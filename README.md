@@ -24,7 +24,7 @@ npm run dev:pages
 npm run build:pages
 ```
 
-O GitHub Pages usa uma entrada estática em pages/, importando **o mesmo** app/page.tsx, estilos e lógica usados no Sites. Não existe uma segunda implementação do jogo. O workflow .github/workflows/pages.yml verifica TypeScript, gera dist-pages e publica automaticamente cada push em main.
+O GitHub Pages usa uma entrada estática em github-pages/, importando **o mesmo** app/page.tsx, estilos e lógica usados no Sites. Não existe uma segunda implementação do jogo. O workflow .github/workflows/pages.yml verifica TypeScript, gera dist-pages e publica automaticamente cada push em main.
 
 Para editar/publicar pelo ChatGPT Sites, preserve .openai/hosting.json e siga o fluxo do plugin Sites. npm run build gera o Worker do Sites; npm run build:pages gera os arquivos estáticos do GitHub Pages.
 

@@ -1,7 +1,7 @@
 // Keep public GitHub history separate from the private Sites repository history.
 // This command prepares a three-way source merge; native connectors publish it.
 import {execFileSync} from 'node:child_process';
-import {readFileSync,writeFileSync,mkdirSync} from 'node:fs';
+import {readFileSync,writeFileSync,mkdirSync,rmSync} from 'node:fs';
 import path from 'node:path';
 
 const remote='https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg.git';
@@ -10,6 +10,7 @@ const git=(...args)=>execFileSync('git',args,{cwd:root,encoding:'utf8',maxBuffer
 const mode=process.argv[2]??'plan';
 const marker=/^GitHub sync: ([0-9a-f]{40})$/m;
 if(mode==='mark') {
+  if(git('status','--porcelain'))throw new Error('Commit or preserve pending edits before marking synchronization.');
   const sha=process.argv[3];
   if(!/^[0-9a-f]{40}$/.test(sha??''))throw new Error('A verified GitHub commit SHA is required.');
   git('fetch','--no-tags',remote,'main:refs/remotes/github/main');
@@ -27,10 +28,26 @@ if(mode==='mark') {
   if(siteTree!==baseTree && siteTree!==publicTree){
     // This temporary commit has only the public baseline as its parent.
     const candidate=git('commit-tree',siteTree,'-p',baseline,'-m','Alteracoes de origem ChatGPT Sites');
-    try{mergedTree=git('merge-tree','--write-tree',publicHead,candidate).split('\n')[0];}
+    try{mergedTree=git('-c','merge.renormalize=true','merge-tree','--write-tree',publicHead,candidate).split('\n')[0];}
     catch{throw new Error('Concurrent source conflict: preserve both versions and report it; never force-push or overwrite edits.');}
   }
   mkdirSync('.sync',{recursive:true});
+  // Normalize tracked text through .gitattributes without changing the checkout.
+  const index=path.resolve('.sync/normalized.index');
+  rmSync(index,{force:true});
+  const indexGit=(...args)=>execFileSync('git',args,{cwd:root,encoding:'utf8',env:{...process.env,GIT_INDEX_FILE:index}}).trim();
+  try{
+    indexGit('read-tree',mergedTree);
+    for(const row of git('ls-tree','-r',mergedTree).split('\n').filter(Boolean)){
+      const match=/^(\d+) blob ([a-f0-9]+)\t(.+)$/.exec(row);
+      if(!match)throw new Error('Unsupported source entry.');
+      const [,fileMode,sha,filePath]=match;
+      const bytes=execFileSync('git',['cat-file','blob',sha],{cwd:root,maxBuffer:32*1024*1024});
+      const normalized=execFileSync('git',['hash-object','-w','--path',filePath,'--stdin'],{cwd:root,input:bytes,encoding:'utf8'}).trim();
+      if(normalized!==sha)indexGit('update-index','--cacheinfo',fileMode,normalized,filePath);
+    }
+    mergedTree=indexGit('write-tree');
+  }finally{rmSync(index,{force:true});}
   const plan={baseline,publicHead,siteTree,mergedTree,needsGitHub:mergedTree!==publicTree,needsSites:mergedTree!==siteTree};
   writeFileSync('.sync/source-plan.json',JSON.stringify(plan,null,2)+'\n');
   console.log(JSON.stringify(plan));

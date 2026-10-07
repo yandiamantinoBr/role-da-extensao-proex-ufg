@@ -4,7 +4,7 @@ import {fileURLToPath} from 'node:url';
 
 const root=fileURLToPath(new URL('.',import.meta.url));
 export default defineConfig(({command})=>({
-  root:fileURLToPath(new URL('./pages',import.meta.url)),
+  root:fileURLToPath(new URL('./github-pages',import.meta.url)),
   base:command==='serve'?'/':process.env.PAGES_BASE_PATH??'/role-da-extensao-proex-ufg/',
   publicDir:fileURLToPath(new URL('./public',import.meta.url)),
   plugins:[react()],
