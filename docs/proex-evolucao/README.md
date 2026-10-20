@@ -1,7 +1,7 @@
 ROLÊ DA EXTENSÃO E OPERAÇÕES DA PROEX
 Pacote de continuidade preparado em 20 de outubro de 2026
 
-O planejamento foi iniciado em código na branch feat/proex-access-foundation. A roleta atual permanece pública e livre. Leia primeiro ESTADO_ATUAL.md e FASE_01_VERIFICACAO.md; há um núcleo de permissões/convites testado, ainda sem login, banco ou painel administrativo integrado.
+O portal operacional foi criado em uma aplicação separada e publicado em https://proex-gestao.yandiamantinobr.chatgpt.site. Leia primeiro ESTADO_ATUAL.md e ADRS/0002-portal-nativo-sites.md. O manual está em apps/proex-portal/README.md na raiz do repositório. A roleta livre permanece preservada.
 
 1. Leia Plano_PROEX_Role_da_Extensao.pdf para entender a estrutura e as decisões.
 2. Para um novo chat Codex/Work, envie prompts/00_PROMPT_MESTRE.txt e prompts/01_DIAGNOSTICO_E_PRESERVACAO.txt.

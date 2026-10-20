@@ -1,5 +1,7 @@
 # Infraestrutura e dependências da PROEX
 
+Atualização executada: o portal usa Sites + D1 + R2 + login nativo ChatGPT; consulte [ADR 0002](ADRS/0002-portal-nativo-sites.md). O levantamento e as opções condicionais abaixo são históricos, não a configuração implantada.
+
 Levantamento de 20/10/2026, somente leitura. Nenhum projeto exclusivo PROEX/Rolê foi encontrado nos recursos Supabase e Vercel acessíveis. Os serviços institucionais fora dessas conexões não foram inspecionados. Não foram consultados segredos nem modificados recursos alheios. A arquitetura está em [ADR 0001](ADRS/0001-arquitetura-e-ambientes.md).
 
 ## Configuração a definir

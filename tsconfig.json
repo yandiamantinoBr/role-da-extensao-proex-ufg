@@ -43,6 +43,11 @@
   ],
   "exclude": [
     "node_modules",
-    "examples"
+    "examples",
+    "apps/proex-portal",
+    "dist-pages",
+    "dist",
+    ".wrangler",
+    ".sites-runtime"
   ]
 }
