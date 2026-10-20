@@ -1,0 +1,1 @@
+ALTER TABLE `portal_users` ADD `activation_pending` integer DEFAULT 0 NOT NULL;

@@ -5,7 +5,15 @@ import { sqliteTable, text, integer, index, uniqueIndex, check } from 'drizzle-o
 export const projects = sqliteTable('projects', {
   id: text('id').primaryKey(), name: text('name').notNull(),
   description: text('description').notNull().default(''), createdAt: text('created_at').notNull(),
-});
+  shortName: text('short_name').notNull().default(''), status: text('status').notNull().default('active'),
+  color: text('color').notNull().default('#54216C'), officialUrl: text('official_url').notNull().default(''),
+  startsAt: text('starts_at'), endsAt: text('ends_at'), location: text('location').notNull().default(''),
+  version: integer('version').notNull().default(1),
+}, t => [
+  check('projects_status_check', sql`${t.status} IN ('active','archived')`),
+  check('projects_version_check', sql`${t.version} > 0`),
+  check('projects_interval_check', sql`${t.startsAt} IS NULL OR ${t.endsAt} IS NULL OR ${t.endsAt} > ${t.startsAt}`),
+]);
 export const members = sqliteTable('members', {
   id: text('id').primaryKey(), userId: text('user_id').notNull(), email: text('email').notNull(),
   role: text('role').notNull(), projectId: text('project_id').references(() => projects.id),
@@ -34,8 +42,12 @@ export const items = sqliteTable('items', {
   stock: integer('stock').notNull().default(0), reserved: integer('reserved').notNull().default(0),
   lowStock: integer('low_stock').notNull().default(0), description: text('description').notNull().default(''),
   condition: text('condition').notNull().default('active'), createdAt: text('created_at').notNull(),
+  assetCode: text('asset_code').notNull().default(''), version: integer('version').notNull().default(1),
+  updatedAt: text('updated_at').notNull().default(''),
 }, t => [
   index('items_project_idx').on(t.projectId),
+  uniqueIndex('items_asset_code_unique').on(t.projectId, t.assetCode).where(sql`${t.assetCode} != ''`),
+  check('items_version_check', sql`${t.version} > 0`),
   check('items_category_check', sql`${t.category} IN ('gift','equipment','distribution','consumption')`),
   check('items_condition_check', sql`${t.condition} IN ('active','maintenance','inactive')`),
   check('items_quantities_check', sql`${t.stock} >= 0 AND ${t.reserved} >= 0 AND ${t.reserved} <= ${t.stock} AND ${t.lowStock} >= 0`),
@@ -130,6 +142,7 @@ export const loans = sqliteTable('loans', {
   status: text('status').notNull().default('reserved'), note: text('note').notNull().default(''),
   conditionOut: text('condition_out').notNull().default(''), conditionIn: text('condition_in').notNull().default(''),
   createdBy: text('created_by').notNull(), createdAt: text('created_at').notNull(), returnedAt: text('returned_at'),
+  checkedOutAt: text('checked_out_at'), updatedAt: text('updated_at').notNull().default(''),
 }, t => [
   index('loans_item_interval_idx').on(t.itemId, t.status, t.startsAt, t.endsAt),
   index('loans_project_idx').on(t.projectId),
@@ -141,7 +154,12 @@ export const documents = sqliteTable('documents', {
   projectId: text('project_id').notNull().references(() => projects.id), objectKey: text('object_key').notNull(),
   name: text('name').notNull(), mime: text('mime').notNull(), size: integer('size').notNull(),
   createdBy: text('created_by').notNull(), createdAt: text('created_at').notNull(),
-}, t => [uniqueIndex('documents_object_key_unique').on(t.objectKey), check('documents_size_check', sql`${t.size} > 0`)]);
+  operationKey: text('operation_key'), contentHash: text('content_hash'),
+}, t => [
+  uniqueIndex('documents_object_key_unique').on(t.objectKey),
+  uniqueIndex('documents_operation_key_unique').on(t.operationKey),
+  check('documents_size_check', sql`${t.size} > 0`),
+]);
 export const audit = sqliteTable('audit', {
   id: text('id').primaryKey(), actorId: text('actor_id').notNull(),
   projectId: text('project_id').references(() => projects.id), action: text('action').notNull(),
@@ -154,3 +172,65 @@ export const visits = sqliteTable('visits', {
   campaignId: text('campaign_id').notNull().references(() => campaigns.id),
   day: text('day').notNull(), hits: integer('hits').notNull().default(0),
 }, t => [uniqueIndex('visits_campaign_day_unique').on(t.campaignId, t.day), check('visits_hits_check', sql`${t.hits} >= 0`)]);
+
+
+// Canonical application identities remain separate from any authentication provider's tables.
+export const portalUsers = sqliteTable('portal_users', {
+  userId: text('user_id').primaryKey(), email: text('email'),
+  status: text('status').notNull().default('active'), activationPending: integer('activation_pending').notNull().default(0), createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, t => [check('portal_users_status_check', sql`${t.status} IN ('active','blocked')`)]);
+export const profiles = sqliteTable('profiles', {
+  userId: text('user_id').primaryKey(), displayName: text('display_name').notNull(),
+  avatarKey: text('avatar_key'), mime: text('mime'), version: integer('version').notNull().default(1),
+  createdAt: text('created_at').notNull(), updatedAt: text('updated_at').notNull(),
+}, t => [check('profiles_version_check', sql`${t.version} > 0`)]);
+export const identityAliases = sqliteTable('identity_aliases', {
+  provider: text('provider').notNull(), subject: text('subject').notNull(),
+  userId: text('user_id').notNull(), createdAt: text('created_at').notNull(),
+}, t => [
+  uniqueIndex('identity_aliases_provider_subject_unique').on(t.provider, t.subject),
+  index('identity_aliases_user_idx').on(t.userId),
+]);
+export const calendarFeeds = sqliteTable('calendar_feeds', {
+  id: text('id').primaryKey(), ownerId: text('owner_id').notNull(), tokenHash: text('token_hash').notNull(),
+  category: text('category').notNull(), projectId: text('project_id').references(() => projects.id),
+  expiresAt: text('expires_at').notNull(), revokedAt: text('revoked_at'), createdAt: text('created_at').notNull(),
+}, t => [
+  uniqueIndex('calendar_feeds_token_hash_unique').on(t.tokenHash),
+  index('calendar_feeds_owner_idx').on(t.ownerId, t.revokedAt),
+]);
+export const records = sqliteTable('records', {
+  id: text('id').primaryKey(), projectId: text('project_id').notNull().references(() => projects.id),
+  kind: text('kind').notNull(), title: text('title').notNull(), body: text('body').notNull().default(''),
+  occurredAt: text('occurred_at').notNull(), startsAt: text('starts_at'), endsAt: text('ends_at'),
+  itemId: text('item_id').references(() => items.id), loanId: text('loan_id').references(() => loans.id),
+  createdBy: text('created_by').notNull(), createdAt: text('created_at').notNull(),
+}, t => [
+  index('records_project_occurred_idx').on(t.projectId, t.occurredAt),
+  index('records_loan_idx').on(t.loanId),
+  index('records_item_idx').on(t.itemId),
+  check('records_interval_check', sql`${t.startsAt} IS NULL OR ${t.endsAt} IS NULL OR ${t.endsAt} >= ${t.startsAt}`),
+]);
+export const recordAttachments = sqliteTable('record_attachments', {
+  id: text('id').primaryKey(), recordId: text('record_id').notNull().references(() => records.id),
+  projectId: text('project_id').notNull().references(() => projects.id), objectKey: text('object_key').notNull(),
+  name: text('name').notNull(), mime: text('mime').notNull(), size: integer('size').notNull(),
+  operationKey: text('operation_key').notNull(), createdBy: text('created_by').notNull(),
+  createdAt: text('created_at').notNull(),
+}, t => [
+  uniqueIndex('record_attachments_object_key_unique').on(t.objectKey),
+  uniqueIndex('record_attachments_operation_key_unique').on(t.operationKey),
+  index('record_attachments_record_idx').on(t.recordId),
+  check('record_attachments_size_check', sql`${t.size} > 0`),
+]);
+export const mutationKeys = sqliteTable('mutation_keys', {
+  scope: text('scope').primaryKey(), fingerprint: text('fingerprint').notNull(),
+  entityId: text('entity_id').notNull(), createdAt: text('created_at').notNull(),
+});
+export const portalRateLimits = sqliteTable('portal_rate_limits', {
+  bucketKey: text('bucket_key').primaryKey(), count: integer('count').notNull().default(0),
+  resetAt: integer('reset_at').notNull(),
+}, t => [check('portal_rate_limits_count_check', sql`${t.count} >= 0`)]);
+
+export * from './auth-schema';

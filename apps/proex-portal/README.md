@@ -6,21 +6,39 @@ Este diretório contém a implementação do portal. A existência do código n�
 
 ## Arquitetura desta implementação
 
-O portal usa o runtime nativo do Sites, banco Cloudflare D1 e armazenamento privado Cloudflare R2. O manifesto `.openai/hosting.json` identifica o projeto do portal e declara os bindings lógicos `DB` e `BUCKET`. Ele deve ser preservado ao atualizar esse Site. O portal não usa o banco de outro projeto da PROEX ou do Kino Campus.
+O portal usa o runtime do Sites, banco Cloudflare D1 e armazenamento privado Cloudflare R2. O login por e-mail e senha usa Better Auth, com sessões e credenciais no próprio D1. O manifesto `.openai/hosting.json` identifica o projeto do portal e declara os bindings lógicos `DB` e `BUCKET`. Ele deve ser preservado ao atualizar esse Site. O portal não usa o banco de outro projeto da PROEX ou do Kino Campus.
 
-O plano inicial discutia PostgreSQL gerenciado e autenticação externa como alternativas condicionais. A implementação atual adota persistência e identidade nativas do Sites para integrar os recursos disponíveis. PostgreSQL, Supabase e hospedagem externa continuam alternativas para uma migração deliberada; não estão configurados neste código. Uma migração exige adaptar SQL, restrições, transações, autenticação e arquivos, com novos testes. Não basta trocar uma variável de conexão.
+As tabelas `auth_*` guardam a autenticação; `portal_users`, `identity_aliases`, `profiles` e `members` guardam cadastro, vínculo de identidade, perfil e permissões do portal. O identificador canônico preserva o histórico anterior: o identificador novo do provedor de senha não substitui os responsáveis já gravados em participações, entregas, empréstimos ou auditoria. Igualdade de e-mail, sozinha, não vincula duas identidades nem concede privilégios.
+
+O plano inicial discutia PostgreSQL gerenciado e autenticação externa como alternativas condicionais. PostgreSQL, Supabase e hospedagem externa continuam alternativas para uma migração deliberada; não estão configurados neste código. Uma migração exige adaptar SQL, restrições, transações, autenticação e arquivos, com novos testes. Não basta trocar uma variável de conexão.
 
 A camada de serviços está em `lib/`; o esquema e suas migrações ficam em `db/` e `drizzle/`; rotas de API fazem autenticação e autorização no servidor. Os contratos são separados da apresentação, mas o adaptador D1 e os bindings ainda pertencem ao runtime atual. O snapshot previsto no repositório público ficará em `apps/proex-portal`, com implantação separada da roleta livre. Copiar o código para o GitHub não publica automaticamente este portal no Sites.
 
-## Login e primeiro responsável
+## Login, convites e primeiro responsável
 
-A entrada usa **Entrar com ChatGPT**, pelo mecanismo nativo do Sites. Não há login próprio por senha, Google direto, código por e-mail, WhatsApp ou Instagram. Uma conta que entrou no portal ainda precisa de um vínculo para operar módulos administrativos. A participação pública em uma campanha usa a identidade nativa, sem exigir vínculo na equipe.
+A entrada habitual é em `/login`, com **e-mail e senha de uma conta previamente cadastrada e ativada**. Não há cadastro público livre. A página de login pode ser aberta sem autenticação; dados internos e operações exigem sessão válida e as permissões correspondentes. A participação oficial usa a mesma identidade canônica do cadastro, com um direito por conta e campanha.
 
-O segredo de runtime `OWNER_EMAIL` define o e-mail autorizado para o primeiro responsável institucional. Configure-o pelo controle de variáveis do Sites, fora do código e do manifesto. O responsável deve entrar normalmente com a conta correspondente. O bootstrap cria o vínculo inicial somente se nunca existiu um responsável global no banco; o histórico impede que mudar esse segredo ou entrar novamente ressuscite um vínculo revogado. O e-mail é usado nessa validação; o identificador estável da conta é usado nos registros.
+As senhas têm de 12 a 128 caracteres. Better Auth armazena hashes scrypt com salt, não a senha em texto. A sessão usa cookie HttpOnly, Secure em HTTPS e validade de sete dias; o servidor consulta o banco, sem usar um perfil em cookie como substituto da autorização atual. A pessoa pode trocar a própria senha informando a atual. A troca renova a sessão corrente e encerra as anteriores; a recuperação encerra todas as sessões.
 
-Não publicar o valor de `OWNER_EMAIL`, tokens ou credenciais no README, GitHub, logs, fixtures ou capturas de tela. Não simular login inserindo cabeçalhos ou dados de usuário no cliente. Uma prévia local comum não reproduz automaticamente a autenticação do Sites.
+Para cadastros antigos, `/acesso-inicial` usa a identidade nativa do Sites **somente como comprovação explícita para vincular uma senha ao cadastro anterior**. É necessário possuir vínculo anterior ou ser o primeiro responsável configurado. Essa comprovação não substitui login por senha nas APIs do portal. Se já existir uma credencial para o mesmo e-mail, também é preciso comprovar a senha dela; não ocorre fusão automática por e-mail.
 
-A tela de equipe emite **links de convite para copiar e compartilhar manualmente**. Nenhum e-mail ou mensagem é enviado automaticamente. O convite tem destinatário, função, escopo, prazo e uso único. A pessoa entra com a conta do e-mail indicado e só então aceita. A geração do link não concede acesso antes do aceite, nem dá permissão para editar código, publicar o Site ou acessar outros projetos.
+O segredo de runtime `OWNER_EMAIL` define o e-mail autorizado para o primeiro responsável institucional, comprovado pelo fluxo nativo anterior. Configure-o pelo controle de variáveis do Sites, fora do código e do manifesto. O bootstrap cria o vínculo inicial somente se nunca existiu um responsável global no banco; o histórico impede que mudar esse segredo ou entrar novamente ressuscite um vínculo revogado. Digitar esse e-mail em um cadastro por senha não concede o papel de responsável.
+
+As configurações de autenticação precisam ser definidas no runtime:
+
+| Variável | Finalidade |
+| --- | --- |
+| `BETTER_AUTH_URL` | Origem HTTPS oficial do portal, sem caminho, consulta ou fragmento |
+| `BETTER_AUTH_SECRET` | Segredo aleatório de pelo menos 32 caracteres, mantido estável entre publicações |
+| `OWNER_EMAIL` | Comprovação inicial do primeiro responsável pelo fluxo nativo, sem promoção por senha |
+
+Na ausência de URL ou segredo válidos, o acesso por senha fica indisponível. Não há segredo padrão de produção. HTTP é permitido apenas em desenvolvimento explícito e para os hosts locais previstos. Não publicar valores dessas variáveis, tokens ou credenciais no README, GitHub, logs, fixtures ou capturas de tela. Não simular login inserindo cabeçalhos ou dados de usuário no cliente. Uma prévia local comum não reproduz automaticamente a comprovação nativa do Sites.
+
+A tela de equipe emite **links de convite para copiar e compartilhar manualmente**. Nenhum e-mail ou mensagem é enviado automaticamente. O convite tem destinatário, função, escopo, validade de sete dias e aceite único. A pessoa abre `/convite`, informa o nome e define a senha; se já tiver credencial no portal, informa a senha atual. O servidor usa o destinatário e as permissões gravados no convite, sem aceitar uma função enviada pelo navegador. A ativação incompleta não permite login. A geração do link não concede acesso antes do aceite, nem dá permissão para editar código, publicar o Site ou acessar outros projetos.
+
+Sem SMTP, o convite manual não comprova automaticamente controle da caixa de e-mail, e a conta não é marcada como e-mail verificado. O responsável deve conferir a pessoa e entregar o link pelo canal institucional adequado. Não há Google OAuth, login por WhatsApp, Facebook ou Instagram nesta revisão.
+
+Se alguém esquecer a senha, o responsável institucional pode gerar um **link pessoal de recuperação**, válido por 30 minutos e de uso único, para compartilhar manualmente. O portal não envia esse link por e-mail. Solicitações públicas não podem emitir ou revelar links de recuperação. Não compartilhar senha nem guardar esses links em planilhas de uso geral.
 
 ## Papéis e escopos
 
@@ -35,7 +53,31 @@ A tela de equipe emite **links de convite para copiar e compartilhar manualmente
 
 Um vínculo pode se limitar a um projeto. As capacidades são verificadas novamente nas APIs e nos downloads; esconder um menu não é a proteção. A revogação de um vínculo impede novas operações quando a requisição seguinte consulta o banco, inclusive de uma sessão que já estava aberta. Convites usados e vínculos são registros diferentes: revogar um convite pendente não é a mesma operação que revogar o vínculo de alguém que já entrou.
 
+O diretório de usuários permite consultar os cadastros visíveis ao gestor e alterar funções permitidas no escopo existente, preservando os vínculos anteriores como histórico. Um responsável institucional pode bloquear ou reativar uma conta: o bloqueio impede acesso e revoga as sessões por senha. A aplicação protege o último responsável ativo e não permite bloquear a própria conta. O papel técnico `user` de Better Auth não corresponde a nenhum papel administrativo da PROEX; os privilégios vêm de `members`.
+
 O responsável global não é concedido pelo formulário comum de convite. Recuperação ou sucessão desse papel exige procedimento institucional e manutenção autorizada, sem apagar histórico para contornar o bootstrap. A operação diária não exige compartilhar a conta do responsável.
+
+## Perfil, celular e aparência
+
+Em Meu perfil, cada pessoa pode alterar o nome de exibição, escolher uma foto na galeria ou solicitar a câmera do aparelho, além de trocar a senha. O e-mail de login não é editável por esse formulário. A interface prepara a foto em PNG com até 512 pixels no maior lado; o servidor limita a imagem preparada a 2 MB e armazena o arquivo no R2 privado. A foto não se torna um endereço público de armazenamento.
+
+Os controles de câmera usam a seleção de arquivos do navegador. A oferta da câmera e os formatos que o aparelho consegue abrir dependem do navegador e do sistema; quando necessário, é possível selecionar uma imagem ou arquivo já salvo. A interface não depende da instalação de um aplicativo. Os dados confirmados ficam no servidor e podem ser consultados em outro aparelho após login; não há edição offline com sincronização posterior.
+
+O seletor oferece tema claro, escuro e preferência do sistema nas páginas de entrada, painel e participação. A preferência fica no próprio navegador; não há sincronização de tema entre aparelhos. As variações da marca preservam contraste com o fundo.
+
+## Projetos e registros operacionais
+
+Os projetos organizam o escopo da equipe, dos materiais e das ações. O cadastro reúne nome, identificação curta, descrição, cor, endereço oficial, local, período e situação; alterações preservam o identificador usado nos registros. Cada material pertence a um projeto e a uma categoria: brinde, equipamento retornável, distribuição institucional ou consumo.
+
+Os registros permitem documentar observações, manutenção, distribuição, consumo, atividade de projeto, material ou empréstimo. Têm projeto, título, descrição e data da ocorrência; podem ter período e vínculo com um material ou empréstimo do mesmo projeto. Fotos e PDFs de até 10 MB podem ser anexados, com leitura e download conforme as permissões do registro. Um registro de consumo ou distribuição é documentação operacional: ele não baixa estoque nem cria empréstimo sozinho. Essas operações continuam pelos movimentos e reservas próprios de cada módulo.
+
+## Agenda e Google Calendar
+
+A agenda reúne informações do portal por **Empréstimos, Materiais, Projetos e eventos, e Consumo**, com filtro de período e projeto. A disponibilidade de um equipamento continua sendo validada no banco, independentemente do que outro aplicativo mostrar.
+
+É possível baixar um arquivo ICS ou criar uma assinatura de leitura por categoria e escopo. A URL privada de assinatura é exibida na criação, tem validade de um ano e pode ser revogada no painel. Quem obtiver esse link pode consultar os eventos incluídos nele; guarde-o como uma credencial. O servidor verifica novamente as permissões e a situação da conta a cada consulta; bloqueio, revogação ou perda de acesso impedem novas leituras.
+
+Para usar no Google Calendar, adicione a URL em **Outras agendas → + → Do URL**, pelo computador; depois a agenda pode aparecer no aplicativo móvel da mesma conta. Consulte as [instruções oficiais do Google Agenda](https://support.google.com/calendar/answer/37100?hl=pt-BR). Trata-se de assinatura ICS de leitura: o Google decide quando buscar atualizações. Não há atualização imediata garantida, envio por OAuth nem edição do portal a partir do Calendar. Importar um arquivo ICS cria uma cópia daquele momento; assinar a URL permite consultas posteriores. Revogar um link impede novas consultas, mas não apaga cópias que já tenham sido importadas ou mantidas pelo serviço externo.
 
 ## Preparar a primeira ação do Rolê
 
@@ -51,7 +93,7 @@ O sistema não cria estoque, regras ou dados de 2025 a partir do relatório narr
 
 ## Participação oficial e atendimento presencial
 
-A roleta e o dado digitais compartilham **uma participação por conta e campanha**. O servidor define e grava cada resultado antes da animação; a página apenas o apresenta. Atualizar ou reabrir recupera o registro, sem conceder nova chance. A escolha da modalidade fica vinculada à primeira participação.
+A roleta e o dado digitais compartilham **uma participação por conta e campanha**. A campanha oficial exige cadastro ativo no portal; a versão livre permanece pública e ilimitada. O servidor define e grava cada resultado antes da animação; a página apenas o apresenta. Atualizar ou reabrir recupera o registro, sem conceder nova chance. A escolha da modalidade fica vinculada à primeira participação.
 
 A opção presencial usa o mesmo direito da conta quando a pessoa reserva seu atendimento na página do evento. Uma tentativa pendente gera comprovante para mostrar à equipe; ela não realiza um sorteio digital. A equipe observa a face real, conclui o registro e confirma a entrega quando houver prêmio. Não realizar o lançamento físico antes de a reserva ser confirmada.
 
@@ -98,10 +140,15 @@ Execute os comandos a partir deste diretório, inclusive quando estiver dentro d
 ```sh
 pnpm install --frozen-lockfile
 pnpm exec tsc --noEmit --incremental false
+pnpm test
 pnpm run build
+# Depois do build: autenticação no Worker compilado, com D1/R2 temporários.
+node --import ./scripts/sites-env.mjs tests/password-auth-worker-smoke.mjs
 ```
 
-No ambiente Work gerenciado, use o supervisor e o fluxo da skill Sites para prévia, preparação de fonte e publicação. Em desenvolvimento standalone, `pnpm dev` inicia a aplicação; esse servidor não cria identidade nativa nem permissões administrativas por conta própria.
+No ambiente Work gerenciado, use o supervisor e o fluxo da skill Sites para prévia, preparação de fonte e publicação. Em desenvolvimento standalone, `pnpm dev` inicia a aplicação; esse servidor não cria contas nem permissões administrativas por conta própria. Configure as variáveis de autenticação e mantenha os dados locais separados. Fixtures sintéticas de teste não devem ser copiadas para a base hospedada.
+
+As versões de Better Auth e do adaptador Drizzle estão fixadas no manifesto e no lockfile. Atualizações exigem revisar as notas de segurança, respeitar a política de maturidade das dependências e testar novamente login, cookies, vínculo canônico, convites, bloqueio e recuperação. `tests/password-auth.test.mjs` usa Better Auth real, Drizzle D1 e SQLite com as migrações reais; ele também verifica disputas de ativação e resgate único de recuperação. O smoke após o build executa o Worker compilado em Miniflare/workerd, criando seus próprios bancos temporários e credenciais sintéticas, sem acessar a base local compartilhada ou a hospedada. Essas verificações complementam a validação nos navegadores utilizados pela equipe.
 
 O Sites provisiona os bindings declarados e aplica as migrações hospedadas no fluxo de publicação. O esquema está em `db/schema.ts`; após mudanças deliberadas, gere e revise as novas migrações com `pnpm run db:generate`, mantendo SQL e metadados no GitHub. Migrações já aplicadas são imutáveis. Não criar ou alterar tabelas durante requisições do aplicativo.
 
@@ -119,5 +166,5 @@ Banco local e banco hospedado são separados. Esse comando não publica nem atua
 - Validar aviso, base de tratamento, fluxo para menores, canal de direitos, retenção, backups e recuperação com a instituição.
 - Confirmar a titularidade e a administração dos recursos, incluindo sucessão e suporte da equipe.
 - Fazer piloto integrado com os perfis reais autorizados, preservando dados de teste separados e registrando a evidência de cada verificação.
-- Se necessário, definir autenticação direta Google/e-mail e SMTP apropriado em arquitetura compatível; não estão disponíveis como método próprio deste portal.
-- Avaliar separadamente integração Meta, catálogo público, sincronização Sheets e migração para outros serviços. Nenhum desses itens deve ser anunciado como ativo antes da implementação e verificação.
+- Se necessário, configurar SMTP institucional e um fluxo de verificação de e-mail e entrega automática de convites/recuperação; a revisão atual usa links compartilhados manualmente.
+- Avaliar separadamente Google OAuth, integração Meta, catálogo público, sincronização Sheets e migração para outros serviços. Nenhum desses itens deve ser anunciado como ativo antes da implementação e verificação.

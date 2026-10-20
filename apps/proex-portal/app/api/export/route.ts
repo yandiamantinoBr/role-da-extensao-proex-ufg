@@ -1,8 +1,8 @@
-import { getChatGPTUser } from '@/app/chatgpt-auth';
+import {getPortalUser} from '@/lib/session';
 import { accessibleProjects, getActor, requireCapability } from '@/lib/access';
 import { all, csv, type Row } from '@/lib/database';
 import { HttpError, publicError } from '@/lib/errors';
-import { database, ownerEmail } from '@/lib/platform';
+import { database } from '@/lib/platform';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,10 +14,10 @@ function scopeFilter(column: string, projects: string[] | null): { sql: string; 
 
 export async function GET(request: Request): Promise<Response> {
   try {
-    const user = await getChatGPTUser();
+    const user = await getPortalUser();
     if (!user) throw new HttpError(401, 'Entre com sua conta para exportar.', 'unauthenticated');
     const db = database();
-    const actor = await getActor(db, user, ownerEmail());
+    const actor = await getActor(db, user);
     const url = new URL(request.url);
     const kind = url.searchParams.get('kind') ?? 'participations';
     if (!['participations', 'stock', 'loans'].includes(kind)) {
@@ -60,8 +60,8 @@ export async function GET(request: Request): Promise<Response> {
       rows = [...participations, ...attempts, ...prizes, ...visits];
     } else if (kind === 'stock') {
       rows = await all(db, `SELECT pr.name AS projeto,i.name AS material,i.category AS categoria,i.unit AS unidade,
-        i.stock AS saldo_fisico,i.reserved AS reservado,(i.stock-i.reserved) AS disponivel,i.condition AS condicao
-        FROM items i JOIN projects pr ON pr.id=i.project_id WHERE ${scope.sql} ORDER BY pr.name,i.name,i.id`, scope.params);
+        i.stock AS saldo_fisico,i.reserved AS reservado,CASE WHEN i.condition<>'active' OR (i.category='equipment' AND EXISTS(SELECT 1 FROM loans busy WHERE busy.item_id=i.id AND (busy.status='out' OR (busy.status='reserved' AND busy.starts_at<=? AND busy.ends_at>?)))) THEN 0 ELSE MAX(0,i.stock-i.reserved) END AS disponivel,i.condition AS condicao
+        FROM items i JOIN projects pr ON pr.id=i.project_id WHERE ${scope.sql} ORDER BY pr.name,i.name,i.id`, [Date.now(),Date.now(),...scope.params]);
     } else {
       rows = await all(db, `SELECT pr.name AS projeto,i.name AS equipamento,l.action_name AS acao,
         datetime(l.starts_at/1000,'unixepoch','-3 hours') AS retirada_prevista_brasilia,

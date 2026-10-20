@@ -1,14 +1,22 @@
 'use client';
+import Image from 'next/image';
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import PhysicalAttendance from '@/components/portal/physical-attendance';
 import CampaignForm from '@/components/portal/campaign-form';
 import PendingPrizes from '@/components/portal/pending-prizes';
-import { ArrowDownToLine, ArrowRight, Boxes, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronRight, ClipboardList, Copy, ExternalLink, FileText, FolderKanban, Gift, LayoutDashboard, LoaderCircle, LogOut, Plus, RefreshCw, Search, Settings2, ShieldCheck, Sparkles, Truck, Users, Wifi, WifiOff, X } from 'lucide-react';
+import ProjectPanel from '@/components/portal/project-panel';
+import TeamPanel from '@/components/portal/team-panel';
+import ProfilePanel from '@/components/portal/profile-panel';
+import CalendarPanel from '@/components/portal/calendar-panel';
+import RecordsPanel from '@/components/portal/records-panel';
+import { ThemeSwitch } from '@/components/theme/theme-switch';
+import { BrandMark } from '@/components/theme/brand-mark';
+import { ArrowDownToLine, ArrowRight, Boxes, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronRight, ClipboardList, ExternalLink, FileText, FolderKanban, Gift, LayoutDashboard, LoaderCircle, LogOut, Plus, RefreshCw, Search, Settings2, ShieldCheck, Sparkles, Truck, Users, Wifi, WifiOff, X } from 'lucide-react';
 // API projections vary by module; the server validates every mutation.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = Record<string, any>;
 type Snapshot = Row;
-type Tab = 'overview' | 'projects' | 'events' | 'materials' | 'loans' | 'team' | 'reports' | 'settings';
+type Tab = 'overview' | 'projects' | 'events' | 'materials' | 'loans' | 'team' | 'reports' | 'settings' | 'calendar' | 'records' | 'profile';
 type Payload = Record<string, unknown>;
 const tabs: {
     id: Tab;
@@ -18,6 +26,8 @@ const tabs: {
     { id: 'overview', label: 'Visão geral', icon: LayoutDashboard }, { id: 'projects', label: 'Projetos', icon: FolderKanban },
     { id: 'events', label: 'Eventos', icon: CalendarDays }, { id: 'materials', label: 'Materiais', icon: Boxes },
     { id: 'loans', label: 'Empréstimos', icon: Truck }, { id: 'team', label: 'Equipe', icon: Users },
+    { id: 'calendar', label: 'Agenda', icon: CalendarDays }, { id: 'records', label: 'Registros', icon: FileText },
+    { id: 'profile', label: 'Conta', icon: Users },
     { id: 'reports', label: 'Relatórios', icon: ClipboardList }, { id: 'settings', label: 'Configurações', icon: Settings2 },
 ];
 const statusNames: Row = { draft: 'Rascunho', active: 'Ativo', paused: 'Pausado', closed: 'Encerrado', reserved: 'Reservado', out: 'Retirado', returned: 'Devolvido', cancelled: 'Cancelado', pending: 'Pendente', accepted: 'Aceito', revoked: 'Revogado' };
@@ -29,6 +39,7 @@ const string = (value: unknown) => value === null || value === undefined ? '' : 
 const when = (value: unknown, time = true) => { const d = new Date(value as string | number); return Number.isFinite(d.getTime()) ? d.toLocaleString('pt-BR', { dateStyle: 'short', ...(time ? { timeStyle: 'short' as const } : {}), timeZone: 'America/Sao_Paulo' }) : 'Não informado'; };
 const iso = (value: FormDataEntryValue | null) => value ? new Date(String(value)).toISOString() : null;
 const operationId = () => crypto.randomUUID();
+const readableError = (value: unknown, fallback = 'Não foi possível concluir. Atualize os dados e tente novamente.') => typeof value === 'string' && value.length < 450 && !/SQLITE|D1_|SQL syntax|Unexpected token|JSON|Failed to fetch|NetworkError|Load failed|<html/i.test(value) ? value : fallback;
 function Field({ label, children, help }: {
     label: string;
     children: ReactNode;
@@ -64,7 +75,7 @@ function Section({ title, description, children, aside }: {
     <div>
     <h2>{title}</h2>{description && <p>{description}</p>}</div>{aside}</div>{children}</section>;
 }
-function OperationForm({ action, make, mutate, children, submit = 'Salvar', onDone, compact = false }: {
+function OperationForm({ action, make, mutate, children, submit = 'Salvar', onDone, compact = false, onProjectFocus }: {
     action: string;
     make: (f: FormData) => Payload;
     mutate: (action: string, data: Payload) => Promise<Row>;
@@ -72,6 +83,7 @@ function OperationForm({ action, make, mutate, children, submit = 'Salvar', onDo
     submit?: string;
     onDone?: (result: Row) => void;
     compact?: boolean;
+    onProjectFocus?: (id: string) => void;
 }) {
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
@@ -98,42 +110,143 @@ function OperationForm({ action, make, mutate, children, submit = 'Salvar', onDo
             setSaving(false);
         }
     }
-    return <form className={`p-form${compact ? ' p-form-compact' : ''}`} onSubmit={send} onChange={() => { if (!saving)
-        key.current = null; }}>
+    return <form className={`p-form${compact ? ' p-form-compact' : ''}`} onSubmit={send} onFocus={e => { const field = e.currentTarget.querySelector('select[name="projectId"]') as unknown as HTMLSelectElement | null; if (field?.value)
+        onProjectFocus?.(field.value); }} onChange={() => {
+            if (!saving)
+                key.current = null;
+        }}>
     <fieldset disabled={saving}>{children}<div className="p-form-footer">{error && <p className="p-inline-error" role="alert">{error}</p>}<button className="p-button p-button-primary" type="submit">{saving ? <LoaderCircle className="p-spin" size={18}/> : <Check size={18}/>}{saving ? 'Salvando…' : submit}</button>
     </div>
     </fieldset>
     </form>;
+}
+function LoanAttachment({ loanId, onSaved }: {
+    loanId: string;
+    onSaved: () => Promise<boolean>;
+}) {
+    const [file, setFile] = useState<File | null>(null), [saving, setSaving] = useState(false), [error, setError] = useState(''), [message, setMessage] = useState('');
+    const key = useRef<string | null>(null);
+    function choose(event: React.ChangeEvent<HTMLInputElement>) { const chosen = event.currentTarget.files?.[0]; event.currentTarget.value = ''; if (!chosen)
+        return; setMessage(''); setError(''); if (chosen.size > 10 * 1024 * 1024 || !['image/jpeg', 'image/png', 'image/webp', 'application/pdf'].includes(chosen.type)) {
+        setError('Escolha uma foto JPEG, PNG, WebP ou um PDF de até 10 MB.');
+        return;
+    } setFile(chosen); key.current = crypto.randomUUID(); }
+    async function upload() { if (!file || saving)
+        return; setSaving(true); setError(''); key.current ??= crypto.randomUUID(); try {
+        const form = new FormData();
+        form.set('loanId', loanId);
+        form.set('file', file);
+        const response = await fetch('/api/files', { method: 'POST', headers: { 'X-Proex-Action': '1', 'X-Operation-Key': key.current }, body: form });
+        const result = await response.json().catch(() => null) as Row | null;
+        if (!response.ok || !result)
+            throw new Error(readableError(result?.error, 'Não foi possível confirmar o anexo. Use Tentar novamente com o mesmo arquivo.'));
+        const updated = await onSaved();
+        setMessage(updated ? 'Documento anexado com acesso restrito.' : 'Documento salvo. Atualize os dados para consultar o anexo.');
+        setFile(null);
+        key.current = null;
+    }
+    catch (error) {
+        setError(readableError(error instanceof Error ? error.message : '', 'A conexão foi interrompida. Use Tentar novamente para enviar o mesmo arquivo sem duplicar o registro.'));
+    }
+    finally {
+        setSaving(false);
+    } }
+    return <div className="p-upload">
+    <label className="p-field">
+    <span>Foto ou PDF do termo</span>
+    <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" disabled={saving} onChange={choose}/>
+    <small>Até 10 MB. O arquivo fica restrito à equipe autorizada.</small>
+    </label>{file && <div className="p-file-ready">
+        <p>
+        <FileText size={15}/>{file.name} · {(file.size / 1024 / 1024).toFixed(1)} MB</p>
+        <div className="p-inline">
+        <button className="p-button p-button-primary" disabled={saving} onClick={() => void upload()}>{saving ? <LoaderCircle size={16} className="p-spin"/> : <Check size={16}/>}{saving ? 'Enviando…' : error ? 'Tentar novamente' : 'Anexar documento'}</button>
+        <button className="p-button p-button-subtle" disabled={saving} onClick={() => { setFile(null); key.current = null; setError(''); }}>Descartar seleção</button>
+        </div>
+        </div>}{error && <p className="p-inline-error" role="alert">{error}</p>}{message && <p className="p-form-help" role="status">{message}</p>}</div>;
+}
+function ItemEditor({ item, mutate, close }: {
+    item: Row;
+    mutate: (action: string, payload: Payload) => Promise<Row>;
+    close: () => void;
+}) {
+    return <section className="p-section p-editor-panel">
+    <div className="p-section-heading">
+    <div>
+    <h2>Editar material</h2>
+    <p>Saldo e reservas são alterados por movimentos. A condição controla a disponibilidade.</p>
+    </div>
+    <button className="p-icon-button" onClick={close} aria-label="Fechar edição do material">
+    <X size={18}/>
+    </button>
+    </div>
+    <OperationForm action="item.update" mutate={mutate} onDone={close} submit="Salvar material" make={f => ({ id: item.id, expectedVersion: item.version, name: f.get('name'), unit: f.get('unit'), lowStock: Number(f.get('lowStock')), description: f.get('description'), condition: f.get('condition'), assetCode: f.get('assetCode') })}>
+    <div className="p-form-grid">
+    <Field label="Nome do material">
+    <input name="name" required maxLength={200} defaultValue={item.name}/>
+    </Field>
+    <Field label="Unidade">
+    <input name="unit" required maxLength={40} defaultValue={item.unit}/>
+    </Field>
+    <Field label="Condição">
+    <select name="condition" defaultValue={item.condition || 'active'}>
+    <option value="active">Disponível para operação</option>
+    <option value="maintenance">Em manutenção</option>
+    <option value="inactive">Inativo</option>
+    </select>
+    <small>Não é possível desativar unidades prometidas ou um equipamento ainda retirado.</small>
+    </Field>
+    <Field label="Alerta quando disponível até">
+    <input name="lowStock" type="number" min="0" max={item.category === 'equipment' ? 1 : undefined} required defaultValue={item.low_stock ?? item.lowStock ?? 0}/>
+    </Field>
+    <Field label="Identificação patrimonial ou código">
+    <input name="assetCode" maxLength={100} defaultValue={item.asset_code ?? item.assetCode ?? ''}/>
+    </Field>
+    </div>
+    <Field label="Descrição">
+    <textarea name="description" rows={3} maxLength={2000} defaultValue={item.description ?? ''}/>
+    </Field>
+    <p className="p-form-help">Projeto e categoria são preservados. Para outra finalidade, cadastre outro material.</p>
+    </OperationForm>
+    </section>;
 }
 export default function PortalClient({ initial }: {
     initial: Snapshot;
 }) {
     const [data, setData] = useState<Snapshot>(initial ?? {});
     const [tab, setTab] = useState<Tab>('overview');
+    const [accountOpen, setAccountOpen] = useState(false);
+    const [closingCampaign, setClosingCampaign] = useState<string | null>(null);
+    const [reportFrom, setReportFrom] = useState(''), [reportTo, setReportTo] = useState('');
+    const [sessionExpired, setSessionExpired] = useState(false);
+    const accountRef = useRef<HTMLDivElement>(null);
     const [filter, setFilter] = useState('');
     const [draftProject, setDraftProject] = useState('');
     const [query, setQuery] = useState('');
+    const [editingItem, setEditingItem] = useState<Row | null>(null);
     const [refreshing, setRefreshing] = useState(false);
     const [busy, setBusy] = useState(false);
     const [online, setOnline] = useState(true);
     const [message, setMessage] = useState('');
+    const [messageKind, setMessageKind] = useState<'success' | 'warning'>('success');
     const [failure, setFailure] = useState('');
-    const [inviteLink, setInviteLink] = useState('');
     const [now, setNow] = useState(() => new Date(initial?.updatedAt ?? 0).getTime());
     const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
     const [offerRows, setOfferRows] = useState(1);
-    const [copied, setCopied] = useState(false);
     const latestRequest = useRef(0);
     const refresh = useCallback(async () => {
         const request = ++latestRequest.current;
         setRefreshing(true);
         try {
             const response = await fetch('/api/portal', { cache: 'no-store' });
-            const body = await response.json() as Row;
-            if (!response.ok)
-                throw new Error(body.error || 'Não foi possível atualizar os dados.');
+            const body = await response.json().catch(() => null) as Row | null;
+            if (response.status === 401)
+                setSessionExpired(true);
+            if (!response.ok || !body)
+                throw new Error(body?.error || 'Não foi possível atualizar. Verifique sua conexão e tente novamente.');
             if (request === latestRequest.current) {
                 setData(body);
+                setSessionExpired(false);
                 setUpdatedAt(new Date());
                 setNow(Date.now());
                 setFailure('');
@@ -142,7 +255,7 @@ export default function PortalClient({ initial }: {
         }
         catch (e) {
             if (request === latestRequest.current)
-                setFailure(e instanceof Error ? e.message : 'Falha de conexão. Os dados exibidos podem estar desatualizados.');
+                setFailure(readableError(e instanceof Error ? e.message : '', 'Falha de conexão. Os dados exibidos podem estar desatualizados.'));
             return false;
         }
         finally {
@@ -151,72 +264,123 @@ export default function PortalClient({ initial }: {
         }
     }, []);
     useEffect(() => { const change = () => { setOnline(navigator.onLine); }; const timer = window.setTimeout(() => { setUpdatedAt(new Date()); setNow(Date.now()); change(); }, 0); const clock = window.setInterval(() => setNow(Date.now()), 60000); window.addEventListener('online', change); window.addEventListener('offline', change); return () => { window.clearTimeout(timer); window.clearInterval(clock); window.removeEventListener('online', change); window.removeEventListener('offline', change); }; }, []);
+    useEffect(() => { const url = new URL(window.location.href); const requested = url.searchParams.get('module'); const timer = window.setTimeout(() => { if (tabs.some(t => t.id === requested))
+        setTab(requested as Tab); setFilter(url.searchParams.get('project') || ''); }, 0); return () => window.clearTimeout(timer); }, []);
+    useEffect(() => { const url = new URL(window.location.href); if (tab === 'overview')
+        url.searchParams.delete('module');
+    else
+        url.searchParams.set('module', tab); if (filter)
+        url.searchParams.set('project', filter);
+    else
+        url.searchParams.delete('project'); window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`); }, [tab, filter]);
+    useEffect(() => { const update = () => { if (navigator.onLine && !document.hidden)
+        void refresh(); }; const timer = window.setInterval(update, 30000); window.addEventListener('online', update); document.addEventListener('visibilitychange', update); return () => { window.clearInterval(timer); window.removeEventListener('online', update); document.removeEventListener('visibilitychange', update); }; }, [refresh]);
+    useEffect(() => { if (!accountOpen)
+        return; const close = (e: PointerEvent) => { if (!accountRef.current?.contains(e.target as Node))
+        setAccountOpen(false); }; const keyboard = (e: KeyboardEvent) => { if (e.key === 'Escape') {
+        setAccountOpen(false);
+        accountRef.current?.querySelector<HTMLButtonElement>('.p-account-trigger')?.focus();
+    } }; document.addEventListener('pointerdown', close); document.addEventListener('keydown', keyboard); return () => { document.removeEventListener('pointerdown', close); document.removeEventListener('keydown', keyboard); }; }, [accountOpen]);
     const projects = list(data.projects), campaigns = list(data.campaigns), items = list(data.items), offers = list(data.offers), loans = list(data.loans);
     const members = list(data.members), invites = list(data.invites), audit = list(data.audit), documents = list(data.documents);
     const user = data.user ?? {};
     const role = string(data.role);
     const capabilities = Array.isArray(data.capabilities) ? data.capabilities : [];
-    const can = (...needed: string[]) => role === 'owner' || capabilities.includes('*') || needed.some(c => capabilities.includes(c));
+    const globalCapabilities: string[] = Array.isArray(data.globalCapabilities) ? data.globalCapabilities : role === 'owner' ? capabilities : [];
+    const projectCapabilities = data.capabilitiesByProject ?? null;
+    const canGlobal = (...needed: string[]) => globalCapabilities.includes('*') || needed.some(c => globalCapabilities.includes(c));
+    const canProject = (id: string, ...needed: string[]) => canGlobal(...needed) || Boolean(projectCapabilities ? needed.some(c => (projectCapabilities[id] ?? []).includes(c)) : role === 'owner' || needed.some(c => capabilities.includes(c)));
+    const canAny = (...needed: string[]) => canGlobal(...needed) || projects.some(p => canProject(p.id, ...needed));
+    const can = (...needed: string[]) => filter ? canProject(filter, ...needed) : canAny(...needed);
     const byProject = (rows: Row[]) => filter ? rows.filter(r => get(r, 'projectId', 'project_id') === filter) : rows;
     const visibleCampaigns = byProject(campaigns), visibleItems = byProject(items), visibleLoans = byProject(loans);
     const projectName = (id: unknown) => projects.find(p => p.id === id)?.name || 'PROEX';
-    const effectiveProject = draftProject || filter || string(projects[0]?.id);
+    const formCapability = tab === 'loans' ? 'loans.manage' : tab === 'events' ? 'campaigns.manage' : 'inventory.manage';
+    const formProjects = projects.filter(p => canProject(p.id, formCapability));
+    const selectedFormProject = draftProject || filter;
+    const effectiveProject = formProjects.some(p => p.id === selectedFormProject) ? selectedFormProject : string(formProjects[0]?.id);
     const formItems = items.filter(i => !effectiveProject || get(i, 'projectId', 'project_id') === effectiveProject);
-    const available = (item: Row) => Number(item.stock ?? item.quantity ?? 0) - Number(item.reserved ?? 0);
-    const lowItems = visibleItems.filter(i => available(i) <= Number(get(i, 'lowStock', 'low_stock') ?? 0));
+    const available = (item: Row) => item.available !== undefined && item.available !== null ? Number(item.available) : Number(item.stock ?? item.quantity ?? 0) - Number(item.reserved ?? 0);
+    const lowItems = visibleItems.filter(i => i.category !== 'equipment' && i.condition === 'active' && available(i) <= Number(get(i, 'lowStock', 'low_stock') ?? 0));
     const lateLoans = visibleLoans.filter(l => l.status === 'out' && new Date(get(l, 'endsAt', 'ends_at')).getTime() < now);
     const searchItems = visibleItems.filter(i => !query || `${i.name} ${i.description ?? ''}`.toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR')));
-    const allowedTabs = tabs.filter(t => t.id === 'overview' || t.id === 'projects' || (t.id === 'events' && can('campaigns.manage', 'participation.operate', 'inventory.deliver')) || (t.id === 'materials' && can('inventory.read', 'inventory.manage', 'inventory.deliver')) || (t.id === 'loans' && can('loans.read', 'loans.manage', 'loans.checkout')) || (t.id === 'team' && can('access.invite', 'access.manage')) || (t.id === 'reports' && can('reports.read')) || (t.id === 'settings' && can('organization.manage')));
+    const allowedTabs = tabs.filter(t => ['overview', 'projects', 'profile', 'calendar', 'records'].includes(t.id) || (t.id === 'events' && canAny('campaigns.manage', 'participation.operate', 'inventory.deliver')) || (t.id === 'materials' && canAny('inventory.read', 'inventory.manage', 'inventory.deliver')) || (t.id === 'loans' && canAny('loans.read', 'loans.manage', 'loans.checkout')) || (t.id === 'team' && canAny('access.invite', 'access.manage')) || (t.id === 'reports' && canAny('reports.read')) || (t.id === 'settings' && canGlobal('organization.manage')));
     async function mutate(action: string, payload: Payload): Promise<Row> {
         if (!navigator.onLine)
             throw new Error('Você está sem conexão. Reconecte antes de confirmar uma operação.');
-        const r = await fetch('/api/portal', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Proex-Action': '1' }, body: JSON.stringify({ action, ...payload }) });
-        const body = await r.json() as Row;
-        if (!r.ok || body.error)
-            throw new Error(body.error || 'Não foi possível concluir esta operação.');
+        const r = await fetch('/api/portal', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Proex-Action': '1' }, body: JSON.stringify({ action, ...payload }) }).catch(() => { throw new Error('A conexão foi interrompida. Reconecte e tente novamente; seu formulário foi preservado.'); });
+        const body = await r.json().catch(() => null) as Row | null;
+        if (r.status === 401)
+            setSessionExpired(true);
+        if (!r.ok || !body || body.error)
+            throw new Error(r.status === 401 ? 'Sua sessão terminou. Entre novamente para continuar.' : readableError(body?.error, 'Não foi possível concluir. Verifique sua conexão e tente novamente.'));
         const updated = await refresh();
-        setMessage(updated ? 'Registro salvo. Os dados foram atualizados.' : 'Registro salvo. A atualização da tela está pendente; use Atualizar dados.');
+        setMessageKind(body.alreadyDelivered ? 'warning' : 'success');
+        setMessage(body.alreadyDelivered ? `Este prêmio${body.offerName ? ` (${body.offerName})` : ''} já foi entregue. Não entregue novamente.` : action === 'prize.redeem' ? 'Entrega registrada. Entregue os materiais indicados à pessoa.' : updated ? 'Registro salvo. Os dados foram atualizados.' : 'Registro salvo. A atualização da tela está pendente; use Atualizar dados.');
         return body;
     }
-    async function quick(action: string, payload: Payload) { if (busy)
-        return; setBusy(true); setFailure(''); try {
-        await mutate(action, { ...payload, operationKey: operationId() });
+    async function quick(action: string, payload: Payload) {
+        if (busy)
+            return;
+        setBusy(true);
+        setFailure('');
+        try {
+            await mutate(action, { ...payload, operationKey: operationId() });
+        }
+        catch (e) {
+            setFailure(e instanceof Error ? e.message : 'Não foi possível concluir.');
+        }
+        finally {
+            setBusy(false);
+        }
     }
-    catch (e) {
-        setFailure(e instanceof Error ? e.message : 'Não foi possível concluir.');
+    async function logout() {
+        setBusy(true);
+        try {
+            const response = await fetch('/api/account', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Proex-Action': '1' }, body: JSON.stringify({ action: 'logout' }) });
+            if (!response.ok)
+                throw new Error('Não foi possível sair. Tente novamente.');
+            // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- Reload clears private client data after the session cookie is removed.
+            window.location.assign('/login');
+        }
+        catch (e) {
+            setFailure(e instanceof Error ? e.message : 'Não foi possível sair.');
+            setBusy(false);
+        }
     }
-    finally {
-        setBusy(false);
-    } }
-    async function copyInvite() { try {
-        await navigator.clipboard.writeText(inviteLink);
-        setCopied(true);
-    }
-    catch {
-        setMessage('Selecione e copie o link do convite abaixo.');
-    } }
     const projectField = <Field label="Projeto">
     <select name="projectId" value={effectiveProject} onChange={e => setDraftProject(e.target.value)} required>
-    <option value="">Selecione um projeto</option>{projects.map(p => <option value={p.id} key={p.id}>{p.name}</option>)}</select>
+    <option value="">Selecione um projeto</option>{formProjects.map(p => <option value={p.id} key={p.id}>{p.name}</option>)}</select>
     </Field>;
+    const dailyRows = byProject(list(data.metrics?.daily)).filter(row => (!reportFrom || row.day >= reportFrom) && (!reportTo || row.day <= reportTo));
+    const campaignTotals = new Map<string, Row>();
+    for (const row of dailyRows) {
+        const key = String(row.campaign_id);
+        const previous = campaignTotals.get(key) ?? { id: row.campaign_id, name: row.campaign_name, project_id: row.project_id, participations: 0, attempts: 0, deliveries: 0 };
+        for (const kind of ['participations', 'attempts', 'deliveries'])
+            previous[kind] += Number(row[kind] ?? 0);
+        campaignTotals.set(key, previous);
+    }
+    const reportCampaignRows = reportFrom || reportTo ? Array.from(campaignTotals.values()) : byProject(list(data.metrics?.campaigns));
     const metric = (...keys: string[]) => { const metrics = data.metrics ?? {}; if (metrics.available === false)
-        return '—'; let value = get(metrics, ...keys); if (filter) {
-        const normalized = keys.includes('deliveries') ? 'deliveries' : keys[0];
-        const scoped = list(metrics.campaigns).filter(c => get(c, 'projectId', 'project_id') === filter);
-        value = ['participations', 'attempts', 'deliveries', 'visits', 'tickets'].includes(normalized) ? scoped.reduce((total, row) => total + Number(row[normalized] ?? 0), 0) : get(metrics.byProject?.[filter] ?? {}, ...keys);
+        return '—'; const normalized = keys.includes('deliveries') ? 'deliveries' : keys.includes('unitsDelivered') ? 'unitsDelivered' : keys[0]; let value = get(metrics, ...keys); if (tab === 'reports' && (reportFrom || reportTo))
+        value = ['participations', 'attempts', 'deliveries', 'tickets'].includes(normalized) ? dailyRows.reduce((total, row) => total + Number(row[normalized] ?? 0), 0) : undefined;
+    else if (filter) {
+        const row = list(metrics.byProject).find(p => get(p, 'projectId', 'project_id') === filter);
+        value = row ? get(row, normalized, ...keys) : ['participations', 'attempts', 'deliveries', 'visits', 'tickets'].includes(normalized) ? list(metrics.campaigns).filter(c => get(c, 'projectId', 'project_id') === filter).reduce((total, row) => total + Number(row[normalized] ?? 0), 0) : undefined;
     } return value === undefined || value === null ? '—' : Number(value).toLocaleString('pt-BR'); };
+    function downloadDaily() { const columns = ['day', 'campaign_name', 'modality', 'participations', 'attempts', 'deliveries', 'tickets']; const escape = (value: unknown) => `"${String(value ?? '').replace(/^[=+@-]/, "'$&").replaceAll('"', '""')}"`; const csv = '\uFEFF' + [['Data', 'Evento', 'Modalidade', 'Participações', 'Tentativas', 'Entregas', 'Atendimentos assistidos'].map(escape).join(';'), ...dailyRows.map(row => columns.map(key => escape(key === 'modality' ? row[key] === 'physical' ? 'Presencial' : row[key] === 'dice' ? 'Dado' : row[key] === 'wheel' ? 'Roleta' : row[key] : row[key])).join(';'))].join('\r\n'); const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' })); const link = document.createElement('a'); link.href = url; link.download = 'proex-resumo-diario.csv'; link.click(); URL.revokeObjectURL(url); }
     const title = tabs.find(t => t.id === tab)?.label ?? 'Visão geral';
     if (!user.userId)
         return <main className="p-login">
         <div className="p-login-card">
         <div className="p-brand">
-        <img src="/brand/proex.png" alt="PROEX"/>
-        <img src="/brand/ufg-white.png" alt="UFG"/>
+        <BrandMark variant="light"/>
         </div>
         <span className="p-eyebrow">GESTÃO DA EXTENSÃO</span>
         <h1>Um lugar para organizar o que acontece.</h1>
         <p>Entre para acessar seus projetos, eventos, materiais e empréstimos.</p>
-        <a className="p-button p-button-primary" href={initial?.signInPath || '/signin-with-chatgpt?return_to=%2F'} target="_top">Entrar com ChatGPT <ArrowRight size={18}/>
+        <a className="p-button p-button-primary" href={'/login'} target="_top">Entrar no portal <ArrowRight size={18}/>
         </a>
         <small>O acesso aos módulos depende das permissões da sua equipe.</small>
         <a className="p-text-link" href="https://role-da-extensao-ufg.yandiamantinobr.chatgpt.site/" target="_blank" rel="noreferrer">Abrir a roleta livre <ExternalLink size={14}/>
@@ -224,25 +388,28 @@ export default function PortalClient({ initial }: {
         </div>
         </main>;
     if (!role || !capabilities.length)
-        return <main className="p-login">
-        <div className="p-login-card">
-        <div className="p-brand">
-        <img src="/brand/proex.png" alt="PROEX"/>
-        <img src="/brand/ufg-white.png" alt="UFG"/>
-        </div>
-        <span className="p-eyebrow">ACESSO DA EQUIPE</span>
+        return <main className="p-no-access">
+        <header>
+        <BrandMark variant="auto"/>
+        <ThemeSwitch />
+        </header>
+        <section className="p-card p-no-access-notice">
+        <ShieldCheck size={25}/>
+        <div>
         <h1>Sua conta está conectada.</h1>
-        <p>Ainda não há uma permissão ativa para {user.email || 'esta conta'}. Abra o link do convite enviado pela equipe ou solicite acesso ao responsável institucional.</p>
+        <p>Ainda não há uma permissão ativa para {user.email || 'esta conta'}. Abra o link do convite recebido ou solicite acesso ao responsável institucional.</p>
+        <div className="p-inline">
         <button className="p-button p-button-primary" onClick={() => void refresh()} disabled={refreshing}>{refreshing && <LoaderCircle size={17} className="p-spin"/>}Verificar meu acesso</button>
-        <a className="p-text-link" href="/signout-with-chatgpt?return_to=%2F" target="_top">Sair e trocar de conta <LogOut size={15}/>
-        </a>
+        <button className="p-button p-button-subtle" disabled={busy} onClick={() => void logout()}>Sair e trocar de conta</button>
         </div>
+        </div>
+        </section>
+        <ProfilePanel onUpdated={() => { void refresh(); }}/>
         </main>;
     return <div className="p-shell">
     <aside className="p-sidebar">
     <a className="p-brand" href="#main" aria-label="Início da gestão PROEX">
-    <img src="/brand/proex.png" alt="PROEX"/>
-    <img src="/brand/ufg-white.png" alt="Universidade Federal de Goiás"/>
+    <BrandMark variant="light"/>
     </a>
     <div className="p-sidebar-name">
     <span>Gestão da extensão</span>
@@ -264,7 +431,7 @@ export default function PortalClient({ initial }: {
     <div className="p-workspace">
     <header className="p-topbar">
     <div className="p-mobile-brand">
-    <img src="/brand/proex.png" alt="PROEX"/>
+    <BrandMark variant="light" showUfg={false}/>
     <span>Gestão</span>
     </div>
     <div className="p-breadcrumb">PROEX <ChevronRight size={14}/>
@@ -274,18 +441,41 @@ export default function PortalClient({ initial }: {
     <button className="p-icon-button" title="Atualizar dados" aria-label="Atualizar dados" disabled={refreshing} onClick={() => void refresh()}>
     <RefreshCw size={18} className={refreshing ? 'p-spin' : ''}/>
     </button>
-    <div className="p-avatar" aria-hidden="true">{string(user.displayName || user.email || 'P').slice(0, 1).toUpperCase()}</div>
-    <div className="p-user">
+    <ThemeSwitch />
+    <div className="p-account" ref={accountRef}>
+    <button className="p-account-trigger" aria-label="Abrir menu da minha conta" aria-expanded={accountOpen} aria-controls="account-menu" onClick={() => setAccountOpen(v => !v)} onKeyDown={e => { if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setAccountOpen(true);
+        window.setTimeout(() => accountRef.current?.querySelector<HTMLButtonElement>('[role=menuitem]')?.focus(), 0);
+    } }}>
+    <span className="p-avatar" aria-hidden="true">{user.avatarUrl ? <Image src={user.avatarUrl} alt="" width={38} height={38} unoptimized/> : string(user.displayName || user.email || 'P').slice(0, 1).toUpperCase()}</span>
+    <span className="p-user">
     <strong>{user.displayName || 'Minha conta'}</strong>
     <small>{roleNames[role] || 'Acesso da equipe'}</small>
-    </div>
-    <a className="p-icon-button" href="/signout-with-chatgpt?return_to=%2F" target="_top" aria-label="Sair" title="Sair">
-    <LogOut size={17}/>
-    </a>
+    </span>
+    <ChevronDown size={14}/>
+    </button>{accountOpen && <div className="p-account-menu" id="account-menu" role="menu" aria-label="Minha conta" onKeyDown={e => { if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== 'Home' && e.key !== 'End')
+            return; e.preventDefault(); const buttons = Array.from(e.currentTarget.querySelectorAll<HTMLButtonElement>('[role=menuitem]')); const index = buttons.indexOf(document.activeElement as HTMLButtonElement); buttons[e.key === 'Home' ? 0 : e.key === 'End' ? buttons.length - 1 : (index + (e.key === 'ArrowDown' ? 1 : -1) + buttons.length) % buttons.length]?.focus(); }}>
+        <div>
+        <strong>{user.displayName || 'Minha conta'}</strong>
+        <small>{user.email}</small>
+        </div>
+        <button role="menuitem" onClick={() => { setTab('profile'); setAccountOpen(false); }}>Minha conta e senha <Users size={16}/>
+        </button>
+        <button role="menuitem" disabled={busy} onClick={() => void logout()}>Sair e trocar de conta <LogOut size={16}/>
+        </button>
+        </div>}</div>
     </div>
     </header>
-      <nav className="p-mobile-nav" aria-label="Módulos">{allowedTabs.map(({ id, label, icon: Icon }) => <button key={id} className={tab === id ? 'is-active' : ''} aria-current={tab === id ? 'page' : undefined} onClick={() => setTab(id)}>
-        <Icon size={17}/>{label}</button>)}</nav>
+      <nav className="p-mobile-nav" aria-label="Módulos principais">{allowedTabs.filter(t => ['overview', 'events', 'materials', 'profile'].includes(t.id)).map(({ id, label, icon: Icon }) => <button key={id} className={tab === id ? 'is-active' : ''} aria-current={tab === id ? 'page' : undefined} onClick={() => setTab(id)}>
+        <Icon size={17}/>
+        <span>{label}</span>
+        </button>)}<label className={`p-more-modules ${!['overview', 'events', 'materials', 'profile'].includes(tab) ? 'is-active' : ''}`}>
+    <ChevronDown size={17}/>
+    <span>Mais</span>
+    <select aria-label="Todos os módulos" value={tab} onChange={e => setTab(e.target.value as Tab)}>{allowedTabs.map(({ id, label }) => <option key={id} value={id}>{label}</option>)}</select>
+    </label>
+    </nav>
       <main className="p-main" id="main">
     <div className="p-page-heading">
     <div>
@@ -305,6 +495,11 @@ export default function PortalClient({ initial }: {
         <span>Consulte o que já está na tela. Reconecte antes de registrar uma operação.</span>
         </div>
         </div>}
+      {sessionExpired && <div className="p-notice p-notice-warning" role="status">
+        <ShieldCheck size={18}/>
+        <span>Sua sessão terminou. Preserve suas anotações e entre novamente.</span>
+        <a className="p-button p-button-subtle" href="/login">Entrar</a>
+        </div>}
       {failure && <div className="p-notice p-notice-error" role="alert">
         <FileText size={18}/>
         <div>
@@ -315,7 +510,7 @@ export default function PortalClient({ initial }: {
         <X size={16}/>
         </button>
         </div>}
-      {message && <div className="p-notice p-notice-success" role="status">
+      {message && <div className={`p-notice p-notice-${messageKind}`} role={messageKind === 'warning' ? 'alert' : 'status'}>
         <CheckCircle2 size={18}/>
         <span>{message}</span>
         <button aria-label="Fechar mensagem" onClick={() => setMessage('')}>
@@ -408,31 +603,7 @@ export default function PortalClient({ initial }: {
                 </div>)}</div> : <Empty title="O histórico começa com a primeira ação" text="Cadastros, entregas e empréstimos aparecerão aqui quando forem registrados." icon={ClipboardList}/>}</Section>
         </>}
 
-      {tab === 'projects' && <>
-        <Section title="Projetos da equipe" description="Cada projeto reúne seus eventos, materiais e pessoas.">{projects.length ? <div className="p-project-grid">{projects.filter(p => !filter || p.id === filter).map(p => <article className="p-card p-project-card" key={p.id}>
-                <span className="p-icon-tile">
-                <FolderKanban size={23}/>
-                </span>
-                <h3>{p.name}</h3>
-                <p>{p.description || 'Organize as ações, materiais e registros deste projeto.'}</p>
-                <div>
-                <span>{campaigns.filter(c => get(c, 'projectId', 'project_id') === p.id).length} eventos</span>
-                <span>{items.filter(c => get(c, 'projectId', 'project_id') === p.id).length} materiais</span>
-                </div>
-                <button className="p-text-link" onClick={() => { setFilter(p.id); setDraftProject(p.id); setTab('overview'); }}>Acessar projeto <ArrowRight size={16}/>
-                </button>
-                </article>)}</div> : <Empty title="Nenhum projeto no seu acesso" text="Crie o primeiro projeto ou solicite um convite ao responsável pela equipe." icon={FolderKanban}/>}</Section>{can('organization.manage', 'projects.manage') && <Section title="Criar projeto" description="Use o nome oficial e uma descrição curta para orientar a equipe.">
-            <OperationForm action="project.create" make={f => ({ name: f.get('name'), description: f.get('description') })} mutate={mutate} submit="Criar projeto">
-            <div className="p-form-grid">
-            <Field label="Nome do projeto">
-            <input name="name" placeholder="Ex.: Rolê da Extensão" required maxLength={120}/>
-            </Field>
-            <Field label="Descrição">
-            <input name="description" placeholder="O que este projeto realiza" maxLength={500}/>
-            </Field>
-            </div>
-            </OperationForm>
-            </Section>}</>}
+      {tab === 'projects' && <ProjectPanel projects={projects} selectedProjectId={filter} canCreate={canGlobal('projects.manage')} canEdit={id => canProject(id, 'campaigns.manage')} mutate={mutate} onSelect={id => { setFilter(id); setDraftProject(id); setTab('overview'); }}/>}
 
       {tab === 'events' && <>
         <Section title="Eventos e campanhas" description="O regulamento, as ofertas e o limite de participação são definidos por evento.">{visibleCampaigns.length ? <div className="p-event-grid">{visibleCampaigns.map(c => <article className="p-card p-event-card" key={c.id}>
@@ -451,32 +622,39 @@ export default function PortalClient({ initial }: {
                 <div className="p-rule-summary">{get(c, 'retryLimit', 'retry_limit') === undefined ? 'Política de repetição pendente' : `Uma participação · até ${get(c, 'retryLimit', 'retry_limit')} repetição(ões) quando sair Tente novamente`}</div>
                 <div className="p-card-actions">
                 <a className="p-button p-button-subtle" href={`/events/${c.id}`} target="_blank" rel="noreferrer">Página do evento <ExternalLink size={15}/>
-                </a>{can('campaigns.manage') && <select aria-label={`Situação do evento ${c.name}`} value={c.status} disabled={busy || c.status === 'closed'} onChange={e => void quick('campaign.status', { id: c.id, status: e.target.value })}>
+                </a>{canProject(get(c, 'projectId', 'project_id'), 'campaigns.manage') && <select aria-label={`Situação do evento ${c.name}`} value={c.status} disabled={busy || c.status === 'closed'} onChange={e => e.target.value === 'closed' ? setClosingCampaign(c.id) : void quick('campaign.status', { id: c.id, status: e.target.value })}>
                     <option value="draft" disabled>Rascunho</option>
                     <option value="active">Ativo</option>
                     <option value="paused">Pausado</option>
                     <option value="closed">Encerrado</option>
-                    </select>}</div>{c.status === 'draft' && can('campaigns.manage') && <details className="p-event-edit">
+                    </select>}</div>{closingCampaign === c.id && <div className="p-inline-confirm">
+                    <p>Encerrar este evento interrompe novas participações e preserva seu histórico. Depois, será necessário criar outro evento para uma nova ação.</p>
+                    <div className="p-inline">
+                    <button className="p-button p-button-danger" disabled={busy} onClick={() => void quick('campaign.status', { id: c.id, status: 'closed' }).then(() => setClosingCampaign(null))}>Confirmar encerramento</button>
+                    <button className="p-button p-button-subtle" disabled={busy} onClick={() => setClosingCampaign(null)}>Voltar</button>
+                    </div>
+                    </div>}{c.status === 'draft' && canProject(get(c, 'projectId', 'project_id'), 'campaigns.manage') && <details className="p-event-edit">
                     <summary>Editar rascunho <ChevronDown size={15}/>
                     </summary>
-                    <CampaignForm projects={projects} offers={offers} initial={c} mutate={mutate}/>
+                    <CampaignForm projects={projects.filter(p => canProject(p.id, 'campaigns.manage'))} offers={offers} initial={c} mutate={mutate}/>
                     </details>}</article>)}</div> : <Empty title="Nenhum evento cadastrado" text="Prepare um evento para definir regras, acompanhar participações e conectar as ofertas de brindes." icon={CalendarDays}/>}</Section>{can('participation.operate') && <Section title="Operação presencial" description="A equipe acompanha o resultado e utiliza as mesmas regras de participação da campanha.">
-            <PhysicalAttendance campaigns={visibleCampaigns} tickets={byProject(list(data.physicalTickets))} mutate={mutate}/>
+            <PhysicalAttendance campaigns={visibleCampaigns.filter(c => canProject(get(c, 'projectId', 'project_id'), 'participation.operate'))} tickets={byProject(list(data.physicalTickets))} mutate={mutate}/>
             </Section>}{can('participation.operate', 'inventory.deliver') && (byProject(list(data.pendingPrizes)).length > 0 || data.pendingPrizesTruncated) && <Section title="Prêmios aguardando entrega" description="Reservas que continuam disponíveis após atualizar a página. Confirme a entrega somente depois de conferir o código.">{data.pendingPrizesTruncated && <div className="p-notice p-notice-warning">
                 <Gift size={17}/>
                 <span>A fila mostra até {data.pendingPrizesLimit || 200} reservas recentes. Há {data.pendingPrizesTotal} no seu acesso completo. Use o código da pessoa em Retirada de brinde para localizar uma entrega que não esteja nesta lista.</span>
                 </div>}<PendingPrizes prizes={byProject(list(data.pendingPrizes))} mutate={mutate}/>
-            </Section>}{can('participation.operate', 'inventory.deliver') && <Section title="Retirada de brinde" description="Confira o código da pessoa e registre a entrega uma única vez.">
+            </Section>}{can('participation.operate', 'inventory.deliver') && <Section title="Retirada de brinde" description="Confirme o registro no servidor antes de entregar os materiais. Códigos já entregues serão sinalizados.">
             <OperationForm action="prize.redeem" make={f => ({ code: f.get('code') })} mutate={mutate} submit="Confirmar entrega" compact>
             <Field label="Código de retirada">
             <input name="code" autoComplete="off" required placeholder="Cole ou digite o código apresentado"/>
             </Field>
             </OperationForm>
             </Section>}{can('campaigns.manage') && projects.length > 0 && <Section title="Preparar evento" description="O evento será criado como rascunho. Regras e estoque precisam estar completos para ativar.">
-            <CampaignForm key={effectiveProject} projects={projects} offers={offers} defaultProject={effectiveProject} mutate={mutate}/>
+            <CampaignForm key={`campaign-create-${filter}`} projects={formProjects} offers={offers} defaultProject={effectiveProject} mutate={mutate}/>
             </Section>}</>}
 
       {tab === 'materials' && <>
+        {editingItem && <ItemEditor key={editingItem.id} item={editingItem} mutate={mutate} close={() => setEditingItem(null)}/>}
         <Section title="Materiais e estoque" description="Saldo físico, reservas e unidades disponíveis ficam separados." aside={<div className="p-search">
             <Search size={17}/>
             <input aria-label="Buscar materiais" placeholder="Buscar material" value={query} onChange={e => setQuery(e.target.value)}/>
@@ -488,12 +666,13 @@ export default function PortalClient({ initial }: {
             <th>Físico</th>
             <th>Reservado</th>
             <th>Disponível</th>
+            <th>Ações</th>
             </tr>
             </thead>
             <tbody>{searchItems.map(i => <tr key={i.id}>
                 <td>
                 <strong>{i.name}</strong>
-                <small>{categoryNames[i.category] || i.category} · {projectName(get(i, 'projectId', 'project_id'))}</small>
+                <small>{categoryNames[i.category] || i.category} · {projectName(get(i, 'projectId', 'project_id'))}</small>{(i.asset_code || i.assetCode) && <small>Código: {i.asset_code || i.assetCode}</small>}{i.condition !== 'active' && <span className="p-badge p-status-paused">{i.condition === 'maintenance' ? 'Em manutenção' : 'Inativo'}</span>}
                 </td>
                 <td>{i.stock ?? i.quantity ?? 0}<small>{i.unit || 'unidade'}</small>
                 </td>
@@ -501,11 +680,12 @@ export default function PortalClient({ initial }: {
                 <td>
                 <span className={available(i) <= Number(get(i, 'lowStock', 'low_stock') ?? 0) ? 'p-low' : 'p-available'}>{available(i)}</span>
                 </td>
+                <td>{canProject(get(i, 'projectId', 'project_id'), 'inventory.manage') && <button className="p-button p-button-subtle" onClick={() => setEditingItem(i)}>Editar</button>}</td>
                 </tr>)}</tbody>
             </table>
             </div> : <Empty title={query ? 'Nenhum material encontrado' : 'Seu catálogo ainda está vazio'} text={query ? 'Tente outro nome ou selecione outro projeto.' : 'Cadastre os materiais e registre o recebimento após conferir a quantidade real.'}/>}</Section>{can('inventory.manage') && projects.length > 0 && <div className="p-two-columns">
             <Section title="Cadastrar material" description="O cadastro começa sem saldo. Registre o recebimento depois da contagem.">
-            <OperationForm action="item.create" mutate={mutate} submit="Cadastrar material" make={f => ({ projectId: f.get('projectId'), name: f.get('name'), category: f.get('category'), unit: f.get('unit'), lowStock: Number(f.get('lowStock')), description: f.get('description') })}>
+            <OperationForm onProjectFocus={setDraftProject} action="item.create" mutate={mutate} submit="Cadastrar material" make={f => ({ projectId: f.get('projectId'), name: f.get('name'), category: f.get('category'), unit: f.get('unit'), lowStock: Number(f.get('lowStock')), description: f.get('description'), assetCode: f.get('assetCode') })}>
             <div className="p-form-grid">{projectField}<Field label="Nome">
             <input name="name" required maxLength={120} placeholder="Ex.: Button azul 2,5 cm"/>
             </Field>
@@ -523,6 +703,9 @@ export default function PortalClient({ initial }: {
             <Field label="Avisar quando disponível até">
             <input name="lowStock" type="number" min="0" step="1" defaultValue="0" required/>
             </Field>
+            <Field label="Identificação patrimonial ou código">
+            <input name="assetCode" maxLength={100} placeholder="Opcional; identifica cada equipamento"/>
+            </Field>
             <Field label="Descrição">
             <input name="description" maxLength={500} placeholder="Composição, identificação ou condição"/>
             </Field>
@@ -534,7 +717,7 @@ export default function PortalClient({ initial }: {
             <OperationForm action="stock.move" mutate={mutate} submit="Registrar movimento" make={f => { const qty = Number(f.get('quantity')); const kind = String(f.get('kind')); return { itemId: f.get('itemId'), delta: kind === 'receive' ? qty : kind === 'adjust' ? qty : -Math.abs(qty), kind, note: f.get('note') }; }}>
             <Field label="Material">
             <select name="itemId" required>
-            <option value="">Selecione o material</option>{visibleItems.map(i => <option value={i.id} key={i.id}>{i.name} · {projectName(get(i, 'projectId', 'project_id'))}</option>)}</select>
+            <option value="">Selecione o material</option>{visibleItems.filter(i => canProject(get(i, 'projectId', 'project_id'), 'inventory.manage')).map(i => <option value={i.id} key={i.id}>{i.name} · {projectName(get(i, 'projectId', 'project_id'))}</option>)}</select>
             </Field>
             <div className="p-form-grid">
             <Field label="Operação">
@@ -558,7 +741,7 @@ export default function PortalClient({ initial }: {
                     <Gift size={18}/>
                     <strong>{o.name}</strong>
                     <span>{o.kind === 'super' ? 'Super Brinde' : 'Brinde'}</span>
-                    </div>)}</div>}<OperationForm action="offer.create" mutate={mutate} submit="Criar oferta" make={f => ({ projectId: f.get('projectId'), name: f.get('name'), kind: f.get('kind'), components: Array.from({ length: offerRows }, (_, n) => ({ itemId: f.get(`componentItem${n}`), quantity: Number(f.get(`componentQty${n}`)) })).filter(x => x.itemId) })}>
+                    </div>)}</div>}<OperationForm onProjectFocus={setDraftProject} action="offer.create" mutate={mutate} submit="Criar oferta" make={f => ({ projectId: f.get('projectId'), name: f.get('name'), kind: f.get('kind'), components: Array.from({ length: offerRows }, (_, n) => ({ itemId: f.get(`componentItem${n}`), quantity: Number(f.get(`componentQty${n}`)) })).filter(x => x.itemId) })}>
             <div className="p-form-grid">{projectField}<Field label="Nome da oferta">
             <input name="name" required maxLength={120} placeholder="Ex.: Kit com três buttons"/>
             </Field>
@@ -611,29 +794,7 @@ export default function PortalClient({ initial }: {
                         <strong>Contato:</strong> {get(l, 'borrowerContact', 'borrower_contact')}</p>}{l.note && <p>
                         <strong>Observações:</strong> {l.note}</p>}{documents.filter(d => get(d, 'loanId', 'loan_id') === l.id).map(d => <a className="p-file-link" key={d.id} href={`/api/files/${d.id}`} target="_blank" rel="noreferrer">
                         <FileText size={16}/>{d.name || 'Termo anexado'}<ExternalLink size={13}/>
-                        </a>)}{can('loans.manage', 'loans.checkout') && <div className="p-upload">
-                        <label>Foto ou PDF do termo<input type="file" accept="image/jpeg,image/png,application/pdf" disabled={busy} onChange={async (e) => { const file = e.target.files?.[0]; if (!file)
-                            return; setBusy(true); setFailure(''); try {
-                            const fd = new FormData();
-                            fd.set('loanId', l.id);
-                            fd.set('file', file);
-                            const r = await fetch('/api/files', { method: 'POST', headers: { 'X-Proex-Action': '1', 'X-Operation-Key': operationId() }, body: fd });
-                            const b = await r.json() as Row;
-                            if (!r.ok)
-                                throw new Error(b.error || 'Não foi possível anexar.');
-                            await refresh();
-                            setMessage('Documento anexado com acesso restrito.');
-                            e.target.value = '';
-                        }
-                        catch (error) {
-                            setFailure(error instanceof Error ? error.message : 'Falha no anexo.');
-                        }
-                        finally {
-                            setBusy(false);
-                        } }}/>
-                        </label>
-                        <small>Até 10 MB. O arquivo fica restrito à equipe autorizada.</small>
-                        </div>}{can('loans.manage', 'loans.checkout') && l.status !== 'returned' && l.status !== 'cancelled' && <OperationForm action="loan.status" mutate={mutate} submit="Registrar atualização" make={f => ({ id: l.id, status: f.get('status'), note: f.get('note') })}>
+                        </a>)}{canProject(get(l, 'projectId', 'project_id'), 'loans.manage', 'loans.checkout') && <LoanAttachment loanId={l.id} onSaved={refresh}/>}{canProject(get(l, 'projectId', 'project_id'), 'loans.manage', 'loans.checkout') && l.status !== 'returned' && l.status !== 'cancelled' && <OperationForm action="loan.status" mutate={mutate} submit="Registrar atualização" make={f => ({ id: l.id, status: f.get('status'), note: f.get('note') })}>
                         <Field label="Etapa">
                         <select name="status">{l.status === 'reserved' && <option value="out">Registrar retirada</option>}{l.status === 'out' && <option value="returned">Registrar devolução</option>}{l.status === 'reserved' && <option value="cancelled">Cancelar reserva</option>}</select>
                         </Field>
@@ -644,7 +805,7 @@ export default function PortalClient({ initial }: {
                     </details>
                     </article>;
                 })}</div> : <Empty title="Nenhuma reserva neste contexto" text="Cadastre o equipamento, confira a disponibilidade e registre a ação que fará a retirada." icon={Truck}/>}</Section>{can('loans.manage') && projects.length > 0 && <Section title="Reservar equipamento" description="Conflitos de horário e bens indisponíveis são conferidos antes da confirmação.">
-            <OperationForm action="loan.create" mutate={mutate} submit="Confirmar reserva" make={f => ({ projectId: f.get('projectId'), itemId: f.get('itemId'), actionName: f.get('actionName'), borrowerName: f.get('borrowerName'), borrowerContact: f.get('borrowerContact'), startsAt: iso(f.get('startsAt')), endsAt: iso(f.get('endsAt')), note: f.get('note') })}>
+            <OperationForm onProjectFocus={setDraftProject} action="loan.create" mutate={mutate} submit="Confirmar reserva" make={f => ({ projectId: f.get('projectId'), itemId: f.get('itemId'), actionName: f.get('actionName'), borrowerName: f.get('borrowerName'), borrowerContact: f.get('borrowerContact'), startsAt: iso(f.get('startsAt')), endsAt: iso(f.get('endsAt')), note: f.get('note') })}>
             <div className="p-form-grid">{projectField}<Field label="Equipamento">
             <select name="itemId" required>
             <option value="">Selecione um bem</option>{formItems.filter(i => i.category === 'equipment').map(i => <option key={i.id} value={i.id}>{i.name}</option>)}</select>
@@ -671,52 +832,26 @@ export default function PortalClient({ initial }: {
             </OperationForm>
             </Section>}</>}
 
-      {tab === 'team' && <>
-        <Section title="Pessoas e permissões" description="Cada pessoa utiliza sua própria conta e recebe acesso somente ao escopo concedido.">{members.length ? <div className="p-card p-member-list">{members.map(m => <div className="p-member" key={m.id}>
-                <span className="p-member-avatar">
-                <Users size={18}/>
-                </span>
-                <div>
-                <strong>{m.displayName || m.name || m.email || 'Integrante'}</strong>
-                <small>{roleNames[m.role] || m.role} · {get(m, 'projectId', 'project_id') ? projectName(get(m, 'projectId', 'project_id')) : 'Organização'}</small>
-                </div>{get(m, 'revokedAt', 'revoked_at') ? <Badge status="revoked"/> : m.role === 'owner' ? <span className="p-badge">Responsável</span> : can('access.manage') && <button className="p-button p-button-danger" disabled={busy} onClick={() => void quick('member.revoke', { id: m.id })}>Revogar</button>}</div>)}</div> : <Empty title="Nenhum vínculo exibido" text="A equipe aparecerá aqui conforme os convites forem aceitos." icon={Users}/>}</Section>{can('access.invite') && <Section title="Convidar para a equipe" description="Gere um link vinculado ao e-mail. O destinatário precisa entrar com essa conta para aceitar.">
-            <OperationForm key={`invite-${filter}`} action="invite.create" mutate={mutate} submit="Gerar convite" onDone={r => { setInviteLink(string(r.inviteUrl)); setCopied(false); }} make={f => ({ email: f.get('email'), role: f.get('role'), projectId: f.get('projectId') || null })}>
-            <div className="p-form-grid">
-            <Field label="E-mail do destinatário">
-            <input name="email" type="email" required autoComplete="off" placeholder="nome@exemplo.com"/>
-            </Field>
-            <Field label="Função">
-            <select name="role">
-            <option value="operator">Operador de evento</option>{can('organization.manage') && <option value="manager">Gestor de projeto</option>}<option value="inventory">Responsável por estoque</option>
-            <option value="loans">Responsável por empréstimos</option>
-            <option value="viewer">Leitor de relatórios</option>
-            </select>
-            </Field>
-            <Field label="Escopo do acesso">
-            <select name="projectId" defaultValue={filter || (can('organization.manage') ? '' : projects[0]?.id)} required={!can('organization.manage')}>{can('organization.manage') && <option value="">Organização · todos os projetos permitidos</option>}{projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
-            </Field>
-            </div>
-            </OperationForm>{inviteLink && <div className="p-invite-result">
-                <CheckCircle2 size={22}/>
-                <div>
-                <strong>Convite criado</strong>
-                <p>Copie o link e compartilhe com o destinatário. Nenhum e-mail foi enviado automaticamente.</p>
-                <div className="p-copy-row">
-                <input aria-label="Link do convite" value={inviteLink} readOnly onFocus={e => e.target.select()}/>
-                <button className="p-button p-button-subtle" onClick={() => void copyInvite()}>
-                <Copy size={16}/>{copied ? 'Copiado' : 'Copiar'}</button>
-                </div>
-                </div>
-                </div>}</Section>}{invites.length > 0 && <Section title="Convites emitidos">
-            <div className="p-card p-member-list">{invites.map(i => <div className="p-member" key={i.id}>
-                <div>
-                <strong>{i.email || get(i, 'recipientEmail', 'recipient_email')}</strong>
-                <small>{roleNames[i.role] || i.role} · válido até {when(get(i, 'expiresAt', 'expires_at'))}</small>
-                </div>
-                <Badge status={get(i, 'revokedAt', 'revoked_at') ? 'revoked' : get(i, 'acceptedAt', 'accepted_at') ? 'accepted' : 'pending'}/>{!get(i, 'revokedAt', 'revoked_at') && !get(i, 'acceptedAt', 'accepted_at') && can('access.manage') && <button className="p-button p-button-danger" disabled={busy} onClick={() => void quick('invite.revoke', { id: i.id })}>Revogar</button>}</div>)}</div>
-            </Section>}</>}
+      {tab === 'team' && <TeamPanel users={list(data.users)} members={members} invites={invites} projects={projects} selectedProjectId={filter} globalAdmin={canGlobal('organization.manage')} canProject={canProject} mutate={mutate} now={now}/>}
+      {tab === 'profile' && <ProfilePanel onUpdated={() => { void refresh(); }}/>}
+      {tab === 'calendar' && <CalendarPanel projects={projects}/>}
+      {tab === 'records' && <RecordsPanel projects={projects} items={items} loans={loans} canWrite={(capability: string, projectId?: string | null) => projectId ? canProject(projectId, capability) : canGlobal(capability)}/>}
 
       {tab === 'reports' && <>
+        <div className="p-card p-report-filters">
+        <label className="p-field">
+        <span>De</span>
+        <input type="date" value={reportFrom} onChange={e => { setReportFrom(e.target.value); if (reportTo && e.target.value > reportTo)
+            setReportTo(e.target.value); }}/>
+        </label>
+        <label className="p-field">
+        <span>Até</span>
+        <input type="date" value={reportTo} min={reportFrom || undefined} onChange={e => { setReportTo(e.target.value); if (e.target.value && reportFrom && e.target.value < reportFrom)
+            setReportFrom(e.target.value); }}/>
+        </label>
+        <button className="p-button p-button-subtle" onClick={() => { setReportFrom(''); setReportTo(''); }}>Todo o período</button>
+        <p>Datas operacionais de Brasília. Contagens de participação, tentativa e entrega usam a data de cada registro.</p>
+        </div>
         <div className="p-stats">
         <div className="p-stat">
         <span>Participações</span>
@@ -736,14 +871,14 @@ export default function PortalClient({ initial }: {
         <div className="p-stat">
         <span>Unidades entregues</span>
         <strong>{metric('units', 'unitsDelivered', 'units_delivered', 'deliveredUnits')}</strong>
-        <small>{filter ? 'Sem medição neste recorte' : 'Quantidade física de itens'}</small>
+        <small>{reportFrom || reportTo ? 'Sem medição diária de unidades' : 'Quantidade física de itens'}</small>
         </div>
         </div>
         <div className="p-measures">
         <div className="p-card">
         <span>Carregamentos de páginas</span>
         <strong>{metric('visits')}</strong>
-        <small>Não são visitantes únicos</small>
+        <small>{reportFrom || reportTo ? 'Sem medição diária neste recorte' : 'Não são visitantes únicos'}</small>
         </div>
         <div className="p-card">
         <span>Atendimentos assistidos</span>
@@ -755,7 +890,7 @@ export default function PortalClient({ initial }: {
         <strong>Não medido</strong>
         <small>Não há confirmação automática de seguimento</small>
         </div>
-        </div>{list(data.metrics?.campaigns).length > 0 && <Section title="Resultados por evento" description="Contagens reais de cada campanha, respeitando seu acesso e o projeto selecionado.">
+        </div>{reportCampaignRows.length > 0 && <Section title="Resultados por evento" description="Contagens reais no projeto e no período selecionados.">
             <div className="p-card p-table-wrap">
             <table>
             <thead>
@@ -766,7 +901,7 @@ export default function PortalClient({ initial }: {
             <th>Entregas</th>
             </tr>
             </thead>
-            <tbody>{byProject(list(data.metrics.campaigns)).map(c => <tr key={c.id}>
+            <tbody>{reportCampaignRows.map(c => <tr key={c.id}>
                 <td>
                 <strong>{c.name}</strong>
                 <small>{projectName(get(c, 'projectId', 'project_id'))}</small>
@@ -777,7 +912,31 @@ export default function PortalClient({ initial }: {
                 </tr>)}</tbody>
             </table>
             </div>
-            </Section>}<Section title="Exportar registros" description="As exportações respeitam o seu acesso. O relatório gerencial usa dados agregados.">
+            </Section>}<Section title="Resumo diário" description="Participações e entregas podem acontecer em dias diferentes." aside={<button className="p-button p-button-subtle" onClick={downloadDaily} disabled={!dailyRows.length}>
+            <ArrowDownToLine size={16}/>Baixar este resumo</button>}>{dailyRows.length ? <div className="p-card p-table-wrap">
+            <table>
+            <thead>
+            <tr>
+            <th>Data e evento</th>
+            <th>Modalidade</th>
+            <th>Participações</th>
+            <th>Tentativas</th>
+            <th>Entregas</th>
+            </tr>
+            </thead>
+            <tbody>{dailyRows.map((r, i) => <tr key={`${r.campaign_id}-${r.day}-${r.modality}-${i}`}>
+                <td>
+                <strong>{String(r.day).split('-').reverse().join('/')}</strong>
+                <small>{r.campaign_name}</small>
+                </td>
+                <td>{r.modality === 'physical' ? 'Presencial' : r.modality === 'dice' ? 'Dado' : r.modality === 'wheel' ? 'Roleta' : r.modality}</td>
+                <td>{r.participations}</td>
+                <td>{r.attempts}</td>
+                <td>{r.deliveries}</td>
+                </tr>)}</tbody>
+            </table>
+            </div> : <Empty title="Sem registros neste período" text="Altere as datas ou o projeto para consultar outro recorte." icon={CalendarDays}/>}</Section>
+        <Section title="Exportar registros completos" description="Arquivos completos do projeto selecionado. O resumo acima respeita também o filtro de datas.">
         <div className="p-export-grid">{[{ kind: 'participations', title: 'Participação nos eventos', text: 'Modalidades, resultados e contagens por campanha.', icon: Users }, { kind: 'stock', title: 'Materiais e movimentos', text: 'Saldo, reservas e quantidade disponível por item.', icon: Boxes }, { kind: 'loans', title: 'Empréstimos', text: 'Agenda, etapas e devoluções pendentes.', icon: Truck }].map(({ kind, title: exportTitle, text, icon: Icon }) => <a className="p-card p-export-card" href={`/api/export?kind=${kind}${filter ? `&projectId=${encodeURIComponent(filter)}` : ''}`} key={kind}>
             <span className="p-icon-tile">
             <Icon size={22}/>
@@ -813,7 +972,7 @@ export default function PortalClient({ initial }: {
         <ShieldCheck size={21}/>
         <div>
         <h3>Integrações com estado explícito</h3>
-        <p>O acesso atual utiliza o login do ChatGPT. Login direto por Google ou e-mail e confirmação de seguimento pelo Instagram não são apresentados como configurados.</p>
+        <p>Gerencie seu nome, suas preferências e sua senha na aba Conta. O Instagram é um canal institucional; seguir o perfil não é verificado automaticamente.</p>
         <p>A roleta livre segue independente. As campanhas oficiais usam os registros e as regras deste portal.</p>
         </div>
         </div>

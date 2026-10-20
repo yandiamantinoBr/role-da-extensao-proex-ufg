@@ -29,7 +29,7 @@ export default function CampaignForm({ projects, offers, initial, defaultProject
     try {
       const date = (name: string) => values.get(name) ? new Date(String(values.get(name))).toISOString() : null;
       await mutate(editing ? 'campaign.update' : 'campaign.create', {
-        ...(editing ? { id: initial?.id } : { projectId }),
+        ...(editing ? { id: initial?.id, expectedVersion: initial?.version } : { projectId }),
         name: values.get('name'), location: values.get('location'), startsAt: date('startsAt'), endsAt: date('endsAt'),
         retryLimit: values.get('retryLimit') !== '' ? Number(values.get('retryLimit')) : null,
         rulesText: values.get('rulesText'), brindeOfferId: values.get('brindeOfferId') || null,

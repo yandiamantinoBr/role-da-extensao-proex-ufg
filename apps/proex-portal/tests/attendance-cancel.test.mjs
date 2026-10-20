@@ -17,9 +17,10 @@ function compile(name, dependencies = {}) {
 }
 const errors = compile('errors');
 const database = compile('database');
-const access = compile('access', { errors });
+const mutations = compile('mutations', { database, errors });
+const access = compile('access', { errors, mutations });
 const cancellation = compile('attendance-cancel', { errors, database, access });
-const campaigns = compile('campaigns', { database, errors, access });
+const campaigns = compile('campaigns', { database, errors, access, mutations });
 const participation = compile('participation', { database, errors, access, campaigns });
 const { getActor } = await import(access);
 const { cancelAttendance } = await import(cancellation);
@@ -34,7 +35,7 @@ async function fixture(t) {
     native.exec(readFileSync(new URL(file, migrations), 'utf8'));
   }
   const now = new Date().toISOString();
-  native.prepare('INSERT INTO projects VALUES(?,?,?,?),(?,?,?,?)').run('role', 'Rolê', '', now, 'other', 'Outro', '', now);
+  native.prepare('INSERT INTO projects(id,name,description,created_at) VALUES(?,?,?,?),(?,?,?,?)').run('role', 'Rolê', '', now, 'other', 'Outro', '', now);
   native.prepare('INSERT INTO members VALUES(?,?,?,?,?,?,?)')
     .run('operator-member', 'operator', 'operator@example.test', 'operator', 'role', null, now);
   native.prepare("INSERT INTO items(id,project_id,name,category,unit,stock,created_at) VALUES('pin','role','Button','gift','un',10,?)").run(now);

@@ -1,7 +1,10 @@
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowRight, Check, CheckCircle2, Copy, Dices, Gift, Camera, LoaderCircle, Settings2, ShieldCheck, Ticket, Volume2, VolumeX, X } from 'lucide-react';
+import { BrandMark } from '@/components/theme/brand-mark';
+import { ThemeSwitch } from '@/components/theme/theme-switch';
 import { SECTORS, targetDice, targetRotation } from '@/lib/roulette';
 import { GameAudio } from '@/lib/game-audio';
 
@@ -86,10 +89,10 @@ export default function EventClient({ eventId, signedIn, signInHref }: { eventId
 
   useEffect(() => {
     alive.current = true; const controller = new AbortController();
-    void refresh(controller.signal).catch(e => { if (!controller.signal.aborted) setError(e instanceof Error ? e.message : 'Não foi possível carregar o evento.'); }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    const loadTimer = window.setTimeout(() => { void refresh(controller.signal).catch(e => { if (!controller.signal.aborted) setError(e instanceof Error ? e.message : 'Não foi possível carregar o evento.'); }).finally(() => { if (!controller.signal.aborted) setLoading(false); }); }, 0);
     const visibility = () => audio.current?.setVisible(!document.hidden);
     document.addEventListener('visibilitychange', visibility);
-    return () => { alive.current = false; controller.abort(); animation.current?.cancel(); if (timer.current) clearTimeout(timer.current); if (progressTimer.current) clearInterval(progressTimer.current); audio.current?.stop(); document.removeEventListener('visibilitychange', visibility); };
+    return () => { alive.current = false; window.clearTimeout(loadTimer); controller.abort(); animation.current?.cancel(); if (timer.current) clearTimeout(timer.current); if (progressTimer.current) clearInterval(progressTimer.current); audio.current?.stop(); document.removeEventListener('visibilitychange', visibility); };
   }, [refresh]);
   useEffect(() => { if (!spinning) position(result, mode); }, [result, mode, spinning, position]);
   useEffect(() => { audio.current?.unlock(sound, 55); }, [sound]);
@@ -179,7 +182,7 @@ export default function EventClient({ eventId, signedIn, signInHref }: { eventId
   async function copyCode() { if (!receiptCode) return; try { await navigator.clipboard.writeText(receiptCode); setCopied(true); } catch { setError('Não foi possível copiar. Você pode mostrar o código à equipe.'); } }
 
   return <main className="proex-event">
-    <header className="pe-top"><a className="pe-brand" href="https://proex.ufg.br/" target="_blank" rel="noreferrer" aria-label="Conheça a PROEX UFG"><img src="/brand/proex.png" alt="PROEX"/><span/><img src="/brand/ufg-white.png" alt="Universidade Federal de Goiás"/></a><a className="pe-team-link" href="/">Área da equipe <ArrowRight size={15}/></a></header>
+    <header className="pe-top"><a className="pe-brand" href="https://proex.ufg.br/" target="_blank" rel="noreferrer" aria-label="Conheça a PROEX UFG"><BrandMark variant="auto" /></a><div className="pe-header-actions"><ThemeSwitch /><Link className="pe-team-link" href="/">Área da equipe <ArrowRight size={15}/></Link></div></header>
     <section className="pe-heading"><span className="pe-eyebrow">UMA CONEXÃO COM A UFG</span><h1>Rolê da <em>Extensão</em><span aria-hidden="true">😎</span></h1><p>{campaign?.name ?? 'Vamos viver esse rolê?'}</p>{campaign?.location && <span className="pe-location">{campaign.location}</span>}</section>
     {loading && !data ? <section className="pe-message" aria-live="polite"><LoaderCircle className="pe-loader"/><h2>Preparando o rolê</h2><p>Estamos consultando as informações do evento.</p></section> : !data ? <section className="pe-message"><span className="pe-big-emoji" aria-hidden="true">🔎</span><h2>Não encontramos este evento</h2><p>{error || 'Confira o link ou procure a equipe do Rolê da Extensão.'}</p><button className="pe-secondary" onClick={update}>Tentar carregar novamente</button></section> : <>
       <div className="pe-event-meta"><span><ShieldCheck size={16}/> Participação oficial</span><span>Uma participação por conta neste evento</span></div>
@@ -194,7 +197,7 @@ export default function EventClient({ eventId, signedIn, signInHref }: { eventId
         </section>
         <section className="pe-control" aria-label="Participação e resultado">
           <div className={`pe-result ${result?.result === 'super' ? 'pe-result-super' : ''}`} aria-live="polite" aria-atomic="true"><span className="pe-result-emoji" aria-hidden="true">{spinning ? mode === 'wheel' ? '🤞' : '🎲' : resultInfo?.emoji ?? (mode === 'physical' ? '👋' : '🍀')}</span><span className="pe-eyebrow">{spinning ? 'SEGURA A EMOÇÃO' : pendingPhysical ? 'SEU ATENDIMENTO' : resultInfo ? 'SEU RESULTADO' : 'SEU PRÓXIMO ROLÊ'}</span><h2>{spinning ? mode === 'wheel' ? 'A roleta tá girando!' : 'O dado tá rolando!' : resultInfo?.title ?? (mode === 'physical' ? 'Bora encontrar a equipe?' : 'A sorte tá no rolê.')}</h2><p>{spinning ? 'Sua participação já foi registrada. Agora é torcer!' : resultInfo?.text ?? (mode === 'physical' ? 'Confirme aqui antes de jogar. Seu código ficará disponível para o atendimento.' : 'Escolha sua dinâmica e descubra sua surpresa.')}</p>{spinning && <div className="pe-progress" role="progressbar" aria-label="Progresso da animação" aria-valuenow={Math.round(progress)} aria-valuemin={0} aria-valuemax={100}><span style={{ width: `${progress}%` }}/></div>}</div>
-          {!authenticated ? <div className="pe-entry"><a className="pe-play" href={signInHref} target="_top">Entrar para participar <ArrowRight size={20}/></a><p>Você entrará com sua conta ChatGPT nesta versão. Sem conta ou sem celular? A equipe pode orientar o atendimento presencial.</p></div> : <>
+          {!authenticated ? <div className="pe-entry"><a className="pe-play" href={signInHref} target="_top">Entrar para participar <ArrowRight size={20}/></a><p>Você entrará com o e-mail e a senha do seu cadastro. Sem conta ou sem celular? A equipe pode orientar o atendimento presencial.</p></div> : <>
             {eligible && !busy && <label className="pe-check"><input type="checkbox" checked={acknowledged} onChange={e => setAcknowledged(e.target.checked)}/><span>Li as regras deste evento e o aviso de privacidade abaixo.</span></label>}
             {eligible || busy ? <button className="pe-play" disabled={!canPlay} onClick={() => void draw()}>{busy ? <><LoaderCircle className="pe-loader" size={20}/>{spinning ? 'SORTEANDO…' : 'CONFIRMANDO…'}</> : result ? <>{mode === 'physical' ? 'Reservar tentativa autorizada' : 'Usar tentativa autorizada'} <ArrowRight size={20}/></> : <><span aria-hidden="true">{mode === 'wheel' ? '🎡' : mode === 'dice' ? '🎲' : '🎟️'}</span>{mode === 'wheel' ? 'GIRAR ROLETA' : mode === 'dice' ? 'LANÇAR O DADO' : 'RESERVAR ATENDIMENTO'}</>}</button> : <div className="pe-status"><CheckCircle2 size={19}/><span>{pendingPhysical ? 'Sua reserva foi registrada. Aguarde a orientação da equipe para jogar presencialmente.' : !active ? campaign?.status === 'paused' ? 'As participações estão pausadas. Procure a equipe.' : 'Este evento não está recebendo participações.' : !policyReady || !noticeReady ? 'A equipe está finalizando as regras e o aviso de privacidade deste evento.' : 'Sua participação neste evento já foi registrada.'}</span></div>}
             {entitlement && !spinning && <div className="pe-receipt"><div><Gift size={18}/><strong>{entitlement.state === 'delivered' ? 'Brinde entregue' : 'Comprovante de brinde'}</strong></div><p>{entitlement.state === 'delivered' ? 'A retirada já foi confirmada pela equipe.' : 'Mostre este código à equipe. A entrega será confirmada uma única vez.'}</p><code>{entitlement.id}</code><button className="pe-minimal" onClick={() => void copyCode()}>{copied ? <Check size={15}/> : <Copy size={15}/>} {copied ? 'Código copiado' : 'Copiar código'}</button></div>}

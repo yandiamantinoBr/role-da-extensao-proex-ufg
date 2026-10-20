@@ -1,8 +1,8 @@
-import { getChatGPTUser } from '../../../chatgpt-auth';
+import {getPortalUser} from '@/lib/session';
 import { getActor, requireCapability } from '../../../../lib/access';
 import { one } from '../../../../lib/database';
 import { HttpError, publicError } from '../../../../lib/errors';
-import { bucket, database, ownerEmail } from '../../../../lib/platform';
+import { bucket, database } from '../../../../lib/platform';
 
 function privateResponse(response: Response): Response {
   response.headers.set('Cache-Control', 'private, no-store');
@@ -15,8 +15,8 @@ export async function GET(
 ): Promise<Response> {
   try {
     const db = database();
-    const user = await getChatGPTUser();
-    let actor = await getActor(db, user, ownerEmail());
+    const user = await getPortalUser();
+    let actor = await getActor(db, user);
     requireCapability(actor, 'loans.read');
     const { id } = await context.params;
     if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(id)) {
@@ -31,7 +31,7 @@ export async function GET(
     }
     const object = await bucket().get(document.object_key);
     if (!object) throw new HttpError(404, 'Arquivo não encontrado.', 'document_not_found');
-    actor = await getActor(db, user, ownerEmail());
+    actor = await getActor(db, user);
     requireCapability(actor, 'loans.read', document.project_id);
     const name = String(document.name).replace(/[\r\n\x00-\x1f\x7f"\\/]/g, '_').slice(0, 160) || 'anexo';
     const fallback = name.replace(/[^\x20-\x7e]/g, '_');

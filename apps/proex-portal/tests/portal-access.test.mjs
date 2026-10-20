@@ -7,20 +7,26 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import ts from 'typescript';
 
-// Compile the two server modules into an isolated directory. No bundler, native auth, or D1 mock
+// Compile the server modules into an isolated directory. No bundler, native auth, or D1 mock
 // authorizes anyone: actual SQLite executes every conditional statement and transaction below.
 const temporary = mkdtempSync(join(tmpdir(), 'proex-access-'));
 writeFileSync(join(temporary, 'package.json'), '{"type":"module"}');
-for (const name of ['access', 'errors']) {
+for (const name of ['access', 'errors', 'database', 'mutations']) {
   const source = readFileSync(new URL(`../lib/${name}.ts`, import.meta.url), 'utf8');
   const output = ts.transpileModule(source, {
     compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
-  }).outputText.replace("from './errors'", "from './errors.js'");
+  }).outputText.replace(/from '(\.\/[^']+)'/g, (_, file) => `from '${file}.js'`);
   writeFileSync(join(temporary, `${name}.js`), output);
 }
 after(() => rmSync(temporary, { recursive: true, force: true }));
-const { getActor, requireCapability, accessibleProjects, accessAction, writeAudit } =
+const { getActor, requireCapability, accessibleProjects, accessAction: callAccessAction, writeAudit } =
   await import(pathToFileURL(join(temporary, 'access.js')).href);
+const INVITE_SECRET = 'fixture-only-proex-invitation-secret-32-characters';
+// Request fixtures supply a client operation id and a separate server-only secret.
+function accessAction(db, actor, action, input, origin, secret = INVITE_SECRET) {
+  const request = action === 'invite.create' && input.operationKey === undefined ? { ...input, operationKey: crypto.randomUUID() } : input;
+  return callAccessAction(db, actor, action, request, origin, secret);
+}
 
 const ownerUser = { userId: 'owner-a', email: 'owner@example.test', displayName: 'Responsável A' };
 const memberUser = { userId: 'member-a', email: 'member@example.test', displayName: 'Pessoa da equipe' };
@@ -33,9 +39,10 @@ function fixture() {
   for (const file of readdirSync(migrationDirectory).filter((name) => name.endsWith('.sql')).sort()) {
     sqlite.exec(readFileSync(new URL(file, migrationDirectory), 'utf8'));
   }
-  sqlite.exec(`INSERT INTO projects VALUES ('role','Rolê','',strftime('%Y-%m-%dT%H:%M:%fZ','now'));
-    INSERT INTO projects VALUES ('other','Outro projeto','',strftime('%Y-%m-%dT%H:%M:%fZ','now'));`);
+  sqlite.exec(`INSERT INTO projects(id,name,description,created_at) VALUES ('role','Rolê','',strftime('%Y-%m-%dT%H:%M:%fZ','now'));
+    INSERT INTO projects(id,name,description,created_at) VALUES ('other','Outro projeto','',strftime('%Y-%m-%dT%H:%M:%fZ','now'));`);
   const database = {
+    beforeBatch: null,
     prepare(sql) {
       function statement(parameters = []) {
         return {
@@ -52,6 +59,7 @@ function fixture() {
       return statement();
     },
     async batch(statements) {
+      if (this.beforeBatch) { const hook = this.beforeBatch; this.beforeBatch = null; hook(); }
       sqlite.exec('BEGIN IMMEDIATE');
       try {
         const results = statements.map((statement) => statement.execute());
@@ -69,7 +77,13 @@ function fixture() {
       .run(id, user.userId, user.email, role, projectId, revokedAt, new Date().toISOString());
     return id;
   }
-  return { sqlite, db: database, seed };
+  function accountState(user, status = 'active', pending = 0) {
+    const now = new Date().toISOString();
+    sqlite.prepare(`INSERT INTO portal_users(user_id,email,status,activation_pending,created_at,updated_at)
+      VALUES(?,?,?,?,?,?) ON CONFLICT(user_id) DO UPDATE SET status=excluded.status,activation_pending=excluded.activation_pending`)
+      .run(user.userId, user.email, status, pending, now, now);
+  }
+  return { sqlite, db: database, seed, accountState };
 }
 
 async function owner(f) { return getActor(f.db, ownerUser, ownerUser.email); }
@@ -174,6 +188,120 @@ test('owner creates a manual seven-day invitation without persisting its raw tok
   assert.equal(JSON.stringify(invitation).includes(tokenOf(result)), false);
   assert.ok(Date.parse(result.expiresAt) - Date.now() > 6.9 * 86400000);
   assert.equal(JSON.stringify(f.sqlite.prepare('SELECT * FROM audit').all()).includes(tokenOf(result)), false);
+});
+
+test('repeated and simultaneous invite creation recovers the same link with one claim and audit', async t => {
+  const f = closeAfter(t, fixture()), actor = await owner(f);
+  const input = { email: memberUser.email, role: 'viewer', projectId: 'role', operationKey: crypto.randomUUID() };
+  const [first, second] = await Promise.all([
+    accessAction(f.db, actor, 'invite.create', input, origin),
+    accessAction(f.db, actor, 'invite.create', input, origin),
+  ]);
+  assert.equal(first.id, second.id); assert.equal(first.inviteUrl, second.inviteUrl); assert.equal(first.expiresAt, second.expiresAt);
+  const replay = await accessAction(f.db, actor, 'invite.create', input, origin);
+  assert.equal(replay.inviteUrl, first.inviteUrl); assert.equal(replay.replayed, true);
+  assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM invites').get().n, 1);
+  assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM mutation_keys').get().n, 1);
+  assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM audit WHERE action='invite.create'").get().n, 1);
+  const persisted = JSON.stringify([f.sqlite.prepare('SELECT * FROM invites').all(), f.sqlite.prepare('SELECT * FROM mutation_keys').all(), f.sqlite.prepare('SELECT * FROM audit').all()]);
+  for (const secret of [tokenOf(first), INVITE_SECRET, input.operationKey]) assert.equal(persisted.includes(secret), false);
+});
+
+test('invite creation binds its operation key to normalized recipient, role and project', async t => {
+  const f = closeAfter(t, fixture()), actor = await owner(f);
+  const input = { email: memberUser.email, role: 'viewer', projectId: 'role', operationKey: crypto.randomUUID() };
+  const first = await accessAction(f.db, actor, 'invite.create', input, origin);
+  assert.equal((await accessAction(f.db, actor, 'invite.create', { ...input, email: ` ${memberUser.email.toUpperCase()} ` }, origin)).inviteUrl, first.inviteUrl);
+  for (const changed of [{ role: 'operator' }, { email: 'another@example.test' }, { projectId: 'other' }]) {
+    await rejected(accessAction(f.db, actor, 'invite.create', { ...input, ...changed }, origin), 'operation_changed', 409);
+  }
+  assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM invites').get().n, 1);
+});
+
+test('invite HMAC is separated by actor even when operation keys and recipient coincide', async t => {
+  const f = closeAfter(t, fixture()), firstActor = await owner(f);
+  const secondUser = { ...ownerUser, userId: 'owner-b', email: 'second@example.test' };
+  f.seed(secondUser, 'owner');
+  const secondActor = await getActor(f.db, secondUser);
+  const input = { email: memberUser.email, role: 'viewer', projectId: 'role', operationKey: 'shared-operation-key' };
+  const first = await accessAction(f.db, firstActor, 'invite.create', input, origin);
+  const second = await accessAction(f.db, secondActor, 'invite.create', input, origin);
+  assert.notEqual(tokenOf(first), tokenOf(second)); assert.notEqual(first.id, second.id);
+});
+
+test('invite creation requires an operation key and a server-only configured secret', async t => {
+  const f = closeAfter(t, fixture()), actor = await owner(f);
+  const input = { email: memberUser.email, role: 'viewer', projectId: 'role', operationKey: crypto.randomUUID() };
+  await rejected(callAccessAction(f.db, actor, 'invite.create', input, origin), 'invites_unavailable', 503);
+  await rejected(callAccessAction(f.db, actor, 'invite.create', input, origin, 'short'), 'invites_unavailable', 503);
+  await rejected(callAccessAction(f.db, actor, 'invite.create', { ...input, operationKey: undefined }, origin, INVITE_SECRET), 'invalid_operation_key', 400);
+  assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM invites').get().n, 0);
+  assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM mutation_keys').get().n, 0);
+});
+
+for (const condition of ['revoked', 'accepted', 'expired']) {
+  test(`invite creation never reissues a ${condition} link during replay`, async t => {
+    const f = closeAfter(t, fixture()), actor = await owner(f);
+    const input = { email: memberUser.email, role: 'viewer', projectId: 'role', operationKey: crypto.randomUUID() };
+    const invite = await accessAction(f.db, actor, 'invite.create', input, origin);
+    if (condition === 'revoked') await accessAction(f.db, actor, 'invite.revoke', { id: invite.id }, origin);
+    if (condition === 'accepted') await accessAction(f.db, await getActor(f.db, memberUser), 'invite.accept', { token: tokenOf(invite) }, origin);
+    if (condition === 'expired') f.sqlite.prepare('UPDATE invites SET expires_at=? WHERE id=?').run(new Date(Date.now() - 1000).toISOString(), invite.id);
+    await rejected(accessAction(f.db, actor, 'invite.create', input, origin), condition === 'accepted' ? 'invite_used' : condition === 'revoked' ? 'invite_revoked' : 'invite_expired', 409);
+    assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM invites').get().n, 1);
+    assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM audit WHERE action='invite.create'").get().n, 1);
+  });
+}
+
+test('secret rotation cannot regenerate a different token for an already claimed operation', async t => {
+  const f = closeAfter(t, fixture()), actor = await owner(f);
+  const input = { email: memberUser.email, role: 'viewer', projectId: 'role', operationKey: crypto.randomUUID() };
+  await accessAction(f.db, actor, 'invite.create', input, origin);
+  await rejected(accessAction(f.db, actor, 'invite.create', input, origin, `${INVITE_SECRET}-rotated`), 'invite_replay_unavailable', 409);
+  assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM invites').get().n, 1);
+});
+
+for (const failure of ['claim', 'audit']) {
+  test(`failed invite ${failure} rolls back the invitation, mutation claim and audit together`, async t => {
+    const f = closeAfter(t, fixture()), actor = await owner(f);
+    const input = { email: memberUser.email, role: 'viewer', projectId: 'role', operationKey: crypto.randomUUID() };
+    f.sqlite.exec(failure === 'claim'
+      ? "CREATE TRIGGER fail_invite_commit BEFORE INSERT ON mutation_keys BEGIN SELECT RAISE(ABORT,'forced_invite_failure'); END"
+      : "CREATE TRIGGER fail_invite_commit BEFORE INSERT ON audit WHEN NEW.action='invite.create' BEGIN SELECT RAISE(ABORT,'forced_invite_failure'); END");
+    await assert.rejects(accessAction(f.db, actor, 'invite.create', input, origin), /forced_invite_failure/);
+    assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM invites').get().n, 0);
+    assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM mutation_keys').get().n, 0);
+    assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM audit WHERE action='invite.create'").get().n, 0);
+    f.sqlite.exec('DROP TRIGGER fail_invite_commit');
+    assert.ok((await accessAction(f.db, actor, 'invite.create', input, origin)).inviteUrl);
+  });
+}
+
+test('simultaneous reuse with different invite data creates one invitation and rejects the conflicting request', async t => {
+  const f = closeAfter(t, fixture()), actor = await owner(f);
+  const input = { email: memberUser.email, role: 'viewer', projectId: 'role', operationKey: crypto.randomUUID() };
+  const results = await Promise.allSettled([
+    accessAction(f.db, actor, 'invite.create', input, origin),
+    accessAction(f.db, actor, 'invite.create', { ...input, role: 'operator' }, origin),
+  ]);
+  assert.equal(results.filter(item => item.status === 'fulfilled').length, 1);
+  assert.equal(results.find(item => item.status === 'rejected').reason.code, 'operation_changed');
+  assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM invites').get().n, 1);
+  assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM mutation_keys').get().n, 1);
+});
+
+test('a previously created link cannot be recovered by a blocked, pending or revoked stale issuer', async t => {
+  const f = closeAfter(t, fixture()), actor = await owner(f);
+  const input = { email: memberUser.email, role: 'viewer', projectId: 'role', operationKey: crypto.randomUUID() };
+  await accessAction(f.db, actor, 'invite.create', input, origin);
+  f.accountState(ownerUser, 'blocked');
+  await rejected(accessAction(f.db, actor, 'invite.create', input, origin), 'access_changed', 403);
+  f.accountState(ownerUser, 'active', 1);
+  await rejected(accessAction(f.db, actor, 'invite.create', input, origin), 'access_changed', 403);
+  f.accountState(ownerUser, 'active', 0);
+  f.sqlite.prepare('UPDATE members SET revoked_at=? WHERE id=?').run(new Date().toISOString(), actor.members[0].id);
+  await rejected(accessAction(f.db, actor, 'invite.create', input, origin), 'access_changed', 403);
+  assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM audit WHERE action='invite.create'").get().n, 1);
 });
 
 test('only owner may invite managers or grant global scope; managers stay in their project', async (t) => {
@@ -311,6 +439,62 @@ test('conditional SQL rejects invitation creation with a stale revoked actor sna
     email: 'recipient@example.test', role: 'operator', projectId: 'role',
   }, origin), 'access_changed', 403);
   assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM invites').get().n, 0);
+});
+
+for (const issuerRole of ['owner', 'manager']) {
+  for (const condition of ['blocked', 'pending']) {
+    test(`${condition} ${issuerRole} cannot leave an existing invitation acceptable`, async t => {
+      const f = closeAfter(t, fixture()), ownerActor = await owner(f);
+      if (issuerRole === 'manager') f.seed(memberUser, 'manager', 'role');
+      const issuerUser = issuerRole === 'owner' ? ownerUser : memberUser;
+      const issuer = issuerRole === 'owner' ? ownerActor : await getActor(f.db, issuerUser);
+      const recipientUser = { userId: 'recipient', email: 'recipient@example.test', displayName: 'Destinatário' };
+      const invite = await accessAction(f.db, issuer, 'invite.create', {
+        email: recipientUser.email, role: 'viewer', projectId: 'role',
+      }, origin);
+      const recipient = await getActor(f.db, recipientUser);
+      // Account state changes after the invite and actor snapshots exist. Memberships remain active.
+      f.accountState(issuerUser, condition === 'blocked' ? 'blocked' : 'active', condition === 'pending' ? 1 : 0);
+      await rejected(accessAction(f.db, recipient, 'invite.accept', { token: tokenOf(invite) }, origin), 'invite_not_accepted', 409);
+      assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM members WHERE user_id=?').get(recipientUser.userId).n, 0);
+      assert.equal(f.sqlite.prepare('SELECT accepted_at FROM invites WHERE id=?').get(invite.id).accepted_at, null);
+      assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM audit WHERE action='invite.accept'").get().n, 0);
+      f.accountState(issuerUser, 'active', 0);
+      assert.equal((await accessAction(f.db, recipient, 'invite.accept', { token: tokenOf(invite) }, origin)).accepted, true);
+    });
+
+    test(`stale ${condition} ${issuerRole} cannot create or revoke invites or memberships`, async t => {
+      const f = closeAfter(t, fixture()), ownerActor = await owner(f);
+      if (issuerRole === 'manager') f.seed(memberUser, 'manager', 'role');
+      const issuerUser = issuerRole === 'owner' ? ownerUser : memberUser;
+      const issuer = issuerRole === 'owner' ? ownerActor : await getActor(f.db, issuerUser);
+      const targetUser = { userId: 'operator', email: 'operator@example.test', displayName: 'Operador' };
+      const targetMember = f.seed(targetUser, 'operator', 'role');
+      const inviteInput = { email: 'recipient@example.test', role: 'viewer', projectId: 'role' };
+      const invite = await accessAction(f.db, issuer, 'invite.create', inviteInput, origin);
+      const originalAudits = f.sqlite.prepare('SELECT COUNT(*) n FROM audit').get().n;
+      f.accountState(issuerUser, condition === 'blocked' ? 'blocked' : 'active', condition === 'pending' ? 1 : 0);
+      await rejected(accessAction(f.db, issuer, 'invite.create', inviteInput, origin), 'access_changed', 403);
+      await rejected(accessAction(f.db, issuer, 'invite.revoke', { id: invite.id }, origin), 'access_changed', 409);
+      await rejected(accessAction(f.db, issuer, 'member.revoke', { id: targetMember }, origin), 'member_not_revoked', 409);
+      assert.equal(f.sqlite.prepare('SELECT revoked_at FROM members WHERE id=?').get(targetMember).revoked_at, null);
+      assert.equal(f.sqlite.prepare('SELECT revoked_at FROM invites WHERE id=?').get(invite.id).revoked_at, null);
+      assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM invites').get().n, 1);
+      assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM audit').get().n, originalAudits);
+    });
+  }
+}
+
+test('invite acceptance checks issuer account state again inside its SQL batch', async t => {
+  const f = closeAfter(t, fixture()), issuer = await owner(f);
+  const invite = await accessAction(f.db, issuer, 'invite.create', {
+    email: memberUser.email, role: 'viewer', projectId: 'role',
+  }, origin);
+  const recipient = await getActor(f.db, memberUser);
+  f.db.beforeBatch = () => f.accountState(ownerUser, 'blocked');
+  await rejected(accessAction(f.db, recipient, 'invite.accept', { token: tokenOf(invite) }, origin), 'invite_not_accepted', 409);
+  assert.equal(f.sqlite.prepare('SELECT accepted_at FROM invites WHERE id=?').get(invite.id).accepted_at, null);
+  assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM members WHERE user_id=?').get(memberUser.userId).n, 0);
 });
 
 test('revoking a used invitation does not silently revoke its accepted membership', async (t) => {

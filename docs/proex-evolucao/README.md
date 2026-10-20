@@ -1,17 +1,48 @@
-ROLÊ DA EXTENSÃO E OPERAÇÕES DA PROEX
-Pacote de continuidade preparado em 20 de outubro de 2026
+# Rolê da Extensão e operações da PROEX
 
-O portal operacional foi criado em uma aplicação separada e publicado em https://proex-gestao.yandiamantinobr.chatgpt.site. Leia primeiro ESTADO_ATUAL.md e ADRS/0002-portal-nativo-sites.md. O manual está em apps/proex-portal/README.md na raiz do repositório. A roleta livre permanece preservada.
+Contexto de continuidade atualizado em 20/10/2026. A evolução mantém o jogo livre e um portal operacional separado. **A V3 foi publicada com sucesso**, versão 3, às 15:55:09 UTC, em https://proex-gestao.yandiamantinobr.chatgpt.site. Fonte publicada no Sites: `db104886f98feebc1b83e30ad35d0390df556d3c`.
 
-1. Leia Plano_PROEX_Role_da_Extensao.pdf para entender a estrutura e as decisões.
-2. Para um novo chat Codex/Work, envie prompts/00_PROMPT_MESTRE.txt e prompts/01_DIAGNOSTICO_E_PRESERVACAO.txt.
-3. Depois execute a fase adequada, sempre com o mestre e o estado atualizado do repositório. Há sete fases; não é necessário abrir sete chats ao mesmo tempo.
-4. Ao retomar, peça ao agente para ler docs/proex-evolucao e ESTADO_ATUAL.md na branch atual da implementação. A branch original docs/proex-evolucao-20261020 contém apenas a primeira versão do planejamento; não a confundir com o avanço de código.
+Comece pelo [estado atual](ESTADO_ATUAL.md), pela [ADR 0003](ADRS/0003-identidade-e-operacao-v3.md) e pelo [manual do portal](../../apps/proex-portal/README.md). A [entrega V3](../ENTREGA-V3.md) reúne a evidência final. O endereço do Site, sozinho, não identifica a revisão; o commit público do GitHub é um registro separado da fonte publicada.
 
-Papéis das ferramentas
-GitHub guarda versões do código e documentação. O painel permitirá operar campanhas e materiais. O banco guardará os registros compartilhados. Google Sheets será interface auxiliar de consulta/importação controlada. A integração do autor com Drive não cria automaticamente integração permanente para visitantes.
+## Como retomar
 
-Regras ainda a definir
-Tente novamente; Super Super Brinde; composição do kit planner; quantidades de estoque; perfil Instagram e acesso ao aplicativo; base legal/retenção/responsáveis; infraestrutura institucional. Os prompts determinam como avançar sem inventar esses valores.
+1. Confira a branch atual da implementação e leia o estado antes de editar. A branch inicial `docs/proex-evolucao-20261020` contém o planejamento original; não representa o avanço posterior de código.
+2. Localize a aplicação em `apps/proex-portal`. Ela tem build, banco e implantação próprios. A roleta livre permanece fora dessa pasta e mantém seu fluxo existente.
+3. Use o [prompt mestre](prompts/00_PROMPT_MESTRE.txt) e o prompt da fase necessária como contexto histórico. Quando uma proposta antiga divergir da implementação, siga as ADRs posteriores e o estado registrado. Há sete fases; não é necessário abrir sete chats ao mesmo tempo.
+4. Entregue um incremento verificável, atualize a documentação e diferencie teste local, fonte versionada e publicação hospedada. Commit ou PR não substitui deploy com status confirmado.
 
-Não há credenciais nem dados pessoais de participantes neste pacote. Não enviar senhas/tokens no chat. Convites reais só depois de identificar destinatário, função e escopo.
+## O que a V3 acrescenta
+
+O acesso cotidiano usa e-mail e senha com Better Auth e cadastro por convite. O login nativo ChatGPT fica limitado à migração explícita das contas anteriores. Perfis, bloqueio de contas, funções por projeto, edição de projetos/materiais, registros e agenda complementam campanhas, estoque, empréstimos e relatórios. IDs canônicos preservam o histórico entre métodos de autenticação; e-mails iguais não unem contas.
+
+O painel apresenta permissões por contexto e atualiza sua leitura pelo servidor. Alterações operacionais são confirmadas no D1; o navegador não é a fonte oficial de saldo, autorização ou resultado. Documentos e fotos ficam no R2 privado. O time usa contas individuais e links manuais de convite/recuperação; não existe envio automático de e-mail.
+
+## Papel de cada ferramenta
+
+| Ferramenta | Papel atual |
+| --- | --- |
+| GitHub | Histórico de código, documentação, revisão e verificações |
+| Portal | Operação da equipe e páginas oficiais das campanhas |
+| D1 | Fonte compartilhada de registros, permissões e autenticação |
+| R2 privado | Termos, anexos e fotos autorizadas |
+| Google Calendar | Consumo de arquivo ou assinatura ICS de leitura |
+| Google Sheets | Importação manual de CSV; integração automática permanece futura |
+
+ICS não é OAuth Google, envio direto para a agenda nem sincronização bidirecional. O cliente externo decide quando atualizar e pode manter cópias após revogação. A conexão do autor com Drive ou outros plugins não cria credenciais permanentes para o portal.
+
+## Decisões e limites
+
+A repetição Tente novamente já é configurável de zero a três por campanha e precisa constar no regulamento. Super Super Brinde, composição definitiva do planner, estoque real, catálogo público de brindes, retenção e fluxo institucional para menores continuam pendentes. Não preencher esses campos com números ou regras inventadas.
+
+Instagram é link opcional: não há verificação Meta de seguimento, condição de seguir para jogar ou contagem comprovada de novos seguidores. Google OAuth, SMTP, login WhatsApp, SEI/SIGAA e sincronização automática Sheets não estão ativos. Contribuições pessoais para alimentação e operações financeiras não pertencem à implementação atual.
+
+## Histórico preservado
+
+- [Plano original](PLANO.md): organização inicial das demandas e fases; o PDF citado nos primeiros prompts pertence ao pacote original.
+- [ADR 0001](ADRS/0001-arquitetura-e-ambientes.md): proposta condicional de infraestrutura externa.
+- [Verificação da fase 01](FASE_01_VERIFICACAO.md): preservação do jogo e núcleo independente de acessos.
+- [ADR 0002](ADRS/0002-portal-nativo-sites.md): portal dedicado com identidade nativa e publicação V2.
+- [ADR 0003](ADRS/0003-identidade-e-operacao-v3.md): identidade por senha e evolução operacional V3.
+- [Infraestrutura](INFRAESTRUTURA.md): configuração atual e levantamento histórico separado.
+
+Este pacote não deve conter senhas, tokens, URLs privadas de convite/agenda, termos assinados ou dados reais de participantes. A emissão de convite exige destinatário, função e escopo definidos; a equipe continua responsável por conferir a pessoa e o canal de entrega.

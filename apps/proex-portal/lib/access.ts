@@ -1,4 +1,5 @@
 import { HttpError } from './errors';
+import { prepareMutation } from './mutations';
 
 type Role = 'owner' | 'manager' | 'operator' | 'inventory' | 'loans' | 'viewer';
 export type PortalMember = {
@@ -64,8 +65,8 @@ function globalOwner(actor: PortalActor): boolean {
 }
 
 /**
- * `user` must come exclusively from Sites' server-side getChatGPTUser helper.
- * Its verified email is used for bootstrap/invite matching, never as the stable account id.
+ * `user` must come exclusively from the server-side canonical session resolver.
+ * Native bootstrap alone may supply configuredOwnerEmail; password identities never do.
  * Re-read memberships for EVERY API request. No provider headers or client claims are accepted here.
  */
 export async function getActor(
@@ -73,7 +74,9 @@ export async function getActor(
 ): Promise<PortalActor | null> {
   if (!user || !identifier(user.userId) || !email(user.email)) return null;
   const normalizedEmail = email(user.email)!;
-  if (email(configuredOwnerEmail) === normalizedEmail) {
+  const account=await db.prepare('SELECT status,activation_pending FROM portal_users WHERE user_id=?').bind(user.userId).first<{status:string;activation_pending:number}>();
+  if(account?.status==='blocked')return null;
+  if (!account?.activation_pending && email(configuredOwnerEmail) === normalizedEmail) {
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
     // Bootstrap happens only before any global owner has ever existed. Logging in must not
@@ -91,7 +94,7 @@ export async function getActor(
   }
   const result = await db.prepare('SELECT * FROM members WHERE user_id=? AND revoked_at IS NULL ORDER BY created_at,id')
     .bind(user.userId).all<PortalMember>();
-  const members = (result.results ?? []).filter((member) => usableMember(member, user.userId));
+  const members = (account?.activation_pending ? [] : result.results ?? []).filter((member) => usableMember(member, user.userId));
   return {
     userId: user.userId, email: normalizedEmail,
     displayName: typeof user.displayName === 'string' ? user.displayName.slice(0, 200) : normalizedEmail,
@@ -151,8 +154,10 @@ async function hashToken(token: string): Promise<string> {
   const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(token));
   return [...new Uint8Array(hash)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }
-function generateToken(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(32));
+async function invitationToken(secret: string, actorId: string, operationKey: string): Promise<string> {
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const message = JSON.stringify(['proex.invitation.v1', actorId, 'invite.create', operationKey]);
+  const bytes = new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(message)));
   return btoa(String.fromCharCode(...bytes)).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', '');
 }
 function projectValue(value: unknown): string | null {
@@ -165,17 +170,24 @@ function canManageRole(actor: PortalActor, role: string, projectId: string | nul
   return projectId !== null && SUBORDINATE_ROLES.includes(role)
     && activeMembers(actor).some((member) => member.role === 'manager' && member.project_id === projectId);
 }
-const OWNER_SQL = `EXISTS (SELECT 1 FROM members auth WHERE auth.user_id=? AND auth.role='owner'
-  AND auth.project_id IS NULL AND auth.revoked_at IS NULL)`;
-const ISSUER_SQL = `(EXISTS (SELECT 1 FROM members issuer WHERE issuer.user_id=i.created_by
-  AND issuer.role='owner' AND issuer.project_id IS NULL AND issuer.revoked_at IS NULL)
+const OWNER_SQL = `EXISTS (SELECT 1 FROM members auth
+  LEFT JOIN portal_users account ON account.user_id=auth.user_id
+  WHERE auth.user_id=? AND auth.role='owner' AND auth.project_id IS NULL AND auth.revoked_at IS NULL
+    AND COALESCE(account.status,'active')='active' AND COALESCE(account.activation_pending,0)=0)`;
+const ISSUER_SQL = `(EXISTS (SELECT 1 FROM members issuer
+  LEFT JOIN portal_users account ON account.user_id=issuer.user_id
+  WHERE issuer.user_id=i.created_by AND issuer.role='owner' AND issuer.project_id IS NULL AND issuer.revoked_at IS NULL
+    AND COALESCE(account.status,'active')='active' AND COALESCE(account.activation_pending,0)=0)
   OR (i.project_id IS NOT NULL AND i.role IN ('operator','inventory','loans','viewer')
-    AND EXISTS (SELECT 1 FROM members issuer WHERE issuer.user_id=i.created_by AND issuer.role='manager'
-      AND issuer.project_id=i.project_id AND issuer.revoked_at IS NULL)))`;
+    AND EXISTS (SELECT 1 FROM members issuer
+      LEFT JOIN portal_users account ON account.user_id=issuer.user_id
+      WHERE issuer.user_id=i.created_by AND issuer.role='manager' AND issuer.project_id=i.project_id AND issuer.revoked_at IS NULL
+        AND COALESCE(account.status,'active')='active' AND COALESCE(account.activation_pending,0)=0)))`;
 
 /** Access mutations use conditional SQL and atomic D1 batches, not a read-then-unconditional-write. */
 export async function accessAction(
   db: D1Database, actor: PortalActor | null, action: string, input: Record<string, unknown>, origin: string,
+  inviteSecret?: string,
 ): Promise<Record<string, unknown> | null> {
   if (!['invite.create', 'invite.revoke', 'invite.accept', 'member.revoke'].includes(action)) return null;
   if (!actor) throw new HttpError(401, 'Entre com sua conta para continuar.', 'unauthenticated');
@@ -196,25 +208,58 @@ export async function accessAction(
     if (!['https:', 'http:'].includes(base.protocol) || base.username || base.password) {
       throw new HttpError(400, 'Endereço do portal inválido.', 'invalid_origin');
     }
-    const token = generateToken();
+    if (typeof inviteSecret !== 'string' || inviteSecret.trim().length < 32) {
+      throw new HttpError(503, 'A emissão de convites precisa ser configurada pelo responsável.', 'invites_unavailable');
+    }
+    const mutation = await prepareMutation(db, actor.userId, action, {
+      email: recipient, role, projectId, operationKey: input.operationKey,
+    });
+    const token = await invitationToken(inviteSecret, actor.userId, input.operationKey as string);
     const tokenHash = await hashToken(token);
-    const id = crypto.randomUUID();
-    const now = new Date().toISOString();
-    const expiresAt = new Date(Date.now() + INVITE_TTL_MS).toISOString();
     const authorization = `(${OWNER_SQL} OR (? IS NOT NULL AND ? IN ('operator','inventory','loans','viewer')
-      AND EXISTS (SELECT 1 FROM members auth WHERE auth.user_id=? AND auth.role='manager'
-        AND auth.project_id=? AND auth.revoked_at IS NULL)))`;
-    const result = await db.batch([
-      db.prepare(`INSERT INTO invites (id,token_hash,email,role,project_id,created_by,expires_at,created_at)
-        SELECT ?,?,?,?,?,?,?,? WHERE ${authorization}`)
-        .bind(id, tokenHash, recipient, role, projectId, actor.userId, expiresAt, now,
-          actor.userId, projectId, role, actor.userId, projectId),
-      db.prepare(`INSERT INTO audit (id,actor_id,project_id,action,entity_id,details,created_at)
-        SELECT ?,?,?,'invite.create',?,?,? WHERE EXISTS (SELECT 1 FROM invites WHERE id=?)`)
-        .bind(crypto.randomUUID(), actor.userId, projectId, id, JSON.stringify({ role }), now, id),
-    ]);
-    if (result[0].meta.changes !== 1) throw new HttpError(403, 'Seu acesso mudou. Atualize a página.', 'access_changed');
-    return { id, expiresAt, inviteUrl: `${base.origin}/convite?token=${encodeURIComponent(token)}`, delivery: 'manual' };
+      AND EXISTS (SELECT 1 FROM members auth
+        LEFT JOIN portal_users account ON account.user_id=auth.user_id
+        WHERE auth.user_id=? AND auth.role='manager' AND auth.project_id=? AND auth.revoked_at IS NULL
+          AND COALESCE(account.status,'active')='active' AND COALESCE(account.activation_pending,0)=0)))`;
+    const authorizationParameters = [actor.userId, projectId, role, actor.userId, projectId];
+    async function presentInvite(id: string, replayed: boolean): Promise<Record<string, unknown>> {
+      // Recovering a link is a privileged operation too; a stale or blocked author gets no token.
+      const invitation = await db.prepare(`SELECT * FROM invites WHERE id=? AND created_by=? AND ${authorization}`)
+        .bind(id, actor!.userId, ...authorizationParameters).first<Invite>();
+      if (!invitation) throw new HttpError(403, 'O convite ou seu acesso mudou. Atualize a página.', 'access_changed');
+      if (invitation.email !== recipient || invitation.role !== role || invitation.project_id !== projectId || invitation.token_hash !== tokenHash) {
+        throw new HttpError(409, 'Não foi possível recuperar este convite. Confira a configuração e gere um novo link.', 'invite_replay_unavailable');
+      }
+      if (invitation.accepted_at) throw new HttpError(409, 'Este convite já foi aceito.', 'invite_used');
+      if (invitation.revoked_at) throw new HttpError(409, 'Este convite foi revogado.', 'invite_revoked');
+      if (!isoValid(invitation.expires_at) || Date.parse(invitation.expires_at) <= Date.now()) {
+        throw new HttpError(409, 'Este convite expirou. Gere um novo convite.', 'invite_expired');
+      }
+      return { id: invitation.id, expiresAt: invitation.expires_at,
+        inviteUrl: `${base.origin}/convite?token=${encodeURIComponent(token)}`, delivery: 'manual', ...(replayed ? { replayed: true } : {}) };
+    }
+    if (mutation.existingId) return presentInvite(mutation.existingId, true);
+    const id = crypto.randomUUID(), now = new Date().toISOString();
+    const expiresAt = new Date(Date.now() + INVITE_TTL_MS).toISOString();
+    try {
+      const result = await db.batch([
+        db.prepare(`INSERT INTO invites (id,token_hash,email,role,project_id,created_by,expires_at,created_at)
+          SELECT ?,?,?,?,?,?,?,? WHERE ${authorization}`)
+          .bind(id, tokenHash, recipient, role, projectId, actor.userId, expiresAt, now, ...authorizationParameters),
+        db.prepare(`INSERT INTO mutation_keys(scope,fingerprint,entity_id,created_at)
+          SELECT ?,?,?,? WHERE EXISTS (SELECT 1 FROM invites WHERE id=?)`)
+          .bind(mutation.scope, mutation.fingerprint, id, now, id),
+        db.prepare(`INSERT INTO audit (id,actor_id,project_id,action,entity_id,details,created_at)
+          SELECT ?,?,?,'invite.create',?,?,? WHERE EXISTS (SELECT 1 FROM invites WHERE id=?)`)
+          .bind(crypto.randomUUID(), actor.userId, projectId, id, JSON.stringify({ role }), now, id),
+      ]);
+      if (result.some(statement => statement.meta.changes !== 1)) {
+        throw new HttpError(403, 'Seu acesso mudou. Atualize a página.', 'access_changed');
+      }
+    } catch (error) {
+      return presentInvite(await mutation.recover(error), true);
+    }
+    return presentInvite(id, false);
   }
 
   if (action === 'invite.accept') {
@@ -271,8 +316,10 @@ export async function accessAction(
     const results = await db.batch([
       db.prepare(`UPDATE invites SET revoked_at=? WHERE id=? AND accepted_at IS NULL AND revoked_at IS NULL
         AND (${OWNER_SQL} OR (project_id IS NOT NULL AND role IN ('operator','inventory','loans','viewer')
-          AND EXISTS (SELECT 1 FROM members auth WHERE auth.user_id=? AND auth.role='manager'
-            AND auth.project_id=invites.project_id AND auth.revoked_at IS NULL)))`)
+          AND EXISTS (SELECT 1 FROM members auth
+            LEFT JOIN portal_users account ON account.user_id=auth.user_id
+            WHERE auth.user_id=? AND auth.role='manager' AND auth.project_id=invites.project_id AND auth.revoked_at IS NULL
+              AND COALESCE(account.status,'active')='active' AND COALESCE(account.activation_pending,0)=0)))`)
         .bind(now, invitation.id, actor.userId, actor.userId),
       db.prepare(`INSERT INTO audit (id,actor_id,project_id,action,entity_id,details,created_at)
         SELECT ?,?,?,'invite.revoke',?,'{}',? WHERE changes()=1`)
@@ -291,10 +338,14 @@ export async function accessAction(
   const results = await db.batch([
     db.prepare(`UPDATE members SET revoked_at=? WHERE id=? AND revoked_at IS NULL
       AND (${OWNER_SQL} OR (project_id IS NOT NULL AND role IN ('operator','inventory','loans','viewer')
-        AND EXISTS (SELECT 1 FROM members auth WHERE auth.user_id=? AND auth.role='manager'
-          AND auth.project_id=members.project_id AND auth.revoked_at IS NULL)))
-      AND (role!='owner' OR (SELECT COUNT(DISTINCT user_id) FROM members owners
-        WHERE owners.role='owner' AND owners.project_id IS NULL AND owners.revoked_at IS NULL)>1)`)
+        AND EXISTS (SELECT 1 FROM members auth
+          LEFT JOIN portal_users account ON account.user_id=auth.user_id
+          WHERE auth.user_id=? AND auth.role='manager' AND auth.project_id=members.project_id AND auth.revoked_at IS NULL
+            AND COALESCE(account.status,'active')='active' AND COALESCE(account.activation_pending,0)=0)))
+      AND (role!='owner' OR (SELECT COUNT(DISTINCT owners.user_id) FROM members owners
+        LEFT JOIN portal_users account ON account.user_id=owners.user_id
+        WHERE owners.role='owner' AND owners.project_id IS NULL AND owners.revoked_at IS NULL
+          AND COALESCE(account.status,'active')='active' AND COALESCE(account.activation_pending,0)=0)>1)`)
       .bind(now, member.id, actor.userId, actor.userId),
     db.prepare(`INSERT INTO audit (id,actor_id,project_id,action,entity_id,details,created_at)
       SELECT ?,?,?,'member.revoke',?,'{}',? WHERE changes()=1`)

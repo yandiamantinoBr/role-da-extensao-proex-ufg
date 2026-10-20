@@ -12,7 +12,7 @@ import ts from 'typescript';
 // at the transport boundary. These synthetic, in-memory fixtures never reach production.
 const temporary = mkdtempSync(join(tmpdir(), 'proex-portal-data-'));
 writeFileSync(join(temporary, 'package.json'), '{"type":"module"}');
-for (const name of ['access', 'database', 'errors', 'portal-data']) {
+for (const name of ['access', 'database', 'errors', 'portal-data', 'users', 'mutations']) {
   const source = readFileSync(new URL(`../lib/${name}.ts`, import.meta.url), 'utf8');
   const output = ts.transpileModule(source, {
     compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
@@ -20,6 +20,7 @@ for (const name of ['access', 'database', 'errors', 'portal-data']) {
   writeFileSync(join(temporary, `${name}.js`), output);
 }
 writeFileSync(join(temporary, 'native-auth.js'), 'export async function getChatGPTUser(){return globalThis.__proexReportTestUser ?? null;}');
+writeFileSync(join(temporary, 'session.js'), 'export async function getPortalUser(){return globalThis.__proexReportTestUser ?? null;}');
 writeFileSync(join(temporary, 'platform.js'), 'export function database(){return globalThis.__proexReportTestDatabase;} export function ownerEmail(){return undefined;}');
 const routeSource = readFileSync(new URL('../app/api/export/route.ts', import.meta.url), 'utf8');
 const routeOutput = ts.transpileModule(routeSource, {
@@ -74,6 +75,8 @@ function fixture(t) {
   }
   function member(role, project = 'project-a') {
     const user = { userId: `user-${role}`, email: `${role}@example.test`, displayName: `Fixture ${role}` };
+    insert('portal_users', { user_id: user.userId, email: user.email, status: 'active', created_at: timestamp, updated_at: timestamp });
+    insert('profiles', { user_id: user.userId, display_name: user.displayName, created_at: timestamp, updated_at: timestamp });
     insert('members', {
       id: `member-${role}`, user_id: user.userId, email: user.email, role,
       project_id: role === 'owner' ? null : project, revoked_at: null, created_at: timestamp,
@@ -189,6 +192,146 @@ test('snapshot scopes and redacts personal fields, hashes, object keys and activ
   assert.equal(inventory.metrics.participations, null);
   assert.equal(inventory.loans.length, 0);
   await assert.rejects(() => portalSnapshot(f.db, null), error => error.status === 401);
+});
+
+test('snapshot exposes editable V3 project, item and loan fields without widening scope', async t => {
+  const f = fixture(t);
+  f.sqlite.prepare(`UPDATE projects SET short_name='Rolê',status='archived',color='#ffaa3d',
+    official_url='https://proex.ufg.br/',starts_at=?,ends_at=?,location='Campus Samambaia',version=4 WHERE id='project-a'`)
+    .run(timestamp, '2026-12-20T02:30:00.000Z');
+  f.sqlite.prepare("UPDATE items SET asset_code='UFG-001',version=3,updated_at=? WHERE id='equipment-a'").run(timestamp);
+  f.sqlite.prepare('UPDATE loans SET checked_out_at=?,updated_at=? WHERE id=?').run(timestamp, timestamp, 'loan-a');
+  const data = await snapshot(f, 'manager');
+  assert.deepEqual({ ...data.projects[0] }, {
+    id: 'project-a', name: 'Projeto A', description: '', created_at: timestamp,
+    short_name: 'Rolê', status: 'archived', color: '#ffaa3d', official_url: 'https://proex.ufg.br/',
+    starts_at: timestamp, ends_at: '2026-12-20T02:30:00.000Z', location: 'Campus Samambaia', version: 4,
+  });
+  const equipment = data.items.find(item => item.id === 'equipment-a');
+  assert.equal(equipment.asset_code, 'UFG-001'); assert.equal(equipment.version, 3); assert.equal(equipment.updated_at, timestamp);
+  assert.equal(data.loans[0].checked_out_at, timestamp); assert.equal(data.loans[0].updated_at, timestamp);
+  assert.ok(data.items.every(item => item.project_id === 'project-a'));
+});
+
+test('capabilities remain separate between global access and each project even with mixed roles', async t => {
+  const f = fixture(t), user = f.member('viewer', 'project-b');
+  f.insert('members', { id: 'inventory-project-a', user_id: user.userId, email: user.email,
+    role: 'inventory', project_id: 'project-a', revoked_at: null, created_at: timestamp });
+  const actor = await getActor(f.db, user);
+  actor.capabilities.push('*', 'organization.manage');
+  const data = await portalSnapshot(f.db, actor);
+  assert.deepEqual(data.globalCapabilities, []);
+  assert.deepEqual(data.capabilitiesByProject['project-a'].sort(), ['inventory.manage', 'inventory.read']);
+  assert.deepEqual(data.capabilitiesByProject['project-b'], ['reports.read']);
+  assert.ok(!data.capabilities.includes('*')); assert.ok(!data.capabilities.includes('organization.manage'));
+  const ownerData = await snapshot(f, 'owner');
+  assert.ok(ownerData.globalCapabilities.includes('organization.manage'));
+  assert.ok(ownerData.capabilitiesByProject['project-a'].includes('inventory.manage'));
+  assert.ok(ownerData.capabilitiesByProject['project-b'].includes('inventory.manage'));
+});
+
+test('an overdue out equipment stays unavailable without disclosing its borrower to inventory staff', async t => {
+  const f = fixture(t), now = Date.now();
+  f.insert('items', { id: 'overdue-equipment', project_id: 'project-a', name: 'Projetor em atraso', category: 'equipment',
+    unit: 'unidade', stock: 1, created_at: timestamp });
+  f.insert('loans', { id: 'overdue-loan', project_id: 'project-a', item_id: 'overdue-equipment', action_name: 'Ação anterior',
+    borrower_name: 'PRIVATE OVERDUE BORROWER', borrower_contact: 'private-borrower@example.test', note: 'PRIVATE OVERDUE NOTE',
+    starts_at: now - 7200000, ends_at: now - 3600000, status: 'out', created_by: 'PRIVATE ACTOR', created_at: timestamp,
+    checked_out_at: timestamp, updated_at: timestamp });
+  const user = f.member('inventory'), actor = await getActor(f.db, user);
+  const first = await portalSnapshot(f.db, actor), equipment = first.items.find(item => item.id === 'overdue-equipment');
+  assert.equal(equipment.stock, 1); assert.equal(equipment.reserved, 0);
+  assert.equal(equipment.on_loan, true); assert.equal(equipment.available, 0); assert.equal(equipment.reserved_now, false);
+  assert.equal(first.loans.length, 0); assert.ok(!/PRIVATE|borrower/.test(JSON.stringify(first)));
+  f.sqlite.prepare("UPDATE loans SET status='returned',returned_at=? WHERE id='overdue-loan'").run(new Date().toISOString());
+  const returned = (await portalSnapshot(f.db, actor)).items.find(item => item.id === 'overdue-equipment');
+  assert.equal(returned.on_loan, false); assert.equal(returned.available, 1);
+});
+
+test('availability accounts for present reservations, future reservations and inactive condition separately', async t => {
+  const f = fixture(t), now = Date.now();
+  for (const [id, start, end] of [['current', now - 60000, now + 60000], ['future', now + 3600000, now + 7200000]]) {
+    f.insert('items', { id, project_id: 'project-a', name: id, category: 'equipment', unit: 'unidade', stock: 1, created_at: timestamp });
+    f.insert('loans', { id: `loan-${id}`, project_id: 'project-a', item_id: id, action_name: 'Reserva', borrower_name: 'PRIVATE BORROWER',
+      starts_at: start, ends_at: end, created_by: 'PRIVATE ACTOR', created_at: timestamp });
+  }
+  f.sqlite.prepare("UPDATE items SET condition='maintenance' WHERE id='equipment-a'").run();
+  const data = await snapshot(f, 'inventory');
+  const current = data.items.find(item => item.id === 'current'), future = data.items.find(item => item.id === 'future');
+  assert.equal(current.available, 0); assert.equal(current.reserved_now, true);
+  assert.equal(future.available, 1); assert.equal(future.reserved_now, false);
+  assert.equal(data.items.find(item => item.id === 'equipment-a').available, 0);
+  observeExport(f, f.member('viewer'));
+  const response = await GET(new Request('https://portal.example.test/api/export?kind=stock'));
+  assert.equal(response.status, 200);
+  const csvLines = (await response.text()).split('\n');
+  assert.match(csvLines.find(line => line.includes('"current"')), /"0";"active"\r?$/);
+  assert.match(csvLines.find(line => line.includes('"future"')), /"1";"active"\r?$/);
+});
+
+test('snapshot presents the current own profile and protected avatar URL without exposing storage or password data', async t => {
+  const f = fixture(t), user = f.member('viewer'), ms = Date.now();
+  f.sqlite.prepare("UPDATE profiles SET display_name='Nome atualizado',avatar_key='PRIVATE AVATAR KEY',mime='image/png',version=7 WHERE user_id=?").run(user.userId);
+  f.insert('auth_user', { id: 'PRIVATE PROVIDER SUBJECT', name: 'Provider name', email: 'credential@example.test', created_at: ms, updated_at: ms });
+  f.insert('auth_account', { id: 'credential-id', account_id: 'credential-id', provider_id: 'credential', user_id: 'PRIVATE PROVIDER SUBJECT',
+    password: 'PRIVATE PASSWORD HASH', created_at: ms, updated_at: ms });
+  f.insert('identity_aliases', { provider: 'password', subject: 'PRIVATE PROVIDER SUBJECT', user_id: user.userId, created_at: timestamp });
+  const actor = await getActor(f.db, user), data = await portalSnapshot(f.db, actor);
+  assert.equal(data.user.displayName, 'Nome atualizado'); assert.equal(data.profile.displayName, 'Nome atualizado');
+  assert.equal(data.user.email, user.email); assert.equal(data.user.avatarUrl, `/api/profile/avatar/${user.userId}?v=7`);
+  assert.equal(data.profile.version, 7); assert.equal(data.hasPassword, true); assert.equal(data.user.hasPassword, true);
+  assert.ok(!/PRIVATE AVATAR|PRIVATE PASSWORD|PRIVATE PROVIDER/.test(JSON.stringify(data)));
+  f.sqlite.prepare('UPDATE auth_account SET password=NULL WHERE id=?').run('credential-id');
+  assert.equal((await portalSnapshot(f.db, actor)).hasPassword, false);
+});
+
+test('owner materializes only trusted membership identities without email merges, aliases or new grants', async t => {
+  const f = fixture(t), user = f.member('owner');
+  for (const [id, revoked] of [['legacy-one', null], ['legacy-two', timestamp]]) {
+    f.insert('members', { id: `member-${id}`, user_id: id, email: 'same@example.test', role: 'viewer',
+      project_id: 'project-a', revoked_at: revoked, created_at: timestamp });
+  }
+  f.insert('members', { id: 'invalid-member', user_id: 'invalid / id', email: 'invalid@example.test', role: 'viewer',
+    project_id: 'project-a', revoked_at: null, created_at: timestamp });
+  f.insert('participations', { id: 'participant-no-membership', campaign_id: 'campaign-a', identity_id: 'participant-only',
+    identity_method: 'account', modality: 'dice', state: 'ready', created_at: timestamp });
+  const blocked = f.member('operator');
+  f.sqlite.prepare("UPDATE portal_users SET status='blocked' WHERE user_id=?").run(blocked.userId);
+  f.sqlite.prepare("UPDATE profiles SET display_name='Nome preservado',avatar_key='PRIVATE KEY',mime='image/png',version=8 WHERE user_id=?").run(blocked.userId);
+  const beforeMembers = f.sqlite.prepare('SELECT * FROM members ORDER BY id').all();
+  const actor = await getActor(f.db, user), first = await portalSnapshot(f.db, actor);
+  assert.equal(first.users.filter(account => account.email === 'same@example.test').length, 2);
+  assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM identity_aliases').get().n, 0);
+  assert.equal(f.sqlite.prepare('SELECT user_id FROM portal_users WHERE user_id=?').get('participant-only'), undefined);
+  assert.equal(f.sqlite.prepare('SELECT user_id FROM portal_users WHERE user_id=?').get('invalid / id'), undefined);
+  assert.equal(f.sqlite.prepare('SELECT status FROM portal_users WHERE user_id=?').get(blocked.userId).status, 'blocked');
+  assert.equal(f.sqlite.prepare('SELECT display_name,version FROM profiles WHERE user_id=?').get(blocked.userId).display_name, 'Nome preservado');
+  assert.equal(f.sqlite.prepare('SELECT version FROM profiles WHERE user_id=?').get(blocked.userId).version, 8);
+  assert.deepEqual(f.sqlite.prepare('SELECT * FROM members ORDER BY id').all(), beforeMembers);
+  const accounts = f.sqlite.prepare('SELECT COUNT(*) n FROM portal_users').get().n;
+  await portalSnapshot(f.db, actor);
+  assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM portal_users').get().n, accounts);
+});
+
+test('project managers do not materialize legacy identities or see another project through the directory', async t => {
+  const f = fixture(t), user = f.member('manager');
+  f.insert('members', { id: 'member-other-legacy', user_id: 'other-legacy', email: 'private-other@example.test', role: 'operator',
+    project_id: 'project-b', revoked_at: null, created_at: timestamp });
+  const data = await portalSnapshot(f.db, await getActor(f.db, user));
+  assert.equal(f.sqlite.prepare('SELECT user_id FROM portal_users WHERE user_id=?').get('other-legacy'), undefined);
+  assert.deepEqual(data.users.map(account => account.userId), [user.userId]);
+  assert.ok(!JSON.stringify(data).includes('private-other@example.test'));
+});
+
+test('blocked and activation-pending stale actors cannot read the snapshot or materialize metadata', async t => {
+  const f = fixture(t), user = f.member('owner'), actor = await getActor(f.db, user);
+  f.insert('members', { id: 'member-legacy', user_id: 'legacy-user', email: 'legacy@example.test', role: 'viewer',
+    project_id: 'project-a', revoked_at: null, created_at: timestamp });
+  f.sqlite.prepare("UPDATE portal_users SET status='blocked' WHERE user_id=?").run(user.userId);
+  await assert.rejects(portalSnapshot(f.db, actor), error => error.status === 403 && error.code === 'account_inactive');
+  f.sqlite.prepare("UPDATE portal_users SET status='active',activation_pending=1 WHERE user_id=?").run(user.userId);
+  await assert.rejects(portalSnapshot(f.db, actor), error => error.status === 403 && error.code === 'account_inactive');
+  assert.equal(f.sqlite.prepare('SELECT user_id FROM portal_users WHERE user_id=?').get('legacy-user'), undefined);
 });
 
 test('metrics separate participation, attempts, redemptions and units and reconcile by project/day', async t => {

@@ -39,3 +39,4 @@ jobs:
       - run: pnpm run check:types
       - run: pnpm test
       - run: pnpm run build
+      - run: node --import ./scripts/sites-env.mjs tests/password-auth-worker-smoke.mjs
