@@ -1,0 +1,37 @@
+FASE 07 RELATÓRIOS PLANILHAS E OPERAÇÃO INSTITUCIONAL
+
+Use 00_PROMPT_MESTRE.txt e os contratos das fases implementadas. Repo https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg. Um portal PROEX, módulos com escopos e banco como fonte oficial. A versão livre não integra indicadores de participação oficial por inferência.
+
+OBJETIVO
+Entregar informações que a gestão consiga interpretar e conferir, com exportações e administração pelo celular. Dados consolidados devem explicar participação, uso dos materiais e disponibilidade dos bens. Não inventar históricos: o relatório 2025 fornecido é narrativo e não autoriza preencher contagens ausentes.
+
+DICIONÁRIO DE MÉTRICAS
+Definir nome, fórmula, fonte, grão, filtros, periodicidade, fuso, estados incluídos/excluídos e limite de interpretação para cada indicador.
+- Acessos: carregamentos/sessões conforme método declarado; não chamar de pessoas únicas. Minimizar rastreamento e não inserir tracker de terceiros por padrão.
+- Inscrições: identidades operacionais registradas na campanha, distinguindo conta e tíquete.
+- Participações: COUNT DISTINCT participation_id; uma identidade/campanha, conforme regra. Tentativas separadas para política de repetição.
+- Modalidade: roleta digital, dado digital, físico observado e contingência reconciliada; soma das modalidades deve conciliar com o total no mesmo estado/filtro.
+- Resultado: por tentativa e final da participação, sem misturar denominadores.
+- Premiação: direitos emitidos, reservados, entregues, expirados, cancelados e pendentes.
+- Itens: unidades efetivamente movimentadas por SKU; prêmio de três buttons é uma premiação e três unidades.
+- Estoque: físico, reservado, disponível, saldo por local/projeto e ajustes; esclarecer titularidade versus localização.
+- Empréstimos: reservados, retirados, devolvidos, atrasados, manutenção e conflitos, sem dupla contagem de unidades.
+- Instagram: cliques, autodeclaração, conferência e API; agregados da conta com período/origem. Nenhuma atribuição causal automática.
+Eventos atravessando meia-noite usam fuso America/Sao_Paulo e intervalo preciso; timestamps armazenados consistentemente. Separar demonstração, testes, cancelamento e provisórios dos totais operacionais. Nenhuma métrica soma usuários únicos de eventos diferentes como pessoas únicas globais sem definição adicional.
+
+TELAS
+Início com filtro projeto/evento/período e indicação de atualização. Cartões com números e denominador, tabela conciliável por dia/modalidade, prêmios pendentes e unidades entregues. Calendário de empréstimos com lista alternativa, acessível em celular. Histórico por item e saldo por local. Filtros persistem sem expor dados pessoais na URL. Se faltar dado, mostrar Não disponível, e não zero.
+Relatório gerencial agregado por padrão, sem nome/e-mail. Exportação identificável exige capacidade específica, finalidade e auditoria. Definir tratamento de células pequenas e dados que permitam reidentificar menores ou grupos muito reduzidos. Não compartilhar dashboard interno publicamente por conveniência.
+
+GOOGLE SHEETS
+Antes de conectar, localizar fontes existentes com autorização e metadados atuais. Ler estrutura/dados relevantes; não inventar ID/aba ou substituir planilha que não foi identificada. Conectores disponíveis ao autor não significam que o site publicado herdará suas credenciais. O job precisa de identidade de serviço/conexão delegada suportada, com acesso mínimo, revogação e propriedade institucional. Não exigir que cada visitante conecte Drive para jogar.
+MVP: exportação manual CSV/XLSX; depois atualização unidirecional do banco para abas de consulta. Exemplos de abas: LEIA_ME, CAMPANHAS, PARTICIPACOES_AGREGADAS, PREMIACOES, ESTOQUE, MOVIMENTOS, EMPRESTIMOS e SINCRONIZACAO, adaptados à necessidade e aos acessos. Não exportar tokens, mensagens, anexos ou e-mails de participantes para pasta aberta. Planilhas com dados restritos são separadas por público; ocultar aba não é controle de acesso.
+Cada execução registra origem, revisão/checkpoint, horário, resultado, contagens e erro sem segredos. Reexecução idempotente por IDs estáveis não duplica linhas. Mudança de planilha/aba ocorre por configuração protegida e teste; regras de domínio não mudam junto. Mostrar atraso de sincronização. Uma exportação antiga não pode reverter o saldo oficial.
+Se a equipe precisar alimentar pela planilha: aba de entrada controlada ou arquivo importável, validação de campos/IDs/unidades, prévia de alterações, conflitos/duplicidades, confirmação por perfil autorizado, lote idempotente e histórico. Apagar célula nunca apaga entrega/termo/reserva automaticamente. Evitar sincronização bidirecional irrestrita. Proteger CSV contra fórmulas injetadas a partir de campos livres.
+
+OPERAÇÃO
+Guia simples para criar evento, abrir atendimento, lançar físico, confirmar brinde, contar estoque, reservar bem, anexar termo, registrar retorno e exportar relatório. Exemplos fictícios claramente identificados; não cadastrar o evento de 19/10 com números do exemplo falado por Yan. Criar dados de demonstração isolados. Treinamento curto no celular com tarefas e estados de erro.
+Contas e recursos transferíveis à UFG; inventário de serviços, responsáveis, custos atuais, contratos, backups, restauro e contatos institucionais confirmados. Distinguir dono do código, responsável pelos dados e operadores. Revisão periódica de acessos e revogação no fim da bolsa; responsáveis suplentes. Tabela de retenção por finalidade e resposta a incidentes/direitos validada pela instituição; não inventar prazo legal. Não implementar cobranças ou rateios de alimentação nessa fase.
+
+ACEITE
+Relatório concilia cenário com uma participação, duas tentativas autorizadas e entrega de três buttons, sem contar três pessoas. Idempotência em exportação/importação e erro de rede. Acesso cruzado a projetos e exportações negado na API. Dados pessoais ausentes de relatório padrão e logs. Reserva/estoque são do banco, mesmo se Sheets ficar indisponível. Limpeza/anonimização segue política aprovada sem apagar indevidamente obrigação de guarda. Demonstrar recuperação de backup em ambiente isolado; listar o que foi realmente testado. Encerrar com PR revisável, manual, custos e pendências, sem anunciar integração que ainda dependa de credencial.

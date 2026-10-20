@@ -1,0 +1,46 @@
+FASE 03 CAMPANHAS E PARTICIPAÇÃO OFICIAL
+
+Use 00_PROMPT_MESTRE.txt, fase 02 e os contratos de estoque da fase 04. Repo: https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg. O jogo livre dos endereços atuais continua ilimitado; o modo oficial é outro fluxo, inicialmente em preview. Não alterar a animação aprovada para resolver autorização.
+
+OBJETIVO
+Permitir uma participação por identidade operacional e campanha, compartilhada entre roleta digital, dado digital e dado físico assistido, com resultado recuperável e relatório confiável. Não prometer identidade civil única por login.
+
+CAMPANHA
+Cadastrar projeto/evento, nome, local, início/fim, fuso America/Sao_Paulo, modalidades, elegibilidade, política de tentativa, regra de entrega, cotas/ofertas, aviso de privacidade e versão. Permitir rascunho, validação, ativa, pausada, encerrada. Antes de ativar, validar regras e ofertas suficientes. Alterações relevantes geram versão com vigência e justificativa, nunca modificam retroativamente sorteios.
+As seis faces originais são três Brinde, uma Tente novamente, uma Não foi dessa vez e uma Super Brinde. No padrão, cada face tem 1/6; se houver pesos por categoria, as chances reais devem ser explícitas e reproduzíveis pela revisão das regras. Preferências de som/tempo são locais; chances e direitos oficiais vêm do servidor.
+
+DECISÕES PENDENTES QUE NÃO PODEM SER INVENTADAS
+Yan pediu jogar uma vez, mas a face Tente novamente sugere repetição. Separar participação e tentativa no modelo. Exigir configuração deliberada: uma tentativa total ou participação com repetição; máximo; modalidades; o que acontece no limite. Não ativar campanha com regra ambígua. Não transformar a face em perda silenciosamente. Super Super Brinde, aposta e segunda tentativa para dobrar prêmio ficam desativados. Escopo proposto para unicidade é por campanha/evento, não global para sempre; confirmar antes do piloto real.
+
+ENTRADA SIMPLES
+Página do evento: identificação mínima, regra curta, ciência do aviso e escolha de modalidade. Google como opção rápida e código/link por e-mail como alternativa quando hospedagem/provedor suportarem. Participação assistida para quem não pode usar essas contas. Não pedir CPF, data completa de nascimento, avatar ou redes sociais por padrão. Crianças/adolescentes exigem fluxo institucional apropriado e linguagem clara, sem presumir que OAuth confirma idade. Divulgações posteriores e imagem ficam em escolhas separadas, quando aplicáveis.
+Um tíquete assistido tem ID imprevisível, evento, emissão/operador e estado; é controle por tíquete. Evitar múltiplos tíquetes para o mesmo atendimento com procedimento presencial, sem afirmar prevenção perfeita de duplicidades. Em dispositivo da equipe, não deixar a sessão do participante anterior aberta.
+
+TRANSAÇÃO DIGITAL
+Na solicitação de jogar, validar sessão/tíquete, campanha e versão, elegibilidade, modalidade, cotas e limite. Em operação atômica, disputar direito único (campanha, identidade), criar tentativa, selecionar resultado com RNG seguro no servidor, reservar oferta/cota e gravar tudo com chave idempotente. Definir restrições de unicidade e locks adequados. Requisições de duas abas ou aparelhos não podem gerar dois direitos. Não confiar em disabled, cookies de navegador ou localStorage como garantia.
+O cliente recebe ID e resultado persistido e executa a animação até a face autorizada. Em rede lenta mostrar estado claro; se houver resposta perdida, consultar/repetir a mesma operação com a mesma chave e recuperar o resultado. Recarga, troca de aba ou conclusão da animação não cria sorteio. Somente servidor concede repetição se a política permitir. A versão livre continua sorteando no navegador, sem direitos oficiais.
+Não atribuir chance com base em estoque oculto. Se faltar cobertura da categoria, pausar novas participações em vez de rerrolar ou mudar pesos. Distinguir resultado autorizado e direito de entrega; emissão de prêmio exige contrato da fase 04. Até ele existir, pilotar apenas com ofertas fictícias e sem distribuição real.
+
+ATENDIMENTO FÍSICO
+Equipe seleciona evento, identifica conta/tíquete, inicia atendimento e reserva o direito. Antes do lançamento real, reservar também cobertura para cada categoria premiável possível da sessão, ou mecanismo equivalente que garanta capacidade sob concorrência. Só autorizar jogar após confirmação do servidor. A pessoa joga o dado físico ou roleta física; operador informa face observada e confirma resultado uma vez. Converter a cobertura escolhida em direito e liberar excedentes. Uma nova tentativa autorizada exige nova cobertura; sem ela, não autorizar o próximo lançamento. Registrar origem manual, operador e horário. Não produzir resultado digital fingindo ser o resultado do dado real. Se atendimento ficar incompleto, abrir tarefa de resolução; não liberar automaticamente direito/cobertura por timeout após possível jogo. Correção exige capacidade especial, justificativa e histórico preservado.
+Ao terminar: mostrar resultado, orientação de retirada e código/QR opaco. QR de resgate não expõe e-mail ou nome. Alternativa digitada para câmera indisponível. Próximo atendimento limpa dados pessoais da tela. Cancelamento ou estorno não dá outra chance sem regra e autorização explícita.
+
+INSTAGRAM
+A exigência de seguir é demanda pendente, coberta na fase 06. Não implementar falsa confirmação por clique. Enquanto não validada, apresentar convite opcional e registrar somente os sinais realmente observados, com inclusão assistida. Modo obrigatório não pode ser ativado por um toggle sem comprovar pré-requisitos e regra institucional.
+
+CONTINGÊNCIA
+Sem conexão, não emitir sorteio oficial ou confirmar resgate definitivo. Pode manter interface/rascunho; registrar atendimento provisional offline por procedimento aprovado, com tíquete e reconciliação posterior e destaque de garantia limitada. Exibir última sincronização e pendências. Não armazenar planilha pessoal com dados de todos os participantes no dispositivo.
+
+ACEITE
+1. Duas chamadas simultâneas da mesma identidade geram uma participação, inclusive roleta versus dado.
+2. Recarga durante giro e timeout após confirmação recuperam o mesmo resultado.
+3. Cliente adulterado não envia face, pesos ou papel válido por conta própria.
+4. Modo físico registra observação real e permite correção auditada, sem apagar original.
+5. Política de Tente novamente tem testes de limite e não permite repetição manual ilimitada.
+6. Falta de cota bloqueia nova participação sem consumir direito parcial ou trocar resultado.
+7. Campanha pausada/encerrada impede novas tentativas; direitos anteriores seguem regra de retirada.
+8. Demonstrações/testes não entram em relatório oficial.
+9. Fluxo mobile, teclado, áudio opcional, preferências de movimento e retorno de erro são verificados.
+10. A roleta livre passa por regressão e permanece pública.
+11. Duas sessões físicas disputando a última oferta de Super Brinde não recebem ambas autorização de lançamento; ausência de face registrada não permite sobreprometer estoque.
+Entregar migrações, estados, contratos, testes de concorrência e roteiro de piloto; atualizar ESTADO_ATUAL com dependências e limites reais.

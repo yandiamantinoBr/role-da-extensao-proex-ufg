@@ -1,0 +1,83 @@
+CONTINUIDADE DO ROLÊ DA EXTENSÃO E DO PORTAL DE OPERAÇÕES DA PROEX UFG
+Versão de planejamento de 20 de outubro de 2026
+
+COMO EXECUTAR
+Este é o contexto mestre. Leia também docs/proex-evolucao no repositório e execute uma fase por vez, usando o prompt numerado correspondente. Não tente entregar todos os módulos numa única alteração. Conclua cada fase com código revisável, testes relevantes, documentação e estado real das integrações. Se receber somente este prompt, comece pela fase 01 de diagnóstico e preservação e prossiga ao primeiro incremento independente cujos pré-requisitos estejam resolvidos. O objetivo é implementação verificável, sem inventar credenciais, decisões institucionais ou resultados de testes.
+
+MISSÃO E CONTEXTO
+O Rolê da Extensão aproxima a UFG da sociedade em eventos, escolas e espaços públicos. Usa roleta, super dado físico/digital, identidade própria, fantasia e distribuição de materiais. Yan solicitou evolução gradual para participação oficial, administração delegável, estoque, empréstimos e relatórios. A equipe tem servidores, bolsistas e estagiários; precisa operar sobretudo por celular, sem conhecimento de programação. A organização maior é a PROEX; Rolê da Extensão é um projeto, e outros projetos devem poder usar o cadastro e os recursos compartilhados com permissões próprias.
+
+REFERÊNCIAS CONFIRMADAS EM 20/10/2026
+Repositório público: https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg
+Branch padrão: main. Commit observado: f905f0d78371dc4a8784cce27bdbc7ef6fa88103.
+Sites público: https://role-da-extensao-ufg.yandiamantinobr.chatgpt.site/
+GitHub Pages: https://yandiamantinobr.github.io/role-da-extensao-proex-ufg/ (endereço documentado no README; revalidar publicação).
+Sites project_id existente: appgprj_6ac62af904348191af733a95a71534db. A consulta nativa confirmou acesso público e versão 7. Não recriar ou alterar esse ID.
+O código usa React/TypeScript, Vinext e Vite; package.json contém dois builds: Worker Sites e exportação estática Pages. Leia os arquivos atuais antes de alterar dependências.
+app/page.tsx, app/globals.css, lib/roulette.ts e lib/game-audio.ts concentram a experiência. README explica que o Pages reaproveita o mesmo jogo. .openai/hosting.json tinha d1 e r2 nulos: isso não constitui banco de participantes implementado.
+docs/synchronization.md descreve sincronização Windows/GitHub/Sites. O README menciona uma tarefa horária, mas a consulta Sites encontrou a automação vinculada desabilitada; frequência e funcionamento não foram validados. Não afirmar sincronização automática ativa sem teste.
+Não foram encontradas releases na consulta da API; licença global do projeto não foi identificada. Licenças de dependências/vendor não resolvem a licença do código próprio, das marcas ou das fontes.
+Relatório de atividades 2025 fornecido por Yan: 18 páginas, elaborado em 2026, com nome histórico PROEC; descreve execução, materiais e avaliação, sem série quantitativa suficiente para preencher indicadores retroativos. Não importar as fotografias, nomes de participantes ou o PDF para o repositório público.
+
+PRESERVAR O QUE FUNCIONA
+A versão livre continua existindo com acesso público e giros ilimitados. Não substituir a página atual por login obrigatório. Manter identidade PROEX/UFG, responsividade, teclado, tela cheia, configuração de tempos, volume, confetes e áudio sintetizado sincronizado. Preservar aleatoriedade segura e correspondência visual do resultado. Não reescrever a animação para criar controle de participação.
+Configuração observada: roleta 12 segundos, ajustável 3–30; dado 6 segundos, ajustável 2–20; três faces de Brinde e uma de cada: Tente novamente, Não foi dessa vez, Super Brinde. Chances padrão 50%, 1/6, 1/6, 1/6. Preferências locais não são regras oficiais de campanha.
+Paleta extraída do código: roxo #3B1753, superfície #54216C, laranja #FFAA3D, turquesa #77DCE5, violeta #8E35BD, rosa #ED55BE e branco #FFFFFF. São tokens da implementação atual; não declarar que constituem manual institucional aprovado. Reutilizar assets originais de public/brand, sem redesenhar logotipos.
+
+ARQUITETURA RECOMENDADA
+Um portal de operações da PROEX, com navegação por projeto e módulos. Manter uma fonte transacional oficial para campanhas, participações, prêmios, movimentos, reservas e auditoria. Planilhas funcionam inicialmente como consulta/exportação ou importação validada. Não fazer dupla gravação irrestrita em banco e Sheets.
+Preferência técnica inicial: PostgreSQL gerenciado, autenticação Google e código/link por e-mail, armazenamento privado e políticas por organização/projeto. Supabase é candidato pragmático para reunir esses serviços, em projeto exclusivo da PROEX, nunca no banco do Kino Campus. Antes de provisionar, verificar recursos institucionais existentes, região, custos atuais, guarda, backups e gestão das contas. Registrar decisão em ADR e estimativa real; não assumir plano gratuito suficiente.
+O Sites atual preserva sua autenticação nativa. A skill Sites consultada orienta a não substituir sua pilha de autenticação. Por isso, a proposta inicial para Google/e-mail é aplicação oficial separada em hospedagem compatível, reutilizando jogo/estilos, com link desde a versão livre quando apropriado. Não prometer OAuth arbitrário dentro do Sites. Validar a plataforma antes de decidir o deploy. GitHub Pages hospeda o jogo livre; não é servidor de autenticação nem banco.
+Manter um repositório inicialmente, com implantação e configuração separadas para legado e portal. Só extrair pacotes compartilhados se necessário. Evitar microserviços e múltiplos repositórios sem motivo operacional. Não unificar cookies/sessões por e-mail entre domínios; usar o provedor e protocolos suportados.
+
+PERMISSÕES
+Separar permissão de usar o painel, editar configurações operacionais e publicar código. Convite no painel não concede GitHub nem credenciais.
+Papéis sugeridos: responsável institucional; gestor de projeto; operador de evento; responsável por estoque; responsável por empréstimos; leitor de relatórios. Cada vínculo tem organização, projeto/módulo/local quando aplicável, ações permitidas e validade. Bolsista do Rolê só opera o Rolê e os eventos autorizados.
+Aplicar autorização em toda API, consulta, mutação, exportação e download. Menus ocultos são apenas apresentação. Convite com e-mail verificado, token imprevisível, prazo, uso único e escopo fixado no servidor; revogação deve afetar sessões abertas. Não permitir remover o último responsável. Administradores usam contas individuais e MFA quando suportado; nada de senha compartilhada ou senha embutida no frontend.
+
+PARTICIPAÇÃO OFICIAL
+Criar campanha/evento com nome, projeto, local, datas e fuso America/Sao_Paulo, limites, modalidades, política de repetição, catálogo/cotas, aviso de privacidade e versão das regras. Proposta: uma participação por conta ou tíquete e campanha, válida para roleta OU dado digital OU dado físico. Isso não garante uma pessoa física única: múltiplas contas e tíquetes precisam de controle presencial proporcional, sem CPF ou fingerprint invasivo por padrão.
+Identificação preferida: Google; alternativa e-mail com código/link; atendimento assistido para pessoas sem conta ou celular adequado. WhatsApp não é login universal gratuito; só estudar OTP por canal oficial, custos e consentimentos numa fase específica. Não exigir conta Instagram para quem não a possui, nem usar login como prova de idade.
+No digital, servidor autentica, verifica campanha/limite, grava resultado e consome direito atomicamente antes da animação. RNG seguro no servidor e configuração versionada. Retentativas com mesma chave retornam o mesmo registro. Recarregar, fechar a aba ou alternar modalidade não cria outra chance. O navegador apenas representa o resultado autorizado. Prévia de demonstração não gera estoque ou métricas oficiais.
+No físico, operador inicia atendimento, bloqueia o direito, registra a face observada e confirma. Antes de autorizar o lançamento, reservar cobertura para cada categoria premiável possível daquela sessão, ou capacidade equivalente comprovadamente garantida; duas sessões não podem prometer o último Super Brinde. Ao confirmar a face, converter a cobertura escolhida em direito e liberar as demais. Nova tentativa autorizada exige nova cobertura. Sessão interrompida não libera automaticamente garantias depois de possível lançamento sem reconciliação. Fonte do resultado deve ser physical_manual, separada do sorteio digital. Correções justificadas preservam histórico; cancelamento não devolve chance automaticamente. Contingência sem internet é registro provisório com tíquete/reconciliação, sem alegação de deduplicação perfeita.
+Regra pendente: Tente novamente conflita com uma única tentativa. Modelo deve separar participação de tentativa e exigir decisão antes de ativar campanha: repetição permitida? limite? modalidade? resultado ao esgotar? probabilidades? Não inventar a política. Super Super Brinde e arriscar prêmio permanecem desativados até regulamento explícito. Uma campanha não pode alterar chances/regras silenciosamente depois de iniciada.
+
+INSTAGRAM
+Demanda de Yan: condicionar a participação a seguir a PROEX e medir resultado. Preservar a demanda como pendência explícita, não declarar que foi atendida por botão ou checkbox. A documentação Meta consultada indica verificação de seguimento em contexto específico de mensagens. Isso não é consulta universal por @usuario, nem login pessoal genérico. A viabilidade e as políticas precisam ser comprovadas no aplicativo/conta institucional real antes da ativação.
+Implementar interface de verificação com estados separado: não verificado, declarado, conferido pela equipe, confirmado pelo provedor, indisponível. Ausência de dado não vira false. O MVP recomendado usa convite voluntário para seguir, com alternativa assistida; condição obrigatória só se a avaliação específica demonstrar compatibilidade técnica e institucional. Confirmar perfil e propriedade antes de configurar: @proex.ufg não foi validado neste levantamento.
+Não usar scraping, senha de Instagram, cookie da conta, API não oficial ou compra de seguidores. Não solicitar permissões além das necessárias. Vincular sessão e eventual conversa por desafio de uso único. Sem guardar conteúdo de mensagens se identificador/estado/horário bastarem. Não chamar clique, declaração ou saldo agregado de novos seguidores causados pelo Rolê.
+
+PRÊMIOS E ESTOQUE
+Categorias de resultado não são itens físicos. Oferta associa categoria a item ou conjunto e quantidade; entrega consome os SKUs reais. Exemplos informados por Yan, sem quantidades confirmadas: button laranja/roxo/azul 2,5 cm, kit planner com composição pendente de 7 ou 8 folhas, caneta preta PROEX, sacochila branca, squeeze branco, agenda e conjunto de três buttons. Não fixar essas regras no código nem inventar saldos.
+Prêmio emitido, reserva e entrega são estados diferentes. Garantir cota/oferta suficiente antes de aceitar novos sorteios; se uma categoria não puder ser atendida, pausar a campanha até reposição/configuração válida. Não refazer sorteio por falta de estoque. Resgate por código imprevisível, de uso único, com operação transacional. Historial de movimentos, contagem física e ajuste justificado, sem edição direta do saldo.
+
+OUTROS MÓDULOS
+Materiais de distribuição institucional (pastas, crachás, blocos, calendários) compartilham catálogo e movimentos, com finalidade/destinatário organizacional. Materiais de consumo registram entradas e uso. Bens duráveis (banner, dado físico, fantasia, projetor, caixa de som, microfone e outros a confirmar) têm identidade, condição, localização e disponibilidade. Um bem compartilhado não vira dois estoques por estar ligado a dois projetos.
+Empréstimos: solicitação, análise, reserva, retirada, devolução e ocorrências; intervalos e quantidades garantidos pelo banco contra concorrência; preparação/manutenção e atraso bloqueiam disponibilidade. Termos/fotos ficam privados, com permissões e guarda próprias. Preservar SEI/SIGAA e fluxos oficiais existentes, sem presumir que o novo painel substitui autorização administrativa.
+Contribuições financeiras para alimentação são demanda futura separada. Nesta fase pode haver cadastro de consumo, sem PIX, cobrança, saldo de pessoas ou contabilidade paralela.
+
+DADOS E PRIVACIDADE
+Coletar o mínimo por finalidade: identidade interna/provedor, e-mail quando necessário ao login, campanha, modalidade, resultado, estado de entrega e horários. Nome de exibição opcional. Não copiar automaticamente avatar ou perfil completo. Aviso simples e completo; base legal, controlador, responsáveis, canal de direitos e retenção devem ser definidos institucionalmente. Ciência do aviso, regras do jogo, comunicação futura e uso de imagem são assuntos diferentes.
+Não usar checkbox genérico como solução universal LGPD. Considerar público infantil/adolescente e melhor interesse, inclusive ECA Digital vigente em 2026; nenhuma exigência improvisada de RG/selfie. Prever fluxo assistido inclusivo. Usar dados fictícios no desenvolvimento, acesso mínimo e relatórios agregados. Não publicar dados pessoais no GitHub, Pages, termos abertos, logs ou planilhas públicas. Backups privados e restauração testada. Código público não implica dados públicos.
+
+RELATÓRIOS
+Separar acessos/sessões, contas/tíquetes inscritos, participações únicas por identidade na campanha, tentativas, modalidade e origem do resultado. Medir prêmios emitidos/resgatados e unidades por SKU. Uma entrega de três buttons = uma premiação e três unidades. Data pelo fuso da campanha; guardar timestamps de forma consistente. Separar demonstrações, testes, cancelamentos e contingência dos totais oficiais. Nenhum valor histórico ilustrativo vira dado real.
+Instagram: cliques, declarações e verificações em colunas distintas. Crescimento total de seguidores não prova atribuição causal. Exportação gerencial agregada por padrão; exportação identificável excepcional, autorizada e auditada.
+
+DESIGN E OPERAÇÃO
+Priorizar celular com uma mão: seletor de evento, ação principal clara, busca/QR com alternativa digitada, estados de conexão, confirmação de entrega e botão próximo atendimento. Limpar dados do participante anterior em aparelhos compartilhados. Texto simples, alto contraste, foco, leitor de tela, zoom e alvos de toque confortáveis. Preservar som opcional e controle de movimento, com apresentação acessível sem alterar o resultado. Carregar o painel e bibliotecas pesadas apenas nas rotas necessárias; medir regressão com baseline do mesmo aparelho/rede.
+
+ETAPAS E ENTREGA
+01 Diagnóstico, preservação, arquitetura e ambiente de teste.
+02 Administração, autenticação e permissões.
+03 Campanhas, participação oficial e atendimento assistido.
+04 Estoque, ofertas, resgate e distribuição.
+05 Empréstimos, bens e consumo interno.
+06 Integração Instagram em experimento isolado.
+07 Relatórios, Sheets e operação institucional.
+Fases 03 e 04 precisam de contrato de cotas/resgate comum; pilotar sem dados reais/prêmios enquanto as regras críticas estiverem pendentes. Fase 06 não bloqueia as demais.
+Usar branches de funcionalidade/PRs pequenos a partir da base adequada; documentação central e ADRs evitam divergência entre chats. Não criar branches vazias só para aparentar andamento. Criar release/tag do legado somente após conferir a revisão testada e permissões de publicação. Uma release registra código, não congela URL de produção; preservar também implantação e pipeline do modo livre.
+
+ACEITE GERAL
+Exigir testes reais de concorrência e autorização: duas requisições geram uma participação; troca de modalidade não burla limite; recarga retorna mesmo resultado; resgate repetido não duplica baixa; último item não vai para duas pessoas; bolsista não lê outro projeto por URL/API; convite expirado/revogado não concede acesso; reservas sobrepostas falham; atraso não libera bem; erro de rede recupera operação; totais conciliam. Validar em celular e desktop o fluxo inteiro. Testes executados, limitações e integrações simuladas devem estar claramente separados.
+Ao encerrar cada fase, informar comportamento entregue, arquivos/commit/PR, validação realizada, pendências concretas e próximo prompt. Não afirmar que testes auditivos ou visuais ocorreram se não ocorreram. Não solicitar segredos em texto de chat. Não criar recursos pagos ou tratar dados reais sem verificar configurações institucionais necessárias; continuar tudo que for independente dessas pendências.
