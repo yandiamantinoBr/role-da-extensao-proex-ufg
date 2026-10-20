@@ -26,6 +26,21 @@ npm run build:pages
 
 O GitHub Pages usa uma entrada estática em github-pages/, importando **o mesmo** app/page.tsx, estilos e lógica usados no Sites. Não existe uma segunda implementação do jogo. O workflow .github/workflows/pages.yml verifica TypeScript, gera dist-pages e publica automaticamente cada push em main.
 
+## Evolução administrativa da PROEX
+
+A evolução está documentada em [docs/proex-evolucao](docs/proex-evolucao/README.md). O primeiro incremento adiciona um núcleo independente de permissões por organização, projeto, módulo, evento e local, com contratos de convites. Esse código não é importado pelo jogo livre e ainda não está conectado a login, banco ou rotas de administração.
+
+Para verificar a branch com Node.js 24 e as dependências do lockfile:
+
+```sh
+npm run check:legacy
+npm run check:types
+npm test
+npm run build:pages
+```
+
+`check:legacy` compara 12 arquivos centrais e de identidade com a referência registrada; mudanças intencionais no jogo exigem revisão e atualização explícita desse baseline. O workflow de verificação de PRs executa esses checks sem publicar. O estado, as limitações e o próximo passo estão em [ESTADO_ATUAL.md](docs/proex-evolucao/ESTADO_ATUAL.md).
+
 Para editar/publicar pelo ChatGPT Sites, preserve .openai/hosting.json e siga o fluxo do plugin Sites. npm run build gera o Worker do Sites; npm run build:pages gera os arquivos estáticos do GitHub Pages.
 
 ## Sincronização
