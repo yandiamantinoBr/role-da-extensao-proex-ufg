@@ -3,6 +3,7 @@ import { useRef, useState, type FormEvent } from 'react';
 import { ArrowUpRight, Check, Copy, KeyRound, LoaderCircle, Mail, Search, ShieldCheck, UserPlus, Users } from 'lucide-react';
 import TeamPersonDetail from './team-person-detail';
 import styles from './team-person.module.css';
+import { useFormDraft, DraftNotice } from './use-form-draft';
 // Server-projected directory and scoped memberships.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = Record<string, any>;
@@ -141,7 +142,8 @@ function DirectoryUser({ user, props, onOpen }: {
 export default function TeamPanel(props: Props) {
     const [selectedUserId,setSelectedUserId]=useState<string|null>(null);
     const [query, setQuery] = useState(''), [inviteUrl, setInviteUrl] = useState(''), [saving, setSaving] = useState(false), [error, setError] = useState('');
-    const key = useRef<string | null>(null);
+    const key = useRef<string | null>(null), inviteRef = useRef<HTMLFormElement>(null);
+    const draft = useFormDraft(inviteRef, 'team:invite');
     const allowed = props.projects.filter(p => props.globalAdmin || props.canProject(p.id, 'access.invite'));
     const directory: Row[] = props.users.length ? props.users : props.members.map(m => ({ userId:m.user_id??m.userId,email: m.email, members: [m] }));
     const filtered = directory.filter(u => `${u.displayName ?? ''} ${u.email ?? ''}`.toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR')) && (!props.selectedProjectId || (u.members ?? []).some((m: Row) => !projectIdOf(m) || projectIdOf(m) === props.selectedProjectId)));
@@ -150,6 +152,7 @@ export default function TeamPanel(props: Props) {
         const result = await props.mutate('invite.create', { email: form.get('email'), role: form.get('role'), projectId: form.get('projectId') || null, operationKey: key.current });
         setInviteUrl(result.inviteUrl || '');
         key.current = null;
+        draft.clear();
         element.reset();
     }
     catch (e) {
@@ -184,8 +187,8 @@ export default function TeamPanel(props: Props) {
         <p>O link fica vinculado ao e-mail e ao escopo escolhido.</p>
         </div>
         </div>
-        <form className="p-form" onSubmit={invite} onChange={() => { if (!saving)
-            key.current = null; }}>
+        <form ref={inviteRef} className="p-form" onSubmit={invite} onChange={() => { if (!saving)
+            key.current = null; }}><DraftNotice draft={draft}/>
         <fieldset disabled={saving}>
         <div className="p-form-grid">
         <label className="p-field">

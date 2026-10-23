@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import styles from './project-panel.module.css';
 import { ArrowLeft, CalendarDays, Check, Clock3, ExternalLink, FileText, FolderKanban, History, Link2, LoaderCircle, Package, Pencil, Plus, RefreshCw, ShieldCheck, X } from 'lucide-react';
 import type { Row } from '@/lib/database';
+import { useFormDraft, DraftNotice } from './use-form-draft';
 type Props={projectId:string;projects:Row[];mutate:(action:string,payload:Row)=>Promise<Row>;onBack:()=>void;onEdit:(project:Row)=>void;onSelect?:(id:string)=>void};
 type Editor={kind:'link'|'call'|'schedule';row:Row|null};
 const labels={active:'Ativo',archived:'Arquivado',past:'Passado',catalog:'Catálogo',draft:'Rascunho',open:'Aberto',closed:'Encerrado',planned:'Planejado',completed:'Realizado',cancelled:'Cancelado'};
@@ -11,14 +12,15 @@ function pretty(value:unknown){if(!value)return 'Não informado';const date=new 
 function localDate(value:unknown){if(!value)return '';const date=new Date(String(value));if(!Number.isFinite(date.getTime()))return '';const shifted=new Date(date.getTime()-date.getTimezoneOffset()*60000);return shifted.toISOString().slice(0,16);}
 function safeUrl(value:unknown){if(typeof value!=='string')return '';try{const url=new URL(value);return url.protocol==='https:'&&!url.username&&!url.password?url.href:'';}catch{return '';}}
 function MetadataForm({editor,projectId,projects,mutate,done}:{editor:Editor;projectId:string;projects:Row[];mutate:Props['mutate'];done:()=>void}){
- const {kind,row}=editor,[saving,setSaving]=useState(false),[error,setError]=useState(''),key=useRef<string|null>(null);
+ const {kind,row}=editor,[saving,setSaving]=useState(false),[error,setError]=useState(''),key=useRef<string|null>(null),formRef=useRef<HTMLFormElement>(null);
+ const draft=useFormDraft(formRef,`project-${kind}:${projectId}:${row?.id??'new'}:${row?.version??0}`);
  async function submit(event:FormEvent<HTMLFormElement>){event.preventDefault();if(saving)return;const form=new FormData(event.currentTarget);setSaving(true);setError('');key.current??=crypto.randomUUID();
  try{const payload:Row={projectId,...(row?{id:row.id,expectedVersion:row.version}:{}),operationKey:key.current};const fields=kind==='link'?['label','url','kind']:kind==='call'?['title','referenceCode','description','status','officialUrl']:['title','status','note','url'];for(const name of fields)payload[name]=form.get(name)||'';
  for(const name of kind==='call'?['opensAt','closesAt']:kind==='schedule'?['startsAt','endsAt']:[])payload[name]=form.get(name)?new Date(String(form.get(name))).toISOString():null;
  if(kind==='call')payload.linkedProjectIds=form.getAll('linkedProjectIds');
- await mutate(`${kind==='call'?'call':`project.${kind}`}.${row?'update':'create'}`,payload);key.current=null;done();}catch(error){setError(error instanceof Error?error.message:'Não foi possível salvar.');}finally{setSaving(false);}}
+ await mutate(`${kind==='call'?'call':`project.${kind}`}.${row?'update':'create'}`,payload);key.current=null;draft.clear();done();}catch(error){setError(error instanceof Error?error.message:'Não foi possível salvar.');}finally{setSaving(false);}}
  const input=(name:string,title:string,extra:Row={})=><label className="p-field"><span>{title}</span><input name={name} defaultValue={row?.[name.replace(/[A-Z]/g,letter=>`_${letter.toLowerCase()}`)]??''} {...extra}/></label>;
- return <form className="p-form" onSubmit={submit} onChange={()=>{if(!saving)key.current=null;}}><fieldset disabled={saving}><div className="p-form-grid">
+ return <form ref={formRef} className="p-form" onSubmit={submit} onChange={()=>{if(!saving)key.current=null;}}><DraftNotice draft={draft}/><fieldset disabled={saving}><div className="p-form-grid">
  {kind==='link'?<>{input('label','Nome do link',{required:true,maxLength:150})}{input('url','Endereço HTTPS',{required:true,type:'url',maxLength:500})}<label className="p-field"><span>Categoria</span><select name="kind" defaultValue={row?.kind??'official'}><option value="official">Página oficial</option><option value="notice">Edital / chamada</option><option value="report">Relatório</option><option value="gallery">Galeria</option><option value="other">Outro recurso</option></select></label></>:<>{input('title',kind==='call'?'Título do edital':'Título do marco / atividade',{required:true,maxLength:200})}{kind==='call'&&input('referenceCode','Número ou referência',{maxLength:80})}<label className="p-field"><span>Situação</span><select name="status" defaultValue={row?.status??(kind==='call'?'draft':'planned')}>{(kind==='call'?['draft','open','closed','archived']:['planned','completed','cancelled']).map(value=><option key={value} value={value}>{label(value)}</option>)}</select></label>{input(kind==='call'?'officialUrl':'url','Fonte oficial / endereço HTTPS',{type:'url',maxLength:500})}
  {(kind==='call'?[['opensAt','Abertura'],['closesAt','Encerramento']]:[['startsAt','Início'],['endsAt','Fim']]).map(([name,title])=><label key={name} className="p-field"><span>{title}{kind==='schedule'?' *':''}</span><input name={name} type="datetime-local" required={kind==='schedule'} defaultValue={localDate(row?.[name.replace(/[A-Z]/g,letter=>`_${letter.toLowerCase()}`)])}/></label>)}
  </>}

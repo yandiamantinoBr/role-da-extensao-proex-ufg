@@ -19,6 +19,7 @@ import { DesktopSidebar, MobileNavigation } from '@/components/portal/portal-nav
 import { PORTAL_MODULES, type ModuleId } from '@/components/portal/navigation-model';
 import { useNavigationPreferences } from '@/components/portal/use-navigation-preferences';
 import { useFormDraft, DraftNotice, setDraftScope } from '@/components/portal/use-form-draft';
+import { THEMATIC_AREAS, groupUnits } from '@/lib/extension-catalog';
 import { ArrowDownToLine, ArrowRight, Boxes, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronRight, ExternalLink, FileText, Gift, LoaderCircle, LogOut, Plus, RefreshCw, Search, ShieldCheck, Truck, Users, Wifi, WifiOff, X } from 'lucide-react';
 // API projections vary by module; the server validates every mutation.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -241,6 +242,7 @@ export default function PortalClient({ initial }: {
     const accountRef = useRef<HTMLDivElement>(null);
     const [filter, setFilter] = useState('');
     const [unitFilter, setUnitFilter] = useState('');
+    const [areaFilter, setAreaFilter] = useState('');
     const [draftProject, setDraftProject] = useState('');
     const [offerProject, setOfferProject] = useState('');
     const [materialsView, setMaterialsView] = useState<'catalog' | 'prizes'>('catalog');
@@ -286,14 +288,14 @@ export default function PortalClient({ initial }: {
     }, []);
     useEffect(() => { const change = () => { setOnline(navigator.onLine); }; const timer = window.setTimeout(() => { setUpdatedAt(new Date()); setNow(Date.now()); change(); }, 0); const clock = window.setInterval(() => setNow(Date.now()), 60000); window.addEventListener('online', change); window.addEventListener('offline', change); return () => { window.clearTimeout(timer); window.clearInterval(clock); window.removeEventListener('online', change); window.removeEventListener('offline', change); }; }, []);
     useEffect(() => { const url = new URL(window.location.href); const requested = url.searchParams.get('module'); const timer = window.setTimeout(() => { if (tabs.some(t => t.id === requested))
-        setTab(requested as Tab); setFilter(url.searchParams.get('project') || ''); setUnitFilter(url.searchParams.get('unit') || ''); }, 0); return () => window.clearTimeout(timer); }, []);
+        setTab(requested as Tab); setFilter(url.searchParams.get('project') || ''); setUnitFilter(url.searchParams.get('unit') || ''); setAreaFilter(url.searchParams.get('area') || ''); }, 0); return () => window.clearTimeout(timer); }, []);
     useEffect(() => { const url = new URL(window.location.href); if (tab === 'overview')
         url.searchParams.delete('module');
     else
         url.searchParams.set('module', tab); if (filter)
         url.searchParams.set('project', filter);
     else
-        url.searchParams.delete('project'); if (unitFilter) url.searchParams.set('unit', unitFilter); else url.searchParams.delete('unit'); window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`); }, [tab, filter, unitFilter]);
+        url.searchParams.delete('project'); if (unitFilter) url.searchParams.set('unit', unitFilter); else url.searchParams.delete('unit'); if (areaFilter) url.searchParams.set('area', areaFilter); else url.searchParams.delete('area'); window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`); }, [tab, filter, unitFilter, areaFilter]);
     useEffect(() => { const update = () => { if (navigator.onLine && !document.hidden)
         void refresh(); }; const timer = window.setInterval(update, 30000); window.addEventListener('online', update); document.addEventListener('visibilitychange', update); return () => { window.clearInterval(timer); window.removeEventListener('online', update); document.removeEventListener('visibilitychange', update); }; }, [refresh]);
     useEffect(() => { if (!accountOpen)
@@ -317,11 +319,21 @@ export default function PortalClient({ initial }: {
     const accessibleUnitIds = new Set(projects.map(unitOf).filter(Boolean));
     const visibleUnits = organizationalUnits.filter(unit => canGlobal('organization.manage') || accessibleUnitIds.has(string(unit.id)));
     const hasUnassignedProjects = projects.some(project => !unitOf(project));
-    const scopedProjects = unitFilter ? projects.filter(project => unitFilter === '__unassigned__' ? !unitOf(project) : unitOf(project) === unitFilter) : projects;
+    const areaOf = (project: Row) => string(get(project, 'thematic_area', 'thematicArea'));
+    const inUnit = (project: Row, unit = unitFilter) => !unit || (unit === '__unassigned__' ? !unitOf(project) : unitOf(project) === unit);
+    const inArea = (project: Row, area = areaFilter) => !area || (area === '__none__' ? !areaOf(project) : areaOf(project) === area);
+    // Filtros relacionados: cada lista mostra a contagem considerando os outros filtros já escolhidos.
+    const scopedProjects = projects.filter(project => inUnit(project) && inArea(project));
+    const unitCounts = new Map<string, number>(), areaCounts = new Map<string, number>();
+    for (const project of projects) {
+        if (inArea(project)) unitCounts.set(unitOf(project) || '__unassigned__', (unitCounts.get(unitOf(project) || '__unassigned__') ?? 0) + 1);
+        if (inUnit(project)) areaCounts.set(areaOf(project) || '__none__', (areaCounts.get(areaOf(project) || '__none__') ?? 0) + 1);
+    }
+    const unitGroups = groupUnits(visibleUnits.map(unit => ({ ...unit, name: string(unit.name), group_label: string(unit.group_label) }) as Row & { name: string; group_label: string }));
     const selectedProjects = filter ? scopedProjects.filter(project => project.id === filter) : scopedProjects;
     const selectedProjectIds = new Set(selectedProjects.map(project => string(project.id)));
     const can = (...needed: string[]) => canGlobal(...needed) || selectedProjects.some(project => canProject(project.id, ...needed));
-    const byProject = (rows: Row[]) => filter || unitFilter ? rows.filter(row => selectedProjectIds.has(string(get(row, 'projectId', 'project_id')))) : rows;
+    const byProject = (rows: Row[]) => filter || unitFilter || areaFilter ? rows.filter(row => selectedProjectIds.has(string(get(row, 'projectId', 'project_id')))) : rows;
     const visibleCampaigns = byProject(campaigns), visibleItems = byProject(items), visibleLoans = byProject(loans);
     const projectName = (id: unknown) => projects.find(p => p.id === id)?.name || 'PROEX';
     const prizeProjects = selectedProjects.filter(project => Number(project.prizes_enabled ?? project.prizesEnabled) === 1 || offers.some(offer => get(offer, 'projectId', 'project_id') === project.id));
@@ -353,8 +365,10 @@ export default function PortalClient({ initial }: {
         setTab(id); setQuery(''); setAccountOpen(false); setSelectedMaterialId(null);
         window.requestAnimationFrame(() => { document.getElementById('main')?.focus({ preventScroll: true }); window.scrollTo({ top: 0, behavior: 'auto' }); });
     }
-    function selectProject(id: string) { const project = projects.find(row => row.id === id); if (id && !project) return; if (project && unitFilter && unitOf(project) !== unitFilter) setUnitFilter(unitOf(project) || '__unassigned__'); setFilter(id); setDraftProject(id); setOfferProject(''); }
+    function selectProject(id: string) { const project = projects.find(row => row.id === id); if (id && !project) return; if (project && unitFilter && unitOf(project) !== unitFilter) setUnitFilter(unitOf(project) || '__unassigned__'); if (project && areaFilter && !inArea(project)) setAreaFilter(''); setFilter(id); setDraftProject(id); setOfferProject(''); }
     function selectUnit(id: string) { setUnitFilter(id); setFilter(''); setDraftProject(''); setOfferProject(''); setQuery(''); }
+    function selectArea(key: string) { setAreaFilter(key); setFilter(''); setDraftProject(''); setOfferProject(''); }
+    function clearScope() { setAreaFilter(''); selectUnit(''); }
     async function mutate(action: string, payload: Payload): Promise<Row> {
         if (!navigator.onLine)
             throw new Error('Você está sem conexão. Reconecte antes de confirmar uma operação.');
@@ -509,21 +523,28 @@ export default function PortalClient({ initial }: {
     <p>{tab === 'overview' ? 'Seu início, seus projetos e o que precisa da sua atenção.' : tabs.find(module => module.id === tab)?.description}</p>
     </div>
     </div>
-    {['overview', 'materials', 'loans', 'events', 'reports'].includes(tab) && <section className="p-scope-filters" aria-label="Filtrar registros por unidade e projeto">
-        <Field label="Unidade">
+    {['overview', 'materials', 'loans', 'events', 'reports'].includes(tab) && <section className="p-scope-filters" aria-label="Filtrar registros por unidade, área temática e projeto">
+        <Field label="Unidade responsável">
             <select value={unitFilter} onChange={event => selectUnit(event.target.value)}>
-                <option value="">Todas as unidades disponíveis</option>
-                {visibleUnits.map(unit => <option key={unit.id} value={unit.id}>{unit.acronym ? `${unit.acronym} · ` : ''}{unit.name}{unit.status === 'archived' ? ' (arquivada)' : ''}</option>)}
-                {hasUnassignedProjects && <option value="__unassigned__">Sem unidade vinculada</option>}
+                <option value="">Todas as unidades ({projects.filter(project => inArea(project)).length})</option>
+                {unitGroups.map(group => <optgroup key={group.group} label={group.group}>{group.units.map(unit => <option key={unit.id} value={unit.id}>{unit.acronym ? `${unit.acronym} · ` : ''}{unit.name}{unit.status === 'archived' ? ' (arquivada)' : ''} ({unitCounts.get(string(unit.id)) ?? 0})</option>)}</optgroup>)}
+                {hasUnassignedProjects && <option value="__unassigned__">Sem unidade vinculada ({unitCounts.get('__unassigned__') ?? 0})</option>}
+            </select>
+        </Field>
+        <Field label="Área temática">
+            <select value={areaFilter} onChange={event => selectArea(event.target.value)}>
+                <option value="">Todas as áreas ({projects.filter(project => inUnit(project)).length})</option>
+                {THEMATIC_AREAS.map(area => <option key={area.key} value={area.key} disabled={!areaCounts.get(area.key) && areaFilter !== area.key}>{area.label} ({areaCounts.get(area.key) ?? 0})</option>)}
+                {areaCounts.get('__none__') ? <option value="__none__">Área não informada ({areaCounts.get('__none__')})</option> : null}
             </select>
         </Field>
         <Field label="Projeto">
             <select value={filter} onChange={event => selectProject(event.target.value)}>
-                <option value="">Todos os projetos disponíveis{unitFilter ? ' nesta unidade' : ''}</option>
+                <option value="">{scopedProjects.length === projects.length ? 'Todos os projetos' : `Todos os ${scopedProjects.length} projeto(s) deste recorte`}</option>
                 {scopedProjects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}
             </select>
         </Field>
-        {(filter || unitFilter) && <button type="button" className="p-button p-button-subtle p-filter-clear" onClick={() => selectUnit('')}><X size={15} />Limpar filtros</button>}
+        {(filter || unitFilter || areaFilter) && <button type="button" className="p-button p-button-subtle p-filter-clear" onClick={clearScope}><X size={15} />Limpar filtros</button>}
     </section>}
       {!online && <div className="p-notice p-notice-warning" role="status">
         <WifiOff size={18}/>

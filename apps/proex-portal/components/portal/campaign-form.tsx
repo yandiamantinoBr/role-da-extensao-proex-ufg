@@ -2,6 +2,7 @@
 
 import { useRef, useState, type FormEvent } from 'react';
 import { Check, LoaderCircle } from 'lucide-react';
+import { useFormDraft, DraftNotice } from './use-form-draft';
 
 // Campaign projections and mutation responses are validated by the server.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -19,8 +20,9 @@ export default function CampaignForm({ projects, offers, initial, defaultProject
   const [projectId, setProjectId] = useState(String(initial?.project_id ?? initial?.projectId ?? defaultProject ?? projects[0]?.id ?? ''));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const key = useRef<string | null>(null);
+  const key = useRef<string | null>(null), formRef = useRef<HTMLFormElement>(null);
   const editing = Boolean(initial?.id);
+  const draft = useFormDraft(formRef, `campaign:${initial?.id ?? 'new'}:${initial?.version ?? 0}`);
   const scopedOffers = offers.filter(o => (o.project_id ?? o.projectId) === projectId);
   async function send(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); if (saving) return;
@@ -36,11 +38,12 @@ export default function CampaignForm({ projects, offers, initial, defaultProject
         superOfferId: values.get('superOfferId') || null, operationKey: key.current,
       });
       key.current = null;
+      draft.clear();
       if (!editing) form.reset();
     } catch (e) { setError(e instanceof Error ? e.message : 'Não foi possível salvar o evento.'); }
     finally { setSaving(false); }
   }
-  return <form className="p-form" onSubmit={send} onChange={() => { if (!saving) key.current = null; }}><fieldset disabled={saving}>
+  return <form ref={formRef} className="p-form" onSubmit={send} onChange={() => { if (!saving) key.current = null; }}><DraftNotice draft={draft}/><fieldset disabled={saving}>
     <div className="p-form-grid">
       {!editing && <label className="p-field"><span>Projeto</span><select name="projectId" required value={projectId} onChange={e => setProjectId(e.target.value)}><option value="">Selecione o projeto</option>{projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>}
       <label className="p-field"><span>Nome do evento</span><input name="name" required maxLength={120} defaultValue={initial?.name ?? ''} placeholder="Nome da ação ou do evento" /></label>

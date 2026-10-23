@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Camera, Check, ClipboardList, ExternalLink, FilePlus2, ImagePlus, LoaderCircle, Paperclip, Plus, RefreshCw, Search, Trash2, Upload } from 'lucide-react';
+import { useFormDraft, DraftNotice } from './use-form-draft';
 
 type Row = Record<string, unknown>;
 type Kind = 'observation' | 'maintenance' | 'distribution' | 'consumption' | 'project' | 'material' | 'loan';
@@ -244,6 +245,8 @@ export default function RecordsPanel({ projects: sourceProjects, items, loans, c
     const update = (record: Entry): Entry => record.id !== recordId ? record : { ...record, attachments: [...record.attachments.filter(value => value.id !== attachment.id), attachment] };
     setRecords(current => current.map(update)); setSaved(current => current ? update(current) : current);
   }
+  const createRef = useRef<HTMLFormElement>(null);
+  const draft = useFormDraft(createRef, 'record:new');
   async function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (savingRef.current || saved) return;
@@ -264,7 +267,7 @@ export default function RecordsPanel({ projects: sourceProjects, items, loans, c
       const result = await requestJson('/api/records', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Proex-Action': '1' }, body: JSON.stringify(currentAttempt.payload) });
       const record = asEntry(result.record);
       if (record.id !== result.id) throw new RequestFailure('A confirmação do registro não pôde ser lida. Tente novamente.');
-      setSaved(record); setUnconfirmed(false); attempt.current = null; refresh();
+      setSaved(record); setUnconfirmed(false); attempt.current = null; draft.clear(); refresh();
     } catch (cause) {
       const uncertain = currentAttempt.uncertain || !confirmedRejection(cause);
       currentAttempt.uncertain = uncertain;
@@ -315,7 +318,7 @@ export default function RecordsPanel({ projects: sourceProjects, items, loans, c
         <span className="p-badge">{kindLabel(saved.kind)}</span><h4 style={{ margin: '10px 0 0', overflowWrap: 'anywhere' }}>{saved.title}</h4>{entryDetails(saved)}
         {canAttach(saved) && <AttachmentQueue key={saved.id} recordId={saved.id} onAttachment={attachment => attach(saved.id, attachment)} onPendingChange={setSavedPending} />}
         <div style={{ marginTop: 20 }}><button type="button" className="p-button p-button-subtle" disabled={savedPending || existingPending} onClick={begin}><FilePlus2 size={17} />Criar outro registro</button>{savedPending && <p className="p-form-help">Confirme os anexos pendentes ou remova da seleção os arquivos que ainda não foram enviados.</p>}</div>
-      </div> : <form className="p-form" onSubmit={create}>
+      </div> : <form ref={createRef} className="p-form" onSubmit={create}><DraftNotice draft={draft}/>
         <p className="p-form-help">Descreva a ocorrência e salve. Depois, anexe fotos ou documentos ao registro confirmado. Este histórico não movimenta estoque nem altera reservas.</p>
         <fieldset disabled={saving || unconfirmed}>
           <div className="p-form-grid"><label className="p-field"><span>Projeto</span><select required value={projectId} onChange={event => changeProject(event.target.value)}>{writableProjects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label><label className="p-field"><span>Categoria</span><select required value={kind} onChange={event => changeKind(event.target.value as Kind)}>{allowedKinds.map(value => <option key={value.value} value={value.value}>{value.label}</option>)}</select></label></div>
