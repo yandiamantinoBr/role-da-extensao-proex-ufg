@@ -65,6 +65,8 @@ export default function CalendarPanel({ projects: sourceProjects, organizational
   const cells = [...Array(monthStart.getUTCDay()).fill(null), ...Array.from({ length: monthEnd.getUTCDate() }, (_, i) => `${displayMonth}-${String(i + 1).padStart(2, '0')}`)];
   const entries = data?.entries ?? [], shown = selectedDay ? entries.filter(event => inDay(event, selectedDay)) : entries;
   const today = civilDay(new Date(mountedAt));
+  const totalMap = new Map<CalendarCategory, number>(); for (const event of entries) totalMap.set(event.category, (totalMap.get(event.category) ?? 0) + 1);
+  const totals = [...totalMap].sort((a, b) => b[1] - a[1]);
   const activeFeeds = data?.feeds.filter(feed => !feed.revoked_at && Date.parse(feed.expires_at) > (result?.receivedAt??mountedAt)) ?? [];
   const unitProjects=unitId?projects.filter(project=>project.unitId===unitId):projects;
   const unitName=organizationalUnits.find(unit=>unit.id===unitId)?.name;
@@ -82,10 +84,11 @@ export default function CalendarPanel({ projects: sourceProjects, organizational
         <label className="p-field"><span>Data inicial</span><input type="date" value={from} onChange={event=>{setFrom(event.target.value);setSelectedDay('');}}/></label>
         <label className="p-field"><span>Data final (incluída)</span><input type="date" value={to} min={from} onChange={event=>{setTo(event.target.value);setSelectedDay('');}}/></label>
       </div>
-      <div className={styles.rangeSummary}><strong>{validRange?`${prettyDay(from)} a ${prettyDay(to)}`:'Escolha as datas inicial e final'}</strong><span>{scopeName} · {category==='all'?'Todas as categorias permitidas':labels[category as CalendarCategory]}</span></div>
-      <div className={styles.actions}><button type="button" className="p-button p-button-subtle" onClick={()=>setReload(value=>value+1)} disabled={loading||!validRange}><RefreshCw size={16}/>Atualizar consulta</button>{validRange?<a className="p-button p-button-subtle" href={`/api/calendar?${query}&format=ics`}><Download size={16}/>{downloadLabel}</a>:<button type="button" className="p-button p-button-subtle" disabled><Download size={16}/>{downloadLabel}</button>}</div>
+      <div className={styles.summaryRow}><div className={styles.rangeSummary}><strong>{validRange?`${prettyDay(from)} a ${prettyDay(to)}`:'Escolha as datas inicial e final'}</strong><span>{scopeName} · {category==='all'?'Todas as categorias permitidas':labels[category as CalendarCategory]}</span></div>
+      <div className={styles.actions}><button type="button" className="p-button p-button-subtle" onClick={()=>setReload(value=>value+1)} disabled={loading||!validRange}><RefreshCw size={16}/>Atualizar consulta</button>{validRange?<a className="p-button p-button-subtle" href={`/api/calendar?${query}&format=ics`}><Download size={16}/>{downloadLabel}</a>:<button type="button" className="p-button p-button-subtle" disabled><Download size={16}/>{downloadLabel}</button>}</div></div>
+      {entries.length>0&&<div className={styles.totals} role="group" aria-label="Registros por categoria no período">{totals.map(([kind,total])=><button key={kind} type="button" aria-pressed={category===kind} className={category===kind?styles.totalActive:''} onClick={()=>{setCategory(current=>current===kind?'all':kind);setSelectedDay('');}}><span style={{background:colors[kind]}}/><b>{total}</b>{labels[kind]}</button>)}</div>}
       {!validRange&&<p className="p-inline-error" role="alert">Escolha um período válido de até dois anos, com a data final igual ou posterior à inicial.</p>}{displayError&&<p className="p-inline-error" role="alert">{displayError}</p>}
-      <p className="p-form-help">O arquivo inclui as datas e os filtros acima. Materiais e consumo mostram movimentações registradas; saldo não cria compromisso futuro. Contatos, documentos e observações internas ficam no portal.</p>
+      <p className={styles.help}>O arquivo .ics inclui as datas e os filtros acima. Materiais e consumo mostram movimentações registradas; contatos e observações internas ficam no portal.</p>
     </section>
     <div className={styles.workspace}>
     <section className="p-card" aria-label="Visão mensal da agenda" aria-busy={loading}>

@@ -4,3 +4,26 @@
 .workspace{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(320px,1fr);gap:22px;align-items:start}.listCard{position:sticky;top:90px;max-height:calc(100dvh - 120px);overflow:auto}.day{align-items:stretch;padding:8px 6px;min-height:92px;text-align:left}.day strong{align-self:flex-start;padding:0 2px}.chip{display:block;font-style:normal;font-size:10.5px;line-height:1.35;padding:3px 6px;border-left:3px solid var(--line);border-radius:6px;background:var(--surface-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.day small{align-self:flex-start;padding-left:4px;color:var(--text-secondary)}.dots{display:none}
 @media(max-width:1280px){.workspace{grid-template-columns:1fr}.listCard{position:static;max-height:none}.filters{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:720px){.filters{grid-template-columns:1fr}.chip{display:none}.dots{display:flex}.day{align-items:center;min-height:60px}.day strong{align-self:center}}
+
+/* V8: layout pelo espaço real do conteúdo (container queries), não pela largura da janela. */
+.panel{container-type:inline-size;container-name:agenda}
+.filters{grid-template-columns:repeat(6,minmax(0,1fr));gap:12px}
+.filters>:global(.p-field){grid-column:span 2}
+.filters>:global(.p-field):nth-child(4),.filters>:global(.p-field):nth-child(5){grid-column:span 3}
+.summaryRow{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;margin-top:12px}
+.summaryRow .rangeSummary{padding:0;gap:2px}
+.summaryRow .actions{margin-top:0}
+.summaryRow .actions :global(.p-button){min-height:40px;padding:8px 12px}
+.totals{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+.totals button{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--surface);color:var(--text-secondary);border-radius:999px;padding:4px 11px 4px 8px;font-size:11px;min-height:32px}
+.totals button>span{width:9px;height:9px;border-radius:50%}
+.totals button b{color:var(--ink);font-variant-numeric:tabular-nums}
+.totals .totalActive{border-color:var(--brand-ink);background:var(--surface-soft);color:var(--brand-ink)}
+.help{font-size:11px;line-height:1.7;color:var(--text-secondary);margin-top:10px}
+.workspace{grid-template-columns:1fr}
+.listCard{position:static;max-height:none}
+.day{min-height:84px}
+@container agenda (min-width:1080px){.filters{grid-template-columns:1fr 1.35fr 1.35fr .85fr .85fr}.filters>:global(.p-field),.filters>:global(.p-field):nth-child(4),.filters>:global(.p-field):nth-child(5){grid-column:auto}}
+@container agenda (min-width:860px){.workspace{grid-template-columns:minmax(0,1.45fr) minmax(300px,1fr);gap:18px}.listCard{position:sticky;top:90px;max-height:calc(100dvh - 120px)}.day{min-height:78px;padding:6px 5px}.monthGrid{gap:4px}}
+@container agenda (max-width:620px){.filters{grid-template-columns:1fr}.filters>:global(.p-field),.filters>:global(.p-field):nth-child(4),.filters>:global(.p-field):nth-child(5){grid-column:auto}.summaryRow .actions{width:100%}}
+.monthHeading h3{text-transform:none}.monthHeading h3::first-letter{text-transform:uppercase}

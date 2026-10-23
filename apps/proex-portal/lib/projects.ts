@@ -171,7 +171,7 @@ export async function projectDetail(db:D1Database,actor:PortalActor|null,id:stri
     all(db,'SELECT * FROM project_schedule_items WHERE project_id=? ORDER BY starts_at DESC,id',[id]),
     canEdit?all(db,`SELECT id,entity_type,entity_id,version,snapshot_json,created_at FROM entity_versions WHERE project_id=? AND entity_type IN ('project','call','project_link','project_schedule_item') ORDER BY created_at DESC,id DESC LIMIT 200`,[id]):Promise.resolve([]),
     all(db,`SELECT p.id,p.name,p.status,p.lifecycle,p.parent_id FROM projects p WHERE (p.parent_id=? OR p.id=?) AND (${visibility}) ORDER BY p.name`,[id,project.parent_id??'',...(visible??[])]),
-    inventory?all(db,'SELECT id,name,category,unit,stock,reserved,condition FROM items WHERE project_id=? ORDER BY name',[id]):Promise.resolve(null),
+    inventory?all(db,'SELECT id,name,category,unit,stock,reserved,low_stock,condition FROM items WHERE project_id=? ORDER BY name',[id]):Promise.resolve(null),
     campaigns?all(db,'SELECT id,name,location,starts_at,ends_at,status FROM campaigns WHERE project_id=? ORDER BY starts_at DESC',[id]):Promise.resolve(null),
     loans?all(db,`SELECT l.id,l.item_id,i.name item_name,l.action_name,l.starts_at,l.ends_at,l.status FROM loans l JOIN items i ON i.id=l.item_id AND i.project_id=l.project_id WHERE l.project_id=? ORDER BY l.starts_at DESC LIMIT 100`,[id]):Promise.resolve(null),
     inventory||loans||reports||canEdit?listRecords(db,actor,{projectId:id,limit:100}):Promise.resolve({records:[]}),

@@ -11,6 +11,7 @@ import SyncSettingsPanel from '@/components/portal/sync-settings-panel';
 import ProfilePanel from '@/components/portal/profile-panel';
 import CalendarPanel from '@/components/portal/calendar-panel';
 import RecordsPanel from '@/components/portal/records-panel';
+import ReportsCenter from '@/components/portal/reports-center';
 import MaterialDetailDrawer from '@/components/portal/material-detail-drawer';
 import { ThemeSwitch } from '@/components/theme/theme-switch';
 import { BrandMark } from '@/components/theme/brand-mark';
@@ -287,7 +288,9 @@ export default function PortalClient({ initial }: {
         }
     }, []);
     useEffect(() => { const change = () => { setOnline(navigator.onLine); }; const timer = window.setTimeout(() => { setUpdatedAt(new Date()); setNow(Date.now()); change(); }, 0); const clock = window.setInterval(() => setNow(Date.now()), 60000); window.addEventListener('online', change); window.addEventListener('offline', change); return () => { window.clearTimeout(timer); window.clearInterval(clock); window.removeEventListener('online', change); window.removeEventListener('offline', change); }; }, []);
-    useEffect(() => { const url = new URL(window.location.href); const requested = url.searchParams.get('module'); const timer = window.setTimeout(() => { if (tabs.some(t => t.id === requested))
+    // Links diretos (?module=…&project=…) esperam as permissões carregarem antes de serem descartados.
+    const pendingLink = useRef<{ tab: string; project: string } | null>(null);
+    useEffect(() => { const url = new URL(window.location.href); const requested = url.searchParams.get('module'); pendingLink.current = { tab: requested && tabs.some(t => t.id === requested) ? requested : '', project: url.searchParams.get('project') || '' }; const timer = window.setTimeout(() => { if (tabs.some(t => t.id === requested))
         setTab(requested as Tab); setFilter(url.searchParams.get('project') || ''); setUnitFilter(url.searchParams.get('unit') || ''); setAreaFilter(url.searchParams.get('area') || ''); }, 0); return () => window.clearTimeout(timer); }, []);
     useEffect(() => { const url = new URL(window.location.href); if (tab === 'overview')
         url.searchParams.delete('module');
@@ -355,12 +358,14 @@ export default function PortalClient({ initial }: {
     const accessibleProjectKey = scopedProjects.map(project => project.id).join('|');
     const accessibleUnitKey = [...visibleUnits.map(unit => string(unit.id)), ...(hasUnassignedProjects ? ['__unassigned__'] : [])].join('|');
     useEffect(() => { if (allowedModuleKey.split('|').includes(tab)) return; const timer = window.setTimeout(() => setTab('overview'), 0); return () => window.clearTimeout(timer); }, [allowedModuleKey, tab]);
+    useEffect(() => { const link = pendingLink.current; if (!link) return; const timer = window.setTimeout(() => { if (link.tab && allowedModuleKey.split('|').includes(link.tab)) { setTab(link.tab as Tab); link.tab = ''; } if (link.project && accessibleProjectKey.split('|').includes(link.project)) { setFilter(link.project); setDraftProject(link.project); link.project = ''; } if (!link.tab && !link.project) pendingLink.current = null; }, 0); return () => window.clearTimeout(timer); }, [allowedModuleKey, accessibleProjectKey]);
     useEffect(() => { if (!filter || accessibleProjectKey.split('|').includes(filter)) return; const timer = window.setTimeout(() => { setFilter(''); setDraftProject(''); }, 0); return () => window.clearTimeout(timer); }, [accessibleProjectKey, filter]);
     useEffect(() => { if (!unitFilter || accessibleUnitKey.split('|').includes(unitFilter)) return; const timer = window.setTimeout(() => { setUnitFilter(''); setFilter(''); setDraftProject(''); }, 0); return () => window.clearTimeout(timer); }, [accessibleUnitKey, unitFilter]);
     const navigation = useNavigationPreferences(string(user.userId), allowedTabs.map(module => module.id));
     setDraftScope(string(user.userId));
     function navigate(id: ModuleId) {
         if (!allowedTabs.some(module => module.id === id)) return;
+        pendingLink.current = null;
         if (id !== tab) navigation.recordVisit(id);
         setTab(id); setQuery(''); setAccountOpen(false); setSelectedMaterialId(null);
         window.requestAnimationFrame(() => { document.getElementById('main')?.focus({ preventScroll: true }); window.scrollTo({ top: 0, behavior: 'auto' }); });
@@ -795,8 +800,11 @@ export default function PortalClient({ initial }: {
             setReportFrom(e.target.value); }}/>
         </label>
         <button className="p-button p-button-subtle" onClick={() => { setReportFrom(''); setReportTo(''); }}>Todo o período</button>
-        <p>Datas operacionais de Brasília. Contagens de participação, tentativa e entrega usam a data de cada registro.</p>
+        <p>Período de todos os relatórios desta página, em datas de Brasília. Contagens de participação, tentativa e entrega usam a data de cada registro.</p>
         </div>
+        <ReportsCenter projectId={filter} unitId={unitFilter} area={areaFilter} from={reportFrom} to={reportTo} available={['projects', 'materials', 'movements', 'loans', 'records', 'campaigns']}
+          scopeLabel={[filter ? projectName(filter) : '', unitFilter ? (unitFilter === '__unassigned__' ? 'Sem unidade vinculada' : string(visibleUnits.find(unit => unit.id === unitFilter)?.acronym || visibleUnits.find(unit => unit.id === unitFilter)?.name)) : '', areaFilter ? (areaFilter === '__none__' ? 'Sem área temática' : THEMATIC_AREAS.find(item => item.key === areaFilter)?.label ?? '') : ''].filter(Boolean).join(' · ')} />
+        <h2 className="p-reports-legacy-title">Indicadores das dinâmicas</h2>
         <div className="p-stats">
         <div className="p-stat">
         <span>Participações</span>
