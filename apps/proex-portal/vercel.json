@@ -1,0 +1,13 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "installCommand": "pnpm install --frozen-lockfile",
+  "buildCommand": "pnpm run build:node",
+  "outputDirectory": "dist/client",
+  "regions": ["gru1"],
+  "functions": {
+    "api/index.mjs": { "includeFiles": "dist/**", "maxDuration": 60, "memory": 1024 }
+  },
+  "rewrites": [{ "source": "/(.*)", "destination": "/api/index?__path=/$1" }],
+  "crons": [{ "path": "/login", "schedule": "0 11 * * *" }]
+}

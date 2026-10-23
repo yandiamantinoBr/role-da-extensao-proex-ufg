@@ -7,7 +7,9 @@ import {passwordAuth,type PasswordAuthOptions} from './password-auth';
 import {HttpError} from './errors';
 export type PortalUser={userId:string,email:string,displayName:string,source:'password'|'native',credentialId?:string,hasPassword:boolean};
 export async function authForRequest(db:D1Database,options:PasswordAuthOptions={}){
- return passwordAuth(db,{...options,allowInsecureDevelopment:import.meta.env?.DEV===true});
+ // PROEX_LOCAL_HTTP permite testar o build de produção em http://localhost; outros hosts seguem exigindo HTTPS.
+ const localProduction=(globalThis as {process?:{env?:Record<string,string|undefined>}}).process?.env?.PROEX_LOCAL_HTTP==='1';
+ return passwordAuth(db,{...options,allowInsecureDevelopment:import.meta.env?.DEV===true||localProduction});
 }
 export async function getHasPassword(userId:string){return !!await one(database(),"SELECT a.id FROM identity_aliases l JOIN auth_account a ON a.user_id=l.subject AND a.provider_id='credential' AND a.password IS NOT NULL WHERE l.provider='password' AND l.user_id=? LIMIT 1",[userId]);}
 async function present(db:D1Database,id:string,email:string,source:'native'|'password',credentialId?:string):Promise<PortalUser|null>{

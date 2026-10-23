@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import vinext from "vinext";
 import { defineConfig } from "vite";
 import hostingConfig from "./.openai/hosting.json";
@@ -37,8 +38,33 @@ const localBindingConfig = {
     : [],
 };
 
+// Alvo Node (Vercel via api/index.mjs, VPS ou servidor próprio com `vinext start`): o mesmo app, com
+// `cloudflare:workers` substituído por platform-node/env.ts (SQLite persistido em
+// Postgres ou disco). O alvo padrão continua sendo Cloudflare/Sites.
+const nodeTarget = process.env.PROEX_TARGET === "node" || process.env.VERCEL === "1";
+
 export default defineConfig(async ({ command }) => {
   configureToolEnvironment(process.cwd());
+  if (nodeTarget) {
+    const nodeEnv = fileURLToPath(new URL("./platform-node/env.ts", import.meta.url));
+    return {
+      ...(process.env.PROEX_DEBUG_BUILD === "1" ? { build: { minify: false } } : {}),
+      // Servidor autocontido: só react, react-dom e ipaddr.js ficam externos (o vinext exige).
+      ssr: { noExternal: true },
+      environments: { rsc: { resolve: { noExternal: true } }, ssr: { resolve: { noExternal: true } } },
+      // O resolvedor de CSS do alvo Node não aplica a condição "style" dos pacotes.
+      resolve: {
+        alias: [
+          { find: /^tailwindcss$/, replacement: fileURLToPath(new URL("./node_modules/tailwindcss/index.css", import.meta.url)) },
+          { find: /^tw-animate-css$/, replacement: fileURLToPath(new URL("./node_modules/tw-animate-css/dist/tw-animate.css", import.meta.url)) },
+        ],
+      },
+      plugins: [
+        { name: "proex-node-env", enforce: "pre" as const, resolveId: (id: string) => (id === "cloudflare:workers" ? nodeEnv : null) },
+        vinext(),
+      ],
+    };
+  }
 
   // Wrangler snapshots its log path while the Cloudflare plugin is imported.
   const { cloudflare } = await import("@cloudflare/vite-plugin");
