@@ -266,3 +266,19 @@ test('project details redact domain relationships and revoked type writers leave
     assert.equal(db.native.prepare('SELECT COUNT(*) n FROM project_types').get().n,0);assert.equal(db.native.prepare('SELECT COUNT(*) n FROM mutation_keys').get().n,0);
   }finally{db.native.close();}
 });
+
+test('project scope separates internal PROEX actions from external partners without changing access', async () => {
+  const db=database();
+  try {
+    const owner=actor(db,'owner',null),manager=actor(db,'manager','project-a');
+    assert.equal(db.native.prepare("SELECT scope FROM projects WHERE id='project-a'").get().scope,'internal','existing projects stay internal');
+    const external=await projectAction(db,owner,'project.create',{...createInput(),scope:'external'});
+    assert.equal(external.project.scope,'external');
+    await assert.rejects(projectAction(db,owner,'project.create',{...createInput(),scope:'partner'}),error=>error.status===400);
+    const updated=await projectAction(db,manager,'project.update',{id:'project-a',expectedVersion:1,scope:'external',operationKey:crypto.randomUUID()});
+    assert.equal(updated.project.scope,'external');
+    const kept=await projectAction(db,manager,'project.update',{id:'project-a',expectedVersion:2,name:'Other name'});
+    assert.equal(kept.project.scope,'external','omitted scope keeps the stored value');
+    await assert.rejects(projectDetail(db,manager,external.project.id),error=>error.status===404,'scope never widens a project grant');
+  } finally {db.native.close();}
+});

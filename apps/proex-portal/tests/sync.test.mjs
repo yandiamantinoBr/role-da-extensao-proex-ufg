@@ -321,7 +321,7 @@ test('unit CAS races roll back the sync receipt and do not overwrite the winning
 test('project sync links units and bridges strict booleans or 0/1 without accepting truthy strings',async()=>{
  const f=fixture();try{
   const created=await applyPortableChanges(f.db,f.actor,{changes:[{changeKey:'project-unit-create-01',action:'unit.create',input:{name:'Unidade acadêmica',acronym:'UA',kind:'academic'}}]});const unitId=created.results[0].entityId;
-  const projectSchema=describePortableSchemas().tables.find(row=>row.table==='projects');assert.deepEqual(projectSchema.columns.slice(-2).map(column=>column.name),['unit_id','prizes_enabled']);assert.equal(projectSchema.columns.find(column=>column.name==='prizes_enabled').type,'boolean');
+  const projectSchema=describePortableSchemas().tables.find(row=>row.table==='projects');assert.deepEqual(projectSchema.columns.slice(-3).map(column=>column.name),['unit_id','prizes_enabled','scope']);assert.equal(projectSchema.columns.find(column=>column.name==='prizes_enabled').type,'boolean');
   let version=1;
   for(const [index,value] of [1,false,true,0].entries()){
    const response=await applyPortableChanges(f.db,f.actor,{changes:[{changeKey:`project-prizes-v5-${index}`,table:'projects',id:'project-a',expectedVersion:version,fields:{unit_id:unitId,prizes_enabled:value}}]});assert.equal(response.results[0].status,'applied');version++;

@@ -23,11 +23,11 @@ class Sheet {
   getFrozenColumns() { return this.frozenCols; } setFrozenColumns(n) { this.frozenCols = n; }
   getRange(row, col, height = 1, width = 1) {
     if (row + height - 1 > this.maxRows || col + width - 1 > this.maxCols) throw new Error(`Range fora da grade em ${this.name}`);
-    const sheet = this, read = () => Array.from({ length: height }, (_, r) => Array.from({ length: width }, (_, c) => String(sheet.cells[row - 1 + r]?.[col - 1 + c] ?? '')));
+    const { cells } = this, read = () => Array.from({ length: height }, (_, r) => Array.from({ length: width }, (_, c) => String(cells[row - 1 + r]?.[col - 1 + c] ?? '')));
     const range = {
       getValues: read, getDisplayValues: read,
-      setValues(values) { assert.equal(values.length, height); values.forEach((line, r) => { assert.equal(line.length, width); sheet.cells[row - 1 + r] ??= []; line.forEach((v, c) => { assert.equal(typeof v, 'string', 'o conector deve gravar texto literal'); sheet.cells[row - 1 + r][col - 1 + c] = v; }); }); return range; },
-      clearContent() { for (let r = 0; r < height; r++) for (let c = 0; c < width; c++) if (sheet.cells[row - 1 + r]) sheet.cells[row - 1 + r][col - 1 + c] = ''; return range; },
+      setValues(values) { assert.equal(values.length, height); values.forEach((line, r) => { assert.equal(line.length, width); cells[row - 1 + r] ??= []; line.forEach((v, c) => { assert.equal(typeof v, 'string', 'o conector deve gravar texto literal'); cells[row - 1 + r][col - 1 + c] = v; }); }); return range; },
+      clearContent() { for (let r = 0; r < height; r++) for (let c = 0; c < width; c++) if (cells[row - 1 + r]) cells[row - 1 + r][col - 1 + c] = ''; return range; },
       setNumberFormat() { return range; }, setFontWeight() { return range; }, setBackgrounds() { return range; }, setNotes() { return range; },
     };
     return range;
