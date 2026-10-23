@@ -16,6 +16,7 @@ function compile(name) {
   return url;
 }
 const { campaignAction } = await import(compile('campaigns'));
+const { projectAction, projectDetail } = await import(compile('projects'));
 function actor(db, role, projectId) {
   const member = { id: crypto.randomUUID(), user_id: crypto.randomUUID(), email: `${role}@example.invalid`, role, project_id: projectId, revoked_at: null, created_at: new Date().toISOString() };
   db.native.prepare('INSERT INTO members(id,user_id,email,role,project_id,revoked_at,created_at) VALUES(?,?,?,?,?,?,?)').run(...Object.values(member));
@@ -159,4 +160,71 @@ test('draft campaign editing rejects missing and stale client versions without o
     assert.equal(row.name, 'First revision'); assert.equal(row.version, 2);
     assert.equal(db.native.prepare("SELECT COUNT(*) n FROM audit WHERE action='campaign.update'").get().n, 1);
   } finally { db.native.close(); }
+});
+
+test('project types, lifecycle and hierarchy preserve scoped editing and reject cycles', async () => {
+  const db=database();try{
+    const owner=actor(db,'owner',null),manager=actor(db,'manager','project-a');
+    const type=await projectAction(db,owner,'project.type.create',{key:'program',label:'Programa',description:'Institutional grouping',status:'active',operationKey:crypto.randomUUID()});
+    await projectAction(db,owner,'project.update',{id:'project-a',expectedVersion:1,name:'Child project',typeId:type.id,parentId:'project-b',lifecycle:'catalog',operationKey:crypto.randomUUID()});
+    const updated=await projectAction(db,manager,'project.update',{id:'project-a',expectedVersion:2,name:'Scoped revision',operationKey:crypto.randomUUID()});
+    assert.equal(updated.project.parent_id,'project-b');assert.equal(updated.project.type_id,type.id);assert.equal(updated.project.lifecycle,'catalog');
+    await assert.rejects(projectAction(db,owner,'project.update',{id:'project-b',expectedVersion:1,parentId:'project-a',operationKey:crypto.randomUUID()}),error=>error.code==='project_cycle');
+    const detail=await projectDetail(db,manager,'project-a');assert.equal(detail.relatedProjects.length,0,'Parent name is not exposed outside project scope.');
+    await assert.rejects(projectDetail(db,manager,'project-b'),error=>error.status===404);
+  }finally{db.native.close();}
+});
+
+test('concurrent project hierarchy edits cannot create a cycle or orphan mutation claim', async () => {
+  const db=database();try{const owner=actor(db,'owner',null);const results=await Promise.allSettled([
+    projectAction(db,owner,'project.update',{id:'project-a',expectedVersion:1,parentId:'project-b',operationKey:crypto.randomUUID()}),
+    projectAction(db,owner,'project.update',{id:'project-b',expectedVersion:1,parentId:'project-a',operationKey:crypto.randomUUID()}),
+  ]);assert.equal(results.filter(result=>result.status==='fulfilled').length,1);assert.equal(db.native.prepare('SELECT COUNT(*) n FROM mutation_keys').get().n,1);assert.equal(db.native.prepare('SELECT COUNT(*) n FROM projects WHERE parent_id IS NOT NULL').get().n,1);
+  }finally{db.native.close();}
+});
+
+test('links and schedules validate input, save snapshots, restore by new CAS revision and replay safely', async () => {
+  const db=database();try{
+    const manager=actor(db,'manager','project-a');
+    const input={projectId:'project-a',label:'Official page',url:'https://proex.ufg.br/',kind:'official',operationKey:crypto.randomUUID()};
+    const created=await projectAction(db,manager,'project.link.create',input);
+    assert.equal((await projectAction(db,manager,'project.link.create',input)).id,created.id);
+    const updated=await projectAction(db,manager,'project.link.update',{id:created.id,expectedVersion:1,label:'Revised label',operationKey:crypto.randomUUID()});
+    assert.equal(updated.project_link.version,2);
+    const restoration={entityType:'project_link',entityId:created.id,restoreVersion:1,expectedVersion:2,operationKey:crypto.randomUUID()};
+    const restored=await projectAction(db,manager,'entity.restore',restoration);
+    assert.equal(restored.project_link.label,'Official page');assert.equal(restored.project_link.version,3);
+    assert.equal((await projectAction(db,manager,'entity.restore',restoration)).duplicate,true);
+    assert.equal(db.native.prepare("SELECT COUNT(*) n FROM entity_versions WHERE entity_type='project_link' AND entity_id=?").get(created.id).n,3);
+    await assert.rejects(projectAction(db,manager,'project.link.create',{...input,url:'javascript:alert(1)',operationKey:crypto.randomUUID()}),error=>error.code==='invalid_url');
+    await assert.rejects(projectAction(db,manager,'project.link.update',{id:created.id,expectedVersion:1,label:'Stale write',operationKey:crypto.randomUUID()}),error=>error.status===409);
+    const schedule=await projectAction(db,manager,'project.schedule.create',{projectId:'project-a',title:'Public reference milestone',startsAt:'2025-10-21T12:00:00Z',endsAt:'2025-10-21T12:00:00Z',status:'completed',note:'Documented institutional source; no operational attendance',url:'https://proex.ufg.br/',operationKey:crypto.randomUUID()});
+    assert.equal(schedule.project_schedule_item.status,'completed');assert.equal(db.native.prepare('SELECT COUNT(*) n FROM campaigns').get().n,0);
+    const detail=await projectDetail(db,manager,'project-a');assert.equal(detail.links.length,1);assert.equal(detail.schedule.length,1);
+  }finally{db.native.close();}
+});
+
+test('shared calls require current authority for every project and remain editable only by authorized managers', async () => {
+  const db=database();try{
+    const owner=actor(db,'owner',null),manager=actor(db,'manager','project-a');
+    const input={projectId:'project-a',title:'Institutional call',referenceCode:'PROEX 01/2026',description:'Public metadata',status:'closed',officialUrl:'https://proex.ufg.br/',linkedProjectIds:['project-b'],operationKey:crypto.randomUUID()};
+    await assert.rejects(projectAction(db,manager,'call.create',input),error=>error.status===403);
+    const created=await projectAction(db,owner,'call.create',input);assert.equal((await projectAction(db,owner,'call.create',input)).id,created.id);
+    const detail=await projectDetail(db,manager,'project-a');assert.equal(detail.calls[0].canEdit,false);assert.deepEqual(detail.calls[0].linkedProjectIds,[]);assert.equal(detail.versions.filter(row=>row.entity_type==='call').length,0);
+    await assert.rejects(projectAction(db,manager,'call.update',{id:created.id,expectedVersion:1,title:'Unauthorized unlink',linkedProjectIds:[],operationKey:crypto.randomUUID()}),error=>error.status===403);
+    await projectAction(db,owner,'call.update',{id:created.id,expectedVersion:1,title:'New title',linkedProjectIds:[],operationKey:crypto.randomUUID()});
+    assert.equal(db.native.prepare('SELECT COUNT(*) n FROM project_calls WHERE call_id=?').get(created.id).n,0);
+    const versions=db.native.prepare("SELECT snapshot_json FROM entity_versions WHERE entity_type='call' AND entity_id=? ORDER BY version").all(created.id);
+    assert.deepEqual(JSON.parse(versions[0].snapshot_json).linked_project_ids,['project-b']);assert.deepEqual(JSON.parse(versions[1].snapshot_json).linked_project_ids,[]);
+  }finally{db.native.close();}
+});
+
+test('project details redact domain relationships and revoked type writers leave no claim', async () => {
+  const db=database();try{
+    const viewer=actor(db,'viewer','project-a'),operator=actor(db,'operator','project-a'),owner=actor(db,'owner',null);
+    for(const principal of [viewer,operator]){const detail=await projectDetail(db,principal,'project-a');assert.equal(detail.permissions.canEdit,false);assert.equal(detail.relationships.items,null);assert.equal(detail.relationships.loans,null);assert.deepEqual(detail.versions,[]);}
+    db.native.prepare('UPDATE members SET revoked_at=? WHERE id=?').run(new Date().toISOString(),owner.members[0].id);
+    await assert.rejects(projectAction(db,owner,'project.type.create',{key:'revoked',label:'Must not exist',operationKey:crypto.randomUUID()}),error=>error.status===409);
+    assert.equal(db.native.prepare('SELECT COUNT(*) n FROM project_types').get().n,0);assert.equal(db.native.prepare('SELECT COUNT(*) n FROM mutation_keys').get().n,0);
+  }finally{db.native.close();}
 });

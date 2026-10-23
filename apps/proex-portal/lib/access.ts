@@ -74,8 +74,8 @@ export async function getActor(
 ): Promise<PortalActor | null> {
   if (!user || !identifier(user.userId) || !email(user.email)) return null;
   const normalizedEmail = email(user.email)!;
-  const account=await db.prepare('SELECT status,activation_pending FROM portal_users WHERE user_id=?').bind(user.userId).first<{status:string;activation_pending:number}>();
-  if(account?.status==='blocked')return null;
+  const account=await db.prepare('SELECT status,activation_pending,anonymized_at FROM portal_users WHERE user_id=?').bind(user.userId).first<{status:string;activation_pending:number;anonymized_at:string|null}>();
+  if(account?.status==='blocked'||account?.anonymized_at)return null;
   if (!account?.activation_pending && email(configuredOwnerEmail) === normalizedEmail) {
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
@@ -85,8 +85,9 @@ export async function getActor(
       db.prepare(`INSERT INTO members (id,user_id,email,role,project_id,revoked_at,created_at)
         SELECT ?,?,?,'owner',NULL,NULL,?
         WHERE NOT EXISTS (SELECT 1 FROM members WHERE role='owner' AND project_id IS NULL)
-        AND NOT EXISTS (SELECT 1 FROM members WHERE user_id=? AND project_id IS NULL AND revoked_at IS NULL)`)
-        .bind(id, user.userId, normalizedEmail, now, user.userId),
+        AND NOT EXISTS (SELECT 1 FROM members WHERE user_id=? AND project_id IS NULL AND revoked_at IS NULL)
+        AND NOT EXISTS (SELECT 1 FROM portal_users WHERE user_id=? AND (status!='active' OR activation_pending!=0 OR anonymized_at IS NOT NULL))`)
+        .bind(id, user.userId, normalizedEmail, now, user.userId, user.userId),
       db.prepare(`INSERT INTO audit (id,actor_id,project_id,action,entity_id,details,created_at)
         SELECT ?,?,NULL,'owner.bootstrap',?,'{}',? WHERE EXISTS (SELECT 1 FROM members WHERE id=?)`)
         .bind(crypto.randomUUID(), user.userId, id, now, id),
@@ -173,16 +174,16 @@ function canManageRole(actor: PortalActor, role: string, projectId: string | nul
 const OWNER_SQL = `EXISTS (SELECT 1 FROM members auth
   LEFT JOIN portal_users account ON account.user_id=auth.user_id
   WHERE auth.user_id=? AND auth.role='owner' AND auth.project_id IS NULL AND auth.revoked_at IS NULL
-    AND COALESCE(account.status,'active')='active' AND COALESCE(account.activation_pending,0)=0)`;
+    AND COALESCE(account.status,'active')='active' AND COALESCE(account.activation_pending,0)=0 AND account.anonymized_at IS NULL)`;
 const ISSUER_SQL = `(EXISTS (SELECT 1 FROM members issuer
   LEFT JOIN portal_users account ON account.user_id=issuer.user_id
   WHERE issuer.user_id=i.created_by AND issuer.role='owner' AND issuer.project_id IS NULL AND issuer.revoked_at IS NULL
-    AND COALESCE(account.status,'active')='active' AND COALESCE(account.activation_pending,0)=0)
+    AND COALESCE(account.status,'active')='active' AND COALESCE(account.activation_pending,0)=0 AND account.anonymized_at IS NULL)
   OR (i.project_id IS NOT NULL AND i.role IN ('operator','inventory','loans','viewer')
     AND EXISTS (SELECT 1 FROM members issuer
       LEFT JOIN portal_users account ON account.user_id=issuer.user_id
       WHERE issuer.user_id=i.created_by AND issuer.role='manager' AND issuer.project_id=i.project_id AND issuer.revoked_at IS NULL
-        AND COALESCE(account.status,'active')='active' AND COALESCE(account.activation_pending,0)=0)))`;
+        AND COALESCE(account.status,'active')='active' AND COALESCE(account.activation_pending,0)=0 AND account.anonymized_at IS NULL)))`;
 
 /** Access mutations use conditional SQL and atomic D1 batches, not a read-then-unconditional-write. */
 export async function accessAction(
@@ -220,7 +221,7 @@ export async function accessAction(
       AND EXISTS (SELECT 1 FROM members auth
         LEFT JOIN portal_users account ON account.user_id=auth.user_id
         WHERE auth.user_id=? AND auth.role='manager' AND auth.project_id=? AND auth.revoked_at IS NULL
-          AND COALESCE(account.status,'active')='active' AND COALESCE(account.activation_pending,0)=0)))`;
+          AND COALESCE(account.status,'active')='active' AND COALESCE(account.activation_pending,0)=0 AND account.anonymized_at IS NULL)))`;
     const authorizationParameters = [actor.userId, projectId, role, actor.userId, projectId];
     async function presentInvite(id: string, replayed: boolean): Promise<Record<string, unknown>> {
       // Recovering a link is a privileged operation too; a stale or blocked author gets no token.
@@ -319,7 +320,7 @@ export async function accessAction(
           AND EXISTS (SELECT 1 FROM members auth
             LEFT JOIN portal_users account ON account.user_id=auth.user_id
             WHERE auth.user_id=? AND auth.role='manager' AND auth.project_id=invites.project_id AND auth.revoked_at IS NULL
-              AND COALESCE(account.status,'active')='active' AND COALESCE(account.activation_pending,0)=0)))`)
+              AND COALESCE(account.status,'active')='active' AND COALESCE(account.activation_pending,0)=0 AND account.anonymized_at IS NULL)))`)
         .bind(now, invitation.id, actor.userId, actor.userId),
       db.prepare(`INSERT INTO audit (id,actor_id,project_id,action,entity_id,details,created_at)
         SELECT ?,?,?,'invite.revoke',?,'{}',? WHERE changes()=1`)
@@ -341,11 +342,11 @@ export async function accessAction(
         AND EXISTS (SELECT 1 FROM members auth
           LEFT JOIN portal_users account ON account.user_id=auth.user_id
           WHERE auth.user_id=? AND auth.role='manager' AND auth.project_id=members.project_id AND auth.revoked_at IS NULL
-            AND COALESCE(account.status,'active')='active' AND COALESCE(account.activation_pending,0)=0)))
+            AND COALESCE(account.status,'active')='active' AND COALESCE(account.activation_pending,0)=0 AND account.anonymized_at IS NULL)))
       AND (role!='owner' OR (SELECT COUNT(DISTINCT owners.user_id) FROM members owners
         LEFT JOIN portal_users account ON account.user_id=owners.user_id
         WHERE owners.role='owner' AND owners.project_id IS NULL AND owners.revoked_at IS NULL
-          AND COALESCE(account.status,'active')='active' AND COALESCE(account.activation_pending,0)=0)>1)`)
+          AND COALESCE(account.status,'active')='active' AND COALESCE(account.activation_pending,0)=0 AND account.anonymized_at IS NULL)>1)`)
       .bind(now, member.id, actor.userId, actor.userId),
     db.prepare(`INSERT INTO audit (id,actor_id,project_id,action,entity_id,details,created_at)
       SELECT ?,?,?,'member.revoke',?,'{}',? WHERE changes()=1`)

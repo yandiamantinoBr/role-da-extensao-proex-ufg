@@ -100,6 +100,21 @@ try {
   const secondCookie = cookieOf(login);
   const invalid = await post({ action: 'login', email, password: 'Senha incorreta de QA 2026!' });
   assert.equal(invalid.status, 401);
+  const username=`qa.${tag}`,syntheticCpf='52998224725';
+  const wrongProof=await post({action:'identifiers.update',kind:'username',value:username,acknowledged:true,currentPassword:'Senha incorreta de QA 2026!'},secondCookie);
+  assert.equal(wrongProof.status,400);
+  for(const [kind,value]of [['username',username],['cpf',syntheticCpf]]){
+    const saved=await post({action:'identifiers.update',kind,value,acknowledged:true,currentPassword:password},secondCookie);
+    assert.equal(saved.status,200,`Worker must verify the current password before storing ${kind}`);
+    assert.equal((await post({action:'login',identifier:value,password})).status,200);
+  }
+  const settings=await worker.dispatchFetch(`${origin}/api/account?action=identifiers`,{headers:{Cookie:secondCookie}});
+  assert.equal(settings.status,200);const identifiers=await settings.json();
+  assert.equal(identifiers.username,username);assert.equal(identifiers.cpfConfigured,true);
+  assert.equal(JSON.stringify(identifiers).includes(syntheticCpf),false);
+  const cpfStored=await db.prepare("SELECT lookup_hash,display_hint FROM login_identifiers WHERE user_id=? AND kind='cpf'").bind(canonical.userId).first();
+  assert.match(cpfStored.lookup_hash,/^[a-f0-9]{64}$/);assert.equal(JSON.stringify(cpfStored).includes(syntheticCpf),false);
+  console.log('PASS compiled Worker: optional username and CPF resolve the same password account, require current-password proof and retain only a keyed CPF digest.');
   const changed = await post({ action: 'changePassword', currentPassword: password, newPassword: crypto.randomBytes(20).toString('base64url') }, secondCookie);
   assert.equal(changed.status, 200);
   const thirdCookie = cookieOf(changed);
@@ -109,6 +124,28 @@ try {
   const newSession = await worker.dispatchFetch(`${origin}/api/account`, { headers: { Cookie: thirdCookie } });
   assert.equal((await newSession.json()).user.userId, canonical.userId);
   console.log('PASS compiled Worker: canonical identity, portal API, logout, password verification, rejected credentials, cookie rotation and immediate session revocation.');
+
+  // Only this disposable Miniflare fixture supplies synthetic native headers.
+  // Production callers must use the authenticated Site plugin, never forged headers.
+  async function mcp(method,params={},asOwner=false){
+    const response=await worker.dispatchFetch(`${origin}/mcp`,{method:'POST',headers:{'Content-Type':'application/json',...(asOwner?{'oai-authenticated-user-id':owner,'oai-authenticated-user-email':ownerEmail}:{})},body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})});
+    assert.equal(response.status,200);return (await response.json()).result;
+  }
+  const discovery=await mcp('server/discover');assert.ok(discovery.supportedVersions.includes('2026-07-28'));
+  const listing=await mcp('tools/list');assert.ok(listing.tools.some(tool=>tool.name==='proex_sync_apply'));
+  assert.equal((await mcp('tools/call',{name:'proex_sync_describe',arguments:{}})).isError,true);
+  const configuration=await mcp('tools/call',{name:'proex_sync_configure',arguments:{spreadsheetId:'qa_sheet_123456',folderId:'qa_folder_123456',attachmentsFolderId:'qa_attachments_123456'}},true);
+  assert.notEqual(configuration.isError,true);
+  const seeded=await mcp('tools/call',{name:'proex_catalog_seed',arguments:{}},true);assert.notEqual(seeded.isError,true,JSON.stringify(seeded));
+  const exported=await mcp('tools/call',{name:'proex_sync_read',arguments:{table:'projects'}},true);
+  assert.notEqual(exported.isError,true);const page=JSON.parse(exported.content[0].text);assert.equal(page.rows.length,10);
+  const original=page.rows[0];
+  const applied=await mcp('tools/call',{name:'proex_sync_apply',arguments:{changes:[{changeKey:'worker-roundtrip-0001',table:'projects',id:original.id,expectedVersion:original.version,fields:{description:'Atualização QA isolada'}}]}},true);
+  assert.equal(JSON.parse(applied.content[0].text).results[0].status,'applied');
+  assert.equal((await db.prepare('SELECT description FROM projects WHERE id=?').bind(original.id).first()).description,'Atualização QA isolada');
+  await db.prepare('UPDATE members SET revoked_at=? WHERE user_id=?').bind(now,owner).run();
+  assert.equal((await mcp('tools/call',{name:'proex_sync_describe',arguments:{}},true)).isError,true);
+  console.log('PASS compiled Worker MCP: discovery, owner authorization, catalog seed, portable roundtrip, private configuration and immediate owner revocation.');
 } finally {
   try { if (worker) await worker.dispose(); }
   finally { fs.rmSync(temporary, { recursive: true, force: true }); }

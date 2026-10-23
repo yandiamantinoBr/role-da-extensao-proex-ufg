@@ -95,6 +95,15 @@ test('category access follows domain capability and revoked memberships stop rea
   await assert.rejects(calendar.calendarEntries(f.db, revoked, { range }), error => error.status === 403);
 });
 
+test('project schedule metadata appears in the central agenda with source revision and cancelled tombstones', async t => {
+  const f=fixture(t),viewer=await actor(f,'viewer'),inventory=await actor(f,'inventory');
+  for(const suffix of ['a','b'])f.insert('project_schedule_items',{id:`schedule-${suffix}`,project_id:`project-${suffix}`,title:`Schedule ${suffix}`,starts_at:timestamp,ends_at:timestamp,status:'cancelled',note:'PRIVATE SCHEDULE NOTE',url:'https://proex.ufg.br/',version:4,created_at:timestamp,updated_at:timestamp});
+  const result=await calendar.calendarEntries(f.db,viewer,{range,category:'projects'}),event=result.entries.find(entry=>entry.sourceKind==='project-schedule');
+  assert.equal(event.sourceId,'schedule-a');assert.equal(event.revision,4);assert.equal(event.status,'CANCELLED');assert.equal(event.allDay,true);assert.equal(event.startsAt,'2026-10-19');
+  assert.ok(!JSON.stringify(result).includes('PRIVATE SCHEDULE NOTE'));assert.ok(!result.entries.some(entry=>entry.sourceId==='schedule-b'));
+  assert.ok(!(await calendar.calendarEntries(f.db,inventory,{range})).entries.some(entry=>entry.sourceKind==='project-schedule'));
+});
+
 test('records linked to loans require loan permission in the same project in agenda and anonymous feeds', async t => {
   const f = fixture(t), inventoryUser = f.member('inventory'), viewerUser = f.member('viewer'), manager = await actor(f, 'manager');
   for (const kind of ['project', 'maintenance', 'consumption']) f.insert('records', {

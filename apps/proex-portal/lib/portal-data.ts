@@ -34,14 +34,14 @@ function count(row: Row | null, key: string): number {
 
 const OWNER_SQL = `EXISTS (SELECT 1 FROM members auth LEFT JOIN portal_users account ON account.user_id=auth.user_id
   WHERE auth.user_id=? AND auth.role='owner' AND auth.project_id IS NULL AND auth.revoked_at IS NULL
-    AND COALESCE(account.status,'active')='active' AND COALESCE(account.activation_pending,0)=0)`;
+    AND COALESCE(account.status,'active')='active' AND COALESCE(account.activation_pending,0)=0 AND account.anonymized_at IS NULL)`;
 
 /** Derive missing directory metadata only from existing canonical membership rows, never an email match. */
 async function materializeLegacyUsers(db: D1Database, actor: PortalActor): Promise<void> {
   if (accessibleProjects(actor, 'organization.manage') !== null) return;
   const missing = await all(db, `SELECT m.user_id,m.email,m.created_at FROM members m
     LEFT JOIN portal_users u ON u.user_id=m.user_id LEFT JOIN profiles p ON p.user_id=m.user_id
-    WHERE (u.user_id IS NULL OR p.user_id IS NULL) AND ${OWNER_SQL} ORDER BY m.created_at DESC,m.id DESC`, [actor.userId]);
+    WHERE (u.user_id IS NULL OR p.user_id IS NULL) AND u.anonymized_at IS NULL AND ${OWNER_SQL} ORDER BY m.created_at DESC,m.id DESC`, [actor.userId]);
   const known = new Map<string, { email: string | null; createdAt: string }>();
   for (const row of missing) {
     if (typeof row.user_id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(row.user_id) || known.has(row.user_id)) continue;
@@ -62,7 +62,7 @@ async function materializeLegacyUsers(db: D1Database, actor: PortalActor): Promi
       statements.push(db.prepare(`INSERT OR IGNORE INTO portal_users(user_id,email,status,activation_pending,created_at,updated_at)
         SELECT ?,?,'active',0,?,? WHERE ${OWNER_SQL}`).bind(userId, legacy.email, legacy.createdAt, now, actor.userId));
       statements.push(db.prepare(`INSERT OR IGNORE INTO profiles(user_id,display_name,avatar_key,mime,version,created_at,updated_at)
-        SELECT u.user_id,?,NULL,NULL,1,u.created_at,? FROM portal_users u WHERE u.user_id=? AND ${OWNER_SQL}`)
+        SELECT u.user_id,?,NULL,NULL,1,u.created_at,? FROM portal_users u WHERE u.user_id=? AND u.anonymized_at IS NULL AND ${OWNER_SQL}`)
         .bind(name, now, userId, actor.userId));
     }
     await db.batch(statements);
@@ -196,7 +196,7 @@ export async function portalSnapshot(db: D1Database, actor: PortalActor | null):
   const snapshotTime = Date.now();
 
   const [projects, campaigns, items, offers, components, loans, loanDetails, members, invites, audit, settingsRows, documents, metrics, physicalTickets, pendingPrizes, pendingPrizeCount, users, ownProfile] = await Promise.all([
-    all(db, `SELECT id,name,description,created_at,short_name,status,color,official_url,starts_at,ends_at,location,version
+    all(db, `SELECT id,name,description,created_at,short_name,status,color,official_url,starts_at,ends_at,location,version,lifecycle,type_id,parent_id
       FROM projects WHERE ${projectsFilter.sql} ORDER BY name,id`, projectsFilter.params),
     all(db, `SELECT id,project_id,name,location,starts_at,ends_at,status,retry_limit,
       brinde_offer_id,super_offer_id,rules_text,version,created_at
@@ -280,6 +280,7 @@ export async function portalSnapshot(db: D1Database, actor: PortalActor | null):
   return {
     user: { userId: actor.userId, ...profile, hasPassword }, profile, hasPassword,
     role, capabilities, globalCapabilities, capabilitiesByProject, projects, campaigns,
+    projectTypes: await all(db,'SELECT id,key,label,description,status,version FROM project_types ORDER BY label,id'),
     items: items.map(item => ({ ...item, on_loan: Boolean(item.on_loan), reserved_now: Boolean(item.reserved_now),
       available: item.condition === 'active' && !item.on_loan && !item.reserved_now ? Math.max(0, item.stock - item.reserved) : 0 })),
     offers: offers.map(offer => ({ ...offer, components: componentsByOffer.get(offer.id) ?? [] })),

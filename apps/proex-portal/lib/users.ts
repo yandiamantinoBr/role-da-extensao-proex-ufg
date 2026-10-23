@@ -5,7 +5,7 @@ const SUBORDINATE_ROLES = ['operator', 'inventory', 'loans', 'viewer'];
 const ASSIGNABLE_ROLES = ['manager', ...SUBORDINATE_ROLES];
 type AssignableRole = 'manager' | 'operator' | 'inventory' | 'loans' | 'viewer';
 type UserStatus = 'active' | 'blocked';
-type UserRow = { user_id: string; email: string | null; status: UserStatus };
+type UserRow = { user_id: string; email: string | null; status: UserStatus; anonymized_at: string|null };
 type ChangeReceipt = { memberId: string; newMemberId: string; role: AssignableRole; changed: boolean };
 
 // Provider subjects never replace these canonical application user ids.
@@ -14,14 +14,14 @@ function identifier(value: unknown): value is string {
 }
 
 const OWNER_SQL = `EXISTS (SELECT 1 FROM members auth
-  JOIN portal_users account ON account.user_id=auth.user_id AND account.status='active' AND COALESCE(account.activation_pending,0)=0
+  JOIN portal_users account ON account.user_id=auth.user_id AND account.status='active' AND COALESCE(account.activation_pending,0)=0 AND account.anonymized_at IS NULL
   WHERE auth.user_id=? AND auth.role='owner' AND auth.project_id IS NULL AND auth.revoked_at IS NULL)`;
 const ACTIVE_OWNER_COUNT_SQL = `(SELECT COUNT(DISTINCT owners.user_id) FROM members owners
   LEFT JOIN portal_users account ON account.user_id=owners.user_id
   WHERE owners.role='owner' AND owners.project_id IS NULL AND owners.revoked_at IS NULL
-    AND COALESCE(account.status,'active')='active' AND COALESCE(account.activation_pending,0)=0)`;
+    AND COALESCE(account.status,'active')='active' AND COALESCE(account.activation_pending,0)=0 AND account.anonymized_at IS NULL)`;
 const VISIBLE_MEMBER_SQL = `EXISTS (SELECT 1 FROM members auth
-  JOIN portal_users account ON account.user_id=auth.user_id AND account.status='active' AND COALESCE(account.activation_pending,0)=0
+  JOIN portal_users account ON account.user_id=auth.user_id AND account.status='active' AND COALESCE(account.activation_pending,0)=0 AND account.anonymized_at IS NULL
   WHERE auth.user_id=? AND auth.revoked_at IS NULL AND auth.role IN ('owner','manager')
     AND (auth.project_id IS NULL OR auth.project_id=m.project_id))`;
 
@@ -71,7 +71,7 @@ export async function listManagedUsers(db: D1Database, actor: PortalActor | null
   const actorId = actor!.userId;
   // SQL rechecks the current account and membership, including a previously loaded actor snapshot.
   const [accounts, memberships] = await Promise.all([
-    db.prepare(`SELECT u.user_id,u.email,u.status,u.activation_pending,p.display_name,
+    db.prepare(`SELECT u.user_id,u.email,u.status,u.activation_pending,u.anonymized_at,p.display_name,
         EXISTS (SELECT 1 FROM identity_aliases aliases WHERE aliases.user_id=u.user_id
           AND aliases.provider='password') AS has_password
       FROM portal_users u LEFT JOIN profiles p ON p.user_id=u.user_id
@@ -91,7 +91,7 @@ export async function listManagedUsers(db: D1Database, actor: PortalActor | null
   return (accounts.results ?? []).map(account => ({
     userId: account.user_id, email: account.email,
     displayName: account.display_name || account.email || 'Pessoa da equipe',
-    status: account.status, hasPassword: Boolean(account.has_password), activationPending: Boolean(account.activation_pending),
+    status: account.status, anonymizedAt: account.anonymized_at, hasPassword: Boolean(account.has_password), activationPending: Boolean(account.activation_pending),
     members: grouped.get(account.user_id) ?? [],
   }));
 }
@@ -113,9 +113,10 @@ export async function usersAction(
     if (status === 'blocked' && targetId === actor.userId) {
       throw new HttpError(409, 'Você não pode bloquear sua própria conta.', 'self_block_forbidden');
     }
-    const target = await db.prepare(`SELECT user_id,email,status FROM portal_users
+    const target = await db.prepare(`SELECT user_id,email,status,anonymized_at FROM portal_users
       WHERE user_id=? AND ${OWNER_SQL}`).bind(targetId, actor.userId).first<UserRow>();
     if (!target) throw new HttpError(404, 'Conta não encontrada ou seu acesso mudou.', 'user_not_found');
+    if (target.anonymized_at) throw new HttpError(409, 'Esta conta foi anonimizada e não pode ser reativada.', 'account_anonymized');
     if (target.status === status) {
       // A repeat block also removes a session that might have been issued meanwhile.
       if (status === 'blocked') await db.prepare(`DELETE FROM auth_session WHERE user_id IN
@@ -126,7 +127,7 @@ export async function usersAction(
     }
     const now = new Date().toISOString(), auditId = crypto.randomUUID();
     const results = await db.batch([
-      db.prepare(`UPDATE portal_users SET status=?,updated_at=? WHERE user_id=? AND status=?
+      db.prepare(`UPDATE portal_users SET status=?,updated_at=? WHERE user_id=? AND status=? AND anonymized_at IS NULL
         AND ${OWNER_SQL}
         AND (?!='blocked' OR (user_id!=? AND (NOT EXISTS
           (SELECT 1 FROM members target WHERE target.user_id=portal_users.user_id
@@ -157,7 +158,7 @@ export async function usersAction(
   if (!canChange(actor, member, role)) throw new HttpError(403, 'Você não pode alterar essa função ou escopo.', 'delegation_forbidden');
   const authorization = `(${OWNER_SQL} OR (? IS NOT NULL AND ? IN ('operator','inventory','loans','viewer')
     AND ? IN ('operator','inventory','loans','viewer') AND EXISTS (SELECT 1 FROM members auth
-      JOIN portal_users account ON account.user_id=auth.user_id AND account.status='active' AND COALESCE(account.activation_pending,0)=0
+      JOIN portal_users account ON account.user_id=auth.user_id AND account.status='active' AND COALESCE(account.activation_pending,0)=0 AND account.anonymized_at IS NULL
       WHERE auth.user_id=? AND auth.role='manager' AND auth.project_id=? AND auth.revoked_at IS NULL)))`;
   const authorizationParameters = [actor.userId, member.project_id, member.role, role, actor.userId, member.project_id];
   // Replays and no-ops also require a currently authorized, active account.
@@ -190,7 +191,7 @@ export async function usersAction(
       db.prepare(`UPDATE members SET revoked_at=? WHERE id=? AND user_id=? AND role=?
         AND project_id IS ? AND revoked_at IS NULL AND ${authorization}
         AND (role!='owner' OR NOT EXISTS (SELECT 1 FROM portal_users account
-          WHERE account.user_id=members.user_id AND account.status='active' AND COALESCE(account.activation_pending,0)=0) OR ${ACTIVE_OWNER_COUNT_SQL}>1)`)
+          WHERE account.user_id=members.user_id AND account.status='active' AND COALESCE(account.activation_pending,0)=0 AND account.anonymized_at IS NULL) OR ${ACTIVE_OWNER_COUNT_SQL}>1)`)
         .bind(now, member.id, member.user_id, member.role, member.project_id, ...authorizationParameters),
       db.prepare(`INSERT INTO members (id,user_id,email,role,project_id,revoked_at,created_at)
         SELECT ?,user_id,email,?,project_id,NULL,? FROM members WHERE id=? AND changes()=1`)

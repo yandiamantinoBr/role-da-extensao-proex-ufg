@@ -185,3 +185,33 @@ test('invalid files, origins and missing operation keys do not touch R2 or datab
     assert.equal(storage.puts, 0); assert.equal(count(db, 'documents'), 0);
   } finally { db.native.close(); }
 });
+
+test('loan upload SQL rejects activation or anonymization changes after the final actor read',async()=>{
+ for(const state of ['pending','anonymized']){
+  const {db,storage}=fixture();
+  try{
+   const user=principal(db);context(db,storage,user);const batch=db.batch.bind(db);
+   db.batch=async statements=>{if(statements.some(statement=>statement.sql.includes('INSERT INTO documents'))){if(state==='pending')db.native.prepare('UPDATE portal_users SET activation_pending=1 WHERE user_id=?').run(user.userId);else db.native.prepare("UPDATE portal_users SET status='active',anonymized_at=? WHERE user_id=?").run(new Date().toISOString(),user.userId);}return batch(statements);};
+   assert.ok((await route.POST(request(`loan-guard-${state}-0001`))).status>=400);
+   assert.equal(count(db,'documents'),0);assert.equal(count(db,'mutation_keys'),0);assert.equal(storage.objects.size,0);
+  }finally{db.native.close();}
+ }
+});
+
+test('failed loan compensation is durable and reopens cleanup completed during the storage upload',async()=>{
+ const {db,storage}=fixture();
+ try{
+  const user=principal(db);context(db,storage,user);const now=new Date().toISOString(),id=crypto.randomUUID();
+  storage.onPut=async()=>{
+   db.native.prepare("UPDATE portal_users SET status='blocked',anonymized_at=? WHERE user_id=?").run(now,user.userId);
+   db.native.prepare("INSERT INTO privacy_requests(id,user_id,status,requested_at,completed_at) VALUES(?,?,'completed',?,?)").run(id,user.userId,now,now);
+  };
+  storage.delete=async()=>{throw new Error('synthetic R2 deletion outage');};
+  assert.equal((await route.POST(request('loan-compensation-pending-0001'))).status,401);
+  assert.equal(count(db,'documents'),0);assert.equal(storage.objects.size,1);
+  const queued=db.native.prepare('SELECT user_id,object_key,mime FROM private_object_deletions').get();
+  assert.equal(queued.user_id,user.userId);assert.equal(queued.mime,'application/pdf');assert.ok(storage.objects.has(queued.object_key));
+  const privacy=db.native.prepare('SELECT status,completed_at FROM privacy_requests WHERE id=?').get(id);
+  assert.equal(privacy.status,'cleanup_pending');assert.equal(privacy.completed_at,null);
+ }finally{db.native.close();}
+});

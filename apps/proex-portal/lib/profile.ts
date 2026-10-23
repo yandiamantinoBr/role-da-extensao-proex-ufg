@@ -1,12 +1,13 @@
 import { Buffer } from 'node:buffer';
+import { inflateSync } from 'node:zlib';
 import { PNG } from 'pngjs';
 import { HttpError } from './errors';
 
 export type ProfileUser = { userId: string; email: string; displayName: string };
-export type OwnProfile = { displayName: string; email: string; avatarUrl: string | null; version: number };
+export type OwnProfile = { displayName: string; email: string; unit: string; jobTitle: string; phone: string; avatarUrl: string | null; version: number };
 type StoredProfile = {
   user_id: string; display_name: string; avatar_key: string | null; mime: string | null;
-  version: number; email: string | null; status: string;
+  unit: string; job_title: string; phone: string; version: number; email: string | null; status: string;
 };
 export const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
 const MAX_FORM_BYTES = MAX_AVATAR_BYTES + 64 * 1024;
@@ -30,12 +31,18 @@ function expectedVersion(value: unknown): number {
   }
   return value;
 }
+function optionalText(value: unknown, label: string, max: number): string {
+  if (typeof value !== 'string') throw new HttpError(400, `Informe ${label} como texto.`, 'invalid_profile_metadata');
+  const normalized = value.normalize('NFC').trim();
+  if (Array.from(normalized).length > max || /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/u.test(normalized)) throw new HttpError(400, `Use até ${max} caracteres em ${label}, sem quebras de linha.`, 'invalid_profile_metadata');
+  return normalized;
+}
 
 async function storedProfile(db: D1Database, user: ProfileUser | null): Promise<StoredProfile> {
   requireUser(user);
-  const account = await db.prepare('SELECT user_id,status FROM portal_users WHERE user_id=?')
-    .bind(user.userId).first<{ user_id: string; status: string }>();
-  if (!account || account.status !== 'active') {
+  const account = await db.prepare('SELECT user_id,status,anonymized_at FROM portal_users WHERE user_id=?')
+    .bind(user.userId).first<{ user_id: string; status: string; anonymized_at: string | null }>();
+  if (!account || account.status !== 'active' || account.anonymized_at) {
     throw new HttpError(403, 'Seu acesso ao portal não está ativo.', 'account_inactive');
   }
   // Identity admission belongs to the session resolver. This only initializes a missing own profile.
@@ -44,10 +51,10 @@ async function storedProfile(db: D1Database, user: ProfileUser | null): Promise<
   await db.prepare(`INSERT OR IGNORE INTO profiles
     (user_id,display_name,avatar_key,mime,version,created_at,updated_at)
     SELECT ?,?,NULL,NULL,1,?,? WHERE EXISTS
-      (SELECT 1 FROM portal_users WHERE user_id=? AND status='active')`)
+      (SELECT 1 FROM portal_users WHERE user_id=? AND status='active' AND anonymized_at IS NULL)`)
     .bind(user.userId, initialName, now, now, user.userId).run();
-  const row = await db.prepare(`SELECT p.user_id,p.display_name,p.avatar_key,p.mime,p.version,u.email,u.status
-    FROM profiles p JOIN portal_users u ON u.user_id=p.user_id WHERE p.user_id=? AND u.status='active'`)
+  const row = await db.prepare(`SELECT p.user_id,p.display_name,p.unit,p.job_title,p.phone,p.avatar_key,p.mime,p.version,u.email,u.status
+    FROM profiles p JOIN portal_users u ON u.user_id=p.user_id WHERE p.user_id=? AND u.status='active' AND u.anonymized_at IS NULL`)
     .bind(user.userId).first<StoredProfile>();
   if (!row || !Number.isSafeInteger(row.version) || row.version < 1) {
     throw new HttpError(403, 'Não foi possível acessar seu perfil ativo.', 'profile_unavailable');
@@ -59,6 +66,9 @@ function projectProfile(row: StoredProfile, user: ProfileUser): OwnProfile {
   return {
     displayName: row.display_name,
     email: row.email ?? user.email,
+    unit: row.unit,
+    jobTitle: row.job_title,
+    phone: row.phone,
     avatarUrl: row.avatar_key && row.mime === 'image/png'
       ? `/api/profile/avatar/${encodeURIComponent(user.userId)}?v=${row.version}` : null,
     version: row.version,
@@ -73,9 +83,9 @@ export async function getOwnProfile(
 }
 
 async function changedError(db: D1Database, user: ProfileUser): Promise<never> {
-  const account = await db.prepare('SELECT status FROM portal_users WHERE user_id=?').bind(user.userId)
-    .first<{ status: string }>();
-  if (!account || account.status !== 'active') throw new HttpError(403, 'Seu acesso ao portal não está ativo.', 'account_inactive');
+  const account = await db.prepare('SELECT status,anonymized_at FROM portal_users WHERE user_id=?').bind(user.userId)
+    .first<{ status: string; anonymized_at: string | null }>();
+  if (!account || account.status !== 'active' || account.anonymized_at) throw new HttpError(403, 'Seu acesso ao portal não está ativo.', 'account_inactive');
   throw new HttpError(409, 'Seu perfil mudou em outra sessão. Atualize para conferir antes de salvar.', 'profile_conflict');
 }
 
@@ -84,28 +94,32 @@ export async function updateOwnProfile(
 ): Promise<{ profile: OwnProfile; hasPassword: boolean }> {
   requireUser(user);
   if (!input || typeof input !== 'object' || Array.isArray(input)
-    || Object.keys(input).some((key) => !['displayName', 'expectedVersion'].includes(key))) {
-    throw new HttpError(400, 'Este formulário altera apenas o nome de exibição.', 'immutable_profile_fields');
+    || Object.keys(input).some((key) => !['displayName', 'unit', 'jobTitle', 'phone', 'expectedVersion'].includes(key))) {
+    throw new HttpError(400, 'Este formulário altera apenas os dados do seu perfil.', 'immutable_profile_fields');
   }
   const name = displayName(input.displayName);
   const version = expectedVersion(input.expectedVersion);
-  await storedProfile(db, user);
+  const before = await storedProfile(db, user);
+  const unit = Object.hasOwn(input, 'unit') ? optionalText(input.unit, 'unidade ou setor', 120) : before.unit;
+  const jobTitle = Object.hasOwn(input, 'jobTitle') ? optionalText(input.jobTitle, 'vínculo ou função institucional', 120) : before.job_title;
+  const phone = Object.hasOwn(input, 'phone') ? optionalText(input.phone, 'telefone de contato', 40) : before.phone;
+  const fields = ['displayName', 'unit', 'jobTitle', 'phone'].filter(field => Object.hasOwn(input, field));
   const now = new Date().toISOString();
   const result = await db.batch([
-    db.prepare(`UPDATE profiles SET display_name=?,version=version+1,updated_at=?
+    db.prepare(`UPDATE profiles SET display_name=?,unit=?,job_title=?,phone=?,version=version+1,updated_at=?
       WHERE user_id=? AND version=? AND EXISTS
-        (SELECT 1 FROM portal_users WHERE user_id=? AND status='active')`)
-      .bind(name, now, user.userId, version, user.userId),
+        (SELECT 1 FROM portal_users WHERE user_id=? AND status='active' AND anonymized_at IS NULL)`)
+      .bind(name, unit, jobTitle, phone, now, user.userId, version, user.userId),
     db.prepare(`INSERT INTO audit (id,actor_id,project_id,action,entity_id,details,created_at)
-      SELECT ?,?,NULL,'profile.update',?,'{"fields":["displayName"]}',? WHERE changes()=1`)
-      .bind(crypto.randomUUID(), user.userId, user.userId, now),
+      SELECT ?,?,NULL,'profile.update',?,?,? WHERE changes()=1`)
+      .bind(crypto.randomUUID(), user.userId, user.userId, JSON.stringify({ fields }), now),
   ]);
   if (result[0].meta.changes !== 1) return changedError(db, user);
   return getOwnProfile(db, user, hasPassword);
 }
 
 /** Check size and IHDR before allocating pixels; re-encoding discards ancillary/private metadata. */
-export function normalizeAvatarPng(bytes: Uint8Array): Uint8Array {
+export async function normalizeAvatarPng(bytes: Uint8Array): Promise<Uint8Array> {
   if (!bytes.byteLength || bytes.byteLength > MAX_AVATAR_BYTES) {
     throw new HttpError(413, 'A foto preparada deve ter até 2 MB.', 'avatar_too_large');
   }
@@ -122,7 +136,24 @@ export function normalizeAvatarPng(bytes: Uint8Array): Uint8Array {
     throw new HttpError(400, 'Prepare a foto com até 512 pixels de largura e altura.', 'avatar_dimensions');
   }
   try {
-    const decoded = PNG.sync.read(Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength), { checkCRC: true });
+    // Reject a later IHDR before decoding: its dimensions must not bypass the bounded first header.
+    let offset = 8, hasEnd = false;
+    const compressed: Buffer[] = [];
+    while (offset + 12 <= bytes.byteLength) {
+      const length = view.getUint32(offset), kind = String.fromCharCode(...bytes.subarray(offset + 4, offset + 8));
+      if (length > bytes.byteLength - offset - 12 || (kind === 'IHDR' && offset !== 8)) throw new Error('invalid_png_chunks');
+      if (kind === 'IDAT') compressed.push(Buffer.from(bytes.buffer, bytes.byteOffset + offset + 8, length));
+      offset += length + 12;
+      if (kind === 'IEND') { hasEnd = length === 0 && offset === bytes.byteLength; break; }
+    }
+    if (!compressed.length || !hasEnd) throw new Error('incomplete_png');
+    // Bound decompression before pngjs streams pixels. Allow 16-bit RGBA plus Adam7 row filters.
+    inflateSync(Buffer.concat(compressed), { maxOutputLength: width * height * 8 + height * 7 });
+    // pngjs.sync.read subclasses private Node zlib internals and fails under workerd.
+    // The public asynchronous parser uses supported zlib streams, with CRC checks enabled.
+    const decoded = await new Promise<PNG>((resolve, reject) => {
+      new PNG({ checkCRC: true }).parse(Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength), (error, image) => error ? reject(error) : resolve(image));
+    });
     if (decoded.width !== width || decoded.height !== height) throw new Error('invalid_dimensions');
     const clean = new PNG({ width, height });
     clean.data = decoded.data;
@@ -134,6 +165,23 @@ export function normalizeAvatarPng(bytes: Uint8Array): Uint8Array {
   }
 }
 
+async function deletePrivateAvatar(db: D1Database, storage: R2Bucket, userId: string, key: string): Promise<void> {
+  try { await storage.delete(key); }
+  catch {
+    try {
+      await db.batch([
+        db.prepare('INSERT INTO private_object_deletions(id,user_id,object_key,mime,created_at) VALUES(?,?,?,?,?)')
+          .bind(crypto.randomUUID(), userId, key, 'image/png', new Date().toISOString()),
+        // An upload can finish I/O after account anonymization has already completed its cleanup.
+        db.prepare(`UPDATE privacy_requests SET status='cleanup_pending',completed_at=NULL
+          WHERE user_id=? AND status='completed' AND EXISTS
+            (SELECT 1 FROM portal_users WHERE user_id=? AND anonymized_at IS NOT NULL)`)
+          .bind(userId, userId),
+      ]);
+    } catch { console.error('Private avatar cleanup could not be queued.'); }
+  }
+}
+
 export async function replaceOwnAvatar(
   db: D1Database, storage: R2Bucket, user: ProfileUser | null,
   bytes: Uint8Array, versionInput: unknown, hasPassword: boolean,
@@ -142,7 +190,7 @@ export async function replaceOwnAvatar(
   const version = expectedVersion(versionInput);
   const before = await storedProfile(db, user);
   if (before.version !== version) return changedError(db, user);
-  const normalized = normalizeAvatarPng(bytes);
+  const normalized = await normalizeAvatarPng(bytes);
   const key = `avatars/${crypto.randomUUID()}.png`;
   const now = new Date().toISOString();
   let committed = false;
@@ -154,7 +202,7 @@ export async function replaceOwnAvatar(
     const result = await db.batch([
       db.prepare(`UPDATE profiles SET avatar_key=?,mime='image/png',version=version+1,updated_at=?
         WHERE user_id=? AND version=? AND EXISTS
-          (SELECT 1 FROM portal_users WHERE user_id=? AND status='active')`)
+          (SELECT 1 FROM portal_users WHERE user_id=? AND status='active' AND anonymized_at IS NULL)`)
         .bind(key, now, user.userId, version, user.userId),
       db.prepare(`INSERT INTO audit (id,actor_id,project_id,action,entity_id,details,created_at)
         SELECT ?,?,NULL,'profile.avatar',?,'{"fields":["avatar"]}',? WHERE changes()=1`)
@@ -175,11 +223,11 @@ export async function replaceOwnAvatar(
     if (!committed) throw error;
   } finally {
     if (!committed && safeToDelete) {
-      try { await storage.delete(key); } catch { console.error('Private avatar compensation failed.'); }
+      await deletePrivateAvatar(db, storage, user.userId, key);
     }
   }
   if (before.avatar_key && before.avatar_key !== key) {
-    try { await storage.delete(before.avatar_key); } catch { console.error('Previous private avatar cleanup failed.'); }
+    await deletePrivateAvatar(db, storage, user.userId, before.avatar_key);
   }
   return getOwnProfile(db, user, hasPassword);
 }

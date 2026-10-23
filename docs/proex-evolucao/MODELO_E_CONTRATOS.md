@@ -1,5 +1,8 @@
 # Modelo de domínio e contratos propostos
 
+> Documento de planejamento histórico. Em 23/10/2026, a V4 foi publicada, versão 4; configuração Drive/Sheets, seed de produção e sincronização inicial foram concluídos e verificados. A rotina periódica está ativa; não houve edição externa pendente para testar sua importação. Leia [ESTADO_ATUAL.md](ESTADO_ATUAL.md), [ENTREGA-V4.md](../ENTREGA-V4.md) e a [ADR 0004](ADRS/0004-monorepo-catalogo-e-integracao-v4.md) antes de executar propostas deste texto. O código atual e as ADRs posteriores prevalecem sobre hipóteses anteriores.
+
+
 Especificação conceitual; não é SQL executado. Ajustar ao ADR de infraestrutura e ao esquema existente. IDs e nomes abaixo são sugestões, sem cadastros reais.
 
 ## Entidades

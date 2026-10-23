@@ -363,3 +363,12 @@ test('directory SQL rejects stale revoked or blocked managers and viewer access'
   assert.deepEqual(await listManagedUsers(f.db, actor), []);
   await rejected(listManagedUsers(f.db, await f.actor(MEMBER)), 'forbidden', 403);
 });
+
+test('anonymized accounts are irreversible tombstones even if a stale row is accidentally marked active', async t => {
+  const f=fixture(t);f.account(MEMBER);f.member(MEMBER,'viewer','role');
+  f.sqlite.prepare("UPDATE portal_users SET status='blocked',anonymized_at=? WHERE user_id=?").run(new Date().toISOString(),MEMBER.userId);
+  await rejected(usersAction(f.db,await f.actor(OWNER),'user.status',{userId:MEMBER.userId,status:'active'}),'account_anonymized',409);
+  f.sqlite.prepare("UPDATE portal_users SET status='active' WHERE user_id=?").run(MEMBER.userId);
+  assert.equal(await f.actor(MEMBER),null);
+  await rejected(usersAction(f.db,await f.actor(OWNER),'user.status',{userId:MEMBER.userId,status:'active'}),'account_anonymized',409);
+});

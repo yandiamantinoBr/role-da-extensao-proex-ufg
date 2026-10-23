@@ -6,30 +6,26 @@ import CampaignForm from '@/components/portal/campaign-form';
 import PendingPrizes from '@/components/portal/pending-prizes';
 import ProjectPanel from '@/components/portal/project-panel';
 import TeamPanel from '@/components/portal/team-panel';
+import AdminPrivacyPanel from '@/components/portal/admin-privacy-panel';
+import SyncSettingsPanel from '@/components/portal/sync-settings-panel';
 import ProfilePanel from '@/components/portal/profile-panel';
 import CalendarPanel from '@/components/portal/calendar-panel';
 import RecordsPanel from '@/components/portal/records-panel';
+import MaterialDetailDrawer from '@/components/portal/material-detail-drawer';
 import { ThemeSwitch } from '@/components/theme/theme-switch';
 import { BrandMark } from '@/components/theme/brand-mark';
-import { ArrowDownToLine, ArrowRight, Boxes, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronRight, ClipboardList, ExternalLink, FileText, FolderKanban, Gift, LayoutDashboard, LoaderCircle, LogOut, Plus, RefreshCw, Search, Settings2, ShieldCheck, Sparkles, Truck, Users, Wifi, WifiOff, X } from 'lucide-react';
+import DashboardPanel from '@/components/portal/dashboard-panel';
+import { DesktopSidebar, MobileNavigation } from '@/components/portal/portal-navigation';
+import { PORTAL_MODULES, type ModuleId } from '@/components/portal/navigation-model';
+import { useNavigationPreferences } from '@/components/portal/use-navigation-preferences';
+import { ArrowDownToLine, ArrowRight, Boxes, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronRight, ExternalLink, FileText, Gift, LoaderCircle, LogOut, Plus, RefreshCw, Search, ShieldCheck, Truck, Users, Wifi, WifiOff, X } from 'lucide-react';
 // API projections vary by module; the server validates every mutation.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = Record<string, any>;
 type Snapshot = Row;
-type Tab = 'overview' | 'projects' | 'events' | 'materials' | 'loans' | 'team' | 'reports' | 'settings' | 'calendar' | 'records' | 'profile';
+type Tab = ModuleId;
 type Payload = Record<string, unknown>;
-const tabs: {
-    id: Tab;
-    label: string;
-    icon: typeof Boxes;
-}[] = [
-    { id: 'overview', label: 'Visão geral', icon: LayoutDashboard }, { id: 'projects', label: 'Projetos', icon: FolderKanban },
-    { id: 'events', label: 'Eventos', icon: CalendarDays }, { id: 'materials', label: 'Materiais', icon: Boxes },
-    { id: 'loans', label: 'Empréstimos', icon: Truck }, { id: 'team', label: 'Equipe', icon: Users },
-    { id: 'calendar', label: 'Agenda', icon: CalendarDays }, { id: 'records', label: 'Registros', icon: FileText },
-    { id: 'profile', label: 'Conta', icon: Users },
-    { id: 'reports', label: 'Relatórios', icon: ClipboardList }, { id: 'settings', label: 'Configurações', icon: Settings2 },
-];
+const tabs = PORTAL_MODULES;
 const statusNames: Row = { draft: 'Rascunho', active: 'Ativo', paused: 'Pausado', closed: 'Encerrado', reserved: 'Reservado', out: 'Retirado', returned: 'Devolvido', cancelled: 'Cancelado', pending: 'Pendente', accepted: 'Aceito', revoked: 'Revogado' };
 const roleNames: Row = { owner: 'Responsável institucional', manager: 'Gestor de projeto', operator: 'Operador de evento', inventory: 'Responsável por estoque', loans: 'Responsável por empréstimos', viewer: 'Leitor de relatórios' };
 const categoryNames: Row = { gift: 'Brinde', equipment: 'Equipamento', distribution: 'Distribuição institucional', consumption: 'Consumo interno' };
@@ -47,6 +43,41 @@ function Field({ label, children, help }: {
 }) {
     return <label className="p-field">
     <span>{label}</span>{children}{help && <small>{help}</small>}</label>;
+}
+function MaterialCategoryFields({ projectId, refreshKey }: { projectId: string; refreshKey: number }) {
+    const [kind, setKind] = useState('gift');
+    const [result, setResult] = useState<{ projectId: string; categories: Row[]; error: string } | null>(null);
+    useEffect(() => {
+        if (!projectId) return;
+        const controller = new AbortController();
+        let active = true;
+        void fetch(`/api/materials?projectId=${encodeURIComponent(projectId)}`, { cache: 'no-store', signal: controller.signal }).then(async response => {
+            const body = await response.json().catch(() => null) as Row | null;
+            if (!response.ok || !body) throw new Error(readableError(body?.error, 'Não foi possível carregar as categorias deste projeto.'));
+            if (active) setResult({ projectId, categories: list(body.categories), error: '' });
+        }).catch(error => {
+            if (active) setResult({ projectId, categories: [], error: readableError(error instanceof Error ? error.message : '', 'Não foi possível carregar as categorias. Verifique sua conexão.') });
+        });
+        return () => { active = false; controller.abort(); };
+    }, [projectId, refreshKey]);
+    const current = result?.projectId === projectId ? result : null;
+    const categories = current?.categories.filter(category => category.core_kind === kind && category.status === 'active') ?? [];
+    return <>
+        <Field label="Tipo de material">
+            <select name="category" value={kind} onChange={event => setKind(event.target.value)}>
+                <option value="gift">Brinde</option>
+                <option value="equipment">Equipamento retornável</option>
+                <option value="distribution">Distribuição institucional</option>
+                <option value="consumption">Consumo interno</option>
+            </select>
+        </Field>
+        <Field label="Categoria do projeto" help={current?.error || (!projectId ? 'Selecione um projeto para consultar suas categorias.' : !current ? 'Carregando categorias…' : categories.length ? 'Opcional. Escolha uma categoria cadastrada para este tipo de material.' : 'Nenhuma categoria específica cadastrada. Você poderá criar uma nos detalhes do material.')}>
+            <select key={`${projectId}-${kind}`} name="categoryId" defaultValue="" disabled={!current || !categories.length}>
+                <option value="">Sem categoria específica</option>
+                {categories.map(category => <option key={category.id} value={category.id}>{category.label}</option>)}
+            </select>
+        </Field>
+    </>;
 }
 function Empty({ title, text, icon: Icon = Boxes }: {
     title: string;
@@ -165,51 +196,6 @@ function LoanAttachment({ loanId, onSaved }: {
         </div>
         </div>}{error && <p className="p-inline-error" role="alert">{error}</p>}{message && <p className="p-form-help" role="status">{message}</p>}</div>;
 }
-function ItemEditor({ item, mutate, close }: {
-    item: Row;
-    mutate: (action: string, payload: Payload) => Promise<Row>;
-    close: () => void;
-}) {
-    return <section className="p-section p-editor-panel">
-    <div className="p-section-heading">
-    <div>
-    <h2>Editar material</h2>
-    <p>Saldo e reservas são alterados por movimentos. A condição controla a disponibilidade.</p>
-    </div>
-    <button className="p-icon-button" onClick={close} aria-label="Fechar edição do material">
-    <X size={18}/>
-    </button>
-    </div>
-    <OperationForm action="item.update" mutate={mutate} onDone={close} submit="Salvar material" make={f => ({ id: item.id, expectedVersion: item.version, name: f.get('name'), unit: f.get('unit'), lowStock: Number(f.get('lowStock')), description: f.get('description'), condition: f.get('condition'), assetCode: f.get('assetCode') })}>
-    <div className="p-form-grid">
-    <Field label="Nome do material">
-    <input name="name" required maxLength={200} defaultValue={item.name}/>
-    </Field>
-    <Field label="Unidade">
-    <input name="unit" required maxLength={40} defaultValue={item.unit}/>
-    </Field>
-    <Field label="Condição">
-    <select name="condition" defaultValue={item.condition || 'active'}>
-    <option value="active">Disponível para operação</option>
-    <option value="maintenance">Em manutenção</option>
-    <option value="inactive">Inativo</option>
-    </select>
-    <small>Não é possível desativar unidades prometidas ou um equipamento ainda retirado.</small>
-    </Field>
-    <Field label="Alerta quando disponível até">
-    <input name="lowStock" type="number" min="0" max={item.category === 'equipment' ? 1 : undefined} required defaultValue={item.low_stock ?? item.lowStock ?? 0}/>
-    </Field>
-    <Field label="Identificação patrimonial ou código">
-    <input name="assetCode" maxLength={100} defaultValue={item.asset_code ?? item.assetCode ?? ''}/>
-    </Field>
-    </div>
-    <Field label="Descrição">
-    <textarea name="description" rows={3} maxLength={2000} defaultValue={item.description ?? ''}/>
-    </Field>
-    <p className="p-form-help">Projeto e categoria são preservados. Para outra finalidade, cadastre outro material.</p>
-    </OperationForm>
-    </section>;
-}
 export default function PortalClient({ initial }: {
     initial: Snapshot;
 }) {
@@ -223,7 +209,7 @@ export default function PortalClient({ initial }: {
     const [filter, setFilter] = useState('');
     const [draftProject, setDraftProject] = useState('');
     const [query, setQuery] = useState('');
-    const [editingItem, setEditingItem] = useState<Row | null>(null);
+    const [selectedMaterialId, setSelectedMaterialId] = useState<string | null>(null);
     const [refreshing, setRefreshing] = useState(false);
     const [busy, setBusy] = useState(false);
     const [online, setOnline] = useState(true);
@@ -282,7 +268,7 @@ export default function PortalClient({ initial }: {
         accountRef.current?.querySelector<HTMLButtonElement>('.p-account-trigger')?.focus();
     } }; document.addEventListener('pointerdown', close); document.addEventListener('keydown', keyboard); return () => { document.removeEventListener('pointerdown', close); document.removeEventListener('keydown', keyboard); }; }, [accountOpen]);
     const projects = list(data.projects), campaigns = list(data.campaigns), items = list(data.items), offers = list(data.offers), loans = list(data.loans);
-    const members = list(data.members), invites = list(data.invites), audit = list(data.audit), documents = list(data.documents);
+    const members = list(data.members), invites = list(data.invites), documents = list(data.documents);
     const user = data.user ?? {};
     const role = string(data.role);
     const capabilities = Array.isArray(data.capabilities) ? data.capabilities : [];
@@ -301,10 +287,20 @@ export default function PortalClient({ initial }: {
     const effectiveProject = formProjects.some(p => p.id === selectedFormProject) ? selectedFormProject : string(formProjects[0]?.id);
     const formItems = items.filter(i => !effectiveProject || get(i, 'projectId', 'project_id') === effectiveProject);
     const available = (item: Row) => item.available !== undefined && item.available !== null ? Number(item.available) : Number(item.stock ?? item.quantity ?? 0) - Number(item.reserved ?? 0);
-    const lowItems = visibleItems.filter(i => i.category !== 'equipment' && i.condition === 'active' && available(i) <= Number(get(i, 'lowStock', 'low_stock') ?? 0));
-    const lateLoans = visibleLoans.filter(l => l.status === 'out' && new Date(get(l, 'endsAt', 'ends_at')).getTime() < now);
     const searchItems = visibleItems.filter(i => !query || `${i.name} ${i.description ?? ''}`.toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR')));
     const allowedTabs = tabs.filter(t => ['overview', 'projects', 'profile', 'calendar', 'records'].includes(t.id) || (t.id === 'events' && canAny('campaigns.manage', 'participation.operate', 'inventory.deliver')) || (t.id === 'materials' && canAny('inventory.read', 'inventory.manage', 'inventory.deliver')) || (t.id === 'loans' && canAny('loans.read', 'loans.manage', 'loans.checkout')) || (t.id === 'team' && canAny('access.invite', 'access.manage')) || (t.id === 'reports' && canAny('reports.read')) || (t.id === 'settings' && canGlobal('organization.manage')));
+    const allowedModuleKey = allowedTabs.map(module => module.id).join('|');
+    const accessibleProjectKey = projects.map(project => project.id).join('|');
+    useEffect(() => { if (allowedModuleKey.split('|').includes(tab)) return; const timer = window.setTimeout(() => setTab('overview'), 0); return () => window.clearTimeout(timer); }, [allowedModuleKey, tab]);
+    useEffect(() => { if (!filter || accessibleProjectKey.split('|').includes(filter)) return; const timer = window.setTimeout(() => { setFilter(''); setDraftProject(''); }, 0); return () => window.clearTimeout(timer); }, [accessibleProjectKey, filter]);
+    const navigation = useNavigationPreferences(string(user.userId), allowedTabs.map(module => module.id));
+    function navigate(id: ModuleId) {
+        if (!allowedTabs.some(module => module.id === id)) return;
+        if (id !== tab) navigation.recordVisit(id);
+        setTab(id); setQuery(''); setAccountOpen(false); setSelectedMaterialId(null);
+        window.requestAnimationFrame(() => { document.getElementById('main')?.focus({ preventScroll: true }); window.scrollTo({ top: 0, behavior: 'auto' }); });
+    }
+    function selectProject(id: string) { if (id && !projects.some(project => project.id === id)) return; setFilter(id); setDraftProject(id); }
     async function mutate(action: string, payload: Payload): Promise<Row> {
         if (!navigator.onLine)
             throw new Error('Você está sem conexão. Reconecte antes de confirmar uma operação.');
@@ -406,28 +402,8 @@ export default function PortalClient({ initial }: {
         </section>
         <ProfilePanel onUpdated={() => { void refresh(); }}/>
         </main>;
-    return <div className="p-shell">
-    <aside className="p-sidebar">
-    <a className="p-brand" href="#main" aria-label="Início da gestão PROEX">
-    <BrandMark variant="light"/>
-    </a>
-    <div className="p-sidebar-name">
-    <span>Gestão da extensão</span>
-    <small>Projetos, pessoas e materiais</small>
-    </div>
-    <nav aria-label="Navegação principal">{allowedTabs.map(({ id, label, icon: Icon }) => <button key={id} className={tab === id ? 'is-active' : ''} aria-current={tab === id ? 'page' : undefined} onClick={() => { setTab(id); setQuery(''); }}>
-        <Icon size={19}/>
-        <span>{label}</span>{tab === id && <ChevronRight size={15}/>}</button>)}</nav>
-    <div className="p-sidebar-bottom">
-    <a href="https://role-da-extensao-ufg.yandiamantinobr.chatgpt.site/" target="_blank" rel="noreferrer">
-    <Sparkles size={17}/>Roleta livre<ExternalLink size={14}/>
-    </a>
-    <div>
-    <ShieldCheck size={16}/>
-    <span>Acesso por função e projeto</span>
-    </div>
-    </div>
-    </aside>
+    return <div className={`p-shell pn-shell ${navigation.collapsed ? 'pn-is-collapsed' : ''} ${navigation.ready ? 'pn-navigation-ready' : ''}`}>
+    <DesktopSidebar modules={allowedTabs} active={tab} onNavigate={navigate} pinned={navigation.pinned} role={role} collapsed={navigation.collapsed} onToggle={navigation.toggleCollapsed} />
     <div className="p-workspace">
     <header className="p-topbar">
     <div className="p-mobile-brand">
@@ -460,28 +436,20 @@ export default function PortalClient({ initial }: {
         <strong>{user.displayName || 'Minha conta'}</strong>
         <small>{user.email}</small>
         </div>
-        <button role="menuitem" onClick={() => { setTab('profile'); setAccountOpen(false); }}>Minha conta e senha <Users size={16}/>
+        <button role="menuitem" onClick={() => { navigate('profile'); }}>Minha conta e senha <Users size={16}/>
         </button>
         <button role="menuitem" disabled={busy} onClick={() => void logout()}>Sair e trocar de conta <LogOut size={16}/>
         </button>
         </div>}</div>
     </div>
     </header>
-      <nav className="p-mobile-nav" aria-label="Módulos principais">{allowedTabs.filter(t => ['overview', 'events', 'materials', 'profile'].includes(t.id)).map(({ id, label, icon: Icon }) => <button key={id} className={tab === id ? 'is-active' : ''} aria-current={tab === id ? 'page' : undefined} onClick={() => setTab(id)}>
-        <Icon size={17}/>
-        <span>{label}</span>
-        </button>)}<label className={`p-more-modules ${!['overview', 'events', 'materials', 'profile'].includes(tab) ? 'is-active' : ''}`}>
-    <ChevronDown size={17}/>
-    <span>Mais</span>
-    <select aria-label="Todos os módulos" value={tab} onChange={e => setTab(e.target.value as Tab)}>{allowedTabs.map(({ id, label }) => <option key={id} value={id}>{label}</option>)}</select>
-    </label>
-    </nav>
-      <main className="p-main" id="main">
+      <MobileNavigation modules={allowedTabs} active={tab} onNavigate={navigate} pinned={navigation.pinned} frequent={navigation.frequent} role={role} onTogglePin={navigation.togglePin} />
+      <main className="p-main" id="main" tabIndex={-1}>
     <div className="p-page-heading">
     <div>
     <span className="p-eyebrow">GESTÃO DA EXTENSÃO</span>
-    <h1>{tab === 'overview' ? 'Tudo pronto para o próximo rolê.' : title}</h1>
-    <p>{tab === 'overview' ? 'Acompanhe os projetos e organize as próximas ações da equipe.' : 'Registros compartilhados, com histórico e acesso por projeto.'}</p>
+    <h1>{tab === 'overview' ? `Olá, ${string(user.displayName).trim().split(/\s+/)[0] || 'equipe'}.` : title}</h1>
+    <p>{tab === 'overview' ? 'Seu início, seus projetos e o que precisa da sua atenção.' : 'Registros compartilhados, com histórico e acesso por projeto.'}</p>
     </div>
     <Field label="Seu contexto">
     <select value={filter} onChange={e => { setFilter(e.target.value); setDraftProject(e.target.value); }} aria-label="Filtrar pelo projeto">
@@ -518,92 +486,9 @@ export default function PortalClient({ initial }: {
         </button>
         </div>}
 
-      {tab === 'overview' && <>
-        <div className="p-stats">
-        <div className="p-stat">
-        <span>
-        <FolderKanban size={19}/>Projetos no seu acesso</span>
-        <strong>{filter ? 1 : projects.length}</strong>
-        <small>Áreas de trabalho compartilhadas</small>
-        </div>
-        <div className="p-stat">
-        <span>
-        <CalendarDays size={19}/>Eventos ativos</span>
-        <strong>{visibleCampaigns.filter(c => c.status === 'active').length}</strong>
-        <small>Campanhas abertas à participação</small>
-        </div>
-        <div className="p-stat">
-        <span>
-        <Users size={19}/>Participações registradas</span>
-        <strong>{metric('participations', 'participationCount', 'participants')}</strong>
-        <small>Contas ou tíquetes, conforme a campanha</small>
-        </div>
-        <div className="p-stat">
-        <span>
-        <Gift size={19}/>Premiações entregues</span>
-        <strong>{metric('deliveries', 'delivered', 'redemptions')}</strong>
-        <small>Entrega confirmada pela equipe</small>
-        </div>
-        </div>
-        <div className="p-overview-grid">
-        <section className="p-hero">
-        <span className="p-pill">
-        <Sparkles size={14}/>ROLÊ DA EXTENSÃO</span>
-        <h2>Uma boa ação começa<br />com tudo organizado.</h2>
-        <p>Prepare o evento, confira os materiais e acompanhe as entregas. A equipe vê os mesmos registros em cada aparelho.</p>
-        <div className="p-hero-actions">{can('campaigns.manage', 'participation.operate') && <button className="p-button p-button-orange" onClick={() => setTab('events')}>Abrir eventos <ArrowRight size={17}/>
-            </button>}{can('inventory.read', 'inventory.deliver', 'inventory.manage') && <button className="p-button p-button-glass" onClick={() => setTab('materials')}>Conferir materiais</button>}</div>
-        <div className="p-hero-orbit" aria-hidden="true">
-        <Gift />
-        <span>✦</span>
-        </div>
-        </section>
-        <section className="p-card p-attention">
-        <div className="p-card-title">
-        <span className="p-icon-tile">
-        <ClipboardList size={20}/>
-        </span>
-        <div>
-        <h2>Para acompanhar</h2>
-        <p>O que merece atenção da equipe</p>
-        </div>
-        </div>{lowItems.length > 0 && <button onClick={() => setTab('materials')}>
-            <span className="p-dot p-dot-orange"/>
-            <div>
-            <strong>{lowItems.length} {lowItems.length === 1 ? 'item com estoque baixo' : 'itens com estoque baixo'}</strong>
-            <small>Confira o saldo disponível</small>
-            </div>
-            <ChevronRight size={17}/>
-            </button>}{lateLoans.length > 0 && <button onClick={() => setTab('loans')}>
-            <span className="p-dot p-dot-red"/>
-            <div>
-            <strong>{lateLoans.length} {lateLoans.length === 1 ? 'devolução em atraso' : 'devoluções em atraso'}</strong>
-            <small>Verifique a disponibilidade dos bens</small>
-            </div>
-            <ChevronRight size={17}/>
-            </button>}{visibleCampaigns.filter(c => c.status === 'draft').length > 0 && <button onClick={() => setTab('events')}>
-            <span className="p-dot p-dot-purple"/>
-            <div>
-            <strong>Eventos em preparação</strong>
-            <small>Revise regras e ofertas antes de ativar</small>
-            </div>
-            <ChevronRight size={17}/>
-            </button>}{!lowItems.length && !lateLoans.length && !visibleCampaigns.some(c => c.status === 'draft') && <div className="p-calm">
-            <CheckCircle2 size={30}/>
-            <strong>Nenhuma pendência indicada</strong>
-            <p>Novas ocorrências aparecerão aqui conforme a operação.</p>
-            </div>}</section>
-        </div>
-        <Section title="Atividade recente" description="Os registros deixam um histórico de quem fez cada operação.">{byProject(audit).length ? <div className="p-card p-activity">{byProject(audit).slice(0, 7).map((a, i) => <div key={a.id ?? i}>
-                <span className="p-activity-dot"/>
-                <div>
-                <strong>{a.label || a.action || 'Registro atualizado'}</strong>
-                <small>{projectName(get(a, 'projectId', 'project_id'))} · {when(get(a, 'createdAt', 'created_at', 'at'))}</small>
-                </div>
-                </div>)}</div> : <Empty title="O histórico começa com a primeira ação" text="Cadastros, entregas e empréstimos aparecerão aqui quando forem registrados." icon={ClipboardList}/>}</Section>
-        </>}
+      {tab === 'overview' && <DashboardPanel modules={allowedTabs} pinned={navigation.pinned} frequent={navigation.frequent} onNavigate={navigate} onTogglePin={navigation.togglePin} displayName={string(user.displayName)} role={role} roleLabel={roleNames[role] || 'Equipe PROEX'} projects={projects} items={visibleItems} loans={visibleLoans} campaigns={visibleCampaigns} selectedProjectId={filter} now={now} onSelectProject={selectProject} known={{ projects: Array.isArray(data.projects), items: Array.isArray(data.items), loans: Array.isArray(data.loans), campaigns: Array.isArray(data.campaigns) }} />}
 
-      {tab === 'projects' && <ProjectPanel projects={projects} selectedProjectId={filter} canCreate={canGlobal('projects.manage')} canEdit={id => canProject(id, 'campaigns.manage')} mutate={mutate} onSelect={id => { setFilter(id); setDraftProject(id); setTab('overview'); }}/>}
+      {tab === 'projects' && <ProjectPanel projects={projects} projectTypes={list(data.projectTypes)} selectedProjectId={filter} canCreate={canGlobal('projects.manage')} canEdit={id => canProject(id, 'campaigns.manage')} mutate={mutate} onSelect={id => { selectProject(id); navigate('overview'); }}/>}
 
       {tab === 'events' && <>
         <Section title="Eventos e campanhas" description="O regulamento, as ofertas e o limite de participação são definidos por evento.">{visibleCampaigns.length ? <div className="p-event-grid">{visibleCampaigns.map(c => <article className="p-card p-event-card" key={c.id}>
@@ -654,7 +539,7 @@ export default function PortalClient({ initial }: {
             </Section>}</>}
 
       {tab === 'materials' && <>
-        {editingItem && <ItemEditor key={editingItem.id} item={editingItem} mutate={mutate} close={() => setEditingItem(null)}/>}
+        <MaterialDetailDrawer itemId={selectedMaterialId} onClose={() => setSelectedMaterialId(null)} onChanged={async () => { await refresh(); }} />
         <Section title="Materiais e estoque" description="Saldo físico, reservas e unidades disponíveis ficam separados." aside={<div className="p-search">
             <Search size={17}/>
             <input aria-label="Buscar materiais" placeholder="Buscar material" value={query} onChange={e => setQuery(e.target.value)}/>
@@ -680,23 +565,16 @@ export default function PortalClient({ initial }: {
                 <td>
                 <span className={available(i) <= Number(get(i, 'lowStock', 'low_stock') ?? 0) ? 'p-low' : 'p-available'}>{available(i)}</span>
                 </td>
-                <td>{canProject(get(i, 'projectId', 'project_id'), 'inventory.manage') && <button className="p-button p-button-subtle" onClick={() => setEditingItem(i)}>Editar</button>}</td>
+                <td><button className="p-button p-button-subtle" onClick={() => setSelectedMaterialId(string(i.id))} aria-label={`Abrir detalhes de ${i.name}`}>Detalhes <ArrowRight size={15} /></button></td>
                 </tr>)}</tbody>
             </table>
             </div> : <Empty title={query ? 'Nenhum material encontrado' : 'Seu catálogo ainda está vazio'} text={query ? 'Tente outro nome ou selecione outro projeto.' : 'Cadastre os materiais e registre o recebimento após conferir a quantidade real.'}/>}</Section>{can('inventory.manage') && projects.length > 0 && <div className="p-two-columns">
             <Section title="Cadastrar material" description="O cadastro começa sem saldo. Registre o recebimento depois da contagem.">
-            <OperationForm onProjectFocus={setDraftProject} action="item.create" mutate={mutate} submit="Cadastrar material" make={f => ({ projectId: f.get('projectId'), name: f.get('name'), category: f.get('category'), unit: f.get('unit'), lowStock: Number(f.get('lowStock')), description: f.get('description'), assetCode: f.get('assetCode') })}>
+            <OperationForm onProjectFocus={setDraftProject} action="item.create" mutate={mutate} submit="Cadastrar material" make={f => ({ projectId: f.get('projectId'), name: f.get('name'), category: f.get('category'), categoryId: f.get('categoryId') || null, unit: f.get('unit'), lowStock: Number(f.get('lowStock')), description: f.get('description'), assetCode: f.get('assetCode') })}>
             <div className="p-form-grid">{projectField}<Field label="Nome">
             <input name="name" required maxLength={120} placeholder="Ex.: Button azul 2,5 cm"/>
             </Field>
-            <Field label="Tipo">
-            <select name="category">
-            <option value="gift">Brinde</option>
-            <option value="equipment">Equipamento retornável</option>
-            <option value="distribution">Distribuição institucional</option>
-            <option value="consumption">Consumo interno</option>
-            </select>
-            </Field>
+            <MaterialCategoryFields projectId={effectiveProject} refreshKey={updatedAt?.getTime() ?? 0} />
             <Field label="Unidade de controle">
             <input name="unit" defaultValue="unidade" required maxLength={40} placeholder="Unidade, kit, pacote…"/>
             </Field>
@@ -832,7 +710,7 @@ export default function PortalClient({ initial }: {
             </OperationForm>
             </Section>}</>}
 
-      {tab === 'team' && <TeamPanel users={list(data.users)} members={members} invites={invites} projects={projects} selectedProjectId={filter} globalAdmin={canGlobal('organization.manage')} canProject={canProject} mutate={mutate} now={now}/>}
+      {tab === 'team' && <><TeamPanel users={list(data.users)} members={members} invites={invites} projects={projects} selectedProjectId={filter} globalAdmin={canGlobal('organization.manage')} canProject={canProject} mutate={mutate} now={now}/>{canGlobal('organization.manage') && <AdminPrivacyPanel />}</>}
       {tab === 'profile' && <ProfilePanel onUpdated={() => { void refresh(); }}/>}
       {tab === 'calendar' && <CalendarPanel projects={projects}/>}
       {tab === 'records' && <RecordsPanel projects={projects} items={items} loans={loans} canWrite={(capability: string, projectId?: string | null) => projectId ? canProject(projectId, capability) : canGlobal(capability)}/>}
@@ -958,6 +836,7 @@ export default function PortalClient({ initial }: {
         </>}
 
       {tab === 'settings' && <>
+        {canGlobal('organization.manage') && <SyncSettingsPanel />}
         <Section title="Canais e informações da operação" description="Use os canais institucionais confirmados e o aviso aprovado para o serviço.">
         <OperationForm action="setting.update" mutate={mutate} submit="Salvar configurações" make={f => ({ instagramUrl: f.get('instagramUrl'), privacyNotice: f.get('privacyNotice') })}>
         <Field label="Perfil oficial no Instagram" help="O link divulga o canal. Ele não verifica automaticamente se a pessoa segue o perfil.">

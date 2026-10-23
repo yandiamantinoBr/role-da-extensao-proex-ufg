@@ -1,48 +1,53 @@
 # Rolê da Extensão e operações da PROEX
 
-Contexto de continuidade atualizado em 20/10/2026. A evolução mantém o jogo livre e um portal operacional separado. **A V3 foi publicada com sucesso**, versão 3, às 15:55:09 UTC, em https://proex-gestao.yandiamantinobr.chatgpt.site. Fonte publicada no Sites: `db104886f98feebc1b83e30ad35d0390df556d3c`.
+Contexto atualizado em 23/10/2026. **A V4 foi publicada com sucesso**, versão 4, no portal https://proex-gestao.yandiamantinobr.chatgpt.site. A fonte publicada no Sites é `ae50c4eab331f74057c60dd487167af1b9925410`; a revisão pública GitHub é uma evidência separada. A branch `feat/proex-v4` parte de `origin/main` observado em `ff27166`, após a integração das PRs #1, #2 e #3.
 
-Comece pelo [estado atual](ESTADO_ATUAL.md), pela [ADR 0003](ADRS/0003-identidade-e-operacao-v3.md) e pelo [manual do portal](../../apps/proex-portal/README.md). A [entrega V3](../ENTREGA-V3.md) reúne a evidência final. O endereço do Site, sozinho, não identifica a revisão; o commit público do GitHub é um registro separado da fonte publicada.
+Comece pelo [estado atual](ESTADO_ATUAL.md), pela [entrega V4](../ENTREGA-V4.md), pela [ADR 0004](ADRS/0004-monorepo-catalogo-e-integracao-v4.md) e pelo [manual operacional](../../apps/proex-portal/docs/MANUAL-PROEX.md). O [README do portal](../../apps/proex-portal/README.md) contém o contrato técnico. Endereço do Site, revisão pública e revisão publicada são evidências diferentes.
 
 ## Como retomar
 
-1. Confira a branch atual da implementação e leia o estado antes de editar. A branch inicial `docs/proex-evolucao-20261020` contém o planejamento original; não representa o avanço posterior de código.
-2. Localize a aplicação em `apps/proex-portal`. Ela tem build, banco e implantação próprios. A roleta livre permanece fora dessa pasta e mantém seu fluxo existente.
-3. Use o [prompt mestre](prompts/00_PROMPT_MESTRE.txt) e o prompt da fase necessária como contexto histórico. Quando uma proposta antiga divergir da implementação, siga as ADRs posteriores e o estado registrado. Há sete fases; não é necessário abrir sete chats ao mesmo tempo.
-4. Entregue um incremento verificável, atualize a documentação e diferencie teste local, fonte versionada e publicação hospedada. Commit ou PR não substitui deploy com status confirmado.
+1. Confira a branch, o estado documentado e a revisão realmente publicada antes de editar. A branch inicial de planejamento e os prompts antigos são contexto histórico.
+2. Trabalhe no portal em `apps/proex-portal`, com manifesto, dependências, banco, arquivos e deploy próprios. A raiz e `github-pages` continuam pertencendo ao jogo livre.
+3. Preserve os 12 arquivos protegidos pelo baseline `f905f0d78371dc4a8784cce27bdbc7ef6fa88103`. Esse baseline não é a posição atual de main. Não recrie o Site nem substitua IDs canônicos por e-mail.
+4. Leia as notas atuais antes do [prompt mestre](prompts/00_PROMPT_MESTRE.txt) e do roteiro da fase. ADRs posteriores e evidência de execução prevalecem sobre propostas antigas.
+5. Registre código, testes, fonte publicada e verificação hospedada da mesma revisão. Configuração de conexão e deploy não comprovam que uma rotina externa foi executada.
 
-## O que a V3 acrescenta
+## Evolução V4
 
-O acesso cotidiano usa e-mail e senha com Better Auth e cadastro por convite. O login nativo ChatGPT fica limitado à migração explícita das contas anteriores. Perfis, bloqueio de contas, funções por projeto, edição de projetos/materiais, registros e agenda complementam campanhas, estoque, empréstimos e relatórios. IDs canônicos preservam o histórico entre métodos de autenticação; e-mails iguais não unem contas.
+O acesso habitual permanece por senha e conta ativada. Nome de usuário e CPF são atalhos opcionais da mesma senha, não SSO nem prova de identidade. Perfis recebem metadados opcionais e fotografia privada. Solicitações de anonimização têm revisão, limpeza e tombstone, sem apagar indiscriminadamente o histórico ou documentos de terceiros.
 
-O painel apresenta permissões por contexto e atualiza sua leitura pelo servidor. Alterações operacionais são confirmadas no D1; o navegador não é a fonte oficial de saldo, autorização ou resultado. Documentos e fotos ficam no R2 privado. O time usa contas individuais e links manuais de convite/recuperação; não existe envio automático de e-mail.
+Projetos têm tipos configuráveis, etapa no catálogo e hierarquia sem herdar privilégios. O detalhe reúne links, editais, cronologia e relações operacionais autorizadas. Metadados são versionados; restauração cria uma revisão nova. Categorias de apresentação dos materiais não substituem as classes e regras operacionais. A agenda inclui as atividades dos projetos.
 
-## Papel de cada ferramenta
+O catálogo pesquisado em fontes oficiais separa programas atuais, referências históricas, projetos, congresso e fomento. O pré-cadastro autorizado preserva registros existentes e cria itens ausentes com saldo zero. O pré-cadastro foi executado em produção: 9 iniciativas novas e 1 preservada (10 no total), 4 tipos, 4 editais em rascunho e 11 materiais novos com estoque zero. Não foram fabricados participantes, empréstimos, entregas ou histórico de movimentos. Não foram fabricados participantes, empréstimos, entregas, eventos realizados ou saldo a partir de notícias.
 
-| Ferramenta | Papel atual |
+## Recursos e integração externa
+
+| Recurso | Estado registrado |
 | --- | --- |
-| GitHub | Histórico de código, documentação, revisão e verificações |
-| Portal | Operação da equipe e páginas oficiais das campanhas |
-| D1 | Fonte compartilhada de registros, permissões e autenticação |
-| R2 privado | Termos, anexos e fotos autorizadas |
-| Google Calendar | Consumo de arquivo ou assinatura ICS de leitura |
-| Google Sheets | Importação manual de CSV; integração automática permanece futura |
+| Portal / D1 / R2 | V4 publicada; operação transacional e arquivos privados |
+| GitHub / monorepo | Código, documentação, testes e migrações; aplicações com deploy separado |
+| Calendar | Download ou assinatura ICS de leitura, sem OAuth ou edição inversa |
+| Planilha / Drive | Configuração concluída; 32 abas; 118 linhas exportadas; leitura de retorno de 27 tabelas e 118 linhas-base verificada |
+| MCP do portal | Ferramentas disponíveis e usadas num contexto novo de nuvem; rotina periódica ativa |
 
-ICS não é OAuth Google, envio direto para a agenda nem sincronização bidirecional. O cliente externo decide quando atualizar e pode manter cópias após revogação. A conexão do autor com Drive ou outros plugins não cria credenciais permanentes para o portal.
+**Configuração e agendamento não comprovam sincronização por si só.** Nesta entrega, o fluxo real independente concluiu em 23/10/2026 às 14:14:59 UTC, com 118 linhas exportadas, 27 tabelas e 118 linhas-base verificadas por leitura de retorno, zero alterações importadas e zero conflitos. A conexão foi conferida habilitada e a rotina periódica está ativa; a atualização não é instantânea.
 
-## Decisões e limites
+A edição de metadados e a aba Operações estão disponíveis, mas não havia alterações externas pendentes: zero operações foram importadas. Portanto, esta execução comprova exportação e leitura de retorno, sem constituir teste de uma alteração feita no Sheets e aplicada no portal. Não havia anexos ou limpezas pendentes nessa execução. Objetos privados e recuperação precisam de verificação própria; a planilha não é backup integral. IDs e URLs privados ficam no handoff autorizado.
 
-A repetição Tente novamente já é configurável de zero a três por campanha e precisa constar no regulamento. Super Super Brinde, composição definitiva do planner, estoque real, catálogo público de brindes, retenção e fluxo institucional para menores continuam pendentes. Não preencher esses campos com números ou regras inventadas.
 
-Instagram é link opcional: não há verificação Meta de seguimento, condição de seguir para jogar ou contagem comprovada de novos seguidores. Google OAuth, SMTP, login WhatsApp, SEI/SIGAA e sincronização automática Sheets não estão ativos. Contribuições pessoais para alimentação e operações financeiras não pertencem à implementação atual.
+## Limites
+
+Instagram permanece link opcional: não há comprovação Meta de seguidores ou condição de seguir para participar. OAuth Google, SMTP, login WhatsApp/Facebook/Instagram, SEI/SIGAA, assinatura certificada e contribuições financeiras não são anunciados como ativos. ICS não oferece atualização imediata garantida nem apaga cópias externas ao revogar o link.
+
+Estoque real, composição do planner, ofertas, regulamentos, fluxo para menores, retenção, suporte e recuperação exigem validação institucional. Super Super Brinde continua sem regra implementada. Revisão de interface não equivale a câmera ou operação testada em aparelho físico. Esta documentação não reativa tarefas antigas Windows/Sites.
 
 ## Histórico preservado
 
-- [Plano original](PLANO.md): organização inicial das demandas e fases; o PDF citado nos primeiros prompts pertence ao pacote original.
-- [ADR 0001](ADRS/0001-arquitetura-e-ambientes.md): proposta condicional de infraestrutura externa.
-- [Verificação da fase 01](FASE_01_VERIFICACAO.md): preservação do jogo e núcleo independente de acessos.
-- [ADR 0002](ADRS/0002-portal-nativo-sites.md): portal dedicado com identidade nativa e publicação V2.
-- [ADR 0003](ADRS/0003-identidade-e-operacao-v3.md): identidade por senha e evolução operacional V3.
-- [Infraestrutura](INFRAESTRUTURA.md): configuração atual e levantamento histórico separado.
+- [Plano original](PLANO.md) e [modelo proposto](MODELO_E_CONTRATOS.md): hipóteses e organização inicial das demandas.
+- [ADR 0001](ADRS/0001-arquitetura-e-ambientes.md): alternativas condicionais de infraestrutura.
+- [Verificação fase 01](FASE_01_VERIFICACAO.md): núcleo independente e preservação do jogo.
+- [ADR 0002](ADRS/0002-portal-nativo-sites.md): portal dedicado e publicação V2.
+- [ADR 0003](ADRS/0003-identidade-e-operacao-v3.md) e [entrega V3](../ENTREGA-V3.md): identidade por senha e publicação anterior confirmada.
+- [Infraestrutura](INFRAESTRUTURA.md): configuração atual e evidências históricas separadas.
 
-Este pacote não deve conter senhas, tokens, URLs privadas de convite/agenda, termos assinados ou dados reais de participantes. A emissão de convite exige destinatário, função e escopo definidos; a equipe continua responsável por conferir a pessoa e o canal de entrega.
+Código público não implica dados públicos. Este pacote não recebe senhas, tokens, URLs privadas de convite/agenda, termos assinados, pastas privadas de operação ou dados reais de participantes.

@@ -1,5 +1,8 @@
 # Entrega V3 — Gestão PROEX e Rolê da Extensão
 
+> Registro histórico da publicação V3. A evolução V4, publicada em 23/10/2026, é descrita em [ENTREGA-V4.md](ENTREGA-V4.md). A evidência abaixo continua vinculada à revisão V3.
+
+
 Registro de 20/10/2026. **Versão 3 publicada com sucesso**, conforme retorno da plataforma às 15:55:09 UTC. A entrada pública e a proteção dos endpoints foram conferidas por HTTP depois da publicação.
 
 | Evidência | Registro final |

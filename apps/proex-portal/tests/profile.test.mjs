@@ -6,6 +6,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import ts from 'typescript';
 import { PNG } from 'pngjs';
+import { deflateSync } from 'node:zlib';
 
 const require = createRequire(import.meta.url);
 function moduleUrl(source) { return `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`; }
@@ -84,13 +85,36 @@ function expectError(promise, status, code) {
 test('an admitted account edits its own profile without receiving organization permissions', async (t) => {
   const f = fixture(t);
   const initial = await getOwnProfile(f.db, user, false);
-  assert.deepEqual(initial, { profile: { displayName: 'Pessoa', email: user.email, avatarUrl: null, version: 1 }, hasPassword: false });
+  assert.deepEqual(initial, { profile: { displayName: 'Pessoa', email: user.email, unit: '', jobTitle: '', phone: '', avatarUrl: null, version: 1 }, hasPassword: false });
   const updated = await updateOwnProfile(f.db, user, { displayName: 'Yan de Exemplo', expectedVersion: 1 }, true);
   assert.equal(updated.profile.displayName, 'Yan de Exemplo');
   assert.equal(updated.profile.version, 2);
   assert.equal(updated.hasPassword, true);
   assert.equal(f.native.prepare('SELECT COUNT(*) n FROM members').get().n, 0);
   assert.equal(JSON.stringify(updated).includes('avatar_key'), false);
+});
+
+test('optional institutional profile data can be saved, preserved by older clients and cleared', async t => {
+  const f = fixture(t);
+  const first = await updateOwnProfile(f.db, user, { displayName: 'Pessoa', unit: '  PROEX · Comunicação  ', jobTitle: ' Bolsista ', phone: '+55 (62) 0000-0000 · ramal 4', expectedVersion: 1 }, false);
+  assert.equal(first.profile.unit, 'PROEX · Comunicação'); assert.equal(first.profile.jobTitle, 'Bolsista');
+  assert.equal(first.profile.phone, '+55 (62) 0000-0000 · ramal 4');
+  const olderClient = await updateOwnProfile(f.db, user, { displayName: 'Nome atualizado', expectedVersion: 2 }, false);
+  assert.equal(olderClient.profile.unit, first.profile.unit); assert.equal(olderClient.profile.phone, first.profile.phone);
+  const cleared = await updateOwnProfile(f.db, user, { displayName: 'Nome atualizado', unit: '', jobTitle: '', phone: '', expectedVersion: 3 }, false);
+  assert.equal(cleared.profile.unit, ''); assert.equal(cleared.profile.jobTitle, ''); assert.equal(cleared.profile.phone, '');
+  assert.equal(f.native.prepare('SELECT COUNT(*) n FROM members').get().n, 0);
+  const audits = f.native.prepare("SELECT details FROM audit WHERE action='profile.update'").all();
+  assert.equal(JSON.stringify(audits).includes('0000-0000'), false);
+});
+
+test('institutional profile data has bounded text and never accepts permission fields', async t => {
+  const f = fixture(t);
+  await getOwnProfile(f.db, user, false);
+  for (const values of [{ unit: 'a'.repeat(121) }, { jobTitle: 'a'.repeat(121) }, { phone: 'a'.repeat(41) }, { phone: 'Contato\nOculto' }, { unit: null }, { jobTitle: 2 }]) {
+    await expectError(updateOwnProfile(f.db, user, { displayName: 'Pessoa', expectedVersion: 1, ...values }, false), 400, 'invalid_profile_metadata');
+  }
+  assert.equal(f.native.prepare('SELECT version FROM profiles').get().version, 1);
 });
 
 test('profile input rejects changes to email, role, status and another user identifier', async (t) => {
@@ -126,6 +150,14 @@ test('an unadmitted or blocked account cannot create or change a profile', async
   assert.equal(f.native.prepare('SELECT COUNT(*) n FROM profiles').get().n, 0);
 });
 
+test('an anonymized principal cannot recreate a deleted profile even if an active status is stale', async t => {
+  const f = fixture(t);
+  f.native.prepare('UPDATE portal_users SET anonymized_at=?').run(new Date().toISOString());
+  await expectError(getOwnProfile(f.db, user, false), 403, 'account_inactive');
+  await expectError(updateOwnProfile(f.db, user, { displayName: 'Pessoa', expectedVersion: 1 }, false), 403, 'account_inactive');
+  assert.equal(f.native.prepare('SELECT COUNT(*) n FROM profiles').get().n, 0);
+});
+
 test('matching e-mail text never merges profile identities', async (t) => {
   const f = fixture(t);
   const now = new Date().toISOString();
@@ -137,18 +169,47 @@ test('matching e-mail text never merges profile identities', async (t) => {
   assert.equal((await getOwnProfile(f.db, other, false)).profile.displayName, 'Outra pessoa');
 });
 
-test('PNG validation checks signature, byte limit and IHDR before decoding pixels', () => {
-  assert.throws(() => normalizeAvatarPng(new Uint8Array(Buffer.from('<svg></svg>'))), { status: 415 });
-  assert.throws(() => normalizeAvatarPng(new Uint8Array(MAX_AVATAR_BYTES + 1)), { status: 413 });
+test('PNG validation checks signature, byte limit and IHDR before decoding pixels', async () => {
+  await assert.rejects(normalizeAvatarPng(new Uint8Array(Buffer.from('<svg></svg>'))), { status: 415 });
+  await assert.rejects(normalizeAvatarPng(new Uint8Array(MAX_AVATAR_BYTES + 1)), { status: 413 });
   const oversized = new Uint8Array(png());
   new DataView(oversized.buffer).setUint32(16, 100000);
-  assert.throws(() => normalizeAvatarPng(oversized), { status: 400, code: 'avatar_dimensions' });
+  await assert.rejects(normalizeAvatarPng(oversized), { status: 400, code: 'avatar_dimensions' });
   const corrupted = new Uint8Array(png());
   corrupted[corrupted.length - 10] ^= 0xff;
-  assert.throws(() => normalizeAvatarPng(corrupted), { status: 415 });
-  const prepared = normalizeAvatarPng(new Uint8Array(png(32, 18)));
+  await assert.rejects(normalizeAvatarPng(corrupted), { status: 415 });
+  const prepared = await normalizeAvatarPng(new Uint8Array(png(32, 18)));
   const decoded = PNG.sync.read(Buffer.from(prepared));
   assert.equal(decoded.width, 32); assert.equal(decoded.height, 18);
+});
+
+test('prepared PNG decoding works without pngjs private synchronous zlib path', async () => {
+  const input = png(48, 32), originalRead = PNG.sync.read;
+  PNG.sync.read = () => { throw new TypeError("Class constructor Inflate cannot be invoked without 'new'"); };
+  try {
+    const normalized = await normalizeAvatarPng(new Uint8Array(input));
+    const decoded = originalRead(Buffer.from(normalized));
+    assert.equal(decoded.width, 48); assert.equal(decoded.height, 32);
+  } finally { PNG.sync.read = originalRead; }
+});
+
+test('duplicate PNG headers and truncated/trailing chunks are rejected before pixel decoding', async () => {
+  const input = png();
+  const duplicateHeader = Buffer.concat([input.subarray(0, 33), input.subarray(8, 33), input.subarray(33)]);
+  for (const bytes of [duplicateHeader, input.subarray(0, -1), Buffer.concat([input, Buffer.from('extra')])]) {
+    await assert.rejects(normalizeAvatarPng(new Uint8Array(bytes)), { status: 415, code: 'invalid_avatar' });
+  }
+});
+
+test('PNG decompression cannot exceed the dimensions declared in its bounded header', async () => {
+  const input = png(), compressed = deflateSync(Buffer.alloc(65536));
+  const idat = Buffer.alloc(compressed.length + 12);
+  idat.writeUInt32BE(compressed.length, 0); idat.write('IDAT', 4); compressed.copy(idat, 8);
+  idat.writeUInt32BE(crc32(idat.subarray(4, -4)), idat.length - 4);
+  const oversizedPixels = Buffer.concat([input.subarray(0, 33), idat, input.subarray(-12)]);
+  await assert.rejects(normalizeAvatarPng(new Uint8Array(oversizedPixels)), { status: 415, code: 'invalid_avatar' });
+  const largest = await normalizeAvatarPng(new Uint8Array(png(512, 512)));
+  assert.equal(PNG.sync.read(Buffer.from(largest)).width, 512);
 });
 
 function crc32(bytes) {
@@ -159,14 +220,14 @@ function crc32(bytes) {
   }
   return (crc ^ 0xffffffff) >>> 0;
 }
-test('server re-encoding removes ancillary identifying metadata', () => {
+test('server re-encoding removes ancillary identifying metadata', async () => {
   const original = png();
   const text = Buffer.from('Author\0private-person@example.test');
   const chunk = Buffer.alloc(text.length + 12);
   chunk.writeUInt32BE(text.length, 0); chunk.write('tEXt', 4); text.copy(chunk, 8);
   chunk.writeUInt32BE(crc32(chunk.subarray(4, -4)), chunk.length - 4);
   const withMetadata = Buffer.concat([original.subarray(0, 33), chunk, original.subarray(33)]);
-  const normalized = Buffer.from(normalizeAvatarPng(new Uint8Array(withMetadata)));
+  const normalized = Buffer.from(await normalizeAvatarPng(new Uint8Array(withMetadata)));
   assert.equal(normalized.includes(Buffer.from('private-person@example.test')), false);
   const types = [];
   for (let offset = 8; offset < normalized.length;) {
@@ -188,6 +249,20 @@ test('avatar upload exposes only a private self URL and cleans the previous obje
   assert.equal(f.objects.size, 1);
   assert.equal(JSON.stringify(second).includes('avatars/'), false);
   await expectError(getOwnAvatar(f.db, user, 'another-user'), 404, 'avatar_not_found');
+});
+
+test('a failed deletion of an old avatar is durably queued without losing the new profile photo', async t => {
+  const f = fixture(t);
+  await getOwnProfile(f.db, user, false);
+  await replaceOwnAvatar(f.db, f.storage, user, new Uint8Array(png()), 1, false);
+  const old = await getOwnAvatar(f.db, user, user.userId);
+  f.storage.delete = async () => { throw new Error('storage_delete_unavailable'); };
+  const updated = await replaceOwnAvatar(f.db, f.storage, user, new Uint8Array(png(4, 3)), 2, false);
+  assert.equal(updated.profile.version, 3);
+  const queued = f.native.prepare('SELECT user_id,object_key,mime,deleted_at FROM private_object_deletions').get();
+  assert.equal(queued.user_id, user.userId); assert.equal(queued.object_key, old.key);
+  assert.equal(queued.mime, 'image/png'); assert.equal(queued.deleted_at, null);
+  assert.notEqual((await getOwnAvatar(f.db, user, user.userId)).key, old.key);
 });
 
 test('concurrent avatar writes keep one version and compensate the losing object', async (t) => {
@@ -238,6 +313,36 @@ test('account blocking during object upload denies commit and compensates storag
   await expectError(replaceOwnAvatar(f.db, f.storage, user, new Uint8Array(png()), 1, false), 403, 'account_inactive');
   assert.equal(f.objects.size, 0);
   assert.equal(f.native.prepare('SELECT version FROM profiles').get().version, 1);
+});
+
+test('anonymization during avatar I/O denies the new object and does not recreate the deleted profile', async t => {
+  const f = fixture(t);
+  await getOwnProfile(f.db, user, false);
+  f.onPut(() => {
+    f.native.prepare("UPDATE portal_users SET status='blocked',anonymized_at=?").run(new Date().toISOString());
+    f.native.prepare('DELETE FROM profiles WHERE user_id=?').run(user.userId);
+  });
+  await expectError(replaceOwnAvatar(f.db, f.storage, user, new Uint8Array(png()), 1, false), 403, 'account_inactive');
+  assert.equal(f.objects.size, 0);
+  assert.equal(f.native.prepare('SELECT COUNT(*) n FROM profiles').get().n, 0);
+});
+
+test('late failed upload compensation reopens completed anonymization and durably queues its private object', async t => {
+  const f = fixture(t);
+  await getOwnProfile(f.db, user, false);
+  f.storage.delete = async () => { throw new Error('storage_delete_unavailable'); };
+  f.onPut(() => {
+    const now = new Date().toISOString();
+    f.native.prepare("UPDATE portal_users SET status='blocked',anonymized_at=?").run(now);
+    f.native.prepare('DELETE FROM profiles WHERE user_id=?').run(user.userId);
+    f.native.prepare("INSERT INTO privacy_requests(id,user_id,status,requested_at,completed_at,reason) VALUES(?,?,'completed',?,?,'account_anonymization')").run('privacy-finished', user.userId, now, now);
+  });
+  await expectError(replaceOwnAvatar(f.db, f.storage, user, new Uint8Array(png()), 1, false), 403, 'account_inactive');
+  const queued = f.native.prepare('SELECT user_id,object_key FROM private_object_deletions').get();
+  assert.equal(queued.user_id, user.userId); assert.equal(f.objects.has(queued.object_key), true);
+  const request = f.native.prepare('SELECT status,completed_at FROM privacy_requests WHERE id=?').get('privacy-finished');
+  assert.equal(request.status, 'cleanup_pending'); assert.equal(request.completed_at, null);
+  assert.equal(f.native.prepare('SELECT COUNT(*) n FROM profiles').get().n, 0);
 });
 
 test('profile mutations require same-origin action requests and the correct media type', () => {
