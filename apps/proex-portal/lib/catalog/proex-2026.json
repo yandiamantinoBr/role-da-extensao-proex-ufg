@@ -1,0 +1,466 @@
+{
+  "schemaVersion": 1,
+  "verifiedAt": "2026-10-23",
+  "scope": "Catálogo institucional público da PROEX/UFG; revisão de programas e projetos, com referências auxiliares de eventos e editais.",
+  "primaryDomain": "proex.ufg.br",
+  "method": "Pesquisa web pelo sistema 1 e leitura de páginas oficiais; nomes, categorias e datas confrontados com índices de gestão 2022–2025 e 2026–2029.",
+  "seedPolicy": {
+    "productionWritesPerformed": false,
+    "automaticProductionSeed": false,
+    "approvalOwner": "root",
+    "stockQuantities": 0,
+    "participations": 0,
+    "loans": 0,
+    "historicalOperations": "Não importar cronologia editorial como campanha, atendimento, movimentação ou empréstimo realizado.",
+    "dates": "Período de gestão, data de publicação e data de realização são campos distintos. Não inventar início/fim operacional quando a fonte só informa o ano ou o mês."
+  },
+  "taxonomy": {
+    "program": "Instrumento de gestão que agrega ações de extensão; não é sinônimo de edição de evento.",
+    "project": "Projeto identificado como tal no portal institucional.",
+    "event": "Evento ou congresso; editais associados ficam separados.",
+    "funding_program": "Programa de bolsas/fomento, distinto dos programas temáticos da seção Programas.",
+    "historical_reference": "Presença no arquivo de gestão não comprova encerramento das atividades; não marcar como inativo só por ausência no índice atual."
+  },
+  "publicProjects": [
+    {
+      "key": "role-da-extensao",
+      "name": "Rolê da Extensão",
+      "entityType": "project",
+      "catalogStatus": "current_listing",
+      "statusEvidence": "Projeto com página própria no menu institucional; criação em janeiro de 2025 documentada e relatório de atividades 2025 disponível.",
+      "description": "Projeto itinerante de aproximação entre universidade e sociedade, com divulgação das ações extensionistas e dinâmicas participativas em espaços acadêmicos, escolares e comunitários.",
+      "officialUrl": "https://proex.ufg.br/p/60194-role-da-extensao",
+      "sources": [
+        {
+          "url": "https://proex.ufg.br/p/60194-role-da-extensao",
+          "publishedAt": "2026-03-25",
+          "updatedAt": "2026-03-26"
+        }
+      ],
+      "founded": {
+        "value": "2025-01",
+        "precision": "month"
+      },
+      "timeline": [
+        {
+          "date": "2025-02-21",
+          "endsOn": "2025-02-27",
+          "title": "Rolê na Matrícula",
+          "kind": "public_documented_edition",
+          "sourceUrl": "https://proex.ufg.br/p/60194-role-da-extensao"
+        },
+        {
+          "date": "2025-03-12",
+          "title": "Participação no Curta o Campus — Cidade de Goiás",
+          "kind": "public_documented_edition",
+          "sourceUrl": "https://proex.ufg.br/p/60194-role-da-extensao"
+        },
+        {
+          "date": "2025-04-12",
+          "title": "Espaço das Profissões Itinerante — Cidade Ocidental",
+          "kind": "public_documented_edition",
+          "sourceUrl": "https://proex.ufg.br/p/60194-role-da-extensao"
+        },
+        {
+          "date": "2025-08-26",
+          "title": "Banco de Alimentos — OVG",
+          "kind": "public_documented_edition",
+          "sourceUrl": "https://proex.ufg.br/p/60194-role-da-extensao"
+        },
+        {
+          "date": "2025-11-04",
+          "endsOn": "2025-11-07",
+          "title": "Participação no CONPEEX",
+          "kind": "public_documented_edition",
+          "sourceUrl": "https://proex.ufg.br/p/60194-role-da-extensao"
+        }
+      ],
+      "resources": [
+        {
+          "kind": "report",
+          "label": "Relatório de atividades 2025",
+          "url": "https://files.cercomp.ufg.br/weby/up/694/o/Relat%C3%B3rio_-_Rol%C3%AA_da_Extens%C3%A3o_-_2025-26.pdf"
+        }
+      ],
+      "recommendedForInitialCatalog": true
+    },
+    {
+      "key": "curta-o-campus",
+      "name": "Curta o Campus",
+      "entityType": "project",
+      "catalogStatus": "current_activity_documented_2026",
+      "statusEvidence": "Página oficial identifica Projeto Curta o Campus e registra edição em 2026; notícia oficial da Rádio UFG também descreve edição de abril de 2026.",
+      "description": "Projeto que abre espaços universitários à comunidade e reúne ações científicas, tecnológicas, artísticas e culturais em edições de integração entre universidade e sociedade.",
+      "officialUrl": "https://proex.ufg.br/p/26615-projeto-curta-o-campus",
+      "sources": [
+        {
+          "url": "https://proex.ufg.br/p/26615-projeto-curta-o-campus",
+          "publishedAt": "2018-10-18",
+          "updatedAt": "2026-09-03",
+          "note": "Foram observadas cópias indexadas com atualização anterior em 10/04/2026; conteúdo mais recente acessado inclui Caminhada Lilás."
+        },
+        {
+          "url": "https://proex.ufg.br/n/199903-radio-ufg-sedia-a-14-edicao-do-curta-o-campus",
+          "publishedAt": null,
+          "updatedAt": "2026-04-15"
+        }
+      ],
+      "founded": {
+        "value": "2018-09-22",
+        "precision": "day"
+      },
+      "timeline": [
+        {
+          "date": "2018-09-22",
+          "title": "Primeira edição — Festival de Pipa e Meio Ambiente",
+          "sourceUrl": "https://proex.ufg.br/p/26615-projeto-curta-o-campus",
+          "kind": "public_documented_edition"
+        },
+        {
+          "date": "2025-10-08",
+          "title": "Edição Planetário",
+          "sourceUrl": "https://proex.ufg.br/p/26615-projeto-curta-o-campus",
+          "kind": "public_documented_edition"
+        },
+        {
+          "date": "2026-04-24",
+          "title": "14ª edição — Rádio UFG",
+          "sourceUrl": "https://proex.ufg.br/n/199903-radio-ufg-sedia-a-14-edicao-do-curta-o-campus",
+          "kind": "public_announced_edition"
+        },
+        {
+          "date": "2026-08-28",
+          "title": "Edição Caminhada Lilás",
+          "sourceUrl": "https://proex.ufg.br/p/26615-projeto-curta-o-campus",
+          "kind": "public_documented_edition"
+        }
+      ],
+      "resources": [],
+      "recommendedForInitialCatalog": true
+    },
+    {
+      "key": "ufg-em-todo-lugar",
+      "name": "UFG em Todo Lugar",
+      "entityType": "program",
+      "catalogStatus": "listed_management_2026_2029",
+      "statusEvidence": "Incluído na relação oficial de Programas de Extensão Gestão 2026–2029, com página própria para esse período.",
+      "description": "Programa de popularização da ciência que leva conhecimentos de ensino, pesquisa e extensão da UFG à comunidade e estimula o diálogo sobre questões sociais.",
+      "officialUrl": "https://proex.ufg.br/p/62477-programa-ufg-em-todo-lugar-gestao-2026-2029",
+      "managementPeriod": {
+        "from": 2026,
+        "to": 2029
+      },
+      "sources": [
+        {
+          "url": "https://proex.ufg.br/p/62477-programa-ufg-em-todo-lugar-gestao-2026-2029",
+          "publishedAt": "2026-07-21",
+          "updatedAt": "2026-07-21"
+        },
+        {
+          "url": "https://proex.ufg.br/p/62169-programas-de-extensao-2026-2029",
+          "publishedAt": "2026-06-25",
+          "updatedAt": "2026-08-18"
+        }
+      ],
+      "timeline": [
+        {
+          "date": "2025-10-21",
+          "title": "Edição de Nerópolis",
+          "sourceUrl": "https://proex.ufg.br/p/58952-ufg-em-todo-lugar-neropolis-outubro-de-2025",
+          "kind": "public_documented_edition",
+          "note": "Referência histórica anterior à gestão atual, não uma operação deste portal."
+        }
+      ],
+      "resources": [
+        {
+          "kind": "history",
+          "label": "Página da gestão 2022–2025",
+          "url": "https://proex.ufg.br/p/60666-programa-ufg-em-todo-lugar"
+        }
+      ],
+      "recommendedForInitialCatalog": true
+    },
+    {
+      "key": "ufg-nos-parques",
+      "name": "UFG nos Parques",
+      "entityType": "program",
+      "catalogStatus": "listed_management_2026_2029",
+      "statusEvidence": "Incluído no índice de gestão 2026–2029 e página atual com edições de março e setembro de 2026.",
+      "description": "Programa que articula ações da UFG em parques e espaços públicos, aproximando a comunidade de conhecimentos sobre ambiente, saúde, lazer, cultura e tecnologia.",
+      "officialUrl": "https://proex.ufg.br/p/62476-programa-ufg-nos-parques-gestao-2026-2029",
+      "managementPeriod": {
+        "from": 2026,
+        "to": 2029
+      },
+      "sources": [
+        {
+          "url": "https://proex.ufg.br/p/62476-programa-ufg-nos-parques-gestao-2026-2029",
+          "publishedAt": "2026-07-21",
+          "updatedAt": "2026-09-18"
+        },
+        {
+          "url": "https://proex.ufg.br/p/62169-programas-de-extensao-2026-2029",
+          "publishedAt": "2026-06-25",
+          "updatedAt": "2026-08-18"
+        }
+      ],
+      "timeline": [
+        {
+          "date": "2026-03-28",
+          "title": "Parque Leolídio di Ramos Caiado",
+          "kind": "public_documented_edition",
+          "sourceUrl": "https://proex.ufg.br/p/62476-programa-ufg-nos-parques-gestao-2026-2029"
+        },
+        {
+          "date": "2026-09-11",
+          "title": "Mossâmedes",
+          "kind": "public_documented_edition",
+          "sourceUrl": "https://proex.ufg.br/p/62476-programa-ufg-nos-parques-gestao-2026-2029"
+        }
+      ],
+      "resources": [
+        {
+          "kind": "history",
+          "label": "Página da gestão 2022–2025",
+          "url": "https://proex.ufg.br/p/29837-programa-ufg-nos-parques"
+        }
+      ],
+      "recommendedForInitialCatalog": true
+    },
+    {
+      "key": "ufg-com-a-escola",
+      "name": "UFG com a Escola",
+      "entityType": "program",
+      "catalogStatus": "listed_management_2026_2029",
+      "statusEvidence": "Nome consta no índice oficial 2026–2029 e página específica dessa gestão é indexada. A abertura integral da página nova falhou na ferramenta; descrição foi confrontada com a página institucional anterior.",
+      "description": "Programa de integração das ações extensionistas da UFG com a educação básica, articulando formação e intercâmbio de conhecimentos entre escola e universidade.",
+      "officialUrl": "https://proex.ufg.br/p/62503-programa-ufg-com-a-escola-gestao-2026-2029",
+      "managementPeriod": {
+        "from": 2026,
+        "to": 2029
+      },
+      "sources": [
+        {
+          "url": "https://proex.ufg.br/p/62503-programa-ufg-com-a-escola-gestao-2026-2029",
+          "publishedAt": "2026-07-22",
+          "updatedAt": null,
+          "verification": "official_search_index"
+        },
+        {
+          "url": "https://proex.ufg.br/p/62169-programas-de-extensao-2026-2029",
+          "publishedAt": "2026-06-25",
+          "updatedAt": "2026-08-18"
+        },
+        {
+          "url": "https://proex.ufg.br/p/29836-programa-ufg-com-a-escola",
+          "publishedAt": "2019-08-06",
+          "updatedAt": "2026-05-04"
+        }
+      ],
+      "timeline": [],
+      "resources": [
+        {
+          "kind": "history",
+          "label": "Página institucional anterior",
+          "url": "https://proex.ufg.br/p/29836-programa-ufg-com-a-escola"
+        }
+      ],
+      "recommendedForInitialCatalog": true
+    },
+    {
+      "key": "ufg-com-voce",
+      "name": "UFG com Você",
+      "entityType": "program",
+      "catalogStatus": "historical_reference_2022_2025",
+      "statusEvidence": "Listado no arquivo de programas Gestão 2022–2025. A página consultada é antiga; não houve comprovação de programação atual ou encerramento.",
+      "description": "Programa da Rádio Universitária em parceria com a pró-reitoria para divulgar e discutir ações de extensão da UFG.",
+      "officialUrl": "https://proex.ufg.br/p/37789-programacao-ufg-com-voce",
+      "managementPeriod": {
+        "from": 2022,
+        "to": 2025
+      },
+      "sources": [
+        {
+          "url": "https://proex.ufg.br/p/60604-programas-de-extensao-2022-2025",
+          "publishedAt": "2026-04-15",
+          "updatedAt": "2026-07-03"
+        },
+        {
+          "url": "https://proex.ufg.br/p/37789-programacao-ufg-com-voce",
+          "publishedAt": "2021-04-16",
+          "updatedAt": "2023-08-31"
+        }
+      ],
+      "timeline": [
+        {
+          "date": "2020-11-18",
+          "title": "Estreia informada pela página histórica",
+          "sourceUrl": "https://proex.ufg.br/p/37789-programacao-ufg-com-voce",
+          "kind": "public_historical_milestone"
+        }
+      ],
+      "resources": [],
+      "recommendedForInitialCatalog": false
+    },
+    {
+      "key": "mulheres-nas-poeticas",
+      "name": "Mulheres nas Poéticas",
+      "entityType": "program",
+      "catalogStatus": "historical_reference_2022_2025",
+      "statusEvidence": "A própria página identifica Gestão 2022–2025 e está vinculada ao arquivo daquele período; continuidade atual não comprovada.",
+      "description": "Programa de ações culturais e artísticas relacionadas às mulheres, suas identidades e seu protagonismo, em articulação com projetos de extensão e cultura.",
+      "officialUrl": "https://proex.ufg.br/p/49175-programa-mulheres-nas-poeticas-gestao-2022-2025",
+      "managementPeriod": {
+        "from": 2022,
+        "to": 2025
+      },
+      "sources": [
+        {
+          "url": "https://proex.ufg.br/p/49175-programa-mulheres-nas-poeticas-gestao-2022-2025",
+          "publishedAt": "2024-02-21",
+          "updatedAt": "2026-07-21"
+        },
+        {
+          "url": "https://proex.ufg.br/p/60604-programas-de-extensao-2022-2025",
+          "publishedAt": "2026-04-15",
+          "updatedAt": "2026-07-03"
+        }
+      ],
+      "timeline": [],
+      "resources": [],
+      "recommendedForInitialCatalog": false
+    },
+    {
+      "key": "culturas-e-artes",
+      "name": "Culturas e Artes na UFG",
+      "entityType": "program",
+      "catalogStatus": "historical_reference_2022_2025",
+      "statusEvidence": "Página oficial identificada como Gestão 2022–2025. Não inferir encerramento a partir da classificação histórica.",
+      "description": "Programa que articula projetos e ações culturais e artísticas na UFG e em diálogo com a comunidade externa.",
+      "officialUrl": "https://proex.ufg.br/p/61018-programa-culturas-e-artes-gestao-2022-2025",
+      "managementPeriod": {
+        "from": 2022,
+        "to": 2025
+      },
+      "sources": [
+        {
+          "url": "https://proex.ufg.br/p/61018-programa-culturas-e-artes-gestao-2022-2025",
+          "publishedAt": "2026-05-04",
+          "updatedAt": "2026-07-21"
+        },
+        {
+          "url": "https://proex.ufg.br/p/60604-programas-de-extensao-2022-2025",
+          "publishedAt": "2026-04-15",
+          "updatedAt": "2026-07-03"
+        }
+      ],
+      "timeline": [],
+      "resources": [],
+      "recommendedForInitialCatalog": false
+    }
+  ],
+  "relatedEntities": [
+    {
+      "key": "conpeex-2026",
+      "name": "23º CONPEEX — Congresso de Pesquisa, Ensino e Extensão",
+      "entityType": "event",
+      "catalogStatus": "official_2026_edition_documented",
+      "officialUrl": "https://23conpeex.plateia.ufg.br/",
+      "description": "Congresso da UFG com apresentação de trabalhos de ensino, pesquisa e extensão; possui editais específicos de trabalhos, atividades e monitoria.",
+      "exactEventDates": null,
+      "note": "Datas do congresso não foram afirmadas sem confirmação. Prazos de editais não são o período do evento.",
+      "sources": [
+        {
+          "url": "https://23conpeex.plateia.ufg.br/",
+          "updatedAt": null
+        },
+        {
+          "url": "https://proex.ufg.br/p/60322-edital-proec-n-08-2026-edital-para-submissao-e-apresentacao-de-trabalhos-no-23-conpeex",
+          "publishedAt": "2026-03-31",
+          "updatedAt": "2026-10-19"
+        }
+      ],
+      "calls": [
+        {
+          "referenceCode": "PROEC 08/2026",
+          "title": "Submissão e apresentação de trabalhos no 23º CONPEEX",
+          "officialUrl": "https://proex.ufg.br/p/60322-edital-proec-n-08-2026-edital-para-submissao-e-apresentacao-de-trabalhos-no-23-conpeex",
+          "statusFact": "Resultado final e segunda retificação publicados; não classificar a inscrição como aberta sem ler o cronograma vigente."
+        },
+        {
+          "referenceCode": "PROEX 19/2026",
+          "title": "Seleção de atividades para a programação do 23º CONPEEX",
+          "officialUrl": "https://proex.ufg.br/p/62914-edital-proex-n-19-2026-selecao-de-atividades-para-compor-a-programacao-do-23-congresso-de-pesquisa-ensino-e-extensao-conpeex-ufg",
+          "statusFact": "Página oficial possui habilitação preliminar publicada em 10/09/2026."
+        },
+        {
+          "referenceCode": "PROEX 21/2026",
+          "title": "Seleção de monitores para o 23º CONPEEX",
+          "officialUrl": "https://proex.ufg.br/p/63173-edital-proex-n-21-2026-chamada-publica-para-cadastramento-de-monitores-as-referente-ao-23-conpeex-congresso-de-pesquisa-ensino-e-extensao",
+          "statusFact": "Inscrições encerradas em 03/09/2026 e resultado publicado em 09/09/2026."
+        }
+      ]
+    },
+    {
+      "key": "probec",
+      "name": "PROBEC — Programa de Bolsas de Extensão e Cultura",
+      "entityType": "funding_program",
+      "catalogStatus": "official_call_2026_2027_documented",
+      "officialUrl": "https://proex.ufg.br/p/59892-edital-proec-n-05-2026-programa-de-bolsas-de-extensao-e-cultura-probec-2026-2027",
+      "description": "Programa de apoio a ações extensionistas e culturais da UFG por meio de bolsas para estudantes de graduação.",
+      "sources": [
+        {
+          "url": "https://proex.ufg.br/n/199260-proec-publica-edital-final-do-probec-2026-2027",
+          "publishedAt": "2026-03-13",
+          "updatedAt": null
+        },
+        {
+          "url": "https://proex.ufg.br/p/59892-edital-proec-n-05-2026-programa-de-bolsas-de-extensao-e-cultura-probec-2026-2027",
+          "publishedAt": "2026-03-10",
+          "updatedAt": "2026-07-29"
+        }
+      ],
+      "calls": [
+        {
+          "referenceCode": "PROEC 05/2026",
+          "title": "PROBEC 2026/2027",
+          "officialUrl": "https://proex.ufg.br/p/59892-edital-proec-n-05-2026-programa-de-bolsas-de-extensao-e-cultura-probec-2026-2027",
+          "statusFact": "Resultado final divulgado em 30/06/2026; não é uma chamada de inscrições aberta em 23/10/2026."
+        }
+      ]
+    }
+  ],
+  "officialResources": [
+    {
+      "kind": "programs_index",
+      "title": "Programas de Extensão",
+      "url": "https://proex.ufg.br/p/32240-programas-de-extensao"
+    },
+    {
+      "kind": "current_programs_index",
+      "title": "Programas de Extensão — Gestão 2026–2029",
+      "url": "https://proex.ufg.br/p/62169-programas-de-extensao-2026-2029"
+    },
+    {
+      "kind": "historical_programs_index",
+      "title": "Programas de Extensão — Gestão 2022–2025",
+      "url": "https://proex.ufg.br/p/60604-programas-de-extensao-2022-2025"
+    },
+    {
+      "kind": "calls_index",
+      "title": "Editais PROEX",
+      "url": "https://proex.ufg.br/p/editais-proex"
+    },
+    {
+      "kind": "manual",
+      "title": "Manual da Extensão",
+      "url": "https://proex.ufg.br/p/40155-manual-da-extensao"
+    }
+  ],
+  "uncertainties": [
+    "Não foi localizado projeto oficial chamado CompEx; fontes oficiais usam CONPEEX para o congresso. Não tratar isso como correção definitiva sem contexto do usuário.",
+    "Não foram confirmados programas oficiais com os nomes Oxigênio nos Parques ou Oxigênio em Todo Lugar. Os nomes documentados no portal são UFG nos Parques e UFG em Todo Lugar; não criar sinônimos sem validação.",
+    "Há diferenças entre cópias indexadas nas datas de atualização e listas de edições de algumas páginas. A proveniência foi preservada; datas de fonte não devem virar fatos operacionais.",
+    "O catálogo não pretende enumerar todas as ações de extensão de toda a UFG. Ele cobre os programas e projetos explicitamente organizados no menu e índices institucionais da PROEX e referências relacionadas verificadas."
+  ]
+}

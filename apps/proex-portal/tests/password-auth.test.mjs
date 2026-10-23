@@ -28,12 +28,12 @@ function compile(source, target) {
   writeFileSync(join(temporary, `${target}.js`), output);
 }
 compile('../db/auth-schema.ts', 'auth-schema');
-for (const name of ['password-auth', 'session', 'access', 'database', 'errors', 'http', 'rate-limit', 'mutations']) compile(`../lib/${name}.ts`, name);
+for (const name of ['password-auth', 'session', 'access', 'database', 'errors', 'http', 'rate-limit', 'mutations', 'login-identifiers', 'privacy']) compile(`../lib/${name}.ts`, name);
 compile('../app/api/account/route.ts', 'account-route');
 compile('../app/api/auth/[...all]/route.ts', 'auth-route');
 writeFileSync(join(temporary, 'request-headers.js'), 'export async function headers(){return globalThis.__proexPasswordTestContext.headers;}');
 writeFileSync(join(temporary, 'native-auth.js'), 'export async function getChatGPTUser(){return globalThis.__proexPasswordTestContext.native ?? null;}');
-writeFileSync(join(temporary, 'platform.js'), 'export function database(){return globalThis.__proexPasswordTestContext.db;} export function ownerEmail(){return globalThis.__proexPasswordTestContext.ownerEmail;}');
+writeFileSync(join(temporary, 'platform.js'), 'export function database(){return globalThis.__proexPasswordTestContext.db;} export function ownerEmail(){return globalThis.__proexPasswordTestContext.ownerEmail;} export function inviteSecret(){return globalThis.__proexPasswordTestContext.runtimeEnv.BETTER_AUTH_SECRET;} export function bucket(){return globalThis.__proexPasswordTestContext.storage;}');
 writeFileSync(join(temporary, 'configured-auth.js'), `
  import {passwordAuth as actual} from './password-auth.js';
  export function passwordAuth(db,options={}){return actual(db,{...options,runtimeEnv:globalThis.__proexPasswordTestContext.runtimeEnv});}
@@ -45,7 +45,7 @@ after(() => {
 const { passwordAuth } = await import(pathToFileURL(join(temporary, 'password-auth.js')).href);
 const { getPortalUser, ensureNativePrincipal } = await import(pathToFileURL(join(temporary, 'session.js')).href);
 const { getActor, requireCapability, accessAction } = await import(pathToFileURL(join(temporary, 'access.js')).href);
-const { POST: accountPost } = await import(pathToFileURL(join(temporary, 'account-route.js')).href);
+const { POST: accountPost, GET: accountGet } = await import(pathToFileURL(join(temporary, 'account-route.js')).href);
 const { GET: authGet } = await import(pathToFileURL(join(temporary, 'auth-route.js')).href);
 const origin = 'https://portal.example.test';
 const originalPassword = 'Uma frase de teste 2026!';
@@ -59,13 +59,14 @@ function fixture(t) {
   }
   function prepare(sql, parameters = []) {
     return {
+      sql,
       bind(...values) { return prepare(sql, values); },
       async first(column) {
         const row = sqlite.prepare(sql).get(...parameters);
         if (hooks.afterFirst) await hooks.afterFirst(sql, parameters, row);
         return column ? row?.[column] ?? null : row ?? null;
       },
-      async all() { return { success: true, results: sqlite.prepare(sql).all(...parameters), meta: {} }; },
+      async all() { const rows=sqlite.prepare(sql).all(...parameters); if(hooks.afterFirst)for(const row of rows)await hooks.afterFirst(sql,parameters,row); return { success: true, results: rows, meta: {} }; },
       async raw() {
         const statement = sqlite.prepare(sql);
         statement.setReturnArrays(true);
@@ -81,6 +82,7 @@ function fixture(t) {
   const db = {
     prepare,
     async batch(statements) {
+      if(hooks.beforeBatch)await hooks.beforeBatch(statements);
       sqlite.exec('BEGIN IMMEDIATE');
       try {
         const result = statements.map(statement => statement.execute());
@@ -91,7 +93,7 @@ function fixture(t) {
     },
   };
   const runtimeEnv = { BETTER_AUTH_URL: origin, BETTER_AUTH_SECRET: crypto.randomUUID() + crypto.randomUUID() };
-  const context = { db, runtimeEnv, headers: new Headers(), native: null, ownerEmail: undefined };
+  const context = { db, runtimeEnv, headers: new Headers(), native: null, ownerEmail: undefined, storage:{async delete(){}} };
   globalThis.__proexPasswordTestContext = context;
   t.after(() => {
     if (globalThis.__proexPasswordTestContext === context) delete globalThis.__proexPasswordTestContext;
@@ -480,4 +482,166 @@ test('HTTP auth wrapper keeps session responses private and hides signup, reset 
     assert.equal(response.status, 404);
     assert.match(response.headers.get('Cache-Control'), /no-store/);
   }
+});
+
+async function accountRead(f, action, cookie) {
+  const request=new Request(`${origin}/api/account?action=${action}`,{headers:{cookie}});
+  f.context.headers=request.headers;
+  return accountGet(request);
+}
+
+test('optional username and CPF require the current password and reuse the canonical password account', async t=>{
+  const f=fixture(t),{auth,user}=await createAccount(f);
+  f.seedPrincipal('aliases-user',user.email);f.alias(user.id,'aliases-user');
+  const {cookie}=await signIn(auth,user.email);
+  const update={action:'identifiers.update',kind:'username',value:'Pessoa.Proex',acknowledged:true,currentPassword:originalPassword};
+  assert.equal((await accountRequest(f,{...update,currentPassword:'Senha errada de teste 2026!'},{cookie})).status,400);
+  assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM login_identifiers').get().n,0);
+  assert.equal((await accountRequest(f,update,{cookie})).status,200);
+  assert.equal((await accountRequest(f,{action:'login',identifier:'PESSOA.PROEX',password:originalPassword})).status,200);
+  assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM auth_user').get().n,1);
+  const cpf='529.982.247-25';
+  const configured=await accountRequest(f,{...update,kind:'cpf',value:cpf},{cookie});
+  assert.equal(configured.status,200);
+  const body=await (await accountRead(f,'identifiers',cookie)).json();
+  assert.equal(body.username,'pessoa.proex');assert.equal(body.cpfConfigured,true);
+  assert.ok(!JSON.stringify(body).includes('529'));assert.ok(!JSON.stringify(body).includes(cpf));
+  const stored=f.sqlite.prepare('SELECT * FROM login_identifiers WHERE kind=\'cpf\'').get();
+  assert.match(stored.lookup_hash,/^[a-f0-9]{64}$/);
+  assert.ok(!JSON.stringify(stored).includes('52998224725'));assert.ok(!JSON.stringify(stored).includes(cpf));
+  assert.ok(!JSON.stringify(f.sqlite.prepare('SELECT * FROM audit').all()).includes('529'));
+  assert.equal((await accountRequest(f,{action:'login',identifier:cpf,password:originalPassword})).status,200);
+  assert.equal((await accountRequest(f,{...update,action:'identifiers.remove',kind:'cpf'},{cookie})).status,200);
+  assert.equal((await accountRequest(f,{action:'login',identifier:cpf,password:originalPassword})).status,401);
+  assert.equal((await accountRequest(f,{action:'login',identifier:user.email,password:originalPassword})).status,200);
+});
+
+test('alias normalization rejects invalid CPF, repeated digits and ambiguous names; uniqueness cannot steal another account',async t=>{
+  const f=fixture(t),first=await createAccount(f,'first@example.test'),second=await createAccount(f,'second@example.test');
+  f.seedPrincipal('alias-first',first.user.email);f.alias(first.user.id,'alias-first');f.seedPrincipal('alias-second',second.user.email);f.alias(second.user.id,'alias-second');
+  const cookie=(await signIn(first.auth,first.user.email)).cookie,otherCookie=(await signIn(second.auth,second.user.email)).cookie;
+  const input={action:'identifiers.update',kind:'cpf',value:'52998224725',acknowledged:true,currentPassword:originalPassword};
+  for(const value of ['11111111111','52998224724','529 982 24725','123','abcdefghijk'])assert.equal((await accountRequest(f,{...input,value},{cookie})).status,400);
+  for(const value of ['a','nome@ufg.br','52998224725','529.982.247-25'])assert.equal((await accountRequest(f,{...input,kind:'username',value},{cookie})).status,400);
+  // Each proof attempt is bounded per account; clear only synthetic rate counters to test the uniqueness transaction.
+  f.sqlite.prepare('DELETE FROM portal_rate_limits').run();
+  assert.equal((await accountRequest(f,input,{cookie})).status,200);
+  assert.equal((await accountRequest(f,input,{cookie:otherCookie})).status,409);
+  assert.equal(f.sqlite.prepare("SELECT user_id FROM login_identifiers WHERE kind='cpf'").get().user_id,'alias-first');
+});
+
+test('email, username and CPF share the canonical login attempt limit',async t=>{
+  const f=fixture(t),{auth,user}=await createAccount(f);
+  f.seedPrincipal('rate-alias-user',user.email);f.alias(user.id,'rate-alias-user');
+  const {cookie}=await signIn(auth,user.email);
+  for(const [kind,value]of [['username','pessoa-limite'],['cpf','52998224725']])assert.equal((await accountRequest(f,{action:'identifiers.update',kind,value,acknowledged:true,currentPassword:originalPassword},{cookie})).status,200);
+  f.sqlite.prepare('DELETE FROM portal_rate_limits').run();
+  const identifiers=[user.email,'pessoa-limite','529.982.247-25'];
+  for(let n=0;n<10;n++)assert.equal((await accountRequest(f,{action:'login',identifier:identifiers[n%3],password:originalPassword})).status,200);
+  assert.equal((await accountRequest(f,{action:'login',identifier:'PESSOA-LIMITE',password:originalPassword})).status,429);
+});
+
+test('anonymized native tombstones cannot restore profiles, aliases, owner bootstrap or password sessions',async t=>{
+  const f=fixture(t),{auth,user}=await createAccount(f);
+  const native={userId:'anonymized-native',email:user.email,displayName:'Nome que deve sumir'};
+  f.seedPrincipal(native.userId,native.email,{role:'owner'});f.alias(user.id,native.userId);f.context.native=native;f.context.ownerEmail=native.email;
+  const {cookie}=await signIn(auth,user.email);
+  f.sqlite.prepare("UPDATE portal_users SET status='blocked',email=NULL,anonymized_at=? WHERE user_id=?").run(new Date().toISOString(),native.userId);
+  f.sqlite.prepare('DELETE FROM profiles WHERE user_id=?').run(native.userId);
+  f.sqlite.prepare("DELETE FROM identity_aliases WHERE provider='native'").run();
+  await assert.rejects(ensureNativePrincipal(),error=>error.code==='account_blocked');
+  assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM profiles').get().n,0);
+  assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM identity_aliases WHERE provider='native'").get().n,0);
+  assert.equal(await getActor(f.db,native,native.email),null);
+  f.context.headers=new Headers({cookie});await assert.rejects(getPortalUser(),error=>error.code==='account_blocked');
+  // Even an accidental status flip must not remove the irreversible tombstone.
+  f.sqlite.prepare("UPDATE portal_users SET status='active'").run();
+  assert.equal(await getActor(f.db,native,native.email),null);
+  await assert.rejects(ensureNativePrincipal(),error=>error.code==='account_blocked');
+  assert.equal((await accountRequest(f,{action:'login',identifier:native.email,password:originalPassword})).status,401);
+});
+
+test('privacy approval removes credentials atomically, retries private photo deletion and retains operational counts',async t=>{
+  const f=fixture(t),owner=await createAccount(f,'privacy-owner@example.test'),target=await createAccount(f,'privacy-target@example.test');
+  f.seedPrincipal('privacy-owner',owner.user.email,{role:'owner'});f.alias(owner.user.id,'privacy-owner');f.seedPrincipal('privacy-target',target.user.email);f.alias(target.user.id,'privacy-target');
+  const ownerCookie=(await signIn(owner.auth,owner.user.email)).cookie,targetCookie=(await signIn(target.auth,target.user.email)).cookie;
+  f.sqlite.prepare("UPDATE profiles SET avatar_key='avatars/private-target',mime='image/png',phone='private phone',unit='unidade' WHERE user_id='privacy-target'").run();
+  const captured=await recovery(f,target.user.email);
+  const request=await accountRequest(f,{action:'privacy.request',currentPassword:originalPassword},{cookie:targetCookie});assert.equal(request.status,200);
+  const pending=await request.json();
+  assert.equal((await accountRequest(f,{action:'privacy.resolve',requestId:pending.id,decision:'anonymize',currentPassword:originalPassword},{cookie:targetCookie})).status,403);
+  assert.equal((await (await accountRead(f,'privacy',targetCookie)).json()).requests.length,1);
+  const deleted=[];f.context.storage={async delete(key){deleted.push(key);throw new Error('synthetic R2 outage');}};
+  const approved=await accountRequest(f,{action:'privacy.resolve',requestId:pending.id,decision:'anonymize',currentPassword:originalPassword},{cookie:ownerCookie});
+  assert.equal(approved.status,200);assert.equal((await approved.json()).status,'cleanup_pending');
+  const account=f.sqlite.prepare("SELECT * FROM portal_users WHERE user_id='privacy-target'").get();assert.equal(account.status,'blocked');assert.equal(account.email,null);assert.ok(account.anonymized_at);
+  assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM profiles WHERE user_id='privacy-target'").get().n,0);
+  assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM auth_user WHERE id=?').get(target.user.id).n,0);
+  assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM auth_session WHERE user_id=?').get(target.user.id).n,0);
+  assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM auth_verification WHERE value=?').get(target.user.id).n,0);
+  assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM members WHERE user_id='privacy-target'").get().n,1);
+  assert.equal(f.sqlite.prepare("SELECT email FROM members WHERE user_id='privacy-target'").get().email,'');
+  assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM audit WHERE action='privacy.anonymized'").get().n,1);
+  assert.equal((await accountRequest(f,{action:'resetPassword',token:captured.token,newPassword:'Uma senha que não revive 2026!'})).status,400);
+  f.context.storage={async delete(key){deleted.push(key);}};
+  const retried=await accountRequest(f,{action:'privacy.resolve',requestId:pending.id,decision:'anonymize',currentPassword:originalPassword},{cookie:ownerCookie});
+  assert.equal(retried.status,200);assert.equal((await retried.json()).status,'completed');assert.deepEqual(deleted,['avatars/private-target','avatars/private-target']);
+  assert.equal(f.sqlite.prepare("SELECT object_key FROM private_object_deletions WHERE user_id='privacy-target'").get().object_key,null);
+  assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM audit WHERE action='privacy.anonymized'").get().n,1);
+});
+
+test('failed anonymization audit rolls back credentials, account state, profile and deletion queue together',async t=>{
+  const f=fixture(t),owner=await createAccount(f,'rollback-owner@example.test'),target=await createAccount(f,'rollback-target@example.test');
+  f.seedPrincipal('rollback-owner',owner.user.email,{role:'owner'});f.alias(owner.user.id,'rollback-owner');f.seedPrincipal('rollback-target',target.user.email);f.alias(target.user.id,'rollback-target');
+  const ownerCookie=(await signIn(owner.auth,owner.user.email)).cookie,targetCookie=(await signIn(target.auth,target.user.email)).cookie;
+  f.sqlite.prepare("UPDATE profiles SET avatar_key='avatars/rollback' WHERE user_id='rollback-target'").run();
+  const pending=await(await accountRequest(f,{action:'privacy.request',currentPassword:originalPassword},{cookie:targetCookie})).json();
+  f.sqlite.exec("CREATE TRIGGER privacy_audit_failure BEFORE INSERT ON audit WHEN NEW.action='privacy.anonymized' BEGIN SELECT RAISE(ABORT,'synthetic audit failure'); END");
+  const response=await accountRequest(f,{action:'privacy.resolve',requestId:pending.id,decision:'anonymize',currentPassword:originalPassword},{cookie:ownerCookie});
+  assert.equal(response.status,500);
+  assert.equal(f.sqlite.prepare("SELECT status FROM portal_users WHERE user_id='rollback-target'").get().status,'active');
+  assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM auth_user WHERE id=?').get(target.user.id).n,1);
+  assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM profiles WHERE user_id='rollback-target'").get().n,1);
+  assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM private_object_deletions').get().n,0);
+  assert.equal(f.sqlite.prepare('SELECT status FROM privacy_requests WHERE id=?').get(pending.id).status,'pending');
+});
+
+test('fresh owner authority is checked inside anonymization SQL after password verification',async t=>{
+  const f=fixture(t),owner=await createAccount(f,'stale-owner@example.test'),target=await createAccount(f,'stale-target@example.test');
+  f.seedPrincipal('stale-owner',owner.user.email,{role:'owner'});f.alias(owner.user.id,'stale-owner');f.seedPrincipal('stale-target',target.user.email);f.alias(target.user.id,'stale-target');
+  const ownerCookie=(await signIn(owner.auth,owner.user.email)).cookie,targetCookie=(await signIn(target.auth,target.user.email)).cookie;
+  const pending=await(await accountRequest(f,{action:'privacy.request',currentPassword:originalPassword},{cookie:targetCookie})).json();
+  f.hooks.beforeBatch=statements=>{
+    if(statements.some(statement=>statement.sql?.includes('SET email=NULL'))){f.sqlite.prepare("UPDATE members SET revoked_at=? WHERE user_id='stale-owner'").run(new Date().toISOString());f.hooks.beforeBatch=null;}
+  };
+  const response=await accountRequest(f,{action:'privacy.resolve',requestId:pending.id,decision:'anonymize',currentPassword:originalPassword},{cookie:ownerCookie});
+  assert.equal(response.status,409);
+  assert.equal(f.sqlite.prepare("SELECT status FROM portal_users WHERE user_id='stale-target'").get().status,'active');
+  assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM auth_user WHERE id=?').get(target.user.id).n,1);
+  assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM audit WHERE action='privacy.anonymized'").get().n,0);
+});
+
+test('privacy remains pending until private Drive exports are acknowledged deleted and attachment tickets are revoked',async t=>{
+  const f=fixture(t),owner=await createAccount(f,'drive-owner@example.test'),target=await createAccount(f,'drive-target@example.test');
+  f.seedPrincipal('drive-owner',owner.user.email,{role:'owner'});f.alias(owner.user.id,'drive-owner');f.seedPrincipal('drive-target',target.user.email);f.alias(target.user.id,'drive-target');
+  const ownerCookie=(await signIn(owner.auth,owner.user.email)).cookie,targetCookie=(await signIn(target.auth,target.user.email)).cookie,now=new Date().toISOString();
+  f.sqlite.prepare("INSERT INTO sync_attachment_exports(id,attachment_kind,attachment_id,drive_file_id,drive_url,content_hash,size,exported_at) VALUES('export-avatar','avatar','drive-target','synthetic-drive-file','https://drive.example.test/private','hash',10,?)").run(now);
+  f.sqlite.prepare("INSERT INTO sync_attachment_tickets(token_hash,owner_id,attachment_kind,attachment_id,expires_at,created_at) VALUES('opaque-ticket','drive-owner','avatar','drive-target',?,?)").run(new Date(Date.now()+600000).toISOString(),now);
+  const pending=await(await accountRequest(f,{action:'privacy.request',currentPassword:originalPassword},{cookie:targetCookie})).json();
+  const input={action:'privacy.resolve',requestId:pending.id,decision:'anonymize',currentPassword:originalPassword};
+  const first=await accountRequest(f,input,{cookie:ownerCookie});assert.equal(first.status,200);assert.equal((await first.json()).status,'cleanup_pending');
+  assert.ok(f.sqlite.prepare("SELECT used_at FROM sync_attachment_tickets WHERE token_hash='opaque-ticket'").get().used_at);
+  f.sqlite.prepare("UPDATE sync_attachment_exports SET deleted_at=? WHERE id='export-avatar'").run(new Date().toISOString());
+  const retry=await accountRequest(f,input,{cookie:ownerCookie});assert.equal(retry.status,200);assert.equal((await retry.json()).status,'completed');
+});
+
+test('blocking an account immediately before an identifier upsert prevents changing the existing alias',async t=>{
+  const f=fixture(t),{auth,user}=await createAccount(f);
+  f.seedPrincipal('identifier-block-race',user.email);f.alias(user.id,'identifier-block-race');const {cookie}=await signIn(auth,user.email);
+  const input={action:'identifiers.update',kind:'username',value:'antes-bloqueio',acknowledged:true,currentPassword:originalPassword};
+  assert.equal((await accountRequest(f,input,{cookie})).status,200);
+  f.hooks.beforeBatch=statements=>{if(statements.some(statement=>statement.sql?.includes('INSERT INTO login_identifiers'))){f.sqlite.prepare("UPDATE portal_users SET status='blocked' WHERE user_id='identifier-block-race'").run();f.hooks.beforeBatch=null;}};
+  assert.equal((await accountRequest(f,{...input,value:'depois-bloqueio'},{cookie})).status,403);
+  assert.equal(f.sqlite.prepare("SELECT display_hint FROM login_identifiers WHERE user_id='identifier-block-race'").get().display_hint,'antes-bloqueio');
+  assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM audit WHERE action='account.identifier-set'").get().n,1);
 });

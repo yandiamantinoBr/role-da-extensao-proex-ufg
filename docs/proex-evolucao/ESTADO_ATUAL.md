@@ -1,6 +1,26 @@
 # Estado atual da evolução PROEX
 
-## V3 publicada
+## V4 publicada; sincronização e edição pela planilha verificadas
+
+Atualização de 23/10/2026. Branch de trabalho: `feat/proex-v4`, baseada em `origin/main` observado em `ff27166`, após a integração das PRs #1, #2 e #3. **A publicação V4 foi confirmada com estado succeeded**, versão 4, fonte Sites `ae50c4eab331f74057c60dd487167af1b9925410`, implantação `appgdep_6adb69136e7c8191a68c74e6e0b09288`, em https://proex-gestao.yandiamantinobr.chatgpt.site. O registro final está em [ENTREGA-V4.md](../ENTREGA-V4.md); a V3 abaixo permanece como histórico.
+
+A V4 acrescenta navegação operacional, perfil com campos opcionais, nome de usuário/CPF opcionais como atalhos da mesma senha, solicitações de anonimização com revisão e tombstone, tipos e hierarquia de projetos sem herdar privilégios, detalhe de projetos com links/editais/cronologia, categorias de materiais, metadados versionados e restauração por nova versão. A agenda inclui atividades dos projetos. A edição busca a revisão atual e recusa sobrescrita concorrente. A verificação final aprovou 255 testes do portal, 33 da raiz, TypeScript, build e smoke do Worker compilado com aliases e MCP; a publicação nativa é uma evidência separada.
+
+O catálogo foi pesquisado em fontes institucionais, distinguindo programas, projetos, congresso, fomento e referências históricas. O pré-cadastro autorizado é idempotente: preserva cadastros existentes e cria itens ausentes com estoque zero. Não produz participantes, saldo, empréstimos, entregas, campanhas ou atividades realizadas a partir de notícias. O pré-cadastro foi executado em produção: 9 iniciativas novas e 1 preservada (10 no total), 4 tipos, 4 editais em rascunho e 11 materiais novos com estoque zero. Não foram fabricados participantes, empréstimos, entregas ou histórico de movimentos.
+
+A integração portátil possui esquema declarado, paginação, recibos, controle de execução e conflitos; metadados e operações passam pelos serviços de domínio. As ferramentas MCP ficaram disponíveis em contexto novo de nuvem, permitindo concluir configuração, pré-cadastro e execução real.
+
+Em 23/10/2026, às 14:14:59 UTC, a primeira execução real em contexto de nuvem independente concluiu a exportação de 118 linhas, com leitura de retorno das 27 tabelas e 118 linhas-base verificadas no Google Sheets. Foram aplicadas zero alterações externas e registrados zero conflitos. A conexão foi conferida habilitada e o histórico confirmou conclusão. A rotina periódica está ativa; a atualização não é instantânea.
+
+Em uma segunda execução, concluída em 23/10/2026 às 14:22:45 UTC, três descrições de buttons foram alteradas pela planilha para registrar cor e diâmetro de 2,5 cm conforme informado pelo usuário. A importação por controle de versão aplicou as três alterações, sem conflitos. A leitura do portal confirmou as descrições e o incremento de uma versão por material, com estoque ainda zero. Após reexportar materiais, auditoria e versões, houve nova leitura das 27 abas de tabelas e das linhas-base. O registro dessa execução concluiu com 130 linhas exportadas, três alterações aplicadas e zero conflitos: o percurso planilha → portal → planilha foi verificado para esses metadados. A aba Operações continua disponível; o teste real acima validou edição de metadados, sem representar homologação de todos os tipos de operação. A planilha privada possui 32 abas. Não havia anexos para copiar ou limpezas pendentes nessa execução. Endereços e identificadores privados ficam fora da documentação pública. A planilha não é backup integral dos arquivos privados.
+
+
+Mantém-se o monorepo: jogo livre na raiz/Pages e portal em `apps/proex-portal`, com deploy próprio. Os 12 arquivos protegidos conservam o baseline `f905f0d78371dc4a8784cce27bdbc7ef6fa88103`; esse baseline não é a posição atual de main. Não foram reativadas por esta documentação tarefas antigas do Windows ou do Site livre. Leia a [ADR 0004](ADRS/0004-monorepo-catalogo-e-integracao-v4.md), o [manual V4](../../apps/proex-portal/docs/MANUAL-PROEX.md) e a [infraestrutura](INFRAESTRUTURA.md).
+
+Continuam sem afirmação de funcionamento: OAuth Google, verificação Meta de seguidores, SMTP, WhatsApp, SEI/SIGAA, câmera em aparelho físico. Estoque real, composição dos kits, regulamentos, tratamento de dados de menores, retenção, suporte e recuperação dependem de validação institucional.
+
+## Histórico verificado — V3 publicada
+
 
 Atualização de 20/10/2026, na branch `feat/proex-portal`. **A publicação nativa da V3 foi confirmada com sucesso às 15:55:09 UTC**, versão 3. A V2 permanece documentada no histórico abaixo. Leia a [ADR 0003](ADRS/0003-identidade-e-operacao-v3.md), o [manual do portal](../../apps/proex-portal/README.md) e a [entrega V3](../ENTREGA-V3.md).
 
@@ -48,7 +68,7 @@ Portal publicado: https://proex-gestao.yandiamantinobr.chatgpt.site
 - Política de repetição configurável de zero a três; regras preservadas após ativar. Rascunhos editáveis. Nenhuma regra de Super Super Brinde foi criada.
 - Métricas por projeto/dia/campanha, sem fingir visitantes únicos ou seguidores verificados.
 
-A versão livre continua no Site anterior e no Pages. Main permanece em `f905f0d78371dc4a8784cce27bdbc7ef6fa88103`; nenhuma alteração foi mesclada nela. Baseline de 12 arquivos preservado. A automação antiga continua desabilitada; sincronização Windows não foi reativada.
+A versão livre continua no Site anterior e no Pages. Naquela verificação, main estava em `f905f0d78371dc4a8784cce27bdbc7ef6fa88103`; naquele momento as mudanças ainda não haviam sido integradas. Baseline de 12 arquivos preservado. A automação antiga continua desabilitada; sincronização Windows não foi reativada.
 
 ## Verificação
 

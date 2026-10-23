@@ -294,3 +294,64 @@ test('chunked multipart bodies are bounded before parsing even without Content-L
   const request = new Request('https://portal.example.invalid/api/records', { method: 'POST', duplex: 'half', body: stream, headers: { 'Content-Type': 'multipart/form-data; boundary=test' } });
   await assert.rejects(readRecordForm(request), error => error.status === 413);
 });
+
+test('soft-deleted record attachments cannot be listed, downloaded or restored by an upload replay', async()=>{
+ const {db,storage}=fixture();
+ try{
+  const manager=principal(db,'manager'),record=await createRecord(db,manager,input({})),payload=file(record.id);
+  const uploaded=await uploadRecordAttachment(db,storage,manager,payload);
+  db.native.prepare('UPDATE record_attachments SET deleted_at=? WHERE id=?').run(new Date().toISOString(),uploaded.attachment.id);
+  assert.deepEqual((await listRecords(db,manager)).records[0].attachments,[]);
+  await assert.rejects(recordAttachment(db,manager,uploaded.attachment.id),error=>error.code==='attachment_not_found');
+  await assert.rejects(uploadRecordAttachment(db,storage,manager,payload),error=>error.code==='attachment_not_found');
+  assert.equal(storage.puts,1);assert.equal(count(db,'record_attachments'),1);
+ }finally{db.native.close();}
+});
+
+test('pending and anonymized accounts cannot use stale roles to read or mutate private records',async()=>{
+ for(const state of ['pending','anonymized']){
+  const {db,storage}=fixture();
+  try{
+   const manager=principal(db,'manager'),record=await createRecord(db,manager,input({}));
+   const uploaded=await uploadRecordAttachment(db,storage,manager,file(record.id));
+   if(state==='pending')db.native.prepare('UPDATE portal_users SET activation_pending=1 WHERE user_id=?').run(manager.userId);
+   else db.native.prepare("UPDATE portal_users SET status='active',anonymized_at=? WHERE user_id=?").run(new Date().toISOString(),manager.userId);
+   assert.equal((await listRecords(db,manager)).records.length,0);
+   await assert.rejects(createRecord(db,manager,input({})),error=>error.code==='access_changed');
+   await assert.rejects(recordAttachment(db,manager,uploaded.attachment.id),error=>error.code==='access_changed');
+   await assert.rejects(uploadRecordAttachment(db,storage,manager,file(record.id)),error=>error.code==='access_changed');
+   assert.equal(storage.puts,1);assert.equal(count(db,'records'),1);
+  }finally{db.native.close();}
+ }
+});
+
+test('activation and anonymization changes during R2 upload prevent the attachment commit and compensate its object',async()=>{
+ for(const state of ['pending','anonymized']){
+  const {db,storage}=fixture();
+  try{
+   const manager=principal(db,'manager'),record=await createRecord(db,manager,input({}));
+   storage.onPut=async()=>{if(state==='pending')db.native.prepare('UPDATE portal_users SET activation_pending=1 WHERE user_id=?').run(manager.userId);else db.native.prepare("UPDATE portal_users SET status='active',anonymized_at=? WHERE user_id=?").run(new Date().toISOString(),manager.userId);};
+   await assert.rejects(uploadRecordAttachment(db,storage,manager,file(record.id)));
+   assert.equal(storage.objects.size,0);assert.equal(count(db,'record_attachments'),0);
+   assert.equal(db.native.prepare("SELECT COUNT(*) n FROM audit WHERE action='record.attachment'").get().n,0);
+  }finally{db.native.close();}
+ }
+});
+
+test('failed compensation after a late anonymized record upload is queued and reopens completed privacy cleanup',async()=>{
+ const {db,storage}=fixture();
+ try{
+  const manager=principal(db,'manager'),record=await createRecord(db,manager,input({})),requestId=crypto.randomUUID(),now=new Date().toISOString();
+  storage.onPut=async()=>{
+   db.native.prepare("UPDATE portal_users SET status='active',anonymized_at=? WHERE user_id=?").run(now,manager.userId);
+   db.native.prepare("INSERT INTO privacy_requests(id,user_id,status,requested_at,completed_at) VALUES(?,?,'completed',?,?)").run(requestId,manager.userId,now,now);
+  };
+  storage.delete=async()=>{throw new Error('synthetic R2 deletion outage');};
+  await assert.rejects(uploadRecordAttachment(db,storage,manager,file(record.id)));
+  assert.equal(count(db,'record_attachments'),0);assert.equal(storage.objects.size,1);
+  const queued=db.native.prepare('SELECT user_id,object_key,mime FROM private_object_deletions').get();
+  assert.equal(queued.user_id,manager.userId);assert.equal(queued.mime,'application/pdf');assert.ok(storage.objects.has(queued.object_key));
+  const request=db.native.prepare('SELECT status,completed_at FROM privacy_requests WHERE id=?').get(requestId);
+  assert.equal(request.status,'cleanup_pending');assert.equal(request.completed_at,null);
+ }finally{db.native.close();}
+});

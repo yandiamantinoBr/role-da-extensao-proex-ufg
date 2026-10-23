@@ -131,6 +131,19 @@ export async function calendarEntries(db: D1Database, actor: PortalActor | null,
         AND julianday(c.starts_at)<julianday(?) AND julianday(c.ends_at)>julianday(?) LIMIT ${MAX_ENTRIES + 1}`,
       [...filter.values, range.endsAt, range.startsAt]);
       result.push(...rows.map(row => entry(row, category, 'campaign')));
+      rows = await all(db, `SELECT s.id,s.project_id,p.name project_name,'Atividade · ' || s.title title,
+        s.starts_at,s.ends_at,s.status state,s.version revision,s.created_at,s.updated_at last_modified
+        FROM project_schedule_items s JOIN projects p ON p.id=s.project_id WHERE ${filter.sql}
+        AND julianday(s.starts_at)<julianday(?) AND julianday(s.ends_at)>=julianday(?) LIMIT ${MAX_ENTRIES + 1}`,
+      [...filter.values, range.endsAt, range.startsAt]);
+      for (const row of rows) {
+        // A source milestone with a single timestamp is a civil-day reference, not an invented appointment.
+        if (Date.parse(row.ends_at) <= Date.parse(row.starts_at)) {
+          row.starts_at = dayInBrazil(row.starts_at);
+          row.ends_at = new Date(Date.parse(`${row.starts_at}T12:00:00Z`) + DAY).toISOString().slice(0,10);
+          result.push(entry(row,category,'project-schedule',true));
+        } else result.push(entry(row,category,'project-schedule'));
+      }
     } else {
       // These are actual ledger dates, grouped by item/kind/civil day, never invented future reservations.
       rows = await all(db, `SELECT i.id || '.' || m.kind || '.' || date(m.created_at,'-3 hours') id,

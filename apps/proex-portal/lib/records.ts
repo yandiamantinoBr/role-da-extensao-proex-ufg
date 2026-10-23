@@ -63,7 +63,7 @@ function requireWrite(actor: PortalActor, record: Pick<StoredRecord, 'kind' | 'l
 async function liveMembership(db: D1Database, actor: PortalActor, projectId: string, roles: string[]): Promise<void> {
   const row = await stmt(db, `SELECT id FROM members m WHERE m.user_id=? AND m.revoked_at IS NULL
     AND m.role IN (${roles.map(() => '?').join(',')}) AND (m.project_id IS NULL OR m.project_id=?)
-    AND NOT EXISTS (SELECT 1 FROM portal_users u WHERE u.user_id=m.user_id AND u.status='blocked') LIMIT 1`, [actor.userId, ...roles, projectId]).first();
+    AND NOT EXISTS (SELECT 1 FROM portal_users u WHERE u.user_id=m.user_id AND (u.status!='active' OR COALESCE(u.activation_pending,0)!=0 OR u.anonymized_at IS NOT NULL)) LIMIT 1`, [actor.userId, ...roles, projectId]).first();
   if (!row) throw new HttpError(403, 'Seu acesso a estes registros mudou. Atualize o portal.', 'access_changed');
 }
 async function recordById(db: D1Database, id: string): Promise<StoredRecord> {
@@ -86,7 +86,7 @@ function attachmentProjection(row: Row) { return { id: row.id, name: row.name, m
 async function projectRecords(db: D1Database, rows: Row[]): Promise<Row[]> {
   if (!rows.length) return [];
   const attachments = (await stmt(db, `SELECT a.id,a.record_id,a.name,a.mime,a.size FROM record_attachments a
-    JOIN records r ON r.id=a.record_id AND r.project_id=a.project_id WHERE a.record_id IN (${rows.map(() => '?').join(',')}) ORDER BY a.created_at,a.id`, rows.map(row => row.id)).all<Row>()).results ?? [];
+    JOIN records r ON r.id=a.record_id AND r.project_id=a.project_id WHERE a.deleted_at IS NULL AND a.record_id IN (${rows.map(() => '?').join(',')}) ORDER BY a.created_at,a.id`, rows.map(row => row.id)).all<Row>()).results ?? [];
   return rows.map(row => ({ ...row, attachments: attachments.filter(attachment => attachment.record_id === row.id).map(attachmentProjection) }));
 }
 async function projectedRecord(db: D1Database, id: string): Promise<Row> {
@@ -111,7 +111,7 @@ export async function listRecords(db: D1Database, actor: PortalActor | null, fil
   let conditions = `(((r.kind='loan' OR r.loan_id IS NOT NULL) AND (${loan.sql}) AND EXISTS(SELECT 1 FROM members m WHERE m.user_id=? AND m.revoked_at IS NULL AND m.role IN ('owner','manager','loans') AND (m.project_id IS NULL OR m.project_id=r.project_id)))
     OR (r.loan_id IS NULL AND r.kind IN ('maintenance','distribution','consumption','material') AND (${inventory.sql}) AND EXISTS(SELECT 1 FROM members m WHERE m.user_id=? AND m.revoked_at IS NULL AND m.role IN ('owner','manager','inventory') AND (m.project_id IS NULL OR m.project_id=r.project_id)))
     OR (r.loan_id IS NULL AND r.kind IN ('project','observation') AND (${project.sql}) AND EXISTS(SELECT 1 FROM members m WHERE m.user_id=? AND m.revoked_at IS NULL AND m.role IN ('owner','manager','viewer') AND (m.project_id IS NULL OR m.project_id=r.project_id))))`;
-  conditions += ` AND NOT EXISTS(SELECT 1 FROM portal_users u WHERE u.user_id=? AND u.status='blocked')`;
+  conditions += ` AND NOT EXISTS(SELECT 1 FROM portal_users u WHERE u.user_id=? AND (u.status!='active' OR COALESCE(u.activation_pending,0)!=0 OR u.anonymized_at IS NOT NULL))`;
   params.push(actor.userId);
   conditions += ' AND (r.item_id IS NULL OR i.project_id=r.project_id) AND (r.loan_id IS NULL OR l.project_id=r.project_id)';
   if (projectId) { conditions += ' AND r.project_id=?'; params.push(projectId); }
@@ -145,7 +145,7 @@ export async function createRecord(db: D1Database, actor: PortalActor | null, in
   }
   const id = crypto.randomUUID(), now = new Date().toISOString(), roles = writeRoles(target);
   const authorization = `EXISTS(SELECT 1 FROM members m WHERE m.user_id=? AND m.revoked_at IS NULL AND m.role IN (${roles.map(() => '?').join(',')}) AND (m.project_id IS NULL OR m.project_id=?))
-    AND NOT EXISTS(SELECT 1 FROM portal_users u WHERE u.user_id=? AND u.status='blocked')`;
+    AND NOT EXISTS(SELECT 1 FROM portal_users u WHERE u.user_id=? AND (u.status!='active' OR COALESCE(u.activation_pending,0)!=0 OR u.anonymized_at IS NOT NULL))`;
   let createdId = id;
   try {
     await db.batch([
@@ -232,11 +232,20 @@ export function validatedRecordFile(input: Pick<RecordFileInput, 'bytes' | 'name
   const stem = (extension ? basename.slice(0, -(extension.length + 1)) : basename).replace(/[^\p{L}\p{N}._ ()-]/gu, '_').replace(/^\.+/, '').trim().slice(0, 120) || 'anexo';
   return { mime, name: `${stem}.${extension ?? MIME_EXTENSIONS[mime][0]}` };
 }
+/** Internal compensation only: keys originate from this request, never from client input. */
+export async function queuePrivateObjectDeletion(db:D1Database,userId:string,key:string,mime:string):Promise<void>{
+ await db.batch([
+  db.prepare('INSERT INTO private_object_deletions(id,user_id,object_key,mime,created_at) VALUES(?,?,?,?,?)')
+   .bind(crypto.randomUUID(),userId,key,mime,new Date().toISOString()),
+  db.prepare(`UPDATE privacy_requests SET status='cleanup_pending',completed_at=NULL WHERE user_id=? AND status='completed'
+   AND EXISTS(SELECT 1 FROM portal_users WHERE user_id=? AND anonymized_at IS NOT NULL)`).bind(userId,userId),
+ ]);
+}
 async function sha256(bytes: Uint8Array): Promise<string> {
   return [...new Uint8Array(await crypto.subtle.digest('SHA-256', new Uint8Array(bytes).buffer))].map(byte => byte.toString(16).padStart(2, '0')).join('');
 }
 async function attachmentById(db: D1Database, id: string): Promise<Attachment> {
-  const row = await stmt(db, `SELECT a.* FROM record_attachments a JOIN records r ON r.id=a.record_id AND r.project_id=a.project_id WHERE a.id=?`, [id]).first<Attachment>();
+  const row = await stmt(db, `SELECT a.* FROM record_attachments a JOIN records r ON r.id=a.record_id AND r.project_id=a.project_id WHERE a.id=? AND a.deleted_at IS NULL`, [id]).first<Attachment>();
   if (!row) throw new HttpError(404, 'Anexo não encontrado.', 'attachment_not_found');
   return row;
 }
@@ -256,7 +265,7 @@ export async function uploadRecordAttachment(db: D1Database, storage: R2Bucket, 
     await db.batch([
       mutation.claimStatement(id),
       stmt(db, `INSERT INTO record_attachments(id,record_id,project_id,object_key,name,mime,size,operation_key,created_by,created_at)
-        VALUES(?,?,CASE WHEN EXISTS(SELECT 1 FROM members m WHERE m.user_id=? AND m.revoked_at IS NULL AND m.role IN (${roles.map(() => '?').join(',')}) AND (m.project_id IS NULL OR m.project_id=?)) AND NOT EXISTS(SELECT 1 FROM portal_users u WHERE u.user_id=? AND u.status='blocked') THEN ? ELSE NULL END,?,?,?,?,?,?,?)`,
+        VALUES(?,?,CASE WHEN EXISTS(SELECT 1 FROM members m WHERE m.user_id=? AND m.revoked_at IS NULL AND m.role IN (${roles.map(() => '?').join(',')}) AND (m.project_id IS NULL OR m.project_id=?)) AND NOT EXISTS(SELECT 1 FROM portal_users u WHERE u.user_id=? AND (u.status!='active' OR COALESCE(u.activation_pending,0)!=0 OR u.anonymized_at IS NOT NULL)) THEN ? ELSE NULL END,?,?,?,?,?,?,?)`,
         [id, record.id, actor.userId, ...roles, record.project_id, actor.userId, record.project_id, objectKey, name, mime, input.bytes.byteLength, mutation.scope, actor.userId, now]),
       stmt(db, "INSERT INTO audit(id,actor_id,project_id,action,entity_id,details,created_at) VALUES(?,?,?,'record.attachment',?,?,?)", [crypto.randomUUID(), actor.userId, record.project_id, id, JSON.stringify({ recordId: record.id, mime, size: input.bytes.byteLength }), now]),
     ]);
@@ -277,7 +286,8 @@ export async function uploadRecordAttachment(db: D1Database, storage: R2Bucket, 
     } else throw error;
   } finally {
     if (!committed && safeToDelete) {
-      try { await storage.delete(objectKey); } catch { console.error('Private record attachment compensation failed.'); }
+      try { await storage.delete(objectKey); }
+      catch { try { await queuePrivateObjectDeletion(db,actor.userId,objectKey,mime); } catch { console.error('Private record cleanup could not be queued.'); } }
     }
   }
   return { attachment: attachmentProjection(await attachmentById(db, resultId)), recordId: record.id };

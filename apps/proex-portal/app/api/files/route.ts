@@ -4,7 +4,7 @@ import { iso, one, text, uid } from '../../../lib/database';
 import { HttpError, publicError } from '../../../lib/errors';
 import { bucket, database } from '../../../lib/platform';
 import { prepareMutation } from '../../../lib/mutations';
-import { validatedRecordFile } from '../../../lib/records';
+import { validatedRecordFile,queuePrivateObjectDeletion } from '../../../lib/records';
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_BODY_BYTES = MAX_FILE_BYTES + 64 * 1024;
@@ -81,9 +81,11 @@ export async function POST(request: Request): Promise<Response> {
   let storage: R2Bucket | null = null;
   let committed = false;
   let safeToDelete = true;
+  let uploadDb:D1Database|null=null,uploadOwnerId:string|null=null,uploadMime:string|null=null;
   try {
     requireAction(request);
     const db = database();
+    uploadDb=db;
     let actor = await getActor(db, await getPortalUser());
     requireCapability(actor, 'loans.manage');
     const initialActorId = actor!.userId;
@@ -110,6 +112,7 @@ export async function POST(request: Request): Promise<Response> {
     requireCapability(actor, 'loans.manage', loan.project_id);
     if (actor!.userId !== initialActorId) throw new HttpError(403, 'Sua conta mudou durante o envio. Atualize o portal.', 'access_changed');
     const actorId = actor!.userId;
+    uploadOwnerId=actorId;uploadMime=mime;
     const mutation = await prepareMutation(db, actorId, `document.upload:${loan.id}`, { loanId, operationKey, name, mime, size: data.byteLength, contentHash });
     if (mutation.existingId) return privateResponse(Response.json({ ...projection(await documentById(db, mutation.existingId)), duplicate: true }, { status: 201 }));
     const id = uid(), now = iso();
@@ -130,7 +133,7 @@ export async function POST(request: Request): Promise<Response> {
           VALUES(?,?,CASE WHEN EXISTS(SELECT 1 FROM loans l WHERE l.id=? AND l.project_id=? AND EXISTS
             (SELECT 1 FROM members m WHERE m.user_id=? AND m.revoked_at IS NULL
               AND m.role IN ('owner','manager','loans') AND (m.project_id IS NULL OR m.project_id=l.project_id)))
-            AND NOT EXISTS(SELECT 1 FROM portal_users u WHERE u.user_id=? AND u.status='blocked') THEN ? ELSE NULL END,?,?,?,?,?,?,?,?)`)
+            AND NOT EXISTS(SELECT 1 FROM portal_users u WHERE u.user_id=? AND (u.status!='active' OR COALESCE(u.activation_pending,0)!=0 OR u.anonymized_at IS NOT NULL)) THEN ? ELSE NULL END,?,?,?,?,?,?,?,?)`)
           .bind(id, loanId, loanId, loan.project_id, actorId, actorId, loan.project_id,
             storedKey, name, mime, data.byteLength, actorId, now, mutation.scope, contentHash),
         db.prepare(`INSERT INTO audit (id,actor_id,project_id,action,entity_id,details,created_at)
@@ -160,7 +163,8 @@ export async function POST(request: Request): Promise<Response> {
     return privateResponse(publicError(error));
   } finally {
     if (storedKey && storage && !committed && safeToDelete) {
-      try { await storage.delete(storedKey); } catch { console.error('Private attachment compensation failed.'); }
+      try { await storage.delete(storedKey); }
+      catch { try { if(uploadDb&&uploadOwnerId&&uploadMime)await queuePrivateObjectDeletion(uploadDb,uploadOwnerId,storedKey,uploadMime); } catch { console.error('Private document cleanup could not be queued.'); } }
     }
   }
 }

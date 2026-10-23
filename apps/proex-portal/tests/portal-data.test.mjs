@@ -206,6 +206,7 @@ test('snapshot exposes editable V3 project, item and loan fields without widenin
     id: 'project-a', name: 'Projeto A', description: '', created_at: timestamp,
     short_name: 'Rolê', status: 'archived', color: '#ffaa3d', official_url: 'https://proex.ufg.br/',
     starts_at: timestamp, ends_at: '2026-12-20T02:30:00.000Z', location: 'Campus Samambaia', version: 4,
+    lifecycle: 'active', type_id: null, parent_id: null,
   });
   const equipment = data.items.find(item => item.id === 'equipment-a');
   assert.equal(equipment.asset_code, 'UFG-001'); assert.equal(equipment.version, 3); assert.equal(equipment.updated_at, timestamp);
@@ -437,4 +438,15 @@ test('CSV rejects other projects, missing permission, revocation and anonymous r
   const response = await GET(new Request('https://portal.example.test/api/export'));
   assert.equal(response.status, 401);
   assert.equal(response.headers.get('Cache-Control'), 'private, no-store');
+});
+
+test('owner directory materialization never recreates profile or contact data for an anonymized canonical identity', async t=>{
+  const f=fixture(t);
+  f.insert('portal_users',{user_id:'legacy-anonymized',email:null,status:'blocked',anonymized_at:timestamp,created_at:timestamp,updated_at:timestamp});
+  f.insert('members',{id:'member-anonymized-history',user_id:'legacy-anonymized',email:'old-pii@example.test',role:'viewer',project_id:'project-a',revoked_at:timestamp,created_at:timestamp});
+  await snapshot(f,'owner');
+  assert.equal(f.sqlite.prepare("SELECT user_id FROM profiles WHERE user_id='legacy-anonymized'").get(),undefined);
+  const retained=f.sqlite.prepare("SELECT email,status,anonymized_at FROM portal_users WHERE user_id='legacy-anonymized'").get();
+  assert.equal(retained.email,null);assert.equal(retained.status,'blocked');assert.equal(retained.anonymized_at,timestamp);
+  assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM identity_aliases WHERE user_id='legacy-anonymized'").get().n,0);
 });

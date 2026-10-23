@@ -2,7 +2,7 @@
 
 Portal para organizar projetos, equipe, eventos, materiais, participação no Rolê da Extensão e empréstimos. A interface prioriza o celular. O jogo livre existente continua independente, público e ilimitado em https://role-da-extensao-ufg.yandiamantinobr.chatgpt.site/ e em sua publicação GitHub Pages.
 
-Este diretório contém a implementação do portal. A existência do código não comprova publicação nem validação de todos os fluxos. Consulte o registro de entrega e as verificações do PR para saber qual revisão foi efetivamente testada e publicada. Não há dados históricos ou saldos reais pré-preenchidos.
+Este diretório contém a implementação V4 do portal. O [Manual de operação](docs/MANUAL-PROEX.md) reúne os fluxos para a equipe. A existência do código não comprova publicação nem validação de todos os fluxos. Consulte o registro de entrega e as verificações do PR para saber qual revisão foi efetivamente testada e publicada. Não há dados históricos ou saldos reais pré-preenchidos.
 
 ## Arquitetura desta implementação
 
@@ -16,7 +16,7 @@ A camada de serviços está em `lib/`; o esquema e suas migrações ficam em `db
 
 ## Login, convites e primeiro responsável
 
-A entrada habitual é em `/login`, com **e-mail e senha de uma conta previamente cadastrada e ativada**. Não há cadastro público livre. A página de login pode ser aberta sem autenticação; dados internos e operações exigem sessão válida e as permissões correspondentes. A participação oficial usa a mesma identidade canônica do cadastro, com um direito por conta e campanha.
+A entrada habitual é em `/login`, com **e-mail e senha de uma conta previamente cadastrada e ativada**. Nome de usuário e CPF podem ser cadastrados pela própria pessoa como atalhos opcionais, usando a mesma senha; não constituem SSO institucional nem comprovação de identidade. O CPF não é exposto em relatórios ou planilhas: a busca usa HMAC com segredo do runtime. Alterar ou remover um atalho exige a senha atual e nova validação da conta ativa. Não há cadastro público livre. A página de login pode ser aberta sem autenticação; dados internos e operações exigem sessão válida e as permissões correspondentes. A participação oficial usa a mesma identidade canônica do cadastro, com um direito por conta e campanha.
 
 As senhas têm de 12 a 128 caracteres. Better Auth armazena hashes scrypt com salt, não a senha em texto. A sessão usa cookie HttpOnly, Secure em HTTPS e validade de sete dias; o servidor consulta o banco, sem usar um perfil em cookie como substituto da autorização atual. A pessoa pode trocar a própria senha informando a atual. A troca renova a sessão corrente e encerra as anteriores; a recuperação encerra todas as sessões.
 
@@ -59,15 +59,23 @@ O responsável global não é concedido pelo formulário comum de convite. Recup
 
 ## Perfil, celular e aparência
 
-Em Meu perfil, cada pessoa pode alterar o nome de exibição, escolher uma foto na galeria ou solicitar a câmera do aparelho, além de trocar a senha. O e-mail de login não é editável por esse formulário. A interface prepara a foto em PNG com até 512 pixels no maior lado; o servidor limita a imagem preparada a 2 MB e armazena o arquivo no R2 privado. A foto não se torna um endereço público de armazenamento.
+Em Meu perfil, cada pessoa pode alterar o nome de exibição e os campos opcionais de unidade, cargo/função e telefone, escolher uma foto na galeria ou solicitar a câmera do aparelho, além de trocar a senha. O e-mail de login não é editável por esse formulário. A interface prepara a foto em PNG com até 512 pixels no maior lado; o servidor limita a imagem preparada a 2 MB e armazena o arquivo no R2 privado. A foto não se torna um endereço público de armazenamento.
 
 Os controles de câmera usam a seleção de arquivos do navegador. A oferta da câmera e os formatos que o aparelho consegue abrir dependem do navegador e do sistema; quando necessário, é possível selecionar uma imagem ou arquivo já salvo. A interface não depende da instalação de um aplicativo. Os dados confirmados ficam no servidor e podem ser consultados em outro aparelho após login; não há edição offline com sincronização posterior.
 
 O seletor oferece tema claro, escuro e preferência do sistema nas páginas de entrada, painel e participação. A preferência fica no próprio navegador; não há sincronização de tema entre aparelhos. As variações da marca preservam contraste com o fundo.
 
+## Solicitações de privacidade
+
+A própria pessoa pode solicitar anonimização, com confirmação da senha. A equipe analisa antes de executar. O processo remove dados de conta, identificadores de entrada, credenciais e foto; preserva contagens, histórico operacional e auditoria com identificador interno. Textos, termos e anexos de terceiros não são apagados automaticamente. A limpeza de objetos pode ficar pendente até confirmação; a conta anonimizada tem tombstone e não pode ser reativada nem receber dados pessoais por materialização do diretório. O último responsável ativo continua protegido. Esse fluxo não substitui a política institucional de tratamento e retenção.
+
 ## Projetos e registros operacionais
 
-Os projetos organizam o escopo da equipe, dos materiais e das ações. O cadastro reúne nome, identificação curta, descrição, cor, endereço oficial, local, período e situação; alterações preservam o identificador usado nos registros. Cada material pertence a um projeto e a uma categoria: brinde, equipamento retornável, distribuição institucional ou consumo.
+Os projetos organizam o escopo da equipe, dos materiais e das ações. O cadastro reúne nome, identificação curta, descrição, cor, endereço oficial, local, período, situação e etapa no catálogo: em atividade, passado ou referência. Tipos de iniciativa são configuráveis pelo responsável. Um programa/projeto superior organiza o catálogo, sem herdar privilégios; ciclos são recusados, inclusive em alterações concorrentes. Cada material pertence a um projeto e a uma classe operacional: brinde, equipamento retornável, distribuição institucional ou consumo. Categorias de apresentação são administráveis sem substituir essas regras operacionais.
+
+Acessar projeto abre um detalhe interno com fontes, links, editais, cronologia, relações e versões. Editar busca a revisão atual; o servidor aplica CAS e recusa sobrescrita concorrente. As versões de projeto, edital, link e atividade preservam metadados; restaurar cria outra revisão e revalida as regras atuais. Não reverte estoque, sorteios, arquivos ou empréstimos. Editais compartilhados exigem administração de todos os projetos envolvidos para alterar seus vínculos.
+
+O catálogo de referência em `lib/catalog/proex-2026.json` foi pesquisado em fontes institucionais em 23/10/2026. Ele separa programas atuais, referências de gestões anteriores, projetos, congresso e programa de fomento. Pré-cadastro é uma operação autorizada, idempotente e feita pelos serviços de domínio: preserva registros encontrados e só cria itens ausentes com estoque zero. Não importa a cronologia editorial como execução operacional nem fabrica empréstimos, participações, entregas, saldo ou resultados. A ausência num índice atual não comprova encerramento. As fontes oficiais e ressalvas estão no JSON e no manual.
 
 Os registros permitem documentar observações, manutenção, distribuição, consumo, atividade de projeto, material ou empréstimo. Têm projeto, título, descrição e data da ocorrência; podem ter período e vínculo com um material ou empréstimo do mesmo projeto. Fotos e PDFs de até 10 MB podem ser anexados, com leitura e download conforme as permissões do registro. Um registro de consumo ou distribuição é documentação operacional: ele não baixa estoque nem cria empréstimo sozinho. Essas operações continuam pelos movimentos e reservas próprios de cada módulo.
 
@@ -129,7 +137,9 @@ O painel separa participações, tentativas, modalidades, tíquetes, premiaçõe
 
 As exportações CSV de participação, estoque e empréstimos respeitam os projetos autorizados. Elas não incluem e-mail, identificador da conta, contato do solicitante, termos ou observações pessoais. São projeções para gestão, não cópia integral do banco. Dados inseridos em campos livres ainda exigem cuidado da equipe. O agrupamento operacional atual usa horário de Brasília, UTC−03, para o período atendido pela implementação.
 
-**Não há sincronização automática com Google Sheets.** O CSV pode ser importado em uma planilha. Uma integração futura deverá ter conexão institucional, acesso mínimo, identificação da origem, idempotência e validação; editar uma célula não poderá apagar uma entrega ou liberar um equipamento. As conexões do autor no chat não se tornam credenciais permanentes dos visitantes.
+A V4 disponibiliza formato portátil, paginação por digest, recibos de idempotência, controle de execuções e importação pelos serviços de domínio. Metadados editáveis usam versão CAS; operações de estoque são append-only. Campos calculados, resultados e permissões não são editáveis diretamente. Cabeçalhos, `_rowKey`, `_rowHash`, versões e nomes técnicos das abas precisam ser preservados.
+
+**Configuração do Drive/Sheets não comprova sincronização verificada.** Salvar IDs, criar uma planilha ou registrar uma solicitação não executa sozinho uma rotina conectada. A conclusão exige leitura de retorno de todas as abas declaradas e ausência de conflitos abertos. O estado deve ser conferido pelo histórico de execuções, não pelo sucesso de configuração ou criação de uma automação. As conexões do autor no chat não se tornam credenciais permanentes dos visitantes. Uma pasta de anexos não comprova cópia dos objetos R2; exportações portáteis não são backup integral de credenciais e arquivos privados. CSV continua disponível para uso manual. Leia o [manual](docs/MANUAL-PROEX.md) antes de operar a planilha.
 
 O endereço do Instagram é configurável e opcional. Abrir ou seguir o perfil não é condição de participação neste fluxo. Não há OAuth Instagram, consulta de seguidores ou métrica de novos seguidores atribuídos ao Rolê. Uma integração Meta futura exige validação técnica, de política e institucional; não usar scraping ou senha dos participantes.
 
@@ -167,4 +177,5 @@ Banco local e banco hospedado são separados. Esse comando não publica nem atua
 - Confirmar a titularidade e a administração dos recursos, incluindo sucessão e suporte da equipe.
 - Fazer piloto integrado com os perfis reais autorizados, preservando dados de teste separados e registrando a evidência de cada verificação.
 - Se necessário, configurar SMTP institucional e um fluxo de verificação de e-mail e entrega automática de convites/recuperação; a revisão atual usa links compartilhados manualmente.
-- Avaliar separadamente Google OAuth, integração Meta, catálogo público, sincronização Sheets e migração para outros serviços. Nenhum desses itens deve ser anunciado como ativo antes da implementação e verificação.
+- Confirmar uma execução completa de sincronização externa com leitura de retorno antes de anunciá-la como ativa; configuração, código e planilha preparada são evidências distintas.
+- Avaliar separadamente Google OAuth, integração Meta, catálogo público e migração para outros serviços. Nenhum item deve ser anunciado como ativo sem implementação e verificação.

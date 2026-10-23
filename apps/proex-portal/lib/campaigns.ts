@@ -1,59 +1,10 @@
+import {projectAction} from './projects';
 import {one,all,uid,iso,text} from './database';
 import {HttpError} from './errors';
 import {requireCapability,type PortalActor} from './access';
-import {prepareMutation} from './mutations';
-
-function projectText(value:unknown,label:string,max:number,optional=false):string{
- if(value===undefined||value===null){if(optional)return '';throw new HttpError(400,`Informe ${label}.`,'invalid_input');}
- if(typeof value!=='string')throw new HttpError(400,`Informe ${label} como texto.`,'invalid_input');
- const result=value.trim();if((!optional&&!result)||result.length>max)throw new HttpError(400,`${label} deve ter ${optional?'até':'entre 1 e'} ${max} caracteres.`,'invalid_input');return result;
-}
-function projectDate(value:unknown,label:string):string|null{
- if(value===undefined||value===null||value==='')return null;
- if(typeof value!=='string'||!/^\d{4}-\d\d-\d\dT\d\d:\d\d(?::\d\d(?:\.\d{1,3})?)?(?:Z|[+-]\d\d:\d\d)$/.test(value))throw new HttpError(400,`${label} deve conter data, horário e fuso horário.`,'invalid_date');
- const time=Date.parse(value),[year,month,day]=value.slice(0,10).split('-').map(Number);
- if(!Number.isFinite(time)||year<2000||year>2200||month<1||month>12||day<1||day>new Date(Date.UTC(year,month,0)).getUTCDate())throw new HttpError(400,`${label} não é uma data válida.`,'invalid_date');
- return new Date(time).toISOString();
-}
 
 export async function campaignAction(db:D1Database,actor:PortalActor,action:string,input:any):Promise<any|null>{
- if(action==='project.create'||action==='project.update'){
-  const existing=action==='project.update'?await one(db,'SELECT * FROM projects WHERE id=?',[projectText(input.id,'o projeto',100)]):null;
-  if(action==='project.update'&&!existing)throw new HttpError(404,'Projeto não encontrado.','project_not_found');
-  if(existing){
-   requireCapability(actor,'campaigns.manage',existing.id);
-   if(!Number.isSafeInteger(input.expectedVersion)||input.expectedVersion<1)throw new HttpError(400,'Informe a versão do projeto. Atualize a página.','invalid_version');
-   if(input.expectedVersion!==existing.version)throw new HttpError(409,'O projeto foi alterado em outra sessão. Atualize a página.','project_changed');
-  }else requireCapability(actor,'projects.manage',null);
-  const creation=existing?null:await prepareMutation(db,actor.userId,action,input);
-  if(creation?.existingId)return {id:creation.existingId,project:await one(db,'SELECT * FROM projects WHERE id=?',[creation.existingId]),duplicate:true};
-  const name=projectText(input.name??existing?.name,'o nome do projeto',120);
-  const shortName=projectText(input.shortName??existing?.short_name,'o nome curto',40,true);
-  const description=projectText(input.description??existing?.description,'a descrição',2000,true);
-  const status=projectText(input.status??existing?.status??'active','a situação',20);
-  if(!['active','archived'].includes(status))throw new HttpError(400,'Escolha projeto ativo ou arquivado.','invalid_status');
-  const color=projectText(input.color??existing?.color??'#54216C','a cor',7).toUpperCase();
-  if(!/^#[0-9A-F]{6}$/.test(color))throw new HttpError(400,'Use uma cor no formato #54216C.','invalid_color');
-  const officialUrl=projectText(input.officialUrl??existing?.official_url,'o endereço oficial',500,true);
-  if(officialUrl){let url:URL;try{url=new URL(officialUrl);}catch{throw new HttpError(400,'Informe um endereço oficial válido.','invalid_url');}if(url.protocol!=='https:'||url.username||url.password)throw new HttpError(400,'O endereço oficial deve começar com https:// e não conter credenciais.','invalid_url');}
-  const startsAt=projectDate(input.startsAt===undefined?existing?.starts_at:input.startsAt,'A data inicial');
-  const endsAt=projectDate(input.endsAt===undefined?existing?.ends_at:input.endsAt,'A data final');
-  if(startsAt&&endsAt&&endsAt<=startsAt)throw new HttpError(400,'A data final deve ocorrer depois da data inicial.','invalid_interval');
-  const location=projectText(input.location??existing?.location,'o local',200,true),id=existing?.id||uid(),now=iso();
-  const mutation=existing
-   ?db.prepare(`UPDATE projects SET name=?,short_name=?,description=?,status=?,color=?,official_url=?,starts_at=?,ends_at=?,location=?,version=version+1
-     WHERE id=? AND version=? AND EXISTS (SELECT 1 FROM members m WHERE m.user_id=? AND m.revoked_at IS NULL AND m.role IN ('owner','manager') AND (m.project_id IS NULL OR m.project_id=projects.id))`)
-     .bind(name,shortName,description,status,color,officialUrl,startsAt,endsAt,location,id,input.expectedVersion,actor.userId)
-   :db.prepare(`INSERT INTO projects(id,name,short_name,description,status,color,official_url,starts_at,ends_at,location,version,created_at)
-     VALUES(CASE WHEN EXISTS (SELECT 1 FROM members m WHERE m.user_id=? AND m.role='owner' AND m.project_id IS NULL AND m.revoked_at IS NULL) THEN ? ELSE NULL END,?,?,?,?,?,?,?,?,?,1,?)`)
-     .bind(actor.userId,id,name,shortName,description,status,color,officialUrl,startsAt,endsAt,location,now);
-  let result:D1Result[];
-  try{result=await db.batch([...(creation?[creation.claimStatement(id)]:[]),mutation,db.prepare('INSERT INTO audit(id,actor_id,project_id,action,entity_id,details,created_at) SELECT ?,?,?,?,?,?,? WHERE changes()=1')
-   .bind(uid(),actor.userId,id,action,id,JSON.stringify({previousVersion:existing?.version??null,status}),now)]);}
-  catch(error){if(!creation)throw error;const replayId=await creation.recover(error);return {id:replayId,project:await one(db,'SELECT * FROM projects WHERE id=?',[replayId]),duplicate:true};}
-  if(result[creation?1:0].meta.changes!==1)throw new HttpError(existing?409:403,'O projeto ou seu acesso mudou. Atualize a página.',existing?'project_changed':'access_changed');
-  return {id,project:await one(db,'SELECT * FROM projects WHERE id=?',[id])};
- }
+ const projectResult=await projectAction(db,actor,action,input);if(projectResult!==null)return projectResult;
  if(action==='setting.update'){
   requireCapability(actor,'organization.manage');const instagram=text(input.instagramUrl,300),notice=text(input.privacyNotice,12000);
   if(instagram){let url:URL;try{url=new URL(instagram);}catch{throw new HttpError(400,'Informe um endereço válido do Instagram.');}if(url.protocol!=='https:'||!['instagram.com','www.instagram.com'].includes(url.hostname)||url.username||url.password)throw new HttpError(400,'Use um endereço https://www.instagram.com/.');}

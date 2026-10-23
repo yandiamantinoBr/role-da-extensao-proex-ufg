@@ -1,6 +1,24 @@
 # Infraestrutura e dependências da PROEX
 
-## Configuração V3 publicada
+## V4 publicada — integração inicial verificada
+
+Atualização de 23/10/2026. A V4 conserva o portal dedicado, D1 e R2 e acrescenta metadados de catálogo/projetos, identificadores opcionais, privacidade e serviços de integração portátil. Não foi provisionado outro banco nem transferida a operação para um serviço externo por esta decisão. Consulte a [ADR 0004](ADRS/0004-monorepo-catalogo-e-integracao-v4.md) e o [registro de entrega](../ENTREGA-V4.md).
+
+O portal público permanece em `apps/proex-portal`, com manifesto e deploy próprios; os comandos da raiz pertencem ao jogo livre. Migrações novas devem ser revisadas e aplicadas pelo fluxo da publicação, sem reescrever SQL já aplicado. A publicação V4 foi confirmada: versão 4, fonte `ae50c4eab331f74057c60dd487167af1b9925410`, implantação `appgdep_6adb69136e7c8191a68c74e6e0b09288`, estado succeeded. A revisão final passou em 255 testes do portal, 33 da raiz, TypeScript, build e smoke compilado com aliases e MCP. As contagens V3 abaixo permanecem históricas.
+
+A V4 mantém `BETTER_AUTH_URL`, `BETTER_AUTH_SECRET` e `OWNER_EMAIL` no runtime, sem valores em código ou documentação. O segredo estável também participa dos identificadores criptográficos de entrada e da emissão idempotente de convites. Mudança deliberada de segredo exige plano de continuidade; não copiar valores para planilhas, prompts ou logs.
+
+A configuração de Sheets referencia planilha e pastas privadas. Os valores ficam no runtime e no handoff autorizado. As ferramentas MCP ficaram disponíveis em um contexto novo de nuvem, permitindo a configuração e o pré-cadastro de produção. O pré-cadastro foi executado em produção: 9 iniciativas novas e 1 preservada (10 no total), 4 tipos, 4 editais em rascunho e 11 materiais novos com estoque zero. Não foram fabricados participantes, empréstimos, entregas ou histórico de movimentos.
+
+Em 23/10/2026, às 14:14:59 UTC, a primeira execução real em contexto de nuvem independente concluiu a exportação de 118 linhas, com leitura de retorno das 27 tabelas e 118 linhas-base verificadas no Google Sheets. Foram aplicadas zero alterações externas e registrados zero conflitos. A conexão foi conferida habilitada e o histórico confirmou conclusão. A rotina periódica está ativa; a atualização não é instantânea.
+
+Em uma segunda execução, concluída em 23/10/2026 às 14:22:45 UTC, três descrições de buttons foram alteradas pela planilha para registrar cor e diâmetro de 2,5 cm conforme informado pelo usuário. A importação por controle de versão aplicou as três alterações, sem conflitos. A leitura do portal confirmou as descrições e o incremento de uma versão por material, com estoque ainda zero. Após reexportar materiais, auditoria e versões, houve nova leitura das 27 abas de tabelas e das linhas-base. O registro dessa execução concluiu com 130 linhas exportadas, três alterações aplicadas e zero conflitos: o percurso planilha → portal → planilha foi verificado para esses metadados. A aba Operações continua disponível; o teste real acima validou edição de metadados, sem representar homologação de todos os tipos de operação. A planilha possui 32 abas; não havia anexos para copiar ou limpezas pendentes. Configuração e agendamento não substituem a evidência de execução acima. Acompanhar as próximas execuções; indisponibilidade externa e conflitos podem atrasar a propagação. Backup e restauração de objetos R2 precisam de verificação própria, além da leitura da planilha.
+
+
+O registro histórico seguinte documenta a publicação V3 anterior. Custos e opções de infraestrutura datados de 20/10/2026 continuam históricos, sem atualização de preço ou contratação implícita pela V4.
+
+
+## Histórico — configuração V3 publicada
 
 Decisão atual: [ADR 0003](ADRS/0003-identidade-e-operacao-v3.md), de 20/10/2026. A V3 mantém o Site dedicado, D1 e R2, e acrescenta autenticação por e-mail e senha com Better Auth. **Publicação versão 3 confirmada com sucesso em 20/10/2026, às 15:55:09 UTC**, revisão de ambiente 2. A [ADR 0002](ADRS/0002-portal-nativo-sites.md) documenta a V2 anterior com login nativo.
 

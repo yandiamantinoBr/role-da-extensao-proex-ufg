@@ -1,5 +1,8 @@
 # Sincronizar Windows, GitHub e ChatGPT Sites
 
+> Procedimento histórico de sincronização do jogo livre. Não descreve a integração portátil da V4 nem comprova que tarefas antigas estejam ativas. Para o estado atual, leia [ENTREGA-V4.md](ENTREGA-V4.md) e [ESTADO_ATUAL.md](proex-evolucao/ESTADO_ATUAL.md). Esta documentação não reativa tarefas Windows/Sites e não confirma sincronização Drive/Sheets.
+
+
 ## Identificadores e escopo autorizados
 
 - Site existente: `appgprj_6ac62af904348191af733a95a71534db` (público).
