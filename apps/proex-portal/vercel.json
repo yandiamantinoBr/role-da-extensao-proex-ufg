@@ -9,5 +9,5 @@
     "api/index.mjs": { "includeFiles": "dist/**", "maxDuration": 60, "memory": 1024 }
   },
   "rewrites": [{ "source": "/(.*)", "destination": "/api/index?__path=/$1" }],
-  "crons": [{ "path": "/login", "schedule": "0 11 * * *" }]
+  "crons": [{ "path": "/api/health", "schedule": "0 11 * * *" }]
 }
