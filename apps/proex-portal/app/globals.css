@@ -66,3 +66,9 @@ input:is([type=checkbox],[type=radio]){appearance:auto;display:inline-block;widt
 .p-scope-filters{grid-template-columns:repeat(3,minmax(0,1fr))}.p-scope-filters:has(.p-filter-clear){grid-template-columns:repeat(3,minmax(0,1fr)) auto}
 @media(max-width:1100px){.p-scope-filters{grid-template-columns:repeat(2,minmax(0,1fr))}.p-scope-filters:has(.p-filter-clear){grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:720px){.p-scope-filters,.p-scope-filters:has(.p-filter-clear){grid-template-columns:1fr}}
+
+/* Conteúdo com largura máxima em telas largas: evita linhas e cartões esticados. */
+.pn-shell .p-main{width:100%;max-width:1640px;margin-inline:auto}
+/* Início: atalhos personalizáveis primeiro; destaque compacto com indicadores. */
+.pd-welcome{padding:26px 32px;min-height:0}.pd-welcome h2{font-size:clamp(22px,2.2vw,30px);margin:10px 0 8px}.pd-welcome-aside{display:none}
+@media(min-width:1500px){.pd-shortcuts{grid-template-columns:repeat(3,minmax(0,1fr))}}
