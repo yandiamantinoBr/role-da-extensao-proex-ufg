@@ -214,9 +214,27 @@ export default function ProfilePanel({ onUpdated }: Props) {
       const blob = await prepareProfilePhoto(file), next = await photoDataUrl(blob);
       if (selection.current !== request) return;
       releasePhotoUrl(previewRef.current); previewRef.current = next; setPhoto(blob); setPreview(next);
-      setMessage('Foto preparada. Confira a prévia e clique em “Salvar perfil”.');
+      setPreparing(false);
+      // A foto é gravada logo após o preparo: não depende de outro clique em "Salvar perfil".
+      await uploadPhoto(blob, request);
     } catch (cause) { if (selection.current === request) setError(cause instanceof Error ? cause.message : 'Não foi possível preparar a foto.'); }
     finally { if (selection.current === request) { profileBusy.current = false; setBusy(false); setPreparing(false); } }
+  }
+  async function uploadPhoto(blob: Blob, request = selection.current) {
+    const current = await fetchProfile();
+    const form = new FormData(); form.set('file', blob, 'avatar.png'); form.set('expectedVersion', String(current.profile.version));
+    try {
+      const data = await responseData(await fetch('/api/profile', { method: 'POST', credentials: 'same-origin', headers: { 'X-Proex-Action': '1' }, body: form }));
+      if (selection.current !== request) return;
+      setProfile(data.profile); setHasPassword(data.hasPassword); discardPhoto(); setMessage('Foto do perfil atualizada.'); onUpdated?.();
+    } catch (cause) {
+      if (selection.current === request) setError((cause instanceof Error ? cause.message : 'Não foi possível salvar a foto.') + ' A prévia foi mantida: use “Tentar salvar a foto novamente”.');
+    }
+  }
+  async function retryPhoto() {
+    if (!photo || profileBusy.current) return;
+    profileBusy.current = true; setBusy(true); setError(''); setMessage('');
+    try { await uploadPhoto(photo); } finally { profileBusy.current = false; setBusy(false); }
   }
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -288,8 +306,8 @@ export default function ProfilePanel({ onUpdated }: Props) {
             <div><dt>Vínculo principal</dt><dd>{affiliations[profile.affiliation]}{profile.jobTitle && <small>{profile.jobTitle}</small>}</dd></div>
             <div><dt>Registro institucional</dt><dd>{profile.registrationNumber || 'Não informado'}{profile.registrationType && <small>{registrationTypes[profile.registrationType]}</small>}</dd></div>
           </dl>
-          <p className={styles.photoHelp}>Foto de até 20 MB. O portal prepara uma imagem de até 512 pixels e remove metadados no envio. {photo && 'A prévia ainda precisa ser salva.'}</p>
-          {photo && <button type="button" className="p-text-link" disabled={disabled} onClick={discardPhoto}>Descartar foto escolhida</button>}
+          <p className={styles.photoHelp}>Foto de até 20 MB em JPEG, PNG ou WebP. Ela é salva assim que escolhida: o portal prepara uma imagem de até 512 pixels e remove os metadados. Fotos HEIC do iPhone dependem do navegador; se não abrir, ajuste a câmera para “Mais compatível” ou escolha outra imagem.</p>
+          {photo && !busy && <div className="p-inline"><button type="button" className="p-button p-button-primary" disabled={disabled} onClick={() => void retryPhoto()}>Tentar salvar a foto novamente</button><button type="button" className="p-text-link" disabled={disabled} onClick={discardPhoto}>Descartar foto escolhida</button></div>}
           {preparing && <p role="status" className={styles.busy}><LoaderCircle size={16} className="p-spin" aria-hidden="true" />Preparando a foto neste aparelho…</p>}
         </div>
         <input ref={cameraRef} type="file" accept="image/*" capture="user" hidden onChange={choosePhoto} />

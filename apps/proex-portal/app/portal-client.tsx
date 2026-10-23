@@ -18,6 +18,7 @@ import DashboardPanel from '@/components/portal/dashboard-panel';
 import { DesktopSidebar, MobileNavigation } from '@/components/portal/portal-navigation';
 import { PORTAL_MODULES, type ModuleId } from '@/components/portal/navigation-model';
 import { useNavigationPreferences } from '@/components/portal/use-navigation-preferences';
+import { useFormDraft, DraftNotice, setDraftScope } from '@/components/portal/use-form-draft';
 import { ArrowDownToLine, ArrowRight, Boxes, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronRight, ExternalLink, FileText, Gift, LoaderCircle, LogOut, Plus, RefreshCw, Search, ShieldCheck, Truck, Users, Wifi, WifiOff, X } from 'lucide-react';
 // API projections vary by module; the server validates every mutation.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -106,8 +107,10 @@ function Section({ title, description, children, aside }: {
     <div>
     <h2>{title}</h2>{description && <p>{description}</p>}</div>{aside}</div>{children}</section>;
 }
-function OperationForm({ action, make, mutate, children, submit = 'Salvar', onDone, compact = false, onProjectFocus }: {
+function OperationForm({ action, make, mutate, children, submit = 'Salvar', onDone, compact = false, onProjectFocus, draftKey }: {
     action: string;
+    /** Identifica o rascunho; por padrão, a própria ação. `null` desliga (ex.: configurações). */
+    draftKey?: string | null;
     make: (f: FormData) => Payload;
     mutate: (action: string, data: Payload) => Promise<Row>;
     children: ReactNode;
@@ -119,6 +122,8 @@ function OperationForm({ action, make, mutate, children, submit = 'Salvar', onDo
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
     const key = useRef<string | null>(null);
+    const formRef = useRef<HTMLFormElement>(null);
+    const draft = useFormDraft(formRef, draftKey === undefined ? (action === 'setting.update' ? null : `operation:${action}`) : draftKey);
     async function send(e: FormEvent<HTMLFormElement>) {
         e.preventDefault();
         if (saving)
@@ -130,6 +135,7 @@ function OperationForm({ action, make, mutate, children, submit = 'Salvar', onDo
         try {
             const result = await mutate(action, { ...make(new FormData(form)), operationKey: key.current });
             key.current = null;
+            draft.clear();
             if (action !== 'setting.update')
                 form.reset();
             onDone?.(result);
@@ -141,12 +147,12 @@ function OperationForm({ action, make, mutate, children, submit = 'Salvar', onDo
             setSaving(false);
         }
     }
-    return <form className={`p-form${compact ? ' p-form-compact' : ''}`} onSubmit={send} onFocus={e => { const field = e.currentTarget.querySelector('select[name="projectId"]') as unknown as HTMLSelectElement | null; if (field?.value)
+    return <form ref={formRef} className={`p-form${compact ? ' p-form-compact' : ''}`} onSubmit={send} onFocus={e => { const field = e.currentTarget.querySelector('select[name="projectId"]') as unknown as HTMLSelectElement | null; if (field?.value)
         onProjectFocus?.(field.value); }} onChange={() => {
             if (!saving)
                 key.current = null;
         }}>
-    <fieldset disabled={saving}>{children}<div className="p-form-footer">{error && <p className="p-inline-error" role="alert">{error}</p>}<button className="p-button p-button-primary" type="submit">{saving ? <LoaderCircle className="p-spin" size={18}/> : <Check size={18}/>}{saving ? 'Salvando…' : submit}</button>
+    <DraftNotice draft={draft}/><fieldset disabled={saving}>{children}<div className="p-form-footer">{error && <p className="p-inline-error" role="alert">{error}</p>}<button className="p-button p-button-primary" type="submit">{saving ? <LoaderCircle className="p-spin" size={18}/> : <Check size={18}/>}{saving ? 'Salvando…' : submit}</button>
     </div>
     </fieldset>
     </form>;
@@ -340,6 +346,7 @@ export default function PortalClient({ initial }: {
     useEffect(() => { if (!filter || accessibleProjectKey.split('|').includes(filter)) return; const timer = window.setTimeout(() => { setFilter(''); setDraftProject(''); }, 0); return () => window.clearTimeout(timer); }, [accessibleProjectKey, filter]);
     useEffect(() => { if (!unitFilter || accessibleUnitKey.split('|').includes(unitFilter)) return; const timer = window.setTimeout(() => { setUnitFilter(''); setFilter(''); setDraftProject(''); }, 0); return () => window.clearTimeout(timer); }, [accessibleUnitKey, unitFilter]);
     const navigation = useNavigationPreferences(string(user.userId), allowedTabs.map(module => module.id));
+    setDraftScope(string(user.userId));
     function navigate(id: ModuleId) {
         if (!allowedTabs.some(module => module.id === id)) return;
         if (id !== tab) navigation.recordVisit(id);
