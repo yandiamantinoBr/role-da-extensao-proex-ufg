@@ -1,0 +1,36 @@
+FASE 02 ADMINISTRAÇÃO E ACESSOS POR ESCOPO
+
+Use 00_PROMPT_MESTRE.txt e as decisões verificadas da fase 01. Repositório: https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg. Preserve Sites e Pages livres. Trabalhe em branch isolada e preview com dados fictícios. Não tratar este arquivo como autorização para convidar pessoas sem destinatários definidos.
+
+OBJETIVO
+Criar a base do portal PROEX para que pessoas sem conhecimento de programação administrem seus projetos pelo celular. Uma permissão operacional não dá acesso a editar código, GitHub, credenciais ou outras áreas institucionais.
+
+PRÉ-REQUISITOS
+ADR de hospedagem/autenticação, ambiente exclusivo PROEX, responsáveis e fonte de dados definidos. Se algo faltar, implementar esquema, protótipo funcional em ambiente de teste, documentação e testes independentes. Não colocar login fictício em produção nem declarar OAuth configurado se ainda usa mock. Se a implantação continuar no Sites, preservar a autenticação nativa e verificar limites em vez de improvisar outra pilha.
+
+MODELO MÍNIMO
+Organização, projeto, usuário autenticado, vínculo de membro, papel/capacidade, escopo, convite e evento de auditoria. Vínculos guardam quem concedeu, validade, revogação e escopo. Autenticação identifica; autorização decide o que fazer. Usar IDs estáveis, não e-mail como chave universal. Não unir contas automaticamente porque nomes coincidem; vinculação de provedores exige confirmação segura.
+
+Papéis iniciais configuráveis:
+- Responsável institucional: administra a organização e responsáveis.
+- Gestor do projeto: configura campanhas, equipe e operações do projeto.
+- Operador: atende eventos designados, registra físico e confirma entrega.
+- Estoque: movimenta locais/itens autorizados.
+- Empréstimos: reserva, entrega, devolve e registra ocorrências.
+- Relatórios: consulta agregados do escopo, sem exportação identificável implícita.
+Implementar matriz explícita de ações; não usar apenas uma coluna is_admin para todos os módulos. Um usuário pode ter papéis diferentes em projetos diferentes. Padrão é negar o que não foi concedido.
+
+AUTENTICAÇÃO
+Para o portal hospedado em ambiente compatível, priorizar Google e código/link por e-mail. Revalidar documentação, URLs de callback, sessões, limites de envio e serviço SMTP institucional. Não ativar WhatsApp, Facebook ou Instagram como métodos fictícios. E-mail ou telefone verificado não prova pessoa única nem faixa etária. Administradores usam contas individuais; MFA quando suportado, sem senha compartilhada. Fluxo de recuperação não pode elevar privilégios.
+
+CONVITES
+Tela Equipe com nome/e-mail apenas onde necessário, papel, escopo, status, validade e ações. Criar convite imprevisível e armazenar seu hash quando adequado; expiração e aceite atômico de uso único; vínculo ao e-mail verificado esperado; não permitir alterar papel/organização no cliente. Reenvio invalida ou controla o anterior; revogação impede aceite e acesso posterior. Não registrar token em logs, analytics ou exportações. Se gerar link para envio manual, mostrar que quem recebe deve corresponder ao e-mail indicado. Só enviar convite real a destinatário expressamente indicado/autorizado; testes com destinatários fictícios ou caixa de teste.
+
+SEGURANÇA
+Checar sessão e vínculo vigente em todas as rotas, APIs, objetos e downloads. Trocar project_id na URL não deve liberar nada. Não confiar em claims editáveis pelo usuário. Se usar Supabase, RLS por organização/projeto, políticas de escrita com USING e WITH CHECK, views seguras e nenhuma chave privilegiada no navegador. Verificar revogação com sessão já aberta; não depender apenas de JWT antigo. Proteger contra CSRF conforme estratégia, abuso de convites/login, enumeração e redirecionamento aberto. Não permitir autoelevação, remover último responsável ou conceder acima de quem convida.
+
+EXPERIÊNCIA MÓVEL
+Início com seletor de projeto, evento ativo e ações pertinentes. Navegação curta: Evento, Materiais, Relatórios e Mais, ajustada às permissões. Mostrar nome do projeto em confirmações para evitar movimentação em local errado. Tela de configuração deve permitir alterar catálogo/regras operacionais sem editar código, respeitando versionamento e limites de campanha ativa. Mostrar estados vazios, convite pendente, acesso expirado e conexão perdida com linguagem simples. Gestão de código/deploy permanece fluxo separado.
+
+ACEITE
+Testar usuário sem vínculo, operador no próprio projeto, operador tentando outro projeto, gestor tentando virar responsável global, leitor tentando exportar dados pessoais; repetir por API direta, não só menus. Convites expirados, reutilizados, de outro e-mail e revogados devem falhar. Revogação bloqueia ação em aba aberta. O último responsável é protegido. Testar sessão compartilhada e logout, teclado, foco, leitura e telas pequenas. Auditoria registra alterações de equipe sem expor segredos. Entregar guia com tarefas reais: convidar, restringir, revogar e consultar o histórico; informar o que está simulado e o que já foi integrado.

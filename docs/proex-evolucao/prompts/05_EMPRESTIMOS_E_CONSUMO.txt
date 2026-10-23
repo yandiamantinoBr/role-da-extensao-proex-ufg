@@ -1,0 +1,63 @@
+PROMPT 05 — EQUIPAMENTOS, EMPRÉSTIMOS E CONSUMO INTERNO DA PROEX
+
+CONTEXTO E OBJETIVO
+
+Continue o sistema modular PROEX/UFG no repositório https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg. A referência histórica da roleta livre é f905f0d78371dc4a8784cce27bdbc7ef6fa88103. Leia AGENTS.md, README, docs/proex-evolucao e os contratos implementados antes de editar. Trabalhe a partir do estado atual, sem resetar trabalho posterior. Use branch própria e preserve integralmente a roleta/dado livres e sua identidade, animações, sons, endereço e funcionamento.
+
+A PROEX empresta equipamentos a ações e projetos de extensão, distribui materiais institucionais e consome materiais internamente. Precisamos organizar essas operações pelo celular, com permissões por projeto e módulo, disponibilidade inteligível, histórico e anexos privados. Reutilize o portal e a autenticação existentes. Não criar um cadastro de usuários paralelo nem planilhas independentes que disputem o mesmo saldo.
+
+Implemente em fases revisáveis. Não pedir confirmação para escolhas técnicas rotineiras dentro do escopo. Registre decisões administrativas realmente indefinidas; não invente regras institucionais, patrimônio, números de tombamento, responsáveis, saldos, prazos ou termos oficiais.
+
+PRÉ-REQUISITOS E ESCOPO
+
+Verifique organização, projetos, usuários, convites, escopos, catálogo, movimentos e armazenamento privado. Reutilize-os quando disponíveis. Se uma dependência ainda não existir, prepare contratos e implementação isolada sem liberar acesso inseguro. Consulte ativos e documentos existentes apenas pelos acessos autorizados; nunca publique termos, contatos, assinaturas ou credenciais no repositório.
+
+O escopo inclui equipamentos retornáveis; materiais institucionais distribuídos; consumo interno de escritório, limpeza e alimentação. A dimensão financeira das contribuições pessoais para alimentação está excluída: não criar cobrança, rateio, carteira, conta a receber ou relatório de dívida. Nesta fase, alimentação pode ter apenas cadastro e movimentação de itens consumidos, com o mesmo controle de acesso. Projetos citados, como Rolê da Extensão e Oxigênio, devem ter nomes e existência confirmados antes de cadastro real.
+
+MODELO COMUM, OPERAÇÕES DISTINTAS
+
+Equipamento individual deve ter identificação interna, descrição, localização, condição, vínculo patrimonial quando informado, disponibilidade e histórico. Número patrimonial é opcional até confirmação; não inventar. Projetor, caixa de som e microfone são exemplos, não inventário comprovado. Acessórios podem integrar um conjunto, mas precisam de relação explícita para saber o que saiu e voltou. Um bem compartilhado possui um único registro físico e pode atender vários projetos autorizados.
+
+Materiais fungíveis usam item, unidade e quantidade: papel, bloco, crachá, pasta, calendário e outros. Distribuir material institucional é saída sem devolução esperada; emprestar equipamento gera obrigação de devolução. Consumir material internamente é outra finalidade da saída. Não converter tudo em empréstimo ou em prêmio. Reutilize o histórico transacional de estoque, com entradas, transferências, consumo, distribuição e ajustes justificados. Unidades e conjuntos precisam de composição conhecida; não presumir que pacote, caixa e unidade são equivalentes.
+
+Entidades equivalentes: ativo; conjunto/acessório; local; projeto/ação; solicitação; reserva; itens da reserva; retirada; devolução; ocorrência; bloqueio/manutenção; documento privado; movimento de consumo/distribuição; auditoria. Preserve a separação entre solicitante externo, atendente e usuário administrador. Um professor que solicita equipamento não recebe acesso administrativo por isso. Dados de contato só entram quando necessários ao atendimento.
+
+RESERVA E DISPONIBILIDADE
+
+Mostre uma visão por lista e calendário, com equipamento, período e situação. Para a equipe, deve ser fácil responder “está disponível neste intervalo?”. Considere início e fim com data/hora e fuso explícito, inicialmente America/Sao_Paulo conforme planejamento. Documente intervalos sem ambiguidade; por exemplo, início incluído e fim excluído. Tempo de preparação/transporte pode ser configurado se a equipe definir; não inventar margem obrigatória.
+
+Estados sugeridos: solicitação recebida, em análise, reserva confirmada, retirado, devolução parcial, devolvido, cancelado e ocorrência. Adapte ao fluxo existente e documente quais estados bloqueiam agenda. Solicitação em análise não deve parecer reserva garantida. Reservas confirmadas e bloqueios de manutenção impedem alocação incompatível. Não aplicar bloqueio permanente a rascunhos esquecidos.
+
+Para ativo individual, proíba reservas confirmadas sobrepostas no banco, inclusive sob concorrência. Para recurso controlado por quantidade, garanta que a soma reservada no intervalo não ultrapasse o disponível. Use transação e restrições adequadas; não confiar em calendário do navegador. Dois atendentes confirmando ao mesmo tempo não podem obter o mesmo equipamento. Equipamentos de um conjunto também não podem aparecer livres para outra reserva durante o compromisso.
+
+Não liberar fisicamente um ativo apenas porque terminou o prazo previsto: se não voltou, marcar atraso e sinalizar impacto nas reservas seguintes. Não cancelar automaticamente a próxima ação. Devolução parcial mantém pendentes os itens ausentes. Avaria ou manutenção bloqueia o uso correspondente até uma liberação registrada. Alterar datas de uma reserva exige nova validação de conflitos e histórico.
+
+RETIRADA, DEVOLUÇÃO E TERMOS
+
+Retirada deve mostrar reserva e itens, registrar conferência, condição observada, responsável e horário real. Devolução confronta o que saiu com o que voltou, permitindo registrar acessórios faltantes, avaria e observações. Fotografias de condição são opcionais e restritas. Correções posteriores ficam auditadas; não apagar ocorrências para “limpar” o histórico.
+
+Permita anexar foto ou PDF do termo efetivamente utilizado, em armazenamento privado. Não apresentar upload de termo como assinatura eletrônica verificada. Não inventar formulário oficial nem texto jurídico. Se existir modelo institucional autorizado, preservar sua origem e versão. Downloads precisam de autorização no servidor, links temporários quando aplicável e validação de tipo/tamanho de arquivo. Nome de arquivo ou caminho não pode permitir acesso a outro projeto.
+
+TELAS E PERMISSÕES
+
+Priorize tarefas: “Consultar disponibilidade”, “Reservar”, “Registrar retirada”, “Registrar devolução”, “Distribuir material” e “Registrar consumo”. Ofereça busca por nome e código; QR é auxílio opcional. Fluxo móvel com poucos campos, datas compreensíveis, resumo antes de confirmar e mensagens de conflito indicando o período bloqueado. Não exponha dados pessoais do solicitante em calendários públicos.
+
+Responsáveis por empréstimos confirmam reservas e registram movimentações nos escopos autorizados. Operadores podem retirar/devolver se essa permissão lhes for concedida. Gestores configuram catálogo e regras do projeto. Leitores consultam indicadores. Bolsistas do Rolê não acessam automaticamente equipamentos, consumo ou documentos gerais da PROEX. Aplique regras em APIs, consultas, exportações e anexos, além dos menus.
+
+CONSUMO, RELATÓRIOS E INTEGRAÇÃO
+
+Consumo e distribuição informam item, quantidade, finalidade, projeto/local e responsável pelo registro; contato do destinatário só quando necessário. Faça baixa atômica com idempotência para evitar duplo clique e repetição após timeout. Saldo insuficiente impede saída normal; contagem divergente abre ajuste/ocorrência com motivo, sem esconder o problema. Nenhum saldo real deve nascer de exemplos sintéticos.
+
+Relatórios separam equipamentos emprestados, devoluções pendentes, atraso, manutenção, materiais distribuídos e materiais consumidos. Contagem de reservas não equivale a pessoas atendidas. Mostre período e origem dos dados. Use banco como fonte oficial; Sheets é exportação ou importação controlada com prévia, validação e rastreabilidade. Não sincronizar células livremente com estados de empréstimo, assinatura ou saldo.
+
+Sem conexão, apresente situação conhecida com horário e avise que disponibilidade pode ter mudado. Não confirme reserva ou baixa oficial offline como se estivesse sincronizada. Repetições usam a mesma chave de idempotência e recuperam a operação real. Uma contingência manual deve ter reconciliação explícita, sem prometer prevenção perfeita de conflitos.
+
+FASES E CRITÉRIOS DE ACEITE
+
+1. Levante contratos, dados disponíveis e decisões pendentes. Entregue cadastro e disponibilidade; depois reserva/retirada/devolução; depois consumo/distribuição e relatórios.
+2. Teste duas confirmações concorrentes para o mesmo ativo e intervalo; apenas uma deve vencer. Teste intervalos adjacentes, manutenção, conjunto com acessório já reservado e alteração de datas.
+3. Verifique atraso sem liberação automática, devolução parcial e avaria que bloqueia nova utilização.
+4. Teste retirada e consumo repetidos após falha, baixa do último item, autorização entre projetos e proteção dos anexos.
+5. Confira uso no celular sem câmera, datas/fuso, conciliação de movimentos e relatórios, recuperação de conexão e ausência de regressão na roleta livre.
+
+Entregue implementação revisável, migrações, testes relevantes, guia curto da equipe, limitações e procedimento de reversão. Siga o fluxo de publicação autorizado no projeto; não declare produção, importação, assinatura ou sincronização que não foi efetivamente verificada.

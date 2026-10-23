@@ -1,0 +1,58 @@
+PROMPT 04 — ESTOQUE, PREMIAÇÕES E ENTREGAS DO ROLÊ DA EXTENSÃO
+
+CONTEXTO E MISSÃO
+
+Continue a evolução da plataforma PROEX/UFG, com prioridade para o Rolê da Extensão e operação pelo celular. Repositório: https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg. Referência histórica do código livre: f905f0d78371dc4a8784cce27bdbc7ef6fa88103. Leia AGENTS.md, README e o planejamento existente em docs/proex-evolucao antes de editar. Essa referência não autoriza resetar o trabalho posterior. Localize o estado atual e integre-se a ele.
+
+Implemente por etapas um módulo de estoque e entrega ligado à administração, às campanhas e às participações oficiais. Preserve o site livre, suas chances, giros, sons, visual, URL e uso ilimitado. Não conecte a demonstração livre a baixas reais. Use branch própria e mudanças revisáveis. Preserve componentes e identidade existentes; não invente marcas, cores ou outro produto visual. Evite confirmações rotineiras e execute o escopo autorizado; registre decisões de negócio realmente pendentes.
+
+PRÉ-REQUISITOS E LIMITES
+
+Verifique autenticação, organização, projetos, permissões por escopo e participação oficial. Reutilize seus contratos; se ainda não existirem, prepare interfaces e migrações isoladas, explicando a dependência. Não contorne autorização para fazer uma demonstração funcionar. Dados reais ficam fora do GitHub. Credenciais, anexos e contatos não entram em commits, fixtures ou logs.
+
+Não presumir saldos, preços, unidades entregues ou regras de premiação. Não ativar estoque oficial com registros fictícios. Catálogo e quantidades iniciais exigem informação da equipe; ofereça importação e cadastro guiados. A ausência desses dados não impede concluir e testar o módulo com dados sintéticos claramente separados.
+
+MODELO E REGRAS
+
+Separe categoria de resultado, oferta de prêmio e item físico. “Brinde” e “Super Brinde” não são itens de estoque. Uma oferta descreve os itens e quantidades que ela consome. Um conjunto de três buttons gera uma premiação e três unidades físicas entregues. “Não foi dessa vez” não movimenta estoque. A política de “Tente novamente” pertence à campanha e deve ser lida, nunca reinventada neste módulo.
+
+Itens iniciais conhecidos, sujeitos a validação: buttons laranja, roxo e azul, com 2,5 cm; planner em conjunto de aproximadamente sete ou oito folhas; caneta PROEX; sacochila branca; squeeze branca; agenda eventual. Não fixar que todo Super Brinde é sacochila, nem presumir estoque positivo. Cadastre composição do planner e unidade de controle após confirmação. Permita novos itens e ofertas sem alterar código. Fotos são opcionais e devem usar arquivos autorizados.
+
+Use entidades equivalentes a: local de armazenamento; item e unidade; vínculo ao projeto; oferta/composição; campanha e cota; reserva; direito ao prêmio; entrega; movimentos; contagem; ocorrência; auditoria. Adapte nomes ao esquema existente. Um mesmo lote físico compartilhado não pode ser copiado como saldo independente em dois projetos. Transferências devem preservar origem, destino, responsável e rastreabilidade.
+
+Mantenha saldo físico, quantidade reservada e disponível distintos. Entradas, entregas, transferências, devoluções de materiais e ajustes têm movimentos próprios. Reservas não são entregas. Ajustes exigem motivo e permissão; o operador não edita diretamente o saldo. Preserve histórico mesmo após desativar um item. Conteúdo histórico precisa manter a composição da oferta que vigorava na emissão.
+
+Não prometa prêmio sem disponibilidade garantida. Antes de emitir direito, reserve uma composição concreta ou adote cotas garantidas cuja relação com estoque seja verificável. Documente o algoritmo escolhido e prove que duas ofertas concorrentes não consomem a mesma unidade. Se uma categoria não puder ser atendida, pause novas participações e alerte a equipe. Não altere probabilidades, troque categorias ou transforme ganhadores em perdedores silenciosamente.
+
+TRANSAÇÕES E ENTREGA
+
+Emitir premiação, reservar itens e consumir cota precisam ocorrer em transação coerente com a participação, com restrições e controle de concorrência no banco. Antes de cada lançamento físico autorizado, garantir cobertura para cada categoria premiável possível da sessão; converter a cobertura correspondente ao resultado e liberar as demais depois da observação. Não permitir que duas sessões físicas recebam autorização apoiadas no último Super Brinde. Interrupção após possível lançamento exige reconciliação antes de liberar a garantia. A confirmação da entrega baixa as unidades reservadas e registra o responsável na mesma operação atômica. Use chaves de idempotência estáveis: duplo toque, atualização, timeout e repetição da requisição não emitem dois prêmios nem duas baixas. Nunca use somente localStorage para proteger limites.
+
+Estados devem representar o que aconteceu: direito emitido; aguardando escolha, se aplicável; reservado; entregue; cancelado ou expirado conforme política. Nem toda categoria precisa passar por todos os estados. Não configure expiração arbitrária. Se a retirada permitir escolha, apresente apenas substituições autorizadas e disponíveis; trocar a composição precisa liberar e reservar atomicamente. Falta física constatada gera ocorrência, bloqueio pertinente e conciliação, sem apagar direitos emitidos.
+
+O comprovante pode usar QR ou código imprevisível, sem expor nome, e-mail ou identificador sequencial de participante. Consulta e resgate exigem permissão adequada e validação no servidor. Um QR compartilhado continua permitindo uma só entrega. Reexibir resultado é permitido sem nova premiação. Estorno exige motivo, vínculo ao movimento original e conferência do retorno físico; não basta mudar um status.
+
+EXPERIÊNCIA MÓVEL E PERMISSÕES
+
+Entregue telas simples: “Entregar brinde”, “Estoque”, “Receber materiais”, “Transferir”, “Contar” e “Histórico”, conforme o papel. Na entrega: ler QR ou digitar código; mostrar campanha, resultado, opções válidas e quantidades; confirmar com resumo; exibir sucesso persistente. Não depender exclusivamente da câmera. Diferencie claramente “a confirmar” de “entregue”. Evite repetição de dados e mantenha botões confortáveis para toque.
+
+Operadores entregam nos eventos e locais autorizados. Responsáveis pelo estoque recebem, transferem e ajustam no próprio escopo. Gestores configuram ofertas e cotas do projeto. Leitores consultam relatórios permitidos. Implemente autorização no servidor, consultas, exportações e anexos. Um bolsista do Rolê não obtém acesso ao estoque geral da PROEX alterando URLs. Audite mudanças sem registrar tokens ou dados pessoais desnecessários.
+
+REDE, INTEGRAÇÕES E RELATÓRIOS
+
+Em conexão instável, mantenha o resumo da operação e recupere o resultado usando a mesma chave. Não confirme entrega oficial offline como se tivesse sincronizado. Mostre reconexão e pendências. Uma eventual contingência manual precisa de identificação e reconciliação explícitas, separadas da operação normal.
+
+O banco é a fonte oficial. Google Sheets pode receber relatórios ou fornecer importação controlada com prévia, validação por linha e histórico. Não criar escrita bidirecional irrestrita. Não baixar estoque por editar uma célula sem validação. Informe fonte e horário da última sincronização; exporte somente os dados permitidos. Nenhuma integração deve exigir compartilhar tokens com a equipe.
+
+Relatórios conciliam campanha, resultado, direitos emitidos, reservas, entregas, cancelamentos e unidades por item, local e período. Uma premiação com três buttons não é três participantes. Adote o fuso da campanha, inicialmente America/Sao_Paulo quando confirmado no planejamento. Acesso à demonstração livre não conta como participação oficial.
+
+EXECUÇÃO E ACEITE
+
+1. Inspecione contratos existentes e registre dependências e decisões.
+2. Entregue esquema, permissões e histórico de movimentos; depois reservas e entregas; depois telas e integrações.
+3. Use migrações e dados sintéticos isolados; não sobrescreva tabelas ou saldos reais.
+4. Verifique dois operadores disputando o último item; apenas uma reserva pode vencer. Teste composição com três unidades, substituição concorrente e transferência sem duplicação.
+5. Teste duplo clique, repetição após timeout, resgate repetido, acesso a outro projeto, estorno justificado e recuperação de falha.
+6. Confira conciliação de relatório, contagem com divergência, legibilidade em tela pequena, uso sem câmera e ausência de regressão no site livre.
+
+Entregue código e documentação revisáveis, resultados dos testes relevantes, limitações reais, instruções de operação e reversão. Siga o fluxo de publicação autorizado no projeto. Não declare integração, sincronização ou disponibilidade em produção sem verificação concreta.

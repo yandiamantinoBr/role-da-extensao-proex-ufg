@@ -1,0 +1,34 @@
+FASE 06 INSTAGRAM VALIDAÇÃO E INTEGRAÇÃO
+
+Use o contexto mestre e o contrato de participação da fase 03. Repo https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg. Este módulo é experimento isolado; a roleta livre continua funcionando. Não apresentar botão Abrir Instagram ou checkbox Já sigo como verificação automática.
+
+DEMANDA
+Yan deseja permitir jogar apenas a quem segue a PROEX e medir alcance. A demanda está registrada, mas sua realização depende de comprovação técnica e compatibilidade com regras da Meta e da instituição. Não substituir a demanda silenciosamente por uma implementação que só parece verificá-la. Oferecer à gestão uma conclusão clara: viável no cenário testado, inviável ou pendente, com evidências.
+
+FONTES PARA REVALIDAR
+https://developers.facebook.com/documentation/instagram-platform/instagram-api-with-instagram-login/messaging-api/user-profile
+https://developers.facebook.com/documentation/instagram-platform/instagram-api-with-instagram-login
+https://transparency.meta.com/policies/community-standards/spam/
+https://help.instagram.com/179379842258600
+Na pesquisa de 20/10/2026, páginas oficiais Meta foram confirmadas por trechos indexados; aberturas diretas tiveram erros/429. Antes de implementar, obter documentação atual completa e testar conta/aplicativo real, registrando versão/permissões. A documentação relaciona is_user_follow_business a perfil contextual de mensagens; não presumir consulta por qualquer @ nem login pessoal genérico. A disponibilidade do campo não aprova automaticamente follow-gate.
+
+PRIMEIRO ENTREGÁVEL
+Diagnóstico curto com: perfil institucional confirmado por fonte/proprietário; tipo da conta; responsável; aplicativo Meta; modo desenvolvimento/publicado; níveis de acesso, permissões e revisão exigidos; webhooks; ambiente de teste; expiração de tokens; limites; condição de política e fluxo inclusivo. Não inventar @proex.ufg: o handle não foi validado neste levantamento. Não reutilizar token de outra aplicação, credencial pessoal ou recurso do Kino Campus.
+Avaliar separadamente promoção/distribuição de brindes e regra de engajamento. A política de Spam contém restrições a exigir engajamento para conteúdo exclusivo; não concluir automaticamente que qualquer promoção é proibida ou permitida. Registrar o enquadramento específico e encaminhar a decisão institucional quando necessário. A existência de botão de configuração não basta para liberar a exigência.
+
+INTERFACE DE NEGÓCIO
+Criar um adaptador substituível, por exemplo SocialVerificationProvider, sem acoplar regra do jogo a uma resposta Meta. Estados: não solicitado, pendente, confirmado, não confirmado, indisponível, expirado e erro; método: autodeclaração, conferência manual ou API. Unknown/erro não pode virar true nem false. Registrar campanha, identidade operacional, método, estado, horário e validade; só guardar identificadores estritamente necessários. Não guardar corpo de mensagens por conveniência.
+
+PROVA DE CONCEITO
+Se o cenário oficial permitir, pessoa inicia interação elegível com a conta profissional institucional. A sessão do site gera um desafio curto, imprevisível, de uso único e vinculado à campanha, com prazo e controle de tentativas. O webhook validado associa interação e desafio; servidor consulta apenas os campos permitidos. Confirmação gera autorização interna de uso único vinculada à identidade/campanha; não um link de jogar compartilhável que habilite várias pessoas.
+Verificar assinatura/autenticidade de webhooks, deduplicar eventos, impedir replay, tratar ordem fora de sequência, timeout, revogação e token expirado. Segredos ficam no servidor. Sanitizar logs e limitar retenção. Se a forma de desafio escolhida expuser o token no histórico de mensagens, modelar prazo e capacidade para não dar privilégios além da campanha. Não confiar em nome digitado ou screenshot para ligar contas automaticamente.
+Testar quem já seguia, quem não segue, quem passa a seguir, quem desfaz seguimento, perfil privado, mensagens não elegíveis, conta sem Instagram, indisponibilidade e celular com navegador embutido. Definir quanto tempo uma evidência vale: estado de seguimento não é permanente. Não prometer checagem contínua nem retirada de prêmio retroativa sem regra institucional.
+
+ALTERNATIVA OPERACIONAL
+Recomendação inicial: convite voluntário para conhecer/seguir e participação por Google/e-mail ou atendimento assistido. Se houver conferência manual aprovada, mostrar esse método no registro, com operador/horário e possibilidade de revisão. Não pedir senha, entrar na conta do participante, fazer scraping ou usar API não oficial. Para crianças/pessoas sem conta compatível, não criar pressão para abrir rede social; fluxo assistido e decisão institucional antecedem coleta.
+
+MÉTRICAS
+Separar clique, declaração, conferência e confirmação por API. Estado confirmado indica seguimento no instante consultado; não prova aquisição pelo evento. Mudança observada false para true é um indicador específico, sujeito à janela e ao vínculo correto. Crescimento agregado da conta é contexto sem atribuição causal automática. Não chamar a soma desses indicadores de novos seguidores.
+
+ACEITE
+Nenhuma verificação simulada em produção. Não existe bypass por payload, @ digitado, replay ou QR compartilhado. Falha da Meta mostra indisponibilidade e segue política declarada, sem consumir indevidamente participação. O módulo pode ser desligado sem afetar jogo/estoque. Relatório identifica método e incerteza. Entregar evidências do teste sem tokens/dados pessoais, documentação de operação e decisão sobre ativação; se bloqueado, completar adaptador/testes de contrato e manter produção sem falsa promessa.
