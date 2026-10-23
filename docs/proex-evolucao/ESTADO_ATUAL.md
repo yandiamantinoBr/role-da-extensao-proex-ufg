@@ -1,6 +1,6 @@
 # Estado atual da evolução PROEX
 
-## V4 publicada; sincronização inicial verificada
+## V4 publicada; sincronização e edição pela planilha verificadas
 
 Atualização de 23/10/2026. Branch de trabalho: `feat/proex-v4`, baseada em `origin/main` observado em `ff27166`, após a integração das PRs #1, #2 e #3. **A publicação V4 foi confirmada com estado succeeded**, versão 4, fonte Sites `ae50c4eab331f74057c60dd487167af1b9925410`, implantação `appgdep_6adb69136e7c8191a68c74e6e0b09288`, em https://proex-gestao.yandiamantinobr.chatgpt.site. O registro final está em [ENTREGA-V4.md](../ENTREGA-V4.md); a V3 abaixo permanece como histórico.
 
@@ -10,14 +10,14 @@ O catálogo foi pesquisado em fontes institucionais, distinguindo programas, pro
 
 A integração portátil possui esquema declarado, paginação, recibos, controle de execução e conflitos; metadados e operações passam pelos serviços de domínio. As ferramentas MCP ficaram disponíveis em contexto novo de nuvem, permitindo concluir configuração, pré-cadastro e execução real.
 
-Em 23/10/2026, às 14:14:59 UTC, uma execução real em contexto de nuvem independente concluiu a exportação de 118 linhas, com leitura de retorno das 27 tabelas e 118 linhas-base verificadas no Google Sheets. Foram aplicadas zero alterações externas e registrados zero conflitos. A conexão foi conferida habilitada e o histórico confirmou conclusão. A rotina periódica está ativa; a atualização não é instantânea.
+Em 23/10/2026, às 14:14:59 UTC, a primeira execução real em contexto de nuvem independente concluiu a exportação de 118 linhas, com leitura de retorno das 27 tabelas e 118 linhas-base verificadas no Google Sheets. Foram aplicadas zero alterações externas e registrados zero conflitos. A conexão foi conferida habilitada e o histórico confirmou conclusão. A rotina periódica está ativa; a atualização não é instantânea.
 
-A edição de metadados e a aba Operações estão disponíveis, mas não havia alterações externas pendentes: zero operações foram importadas. Portanto, esta execução comprova exportação e leitura de retorno, sem constituir teste de uma alteração feita no Sheets e aplicada no portal. A planilha privada possui 32 abas. Não havia anexos para copiar ou limpezas pendentes nessa execução. Endereços e identificadores privados ficam fora da documentação pública. A planilha não é backup integral dos arquivos privados.
+Em uma segunda execução, concluída em 23/10/2026 às 14:22:45 UTC, três descrições de buttons foram alteradas pela planilha para registrar cor e diâmetro de 2,5 cm conforme informado pelo usuário. A importação por controle de versão aplicou as três alterações, sem conflitos. A leitura do portal confirmou as descrições e o incremento de uma versão por material, com estoque ainda zero. Após reexportar materiais, auditoria e versões, houve nova leitura das 27 abas de tabelas e das linhas-base. O registro dessa execução concluiu com 130 linhas exportadas, três alterações aplicadas e zero conflitos: o percurso planilha → portal → planilha foi verificado para esses metadados. A aba Operações continua disponível; o teste real acima validou edição de metadados, sem representar homologação de todos os tipos de operação. A planilha privada possui 32 abas. Não havia anexos para copiar ou limpezas pendentes nessa execução. Endereços e identificadores privados ficam fora da documentação pública. A planilha não é backup integral dos arquivos privados.
 
 
 Mantém-se o monorepo: jogo livre na raiz/Pages e portal em `apps/proex-portal`, com deploy próprio. Os 12 arquivos protegidos conservam o baseline `f905f0d78371dc4a8784cce27bdbc7ef6fa88103`; esse baseline não é a posição atual de main. Não foram reativadas por esta documentação tarefas antigas do Windows ou do Site livre. Leia a [ADR 0004](ADRS/0004-monorepo-catalogo-e-integracao-v4.md), o [manual V4](../../apps/proex-portal/docs/MANUAL-PROEX.md) e a [infraestrutura](INFRAESTRUTURA.md).
 
-Continuam sem afirmação de funcionamento: OAuth Google, verificação Meta de seguidores, SMTP, WhatsApp, SEI/SIGAA, câmera em aparelho físico e importação de uma edição externa ainda não demonstrada. Estoque real, composição dos kits, regulamentos, tratamento de dados de menores, retenção, suporte e recuperação dependem de validação institucional.
+Continuam sem afirmação de funcionamento: OAuth Google, verificação Meta de seguidores, SMTP, WhatsApp, SEI/SIGAA, câmera em aparelho físico. Estoque real, composição dos kits, regulamentos, tratamento de dados de menores, retenção, suporte e recuperação dependem de validação institucional.
 
 ## Histórico verificado — V3 publicada
 

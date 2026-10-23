@@ -49,7 +49,7 @@ Para editar/publicar pelo ChatGPT Sites, preserve .openai/hosting.json e siga o 
 
 Os procedimentos anteriores de cópia Windows/GitHub/Sites estão em [docs/synchronization.md](docs/synchronization.md) e permanecem históricos. Sua documentação não comprova tarefas ativas, e esta evolução não as reativa. GitHub Pages mantém seu fluxo próprio de publicação; a gestão PROEX possui outro deploy.
 
-A V4 oferece integração portátil com Drive/Sheets, recibos e conflitos. A execução inicial real concluiu em 23/10/2026 às 14:14:59 UTC: 118 linhas exportadas e leitura de retorno das 27 tabelas verificada, zero alterações importadas e zero conflitos. A rotina periódica está ativa; não é sincronização instantânea. Não havia edições externas pendentes, portanto não se afirma um round-trip de alteração no Sheets. URLs privadas, credenciais e dados operacionais não pertencem ao repositório.
+A V4 oferece integração portátil com Drive/Sheets, recibos e conflitos. A primeira execução real concluiu em 23/10/2026 às 14:14:59 UTC: 118 linhas exportadas, 27 tabelas verificadas, zero alterações importadas e zero conflitos. Às 14:22:45 UTC, a segunda execução concluiu com 130 linhas exportadas, três alterações aplicadas e zero conflitos: descrições de três buttons editadas na planilha foram conferidas no portal, com uma nova versão e estoque zero, reexportadas e relidas nas 27 tabelas e linhas-base. Esse percurso foi validado para metadados. A rotina periódica está ativa; não é sincronização instantânea. URLs privadas, credenciais e dados operacionais não pertencem ao repositório.
 
 As configurações de volume, tempo e chances são preferências locais de cada navegador, não alterações no código. Não são compartilhadas entre dispositivos ou entre os dois endereços.
 

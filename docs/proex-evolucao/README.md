@@ -27,12 +27,12 @@ O catálogo pesquisado em fontes oficiais separa programas atuais, referências 
 | Portal / D1 / R2 | V4 publicada; operação transacional e arquivos privados |
 | GitHub / monorepo | Código, documentação, testes e migrações; aplicações com deploy separado |
 | Calendar | Download ou assinatura ICS de leitura, sem OAuth ou edição inversa |
-| Planilha / Drive | Configuração concluída; 32 abas; 118 linhas exportadas; leitura de retorno de 27 tabelas e 118 linhas-base verificada |
+| Planilha / Drive | Configuração concluída; 32 abas; segunda execução com 130 linhas exportadas, três alterações de metadados importadas, 27 tabelas e linhas-base relidas; zero conflitos |
 | MCP do portal | Ferramentas disponíveis e usadas num contexto novo de nuvem; rotina periódica ativa |
 
-**Configuração e agendamento não comprovam sincronização por si só.** Nesta entrega, o fluxo real independente concluiu em 23/10/2026 às 14:14:59 UTC, com 118 linhas exportadas, 27 tabelas e 118 linhas-base verificadas por leitura de retorno, zero alterações importadas e zero conflitos. A conexão foi conferida habilitada e a rotina periódica está ativa; a atualização não é instantânea.
+**Configuração e agendamento não comprovam sincronização por si só.** Nesta entrega, o primeiro fluxo real independente concluiu em 23/10/2026 às 14:14:59 UTC, com 118 linhas exportadas, 27 tabelas e 118 linhas-base verificadas por leitura de retorno, zero alterações importadas e zero conflitos. A conexão foi conferida habilitada e a rotina periódica está ativa; a atualização não é instantânea.
 
-A edição de metadados e a aba Operações estão disponíveis, mas não havia alterações externas pendentes: zero operações foram importadas. Portanto, esta execução comprova exportação e leitura de retorno, sem constituir teste de uma alteração feita no Sheets e aplicada no portal. Não havia anexos ou limpezas pendentes nessa execução. Objetos privados e recuperação precisam de verificação própria; a planilha não é backup integral. IDs e URLs privados ficam no handoff autorizado.
+Em uma segunda execução, concluída em 23/10/2026 às 14:22:45 UTC, três descrições de buttons foram alteradas pela planilha para registrar cor e diâmetro de 2,5 cm conforme informado pelo usuário. A importação por controle de versão aplicou as três alterações, sem conflitos. A leitura do portal confirmou as descrições e o incremento de uma versão por material, com estoque ainda zero. Após reexportar materiais, auditoria e versões, houve nova leitura das 27 abas de tabelas e das linhas-base. O registro dessa execução concluiu com 130 linhas exportadas, três alterações aplicadas e zero conflitos: o percurso planilha → portal → planilha foi verificado para esses metadados. A aba Operações está disponível; o teste validou as três edições de metadados, sem comprovar todos os tipos de operação. Não havia anexos ou limpezas pendentes nessa execução. Objetos privados e recuperação precisam de verificação própria; a planilha não é backup integral. IDs e URLs privados ficam no handoff autorizado.
 
 
 ## Limites
