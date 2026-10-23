@@ -1,4 +1,4 @@
-import { Boxes, CalendarDays, ClipboardList, FileText, FolderKanban, LayoutDashboard, Settings2, Truck, UserRound, Users, type LucideIcon } from 'lucide-react';
+import { Boxes, CalendarDays, ClipboardList, Dices, FileText, FolderKanban, LayoutDashboard, Settings2, Truck, UserRound, Users, type LucideIcon } from 'lucide-react';
 export type ModuleId = 'overview' | 'projects' | 'events' | 'materials' | 'loans' | 'team' | 'reports' | 'settings' | 'calendar' | 'records' | 'profile';
 export type PortalModule = {
     id: ModuleId;
@@ -12,7 +12,7 @@ export const PORTAL_MODULES: PortalModule[] = [
     { id: 'calendar', label: 'Agenda', description: 'Consulte ações, reservas e datas da equipe.', icon: CalendarDays },
     { id: 'materials', label: 'Materiais', description: 'Catálogo, disponibilidade e movimentações.', icon: Boxes },
     { id: 'loans', label: 'Empréstimos', description: 'Reservas, retiradas e devoluções de equipamentos.', icon: Truck },
-    { id: 'events', label: 'Dinâmicas', description: 'Roleta, dado, brindes e atendimento nas ações.', icon: CalendarDays },
+    { id: 'events', label: 'Dinâmicas', description: 'Roleta, dado, brindes e atendimento nas ações.', icon: Dices },
     { id: 'records', label: 'Registros', description: 'Observações, documentos e ocorrências.', icon: FileText },
     { id: 'team', label: 'Equipe', description: 'Pessoas, convites e permissões de acesso.', icon: Users },
     { id: 'reports', label: 'Relatórios', description: 'Consulte resultados e exporte registros.', icon: ClipboardList },

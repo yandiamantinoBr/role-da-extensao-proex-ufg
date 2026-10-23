@@ -98,23 +98,6 @@ export default function DashboardPanel({ modules, pinned, frequent, onNavigate, 
         find('loans') && known.loans && { label: 'Empréstimos', value: reserved.length + checkedOut.length, detail: late.length ? `${late.length} em atraso` : 'Nenhum atraso' },
     ].filter((stat): stat is { label: string; value: number; detail: string } => Boolean(stat));
     return <div className="pd-dashboard">
-    <section className="pd-welcome">
-    <div>
-    <span className="pd-context">
-    <span />{selected?.name || unitName || 'Seus projetos'}</span>
-    <h2>Seu próximo passo<br />começa aqui.</h2>
-    <p>{roleDescription}</p>
-    <span className="pd-role">
-    <ShieldLabel />{roleLabel || 'Equipe PROEX'}</span>
-    {stats.length > 0 && <dl className="pd-welcome-stats">{stats.map(stat => <div key={stat.label}><dt>{stat.label}</dt><dd>{stat.value}</dd><small>{stat.detail}</small></div>)}</dl>}
-    </div>
-    <div className="pd-welcome-aside" aria-hidden="true">
-    <FolderKanban size={48}/>
-    <span className="pd-orbit-a"/>
-    <span className="pd-orbit-b"/>
-    <i>✦</i>
-    </div>
-    </section>
     <section className="pd-section" aria-labelledby="pd-shortcut-title">
     <div className="pd-heading">
     <div>
@@ -151,6 +134,23 @@ export default function DashboardPanel({ modules, pinned, frequent, onNavigate, 
         <span>
         <Clock3 size={14}/>Também usados por você</span>{frequentModules.map(({ id, label }) => <button key={id} onClick={() => onNavigate(id)}>{label}<ChevronRight size={13}/>
             </button>)}</div>}</section>
+    <section className="pd-welcome">
+    <div>
+    <span className="pd-context">
+    <span />{selected?.name || unitName || 'Seus projetos'}</span>
+    <h2>Seu próximo passo<br />começa aqui.</h2>
+    <p>{roleDescription}</p>
+    <span className="pd-role">
+    <ShieldLabel />{roleLabel || 'Equipe PROEX'}</span>
+    {stats.length > 0 && <dl className="pd-welcome-stats">{stats.map(stat => <div key={stat.label}><dt>{stat.label}</dt><dd>{stat.value}</dd><small>{stat.detail}</small></div>)}</dl>}
+    </div>
+    <div className="pd-welcome-aside" aria-hidden="true">
+    <FolderKanban size={48}/>
+    <span className="pd-orbit-a"/>
+    <span className="pd-orbit-b"/>
+    <i>✦</i>
+    </div>
+    </section>
     <section className="pd-section" aria-labelledby="pd-summary-title">
     <div className="pd-heading">
     <div>

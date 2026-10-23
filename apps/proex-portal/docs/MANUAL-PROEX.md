@@ -14,9 +14,13 @@ O diretório permite alterar funções autorizadas, revogar vínculos e, para o 
 
 Na hospedagem própria da PROEX (Cloudflare), o primeiro responsável usa `/configuracao-inicial` com o código de configuração do servidor e o e-mail definido na implantação. Depois disso a página deixa de funcionar e o acesso é sempre por e-mail e senha. Veja `docs/HOSPEDAGEM-PROPRIA.md`.
 
+Abra o detalhe de uma pessoa da equipe para consultar seu perfil e os vínculos visíveis no seu escopo. Um gestor de projeto não recebe acesso a todos os projetos ou a todas as pessoas da organização por abrir esse detalhe. Unidade, vínculo institucional e registro de matrícula/SIAPE descrevem o cadastro; as permissões continuam sendo definidas pelos vínculos de equipe autorizados.
+
 ## Perfil e formas opcionais de entrada
 
 Em Meu perfil, a pessoa pode alterar nome, unidade, cargo/função e telefone opcionais, além de preparar uma foto pela galeria ou seleção de câmera. Evite preencher informações que a operação não precisa. As fotos ficam no armazenamento privado; seleção de câmera e formatos disponíveis dependem do aparelho. A preferência de tema claro, escuro ou sistema pertence ao navegador.
+
+Na V5, a pessoa também pode selecionar uma unidade organizacional e informar vínculo institucional e SIAPE, matrícula de estudante ou outro registro, se isso for necessário ao trabalho. Os campos são opcionais, não servem como login ou comprovação de identidade e não concedem permissões. Essas informações adicionais ficam limitadas à própria pessoa e à gestão autorizada no escopo correspondente. Não são copiadas para o Sheets: unidade vinculada ao perfil, vínculo institucional e tipo/número de registro permanecem privados. O texto de unidade que já existia continua na projeção operacional anterior. Não informe CPF no campo de matrícula ou em observações livres.
 
 O e-mail continua sendo uma forma de entrada. Nome de usuário e CPF são atalhos **opcionais**, cadastrados pela própria pessoa com confirmação da senha atual e ciência do aviso. Usam a mesma senha; não são SSO institucional da UFG. A validação dos dígitos do CPF não comprova titularidade nem identidade. O CPF não é exibido em relatórios ou planilhas; a busca usa um identificador criptográfico. É possível remover esses atalhos e continuar entrando com e-mail.
 
@@ -27,6 +31,8 @@ A pessoa pode solicitar a anonimização da conta. A equipe analisa antes de exe
 Abra Projetos e escolha **Acessar projeto** para ver finalidade, fontes, editais, cronologia, materiais e registros relacionados. O filtro distingue iniciativas em atividade, referências passadas e catálogo. A situação ativo/arquivado é um controle operacional separado: uma referência da gestão anterior não prova que a iniciativa acabou.
 
 O responsável global pode cadastrar tipos de iniciativa. Programas, projetos, eventos e áreas institucionais podem ser classificados sem alterar o código. Arquivar um tipo conserva os projetos existentes. Um programa ou projeto superior organiza o catálogo, sem abrir acesso aos demais. A hierarquia não aceita ciclos.
+
+Na V5, o responsável global também cadastra **unidades organizacionais**: nome, sigla e tipo PROEX, unidade acadêmica, órgão ou entidade externa. Projetos podem ser associados a uma unidade; arquivar a unidade conserva os vínculos existentes. Essa organização não concede acesso ao projeto. No cadastro do projeto, **Dinâmicas e brindes** seleciona a apresentação das ferramentas correspondentes; não cria estoque, campanhas, ofertas ou chances e não altera as permissões da equipe.
 
 Em Editar, o formulário busca a revisão atual. Se outra pessoa salvar antes, a sua alteração é recusada para evitar sobrescrever dados. Preserve as anotações e reabra a edição. O histórico permite restaurar metadados autorizados; restaurar cria uma nova versão e não reverte estoque, resultados, empréstimos ou anexos.
 
@@ -39,6 +45,8 @@ Cada projeto informa a **abrangência**: *Interno PROEX* para ações conduzidas
 ## Links, editais e cronologia
 
 No detalhe, adicione páginas oficiais, relatórios, galerias e outros recursos HTTPS. Confira o endereço e evite links com credenciais. Editais têm referência, finalidade, fonte, situação e prazos opcionais. Um edital pode se relacionar com vários projetos; alterá-lo exige administrar todos os projetos envolvidos. Um prazo de inscrição não é a data do evento.
+
+O atalho para os materiais na planilha geral só aparece para o responsável global, quando a visualização do projeto foi configurada na planilha atual. Uma visualização filtrada do Google Sheets é uma facilidade de navegação: quem acessa a planilha pode ter acesso às outras abas. Para uma equipe que deve ver apenas um projeto, prepare um documento específico, confira suas permissões no Drive e cadastre o link desse documento no projeto. Filtrar uma aba não protege os dados dos demais projetos.
 
 A linha do tempo guarda marcos documentados e atividades planejadas, com datas, fonte e situação. Uma referência histórica não cria campanha, atendimento ou movimentação de estoque. Não registre uma atividade como realizada apenas porque existe uma notícia anunciando sua data. As atividades aparecem na agenda conforme as permissões. Observações institucionais não devem conter dados pessoais.
 
@@ -66,6 +74,8 @@ O controle reserva cobertura para os prêmios possíveis antes de autorizar uma 
 
 A agenda separa empréstimos, materiais, projetos/eventos e consumo. Movimentações de estoque aparecem como histórico; saldo não fabrica compromissos futuros. O portal continua sendo a fonte da disponibilidade de equipamentos.
 
+Na V5, use também o filtro de unidade organizacional para localizar os projetos vinculados. O filtro não amplia suas permissões. O download ICS respeita a seleção autorizada de período, categoria, projeto e unidade. Uma assinatura permanente continua usando o escopo de projeto definido na criação; o filtro visual de unidade não cria uma assinatura com acesso geral à organização.
+
 Baixar ICS exige sessão e escopo. Para acompanhar atualizações, gere uma assinatura privada por categoria e projeto. O link aparece somente na criação, vale um ano e pode ser revogado. Guarde-o como credencial. Bloqueio da conta ou perda de acesso impede consultas posteriores; dados já recebidos por outro serviço podem continuar em cópias ou cache.
 
 No computador, abra Google Calendar → Outras agendas → + → Do URL e cole o link. Depois a agenda pode aparecer no aplicativo. Consulte as [instruções oficiais](https://support.google.com/calendar/answer/37100?hl=pt-BR). A assinatura é de leitura, e o Google decide quando atualizar. Importar um arquivo ICS cria uma cópia daquele momento. Não há OAuth Google nem edição do portal a partir do Calendar nesta revisão.
@@ -79,6 +89,8 @@ O portal dispõe de um formato portátil e de serviços de sincronização contr
 Consulte a última execução: horário, situação, contagem e conflitos. Uma execução concluída exige confirmação de leitura de retorno; falhas ou conflitos precisam ser resolvidos. Não anunciar sincronização automática apenas porque o botão foi acionado ou uma automação foi cadastrada. As conexões do autor no chat não se tornam credenciais permanentes dos visitantes.
 
 Na planilha, preserve os nomes técnicos das abas, cabeçalhos, identificadores, versão e hashes das linhas. Edite somente os campos declarados como editáveis. Operações novas usam uma chave estável; reutilizar a mesma chave com conteúdo diferente é recusado. Resultados, saldos calculados e concessões de acesso não podem ser alterados diretamente. Um conflito de versão deve ser revisado; não substituir o histórico para fazer a importação passar.
+
+O esquema da V5 declara 28 tabelas operacionais, incluindo unidades organizacionais. A rotina deve descobrir a lista e os cabeçalhos atuais, acrescentar campos novos sem deslocar os antigos e preservar as edições pendentes e seus originais de comparação. Em projetos, `unit_id` e `prizes_enabled` são campos novos; este último aceita apenas verdadeiro/falso ou números 0/1. Texto como `"false"` não equivale a falso. Uma célula vazia não deve transformar automaticamente um valor ausente em zero, nem apagar uma referência: a rotina precisa comparar com o original e respeitar o tipo do campo. Consulte o [protocolo de sincronização](SINCRONIZACAO.md) antes de manter a rotina.
 
 Ter uma pasta de anexos no Drive não comprova que os objetos privados foram copiados ou restaurados. Credenciais, senhas, CPF, tokens, chaves de armazenamento e termos não pertencem às abas gerais. As exportações são projeções controladas, não um backup integral do banco e dos arquivos. A manutenção deve verificar separadamente backup, restauração e acesso aos objetos privados.
 

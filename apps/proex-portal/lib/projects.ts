@@ -4,12 +4,13 @@ import { HttpError } from './errors';
 import { prepareMutation } from './mutations';
 import { listRecords } from './records';
 import { projectSpreadsheetLinks } from './sync/project-links';
+import { isExtensionLine, isThematicArea } from './extension-catalog';
 
 type Entity = 'project' | 'call' | 'project_link' | 'project_schedule_item';
 const TABLES: Record<Entity, string> = { project: 'projects', call: 'calls', project_link: 'project_links', project_schedule_item: 'project_schedule_items' };
 const PREFIX: Record<Entity, string> = { project: 'project', call: 'call', project_link: 'project.link', project_schedule_item: 'project.schedule' };
 const FIELDS: Record<Entity, string[]> = {
-  project: ['name','short_name','description','status','lifecycle','type_id','parent_id','unit_id','prizes_enabled','scope','color','official_url','starts_at','ends_at','location'],
+  project: ['name','short_name','description','status','lifecycle','type_id','parent_id','unit_id','prizes_enabled','scope','thematic_area','extension_line','color','official_url','starts_at','ends_at','location'],
   call: ['project_id','title','reference_code','description','status','opens_at','closes_at','official_url'],
   project_link: ['project_id','label','url','kind'],
   project_schedule_item: ['project_id','title','starts_at','ends_at','status','note','url'],
@@ -26,6 +27,8 @@ function identifier(value: unknown, optional = false): string | null {
   if (typeof value !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(value)) throw new HttpError(400, 'Identificador inválido.', 'invalid_identifier');
   return value;
 }
+function area(value: unknown): string { const result = value ?? ''; if (!isThematicArea(result)) throw new HttpError(400, 'Escolha uma área temática da extensão válida.', 'invalid_thematic_area'); return result; }
+function line(value: unknown): string { const result = value ?? ''; if (!isExtensionLine(result)) throw new HttpError(400, 'Escolha uma linha de extensão válida (01 a 53).', 'invalid_extension_line'); return result; }
 function choice(value: unknown, options: string[], label: string): string { if (typeof value !== 'string' || !options.includes(value)) throw new HttpError(400, `Escolha ${label} válido.`, 'invalid_input'); return value; }
 function date(value: unknown, optional = true): string | null {
   if ((value === null || value === undefined || value === '') && optional) return null;
@@ -56,7 +59,7 @@ async function normalize(db: D1Database, actor: PortalActor, entity: Entity, inp
     if (!/^#[0-9A-F]{6}$/.test(color)) throw new HttpError(400, 'Use uma cor como #54216C.', 'invalid_color');
     const typeId = identifier(get('typeId','type_id',null), true), parentId = identifier(get('parentId','parent_id',null), true), unitId = identifier(get('unitId','unit_id',null), true);
     const prizesEnabled = get('prizesEnabled','prizes_enabled',false);
-    if (![true,false,0,1].includes(prizesEnabled as boolean)) throw new HttpError(400,'Informe se dinâmicas e brindes estão habilitados.','invalid_prizes_enabled');
+    if (prizesEnabled!==true&&prizesEnabled!==false&&prizesEnabled!==0&&prizesEnabled!==1) throw new HttpError(400,'Informe se dinâmicas e brindes estão habilitados.','invalid_prizes_enabled');
     if (unitId && !await one(db,"SELECT id FROM organizational_units WHERE id=? AND (status='active' OR id=?)",[unitId,existing?.unit_id??''])) throw new HttpError(400,'Unidade não encontrada ou arquivada.','invalid_organizational_unit');
     if (typeId && !await one(db, 'SELECT id FROM project_types WHERE id=? AND (status=\'active\' OR id=?)', [typeId, existing?.type_id ?? ''])) throw new HttpError(400, 'Tipo de projeto não encontrado ou arquivado.', 'invalid_project_type');
     if (parentId) {
@@ -64,7 +67,7 @@ async function normalize(db: D1Database, actor: PortalActor, entity: Entity, inp
       const cycle = existing && await one(db, `WITH RECURSIVE ancestors(id,parent_id) AS (SELECT id,parent_id FROM projects WHERE id=? UNION SELECT p.id,p.parent_id FROM projects p JOIN ancestors a ON p.id=a.parent_id) SELECT id FROM ancestors WHERE id=? LIMIT 1`, [parentId, existing.id]);
       if (cycle) throw new HttpError(400, 'A hierarquia não pode formar um ciclo.', 'project_cycle');
     }
-    fields = { name:text(get('name'), 'o nome do projeto',120), short_name:text(get('shortName','short_name'),'o nome curto',40,true), description:text(get('description'),'a descrição',2000,true), status:choice(get('status','status','active'),['active','archived'],'um estado'), lifecycle:choice(get('lifecycle','lifecycle','active'),['active','past','catalog'],'um ciclo de vida'), type_id:typeId,parent_id:parentId,unit_id:unitId,prizes_enabled:prizesEnabled?1:0,scope:choice(get('scope','scope','internal'),['internal','external'],'uma abrangência (interno ou externo)'),color,official_url:url(get('officialUrl','official_url')),starts_at:date(get('startsAt','starts_at',null)),ends_at:date(get('endsAt','ends_at',null)),location:text(get('location'),'o local',200,true) };
+    fields = { name:text(get('name'), 'o nome do projeto',120), short_name:text(get('shortName','short_name'),'o nome curto',40,true), description:text(get('description'),'a descrição',2000,true), status:choice(get('status','status','active'),['active','archived'],'um estado'), lifecycle:choice(get('lifecycle','lifecycle','active'),['active','past','catalog'],'um ciclo de vida'), type_id:typeId,parent_id:parentId,unit_id:unitId,prizes_enabled:prizesEnabled?1:0,scope:choice(get('scope','scope','internal'),['internal','external'],'uma abrangência (interno ou externo)'),thematic_area:area(get('thematicArea','thematic_area','')),extension_line:line(get('extensionLine','extension_line','')),color,official_url:url(get('officialUrl','official_url')),starts_at:date(get('startsAt','starts_at',null)),ends_at:date(get('endsAt','ends_at',null)),location:text(get('location'),'o local',200,true) };
   } else {
     const projectId = existing?.project_id ?? identifier(input.projectId)!; manage(actor, projectId);
     if (!await one(db, 'SELECT id FROM projects WHERE id=?', [projectId])) throw new HttpError(404, 'Projeto não encontrado.');
@@ -173,7 +176,7 @@ export async function projectDetail(db:D1Database,actor:PortalActor|null,id:stri
     loans?all(db,`SELECT l.id,l.item_id,i.name item_name,l.action_name,l.starts_at,l.ends_at,l.status FROM loans l JOIN items i ON i.id=l.item_id AND i.project_id=l.project_id WHERE l.project_id=? ORDER BY l.starts_at DESC LIMIT 100`,[id]):Promise.resolve(null),
     inventory||loans||reports||canEdit?listRecords(db,actor,{projectId:id,limit:100}):Promise.resolve({records:[]}),
   ]);
-  const projectedCalls=calls.map((call):Row=>{let linked:string[]=[];try{linked=JSON.parse(call.linked_ids_json||'[]');}catch{}const {linked_ids_json,...safe}=call;return{...safe,linkedProjectIds:linked.filter(project=>canSee(actor,project)),canEdit:[call.project_id,...linked].every(project=>permitted(actor,'campaigns.manage',project)||permitted(actor,'projects.manage',null))};});
+  const projectedCalls=calls.map((call):Row=>{let linked:string[]=[];try{linked=JSON.parse(call.linked_ids_json||'[]');}catch{}const safe={...call};delete safe.linked_ids_json;return{...safe,linkedProjectIds:linked.filter(project=>canSee(actor,project)),canEdit:[call.project_id,...linked].every(project=>permitted(actor,'campaigns.manage',project)||permitted(actor,'projects.manage',null))};});
   const editableCalls=new Set(projectedCalls.filter(call=>call.canEdit).map(call=>call.id));
-  return {project,types,organizationalUnits:await all(db,'SELECT id,name,acronym,kind,status,version FROM organizational_units ORDER BY name,id'),spreadsheetLinks:await projectSpreadsheetLinks(db,actor,id),links,calls:projectedCalls,schedule,versions:versions.filter(version=>version.entity_type!=='call'||editableCalls.has(version.entity_id)),relatedProjects,relationships:{items,campaigns:events,loans:loanRows,records:records.records},permissions:{canEdit,canManageTypes:permitted(actor,'projects.manage',null),inventory,loans,reports,campaigns}};
+  return {project,types,organizationalUnits:await all(db,'SELECT id,name,acronym,kind,status,version,group_label,campus FROM organizational_units ORDER BY name,id'),spreadsheetLinks:await projectSpreadsheetLinks(db,actor,id),links,calls:projectedCalls,schedule,versions:versions.filter(version=>version.entity_type!=='call'||editableCalls.has(version.entity_id)),relatedProjects,relationships:{items,campaigns:events,loans:loanRows,records:records.records},permissions:{canEdit,canManageTypes:permitted(actor,'projects.manage',null),inventory,loans,reports,campaigns}};
 }

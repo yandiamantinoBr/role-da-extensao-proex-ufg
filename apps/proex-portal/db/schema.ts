@@ -11,6 +11,7 @@ export const organizationalUnits = sqliteTable('organizational_units', {
   id: text('id').primaryKey(), name: text('name').notNull(), acronym: text('acronym').notNull().default(''),
   kind: text('kind').notNull(), status: text('status').notNull().default('active'),
   version: integer('version').notNull().default(1), createdAt: text('created_at').notNull(), updatedAt: text('updated_at').notNull(),
+  groupLabel: text('group_label').notNull().default(''), campus: text('campus').notNull().default(''), officialUrl: text('official_url').notNull().default(''),
 }, t => [
   index('organizational_units_status_name_idx').on(t.status, t.name),
   check('organizational_units_kind_check', sql`${t.kind} IN ('proex','academic','agency','external')`),
@@ -30,10 +31,13 @@ export const projects = sqliteTable('projects', {
   unitId: text('unit_id').references(() => organizationalUnits.id), prizesEnabled: integer('prizes_enabled').notNull().default(0),
   // internal: ação conduzida pela equipe PROEX; external: unidade acadêmica, órgão ou parceiro.
   scope: text('scope').notNull().default('internal'),
+  // Classificação FORPROEX/UFG: área temática (8 chaves) e linha de extensão ('01'–'53').
+  thematicArea: text('thematic_area').notNull().default(''), extensionLine: text('extension_line').notNull().default(''),
 }, t => [
   index('projects_parent_idx').on(t.parentId), index('projects_unit_idx').on(t.unitId),
   check('projects_prizes_enabled_check', sql`${t.prizesEnabled} IN (0,1)`),
   check('projects_scope_check', sql`${t.scope} IN ('internal','external')`),
+  index('projects_thematic_area_idx').on(t.thematicArea),
   check('projects_status_check', sql`${t.status} IN ('active','archived')`),
   check('projects_lifecycle_check', sql`${t.lifecycle} IN ('active','past','catalog')`),
   check('projects_version_check', sql`${t.version} > 0`),

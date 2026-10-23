@@ -4,6 +4,7 @@ import { type PortalActor } from '../access';
 import { requireSyncOwner } from './contracts';
 import { applyPortableChanges } from './apply';
 import { HttpError } from '../errors';
+import { seedUfgUnits } from '../units';
 
 export function catalogPreview(){return {verifiedAt:catalog.verifiedAt,projects:[...catalog.publicProjects,...catalog.relatedEntities].map(p=>({key:p.key,name:p.name,description:p.description,officialUrl:p.officialUrl,entityType:p.entityType,catalogStatus:p.catalogStatus})),notice:'Referências históricas permanecem no catálogo, sem inferir encerramento. Saldos iniciais zero; nenhum empréstimo, participação, entrega ou evento realizado é inventado.'};}
 const materials=[['Button laranja — 2,5 cm','gift'],['Button roxo — 2,5 cm','gift'],['Button azul — 2,5 cm','gift'],['Planner — conjunto de folhas','gift'],['Caneta PROEX — tinta preta','gift'],['Sacochila Rolê da Extensão','gift'],['Squeeze branca PROEX','gift'],['Agenda PROEX','gift'],['Banner Rolê da Extensão','equipment'],['Dado Rolê da Extensão','equipment'],['Fantasia Rolê da Extensão','equipment']] as const;
@@ -39,5 +40,6 @@ export async function seedCatalog(db:D1Database,actor:PortalActor|null){
    for(const [index,[name,category]] of materials.entries())if(!existingItems.some(item=>canonicalName(item.name)===canonicalName(name))){const changeKey=`catalog-v4-material-${index}`;await create(changeKey,'item.create',{projectId:id,name,category,unit:'unidade',lowStock:0,description:'Pré-cadastro de referência. Faça a contagem física e registre uma entrada para informar o saldo real. Composição dos kits e características devem ser conferidas pela equipe.',assetCode:''});summary.push({kind:'item',name,status:newlyCreated.has(changeKey)?'created_zero_stock':'preserved'});}
   }
  }
+ const units=await seedUfgUnits(db,actor);summary.push({kind:'units',name:`${units.created} unidade(s)/modalidade(s) criadas, ${units.completed} completadas`,status:'ufg-catalog'});
  return {summary,notice:catalogPreview().notice};
 }

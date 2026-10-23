@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { CalendarDays, ChevronLeft, ChevronRight, Copy, Download, ExternalLink, Link2, LoaderCircle, RefreshCw, ShieldCheck, X } from 'lucide-react';
 import type { CalendarCategory, CalendarEntry } from '@/lib/calendar';
 import styles from './calendar-panel.module.css';
+import { groupUnits } from '@/lib/extension-catalog';
 
 type Feed = { id: string; category: CalendarCategory; project_id: string | null; project_name: string | null; created_at: string; expires_at: string; revoked_at: string | null };
 type CalendarData = { entries: CalendarEntry[]; feeds: Feed[]; availableCategories: CalendarCategory[] };
@@ -30,21 +31,23 @@ export default function CalendarPanel({ projects: sourceProjects, organizational
   const initial = useMemo(() => monthRange(civilDay(new Date())), []);
   const [from, setFrom] = useState(initial.from), [to, setTo] = useState(initial.to);
   const [category, setCategory] = useState('all'), [projectId, setProjectId] = useState(''), [unitId,setUnitId]=useState('');
-  const [data, setData] = useState<CalendarData | null>(null), [loading, setLoading] = useState(true), [saving, setSaving] = useState(false);
+  const [result,setResult]=useState<{key:string;data:CalendarData|null;error:string;receivedAt:number}|null>(null),[saving,setSaving]=useState(false);
+  const [mountedAt]=useState(()=>Date.now());
   const [error, setError] = useState(''), [reload, setReload] = useState(0), [selectedDay, setSelectedDay] = useState('');
   const [feedCategory, setFeedCategory] = useState<CalendarCategory>('projects'), [createdFeed, setCreatedFeed] = useState<{ id: string; feedUrl: string; expiresAt: string } | null>(null);
   const [copied, setCopied] = useState(false);
   const validRange=/^\d{4}-\d{2}-\d{2}$/.test(from)&&/^\d{4}-\d{2}-\d{2}$/.test(to)&&Number.isFinite(Date.parse(from))&&Number.isFinite(Date.parse(to))&&to>=from&&(Date.parse(to)-Date.parse(from))/86400000<732;
   const query = useMemo(() => new URLSearchParams({ from, to, category, ...(projectId ? { projectId } : {}), ...(unitId?{unitId}:{}) }).toString(), [from, to, category, projectId,unitId]);
+  const requestKey=`${query}&refresh=${reload}`,data=validRange&&result?.key===requestKey?result.data:null,loading=validRange&&result?.key!==requestKey,displayError=error||(result?.key===requestKey?result.error:'');
   useEffect(() => {
-    if(!validRange){setLoading(false);setData(null);return;}
-    const controller = new AbortController(); setLoading(true); setError('');
+    if(!validRange)return;
+    const controller = new AbortController();
     fetch(`/api/calendar?${query}`, { cache: 'no-store', signal: controller.signal }).then(async response => {
-      const result = await response.json() as CalendarData & { error?: string }; if (!response.ok) throw new Error(result.error || 'Não foi possível consultar a agenda.');
-      setData(result); setFeedCategory(current => result.availableCategories.includes(current) ? current : result.availableCategories[0]);
-    }).catch(e => { if (e.name !== 'AbortError') { setError(e.message); setData(null); } }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
+      const body = await response.json() as CalendarData & { error?: string }; if (!response.ok) throw new Error(body.error || 'Não foi possível consultar a agenda.');
+      if(!controller.signal.aborted){setResult({key:requestKey,data:body,error:'',receivedAt:Date.now()});setFeedCategory(current=>body.availableCategories.includes(current)?current:body.availableCategories[0]??'projects');}
+    }).catch(error=>{if(error.name!=='AbortError')setResult({key:requestKey,data:null,error:error.message,receivedAt:Date.now()});});
     return () => controller.abort();
-  }, [query, reload,validRange]);
+  }, [query,requestKey,validRange]);
   async function mutate(action: string, payload: Record<string, unknown>) {
     if (saving) return; setSaving(true); setError('');
     try {
@@ -61,8 +64,8 @@ export default function CalendarPanel({ projects: sourceProjects, organizational
   const monthStart = new Date(`${displayMonth}-01T12:00:00Z`), monthEnd = new Date(monthStart); monthEnd.setUTCMonth(monthEnd.getUTCMonth() + 1); monthEnd.setUTCDate(0);
   const cells = [...Array(monthStart.getUTCDay()).fill(null), ...Array.from({ length: monthEnd.getUTCDate() }, (_, i) => `${displayMonth}-${String(i + 1).padStart(2, '0')}`)];
   const entries = data?.entries ?? [], shown = selectedDay ? entries.filter(event => inDay(event, selectedDay)) : entries;
-  const today = civilDay(new Date());
-  const activeFeeds = data?.feeds.filter(feed => !feed.revoked_at && Date.parse(feed.expires_at) > Date.now()) ?? [];
+  const today = civilDay(new Date(mountedAt));
+  const activeFeeds = data?.feeds.filter(feed => !feed.revoked_at && Date.parse(feed.expires_at) > (result?.receivedAt??mountedAt)) ?? [];
   const unitProjects=unitId?projects.filter(project=>project.unitId===unitId):projects;
   const unitName=organizationalUnits.find(unit=>unit.id===unitId)?.name;
   const scopeName=projects.find(project=>project.id===projectId)?.name||String(unitName||'Todos os projetos permitidos');
@@ -74,25 +77,27 @@ export default function CalendarPanel({ projects: sourceProjects, organizational
       <div className="p-card-title"><span className="p-icon-tile"><CalendarDays size={21}/></span><div><h3>Agenda integrada</h3><p>Reservas, atividades e movimentações reais, no horário de Brasília.</p></div></div>
       <div className={styles.filters}>
         <label className="p-field"><span>Categoria</span><select value={category} onChange={event=>{setCategory(event.target.value);setSelectedDay('');}}><option value="all">Todas as categorias permitidas</option>{(data?.availableCategories??Object.keys(labels)).map(value=><option key={value} value={value}>{labels[value as CalendarCategory]}</option>)}</select></label>
-        <label className="p-field"><span>Unidade responsável</span><select value={unitId} onChange={event=>{const next=event.target.value;setUnitId(next);if(next&&projects.find(project=>project.id===projectId)?.unitId!==next)setProjectId('');setSelectedDay('');}}><option value="">Todas as unidades</option>{organizationalUnits.map(unit=><option key={String(unit.id)} value={String(unit.id)}>{unit.acronym?`${unit.acronym} · `:''}{String(unit.name)}</option>)}</select></label>
+        <label className="p-field"><span>Unidade responsável</span><select value={unitId} onChange={event=>{const next=event.target.value;setUnitId(next);if(next&&projects.find(project=>project.id===projectId)?.unitId!==next)setProjectId('');setSelectedDay('');}}><option value="">Todas as unidades</option>{groupUnits(organizationalUnits.map(unit=>({...unit,name:String(unit.name),group_label:String(unit.group_label??'')}) as typeof unit & {name:string;group_label:string;acronym?:unknown})).map(group=><optgroup key={group.group} label={group.group}>{group.units.map(unit=><option key={String(unit.id)} value={String(unit.id)}>{unit.acronym?`${unit.acronym} · `:''}{unit.name}</option>)}</optgroup>)}</select></label>
         <label className="p-field"><span>Projeto</span><select value={projectId} onChange={event=>{setProjectId(event.target.value);setSelectedDay('');}}><option value="">{unitId?'Todos os projetos desta unidade':'Todos os projetos permitidos'}</option>{unitProjects.map(project=><option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
         <label className="p-field"><span>Data inicial</span><input type="date" value={from} onChange={event=>{setFrom(event.target.value);setSelectedDay('');}}/></label>
         <label className="p-field"><span>Data final (incluída)</span><input type="date" value={to} min={from} onChange={event=>{setTo(event.target.value);setSelectedDay('');}}/></label>
       </div>
       <div className={styles.rangeSummary}><strong>{validRange?`${prettyDay(from)} a ${prettyDay(to)}`:'Escolha as datas inicial e final'}</strong><span>{scopeName} · {category==='all'?'Todas as categorias permitidas':labels[category as CalendarCategory]}</span></div>
       <div className={styles.actions}><button type="button" className="p-button p-button-subtle" onClick={()=>setReload(value=>value+1)} disabled={loading||!validRange}><RefreshCw size={16}/>Atualizar consulta</button>{validRange?<a className="p-button p-button-subtle" href={`/api/calendar?${query}&format=ics`}><Download size={16}/>{downloadLabel}</a>:<button type="button" className="p-button p-button-subtle" disabled><Download size={16}/>{downloadLabel}</button>}</div>
-      {!validRange&&<p className="p-inline-error" role="alert">Escolha um período válido de até dois anos, com a data final igual ou posterior à inicial.</p>}{error&&<p className="p-inline-error" role="alert">{error}</p>}
+      {!validRange&&<p className="p-inline-error" role="alert">Escolha um período válido de até dois anos, com a data final igual ou posterior à inicial.</p>}{displayError&&<p className="p-inline-error" role="alert">{displayError}</p>}
       <p className="p-form-help">O arquivo inclui as datas e os filtros acima. Materiais e consumo mostram movimentações registradas; saldo não cria compromisso futuro. Contatos, documentos e observações internas ficam no portal.</p>
     </section>
+    <div className={styles.workspace}>
     <section className="p-card" aria-label="Visão mensal da agenda" aria-busy={loading}>
       <div className={styles.monthHeading}><button type="button" className="p-button p-button-subtle" aria-label="Consultar mês anterior" onClick={()=>shiftMonth(-1)}><ChevronLeft size={18}/></button><div><h3>{new Intl.DateTimeFormat('pt-BR',{timeZone,month:'long',year:'numeric'}).format(monthStart)}</h3><small>Mês inicial do período consultado</small></div><button type="button" className="p-button p-button-subtle" aria-label="Consultar próximo mês" onClick={()=>shiftMonth(1)}><ChevronRight size={18}/></button></div>
-      <div className={styles.monthGrid}>{weekday.map(day=><span key={day} className={styles.weekday}>{day}</span>)}{cells.map((day,index)=>{if(!day)return <span key={`empty-${index}`}/>;const dayEntries=entries.filter(event=>inDay(event,day));return <button type="button" key={day} className={`${styles.day} ${selectedDay===day?styles.selected:''}`} onClick={()=>setSelectedDay(current=>current===day?'':day)} aria-pressed={selectedDay===day} aria-label={`${prettyDay(day)}, ${dayEntries.length} registros`}><strong className={day===today?styles.today:undefined}>{Number(day.slice(-2))}</strong><span className={styles.dots}>{[...new Set(dayEntries.map(event=>event.category))].map(kind=><span key={kind} style={{background:colors[kind]}}/>)}</span>{dayEntries.length>0&&<small>{dayEntries.length}</small>}</button>;})}</div>
+      <div className={styles.monthGrid}>{weekday.map(day=><span key={day} className={styles.weekday}>{day}</span>)}{cells.map((day,index)=>{if(!day)return <span key={`empty-${index}`}/>;const dayEntries=entries.filter(event=>inDay(event,day));return <button type="button" key={day} className={`${styles.day} ${selectedDay===day?styles.selected:''}`} onClick={()=>setSelectedDay(current=>current===day?'':day)} aria-pressed={selectedDay===day} aria-label={`${prettyDay(day)}, ${dayEntries.length} registros`}><strong className={day===today?styles.today:undefined}>{Number(day.slice(-2))}</strong><span className={styles.dots}>{[...new Set(dayEntries.map(event=>event.category))].map(kind=><span key={kind} style={{background:colors[kind]}}/>)}</span>{dayEntries.slice(0,2).map(event=><em key={event.uid} className={styles.chip} style={{borderLeftColor:colors[event.category]}} title={event.title}>{event.title}</em>)}{dayEntries.length>2&&<small>+{dayEntries.length-2}</small>}</button>;})}</div>
       <div className={styles.legend}>{Object.entries(labels).map(([key,label])=><small key={key}><span style={{background:colors[key as CalendarCategory]}}/>{label}</small>)}</div>
     </section>
-    <section className="p-card" aria-label="Lista de compromissos">
+    <section className={`p-card ${styles.listCard}`} aria-label="Lista de compromissos">
       <div className="p-card-title"><div><h3>{selectedDay?prettyDay(selectedDay):'Registros do período'}</h3><p>{loading?'Consultando registros…':`${shown.length} registro(s)`}</p></div>{selectedDay&&<button type="button" className="p-button p-button-subtle" onClick={()=>setSelectedDay('')}><X size={15}/>Ver todo o período</button>}</div>
       {loading?<p className="p-form-help"><LoaderCircle size={17} className="p-spin"/> Carregando agenda…</p>:!shown.length?<p className="p-form-help">{validRange?'Nenhum registro corresponde às datas e aos filtros escolhidos.':'Informe um período válido para consultar a agenda.'}</p>:<div className={styles.entries}>{shown.map(event=><article key={event.uid} className={styles.entry} style={{borderLeftColor:colors[event.category]}}><small>{labels[event.category]}</small><h4 className={event.status==='CANCELLED'?styles.cancelled:undefined}>{event.title}</h4><p>{when(event)}</p><p className={styles.entryContext}>{event.projectName}{event.location?` · ${event.location}`:''}{event.status==='CANCELLED'?' · Cancelado / arquivado':''}</p></article>)}</div>}
     </section>
+    </div>
     <section className="p-card">
       <div className="p-card-title"><span className="p-icon-tile"><Link2 size={20}/></span><div><h3>Acompanhar no Google Calendar</h3><p>Assine uma categoria e um projeto para consultar atualizações.</p></div></div>
       <p className="p-form-help">A assinatura é diferente do download do período. Ela mostra um ano passado e um ano futuro. O Google decide quando atualizar; editar no Google não muda o portal. Importar um arquivo .ics cria uma cópia.</p>

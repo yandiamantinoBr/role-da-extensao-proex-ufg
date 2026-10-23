@@ -149,7 +149,7 @@ test('official catalog seed executes real metadata services, starts every item a
  const f=fixture();try{
   const preview=catalogPreview();assert.equal(preview.verifiedAt,'2026-10-23');assert.equal(preview.projects.length,10);
   const first=await seedCatalog(f.db,f.actor);assert.equal(first.summary.filter(row=>row.kind==='project').length,10);
-  assert.equal(f.db.native.prepare('SELECT COUNT(*) n FROM project_types').get().n,4);
+  assert.equal(f.db.native.prepare('SELECT COUNT(*) n FROM project_types').get().n,6,'4 legacy types plus the UFG course and service modalities');
   const items=f.db.native.prepare('SELECT stock,reserved FROM items').all();assert.equal(items.length,11);assert.ok(items.every(item=>item.stock===0&&item.reserved===0));
   for(const table of ['stock_movements','loans','participations','attempts','entitlements','reservations','campaigns','project_schedule_items','records'])assert.equal(f.db.native.prepare(`SELECT COUNT(*) n FROM ${table}`).get().n,0,table);
   const historical=f.db.native.prepare("SELECT lifecycle,description FROM projects WHERE name='Mulheres nas Poéticas'").get();assert.equal(historical.lifecycle,'catalog');assert.match(historical.description,/situação atual a confirmar/);
@@ -176,7 +176,7 @@ test('concurrent catalog seed requests share receipts without duplicating refere
  const f=fixture();try{
   await Promise.all([seedCatalog(f.db,f.actor),seedCatalog(f.db,f.actor)]);
   assert.equal(f.db.native.prepare('SELECT COUNT(*) n FROM projects').get().n,11); // Includes the fixture's pre-existing project.
-  assert.equal(f.db.native.prepare('SELECT COUNT(*) n FROM project_types').get().n,4);
+  assert.equal(f.db.native.prepare('SELECT COUNT(*) n FROM project_types').get().n,6);
   assert.equal(f.db.native.prepare('SELECT COUNT(*) n FROM project_links').get().n,10);
   assert.equal(f.db.native.prepare('SELECT COUNT(*) n FROM calls').get().n,4);
   assert.equal(f.db.native.prepare('SELECT COUNT(*) n FROM items').get().n,11);
@@ -282,7 +282,7 @@ test('domain replay without a service batch cannot append a receipt after its ru
 test('V5 exposes 28 operational tables, with versioned units and no new profile identifiers',async()=>{
  const f=fixture();try{
   const schemas=describePortableSchemas();assert.equal(schemas.tables.length,28);
-  const units=schemas.tables.find(row=>row.table==='organizational_units');assert.equal(units.updateAction,'unit.update');assert.deepEqual(units.columns.filter(column=>column.editable).map(column=>column.name),['name','acronym','kind','status']);
+  const units=schemas.tables.find(row=>row.table==='organizational_units');assert.equal(units.updateAction,'unit.update');assert.deepEqual(units.columns.filter(column=>column.editable).map(column=>column.name),['name','acronym','kind','status','group_label','campus','official_url']);
   const created=await applyPortableChanges(f.db,f.actor,{changes:[{changeKey:'create-unit-v5-001',action:'unit.create',input:{name:'Faculdade de Educação',acronym:'FE',kind:'academic'}}]});assert.equal(created.results[0].status,'applied');const unitId=created.results[0].entityId;assert.equal(typeof unitId,'string');
   f.db.native.prepare('INSERT INTO profiles(user_id,display_name,unit,unit_id,affiliation,registration_type,registration_number,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)').run(f.actor.userId,'Nome visível','Texto de unidade anterior',unitId,'student','student','MATRICULA_PRIVADA_123',f.now,f.now);
   const profilePage=await exportPortablePage(f.db,f.actor,{table:'profiles'}),profile=profilePage.rows[0];assert.equal(profile.unit,'Texto de unidade anterior');assert.equal(profile.display_name,'Nome visível');
@@ -321,7 +321,7 @@ test('unit CAS races roll back the sync receipt and do not overwrite the winning
 test('project sync links units and bridges strict booleans or 0/1 without accepting truthy strings',async()=>{
  const f=fixture();try{
   const created=await applyPortableChanges(f.db,f.actor,{changes:[{changeKey:'project-unit-create-01',action:'unit.create',input:{name:'Unidade acadêmica',acronym:'UA',kind:'academic'}}]});const unitId=created.results[0].entityId;
-  const projectSchema=describePortableSchemas().tables.find(row=>row.table==='projects');assert.deepEqual(projectSchema.columns.slice(-3).map(column=>column.name),['unit_id','prizes_enabled','scope']);assert.equal(projectSchema.columns.find(column=>column.name==='prizes_enabled').type,'boolean');
+  const projectSchema=describePortableSchemas().tables.find(row=>row.table==='projects');assert.deepEqual(projectSchema.columns.slice(-5).map(column=>column.name),['unit_id','prizes_enabled','scope','thematic_area','extension_line']);assert.equal(projectSchema.columns.find(column=>column.name==='prizes_enabled').type,'boolean');
   let version=1;
   for(const [index,value] of [1,false,true,0].entries()){
    const response=await applyPortableChanges(f.db,f.actor,{changes:[{changeKey:`project-prizes-v5-${index}`,table:'projects',id:'project-a',expectedVersion:version,fields:{unit_id:unitId,prizes_enabled:value}}]});assert.equal(response.results[0].status,'applied');version++;

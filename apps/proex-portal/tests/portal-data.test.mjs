@@ -206,7 +206,7 @@ test('snapshot exposes editable V3 project, item and loan fields without widenin
     id: 'project-a', name: 'Projeto A', description: '', created_at: timestamp,
     short_name: 'Rolê', status: 'archived', color: '#ffaa3d', official_url: 'https://proex.ufg.br/',
     starts_at: timestamp, ends_at: '2026-12-20T02:30:00.000Z', location: 'Campus Samambaia', version: 4,
-    lifecycle: 'active', type_id: null, parent_id: null, unit_id:null, prizes_enabled:0, scope:'internal',
+    lifecycle: 'active', type_id: null, parent_id: null, unit_id:null, prizes_enabled:0, scope:'internal', thematic_area:'', extension_line:'',
   });
   const equipment = data.items.find(item => item.id === 'equipment-a');
   assert.equal(equipment.asset_code, 'UFG-001'); assert.equal(equipment.version, 3); assert.equal(equipment.updated_at, timestamp);
