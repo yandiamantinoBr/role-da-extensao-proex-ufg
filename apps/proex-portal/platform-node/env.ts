@@ -23,7 +23,7 @@ class ObjectBucket {
     const { data, contentType } = found;
     return {
       key, size: data.byteLength, httpMetadata: { contentType },
-      get body() { return new Response(data).body!; },
+      get body() { return new Response(new Uint8Array(data)).body!; },
       arrayBuffer: async () => data.slice().buffer, text: async () => new TextDecoder().decode(data),
     };
   }
@@ -35,7 +35,7 @@ let stores: ReturnType<typeof fileStores> | undefined, db: SnapshotD1 | undefine
 function backend() {
   if (stores) return stores;
   const url = process.env.PROEX_DATABASE_URL;
-  stores = url && /^postgres(ql)?:\/\//.test(url) ? postgresStores(url) : fileStores(process.env.PROEX_DATA_DIR || '.data');
+  stores = url && /^postgres(ql)?:\/\//.test(url) ? postgresStores(url, process.env.PROEX_DATABASE_SCHEMA || 'proex') : fileStores(process.env.PROEX_DATA_DIR || '.data');
   return stores;
 }
 

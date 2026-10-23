@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 import vinext from "vinext";
-import { defineConfig } from "vite";
+import { defineConfig, type UserConfig } from "vite";
 import hostingConfig from "./.openai/hosting.json";
 import { readExecutionProfile } from "./scripts/execution-profile.mjs";
 import { configureToolEnvironment } from "./scripts/tool-environment.mjs";
@@ -43,7 +43,7 @@ const localBindingConfig = {
 // Postgres ou disco). O alvo padrão continua sendo Cloudflare/Sites.
 const nodeTarget = process.env.PROEX_TARGET === "node" || process.env.VERCEL === "1";
 
-export default defineConfig(async ({ command }) => {
+export default defineConfig(async ({ command }): Promise<UserConfig> => {
   configureToolEnvironment(process.cwd());
   if (nodeTarget) {
     const nodeEnv = fileURLToPath(new URL("./platform-node/env.ts", import.meta.url));

@@ -7,7 +7,7 @@ import {getPortalUser,ensureNativePrincipal,authForRequest,newPrincipalId} from 
 import {one,iso,text} from '@/lib/database';
 import {HttpError,publicError} from '@/lib/errors';
 import {boundedJson} from '@/lib/http';
-import {accountRate,rateLimit} from '@/lib/rate-limit';
+import {accountRate,rateLimit,clientIp} from '@/lib/rate-limit';
 import {resolveLogin,loginRateSubject,identifierSettings,changeIdentifier} from '@/lib/login-identifiers';
 import {listPrivacyRequests,requestPrivacy,resolvePrivacy} from '@/lib/privacy';
 export const dynamic='force-dynamic';
@@ -76,11 +76,17 @@ export async function POST(request:Request){try{
   return await admittedSignIn(db,auth,i.email,suppliedPassword,h);
  }
  if(input.action==='setupOwner'){
-  await accountRate(db,request,'setup-owner');
+  // Limite por origem: tentativas de terceiros não bloqueiam a configuração legítima.
+  await accountRate(db,request,`setup-owner:${clientIp(request)??'sem-ip'}`);
   const {email,name}=await verifyOwnerSetup(db,{expectedToken:setupToken(),ownerEmail:ownerEmail()},input),newPassword=password(input.password),auth=await authForRequest(db);
   if(await one(db,'SELECT id FROM auth_user WHERE lower(email)=?',[email]))throw new HttpError(409,'Já existe uma conta com este e-mail. Entre pelo login.');
   const authUser=(await auth.api.createUser({body:{email,password:newPassword,name,role:'user'}})).user;
-  await completeOwnerSetup(db,{email,name,credentialId:authUser.id,principalId:newPrincipalId()},ownerEmail());
+  try{await completeOwnerSetup(db,{email,name,credentialId:authUser.id,principalId:newPrincipalId()},ownerEmail());}
+  catch(error){
+   // Sem vínculo, a credencial recém-criada é removida para permitir nova tentativa.
+   if(!await one(db,"SELECT user_id FROM identity_aliases WHERE provider='password' AND subject=?",[authUser.id]))await db.batch([db.prepare('DELETE FROM auth_account WHERE user_id=?').bind(authUser.id),db.prepare('DELETE FROM auth_session WHERE user_id=?').bind(authUser.id),db.prepare('DELETE FROM auth_user WHERE id=?').bind(authUser.id)]);
+   throw error;
+  }
   return await admittedSignIn(db,auth,email,newPassword,h);
  }
  if(input.action==='resetPassword'){

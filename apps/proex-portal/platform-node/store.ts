@@ -48,42 +48,44 @@ export function fileStores(directory: string): { snapshots: SnapshotStore; objec
 }
 
 /** Postgres (Supabase ou qualquer outro): hospedagem serverless, como a Vercel. */
-export function postgresStores(url: string): { snapshots: SnapshotStore; objects: ObjectStore } {
+export function postgresStores(url: string, schema = 'proex'): { snapshots: SnapshotStore; objects: ObjectStore } {
+  if (!/^[a-z_][a-z0-9_]{0,40}$/.test(schema)) throw new Error('Esquema Postgres inválido.');
   // prepare:false é necessário no pooler em modo transação do Supabase.
   const sql = postgres(url, { prepare: false, max: 3, idle_timeout: 20, connect_timeout: 15 });
+  const snapshot = sql(`${schema}.sqlite_snapshot`), history = sql(`${schema}.sqlite_history`), objects = sql(`${schema}.objects`);
   return {
     snapshots: {
       async version() {
-        const [row] = await sql<{ version: string }[]>`select version from proex.sqlite_snapshot where id = 1`;
+        const [row] = await sql<{ version: string }[]>`select version from ${snapshot} where id = 1`;
         return row ? Number(row.version) : 0;
       },
       async load() {
-        const [row] = await sql<{ version: string; data: Uint8Array }[]>`select version, data from proex.sqlite_snapshot where id = 1`;
+        const [row] = await sql<{ version: string; data: Uint8Array }[]>`select version, data from ${snapshot} where id = 1`;
         return row ? { version: Number(row.version), data: new Uint8Array(row.data) } : null;
       },
       async commit(expected, data) {
         return sql.begin(async tx => {
           const rows = expected === 0
-            ? await tx<{ version: string }[]>`insert into proex.sqlite_snapshot (id, version, data) values (1, 1, ${Buffer.from(data)}) on conflict (id) do nothing returning version`
-            : await tx<{ version: string }[]>`update proex.sqlite_snapshot set data = ${Buffer.from(data)}, version = version + 1, updated_at = now() where id = 1 and version = ${expected} returning version`;
+            ? await tx<{ version: string }[]>`insert into ${snapshot} (id, version, data) values (1, 1, ${Buffer.from(data)}) on conflict (id) do nothing returning version`
+            : await tx<{ version: string }[]>`update ${snapshot} set data = ${Buffer.from(data)}, version = version + 1, updated_at = now() where id = 1 and version = ${expected} returning version`;
           if (!rows.length) return null;
           // Cópia de segurança a cada 6 horas, mantendo os últimos 60 dias.
-          await tx`insert into proex.sqlite_history (version, data) select ${rows[0].version}, ${Buffer.from(data)} where not exists (select 1 from proex.sqlite_history where created_at > now() - interval '6 hours')`;
-          await tx`delete from proex.sqlite_history where created_at < now() - interval '60 days'`;
+          await tx`insert into ${history} (version, data) select ${rows[0].version}, ${Buffer.from(data)} where not exists (select 1 from ${history} where created_at > now() - interval '6 hours')`;
+          await tx`delete from ${history} where created_at < now() - interval '60 days'`;
           return Number(rows[0].version);
         });
       },
     },
     objects: {
       async put(key, data, contentType) {
-        await sql`insert into proex.objects (key, content_type, size, data) values (${key}, ${contentType}, ${data.byteLength}, ${Buffer.from(data)})
+        await sql`insert into ${objects} (key, content_type, size, data) values (${key}, ${contentType}, ${data.byteLength}, ${Buffer.from(data)})
           on conflict (key) do update set content_type = excluded.content_type, size = excluded.size, data = excluded.data, created_at = now()`;
       },
       async get(key) {
-        const [row] = await sql<{ data: Uint8Array; content_type: string }[]>`select data, content_type from proex.objects where key = ${key}`;
+        const [row] = await sql<{ data: Uint8Array; content_type: string }[]>`select data, content_type from ${objects} where key = ${key}`;
         return row ? { data: new Uint8Array(row.data), contentType: row.content_type } : null;
       },
-      async delete(key) { await sql`delete from proex.objects where key = ${key}`; },
+      async delete(key) { await sql`delete from ${objects} where key = ${key}`; },
     },
   };
 }

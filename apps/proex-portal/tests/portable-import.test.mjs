@@ -28,9 +28,38 @@ test('portable rows are validated by the real migrations and converted to idempo
   assert.equal(target.prepare('SELECT COUNT(*) n FROM items').get().n, 1, 'replaying the SQL is harmless');
 });
 
-test('broken references are reported instead of silently imported', () => {
+test('rows that break database rules are reported, never silently dropped', () => {
   const broken = { items: [tables.items[0], ['i9', 'missing-project', 'Item', 'gift', '', 'unidade', '0', '0', '0', '', 'active', '', '1', '2026-10-23T00:00:00.000Z', '2026-10-23T00:00:00.000Z']] };
-  assert.throws(() => importTables(migratedDatabase(), broken), /FOREIGN KEY|Referências/);
+  const db = migratedDatabase(), log = [];
+  const statements = importTables(db, broken, line => log.push(line));
+  assert.equal(statements.rejected.length, 1);
+  assert.match(statements.rejected[0].reason, /FOREIGN KEY/);
+  assert.ok(log.some(line => line.startsWith('REJEITADA items i9')));
+  assert.equal(statements.length, 0, 'rejected rows never reach the generated SQL');
+});
+
+test('stock is rebuilt from imported movements, with an audited adjustment when they do not explain it', () => {
+  const itemHeader = tables.items[0];
+  const row = (id, stock, reserved) => [id, 'p1', 'Item ' + id, 'gift', '', 'unidade', String(stock), String(reserved), '0', '', 'active', '', '1', '2026-10-23T00:00:00.000Z', '2026-10-23T00:00:00.000Z'];
+  const input = {
+    project_types: tables.project_types, projects: tables.projects,
+    items: [itemHeader, row('with-moves', 5, 2), row('without-moves', 7, 0)],
+    // actor_id is omitted by the portable format and receives an import placeholder.
+    stock_movements: [['id', 'item_id', 'delta', 'kind', 'note', 'ref_id', 'created_at', 'group_id'],
+      ['m2', 'with-moves', '-3', 'distribute', 'Entrega', '', '2026-10-24T00:00:00.000Z', ''],
+      ['m1', 'with-moves', '8', 'receive', 'Contagem', '', '2026-10-23T00:00:00.000Z', '']],
+  };
+  const db = migratedDatabase();
+  const statements = importTables(db, input);
+  assert.equal(statements.rejected.length, 0);
+  const item = id => ({ ...db.prepare('SELECT stock,reserved FROM items WHERE id=?').get(id) });
+  assert.deepEqual(item('with-moves'), { stock: 5, reserved: 0 }, 'movements replayed in order, reservations not imported');
+  assert.deepEqual(item('without-moves'), { stock: 7, reserved: 0 });
+  assert.equal(db.prepare("SELECT actor_id FROM stock_movements WHERE id='m1'").get().actor_id, 'importacao');
+  assert.equal(db.prepare("SELECT delta FROM stock_movements WHERE item_id='without-moves'").get().delta, 7, 'unexplained balance becomes an adjust movement');
+  const replay = migratedDatabase();
+  for (const sql of statements) replay.exec(sql);
+  assert.deepEqual({ ...replay.prepare('SELECT stock FROM items WHERE id=?').get('without-moves') }, { stock: 7 });
 });
 
 // Minimal stored (uncompressed) .xlsx produced in memory, as Google Sheets/Excel would.

@@ -47,14 +47,17 @@ if (!databaseId && !dryRun) {
 databaseId ||= '00000000-0000-4000-8000-000000000000';
 
 // 2. Bucket R2 para fotos e termos. Sem R2 o portal funciona, mas anexos ficam indisponíveis.
+// Falha fechada: sem R2 o deploy para, a não ser que PROEX_ALLOW_NO_R2=1 seja explícito.
 let withBucket = true;
 if (!dryRun) {
   try {
-    const buckets = wrangler(['r2', 'bucket', 'list'], { capture: true });
-    if (!buckets.includes(bucketName)) wrangler(['r2', 'bucket', 'create', bucketName]);
-  } catch {
+    const listed = wrangler(['r2', 'bucket', 'list'], { capture: true });
+    const names = [...listed.matchAll(/^name:s+(S+)s*$/gm)].map(match => match[1]);
+    if (!names.includes(bucketName)) wrangler(['r2', 'bucket', 'create', bucketName]);
+  } catch (error) {
+    if (env.PROEX_ALLOW_NO_R2 !== '1') throw new Error(`R2 indisponível (${error.message}). Ative o R2 ou defina PROEX_ALLOW_NO_R2=1 para publicar sem anexos.`);
     withBucket = false;
-    console.warn('::warning::R2 indisponível nesta conta (ative o R2 no painel da Cloudflare). Publicando sem anexos.');
+    console.warn('::warning::Publicando sem R2 por PROEX_ALLOW_NO_R2=1: anexos ficam indisponíveis.');
   }
 }
 

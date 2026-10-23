@@ -19,19 +19,13 @@ jobs:
     defaults:
       run:
         working-directory: apps/proex-portal
-    env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-      PROEX_PUBLIC_URL: ${{ vars.PROEX_PUBLIC_URL }}
-      PROEX_WORKER_NAME: ${{ vars.PROEX_WORKER_NAME }}
-      PROEX_D1_NAME: ${{ vars.PROEX_D1_NAME }}
-      PROEX_R2_BUCKET: ${{ vars.PROEX_R2_BUCKET }}
-      BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
-      OWNER_EMAIL: ${{ secrets.OWNER_EMAIL }}
-      SETUP_TOKEN: ${{ secrets.SETUP_TOKEN }}
     steps:
       - name: Conferir configuração
         id: configured
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PROEX_PUBLIC_URL: ${{ vars.PROEX_PUBLIC_URL }}
         run: |
           if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ] || [ -z "$PROEX_PUBLIC_URL" ]; then
             echo "::notice::Hospedagem própria não configurada. Veja apps/proex-portal/docs/HOSPEDAGEM-PROPRIA.md"
@@ -60,4 +54,15 @@ jobs:
         run: pnpm run build
       - name: Implantar (banco, migrações, Worker e segredos)
         if: steps.configured.outputs.ready == 'true'
+        # Segredos visíveis somente neste passo (não em install, testes ou build).
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PROEX_PUBLIC_URL: ${{ vars.PROEX_PUBLIC_URL }}
+          PROEX_WORKER_NAME: ${{ vars.PROEX_WORKER_NAME }}
+          PROEX_D1_NAME: ${{ vars.PROEX_D1_NAME }}
+          PROEX_R2_BUCKET: ${{ vars.PROEX_R2_BUCKET }}
+          BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
+          OWNER_EMAIL: ${{ secrets.OWNER_EMAIL }}
+          SETUP_TOKEN: ${{ secrets.SETUP_TOKEN }}
         run: node scripts/cloudflare/deploy.mjs

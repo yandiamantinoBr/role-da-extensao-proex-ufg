@@ -28,8 +28,10 @@ function bindValue(value: unknown): Value {
 const readOnly = (sql: string) => /^\s*(select|pragma|explain|values)\b/i.test(sql) || (/^\s*with\b/i.test(sql) && !/\b(insert|update|delete|replace)\b/i.test(sql));
 
 class Statement {
-  constructor(private readonly owner: SnapshotD1, readonly sql: string, readonly params: Value[] = []) {}
-  bind(...values: unknown[]) { return new Statement(this.owner, this.sql, values.map(bindValue)); }
+  constructor(private readonly owner: SnapshotD1, readonly sql: string, private readonly raw_: unknown[] = []) {}
+  /** Como no D1, tipos inválidos só falham ao executar. */
+  get params(): Value[] { return this.raw_.map(bindValue); }
+  bind(...values: unknown[]) { return new Statement(this.owner, this.sql, values); }
   async first<T = Row>(column?: string): Promise<T | null> {
     const [result] = await this.owner.execute([this]) as Result[];
     const row = result.results[0];
@@ -59,6 +61,7 @@ export class SnapshotD1 {
   batch(statements: Statement[]) { return this.execute(statements); }
   async exec(sql: string) { await this.execute([new Statement(this, sql)], 'exec'); return { count: 1, duration: 0 }; }
   withSession() { return this; }
+  close() { this.db?.close(); this.db = null; }
 
   /** Executa um lote atômico; reexecuta sobre o banco mais recente em caso de gravação concorrente. */
   execute(statements: Statement[], mode: 'objects' | 'raw' | 'raw-names' | 'exec' = 'objects'): Promise<unknown[]> {

@@ -9,6 +9,8 @@
   "main": "../worker/index.ts",
   "compatibility_date": "2026-05-15",
   "compatibility_flags": ["nodejs_compat"],
+  // Hospedagem própria: descarta cabeçalhos de identidade do Sites (worker/index.ts).
+  "vars": { "PROEX_STANDALONE": "1" },
   "d1_databases": [
     {
       "binding": "DB",

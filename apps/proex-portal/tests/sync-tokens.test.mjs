@@ -62,7 +62,7 @@ test('a key acts as its creator only while that person remains an active owner',
   assert.equal(actor.userId, 'owner');
   assert.ok(f.sqlite.prepare('SELECT last_used_at FROM sync_tokens WHERE id=?').get(id).last_used_at);
   await rejects(actorFromSyncToken(f.db, null), 401);
-  await rejects(actorFromSyncToken(f.db, `Bearer ${token.slice(0, -1)}A`), 401);
+  await rejects(actorFromSyncToken(f.db, `Bearer ${token.slice(0, -1)}${token.endsWith('A') ? 'B' : 'A'}`), 401);
   await rejects(actorFromSyncToken(f.db, token), 401);
   f.sqlite.prepare("UPDATE members SET revoked_at=? WHERE user_id='owner'").run(new Date().toISOString());
   await rejects(actorFromSyncToken(f.db, `Bearer ${token}`), 403);

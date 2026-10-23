@@ -11,7 +11,7 @@ export const dynamic='force-dynamic';
 export async function POST(request:Request){try{
  if(!request.headers.get('content-type')?.toLowerCase().startsWith('application/json'))throw new HttpError(415,'Envie JSON.','invalid_content_type');
  const db=database(),authorization=request.headers.get('authorization');
- await rateLimit(db,`sync-connector:${(await syncDigest(authorization??'')).slice(0,32)}`,600,600000);
+ await rateLimit(db,`sync-connector:${(await syncDigest(authorization??'')).slice(0,32)}`,2000,600000);
  const actor=await actorFromSyncToken(db,authorization);
  const body=await boundedJson(request,144*1024);
  const args=body.args&&typeof body.args==='object'&&!Array.isArray(body.args)?body.args as Record<string,unknown>:{};

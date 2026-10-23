@@ -40,3 +40,5 @@ jobs:
       - run: pnpm test
       - run: pnpm run build
       - run: node --import ./scripts/sites-env.mjs tests/password-auth-worker-smoke.mjs
+      # Alvo Node (Vercel/VPS): o mesmo app compilado sem o runtime Cloudflare.
+      - run: pnpm run build:node

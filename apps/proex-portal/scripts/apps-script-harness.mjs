@@ -39,7 +39,7 @@ const ss = {
   getSheetByName: name => sheets.get(name) ?? null,
   insertSheet: name => { const s = new Sheet(name); sheets.set(name, s); return s; },
 };
-const folder = id => ({ getId: () => id, getFoldersByName: () => ({ hasNext: () => false }), createFolder: name => folder('folder_' + name.replace(/\W/g, '').padEnd(12, 'x')),
+const folder = id => ({ getId: () => id, getSharingAccess: () => 'PRIVATE', getEditors: () => [], getViewers: () => [], getFoldersByName: () => ({ hasNext: () => false }), createFolder: name => folder('folder_' + name.replace(/\W/g, '').padEnd(12, 'x')),
   createFile: blob => { const id = 'file_' + randomUUID().replace(/-/g, ''); files.set(id, blob); return { getId: () => id }; } });
 const javaBytes = buf => [...buf].map(b => (b > 127 ? b - 256 : b));
 const context = vm.createContext({
@@ -48,7 +48,7 @@ const context = vm.createContext({
     prompt: () => { const value = prompts.shift(); return { getSelectedButton: () => 'OK', getResponseText: () => value }; } }) },
   DriveApp: { Access: { PRIVATE: 'PRIVATE' }, getRootFolder: () => folder('rootFolder0000001'), getFolderById: id => folder(id),
     getFileById: id => ({ getParents: () => ({ hasNext: () => true, next: () => folder('parentFolder00001') }), getSharingAccess: () => 'PRIVATE', getSize: () => files.get(id)?.bytes.length ?? 0, setTrashed() {} }) },
-  PropertiesService: { getScriptProperties: () => ({ getProperty: k => properties[k] ?? null, setProperty: (k, v) => { properties[k] = v; }, setProperties: o => Object.assign(properties, o) }) },
+  PropertiesService: { getUserProperties: () => ({ getProperty: k => properties[k] ?? null, setProperty: (k, v) => { properties[k] = v; }, setProperties: o => Object.assign(properties, o) }), getScriptProperties: () => ({ deleteProperty() {} }) },
   LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock() {} }) },
   ScriptApp: { getProjectTriggers: () => [] },
   Utilities: { getUuid: () => randomUUID(), DigestAlgorithm: { SHA_256: 'sha256' }, Charset: { UTF_8: 'utf8' },
@@ -100,5 +100,20 @@ console.log(' ', context.sincronizar_());
 assert.ok(sheets.get('Conflitos').getLastRow() > 1, 'conflito registrado');
 const kept = cell('items', r => r.id === itemId, 'description');
 assert.equal(kept.row[kept.col], newDescription, 'o portal não aceitou a edição conflitante');
-console.log('5. Anexos:', context.copiarAnexos_(), 'arquivo(s) copiado(s)');
+console.log('5. Linhas inválidas não travam a sincronização');
+const before = sheets.get('Conflitos').getLastRow();
+const bad = [['curta', 'stock.move', '{}'], ['harness-json-' + randomUUID(), 'stock.move', '{nao é json'], [opKey, 'stock.move', JSON.stringify({ itemId, delta: 99, kind: 'receive', note: 'Mesma chave, outro conteúdo' })]];
+for (const [key, action, input] of bad) ops.cells.push([key, action, input, '', '', '']);
+const okKey = 'harness-ok-' + randomUUID();
+ops.cells.push([okKey, 'stock.move', JSON.stringify({ itemId, delta: 1, kind: 'receive', note: 'Operação válida no mesmo lote' }), '', '', '']);
+const low = cell('items', r => r.id === itemId, 'low_stock');
+low.s.cells[low.index][low.col] = '1,5';
+console.log(' ', context.sincronizar_());
+const status = key => ops.cells.find(r => r[0] === key)?.slice(3, 6).join(' | ');
+assert.match(status('curta'), /^rejected/);
+assert.match(status(bad[1][0]), /^rejected \| {2}\| invalid_json/);
+assert.match(ops.cells.filter(r => r[0] === opKey)[1].slice(3).join('|'), /rejected\|\|sync_operation_changed/);
+assert.match(status(okKey), /^applied/, 'a valid operation in the same batch is still applied');
+assert.ok(sheets.get('Conflitos').cells.slice(before).some(r => String(r[5]).includes('low_stock')), 'invalid number reported with the desired value');
+console.log('6. Anexos:', context.copiarAnexos_(), 'arquivo(s) copiado(s)');
 console.log('OK — conector validado contra', portal);
