@@ -1,0 +1,56 @@
+name: Backup do banco do portal
+# Exporta diariamente o banco D1 da hospedagem própria como SQL (SQLite padrão) e
+# guarda o arquivo como artefato privado do GitHub por 30 dias. O SQL restaura o
+# portal em outra conta Cloudflare (`wrangler d1 execute --file`) ou abre em
+# qualquer ferramenta SQLite. Fotos e termos ficam no R2 e na pasta privada do Drive.
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    environment: producao
+    defaults:
+      run:
+        working-directory: apps/proex-portal
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      PROEX_D1_NAME: ${{ vars.PROEX_D1_NAME || 'proex-gestao' }}
+    steps:
+      - name: Conferir configuração
+        id: configured
+        working-directory: .
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::notice::Hospedagem própria não configurada; nada a exportar."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v6
+        if: steps.configured.outputs.ready == 'true'
+      - uses: pnpm/action-setup@v4
+        if: steps.configured.outputs.ready == 'true'
+        with:
+          package_json_file: apps/proex-portal/package.json
+      - uses: actions/setup-node@v6
+        if: steps.configured.outputs.ready == 'true'
+        with:
+          node-version: 24
+      - if: steps.configured.outputs.ready == 'true'
+        run: pnpm install --frozen-lockfile
+      - name: Exportar D1
+        if: steps.configured.outputs.ready == 'true'
+        run: |
+          mkdir -p backup
+          node node_modules/wrangler/bin/wrangler.js d1 export "$PROEX_D1_NAME" --remote --output "backup/proex-gestao-$(date -u +%Y-%m-%d).sql"
+      - uses: actions/upload-artifact@v4
+        if: steps.configured.outputs.ready == 'true'
+        with:
+          name: proex-gestao-d1-${{ github.run_id }}
+          path: apps/proex-portal/backup/*.sql
+          retention-days: 30

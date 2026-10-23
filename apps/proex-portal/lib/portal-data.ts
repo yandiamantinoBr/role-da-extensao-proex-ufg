@@ -196,7 +196,7 @@ export async function portalSnapshot(db: D1Database, actor: PortalActor | null):
   const snapshotTime = Date.now();
 
   const [projects, campaigns, items, offers, components, loans, loanDetails, members, invites, audit, settingsRows, documents, metrics, physicalTickets, pendingPrizes, pendingPrizeCount, users, ownProfile] = await Promise.all([
-    all(db, `SELECT id,name,description,created_at,short_name,status,color,official_url,starts_at,ends_at,location,version,lifecycle,type_id,parent_id,unit_id,prizes_enabled
+    all(db, `SELECT id,name,description,created_at,short_name,status,color,official_url,starts_at,ends_at,location,version,lifecycle,type_id,parent_id,unit_id,prizes_enabled,scope
       FROM projects WHERE ${projectsFilter.sql} ORDER BY name,id`, projectsFilter.params),
     all(db, `SELECT id,project_id,name,location,starts_at,ends_at,status,retry_limit,
       brinde_offer_id,super_offer_id,rules_text,version,created_at

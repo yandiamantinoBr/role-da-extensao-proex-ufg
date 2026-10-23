@@ -1,6 +1,6 @@
 # Manual de operação — Gestão PROEX
 
-Revisão V4, preparada em 23/10/2026. Este manual descreve o código desta revisão. A publicação e as integrações externas devem ser confirmadas pelo registro de entrega e pelo histórico do próprio portal. Dados de demonstração não representam estoque, público atendido ou atividades reais.
+Revisão V6, preparada em 23/10/2026 (inclui hospedagem própria, conector da planilha e abrangência dos projetos). Este manual descreve o código desta revisão. A publicação e as integrações externas devem ser confirmadas pelo registro de entrega e pelo histórico do próprio portal. Dados de demonstração não representam estoque, público atendido ou atividades reais.
 
 ## Primeiro acesso e equipe
 
@@ -11,6 +11,8 @@ Quem já tinha um cadastro nativo anterior, ou é o primeiro responsável config
 O responsável institucional administra a organização. Gestores operam os projetos concedidos. Operadores atendem eventos e entregam prêmios autorizados. Estoque, empréstimos e relatórios têm permissões próprias. Uma relação entre programa e projeto não transfere essas permissões. Ao convidar alguém, escolha o menor escopo necessário; compartilhar uma conta não substitui conceder acesso.
 
 O diretório permite alterar funções autorizadas, revogar vínculos e, para o responsável global, bloquear ou reativar contas. Bloquear uma conta impede acesso; não apaga o histórico operacional. O sistema protege o último responsável ativo. Links de recuperação de senha são pessoais, de uso único e validade curta, entregues manualmente após conferência do destinatário.
+
+Na hospedagem própria da PROEX (Cloudflare), o primeiro responsável usa `/configuracao-inicial` com o código de configuração do servidor e o e-mail definido na implantação. Depois disso a página deixa de funcionar e o acesso é sempre por e-mail e senha. Veja `docs/HOSPEDAGEM-PROPRIA.md`.
 
 ## Perfil e formas opcionais de entrada
 
@@ -31,6 +33,8 @@ Em Editar, o formulário busca a revisão atual. Se outra pessoa salvar antes, a
 As fontes institucionais consultadas distinguem os programas da [gestão 2026–2029](https://proex.ufg.br/p/62169-programas-de-extensao-2026-2029) do [arquivo 2022–2025](https://proex.ufg.br/p/60604-programas-de-extensao-2022-2025). O [Rolê da Extensão](https://proex.ufg.br/p/60194-role-da-extensao) e o [Curta o Campus](https://proex.ufg.br/p/26615-projeto-curta-o-campus) são identificados como projetos. Editais pertencem à seção própria e não viram programas automaticamente.
 
 O pré-cadastro institucional é uma operação do responsável. Ele preserva cadastros encontrados e cria materiais faltantes com saldo inicial zero. Referências históricas são identificadas como catálogo; nomes e descrições não são uma declaração de execução atual. O pré-cadastro não inventa empréstimos, participantes, entregas, eventos realizados ou movimentações. Faça a contagem física antes de informar saldo. Kits, conteúdo do planner e características dos materiais precisam de conferência da equipe.
+
+Cada projeto informa a **abrangência**: *Interno PROEX* para ações conduzidas pela própria equipe e *Externo* para unidades acadêmicas, órgãos e parceiros. Use as abas Todos / Internos PROEX / Externos e parceiros acima da lista. A abrangência não concede acesso: para que um bolsista ou servidor atue somente em um projeto, convide a pessoa com a função adequada e esse projeto como escopo. Ela verá apenas o que pertence a ele.
 
 ## Links, editais e cronologia
 
@@ -67,6 +71,8 @@ Baixar ICS exige sessão e escopo. Para acompanhar atualizações, gere uma assi
 No computador, abra Google Calendar → Outras agendas → + → Do URL e cole o link. Depois a agenda pode aparecer no aplicativo. Consulte as [instruções oficiais](https://support.google.com/calendar/answer/37100?hl=pt-BR). A assinatura é de leitura, e o Google decide quando atualizar. Importar um arquivo ICS cria uma cópia daquele momento. Não há OAuth Google nem edição do portal a partir do Calendar nesta revisão.
 
 ## Planilha e Drive: como conferir o estado real
+
+**Ligar a planilha ao portal (uma vez):** em Configurações → Dados e sincronização, gere uma chave de sincronização e baixe o código do conector. Na planilha, abra Extensões → Apps Script, cole o código, salve e recarregue. No menu **PROEX**, use *Conectar ao portal…* (endereço do portal + chave) e depois *Sincronizar agora*. *Ativar sincronização automática* repete o processo a cada 30 minutos; *Copiar fotos e termos para o Drive* guarda os anexos na pasta privada “PROEX · Anexos privados”. Para passar a planilha para outra conta Google, instale o conector na cópia, gere uma chave nova e revogue a antiga.
 
 O portal dispõe de um formato portátil e de serviços de sincronização controlada. A configuração aponta a planilha, a pasta e a pasta de anexos. **Salvar esses endereços, criar as abas ou registrar uma solicitação não comprova sincronização.** É preciso uma rotina autorizada que leia, aplique as operações permitidas, publique os dados e confira a leitura de retorno de todas as abas declaradas.
 

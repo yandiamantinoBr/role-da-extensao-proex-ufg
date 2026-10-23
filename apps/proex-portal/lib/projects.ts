@@ -9,7 +9,7 @@ type Entity = 'project' | 'call' | 'project_link' | 'project_schedule_item';
 const TABLES: Record<Entity, string> = { project: 'projects', call: 'calls', project_link: 'project_links', project_schedule_item: 'project_schedule_items' };
 const PREFIX: Record<Entity, string> = { project: 'project', call: 'call', project_link: 'project.link', project_schedule_item: 'project.schedule' };
 const FIELDS: Record<Entity, string[]> = {
-  project: ['name','short_name','description','status','lifecycle','type_id','parent_id','unit_id','prizes_enabled','color','official_url','starts_at','ends_at','location'],
+  project: ['name','short_name','description','status','lifecycle','type_id','parent_id','unit_id','prizes_enabled','scope','color','official_url','starts_at','ends_at','location'],
   call: ['project_id','title','reference_code','description','status','opens_at','closes_at','official_url'],
   project_link: ['project_id','label','url','kind'],
   project_schedule_item: ['project_id','title','starts_at','ends_at','status','note','url'],
@@ -64,7 +64,7 @@ async function normalize(db: D1Database, actor: PortalActor, entity: Entity, inp
       const cycle = existing && await one(db, `WITH RECURSIVE ancestors(id,parent_id) AS (SELECT id,parent_id FROM projects WHERE id=? UNION SELECT p.id,p.parent_id FROM projects p JOIN ancestors a ON p.id=a.parent_id) SELECT id FROM ancestors WHERE id=? LIMIT 1`, [parentId, existing.id]);
       if (cycle) throw new HttpError(400, 'A hierarquia não pode formar um ciclo.', 'project_cycle');
     }
-    fields = { name:text(get('name'), 'o nome do projeto',120), short_name:text(get('shortName','short_name'),'o nome curto',40,true), description:text(get('description'),'a descrição',2000,true), status:choice(get('status','status','active'),['active','archived'],'um estado'), lifecycle:choice(get('lifecycle','lifecycle','active'),['active','past','catalog'],'um ciclo de vida'), type_id:typeId,parent_id:parentId,unit_id:unitId,prizes_enabled:prizesEnabled?1:0,color,official_url:url(get('officialUrl','official_url')),starts_at:date(get('startsAt','starts_at',null)),ends_at:date(get('endsAt','ends_at',null)),location:text(get('location'),'o local',200,true) };
+    fields = { name:text(get('name'), 'o nome do projeto',120), short_name:text(get('shortName','short_name'),'o nome curto',40,true), description:text(get('description'),'a descrição',2000,true), status:choice(get('status','status','active'),['active','archived'],'um estado'), lifecycle:choice(get('lifecycle','lifecycle','active'),['active','past','catalog'],'um ciclo de vida'), type_id:typeId,parent_id:parentId,unit_id:unitId,prizes_enabled:prizesEnabled?1:0,scope:choice(get('scope','scope','internal'),['internal','external'],'uma abrangência (interno ou externo)'),color,official_url:url(get('officialUrl','official_url')),starts_at:date(get('startsAt','starts_at',null)),ends_at:date(get('endsAt','ends_at',null)),location:text(get('location'),'o local',200,true) };
   } else {
     const projectId = existing?.project_id ?? identifier(input.projectId)!; manage(actor, projectId);
     if (!await one(db, 'SELECT id FROM projects WHERE id=?', [projectId])) throw new HttpError(404, 'Projeto não encontrado.');

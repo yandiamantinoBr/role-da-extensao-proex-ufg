@@ -91,6 +91,12 @@ export default function DashboardPanel({ modules, pinned, frequent, onNavigate, 
     if (find('events') && drafts.length)
         attention.push({ id: 'events', title: `${drafts.length} ${drafts.length === 1 ? 'dinâmica em preparação' : 'dinâmicas em preparação'}`, detail: 'Revise as regras e a disponibilidade antes de ativar.', kind: 'draft' });
     const firstName = displayName.trim().split(/\s+/)[0] || 'equipe';
+    const externalProjects = scopedProjects.filter(project => project.scope === 'external').length;
+    const stats = [
+        known.projects && { label: 'Projetos', value: scopedProjects.length, detail: `${scopedProjects.length - externalProjects} ${scopedProjects.length - externalProjects === 1 ? 'interno' : 'internos'} · ${externalProjects} ${externalProjects === 1 ? 'externo' : 'externos'}` },
+        find('materials') && known.items && { label: 'Materiais', value: items.length, detail: lowStock.length ? `${lowStock.length} com saldo baixo` : 'Nenhum alerta de saldo' },
+        find('loans') && known.loans && { label: 'Empréstimos', value: reserved.length + checkedOut.length, detail: late.length ? `${late.length} em atraso` : 'Nenhum atraso' },
+    ].filter((stat): stat is { label: string; value: number; detail: string } => Boolean(stat));
     return <div className="pd-dashboard">
     <section className="pd-welcome">
     <div>
@@ -100,6 +106,7 @@ export default function DashboardPanel({ modules, pinned, frequent, onNavigate, 
     <p>{roleDescription}</p>
     <span className="pd-role">
     <ShieldLabel />{roleLabel || 'Equipe PROEX'}</span>
+    {stats.length > 0 && <dl className="pd-welcome-stats">{stats.map(stat => <div key={stat.label}><dt>{stat.label}</dt><dd>{stat.value}</dd><small>{stat.detail}</small></div>)}</dl>}
     </div>
     <div className="pd-welcome-aside" aria-hidden="true">
     <FolderKanban size={48}/>

@@ -499,7 +499,7 @@ export default function PortalClient({ initial }: {
     <div>
     <span className="p-eyebrow">GESTÃO DA EXTENSÃO</span>
     <h1>{tab === 'overview' ? `Olá, ${string(user.displayName).trim().split(/\s+/)[0] || 'equipe'}.` : title}</h1>
-    <p>{tab === 'overview' ? 'Seu início, seus projetos e o que precisa da sua atenção.' : 'Registros compartilhados, com histórico e acesso por projeto.'}</p>
+    <p>{tab === 'overview' ? 'Seu início, seus projetos e o que precisa da sua atenção.' : tabs.find(module => module.id === tab)?.description}</p>
     </div>
     </div>
     {['overview', 'materials', 'loans', 'events', 'reports'].includes(tab) && <section className="p-scope-filters" aria-label="Filtrar registros por unidade e projeto">

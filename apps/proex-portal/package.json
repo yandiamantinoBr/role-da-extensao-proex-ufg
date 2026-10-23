@@ -13,7 +13,10 @@
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate",
     "test": "node --test tests/*.test.mjs",
-    "check:types": "tsc --noEmit --incremental false"
+    "check:types": "tsc --noEmit --incremental false",
+    "db:migrate:local": "node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 migrations apply DB --local --persist-to .wrangler/state -c cloudflare/wrangler.jsonc",
+    "data:import": "node scripts/portable-import.mjs",
+    "deploy:cloudflare": "node scripts/cloudflare/deploy.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
