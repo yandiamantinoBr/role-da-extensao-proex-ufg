@@ -56,7 +56,7 @@ async function normalize(db: D1Database, actor: PortalActor, entity: Entity, inp
     if (!/^#[0-9A-F]{6}$/.test(color)) throw new HttpError(400, 'Use uma cor como #54216C.', 'invalid_color');
     const typeId = identifier(get('typeId','type_id',null), true), parentId = identifier(get('parentId','parent_id',null), true), unitId = identifier(get('unitId','unit_id',null), true);
     const prizesEnabled = get('prizesEnabled','prizes_enabled',false);
-    if (![true,false,0,1].includes(prizesEnabled as boolean)) throw new HttpError(400,'Informe se dinâmicas e brindes estão habilitados.','invalid_prizes_enabled');
+    if (prizesEnabled!==true&&prizesEnabled!==false&&prizesEnabled!==0&&prizesEnabled!==1) throw new HttpError(400,'Informe se dinâmicas e brindes estão habilitados.','invalid_prizes_enabled');
     if (unitId && !await one(db,"SELECT id FROM organizational_units WHERE id=? AND (status='active' OR id=?)",[unitId,existing?.unit_id??''])) throw new HttpError(400,'Unidade não encontrada ou arquivada.','invalid_organizational_unit');
     if (typeId && !await one(db, 'SELECT id FROM project_types WHERE id=? AND (status=\'active\' OR id=?)', [typeId, existing?.type_id ?? ''])) throw new HttpError(400, 'Tipo de projeto não encontrado ou arquivado.', 'invalid_project_type');
     if (parentId) {
@@ -173,7 +173,7 @@ export async function projectDetail(db:D1Database,actor:PortalActor|null,id:stri
     loans?all(db,`SELECT l.id,l.item_id,i.name item_name,l.action_name,l.starts_at,l.ends_at,l.status FROM loans l JOIN items i ON i.id=l.item_id AND i.project_id=l.project_id WHERE l.project_id=? ORDER BY l.starts_at DESC LIMIT 100`,[id]):Promise.resolve(null),
     inventory||loans||reports||canEdit?listRecords(db,actor,{projectId:id,limit:100}):Promise.resolve({records:[]}),
   ]);
-  const projectedCalls=calls.map((call):Row=>{let linked:string[]=[];try{linked=JSON.parse(call.linked_ids_json||'[]');}catch{}const {linked_ids_json,...safe}=call;return{...safe,linkedProjectIds:linked.filter(project=>canSee(actor,project)),canEdit:[call.project_id,...linked].every(project=>permitted(actor,'campaigns.manage',project)||permitted(actor,'projects.manage',null))};});
+  const projectedCalls=calls.map((call):Row=>{let linked:string[]=[];try{linked=JSON.parse(call.linked_ids_json||'[]');}catch{}const safe={...call};delete safe.linked_ids_json;return{...safe,linkedProjectIds:linked.filter(project=>canSee(actor,project)),canEdit:[call.project_id,...linked].every(project=>permitted(actor,'campaigns.manage',project)||permitted(actor,'projects.manage',null))};});
   const editableCalls=new Set(projectedCalls.filter(call=>call.canEdit).map(call=>call.id));
   return {project,types,organizationalUnits:await all(db,'SELECT id,name,acronym,kind,status,version FROM organizational_units ORDER BY name,id'),spreadsheetLinks:await projectSpreadsheetLinks(db,actor,id),links,calls:projectedCalls,schedule,versions:versions.filter(version=>version.entity_type!=='call'||editableCalls.has(version.entity_id)),relatedProjects,relationships:{items,campaigns:events,loans:loanRows,records:records.records},permissions:{canEdit,canManageTypes:permitted(actor,'projects.manage',null),inventory,loans,reports,campaigns}};
 }

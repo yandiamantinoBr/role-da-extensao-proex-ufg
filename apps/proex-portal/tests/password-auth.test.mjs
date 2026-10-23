@@ -565,7 +565,8 @@ test('privacy approval removes credentials atomically, retries private photo del
   const f=fixture(t),owner=await createAccount(f,'privacy-owner@example.test'),target=await createAccount(f,'privacy-target@example.test');
   f.seedPrincipal('privacy-owner',owner.user.email,{role:'owner'});f.alias(owner.user.id,'privacy-owner');f.seedPrincipal('privacy-target',target.user.email);f.alias(target.user.id,'privacy-target');
   const ownerCookie=(await signIn(owner.auth,owner.user.email)).cookie,targetCookie=(await signIn(target.auth,target.user.email)).cookie;
-  f.sqlite.prepare("UPDATE profiles SET avatar_key='avatars/private-target',mime='image/png',phone='private phone',unit='unidade' WHERE user_id='privacy-target'").run();
+  f.sqlite.prepare("INSERT INTO organizational_units(id,name,acronym,kind,status,created_at,updated_at) VALUES('privacy-unit','Unidade','U','academic','active',?,?)").run(new Date().toISOString(),new Date().toISOString());
+  f.sqlite.prepare("UPDATE profiles SET avatar_key='avatars/private-target',mime='image/png',phone='private phone',unit='unidade',unit_id='privacy-unit',affiliation='student',registration_type='student',registration_number='PRIVATE-ENROLLMENT-ANON' WHERE user_id='privacy-target'").run();
   const captured=await recovery(f,target.user.email);
   const request=await accountRequest(f,{action:'privacy.request',currentPassword:originalPassword},{cookie:targetCookie});assert.equal(request.status,200);
   const pending=await request.json();
@@ -582,6 +583,7 @@ test('privacy approval removes credentials atomically, retries private photo del
   assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM members WHERE user_id='privacy-target'").get().n,1);
   assert.equal(f.sqlite.prepare("SELECT email FROM members WHERE user_id='privacy-target'").get().email,'');
   assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM audit WHERE action='privacy.anonymized'").get().n,1);
+  assert.ok(!JSON.stringify(f.sqlite.prepare('SELECT * FROM audit').all()).includes('PRIVATE-ENROLLMENT-ANON'));
   assert.equal((await accountRequest(f,{action:'resetPassword',token:captured.token,newPassword:'Uma senha que não revive 2026!'})).status,400);
   f.context.storage={async delete(key){deleted.push(key);}};
   const retried=await accountRequest(f,{action:'privacy.resolve',requestId:pending.id,decision:'anonymize',currentPassword:originalPassword},{cookie:ownerCookie});

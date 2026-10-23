@@ -597,8 +597,8 @@ export default function PortalClient({ initial }: {
             </Field>
             </OperationForm>
             </Section>}{can('campaigns.manage') && formProjects.length > 0 && <Section title="Preparar dinâmica" description="A campanha começa como rascunho. Confira as regras e os brindes antes de ativar.">
-            <CampaignForm key={`campaign-create-${filter}`} projects={formProjects} offers={offers} defaultProject={effectiveProject} mutate={mutate}/>
-            </Section>}</>}
+            <CampaignForm key={`campaign-create-${unitFilter}-${filter}`} projects={formProjects} offers={offers} defaultProject={effectiveProject} mutate={mutate}/>
+            </Section>}{can('campaigns.manage') && !prizeProjects.length && <div className="p-explainer"><Gift size={22} /><div><h3>Quais projetos usam roleta e dado?</h3><p>No cadastro do projeto, marque “Habilitar dinâmicas e brindes” para preparar campanhas e compor os kits desta área.</p><button type="button" className="p-text-link" onClick={() => navigate('projects')}>Abrir projetos <ArrowRight size={15} /></button></div></div>}</>}
 
       {tab === 'materials' && <div className="p-materials-panel">
         {prizeProjects.length > 0 && <nav className="p-material-tabs" aria-label="Áreas de materiais"><button type="button" aria-pressed={!showPrizeView} className={!showPrizeView ? 'is-active' : ''} onClick={() => setMaterialsView('catalog')}><Boxes size={18} />Catálogo e estoque</button><button type="button" aria-pressed={showPrizeView} className={showPrizeView ? 'is-active' : ''} onClick={() => setMaterialsView('prizes')}><Gift size={18} />Brindes e kits</button></nav>}
@@ -854,15 +854,19 @@ export default function PortalClient({ initial }: {
             </table>
             </div> : <Empty title="Sem registros neste período" text="Altere as datas ou o projeto para consultar outro recorte." icon={CalendarDays}/>}</Section>
         <Section title="Exportar registros completos" description="Arquivos completos do projeto selecionado. O resumo acima respeita também o filtro de datas.">
-        <div className="p-export-grid">{[{ kind: 'participations', title: 'Participação nos eventos', text: 'Modalidades, resultados e contagens por campanha.', icon: Users }, { kind: 'stock', title: 'Materiais e movimentos', text: 'Saldo, reservas e quantidade disponível por item.', icon: Boxes }, { kind: 'loans', title: 'Empréstimos', text: 'Agenda, etapas e devoluções pendentes.', icon: Truck }].map(({ kind, title: exportTitle, text, icon: Icon }) => <a className="p-card p-export-card" href={`/api/export?kind=${kind}${filter ? `&projectId=${encodeURIComponent(filter)}` : ''}`} key={kind}>
+        {unitFilter && !filter && <p className="p-form-help">Para baixar os registros completos desta unidade, escolha um projeto no filtro acima. O CSV do resumo diário já reúne os projetos filtrados.</p>}
+        <div className="p-export-grid">{[{ kind: 'participations', title: 'Participação nas dinâmicas', text: 'Modalidades, resultados e contagens por campanha.', icon: Users }, { kind: 'stock', title: 'Materiais e movimentos', text: 'Saldo, reservas e quantidade disponível por item.', icon: Boxes }, { kind: 'loans', title: 'Empréstimos', text: 'Agenda, etapas e devoluções pendentes.', icon: Truck }].map(({ kind, title: exportTitle, text, icon: Icon }) => {
+            const content = <>
             <span className="p-icon-tile">
             <Icon size={22}/>
             </span>
             <h3>{exportTitle}</h3>
             <p>{text}</p>
-            <span className="p-text-link">Baixar CSV <ArrowDownToLine size={16}/>
+            <span className="p-text-link">{unitFilter && !filter ? 'Escolha um projeto' : 'Baixar CSV'} <ArrowDownToLine size={16}/>
             </span>
-            </a>)}</div>
+            </>;
+            return unitFilter && !filter ? <article className="p-card p-export-card p-export-unavailable" key={kind}>{content}</article> : <a className="p-card p-export-card" href={`/api/export?kind=${kind}${filter ? `&projectId=${encodeURIComponent(filter)}` : ''}`} key={kind}>{content}</a>;
+        })}</div>
         </Section>
         <div className="p-explainer">
         <ShieldCheck size={21}/>

@@ -10,7 +10,6 @@ type Props = {
     projects: Row[];
     projectTypes?: Row[];
     organizationalUnits?: Row[];
-    selectedProjectId?: string;
     onSelect?: (id: string) => void;
     canCreate: boolean;
     canEdit: (id: string) => boolean;
@@ -132,11 +131,13 @@ function ProjectForm({ project, projects, types, units, mutate, done }: {
 export default function ProjectPanel({ projects, projectTypes = [], organizationalUnits = [], onSelect, canCreate, canEdit, mutate }: Props) {
     const [editing, setEditing] = useState<Row | null | undefined>();
     const [query, setQuery] = useState(''), [unitId,setUnitId]=useState(''), [typeId,setTypeId]=useState(''), [situation,setSituation]=useState('all'), [scope,setScope]=useState<'all'|'internal'|'external'>('all');
-    const [detail,setDetail]=useState(''),[detailRevision,setDetailRevision]=useState(0),[types,setTypes]=useState<Row[]>(projectTypes),[units,setUnits]=useState<Row[]>(organizationalUnits),[opening,setOpening]=useState(false),[error,setError]=useState(''),[typeEditor,setTypeEditor]=useState(false),[unitEditor,setUnitEditor]=useState(false);
+    const [detail,setDetail]=useState(''),[detailRevision,setDetailRevision]=useState(0),[opening,setOpening]=useState(false),[error,setError]=useState(''),[typeEditor,setTypeEditor]=useState(false),[unitEditor,setUnitEditor]=useState(false);
     const editorRef=useRef<HTMLDivElement|null>(null);
     useEffect(()=>{if(editing!==undefined)editorRef.current?.scrollIntoView({behavior:'smooth',block:'start'});},[editing]);
-    useEffect(()=>{setTypes(projectTypes);},[projectTypes]);
-    useEffect(()=>{setUnits(organizationalUnits);},[organizationalUnits]);
+    const [localTypes,setLocalTypes]=useState<{source:Row[];rows:Row[]}|null>(null),[localUnits,setLocalUnits]=useState<{source:Row[];rows:Row[]}|null>(null);
+    const types=localTypes?.source===projectTypes?localTypes.rows:projectTypes,units=localUnits?.source===organizationalUnits?localUnits.rows:organizationalUnits;
+    function setTypes(next:Row[]|((current:Row[])=>Row[])){setLocalTypes(current=>({source:projectTypes,rows:typeof next==='function'?next(current?.source===projectTypes?current.rows:projectTypes):next}));}
+    function setUnits(next:Row[]|((current:Row[])=>Row[])){setLocalUnits(current=>({source:organizationalUnits,rows:typeof next==='function'?next(current?.source===organizationalUnits?current.rows:organizationalUnits):next}));}
     async function edit(project:Row){setOpening(true);setError('');try{const response=await fetch(`/api/projects/${encodeURIComponent(project.id)}`,{cache:'no-store'}),body=await response.json() as Row;if(!response.ok)throw new Error(body.error||'Não foi possível abrir a edição.');if(!body.permissions?.canEdit)throw new Error('Seu acesso não permite editar este projeto.');setTypes(body.types||[]);setUnits(body.organizationalUnits||[]);setEditing(body.project);}catch(error){setError(error instanceof Error?error.message:'Não foi possível abrir a edição.');}finally{setOpening(false);}}
     async function openUnits(){if(unitEditor){setUnitEditor(false);return;}setError('');try{const response=await fetch('/api/units?includeArchived=1',{cache:'no-store'}),body=await response.json() as Row;if(!response.ok)throw new Error(body.error||'Não foi possível consultar as unidades.');setUnits(body.organizationalUnits||[]);setUnitEditor(true);}catch(error){setError(error instanceof Error?error.message:'Não foi possível consultar as unidades.');}}
     function done(){setEditing(undefined);setDetailRevision(value=>value+1);}

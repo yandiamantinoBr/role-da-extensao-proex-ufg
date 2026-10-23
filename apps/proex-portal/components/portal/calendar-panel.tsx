@@ -30,21 +30,23 @@ export default function CalendarPanel({ projects: sourceProjects, organizational
   const initial = useMemo(() => monthRange(civilDay(new Date())), []);
   const [from, setFrom] = useState(initial.from), [to, setTo] = useState(initial.to);
   const [category, setCategory] = useState('all'), [projectId, setProjectId] = useState(''), [unitId,setUnitId]=useState('');
-  const [data, setData] = useState<CalendarData | null>(null), [loading, setLoading] = useState(true), [saving, setSaving] = useState(false);
+  const [result,setResult]=useState<{key:string;data:CalendarData|null;error:string;receivedAt:number}|null>(null),[saving,setSaving]=useState(false);
+  const [mountedAt]=useState(()=>Date.now());
   const [error, setError] = useState(''), [reload, setReload] = useState(0), [selectedDay, setSelectedDay] = useState('');
   const [feedCategory, setFeedCategory] = useState<CalendarCategory>('projects'), [createdFeed, setCreatedFeed] = useState<{ id: string; feedUrl: string; expiresAt: string } | null>(null);
   const [copied, setCopied] = useState(false);
   const validRange=/^\d{4}-\d{2}-\d{2}$/.test(from)&&/^\d{4}-\d{2}-\d{2}$/.test(to)&&Number.isFinite(Date.parse(from))&&Number.isFinite(Date.parse(to))&&to>=from&&(Date.parse(to)-Date.parse(from))/86400000<732;
   const query = useMemo(() => new URLSearchParams({ from, to, category, ...(projectId ? { projectId } : {}), ...(unitId?{unitId}:{}) }).toString(), [from, to, category, projectId,unitId]);
+  const requestKey=`${query}&refresh=${reload}`,data=validRange&&result?.key===requestKey?result.data:null,loading=validRange&&result?.key!==requestKey,displayError=error||(result?.key===requestKey?result.error:'');
   useEffect(() => {
-    if(!validRange){setLoading(false);setData(null);return;}
-    const controller = new AbortController(); setLoading(true); setError('');
+    if(!validRange)return;
+    const controller = new AbortController();
     fetch(`/api/calendar?${query}`, { cache: 'no-store', signal: controller.signal }).then(async response => {
-      const result = await response.json() as CalendarData & { error?: string }; if (!response.ok) throw new Error(result.error || 'Não foi possível consultar a agenda.');
-      setData(result); setFeedCategory(current => result.availableCategories.includes(current) ? current : result.availableCategories[0]);
-    }).catch(e => { if (e.name !== 'AbortError') { setError(e.message); setData(null); } }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
+      const body = await response.json() as CalendarData & { error?: string }; if (!response.ok) throw new Error(body.error || 'Não foi possível consultar a agenda.');
+      if(!controller.signal.aborted){setResult({key:requestKey,data:body,error:'',receivedAt:Date.now()});setFeedCategory(current=>body.availableCategories.includes(current)?current:body.availableCategories[0]??'projects');}
+    }).catch(error=>{if(error.name!=='AbortError')setResult({key:requestKey,data:null,error:error.message,receivedAt:Date.now()});});
     return () => controller.abort();
-  }, [query, reload,validRange]);
+  }, [query,requestKey,validRange]);
   async function mutate(action: string, payload: Record<string, unknown>) {
     if (saving) return; setSaving(true); setError('');
     try {
@@ -61,8 +63,8 @@ export default function CalendarPanel({ projects: sourceProjects, organizational
   const monthStart = new Date(`${displayMonth}-01T12:00:00Z`), monthEnd = new Date(monthStart); monthEnd.setUTCMonth(monthEnd.getUTCMonth() + 1); monthEnd.setUTCDate(0);
   const cells = [...Array(monthStart.getUTCDay()).fill(null), ...Array.from({ length: monthEnd.getUTCDate() }, (_, i) => `${displayMonth}-${String(i + 1).padStart(2, '0')}`)];
   const entries = data?.entries ?? [], shown = selectedDay ? entries.filter(event => inDay(event, selectedDay)) : entries;
-  const today = civilDay(new Date());
-  const activeFeeds = data?.feeds.filter(feed => !feed.revoked_at && Date.parse(feed.expires_at) > Date.now()) ?? [];
+  const today = civilDay(new Date(mountedAt));
+  const activeFeeds = data?.feeds.filter(feed => !feed.revoked_at && Date.parse(feed.expires_at) > (result?.receivedAt??mountedAt)) ?? [];
   const unitProjects=unitId?projects.filter(project=>project.unitId===unitId):projects;
   const unitName=organizationalUnits.find(unit=>unit.id===unitId)?.name;
   const scopeName=projects.find(project=>project.id===projectId)?.name||String(unitName||'Todos os projetos permitidos');
@@ -81,7 +83,7 @@ export default function CalendarPanel({ projects: sourceProjects, organizational
       </div>
       <div className={styles.rangeSummary}><strong>{validRange?`${prettyDay(from)} a ${prettyDay(to)}`:'Escolha as datas inicial e final'}</strong><span>{scopeName} · {category==='all'?'Todas as categorias permitidas':labels[category as CalendarCategory]}</span></div>
       <div className={styles.actions}><button type="button" className="p-button p-button-subtle" onClick={()=>setReload(value=>value+1)} disabled={loading||!validRange}><RefreshCw size={16}/>Atualizar consulta</button>{validRange?<a className="p-button p-button-subtle" href={`/api/calendar?${query}&format=ics`}><Download size={16}/>{downloadLabel}</a>:<button type="button" className="p-button p-button-subtle" disabled><Download size={16}/>{downloadLabel}</button>}</div>
-      {!validRange&&<p className="p-inline-error" role="alert">Escolha um período válido de até dois anos, com a data final igual ou posterior à inicial.</p>}{error&&<p className="p-inline-error" role="alert">{error}</p>}
+      {!validRange&&<p className="p-inline-error" role="alert">Escolha um período válido de até dois anos, com a data final igual ou posterior à inicial.</p>}{displayError&&<p className="p-inline-error" role="alert">{displayError}</p>}
       <p className="p-form-help">O arquivo inclui as datas e os filtros acima. Materiais e consumo mostram movimentações registradas; saldo não cria compromisso futuro. Contatos, documentos e observações internas ficam no portal.</p>
     </section>
     <section className="p-card" aria-label="Visão mensal da agenda" aria-busy={loading}>
