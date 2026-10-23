@@ -4,13 +4,14 @@ import { DatabaseSync } from 'node:sqlite';
 import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
+import path from 'node:path';
 
 const directory = fileURLToPath(new URL('../', import.meta.url));
 const modules = new Map();
 function compile(name) {
   if (modules.has(name)) return modules.get(name);
   let code = ts.transpileModule(readFileSync(`${directory}lib/${name}.ts`, 'utf8'), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
-  code = code.replace(/from (['"])(\.\/[^'"]+)\1/g, (_match, _quote, dependency) => `from ${JSON.stringify(compile(dependency.slice(2).replace(/\.ts$/, '')))}`);
+  code = code.replace(/from (['"])(\.{1,2}\/[^'"]+)\1/g, (_match, _quote, dependency) => `from ${JSON.stringify(compile(path.posix.normalize(path.posix.join(path.posix.dirname(name),dependency)).replace(/\.ts$/, '')))}`);
   const url = `data:text/javascript;base64,${Buffer.from(`${code}\n//# sourceURL=${name}-under-test.mjs`).toString('base64')}`;
   modules.set(name, url);
   return url;
@@ -61,6 +62,43 @@ test('global owner creates complete project metadata without truncating a 120-ch
     assert.equal(result.project.version, 1);
     assert.equal(db.native.prepare("SELECT COUNT(*) n FROM audit WHERE action='project.create'").get().n, 1);
   } finally { db.native.close(); }
+});
+
+test('project organizational unit and optional dynamics are versioned without granting other projects', async () => {
+  const db=database();
+  try {
+    const owner=actor(db,'owner',null),manager=actor(db,'manager','project-a'),now=new Date().toISOString();
+    db.native.prepare("INSERT INTO organizational_units(id,name,acronym,kind,created_at,updated_at) VALUES('unit-a','Academic unit','UNI','academic',?,?)").run(now,now);
+    db.native.prepare("INSERT INTO organizational_units(id,name,kind,status,created_at,updated_at) VALUES('unit-old','Archived unit','agency','archived',?,?)").run(now,now);
+    const legacy={...db.native.prepare("SELECT * FROM projects WHERE id='project-a'").get()};delete legacy.unit_id;delete legacy.prizes_enabled;
+    db.native.prepare("INSERT INTO entity_versions(id,entity_type,entity_id,project_id,version,snapshot_json,actor_id,created_at) VALUES('legacy-project-a','project','project-a','project-a',1,?,?,?)").run(JSON.stringify(legacy),manager.userId,now);
+    const first=await projectAction(db,manager,'project.update',{id:'project-a',expectedVersion:1,unitId:'unit-a',prizesEnabled:true,operationKey:crypto.randomUUID()});
+    assert.equal(first.project.unit_id,'unit-a');assert.equal(first.project.prizes_enabled,1);assert.equal(first.project.version,2);
+    assert.equal(JSON.parse(db.native.prepare("SELECT snapshot_json FROM entity_versions WHERE entity_type='project' AND entity_id='project-a' AND version=2").get().snapshot_json).prizes_enabled,1);
+    await assert.rejects(projectDetail(db,manager,'project-b'),error=>error.status===404);
+    await assert.rejects(projectAction(db,manager,'project.update',{id:'project-a',expectedVersion:1,unitId:null,prizesEnabled:false}),error=>error.status===409);
+    for(const invalid of [{unitId:'missing-unit'},{unitId:'unit-old'},{prizesEnabled:'true'}])await assert.rejects(projectAction(db,owner,'project.create',{...createInput(),...invalid}),error=>error.status===400);
+    db.native.prepare("UPDATE organizational_units SET status='archived' WHERE id='unit-a'").run();
+    const preserved=await projectAction(db,manager,'project.update',{id:'project-a',expectedVersion:2,name:'Updated purpose'});
+    assert.equal(preserved.project.unit_id,'unit-a');assert.equal(preserved.project.prizes_enabled,1);
+    const restored=await projectAction(db,manager,'entity.restore',{entityType:'project',entityId:'project-a',restoreVersion:1,expectedVersion:3,operationKey:crypto.randomUUID()});
+    assert.equal(restored.project.unit_id,'unit-a');assert.equal(restored.project.prizes_enabled,1);assert.equal(restored.project.version,4);
+    assert.equal(db.native.prepare('SELECT COUNT(*) n FROM members WHERE user_id=?').get(manager.userId).n,1);
+  } finally {db.native.close();}
+});
+
+test('project material spreadsheet view is returned only to a current global owner', async () => {
+  const db=database();
+  try {
+    const owner=actor(db,'owner',null),manager=actor(db,'manager','project-a'),now=new Date().toISOString();
+    db.native.prepare('INSERT INTO settings(name,value,updated_at) VALUES(?,?,?)').run('sync.google_sheets.configuration',JSON.stringify({spreadsheetId:'synthetic-workbook-projects'}),now);
+    db.native.prepare('INSERT INTO settings(name,value,updated_at) VALUES(?,?,?)').run('sync.google_sheets.material_links',JSON.stringify({spreadsheetId:'synthetic-workbook-projects',sheetId:12,views:{'project-a':34},version:1}),now);
+    assert.equal((await projectDetail(db,owner,'project-a')).spreadsheetLinks.materialsUrl,'https://docs.google.com/spreadsheets/d/synthetic-workbook-projects/edit#gid=12&fvid=34');
+    assert.equal((await projectDetail(db,manager,'project-a')).spreadsheetLinks.materialsUrl,null);
+    assert.equal((await projectDetail(db,owner,'project-b')).spreadsheetLinks.materialsUrl,null);
+    db.native.prepare('UPDATE members SET revoked_at=? WHERE id=?').run(now,owner.members[0].id);
+    assert.equal((await projectDetail(db,owner,'project-a')).spreadsheetLinks.materialsUrl,null);
+  } finally {db.native.close();}
 });
 
 test('project managers edit their scope while creation remains global and forged capability arrays grant nothing', async () => {
@@ -227,4 +265,20 @@ test('project details redact domain relationships and revoked type writers leave
     await assert.rejects(projectAction(db,owner,'project.type.create',{key:'revoked',label:'Must not exist',operationKey:crypto.randomUUID()}),error=>error.status===409);
     assert.equal(db.native.prepare('SELECT COUNT(*) n FROM project_types').get().n,0);assert.equal(db.native.prepare('SELECT COUNT(*) n FROM mutation_keys').get().n,0);
   }finally{db.native.close();}
+});
+
+test('project scope separates internal PROEX actions from external partners without changing access', async () => {
+  const db=database();
+  try {
+    const owner=actor(db,'owner',null),manager=actor(db,'manager','project-a');
+    assert.equal(db.native.prepare("SELECT scope FROM projects WHERE id='project-a'").get().scope,'internal','existing projects stay internal');
+    const external=await projectAction(db,owner,'project.create',{...createInput(),scope:'external'});
+    assert.equal(external.project.scope,'external');
+    await assert.rejects(projectAction(db,owner,'project.create',{...createInput(),scope:'partner'}),error=>error.status===400);
+    const updated=await projectAction(db,manager,'project.update',{id:'project-a',expectedVersion:1,scope:'external',operationKey:crypto.randomUUID()});
+    assert.equal(updated.project.scope,'external');
+    const kept=await projectAction(db,manager,'project.update',{id:'project-a',expectedVersion:2,name:'Other name'});
+    assert.equal(kept.project.scope,'external','omitted scope keeps the stored value');
+    await assert.rejects(projectDetail(db,manager,external.project.id),error=>error.status===404,'scope never widens a project grant');
+  } finally {db.native.close();}
 });

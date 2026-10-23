@@ -6,7 +6,19 @@ O banco transacional D1 guarda operações, permissões, recibos e versões; os 
 
 O esquema portátil versão 1 mantém IDs e tipos independentes do provedor. Excel pode receber CSV/JSON ou uma cópia da planilha. Trocar o provedor de sincronização exige implementar e verificar um adaptador; copiar um arquivo não migra autenticação, anexos e transações automaticamente. Para hospedar outra interface, reutilize a API canônica e migre o backend de forma planejada, evitando duas bases independentes.
 
-## Rotina conectada
+## Conector da planilha (Apps Script) — forma recomendada
+
+O arquivo `public/integracoes/proex-planilha.gs` implementa os passos abaixo dentro da própria planilha, sem depender do ChatGPT/Codex nem de uma conta de serviço do Google Cloud:
+
+- autentica no portal com `Authorization: Bearer pxs_…` em `POST /api/sync/connector` (`{ tool, args }`, as mesmas ferramentas do `/mcp`);
+- a chave pertence a um responsável global; o portal guarda o SHA-256, registra último uso, permite até cinco chaves ativas por pessoa, expira em um ano e revalida o papel e a conta a cada chamada;
+- lê `Controle` (bases), coleta edições das colunas editáveis comparando com a base, processa linhas novas de `Operações`, aplica em lotes de 25 com `runId`, exporta todas as tabelas com paginação por digest, grava como texto literal (formato `@`), relê chaves e resumos de todas as abas e só então reescreve as bases e conclui a execução;
+- edições conflitantes ou recusadas vão para `Conflitos` com o conteúdo desejado, e a linha volta ao valor oficial na exportação; linhas sem base (digitadas manualmente nas abas técnicas) também são registradas em `Conflitos`, e as criações devem usar `Operações`;
+- anexos: lista, gera ticket de 60 s, baixa, grava na pasta privada, confere que o arquivo não tem compartilhamento por link e confirma com hash e tamanho.
+
+`scripts/apps-script-harness.mjs` executa o arquivo `.gs` real contra um portal local, com planilha simulada, cobrindo exportação, edição, operação de estoque e conflito.
+
+## Rotina conectada (ChatGPT/Codex, legado)
 
 As ferramentas do plugin privado gerado pelo Site são autenticadas pela identidade nativa e, adicionalmente, pela associação ativa de mantenedor geral no banco. Não há chave de administrador em URLs públicas. Login com senha continua sendo o acesso cotidiano dos integrantes; não exige conta ChatGPT.
 

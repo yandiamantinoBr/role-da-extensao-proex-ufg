@@ -71,14 +71,14 @@ export async function listManagedUsers(db: D1Database, actor: PortalActor | null
   const actorId = actor!.userId;
   // SQL rechecks the current account and membership, including a previously loaded actor snapshot.
   const [accounts, memberships] = await Promise.all([
-    db.prepare(`SELECT u.user_id,u.email,u.status,u.activation_pending,u.anonymized_at,p.display_name,
+    db.prepare(`SELECT u.user_id,u.email,u.status,u.activation_pending,u.anonymized_at,p.display_name,p.avatar_key,p.mime,p.version,
         EXISTS (SELECT 1 FROM identity_aliases aliases WHERE aliases.user_id=u.user_id
           AND aliases.provider='password') AS has_password
       FROM portal_users u LEFT JOIN profiles p ON p.user_id=u.user_id
       WHERE ${OWNER_SQL} OR EXISTS (SELECT 1 FROM members m
         WHERE m.user_id=u.user_id AND ${VISIBLE_MEMBER_SQL})
       ORDER BY COALESCE(p.display_name,u.email,u.user_id),u.user_id`).bind(actorId, actorId)
-      .all<UserRow & { display_name: string | null; has_password: number; activation_pending: number }>(),
+      .all<UserRow & { display_name: string | null; has_password: number; activation_pending: number; avatar_key:string|null;mime:string|null;version:number|null }>(),
     db.prepare(`SELECT m.id,m.user_id,m.role,m.project_id,m.revoked_at,m.created_at FROM members m
       WHERE ${VISIBLE_MEMBER_SQL} ORDER BY m.created_at,m.id`).bind(actorId)
       .all<Pick<PortalMember, 'id' | 'user_id' | 'role' | 'project_id' | 'revoked_at' | 'created_at'>>(),
@@ -89,11 +89,67 @@ export async function listManagedUsers(db: D1Database, actor: PortalActor | null
     grouped.set(userId, [...(grouped.get(userId) ?? []), visible]);
   }
   return (accounts.results ?? []).map(account => ({
-    userId: account.user_id, email: account.email,
-    displayName: account.display_name || account.email || 'Pessoa da equipe',
+    userId: account.user_id, email: account.anonymized_at?null:account.email,
+    displayName: account.anonymized_at?'Conta anonimizada':account.display_name || account.email || 'Pessoa da equipe',
+    avatarUrl: !account.anonymized_at&&account.avatar_key&&account.mime==='image/png'&&Number.isSafeInteger(account.version)&&Number(account.version)>0
+      ? `/api/team/${encodeURIComponent(account.user_id)}/avatar?v=${account.version}`:null,
     status: account.status, anonymizedAt: account.anonymized_at, hasPassword: Boolean(account.has_password), activationPending: Boolean(account.activation_pending),
     members: grouped.get(account.user_id) ?? [],
   }));
+}
+
+export type ManagedPerson = {
+ userId:string;displayName:string;email:string|null;status:UserStatus;isAnonymized:boolean;isSelf:boolean;
+ unitId:string|null;unit:string;organizationalUnit:{id:string;name:string;acronym:string;kind:string;status:string}|null;
+ affiliation:string;jobTitle:string;phone:string;registrationType:string;registrationNumber:string;
+ avatarUrl:string|null;profileVersion:number|null;members:Record<string,unknown>[];
+};
+type ManagedPersonRow={
+ user_id:string;email:string|null;status:UserStatus;anonymized_at:string|null;display_name:string|null;
+ unit_id:string|null;unit:string|null;affiliation:string|null;job_title:string|null;phone:string|null;
+ registration_type:string|null;registration_number:string|null;avatar_key:string|null;mime:string|null;version:number|null;
+ org_id:string|null;org_name:string;org_acronym:string;org_kind:string;org_status:string;members_json:string|null;
+};
+function managedTarget(actor:PortalActor|null,target:unknown,project:unknown){
+ requireCapability(actor,'access.manage');
+ if(!identifier(target)||(project!==undefined&&project!==null&&project!==''&&!identifier(project)))throw new HttpError(400,'Selecione uma pessoa e um projeto válidos.','invalid_user_detail');
+ const projectId=typeof project==='string'&&project?project:null;
+ if(projectId)requireCapability(actor,'access.manage',projectId);
+ const sql=`u.user_id=? AND (${OWNER_SQL} OR EXISTS(SELECT 1 FROM members m WHERE m.user_id=u.user_id AND ${VISIBLE_MEMBER_SQL}))
+  ${projectId?`AND EXISTS(SELECT 1 FROM members m WHERE m.user_id=u.user_id AND (m.project_id IS NULL OR m.project_id=?) AND ${VISIBLE_MEMBER_SQL})`:''}`;
+ return {actor:actor!,userId:target,projectId,sql,parameters:[target,actor!.userId,actor!.userId,...(projectId?[projectId,actor!.userId]:[])]};
+}
+/** Institutional contact/enrollment fields are read on demand, never in the broad directory or Sheets. */
+export async function getManagedUser(db:D1Database,actor:PortalActor|null,userId:unknown,projectId?:unknown):Promise<ManagedPerson>{
+ const target=managedTarget(actor,userId,projectId);
+ // One SQL snapshot binds the private projection, target territory and current authority together.
+ const row=await db.prepare(`SELECT u.user_id,u.email,u.status,u.anonymized_at,p.display_name,p.unit_id,p.unit,p.affiliation,p.job_title,p.phone,
+   p.registration_type,p.registration_number,p.avatar_key,p.mime,p.version,
+   org.id org_id,org.name org_name,org.acronym org_acronym,org.kind org_kind,org.status org_status,
+   (SELECT json_group_array(json_object('id',visible.id,'role',visible.role,'project_id',visible.project_id,'revoked_at',visible.revoked_at,'created_at',visible.created_at))
+    FROM(SELECT m.id,m.role,m.project_id,m.revoked_at,m.created_at FROM members m WHERE m.user_id=u.user_id AND ${VISIBLE_MEMBER_SQL}
+      ${target.projectId?'AND (m.project_id IS NULL OR m.project_id=?)':''} ORDER BY m.created_at,m.id) visible) members_json
+  FROM portal_users u LEFT JOIN profiles p ON p.user_id=u.user_id AND u.anonymized_at IS NULL
+  LEFT JOIN organizational_units org ON org.id=p.unit_id WHERE ${target.sql}`)
+  .bind(target.actor.userId,...(target.projectId?[target.projectId]:[]),...target.parameters).first<ManagedPersonRow>();
+ if(!row)throw new HttpError(404,'Pessoa não encontrada neste contexto ou seu acesso mudou.','user_detail_not_found');
+ const anonymized=!!row.anonymized_at,version=typeof row.version==='number'&&Number.isSafeInteger(row.version)&&row.version>0?row.version:null;
+ const query=new URLSearchParams();if(version)query.set('v',String(version));if(target.projectId)query.set('projectId',target.projectId);
+ return {userId:row.user_id,displayName:anonymized?'Conta anonimizada':row.display_name||row.email||'Pessoa da equipe',email:anonymized?null:row.email,
+  status:row.status,isAnonymized:anonymized,isSelf:row.user_id===target.actor.userId,
+  unitId:row.unit_id??null,unit:row.unit??'',organizationalUnit:row.org_id?{id:row.org_id,name:row.org_name,acronym:row.org_acronym,kind:row.org_kind,status:row.org_status}:null,
+  affiliation:row.affiliation??'',jobTitle:row.job_title??'',phone:row.phone??'',registrationType:row.registration_type??'',registrationNumber:row.registration_number??'',
+  avatarUrl:!anonymized&&row.avatar_key&&row.mime==='image/png'&&version?`/api/team/${encodeURIComponent(row.user_id)}/avatar?${query}`:null,
+  profileVersion:version,members:JSON.parse(row.members_json||'[]')};
+}
+/** Storage keys are internal to the protected avatar route and must never enter its JSON response. */
+export async function managedUserAvatar(db:D1Database,actor:PortalActor|null,userId:unknown,projectId?:unknown):Promise<{key:string;version:number}>{
+ const target=managedTarget(actor,userId,projectId);
+ const row=await db.prepare(`SELECT p.avatar_key,p.mime,p.version FROM portal_users u JOIN profiles p ON p.user_id=u.user_id
+   WHERE ${target.sql} AND u.anonymized_at IS NULL AND p.avatar_key IS NOT NULL AND p.mime='image/png'`)
+   .bind(...target.parameters).first<{avatar_key:string;mime:string;version:number}>();
+ if(!row||!Number.isSafeInteger(row.version)||row.version<1)throw new HttpError(404,'Foto não encontrada neste contexto ou seu acesso mudou.','user_avatar_not_found');
+ return {key:row.avatar_key,version:row.version};
 }
 
 /** Account state is global; membership changes retain their original stored project scope. */

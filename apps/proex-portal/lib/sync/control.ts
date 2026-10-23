@@ -3,6 +3,7 @@ import { HttpError } from '../errors';
 import { type PortalActor } from '../access';
 import { requireSyncOwner, SYNC_OWNER_SQL } from './contracts';
 import { describePortableSchemas } from './portable';
+import { materialLinksStatus } from './project-links';
 
 const CONFIG = 'sync.google_sheets.configuration';
 const RUN_LEASE_MS = 30 * 60 * 1000;
@@ -20,6 +21,7 @@ export async function syncStatus(db:D1Database,actor:PortalActor|null) {
  await requireSyncOwner(db,actor);
  const config=await one(db,'SELECT value FROM settings WHERE name=?',[CONFIG]);
  const result={formatVersion:1,schemas:describePortableSchemas(),configuration:config?JSON.parse(config.value):null,
+  materialLinks:await materialLinksStatus(db,actor),
   connections:await all(db,'SELECT id,provider,label,external_id,enabled,updated_at FROM sync_connections ORDER BY created_at'),
   runs:await all(db,'SELECT id,connection_id,status,direction,started_at,finished_at,exported_count,applied_count,conflict_count,error_code FROM sync_runs ORDER BY started_at DESC LIMIT 20'),
   conflicts:await all(db,"SELECT id,entity_type,entity_id,expected_version,actual_version,reason,status,created_at FROM sync_conflicts WHERE status='open' ORDER BY created_at DESC LIMIT 100"),

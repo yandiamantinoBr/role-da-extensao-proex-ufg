@@ -19,7 +19,7 @@ for (const name of ['access', 'errors', 'users', 'database', 'mutations']) {
 }
 after(() => rmSync(temporary, { recursive: true, force: true }));
 const { getActor, requireCapability, accessAction } = await import(pathToFileURL(join(temporary, 'access.js')).href);
-const { usersAction, listManagedUsers } = await import(pathToFileURL(join(temporary, 'users.js')).href);
+const { usersAction, listManagedUsers, getManagedUser, managedUserAvatar } = await import(pathToFileURL(join(temporary, 'users.js')).href);
 
 const OWNER = { userId: 'native-owner', email: 'owner@example.test', displayName: 'Responsável' };
 const OTHER_OWNER = { userId: 'native-other-owner', email: 'other-owner@example.test', displayName: 'Outro responsável' };
@@ -371,4 +371,47 @@ test('anonymized accounts are irreversible tombstones even if a stale row is acc
   f.sqlite.prepare("UPDATE portal_users SET status='active' WHERE user_id=?").run(MEMBER.userId);
   assert.equal(await f.actor(MEMBER),null);
   await rejected(usersAction(f.db,await f.actor(OWNER),'user.status',{userId:MEMBER.userId,status:'active'}),'account_anonymized',409);
+});
+
+test('managed detail exposes optional institutional data only within the same directory territory',async t=>{
+ const f=fixture(t);f.account(MANAGER);f.member(MANAGER,'manager','role');f.account(MEMBER);f.member(MEMBER,'viewer','role');f.member(MEMBER,'inventory','other');
+ const now=new Date().toISOString();f.sqlite.prepare("INSERT INTO organizational_units(id,name,acronym,kind,status,created_at,updated_at) VALUES('unit-a','Unidade acadêmica','UA','academic','active',?,?)").run(now,now);
+ f.sqlite.prepare("UPDATE profiles SET unit_id='unit-a',unit='Setor complementar',affiliation='student',registration_type='student',registration_number='PRIVATE-ENROLLMENT-42',job_title='Bolsista',phone='PRIVATE-PHONE-42' WHERE user_id=?").run(MEMBER.userId);
+ const manager=await f.actor(MANAGER),person=await getManagedUser(f.db,manager,MEMBER.userId,'role');
+ assert.equal(person.registrationNumber,'PRIVATE-ENROLLMENT-42');assert.equal(person.phone,'PRIVATE-PHONE-42');assert.equal(person.affiliation,'student');assert.equal(person.organizationalUnit.name,'Unidade acadêmica');
+ assert.equal(person.members.length,1);assert.equal(person.members[0].project_id,'role');assert.equal(person.isSelf,false);
+ assert.match(person.avatarUrl,/\/api\/team\/native-member\/avatar\?/);assert.equal(new URL(person.avatarUrl,'https://portal.test').searchParams.get('projectId'),'role');
+ assert.ok(!JSON.stringify(person).includes('avatars/private-object-key'));assert.ok(!JSON.stringify(person).includes('lookup_hash'));assert.ok(!Object.hasOwn(person,'cpf'));
+ const directory=JSON.stringify(await listManagedUsers(f.db,manager));assert.ok(!directory.includes('PRIVATE-ENROLLMENT-42'));assert.ok(!directory.includes('PRIVATE-PHONE-42'));
+ assert.equal((await getManagedUser(f.db,await f.actor(OWNER),MEMBER.userId)).members.length,2);
+ assert.equal((await getManagedUser(f.db,manager,MANAGER.userId)).isSelf,true);
+ await rejected(getManagedUser(f.db,manager,MEMBER.userId,'other'),'forbidden',403);
+ f.account(OTHER_OWNER);f.member(OTHER_OWNER,'viewer','other');
+ await rejected(getManagedUser(f.db,manager,OTHER_OWNER.userId),'user_detail_not_found',404);
+ await rejected(managedUserAvatar(f.db,manager,OTHER_OWNER.userId),'user_avatar_not_found',404);
+});
+
+test('managed detail and avatar reject stale management authority and ordinary viewer identities',async t=>{
+ const f=fixture(t);f.account(MANAGER);f.member(MANAGER,'manager','role');f.account(MEMBER);f.member(MEMBER,'viewer','role');
+ const manager=await f.actor(MANAGER),viewer=await f.actor(MEMBER);
+ await rejected(getManagedUser(f.db,viewer,MEMBER.userId),'forbidden',403);
+ for(const state of ['blocked','pending','anonymized','revoked']){
+  f.sqlite.prepare("UPDATE portal_users SET status='active',activation_pending=0,anonymized_at=NULL WHERE user_id=?").run(MANAGER.userId);f.sqlite.prepare('UPDATE members SET revoked_at=NULL WHERE user_id=?').run(MANAGER.userId);
+  if(state==='blocked')f.sqlite.prepare("UPDATE portal_users SET status='blocked' WHERE user_id=?").run(MANAGER.userId);
+  if(state==='pending')f.sqlite.prepare('UPDATE portal_users SET activation_pending=1 WHERE user_id=?').run(MANAGER.userId);
+  if(state==='anonymized')f.sqlite.prepare('UPDATE portal_users SET anonymized_at=? WHERE user_id=?').run(new Date().toISOString(),MANAGER.userId);
+  if(state==='revoked')f.sqlite.prepare('UPDATE members SET revoked_at=? WHERE user_id=?').run(new Date().toISOString(),MANAGER.userId);
+  await rejected(getManagedUser(f.db,manager,MEMBER.userId),'user_detail_not_found',404);
+  await rejected(managedUserAvatar(f.db,manager,MEMBER.userId),'user_avatar_not_found',404);
+ }
+});
+
+test('an anonymized target never exposes a surviving stale profile, enrollment, email or avatar in management projections',async t=>{
+ const f=fixture(t);f.account(MEMBER);f.member(MEMBER,'viewer','role');
+ f.sqlite.prepare("UPDATE profiles SET display_name='STALE PRIVATE NAME',phone='STALE PRIVATE PHONE',registration_type='other',registration_number='STALE PRIVATE ENROLLMENT' WHERE user_id=?").run(MEMBER.userId);
+ f.sqlite.prepare("UPDATE portal_users SET anonymized_at=?,status='active' WHERE user_id=?").run(new Date().toISOString(),MEMBER.userId);
+ const actor=await f.actor(OWNER),person=await getManagedUser(f.db,actor,MEMBER.userId),directory=await listManagedUsers(f.db,actor);
+ assert.equal(person.isAnonymized,true);assert.equal(person.displayName,'Conta anonimizada');assert.equal(person.email,null);assert.equal(person.registrationNumber,'');assert.equal(person.avatarUrl,null);
+ for(const value of ['STALE PRIVATE',MEMBER.email,'avatars/private-object-key']){assert.ok(!JSON.stringify(person).includes(value));assert.ok(!JSON.stringify(directory).includes(value));}
+ await rejected(managedUserAvatar(f.db,actor,MEMBER.userId),'user_avatar_not_found',404);
 });

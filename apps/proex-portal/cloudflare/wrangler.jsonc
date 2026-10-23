@@ -1,0 +1,24 @@
+// Configuração da implantação independente do portal (Cloudflare Workers + D1 + R2).
+// Usada para migrações e comandos `wrangler d1` locais/remotos. O build do Vite gera
+// `dist/server/wrangler.json` com os mesmos bindings; scripts/cloudflare/deploy.mjs
+// substitui os identificadores reais a partir das variáveis do ambiente de CI.
+// Não coloque segredos aqui: use `wrangler secret put` ou os segredos do GitHub.
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "proex-gestao",
+  "main": "../worker/index.ts",
+  "compatibility_date": "2026-05-15",
+  "compatibility_flags": ["nodejs_compat"],
+  // Hospedagem própria: descarta cabeçalhos de identidade do Sites (worker/index.ts).
+  "vars": { "PROEX_STANDALONE": "1" },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "proex-gestao",
+      // Placeholder local; o deploy usa PROEX_D1_DATABASE_ID.
+      "database_id": "00000000-0000-4000-8000-000000000000",
+      "migrations_dir": "../drizzle"
+    }
+  ],
+  "r2_buckets": [{ "binding": "BUCKET", "bucket_name": "proex-gestao-arquivos" }]
+}

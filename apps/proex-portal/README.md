@@ -6,6 +6,8 @@ Este diretório contém a implementação V4 do portal. O [Manual de operação]
 
 ## Arquitetura desta implementação
 
+**Hospedagem atual: Vercel + Supabase** ([guia](docs/HOSPEDAGEM-VERCEL.md)), com o build Node (`pnpm build:node`) e o SQLite do portal persistido no Postgres por `platform-node/`. **Alternativas com o mesmo código:** ChatGPT Sites e uma conta Cloudflare própria da PROEX, publicada pelo GitHub Actions (`.github/workflows/portal-deploy.yml`), com banco D1 e arquivos R2 independentes de conta pessoal. O passo a passo está em [Hospedagem própria](docs/HOSPEDAGEM-PROPRIA.md). Na hospedagem própria (`PROEX_STANDALONE=1`) o Worker descarta cabeçalhos de identidade do Sites e o primeiro responsável é criado em `/configuracao-inicial`, com `SETUP_TOKEN` e `OWNER_EMAIL`.
+
 O portal usa o runtime do Sites, banco Cloudflare D1 e armazenamento privado Cloudflare R2. O login por e-mail e senha usa Better Auth, com sessões e credenciais no próprio D1. O manifesto `.openai/hosting.json` identifica o projeto do portal e declara os bindings lógicos `DB` e `BUCKET`. Ele deve ser preservado ao atualizar esse Site. O portal não usa o banco de outro projeto da PROEX ou do Kino Campus.
 
 As tabelas `auth_*` guardam a autenticação; `portal_users`, `identity_aliases`, `profiles` e `members` guardam cadastro, vínculo de identidade, perfil e permissões do portal. O identificador canônico preserva o histórico anterior: o identificador novo do provedor de senha não substitui os responsáveis já gravados em participações, entregas, empréstimos ou auditoria. Igualdade de e-mail, sozinha, não vincula duas identidades nem concede privilégios.
@@ -71,7 +73,7 @@ A própria pessoa pode solicitar anonimização, com confirmação da senha. A e
 
 ## Projetos e registros operacionais
 
-Os projetos organizam o escopo da equipe, dos materiais e das ações. O cadastro reúne nome, identificação curta, descrição, cor, endereço oficial, local, período, situação e etapa no catálogo: em atividade, passado ou referência. Tipos de iniciativa são configuráveis pelo responsável. Um programa/projeto superior organiza o catálogo, sem herdar privilégios; ciclos são recusados, inclusive em alterações concorrentes. Cada material pertence a um projeto e a uma classe operacional: brinde, equipamento retornável, distribuição institucional ou consumo. Categorias de apresentação são administráveis sem substituir essas regras operacionais.
+Os projetos organizam o escopo da equipe, dos materiais e das ações. Cada projeto tem **abrangência**: interno (conduzido pela equipe PROEX) ou externo (unidade acadêmica, órgão ou parceiro apoiado pela PROEX). A abrangência organiza a lista e a planilha; o acesso continua sendo concedido por projeto na Equipe, de modo que um bolsista de um projeto externo vê apenas aquele projeto. O cadastro reúne nome, identificação curta, descrição, cor, endereço oficial, local, período, situação e etapa no catálogo: em atividade, passado ou referência. Tipos de iniciativa são configuráveis pelo responsável. Um programa/projeto superior organiza o catálogo, sem herdar privilégios; ciclos são recusados, inclusive em alterações concorrentes. Cada material pertence a um projeto e a uma classe operacional: brinde, equipamento retornável, distribuição institucional ou consumo. Categorias de apresentação são administráveis sem substituir essas regras operacionais.
 
 Acessar projeto abre um detalhe interno com fontes, links, editais, cronologia, relações e versões. Editar busca a revisão atual; o servidor aplica CAS e recusa sobrescrita concorrente. As versões de projeto, edital, link e atividade preservam metadados; restaurar cria outra revisão e revalida as regras atuais. Não reverte estoque, sorteios, arquivos ou empréstimos. Editais compartilhados exigem administração de todos os projetos envolvidos para alterar seus vínculos.
 
@@ -133,6 +135,8 @@ Fotos e PDFs dos termos são objetos privados em R2, associados ao empréstimo e
 
 ## Indicadores e planilhas
 
+**Conector da planilha.** A planilha Google fica ligada ao portal pelo conector Apps Script (`public/integracoes/proex-planilha.gs`, também baixável em Configurações). Ele roda na conta Google de quem instala, exporta as tabelas do formato portátil, importa edições das colunas editáveis e da aba Operações com controle de versão, registra conflitos e copia fotos e termos para uma pasta privada do Drive. A autenticação usa uma chave de sincronização (`pxs_…`) criada e revogada pelo responsável institucional; o portal guarda só o hash e revalida o papel a cada chamada. Detalhes em [Sincronização](docs/SINCRONIZACAO.md). `scripts/apps-script-harness.mjs` executa o próprio arquivo `.gs` contra um portal local com uma planilha simulada.
+
 O painel separa participações, tentativas, modalidades, tíquetes, premiações, entregas e unidades físicas. Um prêmio composto por três buttons é uma premiação e três unidades; uma repetição autorizada não é outra pessoa. Acessos registrados não são visitantes únicos.
 
 As exportações CSV de participação, estoque e empréstimos respeitam os projetos autorizados. Elas não incluem e-mail, identificador da conta, contato do solicitante, termos ou observações pessoais. São projeções para gestão, não cópia integral do banco. Dados inseridos em campos livres ainda exigem cuidado da equipe. O agrupamento operacional atual usa horário de Brasília, UTC−03, para o período atendido pela implementação.
@@ -149,6 +153,7 @@ Execute os comandos a partir deste diretório, inclusive quando estiver dentro d
 
 ```sh
 pnpm install --frozen-lockfile
+pnpm db:migrate:local          # banco local em .wrangler/state
 pnpm exec tsc --noEmit --incremental false
 pnpm test
 pnpm run build

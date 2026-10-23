@@ -30,7 +30,7 @@ export async function PUT(request: Request): Promise<Response> {
   try {
     requireProfileMutation(request, 'json');
     const { db, user } = await principal();
-    const input = await boundedJson(request, 2048);
+    const input = await boundedJson(request, 4096);
     return privateResponse(Response.json(await updateOwnProfile(db, user, input, user.hasPassword)));
   } catch (error) { return privateResponse(publicError(error)); }
 }

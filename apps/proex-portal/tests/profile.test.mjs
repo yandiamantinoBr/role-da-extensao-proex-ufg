@@ -85,7 +85,7 @@ function expectError(promise, status, code) {
 test('an admitted account edits its own profile without receiving organization permissions', async (t) => {
   const f = fixture(t);
   const initial = await getOwnProfile(f.db, user, false);
-  assert.deepEqual(initial, { profile: { displayName: 'Pessoa', email: user.email, unit: '', jobTitle: '', phone: '', avatarUrl: null, version: 1 }, hasPassword: false });
+  assert.deepEqual(initial, { profile: { displayName: 'Pessoa', email: user.email, unit: '', unitId: null, affiliation: '', jobTitle: '', phone: '', registrationType: '', registrationNumber: '', avatarUrl: null, version: 1 }, hasPassword: false });
   const updated = await updateOwnProfile(f.db, user, { displayName: 'Yan de Exemplo', expectedVersion: 1 }, true);
   assert.equal(updated.profile.displayName, 'Yan de Exemplo');
   assert.equal(updated.profile.version, 2);

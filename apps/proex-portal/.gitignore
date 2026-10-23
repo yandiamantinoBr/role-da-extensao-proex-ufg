@@ -43,3 +43,10 @@ yarn-error.log*
 
 # OS metadata
 .DS_Store
+
+# Generated deploy configuration
+/.deploy/
+
+# Node target outputs and local data
+/.data*/
+/.vercel/

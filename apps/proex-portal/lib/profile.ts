@@ -4,10 +4,17 @@ import { PNG } from 'pngjs';
 import { HttpError } from './errors';
 
 export type ProfileUser = { userId: string; email: string; displayName: string };
-export type OwnProfile = { displayName: string; email: string; unit: string; jobTitle: string; phone: string; avatarUrl: string | null; version: number };
+export type ProfileAffiliation = '' | 'student' | 'technical' | 'faculty' | 'scholar' | 'intern' | 'collaborator' | 'other';
+export type ProfileRegistrationType = '' | 'siape' | 'student' | 'other';
+export type OwnProfile = {
+  displayName: string; email: string; unit: string; unitId: string | null; affiliation: ProfileAffiliation;
+  jobTitle: string; phone: string; registrationType: ProfileRegistrationType; registrationNumber: string;
+  avatarUrl: string | null; version: number;
+};
 type StoredProfile = {
   user_id: string; display_name: string; avatar_key: string | null; mime: string | null;
-  unit: string; job_title: string; phone: string; version: number; email: string | null; status: string;
+  unit: string; unit_id: string | null; affiliation: ProfileAffiliation; job_title: string; phone: string;
+  registration_type: ProfileRegistrationType; registration_number: string; version: number; email: string | null; status: string;
 };
 export const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
 const MAX_FORM_BYTES = MAX_AVATAR_BYTES + 64 * 1024;
@@ -37,6 +44,15 @@ function optionalText(value: unknown, label: string, max: number): string {
   if (Array.from(normalized).length > max || /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/u.test(normalized)) throw new HttpError(400, `Use até ${max} caracteres em ${label}, sem quebras de linha.`, 'invalid_profile_metadata');
   return normalized;
 }
+function optionalChoice<T extends string>(value: unknown, options: readonly T[], label: string): T {
+  if (typeof value !== 'string' || !options.includes(value as T)) throw new HttpError(400, `Escolha ${label} válido.`, 'invalid_profile_metadata');
+  return value as T;
+}
+function optionalUnitId(value: unknown): string | null {
+  if (value === null || value === '') return null;
+  if (typeof value !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(value)) throw new HttpError(400, 'Escolha uma unidade válida no catálogo.', 'invalid_profile_unit');
+  return value;
+}
 
 async function storedProfile(db: D1Database, user: ProfileUser | null): Promise<StoredProfile> {
   requireUser(user);
@@ -53,7 +69,7 @@ async function storedProfile(db: D1Database, user: ProfileUser | null): Promise<
     SELECT ?,?,NULL,NULL,1,?,? WHERE EXISTS
       (SELECT 1 FROM portal_users WHERE user_id=? AND status='active' AND anonymized_at IS NULL)`)
     .bind(user.userId, initialName, now, now, user.userId).run();
-  const row = await db.prepare(`SELECT p.user_id,p.display_name,p.unit,p.job_title,p.phone,p.avatar_key,p.mime,p.version,u.email,u.status
+  const row = await db.prepare(`SELECT p.user_id,p.display_name,p.unit,p.unit_id,p.affiliation,p.job_title,p.phone,p.registration_type,p.registration_number,p.avatar_key,p.mime,p.version,u.email,u.status
     FROM profiles p JOIN portal_users u ON u.user_id=p.user_id WHERE p.user_id=? AND u.status='active' AND u.anonymized_at IS NULL`)
     .bind(user.userId).first<StoredProfile>();
   if (!row || !Number.isSafeInteger(row.version) || row.version < 1) {
@@ -67,8 +83,12 @@ function projectProfile(row: StoredProfile, user: ProfileUser): OwnProfile {
     displayName: row.display_name,
     email: row.email ?? user.email,
     unit: row.unit,
+    unitId: row.unit_id,
+    affiliation: row.affiliation,
     jobTitle: row.job_title,
     phone: row.phone,
+    registrationType: row.registration_type,
+    registrationNumber: row.registration_number,
     avatarUrl: row.avatar_key && row.mime === 'image/png'
       ? `/api/profile/avatar/${encodeURIComponent(user.userId)}?v=${row.version}` : null,
     version: row.version,
@@ -86,7 +106,7 @@ async function changedError(db: D1Database, user: ProfileUser): Promise<never> {
   const account = await db.prepare('SELECT status,anonymized_at FROM portal_users WHERE user_id=?').bind(user.userId)
     .first<{ status: string; anonymized_at: string | null }>();
   if (!account || account.status !== 'active' || account.anonymized_at) throw new HttpError(403, 'Seu acesso ao portal não está ativo.', 'account_inactive');
-  throw new HttpError(409, 'Seu perfil mudou em outra sessão. Atualize para conferir antes de salvar.', 'profile_conflict');
+  throw new HttpError(409, 'Seu perfil ou a unidade escolhida mudou. Atualize para conferir antes de salvar.', 'profile_conflict');
 }
 
 export async function updateOwnProfile(
@@ -94,22 +114,29 @@ export async function updateOwnProfile(
 ): Promise<{ profile: OwnProfile; hasPassword: boolean }> {
   requireUser(user);
   if (!input || typeof input !== 'object' || Array.isArray(input)
-    || Object.keys(input).some((key) => !['displayName', 'unit', 'jobTitle', 'phone', 'expectedVersion'].includes(key))) {
+    || Object.keys(input).some((key) => !['displayName', 'unit', 'unitId', 'affiliation', 'jobTitle', 'phone', 'registrationType', 'registrationNumber', 'expectedVersion'].includes(key))) {
     throw new HttpError(400, 'Este formulário altera apenas os dados do seu perfil.', 'immutable_profile_fields');
   }
   const name = displayName(input.displayName);
   const version = expectedVersion(input.expectedVersion);
   const before = await storedProfile(db, user);
   const unit = Object.hasOwn(input, 'unit') ? optionalText(input.unit, 'unidade ou setor', 120) : before.unit;
+  const unitId = Object.hasOwn(input, 'unitId') ? optionalUnitId(input.unitId) : before.unit_id;
+  if (unitId !== null && unitId !== before.unit_id && !await db.prepare("SELECT id FROM organizational_units WHERE id=? AND status='active'").bind(unitId).first()) throw new HttpError(400, 'Escolha uma unidade ativa do catálogo.', 'invalid_profile_unit');
+  const affiliation = Object.hasOwn(input, 'affiliation') ? optionalChoice(input.affiliation, ['', 'student', 'technical', 'faculty', 'scholar', 'intern', 'collaborator', 'other'] as const, 'um vínculo institucional') : before.affiliation;
   const jobTitle = Object.hasOwn(input, 'jobTitle') ? optionalText(input.jobTitle, 'vínculo ou função institucional', 120) : before.job_title;
   const phone = Object.hasOwn(input, 'phone') ? optionalText(input.phone, 'telefone de contato', 40) : before.phone;
-  const fields = ['displayName', 'unit', 'jobTitle', 'phone'].filter(field => Object.hasOwn(input, field));
+  const registrationType = Object.hasOwn(input, 'registrationType') ? optionalChoice(input.registrationType, ['', 'siape', 'student', 'other'] as const, 'um tipo de matrícula') : before.registration_type;
+  const registrationNumber = Object.hasOwn(input, 'registrationNumber') ? optionalText(input.registrationNumber, 'matrícula institucional', 40) : before.registration_number;
+  if (registrationNumber && !registrationType) throw new HttpError(400, 'Escolha o tipo da matrícula ou deixe o número em branco.', 'invalid_registration_type');
+  const fields = ['displayName', 'unit', 'unitId', 'affiliation', 'jobTitle', 'phone', 'registrationType', 'registrationNumber'].filter(field => Object.hasOwn(input, field));
   const now = new Date().toISOString();
   const result = await db.batch([
-    db.prepare(`UPDATE profiles SET display_name=?,unit=?,job_title=?,phone=?,version=version+1,updated_at=?
+    db.prepare(`UPDATE profiles SET display_name=?,unit=?,unit_id=?,affiliation=?,job_title=?,phone=?,registration_type=?,registration_number=?,version=version+1,updated_at=?
       WHERE user_id=? AND version=? AND EXISTS
-        (SELECT 1 FROM portal_users WHERE user_id=? AND status='active' AND anonymized_at IS NULL)`)
-      .bind(name, unit, jobTitle, phone, now, user.userId, version, user.userId),
+        (SELECT 1 FROM portal_users WHERE user_id=? AND status='active' AND anonymized_at IS NULL)
+      AND (? IS NULL OR EXISTS(SELECT 1 FROM organizational_units WHERE id=? AND (status='active' OR id=?)))`)
+      .bind(name, unit, unitId, affiliation, jobTitle, phone, registrationType, registrationNumber, now, user.userId, version, user.userId, unitId, unitId, before.unit_id),
     db.prepare(`INSERT INTO audit (id,actor_id,project_id,action,entity_id,details,created_at)
       SELECT ?,?,NULL,'profile.update',?,?,? WHERE changes()=1`)
       .bind(crypto.randomUUID(), user.userId, user.userId, JSON.stringify({ fields }), now),

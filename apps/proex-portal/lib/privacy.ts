@@ -80,6 +80,7 @@ export async function resolvePrivacy(db:D1Database,actor:PortalActor,input:Recor
   cleanup(`DELETE FROM auth_account WHERE user_id IN(SELECT subject FROM identity_aliases WHERE user_id=? AND provider='password') AND ${confirmed}`,target),
   cleanup(`DELETE FROM auth_user WHERE id IN(SELECT subject FROM identity_aliases WHERE user_id=? AND provider='password') AND ${confirmed}`,target),
   cleanup(`DELETE FROM identity_aliases WHERE user_id=? AND ${confirmed}`,target),
+  // The whole profile is removed, including unit_id, affiliation and private enrollment/contact fields.
   cleanup(`DELETE FROM profiles WHERE user_id=? AND ${confirmed}`,target),
   cleanup(`UPDATE privacy_requests SET status='cleanup_pending',reviewed_by=?,reviewed_at=? WHERE id=? AND status='pending' AND ${confirmed}`,actor.userId,now,request.id),
  ]);

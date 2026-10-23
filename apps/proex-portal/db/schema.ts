@@ -7,6 +7,16 @@ export const projectTypes = sqliteTable('project_types', {
   description: text('description').notNull().default(''), status: text('status').notNull().default('active'),
   version: integer('version').notNull().default(1), createdAt: text('created_at').notNull(), updatedAt: text('updated_at').notNull(),
 }, t => [uniqueIndex('project_types_key_unique').on(t.key), check('project_types_status_check', sql`${t.status} IN ('active','archived')`)]);
+export const organizationalUnits = sqliteTable('organizational_units', {
+  id: text('id').primaryKey(), name: text('name').notNull(), acronym: text('acronym').notNull().default(''),
+  kind: text('kind').notNull(), status: text('status').notNull().default('active'),
+  version: integer('version').notNull().default(1), createdAt: text('created_at').notNull(), updatedAt: text('updated_at').notNull(),
+}, t => [
+  index('organizational_units_status_name_idx').on(t.status, t.name),
+  check('organizational_units_kind_check', sql`${t.kind} IN ('proex','academic','agency','external')`),
+  check('organizational_units_status_check', sql`${t.status} IN ('active','archived')`),
+  check('organizational_units_version_check', sql`${t.version} > 0`),
+]);
 export const projects = sqliteTable('projects', {
   id: text('id').primaryKey(), name: text('name').notNull(),
   description: text('description').notNull().default(''), createdAt: text('created_at').notNull(),
@@ -17,8 +27,13 @@ export const projects = sqliteTable('projects', {
   lifecycle: text('lifecycle').notNull().default('active'),
   typeId: text('type_id').references(() => projectTypes.id),
   parentId: text('parent_id').references((): AnySQLiteColumn => projects.id),
+  unitId: text('unit_id').references(() => organizationalUnits.id), prizesEnabled: integer('prizes_enabled').notNull().default(0),
+  // internal: ação conduzida pela equipe PROEX; external: unidade acadêmica, órgão ou parceiro.
+  scope: text('scope').notNull().default('internal'),
 }, t => [
-  index('projects_parent_idx').on(t.parentId),
+  index('projects_parent_idx').on(t.parentId), index('projects_unit_idx').on(t.unitId),
+  check('projects_prizes_enabled_check', sql`${t.prizesEnabled} IN (0,1)`),
+  check('projects_scope_check', sql`${t.scope} IN ('internal','external')`),
   check('projects_status_check', sql`${t.status} IN ('active','archived')`),
   check('projects_lifecycle_check', sql`${t.lifecycle} IN ('active','past','catalog')`),
   check('projects_version_check', sql`${t.version} > 0`),
@@ -213,9 +228,16 @@ export const portalUsers = sqliteTable('portal_users', {
 export const profiles = sqliteTable('profiles', {
   userId: text('user_id').primaryKey(), displayName: text('display_name').notNull(),
   avatarKey: text('avatar_key'), mime: text('mime'),
+  unitId: text('unit_id').references(() => organizationalUnits.id), affiliation: text('affiliation').notNull().default(''),
+  registrationType: text('registration_type').notNull().default(''), registrationNumber: text('registration_number').notNull().default(''),
   unit: text('unit').notNull().default(''), jobTitle: text('job_title').notNull().default(''), phone: text('phone').notNull().default(''), version: integer('version').notNull().default(1),
   createdAt: text('created_at').notNull(), updatedAt: text('updated_at').notNull(),
-}, t => [check('profiles_version_check', sql`${t.version} > 0`)]);
+}, t => [
+  index('profiles_unit_idx').on(t.unitId),
+  check('profiles_version_check', sql`${t.version} > 0`),
+  check('profiles_affiliation_check', sql`${t.affiliation} IN ('','student','technical','faculty','scholar','intern','collaborator','other')`),
+  check('profiles_registration_type_check', sql`${t.registrationType} IN ('','siape','student','other')`),
+]);
 export const identityAliases = sqliteTable('identity_aliases', {
   provider: text('provider').notNull(), subject: text('subject').notNull(),
   userId: text('user_id').notNull(), createdAt: text('created_at').notNull(),
@@ -340,6 +362,13 @@ export const syncReceipts = sqliteTable('sync_receipts', {
   operationKey: text('operation_key').primaryKey(), fingerprint: text('fingerprint').notNull(), entityId: text('entity_id'),
   resultJson: text('result_json').notNull(), createdAt: text('created_at').notNull(),
 });
+// Chaves do conector da planilha (Apps Script). Só o hash é guardado; cada uso
+// reavalia se a pessoa ainda é responsável global ativa.
+export const syncTokens = sqliteTable('sync_tokens', {
+  id: text('id').primaryKey(), tokenHash: text('token_hash').notNull(), userId: text('user_id').notNull(),
+  label: text('label').notNull().default(''), createdAt: text('created_at').notNull(), expiresAt: text('expires_at').notNull(),
+  revokedAt: text('revoked_at'), lastUsedAt: text('last_used_at'),
+}, t => [uniqueIndex('sync_tokens_hash_unique').on(t.tokenHash), index('sync_tokens_user_idx').on(t.userId)]);
 export const syncConflicts = sqliteTable('sync_conflicts', {
   id: text('id').primaryKey(), connectionId: text('connection_id').references(() => syncConnections.id), runId: text('run_id').references(() => syncRuns.id),
   operationKey: text('operation_key').notNull(), entityType: text('entity_type').notNull(), entityId: text('entity_id'),

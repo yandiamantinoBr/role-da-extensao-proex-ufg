@@ -5,6 +5,7 @@ import {portalSnapshot} from '../../../lib/portal-data';
 import {campaignAction} from '../../../lib/campaigns';
 import {usersAction} from '../../../lib/users';
 import {materialsAction} from '../../../lib/materials';
+import {unitsAction} from '../../../lib/units';
 import {cancelAttendance} from '../../../lib/attendance-cancel';
 import {participationAction} from '../../../lib/participation';
 import {HttpError,publicError} from '../../../lib/errors';
@@ -19,6 +20,7 @@ export async function POST(request:Request){try{
  if(result===null)result=await usersAction(db,actor,action,input);
  if(result===null)result=await campaignAction(db,actor,action,input);
  if(result===null)result=await materialsAction(db,actor,action,input);
+ if(result===null)result=await unitsAction(db,actor,action,input);
  if(result===null)result=await participationAction(db,actor,action,input);
  if(result===null)throw new HttpError(400,'Ação não reconhecida.');return Response.json({ok:true,...result},{headers:{'Cache-Control':'no-store'}});
  }catch(e){return publicError(e);}}

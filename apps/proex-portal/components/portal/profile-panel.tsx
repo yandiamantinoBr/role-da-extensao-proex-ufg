@@ -3,20 +3,44 @@
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Camera, Check, ImagePlus, LoaderCircle, LockKeyhole, RefreshCw, UserRound } from 'lucide-react';
 import AccountIdentityPanel from './account-identity-panel';
+import styles from './profile-panel.module.css';
 
-type Profile = { displayName: string; email: string; unit: string; jobTitle: string; phone: string; avatarUrl: string | null; version: number };
+type Affiliation = '' | 'student' | 'technical' | 'faculty' | 'scholar' | 'intern' | 'collaborator' | 'other';
+type RegistrationType = '' | 'siape' | 'student' | 'other';
+type Profile = {
+  displayName: string; email: string; unit: string; unitId: string | null; affiliation: Affiliation;
+  jobTitle: string; phone: string; registrationType: RegistrationType; registrationNumber: string;
+  avatarUrl: string | null; version: number;
+};
+type ProfileDraft = Omit<Profile, 'email' | 'avatarUrl' | 'version' | 'unitId'> & { unitId: string };
+type OrganizationalUnit = { id: string; name: string; acronym: string; status: 'active' | 'archived' };
 type Payload = { profile: Profile; hasPassword: boolean };
 type Props = { onUpdated?(): void };
-
+const affiliations: Record<Affiliation, string> = { '': 'Não informado', student: 'Estudante', technical: 'Técnico-administrativo', faculty: 'Docente', scholar: 'Bolsista', intern: 'Estagiário(a)', collaborator: 'Colaborador(a)', other: 'Outro' };
+const registrationTypes: Record<RegistrationType, string> = { '': 'Não informar', siape: 'SIAPE', student: 'Matrícula de estudante', other: 'Outro registro institucional' };
+function profileDraft(profile: Profile): ProfileDraft {
+  return { displayName: profile.displayName, unit: profile.unit, unitId: profile.unitId ?? '', affiliation: profile.affiliation, jobTitle: profile.jobTitle, phone: profile.phone, registrationType: profile.registrationType, registrationNumber: profile.registrationNumber };
+}
+function hasProfileChanges(profile: Profile, draft: ProfileDraft): boolean {
+  const saved = profileDraft(profile);
+  return (Object.keys(saved) as (keyof ProfileDraft)[]).some(key => draft[key].trim() !== saved[key]);
+}
+function unitLabel(unit: OrganizationalUnit): string { return unit.acronym ? `${unit.acronym} · ${unit.name}` : unit.name; }
 async function responseData(response: Response): Promise<Payload> {
   const body = await response.json() as Partial<Payload> & { error?: string };
   if (!response.ok) throw new Error(body.error || 'Não foi possível atualizar seu perfil.');
   if (!body.profile || typeof body.profile.displayName !== 'string' || typeof body.profile.email !== 'string'
     || !Number.isSafeInteger(body.profile.version)) throw new Error('Atualize a página para recuperar seu perfil.');
-  return { profile: { ...body.profile, unit: body.profile.unit ?? '', jobTitle: body.profile.jobTitle ?? '', phone: body.profile.phone ?? '' }, hasPassword: body.hasPassword === true };
+  return { profile: { ...body.profile, unit: body.profile.unit ?? '', unitId: body.profile.unitId ?? null, affiliation: body.profile.affiliation ?? '', jobTitle: body.profile.jobTitle ?? '', phone: body.profile.phone ?? '', registrationType: body.profile.registrationType ?? '', registrationNumber: body.profile.registrationNumber ?? '' }, hasPassword: body.hasPassword === true };
 }
 async function fetchProfile(signal?: AbortSignal): Promise<Payload> {
   return responseData(await fetch('/api/profile', { credentials: 'same-origin', cache: 'no-store', signal }));
+}
+async function fetchUnits(signal?: AbortSignal): Promise<OrganizationalUnit[]> {
+  const response = await fetch('/api/units', { credentials: 'same-origin', cache: 'no-store', signal });
+  const body = await response.json() as { organizationalUnits?: OrganizationalUnit[]; error?: string };
+  if (!response.ok || !Array.isArray(body.organizationalUnits)) throw new Error(body.error || 'Não foi possível carregar o catálogo de unidades.');
+  return body.organizationalUnits.filter(unit => typeof unit.id === 'string' && typeof unit.name === 'string' && typeof unit.acronym === 'string' && (unit.status === 'active' || unit.status === 'archived'));
 }
 
 const PHOTO_READ_TIMEOUT = 12000;
@@ -133,165 +157,185 @@ export async function prepareProfilePhoto(file: File): Promise<Blob> {
 }
 
 export default function ProfilePanel({ onUpdated }: Props) {
-  const [profile, setProfile] = useState<Profile | null>(null);
+  const [profile, setProfile] = useState<Profile | null>(null), [draft, setDraft] = useState<ProfileDraft | null>(null);
   const [hasPassword, setHasPassword] = useState(false);
-  const [name, setName] = useState('');
-  const [unit, setUnit] = useState(''), [jobTitle, setJobTitle] = useState(''), [phone, setPhone] = useState('');
-  const [photo, setPhoto] = useState<Blob | null>(null);
-  const [preview, setPreview] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
-  const [preparing, setPreparing] = useState(false);
-  const [error, setError] = useState('');
-  const [message, setMessage] = useState('');
-  const [currentPassword, setCurrentPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [passwordBusy, setPasswordBusy] = useState(false);
-  const [passwordError, setPasswordError] = useState('');
-  const [passwordMessage, setPasswordMessage] = useState('');
-  const previewRef = useRef<string | null>(null);
-  const cameraRef = useRef<HTMLInputElement>(null);
-  const galleryRef = useRef<HTMLInputElement>(null);
-  const selection = useRef(0);
+  const [units, setUnits] = useState<OrganizationalUnit[]>([]), [unitsLoading, setUnitsLoading] = useState(true), [unitsError, setUnitsError] = useState('');
+  const [photo, setPhoto] = useState<Blob | null>(null), [preview, setPreview] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true), [busy, setBusy] = useState(false), [preparing, setPreparing] = useState(false);
+  const [error, setError] = useState(''), [message, setMessage] = useState('');
+  const [currentPassword, setCurrentPassword] = useState(''), [newPassword, setNewPassword] = useState(''), [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordBusy, setPasswordBusy] = useState(false), [passwordError, setPasswordError] = useState(''), [passwordMessage, setPasswordMessage] = useState('');
+  const previewRef = useRef<string | null>(null), cameraRef = useRef<HTMLInputElement>(null), galleryRef = useRef<HTMLInputElement>(null);
+  const selection = useRef(0), profileBusy = useRef(false), passwordPending = useRef(false);
+  function applyProfile(data: Payload) { setProfile(data.profile); setDraft(profileDraft(data.profile)); setHasPassword(data.hasPassword); }
+  async function refreshUnits() {
+    setUnitsLoading(true); setUnitsError('');
+    try { setUnits(await fetchUnits()); }
+    catch (cause) { setUnitsError(cause instanceof Error ? cause.message : 'Não foi possível carregar as unidades.'); }
+    finally { setUnitsLoading(false); }
+  }
   async function refreshProfile() {
+    if (profileBusy.current || passwordPending.current) return;
     setLoading(true); setError(''); setMessage('');
-    try {
-      const data = await fetchProfile();
-      setProfile(data.profile); setName(data.profile.displayName); setHasPassword(data.hasPassword);
-      setUnit(data.profile.unit); setJobTitle(data.profile.jobTitle); setPhone(data.profile.phone);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Não foi possível carregar seu perfil.');
-    } finally { setLoading(false); }
+    try { const data = await fetchProfile(); applyProfile(data); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : 'Não foi possível carregar seu perfil.'); }
+    finally { setLoading(false); }
   }
   useEffect(() => {
     const controller = new AbortController();
-    void fetchProfile(controller.signal).then((data) => {
+    // The unit catalog and the private profile are independent requests.
+    void fetchProfile(controller.signal).then(data => {
       if (controller.signal.aborted) return;
-      setProfile(data.profile); setName(data.profile.displayName); setHasPassword(data.hasPassword); setLoading(false);
-      setUnit(data.profile.unit); setJobTitle(data.profile.jobTitle); setPhone(data.profile.phone);
+      setProfile(data.profile); setDraft(profileDraft(data.profile)); setHasPassword(data.hasPassword); setLoading(false);
     }, (cause: unknown) => {
       if (controller.signal.aborted) return;
       setError(cause instanceof Error ? cause.message : 'Não foi possível carregar seu perfil.'); setLoading(false);
     });
+    void fetchUnits(controller.signal).then(data => {
+      if (!controller.signal.aborted) { setUnits(data); setUnitsLoading(false); }
+    }, (cause: unknown) => {
+      if (!controller.signal.aborted) { setUnitsError(cause instanceof Error ? cause.message : 'Não foi possível carregar as unidades.'); setUnitsLoading(false); }
+    });
     return () => { controller.abort(); selection.current = -1; releasePhotoUrl(previewRef.current); };
   }, []);
-
+  function edit<K extends keyof ProfileDraft>(key: K, value: ProfileDraft[K]) {
+    setDraft(current => current ? { ...current, [key]: value } : current); setMessage('');
+  }
   function discardPhoto() {
-    selection.current++;
-    releasePhotoUrl(previewRef.current);
-    previewRef.current = null; setPreview(null); setPhoto(null); setMessage('');
+    selection.current++; releasePhotoUrl(previewRef.current); previewRef.current = null;
+    setPreview(null); setPhoto(null); setMessage('');
   }
   async function choosePhoto(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]; event.target.value = '';
-    if (!file || busy || passwordBusy) return;
+    if (!file || profileBusy.current || passwordPending.current) return;
     const request = ++selection.current;
-    setBusy(true); setPreparing(true); setError(''); setMessage('');
+    profileBusy.current = true; setBusy(true); setPreparing(true); setError(''); setMessage('');
     try {
-      const blob = await prepareProfilePhoto(file);
-      const next = await photoDataUrl(blob);
+      const blob = await prepareProfilePhoto(file), next = await photoDataUrl(blob);
       if (selection.current !== request) return;
-      releasePhotoUrl(previewRef.current);
-      previewRef.current = next; setPhoto(blob); setPreview(next);
+      releasePhotoUrl(previewRef.current); previewRef.current = next; setPhoto(blob); setPreview(next);
       setMessage('Foto preparada. Confira a prévia e clique em “Salvar perfil”.');
     } catch (cause) { if (selection.current === request) setError(cause instanceof Error ? cause.message : 'Não foi possível preparar a foto.'); }
-    finally { if (selection.current === request) { setBusy(false); setPreparing(false); } }
+    finally { if (selection.current === request) { profileBusy.current = false; setBusy(false); setPreparing(false); } }
   }
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!profile || busy || passwordBusy) return;
-    setBusy(true); setError(''); setMessage('');
+    if (!profile || !draft || profileBusy.current || passwordPending.current) return;
+    setError(''); setMessage('');
+    if (draft.registrationNumber.trim() && !draft.registrationType) { setError('Escolha o tipo da matrícula ou deixe o número em branco.'); return; }
+    profileBusy.current = true; setBusy(true);
     let latest = profile;
     try {
-      if (name.trim() !== profile.displayName || unit.trim() !== profile.unit || jobTitle.trim() !== profile.jobTitle || phone.trim() !== profile.phone) {
+      if (hasProfileChanges(profile, draft)) {
         const data = await responseData(await fetch('/api/profile', {
-          method: 'PUT', credentials: 'same-origin',
-          headers: { 'Content-Type': 'application/json', 'X-Proex-Action': '1' },
-          body: JSON.stringify({ displayName: name, unit, jobTitle, phone, expectedVersion: latest.version }),
+          method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-Proex-Action': '1' },
+          body: JSON.stringify({ ...draft, unitId: draft.unitId || null, expectedVersion: latest.version }),
         }));
-        latest = data.profile; setProfile(latest); setName(latest.displayName); setHasPassword(data.hasPassword);
-        setUnit(latest.unit); setJobTitle(latest.jobTitle); setPhone(latest.phone);
+        latest = data.profile; applyProfile(data);
       }
       if (photo) {
-        const form = new FormData();
-        form.set('file', photo, 'avatar.png'); form.set('expectedVersion', String(latest.version));
+        const form = new FormData(); form.set('file', photo, 'avatar.png'); form.set('expectedVersion', String(latest.version));
         const data = await responseData(await fetch('/api/profile', {
           method: 'POST', credentials: 'same-origin', headers: { 'X-Proex-Action': '1' }, body: form,
         }));
-        latest = data.profile; setProfile(latest); setHasPassword(data.hasPassword); discardPhoto();
+        latest = data.profile; applyProfile(data); discardPhoto();
       }
       setMessage('Seu perfil foi atualizado.'); onUpdated?.();
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Não foi possível salvar o perfil.'); }
-    finally { setBusy(false); }
+    finally { profileBusy.current = false; setBusy(false); }
   }
-
   async function changePassword(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (busy || passwordBusy || !hasPassword) return;
+    if (profileBusy.current || passwordPending.current || !hasPassword) return;
     setPasswordError(''); setPasswordMessage('');
-    if (!currentPassword || currentPassword.length > 128) {
-      setPasswordError('Informe sua senha atual.'); return;
-    }
-    if (newPassword.length < 12 || newPassword.length > 128) {
-      setPasswordError('Use uma nova senha de 12 a 128 caracteres.'); return;
-    }
-    if (newPassword !== confirmPassword) {
-      setPasswordError('A confirmação deve ser igual à nova senha.'); return;
-    }
-    setPasswordBusy(true);
+    if (!currentPassword || currentPassword.length > 128) { setPasswordError('Informe sua senha atual.'); return; }
+    if (newPassword.length < 12 || newPassword.length > 128) { setPasswordError('Use uma nova senha de 12 a 128 caracteres.'); return; }
+    if (newPassword !== confirmPassword) { setPasswordError('A confirmação deve ser igual à nova senha.'); return; }
+    passwordPending.current = true; setPasswordBusy(true);
     try {
       const response = await fetch('/api/account', {
-        method: 'POST', credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json', 'X-Proex-Action': '1' },
+        method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-Proex-Action': '1' },
         body: JSON.stringify({ action: 'changePassword', currentPassword, newPassword }),
       });
       const body = await response.json().catch(() => ({})) as { error?: unknown; message?: unknown };
-      if (!response.ok) throw new Error(typeof body.error === 'string' ? body.error
-        : typeof body.message === 'string' ? body.message : 'Não foi possível alterar sua senha. Confira a senha atual.');
-      setCurrentPassword(''); setNewPassword(''); setConfirmPassword('');
-      setPasswordMessage('Sua senha foi alterada com sucesso.');
-    } catch (cause) {
-      setPasswordError(cause instanceof Error ? cause.message : 'Não foi possível alterar sua senha.');
-    } finally { setPasswordBusy(false); }
+      if (!response.ok) throw new Error(typeof body.error === 'string' ? body.error : typeof body.message === 'string' ? body.message : 'Não foi possível alterar sua senha. Confira a senha atual.');
+      setCurrentPassword(''); setNewPassword(''); setConfirmPassword(''); setPasswordMessage('Sua senha foi alterada com sucesso.');
+    } catch (cause) { setPasswordError(cause instanceof Error ? cause.message : 'Não foi possível alterar sua senha.'); }
+    finally { passwordPending.current = false; setPasswordBusy(false); }
   }
 
-  if (loading) return <div className="p-card" role="status" style={{ padding: 24 }}><LoaderCircle className="p-spin" size={20} /> Carregando seu perfil…</div>;
-  const avatar = preview || profile?.avatarUrl;
-  return <section className="p-card" aria-labelledby="profile-title" style={{ padding: 'clamp(18px,4vw,30px)' }}>
-    <div className="p-row-between" style={{ gap: 16, flexWrap: 'wrap', marginBottom: 24 }}><div><h2 id="profile-title" style={{ margin: '0 0 8px' }}>Meu perfil</h2><p className="p-form-help" style={{ margin: 0 }}>Atualize seu nome e sua foto. O e-mail identifica sua conta.</p></div><button className="p-button p-button-subtle" type="button" disabled={busy || passwordBusy} onClick={() => void refreshProfile()}><RefreshCw size={16} />Atualizar</button></div>
-    {profile && <form className="p-form" onSubmit={save}><fieldset disabled={busy || passwordBusy || loading}>
-      <div style={{ display: 'flex', gap: 22, alignItems: 'center', flexWrap: 'wrap', marginBottom: 24 }}>
-        <div style={{ width: 104, height: 104, flexShrink: 0, borderRadius: '50%', overflow: 'hidden', background: 'var(--surface-soft)', display: 'grid', placeItems: 'center', color: 'var(--brand-ink)' }}>
-          {/* eslint-disable-next-line @next/next/no-img-element -- Private avatar must be requested by the signed-in browser, without an image proxy. */}
-          {avatar ? <img src={avatar} alt={preview ? 'Prévia da sua nova foto' : 'Sua foto de perfil'} width={104} height={104} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <UserRound size={42} aria-hidden="true" />}
-        </div>
-        <div><div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}><button type="button" className="p-button p-button-subtle" onClick={() => cameraRef.current?.click()}><Camera size={17} />Tirar foto</button><button type="button" className="p-button p-button-subtle" onClick={() => galleryRef.current?.click()}><ImagePlus size={17} />Escolher foto</button></div><p className="p-form-help">JPEG, PNG ou imagem compatível com seu aparelho, até 20 MB. A foto será reduzida e ficará protegida no portal.</p>{preparing && <p role="status" className="p-form-help">Preparando a foto neste aparelho…</p>}{photo && <button type="button" className="p-text-link" onClick={discardPhoto}>Descartar foto escolhida</button>}</div>
-      </div>
-      <input ref={cameraRef} type="file" accept="image/*" capture="user" hidden onChange={choosePhoto} />
-      <input ref={galleryRef} type="file" accept="image/*" hidden onChange={choosePhoto} />
-      <div className="p-form-grid"><label className="p-field"><span>Nome de exibição</span><input autoComplete="name" required maxLength={80} value={name} onChange={(event) => { setName(event.target.value); setMessage(''); }} /></label><label className="p-field"><span>E-mail da conta</span><input type="email" value={profile.email} readOnly aria-readonly="true" /><small>O e-mail, a função e as permissões não são alterados neste formulário.</small></label></div>
-      <div className="p-form-grid"><label className="p-field"><span>Unidade ou setor (opcional)</span><input autoComplete="organization" maxLength={120} value={unit} onChange={event => { setUnit(event.target.value); setMessage(''); }} placeholder="Ex.: PROEX · Comunicação" /></label><label className="p-field"><span>Vínculo ou função institucional (opcional)</span><input autoComplete="organization-title" maxLength={120} value={jobTitle} onChange={event => { setJobTitle(event.target.value); setMessage(''); }} placeholder="Ex.: bolsista, técnico ou docente" /><small>Informação de perfil; não concede permissões administrativas.</small></label><label className="p-field"><span>Telefone de contato (opcional)</span><input type="tel" autoComplete="tel" maxLength={40} value={phone} onChange={event => { setPhone(event.target.value); setMessage(''); }} placeholder="Telefone ou ramal institucional" /></label></div>
-      <p className="p-form-help">Preencha os dados opcionais somente se forem úteis para o trabalho da equipe. Você pode apagá-los a qualquer momento.</p>
-      <div className="p-form-footer"><button className="p-button p-button-primary" type="submit" disabled={busy || passwordBusy || (name.trim() === profile.displayName && unit.trim() === profile.unit && jobTitle.trim() === profile.jobTitle && phone.trim() === profile.phone && !photo)}>{busy ? <LoaderCircle size={17} className="p-spin" /> : <Check size={17} />}{preparing ? 'Preparando foto…' : busy ? 'Salvando…' : 'Salvar perfil'}</button></div>
-    </fieldset></form>}
-    {error && <p className="p-inline-error" role="alert">{error}</p>}
-    {message && <p role="status" style={{ color: 'var(--success-ink)', marginBottom: 0 }}>{message}</p>}
-    {profile && <section aria-labelledby="profile-password-title" style={{ marginTop: 30, paddingTop: 24, borderTop: '1px solid var(--line)' }}>
-      <h3 id="profile-password-title" style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '0 0 10px' }}><LockKeyhole size={20} aria-hidden="true" />Alterar senha</h3>
-      {hasPassword ? <form className="p-form" onSubmit={changePassword}>
-        <p className="p-form-help">Confirme sua senha atual e escolha uma nova senha de 12 a 128 caracteres.</p>
-        <fieldset disabled={busy || passwordBusy}>
-          <div className="p-form-grid">
-            <label className="p-field"><span>Senha atual</span><input type="password" autoComplete="current-password" required maxLength={128} value={currentPassword} onChange={(event) => { setCurrentPassword(event.target.value); setPasswordMessage(''); }} /></label>
-            <label className="p-field"><span>Nova senha</span><input type="password" autoComplete="new-password" required minLength={12} maxLength={128} value={newPassword} onChange={(event) => { setNewPassword(event.target.value); setPasswordMessage(''); }} /></label>
-            <label className="p-field"><span>Confirmar nova senha</span><input type="password" autoComplete="new-password" required minLength={12} maxLength={128} value={confirmPassword} onChange={(event) => { setConfirmPassword(event.target.value); setPasswordMessage(''); }} /></label>
+  if (loading) return <div className={`${styles.card} ${styles.busy}`} role="status"><LoaderCircle className="p-spin" size={20} aria-hidden="true" />Carregando seu perfil…</div>;
+  const avatar = preview || profile?.avatarUrl, selectedUnit = units.find(unit => unit.id === profile?.unitId);
+  const currentUnitMissing = !!draft?.unitId && !units.some(unit => unit.id === draft.unitId);
+  const disabled = busy || passwordBusy;
+  return <section className={styles.profileRoot} aria-labelledby="profile-title">
+    {profile && draft && <>
+      <div className={`${styles.card} ${styles.hero}`}>
+        <div className={styles.avatarColumn}>
+          <div className={styles.avatar}>
+            {/* eslint-disable-next-line @next/next/no-img-element -- Private avatars must be fetched by the signed-in browser without an image proxy. */}
+            {avatar ? <img src={avatar} alt={preview ? 'Prévia da sua nova foto' : 'Sua foto de perfil'} width={144} height={144} /> : <UserRound size={52} aria-hidden="true" />}
           </div>
-          <div className="p-form-footer"><button type="submit" className="p-button p-button-primary">{passwordBusy ? <LoaderCircle size={17} className="p-spin" /> : <LockKeyhole size={17} />}{passwordBusy ? 'Alterando senha…' : 'Alterar senha'}</button></div>
-        </fieldset>
-        {passwordError && <p className="p-inline-error" role="alert">{passwordError}</p>}
-        {passwordMessage && <p role="status" style={{ color: 'var(--success-ink)', marginBottom: 0 }}>{passwordMessage}</p>}
-      </form> : <div><p className="p-form-help">Uma senha ainda não foi configurada para esta conta.</p><a className="p-button p-button-subtle" href="/acesso-inicial"><LockKeyhole size={17} />Configurar senha de acesso</a></div>}
-    </section>}
-    {profile && <AccountIdentityPanel hasPassword={hasPassword} />}
+          <div className={styles.photoActions}>
+            <button type="button" className="p-button p-button-subtle" disabled={disabled} onClick={() => cameraRef.current?.click()}><Camera size={16} aria-hidden="true" />Tirar foto</button>
+            <button type="button" className="p-button p-button-subtle" disabled={disabled} onClick={() => galleryRef.current?.click()}><ImagePlus size={16} aria-hidden="true" />Escolher foto</button>
+          </div>
+        </div>
+        <div className={styles.heroBody}>
+          <div className={styles.heroHeading}><div><p className={styles.kicker}>Meu perfil</p><h2 className={styles.name} id="profile-title">{profile.displayName}</h2><p className={styles.email}>{profile.email}</p></div><button className="p-button p-button-subtle" type="button" disabled={disabled} onClick={() => void refreshProfile()}><RefreshCw size={16} aria-hidden="true" />Recarregar dados</button></div>
+          <dl className={styles.summary}>
+            <div><dt>Unidade institucional</dt><dd>{selectedUnit ? unitLabel(selectedUnit) : profile.unitId ? 'Unidade cadastrada' : profile.unit || 'Não informada'}{selectedUnit && profile.unit && <small>{profile.unit}</small>}{selectedUnit?.status === 'archived' && <small>Unidade arquivada · vínculo preservado</small>}</dd></div>
+            <div><dt>Vínculo principal</dt><dd>{affiliations[profile.affiliation]}{profile.jobTitle && <small>{profile.jobTitle}</small>}</dd></div>
+            <div><dt>Registro institucional</dt><dd>{profile.registrationNumber || 'Não informado'}{profile.registrationType && <small>{registrationTypes[profile.registrationType]}</small>}</dd></div>
+          </dl>
+          <p className={styles.photoHelp}>Foto de até 20 MB. O portal prepara uma imagem de até 512 pixels e remove metadados no envio. {photo && 'A prévia ainda precisa ser salva.'}</p>
+          {photo && <button type="button" className="p-text-link" disabled={disabled} onClick={discardPhoto}>Descartar foto escolhida</button>}
+          {preparing && <p role="status" className={styles.busy}><LoaderCircle size={16} className="p-spin" aria-hidden="true" />Preparando a foto neste aparelho…</p>}
+        </div>
+        <input ref={cameraRef} type="file" accept="image/*" capture="user" hidden onChange={choosePhoto} />
+        <input ref={galleryRef} type="file" accept="image/*" hidden onChange={choosePhoto} />
+      </div>
+      <div className={styles.card}>
+        <div className={styles.sectionHeading}><UserRound size={23} aria-hidden="true" /><div><h3>Dados do perfil</h3><p>Seu nome identifica você na equipe. Os dados institucionais e de contato são opcionais.</p></div></div>
+        <form className={styles.form} onSubmit={save}>
+          <fieldset disabled={disabled}>
+            <div className={styles.grid}>
+              <label className={styles.field}><span>Nome de exibição</span><input autoComplete="name" required maxLength={80} value={draft.displayName} onChange={event => edit('displayName', event.target.value)} /></label>
+              <label className={styles.field}><span>E-mail da conta</span><input type="email" value={profile.email} readOnly aria-readonly="true" /><small>O e-mail de acesso é gerenciado pela administração.</small></label>
+            </div>
+            <h4 className={styles.subheading}>Informações institucionais</h4>
+            <div className={styles.grid}>
+              <label className={styles.field}><span>Unidade institucional (opcional)</span><select value={draft.unitId} disabled={unitsLoading || !!unitsError} onChange={event => edit('unitId', event.target.value)} aria-describedby="profile-units-help"><option value="">Não informar</option>{currentUnitMissing && <option value={draft.unitId}>Unidade atual cadastrada</option>}{units.filter(unit => unit.status === 'active' || unit.id === profile.unitId).map(unit => <option key={unit.id} value={unit.id}>{unitLabel(unit)}{unit.status === 'archived' ? ' (arquivada)' : ''}</option>)}</select><small id="profile-units-help">{unitsLoading ? 'Carregando unidades…' : 'Escolha uma unidade do catálogo institucional.'}</small></label>
+              <label className={styles.field}><span>Setor ou complemento (opcional)</span><input autoComplete="organization" maxLength={120} value={draft.unit} onChange={event => edit('unit', event.target.value)} placeholder="Ex.: Comunicação · turno da tarde" /><small>Se você já havia informado uma unidade por texto, ela foi preservada aqui.</small></label>
+              <label className={styles.field}><span>Vínculo principal (opcional)</span><select value={draft.affiliation} onChange={event => edit('affiliation', event.target.value as Affiliation)}>{Object.entries(affiliations).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select><small>Este dado descreve seu vínculo e não concede permissões.</small></label>
+              <label className={styles.field}><span>Função ou atividade (opcional)</span><input autoComplete="organization-title" maxLength={120} value={draft.jobTitle} onChange={event => edit('jobTitle', event.target.value)} placeholder="Ex.: atendimento, comunicação ou coordenação" /></label>
+              <label className={styles.field}><span>Tipo do registro (opcional)</span><select value={draft.registrationType} onChange={event => { const value = event.target.value as RegistrationType; setDraft(current => current ? { ...current, registrationType: value, ...(!value ? { registrationNumber: '' } : {}) } : current); setMessage(''); }}>{Object.entries(registrationTypes).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+              <label className={styles.field}><span>Matrícula ou número do registro (opcional)</span><input autoComplete="off" maxLength={40} value={draft.registrationNumber} onChange={event => edit('registrationNumber', event.target.value)} aria-describedby="profile-registration-help" /><small id="profile-registration-help">Até 40 caracteres. Informe o tipo se preencher o número. Este dado permanece no ambiente privado de gestão.</small></label>
+              <label className={styles.field}><span>Telefone ou ramal (opcional)</span><input type="tel" autoComplete="tel" maxLength={40} value={draft.phone} onChange={event => edit('phone', event.target.value)} placeholder="Contato útil para o trabalho da equipe" /></label>
+            </div>
+            {unitsError && <div className={styles.notice}><p role="alert">{unitsError} A unidade atual será preservada; você pode salvar os demais campos.</p><button type="button" className={`p-text-link ${styles.retry}`} onClick={() => void refreshUnits()}><RefreshCw size={15} aria-hidden="true" />Tentar carregar unidades</button></div>}
+            <p className={styles.help}>Preencha somente o que for útil para a equipe. Você pode remover os dados opcionais neste formulário.</p>
+            <div className={styles.actions}><button className="p-button p-button-primary" type="submit" disabled={disabled || (!hasProfileChanges(profile, draft) && !photo)}>{busy ? <LoaderCircle size={17} className="p-spin" aria-hidden="true" /> : <Check size={17} aria-hidden="true" />}{preparing ? 'Preparando foto…' : busy ? 'Salvando…' : 'Salvar perfil'}</button></div>
+          </fieldset>
+          {error && <p className={styles.error} role="alert">{error}</p>}{message && <p className={styles.success} role="status">{message}</p>}
+        </form>
+      </div>
+      <details className={styles.disclosure}>
+        <summary><span className={styles.summaryTitle}><LockKeyhole size={20} aria-hidden="true" />Senha de acesso</span></summary>
+        <div className={styles.disclosureBody}>
+          {hasPassword ? <form className={styles.form} onSubmit={changePassword}>
+            <p className={styles.help}>Confirme a senha atual e escolha uma nova senha de 12 a 128 caracteres.</p>
+            <fieldset disabled={disabled}><div className={styles.grid}>
+              <label className={styles.field}><span>Senha atual</span><input type="password" autoComplete="current-password" required maxLength={128} value={currentPassword} onChange={event => { setCurrentPassword(event.target.value); setPasswordMessage(''); }} /></label>
+              <label className={styles.field}><span>Nova senha</span><input type="password" autoComplete="new-password" required minLength={12} maxLength={128} value={newPassword} onChange={event => { setNewPassword(event.target.value); setPasswordMessage(''); }} /></label>
+              <label className={styles.field}><span>Confirmar nova senha</span><input type="password" autoComplete="new-password" required minLength={12} maxLength={128} value={confirmPassword} onChange={event => { setConfirmPassword(event.target.value); setPasswordMessage(''); }} /></label>
+            </div><div className={styles.actions}><button type="submit" className="p-button p-button-primary">{passwordBusy ? <LoaderCircle size={17} className="p-spin" aria-hidden="true" /> : <LockKeyhole size={17} aria-hidden="true" />}{passwordBusy ? 'Alterando senha…' : 'Alterar senha'}</button></div></fieldset>
+            {passwordError && <p className={styles.error} role="alert">{passwordError}</p>}{passwordMessage && <p className={styles.success} role="status">{passwordMessage}</p>}
+          </form> : <div><p className={styles.help}>Uma senha ainda não foi configurada para esta conta.</p><a className="p-button p-button-subtle" href="/acesso-inicial"><LockKeyhole size={17} aria-hidden="true" />Configurar senha de acesso</a></div>}
+        </div>
+      </details>
+      <AccountIdentityPanel hasPassword={hasPassword} />
+    </>}
+    {!profile && <div className={styles.card}><h2 id="profile-title">Meu perfil</h2><p className={styles.error} role="alert">{error || 'Não foi possível carregar seu perfil.'}</p><button className="p-button p-button-subtle" type="button" onClick={() => void refreshProfile()}><RefreshCw size={16} aria-hidden="true" />Tentar novamente</button></div>}
   </section>;
 }

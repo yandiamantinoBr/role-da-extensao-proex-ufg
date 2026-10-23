@@ -1,11 +1,14 @@
 'use client';
 import { useRef, useState, type FormEvent } from 'react';
-import { Check, Copy, KeyRound, LoaderCircle, Mail, Search, ShieldCheck, UserPlus, Users } from 'lucide-react';
+import { ArrowUpRight, Check, Copy, KeyRound, LoaderCircle, Mail, Search, ShieldCheck, UserPlus, Users } from 'lucide-react';
+import TeamPersonDetail from './team-person-detail';
+import styles from './team-person.module.css';
 // Server-projected directory and scoped memberships.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = Record<string, any>;
 type Props = {
     now: number;
+    onOpenOwnProfile?: () => void;
     users: Row[];
     members: Row[];
     invites: Row[];
@@ -80,14 +83,17 @@ function Membership({ member, editable, globalAdmin, projectName, mutate }: {
             </div>
             </div> : <button className="p-text-link p-text-danger" disabled={saving} onClick={() => { setRevoke(true); key.current = null; }}>Revogar este acesso</button>}</>}{error && <p className="p-inline-error" role="alert">{error}</p>}</div>;
 }
-function DirectoryUser({ user, props }: {
+function DirectoryUser({ user, props, onOpen }: {
     user: Row;
     props: Props;
+    onOpen(id:string):void;
 }) {
     const [resetUrl, setResetUrl] = useState(''), [busy, setBusy] = useState(false), [error, setError] = useState(''), [confirmBlock, setConfirmBlock] = useState(false);
     const key = useRef<string | null>(null);
     const id = user.userId ?? user.user_id;
     const isBlocked = user.status === 'blocked';
+    const isAnonymized=Boolean(user.anonymizedAt),[brokenAvatar,setBrokenAvatar]=useState('');
+    const displayName=user.displayName||user.display_name||user.email||'Integrante';
     const hasOwner = (user.members ?? []).some((m: Row) => m.role === 'owner' && !(m.revoked_at ?? m.revokedAt));
     const projectName = (id: string | null) => id ? props.projects.find(p => p.id === id)?.name || 'Projeto' : 'Toda a organização';
     async function reset() { if (busy)
@@ -118,13 +124,12 @@ function DirectoryUser({ user, props }: {
     const memberships = (user.members ?? []).filter((m: Row) => !props.selectedProjectId || !projectIdOf(m) || projectIdOf(m) === props.selectedProjectId);
     return <article className="p-card p-directory-user">
     <div className="p-directory-heading">
-    <span className="p-member-avatar">
-    <Users size={18}/>
-    </span>
-    <div>
-    <h3>{user.displayName || user.display_name || user.email || 'Integrante'}</h3>{user.email && <p>
-        <Mail size={13}/>{user.email}</p>}</div>{user.status && <span className={`p-badge ${isBlocked ? 'p-status-cancelled' : 'p-status-active'}`}>{isBlocked ? 'Bloqueado' : 'Ativo'}</span>}</div>{memberships.map((m: Row) => <Membership key={`${m.id}-${m.role}`} member={m} globalAdmin={props.globalAdmin} projectName={projectName(projectIdOf(m))} editable={m.role !== 'owner' && (props.globalAdmin || Boolean(projectIdOf(m) && props.canProject(projectIdOf(m), 'access.manage') && m.role !== 'manager'))} mutate={props.mutate}/>)}{!memberships.length && <p className="p-form-help">Sem vínculo neste contexto.</p>}{props.globalAdmin && id && <div className="p-user-admin">
-        <button className="p-text-link" disabled={busy} onClick={() => void reset()}>
+    <button type="button" className={styles.personTrigger} disabled={!id} onClick={()=>onOpen(String(id))} aria-label={`Ver perfil de ${displayName}`}>
+    <span className={styles.cardAvatar}><Users size={21} aria-hidden="true"/>{user.avatarUrl&&brokenAvatar!==user.avatarUrl&&<img src={user.avatarUrl} alt="" width={48} height={48} loading="lazy" onError={()=>setBrokenAvatar(user.avatarUrl)}/>}</span>
+    <span className={styles.personText}><strong className={styles.personName}>{displayName}</strong>{user.email&&<span className={styles.personEmail}><Mail size={13}/>{user.email}</span>}</span>
+    <ArrowUpRight size={19} className={styles.openIcon} aria-hidden="true"/>
+    </button>{user.status&&<span className={`p-badge ${isBlocked?'p-status-cancelled':'p-status-active'}`}>{isAnonymized?'Anonimizada':user.activationPending?'Ativação pendente':isBlocked?'Bloqueado':'Ativo'}</span>}</div>{memberships.map((m: Row) => <Membership key={`${m.id}-${m.role}`} member={m} globalAdmin={props.globalAdmin} projectName={projectName(projectIdOf(m))} editable={m.role !== 'owner' && (props.globalAdmin || Boolean(projectIdOf(m) && props.canProject(projectIdOf(m), 'access.manage') && m.role !== 'manager'))} mutate={props.mutate}/>)}{!memberships.length && <p className="p-form-help">Sem vínculo neste contexto.</p>}{props.globalAdmin && id && !isAnonymized && <div className="p-user-admin">
+        <button className="p-text-link" disabled={busy||user.activationPending} onClick={() => void reset()}>
         <KeyRound size={15}/>{busy ? 'Aguarde…' : user.hasPassword ? 'Gerar recuperação de senha' : 'Gerar link para definir senha'}</button>{!hasOwner && (confirmBlock ? <div className="p-inline-confirm">
             <p>{isBlocked ? 'Reativar esta conta?' : 'Bloquear esta conta impede novos acessos. O histórico será preservado.'}</p>
             <div className="p-inline">
@@ -134,10 +139,11 @@ function DirectoryUser({ user, props }: {
             </div> : <button className="p-text-link p-text-danger" disabled={busy} onClick={() => { setConfirmBlock(true); key.current = null; }}>{isBlocked ? 'Reativar conta' : 'Bloquear conta'}</button>)}</div>}{resetUrl && <CopyLink url={resetUrl} label="Link de recuperação desta conta"/>}{error && <p className="p-inline-error" role="alert">{error}</p>}</article>;
 }
 export default function TeamPanel(props: Props) {
+    const [selectedUserId,setSelectedUserId]=useState<string|null>(null);
     const [query, setQuery] = useState(''), [inviteUrl, setInviteUrl] = useState(''), [saving, setSaving] = useState(false), [error, setError] = useState('');
     const key = useRef<string | null>(null);
     const allowed = props.projects.filter(p => props.globalAdmin || props.canProject(p.id, 'access.invite'));
-    const directory: Row[] = props.users.length ? props.users : props.members.map(m => ({ email: m.email, members: [m] }));
+    const directory: Row[] = props.users.length ? props.users : props.members.map(m => ({ userId:m.user_id??m.userId,email: m.email, members: [m] }));
     const filtered = directory.filter(u => `${u.displayName ?? ''} ${u.email ?? ''}`.toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR')) && (!props.selectedProjectId || (u.members ?? []).some((m: Row) => !projectIdOf(m) || projectIdOf(m) === props.selectedProjectId)));
     async function invite(e: FormEvent<HTMLFormElement>) { e.preventDefault(); if (saving)
         return; const element = e.currentTarget, form = new FormData(element); setSaving(true); setError(''); key.current ??= crypto.randomUUID(); try {
@@ -158,7 +164,7 @@ export default function TeamPanel(props: Props) {
     <div className="p-section-heading">
     <div>
     <h2>Pessoas e acessos</h2>
-    <p>Cada pessoa usa sua conta. As funções e permissões são definidas por projeto.</p>
+    <p>Clique em uma pessoa para ver seu perfil e os dados institucionais preenchidos. As permissões são definidas por projeto.</p>
     </div>
     </div>
     <label className="p-field p-search-field">
@@ -167,7 +173,7 @@ export default function TeamPanel(props: Props) {
     <Search size={17}/>
     <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Nome ou e-mail"/>
     </div>
-    </label>{filtered.length ? <div className="p-directory">{filtered.map((u, index) => <DirectoryUser key={u.userId ?? `${u.email}-${index}`} user={u} props={props}/>)}</div> : <div className="p-empty">
+    </label>{filtered.length ? <div className="p-directory">{filtered.map((u, index) => <DirectoryUser key={u.userId ?? `${u.email}-${index}`} user={u} props={props} onOpen={setSelectedUserId}/>)}</div> : <div className="p-empty">
         <Users size={28}/>
         <h3>Nenhuma pessoa neste contexto</h3>
         <p>Busque outro nome ou gere um convite para integrar a equipe.</p>
@@ -216,5 +222,5 @@ export default function TeamPanel(props: Props) {
                 </div>
                 <span className="p-badge">{revoked ? 'Revogado' : accepted ? 'Aceito' : expired ? 'Expirado' : 'Pendente'}</span>{!revoked && !accepted && (props.globalAdmin || props.canProject(projectIdOf(invite), 'access.manage')) && <button className="p-button p-button-danger" onClick={() => void props.mutate('invite.revoke', { id: invite.id, operationKey: crypto.randomUUID() }).catch(e => setError(e instanceof Error ? e.message : 'Não foi possível revogar o convite.'))}>Revogar</button>}</div>;
             })}</div>
-        </section>}</>;
+        </section>}{selectedUserId&&<TeamPersonDetail key={`${selectedUserId}:${props.selectedProjectId||''}`} userId={selectedUserId} projectId={props.selectedProjectId} projects={props.projects.map(p=>({id:p.id,name:p.name}))} onClose={()=>setSelectedUserId(null)} onOpenOwnProfile={props.onOpenOwnProfile}/>}</>;
 }

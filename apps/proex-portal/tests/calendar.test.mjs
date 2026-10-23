@@ -84,6 +84,19 @@ test('calendar uses real dates, scopes all categories and projects, and omits pe
   assert.throws(() => calendar.calendarRange('2026-02-30', '2026-03-01'), error => error.status === 400);
 });
 
+test('organizational unit filter narrows every category and the ICS download without enlarging project access',async t=>{
+  const f=fixture(t),owner=await actor(f,'owner'),manager=await actor(f,'manager');
+  for(const suffix of ['a','b']){f.insert('organizational_units',{id:`unit-${suffix}`,name:`Unit ${suffix}`,kind:'academic',created_at:timestamp,updated_at:timestamp});f.sqlite.prepare('UPDATE projects SET unit_id=? WHERE id=?').run(`unit-${suffix}`,`project-${suffix}`);}
+  const result=await calendar.calendarEntries(f.db,owner,{range,unitId:'unit-a'});
+  assert.ok(result.entries.length>=6);assert.ok(result.entries.every(entry=>entry.projectId==='project-a'));
+  assert.deepEqual((await calendar.calendarEntries(f.db,manager,{range,unitId:'unit-b'})).entries,[]);
+  assert.deepEqual((await calendar.calendarEntries(f.db,owner,{range,projectId:'project-a',unitId:'unit-b'})).entries,[]);
+  observe(f,f.member('viewer'));
+  const download=await route.GET(new Request('https://portal.example.test/api/calendar?from=2026-10-01&to=2026-10-31&unitId=unit-b&format=ics'));
+  assert.equal(download.status,200);assert.ok(!(await download.text()).includes('BEGIN:VEVENT'));
+  await assert.rejects(calendar.calendarEntries(f.db,owner,{range,unitId:'invalid/unit'}),error=>error.status===400);
+});
+
 test('category access follows domain capability and revoked memberships stop reads', async t => {
   const f = fixture(t), inventory = await actor(f, 'inventory'), viewer = await actor(f, 'viewer'), operator = await actor(f, 'operator');
   assert.deepEqual((await calendar.calendarEntries(f.db, inventory, { range })).availableCategories, ['materials', 'consumption']);

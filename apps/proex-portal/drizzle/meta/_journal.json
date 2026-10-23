@@ -36,6 +36,20 @@
       "when": 1792762911310,
       "tag": "0004_v4_metadata",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1792765681451,
+      "tag": "0005_v5_organizational_units",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1792770000000,
+      "tag": "0006_v6_scope_and_sync_tokens",
+      "breakpoints": true
     }
   ]
 }

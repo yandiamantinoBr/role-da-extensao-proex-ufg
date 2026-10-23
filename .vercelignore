@@ -1,0 +1,9 @@
+**/node_modules
+apps/proex-portal/.wrangler
+apps/proex-portal/.sites-runtime
+apps/proex-portal/.data*
+apps/proex-portal/dist
+apps/proex-portal/.deploy
+apps/proex-portal/.output
+apps/proex-portal/.dev.vars
+**/.env*

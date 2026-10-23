@@ -3,11 +3,7 @@ import {getActor} from '@/lib/access';
 import {database} from '@/lib/platform';
 import {boundedJson} from '@/lib/http';
 import {HttpError} from '@/lib/errors';
-import {syncStatus,configureSync,startSyncRun,finishSyncRun} from '@/lib/sync/control';
-import {exportPortablePage} from '@/lib/sync/portable';
-import {applyPortableChanges} from '@/lib/sync/apply';
-import {seedCatalog,catalogPreview} from '@/lib/sync/catalog';
-import {listSyncAttachments,createAttachmentTicket,acknowledgeAttachmentExport,acknowledgeAttachmentCleanup} from '@/lib/sync/attachments';
+import {callSyncTool} from '@/lib/sync/tools';
 export const dynamic='force-dynamic';
 const schema=(properties:Record<string,unknown>,required:string[]=[])=>({type:'object',properties,required,additionalProperties:false});
 const str={type:'string'};
@@ -40,7 +36,7 @@ export async function POST(request:Request){let id:unknown=null;try{
   const name=params.name;
   // Native identity is supplied by Sites dispatch; no browser cookie, email claim,
   // OWNER_EMAIL bootstrap, service bypass bearer or sheet cell grants owner access.
-  const value=name==='proex_sync_describe'?await syncStatus(db,actor):name==='proex_sync_read'?await exportPortablePage(db,actor,args as any):name==='proex_sync_apply'?await applyPortableChanges(db,actor,args as any):name==='proex_sync_configure'?await configureSync(db,actor,args):name==='proex_sync_run_start'?await startSyncRun(db,actor,args):name==='proex_sync_run_finish'?await finishSyncRun(db,actor,args):name==='proex_catalog_seed'?await seedCatalog(db,actor):name==='proex_catalog_preview'?(await syncStatus(db,actor),catalogPreview()):name==='proex_sync_attachment_list'?await listSyncAttachments(db,actor,args):name==='proex_sync_attachment_ticket'?await createAttachmentTicket(db,actor,{kind:args.kind,id:args.id,origin:new URL(request.url).origin}):name==='proex_sync_attachment_ack'?await acknowledgeAttachmentExport(db,actor,args as any):name==='proex_sync_attachment_cleanup'?await acknowledgeAttachmentCleanup(db,actor,args as any):undefined;
+  const value=await callSyncTool(db,actor,name,args,new URL(request.url).origin);
   if(value===undefined)throw new HttpError(400,'Ferramenta desconhecida.','unknown_tool');
   result={content:[{type:'text',text:JSON.stringify(value)}]};
  }else return Response.json({jsonrpc:'2.0',id,error:{code:-32601,message:'Method not found'}},{status:400});

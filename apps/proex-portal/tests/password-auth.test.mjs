@@ -12,7 +12,7 @@ import ts from 'typescript';
 // are replaced. These synthetic fixtures never write to a deployed database.
 const temporary = mkdtempSync(join(tmpdir(), 'proex-password-auth-'));
 writeFileSync(join(temporary, 'package.json'), '{"type":"module"}');
-symlinkSync(new URL('../node_modules/', import.meta.url), join(temporary, 'node_modules'), 'dir');
+symlinkSync(new URL('../node_modules/', import.meta.url), join(temporary, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir');
 const replacements = new Map([
   ['@/db/auth-schema', './auth-schema.js'],
   ['@/app/chatgpt-auth', './native-auth.js'],
@@ -28,12 +28,12 @@ function compile(source, target) {
   writeFileSync(join(temporary, `${target}.js`), output);
 }
 compile('../db/auth-schema.ts', 'auth-schema');
-for (const name of ['password-auth', 'session', 'access', 'database', 'errors', 'http', 'rate-limit', 'mutations', 'login-identifiers', 'privacy']) compile(`../lib/${name}.ts`, name);
+for (const name of ['password-auth', 'session', 'access', 'database', 'errors', 'http', 'rate-limit', 'mutations', 'login-identifiers', 'privacy', 'owner-setup']) compile(`../lib/${name}.ts`, name);
 compile('../app/api/account/route.ts', 'account-route');
 compile('../app/api/auth/[...all]/route.ts', 'auth-route');
 writeFileSync(join(temporary, 'request-headers.js'), 'export async function headers(){return globalThis.__proexPasswordTestContext.headers;}');
 writeFileSync(join(temporary, 'native-auth.js'), 'export async function getChatGPTUser(){return globalThis.__proexPasswordTestContext.native ?? null;}');
-writeFileSync(join(temporary, 'platform.js'), 'export function database(){return globalThis.__proexPasswordTestContext.db;} export function ownerEmail(){return globalThis.__proexPasswordTestContext.ownerEmail;} export function inviteSecret(){return globalThis.__proexPasswordTestContext.runtimeEnv.BETTER_AUTH_SECRET;} export function bucket(){return globalThis.__proexPasswordTestContext.storage;}');
+writeFileSync(join(temporary, 'platform.js'), 'export function database(){return globalThis.__proexPasswordTestContext.db;} export function ownerEmail(){return globalThis.__proexPasswordTestContext.ownerEmail;} export function inviteSecret(){return globalThis.__proexPasswordTestContext.runtimeEnv.BETTER_AUTH_SECRET;} export function bucket(){return globalThis.__proexPasswordTestContext.storage;} export function setupToken(){return globalThis.__proexPasswordTestContext.setupToken;} export function isStandalone(){return true;}');
 writeFileSync(join(temporary, 'configured-auth.js'), `
  import {passwordAuth as actual} from './password-auth.js';
  export function passwordAuth(db,options={}){return actual(db,{...options,runtimeEnv:globalThis.__proexPasswordTestContext.runtimeEnv});}
@@ -644,4 +644,35 @@ test('blocking an account immediately before an identifier upsert prevents chang
   assert.equal((await accountRequest(f,{...input,value:'depois-bloqueio'},{cookie})).status,403);
   assert.equal(f.sqlite.prepare("SELECT display_hint FROM login_identifiers WHERE user_id='identifier-block-race'").get().display_hint,'antes-bloqueio');
   assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM audit WHERE action='account.identifier-set'").get().n,1);
+});
+
+test('standalone owner setup needs the runtime token, the configured email and no prior global owner', async t => {
+  const f = fixture(t), setupToken = 'tok_' + crypto.randomUUID().replaceAll('-', '');
+  const input = { action: 'setupOwner', setupToken, email: 'Responsavel@Example.test', name: 'Responsável', password: originalPassword };
+  assert.equal((await accountRequest(f, input)).status, 404, 'disabled without SETUP_TOKEN and OWNER_EMAIL');
+  f.context.setupToken = setupToken; f.context.ownerEmail = 'responsavel@example.test';
+  assert.equal((await accountRequest(f, { ...input, setupToken: setupToken + 'x' })).status, 403);
+  assert.equal((await accountRequest(f, { ...input, email: 'outra@example.test' })).status, 403);
+  assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM auth_user').get().n, 0, 'rejected attempts create no credential');
+  const created = await accountRequest(f, input);
+  assert.equal(created.status, 200);
+  f.context.headers = new Headers({ cookie: cookieFrom(created) });
+  const user = await getPortalUser();
+  assert.equal(user.email, 'responsavel@example.test');
+  const actor = await getActor(f.db, user);
+  requireCapability(actor, 'organization.manage', null);
+  assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM audit WHERE action='owner.bootstrap'").get().n, 1);
+  const again = await accountRequest(f, { ...input, email: 'responsavel@example.test' });
+  assert.equal(again.status, 409, 'the flow closes permanently after the first owner');
+  assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM members WHERE role='owner'").get().n, 1);
+});
+
+test('standalone owner setup never promotes when a global owner already existed', async t => {
+  const f = fixture(t), setupToken = 'tok_' + crypto.randomUUID().replaceAll('-', '');
+  f.context.setupToken = setupToken; f.context.ownerEmail = 'responsavel@example.test';
+  f.seedPrincipal('previous-owner', 'antigo@example.test', { role: 'owner' });
+  f.sqlite.prepare("UPDATE members SET revoked_at=? WHERE user_id='previous-owner'").run(new Date().toISOString());
+  const response = await accountRequest(f, { action: 'setupOwner', setupToken, email: 'responsavel@example.test', name: 'Nova', password: originalPassword });
+  assert.equal(response.status, 409);
+  assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM auth_user').get().n, 0);
 });
