@@ -1,5 +1,7 @@
 # Entrega V6 — portabilidade, planilha ligada e hospedagem própria
 
+> **Produção:** <https://proex-gestao.vercel.app> (Vercel + Supabase, organização “PROEX UFG”). Guia: `apps/proex-portal/docs/HOSPEDAGEM-VERCEL.md`.
+
 Data: 23/10/2026. Branch `feat/proex-v6-portabilidade`, construída sobre o checkpoint V5 (`feat/proex-v5`), que estava incompleto quando o Codex atingiu o limite de uso. A versão publicada no ChatGPT Sites continua sendo a V4 até uma nova publicação.
 
 ## O que mudou
@@ -23,6 +25,18 @@ Data: 23/10/2026. Branch `feat/proex-v6-portabilidade`, construída sobre o chec
 - Portal local em modo hospedagem própria: configuração inicial, cabeçalhos forjados recusados em `/acesso-inicial`, `/api/account` e `/mcp`, chave inválida recusada no conector.
 - `scripts/apps-script-harness.mjs` executou o `.gs` real contra o portal local: exportação de todas as tabelas, edição de célula aplicada com controle de versão, entrada de estoque pela aba Operações, conflito detectado e registrado, cópia de foto para o Drive com recibo aceito.
 - Dados reais da planilha (10 projetos, 4 tipos, 10 links, 4 editais, 11 materiais) importados num banco local pelo importador.
+
+## Revisão independente e correções (V6.1)
+
+Uma revisão independente do código encontrou 16 pontos. Todos foram corrigidos:
+
+- **Backup**: o backup do D1 só é gerado criptografado (`BACKUP_PASSPHRASE`), porque o repositório é público.
+- **Conector**: a chave fica nas propriedades do usuário que conectou. A pasta de anexos é criada no Meu Drive e conferida contra compartilhamento. As execuções respeitam o limite de tempo do Apps Script. Cada aba grava sua própria base de comparação. As edições enviam a linha completa (campanhas exigem isso). Valores inválidos viram conflito com o conteúdo desejado, em vez de nulo silencioso. O retorno das operações é localizado pela chave. Uma linha inválida não trava as demais. Abas editadas durante a sincronização não são sobrescritas.
+- **Importador**: linhas inválidas são listadas e nunca descartadas em silêncio. Campos omitidos por privacidade recebem um marcador de importação. Os saldos são recalculados pelos movimentos.
+- **Deploy Cloudflare**: `PROEX_STANDALONE` também está no `wrangler.jsonc`. A ausência de R2 falha o deploy. Os segredos ficam visíveis só no passo de deploy.
+- **Configuração inicial**: a credencial órfã é removida se o vínculo falhar, e o limite de tentativas é por IP.
+- **Interface**: aviso sobre quem pode editar a planilha; o botão legado da rotina do Codex foi mantido.
+- **Testes**: um teste de chave intermitente foi corrigido; há testes do adaptador Node (concorrência entre instâncias).
 
 ## O que ainda depende de ação humana
 

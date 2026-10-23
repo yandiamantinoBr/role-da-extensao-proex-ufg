@@ -6,7 +6,7 @@ Este diretório contém a implementação V4 do portal. O [Manual de operação]
 
 ## Arquitetura desta implementação
 
-**Duas hospedagens, um código.** O portal roda no ChatGPT Sites e também numa conta Cloudflare própria da PROEX, publicada pelo GitHub Actions (`.github/workflows/portal-deploy.yml`), com banco D1 e arquivos R2 independentes de conta pessoal. O passo a passo está em [Hospedagem própria](docs/HOSPEDAGEM-PROPRIA.md). Na hospedagem própria (`PROEX_STANDALONE=1`) o Worker descarta cabeçalhos de identidade do Sites e o primeiro responsável é criado em `/configuracao-inicial`, com `SETUP_TOKEN` e `OWNER_EMAIL`.
+**Hospedagem atual: Vercel + Supabase** ([guia](docs/HOSPEDAGEM-VERCEL.md)), com o build Node (`pnpm build:node`) e o SQLite do portal persistido no Postgres por `platform-node/`. **Alternativas com o mesmo código:** ChatGPT Sites e uma conta Cloudflare própria da PROEX, publicada pelo GitHub Actions (`.github/workflows/portal-deploy.yml`), com banco D1 e arquivos R2 independentes de conta pessoal. O passo a passo está em [Hospedagem própria](docs/HOSPEDAGEM-PROPRIA.md). Na hospedagem própria (`PROEX_STANDALONE=1`) o Worker descarta cabeçalhos de identidade do Sites e o primeiro responsável é criado em `/configuracao-inicial`, com `SETUP_TOKEN` e `OWNER_EMAIL`.
 
 O portal usa o runtime do Sites, banco Cloudflare D1 e armazenamento privado Cloudflare R2. O login por e-mail e senha usa Better Auth, com sessões e credenciais no próprio D1. O manifesto `.openai/hosting.json` identifica o projeto do portal e declara os bindings lógicos `DB` e `BUCKET`. Ele deve ser preservado ao atualizar esse Site. O portal não usa o banco de outro projeto da PROEX ou do Kino Campus.
 
