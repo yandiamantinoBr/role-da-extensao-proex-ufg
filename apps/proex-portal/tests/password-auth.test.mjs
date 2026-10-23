@@ -12,7 +12,7 @@ import ts from 'typescript';
 // are replaced. These synthetic fixtures never write to a deployed database.
 const temporary = mkdtempSync(join(tmpdir(), 'proex-password-auth-'));
 writeFileSync(join(temporary, 'package.json'), '{"type":"module"}');
-symlinkSync(new URL('../node_modules/', import.meta.url), join(temporary, 'node_modules'), 'dir');
+symlinkSync(new URL('../node_modules/', import.meta.url), join(temporary, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir');
 const replacements = new Map([
   ['@/db/auth-schema', './auth-schema.js'],
   ['@/app/chatgpt-auth', './native-auth.js'],

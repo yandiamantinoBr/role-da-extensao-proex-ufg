@@ -28,9 +28,12 @@ export const projects = sqliteTable('projects', {
   typeId: text('type_id').references(() => projectTypes.id),
   parentId: text('parent_id').references((): AnySQLiteColumn => projects.id),
   unitId: text('unit_id').references(() => organizationalUnits.id), prizesEnabled: integer('prizes_enabled').notNull().default(0),
+  // internal: ação conduzida pela equipe PROEX; external: unidade acadêmica, órgão ou parceiro.
+  scope: text('scope').notNull().default('internal'),
 }, t => [
   index('projects_parent_idx').on(t.parentId), index('projects_unit_idx').on(t.unitId),
   check('projects_prizes_enabled_check', sql`${t.prizesEnabled} IN (0,1)`),
+  check('projects_scope_check', sql`${t.scope} IN ('internal','external')`),
   check('projects_status_check', sql`${t.status} IN ('active','archived')`),
   check('projects_lifecycle_check', sql`${t.lifecycle} IN ('active','past','catalog')`),
   check('projects_version_check', sql`${t.version} > 0`),
@@ -359,6 +362,13 @@ export const syncReceipts = sqliteTable('sync_receipts', {
   operationKey: text('operation_key').primaryKey(), fingerprint: text('fingerprint').notNull(), entityId: text('entity_id'),
   resultJson: text('result_json').notNull(), createdAt: text('created_at').notNull(),
 });
+// Chaves do conector da planilha (Apps Script). Só o hash é guardado; cada uso
+// reavalia se a pessoa ainda é responsável global ativa.
+export const syncTokens = sqliteTable('sync_tokens', {
+  id: text('id').primaryKey(), tokenHash: text('token_hash').notNull(), userId: text('user_id').notNull(),
+  label: text('label').notNull().default(''), createdAt: text('created_at').notNull(), expiresAt: text('expires_at').notNull(),
+  revokedAt: text('revoked_at'), lastUsedAt: text('last_used_at'),
+}, t => [uniqueIndex('sync_tokens_hash_unique').on(t.tokenHash), index('sync_tokens_user_idx').on(t.userId)]);
 export const syncConflicts = sqliteTable('sync_conflicts', {
   id: text('id').primaryKey(), connectionId: text('connection_id').references(() => syncConnections.id), runId: text('run_id').references(() => syncRuns.id),
   operationKey: text('operation_key').notNull(), entityType: text('entity_type').notNull(), entityId: text('entity_id'),
