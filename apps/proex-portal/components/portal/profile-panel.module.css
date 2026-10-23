@@ -59,3 +59,14 @@
 .retry{display:inline-flex;align-items:center;gap:8px;justify-self:start}
 @media(max-width:800px){.hero{grid-template-columns:120px minmax(0,1fr);gap:22px}.avatar{width:116px;height:116px;border-radius:23px}.summary{grid-template-columns:1fr;gap:15px;margin-top:20px}.photoActions button{font-size:11px}.card{padding:23px}.grid{gap:18px}}
 @media(max-width:560px){.profileRoot{gap:17px}.card{padding:21px 18px;border-radius:17px}.hero{grid-template-columns:1fr;gap:20px}.avatarColumn{grid-template-columns:112px minmax(0,1fr);justify-items:stretch;align-items:center;gap:16px}.avatar{width:112px;height:112px}.photoActions{align-content:center}.photoActions button{font-size:12px}.heroHeading{gap:14px}.heroHeading>button{font-size:12px}.name{font-size:27px}.summary{grid-template-columns:1fr;gap:16px}.grid{grid-template-columns:1fr;gap:19px}.wide{grid-column:auto}.field input,.field select{font-size:16px;min-height:49px}.sectionHeading h2,.sectionHeading h3{font-size:19px}.actions{align-items:stretch}.actions>button{flex:1 1 180px;justify-content:center}.disclosure>summary{padding:17px 16px;min-height:66px}.disclosureBody{padding:20px 16px}.choice{font-size:14px;gap:11px}.notice,.success,.error{font-size:13px}.photoHelp{font-size:12px}}
+.cameraDialog{margin:auto;max-height:calc(100dvh - 24px);overflow:auto;border:0;border-radius:18px;padding:20px;width:min(560px,calc(100vw - 24px));background:var(--surface);color:var(--ink);box-shadow:0 24px 80px #190b2955}
+.cameraDialog::backdrop{background:#1a0f24b3;backdrop-filter:blur(2px)}
+.cameraHead{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px}
+.cameraHead h3{display:flex;align-items:center;gap:8px;font-size:16px;margin:0}
+.cameraStage{position:relative;aspect-ratio:1/1;border-radius:14px;overflow:hidden;background:#120a18;display:flex;align-items:center;justify-content:center}
+.cameraStage video,.cameraStage img{width:100%;height:100%;object-fit:cover}
+.mirrored{transform:scaleX(-1)}
+.cameraFrame{position:absolute;inset:9%;border-radius:50%;box-shadow:0 0 0 9999px #00000045;border:2px solid #ffffffb0;pointer-events:none}
+.cameraStatus{position:absolute;inset:auto 16px;color:#f4eaf9;font-size:13px;line-height:1.7;text-align:center;display:flex;gap:8px;align-items:center;justify-content:center}
+.cameraHint{font-size:11px;line-height:1.7;color:var(--text-secondary);margin:10px 0 0}
+.cameraActions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-top:14px}

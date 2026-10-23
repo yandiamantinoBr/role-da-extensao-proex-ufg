@@ -16,6 +16,8 @@ for (const dependency of ['react', 'react/jsx-runtime', 'lucide-react']) {
 }
 const identityPanel = `data:text/javascript;base64,${Buffer.from('export default function IdentityPanel(){return null;}').toString('base64')}`;
 source = source.replaceAll("from './account-identity-panel'", `from ${JSON.stringify(identityPanel)}`).replaceAll('from "./account-identity-panel"', `from ${JSON.stringify(identityPanel)}`);
+const webcam = `data:text/javascript;base64,${Buffer.from('export default function WebcamCapture(){return null;} export function prefersNativeCamera(){return true;}').toString('base64')}`;
+source = source.replace(/from (['"])\.\/webcam-capture\1/g, `from ${JSON.stringify(webcam)}`);
 // CSS modules are presentation only; the photo pipeline is tested without a bundler.
 const cssModule = `data:text/javascript;base64,${Buffer.from('export default new Proxy({}, { get: (_target, key) => String(key) });').toString('base64')}`;
 source = source.replace(/from (['"])\.\/[^'"]+\.module\.css\1/g, `from ${JSON.stringify(cssModule)}`);

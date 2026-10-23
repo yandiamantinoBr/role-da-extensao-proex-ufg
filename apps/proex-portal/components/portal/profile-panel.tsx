@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'r
 import { Camera, Check, ImagePlus, LoaderCircle, LockKeyhole, RefreshCw, UserRound } from 'lucide-react';
 import AccountIdentityPanel from './account-identity-panel';
 import styles from './profile-panel.module.css';
+import WebcamCapture, { prefersNativeCamera } from './webcam-capture';
 
 type Affiliation = '' | 'student' | 'technical' | 'faculty' | 'scholar' | 'intern' | 'collaborator' | 'other';
 type RegistrationType = '' | 'siape' | 'student' | 'other';
@@ -167,6 +168,8 @@ export default function ProfilePanel({ onUpdated }: Props) {
   const [passwordBusy, setPasswordBusy] = useState(false), [passwordError, setPasswordError] = useState(''), [passwordMessage, setPasswordMessage] = useState('');
   const previewRef = useRef<string | null>(null), cameraRef = useRef<HTMLInputElement>(null), galleryRef = useRef<HTMLInputElement>(null);
   const selection = useRef(0), profileBusy = useRef(false), passwordPending = useRef(false);
+  const [webcam, setWebcam] = useState(false);
+  function takePhoto() { if (prefersNativeCamera()) cameraRef.current?.click(); else setWebcam(true); }
   function applyProfile(data: Payload) { setProfile(data.profile); setDraft(profileDraft(data.profile)); setHasPassword(data.hasPassword); }
   async function refreshUnits() {
     setUnitsLoading(true); setUnitsError('');
@@ -205,9 +208,12 @@ export default function ProfilePanel({ onUpdated }: Props) {
     selection.current++; releasePhotoUrl(previewRef.current); previewRef.current = null;
     setPreview(null); setPhoto(null); setMessage('');
   }
-  async function choosePhoto(event: ChangeEvent<HTMLInputElement>) {
+  function choosePhoto(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]; event.target.value = '';
-    if (!file || profileBusy.current || passwordPending.current) return;
+    if (file) void processPhoto(file);
+  }
+  async function processPhoto(file: File) {
+    if (profileBusy.current || passwordPending.current) return;
     const request = ++selection.current;
     profileBusy.current = true; setBusy(true); setPreparing(true); setError(''); setMessage('');
     try {
@@ -295,7 +301,7 @@ export default function ProfilePanel({ onUpdated }: Props) {
             {avatar ? <img src={avatar} alt={preview ? 'Prévia da sua nova foto' : 'Sua foto de perfil'} width={144} height={144} /> : <UserRound size={52} aria-hidden="true" />}
           </div>
           <div className={styles.photoActions}>
-            <button type="button" className="p-button p-button-subtle" disabled={disabled} onClick={() => cameraRef.current?.click()}><Camera size={16} aria-hidden="true" />Tirar foto</button>
+            <button type="button" className="p-button p-button-subtle" disabled={disabled} onClick={takePhoto}><Camera size={16} aria-hidden="true" />Tirar foto</button>
             <button type="button" className="p-button p-button-subtle" disabled={disabled} onClick={() => galleryRef.current?.click()}><ImagePlus size={16} aria-hidden="true" />Escolher foto</button>
           </div>
         </div>
@@ -312,6 +318,7 @@ export default function ProfilePanel({ onUpdated }: Props) {
         </div>
         <input ref={cameraRef} type="file" accept="image/*" capture="user" hidden onChange={choosePhoto} />
         <input ref={galleryRef} type="file" accept="image/*" hidden onChange={choosePhoto} />
+        {webcam && <WebcamCapture onCapture={file => void processPhoto(file)} onClose={() => setWebcam(false)} onFallback={() => galleryRef.current?.click()} />}
       </div>
       <div className={styles.card}>
         <div className={styles.sectionHeading}><UserRound size={23} aria-hidden="true" /><div><h3>Dados do perfil</h3><p>Seu nome identifica você na equipe. Os dados institucionais e de contato são opcionais.</p></div></div>

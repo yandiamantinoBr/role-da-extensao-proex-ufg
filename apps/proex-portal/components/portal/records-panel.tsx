@@ -1,8 +1,10 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
-import { Camera, Check, ClipboardList, ExternalLink, FilePlus2, ImagePlus, LoaderCircle, Paperclip, Plus, RefreshCw, Search, Trash2, Upload } from 'lucide-react';
+import { BarChart3, Camera, Check, ClipboardList, Download, ExternalLink, FilePlus2, ImagePlus, LoaderCircle, Paperclip, Plus, RefreshCw, Search, Trash2, Upload } from 'lucide-react';
 import { useFormDraft, DraftNotice } from './use-form-draft';
+import styles from './records-panel.module.css';
+import { download, toCsv } from './report-export';
 
 type Row = Record<string, unknown>;
 type Kind = 'observation' | 'maintenance' | 'distribution' | 'consumption' | 'project' | 'material' | 'loan';
@@ -31,6 +33,11 @@ const kinds: { value: Kind; label: string; capability: string }[] = [
 const kindLabel = (kind: Kind) => kinds.find(value => value.value === kind)?.label ?? kind;
 const text = (row: Row, key: string) => typeof row[key] === 'string' ? row[key] as string : '';
 const noWrite = () => false;
+const KIND_TONES: Record<Kind, number> = { observation: 1, maintenance: 2, distribution: 3, consumption: 4, project: 5, material: 6, loan: 7 };
+const SHORT_MONTHS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+const MONTH_FORMAT = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', month: 'long', year: 'numeric' });
+function monthTitle(month: string): string { const label = MONTH_FORMAT.format(new Date(`${month}-15T12:00:00Z`)); return label.charAt(0).toUpperCase() + label.slice(1); }
+function monthKey(value: string): string { const date = new Date(value); return Number.isFinite(date.getTime()) ? new Date(date.getTime() - 3 * 3600000).toISOString().slice(0, 7) : ''; }
 function dateTime(value: string): string {
   const date = new Date(value);
   return Number.isFinite(date.getTime()) ? new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' }).format(date) : 'Data indisponível';
@@ -278,7 +285,11 @@ export default function RecordsPanel({ projects: sourceProjects, items, loans, c
   }
   const normalizedSearch = search.trim().toLocaleLowerCase('pt-BR');
   const shown = records.filter(record => (!category || record.kind === category) && (!normalizedSearch || `${record.title} ${record.body}`.toLocaleLowerCase('pt-BR').includes(normalizedSearch)));
-  const projectName = (id: string) => projects.find(project => project.id === id)?.name ?? 'Projeto';
+  const projectName = (id: string) => String(projects.find(project => project.id === id)?.name ?? 'Projeto');
+  const kindCounts = new Map<string, number>(); for (const record of records) kindCounts.set(record.kind, (kindCounts.get(record.kind) ?? 0) + 1);
+  const groups: [string, Entry[]][] = []; for (const record of shown) { const key = monthKey(record.occurred_at); const last = groups[groups.length - 1]; if (last && last[0] === key) last[1].push(record); else groups.push([key, [record]]); }
+  const monthMap = new Map<string, number>(); for (const record of records) { const key = monthKey(record.occurred_at); if (key) monthMap.set(key, (monthMap.get(key) ?? 0) + 1); }
+  const monthTotals = [...monthMap].sort((a, b) => a[0].localeCompare(b[0])).slice(-12), monthMax = Math.max(1, ...monthTotals.map(([, total]) => total));
   const itemName = (id: string | null) => { const item = items.find(value => text(value, 'id') === id); return item ? text(item, 'name') : ''; };
   function entryDetails(record: Entry) {
     return <>
@@ -298,14 +309,12 @@ export default function RecordsPanel({ projects: sourceProjects, items, loans, c
   return <div style={{ display: 'grid', gap: 20 }}>
     <section className="p-card" aria-labelledby="records-title">
       <div className="p-row-between" style={{ gap: 16, flexWrap: 'wrap', marginBottom: 20 }}><div style={{ display: 'flex', gap: 12, alignItems: 'center' }}><span className="p-icon-tile"><ClipboardList size={22} aria-hidden="true" /></span><div><h2 id="records-title" style={{ margin: '0 0 5px', fontSize: 21 }}>Registros e documentos</h2><p className="p-form-help" style={{ margin: 0 }}>Histórico dos projetos, materiais e empréstimos, com anexos privados.</p></div></div>{!!writableProjects.length && !open && <button type="button" className="p-button p-button-primary" onClick={begin} disabled={existingPending}><Plus size={17} />Novo registro</button>}</div>
-      <form onSubmit={applyFilters}>
-        <div className="p-form-grid">
-          <label className="p-field"><span>Projeto</span><select value={filterProject} onChange={event => setFilterProject(event.target.value)}><option value="">Todos os projetos permitidos</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
-          <label className="p-field"><span>Data inicial</span><input type="date" min="2000-01-01" max="2200-12-31" value={from} onChange={event => setFrom(event.target.value)} /></label>
-          <label className="p-field"><span>Data final (inclusive)</span><input type="date" min={from || '2000-01-01'} max="2200-12-31" value={to} onChange={event => setTo(event.target.value)} /></label>
-        </div>
-        <p className="p-form-help">O filtro por dias e o formulário usam o fuso deste aparelho. As datas da lista aparecem no horário de Brasília.</p>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}><button type="submit" className="p-button p-button-primary" disabled={loading || existingPending}><Search size={16} />Consultar período</button><button type="button" className="p-button p-button-subtle" disabled={loading || existingPending} onClick={refresh}><RefreshCw size={16} />Atualizar consulta</button></div>
+      <form onSubmit={applyFilters} className={styles.filterBar}>
+        <label className="p-field"><span>Projeto</span><select value={filterProject} onChange={event => setFilterProject(event.target.value)}><option value="">Todos os projetos permitidos</option>{projects.map(project => <option key={project.id as string} value={project.id as string}>{project.name as string}</option>)}</select></label>
+        <label className="p-field"><span>De</span><input type="date" min="2000-01-01" max="2200-12-31" value={from} onChange={event => setFrom(event.target.value)} /></label>
+        <label className="p-field"><span>Até (inclusive)</span><input type="date" min={from || '2000-01-01'} max="2200-12-31" value={to} onChange={event => setTo(event.target.value)} /></label>
+        <div className={styles.filterActions}><button type="submit" className="p-button p-button-primary" disabled={loading || existingPending}><Search size={16} />Consultar</button><button type="button" className="p-button p-button-subtle" aria-label="Atualizar consulta" title="Atualizar consulta" disabled={loading || existingPending} onClick={refresh}><RefreshCw size={16} /></button>{(from || to || filterProject) && <button type="button" className="p-button p-button-subtle" disabled={loading || existingPending} onClick={() => { setFrom(''); setTo(''); setFilterProject(''); setLoading(true); setFilters({ projectId: '', from: '', to: '' }); setReload(value => value + 1); }}>Limpar</button>}</div>
+        <p className={styles.filterHelp}>O filtro por dias usa o fuso deste aparelho; a lista mostra o horário de Brasília.</p>
         {existingPending && <p role="status" className="p-form-help">Confirme os anexos na lista antes de consultar outro período ou criar um novo registro.</p>}
       </form>
       {readError && <p className="p-inline-error" role="alert">{readError}</p>}
@@ -336,10 +345,18 @@ export default function RecordsPanel({ projects: sourceProjects, items, loans, c
     </section>}
 
     <section className="p-card" aria-labelledby="records-list-title" aria-busy={loading}>
-      <div className="p-row-between" style={{ gap: 12, flexWrap: 'wrap', marginBottom: 18 }}><div><h3 id="records-list-title" style={{ margin: '0 0 6px' }}>Histórico consultado</h3><p className="p-form-help" style={{ margin: 0 }}>{loading ? 'Consultando registros…' : `${shown.length} de ${records.length} registros carregados`}</p></div></div>
-      <div className="p-form-grid" style={{ marginBottom: 16 }}><label className="p-field"><span>Categoria nos resultados</span><select value={category} disabled={existingPending} onChange={event => setCategory(event.target.value)}><option value="">Todas as categorias</option>{kinds.map(value => <option key={value.value} value={value.value}>{value.label}</option>)}</select></label><label className="p-field"><span>Buscar no título e na descrição carregados</span><input type="search" value={search} disabled={existingPending} onChange={event => setSearch(event.target.value)} placeholder="Digite uma palavra" /></label></div>
+      <div className={styles.historyHead}><div><h3 id="records-list-title">Histórico</h3><p className="p-form-help" style={{ margin: 0 }}>{loading ? 'Consultando registros…' : `${shown.length} de ${records.length} registros carregados${filters.from || filters.to ? ' no período escolhido' : ''}`}</p></div>
+        <div className={styles.historyActions}><button type="button" className="p-button p-button-subtle" onClick={() => window.location.assign('/?module=reports')}><BarChart3 size={16} />Central de relatórios</button><button type="button" className="p-button p-button-subtle" disabled={!shown.length} onClick={() => download(`proex-registros-${new Date().toISOString().slice(0, 10)}.csv`, toCsv([{ key: 'data', label: 'Data (Brasília)' }, { key: 'projeto', label: 'Projeto' }, { key: 'categoria', label: 'Categoria' }, { key: 'titulo', label: 'Título' }, { key: 'descricao', label: 'Descrição' }, { key: 'anexos', label: 'Anexos', numeric: true }], shown.map(record => ({ data: dateTime(record.occurred_at), projeto: projectName(record.project_id), categoria: kindLabel(record.kind), titulo: record.title, descricao: record.body, anexos: record.attachments.length })), (row, key) => row[key]))}><Download size={16} />Exportar CSV</button></div></div>
+      <div className={styles.historyFilters}>
+        <div className={styles.kindChips} role="group" aria-label="Filtrar por categoria">
+          <button type="button" aria-pressed={!category} className={!category ? styles.chipActive : ''} disabled={existingPending} onClick={() => setCategory('')}>Todas <span>{records.length}</span></button>
+          {kinds.filter(value => kindCounts.get(value.value) || category === value.value).map(value => <button key={value.value} type="button" aria-pressed={category === value.value} className={category === value.value ? styles.chipActive : ''} data-tone={KIND_TONES[value.value]} disabled={existingPending} onClick={() => setCategory(category === value.value ? '' : value.value)}><i aria-hidden="true" />{value.label} <span>{kindCounts.get(value.value) ?? 0}</span></button>)}
+        </div>
+        <label className={styles.searchField}><Search size={15} aria-hidden="true" /><input type="search" value={search} disabled={existingPending} onChange={event => setSearch(event.target.value)} placeholder="Buscar no título e na descrição" aria-label="Buscar no título e na descrição carregados" /></label>
+      </div>
+      {!loading && records.length > 0 && <div className={styles.monthBars} aria-label="Registros por mês">{monthTotals.map(([month, total]) => <div key={month} title={`${total} registros`}><span style={{ height: `${Math.max(8, Math.round(total / monthMax * 100))}%` }} /><small>{SHORT_MONTHS[Number(month.slice(5)) - 1]}/{month.slice(2, 4)}</small><b>{total}</b></div>)}</div>}
       {truncated && <p role="status" className="p-form-help" style={{ borderLeft: '3px solid var(--brand-ink)', paddingLeft: 12 }}>Há mais registros neste período. A consulta mostra até 100; restrinja o projeto ou as datas para encontrar os demais. A busca e a categoria filtram somente os resultados carregados.</p>}
-      {loading ? <p role="status" className="p-form-help"><LoaderCircle size={18} className="p-spin" style={{ verticalAlign: 'middle', marginRight: 8 }} />Carregando histórico…</p> : readError ? <p className="p-form-help">Corrija a consulta ou tente atualizar para recuperar o histórico.</p> : !shown.length ? <div className="p-empty"><ClipboardList size={28} aria-hidden="true" /><p>Nenhum registro encontrado nos filtros e acessos atuais.</p></div> : <div style={{ display: 'grid', gap: 14 }}>{shown.map(record => <article key={record.id} style={{ border: '1px solid var(--line)', borderRadius: 16, padding: 'clamp(14px,3vw,22px)', background: 'var(--surface-soft)' }}><span className="p-badge">{kindLabel(record.kind)}</span><h4 style={{ margin: '10px 0 0', fontSize: 17, overflowWrap: 'anywhere' }}>{record.title}</h4>{entryDetails(record)}{canAttach(record) && record.id !== saved?.id && <details style={{ marginTop: 16 }}><summary style={{ cursor: 'pointer', color: 'var(--brand-ink)', minHeight: 44, display: 'flex', alignItems: 'center', gap: 8 }}><Paperclip size={16} aria-hidden="true" />Adicionar documentos ou fotos</summary><AttachmentQueue recordId={record.id} onAttachment={attachment => attach(record.id, attachment)} onPendingChange={pending => setAttachmentPending(current => ({ ...current, [record.id]: pending }))} /></details>}</article>)}</div>}
+      {loading ? <p role="status" className="p-form-help"><LoaderCircle size={18} className="p-spin" style={{ verticalAlign: 'middle', marginRight: 8 }} />Carregando histórico…</p> : readError ? <p className="p-form-help">Corrija a consulta ou tente atualizar para recuperar o histórico.</p> : !shown.length ? <div className="p-empty"><ClipboardList size={28} aria-hidden="true" /><p>Nenhum registro encontrado nos filtros e acessos atuais.</p></div> : <div className={styles.timeline}>{groups.map(([month, entries]) => <section key={month} aria-label={month ? monthTitle(month) : 'Sem data'}><h4 className={styles.monthTitle}>{month ? monthTitle(month) : 'Sem data'}<span>{entries.length}</span></h4><div className={styles.entries}>{entries.map(record => <article key={record.id} className={styles.entry} data-tone={KIND_TONES[record.kind]}><div className={styles.entryHead}><span className={styles.kindTag}><i aria-hidden="true" />{kindLabel(record.kind)}</span>{!!record.attachments.length && <span className={styles.attachCount}><Paperclip size={12} aria-hidden="true" />{record.attachments.length}</span>}</div><h4>{record.title}</h4>{entryDetails(record)}{canAttach(record) && record.id !== saved?.id && <details className={styles.attachDetails}><summary><Paperclip size={16} aria-hidden="true" />Adicionar documentos ou fotos</summary><AttachmentQueue recordId={record.id} onAttachment={attachment => attach(record.id, attachment)} onPendingChange={pending => setAttachmentPending(current => ({ ...current, [record.id]: pending }))} /></details>}</article>)}</div></section>)}</div>}
       <p className="p-form-help" style={{ marginBottom: 0, marginTop: 20 }}>Os documentos abrem com sua sessão e permissões atuais. Evite dados pessoais desnecessários nas descrições e nos anexos.</p>
     </section>
   </div>;
