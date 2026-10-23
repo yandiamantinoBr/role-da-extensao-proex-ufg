@@ -1,37 +1,67 @@
 # Estado atual da evolução PROEX
 
-Data: 20/10/2026. Branch de implementação: `feat/proex-access-foundation`, baseada na documentação `docs/proex-evolucao-20261020`. Fase 01 executada e primeiro incremento independente da fase 02 implementado. Sem alteração de main, do jogo ou da publicação atual.
+## V3 publicada
 
-## Evidências atualizadas
+Atualização de 20/10/2026, na branch `feat/proex-portal`. **A publicação nativa da V3 foi confirmada com sucesso às 15:55:09 UTC**, versão 3. A V2 permanece documentada no histórico abaixo. Leia a [ADR 0003](ADRS/0003-identidade-e-operacao-v3.md), o [manual do portal](../../apps/proex-portal/README.md) e a [entrega V3](../ENTREGA-V3.md).
 
-- GitHub main permanece em `f905f0d78371dc4a8784cce27bdbc7ef6fa88103`, árvore `d07a71a224e5ee9e73b73da9098fd00c3af29749`.
-- Fonte Sites reaberta pelo fluxo nativo; sua árvore coincide exatamente com a árvore pública acima. O histórico privado não foi copiado para GitHub.
-- Sites público ativo na versão 7, project_id `appgprj_6ac62af904348191af733a95a71534db`. Sites e Pages responderam HTTP 200 e o título esperado no teste de disponibilidade.
-- Manifesto com `d1=null` e `r2=null`; schema operacional vazio. Automação Sites vinculada continua desabilitada. Sincronização Windows não testada nem reativada.
-- Nenhum projeto exclusivo PROEX encontrado nas conexões Supabase/Vercel acessíveis. Isso não prova ausência de infraestrutura institucional fora dessas conexões.
-- Releases e licença global do projeto continuam pendentes. Licenças de terceiros e marcas preservadas.
+Portal: https://proex-gestao.yandiamantinobr.chatgpt.site. Fonte publicada no Sites: `db104886f98feebc1b83e30ad35d0390df556d3c`. Implantação: `appgdep_6ad78ec1db0c81919b6e4ef6588d8491`, revisão de ambiente 2. O commit público do GitHub é um registro separado dessa revisão de fonte; copiar arquivos ou abrir PR não substitui publicar o Worker e suas migrações.
 
-## Entregue em código
+### Implementação V3
 
-- `lib/proex/access`: autorização com negação por padrão, escopos, validade, revogação e teto explícito de delegação.
-- Serviço de convites com emissão, aceite, revogação de convites pendentes, revalidação da autoridade do emissor, vínculo ao e-mail verificado e auditoria sem token. Persistência, relógio, hash e geração de identificadores/tokens são portas injetadas.
-- 25 testes do núcleo, com repositório serializado exclusivamente de teste; 8 testes de preservação do jogo. Dados sintéticos e nenhuma mensagem real enviada.
-- Scripts de verificação e workflow de PR sem publicação. Baseline de 12 arquivos, ADR de arquitetura e matriz de infraestrutura sem segredos.
+- Entrada por **e-mail e senha com Better Auth**, sessões e credenciais no D1. Cadastro público aberto está desativado: novas contas são ativadas por convite controlado. Não há senha compartilhada da equipe nem envio automático de mensagens.
+- O login nativo ChatGPT fica restrito à ponte explícita para definir a primeira senha de uma identidade já conhecida. Depois da migração, o acesso diário usa senha. IDs canônicos e aliases preservam vínculos, participações e histórico; e-mails iguais não unem contas automaticamente.
+- Convites manuais têm prazo, uso único, destinatário e escopo. Repetir a mesma emissão recupera o mesmo link sem criar outro convite ou auditoria. Aceitos, revogados ou expirados não têm o token reemitido. O convite não comprova controle da caixa de e-mail.
+- Perfil com nome, foto privada e alteração de senha. E-mail e permissões não são editáveis pelo perfil. A interface oferece galeria/câmera quando o aparelho permite; isso não constitui teste em câmera física.
+- Diretório de usuários, bloqueio global de conta, funções por projeto e troca de função com histórico. As APIs verificam o estado atual da conta e dos vínculos; contas bloqueadas ou pendentes não autorizam convites. O último responsável ativo é protegido.
+- Projetos e materiais têm campos editáveis e versão para detectar alterações simultâneas. A disponibilidade de equipamento considera empréstimos ainda retirados, inclusive vencidos; saldo físico e disponibilidade são informações diferentes.
+- Registros operacionais e anexos privados complementam campanhas, estoque, empréstimos e relatórios. Agenda reúne dados autorizados por categoria e projeto, com exportação e assinatura ICS de leitura.
+- A participação oficial e o estoque continuam decididos pelo servidor. Uma conta/evento compartilha o limite entre roleta, dado e presencial; tíquetes assistidos permanecem separados e não comprovam pessoas físicas únicas.
 
-## Validação e limites
+### Evidência disponível
 
-33 testes e TypeScript passaram. Builds Pages e Worker passaram; evidências estão em `FASE_01_VERIFICACAO.md`. Na prévia desktop, configurações, bloqueio durante giro e resultados da roleta/dado foram observados; correspondência de todas as faces foi verificada por testes. Não houve nova prova auditiva humana nem teste em aparelho móvel real. Erros capturados no console eram da extensão do navegador, sem erro do aplicativo identificado naquela amostra.
+Na verificação final informada pela implementação, **179 de 179 testes automatizados**, TypeScript e build do Worker passaram. O Worker compilado também passou por smoke de autenticação em Miniflare/workerd, com banco temporário e credenciais sintéticas. A publicação nativa tem a evidência separada acima; esses testes não equivalem à homologação com dados institucionais reais.
 
-Este incremento não é painel administrativo utilizável. Autenticação real, APIs, banco, persistência transacional, envio de convite e interface administrativa não foram integrados. Concorrência/rollback da fixture não comprovam concorrência de banco em produção. Revogar convite já aceito não revoga o vínculo: esse fluxo e a proteção do último responsável ainda precisam ser implementados transacionalmente. Nenhuma garantia de segurança do sistema completo é inferida destes testes.
+Houve revisão da interface desktop e em largura de 390 pixels, com fixtures locais. Não foi realizada captura por câmera real, teste em telefone físico nem homologação da V3 com estoque, termos ou participantes reais. O jogo livre manteve seus 12 arquivos de referência e passou pelos 33 testes da sua suíte.
 
-## Próximo incremento
+### Integrações e próximos passos
 
-Completar a fase 02: escolha e configuração de infraestrutura exclusiva PROEX, adapter de identidade confiável, persistência com restrições/locks, revogação de vínculos e último responsável; depois APIs e interface móvel. Google OAuth e SMTP institucional são dependências reais, ainda sem configuração. Até lá, continuar contratos e testes isolados sem login simulado ou dados reais.
+Google Calendar pode consumir arquivo ou URL ICS **somente para leitura**. Não existe OAuth Google, escrita de volta no portal ou atualização imediata garantida. Revogar uma assinatura impede novas consultas; não apaga cópias já importadas por outro serviço.
 
-## Pendências de negócio
+Google Sheets continua restrito à importação manual de CSV. SMTP, envio de convites por e-mail, verificação Meta de seguidores, login WhatsApp e integração SEI/SIGAA não estão ativos. O perfil Instagram é um link opcional, sem condição de seguir para participar.
 
-Escopo de uma participação; Tente novamente; Super Super Brinde; catálogo, saldos e composição do planner; perfil/aplicativo Instagram e compatibilidade do follow-gate; responsáveis, finalidade/base legal, guarda e fluxo para menores; integração com SEI/SIGAA. Não solicitar segredos em texto.
+Após a publicação, a equipe deve conferir a entrada e o acesso autorizado com suas próprias contas, realizar o piloto e preencher a configuração institucional. Estoque real, ofertas, regulamentos, aviso de privacidade, retenção e fluxo para menores continuam sob decisão da PROEX. A roleta livre permanece independente; as automações antigas e a sincronização Windows não são reativadas por esta revisão.
+
+## Histórico preservado — publicação V2
+
+O registro abaixo descreve a entrega anterior e sua evidência. As referências a login ChatGPT e aos testes daquela versão não substituem a decisão V3 acima.
+
+Atualizado em 20/10/2026. Branch: `feat/proex-portal`. Leia a [ADR 0002](ADRS/0002-portal-nativo-sites.md) e o [manual do portal](../../apps/proex-portal/README.md).
+
+## Entrega operacional
+
+Portal publicado: https://proex-gestao.yandiamantinobr.chatgpt.site
+
+- Site novo, banco D1 e armazenamento R2 privado separados da roleta livre.
+- Login ChatGPT, primeiro responsável vinculado à conta proprietária, convites por link, revogação e permissões por projeto.
+- Painel responsivo: projetos, campanhas, materiais, ofertas compostas, estoque auditado, empréstimos com conflitos e anexos privados, equipe e relatórios CSV.
+- Participação única por conta/evento entre roleta, dado e presencial; reservas e entrega única no servidor. Atendimento assistido sem conta com tíquete explicitamente separado. Retomada e cancelamento auditado de pendências.
+- Política de repetição configurável de zero a três; regras preservadas após ativar. Rascunhos editáveis. Nenhuma regra de Super Super Brinde foi criada.
+- Métricas por projeto/dia/campanha, sem fingir visitantes únicos ou seguidores verificados.
+
+A versão livre continua no Site anterior e no Pages. Main permanece em `f905f0d78371dc4a8784cce27bdbc7ef6fa88103`; nenhuma alteração foi mesclada nela. Baseline de 12 arquivos preservado. A automação antiga continua desabilitada; sincronização Windows não foi reativada.
+
+## Verificação
+
+Portal: 50 testes reproduzíveis com SQLite real e migrações, TypeScript e build Worker passaram. Incluem concorrência, idempotência, saldo, isolamento de projetos, convites, último responsável, cancelamento e relatórios. Migrações aplicadas localmente e publicação nativa concluída. Revisão visual desktop e em iframe de 390 pixels, com dados locais de QA, sem login simulado na publicação. A versão hospedada respondeu HTTP 200 na entrada e 401 nos endpoints de gestão/exportação/anexos sem autenticação; a consulta de evento inexistente respondeu 404 pelo banco. Não houve teste em aparelho físico nem prova de login de visitante/entrega hospedada; a conta proprietária deve entrar pelo fluxo nativo normal.
+
+Fundação/jogo livre: 33 testes e TypeScript passaram; proteção dos 12 arquivos passou novamente. O núcleo anterior em `lib/proex/access` permanece como trabalho independente; o runtime novo usa `apps/proex-portal/lib/access.ts`.
+
+## Limites explícitos
+
+Login Google/e-mail direto, envio automático de e-mails, verificação Meta de seguimento, sincronização automática Sheets, SEI/SIGAA e contribuições financeiras de alimentação não estão ativos. Não há credencial de instituição nesses serviços configurada para o portal. Consulte a ADR antes de retomar essas integrações.
+
+A equipe precisa preencher saldos reais, ofertas, regulamentos e aviso de privacidade antes de ativar campanhas. Catálogo visual, Super Super Brinde, composição definitiva do planner, guarda dos dados e fluxo para menores continuam decisões institucionais. Produção não recebeu dados de demonstração nem histórico fabricado.
 
 ## Continuidade
 
-Ler este arquivo na branch atual antes de editar. Registrar comportamento, testes reais e pendências. PR de código isolado não significa deploy. Preservar o jogo e não misturar demonstração com operação oficial. O relatório original de 2025 permanece fonte narrativa; nenhum histórico de métricas foi inventado ou importado.
+Fonte publicada do portal: `e146d849e3f7ca87c471841a27f429b22c216905`, project_id `appgprj_6ad777bf0b288191a60d90401ac71d25`. O código público está em `apps/proex-portal`, sem histórico privado ou segredos. Validar código, escopos e regras; usar migrações novas; publicar no mesmo Site. Uma PR não substitui uma publicação verificada.

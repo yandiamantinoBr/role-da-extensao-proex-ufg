@@ -22,3 +22,21 @@ jobs:
       - run: pnpm run check:types
       - run: pnpm test
       - run: pnpm run build:pages
+  portal:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/proex-portal
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: apps/proex-portal/package.json
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run check:types
+      - run: pnpm test
+      - run: pnpm run build
+      - run: node --import ./scripts/sites-env.mjs tests/password-auth-worker-smoke.mjs

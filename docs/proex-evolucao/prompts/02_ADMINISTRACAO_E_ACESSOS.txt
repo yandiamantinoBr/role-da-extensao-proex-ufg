@@ -1,3 +1,6 @@
+ATUALIZAÇÃO DE CONTINUIDADE — 20/10/2026, V3 PUBLICADA
+Antes de executar este roteiro, leia docs/proex-evolucao/ESTADO_ATUAL.md, docs/ENTREGA-V3.md e apps/proex-portal/README.md. O portal existente já usa Better Auth com e-mail/senha, cadastro por convite, D1, R2 privado, perfis, permissões por projeto, registros e agendas ICS para assinatura de leitura no Google Calendar. A identidade nativa serve somente à migração explícita em /acesso-inicial. Sugestões anteriores de autenticação exclusivamente nativa ou infraestrutura ainda não implementada são históricas. Não recrie o Site ou o banco nem substitua o identificador canônico por e-mail. SMTP, OAuth Google, sincronização Sheets e verificação de seguidores Instagram não estão ativos. Preserve a roleta livre e as migrações aplicadas. O estado atual do código e a documentação de entrega prevalecem sobre propostas antigas deste roteiro.
+
 FASE 02 ADMINISTRAÇÃO E ACESSOS POR ESCOPO
 
 Use 00_PROMPT_MESTRE.txt e as decisões verificadas da fase 01. Repositório: https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg. Preserve Sites e Pages livres. Trabalhe em branch isolada e preview com dados fictícios. Não tratar este arquivo como autorização para convidar pessoas sem destinatários definidos.

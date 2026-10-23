@@ -1,0 +1,5 @@
+import type {Metadata} from 'next';
+import './globals.css';
+import ThemeProvider from '@/components/theme/theme-provider';
+export const metadata:Metadata={title:'PROEX UFG · Gestão e Rolê da Extensão',description:'Projetos, materiais, eventos e empréstimos da PROEX UFG.',icons:{icon:'/favicon.svg'},referrer:'no-referrer',robots:{index:false,follow:false}};
+export default function RootLayout({children}:{children:React.ReactNode}){return <html lang="pt-BR" suppressHydrationWarning><head><script dangerouslySetInnerHTML={{__html:"try{var t=localStorage.getItem('proex-theme')||document.cookie.split('; ').find(v=>v.startsWith('proex-theme='))?.split('=')[1]||'system';if(!['light','dark','system'].includes(t))t='system';var r=t==='system'?(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'):t;document.documentElement.dataset.theme=r;document.documentElement.dataset.themePreference=t;document.documentElement.style.colorScheme=r}catch{}"}}/></head><body><ThemeProvider>{children}</ThemeProvider></body></html>}
