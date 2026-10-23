@@ -92,10 +92,10 @@ function entry(row: Row, category: CalendarCategory, sourceKind: string, allDay 
 
 /** A public projection: SQL never selects contacts, free notes, document keys or account identities. */
 export async function calendarEntries(db: D1Database, actor: PortalActor | null, options: {
-  category?: string | null; projectId?: string | null; range: CalendarRange;
+  category?: string | null; projectId?: string | null; unitId?: string | null; range: CalendarRange;
 }): Promise<{ entries: CalendarEntry[]; availableCategories: CalendarCategory[] }> {
   if (!actor) throw new HttpError(401, 'Entre para acessar a agenda.', 'unauthenticated');
-  const projectId = projectValue(options.projectId);
+  const projectId = projectValue(options.projectId), unitId = projectValue(options.unitId);
   const availableCategories = CALENDAR_CATEGORIES.filter(category => {
     const scope = categoryScope(actor, category);
     return scope === null || (projectId ? scope.includes(projectId) : scope.length > 0);
@@ -106,6 +106,7 @@ export async function calendarEntries(db: D1Database, actor: PortalActor | null,
   const { range } = options;
   for (const category of categories) {
     const scope = requireScope(actor, category, projectId), filter = sqlScope('p.id', scope);
+    if (unitId) { filter.sql = `(${filter.sql}) AND p.unit_id=?`; filter.values.push(unitId); }
     let rows: Row[] = [];
     if (category === 'loans') {
       rows = await all(db, `SELECT l.id,l.project_id,p.name project_name,

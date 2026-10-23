@@ -20,6 +20,7 @@ const {applyPortableChanges}=await import(compile('sync/apply'));
 const {materialsAction: syncMaterialsAction}=await import(compile('materials'));
 const {seedCatalog,catalogPreview}=await import(compile('sync/catalog'));
 const {configureSync,startSyncRun,finishSyncRun,syncStatus,requestSync}=await import(compile('sync/control'));
+const {projectSpreadsheetLinks,configureMaterialLinks}=await import(compile('sync/project-links'));
 function fixture(){
  const native=new DatabaseSync(':memory:');native.exec('PRAGMA foreign_keys=ON');
  for(const name of readdirSync(`${directory}drizzle`).filter(name=>name.endsWith('.sql')).sort())native.exec(readFileSync(`${directory}drizzle/${name}`,'utf8'));
@@ -187,13 +188,13 @@ test('concurrent catalog seed requests share receipts without duplicating refere
 const syncConfiguration={spreadsheetId:'spreadsheet-test-0001',folderId:'folder-test-0001',attachmentsFolderId:'attachments-test-0001'};
 const completion=id=>({id,status:'completed',exportedCount:12,readbackVerified:true,tablesVerified:describePortableSchemas().tables.length});
 
-test('sync configuration requires live owner and stays disabled until all 27 tables have verified readback',async()=>{
+test('sync configuration requires live owner and stays disabled until all operational tables have verified readback',async()=>{
  const f=fixture();try{
   await assert.rejects(configureSync(f.db,{...f.actor,userId:'forged'},syncConfiguration),error=>error.status===403);
   await configureSync(f.db,f.actor,syncConfiguration);
   assert.equal((await syncStatus(f.db,f.actor)).connections[0].enabled,0);
   const run=await startSyncRun(f.db,f.actor,{});
-  for(const invalid of [{...completion(run.id),readbackVerified:false},{...completion(run.id),tablesVerified:26},{...completion(run.id),exportedCount:'12'}])await assert.rejects(finishSyncRun(f.db,f.actor,invalid),error=>error.status===400);
+  for(const invalid of [{...completion(run.id),readbackVerified:false},{...completion(run.id),tablesVerified:describePortableSchemas().tables.length-1},{...completion(run.id),exportedCount:'12'}])await assert.rejects(finishSyncRun(f.db,f.actor,invalid),error=>error.status===400);
   assert.equal(f.db.native.prepare('SELECT status FROM sync_runs WHERE id=?').get(run.id).status,'running');
   await finishSyncRun(f.db,f.actor,completion(run.id));
   assert.equal((await syncStatus(f.db,f.actor)).connections[0].enabled,1);
@@ -275,5 +276,88 @@ test('domain replay without a service batch cannot append a receipt after its ru
   f.db.beforeBatch(()=>f.db.native.prepare("UPDATE sync_runs SET status='completed',finished_at=? WHERE id=?").run(f.now,run.id));
   await assert.rejects(applyPortableChanges(f.db,f.actor,{connectionId:'google-sheets',runId:run.id,changes:[change]}),error=>error.code==='sync_run_not_running');
   assert.equal(f.db.native.prepare('SELECT COUNT(*) n FROM sync_receipts').get().n,0);assert.equal(f.db.native.prepare('SELECT COUNT(*) n FROM stock_movements').get().n,1);
+ }finally{f.close();}
+});
+
+test('V5 exposes 28 operational tables, with versioned units and no new profile identifiers',async()=>{
+ const f=fixture();try{
+  const schemas=describePortableSchemas();assert.equal(schemas.tables.length,28);
+  const units=schemas.tables.find(row=>row.table==='organizational_units');assert.equal(units.updateAction,'unit.update');assert.deepEqual(units.columns.filter(column=>column.editable).map(column=>column.name),['name','acronym','kind','status']);
+  const created=await applyPortableChanges(f.db,f.actor,{changes:[{changeKey:'create-unit-v5-001',action:'unit.create',input:{name:'Faculdade de Educação',acronym:'FE',kind:'academic'}}]});assert.equal(created.results[0].status,'applied');const unitId=created.results[0].entityId;assert.equal(typeof unitId,'string');
+  f.db.native.prepare('INSERT INTO profiles(user_id,display_name,unit,unit_id,affiliation,registration_type,registration_number,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)').run(f.actor.userId,'Nome visível','Texto de unidade anterior',unitId,'student','student','MATRICULA_PRIVADA_123',f.now,f.now);
+  const profilePage=await exportPortablePage(f.db,f.actor,{table:'profiles'}),profile=profilePage.rows[0];assert.equal(profile.unit,'Texto de unidade anterior');assert.equal(profile.display_name,'Nome visível');
+  for(const field of ['registration_type','registration_number','affiliation','unit_id']){assert.equal(Object.hasOwn(profile,field),false);assert.equal(profilePage.schema.columns.some(column=>column.name===field),false);assert.ok(profilePage.schema.omitted.includes(field));}
+  assert.equal(JSON.stringify(profilePage).includes('MATRICULA_PRIVADA_123'),false);
+  const unitPage=await exportPortablePage(f.db,f.actor,{table:'organizational_units'});assert.equal(unitPage.rows[0].name,'Faculdade de Educação');assert.equal(unitPage.rows[0].version,1);
+ }finally{f.close();}
+});
+
+test('unit imports use owner-only services, stable receipts and CAS while preserving organizational metadata',async()=>{
+ const f=fixture();try{
+  const change={changeKey:'unit-import-create-01',action:'unit.create',input:{name:'Pró-Reitoria de Extensão',acronym:'PROEX',kind:'proex'}};
+  const first=await applyPortableChanges(f.db,f.actor,{changes:[change]}),unitId=first.results[0].entityId;assert.equal((await applyPortableChanges(f.db,f.actor,{changes:[change]})).results[0].status,'duplicate');
+  const updated=await applyPortableChanges(f.db,f.actor,{changes:[{changeKey:'unit-import-update-01',table:'organizational_units',id:unitId,expectedVersion:1,fields:{name:'Pró-Reitoria de Extensão e Cultura',acronym:'PROEC',status:'archived'}}]});assert.equal(updated.results[0].status,'applied');
+  const row=f.db.native.prepare('SELECT name,kind,status,version FROM organizational_units WHERE id=?').get(unitId);assert.equal(row.name,'Pró-Reitoria de Extensão e Cultura');assert.equal(row.kind,'proex');assert.equal(row.status,'archived');assert.equal(row.version,2);
+  const stale=await applyPortableChanges(f.db,f.actor,{changes:[{changeKey:'unit-import-stale-01',table:'organizational_units',id:unitId,expectedVersion:1,fields:{name:'Não sobrescrever'}}]});assert.equal(stale.results[0].status,'conflict');assert.equal(stale.results[0].code,'unit_changed');
+  f.db.native.prepare('INSERT INTO members(id,user_id,email,role,project_id,created_at) VALUES(?,?,?,?,?,?)').run('manager-v5','manager-v5','manager@example.invalid','manager','project-a',f.now);
+  f.db.native.prepare('INSERT INTO portal_users(user_id,email,status,created_at,updated_at) VALUES(?,?,?,?,?)').run('manager-v5','manager@example.invalid','active',f.now,f.now);
+  const manager={...f.actor,userId:'manager-v5'};
+  await assert.rejects(applyPortableChanges(f.db,manager,{changes:[{changeKey:'unit-forged-owner-01',action:'unit.create',input:{name:'Não autorizado',kind:'external'}}]}),error=>error.status===403);
+  assert.equal(f.db.native.prepare('SELECT COUNT(*) n FROM organizational_units').get().n,1);
+ }finally{f.close();}
+});
+
+test('unit CAS races roll back the sync receipt and do not overwrite the winning unit revision',async()=>{
+ const f=fixture();try{
+  const created=await applyPortableChanges(f.db,f.actor,{changes:[{changeKey:'unit-cas-create-v5-01',action:'unit.create',input:{name:'Unidade inicial',kind:'agency'}}]});const id=created.results[0].entityId;
+  f.db.beforeBatch(()=>f.db.native.prepare("UPDATE organizational_units SET name='Revisão concorrente',version=2 WHERE id=?").run(id));
+  const response=await applyPortableChanges(f.db,f.actor,{changes:[{changeKey:'unit-cas-race-v5-01',table:'organizational_units',id,expectedVersion:1,fields:{name:'Não sobrescrever'}}]});
+  assert.equal(response.results[0].status,'conflict');assert.equal(response.results[0].code,'unit_changed');assert.equal(f.db.native.prepare('SELECT name FROM organizational_units WHERE id=?').get(id).name,'Revisão concorrente');
+  assert.equal(f.db.native.prepare("SELECT COUNT(*) n FROM audit WHERE action='unit.update'").get().n,0);
+  const statuses=f.db.native.prepare('SELECT result_json FROM sync_receipts').all().map(row=>JSON.parse(row.result_json).status);assert.deepEqual(statuses.sort(),['applied','conflict']);
+ }finally{f.close();}
+});
+
+test('project sync links units and bridges strict booleans or 0/1 without accepting truthy strings',async()=>{
+ const f=fixture();try{
+  const created=await applyPortableChanges(f.db,f.actor,{changes:[{changeKey:'project-unit-create-01',action:'unit.create',input:{name:'Unidade acadêmica',acronym:'UA',kind:'academic'}}]});const unitId=created.results[0].entityId;
+  const projectSchema=describePortableSchemas().tables.find(row=>row.table==='projects');assert.deepEqual(projectSchema.columns.slice(-2).map(column=>column.name),['unit_id','prizes_enabled']);assert.equal(projectSchema.columns.find(column=>column.name==='prizes_enabled').type,'boolean');
+  let version=1;
+  for(const [index,value] of [1,false,true,0].entries()){
+   const response=await applyPortableChanges(f.db,f.actor,{changes:[{changeKey:`project-prizes-v5-${index}`,table:'projects',id:'project-a',expectedVersion:version,fields:{unit_id:unitId,prizes_enabled:value}}]});assert.equal(response.results[0].status,'applied');version++;
+   const project=f.db.native.prepare("SELECT unit_id,prizes_enabled,version FROM projects WHERE id='project-a'").get();assert.equal(project.unit_id,unitId);assert.equal(project.prizes_enabled,value===true||value===1?1:0);assert.equal(project.version,version);
+  }
+  for(const [index,value] of ['1','0','true','false','',null,2].entries()){
+   const response=await applyPortableChanges(f.db,f.actor,{changes:[{changeKey:`invalid-prizes-v5-${index}`,table:'projects',id:'project-a',expectedVersion:version,fields:{prizes_enabled:value}}]});assert.equal(response.results[0].status,'rejected');assert.equal(response.results[0].code,'invalid_prizes_enabled');
+  }
+  const page=await exportPortablePage(f.db,f.actor,{table:'projects'});assert.equal(page.rows[0].unit_id,unitId);assert.equal(page.rows[0].prizes_enabled,0);
+ }finally{f.close();}
+});
+
+test('material view configuration is an explicit owner-only operation, idempotent, private and CAS-protected',async()=>{
+ const f=fixture();try{
+  await configureSync(f.db,f.actor,syncConfiguration);
+  const change={changeKey:'material-views-v5-01',action:'sync.material_links.configure',input:{sheetId:12345,views:{'project-a':67890},expectedVersion:0}};
+  const first=await applyPortableChanges(f.db,f.actor,{changes:[change]});assert.equal(first.results[0].status,'applied');assert.equal(first.results[0].entityId,'sync.google_sheets.material_links');assert.equal((await applyPortableChanges(f.db,f.actor,{changes:[change]})).results[0].status,'duplicate');
+  const stored=f.db.native.prepare("SELECT value FROM settings WHERE name='sync.google_sheets.material_links'").get();assert.equal(JSON.parse(stored.value).version,1);assert.equal(JSON.parse(stored.value).views['project-a'],67890);
+  const publicSettings=await exportPortablePage(f.db,f.actor,{table:'settings'});assert.equal(JSON.stringify(publicSettings.rows).includes('67890'),false);
+  const link=await projectSpreadsheetLinks(f.db,f.actor,'project-a');assert.match(link.materialsUrl,/#gid=12345&fvid=67890$/);
+  const manager={...f.actor,userId:'not-an-owner'};assert.equal((await projectSpreadsheetLinks(f.db,manager,'project-a')).materialsUrl,null);
+  await assert.rejects(applyPortableChanges(f.db,manager,{changes:[{...change,changeKey:'forged-material-view-01'}]}),error=>error.status===403);
+  const stale=await applyPortableChanges(f.db,f.actor,{changes:[{...change,changeKey:'stale-material-views-01'}]});assert.equal(stale.results[0].status,'conflict');assert.equal(stale.results[0].code,'sync_links_changed');
+  const unknown=await applyPortableChanges(f.db,f.actor,{changes:[{changeKey:'unknown-project-view-01',action:'sync.material_links.configure',input:{sheetId:12345,views:{'missing-project':123},expectedVersion:1}}]});assert.equal(unknown.results[0].status,'rejected');
+  assert.equal(f.db.native.prepare("SELECT COUNT(*) n FROM audit WHERE action='sync.material_links.configure'").get().n,1);
+ }finally{f.close();}
+});
+
+test('material links bind the configured spreadsheet and reject concurrent configuration revisions',async()=>{
+ const f=fixture();try{
+  await configureSync(f.db,f.actor,syncConfiguration);
+  const direct={sheetId:12,views:{'project-a':34},expectedVersion:0,operationKey:'direct-material-links-v5-01'};
+  await configureMaterialLinks(f.db,f.actor,direct);assert.equal((await configureMaterialLinks(f.db,f.actor,direct)).duplicate,true);
+  f.db.beforeBatch(()=>{const row=f.db.native.prepare("SELECT value FROM settings WHERE name='sync.google_sheets.material_links'").get();f.db.native.prepare("UPDATE settings SET value=? WHERE name='sync.google_sheets.material_links'").run(JSON.stringify({...JSON.parse(row.value),version:2,views:{'project-a':56}}));});
+  const raced=await applyPortableChanges(f.db,f.actor,{changes:[{changeKey:'links-cas-race-v5-01',action:'sync.material_links.configure',input:{sheetId:12,views:{'project-a':78},expectedVersion:1}}]});assert.equal(raced.results[0].status,'conflict');assert.equal(raced.results[0].code,'sync_links_changed');
+  assert.match((await projectSpreadsheetLinks(f.db,f.actor,'project-a')).materialsUrl,/fvid=56$/);
+  await configureSync(f.db,f.actor,{...syncConfiguration,spreadsheetId:'different-spreadsheet-v5-02'});assert.equal((await projectSpreadsheetLinks(f.db,f.actor,'project-a')).materialsUrl,null);
  }finally{f.close();}
 });

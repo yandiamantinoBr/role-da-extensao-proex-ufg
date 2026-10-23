@@ -19,6 +19,7 @@ type Props = {
     loans: Row[];
     campaigns: Row[];
     selectedProjectId: string;
+    unitName?: string;
     now: number;
     onSelectProject: (id: string) => void;
     known: {
@@ -38,7 +39,7 @@ type Summary = {
 };
 const available = (item: Row) => Number(item.available ?? (Number(item.stock ?? 0) - Number(item.reserved ?? 0)));
 const date = (value: unknown) => { const result = new Date(value as string | number); return Number.isFinite(result.getTime()) ? result.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : 'Data não informada'; };
-export default function DashboardPanel({ modules, pinned, frequent, onNavigate, onTogglePin, displayName, role, roleLabel, projects, items, loans, campaigns, selectedProjectId, now, onSelectProject, known }: Props) {
+export default function DashboardPanel({ modules, pinned, frequent, onNavigate, onTogglePin, displayName, role, roleLabel, projects, items, loans, campaigns, selectedProjectId, unitName, now, onSelectProject, known }: Props) {
     const [customizing, setCustomizing] = useState(false);
     const allowed = modules.map(module => module.id);
     const find = (id: ModuleId) => modules.find(module => module.id === id);
@@ -52,13 +53,13 @@ export default function DashboardPanel({ modules, pinned, frequent, onNavigate, 
     const upcoming = [...reserved].filter(loan => new Date(loan.starts_at ?? loan.startsAt).getTime() >= now).sort((a, b) => new Date(a.starts_at ?? a.startsAt).getTime() - new Date(b.starts_at ?? b.startsAt).getTime()).slice(0, 3);
     const summaries: Summary[] = [];
     if (find('projects'))
-        summaries.push({ id: 'projects', title: 'Projetos', value: known.projects ? scopedProjects.length : 'Consultar', detail: selected ? 'Projeto selecionado no seu contexto' : 'Áreas de trabalho no seu acesso', icon: find('projects')!.icon });
+        summaries.push({ id: 'projects', title: 'Projetos', value: known.projects ? scopedProjects.length : 'Consultar', detail: selected ? 'Projeto selecionado nos filtros' : 'Áreas de trabalho disponíveis', icon: find('projects')!.icon });
     if (find('materials'))
-        summaries.push({ id: 'materials', title: 'Materiais', value: known.items ? items.length : 'Consultar', detail: 'Itens cadastrados neste contexto', note: lowStock.length ? `${lowStock.length} com saldo baixo` : undefined, icon: find('materials')!.icon });
+        summaries.push({ id: 'materials', title: 'Materiais', value: known.items ? items.length : 'Consultar', detail: 'Itens nos projetos selecionados', note: lowStock.length ? `${lowStock.length} com saldo baixo` : undefined, icon: find('materials')!.icon });
     if (find('loans'))
         summaries.push({ id: 'loans', title: 'Empréstimos', value: known.loans ? reserved.length + checkedOut.length : 'Consultar', detail: known.loans ? `${checkedOut.length} retirados · ${reserved.length} reservados` : 'Consulte retiradas e devoluções', note: late.length ? `${late.length} em atraso` : undefined, icon: find('loans')!.icon });
     if (find('events'))
-        summaries.push({ id: 'events', title: 'Eventos', value: known.campaigns ? campaigns.filter(campaign => campaign.status === 'active').length : 'Consultar', detail: 'Campanhas ativas neste contexto', note: drafts.length ? `${drafts.length} em preparação` : undefined, icon: find('events')!.icon });
+        summaries.push({ id: 'events', title: 'Dinâmicas', value: known.campaigns ? campaigns.filter(campaign => campaign.status === 'active').length : 'Consultar', detail: 'Campanhas de roleta e dado ativas', note: drafts.length ? `${drafts.length} em preparação` : undefined, icon: find('events')!.icon });
     if (find('calendar'))
         summaries.push({ id: 'calendar', title: 'Agenda', value: 'Ver agenda', detail: 'Ações, reservas e datas compartilhadas', icon: CalendarDays });
     if (find('reports'))
@@ -76,7 +77,7 @@ export default function DashboardPanel({ modules, pinned, frequent, onNavigate, 
     const actionModules = saved.length ? saved : frequentModules.length ? frequentModules : suggestions;
     const shortcutTitle = saved.length ? 'Seus atalhos' : frequentModules.length ? 'Mais usados por você' : 'Para começar';
     const shortcutDescription = saved.length ? 'Os módulos que você escolheu deixar por perto.' : frequentModules.length ? 'Com base nos módulos que você abre neste navegador.' : 'Sugestões para sua função. Você pode escolher outros módulos.';
-    const roleDescription = role === 'operator' ? 'Abra o atendimento, acompanhe o evento e registre cada etapa.' : role === 'inventory' ? 'Confira os materiais e mantenha os registros da equipe atualizados.' : role === 'loans' ? 'Organize reservas, confira retiradas e acompanhe as devoluções.' : role === 'viewer' ? 'Encontre os projetos e consulte os registros disponíveis para sua conta.' : 'Escolha por onde continuar e acompanhe o trabalho nos seus projetos.';
+    const roleDescription = role === 'operator' ? 'Abra o atendimento da roleta ou do dado e registre cada etapa.' : role === 'inventory' ? 'Confira os materiais e mantenha os registros da equipe atualizados.' : role === 'loans' ? 'Organize reservas, confira retiradas e acompanhe as devoluções.' : role === 'viewer' ? 'Encontre os projetos e consulte os registros disponíveis para sua conta.' : 'Escolha por onde continuar e acompanhe o trabalho nos seus projetos.';
     const attention: {
         id: ModuleId;
         title: string;
@@ -88,13 +89,13 @@ export default function DashboardPanel({ modules, pinned, frequent, onNavigate, 
     if (find('materials') && lowStock.length)
         attention.push({ id: 'materials', title: `${lowStock.length} ${lowStock.length === 1 ? 'material com saldo baixo' : 'materiais com saldo baixo'}`, detail: 'O saldo disponível atingiu o alerta cadastrado.', kind: 'stock' });
     if (find('events') && drafts.length)
-        attention.push({ id: 'events', title: `${drafts.length} ${drafts.length === 1 ? 'evento em preparação' : 'eventos em preparação'}`, detail: 'Revise as regras e a disponibilidade antes de ativar.', kind: 'draft' });
+        attention.push({ id: 'events', title: `${drafts.length} ${drafts.length === 1 ? 'dinâmica em preparação' : 'dinâmicas em preparação'}`, detail: 'Revise as regras e a disponibilidade antes de ativar.', kind: 'draft' });
     const firstName = displayName.trim().split(/\s+/)[0] || 'equipe';
     return <div className="pd-dashboard">
     <section className="pd-welcome">
     <div>
     <span className="pd-context">
-    <span />{selected?.name || 'Seu espaço de trabalho'}</span>
+    <span />{selected?.name || unitName || 'Seus projetos'}</span>
     <h2>Seu próximo passo<br />começa aqui.</h2>
     <p>{roleDescription}</p>
     <span className="pd-role">
@@ -146,7 +147,7 @@ export default function DashboardPanel({ modules, pinned, frequent, onNavigate, 
     <section className="pd-section" aria-labelledby="pd-summary-title">
     <div className="pd-heading">
     <div>
-    <h2 id="pd-summary-title">{selected ? `No projeto ${selected.name}` : 'No seu contexto'}</h2>
+    <h2 id="pd-summary-title">{selected ? `Resumo · ${selected.name}` : unitName ? `Resumo · ${unitName}` : 'Resumo dos seus projetos'}</h2>
     <p>Um resumo dos registros que sua conta pode consultar.</p>
     </div>
     </div>
@@ -164,7 +165,7 @@ export default function DashboardPanel({ modules, pinned, frequent, onNavigate, 
     <div className="pd-heading">
     <div>
     <h2>Para acompanhar</h2>
-    <p>O que merece atenção neste contexto.</p>
+    <p>O que merece atenção nos projetos selecionados.</p>
     </div>
     </div>{attention.length ? <div className="pd-attention">{attention.map(item => <button key={item.id} onClick={() => onNavigate(item.id)}>
             <span className={`pd-attention-dot pd-${item.kind}`}/>
@@ -192,7 +193,7 @@ export default function DashboardPanel({ modules, pinned, frequent, onNavigate, 
     <div className="pd-heading">
     <div>
     <h2>Seus projetos</h2>
-    <p>Troque o contexto para acompanhar uma área.</p>
+    <p>Selecione um projeto para acompanhar seus registros.</p>
     </div>
     <button className="pd-inline-link" onClick={() => onNavigate('projects')}>Ver todos <ArrowRight size={14}/>
     </button>

@@ -7,12 +7,12 @@ export type PortalModule = {
     icon: LucideIcon;
 };
 export const PORTAL_MODULES: PortalModule[] = [
-    { id: 'overview', label: 'Início', description: 'Seu contexto, seus atalhos e próximos passos.', icon: LayoutDashboard },
+    { id: 'overview', label: 'Início', description: 'Seus atalhos, projetos e próximos passos.', icon: LayoutDashboard },
     { id: 'projects', label: 'Projetos', description: 'Áreas de trabalho, identidade e equipe.', icon: FolderKanban },
     { id: 'calendar', label: 'Agenda', description: 'Consulte ações, reservas e datas da equipe.', icon: CalendarDays },
     { id: 'materials', label: 'Materiais', description: 'Catálogo, disponibilidade e movimentações.', icon: Boxes },
     { id: 'loans', label: 'Empréstimos', description: 'Reservas, retiradas e devoluções de equipamentos.', icon: Truck },
-    { id: 'events', label: 'Eventos', description: 'Campanhas e atendimento em cada ação.', icon: CalendarDays },
+    { id: 'events', label: 'Dinâmicas', description: 'Roleta, dado, brindes e atendimento nas ações.', icon: CalendarDays },
     { id: 'records', label: 'Registros', description: 'Observações, documentos e ocorrências.', icon: FileText },
     { id: 'team', label: 'Equipe', description: 'Pessoas, convites e permissões de acesso.', icon: Users },
     { id: 'reports', label: 'Relatórios', description: 'Consulte resultados e exporte registros.', icon: ClipboardList },

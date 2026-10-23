@@ -196,6 +196,33 @@ function LoanAttachment({ loanId, onSaved }: {
         </div>
         </div>}{error && <p className="p-inline-error" role="alert">{error}</p>}{message && <p className="p-form-help" role="status">{message}</p>}</div>;
 }
+function PrizeKits({ projects, offers, items, projectId, onProjectChange, projectName, mutate }: {
+    projects: Row[]; offers: Row[]; items: Row[]; projectId: string; onProjectChange: (id: string) => void;
+    projectName: (id: unknown) => string; mutate: (action: string, data: Payload) => Promise<Row>;
+}) {
+    const [rows, setRows] = useState(1);
+    return <Section title="Brindes e kits das dinâmicas" description="Defina a composição das entregas da roleta e do dado nos projetos que utilizam essa opção.">
+        {offers.length > 0 ? <div className="p-kit-grid">{offers.map(offer => <article className="p-card p-kit-card" key={offer.id}>
+            <div className="p-row-between"><span className="p-icon-tile"><Gift size={20} /></span><span className="p-badge">{offer.kind === 'super' ? 'Super Brinde' : 'Brinde'}</span></div>
+            <h3>{offer.name}</h3><p>{projectName(get(offer, 'projectId', 'project_id'))}{Number(offer.active) === 0 ? ' · Inativo' : ''}</p>
+            <ul>{list(offer.components).map(component => <li key={component.item_id}><strong>{component.quantity} ×</strong> {component.name}<small>{component.unit || 'unidade'}</small></li>)}</ul>
+        </article>)}</div> : <Empty title="Nenhum brinde ou kit configurado" text="Monte uma entrega com os materiais já cadastrados no estoque deste projeto." icon={Gift} />}
+        {projects.length > 0 && <div className="p-kit-create"><h3>Montar um brinde ou kit</h3><p>Uma entrega com três buttons baixa três unidades do estoque quando o prêmio é retirado.</p>
+            <OperationForm action="offer.create" mutate={mutate} submit="Salvar composição" make={form => ({ projectId: form.get('projectId'), name: form.get('name'), kind: form.get('kind'), components: Array.from({ length: rows }, (_, index) => ({ itemId: form.get(`componentItem${index}`), quantity: Number(form.get(`componentQty${index}`)) })).filter(component => component.itemId) })}>
+                <div className="p-form-grid">
+                    {projects.length === 1 ? <div className="p-form-destination"><span>Projeto da dinâmica</span><strong>{projects[0].name}</strong><input type="hidden" name="projectId" value={projectId} /></div> : <Field label="Projeto da dinâmica"><select name="projectId" value={projectId} required onChange={event => onProjectChange(event.target.value)}><option value="">Selecione o projeto</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></Field>}
+                    <Field label="Nome do brinde ou kit"><input name="name" required maxLength={120} placeholder="Ex.: Kit com três buttons" /></Field>
+                    <Field label="Resultado na dinâmica"><select name="kind"><option value="brinde">Brinde</option><option value="super">Super Brinde</option></select></Field>
+                </div>
+                <div className="p-components">{Array.from({ length: rows }, (_, index) => <div className="p-component-row" key={index}>
+                    <Field label={`Material ${index + 1}`}><select key={`${projectId}-${index}`} name={`componentItem${index}`} required={index === 0} disabled={!projectId}><option value="">{projectId ? 'Selecione o material' : 'Escolha o projeto primeiro'}</option>{items.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></Field>
+                    <Field label="Quantidade"><input name={`componentQty${index}`} type="number" min="1" max="1000" step="1" defaultValue="1" required /></Field>
+                </div>)}<button type="button" className="p-text-link" disabled={rows >= 8} onClick={() => setRows(previous => previous + 1)}><Plus size={16} />Adicionar outro material</button></div>
+                {projectId && !items.length && <p className="p-form-help">Este projeto ainda não tem materiais ativos do tipo Brinde. Cadastre os itens na área Catálogo e estoque antes de montar a composição.</p>}
+            </OperationForm>
+        </div>}
+    </Section>;
+}
 export default function PortalClient({ initial }: {
     initial: Snapshot;
 }) {
@@ -207,7 +234,10 @@ export default function PortalClient({ initial }: {
     const [sessionExpired, setSessionExpired] = useState(false);
     const accountRef = useRef<HTMLDivElement>(null);
     const [filter, setFilter] = useState('');
+    const [unitFilter, setUnitFilter] = useState('');
     const [draftProject, setDraftProject] = useState('');
+    const [offerProject, setOfferProject] = useState('');
+    const [materialsView, setMaterialsView] = useState<'catalog' | 'prizes'>('catalog');
     const [query, setQuery] = useState('');
     const [selectedMaterialId, setSelectedMaterialId] = useState<string | null>(null);
     const [refreshing, setRefreshing] = useState(false);
@@ -218,7 +248,6 @@ export default function PortalClient({ initial }: {
     const [failure, setFailure] = useState('');
     const [now, setNow] = useState(() => new Date(initial?.updatedAt ?? 0).getTime());
     const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
-    const [offerRows, setOfferRows] = useState(1);
     const latestRequest = useRef(0);
     const refresh = useCallback(async () => {
         const request = ++latestRequest.current;
@@ -251,14 +280,14 @@ export default function PortalClient({ initial }: {
     }, []);
     useEffect(() => { const change = () => { setOnline(navigator.onLine); }; const timer = window.setTimeout(() => { setUpdatedAt(new Date()); setNow(Date.now()); change(); }, 0); const clock = window.setInterval(() => setNow(Date.now()), 60000); window.addEventListener('online', change); window.addEventListener('offline', change); return () => { window.clearTimeout(timer); window.clearInterval(clock); window.removeEventListener('online', change); window.removeEventListener('offline', change); }; }, []);
     useEffect(() => { const url = new URL(window.location.href); const requested = url.searchParams.get('module'); const timer = window.setTimeout(() => { if (tabs.some(t => t.id === requested))
-        setTab(requested as Tab); setFilter(url.searchParams.get('project') || ''); }, 0); return () => window.clearTimeout(timer); }, []);
+        setTab(requested as Tab); setFilter(url.searchParams.get('project') || ''); setUnitFilter(url.searchParams.get('unit') || ''); }, 0); return () => window.clearTimeout(timer); }, []);
     useEffect(() => { const url = new URL(window.location.href); if (tab === 'overview')
         url.searchParams.delete('module');
     else
         url.searchParams.set('module', tab); if (filter)
         url.searchParams.set('project', filter);
     else
-        url.searchParams.delete('project'); window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`); }, [tab, filter]);
+        url.searchParams.delete('project'); if (unitFilter) url.searchParams.set('unit', unitFilter); else url.searchParams.delete('unit'); window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`); }, [tab, filter, unitFilter]);
     useEffect(() => { const update = () => { if (navigator.onLine && !document.hidden)
         void refresh(); }; const timer = window.setInterval(update, 30000); window.addEventListener('online', update); document.addEventListener('visibilitychange', update); return () => { window.clearInterval(timer); window.removeEventListener('online', update); document.removeEventListener('visibilitychange', update); }; }, [refresh]);
     useEffect(() => { if (!accountOpen)
@@ -277,22 +306,39 @@ export default function PortalClient({ initial }: {
     const canGlobal = (...needed: string[]) => globalCapabilities.includes('*') || needed.some(c => globalCapabilities.includes(c));
     const canProject = (id: string, ...needed: string[]) => canGlobal(...needed) || Boolean(projectCapabilities ? needed.some(c => (projectCapabilities[id] ?? []).includes(c)) : role === 'owner' || needed.some(c => capabilities.includes(c)));
     const canAny = (...needed: string[]) => canGlobal(...needed) || projects.some(p => canProject(p.id, ...needed));
-    const can = (...needed: string[]) => filter ? canProject(filter, ...needed) : canAny(...needed);
-    const byProject = (rows: Row[]) => filter ? rows.filter(r => get(r, 'projectId', 'project_id') === filter) : rows;
+    const organizationalUnits = list(data.organizationalUnits);
+    const unitOf = (project: Row) => string(get(project, 'unit_id', 'unitId'));
+    const accessibleUnitIds = new Set(projects.map(unitOf).filter(Boolean));
+    const visibleUnits = organizationalUnits.filter(unit => canGlobal('organization.manage') || accessibleUnitIds.has(string(unit.id)));
+    const hasUnassignedProjects = projects.some(project => !unitOf(project));
+    const scopedProjects = unitFilter ? projects.filter(project => unitFilter === '__unassigned__' ? !unitOf(project) : unitOf(project) === unitFilter) : projects;
+    const selectedProjects = filter ? scopedProjects.filter(project => project.id === filter) : scopedProjects;
+    const selectedProjectIds = new Set(selectedProjects.map(project => string(project.id)));
+    const can = (...needed: string[]) => canGlobal(...needed) || selectedProjects.some(project => canProject(project.id, ...needed));
+    const byProject = (rows: Row[]) => filter || unitFilter ? rows.filter(row => selectedProjectIds.has(string(get(row, 'projectId', 'project_id')))) : rows;
     const visibleCampaigns = byProject(campaigns), visibleItems = byProject(items), visibleLoans = byProject(loans);
     const projectName = (id: unknown) => projects.find(p => p.id === id)?.name || 'PROEX';
+    const prizeProjects = selectedProjects.filter(project => Number(project.prizes_enabled ?? project.prizesEnabled) === 1 || offers.some(offer => get(offer, 'projectId', 'project_id') === project.id));
+    const prizeProjectIds = new Set(prizeProjects.map(project => string(project.id)));
+    const offerProjects = prizeProjects.filter(project => canProject(project.id, 'inventory.manage'));
+    const effectiveOfferProject = offerProjects.some(project => project.id === (filter || offerProject)) ? filter || offerProject : offerProjects.length === 1 ? string(offerProjects[0].id) : '';
+    const offerItems = items.filter(item => get(item, 'projectId', 'project_id') === effectiveOfferProject && item.category === 'gift' && item.condition === 'active');
+    const visibleOffers = byProject(offers).filter(offer => prizeProjectIds.has(string(get(offer, 'projectId', 'project_id'))));
+    const showPrizeView = materialsView === 'prizes' && prizeProjects.length > 0;
     const formCapability = tab === 'loans' ? 'loans.manage' : tab === 'events' ? 'campaigns.manage' : 'inventory.manage';
-    const formProjects = projects.filter(p => canProject(p.id, formCapability));
+    const formProjects = (tab === 'events' ? prizeProjects : selectedProjects).filter(p => canProject(p.id, formCapability));
     const selectedFormProject = draftProject || filter;
-    const effectiveProject = formProjects.some(p => p.id === selectedFormProject) ? selectedFormProject : string(formProjects[0]?.id);
-    const formItems = items.filter(i => !effectiveProject || get(i, 'projectId', 'project_id') === effectiveProject);
+    const effectiveProject = formProjects.some(p => p.id === selectedFormProject) ? selectedFormProject : formProjects.length === 1 ? string(formProjects[0].id) : '';
+    const formItems = items.filter(i => effectiveProject && get(i, 'projectId', 'project_id') === effectiveProject);
     const available = (item: Row) => item.available !== undefined && item.available !== null ? Number(item.available) : Number(item.stock ?? item.quantity ?? 0) - Number(item.reserved ?? 0);
     const searchItems = visibleItems.filter(i => !query || `${i.name} ${i.description ?? ''}`.toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR')));
     const allowedTabs = tabs.filter(t => ['overview', 'projects', 'profile', 'calendar', 'records'].includes(t.id) || (t.id === 'events' && canAny('campaigns.manage', 'participation.operate', 'inventory.deliver')) || (t.id === 'materials' && canAny('inventory.read', 'inventory.manage', 'inventory.deliver')) || (t.id === 'loans' && canAny('loans.read', 'loans.manage', 'loans.checkout')) || (t.id === 'team' && canAny('access.invite', 'access.manage')) || (t.id === 'reports' && canAny('reports.read')) || (t.id === 'settings' && canGlobal('organization.manage')));
     const allowedModuleKey = allowedTabs.map(module => module.id).join('|');
-    const accessibleProjectKey = projects.map(project => project.id).join('|');
+    const accessibleProjectKey = scopedProjects.map(project => project.id).join('|');
+    const accessibleUnitKey = [...visibleUnits.map(unit => string(unit.id)), ...(hasUnassignedProjects ? ['__unassigned__'] : [])].join('|');
     useEffect(() => { if (allowedModuleKey.split('|').includes(tab)) return; const timer = window.setTimeout(() => setTab('overview'), 0); return () => window.clearTimeout(timer); }, [allowedModuleKey, tab]);
     useEffect(() => { if (!filter || accessibleProjectKey.split('|').includes(filter)) return; const timer = window.setTimeout(() => { setFilter(''); setDraftProject(''); }, 0); return () => window.clearTimeout(timer); }, [accessibleProjectKey, filter]);
+    useEffect(() => { if (!unitFilter || accessibleUnitKey.split('|').includes(unitFilter)) return; const timer = window.setTimeout(() => { setUnitFilter(''); setFilter(''); setDraftProject(''); }, 0); return () => window.clearTimeout(timer); }, [accessibleUnitKey, unitFilter]);
     const navigation = useNavigationPreferences(string(user.userId), allowedTabs.map(module => module.id));
     function navigate(id: ModuleId) {
         if (!allowedTabs.some(module => module.id === id)) return;
@@ -300,7 +346,8 @@ export default function PortalClient({ initial }: {
         setTab(id); setQuery(''); setAccountOpen(false); setSelectedMaterialId(null);
         window.requestAnimationFrame(() => { document.getElementById('main')?.focus({ preventScroll: true }); window.scrollTo({ top: 0, behavior: 'auto' }); });
     }
-    function selectProject(id: string) { if (id && !projects.some(project => project.id === id)) return; setFilter(id); setDraftProject(id); }
+    function selectProject(id: string) { const project = projects.find(row => row.id === id); if (id && !project) return; if (project && unitFilter && unitOf(project) !== unitFilter) setUnitFilter(unitOf(project) || '__unassigned__'); setFilter(id); setDraftProject(id); setOfferProject(''); }
+    function selectUnit(id: string) { setUnitFilter(id); setFilter(''); setDraftProject(''); setOfferProject(''); setQuery(''); }
     async function mutate(action: string, payload: Payload): Promise<Row> {
         if (!navigator.onLine)
             throw new Error('Você está sem conexão. Reconecte antes de confirmar uma operação.');
@@ -344,7 +391,7 @@ export default function PortalClient({ initial }: {
             setBusy(false);
         }
     }
-    const projectField = <Field label="Projeto">
+    const projectField = effectiveProject && formProjects.length === 1 ? <div className="p-form-destination"><span>Projeto do registro</span><strong>{projectName(effectiveProject)}</strong><input type="hidden" name="projectId" value={effectiveProject} /></div> : <Field label="Projeto do registro">
     <select name="projectId" value={effectiveProject} onChange={e => setDraftProject(e.target.value)} required>
     <option value="">Selecione um projeto</option>{formProjects.map(p => <option value={p.id} key={p.id}>{p.name}</option>)}</select>
     </Field>;
@@ -364,6 +411,9 @@ export default function PortalClient({ initial }: {
     else if (filter) {
         const row = list(metrics.byProject).find(p => get(p, 'projectId', 'project_id') === filter);
         value = row ? get(row, normalized, ...keys) : ['participations', 'attempts', 'deliveries', 'visits', 'tickets'].includes(normalized) ? list(metrics.campaigns).filter(c => get(c, 'projectId', 'project_id') === filter).reduce((total, row) => total + Number(row[normalized] ?? 0), 0) : undefined;
+    } else if (unitFilter) {
+        const rows = byProject(list(metrics.byProject));
+        value = rows.length && rows.every(row => get(row, normalized, ...keys) !== undefined) ? rows.reduce((total, row) => total + Number(get(row, normalized, ...keys) ?? 0), 0) : undefined;
     } return value === undefined || value === null ? '—' : Number(value).toLocaleString('pt-BR'); };
     function downloadDaily() { const columns = ['day', 'campaign_name', 'modality', 'participations', 'attempts', 'deliveries', 'tickets']; const escape = (value: unknown) => `"${String(value ?? '').replace(/^[=+@-]/, "'$&").replaceAll('"', '""')}"`; const csv = '\uFEFF' + [['Data', 'Evento', 'Modalidade', 'Participações', 'Tentativas', 'Entregas', 'Atendimentos assistidos'].map(escape).join(';'), ...dailyRows.map(row => columns.map(key => escape(key === 'modality' ? row[key] === 'physical' ? 'Presencial' : row[key] === 'dice' ? 'Dado' : row[key] === 'wheel' ? 'Roleta' : row[key] : row[key])).join(';'))].join('\r\n'); const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' })); const link = document.createElement('a'); link.href = url; link.download = 'proex-resumo-diario.csv'; link.click(); URL.revokeObjectURL(url); }
     const title = tabs.find(t => t.id === tab)?.label ?? 'Visão geral';
@@ -443,7 +493,7 @@ export default function PortalClient({ initial }: {
         </div>}</div>
     </div>
     </header>
-      <MobileNavigation modules={allowedTabs} active={tab} onNavigate={navigate} pinned={navigation.pinned} frequent={navigation.frequent} role={role} onTogglePin={navigation.togglePin} />
+      <MobileNavigation modules={allowedTabs} active={tab} onNavigate={navigate} pinned={navigation.pinned} role={role} onTogglePin={navigation.togglePin} />
       <main className="p-main" id="main" tabIndex={-1}>
     <div className="p-page-heading">
     <div>
@@ -451,11 +501,23 @@ export default function PortalClient({ initial }: {
     <h1>{tab === 'overview' ? `Olá, ${string(user.displayName).trim().split(/\s+/)[0] || 'equipe'}.` : title}</h1>
     <p>{tab === 'overview' ? 'Seu início, seus projetos e o que precisa da sua atenção.' : 'Registros compartilhados, com histórico e acesso por projeto.'}</p>
     </div>
-    <Field label="Seu contexto">
-    <select value={filter} onChange={e => { setFilter(e.target.value); setDraftProject(e.target.value); }} aria-label="Filtrar pelo projeto">
-    <option value="">Todos os meus projetos</option>{projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
-    </Field>
     </div>
+    {['overview', 'materials', 'loans', 'events', 'reports'].includes(tab) && <section className="p-scope-filters" aria-label="Filtrar registros por unidade e projeto">
+        <Field label="Unidade">
+            <select value={unitFilter} onChange={event => selectUnit(event.target.value)}>
+                <option value="">Todas as unidades disponíveis</option>
+                {visibleUnits.map(unit => <option key={unit.id} value={unit.id}>{unit.acronym ? `${unit.acronym} · ` : ''}{unit.name}{unit.status === 'archived' ? ' (arquivada)' : ''}</option>)}
+                {hasUnassignedProjects && <option value="__unassigned__">Sem unidade vinculada</option>}
+            </select>
+        </Field>
+        <Field label="Projeto">
+            <select value={filter} onChange={event => selectProject(event.target.value)}>
+                <option value="">Todos os projetos disponíveis{unitFilter ? ' nesta unidade' : ''}</option>
+                {scopedProjects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}
+            </select>
+        </Field>
+        {(filter || unitFilter) && <button type="button" className="p-button p-button-subtle p-filter-clear" onClick={() => selectUnit('')}><X size={15} />Limpar filtros</button>}
+    </section>}
       {!online && <div className="p-notice p-notice-warning" role="status">
         <WifiOff size={18}/>
         <div>
@@ -486,12 +548,12 @@ export default function PortalClient({ initial }: {
         </button>
         </div>}
 
-      {tab === 'overview' && <DashboardPanel modules={allowedTabs} pinned={navigation.pinned} frequent={navigation.frequent} onNavigate={navigate} onTogglePin={navigation.togglePin} displayName={string(user.displayName)} role={role} roleLabel={roleNames[role] || 'Equipe PROEX'} projects={projects} items={visibleItems} loans={visibleLoans} campaigns={visibleCampaigns} selectedProjectId={filter} now={now} onSelectProject={selectProject} known={{ projects: Array.isArray(data.projects), items: Array.isArray(data.items), loans: Array.isArray(data.loans), campaigns: Array.isArray(data.campaigns) }} />}
+      {tab === 'overview' && <DashboardPanel modules={allowedTabs} pinned={navigation.pinned} frequent={navigation.frequent} onNavigate={navigate} onTogglePin={navigation.togglePin} displayName={string(user.displayName)} role={role} roleLabel={roleNames[role] || 'Equipe PROEX'} projects={scopedProjects} items={visibleItems} loans={visibleLoans} campaigns={visibleCampaigns} selectedProjectId={filter} unitName={unitFilter === '__unassigned__' ? 'Sem unidade vinculada' : string(visibleUnits.find(unit => unit.id === unitFilter)?.acronym || visibleUnits.find(unit => unit.id === unitFilter)?.name)} now={now} onSelectProject={selectProject} known={{ projects: Array.isArray(data.projects), items: Array.isArray(data.items), loans: Array.isArray(data.loans), campaigns: Array.isArray(data.campaigns) }} />}
 
-      {tab === 'projects' && <ProjectPanel projects={projects} projectTypes={list(data.projectTypes)} selectedProjectId={filter} canCreate={canGlobal('projects.manage')} canEdit={id => canProject(id, 'campaigns.manage')} mutate={mutate} onSelect={id => { selectProject(id); navigate('overview'); }}/>}
+      {tab === 'projects' && <ProjectPanel projects={projects} projectTypes={list(data.projectTypes)} organizationalUnits={organizationalUnits} canCreate={canGlobal('projects.manage')} canEdit={id => canProject(id, 'campaigns.manage')} mutate={mutate} onSelect={id => { selectProject(id); navigate('overview'); }}/>}
 
       {tab === 'events' && <>
-        <Section title="Eventos e campanhas" description="O regulamento, as ofertas e o limite de participação são definidos por evento.">{visibleCampaigns.length ? <div className="p-event-grid">{visibleCampaigns.map(c => <article className="p-card p-event-card" key={c.id}>
+        <Section title="Roleta e dado" description="Prepare as regras, os brindes e o atendimento das dinâmicas de cada ação.">{visibleCampaigns.length ? <div className="p-event-grid">{visibleCampaigns.map(c => <article className="p-card p-event-card" key={c.id}>
                 <div className="p-row-between">
                 <span className="p-kicker">{projectName(get(c, 'projectId', 'project_id'))}</span>
                 <Badge status={c.status}/>
@@ -522,7 +584,7 @@ export default function PortalClient({ initial }: {
                     <summary>Editar rascunho <ChevronDown size={15}/>
                     </summary>
                     <CampaignForm projects={projects.filter(p => canProject(p.id, 'campaigns.manage'))} offers={offers} initial={c} mutate={mutate}/>
-                    </details>}</article>)}</div> : <Empty title="Nenhum evento cadastrado" text="Prepare um evento para definir regras, acompanhar participações e conectar as ofertas de brindes." icon={CalendarDays}/>}</Section>{can('participation.operate') && <Section title="Operação presencial" description="A equipe acompanha o resultado e utiliza as mesmas regras de participação da campanha.">
+                    </details>}</article>)}</div> : <Empty title="Nenhuma dinâmica cadastrada" text="As campanhas de roleta e dado dos projetos selecionados aparecerão aqui." icon={CalendarDays}/>}</Section>{can('participation.operate') && <Section title="Operação presencial" description="A equipe acompanha o resultado e utiliza as mesmas regras de participação da campanha.">
             <PhysicalAttendance campaigns={visibleCampaigns.filter(c => canProject(get(c, 'projectId', 'project_id'), 'participation.operate'))} tickets={byProject(list(data.physicalTickets))} mutate={mutate}/>
             </Section>}{can('participation.operate', 'inventory.deliver') && (byProject(list(data.pendingPrizes)).length > 0 || data.pendingPrizesTruncated) && <Section title="Prêmios aguardando entrega" description="Reservas que continuam disponíveis após atualizar a página. Confirme a entrega somente depois de conferir o código.">{data.pendingPrizesTruncated && <div className="p-notice p-notice-warning">
                 <Gift size={17}/>
@@ -534,11 +596,13 @@ export default function PortalClient({ initial }: {
             <input name="code" autoComplete="off" required placeholder="Cole ou digite o código apresentado"/>
             </Field>
             </OperationForm>
-            </Section>}{can('campaigns.manage') && projects.length > 0 && <Section title="Preparar evento" description="O evento será criado como rascunho. Regras e estoque precisam estar completos para ativar.">
+            </Section>}{can('campaigns.manage') && formProjects.length > 0 && <Section title="Preparar dinâmica" description="A campanha começa como rascunho. Confira as regras e os brindes antes de ativar.">
             <CampaignForm key={`campaign-create-${filter}`} projects={formProjects} offers={offers} defaultProject={effectiveProject} mutate={mutate}/>
             </Section>}</>}
 
-      {tab === 'materials' && <>
+      {tab === 'materials' && <div className="p-materials-panel">
+        {prizeProjects.length > 0 && <nav className="p-material-tabs" aria-label="Áreas de materiais"><button type="button" aria-pressed={!showPrizeView} className={!showPrizeView ? 'is-active' : ''} onClick={() => setMaterialsView('catalog')}><Boxes size={18} />Catálogo e estoque</button><button type="button" aria-pressed={showPrizeView} className={showPrizeView ? 'is-active' : ''} onClick={() => setMaterialsView('prizes')}><Gift size={18} />Brindes e kits</button></nav>}
+        <div hidden={showPrizeView}>
         <MaterialDetailDrawer itemId={selectedMaterialId} onClose={() => setSelectedMaterialId(null)} onChanged={async () => { await refresh(); }} />
         <Section title="Materiais e estoque" description="Saldo físico, reservas e unidades disponíveis ficam separados." aside={<div className="p-search">
             <Search size={17}/>
@@ -568,7 +632,7 @@ export default function PortalClient({ initial }: {
                 <td><button className="p-button p-button-subtle" onClick={() => setSelectedMaterialId(string(i.id))} aria-label={`Abrir detalhes de ${i.name}`}>Detalhes <ArrowRight size={15} /></button></td>
                 </tr>)}</tbody>
             </table>
-            </div> : <Empty title={query ? 'Nenhum material encontrado' : 'Seu catálogo ainda está vazio'} text={query ? 'Tente outro nome ou selecione outro projeto.' : 'Cadastre os materiais e registre o recebimento após conferir a quantidade real.'}/>}</Section>{can('inventory.manage') && projects.length > 0 && <div className="p-two-columns">
+            </div> : <Empty title={query ? 'Nenhum material encontrado' : 'Seu catálogo ainda está vazio'} text={query ? 'Tente outro nome ou selecione outro projeto.' : 'Cadastre os materiais e registre o recebimento após conferir a quantidade real.'}/>}</Section>{can('inventory.manage') && formProjects.length > 0 && <div className="p-two-columns">
             <Section title="Cadastrar material" description="O cadastro começa sem saldo. Registre o recebimento depois da contagem.">
             <OperationForm onProjectFocus={setDraftProject} action="item.create" mutate={mutate} submit="Cadastrar material" make={f => ({ projectId: f.get('projectId'), name: f.get('name'), category: f.get('category'), categoryId: f.get('categoryId') || null, unit: f.get('unit'), lowStock: Number(f.get('lowStock')), description: f.get('description'), assetCode: f.get('assetCode') })}>
             <div className="p-form-grid">{projectField}<Field label="Nome">
@@ -615,34 +679,9 @@ export default function PortalClient({ initial }: {
             </Field>
             </OperationForm>
             </Section>
-            </div>}{can('inventory.manage') && projects.length > 0 && <Section title="Ofertas de brindes" description="Uma oferta define o que será entregue. Um kit de três buttons consome três unidades.">{offers.length > 0 && <div className="p-offer-list">{byProject(offers).map(o => <div key={o.id}>
-                    <Gift size={18}/>
-                    <strong>{o.name}</strong>
-                    <span>{o.kind === 'super' ? 'Super Brinde' : 'Brinde'}</span>
-                    </div>)}</div>}<OperationForm onProjectFocus={setDraftProject} action="offer.create" mutate={mutate} submit="Criar oferta" make={f => ({ projectId: f.get('projectId'), name: f.get('name'), kind: f.get('kind'), components: Array.from({ length: offerRows }, (_, n) => ({ itemId: f.get(`componentItem${n}`), quantity: Number(f.get(`componentQty${n}`)) })).filter(x => x.itemId) })}>
-            <div className="p-form-grid">{projectField}<Field label="Nome da oferta">
-            <input name="name" required maxLength={120} placeholder="Ex.: Kit com três buttons"/>
-            </Field>
-            <Field label="Categoria do resultado">
-            <select name="kind">
-            <option value="brinde">Brinde</option>
-            <option value="super">Super Brinde</option>
-            </select>
-            </Field>
-            </div>
-            <div className="p-components">{Array.from({ length: offerRows }, (_, n) => <div className="p-component-row" key={n}>
-                <Field label={`Material ${n + 1}`}>
-                <select name={`componentItem${n}`} required={n === 0}>
-                <option value="">Selecione</option>{formItems.filter(i => i.category === 'gift').map(i => <option value={i.id} key={i.id}>{i.name}</option>)}</select>
-                </Field>
-                <Field label="Quantidade">
-                <input name={`componentQty${n}`} type="number" min="1" max="1000" step="1" defaultValue="1" required/>
-                </Field>
-                </div>)}<button type="button" className="p-text-link" disabled={offerRows >= 8} onClick={() => setOfferRows(n => n + 1)}>
-            <Plus size={16}/>Adicionar outro material</button>
-            </div>
-            </OperationForm>
-            </Section>}</>}
+            </div>}</div>
+        {prizeProjects.length > 0 && <div hidden={!showPrizeView}><PrizeKits projects={offerProjects} offers={visibleOffers} items={offerItems} projectId={effectiveOfferProject} onProjectChange={setOfferProject} projectName={projectName} mutate={mutate} /></div>}
+      </div>}
 
       {tab === 'loans' && <>
         <Section title="Agenda de empréstimos" description="A reserva é confirmada por intervalo. Um bem em atraso continua indisponível.">{visibleLoans.length ? <div className="p-loan-list">{visibleLoans.map(l => {
@@ -682,7 +721,7 @@ export default function PortalClient({ initial }: {
                         </OperationForm>}</div>
                     </details>
                     </article>;
-                })}</div> : <Empty title="Nenhuma reserva neste contexto" text="Cadastre o equipamento, confira a disponibilidade e registre a ação que fará a retirada." icon={Truck}/>}</Section>{can('loans.manage') && projects.length > 0 && <Section title="Reservar equipamento" description="Conflitos de horário e bens indisponíveis são conferidos antes da confirmação.">
+                })}</div> : <Empty title="Nenhuma reserva nos filtros selecionados" text="Cadastre o equipamento, confira a disponibilidade e registre a ação que fará a retirada." icon={Truck}/>}</Section>{can('loans.manage') && formProjects.length > 0 && <Section title="Reservar equipamento" description="Conflitos de horário e bens indisponíveis são conferidos antes da confirmação.">
             <OperationForm onProjectFocus={setDraftProject} action="loan.create" mutate={mutate} submit="Confirmar reserva" make={f => ({ projectId: f.get('projectId'), itemId: f.get('itemId'), actionName: f.get('actionName'), borrowerName: f.get('borrowerName'), borrowerContact: f.get('borrowerContact'), startsAt: iso(f.get('startsAt')), endsAt: iso(f.get('endsAt')), note: f.get('note') })}>
             <div className="p-form-grid">{projectField}<Field label="Equipamento">
             <select name="itemId" required>
@@ -712,7 +751,7 @@ export default function PortalClient({ initial }: {
 
       {tab === 'team' && <><TeamPanel users={list(data.users)} members={members} invites={invites} projects={projects} selectedProjectId={filter} globalAdmin={canGlobal('organization.manage')} canProject={canProject} mutate={mutate} now={now}/>{canGlobal('organization.manage') && <AdminPrivacyPanel />}</>}
       {tab === 'profile' && <ProfilePanel onUpdated={() => { void refresh(); }}/>}
-      {tab === 'calendar' && <CalendarPanel projects={projects}/>}
+      {tab === 'calendar' && <CalendarPanel projects={projects} organizationalUnits={organizationalUnits}/>}
       {tab === 'records' && <RecordsPanel projects={projects} items={items} loans={loans} canWrite={(capability: string, projectId?: string | null) => projectId ? canProject(projectId, capability) : canGlobal(capability)}/>}
 
       {tab === 'reports' && <>

@@ -11,7 +11,7 @@ export async function GET(request: Request): Promise<Response> {
   try {
     const db = database(), actor = await getActor(db, await getPortalUser()), url = new URL(request.url);
     const range = calendarRange(url.searchParams.get('from'), url.searchParams.get('to'));
-    const data = await calendarEntries(db, actor, { category: url.searchParams.get('category'), projectId: url.searchParams.get('projectId'), range });
+    const data = await calendarEntries(db, actor, { category: url.searchParams.get('category'), projectId: url.searchParams.get('projectId'), unitId: url.searchParams.get('unitId'), range });
     if (url.searchParams.get('format') === 'ics') {
       return new Response(serializeCalendar(data.entries), { headers: { ...headers, 'Content-Type': 'text/calendar; charset=utf-8', 'Content-Disposition': 'attachment; filename="agenda-proex.ics"' } });
     }

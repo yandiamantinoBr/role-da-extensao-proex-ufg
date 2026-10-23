@@ -5,13 +5,19 @@ import { materialsAction } from '../materials';
 import { campaignAction } from '../campaigns';
 import { projectAction } from '../projects';
 import { createRecord } from '../records';
+import { unitsAction } from '../units';
+import { configureMaterialLinks } from './project-links';
 import { portableDefinition } from './portable';
 import { canonicalSyncJson, syncDigest, requireSyncOwner, SYNC_OWNER_SQL, MAX_SYNC_CHANGES, type PortableChange, type PortableChangeResult } from './contracts';
 
-const APPEND_ACTIONS = new Set(['project.create','project.type.create','project.link.create','project.schedule.create','call.create','material.category.create','item.create','offer.create','stock.move','loan.create','record.create']);
+const APPEND_ACTIONS = new Set(['project.create','project.type.create','project.link.create','project.schedule.create','call.create','material.category.create','item.create','offer.create','stock.move','loan.create','record.create','unit.create','sync.material_links.configure']);
 const PROJECT_ACTIONS = new Set(['project.create','project.update','project.type.create','project.type.update','project.link.create','project.link.update','project.schedule.create','project.schedule.update','call.create','call.update']);
 const MATERIAL_ACTIONS = new Set(['material.category.create','material.category.update','item.create','item.update','offer.create','stock.move','loan.create']);
 const camel = (key:string) => key.replace(/_([a-z])/g,(_match,letter:string)=>letter.toUpperCase());
+function prizesEnabled(value:unknown):boolean{
+ if(value!==true&&value!==false&&value!==0&&value!==1)throw new HttpError(400,'Informe verdadeiro, falso, zero ou um para habilitar dinâmicas e brindes.','invalid_prizes_enabled');
+ return value===true||value===1;
+}
 function object(value:unknown):value is Record<string,unknown>{return !!value&&typeof value==='object'&&!Array.isArray(value);}
 function validId(value:unknown):value is string{return typeof value==='string'&&value.length>0&&value.length<=200&&!/[\u0000-\u001f]/.test(value);}
 function curatedCode(error:HttpError):string{return typeof error.code==='string'&&/^[a-z0-9_]{1,80}$/.test(error.code)?error.code:'sync_rejected';}
@@ -27,7 +33,8 @@ function operation(change:PortableChange):{action:string;input:Record<string,unk
   if(change.table!==undefined||change.fields!==undefined||!APPEND_ACTIONS.has(change.action)||!object(change.input))throw new HttpError(400,'Esta operação não é permitida pela integração.','sync_invalid_action');
   // Actor, grants and authority are supplied by the server, never by spreadsheet.
   for(const key of Object.keys(change.input))if(['actor','actorId','userId','role','members','capabilities','stock','reserved'].includes(key))throw new HttpError(400,'A operação contém um campo controlado pelo portal.','sync_system_field');
-  return {action:change.action,input:{...change.input},entityId:null};
+  const input={...change.input};if(change.action==='project.create'&&input.prizesEnabled!==undefined)input.prizesEnabled=prizesEnabled(input.prizesEnabled);
+  return {action:change.action,input,entityId:null};
  }
  const schema=typeof change.table==='string'?portableDefinition(change.table):undefined;
  if(!schema?.updateAction||!validId(change.id)||!object(change.fields)||!Object.keys(change.fields).length)throw new HttpError(400,'Escolha uma linha de metadados editável.','sync_invalid_row');
@@ -36,7 +43,7 @@ function operation(change:PortableChange):{action:string;input:Record<string,unk
  const fields:Record<string,unknown>={};
  for(const [key,value] of Object.entries(change.fields)){
   if(!allowed.has(key))throw new HttpError(400,'Saldos, permissões e campos calculados não podem ser editados na planilha.','sync_system_field');
-  fields[camel(key)]=value;
+  fields[camel(key)]=key==='prizes_enabled'?prizesEnabled(value):value;
  }
  return {action:schema.updateAction,input:{...fields,id:change.id,expectedVersion:change.expectedVersion},entityId:change.id};
 }
@@ -45,9 +52,11 @@ async function invoke(db:D1Database,actor:PortalActor,action:string,input:Record
  if(MATERIAL_ACTIONS.has(action))return materialsAction(db,actor,action,input);
  if(action==='campaign.update')return campaignAction(db,actor,action,input);
  if(action==='record.create')return createRecord(db,actor,input);
+ if(action==='unit.create'||action==='unit.update')return unitsAction(db,actor,action,input);
+ if(action==='sync.material_links.configure')return configureMaterialLinks(db,actor,input);
  throw new HttpError(400,'Operação de integração não disponível.','sync_invalid_action');
 }
-function resultId(result:any,fallback:string|null):string|null{return result?.id||result?.project?.id||result?.item?.id||result?.loan?.id||result?.movement?.id||result?.offer?.id||result?.category?.id||result?.call?.id||result?.link?.id||result?.schedule?.id||result?.record?.id||fallback;}
+function resultId(result:any,fallback:string|null):string|null{return result?.id||result?.project?.id||result?.item?.id||result?.loan?.id||result?.movement?.id||result?.offer?.id||result?.category?.id||result?.call?.id||result?.link?.id||result?.schedule?.id||result?.record?.id||result?.unit?.id||fallback;}
 
 /** Import is deliberately per-row atomic, not a workbook-wide transaction.
  * Service rules and ledger triggers remain the sole domain writers. */

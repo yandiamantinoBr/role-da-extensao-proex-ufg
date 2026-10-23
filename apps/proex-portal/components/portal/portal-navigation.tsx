@@ -51,17 +51,23 @@ export function DesktopSidebar({ modules, active, onNavigate, pinned, collapsed,
     </div>
     </aside>;
 }
-export function MobileNavigation({ modules, active, onNavigate, pinned, role, frequent, onTogglePin }: Props & {
-    frequent: ModuleId[];
+export function MobileNavigation({ modules, active, onNavigate, pinned, role, onTogglePin }: Props & {
     onTogglePin: (id: ModuleId) => void;
 }) {
     const [open, setOpen] = useState(false), [query, setQuery] = useState('');
     const dialog = useRef<HTMLDivElement>(null), trigger = useRef<HTMLButtonElement>(null);
     const allowed = modules.map(module => module.id);
-    const candidates = [...pinned, ...frequent, ...recommendedModules(role, allowed)];
+    // The bottom bar moves only when the person changes pins or their access changes.
+    const candidates = [...pinned, ...recommendedModules(role, allowed)];
     const primary = [...new Set(candidates)].filter(id => id !== 'overview' && id !== 'profile' && allowed.includes(id)).slice(0, 2);
     const primaryIds: ModuleId[] = ['overview', ...primary, 'profile'].filter((id): id is ModuleId => allowed.includes(id as ModuleId));
     const items = primaryIds.map(id => modules.find(module => module.id === id)).filter((module): module is PortalModule => Boolean(module));
+    useEffect(() => {
+        const desktop = window.matchMedia('(min-width: 721px)');
+        const changed = () => { if (desktop.matches) { setOpen(false); setQuery(''); document.getElementById('main')?.focus({ preventScroll: true }); } };
+        desktop.addEventListener('change', changed);
+        return () => desktop.removeEventListener('change', changed);
+    }, []);
     useEffect(() => { if (!open)
         return; const previous = document.body.style.overflow; document.body.style.overflow = 'hidden'; const timer = window.setTimeout(() => dialog.current?.querySelector<HTMLButtonElement>('.pn-drawer-close')?.focus(), 0); const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') {
         setOpen(false);

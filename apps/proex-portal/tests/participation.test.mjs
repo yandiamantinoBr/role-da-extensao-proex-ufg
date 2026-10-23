@@ -4,12 +4,14 @@ import { DatabaseSync } from 'node:sqlite';
 import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
+import path from 'node:path';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 function asModule(source) { return `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`; }
 function compile(name, dependencies = {}) {
   let code = ts.transpileModule(readFileSync(`${root}lib/${name}.ts`, 'utf8'), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
   for (const [dependency, url] of Object.entries(dependencies)) code = code.replaceAll(`from './${dependency}'`, `from ${JSON.stringify(url)}`).replaceAll(`from "./${dependency}"`, `from ${JSON.stringify(url)}`);
+  code=code.replace(/from (['"])(\.{1,2}\/[^'"]+)\1/g,(_match,_quote,dependency)=>{const resolved=path.posix.normalize(path.posix.join(path.posix.dirname(name),dependency));return `from ${JSON.stringify(dependencies[resolved]??compile(resolved,dependencies))}`;});
   return asModule(`${code}\n//# sourceURL=${name}-under-test.mjs`);
 }
 const errors = compile('errors');

@@ -3,6 +3,7 @@ import test from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
 import { readFileSync, readdirSync } from 'node:fs';
 import ts from 'typescript';
+import path from 'node:path';
 
 function moduleUrl(source) { return `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`; }
 function compile(name, dependencies = {}) {
@@ -13,6 +14,7 @@ function compile(name, dependencies = {}) {
     source = source.replaceAll(`from './${dependency}'`, `from ${JSON.stringify(url)}`)
       .replaceAll(`from "./${dependency}"`, `from ${JSON.stringify(url)}`);
   }
+  source=source.replace(/from (['"])(\.{1,2}\/[^'"]+)\1/g,(_match,_quote,dependency)=>{const resolved=path.posix.normalize(path.posix.join(path.posix.dirname(name),dependency));return `from ${JSON.stringify(dependencies[resolved]??compile(resolved,dependencies))}`;});
   return moduleUrl(source);
 }
 const errors = compile('errors');
