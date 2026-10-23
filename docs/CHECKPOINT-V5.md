@@ -1,5 +1,6 @@
 # Checkpoint de desenvolvimento — V5
-n> **Atualização:** este checkpoint foi concluído e ampliado na branch `feat/proex-v6-portabilidade`. Veja `docs/ENTREGA-V6.md`.
+
+> **Atualização:** este checkpoint foi concluído e ampliado na branch `feat/proex-v6-portabilidade`. Veja `docs/ENTREGA-V6.md`.
 
 Estado: em desenvolvimento, sem publicação desta revisão. A versão operacional continua sendo a V4, fonte Sites `ae50c4eab331f74057c60dd487167af1b9925410`, salva como versão 4. A PR #4 foi incorporada à main no merge `3a1a6697bd123d38d42b9e98f5229409fcceb4dc`, com CI aprovada. A V4 tem sincronização Google Sheets verificada nos dois sentidos: primeira exportação de 118 linhas e, depois, três descrições de buttons importadas com CAS, reexportação de 130 linhas e leitura de retorno de 27 tabelas, sem conflito.
 
