@@ -1,0 +1,54 @@
+{
+  "revision": "f905f0d78371dc4a8784cce27bdbc7ef6fa88103",
+  "tree": "d07a71a224e5ee9e73b73da9098fd00c3af29749",
+  "files": [
+    {
+      "path": "app/globals.css",
+      "gitBlobSha": "abc9b1ecae5e4d9c54d0805680712f0d449907f6"
+    },
+    {
+      "path": "app/layout.tsx",
+      "gitBlobSha": "c0cd7d1a1810ab1eba957a5187fe2386bc5746e0"
+    },
+    {
+      "path": "app/page.tsx",
+      "gitBlobSha": "fab16743027d767d44953c345fe4258b0303caa2"
+    },
+    {
+      "path": "github-pages/index.html",
+      "gitBlobSha": "0ec2a94e55a61ad4bf4efb3d402b3365d628cc70"
+    },
+    {
+      "path": "github-pages/main.tsx",
+      "gitBlobSha": "76793ff64f268316a921e76c3c3cf7bdd69d4778"
+    },
+    {
+      "path": "lib/game-audio.ts",
+      "gitBlobSha": "6cc0e11ac22da09ec09875da9a50ad0e18dd2802"
+    },
+    {
+      "path": "lib/roulette.ts",
+      "gitBlobSha": "8a5bd3405ef7a36289b08b69c325425a4d8d1966"
+    },
+    {
+      "path": "public/brand/emoji-hearts.png",
+      "gitBlobSha": "47f7becce706a9287001c9c2c593bbcecb191eae"
+    },
+    {
+      "path": "public/brand/emoji-sunglasses.png",
+      "gitBlobSha": "28f21cfbe9249e3f3e91c0cfd0c10dea103ad3ed"
+    },
+    {
+      "path": "public/brand/emoji-tongue.png",
+      "gitBlobSha": "8137f238341d3d17a21f28d24ecf227876b1ee2a"
+    },
+    {
+      "path": "public/brand/proex.png",
+      "gitBlobSha": "f452a2e16051df48c0e397545fdc5a4702033b1f"
+    },
+    {
+      "path": "public/brand/ufg-white.png",
+      "gitBlobSha": "8993ca38a280ec1a0ef9730236bd608888afc2ea"
+    }
+  ]
+}

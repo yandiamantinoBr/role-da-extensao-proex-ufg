@@ -14,7 +14,10 @@
     "db:generate": "drizzle-kit generate",
     "dev:pages": "vite --config vite.pages.config.ts --host 127.0.0.1",
     "build:pages": "vite build --config vite.pages.config.ts",
-    "preview:pages": "vite preview --config vite.pages.config.ts --host 127.0.0.1"
+    "preview:pages": "vite preview --config vite.pages.config.ts --host 127.0.0.1",
+    "test": "node --experimental-strip-types --test tests/*.test.mjs",
+    "check:types": "tsc --noEmit --incremental false",
+    "check:legacy": "node scripts/check-legacy-preservation.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
