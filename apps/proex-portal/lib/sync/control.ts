@@ -70,7 +70,7 @@ export async function finishSyncRun(db:D1Database,actor:PortalActor|null,input:R
  if(input.status==='completed'&&(input.readbackVerified!==true||input.tablesVerified!==describePortableSchemas().tables.length))throw new HttpError(400,'Conclua a leitura de retorno de todas as abas antes de confirmar a sincronização.','sync_readback_required');
  const findRun=()=>one(db,'SELECT id,status,exported_count,finished_at FROM sync_runs WHERE id=? AND started_by=?',[input.id,actor.userId]);
  const run=await findRun();if(!run)throw new HttpError(409,'Execução encerrada ou não encontrada.','sync_run_not_running');
- const replay=(row:Record<string,any>|null)=>row&&row.status===input.status&&row.exported_count===exportedCount?{id:input.id,status:row.status,finishedAt:row.finished_at,duplicate:true}:null;
+ const replay=(row:Record<string,unknown>|null)=>row&&row.status===input.status&&row.exported_count===exportedCount?{id:input.id,status:row.status,finishedAt:row.finished_at,duplicate:true}:null;
  if(run.status!=='running'){const saved=replay(run);if(saved)return saved;throw new HttpError(409,'Execução encerrada ou não encontrada.','sync_run_not_running');}
  const code=input.status==='failed'?'provider_or_readback_failed':null,now=iso();
  try{await db.batch([

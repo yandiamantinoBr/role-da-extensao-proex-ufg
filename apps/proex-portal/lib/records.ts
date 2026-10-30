@@ -1,12 +1,15 @@
 import { accessibleProjects, requireCapability, type PortalActor } from './access';
 import { HttpError } from './errors';
 import { prepareMutation } from './mutations';
+import { MAX_UPLOAD_FILE_BYTES, MAX_UPLOAD_BODY_BYTES, UPLOAD_LIMIT_MESSAGE } from './upload-limits';
 
-export const MAX_RECORD_FILE_BYTES = 10 * 1024 * 1024;
-const MAX_FORM_BYTES = MAX_RECORD_FILE_BYTES + 64 * 1024;
+export const MAX_RECORD_FILE_BYTES = MAX_UPLOAD_FILE_BYTES;
+const MAX_FORM_BYTES = MAX_UPLOAD_BODY_BYTES;
 const KINDS = ['observation', 'maintenance', 'distribution', 'consumption', 'project', 'material', 'loan'] as const;
 type Kind = typeof KINDS[number];
 type Scope = string[] | null;
+// SQL projections vary by record kind; each read/write is scoped and validated below.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = Record<string, any>;
 type StoredRecord = { id: string; project_id: string; kind: Kind; loan_id: string | null; item_id: string | null };
 type Attachment = { id: string; record_id: string; project_id: string; object_key: string; name: string; mime: string; size: number };
@@ -168,7 +171,7 @@ export function requireRecordMutation(request: Request, type: 'json' | 'form'): 
 
 export async function readRecordForm(request: Request): Promise<RecordFileInput> {
   const length = request.headers.get('Content-Length');
-  if (length && (!/^\d+$/.test(length) || Number(length) > MAX_FORM_BYTES)) throw new HttpError(413, 'O anexo deve ter até 10 MB.', 'file_too_large');
+  if (length && (!/^\d+$/.test(length) || Number(length) > MAX_FORM_BYTES)) throw new HttpError(413, UPLOAD_LIMIT_MESSAGE, 'file_too_large');
   if (!request.body) throw new HttpError(400, 'Escolha um arquivo.', 'missing_file');
   const reader = request.body.getReader(), chunks: Uint8Array[] = [];
   let size = 0;
@@ -177,7 +180,7 @@ export async function readRecordForm(request: Request): Promise<RecordFileInput>
       const { done, value: chunk } = await reader.read();
       if (done) break;
       size += chunk.byteLength;
-      if (size > MAX_FORM_BYTES) { await reader.cancel(); throw new HttpError(413, 'O anexo deve ter até 10 MB.', 'file_too_large'); }
+      if (size > MAX_FORM_BYTES) { await reader.cancel(); throw new HttpError(413, UPLOAD_LIMIT_MESSAGE, 'file_too_large'); }
       chunks.push(chunk);
     }
   } finally { reader.releaseLock(); }
@@ -188,13 +191,13 @@ export async function readRecordForm(request: Request): Promise<RecordFileInput>
   catch { throw new HttpError(400, 'Não foi possível ler o anexo.', 'invalid_form'); }
   if ([...form.keys()].some(key => !['recordId', 'file', 'operationKey'].includes(key)) || ['recordId', 'file', 'operationKey'].some(key => form.getAll(key).length !== 1)) throw new HttpError(400, 'Envie um registro, uma chave de operação e um arquivo.', 'invalid_form');
   const file = form.get('file');
-  if (!file || typeof file === 'string' || !file.size || file.size > MAX_RECORD_FILE_BYTES) throw new HttpError(413, 'Escolha um arquivo de até 10 MB.', 'invalid_file_size');
+  if (!file || typeof file === 'string' || !file.size || file.size > MAX_RECORD_FILE_BYTES) throw new HttpError(413, UPLOAD_LIMIT_MESSAGE, 'invalid_file_size');
   return { recordId: idValue(form.get('recordId'), 'o registro')!, operationKey: value(form.get('operationKey'), 'a chave de operação', 120), name: file.name, declaredMime: file.type.toLowerCase(), bytes: new Uint8Array(await file.arrayBuffer()) };
 }
 
 export function validatedRecordFile(input: Pick<RecordFileInput, 'bytes' | 'name' | 'declaredMime'>): { mime: string; name: string } {
   const bytes = input.bytes;
-  if (!bytes.byteLength || bytes.byteLength > MAX_RECORD_FILE_BYTES) throw new HttpError(413, 'Escolha um arquivo de até 10 MB.', 'file_too_large');
+  if (!bytes.byteLength || bytes.byteLength > MAX_RECORD_FILE_BYTES) throw new HttpError(413, UPLOAD_LIMIT_MESSAGE, 'file_too_large');
   const signature = (...values: number[]) => values.every((value, i) => bytes[i] === value);
   let mime: string | null = null;
   if (bytes.length >= 8 && signature(0x25, 0x50, 0x44, 0x46, 0x2d)) mime = 'application/pdf';

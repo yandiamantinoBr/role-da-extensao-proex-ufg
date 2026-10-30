@@ -48,6 +48,8 @@ export default function TeamPersonDetail({userId,projectId,projects,onClose,onOp
    <section className={styles.memberships} aria-label="Acessos neste contexto"><h3 className={styles.sectionTitle}><ShieldCheck size={18}/>Acessos neste contexto</h3>{person.members.length?<ul>{person.members.map(member=><li key={member.id}><span><strong>{member.project_id?projects.find(project=>project.id===member.project_id)?.name||'Projeto':'Toda a organização'}</strong><small>{ROLES[member.role]||'Integrante'}</small></span><span className={`p-badge ${member.revoked_at?'p-status-revoked':'p-status-active'}`}>{member.revoked_at?'Revogado':'Ativo'}</span></li>)}</ul>:<p className="p-form-help">Sem vínculo neste contexto.</p>}</section>
    <p className={styles.note}>Os dados institucionais são preenchidos pela própria pessoa. As permissões de acesso são definidas pela gestão em cada projeto.</p>
   </div>}
+  {/* O fallback precisa recarregar o painel: module é lido apenas na inicialização. */}
+  {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
   <footer className={styles.footer}><button className="p-button p-button-subtle" type="button" onClick={onClose}>Fechar perfil</button>{person?.isSelf&&!person.isAnonymized&&(onOpenOwnProfile?<button className="p-button p-button-primary" type="button" onClick={()=>{onClose();onOpenOwnProfile();}}>Editar meu perfil<ArrowUpRight size={16}/></button>:<a className="p-button p-button-primary" href="/?module=profile">Editar meu perfil<ArrowUpRight size={16}/></a>)}</footer>
  </DialogContent></Dialog>;
 }

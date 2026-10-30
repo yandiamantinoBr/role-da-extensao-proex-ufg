@@ -74,7 +74,12 @@ function fixture(t) {
       },
       async run() { return this.execute(); },
       execute() {
-        const result = sqlite.prepare(sql).run(...parameters);
+        const statement = sqlite.prepare(sql);
+        if (statement.columns().length) {
+          const results = statement.all(...parameters);
+          return { success: true, results, meta: { changes: /^\s*SELECT\b/i.test(sql) ? 0 : Number(sqlite.prepare('SELECT changes() AS n').get().n) } };
+        }
+        const result = statement.run(...parameters);
         return { success: true, results: [], meta: { changes: Number(result.changes) } };
       },
     };

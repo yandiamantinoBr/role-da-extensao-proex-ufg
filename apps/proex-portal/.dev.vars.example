@@ -1,0 +1,6 @@
+# Somente nomes. Configure valores locais fora do repositório; não copie segredos de produção.
+PROEX_STANDALONE=
+BETTER_AUTH_URL=
+BETTER_AUTH_SECRET=
+OWNER_EMAIL=
+SETUP_TOKEN=

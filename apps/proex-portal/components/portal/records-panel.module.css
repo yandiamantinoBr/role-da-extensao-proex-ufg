@@ -41,3 +41,22 @@
 @media (max-width: 900px) { .filterBar { grid-template-columns: 1fr 1fr; } .filterBar > label:first-child { grid-column: 1 / -1; } .filterActions { grid-column: 1 / -1; } .filterActions :global(.p-button-primary) { flex: 1; } }
 @media (max-width: 560px) { .filterBar { grid-template-columns: 1fr; } .searchField { width: 100%; } }
 
+.filterActions { flex-wrap: wrap; min-width: 0; }
+.filterHelp, .entry p { overflow-wrap: anywhere; }
+.monthBars { max-width: 100%; min-width: 0; overscroll-behavior-x: contain; }
+.historyActions { min-width: 0; }
+@container portal (max-width:900px) {
+  .filterBar { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .filterBar > label:first-child, .filterActions { grid-column: 1 / -1; }
+}
+@container portal (max-width:620px) {
+  .filterBar { grid-template-columns: minmax(0, 1fr); }
+  .filterActions :global(.p-button-primary) { flex: 1; }
+  .historyActions { width: 100%; }
+  .historyActions :global(.p-button) { flex: 1 1 140px; min-height: 44px; }
+  .kindChips button, .attachDetails summary { min-height: 44px; }
+  .searchField { width: 100%; min-width: 0; }
+  .searchField input { font-size: 16px; }
+  .entryHead { flex-wrap: wrap; }
+}
+

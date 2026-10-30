@@ -1,7 +1,15 @@
 import {HttpError} from './errors';
+const MAX_EXPIRED_BUCKETS_PER_REQUEST = 200;
 export async function rateLimit(db:D1Database,bucket:string,limit:number,windowMs:number){
  const key=[...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(bucket)))].map(b=>b.toString(16).padStart(2,'0')).join(''),now=Date.now();
- const row=await db.prepare('INSERT INTO portal_rate_limits(bucket_key,count,reset_at) VALUES(?,1,?) ON CONFLICT(bucket_key) DO UPDATE SET count=CASE WHEN reset_at<=? THEN 1 ELSE count+1 END,reset_at=CASE WHEN reset_at<=? THEN ? ELSE reset_at END RETURNING count,reset_at').bind(key,now+windowMs,now,now,now+windowMs).first<{count:number,reset_at:number}>();
+ // A limpeza participa da mesma transação do incremento: no alvo Node há
+ // uma única persistência do instantâneo, sem tarefa de escrita em cada leitura.
+ // O lote é limitado e nunca remove um balde ainda ativo.
+ const results=await db.batch([
+  db.prepare('DELETE FROM portal_rate_limits WHERE bucket_key IN (SELECT bucket_key FROM portal_rate_limits WHERE reset_at<=? LIMIT ?)').bind(now,MAX_EXPIRED_BUCKETS_PER_REQUEST),
+  db.prepare('INSERT INTO portal_rate_limits(bucket_key,count,reset_at) VALUES(?,1,?) ON CONFLICT(bucket_key) DO UPDATE SET count=CASE WHEN reset_at<=? THEN 1 ELSE count+1 END,reset_at=CASE WHEN reset_at<=? THEN ? ELSE reset_at END RETURNING count,reset_at').bind(key,now+windowMs,now,now,now+windowMs),
+ ]);
+ const row=results[1]?.results?.[0] as {count:number,reset_at:number}|undefined;
  if(!row||row.count>limit)throw new HttpError(429,'Muitas tentativas. Aguarde alguns minutos antes de tentar novamente.','rate_limited');
 }
 /** IP do cliente informado pela plataforma: Cloudflare ou, no alvo Node da Vercel, x-real-ip (definido pela própria Vercel). */

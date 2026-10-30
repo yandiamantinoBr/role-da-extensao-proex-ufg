@@ -1,6 +1,6 @@
 import {getPortalUser} from '@/lib/session';
 import {database} from '../../../../lib/platform';
-import {one,all,iso,text} from '../../../../lib/database';
+import {one,all,text} from '../../../../lib/database';
 import {HttpError,publicError} from '../../../../lib/errors';
 import {boundedJson} from '../../../../lib/http';
 import {draw,participationView} from '../../../../lib/participation';
@@ -10,7 +10,8 @@ export async function GET(_request:Request,context:Context){try{
  const {id}=await context.params,db=database(),c=await one(db,'SELECT id,name,project_id,location,status,rules_text,retry_limit,starts_at,ends_at FROM campaigns WHERE id=? AND status<>?',[id,'draft']);if(!c)throw new HttpError(404,'Ação não encontrada ou ainda não publicada.');
  const user=await getPortalUser(),p=user?await one(db,'SELECT id FROM participations WHERE campaign_id=? AND identity_id=?',[id,user.userId]):null;
  const settings=Object.fromEntries((await all(db,"SELECT name,value FROM settings WHERE name IN ('instagramUrl','privacyNotice')")).map(r=>[r.name,r.value]));
- await db.prepare('INSERT INTO visits(campaign_id,day,hits) VALUES(?,?,1) ON CONFLICT(campaign_id,day) DO UPDATE SET hits=hits+1').bind(id,new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date())).run();
+ // Abrir um evento é somente leitura. No alvo Node, gravar cada visita
+ // publicaria o banco inteiro novamente; os contadores antigos são históricos.
  return Response.json({campaign:c,authenticated:!!user,participation:p?await participationView(db,p.id):null,instagramUrl:settings.instagramUrl||null,privacyNotice:settings.privacyNotice||null},{headers:{'Cache-Control':'no-store'}});
  }catch(e){return publicError(e);}}
 export async function POST(request:Request,context:Context){try{

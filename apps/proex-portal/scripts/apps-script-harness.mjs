@@ -8,9 +8,11 @@ import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import assert from 'node:assert/strict';
+import { localHarnessUrl } from './local-harness-url.mjs';
 
 const portal = process.env.PORTAL_URL, token = process.env.SYNC_TOKEN;
 if (!portal || !token) { console.error('Defina PORTAL_URL e SYNC_TOKEN.'); process.exit(2); }
+const localOrigin = localHarnessUrl(portal).origin;
 
 class Sheet {
   constructor(name) { this.name = name; this.cells = []; this.maxRows = 1000; this.maxCols = 26; this.frozenRows = 0; this.frozenCols = 0; }
@@ -54,6 +56,7 @@ const context = vm.createContext({
   Utilities: { getUuid: () => randomUUID(), DigestAlgorithm: { SHA_256: 'sha256' }, Charset: { UTF_8: 'utf8' },
     computeDigest: (_alg, value) => javaBytes(createHash('sha256').update(typeof value === 'string' ? Buffer.from(value, 'utf8') : Buffer.from(value.map(b => (b + 256) % 256))).digest()) },
   UrlFetchApp: { fetch(url, options = {}) {
+    if (new URL(url).origin !== localOrigin) throw new Error('O harness bloqueou uma chamada fora do portal local.');
     const args = ['-s', '-o', '-', '-w', '\n%{http_code}', url];
     if (options.method === 'post') args.push('-X', 'POST', '-H', `Content-Type: ${options.contentType}`, '--data-binary', '@-');
     for (const [k, v] of Object.entries(options.headers || {})) args.push('-H', `${k}: ${v}`);

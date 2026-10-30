@@ -19,8 +19,9 @@ import DashboardPanel from '@/components/portal/dashboard-panel';
 import { DesktopSidebar, MobileNavigation } from '@/components/portal/portal-navigation';
 import { PORTAL_MODULES, type ModuleId } from '@/components/portal/navigation-model';
 import { useNavigationPreferences } from '@/components/portal/use-navigation-preferences';
-import { useFormDraft, DraftNotice, setDraftScope } from '@/components/portal/use-form-draft';
+import { useFormDraft, DraftNotice, setDraftScope, clearCurrentDrafts, watchDraftLogout } from '@/components/portal/use-form-draft';
 import { THEMATIC_AREAS, groupUnits } from '@/lib/extension-catalog';
+import { MAX_UPLOAD_FILE_BYTES, UPLOAD_LIMIT_LABEL, uploadErrorMessage } from '@/lib/upload-limits';
 import { ArrowDownToLine, ArrowRight, Boxes, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronRight, ExternalLink, FileText, Gift, LoaderCircle, LogOut, Plus, RefreshCw, Search, ShieldCheck, Truck, Users, Wifi, WifiOff, X } from 'lucide-react';
 // API projections vary by module; the server validates every mutation.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -36,7 +37,12 @@ const get = (r: Row, ...keys: string[]) => keys.map(k => r?.[k]).find(v => v !==
 const list = (value: unknown): Row[] => Array.isArray(value) ? value : [];
 const string = (value: unknown) => value === null || value === undefined ? '' : String(value);
 const when = (value: unknown, time = true) => { const d = new Date(value as string | number); return Number.isFinite(d.getTime()) ? d.toLocaleString('pt-BR', { dateStyle: 'short', ...(time ? { timeStyle: 'short' as const } : {}), timeZone: 'America/Sao_Paulo' }) : 'Não informado'; };
-const iso = (value: FormDataEntryValue | null) => value ? new Date(String(value)).toISOString() : null;
+const iso = (value: FormDataEntryValue | null) => {
+    if (!value) return null;
+    const date = new Date(String(value));
+    if (!Number.isFinite(date.getTime())) throw new Error('Informe uma data e um horário válidos.');
+    return date.toISOString();
+};
 const operationId = () => crypto.randomUUID();
 const readableError = (value: unknown, fallback = 'Não foi possível concluir. Atualize os dados e tente novamente.') => typeof value === 'string' && value.length < 450 && !/SQLITE|D1_|SQL syntax|Unexpected token|JSON|Failed to fetch|NetworkError|Load failed|<html/i.test(value) ? value : fallback;
 function Field({ label, children, help }: {
@@ -166,8 +172,8 @@ function LoanAttachment({ loanId, onSaved }: {
     const [file, setFile] = useState<File | null>(null), [saving, setSaving] = useState(false), [error, setError] = useState(''), [message, setMessage] = useState('');
     const key = useRef<string | null>(null);
     function choose(event: React.ChangeEvent<HTMLInputElement>) { const chosen = event.currentTarget.files?.[0]; event.currentTarget.value = ''; if (!chosen)
-        return; setMessage(''); setError(''); if (chosen.size > 10 * 1024 * 1024 || !['image/jpeg', 'image/png', 'image/webp', 'application/pdf'].includes(chosen.type)) {
-        setError('Escolha uma foto JPEG, PNG, WebP ou um PDF de até 10 MB.');
+        return; setMessage(''); setError(''); if (chosen.size > MAX_UPLOAD_FILE_BYTES || !['image/jpeg', 'image/png', 'image/webp', 'application/pdf'].includes(chosen.type)) {
+        setError(`Escolha uma foto JPEG, PNG, WebP ou um PDF de até ${UPLOAD_LIMIT_LABEL}.`);
         return;
     } setFile(chosen); key.current = crypto.randomUUID(); }
     async function upload() { if (!file || saving)
@@ -178,7 +184,7 @@ function LoanAttachment({ loanId, onSaved }: {
         const response = await fetch('/api/files', { method: 'POST', headers: { 'X-Proex-Action': '1', 'X-Operation-Key': key.current }, body: form });
         const result = await response.json().catch(() => null) as Row | null;
         if (!response.ok || !result)
-            throw new Error(readableError(result?.error, 'Não foi possível confirmar o anexo. Use Tentar novamente com o mesmo arquivo.'));
+            throw new Error(readableError(uploadErrorMessage(response.status, result?.error, 'Não foi possível confirmar o anexo. Use Tentar novamente com o mesmo arquivo.'), 'Não foi possível confirmar o anexo.'));
         const updated = await onSaved();
         setMessage(updated ? 'Documento anexado com acesso restrito.' : 'Documento salvo. Atualize os dados para consultar o anexo.');
         setFile(null);
@@ -194,7 +200,7 @@ function LoanAttachment({ loanId, onSaved }: {
     <label className="p-field">
     <span>Foto ou PDF do termo</span>
     <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" disabled={saving} onChange={choose}/>
-    <small>Até 10 MB. O arquivo fica restrito à equipe autorizada.</small>
+    <small>Até {UPLOAD_LIMIT_LABEL}. O arquivo fica restrito à equipe autorizada.</small>
     </label>{file && <div className="p-file-ready">
         <p>
         <FileText size={15}/>{file.name} · {(file.size / 1024 / 1024).toFixed(1)} MB</p>
@@ -363,6 +369,8 @@ export default function PortalClient({ initial }: {
     useEffect(() => { if (!unitFilter || accessibleUnitKey.split('|').includes(unitFilter)) return; const timer = window.setTimeout(() => { setUnitFilter(''); setFilter(''); setDraftProject(''); }, 0); return () => window.clearTimeout(timer); }, [accessibleUnitKey, unitFilter]);
     const navigation = useNavigationPreferences(string(user.userId), allowedTabs.map(module => module.id));
     setDraftScope(string(user.userId));
+    const draftUserId = string(user.userId);
+    useEffect(() => watchDraftLogout(draftUserId), [draftUserId]);
     function navigate(id: ModuleId) {
         if (!allowedTabs.some(module => module.id === id)) return;
         pendingLink.current = null;
@@ -409,6 +417,7 @@ export default function PortalClient({ initial }: {
             const response = await fetch('/api/account', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Proex-Action': '1' }, body: JSON.stringify({ action: 'logout' }) });
             if (!response.ok)
                 throw new Error('Não foi possível sair. Tente novamente.');
+            clearCurrentDrafts();
             // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- Reload clears private client data after the session cookie is removed.
             window.location.assign('/login');
         }
@@ -479,6 +488,7 @@ export default function PortalClient({ initial }: {
         <ProfilePanel onUpdated={() => { void refresh(); }}/>
         </main>;
     return <div className={`p-shell pn-shell ${navigation.collapsed ? 'pn-is-collapsed' : ''} ${navigation.ready ? 'pn-navigation-ready' : ''}`}>
+    <a className="p-skip-link" href="#main">Pular para o conteúdo</a>
     <DesktopSidebar modules={allowedTabs} active={tab} onNavigate={navigate} pinned={navigation.pinned} role={role} collapsed={navigation.collapsed} onToggle={navigation.toggleCollapsed} />
     <div className="p-workspace">
     <header className="p-topbar">
@@ -829,9 +839,9 @@ export default function PortalClient({ initial }: {
         </div>
         <div className="p-measures">
         <div className="p-card">
-        <span>Carregamentos de páginas</span>
+        <span>Visitas históricas</span>
         <strong>{metric('visits')}</strong>
-        <small>{reportFrom || reportTo ? 'Sem medição diária neste recorte' : 'Não são visitantes únicos'}</small>
+        <small>{data.metrics?.visitsCollection === 'paused' ? 'Coleta suspensa para preservar a disponibilidade; não representa o público atual.' : reportFrom || reportTo ? 'Sem medição diária neste recorte' : 'Não são visitantes únicos'}</small>
         </div>
         <div className="p-card">
         <span>Atendimentos assistidos</span>

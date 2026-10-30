@@ -181,7 +181,45 @@ test('invalid files, origins and missing operation keys do not touch R2 or datab
     assert.equal((await route.POST(request(null))).status, 400);
     assert.equal((await route.POST(request('svg-upload-0001', { bytes: new TextEncoder().encode('<svg/>'), name: 'photo.svg', mime: 'image/svg+xml' }))).status, 415);
     assert.equal((await route.POST(request('mismatch-upload-0001', { name: 'term.png' }))).status, 415);
-    assert.equal((await route.POST(request('huge-upload-0001', { bytes: new Uint8Array(10 * 1024 * 1024 + 1) }))).status, 413);
+    // Node 24's in-process FormData serializer rejects asynchronously when its
+    // stream is cancelled before the final multipart boundary. Exercise the
+    // received wire bytes here; the separate chunked case covers cancellation.
+    const oversized = request('huge-upload-0001', { bytes: new Uint8Array(10 * 1024 * 1024 + 1) });
+    const wireBody = await oversized.arrayBuffer();
+    assert.equal((await route.POST(new Request(oversized.url, { method: 'POST', headers: oversized.headers, body: wireBody }))).status, 413);
+    assert.equal(storage.puts, 0); assert.equal(count(db, 'documents'), 0);
+  } finally { db.native.close(); }
+});
+
+test('loan documents accept 4 MiB and reject larger files before storing anything', async () => {
+  const { db, storage } = fixture();
+  try {
+    context(db, storage, principal(db));
+    const atLimit = new Uint8Array(4 * 1024 * 1024); atLimit.set(pdf);
+    const accepted = await route.POST(request('boundary-upload-0001', { bytes: atLimit }));
+    assert.equal(accepted.status, 201);
+    assert.equal((await accepted.json()).size, atLimit.byteLength);
+    const rejected = await route.POST(request('above-boundary-upload-0001', { bytes: new Uint8Array(atLimit.byteLength + 1) }));
+    assert.equal(rejected.status, 413);
+    assert.match((await rejected.json()).error, /4 MB/);
+    assert.equal(storage.puts, 1); assert.equal(count(db, 'documents'), 1);
+  } finally { db.native.close(); }
+});
+
+test('loan multipart body limit rejects declared and streamed oversized bodies without a storage write', async () => {
+  const { db, storage } = fixture();
+  try {
+    context(db, storage, principal(db));
+    const length = 4 * 1024 * 1024 + 64 * 1024 + 1;
+    for (const chunked of [false, true]) {
+      const body = chunked ? new ReadableStream({ start(controller) { controller.enqueue(new Uint8Array(length)); controller.close(); } }) : 'x';
+      const response = await route.POST(new Request('https://portal.example.invalid/api/files', {
+        method: 'POST', body, ...(chunked ? { duplex: 'half' } : {}),
+        headers: { Origin: 'https://portal.example.invalid', 'X-Proex-Action': '1', 'Content-Type': 'multipart/form-data; boundary=test', ...(!chunked ? { 'Content-Length': String(length) } : {}) },
+      }));
+      assert.equal(response.status, 413);
+      assert.match((await response.json()).error, /4 MB/);
+    }
     assert.equal(storage.puts, 0); assert.equal(count(db, 'documents'), 0);
   } finally { db.native.close(); }
 });

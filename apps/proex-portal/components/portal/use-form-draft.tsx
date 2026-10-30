@@ -1,6 +1,7 @@
 'use client';
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import { History, Trash2 } from 'lucide-react';
+import { DRAFT_PREFIX, PRIVATE_DRAFT_FIELD, clearDraftStorage, createDraftScope, draftLogoutKey, onDraftLogout } from '../../lib/draft-storage';
 
 // Rascunho automático de formulários. Guarda os campos no próprio navegador enquanto a
 // pessoa digita, restaura ao reabrir o formulário e apaga depois de salvar com sucesso.
@@ -9,12 +10,32 @@ import { History, Trash2 } from 'lucide-react';
 // arquivos nunca são guardados. O rascunho fica separado por pessoa (veja setDraftScope).
 type Values = Record<string, string | boolean | string[]>;
 type Stored = { savedAt: string; values: Values };
-const PREFIX = 'proex:draft:v1:';
+const PREFIX = DRAFT_PREFIX;
 const MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
-const PRIVATE = /(password|senha|cpf|token|secret|setup|registrationnumber)/i;
-let scope = 'anon';
+const PRIVATE = PRIVATE_DRAFT_FIELD;
+const draftScope = createDraftScope();
 /** Chamado pelo portal com o identificador da pessoa conectada. */
-export function setDraftScope(userId: string) { scope = userId || 'anon'; }
+export function setDraftScope(userId: string) { draftScope.activate(userId); }
+
+/** Keep logout invalidation active even while no draft form is mounted. */
+export function watchDraftLogout(userId: string) {
+  return onDraftLogout(window, userId, () => {
+    draftScope.invalidate(userId);
+    try { clearDraftStorage(localStorage, userId); } catch { /* storage may be disabled */ }
+  });
+}
+
+/** A completed logout must not leave form drafts on a shared computer. */
+export function clearCurrentDrafts() {
+  const scope = draftScope.current;
+  draftScope.invalidate(scope);
+  try {
+    clearDraftStorage(localStorage, scope);
+    const key = draftLogoutKey(scope);
+    localStorage.setItem(key, 'logout');
+    localStorage.removeItem(key);
+  } catch { /* restricted browser storage must not block logout */ }
+}
 
 type Field = HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
 function fields(form: HTMLFormElement): Field[] {
@@ -47,7 +68,7 @@ function apply(form: HTMLFormElement, values: Values) {
   }
 }
 const same = (a: Values, b: Values) => JSON.stringify(a) === JSON.stringify(b);
-const storageKey = (key: string) => `${PREFIX}${scope}:${key}`;
+const storageKey = (key: string) => `${PREFIX}${draftScope.current}:${key}`;
 function load(key: string): Stored | null {
   try {
     const parsed = JSON.parse(localStorage.getItem(storageKey(key)) || 'null') as Stored | null;
@@ -67,8 +88,17 @@ export function useFormDraft(formRef: RefObject<HTMLFormElement | null>, key: st
   useEffect(() => {
     const form = formRef.current;
     if (!form || !key) return;
+    const formScope = draftScope.current;
+    if (formScope === 'anon') return;
+    const stopLogoutListener = onDraftLogout(window, formScope, () => {
+      draftScope.invalidate(formScope);
+      window.clearTimeout(timer.current);
+      try { clearDraftStorage(localStorage, formScope); } catch { /* storage may be disabled */ }
+      setSavedAt(null); setRestored(false);
+    });
     // Espera o primeiro render preencher os valores iniciais antes de restaurar.
     const start = window.setTimeout(() => {
+      if (draftScope.current !== formScope) return;
       baseline.current = read(form);
       const stored = load(key);
       if (stored && !same(stored.values, baseline.current)) { apply(form, stored.values); setSavedAt(stored.savedAt); setRestored(true); }
@@ -76,7 +106,7 @@ export function useFormDraft(formRef: RefObject<HTMLFormElement | null>, key: st
     const save = () => {
       window.clearTimeout(timer.current);
       timer.current = window.setTimeout(() => {
-        if (!baseline.current) return;
+        if (!baseline.current || draftScope.current !== formScope) return;
         const values = read(form);
         try {
           if (same(values, baseline.current)) { localStorage.removeItem(storageKey(key)); setSavedAt(null); return; }
@@ -88,7 +118,7 @@ export function useFormDraft(formRef: RefObject<HTMLFormElement | null>, key: st
     };
     form.addEventListener('input', save);
     form.addEventListener('change', save);
-    return () => { window.clearTimeout(start); window.clearTimeout(timer.current); form.removeEventListener('input', save); form.removeEventListener('change', save); };
+    return () => { stopLogoutListener(); window.clearTimeout(start); window.clearTimeout(timer.current); form.removeEventListener('input', save); form.removeEventListener('change', save); };
   }, [formRef, key]);
   const clear = useCallback(() => {
     window.clearTimeout(timer.current);
@@ -109,7 +139,7 @@ export function DraftNotice({ draft }: { draft: FormDraft }) {
   if (!draft.savedAt) return null;
   return <p className="p-draft-notice" role="status">
     <History size={15} aria-hidden="true" />
-    <span>{draft.restored ? `Rascunho restaurado (salvo em ${hour(draft.savedAt)}).` : `Rascunho salvo automaticamente às ${hour(draft.savedAt).split(' ')[1] ?? hour(draft.savedAt)}.`} Ele fica só neste navegador até você salvar.</span>
+    <span>{draft.restored ? `Rascunho restaurado (salvo em ${hour(draft.savedAt)}).` : `Rascunho salvo automaticamente às ${hour(draft.savedAt).split(' ')[1] ?? hour(draft.savedAt)}.`} Ele fica só neste navegador até você salvar ou sair.</span>
     <button type="button" className="p-text-link" onClick={draft.discard}><Trash2 size={14} aria-hidden="true" />Descartar rascunho</button>
   </p>;
 }

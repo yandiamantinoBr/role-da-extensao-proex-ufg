@@ -132,11 +132,25 @@ export class SnapshotD1 {
     this.version = snapshot?.version ?? 0;
   }
   private async persist(): Promise<boolean> {
-    const committed = await this.store.commit(this.version, gzipSync(readFileSync(this.file)));
-    if (committed === null) { this.lastCheck = 0; this.version = -1; return false; }
-    this.version = committed;
-    this.lastCheck = Date.now();
-    return true;
+    try {
+      const committed = await this.store.commit(this.version, gzipSync(readFileSync(this.file)));
+      if (committed === null) { this.discardLocal(); return false; }
+      this.version = committed;
+      this.lastCheck = Date.now();
+      return true;
+    } catch (error) {
+      // O COMMIT local já aconteceu. Uma falha de rede pode significar tanto
+      // rejeição remota quanto resposta perdida depois do sucesso: não exponha
+      // nem reenvie esta cópia incerta. A próxima operação recarrega a fonte.
+      this.discardLocal();
+      throw error;
+    }
+  }
+  private discardLocal() {
+    this.close();
+    this.version = -1;
+    this.lastCheck = 0;
+    this.migrated = false;
   }
   /** Aplica migrações pendentes no mesmo formato de histórico do wrangler (`d1_migrations`). */
   private async migrate() {

@@ -1,4 +1,4 @@
-import { one, iso, uid } from '../database';
+import { one, iso, uid, type Row } from '../database';
 import { type PortalActor } from '../access';
 import { HttpError } from '../errors';
 import { materialsAction } from '../materials';
@@ -56,7 +56,8 @@ async function invoke(db:D1Database,actor:PortalActor,action:string,input:Record
  if(action==='sync.material_links.configure')return configureMaterialLinks(db,actor,input);
  throw new HttpError(400,'Operação de integração não disponível.','sync_invalid_action');
 }
-function resultId(result:any,fallback:string|null):string|null{return result?.id||result?.project?.id||result?.item?.id||result?.loan?.id||result?.movement?.id||result?.offer?.id||result?.category?.id||result?.call?.id||result?.link?.id||result?.schedule?.id||result?.record?.id||result?.unit?.id||fallback;}
+// Os serviços legados retornam projeções Row diferentes conforme a operação.
+function resultId(result:Row|null,fallback:string|null):string|null{return result?.id||result?.project?.id||result?.item?.id||result?.loan?.id||result?.movement?.id||result?.offer?.id||result?.category?.id||result?.call?.id||result?.link?.id||result?.schedule?.id||result?.record?.id||result?.unit?.id||fallback;}
 
 /** Import is deliberately per-row atomic, not a workbook-wide transaction.
  * Service rules and ledger triggers remain the sole domain writers. */

@@ -24,7 +24,11 @@ export async function requireSyncOwner(db: D1Database, actor: PortalActor | null
  if (!await one(db, `SELECT 1 AS allowed WHERE ${SYNC_OWNER_SQL}`, [actor.userId])) throw new HttpError(403, 'Somente a administração geral pode sincronizar dados.', 'sync_forbidden');
 }
 export function canonicalSyncJson(value: unknown): string {
- const ordered = (v: any): any => Array.isArray(v) ? v.map(ordered) : v && typeof v === 'object' ? Object.fromEntries(Object.keys(v).filter(k => v[k] !== undefined).sort().map(k => [k, ordered(v[k])])) : v;
+ const ordered = (v: unknown): unknown => {
+  if (Array.isArray(v)) return v.map(ordered);
+  if (v && typeof v === 'object') { const fields = v as Record<string, unknown>; return Object.fromEntries(Object.keys(fields).filter(k => fields[k] !== undefined).sort().map(k => [k, ordered(fields[k])])); }
+  return v;
+ };
  return JSON.stringify(ordered(value));
 }
 export async function syncDigest(value: string): Promise<string> {

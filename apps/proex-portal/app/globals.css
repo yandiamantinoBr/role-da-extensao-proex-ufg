@@ -77,3 +77,36 @@ input:is([type=checkbox],[type=radio]){appearance:auto;display:inline-block;widt
 :where(.p-card:not(.p-table-wrap)){padding:22px 24px}
 :where(.p-card)>h3:first-child{margin-top:0}
 @media(max-width:720px){:where(.p-card:not(.p-table-wrap)){padding:18px 16px}}
+
+/* A largura útil muda com a barra lateral, não só com a janela. */
+.p-main{container-name:portal;container-type:inline-size}
+.p-main :is(.p-section,.p-card,.p-form,.p-table-wrap),.p-form-grid>*{min-width:0}
+.p-table-wrap{max-width:100%;overscroll-behavior-x:contain}
+.p-page-heading>div,.p-section-heading>div,.p-notice>div{min-width:0;overflow-wrap:anywhere}
+.p-draft-notice span{flex:1 1 200px;min-width:0;overflow-wrap:anywhere}
+.p-file-link{min-width:0}.p-file-link>span{min-width:0;overflow-wrap:anywhere}
+.p-login-card{width:100%;min-width:0}
+
+@container portal (max-width:620px){
+  .p-form-grid,.p-two-columns .p-form-grid{grid-template-columns:1fr}
+  .p-form-footer{flex-wrap:wrap;gap:12px}
+  .p-form-footer>.p-inline-error{max-width:none;flex-basis:100%}
+  .p-form-footer>.p-button{width:100%}
+  .p-section-heading{flex-wrap:wrap;align-items:flex-start}
+  .p-section-heading>.p-search{width:100%;min-width:0}
+}
+@media(max-width:720px){
+  .p-main :is(input,select,textarea):not([type=checkbox]):not([type=radio]),
+  .p-login :is(input,select,textarea),.p-page-heading>.p-field select,.p-search input{font-size:16px}
+  .p-topbar .p-icon-button{width:44px;height:44px}
+  .p-topbar .p-avatar{width:40px;height:40px}
+  .p-notice button,.p-text-link,.pd-pin,.pn-pin-button{min-height:44px}
+  .p-notice button{min-width:44px}
+  .p-form-grid,.p-two-columns .p-form-grid{grid-template-columns:1fr}
+  .p-button{white-space:normal;overflow-wrap:anywhere}
+  .p-login-card{max-width:490px}
+  .auth-page :is(input,select,textarea){font-size:16px}
+}
+
+.p-skip-link{position:fixed;top:8px;left:8px;z-index:1000;transform:translateY(-160%);padding:12px 18px;background:var(--surface);color:var(--ink);border:2px solid var(--focus);border-radius:10px;font-weight:700}
+.p-skip-link:focus{transform:translateY(0)}

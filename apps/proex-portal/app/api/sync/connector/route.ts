@@ -11,8 +11,9 @@ export const dynamic='force-dynamic';
 export async function POST(request:Request){try{
  if(!request.headers.get('content-type')?.toLowerCase().startsWith('application/json'))throw new HttpError(415,'Envie JSON.','invalid_content_type');
  const db=database(),authorization=request.headers.get('authorization');
- await rateLimit(db,`sync-connector:${(await syncDigest(authorization??'')).slice(0,32)}`,2000,600000);
  const actor=await actorFromSyncToken(db,authorization);
+ // Chaves ausentes ou inválidas não podem criar baldes persistidos no banco.
+ await rateLimit(db,`sync-connector:${(await syncDigest(authorization!)).slice(0,32)}`,2000,600000);
  const body=await boundedJson(request,144*1024);
  const args=body.args&&typeof body.args==='object'&&!Array.isArray(body.args)?body.args as Record<string,unknown>:{};
  const result=await callSyncTool(db,actor,body.tool,args,new URL(request.url).origin);

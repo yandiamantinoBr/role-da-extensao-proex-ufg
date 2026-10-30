@@ -2,19 +2,21 @@
 
 Portal para organizar projetos, equipe, eventos, materiais, participação no Rolê da Extensão e empréstimos. A interface prioriza o celular. O jogo livre existente continua independente, público e ilimitado em https://role-da-extensao-ufg.yandiamantinobr.chatgpt.site/ e em sua publicação GitHub Pages.
 
-Este diretório contém a implementação V4 do portal. O [Manual de operação](docs/MANUAL-PROEX.md) reúne os fluxos para a equipe. A existência do código não comprova publicação nem validação de todos os fluxos. Consulte o registro de entrega e as verificações do PR para saber qual revisão foi efetivamente testada e publicada. Não há dados históricos ou saldos reais pré-preenchidos.
+Este diretório contém o portal, incluindo as entregas [V7](../../docs/ENTREGA-V7.md) e [V8](../../docs/ENTREGA-V8.md). O [Manual de operação](docs/MANUAL-PROEX.md) reúne os fluxos para a equipe. O endereço de produção é <https://proex-gestao.vercel.app/>. A existência do código não comprova publicação nem validação de todos os fluxos: confira a revisão do deployment e os resultados registrados. Testes locais devem usar somente dados sintéticos.
+
+Para preparar e verificar o ambiente, consulte [Verificação do repositório](docs/VERIFICACAO-REPOSITORIO.md) e o [AGENTS.md](../../AGENTS.md). O arquivo `.dev.vars.example` contém apenas os nomes das variáveis locais, sem valores; credenciais de produção não são necessárias para desenvolver.
 
 ## Arquitetura desta implementação
 
 **Hospedagem atual: Vercel + Supabase** ([guia](docs/HOSPEDAGEM-VERCEL.md)), com o build Node (`pnpm build:node`) e o SQLite do portal persistido no Postgres por `platform-node/`. **Alternativas com o mesmo código:** ChatGPT Sites e uma conta Cloudflare própria da PROEX, publicada pelo GitHub Actions (`.github/workflows/portal-deploy.yml`), com banco D1 e arquivos R2 independentes de conta pessoal. O passo a passo está em [Hospedagem própria](docs/HOSPEDAGEM-PROPRIA.md). Na hospedagem própria (`PROEX_STANDALONE=1`) o Worker descarta cabeçalhos de identidade do Sites e o primeiro responsável é criado em `/configuracao-inicial`, com `SETUP_TOKEN` e `OWNER_EMAIL`.
 
-O portal usa o runtime do Sites, banco Cloudflare D1 e armazenamento privado Cloudflare R2. O login por e-mail e senha usa Better Auth, com sessões e credenciais no próprio D1. O manifesto `.openai/hosting.json` identifica o projeto do portal e declara os bindings lógicos `DB` e `BUCKET`. Ele deve ser preservado ao atualizar esse Site. O portal não usa o banco de outro projeto da PROEX ou do Kino Campus.
+Na Vercel, `platform-node/` fornece as interfaces compatíveis com D1 e R2: as consultas continuam em SQLite (`node:sqlite`), o instantâneo é persistido com controle de versão no esquema privado `proex` do Supabase e os anexos ficam em `proex.objects`. Better Auth mantém as sessões e credenciais no mesmo banco lógico SQLite. Supabase não substitui as tabelas de autenticação por Supabase Auth. Na alternativa Cloudflare/Sites, os bindings `DB` e `BUCKET` usam D1 e R2; preserve o manifesto `.openai/hosting.json` para esse fluxo. O portal não usa o banco de outro projeto da PROEX ou do Kino Campus.
 
 As tabelas `auth_*` guardam a autenticação; `portal_users`, `identity_aliases`, `profiles` e `members` guardam cadastro, vínculo de identidade, perfil e permissões do portal. O identificador canônico preserva o histórico anterior: o identificador novo do provedor de senha não substitui os responsáveis já gravados em participações, entregas, empréstimos ou auditoria. Igualdade de e-mail, sozinha, não vincula duas identidades nem concede privilégios.
 
-O plano inicial discutia PostgreSQL gerenciado e autenticação externa como alternativas condicionais. PostgreSQL, Supabase e hospedagem externa continuam alternativas para uma migração deliberada; não estão configurados neste código. Uma migração exige adaptar SQL, restrições, transações, autenticação e arquivos, com novos testes. Não basta trocar uma variável de conexão.
+O Postgres do Supabase armazena os instantâneos, seus históricos e objetos privados; ele não executa diretamente o SQL de domínio do portal. Uma futura conversão das tabelas para Postgres exigiria adaptar SQL, restrições, transações e testes. Não basta trocar uma variável de conexão nem executar as migrações SQLite no Postgres. O histórico no mesmo Supabase não substitui backup externo com restauração verificada.
 
-A camada de serviços está em `lib/`; o esquema e suas migrações ficam em `db/` e `drizzle/`; rotas de API fazem autenticação e autorização no servidor. Os contratos são separados da apresentação, mas o adaptador D1 e os bindings ainda pertencem ao runtime atual. O snapshot previsto no repositório público ficará em `apps/proex-portal`, com implantação separada da roleta livre. Copiar o código para o GitHub não publica automaticamente este portal no Sites.
+A camada de serviços está em `lib/`; o esquema e suas migrações ficam em `db/` e `drizzle/`; rotas de API fazem autenticação e autorização no servidor. Os adaptadores preservam os contratos existentes. O portal já está no repositório público em `apps/proex-portal`, com implantação separada da roleta livre. Copiar o código para o GitHub não comprova que uma revisão foi publicada.
 
 ## Login, convites e primeiro responsável
 
@@ -131,7 +133,7 @@ Entradas, distribuição institucional, consumo e ajustes têm movimentos e moti
 
 Cadastre cada equipamento como um bem individual. Reservas consideram intervalos e estado; conflitos são bloqueados no banco. Equipamento retirado e não devolvido permanece indisponível após a data prevista. Manutenção e avaria precisam ser registradas antes de novo uso. O portal apoia a operação, sem substituir por si só termos e autorizações oficiais no SEI/SIGAA.
 
-Fotos e PDFs dos termos são objetos privados em R2, associados ao empréstimo e ao projeto. Downloads passam por autorização no servidor. A API aceita PDF, JPEG, PNG ou WebP até 10 MB, com verificações de conteúdo e extensão. Upload de um termo não constitui assinatura eletrônica certificada. Não anexar documentos reais em testes nem publicar termos ou assinaturas no GitHub.
+Fotos e PDFs dos termos são objetos privados, associados ao empréstimo e ao projeto: na hospedagem atual ficam no Supabase, por meio do adaptador de armazenamento; na alternativa Cloudflare ficam no R2. Downloads passam por autorização no servidor. Novos envios aceitam PDF, JPEG, PNG ou WebP até 4 MB por arquivo, com verificações de conteúdo e extensão e limite compartilhado entre interface e APIs. Upload de um termo não constitui assinatura eletrônica certificada. Não anexar documentos reais em testes nem publicar termos ou assinaturas no GitHub.
 
 ## Indicadores e planilhas
 
@@ -154,11 +156,12 @@ O endereço do Instagram é configurável e opcional. Abrir ou seguir o perfil n
 Execute os comandos a partir deste diretório, inclusive quando estiver dentro de `apps/proex-portal` no repositório. Preserve o lockfile e use as versões do projeto.
 
 ```sh
-pnpm install --frozen-lockfile
-pnpm db:migrate:local          # banco local em .wrangler/state
-pnpm exec tsc --noEmit --incremental false
-pnpm test
-pnpm run build
+npx --yes pnpm@11.25.0 install --frozen-lockfile
+npx --yes pnpm@11.25.0 lint
+npx --yes pnpm@11.25.0 check:types
+npx --yes pnpm@11.25.0 test
+npx --yes pnpm@11.25.0 build
+npx --yes pnpm@11.25.0 build:node
 # Depois do build: autenticação no Worker compilado, com D1/R2 temporários.
 node --import ./scripts/sites-env.mjs tests/password-auth-worker-smoke.mjs
 ```
@@ -167,9 +170,9 @@ No ambiente Work gerenciado, use o supervisor e o fluxo da skill Sites para pré
 
 As versões de Better Auth e do adaptador Drizzle estão fixadas no manifesto e no lockfile. Atualizações exigem revisar as notas de segurança, respeitar a política de maturidade das dependências e testar novamente login, cookies, vínculo canônico, convites, bloqueio e recuperação. `tests/password-auth.test.mjs` usa Better Auth real, Drizzle D1 e SQLite com as migrações reais; ele também verifica disputas de ativação e resgate único de recuperação. O smoke após o build executa o Worker compilado em Miniflare/workerd, criando seus próprios bancos temporários e credenciais sintéticas, sem acessar a base local compartilhada ou a hospedada. Essas verificações complementam a validação nos navegadores utilizados pela equipe.
 
-O Sites provisiona os bindings declarados e aplica as migrações hospedadas no fluxo de publicação. O esquema está em `db/schema.ts`; após mudanças deliberadas, gere e revise as novas migrações com `pnpm run db:generate`, mantendo SQL e metadados no GitHub. Migrações já aplicadas são imutáveis. Não criar ou alterar tabelas durante requisições do aplicativo.
+Na alternativa Sites, o fluxo de publicação provisiona os bindings declarados e aplica as migrações hospedadas. Na Vercel, o adaptador Node carrega as migrações SQLite; não aplique esse SQL diretamente no Postgres do Supabase. O esquema está em `db/schema.ts`; após mudanças deliberadas, gere e revise novas migrações com `npx --yes pnpm@11.25.0 db:generate`, mantendo SQL e metadados no GitHub. Migrações já aplicadas são imutáveis. Não criar ou alterar tabelas de domínio nas rotas do aplicativo.
 
-Para a base **local**, faça um build para gerar a configuração Wrangler e aplique cada arquivo SQL ainda pendente, em ordem. O comando abaixo é um exemplo; substitua o nome pelo arquivo correto e nunca reaplique um já executado:
+Para a alternativa Worker com base **local**, faça um build para gerar a configuração Wrangler e aplique cada arquivo SQL ainda pendente, em ordem. O comando abaixo é um exemplo; substitua o nome pelo arquivo correto e nunca reaplique um já executado:
 
 ```sh
 node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/<migracao_pendente>.sql

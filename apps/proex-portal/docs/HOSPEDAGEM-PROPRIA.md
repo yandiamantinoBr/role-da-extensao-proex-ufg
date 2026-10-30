@@ -1,23 +1,26 @@
-# Hospedagem própria do portal (GitHub → Cloudflare)
+# Hospedagem própria do portal — alternativa Cloudflare
 
-O portal pode funcionar em dois lugares, com o mesmo código:
+Estado revisado em 30/10/2026: a hospedagem atual é **Vercel + Supabase**, em [proex-gestao.vercel.app](https://proex-gestao.vercel.app/). Este guia preserva o procedimento da **alternativa Cloudflare**, sem declarar essa alternativa configurada ou publicada. O histórico do ChatGPT Sites também é preservado. Consulte o [guia da hospedagem atual](HOSPEDAGEM-VERCEL.md) e o registro de entrega para identificar a revisão em produção; alterações locais da V9 não comprovam publicação.
+
+O portal mantém estas opções com o mesmo código:
 
 | Onde | Para quê | Quem publica |
 | --- | --- | --- |
-| **ChatGPT Sites** (`proex-gestao.yandiamantinobr.chatgpt.site`) | Versão atual, criada pelo Codex | Codex, pelo fluxo do Sites |
-| **Cloudflare da PROEX** (este guia) | Versão institucional, independente de conta pessoal e do ChatGPT | GitHub Actions, automaticamente a cada atualização da `main` |
+| **Vercel + Supabase** | Hospedagem atual; build Node e adaptador de persistência | Integração da Vercel com o GitHub |
+| **ChatGPT Sites** (`proex-gestao.yandiamantinobr.chatgpt.site`) | Instalação histórica e alternativa | Fluxo do Sites |
+| **Cloudflare da PROEX** (este guia) | Alternativa institucional com Workers, D1 e R2 | Workflow do GitHub Actions, quando configurado |
 
-A Cloudflare é a escolha natural porque o Sites já roda sobre a mesma tecnologia (Workers, banco **D1**, que é SQLite, e arquivos no **R2**). Nada no código precisa ser reescrito: o mesmo banco, as mesmas migrações e os mesmos testes valem para os dois lugares.
+Na hospedagem atual, o banco da aplicação continua **SQLite**: o adaptador Node persiste o arquivo comprimido em `proex.sqlite_snapshot`, no Postgres do Supabase, com controle de versão (compare-and-set). Os anexos privados ficam em `proex.objects`. Isso não converteu as tabelas do domínio para Postgres. A alternativa Cloudflare usa D1 (SQLite) e R2, preservando as consultas e migrações SQLite; dados, identidade, arquivos e recuperação precisam ser transferidos e verificados para a instalação de destino.
 
-## O que a PROEX precisa criar (uma vez)
+## Alternativa Cloudflare: o que a PROEX precisa criar
 
 1. **Conta Cloudflare** com um e-mail institucional (de preferência uma conta da PROEX, não pessoal), em <https://dash.cloudflare.com/sign-up>.
-2. **Plano**: o gratuito serve para testar. Para uso diário recomenda-se o **Workers Paid** (US$ 5/mês na data deste guia): o plano gratuito limita o processamento de cada página a poucos milissegundos, e páginas maiores do painel podem ser interrompidas. Confira os valores atuais em <https://developers.cloudflare.com/workers/platform/pricing/>.
+2. **Plano**: avalie os limites de processamento e armazenamento para o uso pretendido. O valor de US$ 5/mês para Workers Paid foi registrado na versão original deste guia; consulte [preços e limites oficiais](https://developers.cloudflare.com/workers/platform/pricing/) antes de contratar.
 3. **R2** (fotos e termos): no painel, abra **R2** e ative o serviço. A Cloudflare pede um cartão mesmo para a faixa gratuita (10 GB). Sem R2 o portal funciona, mas anexos ficam indisponíveis.
 4. **Token de API**: em **My Profile → API Tokens → Create Token → Edit Cloudflare Workers**, acrescente as permissões **D1: Edit** e **Workers R2 Storage: Edit**. Copie o token, que aparece só uma vez.
 5. **Account ID**: aparece na barra lateral da página inicial do painel.
 
-## O que configurar no GitHub (uma vez)
+## Alternativa Cloudflare: configuração no GitHub
 
 No repositório, abra **Settings → Environments → New environment**, crie `producao` e cadastre:
 
@@ -31,11 +34,7 @@ No repositório, abra **Settings → Environments → New environment**, crie `p
 | `OWNER_EMAIL` | e-mail de quem será o primeiro responsável institucional |
 | `SETUP_TOKEN` | outro texto aleatório (24 ou mais caracteres), usado uma única vez na configuração inicial |
 
-Para gerar textos aleatórios, rode no terminal:
-
-```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
-```
+Gere e guarde os valores secretos em um gerenciador de senhas e cadastre-os diretamente nos campos de Secrets. Não imprima valores em terminal, logs ou documentação.
 
 **Variables** (visíveis):
 
@@ -53,11 +52,11 @@ Depois, em **Actions → Publicar portal PROEX (hospedagem própria) → Run wor
 4. publica o Worker com a marca de hospedagem própria (`PROEX_STANDALONE=1`);
 5. grava os segredos no Worker.
 
-A partir daí, cada merge na `main` que altere `apps/proex-portal` publica de novo. Sem os segredos o fluxo só avisa e termina, sem quebrar nada.
+Quando essa alternativa estiver configurada, cada atualização da `main` que altere `apps/proex-portal` aciona o workflow. Sem a configuração necessária, ele apenas registra um aviso e pula a implantação: um resultado verde nesse caso não comprova publicação Cloudflare e não informa o estado da implantação Vercel.
 
 O endereço `*.workers.dev` aparece no fim do log. Se for usar um domínio da UFG, aponte-o em **Workers → proex-gestao → Settings → Domains & Routes** e atualize `PROEX_PUBLIC_URL`.
 
-## Primeiro acesso
+## Alternativa Cloudflare: primeiro acesso
 
 1. Abra `<endereço>/configuracao-inicial`. O link também aparece na tela de login enquanto ninguém configurou o servidor.
 2. Informe o `SETUP_TOKEN`, o mesmo e-mail de `OWNER_EMAIL`, seu nome e uma senha de 12 ou mais caracteres.
@@ -68,11 +67,11 @@ O endereço `*.workers.dev` aparece no fim do log. Se for usar um domínio da UF
 
 No Sites a identidade do ChatGPT é colocada pela plataforma. Fora dele, qualquer navegador poderia enviar esses mesmos cabeçalhos. Por isso, na hospedagem própria, o Worker descarta todos os cabeçalhos `oai-authenticated-*` antes de o aplicativo ler a requisição. A única forma de criar o primeiro responsável é a combinação **segredo do servidor + e-mail configurado + inexistência de responsável anterior**.
 
-## Trazer os dados do Sites (ou de qualquer backup)
+## Alternativa Cloudflare: trazer dados de outra instalação
 
-Os dados atuais estão espelhados na planilha Google. Para carregar no banco novo:
+Use uma exportação cuja data e leitura de retorno tenham sido verificadas. A planilha é uma projeção operacional; sua configuração e uma sincronização passada não comprovam um gatilho atualmente ativo. Veja [Sincronização](SINCRONIZACAO.md#estado-verificável). Para carregar no banco novo:
 
-1. Na planilha, use **Arquivo → Fazer download → Microsoft Excel (.xlsx)**. Também serve o backup completo baixado em **Configurações → Dados e sincronização** de qualquer instalação.
+1. Na planilha verificada, use **Arquivo → Fazer download → Microsoft Excel (.xlsx)**. Também serve a exportação portátil obtida em **Configurações → Dados e sincronização**. O nome “backup completo” na interface não significa cópia integral de credenciais e objetos privados.
 2. No computador, dentro de `apps/proex-portal`:
 
 ```bash
@@ -87,22 +86,29 @@ npx wrangler d1 execute proex-gestao --remote --file importacao.sql
 
 O importador valida cada linha contra as migrações reais (tipos, regras e vínculos) antes de gerar o SQL e nunca sobrescreve registros existentes (`INSERT OR IGNORE`). Pessoas, permissões, auditoria e credenciais **não** são copiadas: a equipe é convidada de novo no portal novo. Saldos entram como estavam e continuam sendo alterados só por movimentações.
 
-Fotos e termos não estão na planilha (são privados). Eles ficam na pasta do Drive “PROEX · Anexos privados” quando o conector da planilha está ativo, ou podem ser reenviados nos registros.
+Fotos e termos não estão nas células da planilha. Na hospedagem atual são objetos privados do Supabase; na alternativa Cloudflare ficam no R2. Uma cópia pode existir na pasta privada do Drive quando o fluxo de anexos tiver sido concluído e verificado; ter a pasta configurada não comprova a cópia. Confira IDs, hashes, tamanhos e acesso no destino.
 
-## Backup
+Na revisão local V9, novos envios de PDF, JPEG, PNG e WebP têm limite de **4 MiB por arquivo (4.194.304 bytes)**, mostrado como “4 MB”. O limite vale para entrada: anexos legados maiores não são excluídos nem bloqueados nos downloads autorizados. A revisão publicada deve ser conferida antes de atribuir esse limite ao ambiente em produção.
 
-- **Automático**: o fluxo **Backup do banco do portal** exporta o D1 todo dia como `.sql` (SQLite padrão) e guarda 30 dias como artefato privado do GitHub.
-- **Pelo portal**: **Configurações → Dados e sincronização → Baixar backup completo**.
-- **Planilha Google**: cópia legível, atualizada pelo conector (veja `SINCRONIZACAO.md`).
+## Backup e recuperação
+
+- **Hospedagem atual, Vercel + Supabase**: durante uma gravação de instantâneo, o adaptador inclui uma versão em `proex.sqlite_history` se não houver outra nas últimas seis horas, mantendo até 60 dias. A cópia depende de uma gravação; não é um agendamento independente. Ela está no mesmo Supabase e não inclui uma cópia externa dos objetos privados. Exige estratégia de backup externo e restauração verificada.
+- **Saúde do serviço**: `/api/health` faz uma consulta ao banco; o cron configurado para essa rota verifica disponibilidade. Resposta bem-sucedida não cria backup, não exporta arquivos e não testa restauração.
+- **Alternativa Cloudflare**: o workflow **Backup do banco do portal** agenda exportação do D1 e criptografa o SQL como `.sql.enc`, com retenção de 30 dias no GitHub. Ele depende de configuração própria; sem ela, pula exportação e geração de artefato. Resultado verde sem artefato não comprova backup e esse workflow não copia o Supabase nem o R2.
+- **Pelo portal e pela planilha**: a exportação portátil e a projeção Google ajudam na portabilidade dos dados permitidos, mas não são backup integral de credenciais e anexos. Uma sincronização verificada comprova aquela execução, não a existência de um gatilho ativo.
+
+Uma recuperação precisa verificar separadamente o banco, os objetos privados, as permissões e a revisão do código. Registre o arquivo gerado e a restauração testada antes de declarar um backup operacional.
 
 ## Trocar de conta, de hospedagem ou de banco
 
-- **Outra conta Cloudflare**: configure os segredos do novo ambiente, rode o deploy e importe o último backup `.sql` com `wrangler d1 execute --file`.
+- **Outra conta Cloudflare**: após configurar a alternativa de destino, restaure de forma privada o SQL do backup criptografado e importe-o com `wrangler d1 execute --file`. Confira também os objetos do R2 e as permissões; o SQL não os inclui.
 - **Outro banco SQLite** (Turso, arquivo local, DB Browser): o `.sql` exportado é SQLite padrão.
-- **PostgreSQL/Supabase**: os dados migram pelo backup JSON ou pela planilha, mas o código usa SQL do SQLite/D1 em vários serviços. Trocar o banco do aplicativo exige adaptar e testar essas consultas. É uma migração planejada, não uma troca de variável.
+- **Supabase como armazenamento de instantâneos**: já é a arquitetura atual com o build Node; o SQL do aplicativo continua sendo SQLite. Uma conversão futura das tabelas do domínio para **PostgreSQL** exige adaptar e testar consultas, restrições e transações. A exportação portátil ou a planilha, sozinhas, não fazem essa conversão.
 - **Excel Online**: abra o `.xlsx` baixado da planilha, ou o backup JSON pelo Power Query. A chave de sincronização e a API `/api/sync/connector` permitem automatizar também pelo Power Automate.
 
-## Desenvolvimento local
+## Desenvolvimento local da alternativa Cloudflare
+
+Os comandos abaixo preservam o fluxo local D1/R2 desta alternativa. Para o build Node da hospedagem atual, consulte o [README do portal](../README.md) e o [guia Vercel](HOSPEDAGEM-VERCEL.md).
 
 ```bash
 pnpm install

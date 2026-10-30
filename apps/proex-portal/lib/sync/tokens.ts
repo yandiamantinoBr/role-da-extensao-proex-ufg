@@ -10,6 +10,8 @@ import { requireSyncOwner, syncDigest } from './contracts';
 export const SYNC_TOKEN_PREFIX = 'pxs_';
 const TOKEN_DAYS = 365;
 const MAX_ACTIVE_TOKENS = 5;
+// Indicador aproximado de atividade, não um registro de cada requisição.
+export const SYNC_TOKEN_ACTIVITY_INTERVAL_MS = 60_000;
 
 function randomToken(): string {
  const bytes = crypto.getRandomValues(new Uint8Array(32));
@@ -45,13 +47,17 @@ export async function revokeSyncToken(db: D1Database, actor: PortalActor | null,
 export async function actorFromSyncToken(db: D1Database, authorization: string | null): Promise<PortalActor> {
  const match = /^Bearer\s+(pxs_[A-Za-z0-9_-]{40,60})$/.exec(authorization ?? '');
  if (!match) throw new HttpError(401, 'Informe a chave de sincronização.', 'sync_token_required');
- const now = iso();
- const row = await one(db, `SELECT t.id,t.user_id,u.email,p.display_name FROM sync_tokens t
+ const nowMs = Date.now(), now = new Date(nowMs).toISOString();
+ const row = await one(db, `SELECT t.id,t.user_id,t.last_used_at,u.email,p.display_name FROM sync_tokens t
   JOIN portal_users u ON u.user_id=t.user_id LEFT JOIN profiles p ON p.user_id=t.user_id
   WHERE t.token_hash=? AND t.revoked_at IS NULL AND t.expires_at>? AND u.status='active' AND u.activation_pending=0 AND u.anonymized_at IS NULL`, [await syncDigest(match[1]), now]);
  if (!row) throw new HttpError(401, 'Chave de sincronização inválida, expirada ou revogada.', 'sync_token_invalid');
  const actor = await getActor(db, { userId: row.user_id, email: row.email, displayName: row.display_name || row.email });
  await requireSyncOwner(db, actor);
- await db.prepare('UPDATE sync_tokens SET last_used_at=? WHERE id=?').bind(now, row.id).run();
+ const previousUse = typeof row.last_used_at === 'string' ? Date.parse(row.last_used_at) : NaN;
+ if (!Number.isFinite(previousUse) || nowMs - previousUse >= SYNC_TOKEN_ACTIVITY_INTERVAL_MS) {
+  const cutoff = new Date(nowMs - SYNC_TOKEN_ACTIVITY_INTERVAL_MS).toISOString();
+  await db.prepare('UPDATE sync_tokens SET last_used_at=? WHERE id=? AND (last_used_at IS NULL OR last_used_at<=?)').bind(now, row.id, cutoff).run();
+ }
  return actor!;
 }

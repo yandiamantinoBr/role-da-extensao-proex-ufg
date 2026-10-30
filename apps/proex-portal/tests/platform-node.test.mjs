@@ -71,3 +71,58 @@ test('migrations are applied once and recorded like wrangler', async () => {
   await b.prepare('SELECT 1').all();
   assert.deepEqual((await b.prepare('SELECT name FROM d1_migrations').all()).results, [{ name: '0000_test.sql' }]);
 });
+
+function unreliableInstance() {
+  const dir = join(temporary, `unreliable-${counter++}`);
+  const { snapshots } = fileStores(dir);
+  let failure = null;
+  const store = {
+    version: () => snapshots.version(), load: () => snapshots.load(),
+    async commit(expected, data) {
+      const fail = failure; failure = null;
+      if (fail === 'before') throw new Error('synthetic failure before remote commit');
+      const result = await snapshots.commit(expected, data);
+      if (fail === 'after') throw new Error('synthetic reply lost after remote commit');
+      return result;
+    },
+  };
+  const db = new SnapshotD1(store, migrations, join(dir, 'instance.sqlite'), 60_000);
+  opened.push(db);
+  return { db, dir, failNext(mode) { failure = mode; } };
+}
+
+test('a rejected remote commit never exposes or resurrects the local batch', async () => {
+  const f = unreliableInstance(), { db } = f;
+  await db.prepare('SELECT 1').all();
+  f.failNext('before');
+  await assert.rejects(db.batch([
+    db.prepare("INSERT INTO notes(id,body) VALUES('ghost-a','private fixture')"),
+    db.prepare("INSERT INTO notes(id,body) VALUES('ghost-b','private fixture')"),
+  ]), /before remote commit/);
+  assert.equal(await db.prepare('SELECT COUNT(*) AS n FROM notes').first('n'), 0);
+  await db.prepare("INSERT INTO notes(id,body) VALUES('persisted','confirmed')").run();
+  const [fresh] = instances(1, f.dir);
+  assert.deepEqual((await fresh.prepare('SELECT id FROM notes').all()).results, [{ id: 'persisted' }]);
+});
+
+test('a lost commit reply reloads the successful remote state before an idempotent retry', async () => {
+  const { db, failNext } = unreliableInstance();
+  await db.prepare('SELECT 1').all();
+  failNext('after');
+  await assert.rejects(db.prepare("INSERT INTO notes(id,body) VALUES('once','confirmed')").run(), /reply lost/);
+  assert.equal(await db.prepare("SELECT body FROM notes WHERE id='once'").first('body'), 'confirmed');
+  const replay = await db.prepare("INSERT INTO notes(id,body) VALUES('once','confirmed') ON CONFLICT(id) DO NOTHING").run();
+  assert.equal(replay.meta.changes, 0);
+  assert.equal(await db.prepare('SELECT COUNT(*) AS n FROM notes').first('n'), 1);
+});
+
+test('failed migration persistence discards its uncertain local schema and recovers', async () => {
+  for (const mode of ['before', 'after']) {
+    const f = unreliableInstance(); f.failNext(mode);
+    await assert.rejects(f.db.prepare('SELECT 1').all(), /synthetic/);
+    assert.deepEqual((await f.db.prepare('SELECT name FROM d1_migrations').all()).results, [{ name: '0000_test.sql' }]);
+    await f.db.prepare("INSERT INTO notes(id,body) VALUES('recovered','confirmed')").run();
+    const [fresh] = instances(1, f.dir);
+    assert.equal(await fresh.prepare('SELECT COUNT(*) AS n FROM notes').first('n'), 1);
+  }
+});

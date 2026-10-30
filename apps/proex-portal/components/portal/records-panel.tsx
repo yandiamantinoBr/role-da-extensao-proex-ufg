@@ -5,6 +5,7 @@ import { BarChart3, Camera, Check, ClipboardList, Download, ExternalLink, FilePl
 import { useFormDraft, DraftNotice } from './use-form-draft';
 import styles from './records-panel.module.css';
 import { download, toCsv } from './report-export';
+import { MAX_UPLOAD_FILE_BYTES as MAX_FILE_BYTES, UPLOAD_LIMIT_LABEL, uploadErrorMessage } from '../../lib/upload-limits';
 
 type Row = Record<string, unknown>;
 type Kind = 'observation' | 'maintenance' | 'distribution' | 'consumption' | 'project' | 'material' | 'loan';
@@ -20,7 +21,6 @@ type Props = {
 };
 type Filters = { projectId: string; from: string; to: string };
 type UploadEntry = { key: string; file: File; status: 'pending' | 'sending' | 'done' | 'error' | 'uncertain'; uncertain: boolean; error?: string };
-const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const kinds: { value: Kind; label: string; capability: string }[] = [
   { value: 'observation', label: 'Observação geral', capability: 'campaigns.manage' },
   { value: 'maintenance', label: 'Manutenção e condição', capability: 'inventory.manage' },
@@ -65,7 +65,7 @@ async function requestJson(url: string, init: RequestInit): Promise<Record<strin
   try {
     const response = await fetch(url, { ...init, credentials: 'same-origin', cache: 'no-store', signal: controller.signal });
     const body = await response.json().catch(() => null) as Record<string, unknown> | null;
-    if (!response.ok) throw new RequestFailure(typeof body?.error === 'string' ? body.error : 'Não foi possível concluir a solicitação.', response.status);
+    if (!response.ok) throw new RequestFailure(uploadErrorMessage(response.status, body?.error, 'Não foi possível concluir a solicitação.'), response.status);
     if (!body) throw new RequestFailure('A resposta não pôde ser confirmada. Tente novamente.');
     return body;
   } catch (error) {
@@ -88,7 +88,7 @@ function attachmentValue(value: unknown): Attachment {
   return attachment;
 }
 function fileProblem(file: File): string | null {
-  if (!file.size || file.size > MAX_FILE_BYTES) return `${file.name}: escolha um arquivo de até 10 MB, com conteúdo.`;
+  if (!file.size || file.size > MAX_FILE_BYTES) return `${file.name}: escolha um arquivo de até ${UPLOAD_LIMIT_LABEL}, com conteúdo.`;
   const accepted = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
   if (!accepted.includes(file.type.toLowerCase()) && !((!file.type || file.type === 'application/octet-stream') && /\.(pdf|jpe?g|png|webp)$/i.test(file.name))) return `${file.name}: use PDF, JPEG, PNG ou WebP. Converta fotos HEIC antes de enviar.`;
   return null;
@@ -150,7 +150,7 @@ function AttachmentQueue({ recordId, onAttachment, onPendingChange }: {
     } finally { busyRef.current = false; setBusy(false); }
   }
   return <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--line)' }}>
-    <p className="p-form-help">Fotografe um termo ou escolha arquivos. PDF, JPEG, PNG e WebP, até 10 MB por arquivo. O acesso fica restrito às permissões do registro.</p>
+    <p className="p-form-help">Fotografe um termo ou escolha arquivos. PDF, JPEG, PNG e WebP, até {UPLOAD_LIMIT_LABEL} por arquivo. O acesso fica restrito às permissões do registro.</p>
     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
       <button type="button" className="p-button p-button-subtle" disabled={busy} onClick={() => cameraRef.current?.click()}><Camera size={17} aria-hidden="true" />Usar câmera</button>
       <button type="button" className="p-button p-button-subtle" disabled={busy} onClick={() => galleryRef.current?.click()}><ImagePlus size={17} aria-hidden="true" />Galeria ou PDF</button>
@@ -253,7 +253,7 @@ export default function RecordsPanel({ projects: sourceProjects, items, loans, c
     setRecords(current => current.map(update)); setSaved(current => current ? update(current) : current);
   }
   const createRef = useRef<HTMLFormElement>(null);
-  const draft = useFormDraft(createRef, 'record:new');
+  const draft = useFormDraft(createRef, open && !saved ? 'record:new' : null);
   async function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (savingRef.current || saved) return;
@@ -330,13 +330,14 @@ export default function RecordsPanel({ projects: sourceProjects, items, loans, c
       </div> : <form ref={createRef} className="p-form" onSubmit={create}><DraftNotice draft={draft}/>
         <p className="p-form-help">Descreva a ocorrência e salve. Depois, anexe fotos ou documentos ao registro confirmado. Este histórico não movimenta estoque nem altera reservas.</p>
         <fieldset disabled={saving || unconfirmed}>
-          <div className="p-form-grid"><label className="p-field"><span>Projeto</span><select required value={projectId} onChange={event => changeProject(event.target.value)}>{writableProjects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label><label className="p-field"><span>Categoria</span><select required value={kind} onChange={event => changeKind(event.target.value as Kind)}>{allowedKinds.map(value => <option key={value.value} value={value.value}>{value.label}</option>)}</select></label></div>
-          <label className="p-field"><span>Título</span><input required maxLength={160} value={title} onChange={event => setTitle(event.target.value)} placeholder="Ex.: devolução e conferência da caixa de som" /></label>
-          <label className="p-field"><span>Descrição e observações</span><textarea rows={5} maxLength={6000} value={body} onChange={event => setBody(event.target.value)} placeholder="Registre apenas as informações necessárias para a equipe." /></label>
-          <label className="p-field"><span>Data e hora da ocorrência</span><input type="datetime-local" required min="2000-01-01T00:00" max="2200-12-31T23:59" value={occurredAt} onChange={event => setOccurredAt(event.target.value)} /></label>
-          <label style={{ display: 'flex', gap: 10, alignItems: 'center', minHeight: 44 }}><input type="checkbox" checked={hasInterval} onChange={event => setHasInterval(event.target.checked)} />Informar período de uma atividade</label>
-          {hasInterval && <div className="p-form-grid"><label className="p-field"><span>Início da atividade</span><input type="datetime-local" required min="2000-01-01T00:00" max="2200-12-31T23:59" value={startsAt} onChange={event => setStartsAt(event.target.value)} /></label><label className="p-field"><span>Fim da atividade</span><input type="datetime-local" required min={startsAt || '2000-01-01T00:00'} max="2200-12-31T23:59" value={endsAt} onChange={event => setEndsAt(event.target.value)} /></label></div>}
-          <div className="p-form-grid"><label className="p-field"><span>Material vinculado (opcional)</span><select value={itemId} disabled={!!loanId} onChange={event => setItemId(event.target.value)}><option value="">Sem vínculo com material</option>{projectItems.map(item => <option key={text(item, 'id')} value={text(item, 'id')}>{text(item, 'name') || 'Material'}</option>)}</select></label>{allowLoanLink && <label className="p-field"><span>Empréstimo vinculado (opcional)</span><select value={loanId} onChange={event => { const selected = projectLoans.find(loan => text(loan, 'id') === event.target.value); setLoanId(event.target.value); if (selected) setItemId(text(selected, 'item_id')); }}><option value="">Sem vínculo com empréstimo</option>{projectLoans.map(loan => <option key={text(loan, 'id')} value={text(loan, 'id')}>{itemName(text(loan, 'item_id')) || 'Equipamento'} · {text(loan, 'starts_at') ? dateTime(text(loan, 'starts_at')) : `#${text(loan, 'id').slice(0, 12)}`}</option>)}</select></label>}</div>
+          <div className="p-form-grid"><label className="p-field"><span>Projeto</span><select name="projectId" required value={projectId} onChange={event => changeProject(event.target.value)}>{writableProjects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label><label className="p-field"><span>Categoria</span><select name="kind" required value={kind} onChange={event => changeKind(event.target.value as Kind)}>{allowedKinds.map(value => <option key={value.value} value={value.value}>{value.label}</option>)}</select></label></div>
+          <label className="p-field"><span>Título</span><input name="title" required maxLength={160} value={title} onChange={event => setTitle(event.target.value)} placeholder="Ex.: devolução e conferência da caixa de som" /></label>
+          <label className="p-field"><span>Descrição e observações</span><textarea name="body" rows={5} maxLength={6000} value={body} onChange={event => setBody(event.target.value)} placeholder="Registre apenas as informações necessárias para a equipe." /></label>
+          <label className="p-field"><span>Data e hora da ocorrência</span><input name="occurredAt" type="datetime-local" required min="2000-01-01T00:00" max="2200-12-31T23:59" value={occurredAt} onChange={event => setOccurredAt(event.target.value)} /></label>
+          <label style={{ display: 'flex', gap: 10, alignItems: 'center', minHeight: 44 }}><input name="hasInterval" type="checkbox" checked={hasInterval} onChange={event => setHasInterval(event.target.checked)} />Informar período de uma atividade</label>
+          {/* Mantém os campos no formulário para restaurar período e checkbox juntos. */}
+          <div className="p-form-grid" hidden={!hasInterval} style={hasInterval ? undefined : { display: 'none' }}><label className="p-field"><span>Início da atividade</span><input name="startsAt" type="datetime-local" required={hasInterval} disabled={!hasInterval} min="2000-01-01T00:00" max="2200-12-31T23:59" value={startsAt} onChange={event => setStartsAt(event.target.value)} /></label><label className="p-field"><span>Fim da atividade</span><input name="endsAt" type="datetime-local" required={hasInterval} disabled={!hasInterval} min={startsAt || '2000-01-01T00:00'} max="2200-12-31T23:59" value={endsAt} onChange={event => setEndsAt(event.target.value)} /></label></div>
+          <div className="p-form-grid"><label className="p-field"><span>Material vinculado (opcional)</span><select name="itemId" value={itemId} disabled={!!loanId} onChange={event => setItemId(event.target.value)}><option value="">Sem vínculo com material</option>{projectItems.map(item => <option key={text(item, 'id')} value={text(item, 'id')}>{text(item, 'name') || 'Material'}</option>)}</select></label>{allowLoanLink && <label className="p-field"><span>Empréstimo vinculado (opcional)</span><select name="loanId" value={loanId} onChange={event => { const selected = projectLoans.find(loan => text(loan, 'id') === event.target.value); setLoanId(event.target.value); if (selected) setItemId(text(selected, 'item_id')); }}><option value="">Sem vínculo com empréstimo</option>{projectLoans.map(loan => <option key={text(loan, 'id')} value={text(loan, 'id')}>{itemName(text(loan, 'item_id')) || 'Equipamento'} · {text(loan, 'starts_at') ? dateTime(text(loan, 'starts_at')) : `#${text(loan, 'id').slice(0, 12)}`}</option>)}</select></label>}</div>
         </fieldset>
         {unconfirmed && <p role="status" className="p-form-help">{saving ? 'Enviando o registro…' : 'A confirmação está pendente. O próximo envio repete os mesmos dados e a mesma operação.'} Mantenha esta tela aberta para recuperar a confirmação.</p>}
         {saveError && <p className="p-inline-error" role="alert">{saveError}</p>}
