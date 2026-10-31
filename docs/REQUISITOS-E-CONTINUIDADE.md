@@ -8,8 +8,8 @@ Yan declarou: “Autorizo push, PR, merge e deploy da V9 e de todas as próximas
 
 ## Estado e coordenação
 
-- Último aceite publicado nas notas: [V14](ENTREGA-V14.md). **R24/V15 está implementada e integrada localmente**, com QA funcional sintético inicial na revisão `80b361d`; os gates completos, refinamento/recaptura visual, CI, publicação e conferência em produção ainda estão pendentes. A [nota candidata V15](ENTREGA-V15.md) separa esses estados. A autorização permanente de publicação não substitui autorização específica de OAuth/serviços externos.
-- A base V13/V14 tem 83 tabelas de aplicação (0000–0016). A candidata V15 aplica 0017, chega a 86 tabelas e oferece 35 projeções portáteis/Sheets, com designações somente leitura e sem atribuições pessoais/histórico na planilha. O ensaio offline no backup real preservou os dados originais; migração de produção e releitura real da nova projeção permanecem pendentes.
+- Último aceite publicado: [V15](ENTREGA-V15.md), PR #16, merge funcional 737a14b, CI 827/827 portal e 33/33 jogo, Vercel READY no mesmo SHA. R24 está publicada e conferida em produção, com parecer visual de 9,1/10 no incremento observado. A autorização permanente de publicação não substitui consentimentos específicos de OAuth/serviços externos.
+- V13/V14 tinham 83 tabelas (0000–0016). A V15 aplicada tem 86 tabelas e 35 projeções portáteis/Sheets; designações são somente leitura, sem responsáveis/histórico. Migração, releitura real e restauração do novo backup publicado foram conferidas. A entrega V15 registra evidências e limites.
 - V9: implementação `441649a`, integrada por [PR #8](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/8), merge `c19b6439cc17d904ff9c183b86291f8faf7d6cfc`; GitHub Actions e preview aprovados. Produção Vercel `READY` nesse merge em 31/10. Validação pós-publicação é registrada no relatório da entrega.
 - Coordenador integra e publica. Agentes trabalham em worktrees distintas, com commits locais e dono de arquivos explícito. Conferir `git status`, branch e HEAD ao retomar.
 - Frentes em execução: acessos/convites/revogação; sincronização/Apps Script; importação de fontes oficiais/projetos/patrimônio. Relatórios e IA/voz são coordenados junto dessas interfaces.
@@ -17,7 +17,7 @@ Yan declarou: “Autorizo push, PR, merge e deploy da V9 e de todas as próximas
 
 ## Registro completo do pedido de 31/10
 
-R01–R23 preservam abaixo o estado inicial/dono do registro e seus critérios de aceite, como histórico do pedido. O estado atualizado está na [matriz de cobertura](COBERTURA-DE-REQUISITOS.md) e nas entregas por versão; os itens “a implementar” desta coluna histórica não anulam implementações posteriores. R24 registra a implementação local mais recente, ainda sem publicação atestada.
+R01–R23 preservam abaixo o estado inicial/dono do registro e seus critérios de aceite, como histórico do pedido. O estado atualizado está na [matriz](COBERTURA-DE-REQUISITOS.md) e nas entregas por versão; itens históricos “a implementar” não anulam entregas posteriores. R24 registra a entrega V15 publicada e conferida.
 
 | ID | Entrega solicitada | Aceite mínimo | Estado inicial / dono |
 |---|---|---|---|
@@ -44,7 +44,7 @@ R01–R23 preservam abaixo o estado inicial/dono do registro e seus critérios d
 | R21 | E-mail automático sem nova plataforma paga | Remetente explícito e configurável, integração Google existente com cotas, preferências, fila e estado de envio honesto; nenhum e-mail real em QA | MailApp pesquisado; configuração e ativação ainda pendentes |
 | R22 | Compartilhamento por WhatsApp | Compartilhar título/link mínimo por ação da pessoa; envio automático é evolução separada, dependente de configuração oficial e custos conferidos | Link manual previsto; automação não ativada |
 | R23 | Auditoria e melhoria visual de todo o portal | Corrigir filtros/ações colados e sino claro; conferir todas as famílias/abas/funcionalidades em desktop/mobile e claro/escuro, teclado, estados vazios/preenchidos/erro, contraste, toque, consistência; auditoria independente com rubrica fixa e meta mínima 9/10, sem inventar aprovação | Pedido humano posterior à V13; implementação V14 e avaliação integrada em andamento |
-| R24 | Central pessoal Meu trabalho e resumo visual por contexto | Demandas por cor/símbolo/texto, estado/prioridade/prazo separados; atribuições diretas/equipes sem duplicar tarefas; totais completos independentes da página/status, Atenção como união, nomeações e links autorizados; não inferir responsabilidade por autoria/cargo nem conceder ACL | Implementado/integrado localmente na V15, com QA funcional inicial sintético em 80b361d e ensaio offline de 0017 aprovado. Gates completos, refinamento/recaptura visual, CI/publicação/produção e nova releitura Sheets pendentes. Coordenador fixa candidato final; escopo em R24-MEU-TRABALHO.md e estado em ENTREGA-V15.md |
+| R24 | Central pessoal Meu trabalho e resumo visual por contexto | Demandas por cor/símbolo/texto, estado/prioridade/prazo separados; atribuições diretas/equipes sem duplicação; totais completos independentes da página/status, Atenção como união, nomeações e links autorizados; sem responsabilidade presumida por autoria/cargo ou concessão de ACL | Entregue na V15 publicada, PR #16, funcional 737a14b. CI 827 portal + 33 jogo, CUA/produção, Sheets com 35 projeções, restauração de 86 tabelas e parecer 9,1/10 conferidos. Limites em ENTREGA-V15.md e AUDITORIA-DESIGN-V15.md. |
 
 ## Fontes e padrões técnicos
 
@@ -83,3 +83,10 @@ R01: V9 e V10 publicadas/verificadas, PRs8/9 e SHAs registrados. R02: primeira s
 ## Pedido visual posterior à V13 · R23, 31/10/2026
 
 Yan forneceu duas capturas e apontou toolbar `flex flex-wrap gap-2` colada aos filtros `grid gap-3 rounded-2xl...`, no desktop e celular, além do sino inadequado no modo claro. Pediu varredura do site inteiro, análise crítica e auditorias independentes para alcançar pelo menos 9/10. Manter as tarefas anteriores em paralelo. A nota é gate de produto com rubrica/evidências, não certificação de acessibilidade nem justificativa para elevar notas sem observar os estados. Fontes e baseline em apps/proex-portal/docs/AUDITORIA-DESIGN-V14-PRELIMINAR.md.
+
+
+## Aceite publicado V15 · 31/10/2026
+
+R24 e sino agrupado foram publicados pela PR #16, funcional 737a14b, CI 827 portal + 33 jogo e Vercel READY no mesmo SHA. A entrega V15 documenta CUA real, Sheets com 35 tabelas com releitura, modelo com 86 e backup cifrado restaurado em RAM. O parecer independente 9,1/10 vale para o incremento observado, sem certificação WCAG/zoom 200%. A matriz continua a separar implementação, configuração e decisões institucionais.
+
+Para continuidade por outras IAs: o MCP PROEX conectado nesta sessão retornou 27 tabelas e histórico de 25/10, divergindo do canônico com 35/31out. Revalidar origem/esquema antes de usar essa conexão para alterações; não escrever com base nessa resposta antiga. R21 permanece OFF sem confirmação Google específica.

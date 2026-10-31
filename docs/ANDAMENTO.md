@@ -1,8 +1,10 @@
-# Checkpoint atual · V15 candidata, PR #16
+# Checkpoint atual · V15 publicada e conferida
 
-Fonte integrada e salva no GitHub em 6674d37. Meu trabalho, responsabilidades explícitas, sinais visuais e sino agrupado passaram no QA sintético; revisão independente 9,1/10 nos estados observados. 827/827 testes completos em Node 24/26 na revisão funcional, refinamentos posteriores com verificações focadas, tipos/lint e builds Worker/Node. O CI final, merge, Vercel e conferência real ainda estão pendentes. Última produção comprovada: V14, PR #15, funcional 7f7550c.
+[PR #16](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/16), candidato fdc2faf, merge funcional 737a14b. Vercel produção dpl_5dsBCaCtGYdqMS6VS26xvzEoYqxd READY no mesmo SHA; CI com 827 testes do portal e 33 do jogo, sem falhas. Revisão independente do incremento: 9,1/10. Sessão, Meu trabalho, material/gestão, Demandas, sino e 320/375 px conferidos em produção; health 200 e hosts antigos 403.
 
-Ler [ENTREGA-V15.md](ENTREGA-V15.md), [CONTINUAR-AQUI.md](CONTINUAR-AQUI.md) e a [matriz](COBERTURA-DE-REQUISITOS.md). Migração 0017 ensaiada em memória sobre backup real cifrado; produção ainda não migrada neste checkpoint. Sheets35 depende da releitura após publicar. R21 OFF, sem autorização Google específica recebida. As seções seguintes são históricas e não substituem este estado.
+Sheets canônico: 35 tabelas, 170 linhas/zero conflitos às 20:54:33Z e nova conclusão com 173/zero às 21:07:10Z. Backup de 493.313 bytes, SHA-256 93b5a54e…, recuperado em RAM: 86 tabelas, 18 migrações, integridade/FKs/objetos aprovados. Provas em [ENTREGA-V15.md](ENTREGA-V15.md). R21 OFF; custódia externa/primeira execução diária ainda pendentes. Um MCP conectado retornou 27 tabelas/histórico antigo: revalidar a origem antes de usá-lo.
+
+Ler [CONTINUAR-AQUI.md](CONTINUAR-AQUI.md) e a [matriz](COBERTURA-DE-REQUISITOS.md). As seções seguintes são históricas. Publicação/configuração não ativam provedores opcionais.
 
 # Histórico · V13 publicada em 31/10/2026
 
