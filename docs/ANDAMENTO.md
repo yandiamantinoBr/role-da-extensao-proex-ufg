@@ -2,9 +2,9 @@
 
 Leia `AGENTS.md` e `REQUISITOS-E-CONTINUIDADE.md`. Push/PR/merge/deploy de todas as versões do Portal PROEX estão autorizados por Yan. Não solicite novamente essa autorização. Não publique dados privados ou segredos.
 
-## Estado mais recente · candidato V11
+## Estado mais recente · V11 publicada
 
-Produção continua V10, merge `11dbebf697dbe4756ff9e727d91c705e9baae8dc`. Checkout principal `v11-coordenacao`, serviços integrados até `2fbb7f0`, montagem final em alterações locais. 520 testes Node24/26 passaram, tipos/lint e builds Worker/Node aprovados; CUA integrado e migrações sobre backup real offline passaram. Veja `ENTREGA-V11.md`; conferir `git status` e gates finais. WAF bloqueia URLs geradas antigas; domínio canônico responde 200. Sheets e anexos tiveram primeiras execuções automáticas confirmadas em 31/10; recibos e números na entrega.
+Produção V11, PR #10, merge `55bf5f7962ae7862c4a00cbce538179a79f99642`; Vercel READY `dpl_G2MRkbXCSBtPQEtG63p4B3PuvfLm` no mesmo SHA. GitHub/main aprovado. Sessão real, organizações, 11 materiais, PDF/DOCX válidos e health200 conferidos; sem registros de QA ou chamadas pagas. Checkout coordenador agora `v12-coordenacao`, baseado nesse merge. 520 testes Node24/26, tipos/lint/builds e CUA375/414/1250 passaram; migrações no backup real offline preservaram49tabelas. Veja `ENTREGA-V11.md`. WAF bloqueia URLs geradas antigas; não voltar para código anteriorà0008 com banco novo. Sheets/anexos tiveram primeiras execuções automáticas confirmadas em31/10.
 
 Novos requisitos R17–R22 salvos na Vault e no espelho público: acompanhamento/prioridades/checklists, equipes, inbox/sino, e-mail e WhatsApp. Agente `revisao_organizacoes` em worktree `v16-acompanhamento`, migração 0014. Público 0012 com `mobile_responsivo`; backup recorrente 0013 com `relatorios_datas`. Não iniciar edições concorrentes ou confundir trabalho delegado com publicação. As seções anteriores abaixo são histórico e não substituem este estado.
 
