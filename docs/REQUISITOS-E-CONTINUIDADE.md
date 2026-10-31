@@ -40,6 +40,7 @@ Yan declarou: “Autorizo push, PR, merge e deploy da V9 e de todas as próximas
 | R21 | E-mail automático sem nova plataforma paga | Remetente explícito e configurável, integração Google existente com cotas, preferências, fila e estado de envio honesto; nenhum e-mail real em QA | MailApp pesquisado; configuração e ativação ainda pendentes |
 | R22 | Compartilhamento por WhatsApp | Compartilhar título/link mínimo por ação da pessoa; envio automático é evolução separada, dependente de configuração oficial e custos conferidos | Link manual previsto; automação não ativada |
 | R23 | Auditoria e melhoria visual de todo o portal | Corrigir filtros/ações colados e sino claro; conferir todas as famílias/abas/funcionalidades em desktop/mobile e claro/escuro, teclado, estados vazios/preenchidos/erro, contraste, toque, consistência; auditoria independente com rubrica fixa e meta mínima 9/10, sem inventar aprovação | Pedido humano posterior à V13; implementação V14 e avaliação integrada em andamento |
+| R24 | Central pessoal Meu trabalho e resumo visual por contexto | Demandas por cor/símbolo/texto, estado/prioridade/prazo separados; registros atribuídos à pessoa/equipes, nomeações por módulo/projeto/entidade, totais SQL completos e links autorizados; não inferir responsabilidade por autoria/cargo ou conceder ACL | Pedido humano posterior ao checkpoint V14; implementação V15 isolada. Escopo/aceite em R24-MEU-TRABALHO.md |
 
 ## Fontes e padrões técnicos
 

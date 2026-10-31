@@ -1,4 +1,10 @@
-# V14 · Interface revisada e aprovada para publicação
+# V14 · Publicada e conferida
+
+PR #15 integrada em 31/10/2026 às 19:23:33Z: revisão funcional `7f7550c600562765afc944e25a5d768174ee78d9`, candidato aprovado `1fb20f35de0af0e5a6b0e92441d9766e48fd5fe8`. Vercel produção `dpl_5jy8XC6hi5BSmn3YnFTZX93NEUfH` READY no mesmo SHA. CI do candidato aprovado; 755 testes do portal e 33 do jogo. Nota independente 9,0/10 nos estados observados, sem certificação WCAG ou prova de zoom de 200%.
+
+Pós-deploy real: sessão preservada, grupos de Configurações e catálogo autorizado carregados, Demandas desktop/celular com espaço medido de 24 px entre filtros e ações e sino de 44×44 px legível. Central de notificações abriu dentro do viewport e fechou por Escape; nenhum novo erro de console nessa rodada, nenhum dado de QA gravado. Health canônico 200; hosts antigos V9/V10 403. Provas privadas em `apps/proex-portal/.sites-runtime/production-v14/published-ui-proof.json` e imagens correspondentes. Registros posteriores só de documentação mantêm o mesmo código funcional; conferir GitHub/Vercel para o SHA corrente.
+
+R23 concluído neste escopo; avisos repetidos, metadados pequenos, ensaios de zoom/leitor de tela/aparelhos físicos continuam limites ou melhorias explícitos. R24 segue em V15 isolada. R21 continua preparado e OFF, pendente da confirmação específica de acesso Google; a escolha do remetente não concedeu OAuth. Esta atualização supersede os checkpoints abaixo.
 
 Atualização da retomada de 31/10/2026: builds Worker/Node concluídos no candidato `c35140a`, CI da PR #15 aprovado e última recaptura de Tempo e som confirmada em 1250/375 px e claro/escuro: fechar 44×44 px, Enter abre, Espaço fecha e foco retorna ao acionador. Comprovante local separado `resume-final-proof.json`; o JSON da coleta anterior não contém essa retomada. Auditor independente reaplicou os mesmos oito pesos e atribuiu **9,0/10** (ponderada 9,045) aos estados observados. Parecer em `apps/proex-portal/docs/AUDITORIA-DESIGN-V14-FINAL.md`.
 
