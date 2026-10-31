@@ -67,3 +67,6 @@ Revisão independente encontrou e foi corrigida uma corrida em que demissão ope
 Ainda pertence ao coordenador: montagem no PortalClient/header/navigation, relatório PDF/DOCX/XLSX R20, reconciliação modelo/journal/snapshot com0012/13, teste integrado final, backup real e publicação/checagem em produção/Vault. R21/0015 contém o envio opcional por MailApp em frente separada e OFF. Esta branch não publicou nada.
 
 Gates finais desta worktree: 539/539 testes completos em Node24.22.1 e26.12.1; TypeScript limpo; ESLint zero erros e três avisos preexistentes fora desta frente. Build Worker/Node finais registrados no handoff após conclusão. Não copiar a rota auxiliar QA: ela não existe no commit.
+
+
+O revisor também mediu101 consultasmudança de versão remotas numa página50 após leituras strong. A lista foi refeita como um SELECT guardado com atribuições JSON correlacionadas, versões e capacidade atuais no mesmo snapshot. A página continua limitada a50 e não faz consultas por tarefa; detalhe reutiliza essa projeção. Benchmark RAM após correção: página50 p50~3,4ms/p95~3,8ms, contra~22/24ms anteriores; a verificação remota de versão foi reduzida a uma por página, sem TTL ou redução de isolamento. O teste mantém um teto de leituras por página para evitar regressão N+1.
