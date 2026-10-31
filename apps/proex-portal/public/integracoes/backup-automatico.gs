@@ -31,10 +31,13 @@ function backupDriveJson_(id, permissions) {
   if (response.getResponseCode() !== 200) throw backupErro_('backup_drive_metadata_unavailable');
   try { return JSON.parse(response.getContentText()); } catch (_) { throw backupErro_('backup_drive_metadata_invalid'); }
 }
-/** Require exactly the current user's ownership, no extra ACL or inherited folder. */
+/** Require current-user ownership, one owner ACL and the exact private parent.
+ * My Drive reports its sole owner permission as inherited. That marker does not
+ * add a reader: any additional/direct/inherited permission is still rejected.
+ */
 function backupPrivado_(id, parentId, isFolder) {
   var file = backupDriveJson_(id, false), acl = backupDriveJson_(id, true), permissions = acl.permissions || [], owners = file.owners || [];
-  if (file.id !== id || file.trashed || file.driveId || file.shortcutDetails || owners.length !== 1 || owners[0].me !== true || !file.parents || file.parents.length !== 1 || file.parents[0] !== parentId || (isFolder && file.mimeType !== 'application/vnd.google-apps.folder') || (!isFolder && file.mimeType !== 'application/octet-stream') || acl.nextPageToken || permissions.length !== 1 || permissions[0].type !== 'user' || permissions[0].role !== 'owner' || permissions[0].deleted || (permissions[0].permissionDetails || []).some(function (detail) { return detail.inherited; })) throw backupErro_('backup_drive_not_owner_only');
+  if (file.id !== id || file.trashed || file.driveId || file.shortcutDetails || owners.length !== 1 || owners[0].me !== true || !file.parents || file.parents.length !== 1 || file.parents[0] !== parentId || (isFolder && file.mimeType !== 'application/vnd.google-apps.folder') || (!isFolder && file.mimeType !== 'application/octet-stream') || acl.nextPageToken || permissions.length !== 1 || permissions[0].type !== 'user' || permissions[0].role !== 'owner' || permissions[0].deleted) throw backupErro_('backup_drive_not_owner_only');
   return file;
 }
 function backupPasta_(folderId) { backupPrivado_(folderId, DriveApp.getRootFolder().getId(), true); return DriveApp.getFolderById(folderId); }
