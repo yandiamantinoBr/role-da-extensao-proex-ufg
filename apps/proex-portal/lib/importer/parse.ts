@@ -12,7 +12,18 @@ const ALIASES: Record<string, string[]> = {
   sourceYear: ['sourceYear', 'ano'], sourceStatus: ['sourceStatus', 'situacao', 'status'], funding: ['funding', 'fonte de financiamento', 'financiamento'],
   assetCode: ['assetCode', 'asset_code', 'tombamento', 'numero de tombamento', 'numero de patrimonio', 'patrimonio', 'tombo'],
   unit: ['unit', 'unidade de medida'], brand: ['brand', 'marca'], model: ['model', 'modelo'], serialNumber: ['serialNumber', 'numero de serie', 'serie'],
-  responsibleUnit: ['responsibleUnit', 'unidade responsavel', 'unidade de lotacao'], sourceCondition: ['sourceCondition', 'estado do bem', 'estado de conservacao', 'condicao'],
+  responsibleUnit: ['responsibleUnit', 'unidade responsavel', 'unidade de lotacao'],
+  assetLocation: ['assetLocation','asset_location','location','local','localizacao','localizacao fisica','localizacao do bem'],
+  responsibleReference: ['responsibleReference','responsible_reference','responsavel indicado na fonte','responsavel documentado'],
+  conservationState: ['conservationState','conservation_state','sourceCondition','estado do bem','estado de conservacao','condicao'],
+  assetStatus: ['assetStatus','asset_status','situacao patrimonial'],
+  origin: ['origin','origem'], destination: ['destination','destino'],
+  processReference: ['processReference','process_reference','processo','referencia do processo'],
+  responsibilityTerm: ['responsibilityTerm','responsibility_term','termo de responsabilidade'],
+  invoiceReference: ['invoiceReference','invoice_reference','nota fiscal','referencia da nota fiscal'],
+  sourceReference: ['sourceReference','source_reference','fonte do cadastro','referencia documental','pagina do documento'],
+  acquisitionDate: ['acquisitionDate','acquisition_date','data de aquisicao'],
+  acquisitionValueCents: ['acquisitionValueCents','acquisition_value_cents','valor em centavos','valor documentado em centavos'],
 };
 const ENTITIES: Record<string, string> = { amp: '&', quot: '"', apos: "'", nbsp: ' ', aacute: 'á', agrave: 'à', acirc: 'â', atilde: 'ã', eacute: 'é', ecirc: 'ê', iacute: 'í', oacute: 'ó', ocirc: 'ô', otilde: 'õ', uacute: 'ú', uuml: 'ü', ccedil: 'ç', ordm: 'º', ordf: 'ª', ndash: '–', mdash: '—' };
 export function decodeEntities(value: string): string {
@@ -93,10 +104,13 @@ export function validateImportedFields(kind: ImportKind, raw: Record<string, unk
       if (definition.key === 'startsAt' || definition.key === 'endsAt') { fields[definition.key] = importedDate(text, definition.key === 'endsAt'); if (!text.includes('T') && !warnings.includes('Datas sem horário usam o início e o fim do dia em Brasília.')) warnings.push('Datas sem horário usam o início e o fim do dia em Brasília.'); }
       if (definition.key === 'thematicArea') { const area = THEMATIC_AREAS.find(area => normalizedLabel(area.key) === normalizedLabel(text) || normalizedLabel(area.label) === normalizedLabel(text)); if (!area) throw new Error('Escolha uma das áreas temáticas da UFG.'); fields[definition.key] = area.key; }
       if (definition.key === 'extensionLine') { const key = text.match(/^\d{1,2}(?=\D|$)/)?.[0].padStart(2, '0'); if (!key || !EXTENSION_LINES.some(line => line.key === key)) throw new Error('Escolha uma linha de extensão de 01 a 53.'); fields[definition.key] = key; }
+      if (definition.key === 'acquisitionDate') { const date = text.match(/^(\d\d)\/(\d\d)\/(\d{4})$/); const normalized = date ? `${date[3]}-${date[2]}-${date[1]}` : text; if (!/^\d{4}-\d\d-\d\d$/.test(normalized) || new Date(`${normalized}T00:00:00Z`).toISOString().slice(0,10) !== normalized) throw new Error('Informe uma data de aquisição válida.'); fields[definition.key] = normalized; }
+      if (definition.key === 'acquisitionValueCents' && (!/^\d{1,13}$/.test(text) || !Number.isSafeInteger(Number(text)) || Number(text) > 1000000000000)) throw new Error('Use centavos inteiros explicitamente documentados. Não estime nem converta moeda automaticamente.');
       if (definition.key === 'sourceYear' && !/^(20|21)\d\d$/.test(text)) throw new Error('Informe um ano de quatro dígitos.');
     } catch (error) { problems[definition.key] = error instanceof Error ? error.message : 'Valor inválido.'; }
   }
   if (fields.startsAt && fields.endsAt && !problems.startsAt && !problems.endsAt && fields.endsAt <= fields.startsAt) problems.endsAt = 'O fim deve ser posterior ao início.';
+  if (kind === 'asset' && fields.acquisitionValueCents && !['sourceReference','invoiceReference','processReference','responsibilityTerm'].some(key => fields[key]?.trim())) problems.acquisitionValueCents = 'Inclua e selecione uma referência documental para o valor.';
   return { fields, problems, warnings };
 }
 export function parseImportDocument(kind: ImportKind, content: string, format: string): ImportCandidate[] {

@@ -1,6 +1,7 @@
 import { getActor, requireCapability, requireOrganizationCapability, organizationAuthoritySql, type PortalActor } from '../access';
 import { all, one } from '../database';
 import { HttpError } from '../errors';
+import { assetMetadata, ASSET_METADATA_KEYS } from '../asset-metadata';
 import { materialsAction } from '../materials';
 import { prepareMutation } from '../mutations';
 import { projectAction } from '../projects';
@@ -103,7 +104,8 @@ export async function applyImport(db: D1Database, actor: PortalActor | null, inp
     if (!actor) throw new HttpError(403, 'Seu acesso mudou durante a importação.', 'import_forbidden');
     if (review.provenance.url && !await one(db, 'SELECT id FROM project_links WHERE project_id=? AND url=?', [projectId, review.provenance.url])) await projectAction(db, actor, 'project.link.create', { projectId, label: `${review.provenance.label}${review.provenance.externalId ? ` · ação ${review.provenance.externalId}` : ''} · ${review.provenance.retrievedAt.slice(0, 10)}`, url: review.provenance.url, kind: 'official', operationKey: `${operationKey}-source` });
   } else if (!itemId) {
-    const payload = { ...nativeFields, projectId, category: 'equipment', unit: nativeFields.unit || 'unidade', lowStock: 0, operationKey: `${operationKey}-entity` };
+    const structured = assetMetadata(Object.fromEntries(ASSET_METADATA_KEYS.filter(key => selected.has(key)).map(key => [key, key === 'acquisitionValueCents' && fields[key] ? Number(fields[key]) : fields[key] || null])));
+    const payload = { ...nativeFields, ...structured, projectId, category: 'equipment', unit: nativeFields.unit || 'unidade', lowStock: 0, operationKey: `${operationKey}-entity` };
     const mutation = await prepareMutation(db, actor.userId, 'item.create', payload);
     if (!mutation.existingId && fields.assetCode && await one(db, 'SELECT id FROM items WHERE project_id=? AND asset_code=? LIMIT 1', [projectId, fields.assetCode])) throw new HttpError(409, 'Este patrimônio já está cadastrado no projeto. Escolha o bem existente para anexar a conferência.', 'import_duplicate');
     const result = await materialsAction(db, actor, 'item.create', payload), item = result?.item as Record<string, unknown> | undefined;

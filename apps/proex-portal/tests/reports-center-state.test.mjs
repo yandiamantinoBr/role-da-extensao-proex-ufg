@@ -39,7 +39,7 @@ function harness() {
   render(props = base) { index = 0; tree = compiledModule.exports.default(props); return tree; },
   flushEffects() { while (pendingEffects.length) pendingEffects.shift()(); },
   button(name) { const found = nodes().find(node => node.type === 'button' && text(node) === name); assert.ok(found, `button ${name}`); return found; },
-  columnToggles() { return nodes().filter(node => node.type === 'input' && node.props.type === 'checkbox'); },
+  columnToggles() { const detail=nodes().find(node=>node.type==='details'&&text(node.props.children?.[0]).includes('Colunas')),result=[];const visit=node=>{if(!node||typeof node!=='object')return;if(Array.isArray(node)){node.forEach(visit);return;}if(node.type==='input'&&node.props.type==='checkbox')result.push(node);visit(node.props?.children);};visit(detail);return result; },
   text() { return text(tree); },
   get opened() { return opened; },
   dispose() { for (const slot of slots) slot?.cleanup?.(); },

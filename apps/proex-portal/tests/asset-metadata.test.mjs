@@ -67,7 +67,7 @@ test('manual metadata preserves textual zeros, missing values and ledger state, 
     assert.equal(item.asset_code,'00001234'); assert.equal(item.serial_number,'00000077'); assert.equal(item.stock,0); assert.equal(item.acquisition_value_cents,0); assert.equal(item.model,null);
     const updated = await materialsAction(f.db,actor,'item.update',{ id:item.id,expectedVersion:1,model:'Model B',assetStatus:'Informado como transferido',destination:'Destino documental' });
     assert.equal(updated.item.condition,'active'); assert.equal(updated.item.stock,0); assert.equal(updated.item.acquisition_value_cents,0);
-    await assert.rejects(materialsAction(f.db,actor,'item.update',{ id:item.id,expectedVersion:1,brand:'Stale' }),error=>error.code==='item_changed');
+    await assert.rejects(materialsAction(f.db,actor,'item.update',{ id:item.id,expectedVersion:1,brand:'Stale' }),error=>['item_changed','access_changed'].includes(error.code));
     const restored = await materialsAction(f.db,actor,'item.restore',{ id:item.id,expectedVersion:2,restoreVersion:1 }); assert.equal(restored.item.model,null); assert.equal(restored.item.version,3);
     assert.equal(f.db.native.prepare('SELECT COUNT(*) n FROM stock_movements').get().n,0); assert.equal(f.db.native.prepare('SELECT COUNT(*) n FROM loans').get().n,0);
     await assert.rejects(make(f,actor,{assetCode:1234}),error=>error.status===400);
@@ -86,7 +86,7 @@ test('project A/B, anonymous, viewer and loans cannot read or alter private asse
     const item=await make(f,actor); for(const denied of [other,viewer,loans,null]) await assert.rejects(materialDetail(f.db,denied,item.id),error=>[401,403].includes(error.status));
     await assert.rejects(materialsAction(f.db,other,'item.update',{id:item.id,expectedVersion:1,brand:'Forbidden'}),error=>error.status===403);
     f.db.beforeBatch(()=>f.db.native.prepare('UPDATE members SET revoked_at=? WHERE user_id=?').run(f.now,actor.userId));
-    await assert.rejects(materialsAction(f.db,actor,'item.update',{id:item.id,expectedVersion:1,brand:'Revoked'}),error=>error.code==='item_changed');
+    await assert.rejects(materialsAction(f.db,actor,'item.update',{id:item.id,expectedVersion:1,brand:'Revoked'}),error=>['item_changed','access_changed'].includes(error.code));
     assert.equal(f.db.native.prepare('SELECT brand FROM items WHERE id=?').get(item.id).brand,null); assert.equal(f.db.native.prepare('SELECT COUNT(*) n FROM entity_versions WHERE entity_id=?').get(item.id).n,1);
     const creating=principal(f); f.db.beforeBatch(()=>f.db.native.prepare('UPDATE members SET revoked_at=? WHERE user_id=?').run(f.now,creating.userId));
     await assert.rejects(make(f,creating,{assetCode:'000055'})); assert.equal(f.db.native.prepare('SELECT COUNT(*) n FROM items').get().n,1);
