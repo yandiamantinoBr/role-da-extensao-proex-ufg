@@ -203,7 +203,7 @@ export const entitlements = sqliteTable('entitlements', {
   id: text('id').primaryKey(), attemptId: text('attempt_id').notNull().references(() => attempts.id),
   participationId: text('participation_id').notNull().references(() => participations.id),
   offerId: text('offer_id').notNull().references(() => offers.id), state: text('state').notNull(),
-  createdAt: text('created_at').notNull(), providerAcceptedAt: text('provider_accepted_at'), deliveredBy: text('delivered_by'),
+  createdAt: text('created_at').notNull(), deliveredAt: text('delivered_at'), deliveredBy: text('delivered_by'),
 }, t => [
   uniqueIndex('entitlements_attempt_unique').on(t.attemptId),
   check('entitlements_state_check', sql`${t.state} IN ('reserved','delivered','cancelled')`),
@@ -273,12 +273,18 @@ export const portalUsers = sqliteTable('portal_users', {
   updatedAt: text('updated_at').notNull(),
 }, t => [check('portal_users_status_check', sql`${t.status} IN ('active','blocked')`)]);
 export const publicParticipantConfig = sqliteTable('public_participant_config', {
-  id: integer('id').primaryKey(), enabled: integer('enabled').notNull().default(0),
+  id: integer('id'), enabled: integer('enabled').notNull().default(0),
   noticeText: text('notice_text').notNull().default(''), eligibilityText: text('eligibility_text').notNull().default(''),
   noticeApproved: integer('notice_approved').notNull().default(0), eligibilityApproved: integer('eligibility_approved').notNull().default(0),
   version: integer('version').notNull().default(1), updatedAt: text('updated_at').notNull(), updatedBy: text('updated_by'),
   senderFingerprint: text('sender_fingerprint'), senderVerifiedAt: integer('sender_verified_at'), senderDomain: text('sender_domain'), senderStatus: text('sender_status'),
-});
+}, t => [
+  primaryKey({ columns: [t.id] }), check('public_participant_config_id_check', sql`${t.id}=1`),
+  check('public_participant_config_enabled_check', sql`${t.enabled} IN (0,1)`),
+  check('public_participant_config_notice_check', sql`${t.noticeApproved} IN (0,1)`),
+  check('public_participant_config_eligibility_check', sql`${t.eligibilityApproved} IN (0,1)`),
+  check('public_participant_config_version_check', sql`${t.version}>0`),
+]);
 export const participantAccounts = sqliteTable('participant_accounts', {
   userId: text('user_id').primaryKey().references(() => portalUsers.userId), verifiedAt: text('verified_at').notNull(),
   noticeHash: text('notice_hash').notNull(), eligibilityHash: text('eligibility_hash').notNull(), createdAt: text('created_at').notNull(),
@@ -287,7 +293,7 @@ export const participantEmailChallenges = sqliteTable('participant_email_challen
   id: text('id').primaryKey(), tokenHash: text('token_hash').notNull(), email: text('email').notNull(), purpose: text('purpose').notNull(),
   expiresAt: integer('expires_at').notNull(), usedAt: text('used_at'), providerAcceptedAt: text('provider_accepted_at'), configVersion: integer('config_version').notNull(),
   noticeHash: text('notice_hash').notNull(), eligibilityHash: text('eligibility_hash').notNull(), returnTo: text('return_to').notNull(), createdAt: text('created_at').notNull(),
-}, t => [uniqueIndex('participant_challenges_hash_unique').on(t.tokenHash), index('participant_challenges_expiry_idx').on(t.expiresAt), index('participant_challenges_email_idx').on(t.email,t.createdAt)]);
+}, t => [uniqueIndex('participant_challenges_hash_unique').on(t.tokenHash), index('participant_challenges_expiry_idx').on(t.expiresAt), index('participant_challenges_email_idx').on(t.email,t.createdAt), check('participant_challenges_purpose_check', sql`${t.purpose} IN ('signup','recovery')`)]);
 export const profiles = sqliteTable('profiles', {
   userId: text('user_id').primaryKey(), displayName: text('display_name').notNull(),
   avatarKey: text('avatar_key'), mime: text('mime'),

@@ -14,6 +14,7 @@ import AssistantPanel from '@/components/portal/assistant-panel';
 import type { OfficialTeamSelection } from '@/lib/catalog/proex-team';
 import AdminPrivacyPanel from '@/components/portal/admin-privacy-panel';
 import SyncSettingsPanel from '@/components/portal/sync-settings-panel';
+import PublicParticipantsSettingsPanel from '@/components/portal/public-participants-settings-panel';
 import ProfilePanel from '@/components/portal/profile-panel';
 import CalendarPanel from '@/components/portal/calendar-panel';
 import RecordsPanel from '@/components/portal/records-panel';
@@ -953,6 +954,7 @@ export default function PortalClient({ initial }: {
 
       {tab === 'settings' && <>
         {canGlobal('organization.manage') && <SyncSettingsPanel />}
+        <PublicParticipantsSettingsPanel canManage={canGlobal('organization.manage')} onChanged={refreshModules}/>
         <Section title="Canais e informações da operação" description="Use os canais institucionais confirmados e o aviso aprovado para o serviço.">
         <OperationForm action="setting.update" mutate={mutate} submit="Salvar configurações" make={f => ({ instagramUrl: f.get('instagramUrl'), privacyNotice: f.get('privacyNotice') })}>
         <Field label="Perfil oficial no Instagram" help="O link divulga o canal. Ele não verifica automaticamente se a pessoa segue o perfil.">
