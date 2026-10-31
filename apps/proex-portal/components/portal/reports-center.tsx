@@ -8,8 +8,8 @@ import { quantityTotal } from '@/lib/report-quantities';
 import { download, toCsv, toDocx, toJson, toXlsx, type ExportColumn, type ExportRow } from './report-export';
 import styles from './reports-center.module.css';
 
-type DatasetId = 'projects' | 'materials' | 'movements' | 'outflows' | 'loans' | 'records' | 'campaigns' | 'demands' | 'reviews';
-type Column = ExportColumn & { date?: boolean };
+type DatasetId = 'projects' | 'materials' | 'movements' | 'outflows' | 'outflow_details' | 'loans' | 'records' | 'campaigns' | 'demands' | 'reviews';
+type Column = ExportColumn & { date?: boolean; nonAdditive?: boolean };
 type Kpi = { label: string; value: number | null; detail?: string; tone?: 'warn' };
 type Series = { key: string; label: string; value: (row: ExportRow) => number };
 type Dataset = {
@@ -25,6 +25,12 @@ const distinct = (rows: ExportRow[], key: string) => new Set(rows.map(row => row
 const shared: Column[] = [
   { key: 'projeto', label: 'Projeto' }, { key: 'unidade_sigla', label: 'Unidade' }, { key: 'unidade', label: 'Unidade (nome)' },
   { key: 'unidade_grupo', label: 'Tipo de unidade' }, { key: 'area_tematica', label: 'Área temática' }, { key: 'modalidade', label: 'Modalidade' },
+];
+const OUTFLOW_NOTES: Column[] = [
+  { key: 'finalidade_registrada', label: 'Motivo/finalidade registrada (texto livre)' },
+  { key: 'observacao_atividade', label: 'Observação da atividade (texto livre)' },
+  { key: 'condicao_saida', label: 'Condição na retirada (texto livre)' },
+  { key: 'condicao_retorno', label: 'Condição na devolução (texto livre)' },
 ];
 const ASSET_COLUMNS: Column[] = [
   { key: 'descricao_bem', label: 'Descrição do bem' }, { key: 'marca', label: 'Marca' }, { key: 'modelo', label: 'Modelo' }, { key: 'numero_serie', label: 'Número de série' },
@@ -64,6 +70,19 @@ const DATASETS: Record<DatasetId, Dataset> = {
     groups: ['projeto', 'material', 'unidade_sigla', 'tipo', 'unidade_medida'],
     kpis: rows => [{ label: 'Projetos atendidos', value: distinct(rows, 'projeto') }, { label: 'Materiais', value: distinct(rows, 'material') }, { label: 'Quantidade entregue', value: quantityTotal(rows, 'quantidade') }, { label: 'Movimentações', value: sum(rows, 'movimentacoes') }],
   },
+  outflow_details: {
+    label: 'Saídas rastreáveis', description: 'Um registro por distribuição, prêmio entregue ou retirada efetiva de equipamento. Reservas, ajustes e consumo não são saídas deste relatório. Unidade e saldo são os atuais do cadastro; datas previstas não substituem retiradas ausentes.', icon: Truck,
+    columns: [...shared, { key: 'data_saida', label: 'Saída (Brasília)', date: true }, { key: 'material', label: 'Material' }, { key: 'classe', label: 'Classe' }, { key: 'categoria', label: 'Categoria' }, { key: 'unidade_medida', label: 'Unidade de medida atual' },
+      { key: 'tipo', label: 'Tipo da saída' }, { key: 'quantidade', label: 'Quantidade da saída', numeric: true }, { key: 'acao', label: 'Ação registrada' }, { key: 'acao_fonte', label: 'Fonte da ação' },
+      { key: 'registrado_por', label: 'Operador do registro (nome atual)' }, { key: 'operador_fonte', label: 'Fonte do operador' },
+      { key: 'situacao_retorno', label: 'Devolução' }, { key: 'devolucao_prevista', label: 'Devolução prevista', date: true }, { key: 'devolucao_registrada', label: 'Devolução registrada', date: true },
+      { key: 'saldo_atual', label: 'Saldo atual', numeric: true, nonAdditive: true }, { key: 'reservado_atual', label: 'Reservado atual', numeric: true, nonAdditive: true }, { key: 'disponivel_atual', label: 'Saldo menos reservas atuais', numeric: true, nonAdditive: true },
+      { key: 'saldo_origem', label: 'Referência do saldo' }, { key: 'unidade_origem', label: 'Referência da unidade' }, { key: 'fonte_data', label: 'Fonte da data' }, { key: 'instante_saida_utc', label: 'Instante registrado (UTC)' },
+      { key: 'origem', label: 'Origem do registro' }, { key: 'origem_id', label: 'ID do registro de origem' }, { key: 'atividade_id', label: 'ID da atividade' }, { key: 'evento_id', label: 'ID do evento' }],
+    defaults: ['data_saida', 'projeto', 'acao', 'material', 'unidade_medida', 'tipo', 'quantidade', 'registrado_por', 'situacao_retorno'],
+    groups: ['projeto', 'acao', 'material', 'tipo', 'situacao_retorno', 'unidade_medida', 'mes'], dateKey: 'data_saida',
+    kpis: rows => [{ label: 'Registros de saída', value: rows.length }, { label: 'Materiais', value: distinct(rows, 'material') }, { label: 'Quantidade das saídas', value: quantityTotal(rows, 'quantidade') }, { label: 'Retornos pendentes', value: count(rows, row => row.situacao_retorno === 'out'), tone: 'warn' }],
+  },
   loans: {
     label: 'Empréstimos', description: 'Agenda, retiradas, devoluções e atrasos. Não inclui dados de contato.', icon: Truck,
     columns: [...shared, { key: 'material', label: 'Material' }, { key: 'acao', label: 'Ação' }, { key: 'inicio', label: 'Início', date: true }, { key: 'fim', label: 'Devolução prevista', date: true }, { key: 'situacao', label: 'Situação' }, { key: 'em_atraso', label: 'Em atraso' }, { key: 'retirado_em', label: 'Retirado em', date: true }, { key: 'devolvido_em', label: 'Devolvido em', date: true }, { key: 'condicao_saida', label: 'Condição na saída' }, { key: 'condicao_retorno', label: 'Condição no retorno' }],
@@ -100,7 +119,7 @@ const DATASETS: Record<DatasetId, Dataset> = {
     kpis: rows => [{ label: 'Conferências', value: distinct(rows, 'conferencia_id') }, { label: 'Contagens pendentes', value: count(rows, row => row.contagem_pendente === 'sim'), tone: 'warn' }, { label: 'Avarias registradas', value: quantityTotal(rows, 'avariado') }, { label: 'Linhas com divergência ou avaria', value: count(rows, row => num(row.avariado) > 0 || (row.divergencia !== null && num(row.divergencia) !== 0)) }],
   },
 };
-const ORDER: DatasetId[] = ['projects', 'materials', 'movements', 'outflows', 'loans', 'records', 'campaigns', 'demands', 'reviews'];
+const ORDER: DatasetId[] = ['projects', 'materials', 'movements', 'outflows', 'outflow_details', 'loans', 'records', 'campaigns', 'demands', 'reviews'];
 const PHYSICAL_MEASURES = ['saldo', 'reservado', 'disponivel', 'alerta_minimo', 'quantidade', 'esperado', 'contado', 'avariado', 'divergencia', 'sem_avarias'];
 const LABELS: Record<string, Record<string, string>> = {
   abrangencia: { internal: 'Interno PROEX', external: 'Externo' },
@@ -108,7 +127,8 @@ const LABELS: Record<string, Record<string, string>> = {
   classe: { gift: 'Brinde', equipment: 'Equipamento', distribution: 'Distribuição', consumption: 'Consumo' },
   condicao: { active: 'Em uso', maintenance: 'Em manutenção', inactive: 'Inativo' },
   situacao_estoque: { baixo: 'Estoque baixo', ok: 'Adequado' },
-  tipo: { receive: 'Entrada', distribute: 'Distribuição', consume: 'Consumo', adjust: 'Ajuste', redeem: 'Resgate de prêmio', transfer: 'Transferência' },
+  tipo: { receive: 'Entrada', distribute: 'Distribuição', consume: 'Consumo', adjust: 'Ajuste', redeem: 'Resgate de prêmio', transfer: 'Transferência', loan: 'Retirada de equipamento' },
+  situacao_retorno: { not_applicable: 'Não se aplica (distribuição/prêmio)', out: 'Retorno pendente', returned: 'Devolvido' },
   sentido: { entrada: 'Entrada', saida: 'Saída' },
   em_atraso: { sim: 'Sim', nao: 'Não' },
   contagem_pendente: { sim: 'Sim', nao: 'Não' },
@@ -154,7 +174,9 @@ export default function ReportsCenter({ projectId, unitId, area, from, to, scope
   const datasets = ORDER.filter(id => available.includes(id));
   const [dataset, setDataset] = useState<DatasetId>(initialDataset && datasets.includes(initialDataset) ? initialDataset : datasets[0] ?? 'projects');
   const [assetDetails, setAssetDetails] = useState(false);
-  const config = useMemo(() => dataset === 'materials' && assetDetails ? { ...DATASETS.materials, columns: [...DATASETS.materials.columns, ...ASSET_COLUMNS] } : DATASETS[dataset], [dataset, assetDetails]);
+  const [includeNotes, setIncludeNotes] = useState(false), [outflowType, setOutflowType] = useState('all'), [returnState, setReturnState] = useState('all');
+  const config = useMemo(() => dataset === 'materials' && assetDetails ? { ...DATASETS.materials, columns: [...DATASETS.materials.columns, ...ASSET_COLUMNS] }
+    : dataset === 'outflow_details' && includeNotes ? { ...DATASETS.outflow_details, columns: [...DATASETS.outflow_details.columns, ...OUTFLOW_NOTES] } : DATASETS[dataset], [dataset, assetDetails, includeNotes]);
   const [columns, setColumns] = useState<string[]>(config.defaults);
   const [groupBy, setGroupBy] = useState(config.groups[0]);
   const [measure, setMeasure] = useState('__count__');
@@ -163,7 +185,7 @@ export default function ReportsCenter({ projectId, unitId, area, from, to, scope
   const [measurementUnit, setMeasurementUnit] = useState('');
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null);
   const [page, setPage] = useState(0), [pageSize, setPageSize] = useState(25);
-  const queryKey = JSON.stringify([dataset, projectId, unitId, area, from, to, assetDetails]);
+  const queryKey = JSON.stringify([dataset, projectId, unitId, area, from, to, assetDetails, includeNotes, outflowType, returnState]);
   const [loadedQueryKey, setLoadedQueryKey] = useState('');
   const [loadedRows, setRows] = useState<ExportRow[]>([]), [truncated, setTruncated] = useState(false);
   const [fetching, setLoading] = useState(true), [error, setError] = useState('');
@@ -179,6 +201,7 @@ export default function ReportsCenter({ projectId, unitId, area, from, to, scope
     const controller = new AbortController();
     const query = new URLSearchParams({ dataset });
     if (dataset === 'materials' && assetDetails) query.set('assetDetails', '1');
+    if (dataset === 'outflow_details') { query.set('outflowType', outflowType); query.set('returnState', returnState); if (includeNotes) query.set('includeNotes', '1'); }
     if (projectId) query.set('projectId', projectId);
     if (unitId) query.set('unitId', unitId === '__unassigned__' ? '__none__' : unitId);
     if (area) query.set('thematicArea', area);
@@ -190,18 +213,18 @@ export default function ReportsCenter({ projectId, unitId, area, from, to, scope
       .then(body => { if (controller.signal.aborted) return; setRows(Array.isArray(body.rows) ? body.rows : []); setLoadedQueryKey(queryKey); setTruncated(Boolean(body.truncated)); setLoading(false); })
       .catch(reason => { if (controller.signal.aborted) return; setRows([]); setLoadedQueryKey(queryKey); setTruncated(false); setError(reason instanceof Error ? reason.message : 'Não foi possível carregar o relatório.'); setLoading(false); });
     return () => { window.clearTimeout(start); controller.abort(); };
-  }, [dataset, projectId, unitId, area, from, to, queryKey, assetDetails]);
+  }, [dataset, projectId, unitId, area, from, to, queryKey, assetDetails, includeNotes, outflowType, returnState]);
 
   function chooseDataset(id: DatasetId, preset?: Preset) {
     const next = DATASETS[id];
-    setDataset(id); setAssetDetails(false); setColumns(preset?.columns.filter(key => next.columns.some(column => column.key === key)) ?? next.defaults);
+    setDataset(id); setAssetDetails(false); setIncludeNotes(false); setOutflowType('all'); setReturnState('all'); setColumns(preset?.columns.filter(key => next.columns.some(column => column.key === key)) ?? next.defaults);
     setGroupBy(preset && next.groups.includes(preset.groupBy) ? preset.groupBy : next.groups[0]);
-    setMeasure(preset && (preset.measure === '__count__' || next.columns.some(column => column.key === preset.measure && column.numeric)) ? preset.measure : '__count__');
+    setMeasure(preset && (preset.measure === '__count__' || next.columns.some(column => column.key === preset.measure && column.numeric && !column.nonAdditive)) ? preset.measure : '__count__');
     setSearch(preset?.search ?? ''); setMeasurementUnit(''); setFocus(''); setSort(null); setPage(0);
   }
 
   const valueOf = (row: ExportRow, key: string) => display(dataset, row, key);
-  const numericColumns = config.columns.filter(column => column.numeric);
+  const numericColumns = config.columns.filter(column => column.numeric && !column.nonAdditive);
   const unitOptions = [...new Set(rows.map(row => String(row.unidade_medida ?? '').trim()).filter(Boolean))].sort();
   const searched = useMemo(() => {
     const needle = search.trim().toLocaleLowerCase('pt-BR');
@@ -209,7 +232,7 @@ export default function ReportsCenter({ projectId, unitId, area, from, to, scope
     if (!needle) return measured;
     return measured.filter(row => config.columns.some(column => String(display(dataset, row, column.key) ?? '').toLocaleLowerCase('pt-BR').includes(needle)));
   }, [rows, search, config, dataset, measurementUnit]);
-  const mixedUnits = ['materials', 'movements', 'outflows', 'reviews'].includes(dataset) && quantityTotal(searched, 'quantidade') === null;
+  const mixedUnits = ['materials', 'movements', 'outflows', 'outflow_details', 'reviews'].includes(dataset) && quantityTotal(searched, 'quantidade') === null;
   const effectiveMeasure = mixedUnits && PHYSICAL_MEASURES.includes(measure) ? '__count__' : measure;
   const measureLabel = effectiveMeasure === '__count__' ? (dataset === 'movements' ? 'movimentações' : 'linhas') : (config.columns.find(column => column.key === effectiveMeasure)?.label.toLowerCase() ?? '');
   const filtered = useMemo(() => focus ? searched.filter(row => String(display(dataset, row, groupBy) || 'Sem informação') === focus) : searched, [searched, focus, groupBy, dataset]);
@@ -256,6 +279,10 @@ export default function ReportsCenter({ projectId, unitId, area, from, to, scope
   const fileBase = `proex-${dataset}-${stamp}`;
   const exportValue = (row: ExportRow, key: string) => { const column = config.columns.find(item => item.key === key); const value = valueOf(row, key); return column?.date ? dateLabel(value) : column?.numeric ? num(value) : value; };
   const info: [string, string][] = [['Relatório', config.label], ['Recorte', scopeLabel || 'Todos os projetos que você pode consultar'], ['Período', from || to ? `${from ? dateLabel(from) : 'início'} a ${to ? dateLabel(to) : 'hoje'}` : 'Todo o período'], ['Unidade de medida', measurementUnit || 'Todas, separadas em cada registro'], ['Busca', search || '—'], ['Destaque', focus ? `${config.columns.find(column => column.key === groupBy)?.label ?? 'Mês'}: ${focus}` : '—'], ['Linhas', String(sorted.length)], ['Gerado em', new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) + ' (Brasília)'], ['Compartilhamento', 'Recorte das suas permissões. Revise os textos livres antes de compartilhar.']];
+  if (dataset === 'outflow_details') info.push(['Tipo de saída', outflowType === 'all' ? 'Todos' : LABELS.tipo[outflowType]], ['Devolução', returnState === 'all' ? 'Todas' : LABELS.situacao_retorno[returnState]],
+    ['Referências', 'Unidade e saldo atuais do cadastro. Saldos repetidos por registro não devem ser somados. Uma unidade individual por retirada de equipamento; retornos não criam nova saída.'], ['Datas ausentes', 'Sem filtro de período é possível consultar retiradas sem data efetiva; previsões não substituem o histórico.'],
+    ['Operador', 'Nome atual do perfil, somente para quem tem permissão operacional vigente; não identifica o beneficiário.'], ['Textos livres', includeNotes ? 'Consulta opcional sujeita à permissão operacional atual; confira as colunas antes de compartilhar.' : 'Não consultados nem exportados.'],
+    ['Cobertura', truncated ? 'Consulta parcial por limite de linhas ou tamanho. Refine os filtros antes de considerar o relatório completo.' : 'Registros do recorte retornados pela consulta.']);
 
   async function exportDocument(format: 'pdf' | 'docx') {
     if (exporting || loading || !chosen.length) return;
@@ -318,8 +345,10 @@ export default function ReportsCenter({ projectId, unitId, area, from, to, scope
     </div>
 
     {dataset === 'materials' && <label className="p-form-help"><input type="checkbox" checked={assetDetails} onChange={event => { setAssetDetails(event.target.checked); setColumns(DATASETS.materials.defaults); setRows([]); setFocus(''); setMeasure('__count__'); }}/>{' '}Consultar metadados patrimoniais privados (somente projetos com permissão vigente de inventário). A referência de responsável, processo e valor documentado só entra na exportação ao escolher essas colunas.</label>}
+    {dataset === 'outflow_details' && <div className="space-y-3"><p className="p-form-help">A ação aparece quando foi vinculada no registro. O operador é quem registrou a saída, com nome atual do perfil; beneficiários e contatos não são consultados. Saldo e unidade são os atuais do cadastro.</p><label className="p-form-help"><input type="checkbox" checked={includeNotes} onChange={event => { setIncludeNotes(event.target.checked); setColumns(DATASETS.outflow_details.defaults); setRows([]); setFocus(''); setMeasure('__count__'); setPage(0); }}/>{' '}Disponibilizar motivos, observações e condições com permissão operacional vigente (textos livres podem conter dados pessoais). Selecione essas colunas e revise seu conteúdo antes de exportar.</label></div>}
     <div className={styles.controls}>
       <label className={`p-field ${styles.search}`}><span>Buscar nas linhas</span><span className={styles.searchBox}><Search size={15} /><input value={search} onChange={event => { setSearch(event.target.value); setPage(0); }} placeholder="Nome, material, título, observação…" />{search && <button type="button" aria-label="Limpar busca" onClick={() => setSearch('')}><X size={14} /></button>}</span></label>
+      {dataset === 'outflow_details' && <><label className="p-field"><span>Tipo de saída</span><select value={outflowType} onChange={event => { setOutflowType(event.target.value); setFocus(''); setPage(0); }}><option value="all">Todas as saídas</option>{['distribute', 'redeem', 'loan'].map(type => <option value={type} key={type}>{LABELS.tipo[type]}</option>)}</select></label><label className="p-field"><span>Situação da devolução</span><select value={returnState} onChange={event => { setReturnState(event.target.value); setFocus(''); setPage(0); }}><option value="all">Todas as situações</option>{['not_applicable', 'out', 'returned'].map(state => <option value={state} key={state}>{LABELS.situacao_retorno[state]}</option>)}</select></label></>}
       <label className="p-field"><span>Agrupar gráfico por</span><select value={groupBy} onChange={event => { setGroupBy(event.target.value); setFocus(''); }}>{config.groups.map(key => <option key={key} value={key}>{key === 'mes' ? 'Mês' : config.columns.find(column => column.key === key)?.label}</option>)}</select></label>
       <label className="p-field"><span>Medida</span><select value={effectiveMeasure} onChange={event => setMeasure(event.target.value)}><option value="__count__">Quantidade de {dataset === 'movements' ? 'movimentações' : 'linhas'}</option>{numericColumns.map(column => <option key={column.key} value={column.key} disabled={mixedUnits && PHYSICAL_MEASURES.includes(column.key)}>Soma de {column.label.toLowerCase()}</option>)}</select></label>
       {unitOptions.length > 0 && <label className="p-field"><span>Unidade de medida</span><select value={measurementUnit} onChange={event => { setMeasurementUnit(event.target.value); setFocus(''); setPage(0); }}><option value="">Todas as medidas</option>{unitOptions.map(unit => <option key={unit} value={unit}>{unit}</option>)}</select></label>}
@@ -344,7 +373,7 @@ export default function ReportsCenter({ projectId, unitId, area, from, to, scope
       <span className={styles.summaryIcon}><Icon size={20} /></span>
       <p><strong>{config.label}</strong> · {loading ? 'carregando…' : `${formatNumber(filtered.length)} ${filtered.length === 1 ? 'linha' : 'linhas'}`}{scopeLabel ? ` · ${scopeLabel}` : ''}{from || to ? ` · ${from ? dateLabel(from) : 'início'} a ${to ? dateLabel(to) : 'hoje'}` : ''}</p>
       {focus && <button type="button" className={styles.focusChip} onClick={() => setFocus('')}>{groupLabel}: {groupBy === 'mes' && /^\d{4}-\d{2}$/.test(focus) ? monthLabel(focus) : focus}<X size={13} /></button>}
-      {truncated && <small className={styles.warn}>Mostrando as primeiras 5.000 linhas. Refine o recorte para ver tudo.</small>}
+      {truncated && <small className={styles.warn}>{dataset === 'outflow_details' ? 'Consulta parcial: limite de 5.000 linhas ou 3 MiB. Refine o recorte para consultar e exportar tudo.' : 'Mostrando as primeiras 5.000 linhas. Refine o recorte para ver tudo.'}</small>}
     </div>
 
     <div className={styles.kpis}>
