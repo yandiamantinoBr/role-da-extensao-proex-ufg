@@ -40,6 +40,8 @@ Na ausência de URL ou segredo válidos, o acesso por senha fica indisponível. 
 
 A tela de equipe emite **links de convite para copiar e compartilhar manualmente**. Nenhum e-mail ou mensagem é enviado automaticamente. O convite tem destinatário, função, escopo, validade de sete dias e aceite único. A pessoa abre `/convite`, informa o nome e define a senha; se já tiver credencial no portal, informa a senha atual. O servidor usa o destinatário e as permissões gravados no convite, sem aceitar uma função enviada pelo navegador. A ativação incompleta não permite login. A geração do link não concede acesso antes do aceite, nem dá permissão para editar código, publicar o Site ou acessar outros projetos.
 
+Convites usam um projeto como padrão. O alcance do portal inteiro exige escolha e confirmação explícitas do responsável, também verificadas pela API. E-mail institucional, vínculo de bolsista e unidade no perfil não concedem função ou acesso a outros projetos. A [matriz de acessos e escopo](docs/ACESSOS-E-ESCOPO.md) explica as barreiras atuais e o modelo ainda necessário para organizações independentes.
+
 Sem SMTP, o convite manual não comprova automaticamente controle da caixa de e-mail, e a conta não é marcada como e-mail verificado. O responsável deve conferir a pessoa e entregar o link pelo canal institucional adequado. Não há Google OAuth, login por WhatsApp, Facebook ou Instagram nesta revisão.
 
 Se alguém esquecer a senha, o responsável institucional pode gerar um **link pessoal de recuperação**, válido por 30 minutos e de uso único, para compartilhar manualmente. O portal não envia esse link por e-mail. Solicitações públicas não podem emitir ou revelar links de recuperação. Não compartilhar senha nem guardar esses links em planilhas de uso geral.

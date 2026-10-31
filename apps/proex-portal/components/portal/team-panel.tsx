@@ -145,15 +145,20 @@ export default function TeamPanel(props: Props) {
     const key = useRef<string | null>(null), inviteRef = useRef<HTMLFormElement>(null);
     const draft = useFormDraft(inviteRef, 'team:invite');
     const allowed = props.projects.filter(p => props.globalAdmin || props.canProject(p.id, 'access.invite'));
+    const defaultInviteProject = allowed.some(project => project.id === props.selectedProjectId) ? props.selectedProjectId : allowed.length === 1 ? String(allowed[0].id) : '';
+    const [inviteProject, setInviteProject] = useState(defaultInviteProject), [globalConfirmed, setGlobalConfirmed] = useState(false);
     const directory: Row[] = props.users.length ? props.users : props.members.map(m => ({ userId:m.user_id??m.userId,email: m.email, members: [m] }));
     const filtered = directory.filter(u => `${u.displayName ?? ''} ${u.email ?? ''}`.toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR')) && (!props.selectedProjectId || (u.members ?? []).some((m: Row) => !projectIdOf(m) || projectIdOf(m) === props.selectedProjectId)));
     async function invite(e: FormEvent<HTMLFormElement>) { e.preventDefault(); if (saving)
         return; const element = e.currentTarget, form = new FormData(element); setSaving(true); setError(''); key.current ??= crypto.randomUUID(); try {
-        const result = await props.mutate('invite.create', { email: form.get('email'), role: form.get('role'), projectId: form.get('projectId') || null, operationKey: key.current });
+        const globalAccess = form.get('projectId') === '__global__';
+        if (globalAccess && (!props.globalAdmin || !globalConfirmed)) throw new Error('Confirme o alcance do convite ou escolha um projeto.');
+        const result = await props.mutate('invite.create', { email: form.get('email'), role: form.get('role'), projectId: globalAccess ? null : form.get('projectId'), globalAccess: globalAccess && globalConfirmed, operationKey: key.current });
         setInviteUrl(result.inviteUrl || '');
         key.current = null;
         draft.clear();
         element.reset();
+        setInviteProject(defaultInviteProject); setGlobalConfirmed(false);
     }
     catch (e) {
         setError(e instanceof Error ? e.message : 'Não foi possível criar o convite.');
@@ -184,7 +189,7 @@ export default function TeamPanel(props: Props) {
         <div className="p-section-heading">
         <div>
         <h2>Convidar uma pessoa</h2>
-        <p>O link fica vinculado ao e-mail e ao escopo escolhido.</p>
+        <p>O link fica vinculado ao e-mail, à função e ao projeto escolhido. E-mail institucional ou vínculo de bolsista não concede permissões adicionais.</p>
         </div>
         </div>
         <form ref={inviteRef} className="p-form" onSubmit={invite} onChange={() => { if (!saving)
@@ -201,10 +206,11 @@ export default function TeamPanel(props: Props) {
         </label>
         <label className="p-field">
         <span>Escopo do acesso</span>
-        <select name="projectId" defaultValue={allowed.some(p => p.id === props.selectedProjectId) ? props.selectedProjectId : props.globalAdmin ? '' : allowed[0]?.id} required={!props.globalAdmin}>{props.globalAdmin && <option value="">Toda a organização</option>}{allowed.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
+        <select name="projectId" value={inviteProject} onChange={event => { setInviteProject(event.target.value); setGlobalConfirmed(false); }} required><option value="" disabled>Selecione um projeto</option>{allowed.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}{props.globalAdmin && <option value="__global__">Portal inteiro · todos os projetos</option>}</select>
         <small>O acesso a um projeto não concede permissão nos demais.</small>
         </label>
         </div>
+        {props.globalAdmin && inviteProject === '__global__' && <label className="p-field"><span><input type="checkbox" checked={globalConfirmed} onChange={event => setGlobalConfirmed(event.target.checked)} required/> Confirmo que esta pessoa pode atuar em todos os projetos do portal, inclusive futuros.</span><small>Use este alcance somente para a equipe institucional autorizada. Esta confirmação não fica no rascunho.</small></label>}
         <div className="p-form-footer">{error && <p className="p-inline-error" role="alert">{error}</p>}<button className="p-button p-button-primary" type="submit">{saving ? <LoaderCircle size={17} className="p-spin"/> : <UserPlus size={17}/>}{saving ? 'Criando…' : 'Gerar convite'}</button>
         </div>
         </fieldset>
