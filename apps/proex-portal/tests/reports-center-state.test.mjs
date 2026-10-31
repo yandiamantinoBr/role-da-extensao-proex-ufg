@@ -49,21 +49,54 @@ function harness() {
 function nodesInside(node){const result=[];const visit=value=>{if(!value||typeof value!=='object')return;if(Array.isArray(value)){value.forEach(visit);return;}result.push(value);visit(value.props?.children);};visit(node);return result;}
 async function load(h, project = 'a', props = base) { h.render(props); h.flushEffects(); h.requests.at(-1).resolve({ ok: true, json: async () => ({ dataset: 'materials', rows: [row(project)], truncated: false }) }); await tick(); h.render(props); }
 
-test('report subjects are native pressed buttons in a named group and choosing a subject updates the request', async () => {
+test('report subjects use one native select and changing it updates the request', async () => {
  const h = harness();
  try {
   await load(h);
-  const group = () => nodesInside(h.render()).find(node => node.props?.role === 'group' && node.props['aria-label'] === 'Assunto do relatório');
-  const buttons = () => nodesInside(group()).filter(node => node.type === 'button');
-  assert.equal(buttons().length, 2);
-  assert.equal(buttons().filter(button => button.props['aria-pressed']).length, 1);
-  assert.equal(buttons()[0].props['aria-pressed'], true);
-  assert.ok(buttons().every(button => button.props.type === 'button' && button.props.role === undefined && button.props.tabIndex === undefined));
-  buttons()[1].props.onClick();
-  h.render(); h.flushEffects();
-  assert.equal(buttons()[0].props['aria-pressed'], false);
-  assert.equal(buttons()[1].props['aria-pressed'], true);
+  const subject = () => h.input('Assunto do relatório');
+  assert.equal(subject().type, 'select');
+  assert.equal(subject().props.value, 'materials');
+  assert.equal(nodesInside(subject()).filter(node => node.type === 'option').length, 2);
+  subject().props.onChange({target:{value:'loans'}}); h.render(); h.flushEffects();
+  assert.equal(subject().props.value, 'loans');
   assert.equal(new URL(h.requests.at(-1).url, 'https://synthetic.example.invalid').searchParams.get('dataset'), 'loans');
+ } finally { h.dispose(); }
+});
+
+test('report starts with subject/search, keeps advanced choices closed and places rows before export formats and charts', async () => {
+ const h = harness();
+ try {
+  await load(h);
+  const flat = nodesInside(h.render());
+  const options = flat.find(node => node.type === 'details' && nodesInside(node).some(child => child.type === 'summary' && text(child).startsWith('Ajustar recorte e colunas')));
+  const exports = flat.find(node => node.type === 'details' && nodesInside(node).some(child => child.type === 'summary' && text(child) === 'Exportar linhas deste recorte'));
+  assert.equal(options.props.open, undefined); assert.equal(exports.props.open, undefined);
+  assert.equal(nodesInside(options).includes(h.input('Buscar nas linhas')), false);
+  assert.ok(flat.indexOf(h.input('Assunto do relatório')) < flat.findIndex(node => node.type === 'table'));
+  assert.ok(flat.findIndex(node => node.type === 'table') < flat.indexOf(exports));
+  assert.ok(flat.indexOf(exports) < flat.findIndex(node => node.type === 'figure'));
+  h.input('Consultar metadados').props.onChange({target:{checked:true}}); h.render();
+  const active = nodesInside(h.render()).find(node => node.type === 'summary' && text(node).startsWith('Ajustar recorte e colunas'));
+  assert.ok(text(active).includes('metadados patrimoniais'));
+  assert.equal(h.button('Excel').props.disabled, true);
+ } finally { h.dispose(); }
+});
+
+test('all ten available subjects preserve fresh-query export gating through the single selector', async () => {
+ const all = ['projects','materials','movements','outflows','outflow_details','loans','records','campaigns','demands','reviews'];
+ const props = {...base,available:all}, h = harness();
+ try {
+  h.render(props); h.flushEffects();
+  assert.equal(nodesInside(h.input('Assunto do relatório')).filter(node => node.type === 'option').length, 10);
+  for (const dataset of all) {
+   h.input('Assunto do relatório').props.onChange({target:{value:dataset}}); h.render(props); h.flushEffects();
+   assert.equal(h.button('JSON').props.disabled, true);
+   const request = h.requests.at(-1);
+   assert.equal(new URL(request.url,'https://synthetic.example.invalid').searchParams.get('dataset'),dataset);
+   request.resolve({ok:true,json:async()=>({dataset,rows:[{id:`synthetic-${dataset}`,projeto:'Projeto A',material:'Item A',unidade_medida:'unidade',quantidade:1}],truncated:false})}); await tick(); h.render(props);
+   assert.equal(h.input('Assunto do relatório').props.value,dataset);
+   assert.equal(h.button('JSON').props.disabled,false);
+  }
  } finally { h.dispose(); }
 });
 async function jsonDownload(h) { h.button('JSON').props.onClick(); return JSON.parse(await h.downloads.at(-1).blob.text()); }
@@ -79,7 +112,7 @@ test('report exports remain disabled immediately on any server-filter or dataset
    h.button('PDF').props.onClick(); h.button('Word').props.onClick(); h.button('Imprimir').props.onClick(); await tick();
    assert.equal(h.downloads.length, 1); assert.equal(h.opened, 0);
   }
-  h.render(base); h.button('Empréstimos').props.onClick(); h.render(base);
+  h.render(base); h.input('Assunto do relatório').props.onChange({target:{value:'loans'}}); h.render(base);
   for (const name of exportNames) assert.equal(h.button(name).props.disabled, true, `${name}: dataset`);
  } finally { h.dispose(); }
 });

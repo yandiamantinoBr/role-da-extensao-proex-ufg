@@ -334,31 +334,26 @@ export default function ReportsCenter({ projectId, unitId, area, from, to, scope
   if (!datasets.length) return null;
   const groupLabel = groupBy === 'mes' ? 'Mês' : config.columns.find(column => column.key === groupBy)?.label ?? groupBy;
   const Icon = config.icon;
+  const activeOptions = [assetDetails ? 'metadados patrimoniais' : '', includeNotes ? 'textos livres' : '', outflowType !== 'all' ? LABELS.tipo[outflowType] : '', returnState !== 'all' ? LABELS.situacao_retorno[returnState] : '', measurementUnit].filter(Boolean);
   return <section className={styles.root} aria-labelledby="reports-center-title">
     <header className={styles.header}>
       <div>
         <span className={styles.eyebrow}><BarChart3 size={15} />Central de relatórios</span>
-        <h2 id="reports-center-title">Monte o relatório que você precisa</h2>
-        <p>Escolha o assunto, ajuste o recorte com os filtros do topo e as datas acima, veja os gráficos e exporte só as colunas que interessam.</p>
+        <h2 id="reports-center-title">Relatório detalhado</h2>
+        <p>Escolha o assunto e confira as linhas antes de exportar.</p>
       </div>
-      <div className={styles.exportBar} role="group" aria-label="Exportar relatório">
-        <button type="button" className="p-button p-button-primary" disabled={loading || !chosen.length || !sorted.length || !!exporting} onClick={() => download(`${fileBase}.xlsx`, toXlsx(config.label, exportColumns, sorted, exportValue, info))}><FileSpreadsheet size={16} />Excel</button>
-        <button type="button" className="p-button p-button-subtle" disabled={loading || !chosen.length || !sorted.length || !!exporting} onClick={() => void exportDocument('pdf')}>{exporting === 'pdf' ? <LoaderCircle size={16} className="animate-spin" /> : <FileText size={16} />}PDF</button>
-        <button type="button" className="p-button p-button-subtle" disabled={loading || !chosen.length || !sorted.length || !!exporting} onClick={() => void exportDocument('docx')}>{exporting === 'docx' ? <LoaderCircle size={16} className="animate-spin" /> : <FileText size={16} />}Word</button>
-        <button type="button" className="p-button p-button-subtle" disabled={loading || !chosen.length || !sorted.length || !!exporting} onClick={() => download(`${fileBase}${truncated ? '-parcial' : ''}.csv`, toCsv(exportColumns, sorted, exportValue))}><Sheet size={16} />CSV</button>
-        <button type="button" className="p-button p-button-subtle" disabled={loading || !chosen.length || !sorted.length || !!exporting} onClick={() => download(`${fileBase}.json`, toJson({ relatorio: config.label, filtros: Object.fromEntries(info) }, exportColumns, sorted, exportValue))}><FileJson size={16} />JSON</button>
-        <button type="button" className="p-button p-button-subtle" disabled={loading || !chosen.length || !sorted.length || !!exporting} onClick={print}><Printer size={16} />Imprimir</button>
-      </div>
+
     </header>
 
-    <div className={styles.datasets} role="group" aria-label="Assunto do relatório">
-      {datasets.map(id => { const DatasetIcon = DATASETS[id].icon; return <button key={id} type="button" aria-pressed={dataset === id} className={dataset === id ? styles.active : ''} onClick={() => chooseDataset(id)}><DatasetIcon size={17} /><span>{DATASETS[id].label}</span></button>; })}
-    </div>
+    <label className={`p-field ${styles.subject}`}><span>Assunto do relatório</span><select value={dataset} onChange={event => chooseDataset(event.target.value as DatasetId)}>{datasets.map(id => <option key={id} value={id}>{DATASETS[id].label}</option>)}</select></label>
 
+    <div className={styles.primaryControls}>
+      <label className={`p-field ${styles.search}`}><span>Buscar nas linhas</span><span className={styles.searchBox}><Search size={15} /><input value={search} onChange={event => { setSearch(event.target.value); setPage(0); }} placeholder="Nome, material, título, observação…" />{search && <button type="button" aria-label="Limpar busca" onClick={() => setSearch('')}><X size={14} /></button>}</span></label>
+    </div>
+    <details className={styles.options}><summary>Ajustar recorte e colunas <span>{chosen.length} colunas · {presets.length} modelos</span>{activeOptions.length > 0 && <small>{activeOptions.join(' · ')}</small>}</summary><div className={styles.optionsBody}>
     {dataset === 'materials' && <label className="p-form-help"><input type="checkbox" checked={assetDetails} onChange={event => { setAssetDetails(event.target.checked); setColumns(DATASETS.materials.defaults); setRows([]); setFocus(''); setMeasure('__count__'); }}/>{' '}Consultar metadados patrimoniais privados (somente projetos com permissão vigente de inventário). A referência de responsável, processo e valor documentado só entra na exportação ao escolher essas colunas.</label>}
     {dataset === 'outflow_details' && <div className="space-y-3"><p className="p-form-help">A ação aparece quando foi vinculada no registro. O operador é quem registrou a saída, com nome atual do perfil; beneficiários e contatos não são consultados. Saldo e unidade são os atuais do cadastro.</p><label className="p-form-help"><input type="checkbox" checked={includeNotes} onChange={event => { setIncludeNotes(event.target.checked); setColumns(DATASETS.outflow_details.defaults); setRows([]); setFocus(''); setMeasure('__count__'); setPage(0); }}/>{' '}Disponibilizar motivos, observações e condições com permissão operacional vigente (textos livres podem conter dados pessoais). Selecione essas colunas e revise seu conteúdo antes de exportar.</label></div>}
     <div className={styles.controls}>
-      <label className={`p-field ${styles.search}`}><span>Buscar nas linhas</span><span className={styles.searchBox}><Search size={15} /><input value={search} onChange={event => { setSearch(event.target.value); setPage(0); }} placeholder="Nome, material, título, observação…" />{search && <button type="button" aria-label="Limpar busca" onClick={() => setSearch('')}><X size={14} /></button>}</span></label>
       {dataset === 'outflow_details' && <><label className="p-field"><span>Tipo de saída</span><select value={outflowType} onChange={event => { setOutflowType(event.target.value); setFocus(''); setPage(0); }}><option value="all">Todas as saídas</option>{['distribute', 'redeem', 'loan'].map(type => <option value={type} key={type}>{LABELS.tipo[type]}</option>)}</select></label><label className="p-field"><span>Situação da devolução</span><select value={returnState} onChange={event => { setReturnState(event.target.value); setFocus(''); setPage(0); }}><option value="all">Todas as situações</option>{['not_applicable', 'out', 'returned'].map(state => <option value={state} key={state}>{LABELS.situacao_retorno[state]}</option>)}</select></label></>}
       <label className="p-field"><span>Agrupar gráfico por</span><select value={groupBy} onChange={event => { setGroupBy(event.target.value); setFocus(''); }}>{config.groups.map(key => <option key={key} value={key}>{key === 'mes' ? 'Mês' : config.columns.find(column => column.key === key)?.label}</option>)}</select></label>
       <label className="p-field"><span>Medida</span><select value={effectiveMeasure} onChange={event => setMeasure(event.target.value)}><option value="__count__">Quantidade de {dataset === 'movements' ? 'movimentações' : 'linhas'}</option>{numericColumns.map(column => <option key={column.key} value={column.key} disabled={mixedUnits && PHYSICAL_MEASURES.includes(column.key)}>Soma de {column.label.toLowerCase()}</option>)}</select></label>
@@ -371,14 +366,16 @@ export default function ReportsCenter({ projectId, unitId, area, from, to, scope
         </div>
       </details>
     </div>
-    {mixedUnits && <p className="p-form-help" role="status">Há medidas físicas diferentes neste recorte. Selecione uma unidade de medida para somar quantidades; os gráficos mostram contagens de registros.</p>}
-
     <div className={styles.presets}>
       <span><Save size={14} />Modelos salvos</span>
       {presets.length ? presets.map(preset => <span key={preset.name} className={styles.preset}><button type="button" onClick={() => chooseDataset(preset.dataset, preset)} title={`${DATASETS[preset.dataset]?.label}`}>{preset.name}</button><button type="button" aria-label={`Excluir modelo ${preset.name}`} onClick={() => removePreset(preset.name)}><Trash2 size={13} /></button></span>) : <small>Nenhum ainda. Salve a combinação atual de assunto, colunas e agrupamento.</small>}
       <form onSubmit={event => { event.preventDefault(); savePreset(); }}><input value={presetName} onChange={event => setPresetName(event.target.value)} placeholder="Nome do modelo" aria-label="Nome do modelo" maxLength={60} /><button type="submit" className="p-button p-button-subtle" disabled={!presetName.trim()}>Salvar</button></form>
     </div>
 
+    </div></details>
+    {mixedUnits && <p className="p-form-help" role="status">Há medidas físicas diferentes neste recorte. Selecione uma unidade de medida para somar quantidades; os gráficos mostram contagens de registros.</p>}
+
+    {includeNotes && <p className="p-form-help" role="status">Textos livres ativos: podem conter dados pessoais. Revise as colunas escolhidas antes de exportar.</p>}
     {error ? <p className="p-notice p-notice-error" role="alert">{error}</p> : null}
     <div className={styles.summary} aria-live="polite">
       <span className={styles.summaryIcon}><Icon size={20} /></span>
@@ -387,11 +384,45 @@ export default function ReportsCenter({ projectId, unitId, area, from, to, scope
       {truncated && <small className={styles.warn}>{dataset === 'outflow_details' ? 'Consulta parcial: limite de 5.000 linhas ou 3 MiB. Refine o recorte para consultar e exportar tudo.' : 'Mostrando as primeiras 5.000 linhas. Refine o recorte para ver tudo.'}</small>}
     </div>
 
+    {loading ? <div className={styles.loading}><LoaderCircle className="p-spin" size={22} />Carregando dados…</div> : !rows.length ? <div className={styles.empty}><FileText size={22} /><strong>Nada para mostrar neste recorte</strong><span>Altere os filtros, o período ou escolha outro assunto.</span></div> : <>
+      <div className={styles.tableHead}>
+        <strong>Tabela detalhada</strong>
+        <small>{chosen.length ? `${chosen.length} colunas · clique no título para ordenar` : 'Escolha ao menos uma coluna'}</small>
+      </div>
+      <div className={`p-card p-table-wrap ${styles.table}`}>
+        <table>
+          <thead><tr>{chosen.map(column => <th key={column.key} aria-sort={sort?.key === column.key ? (sort.dir === 1 ? 'ascending' : 'descending') : 'none'} className={column.numeric ? styles.numeric : ''}>
+            <button type="button" onClick={() => setSort(current => current?.key === column.key ? (current.dir === 1 ? { key: column.key, dir: -1 } : null) : { key: column.key, dir: 1 })}>{column.label}{sort?.key === column.key ? sort.dir === 1 ? <ArrowUp size={12} /> : <ArrowDown size={12} /> : null}</button>
+          </th>)}</tr></thead>
+          <tbody>{visible.map((row, index) => <tr key={String(row.id ?? index)}>{chosen.map(column => {
+            const value = valueOf(row, column.key);
+            const tone = column.key === 'situacao_estoque' && row.situacao_estoque === 'baixo' || column.key === 'em_atraso' && row.em_atraso === 'sim' ? styles.badgeWarn : column.key === 'sentido' ? (row.sentido === 'entrada' ? styles.badgeIn : styles.badgeOut) : '';
+            return <td key={column.key} className={column.numeric ? styles.numeric : ''}>{tone ? <span className={`${styles.badge} ${tone}`}>{String(value)}</span> : column.date ? dateLabel(value) : column.numeric ? formatNumber(num(value)) : String(value ?? '') || '—'}</td>;
+          })}</tr>)}</tbody>
+        </table>
+      </div>
+      <div className={styles.pager}>
+        <span>{sorted.length ? `${current * pageSize + 1}–${Math.min(sorted.length, (current + 1) * pageSize)} de ${formatNumber(sorted.length)}` : 'Nenhuma linha com esta busca'}</span>
+        <label>Por página <select value={pageSize} onChange={event => { setPageSize(Number(event.target.value)); setPage(0); }}>{PAGE_SIZES.map(size => <option key={size} value={size}>{size}</option>)}</select></label>
+        <button type="button" className="p-button p-button-subtle" disabled={current === 0} onClick={() => setPage(current - 1)}>Anterior</button>
+        <button type="button" className="p-button p-button-subtle" disabled={current >= pages - 1} onClick={() => setPage(current + 1)}>Próxima</button>
+      </div>
+    </>}
+    <details className={styles.exportOptions}><summary>Exportar linhas deste recorte</summary>
+      <div className={styles.exportBar} role="group" aria-label="Exportar relatório">
+        <button type="button" className="p-button p-button-primary" disabled={loading || !chosen.length || !sorted.length || !!exporting} onClick={() => download(`${fileBase}.xlsx`, toXlsx(config.label, exportColumns, sorted, exportValue, info))}><FileSpreadsheet size={16} />Excel</button>
+        <button type="button" className="p-button p-button-subtle" disabled={loading || !chosen.length || !sorted.length || !!exporting} onClick={() => void exportDocument('pdf')}>{exporting === 'pdf' ? <LoaderCircle size={16} className="animate-spin" /> : <FileText size={16} />}PDF</button>
+        <button type="button" className="p-button p-button-subtle" disabled={loading || !chosen.length || !sorted.length || !!exporting} onClick={() => void exportDocument('docx')}>{exporting === 'docx' ? <LoaderCircle size={16} className="animate-spin" /> : <FileText size={16} />}Word</button>
+        <button type="button" className="p-button p-button-subtle" disabled={loading || !chosen.length || !sorted.length || !!exporting} onClick={() => download(`${fileBase}${truncated ? '-parcial' : ''}.csv`, toCsv(exportColumns, sorted, exportValue))}><Sheet size={16} />CSV</button>
+        <button type="button" className="p-button p-button-subtle" disabled={loading || !chosen.length || !sorted.length || !!exporting} onClick={() => download(`${fileBase}.json`, toJson({ relatorio: config.label, filtros: Object.fromEntries(info) }, exportColumns, sorted, exportValue))}><FileJson size={16} />JSON</button>
+        <button type="button" className="p-button p-button-subtle" disabled={loading || !chosen.length || !sorted.length || !!exporting} onClick={print}><Printer size={16} />Imprimir</button>
+      </div>
+    </details>
     <div className={styles.kpis}>
       {kpis.map(kpi => <div key={kpi.label} className={`${styles.kpi} ${kpi.tone === 'warn' && (kpi.value ?? 0) > 0 ? styles.kpiWarn : ''}`}><span>{kpi.label}</span><strong>{loading ? '…' : formatNumber(kpi.value)}</strong></div>)}
     </div>
 
-    {loading ? <div className={styles.loading}><LoaderCircle className="p-spin" size={22} />Carregando dados…</div> : !rows.length ? <div className={styles.empty}><FileText size={22} /><strong>Nada para mostrar neste recorte</strong><span>Altere os filtros, o período ou escolha outro assunto.</span></div> : <>
+    {!loading && rows.length > 0 && <>
       <div className={styles.charts} ref={chartsRef}>
         <figure className={styles.chart}>
           <figcaption><strong>{effectiveMeasure === '__count__' ? 'Distribuição' : `Soma de ${measureLabel}`} por {groupLabel.toLowerCase()}</strong><small>Clique em uma barra para destacar só aquele grupo na tabela.</small></figcaption>
@@ -427,28 +458,6 @@ export default function ReportsCenter({ projectId, unitId, area, from, to, scope
         </figure>}
       </div>
 
-      <div className={styles.tableHead}>
-        <strong>Tabela detalhada</strong>
-        <small>{chosen.length ? `${chosen.length} colunas · clique no título para ordenar` : 'Escolha ao menos uma coluna'}</small>
-      </div>
-      <div className={`p-card p-table-wrap ${styles.table}`}>
-        <table>
-          <thead><tr>{chosen.map(column => <th key={column.key} aria-sort={sort?.key === column.key ? (sort.dir === 1 ? 'ascending' : 'descending') : 'none'} className={column.numeric ? styles.numeric : ''}>
-            <button type="button" onClick={() => setSort(current => current?.key === column.key ? (current.dir === 1 ? { key: column.key, dir: -1 } : null) : { key: column.key, dir: 1 })}>{column.label}{sort?.key === column.key ? sort.dir === 1 ? <ArrowUp size={12} /> : <ArrowDown size={12} /> : null}</button>
-          </th>)}</tr></thead>
-          <tbody>{visible.map((row, index) => <tr key={String(row.id ?? index)}>{chosen.map(column => {
-            const value = valueOf(row, column.key);
-            const tone = column.key === 'situacao_estoque' && row.situacao_estoque === 'baixo' || column.key === 'em_atraso' && row.em_atraso === 'sim' ? styles.badgeWarn : column.key === 'sentido' ? (row.sentido === 'entrada' ? styles.badgeIn : styles.badgeOut) : '';
-            return <td key={column.key} className={column.numeric ? styles.numeric : ''}>{tone ? <span className={`${styles.badge} ${tone}`}>{String(value)}</span> : column.date ? dateLabel(value) : column.numeric ? formatNumber(num(value)) : String(value ?? '') || '—'}</td>;
-          })}</tr>)}</tbody>
-        </table>
-      </div>
-      <div className={styles.pager}>
-        <span>{sorted.length ? `${current * pageSize + 1}–${Math.min(sorted.length, (current + 1) * pageSize)} de ${formatNumber(sorted.length)}` : 'Nenhuma linha com esta busca'}</span>
-        <label>Por página <select value={pageSize} onChange={event => { setPageSize(Number(event.target.value)); setPage(0); }}>{PAGE_SIZES.map(size => <option key={size} value={size}>{size}</option>)}</select></label>
-        <button type="button" className="p-button p-button-subtle" disabled={current === 0} onClick={() => setPage(current - 1)}>Anterior</button>
-        <button type="button" className="p-button p-button-subtle" disabled={current >= pages - 1} onClick={() => setPage(current + 1)}>Próxima</button>
-      </div>
     </>}
   </section>;
 }
