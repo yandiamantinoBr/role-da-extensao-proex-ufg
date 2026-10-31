@@ -11,6 +11,7 @@ import { importFields, type ImportFileProvenance, type ImportKind, type ImportPr
 import { normalizedLabel, parseImportDocument, validateImportedFields } from './parse';
 import { importDigest, readImportReview, signImportReview } from './review';
 import { readPublicSigaa } from './sigaa';
+import { interpretDocument, assertDocumentAuthorization, documentAuthorization,type DocumentInterpretation } from './assistant';
 
 function optionalId(value: unknown): string | null {
   if (value === undefined || value === null || value === '') return null;
@@ -49,7 +50,12 @@ export async function previewImport(db: D1Database, actor: PortalActor | null, i
     if (typeof input.content !== 'string') throw new HttpError(400, 'Informe o conteúdo textual do documento.', 'import_document');
     content = input.content; format = input.sourceMode === 'manual' ? 'json' : String(input.format); url = documentUrl(input.sourceUrl);
   } else throw new HttpError(400, 'Escolha uma fonte de importação.', 'import_source');
-  const candidates = parseImportDocument(kind, content, format);
+  let candidates = parseImportDocument(kind, content, format),interpretation:DocumentInterpretation|undefined;
+  if(input.useAi!==undefined&&typeof input.useAi!=='boolean')throw new HttpError(400,'Escolha usar ou não a IA documental.','document_ai_consent');
+  if(input.useAi===true){
+    if(input.sourceMode==='manual'||candidates.length!==1)throw new HttpError(400,'A IA documental recebe um único cadastro de uma fonte textual. Use a importação normal para vários registros.','document_ai_rows');
+    interpretation=await interpretDocument(db,actor!,{kind,organizationId,projectId,itemId},{content,format,base:candidates[0],consent:input.aiConsent,operationKey:input.aiOperationKey},secret,{fetcher});candidates=[interpretation.candidate];
+  }
   if (kind === 'project') {
     const [units, types] = await Promise.all([all(db, "SELECT id,name,acronym FROM organizational_units WHERE status='active'"), all(db, "SELECT id,key,label FROM project_types WHERE status='active'")]);
     for (const candidate of candidates) {
@@ -62,10 +68,12 @@ export async function previewImport(db: D1Database, actor: PortalActor | null, i
     }
   }
   const now = Date.now();
-  const review: ImportReview = { version: 2, organizationId, actorId: actor!.userId, kind, projectId, itemId, expectedVersion: kind === 'project' && project ? project.version : null,
-    provenance: { kind: input.sourceMode, organizationId, label: sourceFile ? `${sourceFile.fileFormat.toUpperCase()} informado · texto extraído` : input.sourceMode === 'sigaa' ? 'SIGAA Público / UFG' : input.sourceMode === 'manual' ? 'Cadastro manual conferido' : 'Documento textual informado', ...(url ? { url } : {}), ...(externalId ? { externalId } : {}), sha256: sourceFile?.sha256 ?? await importDigest(content), ...(sourceFile ? { textSha256: await importDigest(content), fileFormat: sourceFile.fileFormat, extraction: sourceFile.extraction, ...(sourceFile.pages ? { pages: sourceFile.pages } : {}) } : {}), retrievedAt: new Date(now).toISOString() }, candidates, expiresAt: now + 15 * 60000 };
+  const review: ImportReview = { version: interpretation?3:2, organizationId, actorId: actor!.userId, kind, projectId, itemId, expectedVersion: kind === 'project' && project ? project.version : null,
+    provenance: { kind: input.sourceMode, organizationId, label: sourceFile ? `${sourceFile.fileFormat.toUpperCase()} informado · texto extraído` : input.sourceMode === 'sigaa' ? 'SIGAA Público / UFG' : input.sourceMode === 'manual' ? 'Cadastro manual conferido' : 'Documento textual informado', ...(url ? { url } : {}), ...(externalId ? { externalId } : {}), sha256: sourceFile?.sha256 ?? await importDigest(content), ...(sourceFile ? { textSha256: await importDigest(content), fileFormat: sourceFile.fileFormat, extraction: sourceFile.extraction, ...(sourceFile.pages ? { pages: sourceFile.pages } : {}) } : {}), retrievedAt: interpretation?.provenance.reviewedAt??new Date(now).toISOString(),...(interpretation?{ai:interpretation.provenance}:{}) }, candidates, expiresAt: interpretation?.expiresAt??now + 15 * 60000 };
+  const reviewToken=await signImportReview(secret,review);
+  if(interpretation)await assertDocumentAuthorization(db,actor!,{kind,organizationId,projectId,itemId},interpretation.provenance.configRevision);
   const { actorId: _actorId, ...publicReview } = review; void _actorId;
-  return { ...publicReview, reviewToken: await signImportReview(secret, review) };
+  return { ...publicReview, reviewToken };
 }
 export async function applyImport(db: D1Database, actor: PortalActor | null, input: Record<string, unknown>, secret: string) {
   if (!actor) throw new HttpError(401, 'Entre para importar um cadastro.', 'unauthenticated');
@@ -74,6 +82,11 @@ export async function applyImport(db: D1Database, actor: PortalActor | null, inp
   if (input.confirmed !== true) throw new HttpError(400, 'Confira a prévia e confirme os campos antes de salvar.', 'import_confirmation_required');
   const review = await readImportReview(secret, input.reviewToken, actor.userId);
   await authorizeImportTarget(db, actor, review.kind, review.projectId, review.itemId, review.organizationId);
+  if(review.provenance.ai){
+    const target=db,current=actor,context={kind:review.kind,organizationId:review.organizationId,projectId:review.projectId,itemId:review.itemId},revision=review.provenance.ai.configRevision;
+    await assertDocumentAuthorization(target,current,context,revision);
+    db=new Proxy(target,{get(base,key){if(key==='batch')return async(statements:D1PreparedStatement[])=>{try{return(await base.batch([documentAuthorization(base,current,context,revision),...statements])).slice(1);}catch(error){if(String(error).includes('document_ai_authority_changed'))throw new HttpError(403,'Seu acesso ou a configuração documental mudou.','document_ai_forbidden');throw error;}};const value=Reflect.get(base,key);return typeof value==='function'?value.bind(base):value;}});
+  }
   const candidate = review.candidates.find(row => row.key === input.candidateKey);
   const allowed = new Set(importFields(review.kind).map(field => field.key)), edits = input.edits ?? {};
   if (!edits || typeof edits !== 'object' || Array.isArray(edits) || Object.keys(edits).some(key => !allowed.has(key))) throw new HttpError(400, 'Revise somente os campos operacionais da prévia.', 'import_fields');
@@ -114,8 +127,10 @@ export async function applyImport(db: D1Database, actor: PortalActor | null, inp
   }
   const metadata = importFields(review.kind).filter(field => (field.metadata || review.kind === 'asset' && review.itemId) && selected.has(field.key)).map(field => `${field.label}: ${fields[field.key]}`);
   const revised = importFields(review.kind).filter(field => selected.has(field.key) && Object.hasOwn(edits, field.key) && String(values[field.key]) !== candidate.fields[field.key]).map(field => field.label);
-  const body = [`Fonte: ${review.provenance.label}`, ...(review.provenance.url ? [`Referência: ${review.provenance.url}`] : []), ...(review.provenance.externalId ? [`Identificador externo: ${review.provenance.externalId}`] : []), `Conferida em: ${review.provenance.retrievedAt}`, `SHA-256 do conteúdo consultado: ${review.provenance.sha256}`, ...(review.provenance.textSha256 ? [`SHA-256 do texto extraído: ${review.provenance.textSha256}`] : []), ...(review.provenance.extraction ? [`Extração: ${review.provenance.extraction === 'browser-pdf' ? 'PDF no navegador; texto revisado pela pessoa, sem comparação automática com as páginas no servidor' : review.provenance.extraction === 'server-docx' ? 'Corpo principal word/document.xml, sem paginação fixa' : 'Arquivo textual UTF-8'}`] : []), ...(review.provenance.pages ? [`Páginas usadas na extração do navegador: ${review.provenance.pages.join(', ')}`] : []), `Campos selecionados: ${importFields(review.kind).filter(field => selected.has(field.key)).map(field => field.label).join(', ')}`, ...(revised.length ? [`Campos ajustados manualmente na prévia: ${revised.join(', ')}`] : []), ...metadata,
+  const evidenceMetadata=review.provenance.ai?importFields(review.kind).filter(field=>selected.has(field.key)).map(field=>`${field.label}: ${revised.includes(field.label)?'ajuste manual':candidate.evidence?.[field.key]?.method==='ai'?'sugestão IA com conferência humana':'regra com conferência humana'}; confiança numérica não disponível.`):[];
+  const body = [`Fonte: ${review.provenance.label}`, ...(review.provenance.url ? [`Referência: ${review.provenance.url}`] : []), ...(review.provenance.externalId ? [`Identificador externo: ${review.provenance.externalId}`] : []), `Conferida em: ${review.provenance.retrievedAt}`, `SHA-256 do conteúdo consultado: ${review.provenance.sha256}`, ...(review.provenance.textSha256 ? [`SHA-256 do texto extraído: ${review.provenance.textSha256}`] : []), ...(review.provenance.extraction ? [`Extração: ${review.provenance.extraction === 'browser-pdf' ? 'PDF no navegador; texto revisado pela pessoa, sem comparação automática com as páginas no servidor' : review.provenance.extraction === 'server-docx' ? 'Corpo principal word/document.xml, sem paginação fixa' : 'Arquivo textual UTF-8'}`] : []), ...(review.provenance.pages ? [`Páginas usadas na extração do navegador: ${review.provenance.pages.join(', ')}`] : []), ...(review.provenance.ai?[`Interpretação assistida: ${review.provenance.ai.model} (${review.provenance.ai.modelRevision}); configuração ${review.provenance.ai.configRevision}`,`SHA-256 do texto enviado à IA: ${review.provenance.ai.sourceTextSha256}`,`Confiança numérica: não disponível; sugestões conferidas pela pessoa. Evidências e texto bruto não são incluídos neste recibo.`]:[]), `Campos selecionados: ${importFields(review.kind).filter(field => selected.has(field.key)).map(field => field.label).join(', ')}`, ...(revised.length ? [`Campos ajustados manualmente na prévia: ${revised.join(', ')}`] : []), ...metadata,...evidenceMetadata,
     ...(review.kind === 'asset' ? [review.itemId ? 'A conferência foi vinculada ao bem existente; seus metadados e estoque não foram alterados.' : 'Bem individual cadastrado com saldo zero. A entrada física deve ser conferida e registrada em Materiais.'] : [])].join('\n');
   const receipt = await createRecord(db, actor, { projectId, kind: review.kind === 'asset' ? 'material' : 'project', ...(itemId ? { itemId } : {}), title: 'Fonte e conferência do cadastro importado', body, occurredAt: review.provenance.retrievedAt, operationKey: `${operationKey}-receipt` });
+  if(review.provenance.ai)await assertDocumentAuthorization(db,actor,{kind:review.kind,organizationId:review.organizationId,projectId:review.projectId,itemId:review.itemId},review.provenance.ai.configRevision);
   return { ok: true, projectId, itemId, recordId: receipt.id, stockChanged: false, source: review.provenance.label };
 }

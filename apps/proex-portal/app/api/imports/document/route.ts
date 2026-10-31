@@ -19,7 +19,7 @@ export async function POST(request: Request): Promise<Response> {
     if (!(file instanceof File)) throw new HttpError(400, 'Selecione um arquivo para preparar a prévia.', 'import_file_form');
     const extractedText = form.get('extractedText'), pageCount = Number(form.get('pageCount'));
     const extracted = await extractImportFile(file.name, new Uint8Array(await file.arrayBuffer()), typeof extractedText === 'string' ? { text: extractedText, pageCount } : undefined);
-    const preview = await previewImport(db, actor, { kind, projectId, itemId, organizationId: String(form.get('organizationId') ?? ''), sourceMode: 'document', sourceUrl: String(form.get('sourceUrl') ?? ''), content: extracted.content, format: extracted.format }, secret, undefined, extracted.provenance);
+    const preview = await previewImport(db, actor, { kind, projectId, itemId, organizationId: String(form.get('organizationId') ?? ''), sourceMode: 'document', sourceUrl: String(form.get('sourceUrl') ?? ''), content: extracted.content, format: extracted.format,useAi:form.get('useAi')==='true',aiConsent:form.get('aiConsent')==='true',aiOperationKey:String(form.get('aiOperationKey')??'') }, secret, undefined, extracted.provenance);
     // Warnings are presentation-only; provenance is already bound to reviewToken.
     for (const candidate of preview.candidates) candidate.warnings.push(...extracted.warnings);
     return Response.json(preview, { headers: { 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' } });

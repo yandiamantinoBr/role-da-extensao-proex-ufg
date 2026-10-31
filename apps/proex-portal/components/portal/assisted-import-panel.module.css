@@ -2,16 +2,16 @@
 .panel h3, .saved h4 { display: flex; align-items: center; gap: 9px; }
 .body { margin-top: 18px; display: grid; gap: 16px; }
 .fieldset { display: grid; gap: 16px; border: 0; padding: 0; margin: 0; min-width: 0; }
-.source { display: grid; gap: 7px; padding: 14px; border-radius: 12px; background: var(--bg-soft, #f7f4fa); overflow-wrap: anywhere; }
+.source { display: grid; gap: 7px; padding: 14px; border-radius: 12px; background: var(--surface-soft); color: var(--ink); overflow-wrap: anywhere; }
 .source small { color: var(--muted); }
 .fields { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
 .field { display: grid; grid-template-columns: minmax(170px, 32%) minmax(0, 1fr); gap: 12px; padding: 13px; border-bottom: 1px solid var(--line); }
 .field:last-child { border-bottom: 0; }
 .field > label, .confirm { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; }
-.field input, .confirm input { width: 18px; height: 18px; flex: 0 0 18px; margin: 2px 0 0; }
+.field input[type=checkbox], .confirm input[type=checkbox] { width: 18px; height: 18px; flex: 0 0 18px; margin: 2px 0 0; }
 .field small { display: block; font-size: 11px; color: var(--muted); margin-top: 4px; }
 .field > div { overflow-wrap: anywhere; white-space: pre-wrap; min-width: 0; }
-.field[data-invalid=true] { background: var(--danger-soft, #fff4f1); }
+.field[data-invalid=true] { background: var(--surface-soft); border-left: 3px solid var(--danger); }
 .confirm { line-height: 1.6; padding-block: 4px; }
 .actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 .actions > label:focus-within { outline: 3px solid var(--purple, #54216c); outline-offset: 3px; }

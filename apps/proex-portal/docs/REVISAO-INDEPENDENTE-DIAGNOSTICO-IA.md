@@ -1,0 +1,11 @@
+# Revisão independente do diagnóstico de IA — R11
+
+Revisão curta em 31/10/2026 de `d03c25b`, integrada e corrigida pelo coordenador em **`84c9c029e73f82a0ecfbaa30247de8b13841eb6a`**. Aprovada no escopo de conexão/contratos/rota/UI: nenhum novo P0/P1 identificado. Não reabre R10, inferência operacional ou STT. Nenhum arquivo de implementação foi alterado nesta revisão.
+
+**25/25 testes passaram em Node 24 e Node 26**: 21 existentes e quatro conjuntos independentes em `tests/assistant-connection-independent.test.mjs`. Lint do arquivo novo passou sem erro/aviso. Não foram repetidos builds ou navegação.
+
+Os probes adicionais confirmam que revogar TI/bloquear o concedente durante a resposta impede persistir sucesso e impede nova saída ao repetir o pedido; mudar a revisão durante a espera invalida o recibo; falha de transporte resulta em recibo sanitizado reutilizável, sem redispatch; consulta de estado não grava; e bytes recebidos acima de 32 KiB cancelam o corpo mesmo com comprimento declarado menor. Nenhuma exceção/texto remoto sintético foi exposto no recibo.
+
+A leitura conferiu organização/TI atuais, consentimento explícito, intent e cotas atômicos, chave idempotente mantida para resultado incerto, endpoints HTTPS fixos, redirecionamentos proibidos, orçamento de transporte e fences antes de cada GET e depois das esperas. A interface valida forma/organização/revisão, exige consentimento, limpa resultado e consentimento no erro de acesso e ignora resposta tardia de outra organização. Foram preservadas as correções do coordenador: catálogo sem a versão pinada não prova indisponibilidade; autorização antes de cada consulta DeepSeek não precisa de UPDATE artificial.
+
+A evidência é SQLite real com cifra/configuração/permissões reais **em fixtures** e transporte HTTP falso. Não houve credencial real, consulta autenticada real a provedor, chamada paga, áudio, instalação, migração ou publicação. O endpoint [Deepgram de autenticação](https://developers.deepgram.com/guides/fundamentals/authenticating#test-request) consulta metadados da chave; esse diagnóstico não comprova geração, modelo/escopo de transcrição ou operação futura. A montagem e os gates integrados permanecem com o coordenador.

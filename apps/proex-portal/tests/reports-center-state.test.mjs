@@ -39,13 +39,15 @@ function harness() {
   render(props = base) { index = 0; tree = compiledModule.exports.default(props); return tree; },
   flushEffects() { while (pendingEffects.length) pendingEffects.shift()(); },
   button(name) { const found = nodes().find(node => node.type === 'button' && text(node) === name); assert.ok(found, `button ${name}`); return found; },
+  input(label) { const node=nodes().find(node=>node.type==='label'&&text(node).includes(label)),input=node&&nodesInside(node).find(child=>['input','select'].includes(child.type));assert.ok(input,label);return input; },
   columnToggles() { const detail=nodes().find(node=>node.type==='details'&&text(node.props.children?.[0]).includes('Colunas')),result=[];const visit=node=>{if(!node||typeof node!=='object')return;if(Array.isArray(node)){node.forEach(visit);return;}if(node.type==='input'&&node.props.type==='checkbox')result.push(node);visit(node.props?.children);};visit(detail);return result; },
   text() { return text(tree); },
   get opened() { return opened; },
   dispose() { for (const slot of slots) slot?.cleanup?.(); },
  };
 }
-async function load(h, project = 'a', props = base) { h.render(props); h.flushEffects(); h.requests.at(-1).resolve({ ok: true, json: async () => ({ rows: [row(project)] }) }); await tick(); h.render(props); }
+function nodesInside(node){const result=[];const visit=value=>{if(!value||typeof value!=='object')return;if(Array.isArray(value)){value.forEach(visit);return;}result.push(value);visit(value.props?.children);};visit(node);return result;}
+async function load(h, project = 'a', props = base) { h.render(props); h.flushEffects(); h.requests.at(-1).resolve({ ok: true, json: async () => ({ dataset: 'materials', rows: [row(project)], truncated: false }) }); await tick(); h.render(props); }
 async function jsonDownload(h) { h.button('JSON').props.onClick(); return JSON.parse(await h.downloads.at(-1).blob.text()); }
 
 test('report exports remain disabled immediately on any server-filter or dataset change, before effects run', async () => {
@@ -67,7 +69,7 @@ test('report exports remain disabled immediately on any server-filter or dataset
 test('a new successful response enables exports only with matching scope metadata and current rows', async () => {
  const h = harness(), next = { ...base, projectId: 'project-b', scopeLabel: 'Projeto B' }; try {
   await load(h); h.render(next); assert.equal(h.button('JSON').props.disabled, true); h.flushEffects();
-  h.requests.at(-1).resolve({ ok: true, json: async () => ({ rows: [row('b')] }) }); await tick(); h.render(next);
+  h.requests.at(-1).resolve({ ok: true, json: async () => ({ dataset: 'materials', rows: [row('b')], truncated: false }) }); await tick(); h.render(next);
   assert.equal(h.button('JSON').props.disabled, false); const exported = await jsonDownload(h);
   assert.equal(exported.filtros.Recorte, 'Projeto B'); assert.equal(exported.linhas[0].projeto, 'Projeto B'); assert.equal(JSON.stringify(exported).includes('Material A'), false);
  } finally { h.dispose(); }
@@ -86,8 +88,8 @@ test('an aborted response whose JSON resolves late cannot replace a newer succes
  try {
   await load(h); h.render(b); h.flushEffects(); const oldRequest = h.requests.at(-1), deferred = new Promise(resolve => { resolveBody = resolve; }); oldRequest.resolve({ ok: true, json: () => deferred }); await tick();
   h.render(c); h.flushEffects(); assert.equal(oldRequest.init.signal.aborted, true);
-  h.requests.at(-1).resolve({ ok: true, json: async () => ({ rows: [row('c')] }) }); await tick(); h.render(c);
-  resolveBody({ rows: [row('b')] }); await tick(); h.render(c);
+  h.requests.at(-1).resolve({ ok: true, json: async () => ({ dataset: 'materials', rows: [row('c')], truncated: false }) }); await tick(); h.render(c);
+  resolveBody({ dataset: 'materials', rows: [row('b')], truncated: false }); await tick(); h.render(c);
   const exported = await jsonDownload(h); assert.equal(exported.filtros.Recorte, 'Projeto C'); assert.equal(exported.linhas[0].projeto, 'Projeto C'); assert.equal(JSON.stringify(exported).includes('Material B'), false);
  } finally { h.dispose(); }
 });
@@ -102,4 +104,58 @@ test('deselecting every column blocks exports instead of silently including hidd
   h.columnToggles()[0].props.onChange(); h.render(); assert.equal(h.button('JSON').props.disabled, false);
   const exported = await jsonDownload(h); assert.deepEqual(Object.keys(exported.linhas[0]), ['projeto']); assert.equal(exported.linhas[0].projeto, 'Projeto A'); assert.equal(JSON.stringify(exported.linhas).includes('Material A'), false);
  } finally { h.dispose(); }
+});
+
+const detailedProps={...base,available:['outflows','outflow_details'],initialDataset:'outflow_details'};
+const tracedRow={id:'movement:synthetic',projeto:'Projeto A',data_saida:'2026-10-04',acao:'Feira institucional',material:'Kit institucional',unidade_medida:'kit',tipo:'distribute',quantidade:3,registrado_por:'Operador sintético',situacao_retorno:'not_applicable',saldo_atual:13,finalidade_registrada:'PRIVATE FREE TEXT'};
+async function respondDetails(h,rows=[tracedRow]){h.requests.at(-1).resolve({ok:true,json:async()=>({dataset:'outflow_details',rows,truncated:false})});await tick();h.render(detailedProps);}
+
+test('traceable outflow notes require an explicit query and column selection and are cleared before a different query can export',async()=>{
+ const h=harness();try{
+  h.render(detailedProps);h.flushEffects();assert.equal(new URL('https://fixture.invalid'+h.requests.at(-1).url).searchParams.has('includeNotes'),false);await respondDetails(h);
+  assert.ok(!JSON.stringify(await jsonDownload(h)).includes('PRIVATE FREE TEXT'));
+  h.input('Disponibilizar motivos').props.onChange({target:{checked:true}});h.render(detailedProps);assert.equal(h.button('JSON').props.disabled,true);h.flushEffects();
+  assert.equal(new URL('https://fixture.invalid'+h.requests.at(-1).url).searchParams.get('includeNotes'),'1');await respondDetails(h);
+  assert.ok(!JSON.stringify(await jsonDownload(h)).includes('PRIVATE FREE TEXT'),'consulting text does not select it for export');
+  h.input('Motivo/finalidade registrada').props.onChange();h.render(detailedProps);
+  const selected=await jsonDownload(h);assert.equal(selected.linhas[0].finalidade_registrada,'PRIVATE FREE TEXT');assert.match(selected.filtros['Textos livres'],/opcional/);
+  h.input('Disponibilizar motivos').props.onChange({target:{checked:false}});h.render(detailedProps);assert.equal(h.button('JSON').props.disabled,true);assert.ok(!h.text().includes('PRIVATE FREE TEXT'));
+ }finally{h.dispose();}
+});
+
+test('traceable outflow filters travel to the server, immediately disable stale exports and never offer sums of repeated current balances',async()=>{
+ const h=harness();try{
+  h.render(detailedProps);h.flushEffects();await respondDetails(h);
+  assert.ok(!text(h.input('Medida')).includes('saldo atual'));assert.ok(!text(h.input('Medida')).includes('reservado atual'));
+  h.input('Tipo de saída').props.onChange({target:{value:'loan'}});h.render(detailedProps);assert.equal(h.button('CSV').props.disabled,true);h.flushEffects();
+  assert.equal(new URL('https://fixture.invalid'+h.requests.at(-1).url).searchParams.get('outflowType'),'loan');
+  await respondDetails(h,[{...tracedRow,id:'loan:synthetic',tipo:'loan',quantidade:1,unidade_medida:'unidade',situacao_retorno:'out'}]);
+  h.input('Situação da devolução').props.onChange({target:{value:'returned'}});h.render(detailedProps);assert.equal(h.button('JSON').props.disabled,true);h.flushEffects();
+  assert.equal(new URL('https://fixture.invalid'+h.requests.at(-1).url).searchParams.get('returnState'),'returned');
+  await respondDetails(h,[{...tracedRow,id:'loan:returned',tipo:'loan',quantidade:1,unidade_medida:'unidade',situacao_retorno:'returned'}]);
+  const result=await jsonDownload(h);assert.equal(result.filtros['Tipo de saída'],'Retirada de equipamento');assert.equal(result.filtros['Devolução'],'Devolvido');assert.equal(result.linhas.length,1);assert.equal(result.linhas[0].quantidade,1);
+ }finally{h.dispose();}
+});
+test('independent: malformed successful report JSON is an explicit failure rather than an empty successful query',async()=>{
+ const failures=[];
+ for(const body of [
+  async()=>{throw new SyntaxError('Synthetic malformed JSON');},
+  async()=>({dataset:'outflow_details',rows:'not-an-array',truncated:false}),
+  async()=>({dataset:'loans',rows:[tracedRow],truncated:false}),
+  async()=>({dataset:'outflow_details',rows:[tracedRow],truncated:'false'}),
+  async()=>({dataset:'outflow_details',rows:[null],truncated:false}),
+ ]){
+  const h=harness();try{h.render(detailedProps);h.flushEffects();h.requests.at(-1).resolve({ok:true,json:body});await tick();h.render(detailedProps);
+   for(const name of exportNames)assert.equal(h.button(name).props.disabled,true,name);
+   failures.push(/não foi possível|inválid|incomplet/i.test(h.text()));
+  }finally{h.dispose();}
+ }
+ assert.deepEqual(failures,[true,true,true,true,true],'invalid JSON, dataset, rows or coverage must be presented as data failures, not zero rows');
+});
+test('independent: a partial traceable CSV remains visibly partial after leaving the report screen',async()=>{
+ const h=harness();try{h.render(detailedProps);h.flushEffects();h.requests.at(-1).resolve({ok:true,json:async()=>({dataset:'outflow_details',rows:[tracedRow],truncated:true})});await tick();h.render(detailedProps);
+  const json=await jsonDownload(h);assert.match(json.filtros.Cobertura,/parcial/);
+  h.button('CSV').props.onClick();const csv=h.downloads.at(-1),body=await csv.blob.text();
+  assert.ok(/parcial|partial/i.test(csv.name+'\n'+body),'partial coverage must travel in the CSV filename or content');
+ }finally{h.dispose();}
 });

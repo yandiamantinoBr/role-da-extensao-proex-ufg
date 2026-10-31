@@ -1,36 +1,40 @@
 # Continuidade do Portal PROEX
 
-Atualizado em 31/10/2026. Leia `AGENTS.md`, os requisitos e esta nota antes de retomar. Confira o estado vivo: os números abaixo são um checkpoint, não substituem GitHub/Vercel ou `git status`.
+Atualizado em 31/10/2026. Leia AGENTS.md, este guia e a matriz de requisitos. Confirme GitHub/Vercel e git status: checkpoints não são monitoração contínua. Push, PR, merge e deploy de todas as entregas estão permanentemente autorizados por Yan.
 
 ## Produção comprovada
 
-- URL: https://proex-gestao.vercel.app/ . V11 publicada pela PR #10; correção de leitura publicada pela PR #11.
-- SHA atual: `a46ee63135237954e51635af59ccecbbdb90935c`. Vercel READY `dpl_6Bq7mgvQNo4kjeXBkhCoZg51PpuG`, no mesmo SHA; checks de PR/main aprovados. Sessão autenticada, organizações, health 200 e ausência de erros do portal conferidos.
-- Sessões e permissões consultam a versão autoritativa a cada execução. O payload só é recarregado quando mudou. Leituras não regravam o banco. Reprodução, testes e tradeoff de rede: `apps/proex-portal/docs/AUTORIZACAO-E-SNAPSHOT-AUTORITATIVO.md`.
-- WAF bloqueia hosts diferentes do canônico. URLs geradas V9/V10 retornam 403; Preview não tem credenciais de produção. Não voltar para código anterior à migração 0008 com o banco atual.
-- Sheets automático confirmado após V11: 29 tabelas, 146 linhas, zero conflitos, recibo de 31/10 às 15:07:06.612Z. Anexo: uma cópia confirmada, zero falhas. Isso comprova os instantes registrados, não disponibilidade permanente.
-- Backup completo real V10 foi recuperado, copiado para Drive privado e relido com hash idêntico. Custódia da chave e localizadores ficam apenas na Vault/AppData; transferência para gerenciador independente ainda pendente.
+- Site: https://proex-gestao.vercel.app/ . V12 na PR #12 e compatibilidade do backup na PR #13.
+- SHA atual: 62761e65566e0621f498aae4953e99ff496c07dc. Vercel READY dpl_G5Dr1RFQuJjJxU4K7GbcQQNoF5Bp no mesmo SHA; PR/main aprovados. CI: 645/645 portal e 33/33 jogo na correção. Sessão, catálogo real, Demandas e sino conferidos após V12; asset de backup da correção corresponde ao código local.
+- Health canônico 200; URLs geradas antigas V9/V10 retornam 403. Preview não tem credenciais de produção. Não operar o banco atual com código anterior à migração 0008.
+- Demandas, prioridades, equipes sobrepostas, conferência por material/tamanho, pendências, sino e relatórios estão publicados. Concessão de tarefa não amplia ACL; conferência não movimenta estoque nem fecha empréstimo. WhatsApp é compartilhamento manual.
+- E-mail MailApp e cadastro público estão implementados, mas DESATIVADOS. Remetente/autorizações, aviso aprovado e infraestrutura de envio ainda são gates reais. Não escolher uma conta por ausência de resposta.
 
-## Integração local em andamento
+## Backup e Sheets reais
 
-Checkout coordenador: `v12-coordenacao`. Use `git status`, `git log` e `git worktree list` antes de editar. Push, PR, merge e deploy de todas as entregas estão permanentemente autorizados por Yan; não pedir novamente.
+- Primeiro formato 2 capturado em 31/10 às 13:19:05 BRT, releitura/ACK 13:19:11; 485.224 bytes. A cópia baixada do Drive privado tem o mesmo SHA-256 do recibo: f13c9a6678d956550b7789e9ee4b928892c1fccc8c3612a944563ed6c12ada50.
+- Recuperação física isolada passou: snapshot 270, SQLite 1.183.744 bytes, 1 objeto / 416.503 bytes, 16 migrações, integridade/FK/hashes aprovados; réplica clara temporária removida. Provas privadas em apps/proex-portal/.sites-runtime/production-v12. Localizadores/chaves somente na Vault/AppData, nunca no Git público.
+- Apps Script da planilha recebeu Code.gs atual e backup-automatico.gs, sem arquivo MailApp. Gatilho diário às 03h America/Sao_Paulo instalado e consulta confirmou 1 gatilho, recibo válido e nenhum pendente. A primeira execução pelo relógio ainda não aconteceu; não confundir com a captura manual comprovada pela rotina. Privada sob DPAPI local; custódia independente continua pendente.
+- Drive real informa inherited=true na própria ACL única user/owner. Correção mantém dono atual, ACL única, pai privado exato e recusa qualquer acesso extra, sharedDrive, atalho ou paginação. Positivo reproduzido antes/depois e negativos/revisão passaram. Diagnóstico temporário retirado; pasta extra vazia criada por seleção incorreta foi movida à lixeira recuperável, pasta configurada preservada.
+- Sheets pós-V12: execução automática concluída em 31/10 às 16:37:03.006Z, 34 tabelas / 153 linhas / zero conflitos. Inclui as cinco projeções somente leitura do acompanhamento. Um gatilho de dados e um de anexos preservados; execução automática anterior após V11 foi comprovada em 15:07:06.612Z. Última rodada de anexos não revalidou uma cópia anterior, sem novas falhas; não chamar isso de nova releitura.
 
-- Público opcional: integrado como `d49834e`, painel e modelo em `568abf9`, navegação compatível com o build em `0ca4176`. Modo inicial fechado; aviso aprovado, remetente e verificação de domínio são dependências de ativação. Não houve envio real. Ver `apps/proex-portal/docs/CONTAS-PUBLICAS-DE-PARTICIPANTES.md`.
-- Backup diário: `e5f7c3d`, modelo/journal/snapshot em `a54d8fa`. Formato 2 usa somente chave pública no servidor e Apps Script no projeto da planilha, com arquivo adicional de backup. Falta configurar, publicar e comprovar primeira cópia/recuperação automática real. Ver `apps/proex-portal/docs/BACKUP-AUTOMATICO.md`.
-- Acompanhamento: backend, UI e sino integrados, inclusive proteção operacional, roster preservado, consulta única e isolamento de respostas tardias. Mount em `a240a5a`, respostas em `f9a1fc9`, links em `498a4e2`. Revisão independente sem P0/P1 pendente. Página de 50 demandas passou de 101 para uma consulta de versão, sem carregar/regravar snapshot estável; medição local sintética, sem estimativa da rede de produção.
-- Relatórios: CUA integrado encerrou evento e conferiu P/M/G, com uma avaria M e demanda filha de prioridade alta. PDF, DOCX e XLSX reabertos com três linhas corretas; PDF de duas páginas renderizado e inspecionado. Layouts 375/414/1250 sem overflow; sino móvel dentro da tela. Provas privadas em `.sites-runtime/v12-evidence`. O patch final de respostas tardias e indicador precisa da rodada final de build/smoke.
-- E-mail: código `99a7199`, modelo e preferências por organização `d8588ac`. MailApp em projeto Google próprio, token `pne_` restrito à organização, consentimento individual, fila durável e resultado incerto sem reenvio cego. Revisão independente encontrou duplicação de auditoria em ACK concorrente (sem segundo envio); autor corrigindo. Conta remetente ainda não escolhida; manter tudo desativado. Não instalar MailApp no projeto de sincronização nem ampliar OAuth sem resolver esse gate.
-- WhatsApp: compartilhamento manual de título/link protegido. Nenhum envio automático ou número foi configurado.
+## V13 integrada e próxima ação
 
-## Agentes e próximos passos
+Checkout coordenador: v13-coordenacao, sobre main 62761e6. R09, R10 e R11 integrados, revisados por agentes diferentes e conferidos em CUA. Revisões específicas estão em apps/proex-portal/docs. Fonte congelada; últimos commits são testes e documentação. Não abrir frentes concorrentes sobre arquivos compartilhados.
 
-1. `revisao_organizacoes`: R20 concluído; revisão independente do frontend de e-mail em andamento. Porta 5173 livre após QA do root.
-2. `mobile_responsivo`: R20 reconferido; revisão independente do backend/GAS R21 e ACK concorrente em andamento.
-3. `relatorios_datas`: corrigir ACK concorrente; depois conciliar R01–R22 em matriz documental. Nenhuma mensagem real.
-4. Coordenador: concluir gates integrados após os últimos patches, publicar e conferir SHA/fluxos reais sem QA em produção; instalar e comprovar backup diário no projeto Google existente. Nunca instalar o arquivo MailApp nesse mesmo projeto.
+- R09: “Saídas rastreáveis” mostra ação, quantidade, operador autorizado e retorno; reservas/agendamentos não contam como saída, textos livres exigem opt-in, CSV parcial tem nome explícito.
+- R10: IA opcional no importador de projetos/patrimônios, evidências literais por campo, revisão e confirmação. documentEnabled começa false. Confiança sem calibração permanece nula; não há OCR/envio binário ou saldo automático. 0016 é aditiva.
+- R11: painel montado só em configuração autorizada com revisão salva; consentimento próprio para metadados, sem geração/transcrição automática. Troca de organização/revisão desmonta o diagnóstico. Chaves/provedores reais não foram usados.
+- Autoridade é conferida depois dos awaits de configuração/decifragem, antes de cada envio IA/STT e ao devolver/reaplicar resultados. Mudança de identidade recarrega a interface antes de aplicar novo snapshot.
 
-Gates: 589/589 Node 26 antes de 0015. Rodada Node 24 com 0015 teve 612/613: apenas uma asserção histórica de dez tabelas ignorava as seis de e-mail; corrigida em `e2a111e` para conferir o inventário real. Nova rodada completa em andamento. Modelos de 82 tabelas e cadeia 0000–0015 passaram sem divergência; migrações 0008–0015 ensaiadas no backup real V10 em RAM preservaram 49 tabelas, integridade OK/FK zero. Smoke HTTP sintético de Sheets/conflitos e backup com 5,29 MB, 161 chunks, recuperação física passou. Não usar estas provas locais para afirmar execução do backup diário ou capacidade serverless.
+Suítes finais: 726/726 em Node24 e Node26, tipos/lint sem erros (3 avisos antigos), Worker e Node builds aprovados. Próxima ação do coordenador: fechar CI, criar PR e integrar pelo SHA aprovado, confirmar Vercel READY no mesmo SHA e repetir health/sessão/relatório em produção; depois registrar SHA/recibos na Vault e comunicar às oito frentes. Ver docs/ENTREGA-V13.md. Publicação permanece autorizada; configurações opcionais não devem ser ativadas por ausência de resposta.
 
-Nova chave RSA protegida por DPAPI foi ensaiada offline com o conteúdo do backup real V10: formato 2, recuperação física e hashes passaram. Ainda não é prova de execução da rotina diária em produção. Arquivos reais, chaves, capturas e logs privados permanecem fora do Git público.
+## Evidências e limites
 
-Requisitos completos R01–R22: `REQUISITOS-E-CONTINUIDADE.md` e nota equivalente da Vault. Histórico de execução: `ANDAMENTO.md`; entregas: `ENTREGA-V9.md`, `ENTREGA-V10.md`, `ENTREGA-V11.md`. Não esquecer privacidade/retenção, custódia institucional, ativação dos provedores e demais achados A01–A28. Arquivo gravado na Vault não comprova sincronização em nuvem.
+V12: suíte local 643/643 Node26 mais contrato posterior focado; CI 644/644. Correção Drive: CI 645/645, 22 focados, revisão independente. Tipos/lint sem erros (3 avisos antigos), Worker/Node builds passaram. V13: modelos de 83 tabelas e cadeia 0000–0016 coerentes; migração 0016 ensaiada no backup RSA real V12 em RAM preservou as 82 tabelas originais, integridade OK/FK zero. Histórico V12: migrações ensaiadas no backup real V10 em RAM preservaram 49 tabelas. CUA 375/414/1250 sem overflow, evento→P/M/G com 1 avaria M→revisão alta, PDF/DOCX/XLSX reabertos e PDF renderizado. Build final também confirmou deep link e consentimento próprio persistido/retirado com envio desligado.
+
+Smoke local de Sheets/conflitos e backup de 5,29 MB / 161 chunks com recuperação física passou. Benchmark público local: 100 pedidos, concorrência 10, zero erros, p95 14,47 ms; página de 50 demandas passou de 101 para 1 consulta de versão, zero recargas/commits estáveis. São medições sintéticas locais, não capacidade serverless ou latência Postgres.
+
+Requisitos R01–R22 e achados A01–A28 continuam rastreados. Não declarar tudo concluído: política institucional/retensão, custódia independente, ativação de provedores/público, escolhas de catálogo e demais pendências são distintas de código pronto. R12 já oferece áudio→transcrição revisada→proposta/confirmar no assistente; não espalhar microfones sem necessidade. Nunca ler/imprimir .env/.dev.vars, arquivos de segredo ou valores de chaves.
+
+Leia docs/COBERTURA-DE-REQUISITOS.md e docs/ENTREGA-V13.md; V12 é histórico em docs/ENTREGA-V12.md. Histórico em docs/ANDAMENTO.md; Vault salva/relida localmente não comprova sincronização em nuvem.

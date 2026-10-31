@@ -1,0 +1,28 @@
+# V13 · Saídas rastreáveis e IA documental com revisão
+
+Estado em 31/10/2026: candidato integrado em `v13-coordenacao`, sobre a produção V12.1 `62761e65566e0621f498aae4953e99ff496c07dc`. Publicação e conferência externa serão registradas abaixo depois de concluídas. A autorização permanente de Yan inclui push, PR, merge e deploy desta e das próximas entregas.
+
+## Comportamento
+
+- **R09:** novo relatório “Saídas rastreáveis”, preservando o resumo anterior. Distribuições, resgates e retiradas efetivas de equipamentos apresentam ação vinculada, quantidade, unidade atual, data em Brasília e situação da devolução. Agendamento e reserva não viram saída. Nome atual de quem registrou exige permissão operacional vigente; contatos e beneficiários não são consultados. Motivos e condições são opt-in e precisam ser selecionados para exportar. Saldos atuais repetidos não são somados.
+- **R10:** interpretação opcional de texto extraído no importador de projetos SIGAA e patrimônios. Desligada por padrão; consentimento por documento/organização, até 16 KiB de texto, sem envio binário ou OCR. Sugestões têm trechos literais verificáveis, diferenças e seleção manual; confiança não calibrada fica nula. A confirmação usa as regras normais de acesso, assinatura, versão e idempotência. Patrimônio novo começa sem saldo; o modelo não movimenta estoque nem concede acesso.
+- **R11:** diagnóstico na configuração autorizada de IA, para uma revisão salva da organização. Consultas explícitas de metadados a endpoints oficiais, com consentimento, tempo/tamanho limitados, quotas próprias e recibos idempotentes. Não pede geração ou transcrição; autenticação não comprova acurácia, saldo ou disponibilidade futura. Modelo ausente de catálogo de aliases não é tratado como credencial inválida.
+- **Segurança e interface:** autorização/configuração reconferidas depois de carregar e decifrar credenciais, imediatamente antes de cada envio DeepSeek/Jev/STT e ao devolver/reaplicar resultados. Respostas antigas não restauram prévias de outra seleção. Mudança de conta em outra aba recarrega a interface antes de aplicar os dados. Relatório com JSON/contrato inválido mostra falha; CSV limitado leva `-parcial` no nome.
+
+## Evidências
+
+- Revisões independentes em [saídas](../apps/proex-portal/docs/REVISAO-SAIDAS-RASTREAVEIS.md), [diagnóstico](../apps/proex-portal/docs/REVISAO-INDEPENDENTE-DIAGNOSTICO-IA.md), [identidade](../apps/proex-portal/docs/REVISAO-REFRESH-IDENTIDADE.md) e testes documentais independentes. Dois P2 do relatório corrigidos e reconferidos; os testes negativos de envio após revogação falharam antes das correções e passaram depois.
+- Tipos sem erros, lint sem erros e três avisos antigos; builds Worker e Node limpos. Suíte final completa: **726/726 em Node 24 e 726/726 em Node 26**. Rodada focada integrada: 70/70. A composição real do painel autorizado também tem três testes independentes de presença e descarte de consentimento ao trocar organização/revisão. CI será registrado após a publicação do candidato.
+- Modelo de **83 tabelas**, migrações 0000–0016 e snapshots reconciliados. Ensaio com backup real RSA V12 aplicou somente 0016 em RAM: **82 tabelas originais preservadas**, integridade OK, zero violações FK, nenhum arquivo claro ou chamada de rede.
+- CUA integrado em 375/414/1250, claro/escuro, sem overflow da página e sem novos erros de console. Retirada sintética mostrou ação, operador, quantidade e retorno pendente; filtros respeitaram o recorte. PDF/DOCX/XLSX baixados foram reabertos e os dados conferidos; PDF renderizado e inspecionado. Configuração OFF salva apenas no QA confirmou painel de diagnóstico com consentimento desligado e botões externos bloqueados.
+- CUA documental com provedor sintético percorreu fonte → consentimento → evidência literal → edição manual com foco estável → confirmação → patrimônio com saldo zero. Adaptador temporário removido antes dos builds finais; nenhum provedor real foi acionado.
+- Smoke local de Sheets passou com edição, movimento, conflito de base antiga e preservação de edição durante HTTP. Backup sintético de 5.293.298 bytes em 161 partes foi recuperado fisicamente. Rajada pública local: 100 pedidos, concorrência 10, zero erros, p95 15,13 ms. Dataset de 5.106 fontes: resposta limitada a 3.144.827 bytes/3.010 linhas, cinco leituras e zero escritas para cinco consultas. Medições locais sintéticas não estimam capacidade serverless ou latência de produção.
+- Sheets real confirmou execução automática em **31/10/2026 às 16:37:03.006Z**, 34 tabelas, 153 linhas e zero conflitos. Um gatilho de dados e um de anexos preservados. Rodada de anexos às 16:53:35.070Z: zero novas cópias/falhas e uma cópia anterior não revalidada.
+
+## Configuração e limites
+
+Provedores IA/STT continuam opcionais e não foram testados com chamada paga real. Criptografia não substitui custódia externa do segredo de aplicação; cifras podem permanecer em backups além da expiração lógica de prévias. Política de retenção e cópia independente das chaves continuam pendentes.
+
+E-mail de demandas está publicado, mas desligado: a conta remetente não foi escolhida e nenhum MailApp/OAuth/envio foi realizado. WhatsApp é compartilhamento manual. Cadastro público permanece fechado pelos gates já registrados. Primeiro backup RSA real e recuperação foram comprovados na V12.1; o gatilho diário das 03h está instalado, e sua primeira execução pelo relógio ainda é futura.
+
+Os 22 requisitos e A01–A28 continuam na [matriz](COBERTURA-DE-REQUISITOS.md). Esta entrega não declara encerradas decisões institucionais, retenção, duplicidades de catálogo, testes em aparelhos físicos ou integração SSO. Evidências reais e capturas ficam em `.sites-runtime`, fora do Git público.

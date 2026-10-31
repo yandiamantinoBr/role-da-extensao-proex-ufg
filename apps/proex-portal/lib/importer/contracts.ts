@@ -20,10 +20,12 @@ export const ASSET_IMPORT_FIELDS: ImportField[] = [
   { key: 'acquisitionValueCents', label: 'Valor documentado em centavos inteiros', maximum: 13, metadata: true },
 ];
 export const importFields = (kind: ImportKind) => kind === 'project' ? PROJECT_IMPORT_FIELDS : ASSET_IMPORT_FIELDS;
-export type ImportCandidate = { key: string; fields: Record<string, string>; problems: Record<string, string>; warnings: string[]; suggestedUnitId?: string; suggestedTypeId?: string };
+export type ImportFieldEvidence = {method:'rule'|'ai';status:'literal'|'missing'|'conflict'|'review';quote:string|null;sourceTextSha256:string;confidence:null;page?:number};
+export type ImportAiProvenance = {callId:string;configRevision:number;provider:'deepseek';model:string;modelRevision:string;returnedModel:string;jevModel:string|null;sourceTextSha256:string;reviewedAt:string};
+export type ImportCandidate = { key: string; fields: Record<string, string>; problems: Record<string, string>; warnings: string[]; evidence?:Record<string,ImportFieldEvidence>; suggestedUnitId?: string; suggestedTypeId?: string };
 export type ImportFileProvenance = { fileFormat: string; sha256: string; extraction: 'server-docx' | 'browser-pdf' | 'text-file'; pages?: number[] };
-export type ImportProvenance = { kind: 'sigaa' | 'document' | 'manual'; organizationId: string; label: string; url?: string; externalId?: string; sha256: string; textSha256?: string; fileFormat?: string; extraction?: ImportFileProvenance['extraction']; pages?: number[]; retrievedAt: string };
-export type ImportReview = { version: 2; organizationId: string; actorId: string; kind: ImportKind; projectId: string | null; itemId: string | null; expectedVersion: number | null; provenance: ImportProvenance; candidates: ImportCandidate[]; expiresAt: number };
+export type ImportProvenance = { kind: 'sigaa' | 'document' | 'manual'; organizationId: string; label: string; url?: string; externalId?: string; sha256: string; textSha256?: string; fileFormat?: string; extraction?: ImportFileProvenance['extraction']; pages?: number[]; retrievedAt: string; ai?:ImportAiProvenance };
+export type ImportReview = { version: 2 | 3; organizationId: string; actorId: string; kind: ImportKind; projectId: string | null; itemId: string | null; expectedVersion: number | null; provenance: ImportProvenance; candidates: ImportCandidate[]; expiresAt: number };
 export type ImportPreview = Omit<ImportReview, 'actorId'> & { reviewToken: string };
 export const IMPORT_TEXT_LIMIT = 256 * 1024;
 export const IMPORT_MAX_ROWS = 20;

@@ -13,6 +13,7 @@ function harness(initialProps = props) {
  const slots = [], requests = [], cache = new Map(); let index = 0, tree, currentProps = initialProps;
  const hooks = {
   useState(initial) { const key = index++; if (!(key in slots)) slots[key] = typeof initial === 'function' ? initial() : initial; return [slots[key], value => { slots[key] = typeof value === 'function' ? value(slots[key]) : value; }]; },
+  useEffect(callback){const key=index++;if(!(key in slots))slots[key]={cleanup:callback()};},
   useRef(initial) { const key = index++; slots[key] ??= { current: initial }; return slots[key]; },
  };
  const jsx = { jsx: (type, attrs) => ({ type, props: attrs }), jsxs: (type, attrs) => ({ type, props: attrs }) };
@@ -74,4 +75,29 @@ test('project creation displays the sole authorized organization and requires ex
  const single=harness({...props,kind:'project',defaultProjectId:'',canCreateProject:true,organizations:[organizations[0],organizations[2],organizations[3]]});assert.equal(single.find('input',node=>node.props.readOnly).props.value,'Organização A');assert.equal(single.button('Preparar prévia').props.disabled,false);
  const multiple=harness({...props,kind:'project',defaultProjectId:'',canCreateProject:true,organizations});assert.equal(multiple.button('Preparar prévia').props.disabled,true);const selector=multiple.find('select',node=>text(node).includes('Selecione explicitamente a organização'));assert.equal(selector.props.value,'');assert.equal(text(selector).includes('Não autorizada'),false);assert.equal(text(selector).includes('Arquivada'),false);
  selector.props.onChange({target:{value:'org-b'}});multiple.render();assert.equal(multiple.button('Preparar prévia').props.disabled,false);multiple.chooseFile(file('project-org-b.txt'));await tick();multiple.render();multiple.button('Preparar prévia').props.onClick();await tick();assert.equal(multiple.requests[0].init.body.get('organizationId'),'org-b');
+});
+
+
+test('document AI opt-in names the organization, requires explicit consent and resets when the source changes',async()=>{
+ const organizations=[{id:'org-a',name:'Organização A',status:'active',canManage:true}],setup={...props,projects:[{id:'project-a',name:'Projeto A',organization_id:'org-a'}],organizations};const h=harness(setup);h.chooseFile(file('ai-source.txt','Cadastro: Equipamento A'));await tick();h.render();
+ const use=h.find('input',node=>node.props.type==='checkbox'&&text(h.find('label',label=>text(label).includes('Usar IA para estruturar'))).includes('Usar IA'));assert.equal(use.props.checked,false);use.props.onChange({target:{checked:true}});h.render();assert.match(h.text(),/Organização A/);assert.match(h.text(),/16 KiB/);assert.equal(h.button('Preparar prévia').props.disabled,true);h.button('Preparar prévia').props.onClick();await tick();assert.equal(h.requests.length,0);
+ h.find('label',node=>text(node).includes('Autorizo enviar o texto extraído')).props.children[0].props.onChange({target:{checked:true}});h.render();h.button('Preparar prévia').props.onClick();await tick();const body=h.requests[0].init.body;assert.equal(body.get('useAi'),'true');assert.equal(body.get('aiConsent'),'true');assert.match(body.get('aiOperationKey'),/^[A-Za-z0-9_-]{8,100}$/);
+ h.requests[0].resolve({ok:false,json:async()=>({error:'Erro sintético; mesma operação pode ser conferida.'})});await tick();h.render();h.find('textarea',()=>true).props.onChange({target:{value:'Outro conteúdo'}});h.render();assert.equal(h.button('Preparar prévia').props.disabled,true);
+});
+
+test('AI previews show evidence and missing fields, and conflicts are not selected automatically',async()=>{
+ const setup={...props,projects:[{id:'project-a',name:'Projeto A',organization_id:'org-a'}],organizations:[{id:'org-a',name:'Organização A',status:'active',canManage:true}]},h=harness(setup);h.chooseFile(file('ai-preview.txt'));await tick();h.render();h.button('Preparar prévia').props.onClick();await tick();
+ const review={...preview,organizationId:'org-a',provenance:{...preview.provenance,ai:{model:'deepseek-flash',configRevision:1}},candidates:[{...preview.candidates[0],evidence:{name:{status:'conflict',method:'rule',quote:'Nome documentado',confidence:null},assetCode:{status:'literal',method:'ai',quote:'Tombamento: 000123',confidence:null},brand:{status:'missing',method:'ai',quote:null,confidence:null}}}]};h.requests[0].resolve({ok:true,json:async()=>review});await tick();h.render();assert.match(h.text(),/confiança numérica não está disponível/);assert.match(h.text(),/não encontrado na fonte/);assert.match(h.text(),/Tombamento: 000123/);assert.ok(h.button('Completar campos não encontrados'));const name=h.find('input',node=>node.props.id==='import-asset-name');assert.equal(name.props.checked,false);assert.equal(h.find('input',node=>node.props.id==='import-asset-assetCode').props.checked,true);
+});
+
+
+test('an empty global filter selects a real initial asset destination and never displays an unselected option as the current target',()=>{const setup={...props,defaultProjectId:'',projects:[{id:'project-a',name:'Projeto A',organization_id:'org-a'}],organizations:[{id:'org-a',name:'Organização A',status:'active',canManage:true}]},h=harness(setup);assert.equal(h.find('select',node=>text(node).includes('Projeto A')).props.value,'project-a');assert.equal(h.button('Preparar prévia').props.disabled,false);});
+
+
+test('a preview response from an older source, file or destination cannot restore stale fields after the change handler',async()=>{
+ for(const change of ['content','file','project']){const h=harness();h.chooseFile(file('source-before.txt'));await tick();h.render();h.button('Preparar prévia').props.onClick();await tick();const request=h.requests[0];if(change==='content')h.find('textarea',()=>true).props.onChange({target:{value:'Nome: Fonte nova'}});if(change==='file')h.chooseFile(file('source-after.txt','Nome: Fonte nova'));if(change==='project')h.find('select',node=>text(node).includes('Projeto A')).props.onChange({target:{value:'project-b'}});assert.equal(request.init.signal.aborted,true);request.resolve({ok:true,json:async()=>preview});await tick();h.render();assert.ok(!h.text().includes('Documento sintético'));assert.ok(h.button('Preparar prévia'));}
+});
+
+test('editing a formerly missing field preserves the completed value and the original missing evidence',async()=>{
+ const h=harness();h.chooseFile(file('missing.txt'));await tick();h.render();h.button('Preparar prévia').props.onClick();await tick();h.requests[0].resolve({ok:true,json:async()=>({...preview,candidates:[{...preview.candidates[0],evidence:{brand:{status:'missing',method:'ai',quote:null,confidence:null}}}]})});await tick();h.render();h.button('Completar campos não encontrados').props.onClick();h.render();const input=()=>h.find('input',node=>node.props.placeholder&&node.props.maxLength===120&&node.props.value==='');const candidate=input();candidate.props.onChange({target:{value:'M'}});h.render();const field=h.find('input',node=>node.props.value==='M');field.props.onChange({target:{value:'Marca documentada'}});h.render();assert.ok(h.find('input',node=>node.props.value==='Marca documentada'));assert.match(h.text(),/editado manualmente|não encontrado na fonte/);
 });
