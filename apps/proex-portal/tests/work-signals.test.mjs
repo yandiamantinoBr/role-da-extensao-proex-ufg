@@ -23,7 +23,10 @@ test('closed tasks never appear overdue and missing or malformed dates never inv
  for (const status of ['completed', 'cancelled']) assert.equal(taskDeadline('2020-01-01', status, '2026-10-31').kind, 'closed');
  assert.equal(taskDeadline(null, 'open', '2026-10-31').kind, 'none');
  for (const due of ['2026-02-30', 'invalid', '2026-1-01']) assert.equal(taskDeadline(due, 'open', '2026-10-31').kind, 'invalid');
- assert.equal(taskDeadline('2026-10-31', 'open', 'invalid').kind, 'invalid');
+ const unknown = taskDeadline('2026-10-31', 'open', 'invalid');
+ assert.equal(unknown.kind, 'unknown');
+ assert.equal(unknown.tone, 'neutral');
+ assert.ok(unknown.label.includes('31/10/2026'));
 });
 
 test('calendar day arithmetic is stable across month, year, leap day and daylight saving boundaries', () => {

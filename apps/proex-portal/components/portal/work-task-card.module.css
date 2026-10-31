@@ -1,0 +1,22 @@
+.card { display: grid; align-content: start; gap: 7px; min-width: 0; padding: 16px; border: 1px solid var(--line); border-inline-start: 4px solid var(--control-border); border-radius: 14px; background: var(--surface); }
+.card[data-priority=high] { border-inline-start-color: #b91c1c; }
+.card[data-priority=medium] { border-inline-start-color: #a16207; }
+.card[data-state=completed] { border-inline-start-color: #15803d; }
+.card[data-state=cancelled] { border-inline-start-color: var(--control-border); }
+.card[data-selected=true] { border-color: var(--brand-ink); box-shadow: 0 0 0 1px var(--brand-ink); }
+.title { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-width: 0; min-height: 44px; padding: 6px 0; border: 0; background: transparent; color: var(--ink); text-align: start; font-size: 15px; line-height: 1.5; font-weight: 650; }
+.title > span { min-width: 0; overflow-wrap: anywhere; }
+.title > svg { flex-shrink: 0; color: var(--brand-ink); }
+.title:hover { color: var(--brand-ink); text-decoration: underline; text-underline-offset: 3px; }
+.title:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; border-radius: 5px; }
+.context { display: flex; align-items: start; gap: 6px; min-width: 0; color: var(--text-secondary); font-size: 12px; line-height: 1.6; }
+.context > svg { flex-shrink: 0; margin-top: 2px; }
+.context > span { overflow-wrap: anywhere; }
+.assignees { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 3px; }
+.person, .unassigned { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; padding: 4px 7px; border-radius: 7px; background: var(--surface-soft); color: var(--text-secondary); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.person > svg, .unassigned > svg { flex-shrink: 0; }
+.unassigned { background: transparent; padding-inline: 0; }
+.assignment { font-size: 12px; line-height: 1.5; color: var(--text-secondary); }
+:global(html[data-theme=dark]) .card[data-priority=high] { border-inline-start-color: #fda4af; }
+:global(html[data-theme=dark]) .card[data-priority=medium] { border-inline-start-color: #f4d09a; }
+:global(html[data-theme=dark]) .card[data-state=completed] { border-inline-start-color: #86efac; }
