@@ -46,6 +46,8 @@ Convites usam um projeto como padrão. O alcance de toda uma organização exige
 
 A R04/V11 acrescenta [organizações independentes e isolamento no servidor](docs/ORGANIZACOES-E-ISOLAMENTO.md), com migração local 0008 e administração limitada a cada organização. A aplicação em produção depende de backup completo criptografado e restauração verificada; interface e importador devem usar `organizationId`. O catálogo de unidades UFG permanece separado da fronteira de acesso.
 
+A R16/A05 acrescenta [conta pública de participante opcional](docs/CONTAS-PUBLICAS-DE-PARTICIPANTES.md), separada das permissões da equipe. O modo começa desligado e só pode abrir com aviso aprovado, infraestrutura dedicada e domínio remetente comprovado. A etapa local não comprova ativação ou envio real em produção.
+
 Sem SMTP, o convite manual não comprova automaticamente controle da caixa de e-mail, e a conta não é marcada como e-mail verificado. O responsável deve conferir a pessoa e entregar o link pelo canal institucional adequado. Não há Google OAuth, login por WhatsApp, Facebook ou Instagram nesta revisão.
 
 Se alguém esquecer a senha, o responsável institucional pode gerar um **link pessoal de recuperação**, válido por 30 minutos e de uso único, para compartilhar manualmente. O portal não envia esse link por e-mail. Solicitações públicas não podem emitir ou revelar links de recuperação. Não compartilhar senha nem guardar esses links em planilhas de uso geral.

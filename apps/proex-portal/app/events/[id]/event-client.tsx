@@ -7,6 +7,7 @@ import { BrandMark } from '@/components/theme/brand-mark';
 import { ThemeSwitch } from '@/components/theme/theme-switch';
 import { SECTORS, targetDice, targetRotation } from '@/lib/roulette';
 import { GameAudio } from '@/lib/game-audio';
+import ParticipantEntryLink from '@/components/portal/participant-entry-link';
 
 type SettledResult = 'brinde' | 'super' | 'miss' | 'retry' | 'retry_exhausted';
 type Result = SettledResult | 'pending' | 'cancelled';
@@ -196,6 +197,7 @@ export default function EventClient({ eventId, signedIn, signInHref }: { eventId
           {mode !== 'physical' && <div className="pe-stage-actions"><button className="pe-minimal" disabled={busy} onClick={() => setSettings(true)}><Settings2 size={16}/> Tempo e som</button><button className="pe-minimal" onClick={() => setSound(value => !value)} aria-label={sound ? 'Desativar som' : 'Ativar som'}>{sound ? <Volume2 size={17}/> : <VolumeX size={17}/>} {sound ? 'Som ligado' : 'Sem som'}</button></div>}
         </section>
         <section className="pe-control" aria-label="Participação e resultado">
+          {!authenticated && <ParticipantEntryLink eventId={eventId}/>}
           <div className={`pe-result ${result?.result === 'super' ? 'pe-result-super' : ''}`} aria-live="polite" aria-atomic="true"><span className="pe-result-emoji" aria-hidden="true">{spinning ? mode === 'wheel' ? '🤞' : '🎲' : resultInfo?.emoji ?? (mode === 'physical' ? '👋' : '🍀')}</span><span className="pe-eyebrow">{spinning ? 'SEGURA A EMOÇÃO' : pendingPhysical ? 'SEU ATENDIMENTO' : resultInfo ? 'SEU RESULTADO' : 'SEU PRÓXIMO ROLÊ'}</span><h2>{spinning ? mode === 'wheel' ? 'A roleta tá girando!' : 'O dado tá rolando!' : resultInfo?.title ?? (mode === 'physical' ? 'Bora encontrar a equipe?' : 'A sorte tá no rolê.')}</h2><p>{spinning ? 'Sua participação já foi registrada. Agora é torcer!' : resultInfo?.text ?? (mode === 'physical' ? 'Confirme aqui antes de jogar. Seu código ficará disponível para o atendimento.' : 'Escolha sua dinâmica e descubra sua surpresa.')}</p>{spinning && <div className="pe-progress" role="progressbar" aria-label="Progresso da animação" aria-valuenow={Math.round(progress)} aria-valuemin={0} aria-valuemax={100}><span style={{ width: `${progress}%` }}/></div>}</div>
           {!authenticated ? <div className="pe-entry"><a className="pe-play" href={signInHref} target="_top">Entrar para participar <ArrowRight size={20}/></a><p>Você entrará com o e-mail e a senha do seu cadastro. Sem conta ou sem celular? A equipe pode orientar o atendimento presencial.</p></div> : <>
             {eligible && !busy && <label className="pe-check"><input type="checkbox" checked={acknowledged} onChange={e => setAcknowledged(e.target.checked)}/><span>Li as regras deste evento e o aviso de privacidade abaixo.</span></label>}

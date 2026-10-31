@@ -19,6 +19,7 @@ function compile(file) {
   return url;
 }
 const { reportRows } = await import(compile('lib/reports.ts'));
+const { quantityTotal } = await import(compile('lib/report-quantities.ts'));
 
 function fixture() {
   const native = new DatabaseSync(':memory:');
@@ -35,6 +36,65 @@ function fixture() {
   return db;
 }
 function actor(db,role,project=null){const userId=crypto.randomUUID(),member={id:crypto.randomUUID(),user_id:userId,email:role+'@example.invalid',role,project_id:project,revoked_at:null,created_at:'2026-01-01T00:00:00.000Z'};db.native.prepare('INSERT INTO members(id,user_id,email,role,project_id,revoked_at,created_at) VALUES(?,?,?,?,?,?,?)').run(...Object.values(member));return {userId,email:member.email,displayName:role,capabilities:[],members:[member]};}
+
+function taskFixture(db) {
+  const now = '2026-10-10T02:00:00.000Z';
+  db.native.prepare("INSERT INTO organizations(id,name,slug,created_at,updated_at) VALUES('org-b','Organização B','org-b',?,?)").run(now, now);
+  db.native.prepare("INSERT INTO projects(id,name,organization_id,created_at) VALUES('other-org-project','Outro projeto','org-b',?)").run(now);
+  const insert = db.native.prepare("INSERT INTO followup_tasks(id,organization_id,project_id,title,body,priority,status,due_at,created_by,created_at,updated_at) VALUES(?,?,?,?,'PRIVATE BODY NEVER EXPORT',?,?,?,'synthetic',?,?)");
+  for (const [id, org, project, title, priority, state] of [
+    ['task-a','org_proex','project-a','Recontar bottons','high','open'],
+    ['task-b','org_proex','project-b','Outra demanda','medium','open'],
+    ['task-org','org_proex',null,'Rotina geral','low','completed'],
+    ['task-other-org','org-b','other-org-project','Restrita B','high','open'],
+  ]) insert.run(id, org, project, title, priority, state, '2000-01-01', now, now);
+}
+
+test('demand reports use the live task scope including org-wide administration and revocation', async () => {
+  const db = fixture();
+  try {
+    taskFixture(db);
+    const viewer = actor(db, 'viewer', 'project-a');
+    const result = await reportRows(db, viewer, { dataset: 'demands', from: '2026-10-09', to: '2026-10-09' });
+    assert.deepEqual(result.rows.map(row => [row.id,row.prioridade,row.em_atraso,row.data]), [['task-a','high','sim','2026-10-09']]);
+    assert.doesNotMatch(JSON.stringify(result.rows), /PRIVATE BODY|example\.invalid|Restrita B/);
+    assert.deepEqual((await reportRows(db, viewer, {dataset:'demands',projectId:'project-b'})).rows, []);
+    assert.deepEqual((await reportRows(db, viewer, {dataset:'demands',from:'2026-10-10'})).rows, []);
+    const admin = actor(db, 'owner');
+    db.native.prepare("UPDATE members SET organization_id='org_proex' WHERE id=?").run(admin.members[0].id);
+    admin.members[0].organization_id = 'org_proex';
+    const orgRows = (await reportRows(db, admin, {dataset:'demands'})).rows;
+    assert.deepEqual(new Set(orgRows.map(row => row.id)),new Set(['task-a','task-b','task-org']));
+    assert.equal(orgRows.find(row => row.id==='task-org').em_atraso,'nao');
+    db.native.prepare('UPDATE members SET revoked_at=? WHERE id=?').run('2026-10-31T15:00:00Z',viewer.members[0].id);
+    assert.deepEqual((await reportRows(db, viewer, {dataset:'demands'})).rows, []);
+    db.native.prepare("UPDATE organizations SET status='archived' WHERE id='org_proex'").run();
+    assert.equal((await reportRows(db,admin,{dataset:'demands'})).rows.length,3);
+    await assert.rejects(reportRows(db,admin,{dataset:'demands',from:'2026-10-11',to:'2026-10-10'}),/inicial/);
+  } finally { db.native.close(); }
+});
+
+test('review reports retain sizes, unknown counts, damage, units and stock while denying another project', async () => {
+  const db = fixture();
+  try {
+    taskFixture(db);
+    const viewer=actor(db,'viewer','project-a'), now='2026-10-10T02:00:00.000Z';
+    db.native.prepare("INSERT INTO items(id,project_id,name,category,unit,created_at) VALUES('kit-a','project-a','Kit de apoio','gift','kit',?)").run(now);
+    db.native.prepare("INSERT INTO followup_checklists(id,organization_id,project_id,task_id,title,created_by,created_at,updated_at) VALUES('review-a','org_proex','project-a','task-a','Conferência dos coletes','synthetic',?,?)").run(now,now);
+    const insert=db.native.prepare("INSERT INTO followup_checklist_items(id,checklist_id,item_id,size,expected,counted,damaged,note) VALUES(?,'review-a',?,?,?,?,?,'PRIVATE OBSERVATION')");
+    insert.run('row-m','item-a','M',3,3,1);insert.run('row-p','item-a','P',5,null,0);insert.run('row-kit','kit-a','',4,2,0);
+    const rows=(await reportRows(db,viewer,{dataset:'reviews'})).rows;
+    assert.equal(rows.length,3);
+    const medium=rows.find(row=>row.tamanho==='M'),pending=rows.find(row=>row.tamanho==='P');
+    assert.deepEqual([medium.esperado,medium.contado,medium.avariado,medium.divergencia,medium.sem_avarias],[3,3,1,0,2]);
+    assert.deepEqual([pending.contado,pending.divergencia,pending.sem_avarias,pending.contagem_pendente],[null,null,null,'sim']);
+    assert.equal(rows.find(row=>row.material==='Kit de apoio').unidade_medida,'kit');
+    assert.equal(quantityTotal(rows,'avariado'),null,'mixed physical units cannot produce one total');
+    assert.equal(db.native.prepare("SELECT stock FROM items WHERE id='item-a'").get().stock,1);
+    assert.doesNotMatch(JSON.stringify(rows),/PRIVATE OBSERVATION|PRIVATE BODY/);
+    assert.deepEqual((await reportRows(db,actor(db,'viewer','project-b'),{dataset:'reviews'})).rows,[]);
+  } finally { db.native.close(); }
+});
 
 test('reports respect project scope and the capability of each dataset', async () => {
   const db = fixture();

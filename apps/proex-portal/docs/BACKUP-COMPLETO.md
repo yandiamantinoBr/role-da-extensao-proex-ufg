@@ -1,6 +1,6 @@
 # Backup completo criptografado e restauração isolada
 
-O alvo principal é o portal Node na Vercel com SQLite em snapshot e objetos privados no Supabase. Esta entrega implementa geração manual e verificação de recuperação; não configura um agendamento nem declara backup de produção ou restauração institucional já realizados.
+O alvo principal é o portal Node na Vercel com SQLite em snapshot e objetos privados no Supabase. Este documento descreve geração manual e verificação de recuperação. O [backup diário opcional](BACKUP-AUTOMATICO.md) usa outro envelope criptográfico e depende de configuração e ensaio separados; publicar código não comprova backup de produção.
 
 Em **Configurações → Dados e sincronização → Backup completo criptografado**, uma administração geral ativa pode baixar um arquivo `.proexbackup`. A API exige sessão, mesma origem, cabeçalho de ação e limite de três tentativas em dez minutos. A autoridade é revalidada no snapshot remoto antes da captura e depois da criptografia. Papéis limitados a projetos não podem usar o recurso. A frase de proteção é enviada somente no corpo da requisição HTTPS, sem ser gravada, ecoada ou incluída em auditoria, URLs e logs. Não há senha de produção envolvida.
 
@@ -12,7 +12,7 @@ Em **Configurações → Dados e sincronização → Backup completo criptografa
 
 No Supabase, snapshot e objetos são lidos na mesma transação `REPEATABLE READ READ ONLY`, com consulta prévia de tamanho e timeout de consultas. A captura pode representar um instante anterior a gravações concorrentes posteriores; nunca combina snapshots de instantes diferentes nessa transação. Referências ativas a arquivos ausentes ou divergentes interrompem a operação. O adaptador local exige um único processo escritor; pare escritores locais antes do comando offline.
 
-Não inclui configurações, credenciais e recursos dos provedores nem a coleção histórica `sqlite_history`. O estado atual completo da aplicação contém seus próprios históricos e auditoria. Uma mudança de provedor ou organização ainda precisa preparar infraestrutura e variáveis separadamente. A exportação portátil JSON e a planilha Google continuam sendo projeções com outro escopo.
+Não inclui variáveis externas, credenciais e recursos dos provedores nem a coleção histórica `sqlite_history`. O estado atual completo da aplicação contém seus próprios históricos, auditoria e configurações de IA cifradas no banco; reutilizá-las exige a chave externa original (`BETTER_AUTH_SECRET`) guardada separadamente. Uma mudança de provedor ou organização ainda precisa preparar infraestrutura e variáveis separadamente. A exportação portátil JSON e a planilha Google continuam sendo projeções com outro escopo.
 
 ## Criptografia e limites
 
@@ -48,4 +48,4 @@ node scripts/create-backup.mjs --local-data pasta-de-dados --output arquivo-novo
 
 Esse comando é para quem já tem acesso administrativo aos arquivos locais. Não aceita conexão Supabase, não carrega ambiente e não sobrescreve a saída. Pare escritores locais antes de capturar. A frase é recebida sem eco ou por stdin. Não gera arquivo intermediário descriptografado.
 
-O download não substitui o ensaio de restauração. Registre data, versão, arquivo criptografado guardado fora do provedor, resultado da validação e responsável. Automatização e retenção externa são etapas posteriores; nenhum workflow foi criado para terminar verde sem backup.
+O download não substitui o ensaio de restauração. Registre data, versão, arquivo criptografado guardado fora do provedor, resultado da validação e responsável. A automação externa é opt-in, conforme [instruções próprias](BACKUP-AUTOMATICO.md); retenção continua exigindo política institucional. O workflow Cloudflare legado foi aposentado e falha explicitamente se disparado, sem executar captura.

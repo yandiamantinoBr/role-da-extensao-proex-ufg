@@ -3,6 +3,7 @@ import {useEffect,useState} from 'react';
 import {Download,RefreshCw,ExternalLink,Database,KeyRound,Copy,Check,FileCode2,Archive,Ban} from 'lucide-react';
 import {syncVerificationState} from '../../lib/sync-health';
 import CompleteBackupPanel from './complete-backup-panel';
+import BackupAutomationPanel from './backup-automation-panel';
 // Server validates synchronization payloads; this panel reads table-specific projections.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row=Record<string,any>;
@@ -39,6 +40,7 @@ export default function SyncSettingsPanel(){
   <p className="rounded-xl border border-amber-500/40 p-3 text-sm"><strong>A planilha global deve ter acesso restrito.</strong> Quem pode editá-la também pode editar o conector. Restrinja a edição à administração da integração. Integrantes com acesso limitado a projetos devem usar o portal ou documentos separados com permissões próprias; filtros e abas não isolam os dados de outros projetos.</p>
  </div>
  <CompleteBackupPanel/>
+ <BackupAutomationPanel/>
  <div className="border-t border-border pt-4 space-y-3"><h4 className="font-medium flex items-center gap-2"><Archive size={18}/>Exportação e recuperação</h4><button disabled={busy} onClick={()=>void downloadAll()} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-border px-4 disabled:opacity-50"><Download size={16}/>Baixar exportação portátil (JSON)</button><p className="text-sm text-muted-foreground">Tabelas do formato portátil, com IDs e versões, para importar os dados permitidos em outra instalação. Não é backup integral: arquivos privados, senhas, CPF e contatos restritos ficam fora. Cada tabela é conferida separadamente; a exportação não representa uma transação única entre tabelas.</p>
   <div className="flex flex-wrap items-end gap-2"><label className="block min-w-60 flex-1 text-sm">Uma tabela específica<select value={table} onChange={e=>setTable(e.target.value)} className="mt-1 block min-h-11 w-full rounded-xl border border-border bg-background px-3 text-base">{data.schemas?.tables?.map((s:Row)=><option key={s.table} value={s.table}>{s.label}</option>)}</select></label><button disabled={busy} onClick={()=>void downloadTable()} className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-border px-4 disabled:opacity-50"><Download size={16}/>Baixar tabela</button></div></div>
  <details className="border-t border-border pt-4"><summary className="cursor-pointer py-2 font-medium">Rotina do ChatGPT/Codex (legado)</summary><p className="my-3 text-sm text-muted-foreground">Usada pela versão hospedada no ChatGPT Sites. Registra um pedido que a rotina conectada atende na próxima execução; o conector da planilha não depende dela.</p><button disabled={busy} onClick={()=>void request()} className="min-h-11 rounded-xl border border-border px-4 disabled:opacity-50">Solicitar sincronização à rotina</button></details>

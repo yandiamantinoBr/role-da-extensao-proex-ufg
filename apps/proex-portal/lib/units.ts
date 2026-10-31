@@ -44,6 +44,7 @@ async function translateError(db: D1Database, actor: PortalActor, error: unknown
 }
 async function admittedAccount(db: D1Database, actor: PortalActor | null): Promise<void> {
   if (!actor) throw new HttpError(401, 'Entre para consultar as unidades.', 'unauthenticated');
+  if (!actor.members.length && await stmt(db,'SELECT user_id FROM participant_accounts WHERE user_id=?',[actor.userId]).first()) throw new HttpError(403, 'Este catálogo é destinado à equipe autorizada.', 'portal_membership_required');
   // A unit is organizational metadata. Listing it never creates a project membership.
   if (!await stmt(db, "SELECT user_id FROM portal_users WHERE user_id=? AND status='active' AND anonymized_at IS NULL", [actor.userId]).first()) throw new HttpError(403, 'Seu acesso ao portal não está ativo.', 'account_inactive');
 }

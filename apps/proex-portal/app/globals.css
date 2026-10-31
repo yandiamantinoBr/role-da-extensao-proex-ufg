@@ -110,3 +110,7 @@ input:is([type=checkbox],[type=radio]){appearance:auto;display:inline-block;widt
 
 .p-skip-link{position:fixed;top:8px;left:8px;z-index:1000;transform:translateY(-160%);padding:12px 18px;background:var(--surface);color:var(--ink);border:2px solid var(--focus);border-radius:10px;font-weight:700}
 .p-skip-link:focus{transform:translateY(0)}
+
+/* Keep notifications inside the mobile viewport and retain refresh in the account menu. */
+@media(max-width:800px){#followup-notification-center{position:fixed;inset:78px 12px auto;width:auto;max-height:calc(100dvh - 160px)}}
+@media(max-width:420px){.p-topbar .p-refresh-button{display:none}}

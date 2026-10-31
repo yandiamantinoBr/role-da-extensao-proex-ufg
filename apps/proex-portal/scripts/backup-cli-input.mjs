@@ -28,6 +28,13 @@ export async function readBackupPassword(input = process.stdin, output = process
     });
   } finally { input.setRawMode(previousRaw ?? false); input.pause(); output.write('\n'); }
 }
+/** PEM is secret input, not a path or command-line argument. No echo or disk copy. */
+export async function readBackupPrivateKey(input = process.stdin, output = process.stderr) {
+  if (!input.isTTY) { let value=''; for await (const chunk of input) {value+=chunk.toString('utf8');if(Buffer.byteLength(value)>20000)throw new Error('Chave privada inválida.');}return value.trim(); }
+  output.write('Chave privada PEM (entrada oculta; Enter após END PRIVATE KEY): ');const previousRaw=input.isRaw;input.setRawMode(true);input.resume();
+  try{return await new Promise((done,reject)=>{let value='';const receive=chunk=>{for(const char of chunk.toString('utf8')){if(char==='\u0003'){finish();reject(new Error('Operação cancelada.'));return;}if(char==='\u007f'||char==='\b')value=[...value].slice(0,-1).join('');else if(char==='\r'||char==='\n'){if(/-----END (?:RSA )?PRIVATE KEY-----\s*$/.test(value)){finish();done(value.trim());return;}if(!value.endsWith('\n'))value+='\n';}else value+=char;if(Buffer.byteLength(value)>20000){finish();reject(new Error('Chave privada inválida.'));return;}}};function finish(){input.removeListener('data',receive);}input.on('data',receive);});}
+  finally{input.setRawMode(previousRaw??false);input.pause();output.write('\n');}
+}
 export function backupArguments(args, allowed) {
   const result = {};
   for (let index = 0; index < args.length; index++) {

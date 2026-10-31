@@ -14,10 +14,14 @@ import AssistantPanel from '@/components/portal/assistant-panel';
 import type { OfficialTeamSelection } from '@/lib/catalog/proex-team';
 import AdminPrivacyPanel from '@/components/portal/admin-privacy-panel';
 import SyncSettingsPanel from '@/components/portal/sync-settings-panel';
+import PublicParticipantsSettingsPanel from '@/components/portal/public-participants-settings-panel';
 import ProfilePanel from '@/components/portal/profile-panel';
 import CalendarPanel from '@/components/portal/calendar-panel';
 import RecordsPanel from '@/components/portal/records-panel';
 import ReportsCenter from '@/components/portal/reports-center';
+import FollowUpPanel from '@/components/portal/follow-up-panel';
+import NotificationBell from '@/components/portal/notification-bell';
+import OrganizationEmailSettings from '@/components/portal/organization-email-settings';
 import MaterialDetailDrawer from '@/components/portal/material-detail-drawer';
 import { ThemeSwitch } from '@/components/theme/theme-switch';
 import { BrandMark } from '@/components/theme/brand-mark';
@@ -248,6 +252,8 @@ export default function PortalClient({ initial }: {
 }) {
     const [data, setData] = useState<Snapshot>(initial ?? {});
     const [tab, setTab] = useState<Tab>('overview');
+    const [selectedDemandId, setSelectedDemandId] = useState('');
+    const [reportInitialDataset, setReportInitialDataset] = useState<'projects' | 'demands'>('projects');
     const [accountOpen, setAccountOpen] = useState(false);
     const [officialSuggestion, setOfficialSuggestion] = useState<OfficialTeamSelection | null>(null);
     const [closingCampaign, setClosingCampaign] = useState<string | null>(null);
@@ -304,15 +310,15 @@ export default function PortalClient({ initial }: {
     useEffect(() => { const change = () => { setOnline(navigator.onLine); }; const timer = window.setTimeout(() => { setUpdatedAt(new Date()); setNow(Date.now()); change(); }, 0); const clock = window.setInterval(() => setNow(Date.now()), 60000); window.addEventListener('online', change); window.addEventListener('offline', change); return () => { window.clearTimeout(timer); window.clearInterval(clock); window.removeEventListener('online', change); window.removeEventListener('offline', change); }; }, []);
     // Links diretos (?module=…&project=…) esperam as permissões carregarem antes de serem descartados.
     const pendingLink = useRef<{ tab: string; project: string } | null>(null);
-    useEffect(() => { const url = new URL(window.location.href); const requested = url.searchParams.get('module'); pendingLink.current = { tab: requested && tabs.some(t => t.id === requested) ? requested : '', project: url.searchParams.get('project') || '' }; const timer = window.setTimeout(() => { if (tabs.some(t => t.id === requested))
-        setTab(requested as Tab); setFilter(url.searchParams.get('project') || ''); setUnitFilter(url.searchParams.get('unit') || ''); setAreaFilter(url.searchParams.get('area') || ''); }, 0); return () => window.clearTimeout(timer); }, []);
+    useEffect(() => { const url = new URL(window.location.href); const candidate = url.searchParams.get('demandId') || ''; const demandId = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(candidate) ? candidate : ''; const requested = url.searchParams.get('module') || (demandId ? 'demands' : ''); pendingLink.current = { tab: requested && tabs.some(t => t.id === requested) ? requested : '', project: url.searchParams.get('project') || '' }; const timer = window.setTimeout(() => { if (tabs.some(t => t.id === requested))
+        setTab(requested as Tab); setSelectedDemandId(demandId); setFilter(url.searchParams.get('project') || ''); setUnitFilter(url.searchParams.get('unit') || ''); setAreaFilter(url.searchParams.get('area') || ''); }, 0); return () => window.clearTimeout(timer); }, []);
     useEffect(() => { const url = new URL(window.location.href); if (tab === 'overview')
         url.searchParams.delete('module');
     else
         url.searchParams.set('module', tab); if (filter)
         url.searchParams.set('project', filter);
     else
-        url.searchParams.delete('project'); if (unitFilter) url.searchParams.set('unit', unitFilter); else url.searchParams.delete('unit'); if (areaFilter) url.searchParams.set('area', areaFilter); else url.searchParams.delete('area'); window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`); }, [tab, filter, unitFilter, areaFilter]);
+        url.searchParams.delete('project'); if (unitFilter) url.searchParams.set('unit', unitFilter); else url.searchParams.delete('unit'); if (areaFilter) url.searchParams.set('area', areaFilter); else url.searchParams.delete('area'); if (tab === 'demands' && selectedDemandId) url.searchParams.set('demandId', selectedDemandId); else url.searchParams.delete('demandId'); window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`); }, [tab, filter, unitFilter, areaFilter, selectedDemandId]);
     useEffect(() => { const update = () => { if (navigator.onLine && !document.hidden)
         void refresh(); }; const timer = window.setInterval(update, 30000); window.addEventListener('online', update); document.addEventListener('visibilitychange', update); return () => { window.clearInterval(timer); window.removeEventListener('online', update); document.removeEventListener('visibilitychange', update); }; }, [refresh]);
     useEffect(() => { if (!accountOpen)
@@ -344,6 +350,7 @@ export default function PortalClient({ initial }: {
     const isPlatformOwner = canGlobal('organization.manage');
     const canManageOrganization = organizations.some(organization => organization.canManage);
     const canCreateProjects = canGlobal('projects.manage') || organizations.some(organization => organization.canManage && organization.status === 'active');
+    const canFollowUp = canManageOrganization || projects.length > 0;
     const organizationalUnits = list(data.organizationalUnits);
     const unitOf = (project: Row) => string(get(project, 'unit_id', 'unitId'));
     const accessibleUnitIds = new Set(projects.map(unitOf).filter(Boolean));
@@ -380,7 +387,7 @@ export default function PortalClient({ initial }: {
     const formItems = items.filter(i => effectiveProject && get(i, 'projectId', 'project_id') === effectiveProject);
     const available = (item: Row) => item.available !== undefined && item.available !== null ? Number(item.available) : Number(item.stock ?? item.quantity ?? 0) - Number(item.reserved ?? 0);
     const searchItems = visibleItems.filter(i => !query || `${i.name} ${i.description ?? ''}`.toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR')));
-    const allowedTabs = tabs.filter(t => ['overview', 'projects', 'profile', 'calendar', 'records'].includes(t.id) || (t.id === 'events' && canAny('campaigns.manage', 'participation.operate', 'inventory.deliver')) || (t.id === 'materials' && canAny('inventory.read', 'inventory.manage', 'inventory.deliver')) || (t.id === 'loans' && canAny('loans.read', 'loans.manage', 'loans.checkout')) || (t.id === 'team' && (canManageOrganization || canAny('access.invite', 'access.manage'))) || (t.id === 'reports' && canAny('reports.read')) || (t.id === 'settings' && canGlobal('organization.manage')));
+    const allowedTabs = tabs.filter(t => ['overview', 'projects', 'profile', 'calendar', 'records'].includes(t.id) || (t.id === 'events' && canAny('campaigns.manage', 'participation.operate', 'inventory.deliver')) || (t.id === 'materials' && canAny('inventory.read', 'inventory.manage', 'inventory.deliver')) || (t.id === 'loans' && canAny('loans.read', 'loans.manage', 'loans.checkout')) || (t.id === 'demands' && canFollowUp) || (t.id === 'team' && (canManageOrganization || canAny('access.invite', 'access.manage'))) || (t.id === 'reports' && (canFollowUp || canAny('reports.read'))) || (t.id === 'settings' && canGlobal('organization.manage')));
     const allowedModuleKey = allowedTabs.map(module => module.id).join('|');
     const accessibleProjectKey = scopedProjects.map(project => project.id).join('|');
     const accessibleUnitKey = [...visibleUnits.map(unit => string(unit.id)), ...(hasUnassignedProjects ? ['__unassigned__'] : [])].join('|');
@@ -521,9 +528,10 @@ export default function PortalClient({ initial }: {
     <strong>{title}</strong>
     </div>
     <div className="p-topbar-actions">
-    <button className="p-icon-button" title="Atualizar dados" aria-label="Atualizar dados" disabled={refreshing} onClick={() => void refresh()}>
+    <button className="p-icon-button p-refresh-button" title="Atualizar dados" aria-label="Atualizar dados" disabled={refreshing} onClick={() => void refresh()}>
     <RefreshCw size={18} className={refreshing ? 'p-spin' : ''}/>
     </button>
+    {canFollowUp && <NotificationBell key={string(user.userId)} userId={string(user.userId)} onSelectTask={id => { setSelectedDemandId(id); setFilter(''); setUnitFilter(''); setAreaFilter(''); navigate('demands'); }}/>}
     <ThemeSwitch />
     <div className="p-account" ref={accountRef}>
     <button className="p-account-trigger" aria-label="Abrir menu da minha conta" aria-expanded={accountOpen} aria-controls="account-menu" onClick={() => setAccountOpen(v => !v)} onKeyDown={e => { if (e.key === 'ArrowDown') {
@@ -545,6 +553,7 @@ export default function PortalClient({ initial }: {
         </div>
         <button role="menuitem" onClick={() => { navigate('profile'); }}>Minha conta e senha <Users size={16}/>
         </button>
+        <button role="menuitem" disabled={refreshing} onClick={() => { setAccountOpen(false); void refresh(); }}>Atualizar dados <RefreshCw size={16}/></button>
         <button role="menuitem" disabled={busy} onClick={() => void logout()}>Sair e trocar de conta <LogOut size={16}/>
         </button>
         </div>}</div>
@@ -612,6 +621,7 @@ export default function PortalClient({ initial }: {
         </button>
         </div>}
 
+      {tab === 'demands' && <><FollowUpPanel key={string(user.userId)} defaultProjectId={filter} initialTaskId={selectedDemandId} onSelectTask={setSelectedDemandId} onChanged={refreshModules} onOpenReports={() => { setReportInitialDataset('demands'); navigate('reports'); }}/><OrganizationEmailSettings key={string(user.userId)} userId={string(user.userId)} organizations={organizations}/></>}
       {tab === 'overview' && <DashboardPanel modules={allowedTabs} pinned={navigation.pinned} frequent={navigation.frequent} onNavigate={navigate} onTogglePin={navigation.togglePin} displayName={string(user.displayName)} role={role} roleLabel={roleNames[role] || 'Equipe PROEX'} projects={scopedProjects} items={visibleItems} loans={visibleLoans} campaigns={visibleCampaigns} selectedProjectId={filter} unitName={unitFilter === '__unassigned__' ? 'Sem unidade vinculada' : string(visibleUnits.find(unit => unit.id === unitFilter)?.acronym || visibleUnits.find(unit => unit.id === unitFilter)?.name)} now={now} onSelectProject={selectProject} known={{ projects: Array.isArray(data.projects), items: Array.isArray(data.items), loans: Array.isArray(data.loans), campaigns: Array.isArray(data.campaigns) }} />}
 
       {tab === 'projects' && <>
@@ -839,7 +849,14 @@ export default function PortalClient({ initial }: {
         <button className="p-button p-button-subtle" onClick={() => { setReportFrom(''); setReportTo(''); }}>Todo o período</button>
         <p>Período de todos os relatórios desta página, em datas de Brasília. Contagens de participação, tentativa e entrega usam a data de cada registro.</p>
         </div>
-        <ReportsCenter projectId={filter} unitId={unitFilter} area={areaFilter} from={reportFrom} to={reportTo} available={['projects', 'materials', 'movements', 'outflows', 'loans', 'records', 'campaigns']}
+        <ReportsCenter initialDataset={canAny('reports.read') ? reportInitialDataset : 'demands'} projectId={filter} unitId={unitFilter} area={areaFilter} from={reportFrom} to={reportTo} available={[
+          ...(projects.length ? ['projects' as const] : []),
+          ...(canAny('inventory.read', 'reports.read') ? ['materials', 'movements', 'outflows'] as const : []),
+          ...(canAny('loans.read', 'reports.read') ? ['loans' as const] : []),
+          ...(canAny('reports.read', 'inventory.read', 'loans.read') ? ['records' as const] : []),
+          ...(canAny('reports.read', 'campaigns.manage') ? ['campaigns' as const] : []),
+          ...(canFollowUp ? ['demands', 'reviews'] as const : []),
+        ]}
           scopeLabel={[filter ? projectName(filter) : '', unitFilter ? (unitFilter === '__unassigned__' ? 'Sem unidade vinculada' : string(visibleUnits.find(unit => unit.id === unitFilter)?.acronym || visibleUnits.find(unit => unit.id === unitFilter)?.name)) : '', areaFilter ? (areaFilter === '__none__' ? 'Sem área temática' : THEMATIC_AREAS.find(item => item.key === areaFilter)?.label ?? '') : ''].filter(Boolean).join(' · ')} />
         <h2 className="p-reports-legacy-title">Indicadores das dinâmicas</h2>
         <div className="p-stats">
@@ -953,6 +970,7 @@ export default function PortalClient({ initial }: {
 
       {tab === 'settings' && <>
         {canGlobal('organization.manage') && <SyncSettingsPanel />}
+        <PublicParticipantsSettingsPanel canManage={canGlobal('organization.manage')} onChanged={refreshModules}/>
         <Section title="Canais e informações da operação" description="Use os canais institucionais confirmados e o aviso aprovado para o serviço.">
         <OperationForm action="setting.update" mutate={mutate} submit="Salvar configurações" make={f => ({ instagramUrl: f.get('instagramUrl'), privacyNotice: f.get('privacyNotice') })}>
         <Field label="Perfil oficial no Instagram" help="O link divulga o canal. Ele não verifica automaticamente se a pessoa segue o perfil.">

@@ -1,5 +1,7 @@
 # Continuidade da execução · 31/10/2026
 
+**Resumo para retomar:** `CONTINUAR-AQUI.md` concentra o estado atual, agentes e próximos passos. As seções abaixo preservam a trilha histórica.
+
 Leia `AGENTS.md` e `REQUISITOS-E-CONTINUIDADE.md`. Push/PR/merge/deploy de todas as versões do Portal PROEX estão autorizados por Yan. Não solicite novamente essa autorização. Não publique dados privados ou segredos.
 
 ## Estado mais recente · V11 publicada
@@ -45,3 +47,31 @@ Não executar SINCRONIZAR.cmd, reset/clean/restore destrutivos, env pull ou leit
 - IA/STT/TI por org em worktree v10-importacoes, branch v12-assistente-organizacoes: revisão independente fechou corrida de cota e gravação de plano após revogação; aguarda hash final. Nenhuma chamada paga/conexão real foi realizada. Checar microphone=(self) ao integrar voz.
 - Público opcional A05 em branch v14-acesso-publico (worktree v10-acessos), migração0012 reservada; desativado até configuração/aviso/envio verificados. Não foi publicado. Não enviar e-mails reais como QA.
 - QA local anterior24999 foi encerrado por processos identificados, mas revisão automática recusou exclusão de sua pasta sintética; preservada. QA44864 foi encerrado por stdin `parar` e sua limpeza normal passou. Scripts/chaves/capturas reais estão em `.sites-runtime` e AppData, ignorados. Não publicar esses arquivos.
+
+## Integração local posterior à V11 · 31/10
+
+Acesso público opcional `933b164` integrado como `d49834e` em `v12-coordenacao`, ainda não publicado. Painel administrativo montado em Configurações, separado de convites da equipe. Modo inicial fechado; aviso aprovado, remetente e verificação de domínio continuam requisitos de ativação. Nenhum email real foi enviado. Revisão independente executou17testes específicos com SDK/SQLite reais; suíte integrada537/537 passou. Depois da reconciliação do modelo,19/19 focados em Node24 e tipos/lint focados passaram. Snapshot0012 tem62tabelas e diffzero com modelo.
+
+A verificação de metadados detectou substituição indevida de delivered_at na tabela histórica entitlements, embora SQL runtime permanecesse intacto. Corrigido antes de publicação, preservando provider_accepted_at apenas no desafio público. Novo teste compara tabelas/colunas/tipos/nullabilidade/FKs do modelo contra migrações reais e exige journal/cadeia completos e diffzero. Não alterar migrações já publicadas para resolver divergência do modelo.
+
+Nova revisão delegada a mobile_responsivo, branch/worktree v17-autorizacao-fresca, base aab2d2f: reproduzir com duas instâncias SnapshotD1 a janela de cache1500ms após revogação/bloqueio/sessão e corrigir leituras de autorização sem regravar snapshots por GET. Medir version/load/commit e preservar leituras públicas eficientes. Resultado é gate antes das próximas publicações. Backup0013 e acompanhamento0014 continuam com agentes respectivos; nenhum outro agente edita portal-client ou relatórios.
+
+### CUA integrado do público e sincronização pós-V11
+
+Build Node/Worker do candidato público passou. CUA do build revelou erros de navegação/prefetch RSC no navegador integrado, ausentes da fixture que substituía adaptadores Next. O fluxo de cadastro/login passou a usar anchors nativos e navegação completa ao sair, preservando o padrão já usado no login. Chrome confirmou login → link público → modo fechado sem formulário → acesso da equipe → login real → Configurações. Prontidão impede abrir cadastro sem aviso/provedor; configuração desabilitada foi salva/relida sem email. Tela pública375px sem overflow. Nenhum erro do portal no Chrome; foi observado erro independente de extensão do navegador, fora do código do portal. Capturas sintéticas em .sites-runtime/v12-evidence. Não confundir esse teste fechado com envio/cadastro público real ativo.
+
+Após publicaçãoV11, novo gatilho do Sheets completou12:07:06.612 BRT (15:07Z),146linhas/29tabelas/0conflitos. A nova aba organizations e recibos no portal/planilha foram conferidos; cópia de anexos segue1confirmada/0falhas. Isso comprova compatibilidade da mudança de organização com a sincronização real nesse instante.
+
+Backup automático612bc090e23524f4541d7ae3c230cb8b5cb14db6 recebeu revisão independente root: crypto híbrido/RSA/AAD/keyId, autorização/ticket/fences, configsession-only, limites, privacidade, DriveACL/readback e contratoGETBearer/POSTsessão.36/36 testes focados independentes passaram. Streaming semContent-Length e >6MiB com hash íntegro. Integração, metadados0013, configuração/cópia/restore real ainda pendentes. Nova frente0015MailApp delegada em paralelo, dependente de0014; envio realOFF enquanto conta/OAuth não definidos.
+
+### Checkpoint integrado · 31/10/2026, 12h30 BRT
+
+Rootv12-coordenacao em63b6037 mais relatórios locais. Acesso público d49834e+568abf9+0ca4176, backuprecorrente e5f7c3d+a54d8fa, backendacompanhamentoeec4156+56d8128, leituraautoritativa63b6037 integrados. Modelos agora db/schema.ts reexporta db/base-schema.ts e db/follow-up-schema.ts sem ciclos; 0014snapshot76tabelas/journal completos e diffzero. Nenhum SQLjápublicado alterado.582/582 testes integrados Node26 passaram,19focadosNode24 e tipos/lintfocados semerros. Backupfixture atualizado com o vínculo real doowner para não simular conta participante nos testes de nãoexportação.
+
+Relatórios novos: Demandas/Prioridades eConferências/Avarias, com escopoSQLigualàárea de acompanhamento, inclusiveorg-wide deadmins e históricoarquivado. Período usa criação emBrasília, prazo/atraso separados; linhas portamanho/material/unidade, contagens ausentes continuamNULL, avaria nãoéquantidadefaltante; quantidades de unidadesdiferentes não produzemtotalúnico. Dados de contato/corpo/observações privados não entram.20testes de relatórios/estados/medidas passaram. Formatos usam exportadores reaisPDF/DOCX/XLSX existentes; CUAcomdadosdeconferência será conferido apósUIintegrada.
+
+Revisão independente adicional de0014 encontrou P1: operacional rebaixado aviewer entre pré-leitura ecommit, comgrantdetarefa sobrevivente, ainda podia encerrar divergência/criar acompanhamento. ProbeSQLite semsleep reproduziu; autor corrigindo guardoperacional dentrobatch e revisor reconferirá. Não publicar0014atéfechar. UI/Sheetsfinal0014 e email0015 ainda em agentes; nenhuma mensagemexterna deQA.
+
+Correção de leiturasfoi isolada naPR#11 https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/11, headf53fcec2655da302bff08cb551a026f13143d8bf, sobreV11, sem backend0014. CI em andamento. Sete probesindependentes passaram; árvoreintegradamantémversõesautoritatativas, semGETwrite. Isso permite publicá-la sem esperar funcionalidades novas. Produção permaneceV11SHA55bf5f7nestecheckpoint.
+
+Backupnovo foiensaiadoOFFLINE comconteúdo do backuprealV10/snapshot97, convertidoaoformato2:1objeto, SQLite761.856bytes, arquivo cifrado465.984bytes, recuperação física e hashes relidos, zero chamadasexternas e réplicaprópria removida. Não é ainda execução da rotinaautomáticaprodução. A chave pública será configuradaapóspublicação; chaveprivadanuncaservidor/AppsScript/Drive. Custódiaexternaindependente pendente.
