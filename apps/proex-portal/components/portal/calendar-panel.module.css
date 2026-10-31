@@ -7,6 +7,10 @@
 
 /* V8: layout pelo espaço real do conteúdo (container queries), não pela largura da janela. */
 .panel{container-type:inline-size;container-name:agenda}
+.filterDisclosure{margin-top:12px;min-width:0}
+.filterDisclosure>summary{min-height:44px;cursor:pointer;padding:11px 12px;border:1px solid var(--line);border-radius:9px;font-size:12px;font-weight:600;color:var(--brand-ink);background:var(--surface)}
+.filterBody{display:grid;gap:16px;padding-top:16px;min-width:0}
+.filterBody .actions,.filterBody .help{margin-top:0}
 .filters{grid-template-columns:repeat(6,minmax(0,1fr));gap:12px}
 .filters>:global(.p-field){grid-column:span 2}
 .filters>:global(.p-field):nth-child(4),.filters>:global(.p-field):nth-child(5){grid-column:span 3}

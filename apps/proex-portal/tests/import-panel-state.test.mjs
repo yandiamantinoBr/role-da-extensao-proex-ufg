@@ -41,6 +41,20 @@ function harness(initialProps = props) {
  return h;
 }
 const file = (name, content = 'Nome: Equipamento A\nTombamento: 000123') => new File([content], name, { type: 'text/plain' });
+
+test('collapsed importer keeps a named expanded-state action and restores the source and explanation when reopened', () => {
+ const h = harness();
+ h.find('textarea', () => true).props.onChange({ target: { value: 'Nome: Fonte sintética preservada' } }); h.render();
+ assert.ok(h.text().includes('Confira dados e fonte antes de salvar.'));
+ h.button('Fechar importação').props.onClick(); h.render();
+ assert.equal(h.button('Abrir importação').props['aria-expanded'], false);
+ assert.equal(h.text().includes('Confira dados e fonte antes de salvar.'), false);
+ h.button('Abrir importação').props.onClick(); h.render();
+ assert.equal(h.button('Fechar importação').props['aria-expanded'], true);
+ assert.equal(h.content(), 'Nome: Fonte sintética preservada');
+ assert.ok(h.text().includes('Confira dados e fonte antes de salvar.'));
+ assert.equal(h.requests.length, 0);
+});
 function deferredFile(name) { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); const value = file(name); value.text = () => promise; return { value, resolve, reject }; }
 
 test('selecting an invalid replacement clears the former file and cannot submit its stale content', async () => {

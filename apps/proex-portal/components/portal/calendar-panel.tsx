@@ -77,6 +77,9 @@ export default function CalendarPanel({ projects: sourceProjects, organizational
   return <div className={styles.panel}>
     <section className="p-card" aria-label="Filtros da agenda">
       <div className="p-card-title"><span className="p-icon-tile"><CalendarDays size={21}/></span><div><h3>Agenda integrada</h3><p>Reservas, atividades e movimentações reais, no horário de Brasília.</p></div></div>
+      <div className={styles.summaryRow}><div className={styles.rangeSummary}><strong>{validRange?`${prettyDay(from)} a ${prettyDay(to)}`:'Escolha as datas inicial e final'}</strong><span>{scopeName} · {category==='all'?'Todas as categorias permitidas':labels[category as CalendarCategory]}</span></div>
+</div>
+      <details className={styles.filterDisclosure}><summary>Filtrar período e contexto</summary><div className={styles.filterBody}>
       <div className={styles.filters}>
         <label className="p-field"><span>Categoria</span><select value={category} onChange={event=>{setCategory(event.target.value);setSelectedDay('');}}><option value="all">Todas as categorias permitidas</option>{(data?.availableCategories??Object.keys(labels)).map(value=><option key={value} value={value}>{labels[value as CalendarCategory]}</option>)}</select></label>
         <label className="p-field"><span>Unidade responsável</span><select value={unitId} onChange={event=>{const next=event.target.value;setUnitId(next);if(next&&projects.find(project=>project.id===projectId)?.unitId!==next)setProjectId('');setSelectedDay('');}}><option value="">Todas as unidades</option>{groupUnits(organizationalUnits.map(unit=>({...unit,name:String(unit.name),group_label:String(unit.group_label??'')}) as typeof unit & {name:string;group_label:string;acronym?:unknown})).map(group=><optgroup key={group.group} label={group.group}>{group.units.map(unit=><option key={String(unit.id)} value={String(unit.id)}>{unit.acronym?`${unit.acronym} · `:''}{unit.name}</option>)}</optgroup>)}</select></label>
@@ -84,11 +87,12 @@ export default function CalendarPanel({ projects: sourceProjects, organizational
         <label className="p-field"><span>Data inicial</span><input type="date" value={from} onChange={event=>{setFrom(event.target.value);setSelectedDay('');}}/></label>
         <label className="p-field"><span>Data final (incluída)</span><input type="date" value={to} min={from} onChange={event=>{setTo(event.target.value);setSelectedDay('');}}/></label>
       </div>
-      <div className={styles.summaryRow}><div className={styles.rangeSummary}><strong>{validRange?`${prettyDay(from)} a ${prettyDay(to)}`:'Escolha as datas inicial e final'}</strong><span>{scopeName} · {category==='all'?'Todas as categorias permitidas':labels[category as CalendarCategory]}</span></div>
-      <div className={styles.actions}><button type="button" className="p-button p-button-subtle" onClick={()=>setReload(value=>value+1)} disabled={loading||!validRange}><RefreshCw size={16}/>Atualizar consulta</button>{validRange?<a className="p-button p-button-subtle" href={`/api/calendar?${query}&format=ics`}><Download size={16}/>{downloadLabel}</a>:<button type="button" className="p-button p-button-subtle" disabled><Download size={16}/>{downloadLabel}</button>}</div></div>
+      <div className={styles.actions}><button type="button" className="p-button p-button-subtle" onClick={()=>setReload(value=>value+1)} disabled={loading||!validRange}><RefreshCw size={16}/>Atualizar consulta</button>{validRange?<a className="p-button p-button-subtle" href={`/api/calendar?${query}&format=ics`}><Download size={16}/>{downloadLabel}</a>:<button type="button" className="p-button p-button-subtle" disabled><Download size={16}/>{downloadLabel}</button>}</div>
+      <p className={styles.help}>O arquivo .ics inclui as datas e os filtros acima. Materiais e consumo mostram movimentações registradas; contatos e observações internas ficam no portal.</p>
+      </div></details>
       {entries.length>0&&<div className={styles.totals} role="group" aria-label="Registros por categoria no período">{totals.map(([kind,total])=><button key={kind} type="button" aria-pressed={category===kind} className={category===kind?styles.totalActive:''} onClick={()=>{setCategory(current=>current===kind?'all':kind);setSelectedDay('');}}><span style={{background:colors[kind]}}/><b>{total}</b>{labels[kind]}</button>)}</div>}
       {!validRange&&<p className="p-inline-error" role="alert">Escolha um período válido de até dois anos, com a data final igual ou posterior à inicial.</p>}{displayError&&<p className="p-inline-error" role="alert">{displayError}</p>}
-      <p className={styles.help}>O arquivo .ics inclui as datas e os filtros acima. Materiais e consumo mostram movimentações registradas; contatos e observações internas ficam no portal.</p>
+
     </section>
     <div className={styles.workspace}>
     <section className="p-card" aria-label="Visão mensal da agenda" aria-busy={loading}>

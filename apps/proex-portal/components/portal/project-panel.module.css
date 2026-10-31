@@ -95,6 +95,10 @@
 .showMore{display:block;width:100%;margin-top:10px;border:1px dashed var(--line);background:var(--surface-soft);color:var(--brand-ink);border-radius:10px;min-height:44px;font-size:12px;font-weight:600}
 
 .panel{container-name:projects;container-type:inline-size}
+.adminMenu{min-width:0}
+.adminMenu>summary,.refine>summary{min-height:44px;cursor:pointer;padding:11px 12px;border:1px solid var(--line);border-radius:9px;font-size:12px;font-weight:600;color:var(--brand-ink);background:var(--surface)}
+.adminMenu>.actions{padding-top:12px}
+.adminMenu[open]{flex-basis:100%}
 .organizationContext{border:1px solid var(--line);border-radius:12px;background:var(--surface-soft);padding:16px;margin-bottom:20px;min-width:0;overflow-wrap:anywhere}
 .organizationContext :global(.p-field){margin:0}
 .panel :global(.p-button){min-height:44px}
@@ -111,3 +115,9 @@
   .quickLink{min-width:0;flex-basis:100%}.quickLink span{min-width:0;overflow-wrap:anywhere}
   .facts div{grid-template-columns:1fr;gap:2px}
 }
+.heading{flex-wrap:wrap}
+.filters{grid-template-columns:minmax(0,1fr);gap:12px;padding:18px}
+.refine{grid-column:1/-1;min-width:0}
+.refine>summary>span{margin-left:10px;font-size:11px;color:var(--text-secondary)}
+.refineFields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;padding-top:16px}
+@container projects (max-width:620px){.refineFields{grid-template-columns:minmax(0,1fr)}.heading .actions{align-items:flex-start}.adminMenu{flex:1}.heading .actions>button{flex:1}}
