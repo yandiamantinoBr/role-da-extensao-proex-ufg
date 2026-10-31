@@ -1,4 +1,8 @@
 .panel{min-width:0;container-type:inline-size;container-name:organizations;display:grid;gap:20px}
+.catalogDisclosure{min-width:0;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.catalogDisclosure>summary{cursor:pointer;min-height:44px;padding:12px 16px;font-weight:600;font-size:13px;color:var(--brand-ink)}
+.catalogDisclosure>summary>span{font-weight:400;color:var(--text-secondary);font-size:12px;margin-left:8px}
+.catalogDisclosure[open]>.panel{padding:18px;border-top:1px solid var(--line)}
 .panel h2,.panel h3,.panel h4{overflow-wrap:anywhere;margin:0}
 .panel :global(.p-field){min-width:0}
 .panel :global(.p-button),.panel :global(.p-icon-button){min-height:44px}
@@ -15,6 +19,7 @@
 .card>button{margin-top:auto;width:100%;justify-content:center}
 .card>button[aria-pressed=true]{border-color:var(--brand-ink);color:var(--brand-ink)}
 .workspace{min-width:0;display:grid;gap:20px}
+.card,.workspace{padding:clamp(18px,3vw,24px)}
 .loading{display:flex;align-items:center;gap:10px;font-size:13px}
 .editor{min-width:0;border-block:1px solid var(--line);padding-block:20px}
 .editor fieldset{border:0;padding:0;margin:0;min-width:0;display:grid;gap:16px}

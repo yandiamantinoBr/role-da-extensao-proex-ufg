@@ -1,0 +1,13 @@
+.groups { display: grid; gap: 16px; min-width: 0; }
+.group { min-width: 0; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); color: var(--ink); }
+.group > summary { min-height: 44px; padding: 16px 20px; cursor: pointer; }
+.group > summary strong { font-size: 16px; line-height: 1.5; }
+.group > summary small { display: block; margin-top: 4px; color: var(--text-secondary); font-size: 12px; line-height: 1.6; }
+.group[open] > summary { border-bottom: 1px solid var(--line); }
+.body { display: grid; gap: 20px; padding: 20px; min-width: 0; }
+.group .body > :global(.p-card) { margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.body > :global(.p-section) { margin: 0; }
+@media (max-width: 480px) {
+  .group > summary { padding: 14px 16px; }
+  .body { padding: 16px; }
+}

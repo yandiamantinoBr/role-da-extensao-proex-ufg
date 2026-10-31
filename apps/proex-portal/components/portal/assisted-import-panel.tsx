@@ -133,8 +133,9 @@ export default function AssistedImportPanel({ kind, projects, projectTypes = [],
   }
   const name = kind === 'project' ? 'projeto' : 'bem patrimonial';
   return <section className={`p-card ${styles.panel}`}>
-    <div className="p-row-between"><div><h3><FileInput size={19}/> Importar {name}</h3><p className="p-form-help">Confira dados e fonte antes de salvar. {kind === 'asset' ? 'Fotos e documentos ficam no registro privado do bem.' : 'A fonte pública não cria contas nem concede acesso.'}</p></div><button type="button" className="p-button p-button-subtle" disabled={busy || !!receipt} onClick={() => { setOpen(value => !value); setError(''); }}>{open ? <X size={16}/> : <FileInput size={16}/>}<span>{open ? 'Fechar' : 'Abrir importação'}</span></button></div>
+    <div className={styles.header}><div><h3><FileInput size={19}/> Importar {name}</h3></div><button type="button" className="p-button p-button-subtle" aria-expanded={open} disabled={busy || !!receipt} onClick={() => { setOpen(value => !value); setError(''); }}>{open ? <X size={16}/> : <FileInput size={16}/>}<span>{open ? 'Fechar' : 'Abrir'}<span className={styles.srOnly}> importação</span></span></button></div>
     {open && <div className={styles.body}>
+      <p className="p-form-help">Confira dados e fonte antes de salvar. {kind === 'asset' ? 'Fotos e documentos ficam no registro privado do bem.' : 'A fonte pública não cria contas nem concede acesso.'}</p>
       {!receipt && <>
         {contextDiffers && <p className="p-form-help" role="status">O filtro geral mostra {defaultProjectId ? projects.find(project => project.id === defaultProjectId)?.name ?? 'outro projeto' : 'todos os projetos'}. Esta importação continua destinada a <strong>{projectId ? projects.find(project => project.id === projectId)?.name ?? 'projeto selecionado' : 'novo projeto'}</strong>. A prévia e os arquivos foram preservados; confira o destino antes de confirmar.</p>}
         {!preview ? <fieldset disabled={busy || readingFile} className={styles.fieldset}>

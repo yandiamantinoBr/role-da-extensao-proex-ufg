@@ -49,6 +49,59 @@ function database() {
 }
 const createInput = () => ({ name: 'A'.repeat(120), shortName: 'PROEX', description: 'An institutional project', status: 'active', color: '#54216c', officialUrl: 'https://example.invalid/project', startsAt: '2026-10-20T10:00:00-03:00', endsAt: '2027-10-20T10:00:00-03:00', location: 'Campus', operationKey: crypto.randomUUID() });
 
+function availabilityItem(db,id,{category='equipment',stock=1,reserved=0,condition='active',projectId='project-a'}={}) {
+ db.native.prepare('INSERT INTO items(id,project_id,name,category,unit,stock,reserved,condition,created_at) VALUES(?,?,?,?,?,?,?,?,?)').run(id,projectId,id,category,'unidade',stock,reserved,condition,new Date().toISOString());
+}
+function availabilityLoan(db,user,item,id,status,starts,ends) {
+ db.native.prepare('INSERT INTO loans(id,project_id,item_id,action_name,borrower_name,borrower_contact,starts_at,ends_at,status,created_by,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)').run(id,'project-a',item,'Synthetic action','Synthetic borrower','private-synthetic-contact',starts,ends,status,user.userId,new Date().toISOString());
+}
+
+test('project detail projects current availability without exposing loans to an inventory-only reader', async () => {
+ const db=database(),inventory=actor(db,'inventory','project-a'),now=Date.now();
+ try {
+  for(const id of ['free','out','reserved-now','reserved-future','returned','cancelled','maintenance','empty']) availabilityItem(db,id,{condition:id==='maintenance'?'maintenance':'active',stock:id==='empty'?0:1});
+  availabilityItem(db,'gifts',{category:'gift',stock:5,reserved:3}); availabilityItem(db,'foreign',{projectId:'project-b'});
+  availabilityLoan(db,inventory,'out','loan-out','out',now-120000,now-60000);
+  availabilityLoan(db,inventory,'reserved-now','loan-reserved','reserved',now-60000,now+3600000);
+  availabilityLoan(db,inventory,'reserved-future','loan-future','reserved',now+3600000,now+7200000);
+  availabilityLoan(db,inventory,'returned','loan-returned','returned',now-120000,now-60000);
+  availabilityLoan(db,inventory,'cancelled','loan-cancelled','cancelled',now-120000,now+3600000);
+  const detail=await projectDetail(db,inventory,'project-a');
+  assert.equal(detail.relationships.loans,null);
+  assert.deepEqual(Object.fromEntries(detail.relationships.items.map(item=>[item.id,item.available])),{cancelled:1,empty:0,free:1,gifts:2,maintenance:0,out:0,'reserved-future':1,'reserved-now':0,returned:1});
+  assert.equal(JSON.stringify(detail).includes('private-synthetic-contact'),false);
+  assert.equal(JSON.stringify(detail.relationships.items).includes('loan-out'),false);
+  assert.equal(detail.relationships.items.find(item=>item.id==='out').stock,1);
+ } finally { db.native.close(); }
+});
+
+test('availability checks every blocking loan even when that loan is outside the 100-row relationship page', async () => {
+ const db=database(),owner=actor(db,'owner',null),now=Date.now();
+ try {
+  availabilityItem(db,'projector');
+  availabilityLoan(db,owner,'projector','old-blocking-loan','out',now-864000000,now-863000000);
+  for(let i=0;i<101;i++) availabilityLoan(db,owner,'projector',`returned-${i}`,'returned',now-86400000+i*1000,now-86000000+i*1000);
+  const detail=await projectDetail(db,owner,'project-a');
+  assert.equal(detail.relationships.loans.length,100);
+  assert.equal(detail.relationships.loans.some(loan=>loan.id==='old-blocking-loan'),false);
+  assert.equal(typeof detail.relationships.loans[0].starts_at,'number');
+  assert.equal(typeof detail.relationships.loans[0].ends_at,'number');
+  assert.equal(detail.relationships.items[0].available,0);
+ } finally { db.native.close(); }
+});
+
+test('availability projection rechecks live inventory permission before returning item values', async () => {
+ const db=database(),inventory=actor(db,'inventory','project-a');
+ try {
+  availabilityItem(db,'private-item');
+  const prepare=db.prepare; let demoted=false;
+  db.prepare=sql=>{if(sql.includes('FROM items i WHERE i.project_id=?')){db.native.prepare("UPDATE members SET role='viewer' WHERE user_id=?").run(inventory.userId);demoted=true;}return prepare(sql);};
+  const detail=await projectDetail(db,inventory,'project-a');
+  assert.equal(demoted,true); assert.deepEqual(detail.relationships.items,[]);
+  assert.equal(JSON.stringify(detail).includes('private-item'),false);
+ } finally { db.native.close(); }
+});
+
 const replayActions=['project.create','project.update','project.link.create','project.schedule.create','call.create','project.type.create'];
 function replayInput(action){
  const common={projectId:'project-a',operationKey:crypto.randomUUID()};

@@ -39,6 +39,7 @@ Yan declarou: “Autorizo push, PR, merge e deploy da V9 e de todas as próximas
 | R20 | Central de notificações e sininho | Notificações persistentes de atribuição e pendências, lidas/não lidas, destinatários individuais e equipes autorizados; revogação impede leitura e envio | Frente acompanhamento |
 | R21 | E-mail automático sem nova plataforma paga | Remetente explícito e configurável, integração Google existente com cotas, preferências, fila e estado de envio honesto; nenhum e-mail real em QA | MailApp pesquisado; configuração e ativação ainda pendentes |
 | R22 | Compartilhamento por WhatsApp | Compartilhar título/link mínimo por ação da pessoa; envio automático é evolução separada, dependente de configuração oficial e custos conferidos | Link manual previsto; automação não ativada |
+| R23 | Auditoria e melhoria visual de todo o portal | Corrigir filtros/ações colados e sino claro; conferir todas as famílias/abas/funcionalidades em desktop/mobile e claro/escuro, teclado, estados vazios/preenchidos/erro, contraste, toque, consistência; auditoria independente com rubrica fixa e meta mínima 9/10, sem inventar aprovação | Pedido humano posterior à V13; implementação V14 e avaliação integrada em andamento |
 
 ## Fontes e padrões técnicos
 
@@ -68,3 +69,8 @@ Planilha global exige acesso restrito à administração. Visualizações filtra
 ## Estado comprovado após a V10 · 31/10/2026
 
 R01: V9 e V10 publicadas/verificadas, PRs8/9 e SHAs registrados. R02: primeira sincronização real retomada, 28 tabelas; ACL/cópia privada e script conferidos, execução automática ainda pendente. R03: convites limitados e catálogo oficial publicados, sem envio real de convites em QA. R05/R06/R08/R09: importação com prévia e relatórios reais publicados/testados; ausências de extração permanecem explícitas. R07 estruturado, R04 organizações e R10–R13 IA/STT/TI estão em integração local. R16: backup completo real recuperado e cópia privada fora do Supabase relida; recorrência/transferência da chave e público continuam pendentes. Nenhum plano fecha os itens restantes. Veja `ENTREGA-V10.md` e a seção mais recente de `ANDAMENTO.md`.
+
+
+## Pedido visual posterior à V13 · R23, 31/10/2026
+
+Yan forneceu duas capturas e apontou toolbar `flex flex-wrap gap-2` colada aos filtros `grid gap-3 rounded-2xl...`, no desktop e celular, além do sino inadequado no modo claro. Pediu varredura do site inteiro, análise crítica e auditorias independentes para alcançar pelo menos 9/10. Manter as tarefas anteriores em paralelo. A nota é gate de produto com rubrica/evidências, não certificação de acessibilidade nem justificativa para elevar notas sem observar os estados. Fontes e baseline em apps/proex-portal/docs/AUDITORIA-DESIGN-V14-PRELIMINAR.md.

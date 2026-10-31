@@ -147,7 +147,7 @@ export default function OrganizationsPanel({ organizations, currentActor, people
     const [local, setLocal] = useState<{ source: OrganizationSummary[]; rows: OrganizationSummary[] } | null>(null);
     const rows = local?.source === organizations ? local.rows : organizations;
     const [selectedId, setSelectedId] = useState(''), [creating, setCreating] = useState(false), [query, setQuery] = useState(''), [notice, setNotice] = useState('');
-    const selected = rows.find(row => row.id === selectedId) ?? (rows.length === 1 ? rows[0] : undefined);
+    const selected = rows.find(row => row.id === selectedId);
     const refresh = useCallback(async () => {
         try { const result = await organizationRequest<{ organizations: OrganizationSummary[] }>(); setLocal({ source: organizations, rows: result.organizations }); await onChanged(); }
         catch { setNotice('Alteração salva. Atualize a página para conferir seus acessos atuais.'); }
@@ -157,7 +157,7 @@ export default function OrganizationsPanel({ organizations, currentActor, people
         setCreating(false); setSelectedId(organization.id); setNotice('Organização salva.'); await refresh();
     }
     const visible = rows.filter(row => row.name.toLocaleLowerCase('pt-BR').includes(query.trim().toLocaleLowerCase('pt-BR')));
-    return <section className={`p-section ${styles.panel}`}>
+    return <section className="p-section"><details className={styles.catalogDisclosure}><summary>Organizações e administração <span>{rows.length} disponível(is)</span></summary><div className={styles.panel}>
         <div className={styles.sectionHeading}><div><h2>Organizações</h2><p className="p-form-help">Projetos e acessos separados por organização. As unidades UFG continuam no catálogo institucional.</p></div>{currentActor.isPlatformOwner && <button type="button" className="p-button p-button-primary" onClick={() => { setCreating(true); setNotice(''); }}><Plus size={17} />Nova organização</button>}</div>
         {notice && <p className={styles.notice} role="status">{notice}</p>}
         {creating && currentActor.isPlatformOwner && <section className="p-card"><div className={styles.sectionHeading}><h3>Nova organização</h3><button type="button" className="p-icon-button" aria-label="Fechar criação de organização" onClick={() => setCreating(false)}><X size={18} /></button></div><OrganizationEditor organization={null} onSaved={saved} onCancel={() => setCreating(false)} /></section>}
@@ -165,5 +165,5 @@ export default function OrganizationsPanel({ organizations, currentActor, people
         <div className={styles.grid}>{visible.map(organization => <article key={organization.id} className={`p-card ${styles.card}`}><Building2 size={23} aria-hidden="true" /><h3>{organization.name}</h3><span className="p-badge">{organization.status === 'active' ? 'Ativa' : 'Arquivada'}</span><p>{organization.canManage ? 'Você administra os projetos e acessos desta organização.' : 'Você participa conforme os projetos concedidos à sua conta.'}</p>{organization.canManage && <button type="button" className="p-button p-button-subtle" aria-pressed={selected?.id === organization.id} onClick={() => { setSelectedId(organization.id); setCreating(false); }}><ShieldCheck size={16} />Gerenciar organização</button>}</article>)}</div>
         {!visible.length && <p className="p-empty">{query ? 'Nenhuma organização encontrada.' : 'As organizações aparecerão conforme os acessos concedidos à sua conta.'}</p>}
         {selected?.canManage && <OrganizationWorkspace key={selected.id} organization={selected} currentActor={currentActor} people={people} onChanged={refresh} onSaved={saved} />}
-    </section>;
+    </div></details></section>;
 }

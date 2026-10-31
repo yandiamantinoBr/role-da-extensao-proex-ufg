@@ -1,4 +1,5 @@
 .panel { container-type: inline-size; }
+.panel :global(.p-button) { min-height: 44px; }
 .help { color: var(--muted); font-size: .875rem; line-height: 1.6; }
 .fields { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; }
 .fields input, .fields textarea { width: 100%; min-width: 0; }
