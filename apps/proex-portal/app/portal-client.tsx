@@ -852,6 +852,7 @@ export default function PortalClient({ initial }: {
         <ReportsCenter initialDataset={canAny('reports.read') ? reportInitialDataset : 'demands'} projectId={filter} unitId={unitFilter} area={areaFilter} from={reportFrom} to={reportTo} available={[
           ...(projects.length ? ['projects' as const] : []),
           ...(canAny('inventory.read', 'reports.read') ? ['materials', 'movements', 'outflows'] as const : []),
+          ...(canAny('inventory.read', 'loans.read', 'reports.read') ? ['outflow_details' as const] : []),
           ...(canAny('loans.read', 'reports.read') ? ['loans' as const] : []),
           ...(canAny('reports.read', 'inventory.read', 'loans.read') ? ['records' as const] : []),
           ...(canAny('reports.read', 'campaigns.manage') ? ['campaigns' as const] : []),
