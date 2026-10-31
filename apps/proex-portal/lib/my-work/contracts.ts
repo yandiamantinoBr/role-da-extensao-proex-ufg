@@ -5,7 +5,8 @@ export type WorkArea = typeof WORK_AREAS[number];
 export type OperationalArea = WorkArea | 'general';
 export type AssignmentVia = 'direct' | 'team' | 'both';
 export type AssignmentFilter = 'all' | 'direct' | 'team';
-export type MyWorkStatus = 'pending' | 'all' | 'completed';
+export const MY_WORK_STATUSES = ['pending','all','completed','attention','overdue','due_today','in_progress','blocked','open','cancelled'] as const;
+export type MyWorkStatus = typeof MY_WORK_STATUSES[number];
 export type WorkAssignee = { user_id: string | null; team_id: string | null; name: string };
 export type WorkTarget = { kind: OperationalArea; id: string | null; name: string | null; canOpen: boolean; href: string | null };
 export type TaskCounts = { total: number; pending: number; attention: number; overdue: number; dueToday: number; inProgress: number; blocked: number; completed: number; cancelled: number };
@@ -53,7 +54,7 @@ export function isResponsibility(value: unknown): value is Responsibility {
  return object(value) && typeof value.id === 'string' && typeof value.project_id === 'string' && typeof value.organization_id === 'string' && typeof value.project_name === 'string' && typeof value.organization_name === 'string' && WORK_AREAS.includes(value.area as WorkArea) && ['active', 'revoked'].includes(String(value.status)) && count(value.version) && Number(value.version) > 0 && typeof value.created_at === 'string' && typeof value.updated_at === 'string' && assignees(value.assignees) && (value.assignmentVia === null || via(value.assignmentVia)) && typeof value.canEdit === 'boolean' && target(value.target) && ['item_id', 'loan_id', 'campaign_id'].every(key => value[key] === null || typeof value[key] === 'string');
 }
 export function isMyWorkResponse(value: unknown): value is MyWorkResponse {
- if (!object(value) || value.version !== 1 || typeof value.viewerId !== 'string' || value.timeZone !== 'America/Sao_Paulo' || typeof value.asOf !== 'string' || typeof value.today !== 'string' || value.totalsScope !== 'organization-project-assignment' || !object(value.scope) || !['all', 'direct', 'team'].includes(String(value.scope.assignment)) || !['pending', 'all', 'completed'].includes(String(value.scope.status)) || !object(value.totals) || !counts(value.totals.tasks) || !object(value.totals.responsibilities) || !count(value.totals.responsibilities.total)) return false;
+ if (!object(value) || value.version !== 1 || typeof value.viewerId !== 'string' || value.timeZone !== 'America/Sao_Paulo' || typeof value.asOf !== 'string' || typeof value.today !== 'string' || value.totalsScope !== 'organization-project-assignment' || !object(value.scope) || !['all', 'direct', 'team'].includes(String(value.scope.assignment)) || !MY_WORK_STATUSES.includes(value.scope.status as MyWorkStatus) || !object(value.totals) || !counts(value.totals.tasks) || !object(value.totals.responsibilities) || !count(value.totals.responsibilities.total)) return false;
  if (!['organizationId', 'projectId'].every(key => value.scope && object(value.scope) && (value.scope[key] === null || typeof value.scope[key] === 'string'))) return false;
  if (!Array.isArray(value.areas) || !value.areas.every(row => object(row) && area(row.area) && counts(row.taskCounts) && count(row.responsibilityCount))) return false;
  const page = (input: unknown, validate: (row: unknown) => boolean) => object(input) && count(input.total) && typeof input.hasMore === 'boolean' && (input.nextOffset === null || count(input.nextOffset)) && Array.isArray(input.items) && input.items.length <= 50 && input.items.every(validate);
