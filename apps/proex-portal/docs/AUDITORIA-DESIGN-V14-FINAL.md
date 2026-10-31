@@ -1,25 +1,27 @@
 # Auditoria independente de design — V14
 
-Data: 31/10/2026. **Estado: reavaliação pendente das recapturas; nota final ainda não emitida.** Publicação V14 não é afirmada por este documento.
+Data: 31/10/2026. **Reavaliação concluída: 9,0/10 nos estados observados** (média ponderada: 9,045). É aceite de design do candidato `c35140a`, com os limites abaixo; não é certificação WCAG, comprovação de todas as combinações possíveis ou declaração de publicação V14.
 
-Esta revisão compara a base `23bbeae` (V13 `d069c7f`) com a coleta principal `186e44f` e recapturas pontuais de `3fa3222`. A correção posterior `0804314` ainda não tem recaptura. A nota inicial de 6,95/10 permanece registrada em `AUDITORIA-DESIGN-V14-PRELIMINAR.md`; os pesos não foram alterados para a reavaliação. O revisor não implementou as mudanças de design, não operou CUA em paralelo, não iniciou servidor/build e não alterou produção ou serviços externos. A inspeção combina leitura de fonte, comparação visual de PNGs locais e medições da coordenação.
+Esta revisão compara a base `23bbeae` (V13 `d069c7f`) com a coleta principal `186e44f`, recapturas pontuais de `3fa3222` e quatro recapturas de Tempo e som do candidato `c35140a`, que inclui `0804314`. A nota inicial de 6,95/10 permanece registrada em `AUDITORIA-DESIGN-V14-PRELIMINAR.md`; os pesos não foram alterados para a reavaliação. O revisor não implementou as mudanças de design, não operou CUA em paralelo, não iniciou servidor/build e não alterou produção ou serviços externos. A inspeção combina leitura de fonte, comparação visual de PNGs locais e medições da coordenação. A nota é um julgamento de produto fundamentado nessa evidência, não uma medida normativa de acessibilidade.
 
 ## Rubrica preservada
 
-| Dimensão | Peso | Base | Reavaliação |
-| --- | ---: | ---: | --- |
-| Hierarquia e próxima ação | 15% | 7,0 | Pendente das últimas recapturas. |
-| Espaçamento e densidade | 10% | 7,5 | Pendente das últimas recapturas. |
-| Tipografia e legibilidade | 10% | 7,0 | Pendente das últimas recapturas. |
-| Contraste e temas | 15% | 6,5 | Pendente das últimas recapturas. |
-| Responsividade e toque | 15% | 7,5 | Pendente das últimas recapturas. |
-| Consistência de componentes | 10% | 7,0 | Pendente das últimas recapturas. |
-| Teclado e semântica | 15% | 6,0 | Pendente das últimas recapturas. |
-| Feedback e estados | 10% | 7,5 | Pendente das últimas recapturas. |
+| Dimensão | Peso | Base | Reavaliação | Fundamentação e limite |
+| --- | ---: | ---: | ---: | --- |
+| Hierarquia e próxima ação | 15% | 7,0 | 9,2 | Trabalho precede configurações secundárias; hero duplicado removido, Projetos/Agenda/Relatórios antecipam o conteúdo. Administração e catálogo ainda acrescentam contexto antes de algumas tarefas. |
+| Espaçamento e densidade | 10% | 7,5 | 9,1 | Filtros/ações têm separação de 24px medida pela coordenação; grupos recolhidos e Backup aberto têm respiro e títulos reconhecíveis. Formulários completos continuam longos. |
+| Tipografia e legibilidade | 10% | 7,0 | 8,8 | Controles móveis de texto/seleção legíveis e texto operacional com contraste corrigido. Metadados/tabelas ainda usam 9–11px em alguns lugares e nomes extensos quebram bastante em células estreitas. |
+| Contraste e temas | 15% | 6,5 | 9,2 | Correções de texto secundário, mensagens de áudio, sino claro e botão da Planilha conferidas. Superfícies/foco distinguíveis nos dois temas; não foi medido cada par de cor possível. |
+| Responsividade e toque | 15% | 7,5 | 9,1 | Quatro contextos principais, amostras de 320px, marca/sino separados e alvos ampliados; tabelas usam rolagem própria. Exceção de dias 40×84px preservada; zoom200% e aparelhos físicos não comprovados. |
+| Consistência de componentes | 10% | 7,0 | 9,1 | Campos, variantes primária/secundária, disclosures e aparência pública coerentes; aliases sem definição removidos do botão da Planilha. Há diferenças justificadas entre painel de gestão e evento lúdico. |
+| Teclado e semântica | 15% | 6,0 | 9,0 | Botões reais de foto, seletor nativo de assunto, disclosures e foco visível; coordenação verificou Enter/Espaço/Escape e restauração nos fluxos críticos citados. Sem execução com leitor de tela pelo revisor. |
+| Feedback e estados | 10% | 7,5 | 8,7 | Erro de login em português, indisponibilidade de IA/voz, limites de exportação e divergência da conferência explícitos. Avisos repetidos da mesma demanda ainda geram ruído concreto. |
+
+Cálculo: `(15×9,2 + 10×9,1 + 10×8,8 + 15×9,2 + 15×9,1 + 10×9,1 + 15×9,0 + 10×8,7) / 100 = 9,045`, apresentado com uma casa decimal. As dimensões abaixo de 9 permanecem visíveis; a nota global não significa perfeição nem que cada dimensão atingiu 9.
 
 ## Evidência e comparação
 
-Artefatos privados: `.sites-runtime/production-v14/`, incluindo `measurements-first-pass.json`, `measurements-final.json` e PNGs `final-*`. Não copiar as imagens para o repositório. A coleta principal final informa `codeRevision:186e44f` e `methodVersion:3`, com desktop de 1250×950 e mobile de 375×950, claro e escuro; foram acrescentadas amostras de 320px e estados de trabalho preenchidos. Viewport CSS é verificado pelos metadados, não inferido apenas dos pixels da imagem.
+Artefatos privados: `.sites-runtime/production-v14/`, incluindo `measurements-first-pass.json`, `measurements-final.json` e PNGs `final-*`. Não copiar as imagens para o repositório. A cópia de `measurements-final.json` lida na conclusão contém 107 registros, revisões `186e44f`/`3fa3222` e `methodVersion:3`, com desktop de 1250×950 e mobile de 375×950, claro e escuro; há amostras de 320px e estados preenchidos. Não foi encontrada ali uma entrada de Tempo e som: sua recaptura/medição posterior é evidência separada, descrita abaixo. Viewport CSS é verificado pelos metadados, não inferido apenas dos pixels da imagem.
 
 Na primeira leitura do arquivo final havia 90 registros: nenhum overflow do corpo, nenhum campo móvel de edição de texto/seleção abaixo de 16px e somente os dias da Agenda abaixo da meta de 44px. A regra de tamanho da fonte não trata checkbox/radio como campo de digitação. São dias de 40×84px em sete colunas, com lista de registros alternativa; essa exceção contextual foi aceita explicitamente. O método não prova ausência de sobreposição entre elementos: a marca e o sino sobrepostos em 320px foram encontrados visualmente apesar de `overflow:false`.
 
@@ -48,7 +50,7 @@ As famílias representam a inspeção do portal; não se afirma que toda combina
 | Configurações, Sheets e backup | Grupos Planilha, Backup, Público e Operação; estados abertos claros/escuros e textos de risco preservados. Recapturas conferem botão primário de Planilha (`744be40`) e respiro/títulos de Backup (`1bdae39`). | QA visual não configura gatilhos ou serviços. Não foi gerada chave real para testar apresentação. |
 | Conta, foto e privacidade | `profile-panel.tsx`, identidade e privacidade; perfil, campos opcionais, senha e ações de anonimização. | Não testado com leitor de tela nem câmera física. |
 | Importação, IA e voz | Prévia patrimonial em 375/320px com destino/proveniência, campos selecionados e confirmação; IA indisponível, configuração e áudio aberto com aviso legível no escuro. | Sem chave real, inferência paga, ditado de pessoa real ou benchmark físico de memória. |
-| Público e entrada | Login e erro em português; cadastro fechado, confirmação incompleta, conta não participante e página real do Rolê nos temas. Evento recapturado após `d39e32f`, incluindo Dado/Presencial. | O fechamento do painel Tempo e som tinha 40×40px e recebeu correção posterior `0804314`; falta recaptura. Não foi realizada participação pública real. |
+| Público e entrada | Login e erro em português; cadastro fechado, confirmação incompleta, conta não participante e página real do Rolê nos temas. Evento recapturado após `d39e32f`, incluindo Dado/Presencial; Tempo e som conferido nos quatro PNGs corrigidos de `c35140a`. | Não foi realizada participação pública real. Leitor de tela, aparelho físico e zoom200% não comprovados. |
 
 ## Fechamento de achados e pendências
 
@@ -56,10 +58,14 @@ Os oito achados da baseline têm correção correspondente na fonte: botões rea
 
 As recapturas pontuais de `3fa3222` foram inspecionadas e fecham os achados de marca/sino em 320px (`9c37a96`), botão de chave da Planilha (`744be40`), respiro/títulos de Backup (`1bdae39`), controles públicos principais (`d39e32f`) e datas/disponibilidade do detalhe do projeto (`3fa3222`). A coordenação informou 755 testes passando em Node 24 e 26, tipos/lint sem erros e builds Node/Worker concluídos; não houve repetição desses testes pelo revisor visual.
 
-**Gates ainda abertos:** recaptura do botão de fechar de Tempo e som após `0804314`, e ensaio de zoom de 200% nos fluxos críticos. Ao tentar selecionar a janela Chrome para o zoom nativo, o runtime de CUA da coordenação não conseguiu determinar sua URL Windows com segurança e exigiu encerrar o uso visual naquele turno. A interrupção foi respeitada, sem ferramenta alternativa ou bypass. Isso limita a evidência: a aprovação final não será inferida só pelo diff ou pela aprovação de testes. A nota final permanece pendente; nenhum 9/10 foi atribuído neste checkpoint.
+**Última recaptura fechada:** os arquivos `final-evento-tempo-som-corrigido-{1250,375}-{light,dark}.png` foram inspecionados visualmente e mostram o painel e seu fechamento legíveis, com foco destacado nos quatro contextos. A coordenação mediu o botão em 44×44px, sem controle pequeno, corte ou overflow nesse estado; verificou Enter para abrir, Espaço para fechar e foco retornando a Tempo e som. Esta medição/teclado é prova relatada da coordenação e não deve ser atribuída ao JSON principal antigo. O próprio código `0804314` confirma a dimensão declarada. A fonte de design avaliada permanece `c35140a`; R24 não está incluído nesta nota.
+
+**Limite ainda aberto: zoom200%.** No turno anterior, selecionar a janela Chrome para zoom nativo foi interrompido pelo runtime, que não conseguiu determinar a URL Windows com segurança. A interrupção foi respeitada. No novo turno, o navegador interno retomou e permitiu a recaptura, mas não ofereceu capability documentada de zoom; os atalhos anteriores não comprovaram mudança de escala. Não houve contorno. A capacidade de ampliar texto200% sem perder conteúdo/função continua não comprovada, e não se declara conformidade a esse critério. Ausência desse ensaio não demonstra texto cortado ou ação inacessível: é limite de teste, não defeito P1/P2 inferido. A evidência de 320px é favorável ao reflow, mas não substitui automaticamente o ensaio de redimensionamento de texto. Referências: [W3C 1.4.4](https://www.w3.org/WAI/WCAG22/Understanding/resize-text.html) e [W3C 1.4.10](https://www.w3.org/WAI/WCAG22/Understanding/reflow.html).
+
+O plano preliminar tratava esse ensaio como gate para a conclusão. A coordenação solicitou neste novo turno uma nota do produto observado com o limite expresso, sem converter a indisponibilidade do teste em defeito. Este parecer substitui o estado pendente da nota; não registra o teste como realizado nem remove a pendência de verificação. Não há bloqueador de design comprovado remanescente nos estados conferidos que exija reprovar o candidato. A publicação e sua aceitação operacional continuam sob coordenação.
 
 **Melhoria residual aberta:** avisos consecutivos da mesma demanda exibem título e estado iguais, sem distinguir a mudança geradora. Na fixture, nove avisos referem-se a quatro demandas e cinco linhas parecem duplicadas. Agrupar por demanda com contagem ou mostrar causa/data curta reduziria o ruído. O problema não bloqueia abertura, leitura, marcação ou fechamento; não foi declarado resolvido.
 
 Não há certificação WCAG nem promessa de ausência de defeitos. As capturas full-page podem deslocar elementos fixos na imagem; esse deslocamento não foi classificado como sobreposição operacional sem confirmação geométrica no viewport. Medições não substituem leitura visual, percurso por teclado, leitor de tela ou aparelho físico. Testes de software e builds relatados pela coordenação são evidências complementares, sem elevar automaticamente uma nota estética/de usabilidade. A roleta livre externa permanece fora do escopo.
 
-Este checkpoint não autoriza publicação ou merge. A coordenação informou que produção permanece na V13/`23bbeae`, com a continuidade registrada separadamente. O próximo turno deve retomar somente os gates pendentes e reaplicar a rubrica, preservando este histórico de evidências.
+Este é um parecer de design, sem execução de publicação ou merge. A coordenação informou builds Worker/Node do candidato e CI da PR15 verdes; testes e CI são complementares à evidência visual, não sua substituição. Produção permanece separada do candidato, conforme os registros de continuidade. A próxima verificação deve comprovar zoom200% quando houver ferramenta documentada e acompanhar os avisos repetidos, sem apresentar tarefas futuras de R24 como entregues nesta versão.
