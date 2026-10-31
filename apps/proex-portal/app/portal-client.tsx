@@ -1,5 +1,6 @@
 'use client';
 import Image from 'next/image';
+import scopeStyles from './scope-filters.module.css';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import PhysicalAttendance from '@/components/portal/physical-attendance';
 import CampaignForm from '@/components/portal/campaign-form';
@@ -577,7 +578,20 @@ export default function PortalClient({ initial }: {
     <p>{tab === 'overview' ? 'Seu início, seus projetos e o que precisa da sua atenção.' : tabs.find(module => module.id === tab)?.description}</p>
     </div>
     </div>
-    {['overview', 'materials', 'loans', 'events', 'reports'].includes(tab) && <section className="p-scope-filters" aria-label="Filtrar registros por unidade, área temática e projeto">
+    {['overview', 'materials', 'loans', 'events', 'reports'].includes(tab) && <section className={`p-scope-filters ${scopeStyles.scope}`} aria-label="Filtrar registros por unidade, área temática e projeto">
+        <div className={scopeStyles.layout}>
+        <Field label="Projeto">
+            <select value={filter} onChange={event => selectProject(event.target.value)}>
+                <option value="">{scopedProjects.length === projects.length ? 'Todos os projetos' : `Todos os ${scopedProjects.length} projeto(s) deste recorte`}</option>
+                {scopedProjects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}
+            </select>
+        </Field>
+        {(filter || unitFilter || areaFilter) && <button type="button" className={`p-button p-button-subtle p-filter-clear ${scopeStyles.clear}`} onClick={clearScope}><X size={15} />Limpar filtros</button>}
+        <details className={scopeStyles.refine}>
+            <summary>Refinar contexto
+                {(unitFilter || areaFilter) && <span className={scopeStyles.active}>{[unitFilter ? (unitFilter === '__unassigned__' ? 'Sem unidade vinculada' : string(visibleUnits.find(unit => unit.id === unitFilter)?.acronym || visibleUnits.find(unit => unit.id === unitFilter)?.name) || 'Unidade selecionada') : '', areaFilter ? (areaFilter === '__none__' ? 'Área não informada' : THEMATIC_AREAS.find(area => area.key === areaFilter)?.label || 'Área selecionada') : ''].filter(Boolean).join(' · ')}</span>}
+            </summary>
+            <div className={scopeStyles.fields}>
         <Field label="Unidade responsável">
             <select value={unitFilter} onChange={event => selectUnit(event.target.value)}>
                 <option value="">Todas as unidades ({projects.filter(project => inArea(project)).length})</option>
@@ -592,13 +606,9 @@ export default function PortalClient({ initial }: {
                 {areaCounts.get('__none__') ? <option value="__none__">Área não informada ({areaCounts.get('__none__')})</option> : null}
             </select>
         </Field>
-        <Field label="Projeto">
-            <select value={filter} onChange={event => selectProject(event.target.value)}>
-                <option value="">{scopedProjects.length === projects.length ? 'Todos os projetos' : `Todos os ${scopedProjects.length} projeto(s) deste recorte`}</option>
-                {scopedProjects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}
-            </select>
-        </Field>
-        {(filter || unitFilter || areaFilter) && <button type="button" className="p-button p-button-subtle p-filter-clear" onClick={clearScope}><X size={15} />Limpar filtros</button>}
+            </div>
+        </details>
+        </div>
     </section>}
       {!online && <div className="p-notice p-notice-warning" role="status">
         <WifiOff size={18}/>
@@ -709,7 +719,7 @@ export default function PortalClient({ initial }: {
             </thead>
             <tbody>{searchItems.map(i => <tr key={i.id}>
                 <td>
-                <strong>{i.name}</strong>
+                <button type="button" className="p-text-link" aria-label={`Abrir detalhes de ${i.name}`} onClick={() => setSelectedMaterialId(string(i.id))}><strong>{i.name}</strong></button>
                 <small>{categoryNames[i.category] || i.category} · {projectName(get(i, 'projectId', 'project_id'))}</small>{(i.asset_code || i.assetCode) && <small>Código: {i.asset_code || i.assetCode}</small>}{i.condition !== 'active' && <span className="p-badge p-status-paused">{i.condition === 'maintenance' ? 'Em manutenção' : 'Inativo'}</span>}
                 </td>
                 <td>{i.stock ?? i.quantity ?? 0}<small>{i.unit || 'unidade'}</small>
