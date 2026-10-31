@@ -42,6 +42,7 @@ async function preparedPhoto(file: File): Promise<File> {
 export default function MaterialDetailDrawer(props: Props) { return props.itemId ? <MaterialDialog key={props.itemId} {...props} itemId={props.itemId} /> : null; }
 function MaterialDialog({ itemId, onClose, onChanged, renderWorkContext }: Omit<Props, 'itemId'> & { itemId: string }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const opener = useRef<HTMLElement | null>(null), mounted = useRef(false);
   const cameraInput = useRef<HTMLInputElement>(null), galleryInput = useRef<HTMLInputElement>(null);
   const requestNumber = useRef(0), movementKey = useRef<string | null>(null), categoryKey = useRef<string | null>(null), photoSelection = useRef(0);
   const [loaded, setData] = useState<Detail | null>(null), [tab, setTab] = useState<'summary' | 'move' | 'asset' | 'history' | 'photos' | 'work'>('summary');
@@ -61,11 +62,24 @@ function MaterialDialog({ itemId, onClose, onChanged, renderWorkContext }: Omit<
     }
   }, [itemId]);
   useEffect(() => {
-    const node = dialog.current; node?.showModal();
+    const node = dialog.current;
+    const active = typeof document === 'undefined' ? null : document.activeElement;
+    opener.current = typeof HTMLElement !== 'undefined' && active instanceof HTMLElement && active !== document.body && active !== document.documentElement && !node?.contains(active) ? active : null;
+    mounted.current = true;
+    node?.showModal();
     void reload().catch(failure => setError(failure instanceof Error ? failure.message : 'Não foi possível carregar este material.'));
     const activeRequest = requestNumber;
-    return () => { activeRequest.current++; if (node?.open) node.close(); };
+    return () => { mounted.current = false; activeRequest.current++; if (node?.open) node.close(); };
   }, [reload]);
+  function closed() {
+    // A queued close from an unmounted/reopened dialog must not steal the new target's focus.
+    if (!mounted.current || dialog.current?.open) return;
+    if (typeof document !== 'undefined') {
+      if (opener.current?.isConnected) opener.current.focus({preventScroll: true});
+      if (!opener.current?.isConnected || document.activeElement !== opener.current) document.getElementById('main')?.focus({preventScroll: true});
+    }
+    onClose();
+  }
   async function saved(message: string) {
     setNotice(message);
     try { await reload(); await onChanged?.(); }
@@ -132,7 +146,7 @@ function MaterialDialog({ itemId, onClose, onChanged, renderWorkContext }: Omit<
     finally { setLoadingMore(false); }
   }
   const close = () => dialog.current?.close();
-  return <dialog ref={dialog} className={styles.dialog} aria-labelledby="material-detail-title" onClose={onClose} onClick={event => { if (event.target === event.currentTarget) close(); }}>
+  return <dialog ref={dialog} className={styles.dialog} aria-labelledby="material-detail-title" onClose={closed} onClick={event => { if (event.target === event.currentTarget) close(); }}>
     <div className={styles.shell}>
       <header className={styles.header}><div><span className={styles.eyebrow}>CATÁLOGO DE MATERIAIS</span><h2 id="material-detail-title">{data?.item.name || 'Detalhes do material'}</h2><p>{data?.category?.label || (data ? kindNames[data.item.category] : 'Carregando cadastro…')}</p></div><button className="p-icon-button" onClick={close} aria-label="Fechar detalhes"><X size={22}/></button></header>
       <div className={styles.toolbar}><nav aria-label="Detalhes do material">{([['summary', 'Resumo'], ...(data?.permissions.canManage ? [['move', 'Movimentar']] : []), ...(data?.permissions.canManage && data.item.category === 'equipment' ? [['asset', 'Patrimônio']] : []), ['history', 'Histórico'], ['photos', 'Fotos'], ...(data && renderWorkContext ? [['work', 'Acompanhamento']] : [])] as [typeof tab, string][]).map(([key, label]) => <button key={key} className={tab === key ? styles.activeTab : ''} aria-current={tab === key ? 'page' : undefined} onClick={() => { setTab(key); setError(''); }}>{label}</button>)}</nav><button className="p-icon-button" onClick={() => void reload().catch(failure => setError(failure.message))} aria-label="Atualizar material" disabled={busy}><RefreshCw size={17}/></button></div>

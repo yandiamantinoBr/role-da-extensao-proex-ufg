@@ -1,7 +1,7 @@
 'use client';
 
 import {useEffect, useRef, useState} from 'react';
-import {Building2, CalendarClock, ClipboardList, Gift, Handshake, Layers, RefreshCw, Users, UserRound} from 'lucide-react';
+import {AlertTriangle, Building2, CalendarClock, CircleCheck, CircleDot, ClipboardList, Gift, Handshake, Layers, RefreshCw, Users, UserRound} from 'lucide-react';
 import {isMyWorkResponse, MY_WORK_STATUSES, type AssignmentFilter, type AssignmentVia, type MyWorkResponse, type MyWorkStatus, type OperationalArea, type WorkTarget} from '@/lib/my-work/contracts';
 import {FOLLOWUP_CHANGED} from './follow-up-api';
 import {workApi} from './my-work-api';
@@ -79,16 +79,16 @@ export default function MeuTrabalhoPanel({userId, organizationId = null, project
   }, [key, userId, organizationId, projectId, assignment, status, taskOffset, responsibilityOffset]);
   const counts = data?.totals.tasks;
   const metrics = [
-    {name: 'Atenção', count: counts?.attention, status: 'attention' as const, help: 'Em atraso ou bloqueadas'},
-    {name: 'Prazo hoje', count: counts?.dueToday, status: 'due_today' as const, help: 'Pendentes com prazo hoje'},
-    {name: 'Em andamento', count: counts?.inProgress, status: 'in_progress' as const, help: 'Trabalho iniciado'},
-    {name: 'Concluídas', count: counts?.completed, status: 'completed' as const, help: 'Demandas finalizadas'},
+    {name: 'Atenção', count: counts?.attention, status: 'attention' as const, icon: AlertTriangle, tone: 'warning', help: 'Em atraso ou bloqueadas'},
+    {name: 'Prazo hoje', count: counts?.dueToday, status: 'due_today' as const, icon: CalendarClock, tone: 'warning', help: 'Pendentes com prazo hoje'},
+    {name: 'Em andamento', count: counts?.inProgress, status: 'in_progress' as const, icon: CircleDot, tone: 'info', help: 'Trabalho iniciado'},
+    {name: 'Concluídas', count: counts?.completed, status: 'completed' as const, icon: CircleCheck, tone: 'success', help: 'Demandas finalizadas'},
   ];
   const maxArea = Math.max(1, ...data?.areas.map(area => area.taskCounts.total) ?? []);
   return <section className={styles.panel} aria-label="Meu trabalho" aria-busy={loading}>
     <header className={styles.heading}><div><h2>Meu trabalho</h2><p>Demandas e responsabilidades atribuídas a você ou às suas equipes neste contexto.</p></div><button type="button" className="p-button" onClick={refresh} aria-label="Atualizar meu trabalho"><RefreshCw size={16} aria-hidden="true"/>Atualizar</button></header>
     <div className={styles.assignment} role="group" aria-label="Origem da atribuição">{([['all', 'Todas'], ['direct', 'Diretas'], ['team', 'Por equipe']] as const).map(([value, label]) => <button key={value} type="button" aria-pressed={assignment === value} onClick={() => choose({assignment: value})}>{label}</button>)}</div>
-    <div className={styles.metrics} aria-label="Totais de demandas atribuídas">{metrics.map(metric => <button type="button" key={metric.name} className={styles.metric} aria-pressed={status === metric.status} onClick={() => choose({status: metric.status})}><span>{metric.name}</span><strong>{metric.count ?? '—'}</strong><small>{metric.help}</small></button>)}</div>
+    <div className={styles.metrics} aria-label="Totais de demandas atribuídas">{metrics.map(metric => { const Icon = metric.icon; return <button type="button" key={metric.name} className={styles.metric} data-tone={metric.tone} aria-pressed={status === metric.status} onClick={() => choose({status: metric.status})}><span><Icon size={18} aria-hidden="true"/>{metric.name}</span><strong>{metric.count ?? '—'}</strong><small>{metric.help}</small></button>; })}</div>
     <p className={styles.help}>Os totais abrangem todas as páginas do contexto e da origem escolhida. O filtro de estado abaixo altera a lista de demandas.</p>
     {current?.error && <p role="alert" className={`${styles.notice} ${styles.error}`}>{current.error}</p>}
     <p className={loading ? styles.notice : styles.help} role="status" aria-live="polite" aria-atomic="true">{loading ? 'Consultando atribuições…' : data ? `Demandas (${statusLabels[status]}): ${visibleRange(taskOffset, data.tasks.items.length, data.tasks.total)}. Responsabilidades: ${visibleRange(responsibilityOffset, data.responsibilities.items.length, data.responsibilities.total)}.` : 'Consulta não concluída.'}</p>
