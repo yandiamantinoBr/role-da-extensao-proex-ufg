@@ -251,6 +251,7 @@ export default function PortalClient({ initial }: {
     initial: Snapshot;
 }) {
     const [data, setData] = useState<Snapshot>(initial ?? {});
+    const sessionIdentity = useRef(string(initial?.user?.userId));
     const [tab, setTab] = useState<Tab>('overview');
     const [selectedDemandId, setSelectedDemandId] = useState('');
     const [reportInitialDataset, setReportInitialDataset] = useState<'projects' | 'demands'>('projects');
@@ -288,6 +289,14 @@ export default function PortalClient({ initial }: {
             if (!response.ok || !body)
                 throw new Error(body?.error || 'Não foi possível atualizar. Verifique sua conexão e tente novamente.');
             if (request === latestRequest.current) {
+                const nextIdentity = string(body.user?.userId);
+                if (nextIdentity && sessionIdentity.current && nextIdentity !== sessionIdentity.current) {
+                    // A sessão pode ter sido trocada em outra aba. Descarte o
+                    // contexto de formulários, planos e relatórios da conta anterior.
+                    window.location.reload();
+                    return false;
+                }
+                if (nextIdentity) sessionIdentity.current = nextIdentity;
                 setData(body);
                 setSessionExpired(false);
                 setUpdatedAt(new Date());
@@ -678,7 +687,7 @@ export default function PortalClient({ initial }: {
             </Section>}{can('campaigns.manage') && !prizeProjects.length && <div className="p-explainer"><Gift size={22} /><div><h3>Quais projetos usam roleta e dado?</h3><p>No cadastro do projeto, marque “Habilitar dinâmicas e brindes” para preparar campanhas e compor os kits desta área.</p><button type="button" className="p-text-link" onClick={() => navigate('projects')}>Abrir projetos <ArrowRight size={15} /></button></div></div>}</>}
 
       {tab === 'materials' && <div className="p-materials-panel">
-        <AssistantPanel projects={assistantProjects} defaultProjectId={filter} onApplied={refreshModules}/>
+        <AssistantPanel key={string(user.userId)} projects={assistantProjects} defaultProjectId={filter} onApplied={refreshModules}/>
         <AssistedImportPanel kind="asset" organizations={organizations} projects={projects.map(project => ({ id: string(project.id), name: string(project.name), organization_id: string(get(project, 'organization_id', 'organizationId')), version: Number(project.version ?? 1) }))} items={items.map(item => ({ id: string(item.id), name: string(item.name), project_id: string(get(item, 'projectId', 'project_id')), asset_code: string(item.asset_code) }))} canWrite={id => canProject(id, 'inventory.manage')} defaultProjectId={filter} onImported={refreshModules}/>
         {prizeProjects.length > 0 && <nav className="p-material-tabs" aria-label="Áreas de materiais"><button type="button" aria-pressed={!showPrizeView} className={!showPrizeView ? 'is-active' : ''} onClick={() => setMaterialsView('catalog')}><Boxes size={18} />Catálogo e estoque</button><button type="button" aria-pressed={showPrizeView} className={showPrizeView ? 'is-active' : ''} onClick={() => setMaterialsView('prizes')}><Gift size={18} />Brindes e kits</button></nav>}
         <div hidden={showPrizeView}>
@@ -830,7 +839,7 @@ export default function PortalClient({ initial }: {
             </Section>}</>}
 
       {tab === 'team' && <><OrganizationsPanel organizations={organizations} currentActor={{ userId: string(user.userId), isPlatformOwner }} people={organizationPeople} onChanged={refreshModules}/><OfficialTeamDirectory onSelect={canAny('access.invite') ? setOfficialSuggestion : undefined}/><TeamPanel key={officialSuggestion?.selectionKey ?? 'manual'} officialSuggestion={officialSuggestion} onClearOfficialSuggestion={() => setOfficialSuggestion(null)} users={list(data.users)} members={members} invites={invites} projects={projects} selectedProjectId={filter} globalAdmin={isPlatformOwner} canManageManagers={(projectId, organizationId) => isPlatformOwner || organizations.some(organization => organization.canManage && organization.id === (projectId ? projects.find(project => project.id === projectId)?.organization_id : organizationId))} canProject={canProject} mutate={mutate} now={now}/>{canGlobal('organization.manage') && <AdminPrivacyPanel />}</>}
-      {tab === 'profile' && <><AssistantPanel projects={assistantProjects} defaultProjectId={filter} onApplied={refreshModules}/><ProfilePanel onUpdated={() => { void refresh(); }}/></>}
+      {tab === 'profile' && <><AssistantPanel key={string(user.userId)} projects={assistantProjects} defaultProjectId={filter} onApplied={refreshModules}/><ProfilePanel onUpdated={() => { void refresh(); }}/></>}
       {tab === 'calendar' && <CalendarPanel projects={projects} organizationalUnits={organizationalUnits}/>}
       {tab === 'records' && <RecordsPanel projects={projects} items={items} loans={loans} canWrite={(capability: string, projectId?: string | null) => projectId ? canProject(projectId, capability) : canGlobal(capability)}/>}
 
