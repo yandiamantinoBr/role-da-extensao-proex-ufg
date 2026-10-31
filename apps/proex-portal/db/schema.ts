@@ -521,3 +521,22 @@ export const aiTranscriptions = sqliteTable('ai_transcriptions', {
   organizationId: text('organization_id').notNull().references(() => organizations.id), configRevision: integer('config_revision').notNull(),
   status: text('status').notNull(), resultCiphertext: text('result_ciphertext'), createdAt: text('created_at').notNull(),
 }, t => [primaryKey({ columns: [t.id] }), check('ai_transcriptions_status_check', sql`${t.status} IN ('reserved','complete','failed')`)]);
+
+export const backupAutomationConfiguration = sqliteTable('backup_automation_configuration', {
+  id: text('id'), revision: integer('revision').notNull(), enabled: integer('enabled').notNull().default(0),
+  publicKeyPem: text('public_key_pem').notNull(), keyId: text('key_id').notNull(), driveFolderId: text('drive_folder_id').notNull(),
+  updatedBy: text('updated_by').notNull(), updatedAt: text('updated_at').notNull(),
+}, t => [primaryKey({ columns: [t.id] }), check('backup_automation_configuration_id_check', sql`${t.id}='platform'`), check('backup_automation_configuration_enabled_check', sql`${t.enabled} IN (0,1)`)]);
+export const backupAutomationQuota = sqliteTable('backup_automation_quota', {
+  day: text('day'), issued: integer('issued').notNull().default(0),
+}, t => [primaryKey({ columns: [t.day] }), check('backup_automation_quota_issued_check', sql`${t.issued}>=0`)]);
+export const backupAutomationRuns = sqliteTable('backup_automation_runs', {
+  id: text('id'), operationScope: text('operation_scope').notNull().unique(), actorId: text('actor_id').notNull(), credentialHash: text('credential_hash'),
+  configRevision: integer('config_revision').notNull(), keyId: text('key_id').notNull(), driveFolderId: text('drive_folder_id').notNull(),
+  ticketHash: text('ticket_hash').notNull().unique(), ticketExpiresAt: integer('ticket_expires_at').notNull(), ticketUsedAt: text('ticket_used_at'),
+  status: text('status').notNull(), leaseId: text('lease_id'), artifactSha256: text('artifact_sha256'), artifactSize: integer('artifact_size'),
+  driveFileId: text('drive_file_id'), createdAt: text('created_at').notNull(), generatedAt: text('generated_at'), verifiedAt: text('verified_at'), errorCode: text('error_code'),
+}, t => [primaryKey({ columns: [t.id] }), check('backup_automation_runs_status_check', sql`${t.status} IN ('issued','capturing','generated','verified_client','failed')`), index('backup_automation_runs_created_idx').on(t.createdAt)]);
+export const backupRuntimeLease = sqliteTable('backup_runtime_lease', {
+  id: text('id'), leaseId: text('lease_id').notNull(), expiresAt: integer('expires_at').notNull(),
+}, t => [primaryKey({ columns: [t.id] }), check('backup_runtime_lease_id_check', sql`${t.id}='platform'`)]);
