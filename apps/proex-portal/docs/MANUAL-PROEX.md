@@ -12,6 +12,8 @@ O responsável institucional administra a organização. Gestores operam os proj
 
 O diretório permite alterar funções autorizadas, revogar vínculos e, para o responsável global, bloquear ou reativar contas. Bloquear uma conta impede acesso; não apaga o histórico operacional. O sistema protege o último responsável ativo. Links de recuperação de senha são pessoais, de uso único e validade curta, entregues manualmente após conferência do destinatário.
 
+Complemento de 31/10/2026: a referência [Equipe publicada pela PROEX](EQUIPE-OFICIAL.md) permite buscar nomes, setores e contatos da página oficial, com data de verificação visível. Escolher uma pessoa apenas prepara os campos de conferência do convite. Projeto e função precisam ser escolhidos explicitamente; cargos e e-mails institucionais não concedem permissões. O nome permanece uma referência pública, sem substituir o perfil que a pessoa define ao ativar sua conta.
+
 Na hospedagem própria da PROEX (Cloudflare), o primeiro responsável usa `/configuracao-inicial` com o código de configuração do servidor e o e-mail definido na implantação. Depois disso a página deixa de funcionar e o acesso é sempre por e-mail e senha. Veja `docs/HOSPEDAGEM-PROPRIA.md`.
 
 Abra o detalhe de uma pessoa da equipe para consultar seu perfil e os vínculos visíveis no seu escopo. Um gestor de projeto não recebe acesso a todos os projetos ou a todas as pessoas da organização por abrir esse detalhe. Unidade, vínculo institucional e registro de matrícula/SIAPE descrevem o cadastro; as permissões continuam sendo definidas pelos vínculos de equipe autorizados.

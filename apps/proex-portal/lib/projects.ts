@@ -48,8 +48,18 @@ function manage(actor: PortalActor, projectId: string): void { if (!permitted(ac
 function canSee(actor: PortalActor, projectId: string): boolean { const scope = accessibleProjects(actor); return scope === null || scope.includes(projectId); }
 function guard(actor: PortalActor, projectId: string | null) {
   return { sql: `EXISTS (SELECT 1 FROM members m LEFT JOIN portal_users u ON u.user_id=m.user_id WHERE m.user_id=? AND m.revoked_at IS NULL
-    AND COALESCE(u.status,'active')='active' AND COALESCE(u.activation_pending,0)=0
+    AND COALESCE(u.status,'active')='active' AND COALESCE(u.activation_pending,0)=0 AND u.anonymized_at IS NULL
     AND ${projectId === null ? "m.role='owner' AND m.project_id IS NULL" : "m.role IN ('owner','manager') AND (m.project_id IS NULL OR m.project_id=?)"})`, values: projectId === null ? [actor.userId] : [actor.userId, projectId] };
+}
+/** A receipt identifies a write, but never grants permission to read its result. */
+async function presentEntity(db:D1Database,actor:PortalActor,entity:Entity|'project_type',id:string,action:string):Promise<Row>{
+  const table=entity==='project_type'?'project_types':TABLES[entity],projectColumn=entity==='project'?'resource.id':'resource.project_id';
+  const scope=entity==='project_type'||action==='project.create'?"m.role='owner' AND m.project_id IS NULL":`m.role IN ('owner','manager') AND (m.project_id IS NULL OR m.project_id=${projectColumn})`;
+  const row=await one(db,`SELECT resource.* FROM ${table} resource WHERE resource.id=? AND EXISTS(
+    SELECT 1 FROM members m LEFT JOIN portal_users u ON u.user_id=m.user_id WHERE m.user_id=? AND m.revoked_at IS NULL
+    AND COALESCE(u.status,'active')='active' AND COALESCE(u.activation_pending,0)=0 AND u.anonymized_at IS NULL AND ${scope})`,[id,actor.userId]);
+  if(!row)throw new HttpError(403,'Seu acesso mudou. Atualize a página.','access_changed');
+  return row;
 }
 async function normalize(db: D1Database, actor: PortalActor, entity: Entity, input: Row, existing: Row | null): Promise<{ fields: Row; linked: string[] }> {
   const get = (camel: string, snake = camel, fallback: unknown = '') => input[camel] === undefined ? existing?.[snake] ?? fallback : input[camel];
@@ -99,7 +109,7 @@ async function saveEntity(db: D1Database, actor: PortalActor, entity: Entity, ac
   if(update&&(!Number.isSafeInteger(input.expectedVersion)||input.expectedVersion<1))throw new HttpError(400,'Informe a versão atual. Atualize a página.','invalid_version');
   // Legacy project edits remain CAS protected. The current UI and all new metadata writes use keys.
   const mutation=entity==='project'&&update&&input.operationKey===undefined?null:await prepareMutation(db,actor.userId,action,input);
-  if(mutation?.existingId)return {id:mutation.existingId,[entity]:await one(db,`SELECT * FROM ${table} WHERE id=?`,[mutation.existingId]),duplicate:true};
+  if(mutation?.existingId)return {id:mutation.existingId,[entity]:await presentEntity(db,actor,entity,mutation.existingId,action),duplicate:true};
   if(existing&&existing.version!==input.expectedVersion)throw new HttpError(409,'Este registro mudou. Reabra a edição para carregar a versão atual.','project_changed');
   const {fields,linked}=await normalize(db,actor,entity,input,existing),id=existing?.id??uid(),now=iso(),revision=(existing?.version??0)+1;
   const previousLinked=entity==='call'&&existing?(await all(db,'SELECT project_id FROM project_calls WHERE call_id=? ORDER BY project_id',[id])).map(row=>row.project_id):[];
@@ -124,21 +134,21 @@ async function saveEntity(db: D1Database, actor: PortalActor, entity: Entity, ac
     statements.push(db.prepare(`INSERT INTO audit(id,actor_id,project_id,action,entity_id,details,created_at) SELECT ?,?,?,?,?,?,? WHERE ${ownsClaim} AND EXISTS(SELECT 1 FROM calls WHERE id=? AND version=?)`).bind(uid(),actor.userId,projectId,action,id,JSON.stringify({previousVersion:existing?.version??null,version:revision}),now,mutation!.scope,id,id,revision));
   }else statements.push(db.prepare(`INSERT INTO audit(id,actor_id,project_id,action,entity_id,details,created_at) SELECT ?,?,?,?,?,?,? WHERE changes()=1`).bind(uid(),actor.userId,entity==='project'?id:projectId,action,id,JSON.stringify({previousVersion:existing?.version??null,version:revision}),now));
   let results:D1Result[];
-  try{results=await db.batch(statements);}catch(error){if(!mutation)throw error;const replayId=await mutation.recover(error);return {id:replayId,[entity]:await one(db,`SELECT * FROM ${table} WHERE id=?`,[replayId]),duplicate:true};}
+  try{results=await db.batch(statements);}catch(error){if(!mutation)throw error;const replayId=await mutation.recover(error);return {id:replayId,[entity]:await presentEntity(db,actor,entity,replayId,action),duplicate:true};}
   if(results[mutationIndex].meta.changes!==1)throw new HttpError(existing?409:403,'O registro ou seu acesso mudou. Atualize a página.',existing?'project_changed':'access_changed');
-  return {id,[entity]:await one(db,`SELECT * FROM ${table} WHERE id=?`,[id])};
+  return {id,[entity]:await presentEntity(db,actor,entity,id,action)};
 }
 
 async function typeAction(db:D1Database,actor:PortalActor,action:string,input:Row):Promise<Row>{
   requireCapability(actor,'projects.manage',null);const update=action.endsWith('.update'),existing=update?await one(db,'SELECT * FROM project_types WHERE id=?',[identifier(input.id)]):null;
   if(update&&!existing)throw new HttpError(404,'Tipo não encontrado.');
-  const mutation=await prepareMutation(db,actor.userId,action,input);if(mutation.existingId)return{id:mutation.existingId,duplicate:true};
+  const mutation=await prepareMutation(db,actor.userId,action,input);if(mutation.existingId)return{id:mutation.existingId,projectType:await presentEntity(db,actor,'project_type',mutation.existingId,action),duplicate:true};
   if(existing&&(!Number.isSafeInteger(input.expectedVersion)||input.expectedVersion!==existing.version))throw new HttpError(409,'O tipo mudou. Atualize a página.','project_type_changed');
   const key=text(input.key??existing?.key,'a chave do tipo',50).toLowerCase();if(!/^[a-z][a-z0-9_-]{1,49}$/.test(key))throw new HttpError(400,'Use uma chave curta em letras, números e hífen.');
   const fields={key,label:text(input.label??existing?.label,'o nome do tipo',100),description:text(input.description??existing?.description,'a descrição',1000,true),status:choice(input.status??existing?.status??'active',['active','archived'],'um estado')},id=existing?.id??uid(),now=iso(),auth=guard(actor,null);
   const target=existing?`EXISTS(SELECT 1 FROM project_types WHERE id=? AND version=?) AND ${auth.sql}`:auth.sql,targetValues=existing?[id,input.expectedVersion,...auth.values]:auth.values;
-  let result:D1Result[];try{result=await db.batch([db.prepare(`INSERT INTO mutation_keys(scope,fingerprint,entity_id,created_at) SELECT ?,?,?,? WHERE ${target}`).bind(mutation.scope,mutation.fingerprint,id,now,...targetValues),existing?db.prepare(`UPDATE project_types SET key=?,label=?,description=?,status=?,version=version+1,updated_at=? WHERE id=? AND version=? AND ${auth.sql}`).bind(...Object.values(fields),now,id,input.expectedVersion,...auth.values):db.prepare(`INSERT INTO project_types(id,key,label,description,status,version,created_at,updated_at) SELECT ?,?,?,?,?,1,?,? WHERE ${auth.sql}`).bind(id,...Object.values(fields),now,now,...auth.values),db.prepare(`INSERT INTO audit(id,actor_id,project_id,action,entity_id,details,created_at) SELECT ?,?,NULL,?,?,'{}',? WHERE changes()=1`).bind(uid(),actor.userId,action,id,now)]);}catch(error){return{id:await mutation.recover(error),duplicate:true};}
-  if(result[1].meta.changes!==1)throw new HttpError(409,'O tipo ou seu acesso mudou. Atualize a página.');return{id,projectType:await one(db,'SELECT * FROM project_types WHERE id=?',[id])};
+  let result:D1Result[];try{result=await db.batch([db.prepare(`INSERT INTO mutation_keys(scope,fingerprint,entity_id,created_at) SELECT ?,?,?,? WHERE ${target}`).bind(mutation.scope,mutation.fingerprint,id,now,...targetValues),existing?db.prepare(`UPDATE project_types SET key=?,label=?,description=?,status=?,version=version+1,updated_at=? WHERE id=? AND version=? AND ${auth.sql}`).bind(...Object.values(fields),now,id,input.expectedVersion,...auth.values):db.prepare(`INSERT INTO project_types(id,key,label,description,status,version,created_at,updated_at) SELECT ?,?,?,?,?,1,?,? WHERE ${auth.sql}`).bind(id,...Object.values(fields),now,now,...auth.values),db.prepare(`INSERT INTO audit(id,actor_id,project_id,action,entity_id,details,created_at) SELECT ?,?,NULL,?,?,'{}',? WHERE changes()=1`).bind(uid(),actor.userId,action,id,now)]);}catch(error){const id=await mutation.recover(error);return{id,projectType:await presentEntity(db,actor,'project_type',id,action),duplicate:true};}
+  if(result[1].meta.changes!==1)throw new HttpError(409,'O tipo ou seu acesso mudou. Atualize a página.');return{id,projectType:await presentEntity(db,actor,'project_type',id,action)};
 }
 export async function projectAction(db:D1Database,actor:PortalActor,action:string,input:Row):Promise<Row|null>{
   if(['project.type.create','project.type.update'].includes(action))return typeAction(db,actor,action,input);

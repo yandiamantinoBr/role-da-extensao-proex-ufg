@@ -190,6 +190,38 @@ test('owner creates a manual seven-day invitation without persisting its raw tok
   assert.equal(JSON.stringify(f.sqlite.prepare('SELECT * FROM audit').all()).includes(tokenOf(result)), false);
 });
 
+test('global invitations require an explicit boolean confirmation and only a current owner can grant them', async t => {
+  const f = closeAfter(t, fixture()), administrator = await owner(f);
+  const input = { email: 'external@example.invalid', role: 'viewer', projectId: null };
+  for (const confirmation of [undefined, false, 'true', 1]) {
+    await rejected(accessAction(f.db, administrator, 'invite.create', { ...input, globalAccess: confirmation }, origin), 'global_scope_confirmation_required', 400);
+  }
+  assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM invites').get().n, 0);
+  const global = await accessAction(f.db, administrator, 'invite.create', { ...input, globalAccess: true }, origin);
+  assert.equal(f.sqlite.prepare('SELECT project_id FROM invites WHERE id=?').get(global.id).project_id, null);
+  f.seed(memberUser, 'manager', 'role');
+  const manager = await getActor(f.db, memberUser);
+  await assert.rejects(accessAction(f.db, manager, 'invite.create', { ...input, globalAccess: true }, origin), { status: 403 });
+  f.sqlite.prepare('UPDATE members SET revoked_at=? WHERE user_id=?').run(new Date().toISOString(), administrator.userId);
+  await rejected(accessAction(f.db, administrator, 'invite.create', { ...input, globalAccess: true }, origin), 'access_changed', 403);
+});
+
+test('institutional and external email addresses grant only the invited project role', async t => {
+  const f = closeAfter(t, fixture()), administrator = await owner(f);
+  for (const recipient of ['scholar@ufg.br', 'external@example.invalid']) {
+    const invitation = await accessAction(f.db, administrator, 'invite.create', { email: recipient, role: 'viewer', projectId: 'role' }, origin);
+    const user = { userId: crypto.randomUUID(), email: recipient, displayName: 'Pessoa convidada' };
+    const before = await getActor(f.db, user);
+    assert.deepEqual(accessibleProjects(before), []);
+    await accessAction(f.db, before, 'invite.accept', { token: tokenOf(invitation) }, origin);
+    const after = await getActor(f.db, user);
+    assert.deepEqual(accessibleProjects(after), ['role']);
+    requireCapability(after, 'reports.read', 'role');
+    assert.throws(() => requireCapability(after, 'reports.read', 'other'), { status: 403 });
+    assert.throws(() => requireCapability(after, 'organization.manage', null), { status: 403 });
+  }
+});
+
 test('repeated and simultaneous invite creation recovers the same link with one claim and audit', async t => {
   const f = closeAfter(t, fixture()), actor = await owner(f);
   const input = { email: memberUser.email, role: 'viewer', projectId: 'role', operationKey: crypto.randomUUID() };

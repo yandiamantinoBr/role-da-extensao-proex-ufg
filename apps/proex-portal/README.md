@@ -16,6 +16,8 @@ As tabelas `auth_*` guardam a autenticação; `portal_users`, `identity_aliases`
 
 O Postgres do Supabase armazena os instantâneos, seus históricos e objetos privados; ele não executa diretamente o SQL de domínio do portal. Uma futura conversão das tabelas para Postgres exigiria adaptar SQL, restrições, transações e testes. Não basta trocar uma variável de conexão nem executar as migrações SQLite no Postgres. O histórico no mesmo Supabase não substitui backup externo com restauração verificada.
 
+O alvo Node oferece [backup completo criptografado e restauração isolada](docs/BACKUP-COMPLETO.md), separado da exportação portátil: inclui o snapshot SQLite inteiro e todos os objetos privados, com AES-256-GCM, scrypt e manifesto de hashes. A geração exige administração geral ativa; o restaurador valida banco, vínculos e anexos antes de gravar em uma pasta temporária nova. Isso não configura backup automático nem comprova uma recuperação de produção; retenção externa e ensaio real continuam sendo etapas operacionais.
+
 A camada de serviços está em `lib/`; o esquema e suas migrações ficam em `db/` e `drizzle/`; rotas de API fazem autenticação e autorização no servidor. Os adaptadores preservam os contratos existentes. O portal já está no repositório público em `apps/proex-portal`, com implantação separada da roleta livre. Copiar o código para o GitHub não comprova que uma revisão foi publicada.
 
 ## Login, convites e primeiro responsável
@@ -39,6 +41,8 @@ As configurações de autenticação precisam ser definidas no runtime:
 Na ausência de URL ou segredo válidos, o acesso por senha fica indisponível. Não há segredo padrão de produção. HTTP é permitido apenas em desenvolvimento explícito e para os hosts locais previstos. Não publicar valores dessas variáveis, tokens ou credenciais no README, GitHub, logs, fixtures ou capturas de tela. Não simular login inserindo cabeçalhos ou dados de usuário no cliente. Uma prévia local comum não reproduz automaticamente a comprovação nativa do Sites.
 
 A tela de equipe emite **links de convite para copiar e compartilhar manualmente**. Nenhum e-mail ou mensagem é enviado automaticamente. O convite tem destinatário, função, escopo, validade de sete dias e aceite único. A pessoa abre `/convite`, informa o nome e define a senha; se já tiver credencial no portal, informa a senha atual. O servidor usa o destinatário e as permissões gravados no convite, sem aceitar uma função enviada pelo navegador. A ativação incompleta não permite login. A geração do link não concede acesso antes do aceite, nem dá permissão para editar código, publicar o Site ou acessar outros projetos.
+
+Convites usam um projeto como padrão. O alcance do portal inteiro exige escolha e confirmação explícitas do responsável, também verificadas pela API. E-mail institucional, vínculo de bolsista e unidade no perfil não concedem função ou acesso a outros projetos. A [matriz de acessos e escopo](docs/ACESSOS-E-ESCOPO.md) explica as barreiras atuais e o modelo ainda necessário para organizações independentes.
 
 Sem SMTP, o convite manual não comprova automaticamente controle da caixa de e-mail, e a conta não é marcada como e-mail verificado. O responsável deve conferir a pessoa e entregar o link pelo canal institucional adequado. Não há Google OAuth, login por WhatsApp, Facebook ou Instagram nesta revisão.
 

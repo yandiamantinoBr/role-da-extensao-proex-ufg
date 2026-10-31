@@ -4,10 +4,13 @@ import { ArrowUpRight, Check, Copy, KeyRound, LoaderCircle, Mail, Search, Shield
 import TeamPersonDetail from './team-person-detail';
 import styles from './team-person.module.css';
 import { useFormDraft, DraftNotice } from './use-form-draft';
+import { officialTeamPrefill, type OfficialTeamSelection } from '../../lib/catalog/proex-team';
 // Server-projected directory and scoped memberships.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = Record<string, any>;
 type Props = {
+    officialSuggestion?: OfficialTeamSelection | null;
+    onClearOfficialSuggestion?: () => void;
     now: number;
     onOpenOwnProfile?: () => void;
     users: Row[];
@@ -142,18 +145,31 @@ function DirectoryUser({ user, props, onOpen }: {
 export default function TeamPanel(props: Props) {
     const [selectedUserId,setSelectedUserId]=useState<string|null>(null);
     const [query, setQuery] = useState(''), [inviteUrl, setInviteUrl] = useState(''), [saving, setSaving] = useState(false), [error, setError] = useState('');
-    const key = useRef<string | null>(null), inviteRef = useRef<HTMLFormElement>(null);
-    const draft = useFormDraft(inviteRef, 'team:invite');
+    const [issuedSelection, setIssuedSelection] = useState('');
+    const key = useRef<{ selection: string; operationKey: string } | null>(null), inviteRef = useRef<HTMLFormElement>(null);
+    const official = props.officialSuggestion ? officialTeamPrefill(props.officialSuggestion.id) : null;
+    const suggestionKey = official ? `${props.officialSuggestion!.selectionKey}:${official.id}` : 'manual';
+    // A catalog choice starts a new, explicit scope decision. Never restore an
+    // older person's project/role draft into the official prefill flow.
+    const draft = useFormDraft(inviteRef, official ? null : 'team:invite');
     const allowed = props.projects.filter(p => props.globalAdmin || props.canProject(p.id, 'access.invite'));
+    const defaultInviteProject = official ? '' : allowed.some(project => project.id === props.selectedProjectId) ? props.selectedProjectId : allowed.length === 1 ? String(allowed[0].id) : '';
+    const [inviteProject, setInviteProject] = useState(defaultInviteProject), [globalConfirmed, setGlobalConfirmed] = useState(false);
     const directory: Row[] = props.users.length ? props.users : props.members.map(m => ({ userId:m.user_id??m.userId,email: m.email, members: [m] }));
     const filtered = directory.filter(u => `${u.displayName ?? ''} ${u.email ?? ''}`.toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR')) && (!props.selectedProjectId || (u.members ?? []).some((m: Row) => !projectIdOf(m) || projectIdOf(m) === props.selectedProjectId)));
     async function invite(e: FormEvent<HTMLFormElement>) { e.preventDefault(); if (saving)
-        return; const element = e.currentTarget, form = new FormData(element); setSaving(true); setError(''); key.current ??= crypto.randomUUID(); try {
-        const result = await props.mutate('invite.create', { email: form.get('email'), role: form.get('role'), projectId: form.get('projectId') || null, operationKey: key.current });
+        return; const element = e.currentTarget, form = new FormData(element), selectedScope = form.get('projectId');
+        if (!form.get('role') || !selectedScope || (official && selectedScope === '__global__')) { setError('Escolha explicitamente a função e o projeto antes de gerar o convite.'); return; }
+        setSaving(true); setError(''); if (!key.current || key.current.selection !== suggestionKey) key.current = { selection: suggestionKey, operationKey: crypto.randomUUID() }; try {
+        const globalAccess = selectedScope === '__global__';
+        if (globalAccess && (!props.globalAdmin || !globalConfirmed)) throw new Error('Confirme o alcance do convite ou escolha um projeto.');
+        const result = await props.mutate('invite.create', { email: form.get('email'), role: form.get('role'), projectId: globalAccess ? null : selectedScope, globalAccess: globalAccess && globalConfirmed, operationKey: key.current.operationKey });
+        setIssuedSelection(suggestionKey);
         setInviteUrl(result.inviteUrl || '');
         key.current = null;
         draft.clear();
         element.reset();
+        setInviteProject(defaultInviteProject); setGlobalConfirmed(false);
     }
     catch (e) {
         setError(e instanceof Error ? e.message : 'Não foi possível criar o convite.');
@@ -184,31 +200,34 @@ export default function TeamPanel(props: Props) {
         <div className="p-section-heading">
         <div>
         <h2>Convidar uma pessoa</h2>
-        <p>O link fica vinculado ao e-mail e ao escopo escolhido.</p>
+        <p>O link fica vinculado ao e-mail, à função e ao projeto escolhido. E-mail institucional ou vínculo de bolsista não concede permissões adicionais.</p>
         </div>
         </div>
-        <form ref={inviteRef} className="p-form" onSubmit={invite} onChange={() => { if (!saving)
-            key.current = null; }}><DraftNotice draft={draft}/>
+        {official && <p className="p-form-help" role="status">Sugestão da fonte oficial: {official.name}. Confira o e-mail e escolha projeto e função. O nome é apenas referência; a pessoa define seu próprio perfil na ativação. {props.onClearOfficialSuggestion && <button type="button" className="p-text-link" disabled={saving} onClick={props.onClearOfficialSuggestion}>Limpar sugestão</button>}</p>}
+        <form id="team-invite-form" ref={inviteRef} className="p-form" onSubmit={invite} onChange={() => { if (!saving)
+            { key.current = null; setInviteUrl(''); } }}>{!official && <DraftNotice draft={draft}/>}
         <fieldset disabled={saving}>
         <div className="p-form-grid">
+        {official && <label className="p-field"><span>Nome na fonte oficial</span><input readOnly value={official.name} aria-label="Nome na fonte oficial"/></label>}
         <label className="p-field">
         <span>E-mail da pessoa *</span>
-        <input name="email" type="email" required maxLength={254} autoComplete="off" placeholder="nome@exemplo.com"/>
+        <input key={`email-${suggestionKey}`} name="email" type="email" required maxLength={254} autoComplete="off" placeholder="nome@exemplo.com" defaultValue={official?.email ?? ''}/>
         </label>
         <label className="p-field">
         <span>Função</span>
-        <select name="role" defaultValue="operator">{Object.entries(roles).filter(([id]) => id !== 'owner' && (props.globalAdmin || id !== 'manager')).map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select>
+        <select key={`role-${suggestionKey}`} name="role" defaultValue="" required><option value="" disabled>Selecione a função</option>{Object.entries(roles).filter(([id]) => id !== 'owner' && (props.globalAdmin || id !== 'manager')).map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select>
         </label>
         <label className="p-field">
         <span>Escopo do acesso</span>
-        <select name="projectId" defaultValue={allowed.some(p => p.id === props.selectedProjectId) ? props.selectedProjectId : props.globalAdmin ? '' : allowed[0]?.id} required={!props.globalAdmin}>{props.globalAdmin && <option value="">Toda a organização</option>}{allowed.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
+        <select key={`project-${suggestionKey}`} name="projectId" value={inviteProject} onChange={event => { setInviteProject(event.target.value); setGlobalConfirmed(false); }} required><option value="" disabled>Selecione um projeto</option>{allowed.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}{props.globalAdmin && !official && <option value="__global__">Portal inteiro · todos os projetos</option>}</select>
         <small>O acesso a um projeto não concede permissão nos demais.</small>
         </label>
         </div>
+        {props.globalAdmin && inviteProject === '__global__' && <label className="p-field"><span><input type="checkbox" checked={globalConfirmed} onChange={event => setGlobalConfirmed(event.target.checked)} required/> Confirmo que esta pessoa pode atuar em todos os projetos do portal, inclusive futuros.</span><small>Use este alcance somente para a equipe institucional autorizada. Esta confirmação não fica no rascunho.</small></label>}
         <div className="p-form-footer">{error && <p className="p-inline-error" role="alert">{error}</p>}<button className="p-button p-button-primary" type="submit">{saving ? <LoaderCircle size={17} className="p-spin"/> : <UserPlus size={17}/>}{saving ? 'Criando…' : 'Gerar convite'}</button>
         </div>
         </fieldset>
-        </form>{inviteUrl && <CopyLink url={inviteUrl} label="Convite criado para a equipe"/>}</section>}{visibleInvites.length > 0 && <section className="p-section">
+        </form>{inviteUrl && issuedSelection === suggestionKey && <CopyLink url={inviteUrl} label="Convite criado para a equipe"/>}</section>}{visibleInvites.length > 0 && <section className="p-section">
         <div className="p-section-heading">
         <div>
         <h2>Convites emitidos</h2>

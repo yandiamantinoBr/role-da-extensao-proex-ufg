@@ -125,6 +125,28 @@ test('upload rechecks project role, rejects unauthenticated users and supports t
   } finally { db.native.close(); }
 });
 
+test('knowing a document id or claiming owner headers cannot download another project term', async () => {
+  const { db, storage } = fixture();
+  try {
+    const owner = principal(db, 'loans', 'project-a'); context(db, storage, owner);
+    const uploaded = await route.POST(request('scoped-download-0001'));
+    assert.equal(uploaded.status, 201); const { id } = await uploaded.json();
+    let reads = 0; const get = storage.get.bind(storage);
+    storage.get = async key => { reads++; return get(key); };
+    const url = new Request(`https://portal.example.invalid/api/files/${id}?projectId=project-b`, { headers: { 'oai-authenticated-user-id': owner.userId, 'oai-authenticated-user-email': owner.email } });
+    context(db, storage, principal(db, 'loans', 'project-b'));
+    assert.equal((await download.GET(url, { params: Promise.resolve({ id }) })).status, 403);
+    assert.equal(reads, 0, 'an unauthorized request must not read object storage');
+    context(db, storage, owner);
+    assert.equal((await download.GET(url, { params: Promise.resolve({ id }) })).status, 200);
+    assert.equal(reads, 1);
+    db.native.prepare('UPDATE members SET revoked_at=? WHERE user_id=?').run(new Date().toISOString(), owner.userId);
+    const revoked = await download.GET(url, { params: Promise.resolve({ id }) });
+    assert.equal(revoked.status, 403); assert.equal(revoked.headers.get('Cache-Control'), 'private, no-store');
+    assert.equal(reads, 1);
+  } finally { db.native.close(); }
+});
+
 test('revocation while R2 stores the file rejects the operation and removes the unreferenced object', async () => {
   const { db, storage } = fixture();
   try {
