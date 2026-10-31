@@ -42,7 +42,7 @@ export default function FollowUpPanel({defaultProjectId='',defaultOrganizationId
  const generation=useRef(0),listGeneration=useRef(0),detailGeneration=useRef(0),interactionEpoch=useRef(0),selectionEcho=useRef(initialTaskId),mutationPending=useRef(false),detailElement=useRef<HTMLElement|null>(null),teamRequest=useRef<AbortController|null>(null);
  const catalogKey=JSON.stringify([projectId,organizationId]),listKey=JSON.stringify([projectId,organizationId,status,priority,search,offset,serverDay]);
  const catalog=catalogStored?.key===catalogKey?catalogStored.data:emptyCatalog,tasks=tasksStored?.key===listKey?tasksStored.tasks:[],hasMore=tasksStored?.key===listKey&&tasksStored.hasMore,detail=appliedInitialTaskId===initialTaskId&&loadedDetail?.task.id===selectedTask?loadedDetail:null;
- function selectTask(value:string){detailGeneration.current++;interactionEpoch.current++;selectionEcho.current=value;setSelectedTask(value);setDetail(null);setForm(null);onSelectTask?.(value);}
+ function selectTask(value:string){if(value&&value===selectedTask)return;detailGeneration.current++;interactionEpoch.current++;selectionEcho.current=value;setSelectedTask(value);setDetail(null);setForm(null);onSelectTask?.(value);}
  useEffect(()=>()=>teamRequest.current?.abort(),[]);
  useEffect(()=>{if(detail?.task.id)detailElement.current?.focus();},[detail?.task.id]);
  useEffect(()=>{const timer=setTimeout(()=>{setAppliedInitialTaskId(initialTaskId);if(selectionEcho.current!==initialTaskId){selectionEcho.current=initialTaskId;detailGeneration.current++;interactionEpoch.current++;setSelectedTask(initialTaskId);setDetail(null);setForm(null);}},0);return()=>clearTimeout(timer);},[initialTaskId]);
