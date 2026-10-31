@@ -32,3 +32,9 @@ Pós-publicação: health 200 com banco acessível; sessão real conferiu organi
 R17–R22 acrescentados a pedido de Yan: demandas prioritárias, checklists pós-evento, equipes com vários vínculos, inbox/sino, e-mail e WhatsApp. Agente em `v16-acompanhamento`, migração reservada 0014; público em 0012 e backup automático em 0013, ainda separados deste candidato. Não considerar esses pedidos concluídos por este documento. Conta de envio e autorização MailApp não foram ativadas; nenhum e-mail/WhatsApp real de QA.
 
 Guardar separadamente o segredo original do servidor para reutilizar configurações de IA cifradas recuperadas de backup; o arquivo não inclui variáveis secretas da hospedagem. Transferência da chave de recuperação DPAPI para gerenciador e custódia institucional continuam pendentes na Vault.
+
+## Correção posterior de leitura · PR #11
+
+Publicada em 31/10/2026, merge `a46ee63135237954e51635af59ccecbbdb90935c` às 15:35:08Z. Vercel READY `dpl_6Bq7mgvQNo4kjeXBkhCoZg51PpuG`, mesmo SHA; checks da PR e main aprovados. Sete regressões cobrem revogação/bloqueio/sessão entre instâncias, relatórios, anexos após espera e indisponibilidade de metadados. A instância consulta a versão autoritativa antes de cada execução, sem gravar por GET ou baixar o payload quando a versão coincide. Suíte da entrega isolada: 527/527 Node 24; 13 focados Node 26; tipos/lint/builds aprovados. Root repetiu as sete regressões independentemente.
+
+Produção: health 200, sessão autenticada e administração de organização conferidas, sem erros do portal ou cadastros de QA. WAF continua canônico 200 e hosts antigos 403. Não foi simulada revogação de conta real. Ver `apps/proex-portal/docs/AUTORIZACAO-E-SNAPSHOT-AUTORITATIVO.md` para limites de consistência e custo adicional de consulta de metadados.
