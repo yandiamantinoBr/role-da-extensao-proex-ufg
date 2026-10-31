@@ -1,10 +1,13 @@
 import test from 'node:test';import assert from 'node:assert/strict';import {DatabaseSync} from 'node:sqlite';
 import {readFileSync,readdirSync} from 'node:fs';import {fileURLToPath} from 'node:url';import {resolve,dirname} from 'node:path';import ts from 'typescript';
+import {gzipSync,gunzipSync} from 'node:zlib';
+import {createArchive,validateArchive} from '../platform-node/backup-format.mjs';
 const root=fileURLToPath(new URL('../',import.meta.url)),cache=new Map();
 function compile(file){file=resolve(root,file);if(cache.has(file))return cache.get(file);let code=ts.transpileModule(readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;code=code.replace(/from (['"])(\.[^'"]+)\1/g,(_m,_q,name)=>`from ${JSON.stringify(compile(resolve(dirname(file),name+'.ts')))}`);const url='data:text/javascript;base64,'+Buffer.from(code).toString('base64');cache.set(file,url);return url;}
 const {getActor}=await import(compile('lib/access.ts'));
 const {followupAction,followupList,followupDetail,followupCatalog,notificationInbox}=await import(compile('lib/follow-up/service.ts'));
 const {manualShareUrl}=await import(compile('lib/follow-up/contracts.ts'));
+const {exportPortablePage,describePortableSchemas}=await import(compile('lib/sync/portable.ts'));
 function fixture(t){const native=new DatabaseSync(':memory:');native.exec('PRAGMA foreign_keys=ON');for(const name of readdirSync(root+'drizzle').filter(n=>n.endsWith('.sql')).sort())native.exec(readFileSync(root+'drizzle/'+name,'utf8'));t.after(()=>native.close());const now=new Date().toISOString();
  const insert=(table,row)=>{const cols=Object.keys(row);native.prepare(`INSERT INTO ${table}(${cols.join(',')}) VALUES(${cols.map(()=>'?').join(',')})`).run(...Object.values(row));};
  for(const suffix of ['a','b']){insert('organizations',{id:`org-${suffix}`,name:`Organization ${suffix}`,slug:`org-${suffix}`,created_at:now,updated_at:now});insert('projects',{id:`project-${suffix}`,organization_id:`org-${suffix}`,name:`Project ${suffix}`,created_at:now});insert('items',{id:`item-${suffix}`,project_id:`project-${suffix}`,name:suffix==='a'?'Coletes P/M/G':'Private organization B item',category:'distribution',unit:'un',stock:40,created_at:now});insert('campaigns',{id:`campaign-${suffix}`,project_id:`project-${suffix}`,name:`Event ${suffix}`,starts_at:now,ends_at:new Date(Date.now()+86400000).toISOString(),status:'active',created_at:now});}
@@ -85,6 +88,19 @@ test('delegated checklist counts remain reviewable; only operational staff can c
  const complete=await act(f,manager,'checklist.complete',{id:created.checklist.id,expectedVersion:2,createFollowups:true,operationKey:crypto.randomUUID()});assert.equal(complete.checklist.followups.length,1);
 });
 
+test('losing operational authority at commit cannot fall back to a task-only grant to approve discrepancies or create tasks',async t=>{
+ for(const createFollowups of [true,false]){
+  const f=fixture(t),manager=await f.actor('manager-a'),worker=await f.actor('worker-a');
+  const created=await act(f,manager,'checklist.create',{projectId:'project-a',title:'Revisão operacional',rows:[{itemId:'item-a',size:'G',expected:5}],userIds:['worker-a'],operationKey:crypto.randomUUID()});
+  await act(f,manager,'task.worker.grant',{id:created.task.id,userId:'worker-a',confirmed:true,operationKey:crypto.randomUUID()});
+  await act(f,worker,'checklist.count',{id:created.checklist.id,rowId:created.checklist.rows[0].id,expectedVersion:1,counted:4,damaged:1,operationKey:crypto.randomUUID()});
+  const before=f.native.prepare('SELECT COUNT(*) n FROM mutation_keys').get().n;
+  f.db.before=()=>f.native.prepare("UPDATE members SET role='viewer' WHERE user_id='worker-a'").run();
+  await assert.rejects(act(f,worker,'checklist.complete',{id:created.checklist.id,expectedVersion:2,createFollowups,operationKey:crypto.randomUUID()}),{status:403});
+  assert.equal(f.native.prepare('SELECT COUNT(*) n FROM followup_checklist_actions').get().n,0);assert.equal(f.native.prepare('SELECT COUNT(*) n FROM mutation_keys').get().n,before);assert.equal(f.native.prepare('SELECT status FROM followup_checklists').get().status,'open');
+ }
+});
+
 test('archived organizations retain authorized history while blocking writes, delegation and inbox notices; GET never writes',async t=>{
  const f=fixture(t),admin=await f.actor('admin-a'),viewer=await f.actor('viewer-a');const created=await act(f,admin,'task.create',create({userIds:['viewer-a']}));
  const notice=(await notificationInbox(f.db,viewer)).notifications[0];
@@ -102,6 +118,27 @@ test('organization task assignment candidates are admins; private team managemen
  const f=fixture(t),admin=await f.actor('admin-a'),worker=await f.actor('worker-a');
  const catalog=await followupCatalog(f.db,admin,{organizationId:'org-a'});assert.ok(catalog.people.some(p=>p.userId==='admin-a'));assert.ok(!catalog.people.some(p=>p.userId==='worker-a'));assert.ok(catalog.teamPeople.some(p=>p.userId==='worker-a'));assert.ok(!catalog.teamPeople.some(p=>p.userId==='worker-b'));
  const limited=await followupCatalog(f.db,worker,{projectId:'project-a'});assert.deepEqual(limited.teamPeople,[]);
+});
+
+test('portable Sheets projections are global-owner read-only and exclude roster, delegation, notifications and private notes',async t=>{
+ const f=fixture(t),admin=await f.actor('admin-a'),platform=await f.actor('platform'),viewer=await f.actor('viewer-a');
+ const created=await act(f,admin,'checklist.create',{projectId:'project-a',title:'Conferência exportável',rows:[{itemId:'item-a',size:'P',expected:5}],userIds:['viewer-a'],operationKey:crypto.randomUUID()});
+ await act(f,admin,'checklist.count',{id:created.checklist.id,rowId:created.checklist.rows[0].id,expectedVersion:1,counted:4,damaged:1,note:'Private synthetic note not for Sheets.',operationKey:crypto.randomUUID()});
+ for(const table of ['followup_teams','followup_tasks','followup_checklists','followup_checklist_items','followup_checklist_actions']){
+  await assert.rejects(exportPortablePage(f.db,admin,{table}),{status:403});await assert.rejects(exportPortablePage(f.db,viewer,{table}),{status:403});
+  const page=await exportPortablePage(f.db,platform,{table});assert.equal(page.readOnly,true);assert.ok(page.schema.columns.every(column=>!column.editable));assert.ok(!JSON.stringify(page.rows).includes('Private synthetic note'));assert.ok(!JSON.stringify(page.rows).includes('viewer-a'));
+ }
+ const schemas=describePortableSchemas().tables;for(const table of ['followup_team_members','followup_work_grants','followup_assignees','followup_notifications','followup_history'])assert.ok(!schemas.some(s=>s.table===table));
+ assert.equal(schemas.find(s=>s.table==='followup_checklist_items').columns.find(c=>c.name==='size').type,'text');
+});
+
+test('complete SQLite backup inventories and restores all follow-up tables including internal receipts and grants',async t=>{
+ const f=fixture(t),admin=await f.actor('admin-a');
+ const created=await act(f,admin,'task.create',create({userIds:['viewer-a']}));await act(f,admin,'task.worker.grant',{id:created.task.id,userId:'viewer-a',confirmed:true,operationKey:crypto.randomUUID()});
+ f.native.exec('CREATE TABLE d1_migrations(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT UNIQUE)');const migrations=readdirSync(root+'drizzle').filter(n=>n.endsWith('.sql')).sort().map(name=>({name,sql:readFileSync(root+'drizzle/'+name,'utf8')}));for(const row of migrations)f.native.prepare('INSERT INTO d1_migrations(name) VALUES(?)').run(row.name);
+ const archive=createArchive({backend:'disk',snapshot:{version:1,data:gzipSync(f.native.serialize())},objects:[]},{migrations,ownerId:'platform'});
+ const restored=validateArchive(archive.bytes,{migrations});assert.equal(restored.manifest.sqlite.tables.filter(t=>t.name.startsWith('followup_')).length,10);
+ const copy=new DatabaseSync(':memory:');try{copy.deserialize(gunzipSync(restored.snapshot));assert.equal(copy.prepare('SELECT COUNT(*) n FROM followup_work_grants').get().n,1);assert.equal(copy.prepare('SELECT COUNT(*) n FROM followup_notifications').get().n,2);assert.equal(copy.prepare('SELECT title FROM followup_tasks WHERE id=?').get(created.task.id).title,created.task.title);assert.deepEqual(copy.prepare('PRAGMA foreign_key_check').all(),[]);}finally{copy.close();}
 });
 
 test('a person can join several teams; team removal hides inbox immediately without changing any application grant',async t=>{

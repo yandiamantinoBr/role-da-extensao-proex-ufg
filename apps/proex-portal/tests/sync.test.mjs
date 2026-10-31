@@ -279,9 +279,9 @@ test('domain replay without a service batch cannot append a receipt after its ru
  }finally{f.close();}
 });
 
-test('portable schema exposes 29 operational tables, including read-only organizations and no new profile identifiers',async()=>{
+test('portable schema exposes 34 operational tables, including read-only organizations and no new profile identifiers',async()=>{
  const f=fixture();try{
-  const schemas=describePortableSchemas();assert.equal(schemas.tables.length,29);
+  const schemas=describePortableSchemas();assert.equal(schemas.tables.length,34);
   const units=schemas.tables.find(row=>row.table==='organizational_units');assert.equal(units.updateAction,'unit.update');assert.deepEqual(units.columns.filter(column=>column.editable).map(column=>column.name),['name','acronym','kind','status','group_label','campus','official_url']);
   const created=await applyPortableChanges(f.db,f.actor,{changes:[{changeKey:'create-unit-v5-001',action:'unit.create',input:{name:'Faculdade de Educação',acronym:'FE',kind:'academic'}}]});assert.equal(created.results[0].status,'applied');const unitId=created.results[0].entityId;assert.equal(typeof unitId,'string');
   f.db.native.prepare('INSERT INTO profiles(user_id,display_name,unit,unit_id,affiliation,registration_type,registration_number,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)').run(f.actor.userId,'Nome visível','Texto de unidade anterior',unitId,'student','student','MATRICULA_PRIVADA_123',f.now,f.now);
