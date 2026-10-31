@@ -39,7 +39,7 @@ function fixture() {
   const db = { prepare(sql) { let values = []; return { bind(...args) { values = args; return this; }, async first() { return native.prepare(sql).get(...values) ?? null; }, async all() { return { results: native.prepare(sql).all(...values) }; }, async run() { return { meta: { changes: Number(native.prepare(sql).run(...values).changes) } }; }, execute() { if (failRecord && /INSERT INTO records/.test(sql)) { failRecord = false; throw new Error('synthetic_record_failure'); } const results = native.prepare(sql).all(...values); return { results, meta: { changes: Number(native.prepare('SELECT changes() n').get().n) } }; } }; }, async batch(statements) { native.exec('BEGIN'); try { const result = statements.map(statement => statement.execute()); native.exec('COMMIT'); return result; } catch (error) { native.exec('ROLLBACK'); throw error; } } };
   return { native, db, actors, failRecordOnce() { failRecord = true; } };
 }
-const document = (fields, extra = {}) => ({ kind: 'project', sourceMode: 'document', format: 'json', content: JSON.stringify(fields), ...extra });
+const document = (fields, extra = {}) => ({ kind: 'project', organizationId: 'org_proex', sourceMode: 'document', format: 'json', content: JSON.stringify(fields), ...extra });
 const apply = (preview, selectedFields, operationKey = 'qa-import-operation-1', extra = {}) => ({ confirmed: true, reviewToken: preview.reviewToken, candidateKey: 'row-1', selectedFields, operationKey, ...extra });
 
 test('HTML, JSON and CSV extract only operational fields, decode entities and preserve tombamento zeros', () => {
@@ -155,7 +155,7 @@ test('visual corrections are validated, selected explicitly and recorded as manu
 test('asset import preserves identifier text, records structured evidence and creates no stock movement', async () => {
   const f = fixture(); try {
     const preview = await previewImport(f.db, f.actors.inventory, { kind: 'asset', projectId: 'project-a', sourceMode: 'manual', content: JSON.stringify({ name: 'Projetor QA', assetCode: '000123', brand: 'Marca QA', serialNumber: 'SERIE-QA', location: 'Sala de conferência', stock: 1 }) }, secret);
-    const input = apply(preview, ['name', 'assetCode', 'brand', 'serialNumber', 'location'], 'qa-import-asset-1');
+    const input = apply(preview, ['name', 'assetCode', 'brand', 'serialNumber', 'assetLocation'], 'qa-import-asset-1');
     const saved = await applyImport(f.db, f.actors.inventory, input, secret), replay = await applyImport(f.db, f.actors.inventory, input, secret);
     assert.equal(saved.itemId, replay.itemId); assert.equal(saved.recordId, replay.recordId);
     const item = f.native.prepare('SELECT stock,asset_code,category FROM items WHERE id=?').get(saved.itemId);
@@ -165,8 +165,35 @@ test('asset import preserves identifier text, records structured evidence and cr
     await assert.rejects(applyImport(f.db, f.actors.inventory, { ...input, operationKey: 'qa-duplicate-asset' }, secret), error => error.code === 'import_duplicate');
     await assert.rejects(previewImport(f.db, f.actors.owner, { kind: 'asset', projectId: 'project-b', itemId: saved.itemId, sourceMode: 'manual', content: '{}' }, secret), error => error.code === 'project_mismatch');
     const evidence = await previewImport(f.db, f.actors.inventory, { kind: 'asset', projectId: 'project-a', itemId: saved.itemId, sourceMode: 'manual', content: JSON.stringify({ name: 'Nome observado na etiqueta', assetCode: '000123', sourceCondition: 'Necessita conferência' }) }, secret);
-    const received = await applyImport(f.db, f.actors.inventory, apply(evidence, ['name', 'assetCode', 'sourceCondition'], 'qa-asset-evidence-1'), secret);
+    const received = await applyImport(f.db, f.actors.inventory, apply(evidence, ['name', 'assetCode', 'conservationState'], 'qa-asset-evidence-1'), secret);
     assert.equal(f.native.prepare('SELECT name FROM items WHERE id=?').get(saved.itemId).name, 'Projetor QA');
     assert.match(f.native.prepare('SELECT body FROM records WHERE id=?').get(received.recordId).body, /Nome observado na etiqueta/);
   } finally { f.native.close(); }
+});
+
+test('Data de fim and término aliases preserve the final Brasília day without fabricating missing dates',()=>{
+ for(const label of ['Data de fim','Data de término','Término']){const candidate=parseImportDocument('project',`Título: Projeto QA\nData de início: 01/11/2026\n${label}: 30/11/2026`,'text')[0];assert.equal(candidate.fields.startsAt,'2026-11-01T03:00:00.000Z');assert.equal(candidate.fields.endsAt,'2026-12-01T02:59:59.999Z');}
+ assert.equal(parseImportDocument('project','Título: Projeto QA\nData de início: 01/11/2026','text')[0].fields.endsAt,undefined);
+});
+test('new project import requires explicit authorized organization, binds it to token/provenance and rechecks on replay',async()=>{
+ const f=fixture();try{
+  const at=new Date().toISOString();f.native.prepare("INSERT INTO organizations(id,name,slug,created_at,updated_at) VALUES('org-b','Organização B','organizacao-b',?,?)").run(at,at);
+  const userId='local-owner-a',email='local-owner-a@example.test';f.native.prepare("INSERT INTO portal_users(user_id,email,status,created_at,updated_at) VALUES(?,?,'active',?,?)").run(userId,email,at,at);f.native.prepare("INSERT INTO members(id,user_id,email,role,project_id,organization_id,created_at) VALUES(?,?,?,'owner',NULL,'org_proex',?)").run(userId,userId,email,at);const owner={userId,email,displayName:'Admin A'};
+  await assert.rejects(previewImport(f.db,owner,document({name:'Novo sem organização'},{organizationId:undefined}),secret),error=>error.code==='import_organization');
+  await assert.rejects(previewImport(f.db,owner,document({name:'Escopo B'},{organizationId:'org-b'}),secret),error=>error.status===403);
+  const preview=await previewImport(f.db,owner,document({name:'Projeto local A'}),secret);assert.equal(preview.organizationId,'org_proex');assert.equal(preview.provenance.organizationId,'org_proex');assert.equal((await readImportReview(secret,preview.reviewToken,userId)).version,2);
+  const result=await applyImport(f.db,owner,apply(preview,['name'],'test-only-organization-import'),secret);assert.equal(f.native.prepare('SELECT organization_id FROM projects WHERE id=?').get(result.projectId).organization_id,'org_proex');
+  f.native.prepare('UPDATE members SET revoked_at=? WHERE id=?').run(at,userId);await assert.rejects(applyImport(f.db,owner,apply(preview,['name'],'test-only-organization-import'),secret),error=>error.status===403);
+ }finally{f.native.close();}
+});
+
+test('all sixteen documented asset fields enter the new zero-stock asset, preserve zeros, and never overwrite an existing asset',async()=>{
+ const f=fixture();try{
+  const values={name:'Bem documentado',assetCode:'00000042',brand:'Marca QA',model:'Modelo QA',serialNumber:'0000123',assetLocation:'Sala fictícia',responsibleUnit:'Unidade informada',responsibleReference:'Equipe fictícia',conservationState:'Conferido',assetStatus:'Em uso informado',origin:'Origem documental',destination:'Destino documental',processReference:'00001',responsibilityTerm:'00002',invoiceReference:'00003',sourceReference:'Documento sintético, página 1',acquisitionDate:'01/10/2026',acquisitionValueCents:'123456'};
+  const preview=await previewImport(f.db,f.actors.inventory,{kind:'asset',projectId:'project-a',sourceMode:'manual',content:JSON.stringify(values)},secret);assert.deepEqual(preview.candidates[0].problems,{});
+  const fields=Object.keys(values),saved=await applyImport(f.db,f.actors.inventory,apply(preview,fields,'qa-sixteen-asset-fields'),secret),row=f.native.prepare('SELECT * FROM items WHERE id=?').get(saved.itemId);
+  assert.equal(row.stock,0);assert.equal(row.reserved,0);assert.equal(row.asset_code,'00000042');assert.equal(row.serial_number,'0000123');assert.equal(row.acquisition_value_cents,123456);assert.equal(row.acquisition_date,'2026-10-01');assert.equal(row.process_reference,'00001');assert.equal(row.responsibility_term,'00002');assert.equal(row.invoice_reference,'00003');assert.equal(row.responsible_reference,'Equipe fictícia');assert.equal(row.asset_location,'Sala fictícia');assert.equal(row.conservation_state,'Conferido');assert.equal(row.asset_status,'Em uso informado');assert.equal(row.origin,'Origem documental');assert.equal(row.destination,'Destino documental');assert.equal(row.source_reference,'Documento sintético, página 1');assert.equal(row.brand,'Marca QA');assert.equal(row.model,'Modelo QA');assert.equal(row.responsible_unit,'Unidade informada');
+  const evidence=await previewImport(f.db,f.actors.inventory,{kind:'asset',projectId:'project-a',itemId:saved.itemId,sourceMode:'manual',content:JSON.stringify({...values,brand:'Marca observada depois',acquisitionValueCents:'999999'})},secret);const receipt=await applyImport(f.db,f.actors.inventory,apply(evidence,fields,'qa-sixteen-existing-evidence'),secret);assert.equal(f.native.prepare('SELECT brand FROM items WHERE id=?').get(saved.itemId).brand,'Marca QA');assert.match(f.native.prepare('SELECT body FROM records WHERE id=?').get(receipt.recordId).body,/Marca observada depois/);assert.equal(f.native.prepare('SELECT COUNT(*) n FROM stock_movements').get().n,0);
+  const noSource=parseImportDocument('asset',JSON.stringify({name:'Sem valor inferido',acquisitionValueCents:'1200'}),'json')[0];assert.match(noSource.problems.acquisitionValueCents,/referência/);const currency=parseImportDocument('asset',JSON.stringify({name:'Não converter moeda',acquisitionValueCents:'12,34',sourceReference:'Documento'}),'json')[0];assert.match(currency.problems.acquisitionValueCents,/centavos inteiros/);
+ }finally{f.native.close();}
 });

@@ -1,6 +1,7 @@
-import { accessibleProjects, requireCapability, type PortalActor } from './access';
+import { memberProjectScopeSql, accessibleProjects, requireCapability, requireLiveCapability, capabilityBatch, projectAuthoritySql, type PortalActor } from './access';
 import { HttpError } from './errors';
 import { prepareMutation } from './mutations';
+import { assetMetadata, assetMetadataValues, ASSET_METADATA_COLUMNS, ASSET_METADATA_KEYS } from './asset-metadata';
 
 type Item = { id: string; project_id: string; name: string; category: string; unit: string; stock: number; reserved: number; condition: string; description: string; low_stock: number; asset_code: string; version: number; updated_at: string; category_id: string | null };
 type Loan = { id: string; project_id: string; item_id: string; status: string; note: string; starts_at: number; ends_at: number; condition_out: string; condition_in: string; checked_out_at: string | null; returned_at: string | null; updated_at: string };
@@ -49,9 +50,10 @@ function auditStatement(db: D1Database, actor: PortalActor, action: string, enti
   return statement(db, 'INSERT INTO audit (id,actor_id,project_id,action,entity_id,details,created_at) VALUES (?,?,?,?,?,?,?)',
     [crypto.randomUUID(), actor.userId, projectId, action, entityId, JSON.stringify(details), now]);
 }
-async function createBatch(db: D1Database, mutation: Awaited<ReturnType<typeof prepareMutation>>, id: string, statements: D1PreparedStatement[]): Promise<string> {
-  try { await db.batch([mutation.claimStatement(id), ...statements]); return id; }
-  catch (error) { return mutation.recover(error); }
+async function createBatch(db: D1Database, actor:PortalActor, projectId:string, capability:string, mutation: Awaited<ReturnType<typeof prepareMutation>>, id: string, statements: D1PreparedStatement[], additionalCapabilities: string[]=[]): Promise<string> {
+  const assertions=additionalCapabilities.map(cap=>{requireCapability(actor,cap,projectId);const live=projectAuthoritySql(actor,[cap],'?');return db.prepare(`SELECT CASE WHEN ${live.sql} THEN 1 ELSE json_extract('[]','portal_authority_changed') END`).bind(...live.values,projectId);});
+  try { await capabilityBatch(db,actor,capability,projectId,[...assertions,mutation.claimStatement(id), ...statements]); return id; }
+  catch (error) { if(error instanceof HttpError&&error.status===403)throw error;return mutation.recover(error); }
 }
 async function offerById(db: D1Database, id: string) {
   const offer = await statement(db, 'SELECT * FROM offers WHERE id=?', [id]).first<Record<string, unknown>>();
@@ -67,7 +69,7 @@ async function itemById(db: D1Database, id: unknown): Promise<Item> {
 }
 async function requireProject(db: D1Database, actor: PortalActor, projectId: unknown, capability: Parameters<typeof requireCapability>[1]): Promise<string> {
   const id = textValue(projectId, 'o projeto', 100);
-  await requireCapability(actor, capability, id);
+  await requireLiveCapability(db, actor, capability, id);
   const project = await statement(db, 'SELECT id FROM projects WHERE id=?', [id]).first();
   if (!project) throw new HttpError(404, 'Projeto não encontrado.', 'project_not_found');
   return id;
@@ -100,7 +102,7 @@ function translateDatabaseError(error: unknown): never {
 }
 
 function inventoryAuthorization(projectSql: string): string {
-  return `EXISTS(SELECT 1 FROM members m WHERE m.user_id=? AND m.revoked_at IS NULL AND m.role IN ('owner','manager','inventory') AND (m.project_id IS NULL OR m.project_id=${projectSql})) AND NOT EXISTS(SELECT 1 FROM portal_users u WHERE u.user_id=? AND (u.status!='active' OR u.activation_pending!=0 OR u.anonymized_at IS NOT NULL))`;
+  return `EXISTS(SELECT 1 FROM members m WHERE m.user_id=? AND m.revoked_at IS NULL AND m.role IN ('owner','manager','inventory') AND ${memberProjectScopeSql("m",projectSql)}) AND NOT EXISTS(SELECT 1 FROM portal_users u WHERE u.user_id=? AND (u.status!='active' OR u.activation_pending!=0 OR u.anonymized_at IS NOT NULL))`;
 }
 function conditionalAudit(db: D1Database, actor: PortalActor, action: string, entityId: string, projectId: string, details: Record<string, unknown>, now: string) {
   return statement(db, 'INSERT INTO audit(id,actor_id,project_id,action,entity_id,details,created_at) SELECT ?,?,?,?,?,?,? WHERE changes()=1', [crypto.randomUUID(), actor.userId, projectId, action, entityId, JSON.stringify(details), now]);
@@ -114,7 +116,7 @@ async function metadataSnapshot(db: D1Database, type: 'item' | 'category', id: s
   if (!row) throw new HttpError(404, 'Esta versão do cadastro não foi encontrada.', 'version_not_found');
   const parsed: unknown = JSON.parse(row.snapshot_json);
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new HttpError(409, 'A versão não contém um cadastro válido.', 'invalid_snapshot');
-  const allowed = type === 'item' ? ['name','category','unit','lowStock','description','assetCode','categoryId','condition'] : ['label','description','status','coreKind'];
+  const allowed = type === 'item' ? ['name','category','unit','lowStock','description','assetCode','categoryId','condition', ...ASSET_METADATA_KEYS] : ['label','description','status','coreKind'];
   return Object.fromEntries(Object.entries(parsed).filter(([key]) => allowed.includes(key)));
 }
 async function categoryById(db: D1Database, id: string): Promise<MaterialCategory> {
@@ -155,7 +157,7 @@ export async function materialsAction(db: D1Database, actor: PortalActor, action
         const status = textValue(input.status ?? previous.status, 'a situação da categoria', 20);
         if (!['active', 'archived'].includes(status)) throw new HttpError(400, 'Escolha categoria ativa ou arquivada.', 'invalid_status');
         const snapshot = { label, description, status, coreKind: previous.core_kind };
-        const result = await db.batch([
+        const result = await capabilityBatch(db,actor,'inventory.manage',projectId,[
           statement(db, `UPDATE material_categories SET label=?,label_key=?,description=?,status=?,version=version+1,updated_at=? WHERE id=? AND version=? AND ${inventoryAuthorization('material_categories.project_id')}`, [label, labelKey, description, status, now, previous.id, input.expectedVersion, actor.userId, actor.userId]),
           versionStatement(db, actor, 'category', previous.id, projectId, previous.version + 1, snapshot, now, true),
           conditionalAudit(db, actor, action, previous.id, projectId, { version: previous.version + 1, status, ...(action === 'material.category.restore' ? { restoredFromVersion: input.restoreVersion } : {}) }, now),
@@ -168,7 +170,7 @@ export async function materialsAction(db: D1Database, actor: PortalActor, action
       const mutation = await prepareMutation(db, actor.userId, action, input);
       if (mutation.existingId) return { category: await categoryById(db, mutation.existingId), duplicate: true };
       const id = crypto.randomUUID();
-      const createdId = await createBatch(db, mutation, id, [
+      const createdId = await createBatch(db, actor, projectId, 'inventory.manage', mutation, id, [
         statement(db, `INSERT INTO material_categories(id,project_id,label,label_key,core_kind,description,status,version,created_at,updated_at) VALUES(?,CASE WHEN ${inventoryAuthorization('?')} THEN ? ELSE NULL END,?,?,?,?,'active',1,?,?)`, [id, actor.userId, projectId, actor.userId, projectId, label, labelKey, coreKind, description, now, now]),
         versionStatement(db, actor, 'category', id, projectId, 1, { label, description, status: 'active', coreKind }, now),
         auditStatement(db, actor, action, id, projectId, { label, coreKind }, now),
@@ -185,13 +187,13 @@ export async function materialsAction(db: D1Database, actor: PortalActor, action
       const mutation = await prepareMutation(db, actor.userId, action, input);
       if (mutation.existingId) return { group: await statement(db, 'SELECT id,project_id,title,kind,occurred_at FROM activity_groups WHERE id=?', [mutation.existingId]).first(), duplicate: true };
       const id = crypto.randomUUID();
-      const createdId = await createBatch(db, mutation, id, [statement(db, 'INSERT INTO activity_groups(id,project_id,title,occurred_at,kind,note,created_by,created_at) VALUES(?,?,?,?,?,?,?,?)', [id, projectId, title, occurredAt, kind, note, actor.userId, now]), auditStatement(db, actor, action, id, projectId, { kind }, now)]);
+      const createdId = await createBatch(db, actor, projectId, kind==='loan'?'loans.manage':'inventory.manage', mutation, id, [statement(db, 'INSERT INTO activity_groups(id,project_id,title,occurred_at,kind,note,created_by,created_at) VALUES(?,?,?,?,?,?,?,?)', [id, projectId, title, occurredAt, kind, note, actor.userId, now]), auditStatement(db, actor, action, id, projectId, { kind }, now)],kind==='mixed'?['loans.manage']:[]);
       return { group: await statement(db, 'SELECT id,project_id,title,kind,occurred_at FROM activity_groups WHERE id=?', [createdId]).first() };
     }
     if (action === 'item.create') {
       const projectId = await requireProject(db, actor, input.projectId, 'inventory.manage');
       const mutation = await prepareMutation(db, actor.userId, action, input);
-      if (mutation.existingId) return { item: await itemById(db, mutation.existingId), duplicate: true };
+      if (mutation.existingId) { await inventoryRead(db, actor, projectId); return { item: await itemById(db, mutation.existingId), duplicate: true }; }
       const name = textValue(input.name, 'o nome do material');
       const customCategory = input.categoryId ? await categoryById(db, textValue(input.categoryId, 'a categoria', 100)) : null;
       const category = textValue(input.category ?? customCategory?.core_kind, 'a categoria', 30);
@@ -202,19 +204,21 @@ export async function materialsAction(db: D1Database, actor: PortalActor, action
       if (category === 'equipment' && lowStock > 1) throw new HttpError(400, 'O alerta de um equipamento individual pode ser zero ou uma unidade.', 'equipment_unit');
       const description = textValue(input.description, 'a descrição', 2000, true);
       const assetCode = textValue(input.assetCode, 'a identificação patrimonial', 100, true);
+      const metadata = assetMetadata(input);
       const id = crypto.randomUUID();
-      const createdId = await createBatch(db, mutation, id, [
-        statement(db, 'INSERT INTO items (id,project_id,name,category,unit,low_stock,description,asset_code,created_at,updated_at,category_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)', [id, projectId, name, category, unit, lowStock, description, assetCode, now, now, categoryId]),
-        versionStatement(db, actor, 'item', id, projectId, 1, { name, category, unit, lowStock, description, assetCode, categoryId, condition: 'active' }, now),
+      const createdId = await createBatch(db, actor, projectId, 'inventory.manage', mutation, id, [
+        statement(db, `INSERT INTO items (id,project_id,name,category,unit,low_stock,description,asset_code,created_at,updated_at,category_id,${ASSET_METADATA_COLUMNS.join(',')}) VALUES (?,?,?,?,?,?,?,?,?,?,?,${ASSET_METADATA_COLUMNS.map(() => '?').join(',')})`, [id, projectId, name, category, unit, lowStock, description, assetCode, now, now, categoryId, ...assetMetadataValues(metadata)]),
+        versionStatement(db, actor, 'item', id, projectId, 1, { name, category, unit, lowStock, description, assetCode, categoryId, condition: 'active', ...metadata }, now),
         auditStatement(db, actor, action, id, projectId, { name, category }, now),
       ]);
+      await inventoryRead(db, actor, projectId);
       return { item: await itemById(db, createdId), ...(createdId !== id ? { duplicate: true } : {}) };
     }
 
 
     if (action === 'item.update' || action === 'item.restore') {
       const item = await itemById(db, input.id);
-      await requireCapability(actor, 'inventory.manage', item.project_id);
+      await requireLiveCapability(db, actor, 'inventory.manage', item.project_id);
       if (action === 'item.restore') input = { ...await metadataSnapshot(db, 'item', item.id, item.project_id, input.restoreVersion), id: item.id, expectedVersion: input.expectedVersion, restoreVersion: input.restoreVersion };
       if (typeof input.expectedVersion !== 'number' || !Number.isSafeInteger(input.expectedVersion) || input.expectedVersion < 1) throw new HttpError(400, 'Informe a versão do material. Atualize a página.', 'invalid_version');
       if (input.expectedVersion !== item.version) throw new HttpError(409, 'O material foi alterado em outra sessão. Atualize a página.', 'item_changed');
@@ -229,20 +233,22 @@ export async function materialsAction(db: D1Database, actor: PortalActor, action
       const condition = textValue(input.condition ?? item.condition, 'a condição', 30);
       if (!['active', 'maintenance', 'inactive'].includes(condition)) throw new HttpError(400, 'Escolha uma condição válida.', 'invalid_condition');
       const assetCode = textValue(input.assetCode ?? item.asset_code, 'a identificação patrimonial', 100, true);
+      const metadata = assetMetadata(input, item);
       if (condition !== 'active') {
         if (item.reserved > 0) throw new HttpError(409, 'Há unidades prometidas em brindes. Conclua ou cancele as reservas antes de desativar o material.', 'item_reserved');
         const out = await statement(db, "SELECT id FROM loans WHERE item_id=? AND status='out' LIMIT 1", [item.id]).first();
         if (out) throw new HttpError(409, 'Registre a devolução antes de colocar o equipamento em manutenção ou desativá-lo.', 'asset_in_use');
       }
-      const results = await db.batch([
-        statement(db, `UPDATE items SET name=?,unit=?,description=?,low_stock=?,condition=?,asset_code=?,category_id=?,version=version+1,updated_at=?
+      const results = await capabilityBatch(db,actor,'inventory.manage',item.project_id,[
+        statement(db, `UPDATE items SET name=?,unit=?,description=?,low_stock=?,condition=?,asset_code=?,category_id=?,${ASSET_METADATA_COLUMNS.map(column => `${column}=?`).join(',')},version=version+1,updated_at=?
           WHERE id=? AND version=? AND (?='active' OR (reserved=0 AND NOT EXISTS (SELECT 1 FROM loans WHERE item_id=items.id AND status='out')))
           AND ${inventoryAuthorization('items.project_id')}`,
-          [name, unit, description, lowStock, condition, assetCode, categoryId, now, item.id, input.expectedVersion, condition, actor.userId, actor.userId]),
-        versionStatement(db, actor, 'item', item.id, item.project_id, item.version + 1, { name, category: item.category, unit, description, lowStock, condition, assetCode, categoryId }, now, true),
+          [name, unit, description, lowStock, condition, assetCode, categoryId, ...assetMetadataValues(metadata), now, item.id, input.expectedVersion, condition, actor.userId, actor.userId]),
+        versionStatement(db, actor, 'item', item.id, item.project_id, item.version + 1, { name, category: item.category, unit, description, lowStock, condition, assetCode, categoryId, ...metadata }, now, true),
         conditionalAudit(db, actor, action, item.id, item.project_id, { previousVersion: item.version, condition, assetCode, ...(action === 'item.restore' ? { restoredFromVersion: input.restoreVersion } : {}) }, now),
       ]);
       if (results[0].meta.changes !== 1) throw new HttpError(409, 'O material, sua disponibilidade ou seu acesso mudou. Atualize a página.', 'item_changed');
+      await inventoryRead(db, actor, item.project_id);
       return { item: await itemById(db, item.id) };
     }
 
@@ -250,7 +256,7 @@ export async function materialsAction(db: D1Database, actor: PortalActor, action
       const item = await itemById(db, input.itemId);
       const kind = textValue(input.kind, 'o tipo de movimentação', 20);
       if (!['receive', 'distribute', 'consume', 'adjust'].includes(kind)) throw new HttpError(400, 'Escolha uma movimentação válida.', 'invalid_movement');
-      await requireCapability(actor, 'inventory.manage', item.project_id);
+      await requireLiveCapability(db, actor, 'inventory.manage', item.project_id);
       if (typeof input.delta !== 'number' || !Number.isSafeInteger(input.delta) || input.delta === 0 || Math.abs(input.delta) > MAX_QUANTITY) throw new HttpError(400, 'Informe uma quantidade inteira diferente de zero.', 'invalid_quantity');
       const delta = input.delta as number;
       if ((kind === 'receive' && delta < 0) || (['distribute', 'consume'].includes(kind) && delta > 0)) throw new HttpError(400, 'Entradas devem ser positivas; distribuição e consumo devem ser negativos.', 'invalid_quantity');
@@ -274,11 +280,12 @@ export async function materialsAction(db: D1Database, actor: PortalActor, action
       }
       const id = crypto.randomUUID();
       try {
-        await db.batch([
+        await capabilityBatch(db,actor,'inventory.manage',item.project_id,[
           statement(db, 'INSERT INTO stock_movements (id,item_id,delta,kind,note,ref_id,actor_id,created_at,group_id) VALUES (?,?,?,?,?,?,?,?,?)', [id, item.id, delta, kind, note, refId, actor.userId, now, groupId]),
           auditStatement(db, actor, action, id, item.project_id, { itemId: item.id, delta, kind, note }, now),
         ]);
       } catch (error) {
+        if(error instanceof HttpError&&error.status===403)throw error;
         // A retried mobile request can race the first request; uniqueness makes it safe.
         const retry = await statement(db, 'SELECT * FROM stock_movements WHERE ref_id=?', [refId]).first<Movement>();
         if (!retry) throw error;
@@ -308,7 +315,7 @@ export async function materialsAction(db: D1Database, actor: PortalActor, action
         components.push({ itemId: item.id, quantity: integerValue(component.quantity, 'A quantidade por brinde', 1) });
       }
       const id = crypto.randomUUID();
-      const createdId = await createBatch(db, mutation, id, [
+      const createdId = await createBatch(db, actor, projectId, 'inventory.manage', mutation, id, [
         statement(db, 'INSERT INTO offers (id,project_id,name,kind,active) VALUES (?,?,?,?,1)', [id, projectId, name, kind]),
         ...components.map(component => statement(db, 'INSERT INTO offer_components (offer_id,item_id,quantity) VALUES (?,?,?)', [id, component.itemId, component.quantity])),
         auditStatement(db, actor, action, id, projectId, { name, kind, components }, now),
@@ -338,7 +345,7 @@ export async function materialsAction(db: D1Database, actor: PortalActor, action
         return { loan: await statement(db, 'SELECT * FROM loans WHERE id=?', [duplicateId]).first(), duplicate: true };
       }
       const id = crypto.randomUUID();
-      const createdId = await createBatch(db, mutation, id, [
+      const createdId = await createBatch(db, actor, projectId, 'loans.manage', mutation, id, [
         statement(db, 'INSERT INTO loans (id,project_id,item_id,action_name,borrower_name,borrower_contact,starts_at,ends_at,status,note,created_by,created_at,updated_at,group_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)', [id, projectId, item.id, actionName, borrowerName, borrowerContact, startsAt, endsAt, 'reserved', note, actor.userId, now, now, groupId]),
         auditStatement(db, actor, action, id, projectId, { itemId: item.id, startsAt, endsAt, actionName }, now),
       ]);
@@ -348,7 +355,7 @@ export async function materialsAction(db: D1Database, actor: PortalActor, action
     const id = textValue(input.id, 'o empréstimo', 100);
     const loan = await statement(db, 'SELECT * FROM loans WHERE id=?', [id]).first<Loan>();
     if (!loan) throw new HttpError(404, 'Empréstimo não encontrado.', 'loan_not_found');
-    await requireCapability(actor, 'loans.manage', loan.project_id);
+    await requireLiveCapability(db, actor, 'loans.manage', loan.project_id);
     const status = textValue(input.status, 'a situação', 20);
     if (!['out', 'returned', 'cancelled'].includes(status)) throw new HttpError(400, 'Escolha uma situação válida.', 'invalid_status');
     if (loan.status === status) return { loan, duplicate: true };
@@ -361,10 +368,10 @@ export async function materialsAction(db: D1Database, actor: PortalActor, action
     if (status === 'out' && (loan.starts_at > Date.now() || loan.ends_at <= Date.now())) throw new HttpError(409, 'A retirada só pode ser registrada dentro do período reservado.', 'loan_checkout_window');
     const checkedOutAt = status === 'out' ? now : loan.checked_out_at;
     const returnedAt = status === 'returned' ? now : loan.returned_at;
-    const results = await db.batch([
+    const results = await capabilityBatch(db,actor,'loans.manage',loan.project_id,[
       // The original reservation note is immutable here. Each stage has its own condition and audit entry.
       statement(db, `UPDATE loans SET status=?,condition_out=?,condition_in=?,checked_out_at=?,returned_at=?,updated_at=? WHERE id=? AND status=?
-        AND EXISTS (SELECT 1 FROM members m WHERE m.user_id=? AND m.revoked_at IS NULL AND m.role IN ('owner','manager','loans') AND (m.project_id IS NULL OR m.project_id=loans.project_id)) RETURNING id`,
+        AND EXISTS (SELECT 1 FROM members m WHERE m.user_id=? AND m.revoked_at IS NULL AND m.role IN ('owner','manager','loans') AND ${memberProjectScopeSql("m","loans.project_id")}) RETURNING id`,
         [status, conditionOut, conditionIn, checkedOutAt, returnedAt, now, id, loan.status, actor.userId]),
       statement(db, 'INSERT INTO audit (id,actor_id,project_id,action,entity_id,details,created_at) SELECT ?,?,?,?,?,?,? WHERE changes()=1', [crypto.randomUUID(), actor.userId, loan.project_id, action, id, JSON.stringify({ previous: loan.status, status, note, ...(status === 'out' ? { conditionOut } : status === 'returned' ? { conditionIn } : {}) }), now]),
     ]);
@@ -381,7 +388,7 @@ export async function materialsAction(db: D1Database, actor: PortalActor, action
 
 async function inventoryRead(db: D1Database, actor: PortalActor | null, projectId: string): Promise<void> {
   requireCapability(actor, 'inventory.read', projectId);
-  const allowed = await statement(db, `SELECT id FROM members m WHERE m.user_id=? AND m.revoked_at IS NULL AND m.role IN ('owner','manager','inventory') AND (m.project_id IS NULL OR m.project_id=?) AND NOT EXISTS(SELECT 1 FROM portal_users u WHERE u.user_id=m.user_id AND (u.status!='active' OR u.activation_pending!=0 OR u.anonymized_at IS NOT NULL)) LIMIT 1`, [actor!.userId, projectId]).first();
+  const allowed = await statement(db, `SELECT id FROM members m WHERE m.user_id=? AND m.revoked_at IS NULL AND m.role IN ('owner','manager','inventory') AND ${memberProjectScopeSql("m","?")} AND NOT EXISTS(SELECT 1 FROM portal_users u WHERE u.user_id=m.user_id AND (u.status!='active' OR u.activation_pending!=0 OR u.anonymized_at IS NOT NULL)) LIMIT 1`, [actor!.userId, projectId]).first();
   if (!allowed) throw new HttpError(403, 'Seu acesso ao catálogo mudou. Atualize a página.', 'access_changed');
 }
 export async function listMaterialCategories(db: D1Database, actor: PortalActor | null, projectId?: unknown): Promise<MaterialCategory[]> {
@@ -394,7 +401,7 @@ export async function listMaterialCategories(db: D1Database, actor: PortalActor 
   const where = selected ? 'c.project_id=?' : scope === null ? '1=1' : `c.project_id IN (${scope.map(() => '?').join(',')})`;
   if (selected) params.push(selected); else if (scope) params.push(...scope);
   params.push(actor.userId, actor.userId);
-  return (await statement(db, `SELECT c.* FROM material_categories c WHERE ${where} AND EXISTS(SELECT 1 FROM members m WHERE m.user_id=? AND m.revoked_at IS NULL AND m.role IN ('owner','manager','inventory') AND (m.project_id IS NULL OR m.project_id=c.project_id)) AND NOT EXISTS(SELECT 1 FROM portal_users u WHERE u.user_id=? AND (u.status!='active' OR u.activation_pending!=0 OR u.anonymized_at IS NOT NULL)) ORDER BY c.status,c.label,c.id`, params).all<MaterialCategory>()).results ?? [];
+  return (await statement(db, `SELECT c.* FROM material_categories c WHERE ${where} AND EXISTS(SELECT 1 FROM members m WHERE m.user_id=? AND m.revoked_at IS NULL AND m.role IN ('owner','manager','inventory') AND ${memberProjectScopeSql("m","c.project_id")}) AND NOT EXISTS(SELECT 1 FROM portal_users u WHERE u.user_id=? AND (u.status!='active' OR u.activation_pending!=0 OR u.anonymized_at IS NOT NULL)) ORDER BY c.status,c.label,c.id`, params).all<MaterialCategory>()).results ?? [];
 }
 export async function materialDetail(db: D1Database, actor: PortalActor | null, itemId: unknown, options: { before?: unknown; limit?: unknown } = {}): Promise<Record<string, unknown>> {
   if (!actor) throw new HttpError(401, 'Entre para acessar o material.', 'unauthenticated');
@@ -413,19 +420,27 @@ export async function materialDetail(db: D1Database, actor: PortalActor | null, 
   const movementRows = (await statement(db, `SELECT m.id,m.delta,m.kind,m.note AS reason,m.created_at,m.group_id,g.title AS group_title,
     COALESCE(NULLIF(p.display_name,''),'Equipe') AS actor_name FROM stock_movements m LEFT JOIN profiles p ON p.user_id=m.actor_id
     LEFT JOIN activity_groups g ON g.id=m.group_id AND g.project_id=? WHERE m.item_id=?${before ? beforeId ? ' AND (m.created_at<? OR (m.created_at=? AND m.id<?))' : ' AND m.created_at<?' : ''} ORDER BY m.created_at DESC,m.id DESC LIMIT ?`, [item.project_id, item.id, ...(before ? beforeId ? [before, before, beforeId] : [before] : []), limit + 1]).all<Record<string, unknown>>()).results ?? [];
-  const photos = (await statement(db, `SELECT a.id,a.name,a.mime,a.size,a.caption,a.attachment_role,a.created_at,r.id AS record_id,r.title
+  const attachments = (await statement(db, `SELECT a.id,a.name,a.mime,a.size,a.caption,a.attachment_role,a.created_at,r.id AS record_id,r.title
     FROM record_attachments a JOIN records r ON r.id=a.record_id AND r.project_id=a.project_id
     WHERE r.item_id=? AND r.project_id=? AND r.loan_id IS NULL AND r.kind IN ('material','maintenance','distribution','consumption') AND a.deleted_at IS NULL
-    AND a.mime IN ('image/jpeg','image/png','image/webp') ORDER BY a.display_order,a.created_at DESC,a.id LIMIT 100`, [item.id, item.project_id]).all<Record<string, unknown>>()).results ?? [];
+    ORDER BY a.display_order,a.created_at DESC,a.id LIMIT 101`, [item.id, item.project_id]).all<Record<string, unknown>>()).results ?? [];
+  const loanHistory = (await statement(db, `SELECT id,status,starts_at,ends_at,checked_out_at,returned_at FROM loans WHERE item_id=? AND project_id=? ORDER BY starts_at DESC,id DESC LIMIT 101`, [item.id, item.project_id]).all()).results ?? [];
+  const records = (await statement(db, `SELECT id,kind,title,occurred_at,created_at FROM records WHERE item_id=? AND project_id=? AND loan_id IS NULL AND kind IN ('material','maintenance','distribution','consumption') ORDER BY occurred_at DESC,id DESC LIMIT 101`, [item.id, item.project_id]).all()).results ?? [];
   const activeLoans = (await statement(db, `SELECT id,status,starts_at,ends_at FROM loans WHERE item_id=? AND project_id=? AND status IN ('reserved','out') ORDER BY starts_at LIMIT 100`, [item.id, item.project_id]).all<{ id: string; status: string; starts_at: number; ends_at: number }>()).results ?? [];
   const clock = Date.now(), blocking = activeLoans.find(loan => loan.status === 'out' || (loan.starts_at <= clock && loan.ends_at > clock));
   let canManage = false;
   try { requireCapability(actor, 'inventory.manage', item.project_id); canManage = true; } catch { /* Read-only catalog role. */ }
   const versions = canManage ? (await statement(db, "SELECT id,version,created_at FROM entity_versions WHERE entity_type='item' AND entity_id=? AND project_id=? ORDER BY version DESC LIMIT 30", [item.id, item.project_id]).all()).results ?? [] : [];
+  // A revocation during the asynchronous history reads must suppress the whole payload.
+  await inventoryRead(db, actor, item.project_id);
+  const files = attachments.slice(0, 100).map<Record<string, unknown>>(attachment => ({ ...attachment, url: `/api/records/files/${attachment.id}` }));
   return {
     item, category: item.category_id ? await categoryById(db, item.category_id) : null,
     categories: await listMaterialCategories(db, actor, item.project_id), movements: movementRows.slice(0, limit),
-    photos: photos.map(photo => ({ ...photo, url: `/api/records/files/${photo.id}` })),
+    photos: files.filter(file => String(file.mime).startsWith('image/')),
+    attachments: files, attachmentsTruncated: attachments.length > 100,
+    loanHistory: loanHistory.slice(0, 100), loanHistoryTruncated: loanHistory.length > 100,
+    records: records.slice(0, 100), recordsTruncated: records.length > 100,
     availability: { physical: item.stock, prizeReserved: item.reserved, available: item.category === 'equipment' ? (item.condition === 'active' && item.stock === 1 && !blocking ? 1 : 0) : item.stock - item.reserved, equipmentState: item.category === 'equipment' ? blocking?.status ?? item.condition : null, nextReservations: activeLoans.map(loan => ({ id: loan.id, status: loan.status, starts_at: loan.starts_at, ends_at: loan.ends_at })) },
     permissions: { canManage, canUploadPhotos: canManage }, versions,
     historyTruncated: movementRows.length > limit,

@@ -1,3 +1,4 @@
+import { ASSET_TEXT_FIELDS } from '../asset-metadata';
 export type ImportKind = 'project' | 'asset';
 export type ImportField = { key: string; label: string; maximum: number; metadata?: boolean };
 export const PROJECT_IMPORT_FIELDS: ImportField[] = [
@@ -14,17 +15,15 @@ export const PROJECT_IMPORT_FIELDS: ImportField[] = [
 export const ASSET_IMPORT_FIELDS: ImportField[] = [
   { key: 'name', label: 'Nome do bem', maximum: 120 }, { key: 'assetCode', label: 'Tombamento / patrimônio', maximum: 100 },
   { key: 'description', label: 'Descrição', maximum: 2000 }, { key: 'unit', label: 'Unidade de medida', maximum: 40 },
-  { key: 'brand', label: 'Marca', maximum: 120, metadata: true }, { key: 'model', label: 'Modelo', maximum: 120, metadata: true },
-  { key: 'serialNumber', label: 'Número de série', maximum: 120, metadata: true },
-  { key: 'location', label: 'Localização física', maximum: 200, metadata: true },
-  { key: 'responsibleUnit', label: 'Unidade responsável', maximum: 200, metadata: true },
-  { key: 'sourceCondition', label: 'Condição informada', maximum: 100, metadata: true },
+  ...ASSET_TEXT_FIELDS.map(field => ({ key: field[0], label: field[2], maximum: field[3], metadata: true })),
+  { key: 'acquisitionDate', label: 'Data de aquisição documentada', maximum: 10, metadata: true },
+  { key: 'acquisitionValueCents', label: 'Valor documentado em centavos inteiros', maximum: 13, metadata: true },
 ];
 export const importFields = (kind: ImportKind) => kind === 'project' ? PROJECT_IMPORT_FIELDS : ASSET_IMPORT_FIELDS;
 export type ImportCandidate = { key: string; fields: Record<string, string>; problems: Record<string, string>; warnings: string[]; suggestedUnitId?: string; suggestedTypeId?: string };
 export type ImportFileProvenance = { fileFormat: string; sha256: string; extraction: 'server-docx' | 'browser-pdf' | 'text-file'; pages?: number[] };
-export type ImportProvenance = { kind: 'sigaa' | 'document' | 'manual'; label: string; url?: string; externalId?: string; sha256: string; textSha256?: string; fileFormat?: string; extraction?: ImportFileProvenance['extraction']; pages?: number[]; retrievedAt: string };
-export type ImportReview = { version: 1; actorId: string; kind: ImportKind; projectId: string | null; itemId: string | null; expectedVersion: number | null; provenance: ImportProvenance; candidates: ImportCandidate[]; expiresAt: number };
+export type ImportProvenance = { kind: 'sigaa' | 'document' | 'manual'; organizationId: string; label: string; url?: string; externalId?: string; sha256: string; textSha256?: string; fileFormat?: string; extraction?: ImportFileProvenance['extraction']; pages?: number[]; retrievedAt: string };
+export type ImportReview = { version: 2; organizationId: string; actorId: string; kind: ImportKind; projectId: string | null; itemId: string | null; expectedVersion: number | null; provenance: ImportProvenance; candidates: ImportCandidate[]; expiresAt: number };
 export type ImportPreview = Omit<ImportReview, 'actorId'> & { reviewToken: string };
 export const IMPORT_TEXT_LIMIT = 256 * 1024;
 export const IMPORT_MAX_ROWS = 20;

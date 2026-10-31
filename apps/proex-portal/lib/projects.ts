@@ -1,4 +1,4 @@
-import { accessibleProjects, requireCapability, type PortalActor } from './access';
+import { accessibleProjects, requireCapability, requireOrganizationCapability, organizationAuthoritySql, memberProjectScopeSql, projectAuthoritySql, LEGACY_ORGANIZATION_ID, type PortalActor } from './access';
 import { all, one, uid, iso, type Row } from './database';
 import { HttpError } from './errors';
 import { prepareMutation } from './mutations';
@@ -10,7 +10,7 @@ type Entity = 'project' | 'call' | 'project_link' | 'project_schedule_item';
 const TABLES: Record<Entity, string> = { project: 'projects', call: 'calls', project_link: 'project_links', project_schedule_item: 'project_schedule_items' };
 const PREFIX: Record<Entity, string> = { project: 'project', call: 'call', project_link: 'project.link', project_schedule_item: 'project.schedule' };
 const FIELDS: Record<Entity, string[]> = {
-  project: ['name','short_name','description','status','lifecycle','type_id','parent_id','unit_id','prizes_enabled','scope','thematic_area','extension_line','color','official_url','starts_at','ends_at','location'],
+  project: ['name','short_name','description','status','lifecycle','type_id','parent_id','unit_id','prizes_enabled','scope','thematic_area','extension_line','color','official_url','starts_at','ends_at','location','organization_id'],
   call: ['project_id','title','reference_code','description','status','opens_at','closes_at','official_url'],
   project_link: ['project_id','label','url','kind'],
   project_schedule_item: ['project_id','title','starts_at','ends_at','status','note','url'],
@@ -46,15 +46,18 @@ function url(value: unknown, optional = true): string {
 function permitted(actor: PortalActor, capability: string, projectId: string | null): boolean { try { requireCapability(actor, capability, projectId); return true; } catch { return false; } }
 function manage(actor: PortalActor, projectId: string): void { if (!permitted(actor, 'projects.manage', null)) requireCapability(actor, 'campaigns.manage', projectId); }
 function canSee(actor: PortalActor, projectId: string): boolean { const scope = accessibleProjects(actor); return scope === null || scope.includes(projectId); }
-function guard(actor: PortalActor, projectId: string | null) {
+function guard(actor: PortalActor, projectId: string | null, organizationId?: string) {
+  if (projectId === null && organizationId !== undefined) return organizationAuthoritySql(actor, organizationId);
   return { sql: `EXISTS (SELECT 1 FROM members m LEFT JOIN portal_users u ON u.user_id=m.user_id WHERE m.user_id=? AND m.revoked_at IS NULL
     AND COALESCE(u.status,'active')='active' AND COALESCE(u.activation_pending,0)=0 AND u.anonymized_at IS NULL
-    AND ${projectId === null ? "m.role='owner' AND m.project_id IS NULL" : "m.role IN ('owner','manager') AND (m.project_id IS NULL OR m.project_id=?)"})`, values: projectId === null ? [actor.userId] : [actor.userId, projectId] };
+    AND ${projectId === null ? "m.role='owner' AND m.project_id IS NULL AND m.organization_id IS NULL" : `m.role IN ('owner','manager') AND ${memberProjectScopeSql('m','?')}`})`, values: [actor.userId, ...(projectId === null ? [] : [projectId])] };
 }
-/** A receipt identifies a write, but never grants permission to read its result. */
-async function presentEntity(db:D1Database,actor:PortalActor,entity:Entity|'project_type',id:string,action:string):Promise<Row>{
+/** Mutation receipts acknowledge a write; they never preserve a revoked read grant. */
+async function presentEntity(db: D1Database, actor: PortalActor, entity: Entity | 'project_type', id: string, action: string): Promise<Row> {
   const table=entity==='project_type'?'project_types':TABLES[entity],projectColumn=entity==='project'?'resource.id':'resource.project_id';
-  const scope=entity==='project_type'||action==='project.create'?"m.role='owner' AND m.project_id IS NULL":`m.role IN ('owner','manager') AND (m.project_id IS NULL OR m.project_id=${projectColumn})`;
+  const scope=entity==='project_type'?"m.role='owner' AND m.project_id IS NULL AND m.organization_id IS NULL"
+    :action==='project.create'?"m.role='owner' AND m.project_id IS NULL AND (m.organization_id IS NULL OR m.organization_id=resource.organization_id)"
+    :`m.role IN ('owner','manager') AND ${memberProjectScopeSql('m',projectColumn)}`;
   const row=await one(db,`SELECT resource.* FROM ${table} resource WHERE resource.id=? AND EXISTS(
     SELECT 1 FROM members m LEFT JOIN portal_users u ON u.user_id=m.user_id WHERE m.user_id=? AND m.revoked_at IS NULL
     AND COALESCE(u.status,'active')='active' AND COALESCE(u.activation_pending,0)=0 AND u.anonymized_at IS NULL AND ${scope})`,[id,actor.userId]);
@@ -105,15 +108,21 @@ async function saveEntity(db: D1Database, actor: PortalActor, entity: Entity, ac
   const existing=update?await one(db,`SELECT * FROM ${table} WHERE id=?`,[identifier(input.id)]):null;
   if(update&&!existing)throw new HttpError(404,'Registro não encontrado.','entity_not_found');
   const projectId=entity==='project'?(existing?.id??null):(existing?.project_id??identifier(input.projectId)!);
-  if(projectId)manage(actor,projectId);else requireCapability(actor,'projects.manage',null);
+  const ownedOrganizations=actor.members.filter(member=>member.role==='owner'&&member.project_id===null&&member.organization_id).map(member=>member.organization_id!);
+  const organizationId=entity==='project'?(existing?.organization_id??identifier(input.organizationId??(ownedOrganizations.length===1?ownedOrganizations[0]:LEGACY_ORGANIZATION_ID))!):null;
+  if(projectId)manage(actor,projectId);else requireOrganizationCapability(actor,'projects.manage',organizationId!);
+  if(entity==='project'&&existing&&input.organizationId!==undefined&&input.organizationId!==existing.organization_id)throw new HttpError(400,'A transferência de organização exige uma revisão específica.','organization_transfer_requires_review');
+  if(entity==='project'&&!existing&&!await one(db,"SELECT id FROM organizations WHERE id=? AND status='active'",[organizationId]))throw new HttpError(400,'Escolha uma organização ativa.','organization_not_found');
   if(update&&(!Number.isSafeInteger(input.expectedVersion)||input.expectedVersion<1))throw new HttpError(400,'Informe a versão atual. Atualize a página.','invalid_version');
   // Legacy project edits remain CAS protected. The current UI and all new metadata writes use keys.
   const mutation=entity==='project'&&update&&input.operationKey===undefined?null:await prepareMutation(db,actor.userId,action,input);
   if(mutation?.existingId)return {id:mutation.existingId,[entity]:await presentEntity(db,actor,entity,mutation.existingId,action),duplicate:true};
   if(existing&&existing.version!==input.expectedVersion)throw new HttpError(409,'Este registro mudou. Reabra a edição para carregar a versão atual.','project_changed');
   const {fields,linked}=await normalize(db,actor,entity,input,existing),id=existing?.id??uid(),now=iso(),revision=(existing?.version??0)+1;
+  if(entity==='project')fields.organization_id=organizationId;
   const previousLinked=entity==='call'&&existing?(await all(db,'SELECT project_id FROM project_calls WHERE call_id=? ORDER BY project_id',[id])).map(row=>row.project_id):[];
-  const auth=guard(actor,projectId),relatedAuth=entity==='call'?[...new Set([...linked,...previousLinked])].map(project=>guard(actor,project)):[];
+  const auth=guard(actor,projectId,organizationId??undefined),relatedAuth=entity==='call'?[...new Set([...linked,...previousLinked])].map(project=>guard(actor,project)):[];
+  if(entity==='project'&&!existing){auth.sql+=" AND EXISTS(SELECT 1 FROM organizations WHERE id=? AND status='active')";auth.values.push(organizationId!);}
   const cycleGuard=entity==='project'&&existing&&fields.parent_id?{sql:`NOT EXISTS(WITH RECURSIVE ancestors(id,parent_id) AS (SELECT id,parent_id FROM projects WHERE id=? UNION SELECT p.id,p.parent_id FROM projects p JOIN ancestors a ON p.id=a.parent_id) SELECT 1 FROM ancestors WHERE id=?)`,values:[fields.parent_id,id]}:{sql:'1=1',values:[]};
   const authorization=[auth.sql,...relatedAuth.map(value=>value.sql),cycleGuard.sql].join(' AND '),authValues=[...auth.values,...relatedAuth.flatMap(value=>value.values),...cycleGuard.values];
   const target=existing?`EXISTS(SELECT 1 FROM ${table} WHERE id=? AND version=?) AND (${authorization})`:`(${authorization})`;
@@ -147,7 +156,7 @@ async function typeAction(db:D1Database,actor:PortalActor,action:string,input:Ro
   const key=text(input.key??existing?.key,'a chave do tipo',50).toLowerCase();if(!/^[a-z][a-z0-9_-]{1,49}$/.test(key))throw new HttpError(400,'Use uma chave curta em letras, números e hífen.');
   const fields={key,label:text(input.label??existing?.label,'o nome do tipo',100),description:text(input.description??existing?.description,'a descrição',1000,true),status:choice(input.status??existing?.status??'active',['active','archived'],'um estado')},id=existing?.id??uid(),now=iso(),auth=guard(actor,null);
   const target=existing?`EXISTS(SELECT 1 FROM project_types WHERE id=? AND version=?) AND ${auth.sql}`:auth.sql,targetValues=existing?[id,input.expectedVersion,...auth.values]:auth.values;
-  let result:D1Result[];try{result=await db.batch([db.prepare(`INSERT INTO mutation_keys(scope,fingerprint,entity_id,created_at) SELECT ?,?,?,? WHERE ${target}`).bind(mutation.scope,mutation.fingerprint,id,now,...targetValues),existing?db.prepare(`UPDATE project_types SET key=?,label=?,description=?,status=?,version=version+1,updated_at=? WHERE id=? AND version=? AND ${auth.sql}`).bind(...Object.values(fields),now,id,input.expectedVersion,...auth.values):db.prepare(`INSERT INTO project_types(id,key,label,description,status,version,created_at,updated_at) SELECT ?,?,?,?,?,1,?,? WHERE ${auth.sql}`).bind(id,...Object.values(fields),now,now,...auth.values),db.prepare(`INSERT INTO audit(id,actor_id,project_id,action,entity_id,details,created_at) SELECT ?,?,NULL,?,?,'{}',? WHERE changes()=1`).bind(uid(),actor.userId,action,id,now)]);}catch(error){const id=await mutation.recover(error);return{id,projectType:await presentEntity(db,actor,'project_type',id,action),duplicate:true};}
+  let result:D1Result[];try{result=await db.batch([db.prepare(`INSERT INTO mutation_keys(scope,fingerprint,entity_id,created_at) SELECT ?,?,?,? WHERE ${target}`).bind(mutation.scope,mutation.fingerprint,id,now,...targetValues),existing?db.prepare(`UPDATE project_types SET key=?,label=?,description=?,status=?,version=version+1,updated_at=? WHERE id=? AND version=? AND ${auth.sql}`).bind(...Object.values(fields),now,id,input.expectedVersion,...auth.values):db.prepare(`INSERT INTO project_types(id,key,label,description,status,version,created_at,updated_at) SELECT ?,?,?,?,?,1,?,? WHERE ${auth.sql}`).bind(id,...Object.values(fields),now,now,...auth.values),db.prepare(`INSERT INTO audit(id,actor_id,project_id,action,entity_id,details,created_at) SELECT ?,?,NULL,?,?,'{}',? WHERE changes()=1`).bind(uid(),actor.userId,action,id,now)]);}catch(error){const replayId=await mutation.recover(error);return{id:replayId,projectType:await presentEntity(db,actor,'project_type',replayId,action),duplicate:true};}
   if(result[1].meta.changes!==1)throw new HttpError(409,'O tipo ou seu acesso mudou. Atualize a página.');return{id,projectType:await presentEntity(db,actor,'project_type',id,action)};
 }
 export async function projectAction(db:D1Database,actor:PortalActor,action:string,input:Row):Promise<Row|null>{
@@ -172,7 +181,8 @@ export async function projectAction(db:D1Database,actor:PortalActor,action:strin
 export async function projectDetail(db:D1Database,actor:PortalActor|null,id:string):Promise<Row>{
   if(!actor)throw new HttpError(401,'Entre para acessar este projeto.','unauthenticated');identifier(id);
   if(!canSee(actor,id))throw new HttpError(404,'Projeto não encontrado.');
-  const project=await one(db,`SELECT p.*,t.key type_key,t.label type_label,u.name unit_name,u.acronym unit_acronym FROM projects p LEFT JOIN project_types t ON t.id=p.type_id LEFT JOIN organizational_units u ON u.id=p.unit_id WHERE p.id=?`,[id]);if(!project)throw new HttpError(404,'Projeto não encontrado.');
+  const authority=projectAuthoritySql(actor,[],'p.id');
+  const project=await one(db,`SELECT p.*,t.key type_key,t.label type_label,u.name unit_name,u.acronym unit_acronym FROM projects p LEFT JOIN project_types t ON t.id=p.type_id LEFT JOIN organizational_units u ON u.id=p.unit_id WHERE p.id=? AND ${authority.sql}`,[id,...authority.values]);if(!project)throw new HttpError(404,'Projeto não encontrado.');
   const canEdit=permitted(actor,'campaigns.manage',id)||permitted(actor,'projects.manage',null),inventory=permitted(actor,'inventory.read',id),loans=permitted(actor,'loans.read',id),reports=permitted(actor,'reports.read',id),campaigns=canEdit||permitted(actor,'participation.operate',id);
   const visible=accessibleProjects(actor),visibility=visible===null?'1=1':visible.length?`p.id IN (${visible.map(()=>'?').join(',')})`:'1=0';
   const [types,links,calls,schedule,versions,relatedProjects,items,events,loanRows,records]=await Promise.all([

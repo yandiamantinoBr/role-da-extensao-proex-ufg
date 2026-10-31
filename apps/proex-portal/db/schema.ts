@@ -1,7 +1,17 @@
 import { sql } from 'drizzle-orm';
-import { sqliteTable, text, integer, index, uniqueIndex, check, type AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, index, uniqueIndex, primaryKey, check, type AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
 
 // The schema has no production seed data. All quantities begin at zero.
+// SQL migrations remain authoritative for triggers, backfills and immutable history.
+// Drizzle snapshots cannot represent triggers. Review every generated table rebuild:
+// it must preserve the ledger, organization and asset-source triggers in 0000–0011.
+// In particular, projects.organization_id is nullable in SQLite's column metadata;
+// migration 0008 fills and enforces it with triggers, without a column default.
+export const organizations = sqliteTable('organizations', {
+  id: text('id').primaryKey(), name: text('name').notNull(), slug: text('slug').notNull().unique(),
+  status: text('status').notNull().default('active'), version: integer('version').notNull().default(1),
+  createdAt: text('created_at').notNull(), updatedAt: text('updated_at').notNull(),
+}, t => [check('organizations_status_check', sql`${t.status} IN ('active','archived')`), check('organizations_version_check', sql`${t.version}>0`)]);
 export const projectTypes = sqliteTable('project_types', {
   id: text('id').primaryKey(), key: text('key').notNull(), label: text('label').notNull(),
   description: text('description').notNull().default(''), status: text('status').notNull().default('active'),
@@ -20,6 +30,7 @@ export const organizationalUnits = sqliteTable('organizational_units', {
 ]);
 export const projects = sqliteTable('projects', {
   id: text('id').primaryKey(), name: text('name').notNull(),
+  organizationId: text('organization_id').references(() => organizations.id),
   description: text('description').notNull().default(''), createdAt: text('created_at').notNull(),
   shortName: text('short_name').notNull().default(''), status: text('status').notNull().default('active'),
   color: text('color').notNull().default('#54216C'), officialUrl: text('official_url').notNull().default(''),
@@ -35,9 +46,12 @@ export const projects = sqliteTable('projects', {
   thematicArea: text('thematic_area').notNull().default(''), extensionLine: text('extension_line').notNull().default(''),
 }, t => [
   index('projects_parent_idx').on(t.parentId), index('projects_unit_idx').on(t.unitId),
+  index('projects_organization_idx').on(t.organizationId, t.id),
   check('projects_prizes_enabled_check', sql`${t.prizesEnabled} IN (0,1)`),
   check('projects_scope_check', sql`${t.scope} IN ('internal','external')`),
   index('projects_thematic_area_idx').on(t.thematicArea),
+  check('projects_thematic_area_check', sql`${t.thematicArea} IN ('','comunicacao','cultura','direitos_humanos_justica','educacao','meio_ambiente','saude','tecnologia_producao','trabalho')`),
+  check('projects_extension_line_check', sql`${t.extensionLine}='' OR (length(${t.extensionLine})=2 AND ${t.extensionLine} BETWEEN '01' AND '53')`),
   check('projects_status_check', sql`${t.status} IN ('active','archived')`),
   check('projects_lifecycle_check', sql`${t.lifecycle} IN ('active','past','catalog')`),
   check('projects_version_check', sql`${t.version} > 0`),
@@ -47,9 +61,15 @@ export const members = sqliteTable('members', {
   id: text('id').primaryKey(), userId: text('user_id').notNull(), email: text('email').notNull(),
   role: text('role').notNull(), projectId: text('project_id').references(() => projects.id),
   revokedAt: text('revoked_at'), createdAt: text('created_at').notNull(),
+  organizationId: text('organization_id').references(() => organizations.id),
 }, t => [
   index('members_user_active_idx').on(t.userId, t.revokedAt),
   index('members_project_idx').on(t.projectId),
+  index('members_organization_idx').on(t.organizationId, t.userId, t.revokedAt),
+  // Drizzle Kit 0.31.10 splits comma-containing SQLite index expressions when
+  // emitting fresh DDL. Keep this faithful to 0008; never apply that broken fresh
+  // output. Established-snapshot diffs are empty. Index/table rebuilds need review.
+  uniqueIndex('members_active_scope_unique').on(t.userId, sql.raw("COALESCE(organization_id,'')"), sql.raw("COALESCE(project_id,'')")).where(sql`${t.revokedAt} IS NULL`),
   check('members_role_check', sql`${t.role} IN ('owner','manager','operator','inventory','loans','viewer')`),
   check('members_owner_scope_check', sql`${t.role} != 'owner' OR ${t.projectId} IS NULL`),
 ]);
@@ -59,6 +79,7 @@ export const invites = sqliteTable('invites', {
   createdBy: text('created_by').notNull(), expiresAt: text('expires_at').notNull(),
   acceptedBy: text('accepted_by'), acceptedAt: text('accepted_at'), revokedAt: text('revoked_at'),
   createdAt: text('created_at').notNull(),
+  organizationId: text('organization_id').references(() => organizations.id),
 }, t => [
   uniqueIndex('invites_token_hash_unique').on(t.tokenHash),
   index('invites_email_idx').on(t.email),
@@ -86,6 +107,11 @@ export const items = sqliteTable('items', {
   assetCode: text('asset_code').notNull().default(''), version: integer('version').notNull().default(1),
   updatedAt: text('updated_at').notNull().default(''),
   categoryId: text('category_id').references(() => materialCategories.id),
+  brand: text('brand'), model: text('model'), serialNumber: text('serial_number'), assetLocation: text('asset_location'),
+  responsibleUnit: text('responsible_unit'), responsibleReference: text('responsible_reference'),
+  conservationState: text('conservation_state'), assetStatus: text('asset_status'), origin: text('origin'), destination: text('destination'),
+  processReference: text('process_reference'), responsibilityTerm: text('responsibility_term'), invoiceReference: text('invoice_reference'),
+  sourceReference: text('source_reference'), acquisitionDate: text('acquisition_date'), acquisitionValueCents: integer('acquisition_value_cents'),
 }, t => [
   index('items_project_idx').on(t.projectId),
   uniqueIndex('items_asset_code_unique').on(t.projectId, t.assetCode).where(sql`${t.assetCode} != ''`),
@@ -94,6 +120,22 @@ export const items = sqliteTable('items', {
   check('items_condition_check', sql`${t.condition} IN ('active','maintenance','inactive')`),
   check('items_quantities_check', sql`${t.stock} >= 0 AND ${t.reserved} >= 0 AND ${t.reserved} <= ${t.stock} AND ${t.lowStock} >= 0`),
   check('items_equipment_single_check', sql`${t.category} != 'equipment' OR ${t.stock} <= 1`),
+  check('items_brand_length_check', sql`${t.brand} IS NULL OR length(${t.brand})<=120`),
+  check('items_model_length_check', sql`${t.model} IS NULL OR length(${t.model})<=160`),
+  check('items_serial_number_length_check', sql`${t.serialNumber} IS NULL OR length(${t.serialNumber})<=160`),
+  check('items_asset_location_length_check', sql`${t.assetLocation} IS NULL OR length(${t.assetLocation})<=300`),
+  check('items_responsible_unit_length_check', sql`${t.responsibleUnit} IS NULL OR length(${t.responsibleUnit})<=240`),
+  check('items_responsible_reference_length_check', sql`${t.responsibleReference} IS NULL OR length(${t.responsibleReference})<=240`),
+  check('items_conservation_state_length_check', sql`${t.conservationState} IS NULL OR length(${t.conservationState})<=200`),
+  check('items_asset_status_length_check', sql`${t.assetStatus} IS NULL OR length(${t.assetStatus})<=160`),
+  check('items_origin_length_check', sql`${t.origin} IS NULL OR length(${t.origin})<=240`),
+  check('items_destination_length_check', sql`${t.destination} IS NULL OR length(${t.destination})<=240`),
+  check('items_process_reference_length_check', sql`${t.processReference} IS NULL OR length(${t.processReference})<=120`),
+  check('items_responsibility_term_length_check', sql`${t.responsibilityTerm} IS NULL OR length(${t.responsibilityTerm})<=160`),
+  check('items_invoice_reference_length_check', sql`${t.invoiceReference} IS NULL OR length(${t.invoiceReference})<=160`),
+  check('items_source_reference_length_check', sql`${t.sourceReference} IS NULL OR length(${t.sourceReference})<=500`),
+  check('items_acquisition_date_check', sql`${t.acquisitionDate} IS NULL OR (length(${t.acquisitionDate})=10 AND ${t.acquisitionDate} GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]')`),
+  check('items_acquisition_value_check', sql`${t.acquisitionValueCents} IS NULL OR (typeof(${t.acquisitionValueCents})='integer' AND ${t.acquisitionValueCents} BETWEEN 0 AND 1000000000000)`),
 ]);
 export const offers = sqliteTable('offers', {
   id: text('id').primaryKey(), projectId: text('project_id').notNull().references(() => projects.id),
@@ -213,6 +255,7 @@ export const audit = sqliteTable('audit', {
   id: text('id').primaryKey(), actorId: text('actor_id').notNull(),
   projectId: text('project_id').references(() => projects.id), action: text('action').notNull(),
   entityId: text('entity_id').notNull(), details: text('details').notNull().default('{}'), createdAt: text('created_at').notNull(),
+  organizationId: text('organization_id').references(() => organizations.id),
 }, t => [index('audit_project_created_idx').on(t.projectId, t.createdAt)]);
 export const settings = sqliteTable('settings', {
   name: text('name').primaryKey(), value: text('value').notNull(), updatedAt: text('updated_at').notNull(),
@@ -393,3 +436,66 @@ export const syncAttachmentExports = sqliteTable('sync_attachment_exports', {
   check('sync_attachment_exports_kind_check', sql`${t.attachmentKind} IN ('record','loan','avatar')`),
   check('sync_attachment_exports_size_check', sql`${t.size} > 0`),
 ]);
+
+// Immutable migration evidence; update/delete guards live in migration 0008.
+export const organizationGrantMigrations = sqliteTable('organization_grant_migrations', {
+  memberId: text('member_id').primaryKey(), userId: text('user_id').notNull(), previousRole: text('previous_role').notNull(),
+  previousProjectId: text('previous_project_id'), previousRevokedAt: text('previous_revoked_at'),
+  organizationId: text('organization_id').references(() => organizations.id), classification: text('classification').notNull(),
+  migration: text('migration').notNull(), migratedAt: text('migrated_at').notNull(),
+}, t => [check('organization_grant_migrations_classification_check', sql`${t.classification} IN ('platform_owner','legacy_organization','project')`)]);
+
+// Private server-only AI tables. Declaring them here never adds them to portable,
+// MCP, Sheets or Drive allowlists. Complete encrypted backups preserve them.
+// These seven legacy AI TEXT PRIMARY KEY declarations omitted NOT NULL in SQL.
+// Table-level primaryKey retains SQLite's actual nullability in the typed model;
+// application validation still supplies IDs. Do not silently strengthen persisted DDL.
+export const aiSettings = sqliteTable('ai_settings', {
+  id: text('id'), revision: integer('revision').notNull().default(1),
+  configJson: text('config_json').notNull(), credentialsCiphertext: text('credentials_ciphertext').notNull(),
+  updatedBy: text('updated_by').notNull(), updatedAt: text('updated_at').notNull(),
+}, t => [primaryKey({ columns: [t.id] }), check('ai_settings_id_check', sql`${t.id}='portal'`)]);
+export const aiDailyUsage = sqliteTable('ai_daily_usage', {
+  day: text('day'), reservedUsdMicros: integer('reserved_usd_micros').notNull().default(0),
+  reservedTokens: integer('reserved_tokens').notNull().default(0), reservedMs: integer('reserved_ms').notNull().default(0),
+  calls: integer('calls').notNull().default(0),
+}, t => [
+  primaryKey({ columns: [t.day] }),
+  check('ai_daily_usage_usd_check', sql`${t.reservedUsdMicros}>=0`), check('ai_daily_usage_tokens_check', sql`${t.reservedTokens}>=0`),
+  check('ai_daily_usage_ms_check', sql`${t.reservedMs}>=0`), check('ai_daily_usage_calls_check', sql`${t.calls}>=0`),
+]);
+export const aiPlans = sqliteTable('ai_plans', {
+  id: text('id'), actorId: text('actor_id').notNull(), projectId: text('project_id').notNull().references(() => projects.id),
+  payloadJson: text('payload_json').notNull(), payloadDigest: text('payload_digest').notNull(), expiresAt: integer('expires_at').notNull(),
+  status: text('status').notNull().default('ready'), resultJson: text('result_json'), createdAt: text('created_at').notNull(),
+}, t => [primaryKey({ columns: [t.id] }), index('ai_plans_actor_project_idx').on(t.actorId, t.projectId, t.expiresAt), check('ai_plans_status_check', sql`${t.status} IN ('ready','applied','cancelled')`)]);
+export const aiCalls = sqliteTable('ai_calls', {
+  id: text('id'), fingerprint: text('fingerprint').notNull(), actorId: text('actor_id').notNull(), projectId: text('project_id').notNull(),
+  status: text('status').notNull(), planId: text('plan_id'), day: text('day').notNull(), createdAt: text('created_at').notNull(),
+  admissionNonce: text('admission_nonce'),
+}, t => [primaryKey({ columns: [t.id] }), check('ai_calls_status_check', sql`${t.status} IN ('reserved','complete','failed')`)]);
+export const aiOrganizationSettings = sqliteTable('ai_organization_settings', {
+  organizationId: text('organization_id').references(() => organizations.id), revision: integer('revision').notNull(),
+  configJson: text('config_json').notNull(), credentialsCiphertext: text('credentials_ciphertext').notNull(),
+  updatedBy: text('updated_by').notNull(), updatedAt: text('updated_at').notNull(),
+}, t => [primaryKey({ columns: [t.organizationId] })]);
+export const aiConfigurationGrants = sqliteTable('ai_configuration_grants', {
+  id: text('id'), organizationId: text('organization_id').notNull().references(() => organizations.id),
+  userId: text('user_id').notNull(), grantorMemberId: text('grantor_member_id').notNull().references(() => members.id),
+  grantedBy: text('granted_by').notNull(), createdAt: text('created_at').notNull(), revokedAt: text('revoked_at'),
+}, t => [primaryKey({ columns: [t.id] }), uniqueIndex('ai_configuration_grants_active_idx').on(t.organizationId, t.userId).where(sql`${t.revokedAt} IS NULL`)]);
+export const aiOrganizationUsage = sqliteTable('ai_organization_usage', {
+  organizationId: text('organization_id').notNull().references(() => organizations.id), day: text('day').notNull(),
+  reservedUsdMicros: integer('reserved_usd_micros').notNull().default(0), reservedTokens: integer('reserved_tokens').notNull().default(0),
+  reservedMs: integer('reserved_ms').notNull().default(0), calls: integer('calls').notNull().default(0),
+}, t => [
+  primaryKey({ columns: [t.organizationId, t.day] }),
+  check('ai_organization_usage_usd_check', sql`${t.reservedUsdMicros}>=0`), check('ai_organization_usage_tokens_check', sql`${t.reservedTokens}>=0`),
+  check('ai_organization_usage_ms_check', sql`${t.reservedMs}>=0`), check('ai_organization_usage_calls_check', sql`${t.calls}>=0`),
+]);
+export const aiTranscriptions = sqliteTable('ai_transcriptions', {
+  id: text('id'), fingerprint: text('fingerprint').notNull(), admissionNonce: text('admission_nonce').notNull(),
+  actorId: text('actor_id').notNull(), projectId: text('project_id').notNull().references(() => projects.id),
+  organizationId: text('organization_id').notNull().references(() => organizations.id), configRevision: integer('config_revision').notNull(),
+  status: text('status').notNull(), resultCiphertext: text('result_ciphertext'), createdAt: text('created_at').notNull(),
+}, t => [primaryKey({ columns: [t.id] }), check('ai_transcriptions_status_check', sql`${t.status} IN ('reserved','complete','failed')`)]);

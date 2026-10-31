@@ -122,3 +122,16 @@ test('manual external invitations remain possible with an explicit role and scop
     assert.equal(nodes(restricted, node => node.type === 'option' && node.props.value === '__global__').length, 0);
   } finally { globalThis.FormData = original; delete globalThis.__officialDraftKeys; }
 });
+
+
+test('organization administrators can choose project managers only inside their managed scope', () => {
+  globalThis.__officialDraftKeys = [];
+  const props = { now: 0, users: [], members: [], invites: [], projects: [{ id: 'A', name: 'Project A' }, { id: 'B', name: 'Project B' }], globalAdmin: false, canProject: () => true, canManageManagers: projectId => projectId === 'A', mutate: async () => { throw new Error('not submitted'); } };
+  try {
+    for (const [selectedProjectId, expected] of [['A',1],['B',0]]) {
+      const tree = TeamPanel({ ...props, selectedProjectId });
+      assert.equal(nodes(tree, node => node.type === 'option' && node.props.value === 'manager').length, expected);
+      assert.equal(nodes(tree, node => node.type === 'option' && node.props.value === '__global__').length, 0);
+    }
+  } finally { delete globalThis.__officialDraftKeys; }
+});

@@ -1,6 +1,7 @@
-import { getActor, requireCapability, type PortalActor } from '../access';
+import { getActor, requireCapability, requireOrganizationCapability, organizationAuthoritySql, type PortalActor } from '../access';
 import { all, one } from '../database';
 import { HttpError } from '../errors';
+import { assetMetadata, ASSET_METADATA_KEYS } from '../asset-metadata';
 import { materialsAction } from '../materials';
 import { prepareMutation } from '../mutations';
 import { projectAction } from '../projects';
@@ -16,13 +17,14 @@ function optionalId(value: unknown): string | null {
   if (typeof value !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(value)) throw new HttpError(400, 'Escolha um cadastro válido no portal.', 'import_target');
   return value;
 }
-export async function authorizeImportTarget(db: D1Database, actor: PortalActor | null, kind: ImportKind, projectId: string | null, itemId: string | null) {
+export async function authorizeImportTarget(db: D1Database, actor: PortalActor | null, kind: ImportKind, projectId: string | null, itemId: string | null, organizationId?: string | null) {
   if (!actor) throw new HttpError(401, 'Entre para importar um cadastro.', 'unauthenticated');
   const current = await getActor(db, actor);
   if (!current) throw new HttpError(403, 'Seu acesso ao portal mudou. Entre novamente.', 'import_forbidden');
-  if (!projectId) { if (kind !== 'project' || itemId) throw new HttpError(400, 'Escolha o projeto responsável pelo bem.', 'import_target'); requireCapability(current, 'projects.manage', null); return null; }
+  if (!projectId) { if (kind !== 'project' || itemId) throw new HttpError(400, 'Escolha o projeto responsável pelo bem.', 'import_target'); if (!organizationId) throw new HttpError(400, 'Escolha explicitamente a organização responsável pelo novo projeto.', 'import_organization'); requireOrganizationCapability(current, 'projects.manage', organizationId); const authority = organizationAuthoritySql(current, organizationId); if (!await one(db, `SELECT id FROM organizations WHERE id=? AND status='active' AND ${authority.sql}`, [organizationId, ...authority.values])) throw new HttpError(403, 'A organização ou seu acesso mudou.', 'import_organization'); return null; }
   requireCapability(current, kind === 'asset' ? 'inventory.manage' : 'campaigns.manage', projectId);
-  const project = await one(db, 'SELECT id,name,version FROM projects WHERE id=?', [projectId]);
+  const project = await one(db, 'SELECT id,name,version,organization_id FROM projects WHERE id=?', [projectId]);
+  if (project && organizationId && organizationId !== project.organization_id) throw new HttpError(400, 'O projeto pertence a outra organização. Prepare outra prévia.', 'import_organization');
   if (!project) throw new HttpError(404, 'Projeto não encontrado.', 'project_not_found');
   if (itemId && (kind !== 'asset' || !await one(db, 'SELECT id FROM items WHERE id=? AND project_id=?', [itemId, projectId]))) throw new HttpError(400, 'O bem deve pertencer ao projeto escolhido.', 'project_mismatch');
   return project;
@@ -37,8 +39,8 @@ function documentUrl(value: unknown): string | undefined {
 const modalityKey = (value: string) => ({ programa: 'program', projeto: 'project', curso: 'course', evento: 'event', prestacaodeservico: 'service', prestacaodeservicos: 'service' } as Record<string, string>)[normalizedLabel(value)] ?? MODALITY_TYPE_KEYS[value];
 export async function previewImport(db: D1Database, actor: PortalActor | null, input: Record<string, unknown>, secret: string, fetcher?: typeof fetch, sourceFile?: ImportFileProvenance): Promise<ImportPreview> {
   if (input.kind !== 'project' && input.kind !== 'asset') throw new HttpError(400, 'Escolha projeto ou bem patrimonial.', 'import_kind');
-  const kind = input.kind, projectId = optionalId(input.projectId), itemId = optionalId(input.itemId);
-  const project = await authorizeImportTarget(db, actor, kind, projectId, itemId);
+  const kind = input.kind, projectId = optionalId(input.projectId), itemId = optionalId(input.itemId), requestedOrganizationId = optionalId(input.organizationId);
+  const project = await authorizeImportTarget(db, actor, kind, projectId, itemId, requestedOrganizationId), organizationId = String(project?.organization_id ?? requestedOrganizationId);
   let content: string, format: string, url: string | undefined, externalId: string | undefined;
   if (input.sourceMode === 'sigaa') {
     if (kind !== 'project') throw new HttpError(400, 'O SIGAA público importa informações de projetos.', 'import_source');
@@ -60,16 +62,18 @@ export async function previewImport(db: D1Database, actor: PortalActor | null, i
     }
   }
   const now = Date.now();
-  const review: ImportReview = { version: 1, actorId: actor!.userId, kind, projectId, itemId, expectedVersion: kind === 'project' && project ? project.version : null,
-    provenance: { kind: input.sourceMode, label: sourceFile ? `${sourceFile.fileFormat.toUpperCase()} informado · texto extraído` : input.sourceMode === 'sigaa' ? 'SIGAA Público / UFG' : input.sourceMode === 'manual' ? 'Cadastro manual conferido' : 'Documento textual informado', ...(url ? { url } : {}), ...(externalId ? { externalId } : {}), sha256: sourceFile?.sha256 ?? await importDigest(content), ...(sourceFile ? { textSha256: await importDigest(content), fileFormat: sourceFile.fileFormat, extraction: sourceFile.extraction, ...(sourceFile.pages ? { pages: sourceFile.pages } : {}) } : {}), retrievedAt: new Date(now).toISOString() }, candidates, expiresAt: now + 15 * 60000 };
+  const review: ImportReview = { version: 2, organizationId, actorId: actor!.userId, kind, projectId, itemId, expectedVersion: kind === 'project' && project ? project.version : null,
+    provenance: { kind: input.sourceMode, organizationId, label: sourceFile ? `${sourceFile.fileFormat.toUpperCase()} informado · texto extraído` : input.sourceMode === 'sigaa' ? 'SIGAA Público / UFG' : input.sourceMode === 'manual' ? 'Cadastro manual conferido' : 'Documento textual informado', ...(url ? { url } : {}), ...(externalId ? { externalId } : {}), sha256: sourceFile?.sha256 ?? await importDigest(content), ...(sourceFile ? { textSha256: await importDigest(content), fileFormat: sourceFile.fileFormat, extraction: sourceFile.extraction, ...(sourceFile.pages ? { pages: sourceFile.pages } : {}) } : {}), retrievedAt: new Date(now).toISOString() }, candidates, expiresAt: now + 15 * 60000 };
   const { actorId: _actorId, ...publicReview } = review; void _actorId;
   return { ...publicReview, reviewToken: await signImportReview(secret, review) };
 }
 export async function applyImport(db: D1Database, actor: PortalActor | null, input: Record<string, unknown>, secret: string) {
   if (!actor) throw new HttpError(401, 'Entre para importar um cadastro.', 'unauthenticated');
+  actor = await getActor(db, actor);
+  if (!actor) throw new HttpError(403, 'Seu acesso mudou. Entre novamente.', 'import_forbidden');
   if (input.confirmed !== true) throw new HttpError(400, 'Confira a prévia e confirme os campos antes de salvar.', 'import_confirmation_required');
   const review = await readImportReview(secret, input.reviewToken, actor.userId);
-  await authorizeImportTarget(db, actor, review.kind, review.projectId, review.itemId);
+  await authorizeImportTarget(db, actor, review.kind, review.projectId, review.itemId, review.organizationId);
   const candidate = review.candidates.find(row => row.key === input.candidateKey);
   const allowed = new Set(importFields(review.kind).map(field => field.key)), edits = input.edits ?? {};
   if (!edits || typeof edits !== 'object' || Array.isArray(edits) || Object.keys(edits).some(key => !allowed.has(key))) throw new HttpError(400, 'Revise somente os campos operacionais da prévia.', 'import_fields');
@@ -85,20 +89,23 @@ export async function applyImport(db: D1Database, actor: PortalActor | null, inp
   const operationKey = input.operationKey, nativeFields = Object.fromEntries(importFields(review.kind).filter(field => !field.metadata && selected.has(field.key)).map(field => [field.key, fields[field.key]]));
   let projectId = review.projectId, itemId = review.itemId;
   if (review.kind === 'project') {
-    const payload: Record<string, unknown> = { ...nativeFields, operationKey: `${operationKey}-entity`, ...(projectId ? { id: projectId, expectedVersion: review.expectedVersion } : {}) };
+    const payload: Record<string, unknown> = { ...nativeFields, operationKey: `${operationKey}-entity`, ...(projectId ? { id: projectId, expectedVersion: review.expectedVersion } : { organizationId: review.organizationId }) };
     if (selected.has('unitName') && input.unitId) payload.unitId = optionalId(input.unitId);
     if (selected.has('modality') && input.typeId) payload.typeId = optionalId(input.typeId);
     if (input.saveOfficialUrl === true && review.provenance.url) payload.officialUrl = review.provenance.url;
     const action = `project.${projectId ? 'update' : 'create'}`;
     if (!projectId && review.provenance.url) {
       const mutation = await prepareMutation(db, actor.userId, action, payload);
-      if (!mutation.existingId && await one(db, 'SELECT p.id FROM projects p LEFT JOIN project_links l ON l.project_id=p.id WHERE p.official_url=? OR l.url=? LIMIT 1', [review.provenance.url, review.provenance.url])) throw new HttpError(409, 'Esta fonte já está vinculada a um projeto. Escolha o cadastro existente para atualizar.', 'import_duplicate');
+      if (!mutation.existingId && await one(db, 'SELECT p.id FROM projects p LEFT JOIN project_links l ON l.project_id=p.id WHERE p.organization_id=? AND (p.official_url=? OR l.url=?) LIMIT 1', [review.organizationId, review.provenance.url, review.provenance.url])) throw new HttpError(409, 'Esta fonte já está vinculada a um projeto. Escolha o cadastro existente para atualizar.', 'import_duplicate');
     }
     const result = await projectAction(db, actor, action, payload); projectId = result?.id;
     if (!projectId) throw new HttpError(500, 'Não foi possível confirmar o projeto importado.', 'import_result');
+    actor = await getActor(db, actor);
+    if (!actor) throw new HttpError(403, 'Seu acesso mudou durante a importação.', 'import_forbidden');
     if (review.provenance.url && !await one(db, 'SELECT id FROM project_links WHERE project_id=? AND url=?', [projectId, review.provenance.url])) await projectAction(db, actor, 'project.link.create', { projectId, label: `${review.provenance.label}${review.provenance.externalId ? ` · ação ${review.provenance.externalId}` : ''} · ${review.provenance.retrievedAt.slice(0, 10)}`, url: review.provenance.url, kind: 'official', operationKey: `${operationKey}-source` });
   } else if (!itemId) {
-    const payload = { ...nativeFields, projectId, category: 'equipment', unit: nativeFields.unit || 'unidade', lowStock: 0, operationKey: `${operationKey}-entity` };
+    const structured = assetMetadata(Object.fromEntries(ASSET_METADATA_KEYS.filter(key => selected.has(key)).map(key => [key, key === 'acquisitionValueCents' && fields[key] ? Number(fields[key]) : fields[key] || null])));
+    const payload = { ...nativeFields, ...structured, projectId, category: 'equipment', unit: nativeFields.unit || 'unidade', lowStock: 0, operationKey: `${operationKey}-entity` };
     const mutation = await prepareMutation(db, actor.userId, 'item.create', payload);
     if (!mutation.existingId && fields.assetCode && await one(db, 'SELECT id FROM items WHERE project_id=? AND asset_code=? LIMIT 1', [projectId, fields.assetCode])) throw new HttpError(409, 'Este patrimônio já está cadastrado no projeto. Escolha o bem existente para anexar a conferência.', 'import_duplicate');
     const result = await materialsAction(db, actor, 'item.create', payload), item = result?.item as Record<string, unknown> | undefined;

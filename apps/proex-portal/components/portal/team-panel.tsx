@@ -19,6 +19,7 @@ type Props = {
     projects: Row[];
     selectedProjectId?: string;
     globalAdmin: boolean;
+    canManageManagers?: (projectId: string | null, organizationId?: string | null) => boolean;
     canProject: (id: string, capability: string) => boolean;
     mutate: (action: string, payload: Record<string, unknown>) => Promise<Row>;
 };
@@ -132,7 +133,7 @@ function DirectoryUser({ user, props, onOpen }: {
     <span className={styles.cardAvatar}><Users size={21} aria-hidden="true"/>{user.avatarUrl&&brokenAvatar!==user.avatarUrl&&<img src={user.avatarUrl} alt="" width={48} height={48} loading="lazy" onError={()=>setBrokenAvatar(user.avatarUrl)}/>}</span>
     <span className={styles.personText}><strong className={styles.personName}>{displayName}</strong>{user.email&&<span className={styles.personEmail}><Mail size={13}/>{user.email}</span>}</span>
     <ArrowUpRight size={19} className={styles.openIcon} aria-hidden="true"/>
-    </button>{user.status&&<span className={`p-badge ${isBlocked?'p-status-cancelled':'p-status-active'}`}>{isAnonymized?'Anonimizada':user.activationPending?'Ativação pendente':isBlocked?'Bloqueado':'Ativo'}</span>}</div>{memberships.map((m: Row) => <Membership key={`${m.id}-${m.role}`} member={m} globalAdmin={props.globalAdmin} projectName={projectName(projectIdOf(m))} editable={m.role !== 'owner' && (props.globalAdmin || Boolean(projectIdOf(m) && props.canProject(projectIdOf(m), 'access.manage') && m.role !== 'manager'))} mutate={props.mutate}/>)}{!memberships.length && <p className="p-form-help">Sem vínculo neste contexto.</p>}{props.globalAdmin && id && !isAnonymized && <div className="p-user-admin">
+    </button>{user.status&&<span className={`p-badge ${isBlocked?'p-status-cancelled':'p-status-active'}`}>{isAnonymized?'Anonimizada':user.activationPending?'Ativação pendente':isBlocked?'Bloqueado':'Ativo'}</span>}</div>{memberships.map((m: Row) => <Membership key={`${m.id}-${m.role}`} member={m} globalAdmin={props.globalAdmin || Boolean(props.canManageManagers?.(projectIdOf(m), m.organization_id))} projectName={projectName(projectIdOf(m))} editable={m.role !== 'owner' && (props.globalAdmin || Boolean(props.canManageManagers?.(projectIdOf(m), m.organization_id)) || Boolean(projectIdOf(m) && props.canProject(projectIdOf(m), 'access.manage') && m.role !== 'manager'))} mutate={props.mutate}/>)}{!memberships.length && <p className="p-form-help">Sem vínculo neste contexto.</p>}{props.globalAdmin && id && !isAnonymized && <div className="p-user-admin">
         <button className="p-text-link" disabled={busy||user.activationPending} onClick={() => void reset()}>
         <KeyRound size={15}/>{busy ? 'Aguarde…' : user.hasPassword ? 'Gerar recuperação de senha' : 'Gerar link para definir senha'}</button>{!hasOwner && (confirmBlock ? <div className="p-inline-confirm">
             <p>{isBlocked ? 'Reativar esta conta?' : 'Bloquear esta conta impede novos acessos. O histórico será preservado.'}</p>
@@ -215,7 +216,7 @@ export default function TeamPanel(props: Props) {
         </label>
         <label className="p-field">
         <span>Função</span>
-        <select key={`role-${suggestionKey}`} name="role" defaultValue="" required><option value="" disabled>Selecione a função</option>{Object.entries(roles).filter(([id]) => id !== 'owner' && (props.globalAdmin || id !== 'manager')).map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select>
+        <select key={`role-${suggestionKey}`} name="role" defaultValue="" required><option value="" disabled>Selecione a função</option>{Object.entries(roles).filter(([id]) => id !== 'owner' && (props.globalAdmin || Boolean(props.canManageManagers?.(inviteProject || null)) || id !== 'manager')).map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select>
         </label>
         <label className="p-field">
         <span>Escopo do acesso</span>

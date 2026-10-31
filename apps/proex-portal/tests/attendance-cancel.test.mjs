@@ -40,7 +40,7 @@ async function fixture(t) {
   }
   const now = new Date().toISOString();
   native.prepare('INSERT INTO projects(id,name,description,created_at) VALUES(?,?,?,?),(?,?,?,?)').run('role', 'Rolê', '', now, 'other', 'Outro', '', now);
-  native.prepare('INSERT INTO members VALUES(?,?,?,?,?,?,?)')
+  native.prepare('INSERT INTO members(id,user_id,email,role,project_id,revoked_at,created_at) VALUES(?,?,?,?,?,?,?)')
     .run('operator-member', 'operator', 'operator@example.test', 'operator', 'role', null, now);
   native.prepare("INSERT INTO items(id,project_id,name,category,unit,stock,created_at) VALUES('pin','role','Button','gift','un',10,?)").run(now);
   native.prepare("INSERT INTO offers VALUES('regular','role','Um button','brinde',1),('special','role','Três buttons','super',1)").run();
@@ -137,7 +137,7 @@ test('concurrent cancellation and replay release only once and preserve the firs
 
 test('another project operator cannot cancel or release inventory', async (t) => {
   const f = await fixture(t);
-  f.native.prepare('INSERT INTO members VALUES(?,?,?,?,?,?,?)')
+  f.native.prepare('INSERT INTO members(id,user_id,email,role,project_id,revoked_at,created_at) VALUES(?,?,?,?,?,?,?)')
     .run('other-member', 'other-operator', 'other@example.test', 'operator', 'other', null, new Date().toISOString());
   const actor = await getActor(f.db, { userId: 'other-operator', email: 'other@example.test', displayName: 'Outro' });
   await assert.rejects(cancelAttendance(f.db, actor, input), { status: 403 });

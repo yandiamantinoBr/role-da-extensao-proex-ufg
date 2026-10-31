@@ -1,5 +1,5 @@
 import {getPortalUser} from '@/lib/session';
-import { getActor, requireCapability } from '../../../lib/access';
+import { memberProjectScopeSql, getActor, requireCapability } from '../../../lib/access';
 import { iso, one, text, uid } from '../../../lib/database';
 import { HttpError, publicError } from '../../../lib/errors';
 import { bucket, database } from '../../../lib/platform';
@@ -131,7 +131,7 @@ export async function POST(request: Request): Promise<Response> {
           (id,loan_id,project_id,object_key,name,mime,size,created_by,created_at,operation_key,content_hash)
           VALUES(?,?,CASE WHEN EXISTS(SELECT 1 FROM loans l WHERE l.id=? AND l.project_id=? AND EXISTS
             (SELECT 1 FROM members m WHERE m.user_id=? AND m.revoked_at IS NULL
-              AND m.role IN ('owner','manager','loans') AND (m.project_id IS NULL OR m.project_id=l.project_id)))
+              AND m.role IN ('owner','manager','loans') AND ${memberProjectScopeSql("m","l.project_id")}))
             AND NOT EXISTS(SELECT 1 FROM portal_users u WHERE u.user_id=? AND (u.status!='active' OR COALESCE(u.activation_pending,0)!=0 OR u.anonymized_at IS NOT NULL)) THEN ? ELSE NULL END,?,?,?,?,?,?,?,?)`)
           .bind(id, loanId, loanId, loan.project_id, actorId, actorId, loan.project_id,
             storedKey, name, mime, data.byteLength, actorId, now, mutation.scope, contentHash),

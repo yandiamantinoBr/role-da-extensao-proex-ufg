@@ -279,9 +279,9 @@ test('domain replay without a service batch cannot append a receipt after its ru
  }finally{f.close();}
 });
 
-test('V5 exposes 28 operational tables, with versioned units and no new profile identifiers',async()=>{
+test('portable schema exposes 29 operational tables, including read-only organizations and no new profile identifiers',async()=>{
  const f=fixture();try{
-  const schemas=describePortableSchemas();assert.equal(schemas.tables.length,28);
+  const schemas=describePortableSchemas();assert.equal(schemas.tables.length,29);
   const units=schemas.tables.find(row=>row.table==='organizational_units');assert.equal(units.updateAction,'unit.update');assert.deepEqual(units.columns.filter(column=>column.editable).map(column=>column.name),['name','acronym','kind','status','group_label','campus','official_url']);
   const created=await applyPortableChanges(f.db,f.actor,{changes:[{changeKey:'create-unit-v5-001',action:'unit.create',input:{name:'Faculdade de Educação',acronym:'FE',kind:'academic'}}]});assert.equal(created.results[0].status,'applied');const unitId=created.results[0].entityId;assert.equal(typeof unitId,'string');
   f.db.native.prepare('INSERT INTO profiles(user_id,display_name,unit,unit_id,affiliation,registration_type,registration_number,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)').run(f.actor.userId,'Nome visível','Texto de unidade anterior',unitId,'student','student','MATRICULA_PRIVADA_123',f.now,f.now);
@@ -321,7 +321,7 @@ test('unit CAS races roll back the sync receipt and do not overwrite the winning
 test('project sync links units and bridges strict booleans or 0/1 without accepting truthy strings',async()=>{
  const f=fixture();try{
   const created=await applyPortableChanges(f.db,f.actor,{changes:[{changeKey:'project-unit-create-01',action:'unit.create',input:{name:'Unidade acadêmica',acronym:'UA',kind:'academic'}}]});const unitId=created.results[0].entityId;
-  const projectSchema=describePortableSchemas().tables.find(row=>row.table==='projects');assert.deepEqual(projectSchema.columns.slice(-5).map(column=>column.name),['unit_id','prizes_enabled','scope','thematic_area','extension_line']);assert.equal(projectSchema.columns.find(column=>column.name==='prizes_enabled').type,'boolean');
+  const projectSchema=describePortableSchemas().tables.find(row=>row.table==='projects');assert.deepEqual(projectSchema.columns.slice(-6).map(column=>column.name),['unit_id','prizes_enabled','scope','thematic_area','extension_line','organization_id']);assert.equal(projectSchema.columns.find(column=>column.name==='prizes_enabled').type,'boolean');assert.equal(projectSchema.columns.find(column=>column.name==='organization_id').editable,false);
   let version=1;
   for(const [index,value] of [1,false,true,0].entries()){
    const response=await applyPortableChanges(f.db,f.actor,{changes:[{changeKey:`project-prizes-v5-${index}`,table:'projects',id:'project-a',expectedVersion:version,fields:{unit_id:unitId,prizes_enabled:value}}]});assert.equal(response.results[0].status,'applied');version++;

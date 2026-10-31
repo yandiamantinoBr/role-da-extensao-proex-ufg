@@ -9,8 +9,8 @@ const root = new URL('../', import.meta.url), tick = () => new Promise(resolve =
 const text = node => typeof node === 'string' ? node : Array.isArray(node) ? node.map(text).join('') : node && typeof node === 'object' ? text(node.props?.children) : '';
 const props = { kind: 'asset', defaultProjectId: 'project-a', projects: [{ id: 'project-a', name: 'Projeto A' }, { id: 'project-b', name: 'Projeto B' }], items: [], canWrite: () => true };
 const preview = { projectId: 'project-a', itemId: null, reviewToken: 'synthetic-reviewed-document', provenance: { label: 'Documento sintético', retrievedAt: '2026-10-31T12:00:00Z', extraction: 'text-file' }, candidates: [{ key: 'row-1', fields: { name: 'Equipamento A', assetCode: '000123' }, problems: {}, warnings: [] }] };
-function harness() {
- const slots = [], requests = [], cache = new Map(); let index = 0, tree, currentProps = props;
+function harness(initialProps = props) {
+ const slots = [], requests = [], cache = new Map(); let index = 0, tree, currentProps = initialProps;
  const hooks = {
   useState(initial) { const key = index++; if (!(key in slots)) slots[key] = typeof initial === 'function' ? initial() : initial; return [slots[key], value => { slots[key] = typeof value === 'function' ? value(slots[key]) : value; }]; },
   useRef(initial) { const key = index++; slots[key] ??= { current: initial }; return slots[key]; },
@@ -67,4 +67,11 @@ test('changing the global context preserves the reviewed destination and source,
  assert.equal(h.requests[0].init.body.get('projectId'), 'project-a'); h.requests[0].resolve({ ok: true, json: async () => preview }); await tick(); h.render(); assert.match(h.text(), /Destino: Projeto A/);
  h.render({ ...props, defaultProjectId: 'project-b' }); assert.match(h.text(), /filtro geral mostra Projeto B/); assert.match(h.text(), /continua destinada a Projeto A/); assert.match(h.text(), /Destino: Projeto A/); assert.equal(h.button('Confirmar e salvar').props.disabled, true);
  h.button('Voltar à fonte').props.onClick(); h.render(); assert.match(h.text(), /Selecionado: source-a.txt/); assert.equal(h.requests.length, 1);
+});
+
+test('project creation displays the sole authorized organization and requires explicit choice when several are available',async()=>{
+ const organizations=[{id:'org-a',name:'Organização A',status:'active',canManage:true},{id:'org-b',name:'Organização B',status:'active',canManage:true},{id:'org-hidden',name:'Não autorizada',status:'active',canManage:false},{id:'org-archived',name:'Arquivada',status:'archived',canManage:true}];
+ const single=harness({...props,kind:'project',defaultProjectId:'',canCreateProject:true,organizations:[organizations[0],organizations[2],organizations[3]]});assert.equal(single.find('input',node=>node.props.readOnly).props.value,'Organização A');assert.equal(single.button('Preparar prévia').props.disabled,false);
+ const multiple=harness({...props,kind:'project',defaultProjectId:'',canCreateProject:true,organizations});assert.equal(multiple.button('Preparar prévia').props.disabled,true);const selector=multiple.find('select',node=>text(node).includes('Selecione explicitamente a organização'));assert.equal(selector.props.value,'');assert.equal(text(selector).includes('Não autorizada'),false);assert.equal(text(selector).includes('Arquivada'),false);
+ selector.props.onChange({target:{value:'org-b'}});multiple.render();assert.equal(multiple.button('Preparar prévia').props.disabled,false);multiple.chooseFile(file('project-org-b.txt'));await tick();multiple.render();multiple.button('Preparar prévia').props.onClick();await tick();assert.equal(multiple.requests[0].init.body.get('organizationId'),'org-b');
 });

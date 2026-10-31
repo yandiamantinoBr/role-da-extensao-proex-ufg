@@ -12,7 +12,7 @@ import ts from 'typescript';
 // at the transport boundary. These synthetic, in-memory fixtures never reach production.
 const temporary = mkdtempSync(join(tmpdir(), 'proex-portal-data-'));
 writeFileSync(join(temporary, 'package.json'), '{"type":"module"}');
-for (const name of ['access', 'database', 'errors', 'portal-data', 'users', 'mutations']) {
+for (const name of ['access', 'database', 'errors', 'portal-data', 'users', 'mutations', 'organizations']) {
   const source = readFileSync(new URL(`../lib/${name}.ts`, import.meta.url), 'utf8');
   const output = ts.transpileModule(source, {
     compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
@@ -206,7 +206,7 @@ test('snapshot exposes editable V3 project, item and loan fields without widenin
     id: 'project-a', name: 'Projeto A', description: '', created_at: timestamp,
     short_name: 'Rolê', status: 'archived', color: '#ffaa3d', official_url: 'https://proex.ufg.br/',
     starts_at: timestamp, ends_at: '2026-12-20T02:30:00.000Z', location: 'Campus Samambaia', version: 4,
-    lifecycle: 'active', type_id: null, parent_id: null, unit_id:null, prizes_enabled:0, scope:'internal', thematic_area:'', extension_line:'',
+    lifecycle: 'active', type_id: null, parent_id: null, unit_id:null, prizes_enabled:0, scope:'internal', thematic_area:'', extension_line:'', organization_id:'org_proex',
   });
   const equipment = data.items.find(item => item.id === 'equipment-a');
   assert.equal(equipment.asset_code, 'UFG-001'); assert.equal(equipment.version, 3); assert.equal(equipment.updated_at, timestamp);

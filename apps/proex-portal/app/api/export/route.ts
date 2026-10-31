@@ -1,5 +1,5 @@
 import {getPortalUser} from '@/lib/session';
-import { accessibleProjects, getActor, requireCapability } from '@/lib/access';
+import { accessibleProjects, getActor, requireCapability, projectAuthoritySql } from '@/lib/access';
 import { all, csv, type Row } from '@/lib/database';
 import { HttpError, publicError } from '@/lib/errors';
 import { database } from '@/lib/platform';
@@ -27,6 +27,8 @@ export async function GET(request: Request): Promise<Response> {
     requireCapability(actor, 'reports.read', projectId === null ? undefined : projectId);
     const projects = projectId === null ? accessibleProjects(actor, 'reports.read') : [projectId];
     const scope = scopeFilter(kind === 'participations' ? 'c.project_id' : kind === 'stock' ? 'i.project_id' : 'l.project_id', projects);
+    const authority=projectAuthoritySql(actor!,['reports.read'],kind==='participations'?'c.project_id':kind==='stock'?'i.project_id':'l.project_id');scope.sql=`(${scope.sql}) AND (${authority.sql})`;scope.params.push(...authority.values);
+    const organizationId=url.searchParams.get('organizationId');if(organizationId){if(organizationId.length>200)throw new HttpError(400,'Organização inválida.','invalid_organization');scope.sql+=' AND pr.organization_id=?';scope.params.push(organizationId);}
     let rows: Row[];
     if (kind === 'participations') {
       // Record types keep denominators separate: an authorized retry is not a second person.

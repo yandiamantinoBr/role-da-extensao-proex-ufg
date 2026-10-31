@@ -76,7 +76,7 @@ test('SQLite corruption, foreign-key violations, zip bombs and size/count limits
   const f = backupFixture();
   try {
     const bad = f.capture(); bad.snapshot.data = gzipSync(Buffer.from('not SQLite')); assert.throws(() => createArchive(bad, { migrations }), BackupError);
-    f.native.exec('PRAGMA foreign_keys=OFF'); f.native.prepare("INSERT INTO project_calls(call_id,project_id) VALUES('missing-call','project-fixture')").run();
+    f.native.exec('PRAGMA foreign_keys=OFF'); f.native.prepare("UPDATE projects SET unit_id='missing-unit' WHERE id='project-fixture'").run();
     assert.throws(() => artifact(f), error => error.code === 'backup_sqlite');
     const bomb = f.capture(); bomb.snapshot.data = gzipSync(Buffer.alloc(BACKUP_LIMITS.sqliteBytes + 1)); assert.throws(() => createArchive(bomb), BackupError);
     const many = f.capture(); many.objects = Array(BACKUP_LIMITS.objects + 1).fill(f.objects[0]); assert.throws(() => createArchive(many), BackupError);
@@ -84,7 +84,7 @@ test('SQLite corruption, foreign-key violations, zip bombs and size/count limits
 });
 
 test('capture authority and post-encryption revocation reject project roles, blocked and revoked accounts', async () => {
-  for (const update of ["UPDATE members SET role='manager',project_id='project-fixture'", "UPDATE members SET revoked_at='2026-10-31'", "UPDATE portal_users SET status='blocked'", 'UPDATE portal_users SET activation_pending=1']) {
+  for (const update of ["UPDATE members SET role='manager',project_id='project-fixture',organization_id=(SELECT organization_id FROM projects WHERE id='project-fixture')", "UPDATE members SET revoked_at='2026-10-31'", "UPDATE portal_users SET status='blocked'", 'UPDATE portal_users SET activation_pending=1']) {
     const f = backupFixture(); f.native.exec(update); let captures = 0;
     try { const service = completeBackupService({ backup: { authoritySnapshot: async () => f.snapshot(), capture: async () => { captures++; return f.capture(); } } }, migrations);
       await assert.rejects(service.createEncrypted(f.actor.userId, password), error => error.code === 'backup_forbidden'); assert.equal(captures, 0);
@@ -98,7 +98,7 @@ test('capture authority and post-encryption revocation reject project roles, blo
 
 test('organization owners cannot capture the platform, including demotion during capture', async () => {
   for (const duringCapture of [false, true]) {
-    const f = backupFixture(); f.native.exec('ALTER TABLE members ADD COLUMN organization_id TEXT'); let captures = 0;
+    const f = backupFixture(); if(!f.native.prepare('PRAGMA table_info(members)').all().some(column=>column.name==='organization_id'))f.native.exec('ALTER TABLE members ADD COLUMN organization_id TEXT');f.native.prepare("INSERT INTO organizations(id,name,slug,created_at,updated_at) VALUES('synthetic-org','Organização sintética','synthetic-org',?,?)").run(new Date().toISOString(),new Date().toISOString()); let captures = 0;
     if (!duringCapture) f.native.exec("UPDATE members SET organization_id='synthetic-org'");
     try {
       const service = completeBackupService({ backup: { authoritySnapshot: async () => f.snapshot(), capture: async () => { captures++; const captured = f.capture(); f.native.exec("UPDATE members SET organization_id='synthetic-org'"); return captured; } } }, migrations);

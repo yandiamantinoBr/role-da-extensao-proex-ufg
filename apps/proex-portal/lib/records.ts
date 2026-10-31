@@ -1,4 +1,4 @@
-import { accessibleProjects, requireCapability, type PortalActor } from './access';
+import { memberProjectScopeSql, accessibleProjects, requireCapability, type PortalActor } from './access';
 import { HttpError } from './errors';
 import { prepareMutation } from './mutations';
 import { MAX_UPLOAD_FILE_BYTES, MAX_UPLOAD_BODY_BYTES, UPLOAD_LIMIT_MESSAGE } from './upload-limits';
@@ -65,7 +65,7 @@ function requireWrite(actor: PortalActor, record: Pick<StoredRecord, 'kind' | 'l
 }
 async function liveMembership(db: D1Database, actor: PortalActor, projectId: string, roles: string[]): Promise<void> {
   const row = await stmt(db, `SELECT id FROM members m WHERE m.user_id=? AND m.revoked_at IS NULL
-    AND m.role IN (${roles.map(() => '?').join(',')}) AND (m.project_id IS NULL OR m.project_id=?)
+    AND m.role IN (${roles.map(() => '?').join(',')}) AND ${memberProjectScopeSql("m","?")}
     AND NOT EXISTS (SELECT 1 FROM portal_users u WHERE u.user_id=m.user_id AND (u.status!='active' OR COALESCE(u.activation_pending,0)!=0 OR u.anonymized_at IS NOT NULL)) LIMIT 1`, [actor.userId, ...roles, projectId]).first();
   if (!row) throw new HttpError(403, 'Seu acesso a estes registros mudou. Atualize o portal.', 'access_changed');
 }
@@ -111,9 +111,9 @@ export async function listRecords(db: D1Database, actor: PortalActor | null, fil
   if (projectId && ![projectScope, inventoryScope, loanScope].some(scope => scope === null || scope.includes(projectId))) throw new HttpError(403, 'Você não tem acesso aos registros deste projeto.', 'forbidden');
   const project = scopeFilter(projectScope, 'r.project_id'), inventory = scopeFilter(inventoryScope, 'r.project_id'), loan = scopeFilter(loanScope, 'r.project_id');
   const params: (string | number | null)[] = [...loan.params, actor.userId, ...inventory.params, actor.userId, ...project.params, actor.userId];
-  let conditions = `(((r.kind='loan' OR r.loan_id IS NOT NULL) AND (${loan.sql}) AND EXISTS(SELECT 1 FROM members m WHERE m.user_id=? AND m.revoked_at IS NULL AND m.role IN ('owner','manager','loans') AND (m.project_id IS NULL OR m.project_id=r.project_id)))
-    OR (r.loan_id IS NULL AND r.kind IN ('maintenance','distribution','consumption','material') AND (${inventory.sql}) AND EXISTS(SELECT 1 FROM members m WHERE m.user_id=? AND m.revoked_at IS NULL AND m.role IN ('owner','manager','inventory') AND (m.project_id IS NULL OR m.project_id=r.project_id)))
-    OR (r.loan_id IS NULL AND r.kind IN ('project','observation') AND (${project.sql}) AND EXISTS(SELECT 1 FROM members m WHERE m.user_id=? AND m.revoked_at IS NULL AND m.role IN ('owner','manager','viewer') AND (m.project_id IS NULL OR m.project_id=r.project_id))))`;
+  let conditions = `(((r.kind='loan' OR r.loan_id IS NOT NULL) AND (${loan.sql}) AND EXISTS(SELECT 1 FROM members m WHERE m.user_id=? AND m.revoked_at IS NULL AND m.role IN ('owner','manager','loans') AND ${memberProjectScopeSql("m","r.project_id")}))
+    OR (r.loan_id IS NULL AND r.kind IN ('maintenance','distribution','consumption','material') AND (${inventory.sql}) AND EXISTS(SELECT 1 FROM members m WHERE m.user_id=? AND m.revoked_at IS NULL AND m.role IN ('owner','manager','inventory') AND ${memberProjectScopeSql("m","r.project_id")}))
+    OR (r.loan_id IS NULL AND r.kind IN ('project','observation') AND (${project.sql}) AND EXISTS(SELECT 1 FROM members m WHERE m.user_id=? AND m.revoked_at IS NULL AND m.role IN ('owner','manager','viewer') AND ${memberProjectScopeSql("m","r.project_id")})))`;
   conditions += ` AND NOT EXISTS(SELECT 1 FROM portal_users u WHERE u.user_id=? AND (u.status!='active' OR COALESCE(u.activation_pending,0)!=0 OR u.anonymized_at IS NOT NULL))`;
   params.push(actor.userId);
   conditions += ' AND (r.item_id IS NULL OR i.project_id=r.project_id) AND (r.loan_id IS NULL OR l.project_id=r.project_id)';
@@ -147,7 +147,7 @@ export async function createRecord(db: D1Database, actor: PortalActor | null, in
     if (!loan || (itemId && loan.item_id !== itemId)) throw new HttpError(400, 'O empréstimo e o material devem pertencer ao projeto e ao mesmo atendimento.', 'project_mismatch');
   }
   const id = crypto.randomUUID(), now = new Date().toISOString(), roles = writeRoles(target);
-  const authorization = `EXISTS(SELECT 1 FROM members m WHERE m.user_id=? AND m.revoked_at IS NULL AND m.role IN (${roles.map(() => '?').join(',')}) AND (m.project_id IS NULL OR m.project_id=?))
+  const authorization = `EXISTS(SELECT 1 FROM members m WHERE m.user_id=? AND m.revoked_at IS NULL AND m.role IN (${roles.map(() => '?').join(',')}) AND ${memberProjectScopeSql("m","?")})
     AND NOT EXISTS(SELECT 1 FROM portal_users u WHERE u.user_id=? AND (u.status!='active' OR COALESCE(u.activation_pending,0)!=0 OR u.anonymized_at IS NOT NULL))`;
   let createdId = id;
   try {
@@ -268,7 +268,7 @@ export async function uploadRecordAttachment(db: D1Database, storage: R2Bucket, 
     await db.batch([
       mutation.claimStatement(id),
       stmt(db, `INSERT INTO record_attachments(id,record_id,project_id,object_key,name,mime,size,operation_key,created_by,created_at)
-        VALUES(?,?,CASE WHEN EXISTS(SELECT 1 FROM members m WHERE m.user_id=? AND m.revoked_at IS NULL AND m.role IN (${roles.map(() => '?').join(',')}) AND (m.project_id IS NULL OR m.project_id=?)) AND NOT EXISTS(SELECT 1 FROM portal_users u WHERE u.user_id=? AND (u.status!='active' OR COALESCE(u.activation_pending,0)!=0 OR u.anonymized_at IS NOT NULL)) THEN ? ELSE NULL END,?,?,?,?,?,?,?)`,
+        VALUES(?,?,CASE WHEN EXISTS(SELECT 1 FROM members m WHERE m.user_id=? AND m.revoked_at IS NULL AND m.role IN (${roles.map(() => '?').join(',')}) AND ${memberProjectScopeSql("m","?")}) AND NOT EXISTS(SELECT 1 FROM portal_users u WHERE u.user_id=? AND (u.status!='active' OR COALESCE(u.activation_pending,0)!=0 OR u.anonymized_at IS NOT NULL)) THEN ? ELSE NULL END,?,?,?,?,?,?,?)`,
         [id, record.id, actor.userId, ...roles, record.project_id, actor.userId, record.project_id, objectKey, name, mime, input.bytes.byteLength, mutation.scope, actor.userId, now]),
       stmt(db, "INSERT INTO audit(id,actor_id,project_id,action,entity_id,details,created_at) VALUES(?,?,?,'record.attachment',?,?,?)", [crypto.randomUUID(), actor.userId, record.project_id, id, JSON.stringify({ recordId: record.id, mime, size: input.bytes.byteLength }), now]),
     ]);

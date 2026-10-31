@@ -21,12 +21,12 @@ function request(body = { password }, headers = {}) { return new Request('https:
 
 test('backup is available only to a currently active global owner, never project scopes or forged roles', async () => {
   const f = fixture(); assert.equal((await route.GET()).status, 200);
-  f.native.exec("UPDATE members SET role='manager',project_id='project-fixture'");
+  f.native.exec("UPDATE members SET role='manager',project_id='project-fixture',organization_id=(SELECT organization_id FROM projects WHERE id='project-fixture')");
   f.state.user = { ...f.actor, capabilities: ['organization.manage'], members: [{ role: 'owner', project_id: null }] };
   assert.equal((await route.GET()).status, 403); assert.equal((await route.POST(request())).status, 403); assert.equal(f.state.calls, 0);
-  f.native.exec("UPDATE members SET role='owner',project_id=NULL; UPDATE portal_users SET status='blocked'");
+  const blocked = fixture(); blocked.native.exec("UPDATE portal_users SET status='blocked'");
   assert.equal((await route.POST(request())).status, 401);
-  f.state.user = null; assert.equal((await route.POST(request())).status, 401);
+  blocked.state.user = null; assert.equal((await route.POST(request())).status, 401);
 });
 test('strict CSRF and bounded payloads prevent export before cryptography, and password is never echoed', async () => {
   const f = fixture();

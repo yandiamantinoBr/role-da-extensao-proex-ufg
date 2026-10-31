@@ -7,7 +7,7 @@ import {getActor} from './access';
 // e inexistência histórica de responsável global. Depois da primeira conclusão o
 // fluxo fica permanentemente indisponível, mesmo que os segredos continuem definidos.
 export async function ownerExists(db:D1Database):Promise<boolean>{
- return !!await one(db,"SELECT 1 AS present FROM members WHERE role='owner' AND project_id IS NULL LIMIT 1");
+ return !!await one(db,"SELECT 1 AS present FROM members WHERE role='owner' AND project_id IS NULL AND organization_id IS NULL LIMIT 1");
 }
 async function sameSecret(supplied:string,expected:string):Promise<boolean>{
  const encoder=new TextEncoder();
@@ -34,6 +34,6 @@ export async function completeOwnerSetup(db:D1Database,account:{email:string;nam
  if(linked?.user_id!==principalId)throw new HttpError(409,'Não foi possível vincular a conta. Tente novamente.');
  // getActor executa o bootstrap guardado por NOT EXISTS: só um responsável global nasce.
  const actor=await getActor(db,{userId:principalId,email,displayName:name},configuredOwnerEmail);
- if(!actor?.members.some(member=>member.role==='owner'&&member.project_id===null))throw new HttpError(409,'A configuração inicial já foi concluída por outra conta.','setup_completed');
+ if(!actor?.members.some(member=>member.role==='owner'&&member.project_id===null&&member.organization_id==null))throw new HttpError(409,'A configuração inicial já foi concluída por outra conta.','setup_completed');
  return actor;
 }
