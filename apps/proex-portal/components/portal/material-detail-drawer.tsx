@@ -2,7 +2,7 @@
 import AssetDetailsPanel from './asset-details-panel';
 /* Protected same-origin images carry the viewer's session; do not proxy them through an image optimizer. */
 /* eslint-disable @next/next/no-img-element */
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { ArrowDownLeft, ArrowUpRight, Boxes, Camera, Check, History, ImagePlus, LoaderCircle, PackagePlus, RefreshCw, X } from 'lucide-react';
 import styles from './material-detail-drawer.module.css';
 
@@ -11,7 +11,7 @@ type Material = { id: string; project_id: string; name: string; category: string
 type Movement = { id: string; delta: number; kind: string; reason: string; created_at: string; actor_name: string; group_title?: string };
 type Photo = { id: string; name: string; url: string; caption?: string; title: string };
 type Detail = { item: Material; category: Category | null; categories: Category[]; movements: Movement[]; photos: Photo[]; availability: { available: number; equipmentState: string | null }; permissions: { canManage: boolean; canUploadPhotos: boolean }; versions: {id:string;version:number;created_at:string}[]; historyTruncated: boolean; nextCursor: string | null };
-type Props = { itemId: string | null; onClose: () => void; onChanged?: () => void | Promise<void> };
+type Props = { itemId: string | null; onClose: () => void; onChanged?: () => void | Promise<void>; renderWorkContext?: (context: {itemId: string; projectId: string}) => ReactNode };
 type Upload = { file: File; recordId: string | null; recordKey: string; uploadKey: string; occurredAt: string; title: string };
 const kindNames: Record<string, string> = { gift: 'Brindes', equipment: 'Equipamentos', distribution: 'Distribuição institucional', consumption: 'Consumo interno' };
 const movementNames: Record<string, string> = { receive: 'Recebimento', distribute: 'Distribuição', consume: 'Consumo interno', adjust: 'Correção de contagem', redeem: 'Entrega de brinde', transfer: 'Transferência' };
@@ -40,25 +40,47 @@ async function preparedPhoto(file: File): Promise<File> {
   } finally { URL.revokeObjectURL(url); }
 }
 export default function MaterialDetailDrawer(props: Props) { return props.itemId ? <MaterialDialog key={props.itemId} {...props} itemId={props.itemId} /> : null; }
-function MaterialDialog({ itemId, onClose, onChanged }: Omit<Props, 'itemId'> & { itemId: string }) {
+function MaterialDialog({ itemId, onClose, onChanged, renderWorkContext }: Omit<Props, 'itemId'> & { itemId: string }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const opener = useRef<HTMLElement | null>(null), mounted = useRef(false);
   const cameraInput = useRef<HTMLInputElement>(null), galleryInput = useRef<HTMLInputElement>(null);
   const requestNumber = useRef(0), movementKey = useRef<string | null>(null), categoryKey = useRef<string | null>(null), photoSelection = useRef(0);
-  const [data, setData] = useState<Detail | null>(null), [tab, setTab] = useState<'summary' | 'move' | 'asset' | 'history' | 'photos'>('summary');
+  const [loaded, setData] = useState<Detail | null>(null), [tab, setTab] = useState<'summary' | 'move' | 'asset' | 'history' | 'photos' | 'work'>('summary');
+  const data = loaded?.item.id === itemId ? loaded : null;
   const [error, setError] = useState(''), [notice, setNotice] = useState(''), [busy, setBusy] = useState(false), [loadingMore, setLoadingMore] = useState(false);
   const [upload, setUpload] = useState<Upload | null>(null), [preparing, setPreparing] = useState(false), [moveKind, setMoveKind] = useState('receive');
   const reload = useCallback(async () => {
     const requestId = ++requestNumber.current;
-    const response = await fetch(`/api/materials/${encodeURIComponent(itemId)}`, { cache: 'no-store' });
-    const payload = await jsonResponse(response);
-    if (requestNumber.current === requestId) setData(payload as unknown as Detail);
+    try {
+      const response = await fetch(`/api/materials/${encodeURIComponent(itemId)}`, { cache: 'no-store' });
+      const payload = await jsonResponse(response) as unknown as Detail;
+      if (payload?.item?.id !== itemId || typeof payload.item.project_id !== 'string' || !payload.item.project_id) throw new Error('A resposta não corresponde ao material solicitado.');
+      if (requestNumber.current === requestId) setData(payload);
+    } catch (failure) {
+      if (requestNumber.current === requestId) setData(null);
+      throw failure;
+    }
   }, [itemId]);
   useEffect(() => {
-    const node = dialog.current; node?.showModal();
+    const node = dialog.current;
+    const active = typeof document === 'undefined' ? null : document.activeElement;
+    opener.current = typeof HTMLElement !== 'undefined' && active instanceof HTMLElement && active !== document.body && active !== document.documentElement && !node?.contains(active) ? active : null;
+    mounted.current = true;
+    node?.showModal();
     void reload().catch(failure => setError(failure instanceof Error ? failure.message : 'Não foi possível carregar este material.'));
     const activeRequest = requestNumber;
-    return () => { activeRequest.current++; if (node?.open) node.close(); };
+    return () => { mounted.current = false; activeRequest.current++; if (node?.open) node.close(); };
   }, [reload]);
+  function closed() {
+    // A queued close from an unmounted/reopened dialog must not steal the new target's focus.
+    if (!mounted.current || dialog.current?.open) return;
+    mounted.current = false;
+    if (typeof document !== 'undefined') {
+      if (opener.current?.isConnected) opener.current.focus({preventScroll: true});
+      if (!opener.current?.isConnected || document.activeElement !== opener.current) document.getElementById('main')?.focus({preventScroll: true});
+    }
+    onClose();
+  }
   async function saved(message: string) {
     setNotice(message);
     try { await reload(); await onChanged?.(); }
@@ -125,14 +147,15 @@ function MaterialDialog({ itemId, onClose, onChanged }: Omit<Props, 'itemId'> & 
     finally { setLoadingMore(false); }
   }
   const close = () => dialog.current?.close();
-  return <dialog ref={dialog} className={styles.dialog} aria-labelledby="material-detail-title" onClose={onClose} onClick={event => { if (event.target === event.currentTarget) close(); }}>
+  return <dialog ref={dialog} className={styles.dialog} aria-labelledby="material-detail-title" onClose={closed} onClick={event => { if (event.target === event.currentTarget) close(); }}>
     <div className={styles.shell}>
       <header className={styles.header}><div><span className={styles.eyebrow}>CATÁLOGO DE MATERIAIS</span><h2 id="material-detail-title">{data?.item.name || 'Detalhes do material'}</h2><p>{data?.category?.label || (data ? kindNames[data.item.category] : 'Carregando cadastro…')}</p></div><button className="p-icon-button" onClick={close} aria-label="Fechar detalhes"><X size={22}/></button></header>
-      <div className={styles.toolbar}><nav aria-label="Detalhes do material">{([['summary', 'Resumo'], ...(data?.permissions.canManage ? [['move', 'Movimentar']] : []), ...(data?.permissions.canManage && data.item.category === 'equipment' ? [['asset', 'Patrimônio']] : []), ['history', 'Histórico'], ['photos', 'Fotos']] as [typeof tab, string][]).map(([key, label]) => <button key={key} className={tab === key ? styles.activeTab : ''} aria-current={tab === key ? 'page' : undefined} onClick={() => { setTab(key); setError(''); }}>{label}</button>)}</nav><button className="p-icon-button" onClick={() => void reload().catch(failure => setError(failure.message))} aria-label="Atualizar material" disabled={busy}><RefreshCw size={17}/></button></div>
+      <div className={styles.toolbar}><nav aria-label="Detalhes do material">{([['summary', 'Resumo'], ...(data?.permissions.canManage ? [['move', 'Movimentar']] : []), ...(data?.permissions.canManage && data.item.category === 'equipment' ? [['asset', 'Patrimônio']] : []), ['history', 'Histórico'], ['photos', 'Fotos'], ...(data && renderWorkContext ? [['work', 'Acompanhamento']] : [])] as [typeof tab, string][]).map(([key, label]) => <button key={key} className={tab === key ? styles.activeTab : ''} aria-current={tab === key ? 'page' : undefined} onClick={() => { setTab(key); setError(''); }}>{label}</button>)}</nav><button className="p-icon-button" onClick={() => void reload().catch(failure => setError(failure.message))} aria-label="Atualizar material" disabled={busy}><RefreshCw size={17}/></button></div>
       <div className={styles.body}>
         {error && <p className={styles.error} role="alert">{error}</p>}{notice && <p className={styles.notice} role="status">{notice}</p>}
         {!data ? <div className={styles.empty}><LoaderCircle className="p-spin" size={28}/><p>Carregando os registros do material…</p></div> : <>
           <div className={styles.balances}><div><small>Saldo registrado</small><strong>{data.item.stock}</strong><span>{data.item.unit}</span></div><div><small>Reservado em brindes</small><strong>{data.item.reserved}</strong><span>unidades prometidas</span></div><div className={styles.available}><small>{data.item.category === 'equipment' ? 'Disponível agora' : 'Disponível para uso'}</small><strong>{data.availability.available}</strong><span>{data.item.category === 'equipment' ? conditionNames[data.availability.equipmentState || 'active'] || 'Confira a agenda para outra data' : 'saldo após as reservas'}</span></div></div>
+          {tab === 'work' && renderWorkContext?.({itemId: data.item.id, projectId: data.item.project_id})}
           {tab === 'summary' && <><div className={styles.summary}>{data.photos[0] ? <a href={data.photos[0].url} target="_blank" rel="noreferrer" aria-label="Abrir foto do material"><img src={data.photos[0].url} alt={data.photos[0].caption || data.item.name}/></a> : <div className={styles.noPhoto}><Boxes size={48}/><span>Ainda sem foto</span><button className="p-text-link" onClick={() => setTab('photos')}>Adicionar ou consultar fotos</button></div>}<div><span className={styles.tag}>{conditionNames[data.item.condition] || data.item.condition}</span><p>{data.item.description || 'Inclua uma descrição para facilitar a identificação e o uso deste material.'}</p>{data.item.asset_code && <p><strong>Identificação:</strong> {data.item.asset_code}</p>}<p className={styles.helper}>Alerta de estoque quando houver {data.item.low_stock} {data.item.unit} ou menos disponíveis.</p></div></div>
             {data.permissions.canManage && <><details className={styles.details}><summary>Editar cadastro do material</summary><form key={data.item.version} onSubmit={updateMetadata} className={styles.form}><fieldset disabled={busy}><label>Nome<input name="name" defaultValue={data.item.name} required maxLength={200}/></label><div className={styles.columns}><label>Categoria<select name="categoryId" defaultValue={data.item.category_id || ''}><option value="">{kindNames[data.item.category]} · sem categoria específica</option>{data.categories.filter(category => category.core_kind === data.item.category && (category.status === 'active' || category.id === data.item.category_id)).map(category => <option key={category.id} value={category.id}>{category.label}{category.status !== 'active' ? ' (arquivada)' : ''}</option>)}</select></label><label>Unidade de controle<input name="unit" defaultValue={data.item.unit} maxLength={40} required/></label></div><label>Descrição<textarea name="description" rows={3} defaultValue={data.item.description} maxLength={2000}/></label><div className={styles.columns}><label>Identificação ou patrimônio<input name="assetCode" defaultValue={data.item.asset_code} maxLength={100}/></label><label>Condição<select name="condition" defaultValue={data.item.condition}><option value="active">Em uso</option><option value="maintenance">Em manutenção</option><option value="inactive">Fora de uso</option></select></label></div><label>Alertar quando o saldo disponível for igual ou menor que<input name="lowStock" type="number" min="0" max={data.item.category === 'equipment' ? '1' : '1000000'} step="1" defaultValue={data.item.low_stock} required/><small>Informe a quantidade em {data.item.unit}. As unidades reservadas para brindes já são descontadas.</small></label><button className="p-button p-button-primary" type="submit"><Check size={17}/>Salvar cadastro</button></fieldset></form></details>
             <details className={styles.details}><summary>Criar uma categoria para estes materiais</summary><form onSubmit={createCategory} className={styles.form} onChange={() => { categoryKey.current = null; }}><fieldset disabled={busy}><label>Nome da categoria<input name="label" required maxLength={100} placeholder={data.item.category === 'equipment' ? 'Ex.: Equipamentos de som' : 'Ex.: Materiais para oficinas'}/></label><label>Descrição opcional<input name="description" maxLength={1000}/></label><p className={styles.helper}>A categoria ficará disponível para {kindNames[data.item.category].toLocaleLowerCase('pt-BR')} deste projeto.</p><button className="p-button p-button-subtle" type="submit"><PackagePlus size={17}/>Criar categoria</button></fieldset></form></details></>}

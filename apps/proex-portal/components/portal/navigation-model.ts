@@ -1,5 +1,5 @@
-import { Boxes, CalendarDays, ClipboardList, Dices, FileText, FolderKanban, LayoutDashboard, ListChecks, Settings2, Truck, UserRound, Users, type LucideIcon } from 'lucide-react';
-export type ModuleId = 'overview' | 'projects' | 'events' | 'materials' | 'loans' | 'team' | 'reports' | 'settings' | 'calendar' | 'records' | 'profile' | 'demands';
+import { Boxes, CalendarDays, ClipboardList, Dices, FileText, FolderKanban, LayoutDashboard, ListChecks, Settings2, Truck, UserRound, UserRoundCheck, Users, type LucideIcon } from 'lucide-react';
+export type ModuleId = 'overview' | 'projects' | 'events' | 'materials' | 'loans' | 'team' | 'reports' | 'settings' | 'calendar' | 'records' | 'profile' | 'demands' | 'my-work';
 export type PortalModule = {
     id: ModuleId;
     label: string;
@@ -8,6 +8,7 @@ export type PortalModule = {
 };
 export const PORTAL_MODULES: PortalModule[] = [
     { id: 'overview', label: 'Início', description: 'Seus atalhos, projetos e próximos passos.', icon: LayoutDashboard },
+    { id: 'my-work', label: 'Meu trabalho', description: 'Suas demandas, equipes, responsabilidades e prazos.', icon: UserRoundCheck },
     { id: 'projects', label: 'Projetos', description: 'Áreas de trabalho, identidade e equipe.', icon: FolderKanban },
     { id: 'demands', label: 'Demandas', description: 'Prioridades, responsáveis e conferências da equipe.', icon: ListChecks },
     { id: 'calendar', label: 'Agenda', description: 'Consulte ações, reservas e datas da equipe.', icon: CalendarDays },

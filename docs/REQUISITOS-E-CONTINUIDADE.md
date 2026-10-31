@@ -8,12 +8,16 @@ Yan declarou: “Autorizo push, PR, merge e deploy da V9 e de todas as próximas
 
 ## Estado e coordenação
 
+- Último aceite publicado nas notas: [V14](ENTREGA-V14.md). **R24/V15 está implementada e integrada localmente**, com QA funcional sintético inicial na revisão `80b361d`; os gates completos, refinamento/recaptura visual, CI, publicação e conferência em produção ainda estão pendentes. A [nota candidata V15](ENTREGA-V15.md) separa esses estados. A autorização permanente de publicação não substitui autorização específica de OAuth/serviços externos.
+- A base V13/V14 tem 83 tabelas de aplicação (0000–0016). A candidata V15 aplica 0017, chega a 86 tabelas e oferece 35 projeções portáteis/Sheets, com designações somente leitura e sem atribuições pessoais/histórico na planilha. O ensaio offline no backup real preservou os dados originais; migração de produção e releitura real da nova projeção permanecem pendentes.
 - V9: implementação `441649a`, integrada por [PR #8](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/8), merge `c19b6439cc17d904ff9c183b86291f8faf7d6cfc`; GitHub Actions e preview aprovados. Produção Vercel `READY` nesse merge em 31/10. Validação pós-publicação é registrada no relatório da entrega.
 - Coordenador integra e publica. Agentes trabalham em worktrees distintas, com commits locais e dono de arquivos explícito. Conferir `git status`, branch e HEAD ao retomar.
 - Frentes em execução: acessos/convites/revogação; sincronização/Apps Script; importação de fontes oficiais/projetos/patrimônio. Relatórios e IA/voz são coordenados junto dessas interfaces.
 - Conteúdo real, credenciais, arquivos pessoais e capturas de produção permanecem fora do repositório público. Usar fixtures sintéticas e URLs públicas de fontes oficiais.
 
 ## Registro completo do pedido de 31/10
+
+R01–R23 preservam abaixo o estado inicial/dono do registro e seus critérios de aceite, como histórico do pedido. O estado atualizado está na [matriz de cobertura](COBERTURA-DE-REQUISITOS.md) e nas entregas por versão; os itens “a implementar” desta coluna histórica não anulam implementações posteriores. R24 registra a implementação local mais recente, ainda sem publicação atestada.
 
 | ID | Entrega solicitada | Aceite mínimo | Estado inicial / dono |
 |---|---|---|---|
@@ -40,15 +44,17 @@ Yan declarou: “Autorizo push, PR, merge e deploy da V9 e de todas as próximas
 | R21 | E-mail automático sem nova plataforma paga | Remetente explícito e configurável, integração Google existente com cotas, preferências, fila e estado de envio honesto; nenhum e-mail real em QA | MailApp pesquisado; configuração e ativação ainda pendentes |
 | R22 | Compartilhamento por WhatsApp | Compartilhar título/link mínimo por ação da pessoa; envio automático é evolução separada, dependente de configuração oficial e custos conferidos | Link manual previsto; automação não ativada |
 | R23 | Auditoria e melhoria visual de todo o portal | Corrigir filtros/ações colados e sino claro; conferir todas as famílias/abas/funcionalidades em desktop/mobile e claro/escuro, teclado, estados vazios/preenchidos/erro, contraste, toque, consistência; auditoria independente com rubrica fixa e meta mínima 9/10, sem inventar aprovação | Pedido humano posterior à V13; implementação V14 e avaliação integrada em andamento |
-| R24 | Central pessoal Meu trabalho e resumo visual por contexto | Demandas por cor/símbolo/texto, estado/prioridade/prazo separados; registros atribuídos à pessoa/equipes, nomeações por módulo/projeto/entidade, totais SQL completos e links autorizados; não inferir responsabilidade por autoria/cargo ou conceder ACL | Pedido humano posterior ao checkpoint V14; implementação V15 isolada. Escopo/aceite em R24-MEU-TRABALHO.md |
+| R24 | Central pessoal Meu trabalho e resumo visual por contexto | Demandas por cor/símbolo/texto, estado/prioridade/prazo separados; atribuições diretas/equipes sem duplicar tarefas; totais completos independentes da página/status, Atenção como união, nomeações e links autorizados; não inferir responsabilidade por autoria/cargo nem conceder ACL | Implementado/integrado localmente na V15, com QA funcional inicial sintético em 80b361d e ensaio offline de 0017 aprovado. Gates completos, refinamento/recaptura visual, CI/publicação/produção e nova releitura Sheets pendentes. Coordenador fixa candidato final; escopo em R24-MEU-TRABALHO.md e estado em ENTREGA-V15.md |
 
 ## Fontes e padrões técnicos
 
 Pedido adicional de 31/10: Yan descreveu coletes P/M/G, um colete médio avariado após evento, conferência de devoluções, reposição e recontagem prioritária de bottons. Pediu delegação para pessoas e equipes sobrepostas, notificações internas e por e-mail, sininho com afazeres e análise de WhatsApp, aplicando os mesmos padrões de testes, Vault e continuidade. Esses exemplos são critérios de uso, não dados reais a cadastrar automaticamente.
 
+No pedido R24, “renovar no CGA” também é apenas exemplo informado pelo usuário. Não define prazo, obrigação institucional ou cadastro automático. A central pessoal usa atribuições explícitas vigentes; autoria, cargo, `borrower` e referência documental não as substituem. As nomeações de responsabilidade são distintas de papéis de segurança e de grants limitados a uma demanda.
+
 Para R17–R22: validar todas as referências no mesmo escopo; membros de equipe precisam manter autorização no projeto. Checklist não movimenta estoque nem encerra empréstimo implicitamente. Eventos repetidos não duplicam pendências/notificações. E-mail usa conteúdo mínimo e destinatário revalidado; não confundir aceitação pelo remetente com entrega/leitura. Envio com resultado incerto precisa de reconciliação, sem retentativa cega. WhatsApp manual só prepara texto; a pessoa escolhe e envia.
 
-Fontes primárias consultadas em 31/10: [MailApp](https://developers.google.com/apps-script/reference/mail/mail-app), [cotas Google](https://developers.google.com/apps-script/guides/services/quotas), [clique para conversa WhatsApp](https://faq.whatsapp.com/5913398998672934/?locale=pt_BR). MailApp envia sem ler a caixa de entrada; gatilho executa na conta que o instalou. Há cotas, portanto não prometer envio ilimitado nem custo zero em qualquer escala. Conta institucional específica e autorização de envio ainda precisam ser definidas/ativadas; não falsificar remetente PROEX.
+Fontes primárias consultadas em 31/10: [MailApp](https://developers.google.com/apps-script/reference/mail/mail-app), [cotas Google](https://developers.google.com/apps-script/guides/services/quotas), [clique para conversa WhatsApp](https://faq.whatsapp.com/5913398998672934/?locale=pt_BR). MailApp envia sem ler a caixa de entrada; gatilho executa na conta que o instalou. Há cotas, portanto não prometer envio ilimitado nem custo zero em qualquer escala. Yan escolheu uma conta Google pessoal provisória como remetente e a configuração permanece OFF. Essa escolha não concede OAuth: a confirmação específica de acesso Google, credencial restrita, gatilho e teste de envio autorizado continuam pendentes. Não falsificar remetente PROEX.
 
 Fontes iniciais indicadas por Yan: [SIGAA Público](https://sigaa.sistemas.ufg.br/sigaa/public/home.jsf) e [Equipe PROEX](https://proex.ufg.br/p/equipe-proex). Patrimônio deve usar documentos oficiais UFG/DLOG/DMP. A fonte pública identifica pessoas e ações; permissões internas dependem de concessão explícita e identidade comprovada.
 
@@ -68,6 +74,8 @@ Planilha global exige acesso restrito à administração. Visualizações filtra
 
 
 ## Estado comprovado após a V10 · 31/10/2026
+
+Checkpoint histórico da V10; consultar a matriz e as entregas posteriores para o estado vigente.
 
 R01: V9 e V10 publicadas/verificadas, PRs8/9 e SHAs registrados. R02: primeira sincronização real retomada, 28 tabelas; ACL/cópia privada e script conferidos, execução automática ainda pendente. R03: convites limitados e catálogo oficial publicados, sem envio real de convites em QA. R05/R06/R08/R09: importação com prévia e relatórios reais publicados/testados; ausências de extração permanecem explícitas. R07 estruturado, R04 organizações e R10–R13 IA/STT/TI estão em integração local. R16: backup completo real recuperado e cópia privada fora do Supabase relida; recorrência/transferência da chave e público continuam pendentes. Nenhum plano fecha os itens restantes. Veja `ENTREGA-V10.md` e a seção mais recente de `ANDAMENTO.md`.
 

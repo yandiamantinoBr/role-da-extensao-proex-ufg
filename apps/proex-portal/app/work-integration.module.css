@@ -1,0 +1,9 @@
+.entry { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 18px; margin-bottom: 22px; padding: 16px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); }
+.entry > div { flex: 1 1 240px; min-width: 0; }
+.entry strong { display: block; color: var(--ink); font-size: 16px; line-height: 1.5; }
+.entry p { color: var(--text-secondary); font-size: 13px; line-height: 1.6; }
+.projectFilter { max-width: 520px; padding: 12px 16px 0; margin-bottom: 20px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+.focusNotice { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-soft); }
+.focusNotice p { flex: 1 1 220px; color: var(--text-secondary); font-size: 13px; line-height: 1.6; }
+.record { scroll-margin-block: 90px 110px; }
+.record:focus { outline: 3px solid var(--focus); outline-offset: 4px; }

@@ -132,5 +132,5 @@ input:is([type=checkbox],[type=radio]){appearance:auto;display:inline-block;widt
 @media (max-width: 350px) {
   .p-topbar { gap: 8px; }
   .p-mobile-brand, .p-topbar-actions { flex-shrink: 0; }
-  .p-topbar .theme-switch > svg, .p-account-trigger > svg { display: none; }
+  .p-topbar .theme-switch > span[aria-hidden=true], .p-account-trigger > svg { display: none; }
 }

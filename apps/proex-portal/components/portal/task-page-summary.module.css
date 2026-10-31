@@ -1,0 +1,11 @@
+.summary { display: grid; gap: 8px; min-width: 0; }
+.caption { color: var(--text-secondary); font-size: 12px; line-height: 1.5; }
+.metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0; }
+.metrics > div { padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.metrics dt { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; color: var(--text-secondary); font-size: 12px; line-height: 1.5; }
+.metrics dt > svg { flex-shrink: 0; }
+.metrics dd { margin: 4px 0 0; color: var(--ink); font-size: 24px; line-height: 1.2; font-weight: 700; font-variant-numeric: tabular-nums; }
+.metrics [data-tone=danger] dt > svg { color: var(--danger); }
+.metrics [data-tone=info] dt > svg { color: var(--brand-ink); }
+.metrics [data-tone=success] dt > svg { color: #15803d; }
+:global(html[data-theme=dark]) .metrics [data-tone=success] dt > svg { color: #86efac; }

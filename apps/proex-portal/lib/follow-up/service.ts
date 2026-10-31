@@ -6,6 +6,8 @@ import { campaignAction } from '../campaigns';
 import { listOrganizations } from '../organizations';
 import { TASK_STATES, TASK_PRIORITIES, id, text, integer, version, date, choices, ids, onlyKeys, fail } from './contracts';
 import { authority, workAuthority, assignedRecipient, activeAccount, actorRequired, requireScope, scopeStatement, atomic, cas, fanout, recipientLimit, effectiveRecipient, type Scope } from './scope';
+import { serverWorkClock } from './time';
+import { groupNotifications, type NoticeForGroup } from './notification-groups';
 
 async function resolveScope(db:D1Database,input:Record<string,unknown>):Promise<Scope> {
  const projectId=id(input.projectId,true),requested=id(input.organizationId,true);
@@ -22,7 +24,7 @@ async function taskAtomic(db:D1Database,actor:PortalActor,taskId:string,statemen
 async function checklistRow(db:D1Database,actor:PortalActor,checklistId:string,write=false){const row=await one(db,`SELECT c.* FROM followup_checklists c WHERE c.id=? AND ${authority('?','c.organization_id','c.project_id',write)}`,[checklistId,actor.userId]);if(!row)fail('Conferência não encontrada neste contexto.','followup_not_found',404);return row!;}
 // One guarded SQL read per page/detail projection. Strong SnapshotD1 reads check
 // storage version on every query; per-task SELECT loops would add network RTTs.
-const taskProjectionSql = `SELECT t.*,COALESCE(p.name,'Organização') project_name,o.name organization_name,
+export const taskProjectionSql = `SELECT t.*,COALESCE(p.name,'Organização') project_name,o.name organization_name,
  ${authority('caller.user_id','t.organization_id','t.project_id',true)} can_edit,
  ${workAuthority('caller.user_id')} can_work,
  ${authority('caller.user_id','t.organization_id','t.project_id',true,true)} can_delegate_work,
@@ -34,7 +36,7 @@ const taskProjectionSql = `SELECT t.*,COALESCE(p.name,'Organização') project_n
  AND ((a.user_id IS NOT NULL AND EXISTS(SELECT 1 FROM portal_users person WHERE person.user_id=a.user_id AND ${activeAccount('person')}) AND ${authority('a.user_id','t.organization_id','t.project_id')}) OR (team.organization_id=t.organization_id AND team.status='active')) ORDER BY name,a.id
  ) visible) assignees_json
  FROM followup_tasks t JOIN(SELECT ? user_id) caller LEFT JOIN projects p ON p.id=t.project_id JOIN organizations o ON o.id=t.organization_id`;
-function projectedTask(task:Row):Row {
+export function projectedTask(task:Row):Row {
  const {created_by:_createdBy,can_edit:canEdit,can_work:canWork,can_delegate_work:canDelegateWork,assignees_json:assigneesJson,...safe}=task;void _createdBy;
  return {...safe,canEdit:Boolean(canEdit),canWork:Boolean(canWork),canDelegateWork:Boolean(canDelegateWork),assignees:JSON.parse(assigneesJson??'[]')};
 }
@@ -58,7 +60,7 @@ export async function followupList(db:D1Database,actor:PortalActor|null,input:Re
  if(input.status&&input.status!=='all'){conditions.push('t.status=?');values.push(choices(input.status,TASK_STATES));}if(input.priority&&input.priority!=='all'){conditions.push('t.priority=?');values.push(choices(input.priority,TASK_PRIORITIES));}
  const search=text(input.search,120,true);if(search){conditions.push("(t.title LIKE ? ESCAPE '\\' OR t.body LIKE ? ESCAPE '\\')");const needle='%'+search.replace(/[\\%_]/g,'\\$&')+'%';values.push(needle,needle);}
  const offset=input.offset===undefined?0:integer(input.offset,50000);const rows=await all(db,`${taskProjectionSql} WHERE ${conditions.join(' AND ')} ORDER BY CASE t.status WHEN 'completed' THEN 1 WHEN 'cancelled' THEN 1 ELSE 0 END,CASE t.priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,COALESCE(t.due_at,'9999'),t.updated_at DESC,t.id LIMIT 51 OFFSET ?`,[...values,offset]);
- return{tasks:rows.slice(0,50).map(projectedTask),hasMore:rows.length>50,nextOffset:offset+50};
+ return{tasks:rows.slice(0,50).map(projectedTask),hasMore:rows.length>50,nextOffset:offset+50,...serverWorkClock()};
 }
 async function people(db:D1Database,scope:Scope){return all(db,`SELECT DISTINCT u.user_id userId,COALESCE(NULLIF(p.display_name,''),'Integrante') name FROM portal_users u LEFT JOIN profiles p ON p.user_id=u.user_id WHERE ${activeAccount('u')} AND ${authority('u.user_id','scope.organization_id','scope.project_id')} ORDER BY name,u.user_id`.replace('FROM portal_users u','FROM(SELECT ? organization_id,? project_id) scope JOIN portal_users u'),[scope.organizationId,scope.projectId]);}
 async function orgPeople(db:D1Database,orgId:string){return all(db,`SELECT DISTINCT u.user_id userId,COALESCE(NULLIF(p.display_name,''),'Integrante') name FROM portal_users u LEFT JOIN profiles p ON p.user_id=u.user_id WHERE ${activeAccount('u')} AND EXISTS(SELECT 1 FROM members m WHERE m.user_id=u.user_id AND m.revoked_at IS NULL AND (m.organization_id=? OR(m.role='owner' AND m.project_id IS NULL AND m.organization_id IS NULL))) ORDER BY name,u.user_id`,[orgId]);}
@@ -172,12 +174,17 @@ async function checklistAction(db:D1Database,actor:PortalActor,action:string,inp
  try{await taskAtomic(db,actor,taskId,statements);}catch(error){if(error instanceof HttpError)throw error;const recovered=await mutation.recover(error);await taskWorkPermission(db,actor,recovered);return{...await followupDetail(db,actor,recovered),duplicate:true};}return followupDetail(db,actor,taskId);
 }
 const inboxPredicate=`${authority('?','t.organization_id','t.project_id')} AND EXISTS(SELECT 1 FROM organizations inbox_org WHERE inbox_org.id=t.organization_id AND inbox_org.status='active') AND ${effectiveRecipient('n.user_id')} AND EXISTS(SELECT 1 FROM portal_users inbox_user WHERE inbox_user.user_id=n.user_id AND ${activeAccount('inbox_user')})`;
-export async function notificationInbox(db:D1Database,actor:PortalActor|null){actorRequired(actor);const notifications=await all(db,`SELECT n.id,n.task_id,n.read_at,n.created_at,t.title,t.status,t.priority,t.due_at,t.project_id FROM followup_notifications n JOIN followup_tasks t ON t.id=n.task_id WHERE n.user_id=? AND ${inboxPredicate} ORDER BY n.created_at DESC,n.id LIMIT 100`,[actor.userId,actor.userId]);
- const counts=await one(db,`SELECT COUNT(*) total,COALESCE(SUM(CASE WHEN n.read_at IS NULL THEN 1 ELSE 0 END),0) unread FROM followup_notifications n JOIN followup_tasks t ON t.id=n.task_id WHERE n.user_id=? AND ${inboxPredicate}`,[actor.userId,actor.userId]);
- const pending=await all(db,`SELECT t.id,t.title,t.priority,t.due_at,t.project_id FROM followup_tasks t JOIN(SELECT ? user_id) recipient WHERE t.status NOT IN ('completed','cancelled') AND EXISTS(SELECT 1 FROM organizations inbox_org WHERE inbox_org.id=t.organization_id AND inbox_org.status='active') AND ${authority('recipient.user_id','t.organization_id','t.project_id')} AND ${effectiveRecipient('recipient.user_id')} ORDER BY CASE t.priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,COALESCE(t.due_at,'9999'),t.id LIMIT 101`,[actor.userId]);
- return{notifications,unread:Number(counts?.unread??0),hasMore:Number(counts?.total??0)>100,pending:pending.slice(0,100),pendingHasMore:pending.length>100,email:{enabled:false,reason:'Somente notificações internas. Nenhum e-mail é enviado por este incremento.'}};
+export async function notificationInbox(db:D1Database,actor:PortalActor|null){actorRequired(actor);
+ // Window, global counts and followed tasks use the same fresh read snapshot.
+ const results=await db.batch([
+ db.prepare(`SELECT n.id,n.task_id,n.read_at,n.created_at,t.title,t.status,t.priority,t.due_at,t.project_id FROM followup_notifications n JOIN followup_tasks t ON t.id=n.task_id WHERE n.user_id=? AND ${inboxPredicate} ORDER BY n.created_at DESC,n.id LIMIT 100`).bind(actor.userId,actor.userId),
+ db.prepare(`SELECT COUNT(*) total,COALESCE(SUM(CASE WHEN n.read_at IS NULL THEN 1 ELSE 0 END),0) unread FROM followup_notifications n JOIN followup_tasks t ON t.id=n.task_id WHERE n.user_id=? AND ${inboxPredicate}`).bind(actor.userId,actor.userId),
+ db.prepare(`SELECT t.id,t.title,t.priority,t.due_at,t.project_id FROM followup_tasks t JOIN(SELECT ? user_id) recipient WHERE t.status NOT IN ('completed','cancelled') AND EXISTS(SELECT 1 FROM organizations inbox_org WHERE inbox_org.id=t.organization_id AND inbox_org.status='active') AND ${authority('recipient.user_id','t.organization_id','t.project_id')} AND ${effectiveRecipient('recipient.user_id')} ORDER BY CASE t.priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,COALESCE(t.due_at,'9999'),t.id LIMIT 101`).bind(actor.userId),
+ ]);
+ const notifications=(results[0].results??[]) as Row[],counts=(results[1].results?.[0]??{}) as Row,pending=(results[2].results??[]) as Row[];
+ return{notifications,groups:groupNotifications(notifications as NoticeForGroup[]),windowLimit:100,...serverWorkClock(),viewerId:actor.userId,unread:Number(counts?.unread??0),hasMore:Number(counts?.total??0)>100,pending:pending.slice(0,100),pendingHasMore:pending.length>100,email:{enabled:false,reason:'Somente notificações internas. Nenhum e-mail é enviado por este incremento.'}};
 }
-async function notificationRead(db:D1Database,actor:PortalActor,input:Record<string,unknown>){onlyKeys(input,['action','id','read','all']);if(typeof input.read!=='boolean'||input.all!==undefined&&typeof input.all!=='boolean')fail('Escolha marcar como lida ou não lida.');const at=input.read?iso():null,noticeId=input.all===true?null:id(input.id);await db.prepare(`UPDATE followup_notifications SET read_at=? WHERE user_id=? ${noticeId?'AND id=?':''} AND EXISTS(SELECT 1 FROM followup_tasks t WHERE t.id=followup_notifications.task_id AND EXISTS(SELECT 1 FROM organizations notify_org WHERE notify_org.id=t.organization_id AND notify_org.status='active') AND ${authority('?','t.organization_id','t.project_id')} AND ${effectiveRecipient('followup_notifications.user_id')}) AND EXISTS(SELECT 1 FROM portal_users u WHERE u.user_id=followup_notifications.user_id AND ${activeAccount('u')})`).bind(at,actor.userId,...(noticeId?[noticeId]:[]),actor.userId).run();return notificationInbox(db,actor);}
+async function notificationRead(db:D1Database,actor:PortalActor,input:Record<string,unknown>){onlyKeys(input,['action','id','taskId','read','all']);if(typeof input.read!=='boolean')fail('Escolha marcar como lida ou não lida.');const selectors=['id','taskId','all'].filter(key=>input[key]!==undefined);if(selectors.length!==1||selectors[0]==='all'&&input.all!==true)fail('Escolha apenas um aviso, uma demanda ou todos os avisos.');const at=input.read?iso():null,noticeId=selectors[0]==='id'?id(input.id):null,taskId=selectors[0]==='taskId'?id(input.taskId):null;await db.prepare(`UPDATE followup_notifications SET read_at=? WHERE user_id=? ${noticeId?'AND id=?':taskId?'AND task_id=?':''} AND read_at IS ${input.read?'NULL':'NOT NULL'} AND EXISTS(SELECT 1 FROM followup_tasks t WHERE t.id=followup_notifications.task_id AND EXISTS(SELECT 1 FROM organizations notify_org WHERE notify_org.id=t.organization_id AND notify_org.status='active') AND ${authority('?','t.organization_id','t.project_id')} AND ${effectiveRecipient('followup_notifications.user_id')}) AND EXISTS(SELECT 1 FROM portal_users u WHERE u.user_id=followup_notifications.user_id AND ${activeAccount('u')})`).bind(at,actor.userId,...(noticeId?[noticeId]:taskId?[taskId]:[]),actor.userId).run();return notificationInbox(db,actor);}
 
 export async function followupAction(db:D1Database,actor:PortalActor|null,action:string,input:Record<string,unknown>):Promise<Row>{actorRequired(actor);try{
  if(action==='task.create'||action==='task.update')return await taskAction(db,actor,action,input);
