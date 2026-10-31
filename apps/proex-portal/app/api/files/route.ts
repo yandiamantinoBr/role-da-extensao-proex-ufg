@@ -6,8 +6,7 @@ import { bucket, database } from '../../../lib/platform';
 import { prepareMutation } from '../../../lib/mutations';
 import { validatedRecordFile,queuePrivateObjectDeletion } from '../../../lib/records';
 
-const MAX_FILE_BYTES = 10 * 1024 * 1024;
-const MAX_BODY_BYTES = MAX_FILE_BYTES + 64 * 1024;
+import { MAX_UPLOAD_FILE_BYTES as MAX_FILE_BYTES, MAX_UPLOAD_BODY_BYTES as MAX_BODY_BYTES, UPLOAD_LIMIT_MESSAGE } from '../../../lib/upload-limits';
 
 function privateResponse(response: Response): Response {
   response.headers.set('Cache-Control', 'private, no-store');
@@ -30,7 +29,7 @@ function requireAction(request: Request): void {
 async function boundedFormData(request: Request): Promise<FormData> {
   const length = request.headers.get('Content-Length');
   if (length && (!/^\d+$/.test(length) || Number(length) > MAX_BODY_BYTES)) {
-    throw new HttpError(413, 'O anexo deve ter no máximo 10 MB.', 'file_too_large');
+    throw new HttpError(413, UPLOAD_LIMIT_MESSAGE, 'file_too_large');
   }
   if (!request.body) throw new HttpError(400, 'Escolha um arquivo.', 'missing_file');
   const reader = request.body.getReader();
@@ -43,7 +42,7 @@ async function boundedFormData(request: Request): Promise<FormData> {
       size += value.byteLength;
       if (size > MAX_BODY_BYTES) {
         await reader.cancel();
-        throw new HttpError(413, 'O anexo deve ter no máximo 10 MB.', 'file_too_large');
+        throw new HttpError(413, UPLOAD_LIMIT_MESSAGE, 'file_too_large');
       }
       chunks.push(value);
     }
@@ -101,7 +100,7 @@ export async function POST(request: Request): Promise<Response> {
     requireCapability(actor, 'loans.manage', loan.project_id);
     const entry = form.get('file');
     if (!entry || typeof entry === 'string' || typeof entry.arrayBuffer !== 'function') throw new HttpError(400, 'Escolha um arquivo.', 'missing_file');
-    if (!entry.size || entry.size > MAX_FILE_BYTES) throw new HttpError(entry.size ? 413 : 400, 'Escolha um arquivo de até 10 MB.', 'invalid_file_size');
+    if (!entry.size || entry.size > MAX_FILE_BYTES) throw new HttpError(entry.size ? 413 : 400, UPLOAD_LIMIT_MESSAGE, 'invalid_file_size');
     const headerKey = request.headers.get('X-Operation-Key'), formKey = form.get('operationKey');
     if (headerKey && formKey !== null && formKey !== headerKey) throw new HttpError(400, 'As chaves da operação não correspondem. Atualize o formulário.', 'invalid_operation_key');
     const operationKey = headerKey ?? formKey;

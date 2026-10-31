@@ -1,3 +1,7 @@
+// Fronteira legada das consultas D1: cada projeção SQL possui colunas diferentes.
+// Tipar todas as consultas exige contratos por serviço; mantenha a exceção aqui,
+// sem propagar novos `any` para parsers ou desabilitar a regra no projeto.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type Row=Record<string,any>;
 export async function all(db:D1Database,sql:string,params:unknown[]=[]):Promise<Row[]>{return (await db.prepare(sql).bind(...params).all<Row>()).results??[];}
 export async function one(db:D1Database,sql:string,params:unknown[]=[]):Promise<Row|null>{return db.prepare(sql).bind(...params).first<Row>();}

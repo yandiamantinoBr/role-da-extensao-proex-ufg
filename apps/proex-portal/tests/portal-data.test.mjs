@@ -358,6 +358,8 @@ test('metrics separate participation, attempts, redemptions and units and reconc
   const owner = await snapshot(f, 'owner');
   assert.equal(owner.projects.length, 2);
   assert.equal(owner.metrics.visits, 106);
+  assert.equal(owner.metrics.visitsCollection, 'paused');
+  assert.match(owner.metrics.definitions.visits, /Histórico.*coleta.*suspensa/);
   assert.equal(owner.metrics.unitsDelivered, 8);
   assert.equal(owner.metrics.byProject.length, 2);
   assert.ok(!('uniquePeople' in owner.metrics));

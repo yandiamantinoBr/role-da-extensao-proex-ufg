@@ -1,9 +1,10 @@
 import {projectAction} from './projects';
-import {one,all,uid,iso,text} from './database';
+import {one,all,uid,iso,text,type Row} from './database';
 import {HttpError} from './errors';
 import {requireCapability,type PortalActor} from './access';
 
-export async function campaignAction(db:D1Database,actor:PortalActor,action:string,input:any):Promise<any|null>{
+// Os serviços de campanha ainda compartilham as projeções SQL dinâmicas de Row.
+export async function campaignAction(db:D1Database,actor:PortalActor,action:string,input:Row):Promise<Row|null>{
  const projectResult=await projectAction(db,actor,action,input);if(projectResult!==null)return projectResult;
  if(action==='setting.update'){
   requireCapability(actor,'organization.manage');const instagram=text(input.instagramUrl,300),notice=text(input.privacyNotice,12000);
@@ -38,7 +39,7 @@ export async function campaignAction(db:D1Database,actor:PortalActor,action:stri
 }
 export function audit(db:D1Database,actor:{userId:string},action:string,id:string,project:string|null,now=iso()){return db.prepare('INSERT INTO audit(id,actor_id,project_id,action,entity_id,details,created_at) VALUES(?,?,?,?,?,?,?)').bind(uid(),actor.userId,project,action,id,'{}',now);}
 export async function activeCampaign(db:D1Database,id:string){const c=await one(db,'SELECT * FROM campaigns WHERE id=?',[id]);if(!c)throw new HttpError(404,'Ação não encontrada.');if(c.status!=='active'||c.starts_at>iso()||c.ends_at<=iso())throw new HttpError(409,'Esta ação não está recebendo participações agora.');if(c.retry_limit===null||!c.rules_text||!c.brinde_offer_id||!c.super_offer_id)throw new HttpError(409,'A ação ainda não tem todas as regras configuradas.');if(!text((await one(db,"SELECT value FROM settings WHERE name='privacyNotice'"))?.value,12000))throw new HttpError(409,'O aviso de privacidade ainda precisa ser configurado.');return c;}
-export async function prizeComponents(db:D1Database,c:any){
+export async function prizeComponents(db:D1Database,c:Row){
  const rows=await all(db,'SELECT oc.*,o.kind,o.project_id,i.category,i.condition,i.stock,i.reserved,i.project_id item_project_id FROM offer_components oc JOIN offers o ON o.id=oc.offer_id JOIN items i ON i.id=oc.item_id WHERE o.id IN (?,?) AND o.active=1',[c.brinde_offer_id,c.super_offer_id]);
  if(!rows.some(r=>r.offer_id===c.brinde_offer_id&&r.kind==='brinde')||!rows.some(r=>r.offer_id===c.super_offer_id&&r.kind==='super')||rows.some(r=>r.project_id!==c.project_id||r.item_project_id!==c.project_id||r.category!=='gift'||r.condition!=='active'))throw new HttpError(409,'Configure ofertas ativas de brindes deste projeto.');
  return rows;

@@ -243,6 +243,20 @@ test('multipart parsing enforces one file, bounded bodies and explicit same-orig
   await assert.rejects(readRecordForm(new Request('https://portal.example.invalid/api/records', { method: 'POST', body: 'x', headers: { 'Content-Length': String(MAX_RECORD_FILE_BYTES * 2), 'Content-Type': 'multipart/form-data; boundary=test' } })), error => error.status === 413);
 });
 
+test('record attachments use the same 4 MiB limit including multipart overhead', async () => {
+  const limit = 4 * 1024 * 1024;
+  assert.equal(MAX_RECORD_FILE_BYTES, limit);
+  const atLimit = new Uint8Array(limit); atLimit.set(pdf);
+  assert.equal(validatedRecordFile(file('record', { bytes: atLimit })).mime, 'application/pdf');
+  for (const size of [limit, limit + 1]) {
+    const bytes = new Uint8Array(size); bytes.set(pdf);
+    const form = new FormData(); form.set('recordId', 'record-test'); form.set('operationKey', 'record-boundary-0001'); form.set('file', new File([bytes], 'term.pdf', { type: 'application/pdf' }));
+    const request = new Request('https://portal.example.invalid/api/records', { method: 'POST', body: form });
+    if (size === limit) assert.equal((await readRecordForm(request)).bytes.byteLength, limit);
+    else await assert.rejects(readRecordForm(request), error => error.status === 413 && /4 MB/.test(error.message));
+  }
+});
+
 test('HTTP routes use real authorization and private download headers for PDF and images', async () => {
   const { db, storage } = fixture();
   try {

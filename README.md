@@ -1,5 +1,9 @@
 # Rolê da Extensão · PROEX UFG 😎
 
+Este monorepo reúne o **Portal PROEX**, em [`apps/proex-portal`](apps/proex-portal/README.md), e o jogo livre preservado na raiz. O portal de gestão tem hospedagem Vercel + Supabase e endereço <https://proex-gestao.vercel.app/>. O banco da aplicação continua SQLite, persistido por instantâneos com versão no esquema privado do Supabase; os anexos também são privados. Veja o [guia de hospedagem](apps/proex-portal/docs/HOSPEDAGEM-VERCEL.md).
+
+As entregas [V7](docs/ENTREGA-V7.md) e [V8](docs/ENTREGA-V8.md) estão registradas pelos commits locais. Consulte [AGENTS.md](AGENTS.md) antes de trabalhar no repositório. As instruções abaixo de abertura e GitHub Pages se referem ao **jogo livre**; o portal tem comandos e publicação próprios.
+
 Roleta e Super Dado com a mesma dinâmica: **3 faces de Brinde, 1 Tente novamente, 1 Não foi dessa vez e 1 Super Brinde**. O sorteio usa a aleatoriedade segura do navegador.
 
 - Roleta e dado com animações completas e duração configurável.
@@ -28,9 +32,9 @@ O GitHub Pages usa uma entrada estática em github-pages/, importando **o mesmo*
 
 ## Evolução administrativa da PROEX
 
-A evolução está documentada em [docs/proex-evolucao](docs/proex-evolucao/README.md). O portal em [apps/proex-portal](apps/proex-portal/README.md) tem autenticação, banco, arquivos privados e implantação próprios. O jogo livre permanece independente e ilimitado. A V3 tem publicação registrada; a **V4 foi publicada com sucesso**, versão 4, fonte Sites `ae50c4eab331f74057c60dd487167af1b9925410`. Pré-cadastro e sincronização inicial Drive/Sheets foram concluídos em produção; a rotina periódica está ativa, sem atualização instantânea. Consulte [ENTREGA-V4.md](docs/ENTREGA-V4.md) e a [ADR 0004](docs/proex-evolucao/ADRS/0004-monorepo-catalogo-e-integracao-v4.md).
+A evolução está documentada em [docs/proex-evolucao](docs/proex-evolucao/README.md). O portal tem autenticação, banco, arquivos privados e implantação próprios. O jogo livre permanece independente e ilimitado. Os registros [V3](docs/ENTREGA-V3.md), [V4](docs/ENTREGA-V4.md), [V6](docs/ENTREGA-V6.md), [V7](docs/ENTREGA-V7.md) e [V8](docs/ENTREGA-V8.md) descrevem etapas diferentes; os endereços e referências ao Sites nas entregas antigas são históricos. A configuração da planilha e seus registros anteriores não comprovam que uma sincronização esteja atualizada hoje: confira o histórico de execuções e conflitos no portal.
 
-O monorepo preserva um único histórico público: raiz/Pages para o jogo, `apps/proex-portal` para a gestão. Execute os comandos a partir da aplicação correta; publicar uma não publica a outra. A branch `feat/proex-v4` parte de main observado em `ff27166`, após as PRs #1, #2 e #3. O núcleo anterior de permissões continua independente; o portal operacional tem seus próprios serviços e verificações.
+O monorepo preserva um único histórico público: raiz/Pages para o jogo, `apps/proex-portal` para a gestão. Execute os comandos a partir da aplicação correta; publicar uma não publica a outra. O núcleo anterior de permissões continua independente; o portal operacional tem seus próprios serviços e verificações.
 
 Para verificar a branch com Node.js 24 e as dependências do lockfile:
 
@@ -49,7 +53,7 @@ Para editar/publicar pelo ChatGPT Sites, preserve .openai/hosting.json e siga o 
 
 Os procedimentos anteriores de cópia Windows/GitHub/Sites estão em [docs/synchronization.md](docs/synchronization.md) e permanecem históricos. Sua documentação não comprova tarefas ativas, e esta evolução não as reativa. GitHub Pages mantém seu fluxo próprio de publicação; a gestão PROEX possui outro deploy.
 
-A V4 oferece integração portátil com Drive/Sheets, recibos e conflitos. A primeira execução real concluiu em 23/10/2026 às 14:14:59 UTC: 118 linhas exportadas, 27 tabelas verificadas, zero alterações importadas e zero conflitos. Às 14:22:45 UTC, a segunda execução concluiu com 130 linhas exportadas, três alterações aplicadas e zero conflitos: descrições de três buttons editadas na planilha foram conferidas no portal, com uma nova versão e estoque zero, reexportadas e relidas nas 27 tabelas e linhas-base. Esse percurso foi validado para metadados. A rotina periódica está ativa; não é sincronização instantânea. URLs privadas, credenciais e dados operacionais não pertencem ao repositório.
+A V4 introduziu integração portátil com Drive/Sheets, recibos e conflitos. O registro histórico informa uma execução em 23/10/2026 às 14:14:59 UTC: 118 linhas exportadas, 27 tabelas verificadas, zero alterações importadas e zero conflitos. Às 14:22:45 UTC, outra execução registrou 130 linhas exportadas, três alterações aplicadas e zero conflitos: descrições de três buttons editadas na planilha foram conferidas no portal, com uma nova versão e estoque zero, reexportadas e relidas nas 27 tabelas e linhas-base. Esse percurso foi validado para metadados naquela revisão; não comprova o funcionamento atual da rotina periódica nem sincronização instantânea. URLs privadas, credenciais e dados operacionais não pertencem ao repositório.
 
 As configurações de volume, tempo e chances são preferências locais de cada navegador, não alterações no código. Não são compartilhadas entre dispositivos ou entre os dois endereços.
 

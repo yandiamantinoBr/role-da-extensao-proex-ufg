@@ -64,10 +64,11 @@ export async function reportRows(db: D1Database, actor: PortalActor | null, inpu
       if (value === '__none__') where.push(`(${column} IS NULL OR ${column}='')`); else { where.push(`${column}=?`); params.push(value); }
     }
   }
-  const period = (column: string) => {
+  const period = (column: string, milliseconds = false) => {
     const clauses: string[] = [], values: unknown[] = [];
-    if (from) { clauses.push(`date(${column},'-3 hours')>=?`); values.push(from); }
-    if (to) { clauses.push(`date(${column},'-3 hours')<=?`); values.push(to); }
+    const calendarDay = milliseconds ? `date(${column}/1000,'unixepoch','-3 hours')` : `date(${column},'-3 hours')`;
+    if (from) { clauses.push(`${calendarDay}>=?`); values.push(from); }
+    if (to) { clauses.push(`${calendarDay}<=?`); values.push(to); }
     return { clauses, values };
   };
   const base = `projects p LEFT JOIN organizational_units u ON u.id=p.unit_id LEFT JOIN project_types t ON t.id=p.type_id`;
@@ -93,10 +94,10 @@ export async function reportRows(db: D1Database, actor: PortalActor | null, inpu
       CASE WHEN m.delta>0 THEN 'entrada' ELSE 'saida' END AS sentido,m.note AS observacao
       FROM stock_movements m JOIN items i ON i.id=m.item_id JOIN ${base.replace('projects p', 'projects p ON p.id=i.project_id')} /*WHERE*/ ORDER BY m.created_at DESC`, period('m.created_at'));
   } else if (dataset === 'loans') {
-    rows = await run(`SELECT l.id,${projectColumns},i.name AS material,l.action_name AS acao,date(l.starts_at,'-3 hours') AS inicio,date(l.ends_at,'-3 hours') AS fim,
+    rows = await run(`SELECT l.id,${projectColumns},i.name AS material,l.action_name AS acao,date(l.starts_at/1000,'unixepoch','-3 hours') AS inicio,date(l.ends_at/1000,'unixepoch','-3 hours') AS fim,
       l.status AS situacao,date(l.checked_out_at,'-3 hours') AS retirado_em,date(l.returned_at,'-3 hours') AS devolvido_em,
-      CASE WHEN l.status='out' AND l.ends_at<strftime('%Y-%m-%dT%H:%M:%fZ','now') THEN 'sim' ELSE 'nao' END AS em_atraso,l.condition_out AS condicao_saida,l.condition_in AS condicao_retorno
-      FROM loans l JOIN items i ON i.id=l.item_id JOIN ${base.replace('projects p', 'projects p ON p.id=l.project_id')} /*WHERE*/ ORDER BY l.starts_at DESC`, period('l.starts_at'));
+      CASE WHEN l.status='out' AND l.ends_at<CAST(strftime('%s','now') AS INTEGER)*1000 THEN 'sim' ELSE 'nao' END AS em_atraso,l.condition_out AS condicao_saida,l.condition_in AS condicao_retorno
+      FROM loans l JOIN items i ON i.id=l.item_id JOIN ${base.replace('projects p', 'projects p ON p.id=l.project_id')} /*WHERE*/ ORDER BY l.starts_at DESC`, period('l.starts_at', true));
   } else if (dataset === 'records') {
     rows = await run(`SELECT r.id,date(r.occurred_at,'-3 hours') AS data,${projectColumns},r.kind AS categoria,r.title AS titulo,substr(r.body,1,500) AS descricao,
       (SELECT COUNT(*) FROM record_attachments a WHERE a.record_id=r.id AND a.deleted_at IS NULL) AS anexos

@@ -29,7 +29,7 @@ function fixture() {
   native.prepare("INSERT INTO projects(id,name,created_at,unit_id,thematic_area,scope) VALUES('project-a','Projeto A',?,'unit-a','cultura','external'),('project-b','Projeto B',?,NULL,'saude','internal')").run(now, now);
   native.prepare("INSERT INTO items(id,project_id,name,category,unit,stock,reserved,low_stock,created_at) VALUES('item-a','project-a','Caixa de som','equipment','unidade',1,0,1,?),('item-b','project-b','Camisetas','gift','unidade',40,5,10,?)").run(now, now);
   native.prepare("INSERT INTO stock_movements(id,item_id,delta,kind,note,actor_id,created_at) VALUES('m-1','item-b',50,'receive','Compra','test','2026-09-02T12:00:00.000Z'),('m-2','item-b',-10,'distribute','Feira','test','2026-10-05T12:00:00.000Z')").run();
-  native.prepare("INSERT INTO loans(id,project_id,item_id,action_name,borrower_name,borrower_contact,starts_at,ends_at,created_by,created_at) VALUES('loan-a','project-a','item-a','Mostra','Pessoa privada','pessoa@example.invalid','2026-10-01T12:00:00.000Z','2026-10-03T12:00:00.000Z','test',?)").run(now);
+  native.prepare("INSERT INTO loans(id,project_id,item_id,action_name,borrower_name,borrower_contact,starts_at,ends_at,created_by,created_at) VALUES('loan-a','project-a','item-a','Mostra','Pessoa privada','pessoa@example.invalid',?,?,'test',?)").run(Date.parse('2026-10-01T12:00:00.000Z'), Date.parse('2026-10-03T12:00:00.000Z'), now);
   native.prepare("INSERT INTO records(id,project_id,kind,title,body,occurred_at,created_by,created_at) VALUES('r-1','project-a','observation','Reunião','Notas','2026-10-01T12:00:00.000Z','test',?),('r-2','project-a','maintenance','Conserto','Cabo','2026-10-02T12:00:00.000Z','test',?)").run(now, now);
   const db = { native, prepare(sql) { let values = []; return { bind(...args) { values = args; return this; }, async all() { return { results: native.prepare(sql).all(...values) }; }, async first() { return native.prepare(sql).get(...values) ?? null; } }; } };
   return db;
@@ -76,3 +76,59 @@ test('report filters combine unit, thematic area and Brasília calendar dates', 
   assert.deepEqual(october.rows.map(row => [row.tipo, row.quantidade, row.sentido]), [['distribute', -10, 'saida']]);
   await assert.rejects(reportRows(db, actor('owner'), { dataset: 'movements', from: '01/10/2026' }), /AAAA-MM-DD/);
 });
+
+test('loan reports render millisecond reservation dates and preserve ISO checkout and return dates', async (t) => {
+  const db = fixture();
+  t.after(() => db.native.close());
+  const startsAt = Date.parse('2026-10-01T02:59:59.999Z'), endsAt = Date.parse('2026-10-02T03:00:00.001Z');
+  db.native.prepare("UPDATE loans SET starts_at=?,ends_at=?,status='returned',checked_out_at=?,returned_at=? WHERE id='loan-a'")
+    .run(startsAt, endsAt, '2026-10-01T03:00:00.000Z', '2026-10-02T02:59:59.999Z');
+
+  const { rows } = await reportRows(db, actor('owner'), { dataset: 'loans' });
+  assert.deepEqual([rows[0].inicio, rows[0].fim], ['2026-09-30', '2026-10-02']);
+  assert.deepEqual([rows[0].retirado_em, rows[0].devolvido_em], ['2026-10-01', '2026-10-01']);
+});
+
+test('loan report periods include both Brasília day boundaries with millisecond timestamps', async (t) => {
+  const db = fixture();
+  t.after(() => db.native.close());
+  db.native.exec('DELETE FROM loans');
+  const insert = db.native.prepare("INSERT INTO loans(id,project_id,item_id,action_name,borrower_name,starts_at,ends_at,created_by,created_at) VALUES(?,'project-a','item-a','Mostra','Pessoa privada',?,?,'test','2026-10-01T12:00:00.000Z')");
+  for (const [id, startsAt] of [
+    ['before-day', '2026-10-01T02:59:59.999Z'],
+    ['day-start', '2026-10-01T03:00:00.000Z'],
+    ['day-end', '2026-10-02T02:59:59.999Z'],
+    ['after-day', '2026-10-02T03:00:00.000Z'],
+  ]) {
+    const milliseconds = Date.parse(startsAt);
+    insert.run(id, milliseconds, milliseconds + 1);
+  }
+  const owner = actor('owner');
+  const combined = await reportRows(db, owner, { dataset: 'loans', from: '2026-10-01', to: '2026-10-01', projectId: 'project-a', unitId: 'unit-a', thematicArea: 'cultura' });
+  assert.deepEqual(combined.rows.map(row => row.id), ['day-end', 'day-start']);
+  assert.ok(combined.rows.every(row => row.inicio === '2026-10-01'));
+  const fromOnly = await reportRows(db, owner, { dataset: 'loans', from: '2026-10-01' });
+  assert.deepEqual(fromOnly.rows.map(row => row.id), ['after-day', 'day-end', 'day-start']);
+  const toOnly = await reportRows(db, owner, { dataset: 'loans', to: '2026-10-01' });
+  assert.deepEqual(toOnly.rows.map(row => row.id), ['day-end', 'day-start', 'before-day']);
+  assert.deepEqual((await reportRows(db, actor('manager', 'project-b'), { dataset: 'loans', from: '2026-10-01', to: '2026-10-01' })).rows, []);
+});
+
+for (const [status, dueOffset, expected] of [
+  ['out', -86400000, 'sim'],
+  ['out', 86400000, 'nao'],
+  ['reserved', -86400000, 'nao'],
+  ['returned', -86400000, 'nao'],
+  ['cancelled', -86400000, 'nao'],
+]) {
+  test(`loan reports mark ${status} due ${dueOffset < 0 ? 'in the past' : 'in the future'} as overdue=${expected}`, async (t) => {
+    const db = fixture();
+    t.after(() => db.native.close());
+    db.native.exec('DELETE FROM loans');
+    const clock = Date.now();
+    db.native.prepare("INSERT INTO loans(id,project_id,item_id,action_name,borrower_name,starts_at,ends_at,status,created_by,created_at) VALUES('loan-a','project-a','item-a','Mostra','Pessoa privada',?,?,?,'test',?)")
+      .run(clock - 2 * 86400000, clock + dueOffset, status, new Date(clock).toISOString());
+    const { rows } = await reportRows(db, actor('owner'), { dataset: 'loans' });
+    assert.equal(rows[0].em_atraso, expected);
+  });
+}

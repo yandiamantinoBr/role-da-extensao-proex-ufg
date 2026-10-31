@@ -1,17 +1,18 @@
-import {one,all,uid,iso,text} from './database';
+import {one,all,uid,iso,text,type Row} from './database';
 import {HttpError} from './errors';
 import {requireCapability,type PortalActor} from './access';
 import {activeCampaign,prizeComponents,audit} from './campaigns';
 const outcomes=['brinde','retry','brinde','super','miss','brinde'] as const;
 function randomResult(){const n=new Uint32Array(1);do{crypto.getRandomValues(n);}while(n[0]>=4294967292);return outcomes[n[0]%6];}
-function operation(value:any){const key=text(value,120);if(!/^[\w-]{8,120}$/.test(key))throw new HttpError(400,'Identificador da operação inválido.');return key;}
-export async function participationView(db:D1Database,id:string):Promise<Record<string,any>|null>{const p=await one(db,'SELECT id,state,modality,attempt_count,identity_method,created_at FROM participations WHERE id=?',[id]);if(!p)return null;return {...p,attempts:await all(db,'SELECT id,number,result,state FROM attempts WHERE participation_id=? ORDER BY number',[id]),entitlements:await all(db,'SELECT e.id,e.state,o.name offer_name FROM entitlements e JOIN offers o ON o.id=e.offer_id WHERE e.participation_id=?',[id])};}
-async function replay(db:D1Database,attempt:any){return {attempt:{id:attempt.id,number:attempt.number,result:attempt.result},participation:await participationView(db,attempt.participation_id),entitlement:await one(db,'SELECT e.id,e.state,o.name offer_name FROM entitlements e JOIN offers o ON o.id=e.offer_id WHERE e.attempt_id=?',[attempt.id])};}
-export async function draw(db:D1Database,campaignId:string,user:{userId:string},input:any){
+function operation(value:unknown){const key=text(value,120);if(!/^[\w-]{8,120}$/.test(key))throw new HttpError(400,'Identificador da operação inválido.');return key;}
+export async function participationView(db:D1Database,id:string):Promise<Row|null>{const p=await one(db,'SELECT id,state,modality,attempt_count,identity_method,created_at FROM participations WHERE id=?',[id]);if(!p)return null;return {...p,attempts:await all(db,'SELECT id,number,result,state FROM attempts WHERE participation_id=? ORDER BY number',[id]),entitlements:await all(db,'SELECT e.id,e.state,o.name offer_name FROM entitlements e JOIN offers o ON o.id=e.offer_id WHERE e.participation_id=?',[id])};}
+async function replay(db:D1Database,attempt:Row){return {attempt:{id:attempt.id,number:attempt.number,result:attempt.result},participation:await participationView(db,attempt.participation_id),entitlement:await one(db,'SELECT e.id,e.state,o.name offer_name FROM entitlements e JOIN offers o ON o.id=e.offer_id WHERE e.attempt_id=?',[attempt.id])};}
+// Row preserva o contrato legado das consultas e dos serviços de participação.
+export async function draw(db:D1Database,campaignId:string,user:{userId:string},input:Record<string,unknown>){
  const modality=text(input.modality,20);if(!['wheel','dice','physical'].includes(modality))throw new HttpError(400,'Escolha roleta, dado ou atendimento presencial.');const key=`${campaignId}:${user.userId}:${operation(input.operationKey)}`;
  const existing=await one(db,'SELECT a.* FROM attempts a JOIN participations p ON p.id=a.participation_id WHERE a.idempotency_key=? AND p.identity_id=? AND p.campaign_id=?',[key,user.userId,campaignId]);if(existing)return replay(db,existing);
  const c=await activeCampaign(db,campaignId),components=await prizeComponents(db,c);
- let p=await one(db,'SELECT * FROM participations WHERE campaign_id=? AND identity_id=?',[campaignId,user.userId]);
+ const p=await one(db,'SELECT * FROM participations WHERE campaign_id=? AND identity_id=?',[campaignId,user.userId]);
  if(p&&!['ready','retry_ready'].includes(p.state))throw new HttpError(409,'Sua participação nesta ação já foi utilizada.');if(p&&p.modality!==modality)throw new HttpError(409,'Continue na modalidade escolhida na primeira tentativa.');
  const pid=p?.id||uid(),number=(p?.attempt_count||0)+1,attemptId=uid(),now=iso();let result:string=modality==='physical'?'pending':randomResult();if(result==='retry'&&number>c.retry_limit)result='retry_exhausted';
  const chosen=result==='brinde'?c.brinde_offer_id:result==='super'?c.super_offer_id:null;
@@ -25,7 +26,7 @@ export async function draw(db:D1Database,campaignId:string,user:{userId:string},
  try{await db.batch(statements);}catch(error){const duplicate=await one(db,'SELECT * FROM attempts WHERE idempotency_key=?',[key]);if(duplicate)return replay(db,duplicate);throw error;}
  return replay(db,{id:attemptId,participation_id:pid,number,result});
 }
-export async function participationAction(db:D1Database,actor:PortalActor,action:string,input:any):Promise<any|null>{
+export async function participationAction(db:D1Database,actor:PortalActor,action:string,input:Row):Promise<Row|null>{
  if(action==='participation.ticket'){
   const campaignId=text(input.campaignId,100),ticketKey=`ticket:${campaignId}:${actor.userId}:${operation(input.operationKey)}`;const repeated=await one(db,'SELECT a.*,c.project_id FROM attempts a JOIN participations p ON p.id=a.participation_id JOIN campaigns c ON c.id=p.campaign_id WHERE a.idempotency_key=? AND p.campaign_id=?',[ticketKey,campaignId]);if(repeated){requireCapability(actor,'participation.operate',repeated.project_id);return {participationId:repeated.participation_id,attemptId:repeated.id,state:(await participationView(db,repeated.participation_id))?.state};}const c=await activeCampaign(db,campaignId);requireCapability(actor,'participation.operate',c.project_id);const components=await prizeComponents(db,c);
   const previous=input.participationId?await one(db,"SELECT * FROM participations WHERE id=? AND campaign_id=? AND modality='physical'",[text(input.participationId,100),c.id]):null;

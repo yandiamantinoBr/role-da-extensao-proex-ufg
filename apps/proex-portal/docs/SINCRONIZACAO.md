@@ -1,10 +1,10 @@
 # Sincronização operacional PROEX
 
-Este documento descreve a evolução V5 em preparação. As evidências confirmadas de publicação e sincronização da V4 são preservadas; a documentação do novo protocolo não comprova implantação V5 ou execução externa. A revisão efetivamente disponível deve ser confirmada no registro de entrega e no histórico da rotina.
+Estado revisado em 30/10/2026: a hospedagem atual é **Vercel + Supabase**, em [proex-gestao.vercel.app](https://proex-gestao.vercel.app/), com o banco SQLite persistido por instantâneos versionados. Veja [Hospedagem Vercel](HOSPEDAGEM-VERCEL.md). Cloudflare D1/R2 e ChatGPT Sites são alternativas; os registros anteriores de V4/V5 abaixo preservam a evolução do protocolo. A revisão publicada e a última sincronização devem ser conferidas separadamente no registro de entrega e no histórico da rotina. Alterações locais da V9 não comprovam publicação nem execução externa.
 
 ## O que é a fonte de cada informação
 
-O banco transacional D1 guarda operações, permissões, recibos e versões; os arquivos privados ficam no R2. A planilha Google é uma projeção operacional com edição controlada de metadados. Não contém senhas, CPF, hashes de login, tokens, contatos restritos ou chaves privadas de armazenamento. O GitHub guarda código e documentação, não a base de produção. O endereço do frontend não muda essa separação.
+O banco transacional **SQLite** guarda operações, permissões, recibos e versões. Na hospedagem atual, o adaptador Node executa o SQL do portal em SQLite e persiste o arquivo comprimido no Postgres do Supabase, em `proex.sqlite_snapshot`, com controle de versão (compare-and-set); os anexos privados ficam em `proex.objects`. O Postgres armazena esses dados, sem executar diretamente o SQL de domínio do portal. Na alternativa Cloudflare, essas funções usam D1 e R2. A planilha Google é uma projeção operacional com edição controlada de metadados. Não contém senhas, CPF, hashes de login, tokens, contatos restritos ou chaves privadas de armazenamento. O GitHub guarda código e documentação, não a base de produção. O endereço do frontend não muda essa separação.
 
 O esquema portátil versão 1 mantém IDs e tipos independentes do provedor. Excel pode receber CSV/JSON ou uma cópia da planilha. Trocar o provedor de sincronização exige implementar e verificar um adaptador; copiar um arquivo não migra autenticação, anexos e transações automaticamente. Para hospedar outra interface, reutilize a API canônica e migre o backend de forma planejada, evitando duas bases independentes.
 
@@ -13,7 +13,7 @@ O esquema portátil versão 1 mantém IDs e tipos independentes do provedor. Exc
 O arquivo `public/integracoes/proex-planilha.gs` implementa os passos abaixo dentro da própria planilha, sem depender do ChatGPT/Codex nem de uma conta de serviço do Google Cloud:
 
 - autentica no portal com `Authorization: Bearer pxs_…` em `POST /api/sync/connector` (`{ tool, args }`, as mesmas ferramentas do `/mcp`);
-- a chave pertence a um responsável global; o portal guarda o SHA-256, registra último uso, permite até cinco chaves ativas por pessoa, expira em um ano e revalida o papel e a conta a cada chamada;
+- a chave pertence a um responsável global; o portal guarda o SHA-256, registra último uso, permite até cinco chaves ativas por pessoa, expira em um ano e revalida o papel e a conta a cada chamada; na revisão local V9, o registro de atividade é aproximado, atualizado no máximo uma vez por minuto, enquanto validade e revogação continuam conferidas em todas as chamadas;
 - lê `Controle` (bases), coleta edições das colunas editáveis comparando com a base, processa linhas novas de `Operações`, aplica em lotes de 25 com `runId`, exporta todas as tabelas com paginação por digest, grava como texto literal (formato `@`), relê chaves e resumos de todas as abas e só então reescreve as bases e conclui a execução;
 - edições conflitantes ou recusadas vão para `Conflitos` com o conteúdo desejado, e a linha volta ao valor oficial na exportação; linhas sem base (digitadas manualmente nas abas técnicas) também são registradas em `Conflitos`, e as criações devem usar `Operações`;
 - anexos: lista, gera ticket de 60 s, baixa, grava na pasta privada, confere que o arquivo não tem compartilhamento por link e confirma com hash e tamanho.
@@ -61,12 +61,16 @@ Esses atalhos da planilha geral são retornados somente a um responsável global
 
 ## Fotos e termos
 
-O fluxo de anexos usa lista autenticada, ticket de download de curta duração e uso único, upload na pasta privada e recibo com ID Google, URL privada, SHA-256 e tamanho. Não escreva tickets, links de download temporários, nomes particulares ou chaves R2 na planilha. Na planilha ficam IDs e referências privadas do Drive. Nunca publique arquivos para fazer uma miniatura funcionar.
+O fluxo de anexos usa lista autenticada, ticket de download de curta duração e uso único, upload na pasta privada e recibo com ID Google, URL privada, SHA-256 e tamanho. Não escreva tickets, links de download temporários, nomes particulares ou chaves de armazenamento na planilha. Na planilha ficam IDs e referências privadas do Drive. Nunca publique arquivos para fazer uma miniatura funcionar.
+
+Na revisão local V9, **novos envios de fotos e termos aceitam até 4 MiB por arquivo (4.194.304 bytes)**, apresentados na interface como “4 MB”, em PDF, JPEG, PNG ou WebP. O limite de entrada não reduz nem exclui anexos legados maiores: os downloads autorizados dos objetos existentes continuam disponíveis. O fluxo de cópia para o Drive mantém seu limite próprio de 10 MiB por objeto; ele não passa a rejeitar um legado apenas por ultrapassar 4 MiB. A existência de uma referência na planilha não comprova que o objeto foi copiado; confira o recibo, o hash e o tamanho no destino privado.
 
 Se uma conta for desidentificada durante upload, o recibo tardio reabre a pendência de limpeza. A revisão de privacidade precisa contemplar cópias externas e os documentos operacionais cuja retenção seja necessária. Excluir um perfil não garante anonimização completa de texto livre, documentos, cópias ou backups.
 
 ## Estado verificável
 
-Configurar IDs, criar uma planilha, instalar o plugin, criar um agendamento e executar uma sincronização são etapas distintas. A interface mostra configuração e execuções separadamente. A publicação do código não deve ser descrita como sincronização ativa antes do teste real de gravação e leitura pelo acesso destinado à rotina.
+Configurar IDs, criar uma planilha, instalar o plugin, criar um agendamento e executar uma sincronização são etapas distintas. A interface mostra configuração e execuções separadamente. Uma execução concluída com leitura de retorno comprova aquela sincronização; **não comprova que exista um gatilho ativo**, que ele continue autorizado ou que a próxima execução acontecerá. O gatilho deve ser conferido na conta Google que o instalou, junto com seu histórico de execuções. A publicação do código e o teste local do `.gs` também não comprovam sincronização externa ativa.
 
-As credenciais dos conectores pertencem à plataforma e não são extraídas para o aplicativo, repositório ou planilha. Se o plugin criado não aparecer, usar `get_site(include_mcp_connection=true)` e o plugin_id retornado na interface de instalação. Não substituir por uma chave pessoal embutida no código.
+A rota `/api/health` consulta o banco para verificar disponibilidade. Uma resposta bem-sucedida ou a execução de seu cron não exporta dados, não copia anexos e não verifica restauração. O histórico de instantâneos no mesmo Supabase também não substitui backup externo com restauração testada; veja [Hospedagem própria — backup](HOSPEDAGEM-PROPRIA.md#backup-e-recuperação).
+
+Na alternativa legada do ChatGPT Sites, as credenciais das conexões Google pertencem à plataforma e não são extraídas para o aplicativo, repositório ou planilha. Se o plugin criado não aparecer, usar `get_site(include_mcp_connection=true)` e o plugin_id retornado na interface de instalação. No conector Apps Script, a chave de sincronização é uma credencial própria do portal, guardada nas propriedades do usuário Google que conectou conforme o manual. Não publique credenciais nem as imprima em logs.

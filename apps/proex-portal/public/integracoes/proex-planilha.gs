@@ -37,6 +37,9 @@ var ATTACHMENTS_FOLDER = 'PROEX · Anexos privados';
 // O Apps Script encerra execuções após 6 minutos; paramos com folga.
 var SYNC_BUDGET_MS = 5 * 60 * 1000, ATTACHMENTS_BUDGET_MS = 4 * 60 * 1000;
 var ISOLATE_CODES = ['sync_operation_changed', 'sync_invalid_change_key', 'sync_invalid_action', 'sync_system_field', 'sync_invalid_row', 'sync_invalid_version', 'sync_change_limit', 'sync_input_limit'];
+// Estes serviços preservam o valor atual quando um campo é omitido na edição.
+// Campanhas exigem a linha completa; tabelas novas precisam da mesma conferência.
+var PARTIAL_METADATA_TABLES = ['project_types', 'projects', 'project_links', 'project_schedule_items', 'calls', 'material_categories', 'items', 'organizational_units'];
 
 function onOpen() {
   SpreadsheetApp.getUi().createMenu('PROEX')
@@ -237,9 +240,14 @@ function coletarEdicoes_(ss, schemas, baselines) {
         return;
       }
       if (!Object.keys(edited).length) return;
-      // Envia a linha editável completa: serviços como campanhas exigem todos os campos.
+      // Envia os campos conhecidos; uma coluna nova ausente também na base não é
+      // uma edição vazia. O serviço preserva seu valor atual até atualizar a aba.
       var fields = {}, invalid = [];
       editable.forEach(function (c) {
+        if (!(c.name in row) && !(c.name in base)) {
+          if (PARTIAL_METADATA_TABLES.indexOf(schema.table) < 0) invalid.push(c.name + ': coluna ausente; atualize a aba e reaplique a edição');
+          return;
+        }
         var source = (c.name in row) ? row[c.name] : texto_(base[c.name]);
         var converted = converter_(source, c);
         if (converted.error) invalid.push(c.name + ': ' + converted.error); else fields[c.name] = converted.value;
