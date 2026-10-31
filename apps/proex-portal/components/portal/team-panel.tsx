@@ -186,6 +186,7 @@ export default function TeamPanel(props: Props) {
     <h2>Pessoas e acessos</h2>
     <p>Clique em uma pessoa para ver seu perfil e os dados institucionais preenchidos. As permissões são definidas por projeto.</p>
     </div>
+    {(props.globalAdmin || allowed.length > 0) && <a href="#team-invite-form" className="p-button p-button-primary"><UserPlus size={17} aria-hidden="true"/>Convidar pessoa</a>}
     </div>
     <label className="p-field p-search-field">
     <span>Buscar pessoa</span>

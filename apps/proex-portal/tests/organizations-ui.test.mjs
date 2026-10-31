@@ -103,6 +103,7 @@ function fixture(t) {
 
 test('local organization UI uses scoped API detail, hides global controls/foreign people and protects the last admin', async t => {
     const f = fixture(t), ui = renderer(OrganizationsPanel, { organizations: await f.organizations(), currentActor: { userId: f.admin.userId, isPlatformOwner: false }, people: [{ userId: f.foreign.userId, displayName: f.foreign.displayName }], onChanged() {} }); await ui.flush();
+    assert.equal(ui.one(node => node.type === 'details' && text(node).includes('Organizações e administração')).props.open, undefined); assert.equal(f.requests.length, 0); await ui.click('Gerenciar organização');
     assert.match(ui.text(), /Organization A/); assert.ok(!ui.text().includes('Organization B')); assert.ok(!ui.text().includes('Foreign person B')); assert.ok(!ui.text().includes('Nova organização'));
     assert.match(ui.text(), /Candidate A/); assert.equal(ui.one(node => node.type === 'button' && node.props['aria-label'] === 'Remover administração de Local administrator').props.disabled, true);
     assert.equal(f.requests.filter(request => request.method === 'POST').length, 0);
@@ -110,7 +111,7 @@ test('local organization UI uses scoped API detail, hides global controls/foreig
 });
 
 test('actual grant and revoke handlers require a prior confirmation and commit only one scoped change', async t => {
-    const f = fixture(t), ui = renderer(OrganizationsPanel, { organizations: await f.organizations(), currentActor: { userId: f.admin.userId, isPlatformOwner: false }, onChanged() {} }); await ui.flush();
+    const f = fixture(t), ui = renderer(OrganizationsPanel, { organizations: await f.organizations(), currentActor: { userId: f.admin.userId, isPlatformOwner: false }, onChanged() {} }); await ui.flush(); await ui.click('Gerenciar organização');
     await choose(ui, 'administratorUserId', 'candidate'); await submit(ui, formWith('Nomear administrador'));
     assert.equal(f.requests.filter(request => request.method === 'POST').length, 0); assert.equal(ui.all(node => node.type === 'dialog').length, 1);
     await ui.click('Cancelar'); assert.equal(f.requests.filter(request => request.method === 'POST').length, 0);
@@ -125,7 +126,7 @@ test('actual grant and revoke handlers require a prior confirmation and commit o
 
 test('confirmation preserves the last administrator when another grant disappears before submission', async t => {
     const f = fixture(t); f.insert('members', { id: 'second-admin', user_id: 'candidate', email: f.candidate.email, role: 'owner', project_id: null, organization_id: 'org-a', created_at: f.now });
-    const ui = renderer(OrganizationsPanel, { organizations: await f.organizations(), currentActor: { userId: f.admin.userId, isPlatformOwner: false }, onChanged() {} }); await ui.flush();
+    const ui = renderer(OrganizationsPanel, { organizations: await f.organizations(), currentActor: { userId: f.admin.userId, isPlatformOwner: false }, onChanged() {} }); await ui.flush(); await ui.click('Gerenciar organização');
     ui.one(node => node.type === 'button' && node.props['aria-label'] === 'Remover administração de Local administrator').props.onClick(); await ui.flush();
     f.native.prepare("UPDATE members SET revoked_at=? WHERE id='second-admin'").run(f.now); await ui.click('Confirmar remoção');
     assert.equal(f.native.prepare("SELECT revoked_at FROM members WHERE id='member-admin'").get().revoked_at, null); assert.match(ui.text(), /Mantenha outro administrador/);
@@ -175,7 +176,7 @@ test('anonymized accounts do not count as replacement admins or expose an old pr
     const f = fixture(t); f.insert('members', { id: 'anonymized-admin', user_id: 'candidate', email: f.candidate.email, role: 'owner', project_id: null, organization_id: 'org-a', created_at: f.now });
     f.native.prepare("UPDATE portal_users SET anonymized_at=? WHERE user_id='candidate'").run(f.now);
     const detail = await (await route.GET(new Request(`${origin}/api/organizations?organizationId=org-a`))).json(); assert.ok(detail.members.filter(member => member.user_id === 'candidate').every(member => member.anonymized === 1 && member.display_name === null));
-    const ui = renderer(OrganizationsPanel, { organizations: await f.organizations(), currentActor: { userId: f.admin.userId, isPlatformOwner: false }, onChanged() {} }); await ui.flush();
+    const ui = renderer(OrganizationsPanel, { organizations: await f.organizations(), currentActor: { userId: f.admin.userId, isPlatformOwner: false }, onChanged() {} }); await ui.flush(); await ui.click('Gerenciar organização');
     assert.ok(!ui.text().includes('Candidate A')); assert.equal(ui.one(node => node.type === 'button' && node.props['aria-label'] === 'Remover administração de Local administrator').props.disabled, true);
 });
 

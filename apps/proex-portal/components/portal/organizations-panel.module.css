@@ -1,4 +1,8 @@
 .panel{min-width:0;container-type:inline-size;container-name:organizations;display:grid;gap:20px}
+.catalogDisclosure{min-width:0;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.catalogDisclosure>summary{cursor:pointer;min-height:44px;padding:12px 16px;font-weight:600;font-size:13px;color:var(--brand-ink)}
+.catalogDisclosure>summary>span{font-weight:400;color:var(--text-secondary);font-size:12px;margin-left:8px}
+.catalogDisclosure[open]>.panel{padding:18px;border-top:1px solid var(--line)}
 .panel h2,.panel h3,.panel h4{overflow-wrap:anywhere;margin:0}
 .panel :global(.p-field){min-width:0}
 .panel :global(.p-button),.panel :global(.p-icon-button){min-height:44px}

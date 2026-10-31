@@ -56,6 +56,19 @@ test('catalogue administration is a closed native disclosure containing the orig
  } finally { h.dispose(); }
 });
 
+test('people list offers an early invitation shortcut only to someone allowed to invite', () => {
+ const base = { users: [], members: [], invites: [], projects, now: Date.now(), globalAdmin: false, canProject: () => true, mutate: async () => ({}) };
+ const admin = harness('team-panel', base);
+ try {
+  const shortcut = admin.all().find(node => node.type === 'a' && text(node) === 'Convidar pessoa');
+  assert.equal(shortcut.props.href, '#team-invite-form');
+  assert.equal(admin.all().filter(node => node.type === 'form' && node.props.id === 'team-invite-form').length, 1);
+  const viewer = harness('team-panel', { ...base, canProject: () => false });
+  try { assert.equal(viewer.all().some(node => node.type === 'a' && text(node) === 'Convidar pessoa'), false); }
+  finally { viewer.dispose(); }
+ } finally { admin.dispose(); }
+});
+
 test('agenda keeps its five filters unique and preserves context, dates and month navigation in real requests', () => {
  const h = harness('calendar-panel', { projects, organizationalUnits: units });
  try {
