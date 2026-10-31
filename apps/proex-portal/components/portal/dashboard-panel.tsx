@@ -45,6 +45,9 @@ export default function DashboardPanel({ modules, pinned, frequent, onNavigate, 
     const find = (id: ModuleId) => modules.find(module => module.id === id);
     const selected = projects.find(project => project.id === selectedProjectId);
     const scopedProjects = selectedProjectId ? projects.filter(project => project.id === selectedProjectId) : projects;
+    const externalProjects = scopedProjects.filter(project => project.scope === 'external').length;
+    const internalProjects = scopedProjects.length - externalProjects;
+    const projectScopeDetail = `${internalProjects} ${internalProjects === 1 ? 'interno' : 'internos'} · ${externalProjects} ${externalProjects === 1 ? 'externo' : 'externos'}`;
     const lowStock = items.filter(item => item.category !== 'equipment' && item.condition === 'active' && available(item) <= Number(item.low_stock ?? item.lowStock ?? 0));
     const reserved = loans.filter(loan => loan.status === 'reserved');
     const checkedOut = loans.filter(loan => loan.status === 'out');
@@ -53,7 +56,7 @@ export default function DashboardPanel({ modules, pinned, frequent, onNavigate, 
     const upcoming = [...reserved].filter(loan => new Date(loan.starts_at ?? loan.startsAt).getTime() >= now).sort((a, b) => new Date(a.starts_at ?? a.startsAt).getTime() - new Date(b.starts_at ?? b.startsAt).getTime()).slice(0, 3);
     const summaries: Summary[] = [];
     if (find('projects'))
-        summaries.push({ id: 'projects', title: 'Projetos', value: known.projects ? scopedProjects.length : 'Consultar', detail: selected ? 'Projeto selecionado nos filtros' : 'Áreas de trabalho disponíveis', icon: find('projects')!.icon });
+        summaries.push({ id: 'projects', title: 'Projetos', value: known.projects ? scopedProjects.length : 'Consultar', detail: known.projects ? projectScopeDetail : selected ? 'Projeto selecionado nos filtros' : 'Áreas de trabalho disponíveis', icon: find('projects')!.icon });
     if (find('materials'))
         summaries.push({ id: 'materials', title: 'Materiais', value: known.items ? items.length : 'Consultar', detail: 'Itens nos projetos selecionados', note: lowStock.length ? `${lowStock.length} com saldo baixo` : undefined, icon: find('materials')!.icon });
     if (find('loans'))
@@ -70,14 +73,14 @@ export default function DashboardPanel({ modules, pinned, frequent, onNavigate, 
         summaries.push({ id: 'team', title: 'Equipe', value: 'Ver acessos', detail: 'Pessoas e permissões da sua equipe', icon: find('team')!.icon });
     const priorities = [...new Set([...pinned, ...frequent, ...recommendedModules(role, allowed)])];
     summaries.sort((a, b) => { const index = (id: ModuleId) => { const position = priorities.indexOf(id); return position < 0 ? 100 : position; }; return index(a.id) - index(b.id); });
-    const visibleSummaries = summaries.slice(0, 4);
+    const countedIds: ModuleId[] = ['projects', 'materials', 'loans', 'events'];
+    const visibleSummaries = [...summaries.filter(summary => countedIds.includes(summary.id)), ...summaries.filter(summary => !countedIds.includes(summary.id))].slice(0, 4);
     const saved = pinned.map(find).filter((module): module is PortalModule => Boolean(module));
     const suggestions = priorities.slice(0, 4).map(find).filter((module): module is PortalModule => Boolean(module));
     const frequentModules = frequent.filter(id => !pinned.includes(id)).slice(0, 4).map(find).filter((module): module is PortalModule => Boolean(module));
     const actionModules = saved.length ? saved : frequentModules.length ? frequentModules : suggestions;
     const shortcutTitle = saved.length ? 'Seus atalhos' : frequentModules.length ? 'Mais usados por você' : 'Para começar';
     const shortcutDescription = saved.length ? 'Os módulos que você escolheu deixar por perto.' : frequentModules.length ? 'Com base nos módulos que você abre neste navegador.' : 'Sugestões para sua função. Você pode escolher outros módulos.';
-    const roleDescription = role === 'operator' ? 'Abra o atendimento da roleta ou do dado e registre cada etapa.' : role === 'inventory' ? 'Confira os materiais e mantenha os registros da equipe atualizados.' : role === 'loans' ? 'Organize reservas, confira retiradas e acompanhe as devoluções.' : role === 'viewer' ? 'Encontre os projetos e consulte os registros disponíveis para sua conta.' : 'Escolha por onde continuar e acompanhe o trabalho nos seus projetos.';
     const attention: {
         id: ModuleId;
         title: string;
@@ -91,12 +94,6 @@ export default function DashboardPanel({ modules, pinned, frequent, onNavigate, 
     if (find('events') && drafts.length)
         attention.push({ id: 'events', title: `${drafts.length} ${drafts.length === 1 ? 'dinâmica em preparação' : 'dinâmicas em preparação'}`, detail: 'Revise as regras e a disponibilidade antes de ativar.', kind: 'draft' });
     const firstName = displayName.trim().split(/\s+/)[0] || 'equipe';
-    const externalProjects = scopedProjects.filter(project => project.scope === 'external').length;
-    const stats = [
-        known.projects && { label: 'Projetos', value: scopedProjects.length, detail: `${scopedProjects.length - externalProjects} ${scopedProjects.length - externalProjects === 1 ? 'interno' : 'internos'} · ${externalProjects} ${externalProjects === 1 ? 'externo' : 'externos'}` },
-        find('materials') && known.items && { label: 'Materiais', value: items.length, detail: lowStock.length ? `${lowStock.length} com saldo baixo` : 'Nenhum alerta de saldo' },
-        find('loans') && known.loans && { label: 'Empréstimos', value: reserved.length + checkedOut.length, detail: late.length ? `${late.length} em atraso` : 'Nenhum atraso' },
-    ].filter((stat): stat is { label: string; value: number; detail: string } => Boolean(stat));
     return <div className="pd-dashboard">
     <section className="pd-section" aria-labelledby="pd-shortcut-title">
     <div className="pd-heading">
@@ -134,28 +131,11 @@ export default function DashboardPanel({ modules, pinned, frequent, onNavigate, 
         <span>
         <Clock3 size={14}/>Também usados por você</span>{frequentModules.map(({ id, label }) => <button key={id} onClick={() => onNavigate(id)}>{label}<ChevronRight size={13}/>
             </button>)}</div>}</section>
-    <section className="pd-welcome">
-    <div>
-    <span className="pd-context">
-    <span />{selected?.name || unitName || 'Seus projetos'}</span>
-    <h2>Seu próximo passo<br />começa aqui.</h2>
-    <p>{roleDescription}</p>
-    <span className="pd-role">
-    <ShieldLabel />{roleLabel || 'Equipe PROEX'}</span>
-    {stats.length > 0 && <dl className="pd-welcome-stats">{stats.map(stat => <div key={stat.label}><dt>{stat.label}</dt><dd>{stat.value}</dd><small>{stat.detail}</small></div>)}</dl>}
-    </div>
-    <div className="pd-welcome-aside" aria-hidden="true">
-    <FolderKanban size={48}/>
-    <span className="pd-orbit-a"/>
-    <span className="pd-orbit-b"/>
-    <i>✦</i>
-    </div>
-    </section>
     <section className="pd-section" aria-labelledby="pd-summary-title">
     <div className="pd-heading">
     <div>
     <h2 id="pd-summary-title">{selected ? `Resumo · ${selected.name}` : unitName ? `Resumo · ${unitName}` : 'Resumo dos seus projetos'}</h2>
-    <p>Um resumo dos registros que sua conta pode consultar.</p>
+    <p>{roleLabel || 'Equipe PROEX'} · Somente registros disponíveis para sua conta.</p>
     </div>
     </div>
     <div className="pd-summaries">{visibleSummaries.map(({ id, title, value, detail, note, icon: Icon }) => <button className="pd-summary" onClick={() => onNavigate(id)} key={id}>
@@ -225,4 +205,3 @@ export default function DashboardPanel({ modules, pinned, frequent, onNavigate, 
     <Sparkles size={13}/>Atalhos e módulos frequentes ficam neste navegador. Os registros dos projetos continuam sincronizados no portal.</p>
     </div>;
 }
-function ShieldLabel() { return <span className="pd-role-dot" aria-hidden="true"/>; }
