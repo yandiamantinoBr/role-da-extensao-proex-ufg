@@ -1,6 +1,6 @@
 # V11: organizações, patrimônio e assistente revisado
 
-Estado em 31/10/2026: candidato local, ainda não publicado neste registro. Autorização permanente de publicação consta em `AGENTS.md` e `REQUISITOS-E-CONTINUIDADE.md`.
+Estado em 31/10/2026: publicada e verificada. [PR #10](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/10), candidato `2a8fb178fc4dd15c4f89e2e7004cbe52aeba7172`, merge `55bf5f7962ae7862c4a00cbce538179a79f99642` às 15:03:41Z. Vercel `READY`, deployment `dpl_G2MRkbXCSBtPQEtG63p4B3PuvfLm`, produção no mesmo SHA. Autorização permanente consta em `AGENTS.md` e `REQUISITOS-E-CONTINUIDADE.md`.
 
 ## Comportamento
 
@@ -12,7 +12,7 @@ Assistente de estoque/registros: configurar provedores e limites por organizaç�
 
 ## Validação do candidato
 
-- 520/520 testes em Node 24.22.1 e Node 26.12.1; TypeScript sem erros; ESLint sem erros, três avisos preexistentes. Builds Worker e Node passaram. A montagem final recebeu pequenas correções de atualização e tema após o primeiro build; reconferir os gates antes de publicar.
+- 520/520 testes em Node 24.22.1 e Node 26.12.1; TypeScript sem erros; ESLint sem erros, três avisos preexistentes. Builds Worker e Node passaram e foram repetidos após a montagem final; teste de convites focado 8/8. Checks da PR e do merge/main aprovados, incluindo autenticação real no Worker.
 - Revisão independente dos serviços de organização e IA/STT fechou falhas de replay após revogação, concorrência na reserva e persistência tardia após perda de autoridade. Modelo Drizzle reconciliado com as 12 migrações SQL, 59 tabelas e cadeia de snapshots. Geração oficial resulta em diff vazio; migrações SQL existentes permaneceram intactas. Triggers/backfills são autoritativos no SQL. Drizzle Kit 0.31.10 tem limitação ao regenerar do zero índices com expressão e vírgula; revisar SQL gerado antes de aplicar.
 - Backup real V10 validado e quatro migrações novas aplicadas offline, só em memória. Valores existentes das 49 tabelas preservados, integridade OK, zero violações FK e todos os projetos associados à PROEX; nenhum arquivo em claro ou chamada de rede.
 - QA HTTP sintético: servidor → autenticação → API → banco → relatório; conector simulado e backup/recuperação isolada com objeto privado passaram. Backup sintético 5.283.971 bytes, SQLite 864.256 bytes; pico de RSS do processo 271.392 KiB inclui preparação e criptografia, não é medição isolada do endpoint.
@@ -24,6 +24,8 @@ Assistente de estoque/registros: configurar provedores e limites por organizaç�
 O código antigo interpreta concessões de organização como globais. WAF aceita somente o domínio canônico; URLs geradas V9/V10 foram verificadas como 403 e Preview não tem banco/autenticação de produção. Executar `node scripts/check-release-isolation.mjs` antes da publicação. Não voltar para código anterior à 0008 com banco atualizado.
 
 Google Sheets real: primeiro gatilho de dados concluído em 31/10/2026 às 14:36:45.344Z, 142 linhas e zero conflitos; rotina automática de anexos confirmou uma cópia, zero falhas, às 14:53:40.406Z. Histórico de execução e recibos foram conferidos no navegador. Isso comprova aqueles instantes, não disponibilidade permanente.
+
+Pós-publicação: health 200 com banco acessível; sessão real conferiu organizações, gestão local, catálogo de 11 materiais e configuração de IA desabilitada. PDF e DOCX reais gerados e validados (assinatura PDF, ZIP e `word/document.xml`), sem erro de console. Microfone permitido somente à própria origem. WAF reconferido: canônico 200, V9/V10 gerados 403. Nenhum registro de QA, convite, e-mail, chave de IA ou chamada paga foi inserido na produção. Evidência privada em `.sites-runtime/production-v11`; não publicar arquivos reais.
 
 ## Continuidade
 
