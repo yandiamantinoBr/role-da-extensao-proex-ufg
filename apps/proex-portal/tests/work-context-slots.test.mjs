@@ -73,6 +73,14 @@ test('an incoming project target replaces an editing context, while edit/cancel 
   } finally {h.dispose();}
 });
 
+test('a delayed edit from the previous incoming target cannot discard an editor already opened for the new target', async () => {
+  const h = panel({initialProjectId: 'project-a'}); try {
+    h.detail().props.onEdit(projects[0]); const old = h.requests.at(-1); h.render({initialProjectId: 'project-b'}); h.detail().props.onEdit(projects[1]);
+    await h.ready({...projectPayload('project-b'), types: [], organizationalUnits: [], permissions: {canEdit: true}}); assert.match(h.body(), /Editar Projeto project-b/);
+    h.reply(old, {...projectPayload('project-a'), types: [], organizationalUnits: [], permissions: {canEdit: true}}); await tick(); h.render(); assert.match(h.body(), /Editar Projeto project-b/); assert.ok(!h.body().includes('Editar Projeto project-a'));
+  } finally {h.dispose();}
+});
+
 test('ProjectDetail mounts work only after an authorized matching response; target changes and 403 cannot reuse the previous slot', async () => {
   const calls = [], h = detail({renderWorkContext: id => {calls.push(id); return `work:${id}`;}}); try {
     assert.deepEqual(calls, []); await h.ready(projectPayload('project-a')); assert.equal(calls.at(-1), 'project-a'); assert.match(h.body(), /work:project-a/);

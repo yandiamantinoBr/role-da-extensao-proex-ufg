@@ -169,7 +169,7 @@ export default function ProjectPanel({ projects, projectTypes = [], organization
     const detail = projects.some(project => project.id === currentWorkspace.detail) ? currentWorkspace.detail : '';
     const editing = currentWorkspace.editing === null ? null : projects.some(project => project.id === currentWorkspace.editing?.id && canEdit(project.id)) ? currentWorkspace.editing : undefined;
     function setDetail(id: string) {setWorkspace(current => ({...(current.request === initialProjectId ? current : initialWorkspace()), detail: id, editing: undefined, echo: id})); onDetailChange?.(id || null);}
-    function setEditing(project: Row | null | undefined) {setWorkspace(current => ({...(current.request === initialProjectId ? current : initialWorkspace()), editing: project}));}
+    function setEditing(project: Row | null | undefined) {setWorkspace(current => current.request === initialProjectId ? {...current, editing: project} : current);}
     const [query, setQuery] = useState(''), [unitId,setUnitId]=useState(''), [typeId,setTypeId]=useState(''), [situation,setSituation]=useState('all'), [area,setArea]=useState(''), [scope,setScope]=useState<'all'|'internal'|'external'>('all');
     const [detailRevision,setDetailRevision]=useState(0),[opening,setOpening]=useState(false),[error,setError]=useState(''),[typeEditor,setTypeEditor]=useState(false),[unitEditor,setUnitEditor]=useState(false);
     const editorRef=useRef<HTMLDivElement|null>(null);
