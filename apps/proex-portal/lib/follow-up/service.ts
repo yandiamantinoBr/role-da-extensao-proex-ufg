@@ -145,6 +145,9 @@ async function checklistAction(db:D1Database,actor:PortalActor,action:string,inp
   if(input.createFollowups!==undefined&&typeof input.createFollowups!=='boolean')fail('Confirme a criação das pendências.');
   const rows=await all(db,'SELECT r.*,i.name material FROM followup_checklist_items r JOIN items i ON i.id=r.item_id WHERE checklist_id=?',[checklist.id]);if(rows.some(r=>r.counted===null))fail('Preencha a contagem de todos os itens antes de concluir.','followup_checklist_pending');
   if(work.delegatedOnly&&(input.createFollowups===true||rows.some(r=>r.counted!==r.expected||r.damaged>0)))fail('A gestão precisa revisar as divergências e autorizar eventuais novas pendências. As contagens continuam salvas.','followup_manager_review',409);
+  // A task-only grant must not become a fallback for operational authority lost
+  // between validation and commit. Review/create requires live operational access.
+  if(input.createFollowups===true||rows.some(r=>r.counted!==r.expected||r.damaged>0))statements.push(scopeStatement(db,actor,scope,true));
   statements.push(db.prepare("SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM followup_checklist_items WHERE checklist_id=? AND counted IS NULL) THEN 1 ELSE json_extract('[]','followup_version_changed') END").bind(checklist.id));
   if(input.createFollowups)for(const row of rows.filter(r=>r.counted!==r.expected||r.damaged>0)){
    const childId=uid(),child=fields({title:`Revisar ${row.material}${row.size?` (${row.size})`:''}`.slice(0,160),body:`Esperado: ${row.expected}; contado: ${row.counted}; avariado: ${row.damaged}. ${row.note}\nConfira a divergência. Nenhuma quantidade foi alterada no estoque; use uma movimentação normal revisada se necessário.`,priority:row.damaged>0||row.counted<row.expected?'high':'medium',campaignId:checklist.campaign_id,itemId:row.item_id});
