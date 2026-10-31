@@ -61,7 +61,7 @@ function harness(file = 'meu-trabalho-panel', initialProps = {}) {
   h.render(); return h;
 }
 const counts = (changes = {}) => ({total: 101, pending: 90, attention: 8, overdue: 7, dueToday: 3, inProgress: 20, blocked: 2, completed: 10, cancelled: 1, ...changes});
-const target = (changes = {}) => ({kind: 'materials', id: 'material-a', name: 'Material permitido', canOpen: true, href: '/?module=inventory&itemId=material-a', ...changes});
+const target = (changes = {}) => ({kind: 'materials', id: 'material-a', name: 'Material permitido', canOpen: true, href: '/?module=materials&project=project-a', ...changes});
 const task = (changes = {}) => ({id: 'task-a', organization_id: 'org-a', project_id: 'project-a', organization_name: 'Organização A', project_name: 'Projeto A', title: 'Recontar material A', priority: 'high', status: 'blocked', due_at: '2026-10-31', version: 2, canEdit: false, canWork: true, canDelegateWork: false, assignees: [{user_id: 'user-a', team_id: null, name: 'Pessoa A'}, {user_id: null, team_id: 'team-a', name: 'Equipe A'}], assignmentVia: 'both', area: 'materials', href: '/?module=demands&demandId=task-a', target: target(), ...changes});
 const responsibility = (changes = {}) => ({id: 'responsibility-a', organization_id: 'org-a', project_id: 'project-a', organization_name: 'Organização A', project_name: 'Projeto A', area: 'materials', item_id: 'material-a', loan_id: null, campaign_id: null, status: 'active', version: 1, created_at: '2026-10-31T12:00:00Z', updated_at: '2026-10-31T12:00:00Z', assignees: [{user_id: 'user-a', team_id: null, name: 'Pessoa A'}], assignmentVia: 'direct', canEdit: true, target: target(), ...changes});
 function response(changes = {}) {
@@ -105,12 +105,20 @@ test('an old response between filter handler and cleanup cannot replace the new 
   } finally {h.dispose();}
 });
 
+test('a response with a correct scope envelope but a row from another project is rejected instead of displaying its title', async () => {
+  const h = harness(); try {await h.ready(response({tasks: {...response().tasks, items: [task({project_id: 'project-b', title: 'Título de outro projeto'})]}})); assert.match(h.body(), /contexto da resposta mudou/); assert.ok(!h.body().includes('Título de outro projeto'));} finally {h.dispose();}
+});
+
 test('restricted targets never display a supplied hidden title or link; valid task callbacks preserve explicit context', async () => {
   const seen = [], h = harness('meu-trabalho-panel', {onOpenTask: (...args) => seen.push(args)}); try {
     await h.ready(response({tasks: {...response().tasks, items: [task({target: target({name: 'Hidden entity', canOpen: false, href: '/?module=forbidden'})})]}, responsibilities: {...response().responsibilities, items: [responsibility({target: target({name: 'Hidden entity', canOpen: false, href: '/?module=forbidden'})})]}}));
     assert.ok(!h.body().includes('Hidden entity')); assert.ok(!h.find('a', n => n.props.href === '/?module=forbidden')); assert.match(h.body(), /A designação não amplia/);
     h.click('Recontar material A'); assert.equal(seen[0][0], 'task-a'); assert.equal(seen[0][1].projectId, 'project-a');
   } finally {h.dispose();}
+});
+
+test('a restricted task target with canonical null identifiers still explains that assignment does not grant access', async () => {
+  const h = harness(); try {await h.ready(response({tasks: {...response().tasks, items: [task({target: target({id: null, name: null, href: null, canOpen: false})})]}, responsibilities: {items: [], total: 0, hasMore: false, nextOffset: null}})); assert.match(h.body(), /Registro de acesso restrito/); assert.ok(!h.find('a', node => node.props.href.includes('materials')));} finally {h.dispose();}
 });
 
 test('malformed JSON and nested DTOs show an error rather than false empty results; unmounted requests are cancelled', async () => {
@@ -122,4 +130,93 @@ test('malformed JSON and nested DTOs show an error rather than false empty resul
 
 test('refresh events preserve the selected filters, without polling or storing personal data', async () => {
   const h = harness(); try {await h.ready(); h.changeStatus('overdue'); h.render(); await h.ready(response({scope: {...response().scope, status: 'overdue'}, asOf: 'invalid'})); assert.match(h.body(), /horário não informado/); h.event('proex:followup-changed'); h.render(); assert.equal(new URL(h.last().url, 'http://fixture').searchParams.get('status'), 'overdue'); assert.equal(h.last().init.cache, 'no-store');} finally {h.dispose();}
+});
+
+test('a persistent polite result summary announces the loaded scope and page after filtering', async () => {
+  const h = harness(); try {
+    await h.ready(); let summary = h.find('p', node => node.props.role === 'status'); assert.equal(summary.props['aria-live'], 'polite'); assert.match(text(summary), /Demandas \(Pendentes\): 1–1 de 90/);
+    h.changeStatus('completed'); h.render(); await h.ready(response({scope: {...response().scope, status: 'completed'}, tasks: {items: [], total: 0, hasMore: false, nextOffset: null}})); summary = h.find('p', node => node.props.role === 'status'); assert.match(text(summary), /Demandas \(Concluídas\): 0 de 0/); assert.equal(summary.props['aria-atomic'], 'true');
+  } finally {h.dispose();}
+});
+
+function manager(props = {}) {return harness('responsibility-manager', {area: 'materials', itemId: 'material-a', ...props});}
+const catalog = (changes = {}) => ({viewerId: 'user-a', projectId: 'project-a', projects: [{id: 'project-a', name: 'Projeto A', organization_id: 'org-a', canManage: true}], people: [{userId: 'user-a', name: 'Pessoa A'}, {userId: 'user-b', name: 'Pessoa B'}], teams: [{id: 'team-a', name: 'Equipe A'}], items: [{id: 'material-a', name: 'Material permitido'}], loans: [], campaigns: [], canManage: true, truncated: {items: false, loans: false, campaigns: false}, ...changes});
+const list = (items = []) => ({viewerId: 'user-a', projectId: 'project-a', total: items.length, hasMore: false, nextOffset: null, items});
+async function readyManager(h, rows = [], nextCatalog = catalog()) {
+  const get = view => h.requests.filter(request => request.init.method === 'GET' && new URL(request.url, 'http://fixture').searchParams.get('view') === view).at(-1);
+  h.reply(get('catalog'), nextCatalog); h.reply(get('list'), list(rows)); await tick(); h.render();
+}
+const checked = (h, name) => h.find('input', node => node.props.name === name)?.props.checked;
+function check(h, name) {const input = h.find('input', node => node.props.name === name); assert.ok(input, name); input.props.onChange(); h.render();}
+function submit(h) {const form = h.find('form'); assert.ok(form); form.props.onSubmit({preventDefault() {}});}
+
+test('the manager starts with no implied assignment and submits only explicit people/teams, one CAS command at a time', async () => {
+  const seen = [], h = manager({onChanged: () => seen.push('changed')}); try {
+    const get = new URL(h.requests[1].url, 'http://fixture').searchParams; assert.equal(get.get('status'), 'all'); assert.equal(get.get('itemId'), 'material-a'); assert.equal(get.get('target'), null);
+    await readyManager(h); assert.equal(checked(h, 'person:user-a'), false); assert.equal(checked(h, 'team:team-a'), false);
+    check(h, 'person:user-b'); check(h, 'team:team-a'); const before = h.requests.length; submit(h); submit(h); assert.equal(h.requests.length, before + 1);
+    const request = h.last(), body = JSON.parse(request.init.body); assert.equal(body.expectedVersion, 0); assert.deepEqual(body.userIds, ['user-b']); assert.deepEqual(body.teamIds, ['team-a']); assert.equal(request.init.headers['X-Proex-Action'], '1');
+    h.reply(request, {viewerId: 'user-a', responsibility: responsibility({assignees: [{user_id: 'user-b', team_id: null, name: 'Pessoa B'}, {user_id: null, team_id: 'team-a', name: 'Equipe A'}]})}); await tick(); h.render(); assert.match(h.body(), /Responsáveis salvos/); assert.deepEqual(seen, ['changed']);
+  } finally {h.dispose();}
+});
+
+test('an uncertain or malformed save preserves choices and retries the same operation key rather than claiming success', async () => {
+  const h = manager(); try {
+    await readyManager(h); check(h, 'person:user-b'); submit(h); const first = JSON.parse(h.last().init.body); h.reply(h.last(), {}); await tick(); h.render(); assert.match(h.body(), /Sua seleção foi preservada/); assert.ok(!h.body().includes('Responsáveis salvos')); assert.equal(checked(h, 'person:user-b'), true);
+    submit(h); const retry = JSON.parse(h.last().init.body); assert.equal(retry.operationKey, first.operationKey); assert.equal(retry.expectedVersion, 0);
+    h.reply(h.last(), {}, 409); await tick(); h.render(); assert.match(h.body(), /registro mudou/); assert.equal(checked(h, 'person:user-b'), true);
+  } finally {h.dispose();}
+});
+
+test('revoked records retain their CAS version but never preselect historical assignees', async () => {
+  const h = manager(); try {
+    await readyManager(h, [responsibility({status: 'revoked', version: 4})]); assert.match(h.body(), /não são selecionadas automaticamente/); assert.equal(checked(h, 'person:user-a'), false);
+    check(h, 'person:user-b'); submit(h); assert.equal(JSON.parse(h.last().init.body).expectedVersion, 4);
+    h.reply(h.last(), {viewerId: 'user-a', responsibility: responsibility({version: 5, assignees: [{user_id: 'user-b', team_id: null, name: 'Pessoa B'}]})}); await tick(); h.render(); assert.match(h.body(), /Responsáveis salvos/);
+  } finally {h.dispose();}
+});
+
+test('revocation requires a separate confirmation and leaves no old selection when the record is revoked', async () => {
+  const h = manager(); try {
+    await readyManager(h, [responsibility()]); const before = h.requests.length; h.click('Revogar designação'); h.render(); assert.equal(h.requests.length, before); assert.match(h.body(), /Revogar esta designação\?/);
+    h.click('Manter designação'); h.render(); assert.ok(!h.find('section', node => node.props['aria-label'] === 'Confirmar revogação'));
+    h.click('Revogar designação'); h.render(); h.click('Confirmar revogação'); assert.equal(JSON.parse(h.last().init.body).action, 'responsibility.revoke');
+    h.reply(h.last(), {viewerId: 'user-a', responsibility: responsibility({status: 'revoked', version: 2})}); await tick(); h.render(); assert.match(h.body(), /Designação revogada/); assert.equal(checked(h, 'person:user-a'), false);
+  } finally {h.dispose();}
+});
+
+test('403 after a mutation removes people and editing controls; absent authority never shows a supplied private catalog', async () => {
+  const h = manager(); try {
+    await readyManager(h, [responsibility()]); submit(h); h.reply(h.last(), {}, 403); await tick(); h.render(); assert.match(h.body(), /gestão deste registro foi encerrada/); assert.ok(!h.body().includes('Pessoa A')); assert.ok(!h.find('form'));
+  } finally {h.dispose();}
+  const readOnly = manager(); try {await readyManager(readOnly, [], catalog({canManage: false})); assert.ok(!readOnly.find('input')); assert.ok(!readOnly.body().includes('Pessoa A'));} finally {readOnly.dispose();}
+});
+
+test('manager account/target switches hide old choices synchronously; response identity and target must match before editing', async () => {
+  const h = manager(); try {
+    await readyManager(h, [responsibility()]); h.render({userId: 'user-b', itemId: 'material-b'}, false); assert.ok(!h.body().includes('Pessoa A')); assert.ok(!h.find('form')); h.effects();
+    await readyManager(h, [responsibility()], catalog()); assert.match(h.body(), /sessão ou o alvo/); assert.ok(!h.find('form'));
+  } finally {h.dispose();}
+  const wrongTarget = manager(); try {await readyManager(wrongTarget, [responsibility({item_id: 'material-b'})]); assert.match(wrongTarget.body(), /sessão ou o alvo/); assert.ok(!wrongTarget.find('form'));} finally {wrongTarget.dispose();}
+});
+
+test('a late save after target replacement/unmount cannot show success or invoke callbacks in the new context', async () => {
+  const seen = [], h = manager({onChanged: () => seen.push('changed')}); try {
+    await readyManager(h); check(h, 'person:user-a'); submit(h); const old = h.last(); h.render({itemId: 'material-b'}); assert.equal(old.init.signal.aborted, true); h.reply(old, {viewerId: 'user-a', responsibility: responsibility()}); await tick(); h.render(); assert.deepEqual(seen, []); assert.ok(!h.body().includes('Responsáveis salvos'));
+  } finally {h.dispose();}
+});
+
+test('a save resolving after a prop change but before passive cleanup cannot notify the new account or resurrect old choices', async () => {
+  const seen = [], h = manager({onChanged: () => seen.push('changed')}); try {
+    await readyManager(h); check(h, 'person:user-a'); submit(h); const old = h.last();
+    h.render({userId: 'user-b', projectId: 'project-b', itemId: 'material-b'}, false);
+    h.reply(old, {viewerId: 'user-a', responsibility: responsibility()}); await tick(); h.render(); assert.deepEqual(seen, []); assert.ok(!h.body().includes('Pessoa A')); assert.ok(!h.body().includes('Responsáveis salvos'));
+  } finally {h.dispose();}
+});
+
+test('general area targets are requested explicitly, partial catalogs are labelled, and missing selection performs no mutation', async () => {
+  const h = manager({itemId: null}); try {
+    assert.equal(new URL(h.last().url, 'http://fixture').searchParams.get('target'), 'area'); await readyManager(h, [], catalog({truncated: {items: true, loans: false, campaigns: false}})); assert.match(h.body(), /catálogo de registros é parcial/);
+    const before = h.requests.length; submit(h); h.render(); assert.equal(h.requests.length, before); assert.match(h.body(), /Selecione pelo menos uma pessoa ou equipe/);
+  } finally {h.dispose();}
 });
