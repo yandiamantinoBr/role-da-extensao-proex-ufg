@@ -26,6 +26,13 @@ const shared: Column[] = [
   { key: 'projeto', label: 'Projeto' }, { key: 'unidade_sigla', label: 'Unidade' }, { key: 'unidade', label: 'Unidade (nome)' },
   { key: 'unidade_grupo', label: 'Tipo de unidade' }, { key: 'area_tematica', label: 'Área temática' }, { key: 'modalidade', label: 'Modalidade' },
 ];
+const ASSET_COLUMNS: Column[] = [
+  { key: 'descricao_bem', label: 'Descrição do bem' }, { key: 'marca', label: 'Marca' }, { key: 'modelo', label: 'Modelo' }, { key: 'numero_serie', label: 'Número de série' },
+  { key: 'localizacao_bem', label: 'Localização do bem' }, { key: 'unidade_responsavel', label: 'Unidade responsável' }, { key: 'responsavel_documentado', label: 'Responsável na fonte' },
+  { key: 'conservacao', label: 'Conservação observada' }, { key: 'situacao_patrimonial', label: 'Situação patrimonial informada' }, { key: 'origem', label: 'Origem informada' }, { key: 'destino', label: 'Destino informado' },
+  { key: 'processo', label: 'Referência do processo' }, { key: 'termo_responsabilidade', label: 'Termo de responsabilidade' }, { key: 'nota_fiscal', label: 'Referência da nota fiscal' },
+  { key: 'data_aquisicao', label: 'Aquisição documentada', date: true }, { key: 'valor_aquisicao_centavos', label: 'Valor documentado (centavos)' }, { key: 'fonte_cadastro', label: 'Fonte do cadastro' },
+];
 
 const DATASETS: Record<DatasetId, Dataset> = {
   projects: {
@@ -127,7 +134,8 @@ export default function ReportsCenter({ projectId, unitId, area, from, to, scope
 }) {
   const datasets = ORDER.filter(id => available.includes(id));
   const [dataset, setDataset] = useState<DatasetId>(datasets[0] ?? 'projects');
-  const config = DATASETS[dataset];
+  const [assetDetails, setAssetDetails] = useState(false);
+  const config = useMemo(() => dataset === 'materials' && assetDetails ? { ...DATASETS.materials, columns: [...DATASETS.materials.columns, ...ASSET_COLUMNS] } : DATASETS[dataset], [dataset, assetDetails]);
   const [columns, setColumns] = useState<string[]>(config.defaults);
   const [groupBy, setGroupBy] = useState(config.groups[0]);
   const [measure, setMeasure] = useState('__count__');
@@ -136,7 +144,7 @@ export default function ReportsCenter({ projectId, unitId, area, from, to, scope
   const [measurementUnit, setMeasurementUnit] = useState('');
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null);
   const [page, setPage] = useState(0), [pageSize, setPageSize] = useState(25);
-  const queryKey = JSON.stringify([dataset, projectId, unitId, area, from, to]);
+  const queryKey = JSON.stringify([dataset, projectId, unitId, area, from, to, assetDetails]);
   const [loadedQueryKey, setLoadedQueryKey] = useState('');
   const [loadedRows, setRows] = useState<ExportRow[]>([]), [truncated, setTruncated] = useState(false);
   const [fetching, setLoading] = useState(true), [error, setError] = useState('');
@@ -151,6 +159,7 @@ export default function ReportsCenter({ projectId, unitId, area, from, to, scope
   useEffect(() => {
     const controller = new AbortController();
     const query = new URLSearchParams({ dataset });
+    if (dataset === 'materials' && assetDetails) query.set('assetDetails', '1');
     if (projectId) query.set('projectId', projectId);
     if (unitId) query.set('unitId', unitId === '__unassigned__' ? '__none__' : unitId);
     if (area) query.set('thematicArea', area);
@@ -162,11 +171,11 @@ export default function ReportsCenter({ projectId, unitId, area, from, to, scope
       .then(body => { if (controller.signal.aborted) return; setRows(Array.isArray(body.rows) ? body.rows : []); setLoadedQueryKey(queryKey); setTruncated(Boolean(body.truncated)); setLoading(false); })
       .catch(reason => { if (controller.signal.aborted) return; setRows([]); setLoadedQueryKey(queryKey); setTruncated(false); setError(reason instanceof Error ? reason.message : 'Não foi possível carregar o relatório.'); setLoading(false); });
     return () => { window.clearTimeout(start); controller.abort(); };
-  }, [dataset, projectId, unitId, area, from, to, queryKey]);
+  }, [dataset, projectId, unitId, area, from, to, queryKey, assetDetails]);
 
   function chooseDataset(id: DatasetId, preset?: Preset) {
     const next = DATASETS[id];
-    setDataset(id); setColumns(preset?.columns.filter(key => next.columns.some(column => column.key === key)) ?? next.defaults);
+    setDataset(id); setAssetDetails(false); setColumns(preset?.columns.filter(key => next.columns.some(column => column.key === key)) ?? next.defaults);
     setGroupBy(preset && next.groups.includes(preset.groupBy) ? preset.groupBy : next.groups[0]);
     setMeasure(preset && (preset.measure === '__count__' || next.columns.some(column => column.key === preset.measure && column.numeric)) ? preset.measure : '__count__');
     setSearch(preset?.search ?? ''); setMeasurementUnit(''); setFocus(''); setSort(null); setPage(0);
@@ -289,6 +298,7 @@ export default function ReportsCenter({ projectId, unitId, area, from, to, scope
       {datasets.map(id => { const DatasetIcon = DATASETS[id].icon; return <button key={id} type="button" role="tab" aria-selected={dataset === id} className={dataset === id ? styles.active : ''} onClick={() => chooseDataset(id)}><DatasetIcon size={17} /><span>{DATASETS[id].label}</span></button>; })}
     </div>
 
+    {dataset === 'materials' && <label className="p-form-help"><input type="checkbox" checked={assetDetails} onChange={event => { setAssetDetails(event.target.checked); setColumns(DATASETS.materials.defaults); setRows([]); setFocus(''); setMeasure('__count__'); }}/>{' '}Consultar metadados patrimoniais privados (somente projetos com permissão vigente de inventário). A referência de responsável, processo e valor documentado só entra na exportação ao escolher essas colunas.</label>}
     <div className={styles.controls}>
       <label className={`p-field ${styles.search}`}><span>Buscar nas linhas</span><span className={styles.searchBox}><Search size={15} /><input value={search} onChange={event => { setSearch(event.target.value); setPage(0); }} placeholder="Nome, material, título, observação…" />{search && <button type="button" aria-label="Limpar busca" onClick={() => setSearch('')}><X size={14} /></button>}</span></label>
       <label className="p-field"><span>Agrupar gráfico por</span><select value={groupBy} onChange={event => { setGroupBy(event.target.value); setFocus(''); }}>{config.groups.map(key => <option key={key} value={key}>{key === 'mes' ? 'Mês' : config.columns.find(column => column.key === key)?.label}</option>)}</select></label>

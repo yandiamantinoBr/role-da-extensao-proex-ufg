@@ -1,5 +1,6 @@
 import { all, csv } from '../database';
 import { HttpError } from '../errors';
+import { ASSET_METADATA_COLUMNS, ASSET_TEXT_FIELDS } from '../asset-metadata';
 import { type PortalActor } from '../access';
 import { canonicalSyncJson, syncDigest, requireSyncOwner, MAX_PORTABLE_PAGE, MAX_PORTABLE_TABLE_ROWS, MAX_PORTABLE_TABLE_BYTES, PORTABLE_VERSION, type PortableSchema, type PortableRow, type PortableColumn } from './contracts';
 
@@ -15,7 +16,7 @@ const DEFINITIONS: Record<string, Definition> = {
  calls: {label:'Editais',fields:'id,project_id,title,reference_code,description,status,opens_at,closes_at,official_url,version,created_at,updated_at',editable:'title,reference_code,description,status,opens_at,closes_at,official_url',action:'call.update'},
  project_calls: {label:'Projetos e editais',fields:'call_id,project_id',key:'json_array(call_id,project_id)'},
  material_categories: {label:'Categorias de materiais',fields:'id,project_id,label,core_kind,description,status,version,created_at,updated_at',editable:'label,description,status',action:'material.category.update'},
- items: {label:'Materiais',fields:'id,project_id,name,category,category_id,unit,stock,reserved,low_stock,description,condition,asset_code,version,created_at,updated_at',editable:'name,category_id,unit,low_stock,description,condition,asset_code',action:'item.update'},
+ items: {label:'Materiais',fields:`id,project_id,name,category,category_id,unit,stock,reserved,low_stock,description,condition,asset_code,version,created_at,updated_at,${ASSET_METADATA_COLUMNS.join(',')}`,editable:`name,category_id,unit,low_stock,description,condition,asset_code,${ASSET_METADATA_COLUMNS.join(',')}`,action:'item.update'},
  stock_movements: {label:'Movimentações de estoque',fields:'id,item_id,delta,kind,note,ref_id,created_at,group_id',mode:'append_only',omitted:['actor_id']},
  activity_groups: {label:'Atividades e entregas',fields:'id,project_id,title,occurred_at,kind,note,created_at',mode:'append_only',omitted:['created_by']},
  loans: {label:'Empréstimos',fields:'id,project_id,item_id,action_name,starts_at,ends_at,status,note,condition_out,condition_in,created_at,returned_at,checked_out_at,updated_at,group_id',mode:'append_only',omitted:['borrower_name','borrower_contact','created_by']},
@@ -38,12 +39,15 @@ const DEFINITIONS: Record<string, Definition> = {
  organizational_units: {label:'Unidades organizacionais',fields:'id,name,acronym,kind,status,version,created_at,updated_at,group_label,campus,official_url',editable:'name,acronym,kind,status,group_label,campus,official_url',action:'unit.update'},
 };
 const LABELS: Record<string,string>={id:'Identificador',project_id:'Projeto',name:'Nome',title:'Título',description:'Descrição',status:'Situação',version:'Versão',created_at:'Criado em',updated_at:'Atualizado em',stock:'Saldo calculado',reserved:'Reservado calculado',low_stock:'Alerta de estoque',unit:'Unidade',asset_code:'Patrimônio',condition:'Condição',label:'Categoria',starts_at:'Início',ends_at:'Fim',note:'Observação',delta:'Quantidade da movimentação',kind:'Tipo',role:'Papel',user_id:'Identidade interna',display_name:'Nome de exibição',job_title:'Função',unit_id:'Unidade organizacional',acronym:'Sigla',prizes_enabled:'Dinâmicas e brindes habilitados',scope:'Abrangência (internal = PROEX, external = outra unidade ou parceiro)',thematic_area:'Área temática (FORPROEX)',extension_line:'Linha de extensão (01 a 53)',group_label:'Grupo institucional',campus:'Câmpus'};
-const NUMBER_FIELDS=new Set(['stock','reserved','low_stock','version','delta','quantity','number','attempt_count','retry_limit','size','display_order','hits']);
+for (const [, column, label] of ASSET_TEXT_FIELDS) LABELS[column] = label;
+LABELS.acquisition_date = 'Data de aquisição documentada'; LABELS.acquisition_value_cents = 'Valor documentado em centavos';
+const PRIVATE_ASSET_COLUMNS = new Set<string>(ASSET_METADATA_COLUMNS);
+const NUMBER_FIELDS=new Set(['stock','reserved','low_stock','version','delta','quantity','number','attempt_count','retry_limit','size','display_order','hits','acquisition_value_cents']);
 export function describePortableSchemas(): {formatVersion:number;tables:PortableSchema[];limits:{page:number;tableRows:number;tableBytes:number};notice:string} {
  return {formatVersion:PORTABLE_VERSION,tables:Object.entries(DEFINITIONS).map(([table,d])=>{
   const editable=new Set((d.editable||'').split(','));
   const systemColumns:PortableColumn[]=[{name:'_rowKey',label:'Chave da linha (sistema)',type:'text',editable:false,required:true,system:true,private:false},{name:'_rowHash',label:'Resumo original (sistema)',type:'text',editable:false,required:true,system:true,private:false}];
-  return {table,label:d.label,sheetName:table,mode:d.mode||(d.action?'metadata':'read_only'),updateAction:d.action,versionColumn:d.fields.split(',').includes('version')?'version':undefined,omitted:d.omitted||[],columns:[...systemColumns,...d.fields.split(',').map(name=>({name,label:LABELS[name]||name,type:NUMBER_FIELDS.has(name)||(table==='loans'&&['starts_at','ends_at'].includes(name))?'number':['active','prizes_enabled'].includes(name)?'boolean':/(?:_at|^day$)/.test(name)?'datetime':'text',editable:editable.has(name),required:name==='id'||name==='version',system:!editable.has(name),private:false} as PortableColumn))]};
+  return {table,label:d.label,sheetName:table,mode:d.mode||(d.action?'metadata':'read_only'),updateAction:d.action,versionColumn:d.fields.split(',').includes('version')?'version':undefined,omitted:d.omitted||[],columns:[...systemColumns,...d.fields.split(',').map(name=>({name,label:LABELS[name]||name,type:NUMBER_FIELDS.has(name)||(table==='loans'&&['starts_at','ends_at'].includes(name))?'number':['active','prizes_enabled'].includes(name)?'boolean':/(?:_at|^day$|^acquisition_date$)/.test(name)?'datetime':'text',editable:editable.has(name),required:name==='id'||name==='version',system:!editable.has(name),private:table==='items'&&PRIVATE_ASSET_COLUMNS.has(name)} as PortableColumn))]};
  }),limits:{page:MAX_PORTABLE_PAGE,tableRows:MAX_PORTABLE_TABLE_ROWS,tableBytes:MAX_PORTABLE_TABLE_BYTES},notice:'Planilha não concede acesso. Saldos, resultados, permissões e histórico são calculados no portal. Contatos, credenciais, CPF e arquivos privados não são exportados; textos operacionais devem evitar dados pessoais. Gravações em planilhas devem usar valores RAW, sem interpretar texto como fórmula. Cada tabela tem sua própria versão de leitura; não há uma transação de leitura entre tabelas.'};
 }
 export function portableDefinition(table:string): PortableSchema | undefined {return describePortableSchemas().tables.find(row=>row.table===table);}

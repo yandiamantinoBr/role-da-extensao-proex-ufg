@@ -94,6 +94,11 @@ export const items = sqliteTable('items', {
   assetCode: text('asset_code').notNull().default(''), version: integer('version').notNull().default(1),
   updatedAt: text('updated_at').notNull().default(''),
   categoryId: text('category_id').references(() => materialCategories.id),
+  brand: text('brand'), model: text('model'), serialNumber: text('serial_number'), assetLocation: text('asset_location'),
+  responsibleUnit: text('responsible_unit'), responsibleReference: text('responsible_reference'),
+  conservationState: text('conservation_state'), assetStatus: text('asset_status'), origin: text('origin'), destination: text('destination'),
+  processReference: text('process_reference'), responsibilityTerm: text('responsibility_term'), invoiceReference: text('invoice_reference'),
+  sourceReference: text('source_reference'), acquisitionDate: text('acquisition_date'), acquisitionValueCents: integer('acquisition_value_cents'),
 }, t => [
   index('items_project_idx').on(t.projectId),
   uniqueIndex('items_asset_code_unique').on(t.projectId, t.assetCode).where(sql`${t.assetCode} != ''`),

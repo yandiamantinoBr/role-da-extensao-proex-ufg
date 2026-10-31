@@ -59,6 +59,8 @@ export async function reportRows(db: D1Database, actor: PortalActor | null, inpu
   const from = day(input.from, 'a data inicial'), to = day(input.to, 'a data final');
   const where: string[] = [], params: unknown[] = [];
   const authority=projectAuthoritySql(actor,REPORT_DATASETS[dataset].capabilities,'p.id');where.push(authority.sql);params.push(...authority.values);
+  const assetDetails = dataset === 'materials' && (input.assetDetails === true || input.assetDetails === '1');
+  if(assetDetails){const privateAuthority=projectAuthoritySql(actor,['inventory.read'],'p.id');where.push(privateAuthority.sql);params.push(...privateAuthority.values);}
   if (projects !== null) { where.push(`p.id IN (${projects.map(() => '?').join(',')})`); params.push(...projects); }
   for (const [key, column] of [['projectId', 'p.id'], ['organizationId','p.organization_id'], ['unitId', 'p.unit_id'], ['thematicArea', 'p.thematic_area']] as const) {
     const value = input[key];
@@ -91,6 +93,10 @@ export async function reportRows(db: D1Database, actor: PortalActor | null, inpu
     rows = await run(`SELECT i.id,${projectColumns},i.name AS material,i.category AS classe,COALESCE(mc.label,'') AS categoria,i.unit AS unidade_medida,
       i.stock AS saldo,i.reserved AS reservado,i.stock-i.reserved AS disponivel,i.low_stock AS alerta_minimo,
       CASE WHEN i.stock-i.reserved<=i.low_stock THEN 'baixo' ELSE 'ok' END AS situacao_estoque,i.condition AS condicao,i.asset_code AS patrimonio,
+      ${assetDetails ? `i.description AS descricao_bem,i.brand AS marca,i.model AS modelo,i.serial_number AS numero_serie,i.asset_location AS localizacao_bem,
+      i.responsible_unit AS unidade_responsavel,i.responsible_reference AS responsavel_documentado,i.conservation_state AS conservacao,i.asset_status AS situacao_patrimonial,
+      i.origin AS origem,i.destination AS destino,i.process_reference AS processo,i.responsibility_term AS termo_responsabilidade,i.invoice_reference AS nota_fiscal,
+      i.acquisition_date AS data_aquisicao,i.acquisition_value_cents AS valor_aquisicao_centavos,i.source_reference AS fonte_cadastro,` : ''}
       date(i.updated_at,'-3 hours') AS atualizado_em FROM items i JOIN ${base.replace('projects p', 'projects p ON p.id=i.project_id')} LEFT JOIN material_categories mc ON mc.id=i.category_id /*WHERE*/ ORDER BY p.name,i.name`);
   } else if (dataset === 'movements') {
     rows = await run(`SELECT m.id,date(m.created_at,'-3 hours') AS data,${projectColumns},i.name AS material,i.category AS classe,i.unit AS unidade_medida,m.kind AS tipo,m.delta AS quantidade,
