@@ -47,7 +47,7 @@ function harness() {
  };
 }
 function nodesInside(node){const result=[];const visit=value=>{if(!value||typeof value!=='object')return;if(Array.isArray(value)){value.forEach(visit);return;}result.push(value);visit(value.props?.children);};visit(node);return result;}
-async function load(h, project = 'a', props = base) { h.render(props); h.flushEffects(); h.requests.at(-1).resolve({ ok: true, json: async () => ({ rows: [row(project)] }) }); await tick(); h.render(props); }
+async function load(h, project = 'a', props = base) { h.render(props); h.flushEffects(); h.requests.at(-1).resolve({ ok: true, json: async () => ({ dataset: 'materials', rows: [row(project)], truncated: false }) }); await tick(); h.render(props); }
 async function jsonDownload(h) { h.button('JSON').props.onClick(); return JSON.parse(await h.downloads.at(-1).blob.text()); }
 
 test('report exports remain disabled immediately on any server-filter or dataset change, before effects run', async () => {
@@ -69,7 +69,7 @@ test('report exports remain disabled immediately on any server-filter or dataset
 test('a new successful response enables exports only with matching scope metadata and current rows', async () => {
  const h = harness(), next = { ...base, projectId: 'project-b', scopeLabel: 'Projeto B' }; try {
   await load(h); h.render(next); assert.equal(h.button('JSON').props.disabled, true); h.flushEffects();
-  h.requests.at(-1).resolve({ ok: true, json: async () => ({ rows: [row('b')] }) }); await tick(); h.render(next);
+  h.requests.at(-1).resolve({ ok: true, json: async () => ({ dataset: 'materials', rows: [row('b')], truncated: false }) }); await tick(); h.render(next);
   assert.equal(h.button('JSON').props.disabled, false); const exported = await jsonDownload(h);
   assert.equal(exported.filtros.Recorte, 'Projeto B'); assert.equal(exported.linhas[0].projeto, 'Projeto B'); assert.equal(JSON.stringify(exported).includes('Material A'), false);
  } finally { h.dispose(); }
@@ -88,8 +88,8 @@ test('an aborted response whose JSON resolves late cannot replace a newer succes
  try {
   await load(h); h.render(b); h.flushEffects(); const oldRequest = h.requests.at(-1), deferred = new Promise(resolve => { resolveBody = resolve; }); oldRequest.resolve({ ok: true, json: () => deferred }); await tick();
   h.render(c); h.flushEffects(); assert.equal(oldRequest.init.signal.aborted, true);
-  h.requests.at(-1).resolve({ ok: true, json: async () => ({ rows: [row('c')] }) }); await tick(); h.render(c);
-  resolveBody({ rows: [row('b')] }); await tick(); h.render(c);
+  h.requests.at(-1).resolve({ ok: true, json: async () => ({ dataset: 'materials', rows: [row('c')], truncated: false }) }); await tick(); h.render(c);
+  resolveBody({ dataset: 'materials', rows: [row('b')], truncated: false }); await tick(); h.render(c);
   const exported = await jsonDownload(h); assert.equal(exported.filtros.Recorte, 'Projeto C'); assert.equal(exported.linhas[0].projeto, 'Projeto C'); assert.equal(JSON.stringify(exported).includes('Material B'), false);
  } finally { h.dispose(); }
 });

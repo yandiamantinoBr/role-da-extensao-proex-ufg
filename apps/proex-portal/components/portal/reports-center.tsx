@@ -209,8 +209,19 @@ export default function ReportsCenter({ projectId, unitId, area, from, to, scope
     if (to) query.set('to', to);
     const start = window.setTimeout(() => { setLoading(true); setError(''); }, 0);
     fetch(`/api/reports?${query}`, { credentials: 'same-origin', cache: 'no-store', signal: controller.signal })
-      .then(async response => { const body = (await response.json().catch(() => ({}))) as { rows?: ExportRow[]; truncated?: boolean; error?: string | { message?: string }; message?: string }; if (!response.ok) throw new Error((typeof body.error === 'string' ? body.error : body.error?.message) || body.message || 'Não foi possível carregar o relatório.'); return body; })
-      .then(body => { if (controller.signal.aborted) return; setRows(Array.isArray(body.rows) ? body.rows : []); setLoadedQueryKey(queryKey); setTruncated(Boolean(body.truncated)); setLoading(false); })
+      .then(async response => {
+        let value: unknown;
+        try { value = await response.json(); }
+        catch (reason) { if (controller.signal.aborted) throw reason; throw new Error('Não foi possível carregar o relatório: resposta incompleta ou inválida.'); }
+        const body = value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
+        if (!response.ok) {
+          const detail = body?.error;
+          throw new Error((typeof detail === 'string' ? detail : detail && typeof detail === 'object' && 'message' in detail && typeof detail.message === 'string' ? detail.message : typeof body?.message === 'string' ? body.message : '') || 'Não foi possível carregar o relatório.');
+        }
+        if (!body || body.dataset !== dataset || !Array.isArray(body.rows) || !body.rows.every(row => row !== null && typeof row === 'object' && !Array.isArray(row)) || typeof body.truncated !== 'boolean') throw new Error('Não foi possível carregar o relatório: resposta incompleta ou inválida.');
+        return { rows: body.rows as ExportRow[], truncated: body.truncated };
+      })
+      .then(body => { if (controller.signal.aborted) return; setRows(body.rows); setLoadedQueryKey(queryKey); setTruncated(body.truncated); setLoading(false); })
       .catch(reason => { if (controller.signal.aborted) return; setRows([]); setLoadedQueryKey(queryKey); setTruncated(false); setError(reason instanceof Error ? reason.message : 'Não foi possível carregar o relatório.'); setLoading(false); });
     return () => { window.clearTimeout(start); controller.abort(); };
   }, [dataset, projectId, unitId, area, from, to, queryKey, assetDetails, includeNotes, outflowType, returnState]);
@@ -334,7 +345,7 @@ export default function ReportsCenter({ projectId, unitId, area, from, to, scope
         <button type="button" className="p-button p-button-primary" disabled={loading || !chosen.length || !sorted.length || !!exporting} onClick={() => download(`${fileBase}.xlsx`, toXlsx(config.label, exportColumns, sorted, exportValue, info))}><FileSpreadsheet size={16} />Excel</button>
         <button type="button" className="p-button p-button-subtle" disabled={loading || !chosen.length || !sorted.length || !!exporting} onClick={() => void exportDocument('pdf')}>{exporting === 'pdf' ? <LoaderCircle size={16} className="animate-spin" /> : <FileText size={16} />}PDF</button>
         <button type="button" className="p-button p-button-subtle" disabled={loading || !chosen.length || !sorted.length || !!exporting} onClick={() => void exportDocument('docx')}>{exporting === 'docx' ? <LoaderCircle size={16} className="animate-spin" /> : <FileText size={16} />}Word</button>
-        <button type="button" className="p-button p-button-subtle" disabled={loading || !chosen.length || !sorted.length || !!exporting} onClick={() => download(`${fileBase}.csv`, toCsv(exportColumns, sorted, exportValue))}><Sheet size={16} />CSV</button>
+        <button type="button" className="p-button p-button-subtle" disabled={loading || !chosen.length || !sorted.length || !!exporting} onClick={() => download(`${fileBase}${truncated ? '-parcial' : ''}.csv`, toCsv(exportColumns, sorted, exportValue))}><Sheet size={16} />CSV</button>
         <button type="button" className="p-button p-button-subtle" disabled={loading || !chosen.length || !sorted.length || !!exporting} onClick={() => download(`${fileBase}.json`, toJson({ relatorio: config.label, filtros: Object.fromEntries(info) }, exportColumns, sorted, exportValue))}><FileJson size={16} />JSON</button>
         <button type="button" className="p-button p-button-subtle" disabled={loading || !chosen.length || !sorted.length || !!exporting} onClick={print}><Printer size={16} />Imprimir</button>
       </div>
