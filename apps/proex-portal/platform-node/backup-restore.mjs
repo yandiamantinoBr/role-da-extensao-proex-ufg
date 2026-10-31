@@ -2,7 +2,7 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, writeFile
 import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { BackupError, decryptArchive, MAX_ENCRYPTED_BYTES, sha256, validateArchive } from './backup-format.mjs';
+import { BackupError, decryptArchive, decryptHybridArchive, isHybridBackup, MAX_ENCRYPTED_BYTES, sha256, validateArchive } from './backup-format.mjs';
 
 export const RESTORE_PREFIX = 'proex-isolated-restore-';
 const badDestination = () => { throw Object.assign(new Error('A restauração exige uma pasta nova e isolada, diretamente na pasta temporária local.'), { code: 'backup_destination' }); };
@@ -28,11 +28,12 @@ export function rejectConfiguredRuntime(environment) {
 }
 export async function restoreEncryptedBackup(encrypted, password, { dryRun = false, destination, migrations = [] } = {}) {
   const target = restoreDestination(destination);
-  const clear = await decryptArchive(encrypted, password);
+  const clear = isHybridBackup(encrypted) ? decryptHybridArchive(encrypted, password) : await decryptArchive(encrypted, password);
   try {
     const archive = validateArchive(clear, { migrations });
+    if(archive.manifest.formatVersion!==(isHybridBackup(encrypted)?2:1))throw new BackupError('backup_invalid');
     const unknownMigrations = archive.manifest.sqlite.migrations.filter(applied => !migrations.some(local => local.name === applied.name) || applied.sha256 === null).length;
-    const report = { formatVersion: 1, verified: true, dryRun, snapshotVersion: archive.manifest.source.snapshotVersion,
+    const report = { formatVersion: archive.manifest.formatVersion, verified: true, dryRun, snapshotVersion: archive.manifest.source.snapshotVersion,
       objects: archive.objects.length, objectBytes: archive.manifest.totalObjectBytes, sqliteBytes: archive.manifest.sqlite.uncompressedSize,
       migrations: archive.manifest.sqlite.migrations.length, unknownMigrations, codeRevision: archive.manifest.source.codeRevision };
     if (dryRun) return report;

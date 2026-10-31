@@ -50,6 +50,13 @@ function onOpen() {
     .addItem('Ativar sincronização automática', 'ativarAutomatico')
     .addItem('Desativar sincronização automática', 'desativarAutomatico')
     .addSeparator()
+    .addItem('Preparar pasta privada de backups', 'prepararPastaBackup')
+    .addItem('Ativar backup diário', 'ativarBackupDiario')
+    .addItem('Desativar backup diário', 'desativarBackupDiario')
+    .addItem('Executar backup completo agora', 'backupCompletoAgora')
+    .addItem('Ver estado do backup', 'verEstadoBackup')
+    .addItem('Liberar recibo de backup pendente…', 'liberarReciboBackup')
+    .addSeparator()
     .addItem('Conectar ao portal…', 'conectar')
     .addItem('Ver estado da conexão', 'verEstado')
     .addToUi();
@@ -102,7 +109,7 @@ function verEstado() {
 function estadoGatilhos_() {
   var handlers = ScriptApp.getProjectTriggers().map(function (t) { return t.getHandlerFunction(); });
   function count(handler) { var n = handlers.filter(function (h) { return h === handler; }).length; return n ? n + ' instalado(s); confira o histórico de execuções' : 'não instalado'; }
-  return { data: count('sincronizarAutomatico'), attachments: count('copiarAnexosAutomatico') };
+  return { data: count('sincronizarAutomatico'), attachments: count('copiarAnexosAutomatico'), backup: count('backupDiarioAutomatico') };
 }
 
 function ativarAutomatico() {

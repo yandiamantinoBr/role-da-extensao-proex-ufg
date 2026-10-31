@@ -1,67 +1,15 @@
-name: Backup do banco do portal
-# Exporta diariamente o banco D1 da hospedagem Cloudflare como SQL (SQLite padrão),
-# CRIPTOGRAFADO com BACKUP_PASSPHRASE antes de virar artefato. O repositório é
-# público: um backup sem criptografia exporia hashes de senha, e-mails e contatos.
-# Sem a frase secreta configurada, nenhum arquivo é gerado.
-# Restaurar: openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -in arquivo.sql.enc -out arquivo.sql
-# (a hospedagem Vercel/Supabase guarda cópias próprias a cada 6 h em proex.sqlite_history).
+name: Backup legado aposentado (não executa captura)
+# Intencionalmente sem schedule e sem segredos/provedor/artefatos.
+# Rotina diária atual: Apps Script opt-in, arquivo integral formato 2 no Drive.
+# Consulte apps/proex-portal/docs/BACKUP-AUTOMATICO.md antes de configurar.
 on:
-  schedule:
-    - cron: '17 6 * * *'
   workflow_dispatch:
-permissions:
-  contents: read
+permissions: {}
 jobs:
-  backup:
+  retired:
     runs-on: ubuntu-latest
-    environment: producao
-    defaults:
-      run:
-        working-directory: apps/proex-portal
     steps:
-      - name: Conferir configuração
-        id: configured
-        working-directory: .
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+      - name: Informar que nenhum backup foi realizado
         run: |
-          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$BACKUP_PASSPHRASE" ]; then
-            echo "::notice::Backup Cloudflare não configurado (CLOUDFLARE_API_TOKEN e BACKUP_PASSPHRASE)."
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "ready=true" >> "$GITHUB_OUTPUT"
-          fi
-      - uses: actions/checkout@v6
-        if: steps.configured.outputs.ready == 'true'
-      - uses: pnpm/action-setup@v4
-        if: steps.configured.outputs.ready == 'true'
-        with:
-          package_json_file: apps/proex-portal/package.json
-      - uses: actions/setup-node@v6
-        if: steps.configured.outputs.ready == 'true'
-        with:
-          node-version: 24
-      - if: steps.configured.outputs.ready == 'true'
-        run: pnpm install --frozen-lockfile
-      - name: Exportar e criptografar
-        if: steps.configured.outputs.ready == 'true'
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
-          PROEX_D1_NAME: ${{ vars.PROEX_D1_NAME || 'proex-gestao' }}
-        run: |
-          set -euo pipefail
-          umask 077
-          mkdir -p backup
-          name="proex-gestao-$(date -u +%Y-%m-%d)"
-          node node_modules/wrangler/bin/wrangler.js d1 export "$PROEX_D1_NAME" --remote --output "backup/$name.sql"
-          openssl enc -aes-256-cbc -pbkdf2 -iter 600000 -salt -in "backup/$name.sql" -out "backup/$name.sql.enc" -pass env:BACKUP_PASSPHRASE
-          shred -u "backup/$name.sql" 2>/dev/null || rm -f "backup/$name.sql"
-      - uses: actions/upload-artifact@v4
-        if: steps.configured.outputs.ready == 'true'
-        with:
-          name: proex-gestao-d1-${{ github.run_id }}
-          path: apps/proex-portal/backup/*.sql.enc
-          retention-days: 30
+          echo "::error::Este backup Cloudflare foi aposentado. Nenhum backup foi criado. Configure e teste o backup diário Apps Script no portal; consulte BACKUP-AUTOMATICO.md."
+          exit 1

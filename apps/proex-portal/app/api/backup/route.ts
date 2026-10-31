@@ -6,6 +6,7 @@ import { boundedJson } from '@/lib/http';
 import { requireSyncOwner } from '@/lib/sync/contracts';
 import { rateLimit } from '@/lib/rate-limit';
 import { completeBackupBinding } from '@/lib/backup';
+import { acquireBackupLease, releaseBackupLease } from '@/lib/backup-automation';
 export const dynamic = 'force-dynamic';
 const secureHeaders = { 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer' };
 function protect(response: Response) { for (const [name, value] of Object.entries(secureHeaders)) response.headers.set(name, value); return response; }
@@ -39,9 +40,10 @@ export async function POST(request: Request) {
     const input = await boundedJson(request, 4096);
     if (Object.keys(input).length !== 1 || typeof input.password !== 'string' || [...input.password].length < 16 || [...input.password].length > 256 || new TextEncoder().encode(input.password).byteLength > 1024 || /[\r\n\0]/.test(input.password)) throw new HttpError(400, 'Use uma frase de proteção com 16 a 256 caracteres.', 'backup_password');
     await rateLimit(db, 'backup:global', 3, 10 * 60 * 1000);
+    const leaseId=crypto.randomUUID();await acquireBackupLease(db,{actor:actor!,credentialHash:null},leaseId);
     let encrypted: Uint8Array;
     try { encrypted = await binding.createEncrypted(actor!.userId, input.password); }
-    finally { input.password = ''; } // no persistence, echo, URL, or audit payload
+    finally { input.password = '';await releaseBackupLease(db,leaseId); } // no persistence, echo, URL, or audit payload
     await requireSyncOwner(db, await getActor(db, await getPortalUser()));
     // A bounded, already authenticated encrypted archive is sent in chunks. The
     // Vercel proxy pipes the body; no plaintext or provider URL is ever streamed.

@@ -1,19 +1,22 @@
 // Complete application backups. Plaintext is held in memory only; no environment
 // secrets or provider credentials are part of the format. The restore CLI is the
 // only component allowed to materialize decrypted data, in a new isolated folder.
-import { createCipheriv, createDecipheriv, createHash, randomBytes, scrypt } from 'node:crypto';
+import { constants, createCipheriv, createDecipheriv, createHash, createPrivateKey, createPublicKey, privateDecrypt, publicEncrypt, randomBytes, scrypt } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { gunzipSync } from 'node:zlib';
 import { promisify } from 'node:util';
 
 export const BACKUP_LIMITS = Object.freeze({ totalBytes: 64 * 1024 * 1024, sqliteBytes: 64 * 1024 * 1024, objectBytes: 16 * 1024 * 1024, objects: 10000, manifestBytes: 4 * 1024 * 1024 });
 export const MAX_ENCRYPTED_BYTES = BACKUP_LIMITS.totalBytes + BACKUP_LIMITS.manifestBytes + 4096;
+export const AUTOMATIC_BACKUP_LIMITS = Object.freeze({ ...BACKUP_LIMITS, totalBytes: 24 * 1024 * 1024 });
+export const MAX_AUTOMATIC_ENCRYPTED_BYTES = 32 * 1024 * 1024;
 const MAGIC = Buffer.from('PROEXBK1'), KDF = Object.freeze({ N: 131072, r: 8, p: 1 }), derive = promisify(scrypt);
+const HYBRID_MAGIC = Buffer.from('PROEXBK2'), OAEP_LABEL = Buffer.from('proex-complete-backup/v2');
 const messages = {
   backup_password: 'Use uma frase de proteção com 16 a 256 caracteres.',
   backup_limit: 'O backup excede o limite desta ferramenta. Nenhum arquivo parcial foi confirmado.',
   backup_invalid: 'O arquivo não é um backup completo PROEX válido.',
-  backup_authentication: 'Frase de proteção incorreta ou arquivo adulterado.',
+  backup_authentication: 'Credencial de recuperação incorreta ou arquivo adulterado.',
   backup_sqlite: 'O banco do backup não passou nas verificações de integridade e vínculos.',
   backup_objects: 'O inventário de arquivos está incompleto ou diverge do banco.',
   backup_forbidden: 'Somente a administração geral ativa pode gerar o backup completo.',
@@ -96,15 +99,16 @@ function inspectDatabase(snapshot, objects, migrations = [], ownerId) {
   finally { opened.db.close(); opened.raw.fill(0); }
 }
 
-/** @param {object} capture @param {{migrations?: {name:string,sql:string}[], codeRevision?:string|null, ownerId?:string, now?:string}} options */
-export function createArchive(capture, { migrations = [], codeRevision = null, ownerId, now = new Date().toISOString() } = {}) {
+/** @param {object} capture @param {{migrations?: {name:string,sql:string}[], codeRevision?:string|null, ownerId?:string, now?:string, formatVersion?:number}} options */
+export function createArchive(capture, { migrations = [], codeRevision = null, ownerId, now = new Date().toISOString(), formatVersion = 1 } = {}) {
+  if (![1, 2].includes(formatVersion)) fail('backup_invalid');
   if (!capture?.snapshot || !integer(capture.snapshot.version) || capture.snapshot.version < 1 || !Array.isArray(capture.objects) || capture.objects.length > BACKUP_LIMITS.objects || !['postgres', 'disk'].includes(capture.backend)) fail('backup_source');
   const objects = capture.objects.slice().sort((a, b) => String(a.storageId).localeCompare(String(b.storageId)));
   const metadata = objects.map(objectMetadata);
   const totalBytes = capture.snapshot.data.byteLength + metadata.reduce((total, object) => total + object.size, 0);
   if (totalBytes > BACKUP_LIMITS.totalBytes) fail('backup_limit');
   const inspected = inspectDatabase(capture.snapshot.data, objects, migrations, ownerId);
-  const manifest = { format: 'proex-complete-backup', formatVersion: 1, createdAt: now,
+  const manifest = { format: 'proex-complete-backup', formatVersion, createdAt: now,
     source: { engine: 'sqlite', backend: capture.backend, consistency: capture.backend === 'postgres' ? 'repeatable-read' : 'single-process', snapshotVersion: capture.snapshot.version, codeRevision: typeof codeRevision === 'string' && /^[a-f0-9]{40}$/i.test(codeRevision) ? codeRevision : null },
     sqlite: { compression: 'gzip', size: capture.snapshot.data.byteLength, sha256: sha256(capture.snapshot.data), uncompressedSize: inspected.rawSize, uncompressedSha256: inspected.rawSha256, migrationHashMode: 'utf8-lf', migrations: inspected.migrations, tables: inspected.tables, references: inspected.references },
     objects: metadata, totalObjects: metadata.length, totalObjectBytes: metadata.reduce((total, object) => total + object.size, 0) };
@@ -151,6 +155,50 @@ export async function decryptArchive(encrypted, password) {
   finally { key.fill(0); plaintext?.fill(0); }
 }
 
+/** Public configuration only. Private PEM is rejected before any key parsing. */
+/** @returns {{publicKeyPem:string,keyId:string}} */
+export function backupPublicKey(pem) {
+  try {
+    if (typeof pem !== 'string' || Buffer.byteLength(pem) > 4096 || !/^-----BEGIN PUBLIC KEY-----\r?\n[A-Za-z0-9+/=\r\n]+-----END PUBLIC KEY-----\s*$/.test(pem) || /PRIVATE/.test(pem)) fail('backup_invalid');
+    const key = createPublicKey({ key: pem, format: 'pem', type: 'spki' });
+    if (key.type !== 'public' || key.asymmetricKeyType !== 'rsa' || key.asymmetricKeyDetails?.modulusLength !== 4096 || key.asymmetricKeyDetails?.publicExponent !== 65537n) fail('backup_invalid');
+    const der = key.export({ format: 'der', type: 'spki' });
+    return { publicKeyPem: key.export({ format: 'pem', type: 'spki' }).toString(), keyId: sha256(der) };
+  } catch { throw new BackupError('backup_invalid'); }
+}
+/** Hybrid public-key envelope. The private key is never needed by capture/server. */
+export function encryptHybridArchive(bytes, publicKeyPem) {
+  if (!(bytes instanceof Uint8Array) || bytes.byteLength > MAX_ENCRYPTED_BYTES - 4096) fail('backup_limit');
+  const recipient = backupPublicKey(publicKeyPem), key = randomBytes(32), iv = randomBytes(12);
+  try {
+    const wrappedKey = publicEncrypt({ key: recipient.publicKeyPem, padding: constants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256', oaepLabel: OAEP_LABEL }, key);
+    const header = Buffer.from(JSON.stringify({ formatVersion: 2, cipher: 'AES-256-GCM', keyWrap: 'RSA-OAEP-4096-SHA256', keyId: recipient.keyId, iv: iv.toString('base64'), wrappedKey: wrappedKey.toString('base64'), tagBytes: 16 }));
+    const length = Buffer.alloc(4); length.writeUInt32BE(header.length); const aad = Buffer.concat([HYBRID_MAGIC, length, header]);
+    const cipher = createCipheriv('aes-256-gcm', key, iv, { authTagLength: 16 }); cipher.setAAD(aad);
+    return Buffer.concat([aad, cipher.update(bytes), cipher.final(), cipher.getAuthTag()]);
+  } finally { key.fill(0); }
+}
+export function isHybridBackup(bytes) { return bytes instanceof Uint8Array && bytes.byteLength >= 8 && Buffer.from(bytes.buffer, bytes.byteOffset, 8).equals(HYBRID_MAGIC); }
+/** Offline only. Accepts private material by in-memory input, never a filename/URL. */
+export function decryptHybridArchive(encrypted, privateKeyPem) {
+  if (!(encrypted instanceof Uint8Array) || encrypted.byteLength < 64 || encrypted.byteLength > MAX_ENCRYPTED_BYTES || !isHybridBackup(encrypted)) fail('backup_invalid');
+  const bytes = Buffer.from(encrypted.buffer, encrypted.byteOffset, encrypted.byteLength), length = bytes.readUInt32BE(8);
+  if (length < 2 || length > 2048 || bytes.length < 12 + length + 16) fail('backup_invalid');
+  let header; try { header = JSON.parse(bytes.subarray(12, 12 + length).toString('utf8')); } catch { fail('backup_invalid'); }
+  if (!exactKeys(header, ['formatVersion','cipher','keyWrap','keyId','iv','wrappedKey','tagBytes']) || header.formatVersion !== 2 || header.cipher !== 'AES-256-GCM' || header.keyWrap !== 'RSA-OAEP-4096-SHA256' || !hex(header.keyId) || header.tagBytes !== 16 || !/^[A-Za-z0-9+/]{16}$/.test(header.iv) || typeof header.wrappedKey !== 'string' || !/^[A-Za-z0-9+/]{683}=$/.test(header.wrappedKey)) fail('backup_invalid');
+  let key, plaintext;
+  try {
+    if (typeof privateKeyPem !== 'string' || Buffer.byteLength(privateKeyPem) > 20000 || !/^-----BEGIN (?:RSA )?PRIVATE KEY-----\r?\n[A-Za-z0-9+/=\r\n]+-----END (?:RSA )?PRIVATE KEY-----\s*$/.test(privateKeyPem)) fail('backup_authentication');
+    const privateKey = createPrivateKey(privateKeyPem);
+    if (privateKey.asymmetricKeyType !== 'rsa' || privateKey.asymmetricKeyDetails?.modulusLength !== 4096 || privateKey.asymmetricKeyDetails?.publicExponent !== 65537n || sha256(createPublicKey(privateKey).export({ format: 'der', type: 'spki' })) !== header.keyId) fail('backup_authentication');
+    key = privateDecrypt({ key: privateKey, padding: constants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256', oaepLabel: OAEP_LABEL }, Buffer.from(header.wrappedKey, 'base64'));
+    if (key.length !== 32) fail('backup_authentication');
+    const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(header.iv, 'base64'), { authTagLength: 16 });
+    decipher.setAAD(bytes.subarray(0, 12 + length)); decipher.setAuthTag(bytes.subarray(-16)); plaintext = decipher.update(bytes.subarray(12 + length, -16)); return Buffer.concat([plaintext, decipher.final()]);
+  } catch { fail('backup_authentication'); }
+  finally { key?.fill(0); plaintext?.fill(0); }
+}
+
 /** @param {Uint8Array} bytes @param {{migrations?: {name:string,sql:string}[]}} options */
 export function validateArchive(bytes, { migrations = [] } = {}) {
   if (!(bytes instanceof Uint8Array) || bytes.byteLength < 5 || bytes.byteLength > MAX_ENCRYPTED_BYTES) fail('backup_invalid');
@@ -158,7 +206,7 @@ export function validateArchive(bytes, { migrations = [] } = {}) {
   if (length > BACKUP_LIMITS.manifestBytes || length < 2 || length + 4 > source.length) fail('backup_invalid');
   let manifest;
   try { manifest = JSON.parse(source.subarray(4, 4 + length).toString('utf8')); } catch { fail('backup_invalid'); }
-  if (!exactKeys(manifest, ['format', 'formatVersion', 'createdAt', 'source', 'sqlite', 'objects', 'totalObjects', 'totalObjectBytes']) || manifest.format !== 'proex-complete-backup' || manifest.formatVersion !== 1 || typeof manifest.createdAt !== 'string' || !Number.isFinite(Date.parse(manifest.createdAt)) || !exactKeys(manifest.source, ['engine', 'backend', 'consistency', 'snapshotVersion', 'codeRevision']) || manifest.source.engine !== 'sqlite' || !['postgres', 'disk'].includes(manifest.source.backend) || manifest.source.consistency !== (manifest.source.backend === 'postgres' ? 'repeatable-read' : 'single-process') || !integer(manifest.source.snapshotVersion) || manifest.source.snapshotVersion < 1 || (manifest.source.codeRevision !== null && !/^[a-f0-9]{40}$/i.test(manifest.source.codeRevision))) fail('backup_invalid');
+  if (!exactKeys(manifest, ['format', 'formatVersion', 'createdAt', 'source', 'sqlite', 'objects', 'totalObjects', 'totalObjectBytes']) || manifest.format !== 'proex-complete-backup' || ![1,2].includes(manifest.formatVersion) || typeof manifest.createdAt !== 'string' || !Number.isFinite(Date.parse(manifest.createdAt)) || !exactKeys(manifest.source, ['engine', 'backend', 'consistency', 'snapshotVersion', 'codeRevision']) || manifest.source.engine !== 'sqlite' || !['postgres', 'disk'].includes(manifest.source.backend) || manifest.source.consistency !== (manifest.source.backend === 'postgres' ? 'repeatable-read' : 'single-process') || !integer(manifest.source.snapshotVersion) || manifest.source.snapshotVersion < 1 || (manifest.source.codeRevision !== null && !/^[a-f0-9]{40}$/i.test(manifest.source.codeRevision))) fail('backup_invalid');
   const sql = manifest.sqlite;
   if (!exactKeys(sql, ['compression', 'size', 'sha256', 'uncompressedSize', 'uncompressedSha256', 'migrationHashMode', 'migrations', 'tables', 'references']) || sql.compression !== 'gzip' || sql.migrationHashMode !== 'utf8-lf' || !integer(sql.size, BACKUP_LIMITS.totalBytes) || !hex(sql.sha256) || !integer(sql.uncompressedSize, BACKUP_LIMITS.sqliteBytes) || !hex(sql.uncompressedSha256) || !integer(sql.references) || !Array.isArray(sql.migrations) || !Array.isArray(sql.tables) || !Array.isArray(manifest.objects) || !integer(manifest.totalObjects, BACKUP_LIMITS.objects) || manifest.totalObjects !== manifest.objects.length || !integer(manifest.totalObjectBytes, BACKUP_LIMITS.totalBytes)) fail('backup_invalid');
   let offset = 4 + length;
