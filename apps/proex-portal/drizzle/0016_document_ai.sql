@@ -1,4 +1,5 @@
--- Private receipts for optional document interpretation. No source text is stored.
+-- Private receipts retain only encrypted suggestions and source excerpts.
+-- No original document artifact is stored; logical recovery expiry is 15 minutes.
 -- result_ciphertext is scoped to organization+call and erased opportunistically at expiry.
 CREATE TABLE ai_document_calls (
  id TEXT PRIMARY KEY NOT NULL,
