@@ -39,6 +39,19 @@ const task=(id='task-a')=>({id,organization_id:'org-a',project_id:'project-a',ti
 const detail=()=>({task:task(),checklist:null,workCandidates:[],workGrants:[],history:[]});
 async function ready(h){h.reply(h.pending('catalog'),catalog());h.reply(h.pending('tasks'),{tasks:[task()],hasMore:false,today:'2026-10-31'});await tick();h.render();}
 
+test('the server day renews the list and its deadlines without resetting filters or querying the catalog again',async()=>{
+ const h=harness();try{
+  h.render({serverDay:'2026-10-31'});h.timers();await ready(h);
+  h.select('Estado','blocked');h.render();h.timers();const old=h.pending('tasks');
+  const catalogs=h.requests.filter(request=>h.view(request)==='catalog').length;
+  h.render({serverDay:'2026-11-01'});assert.ok(!h.body().includes('Task A'));h.timers();
+  assert.equal(old.init.signal.aborted,true);assert.equal(h.value('Estado'),'blocked');
+  assert.equal(h.requests.filter(request=>h.view(request)==='catalog').length,catalogs);
+  h.reply(old,{tasks:[{...task(),title:'Late old day'}],hasMore:false,today:'2026-10-31'});await tick();h.render();assert.ok(!h.body().includes('Late old day'));
+  h.reply(h.pending('tasks'),{tasks:[{...task(),status:'blocked',due_at:'2026-10-31'}],hasMore:false,today:'2026-11-01'});await tick();h.render();assert.match(h.body(),/Prazo vencido/);
+ }finally{h.dispose();}
+});
+
 test('switching project hides the previous list and editing actions before effects finish; late responses do not restore them',async()=>{
  const h=harness();try{await ready(h);assert.ok(h.body().includes('Task A'));assert.ok(h.hasButton('Nova demanda'));
  h.select('Projeto','project-b');h.render();assert.ok(!h.body().includes('Task A'));assert.ok(!h.hasButton('Nova demanda'));h.timers();const old=h.pending('tasks');

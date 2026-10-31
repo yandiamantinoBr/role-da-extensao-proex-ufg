@@ -122,20 +122,33 @@ test('a restricted task target with canonical null identifiers still explains th
 });
 
 test('malformed JSON and nested DTOs show an error rather than false empty results; unmounted requests are cancelled', async () => {
-  for (const data of [{}, response({tasks: {...response().tasks, items: [null]}}), async () => {throw new SyntaxError('truncated');}]) {
+  for (const data of [{}, response({asOf: 'invalid'}), response({tasks: {...response().tasks, items: [null]}}), async () => {throw new SyntaxError('truncated');}]) {
     const h = harness(); try {h.reply(h.last(), data); await tick(); h.render(); assert.ok(h.find('p', n => n.props.role === 'alert')); assert.ok(!h.body().includes('Nenhuma demanda neste recorte'));} finally {h.dispose();}
   }
   const h = harness(), request = h.last(); h.dispose(); assert.equal(request.init.signal.aborted, true); h.reply(request, response()); await tick();
 });
 
 test('refresh events preserve the selected filters, without polling or storing personal data', async () => {
-  const h = harness(); try {await h.ready(); h.changeStatus('overdue'); h.render(); await h.ready(response({scope: {...response().scope, status: 'overdue'}, asOf: 'invalid'})); assert.match(h.body(), /horário não informado/); h.event('proex:followup-changed'); h.render(); assert.equal(new URL(h.last().url, 'http://fixture').searchParams.get('status'), 'overdue'); assert.equal(h.last().init.cache, 'no-store');} finally {h.dispose();}
+  const h = harness(); try {await h.ready(); h.changeStatus('overdue'); h.render(); await h.ready(response({scope: {...response().scope, status: 'overdue'}})); assert.match(h.body(), /Consulta em/); h.event('proex:followup-changed'); h.render(); assert.equal(new URL(h.last().url, 'http://fixture').searchParams.get('status'), 'overdue'); assert.equal(h.last().init.cache, 'no-store');} finally {h.dispose();}
 });
 
 test('a persistent polite result summary announces the loaded scope and page after filtering', async () => {
   const h = harness(); try {
     await h.ready(); let summary = h.find('p', node => node.props.role === 'status'); assert.equal(summary.props['aria-live'], 'polite'); assert.match(text(summary), /Demandas \(Pendentes\): 1–1 de 90/);
     h.changeStatus('completed'); h.render(); await h.ready(response({scope: {...response().scope, status: 'completed'}, tasks: {items: [], total: 0, hasMore: false, nextOffset: null}})); summary = h.find('p', node => node.props.role === 'status'); assert.match(text(summary), /Demandas \(Concluídas\): 0 de 0/); assert.equal(summary.props['aria-atomic'], 'true');
+  } finally {h.dispose();}
+});
+
+test('a new server day hides stale totals, cancels old responses and preserves the selected filters', async () => {
+  const h = harness('meu-trabalho-panel', {serverDay: '2026-10-31'}); try {
+    await h.ready(); h.changeStatus('overdue'); h.render();
+    const old = h.last(); h.render({serverDay: '2026-11-01'});
+    assert.equal(old.init.signal.aborted, true); assert.ok(!h.body().includes('Pessoa A'));
+    assert.equal(new URL(h.last().url, 'http://fixture').searchParams.get('status'), 'overdue');
+    h.reply(old, response()); await tick(); h.render(); assert.ok(!h.body().includes('Pessoa A'));
+    await h.ready(response({today: '2026-11-01', scope: {...response().scope, status: 'overdue'}}));
+    assert.match(h.body(), /Pessoa A/);
+    const requests = h.requests.length; h.render({serverDay: '2026-11-01'}); assert.equal(h.requests.length, requests);
   } finally {h.dispose();}
 });
 

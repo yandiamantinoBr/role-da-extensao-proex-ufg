@@ -13,6 +13,7 @@ export type MeuTrabalhoPanelProps = {
   userId: string;
   organizationId?: string | null;
   projectId?: string | null;
+  serverDay?: string;
   onOpenTask?: (id: string, context: MyWorkContext) => void;
   onOpenTarget?: (target: WorkTarget, context: MyWorkContext) => void;
 };
@@ -43,14 +44,14 @@ function consultationTime(value: string) {
 }
 const visibleRange = (offset: number, length: number, total: number) => length ? `${offset + 1}–${offset + length} de ${total}` : `0 de ${total}`;
 
-export default function MeuTrabalhoPanel({userId, organizationId = null, projectId = null, onOpenTask, onOpenTarget}: MeuTrabalhoPanelProps) {
+export default function MeuTrabalhoPanel({userId, organizationId = null, projectId = null, serverDay = '', onOpenTask, onOpenTarget}: MeuTrabalhoPanelProps) {
   const owner = JSON.stringify([userId, organizationId, projectId]);
   const [selection, setSelection] = useState<Selection>(() => initial(owner));
   const selected = selection.owner === owner ? selection : initial(owner);
   const {assignment, status, taskOffset, responsibilityOffset} = selected;
   const [revision, setRevision] = useState(0), [loaded, setLoaded] = useState<Loaded | null>(null);
   const active = useRef<AbortController | null>(null), generation = useRef(0);
-  const key = JSON.stringify([owner, assignment, status, taskOffset, responsibilityOffset, revision]);
+  const key = JSON.stringify([owner, assignment, status, taskOffset, responsibilityOffset, revision, serverDay]);
   const current = loaded?.key === key ? loaded : null, data = current?.data, loading = !current;
   function invalidate() { generation.current++; active.current?.abort(); }
   function choose(patch: Partial<Omit<Selection, 'owner'>>) { invalidate(); setSelection({...selected, taskOffset: 0, responsibilityOffset: 0, ...patch}); }

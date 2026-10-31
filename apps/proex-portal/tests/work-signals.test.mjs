@@ -4,11 +4,11 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
 
-const module = { exports: {} };
+const compiledModule = { exports: {} };
 const source = readFileSync(new URL('../lib/follow-up/presentation.ts', import.meta.url), 'utf8');
 const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-vm.runInNewContext(code, { module, exports: module.exports, Date, Number, Math });
-const { taskDeadline } = module.exports;
+vm.runInNewContext(code, { module: compiledModule, exports: compiledModule.exports, Date, Number, Math });
+const { taskDeadline } = compiledModule.exports;
 
 test('calendar-day attention distinguishes overdue, today and coming deadlines without changing priority', () => {
  assert.equal(taskDeadline('2026-10-30', 'open', '2026-10-31').kind, 'overdue');

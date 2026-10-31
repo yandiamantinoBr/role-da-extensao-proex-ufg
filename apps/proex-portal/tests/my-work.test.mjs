@@ -6,7 +6,7 @@ const root=fileURLToPath(new URL('../',import.meta.url)),cache=new Map();
 function compile(file){file=resolve(root,file);if(cache.has(file))return cache.get(file);let code=ts.transpileModule(readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;code=code.replace(/from (['"])(\.[^'"]+)\1/g,(_m,_q,name)=>`from ${JSON.stringify(compile(resolve(dirname(file),name+'.ts')))}`);const url='data:text/javascript;base64,'+Buffer.from(code).toString('base64');cache.set(file,url);return url;}
 const {getActor}=await import(compile('lib/access.ts'));
 const {followupAction,followupList}=await import(compile('lib/follow-up/service.ts'));
-const {serverWorkClock}=await import(compile('lib/follow-up/time.ts'));
+const {serverWorkClock,workDayFromServerTimestamp}=await import(compile('lib/follow-up/time.ts'));
 const {exportPortablePage,describePortableSchemas}=await import(compile('lib/sync/portable.ts'));
 const {myWork}=await import(compile('lib/my-work/service.ts'));
 const {responsibilityAction,responsibilityList,responsibilityDetail,responsibilityCatalog}=await import(compile('lib/responsibilities/service.ts'));
@@ -145,4 +145,11 @@ test('HTTP wrappers agree with real services, reject forged actors, preserve pri
  const list=await r.GET(new Request(origin+'/api/responsibilities?projectId=project-a&limit=1'));assert.ok(isResponsibilityList(await list.json()));
  globalThis.__workQa.user=f.users['worker-a'];const work=await m.GET(new Request(origin+'/api/my-work?userId=worker-b&today=1900-01-01'));const dto=await work.json();assert.equal(work.status,200);assert.ok(isMyWorkResponse(dto));assert.equal(dto.viewerId,'worker-a');assert.notEqual(dto.today,'1900-01-01');assert.equal(dto.totals.responsibilities.total,1);
  f.native.prepare("UPDATE portal_users SET status='blocked' WHERE user_id='worker-a'").run();assert.equal((await m.GET(new Request(origin+'/api/my-work'))).status,401);
+});
+
+
+test('portal refresh dates use the server instant in Brasília, including midnight and invalid timestamps',()=>{
+ assert.equal(workDayFromServerTimestamp('2026-11-01T02:59:59.999Z'),'2026-10-31');
+ assert.equal(workDayFromServerTimestamp('2026-11-01T03:00:00.000Z'),'2026-11-01');
+ for(const value of [undefined,null,0,'','invalid'])assert.equal(workDayFromServerTimestamp(value),'');
 });

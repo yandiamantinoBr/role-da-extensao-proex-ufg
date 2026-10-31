@@ -10,10 +10,10 @@ const nodes = tree => { const output=[];const visit=node=>{if(!node||typeof node
 const element = (type, props) => typeof type === 'function' ? type(props) : { type, props };
 function load(file) {
  if (modules.has(file)) return modules.get(file);
- const module = {exports:{}}; modules.set(file,module.exports);
+ const compiledModule = {exports:{}}; modules.set(file,compiledModule.exports);
  const require = name => name === 'react/jsx-runtime' ? {jsx:element,jsxs:element} : name === 'lucide-react' ? new Proxy({}, {get:(_,key)=>String(key)}) : name.endsWith('.module.css') ? {default:new Proxy({}, {get:(_,key)=>String(key)})} : name === '../errors' ? {HttpError:class extends Error{}} : load(name === './work-signals' ? 'components/portal/work-signals.tsx' : name.startsWith('@/') ? name.slice(2)+'.ts' : name);
  const code=ts.transpileModule(readFileSync(new URL('../'+file,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText;
- vm.runInNewContext(code,{module,exports:module.exports,require,Date,Intl,Number,Math});return module.exports;
+ vm.runInNewContext(code,{module:compiledModule,exports:compiledModule.exports,require,Date,Intl,Number,Math});return compiledModule.exports;
 }
 const {WorkTaskCard}=load('components/portal/work-task-card.tsx');
 const {TaskPageSummary}=load('components/portal/task-page-summary.tsx');
