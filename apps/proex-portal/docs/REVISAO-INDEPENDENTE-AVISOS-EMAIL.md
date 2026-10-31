@@ -1,0 +1,15 @@
+# Revisão independente dos avisos — R21 / 0015
+
+Revisão local em 31/10/2026 do backend/script `7bf127f7c5a7bf59a5fb14324b7e192c79ad1d4b`, com correção `732e45978915ebdf0f921432b02f446c843b5ea4`. **Aprovado no escopo de leitura de código e testes sintéticos, sem P0/P1 restante identificado.** Montagem, metadados 0015, builds e revisão integrada continuam sob coordenação do responsável principal. Nada foi instalado no Google, nem houve envio, token real, OAuth, acesso a segredo ou publicação.
+
+O P2 encontrado foi reproduzido antes: duas confirmações simultâneas de um único aviso criavam dois eventos de aceitação e retornavam ambas como operação nova. Não havia repetição do MailApp. O patch condiciona recibo/estado à transição efetiva no mesmo batch e deriva `replayed` do resultado atômico. A reprodução independente passou: um evento e um replay.
+
+**29/29 testes em Node 24 e Node 26**: 25 do autor (18 backend e sete GAS) e quatro conjuntos independentes em `tests/follow-up-email-independent.test.mjs`. Além do ACK concorrente, os probes acrescentam:
+
+- Revogar destinatário/emissor ou retirar consentimento depois de `sending` durável e antes da checagem final: endereço não liberado, estado incerto, cota conservadoramente reservada e nenhum aceite criado.
+- Confirmar antes de `begin` ou usar recibo de outro aviso: negado; repetir o recibo correto não duplica o aceite.
+- Rodar recuperação com credencial revogada: negado. Uma nova credencial restrita do mesmo emissor recupera somente estado; não devolve destinatário e nunca recoloca envio incerto na fila.
+
+A leitura cobriu os vínculos `pne_` por organização, autoridade atual do emissor, consentimento/endereço canônico do destinatário, cotas/intervalo e claim/CAS, separação cookie administrativo versus bearer de despacho e proibição de usar `pne_` na sincronização. Fila, credenciais e recibos privados ficam fora das projeções portáteis. O GAS usa projeto separado, propriedades da conta e trava; não acessa caixa de entrada nem integra gatilhos de backup/Sheets existentes.
+
+Tipos e lint dos arquivos focados passaram sem erro/aviso. A fronteira de confiança está documentada: o servidor recebe atestação do conector autorizado. O portador da credencial com o claim/recibo pode atestar uma chamada; isso não é prova independente do Google. [MailApp retorna `void` e sua cota conta destinatários](https://developers.google.com/apps-script/reference/mail/mail-app), sem comprovante de entrega/leitura. [A conta efetiva é a autoridade de execução](https://developers.google.com/apps-script/reference/base/session#geteffectiveuser); [o gatilho instalável roda na conta de quem o criou](https://developers.google.com/apps-script/guides/triggers/installable). Depois que o conteúdo é liberado para chamada externa, uma revogação posterior não consegue recolhê-lo. Falhas incertas exigem reconciliação manual e não provocam reenvio automático.
