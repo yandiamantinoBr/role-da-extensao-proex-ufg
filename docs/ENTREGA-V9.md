@@ -58,3 +58,10 @@ Revisar o commit local e obter autorização específica antes de push, PR, merg
 A planilha real ainda usa uma estrutura anterior; versão instalada do Apps Script, gatilho e pasta ativa precisam ser conferidos. Publicar o asset `.gs` no portal não instala o código no projeto vinculado à planilha. Duplicidade de projetos e política de compartilhamento continuam registradas na Vault, sem mudanças externas.
 
 Backup fora do Supabase, restauração completa com arquivos, participação pública, perfis institucionais, retenção/LGPD e transferência de contas continuam pendentes das decisões e etapas descritas na Vault. Este pacote reduz falhas e custo de leitura; escritas legítimas ainda persistem o instantâneo completo.
+
+
+## Publicação e conferência de produção · 31/10/2026
+
+V9 publicada por autorização explícita de Yan: PR #8, merge `c19b6439cc17d904ff9c183b86291f8faf7d6cfc`; checks verify/portal/Vercel aprovados. Vercel `READY`, deployment `dpl_cc1uw8tRxd7PgL4jZcDzAvtTDtUQ`, em `https://proex-gestao.vercel.app`. Health 200 e cabeçalhos de segurança conferidos. Conta autenticada acessou visão geral e relatórios com dados reais; exportação XLSX gerou arquivo local. Nenhum cadastro de QA foi inserido em produção. Capturas e arquivos reais permanecem em `.sites-runtime/production-v9/` ou Downloads, fora do Git público.
+
+Em 31/10, a planilha global foi restringida: API Drive confirmou `shared:false`, somente owner e ausência de `anyone`. Cópia privada anterior à reconexão foi preservada e sua ACL também conferida. Sincronização automática ainda não foi comprovada; último estado confirmado segue 25/10 até a instalação/teste do script.

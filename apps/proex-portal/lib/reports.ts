@@ -9,6 +9,7 @@ export const REPORT_DATASETS = {
   projects: { label: 'Projetos e ações', capabilities: [] as string[] },
   materials: { label: 'Materiais e estoque', capabilities: ['inventory.read', 'reports.read'] },
   movements: { label: 'Movimentações de estoque', capabilities: ['inventory.read', 'reports.read'] },
+  outflows: { label: 'Saídas institucionais', capabilities: ['inventory.read', 'reports.read'] },
   loans: { label: 'Empréstimos', capabilities: ['loans.read', 'reports.read'] },
   records: { label: 'Registros', capabilities: ['reports.read', 'inventory.read', 'loans.read'] },
   campaigns: { label: 'Eventos e dinâmicas', capabilities: ['reports.read', 'campaigns.manage'] },
@@ -90,9 +91,14 @@ export async function reportRows(db: D1Database, actor: PortalActor | null, inpu
       CASE WHEN i.stock-i.reserved<=i.low_stock THEN 'baixo' ELSE 'ok' END AS situacao_estoque,i.condition AS condicao,i.asset_code AS patrimonio,
       date(i.updated_at,'-3 hours') AS atualizado_em FROM items i JOIN ${base.replace('projects p', 'projects p ON p.id=i.project_id')} LEFT JOIN material_categories mc ON mc.id=i.category_id /*WHERE*/ ORDER BY p.name,i.name`);
   } else if (dataset === 'movements') {
-    rows = await run(`SELECT m.id,date(m.created_at,'-3 hours') AS data,${projectColumns},i.name AS material,i.category AS classe,m.kind AS tipo,m.delta AS quantidade,
+    rows = await run(`SELECT m.id,date(m.created_at,'-3 hours') AS data,${projectColumns},i.name AS material,i.category AS classe,i.unit AS unidade_medida,m.kind AS tipo,m.delta AS quantidade,
       CASE WHEN m.delta>0 THEN 'entrada' ELSE 'saida' END AS sentido,m.note AS observacao
       FROM stock_movements m JOIN items i ON i.id=m.item_id JOIN ${base.replace('projects p', 'projects p ON p.id=i.project_id')} /*WHERE*/ ORDER BY m.created_at DESC`, period('m.created_at'));
+  } else if (dataset === 'outflows') {
+    const range = period('m.created_at');
+    rows = await run(`SELECT i.id||':'||m.kind AS id,${projectColumns},i.name AS material,i.category AS classe,i.unit AS unidade_medida,m.kind AS tipo,
+      SUM(-m.delta) AS quantidade,COUNT(*) AS movimentacoes,MIN(date(m.created_at,'-3 hours')) AS primeira_saida,MAX(date(m.created_at,'-3 hours')) AS ultima_saida
+      FROM stock_movements m JOIN items i ON i.id=m.item_id JOIN ${base.replace('projects p', 'projects p ON p.id=i.project_id')} /*WHERE*/ GROUP BY i.id,m.kind ORDER BY p.name,i.name,m.kind`, { clauses: [...range.clauses, "m.delta<0", "m.kind IN ('distribute','redeem')"], values: range.values });
   } else if (dataset === 'loans') {
     rows = await run(`SELECT l.id,${projectColumns},i.name AS material,l.action_name AS acao,date(l.starts_at/1000,'unixepoch','-3 hours') AS inicio,date(l.ends_at/1000,'unixepoch','-3 hours') AS fim,
       l.status AS situacao,date(l.checked_out_at,'-3 hours') AS retirado_em,date(l.returned_at,'-3 hours') AS devolvido_em,

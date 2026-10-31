@@ -4,12 +4,13 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { ArrowDown, ArrowUp, BarChart3, Boxes, CalendarRange, ClipboardList, Columns3, FileJson, FileSpreadsheet, FileText, FolderKanban, LoaderCircle, Printer, Repeat2, Save, Search, Sheet, Trash2, Truck, X } from 'lucide-react';
 import { areaLabel } from '@/lib/extension-catalog';
-import { download, toCsv, toJson, toXlsx, type ExportColumn, type ExportRow } from './report-export';
+import { quantityTotal } from '@/lib/report-quantities';
+import { download, toCsv, toDocx, toJson, toXlsx, type ExportColumn, type ExportRow } from './report-export';
 import styles from './reports-center.module.css';
 
-type DatasetId = 'projects' | 'materials' | 'movements' | 'loans' | 'records' | 'campaigns';
+type DatasetId = 'projects' | 'materials' | 'movements' | 'outflows' | 'loans' | 'records' | 'campaigns';
 type Column = ExportColumn & { date?: boolean };
-type Kpi = { label: string; value: number; detail?: string; tone?: 'warn' };
+type Kpi = { label: string; value: number | null; detail?: string; tone?: 'warn' };
 type Series = { key: string; label: string; value: (row: ExportRow) => number };
 type Dataset = {
   label: string; description: string; icon: typeof Boxes; columns: Column[]; defaults: string[];
@@ -37,17 +38,24 @@ const DATASETS: Record<DatasetId, Dataset> = {
   materials: {
     label: 'Materiais e estoque', description: 'Saldo, reservas, disponibilidade e alertas de cada item.', icon: Boxes,
     columns: [...shared, { key: 'material', label: 'Material' }, { key: 'classe', label: 'Classe' }, { key: 'categoria', label: 'Categoria' }, { key: 'unidade_medida', label: 'Unidade de medida' }, { key: 'saldo', label: 'Saldo físico', numeric: true }, { key: 'reservado', label: 'Reservado', numeric: true }, { key: 'disponivel', label: 'Disponível', numeric: true }, { key: 'alerta_minimo', label: 'Alerta mínimo', numeric: true }, { key: 'situacao_estoque', label: 'Situação do estoque' }, { key: 'condicao', label: 'Condição' }, { key: 'patrimonio', label: 'Patrimônio' }, { key: 'atualizado_em', label: 'Atualizado em', date: true }],
-    defaults: ['material', 'projeto', 'classe', 'categoria', 'saldo', 'reservado', 'disponivel', 'situacao_estoque', 'condicao'],
+    defaults: ['material', 'projeto', 'classe', 'categoria', 'unidade_medida', 'saldo', 'reservado', 'disponivel', 'situacao_estoque', 'condicao'],
     groups: ['classe', 'categoria', 'projeto', 'unidade_sigla', 'situacao_estoque', 'condicao', 'area_tematica'],
-    kpis: rows => [{ label: 'Itens', value: rows.length }, { label: 'Unidades em saldo', value: sum(rows, 'saldo') }, { label: 'Disponíveis', value: sum(rows, 'disponivel') }, { label: 'Com estoque baixo', value: count(rows, row => row.situacao_estoque === 'baixo'), tone: 'warn' }],
+    kpis: rows => [{ label: 'Itens', value: rows.length }, { label: 'Quantidade em saldo', value: quantityTotal(rows, 'saldo') }, { label: 'Disponíveis', value: quantityTotal(rows, 'disponivel') }, { label: 'Com estoque baixo', value: count(rows, row => row.situacao_estoque === 'baixo'), tone: 'warn' }],
   },
   movements: {
     label: 'Movimentações', description: 'Histórico de entradas, distribuições, consumos e ajustes de estoque.', icon: Repeat2,
-    columns: [{ key: 'data', label: 'Data', date: true }, ...shared, { key: 'material', label: 'Material' }, { key: 'classe', label: 'Classe' }, { key: 'tipo', label: 'Tipo' }, { key: 'sentido', label: 'Sentido' }, { key: 'quantidade', label: 'Quantidade', numeric: true }, { key: 'observacao', label: 'Observação' }],
-    defaults: ['data', 'material', 'projeto', 'tipo', 'sentido', 'quantidade', 'observacao'],
+    columns: [{ key: 'data', label: 'Data', date: true }, ...shared, { key: 'material', label: 'Material' }, { key: 'classe', label: 'Classe' }, { key: 'unidade_medida', label: 'Unidade de medida' }, { key: 'tipo', label: 'Tipo' }, { key: 'sentido', label: 'Sentido' }, { key: 'quantidade', label: 'Quantidade', numeric: true }, { key: 'observacao', label: 'Observação' }],
+    defaults: ['data', 'material', 'projeto', 'unidade_medida', 'tipo', 'sentido', 'quantidade', 'observacao'],
     groups: ['tipo', 'material', 'projeto', 'classe', 'unidade_sigla', 'mes'], dateKey: 'data',
     series: [{ key: 'in', label: 'Entradas', value: row => Math.max(num(row.quantidade), 0) }, { key: 'out', label: 'Saídas', value: row => Math.max(-num(row.quantidade), 0) }],
-    kpis: rows => [{ label: 'Movimentações', value: rows.length }, { label: 'Unidades que entraram', value: rows.reduce((total, row) => total + Math.max(num(row.quantidade), 0), 0) }, { label: 'Unidades que saíram', value: rows.reduce((total, row) => total + Math.max(-num(row.quantidade), 0), 0) }, { label: 'Materiais movimentados', value: distinct(rows, 'material') }],
+    kpis: rows => [{ label: 'Movimentações', value: rows.length }, { label: 'Quantidade que entrou', value: quantityTotal(rows, 'quantidade', 'in') }, { label: 'Quantidade que saiu', value: quantityTotal(rows, 'quantidade', 'out') }, { label: 'Materiais movimentados', value: distinct(rows, 'material') }],
+  },
+  outflows: {
+    label: 'Saídas institucionais', description: 'Distribuições e prêmios entregues, por projeto, material e unidade de medida. Ajustes, consumo e reservas ficam em seus próprios relatórios.', icon: Truck,
+    columns: [...shared, { key: 'material', label: 'Material' }, { key: 'classe', label: 'Classe' }, { key: 'unidade_medida', label: 'Unidade de medida' }, { key: 'tipo', label: 'Finalidade da saída' }, { key: 'quantidade', label: 'Quantidade entregue', numeric: true }, { key: 'movimentacoes', label: 'Movimentações', numeric: true }, { key: 'primeira_saida', label: 'Primeira saída', date: true }, { key: 'ultima_saida', label: 'Última saída', date: true }],
+    defaults: ['projeto', 'material', 'unidade_medida', 'tipo', 'quantidade', 'movimentacoes', 'primeira_saida', 'ultima_saida'],
+    groups: ['projeto', 'material', 'unidade_sigla', 'tipo', 'unidade_medida'],
+    kpis: rows => [{ label: 'Projetos atendidos', value: distinct(rows, 'projeto') }, { label: 'Materiais', value: distinct(rows, 'material') }, { label: 'Quantidade entregue', value: quantityTotal(rows, 'quantidade') }, { label: 'Movimentações', value: sum(rows, 'movimentacoes') }],
   },
   loans: {
     label: 'Empréstimos', description: 'Agenda, retiradas, devoluções e atrasos. Não inclui dados de contato.', icon: Truck,
@@ -71,7 +79,7 @@ const DATASETS: Record<DatasetId, Dataset> = {
     kpis: rows => [{ label: 'Eventos', value: rows.length }, { label: 'Participações', value: sum(rows, 'participacoes') }, { label: 'Tentativas', value: sum(rows, 'tentativas') }, { label: 'Prêmios entregues', value: sum(rows, 'premios_entregues') }],
   },
 };
-const ORDER: DatasetId[] = ['projects', 'materials', 'movements', 'loans', 'records', 'campaigns'];
+const ORDER: DatasetId[] = ['projects', 'materials', 'movements', 'outflows', 'loans', 'records', 'campaigns'];
 const LABELS: Record<string, Record<string, string>> = {
   abrangencia: { internal: 'Interno PROEX', external: 'Externo' },
   etapa: { active: 'Em andamento', past: 'Encerrado', catalog: 'Catálogo' },
@@ -104,7 +112,7 @@ function display(dataset: DatasetId, row: ExportRow, key: string): unknown {
 function monthOf(row: ExportRow, key?: string): string { const value = key ? String(row[key] ?? '') : ''; return /^\d{4}-\d{2}/.test(value) ? value.slice(0, 7) : ''; }
 function monthLabel(month: string) { const [year, index] = month.split('-'); return `${MONTHS[Number(index) - 1]}/${year.slice(2)}`; }
 function dateLabel(value: unknown) { const text = String(value ?? ''); return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text.split('-').reverse().join('/') : text; }
-const formatNumber = (value: number) => value.toLocaleString('pt-BR', { maximumFractionDigits: 1 });
+const formatNumber = (value: number | null) => value === null ? '—' : value.toLocaleString('pt-BR', { maximumFractionDigits: 1 });
 function readPresets(): Preset[] { try { const parsed = JSON.parse(localStorage.getItem(PRESETS_KEY) || '[]'); return Array.isArray(parsed) ? parsed.slice(0, 20) : []; } catch { return []; } }
 function writePresets(presets: Preset[]) { try { localStorage.setItem(PRESETS_KEY, JSON.stringify(presets)); } catch { /* armazenamento indisponível */ } }
 
@@ -124,12 +132,14 @@ export default function ReportsCenter({ projectId, unitId, area, from, to, scope
   const [measure, setMeasure] = useState('__count__');
   const [focus, setFocus] = useState('');
   const [search, setSearch] = useState('');
+  const [measurementUnit, setMeasurementUnit] = useState('');
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null);
   const [page, setPage] = useState(0), [pageSize, setPageSize] = useState(25);
   const [rows, setRows] = useState<ExportRow[]>([]), [truncated, setTruncated] = useState(false);
   const [loading, setLoading] = useState(true), [error, setError] = useState('');
   const [presets, setPresets] = useState<Preset[]>([]);
   const [presetName, setPresetName] = useState('');
+  const [exporting, setExporting] = useState<'pdf' | 'docx' | null>(null);
   const chartsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { const timer = window.setTimeout(() => setPresets(readPresets()), 0); return () => window.clearTimeout(timer); }, []);
@@ -154,27 +164,31 @@ export default function ReportsCenter({ projectId, unitId, area, from, to, scope
     setDataset(id); setColumns(preset?.columns.filter(key => next.columns.some(column => column.key === key)) ?? next.defaults);
     setGroupBy(preset && next.groups.includes(preset.groupBy) ? preset.groupBy : next.groups[0]);
     setMeasure(preset && (preset.measure === '__count__' || next.columns.some(column => column.key === preset.measure && column.numeric)) ? preset.measure : '__count__');
-    setSearch(preset?.search ?? ''); setFocus(''); setSort(null); setPage(0);
+    setSearch(preset?.search ?? ''); setMeasurementUnit(''); setFocus(''); setSort(null); setPage(0);
   }
 
   const valueOf = (row: ExportRow, key: string) => display(dataset, row, key);
   const numericColumns = config.columns.filter(column => column.numeric);
-  const measureLabel = measure === '__count__' ? (dataset === 'movements' ? 'movimentações' : 'linhas') : (config.columns.find(column => column.key === measure)?.label.toLowerCase() ?? '');
+  const unitOptions = [...new Set(rows.map(row => String(row.unidade_medida ?? '').trim()).filter(Boolean))].sort();
   const searched = useMemo(() => {
     const needle = search.trim().toLocaleLowerCase('pt-BR');
-    if (!needle) return rows;
-    return rows.filter(row => config.columns.some(column => String(display(dataset, row, column.key) ?? '').toLocaleLowerCase('pt-BR').includes(needle)));
-  }, [rows, search, config, dataset]);
+    const measured = measurementUnit ? rows.filter(row => String(row.unidade_medida ?? '').trim() === measurementUnit) : rows;
+    if (!needle) return measured;
+    return measured.filter(row => config.columns.some(column => String(display(dataset, row, column.key) ?? '').toLocaleLowerCase('pt-BR').includes(needle)));
+  }, [rows, search, config, dataset, measurementUnit]);
+  const mixedUnits = ['materials', 'movements', 'outflows'].includes(dataset) && quantityTotal(searched, 'quantidade') === null;
+  const effectiveMeasure = mixedUnits && ['saldo', 'reservado', 'disponivel', 'alerta_minimo', 'quantidade'].includes(measure) ? '__count__' : measure;
+  const measureLabel = effectiveMeasure === '__count__' ? (dataset === 'movements' ? 'movimentações' : 'linhas') : (config.columns.find(column => column.key === effectiveMeasure)?.label.toLowerCase() ?? '');
   const filtered = useMemo(() => focus ? searched.filter(row => String(display(dataset, row, groupBy) || 'Sem informação') === focus) : searched, [searched, focus, groupBy, dataset]);
 
   const breakdown = useMemo(() => {
     const totals = new Map<string, number>();
-    for (const row of searched) { const key = String(display(dataset, row, groupBy) || 'Sem informação'); totals.set(key, (totals.get(key) ?? 0) + (measure === '__count__' ? 1 : (dataset === 'movements' && measure === 'quantidade' ? Math.abs(num(row[measure])) : num(row[measure])))); }
+    for (const row of searched) { const key = String(display(dataset, row, groupBy) || 'Sem informação'); totals.set(key, (totals.get(key) ?? 0) + (effectiveMeasure === '__count__' ? 1 : (dataset === 'movements' && effectiveMeasure === 'quantidade' ? Math.abs(num(row[effectiveMeasure])) : num(row[effectiveMeasure])))); }
     const sorted = [...totals].sort((a, b) => groupBy === 'mes' ? a[0].localeCompare(b[0]) : b[1] - a[1]);
     if (groupBy === 'mes' || sorted.length <= 10) return sorted.map(([name, value]) => ({ name: groupBy === 'mes' && name !== 'Sem informação' ? monthLabel(name) : name, raw: name, value }));
     const top = sorted.slice(0, 9), rest = sorted.slice(9).reduce((total, [, value]) => total + value, 0);
     return [...top.map(([name, value]) => ({ name, raw: name, value })), { name: `Outros (${sorted.length - 9})`, raw: '', value: rest }];
-  }, [searched, groupBy, measure, dataset]);
+  }, [searched, groupBy, effectiveMeasure, dataset]);
 
   const timeline = useMemo(() => {
     if (!config.dateKey) return [];
@@ -184,11 +198,11 @@ export default function ReportsCenter({ projectId, unitId, area, from, to, scope
     return keys.map(month => {
       const bucket = months.get(month)!;
       const point: Record<string, number | string> = { name: monthLabel(month) };
-      if (config.series) for (const serie of config.series) point[serie.key] = bucket.reduce((total, row) => total + serie.value(row), 0);
-      else point.value = measure === '__count__' ? bucket.length : sum(bucket, measure);
+      if (config.series) for (const serie of config.series) point[serie.key] = bucket.reduce((total, row) => total + (mixedUnits ? (serie.value(row) > 0 ? 1 : 0) : serie.value(row)), 0);
+      else point.value = effectiveMeasure === '__count__' ? bucket.length : sum(bucket, effectiveMeasure);
       return point;
     });
-  }, [filtered, config, measure]);
+  }, [filtered, config, effectiveMeasure, mixedUnits]);
 
   const sorted = useMemo(() => {
     if (!sort) return filtered;
@@ -208,7 +222,20 @@ export default function ReportsCenter({ projectId, unitId, area, from, to, scope
   const stamp = new Date().toISOString().slice(0, 10);
   const fileBase = `proex-${dataset}-${stamp}`;
   const exportValue = (row: ExportRow, key: string) => { const column = config.columns.find(item => item.key === key); const value = valueOf(row, key); return column?.date ? dateLabel(value) : column?.numeric ? num(value) : value; };
-  const info: [string, string][] = [['Relatório', config.label], ['Recorte', scopeLabel || 'Todos os projetos que você pode consultar'], ['Período', from || to ? `${from ? dateLabel(from) : 'início'} a ${to ? dateLabel(to) : 'hoje'}` : 'Todo o período'], ['Busca', search || '—'], ['Destaque', focus ? `${config.columns.find(column => column.key === groupBy)?.label ?? 'Mês'}: ${focus}` : '—'], ['Linhas', String(sorted.length)], ['Gerado em', new Date().toLocaleString('pt-BR')], ['Privacidade', 'Sem contatos, contas ou identificadores de pessoas.']];
+  const info: [string, string][] = [['Relatório', config.label], ['Recorte', scopeLabel || 'Todos os projetos que você pode consultar'], ['Período', from || to ? `${from ? dateLabel(from) : 'início'} a ${to ? dateLabel(to) : 'hoje'}` : 'Todo o período'], ['Unidade de medida', measurementUnit || 'Todas, separadas em cada registro'], ['Busca', search || '—'], ['Destaque', focus ? `${config.columns.find(column => column.key === groupBy)?.label ?? 'Mês'}: ${focus}` : '—'], ['Linhas', String(sorted.length)], ['Gerado em', new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) + ' (Brasília)'], ['Compartilhamento', 'Recorte das suas permissões. Revise os textos livres antes de compartilhar.']];
+
+  async function exportDocument(format: 'pdf' | 'docx') {
+    if (exporting) return;
+    setExporting(format); setError('');
+    try {
+      const blob = format === 'docx'
+        ? toDocx(config.label, exportColumns, sorted, exportValue, info)
+        : await (await import('./report-pdf')).toPdf(config.label, exportColumns, sorted, exportValue, info);
+      download(`${fileBase}.${format}`, blob);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Não foi possível gerar o documento. Tente novamente.');
+    } finally { setExporting(null); }
+  }
 
   function toggleColumn(key: string) { setColumns(current => current.includes(key) ? current.filter(item => item !== key) : config.columns.map(column => column.key).filter(item => item === key || current.includes(item))); }
   function savePreset() {
@@ -243,10 +270,12 @@ export default function ReportsCenter({ projectId, unitId, area, from, to, scope
         <p>Escolha o assunto, ajuste o recorte com os filtros do topo e as datas acima, veja os gráficos e exporte só as colunas que interessam.</p>
       </div>
       <div className={styles.exportBar} role="group" aria-label="Exportar relatório">
-        <button type="button" className="p-button p-button-primary" disabled={!sorted.length} onClick={() => download(`${fileBase}.xlsx`, toXlsx(config.label, exportColumns, sorted, exportValue, info))}><FileSpreadsheet size={16} />Excel</button>
-        <button type="button" className="p-button p-button-subtle" disabled={!sorted.length} onClick={() => download(`${fileBase}.csv`, toCsv(exportColumns, sorted, exportValue))}><Sheet size={16} />CSV</button>
-        <button type="button" className="p-button p-button-subtle" disabled={!sorted.length} onClick={() => download(`${fileBase}.json`, toJson({ relatorio: config.label, filtros: Object.fromEntries(info) }, exportColumns, sorted, exportValue))}><FileJson size={16} />JSON</button>
-        <button type="button" className="p-button p-button-subtle" disabled={!sorted.length} onClick={print}><Printer size={16} />Imprimir / PDF</button>
+        <button type="button" className="p-button p-button-primary" disabled={!sorted.length || !!exporting} onClick={() => download(`${fileBase}.xlsx`, toXlsx(config.label, exportColumns, sorted, exportValue, info))}><FileSpreadsheet size={16} />Excel</button>
+        <button type="button" className="p-button p-button-subtle" disabled={!sorted.length || !!exporting} onClick={() => void exportDocument('pdf')}>{exporting === 'pdf' ? <LoaderCircle size={16} className="animate-spin" /> : <FileText size={16} />}PDF</button>
+        <button type="button" className="p-button p-button-subtle" disabled={!sorted.length || !!exporting} onClick={() => void exportDocument('docx')}>{exporting === 'docx' ? <LoaderCircle size={16} className="animate-spin" /> : <FileText size={16} />}Word</button>
+        <button type="button" className="p-button p-button-subtle" disabled={!sorted.length || !!exporting} onClick={() => download(`${fileBase}.csv`, toCsv(exportColumns, sorted, exportValue))}><Sheet size={16} />CSV</button>
+        <button type="button" className="p-button p-button-subtle" disabled={!sorted.length || !!exporting} onClick={() => download(`${fileBase}.json`, toJson({ relatorio: config.label, filtros: Object.fromEntries(info) }, exportColumns, sorted, exportValue))}><FileJson size={16} />JSON</button>
+        <button type="button" className="p-button p-button-subtle" disabled={!sorted.length || !!exporting} onClick={print}><Printer size={16} />Imprimir</button>
       </div>
     </header>
 
@@ -257,7 +286,8 @@ export default function ReportsCenter({ projectId, unitId, area, from, to, scope
     <div className={styles.controls}>
       <label className={`p-field ${styles.search}`}><span>Buscar nas linhas</span><span className={styles.searchBox}><Search size={15} /><input value={search} onChange={event => { setSearch(event.target.value); setPage(0); }} placeholder="Nome, material, título, observação…" />{search && <button type="button" aria-label="Limpar busca" onClick={() => setSearch('')}><X size={14} /></button>}</span></label>
       <label className="p-field"><span>Agrupar gráfico por</span><select value={groupBy} onChange={event => { setGroupBy(event.target.value); setFocus(''); }}>{config.groups.map(key => <option key={key} value={key}>{key === 'mes' ? 'Mês' : config.columns.find(column => column.key === key)?.label}</option>)}</select></label>
-      <label className="p-field"><span>Medida</span><select value={measure} onChange={event => setMeasure(event.target.value)}><option value="__count__">Quantidade de {dataset === 'movements' ? 'movimentações' : 'linhas'}</option>{numericColumns.map(column => <option key={column.key} value={column.key}>Soma de {column.label.toLowerCase()}</option>)}</select></label>
+      <label className="p-field"><span>Medida</span><select value={effectiveMeasure} onChange={event => setMeasure(event.target.value)}><option value="__count__">Quantidade de {dataset === 'movements' ? 'movimentações' : 'linhas'}</option>{numericColumns.map(column => <option key={column.key} value={column.key} disabled={mixedUnits && ['saldo', 'reservado', 'disponivel', 'alerta_minimo', 'quantidade'].includes(column.key)}>Soma de {column.label.toLowerCase()}</option>)}</select></label>
+      {unitOptions.length > 0 && <label className="p-field"><span>Unidade de medida</span><select value={measurementUnit} onChange={event => { setMeasurementUnit(event.target.value); setFocus(''); setPage(0); }}><option value="">Todas as medidas</option>{unitOptions.map(unit => <option key={unit} value={unit}>{unit}</option>)}</select></label>}
       <details className={styles.columns}>
         <summary><Columns3 size={16} />Colunas ({chosen.length}/{config.columns.length})</summary>
         <div>
@@ -266,6 +296,7 @@ export default function ReportsCenter({ projectId, unitId, area, from, to, scope
         </div>
       </details>
     </div>
+    {mixedUnits && <p className="p-form-help" role="status">Há medidas físicas diferentes neste recorte. Selecione uma unidade de medida para somar quantidades; os gráficos mostram contagens de registros.</p>}
 
     <div className={styles.presets}>
       <span><Save size={14} />Modelos salvos</span>
@@ -277,18 +308,18 @@ export default function ReportsCenter({ projectId, unitId, area, from, to, scope
     <div className={styles.summary} aria-live="polite">
       <span className={styles.summaryIcon}><Icon size={20} /></span>
       <p><strong>{config.label}</strong> · {loading ? 'carregando…' : `${formatNumber(filtered.length)} ${filtered.length === 1 ? 'linha' : 'linhas'}`}{scopeLabel ? ` · ${scopeLabel}` : ''}{from || to ? ` · ${from ? dateLabel(from) : 'início'} a ${to ? dateLabel(to) : 'hoje'}` : ''}</p>
-      {focus && <button type="button" className={styles.focusChip} onClick={() => setFocus('')}>{groupLabel}: {groupBy === 'mes' && /^d{4}-d{2}$/.test(focus) ? monthLabel(focus) : focus}<X size={13} /></button>}
+      {focus && <button type="button" className={styles.focusChip} onClick={() => setFocus('')}>{groupLabel}: {groupBy === 'mes' && /^\d{4}-\d{2}$/.test(focus) ? monthLabel(focus) : focus}<X size={13} /></button>}
       {truncated && <small className={styles.warn}>Mostrando as primeiras 5.000 linhas. Refine o recorte para ver tudo.</small>}
     </div>
 
     <div className={styles.kpis}>
-      {kpis.map(kpi => <div key={kpi.label} className={`${styles.kpi} ${kpi.tone === 'warn' && kpi.value > 0 ? styles.kpiWarn : ''}`}><span>{kpi.label}</span><strong>{loading ? '…' : formatNumber(kpi.value)}</strong></div>)}
+      {kpis.map(kpi => <div key={kpi.label} className={`${styles.kpi} ${kpi.tone === 'warn' && (kpi.value ?? 0) > 0 ? styles.kpiWarn : ''}`}><span>{kpi.label}</span><strong>{loading ? '…' : formatNumber(kpi.value)}</strong></div>)}
     </div>
 
     {loading ? <div className={styles.loading}><LoaderCircle className="p-spin" size={22} />Carregando dados…</div> : !rows.length ? <div className={styles.empty}><FileText size={22} /><strong>Nada para mostrar neste recorte</strong><span>Altere os filtros, o período ou escolha outro assunto.</span></div> : <>
       <div className={styles.charts} ref={chartsRef}>
         <figure className={styles.chart}>
-          <figcaption><strong>{measure === '__count__' ? 'Distribuição' : `Soma de ${measureLabel}`} por {groupLabel.toLowerCase()}</strong><small>Clique em uma barra para destacar só aquele grupo na tabela.</small></figcaption>
+          <figcaption><strong>{effectiveMeasure === '__count__' ? 'Distribuição' : `Soma de ${measureLabel}`} por {groupLabel.toLowerCase()}</strong><small>Clique em uma barra para destacar só aquele grupo na tabela.</small></figcaption>
           <div style={{ height: Math.max(180, breakdown.length * 34 + 40) }} role="img" aria-label={`Gráfico de barras: ${breakdown.map(item => `${item.name} ${formatNumber(item.value)}`).join(', ')}`}>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={breakdown} layout="vertical" margin={{ top: 4, right: 44, bottom: 4, left: 4 }} barCategoryGap={6}>
@@ -296,25 +327,25 @@ export default function ReportsCenter({ projectId, unitId, area, from, to, scope
                 <XAxis type="number" allowDecimals={false} tick={{ fill: 'var(--rc-axis)', fontSize: 11 }} axisLine={false} tickLine={false} />
                 <YAxis type="category" dataKey="name" width={150} tick={{ fill: 'var(--rc-axis)', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(value: string) => value.length > 24 ? `${value.slice(0, 23)}…` : value} />
                 <Tooltip cursor={{ fill: 'var(--rc-hover)' }} content={<ChartTooltip unit={measureLabel} />} />
-                <Bar dataKey="value" name={measure === '__count__' ? 'Total' : `Soma de ${measureLabel}`} fill="var(--rc-1)" radius={[0, 4, 4, 0]} maxBarSize={22} cursor="pointer" label={{ position: 'right', fill: 'var(--rc-axis)', fontSize: 11, formatter: (value: unknown) => formatNumber(Number(value) || 0) }}
+                <Bar dataKey="value" name={effectiveMeasure === '__count__' ? 'Total' : `Soma de ${measureLabel}`} fill="var(--rc-1)" radius={[0, 4, 4, 0]} maxBarSize={22} cursor="pointer" label={{ position: 'right', fill: 'var(--rc-axis)', fontSize: 11, formatter: (value: unknown) => formatNumber(Number(value) || 0) }}
                   onClick={(entry: { payload?: { raw?: string } }) => { const raw = entry?.payload?.raw; if (!raw) return; setFocus(current => current === raw ? '' : raw); setPage(0); }} />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </figure>
         {timeline.length > 0 && <figure className={styles.chart}>
-          <figcaption><strong>Evolução por mês</strong><small>{config.series ? 'Unidades que entraram e saíram do estoque.' : `${measure === '__count__' ? 'Quantidade' : `Soma de ${measureLabel}`} por mês${DATASETS[dataset].dateKey === 'inicio' ? ' de início' : ''}.`}</small></figcaption>
+          <figcaption><strong>Evolução por mês</strong><small>{config.series ? (mixedUnits ? 'Contagem de movimentações de entrada e saída, sem somar medidas diferentes.' : `Quantidades em ${measurementUnit || unitOptions[0] || 'unidade informada'} que entraram e saíram do estoque.`) : `${effectiveMeasure === '__count__' ? 'Quantidade' : `Soma de ${measureLabel}`} por mês${DATASETS[dataset].dateKey === 'inicio' ? ' de início' : ''}.`}</small></figcaption>
           <div style={{ height: 260 }} role="img" aria-label={`Gráfico mensal com ${timeline.length} meses`}>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={timeline} margin={{ top: 8, right: 8, bottom: 4, left: -12 }} barGap={2}>
                 <CartesianGrid vertical={false} stroke="var(--rc-grid)" />
                 <XAxis dataKey="name" tick={{ fill: 'var(--rc-axis)', fontSize: 11 }} axisLine={false} tickLine={false} />
                 <YAxis allowDecimals={false} tick={{ fill: 'var(--rc-axis)', fontSize: 11 }} axisLine={false} tickLine={false} />
-                <Tooltip cursor={{ fill: 'var(--rc-hover)' }} content={<ChartTooltip unit={config.series ? 'unidades' : measureLabel} />} />
+                <Tooltip cursor={{ fill: 'var(--rc-hover)' }} content={<ChartTooltip unit={config.series ? (mixedUnits ? 'movimentações' : measurementUnit || unitOptions[0] || 'unidades') : measureLabel} />} />
                 {config.series ? <>
                   <Legend iconType="circle" wrapperStyle={{ fontSize: 12, color: 'var(--rc-axis)' }} />
                   {config.series.map((serie, index) => <Bar key={serie.key} dataKey={serie.key} name={serie.label} fill={`var(--rc-${index + 1})`} radius={[4, 4, 0, 0]} maxBarSize={28} />)}
-                </> : <Bar dataKey="value" name={measure === '__count__' ? 'Total' : `Soma de ${measureLabel}`} fill="var(--rc-1)" radius={[4, 4, 0, 0]} maxBarSize={36} />}
+                </> : <Bar dataKey="value" name={effectiveMeasure === '__count__' ? 'Total' : `Soma de ${measureLabel}`} fill="var(--rc-1)" radius={[4, 4, 0, 0]} maxBarSize={36} />}
               </BarChart>
             </ResponsiveContainer>
           </div>

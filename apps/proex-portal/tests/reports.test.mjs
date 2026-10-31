@@ -55,7 +55,7 @@ test('every report dataset intersects an explicit project or unit filter with th
   const db = fixture(); t.after(() => db.native.close());
   const now = '2026-10-10T15:00:00.000Z';
   db.native.prepare("INSERT INTO campaigns(id,project_id,name,starts_at,ends_at,status,created_at) VALUES('campaign-a','project-a','Event A',?,?,'draft',?),('campaign-b','project-b','Event B',?,?,'draft',?)").run(now, '2026-10-11T15:00:00.000Z', now, now, '2026-10-11T15:00:00.000Z', now);
-  for (const dataset of ['projects','materials','movements','loans','records','campaigns']) {
+  for (const dataset of ['projects','materials','movements','outflows','loans','records','campaigns']) {
     for (const [own, other] of [['project-a','project-b'],['project-b','project-a']]) {
       const manager = actor('manager', own);
       const forbidden = await reportRows(db, manager, { dataset, projectId: other });
@@ -148,3 +148,19 @@ for (const [status, dueOffset, expected] of [
     assert.equal(rows[0].em_atraso, expected);
   });
 }
+
+
+test('institutional outflows total only effective distribution and delivered prizes within the date and project scope', async t => {
+  const db = fixture(); t.after(() => db.native.close());
+  const insert = db.native.prepare("INSERT INTO stock_movements(id,item_id,delta,kind,note,actor_id,created_at) VALUES(?,'item-b',?,?,'No personal details','test',?)");
+  insert.run('m-3', -2, 'redeem', '2026-10-08T12:00:00.000Z');
+  insert.run('m-4', -3, 'adjust', '2026-10-09T12:00:00.000Z');
+  insert.run('m-5', -4, 'consume', '2026-10-10T12:00:00.000Z');
+  insert.run('m-6', -5, 'distribute', '2026-11-01T12:00:00.000Z');
+  insert.run('m-7', -1, 'distribute', '2026-10-06T12:00:00.000Z');
+  const { rows } = await reportRows(db, actor('inventory', 'project-b'), { dataset: 'outflows', from: '2026-10-01', to: '2026-10-31' });
+  assert.deepEqual(rows.map(row => [row.projeto,row.material,row.unidade_medida,row.tipo,row.quantidade,row.movimentacoes]), [['Projeto B','Camisetas','unidade','distribute',11,2],['Projeto B','Camisetas','unidade','redeem',2,1]]);
+  assert.deepEqual([rows[0].primeira_saida,rows[0].ultima_saida], ['2026-10-05','2026-10-06']);
+  assert.ok(!JSON.stringify(rows).includes('No personal details'));
+  assert.deepEqual((await reportRows(db, actor('loans', 'project-b'), { dataset: 'outflows' })).rows, []);
+});

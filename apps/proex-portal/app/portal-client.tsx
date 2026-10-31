@@ -5,6 +5,7 @@ import PhysicalAttendance from '@/components/portal/physical-attendance';
 import CampaignForm from '@/components/portal/campaign-form';
 import PendingPrizes from '@/components/portal/pending-prizes';
 import ProjectPanel from '@/components/portal/project-panel';
+import AssistedImportPanel from '@/components/portal/assisted-import-panel';
 import TeamPanel from '@/components/portal/team-panel';
 import AdminPrivacyPanel from '@/components/portal/admin-privacy-panel';
 import SyncSettingsPanel from '@/components/portal/sync-settings-panel';
@@ -593,7 +594,10 @@ export default function PortalClient({ initial }: {
 
       {tab === 'overview' && <DashboardPanel modules={allowedTabs} pinned={navigation.pinned} frequent={navigation.frequent} onNavigate={navigate} onTogglePin={navigation.togglePin} displayName={string(user.displayName)} role={role} roleLabel={roleNames[role] || 'Equipe PROEX'} projects={scopedProjects} items={visibleItems} loans={visibleLoans} campaigns={visibleCampaigns} selectedProjectId={filter} unitName={unitFilter === '__unassigned__' ? 'Sem unidade vinculada' : string(visibleUnits.find(unit => unit.id === unitFilter)?.acronym || visibleUnits.find(unit => unit.id === unitFilter)?.name)} now={now} onSelectProject={selectProject} known={{ projects: Array.isArray(data.projects), items: Array.isArray(data.items), loans: Array.isArray(data.loans), campaigns: Array.isArray(data.campaigns) }} />}
 
-      {tab === 'projects' && <ProjectPanel projects={projects} projectTypes={list(data.projectTypes)} organizationalUnits={organizationalUnits} canCreate={canGlobal('projects.manage')} canEdit={id => canProject(id, 'campaigns.manage')} mutate={mutate} onSelect={id => { selectProject(id); navigate('overview'); }}/>}
+      {tab === 'projects' && <>
+        <AssistedImportPanel kind="project" projects={projects.map(project => ({ id: string(project.id), name: string(project.name), version: Number(project.version ?? 1) }))} projectTypes={list(data.projectTypes).map(type => ({ id: string(type.id), label: string(type.label) }))} organizationalUnits={organizationalUnits.map(unit => ({ id: string(unit.id), name: string(unit.name), acronym: string(unit.acronym) }))} canCreateProject={canGlobal('projects.manage')} canWrite={id => canProject(id, 'campaigns.manage')} defaultProjectId={filter} onImported={async () => { await refresh(); }}/>
+        <ProjectPanel projects={projects} projectTypes={list(data.projectTypes)} organizationalUnits={organizationalUnits} canCreate={canGlobal('projects.manage')} canEdit={id => canProject(id, 'campaigns.manage')} mutate={mutate} onSelect={id => { selectProject(id); navigate('overview'); }}/>
+      </>}
 
       {tab === 'events' && <>
         <Section title="Roleta e dado" description="Prepare as regras, os brindes e o atendimento das dinâmicas de cada ação.">{visibleCampaigns.length ? <div className="p-event-grid">{visibleCampaigns.map(c => <article className="p-card p-event-card" key={c.id}>
@@ -644,6 +648,7 @@ export default function PortalClient({ initial }: {
             </Section>}{can('campaigns.manage') && !prizeProjects.length && <div className="p-explainer"><Gift size={22} /><div><h3>Quais projetos usam roleta e dado?</h3><p>No cadastro do projeto, marque “Habilitar dinâmicas e brindes” para preparar campanhas e compor os kits desta área.</p><button type="button" className="p-text-link" onClick={() => navigate('projects')}>Abrir projetos <ArrowRight size={15} /></button></div></div>}</>}
 
       {tab === 'materials' && <div className="p-materials-panel">
+        <AssistedImportPanel kind="asset" projects={projects.map(project => ({ id: string(project.id), name: string(project.name), version: Number(project.version ?? 1) }))} items={items.map(item => ({ id: string(item.id), name: string(item.name), project_id: string(get(item, 'projectId', 'project_id')), asset_code: string(item.asset_code) }))} canWrite={id => canProject(id, 'inventory.manage')} defaultProjectId={filter} onImported={async () => { await refresh(); }}/>
         {prizeProjects.length > 0 && <nav className="p-material-tabs" aria-label="Áreas de materiais"><button type="button" aria-pressed={!showPrizeView} className={!showPrizeView ? 'is-active' : ''} onClick={() => setMaterialsView('catalog')}><Boxes size={18} />Catálogo e estoque</button><button type="button" aria-pressed={showPrizeView} className={showPrizeView ? 'is-active' : ''} onClick={() => setMaterialsView('prizes')}><Gift size={18} />Brindes e kits</button></nav>}
         <div hidden={showPrizeView}>
         <MaterialDetailDrawer itemId={selectedMaterialId} onClose={() => setSelectedMaterialId(null)} onChanged={async () => { await refresh(); }} />
@@ -812,7 +817,7 @@ export default function PortalClient({ initial }: {
         <button className="p-button p-button-subtle" onClick={() => { setReportFrom(''); setReportTo(''); }}>Todo o período</button>
         <p>Período de todos os relatórios desta página, em datas de Brasília. Contagens de participação, tentativa e entrega usam a data de cada registro.</p>
         </div>
-        <ReportsCenter projectId={filter} unitId={unitFilter} area={areaFilter} from={reportFrom} to={reportTo} available={['projects', 'materials', 'movements', 'loans', 'records', 'campaigns']}
+        <ReportsCenter projectId={filter} unitId={unitFilter} area={areaFilter} from={reportFrom} to={reportTo} available={['projects', 'materials', 'movements', 'outflows', 'loans', 'records', 'campaigns']}
           scopeLabel={[filter ? projectName(filter) : '', unitFilter ? (unitFilter === '__unassigned__' ? 'Sem unidade vinculada' : string(visibleUnits.find(unit => unit.id === unitFilter)?.acronym || visibleUnits.find(unit => unit.id === unitFilter)?.name)) : '', areaFilter ? (areaFilter === '__none__' ? 'Sem área temática' : THEMATIC_AREAS.find(item => item.key === areaFilter)?.label ?? '') : ''].filter(Boolean).join(' · ')} />
         <h2 className="p-reports-legacy-title">Indicadores das dinâmicas</h2>
         <div className="p-stats">
