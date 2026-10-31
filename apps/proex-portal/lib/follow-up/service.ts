@@ -20,14 +20,28 @@ function taskWorkAssertion(db:D1Database,actor:PortalActor,taskId:string,manager
 async function taskWorkPermission(db:D1Database,actor:PortalActor,taskId:string){const row=await one(db,`SELECT ${authority('caller.user_id','t.organization_id','t.project_id',true)} direct,${workAuthority('caller.user_id')} delegated FROM followup_tasks t JOIN(SELECT ? user_id) caller WHERE t.id=?`,[actor.userId,taskId]);if(!row||!row.direct&&!row.delegated)fail('Você não possui autorização para acompanhar esta demanda.','followup_forbidden',403);return{delegatedOnly:!row!.direct};}
 async function taskAtomic(db:D1Database,actor:PortalActor,taskId:string,statements:D1PreparedStatement[],managerOnly=false){try{return(await db.batch([taskWorkAssertion(db,actor,taskId,managerOnly),...statements])).slice(1);}catch(error){if(String(error).includes('followup_authority_changed'))fail('Sua autorização para esta demanda mudou.','followup_forbidden',403);if(String(error).includes('followup_version_changed'))fail('O registro mudou. Reabra a edição.','followup_conflict',409);throw error;}}
 async function checklistRow(db:D1Database,actor:PortalActor,checklistId:string,write=false){const row=await one(db,`SELECT c.* FROM followup_checklists c WHERE c.id=? AND ${authority('?','c.organization_id','c.project_id',write)}`,[checklistId,actor.userId]);if(!row)fail('Conferência não encontrada neste contexto.','followup_not_found',404);return row!;}
+// One guarded SQL read per page/detail projection. Strong SnapshotD1 reads check
+// storage version on every query; per-task SELECT loops would add network RTTs.
+const taskProjectionSql = `SELECT t.*,COALESCE(p.name,'Organização') project_name,o.name organization_name,
+ ${authority('caller.user_id','t.organization_id','t.project_id',true)} can_edit,
+ ${workAuthority('caller.user_id')} can_work,
+ ${authority('caller.user_id','t.organization_id','t.project_id',true,true)} can_delegate_work,
+ (SELECT id FROM followup_checklists WHERE task_id=t.id) checklist_id,
+ (SELECT COALESCE(json_group_array(json_object('user_id',visible.user_id,'team_id',visible.team_id,'name',visible.name)),'[]') FROM (
+ SELECT a.user_id,a.team_id,CASE WHEN a.team_id IS NOT NULL THEN team.name ELSE COALESCE(NULLIF(profile.display_name,''),'Integrante') END name
+ FROM followup_assignees a LEFT JOIN profiles profile ON profile.user_id=a.user_id LEFT JOIN followup_teams team ON team.id=a.team_id
+ WHERE a.task_id=t.id AND a.removed_at IS NULL AND ${authority('caller.user_id','t.organization_id','t.project_id')}
+ AND ((a.user_id IS NOT NULL AND EXISTS(SELECT 1 FROM portal_users person WHERE person.user_id=a.user_id AND ${activeAccount('person')}) AND ${authority('a.user_id','t.organization_id','t.project_id')}) OR (team.organization_id=t.organization_id AND team.status='active')) ORDER BY name,a.id
+ ) visible) assignees_json
+ FROM followup_tasks t JOIN(SELECT ? user_id) caller LEFT JOIN projects p ON p.id=t.project_id JOIN organizations o ON o.id=t.organization_id`;
+function projectedTask(task:Row):Row {
+ const {created_by:_createdBy,can_edit:canEdit,can_work:canWork,can_delegate_work:canDelegateWork,assignees_json:assigneesJson,...safe}=task;void _createdBy;
+ return {...safe,canEdit:Boolean(canEdit),canWork:Boolean(canWork),canDelegateWork:Boolean(canDelegateWork),assignees:JSON.parse(assigneesJson??'[]')};
+}
 async function projection(db:D1Database,actor:PortalActor,taskId:string):Promise<Row>{
- const task=await one(db,`SELECT t.*,COALESCE(p.name,'Organização') project_name,o.name organization_name,${authority('caller.user_id','t.organization_id','t.project_id',true)} can_edit,${workAuthority('caller.user_id')} can_work,${authority('caller.user_id','t.organization_id','t.project_id',true,true)} can_delegate_work,(SELECT id FROM followup_checklists WHERE task_id=t.id) checklist_id
- FROM followup_tasks t JOIN(SELECT ? user_id) caller LEFT JOIN projects p ON p.id=t.project_id JOIN organizations o ON o.id=t.organization_id WHERE t.id=? AND ${authority('caller.user_id','t.organization_id','t.project_id')}`,[actor.userId,taskId]);
+ const task=await one(db,`${taskProjectionSql} WHERE t.id=? AND ${authority('caller.user_id','t.organization_id','t.project_id')}`,[actor.userId,taskId]);
  if(!task)fail('Demanda não encontrada neste contexto ou seu acesso mudou.','followup_not_found',404);
- const assignees=await all(db,`SELECT a.user_id,a.team_id,CASE WHEN a.team_id IS NOT NULL THEN team.name ELSE COALESCE(NULLIF(profile.display_name,''),'Integrante') END name
- FROM followup_assignees a JOIN followup_tasks t ON t.id=a.task_id LEFT JOIN profiles profile ON profile.user_id=a.user_id LEFT JOIN followup_teams team ON team.id=a.team_id
- WHERE a.task_id=? AND a.removed_at IS NULL AND ${authority('?','t.organization_id','t.project_id')} AND ((a.user_id IS NOT NULL AND EXISTS(SELECT 1 FROM portal_users person WHERE person.user_id=a.user_id AND ${activeAccount('person')}) AND ${authority('a.user_id','t.organization_id','t.project_id')}) OR (team.organization_id=t.organization_id AND team.status='active')) ORDER BY name,a.id`,[taskId,actor.userId]);
- const {created_by:_createdBy,can_edit:canEdit,can_work:canWork,can_delegate_work:canDelegateWork,...safe}=task!;void _createdBy;return{...safe,canEdit:Boolean(canEdit),canWork:Boolean(canWork),canDelegateWork:Boolean(canDelegateWork),assignees};
+ return projectedTask(task!);
 }
 export async function followupDetail(db:D1Database,actor:PortalActor|null,taskId:unknown){actorRequired(actor);const task=await projection(db,actor,id(taskId)!);
  const checklist=task.checklist_id?await checklistRow(db,actor,task.checklist_id):null;
@@ -39,13 +53,12 @@ export async function followupDetail(db:D1Database,actor:PortalActor|null,taskId
  await requireScope(db,actor,scopeOf(task));
  return{task,checklist:checklist?{id:checklist.id,task_id:checklist.task_id,title:checklist.title,status:checklist.status,version:checklist.version,rows,followups}:null,workCandidates,workGrants,history:revisions.map(r=>({version:r.version,createdAt:r.created_at,snapshot:JSON.parse(r.snapshot_json)}))};
 }
-export async function followupList(db:D1Database,actor:PortalActor|null,input:Record<string,unknown>={}){actorRequired(actor);const conditions=[authority('?','t.organization_id','t.project_id')],values:unknown[]=[actor.userId];
+export async function followupList(db:D1Database,actor:PortalActor|null,input:Record<string,unknown>={}){actorRequired(actor);const conditions=[authority('caller.user_id','t.organization_id','t.project_id')],values:unknown[]=[actor.userId];
  if(input.projectId){conditions.push('t.project_id=?');values.push(id(input.projectId));}if(input.organizationId){conditions.push('t.organization_id=?');values.push(id(input.organizationId));}
  if(input.status&&input.status!=='all'){conditions.push('t.status=?');values.push(choices(input.status,TASK_STATES));}if(input.priority&&input.priority!=='all'){conditions.push('t.priority=?');values.push(choices(input.priority,TASK_PRIORITIES));}
  const search=text(input.search,120,true);if(search){conditions.push("(t.title LIKE ? ESCAPE '\\' OR t.body LIKE ? ESCAPE '\\')");const needle='%'+search.replace(/[\\%_]/g,'\\$&')+'%';values.push(needle,needle);}
- const offset=input.offset===undefined?0:integer(input.offset,50000);const rows=await all(db,`SELECT t.id FROM followup_tasks t WHERE ${conditions.join(' AND ')} ORDER BY CASE t.status WHEN 'completed' THEN 1 WHEN 'cancelled' THEN 1 ELSE 0 END,CASE t.priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,COALESCE(t.due_at,'9999'),t.updated_at DESC,t.id LIMIT 51 OFFSET ?`,[...values,offset]);
- const tasks=[];for(const row of rows.slice(0,50)){try{tasks.push(await projection(db,actor,row.id));}catch(error){if(!(error instanceof HttpError&&error.status===404))throw error;}}
- return{tasks,hasMore:rows.length>50,nextOffset:offset+50};
+ const offset=input.offset===undefined?0:integer(input.offset,50000);const rows=await all(db,`${taskProjectionSql} WHERE ${conditions.join(' AND ')} ORDER BY CASE t.status WHEN 'completed' THEN 1 WHEN 'cancelled' THEN 1 ELSE 0 END,CASE t.priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,COALESCE(t.due_at,'9999'),t.updated_at DESC,t.id LIMIT 51 OFFSET ?`,[...values,offset]);
+ return{tasks:rows.slice(0,50).map(projectedTask),hasMore:rows.length>50,nextOffset:offset+50};
 }
 async function people(db:D1Database,scope:Scope){return all(db,`SELECT DISTINCT u.user_id userId,COALESCE(NULLIF(p.display_name,''),'Integrante') name FROM portal_users u LEFT JOIN profiles p ON p.user_id=u.user_id WHERE ${activeAccount('u')} AND ${authority('u.user_id','scope.organization_id','scope.project_id')} ORDER BY name,u.user_id`.replace('FROM portal_users u','FROM(SELECT ? organization_id,? project_id) scope JOIN portal_users u'),[scope.organizationId,scope.projectId]);}
 async function orgPeople(db:D1Database,orgId:string){return all(db,`SELECT DISTINCT u.user_id userId,COALESCE(NULLIF(p.display_name,''),'Integrante') name FROM portal_users u LEFT JOIN profiles p ON p.user_id=u.user_id WHERE ${activeAccount('u')} AND EXISTS(SELECT 1 FROM members m WHERE m.user_id=u.user_id AND m.revoked_at IS NULL AND (m.organization_id=? OR(m.role='owner' AND m.project_id IS NULL AND m.organization_id IS NULL))) ORDER BY name,u.user_id`,[orgId]);}
