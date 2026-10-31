@@ -1,4 +1,4 @@
-import { requireCapability, type PortalActor } from './access';
+import { requireLiveCapability, capabilityBatch, type PortalActor } from './access';
 import { iso, one } from './database';
 import { HttpError } from './errors';
 
@@ -18,7 +18,7 @@ export async function cancelAttendance(
     FROM attempts a JOIN participations p ON p.id=a.participation_id
     JOIN campaigns c ON c.id=p.campaign_id WHERE a.id=?`, [attemptId]);
   if (!attempt) throw new HttpError(404, 'Atendimento não encontrado.', 'attendance_not_found');
-  requireCapability(actor, 'participation.operate', attempt.project_id);
+  await requireLiveCapability(db, actor, 'participation.operate', attempt.project_id);
   if (attempt.state === 'cancelled' && attempt.result === 'cancelled' && !attempt.has_prize) {
     return { cancelled: true };
   }
@@ -27,7 +27,7 @@ export async function cancelAttendance(
   }
 
   const now = iso();
-  const results = await db.batch([
+  const results = await capabilityBatch(db,actor,'participation.operate',attempt.project_id,[
     db.prepare(`UPDATE attempts SET state='cancelled',result='cancelled'
       WHERE id=? AND state='pending'
         AND NOT EXISTS(SELECT 1 FROM entitlements WHERE attempt_id=attempts.id)
@@ -49,7 +49,7 @@ export async function cancelAttendance(
   ]);
   if (results[0].meta.changes !== 1) {
     const latest = await one(db, 'SELECT state,result FROM attempts WHERE id=?', [attempt.id]);
-    if (latest?.state === 'cancelled' && latest.result === 'cancelled') return { cancelled: true };
+    if (latest?.state === 'cancelled' && latest.result === 'cancelled') { await requireLiveCapability(db,actor,'participation.operate',attempt.project_id); return { cancelled: true }; }
     throw new HttpError(409, 'O atendimento ou seu acesso mudou. Atualize antes de continuar.', 'attendance_changed');
   }
   return { cancelled: true };

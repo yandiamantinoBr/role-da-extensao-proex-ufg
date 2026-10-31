@@ -49,6 +49,38 @@ function database() {
 }
 const createInput = () => ({ name: 'A'.repeat(120), shortName: 'PROEX', description: 'An institutional project', status: 'active', color: '#54216c', officialUrl: 'https://example.invalid/project', startsAt: '2026-10-20T10:00:00-03:00', endsAt: '2027-10-20T10:00:00-03:00', location: 'Campus', operationKey: crypto.randomUUID() });
 
+const replayActions=['project.create','project.update','project.link.create','project.schedule.create','call.create','project.type.create'];
+function replayInput(action){
+ const common={projectId:'project-a',operationKey:crypto.randomUUID()};
+ if(action==='project.create')return createInput();
+ if(action==='project.update')return{...common,id:'project-a',expectedVersion:1,name:'Private project revision',description:'Private replay content'};
+ if(action==='project.link.create')return{...common,label:'Private link',url:'https://example.invalid/private',kind:'official'};
+ if(action==='project.schedule.create')return{...common,title:'Private schedule',status:'planned',startsAt:'2026-11-01T10:00:00.000Z',endsAt:'2026-11-01T11:00:00.000Z',note:'Private replay content'};
+ if(action==='call.create')return{...common,title:'Private call',status:'draft',description:'Private replay content'};
+ return{...common,key:'replay-type',label:'Private type',status:'active'};
+}
+for(const action of replayActions){
+ test(`${action} receipts do not disclose results to a revoked cached actor`,async()=>{
+  const db=database();try{
+   const acting=actor(db,action==='project.create'||action==='project.type.create'?'owner':'manager',action==='project.create'||action==='project.type.create'?null:'project-a'),input=replayInput(action);
+   const first=await projectAction(db,acting,action,input),replay=await projectAction(db,acting,action,input);assert.equal(first.id,replay.id);assert.equal(replay.duplicate,true);
+   db.native.prepare('UPDATE members SET revoked_at=? WHERE id=?').run(new Date().toISOString(),acting.members[0].id);
+   await assert.rejects(projectAction(db,acting,action,input),error=>error.status===403&&error.code==='access_changed');
+  }finally{db.native.close();}
+ });
+ test(`${action} lost-reply recovery rechecks authority without undoing or duplicating the committed write`,async()=>{
+  const db=database();try{
+   const acting=actor(db,action==='project.create'||action==='project.type.create'?'owner':'manager',action==='project.create'||action==='project.type.create'?null:'project-a'),input=replayInput(action),batch=db.batch.bind(db);let loseReply=true;
+   db.batch=async statements=>{const result=await batch(statements);if(loseReply){loseReply=false;db.native.prepare('UPDATE members SET revoked_at=? WHERE id=?').run(new Date().toISOString(),acting.members[0].id);throw new Error('reply_lost_after_commit');}return result;};
+   await assert.rejects(projectAction(db,acting,action,input),{status:403});
+   assert.equal(db.native.prepare('SELECT COUNT(*) n FROM audit WHERE action=?').get(action).n,1);
+   db.native.prepare('UPDATE members SET revoked_at=NULL WHERE id=?').run(acting.members[0].id);
+   const recovered=await projectAction(db,acting,action,input);assert.equal(recovered.duplicate,true);
+   assert.equal(db.native.prepare('SELECT COUNT(*) n FROM audit WHERE action=?').get(action).n,1);
+  }finally{db.native.close();}
+ });
+}
+
 test('global owner creates complete project metadata without truncating a 120-character name', async () => {
   const db = database();
   try {

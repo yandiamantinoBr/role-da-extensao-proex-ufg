@@ -84,6 +84,28 @@ async function fixture(t) {
 }
 const input = { attemptId: 'attempt', reason: 'abandoned' };
 
+function removeAccess(f,condition){
+ const now=new Date().toISOString();
+ if(condition==='revoked'){f.native.prepare('UPDATE members SET revoked_at=? WHERE user_id=?').run(now,f.actor.userId);return;}
+ f.native.prepare("INSERT OR IGNORE INTO portal_users(user_id,email,status,activation_pending,created_at,updated_at) VALUES(?,?,'active',0,?,?)").run(f.actor.userId,f.actor.email,now,now);
+ if(condition==='blocked')f.native.prepare("UPDATE portal_users SET status='blocked' WHERE user_id=?").run(f.actor.userId);
+ if(condition==='pending')f.native.prepare('UPDATE portal_users SET activation_pending=1 WHERE user_id=?').run(f.actor.userId);
+ if(condition==='anonymized')f.native.prepare('UPDATE portal_users SET anonymized_at=? WHERE user_id=?').run(now,f.actor.userId);
+}
+for(const condition of ['revoked','blocked','pending','anonymized']){
+ for(const phase of ['before-call','before-batch','replay']){
+  test(`cancel attendance rejects ${condition} access ${phase} without unauthorized state or audit changes`,async t=>{
+   const f=await fixture(t);
+   if(phase==='replay')await cancelAttendance(f.db,f.actor,input);
+   const before={attempt:f.native.prepare("SELECT state,result FROM attempts WHERE id='attempt'").get(),reserved:f.native.prepare("SELECT reserved FROM items WHERE id='pin'").get().reserved,audit:f.native.prepare("SELECT COUNT(*) n FROM audit WHERE action='participation.cancel'").get().n};
+   if(phase==='before-batch'){const batch=f.db.batch.bind(f.db);f.db.batch=async statements=>{removeAccess(f,condition);return batch(statements);};}
+   else removeAccess(f,condition);
+   await assert.rejects(cancelAttendance(f.db,f.actor,input),error=>error.status===403&&error.code==='access_changed');
+   assert.deepEqual({attempt:f.native.prepare("SELECT state,result FROM attempts WHERE id='attempt'").get(),reserved:f.native.prepare("SELECT reserved FROM items WHERE id='pin'").get().reserved,audit:f.native.prepare("SELECT COUNT(*) n FROM audit WHERE action='participation.cancel'").get().n},before);
+  });
+ }
+}
+
 test('cancellation releases both coverage reservations without consuming stock or inventing a result', async (t) => {
   const f = await fixture(t);
   assert.deepEqual(await cancelAttendance(f.db, f.actor, input), { cancelled: true });
@@ -126,7 +148,7 @@ test('another project operator cannot cancel or release inventory', async (t) =>
 test('a revoked in-flight actor snapshot cannot mutate the attendance', async (t) => {
   const f = await fixture(t);
   f.native.prepare('UPDATE members SET revoked_at=?').run(new Date().toISOString());
-  await assert.rejects(cancelAttendance(f.db, f.actor, input), { status: 409, code: 'attendance_changed' });
+  await assert.rejects(cancelAttendance(f.db, f.actor, input), { status: 403, code: 'access_changed' });
   assert.equal(f.native.prepare('SELECT reserved FROM items').get().reserved, 4);
   assert.equal(f.native.prepare('SELECT state FROM attempts').get().state, 'pending');
 });
