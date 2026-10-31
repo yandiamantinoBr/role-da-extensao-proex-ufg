@@ -23,3 +23,7 @@
   .trigger:focus-visible { outline-color: #fff; }
   .counter { border-color: var(--purple); }
 }
+
+.unread { border-color: #93c5fd; background: #eff6ff; color: #1e40af; }
+.unread a { color: inherit; }
+:global(html[data-theme=dark]) .unread { border-color: #47678e; background: #1d304d; color: #c4dcff; }
