@@ -7,6 +7,7 @@
   button { color: inherit; cursor: pointer; }
   button:disabled { cursor: not-allowed; opacity: .55; }
   fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
+  label:has(> input:is([type=checkbox],[type=radio])) { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; }
 }
 
 :root{--purple:#3b1753;--purple-light:#6b3c85;--orange:#ffaa3d;--aqua:#77dce5;--ink:#292333;--muted:#746c7e;--line:#e8e3ee;--paper:#fff;--canvas:#f7f6fa;--danger:#a92e4c;--radius:18px;--background:var(--canvas);--foreground:var(--ink);--font-sans:Arial,Helvetica,sans-serif}
