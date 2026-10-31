@@ -1,0 +1,12 @@
+.signals { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; min-width: 0; }
+.signal { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; min-height: 28px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-soft); color: var(--text-secondary); font-size: 12px; line-height: 1.4; font-weight: 600; overflow-wrap: anywhere; }
+.signal > svg { flex-shrink: 0; }
+.signal[data-tone=info] { background: #eff6ff; color: #1e40af; border-color: #bfdbfe; }
+.signal[data-tone=warning] { background: #fff8e6; color: #854d0e; border-color: #f0cf8c; }
+.signal[data-tone=danger] { background: #fef2f2; color: #991b1b; border-color: #fecaca; }
+.signal[data-tone=success] { background: #ecfdf5; color: #166534; border-color: #b7e4cd; }
+.date { font-size: 11px; font-weight: 400; }
+:global(html[data-theme=dark]) .signal[data-tone=info] { background: #1d304d; color: #c4dcff; border-color: #47678e; }
+:global(html[data-theme=dark]) .signal[data-tone=warning] { background: #392d1d; color: #f4d09a; border-color: #795a32; }
+:global(html[data-theme=dark]) .signal[data-tone=danger] { background: #452233; color: #ffd0dd; border-color: #85455f; }
+:global(html[data-theme=dark]) .signal[data-tone=success] { background: #19382e; color: #b8edd3; border-color: #376a55; }
