@@ -1,0 +1,7 @@
+.panel{min-width:0;display:grid;gap:18px;container-type:inline-size;container-name:participant-settings;overflow-wrap:anywhere}
+.panel h3,.panel p{margin:0}.panel p,.panel li{font-size:13px;line-height:1.8}.panel fieldset{border:0;padding:0;margin:0;min-width:0;display:grid;gap:16px}.panel legend{font-size:16px;font-weight:700;margin-bottom:18px}
+.panel :global(.p-field){min-width:0;margin:0}.panel textarea{width:100%;min-width:0;max-width:100%}.panel button{min-height:44px;white-space:normal}
+.readiness{padding:18px;border:1px solid var(--line);border-radius:12px;background:var(--surface-soft);display:grid;gap:14px}.readiness ul{padding-left:20px;margin:0}.readiness code{overflow-wrap:anywhere}
+.check{display:flex;gap:12px;align-items:flex-start;min-height:44px;padding-block:6px;font-size:13px;line-height:1.7;cursor:pointer}.check input{width:19px;height:19px;margin-top:2px;flex-shrink:0;accent-color:var(--brand-ink)}
+.actions{display:flex;gap:12px;justify-content:flex-end;flex-wrap:wrap}.actions button{flex:0 1 auto}
+@container participant-settings (max-width:600px){.actions{flex-direction:column}.actions button{width:100%;justify-content:center}.panel textarea{font-size:16px}}

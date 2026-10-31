@@ -11,3 +11,5 @@ export function inviteSecret():string|undefined{return vars().BETTER_AUTH_SECRET
 export function isStandalone():boolean{return vars().PROEX_STANDALONE==='1';}
 /** Segredo de uso único para criar o primeiro responsável fora do Sites. */
 export function setupToken():string|undefined{const value=vars().SETUP_TOKEN;return value&&value.length>=24?value:undefined;}
+/** Dedicated sender; values remain server-only and never belong in public responses/logs. */
+export function participantEmailEnvironment(){const values=vars();return{provider:values.PUBLIC_PARTICIPANT_EMAIL_PROVIDER,apiKey:values.PUBLIC_PARTICIPANT_EMAIL_API_KEY,from:values.PUBLIC_PARTICIPANT_EMAIL_FROM,domainId:values.PUBLIC_PARTICIPANT_EMAIL_DOMAIN_ID,origin:values.BETTER_AUTH_URL};}

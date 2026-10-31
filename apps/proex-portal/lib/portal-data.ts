@@ -173,6 +173,7 @@ async function reportMetrics(db: D1Database, scope: Scope, actor:PortalActor): P
 /** Protected, explicitly projected snapshot. No token hashes or storage keys leave the server. */
 export async function portalSnapshot(db: D1Database, actor: PortalActor | null): Promise<Row> {
   if (!actor) throw new HttpError(401, 'Entre com sua conta para continuar.', 'unauthenticated');
+  if (!actor.members.length) throw new HttpError(403, 'A conta de participante não concede acesso ao painel da equipe.', 'portal_membership_required');
   const ownAccount = await one(db, 'SELECT status,activation_pending FROM portal_users WHERE user_id=?', [actor.userId]);
   if (ownAccount && (ownAccount.status !== 'active' || ownAccount.activation_pending !== 0)) {
     throw new HttpError(403, 'Seu acesso ao portal não está ativo.', 'account_inactive');

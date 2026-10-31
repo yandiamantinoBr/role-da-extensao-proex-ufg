@@ -43,6 +43,18 @@ try {
     for (const sql of statements) await db.prepare(sql).run();
   }
 
+  // New public access remains closed even in a deployed/compiled runtime until
+  // notice, provider and sender-domain readiness are explicitly configured.
+  const publicAvailability = await worker.dispatchFetch(`${origin}/api/participants`);
+  assert.equal(publicAvailability.status, 200);
+  assert.equal((await publicAvailability.json()).available, false);
+  const publicSignup = await worker.dispatchFetch(`${origin}/api/participants`, {
+    method: 'POST', headers: { Origin: origin, 'Content-Type': 'application/json', 'X-Proex-Action': '1' },
+    body: JSON.stringify({ action: 'request', email: 'public-fixture@example.test', purpose: 'signup', noticeAccepted: true }),
+  });
+  assert.equal(publicSignup.status, 503);
+  assert.equal((await db.prepare('SELECT COUNT(*) n FROM participant_email_challenges').first()).n, 0);
+
   // Only a synthetic issuer and invitation are seeded. The Worker itself creates
   // the auth user, hashes its password, grants its membership and issues cookies.
   const tag = crypto.randomBytes(6).toString('hex');
