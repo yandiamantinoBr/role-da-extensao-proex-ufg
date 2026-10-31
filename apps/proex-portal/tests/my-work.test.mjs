@@ -39,6 +39,16 @@ test('personal work never infers assignments from creation, borrower, documentar
  const work=await myWork(f.db,worker);assert.equal(work.totals.tasks.total,0);assert.equal(work.tasks.items.length,0);assert.equal(work.totals.responsibilities.total,0);assert.ok(isMyWorkResponse(work));
 });
 
+test('contextual entity links follow the primary area, including a task linked to both a loan and its material',async t=>{
+ const f=fixture(t),manager=await f.actor('manager-a'),viewer=await f.actor('viewer-a');
+ f.native.prepare("UPDATE items SET category='equipment',stock=1 WHERE id='item-a'").run();
+ f.insert('loans',{id:'loan-a',project_id:'project-a',item_id:'item-a',action_name:'Retirada sintética',borrower_name:'Pessoa sintética',starts_at:Date.now(),ends_at:Date.now()+3600000,status:'reserved',created_by:'manager-a',created_at:f.now});
+ task(f,{id:'multiple-references',user:'manager-a',item_id:'item-a',loan_id:'loan-a',campaign_id:'campaign-a'});
+ const work=await myWork(f.db,manager),target=work.tasks.items[0].target;assert.equal(target.kind,'loans');assert.equal(target.id,'loan-a');assert.equal(target.name,'Retirada sintética');assert.equal(target.href,'/?module=loans&project=project-a&loanId=loan-a');assert.equal(new URL(target.href,'https://portal.example.invalid').searchParams.has('itemId'),false);
+ for(const [area,extra,param,value] of [['materials',{itemId:'item-a'},'itemId','item-a'],['loans',{itemId:null,loanId:'loan-a'},'loanId','loan-a'],['campaigns',{itemId:null,campaignId:'campaign-a'},'campaignId','campaign-a'],['projects',{itemId:null},'detailProject','project-a']]){const saved=await responsibility(f,manager,save({area,...extra,userIds:['viewer-a']}));const url=new URL(saved.responsibility.target.href,'https://portal.example.invalid');assert.equal(url.searchParams.get(param),value);assert.equal(saved.responsibility.target.id,value);if(area!=='projects'){const restricted=await responsibilityDetail(f.db,viewer,saved.responsibility.id);assert.equal(restricted.responsibility.target.href,null);assert.equal(restricted.responsibility.target.name,null);assert.equal(restricted.responsibility.target.id,null);}}
+ const general=await responsibility(f,manager,save({itemId:null}));assert.equal(general.responsibility.target.id,null);assert.equal(general.responsibility.target.href,'/?module=materials&project=project-a');
+});
+
 test('complete SQL counts, attention union and real status filters remain correct beyond 50 rows and overlapping teams',async t=>{
  const f=fixture(t),worker=await f.actor('worker-a'),a=await team(f,['worker-a']),b=await team(f,['worker-a'],'TI'),today=new Date(Date.now()-10800000).toISOString().slice(0,10);
  for(let i=0;i<67;i++)task(f,{id:'task-'+String(i).padStart(3,'0'),teams:[a,b],status:i<7?'completed':i<17?'blocked':i<27?'in_progress':'open',due:i<17?'2001-01-01':today});

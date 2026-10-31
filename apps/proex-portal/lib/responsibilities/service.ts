@@ -3,11 +3,12 @@ import { all, one, uid, iso, type Row } from '../database';
 import { prepareMutation } from '../mutations';
 import { actorRequired, activeAccount, authority, requireScope } from '../follow-up/scope';
 import { id, ids, integer, choices, onlyKeys, fail } from '../follow-up/contracts';
-import { WORK_AREAS, type WorkArea, type Responsibility, type WorkTarget } from '../my-work/contracts';
+import { WORK_AREAS, type WorkArea, type OperationalArea, type Responsibility, type WorkTarget } from '../my-work/contracts';
 import { responsibilityRead, responsibilityManage, responsibilityDirect, responsibilityTeam, targetAccess, assignmentVia } from './scope';
 
-export function contextLink(area: WorkArea, projectId: string) {const q=new URLSearchParams({module:area==='campaigns'?'events':area,project:projectId});return '/?'+q;}
-export function workTarget(row: Row): WorkTarget {const canOpen=Boolean(row.can_open),area=row.area as WorkArea;return{kind:area,id:canOpen?(row.item_id??row.loan_id??row.campaign_id??row.project_id):null,name:canOpen?(row.target_name??row.project_name):null,canOpen,href:canOpen?contextLink(area,row.project_id):null};}
+export function contextLink(area: WorkArea, projectId: string, targetId: string|null=null) {const q=new URLSearchParams({module:area==='campaigns'?'events':area,project:projectId});if(area==='projects')q.set('detailProject',projectId);else if(targetId)q.set(area==='materials'?'itemId':area==='loans'?'loanId':'campaignId',targetId);return '/?'+q;}
+export function contextTargetId(row: Row,area: OperationalArea):string|null {return area==='loans'?row.loan_id??null:area==='materials'?row.item_id??null:area==='campaigns'?row.campaign_id??null:area==='projects'?row.project_id??null:null;}
+export function workTarget(row: Row): WorkTarget {const area=row.area as OperationalArea,canOpen=area!=='general'&&Boolean(row.can_open),targetId=contextTargetId(row,area);return{kind:area,id:canOpen?targetId:null,name:canOpen?(row.target_name??row.project_name):null,canOpen,href:canOpen?contextLink(area as WorkArea,row.project_id,targetId):null};}
 export function responsibilityProjection(actor: PortalActor) {
  const accesses=WORK_AREAS.filter(a=>a!=='projects').map(area=>({area,...targetAccess(actor,area,'s.project_id')}));
  const canOpen=`CASE ${accesses.map(a=>`WHEN s.area='${a.area}' THEN (${a.sql})`).join(' ')} ELSE 1 END`;
