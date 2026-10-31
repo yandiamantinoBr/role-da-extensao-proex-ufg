@@ -2,6 +2,10 @@
 @import "tw-animate-css";
 @import "../vendor/shadcn-tailwind-4.13.0.css";
 
+@media (max-width: 720px) {
+  .theme-switch select { font-size: 16px; }
+}
+
 /* Resets belong to the base layer so component utilities can style controls. */
 @layer base {
   button { color: inherit; cursor: pointer; }
