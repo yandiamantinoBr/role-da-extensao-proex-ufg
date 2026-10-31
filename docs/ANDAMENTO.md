@@ -1,5 +1,7 @@
 # Continuidade da execução · 31/10/2026
 
+**Resumo para retomar:** `CONTINUAR-AQUI.md` concentra o estado atual, agentes e próximos passos. As seções abaixo preservam a trilha histórica.
+
 Leia `AGENTS.md` e `REQUISITOS-E-CONTINUIDADE.md`. Push/PR/merge/deploy de todas as versões do Portal PROEX estão autorizados por Yan. Não solicite novamente essa autorização. Não publique dados privados ou segredos.
 
 ## Estado mais recente · V11 publicada
