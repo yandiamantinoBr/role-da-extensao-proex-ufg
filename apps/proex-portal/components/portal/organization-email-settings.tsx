@@ -10,15 +10,17 @@ export default function OrganizationEmailSettings({ userId, organizations }: {
   organizations: Organization[];
 }) {
   const [selected, setSelected] = useState('');
+  const [expanded, setExpanded] = useState(false);
   const active = organizations.filter(organization => organization.status === 'active');
   const organizationId = active.some(organization => organization.id === selected)
     ? selected : active[0]?.id;
 
   if (!organizationId) return null;
 
-  return <section className="p-card mt-5 min-w-0 space-y-4" aria-label="Preferências de e-mail por organização">
+  return <details className="p-card mt-5 min-w-0" onToggle={event => setExpanded(event.currentTarget.open)}>
+    <summary className="min-h-11 cursor-pointer py-2 text-lg font-semibold">Avisos por e-mail</summary>
+    {expanded && <div className="space-y-4 pt-3" role="region" aria-label="Preferências de e-mail por organização">
     <div>
-      <h2 className="text-lg font-semibold">Avisos por e-mail</h2>
       <p className="text-sm text-[var(--muted)]">Escolha em quais organizações deseja receber avisos. A equipe precisa configurar a conta remetente antes do primeiro envio.</p>
     </div>
     {active.length > 1 && <label className="block text-sm">Organização dos avisos
@@ -27,5 +29,6 @@ export default function OrganizationEmailSettings({ userId, organizations }: {
       </select>
     </label>}
     <EmailSettingsPanel key={`${userId}:${organizationId}`} organizationId={organizationId}/>
-  </section>;
+    </div>}
+  </details>;
 }
