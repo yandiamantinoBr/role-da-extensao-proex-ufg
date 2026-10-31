@@ -185,13 +185,20 @@ export async function projectDetail(db:D1Database,actor:PortalActor|null,id:stri
   const project=await one(db,`SELECT p.*,t.key type_key,t.label type_label,u.name unit_name,u.acronym unit_acronym FROM projects p LEFT JOIN project_types t ON t.id=p.type_id LEFT JOIN organizational_units u ON u.id=p.unit_id WHERE p.id=? AND ${authority.sql}`,[id,...authority.values]);if(!project)throw new HttpError(404,'Projeto não encontrado.');
   const canEdit=permitted(actor,'campaigns.manage',id)||permitted(actor,'projects.manage',null),inventory=permitted(actor,'inventory.read',id),loans=permitted(actor,'loans.read',id),reports=permitted(actor,'reports.read',id),campaigns=canEdit||permitted(actor,'participation.operate',id);
   const visible=accessibleProjects(actor),visibility=visible===null?'1=1':visible.length?`p.id IN (${visible.map(()=>'?').join(',')})`:'1=0';
+  const availabilityNow=Date.now(),inventoryAuthority=projectAuthoritySql(actor,['inventory.read'],'i.project_id');
   const [types,links,calls,schedule,versions,relatedProjects,items,events,loanRows,records]=await Promise.all([
     all(db,'SELECT * FROM project_types ORDER BY label,id'),all(db,'SELECT * FROM project_links WHERE project_id=? ORDER BY kind,label,id',[id]),
     all(db,`SELECT c.*,(SELECT json_group_array(pc.project_id) FROM project_calls pc WHERE pc.call_id=c.id) linked_ids_json FROM calls c WHERE c.project_id=? OR EXISTS(SELECT 1 FROM project_calls pc WHERE pc.call_id=c.id AND pc.project_id=?) ORDER BY c.opens_at DESC,c.title`,[id,id]),
     all(db,'SELECT * FROM project_schedule_items WHERE project_id=? ORDER BY starts_at DESC,id',[id]),
     canEdit?all(db,`SELECT id,entity_type,entity_id,version,snapshot_json,created_at FROM entity_versions WHERE project_id=? AND entity_type IN ('project','call','project_link','project_schedule_item') ORDER BY created_at DESC,id DESC LIMIT 200`,[id]):Promise.resolve([]),
     all(db,`SELECT p.id,p.name,p.status,p.lifecycle,p.parent_id FROM projects p WHERE (p.parent_id=? OR p.id=?) AND (${visibility}) ORDER BY p.name`,[id,project.parent_id??'',...(visible??[])]),
-    inventory?all(db,'SELECT id,name,category,unit,stock,reserved,low_stock,condition FROM items WHERE project_id=? ORDER BY name',[id]):Promise.resolve(null),
+    inventory?all(db,`SELECT i.id,i.name,i.category,i.unit,i.stock,i.reserved,i.low_stock,i.condition,
+      CASE WHEN i.condition='active' AND (i.category<>'equipment' OR NOT EXISTS (
+        SELECT 1 FROM loans l WHERE l.item_id=i.id AND l.project_id=i.project_id
+          AND (l.status='out' OR (l.status='reserved' AND l.starts_at<=? AND l.ends_at>?))
+      )) THEN MAX(0,i.stock-i.reserved) ELSE 0 END AS available
+      FROM items i WHERE i.project_id=? AND ${inventoryAuthority.sql} ORDER BY i.name`,
+      [availabilityNow,availabilityNow,id,...inventoryAuthority.values]):Promise.resolve(null),
     campaigns?all(db,'SELECT id,name,location,starts_at,ends_at,status FROM campaigns WHERE project_id=? ORDER BY starts_at DESC',[id]):Promise.resolve(null),
     loans?all(db,`SELECT l.id,l.item_id,i.name item_name,l.action_name,l.starts_at,l.ends_at,l.status FROM loans l JOIN items i ON i.id=l.item_id AND i.project_id=l.project_id WHERE l.project_id=? ORDER BY l.starts_at DESC LIMIT 100`,[id]):Promise.resolve(null),
     inventory||loans||reports||canEdit?listRecords(db,actor,{projectId:id,limit:100}):Promise.resolve({records:[]}),
