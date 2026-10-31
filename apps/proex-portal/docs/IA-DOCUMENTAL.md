@@ -28,7 +28,7 @@ A prévia IA usa HMAC v3, ligada a ator, organização, projeto/bem, revisão da
 
 ## Limites e continuidade
 
-Não houve publicação, leitura de segredo nem chamada real aos provedores. Testes usam SQLite/migrações reais, HTTP injetado e documentos/contas sintéticos. A revisão independente, integração de metadados, builds e CUA finais serão registrados no handoff. O coordenador mantém montagem, backup real, publicação e Vault.
+Não houve publicação, leitura de segredo nem chamada real aos provedores. Testes usam SQLite/migrações reais, HTTP injetado e documentos/contas sintéticos. A revisão independente, integração de metadados, builds e CUA estão registrados abaixo. O coordenador mantém montagem, backup real, publicação e Vault.
 
 ## Verificação local e revisão independente (2026-10-31)
 
@@ -40,3 +40,5 @@ Não houve publicação, leitura de segredo nem chamada real aos provedores. Tes
 
 Evidências locais (fora do repositório): `C:/Users/yan1n/AppData/Local/Temp/proex-document-375-dark.png`, `proex-document-375-receipt.png`, `proex-document-414-light.png`, `proex-document-1250-light.png`. São capturas de dados sintéticos, não evidência de provedor ou produção.
 
+
+Gates finais limpos na composição `babab32` + metadados do coordenador `0dfa34e` (cherry-pick local `ce3d47c`): 666/666 testes completos tanto em Node 24.22.1 quanto em 26.12.1; TypeScript sem erros; ESLint zero erros e três avisos anteriores (navegação em Registros e duas imagens da Equipe); builds Worker e Node concluídos. Smoke compilado Worker confirmou conta/sessão, API, identidade canônica, roundtrip portátil MCP e revogação imediata. Os builds limpos já não contêm helper HTTP falso nem rota de iframe QA. A reconciliação confirmou 83 tabelas e nenhuma divergência do modelo/journal/snapshot. A inspeção CUA corresponde ao mesmo comportamento final, sob transporte sintético temporário explicitado acima; não valida conectividade real do modelo.
