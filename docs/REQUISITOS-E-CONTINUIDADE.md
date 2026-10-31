@@ -51,3 +51,8 @@ Planilha global exige acesso restrito à administração. Visualizações filtra
 3. Atualizar a tabela de requisitos com implementação, teste, integração, publicação e comprovação em produção separadamente. Um plano ou mock não fecha requisito.
 4. Registrar comando/revisão/ambiente, evidência, riscos, próximo passo e dependências. Atualizar Contexto/Plano/Registro na Vault; Decisões só recebe decisões humanas.
 5. Preservar as configurações e arquivos de segredos. Não imprimir valores, exportar sessões, enviar dados reais para fixtures ou publicar capturas privadas. Quando uma conexão precisar de autenticação humana, registrar a lacuna e avançar nas frentes independentes.
+
+
+## Estado comprovado após a V10 · 31/10/2026
+
+R01: V9 e V10 publicadas/verificadas, PRs8/9 e SHAs registrados. R02: primeira sincronização real retomada, 28 tabelas; ACL/cópia privada e script conferidos, execução automática ainda pendente. R03: convites limitados e catálogo oficial publicados, sem envio real de convites em QA. R05/R06/R08/R09: importação com prévia e relatórios reais publicados/testados; ausências de extração permanecem explícitas. R07 estruturado, R04 organizações e R10–R13 IA/STT/TI estão em integração local. R16: backup completo real recuperado e cópia privada fora do Supabase relida; recorrência/transferência da chave e público continuam pendentes. Nenhum plano fecha os itens restantes. Veja `ENTREGA-V10.md` e a seção mais recente de `ANDAMENTO.md`.

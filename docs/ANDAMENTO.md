@@ -27,3 +27,15 @@ Leia `AGENTS.md` e `REQUISITOS-E-CONTINUIDADE.md`. Push/PR/merge/deploy de todas
 6. Manter Vault Contexto/Plano/Registro e relatório de entrega com implementação/testes/publicação/prova separados. Preservar histórico. Atualização local da Vault não comprova nuvem.
 
 Não executar SINCRONIZAR.cmd, reset/clean/restore destrutivos, env pull ou leitura de segredos. Não alterar Kino. Node24.22.1 já está no runtime empacotado; dependências novas desta entrega pinadas pdf-lib1.17.1/fontkit1.1.1/pdfjs6.4.299, sem chamadas pagas de IA.
+
+
+## Estado posterior à V10 publicada
+
+- Produção: PR #9, merge `11dbebf`, Vercel READY `dpl_7BsFKBxE5USsAHSm89Zq9tJetdZH`. Relatórios reais PDF/Word e health conferidos. Candidato final 448/448 Node24, tipos/lint/builds/CI aprovados, CUA375/414/1250.
+- Backup REAL completo recuperado fisicamente e hashes conferidos; cópia criptografada Drive privada relida idêntica. Localizador da chave DPAPI e recuperação sem imprimir valores estão na Vault. A chave não está no repo; Bitwarden e backup recorrente ainda pendentes.
+- Sheets real: completed2026-10-31T14:21:21.016Z, 141 linhas/28 tabelas/0 conflitos; script31/10 e destino Vercel comprovados. Ativação de dados30min/anexos1h executada; instalação e execução automática posterior ainda sendo conferidas.
+- WAF do projeto: `rule_proex_canonical_host_isolation_7Qp7ju`, host diferente do canonical → deny; ativo e conferido após propagação. Canonical200, URLs V10/V9 403. Previews têm apenas Corepack, sem banco/auth de produção. **Não publique 0008 se esse isolamento regredir, nem faça rollback para código anterior à 0008 com banco novo.**
+- Checkout coordenador agora `v11-coordenacao`, baseado no merge V10. Integrados localmente: org15ff698 (b59 resolvido1bb), UI154a5ac (b98), IA d363cb1 (5a), import org c071286 (841), patrimônio1bf39e4 (85), mapper6678d5f (3fc). Ainda SEM push/deploy da 0008. Falta montar PortalClient/MaterialDrawer, integrar 0011 IA/STT final e compatibilidade backup, reconciliar journal/Drizzle, executar gates e CUA integrado.
+- IA/STT/TI por org em worktree v10-importacoes, branch v12-assistente-organizacoes: revisão independente fechou corrida de cota e gravação de plano após revogação; aguarda hash final. Nenhuma chamada paga/conexão real foi realizada. Checar microphone=(self) ao integrar voz.
+- Público opcional A05 em branch v14-acesso-publico (worktree v10-acessos), migração0012 reservada; desativado até configuração/aviso/envio verificados. Não foi publicado. Não enviar e-mails reais como QA.
+- QA local anterior24999 foi encerrado por processos identificados, mas revisão automática recusou exclusão de sua pasta sintética; preservada. QA44864 foi encerrado por stdin `parar` e sua limpeza normal passou. Scripts/chaves/capturas reais estão em `.sites-runtime` e AppData, ignorados. Não publicar esses arquivos.
