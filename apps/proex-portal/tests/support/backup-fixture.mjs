@@ -4,6 +4,9 @@ import { nativeFixture, migrations } from './traffic-fixture.mjs';
 export { migrations };
 export function backupFixture() {
   const f = nativeFixture(); const actor = f.owner(), now = new Date().toISOString();
+  // The owner fixture must carry its actual membership when exercising the
+  // participant/team boundary; an empty membership array describes a participant.
+  actor.members = f.native.prepare('SELECT * FROM members WHERE user_id=?').all(actor.userId).map(row => ({ ...row }));
   f.native.exec('CREATE TABLE d1_migrations(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT UNIQUE,applied_at TEXT DEFAULT CURRENT_TIMESTAMP); CREATE TABLE backup_test_private(secret TEXT); INSERT INTO backup_test_private VALUES(\'synthetic-only-private-state\');');
   for (const migration of migrations) f.native.prepare('INSERT INTO d1_migrations(name) VALUES(?)').run(migration.name);
   const objects = ['document', 'record', 'avatar', 'orphan'].map(kind => ({ key: `synthetic/private/${kind}`, storageId: sha256(`synthetic/private/${kind}`), contentType: kind === 'document' ? 'application/pdf' : 'image/png', data: Buffer.from(`synthetic bytes for ${kind}`) }));

@@ -8,7 +8,7 @@ import { quantityTotal } from '@/lib/report-quantities';
 import { download, toCsv, toDocx, toJson, toXlsx, type ExportColumn, type ExportRow } from './report-export';
 import styles from './reports-center.module.css';
 
-type DatasetId = 'projects' | 'materials' | 'movements' | 'outflows' | 'loans' | 'records' | 'campaigns';
+type DatasetId = 'projects' | 'materials' | 'movements' | 'outflows' | 'loans' | 'records' | 'campaigns' | 'demands' | 'reviews';
 type Column = ExportColumn & { date?: boolean };
 type Kpi = { label: string; value: number | null; detail?: string; tone?: 'warn' };
 type Series = { key: string; label: string; value: (row: ExportRow) => number };
@@ -85,8 +85,23 @@ const DATASETS: Record<DatasetId, Dataset> = {
     groups: ['projeto', 'situacao', 'unidade_sigla', 'area_tematica', 'mes'], dateKey: 'inicio',
     kpis: rows => [{ label: 'Eventos', value: rows.length }, { label: 'Participações', value: sum(rows, 'participacoes') }, { label: 'Tentativas', value: sum(rows, 'tentativas') }, { label: 'Prêmios entregues', value: sum(rows, 'premios_entregues') }],
   },
+  demands: {
+    label: 'Demandas e prioridades', description: 'Pendências, responsáveis ativos e prazos. O período filtra a criação; atraso considera o prazo em Brasília. Não inclui contatos ou corpo privado.', icon: ClipboardList,
+    columns: [{ key: 'organizacao', label: 'Organização' }, ...shared, { key: 'demanda', label: 'Demanda' }, { key: 'prioridade', label: 'Prioridade' }, { key: 'situacao', label: 'Situação' }, { key: 'prazo', label: 'Prazo', date: true }, { key: 'em_atraso', label: 'Em atraso' }, { key: 'data', label: 'Criada em', date: true }, { key: 'atualizada_em', label: 'Atualizada em', date: true }, { key: 'evento', label: 'Evento vinculado' }, { key: 'material', label: 'Material vinculado' }, { key: 'responsaveis_ativos', label: 'Responsáveis individuais ativos', numeric: true }, { key: 'equipes_ativas', label: 'Equipes ativas', numeric: true }, { key: 'itens_conferencia', label: 'Itens da conferência', numeric: true }, { key: 'contagens_pendentes', label: 'Contagens pendentes', numeric: true }],
+    defaults: ['organizacao', 'projeto', 'demanda', 'prioridade', 'situacao', 'prazo', 'em_atraso', 'equipes_ativas'],
+    groups: ['prioridade', 'situacao', 'organizacao', 'projeto', 'em_atraso', 'mes'], dateKey: 'data',
+    kpis: rows => [{ label: 'Demandas', value: rows.length }, { label: 'Pendentes', value: count(rows, row => !['completed', 'cancelled'].includes(String(row.situacao))) }, { label: 'Em atraso', value: count(rows, row => row.em_atraso === 'sim'), tone: 'warn' }, { label: 'Contagens pendentes', value: sum(rows, 'contagens_pendentes') }],
+  },
+  reviews: {
+    label: 'Conferências e avarias', description: 'Uma linha por material e tamanho, com contagem e avaria registradas. O período filtra a criação da conferência. Conferir não movimenta o estoque.', icon: ClipboardList,
+    columns: [{ key: 'organizacao', label: 'Organização' }, ...shared, { key: 'conferencia', label: 'Conferência' }, { key: 'demanda', label: 'Demanda vinculada' }, { key: 'situacao', label: 'Situação' }, { key: 'data', label: 'Criada em', date: true }, { key: 'evento', label: 'Evento vinculado' }, { key: 'material', label: 'Material' }, { key: 'tamanho', label: 'Tamanho' }, { key: 'unidade_medida', label: 'Unidade de medida' }, { key: 'esperado', label: 'Esperado', numeric: true }, { key: 'contado', label: 'Contado', numeric: true }, { key: 'avariado', label: 'Avarias registradas', numeric: true }, { key: 'divergencia', label: 'Diferença para o esperado', numeric: true }, { key: 'sem_avarias', label: 'Contados sem avaria', numeric: true }, { key: 'contagem_pendente', label: 'Contagem pendente' }, { key: 'acompanhamentos', label: 'Acompanhamentos criados', numeric: true }],
+    defaults: ['organizacao', 'projeto', 'conferencia', 'material', 'tamanho', 'unidade_medida', 'esperado', 'contado', 'avariado', 'divergencia', 'situacao'],
+    groups: ['conferencia', 'material', 'tamanho', 'unidade_medida', 'situacao', 'organizacao', 'mes'], dateKey: 'data',
+    kpis: rows => [{ label: 'Conferências', value: distinct(rows, 'conferencia_id') }, { label: 'Contagens pendentes', value: count(rows, row => row.contagem_pendente === 'sim'), tone: 'warn' }, { label: 'Avarias registradas', value: quantityTotal(rows, 'avariado') }, { label: 'Linhas com divergência', value: count(rows, row => row.divergencia !== null && num(row.divergencia) !== 0) }],
+  },
 };
-const ORDER: DatasetId[] = ['projects', 'materials', 'movements', 'outflows', 'loans', 'records', 'campaigns'];
+const ORDER: DatasetId[] = ['projects', 'materials', 'movements', 'outflows', 'loans', 'records', 'campaigns', 'demands', 'reviews'];
+const PHYSICAL_MEASURES = ['saldo', 'reservado', 'disponivel', 'alerta_minimo', 'quantidade', 'esperado', 'contado', 'avariado', 'divergencia', 'sem_avarias'];
 const LABELS: Record<string, Record<string, string>> = {
   abrangencia: { internal: 'Interno PROEX', external: 'Externo' },
   etapa: { active: 'Em andamento', past: 'Encerrado', catalog: 'Catálogo' },
@@ -96,12 +111,16 @@ const LABELS: Record<string, Record<string, string>> = {
   tipo: { receive: 'Entrada', distribute: 'Distribuição', consume: 'Consumo', adjust: 'Ajuste', redeem: 'Resgate de prêmio', transfer: 'Transferência' },
   sentido: { entrada: 'Entrada', saida: 'Saída' },
   em_atraso: { sim: 'Sim', nao: 'Não' },
+  contagem_pendente: { sim: 'Sim', nao: 'Não' },
+  prioridade: { high: 'Alta', medium: 'Média', low: 'Baixa' },
   categoria: { observation: 'Observação', maintenance: 'Manutenção', distribution: 'Distribuição', consumption: 'Consumo', project: 'Projeto', material: 'Material', loan: 'Empréstimo' },
 };
 const STATUS: Partial<Record<DatasetId, Record<string, string>>> = {
   projects: { active: 'Ativo', archived: 'Arquivado' },
   loans: { reserved: 'Reservado', out: 'Retirado', returned: 'Devolvido', cancelled: 'Cancelado' },
   campaigns: { draft: 'Rascunho', active: 'Ativo', paused: 'Pausado', closed: 'Encerrado' },
+  demands: { open: 'Aberta', in_progress: 'Em andamento', blocked: 'Bloqueada', completed: 'Concluída', cancelled: 'Cancelada' },
+  reviews: { open: 'Aberta', completed: 'Concluída' },
 };
 const MONTHS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 const PRESETS_KEY = 'proex.reports.presets.v1';
@@ -190,8 +209,8 @@ export default function ReportsCenter({ projectId, unitId, area, from, to, scope
     if (!needle) return measured;
     return measured.filter(row => config.columns.some(column => String(display(dataset, row, column.key) ?? '').toLocaleLowerCase('pt-BR').includes(needle)));
   }, [rows, search, config, dataset, measurementUnit]);
-  const mixedUnits = ['materials', 'movements', 'outflows'].includes(dataset) && quantityTotal(searched, 'quantidade') === null;
-  const effectiveMeasure = mixedUnits && ['saldo', 'reservado', 'disponivel', 'alerta_minimo', 'quantidade'].includes(measure) ? '__count__' : measure;
+  const mixedUnits = ['materials', 'movements', 'outflows', 'reviews'].includes(dataset) && quantityTotal(searched, 'quantidade') === null;
+  const effectiveMeasure = mixedUnits && PHYSICAL_MEASURES.includes(measure) ? '__count__' : measure;
   const measureLabel = effectiveMeasure === '__count__' ? (dataset === 'movements' ? 'movimentações' : 'linhas') : (config.columns.find(column => column.key === effectiveMeasure)?.label.toLowerCase() ?? '');
   const filtered = useMemo(() => focus ? searched.filter(row => String(display(dataset, row, groupBy) || 'Sem informação') === focus) : searched, [searched, focus, groupBy, dataset]);
 
@@ -302,7 +321,7 @@ export default function ReportsCenter({ projectId, unitId, area, from, to, scope
     <div className={styles.controls}>
       <label className={`p-field ${styles.search}`}><span>Buscar nas linhas</span><span className={styles.searchBox}><Search size={15} /><input value={search} onChange={event => { setSearch(event.target.value); setPage(0); }} placeholder="Nome, material, título, observação…" />{search && <button type="button" aria-label="Limpar busca" onClick={() => setSearch('')}><X size={14} /></button>}</span></label>
       <label className="p-field"><span>Agrupar gráfico por</span><select value={groupBy} onChange={event => { setGroupBy(event.target.value); setFocus(''); }}>{config.groups.map(key => <option key={key} value={key}>{key === 'mes' ? 'Mês' : config.columns.find(column => column.key === key)?.label}</option>)}</select></label>
-      <label className="p-field"><span>Medida</span><select value={effectiveMeasure} onChange={event => setMeasure(event.target.value)}><option value="__count__">Quantidade de {dataset === 'movements' ? 'movimentações' : 'linhas'}</option>{numericColumns.map(column => <option key={column.key} value={column.key} disabled={mixedUnits && ['saldo', 'reservado', 'disponivel', 'alerta_minimo', 'quantidade'].includes(column.key)}>Soma de {column.label.toLowerCase()}</option>)}</select></label>
+      <label className="p-field"><span>Medida</span><select value={effectiveMeasure} onChange={event => setMeasure(event.target.value)}><option value="__count__">Quantidade de {dataset === 'movements' ? 'movimentações' : 'linhas'}</option>{numericColumns.map(column => <option key={column.key} value={column.key} disabled={mixedUnits && PHYSICAL_MEASURES.includes(column.key)}>Soma de {column.label.toLowerCase()}</option>)}</select></label>
       {unitOptions.length > 0 && <label className="p-field"><span>Unidade de medida</span><select value={measurementUnit} onChange={event => { setMeasurementUnit(event.target.value); setFocus(''); setPage(0); }}><option value="">Todas as medidas</option>{unitOptions.map(unit => <option key={unit} value={unit}>{unit}</option>)}</select></label>}
       <details className={styles.columns}>
         <summary><Columns3 size={16} />Colunas ({chosen.length}/{config.columns.length})</summary>

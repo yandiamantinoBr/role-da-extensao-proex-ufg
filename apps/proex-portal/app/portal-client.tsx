@@ -381,7 +381,7 @@ export default function PortalClient({ initial }: {
     const formItems = items.filter(i => effectiveProject && get(i, 'projectId', 'project_id') === effectiveProject);
     const available = (item: Row) => item.available !== undefined && item.available !== null ? Number(item.available) : Number(item.stock ?? item.quantity ?? 0) - Number(item.reserved ?? 0);
     const searchItems = visibleItems.filter(i => !query || `${i.name} ${i.description ?? ''}`.toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR')));
-    const allowedTabs = tabs.filter(t => ['overview', 'projects', 'profile', 'calendar', 'records'].includes(t.id) || (t.id === 'events' && canAny('campaigns.manage', 'participation.operate', 'inventory.deliver')) || (t.id === 'materials' && canAny('inventory.read', 'inventory.manage', 'inventory.deliver')) || (t.id === 'loans' && canAny('loans.read', 'loans.manage', 'loans.checkout')) || (t.id === 'team' && (canManageOrganization || canAny('access.invite', 'access.manage'))) || (t.id === 'reports' && canAny('reports.read')) || (t.id === 'settings' && canGlobal('organization.manage')));
+    const allowedTabs = tabs.filter(t => ['overview', 'projects', 'profile', 'calendar', 'records'].includes(t.id) || (t.id === 'events' && canAny('campaigns.manage', 'participation.operate', 'inventory.deliver')) || (t.id === 'materials' && canAny('inventory.read', 'inventory.manage', 'inventory.deliver')) || (t.id === 'loans' && canAny('loans.read', 'loans.manage', 'loans.checkout')) || (t.id === 'team' && (canManageOrganization || canAny('access.invite', 'access.manage'))) || (t.id === 'reports' && (canManageOrganization || canAny('reports.read'))) || (t.id === 'settings' && canGlobal('organization.manage')));
     const allowedModuleKey = allowedTabs.map(module => module.id).join('|');
     const accessibleProjectKey = scopedProjects.map(project => project.id).join('|');
     const accessibleUnitKey = [...visibleUnits.map(unit => string(unit.id)), ...(hasUnassignedProjects ? ['__unassigned__'] : [])].join('|');
@@ -840,7 +840,7 @@ export default function PortalClient({ initial }: {
         <button className="p-button p-button-subtle" onClick={() => { setReportFrom(''); setReportTo(''); }}>Todo o período</button>
         <p>Período de todos os relatórios desta página, em datas de Brasília. Contagens de participação, tentativa e entrega usam a data de cada registro.</p>
         </div>
-        <ReportsCenter projectId={filter} unitId={unitFilter} area={areaFilter} from={reportFrom} to={reportTo} available={['projects', 'materials', 'movements', 'outflows', 'loans', 'records', 'campaigns']}
+        <ReportsCenter projectId={filter} unitId={unitFilter} area={areaFilter} from={reportFrom} to={reportTo} available={['projects', 'materials', 'movements', 'outflows', 'loans', 'records', 'campaigns', 'demands', 'reviews']}
           scopeLabel={[filter ? projectName(filter) : '', unitFilter ? (unitFilter === '__unassigned__' ? 'Sem unidade vinculada' : string(visibleUnits.find(unit => unit.id === unitFilter)?.acronym || visibleUnits.find(unit => unit.id === unitFilter)?.name)) : '', areaFilter ? (areaFilter === '__none__' ? 'Sem área temática' : THEMATIC_AREAS.find(item => item.key === areaFilter)?.label ?? '') : ''].filter(Boolean).join(' · ')} />
         <h2 className="p-reports-legacy-title">Indicadores das dinâmicas</h2>
         <div className="p-stats">

@@ -1,6 +1,7 @@
 import { accessibleProjects, projectAuthoritySql, type PortalActor } from './access';
 import { all, type Row } from './database';
 import { HttpError } from './errors';
+import { followupReportRows } from './follow-up/reports';
 
 // Central de relatórios: conjuntos de dados tabulares, já filtrados pelas permissões
 // de cada pessoa. Nenhum conjunto inclui contatos, identificadores de conta, quem
@@ -13,6 +14,8 @@ export const REPORT_DATASETS = {
   loans: { label: 'Empréstimos', capabilities: ['loans.read', 'reports.read'] },
   records: { label: 'Registros', capabilities: ['reports.read', 'inventory.read', 'loans.read'] },
   campaigns: { label: 'Eventos e dinâmicas', capabilities: ['reports.read', 'campaigns.manage'] },
+  demands: { label: 'Demandas e prioridades', capabilities: [] as string[] },
+  reviews: { label: 'Conferências e avarias', capabilities: [] as string[] },
 } as const;
 export type ReportDataset = keyof typeof REPORT_DATASETS;
 const MAX_ROWS = 5000;
@@ -54,6 +57,7 @@ export async function reportRows(db: D1Database, actor: PortalActor | null, inpu
   if (!actor) throw new HttpError(401, 'Entre para consultar relatórios.', 'unauthenticated');
   const dataset = input.dataset as ReportDataset;
   if (!(dataset in REPORT_DATASETS)) throw new HttpError(400, 'Escolha um relatório válido.', 'invalid_report');
+  if (dataset === 'demands' || dataset === 'reviews') return followupReportRows(db, actor, dataset, input, MAX_ROWS);
   const projects = scope(actor, REPORT_DATASETS[dataset].capabilities);
   if (projects !== null && !projects.length) return { dataset, rows: [], truncated: false };
   const from = day(input.from, 'a data inicial'), to = day(input.to, 'a data final');
