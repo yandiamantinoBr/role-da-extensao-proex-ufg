@@ -7,6 +7,8 @@ import PendingPrizes from '@/components/portal/pending-prizes';
 import ProjectPanel from '@/components/portal/project-panel';
 import AssistedImportPanel from '@/components/portal/assisted-import-panel';
 import TeamPanel from '@/components/portal/team-panel';
+import OfficialTeamDirectory from '@/components/portal/official-team-directory';
+import type { OfficialTeamSelection } from '@/lib/catalog/proex-team';
 import AdminPrivacyPanel from '@/components/portal/admin-privacy-panel';
 import SyncSettingsPanel from '@/components/portal/sync-settings-panel';
 import ProfilePanel from '@/components/portal/profile-panel';
@@ -244,6 +246,7 @@ export default function PortalClient({ initial }: {
     const [data, setData] = useState<Snapshot>(initial ?? {});
     const [tab, setTab] = useState<Tab>('overview');
     const [accountOpen, setAccountOpen] = useState(false);
+    const [officialSuggestion, setOfficialSuggestion] = useState<OfficialTeamSelection | null>(null);
     const [closingCampaign, setClosingCampaign] = useState<string | null>(null);
     const [reportFrom, setReportFrom] = useState(''), [reportTo, setReportTo] = useState('');
     const [sessionExpired, setSessionExpired] = useState(false);
@@ -797,7 +800,7 @@ export default function PortalClient({ initial }: {
             </OperationForm>
             </Section>}</>}
 
-      {tab === 'team' && <><TeamPanel users={list(data.users)} members={members} invites={invites} projects={projects} selectedProjectId={filter} globalAdmin={canGlobal('organization.manage')} canProject={canProject} mutate={mutate} now={now}/>{canGlobal('organization.manage') && <AdminPrivacyPanel />}</>}
+      {tab === 'team' && <><OfficialTeamDirectory onSelect={canAny('access.invite') ? setOfficialSuggestion : undefined}/><TeamPanel key={officialSuggestion?.selectionKey ?? 'manual'} officialSuggestion={officialSuggestion} onClearOfficialSuggestion={() => setOfficialSuggestion(null)} users={list(data.users)} members={members} invites={invites} projects={projects} selectedProjectId={filter} globalAdmin={canGlobal('organization.manage')} canProject={canProject} mutate={mutate} now={now}/>{canGlobal('organization.manage') && <AdminPrivacyPanel />}</>}
       {tab === 'profile' && <ProfilePanel onUpdated={() => { void refresh(); }}/>}
       {tab === 'calendar' && <CalendarPanel projects={projects} organizationalUnits={organizationalUnits}/>}
       {tab === 'records' && <RecordsPanel projects={projects} items={items} loans={loans} canWrite={(capability: string, projectId?: string | null) => projectId ? canProject(projectId, capability) : canGlobal(capability)}/>}

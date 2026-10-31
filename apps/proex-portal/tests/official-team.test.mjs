@@ -91,7 +91,7 @@ test('TeamPanel uses only the verified contact, resets scope choices and does no
   const tree = TeamPanel(props), form = nodes(tree, node => node.type === 'form')[0];
   assert.equal(nodes(tree, node => node.type === 'input' && node.props.name === 'email')[0].props.defaultValue, officialTeamPrefill('luana-ribeiro').email);
   const name = nodes(tree, node => node.type === 'input' && node.props['aria-label'] === 'Nome na fonte oficial')[0]; assert.equal(name.props.name, undefined); assert.equal(name.props.readOnly, true);
-  for (const field of ['role', 'projectId']) { const select = nodes(tree, node => node.type === 'select' && node.props.name === field)[0]; assert.equal(select.props.defaultValue, ''); assert.equal(select.props.required, true); }
+  for (const field of ['role', 'projectId']) { const select = nodes(tree, node => node.type === 'select' && node.props.name === field)[0]; assert.equal(select.props.value ?? select.props.defaultValue, ''); assert.equal(select.props.required, true); }
   assert.equal(nodes(tree, node => node.type === 'option' && node.props.value === '__global__').length, 0);
   assert.equal(nodes(tree, node => typeof node.type === 'function' && node.type.name === 'DraftNotice').length, 0, 'a stale manual draft discard cannot overwrite the official prefill');
   assert.deepEqual(globalThis.__officialDraftKeys, [null], 'no previous person’s project or role draft is inherited'); assert.equal(mutations, 0);
@@ -101,7 +101,7 @@ test('TeamPanel uses only the verified contact, resets scope choices and does no
   try {
     for (const scope of [{}, { role: 'viewer' }, { role: 'viewer', projectId: '__global__' }]) { values = scope; await form.props.onSubmit(event); assert.equal(mutations, 0); }
     values = { email: 'synthetic@outside.invalid', role: 'viewer', projectId: 'synthetic-project' }; await form.props.onSubmit(event);
-    assert.equal(mutations, 1); assert.deepEqual(Object.keys(payload).sort(), ['email', 'role', 'projectId', 'operationKey'].sort()); assert.equal(payload.projectId, 'synthetic-project'); assert.equal(payload.role, 'viewer');
+    assert.equal(mutations, 1); assert.deepEqual(Object.keys(payload).sort(), ['email', 'role', 'projectId', 'globalAccess', 'operationKey'].sort()); assert.equal(payload.projectId, 'synthetic-project'); assert.equal(payload.role, 'viewer');
   } finally { globalThis.FormData = original; delete globalThis.__officialDraftKeys; }
 });
 
@@ -111,10 +111,13 @@ test('manual external invitations remain possible with an explicit role and scop
     mutate: async (_action, value) => { payload = value; return {}; } };
   const form = nodes(TeamPanel(props), node => node.type === 'form')[0];
   const original = globalThis.FormData;
-  globalThis.FormData = class { get(name) { return { email: 'synthetic@external.invalid', role: 'viewer', projectId: '__global__' }[name]; } };
+  let selectedScope = '__global__';
+  globalThis.FormData = class { get(name) { return { email: 'synthetic@external.invalid', role: 'viewer', projectId: selectedScope }[name]; } };
   try {
     assert.equal(payload, undefined); await form.props.onSubmit({ preventDefault() {}, currentTarget: { reset() {} } });
-    assert.equal(payload.email, 'synthetic@external.invalid'); assert.equal(payload.projectId, null); assert.equal(payload.role, 'viewer');
+    assert.equal(payload, undefined, 'global invitation requires an explicit additional scope confirmation');
+    selectedScope = 'synthetic-project'; await form.props.onSubmit({ preventDefault() {}, currentTarget: { reset() {} } });
+    assert.equal(payload.email, 'synthetic@external.invalid'); assert.equal(payload.projectId, 'synthetic-project'); assert.equal(payload.globalAccess, false); assert.equal(payload.role, 'viewer');
     const restricted = TeamPanel({ ...props, globalAdmin: false });
     assert.equal(nodes(restricted, node => node.type === 'option' && node.props.value === '__global__').length, 0);
   } finally { globalThis.FormData = original; delete globalThis.__officialDraftKeys; }

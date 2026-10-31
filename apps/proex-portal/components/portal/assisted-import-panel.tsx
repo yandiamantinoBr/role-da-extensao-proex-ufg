@@ -39,11 +39,13 @@ export default function AssistedImportPanel({ kind, projects, projectTypes = [],
   const [selected, setSelected] = useState<string[]>([]), [unitId, setUnitId] = useState(''), [typeId, setTypeId] = useState(''), [saveOfficialUrl, setSaveOfficialUrl] = useState(false);
   const [confirmed, setConfirmed] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState(''), [receipt, setReceipt] = useState<Receipt | null>(null);
   const [files, setFiles] = useState<PendingFile[]>([]), operation = useRef<string | null>(null);
+  const [readingFile, setReadingFile] = useState(false), fileReadEpoch = useRef(0);
   const inputId = `import-${kind}`, candidate = preview?.candidates[candidateIndex];
   const editableFields = { ...candidate?.fields, ...edits }, checkedFields = candidate ? validateImportedFields(kind, editableFields) : null;
   const problems: Record<string, string> = { ...checkedFields?.problems, ...(candidate && !editableFields.name ? { name: 'Informe o nome ou título antes de selecionar este campo.' } : {}) };
   const validDestination = projectId ? permitted.some(project => project.id === projectId) : kind === 'project' && canCreateProject;
   const available = kind === 'project' ? canCreateProject || permitted.length > 0 : permitted.length > 0;
+  const contextDiffers = defaultProjectId !== undefined && defaultProjectId !== projectId;
   if (!available) return null;
   function resetReview() { setPreview(null); setReceipt(null); setConfirmed(false); setError(''); setEdits({}); setShowMissing(false); operation.current = null; }
   function chooseCandidate(next: ImportPreview, index: number) {
@@ -52,13 +54,21 @@ export default function AssistedImportPanel({ kind, projects, projectTypes = [],
   }
   async function readFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; if (!file) return;
-    resetReview();
-    const extension = file.name.split('.').pop()?.toLowerCase(), binary = extension === 'pdf' || extension === 'docx', next = extension === 'json' ? 'json' : ['csv', 'tsv'].includes(extension ?? '') ? 'csv' : ['html', 'htm'].includes(extension ?? '') ? 'html' : extension === 'txt' || binary ? 'text' : null;
-    if (file.size > (binary ? MAX_UPLOAD_FILE_BYTES : IMPORT_TEXT_LIMIT)) { setError(binary ? `Use um documento de até ${UPLOAD_LIMIT_LABEL}.` : 'Use um documento textual de até 256 KiB.'); return; }
-    if (!next) { setError('Use PDF, DOCX, TXT, HTML, JSON ou CSV.'); return; }
-    try { setSourceFile(file); setContent(binary ? '' : await file.text()); setFormat(next); } catch { setError('Não foi possível ler este arquivo.'); }
+    const epoch = ++fileReadEpoch.current;
+    resetReview(); setSourceFile(null); setContent(''); setReadingFile(true);
+    try {
+      const extension = file.name.split('.').pop()?.toLowerCase(), binary = extension === 'pdf' || extension === 'docx', next = extension === 'json' ? 'json' : ['csv', 'tsv'].includes(extension ?? '') ? 'csv' : ['html', 'htm'].includes(extension ?? '') ? 'html' : extension === 'txt' || binary ? 'text' : null;
+      if (file.size > (binary ? MAX_UPLOAD_FILE_BYTES : IMPORT_TEXT_LIMIT)) throw new Error(binary ? `Use um documento de até ${UPLOAD_LIMIT_LABEL}.` : 'Use um documento textual de até 256 KiB.');
+      if (!next) throw new Error('Use PDF, DOCX, TXT, HTML, JSON ou CSV.');
+      const nextContent = binary ? '' : await file.text();
+      if (epoch !== fileReadEpoch.current) return;
+      setSourceFile(file); setContent(nextContent); setFormat(next);
+    } catch (error) { if (epoch === fileReadEpoch.current) setError(error instanceof Error ? error.message : 'Não foi possível ler este arquivo.'); }
+    finally { if (epoch === fileReadEpoch.current) setReadingFile(false); }
   }
   async function prepare() {
+    if (busy || readingFile) return;
+    if (sourceMode === 'document' && !sourceFile && !content.trim()) { setError('Selecione um documento válido ou informe o conteúdo antes de preparar a prévia.'); return; }
     setBusy(true); setError(''); setConfirmed(false); operation.current = null;
     try {
       let value: Record<string, unknown>;
@@ -113,7 +123,8 @@ export default function AssistedImportPanel({ kind, projects, projectTypes = [],
     <div className="p-row-between"><div><h3><FileInput size={19}/> Importar {name}</h3><p className="p-form-help">Confira dados e fonte antes de salvar. {kind === 'asset' ? 'Fotos e documentos ficam no registro privado do bem.' : 'A fonte pública não cria contas nem concede acesso.'}</p></div><button type="button" className="p-button p-button-subtle" disabled={busy || !!receipt} onClick={() => { setOpen(value => !value); setError(''); }}>{open ? <X size={16}/> : <FileInput size={16}/>}<span>{open ? 'Fechar' : 'Abrir importação'}</span></button></div>
     {open && <div className={styles.body}>
       {!receipt && <>
-        {!preview ? <fieldset disabled={busy} className={styles.fieldset}>
+        {contextDiffers && <p className="p-form-help" role="status">O filtro geral mostra {defaultProjectId ? projects.find(project => project.id === defaultProjectId)?.name ?? 'outro projeto' : 'todos os projetos'}. Esta importação continua destinada a <strong>{projectId ? projects.find(project => project.id === projectId)?.name ?? 'projeto selecionado' : 'novo projeto'}</strong>. A prévia e os arquivos foram preservados; confira o destino antes de confirmar.</p>}
+        {!preview ? <fieldset disabled={busy || readingFile} className={styles.fieldset}>
           <div className="p-form-grid"><label className="p-field"><span>{kind === 'project' ? 'Destino dos dados' : 'Projeto responsável'}</span><select value={projectId} onChange={event => { setProjectId(event.target.value); setItemId(''); resetReview(); }}>{kind === 'project' && canCreateProject && <option value="">Criar novo projeto</option>}{permitted.map(project => <option key={project.id} value={project.id}>{kind === 'project' ? 'Atualizar: ' : ''}{project.name}</option>)}</select></label>
           {kind === 'asset' && <label className="p-field"><span>Cadastro do bem</span><select value={itemId} onChange={event => { setItemId(event.target.value); resetReview(); }}><option value="">Cadastrar novo equipamento individual</option>{items.filter(item => item.project_id === projectId).map(item => <option key={item.id} value={item.id}>Conferência e anexos: {item.name}{item.asset_code ? ` · ${item.asset_code}` : ''}</option>)}</select></label>}
           <label className="p-field"><span>Fonte dos dados</span><select value={sourceMode} onChange={event => { setSourceMode(event.target.value); setSourceFile(null); setSourceUrl(''); resetReview(); }}>{kind === 'project' && <option value="sigaa">SIGAA Público / UFG</option>}{kind === 'asset' && <option value="manual">Preencher dados do bem</option>}<option value="document">Arquivo ou documento textual</option></select></label></div>
@@ -125,7 +136,8 @@ export default function AssistedImportPanel({ kind, projects, projectTypes = [],
           <p className="p-form-help">Use dados operacionais. Contatos, CPF, credenciais, contas e permissões não são importados. Cada documento admite até vinte registros, confirmados um por vez.</p>
           {kind === 'asset' && <p className="p-form-help">{itemId ? 'O bem existente receberá uma conferência com os dados selecionados e anexos. O cadastro e seu saldo permanecem como estão.' : 'O equipamento será cadastrado com saldo zero. Após a conferência física, registre a entrada em Materiais.'}</p>}
           {!validDestination && <p className="p-inline-error">Escolha um projeto disponível para sua conta antes de preparar a prévia.</p>}
-          <button type="button" className="p-button p-button-primary" disabled={busy || !validDestination} onClick={() => void prepare()}>{busy ? <LoaderCircle size={16} className="p-spin"/> : <FileInput size={16}/>} Preparar prévia</button>
+          {readingFile && <p className="p-form-help" role="status">Lendo o documento selecionado…</p>}
+          <button type="button" className="p-button p-button-primary" disabled={busy || readingFile || !validDestination} onClick={() => void prepare()}>{busy || readingFile ? <LoaderCircle size={16} className="p-spin"/> : <FileInput size={16}/>} Preparar prévia</button>
         </fieldset> : candidate && <>
           <div className={styles.source}><strong>{preview.provenance.label}</strong><span>Destino: {preview.projectId ? projects.find(project => project.id === preview.projectId)?.name ?? 'Projeto selecionado' : 'Novo projeto'}{preview.itemId ? ' · conferência de bem existente' : kind === 'asset' ? ' · novo equipamento individual' : ''}</span>{preview.provenance.url && <a className="p-text-link" href={preview.provenance.url} target="_blank" rel="noopener noreferrer">Abrir fonte</a>}<small>Consulta: {new Date(preview.provenance.retrievedAt).toLocaleString('pt-BR')} · confirmação válida por 15 minutos</small></div>
           {preview.candidates.length > 1 && <label className="p-field"><span>Registro a conferir</span><select disabled={busy} value={candidateIndex} onChange={event => chooseCandidate(preview, Number(event.target.value))}>{preview.candidates.map((row, index) => <option key={row.key} value={index}>{index + 1}. {row.fields.name || 'Nome não identificado'}</option>)}</select></label>}

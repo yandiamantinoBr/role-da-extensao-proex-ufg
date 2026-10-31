@@ -99,6 +99,7 @@ const STATUS: Partial<Record<DatasetId, Record<string, string>>> = {
 const MONTHS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 const PRESETS_KEY = 'proex.reports.presets.v1';
 const PAGE_SIZES = [25, 50, 100];
+const EMPTY_ROWS: ExportRow[] = [];
 
 function display(dataset: DatasetId, row: ExportRow, key: string): unknown {
   const value = key === 'mes' ? monthOf(row, DATASETS[dataset].dateKey) : row[key];
@@ -135,8 +136,12 @@ export default function ReportsCenter({ projectId, unitId, area, from, to, scope
   const [measurementUnit, setMeasurementUnit] = useState('');
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null);
   const [page, setPage] = useState(0), [pageSize, setPageSize] = useState(25);
-  const [rows, setRows] = useState<ExportRow[]>([]), [truncated, setTruncated] = useState(false);
-  const [loading, setLoading] = useState(true), [error, setError] = useState('');
+  const queryKey = JSON.stringify([dataset, projectId, unitId, area, from, to]);
+  const [loadedQueryKey, setLoadedQueryKey] = useState('');
+  const [loadedRows, setRows] = useState<ExportRow[]>([]), [truncated, setTruncated] = useState(false);
+  const [fetching, setLoading] = useState(true), [error, setError] = useState('');
+  const rows = loadedQueryKey === queryKey ? loadedRows : EMPTY_ROWS;
+  const loading = fetching || loadedQueryKey !== queryKey;
   const [presets, setPresets] = useState<Preset[]>([]);
   const [presetName, setPresetName] = useState('');
   const [exporting, setExporting] = useState<'pdf' | 'docx' | null>(null);
@@ -154,10 +159,10 @@ export default function ReportsCenter({ projectId, unitId, area, from, to, scope
     const start = window.setTimeout(() => { setLoading(true); setError(''); }, 0);
     fetch(`/api/reports?${query}`, { credentials: 'same-origin', cache: 'no-store', signal: controller.signal })
       .then(async response => { const body = (await response.json().catch(() => ({}))) as { rows?: ExportRow[]; truncated?: boolean; error?: string | { message?: string }; message?: string }; if (!response.ok) throw new Error((typeof body.error === 'string' ? body.error : body.error?.message) || body.message || 'Não foi possível carregar o relatório.'); return body; })
-      .then(body => { setRows(Array.isArray(body.rows) ? body.rows : []); setTruncated(Boolean(body.truncated)); setLoading(false); })
-      .catch(reason => { if (controller.signal.aborted) return; setRows([]); setError(reason instanceof Error ? reason.message : 'Não foi possível carregar o relatório.'); setLoading(false); });
+      .then(body => { if (controller.signal.aborted) return; setRows(Array.isArray(body.rows) ? body.rows : []); setLoadedQueryKey(queryKey); setTruncated(Boolean(body.truncated)); setLoading(false); })
+      .catch(reason => { if (controller.signal.aborted) return; setRows([]); setLoadedQueryKey(queryKey); setTruncated(false); setError(reason instanceof Error ? reason.message : 'Não foi possível carregar o relatório.'); setLoading(false); });
     return () => { window.clearTimeout(start); controller.abort(); };
-  }, [dataset, projectId, unitId, area, from, to]);
+  }, [dataset, projectId, unitId, area, from, to, queryKey]);
 
   function chooseDataset(id: DatasetId, preset?: Preset) {
     const next = DATASETS[id];
@@ -218,14 +223,14 @@ export default function ReportsCenter({ projectId, unitId, area, from, to, scope
   const visible = sorted.slice(current * pageSize, current * pageSize + pageSize);
   const chosen = config.columns.filter(column => columns.includes(column.key));
   const kpis = config.kpis(filtered);
-  const exportColumns: Column[] = chosen.length ? chosen : config.columns;
+  const exportColumns: Column[] = chosen;
   const stamp = new Date().toISOString().slice(0, 10);
   const fileBase = `proex-${dataset}-${stamp}`;
   const exportValue = (row: ExportRow, key: string) => { const column = config.columns.find(item => item.key === key); const value = valueOf(row, key); return column?.date ? dateLabel(value) : column?.numeric ? num(value) : value; };
   const info: [string, string][] = [['Relatório', config.label], ['Recorte', scopeLabel || 'Todos os projetos que você pode consultar'], ['Período', from || to ? `${from ? dateLabel(from) : 'início'} a ${to ? dateLabel(to) : 'hoje'}` : 'Todo o período'], ['Unidade de medida', measurementUnit || 'Todas, separadas em cada registro'], ['Busca', search || '—'], ['Destaque', focus ? `${config.columns.find(column => column.key === groupBy)?.label ?? 'Mês'}: ${focus}` : '—'], ['Linhas', String(sorted.length)], ['Gerado em', new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) + ' (Brasília)'], ['Compartilhamento', 'Recorte das suas permissões. Revise os textos livres antes de compartilhar.']];
 
   async function exportDocument(format: 'pdf' | 'docx') {
-    if (exporting) return;
+    if (exporting || loading || !chosen.length) return;
     setExporting(format); setError('');
     try {
       const blob = format === 'docx'
@@ -245,6 +250,7 @@ export default function ReportsCenter({ projectId, unitId, area, from, to, scope
   }
   function removePreset(name: string) { const next = presets.filter(preset => preset.name !== name); setPresets(next); writePresets(next); }
   function print() {
+    if (loading || !chosen.length) return;
     const popup = window.open('', '_blank', 'width=1100,height=800'); if (!popup) { setError('O navegador bloqueou a janela de impressão. Permita pop-ups para este site e tente de novo.'); return; }
     const charts = chartsRef.current?.querySelectorAll('svg.recharts-surface') ?? [];
     const escape = (value: unknown) => String(value ?? '').replace(/[&<>"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[char]!));
@@ -270,12 +276,12 @@ export default function ReportsCenter({ projectId, unitId, area, from, to, scope
         <p>Escolha o assunto, ajuste o recorte com os filtros do topo e as datas acima, veja os gráficos e exporte só as colunas que interessam.</p>
       </div>
       <div className={styles.exportBar} role="group" aria-label="Exportar relatório">
-        <button type="button" className="p-button p-button-primary" disabled={!sorted.length || !!exporting} onClick={() => download(`${fileBase}.xlsx`, toXlsx(config.label, exportColumns, sorted, exportValue, info))}><FileSpreadsheet size={16} />Excel</button>
-        <button type="button" className="p-button p-button-subtle" disabled={!sorted.length || !!exporting} onClick={() => void exportDocument('pdf')}>{exporting === 'pdf' ? <LoaderCircle size={16} className="animate-spin" /> : <FileText size={16} />}PDF</button>
-        <button type="button" className="p-button p-button-subtle" disabled={!sorted.length || !!exporting} onClick={() => void exportDocument('docx')}>{exporting === 'docx' ? <LoaderCircle size={16} className="animate-spin" /> : <FileText size={16} />}Word</button>
-        <button type="button" className="p-button p-button-subtle" disabled={!sorted.length || !!exporting} onClick={() => download(`${fileBase}.csv`, toCsv(exportColumns, sorted, exportValue))}><Sheet size={16} />CSV</button>
-        <button type="button" className="p-button p-button-subtle" disabled={!sorted.length || !!exporting} onClick={() => download(`${fileBase}.json`, toJson({ relatorio: config.label, filtros: Object.fromEntries(info) }, exportColumns, sorted, exportValue))}><FileJson size={16} />JSON</button>
-        <button type="button" className="p-button p-button-subtle" disabled={!sorted.length || !!exporting} onClick={print}><Printer size={16} />Imprimir</button>
+        <button type="button" className="p-button p-button-primary" disabled={loading || !chosen.length || !sorted.length || !!exporting} onClick={() => download(`${fileBase}.xlsx`, toXlsx(config.label, exportColumns, sorted, exportValue, info))}><FileSpreadsheet size={16} />Excel</button>
+        <button type="button" className="p-button p-button-subtle" disabled={loading || !chosen.length || !sorted.length || !!exporting} onClick={() => void exportDocument('pdf')}>{exporting === 'pdf' ? <LoaderCircle size={16} className="animate-spin" /> : <FileText size={16} />}PDF</button>
+        <button type="button" className="p-button p-button-subtle" disabled={loading || !chosen.length || !sorted.length || !!exporting} onClick={() => void exportDocument('docx')}>{exporting === 'docx' ? <LoaderCircle size={16} className="animate-spin" /> : <FileText size={16} />}Word</button>
+        <button type="button" className="p-button p-button-subtle" disabled={loading || !chosen.length || !sorted.length || !!exporting} onClick={() => download(`${fileBase}.csv`, toCsv(exportColumns, sorted, exportValue))}><Sheet size={16} />CSV</button>
+        <button type="button" className="p-button p-button-subtle" disabled={loading || !chosen.length || !sorted.length || !!exporting} onClick={() => download(`${fileBase}.json`, toJson({ relatorio: config.label, filtros: Object.fromEntries(info) }, exportColumns, sorted, exportValue))}><FileJson size={16} />JSON</button>
+        <button type="button" className="p-button p-button-subtle" disabled={loading || !chosen.length || !sorted.length || !!exporting} onClick={print}><Printer size={16} />Imprimir</button>
       </div>
     </header>
 
