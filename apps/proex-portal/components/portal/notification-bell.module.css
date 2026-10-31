@@ -1,0 +1,25 @@
+.trigger { position: relative; }
+.trigger[aria-expanded=true] { box-shadow: inset 0 0 0 1px currentColor; }
+.trigger:focus-visible { outline: 3px solid var(--brand-ink); outline-offset: 3px; }
+.counter {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 20px;
+  min-height: 20px;
+  padding: 1px 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--surface);
+  border-radius: 999px;
+  background: #b91c1c;
+  color: #fff;
+  font-size: 11px;
+  line-height: 1.2;
+  font-weight: 700;
+}
+@media (max-width: 720px) {
+  .trigger:focus-visible { outline-color: #fff; }
+  .counter { border-color: var(--purple); }
+}
