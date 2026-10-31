@@ -1,5 +1,7 @@
 # Trabalho atual · R23/V14 e ativação de avisos
 
+**Checkpoint mais recente: V14 candidata não publicada.** Código em `v14-interface`, funcional `3fa3222`, último ajuste CSS `0804314`. 755/755 testes em Node 24/26, 33/33 do jogo, tipos/lint sem erros (três avisos antigos), Worker/Node passaram em `3fa3222`. QA e recapturas pontuais confirmaram datas, disponibilidade, botão da planilha, respiro do backup, alvos públicos e cabeçalho de 320 px. CUA foi encerrado por proteção ao não identificar a URL Chrome no Windows; não contornar. QA encerrado. Falta recompilar o último ajuste CSS do fechar 44 px, recapturá-lo, completar a verificação visual/zoom e concluir a nota independente antes de merge/deploy. 200% não foi comprovado. Ler `docs/ENTREGA-V14.md`; o texto anterior abaixo é histórico do trabalho. Última produção ainda `23bbeae`. R21 continua OFF, aguardando a confirmação específica de acesso Google já perguntada.
+
 Em 31/10/2026, após V13, Yan escolheu provisoriamente a conta Google pessoal atual para avisos e pediu auditoria visual de TODO portal com nota independente mínima de 9/10. Última produção comprovada continua 23bbeae/V13. V14 está LOCAL, ainda sem publicação e sem aprovação9. Os detalhes abaixo da V13 permanecem como histórico útil.
 
 - Root integra v14-interface e faz CUA exclusivo em QA sintético, sem gravações de QA em produção. Achados não se limitam a overflow: cascata CSS, contraste, teclado, toque e prioridade do conteúdo.
