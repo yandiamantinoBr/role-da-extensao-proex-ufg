@@ -351,8 +351,8 @@ export default function ReportsCenter({ projectId, unitId, area, from, to, scope
       </div>
     </header>
 
-    <div className={styles.datasets} role="tablist" aria-label="Assunto do relatório">
-      {datasets.map(id => { const DatasetIcon = DATASETS[id].icon; return <button key={id} type="button" role="tab" aria-selected={dataset === id} className={dataset === id ? styles.active : ''} onClick={() => chooseDataset(id)}><DatasetIcon size={17} /><span>{DATASETS[id].label}</span></button>; })}
+    <div className={styles.datasets} role="group" aria-label="Assunto do relatório">
+      {datasets.map(id => { const DatasetIcon = DATASETS[id].icon; return <button key={id} type="button" aria-pressed={dataset === id} className={dataset === id ? styles.active : ''} onClick={() => chooseDataset(id)}><DatasetIcon size={17} /><span>{DATASETS[id].label}</span></button>; })}
     </div>
 
     {dataset === 'materials' && <label className="p-form-help"><input type="checkbox" checked={assetDetails} onChange={event => { setAssetDetails(event.target.checked); setColumns(DATASETS.materials.defaults); setRows([]); setFocus(''); setMeasure('__count__'); }}/>{' '}Consultar metadados patrimoniais privados (somente projetos com permissão vigente de inventário). A referência de responsável, processo e valor documentado só entra na exportação ao escolher essas colunas.</label>}

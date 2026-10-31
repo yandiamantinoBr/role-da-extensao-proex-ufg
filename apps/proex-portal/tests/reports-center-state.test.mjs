@@ -48,6 +48,24 @@ function harness() {
 }
 function nodesInside(node){const result=[];const visit=value=>{if(!value||typeof value!=='object')return;if(Array.isArray(value)){value.forEach(visit);return;}result.push(value);visit(value.props?.children);};visit(node);return result;}
 async function load(h, project = 'a', props = base) { h.render(props); h.flushEffects(); h.requests.at(-1).resolve({ ok: true, json: async () => ({ dataset: 'materials', rows: [row(project)], truncated: false }) }); await tick(); h.render(props); }
+
+test('report subjects are native pressed buttons in a named group and choosing a subject updates the request', async () => {
+ const h = harness();
+ try {
+  await load(h);
+  const group = () => nodesInside(h.render()).find(node => node.props?.role === 'group' && node.props['aria-label'] === 'Assunto do relatório');
+  const buttons = () => nodesInside(group()).filter(node => node.type === 'button');
+  assert.equal(buttons().length, 2);
+  assert.equal(buttons().filter(button => button.props['aria-pressed']).length, 1);
+  assert.equal(buttons()[0].props['aria-pressed'], true);
+  assert.ok(buttons().every(button => button.props.type === 'button' && button.props.role === undefined && button.props.tabIndex === undefined));
+  buttons()[1].props.onClick();
+  h.render(); h.flushEffects();
+  assert.equal(buttons()[0].props['aria-pressed'], false);
+  assert.equal(buttons()[1].props['aria-pressed'], true);
+  assert.equal(new URL(h.requests.at(-1).url, 'https://synthetic.example.invalid').searchParams.get('dataset'), 'loans');
+ } finally { h.dispose(); }
+});
 async function jsonDownload(h) { h.button('JSON').props.onClick(); return JSON.parse(await h.downloads.at(-1).blob.text()); }
 
 test('report exports remain disabled immediately on any server-filter or dataset change, before effects run', async () => {
