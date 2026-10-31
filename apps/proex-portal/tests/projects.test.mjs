@@ -129,7 +129,7 @@ test('project material spreadsheet view is returned only to a current global own
     assert.equal((await projectDetail(db,manager,'project-a')).spreadsheetLinks.materialsUrl,null);
     assert.equal((await projectDetail(db,owner,'project-b')).spreadsheetLinks.materialsUrl,null);
     db.native.prepare('UPDATE members SET revoked_at=? WHERE id=?').run(now,owner.members[0].id);
-    assert.equal((await projectDetail(db,owner,'project-a')).spreadsheetLinks.materialsUrl,null);
+    await assert.rejects(projectDetail(db,owner,'project-a'),{status:404});
   } finally {db.native.close();}
 });
 

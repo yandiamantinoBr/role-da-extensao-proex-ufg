@@ -93,7 +93,7 @@ test('legacy project edit reaches the backend while omitted new columns preserve
     assert.deepEqual({ ...saved }, { name: 'Nome corrigido na planilha antiga', unit_id: 'qa-unit', prizes_enabled: 1, scope: 'external', thematic_area: 'cultura', extension_line: '12' });
     const refreshed = (await exportPortablePage(db, actor, { table: 'projects' })).rows[0];
     fixture.context.escreverTabela_(fixture.ss, schemaFor('projects'), [refreshed]);
-    assert.equal(fixture.sheet.columns, 22); assert.equal(fixture.sheet.cells[1][2], current.id);
+    assert.equal(fixture.sheet.columns, 23); assert.equal(fixture.sheet.cells[1][2], current.id);
     assert.equal(fixture.context.conferirTabela_(fixture.ss, schemaFor('projects'), [refreshed]), true);
     const units = schemaFor('organizational_units');
     fixture.context.escreverTabela_(fixture.ss, units, []);

@@ -1,4 +1,4 @@
-import { accessibleProjects, type PortalActor } from './access';
+import { accessibleProjects, projectAuthoritySql, type PortalActor } from './access';
 import { all, type Row } from './database';
 import { HttpError } from './errors';
 
@@ -41,7 +41,8 @@ function day(value: unknown, label: string): string | null {
 // Mesma regra da lista de registros: empréstimos para quem cuida de empréstimos, materiais
 // para quem cuida do estoque e registros do projeto para coordenação e consulta.
 function recordVisibility(actor: PortalActor, extra: { clauses: string[]; values: unknown[] }) {
-  const loan = inScope('p.id', accessibleProjects(actor, 'loans.read')), inventory = inScope('p.id', accessibleProjects(actor, 'inventory.read')), project = inScope('p.id', accessibleProjects(actor, 'reports.read'));
+  const authorized=(capability:string)=>{const scope=inScope('p.id',accessibleProjects(actor,capability)),live=projectAuthoritySql(actor,[capability],'p.id');return{sql:`(${scope.sql}) AND (${live.sql})`,params:[...scope.params,...live.values]};};
+  const loan=authorized('loans.read'),inventory=authorized('inventory.read'),project=authorized('reports.read');
   return {
     clauses: [...extra.clauses, `(((r.kind='loan' OR r.loan_id IS NOT NULL) AND ${loan.sql}) OR (r.loan_id IS NULL AND r.kind IN ('maintenance','distribution','consumption','material') AND ${inventory.sql}) OR (r.loan_id IS NULL AND r.kind IN ('project','observation') AND ${project.sql}))`],
     values: [...extra.values, ...loan.params, ...inventory.params, ...project.params],
@@ -57,8 +58,9 @@ export async function reportRows(db: D1Database, actor: PortalActor | null, inpu
   if (projects !== null && !projects.length) return { dataset, rows: [], truncated: false };
   const from = day(input.from, 'a data inicial'), to = day(input.to, 'a data final');
   const where: string[] = [], params: unknown[] = [];
+  const authority=projectAuthoritySql(actor,REPORT_DATASETS[dataset].capabilities,'p.id');where.push(authority.sql);params.push(...authority.values);
   if (projects !== null) { where.push(`p.id IN (${projects.map(() => '?').join(',')})`); params.push(...projects); }
-  for (const [key, column] of [['projectId', 'p.id'], ['unitId', 'p.unit_id'], ['thematicArea', 'p.thematic_area']] as const) {
+  for (const [key, column] of [['projectId', 'p.id'], ['organizationId','p.organization_id'], ['unitId', 'p.unit_id'], ['thematicArea', 'p.thematic_area']] as const) {
     const value = input[key];
     if (typeof value === 'string' && value) {
       if (value.length > 200) throw new HttpError(400, 'Filtro inválido.', 'invalid_report_filter');

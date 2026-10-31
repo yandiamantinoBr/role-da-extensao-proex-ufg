@@ -73,7 +73,7 @@ function fixture() {
   };
   function seed(user, role, projectId = null, revokedAt = null) {
     const id = crypto.randomUUID();
-    sqlite.prepare('INSERT INTO members VALUES (?,?,?,?,?,?,?)')
+    sqlite.prepare('INSERT INTO members(id,user_id,email,role,project_id,revoked_at,created_at) VALUES (?,?,?,?,?,?,?)')
       .run(id, user.userId, user.email, role, projectId, revokedAt, new Date().toISOString());
     return id;
   }

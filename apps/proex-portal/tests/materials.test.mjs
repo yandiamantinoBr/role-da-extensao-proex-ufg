@@ -151,7 +151,7 @@ test('item metadata uses version checks, preserves category and checks current p
     await assert.rejects(materialsAction(db, actor, 'item.update', { id: material.id, expectedVersion: 2, category: 'gift' }), error => error.code === 'immutable_category');
     await assert.rejects(materialsAction(db, actor, 'item.update', { id: material.id, expectedVersion: 2, projectId: 'project-b' }), error => error.code === 'immutable_project');
     db.native.prepare('UPDATE members SET revoked_at=? WHERE id=?').run(new Date().toISOString(), member.id);
-    await assert.rejects(materialsAction(db, actor, 'item.update', { id: material.id, expectedVersion: 2, name: 'Revoked actor update' }), error => error.code === 'item_changed');
+    await assert.rejects(materialsAction(db, actor, 'item.update', { id: material.id, expectedVersion: 2, name: 'Revoked actor update' }), error => error.code === 'access_changed' && error.status === 403);
     assert.equal(db.native.prepare('SELECT name,version FROM items WHERE id=?').get(material.id).version, 2);
     assert.equal(db.native.prepare("SELECT COUNT(*) n FROM audit WHERE action='item.update'").get().n, 1);
   } finally { db.native.close(); }

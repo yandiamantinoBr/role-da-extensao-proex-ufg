@@ -2,7 +2,7 @@ import {all,one,iso,uid} from './database';
 import {requireCapability,type PortalActor} from './access';
 import {HttpError} from './errors';
 
-const OWNER=`EXISTS(SELECT 1 FROM members m JOIN portal_users a ON a.user_id=m.user_id WHERE m.user_id=? AND m.role='owner' AND m.project_id IS NULL AND m.revoked_at IS NULL AND a.status='active' AND a.activation_pending=0 AND a.anonymized_at IS NULL)`;
+const OWNER=`EXISTS(SELECT 1 FROM members m JOIN portal_users a ON a.user_id=m.user_id WHERE m.user_id=? AND m.role='owner' AND m.project_id IS NULL AND m.organization_id IS NULL AND m.revoked_at IS NULL AND a.status='active' AND a.activation_pending=0 AND a.anonymized_at IS NULL)`;
 const ACTIVE="status='active' AND activation_pending=0 AND anonymized_at IS NULL";
 export const privacyScopeNotice='Esta solicitação remove os dados da sua conta, seus identificadores de entrada, credenciais e foto. A equipe analisa a solicitação antes de executá-la. Contagens, histórico operacional e auditoria com identificador interno são preservados. Textos, termos assinados e anexos de terceiros não são apagados automaticamente e podem exigir análise institucional. A conta anonimizada não pode ser reativada.';
 
@@ -63,7 +63,7 @@ export async function resolvePrivacy(db:D1Database,actor:PortalActor,input:Recor
   return {ok:true,id:request.id,status:'rejected'};
  }
  const confirmed=`EXISTS(SELECT 1 FROM audit WHERE id=?)`;
- const conditions=`user_id=? AND anonymized_at IS NULL AND ${OWNER} AND EXISTS(SELECT 1 FROM privacy_requests WHERE id=? AND user_id=portal_users.user_id AND status='pending') AND (NOT EXISTS(SELECT 1 FROM members WHERE members.user_id=portal_users.user_id AND role='owner' AND project_id IS NULL AND revoked_at IS NULL) OR (SELECT COUNT(DISTINCT m.user_id) FROM members m LEFT JOIN portal_users u ON u.user_id=m.user_id WHERE m.role='owner' AND m.project_id IS NULL AND m.revoked_at IS NULL AND COALESCE(u.status,'active')='active' AND COALESCE(u.activation_pending,0)=0 AND u.anonymized_at IS NULL)>1)`;
+ const conditions=`user_id=? AND anonymized_at IS NULL AND ${OWNER} AND EXISTS(SELECT 1 FROM privacy_requests WHERE id=? AND user_id=portal_users.user_id AND status='pending') AND (NOT EXISTS(SELECT 1 FROM members WHERE members.user_id=portal_users.user_id AND role='owner' AND project_id IS NULL AND organization_id IS NULL AND revoked_at IS NULL) OR (SELECT COUNT(DISTINCT m.user_id) FROM members m LEFT JOIN portal_users u ON u.user_id=m.user_id WHERE m.role='owner' AND m.project_id IS NULL AND m.organization_id IS NULL AND m.revoked_at IS NULL AND COALESCE(u.status,'active')='active' AND COALESCE(u.activation_pending,0)=0 AND u.anonymized_at IS NULL)>1)`;
  const target=request.user_id;
  const cleanup=(sql:string,...parameters:unknown[])=>db.prepare(sql).bind(...parameters,auditId);
  const results=await db.batch([

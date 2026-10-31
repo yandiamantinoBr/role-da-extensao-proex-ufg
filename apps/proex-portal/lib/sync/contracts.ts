@@ -17,7 +17,7 @@ export type PortableChangeResult = { changeKey: string; status: 'applied' | 'dup
 // This predicate is also evaluated inside every imported domain transaction. A stale
 // actor object or spreadsheet cell can never establish organization authority.
 export const SYNC_OWNER_SQL = `EXISTS(SELECT 1 FROM members m LEFT JOIN portal_users u ON u.user_id=m.user_id
- WHERE m.user_id=? AND m.role='owner' AND m.project_id IS NULL AND m.revoked_at IS NULL
+ WHERE m.user_id=? AND m.role='owner' AND m.project_id IS NULL AND m.organization_id IS NULL AND m.revoked_at IS NULL
  AND COALESCE(u.status,'active')='active' AND COALESCE(u.activation_pending,0)=0 AND u.anonymized_at IS NULL)`;
 export async function requireSyncOwner(db: D1Database, actor: PortalActor | null): Promise<void> {
  if (!actor) throw new HttpError(401, 'Entre para acessar a integração.', 'unauthenticated');

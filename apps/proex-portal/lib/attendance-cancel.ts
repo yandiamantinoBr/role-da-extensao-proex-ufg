@@ -1,4 +1,4 @@
-import { requireLiveCapability, capabilityBatch, type PortalActor } from './access';
+import { memberProjectScopeSql, requireLiveCapability, capabilityBatch, type PortalActor } from './access';
 import { iso, one } from './database';
 import { HttpError } from './errors';
 
@@ -27,7 +27,7 @@ export async function cancelAttendance(
   }
 
   const now = iso();
-  const results = await capabilityBatch(db,actor,'participation.operate',attempt.project_id,[
+  const results = await capabilityBatch(db, actor, 'participation.operate', attempt.project_id, [
     db.prepare(`UPDATE attempts SET state='cancelled',result='cancelled'
       WHERE id=? AND state='pending'
         AND NOT EXISTS(SELECT 1 FROM entitlements WHERE attempt_id=attempts.id)
@@ -35,7 +35,7 @@ export async function cancelAttendance(
           AND p.modality='physical' AND p.state='physical_pending')
         AND EXISTS(SELECT 1 FROM members auth WHERE auth.user_id=? AND auth.revoked_at IS NULL
           AND auth.role IN ('owner','manager','operator')
-          AND (auth.project_id IS NULL OR auth.project_id=?))`)
+          AND ${memberProjectScopeSql("auth","?")})`)
       .bind(attempt.id, actor.userId, attempt.project_id),
     db.prepare(`UPDATE reservations SET state='released' WHERE attempt_id=? AND state='held'
       AND EXISTS(SELECT 1 FROM attempts WHERE id=? AND state='cancelled' AND result='cancelled')`)
@@ -49,7 +49,10 @@ export async function cancelAttendance(
   ]);
   if (results[0].meta.changes !== 1) {
     const latest = await one(db, 'SELECT state,result FROM attempts WHERE id=?', [attempt.id]);
-    if (latest?.state === 'cancelled' && latest.result === 'cancelled') { await requireLiveCapability(db,actor,'participation.operate',attempt.project_id); return { cancelled: true }; }
+    if (latest?.state === 'cancelled' && latest.result === 'cancelled') {
+      await requireLiveCapability(db, actor, 'participation.operate', attempt.project_id);
+      return { cancelled: true };
+    }
     throw new HttpError(409, 'O atendimento ou seu acesso mudou. Atualize antes de continuar.', 'attendance_changed');
   }
   return { cancelled: true };

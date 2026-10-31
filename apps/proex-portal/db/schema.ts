@@ -2,6 +2,11 @@ import { sql } from 'drizzle-orm';
 import { sqliteTable, text, integer, index, uniqueIndex, check, type AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
 
 // The schema has no production seed data. All quantities begin at zero.
+export const organizations = sqliteTable('organizations', {
+  id: text('id').primaryKey(), name: text('name').notNull(), slug: text('slug').notNull().unique(),
+  status: text('status').notNull().default('active'), version: integer('version').notNull().default(1),
+  createdAt: text('created_at').notNull(), updatedAt: text('updated_at').notNull(),
+}, t => [check('organizations_status_check', sql`${t.status} IN ('active','archived')`), check('organizations_version_check', sql`${t.version}>0`)]);
 export const projectTypes = sqliteTable('project_types', {
   id: text('id').primaryKey(), key: text('key').notNull(), label: text('label').notNull(),
   description: text('description').notNull().default(''), status: text('status').notNull().default('active'),
@@ -20,6 +25,7 @@ export const organizationalUnits = sqliteTable('organizational_units', {
 ]);
 export const projects = sqliteTable('projects', {
   id: text('id').primaryKey(), name: text('name').notNull(),
+  organizationId: text('organization_id').notNull().default('org_proex').references(() => organizations.id),
   description: text('description').notNull().default(''), createdAt: text('created_at').notNull(),
   shortName: text('short_name').notNull().default(''), status: text('status').notNull().default('active'),
   color: text('color').notNull().default('#54216C'), officialUrl: text('official_url').notNull().default(''),
@@ -47,6 +53,7 @@ export const members = sqliteTable('members', {
   id: text('id').primaryKey(), userId: text('user_id').notNull(), email: text('email').notNull(),
   role: text('role').notNull(), projectId: text('project_id').references(() => projects.id),
   revokedAt: text('revoked_at'), createdAt: text('created_at').notNull(),
+  organizationId: text('organization_id').references(() => organizations.id),
 }, t => [
   index('members_user_active_idx').on(t.userId, t.revokedAt),
   index('members_project_idx').on(t.projectId),
@@ -59,6 +66,7 @@ export const invites = sqliteTable('invites', {
   createdBy: text('created_by').notNull(), expiresAt: text('expires_at').notNull(),
   acceptedBy: text('accepted_by'), acceptedAt: text('accepted_at'), revokedAt: text('revoked_at'),
   createdAt: text('created_at').notNull(),
+  organizationId: text('organization_id').references(() => organizations.id),
 }, t => [
   uniqueIndex('invites_token_hash_unique').on(t.tokenHash),
   index('invites_email_idx').on(t.email),
@@ -213,6 +221,7 @@ export const audit = sqliteTable('audit', {
   id: text('id').primaryKey(), actorId: text('actor_id').notNull(),
   projectId: text('project_id').references(() => projects.id), action: text('action').notNull(),
   entityId: text('entity_id').notNull(), details: text('details').notNull().default('{}'), createdAt: text('created_at').notNull(),
+  organizationId: text('organization_id').references(() => organizations.id),
 }, t => [index('audit_project_created_idx').on(t.projectId, t.createdAt)]);
 export const settings = sqliteTable('settings', {
   name: text('name').primaryKey(), value: text('value').notNull(), updatedAt: text('updated_at').notNull(),
