@@ -10,7 +10,8 @@ import type { SnapshotStore } from './store';
 // - cada `batch` é uma transação atômica, com `changes()` e asserções na mesma conexão;
 // - gravações concorrentes de instâncias diferentes são serializadas por compare-and-set:
 //   em conflito, a instância recarrega o banco mais recente e reexecuta o lote;
-// - leituras podem estar até `freshnessMs` atrasadas, como réplicas de leitura do D1.
+// - toda execução consulta a versão autoritativa antes de ler, incluindo sessões e
+//   fences de autorização após awaits; o payload só é baixado se a versão mudou.
 type Value = string | number | bigint | null | Uint8Array;
 type Row = Record<string, unknown>;
 type Result = { success: true; results: Row[]; meta: { changes: number; last_row_id: number; duration: number; rows_read: number; rows_written: number; changed_db: boolean } };
@@ -50,12 +51,15 @@ class Statement {
 export class SnapshotD1 {
   private db: DatabaseSync | null = null;
   private version = 0;
-  private lastCheck = 0;
   private queue: Promise<unknown> = Promise.resolve();
   private migrated = false;
 
   constructor(private readonly store: SnapshotStore, private readonly migrations: Migration[] = [],
-    private readonly file = join(tmpdir(), 'proex-d1', `${process.pid}.sqlite`), private readonly freshnessMs = 1500) {}
+    private readonly file = join(tmpdir(), 'proex-d1', `${process.pid}.sqlite`), legacyFreshnessMs?: number) {
+    // Kept only for source compatibility with older local tools. A caller-provided
+    // TTL must never turn a shared authorization/session snapshot into a stale read.
+    void legacyFreshnessMs;
+  }
 
   prepare(sql: string) { return new Statement(this, sql); }
   batch(statements: Statement[]) { return this.execute(statements); }
@@ -67,9 +71,8 @@ export class SnapshotD1 {
   execute(statements: Statement[], mode: 'objects' | 'raw' | 'raw-names' | 'exec' = 'objects'): Promise<unknown[]> {
     return this.lock(async () => {
       await this.migrate();
-      const writes = mode === 'exec' || statements.some(statement => !readOnly(statement.sql));
       for (let attempt = 0; attempt < 8; attempt++) {
-        await this.refresh(writes || attempt ? 0 : this.freshnessMs);
+        await this.refresh();
         const db = this.db!, before = this.totalChanges();
         db.exec('BEGIN IMMEDIATE');
         let results: unknown[];
@@ -122,10 +125,10 @@ export class SnapshotD1 {
     this.db = new DatabaseSync(this.file);
     this.db.exec('PRAGMA journal_mode=DELETE; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;');
   }
-  private async refresh(maxAgeMs: number) {
-    if (this.db && Date.now() - this.lastCheck < maxAgeMs) return;
+  private async refresh() {
+    // A cheap primary-store version read is required even when this process has
+    // just read or committed. Another instance may have revoked access since then.
     const remote = await this.store.version();
-    this.lastCheck = Date.now();
     if (this.db && remote === this.version) return;
     const snapshot = remote ? await this.store.load() : null;
     this.open(snapshot?.data ?? null);
@@ -136,7 +139,6 @@ export class SnapshotD1 {
       const committed = await this.store.commit(this.version, gzipSync(readFileSync(this.file)));
       if (committed === null) { this.discardLocal(); return false; }
       this.version = committed;
-      this.lastCheck = Date.now();
       return true;
     } catch (error) {
       // O COMMIT local já aconteceu. Uma falha de rede pode significar tanto
@@ -149,14 +151,13 @@ export class SnapshotD1 {
   private discardLocal() {
     this.close();
     this.version = -1;
-    this.lastCheck = 0;
     this.migrated = false;
   }
   /** Aplica migrações pendentes no mesmo formato de histórico do wrangler (`d1_migrations`). */
   private async migrate() {
     if (this.migrated || !this.migrations.length) { this.migrated = true; return; }
     for (let attempt = 0; attempt < 8; attempt++) {
-      await this.refresh(0);
+      await this.refresh();
       const db = this.db!;
       db.exec('CREATE TABLE IF NOT EXISTS d1_migrations(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL)');
       const applied = new Set((db.prepare('SELECT name FROM d1_migrations').all() as { name: string }[]).map(row => row.name));
