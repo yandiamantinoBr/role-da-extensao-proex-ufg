@@ -1,6 +1,6 @@
 # Sincronização operacional PROEX
 
-Estado revisado em 30/10/2026: a hospedagem atual é **Vercel + Supabase**, em [proex-gestao.vercel.app](https://proex-gestao.vercel.app/), com o banco SQLite persistido por instantâneos versionados. Veja [Hospedagem Vercel](HOSPEDAGEM-VERCEL.md). Cloudflare D1/R2 e ChatGPT Sites são alternativas; os registros anteriores de V4/V5 abaixo preservam a evolução do protocolo. A revisão publicada e a última sincronização devem ser conferidas separadamente no registro de entrega e no histórico da rotina. Alterações locais da V9 não comprovam publicação nem execução externa.
+Estado revisado em 31/10/2026: a hospedagem atual é **Vercel + Supabase**, em [proex-gestao.vercel.app](https://proex-gestao.vercel.app/), com o banco SQLite persistido por instantâneos versionados. Veja [Hospedagem Vercel](HOSPEDAGEM-VERCEL.md). Cloudflare D1/R2 e ChatGPT Sites são alternativas; os registros anteriores de V4/V5 abaixo preservam a evolução do protocolo. A revisão publicada e a última sincronização devem ser conferidas separadamente no registro de entrega e no histórico da rotina. Mudanças no repositório não comprovam, por si só, publicação, instalação do conector ou execução externa.
 
 ## O que é a fonte de cada informação
 
@@ -19,6 +19,12 @@ O arquivo `public/integracoes/proex-planilha.gs` implementa os passos abaixo den
 - anexos: lista, gera ticket de 60 s, baixa, grava na pasta privada, confere que o arquivo não tem compartilhamento por link e confirma com hash e tamanho.
 
 `scripts/apps-script-harness.mjs` executa o arquivo `.gs` real contra um portal local, com planilha simulada, cobrindo exportação, edição, operação de estoque e conflito.
+
+O conector com versão `2026-10-31` confere todas as células relidas, além dos cabeçalhos e da quantidade de linhas. A comparação de edições concorrentes acontece depois de carregar a tabela do portal, imediatamente antes de escrever. Uma divergência preserva a aba e sua base anterior; nenhuma edição pendente deve ser descartada para forçar uma conclusão. O Google Sheets não oferece uma transação que bloqueie edições humanas entre essa comparação e a escrita; os editores responsáveis devem evitar editar durante a execução.
+
+No `Controle`, `lastVerifiedAt` avança somente quando todas as tabelas foram relidas sem conflitos na execução. Tentativas parciais preservam essa data e registram `lastAttemptAt`, `lastAttemptStatus`, `tablesVerified` e `connectorVersion`. As bases de tabelas já conferidas são preservadas, mas não há checkpoint de paginação: outra execução relê as tabelas desde o início. Instalar esse arquivo no projeto vinculado é uma etapa separada de publicar o portal.
+
+O menu **Ver estado da conexão** distingue os gatilhos de dados e anexos da conta Google atual e mostra o resultado mais recente da cópia de arquivos nessa conta. Novas cópias conferem permissões, tamanho e SHA-256 dos bytes relidos do Drive antes de confirmar o recibo. Falhas de download, releitura ou confirmação são registradas como falhas, com contagens e códigos, sem nomes de arquivos ou tickets. Um arquivo criado sem recibo confirmado pode permanecer no destino para revisão; não há exclusão automática de cópias. Cópias anteriores são indicadas como não revalidadas; esse resultado não confirma que todos os objetos do portal tenham backup. No painel, 90 minutos sem uma conclusão geram um aviso para conferir a rotina; o portal não deduz que os gatilhos estejam ativos.
 
 Na V5, o esquema declara **28 tabelas operacionais**. `organizational_units` é acrescentada ao catálogo portátil, com `name`, `acronym`, `kind` e `status` editáveis por operação do responsável global e controle de versão. A aba `projects` recebe `unit_id` e `prizes_enabled` ao final dos campos existentes. O vínculo de unidade e a opção de interface não alteram ACLs, papéis ou permissões. No perfil, `unit_id`, `affiliation`, `registration_type` e `registration_number` continuam fora da exportação; o texto anterior de `profiles.unit` permanece na projeção já existente. Não completar esses dados privados a partir da planilha.
 
