@@ -6,8 +6,10 @@ Os oito testes de `outflow-details.test.mjs` e os dois estados novos da interfac
 
 | Achado | Reprodução | Estado |
 | --- | --- | --- |
-| P2: falha de dados recebida como HTTP 200 aparece como consulta vazia | Erro de parse JSON e `rows` que não é array não apresentam erro explícito. A interface aplica o fallback vazio. | Correção do coordenador em validação. |
-| P2: CSV de consulta parcial perde a indicação ao sair da tela | `truncated:true` aparece em `filtros.Cobertura` do JSON, mas o CSV tem nome normal e nenhum aviso no conteúdo. | Correção do coordenador em validação. |
+| P2: falha de dados recebida como HTTP 200 aparece como consulta vazia | Erro de parse JSON e `rows` que não é array não apresentam erro explícito. A interface aplica o fallback vazio. | Corrigido em `e6d7d2e`. A prova independente também rejeita dataset diferente, `truncated` não booleano e linha nula. |
+| P2: CSV de consulta parcial perde a indicação ao sair da tela | `truncated:true` aparece em `filtros.Cobertura` do JSON, mas o CSV tem nome normal e nenhum aviso no conteúdo. | Corrigido em `e6d7d2e`: nome `-parcial.csv`, mantendo o conteúdo tabular. |
+
+Reconferência: **12/12 testes focados passaram** após `e6d7d2e`, incluindo as duas provas antes vermelhas. Revisão aprovada no escopo examinado, sem outro P0/P1 identificado; nenhum build ou teste de rede foi repetido. ESLint do arquivo de estados e `git diff --check` passaram.
 
 ## Controles conferidos
 

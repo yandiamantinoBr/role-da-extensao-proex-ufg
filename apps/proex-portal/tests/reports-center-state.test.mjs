@@ -138,13 +138,19 @@ test('traceable outflow filters travel to the server, immediately disable stale 
 });
 test('independent: malformed successful report JSON is an explicit failure rather than an empty successful query',async()=>{
  const failures=[];
- for(const body of [async()=>{throw new SyntaxError('Synthetic malformed JSON');},async()=>({rows:'not-an-array',truncated:false})]){
+ for(const body of [
+  async()=>{throw new SyntaxError('Synthetic malformed JSON');},
+  async()=>({dataset:'outflow_details',rows:'not-an-array',truncated:false}),
+  async()=>({dataset:'loans',rows:[tracedRow],truncated:false}),
+  async()=>({dataset:'outflow_details',rows:[tracedRow],truncated:'false'}),
+  async()=>({dataset:'outflow_details',rows:[null],truncated:false}),
+ ]){
   const h=harness();try{h.render(detailedProps);h.flushEffects();h.requests.at(-1).resolve({ok:true,json:body});await tick();h.render(detailedProps);
    for(const name of exportNames)assert.equal(h.button(name).props.disabled,true,name);
    failures.push(/não foi possível|inválid|incomplet/i.test(h.text()));
   }finally{h.dispose();}
  }
- assert.deepEqual(failures,[true,true],'invalid JSON and invalid rows must be presented as data failures, not zero rows');
+ assert.deepEqual(failures,[true,true,true,true,true],'invalid JSON, dataset, rows or coverage must be presented as data failures, not zero rows');
 });
 test('independent: a partial traceable CSV remains visibly partial after leaving the report screen',async()=>{
  const h=harness();try{h.render(detailedProps);h.flushEffects();h.requests.at(-1).resolve({ok:true,json:async()=>({dataset:'outflow_details',rows:[tracedRow],truncated:true})});await tick();h.render(detailedProps);
