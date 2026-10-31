@@ -136,3 +136,20 @@ test('traceable outflow filters travel to the server, immediately disable stale 
   const result=await jsonDownload(h);assert.equal(result.filtros['Tipo de saída'],'Retirada de equipamento');assert.equal(result.filtros['Devolução'],'Devolvido');assert.equal(result.linhas.length,1);assert.equal(result.linhas[0].quantidade,1);
  }finally{h.dispose();}
 });
+test('independent: malformed successful report JSON is an explicit failure rather than an empty successful query',async()=>{
+ const failures=[];
+ for(const body of [async()=>{throw new SyntaxError('Synthetic malformed JSON');},async()=>({rows:'not-an-array',truncated:false})]){
+  const h=harness();try{h.render(detailedProps);h.flushEffects();h.requests.at(-1).resolve({ok:true,json:body});await tick();h.render(detailedProps);
+   for(const name of exportNames)assert.equal(h.button(name).props.disabled,true,name);
+   failures.push(/não foi possível|inválid|incomplet/i.test(h.text()));
+  }finally{h.dispose();}
+ }
+ assert.deepEqual(failures,[true,true],'invalid JSON and invalid rows must be presented as data failures, not zero rows');
+});
+test('independent: a partial traceable CSV remains visibly partial after leaving the report screen',async()=>{
+ const h=harness();try{h.render(detailedProps);h.flushEffects();h.requests.at(-1).resolve({ok:true,json:async()=>({dataset:'outflow_details',rows:[tracedRow],truncated:true})});await tick();h.render(detailedProps);
+  const json=await jsonDownload(h);assert.match(json.filtros.Cobertura,/parcial/);
+  h.button('CSV').props.onClick();const csv=h.downloads.at(-1),body=await csv.blob.text();
+  assert.ok(/parcial|partial/i.test(csv.name+'\n'+body),'partial coverage must travel in the CSV filename or content');
+ }finally{h.dispose();}
+});
