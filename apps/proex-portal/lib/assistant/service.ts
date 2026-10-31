@@ -40,14 +40,16 @@ export async function prepareAssistantPlan(db: D1Database, actor: PortalActor | 
  if (admitted && admitted.admission_nonce !== admissionNonce) { const recovered=await existingCall(); if(recovered)return recovered; throw new HttpError(409,'Este envio já está em processamento.','assistant_call_replay'); }
  if (!admitted) throw new HttpError(429, 'O limite diário de custo, tokens, tempo ou chamadas foi atingido. O responsável pode revisar os limites.', 'assistant_quota');
  const controller = new AbortController(), timer = setTimeout(() => controller.abort(), config.timeoutMs);
+ async function dispatchFence(){await authorization.first();if(controller.signal.aborted)throw new HttpError(503,'A chamada excedeu o tempo reservado. Não houve repetição automática.','assistant_provider_unavailable');}
  try {
   await scopedActor(db,current,project);
   if((await loadSettings(db,secret,organizationId)).revision!==revision)throw new HttpError(409,'A configuração mudou antes da chamada.','assistant_configuration_changed');
+  await dispatchFence();
   const generated = await generateProposal(config, credentials, body, controller.signal, options.fetcher), proposal = validateProposal(generated.proposal, request, items);
   if (generated.inputTokens > bodyBytes) throw new HttpError(502, 'O uso de tokens excedeu a reserva preventiva.', 'assistant_usage');
   const fresh = await scopedActor(db, current, project); requireCapability(fresh, operationCapability(proposal.intent), project);
   let jevModel: string | null = null;
-  if (config.jevEnabled) { if((await loadSettings(db,secret,organizationId)).revision!==revision)throw new HttpError(409,'A configuração mudou antes da conferência.','assistant_configuration_changed'); await scopedActor(db,current,project); const decision = await checkDecision(config, credentials, decisionBody(config, request, proposal), controller.signal, options.fetcher); if (!decision.approved || decision.inputTokens > bodyBytes + 18000) throw new HttpError(409, 'O classificador indicou dúvida. Esclareça ação, material e quantidade no pedido.', 'assistant_needs_review'); jevModel = decision.model; }
+  if (config.jevEnabled) { if((await loadSettings(db,secret,organizationId)).revision!==revision)throw new HttpError(409,'A configuração mudou antes da conferência.','assistant_configuration_changed'); await scopedActor(db,current,project); await dispatchFence();const decision = await checkDecision(config, credentials, decisionBody(config, request, proposal), controller.signal, options.fetcher); if (!decision.approved || decision.inputTokens > bodyBytes + 18000) throw new HttpError(409, 'O classificador indicou dúvida. Esclareça ação, material e quantidade no pedido.', 'assistant_needs_review'); jevModel = decision.model; }
   if ((await loadSettings(db, secret, organizationId)).revision !== revision) throw new HttpError(409, 'A configuração de IA mudou. Prepare a proposta novamente.', 'assistant_configuration_changed');
   const before = proposal.itemId ? items.find(item => item.id === proposal.itemId)! : null, delta = proposal.intent === 'stock.receive' ? proposal.quantity : ['stock.distribute', 'stock.consume'].includes(proposal.intent) ? -proposal.quantity : 0;
   if (before && delta && (before.condition !== 'active' || before.stock + delta < before.reserved || before.category === 'equipment' && (delta < 0 || before.stock + delta > 1))) throw new HttpError(409, 'O material não permite essa movimentação. Confira disponibilidade e categoria em Materiais.', 'assistant_stock');
