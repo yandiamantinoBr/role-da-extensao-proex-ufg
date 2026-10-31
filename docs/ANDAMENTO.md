@@ -1,4 +1,10 @@
-# Checkpoint atual · V13 publicada em 31/10/2026
+# Checkpoint atual · V15 candidata, PR #16
+
+Fonte integrada e salva no GitHub em 6674d37. Meu trabalho, responsabilidades explícitas, sinais visuais e sino agrupado passaram no QA sintético; revisão independente 9,1/10 nos estados observados. 827/827 testes completos em Node 24/26 na revisão funcional, refinamentos posteriores com verificações focadas, tipos/lint e builds Worker/Node. O CI final, merge, Vercel e conferência real ainda estão pendentes. Última produção comprovada: V14, PR #15, funcional 7f7550c.
+
+Ler [ENTREGA-V15.md](ENTREGA-V15.md), [CONTINUAR-AQUI.md](CONTINUAR-AQUI.md) e a [matriz](COBERTURA-DE-REQUISITOS.md). Migração 0017 ensaiada em memória sobre backup real cifrado; produção ainda não migrada neste checkpoint. Sheets35 depende da releitura após publicar. R21 OFF, sem autorização Google específica recebida. As seções seguintes são históricas e não substituem este estado.
+
+# Histórico · V13 publicada em 31/10/2026
 
 PR #14, revisão funcional d069c7f, Vercel READY no mesmo SHA. 726/726 testes do portal e 33/33 do jogo no CI; sessão/relatório/Demandas/isolamento conferidos em produção. Sheets automático 34 tabelas/153 linhas/zero conflitos em 16:37:03Z. Primeiro backup RSA real recuperado e gatilho diário instalado; primeira execução pelo relógio e custódia externa continuam pendentes. Remetente/IA/público não foram ativados implicitamente. Guia curto em [CONTINUAR-AQUI.md](CONTINUAR-AQUI.md), requisitos em [COBERTURA-DE-REQUISITOS.md](COBERTURA-DE-REQUISITOS.md) e provas em [ENTREGA-V13.md](ENTREGA-V13.md). Abaixo, histórico preservado.
 

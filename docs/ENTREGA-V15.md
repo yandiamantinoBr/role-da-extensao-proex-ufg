@@ -1,0 +1,46 @@
+# V15 · Meu trabalho e responsabilidades explícitas
+
+Estado em 31/10/2026: **candidato 6674d37 testado localmente, PR #16 aberta, publicação pendente**. Este incremento R24 reúne Meu trabalho, responsabilidades e o sino agrupado. A revisão independente atribuiu **9,1/10** (9,11 ponderada) aos estados observados da V15; isso não equivale a certificação WCAG nem repete a auditoria de todas as famílias da V14. CI da revisão final, merge, deploy e conferência real ainda devem terminar. Última produção comprovada: [V14](ENTREGA-V14.md).
+
+## Comportamento do candidato
+
+**Meu trabalho** reúne demandas atribuídas diretamente à pessoa ou a equipes ativas das quais ela participa, sempre intersectadas com seu acesso vigente. Uma atribuição direta somada a várias equipes conta a mesma demanda uma única vez. Criar um registro, ocupar um cargo, tomar um equipamento emprestado ou constar como responsável documental de um patrimônio não cria atribuição pessoal.
+
+Os cartões separam estado, prioridade e prazo, com rótulos e símbolos além das cores. “Atenção” é a união de demandas atrasadas ou bloqueadas; uma demanda nas duas condições conta uma vez. O dia de Brasília vem do servidor: o prazo de hoje ainda não venceu, e demandas concluídas ou canceladas não entram como vencidas. Os filtros dos cartões consultam todo o conjunto no servidor antes de paginar.
+
+“Totais do recorte” cobre a população atribuída completa no contexto de organização, projeto e modalidade direta/equipe, independentemente do status selecionado e da página visível. As listas têm paginação separada, de até 50 registros, e informam total e continuidade. Os resumos por área representam módulos operacionais, sem confundir área temática ou equipe: empréstimo → material → campanha → projeto → geral. Essa precedência mantém cada demanda em um único grupo. Quantidades de demandas e de designações são apresentadas separadamente.
+
+**Designações de responsabilidade** permitem nomear pessoas e equipes para um projeto e sua área de Projetos, Materiais, Empréstimos ou Dinâmicas, opcionalmente para uma entidade específica. O projeto é obrigatório; alvo e organização devem ser compatíveis. Administração/gestão vigente pode nomear, substituir, revogar ou reativar, com revisão, controle de concorrência, recibo idempotente, auditoria e histórico. Pessoas e equipes podem se sobrepor; revogação e mudanças de acesso têm efeito nas consultas atuais.
+
+Papéis, designações e participação em equipes mantêm suas funções distintas. **Nomear alguém não amplia a ACL nem concede estoque, empréstimos, administração ou leitura de outro projeto.** A autorização limitada para trabalhar numa demanda continua separada da designação. Uma pessoa sem permissão do domínio não recebe nome, ID navegável ou URL do alvo restrito. Pessoas elegíveis são exibidas pelo nome necessário ao contexto, sem e-mails ou cadastro privado da equipe.
+
+Os links internos de demandas e responsabilidades identificam o contexto e a entidade autorizada. Foram acrescentados parâmetros específicos para projeto, material, empréstimo e campanha; tarefas com vários vínculos seguem a mesma área primária no nome, ID e link. QA sintético confirmou abertura dos quatro tipos de registro, foco no empréstimo/evento, contexto do material e retorno à lista. Mudar manualmente de contexto descarta o alvo anterior; ele não reaparece ao voltar ao projeto. Respostas antigas de outra conta, projeto ou alvo devem ser descartadas, sem restaurar uma edição anterior.
+
+**O sino agrupa atualizações por demanda.** Cada grupo mostra título, última data e quantidades de atualizações/não lidas somente na janela das 100 notificações recentes. O contador global de não lidas continua completo e pode superar a soma dos grupos visíveis. Abrir um grupo marca, em uma operação, os avisos próprios atualmente autorizados daquela demanda, inclusive os anteriores à janela; avisos de outras pessoas e tarefas são preservados. “Pendentes que você acompanha” explica que inclui demandas criadas ou recebidas. O link Meu trabalho leva às atribuições explícitas.
+
+As consultas permanecem sem gravação por visita, sem fanout por atualização e sem polling agressivo. O sino mantém intervalo moderado, pausa em aba oculta e proteção contra respostas tardias. E-mail/filas e o compartilhamento manual por WhatsApp preservam o desenho existente; este incremento não ativa serviços externos.
+
+## Validação da composição
+
+- Suíte completa: **827/827** em Node 24 e 26 na revisão funcional 275df47. Refinamentos posteriores de texto/CSS foram conferidos com testes focados; o CI deverá repetir a suíte no candidato final. Tipos passaram; lint teve zero erros e três avisos anteriores. Builds Worker e Node de 6674d37 concluídos.
+- CUA sintético: filtros por pessoa/equipe, totais completos versus páginas de seis, paginação independente, vazio, designar/revogar/reativar, conflito preservando escolhas, quatro links e leitura de cinco avisos do mesmo grupo sem marcar os demais. O caso tem 14 demandas criadas, 12 atribuídas, nove pendentes e Atenção quatro (três atrasadas ou duas bloqueadas com uma sobreposição).
+- Claro/escuro em 1250 e 375 px; central também em 320 e 414 px. Filtros e ações de Demandas mantêm 24 px, sino 44×44 px. As recapturas de 320 comparam scrollWidth com clientWidth, e não só innerWidth: conteúdo e área útil são 305 px. O detalhe de material usa a largura do contêiner, sem corte lateral, e os avisos escuros usam superfície azul escura. Alvos novos medidos têm pelo menos 44 px.
+- Teclado real: Espaço abre Mais e filtra Concluídas; Enter abre Meu trabalho; Escape fecha sino e retorna ao acionador. No material, Escape retorna ao botão original ou a main quando a abertura veio por URL. Dia operacional renova pela data recebida na atualização já existente do portal, sem novo polling.
+- Benchmark HTTP interno: 25 amostras de Meu trabalho no loopback, fixture sintética, p50 17,24 ms e p95 19,54 ms. O ensaio de 120 demandas do adaptador aquecido faz uma verificação forte de versão, zero downloads e zero commits. Não estima capacidade/latência de produção.
+- Parecer: [auditoria V15](../apps/proex-portal/docs/AUDITORIA-DESIGN-V15.md). Densidade e tipografia continuam oportunidades explícitas; zoom 200%, leitor de tela e aparelhos físicos não foram comprovados.
+
+## Evidência dos incrementos
+
+- Rodadas focadas dos incrementos passaram em Node 24 e Node 26: backend/modelo/compatibilidade, 74/74; links contextuais, 15/15; sino e regressões relacionadas, inclusive e-mail, 68/68. Tipos e lint dos incrementos foram conferidos. Esses resultados pertencem às revisões testadas, sem substituir os gates finais da composição.
+- Testes sintéticos cobrem 50+ tarefas, sobreposição direta/equipes, totais e filtros completos, alvo de outro projeto, conta bloqueada, remoção de integrante, revogação, CAS, concorrência, recuperação de resposta perdida, descarte de respostas antigas, DTOs, CSRF e leitura por tarefa. O benchmark do serviço pessoal com adaptador real de snapshot fez uma verificação autoritativa de versão e zero downloads/gravações após aquecimento; não estima latência ou capacidade de produção.
+- A migração **0017** adiciona três tabelas de designações, atribuições e histórico. Modelo, journal e snapshot estão reconciliados em **86 tabelas de aplicação**. Node e Worker usam o mesmo conjunto de migrações; a persistência permanece SQLite no armazenamento de snapshots existente.
+- Um ensaio **offline, somente em memória**, aplicou 0017 sobre um backup real cifrado. Os hashes de todas as colunas e linhas originais coincidiram; as linhas anteriores do journal também foram preservadas. Integridade SQLite aprovada, zero violações de FK, organizações válidas e modelo de tabelas/colunas/FKs correspondente. SHA-256 do arquivo cifrado: `3f88a12372a3c8362b18027c797ec539eaad33b960bb05ed70b80c6d3d7ea379`. O ensaio não escreveu dados descriptografados em disco nem alterou produção. Custódia independente da máquina continua uma pendência de recuperação.
+- Backup completo sintético preservou designações, atribuições e histórico. A projeção portátil/Sheets passa a oferecer 35 tabelas; a nova projeção de designações é somente leitura para administração global e exclui responsáveis, histórico e cadastro privado da equipe. A releitura real da nova tabela no conector ainda está pendente.
+
+## Gates e continuidade pendentes
+
+1. Aguardar CI da PR #16 no SHA final, integrar e conferir o deploy Vercel no mesmo SHA.
+2. Conferir sessão, Meu trabalho/Demandas/sino, migração 0017, saúde e isolamento em produção, sem gravar QA real. Revalidar a projeção Sheets de 35 tabelas e o backup completo.
+3. Registrar resultados comprovados na documentação, Vault e oito chats. R21 permanece OFF até confirmação específica de acesso Google; IA/STT e cadastro público também não são ativados por este incremento. Primeira execução diária do backup pelo relógio e custódia independente permanecem pendentes.
+
+Escopo e critérios: [R24](R24-MEU-TRABALHO.md). Contratos e modelo: [Meu trabalho e responsabilidades](../apps/proex-portal/docs/MEU-TRABALHO-E-RESPONSABILIDADES.md). [Sino agrupado](../apps/proex-portal/docs/SINO-AGRUPADO.md). Pedidos e pendências institucionais: [matriz](COBERTURA-DE-REQUISITOS.md) e [continuidade](REQUISITOS-E-CONTINUIDADE.md).
