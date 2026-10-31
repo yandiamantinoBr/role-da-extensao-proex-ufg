@@ -148,11 +148,11 @@ function ChartTooltip({ active, payload, label, unit }: { active?: boolean; payl
   return <div className={styles.tooltip}><strong>{label}</strong>{payload.map(item => <span key={item.name}><i style={{ background: item.color }} />{item.name}<b>{formatNumber(Number(item.value) || 0)} {unit}</b></span>)}</div>;
 }
 
-export default function ReportsCenter({ projectId, unitId, area, from, to, scopeLabel, available }: {
-  projectId: string; unitId: string; area: string; from: string; to: string; scopeLabel: string; available: DatasetId[];
+export default function ReportsCenter({ projectId, unitId, area, from, to, scopeLabel, available, initialDataset }: {
+  projectId: string; unitId: string; area: string; from: string; to: string; scopeLabel: string; available: DatasetId[]; initialDataset?: DatasetId;
 }) {
   const datasets = ORDER.filter(id => available.includes(id));
-  const [dataset, setDataset] = useState<DatasetId>(datasets[0] ?? 'projects');
+  const [dataset, setDataset] = useState<DatasetId>(initialDataset && datasets.includes(initialDataset) ? initialDataset : datasets[0] ?? 'projects');
   const [assetDetails, setAssetDetails] = useState(false);
   const config = useMemo(() => dataset === 'materials' && assetDetails ? { ...DATASETS.materials, columns: [...DATASETS.materials.columns, ...ASSET_COLUMNS] } : DATASETS[dataset], [dataset, assetDetails]);
   const [columns, setColumns] = useState<string[]>(config.defaults);
