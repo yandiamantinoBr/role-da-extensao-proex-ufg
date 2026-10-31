@@ -10,7 +10,7 @@ export type OrganizationalUnit = {
 };
 const KINDS = ['proex', 'academic', 'agency', 'external'];
 const OWNER_SQL = `EXISTS(SELECT 1 FROM members m LEFT JOIN portal_users u ON u.user_id=m.user_id
-  WHERE m.user_id=? AND m.role='owner' AND m.project_id IS NULL AND m.revoked_at IS NULL
+  WHERE m.user_id=? AND m.role='owner' AND m.project_id IS NULL AND m.organization_id IS NULL AND m.revoked_at IS NULL
     AND COALESCE(u.status,'active')='active' AND COALESCE(u.activation_pending,0)=0 AND u.anonymized_at IS NULL)`;
 function stmt(db: D1Database, sql: string, values: (string | number | null)[] = []) { return db.prepare(sql).bind(...values); }
 function text(value: unknown, label: string, maximum: number, optional = false): string {

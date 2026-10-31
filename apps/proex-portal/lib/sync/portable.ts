@@ -7,8 +7,9 @@ type Definition = { label: string; fields: string; editable?: string; action?: s
 // Explicit projections are intentional. Adding a database column does not make it
 // an exported column. Credentials, CPF hashes and private storage keys never enter.
 const DEFINITIONS: Record<string, Definition> = {
+ organizations: {label:'Organizações de acesso',fields:'id,name,slug,status,version,created_at,updated_at',mode:'read_only'},
  project_types: {label:'Tipos de projeto',fields:'id,key,label,description,status,version,created_at,updated_at',editable:'label,description,status',action:'project.type.update'},
- projects: {label:'Projetos',fields:'id,name,short_name,description,status,lifecycle,type_id,parent_id,color,official_url,starts_at,ends_at,location,version,created_at,unit_id,prizes_enabled,scope,thematic_area,extension_line',editable:'name,short_name,description,status,lifecycle,type_id,parent_id,color,official_url,starts_at,ends_at,location,unit_id,prizes_enabled,scope,thematic_area,extension_line',action:'project.update'},
+ projects: {label:'Projetos',fields:'id,name,short_name,description,status,lifecycle,type_id,parent_id,color,official_url,starts_at,ends_at,location,version,created_at,unit_id,prizes_enabled,scope,thematic_area,extension_line,organization_id',editable:'name,short_name,description,status,lifecycle,type_id,parent_id,color,official_url,starts_at,ends_at,location,unit_id,prizes_enabled,scope,thematic_area,extension_line',action:'project.update'},
  project_links: {label:'Links de projetos',fields:'id,project_id,label,url,kind,version,created_at,updated_at',editable:'label,url,kind',action:'project.link.update'},
  project_schedule_items: {label:'Agenda de projetos',fields:'id,project_id,title,starts_at,ends_at,status,note,url,version,created_at,updated_at',editable:'title,starts_at,ends_at,status,note,url',action:'project.schedule.update'},
  calls: {label:'Editais',fields:'id,project_id,title,reference_code,description,status,opens_at,closes_at,official_url,version,created_at,updated_at',editable:'title,reference_code,description,status,opens_at,closes_at,official_url',action:'call.update'},
@@ -28,9 +29,9 @@ const DEFINITIONS: Record<string, Definition> = {
  attempts: {label:'Tentativas',fields:'id,participation_id,number,result,state,created_at',omitted:['idempotency_key']},
  reservations: {label:'Reservas de brindes',fields:'id,participation_id,attempt_id,offer_id,item_id,quantity,state'},
  entitlements: {label:'Direitos a brindes',fields:'id,attempt_id,participation_id,offer_id,state,created_at,delivered_at',omitted:['delivered_by']},
- members: {label:'Equipe e permissões',fields:'id,user_id,role,project_id,revoked_at,created_at',omitted:['email']},
+ members: {label:'Equipe e permissões',fields:'id,user_id,role,project_id,organization_id,revoked_at,created_at',omitted:['email']},
  profiles: {label:'Perfis da equipe',fields:'user_id,display_name,unit,job_title,version,created_at,updated_at',key:'user_id',omitted:['phone','avatar_key','mime','registration_type','registration_number','affiliation','unit_id']},
- audit: {label:'Histórico de operações',fields:'id,project_id,action,entity_id,created_at',omitted:['actor_id','details']},
+ audit: {label:'Histórico de operações',fields:'id,project_id,organization_id,action,entity_id,created_at',omitted:['actor_id','details']},
  entity_versions: {label:'Revisões de metadados',fields:'id,entity_type,entity_id,project_id,version,created_at',omitted:['actor_id','snapshot_json']},
  visits: {label:'Acessos por dia',fields:'campaign_id,day,hits',key:'json_array(campaign_id,day)'},
  settings: {label:'Configurações públicas',fields:'name,value,updated_at',key:'name',where:"name IN ('instagramUrl','privacyNotice')"},

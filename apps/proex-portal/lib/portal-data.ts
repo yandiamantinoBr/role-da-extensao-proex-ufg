@@ -1,7 +1,8 @@
-import { accessibleProjects, requireCapability, type PortalActor } from './access';
+import { accessibleProjects, requireCapability, projectAuthoritySql, type PortalActor } from './access';
 import { all, one, type Row } from './database';
 import { HttpError } from './errors';
 import { listManagedUsers } from './users';
+import { listOrganizations } from './organizations';
 
 type Scope = string[] | null;
 type Filter = { sql: string; params: unknown[] };
@@ -15,6 +16,10 @@ function filter(column: string, scope: Scope): Filter {
   if (scope === null) return { sql: '1=1', params: [] };
   if (!scope.length) return { sql: '1=0', params: [] };
   return { sql: `${column} IN (${scope.map(() => '?').join(',')})`, params: scope };
+}
+function authorizedFilter(column:string, scope:Scope, actor:PortalActor, capabilities:readonly string[]=[]):Filter{
+  const result=filter(column,scope),authority=projectAuthoritySql(actor,capabilities,column);
+  return{sql:`(${result.sql}) AND (${authority.sql})`,params:[...result.params,...authority.values]};
 }
 
 function scopes(actor: PortalActor, ...capabilities: string[]): Scope {
@@ -33,7 +38,7 @@ function count(row: Row | null, key: string): number {
 }
 
 const OWNER_SQL = `EXISTS (SELECT 1 FROM members auth LEFT JOIN portal_users account ON account.user_id=auth.user_id
-  WHERE auth.user_id=? AND auth.role='owner' AND auth.project_id IS NULL AND auth.revoked_at IS NULL
+  WHERE auth.user_id=? AND auth.role='owner' AND auth.project_id IS NULL AND auth.organization_id IS NULL AND auth.revoked_at IS NULL
     AND COALESCE(account.status,'active')='active' AND COALESCE(account.activation_pending,0)=0 AND account.anonymized_at IS NULL)`;
 
 /** Derive missing directory metadata only from existing canonical membership rows, never an email match. */
@@ -74,16 +79,16 @@ function allowed(actor: PortalActor, capability: string, projectId?: string | nu
   catch (error) { if (error instanceof HttpError && error.status === 403) return false; throw error; }
 }
 
-async function reportMetrics(db: D1Database, scope: Scope): Promise<Row> {
+async function reportMetrics(db: D1Database, scope: Scope, actor:PortalActor): Promise<Row> {
   // No permission is different from an observed zero. Never manufacture "unique people".
   if (scope !== null && !scope.length) return {
     available: false, participations: null, attempts: null, deliveries: null,
     pendingPrizes: null, unitsDelivered: null, tickets: null, visits: null,
     modalities: [], results: [], campaigns: [], daily: [], byProject: [],
   };
-  const campaign = filter('c.project_id', scope);
-  const item = filter('i.project_id', scope);
-  const project = filter('pr.id', scope);
+  const campaign = authorizedFilter('c.project_id', scope,actor,['reports.read']);
+  const item = authorizedFilter('i.project_id', scope,actor,['reports.read']);
+  const project = authorizedFilter('pr.id', scope,actor,['reports.read']);
   const [participations, attempts, entitlements, movements, visits, modalities, results, campaigns, daily, byProject] = await Promise.all([
     one(db, `SELECT COUNT(*) AS total,
       COALESCE(SUM(CASE WHEN p.identity_method='ticket' THEN 1 ELSE 0 END),0) AS tickets
@@ -181,22 +186,30 @@ export async function portalSnapshot(db: D1Database, actor: PortalActor | null):
   const loanScope = scopes(actor, 'loans.read', 'reports.read');
   const accessScope = accessibleProjects(actor, 'access.manage');
   const auditScope = scopes(actor, 'access.manage', 'reports.read');
-  const projectsFilter = filter('id', projectScope);
-  const campaignsFilter = filter('project_id', campaignScope);
-  const inventoryFilter = filter('project_id', inventoryScope);
-  const equipmentFilter = filter('project_id', loanPrivateScope);
-  const offersFilter = filter('o.project_id', offerScope);
-  const loansFilter = filter('project_id', loanScope);
-  const privateLoansFilter = filter('project_id', loanPrivateScope);
-  const accessFilter = filter('project_id', accessScope);
-  const auditFilter = filter('project_id', auditScope);
-  const documentsFilter = filter('d.project_id', loanPrivateScope);
-  const physicalFilter = filter('c.project_id', accessibleProjects(actor, 'participation.operate'));
-  const prizesFilter = filter('c.project_id', accessibleProjects(actor, 'inventory.deliver'));
+  const projectsFilter = authorizedFilter('projects.id', projectScope,actor);
+  const campaignsFilter = authorizedFilter('campaigns.project_id', campaignScope,actor,['campaigns.manage','participation.operate','reports.read']);
+  const inventoryFilter = authorizedFilter('items.project_id', inventoryScope,actor,['inventory.read','inventory.manage','inventory.deliver','reports.read']);
+  const equipmentFilter = authorizedFilter('items.project_id', loanPrivateScope,actor,['loans.read']);
+  const offersFilter = authorizedFilter('o.project_id', offerScope,actor,['campaigns.manage','participation.operate','inventory.read','inventory.manage','inventory.deliver','reports.read']);
+  const loansFilter = authorizedFilter('loans.project_id', loanScope,actor,['loans.read','reports.read']);
+  const privateLoansFilter = authorizedFilter('loans.project_id', loanPrivateScope,actor,['loans.read']);
+  const accessRowsFilter=(table:string,scope:Scope,capabilities:readonly string[])=>{
+    const projected=authorizedFilter(`${table}.project_id`,scope,actor,capabilities);
+    const admin=`EXISTS(SELECT 1 FROM members admin LEFT JOIN portal_users account ON account.user_id=admin.user_id
+      WHERE admin.user_id=? AND admin.role='owner' AND admin.project_id IS NULL AND admin.revoked_at IS NULL
+      AND (admin.organization_id IS NULL OR admin.organization_id=${table}.organization_id)
+      AND COALESCE(account.status,'active')='active' AND COALESCE(account.activation_pending,0)=0 AND account.anonymized_at IS NULL)`;
+    return{sql:`((${projected.sql}) OR (${admin}))`,params:[...projected.params,actor.userId]};
+  };
+  const membersFilter=accessRowsFilter('members',accessScope,['access.manage']),invitesFilter=accessRowsFilter('invites',accessScope,['access.manage']);
+  const auditFilter=accessRowsFilter('audit',auditScope,['access.manage','reports.read']);
+  const documentsFilter = authorizedFilter('d.project_id', loanPrivateScope,actor,['loans.read']);
+  const physicalFilter = authorizedFilter('c.project_id', accessibleProjects(actor, 'participation.operate'),actor,['participation.operate']);
+  const prizesFilter = authorizedFilter('c.project_id', accessibleProjects(actor, 'inventory.deliver'),actor,['inventory.deliver']);
   const snapshotTime = Date.now();
 
   const [projects, campaigns, items, offers, components, loans, loanDetails, members, invites, audit, settingsRows, documents, metrics, physicalTickets, pendingPrizes, pendingPrizeCount, users, ownProfile] = await Promise.all([
-    all(db, `SELECT id,name,description,created_at,short_name,status,color,official_url,starts_at,ends_at,location,version,lifecycle,type_id,parent_id,unit_id,prizes_enabled,scope,thematic_area,extension_line
+    all(db, `SELECT id,name,description,created_at,short_name,status,color,official_url,starts_at,ends_at,location,version,lifecycle,type_id,parent_id,unit_id,prizes_enabled,scope,thematic_area,extension_line,organization_id
       FROM projects WHERE ${projectsFilter.sql} ORDER BY name,id`, projectsFilter.params),
     all(db, `SELECT id,project_id,name,location,starts_at,ends_at,status,retry_limit,
       brinde_offer_id,super_offer_id,rules_text,version,created_at
@@ -218,10 +231,10 @@ export async function portalSnapshot(db: D1Database, actor: PortalActor | null):
       FROM loans WHERE ${loansFilter.sql} ORDER BY starts_at DESC,id`, loansFilter.params),
     all(db, `SELECT id,project_id,borrower_name,borrower_contact,note,condition_out,condition_in
       FROM loans WHERE ${privateLoansFilter.sql}`, privateLoansFilter.params),
-    all(db, `SELECT id,email,role,project_id,revoked_at,created_at FROM members
-      WHERE ${accessFilter.sql} ORDER BY created_at,id`, accessFilter.params),
-    all(db, `SELECT id,email,role,project_id,expires_at,accepted_at,revoked_at,created_at FROM invites
-      WHERE ${accessFilter.sql} ORDER BY created_at DESC,id`, accessFilter.params),
+    all(db, `SELECT id,email,role,project_id,organization_id,revoked_at,created_at FROM members
+      WHERE ${membersFilter.sql} ORDER BY created_at,id`, membersFilter.params),
+    all(db, `SELECT id,email,role,project_id,organization_id,expires_at,accepted_at,revoked_at,created_at FROM invites
+      WHERE ${invitesFilter.sql} ORDER BY created_at DESC,id`, invitesFilter.params),
     // Activity summaries deliberately exclude actor ids, free-form details and entity values.
     all(db, `SELECT id,project_id,action,created_at FROM audit
       WHERE ${auditFilter.sql} ORDER BY created_at DESC,id DESC LIMIT 100`, auditFilter.params),
@@ -229,7 +242,7 @@ export async function portalSnapshot(db: D1Database, actor: PortalActor | null):
     all(db, `SELECT d.id,d.loan_id,d.project_id,d.name,d.mime,d.size,d.created_at
       FROM documents d JOIN loans l ON l.id=d.loan_id AND l.project_id=d.project_id
       WHERE ${documentsFilter.sql} ORDER BY d.created_at DESC,d.id`, documentsFilter.params),
-    reportMetrics(db, accessibleProjects(actor, 'reports.read')),
+    reportMetrics(db, accessibleProjects(actor, 'reports.read'),actor),
     all(db, `SELECT p.id AS participation_id,p.campaign_id,p.identity_method,p.state,p.attempt_count,
       a.id AS attempt_id,a.number,a.result,a.state AS attempt_state,c.name AS campaign_name,c.project_id
       FROM participations p JOIN campaigns c ON c.id=p.campaign_id
@@ -279,7 +292,7 @@ export async function portalSnapshot(db: D1Database, actor: PortalActor | null):
   const hasPassword = Boolean(ownProfile?.has_password);
   return {
     user: { userId: actor.userId, ...profile, hasPassword }, profile, hasPassword,
-    role, capabilities, globalCapabilities, capabilitiesByProject, projects, campaigns,
+    role, capabilities, globalCapabilities, capabilitiesByProject, organizations: await listOrganizations(db,actor), projects, campaigns,
     projectTypes: await all(db,'SELECT id,key,label,description,status,version FROM project_types ORDER BY label,id'),
     organizationalUnits: await all(db,'SELECT id,name,acronym,kind,status,version,group_label,campus FROM organizational_units ORDER BY name,id'),
     items: items.map(item => ({ ...item, on_loan: Boolean(item.on_loan), reserved_now: Boolean(item.reserved_now),

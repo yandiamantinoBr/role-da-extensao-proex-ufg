@@ -1,5 +1,7 @@
 # Acessos e escopo — incremento V10
 
+O modelo posterior de organizações independentes está em [Organizações e isolamento — R04/V11](ORGANIZACOES-E-ISOLAMENTO.md). Este registro preserva o comportamento da V10 anterior à migração 0008.
+
 Implementação local iniciada em 31/10/2026 sobre a V9 (`441649a`). Não cria provedor de login, organização independente ou cadastro público. Publicação e situação dos provedores devem ser conferidas no registro de entrega integrado.
 
 ## O que a autorização significa hoje

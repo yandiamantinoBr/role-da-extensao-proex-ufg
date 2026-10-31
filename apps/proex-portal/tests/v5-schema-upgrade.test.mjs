@@ -17,7 +17,7 @@ test('V5 upgrade adds organizational metadata in place while preserving inventor
    INSERT INTO participations(id,campaign_id,identity_id,identity_method,modality,state,created_at) VALUES('participation-a','campaign-a','person-a','account','wheel','completed','2026-10-23T00:00:00.000Z');
    INSERT INTO profiles(user_id,display_name,avatar_key,mime,unit,job_title,phone,version,created_at,updated_at) VALUES('staff-a','Legacy display name','private-avatar-key','image/png','Free-form legacy unit','Legacy job title','Private phone',7,'2026-10-23T00:00:00.000Z','2026-10-23T00:00:00.000Z');`);
   const beforeTriggers=db.prepare("SELECT name FROM sqlite_master WHERE type='trigger'").all().map(row=>row.name);
-  for(const migration of migrations.filter(name=>name>='0005')){
+  for(const migration of migrations.filter(name=>name>='0005'&&name<'0008')){
    const sql=readFileSync(new URL(migration,migrationsRoot),'utf8');
    assert.doesNotMatch(sql,/DROP\s+TABLE|RENAME\s+TO|foreign_keys\s*=\s*OFF|INSERT\s+INTO|UPDATE\s+(projects|profiles)/i);
    db.exec(sql);

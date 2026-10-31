@@ -1,4 +1,4 @@
-import { accessibleProjects, requireCapability, type PortalActor, type PortalMember } from './access';
+import { accessibleProjects, requireCapability, requireOrganizationCapability, delegationAuthority, memberProjectScopeSql, ownerSurvivalSql, type PortalActor, type PortalMember } from './access';
 import { HttpError } from './errors';
 
 const SUBORDINATE_ROLES = ['operator', 'inventory', 'loans', 'viewer'];
@@ -15,15 +15,16 @@ function identifier(value: unknown): value is string {
 
 const OWNER_SQL = `EXISTS (SELECT 1 FROM members auth
   JOIN portal_users account ON account.user_id=auth.user_id AND account.status='active' AND COALESCE(account.activation_pending,0)=0 AND account.anonymized_at IS NULL
-  WHERE auth.user_id=? AND auth.role='owner' AND auth.project_id IS NULL AND auth.revoked_at IS NULL)`;
+  WHERE auth.user_id=? AND auth.role='owner' AND auth.project_id IS NULL AND auth.organization_id IS NULL AND auth.revoked_at IS NULL)`;
 const ACTIVE_OWNER_COUNT_SQL = `(SELECT COUNT(DISTINCT owners.user_id) FROM members owners
   LEFT JOIN portal_users account ON account.user_id=owners.user_id
-  WHERE owners.role='owner' AND owners.project_id IS NULL AND owners.revoked_at IS NULL
+  WHERE owners.role='owner' AND owners.project_id IS NULL AND owners.organization_id IS NULL AND owners.revoked_at IS NULL
     AND COALESCE(account.status,'active')='active' AND COALESCE(account.activation_pending,0)=0 AND account.anonymized_at IS NULL)`;
 const VISIBLE_MEMBER_SQL = `EXISTS (SELECT 1 FROM members auth
   JOIN portal_users account ON account.user_id=auth.user_id AND account.status='active' AND COALESCE(account.activation_pending,0)=0 AND account.anonymized_at IS NULL
   WHERE auth.user_id=? AND auth.revoked_at IS NULL AND auth.role IN ('owner','manager')
-    AND (auth.project_id IS NULL OR auth.project_id=m.project_id))`;
+    AND ((auth.role='owner' AND auth.project_id IS NULL AND auth.organization_id IS NULL)
+      OR (auth.project_id IS NULL AND auth.organization_id=m.organization_id) OR auth.project_id=m.project_id))`;
 
 function isOwner(actor: PortalActor): boolean {
   return accessibleProjects(actor, 'organization.manage') === null;
@@ -31,10 +32,11 @@ function isOwner(actor: PortalActor): boolean {
 
 function canChange(actor: PortalActor, member: PortalMember, role: AssignableRole): boolean {
   if (isOwner(actor)) return true;
+  if(member.role!=='owner' && actor.members.some(item=>item.role==='owner'&&item.project_id===null&&item.organization_id===member.organization_id&&item.revoked_at===null)) return true;
   return member.project_id !== null && SUBORDINATE_ROLES.includes(member.role)
     && SUBORDINATE_ROLES.includes(role)
     && actor.members.some(item => item.user_id === actor.userId && item.role === 'manager'
-      && item.revoked_at === null && item.project_id === member.project_id);
+      && item.revoked_at === null && (item.project_id === member.project_id || (item.project_id===null && actor.organizationProjects?.[item.organization_id??'org_proex']?.includes(member.project_id!))));
 }
 
 async function receiptId(actorId: string, operationKey: unknown): Promise<string> {
@@ -79,9 +81,9 @@ export async function listManagedUsers(db: D1Database, actor: PortalActor | null
         WHERE m.user_id=u.user_id AND ${VISIBLE_MEMBER_SQL})
       ORDER BY COALESCE(p.display_name,u.email,u.user_id),u.user_id`).bind(actorId, actorId)
       .all<UserRow & { display_name: string | null; has_password: number; activation_pending: number; avatar_key:string|null;mime:string|null;version:number|null }>(),
-    db.prepare(`SELECT m.id,m.user_id,m.role,m.project_id,m.revoked_at,m.created_at FROM members m
+    db.prepare(`SELECT m.id,m.user_id,m.role,m.project_id,m.organization_id,m.revoked_at,m.created_at FROM members m
       WHERE ${VISIBLE_MEMBER_SQL} ORDER BY m.created_at,m.id`).bind(actorId)
-      .all<Pick<PortalMember, 'id' | 'user_id' | 'role' | 'project_id' | 'revoked_at' | 'created_at'>>(),
+      .all<Pick<PortalMember, 'id' | 'user_id' | 'role' | 'project_id' | 'organization_id' | 'revoked_at' | 'created_at'>>(),
   ]);
   const grouped = new Map<string, Record<string, unknown>[]>();
   for (const member of memberships.results ?? []) {
@@ -116,7 +118,7 @@ function managedTarget(actor:PortalActor|null,target:unknown,project:unknown){
  const projectId=typeof project==='string'&&project?project:null;
  if(projectId)requireCapability(actor,'access.manage',projectId);
  const sql=`u.user_id=? AND (${OWNER_SQL} OR EXISTS(SELECT 1 FROM members m WHERE m.user_id=u.user_id AND ${VISIBLE_MEMBER_SQL}))
-  ${projectId?`AND EXISTS(SELECT 1 FROM members m WHERE m.user_id=u.user_id AND (m.project_id IS NULL OR m.project_id=?) AND ${VISIBLE_MEMBER_SQL})`:''}`;
+  ${projectId?`AND EXISTS(SELECT 1 FROM members m WHERE m.user_id=u.user_id AND ${memberProjectScopeSql('m','?')} AND ${VISIBLE_MEMBER_SQL})`:''}`;
  return {actor:actor!,userId:target,projectId,sql,parameters:[target,actor!.userId,actor!.userId,...(projectId?[projectId,actor!.userId]:[])]};
 }
 /** Institutional contact/enrollment fields are read on demand, never in the broad directory or Sheets. */
@@ -126,9 +128,9 @@ export async function getManagedUser(db:D1Database,actor:PortalActor|null,userId
  const row=await db.prepare(`SELECT u.user_id,u.email,u.status,u.anonymized_at,p.display_name,p.unit_id,p.unit,p.affiliation,p.job_title,p.phone,
    p.registration_type,p.registration_number,p.avatar_key,p.mime,p.version,
    org.id org_id,org.name org_name,org.acronym org_acronym,org.kind org_kind,org.status org_status,
-   (SELECT json_group_array(json_object('id',visible.id,'role',visible.role,'project_id',visible.project_id,'revoked_at',visible.revoked_at,'created_at',visible.created_at))
-    FROM(SELECT m.id,m.role,m.project_id,m.revoked_at,m.created_at FROM members m WHERE m.user_id=u.user_id AND ${VISIBLE_MEMBER_SQL}
-      ${target.projectId?'AND (m.project_id IS NULL OR m.project_id=?)':''} ORDER BY m.created_at,m.id) visible) members_json
+   (SELECT json_group_array(json_object('id',visible.id,'role',visible.role,'project_id',visible.project_id,'organization_id',visible.organization_id,'revoked_at',visible.revoked_at,'created_at',visible.created_at))
+    FROM(SELECT m.id,m.role,m.project_id,m.organization_id,m.revoked_at,m.created_at FROM members m WHERE m.user_id=u.user_id AND ${VISIBLE_MEMBER_SQL}
+      ${target.projectId?`AND ${memberProjectScopeSql('m','?')}`:''} ORDER BY m.created_at,m.id) visible) members_json
   FROM portal_users u LEFT JOIN profiles p ON p.user_id=u.user_id AND u.anonymized_at IS NULL
   LEFT JOIN organizational_units org ON org.id=p.unit_id WHERE ${target.sql}`)
   .bind(target.actor.userId,...(target.projectId?[target.projectId]:[]),...target.parameters).first<ManagedPersonRow>();
@@ -187,7 +189,7 @@ export async function usersAction(
         AND ${OWNER_SQL}
         AND (?!='blocked' OR (user_id!=? AND (NOT EXISTS
           (SELECT 1 FROM members target WHERE target.user_id=portal_users.user_id
-            AND target.role='owner' AND target.project_id IS NULL AND target.revoked_at IS NULL
+            AND target.role='owner' AND target.project_id IS NULL AND target.organization_id IS NULL AND target.revoked_at IS NULL
             AND COALESCE(portal_users.activation_pending,0)=0)
           OR ${ACTIVE_OWNER_COUNT_SQL}>1)))`)
         .bind(status, now, targetId, target.status, actor.userId, status, actor.userId),
@@ -210,13 +212,9 @@ export async function usersAction(
   const role = input.role as AssignableRole;
   const member = await db.prepare('SELECT * FROM members WHERE id=?').bind(input.memberId).first<PortalMember>();
   if (!member) throw new HttpError(404, 'Vínculo não encontrado.', 'member_not_found');
-  requireCapability(actor, 'access.manage', member.project_id);
+  if(member.project_id)requireCapability(actor,'access.manage',member.project_id);else if(member.organization_id)requireOrganizationCapability(actor,'access.manage',member.organization_id);else requireCapability(actor,'access.manage',null);
   if (!canChange(actor, member, role)) throw new HttpError(403, 'Você não pode alterar essa função ou escopo.', 'delegation_forbidden');
-  const authorization = `(${OWNER_SQL} OR (? IS NOT NULL AND ? IN ('operator','inventory','loans','viewer')
-    AND ? IN ('operator','inventory','loans','viewer') AND EXISTS (SELECT 1 FROM members auth
-      JOIN portal_users account ON account.user_id=auth.user_id AND account.status='active' AND COALESCE(account.activation_pending,0)=0 AND account.anonymized_at IS NULL
-      WHERE auth.user_id=? AND auth.role='manager' AND auth.project_id=? AND auth.revoked_at IS NULL)))`;
-  const authorizationParameters = [actor.userId, member.project_id, member.role, role, actor.userId, member.project_id];
+  const permission=delegationAuthority(actor,member.project_id,member.organization_id??null,role),authorization=permission.sql,authorizationParameters=permission.values;
   // Replays and no-ops also require a currently authorized, active account.
   const permitted = await db.prepare(`SELECT id FROM members WHERE id=? AND ${authorization}`)
     .bind(member.id, ...authorizationParameters).first();
@@ -246,11 +244,11 @@ export async function usersAction(
     const results = await db.batch([
       db.prepare(`UPDATE members SET revoked_at=? WHERE id=? AND user_id=? AND role=?
         AND project_id IS ? AND revoked_at IS NULL AND ${authorization}
-        AND (role!='owner' OR NOT EXISTS (SELECT 1 FROM portal_users account
-          WHERE account.user_id=members.user_id AND account.status='active' AND COALESCE(account.activation_pending,0)=0 AND account.anonymized_at IS NULL) OR ${ACTIVE_OWNER_COUNT_SQL}>1)`)
+        AND (NOT EXISTS (SELECT 1 FROM portal_users account
+          WHERE account.user_id=members.user_id AND account.status='active' AND COALESCE(account.activation_pending,0)=0 AND account.anonymized_at IS NULL) OR ${ownerSurvivalSql('members')})`)
         .bind(now, member.id, member.user_id, member.role, member.project_id, ...authorizationParameters),
-      db.prepare(`INSERT INTO members (id,user_id,email,role,project_id,revoked_at,created_at)
-        SELECT ?,user_id,email,?,project_id,NULL,? FROM members WHERE id=? AND changes()=1`)
+      db.prepare(`INSERT INTO members (id,user_id,email,role,project_id,revoked_at,created_at,organization_id)
+        SELECT ?,user_id,email,?,project_id,NULL,?,organization_id FROM members WHERE id=? AND changes()=1`)
         .bind(newMemberId, role, now, member.id),
       db.prepare(`INSERT INTO audit (id,actor_id,project_id,action,entity_id,details,created_at)
         SELECT ?,?,?,'member.change',?,?,? WHERE changes()=1`)

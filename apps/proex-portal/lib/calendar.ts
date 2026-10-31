@@ -1,4 +1,4 @@
-import { accessibleProjects, getActor, writeAudit, type PortalActor } from './access';
+import { accessibleProjects, getActor, writeAudit, projectAuthoritySql, type PortalActor } from './access';
 import { all, one, type Row } from './database';
 import { HttpError } from './errors';
 
@@ -105,7 +105,8 @@ export async function calendarEntries(db: D1Database, actor: PortalActor | null,
   const result: CalendarEntry[] = [];
   const { range } = options;
   for (const category of categories) {
-    const scope = requireScope(actor, category, projectId), filter = sqlScope('p.id', scope);
+    const scope = requireScope(actor, category, projectId), filter = sqlScope('p.id', scope),authority=projectAuthoritySql(actor,capabilities[category],'p.id');
+    filter.sql=`(${filter.sql}) AND (${authority.sql})`;filter.values.push(...authority.values);
     if (unitId) { filter.sql = `(${filter.sql}) AND p.unit_id=?`; filter.values.push(unitId); }
     let rows: Row[] = [];
     if (category === 'loans') {
