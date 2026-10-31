@@ -1,6 +1,12 @@
-# V14 · Interface revisada, candidata ainda não publicada
+# V14 · Interface revisada e aprovada para publicação
 
-Checkpoint de 31/10/2026. A última produção comprovada continua V13: revisão funcional `d069c7f`, documentação publicada `23bbeae`, PR #14. Esta nota não declara publicação ou nota final 9/10.
+Atualização da retomada de 31/10/2026: builds Worker/Node concluídos no candidato `c35140a`, CI da PR #15 aprovado e última recaptura de Tempo e som confirmada em 1250/375 px e claro/escuro: fechar 44×44 px, Enter abre, Espaço fecha e foco retorna ao acionador. Comprovante local separado `resume-final-proof.json`; o JSON da coleta anterior não contém essa retomada. Auditor independente reaplicou os mesmos oito pesos e atribuiu **9,0/10** (ponderada 9,045) aos estados observados. Parecer em `apps/proex-portal/docs/AUDITORIA-DESIGN-V14-FINAL.md`.
+
+Nenhum novo defeito visual bloqueador foi demonstrado. Zoom de 200% continua não comprovado e é limite de evidência, sem declaração de conformidade WCAG; não foi contornada a interrupção da janela nativa. Pendem apenas CI do descendente documental, merge autorizado e comprovação do deploy/produção. R24 (central Meu trabalho, nomeações e demandas mais visuais) está em implementação isolada V15 e não integra esta nota ou a nota de design da V14.
+
+## Histórico do checkpoint anterior, superado pela retomada acima
+
+Checkpoint anterior de 31/10/2026. Naquele momento a última produção comprovada era V13: revisão funcional `d069c7f`, documentação publicada `23bbeae`, PR #14. Os gates abaixo descrevem aquela interrupção e não substituem a atualização no topo.
 
 ## Mudança e evidência
 
