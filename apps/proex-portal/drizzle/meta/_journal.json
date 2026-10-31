@@ -85,6 +85,13 @@
       "when": 1793404800003,
       "tag": "0011_ai_organizations_and_speech",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1793450000000,
+      "tag": "0012_v14_public_participants",
+      "breakpoints": true
     }
   ]
 }

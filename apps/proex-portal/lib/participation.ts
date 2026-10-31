@@ -24,7 +24,7 @@ export async function draw(db:D1Database,campaignId:string,user:{userId:string},
  if(result!=='pending')statements.push(db.prepare("UPDATE reservations SET state='released' WHERE attempt_id=? AND (? IS NULL OR offer_id<>?)").bind(attemptId,chosen,chosen));
  if(chosen)statements.push(db.prepare("INSERT INTO entitlements(id,attempt_id,participation_id,offer_id,state,created_at) VALUES(?,?,?,?,'reserved',?)").bind(uid(),attemptId,pid,chosen,now));
  statements.push(audit(db,user,'participation.draw',pid,c.project_id,now));
- try{await accountBatch(db,user.userId,statements);}catch(error){if(error instanceof HttpError&&error.status===403)throw error;const duplicate=await one(db,'SELECT * FROM attempts WHERE idempotency_key=?',[key]);if(duplicate){await requireLiveAccount(db,user.userId);return replay(db,duplicate);}throw error;}
+ try{await accountBatch(db,user.userId,statements);}catch(error){if(error instanceof HttpError&&error.status===403)throw error;const duplicate=await one(db,'SELECT * FROM attempts WHERE idempotency_key=?',[key]);if(duplicate){await requireLiveAccount(db,user.userId);return replay(db,duplicate);}if(String(error).includes('UNIQUE constraint')&&await one(db,'SELECT id FROM participations WHERE campaign_id=? AND identity_id=?',[campaignId,user.userId])){await requireLiveAccount(db,user.userId);throw new HttpError(409,'Sua participação mudou em outra tentativa. Atualize para consultar o resultado.','participation_changed');}throw error;}
  return replay(db,{id:attemptId,participation_id:pid,number,result});
 }
 export async function participationAction(db:D1Database,actor:PortalActor,action:string,input:Row):Promise<Row|null>{
