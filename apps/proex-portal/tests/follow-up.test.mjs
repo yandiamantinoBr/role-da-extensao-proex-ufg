@@ -170,3 +170,29 @@ test('checklists count sizes and damage, create reviewed follow-ups once, and ne
 });
 
 test('WhatsApp sharing is a manual URL with a title and protected task link, without phone recipients or hidden task body',()=>{const url=new URL(manualShareUrl('Recontagem', 'task-synthetic','https://portal.example.invalid/?module=demands'));assert.equal(url.origin,'https://wa.me');assert.equal(url.pathname,'/');assert.deepEqual([...url.searchParams.keys()],['text']);assert.ok(url.searchParams.get('text').includes('demandId=task-synthetic'));assert.throws(()=>manualShareUrl('x','id','javascript:alert(1)'));});
+
+test('internal benchmark: paginated task reads and a 1000-notice inbox stay bounded and perform zero writes',async t=>{
+ const f=fixture(t),worker=await f.actor('worker-a');
+ for(let index=0;index<1000;index++){
+  const taskId='benchmark-task-'+index;f.insert('followup_tasks',{id:taskId,organization_id:'org-a',project_id:'project-a',title:'Synthetic task '+index,priority:'medium',status:'open',created_by:'admin-a',created_at:f.now,updated_at:f.now});
+  f.insert('followup_assignees',{id:'benchmark-assignee-'+index,task_id:taskId,user_id:'worker-a',created_at:f.now});
+  f.insert('followup_notifications',{id:'benchmark-notice-'+index,task_id:taskId,user_id:'worker-a',cause_key:'task:1',created_at:f.now});
+ }
+ const before=f.native.prepare('SELECT total_changes() n').get().n,tasks=[],inbox=[];
+ for(let sample=0;sample<10;sample++){
+  let start=performance.now();const page=await followupList(f.db,worker,{projectId:'project-a'});tasks.push(performance.now()-start);assert.equal(page.tasks.length,50);assert.equal(page.hasMore,true);
+  start=performance.now();const notices=await notificationInbox(f.db,worker);inbox.push(performance.now()-start);assert.equal(notices.notifications.length,100);assert.equal(notices.unread,1000);assert.equal(notices.pending.length,100);assert.equal(notices.pendingHasMore,true);
+ }
+ assert.equal(f.native.prepare('SELECT total_changes() n').get().n,before);
+ const metrics=values=>{const sorted=values.toSorted((a,b)=>a-b);return{samples:sorted.length,p50Ms:+sorted[4].toFixed(2),p95Ms:+sorted[9].toFixed(2)};};
+ t.diagnostic(JSON.stringify({benchmark:'followup-local-sqlite',fixture:{tasks:1000,notices:1000},taskPage:metrics(tasks),inbox:metrics(inbox),writes:0,limitation:'Synthetic in-memory SQLite; does not estimate serverless capacity.'}));
+});
+
+
+test('partial team metadata updates preserve its roster; removing everyone requires an explicit empty array',async t=>{
+ const f=fixture(t),admin=await f.actor('admin-a');const team=await act(f,admin,'team.create',{organizationId:'org-a',name:'Comunicação',userIds:['worker-a','viewer-a'],operationKey:crypto.randomUUID()});
+ await act(f,admin,'team.update',{id:team.teamId,expectedVersion:1,name:'Comunicação e divulgação',operationKey:crypto.randomUUID()});
+ assert.equal(f.native.prepare('SELECT COUNT(*) n FROM followup_team_members WHERE team_id=? AND removed_at IS NULL').get(team.teamId).n,2);
+ await act(f,admin,'team.update',{id:team.teamId,expectedVersion:2,status:'archived',userIds:[],operationKey:crypto.randomUUID()});
+ assert.equal(f.native.prepare('SELECT COUNT(*) n FROM followup_team_members WHERE team_id=? AND removed_at IS NULL').get(team.teamId).n,0);
+});
