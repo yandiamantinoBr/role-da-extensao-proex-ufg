@@ -1,3 +1,7 @@
+# Checkpoint atual · V13 publicada em 31/10/2026
+
+PR #14, revisão funcional d069c7f, Vercel READY no mesmo SHA. 726/726 testes do portal e 33/33 do jogo no CI; sessão/relatório/Demandas/isolamento conferidos em produção. Sheets automático 34 tabelas/153 linhas/zero conflitos em 16:37:03Z. Primeiro backup RSA real recuperado e gatilho diário instalado; primeira execução pelo relógio e custódia externa continuam pendentes. Remetente/IA/público não foram ativados implicitamente. Guia curto em [CONTINUAR-AQUI.md](CONTINUAR-AQUI.md), requisitos em [COBERTURA-DE-REQUISITOS.md](COBERTURA-DE-REQUISITOS.md) e provas em [ENTREGA-V13.md](ENTREGA-V13.md). Abaixo, histórico preservado.
+
 # Continuidade da execução · 31/10/2026
 
 **Resumo para retomar:** `CONTINUAR-AQUI.md` concentra o estado atual, agentes e próximos passos. As seções abaixo preservam a trilha histórica.

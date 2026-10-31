@@ -1,6 +1,6 @@
 # V13 · Saídas rastreáveis e IA documental com revisão
 
-Estado em 31/10/2026: candidato integrado em `v13-coordenacao`, sobre a produção V12.1 `62761e65566e0621f498aae4953e99ff496c07dc`. Publicação e conferência externa serão registradas abaixo depois de concluídas. A autorização permanente de Yan inclui push, PR, merge e deploy desta e das próximas entregas.
+Publicada em 31/10/2026 pela [PR #14](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/14), integrada às 17:05:08Z. Candidato `f202903540434ebe0c41bfc8f18a3fdf4ce1f857`; revisão funcional `d069c7f280881f946e801fd9a956dad86379fcdf`. Vercel `dpl_3KvAbcFCHoaJp61GsjuxBS6N7GBD` **READY no mesmo SHA**, alvo produção. Checks da PR e workflows de main aprovados: **726/726 testes do portal e 33/33 do jogo**. A autorização permanente de Yan inclui as próximas publicações.
 
 ## Comportamento
 
@@ -12,7 +12,7 @@ Estado em 31/10/2026: candidato integrado em `v13-coordenacao`, sobre a produç�
 ## Evidências
 
 - Revisões independentes em [saídas](../apps/proex-portal/docs/REVISAO-SAIDAS-RASTREAVEIS.md), [diagnóstico](../apps/proex-portal/docs/REVISAO-INDEPENDENTE-DIAGNOSTICO-IA.md), [identidade](../apps/proex-portal/docs/REVISAO-REFRESH-IDENTIDADE.md) e testes documentais independentes. Dois P2 do relatório corrigidos e reconferidos; os testes negativos de envio após revogação falharam antes das correções e passaram depois.
-- Tipos sem erros, lint sem erros e três avisos antigos; builds Worker e Node limpos. Suíte final completa: **726/726 em Node 24 e 726/726 em Node 26**. Rodada focada integrada: 70/70. A composição real do painel autorizado também tem três testes independentes de presença e descarte de consentimento ao trocar organização/revisão. CI será registrado após a publicação do candidato.
+- Tipos sem erros, lint sem erros e três avisos antigos; builds Worker e Node limpos. Suíte final completa: **726/726 em Node 24 e 726/726 em Node 26**. Rodada focada integrada: 70/70. A composição real do painel autorizado também tem três testes independentes de presença e descarte de consentimento ao trocar organização/revisão. CI aprovado no candidato publicado: 726/726 portal e 33/33 jogo.
 - Modelo de **83 tabelas**, migrações 0000–0016 e snapshots reconciliados. Ensaio com backup real RSA V12 aplicou somente 0016 em RAM: **82 tabelas originais preservadas**, integridade OK, zero violações FK, nenhum arquivo claro ou chamada de rede.
 - CUA integrado em 375/414/1250, claro/escuro, sem overflow da página e sem novos erros de console. Retirada sintética mostrou ação, operador, quantidade e retorno pendente; filtros respeitaram o recorte. PDF/DOCX/XLSX baixados foram reabertos e os dados conferidos; PDF renderizado e inspecionado. Configuração OFF salva apenas no QA confirmou painel de diagnóstico com consentimento desligado e botões externos bloqueados.
 - CUA documental com provedor sintético percorreu fonte → consentimento → evidência literal → edição manual com foco estável → confirmação → patrimônio com saldo zero. Adaptador temporário removido antes dos builds finais; nenhum provedor real foi acionado.
@@ -26,3 +26,12 @@ Provedores IA/STT continuam opcionais e não foram testados com chamada paga rea
 E-mail de demandas está publicado, mas desligado: a conta remetente não foi escolhida e nenhum MailApp/OAuth/envio foi realizado. WhatsApp é compartilhamento manual. Cadastro público permanece fechado pelos gates já registrados. Primeiro backup RSA real e recuperação foram comprovados na V12.1; o gatilho diário das 03h está instalado, e sua primeira execução pelo relógio ainda é futura.
 
 Os 22 requisitos e A01–A28 continuam na [matriz](COBERTURA-DE-REQUISITOS.md). Esta entrega não declara encerradas decisões institucionais, retenção, duplicidades de catálogo, testes em aparelhos físicos ou integração SSO. Evidências reais e capturas ficam em `.sites-runtime`, fora do Git público.
+
+
+## Conferência externa após o deploy
+
+Em 31/10/2026, por volta das 14h07 BRT, sessão real permaneceu autenticada, projetos autorizados e Demandas/sino carregaram, e o novo relatório respondeu sem erro. O recorte de saídas atual tem zero registros; não foram inventadas saídas para demonstrar a tela. A configuração exibiu IA indisponível e opt-in documental desmarcado, sem salvar configuração, chamar provedores ou criar cadastros de QA em produção. Nenhum novo erro de console foi observado nessa rodada.
+
+Health canônico HTTP 200; hosts gerados antigos V9/V10 HTTP 403. Preview não recebeu credenciais de produção. Banco existente continua no mesmo snapshot SQLite/CAS hospedado no Supabase, sem migração indevida para SQL Postgres. Sheets mantém a execução automática e os recibos datados acima. Provas privadas em apps/proex-portal/.sites-runtime/production-v13.
+
+Este registro identifica a revisão funcional publicada e o instante de verificação. Commits posteriores que alterem somente documentação mantêm o mesmo código funcional; confira o SHA corrente no GitHub/Vercel antes de operar. Não há promessa de monitoração contínua. A Vault foi salva/relida localmente; isso não comprova sincronização dela na nuvem.

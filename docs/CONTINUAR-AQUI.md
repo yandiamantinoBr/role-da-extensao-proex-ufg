@@ -4,8 +4,8 @@ Atualizado em 31/10/2026. Leia AGENTS.md, este guia e a matriz de requisitos. Co
 
 ## Produção comprovada
 
-- Site: https://proex-gestao.vercel.app/ . V12 na PR #12 e compatibilidade do backup na PR #13.
-- SHA atual: 62761e65566e0621f498aae4953e99ff496c07dc. Vercel READY dpl_G5Dr1RFQuJjJxU4K7GbcQQNoF5Bp no mesmo SHA; PR/main aprovados. CI: 645/645 portal e 33/33 jogo na correção. Sessão, catálogo real, Demandas e sino conferidos após V12; asset de backup da correção corresponde ao código local.
+- Site: https://proex-gestao.vercel.app/ . V13 publicada na PR #14; V12 e compatibilidade do backup são histórico nas PRs #12/#13.
+- Revisão funcional V13: d069c7f280881f946e801fd9a956dad86379fcdf; Vercel READY dpl_3KvAbcFCHoaJp61GsjuxBS6N7GBD no mesmo SHA. Candidato f202903, PR/main aprovados: 726/726 portal e 33/33 jogo. Sessão real, Demandas/sino, novo relatório e padrão documental OFF conferidos após deploy, sem QA ou chamadas de provedores em produção. Commits posteriores só de documentação mantêm o mesmo código; consultar GitHub/Vercel para o SHA corrente.
 - Health canônico 200; URLs geradas antigas V9/V10 retornam 403. Preview não tem credenciais de produção. Não operar o banco atual com código anterior à migração 0008.
 - Demandas, prioridades, equipes sobrepostas, conferência por material/tamanho, pendências, sino e relatórios estão publicados. Concessão de tarefa não amplia ACL; conferência não movimenta estoque nem fecha empréstimo. WhatsApp é compartilhamento manual.
 - E-mail MailApp e cadastro público estão implementados, mas DESATIVADOS. Remetente/autorizações, aviso aprovado e infraestrutura de envio ainda são gates reais. Não escolher uma conta por ausência de resposta.
@@ -18,16 +18,16 @@ Atualizado em 31/10/2026. Leia AGENTS.md, este guia e a matriz de requisitos. Co
 - Drive real informa inherited=true na própria ACL única user/owner. Correção mantém dono atual, ACL única, pai privado exato e recusa qualquer acesso extra, sharedDrive, atalho ou paginação. Positivo reproduzido antes/depois e negativos/revisão passaram. Diagnóstico temporário retirado; pasta extra vazia criada por seleção incorreta foi movida à lixeira recuperável, pasta configurada preservada.
 - Sheets pós-V12: execução automática concluída em 31/10 às 16:37:03.006Z, 34 tabelas / 153 linhas / zero conflitos. Inclui as cinco projeções somente leitura do acompanhamento. Um gatilho de dados e um de anexos preservados; execução automática anterior após V11 foi comprovada em 15:07:06.612Z. Última rodada de anexos não revalidou uma cópia anterior, sem novas falhas; não chamar isso de nova releitura.
 
-## V13 integrada e próxima ação
+## V13 publicada e próxima ação
 
-Checkout coordenador: v13-coordenacao, sobre main 62761e6. R09, R10 e R11 integrados, revisados por agentes diferentes e conferidos em CUA. Revisões específicas estão em apps/proex-portal/docs. Fonte congelada; últimos commits são testes e documentação. Não abrir frentes concorrentes sobre arquivos compartilhados.
+Checkout coordenador: v13-coordenacao, atualizado sobre main d069c7f. R09, R10 e R11 integrados, revisados por agentes diferentes e conferidos em CUA. Revisões específicas estão em apps/proex-portal/docs. Fonte congelada; últimos commits são testes e documentação. Não abrir frentes concorrentes sobre arquivos compartilhados.
 
 - R09: “Saídas rastreáveis” mostra ação, quantidade, operador autorizado e retorno; reservas/agendamentos não contam como saída, textos livres exigem opt-in, CSV parcial tem nome explícito.
 - R10: IA opcional no importador de projetos/patrimônios, evidências literais por campo, revisão e confirmação. documentEnabled começa false. Confiança sem calibração permanece nula; não há OCR/envio binário ou saldo automático. 0016 é aditiva.
 - R11: painel montado só em configuração autorizada com revisão salva; consentimento próprio para metadados, sem geração/transcrição automática. Troca de organização/revisão desmonta o diagnóstico. Chaves/provedores reais não foram usados.
 - Autoridade é conferida depois dos awaits de configuração/decifragem, antes de cada envio IA/STT e ao devolver/reaplicar resultados. Mudança de identidade recarrega a interface antes de aplicar novo snapshot.
 
-Suítes finais: 726/726 em Node24 e Node26, tipos/lint sem erros (3 avisos antigos), Worker e Node builds aprovados. Próxima ação do coordenador: fechar CI, criar PR e integrar pelo SHA aprovado, confirmar Vercel READY no mesmo SHA e repetir health/sessão/relatório em produção; depois registrar SHA/recibos na Vault e comunicar às oito frentes. Ver docs/ENTREGA-V13.md. Publicação permanece autorizada; configurações opcionais não devem ser ativadas por ausência de resposta.
+Suítes finais: 726/726 em Node24 e Node26, tipos/lint sem erros (3 avisos antigos), Worker e Node builds aprovados. PR #14 e deploy de produção concluídos, conferência autenticada e isolamento aprovados. Coordenador mantém a trilha de registro na Vault e oito chats. Próximas ações reais: escolher/configurar remetente, configurar provedores pelo responsável, testar em aparelhos físicos, comprovar primeira execução diária e custodiar as chaves fora da máquina. Não ativar serviços por ausência de resposta; consultar docs/ENTREGA-V13.md e a matriz.
 
 ## Evidências e limites
 
