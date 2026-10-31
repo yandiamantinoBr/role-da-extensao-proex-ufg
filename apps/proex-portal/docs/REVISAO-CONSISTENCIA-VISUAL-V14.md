@@ -39,3 +39,9 @@ O piso global histórico `p-button` 43 px, `p-button-danger` 38 px e `p-icon-but
 ## Critério para a revisão visual final
 
 Verificar hierarquia/legibilidade, respiro entre blocos, contraste claro/escuro, estados de foco/seleção/erro/ocupado, ações alcançáveis com teclado/toque e último campo/submit visíveis acima da navegação. Exigir 9/10 por avaliação crítica após os ajustes, com cada falha remanescente descrita. Não atribuir a nota antes dessa observação.
+
+## Segunda passagem após medição integrada
+
+O coordenador mediu os botões de ordenação dos cabeçalhos de relatórios em 39 px no desktop e 38 px no mobile, além de disclosures de configuração com 21/37 px. O patch local acrescenta mínimo explícito de 44×44 px aos botões dos `th`, preservando a tabela larga e a rolagem contida. Também eleva a 44 px os summaries de Rotina ChatGPT/Codex, Catálogo institucional, Configuração técnica no servidor, áudio/ditado do assistente e política da conta participante. São alterações de classe/CSS local, sem reset novo e sem mudar handlers ou abertura dos disclosures. Tipos/lint e 18 testes de estado passaram; a medida após integração continua a cargo do coordenador.
+
+**Exceção da agenda:** na primeira passagem real do coordenador, tema escuro e viewport de 375 px, os sete dias mediram **40×84 px**, `documentWidth=360`, sem overflow. A grade mantém sete colunas e a leitura do mês completo; a lista de compromissos e os filtros de período ficam disponíveis como alternativa. Forçar largura de 44 px nesse espaço exigiria comprimir arbitrariamente os gutters/padding ou introduzir rolagem horizontal da grade. O coordenador aceitou preservar essa exceção contextual. Nenhuma dimensão da agenda foi alterada nessa passagem e não se afirma que todos os controles do site têm 44 px uniformemente.
