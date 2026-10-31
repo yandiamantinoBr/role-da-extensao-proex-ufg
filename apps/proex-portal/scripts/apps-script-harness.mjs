@@ -49,7 +49,7 @@ const context = vm.createContext({
   SpreadsheetApp: { getActive: () => ss, getUi: () => ({ ButtonSet: { OK_CANCEL: 1 }, Button: { OK: 'OK' }, alert: msg => console.log('  alert:', msg.split('\n')[0]),
     prompt: () => { const value = prompts.shift(); return { getSelectedButton: () => 'OK', getResponseText: () => value }; } }) },
   DriveApp: { Access: { PRIVATE: 'PRIVATE' }, getRootFolder: () => folder('rootFolder0000001'), getFolderById: id => folder(id),
-    getFileById: id => ({ getParents: () => ({ hasNext: () => true, next: () => folder('parentFolder00001') }), getSharingAccess: () => 'PRIVATE', getSize: () => files.get(id)?.bytes.length ?? 0, setTrashed() {} }) },
+    getFileById: id => ({ getParents: () => ({ hasNext: () => true, next: () => folder('parentFolder00001') }), getSharingAccess: () => 'PRIVATE', getEditors: () => [], getViewers: () => [], getSize: () => files.get(id)?.bytes.length ?? 0, getBlob: () => files.get(id), setTrashed() {} }) },
   PropertiesService: { getUserProperties: () => ({ getProperty: k => properties[k] ?? null, setProperty: (k, v) => { properties[k] = v; }, setProperties: o => Object.assign(properties, o) }), getScriptProperties: () => ({ deleteProperty() {} }) },
   LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock() {} }) },
   ScriptApp: { getProjectTriggers: () => [] },
@@ -77,6 +77,11 @@ console.log(' ', context.sincronizar_());
 const items = sheets.get('items');
 assert.ok(items && items.getLastRow() > 1, 'a aba items deve ter linhas');
 assert.ok(sheets.get('Controle').cells.some(r => String(r[0]).startsWith('baseline:items:')), 'bases gravadas no Controle');
+const expectedTables = context.chamar_('proex_sync_describe', {}).schemas.tables.length;
+const controlValue = key => sheets.get('Controle').cells.find(row => row[0] === key)?.[1];
+assert.equal(controlValue('syncState'), 'verified');
+assert.equal(controlValue('tablesVerified'), String(expectedTables));
+assert.equal(controlValue('connectorVersion'), context.CONNECTOR_VERSION);
 
 console.log('3. Editar a descrição de um material e criar um movimento pela aba Operações');
 const target = cell('items', r => r.name?.startsWith('Button azul'), 'description');
@@ -119,4 +124,20 @@ assert.match(ops.cells.filter(r => r[0] === opKey)[1].slice(3).join('|'), /rejec
 assert.match(status(okKey), /^applied/, 'a valid operation in the same batch is still applied');
 assert.ok(sheets.get('Conflitos').cells.slice(before).some(r => String(r[5]).includes('low_stock')), 'invalid number reported with the desired value');
 console.log('6. Anexos:', context.copiarAnexos_(), 'arquivo(s) copiado(s)');
+console.log('7. Preservar uma edição feita durante a leitura HTTP e conferir todos os valores');
+const beforeRace = cell('items', row => row.id === itemId, 'description');
+const baselineBeforeRace = controlValue(`baseline:items:${itemId}`);
+const read = context.lerTabela_; let inject = true;
+context.lerTabela_ = table => {
+  const rows = read(table);
+  if (table === 'items' && inject) { inject = false; beforeRace.row[beforeRace.col] = 'Edição humana durante a exportação'; }
+  return rows;
+};
+try { assert.match(context.sincronizar_(), /conflito/); }
+finally { context.lerTabela_ = read; }
+assert.equal(beforeRace.row[beforeRace.col], 'Edição humana durante a exportação', 'a exportação não deve sobrescrever a edição feita durante HTTP');
+assert.equal(controlValue(`baseline:items:${itemId}`), baselineBeforeRace, 'a base da aba não conferida deve permanecer intacta');
+const currentSchema = context.chamar_('proex_sync_describe', {}).schemas.tables.find(schema => schema.table === 'items');
+assert.equal(context.conferirTabela_(ss, currentSchema, read('items')), false, 'chave e hash intactos não confirmam valores divergentes');
+assert.equal(controlValue('syncState'), 'partial');
 console.log('OK — conector validado contra', portal);

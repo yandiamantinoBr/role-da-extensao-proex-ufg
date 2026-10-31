@@ -34,6 +34,7 @@ var CONFLICTS_HEADER = ['id', 'entity_type', 'entity_id', 'expected_version', 'a
 var BASELINE_NOTE = 'portable-v1: original confirmado; preserve até nova leitura de retorno.';
 var EDITABLE_COLOR = '#FFF4D6', SYSTEM_COLOR = '#ECECEC';
 var ATTACHMENTS_FOLDER = 'PROEX · Anexos privados';
+var CONNECTOR_VERSION = '2026-10-31';
 // O Apps Script encerra execuções após 6 minutos; paramos com folga.
 var SYNC_BUDGET_MS = 5 * 60 * 1000, ATTACHMENTS_BUDGET_MS = 4 * 60 * 1000;
 var ISOLATE_CODES = ['sync_operation_changed', 'sync_invalid_change_key', 'sync_invalid_action', 'sync_system_field', 'sync_invalid_row', 'sync_invalid_version', 'sync_change_limit', 'sync_input_limit'];
@@ -84,18 +85,30 @@ function conectar() {
 
 function verEstado() {
   var status = chamar_('proex_sync_describe', {});
-  var last = (status.runs || [])[0];
+  var last = (status.runs || [])[0], triggers = estadoGatilhos_(), attachments = lerEstadoAnexos_();
   var linhas = [
+    'Conector: ' + CONNECTOR_VERSION,
     'Portal: ' + propriedades_().getProperty('PORTAL_URL'),
     'Tabelas no formato portátil: ' + status.schemas.tables.length,
     'Última execução: ' + (last ? last.status + ' em ' + (last.finished_at || last.started_at) + ' (' + (last.exported_count || 0) + ' linhas)' : 'nenhuma'),
     'Conflitos abertos: ' + (status.conflicts || []).length,
-    'Automático: ' + (ScriptApp.getProjectTriggers().some(function (t) { return t.getHandlerFunction() === 'sincronizarAutomatico'; }) ? 'ativo' : 'desativado'),
+    'Gatilho de dados nesta conta: ' + triggers.data,
+    'Gatilho de anexos nesta conta: ' + triggers.attachments,
+    'Última cópia de anexos: ' + (attachments ? resumoAnexos_(attachments) + ' em ' + attachments.at : 'não registrada nesta conta'),
+    'Gatilhos de outras contas não são visíveis aqui. Um gatilho instalado não comprova uma execução concluída.',
   ];
   SpreadsheetApp.getUi().alert(linhas.join('\n'));
 }
+function estadoGatilhos_() {
+  var handlers = ScriptApp.getProjectTriggers().map(function (t) { return t.getHandlerFunction(); });
+  function count(handler) { var n = handlers.filter(function (h) { return h === handler; }).length; return n ? n + ' instalado(s); confira o histórico de execuções' : 'não instalado'; }
+  return { data: count('sincronizarAutomatico'), attachments: count('copiarAnexosAutomatico') };
+}
 
 function ativarAutomatico() {
+  // Não instale uma rotina que já começa sem autenticação ou configuração.
+  chamar_('proex_sync_describe', {});
+  if (!propriedades_().getProperty('ATTACHMENTS_FOLDER_ID')) throw new Error('Conecte a planilha e a pasta privada antes de ativar os gatilhos.');
   desativarAutomatico();
   ScriptApp.newTrigger('sincronizarAutomatico').timeBased().everyMinutes(30).create();
   ScriptApp.newTrigger('copiarAnexosAutomatico').timeBased().everyHours(1).create();
@@ -109,7 +122,7 @@ function desativarAutomatico() {
 function sincronizarAutomatico() { sincronizar_(); }
 function copiarAnexosAutomatico() { copiarAnexos_(); }
 function sincronizarAgora() { SpreadsheetApp.getActive().toast(sincronizar_(), 'PROEX', 8); }
-function copiarAnexos() { SpreadsheetApp.getActive().toast(copiarAnexos_() + ' arquivo(s) copiado(s) para a pasta privada.', 'PROEX', 6); }
+function copiarAnexos() { copiarAnexos_(); SpreadsheetApp.getActive().toast(resumoAnexos_(lerEstadoAnexos_()), 'PROEX', 8); }
 
 // ---------------------------------------------------------------- sincronização
 
@@ -144,25 +157,30 @@ function sincronizar_() {
       for (var i = 0; i < schemas.length; i++) {
         var schema = schemas[i];
         if (Date.now() - started > SYNC_BUDGET_MS) { outcome = 'failed'; break; }
-        if (edits.snapshots[schema.table] && alteradaDuranteSync_(ss, schema, edits.snapshots[schema.table])) {
+        var rows = lerTabela_(schema.table);
+        if (Date.now() - started > SYNC_BUDGET_MS) { outcome = 'failed'; break; }
+        // A leitura do portal pode levar várias chamadas HTTP. Confira a planilha
+        // depois delas, imediatamente antes da escrita, preservando edições novas.
+        if (Object.prototype.hasOwnProperty.call(edits.snapshots, schema.table) && alteradaDuranteSync_(ss, schema, edits.snapshots[schema.table])) {
           conflicts.push(conflito_('', schema.table, '', '', '', 'A aba foi editada durante a sincronização e não foi sobrescrita. As edições serão lidas na próxima execução.'));
           continue;
         }
-        var rows = lerTabela_(schema.table);
         escreverTabela_(ss, schema, rows);
         exported += rows.length;
         if (!conferirTabela_(ss, schema, rows)) continue;
         verified++;
         if (schema.mode === 'metadata') {
           control.replace(schema.table, rows.map(function (row) { return ['baseline:' + schema.table + ':' + row._rowKey, JSON.stringify(row), BASELINE_NOTE]; }));
-          control.save(verified, schemas.length);
+          control.save(verified, schemas.length, 'running');
         }
       }
       registrarConflitos_(ss, conflicts);
       if (outcome === 'completed' && verified !== schemas.length) outcome = conflicts.length ? 'conflict' : 'failed';
       else if (outcome === 'completed' && conflicts.length) outcome = 'conflict';
+      control.save(verified, schemas.length, outcome);
     } catch (error) {
       outcome = 'failed';
+      if (control) { try { control.save(verified, schemas.length, outcome); } catch (_saveError) { /* preserve o erro original */ } }
       throw error;
     } finally {
       chamar_('proex_sync_run_finish', { id: run.id, status: outcome, exportedCount: exported, readbackVerified: verified === schemas.length, tablesVerified: verified });
@@ -170,7 +188,7 @@ function sincronizar_() {
     return outcome === 'completed'
       ? 'Sincronizado: ' + exported + ' linhas exportadas, ' + applied + ' alteração(ões) aplicada(s).'
       : outcome === 'conflict' ? 'Sincronizado com ' + conflicts.length + ' conflito(s). Veja a aba Conflitos.'
-      : 'Sincronização interrompida (tempo ou conferência). A próxima execução continua de onde parou.';
+      : 'Sincronização interrompida (tempo ou conferência). As bases já conferidas foram preservadas; a próxima execução relê as tabelas desde o início.';
   } finally {
     lock.releaseLock();
   }
@@ -223,9 +241,10 @@ function coletarEdicoes_(ss, schemas, baselines) {
   var changes = [], problems = [], snapshots = {};
   schemas.filter(function (s) { return s.mode === 'metadata'; }).forEach(function (schema) {
     var sheet = ss.getSheetByName(schema.sheetName);
-    if (!sheet || sheet.getLastRow() < 2) return;
-    var values = sheet.getRange(1, 1, sheet.getLastRow(), sheet.getLastColumn()).getDisplayValues();
+    if (!sheet) { snapshots[schema.table] = null; return; }
+    var values = sheet.getLastRow() ? sheet.getRange(1, 1, sheet.getLastRow(), sheet.getLastColumn()).getDisplayValues() : [];
     snapshots[schema.table] = values;
+    if (values.length < 2) return;
     var header = values[0], editable = schema.columns.filter(function (c) { return c.editable; });
     values.slice(1).forEach(function (cells) {
       if (cells.every(function (v) { return v === ''; })) return;
@@ -262,7 +281,8 @@ function coletarEdicoes_(ss, schemas, baselines) {
 
 function alteradaDuranteSync_(ss, schema, before) {
   var sheet = ss.getSheetByName(schema.sheetName);
-  if (!sheet) return false;
+  if (!sheet) return before !== null;
+  if (before === null) return true;
   var now = sheet.getLastRow() ? sheet.getRange(1, 1, sheet.getLastRow(), sheet.getLastColumn()).getDisplayValues() : [];
   return JSON.stringify(now) !== JSON.stringify(before);
 }
@@ -322,12 +342,14 @@ function escreverTabela_(ss, schema, rows) {
 
 function conferirTabela_(ss, schema, rows) {
   var sheet = ss.getSheetByName(schema.sheetName);
+  if (!sheet || sheet.getLastRow() !== rows.length + 1) return false;
   var header = sheet.getRange(1, 1, 1, schema.columns.length).getDisplayValues()[0];
   if (header.join('\u0001') !== schema.columns.map(function (c) { return c.name; }).join('\u0001')) return false;
-  if (!rows.length) return sheet.getLastRow() <= 1;
-  var keyCol = header.indexOf('_rowKey'), hashCol = header.indexOf('_rowHash');
+  if (!rows.length) return true;
   var values = sheet.getRange(2, 1, rows.length, header.length).getDisplayValues();
-  return rows.every(function (row, i) { return values[i][keyCol] === row._rowKey && values[i][hashCol] === row._rowHash; });
+  // Os hashes armazenados são células também: mantê-los intactos não prova que
+  // nome, saldo, texto ou qualquer outro valor foi gravado e relido corretamente.
+  return rows.every(function (row, i) { return header.every(function (name, j) { return values[i][j] === texto_(row[name]); }); });
 }
 
 function garantirAbasDeControle_(ss) {
@@ -345,6 +367,8 @@ function lerControle_(ss) {
   var sheet = ss.getSheetByName(CONTROL), rows = [], baselines = {};
   if (sheet.getLastRow() >= 2) rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, 3).getValues().map(function (r) { return [String(r[0]), String(r[1]), String(r[2])]; });
   var entries = rows.filter(function (r) { return r[0].indexOf('baseline:') === 0; });
+  var previousVerified = rows.filter(function (r) { return r[0] === 'lastVerifiedAt'; })[0];
+  var lastVerifiedAt = previousVerified ? previousVerified[1] : '';
   entries.forEach(function (r) { try { baselines[r[0].slice(9)] = JSON.parse(r[1]); } catch (e) { /* base corrompida: a linha vira conflito */ } });
   return {
     baselines: baselines,
@@ -352,14 +376,19 @@ function lerControle_(ss) {
       var prefix = 'baseline:' + table + ':';
       entries = entries.filter(function (r) { return r[0].indexOf(prefix) !== 0; }).concat(fresh);
     },
-    save: function (verified, total) {
+    save: function (verified, total, state) {
       var now = new Date().toISOString();
+      var complete = state === 'completed' && verified === total;
+      if (complete) lastVerifiedAt = now;
       var data = [
         ['key', 'value', 'note'],
         ['formatVersion', '1', 'Versão do formato portátil. Alterar somente com migração coordenada.'],
-        ['syncState', verified === total ? 'verified' : 'partial', 'Metadados importados e relidos com controle de versão.'],
-        ['lastVerifiedAt', now, 'Gravação e leitura de retorno confirmadas pelo conector Apps Script (' + verified + ' de ' + total + ' abas).'],
+        ['syncState', complete ? 'verified' : 'partial', 'Verificada somente após releitura de todas as tabelas e ausência de conflitos nesta execução.'],
+        ['lastVerifiedAt', lastVerifiedAt, 'Última execução integralmente verificada; não comprova gatilho ativo.'],
         ['tablesVerified', String(verified), 'Abas conferidas nesta execução.'],
+        ['lastAttemptAt', now, 'Horário da tentativa atual.'],
+        ['lastAttemptStatus', state || 'partial', 'Resultado desta tentativa; bases parciais já conferidas são preservadas.'],
+        ['connectorVersion', CONNECTOR_VERSION, 'Versão instalada do conector Apps Script.'],
       ].concat(entries);
       if (sheet.getMaxRows() < data.length + 1) sheet.insertRowsAfter(sheet.getMaxRows(), data.length + 1 - sheet.getMaxRows());
       if (sheet.getLastRow() > 0) sheet.getRange(1, 1, sheet.getLastRow(), 3).clearContent();
@@ -386,41 +415,96 @@ function conflito_(id, table, entityId, expected, actual, reason) {
 
 function copiarAnexos_() {
   var folderId = propriedades_().getProperty('ATTACHMENTS_FOLDER_ID');
-  if (!folderId) return 0;
+  if (!folderId) {
+    salvarEstadoAnexos_({ status: 'failed', copied: 0, failed: 1, codes: ['attachment_folder_missing'] });
+    throw new Error('Conecte a planilha e a pasta privada antes de copiar anexos.');
+  }
   var lock = LockService.getScriptLock();
-  if (!lock.tryLock(15000)) return 0;
+  if (!lock.tryLock(15000)) { salvarEstadoAnexos_({ status: 'busy', copied: 0, failed: 0 }); return 0; }
+  var result = { status: 'completed', copied: 0, failed: 0, existing: 0, codes: [] };
   try {
     var folder = DriveApp.getFolderById(folderId);
     conferirPastaPrivada_(folder);
-    var copied = 0, after = null, started = Date.now();
+    var after = null, started = Date.now();
     do {
       var args = { limit: 50 };
       if (after) args.after = after;
       var page = chamar_('proex_sync_attachment_list', args);
       for (var i = 0; i < page.attachments.length; i++) {
         var item = page.attachments[i];
-        if (item.driveExport && !item.driveExport.deletedAt) continue;
-        if (Date.now() - started > ATTACHMENTS_BUDGET_MS) return copied; // continua na próxima execução
-        var ticket = chamar_('proex_sync_attachment_ticket', { kind: item.kind, id: item.id });
-        var response = UrlFetchApp.fetch(ticket.url, { muteHttpExceptions: true, followRedirects: false });
-        if (response.getResponseCode() !== 200) continue;
-        var blob = response.getBlob();
-        var bytes = blob.getBytes(), hash = hexBytes_(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, bytes));
-        var ext = { 'application/pdf': 'pdf', 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' }[item.mime] || 'bin';
-        var file = folder.createFile(blob.setName(item.kind + '-' + item.id + '.' + ext));
-        var reread = DriveApp.getFileById(file.getId());
-        chamar_('proex_sync_attachment_ack', {
-          kind: item.kind, id: item.id, driveFileId: file.getId(), driveUrl: 'https://drive.google.com/file/d/' + file.getId() + '/view',
-          contentHash: hash, size: bytes.length, privateConfirmed: reread.getSharingAccess() === DriveApp.Access.PRIVATE, readbackVerified: reread.getSize() === bytes.length,
-        });
-        copied++;
+        if (item.driveExport && !item.driveExport.deletedAt) { result.existing++; continue; }
+        if (Date.now() - started > ATTACHMENTS_BUDGET_MS) {
+          result.status = result.failed ? 'failed' : 'partial';
+          salvarEstadoAnexos_(result);
+          if (result.failed) throw new Error('Falha na cópia de anexos. Veja PROEX → Ver estado da conexão.');
+          return result.copied;
+        }
+        try {
+          var ticket = chamar_('proex_sync_attachment_ticket', { kind: item.kind, id: item.id });
+          var response = UrlFetchApp.fetch(ticket.url, { muteHttpExceptions: true, followRedirects: false });
+          if (response.getResponseCode() !== 200) {
+            var downloadError = new Error('Download de anexo recusado.');
+            downloadError.code = 'download_http_' + response.getResponseCode(); throw downloadError;
+          }
+          var blob = response.getBlob();
+          var bytes = blob.getBytes(), hash = hexBytes_(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, bytes));
+          var ext = { 'application/pdf': 'pdf', 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp' }[item.mime] || 'bin';
+          var file = folder.createFile(blob.setName(item.kind + '-' + item.id + '.' + ext));
+          var reread = DriveApp.getFileById(file.getId());
+          var privateConfirmed = reread.getSharingAccess() === DriveApp.Access.PRIVATE && reread.getEditors().length === 0 && reread.getViewers().length === 0;
+          var readbackVerified = false;
+          if (privateConfirmed && reread.getSize() === bytes.length) {
+            var storedBytes = reread.getBlob().getBytes();
+            readbackVerified = storedBytes.length === bytes.length && hexBytes_(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, storedBytes)) === hash;
+          }
+          if (!privateConfirmed || !readbackVerified) {
+            var readbackError = new Error('A cópia privada não passou na conferência.');
+            readbackError.code = privateConfirmed ? 'attachment_readback_failed' : 'attachment_not_private'; throw readbackError;
+          }
+          chamar_('proex_sync_attachment_ack', {
+            kind: item.kind, id: item.id, driveFileId: file.getId(), driveUrl: 'https://drive.google.com/file/d/' + file.getId() + '/view',
+            contentHash: hash, size: bytes.length, privateConfirmed: privateConfirmed, readbackVerified: readbackVerified,
+          });
+          result.copied++;
+        } catch (error) {
+          result.failed++;
+          var code = error && /^[a-z0-9_]{1,80}$/i.test(error.code || '') ? error.code : 'attachment_copy_failed';
+          if (result.codes.indexOf(code) < 0 && result.codes.length < 5) result.codes.push(code);
+          // Falha de autenticação não deve provocar uma chamada por anexo.
+          if (['sync_token_invalid', 'sync_forbidden', 'unauthenticated'].indexOf(code) >= 0) throw error;
+        }
       }
       after = page.nextCursor;
     } while (after);
-    return copied;
+    result.status = result.failed ? 'failed' : 'completed';
+    salvarEstadoAnexos_(result);
+    if (result.failed) throw new Error('Falha na cópia de ' + result.failed + ' anexo(s); ' + result.copied + ' confirmado(s). Veja PROEX → Ver estado da conexão.');
+    return result.copied;
+  } catch (_error) {
+    result.status = 'failed';
+    if (!result.failed) result.failed = 1;
+    salvarEstadoAnexos_(result);
+    // Não inclua nomes, URLs de tickets ou texto bruto do provedor nos logs.
+    throw new Error('Cópia de anexos incompleta: ' + result.copied + ' confirmado(s), ' + result.failed + ' falha(s). Veja PROEX → Ver estado da conexão.');
   } finally {
     lock.releaseLock();
   }
+}
+function salvarEstadoAnexos_(result) {
+  result.at = new Date().toISOString();
+  propriedades_().setProperty('LAST_ATTACHMENTS_RESULT', JSON.stringify(result));
+}
+function lerEstadoAnexos_() {
+  try { return JSON.parse(propriedades_().getProperty('LAST_ATTACHMENTS_RESULT') || 'null'); } catch (_error) { return null; }
+}
+function resumoAnexos_(result) {
+  if (!result) return 'nenhuma cópia registrada';
+  if (result.status === 'busy') return 'não executada: outra sincronização está em andamento';
+  var text = result.copied + ' cópia(s) confirmada(s), ' + result.failed + ' falha(s)';
+  if (result.status === 'partial') text += '; interrompida pelo limite de tempo, há anexos por conferir';
+  if (result.existing) text += '; ' + result.existing + ' cópia(s) anterior(es) não revalidadas';
+  if (result.codes && result.codes.length) text += '; códigos: ' + result.codes.join(', ');
+  return text;
 }
 
 /** Interrompe se a pasta de anexos estiver compartilhada por link ou com outras pessoas. */
