@@ -127,3 +127,10 @@ input:is([type=checkbox],[type=radio]){appearance:auto;display:inline-block;widt
 @media (max-width: 720px) {
   .theme-switch select { font-size: 16px; }
 }
+
+/* Keep the brand and all three controls separate on narrow phones. */
+@media (max-width: 350px) {
+  .p-topbar { gap: 8px; }
+  .p-mobile-brand, .p-topbar-actions { flex-shrink: 0; }
+  .p-topbar .theme-switch > svg, .p-account-trigger > svg { display: none; }
+}
