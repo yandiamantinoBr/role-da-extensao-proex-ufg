@@ -1,7 +1,8 @@
+import {resolve} from 'node:path';
 import {test,after} from 'node:test';
 import assert from 'node:assert/strict';
 
-import {compile,nativeFixture} from './support/traffic-fixture.mjs';
+import {compile,root,nativeFixture} from './support/traffic-fixture.mjs';
 const email=await import(compile('lib/follow-up/email.ts'));
 const tokenApi=await import(compile('lib/follow-up/email-tokens.ts'));
 const fixtures=[];after(()=>{for(const f of fixtures)f.close();delete globalThis.__emailRoute;});
@@ -63,4 +64,20 @@ test('independent: rotated scoped credentials recover only metadata and never re
  assert.ok(!JSON.stringify(recovered).includes(f.user.email));
  await assert.rejects(email.beginEmail(f.db,fresh,{...input,remainingQuota:100},origin),code('email_claim_changed'));
  assert.equal((await email.claimEmail(f.db,fresh,{...f.common,remainingQuota:100},origin,Date.now()+121000)).claim,null);
+});
+test('independent: settings transport accepts real GET and mutation DTOs and normalizes SQL token expiration',async t=>{
+ const f=await fixture(),helper=await import(compile('components/portal/email-settings-api.ts')),original=globalThis.fetch;
+ globalThis.__emailUiReview={db:f.db,user:f.owner};
+ t.after(()=>{globalThis.fetch=original;delete globalThis.__emailUiReview;});
+ const replacements=new Map([
+  [resolve(root,'lib/platform.ts'),'export function database(){return globalThis.__emailUiReview.db;}'],
+  [resolve(root,'lib/session.ts'),'export async function getPortalUser(){return globalThis.__emailUiReview.user;}'],
+  [resolve(root,'lib/follow-up/email-platform.ts'),'export function followupEmailOrigin(){return "https://synthetic.invalid";}'],
+ ]);
+ const route=await import(compile('app/api/follow-up/email/route.ts',replacements));
+ globalThis.fetch=async(url,init={})=>{const request=new Request(new URL(url,origin),{...init,headers:{Origin:origin,...init.headers}});return init.method==='POST'?route.POST(request):route.GET(request);};
+ const status=await helper.loadEmailStatus(f.org);assert.equal(status.canManage,true);assert.equal(status.dispatchTokens[0].expired,false);
+ const created=await helper.updateEmailSettings(f.org,{action:'token.create',label:'Synthetic UI credential',expiresDays:30});assert.equal(created.kind,'token');
+ const current=await helper.loadEmailStatus(f.org);assert.ok(current.dispatchTokens.some(row=>row.id===created.id&&row.expired===false));
+ assert.deepEqual(await helper.updateEmailSettings(f.org,{action:'token.revoke',id:created.id}),{kind:'updated'});
 });
