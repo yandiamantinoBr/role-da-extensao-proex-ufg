@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { check, index, integer, primaryKey, sqliteTable, text, unique, uniqueIndex } from 'drizzle-orm/sqlite-core';
-import { organizations, projects, members, portalUsers, items, campaigns, loans } from './schema';
+import { organizations, projects, members, portalUsers, items, campaigns, loans } from './base-schema';
 
 // Export these tables from db/schema.ts when integrating 0014. Runtime SQL owns
 // relationship/immutability triggers; Drizzle has no trigger model.
