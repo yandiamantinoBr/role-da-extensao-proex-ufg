@@ -2,15 +2,18 @@ import { accessibleProjects, projectAuthoritySql, type PortalActor } from './acc
 import { all, type Row } from './database';
 import { HttpError } from './errors';
 import { followupReportRows } from './follow-up/reports';
+import { detailedOutflowRows } from './outflow-details';
 
 // Central de relatórios: conjuntos de dados tabulares, já filtrados pelas permissões
-// de cada pessoa. Nenhum conjunto inclui contatos, identificadores de conta, quem
-// operou ou chaves de arquivos. Agregações e gráficos são feitos na interface.
+// de cada pessoa. Contatos, identificadores de conta e chaves de arquivos ficam fora.
+// Saídas rastreáveis podem incluir o nome atual do operador sob permissão operacional
+// vigente. Agregações e gráficos são feitos na interface.
 export const REPORT_DATASETS = {
   projects: { label: 'Projetos e ações', capabilities: [] as string[] },
   materials: { label: 'Materiais e estoque', capabilities: ['inventory.read', 'reports.read'] },
   movements: { label: 'Movimentações de estoque', capabilities: ['inventory.read', 'reports.read'] },
   outflows: { label: 'Saídas institucionais', capabilities: ['inventory.read', 'reports.read'] },
+  outflow_details: { label: 'Saídas rastreáveis', capabilities: ['inventory.read', 'loans.read', 'reports.read'] },
   loans: { label: 'Empréstimos', capabilities: ['loans.read', 'reports.read'] },
   records: { label: 'Registros', capabilities: ['reports.read', 'inventory.read', 'loans.read'] },
   campaigns: { label: 'Eventos e dinâmicas', capabilities: ['reports.read', 'campaigns.manage'] },
@@ -19,6 +22,8 @@ export const REPORT_DATASETS = {
 } as const;
 export type ReportDataset = keyof typeof REPORT_DATASETS;
 const MAX_ROWS = 5000;
+// Leave room below the host's non-streamed response cap, even with optional notes.
+const MAX_OUTFLOW_BYTES = 3 * 1024 * 1024;
 
 function scope(actor: PortalActor, capabilities: readonly string[]): string[] | null {
   if (!capabilities.length) return accessibleProjects(actor);
@@ -38,6 +43,8 @@ function inScope(column: string, projects: string[] | null): { sql: string; para
 function day(value: unknown, label: string): string | null {
   if (value === null || value === undefined || value === '') return null;
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new HttpError(400, `Informe ${label} como data (AAAA-MM-DD).`, 'invalid_report_date');
+  const parsed = Date.parse(value);
+  if (!Number.isFinite(parsed) || new Date(parsed).toISOString().slice(0, 10) !== value) throw new HttpError(400, `Informe ${label} como uma data existente.`, 'invalid_report_date');
   return value;
 }
 
@@ -56,11 +63,12 @@ function recordVisibility(actor: PortalActor, extra: { clauses: string[]; values
 export async function reportRows(db: D1Database, actor: PortalActor | null, input: Record<string, unknown>): Promise<{ dataset: ReportDataset; rows: Row[]; truncated: boolean }> {
   if (!actor) throw new HttpError(401, 'Entre para consultar relatórios.', 'unauthenticated');
   const dataset = input.dataset as ReportDataset;
-  if (!(dataset in REPORT_DATASETS)) throw new HttpError(400, 'Escolha um relatório válido.', 'invalid_report');
+  if (!Object.hasOwn(REPORT_DATASETS, dataset)) throw new HttpError(400, 'Escolha um relatório válido.', 'invalid_report');
   if (dataset === 'demands' || dataset === 'reviews') return followupReportRows(db, actor, dataset, input, MAX_ROWS);
   const projects = scope(actor, REPORT_DATASETS[dataset].capabilities);
   if (projects !== null && !projects.length) return { dataset, rows: [], truncated: false };
   const from = day(input.from, 'a data inicial'), to = day(input.to, 'a data final');
+  if (from && to && from > to) throw new HttpError(400, 'A data inicial deve ser anterior ou igual à final.', 'invalid_report_date');
   const where: string[] = [], params: unknown[] = [];
   const authority=projectAuthoritySql(actor,REPORT_DATASETS[dataset].capabilities,'p.id');where.push(authority.sql);params.push(...authority.values);
   const assetDetails = dataset === 'materials' && (input.assetDetails === true || input.assetDetails === '1');
@@ -87,7 +95,9 @@ export async function reportRows(db: D1Database, actor: PortalActor | null, inpu
     return all(db, sql.replace('/*WHERE*/', clauses.length ? `WHERE ${clauses.join(' AND ')}` : '') + ` LIMIT ${MAX_ROWS + 1}`, [...params, ...extra.values]);
   };
   let rows: Row[];
-  if (dataset === 'projects') {
+  if (dataset === 'outflow_details') {
+    rows = await detailedOutflowRows(db, actor, input, { base, projectColumns, where, params, period, limit: MAX_ROWS + 1 });
+  } else if (dataset === 'projects') {
     rows = await run(`SELECT p.id,${projectColumns},p.short_name AS sigla,p.extension_line AS linha_extensao,p.scope AS abrangencia,p.status AS situacao,p.lifecycle AS etapa,
       date(p.starts_at,'-3 hours') AS inicio,date(p.ends_at,'-3 hours') AS fim,p.location AS local,
       (SELECT COUNT(*) FROM items i WHERE i.project_id=p.id) AS materiais,(SELECT COUNT(*) FROM campaigns c WHERE c.project_id=p.id) AS eventos,
@@ -126,6 +136,15 @@ export async function reportRows(db: D1Database, actor: PortalActor | null, inpu
       (SELECT COUNT(*) FROM attempts a JOIN participations x ON x.id=a.participation_id WHERE x.campaign_id=c.id) AS tentativas,
       (SELECT COUNT(*) FROM entitlements e JOIN participations x ON x.id=e.participation_id WHERE x.campaign_id=c.id AND e.state='delivered') AS premios_entregues
       FROM campaigns c JOIN ${base.replace('projects p', 'projects p ON p.id=c.project_id')} /*WHERE*/ ORDER BY c.starts_at DESC`, period('c.starts_at'));
+  }
+  if (dataset === 'outflow_details') {
+    const selected: Row[] = [], encoder = new TextEncoder(); let bytes = 128;
+    for (const row of rows.slice(0, MAX_ROWS)) {
+      const size = encoder.encode(JSON.stringify(row)).byteLength + 1;
+      if (bytes + size > MAX_OUTFLOW_BYTES) break;
+      selected.push(row); bytes += size;
+    }
+    return { dataset, rows: selected, truncated: rows.length > selected.length };
   }
   return { dataset, rows: rows.slice(0, MAX_ROWS), truncated: rows.length > MAX_ROWS };
 }
