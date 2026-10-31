@@ -164,18 +164,19 @@ export async function calendarEntries(db: D1Database, actor: PortalActor | null,
       projects: ['project'], consumption: ['consumption'],
     };
     const linkedLoanScope = sqlScope('r.project_id', accessibleProjects(actor, 'loans.read'));
+    const linkedLoanAuthority = projectAuthoritySql(actor, ['loans.read'], 'r.project_id');
     rows = await all(db, `SELECT r.id,r.project_id,p.name project_name,'Registro · ' || r.title title,
       COALESCE(r.starts_at,r.occurred_at) starts_at,COALESCE(r.ends_at,r.starts_at,r.occurred_at) ends_at,
       r.starts_at scheduled,'recorded' state,0 revision,r.created_at,r.created_at last_modified
       FROM records r JOIN projects p ON p.id=r.project_id
       LEFT JOIN loans linked_loan ON linked_loan.id=r.loan_id
       LEFT JOIN items linked_item ON linked_item.id=r.item_id WHERE ${filter.sql}
-      AND (r.loan_id IS NULL OR (linked_loan.project_id=r.project_id AND (${linkedLoanScope.sql})))
+      AND (r.loan_id IS NULL OR (linked_loan.project_id=r.project_id AND (${linkedLoanScope.sql}) AND (${linkedLoanAuthority.sql})))
       AND (r.item_id IS NULL OR linked_item.project_id=r.project_id)
       AND r.kind IN (${kinds[category].map(() => '?').join(',')})
       AND julianday(COALESCE(r.starts_at,r.occurred_at))<julianday(?)
       AND julianday(COALESCE(r.ends_at,r.starts_at,r.occurred_at))>=julianday(?) LIMIT ${MAX_ENTRIES + 1}`,
-    [...filter.values, ...linkedLoanScope.values, ...kinds[category], range.endsAt, range.startsAt]);
+    [...filter.values, ...linkedLoanScope.values, ...linkedLoanAuthority.values, ...kinds[category], range.endsAt, range.startsAt]);
     for (const row of rows) {
       if (!row.scheduled || Date.parse(row.ends_at) <= Date.parse(row.starts_at)) {
         row.starts_at = dayInBrazil(row.starts_at);
@@ -228,15 +229,32 @@ export async function calendarAction(db: D1Database, actor: PortalActor | null, 
 export async function calendarFeed(db: D1Database, token: string, now = new Date()): Promise<{ entries: CalendarEntry[]; category: CalendarCategory }> {
   const missing = () => new HttpError(404, 'Esta assinatura não está disponível. Gere um novo link no painel.', 'calendar_feed_unavailable');
   if (!/^[A-Za-z0-9_-]{43}$/.test(token)) throw missing();
+  const tokenHash = await calendarTokenHash(token);
   const feed = await one(db, `SELECT f.owner_id,f.category,f.project_id,f.expires_at,f.revoked_at,u.email,u.status
-    FROM calendar_feeds f JOIN portal_users u ON u.user_id=f.owner_id WHERE f.token_hash=?`, [await calendarTokenHash(token)]);
+    FROM calendar_feeds f JOIN portal_users u ON u.user_id=f.owner_id WHERE f.token_hash=?`, [tokenHash]);
   if (!feed || feed.revoked_at || feed.status !== 'active' || !Number.isFinite(Date.parse(feed.expires_at)) || Date.parse(feed.expires_at) <= now.getTime()) throw missing();
   const category = categoryValue(feed.category);
   // No OWNER_EMAIL bootstrap: membership and canonical account status are re-read for each fetch.
   const actor = await getActor(db, { userId: feed.owner_id, email: feed.email || 'calendar-account@invalid.example', displayName: 'Agenda' });
+  if (!actor) throw missing();
   try { requireScope(actor, category, feed.project_id, feed.project_id === null); } catch { throw missing(); }
   const from = dayInBrazil(new Date(now.getTime() - 365 * DAY)), to = dayInBrazil(new Date(now.getTime() + 365 * DAY));
-  return { ...await calendarEntries(db, actor, { category, projectId: feed.project_id, range: calendarRange(from, to, now) }), category };
+  const data = await calendarEntries(db, actor, { category, projectId: feed.project_id, range: calendarRange(from, to, now) });
+  // Projection may await multiple fresh reads. Do not release an already-built payload after
+  // its bearer, account or authority was revoked during one of those reads.
+  const authority = feed.project_id === null
+    ? { sql: `EXISTS(SELECT 1 FROM members m WHERE m.user_id=f.owner_id AND m.role='owner'
+        AND m.project_id IS NULL AND m.organization_id IS NULL AND m.revoked_at IS NULL)`, values: [] }
+    : projectAuthoritySql(actor, capabilities[category], 'f.project_id');
+  const linkedLoanAuthority = projectAuthoritySql(actor, ['loans.read'], 'r.project_id');
+  const emittedRecords = JSON.stringify(data.entries.filter(value => value.sourceKind === 'record').map(value => value.sourceId));
+  if (!await one(db, `SELECT 1 allowed FROM calendar_feeds f JOIN portal_users u ON u.user_id=f.owner_id
+    WHERE f.token_hash=? AND f.owner_id=? AND f.category=? AND f.project_id IS ? AND f.revoked_at IS NULL
+    AND julianday(f.expires_at)>julianday(?) AND u.status='active' AND u.activation_pending=0 AND u.anonymized_at IS NULL
+    AND (${authority.sql}) AND NOT EXISTS(SELECT 1 FROM json_each(?) emitted JOIN records r ON r.id=emitted.value
+      WHERE r.loan_id IS NOT NULL AND NOT (${linkedLoanAuthority.sql}))`, [tokenHash, feed.owner_id, category, feed.project_id,
+    new Date(Math.max(Date.now(), now.getTime())).toISOString(), ...authority.values, emittedRecords, ...linkedLoanAuthority.values])) throw missing();
+  return { ...data, category };
 }
 
 export function escapeICalText(value: string): string {
@@ -253,7 +271,14 @@ export function foldICalLine(value: string): string {
 }
 function icalTime(value: string): string { return new Date(value).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z'); }
 export function serializeCalendar(entries: CalendarEntry[], label = 'Agenda PROEX'): string {
-  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//PROEX//Gestao institucional//PT-BR', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', `X-WR-CALNAME:${escapeICalText(label)}`, 'X-WR-TIMEZONE:America/Sao_Paulo'];
+  // This is passive calendar data, not an iTIP PUBLISH transaction. Omitting METHOD also
+  // keeps the body consistent with text/calendar without a MIME method parameter.
+  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//PROEX//Gestao institucional//PT-BR', 'CALSCALE:GREGORIAN', `X-WR-CALNAME:${escapeICalText(label)}`, 'X-WR-TIMEZONE:America/Sao_Paulo'];
+  // RFC 5545 requires a component even when there are no events. An exact UTC timezone
+  // supplies one without inventing an appointment or asserting anyone's availability.
+  // Actual timed entries remain UTC (Z); the calendar display preference remains Brasília.
+  if (!entries.length) lines.push('BEGIN:VTIMEZONE', 'TZID:UTC', 'BEGIN:STANDARD', 'DTSTART:19700101T000000',
+    'TZOFFSETFROM:+0000', 'TZOFFSETTO:+0000', 'TZNAME:UTC', 'END:STANDARD', 'END:VTIMEZONE');
   for (const event of entries) {
     lines.push('BEGIN:VEVENT', `UID:${escapeICalText(event.uid)}`, `DTSTAMP:${icalTime(event.lastModified)}`, `LAST-MODIFIED:${icalTime(event.lastModified)}`, `SEQUENCE:${event.revision}`);
     if (event.allDay) lines.push(`DTSTART;VALUE=DATE:${event.startsAt.replaceAll('-', '')}`, `DTEND;VALUE=DATE:${event.endsAt.replaceAll('-', '')}`);
