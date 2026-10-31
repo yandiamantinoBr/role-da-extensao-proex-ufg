@@ -1,5 +1,7 @@
 # V16 · assinatura da agenda
 
+**Publicada:** [PR #17](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/17), candidato `7e61d9b64e27f64ce005eaab5f3a6924f0779f6c`, merge `f8c3718abcb654b0b8b06679fe8dfba87cf6deff` em 31/10/2026 às 22:18:54Z. Vercel `dpl_GsN2Q4ZZJGH8foUMmtTzcXBREsAf` READY nesse merge. CI remoto: 838/838 portal e 33/33 jogo. Health canônico 200; hosts antigos de V9/V10 continuam 403.
+
 Em 31/10/2026, Yan informou que o atalho de assinatura no Google Calendar exibia “Unable to add calendar. Check the URL.”. A URL privada fornecida não integra este repositório ou as provas públicas.
 
 ## Mudança
@@ -15,7 +17,7 @@ Antes da publicação desta correção, a coordenação usou a assinatura existe
 
 O download de diagnóstico foi bloqueado pela revisão automática do navegador porque a origem da operação não pôde ser identificada. A operação não foi contornada. A confirmação operacional usa a interface do Google e o valor original da página.
 
-Fonte funcional integrada: `12d5b54` (candidato original `10e9b08`). Testes locais completos Node 24: **838 aprovados, zero falhas**. Tipos, builds Worker/Node e lint passaram; lint mantém três avisos anteriores e nenhum erro. A revisão independente aprovou 21 testes do candidato e 14 probes próprios em Node 24 e 26, sem novo P1/P2 no escopo. Publicação e CI remoto serão registrados após conclusão. Provas de navegador ficam somente no diretório local ignorado.
+Fonte funcional integrada: `12d5b54` (candidato original `10e9b08`). Testes locais completos Node 24: **838 aprovados, zero falhas**. Tipos, builds Worker/Node e lint passaram; lint mantém três avisos anteriores e nenhum erro. A revisão independente aprovou 21 testes do candidato e 14 probes próprios em Node 24 e 26, sem novo P1/P2 no escopo. QA do build final: largura 375/client 360/scroll 360 e largura 1250/client 1235/scroll 1235; botão e orientação corretos, sem overflow. Provas de navegador ficam somente no diretório local ignorado. O servidor QA foi encerrado; a revisão automática bloqueou a limpeza de sua pasta temporária, preservada sem contorno do bloqueio.
 
 A consulta real da categoria **Projetos e eventos**, em todos os projetos autorizados, de **31/10/2025 a 31/10/2027**, retornou **zero registros**. A ausência de compromissos dessa assinatura em novembro é compatível com a fonte consultada. Enriquecer datas exige documento oficial ou confirmação responsável; a correção não inventa eventos de teste em produção. A cadência de futuras consultas do Google continua fora do controle do portal.
 

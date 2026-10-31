@@ -1,4 +1,8 @@
-# Checkpoint atual · V15 publicada e conferida
+# Checkpoint atual · V16 publicada
+
+Em 31/10/2026, PR #17 integrada em `f8c3718abcb654b0b8b06679fe8dfba87cf6deff`; Vercel `dpl_GsN2Q4ZZJGH8foUMmtTzcXBREsAf` READY no mesmo SHA. CI 838 portal + 33 jogo, sem falhas; revisão independente do calendário aprovada. Fluxo oficial Do URL criou a assinatura existente no Google antes do patch; fonte real de projetos/eventos está vazia no horizonte consultado. Ver [ENTREGA-V16.md](ENTREGA-V16.md). R21 autorizado e conectado, ainda OFF/sem envio; V17 prepara piloto próprio com proteção de destinatário. As seções abaixo preservam o histórico.
+
+# Histórico · V15 publicada e conferida
 
 [PR #16](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/16), candidato fdc2faf, merge funcional 737a14b. Vercel produção dpl_5dsBCaCtGYdqMS6VS26xvzEoYqxd READY no mesmo SHA; CI com 827 testes do portal e 33 do jogo, sem falhas. Revisão independente do incremento: 9,1/10. Sessão, Meu trabalho, material/gestão, Demandas, sino e 320/375 px conferidos em produção; health 200 e hosts antigos 403.
 

@@ -1,4 +1,10 @@
-# Continuar Portal PROEX · V15 publicada
+# Continuar Portal PROEX · V16 publicada
+
+Em 31/10/2026, [PR #17](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/17) integrada: merge funcional `f8c3718abcb654b0b8b06679fe8dfba87cf6deff`; Vercel `dpl_GsN2Q4ZZJGH8foUMmtTzcXBREsAf` READY nesse SHA. CI: 838 testes do portal e 33 do jogo, sem falhas; tipos/builds Worker e Node aprovados, lint sem erros e três avisos anteriores. QA 375/1250 sem overflow. O botão da agenda segue o fluxo oficial Do URL, com ICS passivo conforme e verificação fresca de acesso. [ENTREGA-V16.md](ENTREGA-V16.md) traz provas e limites. O usuário já tem a assinatura criada no Google; a fonte consultada de projetos/eventos retorna zero registros no horizonte da assinatura. Não criar compromissos fictícios para preenchê-la.
+
+**R21: autorização específica recebida.** Conta, organização e credencial restrita de 30 dias foram conectadas no projeto privado separado. Servidor OFF e nenhum piloto enviado neste checkpoint. Incremento V17 em worktree separada prepara piloto limitado ao próprio emissor, com as mesmas proteções de consentimento/ACL/cota, e feedback da cópia da credencial. Não repetir a pergunta já respondida pelo usuário nem executar o fluxo normal para um piloto self-only. A rotina original de Sheets/Drive/backup permanece separada.
+
+## Histórico · V15 publicada
 
 Em 31/10/2026, PR #16 integrada: candidato fdc2faf, merge funcional `737a14bf2b3d68c7c0bf19c090a15150c45ffe32`. Vercel `dpl_5dsBCaCtGYdqMS6VS26xvzEoYqxd` READY nesse SHA. CI: 827/827 testes do portal e 33/33 do jogo. Código local main e GitHub conferidos. Commits posteriores apenas documentais preservam a versão funcional; verificar o SHA corrente no GitHub/Vercel antes de continuar. Push, PR, merge e deploy permanecem autorizados; regras de segredos e dados continuam em AGENTS.md.
 
@@ -6,7 +12,7 @@ Em 31/10/2026, PR #16 integrada: candidato fdc2faf, merge funcional `737a14bf2b3
 
 Sheets canônico: 35 tabelas, 170 linhas/zero conflitos e depois 173 linhas/zero. **Conector de IA divergente:** um MCP desta sessão respondeu 27 tabelas e histórico de 25/10. Revalidar destino/esquema antes de usar essa conexão para escrita; portal canônico e planilha respondem 35. O gerenciamento consultado não expõe edição desse endpoint privado. Isso não é uma falha da sincronização canônica.
 
-R21 continua preparado e OFF, esperando confirmação Google específica; a escolha do remetente não autoriza OAuth, token ou envio. IA/STT, público, custódia externa e decisões institucionais permanecem na [matriz R01–R24](COBERTURA-DE-REQUISITOS.md). Não gravar exemplos de QA em produção nem presumir atribuição por autoria/cargo/tomador. Zoom de 200%, leitor de tela e aparelhos físicos não foram comprovados. [Parecer visual](../apps/proex-portal/docs/AUDITORIA-DESIGN-V15.md).
+Na entrega V15, R21 estava preparado e OFF, esperando confirmação Google específica; esse bloqueio de autorização foi superado pela resposta posterior registrada no topo. IA/STT, público, custódia externa e decisões institucionais permanecem na [matriz R01–R24](COBERTURA-DE-REQUISITOS.md). Não gravar exemplos de QA em produção nem presumir atribuição por autoria/cargo/tomador. Zoom de 200%, leitor de tela e aparelhos físicos não foram comprovados. [Parecer visual](../apps/proex-portal/docs/AUDITORIA-DESIGN-V15.md).
 
 ## Histórico de retomadas anteriores
 
