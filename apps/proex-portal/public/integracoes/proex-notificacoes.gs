@@ -58,47 +58,65 @@ function verEstadoAvisosEmail() {
   var props = avisoPropriedades_(), state; try { state = JSON.parse(props.getProperty('EMAIL_LAST_STATE') || 'null'); } catch (_) { state = null; }
   SpreadsheetApp.getUi().alert('Conta efetiva: ' + avisoConta_() + '\nGatilho nesta conta: ' + (props.getProperty('EMAIL_TRIGGER_ENABLED') === '1' ? 'habilitado; confira histórico' : 'desativado') + '\nÚltima tentativa: ' + (state ? state.status + ' em ' + state.at + ' · aceitos nesta execução: ' + (state.accepted || 0) + (state.code ? ' · ' + state.code : '') : 'nenhuma') + '\nPendente local: ' + (props.getProperty('EMAIL_PENDING') ? 'sim; não repetir envio manualmente' : 'não') + '\nAceitação não confirma entrega nem leitura.');
 }
-function menuAvisosEmail() { SpreadsheetApp.getUi().createMenu('PROEX · Avisos').addItem('Conectar somente os avisos', 'conectarAvisosEmail').addItem('Preparar conta e organização', 'configurarAvisosLocais').addItem('Ativar avisos por e-mail', 'ativarAvisosEmail').addItem('Desativar avisos por e-mail', 'desativarAvisosEmail').addItem('Processar avisos agora', 'processarAvisosEmail').addItem('Ver estado dos avisos', 'verEstadoAvisosEmail').addToUi(); }
+function menuAvisosEmail() { SpreadsheetApp.getUi().createMenu('PROEX · Avisos').addItem('Conectar somente os avisos', 'conectarAvisosEmail').addItem('Preparar conta e organização', 'configurarAvisosLocais').addItem('Ativar avisos por e-mail', 'ativarAvisosEmail').addItem('Desativar avisos por e-mail', 'desativarAvisosEmail').addItem('Enviar um único teste para mim', 'enviarTesteProprioAvisosEmail').addItem('Processar avisos agora', 'processarAvisosEmail').addItem('Ver estado dos avisos', 'verEstadoAvisosEmail').addToUi(); }
 function avisosEmailAutomaticos() { if (avisoPropriedades_().getProperty('EMAIL_TRIGGER_ENABLED') !== '1') throw avisoErro_('email_trigger_disabled'); return processarAvisosEmail(); }
 function avisoPending_(value) { avisoPropriedades_().setProperty('EMAIL_PENDING', JSON.stringify(value)); }
-function processarAvisosEmail() {
+function processarAvisosEmail() { return avisoProcessar_(false); }
+function enviarTesteProprioAvisosEmail() { return avisoProcessar_(true); }
+function avisoPilotoRegistrar_(organizationId, id, status) { avisoPropriedades_().setProperty('EMAIL_PILOT_ATTEMPT', JSON.stringify({ organizationId: organizationId, id: id, status: status, at: new Date().toISOString() })); }
+function avisoProcessar_(pilot) {
   var start = Date.now(), lock = LockService.getUserLock(), locked = false, props = avisoPropriedades_(), accepted = 0;
   try {
     locked = lock.tryLock(1000); if (!locked) throw avisoErro_('email_busy');
     var organizationId = props.getProperty('EMAIL_ORGANIZATION_ID'), actual = avisoConta_();
     if (!organizationId || props.getProperty('EMAIL_INSTALLER_EMAIL') !== actual) throw avisoErro_('email_sender_mismatch');
+    if (pilot && props.getProperty('EMAIL_TRIGGER_ENABLED') === '1') throw avisoErro_('email_pilot_requires_paused');
     var common = { organizationId: organizationId, installerEmail: actual }, pending;
     try { pending = JSON.parse(props.getProperty('EMAIL_PENDING') || 'null'); } catch (_) { throw avisoErro_('email_pending_invalid'); }
+    if (pilot && !pending && props.getProperty('EMAIL_PILOT_ATTEMPT')) { avisoEstado_({ status: 'pilot_already_attempted', at: new Date().toISOString(), accepted: 0 }); return { accepted: 0, state: 'pilot_already_attempted' }; }
     if (pending) {
+      if (!!pending.pilot !== !!pilot) throw avisoErro_('email_pending_mode_changed');
       if (pending.organizationId !== organizationId || pending.installerEmail !== actual) throw avisoErro_('email_pending_context_changed');
+      var externalMayHaveRun = pending.stage === 'sending' || pending.stage === 'accepted_local';
+      if (pilot && externalMayHaveRun) avisoPilotoRegistrar_(organizationId, pending.id, 'attempted_unconfirmed');
       var recovered;
       if (pending.stage === 'accepted_local') { try { recovered = avisoApi_(Object.assign({}, common, { action: 'dispatch.ack', id: pending.id, claimToken: pending.claimToken, acceptanceToken: pending.acceptanceToken })); } catch (_) { recovered = avisoApi_(Object.assign({}, common, { action: 'dispatch.recover', id: pending.id, claimToken: pending.claimToken })); } }
       else recovered = avisoApi_(Object.assign({}, common, { action: 'dispatch.recover', id: pending.id, claimToken: pending.claimToken }));
-      if (recovered.status === 'accepted') { if (pending.stage === 'accepted_local') accepted++; props.deleteProperty('EMAIL_PENDING'); }
-      else if (recovered.status === 'superseded' || recovered.status === 'queued' || recovered.status === 'cancelled' || recovered.status === 'accepted_attested' || recovered.status === 'closed_unconfirmed') props.deleteProperty('EMAIL_PENDING');
+      var recoveredStatus = recovered.status;
+      if (pilot && externalMayHaveRun && ['superseded', 'queued', 'cancelled'].indexOf(recoveredStatus) >= 0) recoveredStatus = 'closed_unconfirmed';
+      // Persist the pilot attempt/terminal outcome before clearing its pending claim.
+      // A missing or changed server receipt must never authorize a second pilot.
+      if (pilot && ['accepted', 'accepted_attested', 'closed_unconfirmed'].indexOf(recoveredStatus) >= 0) avisoPilotoRegistrar_(organizationId, pending.id, recoveredStatus);
+      if (recoveredStatus === 'accepted') { if (pending.stage === 'accepted_local') accepted++; props.deleteProperty('EMAIL_PENDING'); }
+      else if (recoveredStatus === 'superseded' || recoveredStatus === 'queued' || recoveredStatus === 'cancelled' || recoveredStatus === 'accepted_attested' || recoveredStatus === 'closed_unconfirmed') props.deleteProperty('EMAIL_PENDING');
       else throw avisoErro_('email_send_uncertain');
+      if (pilot) { avisoEstado_({ status: recoveredStatus, at: new Date().toISOString(), accepted: accepted }); return { accepted: accepted, state: recoveredStatus }; }
     }
-    for (var index = 0; index < NOTIFY_BATCH_MAX; index++) {
+    for (var index = 0; index < (pilot ? 1 : NOTIFY_BATCH_MAX); index++) {
       if (Date.now() - start >= NOTIFY_BUDGET_MS) throw avisoErro_('email_time_budget');
       if (avisoConta_() !== actual) throw avisoErro_('email_sender_mismatch');
       var quota = MailApp.getRemainingDailyQuota(); if (!Number.isSafeInteger(quota) || quota < 1) { avisoEstado_({ status: 'google_quota', at: new Date().toISOString(), accepted: accepted, remainingQuota: Math.max(0, quota || 0) }); return { accepted: accepted, state: 'google_quota' }; }
-      var response = avisoApi_(Object.assign({}, common, { action: 'dispatch.claim', remainingQuota: quota }));
+      var response = avisoApi_(Object.assign({}, common, { action: pilot ? 'dispatch.pilot.claim' : 'dispatch.claim', remainingQuota: quota }));
       if (!response.claim) { avisoEstado_({ status: response.state || 'idle', at: new Date().toISOString(), accepted: accepted, remainingQuota: quota }); return { accepted: accepted, state: response.state || 'idle' }; }
-      pending = { organizationId: organizationId, installerEmail: actual, id: response.claim.id, claimToken: response.claim.claimToken, stage: 'begin_pending' }; avisoPending_(pending);
-      var message = avisoApi_(Object.assign({}, common, { action: 'dispatch.begin', id: pending.id, claimToken: pending.claimToken, remainingQuota: quota }));
+      pending = { organizationId: organizationId, installerEmail: actual, id: response.claim.id, claimToken: response.claim.claimToken, stage: 'begin_pending', pilot: !!pilot }; avisoPending_(pending);
+      var message = avisoApi_(Object.assign({}, common, { action: pilot ? 'dispatch.pilot.begin' : 'dispatch.begin', id: pending.id, claimToken: pending.claimToken, remainingQuota: quota }));
       if (message.senderEmail !== actual || !message.acceptanceToken || !/^[A-Za-z0-9_-]{20,100}$/.test(message.acceptanceToken) || message.subject !== 'PROEX · Nova demanda' || typeof message.body !== 'string' || message.body.length > 800 || !/^Você recebeu uma demanda na PROEX\.\n\nAcesse o portal para consultar os detalhes:\nhttps:\/\//.test(message.body) || avisoEmail_(message.to) !== message.to || /[,;\r\n]/.test(message.to)) throw avisoErro_('email_message_invalid');
       var linkLines = message.body.split('\n'), link = linkLines[linkLines.length - 1], expectedLink = props.getProperty('PORTAL_URL').replace(/:443$/, '') + '/?module=demands&demandId=';
       if (link.indexOf(expectedLink) !== 0 || !/^[A-Za-z0-9._~%:-]+$/.test(link.slice(expectedLink.length))) throw avisoErro_('email_message_invalid');
+      if (pilot && message.to !== actual) throw avisoErro_('email_pilot_recipient_mismatch');
       if (Date.now() - start >= NOTIFY_BUDGET_MS || avisoConta_() !== actual || MailApp.getRemainingDailyQuota() < 1) throw avisoErro_('email_pre_send_changed');
       pending.stage = 'sending'; pending.acceptanceToken = message.acceptanceToken; avisoPending_(pending);
+      if (pilot) avisoPilotoRegistrar_(organizationId, pending.id, 'attempted_unconfirmed');
       // Server has durably entered sending before this irreversible external call.
       // Any exception, timeout or uncertain result remains pending; never retry send.
       MailApp.sendEmail({ to: message.to, subject: message.subject, body: message.body });
       pending.stage = 'accepted_local'; avisoPending_(pending);
       var ack = avisoApi_(Object.assign({}, common, { action: 'dispatch.ack', id: pending.id, claimToken: pending.claimToken, acceptanceToken: pending.acceptanceToken }));
       if (ack.status !== 'accepted') throw avisoErro_('email_ack_uncertain');
+      if (pilot) avisoPilotoRegistrar_(organizationId, pending.id, 'accepted');
       accepted++; props.deleteProperty('EMAIL_PENDING');
       avisoEstado_({ status: 'accepted', at: new Date().toISOString(), accepted: accepted, remainingQuota: MailApp.getRemainingDailyQuota() });
+      if (pilot) return { accepted: accepted, state: 'accepted' };
       Utilities.sleep(1000);
     }
     return { accepted: accepted, state: 'batch_limit' };
