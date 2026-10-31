@@ -39,3 +39,31 @@ WhatsApp é apenas compartilhamento manual de título + link protegido via `http
 ## Verificação do backend
 
 13 cenários SQLite reais passaram em Node 24: isolamento A/B, escopo geral somente admin, referências, CAS/idempotência, atomicidade do encerramento, três tamanhos, pendências únicas, saldos preservados, remoção de equipe, grants mínimos e revogação no commit, histórico arquivado, catálogo sem contatos e GET sem escrita. Tipos e lint focados passaram antes da entrega da UI. A verificação final da UI e de compatibilidade portátil é registrada no complemento deste documento antes do handoff final.
+
+## Componentes e montagem
+
+`components/portal/follow-up-panel.tsx` exporta `FollowUpPanel` padrão, com props `defaultProjectId?`, `defaultOrganizationId?`, `initialTaskId?`, `onChanged?:()=>void|Promise<void>`, `onOpenReports?:()=>void`, `basePath?`. O padrão de basePath é `/?module=demands`. `initialTaskId` acompanha mudanças vindas do sino. Montar com `key={userId}` para descartar estado anterior ao trocar conta; o portal deve manter seu `setDraftScope(userId)` existente. Equipes ficam embutidas no painel, sob CTA administrativo; sua edição busca catálogo organizacional completo separado das atribuições de projeto. Nunca montar o editor com roster parcial de projeto. Atualização de equipe sem `userIds` preserva o quadro atual; remoção geral exige `[]` explícito.
+
+`components/portal/notification-bell.tsx` exporta `NotificationBell` padrão: `userId` obrigatório, `onSelectTask?:(id)=>void`, `basePath?`. O callback deve abrir Demandas e atualizar initialTaskId. A ação marca apenas o aviso próprio como lido. Sem callback, o link usa demandId no endereço protegido. O cabeçalho do portal recebe o sino; não foi modificado nesta branch.
+
+O sino consulta ao iniciar, focar ou voltar à aba e a cada 60 segundos visíveis. Requisições em andamento são deduplicadas; uma invalidação durante consulta agenda uma nova leitura; troca de conta cancela a consulta e oculta o estado anterior. O contador é persistente e o atraso deriva do prazo; refresh não cria notificações. Escape fecha e devolve foco ao botão.
+
+O painel usa container queries (560/640/850px) para respeitar o espaço efetivo do conteúdo. Em celular o detalhe aparece antes da lista e recebe foco após abrir/criar demanda. Formulários reutilizam rascunhos locais por pessoa/contexto/registro. Uma linha alterada de conferência é remontada pela revisão dos valores, preservando rascunhos de outras linhas sem sobrescrever silenciosamente um novo valor remoto. Formulário de checklist suporta até 20 linhas na UI atual; API aceita até 100. Não há material/tamanho inventado, cálculo de saldo automático ou foto adicional neste fluxo.
+
+## Sheets e backup
+
+Cinco projeções portáteis read-only: teams, tasks, checklists, checklist_items e checklist_actions. Somente owner GLOBAL atual pode exportar; owner organizacional não recebe exportação global. Não exportam roster, pessoas responsáveis, grants, notificações, histórico, corpo da demanda ou notas da conferência. Tamanho é texto (P/M/G), contagens são números. O Apps Script existente descobre schemas dinamicamente; a sincronização passa de 29 para 34 projeções e exige nova leitura de retorno de todas antes de confirmar sucesso. Edição de demandas/equipes/checklists fica nas operações autorizadas da plataforma; edição dessas abas não aplica alteração direta. Integração real das novas abas no Google Sheets depende do rollout coordenado, não foi executada a partir desta worktree.
+
+Teste de backup completo criou e validou arquivo em memória, inventariou as dez tabelas e restaurou grants, avisos, demandas e integridade referencial. Nenhum arquivo ou dado real foi acessado.
+
+## Evidência visual e desempenho
+
+QA descartável local, sem .env/.dev.vars/provedor real: criar demanda e responsável, conferir material P com contagem9/esperado10/avaria1, concluir com pendência vinculada, criar equipe e marcar avisos como lidos funcionaram por CUA. Verificação em iframe375/414 e1250 com conteúdo950 aproximado; leitura DOM confirmou ausência de overflow horizontal em375 e1250. Temas escuro/claro comparados. A rota auxiliar foi removida, o servidor foi encerrado e o tema de teste voltou a Sistema. Capturas sintéticas locais em Temp: proex-followup-375-dark.png, proex-followup-414-dark.png e proex-followup-1250-light.png; não incluem dados de produção. Últimas melhorias de bordas/touch targets/Escape ficam cobertas por tipos/lint e montagem final do coordenador.
+
+Benchmark independente em SQLite RAM sintético (1000 demandas/1000 avisos, 10 amostras, Node24): página50 p50~22ms/p95~24ms; inbox100 p50~5,3ms/p95~6,1ms; zero writes. São medidas locais de serviço, não projeção de capacidade serverless. O smoke Node local completo também passou. Não houve teste de carga em produção.
+
+Revisão independente encontrou e foi corrigida uma corrida em que demissão operacional para viewer poderia usar um grant task-only sobrevivente para aprovar divergências. O mesmo batch agora exige autorização operacional atual para aprovação de divergências e criação de pendências. A revogação retorna403 e preserva checklist/recibo/filhos. A revisão também corrigiu perda silenciosa de integrantes em atualização parcial de equipe. O coordenador integra a correção R17 de leituras strong do SnapshotD1 para preservar a garantia SQL fresca entre processos, além dos guards desta frente.
+
+Ainda pertence ao coordenador: montagem no PortalClient/header/navigation, relatório PDF/DOCX/XLSX R20, reconciliação modelo/journal/snapshot com0012/13, teste integrado final, backup real e publicação/checagem em produção/Vault. R21/0015 contém o envio opcional por MailApp em frente separada e OFF. Esta branch não publicou nada.
+
+Gates finais desta worktree: 539/539 testes completos em Node24.22.1 e26.12.1; TypeScript limpo; ESLint zero erros e três avisos preexistentes fora desta frente. Build Worker/Node finais registrados no handoff após conclusão. Não copiar a rota auxiliar QA: ela não existe no commit.
