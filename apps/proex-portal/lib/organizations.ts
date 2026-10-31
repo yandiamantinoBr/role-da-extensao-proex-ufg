@@ -32,7 +32,8 @@ export async function organizationDetail(db:D1Database,actor:PortalActor|null,id
   const permission=organizationAuthoritySql(actor!,organizationId);
   const organization=await one(db,`SELECT id,name,slug,status,version FROM organizations WHERE id=? AND ${permission.sql}`,[organizationId,...permission.values]);
   if(!organization)throw new HttpError(403,'A organização ou seu acesso mudou.','organization_access_changed');
-  const members=await all(db,`SELECT m.id,m.user_id,m.role,m.project_id,m.organization_id,m.revoked_at,u.status,u.activation_pending,p.display_name
+  const members=await all(db,`SELECT m.id,m.user_id,m.role,m.project_id,m.organization_id,m.revoked_at,u.status,u.activation_pending,
+    (u.anonymized_at IS NOT NULL) anonymized,CASE WHEN u.anonymized_at IS NULL THEN p.display_name ELSE NULL END display_name
     FROM members m LEFT JOIN portal_users u ON u.user_id=m.user_id LEFT JOIN profiles p ON p.user_id=m.user_id
     WHERE m.organization_id=? AND ${permission.sql} ORDER BY m.created_at,m.id`,[organizationId,...permission.values]);
   return{organization,members};
