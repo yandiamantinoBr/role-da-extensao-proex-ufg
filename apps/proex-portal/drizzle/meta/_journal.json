@@ -120,6 +120,13 @@
       "when": 1793450000004,
       "tag": "0016_document_ai",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "6",
+      "when": 1793450000005,
+      "tag": "0017_work_responsibilities",
+      "breakpoints": true
     }
   ]
 }

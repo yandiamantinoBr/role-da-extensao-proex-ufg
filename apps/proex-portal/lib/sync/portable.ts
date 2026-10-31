@@ -9,6 +9,7 @@ type Definition = { label: string; fields: string; editable?: string; action?: s
 // an exported column. Credentials, CPF hashes and private storage keys never enter.
 const DEFINITIONS: Record<string, Definition> = {
  organizations: {label:'Organizações de acesso',fields:'id,name,slug,status,version,created_at,updated_at',mode:'read_only'},
+ work_responsibility_scopes: {label:'Designações por área e entidade',fields:'id,organization_id,project_id,area,item_id,loan_id,campaign_id,status,version,created_at,updated_at',mode:'read_only',omitted:['created_by','assignees','history']},
  followup_teams: {label:'Equipes de acompanhamento',fields:'id,organization_id,name,status,version,created_at,updated_at',mode:'read_only',omitted:['created_by','roster']},
  followup_tasks: {label:'Demandas e pendências',fields:'id,organization_id,project_id,title,priority,status,due_at,campaign_id,item_id,loan_id,version,created_at,updated_at',mode:'read_only',omitted:['body','created_by','assignees','work_grants']},
  followup_checklists: {label:'Conferências de materiais',fields:'id,organization_id,project_id,campaign_id,task_id,title,status,version,created_at,updated_at',mode:'read_only',omitted:['created_by']},
