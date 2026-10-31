@@ -1,6 +1,6 @@
 # Avisos opcionais por MailApp — R21
 
-Em 2026-10-31 a conta remetente ainda não foi escolhida. **Envio real permanece desativado.** Este incremento fornece código e testes com dados sintéticos e MailApp simulado; não instala projeto, gatilho, autorização Google nem envia mensagens reais. Publicar o portal não habilita a rotina. A migração interna **0015** depende das demandas/notificações da **0014** e deve ser reconciliada no modelo/journal pelo coordenador antes de publicação.
+Em 2026-10-31, após a publicação V13, Yan escolheu explicitamente a conta Google pessoal atual como remetente **provisório**. O endereço real e os localizadores privados ficam na Vault e no painel autorizado, fora do Git público. O remetente foi salvo no portal com envio **desativado**, limites 50/dia na organização, 3/pessoa/dia, 100 por evento e intervalo de 300 segundos. Planilha privada e projeto vinculado separados foram preparados, com código salvo, menu verificado e quatro escopos explícitos (MailApp, identidade, HTTP e gatilhos), sem acesso Gmail/Sheets/Drive. A tela Google exige autorização específica; credencial restrita, ativação e primeiro envio real ainda não foram concluídos. A migração 0015 e a revisão independente já foram integradas/publicadas na V12; não tratá-las como bloqueios técnicos atuais.
 
 ## Menor privilégio e consentimento
 
@@ -10,7 +10,7 @@ Cada pessoa escolhe receber avisos **somente no próprio e-mail canônico da con
 
 O conector usa uma credencial **`pne_` exclusiva de avisos e da organização vinculada**. Nunca deve receber `pxs_` de sincronização global. A sessão administrativa pode criá-la por ação explícita, com validade de 1–90 dias (padrão 30), até cinco ativas por organização. O valor aparece uma única vez; o banco guarda somente SHA-256. A validade, revogação, organização e autoridade ativa do emissor são revalidadas na autenticação e dentro de cada transação de despacho. Rebaixar, revogar ou bloquear o emissor invalida a credencial, mesmo se seu objeto de sessão estiver antigo. A credencial não altera configuração, remetente, consentimentos, destinatários nem acessa sincronização ou painel da equipe. Renovação é manual; não há emissão automática de credenciais reais neste trabalho.
 
-## Instalação futura sem interromper as rotinas existentes
+## Instalação sem interromper as rotinas existentes
 
 Use uma **planilha privada exclusiva de avisos e seu projeto Apps Script separado**. Não adicione `proex-notificacoes.gs` ao projeto atual da planilha/Drive/backup: escopos inferidos de MailApp podem exigir nova autorização e interromper os gatilhos existentes até ela ser concedida. Quem edita o projeto de avisos pode usar a credencial restrita e alterar código executado pela conta instaladora; limite edição às pessoas responsáveis por essa organização.
 
@@ -44,4 +44,4 @@ As cotas oficiais consultadas em 2026-10-31 indicam 100 destinatários/dia para 
 
 Testes locais usam banco descartável, endereços `example.test`, credenciais sintéticas e MailApp falso. Cobrem revogação, mudança de e-mail, opt-out, equipe, escopos A/B, quota, admissão concorrente, expiração, timeout, ACK perdido, incerteza e exclusão das projeções Sheets/MCP/Drive. As tabelas `followup_email_*` são internas e não entram no formato portátil. O backup completo criptografado pode contê-las, como restante do estado privado da aplicação.
 
-O componente `EmailSettingsPanel` recebe somente `organizationId`; o coordenador monta-o no contexto apropriado, com remount ao mudar organização. A liberação ainda exige revisão independente, reconciliação de schema/migração e testes integrados. Uma primeira execução real depende da escolha explícita da conta e autorização no momento, instalação separada e consentimento das pessoas. **Nenhum envio real foi realizado nesta entrega.**
+O componente `EmailSettingsPanel` recebe somente `organizationId`; o coordenador monta-o no contexto apropriado, com remount ao mudar organização. Revisão independente, reconciliação de schema/migração e testes integrados foram concluídos na publicação V12. Na etapa operacional posterior à V13, o remetente provisório já foi escolhido e a instalação separada está preparada; faltam autorização específica de acesso, conexão restrita, consentimentos, ativação e piloto. **Nenhum envio real foi realizado nesta entrega.**

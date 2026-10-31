@@ -1,3 +1,13 @@
+# Trabalho atual · R23/V14 e ativação de avisos
+
+Em 31/10/2026, após V13, Yan escolheu provisoriamente a conta Google pessoal atual para avisos e pediu auditoria visual de TODO portal com nota independente mínima de 9/10. Última produção comprovada continua 23bbeae/V13. V14 está LOCAL, ainda sem publicação e sem aprovação9. Os detalhes abaixo da V13 permanecem como histórico útil.
+
+- Root integra v14-interface e faz CUA exclusivo em QA sintético, sem gravações de QA em produção. Achados não se limitam a overflow: cascata CSS, contraste, teclado, toque e prioridade do conteúdo.
+- relatorios_datas mantém auditoria independente, baseline V13 de 7,0/10, rubrica de 8 dimensões e checklist de 16 famílias em apps/proex-portal/docs/AUDITORIA-DESIGN-V14-PRELIMINAR.md. Só reavaliar após os mesmos contextos/estados no build final.
+- revisao_organizacoes: Demandas/sino, login, Início e recorte compartilhado/configurações. mobile_responsivo: projetos, agenda, importação, relatórios, equipe e alvos locais. Não sobrepor arquivos sem coordenação.
+- Avisos: remetente salvo OFF no portal, planilha/Apps Script privados separados preparados e menu confirmado. Manifesto limita quatro escopos e não solicita Gmail/Sheets/Drive. Confirmação específica de Google+token de 30 dias+piloto próprio está pendente em pergunta assíncrona. Não emitir token nem habilitar envio antes da resposta. Localizadores e endereço somente na Vault; nenhum segredo no Git.
+- QA em 127.0.0.1:5173 iniciado pelo coordenador, somente loopback/dados fictícios. Provas privadas em apps/proex-portal/.sites-runtime/production-v14; mudanças na fonte requer parar QA e rebuild antes de conferir o build final. Não tocar QA antigo cuja exclusão foi rejeitada.
+
 # Continuidade do Portal PROEX
 
 Atualizado em 31/10/2026. Leia AGENTS.md, este guia e a matriz de requisitos. Confirme GitHub/Vercel e git status: checkpoints não são monitoração contínua. Push, PR, merge e deploy de todas as entregas estão permanentemente autorizados por Yan.
@@ -8,7 +18,7 @@ Atualizado em 31/10/2026. Leia AGENTS.md, este guia e a matriz de requisitos. Co
 - Revisão funcional V13: d069c7f280881f946e801fd9a956dad86379fcdf; Vercel READY dpl_3KvAbcFCHoaJp61GsjuxBS6N7GBD no mesmo SHA. Candidato f202903, PR/main aprovados: 726/726 portal e 33/33 jogo. Sessão real, Demandas/sino, novo relatório e padrão documental OFF conferidos após deploy, sem QA ou chamadas de provedores em produção. Commits posteriores só de documentação mantêm o mesmo código; consultar GitHub/Vercel para o SHA corrente.
 - Health canônico 200; URLs geradas antigas V9/V10 retornam 403. Preview não tem credenciais de produção. Não operar o banco atual com código anterior à migração 0008.
 - Demandas, prioridades, equipes sobrepostas, conferência por material/tamanho, pendências, sino e relatórios estão publicados. Concessão de tarefa não amplia ACL; conferência não movimenta estoque nem fecha empréstimo. WhatsApp é compartilhamento manual.
-- E-mail MailApp e cadastro público estão implementados, mas DESATIVADOS. Remetente/autorizações, aviso aprovado e infraestrutura de envio ainda são gates reais. Não escolher uma conta por ausência de resposta.
+- E-mail MailApp e cadastro público estão implementados, mas DESATIVADOS. Remetente pessoal provisório escolhido em 31/10 e salvo com envio OFF; instalação separada e autorização Google ainda pendentes. Aviso aprovado e infraestrutura da entrada pública têm gates próprios. Não escolher uma conta por ausência de resposta.
 
 ## Backup e Sheets reais
 
@@ -20,14 +30,14 @@ Atualizado em 31/10/2026. Leia AGENTS.md, este guia e a matriz de requisitos. Co
 
 ## V13 publicada e próxima ação
 
-Checkout coordenador: v13-coordenacao, atualizado sobre main d069c7f. R09, R10 e R11 integrados, revisados por agentes diferentes e conferidos em CUA. Revisões específicas estão em apps/proex-portal/docs. Fonte congelada; últimos commits são testes e documentação. Não abrir frentes concorrentes sobre arquivos compartilhados.
+Checkout coordenador atual: v14-interface, sobre a produção documental 23bbeae (revisão funcional V13 d069c7f). R09, R10 e R11 integrados, revisados por agentes diferentes e conferidos em CUA. Revisões específicas estão em apps/proex-portal/docs. Fonte congelada; últimos commits são testes e documentação. Não abrir frentes concorrentes sobre arquivos compartilhados.
 
 - R09: “Saídas rastreáveis” mostra ação, quantidade, operador autorizado e retorno; reservas/agendamentos não contam como saída, textos livres exigem opt-in, CSV parcial tem nome explícito.
 - R10: IA opcional no importador de projetos/patrimônios, evidências literais por campo, revisão e confirmação. documentEnabled começa false. Confiança sem calibração permanece nula; não há OCR/envio binário ou saldo automático. 0016 é aditiva.
 - R11: painel montado só em configuração autorizada com revisão salva; consentimento próprio para metadados, sem geração/transcrição automática. Troca de organização/revisão desmonta o diagnóstico. Chaves/provedores reais não foram usados.
 - Autoridade é conferida depois dos awaits de configuração/decifragem, antes de cada envio IA/STT e ao devolver/reaplicar resultados. Mudança de identidade recarrega a interface antes de aplicar novo snapshot.
 
-Suítes finais: 726/726 em Node24 e Node26, tipos/lint sem erros (3 avisos antigos), Worker e Node builds aprovados. PR #14 e deploy de produção concluídos, conferência autenticada e isolamento aprovados. Coordenador mantém a trilha de registro na Vault e oito chats. Próximas ações reais: escolher/configurar remetente, configurar provedores pelo responsável, testar em aparelhos físicos, comprovar primeira execução diária e custodiar as chaves fora da máquina. Não ativar serviços por ausência de resposta; consultar docs/ENTREGA-V13.md e a matriz.
+Suítes finais: 726/726 em Node24 e Node26, tipos/lint sem erros (3 avisos antigos), Worker e Node builds aprovados. PR #14 e deploy de produção concluídos, conferência autenticada e isolamento aprovados. Coordenador mantém a trilha de registro na Vault e oito chats. Próximas ações reais: concluir autorização/instalação do remetente pessoal provisório já escolhido, configurar provedores pelo responsável, testar em aparelhos físicos, comprovar primeira execução diária e custodiar as chaves fora da máquina. Não ativar serviços por ausência de resposta; consultar docs/ENTREGA-V13.md e a matriz.
 
 ## Evidências e limites
 
