@@ -74,6 +74,7 @@ function MaterialDialog({ itemId, onClose, onChanged, renderWorkContext }: Omit<
   function closed() {
     // A queued close from an unmounted/reopened dialog must not steal the new target's focus.
     if (!mounted.current || dialog.current?.open) return;
+    mounted.current = false;
     if (typeof document !== 'undefined') {
       if (opener.current?.isConnected) opener.current.focus({preventScroll: true});
       if (!opener.current?.isConnected || document.activeElement !== opener.current) document.getElementById('main')?.focus({preventScroll: true});

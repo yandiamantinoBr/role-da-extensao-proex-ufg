@@ -94,3 +94,8 @@ test('a queued close from effect replay cannot close a reopened native dialog or
   h.replayEffect(); b.flush(); assert.equal(h.closed, 0); assert.equal(h.node.open, true); assert.equal(b.document.activeElement, h.node.closeButton);
   h.escape(); assert.equal(h.closed, 1); assert.equal(b.document.activeElement, opener); h.cleanup();
 });
+
+test('effect replay and a real close queued together report the completed close only once', () => {
+  const b = browser(), opener = new b.Element('catalog-launcher'); opener.focus(); const h = mount(b);
+  h.replayEffect(); h.node.close(); b.flush(); assert.equal(h.closed, 1); assert.equal(b.document.activeElement, opener); h.cleanup();
+});
