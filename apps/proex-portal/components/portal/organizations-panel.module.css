@@ -15,6 +15,7 @@
 .card>button{margin-top:auto;width:100%;justify-content:center}
 .card>button[aria-pressed=true]{border-color:var(--brand-ink);color:var(--brand-ink)}
 .workspace{min-width:0;display:grid;gap:20px}
+.card,.workspace{padding:clamp(18px,3vw,24px)}
 .loading{display:flex;align-items:center;gap:10px;font-size:13px}
 .editor{min-width:0;border-block:1px solid var(--line);padding-block:20px}
 .editor fieldset{border:0;padding:0;margin:0;min-width:0;display:grid;gap:16px}

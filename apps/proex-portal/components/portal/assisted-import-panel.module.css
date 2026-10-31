@@ -1,18 +1,22 @@
-.panel { container-type: inline-size; margin-block: 18px; }
+.panel { container-type: inline-size; margin-block: 18px; padding: clamp(18px, 3vw, 24px); min-width: 0; }
+.panel > :global(.p-row-between) { flex-wrap: wrap; align-items: flex-start; gap: 16px; }
+.panel > :global(.p-row-between) > div { flex: 1 1 240px; min-width: 0; }
+.panel :global(.p-button) { min-height: 44px; }
+.panel :global(.p-field) { margin-bottom: 0; }
 .panel h3, .saved h4 { display: flex; align-items: center; gap: 9px; }
-.body { margin-top: 18px; display: grid; gap: 16px; }
+.body { margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--line); display: grid; gap: 18px; }
 .fieldset { display: grid; gap: 16px; border: 0; padding: 0; margin: 0; min-width: 0; }
 .source { display: grid; gap: 7px; padding: 14px; border-radius: 12px; background: var(--surface-soft); color: var(--ink); overflow-wrap: anywhere; }
 .source small { color: var(--muted); }
 .fields { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
 .field { display: grid; grid-template-columns: minmax(170px, 32%) minmax(0, 1fr); gap: 12px; padding: 13px; border-bottom: 1px solid var(--line); }
 .field:last-child { border-bottom: 0; }
-.field > label, .confirm { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; }
-.field input[type=checkbox], .confirm input[type=checkbox] { width: 18px; height: 18px; flex: 0 0 18px; margin: 2px 0 0; }
+.field > label, .confirm { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; min-height: 44px; }
+.field input[type=checkbox], .confirm input[type=checkbox] { width: 20px; height: 20px; min-height: 20px; max-height: 20px; flex: 0 0 20px; padding: 0; margin: 2px 0 0; accent-color: var(--brand-ink); }
 .field small { display: block; font-size: 11px; color: var(--muted); margin-top: 4px; }
 .field > div { overflow-wrap: anywhere; white-space: pre-wrap; min-width: 0; }
 .field[data-invalid=true] { background: var(--surface-soft); border-left: 3px solid var(--danger); }
-.confirm { line-height: 1.6; padding-block: 4px; }
+.confirm { line-height: 1.6; padding-block: 10px; }
 .actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 .actions > label:focus-within { outline: 3px solid var(--purple, #54216c); outline-offset: 3px; }
 .saved { display: grid; gap: 14px; }

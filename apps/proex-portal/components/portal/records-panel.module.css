@@ -1,15 +1,15 @@
 .filterBar { display: grid; grid-template-columns: minmax(220px, 2fr) minmax(150px, 1fr) minmax(150px, 1fr) auto; gap: 12px; align-items: end; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface-soft); }
 .filterBar :global(.p-field) { margin: 0; min-width: 0; max-width: none; }
 .filterActions { display: flex; gap: 8px; }
-.filterActions :global(.p-button) { min-height: 43px; }
+.filterActions :global(.p-button) { min-height: 44px; }
 .filterHelp { grid-column: 1 / -1; font-size: 11px; color: var(--text-secondary); margin: 0; }
 .historyHead { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
 .historyHead h3 { margin: 0 0 4px; font-size: 18px; }
 .historyActions { display: flex; gap: 8px; flex-wrap: wrap; }
-.historyActions :global(.p-button) { min-height: 38px; padding: 8px 12px; font-size: 12px; }
+.historyActions :global(.p-button) { min-height: 44px; padding: 8px 12px; font-size: 12px; }
 .historyFilters { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; margin-bottom: 14px; }
 .kindChips { display: flex; flex-wrap: wrap; gap: 6px; }
-.kindChips button { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 5px 11px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--text-secondary); font-size: 12px; font-weight: 500; }
+.kindChips button { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 5px 11px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--text-secondary); font-size: 12px; font-weight: 500; }
 .kindChips button span { font-size: 10px; font-weight: 700; background: var(--surface-soft); border-radius: 999px; padding: 1px 7px; color: var(--brand-ink); }
 .kindChips button.chipActive { border-color: var(--brand-ink); color: var(--brand-ink); background: var(--surface-soft); font-weight: 600; }
 .kindChips i, .kindTag i { width: 8px; height: 8px; border-radius: 50%; background: var(--tone); display: inline-block; flex-shrink: 0; }
@@ -32,7 +32,7 @@
 .kindTag { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; color: var(--text-secondary); }
 .attachCount { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--brand-ink); background: var(--surface-soft); border-radius: 999px; padding: 2px 8px; }
 .attachDetails { margin-top: 12px; }
-.attachDetails summary { cursor: pointer; color: var(--brand-ink); min-height: 40px; display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.attachDetails summary { cursor: pointer; color: var(--brand-ink); min-height: 44px; display: flex; align-items: center; gap: 8px; font-size: 12px; }
 :is(.entry,.kindChips button)[data-tone="1"] { --tone: #2a78d6; } :is(.entry,.kindChips button)[data-tone="2"] { --tone: #eb6834; } :is(.entry,.kindChips button)[data-tone="3"] { --tone: #1baf7a; } :is(.entry,.kindChips button)[data-tone="4"] { --tone: #eda100; }
 :is(.entry,.kindChips button)[data-tone="5"] { --tone: #e87ba4; } :is(.entry,.kindChips button)[data-tone="6"] { --tone: #008300; } :is(.entry,.kindChips button)[data-tone="7"] { --tone: #6250d6; }
 :global(html[data-theme=dark]) :is(.entry,.kindChips button)[data-tone="1"] { --tone: #3987e5; } :global(html[data-theme=dark]) :is(.entry,.kindChips button)[data-tone="2"] { --tone: #d95926; } :global(html[data-theme=dark]) :is(.entry,.kindChips button)[data-tone="3"] { --tone: #199e70; }
