@@ -4,6 +4,7 @@ import ProjectDetail from './project-detail';
 import { useFormDraft, DraftNotice } from './use-form-draft';
 import { EXTENSION_LINES, THEMATIC_AREAS, areaLabel, groupUnits } from '@/lib/extension-catalog';
 import styles from './project-panel.module.css';
+import type { OrganizationSummary } from './organizations-panel';
 import { ArrowRight, CalendarDays, Check, ExternalLink, FolderKanban, LoaderCircle, MapPin, Pencil, Plus, X } from 'lucide-react';
 // The protected API projects module-specific metadata.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -12,6 +13,8 @@ type Props = {
     projects: Row[];
     projectTypes?: Row[];
     organizationalUnits?: Row[];
+    organizations?: OrganizationSummary[];
+    isPlatformOwner?: boolean;
     onSelect?: (id: string) => void;
     canCreate: boolean;
     canEdit: (id: string) => boolean;
@@ -49,28 +52,36 @@ function OrganizationalUnitForm({units,mutate,onSaved,close}:{units:Row[];mutate
       <form ref={formRef} key={`${current?.id??'new'}-${current?.version??0}`} onSubmit={save} onChange={()=>{if(!saving)key.current=null;}}><DraftNotice draft={draft}/><fieldset disabled={saving}><div className="p-form-grid"><label className="p-field"><span>Nome da unidade *</span><input name="name" required maxLength={200} defaultValue={current?.name??''} placeholder="Nome oficial da unidade"/></label><label className="p-field"><span>Sigla</span><input name="acronym" maxLength={40} defaultValue={current?.acronym??''} placeholder="Ex.: PROEX"/></label><label className="p-field"><span>Tipo</span><select name="kind" defaultValue={current?.kind??'academic'}><option value="proex">PROEX</option><option value="academic">Unidade acadêmica</option><option value="agency">Órgão</option><option value="external">Entidade externa / parceira</option></select></label><label className="p-field"><span>Situação</span><select name="status" defaultValue={current?.status??'active'}><option value="active">Ativa</option>{current&&<option value="archived">Arquivada</option>}</select><small>Arquivar conserva vínculos e histórico.</small></label><label className="p-field"><span>Grupo institucional</span><input name="groupLabel" list="proex-unit-groups" maxLength={80} defaultValue={current?.group_label??''} placeholder="Ex.: Unidade Acadêmica"/><datalist id="proex-unit-groups">{groups.map(group=><option key={group} value={group}/>)}</datalist><small>Organiza os filtros (Unidades Acadêmicas, Pró-Reitorias, Órgãos…).</small></label><label className="p-field"><span>Câmpus</span><input name="campus" maxLength={120} defaultValue={current?.campus??''} placeholder="Ex.: Campus Samambaia"/></label><label className="p-field"><span>Página oficial</span><input name="officialUrl" type="url" maxLength={300} defaultValue={current?.official_url??''} placeholder="https://"/></label></div>{error&&<p className="p-inline-error" role="alert">{error}</p>}<div className="p-form-footer"><button type="button" className="p-button p-button-subtle" onClick={close}>Fechar</button><button type="submit" className="p-button p-button-primary">{saving?<LoaderCircle size={16} className="p-spin"/>:<Check size={16}/>}Salvar unidade</button></div></fieldset></form>
     </section>;
 }
-function ProjectForm({ project, projects, types, units, mutate, done }: {
+function ProjectForm({ project, projects, types, units, organizations, mutate, done }: {
     project: Row | null;
     projects: Row[];
     types: Row[];
     units: Row[];
+    organizations: OrganizationSummary[];
     mutate: Props['mutate'];
     done: () => void;
 }) {
     const [saving, setSaving] = useState(false), [error, setError] = useState('');
     const key = useRef<string | null>(null), formRef = useRef<HTMLFormElement>(null);
     const draft = useFormDraft(formRef, `project:${project?.id ?? 'new'}:${project?.version ?? 0}`);
+    const [organizationId, setOrganizationId] = useState(String(project?.organization_id ?? (organizations.length === 1 ? organizations[0].id : '')));
+    const organization = organizations.find(row => row.id === organizationId);
+    const parentProjects = projects.filter(row => row.organization_id === organizationId);
     async function save(e: FormEvent<HTMLFormElement>) {
         e.preventDefault();
         if (saving)
             return;
         const form = new FormData(e.currentTarget);
+        const selectedOrganizationId = String(form.get('organizationId') || organizationId);
+        if (!project && !organizations.some(row => row.id === selectedOrganizationId && row.canManage && row.status === 'active')) {
+            setError('Escolha uma organização ativa que você administra.'); return;
+        }
         setSaving(true);
         setError('');
         key.current ??= crypto.randomUUID();
         try {
             const date = (name: string) => form.get(name) ? new Date(`${form.get(name)}T${name === 'endsAt' ? '23:59:59' : '00:00:00'}-03:00`).toISOString() : null;
-            await mutate(project ? 'project.update' : 'project.create', { ...(project ? { id: project.id, expectedVersion: Number(project.version) } : {}), name: form.get('name'), shortName: form.get('shortName'), description: form.get('description'), status: form.get('status'), lifecycle: form.get('lifecycle'), typeId: form.get('typeId')||null, unitId: form.get('unitId')||null, scope: form.get('scope'), thematicArea: form.get('thematicArea') || '', extensionLine: form.get('extensionLine') || '', prizesEnabled: form.get('prizesEnabled')==='on', parentId: form.get('parentId')||null, color: form.get('color'), officialUrl: form.get('officialUrl'), startsAt: date('startsAt'), endsAt: date('endsAt'), location: form.get('location'), operationKey: key.current });
+            await mutate(project ? 'project.update' : 'project.create', { ...(project ? { id: project.id, expectedVersion: Number(project.version) } : { organizationId: selectedOrganizationId }), name: form.get('name'), shortName: form.get('shortName'), description: form.get('description'), status: form.get('status'), lifecycle: form.get('lifecycle'), typeId: form.get('typeId')||null, unitId: form.get('unitId')||null, scope: form.get('scope'), thematicArea: form.get('thematicArea') || '', extensionLine: form.get('extensionLine') || '', prizesEnabled: form.get('prizesEnabled')==='on', parentId: form.get('parentId')||null, color: form.get('color'), officialUrl: form.get('officialUrl'), startsAt: date('startsAt'), endsAt: date('endsAt'), location: form.get('location'), operationKey: key.current });
             key.current = null;
             draft.clear();
             done();
@@ -86,6 +97,8 @@ function ProjectForm({ project, projects, types, units, mutate, done }: {
         key.current = null; }}>
     <DraftNotice draft={draft}/>
     <fieldset disabled={saving}>
+    {!project && <div className={styles.organizationContext}>{organizations.length > 1 ? <label className="p-field"><span>Organização do projeto *</span><select name="organizationId" required value={organizationId} onChange={event => setOrganizationId(event.target.value)}><option value="">Selecione a organização</option>{organizations.map(row => <option key={row.id} value={row.id}>{row.name}</option>)}</select><small>O projeto e seus acessos ficarão vinculados a esta organização.</small></label> : <><strong>Organização: {organization?.name ?? 'Nenhuma organização ativa disponível'}</strong><input type="hidden" name="organizationId" value={organizationId}/><p className="p-form-help">O projeto será criado nesta organização.</p></>}</div>}
+    {project && <p className="p-form-help">Organização: {organization?.name ?? 'Organização do projeto'}. O vínculo é preservado nesta edição.</p>}
     <div className="p-form-grid">
     <label className="p-field">
     <span>Nome oficial do projeto *</span>
@@ -97,7 +110,7 @@ function ProjectForm({ project, projects, types, units, mutate, done }: {
     <label className="p-field"><span>Abrangência</span><select name="scope" defaultValue={project?.scope??'internal'}><option value="internal">Interno · conduzido pela equipe PROEX</option><option value="external">Externo · unidade acadêmica, órgão ou parceiro</option></select><small>Separa as ações da própria PROEX das iniciativas que ela apoia. Acesso continua definido por projeto na Equipe.</small></label>
     <label className="p-field"><span>Unidade responsável</span><select name="unitId" defaultValue={project?.unit_id??''}><option value="">Unidade ainda não definida</option><UnitOptions units={units.filter(unit=>unit.status==='active'||unit.id===project?.unit_id)}/></select><small>Unidade da coordenação da ação. Não concede permissões.</small></label>
     <label className="p-field"><span>Etapa no catálogo</span><select name="lifecycle" defaultValue={project?.lifecycle??'active'}><option value="active">Em atividade</option><option value="past">Passado / histórico</option><option value="catalog">Catálogo / referência</option></select><small>Uma referência histórica não comprova encerramento da iniciativa.</small></label>
-    <label className="p-field"><span>Programa ou projeto superior</span><select name="parentId" defaultValue={project?.parent_id??''}><option value="">Sem vínculo superior</option>{project?.parent_id&&!projects.some(row=>row.id===project.parent_id)&&<option value={project.parent_id}>Vínculo superior atual (acesso restrito)</option>}{projects.filter(row=>row.id!==project?.id).map(row=><option key={row.id} value={row.id}>{row.name}</option>)}</select><small>A relação organiza o catálogo e não concede acesso a outros projetos.</small></label>
+    <label className="p-field"><span>Programa ou projeto superior</span><select key={organizationId} name="parentId" defaultValue={project?.parent_id??''}><option value="">Sem vínculo superior</option>{project?.parent_id&&!parentProjects.some(row=>row.id===project.parent_id)&&<option value={project.parent_id}>Vínculo superior atual (acesso restrito)</option>}{parentProjects.filter(row=>row.id!==project?.id).map(row=><option key={row.id} value={row.id}>{row.name}</option>)}</select><small>A relação organiza projetos da mesma organização e não concede acesso.</small></label>
     <label className="p-field">
     <span>Nome curto ou sigla</span>
     <input name="shortName" maxLength={40} defaultValue={value(project, 'short_name', 'shortName')}/>
@@ -142,7 +155,7 @@ function ProjectForm({ project, projects, types, units, mutate, done }: {
     </fieldset>
     </form>;
 }
-export default function ProjectPanel({ projects, projectTypes = [], organizationalUnits = [], onSelect, canCreate, canEdit, mutate }: Props) {
+export default function ProjectPanel({ projects, projectTypes = [], organizationalUnits = [], organizations = [], isPlatformOwner = false, onSelect, canCreate, canEdit, mutate }: Props) {
     const [editing, setEditing] = useState<Row | null | undefined>();
     const [query, setQuery] = useState(''), [unitId,setUnitId]=useState(''), [typeId,setTypeId]=useState(''), [situation,setSituation]=useState('all'), [area,setArea]=useState(''), [scope,setScope]=useState<'all'|'internal'|'external'>('all');
     const [detail,setDetail]=useState(''),[detailRevision,setDetailRevision]=useState(0),[opening,setOpening]=useState(false),[error,setError]=useState(''),[typeEditor,setTypeEditor]=useState(false),[unitEditor,setUnitEditor]=useState(false);
@@ -164,11 +177,13 @@ export default function ProjectPanel({ projects, projectTypes = [], organization
     });
     const hasFilters=Boolean(query||unitId||typeId||area||situation!=='all'||scope!=='all');
     const scopeCount=(value:'internal'|'external')=>projects.filter(project=>(project.scope??'internal')===value).length;
+    const creatableOrganizations = organizations.filter(organization => organization.canManage && organization.status === 'active');
+    const createAllowed = canCreate && creatableOrganizations.length > 0;
     return <section className={`p-section ${styles.panel}`}>
-      <div className={`p-section-heading ${styles.heading}`}><div><h2>{detail?'Detalhe do projeto':'Projetos da equipe'}</h2><p>Programas, projetos e iniciativas organizados por unidade.</p></div>{canCreate&&<div className={styles.actions}><button type="button" className="p-button p-button-subtle" onClick={()=>void openUnits()}>Unidades</button><button type="button" className="p-button p-button-subtle" onClick={()=>setTypeEditor(value=>!value)}>Tipos de iniciativa</button><button type="button" className="p-button p-button-primary" onClick={()=>{setDetail('');setEditing(null);}}><Plus size={17}/>Novo projeto</button></div>}</div>
-      {unitEditor&&canCreate&&<OrganizationalUnitForm units={units} mutate={mutate} close={()=>setUnitEditor(false)} onSaved={row=>setUnits(current=>[...current.filter(unit=>unit.id!==row.id),row].sort((a,b)=>a.name.localeCompare(b.name,'pt-BR')))}/>}
-      {typeEditor&&canCreate&&<ProjectTypeForm types={types} mutate={mutate} close={()=>setTypeEditor(false)} onSaved={row=>setTypes(current=>[...current.filter(type=>type.id!==row.id),row])}/>}
-      {editing!==undefined&&<div ref={editorRef} className={`p-editor-panel ${styles.editor}`}><div className="p-row-between"><h3>{editing?`Editar ${editing.name}`:'Criar projeto'}</h3><button type="button" className="p-icon-button" aria-label="Fechar formulário de projeto" onClick={()=>setEditing(undefined)}><X size={18}/></button></div><ProjectForm key={`${editing?.id??'new'}-${editing?.version??0}`} project={editing} projects={projects} types={types} units={units} mutate={mutate} done={done}/></div>}
+      <div className={`p-section-heading ${styles.heading}`}><div><h2>{detail?'Detalhe do projeto':'Projetos da equipe'}</h2><p>Programas, projetos e iniciativas organizados por unidade.</p></div>{(createAllowed || isPlatformOwner)&&<div className={styles.actions}>{isPlatformOwner&&<><button type="button" className="p-button p-button-subtle" onClick={()=>void openUnits()}>Unidades</button><button type="button" className="p-button p-button-subtle" onClick={()=>setTypeEditor(value=>!value)}>Tipos de iniciativa</button></>}{createAllowed&&<button type="button" className="p-button p-button-primary" onClick={()=>{setDetail('');setEditing(null);}}><Plus size={17}/>Novo projeto</button>}</div>}</div>
+      {unitEditor&&isPlatformOwner&&<OrganizationalUnitForm units={units} mutate={mutate} close={()=>setUnitEditor(false)} onSaved={row=>setUnits(current=>[...current.filter(unit=>unit.id!==row.id),row].sort((a,b)=>a.name.localeCompare(b.name,'pt-BR')))}/>}
+      {typeEditor&&isPlatformOwner&&<ProjectTypeForm types={types} mutate={mutate} close={()=>setTypeEditor(false)} onSaved={row=>setTypes(current=>[...current.filter(type=>type.id!==row.id),row])}/>}
+      {editing!==undefined&&(editing || createAllowed)&&<div ref={editorRef} className={`p-editor-panel ${styles.editor}`}><div className="p-row-between"><h3>{editing?`Editar ${editing.name}`:'Criar projeto'}</h3><button type="button" className="p-icon-button" aria-label="Fechar formulário de projeto" onClick={()=>setEditing(undefined)}><X size={18}/></button></div><ProjectForm key={`${editing?.id??'new'}-${editing?.version??0}`} project={editing} projects={projects} types={types} units={units} organizations={editing ? organizations : creatableOrganizations} mutate={mutate} done={done}/></div>}
       {error&&<p className="p-inline-error" role="alert">{error}</p>}
       {detail?<ProjectDetail key={`${detail}-${detailRevision}`} projectId={detail} projects={projects} mutate={mutate} onBack={()=>setDetail('')} onEdit={project=>void edit(project)} onSelect={id=>setDetail(id)}/>:<>
         <div className={`p-card ${styles.filters}`} aria-label="Filtros dos projetos"><label className={`p-field ${styles.search}`}><span>Buscar projeto</span><input value={query} onChange={event=>setQuery(event.target.value)} placeholder="Nome, sigla, unidade ou finalidade"/></label><label className="p-field"><span>Unidade responsável</span><select value={unitId} onChange={event=>setUnitId(event.target.value)}><option value="">Todas as unidades</option><option value="unassigned">Sem unidade definida</option><UnitOptions units={units}/></select></label><label className="p-field"><span>Área temática</span><select value={area} onChange={event=>setArea(event.target.value)}><option value="">Todas as áreas</option>{THEMATIC_AREAS.map(item=><option key={item.key} value={item.key}>{item.label}</option>)}<option value="none">Área não informada</option></select></label><label className="p-field"><span>Modalidade</span><select value={typeId} onChange={event=>setTypeId(event.target.value)}><option value="">Todas as modalidades</option><option value="unassigned">Sem tipo definido</option>{types.map(type=><option key={type.id} value={type.id}>{type.label}</option>)}</select></label><label className="p-field"><span>Situação</span><select value={situation} onChange={event=>setSituation(event.target.value)}><option value="all">Todas as situações</option><option value="active">Em atividade</option><option value="past">Passados / históricos</option><option value="catalog">Catálogo / referência</option><option value="archived">Arquivados</option></select></label><div className={styles.scopeTabs} role="group" aria-label="Abrangência">{([['all','Todos',projects.length],['internal','Internos PROEX',scopeCount('internal')],['external','Externos e parceiros',scopeCount('external')]] as const).map(([id,label,count])=><button key={id} type="button" aria-pressed={scope===id} className={scope===id?styles.scopeTabActive:styles.scopeTab} onClick={()=>setScope(id)}>{label}<span>{count}</span></button>)}</div><div className={styles.filterSummary}><span>{visible.length} de {projects.length} projeto(s)</span>{hasFilters&&<button type="button" className="p-text-link" onClick={()=>{setQuery('');setUnitId('');setTypeId('');setArea('');setSituation('all');setScope('all');}}>Limpar filtros <X size={14}/></button>}</div></div>

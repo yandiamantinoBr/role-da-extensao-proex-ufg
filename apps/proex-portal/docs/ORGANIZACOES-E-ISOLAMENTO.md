@@ -68,3 +68,26 @@ Os testes novos usam SQLite, migrações e módulos reais, com contas e arquivos
 A suíte completa passou em 401/401 casos tanto no Node 24.22.1 quanto no Node 26.12.1; tipos passaram e lint terminou com zero erros e quatro avisos anteriores. Os builds Worker e Node passaram, assim como o smoke do Worker compilado, incluindo autenticação, senha, sessão, MCP e roundtrip portátil com revogação imediata. Uma revisão independente repetiu os cinco probes de autorização que originaram correções (replay revogado, lista de organizações após revogação, catálogo global após perda de administração da plataforma, cancelamento com conta bloqueada e `canManage` após rebaixamento), todos aprovados; também executou 94 testes de organizações/projetos/atendimento/equipe. Esta evidência é local e não substitui as verificações da revisão integrada.
 
 Antes de integrar/publicar: concluir revisão independente da 0008 e das permissões; conferir backup e restauração; incorporar o seletor/gestão de organizações na interface e no importador; repetir tipos, suíte, lint e os builds Worker/Node na revisão integrada. Esta entrega do backend não afirma que a nova interface já foi montada nem que houve aplicação da migração em produção.
+
+## Interface isolada — etapa seguinte sobre `b59e873`
+
+`components/portal/organizations-panel.tsx` fornece `OrganizationsPanel` com estas props:
+
+| Prop | Contrato |
+| --- | --- |
+| `organizations` | `OrganizationSummary[]` do snapshot autorizado: `id`, `name`, `slug`, `status`, `version`, `canManage` |
+| `currentActor` | `{ userId, isPlatformOwner }`; derivar administração da plataforma de `globalCapabilities`, nunca apenas do nome do papel |
+| `people` | Opcional: `OrganizationPerson[]`, projeção `users` já autorizada do snapshot. Somente a plataforma usa essa lista para nomear pessoas de fora da organização; a administração local usa exclusivamente os membros retornados no detalhe protegido |
+| `onChanged` | Callback assíncrono ou síncrono para recarregar o snapshot do portal após uma alteração concluída |
+
+O painel permite criar organizações somente na plataforma, editar nome/situação com CAS, recarregar a versão após conflito, conceder/remover administração local após confirmação e preservar o último administrador ativo. A edição mantém rascunho local por conta/organização/versão, apagado após salvar; escolhas administrativas e confirmações não são persistidas como rascunho. O diálogo nativo tem rótulo/descrição, foco inicial em Cancelar, ciclo de Tab/Shift+Tab, Escape quando não está salvando e bloqueio de submissão duplicada. Contas bloqueadas, pendentes e anonimizadas não são candidatas nem contam como substitutas; o detalhe também omite o nome de perfis antigos anonimizados.
+
+`ProjectPanel` passa a receber `organizations` e `isPlatformOwner`. O chamador deve permitir criação quando houver capacidade global correspondente **ou** uma organização ativa com `canManage`. Uma única organização gerenciável aparece com nome fixo e envia seu ID; várias exigem escolha explícita sem seleção inicial. A hierarquia oferece apenas projetos da organização escolhida, e edições conservam o vínculo original. Tipos/unidades compartilhados só aparecem para `isPlatformOwner`. Na ausência da nova prop, a criação fica indisponível; a integração do chamador é necessária antes de publicar a interface. O importador recebeu o mesmo contrato em sua tarefa separada.
+
+`portal-client.tsx` não foi alterado nesta branch: o coordenador integrará a aba/painel, props, visibilidade da criação e atualização do snapshot em conjunto com as demais entregas. A API e os testes independem dessa montagem.
+
+Nove testes adicionais executam os handlers JSX reais com um adaptador inerte de DOM/hooks e encaminham as ações à API/SQLite reais. Cobrem confirmação/cancelamento, duplicidade, revogação concorrente do último administrador, CAS/recarregamento, criação por organização, edição sem transferência, anonimização e ausência de controles administrativos para externos. Essa técnica não simula geometria ou teclado.
+
+Nesta etapa da interface, a suíte completa passou em 410/410 casos no Node 24.22.1; tipos e builds Worker/Node passaram. O lint permaneceu com zero erros e quatro avisos anteriores. Após a inclusão do rascunho, os nove testes de interface e a verificação de tipos/lint dos arquivos alterados foram repetidos e passaram.
+
+Em fixture React separada na porta local 5174, sem credenciais/ambiente de produção, foi conferido o fluxo navegador → API → SQLite: concessão confirmada, cancelamento por Escape, foco/Shift+Tab, projetos locais/plataforma persistidos em organizações distintas, criação/arquivamento e limites do externo. As capturas sintéticas foram inspecionadas. Nos estados verificados em 375/414 px e 1250 px com conteúdo de aproximadamente 950 px, a largura da página permaneceu igual à janela, nenhum controle ficou cortado, os botões medidos tinham pelo menos 44 px e não houve `pageerror`. Evidências locais ignoradas pelo Git: `.sites-runtime/organizations-ui-browser-evidence.json` e `organizations-*.png`. A partir da orientação posterior do coordenador, novas verificações de interface devem usar exclusivamente CUA; o smoke CUA integrado continua pendente, junto do backup/restauração real antes da migração.

@@ -1,0 +1,54 @@
+.panel{min-width:0;container-type:inline-size;container-name:organizations;display:grid;gap:20px}
+.panel h2,.panel h3,.panel h4{overflow-wrap:anywhere;margin:0}
+.panel :global(.p-field){min-width:0}
+.panel :global(.p-button),.panel :global(.p-icon-button){min-height:44px}
+.panel :global(.p-field) input,.panel :global(.p-field) select{min-width:0;max-width:100%}
+.sectionHeading{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;min-width:0}
+.sectionHeading>div:first-child{min-width:0;flex:1 1 230px}
+.actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:10px;align-items:center}
+.actions button{white-space:normal}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,270px),1fr));gap:16px;align-items:stretch}
+.card{display:grid;align-content:start;justify-items:start;gap:12px;min-width:0}
+.card h3{font-size:18px;line-height:1.4}
+.card p,.notice{font-size:13px;line-height:1.7;overflow-wrap:anywhere}
+.card p{color:var(--text-secondary);margin:0}
+.card>button{margin-top:auto;width:100%;justify-content:center}
+.card>button[aria-pressed=true]{border-color:var(--brand-ink);color:var(--brand-ink)}
+.workspace{min-width:0;display:grid;gap:20px}
+.loading{display:flex;align-items:center;gap:10px;font-size:13px}
+.editor{min-width:0;border-block:1px solid var(--line);padding-block:20px}
+.editor fieldset{border:0;padding:0;margin:0;min-width:0;display:grid;gap:16px}
+.editor legend{font-size:15px;font-weight:700;margin-bottom:16px}
+.formGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.adminHeading{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.adminHeading span{font-size:12px;color:var(--text-secondary)}
+.members{list-style:none;margin:0;padding:0;min-width:0}
+.members li{display:flex;justify-content:space-between;align-items:center;gap:16px;border-bottom:1px solid var(--line);padding:14px 0;min-width:0}
+.members li>span{display:grid;gap:4px;min-width:0;font-size:13px;overflow-wrap:anywhere}
+.members small{font-size:12px;color:var(--text-secondary)}
+.members button{flex-shrink:0}
+.grant{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:16px;align-items:start}
+.grant>button{margin-top:24px}
+.notice{border:1px solid var(--line);background:var(--surface-soft);color:var(--brand-ink);padding:12px 16px;border-radius:10px;margin:0}
+.dialog{border:1px solid var(--line);border-radius:16px;background:var(--surface);color:var(--ink);width:min(520px,calc(100vw - 32px));max-height:calc(100dvh - 32px);overflow:auto;padding:24px;box-sizing:border-box;overscroll-behavior:contain}
+.dialog::backdrop{background:#160d2399}
+.dialog h3{font-size:20px;line-height:1.4;margin:0 0 16px;overflow-wrap:anywhere}
+.dialog p{font-size:14px;line-height:1.75;overflow-wrap:anywhere}
+.dialog .actions{margin-top:24px}
+.dialog button{min-height:44px}
+.dialog .actions>button{flex:0 1 auto}
+@container organizations (max-width:620px){
+ .formGrid,.grant{grid-template-columns:minmax(0,1fr)}
+ .grant>button{margin-top:0}
+ .actions{width:100%;justify-content:stretch}
+ .actions>button{flex:1 1 160px;justify-content:center}
+ .sectionHeading>button{width:100%;justify-content:center}
+ .members li{align-items:flex-start;flex-wrap:wrap}
+ .members li>span{flex:1 1 160px}
+}
+@media(max-width:480px){
+ .dialog{padding:20px}
+ .dialog .actions{flex-direction:column-reverse;align-items:stretch}
+ .dialog .actions button{width:100%}
+ .panel input,.panel select{font-size:16px}
+}
