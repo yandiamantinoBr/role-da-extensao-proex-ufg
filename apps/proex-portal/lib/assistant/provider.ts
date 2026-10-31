@@ -23,7 +23,7 @@ async function boundedResponse(response: Response): Promise<Record<string, unkno
  try { return object(JSON.parse(new TextDecoder().decode(bytes))); } catch { throw new HttpError(502, 'O provedor não retornou JSON válido.', 'assistant_provider_schema'); }
 }
 async function post(provider: keyof typeof PROVIDERS, apiKey: string, body: unknown, signal: AbortSignal, fetcher: typeof fetch): Promise<Record<string, unknown>> {
- try { return await boundedResponse(await fetcher(providerEndpoint(provider), { method: 'POST', redirect: 'error', cache: 'no-store', signal, headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) })); }
+ try { const result=await boundedResponse(await fetcher(providerEndpoint(provider), { method: 'POST', redirect: 'error', cache: 'no-store', signal, headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) })); if(JSON.stringify(result).includes(apiKey))throw new HttpError(502,'O provedor retornou dados que não podem ser apresentados.','assistant_provider_schema');return result; }
  catch (error) { if (error instanceof HttpError) throw error; throw new HttpError(503, 'A chamada de IA falhou ou demorou demais. Não houve nova tentativa automática.', 'assistant_provider_unavailable'); }
 }
 export async function generateProposal(config: AssistantConfig, credentials: AssistantCredentials, body: ReturnType<typeof generationBody>, signal: AbortSignal, fetcher: typeof fetch = fetch) {

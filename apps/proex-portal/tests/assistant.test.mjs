@@ -23,12 +23,15 @@ const { describePortableSchemas, exportPortablePage } = await import(compile('sy
 const { syncStatus } = await import(compile('sync/control'));
 const { listSyncAttachments } = await import(compile('sync/attachments'));
 const { startReviewedDictation } = await import(compile('assistant/dictation'));
+const { manageAssistantGrant } = await import(compile('assistant/settings'));
+const { transcribeSpeech, validateSpeechAudio, speechEndpoint, SPEECH_ENDPOINT } = await import(compile('assistant/speech'));
+const { encodeSpeechWav, prepareSpeechWav } = await import(compile('../components/portal/speech-audio'));
 const secret = 'test-only-assistant-auth-secret-no-production-access';
 const key = 'test-only-fake-provider-credential';
 function fixture() {
  const native = new DatabaseSync(':memory:'); native.exec('PRAGMA foreign_keys=ON');
  for (const migration of readdirSync(`${root}drizzle`).filter(file => file.endsWith('.sql')).sort()) native.exec(readFileSync(`${root}drizzle/${migration}`, 'utf8'));
- const now = new Date().toISOString();
+ const now = new Date().toISOString(); native.prepare("INSERT INTO organizations(id,name,slug,created_at,updated_at) VALUES('unit-synthetic','Outra org','outra-org',?,?)").run(now,now);
  native.prepare("INSERT INTO projects(id,name,description,scope,created_at) VALUES('project-a','Projeto A','','external',?),('project-b','Projeto B','','external',?)").run(now, now);
  native.prepare("INSERT INTO items(id,project_id,name,category,unit,created_at,updated_at) VALUES('item-a','project-a','Caneta QA','consumption','unidade',?,?),('item-b','project-b','Outro material','consumption','unidade',?,?)").run(now, now, now, now);
  const actors = {};
@@ -38,11 +41,11 @@ function fixture() {
   native.prepare('INSERT INTO members(id,user_id,email,role,project_id,created_at) VALUES(?,?,?,?,?,?)').run(userId, userId, email, role, project, now);
   actors[role] = { userId, email, displayName: role, capabilities: [], members: [{ id: userId, user_id: userId, email, role, project_id: project, revoked_at: null, created_at: now }] };
  }
- let failReceipt = false, beforeStockBatch = null;
- const db = { prepare(sql) { let values = []; return { sql, bind(...args) { values = args; return this; }, async first() { return native.prepare(sql).get(...values) ?? null; }, async all() { return { results: native.prepare(sql).all(...values) }; }, async run() { return { meta: { changes: Number(native.prepare(sql).run(...values).changes) } }; }, execute() { if (failReceipt && /UPDATE ai_plans SET status='applied'/.test(sql)) { failReceipt = false; throw new Error('synthetic_receipt_failure'); } const results = native.prepare(sql).all(...values); return { results, meta: { changes: Number(native.prepare('SELECT changes() n').get().n) } }; } }; }, async batch(statements) { if (beforeStockBatch && statements.some(statement => /INSERT INTO stock_movements/.test(statement.sql))) { const hook = beforeStockBatch; beforeStockBatch = null; hook(); } native.exec('BEGIN'); try { const results = statements.map(statement => statement.execute()); native.exec('COMMIT'); return results; } catch (error) { native.exec('ROLLBACK'); throw error; } } };
- return { native, db, actors, failReceiptOnce() { failReceipt = true; }, raceStockOnce(callback) { beforeStockBatch = callback; } };
+ let failReceipt = false, beforeStockBatch = null, beforeOtherBatch = null;
+ const db = { prepare(sql) { let values = []; return { sql, bind(...args) { values = args; return this; }, async first() { return native.prepare(sql).get(...values) ?? null; }, async all() { return { results: native.prepare(sql).all(...values) }; }, async run() { return { meta: { changes: Number(native.prepare(sql).run(...values).changes) } }; }, execute() { if (failReceipt && /UPDATE ai_plans SET status='applied'/.test(sql)) { failReceipt = false; throw new Error('synthetic_receipt_failure'); } const results = native.prepare(sql).all(...values); return { results, meta: { changes: Number(native.prepare('SELECT changes() n').get().n) } }; } }; }, async batch(statements) { if(beforeOtherBatch&&statements.some(statement=>beforeOtherBatch.pattern.test(statement.sql))){const hook=beforeOtherBatch.callback;beforeOtherBatch=null;hook();} if (beforeStockBatch && statements.some(statement => /INSERT INTO stock_movements/.test(statement.sql))) { const hook = beforeStockBatch; beforeStockBatch = null; hook(); } native.exec('BEGIN'); try { const results = statements.map(statement => statement.execute()); native.exec('COMMIT'); return results; } catch (error) { native.exec('ROLLBACK'); throw error; } } };
+ return { native, db, actors, failReceiptOnce() { failReceipt = true; }, raceStockOnce(callback) { beforeStockBatch = callback; }, raceBatch(pattern,callback){beforeOtherBatch={pattern,callback};} };
 }
-const configInput = (config = {}, extra = {}) => ({ action: 'configure', expectedRevision: 0, config: { ...DEFAULT_ASSISTANT_CONFIG, enabled: true, ...config }, deepseekKey: key, ...extra });
+const configInput = (config = {}, extra = {}) => ({ action: 'configure', organizationId: 'org_proex', expectedRevision: 0, config: { ...DEFAULT_ASSISTANT_CONFIG, enabled: true, ...config }, deepseekKey: key, ...extra });
 const request = (extra = {}) => ({ action: 'prepare', projectId: 'project-a', request: 'Registrar entrada de 10 canetas recebidas para a oficina.', consent: true, operationKey: 'test-only-assistant-call-1', ...extra });
 const proposal = (extra = {}) => ({ intent: 'stock.receive', itemId: 'item-a', quantity: 10, title: 'Entrada de canetas', body: 'Canetas recebidas para a oficina', evidence: [{ source: 'request', quote: 'entrada de 10 canetas' }], ...extra });
 function fakeProvider(overrides = {}) { let calls = 0; return { get calls() { return calls; }, fetch: async (url, init) => { calls++; assert.equal(init.redirect, 'error'); assert.ok(init.signal); assert.match(init.headers.Authorization, /^Bearer test-only/); const body = JSON.parse(init.body); if (String(url).includes('typesafe')) return Response.json({ model: body.model, answers: { faithful: { type: 'choice', choice: 'supported', confidence: 0.99, probabilities: { supported: 0.99, review: 0.01 }, ...overrides.decision } }, usage: { input_tokens: 500 } }); assert.equal(body.thinking.type, 'disabled'); assert.equal(body.response_format.type, 'json_object'); return Response.json({ model: 'deepseek-flash', choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(proposal(overrides.proposal)) } }], usage: { prompt_tokens: 500, completion_tokens: 100 }, ...overrides.response }); } }; }
@@ -59,8 +62,8 @@ test('only platform owner configures; no endpoint override, no plaintext echo, o
   await assert.rejects(configureAssistant(f.db, f.actors.manager, configInput(), secret), code('assistant_configuration_forbidden'));
   await assert.rejects(configureAssistant(f.db, f.actors.owner, configInput({ endpoint: 'https://127.0.0.1/' }), secret), code('assistant_schema'));
   const result = await configureAssistant(f.db, f.actors.owner, configInput(), secret); assert.deepEqual(result, { ok: true, revision: 1 });
-  const stored = f.native.prepare('SELECT * FROM ai_settings').get(); assert.equal(stored.credentials_ciphertext.includes(key), false); assert.equal(JSON.stringify(stored).includes(key), false);
-  const status = await assistantStatus(f.db, f.actors.owner, secret); assert.equal(status.available, true); assert.equal(JSON.stringify(status).includes('ciphertext'), false); assert.equal(JSON.stringify(status).includes(key), false);
+  const stored = f.native.prepare('SELECT * FROM ai_organization_settings').get(); assert.equal(stored.credentials_ciphertext.includes(key), false); assert.equal(JSON.stringify(stored).includes(key), false);
+  const status = await assistantStatus(f.db, f.actors.owner, secret, 'org_proex'); assert.equal(status.available, true); assert.equal(JSON.stringify(status).includes('ciphertext'), false); assert.equal(JSON.stringify(status).includes(key), false);
   await assert.rejects(configureAssistant(f.db, f.actors.owner, configInput(), secret), code('assistant_configuration_changed'));
   if (!f.native.prepare('PRAGMA table_info(members)').all().some(row => row.name === 'organization_id')) f.native.exec('ALTER TABLE members ADD organization_id TEXT');
   f.native.prepare("UPDATE members SET organization_id='unit-synthetic' WHERE role='owner'").run();
@@ -126,10 +129,10 @@ test('quotas reserve before call, duplicate retries cannot pay again, unknown fa
  const f = fixture(), provider = fakeProvider(); try {
   await configureAssistant(f.db, f.actors.owner, configInput({ dailyCalls: 1 }), secret);
   await assert.rejects(prepareAssistantPlan(f.db, f.actors.inventory, request(), secret, { fetcher: async () => { throw new Error('test-only-network-failure'); } }), code('assistant_provider_unavailable'));
-  const usage = f.native.prepare('SELECT * FROM ai_daily_usage').get(); assert.equal(usage.calls, 1); assert.ok(usage.reserved_usd_micros > 0); assert.ok(usage.reserved_tokens > 0); assert.ok(usage.reserved_ms > 0);
+  const usage = f.native.prepare('SELECT * FROM ai_organization_usage').get(); assert.equal(usage.calls, 1); assert.ok(usage.reserved_usd_micros > 0); assert.ok(usage.reserved_tokens > 0); assert.ok(usage.reserved_ms > 0);
   await assert.rejects(prepareAssistantPlan(f.db, f.actors.inventory, request(), secret, { fetcher: provider.fetch }), code('assistant_call_replay'));
   await assert.rejects(prepareAssistantPlan(f.db, f.actors.inventory, request({ operationKey: 'test-only-second-call' }), secret, { fetcher: provider.fetch }), code('assistant_quota'));
-  assert.equal(provider.calls, 0); assert.deepEqual(f.native.prepare('SELECT * FROM ai_daily_usage').get(), usage);
+  assert.equal(provider.calls, 0); assert.deepEqual(f.native.prepare('SELECT * FROM ai_organization_usage').get(), usage);
  } finally { f.native.close(); }
 });
 test('atomic stock predicate closes a concurrent change between preflight and domain transaction', async () => {
@@ -143,7 +146,7 @@ test('atomic stock predicate closes a concurrent change between preflight and do
 });
 test('each daily ceiling independently refuses a request before provider transport', async () => {
  for (const ceiling of [{ dailyUsdMicros: 1000 }, { dailyTokens: 1000 }, { dailyMs: 1000 }]) {
-  const f = fixture(), provider = fakeProvider(); try { await configureAssistant(f.db, f.actors.owner, configInput(ceiling), secret); await assert.rejects(prepareAssistantPlan(f.db, f.actors.inventory, request(), secret, { fetcher: provider.fetch }), code('assistant_quota')); assert.equal(provider.calls, 0); assert.equal(f.native.prepare('SELECT COUNT(*) n FROM ai_calls').get().n, 0); assert.equal(f.native.prepare('SELECT calls FROM ai_daily_usage').get().calls, 0); } finally { f.native.close(); }
+  const f = fixture(), provider = fakeProvider(); try { await configureAssistant(f.db, f.actors.owner, configInput(ceiling), secret); await assert.rejects(prepareAssistantPlan(f.db, f.actors.inventory, request(), secret, { fetcher: provider.fetch }), code('assistant_quota')); assert.equal(provider.calls, 0); assert.equal(f.native.prepare('SELECT COUNT(*) n FROM ai_calls').get().n, 0); assert.equal(f.native.prepare('SELECT calls FROM ai_organization_usage').get().calls, 0); } finally { f.native.close(); }
  }
 });
 test('revocation during provider response prevents any plan; disabling config invalidates issued plans', async () => {
@@ -191,9 +194,9 @@ test('strict schema rejects invented fields, foreign IDs, quantities and fabrica
 });
 test('AI secrets and internal state cannot enter portal snapshot, MCP/Sheets pages or Drive attachment manifest', async () => {
  const f = fixture(); try {
-  await configureAssistant(f.db, f.actors.owner, configInput(), secret); const ciphertext = f.native.prepare('SELECT credentials_ciphertext FROM ai_settings').get().credentials_ciphertext;
+  await configureAssistant(f.db, f.actors.owner, configInput(), secret); const ciphertext = f.native.prepare('SELECT credentials_ciphertext FROM ai_organization_settings').get().credentials_ciphertext;
   const schemas = describePortableSchemas(), snapshot = await portalSnapshot(f.db, f.actors.owner), status = await syncStatus(f.db, f.actors.owner), attachments = await listSyncAttachments(f.db, f.actors.owner);
-  for (const table of ['ai_settings', 'ai_plans', 'ai_calls', 'ai_daily_usage']) { assert.equal(schemas.tables.some(row => row.table === table), false); await assert.rejects(exportPortablePage(f.db, f.actors.owner, { table })); }
+  for (const table of ['ai_settings', 'ai_plans', 'ai_calls', 'ai_daily_usage', 'ai_organization_settings', 'ai_configuration_grants', 'ai_organization_usage', 'ai_transcriptions']) { assert.equal(schemas.tables.some(row => row.table === table), false); await assert.rejects(exportPortablePage(f.db, f.actors.owner, { table })); }
   const pages = []; for (const schema of schemas.tables) pages.push(await exportPortablePage(f.db, f.actors.owner, { table: schema.table }));
   const exposed = JSON.stringify({ snapshot, status, attachments, pages }); for (const forbidden of [key, ciphertext, 'credentials_ciphertext', 'config_json', 'ai_settings']) assert.equal(exposed.includes(forbidden), false, forbidden);
  } finally { f.native.close(); }
@@ -208,4 +211,92 @@ test('browser dictation requires consent, stages final text only, and ignores ev
  instance.onresult({ resultIndex: 0, results: [{ isFinal: false, 0: { transcript: 'unconfirmed speech' } }] }); assert.equal(draft, '');
  instance.onresult({ resultIndex: 0, results: [{ isFinal: true, 0: { transcript: 'entrada de 10 canetas' } }] }); assert.equal(draft, 'entrada de 10 canetas ');
  session.abort(); assert.equal(listening, false); instance.onresult({ resultIndex: 0, results: [{ isFinal: true, 0: { transcript: 'late ignored text' } }] }); assert.equal(draft, 'entrada de 10 canetas ');
+});
+
+function organizationActor(f, userId, role, organizationId='org_proex') {
+ const at=new Date().toISOString(),email=`${userId}@example.test`;f.native.prepare("INSERT INTO portal_users(user_id,email,status,created_at,updated_at) VALUES(?,?,'active',?,?)").run(userId,email,at,at);f.native.prepare('INSERT INTO members(id,user_id,email,role,project_id,organization_id,created_at) VALUES(?,?,?,?,NULL,?,?)').run(userId,userId,email,role,organizationId,at);return{userId,email,displayName:userId,members:[],capabilities:[]};
+}
+test('organization TI delegation is explicit, owner-controlled, revocable and never expands stock permissions',async()=>{
+ const f=fixture();try{
+  const ti=organizationActor(f,'synthetic-ti','viewer'),localOwner=organizationActor(f,'local-owner','owner');
+  await configureAssistant(f.db,localOwner,configInput(),secret);
+  await assert.rejects(configureAssistant(f.db,ti,configInput({}, {expectedRevision:1}),secret),code('assistant_configuration_forbidden'));
+  await manageAssistantGrant(f.db,localOwner,{action:'grant.create',organizationId:'org_proex',userId:ti.userId});
+  const status=await assistantStatus(f.db,ti,secret,'org_proex');assert.equal(status.canConfigure,true);assert.equal(status.canDelegate,false);assert.equal(status.grants,undefined);assert.equal(JSON.stringify(status).includes(key),false);
+  await configureAssistant(f.db,ti,configInput({}, {expectedRevision:1}),secret);
+  await assert.rejects(configureAssistant(f.db,ti,configInput({}, {organizationId:'unit-synthetic',expectedRevision:0}),secret),code('assistant_configuration_forbidden'));
+  await assert.rejects(prepareAssistantPlan(f.db,ti,request(),secret,{fetcher:fakeProvider().fetch}),code('forbidden'));
+  await assert.rejects(manageAssistantGrant(f.db,ti,{action:'grant.create',organizationId:'org_proex',userId:localOwner.userId}),code('assistant_configuration_forbidden'));
+  const grant=f.native.prepare('SELECT id FROM ai_configuration_grants WHERE user_id=?').get(ti.userId);await manageAssistantGrant(f.db,localOwner,{action:'grant.revoke',organizationId:'org_proex',grantId:grant.id});
+  await assert.rejects(configureAssistant(f.db,ti,configInput({}, {expectedRevision:2}),secret),code('assistant_configuration_forbidden'));
+ }finally{f.native.close();}
+});
+test('revoking an issuer or grant between validation and config transaction fails without saving credentials',async()=>{
+ const f=fixture();try{
+  const ti=organizationActor(f,'technical-delegate','viewer'),issuer=organizationActor(f,'grant-issuer','owner');await configureAssistant(f.db,issuer,configInput(),secret);await manageAssistantGrant(f.db,issuer,{action:'grant.create',organizationId:'org_proex',userId:ti.userId});
+  f.raceBatch(/UPDATE ai_organization_settings/,()=>f.native.prepare('UPDATE ai_configuration_grants SET revoked_at=? WHERE user_id=?').run(new Date().toISOString(),ti.userId));
+  await assert.rejects(configureAssistant(f.db,ti,configInput({}, {expectedRevision:1}),secret),code('assistant_configuration_forbidden'));assert.equal(f.native.prepare('SELECT revision FROM ai_organization_settings').get().revision,1);
+  await manageAssistantGrant(f.db,issuer,{action:'grant.create',organizationId:'org_proex',userId:ti.userId});f.native.prepare('UPDATE members SET revoked_at=? WHERE id=?').run(new Date().toISOString(),issuer.userId);
+  await assert.rejects(configureAssistant(f.db,ti,configInput({}, {expectedRevision:1}),secret),code('assistant_configuration_forbidden'));
+ }finally{f.native.close();}
+});
+function wav(seconds=1){const samples=new Float32Array(Math.floor(seconds*16000));for(let i=0;i<samples.length;i++)samples[i]=.1*Math.sin(i*.1);return encodeSpeechWav({duration:seconds,length:samples.length,sampleRate:16000,numberOfChannels:1,getChannelData:()=>samples});}
+const speechInput=(bytes=wav(),extra={})=>({projectId:'project-a',operationKey:'test-only-transcription-call',consent:true,mime:'audio/wav',bytes,...extra});
+function fakeSpeechProvider(){let calls=0;return{get calls(){return calls;},fetch:async(url,init)=>{calls++;assert.equal(url,SPEECH_ENDPOINT);assert.equal(init.redirect,'error');assert.match(init.headers.Authorization,/^Token test-only/);assert.equal(init.headers['Content-Type'],'audio/wav');const duration=validateSpeechAudio(new Uint8Array(init.body),'audio/wav').duration;return Response.json({metadata:{duration,model_info:{'synthetic-model':{arch:'nova-3',name:'3-general-nova',version:'2026-05-13.synthetic'}}},results:{channels:[{alternatives:[{transcript:'Registrar entrada de 10 canetas.'}]}]}});}};}
+test('STT accepts real bounded PCM bytes, uses official HTTP adapter and encrypts transcript recovery without storing audio',async()=>{
+ const f=fixture(),provider=fakeSpeechProvider();try{
+  await configureAssistant(f.db,f.actors.owner,configInput({sttEnabled:true},{deepgramKey:key}),secret);const result=await transcribeSpeech(f.db,f.actors.inventory,speechInput(),secret,{fetcher:provider.fetch});assert.equal(result.transcript,'Registrar entrada de 10 canetas.');assert.equal(result.provenance.duration,1);assert.equal(result.provenance.organizationId,'org_proex');
+  const stored=f.native.prepare('SELECT * FROM ai_transcriptions').get();assert.equal(JSON.stringify(stored).includes('Registrar entrada'),false);assert.equal(JSON.stringify(stored).includes(key),false);assert.equal(stored.status,'complete');
+  const replay=await transcribeSpeech(f.db,f.actors.inventory,speechInput(),secret,{fetcher:provider.fetch});assert.equal(replay.replayed,true);assert.equal(provider.calls,1);assert.equal(f.native.prepare('SELECT COUNT(*) n FROM stock_movements').get().n,0);
+  const ciphertext=f.native.prepare('SELECT credentials_ciphertext FROM ai_organization_settings').get().credentials_ciphertext;await assert.rejects(decryptCredentials(secret,ciphertext,'unit-synthetic'),code('assistant_credentials_unavailable'));
+ }finally{f.native.close();}
+});
+test('STT rejects mismatched MIME, corrupt headers, silence, excessive duration/size and SSRF before provider cost',async()=>{
+ const f=fixture(),provider=fakeSpeechProvider();try{
+  await configureAssistant(f.db,f.actors.owner,configInput({sttEnabled:true},{deepgramKey:key}),secret);
+  const broken=wav();broken[36]=0;
+  const silent=wav();silent.fill(0,44);
+  for(const input of [speechInput(wav(),{mime:'image/png'}),speechInput(broken),speechInput(silent),speechInput(new Uint8Array(4*1024*1024+1)),speechInput(wav(),{consent:false})])await assert.rejects(transcribeSpeech(f.db,f.actors.inventory,input,secret,{fetcher:provider.fetch}));
+  assert.throws(()=>encodeSpeechWav({duration:91,length:1,sampleRate:16000,numberOfChannels:1,getChannelData:()=>new Float32Array(1)}));
+  for(const url of ['http://127.0.0.1/','https://api.deepgram.com.evil.test/v1/listen',SPEECH_ENDPOINT+'&callback=https://localhost'])assert.throws(()=>speechEndpoint(url),code('speech_endpoint'));
+  assert.equal(provider.calls,0);assert.equal(f.native.prepare('SELECT COUNT(*) n FROM ai_transcriptions').get().n,0);
+ }finally{f.native.close();}
+});
+test('STT rechecks scope, revocation before admission, and revoked replay; abort retains quota without a second call',async()=>{
+ const f=fixture(),provider=fakeSpeechProvider();try{
+  await configureAssistant(f.db,f.actors.owner,configInput({sttEnabled:true},{deepgramKey:key}),secret);
+  await assert.rejects(transcribeSpeech(f.db,f.actors.inventory,speechInput(wav(),{projectId:'project-b'}),secret,{fetcher:provider.fetch}));assert.equal(provider.calls,0);
+  f.raceBatch(/INSERT INTO ai_transcriptions/,()=>f.native.prepare("UPDATE members SET revoked_at=? WHERE user_id='inventory-qa'").run(new Date().toISOString()));
+  await assert.rejects(transcribeSpeech(f.db,f.actors.inventory,speechInput(),secret,{fetcher:provider.fetch}),code('speech_forbidden'));assert.equal(provider.calls,0);assert.equal(f.native.prepare('SELECT COUNT(*) n FROM ai_transcriptions').get().n,0);
+  const abort=new AbortController();const pending=transcribeSpeech(f.db,f.actors.manager,speechInput(),secret,{signal:abort.signal,fetcher:async(_url,init)=>new Promise((_resolve,reject)=>{init.signal.addEventListener('abort',()=>reject(new Error('synthetic abort')));abort.abort();})});await assert.rejects(pending,code('speech_provider'));assert.equal(f.native.prepare('SELECT status FROM ai_transcriptions').get().status,'failed');assert.equal(f.native.prepare('SELECT calls FROM ai_organization_usage').get().calls,1);
+  await assert.rejects(transcribeSpeech(f.db,f.actors.manager,speechInput(),secret,{fetcher:provider.fetch}),code('speech_replay'));assert.equal(provider.calls,0);
+ }finally{f.native.close();}
+});
+test('STT permission loss during response withholds transcript and quota is isolated by organization',async()=>{
+ const f=fixture(),provider=fakeSpeechProvider();try{
+  await configureAssistant(f.db,f.actors.owner,configInput({sttEnabled:true},{deepgramKey:key}),secret);
+  await assert.rejects(transcribeSpeech(f.db,f.actors.inventory,speechInput(),secret,{fetcher:async(...args)=>{const response=await provider.fetch(...args);f.native.prepare("UPDATE members SET revoked_at=? WHERE user_id='inventory-qa'").run(new Date().toISOString());return response;}}));assert.equal(f.native.prepare('SELECT result_ciphertext FROM ai_transcriptions').get().result_ciphertext,null);
+  const blocked=new AbortController();blocked.abort();await assert.rejects(transcribeSpeech(f.db,f.actors.manager,speechInput(wav(),{operationKey:'test-only-aborted-before'}),secret,{signal:blocked.signal,fetcher:provider.fetch}),code('speech_aborted'));assert.equal(provider.calls,1);
+  const at=new Date().toISOString();f.native.prepare("INSERT INTO projects(id,name,organization_id,created_at) VALUES('project-c','Projeto C','unit-synthetic',?)").run(at);await configureAssistant(f.db,f.actors.owner,configInput({sttEnabled:true},{organizationId:'unit-synthetic',deepgramKey:key}),secret);await transcribeSpeech(f.db,f.actors.owner,speechInput(wav(),{projectId:'project-c'}),secret,{fetcher:provider.fetch});assert.equal(f.native.prepare('SELECT COUNT(*) n FROM ai_organization_usage WHERE calls=1').get().n,2);
+ }finally{f.native.close();}
+});
+test('browser WAV conversion preserves enforced duration and canonical PCM without remote conversion',async()=>{
+ const bytes=wav(),file=new File([bytes],'synthetic.wav',{type:'audio/wav'}),converted=await prepareSpeechWav(file,()=>assert.fail('canonical WAV needs no decoder'));assert.equal(converted.type,'audio/wav');assert.equal(validateSpeechAudio(new Uint8Array(await converted.arrayBuffer()),converted.type).duration,1);
+ await assert.rejects(prepareSpeechWav(new File([bytes],'not-audio.svg',{type:'image/svg+xml'})));
+});
+
+function freezeInitialMisses(f,pattern){const original=f.db.prepare.bind(f.db);let reads=0,release;const barrier=new Promise(resolve=>{release=resolve;});f.db.prepare=sql=>{const statement=original(sql);if(!pattern.test(sql))return statement;return{...statement,bind(...values){statement.bind(...values);return this;},async first(){const result=await statement.first();if(++reads<=2){if(reads===2)release();await barrier;}return result;}};};}
+test('concurrent identical paid prepares own one admission even when the second insert is refused at the daily ceiling',async()=>{
+ for(const dailyCalls of [1,2]){const f=fixture(),provider=fakeProvider();try{await configureAssistant(f.db,f.actors.owner,configInput({dailyCalls}),secret);freezeInitialMisses(f,/SELECT fingerprint,status,plan_id FROM ai_calls/);const results=await Promise.allSettled([prepareAssistantPlan(f.db,f.actors.inventory,request(),secret,{fetcher:provider.fetch}),prepareAssistantPlan(f.db,f.actors.inventory,request(),secret,{fetcher:provider.fetch})]);assert.ok(results.some(result=>result.status==='fulfilled'));assert.equal(provider.calls,1);assert.equal(f.native.prepare('SELECT calls FROM ai_organization_usage').get().calls,1);assert.equal(f.native.prepare('SELECT COUNT(*) n FROM ai_calls').get().n,1);for(const result of results)if(result.status==='rejected')assert.equal(result.reason.code,'assistant_call_replay');}finally{f.native.close();}}
+});
+test('concurrent identical speech requests cannot reuse another reservation nonce or exceed dailyCalls=1',async()=>{
+ for(const dailyCalls of [1,2]){const f=fixture(),provider=fakeSpeechProvider();try{await configureAssistant(f.db,f.actors.owner,configInput({dailyCalls,sttEnabled:true},{deepgramKey:key}),secret);freezeInitialMisses(f,/SELECT \* FROM ai_transcriptions WHERE id=/);const results=await Promise.allSettled([transcribeSpeech(f.db,f.actors.inventory,speechInput(),secret,{fetcher:provider.fetch}),transcribeSpeech(f.db,f.actors.inventory,speechInput(),secret,{fetcher:provider.fetch})]);assert.ok(results.some(result=>result.status==='fulfilled'));assert.equal(provider.calls,1);assert.equal(f.native.prepare('SELECT calls FROM ai_organization_usage').get().calls,1);assert.equal(f.native.prepare('SELECT COUNT(*) n FROM ai_transcriptions').get().n,1);for(const result of results)if(result.status==='rejected')assert.equal(result.reason.code,'speech_replay');}finally{f.native.close();}}
+});
+
+test('final plan persistence checks revocation and configuration atomically before exposing its snapshot',async()=>{
+ for(const change of ['revoked','configuration']){const f=fixture(),provider=fakeProvider();try{await configureAssistant(f.db,f.actors.owner,configInput(),secret);f.raceBatch(/INSERT INTO ai_plans/,()=>{if(change==='revoked')f.native.prepare("UPDATE members SET revoked_at=? WHERE user_id='inventory-qa'").run(new Date().toISOString());else f.native.prepare("UPDATE ai_organization_settings SET revision=revision+1,config_json=json_set(config_json,'$.enabled',0)").run();});await assert.rejects(prepareAssistantPlan(f.db,f.actors.inventory,request(),secret,{fetcher:provider.fetch}),code('assistant_forbidden'));assert.equal(provider.calls,1);assert.equal(f.native.prepare('SELECT COUNT(*) n FROM ai_plans').get().n,0);assert.equal(f.native.prepare("SELECT COUNT(*) n FROM audit WHERE action='assistant.plan'").get().n,0);assert.equal(f.native.prepare('SELECT status FROM ai_calls').get().status,'failed');}finally{f.native.close();}}
+});
+
+test('expired transcription recovery erases its ciphertext on next organization use and never repeats a paid call',async()=>{
+ const f=fixture(),provider=fakeSpeechProvider();try{await configureAssistant(f.db,f.actors.owner,configInput({sttEnabled:true},{deepgramKey:key}),secret);const now=Date.now();await transcribeSpeech(f.db,f.actors.inventory,speechInput(),secret,{fetcher:provider.fetch,now});assert.ok(f.native.prepare('SELECT result_ciphertext FROM ai_transcriptions').get().result_ciphertext);await assert.rejects(transcribeSpeech(f.db,f.actors.inventory,speechInput(),secret,{fetcher:provider.fetch,now:now+3600001}),code('speech_replay'));assert.equal(f.native.prepare('SELECT result_ciphertext FROM ai_transcriptions').get().result_ciphertext,null);assert.equal(provider.calls,1);}finally{f.native.close();}
 });

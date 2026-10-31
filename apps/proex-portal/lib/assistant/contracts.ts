@@ -1,17 +1,17 @@
 import { HttpError } from '../errors';
 
-export const ASSISTANT_CONTRACT = 'proex.assistant/v1';
+export const ASSISTANT_CONTRACT = 'proex.assistant/v2';
 export const PROVIDERS = {
  deepseek: { endpoint: 'https://api.deepseek.com/chat/completions', model: 'deepseek-flash', revision: 'DeepSeek-V4.1-Flash-1017', inputMicrosPerToken: 0.3, outputMicrosPerToken: 1.2 },
  typesafe: { endpoint: 'https://api.typesafe.ai/v1/systemone', model: 'jev-1.14.0', inputMicrosPerToken: 0.042 },
 } as const;
-export type AssistantConfig = { enabled: boolean; jevEnabled: boolean; model: 'deepseek-flash'; jevModel: 'jev-1.14.0'; dailyUsdMicros: number; dailyTokens: number; dailyCalls: number; dailyMs: number; timeoutMs: number; maxOutputTokens: number };
-export const DEFAULT_ASSISTANT_CONFIG: AssistantConfig = { enabled: false, jevEnabled: false, model: 'deepseek-flash', jevModel: 'jev-1.14.0', dailyUsdMicros: 1_000_000, dailyTokens: 100_000, dailyCalls: 20, dailyMs: 300_000, timeoutMs: 12_000, maxOutputTokens: 1200 };
-export type AssistantCredentials = { deepseek: string; typesafe: string };
+export type AssistantConfig = { enabled: boolean; jevEnabled: boolean; sttEnabled: boolean; model: 'deepseek-flash'; jevModel: 'jev-1.14.0'; dailyUsdMicros: number; dailyTokens: number; dailyCalls: number; dailyMs: number; timeoutMs: number; maxOutputTokens: number };
+export const DEFAULT_ASSISTANT_CONFIG: AssistantConfig = { enabled: false, jevEnabled: false, sttEnabled: false, model: 'deepseek-flash', jevModel: 'jev-1.14.0', dailyUsdMicros: 1_000_000, dailyTokens: 100_000, dailyCalls: 20, dailyMs: 300_000, timeoutMs: 12_000, maxOutputTokens: 1200 };
+export type AssistantCredentials = { deepseek: string; typesafe: string; deepgram?: string };
 export type AssistantItem = { id: string; name: string; category: string; unit: string; stock: number; reserved: number; condition: string };
 export type AssistantIntent = 'stock.query' | 'stock.receive' | 'stock.distribute' | 'stock.consume' | 'record.create';
 export type AssistantProposal = { intent: AssistantIntent; itemId: string | null; quantity: number; title: string; body: string; evidence: { source: 'request'; quote: string }[] };
-export type AssistantPlan = { contract: string; id: string; actorId: string; projectId: string; configRevision: number; proposal: AssistantProposal; before: AssistantItem | null; after: { stock: number; available: number } | null; provenance: { requestSha256: string; contextSha256: string; provider: 'deepseek'; model: string; modelRevision: string; returnedModel: string; jevModel: string | null; reviewedAt: string }; expiresAt: number };
+export type AssistantPlan = { contract: string; id: string; actorId: string; organizationId: string; projectId: string; configRevision: number; proposal: AssistantProposal; before: AssistantItem | null; after: { stock: number; available: number } | null; provenance: { requestSha256: string; contextSha256: string; provider: 'deepseek'; model: string; modelRevision: string; returnedModel: string; jevModel: string | null; reviewedAt: string }; expiresAt: number };
 
 export function object(value: unknown): Record<string, unknown> {
  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new HttpError(400, 'Os dados enviados são inválidos.', 'assistant_schema');
@@ -23,7 +23,7 @@ export function onlyKeys(value: Record<string, unknown>, keys: readonly string[]
 export function validateConfig(value: unknown): AssistantConfig {
  const input = object(value); onlyKeys(input, Object.keys(DEFAULT_ASSISTANT_CONFIG));
  const result = { ...DEFAULT_ASSISTANT_CONFIG, ...input } as AssistantConfig;
- if (typeof result.enabled !== 'boolean' || typeof result.jevEnabled !== 'boolean' || result.model !== PROVIDERS.deepseek.model || result.jevModel !== PROVIDERS.typesafe.model) throw new HttpError(400, 'Escolha os modelos verificados nesta versão do portal.', 'assistant_model');
+ if (typeof result.sttEnabled !== 'boolean' || typeof result.enabled !== 'boolean' || typeof result.jevEnabled !== 'boolean' || result.model !== PROVIDERS.deepseek.model || result.jevModel !== PROVIDERS.typesafe.model) throw new HttpError(400, 'Escolha os modelos verificados nesta versão do portal.', 'assistant_model');
  const bounds = { dailyUsdMicros: [1000, 10_000_000], dailyTokens: [1000, 1_000_000], dailyCalls: [1, 100], dailyMs: [1000, 3_600_000], timeoutMs: [1000, 20_000], maxOutputTokens: [200, 2000] };
  for (const [key, [min, max]] of Object.entries(bounds)) { const n = result[key as keyof typeof bounds]; if (!Number.isSafeInteger(n) || n < min || n > max) throw new HttpError(400, `Confira o limite ${key}.`, 'assistant_budget'); }
  return result;
