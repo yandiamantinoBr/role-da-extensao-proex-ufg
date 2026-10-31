@@ -9,9 +9,11 @@ import styles from './assisted-import-panel.module.css';
 type Project = { id: string; name: string; version?: number };
 type Item = { id: string; name: string; project_id: string; asset_code?: string };
 type Option = { id: string; name?: string; label?: string; acronym?: string; status?: string };
+type Organization = { id: string; name: string; status: string; canManage: boolean };
 export type AssistedImportProps = {
   kind: ImportKind; projects: Project[]; projectTypes?: Option[]; organizationalUnits?: Option[]; items?: Item[];
   canCreateProject?: boolean; canWrite: (projectId: string) => boolean;
+  organizations?: Organization[];
   defaultProjectId?: string; onImported?: (projectId: string) => void | Promise<void>;
 };
 type Receipt = { projectId: string; itemId?: string; recordId: string };
@@ -29,8 +31,12 @@ async function post(input: Record<string, unknown> | FormData, url = '/api/impor
 }
 const message = (error: unknown) => error instanceof Error ? error.message : 'Não foi possível concluir. Tente novamente.';
 
-export default function AssistedImportPanel({ kind, projects, projectTypes = [], organizationalUnits = [], items = [], canCreateProject = false, canWrite, defaultProjectId, onImported }: AssistedImportProps) {
+export default function AssistedImportPanel({ kind, projects, projectTypes = [], organizationalUnits = [], items = [], organizations = [], canCreateProject = false, canWrite, defaultProjectId, onImported }: AssistedImportProps) {
   const permitted = projects.filter(project => canWrite(project.id));
+  const managedOrganizations = organizations.filter(organization => organization.canManage && organization.status === 'active');
+  const createAllowed = canCreateProject || managedOrganizations.length > 0;
+  const [organizationChoice, setOrganizationChoice] = useState('');
+  const organizationId = managedOrganizations.length === 1 ? managedOrganizations[0].id : organizationChoice;
   const [open, setOpen] = useState(false), [projectId, setProjectId] = useState(defaultProjectId ?? (kind === 'asset' || !canCreateProject ? permitted[0]?.id ?? '' : ''));
   const [itemId, setItemId] = useState(''), [sourceMode, setSourceMode] = useState(kind === 'project' ? 'sigaa' : 'manual');
   const [format, setFormat] = useState('text'), [sourceUrl, setSourceUrl] = useState(''), [content, setContent] = useState('');
@@ -43,8 +49,8 @@ export default function AssistedImportPanel({ kind, projects, projectTypes = [],
   const inputId = `import-${kind}`, candidate = preview?.candidates[candidateIndex];
   const editableFields = { ...candidate?.fields, ...edits }, checkedFields = candidate ? validateImportedFields(kind, editableFields) : null;
   const problems: Record<string, string> = { ...checkedFields?.problems, ...(candidate && !editableFields.name ? { name: 'Informe o nome ou título antes de selecionar este campo.' } : {}) };
-  const validDestination = projectId ? permitted.some(project => project.id === projectId) : kind === 'project' && canCreateProject;
-  const available = kind === 'project' ? canCreateProject || permitted.length > 0 : permitted.length > 0;
+  const validDestination = projectId ? permitted.some(project => project.id === projectId) : kind === 'project' && createAllowed && managedOrganizations.some(organization => organization.id === organizationId);
+  const available = kind === 'project' ? createAllowed || permitted.length > 0 : permitted.length > 0;
   const contextDiffers = defaultProjectId !== undefined && defaultProjectId !== projectId;
   if (!available) return null;
   function resetReview() { setPreview(null); setReceipt(null); setConfirmed(false); setError(''); setEdits({}); setShowMissing(false); operation.current = null; }
@@ -73,10 +79,10 @@ export default function AssistedImportPanel({ kind, projects, projectTypes = [],
     try {
       let value: Record<string, unknown>;
       if (sourceMode === 'document' && sourceFile) {
-        const body = new FormData(); body.set('file', sourceFile); body.set('kind', kind); body.set('projectId', projectId); body.set('itemId', kind === 'asset' ? itemId : ''); body.set('sourceUrl', sourceUrl);
+        const body = new FormData(); body.set('file', sourceFile); body.set('kind', kind); body.set('projectId', projectId); body.set('organizationId', projectId ? '' : organizationId); body.set('itemId', kind === 'asset' ? itemId : ''); body.set('sourceUrl', sourceUrl);
         if (sourceFile.name.toLowerCase().endsWith('.pdf')) { const { extractPdfText } = await import('./import-pdf-text'); const extracted = await extractPdfText(sourceFile); body.set('extractedText', extracted.text); body.set('pageCount', String(extracted.pageCount)); }
         value = await post(body, '/api/imports/document');
-      } else value = await post({ action: 'preview', kind, projectId, itemId: kind === 'asset' ? itemId : '', sourceMode, sourceUrl, format, content: sourceMode === 'manual' ? JSON.stringify(manual) : content });
+      } else value = await post({ action: 'preview', kind, projectId, organizationId: projectId ? '' : organizationId, itemId: kind === 'asset' ? itemId : '', sourceMode, sourceUrl, format, content: sourceMode === 'manual' ? JSON.stringify(manual) : content });
       if (typeof value.reviewToken !== 'string' || !Array.isArray(value.candidates) || !value.candidates.length) throw new Error('A prévia não pôde ser confirmada.');
       const next = value as ImportPreview; setPreview(next); chooseCandidate(next, 0); setSaveOfficialUrl(!projectId && !!next.provenance.url);
     } catch (error) { setError(message(error)); } finally { setBusy(false); }
@@ -125,7 +131,8 @@ export default function AssistedImportPanel({ kind, projects, projectTypes = [],
       {!receipt && <>
         {contextDiffers && <p className="p-form-help" role="status">O filtro geral mostra {defaultProjectId ? projects.find(project => project.id === defaultProjectId)?.name ?? 'outro projeto' : 'todos os projetos'}. Esta importação continua destinada a <strong>{projectId ? projects.find(project => project.id === projectId)?.name ?? 'projeto selecionado' : 'novo projeto'}</strong>. A prévia e os arquivos foram preservados; confira o destino antes de confirmar.</p>}
         {!preview ? <fieldset disabled={busy || readingFile} className={styles.fieldset}>
-          <div className="p-form-grid"><label className="p-field"><span>{kind === 'project' ? 'Destino dos dados' : 'Projeto responsável'}</span><select value={projectId} onChange={event => { setProjectId(event.target.value); setItemId(''); resetReview(); }}>{kind === 'project' && canCreateProject && <option value="">Criar novo projeto</option>}{permitted.map(project => <option key={project.id} value={project.id}>{kind === 'project' ? 'Atualizar: ' : ''}{project.name}</option>)}</select></label>
+          <div className="p-form-grid"><label className="p-field"><span>{kind === 'project' ? 'Destino dos dados' : 'Projeto responsável'}</span><select value={projectId} onChange={event => { setProjectId(event.target.value); setItemId(''); resetReview(); }}>{kind === 'project' && createAllowed && <option value="">Criar novo projeto</option>}{permitted.map(project => <option key={project.id} value={project.id}>{kind === 'project' ? 'Atualizar: ' : ''}{project.name}</option>)}</select></label>
+          {kind === 'project' && !projectId && <label className="p-field"><span>Organização responsável *</span>{managedOrganizations.length === 1 ? <input readOnly value={managedOrganizations[0].name}/> : <select value={organizationChoice} required onChange={event => { setOrganizationChoice(event.target.value); resetReview(); }}><option value="">Selecione explicitamente a organização</option>{managedOrganizations.map(organization => <option key={organization.id} value={organization.id}>{organization.name}</option>)}</select>}</label>}
           {kind === 'asset' && <label className="p-field"><span>Cadastro do bem</span><select value={itemId} onChange={event => { setItemId(event.target.value); resetReview(); }}><option value="">Cadastrar novo equipamento individual</option>{items.filter(item => item.project_id === projectId).map(item => <option key={item.id} value={item.id}>Conferência e anexos: {item.name}{item.asset_code ? ` · ${item.asset_code}` : ''}</option>)}</select></label>}
           <label className="p-field"><span>Fonte dos dados</span><select value={sourceMode} onChange={event => { setSourceMode(event.target.value); setSourceFile(null); setSourceUrl(''); resetReview(); }}>{kind === 'project' && <option value="sigaa">SIGAA Público / UFG</option>}{kind === 'asset' && <option value="manual">Preencher dados do bem</option>}<option value="document">Arquivo ou documento textual</option></select></label></div>
           {sourceMode === 'sigaa' ? <label className="p-field"><span>Número da ação ou link público do SIGAA/UFG</span><input value={sourceUrl} maxLength={500} onChange={event => setSourceUrl(event.target.value)} placeholder="Número da ação ou link público"/><small>A consulta lê uma ação. Caso o sistema exija verificação humana, use o documento textual.</small></label> : sourceMode === 'manual' ? <div className="p-form-grid">{importFields('asset').map(field => <label className="p-field" key={field.key}><span>{field.label}{field.metadata ? ' · registro de conferência' : ''}</span>{field.key === 'description' ? <textarea rows={3} maxLength={field.maximum} value={manual[field.key] ?? ''} onChange={event => setManual(previous => ({ ...previous, [field.key]: event.target.value }))}/> : <input value={manual[field.key] ?? ''} maxLength={field.maximum} onChange={event => setManual(previous => ({ ...previous, [field.key]: event.target.value }))}/>}</label>)}</div> : <>
@@ -139,7 +146,7 @@ export default function AssistedImportPanel({ kind, projects, projectTypes = [],
           {readingFile && <p className="p-form-help" role="status">Lendo o documento selecionado…</p>}
           <button type="button" className="p-button p-button-primary" disabled={busy || readingFile || !validDestination} onClick={() => void prepare()}>{busy || readingFile ? <LoaderCircle size={16} className="p-spin"/> : <FileInput size={16}/>} Preparar prévia</button>
         </fieldset> : candidate && <>
-          <div className={styles.source}><strong>{preview.provenance.label}</strong><span>Destino: {preview.projectId ? projects.find(project => project.id === preview.projectId)?.name ?? 'Projeto selecionado' : 'Novo projeto'}{preview.itemId ? ' · conferência de bem existente' : kind === 'asset' ? ' · novo equipamento individual' : ''}</span>{preview.provenance.url && <a className="p-text-link" href={preview.provenance.url} target="_blank" rel="noopener noreferrer">Abrir fonte</a>}<small>Consulta: {new Date(preview.provenance.retrievedAt).toLocaleString('pt-BR')} · confirmação válida por 15 minutos</small></div>
+          <div className={styles.source}><strong>{preview.provenance.label}</strong><span>Organização: {organizations.find(organization => organization.id === preview.organizationId)?.name ?? preview.organizationId}</span><span>Destino: {preview.projectId ? projects.find(project => project.id === preview.projectId)?.name ?? 'Projeto selecionado' : 'Novo projeto'}{preview.itemId ? ' · conferência de bem existente' : kind === 'asset' ? ' · novo equipamento individual' : ''}</span>{preview.provenance.url && <a className="p-text-link" href={preview.provenance.url} target="_blank" rel="noopener noreferrer">Abrir fonte</a>}<small>Consulta: {new Date(preview.provenance.retrievedAt).toLocaleString('pt-BR')} · confirmação válida por 15 minutos</small></div>
           {preview.candidates.length > 1 && <label className="p-field"><span>Registro a conferir</span><select disabled={busy} value={candidateIndex} onChange={event => chooseCandidate(preview, Number(event.target.value))}>{preview.candidates.map((row, index) => <option key={row.key} value={index}>{index + 1}. {row.fields.name || 'Nome não identificado'}</option>)}</select></label>}
           {Array.from(new Set([...candidate.warnings, ...(checkedFields?.warnings ?? [])])).map(warning => <p className="p-form-help" key={warning}>{warning}</p>)}
           {preview.provenance.pages && <p className="p-form-help">PDF: páginas {preview.provenance.pages[0]} a {preview.provenance.pages.at(-1)} usadas na extração do navegador.</p>}

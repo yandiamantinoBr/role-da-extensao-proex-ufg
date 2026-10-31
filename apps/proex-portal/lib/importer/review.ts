@@ -6,7 +6,7 @@ const encode = (bytes: Uint8Array) => btoa(Array.from(bytes, value => String.fro
 function decode(value: string): Uint8Array { return Uint8Array.from(atob(value.replace(/-/g, '+').replace(/_/g, '/')), character => character.charCodeAt(0)); }
 async function signature(secret: string, payload: string): Promise<Uint8Array> {
   const key = await crypto.subtle.importKey('raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-  return new Uint8Array(await crypto.subtle.sign('HMAC', key, encoder.encode(`proex-import-v1:${payload}`)));
+  return new Uint8Array(await crypto.subtle.sign('HMAC', key, encoder.encode(`proex-import-v2:${payload}`)));
 }
 export async function signImportReview(secret: string, review: ImportReview): Promise<string> {
   const payload = encode(encoder.encode(JSON.stringify(review)));
@@ -21,7 +21,7 @@ export async function readImportReview(secret: string, token: unknown, actorId: 
   for (let index = 0; index < expected.length; index++) difference |= expected[index] ^ received[index];
   if (difference) throw invalid();
   let review: ImportReview; try { review = JSON.parse(new TextDecoder().decode(decode(payload))) as ImportReview; } catch { throw invalid(); }
-  if (review.version !== 1 || review.actorId !== actorId || !Number.isFinite(review.expiresAt) || review.expiresAt <= now || review.expiresAt > now + 16 * 60000) throw invalid();
+  if (review.version !== 2 || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(review.organizationId) || review.provenance?.organizationId !== review.organizationId || review.actorId !== actorId || !Number.isFinite(review.expiresAt) || review.expiresAt <= now || review.expiresAt > now + 16 * 60000) throw invalid();
   return review;
 }
 export async function importDigest(value: string | Uint8Array): Promise<string> { return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', typeof value === 'string' ? encoder.encode(value) : new Uint8Array(value))), byte => byte.toString(16).padStart(2, '0')).join(''); }

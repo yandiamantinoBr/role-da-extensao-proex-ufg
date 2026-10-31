@@ -6,7 +6,7 @@ export const normalizedLabel = (value: string) => value.normalize('NFD').replace
 const ALIASES: Record<string, string[]> = {
   name: ['name', 'nome', 'titulo', 'titulo da acao', 'denominacao', 'nome do bem'], shortName: ['shortName', 'short_name', 'nome curto', 'sigla'],
   description: ['description', 'descricao', 'resumo', 'resumo da acao'], startsAt: ['startsAt', 'starts_at', 'inicio', 'data de inicio', 'data inicial'],
-  endsAt: ['endsAt', 'ends_at', 'fim', 'data de termino', 'data final'], location: ['location', 'local', 'localizacao', 'municipios de realizacao'],
+  endsAt: ['endsAt', 'ends_at', 'fim', 'data de fim', 'data de termino', 'data de término', 'data final', 'termino', 'término'], location: ['location', 'local', 'localizacao', 'municipios de realizacao'],
   thematicArea: ['thematicArea', 'thematic_area', 'area tematica', 'area principal'], extensionLine: ['extensionLine', 'extension_line', 'linha de extensao'],
   unitName: ['unitName', 'unidade proponente', 'unidade responsavel'], modality: ['modality', 'modalidade', 'tipo de acao', 'tipo'],
   sourceYear: ['sourceYear', 'ano'], sourceStatus: ['sourceStatus', 'situacao', 'status'], funding: ['funding', 'fonte de financiamento', 'financiamento'],

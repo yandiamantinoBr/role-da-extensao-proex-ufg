@@ -23,8 +23,8 @@ export const ASSET_IMPORT_FIELDS: ImportField[] = [
 export const importFields = (kind: ImportKind) => kind === 'project' ? PROJECT_IMPORT_FIELDS : ASSET_IMPORT_FIELDS;
 export type ImportCandidate = { key: string; fields: Record<string, string>; problems: Record<string, string>; warnings: string[]; suggestedUnitId?: string; suggestedTypeId?: string };
 export type ImportFileProvenance = { fileFormat: string; sha256: string; extraction: 'server-docx' | 'browser-pdf' | 'text-file'; pages?: number[] };
-export type ImportProvenance = { kind: 'sigaa' | 'document' | 'manual'; label: string; url?: string; externalId?: string; sha256: string; textSha256?: string; fileFormat?: string; extraction?: ImportFileProvenance['extraction']; pages?: number[]; retrievedAt: string };
-export type ImportReview = { version: 1; actorId: string; kind: ImportKind; projectId: string | null; itemId: string | null; expectedVersion: number | null; provenance: ImportProvenance; candidates: ImportCandidate[]; expiresAt: number };
+export type ImportProvenance = { kind: 'sigaa' | 'document' | 'manual'; organizationId: string; label: string; url?: string; externalId?: string; sha256: string; textSha256?: string; fileFormat?: string; extraction?: ImportFileProvenance['extraction']; pages?: number[]; retrievedAt: string };
+export type ImportReview = { version: 2; organizationId: string; actorId: string; kind: ImportKind; projectId: string | null; itemId: string | null; expectedVersion: number | null; provenance: ImportProvenance; candidates: ImportCandidate[]; expiresAt: number };
 export type ImportPreview = Omit<ImportReview, 'actorId'> & { reviewToken: string };
 export const IMPORT_TEXT_LIMIT = 256 * 1024;
 export const IMPORT_MAX_ROWS = 20;

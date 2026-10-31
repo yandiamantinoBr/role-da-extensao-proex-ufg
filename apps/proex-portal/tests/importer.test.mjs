@@ -39,7 +39,7 @@ function fixture() {
   const db = { prepare(sql) { let values = []; return { bind(...args) { values = args; return this; }, async first() { return native.prepare(sql).get(...values) ?? null; }, async all() { return { results: native.prepare(sql).all(...values) }; }, async run() { return { meta: { changes: Number(native.prepare(sql).run(...values).changes) } }; }, execute() { if (failRecord && /INSERT INTO records/.test(sql)) { failRecord = false; throw new Error('synthetic_record_failure'); } const results = native.prepare(sql).all(...values); return { results, meta: { changes: Number(native.prepare('SELECT changes() n').get().n) } }; } }; }, async batch(statements) { native.exec('BEGIN'); try { const result = statements.map(statement => statement.execute()); native.exec('COMMIT'); return result; } catch (error) { native.exec('ROLLBACK'); throw error; } } };
   return { native, db, actors, failRecordOnce() { failRecord = true; } };
 }
-const document = (fields, extra = {}) => ({ kind: 'project', sourceMode: 'document', format: 'json', content: JSON.stringify(fields), ...extra });
+const document = (fields, extra = {}) => ({ kind: 'project', organizationId: 'org_proex', sourceMode: 'document', format: 'json', content: JSON.stringify(fields), ...extra });
 const apply = (preview, selectedFields, operationKey = 'qa-import-operation-1', extra = {}) => ({ confirmed: true, reviewToken: preview.reviewToken, candidateKey: 'row-1', selectedFields, operationKey, ...extra });
 
 test('HTML, JSON and CSV extract only operational fields, decode entities and preserve tombamento zeros', () => {
@@ -169,4 +169,20 @@ test('asset import preserves identifier text, records structured evidence and cr
     assert.equal(f.native.prepare('SELECT name FROM items WHERE id=?').get(saved.itemId).name, 'Projetor QA');
     assert.match(f.native.prepare('SELECT body FROM records WHERE id=?').get(received.recordId).body, /Nome observado na etiqueta/);
   } finally { f.native.close(); }
+});
+
+test('Data de fim and término aliases preserve the final Brasília day without fabricating missing dates',()=>{
+ for(const label of ['Data de fim','Data de término','Término']){const candidate=parseImportDocument('project',`Título: Projeto QA\nData de início: 01/11/2026\n${label}: 30/11/2026`,'text')[0];assert.equal(candidate.fields.startsAt,'2026-11-01T03:00:00.000Z');assert.equal(candidate.fields.endsAt,'2026-12-01T02:59:59.999Z');}
+ assert.equal(parseImportDocument('project','Título: Projeto QA\nData de início: 01/11/2026','text')[0].fields.endsAt,undefined);
+});
+test('new project import requires explicit authorized organization, binds it to token/provenance and rechecks on replay',async()=>{
+ const f=fixture();try{
+  const at=new Date().toISOString();f.native.prepare("INSERT INTO organizations(id,name,slug,created_at,updated_at) VALUES('org-b','Organização B','organizacao-b',?,?)").run(at,at);
+  const userId='local-owner-a',email='local-owner-a@example.test';f.native.prepare("INSERT INTO portal_users(user_id,email,status,created_at,updated_at) VALUES(?,?,'active',?,?)").run(userId,email,at,at);f.native.prepare("INSERT INTO members(id,user_id,email,role,project_id,organization_id,created_at) VALUES(?,?,?,'owner',NULL,'org_proex',?)").run(userId,userId,email,at);const owner={userId,email,displayName:'Admin A'};
+  await assert.rejects(previewImport(f.db,owner,document({name:'Novo sem organização'},{organizationId:undefined}),secret),error=>error.code==='import_organization');
+  await assert.rejects(previewImport(f.db,owner,document({name:'Escopo B'},{organizationId:'org-b'}),secret),error=>error.status===403);
+  const preview=await previewImport(f.db,owner,document({name:'Projeto local A'}),secret);assert.equal(preview.organizationId,'org_proex');assert.equal(preview.provenance.organizationId,'org_proex');assert.equal((await readImportReview(secret,preview.reviewToken,userId)).version,2);
+  const result=await applyImport(f.db,owner,apply(preview,['name'],'test-only-organization-import'),secret);assert.equal(f.native.prepare('SELECT organization_id FROM projects WHERE id=?').get(result.projectId).organization_id,'org_proex');
+  f.native.prepare('UPDATE members SET revoked_at=? WHERE id=?').run(at,userId);await assert.rejects(applyImport(f.db,owner,apply(preview,['name'],'test-only-organization-import'),secret),error=>error.status===403);
+ }finally{f.native.close();}
 });

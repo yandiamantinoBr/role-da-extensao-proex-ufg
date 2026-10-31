@@ -158,9 +158,9 @@ test('institutional outflows total only effective distribution and delivered pri
   insert.run('m-5', -4, 'consume', '2026-10-10T12:00:00.000Z');
   insert.run('m-6', -5, 'distribute', '2026-11-01T12:00:00.000Z');
   insert.run('m-7', -1, 'distribute', '2026-10-06T12:00:00.000Z');
-  const { rows } = await reportRows(db, actor('inventory', 'project-b'), { dataset: 'outflows', from: '2026-10-01', to: '2026-10-31' });
+  const { rows } = await reportRows(db, actor(db, 'inventory', 'project-b'), { dataset: 'outflows', from: '2026-10-01', to: '2026-10-31' });
   assert.deepEqual(rows.map(row => [row.projeto,row.material,row.unidade_medida,row.tipo,row.quantidade,row.movimentacoes]), [['Projeto B','Camisetas','unidade','distribute',11,2],['Projeto B','Camisetas','unidade','redeem',2,1]]);
   assert.deepEqual([rows[0].primeira_saida,rows[0].ultima_saida], ['2026-10-05','2026-10-06']);
   assert.ok(!JSON.stringify(rows).includes('No personal details'));
-  assert.deepEqual((await reportRows(db, actor('loans', 'project-b'), { dataset: 'outflows' })).rows, []);
+  assert.deepEqual((await reportRows(db, actor(db, 'loans', 'project-b'), { dataset: 'outflows' })).rows, []);
 });
