@@ -1,6 +1,7 @@
 'use client';
 import Image from 'next/image';
 import scopeStyles from './scope-filters.module.css';
+import settingsStyles from './settings-groups.module.css';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import PhysicalAttendance from '@/components/portal/physical-attendance';
 import CampaignForm from '@/components/portal/campaign-form';
@@ -15,6 +16,8 @@ import AssistantPanel from '@/components/portal/assistant-panel';
 import type { OfficialTeamSelection } from '@/lib/catalog/proex-team';
 import AdminPrivacyPanel from '@/components/portal/admin-privacy-panel';
 import SyncSettingsPanel from '@/components/portal/sync-settings-panel';
+import CompleteBackupPanel from '@/components/portal/complete-backup-panel';
+import BackupAutomationPanel from '@/components/portal/backup-automation-panel';
 import PublicParticipantsSettingsPanel from '@/components/portal/public-participants-settings-panel';
 import ProfilePanel from '@/components/portal/profile-panel';
 import CalendarPanel from '@/components/portal/calendar-panel';
@@ -988,9 +991,24 @@ export default function PortalClient({ initial }: {
         </div>
         </>}
 
-      {tab === 'settings' && <>
-        {canGlobal('organization.manage') && <SyncSettingsPanel />}
-        <PublicParticipantsSettingsPanel canManage={canGlobal('organization.manage')} onChanged={refreshModules}/>
+      {tab === 'settings' && <div className={settingsStyles.groups}>
+        {canGlobal('organization.manage') && <>
+          <details className={settingsStyles.group}>
+            <summary><strong>Planilha e anexos</strong><small>Conexão, sincronização, arquivos no Drive e exportação portátil.</small></summary>
+            <div className={settingsStyles.body}><SyncSettingsPanel includeBackups={false}/></div>
+          </details>
+          <details className={settingsStyles.group}>
+            <summary><strong>Backup e recuperação</strong><small>Cópias completas cifradas, conferência da recuperação e rotina externa.</small></summary>
+            <div className={settingsStyles.body}><CompleteBackupPanel/><BackupAutomationPanel/></div>
+          </details>
+          <details className={settingsStyles.group}>
+            <summary><strong>Acesso público</strong><small>Prontidão, aviso e abertura explícita do cadastro de participantes.</small></summary>
+            <div className={settingsStyles.body}><PublicParticipantsSettingsPanel canManage={canGlobal('organization.manage')} onChanged={refreshModules}/></div>
+          </details>
+        </>}
+        <details className={settingsStyles.group}>
+          <summary><strong>Operação e canais</strong><small>Canais institucionais e aviso de privacidade da operação.</small></summary>
+          <div className={settingsStyles.body}>
         <Section title="Canais e informações da operação" description="Use os canais institucionais confirmados e o aviso aprovado para o serviço.">
         <OperationForm action="setting.update" mutate={mutate} submit="Salvar configurações" make={f => ({ instagramUrl: f.get('instagramUrl'), privacyNotice: f.get('privacyNotice') })}>
         <Field label="Perfil oficial no Instagram" help="O link divulga o canal. Ele não verifica automaticamente se a pessoa segue o perfil.">
@@ -1009,7 +1027,9 @@ export default function PortalClient({ initial }: {
         <p>A roleta livre segue independente. As campanhas oficiais usam os registros e as regras deste portal.</p>
         </div>
         </div>
-        </>}
+          </div>
+        </details>
+      </div>}
 
       <footer className="p-footer">
     <span>{online ? <Wifi size={14}/> : <WifiOff size={14}/>}{online ? 'Conectado' : 'Sem conexão'}{updatedAt && ` · atualizado às ${updatedAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`}</span>
