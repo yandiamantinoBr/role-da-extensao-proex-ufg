@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import postgres from 'postgres';
@@ -21,9 +21,13 @@ export interface ObjectStore {
   get(key: string): Promise<StoredObject | null>;
   delete(key: string): Promise<void>;
 }
+export type CaptureLimits = { totalBytes: number; objectBytes: number; objects: number };
+export type BackupCapture = { backend: 'disk' | 'postgres'; snapshot: Snapshot; objects: { storageId: string; key: string | null; contentType: string; data: Uint8Array }[] };
+export type BackendStores = { snapshots: SnapshotStore; objects: ObjectStore; backup: { authoritySnapshot(limits: CaptureLimits): Promise<Snapshot>; capture(limits: CaptureLimits): Promise<BackupCapture> } };
+function captureError(code: 'backup_limit' | 'backup_source'): never { throw Object.assign(new Error('Backup source unavailable.'), { name: 'BackupSourceError', code }); }
 
 /** Disco local: VPS, servidor da UFG ou desenvolvimento. */
-export function fileStores(directory: string): { snapshots: SnapshotStore; objects: ObjectStore } {
+export function fileStores(directory: string): BackendStores {
   mkdirSync(join(directory, 'objects'), { recursive: true });
   const versionFile = join(directory, 'version'), dataFile = join(directory, 'portal.sqlite.gz');
   const current = () => existsSync(versionFile) ? Number(readFileSync(versionFile, 'utf8')) : 0;
@@ -44,11 +48,44 @@ export function fileStores(directory: string): { snapshots: SnapshotStore; objec
       async get(key) { const path = objectPath(key); return existsSync(path) ? { data: readFileSync(path), contentType: readFileSync(`${path}.type`, 'utf8') } : null; },
       async delete(key) { rmSync(objectPath(key), { force: true }); rmSync(`${objectPath(key)}.type`, { force: true }); },
     },
+    backup: {
+      async authoritySnapshot(limits) {
+        if (!existsSync(dataFile) || !existsSync(versionFile) || lstatSync(dataFile).isSymbolicLink() || lstatSync(versionFile).isSymbolicLink()) captureError('backup_source');
+        if (lstatSync(dataFile).size > limits.totalBytes) captureError('backup_limit');
+        const version = current(), data = readFileSync(dataFile);
+        if (!Number.isSafeInteger(version) || version < 1 || current() !== version) captureError('backup_source');
+        return { version, data };
+      },
+      async capture(limits) {
+        // All operations below are synchronous: no application write can interleave
+        // in this Node process. This backend does not support multiple writers in
+        // different OS processes; Supabase uses a database transaction below.
+        if (!existsSync(dataFile) || !existsSync(versionFile) || lstatSync(dataFile).isSymbolicLink() || lstatSync(versionFile).isSymbolicLink() || lstatSync(join(directory, 'objects')).isSymbolicLink()) captureError('backup_source');
+        const before = current();
+        if (!Number.isSafeInteger(before) || before < 1) captureError('backup_source');
+        const entries = readdirSync(join(directory, 'objects')).sort();
+        const ids = entries.filter(name => /^[a-f0-9]{64}$/.test(name));
+        if (ids.length > limits.objects || entries.length !== ids.length * 2 || entries.some(name => !/^[a-f0-9]{64}(\.type)?$/.test(name))) captureError('backup_source');
+        let size = lstatSync(dataFile).size;
+        if (size > limits.totalBytes) captureError('backup_limit');
+        for (const id of ids) {
+          const path = join(directory, 'objects', id), type = `${path}.type`;
+          if (!existsSync(type) || lstatSync(path).isSymbolicLink() || lstatSync(type).isSymbolicLink() || !lstatSync(path).isFile() || !lstatSync(type).isFile() || lstatSync(type).size > 200) captureError('backup_source');
+          const bytes = lstatSync(path).size;
+          if (bytes > limits.objectBytes || (size += bytes) > limits.totalBytes) captureError('backup_limit');
+        }
+        const data = readFileSync(dataFile), copied = ids.map(id => ({ storageId: id, key: null, contentType: readFileSync(join(directory, 'objects', `${id}.type`), 'utf8'), data: readFileSync(join(directory, 'objects', id)) }));
+        if (current() !== before) captureError('backup_source');
+        // Opaque orphan keys on disk cannot be reversed from SHA256. Preserve the
+        // storage IDs themselves, so even unreferenced private objects are copied.
+        return { backend: 'disk', snapshot: { version: before, data }, objects: copied };
+      },
+    },
   };
 }
 
 /** Postgres (Supabase ou qualquer outro): hospedagem serverless, como a Vercel. */
-export function postgresStores(url: string, schema = 'proex'): { snapshots: SnapshotStore; objects: ObjectStore } {
+export function postgresStores(url: string, schema = 'proex'): BackendStores {
   if (!/^[a-z_][a-z0-9_]{0,40}$/.test(schema)) throw new Error('Esquema Postgres inválido.');
   // prepare:false é necessário no pooler em modo transação do Supabase.
   const sql = postgres(url, { prepare: false, max: 3, idle_timeout: 20, connect_timeout: 15 });
@@ -86,6 +123,30 @@ export function postgresStores(url: string, schema = 'proex'): { snapshots: Snap
         return row ? { data: new Uint8Array(row.data), contentType: row.content_type } : null;
       },
       async delete(key) { await sql`delete from ${objects} where key = ${key}`; },
+    },
+    backup: {
+      async authoritySnapshot(limits) {
+        const [row] = await sql<{ version: string; bytes: number; data: Uint8Array | null }[]>`select version,octet_length(data) AS bytes,CASE WHEN octet_length(data)<=${limits.totalBytes} THEN data ELSE NULL END AS data from ${snapshot} where id=1`;
+        if (!row) captureError('backup_source');
+        if (row.bytes > limits.totalBytes) captureError('backup_limit');
+        const version = Number(row.version);
+        if (!row.data || !Number.isSafeInteger(version) || version < 1) captureError('backup_source');
+        return { version, data: new Uint8Array(row.data) };
+      },
+      async capture(limits) {
+        return await sql.begin('isolation level repeatable read read only', async tx => {
+          await tx`set local statement_timeout = '15000'`;
+          const [meta] = await tx<{ count: string; bytes: string; largest: number }[]>`select count(*)::text AS count,coalesce(sum(octet_length(data)),0)::text AS bytes,coalesce(max(octet_length(data)),0) AS largest from ${objects}`;
+          const [snapshotMeta] = await tx<{ bytes: number }[]>`select octet_length(data) AS bytes from ${snapshot} where id=1`;
+          if (!snapshotMeta) captureError('backup_source');
+          if (Number(meta.count) > limits.objects || meta.largest > limits.objectBytes || Number(meta.bytes) + snapshotMeta.bytes > limits.totalBytes) captureError('backup_limit');
+          const [row] = await tx<{ version: string; data: Uint8Array }[]>`select version,data from ${snapshot} where id=1`;
+          const copied = await tx<{ key: string; content_type: string; size: number; data: Uint8Array }[]>`select key,content_type,size,data from ${objects} order by key COLLATE "C"`;
+          const version = Number(row.version);
+          if (!Number.isSafeInteger(version) || version < 1 || copied.length !== Number(meta.count) || copied.some(object => Number(object.size) !== object.data.byteLength)) captureError('backup_source');
+          return { backend: 'postgres' as const, snapshot: { version, data: new Uint8Array(row.data) }, objects: copied.map(object => ({ storageId: createHash('sha256').update(object.key).digest('hex'), key: object.key, contentType: object.content_type, data: new Uint8Array(object.data) })) };
+        }) as BackupCapture;
+      },
     },
   };
 }

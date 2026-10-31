@@ -4,14 +4,16 @@
 // A senha abaixo é pública, sintética e válida somente neste banco temporário.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { randomBytes, randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { request as httpRequest } from 'node:http';
 import { createServer as createProbe } from 'node:net';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { restoreEncryptedBackup, RESTORE_PREFIX } from '../platform-node/backup-restore.mjs';
+import { localMigrations } from './backup-cli-input.mjs';
 
 export const QA_ORIGIN = 'http://127.0.0.1:5173';
 export const QA_EMAIL = 'qa@proex.example.test';
@@ -66,7 +68,7 @@ async function serve() {
     server.close(() => process.exit(0));
     server.closeAllConnections?.();
   };
-  process.on('message', message => { if (message?.event === 'shutdown') stop(); });
+  process.on('message', message => { if (message?.event === 'shutdown') stop(); if (message?.event === 'memory') process.send?.({ event: 'memory', rssBytes: process.memoryUsage().rss, maxRssKiB: process.resourceUsage().maxRSS }); });
   process.on('disconnect', stop);
   process.once('SIGINT', stop);
   process.once('SIGTERM', stop);
@@ -75,7 +77,7 @@ async function serve() {
 
 function localClient() {
   const cookies = new Map();
-  return async function api(path, body, authenticated = true) {
+  return async function api(path, body, authenticated = true, binary = false) {
     if (!path.startsWith('/') || path.startsWith('//')) throw new Error('QA aceita somente caminhos locais.');
     const payload = body === undefined ? null : Buffer.from(JSON.stringify(body));
     const headers = { Accept: 'application/json' };
@@ -96,9 +98,9 @@ function localClient() {
             const pair = cookie.split(';', 1)[0], split = pair.indexOf('=');
             if (split > 0) cookies.set(pair.slice(0, split), pair.slice(split + 1));
           }
-          const text = Buffer.concat(chunks).toString('utf8');
-          let value; try { value = JSON.parse(text); } catch { value = null; }
-          done({ status: response.statusCode, value, bytes: size });
+          const data = Buffer.concat(chunks);
+          let value; try { value = binary ? data : JSON.parse(data.toString('utf8')); } catch { value = null; }
+          done({ status: response.statusCode, value, bytes: size, headers: response.headers, chunks: chunks.length });
         });
       });
       request.setTimeout(15000, () => request.destroy(new Error('Tempo de resposta excedido no QA local.')));
@@ -201,6 +203,45 @@ async function syncSmoke(api, directory, redact) {
   if (exitCode !== 0) throw new Error('O harness da planilha simulada falhou no portal local.');
 }
 
+async function backupSmoke(api, directory, server) {
+  const capability = ok(await api('/api/backup'), 'Disponibilidade do backup local');
+  assert.equal(capability.supported, true);
+  assert.equal((await api('/api/backup', undefined, false)).status, 401, 'metadados do backup exigem autenticação');
+  // A large private orphan proves the complete inventory is captured even when
+  // no operational row refers to the object. Bytes and phrase are synthetic.
+  const bytes = randomBytes(5 * 1024 * 1024), key = createHash('sha256').update('qa-private-orphan').digest('hex');
+  writeFileSync(join(directory, 'data', 'objects', key), bytes);
+  writeFileSync(join(directory, 'data', 'objects', key + '.type'), 'application/octet-stream');
+  let protection = randomBytes(32).toString('base64url'), restored;
+  try {
+    const response = await api('/api/backup', { password: protection }, true, true);
+    assert.equal(response.status, 200, 'API local deve preparar o backup completo');
+    assert.ok(response.bytes > 4.5 * 1024 * 1024); assert.ok(response.chunks > 1);
+    assert.equal(response.headers['content-length'], undefined, 'backup deve usar streaming sem Content-Length');
+    assert.equal(response.headers['transfer-encoding'], 'chunked');
+    const dry = await restoreEncryptedBackup(response.value, protection, { dryRun: true, migrations: localMigrations() });
+    assert.equal(dry.verified, true); assert.equal(dry.objects, 1);
+    restored = await restoreEncryptedBackup(response.value, protection, { migrations: localMigrations() });
+    const copied = readFileSync(join(restored.directory, 'data', 'objects', key));
+    assert.equal(createHash('sha256').update(copied).digest('hex'), createHash('sha256').update(bytes).digest('hex'));
+    assert.equal(JSON.parse(readFileSync(join(restored.directory, 'ISOLATED-RESTORE.json'))).ready, true);
+    const memory = await new Promise((done, reject) => {
+      const timeout = setTimeout(() => { server.removeListener('message', receive); reject(new Error('Métrica local do processo QA indisponível.')); }, 5000);
+      const receive = message => { if (message?.event === 'memory') { clearTimeout(timeout); server.removeListener('message', receive); done(message); } };
+      server.on('message', receive); server.send({ event: 'memory' });
+    });
+    console.log(JSON.stringify({ backupSmoke: 'passed', environment: 'loopback, dados sintéticos; não confirma edge Vercel ou backup de produção', encryptedBytes: response.bytes, httpChunks: response.chunks, verifiedObjects: restored.objects, sqliteBytes: restored.sqliteBytes, isolatedRestore: true,
+      serverCurrentRssBytes: memory.rssBytes, serverProcessMaxRssKiB: memory.maxRssKiB, memoryScope: 'máximo do processo servidor desde o início deste QA, incluindo preparação e criptografia' }));
+  } finally {
+    protection = ''; bytes.fill(0);
+    if (restored?.directory) {
+      const absolute = realpathSync(restored.directory), temporaryParent = realpathSync(tmpdir());
+      if (dirname(absolute) !== temporaryParent || !basename(absolute).startsWith(RESTORE_PREFIX)) throw new Error('Pasta restaurada fora do limite local esperado.');
+      rmSync(absolute, { recursive: true, force: true });
+    }
+  }
+}
+
 async function run(options) {
   if (!existsSync(join(projectRoot, 'dist/server/index.js')) || !existsSync(join(projectRoot, 'node_modules/vinext/dist/server/prod-server.js'))) {
     throw new Error('Execute npx --yes pnpm@11.25.0 build:node antes de iniciar o QA local.');
@@ -248,6 +289,7 @@ async function run(options) {
     console.log(JSON.stringify({ fixture, environment: 'descartável, loopback, sem produção', dataDirectory: directory }));
     if (options.benchmark) await benchmark(api, fixture);
     if (options.syncSmoke) await syncSmoke(api, directory, redact);
+    if (options.backupSmoke) await backupSmoke(api, directory, child);
     console.log('Smoke autenticado concluído: servidor → API → dados → relatório.');
     if (!options.smoke) {
       console.log('Servidor mantido para revisão no navegador. Digite parar ou Ctrl+C para encerrar somente este QA e limpar sua pasta temporária.');
@@ -266,11 +308,11 @@ async function main() {
   const args = process.argv.slice(2);
   if (args.length === 1 && args[0] === '--serve') return serve();
   if (args.includes('--help')) {
-    console.log('Uso: node scripts/qa-local.mjs [--smoke] [--sync-smoke] [--benchmark]\nRequer build:node atual e porta 5173 livre. Sem --smoke, mantém o QA aberto para o navegador.\nHost fixo 127.0.0.1; não aceita URL/host remoto. Não lê .env/.dev.vars, não instala dependências e não acessa a planilha/Drive reais.');
+    console.log('Uso: node scripts/qa-local.mjs [--smoke] [--sync-smoke] [--backup-smoke] [--benchmark]\nRequer build:node atual e porta 5173 livre. Sem --smoke, mantém o QA aberto para o navegador.\nHost fixo 127.0.0.1; não aceita URL/host remoto. Não lê .env/.dev.vars, não instala dependências e não acessa a planilha/Drive reais.');
     return;
   }
-  if (args.some(arg => !['--smoke', '--sync-smoke', '--benchmark'].includes(arg))) throw new Error('Opção desconhecida; use --help. Host/URL remoto não são aceitos.');
-  await run({ smoke: args.includes('--smoke'), syncSmoke: args.includes('--sync-smoke'), benchmark: args.includes('--benchmark') });
+  if (args.some(arg => !['--smoke', '--sync-smoke', '--backup-smoke', '--benchmark'].includes(arg))) throw new Error('Opção desconhecida; use --help. Host/URL remoto não são aceitos.');
+  await run({ smoke: args.includes('--smoke'), syncSmoke: args.includes('--sync-smoke'), backupSmoke: args.includes('--backup-smoke'), benchmark: args.includes('--benchmark') });
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === scriptPath) {

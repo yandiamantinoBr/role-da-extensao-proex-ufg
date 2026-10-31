@@ -3,6 +3,7 @@
 // lib/platform.ts e db/index.ts: `env.DB`, `env.BUCKET` e variáveis de ambiente.
 import { SnapshotD1, type Migration } from './d1';
 import { fileStores, postgresStores, type ObjectStore } from './store';
+import { completeBackupService } from './backup-service';
 
 const sources = import.meta.glob('../drizzle/*.sql', { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
 const migrations: Migration[] = Object.entries(sources)
@@ -32,6 +33,7 @@ class ObjectBucket {
 }
 
 let stores: ReturnType<typeof fileStores> | undefined, db: SnapshotD1 | undefined, bucket: ObjectBucket | undefined;
+let backup: ReturnType<typeof completeBackupService> | undefined;
 function backend() {
   if (stores) return stores;
   const url = process.env.PROEX_DATABASE_URL;
@@ -43,9 +45,11 @@ export const env = new Proxy({} as Record<string, unknown>, {
   get(_target, key: string) {
     if (key === 'DB') return db ??= new SnapshotD1(backend().snapshots, migrations);
     if (key === 'BUCKET') return bucket ??= new ObjectBucket(backend().objects);
+    if (key === 'PROEX_BACKUP') return backup ??= completeBackupService(backend(), migrations, process.env.VERCEL_GIT_COMMIT_SHA);
     // Fora do Sites não existe identidade nativa: força o modo de hospedagem própria.
     if (key === 'PROEX_STANDALONE') return '1';
     return process.env[key];
   },
 });
-export default { env };
+const runtime = { env };
+export default runtime;
