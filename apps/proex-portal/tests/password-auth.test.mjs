@@ -351,7 +351,7 @@ test('invitation activation derives the grant from its stored token and safely r
   const f = fixture(t);
   f.seedPrincipal('inviting-owner', 'owner@example.test', { role: 'owner' });
   const owner = await getActor(f.db, { userId: 'inviting-owner', email: 'owner@example.test', displayName: 'Responsável' });
-  const invite = await accessAction(f.db, owner, 'invite.create', { email: 'convidada@example.test', role: 'viewer', operationKey: crypto.randomUUID() }, origin, f.runtimeEnv.BETTER_AUTH_SECRET);
+  const invite = await accessAction(f.db, owner, 'invite.create', { email: 'convidada@example.test', role: 'viewer', globalAccess: true, operationKey: crypto.randomUUID() }, origin, f.runtimeEnv.BETTER_AUTH_SECRET);
   const token = new URL(invite.inviteUrl).searchParams.get('token');
   const input = { action: 'activateInvite', token, name: 'Pessoa convidada', password: originalPassword, role: 'owner', userId: owner.userId, projectId: 'invented' };
   const response = await accountRequest(f, input);
@@ -407,7 +407,7 @@ test('simultaneous invite activations grant access to the persisted canonical al
   const f = fixture(t), { user } = await createAccount(f, 'race@example.test');
   f.seedPrincipal('race-inviting-owner', 'owner@example.test', { role: 'owner' });
   const owner = await getActor(f.db, { userId: 'race-inviting-owner', email: 'owner@example.test', displayName: 'Responsável' });
-  const invite = await accessAction(f.db, owner, 'invite.create', { email: user.email, role: 'viewer', operationKey: crypto.randomUUID() }, origin, f.runtimeEnv.BETTER_AUTH_SECRET);
+  const invite = await accessAction(f.db, owner, 'invite.create', { email: user.email, role: 'viewer', globalAccess: true, operationKey: crypto.randomUUID() }, origin, f.runtimeEnv.BETTER_AUTH_SECRET);
   const token = new URL(invite.inviteUrl).searchParams.get('token');
   let initialReads = 0, releaseAliasReads, releaseFirstStatus, firstStatusUser, secondStatusUser;
   const aliasReads = new Promise(resolve => { releaseAliasReads = resolve; });

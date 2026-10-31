@@ -430,7 +430,12 @@ test('CSV rejects other projects, missing permission, revocation and anonymous r
   const f = fixture(t);
   const viewer = f.member('viewer');
   observeExport(f, viewer);
-  assert.equal((await GET(new Request('https://portal.example.test/api/export?kind=stock&projectId=project-b'))).status, 403);
+  for (const kind of ['stock', 'loans', 'participations']) {
+    const response = await GET(new Request(`https://portal.example.test/api/export?kind=${kind}&projectId=project-b`, { headers: { 'oai-authenticated-user-id': 'owner', 'oai-authenticated-user-email': 'owner@ufg.br' } }));
+    assert.equal(response.status, 403);
+    assert.equal(response.headers.get('Cache-Control'), 'private, no-store');
+    assert.ok(!(await response.text()).includes('SECRET PROJECT B'));
+  }
   assert.equal((await GET(new Request('https://portal.example.test/api/export?kind=invalid'))).status, 400);
   f.sqlite.prepare('UPDATE members SET revoked_at=? WHERE user_id=?').run(new Date().toISOString(), viewer.userId);
   assert.equal((await GET(new Request('https://portal.example.test/api/export?kind=stock'))).status, 403);

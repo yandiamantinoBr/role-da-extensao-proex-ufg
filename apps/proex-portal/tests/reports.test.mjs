@@ -51,6 +51,22 @@ test('reports respect project scope and the capability of each dataset', async (
   await assert.rejects(reportRows(db, actor('owner'), { dataset: 'users' }), /relatório válido/);
 });
 
+test('every report dataset intersects an explicit project or unit filter with the authorized projects', async t => {
+  const db = fixture(); t.after(() => db.native.close());
+  const now = '2026-10-10T15:00:00.000Z';
+  db.native.prepare("INSERT INTO campaigns(id,project_id,name,starts_at,ends_at,status,created_at) VALUES('campaign-a','project-a','Event A',?,?,'draft',?),('campaign-b','project-b','Event B',?,?,'draft',?)").run(now, '2026-10-11T15:00:00.000Z', now, now, '2026-10-11T15:00:00.000Z', now);
+  for (const dataset of ['projects','materials','movements','loans','records','campaigns']) {
+    for (const [own, other] of [['project-a','project-b'],['project-b','project-a']]) {
+      const manager = actor('manager', own);
+      const forbidden = await reportRows(db, manager, { dataset, projectId: other });
+      assert.deepEqual(forbidden.rows, [], `${dataset} must not replace scope with a requested foreign project`);
+      const all = await reportRows(db, manager, { dataset });
+      assert.ok(all.rows.every(row => row.projeto === (own === 'project-a' ? 'Projeto A' : 'Projeto B')));
+    }
+    assert.deepEqual((await reportRows(db, actor('manager', 'project-b'), { dataset, unitId: 'unit-a' })).rows, [], `${dataset} must not gain access through another unit`);
+  }
+});
+
 test('loan reports never expose borrower data and records follow the history visibility rules', async () => {
   const db = fixture();
   const loans = await reportRows(db, actor('owner'), { dataset: 'loans' });

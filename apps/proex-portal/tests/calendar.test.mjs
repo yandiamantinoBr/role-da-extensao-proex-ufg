@@ -205,3 +205,14 @@ test('HTTP routes protect reads/writes, bound date ranges, and serve authorized 
   const missing = await feedRoute.GET(new Request('https://portal.example.test/api/calendar/feed/invalid'), { params: Promise.resolve({ token: 'invalid' }) });
   assert.equal(missing.status, 404); assert.equal(missing.headers.get('Referrer-Policy'), 'no-referrer');
 });
+
+test('calendar JSON, ICS and subscription creation reject a foreign project even with claimed identity headers', async t => {
+  const f = fixture(t), user = f.member('manager'); observe(f, user);
+  for (const format of ['json','ics']) {
+    const response = await route.GET(new Request(`https://portal.example.test/api/calendar?from=2026-10-01&to=2026-10-31&category=loans&projectId=project-b&format=${format}`, { headers: { 'oai-authenticated-user-id': 'owner', 'oai-authenticated-user-email': 'owner@ufg.br' } }));
+    assert.equal(response.status, 403); assert.equal(response.headers.get('Cache-Control'), 'private, no-store');
+    assert.ok(!(await response.text()).includes('SECRET PROJECT B'));
+  }
+  assert.equal((await route.POST(post('feed.create', { category: 'loans', projectId: 'project-b' }))).status, 403);
+  assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM calendar_feeds').get().n, 0);
+});

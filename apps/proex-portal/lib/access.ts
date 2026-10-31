@@ -127,6 +127,51 @@ export function accessibleProjects(actor: PortalActor | null, capability?: strin
   return [...new Set(members.map((member) => member.project_id!))];
 }
 
+function liveCapability(actor: PortalActor, capability: string, projectId: string | null) {
+  requireCapability(actor, capability, projectId);
+  const roles = Object.entries(ROLE_CAPABILITIES).filter(([, capabilities]) => capabilities.includes(capability)).map(([role]) => role);
+  const sql = `EXISTS (SELECT 1 FROM members m LEFT JOIN portal_users u ON u.user_id=m.user_id
+    WHERE m.user_id=? AND m.revoked_at IS NULL AND m.role IN (${roles.map(() => '?').join(',')})
+      AND COALESCE(u.status,'active')='active' AND COALESCE(u.activation_pending,0)=0 AND u.anonymized_at IS NULL
+      AND (m.project_id IS NULL${projectId === null ? '' : ' OR m.project_id=?'}))`;
+  return { sql, values: [actor.userId, ...roles, ...(projectId === null ? [] : [projectId])] };
+}
+
+/** Replays are protected reads too; never trust a membership loaded before revocation. */
+export async function requireLiveCapability(db: D1Database, actor: PortalActor, capability: string, projectId: string | null): Promise<void> {
+  const permission = liveCapability(actor, capability, projectId);
+  if (!await db.prepare(`SELECT 1 AS allowed WHERE ${permission.sql}`).bind(...permission.values).first()) {
+    throw new HttpError(403, 'Seu acesso mudou. Atualize a página.', 'access_changed');
+  }
+}
+
+/** The assertion and domain writes share one transaction, including audit and stock triggers. */
+export async function capabilityBatch(db: D1Database, actor: PortalActor, capability: string, projectId: string | null, statements: D1PreparedStatement[]): Promise<D1Result[]> {
+  const permission = liveCapability(actor, capability, projectId);
+  const assertion = db.prepare(`SELECT CASE WHEN ${permission.sql} THEN 1 ELSE json_extract('[]','portal_authority_changed') END`).bind(...permission.values);
+  try { return (await db.batch([assertion, ...statements])).slice(1); }
+  catch (error) {
+    if (String(error).includes('portal_authority_changed')) throw new HttpError(403, 'Seu acesso mudou. Atualize a página.', 'access_changed');
+    throw error;
+  }
+}
+
+const ACTIVE_ACCOUNT_SQL = `EXISTS (SELECT 1 FROM portal_users WHERE user_id=? AND status='active' AND activation_pending=0 AND anonymized_at IS NULL)`;
+/** Public participation needs an active canonical account, but no internal project role. */
+export async function requireLiveAccount(db: D1Database, userId: string): Promise<void> {
+  if (!identifier(userId) || !await db.prepare(`SELECT 1 AS allowed WHERE ${ACTIVE_ACCOUNT_SQL}`).bind(userId).first()) {
+    throw new HttpError(403, 'Seu acesso mudou. Entre novamente.', 'account_inactive');
+  }
+}
+export async function accountBatch(db: D1Database, userId: string, statements: D1PreparedStatement[]): Promise<D1Result[]> {
+  const assertion = db.prepare(`SELECT CASE WHEN ${ACTIVE_ACCOUNT_SQL} THEN 1 ELSE json_extract('[]','participant_account_changed') END`).bind(userId);
+  try { return (await db.batch([assertion, ...statements])).slice(1); }
+  catch (error) {
+    if (String(error).includes('participant_account_changed')) throw new HttpError(403, 'Seu acesso mudou. Entre novamente.', 'account_inactive');
+    throw error;
+  }
+}
+
 function auditDetails(value: unknown, depth = 0): unknown {
   if (depth > 4) return '[omitido]';
   if (value === null || typeof value === 'boolean' || typeof value === 'number') return value;
@@ -201,6 +246,9 @@ export async function accessAction(
     if (!recipient || !INVITABLE_ROLES.includes(role)) throw new HttpError(400, 'Informe e-mail e função válidos.', 'invalid_invite');
     requireCapability(actor, 'access.invite', projectId);
     if (!canManageRole(actor, role, projectId)) throw new HttpError(403, 'Você não pode conceder essa função ou escopo.', 'delegation_forbidden');
+    if (projectId === null && input.globalAccess !== true) {
+      throw new HttpError(400, 'Escolha um projeto. O acesso ao portal inteiro exige confirmação explícita da administração.', 'global_scope_confirmation_required');
+    }
     if (projectId && !await db.prepare('SELECT id FROM projects WHERE id=?').bind(projectId).first()) {
       throw new HttpError(404, 'Projeto não encontrado.', 'project_not_found');
     }

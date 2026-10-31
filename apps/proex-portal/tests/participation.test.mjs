@@ -16,16 +16,18 @@ function compile(name, dependencies = {}) {
 }
 const errors = compile('errors');
 const databaseModule = compile('database');
-const access = asModule(`import {HttpError} from ${JSON.stringify(errors)}; export function requireCapability(actor, cap, project) { if (!actor || !actor.capabilities.includes(cap) || (project && !actor.projects.includes(project))) throw new HttpError(403,'Sem permissão.','forbidden'); }`);
 const mutations = compile('mutations', { database: databaseModule, errors });
 const projectAccess = compile('access', { errors, mutations });
 const records = compile('records', { database: databaseModule, errors, access: projectAccess, mutations });
 const projects = compile('projects', { database: databaseModule, errors, access: projectAccess, mutations, records });
-const campaigns = compile('campaigns', { database: databaseModule, errors, access, mutations, projects });
-const participation = compile('participation', { database: databaseModule, errors, access, campaigns });
+const campaigns = compile('campaigns', { database: databaseModule, errors, access: projectAccess, mutations, projects });
+const participation = compile('participation', { database: databaseModule, errors, access: projectAccess, campaigns });
 const { campaignAction } = await import(campaigns);
-const { draw, participationAction } = await import(participation);
-const actor = { userId: 'operator-test', projects: ['project-test'], capabilities: ['campaigns.manage', 'participation.operate', 'inventory.deliver'] };
+const { draw: actualDraw, participationAction } = await import(participation);
+const actor = { userId: 'operator-test', email: 'operator@example.invalid', displayName: 'Gestor de teste', members: [{ id: 'operator-member', user_id: 'operator-test', email: 'operator@example.invalid', role: 'manager', project_id: 'project-test', revoked_at: null, created_at: '2026-01-01T00:00:00.000Z' }], capabilities: [] };
+// Existing domain scenarios model an already admitted session. Negative account tests
+// call actualDraw directly; INSERT OR IGNORE never repairs a blocked account.
+async function draw(db,campaign,user,input){const now=new Date().toISOString();db.native.prepare("INSERT OR IGNORE INTO portal_users(user_id,email,status,activation_pending,created_at,updated_at) VALUES(?,?,'active',0,?,?)").run(user.userId,`${user.userId}@example.invalid`,now,now);return actualDraw(db,campaign,user,input);}
 let serial = 0;
 const key = prefix => `${prefix}-${String(++serial).padStart(10, '0')}`;
 
@@ -37,6 +39,7 @@ function fixture({ retryLimit = 0, stock = 10000, privacy = true, status = 'acti
   for (const name of migrations) native.exec(readFileSync(`${root}drizzle/${name}`, 'utf8'));
   const now = new Date().toISOString();
   native.prepare('INSERT INTO projects(id,name,description,created_at) VALUES(?,?,?,?)').run('project-test', 'Test project', '', now);
+  native.prepare('INSERT INTO members(id,user_id,email,role,project_id,revoked_at,created_at) VALUES(?,?,?,?,?,?,?)').run(...Object.values(actor.members[0]));
   native.prepare("INSERT INTO items(id,project_id,name,category,unit,stock,created_at) VALUES('pin','project-test','Test pin','gift','unidade',?,?)").run(stock, now);
   native.prepare("INSERT INTO offers(id,project_id,name,kind,active) VALUES('regular','project-test','One pin','brinde',1),('special','project-test','Three pins','super',1)").run();
   native.prepare("INSERT INTO offer_components(offer_id,item_id,quantity) VALUES('regular','pin',1),('special','pin',3)").run();
@@ -54,8 +57,9 @@ function fixture({ retryLimit = 0, stock = 10000, privacy = true, status = 'acti
     };
   };
   const db = {
-    native, prepare,
+    native, prepare, beforeBatch: null,
     async batch(statements) {
+      if(this.beforeBatch){const hook=this.beforeBatch;this.beforeBatch=null;hook();}
       native.exec('BEGIN');
       try { const result = statements.map(statement => statement.execute()); native.exec('COMMIT'); return result; }
       catch (error) { native.exec('ROLLBACK'); throw error; }
@@ -205,7 +209,7 @@ test('campaign activation requires published privacy notice and operator scope i
     await assert.rejects(campaignAction(db, actor, 'campaign.status', { id: 'campaign-test', status: 'active' }), error => error.status === 400 && error.message.includes('privacidade'));
     assert.equal(db.native.prepare("SELECT status FROM campaigns WHERE id='campaign-test'").get().status, 'draft');
     assert.equal(count(db, 'audit'), 0);
-    const denied = { ...actor, projects: ['another-project'] };
+    const denied = { ...actor, members: actor.members.map(member=>({...member,project_id:'another-project'})) };
     await assert.rejects(campaignAction(db, denied, 'campaign.status', { id: 'campaign-test', status: 'closed' }), error => error.status === 403);
   } finally { db.native.close(); }
 });
@@ -245,3 +249,94 @@ test('authenticated physical attendance shares the account limit with wheel and 
     assert.equal(db.native.prepare("SELECT reserved FROM items WHERE id='pin'").get().reserved, 0);
   } finally { db.native.close(); }
 });
+
+const domainTables = ['campaigns','settings','participations','attempts','reservations','entitlements','items','stock_movements','audit'];
+const domainSnapshot = db => Object.fromEntries(domainTables.map(table => [table, db.native.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all()]));
+function changeAccess(db, userId, condition) {
+  const now = new Date().toISOString();
+  if (condition === 'revoked') db.native.prepare('UPDATE members SET revoked_at=? WHERE user_id=?').run(now, userId);
+  else {
+    db.native.prepare("INSERT OR IGNORE INTO portal_users(user_id,email,status,activation_pending,created_at,updated_at) VALUES(?,?,'active',0,?,?)").run(userId, `${userId}@example.invalid`, now, now);
+    if (condition === 'blocked') db.native.prepare("UPDATE portal_users SET status='blocked' WHERE user_id=?").run(userId);
+    if (condition === 'pending') db.native.prepare('UPDATE portal_users SET activation_pending=1 WHERE user_id=?').run(userId);
+    if (condition === 'anonymized') db.native.prepare('UPDATE portal_users SET anonymized_at=? WHERE user_id=?').run(now, userId);
+  }
+}
+
+for (const condition of ['revoked','blocked','pending','anonymized']) {
+  for (const action of ['campaign.create','campaign.update','campaign.status','setting.update','participation.ticket','participation.physical','prize.redeem']) {
+    test(`${action} rolls back every domain effect when authority becomes ${condition} just before its batch`, async () => {
+      const db = fixture({ status: action.startsWith('campaign.') ? 'draft' : 'active' });
+      try {
+        let acting = actor, input;
+        if (action === 'setting.update') {
+          const member = { ...actor.members[0], id: 'owner-member', role: 'owner', project_id: null };
+          db.native.prepare('INSERT INTO members(id,user_id,email,role,project_id,revoked_at,created_at) VALUES(?,?,?,?,?,?,?)').run(...Object.values(member));
+          acting = { ...actor, members: [member] }; input = { privacyNotice: 'New notice', instagramUrl: '' };
+        } else if (action.startsWith('campaign.')) {
+          const current = db.native.prepare("SELECT * FROM campaigns WHERE id='campaign-test'").get();
+          input = { id: current.id, projectId: current.project_id, expectedVersion: current.version, name: 'New campaign', startsAt: current.starts_at, endsAt: current.ends_at, rulesText: 'Rules', retryLimit: 0, brindeOfferId: 'regular', superOfferId: 'special', status: 'closed' };
+        } else if (action === 'participation.ticket') input = { campaignId: 'campaign-test', operationKey: key('ticket-race') };
+        else {
+          const ticket = await participationAction(db, acting, 'participation.ticket', { campaignId: 'campaign-test', operationKey: key('ticket-setup') });
+          input = { attemptId: ticket.attemptId, result: 'brinde' };
+          if (action === 'prize.redeem') {
+            const completed = await participationAction(db, acting, 'participation.physical', input);
+            input = { code: completed.entitlement.id, operationKey: key('redeem-race') };
+          }
+        }
+        const before = domainSnapshot(db);
+        db.beforeBatch = () => changeAccess(db, acting.userId, condition);
+        await assert.rejects(action.startsWith('campaign.') || action === 'setting.update'
+          ? campaignAction(db, acting, action, input) : participationAction(db, acting, action, input), error => error.status === 403 && error.code === 'access_changed');
+        assert.deepEqual(domainSnapshot(db), before, 'the rejected batch must not leave stock, audit, reservations or campaign changes');
+      } finally { db.native.close(); }
+    });
+  }
+}
+
+for (const condition of ['blocked','pending','anonymized']) {
+  test(`digital participation rejects an account made ${condition} before commit without reserving stock`, async () => {
+    const db = fixture(), user = { userId: 'participant-race' }, now = new Date().toISOString();
+    try {
+      db.native.prepare("INSERT INTO portal_users(user_id,email,status,activation_pending,created_at,updated_at) VALUES(?,?,'active',0,?,?)").run(user.userId, 'participant@example.invalid', now, now);
+      const before = domainSnapshot(db);
+      db.beforeBatch = () => changeAccess(db, user.userId, condition);
+      await assert.rejects(actualDraw(db, 'campaign-test', user, { modality: 'wheel', operationKey: key('public-race') }), error => error.status === 403 && error.code === 'account_inactive');
+      assert.deepEqual(domainSnapshot(db), before);
+    } finally { db.native.close(); }
+  });
+}
+
+test('an absent or blocked public account cannot draw or replay a previous result', async () => {
+  const db = fixture(), user = { userId: 'participant-replay' }, input = { modality: 'dice', operationKey: key('public-replay') };
+  try {
+    await assert.rejects(actualDraw(db, 'campaign-test', user, input), { status: 403 });
+    await draw(db, 'campaign-test', user, input);
+    const before = domainSnapshot(db); changeAccess(db, user.userId, 'blocked');
+    await assert.rejects(actualDraw(db, 'campaign-test', user, input), { status: 403 });
+    assert.deepEqual(domainSnapshot(db), before);
+  } finally { db.native.close(); }
+});
+
+for (const source of ['account', 'ticket']) {
+  test(`${source} replay after a lost commit reply rechecks current access and never duplicates the attempt`, async () => {
+    const db = fixture(), user = { userId: 'lost-reply-participant' }, operationKey = key('lost-reply');
+    try {
+      const batch = db.batch.bind(db); let loseReply = true;
+      db.batch = async statements => {
+        const result = await batch(statements);
+        if (loseReply) { loseReply = false; changeAccess(db, source === 'account' ? user.userId : actor.userId, source === 'account' ? 'blocked' : 'revoked'); throw new Error('reply_lost_after_commit'); }
+        return result;
+      };
+      const invoke = () => source === 'account' ? draw(db, 'campaign-test', user, { modality: 'physical', operationKey }) : participationAction(db, actor, 'participation.ticket', { campaignId: 'campaign-test', operationKey });
+      await assert.rejects(invoke(), { status: 403 });
+      assert.equal(count(db, 'attempts'), 1, 'the already committed operation remains, although its now-unauthorized reply is hidden');
+      assert.equal(count(db, 'participations'), 1);
+      if (source === 'account') db.native.prepare("UPDATE portal_users SET status='active' WHERE user_id=?").run(user.userId);
+      else db.native.prepare('UPDATE members SET revoked_at=NULL WHERE user_id=?').run(actor.userId);
+      await invoke();
+      assert.equal(count(db, 'attempts'), 1); assert.equal(count(db, 'audit'), 1);
+    } finally { db.native.close(); }
+  });
+}
