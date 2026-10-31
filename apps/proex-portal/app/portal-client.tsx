@@ -621,7 +621,7 @@ export default function PortalClient({ initial }: {
         </button>
         </div>}
 
-      {tab === 'demands' && <><FollowUpPanel key={string(user.userId)} defaultProjectId={filter} initialTaskId={selectedDemandId} onChanged={refreshModules} onOpenReports={() => { setReportInitialDataset('demands'); navigate('reports'); }}/><OrganizationEmailSettings key={string(user.userId)} userId={string(user.userId)} organizations={organizations}/></>}
+      {tab === 'demands' && <><FollowUpPanel key={string(user.userId)} defaultProjectId={filter} initialTaskId={selectedDemandId} onSelectTask={setSelectedDemandId} onChanged={refreshModules} onOpenReports={() => { setReportInitialDataset('demands'); navigate('reports'); }}/><OrganizationEmailSettings key={string(user.userId)} userId={string(user.userId)} organizations={organizations}/></>}
       {tab === 'overview' && <DashboardPanel modules={allowedTabs} pinned={navigation.pinned} frequent={navigation.frequent} onNavigate={navigate} onTogglePin={navigation.togglePin} displayName={string(user.displayName)} role={role} roleLabel={roleNames[role] || 'Equipe PROEX'} projects={scopedProjects} items={visibleItems} loans={visibleLoans} campaigns={visibleCampaigns} selectedProjectId={filter} unitName={unitFilter === '__unassigned__' ? 'Sem unidade vinculada' : string(visibleUnits.find(unit => unit.id === unitFilter)?.acronym || visibleUnits.find(unit => unit.id === unitFilter)?.name)} now={now} onSelectProject={selectProject} known={{ projects: Array.isArray(data.projects), items: Array.isArray(data.items), loans: Array.isArray(data.loans), campaigns: Array.isArray(data.campaigns) }} />}
 
       {tab === 'projects' && <>
