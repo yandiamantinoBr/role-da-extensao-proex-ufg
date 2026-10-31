@@ -6,6 +6,7 @@ import { createRecord } from '../records';
 import { ASSISTANT_CONTRACT, PROVIDERS, object, onlyKeys, safeRequest, validateProposal, type AssistantItem, type AssistantPlan } from './contracts';
 import { digest, signPlan, verifyPlan } from './crypto';
 import { loadAssistantSettings as loadSettings } from './settings';
+import { aiReservation, reservationStatements } from './admission';
 import { checkDecision, decisionBody, generateProposal, generationBody } from './provider';
 
 const nowIso = () => new Date().toISOString();
@@ -27,20 +28,14 @@ export async function prepareAssistantPlan(db: D1Database, actor: PortalActor | 
  const items = rows.map(row => ({ ...row, name: safeRequest(row.name), unit: safeRequest(row.unit) })) as AssistantItem[], body = generationBody(config, request, items);
  const bodyBytes = new TextEncoder().encode(JSON.stringify(body)).byteLength + 2048;
  if (bodyBytes > 24000) throw new HttpError(400, 'Reduza o pedido ou a quantidade de materiais do contexto.', 'assistant_context_limit');
- const reservedTokens = bodyBytes + config.maxOutputTokens + (config.jevEnabled ? bodyBytes + 18000 : 0), calls = config.jevEnabled ? 2 : 1;
- const reservedCost = Math.ceil(bodyBytes * PROVIDERS.deepseek.inputMicrosPerToken + config.maxOutputTokens * PROVIDERS.deepseek.outputMicrosPerToken + (config.jevEnabled ? (bodyBytes + 18000) * PROVIDERS.typesafe.inputMicrosPerToken : 0));
+ const reservation=aiReservation(config,bodyBytes),reservedCost=reservation.cost;
  const id = await digest(`${current.userId}\n${project}\n${input.operationKey}`), fingerprint = await digest(JSON.stringify({ request, project, revision })), day = dayKey(now);
  async function existingCall() { const call = await one(db, 'SELECT fingerprint,status,plan_id FROM ai_calls WHERE id=?', [id]); if (call && call.fingerprint !== fingerprint) throw new HttpError(409, 'Este envio já foi usado com outro pedido. Prepare uma nova solicitação.', 'assistant_operation_changed'); if (!call) return null; if (call.status === 'complete') { const stored = await one(db, 'SELECT payload_json,payload_digest,status FROM ai_plans WHERE id=?', [call.plan_id]); if (stored?.status === 'ready') { const plan = JSON.parse(stored.payload_json) as AssistantPlan; if (plan.expiresAt > now) return presentPlan(plan, stored.payload_digest, secret); } } throw new HttpError(409, 'Este envio já foi processado ou está em andamento. Prepare um novo pedido se necessário.', 'assistant_call_replay'); }
  const admissionNonce = crypto.randomUUID();
  const existing = await existingCall(); if (existing) { await scopedActor(db,current,project); return existing; }
  const authority = projectAuthoritySql(current,['inventory.read'],'?');
  const authorization = db.prepare(`SELECT CASE WHEN ${authority.sql} AND EXISTS(SELECT 1 FROM ai_organization_settings s JOIN organizations o ON o.id=s.organization_id WHERE s.organization_id=? AND s.revision=? AND json_extract(s.config_json,'$.enabled')=1 AND o.status='active') THEN 1 ELSE json_extract('[]','assistant_authority_changed') END`).bind(...authority.values,project,organizationId,revision);
- try { await db.batch([
-  authorization,
-  db.prepare('INSERT INTO ai_organization_usage(organization_id,day) VALUES(?,?) ON CONFLICT(organization_id,day) DO NOTHING').bind(organizationId, day),
-  db.prepare(`INSERT INTO ai_calls(id,fingerprint,admission_nonce,actor_id,project_id,status,day,created_at) SELECT ?,?,?,?,?,'reserved',?,? FROM ai_organization_usage WHERE organization_id=? AND day=? AND reserved_usd_micros+?<=? AND reserved_tokens+?<=? AND reserved_ms+?<=? AND calls+?<=? AND EXISTS(SELECT 1 FROM ai_organization_settings WHERE organization_id=? AND revision=?)`).bind(id, fingerprint, admissionNonce, current.userId, project, day, new Date(now).toISOString(), organizationId, day, reservedCost, config.dailyUsdMicros, reservedTokens, config.dailyTokens, config.timeoutMs, config.dailyMs, calls, config.dailyCalls, organizationId, revision),
-  db.prepare('UPDATE ai_organization_usage SET reserved_usd_micros=reserved_usd_micros+?,reserved_tokens=reserved_tokens+?,reserved_ms=reserved_ms+?,calls=calls+? WHERE organization_id=? AND day=? AND EXISTS(SELECT 1 FROM ai_calls WHERE id=? AND admission_nonce=?)').bind(reservedCost, reservedTokens, config.timeoutMs, calls, organizationId, day, id, admissionNonce),
- ]); } catch (error) { if(String(error).includes('assistant_authority_changed')) throw new HttpError(403,'Seu acesso ou a configuração mudou.','assistant_forbidden'); const recovered = await existingCall(); if (recovered) return recovered; throw error; }
+ try { await db.batch(reservationStatements(db,{table:'ai_calls',authorization,id,fingerprint,nonce:admissionNonce,actorId:current.userId,projectId:project,organizationId,day,createdAt:new Date(now).toISOString(),revision,config,reservation})); } catch (error) { if(String(error).includes('assistant_authority_changed')) throw new HttpError(403,'Seu acesso ou a configuração mudou.','assistant_forbidden'); const recovered = await existingCall(); if (recovered) return recovered; throw error; }
  const admitted = await one(db, 'SELECT admission_nonce FROM ai_calls WHERE id=?', [id]);
  if (admitted && admitted.admission_nonce !== admissionNonce) { const recovered=await existingCall(); if(recovered)return recovered; throw new HttpError(409,'Este envio já está em processamento.','assistant_call_replay'); }
  if (!admitted) throw new HttpError(429, 'O limite diário de custo, tokens, tempo ou chamadas foi atingido. O responsável pode revisar os limites.', 'assistant_quota');

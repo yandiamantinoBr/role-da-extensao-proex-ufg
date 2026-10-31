@@ -140,3 +140,6 @@ export function parseImportDocument(kind: ImportKind, content: string, format: s
     return candidate;
   });
 }
+
+/** Visible textual input for evidence checks; hidden attributes/scripts are not sent. */
+export function importEvidenceText(content:string,format:string):string{return(format==='html'?cellText(visibleHtml(content).replace(/<\/(?:p|div|h\d|tr)>/gi,'\n')):content).normalize('NFC').replace(/\r\n?/g,'\n');}

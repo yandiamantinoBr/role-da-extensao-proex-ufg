@@ -48,15 +48,15 @@ export async function assistantStatus(db: D1Database, actor: PortalActor | null,
  const current = actor && await getActor(db, actor); if (!current) throw new HttpError(403, 'Entre para usar o assistente.', 'assistant_forbidden');
  const visible = [];
  for (const organization of current.organizations ?? []) {
-  let canConfigure = false, canDelegate = false, available = false, sttAvailable = false;
+  let canConfigure = false, canDelegate = false, available = false, sttAvailable = false, documentAvailable=false;
   try { await configurationActor(db, current, organization.id); canConfigure = true; } catch { /* deny */ }
   try { await configurationActor(db, current, organization.id, true); canDelegate = true; } catch { /* deny */ }
-  try { await loadAssistantSettings(db, secret, organization.id); available = true; } catch { /* unavailable */ }
+  try { const setting=await loadAssistantSettings(db, secret, organization.id); available = true;documentAvailable=setting.config.documentEnabled; } catch { /* unavailable */ }
   try { await loadAssistantSettings(db, secret, organization.id, true); sttAvailable = true; } catch { /* unavailable */ }
-  visible.push({ id: organization.id, name: organization.name, canConfigure, canDelegate, available, sttAvailable });
+  visible.push({ id: organization.id, name: organization.name, canConfigure, canDelegate, available, sttAvailable,documentAvailable });
  }
  const selected = visible.find(organization => organization.id === selectedId) ?? (visible.length === 1 ? visible[0] : undefined);
- const result = { available: selected?.available ?? false, canConfigure: selected?.canConfigure ?? false, canDelegate: selected?.canDelegate ?? false, organizationId: selected?.id ?? '', organizations: visible, voice: { dictation: 'browser-optional', uploadStt: selected?.sttAvailable ?? false } };
+ const result = { available: selected?.available ?? false, documentAvailable:selected?.documentAvailable??false, canConfigure: selected?.canConfigure ?? false, canDelegate: selected?.canDelegate ?? false, organizationId: selected?.id ?? '', organizations: visible, voice: { dictation: 'browser-optional', uploadStt: selected?.sttAvailable ?? false } };
  if (!selected?.canConfigure) return result;
  const row = await one(db, 'SELECT revision,config_json FROM ai_organization_settings WHERE organization_id=?', [selected.id]);
  const day=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
