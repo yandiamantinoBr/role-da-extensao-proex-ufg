@@ -33,12 +33,13 @@ const range = calendar.calendarRange('2026-10-01', '2026-10-31');
 
 function fixture(t) {
   const sqlite = new DatabaseSync(':memory:'); t.after(() => sqlite.close()); sqlite.exec('PRAGMA foreign_keys=ON');
+  let afterRead = () => {};
   const migrations = new URL('../drizzle/', import.meta.url);
   for (const name of readdirSync(migrations).filter(name => name.endsWith('.sql')).sort()) sqlite.exec(readFileSync(new URL(name, migrations), 'utf8'));
   function prepare(sql, values = []) { return {
     bind(...parameters) { return prepare(sql, parameters); },
     async first() { return sqlite.prepare(sql).get(...values) ?? null; },
-    async all() { return { success: true, results: sqlite.prepare(sql).all(...values) }; },
+    async all() { const results = sqlite.prepare(sql).all(...values); afterRead(sql); return { success: true, results }; },
     async run() { return this.execute(); },
     execute() { const result = sqlite.prepare(sql).run(...values); return { success: true, results: [], meta: { changes: Number(result.changes) } }; },
   }; }
@@ -62,7 +63,7 @@ function fixture(t) {
     insert('records', { id: `record-${suffix}`, project_id: `project-${suffix}`, kind: 'maintenance', title: `Revisão ${suffix}`, body: 'PRIVATE RECORD BODY', occurred_at: timestamp, created_by: 'PRIVATE ACTOR', created_at: timestamp });
   }
   insert('records', { id: 'observation', project_id: 'project-a', kind: 'observation', title: 'PRIVATE OBSERVATION', body: 'PRIVATE BODY', occurred_at: timestamp, created_by: 'PRIVATE ACTOR', created_at: timestamp });
-  return { db, sqlite, insert, member };
+  return { db, sqlite, insert, member, afterRead(callback) { afterRead = callback; } };
 }
 async function actor(f, role, projectId) { return getActor(f.db, f.member(role, projectId)); }
 function observe(f, user) { globalThis.__calendarDb = f.db; globalThis.__calendarUser = user; }
@@ -189,6 +190,65 @@ test('ICS has stable IDs, cancellation tombstones, valid date boundaries, escapi
   assert.match(ics, /STATUS:CANCELLED/); assert.match(ics, /DTSTART:20261020T023000Z/);
   assert.match(ics, /Extensão\\; café\\, ação\\\\teste\\n/);
   assert.equal(calendar.serializeCalendar(result.entries), ics, 'Rendering does not invent new revisions or timestamps.');
+});
+
+test('subscription and download are passive calendar data, including an empty calendar without invented events', async t => {
+  const f = fixture(t), owner = await actor(f, 'owner');
+  const created = await calendar.calendarAction(f.db, owner, { action: 'feed.create', category: 'projects' }, 'https://portal.example.test');
+  f.sqlite.exec('DELETE FROM campaigns; DELETE FROM records; UPDATE projects SET starts_at=NULL,ends_at=NULL');
+  observe(f, null);
+  const response = await feedRoute.GET(new Request(created.feedUrl), { params: Promise.resolve({ token: created.feedUrl.split('/').at(-1) }) });
+  assert.equal(response.status, 200);
+  const ics = await response.text();
+  assert.match(response.headers.get('Content-Type'), /^text\/calendar; charset=utf-8$/);
+  assert.ok(!ics.includes('METHOD:'), 'A read-only subscription is not an iTIP scheduling transaction.');
+  assert.match(ics, /BEGIN:VTIMEZONE\r\nTZID:UTC\r\nBEGIN:STANDARD\r\nDTSTART:19700101T000000\r\nTZOFFSETFROM:\+0000\r\nTZOFFSETTO:\+0000\r\nTZNAME:UTC\r\nEND:STANDARD\r\nEND:VTIMEZONE/);
+  assert.ok(!/BEGIN:(VEVENT|VFREEBUSY|VTODO)/.test(ics), 'No fake appointment or availability is published.');
+  assert.ok(ics.endsWith('END:VCALENDAR\r\n'));
+  for (const line of ics.split('\r\n')) assert.ok(Buffer.byteLength(line, 'utf8') <= 75);
+  observe(f, { userId: owner.userId, email: owner.email, displayName: '' });
+  const download = await route.GET(new Request('https://portal.example.test/api/calendar?from=2026-10-01&to=2026-10-31&category=projects&format=ics'));
+  assert.equal(download.status, 200); assert.match(await download.text(), /BEGIN:VTIMEZONE/);
+});
+
+test('an anonymous feed is fenced after its last projection when the link, account or scope is revoked', async t => {
+  for (const change of ['feed', 'blocked', 'membership', 'platform-owner']) await t.test(change, async t => {
+    const f = fixture(t), owner = await actor(f, 'owner');
+    const created = await calendar.calendarAction(f.db, owner, { action: 'feed.create', category: 'projects', ...(change === 'platform-owner' ? {} : { projectId: 'project-a' }) }, 'https://portal.example.test');
+    let changed = false;
+    f.afterRead(sql => {
+      if (changed || !sql.includes('FROM records r JOIN projects')) return;
+      changed = true;
+      if (change === 'feed') f.sqlite.prepare('UPDATE calendar_feeds SET revoked_at=? WHERE id=?').run(timestamp, created.id);
+      else if (change === 'blocked') f.sqlite.prepare("UPDATE portal_users SET status='blocked' WHERE user_id=?").run(owner.userId);
+      else if (change === 'membership') f.sqlite.prepare('UPDATE members SET revoked_at=? WHERE user_id=?').run(timestamp, owner.userId);
+      else f.sqlite.prepare("UPDATE members SET organization_id='org_proex' WHERE user_id=?").run(owner.userId);
+    });
+    observe(f, null);
+    const response = await feedRoute.GET(new Request(created.feedUrl), { params: Promise.resolve({ token: created.feedUrl.split('/').at(-1) }) });
+    assert.ok(changed); assert.equal(response.status, 404);
+    assert.equal((await response.json()).code, 'calendar_feed_unavailable');
+    assert.equal(response.headers.get('Cache-Control'), 'private, no-store');
+  });
+});
+
+test('a projects feed never releases loan-linked records after the owner loses loans.read mid-request', async t => {
+  for (const timing of ['before-records', 'after-records']) await t.test(timing, async t => {
+    const f = fixture(t), manager = await actor(f, 'manager');
+    f.insert('records', { id: 'linked-private', project_id: 'project-a', kind: 'project', loan_id: 'loan-a',
+      title: 'RESTRICTED LOAN RECORD', occurred_at: timestamp, created_by: manager.userId, created_at: timestamp });
+    const created = await calendar.calendarAction(f.db, manager, { action: 'feed.create', category: 'projects', projectId: 'project-a' }, 'https://portal.example.test');
+    let changed = false;
+    f.afterRead(sql => {
+      const matches = timing === 'before-records' ? sql.includes('FROM projects p WHERE') : sql.includes('FROM records r JOIN projects');
+      if (!changed && matches) { changed = true; f.sqlite.prepare("UPDATE members SET role='viewer' WHERE user_id=?").run(manager.userId); }
+    });
+    observe(f, null);
+    const response = await feedRoute.GET(new Request(created.feedUrl), { params: Promise.resolve({ token: created.feedUrl.split('/').at(-1) }) });
+    assert.ok(changed);
+    assert.ok([200, 404].includes(response.status));
+    assert.ok(!(await response.text()).includes('RESTRICTED LOAN RECORD'));
+  });
 });
 
 test('HTTP routes protect reads/writes, bound date ranges, and serve authorized ICS without caching', async t => {
