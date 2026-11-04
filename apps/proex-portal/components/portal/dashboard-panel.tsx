@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { ArrowRight, CalendarDays, Check, CheckCircle2, ChevronRight, Clock3, FolderKanban, Info, PackageSearch, Pin, Settings2, TriangleAlert, type LucideIcon } from 'lucide-react';
+import { ArrowRight, CalendarDays, CheckCircle2, ChevronRight, Clock3, FolderKanban, Info, PackageSearch, Pin, Settings2, TriangleAlert, type LucideIcon } from 'lucide-react';
 import { recommendedModules, type ModuleId, type PortalModule } from './navigation-model';
 import styles from './dashboard-panel.module.css';
 // Only server-projected records are used for business counts.
@@ -22,7 +22,7 @@ type Props = {
     selectedProjectId: string;
     unitName?: string;
     now: number;
-    onSelectProject: (id: string) => void;
+    onOpenProject: (id: string) => void;
     known: {
         projects: boolean;
         items: boolean;
@@ -41,7 +41,7 @@ type Summary = {
 };
 const available = (item: Row) => Number(item.available ?? (Number(item.stock ?? 0) - Number(item.reserved ?? 0)));
 const date = (value: unknown) => { const result = new Date(value as string | number); return Number.isFinite(result.getTime()) ? result.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : 'Data não informada'; };
-export default function DashboardPanel({ modules, pinned, frequent, onNavigate, onTogglePin, displayName, role, roleLabel, projects, items, loans, campaigns, selectedProjectId, unitName, now, onSelectProject, known }: Props) {
+export default function DashboardPanel({ modules, pinned, frequent, onNavigate, onTogglePin, displayName, role, roleLabel, projects, items, loans, campaigns, selectedProjectId, unitName, now, onOpenProject, known }: Props) {
     const [customizing, setCustomizing] = useState(false);
     const allowed = modules.map(module => module.id);
     const find = (id: ModuleId) => modules.find(module => module.id === id);
@@ -230,19 +230,17 @@ export default function DashboardPanel({ modules, pinned, frequent, onNavigate, 
     <div className="pd-heading">
     <div>
     <h2>Seus projetos</h2>
-    <p>Selecione um projeto para acompanhar seus registros.</p>
+    <p>Abra um projeto para ver sua ficha, agenda e registros.</p>
     </div>
-    {find('projects') && <button type="button" className="pd-inline-link" onClick={() => onNavigate('projects')}>Ver todos <ArrowRight size={14} aria-hidden="true"/>
-    </button>}
-    </div>{projects.length ? <div className="pd-projects">{selectedProjectId && <button className="pd-all-projects" onClick={() => onSelectProject('')}>
-            <FolderKanban size={17}/>Todos os meus projetos<ArrowRight size={14}/>
-            </button>}{visibleProjects.map(project => <button key={project.id} className={selectedProjectId === project.id ? 'is-active' : ''} aria-pressed={selectedProjectId === project.id} onClick={() => onSelectProject(project.id)}>
+    </div>{projects.length ? <div className="pd-projects">{find('projects') && <button type="button" className="pd-all-projects" onClick={() => onNavigate('projects')}>
+            <FolderKanban size={17} aria-hidden="true"/>Todos os meus projetos<ArrowRight size={14} aria-hidden="true"/>
+            </button>}{visibleProjects.map(project => <button type="button" key={project.id} aria-label={`Abrir projeto: ${project.name}`} onClick={() => onOpenProject(project.id)}>
             <span className="pd-project-initial" style={{ borderColor: /^#[\da-f]{6}$/i.test(project.color ?? '') ? project.color : undefined }}>{String(project.short_name || project.name || 'P').slice(0, 2).toUpperCase()}</span>
             <span>
             <strong>{project.name}</strong>
             <small>{project.status === 'archived' ? 'Arquivado · histórico preservado' : project.scope === 'external' ? 'Projeto externo' : 'Projeto interno'}</small>
             </span>
-            {selectedProjectId === project.id ? <Check size={17} aria-hidden="true"/> : <ChevronRight size={16} aria-hidden="true"/>}
+            <ChevronRight size={16} aria-hidden="true"/>
             </button>)}</div> : <div className="pd-calm">
         <FolderKanban size={28}/>
         <div>

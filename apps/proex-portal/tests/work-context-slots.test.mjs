@@ -10,7 +10,7 @@ const projects = [{id: 'project-a', name: 'Projeto A'}, {id: 'project-b', name: 
 const ProjectDetailBoundary = 'ProjectDetailBoundary';
 function harness(file, props = {}, internalMaterial = false) {
   let index = 0, tree, pendingRender = false;
-  const slots = [], effects = [], requests = [], compiledModule = {exports: {}};
+  const slots = [], effects = [], requests = [], scrolls = [], compiledModule = {exports: {}};
   const sameDeps = (a, b) => a && a.length === b.length && a.every((value, n) => value === b[n]);
   const hooks = {
     useState(initial) {const i = index++; if (!(i in slots)) slots[i] = typeof initial === 'function' ? initial() : initial; return [slots[i], value => {slots[i] = typeof value === 'function' ? value(slots[i]) : value; pendingRender = true;}];},
@@ -23,13 +23,13 @@ function harness(file, props = {}, internalMaterial = false) {
   const code = ts.transpileModule(source, {compilerOptions: {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX}}).outputText;
   vm.runInNewContext(code + (internalMaterial ? '\nmodule.exports.MaterialDialogForTest = MaterialDialog;' : ''), {
     module: compiledModule, exports: compiledModule.exports, require: name => name === 'react' ? hooks : name === 'react/jsx-runtime' ? {jsx, jsxs: jsx} : name === 'lucide-react' ? new Proxy({}, {get: (_target, key) => String(key)}) : name.endsWith('.css') ? {default: new Proxy({}, {get: (_target, key) => String(key)})} : name === './project-detail' ? {default: ProjectDetailBoundary} : name === '@/lib/extension-catalog' ? {areaLabel: value => value, lineLabel: value => value, groupUnits: () => [], EXTENSION_LINES: [], THEMATIC_AREAS: []} : {default: () => null, useFormDraft: () => ({clear() {}}), DraftNotice: () => null},
-    URL, Date, Intl, Error, AbortController, FormData, crypto, fetch: (url, init) => new Promise(resolve => requests.push({url, init, resolve})),
+    URL, Date, Intl, Error, AbortController, FormData, crypto, window: {requestAnimationFrame: run => run(), scrollTo: options => scrolls.push(options.top)}, fetch: (url, init) => new Promise(resolve => requests.push({url, init, resolve})),
   });
   const Component = internalMaterial ? compiledModule.exports.MaterialDialogForTest : compiledModule.exports.default;
   function nodes() {const result = []; const visit = node => {if (!node || typeof node !== 'object') return; if (Array.isArray(node)) return node.forEach(visit); result.push(node); visit(node.props?.children);}; visit(tree); return result;}
   const h = {
-    requests,
-    render(patch = {}, flush = true) {props = {...props, ...patch}; let count = 0; do {pendingRender = false; index = 0; effects.length = 0; tree = Component(props); assert.ok(++count < 5, 'render converges after a controlled target change');} while (pendingRender); for (const node of nodes()) if (node.props?.ref && !node.props.ref.current) node.props.ref.current = {open: false, showModal() {this.open = true;}, close() {this.open = false;}, scrollIntoView() {}}; if (flush) h.effects();},
+    requests, scrolls,
+    render(patch = {}, flush = true) {props = {...props, ...patch}; let count = 0; do {pendingRender = false; index = 0; effects.length = 0; tree = Component(props); assert.ok(++count < 5, 'render converges after a controlled target change');} while (pendingRender); for (const node of nodes()) if (node.props?.ref && !node.props.ref.current) node.props.ref.current = {open: false, showModal() {this.open = true;}, close() {this.open = false;}, scrollIntoView() {}, focus() {}}; if (flush) h.effects();},
     effects() {effects.splice(0).forEach(effect => effect());},
     body() {return text(tree);},
     node(type, predicate = () => true) {return nodes().find(node => node.type === type && predicate(node));},
@@ -58,7 +58,7 @@ test('ProjectPanel accepts only a visible initial target and preserves the list 
 test('manual open/back notifies URL state once and its echo does not reopen the detail or discard a new form', () => {
   const seen = [], h = panel({onDetailChange: id => seen.push(id)}); try {
     h.click('Acessar projeto'); h.render({initialProjectId: 'project-a'}); assert.equal(h.detail().props.projectId, 'project-a'); assert.deepEqual(seen, ['project-a']);
-    h.detail().props.onBack(); h.render({initialProjectId: ''}); assert.equal(h.detail(), undefined); assert.deepEqual(seen, ['project-a', null]);
+    h.detail().props.onBack(); h.render({initialProjectId: ''}); assert.equal(h.detail(), undefined); assert.deepEqual(seen, ['project-a', null]); assert.deepEqual(h.scrolls, [0, 0]);
     h.render({initialProjectId: 'project-b'}); assert.equal(h.detail().props.projectId, 'project-b'); assert.deepEqual(seen, ['project-a', null], 'incoming targets are not echoed back');
     h.click('Novo projeto'); h.render({initialProjectId: ''}); assert.match(h.body(), /Criar projeto/); assert.equal(h.detail(), undefined); assert.equal(seen.at(-1), null);
     h.render({initialProjectId: 'project-a'}); assert.equal(h.detail().props.projectId, 'project-a'); assert.ok(!h.body().includes('Criar projeto'));
