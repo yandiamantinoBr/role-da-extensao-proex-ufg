@@ -8,11 +8,12 @@ import { TaskSignals } from './work-signals';
 import { WorkTaskCard } from './work-task-card';
 import { TaskPageSummary } from './task-page-summary';
 import { TaskTriage, TaskTriageMatrix } from './task-triage';
+import styles from './follow-up-panel.module.css';
 
-const field='mt-1 min-h-11 w-full min-w-0 rounded-xl border border-[var(--muted)] bg-[var(--canvas)] px-3 py-2 text-base text-[var(--ink)]';
+const field='mt-1 min-h-11 w-full min-w-0 rounded-xl border bg-[var(--canvas)] px-3 py-2 text-base text-[var(--ink)] '+styles.field;
 const button='justify-self-start max-w-full inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[var(--muted)] bg-[var(--canvas)] px-4 py-2 font-semibold text-[var(--ink)] disabled:opacity-50';
 const primary='justify-self-start max-w-full p-button p-button-primary min-h-11 disabled:opacity-50';
-const focusAnchor='[scroll-margin-block:96px_112px] focus:outline-3 focus:outline-offset-2 focus:outline-[var(--focus)]';
+const focusAnchor=styles.focusAnchor;
 const emptyCatalog:Catalog={organizations:[],projects:[],people:[],teamPeople:[],teams:[],items:[],campaigns:[],loans:[],canEdit:false,canManageTeams:false};
 type Detail={task:Task;checklist:Checklist|null;workCandidates:{userId:string;name:string}[];workGrants:{id:string;userId:string}[];history:{version:number;createdAt:string;snapshot:{status:string;progressNote?:string}}[]};
 type Props={defaultProjectId?:string;defaultOrganizationId?:string;initialTaskId?:string;serverDay?:string;onChanged?:()=>void|Promise<void>;onSelectTask?:(id:string)=>void;onOpenReports?:()=>void;basePath?:string};

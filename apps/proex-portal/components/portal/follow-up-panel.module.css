@@ -1,0 +1,13 @@
+.field,
+:global(html[data-theme=dark]) .field {
+  border-color: var(--muted);
+}
+
+.focusAnchor {
+  scroll-margin-block: 96px 112px;
+}
+
+.focusAnchor:focus {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
