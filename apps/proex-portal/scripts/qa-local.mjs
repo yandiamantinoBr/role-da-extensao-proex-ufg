@@ -250,8 +250,11 @@ async function run(options) {
   const temporaryParent = realpathSync(tmpdir()), directory = mkdtempSync(join(temporaryParent, TEMP_PREFIX));
   mkdirSync(join(directory, 'runtime')); mkdirSync(join(directory, 'data'));
   const authSecret = randomBytes(32).toString('base64url'), setupToken = randomBytes(32).toString('base64url');
-  const redact = text => [authSecret, setupToken, QA_TEST_PASSWORD].reduce((value, secret) => value.split(secret).join('[SEGREDO QA OMITIDO]'), String(text));
-  const child = spawn(process.execPath, [scriptPath, '--serve'], { cwd: directory, env: qaEnvironment(directory, authSecret, setupToken), stdio: ['ignore', 'pipe', 'pipe', 'ipc'], windowsHide: true });
+  const credentialSecret = options.credentialVault ? randomBytes(32).toString('base64url') : null;
+  const redact = text => [authSecret, setupToken, QA_TEST_PASSWORD, credentialSecret].filter(Boolean).reduce((value, secret) => value.split(secret).join('[SEGREDO QA OMITIDO]'), String(text));
+  const environment = qaEnvironment(directory, authSecret, setupToken);
+  if (credentialSecret) environment.PROEX_KEYS_SECRET = credentialSecret;
+  const child = spawn(process.execPath, [scriptPath, '--serve'], { cwd: directory, env: environment, stdio: ['ignore', 'pipe', 'pipe', 'ipc'], windowsHide: true });
   // Do not forward raw framework logs: even local authentication can log credentials.
   child.stdout.resume(); child.stderr.resume();
   let cleanupPromise;
@@ -308,11 +311,11 @@ async function main() {
   const args = process.argv.slice(2);
   if (args.length === 1 && args[0] === '--serve') return serve();
   if (args.includes('--help')) {
-    console.log('Uso: node scripts/qa-local.mjs [--smoke] [--sync-smoke] [--backup-smoke] [--benchmark]\nRequer build:node atual e porta 5173 livre. Sem --smoke, mantém o QA aberto para o navegador.\nHost fixo 127.0.0.1; não aceita URL/host remoto. Não lê .env/.dev.vars, não instala dependências e não acessa a planilha/Drive reais.');
+    console.log('Uso: node scripts/qa-local.mjs [--smoke] [--sync-smoke] [--backup-smoke] [--benchmark] [--credential-vault]\nRequer build:node atual e porta 5173 livre. Sem --smoke, mantém o QA aberto para o navegador.\nHost fixo 127.0.0.1; não aceita URL/host remoto. Não lê .env/.dev.vars, não instala dependências e não acessa a planilha/Drive reais.');
     return;
   }
-  if (args.some(arg => !['--smoke', '--sync-smoke', '--backup-smoke', '--benchmark'].includes(arg))) throw new Error('Opção desconhecida; use --help. Host/URL remoto não são aceitos.');
-  await run({ smoke: args.includes('--smoke'), syncSmoke: args.includes('--sync-smoke'), backupSmoke: args.includes('--backup-smoke'), benchmark: args.includes('--benchmark') });
+  if (args.some(arg => !['--smoke', '--sync-smoke', '--backup-smoke', '--benchmark', '--credential-vault'].includes(arg))) throw new Error('Opção desconhecida; use --help. Host/URL remoto não são aceitos.');
+  await run({ smoke: args.includes('--smoke'), syncSmoke: args.includes('--sync-smoke'), backupSmoke: args.includes('--backup-smoke'), benchmark: args.includes('--benchmark'), credentialVault: args.includes('--credential-vault') });
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === scriptPath) {
