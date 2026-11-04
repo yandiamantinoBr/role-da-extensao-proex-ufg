@@ -150,6 +150,7 @@ const LEGACY_PRESETS_KEY = 'proex.reports.presets.v1';
 const PRESETS_PREFIX = 'proex.reports.presets.v2:';
 const PAGE_SIZES = [25, 50, 100];
 const EMPTY_ROWS: ExportRow[] = [];
+const CURRENT_POSITION_PERIOD = 'Posição atual (sem filtro de período)';
 
 function display(dataset: DatasetId, row: ExportRow, key: string): unknown {
   const value = key === 'mes' ? monthOf(row, DATASETS[dataset].dateKey) : row[key];
@@ -317,7 +318,7 @@ export function ProjectReportExports({ projectId, projectName, officialUrl }: { 
       const info: [string, string][] = [
         ['Relatório', project.label],
         ['Recorte', presentation.projectName ?? 'Projeto selecionado'],
-        ['Período', 'Todo o período'],
+        ['Período', CURRENT_POSITION_PERIOD],
         ['Linhas', '1'],
         ['Gerado em', now.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) + ' (Brasília)'],
       ];
@@ -341,7 +342,7 @@ export function ProjectReportExports({ projectId, projectName, officialUrl }: { 
   const details = previewRow ? DATASETS.projects.columns.filter(column =>
     ['unidade_sigla', 'area_tematica', 'modalidade', 'abrangencia', 'etapa', 'marcos_agenda'].includes(column.key)) : [];
   return <section ref={detach} className={`p-card ${styles.projectReport}`} aria-label="Baixar resumo do projeto">
-    <ReportMasthead label="Relatório do projeto" title={summary?.projectName || projectName || 'Resumo do projeto'} description="Ficha e totais do período completo" project projectBrand={summary ? summary.projectBrand : projectBrandFor(projectId, projectName, officialUrl)}/>
+    <ReportMasthead label="Relatório do projeto" title={summary?.projectName || projectName || 'Resumo do projeto'} description="Ficha e totais da posição atual" project projectBrand={summary ? summary.projectBrand : projectBrandFor(projectId, projectName, officialUrl)}/>
     <div className={styles.projectReportBody}>
       <div className={styles.projectReportActions}>
         <p className={styles.reportHelp}>Para escolher dados, colunas ou datas, abra Relatórios do projeto.</p>
@@ -383,14 +384,17 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
   const [columns, setColumns] = useState<string[]>(config.defaults);
   const [groupBy, setGroupBy] = useState(config.groups[0]);
   const [measure, setMeasure] = useState('__count__');
-  const [focus, setFocus] = useState('');
   const [searchState, setSearchState] = useState({ userId, value: '' });
   const search = searchState.userId === userId ? searchState.value : '';
   const setSearch = (value: string) => setSearchState({ userId, value });
-  const [measurementUnit, setMeasurementUnit] = useState('');
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null);
-  const [page, setPage] = useState(0), [pageSize, setPageSize] = useState(25);
+  const [pageSize, setPageSize] = useState(25);
   const queryKey = JSON.stringify([userId, dataset, projectId, unitId, area, from, to, assetDetails, includeNotes, outflowType, returnState]);
+  const initialView = { queryKey, focus: '', measurementUnit: '', page: 0 };
+  const [view, setView] = useState(initialView);
+  if (view.queryKey !== queryKey) setView(initialView);
+  const { focus, measurementUnit, page } = view.queryKey === queryKey ? view : initialView;
+  const updateView = (changes: Partial<Omit<typeof view, 'queryKey'>>) => setView(current => ({ ...current, ...changes }));
   const [loadedQueryKey, setLoadedQueryKey] = useState('');
   const [loadedRows, setRows] = useState<ExportRow[]>([]), [truncated, setTruncated] = useState(false);
   const [fetching, setLoading] = useState(true), [error, setError] = useState('');
@@ -432,7 +436,7 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
     setDataset(id); setAssetDetails(false); setIncludeNotes(false); setOutflowType('all'); setReturnState('all'); setColumns(preset?.columns.filter(key => next.columns.some(column => column.key === key)) ?? next.defaults);
     setGroupBy(preset && next.groups.includes(preset.groupBy) ? preset.groupBy : next.groups[0]);
     setMeasure(preset && (preset.measure === '__count__' || next.columns.some(column => column.key === preset.measure && column.numeric && !column.nonAdditive)) ? preset.measure : '__count__');
-    setSearch(preset?.search ?? ''); setMeasurementUnit(''); setFocus(''); setSort(null); setPage(0);
+    setSearch(preset?.search ?? ''); updateView({ measurementUnit: '', focus: '', page: 0 }); setSort(null);
   }
 
   const valueOf = (row: ExportRow, key: string) => display(dataset, row, key);
@@ -493,7 +497,13 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
   const stamp = new Date().toISOString().slice(0, 10);
   const fileBase = `proex-${dataset}-${stamp}`;
   const exportValue = (row: ExportRow, key: string) => { const column = config.columns.find(item => item.key === key); const value = valueOf(row, key); return column?.date ? dateLabel(value) : column?.numeric ? reportNumber(value) : value; };
-  const info: [string, string][] = [['Relatório', config.label], ['Recorte', scopeLabel || 'Todos os projetos que você pode consultar'], ['Período', from || to ? `${from ? dateLabel(from) : 'início'} a ${to ? dateLabel(to) : 'hoje'}` : 'Todo o período'], ['Unidade de medida', measurementUnit || 'Todas, separadas em cada registro'], ['Busca', search || '—'], ['Destaque', focus ? `${config.columns.find(column => column.key === groupBy)?.label ?? 'Mês'}: ${focus}` : '—'], ['Linhas', String(sorted.length)], ['Gerado em', new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) + ' (Brasília)'], ['Compartilhamento', 'Recorte das suas permissões. Revise os textos livres antes de compartilhar.']];
+  const positionOnly = dataset === 'projects' || dataset === 'materials';
+  let periodLabel = 'Todo o período';
+  if (positionOnly) periodLabel = CURRENT_POSITION_PERIOD;
+  else if (from && to) periodLabel = `${dateLabel(from)} a ${dateLabel(to)}`;
+  else if (from) periodLabel = `A partir de ${dateLabel(from)}`;
+  else if (to) periodLabel = `Até ${dateLabel(to)}`;
+  const info: [string, string][] = [['Relatório', config.label], ['Recorte', scopeLabel || 'Todos os projetos que você pode consultar'], ['Período', periodLabel], ['Unidade de medida', measurementUnit || 'Todas, separadas em cada registro'], ['Busca', search || '—'], ['Destaque', focus ? `${config.columns.find(column => column.key === groupBy)?.label ?? 'Mês'}: ${focus}` : '—'], ['Linhas', String(sorted.length)], ['Gerado em', new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) + ' (Brasília)'], ['Compartilhamento', 'Recorte das suas permissões. Revise os textos livres antes de compartilhar.']];
   if (dataset === 'outflow_details') info.push(['Tipo de saída', outflowType === 'all' ? 'Todos' : LABELS.tipo[outflowType]], ['Devolução', returnState === 'all' ? 'Todas' : LABELS.situacao_retorno[returnState]],
     ['Referências', 'Unidade e saldo atuais do cadastro. Saldos repetidos por registro não devem ser somados. Uma unidade individual por retirada de equipamento; retornos não criam nova saída.'], ['Datas ausentes', 'Sem filtro de período é possível consultar retiradas sem data efetiva; previsões não substituem o histórico.'],
     ['Operador', 'Nome atual do perfil, somente para quem tem permissão operacional vigente; não identifica o beneficiário.'], ['Textos livres', includeNotes ? 'Consulta opcional sujeita à permissão operacional atual; confira as colunas antes de compartilhar.' : 'Não consultados nem exportados.'],
@@ -552,16 +562,16 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
     <label className={`p-field ${styles.subject}`}><span>Assunto do relatório</span><select value={dataset} onChange={event => chooseDataset(event.target.value as DatasetId)}>{datasets.map(id => <option key={id} value={id}>{DATASETS[id].label}</option>)}</select></label>
 
     <div className={styles.primaryControls}>
-      <label className={`p-field ${styles.search}`}><span>Buscar nas linhas</span><span className={styles.searchBox}><Search size={15} /><input value={search} onChange={event => { setSearch(event.target.value); setPage(0); }} placeholder="Nome, material, título, observação…" />{search && <button type="button" aria-label="Limpar busca" onClick={() => setSearch('')}><X size={14} /></button>}</span></label>
+      <label className={`p-field ${styles.search}`}><span>Buscar nas linhas</span><span className={styles.searchBox}><Search size={15} /><input value={search} onChange={event => { setSearch(event.target.value); updateView({ page: 0 }); }} placeholder="Nome, material, título, observação…" />{search && <button type="button" aria-label="Limpar busca" onClick={() => { setSearch(''); updateView({ page: 0 }); }}><X size={14} /></button>}</span></label>
     </div>
     <details className={styles.options}><summary>Ajustar recorte e colunas <span>{chosen.length} colunas · {visiblePresets.length} modelos</span>{activeOptions.length > 0 && <small>{activeOptions.join(' · ')}</small>}</summary><div className={styles.optionsBody}>
-    {dataset === 'materials' && <label className="p-form-help"><input type="checkbox" checked={assetDetails} onChange={event => { setAssetDetails(event.target.checked); setColumns(DATASETS.materials.defaults); setRows([]); setFocus(''); setMeasure('__count__'); }}/>{' '}Consultar metadados patrimoniais privados (somente projetos com permissão vigente de inventário). A referência de responsável, processo e valor documentado só entra na exportação ao escolher essas colunas.</label>}
-    {dataset === 'outflow_details' && <div className="space-y-3"><p className="p-form-help">A ação aparece quando foi vinculada no registro. O operador é quem registrou a saída, com nome atual do perfil; beneficiários e contatos não são consultados. Saldo e unidade são os atuais do cadastro.</p><label className="p-form-help"><input type="checkbox" checked={includeNotes} onChange={event => { setIncludeNotes(event.target.checked); setColumns(DATASETS.outflow_details.defaults); setRows([]); setFocus(''); setMeasure('__count__'); setPage(0); }}/>{' '}Disponibilizar motivos, observações e condições com permissão operacional vigente (textos livres podem conter dados pessoais). Selecione essas colunas e revise seu conteúdo antes de exportar.</label></div>}
+    {dataset === 'materials' && <label className="p-form-help"><input type="checkbox" checked={assetDetails} onChange={event => { setAssetDetails(event.target.checked); setColumns(DATASETS.materials.defaults); setRows([]); setMeasure('__count__'); }}/>{' '}Consultar metadados patrimoniais privados (somente projetos com permissão vigente de inventário). A referência de responsável, processo e valor documentado só entra na exportação ao escolher essas colunas.</label>}
+    {dataset === 'outflow_details' && <div className="space-y-3"><p className="p-form-help">A ação aparece quando foi vinculada no registro. O operador é quem registrou a saída, com nome atual do perfil; beneficiários e contatos não são consultados. Saldo e unidade são os atuais do cadastro.</p><label className="p-form-help"><input type="checkbox" checked={includeNotes} onChange={event => { setIncludeNotes(event.target.checked); setColumns(DATASETS.outflow_details.defaults); setRows([]); setMeasure('__count__'); }}/>{' '}Disponibilizar motivos, observações e condições com permissão operacional vigente (textos livres podem conter dados pessoais). Selecione essas colunas e revise seu conteúdo antes de exportar.</label></div>}
     <div className={styles.controls}>
-      {dataset === 'outflow_details' && <><label className="p-field"><span>Tipo de saída</span><select value={outflowType} onChange={event => { setOutflowType(event.target.value); setFocus(''); setPage(0); }}><option value="all">Todas as saídas</option>{['distribute', 'redeem', 'loan'].map(type => <option value={type} key={type}>{LABELS.tipo[type]}</option>)}</select></label><label className="p-field"><span>Situação da devolução</span><select value={returnState} onChange={event => { setReturnState(event.target.value); setFocus(''); setPage(0); }}><option value="all">Todas as situações</option>{['not_applicable', 'out', 'returned'].map(state => <option value={state} key={state}>{LABELS.situacao_retorno[state]}</option>)}</select></label></>}
-      <label className="p-field"><span>Agrupar gráfico por</span><select value={groupBy} onChange={event => { setGroupBy(event.target.value); setFocus(''); }}>{config.groups.map(key => <option key={key} value={key}>{key === 'mes' ? 'Mês' : config.columns.find(column => column.key === key)?.label}</option>)}</select></label>
+      {dataset === 'outflow_details' && <><label className="p-field"><span>Tipo de saída</span><select value={outflowType} onChange={event => setOutflowType(event.target.value)}><option value="all">Todas as saídas</option>{['distribute', 'redeem', 'loan'].map(type => <option value={type} key={type}>{LABELS.tipo[type]}</option>)}</select></label><label className="p-field"><span>Situação da devolução</span><select value={returnState} onChange={event => setReturnState(event.target.value)}><option value="all">Todas as situações</option>{['not_applicable', 'out', 'returned'].map(state => <option value={state} key={state}>{LABELS.situacao_retorno[state]}</option>)}</select></label></>}
+      <label className="p-field"><span>Agrupar gráfico por</span><select value={groupBy} onChange={event => { setGroupBy(event.target.value); updateView({ focus: '', page: 0 }); }}>{config.groups.map(key => <option key={key} value={key}>{key === 'mes' ? 'Mês' : config.columns.find(column => column.key === key)?.label}</option>)}</select></label>
       <label className="p-field"><span>Medida</span><select value={effectiveMeasure} onChange={event => setMeasure(event.target.value)}><option value="__count__">Quantidade de {dataset === 'movements' ? 'movimentações' : 'linhas'}</option>{numericColumns.map(column => <option key={column.key} value={column.key} disabled={mixedUnits && PHYSICAL_MEASURES.includes(column.key)}>Soma de {column.label.toLowerCase()}</option>)}</select></label>
-      {unitOptions.length > 0 && <label className="p-field"><span>Unidade de medida</span><select value={measurementUnit} onChange={event => { setMeasurementUnit(event.target.value); setFocus(''); setPage(0); }}><option value="">Todas as medidas</option>{unitOptions.map(unit => <option key={unit} value={unit}>{unit}</option>)}</select></label>}
+      {unitOptions.length > 0 && <label className="p-field"><span>Unidade de medida</span><select value={measurementUnit} onChange={event => updateView({ measurementUnit: event.target.value, focus: '', page: 0 })}><option value="">Todas as medidas</option>{unitOptions.map(unit => <option key={unit} value={unit}>{unit}</option>)}</select></label>}
       <details className={styles.columns}>
         <summary><Columns3 size={16} />Colunas ({chosen.length}/{config.columns.length})</summary>
         <div>
@@ -583,8 +593,8 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
     {error ? <p className="p-notice p-notice-error" role="alert">{error}</p> : null}
     <div className={styles.summary} aria-live="polite">
       <span className={styles.summaryIcon}><Icon size={20} /></span>
-      <p><strong>{config.label}</strong> · {loading ? 'carregando…' : `${formatNumber(filtered.length)} ${filtered.length === 1 ? 'linha' : 'linhas'}`}{scopeLabel ? ` · ${scopeLabel}` : ''}{from || to ? ` · ${from ? dateLabel(from) : 'início'} a ${to ? dateLabel(to) : 'hoje'}` : ''}</p>
-      {focus && <button type="button" className={styles.focusChip} onClick={() => setFocus('')}>{groupLabel}: {groupBy === 'mes' && /^\d{4}-\d{2}$/.test(focus) ? monthLabel(focus) : focus}<X size={13} /></button>}
+      <p><strong>{config.label}</strong> · {loading ? 'carregando…' : `${formatNumber(filtered.length)} ${filtered.length === 1 ? 'linha' : 'linhas'}`}{scopeLabel ? ` · ${scopeLabel}` : ''}{positionOnly || from || to ? ` · ${periodLabel}` : ''}</p>
+      {focus && <button type="button" className={styles.focusChip} onClick={() => updateView({ focus: '', page: 0 })}>{groupLabel}: {groupBy === 'mes' && /^\d{4}-\d{2}$/.test(focus) ? monthLabel(focus) : focus}<X size={13} /></button>}
       {!loading && truncated && <small className={styles.warn}>{dataset === 'outflow_details' ? 'Consulta parcial: limite de 5.000 linhas ou 3 MiB. Refine o recorte para consultar e exportar tudo.' : 'Mostrando as primeiras 5.000 linhas. Refine o recorte para ver tudo.'}</small>}
     </div>
 
@@ -609,9 +619,9 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
       </div>
       <div className={styles.pager}>
         <span>{sorted.length ? `${current * pageSize + 1}–${Math.min(sorted.length, (current + 1) * pageSize)} de ${formatNumber(sorted.length)}` : 'Nenhuma linha com esta busca'}</span>
-        <label>Por página <select value={pageSize} onChange={event => { setPageSize(Number(event.target.value)); setPage(0); }}>{PAGE_SIZES.map(size => <option key={size} value={size}>{size}</option>)}</select></label>
-        <button type="button" className="p-button p-button-subtle" disabled={current === 0} onClick={() => setPage(current - 1)}>Anterior</button>
-        <button type="button" className="p-button p-button-subtle" disabled={current >= pages - 1} onClick={() => setPage(current + 1)}>Próxima</button>
+        <label>Por página <select value={pageSize} onChange={event => { setPageSize(Number(event.target.value)); updateView({ page: 0 }); }}>{PAGE_SIZES.map(size => <option key={size} value={size}>{size}</option>)}</select></label>
+        <button type="button" className="p-button p-button-subtle" disabled={current === 0} onClick={() => updateView({ page: current - 1 })}>Anterior</button>
+        <button type="button" className="p-button p-button-subtle" disabled={current >= pages - 1} onClick={() => updateView({ page: current + 1 })}>Próxima</button>
       </div>
     </>}
     <details className={styles.exportOptions}><summary>Exportar linhas deste recorte</summary>
@@ -636,7 +646,7 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
                 <YAxis type="category" dataKey="name" width={150} tick={{ fill: 'var(--rc-axis)', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(value: string) => value.length > 24 ? `${value.slice(0, 23)}…` : value} />
                 <Tooltip cursor={{ fill: 'var(--rc-hover)' }} content={<ChartTooltip unit={measureLabel} />} />
                 <Bar dataKey="value" name={effectiveMeasure === '__count__' ? 'Total' : `Soma de ${measureLabel}`} fill="var(--rc-1)" radius={[0, 4, 4, 0]} maxBarSize={22} cursor="pointer" label={{ position: 'right', fill: 'var(--rc-axis)', fontSize: 11, formatter: (value: unknown) => formatNumber(Number(value) || 0) }}
-                  onClick={(entry: { payload?: { raw?: string } }) => { const raw = entry?.payload?.raw; if (!raw) return; setFocus(current => current === raw ? '' : raw); setPage(0); }} />
+                  onClick={(entry: { payload?: { raw?: string } }) => { const raw = entry?.payload?.raw; if (raw) updateView({ focus: focus === raw ? '' : raw, page: 0 }); }} />
               </BarChart>
             </ResponsiveContainer>
           </div>

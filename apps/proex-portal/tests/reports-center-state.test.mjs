@@ -119,6 +119,58 @@ test('report exports remain disabled immediately on any server-filter or dataset
  } finally { h.dispose(); }
 });
 
+test('changing project clears incompatible unit and chart filters and starts on the first page', async () => {
+ const h = harness();
+ const other = { ...base, projectId: 'project-b', scopeLabel: 'Projeto B' };
+ const resolveRows = async (props, unit, category) => {
+  h.render(props); h.flushEffects();
+  const rows = Array.from({length: 30}, (_, index) => ({ ...row(props.projectId), id: `item-${index}`, classe: category, unidade_medida: unit }));
+  h.requests.at(-1).resolve({ ok: true, json: async () => ({ dataset: 'materials', rows, truncated: false }) });
+  await tick();
+  return h.render(props);
+ };
+ try {
+  let view = await resolveRows(base, 'kit', 'gift');
+  h.input('Unidade de medida').props.onChange({ target: { value: 'kit' } });
+  view = h.render();
+  const chartFilter = nodesInside(view).find(node => node.type === 'Bar' && node.props.onClick);
+  chartFilter.props.onClick({ payload: { raw: 'Brinde' } });
+  h.render();
+  h.button('Próxima').props.onClick();
+  h.render();
+  assert.match(h.text(), /26–30 de 30/);
+
+  h.render(other);
+  assert.equal(h.button('JSON').props.disabled, true);
+  await resolveRows(other, '', 'equipment');
+  assert.match(h.text(), /1–25 de 30/);
+  assert.equal(h.button('JSON').props.disabled, false);
+  assert.equal((await jsonDownload(h)).linhas.length, 30);
+
+  await resolveRows(base, 'kit', 'gift');
+  assert.equal(h.input('Unidade de medida').props.value, '');
+  assert.match(h.text(), /1–25 de 30/);
+ } finally { h.dispose(); }
+});
+
+test('report period on screen and in exports reflects whether the subject applies dates', async () => {
+ const h = harness(), props = { ...base, available: ['projects', 'materials', 'loans'], from: '2026-10-01' };
+ try {
+  h.render(props);
+  for (const dataset of props.available) {
+   h.input('Assunto do relatório').props.onChange({ target: { value: dataset } });
+   h.render(props); h.flushEffects();
+   const request = h.requests.at(-1);
+   assert.equal(new URL(request.url, 'https://synthetic.example.invalid').searchParams.get('from'), props.from);
+   request.resolve({ ok: true, json: async () => ({ dataset, rows: [row('a')], truncated: false }) });
+   await tick(); h.render(props);
+   const period = dataset === 'loans' ? 'A partir de 01/10/2026' : 'Posição atual (sem filtro de período)';
+   assert.ok(h.text().includes(period));
+   assert.equal((await jsonDownload(h)).filtros.Período, period);
+  }
+ } finally { h.dispose(); }
+});
+
 test('a new successful response enables exports only with matching scope metadata and current rows', async () => {
  const h = harness(), next = { ...base, projectId: 'project-b', scopeLabel: 'Projeto B' }; try {
   await load(h); h.render(next); assert.equal(h.button('JSON').props.disabled, true); h.flushEffects();
@@ -220,7 +272,7 @@ test('project summary buttons download the same authorized singleton in each for
   const report = h.renderProject(row.id);
   assert.equal(h.requests.length,0);
   const masthead = nodesInside(report).find(node => node.type?.name === 'ReportMasthead');
-  assert.match(masthead.props.description,/Ficha e totais do período completo/);
+  assert.match(masthead.props.description,/Ficha e totais da posição atual/);
   for (const [button, ext] of [['Excel (XLSX)','xlsx'],['Word (DOCX)','docx'],['PDF','pdf']]) {
    h.button(button).props.onClick();
    const request = h.requests.at(-1);

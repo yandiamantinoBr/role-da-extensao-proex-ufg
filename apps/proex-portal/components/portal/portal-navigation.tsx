@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowRight, ChevronRight, ExternalLink, Menu, PanelLeftClose, PanelLeftOpen, Pin, Search, ShieldCheck, Sparkles, X } from 'lucide-react';
 import { BrandMark } from '@/components/theme/brand-mark';
 import { recommendedModules, type ModuleId, type PortalModule } from './navigation-model';
@@ -56,27 +56,48 @@ export function MobileNavigation({ modules, active, onNavigate, pinned, role, on
 }) {
     const [open, setOpen] = useState(false), [query, setQuery] = useState('');
     const dialog = useRef<HTMLDivElement>(null), trigger = useRef<HTMLButtonElement>(null);
+    const navigation = useRef<HTMLElement>(null);
     const allowed = modules.map(module => module.id);
     // The bottom bar moves only when the person changes pins or their access changes.
     const candidates = [...pinned, ...recommendedModules(role, allowed)];
     const primary = [...new Set(candidates)].filter(id => id !== 'overview' && id !== 'profile' && allowed.includes(id)).slice(0, 2);
     const primaryIds: ModuleId[] = ['overview', ...primary, 'profile'].filter((id): id is ModuleId => allowed.includes(id as ModuleId));
     const items = primaryIds.map(id => modules.find(module => module.id === id)).filter((module): module is PortalModule => Boolean(module));
-    useEffect(() => {
-        const desktop = window.matchMedia('(min-width: 721px)');
-        const changed = () => { if (desktop.matches) { setOpen(false); setQuery(''); document.getElementById('main')?.focus({ preventScroll: true }); } };
-        desktop.addEventListener('change', changed);
-        return () => desktop.removeEventListener('change', changed);
-    }, []);
-    useEffect(() => { if (!open)
-        return; const previous = document.body.style.overflow; document.body.style.overflow = 'hidden'; const timer = window.setTimeout(() => dialog.current?.querySelector<HTMLButtonElement>('.pn-drawer-close')?.focus(), 0); const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') {
+    const close = useCallback(() => {
         setOpen(false);
-        trigger.current?.focus();
-    } }; document.addEventListener('keydown', escape); return () => { window.clearTimeout(timer); document.body.style.overflow = previous; document.removeEventListener('keydown', escape); }; }, [open]);
-    function close() { setOpen(false); setQuery(''); trigger.current?.focus(); }
+        setQuery('');
+        trigger.current?.focus({ preventScroll: true });
+    }, []);
+
+    useEffect(() => {
+        const mobile = window.matchMedia('(max-width: 720px)');
+        function changed() {
+            if (mobile.matches) return;
+            const moveFocus = dialog.current !== null || navigation.current?.contains(document.activeElement);
+            setOpen(false);
+            setQuery('');
+            if (moveFocus) document.getElementById('main')?.focus({ preventScroll: true });
+        }
+        mobile.addEventListener('change', changed);
+        return () => mobile.removeEventListener('change', changed);
+    }, []);
+
+    useEffect(() => {
+        if (!open) return;
+        const previous = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+        const timer = window.setTimeout(() => dialog.current?.querySelector<HTMLButtonElement>('.pn-drawer-close')?.focus(), 0);
+        const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') close(); };
+        document.addEventListener('keydown', escape);
+        return () => {
+            window.clearTimeout(timer);
+            document.body.style.overflow = previous;
+            document.removeEventListener('keydown', escape);
+        };
+    }, [open, close]);
     function navigate(id: ModuleId) { onNavigate(id); close(); }
     return <>
-    <nav className="pn-mobile-nav" aria-label="Navegação principal no celular">{items.map(({ id, label, icon: Icon }) => <button key={id} className={active === id ? 'is-active' : ''} onClick={() => onNavigate(id)} aria-current={active === id ? 'page' : undefined}>
+    <nav ref={navigation} className="pn-mobile-nav" aria-label="Navegação principal no celular">{items.map(({ id, label, icon: Icon }) => <button key={id} className={active === id ? 'is-active' : ''} onClick={() => onNavigate(id)} aria-current={active === id ? 'page' : undefined}>
         <Icon size={20}/>
         <span>{label}</span>
         </button>)}<button ref={trigger} className={open || !primaryIds.includes(active) ? 'is-active' : ''} onClick={() => setOpen(true)} aria-haspopup="dialog" aria-expanded={open} aria-controls="portal-mobile-navigation">

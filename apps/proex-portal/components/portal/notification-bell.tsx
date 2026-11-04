@@ -207,6 +207,7 @@ export default function NotificationBell({userId,onSelectTask,basePath='/?module
  }
 
  function selectTask(event:React.MouseEvent<HTMLAnchorElement>,id:string,markRead=false) {
+  if(event.defaultPrevented||event.button!==0||event.ctrlKey||event.metaKey||event.shiftKey||event.altKey)return;
   if(onSelectTask){event.preventDefault();onSelectTask(id);}
   if(markRead)void mutate({action:'notification.read',taskId:id,read:true});
   close();
