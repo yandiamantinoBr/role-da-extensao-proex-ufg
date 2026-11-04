@@ -17,13 +17,13 @@ const civilDates=await import(`data:text/javascript;base64,${Buffer.from(civilDa
 const communicationSource = readFileSync(new URL('../lib/project-communication.ts', import.meta.url), 'utf8');
 const communicationCode = ts.transpileModule(communicationSource, {compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
 const communication = await import(`data:text/javascript;base64,${Buffer.from(communicationCode).toString('base64')}`);
-async function renderDetail(relationships,schedule=[],canEdit=false,metadata={}){
+async function renderDetail(relationships,schedule=[],canEdit=false,metadata={}, props={}){
  const slots=[],effects=[];let index=0,tree;
  const hooks={useState(initial){const key=index++;if(!(key in slots))slots[key]={value:typeof initial==='function'?initial():initial};return[slots[key].value,value=>{slots[key].value=typeof value==='function'?value(slots[key].value):value;}];},useRef(initial){const key=index++;return(slots[key]??={value:{current:initial}}).value;},useEffect(fn){const key=index++;if(!(key in slots)){slots[key]=true;effects.push(fn);}}};
  const jsx=(type,props)=>({type,props}),compiled={exports:{}};
  const payload={project:{id:'project-a',name:'Projeto sintético',status:'active',lifecycle:'active',scope:'internal',starts_at:'2026-10-31T13:00:00.000Z',description:'Projeto de contrato'},types:[],links:[],calls:[],schedule,versions:[],relatedProjects:[],organizationalUnits:[],permissions:{canEdit},relationships,...metadata};
  vm.runInNewContext(code,{module:compiled,exports:compiled.exports,require:name=>name==='react'?hooks:name==='react/jsx-runtime'?{jsx,jsxs:jsx}:name==='lucide-react'?new Proxy({},{get:(_,key)=>String(key)}):name.endsWith('.css')?{default:new Proxy({},{get:(_,key)=>String(key)})}:name==='@/lib/extension-catalog'?{areaLabel:value=>value,lineLabel:value=>value}:name==='@/lib/civil-date'?civilDates:name==='@/lib/project-communication'?communication:name==='./reports-center'?{ProjectReportExports:'ProjectReportExports'}:{DraftNotice:()=>null,useFormDraft:()=>({clear(){}})},Date:FixedDate,Intl,URL,AbortController,Number,fetch:async()=>({ok:true,json:async()=>payload})});
- function render(){index=0;tree=compiled.exports.default({projectId:'project-a',projects:[],mutate:async()=>({}),onBack(){},onEdit(){}});}
+ function render(){index=0;tree=compiled.exports.default({projectId:'project-a',projects:[],mutate:async()=>({}),onBack(){},onEdit(){},...props});}
  render();effects.forEach(fn=>fn());await tick();render();
  return{tree,all:nodes(tree),text:text(tree),editSchedule(title){
   const row=nodes(tree).find(node=>node.type==='li'&&text(node).includes(title));
@@ -123,12 +123,18 @@ test('only a detail with report permission mounts the shortcut, including archiv
 });
 
 test('project navigation keeps the project scope and reveals the spreadsheet shortcut only when there is a linked sheet', async () => {
- const empty = await renderDetail({});
+ const props = {projects:[{id:'project-a'}],shortcutModules:['demands','calendar']};
+ const empty = await renderDetail({},[],false,{},props);
  const getNav = ui => ui.all.find(node => node.type === 'nav' && node.props['aria-label'] === 'Atalhos do projeto');
  assert.deepEqual(nodes(getNav(empty)).filter(node=>node.type==='a').map(node=>node.props.href),
   ['/?module=demands&project=project-a','/?module=calendar&project=project-a']);
  const sheet = {id:'local-sheet',label:'Contagem sintética',url:'https://docs.google.com/spreadsheets/d/SYNTHETIC/edit'};
- const linked = await renderDetail({},[],false,{links:[sheet]});
+ const linked = await renderDetail({},[],false,{links:[sheet]},props);
+ const agendaOnly = await renderDetail({},[],false,{}, {...props,shortcutModules:['calendar']});
+ assert.deepEqual(nodes(getNav(agendaOnly)).filter(node=>node.type==='a').map(node=>node.props.href),
+  ['/?module=calendar&project=project-a']);
+ const outsideScope = await renderDetail({},[],false,{}, {...props,projects:[{id:'different-project'}]});
+ assert.equal(getNav(outsideScope),undefined);
  assert.ok(nodes(getNav(linked)).some(node=>node.props.href==='#project-spreadsheets'));
  assert.ok(linked.all.some(node=>node.props.id==='project-spreadsheets'));
 });

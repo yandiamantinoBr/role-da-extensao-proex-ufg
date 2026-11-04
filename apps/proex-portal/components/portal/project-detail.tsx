@@ -8,7 +8,8 @@ import { isCivilDate } from '@/lib/civil-date';
 import { COMMUNICATION_CHANNELS, COMMUNICATION_NOTE_LIMIT, communicationLabel } from '@/lib/project-communication';
 import { useFormDraft, DraftNotice } from './use-form-draft';
 import { ProjectReportExports } from './reports-center';
-type Props={projectId:string;projects:Row[];mutate:(action:string,payload:Row)=>Promise<Row>;onBack:()=>void;onEdit:(project:Row)=>void;onSelect?:(id:string)=>void;renderWorkContext?:(projectId:string)=>ReactNode};
+export type ProjectShortcutModule = 'demands' | 'calendar';
+type Props={projectId:string;shortcutModules?:readonly ProjectShortcutModule[];projects:Row[];mutate:(action:string,payload:Row)=>Promise<Row>;onBack:()=>void;onEdit:(project:Row)=>void;onSelect?:(id:string)=>void;renderWorkContext?:(projectId:string)=>ReactNode};
 type Editor={kind:'link'|'call'|'schedule';row:Row|null};
 const lifecycle={active:'Em andamento',past:'Encerrado',catalog:'Catálogo'};
 const categories={gift:'Brinde',equipment:'Equipamento',distribution:'Distribuição',consumption:'Consumo'};
@@ -108,7 +109,7 @@ function MetadataForm({editor,projectId,projects,mutate,done}:{editor:Editor;pro
  {kind!=='link'&&<p className="p-form-help">Horários do aparelho. Uma atividade editorial não cria campanha, movimentação ou empréstimo.</p>}
  {error&&<p role="alert" className="p-inline-error">{error}</p>}<div className="p-form-footer"><button type="button" className="p-button p-button-subtle" onClick={done}>Cancelar</button><button className="p-button p-button-primary" type="submit">{saving?<LoaderCircle className="p-spin" size={16}/>:<Check size={16}/>}Salvar</button></div></fieldset></form>;
 }
-export default function ProjectDetail({projectId,projects,mutate,onBack,onEdit,onSelect,renderWorkContext}:Props){
+export default function ProjectDetail({projectId,projects,mutate,onBack,onEdit,onSelect,renderWorkContext,shortcutModules=[]}:Props){
  const [result,setResult]=useState<{key:string;data:Row|null;error:string;receivedAt:number}|null>(null),[error,setError]=useState(''),[reload,setReload]=useState(0),[editor,setEditor]=useState<Editor|null>(null),[restoring,setRestoring]=useState(false),[confirmVersion,setConfirmVersion]=useState<Row|null>(null),[allCalls,setAllCalls]=useState(false);
  const editorRef=useRef<HTMLElement|null>(null);useEffect(()=>{if(editor)editorRef.current?.scrollIntoView({behavior:'smooth',block:'start'});},[editor]);
  const requestKey=`${projectId}:${reload}`,data=result?.key===requestKey?result.data:null,loading=result?.key!==requestKey,displayError=error||(result?.key===requestKey?result.error:'');
@@ -121,6 +122,8 @@ export default function ProjectDetail({projectId,projects,mutate,onBack,onEdit,o
  const communicationLinks = projectLinks.filter(link => communicationLabel(link.communication_channel));
  const referenceLinks = projectLinks.filter(link => !communicationLabel(link.communication_channel));
  const materialsUrl=safeUrl(data?.spreadsheetLinks?.materialsUrl),projectSheetLinks=(data?.links??[]).filter((link:Row)=>{try{return new URL(String(link.url)).hostname==='docs.google.com'&&new URL(String(link.url)).pathname.startsWith('/spreadsheets/');}catch{return false;}});
+ const hasSpreadsheets = Boolean(materialsUrl || projectSheetLinks.length);
+ const shortcuts = projects.some(candidate => candidate.id === projectId) ? shortcutModules : [];
  const rel=(key:string)=>relationships[key] as Row[]|null|undefined;
  const items=rel('items'),campaigns=rel('campaigns'),loans=rel('loans'),records=rel('records'),now=result?.receivedAt??0;
  const activeLoans=loans?.filter(loan=>loan.status==='out'||loan.status==='reserved').length??0,lateLoans=loans?.filter(loan=>loanIsLate(loan,now)).length??0;
@@ -151,11 +154,11 @@ export default function ProjectDetail({projectId,projects,mutate,onBack,onEdit,o
  <dl className={styles.facts}><div><dt>Período</dt><dd>{project.starts_at?`${pretty(project.starts_at)}${project.ends_at?` até ${pretty(project.ends_at)}`:''}`:'Não informado'}</dd></div><div><dt>Local</dt><dd>{project.location||'Não informado'}</dd></div><div><dt>Dinâmicas e brindes</dt><dd>{project.prizes_enabled?'Habilitados':'Não habilitados'}</dd></div>{safeUrl(project.official_url)&&<div><dt>Fonte oficial</dt><dd><a className="p-text-link" href={safeUrl(project.official_url)} target="_blank" rel="noopener noreferrer">Abrir página <ExternalLink size={13}/></a></dd></div>}</dl></div>
  {kpis.length>0&&<div className={styles.heroKpis}>{kpis.map(({label:title,value,detail,tone,icon:Icon})=><div key={title} className={tone?styles.kpiWarn:''}><span><Icon size={15}/>{title}</span><strong>{value}</strong><small>{detail}</small></div>)}</div>}
  <p className="p-form-help" style={{marginTop:14}}><ShieldCheck size={14}/> A relação entre programa e projeto organiza o catálogo; os acessos continuam sendo concedidos por projeto.</p></header>
- <nav className={styles.projectQuickActions} aria-label="Atalhos do projeto">
-  <a className="p-button p-button-subtle" href={`/?module=demands&project=${encodeURIComponent(project.id)}`}><ClipboardList size={16} aria-hidden="true"/>Demandas</a>
-  <a className="p-button p-button-subtle" href={`/?module=calendar&project=${encodeURIComponent(project.id)}`}><CalendarDays size={16} aria-hidden="true"/>Agenda</a>
-  {(materialsUrl||projectSheetLinks.length>0)&&<a className="p-button p-button-subtle" href="#project-spreadsheets"><FileText size={16} aria-hidden="true"/>Planilhas</a>}
- </nav>
+ {(shortcuts.length > 0 || hasSpreadsheets) && <nav className={styles.projectQuickActions} aria-label="Atalhos do projeto">
+  {shortcuts.includes('demands') && <a className="p-button p-button-subtle" href={`/?module=demands&project=${encodeURIComponent(project.id)}`}><ClipboardList size={16} aria-hidden="true"/>Demandas</a>}
+  {shortcuts.includes('calendar') && <a className="p-button p-button-subtle" href={`/?module=calendar&project=${encodeURIComponent(project.id)}`}><CalendarDays size={16} aria-hidden="true"/>Agenda</a>}
+  {hasSpreadsheets && <a className="p-button p-button-subtle" href="#project-spreadsheets"><FileText size={16} aria-hidden="true"/>Planilhas</a>}
+ </nav>}
  {renderWorkContext?.(project.id)}
  {data.permissions?.reports&&<ProjectReportExports key={project.id} projectId={project.id} projectName={project.name} officialUrl={project.official_url}/>}
  {data.relatedProjects.length>0&&<div className="p-card"><h3>Programas e projetos relacionados</h3><div className="p-inline" style={{flexWrap:'wrap',marginTop:12}}>{data.relatedProjects.map((related:Row)=><button key={related.id} type="button" className="p-button p-button-subtle" onClick={()=>onSelect?.(related.id)}><FolderKanban size={15}/>{related.name}</button>)}</div></div>}

@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
-import ProjectDetail from './project-detail';
+import ProjectDetail, { type ProjectShortcutModule } from './project-detail';
 import { useFormDraft, DraftNotice } from './use-form-draft';
 import { EXTENSION_LINES, THEMATIC_AREAS, areaLabel, groupUnits } from '@/lib/extension-catalog';
 import styles from './project-panel.module.css';
@@ -17,6 +17,7 @@ type Props = {
     isPlatformOwner?: boolean;
     initialProjectId?: string;
     onDetailChange?: (id: string | null) => void;
+    shortcutModules?: readonly ProjectShortcutModule[];
     renderWorkContext?: (projectId: string) => ReactNode;
     onSelect?: (id: string) => void;
     canCreate: boolean;
@@ -158,7 +159,7 @@ function ProjectForm({ project, projects, types, units, organizations, mutate, d
     </fieldset>
     </form>;
 }
-export default function ProjectPanel({ projects, projectTypes = [], organizationalUnits = [], organizations = [], isPlatformOwner = false, initialProjectId = '', onDetailChange, renderWorkContext, onSelect, canCreate, canEdit, mutate }: Props) {
+export default function ProjectPanel({ projects, projectTypes = [], organizationalUnits = [], organizations = [], isPlatformOwner = false, initialProjectId = '', onDetailChange, renderWorkContext, shortcutModules, onSelect, canCreate, canEdit, mutate }: Props) {
     type Workspace = {request: string; detail: string; editing: Row | null | undefined; echo: string | null};
     const initialWorkspace = (): Workspace => ({request: initialProjectId, detail: initialProjectId, editing: undefined, echo: null});
     const [workspace, setWorkspace] = useState<Workspace>(initialWorkspace);
@@ -199,7 +200,7 @@ export default function ProjectPanel({ projects, projectTypes = [], organization
       {typeEditor&&isPlatformOwner&&<ProjectTypeForm types={types} mutate={mutate} close={()=>setTypeEditor(false)} onSaved={row=>setTypes(current=>[...current.filter(type=>type.id!==row.id),row])}/>}
       {editing!==undefined&&(editing || createAllowed)&&<div ref={editorRef} className={`p-editor-panel ${styles.editor}`}><div className="p-row-between"><h3>{editing?`Editar ${editing.name}`:'Criar projeto'}</h3><button type="button" className="p-icon-button" aria-label="Fechar formulário de projeto" onClick={()=>setEditing(undefined)}><X size={18}/></button></div><ProjectForm key={`${editing?.id??'new'}-${editing?.version??0}`} project={editing} projects={projects} types={types} units={units} organizations={editing ? organizations : creatableOrganizations} mutate={mutate} done={done}/></div>}
       {error&&<p className="p-inline-error" role="alert">{error}</p>}
-      {detail?<ProjectDetail key={`${detail}-${detailRevision}`} projectId={detail} projects={projects} mutate={mutate} onBack={()=>setDetail('')} onEdit={project=>void edit(project)} onSelect={id=>setDetail(id)} renderWorkContext={renderWorkContext}/>:<>
+      {detail?<ProjectDetail key={`${detail}-${detailRevision}`} projectId={detail} projects={projects} mutate={mutate} onBack={()=>setDetail('')} onEdit={project=>void edit(project)} onSelect={id=>setDetail(id)} renderWorkContext={renderWorkContext} shortcutModules={shortcutModules}/>:<>
         <div className={`p-card ${styles.filters}`} aria-label="Filtros dos projetos"><label className={`p-field ${styles.search}`}><span>Buscar projeto</span><input value={query} onChange={event=>setQuery(event.target.value)} placeholder="Nome, sigla, unidade ou finalidade"/></label><details className={styles.refine}><summary>Refinar projetos{refinedCount > 0 && <span>{refinedCount} ativo(s)</span>}</summary><div className={styles.refineFields}><label className="p-field"><span>Unidade responsável</span><select value={unitId} onChange={event=>setUnitId(event.target.value)}><option value="">Todas as unidades</option><option value="unassigned">Sem unidade definida</option><UnitOptions units={units}/></select></label><label className="p-field"><span>Área temática</span><select value={area} onChange={event=>setArea(event.target.value)}><option value="">Todas as áreas</option>{THEMATIC_AREAS.map(item=><option key={item.key} value={item.key}>{item.label}</option>)}<option value="none">Área não informada</option></select></label><label className="p-field"><span>Modalidade</span><select value={typeId} onChange={event=>setTypeId(event.target.value)}><option value="">Todas as modalidades</option><option value="unassigned">Sem tipo definido</option>{types.map(type=><option key={type.id} value={type.id}>{type.label}</option>)}</select></label><label className="p-field"><span>Situação</span><select value={situation} onChange={event=>setSituation(event.target.value)}><option value="all">Todas as situações</option><option value="active">Em atividade</option><option value="past">Passados / históricos</option><option value="catalog">Catálogo / referência</option><option value="archived">Arquivados</option></select></label></div></details><div className={styles.scopeTabs} role="group" aria-label="Abrangência">{([['all','Todos',projects.length],['internal','Internos PROEX',scopeCount('internal')],['external','Externos e parceiros',scopeCount('external')]] as const).map(([id,label,count])=><button key={id} type="button" aria-pressed={scope===id} className={scope===id?styles.scopeTabActive:styles.scopeTab} onClick={()=>setScope(id)}>{label}<span>{count}</span></button>)}</div><div className={styles.filterSummary}><span>{visible.length} de {projects.length} projeto(s)</span>{hasFilters&&<button type="button" className="p-text-link" onClick={()=>{setQuery('');setUnitId('');setTypeId('');setArea('');setSituation('all');setScope('all');}}>Limpar filtros <X size={14}/></button>}</div></div>
         {visible.length?<div className={styles.grid}>{visible.map(project=>{const unit=units.find(unit=>unit.id===project.unit_id);return <article className={`p-card ${styles.card}`} key={project.id}>
           <div className="p-row-between"><span className="p-icon-tile" style={{borderTop:`3px solid ${/^#[\da-f]{6}$/i.test(project.color??'')?project.color:'#54216C'}`}}><FolderKanban size={22}/></span><span className={`p-badge ${project.status==='archived'?'p-status-closed':'p-status-active'}`}>{project.status==='archived'?'Arquivado':project.lifecycle==='past'?'Histórico':project.lifecycle==='catalog'?'Catálogo':'Em atividade'}</span></div>
