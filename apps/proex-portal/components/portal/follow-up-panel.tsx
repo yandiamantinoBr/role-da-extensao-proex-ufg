@@ -14,6 +14,11 @@ const field='mt-1 min-h-11 w-full min-w-0 rounded-xl border bg-[var(--canvas)] p
 const button='justify-self-start max-w-full inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[var(--muted)] bg-[var(--canvas)] px-4 py-2 font-semibold text-[var(--ink)] disabled:opacity-50';
 const primary='justify-self-start max-w-full p-button p-button-primary min-h-11 disabled:opacity-50';
 const focusAnchor=styles.focusAnchor;
+function focusOpenedHeading(heading:HTMLHeadingElement|null){
+ if(!heading)return;
+ heading.focus({preventScroll:true});
+ heading.scrollIntoView({block:'start',behavior:'instant'});
+}
 const emptyCatalog:Catalog={organizations:[],projects:[],people:[],teamPeople:[],teams:[],items:[],campaigns:[],loans:[],canEdit:false,canManageTeams:false};
 type Detail={task:Task;checklist:Checklist|null;workCandidates:{userId:string;name:string}[];workGrants:{id:string;userId:string}[];history:{version:number;createdAt:string;snapshot:{status:string;progressNote?:string}}[]};
 type Props={defaultProjectId?:string;defaultOrganizationId?:string;initialTaskId?:string;serverDay?:string;onChanged?:()=>void|Promise<void>;onSelectTask?:(id:string)=>void;onOpenReports?:()=>void;basePath?:string};
@@ -106,8 +111,8 @@ export default function FollowUpPanel({defaultProjectId='',defaultOrganizationId
   onSelectTask?.(value);
  }
  useEffect(()=>()=>teamRequest.current?.abort(),[]);
- useEffect(()=>{if(detail?.task.id)detailElement.current?.focus();},[detail?.task.id]);
- useEffect(()=>{if(form)formHeading.current?.focus();},[form]);
+ useEffect(()=>{if(detail?.task.id)focusOpenedHeading(detailElement.current);},[detail?.task.id]);
+ useEffect(()=>{if(form)focusOpenedHeading(formHeading.current);},[form]);
  useEffect(()=>{
   const timer=setTimeout(()=>{
    initialSelectionTimer.current=undefined;
