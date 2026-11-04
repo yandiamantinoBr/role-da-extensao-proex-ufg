@@ -1,4 +1,8 @@
-# Checkpoint atual · V19 publicada
+# Checkpoint atual · V21 publicada
+
+V20 e V21 integradas pelas PRs #21 e #22. CONPEEX com nove demandas, cinco lotes e planilha de trabalho vinculada no drive Equipe PROEC. O catálogo de Comunicação recebeu uma referência oficial da UFG. Em produção, o XLSX direto devolveu somente o projeto escolhido. A leitura técnica da V21 passou nos gates de CI e a bancada local confirmou o cabeçalho móvel e a linha de prazos. [Entrega V21](ENTREGA-V21.md), [entrega V20](ENTREGA-V20.md).
+
+## Histórico · V19 publicada
 
 Em 04/11/2026, V19 publicada a partir da PR #20, merge `bf662b4d271e65ca3c50cde2ebcbe09b7170a758`, Vercel READY e CI 871 portal + 33 jogo. O período oficial do 23º CONPEEX foi cadastrado como atividade de dia inteiro e conferido na Agenda. A V18, PR #19, corrigiu o detalhe de Demandas ao clicar no cartão selecionado e passou pela conferência em produção. [Entrega V19](ENTREGA-V19.md), [entrega V18](ENTREGA-V18.md).
 
