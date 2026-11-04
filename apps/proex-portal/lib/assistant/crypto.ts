@@ -4,9 +4,60 @@ const b64 = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes)).replaceAl
 function un64(value: string): Uint8Array<ArrayBuffer> { if (!/^[A-Za-z0-9_-]+$/.test(value)) throw new Error('base64'); return Uint8Array.from(atob(value.replaceAll('-', '+').replaceAll('_', '/')), char => char.charCodeAt(0)); }
 function secretCheck(secret: string) { if (typeof secret !== 'string' || secret.length < 32) throw new HttpError(503, 'A configuração de segurança do assistente está indisponível.', 'assistant_unavailable'); }
 export async function digest(value: string | Uint8Array): Promise<string> { return b64(new Uint8Array(await crypto.subtle.digest('SHA-256', typeof value === 'string' ? encoder.encode(value) : new Uint8Array(value)))); }
-async function encryptionKey(secret: string) { secretCheck(secret); const key = await crypto.subtle.importKey('raw', encoder.encode(secret), 'HKDF', false, ['deriveKey']); return crypto.subtle.deriveKey({ name: 'HKDF', hash: 'SHA-256', salt: encoder.encode('proex.assistant.credentials/v1'), info: encoder.encode('server-only') }, key, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']); }
+async function encryptionKey(secret: string, domain = 'proex.assistant.credentials/v1') { secretCheck(secret); const key = await crypto.subtle.importKey('raw', encoder.encode(secret), 'HKDF', false, ['deriveKey']); return crypto.subtle.deriveKey({ name: 'HKDF', hash: 'SHA-256', salt: encoder.encode(domain), info: encoder.encode('server-only') }, key, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']); }
 export async function encryptCredentials(secret: string, value: unknown, scope = 'portal'): Promise<string> { const iv = crypto.getRandomValues(new Uint8Array(12)); const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv, additionalData: encoder.encode(`ai_settings:${scope}:v1`) }, await encryptionKey(secret), encoder.encode(JSON.stringify(value))); return `v1.${b64(iv)}.${b64(new Uint8Array(ciphertext))}`; }
 export async function decryptCredentials(secret: string, value: string, scope = 'portal'): Promise<unknown> { try { const [version, iv, ciphertext, extra] = value.split('.'); if (version !== 'v1' || extra) throw new Error('version'); const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: un64(iv), additionalData: encoder.encode(`ai_settings:${scope}:v1`) }, await encryptionKey(secret), un64(ciphertext)); return JSON.parse(new TextDecoder().decode(plain)); } catch { throw new HttpError(503, 'Reconfigure as credenciais do assistente com o responsável.', 'assistant_credentials_unavailable'); } }
+
+export type CredentialKeys = { current?: string; previous?: string };
+const providerKeyDomain = 'proex.assistant.provider-credentials/v2';
+
+export async function credentialKeyId(secret: string | undefined, authSecret: string): Promise<string> {
+  if (!secret || secret === authSecret || secret.length < 32 || secret.length > 1024) {
+    throw new HttpError(503, 'Configure o segredo próprio das credenciais no servidor.', 'assistant_key_configuration');
+  }
+  return (await digest(`${providerKeyDomain}/key-id:${secret}`)).slice(0, 16);
+}
+
+function providerCredentialContext(organizationId: string, keyId: string) {
+  return encoder.encode(JSON.stringify([providerKeyDomain, organizationId, keyId]));
+}
+
+/** The dedicated key covers provider credentials only. Existing replay and plan keys stay separate. */
+export async function encryptProviderCredentials(authSecret: string, value: unknown, organizationId: string, keys: CredentialKeys = {}, previousEnvelope?: string): Promise<string> {
+  const secret = keys.current;
+  if (secret === undefined && keys.previous === undefined && (!previousEnvelope || previousEnvelope.startsWith('v1.'))) {
+    return encryptCredentials(authSecret, value, organizationId);
+  }
+  const keyId = await credentialKeyId(secret, authSecret);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const plaintext = encoder.encode(JSON.stringify(value));
+  try {
+    const ciphertext = await crypto.subtle.encrypt({
+      name: 'AES-GCM', iv, additionalData: providerCredentialContext(organizationId, keyId),
+    }, await encryptionKey(secret!, providerKeyDomain), plaintext);
+    return `v2.${keyId}.${b64(iv)}.${b64(new Uint8Array(ciphertext))}`;
+  } finally { plaintext.fill(0); }
+}
+
+export async function decryptProviderCredentials(authSecret: string, envelope: string, organizationId: string, keys: CredentialKeys = {}): Promise<unknown> {
+  if (envelope.startsWith('v1.')) return decryptCredentials(authSecret, envelope, organizationId);
+  try {
+    const fields = envelope.split('.');
+    const [version, keyId, nonce, ciphertext] = fields;
+    if (fields.length !== 4 || version !== 'v2' || !/^[A-Za-z0-9_-]{16}$/.test(keyId) || envelope.length > 12000) throw new Error();
+    const iv = un64(nonce), bytes = un64(ciphertext);
+    if (iv.length !== 12 || bytes.length < 16 || b64(iv) !== nonce || b64(bytes) !== ciphertext) throw new Error();
+    for (const secret of [keys.current, keys.previous]) {
+      if (secret === undefined || await credentialKeyId(secret, authSecret) !== keyId) continue;
+      const plaintext = new Uint8Array(await crypto.subtle.decrypt({
+        name: 'AES-GCM', iv, additionalData: providerCredentialContext(organizationId, keyId),
+      }, await encryptionKey(secret, providerKeyDomain), bytes));
+      try { return JSON.parse(new TextDecoder().decode(plaintext)); }
+      finally { plaintext.fill(0); }
+    }
+  } catch { /* Never fall back to the legacy key after a v2 failure. */ }
+  throw new HttpError(503, 'As credenciais do assistente estão indisponíveis. Procure a administração geral.', 'assistant_credentials_unavailable');
+}
 async function signingKey(secret: string) { secretCheck(secret); return crypto.subtle.importKey('raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify']); }
 export async function signPlan(secret: string, payload: Record<string, unknown>): Promise<string> { const body = b64(encoder.encode(JSON.stringify(payload))); return `${body}.${b64(new Uint8Array(await crypto.subtle.sign('HMAC', await signingKey(secret), encoder.encode(`proex.assistant.plan/v2:${body}`))))}`; }
 export async function verifyPlan(secret: string, token: unknown, actorId: string, now = Date.now()): Promise<{ id: string; digest: string; actorId: string; organizationId: string; projectId: string; expiresAt: number }> { try { if (typeof token !== 'string' || token.length > 2000) throw new Error('token'); const [body, signature, extra] = token.split('.'); if (!body || !signature || extra || !await crypto.subtle.verify('HMAC', await signingKey(secret), un64(signature), encoder.encode(`proex.assistant.plan/v2:${body}`))) throw new Error('signature'); const payload = JSON.parse(new TextDecoder().decode(un64(body))); if (payload.actorId !== actorId || typeof payload.id !== 'string' || typeof payload.projectId !== 'string' || typeof payload.organizationId !== 'string' || typeof payload.digest !== 'string' || !Number.isSafeInteger(payload.expiresAt) || payload.expiresAt <= now || payload.expiresAt > now + 11 * 60000) throw new Error('expired'); return payload; } catch { throw new HttpError(409, 'A proposta expirou, mudou ou pertence a outra pessoa. Prepare uma nova prévia.', 'assistant_plan_invalid'); } }

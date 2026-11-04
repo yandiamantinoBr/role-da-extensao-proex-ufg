@@ -12,7 +12,7 @@ Em **Configurações → Dados e sincronização → Backup completo criptografa
 
 No Supabase, snapshot e objetos são lidos na mesma transação `REPEATABLE READ READ ONLY`, com consulta prévia de tamanho e timeout de consultas. A captura pode representar um instante anterior a gravações concorrentes posteriores; nunca combina snapshots de instantes diferentes nessa transação. Referências ativas a arquivos ausentes ou divergentes interrompem a operação. O adaptador local exige um único processo escritor; pare escritores locais antes do comando offline.
 
-Não inclui variáveis externas, credenciais e recursos dos provedores nem a coleção histórica `sqlite_history`. O estado atual completo da aplicação contém seus próprios históricos, auditoria e configurações de IA cifradas no banco; reutilizá-las exige a chave externa original (`BETTER_AUTH_SECRET`) guardada separadamente. Uma mudança de provedor ou organização ainda precisa preparar infraestrutura e variáveis separadamente. A exportação portátil JSON e a planilha Google continuam sendo projeções com outro escopo.
+O backup inclui o estado atual da aplicação, históricos, auditoria e configurações de IA cifradas no banco. Para recuperar credenciais de IA, guarde separadamente o `BETTER_AUTH_SECRET` dos envelopes v1 e o `PROEX_KEYS_SECRET` correspondente aos envelopes v2. [Recifragem e rotação](ASSISTENTE-IA.md#recifragem-e-rotação-de-credenciais). Variáveis externas, recursos dos provedores e a coleção histórica `sqlite_history` ficam fora do backup. A exportação portátil JSON e a planilha Google continuam sendo projeções com outro escopo.
 
 ## Criptografia e limites
 

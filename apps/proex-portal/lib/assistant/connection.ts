@@ -3,7 +3,7 @@ import {all,one} from '../database';
 import {HttpError} from '../errors';
 import {prepareMutation} from '../mutations';
 import {object,onlyKeys,validateConfig} from './contracts';
-import {decryptCredentials,digest} from './crypto';
+import {decryptProviderCredentials,digest,type CredentialKeys} from './crypto';
 import {configurationActor} from './settings';
 import {CONNECTION_PROVIDERS,connectionReceipt,type ConnectionProvider,type ConnectionReceipt} from './connection-contracts';
 import {probeConnection} from './connection-provider';
@@ -30,13 +30,13 @@ function rateStatements(db:D1Database,key:string,limit:number,windowMs:number,no
  db.prepare('INSERT INTO portal_rate_limits(bucket_key,count,reset_at) VALUES(?,1,?) ON CONFLICT(bucket_key) DO UPDATE SET count=CASE WHEN reset_at<=? THEN 1 ELSE count+1 END,reset_at=CASE WHEN reset_at<=? THEN ? ELSE reset_at END').bind(key,now+windowMs,now,now,now+windowMs),
  assertion(db,'EXISTS(SELECT 1 FROM portal_rate_limits WHERE bucket_key=? AND count<=?)',[key,limit],'assistant_probe_quota'),
  ];}
-export async function testAssistantConnection(db:D1Database,actor:PortalActor|null,input:Record<string,unknown>,secret:string,options:{fetcher?:typeof fetch;signal?:AbortSignal}={}):Promise<ConnectionReceipt>{
+export async function testAssistantConnection(db:D1Database,actor:PortalActor|null,input:Record<string,unknown>,secret:string,options:{fetcher?:typeof fetch;signal?:AbortSignal;keys?:CredentialKeys}={}):Promise<ConnectionReceipt>{
  onlyKeys(input,['organizationId','provider','expectedRevision','operationKey','consent']);if(!Number.isSafeInteger(input.expectedRevision)||Number(input.expectedRevision)<1)throw new HttpError(409,'Atualize a configuração salva antes de testar.','assistant_configuration_changed');if(input.consent!==true)throw new HttpError(400,'Confirme o uso da credencial salva para consultar somente metadados do provedor.','assistant_consent');
  if(!CONNECTION_PROVIDERS.includes(input.provider as ConnectionProvider))throw new HttpError(400,'Escolha um provedor autorizado.','assistant_provider');const provider=input.provider as ConnectionProvider,c=await context(db,actor,input.organizationId,input.expectedRevision);
  if(options.signal?.aborted)throw new HttpError(499,'O diagnóstico foi cancelado.','assistant_connection_cancelled');
  const mutation=await prepareMutation(db,c.current.userId,'assistant.connection.test',input);
  if(mutation.existingId)return storedReceipt(db,c,mutation.existingId,provider);
- const credentials=object(await decryptCredentials(secret,c.credentialsCiphertext,c.organizationId));let credential=credentials[provider];if(typeof credential!=='string'||credential.length<12)throw new HttpError(409,'Cadastre e salve a credencial deste provedor antes de testar.','assistant_credentials');
+ const credentials=object(await decryptProviderCredentials(secret,c.credentialsCiphertext,c.organizationId,options.keys));let credential=credentials[provider];if(typeof credential!=='string'||credential.length<12)throw new HttpError(409,'Cadastre e salve a credencial deste provedor antes de testar.','assistant_credentials');
  const id=crypto.randomUUID(),start=Date.now(),at=new Date(start).toISOString(),tenMinuteKey=await digest(`assistant.connection/10m/${c.organizationId}/${provider}`),dailyKey=await digest(`assistant.connection/24h/${c.organizationId}/${provider}`);
  // mutation_keys retains its existing meaning: this operation creates the
  // durable audit record identified by entity_id, in the very same transaction.

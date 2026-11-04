@@ -5,7 +5,7 @@ import {aiReservation,reservationStatements} from '../assistant/admission';
 import {loadAssistantSettings} from '../assistant/settings';
 import {PROVIDERS,object,onlyKeys} from '../assistant/contracts';
 import {generateProposal,checkDecision,generationBody,decisionBody} from '../assistant/provider';
-import {encryptCredentials,decryptCredentials} from '../assistant/crypto';
+import {encryptCredentials,decryptCredentials,type CredentialKeys} from '../assistant/crypto';
 import {importFields,type ImportCandidate,type ImportKind,type ImportAiProvenance,type ImportFieldEvidence} from './contracts';
 import {validateImportedFields,importEvidenceText} from './parse';
 import {importDigest} from './review';
@@ -42,12 +42,12 @@ export function documentAuthorization(db:D1Database,actor:PortalActor,context:Do
 }
 function authorityError(error:unknown):never{if(String(error).includes('document_ai_authority_changed'))fail('Seu acesso ou a configuração documental mudou. Prepare outra prévia.','document_ai_forbidden',403);throw error;}
 export async function assertDocumentAuthorization(db:D1Database,actor:PortalActor,context:DocumentContext,revision:number){try{await documentAuthorization(db,actor,context,revision).first();}catch(error){authorityError(error);}}
-export async function interpretDocument(db:D1Database,actor:PortalActor,context:DocumentContext,input:{content:string;format:string;base:ImportCandidate;consent:unknown;operationKey:unknown},secret:string,options:{fetcher?:typeof fetch;now?:number}={}):Promise<DocumentInterpretation>{
+export async function interpretDocument(db:D1Database,actor:PortalActor,context:DocumentContext,input:{content:string;format:string;base:ImportCandidate;consent:unknown;operationKey:unknown},secret:string,options:{fetcher?:typeof fetch;now?:number;keys?:CredentialKeys}={}):Promise<DocumentInterpretation>{
  if(context.kind==='asset'&&!context.projectId)fail('Escolha o projeto responsável pelo patrimônio.','document_ai_target');
  if(input.consent!==true)fail('Confirme o envio do texto extraído ao provedor configurado para esta organização.','document_ai_consent');
  if(typeof input.operationKey!=='string'||!/^[A-Za-z0-9_-]{8,100}$/.test(input.operationKey))fail('Reabra a prévia para gerar uma solicitação válida.','document_ai_operation');
  const current=await getActor(db,actor);if(!current)fail('Seu acesso mudou. Entre novamente.','document_ai_forbidden',403);
- const {config,credentials,revision}=await loadAssistantSettings(db,secret,context.organizationId);if(!config.documentEnabled)fail('A interpretação documental está desativada nesta organização. Use a importação sem IA.','document_ai_unavailable',503);
+ const {config,credentials,revision}=await loadAssistantSettings(db,secret,context.organizationId,false,options.keys);if(!config.documentEnabled)fail('A interpretação documental está desativada nesta organização. Use a importação sem IA.','document_ai_unavailable',503);
  await assertDocumentAuthorization(db,current!,context,revision);
  const text=documentText(input.content,input.format),sourceDigest=await importDigest(text),now=options.now??Date.now(),expiresAt=now+15*60000,createdAt=new Date(now).toISOString(),id=await importDigest(`document\n${current!.userId}\n${context.organizationId}\n${input.operationKey}`),fingerprint=await importDigest(JSON.stringify({context,sourceDigest,revision,base:input.base}));
  // Only encrypted field suggestions are retained for short idempotent recovery.
@@ -61,7 +61,7 @@ export async function interpretDocument(db:D1Database,actor:PortalActor,context:
  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),config.timeoutMs);
  async function fresh(){
   if(controller.signal.aborted)fail('A interpretação excedeu o tempo reservado. Não houve repetição automática.','document_ai_timeout',503);
-  if((await loadAssistantSettings(db,secret,context.organizationId)).revision!==revision)fail('A configuração mudou. Prepare outra prévia.','document_ai_configuration_changed',409);
+  if((await loadAssistantSettings(db,secret,context.organizationId,false,options.keys)).revision!==revision)fail('A configuração mudou. Prepare outra prévia.','document_ai_configuration_changed',409);
   // Decryption/settings may yield: live SQL must be the last awaited operation
   // before dispatch, and the timeout is checked again after that wait.
   await assertDocumentAuthorization(db,current!,context,revision);

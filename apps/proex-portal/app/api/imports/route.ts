@@ -1,5 +1,5 @@
 import { getActor } from '@/lib/access';
-import { database, inviteSecret } from '@/lib/platform';
+import { database, inviteSecret, assistantCredentialKeys } from '@/lib/platform';
 import { getPortalUser } from '@/lib/session';
 import { HttpError, publicError } from '@/lib/errors';
 import { boundedJson } from '@/lib/http';
@@ -13,7 +13,7 @@ export async function POST(request: Request): Promise<Response> {
     if (!actor) throw new HttpError(401, 'Entre para importar um cadastro.', 'unauthenticated');
     const secret = inviteSecret();
     if (!secret) throw new HttpError(503, 'A importação está indisponível até a configuração do portal ser concluída.', 'import_unavailable');
-    const result = input.action === 'preview' ? await previewImport(db, actor, input, secret) : input.action === 'apply' ? await applyImport(db, actor, input, secret) : null;
+    const result = input.action === 'preview' ? await previewImport(db, actor, input, secret, undefined, undefined, assistantCredentialKeys()) : input.action === 'apply' ? await applyImport(db, actor, input, secret) : null;
     if (!result) throw new HttpError(400, 'Escolha preparar prévia ou confirmar importação.', 'invalid_action');
     return Response.json(result, { headers: { 'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff' } });
   } catch (error) { return publicError(error); }

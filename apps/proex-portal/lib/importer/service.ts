@@ -10,6 +10,7 @@ import { MODALITY_TYPE_KEYS } from '../extension-catalog';
 import { importFields, type ImportFileProvenance, type ImportKind, type ImportPreview, type ImportReview } from './contracts';
 import { normalizedLabel, parseImportDocument, validateImportedFields } from './parse';
 import { importDigest, readImportReview, signImportReview } from './review';
+import type { CredentialKeys } from '../assistant/crypto';
 import { readPublicSigaa } from './sigaa';
 import { interpretDocument, assertDocumentAuthorization, documentAuthorization,type DocumentInterpretation } from './assistant';
 
@@ -38,7 +39,7 @@ function documentUrl(value: unknown): string | undefined {
   return url.href;
 }
 const modalityKey = (value: string) => ({ programa: 'program', projeto: 'project', curso: 'course', evento: 'event', prestacaodeservico: 'service', prestacaodeservicos: 'service' } as Record<string, string>)[normalizedLabel(value)] ?? MODALITY_TYPE_KEYS[value];
-export async function previewImport(db: D1Database, actor: PortalActor | null, input: Record<string, unknown>, secret: string, fetcher?: typeof fetch, sourceFile?: ImportFileProvenance): Promise<ImportPreview> {
+export async function previewImport(db: D1Database, actor: PortalActor | null, input: Record<string, unknown>, secret: string, fetcher?: typeof fetch, sourceFile?: ImportFileProvenance, keys?: CredentialKeys): Promise<ImportPreview> {
   if (input.kind !== 'project' && input.kind !== 'asset') throw new HttpError(400, 'Escolha projeto ou bem patrimonial.', 'import_kind');
   const kind = input.kind, projectId = optionalId(input.projectId), itemId = optionalId(input.itemId), requestedOrganizationId = optionalId(input.organizationId);
   const project = await authorizeImportTarget(db, actor, kind, projectId, itemId, requestedOrganizationId), organizationId = String(project?.organization_id ?? requestedOrganizationId);
@@ -54,7 +55,7 @@ export async function previewImport(db: D1Database, actor: PortalActor | null, i
   if(input.useAi!==undefined&&typeof input.useAi!=='boolean')throw new HttpError(400,'Escolha usar ou não a IA documental.','document_ai_consent');
   if(input.useAi===true){
     if(input.sourceMode==='manual'||candidates.length!==1)throw new HttpError(400,'A IA documental recebe um único cadastro de uma fonte textual. Use a importação normal para vários registros.','document_ai_rows');
-    interpretation=await interpretDocument(db,actor!,{kind,organizationId,projectId,itemId},{content,format,base:candidates[0],consent:input.aiConsent,operationKey:input.aiOperationKey},secret,{fetcher});candidates=[interpretation.candidate];
+    interpretation=await interpretDocument(db,actor!,{kind,organizationId,projectId,itemId},{content,format,base:candidates[0],consent:input.aiConsent,operationKey:input.aiOperationKey},secret,{fetcher,keys});candidates=[interpretation.candidate];
   }
   if (kind === 'project') {
     const [units, types] = await Promise.all([all(db, "SELECT id,name,acronym FROM organizational_units WHERE status='active'"), all(db, "SELECT id,key,label FROM project_types WHERE status='active'")]);
