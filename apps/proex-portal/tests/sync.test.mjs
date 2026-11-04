@@ -206,6 +206,17 @@ test('sync configuration requires live owner and stays disabled until all operat
  }finally{f.close();}
 });
 
+test('a bound connector cannot start against an old workbook even if the configuration changes at commit',async()=>{
+ const f=fixture();try{
+  await configureSync(f.db,f.actor,syncConfiguration);
+  await assert.rejects(startSyncRun(f.db,f.actor,{spreadsheetId:'unbound-sheet-0002'}),error=>error.code==='sync_workbook_changed');
+  f.db.beforeBatch(()=>f.db.native.prepare("UPDATE sync_connections SET external_id=? WHERE id='google-sheets'").run('replacement-sheet-0003'));
+  await assert.rejects(startSyncRun(f.db,f.actor,{spreadsheetId:syncConfiguration.spreadsheetId}),error=>error.code==='sync_workbook_changed');
+  assert.equal(f.db.native.prepare('SELECT COUNT(*) n FROM sync_runs').get().n,0);
+  assert.ok((await startSyncRun(f.db,f.actor,{spreadsheetId:'replacement-sheet-0003'})).id);
+ }finally{f.close();}
+});
+
 test('simultaneous starts atomically admit one worker and never interrupt its fresh run',async()=>{
  const f=fixture();try{
   await configureSync(f.db,f.actor,syncConfiguration);

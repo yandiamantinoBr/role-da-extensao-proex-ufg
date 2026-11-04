@@ -34,7 +34,7 @@ var CONFLICTS_HEADER = ['id', 'entity_type', 'entity_id', 'expected_version', 'a
 var BASELINE_NOTE = 'portable-v1: original confirmado; preserve até nova leitura de retorno.';
 var EDITABLE_COLOR = '#FFF4D6', SYSTEM_COLOR = '#ECECEC';
 var ATTACHMENTS_FOLDER = 'PROEX · Anexos privados';
-var CONNECTOR_VERSION = '2026-11-04';
+var CONNECTOR_VERSION = '2026-11-04.1';
 // O Apps Script encerra execuções após 6 minutos; paramos com folga.
 var SYNC_BUDGET_MS = 5 * 60 * 1000, ATTACHMENTS_BUDGET_MS = 4 * 60 * 1000;
 var ISOLATE_CODES = ['sync_operation_changed', 'sync_invalid_change_key', 'sync_invalid_action', 'sync_system_field', 'sync_invalid_row', 'sync_invalid_version', 'sync_change_limit', 'sync_input_limit'];
@@ -445,12 +445,15 @@ function sincronizar_() {
   if (!lock.tryLock(15000)) return 'Outra sincronização já está em andamento.';
   var started = Date.now();
   try {
+    var ss = SpreadsheetApp.getActive();
     var status = chamar_('proex_sync_describe', {});
+    if (!ss || !status.configuration || status.configuration.spreadsheetId !== ss.getId()) {
+      throw new Error('Abra a planilha mestre configurada no Portal PROEX para sincronizar.');
+    }
     var schemas = status.schemas.tables;
-    var run = chamar_('proex_sync_run_start', { requestId: Utilities.getUuid() });
+    var run = chamar_('proex_sync_run_start', { requestId: Utilities.getUuid(), spreadsheetId: ss.getId() });
     var outcome = 'completed', exported = 0, verified = 0, applied = 0, conflicts = [];
     try {
-      var ss = SpreadsheetApp.getActive();
       garantirAbasDeControle_(ss);
       var control = lerControle_(ss);
 

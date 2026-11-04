@@ -82,6 +82,13 @@ const controlValue = key => sheets.get('Controle').cells.find(row => row[0] === 
 assert.equal(controlValue('syncState'), 'verified');
 assert.equal(controlValue('tablesVerified'), String(expectedTables));
 assert.equal(controlValue('connectorVersion'), context.CONNECTOR_VERSION);
+const connectedWorkbook = ss.getId;
+const completedBeforeWrongWorkbook = controlValue('lastVerifiedAt');
+ss.getId = () => 'wrong-harness-workbook';
+try {
+  assert.throws(() => context.sincronizar_(), /Abra a planilha mestre configurada.*para sincronizar/);
+  assert.equal(controlValue('lastVerifiedAt'), completedBeforeWrongWorkbook);
+} finally { ss.getId = connectedWorkbook; }
 
 console.log('3. Editar a descrição de um material e criar um movimento pela aba Operações');
 const target = cell('items', r => r.name?.startsWith('Button azul'), 'description');
