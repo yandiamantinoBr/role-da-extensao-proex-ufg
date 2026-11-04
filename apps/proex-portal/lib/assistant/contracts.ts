@@ -8,6 +8,13 @@ export const PROVIDERS = {
 export type AssistantConfig = { enabled: boolean; documentEnabled: boolean; jevEnabled: boolean; sttEnabled: boolean; model: 'deepseek-flash'; jevModel: 'jev-1.14.0'; dailyUsdMicros: number; dailyTokens: number; dailyCalls: number; dailyMs: number; timeoutMs: number; maxOutputTokens: number };
 export const DEFAULT_ASSISTANT_CONFIG: AssistantConfig = { enabled: false, documentEnabled: false, jevEnabled: false, sttEnabled: false, model: 'deepseek-flash', jevModel: 'jev-1.14.0', dailyUsdMicros: 1_000_000, dailyTokens: 100_000, dailyCalls: 20, dailyMs: 300_000, timeoutMs: 12_000, maxOutputTokens: 1200 };
 export type AssistantCredentials = { deepseek: string; typesafe: string; deepgram?: string };
+export const credentialProviders = ['deepseek', 'typesafe', 'deepgram'] as const;
+export type CredentialProvider = (typeof credentialProviders)[number];
+
+export function availableProviderCredentials(credentials: Record<string, unknown>): AssistantCredentials {
+ const read = (provider: CredentialProvider) => typeof credentials[provider] === 'string' ? String(credentials[provider]) : '';
+ return { deepseek: read('deepseek'), typesafe: read('typesafe'), deepgram: read('deepgram') };
+}
 export type AssistantItem = { id: string; name: string; category: string; unit: string; stock: number; reserved: number; condition: string };
 export type AssistantIntent = 'stock.query' | 'stock.receive' | 'stock.distribute' | 'stock.consume' | 'record.create';
 export type AssistantProposal = { intent: AssistantIntent; itemId: string | null; quantity: number; title: string; body: string; evidence: { source: 'request'; quote: string }[] };

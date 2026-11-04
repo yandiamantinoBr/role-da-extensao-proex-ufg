@@ -11,7 +11,7 @@ const pendingShape=(value:unknown)=>object(value)&&typeof value.id==='string'&&t
  &&(value.status===undefined||typeof value.status==='string'&&['open','in_progress','blocked'].includes(value.status))
  &&(value.priority===undefined||typeof value.priority==='string'&&['high','medium','low'].includes(value.priority))
  &&(value.version===undefined||typeof value.version==='number'&&Number.isSafeInteger(value.version)&&value.version>0);
-function taskShape(value:unknown){return object(value)&&typeof value.id==='string'&&typeof value.title==='string'&&typeof value.body==='string'&&typeof value.project_name==='string'&&typeof value.organization_name==='string'&&typeof value.version==='number'&&typeof value.status==='string'&&['open','in_progress','blocked','completed','cancelled'].includes(value.status)&&typeof value.priority==='string'&&['high','medium','low'].includes(value.priority)&&nullableText(value.due_at)&&entries(value,'assignees');}
+function taskShape(value:unknown){return object(value)&&typeof value.id==='string'&&typeof value.title==='string'&&typeof value.body==='string'&&typeof value.project_name==='string'&&typeof value.organization_name==='string'&&typeof value.version==='number'&&typeof value.status==='string'&&['open','in_progress','blocked','completed','cancelled'].includes(value.status)&&typeof value.priority==='string'&&['high','medium','low'].includes(value.priority)&&(value.importance==null||typeof value.importance==='string'&&['high','medium','low'].includes(value.importance))&&nullableText(value.due_at)&&entries(value,'assignees');}
 function validResponse(value:unknown,query:URLSearchParams|string,body?:Record<string,unknown>){
  if(!object(value))return false;
  const action=typeof body?.action==='string'?body.action:'',view=body?(['notification.read','notification.dismiss','pending.visibility'].includes(action)?'inbox':action.startsWith('team.')?'team':'detail'):new URLSearchParams(String(query)).get('view')??'tasks';
@@ -24,7 +24,8 @@ function validResponse(value:unknown,query:URLSearchParams|string,body?:Record<s
  return false;
 }
 export async function followupApi<T>(query:URLSearchParams|string,body?:Record<string,unknown>,signal?:AbortSignal):Promise<T>{
- const response=await fetch(`/api/follow-up${String(query)?`?${query}`:''}`,{method:body?'POST':'GET',credentials:'same-origin',cache:'no-store',signal,...(body?{headers:{'Content-Type':'application/json','X-Proex-Action':'1'},body:JSON.stringify(body)}:{})});
+ const endpoint=body?.action==='task.triage.apply'?'/api/follow-up/triage':'/api/follow-up';
+ const response=await fetch(`${endpoint}${String(query)?`?${query}`:''}`,{method:body?'POST':'GET',credentials:'same-origin',cache:'no-store',signal,...(body?{headers:{'Content-Type':'application/json','X-Proex-Action':'1'},body:JSON.stringify(body)}:{})});
  let data:unknown;
  try{data=await response.json();}catch(error){if(signal?.aborted)throw signal.reason??error;if(object(error)&&error.name==='AbortError')throw error;if(response.ok)throw new Error('A resposta chegou incompleta. Seus campos foram preservados; atualize e tente novamente.');data={};}
  if(signal?.aborted){const error=new Error('Consulta cancelada.');error.name='AbortError';throw error;}

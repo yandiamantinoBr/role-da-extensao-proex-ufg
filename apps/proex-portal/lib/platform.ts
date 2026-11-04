@@ -1,13 +1,19 @@
 import {env} from 'cloudflare:workers';
 import {HttpError} from './errors';
 import type {SpeechEnvironment} from './assistant/settings';
+import type {CredentialKeys} from './assistant/crypto';
 type RuntimeVars=Record<string,string|undefined>;
 const vars=()=>env as unknown as RuntimeVars;
 export function database():D1Database{if(!env.DB)throw new HttpError(503,'O banco do portal ainda não está disponível.');return env.DB;}
 export function bucket():R2Bucket{if(!env.BUCKET)throw new HttpError(503,'O armazenamento de anexos ainda não está disponível.');return env.BUCKET;}
 export function ownerEmail():string|undefined{return vars().OWNER_EMAIL;}
 
+export function taskTriageEnabled():boolean{return vars().PROEX_JEV_TASK_TRIAGE==='1';}
 export function inviteSecret():string|undefined{return vars().BETTER_AUTH_SECRET;}
+export function assistantCredentialKeys():CredentialKeys{
+ const values=vars();
+ return {current:values.PROEX_KEYS_SECRET||undefined,previous:values.PROEX_KEYS_PREVIOUS_SECRET||undefined};
+}
 /** Server-only routing for a single opt-in organization. */
 export function speechEnvironment():SpeechEnvironment {
  const values=vars();

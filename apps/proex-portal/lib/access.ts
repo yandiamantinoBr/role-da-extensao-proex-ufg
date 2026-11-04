@@ -106,6 +106,11 @@ export function organizationAuthoritySql(actor: PortalActor, organizationId: str
     WHERE m.user_id=? AND m.revoked_at IS NULL AND ${organizationOwnerSql('m','?')}
     AND COALESCE(u.status,'active')='active' AND COALESCE(u.activation_pending,0)=0 AND u.anonymized_at IS NULL)`, values: [actor.userId, organizationId] };
 }
+export function platformOwnerAuthoritySql(actor: PortalActor) {
+  return { sql: `EXISTS(SELECT 1 FROM members m JOIN portal_users u ON u.user_id=m.user_id
+    WHERE m.user_id=? AND m.role='owner' AND m.organization_id IS NULL AND m.project_id IS NULL AND m.revoked_at IS NULL
+    AND u.status='active' AND u.activation_pending=0 AND u.anonymized_at IS NULL)`, values: [actor.userId] };
+}
 /** SQL authorization is evaluated with the resource, including revocation after getActor. */
 export function projectAuthoritySql(actor: PortalActor, capabilities: readonly string[], projectSql: string) {
   const roles=Object.entries(ROLE_CAPABILITIES).filter(([,available])=>!capabilities.length||capabilities.some(capability=>available.includes(capability))).map(([role])=>role);

@@ -4,7 +4,7 @@ import { HttpError } from '../errors';
 import { materialsAction } from '../materials';
 import { createRecord } from '../records';
 import { ASSISTANT_CONTRACT, PROVIDERS, object, onlyKeys, safeRequest, validateProposal, type AssistantItem, type AssistantPlan } from './contracts';
-import { digest, signPlan, verifyPlan } from './crypto';
+import { digest, signPlan, verifyPlan, type CredentialKeys } from './crypto';
 import { loadAssistantSettings as loadSettings } from './settings';
 import { aiReservation, reservationStatements } from './admission';
 import { checkDecision, decisionBody, generateProposal, generationBody } from './provider';
@@ -23,13 +23,13 @@ async function assertPlanAuthorization(statement: D1PreparedStatement) {
  try { await statement.first(); } catch(error) { if(String(error).includes('assistant_authority_changed'))throw new HttpError(403,'Seu acesso ou a configuração mudou.','assistant_forbidden'); throw error; }
 }
 function dayKey(now: number): string { const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(now)); return ['year', 'month', 'day'].map(type => parts.find(part => part.type === type)!.value).join('-'); }
-export async function prepareAssistantPlan(db: D1Database, actor: PortalActor | null, input: Record<string, unknown>, secret: string, options: { fetcher?: typeof fetch; now?: number } = {}) {
+export async function prepareAssistantPlan(db: D1Database, actor: PortalActor | null, input: Record<string, unknown>, secret: string, options: { fetcher?: typeof fetch; now?: number; keys?: CredentialKeys } = {}) {
  onlyKeys(input, ['action', 'projectId', 'request', 'operationKey', 'consent']);
  if (input.consent !== true) throw new HttpError(400, 'Confirme o envio do pedido e do estoque deste projeto aos provedores configurados.', 'assistant_consent');
  if (typeof input.operationKey !== 'string' || !/^[A-Za-z0-9_-]{8,100}$/.test(input.operationKey)) throw new HttpError(400, 'Reabra o assistente antes de enviar.', 'assistant_operation');
  const project = projectId(input.projectId), current = await scopedActor(db, actor, project), request = safeRequest(input.request), now = options.now ?? Date.now();
  const organizationId = String((await one(db, 'SELECT organization_id FROM projects WHERE id=?', [project]))?.organization_id);
- const { config, credentials, revision } = await loadSettings(db, secret, organizationId);
+ const { config, credentials, revision } = await loadSettings(db, secret, organizationId, false, options.keys);
  const rows = await all(db, 'SELECT id,name,category,unit,stock,reserved,condition FROM items WHERE project_id=? ORDER BY id LIMIT 101', [project]);
  if (rows.length > 100) throw new HttpError(400, 'Este projeto possui mais de 100 materiais. Use os filtros de Materiais para esta consulta.', 'assistant_context_limit');
  const items = rows.map(row => ({ ...row, name: safeRequest(row.name), unit: safeRequest(row.unit) })) as AssistantItem[], body = generationBody(config, request, items);
@@ -49,14 +49,14 @@ export async function prepareAssistantPlan(db: D1Database, actor: PortalActor | 
  async function dispatchFence(){await assertPlanAuthorization(authorization);if(controller.signal.aborted)throw new HttpError(503,'A chamada excedeu o tempo reservado. Não houve repetição automática.','assistant_provider_unavailable');}
  try {
   await scopedActor(db,current,project);
-  if((await loadSettings(db,secret,organizationId)).revision!==revision)throw new HttpError(409,'A configuração mudou antes da chamada.','assistant_configuration_changed');
+  if((await loadSettings(db,secret,organizationId,false,options.keys)).revision!==revision)throw new HttpError(409,'A configuração mudou antes da chamada.','assistant_configuration_changed');
   await dispatchFence();
   const generated = await generateProposal(config, credentials, body, controller.signal, options.fetcher), proposal = validateProposal(generated.proposal, request, items);
   if (generated.inputTokens > bodyBytes) throw new HttpError(502, 'O uso de tokens excedeu a reserva preventiva.', 'assistant_usage');
   const fresh = await scopedActor(db, current, project); requireCapability(fresh, operationCapability(proposal.intent), project);
   let jevModel: string | null = null;
-  if (config.jevEnabled) { if((await loadSettings(db,secret,organizationId)).revision!==revision)throw new HttpError(409,'A configuração mudou antes da conferência.','assistant_configuration_changed'); await scopedActor(db,current,project); await dispatchFence();const decision = await checkDecision(config, credentials, decisionBody(config, request, proposal), controller.signal, options.fetcher); if (!decision.approved || decision.inputTokens > bodyBytes + 18000) throw new HttpError(409, 'O classificador indicou dúvida. Esclareça ação, material e quantidade no pedido.', 'assistant_needs_review'); jevModel = decision.model; }
-  if ((await loadSettings(db, secret, organizationId)).revision !== revision) throw new HttpError(409, 'A configuração de IA mudou. Prepare a proposta novamente.', 'assistant_configuration_changed');
+  if (config.jevEnabled) { if((await loadSettings(db,secret,organizationId,false,options.keys)).revision!==revision)throw new HttpError(409,'A configuração mudou antes da conferência.','assistant_configuration_changed'); await scopedActor(db,current,project); await dispatchFence();const decision = await checkDecision(config, credentials, decisionBody(config, request, proposal), controller.signal, options.fetcher); if (!decision.approved || decision.inputTokens > bodyBytes + 18000) throw new HttpError(409, 'O classificador indicou dúvida. Esclareça ação, material e quantidade no pedido.', 'assistant_needs_review'); jevModel = decision.model; }
+  if ((await loadSettings(db, secret, organizationId, false, options.keys)).revision !== revision) throw new HttpError(409, 'A configuração de IA mudou. Prepare a proposta novamente.', 'assistant_configuration_changed');
   const before = proposal.itemId ? items.find(item => item.id === proposal.itemId)! : null, delta = proposal.intent === 'stock.receive' ? proposal.quantity : ['stock.distribute', 'stock.consume'].includes(proposal.intent) ? -proposal.quantity : 0;
   if (before && delta && (before.condition !== 'active' || before.stock + delta < before.reserved || before.category === 'equipment' && (delta < 0 || before.stock + delta > 1))) throw new HttpError(409, 'O material não permite essa movimentação. Confira disponibilidade e categoria em Materiais.', 'assistant_stock');
   const plan: AssistantPlan = { contract: ASSISTANT_CONTRACT, id: crypto.randomUUID(), actorId: current.userId, organizationId, projectId: project, configRevision: revision, proposal, before, after: before ? { stock: before.stock + delta, available: before.stock + delta - before.reserved } : null, provenance: { requestSha256: await digest(request), contextSha256: await digest(JSON.stringify(items)), provider: 'deepseek', model: config.model, modelRevision: PROVIDERS.deepseek.revision, returnedModel: generated.returnedModel, jevModel, reviewedAt: new Date(now).toISOString() }, expiresAt: now + 10 * 60000 }, payload = JSON.stringify(plan), hash = await digest(payload);
@@ -74,14 +74,14 @@ function guardedStockDatabase(db: D1Database, plan: AssistantPlan, authorization
  const configuration = () => db.prepare("SELECT CASE WHEN EXISTS(SELECT 1 FROM ai_organization_settings s JOIN projects p ON p.organization_id=s.organization_id JOIN organizations o ON o.id=s.organization_id WHERE p.id=? AND s.organization_id=? AND s.revision=? AND o.status='active' AND json_extract(s.config_json,'$.enabled')=1) THEN 1 ELSE json_extract('[]','assistant_configuration_changed') END").bind(plan.projectId,plan.organizationId,plan.configRevision);
  return new Proxy(db, { get(target, key) { if (key === 'batch') return async (statements: D1PreparedStatement[]) => { const guards=[authorization,configuration(),...(before&&refId?[assertion()]:[])];try{return(await target.batch([...guards,...statements])).slice(guards.length);}catch(error){if(String(error).includes('assistant_authority_changed'))throw new HttpError(403,'Seu acesso ou a configuração mudou.','assistant_forbidden');throw error;}}; const value = Reflect.get(target, key); return typeof value === 'function' ? value.bind(target) : value; } });
 }
-export async function applyAssistantPlan(db: D1Database, actor: PortalActor | null, input: Record<string, unknown>, secret: string, now = Date.now()) {
+export async function applyAssistantPlan(db: D1Database, actor: PortalActor | null, input: Record<string, unknown>, secret: string, now = Date.now(), keys?: CredentialKeys) {
  onlyKeys(input, ['action', 'planToken', 'confirmed']);
  if (input.confirmed !== true) throw new HttpError(400, 'Confira a proposta e marque a confirmação antes de continuar.', 'assistant_confirmation');
  const current = await currentActor(db, actor), token = await verifyPlan(secret, input.planToken, current.userId, now), stored = await one(db, 'SELECT * FROM ai_plans WHERE id=? AND actor_id=? AND project_id=?', [token.id, current.userId, token.projectId]);
  if (!stored || stored.payload_digest !== token.digest || await digest(stored.payload_json) !== token.digest || stored.expires_at !== token.expiresAt || stored.status === 'cancelled') throw new HttpError(409, 'A proposta mudou ou foi cancelada. Prepare outra prévia.', 'assistant_plan_invalid');
  const decoded = JSON.parse(stored.payload_json) as AssistantPlan; if(decoded.contract!==ASSISTANT_CONTRACT||decoded.organizationId!==token.organizationId)throw new HttpError(409,'A proposta mudou de organização ou contrato.','assistant_plan_invalid');
  const plan = decoded, organizationId = plan.organizationId, authorization=planAuthorization(db,current,plan.projectId,organizationId,plan.configRevision,operationCapability(plan.proposal.intent)), fresh = await scopedActor(db, current, plan.projectId); requireCapability(fresh, operationCapability(plan.proposal.intent), plan.projectId);
- if ((await loadSettings(db, secret, organizationId)).revision !== plan.configRevision) throw new HttpError(409, 'A configuração mudou. Prepare uma nova prévia.', 'assistant_configuration_changed');
+ if ((await loadSettings(db, secret, organizationId, false, keys)).revision !== plan.configRevision) throw new HttpError(409, 'A configuração mudou. Prepare uma nova prévia.', 'assistant_configuration_changed');
  if (stored.status === 'applied') { const result={...JSON.parse(stored.result_json),replayed:true}; await assertPlanAuthorization(authorization); return result; }
  const p = plan.proposal, operationKey = `ai_${plan.id.replaceAll('-', '')}`, item = p.itemId ? await one(db, 'SELECT id,project_id,name,category,unit,stock,reserved,condition FROM items WHERE id=? AND project_id=?', [p.itemId, plan.projectId]) : null;
  if (p.itemId && !item) throw new HttpError(409, 'O material não pertence mais ao projeto da proposta.', 'assistant_scope');

@@ -2,7 +2,7 @@ import { getActor, requireLiveCapability, projectAuthoritySql, type PortalActor 
 import { one } from '../database';
 import { HttpError } from '../errors';
 import { object, safeRequest } from './contracts';
-import { decryptCredentials, digest, encryptCredentials } from './crypto';
+import { decryptCredentials, digest, encryptCredentials, type CredentialKeys } from './crypto';
 import { groqSpeechKey, loadAssistantSettings, speechProviderForOrganization, type SpeechEnvironment, type SpeechProvider } from './settings';
 
 const GROQ_SPEECH_ENDPOINT = 'https://api.groq.com/openai/v1/audio/transcriptions';
@@ -55,13 +55,13 @@ function validatedTranscript(response: Record<string, unknown>, provider: Speech
  return { transcript: safeRequest(transcript), returnedVersion };
 }
 
-export async function transcribeSpeech(db:D1Database, actor:PortalActor|null, input:{projectId:string;operationKey:string;consent:boolean;expectedProvider?:string;mime:string;bytes:Uint8Array},secret:string,options:{fetcher?:typeof fetch;signal?:AbortSignal;now?:number;environment?:SpeechEnvironment}={}) {
+export async function transcribeSpeech(db:D1Database, actor:PortalActor|null, input:{projectId:string;operationKey:string;consent:boolean;expectedProvider?:string;mime:string;bytes:Uint8Array},secret:string,options:{fetcher?:typeof fetch;signal?:AbortSignal;now?:number;environment?:SpeechEnvironment;keys?:CredentialKeys}={}) {
  if(!input.consent)throw new HttpError(400,'Autorize o envio deste áudio ao provedor configurado.','speech_consent');
  if(!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(input.projectId)||!/^[A-Za-z0-9_-]{8,100}$/.test(input.operationKey))throw new HttpError(400,'Escolha o projeto e prepare um envio válido.','speech_input');
  const {current,organizationId}=await speechActor(db,actor,input.projectId);
  const provider=speechProviderForOrganization(organizationId,options.environment);
  if ((input.expectedProvider ?? 'deepgram') !== provider) throw new HttpError(409,'O provedor de transcrição mudou. Atualize o portal e confirme novamente.','speech_provider_changed');
- const audio=validateSpeechAudio(input.bytes,input.mime),settings=await loadAssistantSettings(db,secret,organizationId,provider),now=options.now??Date.now();
+ const audio=validateSpeechAudio(input.bytes,input.mime),settings=await loadAssistantSettings(db,secret,organizationId,provider,options.keys),now=options.now??Date.now();
  const apiKey=provider==='groq'?groqSpeechKey(options.environment):settings.credentials.deepgram!;
  const model=provider==='groq'?GROQ_SPEECH_MODEL:'nova-3';
  await db.prepare("UPDATE ai_transcriptions SET result_ciphertext=NULL WHERE organization_id=? AND status='complete' AND created_at<? AND result_ciphertext IS NOT NULL").bind(organizationId,new Date(now-3600000).toISOString()).run();
@@ -83,12 +83,12 @@ export async function transcribeSpeech(db:D1Database, actor:PortalActor|null, in
  if(!admitted)throw new HttpError(429,'O limite diário da organização foi atingido.','assistant_quota');
  const controller=new AbortController(),abort=()=>controller.abort(),timer=setTimeout(abort,settings.config.timeoutMs);options.signal?.addEventListener('abort',abort,{once:true});
  try{
-  await speechActor(db,current,input.projectId);if((await loadAssistantSettings(db,secret,organizationId,provider)).revision!==settings.revision)throw new HttpError(409,'A configuração mudou antes da transcrição.','speech_configuration_changed');await authorized();if(controller.signal.aborted)throw new HttpError(503,'A transcrição excedeu o tempo reservado.','speech_provider');
+  await speechActor(db,current,input.projectId);if((await loadAssistantSettings(db,secret,organizationId,provider,options.keys)).revision!==settings.revision)throw new HttpError(409,'A configuração mudou antes da transcrição.','speech_configuration_changed');await authorized();if(controller.signal.aborted)throw new HttpError(503,'A transcrição excedeu o tempo reservado.','speech_provider');
   const response=await providerSpeech(provider,input.bytes,apiKey,controller.signal,options.fetcher??fetch);
   if(JSON.stringify(response).includes(apiKey))throw new HttpError(502,'O provedor retornou dados que não podem ser apresentados.','speech_schema');
   const { transcript, returnedVersion } = validatedTranscript(response, provider, audio.duration);
   const result={transcript,provenance:{provider,model,returnedVersion,organizationId,projectId:input.projectId,audioSha256,duration:audio.duration,at:new Date(now).toISOString()}};
-  await speechActor(db,current,input.projectId);if((await loadAssistantSettings(db,secret,organizationId,provider)).revision!==settings.revision)throw new HttpError(409,'A configuração mudou. A transcrição não será apresentada.','speech_configuration_changed');
+  await speechActor(db,current,input.projectId);if((await loadAssistantSettings(db,secret,organizationId,provider,options.keys)).revision!==settings.revision)throw new HttpError(409,'A configuração mudou. A transcrição não será apresentada.','speech_configuration_changed');
   const ciphertext=await encryptCredentials(secret,result,`speech:${organizationId}:${id}`);await db.batch([assertion,db.prepare("UPDATE ai_transcriptions SET status='complete',result_ciphertext=? WHERE id=? AND status='reserved'").bind(ciphertext,id),db.prepare("INSERT INTO audit(id,actor_id,project_id,organization_id,action,entity_id,details,created_at) SELECT ?,?,?,?,'assistant.transcribe',?,?,? WHERE changes()=1").bind(crypto.randomUUID(),current.userId,input.projectId,organizationId,id,JSON.stringify({duration:audio.duration,provider,model,audioSha256,reservedUsdMicros:cost}),new Date(now).toISOString())]);await authorized();return result;
  }catch(error){await db.prepare("UPDATE ai_transcriptions SET status='failed' WHERE id=? AND status='reserved'").bind(id).run();if(error instanceof HttpError)throw error;if(String(error).includes('speech_authority_changed'))throw new HttpError(403,'Seu acesso ou a configuração mudou.','speech_forbidden');throw new HttpError(502,'A resposta de transcrição não pôde ser validada.','speech_schema');}finally{clearTimeout(timer);options.signal?.removeEventListener('abort',abort);}
 }

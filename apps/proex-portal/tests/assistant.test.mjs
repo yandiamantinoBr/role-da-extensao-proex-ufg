@@ -17,7 +17,9 @@ function compile(name) {
 const { DEFAULT_ASSISTANT_CONFIG, validateProposal } = await import(compile('assistant/contracts'));
 const { configureAssistant, assistantStatus, prepareAssistantPlan, applyAssistantPlan } = await import(compile('assistant/service'));
 const { providerEndpoint } = await import(compile('assistant/provider'));
-const { encryptCredentials, decryptCredentials, verifyPlan } = await import(compile('assistant/crypto'));
+const { encryptCredentials, decryptCredentials, encryptProviderCredentials, decryptProviderCredentials, verifyPlan } = await import(compile('assistant/crypto'));
+const { migrateAssistantCredentials } = await import(compile('assistant/credential-migration'));
+const { assistantCredentialVault, manageAssistantCredential } = await import(compile('assistant/credential-vault'));
 const { portalSnapshot } = await import(compile('portal-data'));
 const { describePortableSchemas, exportPortablePage } = await import(compile('sync/portable'));
 const { syncStatus } = await import(compile('sync/control'));
@@ -28,6 +30,10 @@ const { transcribeSpeech, validateSpeechAudio, speechEndpoint, SPEECH_ENDPOINT }
 const { encodeSpeechWav, prepareSpeechWav } = await import(compile('../components/portal/speech-audio'));
 const secret = 'test-only-assistant-auth-secret-no-production-access';
 const key = 'test-only-fake-provider-credential';
+const keys = { current: 'synthetic-only-independent-key-for-credential-migration' };
+const vaultInput = (action, expectedRevision, extra = {}) => ({ action, organizationId: 'org_proex', provider: 'deepseek', expectedRevision, ...extra });
+const saveVault = (f, expectedRevision = 0) => manageAssistantCredential(f.db, f.actors.owner,
+ vaultInput('save', expectedRevision, { label: 'Chave sintética', secret: key }), secret, keys);
 function fixture() {
  const native = new DatabaseSync(':memory:'); native.exec('PRAGMA foreign_keys=ON');
  for (const migration of readdirSync(`${root}drizzle`).filter(file => file.endsWith('.sql')).sort()) native.exec(readFileSync(`${root}drizzle/${migration}`, 'utf8'));
@@ -56,6 +62,218 @@ test('credentials use authenticated encryption, cannot be decrypted after tamper
  const ciphertext = await encryptCredentials(secret, { deepseek: key }); assert.equal(ciphertext.includes(key), false); assert.deepEqual(await decryptCredentials(secret, ciphertext), { deepseek: key });
  await assert.rejects(decryptCredentials(secret + '-rotated', ciphertext), code('assistant_credentials_unavailable'));
  const [version, iv, bytes] = ciphertext.split('.'); await assert.rejects(decryptCredentials(secret, `${version}.${iv}.${bytes.slice(0, -2)}aa`), code('assistant_credentials_unavailable'));
+});
+
+test('provider envelopes distinguish the legacy and dedicated secrets, organization, version and rotation', async () => {
+ const value = { deepseek: key };
+ const legacy = await encryptProviderCredentials(secret, value, 'org_proex');
+ const v2 = await encryptProviderCredentials(secret, value, 'org_proex', keys);
+ assert.match(legacy, /^v1\./);
+ assert.match(v2, /^v2\.[\w-]{16}\.[\w-]{16}\.[\w-]+$/);
+ assert.notEqual(v2, await encryptProviderCredentials(secret, value, 'org_proex', keys));
+ assert.deepEqual(await decryptProviderCredentials(secret, legacy, 'org_proex', keys), value);
+ assert.deepEqual(await decryptProviderCredentials(secret + '-rotated', v2, 'org_proex', keys), value);
+ const rotated = { current: keys.current + '-rotated', previous: keys.current };
+ assert.deepEqual(await decryptProviderCredentials(secret, v2, 'org_proex', rotated), value);
+ for (const [envelope, scope, available] of [
+  [v2, 'org_proex', {}], [v2, 'org_proex', { current: rotated.current }], [v2, 'different-org', keys],
+  [v2.replace(/^v2\./, 'v1.'), 'org_proex', keys], [v2 + '.', 'org_proex', keys],
+  [v2.replace(/\.([\w-])([\w-]+)$/, (_, initial, rest) => '.' + (initial === 'A' ? 'B' : 'A') + rest), 'org_proex', keys],
+ ]) await assert.rejects(decryptProviderCredentials(secret, envelope, scope, available), code('assistant_credentials_unavailable'));
+ await assert.rejects(encryptProviderCredentials(secret, value, 'org_proex', {}, v2), code('assistant_key_configuration'));
+ await assert.rejects(encryptProviderCredentials(secret, value, 'org_proex', { current: secret }), code('assistant_key_configuration'));
+});
+
+test('only the live global owner can migrate bounded batches; unreadable rows do not prevent progress', async () => {
+ const f = fixture();
+ try {
+  await configureAssistant(f.db, f.actors.owner, configInput(), secret);
+  const now = new Date().toISOString(), add = f.native.prepare('INSERT INTO organizations(id,name,slug,created_at,updated_at) VALUES(?,?,?,?,?)');
+  for (const id of ['org-a-broken', 'org-b-synthetic']) add.run(id, id, id, now, now);
+  const copy = f.native.prepare('INSERT INTO ai_organization_settings SELECT ?,revision,config_json,?,updated_by,updated_at FROM ai_organization_settings WHERE organization_id=\'org_proex\'');
+  copy.run('org-a-broken', 'v1.broken.invalid');
+  copy.run('org-b-synthetic', await encryptCredentials(secret, { deepseek: key }, 'org-b-synthetic'));
+  const row = () => f.native.prepare("SELECT * FROM ai_organization_settings WHERE organization_id='org_proex'").get();
+  const before = row();
+  await manageAssistantGrant(f.db, f.actors.owner, { action: 'grant.create', organizationId: 'org_proex', userId: f.actors.manager.userId });
+  await assert.rejects(migrateAssistantCredentials(f.db, f.actors.manager, {}, secret, keys), code('assistant_key_admin'));
+  await assert.rejects(migrateAssistantCredentials(f.db, null, {}, secret, keys), code('unauthenticated'));
+  await assert.rejects(migrateAssistantCredentials(f.db, f.actors.owner, { limit: 11 }, secret, keys), code('assistant_key_migration_input'));
+  await assert.rejects(migrateAssistantCredentials(f.db, f.actors.owner, {}, secret, {}), code('assistant_key_configuration'));
+  const first = await migrateAssistantCredentials(f.db, f.actors.owner, { limit: 1 }, secret, keys);
+  assert.deepEqual(first, { migrated: 0, changed: 0, unreadable: 1, remaining: 3, nextCursor: 'org-a-broken' });
+  const second = await migrateAssistantCredentials(f.db, f.actors.owner, { cursor: first.nextCursor }, secret, keys);
+  assert.deepEqual(second, { migrated: 2, changed: 0, unreadable: 0, remaining: 1, nextCursor: null });
+  const after = row(), { credentials_ciphertext: ciphertext, ...other } = after;
+  assert.match(ciphertext, /^v2\./);
+  const { credentials_ciphertext: legacyCiphertext, ...previousFields } = before;
+  assert.deepEqual(other, previousFields, 'reciphering leaves non-credential fields intact');
+  const receipt = await migrateAssistantCredentials(f.db, f.actors.owner, {}, secret, keys);
+  assert.deepEqual(receipt, { migrated: 0, changed: 0, unreadable: 1, remaining: 1, nextCursor: null });
+  const audit = f.native.prepare("SELECT details FROM audit WHERE action='assistant.credentials.reencrypted'").all();
+  assert.equal(audit.length, 2);
+  const publicStatus = await assistantStatus(f.db, f.actors.owner, secret + '-rotated', 'org_proex', undefined, keys);
+  assert.equal(publicStatus.available, true);
+  const exported = JSON.stringify({ receipt, audit, publicStatus });
+  for (const privateValue of [key, secret, keys.current, ciphertext, legacyCiphertext]) assert.ok(!exported.includes(privateValue));
+ } finally { f.native.close(); }
+});
+
+test('reciphering and settings saves use compare-and-swap in both directions and recheck live ACL', async () => {
+ const f = fixture();
+ try {
+  await configureAssistant(f.db, f.actors.owner, configInput(), secret);
+  const row = () => f.native.prepare("SELECT revision,credentials_ciphertext FROM ai_organization_settings WHERE organization_id='org_proex'").get();
+  const set = f.native.prepare("UPDATE ai_organization_settings SET credentials_ciphertext=? WHERE organization_id='org_proex'");
+  const concurrentLegacy = await encryptCredentials(secret, { deepseek: key + '-concurrent' }, 'org_proex');
+  f.raceBatch(/SET credentials_ciphertext=/, () => set.run(concurrentLegacy));
+  assert.equal((await migrateAssistantCredentials(f.db, f.actors.owner, {}, secret, keys)).changed, 1);
+  assert.equal(row().credentials_ciphertext, concurrentLegacy);
+  const concurrentV2 = await encryptProviderCredentials(secret, { deepseek: key }, 'org_proex', keys);
+  f.raceBatch(/SET revision=\?,config_json=/, () => set.run(concurrentV2));
+  await assert.rejects(configureAssistant(f.db, f.actors.owner, configInput({}, { expectedRevision: 1 }), secret), code('assistant_configuration_changed'));
+  assert.equal(row().credentials_ciphertext, concurrentV2);
+  await assert.rejects(configureAssistant(f.db, f.actors.owner, configInput({}, { expectedRevision: 1, replaceCredentials: true }), secret), code('assistant_key_configuration'));
+  set.run(concurrentLegacy);
+  f.raceBatch(/SET credentials_ciphertext=/, () => f.native.prepare("UPDATE members SET revoked_at=? WHERE user_id=?").run(new Date().toISOString(), f.actors.owner.userId));
+  await assert.rejects(migrateAssistantCredentials(f.db, f.actors.owner, {}, secret, keys), code('assistant_key_admin'));
+  assert.equal(row().credentials_ciphertext, concurrentLegacy);
+  assert.equal(f.native.prepare("SELECT COUNT(*) AS n FROM audit WHERE action='assistant.credentials.reencrypted'").get().n, 0);
+ } finally { f.native.close(); }
+});
+
+test('a rotated dedicated key can migrate older v2 envelopes and signed plans still use the login secret', async () => {
+ const f = fixture();
+ try {
+  await saveVault(f);
+  await configureAssistant(f.db, f.actors.owner, { action: 'configure', organizationId: 'org_proex', expectedRevision: 1, config: { ...DEFAULT_ASSISTANT_CONFIG, enabled: true } }, secret, undefined, keys);
+  const rotated = { current: keys.current + '-rotation', previous: keys.current };
+  const preview = await prepareAssistantPlan(f.db, f.actors.inventory, request(), secret, { fetcher: fakeProvider().fetch, keys: rotated });
+  assert.equal((await migrateAssistantCredentials(f.db, f.actors.owner, {}, secret, rotated)).migrated, 1);
+  const result = await applyAssistantPlan(f.db, f.actors.inventory, confirm(preview), secret, undefined, { current: rotated.current });
+  assert.ok(result.movementId);
+ } finally { f.native.close(); }
+});
+
+test('the owner-only vault masks credentials, preserves delegated configuration, and disables dependent features', async () => {
+ const f = fixture();
+ try {
+  const read = () => assistantCredentialVault(f.db, f.actors.owner, 'org_proex', secret, keys);
+  const write = (action, revision, extra) => manageAssistantCredential(f.db, f.actors.owner, vaultInput(action, revision, extra), secret, keys);
+  const config = (revision, changes = {}) => ({ action: 'configure', organizationId: 'org_proex', expectedRevision: revision, config: { ...DEFAULT_ASSISTANT_CONFIG, ...changes } });
+  const syntheticKey = 'sk-only-synthetic-credential-zW12';
+  await manageAssistantGrant(f.db, f.actors.owner, { action: 'grant.create', organizationId: 'org_proex', userId: f.actors.manager.userId });
+  await assert.rejects(assistantCredentialVault(f.db, f.actors.manager, 'org_proex', secret, keys), code('assistant_key_admin'));
+  await assert.rejects(manageAssistantCredential(f.db, f.actors.manager, vaultInput('save', 0, { label: 'Outra chave', secret: syntheticKey }), secret, keys), code('assistant_key_admin'));
+  await assert.rejects(write('save', 0, { label: syntheticKey, secret: syntheticKey }), code('assistant_key_label'));
+  const saved = await write('save', 0, { label: 'DeepSeek QA', secret: syntheticKey });
+  assert.equal(saved.keys[0].mask, 'sk-…zW12');
+  assert.equal(saved.keys[0].status, 'active');
+  await assert.rejects(configureAssistant(f.db, f.actors.manager, { ...config(1), deepseekKey: key }, secret, undefined, keys), code('assistant_key_admin'));
+  assert.equal((await configureAssistant(f.db, f.actors.manager, config(1, { enabled: true, documentEnabled: true }), secret, undefined, keys)).revision, 2);
+  const disabled = await write('disable', 2);
+  assert.equal(disabled.keys[0].status, 'disabled');
+  const disabledEnvelope = f.native.prepare('SELECT credentials_ciphertext FROM ai_organization_settings').get().credentials_ciphertext;
+  assert.equal((await decryptProviderCredentials(secret, disabledEnvelope, 'org_proex', keys)).deepseek, undefined);
+  await assert.rejects(configureAssistant(f.db, f.actors.manager, config(3, { enabled: true }), secret, undefined, keys), code('assistant_credentials'));
+  assert.equal((await assistantStatus(f.db, f.actors.owner, secret, 'org_proex', undefined, keys)).config.documentEnabled, false);
+  assert.equal((await write('enable', 3)).keys[0].status, 'active');
+  assert.equal((await assistantStatus(f.db, f.actors.owner, secret, 'org_proex', undefined, keys)).available, false);
+  await assert.rejects(write('remove', 3), code('assistant_configuration_changed'));
+  assert.equal((await write('remove', 4)).keys[0].status, 'removed');
+  const row = f.native.prepare("SELECT credentials_ciphertext FROM ai_organization_settings WHERE organization_id='org_proex'").get();
+  assert.equal((await decryptProviderCredentials(secret, row.credentials_ciphertext, 'org_proex', keys)).deepseek, undefined);
+  const audit = f.native.prepare("SELECT details FROM audit WHERE action LIKE 'assistant.credentials.%'").all();
+  assert.equal(audit.length, 4);
+  const exposed = JSON.stringify({ vault: await read(), audit });
+  for (const value of [syntheticKey, keys.current, row.credentials_ciphertext]) assert.ok(!exposed.includes(value));
+ } finally { f.native.close(); }
+});
+
+
+test('vault rejects plausible keys in labels and sanitizes legacy labels and masks without echoing them', async () => {
+ const f = fixture(), speech = { provider: 'groq', organizationId: 'org_proex', groqKey: 'syntheticGroqValue' };
+ const foreignKey = 'sk-qa-foreign-provider-only-Fz29', randomLookingKey = 'A0qp9b7f7CgT5m2RX4j5pY8s';
+ try {
+  await manageAssistantCredential(f.db, f.actors.owner,
+   { ...vaultInput('save', 0, { label: 'Texto de outra organização', secret: foreignKey }), organizationId: 'unit-synthetic' }, secret, keys, speech);
+  for (const label of ['Voz ' + speech.groqKey, 'Chave ' + foreignKey, randomLookingKey]) {
+   await assert.rejects(manageAssistantCredential(f.db, f.actors.owner,
+    vaultInput('save', 0, { label, secret: key }), secret, keys, speech), error => {
+     assert.equal(error.code, 'assistant_key_label');
+     assert.ok(!error.message.includes(label));
+     return true;
+    });
+  }
+  const saved = await manageAssistantCredential(f.db, f.actors.owner,
+   vaultInput('save', 0, { label: 'Credencial de homologação', secret: key }), secret, keys, speech);
+  assert.equal(saved.keys[0].label, 'Credencial de homologação');
+  assert.match(saved.keys[0].mask, /^…[A-Za-z0-9_-]{4}$/);
+  const metadata = f.native.prepare("SELECT label,mask FROM ai_provider_credential_metadata WHERE organization_id='org_proex'");
+  f.native.prepare("UPDATE ai_provider_credential_metadata SET label=?,mask=? WHERE organization_id='org_proex'")
+   .run(speech.groqKey, foreignKey);
+  const read = await assistantCredentialVault(f.db, f.actors.owner, 'org_proex', secret, keys, speech);
+  assert.equal(read.keys[0].label, 'DeepSeek');
+  assert.equal(read.keys[0].mask, null);
+  assert.equal(metadata.get().label, speech.groqKey, 'reading does not change stored data');
+  const disabled = await manageAssistantCredential(f.db, f.actors.owner, vaultInput('disable', 1), secret, keys, speech);
+  assert.equal(disabled.keys[0].status, 'disabled');
+  assert.deepEqual({ ...metadata.get() }, { label: 'DeepSeek', mask: '' });
+  const audit = f.native.prepare("SELECT details FROM audit WHERE action LIKE 'assistant.credentials.%'").all();
+  assert.equal(audit.length, 3);
+  for (const { details } of audit) assert.deepEqual(Object.keys(JSON.parse(details)).sort(), ['provider', 'revision', 'state']);
+  const exposed = JSON.stringify({ read, disabled, audit });
+  for (const protectedValue of [speech.groqKey, foreignKey, key, keys.current]) assert.ok(!exposed.includes(protectedValue));
+ } finally { f.native.close(); }
+});
+
+test('vault owner and revision are checked again inside the write transaction, and recovery needs explicit confirmation', async () => {
+ const f = fixture();
+ try {
+  await saveVault(f);
+  const sql = f.native.prepare("UPDATE ai_organization_settings SET credentials_ciphertext='v1.lost.ciphertext' WHERE organization_id='org_proex'");
+  sql.run();
+  assert.equal((await assistantCredentialVault(f.db, f.actors.owner, 'org_proex', secret, keys)).recoverable, true);
+  await assert.rejects(saveVault(f, 1), code('assistant_key_recovery'));
+  const replacement = vaultInput('save', 1, { label: 'Recuperação sintética', secret: key, replaceUnavailable: true });
+  f.raceBatch(/vault_authority_changed/, () => f.native.prepare("UPDATE members SET revoked_at=? WHERE user_id=?").run(new Date().toISOString(), f.actors.owner.userId));
+  await assert.rejects(manageAssistantCredential(f.db, f.actors.owner, replacement, secret, keys), code('assistant_key_admin'));
+  assert.equal(f.native.prepare('SELECT credentials_ciphertext FROM ai_organization_settings').get().credentials_ciphertext, 'v1.lost.ciphertext');
+  f.native.prepare('UPDATE members SET revoked_at=NULL WHERE user_id=?').run(f.actors.owner.userId);
+  const result = await manageAssistantCredential(f.db, f.actors.owner, replacement, secret, keys);
+  assert.equal(result.recoverable, false);
+  assert.equal(result.keys[0].status, 'active');
+ } finally { f.native.close(); }
+});
+
+test('vault reservations follow Brasília day and month, and missing dedicated key never advertises a v2 downgrade', async () => {
+ const f = fixture(), DateConstructor = globalThis.Date;
+ try {
+  const day = DateConstructor.parse('2026-11-01T02:30:00.000Z');
+  globalThis.Date = class extends DateConstructor {
+   constructor(...args) { super(...(args.length ? args : [day])); }
+   static now() { return day; }
+  };
+  const insert = f.native.prepare('INSERT INTO ai_organization_usage(organization_id,day,reserved_usd_micros) VALUES(?,?,?)');
+  insert.run('org_proex', '2026-10-01', 7);
+  insert.run('org_proex', '2026-10-31', 11);
+  insert.run('org_proex', '2026-11-01', 23);
+  await configureAssistant(f.db, f.actors.owner, configInput(), secret);
+  const legacy = await assistantCredentialVault(f.db, f.actors.owner, 'org_proex', secret, {});
+  assert.equal(legacy.legacyAvailable, true);
+  assert.equal(legacy.storageReady, false);
+  assert.equal(legacy.keys[0].status, 'active');
+  assert.equal(legacy.keys[0].mask, null);
+  assert.deepEqual(legacy.reserved, { today: 11, month: 18, dailyLimit: 1000000 });
+  assert.equal((await assistantStatus(f.db, f.actors.owner, secret, 'org_proex')).credentialVaultManaged, false);
+  await migrateAssistantCredentials(f.db, f.actors.owner, {}, secret, keys);
+  const missing = await assistantCredentialVault(f.db, f.actors.owner, 'org_proex', secret, {});
+  assert.equal(missing.legacyAvailable, false);
+  assert.equal(missing.storageReady, false);
+  assert.equal(missing.keys[0].status, 'unavailable');
+  assert.equal((await assistantStatus(f.db, f.actors.owner, secret, 'org_proex')).credentialVaultManaged, true);
+  await assert.rejects(configureAssistant(f.db, f.actors.owner, configInput({}, { expectedRevision: 1, replaceCredentials: true }), secret), code('assistant_key_configuration'));
+ } finally { globalThis.Date = DateConstructor; f.native.close(); }
 });
 test('only platform owner configures; no endpoint override, no plaintext echo, optimistic revision required', async () => {
  const f = fixture(); try {
@@ -194,11 +412,12 @@ test('strict schema rejects invented fields, foreign IDs, quantities and fabrica
 });
 test('AI secrets and internal state cannot enter portal snapshot, MCP/Sheets pages or Drive attachment manifest', async () => {
  const f = fixture(); try {
-  await configureAssistant(f.db, f.actors.owner, configInput(), secret); const ciphertext = f.native.prepare('SELECT credentials_ciphertext FROM ai_organization_settings').get().credentials_ciphertext;
+  await saveVault(f); const ciphertext = f.native.prepare('SELECT credentials_ciphertext FROM ai_organization_settings').get().credentials_ciphertext;
+  assert.match(ciphertext, /^v2\./);
   const schemas = describePortableSchemas(), snapshot = await portalSnapshot(f.db, f.actors.owner), status = await syncStatus(f.db, f.actors.owner), attachments = await listSyncAttachments(f.db, f.actors.owner);
-  for (const table of ['ai_settings', 'ai_plans', 'ai_calls', 'ai_daily_usage', 'ai_organization_settings', 'ai_configuration_grants', 'ai_organization_usage', 'ai_transcriptions']) { assert.equal(schemas.tables.some(row => row.table === table), false); await assert.rejects(exportPortablePage(f.db, f.actors.owner, { table })); }
+  for (const table of ['ai_settings', 'ai_plans', 'ai_calls', 'ai_daily_usage', 'ai_organization_settings', 'ai_configuration_grants', 'ai_organization_usage', 'ai_transcriptions', 'ai_provider_credential_metadata']) { assert.equal(schemas.tables.some(row => row.table === table), false); await assert.rejects(exportPortablePage(f.db, f.actors.owner, { table })); }
   const pages = []; for (const schema of schemas.tables) pages.push(await exportPortablePage(f.db, f.actors.owner, { table: schema.table }));
-  const exposed = JSON.stringify({ snapshot, status, attachments, pages }); for (const forbidden of [key, ciphertext, 'credentials_ciphertext', 'config_json', 'ai_settings']) assert.equal(exposed.includes(forbidden), false, forbidden);
+  const exposed = JSON.stringify({ snapshot, status, attachments, pages }); for (const forbidden of [key, keys.current, ciphertext, 'credentials_ciphertext', 'config_json', 'ai_settings']) assert.equal(exposed.includes(forbidden), false, forbidden);
  } finally { f.native.close(); }
 });
 test('browser dictation requires consent, stages final text only, and ignores events after cancellation', () => {
