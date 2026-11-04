@@ -1,6 +1,6 @@
 import { type PortalActor } from '../access';
 import { one, uid, type Row } from '../database';
-import { digest } from '../assistant/crypto';
+import { digest, type CredentialKeys } from '../assistant/crypto';
 import { PROVIDERS, safeRequest } from '../assistant/contracts';
 import { loadAssistantSettings } from '../assistant/settings';
 import { reservationStatements } from '../assistant/admission';
@@ -43,7 +43,7 @@ function guardError(error:unknown):never {
 }
 
 export async function prepareTaskTriage(db:D1Database, actor:PortalActor, input:Record<string,unknown>, secret:string,
-  options:{now?:number;fetcher?:typeof fetch}={}):Promise<TriageResponse> {
+  options:{now?:number;fetcher?:typeof fetch;keys?:CredentialKeys}={}):Promise<TriageResponse> {
  onlyKeys(input,['id','expectedVersion','operationKey','context','consent']);
  if (input.consent!==true) fail('Confirme o envio do resumo operacional ao provedor.', 'triage_consent');
  if (typeof input.operationKey!=='string' || !/^[A-Za-z0-9_-]{8,100}$/.test(input.operationKey)) fail('Abra a triagem novamente.', 'triage_operation');
@@ -53,7 +53,7 @@ export async function prepareTaskTriage(db:D1Database, actor:PortalActor, input:
  }
  const task = await getTask(db,actor,id(input.id)!);
  if (task.version!==version(input.expectedVersion) || ['completed','cancelled'].includes(task.status)) return stale();
- const {config, credentials, revision} = await loadAssistantSettings(db,secret,task.organization_id);
+ const {config, credentials, revision} = await loadAssistantSettings(db,secret,task.organization_id,false,options.keys);
  if (!config.jevEnabled || !credentials.typesafe) return unavailable();
  const now = options.now ?? Date.now(), createdAt = new Date(now).toISOString(), day = createdAt.slice(0,10);
  const proposalId = await digest(JSON.stringify(['triage',actor.userId,task.id,input.operationKey]));

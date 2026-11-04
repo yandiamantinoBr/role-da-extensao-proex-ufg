@@ -1,5 +1,5 @@
 import { getActor } from '@/lib/access';
-import { database, inviteSecret, taskTriageEnabled } from '@/lib/platform';
+import { assistantCredentialKeys, database, inviteSecret, taskTriageEnabled } from '@/lib/platform';
 import { getPortalUser } from '@/lib/session';
 import { boundedJson } from '@/lib/http';
 import { HttpError, publicError } from '@/lib/errors';
@@ -31,6 +31,6 @@ export async function POST(request:Request) {
   if(!taskTriageEnabled()||!secret)throw new HttpError(503,'A triagem com JEV está desativada. Você pode classificar a demanda manualmente.','triage_disabled');
   const input=await boundedJson(request,8*1024);
   if(input.action==='task.triage.apply')return Response.json(await applyTaskTriage(db,actor,input),{headers});
-  return Response.json(await prepareTaskTriage(db,actor,input,secret),{headers});
+  return Response.json(await prepareTaskTriage(db,actor,input,secret,{keys:assistantCredentialKeys()}),{headers});
  } catch(error) {return failure(error);}
 }

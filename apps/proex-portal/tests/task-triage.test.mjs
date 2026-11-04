@@ -6,6 +6,7 @@ import {compile,nativeFixture,root} from './support/traffic-fixture.mjs';
 const {prepareTaskTriage,applyTaskTriage}=await import(compile('lib/follow-up/triage.ts'));
 const {followupAction}=await import(compile('lib/follow-up/service.ts'));
 const {configureAssistant}=await import(compile('lib/assistant/settings.ts'));
+const {migrateAssistantCredentials}=await import(compile('lib/assistant/credential-migration.ts'));
 const {DEFAULT_ASSISTANT_CONFIG}=await import(compile('lib/assistant/contracts.ts'));
 const key='synthetic-only-typesafe-credential', secret='test-only-triage-session-secret-at-least-32';
 const now=Date.parse('2026-11-04T02:30:00Z');
@@ -128,10 +129,23 @@ test('a revoked actor during dispatch never sees the proposal and the measured r
  assert.equal(f.native.prepare('SELECT calls FROM ai_organization_usage').get().calls,1);
 });
 
+test('dedicated v2 credentials work after reciphering through the bridge',async t=>{
+ const f=await fixture(t),source=fake(),keys={current:'synthetic-only-dedicated-triage-test-key'};
+ const receipt=await migrateAssistantCredentials(f.db,f.owner,{},secret,keys);
+ assert.equal(receipt.migrated,1);
+ assert.equal(receipt.remaining,0);
+ await assert.rejects(prepare(f,source),{code:'assistant_credentials_unavailable'});
+ assert.equal(source.calls.length,0);
+ const proposal=await prepareTaskTriage(f.db,f.owner,prepareInput(f),secret,{now,fetcher:source.fetcher,keys});
+ assert.deepEqual(proposal.proposal,{urgency:'high',importance:'medium'});
+ assert.equal(source.calls.length,1);
+ assert.equal((await apply(f,proposal)).task.importance,'medium');
+});
+
 test('HTTP pilot is off by default and keeps the manual path, CSRF and no-store',async t=>{
  const f=await fixture(t);
  const fixtures=new Map([
-  [resolve(root,'lib/platform.ts'),"export function database(){return globalThis.__triageTest.db;} export function inviteSecret(){return globalThis.__triageTest.secret;} export function taskTriageEnabled(){return false;}"],
+  [resolve(root,'lib/platform.ts'),"export function database(){return globalThis.__triageTest.db;} export function inviteSecret(){return globalThis.__triageTest.secret;} export function taskTriageEnabled(){return false;} export function assistantCredentialKeys(){return {};}"],
   [resolve(root,'lib/session.ts'),"export async function getPortalUser(){return globalThis.__triageTest.owner;}"],
  ]);
  globalThis.__triageTest={...f,secret};
