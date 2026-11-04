@@ -154,6 +154,54 @@ test('changing project clears incompatible unit and chart filters and starts on 
  } finally { h.dispose(); }
 });
 
+test('chart and native group selector filter the same rows and reset pagination', async () => {
+ const h = harness();
+ const materialRows = Array.from({ length: 30 }, (_, index) => ({ ...row('a'), id: `gift-${index}` }));
+ const equipment = { ...row('b'), classe: 'equipment' };
+ try {
+  h.render(); h.flushEffects();
+  h.requests.at(-1).resolve({ ok: true, json: async () => ({ dataset: 'materials', rows: [...materialRows, equipment], truncated: false }) });
+  await tick(); h.render();
+  h.button('Próxima').props.onClick(); h.render();
+  assert.match(h.text(), /26–31 de 31/);
+  const select = () => h.input('Filtrar tabela por grupo');
+  select().props.onChange({ target: { value: 'Equipamento' } }); h.render();
+  assert.match(h.text(), /1–1 de 1/);
+  assert.deepEqual((await jsonDownload(h)).linhas.map(line => line.material), ['Material B']);
+  const filterBar = nodesInside(h.render()).find(node => node.type === 'Bar' && node.props.onClick);
+  filterBar.props.onClick({ payload: { raw: 'Brinde' } }); h.render();
+  assert.equal(select().props.value, 'Brinde');
+  assert.match(h.text(), /1–25 de 30/);
+  select().props.onChange({ target: { value: '' } }); h.render();
+  assert.match(h.text(), /1–25 de 31/);
+  const container = nodesInside(h.render()).find(node => node.type === 'ResponsiveContainer' && node.props.onResize);
+  const axis = () => nodesInside(h.render()).find(node => node.type === 'YAxis' && node.props.type === 'category');
+  container.props.onResize(234, 180);
+  assert.equal(axis().props.width, 78);
+  assert.match(axis().props.tickFormatter('Material institucional da Pró-Reitoria de Extensão'), /…$/);
+  container.props.onResize(480, 180);
+  assert.equal(axis().props.width, 150);
+ } finally { h.dispose(); }
+});
+
+test('month table exposes the same entries and withdrawals as the filtered timeline', async () => {
+ const h = harness(), props = { ...base, available: ['movements'] };
+ const movement = (id, data, tipo, quantidade) => ({ ...row('a'), id, data, tipo, quantidade });
+ try {
+  h.render(props); h.flushEffects();
+  h.requests.at(-1).resolve({ ok: true, json: async () => ({ dataset: 'movements', truncated: false, rows: [
+   movement('in', '2026-09-02', 'receive', 7), movement('out', '2026-09-07', 'distribute', -4),
+   movement('next', '2026-10-03', 'distribute', -2),
+  ] }) });
+  await tick(); h.render(props);
+  const table = () => nodesInside(h.render(props)).find(node => node.type === 'table' && text(node).startsWith('Valores da evolução por mês'));
+  const body = () => nodesInside(table()).filter(node => node.type === 'tr').map(row => nodesInside(row).filter(cell => ['th','td'].includes(cell.type)).map(text));
+  assert.deepEqual(body(), [['Mês','Entradas','Saídas'],['set/26','7','4'],['out/26','0','2']]);
+  h.input('Filtrar tabela por grupo').props.onChange({ target: { value: 'Entrada' } });
+  assert.deepEqual(body(), [['Mês','Entradas','Saídas'],['set/26','7','0']]);
+ } finally { h.dispose(); }
+});
+
 test('report period on screen and in exports reflects whether the subject applies dates', async () => {
  const h = harness(), props = { ...base, available: ['projects', 'materials', 'loans'], from: '2026-10-01' };
  try {

@@ -410,7 +410,9 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
   const presetName = presetsReady ? presetState.name : '';
   const visiblePresets = presetsReady ? presetState.values.filter(preset => datasets.includes(preset.dataset)) : [];
   const [exporting, setExporting] = useState<'pdf' | 'docx' | null>(null);
+  const [categoryAxisWidth, setCategoryAxisWidth] = useState(150);
   const chartsRef = useRef<HTMLDivElement>(null);
+  const reportSearchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!presetKey) return;
@@ -549,6 +551,7 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
       :root{--rc-1:#2a78d6;--rc-2:#eb6834;--rc-grid:#e6e1ec;--rc-axis:#6b6275}body{font:12px/1.5 system-ui,sans-serif;color:#231b2b;margin:28px}h1{font-size:20px;margin:0 0 4px;color:#54216c}dl{display:grid;grid-template-columns:140px 1fr;gap:2px 12px;margin:12px 0 18px}dt{color:#6b6275}dd{margin:0}.k{display:flex;gap:10px;margin-bottom:16px}.k div{border:1px solid #ddd3e6;border-radius:8px;padding:8px 12px;min-width:120px}.k b{display:block;font-size:20px;color:#54216c}.c{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px}.c svg{max-width:100%;height:auto}table{width:100%;border-collapse:collapse;font-size:11px}th{background:#54216c;color:#fff;text-align:left;padding:5px}td{border-bottom:1px solid #e6e1ec;padding:4px 5px}td.n{text-align:right;font-variant-numeric:tabular-nums}@media print{body{margin:10mm}} .masthead{display:flex;justify-content:space-between;align-items:center;gap:14px;border-bottom:3px solid #ffaa3d;margin:0 0 14px;padding-bottom:12px}.masthead p{margin:0}.logos{display:flex;gap:10px;align-items:center;flex-shrink:0}.logos img{width:70px;height:40px;object-fit:contain;filter:brightness(0)}.k{display:grid;grid-template-columns:repeat(4,minmax(0,1fr))}.k div{min-width:0;break-inside:avoid}thead{display:table-header-group}tr{break-inside:avoid}th,td{overflow-wrap:anywhere}body{print-color-adjust:exact;-webkit-print-color-adjust:exact}</style></head><body>
       <header class="masthead"><div><h1>${escape(config.label)}</h1><p>Pró-Reitoria de Extensão da UFG</p></div><div class="logos"><img src="${brandBase}/brand/proex.png" alt="PROEX"><img src="${brandBase}/brand/ufg-white.png" alt="Universidade Federal de Goiás"></div></header><dl>${info.map(([label, value]) => `<dt>${escape(label)}</dt><dd>${escape(value)}</dd>`).join('')}</dl>
       <div class="k">${kpis.map(kpi => `<div>${escape(kpi.label)}<b>${formatNumber(kpi.value)}</b></div>`).join('')}</div>
+      ${focus && charts.length ? '<p>A distribuição por grupo compara todos os grupos do recorte. Os demais dados refletem o grupo selecionado.</p>' : ''}
       <div class="c">${[...charts].map(svg => svg.outerHTML).join('')}</div>
       <table><thead><tr>${exportColumns.map(column => `<th>${escape(column.label)}</th>`).join('')}</tr></thead><tbody>${sorted.slice(0, 2000).map(row => `<tr>${exportColumns.map(column => `<td${column.numeric ? ' class="n"' : ''}>${escape(exportValue(row, column.key))}</td>`).join('')}</tr>`).join('')}</tbody></table>
       ${sorted.length > 2000 ? '<p>Impressão limitada às primeiras 2.000 linhas. Use a exportação em planilha para o conjunto completo.</p>' : ''}
@@ -558,6 +561,11 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
 
   if (!datasets.length) return null;
   const groupLabel = groupBy === 'mes' ? 'Mês' : config.columns.find(column => column.key === groupBy)?.label ?? groupBy;
+  const focusLabel = groupBy === 'mes' && /^\d{4}-\d{2}$/.test(focus) ? monthLabel(focus) : focus;
+  const setGroupFocus = (value: string) => updateView({ focus: value, page: 0 });
+  const categoryLabelLimit = Math.floor((categoryAxisWidth - 10) / 6);
+  const chartMeasureLabel = effectiveMeasure === '__count__' ? 'Total' : `Soma de ${measureLabel}`;
+  const monthColumns = config.series ?? [{ key: 'value', label: chartMeasureLabel }];
   const Icon = config.icon;
   const activeOptions = [assetDetails ? 'metadados patrimoniais' : '', includeNotes ? 'textos livres' : '', outflowType !== 'all' ? LABELS.tipo[outflowType] : '', returnState !== 'all' ? LABELS.situacao_retorno[returnState] : '', measurementUnit].filter(Boolean);
   return <section className={styles.root} aria-label="Central de relatórios">
@@ -566,7 +574,7 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
     <label className={`p-field ${styles.subject}`}><span>Assunto do relatório</span><select value={dataset} onChange={event => chooseDataset(event.target.value as DatasetId)}>{datasets.map(id => <option key={id} value={id}>{DATASETS[id].label}</option>)}</select></label>
 
     <div className={styles.primaryControls}>
-      <label className={`p-field ${styles.search}`}><span>Buscar nas linhas</span><span className={styles.searchBox}><Search size={15} /><input value={search} onChange={event => { setSearch(event.target.value); updateView({ page: 0 }); }} placeholder="Nome, material, título, observação…" />{search && <button type="button" aria-label="Limpar busca" onClick={() => { setSearch(''); updateView({ page: 0 }); }}><X size={14} /></button>}</span></label>
+      <label className={`p-field ${styles.search}`}><span>Buscar nas linhas</span><span className={styles.searchBox}><Search size={15} /><input ref={reportSearchRef} value={search} onChange={event => { setSearch(event.target.value); updateView({ page: 0 }); }} placeholder="Nome, material, título, observação…" />{search && <button type="button" aria-label="Limpar busca" onClick={() => { setSearch(''); updateView({ page: 0 }); }}><X size={14} /></button>}</span></label>
     </div>
     <details className={styles.options}><summary>Ajustar recorte e colunas <span>{chosen.length} colunas · {visiblePresets.length} modelos</span>{activeOptions.length > 0 && <small>{activeOptions.join(' · ')}</small>}</summary><div className={styles.optionsBody}>
     {dataset === 'materials' && <label className="p-form-help"><input type="checkbox" checked={assetDetails} onChange={event => { setAssetDetails(event.target.checked); setColumns(DATASETS.materials.defaults); setRows([]); setMeasure('__count__'); }}/>{' '}Consultar metadados patrimoniais privados (somente projetos com permissão vigente de inventário). A referência de responsável, processo e valor documentado só entra na exportação ao escolher essas colunas.</label>}
@@ -598,7 +606,7 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
     <div className={styles.summary} aria-live="polite">
       <span className={styles.summaryIcon}><Icon size={20} /></span>
       <p><strong>{config.label}</strong> · {loading ? 'carregando…' : `${formatNumber(filtered.length)} ${filtered.length === 1 ? 'linha' : 'linhas'}`}{scopeLabel ? ` · ${scopeLabel}` : ''}{positionOnly || from || to ? ` · ${periodLabel}` : ''}</p>
-      {focus && <button type="button" className={styles.focusChip} onClick={() => updateView({ focus: '', page: 0 })}>{groupLabel}: {groupBy === 'mes' && /^\d{4}-\d{2}$/.test(focus) ? monthLabel(focus) : focus}<X size={13} /></button>}
+      {focus && <button type="button" className={styles.focusChip} aria-label={`Limpar filtro de grupo: ${focusLabel}`} onClick={event => { setGroupFocus(''); if (event.detail === 0) reportSearchRef.current?.focus(); }}>{groupLabel}: {focusLabel}<X size={13} aria-hidden="true" /></button>}
       {!loading && truncated && <small className={styles.warn}>{dataset === 'outflow_details' ? 'Consulta parcial: limite de 5.000 linhas ou 3 MiB. Refine o recorte para consultar e exportar tudo.' : 'Mostrando as primeiras 5.000 linhas. Refine o recorte para ver tudo.'}</small>}
     </div>
 
@@ -637,19 +645,27 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
         <button type="button" className="p-button p-button-subtle" disabled={loading || !chosen.length || !sorted.length || !!exporting} onClick={print}><Printer size={16} />Imprimir</button>
       </div>
     </details>
-    {!loading && rows.length > 0 && <>
+    {!loading && breakdown.length > 0 && <>
       <div className={styles.charts} ref={chartsRef}>
         <figure className={styles.chart}>
-          <figcaption><strong>{effectiveMeasure === '__count__' ? 'Distribuição' : `Soma de ${measureLabel}`} por {groupLabel.toLowerCase()}</strong><small>Clique em uma barra para destacar só aquele grupo na tabela.</small></figcaption>
+          <figcaption><strong>{effectiveMeasure === '__count__' ? 'Distribuição' : `Soma de ${measureLabel}`} por {groupLabel.toLowerCase()}</strong><small>Selecione um grupo ou toque em uma barra para filtrar as linhas da tabela.</small></figcaption>
+          <label className={`p-field ${styles.chartGroup}`}><span>Filtrar tabela por grupo</span>
+            <select value={focus} onChange={event => setGroupFocus(event.target.value)}>
+              <option value="">Todos os grupos</option>
+              {focus && !breakdown.some(item => item.raw === focus) && <option value={focus}>{focusLabel}</option>}
+              {breakdown.filter(item => item.raw).map(item => <option key={item.raw} value={item.raw}>{item.name}</option>)}
+            </select>
+          </label>
+          {breakdown.some(item => !item.raw) && <p className={styles.chartHelp}>“Outros” reúne os grupos menores. Esses grupos aparecem só no gráfico, sem seleção individual.</p>}
           <div style={{ height: Math.max(180, breakdown.length * 34 + 40) }} role="img" aria-label={`Gráfico de barras: ${breakdown.map(item => `${item.name} ${formatNumber(item.value)}`).join(', ')}`}>
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" onResize={width => setCategoryAxisWidth(Math.max(70, Math.min(150, Math.floor(width / 3))))}>
               <BarChart data={breakdown} layout="vertical" margin={{ top: 4, right: 44, bottom: 4, left: 4 }} barCategoryGap={6}>
                 <CartesianGrid horizontal={false} stroke="var(--rc-grid)" />
                 <XAxis type="number" allowDecimals={false} tick={{ fill: 'var(--rc-axis)', fontSize: 11 }} axisLine={false} tickLine={false} />
-                <YAxis type="category" dataKey="name" width={150} tick={{ fill: 'var(--rc-axis)', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(value: string) => value.length > 24 ? `${value.slice(0, 23)}…` : value} />
+                <YAxis type="category" dataKey="name" width={categoryAxisWidth} tick={{ fill: 'var(--rc-axis)', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(value: string) => value.length > categoryLabelLimit ? `${value.slice(0, categoryLabelLimit - 1)}…` : value} />
                 <Tooltip cursor={{ fill: 'var(--rc-hover)' }} content={<ChartTooltip unit={measureLabel} />} />
-                <Bar dataKey="value" name={effectiveMeasure === '__count__' ? 'Total' : `Soma de ${measureLabel}`} fill="var(--rc-1)" radius={[0, 4, 4, 0]} maxBarSize={22} cursor="pointer" label={{ position: 'right', fill: 'var(--rc-axis)', fontSize: 11, formatter: (value: unknown) => formatNumber(Number(value) || 0) }}
-                  onClick={(entry: { payload?: { raw?: string } }) => { const raw = entry?.payload?.raw; if (raw) updateView({ focus: focus === raw ? '' : raw, page: 0 }); }} />
+                <Bar dataKey="value" name={chartMeasureLabel} fill="var(--rc-1)" radius={[0, 4, 4, 0]} maxBarSize={22} cursor="pointer" label={{ position: 'right', fill: 'var(--rc-axis)', fontSize: 11, formatter: (value: unknown) => formatNumber(Number(value) || 0) }}
+                  onClick={(entry: { payload?: { raw?: string } }) => { const raw = entry?.payload?.raw; if (raw) setGroupFocus(focus === raw ? '' : raw); }} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -666,10 +682,18 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
                 {config.series ? <>
                   <Legend iconType="circle" wrapperStyle={{ fontSize: 12, color: 'var(--rc-axis)' }} />
                   {config.series.map((serie, index) => <Bar key={serie.key} dataKey={serie.key} name={serie.label} fill={`var(--rc-${index + 1})`} radius={[4, 4, 0, 0]} maxBarSize={28} />)}
-                </> : <Bar dataKey="value" name={effectiveMeasure === '__count__' ? 'Total' : `Soma de ${measureLabel}`} fill="var(--rc-1)" radius={[4, 4, 0, 0]} maxBarSize={36} />}
+                </> : <Bar dataKey="value" name={chartMeasureLabel} fill="var(--rc-1)" radius={[4, 4, 0, 0]} maxBarSize={36} />}
               </BarChart>
             </ResponsiveContainer>
           </div>
+          <details className={styles.monthValues}>
+            <summary>Ver valores por mês</summary>
+            <table>
+              <caption className="sr-only">Valores da evolução por mês</caption>
+              <thead><tr><th scope="col">Mês</th>{monthColumns.map(column => <th key={column.key} scope="col">{column.label}</th>)}</tr></thead>
+              <tbody>{timeline.map(point => <tr key={point.name}><th scope="row">{point.name}</th>{monthColumns.map(column => <td key={column.key}>{formatNumber(reportNumber(point[column.key]))}</td>)}</tr>)}</tbody>
+            </table>
+          </details>
         </figure>}
       </div>
 
