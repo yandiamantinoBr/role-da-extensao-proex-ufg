@@ -41,6 +41,29 @@ function credentialMask(provider: CredentialProvider, key: string) {
   return prefix + '…' + (/^[A-Za-z0-9_-]{4}$/.test(tail) ? tail : '••••');
 }
 
+function safeMask(provider: CredentialProvider, value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const suffix = provider === 'deepseek' ? value.replace(/^sk-/, '') : value;
+  return /^…(?:[A-Za-z0-9_-]{4}|••••)$/u.test(suffix) ? value : null;
+}
+
+function safeLabel(value: unknown, secrets: readonly unknown[]): string | null {
+  const label = typeof value === 'string' ? value.trim() : '';
+  if (!label || label.length > 72 || /[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/u.test(label)) return null;
+  const normalized = label.normalize('NFKC');
+  if (secrets.some(secret => typeof secret === 'string' && secret.length >= 12 && normalized.includes(secret.normalize('NFKC')))) return null;
+  if (/\b(?:sk[-_]|gsk_|dg_)[A-Za-z0-9_-]{10,}|\b(?:bearer\s+|(?:api[_ -]?key|access[_ -]?token)\s*[:=]\s*)[A-Za-z0-9_+./=-]{12,}/i.test(normalized)) return null;
+  const tokens = normalized.match(/[A-Za-z0-9_+./=-]{24,}/g) ?? [];
+  if (tokens.some(token => token.length >= 32 || /^[a-f0-9]{24,}$/i.test(token) || /[a-z]/i.test(token) && /\d/.test(token))) return null;
+  return label;
+}
+
+function protectedValues(authSecret: string, keys: CredentialKeys, speech: SpeechEnvironment | undefined,
+  credentials: Record<string, unknown> | null, disabled: Record<string, unknown>) {
+  return [authSecret, keys.current, keys.previous, speech?.groqKey,
+    ...credentialProviders.flatMap(provider => [credentials?.[provider], disabled[provider]])];
+}
+
 function disabledCredentials(credentials: Record<string, unknown> | null): Record<string, unknown> {
   const disabled = credentials?.disabledCredentials;
   return disabled && typeof disabled === 'object' && !Array.isArray(disabled) ? { ...disabled } : {};
@@ -66,12 +89,13 @@ export async function assistantCredentialVault(db: D1Database, actor: PortalActo
     COALESCE(SUM(reserved_usd_micros),0) AS month FROM ai_organization_usage WHERE organization_id=? AND substr(day,1,7)=? AND ${authority.sql}`,
   [today, id, today.slice(0, 7), ...authority.values]) : null;
   const disabled = disabledCredentials(credentials);
+  const secrets = protectedValues(authSecret, keys, speech, credentials, disabled);
   const entries = credentialProviders.map(provider => {
     const saved = metadata.find(entry => entry.provider === provider);
     const present = !!credentials && validProviderKey(credentials[provider]);
     const status = credentials === null ? 'unavailable' : present ? 'active' : validProviderKey(disabled[provider]) ? 'disabled' : saved?.state === 'removed' ? 'removed' : 'missing';
-    return { provider, label: String(saved?.label ?? providers[provider]), purpose: purposes[provider], status,
-      mask: typeof saved?.mask === 'string' && saved.mask ? saved.mask : null, createdAt: saved?.created_at ?? null, createdBy: saved?.created_by ?? null,
+    return { provider, label: safeLabel(saved?.label, secrets) ?? providers[provider], purpose: purposes[provider], status,
+      mask: safeMask(provider, saved?.mask), createdAt: saved?.created_at ?? null, createdBy: saved?.created_by ?? null,
       updatedAt: saved?.updated_at ?? null, updatedBy: saved?.updated_by ?? null };
   });
   if (!await one(db, `SELECT 1 WHERE ${authority.sql}`, authority.values)) throw forbidden();
@@ -107,14 +131,14 @@ export async function manageAssistantCredential(db: D1Database, caller: PortalAc
   const disabled = disabledCredentials(current);
   const previousKey = current[provider] ?? disabled[provider];
   const previous = await one(db, 'SELECT label,mask FROM ai_provider_credential_metadata WHERE organization_id=? AND provider=?', [id, provider]);
-  let label = String(previous?.label ?? providers[provider]), mask = String(previous?.mask ?? '');
+  const secrets = protectedValues(authSecret, keys, speech, current, disabled);
+  let label = safeLabel(previous?.label, secrets) ?? providers[provider];
+  let mask = safeMask(provider, previous?.mask) ?? '';
   if (saving) {
     if (!validProviderKey(input.secret)) throw new HttpError(400, 'Informe uma credencial válida do provedor.', 'assistant_credentials');
-    label = typeof input.label === 'string' ? input.label.trim() : '';
-    if (!label || label.length > 72 || /[\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/u.test(label) ||
-        [input.secret, authSecret, keys.current, keys.previous, ...credentialProviders.flatMap(name => [current[name], disabled[name]])].some(value => typeof value === 'string' && value && label.includes(value))) {
-      throw new HttpError(400, 'Informe um nome curto sem credenciais ou segredos.', 'assistant_key_label');
-    }
+    const name = safeLabel(input.label, [input.secret, ...secrets]);
+    if (!name) throw new HttpError(400, 'Informe um nome curto sem credenciais ou segredos.', 'assistant_key_label');
+    label = name;
     current[provider] = input.secret;
     mask = credentialMask(provider, input.secret);
   } else if (!validProviderKey(previousKey)) {
@@ -143,7 +167,7 @@ export async function manageAssistantCredential(db: D1Database, caller: PortalAc
     VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(organization_id,provider) DO UPDATE SET label=excluded.label,mask=excluded.mask,state=excluded.state,updated_at=excluded.updated_at,updated_by=excluded.updated_by`)
     .bind(id, provider, label, mask, state, at, actor.userId, at, actor.userId);
   const audit = db.prepare('INSERT INTO audit(id,actor_id,organization_id,action,entity_id,details,created_at) VALUES(?,?,?,?,?,?,?)')
-    .bind(crypto.randomUUID(), actor.userId, id, `assistant.credentials.${recover ? 'recover' : action}`, id, JSON.stringify({ provider, state, mask: mask || null, revision }), at);
+    .bind(crypto.randomUUID(), actor.userId, id, `assistant.credentials.${recover ? 'recover' : action}`, id, JSON.stringify({ provider, state, revision }), at);
   try {
     await db.batch([guard, write, verify, metadata,
       ...(recover ? [db.prepare("UPDATE ai_provider_credential_metadata SET state='removed',updated_at=?,updated_by=? WHERE organization_id=? AND provider<>?").bind(at, actor.userId, id, provider)] : []),

@@ -1022,7 +1022,7 @@ export default function PortalClient({ initial }: {
 
       {tab === 'settings' && <div className={settingsStyles.groups}>
         {canGlobal('organization.manage') && <>
-          <CredentialVaultSettings key={string(user.userId)} groupClass={settingsStyles.group} bodyClass={settingsStyles.body}/>
+          <CredentialVaultSettings key={string(user.userId)} groupClass={settingsStyles.group} bodyClass={settingsStyles.body} onConfigure={() => navigate('profile')}/>
           <details className={settingsStyles.group}>
             <summary><strong>Planilha e anexos</strong><small>Conexão, sincronização, arquivos no Drive e exportação portátil.</small></summary>
             <div className={settingsStyles.body}><SyncSettingsPanel includeBackups={false}/></div>

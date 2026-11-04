@@ -190,6 +190,43 @@ test('the owner-only vault masks credentials, preserves delegated configuration,
  } finally { f.native.close(); }
 });
 
+
+test('vault rejects plausible keys in labels and sanitizes legacy labels and masks without echoing them', async () => {
+ const f = fixture(), speech = { provider: 'groq', organizationId: 'org_proex', groqKey: 'syntheticGroqValue' };
+ const foreignKey = 'sk-qa-foreign-provider-only-Fz29', randomLookingKey = 'A0qp9b7f7CgT5m2RX4j5pY8s';
+ try {
+  await manageAssistantCredential(f.db, f.actors.owner,
+   { ...vaultInput('save', 0, { label: 'Texto de outra organização', secret: foreignKey }), organizationId: 'unit-synthetic' }, secret, keys, speech);
+  for (const label of ['Voz ' + speech.groqKey, 'Chave ' + foreignKey, randomLookingKey]) {
+   await assert.rejects(manageAssistantCredential(f.db, f.actors.owner,
+    vaultInput('save', 0, { label, secret: key }), secret, keys, speech), error => {
+     assert.equal(error.code, 'assistant_key_label');
+     assert.ok(!error.message.includes(label));
+     return true;
+    });
+  }
+  const saved = await manageAssistantCredential(f.db, f.actors.owner,
+   vaultInput('save', 0, { label: 'Credencial de homologação', secret: key }), secret, keys, speech);
+  assert.equal(saved.keys[0].label, 'Credencial de homologação');
+  assert.match(saved.keys[0].mask, /^…[A-Za-z0-9_-]{4}$/);
+  const metadata = f.native.prepare("SELECT label,mask FROM ai_provider_credential_metadata WHERE organization_id='org_proex'");
+  f.native.prepare("UPDATE ai_provider_credential_metadata SET label=?,mask=? WHERE organization_id='org_proex'")
+   .run(speech.groqKey, foreignKey);
+  const read = await assistantCredentialVault(f.db, f.actors.owner, 'org_proex', secret, keys, speech);
+  assert.equal(read.keys[0].label, 'DeepSeek');
+  assert.equal(read.keys[0].mask, null);
+  assert.equal(metadata.get().label, speech.groqKey, 'reading does not change stored data');
+  const disabled = await manageAssistantCredential(f.db, f.actors.owner, vaultInput('disable', 1), secret, keys, speech);
+  assert.equal(disabled.keys[0].status, 'disabled');
+  assert.deepEqual({ ...metadata.get() }, { label: 'DeepSeek', mask: '' });
+  const audit = f.native.prepare("SELECT details FROM audit WHERE action LIKE 'assistant.credentials.%'").all();
+  assert.equal(audit.length, 3);
+  for (const { details } of audit) assert.deepEqual(Object.keys(JSON.parse(details)).sort(), ['provider', 'revision', 'state']);
+  const exposed = JSON.stringify({ read, disabled, audit });
+  for (const protectedValue of [speech.groqKey, foreignKey, key, keys.current]) assert.ok(!exposed.includes(protectedValue));
+ } finally { f.native.close(); }
+});
+
 test('vault owner and revision are checked again inside the write transaction, and recovery needs explicit confirmation', async () => {
  const f = fixture();
  try {

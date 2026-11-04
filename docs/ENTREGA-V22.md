@@ -47,3 +47,22 @@ Na sessão autenticada, a ficha do CONPEEX apresentou a prévia, as três marcas
 A migração 0019 acrescenta duas estruturas pessoais. O acesso à caixa em produção confirmou a leitura do novo fluxo. O conector mantém suas 35 projeções, e os estados pessoais ficam fora do espelho. A verificação bidirecional desta rodada foi local. O último checkpoint real registrado está na entrega V19.
 
 No smoke autenticado de navegação, as 13 abas do menu abriram com título correspondente e largura de rolagem igual à largura útil. O ensaio usou o menu lateral a 932 px e a navegação inferior a 390 px, incluindo o menu Mais. Foram testadas abertura e largura do documento. A auditoria funcional das demais ações segue na fila.
+
+## Revisão de fluxos após a V22 · 04/11/2026
+
+A [PR #24](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/24) corrigiu os cartões do Início, que antes mudavam apenas o filtro. O merge `1eb9913` ficou READY na Vercel. Em produção, os cartões do CONPEEX e de Culturas e Artes na UFG abriram a ficha correspondente a 390 px, no topo e sem overflow. Na bancada, a correção passou nos dois temas a 390 e 1366 px. Também foram conferidos o retorno ao catálogo com foco no título, o recarregamento da ficha, a prévia do relatório e o atalho da Agenda.
+
+A [PR #25](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/25) ficou READY no merge `d63c08d`. A prévia real do CONPEEX exibiu **Dinâmicas 0** e **Marcos na Agenda 1**. A ficha sintética com os campos adicionais continuou em uma folha A4. Em bancada, o botão de empréstimo sem escolha conservou o estado Retirado. Escolher Registrar devolução e confirmar mudou para Devolvido. Apenas as observações daquele empréstimo entram no rascunho. O sino exibiu as páginas de 20 e 5 pendências ocultadas. A navegação anterior/próxima e a restauração da 21ª foram confirmadas.
+
+| Área | Fluxo exercitado |
+| --- | --- |
+| Acesso e projetos | Entrada sintética, cartões, catálogo, retorno, URL direta, dois temas e os controles de detalhe. |
+| Demandas e sino | Criação sintética com atribuição, aviso, ocultação, restauração, leitura, confirmação de limpeza e duas páginas de ocultadas. |
+| Materiais e empréstimos | Dois acessos ao detalhe, aba Histórico, fechamento por Esc, reserva e retirada via API local, devolução pela interface após escolha explícita. |
+| Agenda e relatório | Atalho mantém projeto. Prévia e lista dos formatos na interface. Indicadores da Agenda em produção e arquivo de uma página na bancada. |
+| Registros e equipe | Formulário e gravação de registro sintético. Catálogo e preenchimento de convite abertos localmente. |
+| Dinâmicas | Página pública local, troca para dado e expansão de regras e privacidade. |
+| Configurações | Conector sintético de ida e volta, edição concorrente e restauração em local isolado do backup cifrado com um objeto. |
+| Conta e IA | Campos DeepSeek, TypeSafe e Deepgram confirmados na conta em produção. O fluxo de cadastro real permanece a cargo do responsável. |
+
+O quadro informa o que foi exercitado em cada área. O CI cobre outros comportamentos. A auditoria de todos os estados e controles de cada função, aparelhos físicos, serviços externos e dados institucionais permanece por cenário.

@@ -11,10 +11,15 @@ import { serverWorkClock } from './time';
 import { followupDetail, saveTaskTriage } from './service';
 import { TRIAGE_CONTEXT_LIMIT, TRIAGE_INPUT_LIMIT, type TriageProposal, type TriageResponse } from './triage-contract';
 
-const configEnabled = "json_extract(s.config_json,'$.enabled')=1 AND json_extract(s.config_json,'$.jevEnabled')=1";
+const configEnabled = "json_extract(s.config_json,'$.jevEnabled')=1";
 const activeTask = "t.status IN ('open','in_progress','blocked')";
-const unavailable = () => fail('A triagem com JEV está indisponível nesta organização. Você pode classificar a demanda manualmente.', 'triage_disabled', 503);
 const stale = () => fail('A demanda ou a configuração mudou. Abra a versão atual para preparar outra triagem.', 'triage_stale', 409);
+const sensitiveSummary = [
+ /\b[a-z][a-z\d+.-]{1,15}:\/\/|\bwww\.|\b(?:[a-z\d][a-z\d-]*\.)+(?:br|com|org|net|edu|gov|io|app|test|invalid)\b/iu,
+ /(?<![\p{L}\d])(?:\d{3}[\s.]?\d{3}[\s.]?\d{3}[\s-]?\d{2}|\d{2}[\s.]?\d{3}[\s.]?\d{3}[\s/]?\d{4}[\s-]?\d{2})(?![\p{L}\d])/u,
+ /(?<![\p{L}\d])(?:\+?55[\s.-]*)?(?:\(\d{2}\)|\d{2})[\s.-]*(?:9[\s.-]*)?\d{4}[\s.-]*\d{4}(?![\p{L}\d])/u,
+ /-----BEGIN |\b(?:pne_|pxs_)[A-Za-z0-9_-]{12,}|\[(?:e-mail|documento) omitido\]/iu,
+];
 
 export async function taskTriageAvailable(db:D1Database, actor:PortalActor, taskId:unknown):Promise<boolean> {
  const task = await getTask(db,actor,id(taskId)!);
@@ -48,18 +53,17 @@ export async function prepareTaskTriage(db:D1Database, actor:PortalActor, input:
  if (input.consent!==true) fail('Confirme o envio do resumo operacional ao provedor.', 'triage_consent');
  if (typeof input.operationKey!=='string' || !/^[A-Za-z0-9_-]{8,100}$/.test(input.operationKey)) fail('Abra a triagem novamente.', 'triage_operation');
  const context = safeRequest(text(input.context,TRIAGE_CONTEXT_LIMIT));
- if (/https?:\/\/|www\.|-----BEGIN |\b(?:pne_|pxs_)[A-Za-z0-9_-]{12,}|(?:\+?55[\s-]*)?\(?\d{2}\)?[\s-]*\d{4,5}[-\s]?\d{4}|\[(?:e-mail|documento) omitido\]/iu.test(context)) {
+ if (sensitiveSummary.some(pattern => pattern.test(context))) {
   fail('Retire links, contatos e documentos do resumo operacional antes de enviar.', 'triage_sensitive');
  }
  const task = await getTask(db,actor,id(input.id)!);
  if (task.version!==version(input.expectedVersion) || ['completed','cancelled'].includes(task.status)) return stale();
- const {config, credentials, revision} = await loadAssistantSettings(db,secret,task.organization_id,false,options.keys);
- if (!config.jevEnabled || !credentials.typesafe) return unavailable();
- const now = options.now ?? Date.now(), createdAt = new Date(now).toISOString(), day = createdAt.slice(0,10);
+ const {config, credentials, revision} = await loadAssistantSettings(db,secret,task.organization_id,'triage',options.keys);
+ const now = options.now ?? Date.now(), {asOf:createdAt,today:day} = serverWorkClock(now);
  const proposalId = await digest(JSON.stringify(['triage',actor.userId,task.id,input.operationKey]));
  const fingerprint = await digest(JSON.stringify([task.id,task.version,revision,context]));
  const authorization = guard(db,actor,task,revision);
- const body = taskTriageBody(config,context,task.due_at,serverWorkClock(now).today);
+ const body = taskTriageBody(config,context,task.due_at,day);
  if (new TextEncoder().encode(JSON.stringify(body)).byteLength>TRIAGE_INPUT_LIMIT) fail('Resuma o contexto antes de enviar.', 'triage_context_limit');
  const reservedUsdMicros = Math.ceil(TRIAGE_INPUT_LIMIT*PROVIDERS.typesafe.inputMicrosPerToken);
  async function replay():Promise<TriageResponse|null> {

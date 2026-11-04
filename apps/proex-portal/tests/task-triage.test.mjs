@@ -3,9 +3,10 @@ import assert from 'node:assert/strict';
 import {resolve} from 'node:path';
 import {compile,nativeFixture,root} from './support/traffic-fixture.mjs';
 
-const {prepareTaskTriage,applyTaskTriage}=await import(compile('lib/follow-up/triage.ts'));
+const {prepareTaskTriage,applyTaskTriage,taskTriageAvailable}=await import(compile('lib/follow-up/triage.ts'));
 const {followupAction}=await import(compile('lib/follow-up/service.ts'));
 const {configureAssistant}=await import(compile('lib/assistant/settings.ts'));
+const {prepareAssistantPlan}=await import(compile('lib/assistant/service.ts'));
 const {migrateAssistantCredentials}=await import(compile('lib/assistant/credential-migration.ts'));
 const {DEFAULT_ASSISTANT_CONFIG}=await import(compile('lib/assistant/contracts.ts'));
 const key='synthetic-only-typesafe-credential', secret='test-only-triage-session-secret-at-least-32';
@@ -17,7 +18,7 @@ async function fixture(t,config={}) {
  const org=f.native.prepare("SELECT organization_id FROM projects WHERE id='project-fixture'").get().organization_id;
  await configureAssistant(f.db,owner,{organizationId:org,expectedRevision:0,
   config:{...DEFAULT_ASSISTANT_CONFIG,enabled:true,jevEnabled:true,...config},
-  deepseekKey:'synthetic-only-text-provider',typesafeKey:key},secret);
+  ...(config.enabled===false?{}:{deepseekKey:'synthetic-only-text-provider'}),typesafeKey:key},secret);
  const created=await followupAction(f.db,owner,'task.create',{
   action:'task.create',organizationId:org,projectId:'project-fixture',title:'Título que o provedor não recebe',
   body:'Detalhe interno protegido',dueAt:'2026-11-04',operationKey:crypto.randomUUID(),
@@ -76,16 +77,51 @@ test('sensitive or unapproved requests never reserve or dispatch, and an explici
   importance:{type:'choice',choice:'high',confidence:0.97,probabilities:{high:0.97}},
  }});
  await assert.rejects(prepare(f,source,prepareInput(f,{consent:false})),{code:'triage_consent'});
- for(const fragment of ['Contato: fake@example.invalid','Abrir https://example.invalid','Chave pxs_synthetic_only_not_a_key','Telefone (62) 99999-8888']){
+ for(const fragment of ['Contato: fake@example.invalid','Abrir https://example.invalid','Chave pxs_synthetic_only_not_a_key',
+  'Telefone (62) 99999-8888','Telefone (62) 9 9999-9999','Documento 123 456 789 09','Documento 12.345.678/0001-99',
+  'Acesse sigaa.example.test/consulta','Use ftp://example.invalid/registro']){
   await assert.rejects(prepare(f,source,prepareInput(f,{context:fragment})),{code:'triage_sensitive'});
  }
  assert.equal(source.calls.length,0);
  assert.equal(f.native.prepare('SELECT COUNT(*) n FROM ai_task_triage_calls').get().n,0);
- const input=prepareInput(f);
+ const input=prepareInput(f,{context:'Conferir o material até 2026-11-04, conforme a demanda CGA-2026-042.'});
  assert.deepEqual(await prepare(f,source,input),{status:'abstained'});
  assert.deepEqual(await prepare(f,source,input),{status:'abstained'});
  assert.equal(source.calls.length,1);
  assert.equal(f.native.prepare('SELECT importance FROM followup_tasks').get().importance,null);
+});
+
+test('triage shares the assistant quota and resets at midnight in Brasília',async t=>{
+ const f=await fixture(t,{dailyCalls:2}),source=fake();
+ const before=Date.parse('2026-11-04T02:59:59.999Z'),after=before+1;
+ let textCalls=0;
+ await assert.rejects(prepareAssistantPlan(f.db,f.owner,{
+  action:'prepare',projectId:'project-fixture',request:'Consultar material para o evento.',consent:true,operationKey:crypto.randomUUID(),
+ },secret,{now:before,fetcher:async()=>{
+  textCalls++;
+  return Response.json({error:'synthetic outage'},{status:503});
+ }}),{code:'assistant_provider_unavailable'});
+ assert.equal(textCalls,1);
+ const triageAt=at=>prepareTaskTriage(f.db,f.owner,prepareInput(f),secret,{now:at,fetcher:source.fetcher});
+ await assert.rejects(triageAt(before),{code:'triage_budget'});
+ assert.equal(source.calls.length,0);
+ assert.equal((await triageAt(after)).status,'ready');
+ assert.equal(source.calls[0].body.state.today,'2026-11-04');
+ const reservations=f.native.prepare('SELECT day,calls FROM ai_organization_usage ORDER BY day').all();
+ assert.deepEqual(reservations.map(row=>({...row})),[{day:'2026-11-03',calls:2},{day:'2026-11-04',calls:1}]);
+});
+
+test('triage uses only the opted-in TypeSafe credential and works without a DeepSeek key',async t=>{
+ const f=await fixture(t,{enabled:false}),source=fake();
+ assert.equal(await taskTriageAvailable(f.db,f.owner,f.task.id),true);
+ const proposal=await prepare(f,source);
+ assert.equal(proposal.status,'ready');
+ assert.equal(source.calls.length,1);
+ assert.equal((await apply(f,proposal)).task.importance,'medium');
+ await configureAssistant(f.db,f.owner,{organizationId:f.org,expectedRevision:1,config:DEFAULT_ASSISTANT_CONFIG},secret);
+ assert.equal(await taskTriageAvailable(f.db,f.owner,f.task.id),false);
+ await assert.rejects(prepare(f,source,prepareInput(f,{expectedVersion:2})),{code:'triage_disabled'});
+ assert.equal(source.calls.length,1);
 });
 
 test('budget and concurrent replay admit at most one dispatch, plus authorization fences before result and apply',async t=>{

@@ -35,11 +35,15 @@ export async function configurationActor(db: D1Database, actor: PortalActor | nu
  if (!await one(db, `SELECT id FROM organizations WHERE id=? AND status='active' AND ${auth.sql}`, [organizationId, ...auth.values])) throw new HttpError(403, 'Seu acesso à configuração desta organização mudou.', 'assistant_configuration_forbidden');
  return { current, auth };
 }
-export async function loadAssistantSettings(db: D1Database, secret: string, organizationId: string, speech: boolean | SpeechProvider = false, keys?: CredentialKeys) {
+export async function loadAssistantSettings(db: D1Database, secret: string, organizationId: string, mode: boolean | SpeechProvider | 'triage' = false, keys?: CredentialKeys) {
  const row = await one(db, "SELECT s.* FROM ai_organization_settings s JOIN organizations o ON o.id=s.organization_id AND o.status='active' WHERE s.organization_id=?", [organizationId]);
  if (!row) throw new HttpError(503, 'Esta organização ainda não configurou o assistente.', 'assistant_unavailable');
  const config = validateConfig(JSON.parse(row.config_json)), credentials = availableProviderCredentials(object(await decryptProviderCredentials(secret, row.credentials_ciphertext, organizationId, keys)));
- if (speech ? !config.sttEnabled || (speech !== 'groq' && (typeof credentials.deepgram !== 'string' || !credentials.deepgram)) : !config.enabled || typeof credentials.deepseek !== 'string' || !credentials.deepseek || config.jevEnabled && !credentials.typesafe) throw new HttpError(503, speech ? 'A transcrição desta organização está desativada ou sem credencial.' : 'O assistente desta organização está desativado ou sem credencial.', 'assistant_unavailable');
+ if (mode === 'triage') {
+  if (!config.jevEnabled || !credentials.typesafe) throw new HttpError(503, 'A triagem com JEV está indisponível nesta organização. Você pode classificar a demanda manualmente.', 'triage_disabled');
+ } else if (mode ? !config.sttEnabled || (mode !== 'groq' && !credentials.deepgram) : !config.enabled || !credentials.deepseek || config.jevEnabled && !credentials.typesafe) {
+  throw new HttpError(503, mode ? 'A transcrição desta organização está desativada ou sem credencial.' : 'O assistente desta organização está desativado ou sem credencial.', 'assistant_unavailable');
+ }
  return { config, credentials, revision: Number(row.revision) };
 }
 function id(value: unknown): string { if (typeof value !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(value)) throw new HttpError(400, 'Escolha uma organização válida.', 'assistant_organization'); return value; }
