@@ -1,10 +1,12 @@
 'use client';
 
 import {useEffect, useRef, useState} from 'react';
-import {AlertTriangle, Building2, CalendarClock, CircleCheck, CircleDot, ClipboardList, Gift, Handshake, Layers, RefreshCw, Users, UserRound} from 'lucide-react';
+import {AlertTriangle, Building2, CalendarClock, CircleCheck, CircleDot, ClipboardList, Download, Gift, Handshake, Layers, RefreshCw, Users, UserRound} from 'lucide-react';
 import {isMyWorkResponse, MY_WORK_STATUSES, type AssignmentFilter, type AssignmentVia, type MyWorkResponse, type MyWorkStatus, type OperationalArea, type WorkTarget} from '@/lib/my-work/contracts';
 import {FOLLOWUP_CHANGED} from './follow-up-api';
 import {workApi} from './my-work-api';
+import {myWorkMarkdown} from './my-work-markdown';
+import {download} from './report-export';
 import {TaskSignals} from './work-signals';
 import styles from './meu-trabalho-panel.module.css';
 
@@ -92,6 +94,13 @@ export default function MeuTrabalhoPanel({userId, organizationId = null, project
     <p className={styles.help}>Os totais abrangem todas as páginas do contexto e da origem escolhida. O filtro de estado abaixo altera a lista de demandas.</p>
     {current?.error && <p role="alert" className={`${styles.notice} ${styles.error}`}>{current.error}</p>}
     <p className={loading ? styles.notice : styles.help} role="status" aria-live="polite" aria-atomic="true">{loading ? 'Consultando atribuições…' : data ? `Demandas (${statusLabels[status]}): ${visibleRange(taskOffset, data.tasks.items.length, data.tasks.total)}. Responsabilidades: ${visibleRange(responsibilityOffset, data.responsibilities.items.length, data.responsibilities.total)}.` : 'Consulta não concluída.'}</p>
+    {data && (data.tasks.items.length > 0 || data.responsibilities.items.length > 0) && <div>
+      <button type="button" className="p-button p-button-subtle min-h-11" aria-describedby="my-work-markdown-help" onClick={() => {
+        const markdown = myWorkMarkdown(data, window.location.origin);
+        download(`meu-trabalho-proex-${data.today}.md`, new Blob([markdown], {type: 'text/markdown;charset=utf-8'}));
+      }}><Download size={16} aria-hidden="true"/> Baixar para Obsidian (.md)</button>
+      <p className={styles.help} id="my-work-markdown-help">Inclui só os itens destas páginas. Salve o arquivo na sua Vault.</p>
+    </div>}
     {data && <>
       <section className={styles.listSection} aria-label="Minhas demandas"><div className={styles.listHeading}><h3><ClipboardList size={18} aria-hidden="true"/> Demandas · {data.tasks.total}</h3><label>Estado da lista<select value={status} onChange={event => choose({status: event.target.value as MyWorkStatus})}>{MY_WORK_STATUSES.map(value => <option key={value} value={value}>{statusLabels[value]}</option>)}</select></label></div>
         {!data.tasks.items.length ? <div className={styles.empty}><strong>Nenhuma demanda neste recorte.</strong><p>Ser criador de um registro ou ter acesso ao projeto não significa ser responsável por ele.</p></div> : <ul className={styles.list}>{data.tasks.items.map(task => { const context = {organizationId: task.organization_id, projectId: task.project_id}; return <li key={task.id} className={styles.card}><div className={styles.rowTop}><TaskSignals status={task.status} priority={task.priority} dueAt={task.due_at} today={data.today}/><AssignmentLabel via={task.assignmentVia}/></div><h4>{onOpenTask ? <button type="button" onClick={() => onOpenTask(task.id, context)}>{task.title}</button> : <a href={task.href}>{task.title}</a>}</h4><p className={styles.context}>{task.organization_name}{task.project_name && ` · ${task.project_name}`} · {areaLabels[task.area]}</p><p className={styles.assignees}>Responsáveis: {task.assignees.map(person => person.name).join(', ') || 'Não informado'}</p>{task.area !== 'general' && <TargetLink target={task.target} context={context} onOpen={onOpenTarget}/>}</li>; })}</ul>}

@@ -1,7 +1,8 @@
 'use client';
 import { useState } from 'react';
-import { ArrowDownLeft, ArrowRight, CalendarDays, CheckCircle2, ChevronRight, Clock3, FolderKanban, Pin, Settings2, Sparkles, type LucideIcon } from 'lucide-react';
+import { ArrowRight, CalendarDays, Check, CheckCircle2, ChevronRight, Clock3, FolderKanban, Info, PackageSearch, Pin, Settings2, TriangleAlert, type LucideIcon } from 'lucide-react';
 import { recommendedModules, type ModuleId, type PortalModule } from './navigation-model';
+import styles from './dashboard-panel.module.css';
 // Only server-projected records are used for business counts.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = Record<string, any>;
@@ -35,6 +36,7 @@ type Summary = {
     value: string | number;
     detail: string;
     note?: string;
+    share?: number;
     icon: LucideIcon;
 };
 const available = (item: Row) => Number(item.available ?? (Number(item.stock ?? 0) - Number(item.reserved ?? 0)));
@@ -53,16 +55,56 @@ export default function DashboardPanel({ modules, pinned, frequent, onNavigate, 
     const checkedOut = loans.filter(loan => loan.status === 'out');
     const late = checkedOut.filter(loan => new Date(loan.ends_at ?? loan.endsAt).getTime() < now);
     const drafts = campaigns.filter(campaign => campaign.status === 'draft');
+    const activeCampaignCount = campaigns.filter(campaign => campaign.status === 'active').length;
+    const currentLoanCount = reserved.length + checkedOut.length;
+    const campaignCount = activeCampaignCount + drafts.length;
     const upcoming = [...reserved].filter(loan => new Date(loan.starts_at ?? loan.startsAt).getTime() >= now).sort((a, b) => new Date(a.starts_at ?? a.startsAt).getTime() - new Date(b.starts_at ?? b.startsAt).getTime()).slice(0, 3);
     const summaries: Summary[] = [];
-    if (find('projects'))
-        summaries.push({ id: 'projects', title: 'Projetos', value: known.projects ? scopedProjects.length : 'Consultar', detail: known.projects ? projectScopeDetail : selected ? 'Projeto selecionado nos filtros' : 'Áreas de trabalho disponíveis', icon: find('projects')!.icon });
-    if (find('materials'))
-        summaries.push({ id: 'materials', title: 'Materiais', value: known.items ? items.length : 'Consultar', detail: 'Itens nos projetos selecionados', note: lowStock.length ? `${lowStock.length} com saldo baixo` : undefined, icon: find('materials')!.icon });
-    if (find('loans'))
-        summaries.push({ id: 'loans', title: 'Empréstimos', value: known.loans ? reserved.length + checkedOut.length : 'Consultar', detail: known.loans ? `${checkedOut.length} retirados · ${reserved.length} reservados` : 'Consulte retiradas e devoluções', note: late.length ? `${late.length} em atraso` : undefined, icon: find('loans')!.icon });
-    if (find('events'))
-        summaries.push({ id: 'events', title: 'Dinâmicas', value: known.campaigns ? campaigns.filter(campaign => campaign.status === 'active').length : 'Consultar', detail: 'Campanhas de roleta e dado ativas', note: drafts.length ? `${drafts.length} em preparação` : undefined, icon: find('events')!.icon });
+    const projectModule = find('projects');
+    if (projectModule) {
+        summaries.push({
+            id: 'projects',
+            title: 'Projetos',
+            value: known.projects ? scopedProjects.length : 'Consultar',
+            detail: known.projects ? projectScopeDetail : selected ? 'Projeto selecionado nos filtros' : 'Áreas de trabalho disponíveis',
+            share: known.projects && scopedProjects.length ? internalProjects / scopedProjects.length : undefined,
+            icon: projectModule.icon,
+        });
+    }
+    const materialModule = find('materials');
+    if (materialModule) {
+        summaries.push({
+            id: 'materials',
+            title: 'Materiais',
+            value: known.items ? items.length : 'Consultar',
+            detail: 'Itens nos projetos selecionados',
+            note: known.items && lowStock.length ? `${lowStock.length} com saldo baixo` : undefined,
+            icon: materialModule.icon,
+        });
+    }
+    const loanModule = find('loans');
+    if (loanModule) {
+        summaries.push({
+            id: 'loans',
+            title: 'Empréstimos',
+            value: known.loans ? currentLoanCount : 'Consultar',
+            detail: known.loans ? `${checkedOut.length} retirados · ${reserved.length} reservados` : 'Consulte retiradas e devoluções',
+            note: known.loans && late.length ? `${late.length} em atraso` : undefined,
+            share: known.loans && currentLoanCount ? checkedOut.length / currentLoanCount : undefined,
+            icon: loanModule.icon,
+        });
+    }
+    const eventModule = find('events');
+    if (eventModule) {
+        summaries.push({
+            id: 'events',
+            title: 'Dinâmicas',
+            value: known.campaigns ? activeCampaignCount : 'Consultar',
+            detail: known.campaigns ? `${activeCampaignCount} ativadas · ${drafts.length} em preparação` : 'Campanhas de roleta e dado',
+            share: known.campaigns && campaignCount ? activeCampaignCount / campaignCount : undefined,
+            icon: eventModule.icon,
+        });
+    }
     if (find('calendar'))
         summaries.push({ id: 'calendar', title: 'Agenda', value: 'Ver agenda', detail: 'Ações, reservas e datas compartilhadas', icon: CalendarDays });
     if (find('reports'))
@@ -80,21 +122,45 @@ export default function DashboardPanel({ modules, pinned, frequent, onNavigate, 
     const frequentModules = frequent.filter(id => !pinned.includes(id)).slice(0, 4).map(find).filter((module): module is PortalModule => Boolean(module));
     const actionModules = saved.length ? saved : frequentModules.length ? frequentModules : suggestions;
     const shortcutTitle = saved.length ? 'Seus atalhos' : frequentModules.length ? 'Mais usados por você' : 'Para começar';
-    const shortcutDescription = saved.length ? 'Os módulos que você escolheu deixar por perto.' : frequentModules.length ? 'Com base nos módulos que você abre neste navegador.' : 'Sugestões para sua função. Você pode escolher outros módulos.';
+    const shortcutDescription = saved.length ? 'Módulos que você fixou neste navegador.' : frequentModules.length ? 'Com base nos módulos que você abre neste navegador.' : 'Sugestões para sua função. Você pode escolher outros módulos.';
     const attention: {
         id: ModuleId;
         title: string;
         detail: string;
-        kind: string;
+        kind: 'late' | 'stock' | 'draft';
+        icon: LucideIcon;
     }[] = [];
-    if (find('loans') && late.length)
-        attention.push({ id: 'loans', title: `${late.length} ${late.length === 1 ? 'devolução em atraso' : 'devoluções em atraso'}`, detail: 'Confira os equipamentos que continuam retirados.', kind: 'late' });
-    if (find('materials') && lowStock.length)
-        attention.push({ id: 'materials', title: `${lowStock.length} ${lowStock.length === 1 ? 'material com saldo baixo' : 'materiais com saldo baixo'}`, detail: 'O saldo disponível atingiu o alerta cadastrado.', kind: 'stock' });
-    if (find('events') && drafts.length)
-        attention.push({ id: 'events', title: `${drafts.length} ${drafts.length === 1 ? 'dinâmica em preparação' : 'dinâmicas em preparação'}`, detail: 'Revise as regras e a disponibilidade antes de ativar.', kind: 'draft' });
+    if (find('loans') && known.loans && late.length)
+        attention.push({ id: 'loans', title: `${late.length} ${late.length === 1 ? 'devolução em atraso' : 'devoluções em atraso'}`, detail: 'Confira os equipamentos que continuam retirados.', kind: 'late', icon: TriangleAlert });
+    if (find('materials') && known.items && lowStock.length)
+        attention.push({ id: 'materials', title: `${lowStock.length} ${lowStock.length === 1 ? 'material com saldo baixo' : 'materiais com saldo baixo'}`, detail: 'O saldo disponível atingiu o alerta cadastrado.', kind: 'stock', icon: PackageSearch });
+    if (find('events') && known.campaigns && drafts.length)
+        attention.push({ id: 'events', title: `${drafts.length} ${drafts.length === 1 ? 'dinâmica em preparação' : 'dinâmicas em preparação'}`, detail: 'Revise as regras e a disponibilidade antes de ativar.', kind: 'draft', icon: Clock3 });
+    const partialAttention = (loanModule && !known.loans) || (materialModule && !known.items) || (eventModule && !known.campaigns);
     const firstName = displayName.trim().split(/\s+/)[0] || 'equipe';
-    return <div className="pd-dashboard">
+    const visibleProjects = [ ...(selected ? [selected] : []), ...projects.filter(project => project.id !== selectedProjectId) ].slice(0, 5);
+    return <div className={`pd-dashboard ${styles.dashboard}`}>
+    <section className="pd-section" aria-labelledby="pd-summary-title">
+    <div className="pd-heading">
+    <div>
+    <h2 id="pd-summary-title">{selected ? `Resumo · ${selected.name}` : unitName ? `Resumo · ${unitName}` : 'Resumo dos seus projetos'}</h2>
+    <p>{roleLabel || 'Equipe PROEX'} · Somente registros disponíveis para sua conta.</p>
+    </div>
+    </div>
+    <div className="pd-summaries">{visibleSummaries.map(({ id, title, value, detail, note, share, icon: Icon }) => <button className="pd-summary" type="button" onClick={() => onNavigate(id)} key={id}>
+        <span className="pd-summary-label">
+        <span className={styles.summaryIcon}><Icon size={18} aria-hidden="true"/></span>
+        {title}
+        <ChevronRight size={16} aria-hidden="true"/>
+        </span>
+        <strong className={typeof value === 'string' ? 'pd-summary-text' : ''}>{value}</strong>
+        {share !== undefined && <span className={styles.distribution} aria-hidden="true">
+            <span style={{ inlineSize: `${share * 100}%` }}/>
+        </span>}
+        <span className="pd-summary-detail">{detail}</span>
+        {note && <span className="pd-summary-note"><TriangleAlert size={14} aria-hidden="true"/>{note}</span>}
+        </button>)}</div>
+    </section>
     <section className="pd-section" aria-labelledby="pd-shortcut-title">
     <div className="pd-heading">
     <div>
@@ -131,22 +197,6 @@ export default function DashboardPanel({ modules, pinned, frequent, onNavigate, 
         <span>
         <Clock3 size={14}/>Também usados por você</span>{frequentModules.map(({ id, label }) => <button key={id} onClick={() => onNavigate(id)}>{label}<ChevronRight size={13}/>
             </button>)}</div>}</section>
-    <section className="pd-section" aria-labelledby="pd-summary-title">
-    <div className="pd-heading">
-    <div>
-    <h2 id="pd-summary-title">{selected ? `Resumo · ${selected.name}` : unitName ? `Resumo · ${unitName}` : 'Resumo dos seus projetos'}</h2>
-    <p>{roleLabel || 'Equipe PROEX'} · Somente registros disponíveis para sua conta.</p>
-    </div>
-    </div>
-    <div className="pd-summaries">{visibleSummaries.map(({ id, title, value, detail, note, icon: Icon }) => <button className="pd-summary" onClick={() => onNavigate(id)} key={id}>
-        <span className="pd-summary-label">
-        <Icon size={19}/>{title}<ArrowDownLeft size={15}/>
-        </span>
-        <strong className={typeof value === 'string' ? 'pd-summary-text' : ''}>{value}</strong>
-        <span className="pd-summary-detail">{detail}</span>{note && <span className="pd-summary-note">{note}</span>}<span className="pd-summary-open">Abrir {title.toLocaleLowerCase('pt-BR')} <ArrowRight size={13}/>
-        </span>
-        </button>)}</div>
-    </section>
     <div className="pd-lower">
     <section className="pd-panel">
     <div className="pd-heading">
@@ -154,20 +204,20 @@ export default function DashboardPanel({ modules, pinned, frequent, onNavigate, 
     <h2>Para acompanhar</h2>
     <p>O que merece atenção nos projetos selecionados.</p>
     </div>
-    </div>{attention.length ? <div className="pd-attention">{attention.map(item => <button key={item.id} onClick={() => onNavigate(item.id)}>
-            <span className={`pd-attention-dot pd-${item.kind}`}/>
+    </div>{attention.length ? <div className="pd-attention">{attention.map(({ id, title, detail, kind, icon: Icon }) => <button type="button" key={id} onClick={() => onNavigate(id)}>
+            <span className={styles.attentionIcon} data-kind={kind}><Icon size={17} aria-hidden="true"/></span>
             <span>
-            <strong>{item.title}</strong>
-            <small>{item.detail}</small>
+            <strong>{title}</strong>
+            <small>{detail}</small>
             </span>
             <ChevronRight size={17}/>
             </button>)}</div> : <div className="pd-calm">
-        <CheckCircle2 size={28}/>
+        {partialAttention ? <Info size={24} aria-hidden="true"/> : <CheckCircle2 size={24} aria-hidden="true"/>}
         <div>
-        <strong>Nenhuma pendência indicada</strong>
-        <p>Ocorrências e alertas aparecerão aqui conforme os registros disponíveis.</p>
+        <strong>{partialAttention ? 'Resumo de alertas indisponível' : 'Nenhuma pendência indicada'}</strong>
+        <p>{partialAttention ? 'Abra os módulos para conferir os registros deste recorte.' : 'Os alertas aparecem aqui conforme os registros disponíveis.'}</p>
         </div>
-        </div>}{find('loans') && upcoming.length > 0 && <div className="pd-upcoming">
+        </div>}{find('loans') && known.loans && upcoming.length > 0 && <div className="pd-upcoming">
         <h3>Próximas retiradas</h3>{upcoming.map(loan => <button key={loan.id} onClick={() => onNavigate('loans')}>
             <CalendarDays size={17}/>
             <span>
@@ -182,17 +232,17 @@ export default function DashboardPanel({ modules, pinned, frequent, onNavigate, 
     <h2>Seus projetos</h2>
     <p>Selecione um projeto para acompanhar seus registros.</p>
     </div>
-    <button className="pd-inline-link" onClick={() => onNavigate('projects')}>Ver todos <ArrowRight size={14}/>
-    </button>
+    {find('projects') && <button type="button" className="pd-inline-link" onClick={() => onNavigate('projects')}>Ver todos <ArrowRight size={14} aria-hidden="true"/>
+    </button>}
     </div>{projects.length ? <div className="pd-projects">{selectedProjectId && <button className="pd-all-projects" onClick={() => onSelectProject('')}>
             <FolderKanban size={17}/>Todos os meus projetos<ArrowRight size={14}/>
-            </button>}{projects.slice(0, 5).map(project => <button key={project.id} className={selectedProjectId === project.id ? 'is-active' : ''} aria-pressed={selectedProjectId === project.id} onClick={() => onSelectProject(project.id)}>
+            </button>}{visibleProjects.map(project => <button key={project.id} className={selectedProjectId === project.id ? 'is-active' : ''} aria-pressed={selectedProjectId === project.id} onClick={() => onSelectProject(project.id)}>
             <span className="pd-project-initial" style={{ borderColor: /^#[\da-f]{6}$/i.test(project.color ?? '') ? project.color : undefined }}>{String(project.short_name || project.name || 'P').slice(0, 2).toUpperCase()}</span>
             <span>
             <strong>{project.name}</strong>
-            <small>{project.status === 'archived' ? 'Arquivado · histórico preservado' : project.short_name || 'Área de trabalho compartilhada'}</small>
+            <small>{project.status === 'archived' ? 'Arquivado · histórico preservado' : project.scope === 'external' ? 'Projeto externo' : 'Projeto interno'}</small>
             </span>
-            <ChevronRight size={16}/>
+            {selectedProjectId === project.id ? <Check size={17} aria-hidden="true"/> : <ChevronRight size={16} aria-hidden="true"/>}
             </button>)}</div> : <div className="pd-calm">
         <FolderKanban size={28}/>
         <div>
@@ -201,7 +251,5 @@ export default function DashboardPanel({ modules, pinned, frequent, onNavigate, 
         </div>
         </div>}</section>
     </div>
-    <p className="pd-privacy-note">
-    <Sparkles size={13}/>Atalhos e módulos frequentes ficam neste navegador. Os registros dos projetos continuam sincronizados no portal.</p>
     </div>;
 }
