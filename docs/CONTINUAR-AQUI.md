@@ -1,4 +1,10 @@
-# Continuar Portal PROEX · V21 publicada
+# Continuar Portal PROEX · V22 publicada
+
+Em 04/11/2026, PR #23 integrada em `51fedadfdc27ab7f05059ad6276b871d64f0e15e`, Vercel `dpl_2ei6jUVH2CgbRbVwvAdG9cXcuWiS` READY. CI 899 portal + 33 jogo. Ficha do CONPEEX baixada e renderizada em produção. Avisos e Pendentes têm ações pessoais e feedback de concorrência. A migração 0019 mantém 35 projeções Sheets. O GitHub remoto voltou a ter somente `main`. [Entrega V22](ENTREGA-V22.md).
+
+Para continuar, comece pelos aceites V23–V25 no fim da seção de continuidade da V22. Preserve as decisões e a fila de integrações da Vault. As próximas entregas têm validações próprias de custo, acesso, identidade e operação.
+
+## Histórico · V21 publicada
 
 Em 04/11/2026, a PR #22 integrou `dcac2edfd633e599c538ad8a929b50bc002b39fa`, READY na Vercel. CI com 884 testes do portal e 33 do jogo. Comunicação por projeto, gráficos de Demandas e exportação direta foram conferidos no CONPEEX em produção. Groq está disponível como opção de configuração para um piloto, testado por simulação. [Entrega V21](ENTREGA-V21.md).
 

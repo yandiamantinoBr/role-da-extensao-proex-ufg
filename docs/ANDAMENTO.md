@@ -1,4 +1,8 @@
-# Checkpoint atual · V21 publicada
+# Checkpoint atual · V22 publicada
+
+Em 04/11/2026, PR #23 integrada, commit `51fedad` READY na Vercel. CI 899 portal + 33 jogo. PDF do CONPEEX e controles da central verificados no domínio oficial. Prévia e sino passaram em 390/1366 px nos dois temas em bancada. [Entrega V22](ENTREGA-V22.md), [continuidade](CONTINUAR-AQUI.md).
+
+## Histórico · V21 publicada
 
 V20 e V21 integradas pelas PRs #21 e #22. CONPEEX com nove demandas, cinco lotes e planilha de trabalho vinculada no drive Equipe PROEC. O catálogo de Comunicação recebeu uma referência oficial da UFG. Em produção, o XLSX direto devolveu somente o projeto escolhido. A leitura técnica da V21 passou nos gates de CI e a bancada local confirmou o cabeçalho móvel e a linha de prazos. [Entrega V21](ENTREGA-V21.md), [entrega V20](ENTREGA-V20.md).
 
