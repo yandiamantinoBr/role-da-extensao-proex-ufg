@@ -50,7 +50,7 @@ const context = vm.createContext({
     prompt: () => { const value = prompts.shift(); return { getSelectedButton: () => 'OK', getResponseText: () => value }; } }) },
   DriveApp: { Access: { PRIVATE: 'PRIVATE' }, getRootFolder: () => folder('rootFolder0000001'), getFolderById: id => folder(id),
     getFileById: id => ({ getParents: () => ({ hasNext: () => true, next: () => folder('parentFolder00001') }), getSharingAccess: () => 'PRIVATE', getEditors: () => [], getViewers: () => [], getSize: () => files.get(id)?.bytes.length ?? 0, getBlob: () => files.get(id), setTrashed() {} }) },
-  PropertiesService: { getUserProperties: () => ({ getProperty: k => properties[k] ?? null, setProperty: (k, v) => { properties[k] = v; }, setProperties: o => Object.assign(properties, o) }), getScriptProperties: () => ({ deleteProperty() {} }) },
+  PropertiesService: { getUserProperties: () => ({ getProperty: k => properties[k] ?? null, setProperty: (k, v) => { properties[k] = v; }, setProperties: o => Object.assign(properties, o), deleteProperty: k => { delete properties[k]; } }), getScriptProperties: () => ({ deleteProperty() {} }) },
   LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock() {} }) },
   ScriptApp: { getProjectTriggers: () => [] },
   Utilities: { getUuid: () => randomUUID(), DigestAlgorithm: { SHA_256: 'sha256' }, Charset: { UTF_8: 'utf8' },
@@ -140,4 +140,111 @@ assert.equal(controlValue(`baseline:items:${itemId}`), baselineBeforeRace, 'a ba
 const currentSchema = context.chamar_('proex_sync_describe', {}).schemas.tables.find(schema => schema.table === 'items');
 assert.equal(context.conferirTabela_(ss, currentSchema, read('items')), false, 'chave e hash intactos não confirmam valores divergentes');
 assert.equal(controlValue('syncState'), 'partial');
+
+console.log('8. Conferir recibos de Operações após edição concorrente e chave reutilizada');
+assert.match(context.sincronizar_(), /^Sincronizado:/, 'a edição pendente da etapa anterior deve ser importada');
+const balance = () => {
+  const current = cell('items', row => row.id === itemId, 'stock');
+  return Number(current.row[current.col]);
+};
+const startingStock = balance();
+const raceKey = 'harness-race-' + randomUUID();
+const raceInput = { itemId, delta: 2, kind: 'receive', note: 'Recebimento de duas unidades.' };
+const concurrentInput = JSON.stringify({ ...raceInput, delta: 9 });
+const raceRow = [raceKey, 'stock.move', JSON.stringify(raceInput), '', '', ''];
+ops.cells.push(raceRow);
+const call = context.chamar_;
+let editedDuringApply = false;
+context.chamar_ = (tool, args) => {
+  const response = call(tool, args);
+  if (tool === 'proex_sync_apply' && args.changes?.some(change => change.changeKey === raceKey)) {
+    assert.equal(response.results[0].status, 'applied');
+    raceRow[2] = concurrentInput;
+    editedDuringApply = true;
+  }
+  return response;
+};
+try { assert.match(context.sincronizar_(), /conflito/); }
+finally { context.chamar_ = call; }
+assert.ok(editedDuringApply);
+assert.deepEqual(raceRow, [raceKey, 'stock.move', concurrentInput, 'conflict', '', 'operation_row_changed']);
+assert.equal(balance(), startingStock + 2, 'só o conteúdo original chegou ao estoque');
+assert.ok(sheets.get('Conflitos').cells.some(row => row.join(' ').includes('operation_row_changed')));
+
+const reusedRow = [raceKey, 'stock.move', concurrentInput, '', '', ''];
+ops.cells.push(reusedRow);
+assert.doesNotThrow(() => context.sincronizar_());
+assert.deepEqual(reusedRow.slice(3), ['rejected', '', 'sync_operation_changed']);
+assert.equal(balance(), startingStock + 2, 'nem a divergência nem a chave reutilizada alteraram o estoque');
+
+console.log('9. Cadastrar material pelo formulário, retomar resposta perdida e conferir ida e volta');
+const activeWorkbook = ss.getId;
+ss.getId = () => 'anotherSyntheticWorkbook0002';
+try { assert.throws(() => context.carregarCadastroMaterial(), /Abra a planilha mestre configurada/); }
+finally { ss.getId = activeWorkbook; }
+const cadastro = context.carregarCadastroMaterial();
+const project = cadastro.projects.find(project => project.name.split(' · ')[0] === 'Projeto QA descartável');
+assert.ok(project?.id, 'o formulário oferece um projeto da planilha conectada');
+const input = {
+  changeKey: cadastro.draft.changeKey,
+  projectId: project.id,
+  category: 'gift',
+  categoryId: '',
+  name: 'Material do formulário QA',
+  unit: 'unidade',
+  lowStock: 3,
+  description: 'Cadastro manual feito no formulário da planilha.',
+  assetCode: '',
+};
+const lost = new Error('Resposta sintética interrompida após confirmação no portal.');
+let lostAfterCommit = false;
+context.chamar_ = (tool, args) => {
+  const response = call(tool, args);
+  if (tool === 'proex_sync_apply' && args.changes?.some(change => change.changeKey === input.changeKey)) {
+    assert.equal(response.results[0].status, 'applied');
+    lostAfterCommit = true;
+    throw lost;
+  }
+  return response;
+};
+try { assert.throws(() => context.salvarCadastroMaterial(input), /retome o mesmo cadastro/); }
+finally { context.chamar_ = call; }
+assert.ok(lostAfterCommit);
+const pending = context.carregarCadastroMaterial().draft;
+assert.equal(pending.changeKey, input.changeKey);
+assert.equal(pending.input.name, input.name);
+assert.throws(() => context.salvarCadastroMaterial({ ...input, name: 'Mudança após perda de resposta' }), /Há um cadastro para retomar/);
+assert.throws(() => context.novoCadastroMaterial(input.changeKey), /cadastro em andamento/);
+const created = context.salvarCadastroMaterial(input);
+assert.equal(created.status, 'duplicate', 'a mesma chave deve recuperar o cadastro anterior');
+assert.ok(created.entityId);
+const portalCreated = () => context.lerTabela_('items').filter(item => item.name === input.name && item.project_id === project.id);
+const createdRows = portalCreated();
+assert.equal(createdRows.length, 1, 'a repetição não cria outro material');
+const [portalItem] = createdRows;
+assert.equal(portalItem.id, created.entityId);
+assert.equal(portalItem.description, input.description);
+assert.equal(Number(portalItem.stock), 0);
+assert.equal(Number(portalItem.low_stock), 3);
+assert.ok(!items.cells.some(row => row.includes(created.entityId)), 'o formulário separa cadastro de sincronização');
+context.novoCadastroMaterial(input.changeKey);
+assert.notEqual(context.carregarCadastroMaterial().draft.changeKey, input.changeKey);
+assert.match(context.sincronizar_(), /^Sincronizado:/);
+const exportedItem = cell('items', row => row.id === created.entityId, 'description');
+assert.equal(exportedItem.row[exportedItem.col], input.description);
+assert.equal(exportedItem.row[exportedItem.s.cells[0].indexOf('stock')], '0');
+const updatedDescription = 'Descrição revisada na coluna em creme.';
+exportedItem.row[exportedItem.col] = updatedDescription;
+assert.match(context.sincronizar_(), /^Sincronizado:/);
+const [updatedItem] = portalCreated();
+assert.equal(updatedItem.description, updatedDescription);
+assert.equal(Number(updatedItem.version), Number(portalItem.version) + 1);
+const reexportedItem = cell('items', row => row.id === created.entityId, 'description');
+assert.equal(reexportedItem.row[reexportedItem.col], updatedDescription);
+const updatedBaseline = JSON.parse(controlValue(`baseline:items:${created.entityId}`));
+assert.equal(updatedBaseline.description, updatedDescription);
+assert.equal(updatedBaseline.version, updatedItem.version);
+assert.equal(controlValue('syncState'), 'verified');
+assert.equal(controlValue('tablesVerified'), String(expectedTables));
+
 console.log('OK — conector validado contra', portal);
