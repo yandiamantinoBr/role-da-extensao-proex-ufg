@@ -116,6 +116,15 @@
 .chart figcaption { display: flex; flex-direction: column; gap: 3px; margin: 0 4px 10px; }
 .chart figcaption strong { font-size: 13px; color: var(--ink); }
 .chart figcaption small { font-size: 11px; color: var(--text-secondary); }
+.chartGroup { margin: 12px 4px 6px; min-width: 0; }
+.chartGroup select { width: 100%; min-width: 0; min-height: 44px; text-overflow: ellipsis; }
+.chartHelp { margin: 6px 4px; color: var(--text-secondary); font-size: 12px; }
+.monthValues { margin: 8px 4px 0; border-top: 1px solid var(--line); }
+.monthValues summary { min-height: 44px; padding-block: 12px; cursor: pointer; color: var(--brand-ink); font-size: 13px; font-weight: 650; }
+.monthValues summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.monthValues table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+.monthValues th, .monthValues td { padding: 8px 5px; border-top: 1px solid var(--line); text-align: end; overflow-wrap: anywhere; }
+.monthValues th:first-child { text-align: start; }
 .chart :global(.recharts-surface) { overflow: visible; }
 .chart :global(.recharts-legend-item-text) { color: var(--rc-axis) !important; }
 .tooltip { background: var(--surface); border: 1px solid var(--line); border-radius: 9px; box-shadow: 0 8px 24px #190b2924; padding: 9px 11px; font-size: 12px; display: flex; flex-direction: column; gap: 4px; color: var(--ink); min-width: 160px; }

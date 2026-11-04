@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import ts from 'typescript';
+import { zipEntries } from './support/report-module.mjs';
 
 // Compile the actual read/projection and authorization modules, then execute their SQL against
 // the complete migration set. Only native request identity and the Cloudflare binding are replaced
@@ -23,9 +24,12 @@ writeFileSync(join(temporary, 'native-auth.js'), 'export async function getChatG
 writeFileSync(join(temporary, 'session.js'), 'export async function getPortalUser(){return globalThis.__proexReportTestUser ?? null;}');
 writeFileSync(join(temporary, 'platform.js'), 'export function database(){return globalThis.__proexReportTestDatabase;} export function ownerEmail(){return undefined;}');
 const routeSource = readFileSync(new URL('../app/api/export/route.ts', import.meta.url), 'utf8');
+const spreadsheetSource = readFileSync(new URL('../components/portal/report-export.ts', import.meta.url), 'utf8');
+const compilerOptions = { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 };
+writeFileSync(join(temporary, 'report-export.js'), ts.transpileModule(spreadsheetSource, { compilerOptions }).outputText);
 const routeOutput = ts.transpileModule(routeSource, {
-  compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
-}).outputText.replace('@/app/chatgpt-auth', './native-auth.js').replace(/@\/lib\/([A-Za-z-]+)/g, './$1.js');
+  compilerOptions,
+}).outputText.replace('@/app/chatgpt-auth', './native-auth.js').replace(/@\/lib\/([A-Za-z-]+)/g, './$1.js').replace('@/components/portal/report-export', './report-export.js');
 writeFileSync(join(temporary, 'export-route.js'), routeOutput);
 after(() => {
   rmSync(temporary, { recursive: true, force: true });
@@ -404,7 +408,7 @@ test('pending prize recovery is deliverer-only, oldest first, with explicit coun
   assert.equal(viewer.metrics.pendingPrizes, 201);
 });
 
-test('three CSV exports are scoped and aggregated, without identities, contacts, notes or storage keys', async t => {
+test('three exports share authorized columns and data in XLSX and legacy CSV', async t => {
   const f = fixture(t);
   f.participation('a', 'a', { results: ['retry', 'brinde'], prize: 'delivered' });
   f.participation('b', 'b', { identity: 'account', modality: 'wheel', results: ['super'], prize: 'delivered' });
@@ -423,6 +427,18 @@ test('three CSV exports are scoped and aggregated, without identities, contacts,
     }
     if (kind === 'stock') assert.ok(body.includes("'=Button A"), 'CSV neutralizes spreadsheet formulas.');
     if (kind === 'loans') assert.ok(!/borrower|contato|note|observa/i.test(body));
+    const spreadsheet = await GET(new Request(`https://portal.example.test/api/export?kind=${kind}&format=xlsx`));
+    assert.equal(spreadsheet.status, 200);
+    assert.equal(spreadsheet.headers.get('Cache-Control'), 'private, no-store');
+    assert.match(spreadsheet.headers.get('Content-Type'), /spreadsheetml.sheet$/);
+    assert.match(spreadsheet.headers.get('Content-Disposition'), /\.xlsx"$/);
+    const xml = (await zipEntries(await spreadsheet.blob())).get('xl/worksheets/sheet1.xml');
+    const heading = xml.match(/<row r="1">(.+?)<\/row>/)[1];
+    const columns = [...heading.matchAll(/<t xml:space="preserve">(.+?)<\/t>/g)].map(match => match[1]);
+    assert.deepEqual(columns, body.trimStart().split('\r\n')[0].split(';').map(key => key.slice(1, -1)));
+    assert.ok(!/PRIVATE|SECRET PROJECT B|SECRET ITEM B|@example\.test|<f>/.test(xml));
+    if (kind === 'participations') for (const type of ['participacao', 'tentativa', 'premiacao', 'acesso', 'brinde', '2026-10-19']) assert.ok(xml.includes(type));
+    if (kind === 'stock') assert.ok(xml.includes("'=Button A"));
   }
 });
 
@@ -435,10 +451,12 @@ test('CSV rejects other projects, missing permission, revocation and anonymous r
     assert.equal(response.status, 403);
     assert.equal(response.headers.get('Cache-Control'), 'private, no-store');
     assert.ok(!(await response.text()).includes('SECRET PROJECT B'));
+    assert.equal((await GET(new Request(`https://portal.example.test/api/export?kind=${kind}&format=xlsx&projectId=project-b`))).status, 403);
   }
   assert.equal((await GET(new Request('https://portal.example.test/api/export?kind=invalid'))).status, 400);
   f.sqlite.prepare('UPDATE members SET revoked_at=? WHERE user_id=?').run(new Date().toISOString(), viewer.userId);
   assert.equal((await GET(new Request('https://portal.example.test/api/export?kind=stock'))).status, 403);
+  assert.equal((await GET(new Request('https://portal.example.test/api/export?kind=stock&format=xlsx'))).status, 403);
   observeExport(f, f.member('inventory'));
   assert.equal((await GET(new Request('https://portal.example.test/api/export?kind=stock'))).status, 403);
   observeExport(f, null);

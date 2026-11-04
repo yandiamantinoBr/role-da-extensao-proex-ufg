@@ -6,6 +6,8 @@ As PRs #24 e #25 corrigiram os cartões de projetos no Início, a escolha da atu
 
 A [revisão de interação](REVISAO-DE-INTERACAO-MOVEL.md) registra o caso de rolagem da PR #27 e os critérios de teste para gestos, foco, mudanças de recorte e exportação.
 
+O [acabamento de Demandas e exportações](ACABAMENTO-DEMANDAS-E-EXPORTACOES.md) detalha o fluxo de edição móvel, a troca dos downloads CSV por XLSX e o acesso a planilhas vinculadas, além da alternativa de teclado para os gráficos.
+
 ## Histórico · V22 publicada
 
 Em 04/11/2026, PR #23 integrada em `51fedadfdc27ab7f05059ad6276b871d64f0e15e`, Vercel `dpl_2ei6jUVH2CgbRbVwvAdG9cXcuWiS` READY. CI 899 portal + 33 jogo. Ficha do CONPEEX baixada e renderizada em produção. Avisos e Pendentes têm ações pessoais e feedback de concorrência. A migração 0019 mantém 35 projeções Sheets. O GitHub remoto voltou a ter somente `main`. [Entrega V22](ENTREGA-V22.md).

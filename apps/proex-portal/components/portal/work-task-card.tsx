@@ -6,12 +6,12 @@ import { TaskSignals } from './work-signals';
 import styles from './work-task-card.module.css';
 
 type CardTask = Pick<Task, 'id' | 'title' | 'status' | 'priority' | 'due_at' | 'project_name' | 'organization_name' | 'assignees'>;
-type Props = { task: CardTask; today: string; onOpen: () => void; selected?: boolean; disabled?: boolean; assignmentLabel?: string };
+type Props = { task: CardTask; today: string; onOpen: (trigger?: HTMLButtonElement) => void; selected?: boolean; disabled?: boolean; assignmentLabel?: string };
 
 export function WorkTaskCard({ task, today, onOpen, selected = false, disabled = false, assignmentLabel }: Props) {
  return <article className={styles.card} data-priority={task.priority} data-state={task.status} data-selected={selected}>
+  <button type="button" className={styles.title} disabled={disabled} aria-expanded={selected} onClick={event=>onOpen(event?.currentTarget)}><span>{task.title}</span><ArrowUpRight size={17} aria-hidden="true"/></button>
   <TaskSignals status={task.status} priority={task.priority} dueAt={task.due_at} today={today}/>
-  <button type="button" className={styles.title} disabled={disabled} aria-expanded={selected} onClick={onOpen}><span>{task.title}</span><ArrowUpRight size={17} aria-hidden="true"/></button>
   <p className={styles.context}><FolderKanban size={15} aria-hidden="true"/><span>{task.project_name || task.organization_name}</span></p>
   <div className={styles.assignees} role="group" aria-label="Responsáveis">
    {task.assignees.length ? task.assignees.slice(0, 3).map(person => <span className={styles.person} key={person.user_id ?? person.team_id}>{person.team_id ? <Users size={14} aria-hidden="true"/> : <UserRound size={14} aria-hidden="true"/>}{person.name}</span>) : <span className={styles.unassigned}><UserRoundPlus size={15} aria-hidden="true"/>Responsável a definir</span>}

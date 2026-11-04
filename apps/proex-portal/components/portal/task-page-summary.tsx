@@ -13,7 +13,7 @@ type Props = {
  hasMore?: boolean;
  selectedId?: string;
  disabled?: boolean;
- onOpen?: (id: string) => void;
+ onOpen?: (id: string, trigger?: HTMLButtonElement) => void;
 };
 
 type DeadlineGroup = {
@@ -85,7 +85,7 @@ export function TaskPageSummary({ tasks, today, page = 1, hasMore = false, selec
        <h4><CalendarDays size={16} aria-hidden="true"/><time dateTime={date}>{group.label}</time>{date === today && <span>Hoje</span>}</h4>
        <ul>{group.tasks.map(({ task, deadline }) => <li key={task.id}>
         {onOpen
-         ? <button type="button" aria-label={`Abrir demanda: ${task.title}`} aria-expanded={selectedId === task.id} disabled={disabled} onClick={() => onOpen(task.id)}>{task.title}<ChevronRight size={16} aria-hidden="true"/></button>
+         ? <button type="button" aria-label={`Abrir demanda: ${task.title}`} aria-expanded={selectedId === task.id} disabled={disabled} onClick={event => onOpen(task.id,event?.currentTarget)}>{task.title}<ChevronRight size={16} aria-hidden="true"/></button>
          : <strong>{task.title}</strong>}
         <div className={styles.signals}>
          <TaskStateBadge status={task.status}/>

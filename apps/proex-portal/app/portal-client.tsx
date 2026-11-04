@@ -24,6 +24,7 @@ import ProfilePanel from '@/components/portal/profile-panel';
 import CalendarPanel from '@/components/portal/calendar-panel';
 import RecordsPanel from '@/components/portal/records-panel';
 import ReportsCenter from '@/components/portal/reports-center';
+import { download, toXlsx } from '@/components/portal/report-export';
 import FollowUpPanel from '@/components/portal/follow-up-panel';
 import MeuTrabalhoPanel from '@/components/portal/meu-trabalho-panel';
 import { workDayFromServerTimestamp } from '@/lib/follow-up/time';
@@ -499,6 +500,7 @@ export default function PortalClient({ initial }: {
     <option value="">Selecione um projeto</option>{formProjects.map(p => <option value={p.id} key={p.id}>{p.name}</option>)}</select>
     </Field>;
     const dailyRows = byProject(list(data.metrics?.daily)).filter(row => (!reportFrom || row.day >= reportFrom) && (!reportTo || row.day <= reportTo));
+    const exportNeedsProject = Boolean(unitFilter || areaFilter) && !filter;
     const campaignTotals = new Map<string, Row>();
     for (const row of dailyRows) {
         const key = String(row.campaign_id);
@@ -518,7 +520,16 @@ export default function PortalClient({ initial }: {
         const rows = byProject(list(metrics.byProject));
         value = rows.length && rows.every(row => get(row, normalized, ...keys) !== undefined) ? rows.reduce((total, row) => total + Number(get(row, normalized, ...keys) ?? 0), 0) : undefined;
     } return value === undefined || value === null ? '—' : Number(value).toLocaleString('pt-BR'); };
-    function downloadDaily() { const columns = ['day', 'campaign_name', 'modality', 'participations', 'attempts', 'deliveries', 'tickets']; const escape = (value: unknown) => `"${String(value ?? '').replace(/^[=+@-]/, "'$&").replaceAll('"', '""')}"`; const csv = '\uFEFF' + [['Data', 'Evento', 'Modalidade', 'Participações', 'Tentativas', 'Entregas', 'Atendimentos assistidos'].map(escape).join(';'), ...dailyRows.map(row => columns.map(key => escape(key === 'modality' ? row[key] === 'physical' ? 'Presencial' : row[key] === 'dice' ? 'Dado' : row[key] === 'wheel' ? 'Roleta' : row[key] : row[key])).join(';'))].join('\r\n'); const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' })); const link = document.createElement('a'); link.href = url; link.download = 'proex-resumo-diario.csv'; link.click(); URL.revokeObjectURL(url); }
+    function downloadDaily() {
+        const columns = [
+            { key: 'day', label: 'Data' }, { key: 'campaign_name', label: 'Evento' }, { key: 'modality', label: 'Modalidade' },
+            { key: 'participations', label: 'Participações', numeric: true }, { key: 'attempts', label: 'Tentativas', numeric: true },
+            { key: 'deliveries', label: 'Entregas', numeric: true }, { key: 'tickets', label: 'Atendimentos assistidos', numeric: true },
+        ];
+        const modalities: Record<string, string> = { physical: 'Presencial', dice: 'Dado', wheel: 'Roleta' };
+        const rows = dailyRows.map(row => ({ ...row, modality: modalities[string(row.modality)] ?? row.modality }));
+        download('proex-resumo-diario.xlsx', toXlsx('Resumo diário', columns, rows, (row, key) => row[key], [['Linhas', String(rows.length)]]));
+    }
     const title = tabs.find(t => t.id === tab)?.label ?? 'Visão geral';
     if (!user.userId)
         return <main className="p-login">
@@ -972,7 +983,7 @@ export default function PortalClient({ initial }: {
             </table>
             </div>
             </Section>}<Section title="Resumo diário" description="Participações e entregas podem acontecer em dias diferentes." aside={<button className="p-button p-button-subtle" onClick={downloadDaily} disabled={!dailyRows.length}>
-            <ArrowDownToLine size={16}/>Baixar este resumo</button>}>{dailyRows.length ? <div className="p-card p-table-wrap">
+            <ArrowDownToLine size={16}/>Baixar resumo em XLSX</button>}>{dailyRows.length ? <div className="p-card p-table-wrap">
             <table>
             <thead>
             <tr>
@@ -995,8 +1006,8 @@ export default function PortalClient({ initial }: {
                 </tr>)}</tbody>
             </table>
             </div> : <Empty title="Sem registros neste período" text="Altere as datas ou o projeto para consultar outro recorte." icon={CalendarDays}/>}</Section>
-        <Section title="Exportar registros completos" description="Arquivos completos do projeto selecionado. O resumo acima respeita também o filtro de datas.">
-        {unitFilter && !filter && <p className="p-form-help">Para baixar os registros completos desta unidade, escolha um projeto no filtro acima. O CSV do resumo diário já reúne os projetos filtrados.</p>}
+        {(filter ? canProject(filter, 'reports.read') : canAny('reports.read')) && <Section title="Exportar registros completos" description="Planilhas do recorte autorizado, sem corte por data. O resumo diário acima usa as datas escolhidas.">
+        {exportNeedsProject && <p className="p-form-help">Com filtro de unidade ou área, escolha um projeto para baixar os registros completos. O resumo diário já usa o recorte selecionado.</p>}
         <div className="p-export-grid">{[{ kind: 'participations', title: 'Participação nas dinâmicas', text: 'Modalidades, resultados e contagens por campanha.', icon: Users }, { kind: 'stock', title: 'Materiais e movimentos', text: 'Saldo, reservas e quantidade disponível por item.', icon: Boxes }, { kind: 'loans', title: 'Empréstimos', text: 'Agenda, etapas e devoluções pendentes.', icon: Truck }].map(({ kind, title: exportTitle, text, icon: Icon }) => {
             const content = <>
             <span className="p-icon-tile">
@@ -1004,18 +1015,18 @@ export default function PortalClient({ initial }: {
             </span>
             <h3>{exportTitle}</h3>
             <p>{text}</p>
-            <span className="p-text-link">{unitFilter && !filter ? 'Escolha um projeto' : 'Baixar CSV'} <ArrowDownToLine size={16}/>
+            <span className="p-text-link">{exportNeedsProject ? 'Escolha um projeto' : 'Baixar XLSX'} <ArrowDownToLine size={16}/>
             </span>
             </>;
-            return unitFilter && !filter ? <article className="p-card p-export-card p-export-unavailable" key={kind}>{content}</article> : <a className="p-card p-export-card" href={`/api/export?kind=${kind}${filter ? `&projectId=${encodeURIComponent(filter)}` : ''}`} key={kind}>{content}</a>;
+            return exportNeedsProject ? <article className="p-card p-export-card p-export-unavailable" key={kind}>{content}</article> : <a className="p-card p-export-card" href={`/api/export?kind=${kind}&format=xlsx${filter ? `&projectId=${encodeURIComponent(filter)}` : ''}`} key={kind}>{content}</a>;
         })}</div>
-        </Section>
+        </Section>}
         <div className="p-explainer">
         <ShieldCheck size={21}/>
         <div>
         <h3>Contagens com significado</h3>
         <p>Uma premiação com três buttons representa uma participação e três unidades entregues. Cliques no Instagram, declarações e confirmações de seguimento são sinais diferentes; nenhum deles será somado automaticamente como “novos seguidores”.</p>
-        <p>Arquivos CSV podem ser importados no Google Sheets. Uma conexão automática com a planilha precisa ser configurada separadamente.</p>
+        <p>Você pode importar os arquivos XLSX no Google Sheets. As planilhas vinculadas ao projeto ficam em Projetos, com o acesso concedido no Drive.</p>
         </div>
         </div>
         </>}

@@ -1,5 +1,4 @@
-// Exportações da central de relatórios, geradas no navegador a partir das linhas já
-// filtradas: CSV para planilhas, XLSX nativo (zip sem compressão) e JSON.
+// Exportações a partir das linhas já filtradas, incluindo XLSX, DOCX e JSON.
 export type ExportColumn = { key: string; label: string; numeric?: boolean };
 export type ExportRow = Record<string, unknown>;
 
@@ -14,15 +13,6 @@ export function download(name: string, blob: Blob) {
 function safeText(value: unknown): string {
   const text = value === null || value === undefined ? '' : String(value);
   return /^[=+\-@\t\r]/.test(text) && !/^-?\d+([.,]\d+)?$/.test(text) ? `'${text}` : text;
-}
-
-export function toCsv(columns: ExportColumn[], rows: ExportRow[], display: (row: ExportRow, key: string) => unknown): Blob {
-  const cell = (value: unknown) => { const text = safeText(value); return /[;"\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text; };
-  const lines = [columns.map(column => cell(column.label)).join(';'), ...rows.map(row => columns.map(column => {
-    const value = display(row, column.key);
-    return column.numeric && typeof value === 'number' ? String(value).replace('.', ',') : cell(value);
-  }).join(';'))];
-  return new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
 }
 
 export function toJson(meta: Record<string, unknown>, columns: ExportColumn[], rows: ExportRow[], display: (row: ExportRow, key: string) => unknown): Blob {

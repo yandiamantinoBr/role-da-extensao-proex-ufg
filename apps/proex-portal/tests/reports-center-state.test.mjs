@@ -3,13 +3,14 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
+import { zipEntries } from './support/report-module.mjs';
 
 const root = new URL('../', import.meta.url);
 const transpile = file => ts.transpileModule(readFileSync(new URL(file, root), 'utf8'), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
 function pure(file) { const compiledModule = { exports: {} }; vm.runInNewContext(transpile(file), { module: compiledModule, exports: compiledModule.exports, Blob, TextEncoder, Uint8Array, DataView, ArrayBuffer }); return compiledModule.exports; }
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const text = node => typeof node === 'string' ? node : Array.isArray(node) ? node.map(text).join('') : node && typeof node === 'object' ? text(node.props?.children) : '';
-const exportNames = ['Excel', 'PDF', 'Word', 'CSV', 'JSON', 'Imprimir'];
+const exportNames = ['Excel', 'PDF', 'Word', 'JSON', 'Imprimir'];
 const base = { userId: 'report-user', projectId: 'project-a', unitId: '', area: '', from: '', to: '', scopeLabel: 'Projeto A', available: ['materials', 'loans'] };
 const row = project => ({ id: `item-${project}`, projeto: `Projeto ${project.toUpperCase()}`, material: `Material ${project.toUpperCase()}`, classe: 'gift', unidade_medida: 'unidade', saldo: 9, reservado: 0, disponivel: 9 });
 
@@ -153,6 +154,54 @@ test('changing project clears incompatible unit and chart filters and starts on 
  } finally { h.dispose(); }
 });
 
+test('chart and native group selector filter the same rows and reset pagination', async () => {
+ const h = harness();
+ const materialRows = Array.from({ length: 30 }, (_, index) => ({ ...row('a'), id: `gift-${index}` }));
+ const equipment = { ...row('b'), classe: 'equipment' };
+ try {
+  h.render(); h.flushEffects();
+  h.requests.at(-1).resolve({ ok: true, json: async () => ({ dataset: 'materials', rows: [...materialRows, equipment], truncated: false }) });
+  await tick(); h.render();
+  h.button('Próxima').props.onClick(); h.render();
+  assert.match(h.text(), /26–31 de 31/);
+  const select = () => h.input('Filtrar tabela por grupo');
+  select().props.onChange({ target: { value: 'Equipamento' } }); h.render();
+  assert.match(h.text(), /1–1 de 1/);
+  assert.deepEqual((await jsonDownload(h)).linhas.map(line => line.material), ['Material B']);
+  const filterBar = nodesInside(h.render()).find(node => node.type === 'Bar' && node.props.onClick);
+  filterBar.props.onClick({ payload: { raw: 'Brinde' } }); h.render();
+  assert.equal(select().props.value, 'Brinde');
+  assert.match(h.text(), /1–25 de 30/);
+  select().props.onChange({ target: { value: '' } }); h.render();
+  assert.match(h.text(), /1–25 de 31/);
+  const container = nodesInside(h.render()).find(node => node.type === 'ResponsiveContainer' && node.props.onResize);
+  const axis = () => nodesInside(h.render()).find(node => node.type === 'YAxis' && node.props.type === 'category');
+  container.props.onResize(234, 180);
+  assert.equal(axis().props.width, 78);
+  assert.match(axis().props.tickFormatter('Material institucional da Pró-Reitoria de Extensão'), /…$/);
+  container.props.onResize(480, 180);
+  assert.equal(axis().props.width, 150);
+ } finally { h.dispose(); }
+});
+
+test('month table exposes the same entries and withdrawals as the filtered timeline', async () => {
+ const h = harness(), props = { ...base, available: ['movements'] };
+ const movement = (id, data, tipo, quantidade) => ({ ...row('a'), id, data, tipo, quantidade });
+ try {
+  h.render(props); h.flushEffects();
+  h.requests.at(-1).resolve({ ok: true, json: async () => ({ dataset: 'movements', truncated: false, rows: [
+   movement('in', '2026-09-02', 'receive', 7), movement('out', '2026-09-07', 'distribute', -4),
+   movement('next', '2026-10-03', 'distribute', -2),
+  ] }) });
+  await tick(); h.render(props);
+  const table = () => nodesInside(h.render(props)).find(node => node.type === 'table' && text(node).startsWith('Valores da evolução por mês'));
+  const body = () => nodesInside(table()).filter(node => node.type === 'tr').map(row => nodesInside(row).filter(cell => ['th','td'].includes(cell.type)).map(text));
+  assert.deepEqual(body(), [['Mês','Entradas','Saídas'],['set/26','7','4'],['out/26','0','2']]);
+  h.input('Filtrar tabela por grupo').props.onChange({ target: { value: 'Entrada' } });
+  assert.deepEqual(body(), [['Mês','Entradas','Saídas'],['set/26','7','0']]);
+ } finally { h.dispose(); }
+});
+
 test('report period on screen and in exports reflects whether the subject applies dates', async () => {
  const h = harness(), props = { ...base, available: ['projects', 'materials', 'loans'], from: '2026-10-01' };
  try {
@@ -232,7 +281,7 @@ test('traceable outflow filters travel to the server, immediately disable stale 
  const h=harness();try{
   h.render(detailedProps);h.flushEffects();await respondDetails(h);
   assert.ok(!text(h.input('Medida')).includes('saldo atual'));assert.ok(!text(h.input('Medida')).includes('reservado atual'));
-  h.input('Tipo de saída').props.onChange({target:{value:'loan'}});h.render(detailedProps);assert.equal(h.button('CSV').props.disabled,true);h.flushEffects();
+  h.input('Tipo de saída').props.onChange({target:{value:'loan'}});h.render(detailedProps);assert.equal(h.button('Excel').props.disabled,true);h.flushEffects();
   assert.equal(new URL('https://fixture.invalid'+h.requests.at(-1).url).searchParams.get('outflowType'),'loan');
   await respondDetails(h,[{...tracedRow,id:'loan:synthetic',tipo:'loan',quantidade:1,unidade_medida:'unidade',situacao_retorno:'out'}]);
   h.input('Situação da devolução').props.onChange({target:{value:'returned'}});h.render(detailedProps);assert.equal(h.button('JSON').props.disabled,true);h.flushEffects();
@@ -257,11 +306,15 @@ test('independent: malformed successful report JSON is an explicit failure rathe
  }
  assert.deepEqual(failures,[true,true,true,true,true],'invalid JSON, dataset, rows or coverage must be presented as data failures, not zero rows');
 });
-test('independent: a partial traceable CSV remains visibly partial after leaving the report screen',async()=>{
+test('the report offers XLSX, PDF and Word and marks partial XLSX in the filename and metadata',async()=>{
  const h=harness();try{h.render(detailedProps);h.flushEffects();h.requests.at(-1).resolve({ok:true,json:async()=>({dataset:'outflow_details',rows:[tracedRow],truncated:true})});await tick();h.render(detailedProps);
+  for(const name of ['Excel','PDF','Word']) assert.equal(h.button(name).props.disabled,false);
+  assert.ok(!nodesInside(h.render(detailedProps)).some(node=>node.type==='button'&&text(node)==='CSV'));
   const json=await jsonDownload(h);assert.match(json.filtros.Cobertura,/parcial/);
-  h.button('CSV').props.onClick();const csv=h.downloads.at(-1),body=await csv.blob.text();
-  assert.ok(/parcial|partial/i.test(csv.name+'\n'+body),'partial coverage must travel in the CSV filename or content');
+  h.button('Excel').props.onClick();
+  const xlsx=h.downloads.at(-1),entries=await zipEntries(xlsx.blob);
+  assert.match(xlsx.name,/-parcial\.xlsx$/);
+  assert.match(entries.get('xl/worksheets/sheet2.xml'),/Consulta parcial/);
  }finally{h.dispose();}
 });
 
@@ -295,6 +348,14 @@ test('project summary buttons download the same authorized singleton in each for
   assert.equal(formatValue(row,'emprestimos'),'');
   assert.equal(formatValue(row,'etapa'),'Encerrado');
   assert.ok(metadata.some(([label,value])=>label==='Recorte'&&value==='Projeto A'));
+ } finally { h.dispose(); }
+});
+
+test('the project report links only to spreadsheets already available in the project', () => {
+ const h = harness(), linked = tree => nodesInside(tree).find(node => node.type === 'a' && node.props.href === '#project-spreadsheets');
+ try {
+  assert.equal(linked(h.renderProject('project-a')), undefined);
+  assert.equal(text(linked(h.renderProject('project-a', { hasLinkedSpreadsheets: true }))), 'Planilhas do projeto');
  } finally { h.dispose(); }
 });
 
