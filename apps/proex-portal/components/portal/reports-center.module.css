@@ -8,6 +8,10 @@
   --rc-1: #3987e5; --rc-2: #d95926; --rc-grid: #3a2c45; --rc-axis: #c2b0ce; --rc-hover: #ffffff0d;
   --rc-warn-bg: #49351f; --rc-warn-ink: #f0c58e; --rc-in-bg: #173a2d; --rc-in-ink: #a9ecd0; --rc-out-bg: #47261a; --rc-out-ink: #ffc2a8;
 }
+.root select,
+:global(html[data-theme=dark]) .root select {
+  border-color: var(--muted);
+}
 .masthead {
   display: flex;
   align-items: center;
