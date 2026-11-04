@@ -22,7 +22,7 @@ async function renderDetail(relationships,schedule=[],canEdit=false,metadata={})
  const hooks={useState(initial){const key=index++;if(!(key in slots))slots[key]={value:typeof initial==='function'?initial():initial};return[slots[key].value,value=>{slots[key].value=typeof value==='function'?value(slots[key].value):value;}];},useRef(initial){const key=index++;return(slots[key]??={value:{current:initial}}).value;},useEffect(fn){const key=index++;if(!(key in slots)){slots[key]=true;effects.push(fn);}}};
  const jsx=(type,props)=>({type,props}),compiled={exports:{}};
  const payload={project:{id:'project-a',name:'Projeto sintético',status:'active',lifecycle:'active',scope:'internal',starts_at:'2026-10-31T13:00:00.000Z',description:'Projeto de contrato'},types:[],links:[],calls:[],schedule,versions:[],relatedProjects:[],organizationalUnits:[],permissions:{canEdit},relationships,...metadata};
- vm.runInNewContext(code,{module:compiled,exports:compiled.exports,require:name=>name==='react'?hooks:name==='react/jsx-runtime'?{jsx,jsxs:jsx}:name==='lucide-react'?new Proxy({},{get:(_,key)=>String(key)}):name.endsWith('.css')?{default:new Proxy({},{get:(_,key)=>String(key)})}:name==='@/lib/extension-catalog'?{areaLabel:value=>value,lineLabel:value=>value}:name==='@/lib/civil-date'?civilDates:name==='@/lib/project-communication'?communication:{DraftNotice:()=>null,useFormDraft:()=>({clear(){}})},Date:FixedDate,Intl,URL,AbortController,Number,fetch:async()=>({ok:true,json:async()=>payload})});
+ vm.runInNewContext(code,{module:compiled,exports:compiled.exports,require:name=>name==='react'?hooks:name==='react/jsx-runtime'?{jsx,jsxs:jsx}:name==='lucide-react'?new Proxy({},{get:(_,key)=>String(key)}):name.endsWith('.css')?{default:new Proxy({},{get:(_,key)=>String(key)})}:name==='@/lib/extension-catalog'?{areaLabel:value=>value,lineLabel:value=>value}:name==='@/lib/civil-date'?civilDates:name==='@/lib/project-communication'?communication:name==='./reports-center'?{ProjectReportExports:'ProjectReportExports'}:{DraftNotice:()=>null,useFormDraft:()=>({clear(){}})},Date:FixedDate,Intl,URL,AbortController,Number,fetch:async()=>({ok:true,json:async()=>payload})});
  function render(){index=0;tree=compiled.exports.default({projectId:'project-a',projects:[],mutate:async()=>({}),onBack(){},onEdit(){}});}
  render();effects.forEach(fn=>fn());await tick();render();
  return{tree,all:nodes(tree),text:text(tree),editSchedule(title){
@@ -112,4 +112,12 @@ test('the detail distinguishes communication channels, leaves legacy links ordin
  assert.match(editor.text, /Nota histórica/);
  const viewer = await renderDetail({}, [], false, {links, versions});
  assert.doesNotMatch(viewer.text, /Nota histórica|Restaurar/);
+});
+
+test('only a detail with report permission mounts the shortcut, including archived projects',async()=>{
+ const denied=await renderDetail({},[],false,{permissions:{reports:false}});
+ assert.equal(denied.all.some(node=>node.type==='ProjectReportExports'),false);
+ const allowed=await renderDetail({},[],false,{permissions:{reports:true},project:{id:'project-a',name:'Projeto arquivado',status:'archived',lifecycle:'past',scope:'internal'}});
+ assert.equal(allowed.all.find(node=>node.type==='ProjectReportExports').props.projectId,'project-a');
+ assert.match(allowed.text,/Relatórios do projeto/);
 });

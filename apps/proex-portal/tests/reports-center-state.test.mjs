@@ -19,23 +19,25 @@ const row = project => ({ id: `item-${project}`, projeto: `Projeto ${project.toU
  * No DOM, network, filesystem writes or framework build is involved.
  */
 function harness() {
- const slots = [], pendingEffects = [], requests = [], downloads = []; let index = 0, tree, opened = 0;
+ const slots = [], pendingEffects = [], requests = [], downloads = [], pdfInputs = []; let index = 0, tree, opened = 0;
  const same = (left, right) => left?.length === right?.length && left?.every((value, i) => Object.is(value, right[i]));
  const hooks = {
   useState(initial) { const key = index++; if (!(key in slots)) slots[key] = { value: typeof initial === 'function' ? initial() : initial }; return [slots[key].value, next => { slots[key].value = typeof next === 'function' ? next(slots[key].value) : next; }]; },
   useRef(initial) { const key = index++; slots[key] ??= { value: { current: initial } }; return slots[key].value; },
   useMemo(callback) { index++; return callback(); },
+  useCallback(callback) { index++; return callback; },
   useEffect(callback, deps) { const key = index++; if (!same(slots[key]?.deps, deps)) pendingEffects.push(() => { slots[key]?.cleanup?.(); slots[key] = { deps, cleanup: callback() }; }); },
  };
  const jsx = { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) };
  const exporters = pure('components/portal/report-export.ts'); exporters.download = (name, blob) => downloads.push({ name, blob });
- const require = name => name === 'react' ? hooks : name === 'react/jsx-runtime' ? jsx : name === './report-export' ? exporters : name === '@/lib/report-quantities' ? pure('lib/report-quantities.ts') : name === '@/lib/extension-catalog' ? { areaLabel: value => value } : name.endsWith('.css') ? { default: new Proxy({}, { get: (_object, key) => key }) } : new Proxy({}, { get: (_object, key) => String(key) });
+ const require = name => name === 'react' ? hooks : name === 'react/jsx-runtime' ? jsx : name === './report-export' ? exporters : name === './report-pdf' ? { toPdf(...args) { pdfInputs.push(args); return new Blob(['synthetic pdf'], { type: 'application/pdf' }); } } : name === '@/lib/report-quantities' ? pure('lib/report-quantities.ts') : name === '@/lib/extension-catalog' ? { areaLabel: value => value } : name.endsWith('.css') ? { default: new Proxy({}, { get: (_object, key) => key }) } : new Proxy({}, { get: (_object, key) => String(key) });
  const compiledModule = { exports: {} };
  const window = { setTimeout(callback) { callback(); return 1; }, clearTimeout() {}, open() { opened++; return null; } };
  vm.runInNewContext(transpile('components/portal/reports-center.tsx'), { module: compiledModule, exports: compiledModule.exports, require, Blob, Intl, Date, Map, Set, URLSearchParams, AbortController, window, localStorage: { getItem: () => null }, fetch: (url, init) => new Promise((resolve, reject) => requests.push({ url, init, resolve, reject })) });
  function nodes() { const result = []; const visit = node => { if (!node || typeof node !== 'object') return; if (Array.isArray(node)) { node.forEach(visit); return; } result.push(node); visit(node.props?.children); }; visit(tree); return result; }
  return {
-  requests, downloads,
+  requests, downloads, pdfInputs,
+  renderProject(projectId) { index = 0; tree = compiledModule.exports.ProjectReportExports({projectId}); return tree; },
   render(props = base) { index = 0; tree = compiledModule.exports.default(props); return tree; },
   flushEffects() { while (pendingEffects.length) pendingEffects.shift()(); },
   button(name) { const found = nodes().find(node => node.type === 'button' && text(node) === name); assert.ok(found, `button ${name}`); return found; },
@@ -209,4 +211,69 @@ test('independent: a partial traceable CSV remains visibly partial after leaving
   h.button('CSV').props.onClick();const csv=h.downloads.at(-1),body=await csv.blob.text();
   assert.ok(/parcial|partial/i.test(csv.name+'\n'+body),'partial coverage must travel in the CSV filename or content');
  }finally{h.dispose();}
+});
+
+test('project summary buttons download the same authorized singleton in each format without a preliminary query', async () => {
+ const row = {id:'project-a',projeto:'Projeto A',abrangencia:'internal',etapa:'past',materiais:0};
+ const h = harness();
+ try {
+  h.renderProject(row.id);
+  assert.equal(h.requests.length,0);
+  assert.match(h.text(),/Ficha e totais deste projeto em todo o período/);
+  for (const [button, ext] of [['Excel (XLSX)','xlsx'],['Word (DOCX)','docx'],['PDF','pdf']]) {
+   h.button(button).props.onClick();
+   const request = h.requests.at(-1);
+   const query = new URL(request.url,'https://synthetic.example.invalid').searchParams;
+   assert.deepEqual(Object.fromEntries(query),{dataset:'projects',projectId:row.id});
+   h.renderProject(row.id);
+   assert.equal(h.button(button).props.disabled,true);
+   request.resolve({ok:true,json:async()=>({dataset:'projects',rows:[row],truncated:false})});
+   await tick();
+   h.renderProject(row.id);
+   const exported = h.downloads.at(-1);
+   assert.equal(exported.name.split('.').at(-1),ext);
+   assert.equal(h.button(button).props.disabled,false);
+   if (ext !== 'pdf') assert.match(await exported.blob.text(),/Projeto A/);
+  }
+  const [,columns,pdfRows,formatValue,metadata] = h.pdfInputs[0];
+  assert.equal(columns.some(column=>column.key==='local'),false,'use the same default columns as the central report');
+  assert.equal(pdfRows[0],row);
+  assert.equal(formatValue(row,'materiais'),0);
+  assert.equal(formatValue(row,'emprestimos'),'');
+  assert.equal(formatValue(row,'etapa'),'Encerrado');
+  assert.ok(metadata.some(([label,value])=>label==='Recorte'&&value==='Projeto A'));
+ } finally { h.dispose(); }
+});
+
+test('project summary never downloads absent, mixed, partial, unauthorized or detached project results', async () => {
+ const h=harness(),projectId='project-a';
+ try {
+  const same={id:projectId,projeto:'Projeto A'};
+  const foreign={id:'project-b',projeto:'Projeto B'};
+  const body=(rows,truncated=false)=>({dataset:'projects',rows,truncated});
+  const results=[
+   [true,body([]),/indisponível/],
+   [true,body([foreign]),/não corresponde/],
+   [true,body([same,foreign]),/não corresponde/],
+   [true,body([same],true),/não corresponde/],
+   [false,{error:{message:'Acesso revogado'}},/Acesso revogado/],
+  ];
+  for (const [ok,value,alert] of results) {
+   h.renderProject(projectId);
+   h.button('Excel (XLSX)').props.onClick();
+   h.requests.at(-1).resolve({ok,json:async()=>value});
+   await tick();
+   h.renderProject(projectId);
+   assert.match(h.text(),alert);
+   assert.equal(h.downloads.length,0);
+  }
+  const section=h.renderProject(projectId);
+  h.button('Word (DOCX)').props.onClick();
+  const abandoned=h.requests.at(-1);
+  section.props.ref(null);
+  assert.equal(abandoned.init.signal.aborted,true);
+  abandoned.resolve({ok:true,json:async()=>body([same])});
+  await tick();
+  assert.equal(h.downloads.length,0);
+ } finally { h.dispose(); }
 });

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { ArrowDown, ArrowUp, BarChart3, Boxes, CalendarRange, ClipboardList, Columns3, FileJson, FileSpreadsheet, FileText, FolderKanban, LoaderCircle, Printer, Repeat2, Save, Search, Sheet, Trash2, Truck, X } from 'lucide-react';
 import { areaLabel } from '@/lib/extension-catalog';
@@ -168,6 +168,91 @@ function ChartTooltip({ active, payload, label, unit }: { active?: boolean; payl
   return <div className={styles.tooltip}><strong>{label}</strong>{payload.map(item => <span key={item.name}><i style={{ background: item.color }} />{item.name}<b>{formatNumber(Number(item.value) || 0)} {unit}</b></span>)}</div>;
 }
 
+async function requestReport(query: URLSearchParams, signal: AbortSignal): Promise<{ rows: ExportRow[]; truncated: boolean }> {
+  const response = await fetch(`/api/reports?${query}`, { credentials: 'same-origin', cache: 'no-store', signal });
+  let value: unknown;
+  try {
+    value = await response.json();
+  } catch (reason) {
+    if (signal.aborted) throw reason;
+    throw new Error('Não foi possível carregar o relatório: resposta incompleta ou inválida.');
+  }
+  const body = value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
+  if (!response.ok) {
+    const detail = body?.error;
+    throw new Error((typeof detail === 'string' ? detail : detail && typeof detail === 'object' && 'message' in detail && typeof detail.message === 'string' ? detail.message : typeof body?.message === 'string' ? body.message : '') || 'Não foi possível carregar o relatório.');
+  }
+  if (!body || body.dataset !== query.get('dataset') || !Array.isArray(body.rows) || !body.rows.every(row => row !== null && typeof row === 'object' && !Array.isArray(row)) || typeof body.truncated !== 'boolean') {
+    throw new Error('Não foi possível carregar o relatório: resposta incompleta ou inválida.');
+  }
+  return { rows: body.rows as ExportRow[], truncated: body.truncated };
+}
+
+type DocumentFormat = 'xlsx' | 'docx' | 'pdf';
+
+function reportDocument(format: DocumentFormat, title: string, columns: ExportColumn[], rows: ExportRow[], value: (row: ExportRow, key: string) => unknown, info: [string, string][]): Blob | Promise<Blob> {
+  if (format === 'xlsx') return toXlsx(title, columns, rows, value, info);
+  if (format === 'docx') return toDocx(title, columns, rows, value, info);
+  return import('./report-pdf').then(({ toPdf }) => toPdf(title, columns, rows, value, info));
+}
+
+export function ProjectReportExports({ projectId }: { projectId: string }) {
+  const pending = useRef<AbortController | null>(null);
+  const [exporting, setExporting] = useState<DocumentFormat | null>(null);
+  const [error, setError] = useState('');
+  const detach = useCallback((element: HTMLElement | null) => {
+    if (!element) pending.current?.abort();
+  }, []);
+
+  async function save(format: DocumentFormat) {
+    if (!projectId || pending.current) return;
+    const controller = new AbortController();
+    pending.current = controller;
+    setExporting(format);
+    setError('');
+    try {
+      const { rows, truncated } = await requestReport(new URLSearchParams({ dataset: 'projects', projectId }), controller.signal);
+      if (controller.signal.aborted) return;
+      if (!rows.length) throw new Error('O resumo do projeto está indisponível. Atualize o projeto e confira seu acesso.');
+      if (truncated || rows.length !== 1 || rows[0].id !== projectId) throw new Error('A resposta não corresponde ao projeto selecionado.');
+      const project = DATASETS.projects;
+      const columns = project.columns.filter(column => project.defaults.includes(column.key));
+      const now = new Date();
+      const info: [string, string][] = [
+        ['Relatório', project.label],
+        ['Recorte', typeof rows[0].projeto === 'string' && rows[0].projeto ? rows[0].projeto : 'Projeto selecionado'],
+        ['Período', 'Todo o período'],
+        ['Linhas', '1'],
+        ['Gerado em', now.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) + ' (Brasília)'],
+      ];
+      const file = await reportDocument(format, project.label, columns, rows, (row, key) => display('projects', row, key), info);
+      if (controller.signal.aborted) return;
+      download(`proex-resumo-projeto-${now.toISOString().slice(0, 10)}.${format}`, file);
+    } catch (cause) {
+      if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'Não foi possível gerar o resumo.');
+    } finally {
+      if (pending.current === controller) {
+        pending.current = null;
+        if (!controller.signal.aborted) setExporting(null);
+      }
+    }
+  }
+
+  return <section ref={detach} className="p-card grid min-w-0 gap-3" aria-label="Baixar resumo do projeto">
+    <div>
+      <h3>Baixar resumo do projeto</h3>
+      <p className="p-form-help">Ficha e totais deste projeto em todo o período. Para escolher dados, colunas ou datas, abra Relatórios do projeto.</p>
+    </div>
+    <div className="flex flex-wrap gap-2" role="group" aria-label="Formatos do resumo">
+      <button type="button" className="p-button p-button-subtle" disabled={!!exporting} onClick={() => void save('xlsx')}><FileSpreadsheet size={16} aria-hidden="true"/>Excel (XLSX)</button>
+      <button type="button" className="p-button p-button-subtle" disabled={!!exporting} onClick={() => void save('docx')}><FileText size={16} aria-hidden="true"/>Word (DOCX)</button>
+      <button type="button" className="p-button p-button-subtle" disabled={!!exporting} onClick={() => void save('pdf')}><FileText size={16} aria-hidden="true"/>PDF</button>
+    </div>
+    {exporting && <p className="p-form-help" role="status">Preparando o resumo em {exporting.toUpperCase()}…</p>}
+    {error && <p className="p-inline-error" role="alert">{error}</p>}
+  </section>;
+}
+
 export default function ReportsCenter({ projectId, unitId, area, from, to, scopeLabel, available, initialDataset }: {
   projectId: string; unitId: string; area: string; from: string; to: string; scopeLabel: string; available: DatasetId[]; initialDataset?: DatasetId;
 }) {
@@ -208,19 +293,7 @@ export default function ReportsCenter({ projectId, unitId, area, from, to, scope
     if (from) query.set('from', from);
     if (to) query.set('to', to);
     const start = window.setTimeout(() => { setLoading(true); setError(''); }, 0);
-    fetch(`/api/reports?${query}`, { credentials: 'same-origin', cache: 'no-store', signal: controller.signal })
-      .then(async response => {
-        let value: unknown;
-        try { value = await response.json(); }
-        catch (reason) { if (controller.signal.aborted) throw reason; throw new Error('Não foi possível carregar o relatório: resposta incompleta ou inválida.'); }
-        const body = value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
-        if (!response.ok) {
-          const detail = body?.error;
-          throw new Error((typeof detail === 'string' ? detail : detail && typeof detail === 'object' && 'message' in detail && typeof detail.message === 'string' ? detail.message : typeof body?.message === 'string' ? body.message : '') || 'Não foi possível carregar o relatório.');
-        }
-        if (!body || body.dataset !== dataset || !Array.isArray(body.rows) || !body.rows.every(row => row !== null && typeof row === 'object' && !Array.isArray(row)) || typeof body.truncated !== 'boolean') throw new Error('Não foi possível carregar o relatório: resposta incompleta ou inválida.');
-        return { rows: body.rows as ExportRow[], truncated: body.truncated };
-      })
+    requestReport(query, controller.signal)
       .then(body => { if (controller.signal.aborted) return; setRows(body.rows); setLoadedQueryKey(queryKey); setTruncated(body.truncated); setLoading(false); })
       .catch(reason => { if (controller.signal.aborted) return; setRows([]); setLoadedQueryKey(queryKey); setTruncated(false); setError(reason instanceof Error ? reason.message : 'Não foi possível carregar o relatório.'); setLoading(false); });
     return () => { window.clearTimeout(start); controller.abort(); };
@@ -299,9 +372,7 @@ export default function ReportsCenter({ projectId, unitId, area, from, to, scope
     if (exporting || loading || !chosen.length) return;
     setExporting(format); setError('');
     try {
-      const blob = format === 'docx'
-        ? toDocx(config.label, exportColumns, sorted, exportValue, info)
-        : await (await import('./report-pdf')).toPdf(config.label, exportColumns, sorted, exportValue, info);
+      const blob = await reportDocument(format, config.label, exportColumns, sorted, exportValue, info);
       download(`${fileBase}.${format}`, blob);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Não foi possível gerar o documento. Tente novamente.');

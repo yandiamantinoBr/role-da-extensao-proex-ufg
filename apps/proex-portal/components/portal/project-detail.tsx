@@ -7,6 +7,7 @@ import type { Row } from '@/lib/database';
 import { isCivilDate } from '@/lib/civil-date';
 import { COMMUNICATION_CHANNELS, COMMUNICATION_NOTE_LIMIT, communicationLabel } from '@/lib/project-communication';
 import { useFormDraft, DraftNotice } from './use-form-draft';
+import { ProjectReportExports } from './reports-center';
 type Props={projectId:string;projects:Row[];mutate:(action:string,payload:Row)=>Promise<Row>;onBack:()=>void;onEdit:(project:Row)=>void;onSelect?:(id:string)=>void;renderWorkContext?:(projectId:string)=>ReactNode};
 type Editor={kind:'link'|'call'|'schedule';row:Row|null};
 const lifecycle={active:'Em andamento',past:'Encerrado',catalog:'Catálogo'};
@@ -151,6 +152,7 @@ export default function ProjectDetail({projectId,projects,mutate,onBack,onEdit,o
  {kpis.length>0&&<div className={styles.heroKpis}>{kpis.map(({label:title,value,detail,tone,icon:Icon})=><div key={title} className={tone?styles.kpiWarn:''}><span><Icon size={15}/>{title}</span><strong>{value}</strong><small>{detail}</small></div>)}</div>}
  <p className="p-form-help" style={{marginTop:14}}><ShieldCheck size={14}/> A relação entre programa e projeto organiza o catálogo; os acessos continuam sendo concedidos por projeto.</p></header>
  {renderWorkContext?.(project.id)}
+ {data.permissions?.reports&&<ProjectReportExports key={project.id} projectId={project.id}/>}
  {data.relatedProjects.length>0&&<div className="p-card"><h3>Programas e projetos relacionados</h3><div className="p-inline" style={{flexWrap:'wrap',marginTop:12}}>{data.relatedProjects.map((related:Row)=><button key={related.id} type="button" className="p-button p-button-subtle" onClick={()=>onSelect?.(related.id)}><FolderKanban size={15}/>{related.name}</button>)}</div></div>}
  {(materialsUrl||projectSheetLinks.length>0)&&<section className="p-card"><h3>Planilhas do projeto</h3><p className="p-form-help">Abra os materiais e referências no Google Sheets com a conta que recebeu acesso.</p><div className={styles.detailLinks}>{materialsUrl&&<a className={styles.quickLink} href={materialsUrl} target="_blank" rel="noopener noreferrer"><Package size={20}/><span><strong>Planilha de materiais</strong><small>Espelho geral de gestão · acesso do responsável global</small></span><ExternalLink size={15}/></a>}{projectSheetLinks.map((link:Row)=><a key={link.id} className={styles.quickLink} href={safeUrl(link.url)} target="_blank" rel="noopener noreferrer"><FileText size={20}/><span><strong>{link.label}</strong><small>Planilha específica vinculada ao projeto</small></span><ExternalLink size={15}/></a>)}</div><p className={styles.externalNote}>O acesso no Google depende do compartilhamento feito no Drive. Filtros e links não substituem as permissões da planilha.</p></section>}
  <div className={styles.detailGrid}>
