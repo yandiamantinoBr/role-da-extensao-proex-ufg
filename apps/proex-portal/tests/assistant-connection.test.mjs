@@ -54,6 +54,12 @@ test('credential migration HTTP is private, owner-only and serves v2 to the exis
   const ciphertext = f.native.prepare('SELECT credentials_ciphertext FROM ai_organization_settings').get().credentials_ciphertext;
   const exported = JSON.stringify([await response.text(), await diagnostic.text(), errors]);
   for (const privateValue of [secret, keyring.current, ciphertext, ...Object.values(keys)]) assert.ok(!exported.includes(privateValue));
+  const corrupted = ciphertext.replace(/\.([\w-])([\w-]+)$/, (_, initial, rest) => '.' + (initial === 'A' ? 'B' : 'A') + rest);
+  f.native.prepare('UPDATE ai_organization_settings SET credentials_ciphertext=? WHERE organization_id=?').run(corrupted, f.org);
+  globalThis.__connectionRoute.actor = f.owner;
+  const verification = await migration.POST(request(path));
+  assert.deepEqual(await verification.json(), { migrated: 0, changed: 0, unreadable: 1, remaining: 0, nextCursor: null });
+  assert.equal(provider.calls.length, 1);
  } finally { globalThis.fetch = originalFetch; console.error = originalError; }
 });
 test('HTTP requires session, strict origin/action/bounded JSON, and returns only sanitized connection receipts',async()=>{const f=await fixture(),provider=fake();globalThis.__connectionRoute={db:f.db,actor:f.ti};const request=(body,headers={})=>new Request('https://synthetic.invalid/api/assistant/connection',{method:'POST',headers:{Origin:'https://synthetic.invalid','X-Proex-Action':'1','Content-Type':'application/json',...headers},body:JSON.stringify(body)});for(const headers of[{Origin:'https://foreign.invalid'},{'X-Proex-Action':''},{'Content-Type':'application/json-bad'}])assert.equal((await route.POST(request(input(f),headers))).status,403);assert.equal((await route.POST(request({...input(f),extra:'x'.repeat(3000)}))).status,413);const original=globalThis.fetch;globalThis.fetch=provider.fetch;try{const response=await route.POST(request(input(f,'typesafe')));assert.equal(response.status,200);assert.equal(response.headers.get('Cache-Control'),'private, no-store');assert.equal((await response.json()).outcome,'authenticated');const before=f.stats.commits;await route.GET(new Request('https://synthetic.invalid/api/assistant/connection?organizationId='+f.org));assert.equal(f.stats.commits,before);}finally{globalThis.fetch=original;}globalThis.__connectionRoute.actor=null;assert.equal((await route.POST(request(input(f),{Authorization:'Bearer pne_'+'x'.repeat(43)}))).status,401);});

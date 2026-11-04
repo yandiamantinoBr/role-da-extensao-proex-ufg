@@ -18,14 +18,15 @@ export async function migrateAssistantCredentials(db: D1Database, actor: PortalA
   }
   const prefix = `v2.${await credentialKeyId(keys.current, authSecret)}.`;
   const candidates = await all(db, `SELECT organization_id,revision,credentials_ciphertext
-    FROM ai_organization_settings WHERE organization_id>? AND substr(credentials_ciphertext,1,?)<>?
-      AND ${authority.sql} ORDER BY organization_id LIMIT ?`, [cursor, prefix.length, prefix, ...authority.values, limit + 1]);
+    FROM ai_organization_settings WHERE organization_id>? AND ${authority.sql}
+    ORDER BY organization_id LIMIT ?`, [cursor, ...authority.values, limit + 1]);
   let migrated = 0, changed = 0, unreadable = 0;
   for (const candidate of candidates.slice(0, limit)) {
     const organizationId = String(candidate.organization_id), previous = String(candidate.credentials_ciphertext);
     let credentials;
     try { credentials = object(await decryptProviderCredentials(authSecret, previous, organizationId, keys)); }
     catch { unreadable++; continue; }
+    if (previous.startsWith(prefix)) continue;
     const ciphertext = await encryptProviderCredentials(authSecret, credentials, organizationId, keys, previous);
     const [written] = await db.batch([
       db.prepare(`UPDATE ai_organization_settings SET credentials_ciphertext=?
