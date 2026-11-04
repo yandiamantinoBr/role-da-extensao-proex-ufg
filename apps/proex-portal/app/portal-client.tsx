@@ -36,6 +36,7 @@ import workStyles from './work-integration.module.css';
 import NotificationBell from '@/components/portal/notification-bell';
 import OrganizationEmailSettings from '@/components/portal/organization-email-settings';
 import MaterialDetailDrawer from '@/components/portal/material-detail-drawer';
+import MaterialCatalog from '@/components/portal/material-catalog';
 import { ThemeSwitch } from '@/components/theme/theme-switch';
 import { BrandMark } from '@/components/theme/brand-mark';
 import DashboardPanel from '@/components/portal/dashboard-panel';
@@ -779,32 +780,28 @@ export default function PortalClient({ initial }: {
         <Section title="Materiais e estoque" description="Saldo físico, reservas e unidades disponíveis ficam separados." aside={<div className="p-search">
             <Search size={17}/>
             <input aria-label="Buscar materiais" placeholder="Buscar material" value={query} onChange={e => setQuery(e.target.value)}/>
-            </div>}>{searchItems.length ? <div className="p-card p-table-wrap">
-            <table>
-            <thead>
-            <tr>
-            <th>Material</th>
-            <th>Físico</th>
-            <th>Reservado</th>
-            <th>Disponível</th>
-            <th>Ações</th>
-            </tr>
-            </thead>
-            <tbody>{searchItems.map(i => <tr key={i.id}>
-                <td>
-                <button type="button" className="p-text-link" aria-label={`Abrir detalhes de ${i.name}`} onClick={() => setSelectedMaterialId(string(i.id))}><strong>{i.name}</strong></button>
-                <small>{categoryNames[i.category] || i.category} · {projectName(get(i, 'projectId', 'project_id'))}</small>{(i.asset_code || i.assetCode) && <small>Código: {i.asset_code || i.assetCode}</small>}{i.condition !== 'active' && <span className="p-badge p-status-paused">{i.condition === 'maintenance' ? 'Em manutenção' : 'Inativo'}</span>}
-                </td>
-                <td>{i.stock ?? i.quantity ?? 0}<small>{i.unit || 'unidade'}</small>
-                </td>
-                <td>{i.reserved ?? 0}</td>
-                <td>
-                <span className={available(i) <= Number(get(i, 'lowStock', 'low_stock') ?? 0) ? 'p-low' : 'p-available'}>{available(i)}</span>
-                </td>
-                <td><button className="p-button p-button-subtle" onClick={() => setSelectedMaterialId(string(i.id))} aria-label={`Abrir detalhes de ${i.name}`}>Detalhes <ArrowRight size={15} /></button></td>
-                </tr>)}</tbody>
-            </table>
-            </div> : <Empty title={query ? 'Nenhum material encontrado' : 'Seu catálogo ainda está vazio'} text={query ? 'Tente outro nome ou selecione outro projeto.' : 'Cadastre os materiais e registre o recebimento após conferir a quantidade real.'}/>}</Section>{can('inventory.manage') && formProjects.length > 0 && <div className="p-two-columns">
+            </div>}>{searchItems.length ? <MaterialCatalog onOpen={setSelectedMaterialId} materials={searchItems.map(item => {
+                const availableQuantity = available(item);
+                const projectId = string(get(item, 'projectId', 'project_id'));
+                const hasLoan = Number(get(item, 'onLoan', 'on_loan')) === 1;
+                const reservedNow = Number(get(item, 'reservedNow', 'reserved_now')) === 1;
+                const availabilityNote = hasLoan ? 'Emprestado' : reservedNow ? 'Reserva em andamento' : '';
+                return {
+                    id: string(item.id),
+                    name: string(item.name),
+                    category: string(categoryNames[item.category] || item.category),
+                    project: string(projectName(projectId)),
+                    assetCode: string(item.asset_code || item.assetCode),
+                    condition: string(item.condition),
+                    unit: string(item.unit || 'unidade'),
+                    physical: item.stock ?? item.quantity ?? 0,
+                    reserved: reservedNow ? 1 : item.reserved ?? 0,
+                    available: availableQuantity,
+                    availabilityNote,
+                    lowStock: item.condition === 'active' && !availabilityNote && availableQuantity <= Number(get(item, 'lowStock', 'low_stock') ?? 0),
+                    canOpen: canProject(projectId, 'inventory.read'),
+                };
+            })} /> : <Empty title={query ? 'Nenhum material encontrado' : 'Seu catálogo ainda está vazio'} text={query ? 'Tente outro nome ou selecione outro projeto.' : 'Cadastre os materiais e registre o recebimento após conferir a quantidade real.'}/>}</Section>{can('inventory.manage') && formProjects.length > 0 && <div className="p-two-columns">
             <Section title="Cadastrar material" description="O cadastro começa sem saldo. Registre o recebimento depois da contagem.">
             <OperationForm onProjectFocus={setDraftProject} action="item.create" mutate={mutate} submit="Cadastrar material" make={f => ({ projectId: f.get('projectId'), name: f.get('name'), category: f.get('category'), categoryId: f.get('categoryId') || null, unit: f.get('unit'), lowStock: Number(f.get('lowStock')), description: f.get('description'), assetCode: f.get('assetCode') })}>
             <div className="p-form-grid">{projectField}<Field label="Nome">
