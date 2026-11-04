@@ -1,4 +1,8 @@
-# Checkpoint atual · V16 publicada
+# Checkpoint atual · V17 publicada e avisos em operação
+
+PR #18 integrada em `f77736262089c97aab226f956fd622ae3b407ad4`, Vercel READY no mesmo commit. CI aprovou 854 testes do portal e 33 do jogo. Piloto único recebido em 31/10, demanda operacional concluída e gatilho de dez minutos instalado. Em 04/11, quatro execuções por relógio constaram como concluídas no projeto Google. Credencial vigente até 30/11. Provas em [ENTREGA-V17.md](ENTREGA-V17.md).
+
+# Histórico · V16 publicada
 
 Em 31/10/2026, PR #17 integrada em `f8c3718abcb654b0b8b06679fe8dfba87cf6deff`; Vercel `dpl_GsN2Q4ZZJGH8foUMmtTzcXBREsAf` READY no mesmo SHA. CI 838 portal + 33 jogo, sem falhas; revisão independente do calendário aprovada. Fluxo oficial Do URL criou a assinatura existente no Google antes do patch; fonte real de projetos/eventos está vazia no horizonte consultado. Ver [ENTREGA-V16.md](ENTREGA-V16.md). R21 autorizado e conectado, ainda OFF/sem envio; V17 prepara piloto próprio com proteção de destinatário. As seções abaixo preservam o histórico.
 

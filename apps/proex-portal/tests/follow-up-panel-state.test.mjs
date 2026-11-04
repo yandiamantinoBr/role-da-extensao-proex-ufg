@@ -86,3 +86,110 @@ test('advanced filters stay native and initially collapsed while active values s
  h.select('Estado','blocked');h.render();h.select('Prioridade','high');h.render();const search=h.find('input',node=>node.props.placeholder==='Título ou contexto');search.props.onChange({target:{value:'coletes'}});h.render();h.timers();let query=new URL(h.pending('tasks').url,'http://127.0.0.1').searchParams;assert.equal(query.get('status'),'blocked');assert.equal(query.get('priority'),'high');assert.equal(query.get('search'),'coletes');assert.match(text(h.find('summary',node=>text(node).startsWith('Buscar e filtrar'))),/3 filtros ativos/);assert.equal(h.value('Estado'),'blocked');assert.equal(h.value('Prioridade'),'high');assert.equal(filters().props.open,undefined,'rerenders do not control or reset the native disclosure');
  h.select('Estado','all');h.render();h.select('Prioridade','all');h.render();h.find('input',node=>node.props.placeholder==='Título ou contexto').props.onChange({target:{value:''}});h.render();h.timers();query=new URL(h.pending('tasks').url,'http://127.0.0.1').searchParams;assert.equal(query.get('search'),null);assert.equal(query.get('status'),'all');assert.equal(query.get('priority'),'all');assert.equal(text(h.find('summary',node=>text(node).startsWith('Buscar e filtrar'))),'Buscar e filtrar');}finally{h.dispose();}
 });
+
+test('clicking the selected card preserves its loaded detail and does not rewrite the selection URL',async()=>{
+ const h=harness(),seen=[];try{
+  h.render({onSelectTask:id=>seen.push(id)});await ready(h);
+  h.button('Task A').props.onClick();h.render({initialTaskId:'task-a'});h.timers();h.render();
+  h.reply(h.pending('detail'),detail());await tick();h.render();assert.ok(h.body().includes('Context A'));
+  const count=h.requests.length;
+  h.button('Task A').props.onClick();h.render();h.timers();h.render();
+  assert.ok(h.body().includes('Context A'));assert.equal(h.requests.length,count);assert.deepEqual(seen,['task-a']);
+ }finally{h.dispose();}
+});
+
+test('clicking the selected card while its detail is pending keeps that request alive and accepts its response',async()=>{
+ const h=harness();try{
+  await ready(h);h.button('Task A').props.onClick();h.render();const request=h.pending('detail'),count=h.requests.length;
+  h.button('Task A').props.onClick();h.render();
+  assert.equal(request.init.signal.aborted,false);assert.equal(h.requests.length,count);
+  h.reply(request,detail());await tick();h.render();assert.ok(h.body().includes('Context A'));
+ }finally{h.dispose();}
+});
+
+test('clicking A supersedes a pending or queued URL selection of B without discarding A',async t=>{
+ for(const timerRan of [false,true])for(const loaded of [true,false])await t.test(`${timerRan?'queued B':'pending B'}, ${loaded?'loaded detail':'live request'}`,async()=>{
+  const h=harness(),seen=[];
+  try{
+   h.render({onSelectTask:id=>seen.push(id)});await ready(h);
+   h.button('Task A').props.onClick();h.render({initialTaskId:'task-a'});h.timers();h.render();
+   const request=h.pending('detail');
+   if(loaded){h.reply(request,detail());await tick();h.render();assert.ok(h.body().includes('Context A'));}
+   const count=h.requests.length;
+   h.render({initialTaskId:'task-b'});
+   if(timerRan)h.timers();
+   h.button('Task A').props.onClick();
+   // The stale B timer would run here, before the parent echoes A back.
+   h.timers();h.render();
+   assert.equal(h.requests.length,count);assert.equal(request.init.signal.aborted,false);
+   assert.deepEqual(seen,['task-a','task-a']);
+   h.render({initialTaskId:'task-a'});
+   if(loaded)assert.ok(h.body().includes('Context A'));
+   h.timers();h.render();
+   if(!loaded){h.reply(request,detail());await tick();h.render();}
+   assert.ok(h.body().includes('Context A'));assert.equal(h.requests.length,count);
+   h.render({initialTaskId:'task-b'});h.timers();h.render();
+   assert.equal(new URL(h.pending('detail').url,'http://127.0.0.1').searchParams.get('id'),'task-b');
+  }finally{h.dispose();}
+ });
+});
+
+test('reasserting a selected card cannot restore detail rejected by its latest request',async()=>{
+ const h=harness(),seen=[];
+ try{
+  h.render({onSelectTask:id=>seen.push(id)});await ready(h);
+  h.button('Task A').props.onClick();h.render({initialTaskId:'task-a'});h.timers();h.render();
+  h.reply(h.pending('detail'),detail());await tick();h.render();assert.ok(h.body().includes('Context A'));
+  h.button('Atualizar').props.onClick();h.render();h.timers();h.render();const recheck=h.pending('detail');
+  h.render({initialTaskId:'task-b'});h.timers();const count=h.requests.length;
+  recheck.resolve({ok:false,status:403,json:async()=>({error:'Acesso revogado'})});await tick();
+  h.button('Task A').props.onClick();h.render({initialTaskId:'task-a'});h.timers();h.render();
+  assert.ok(!h.body().includes('Context A'));assert.ok(h.body().includes('Acesso revogado'));
+  assert.equal(h.requests.length,count);assert.deepEqual(seen,['task-a','task-a']);
+
+  h.button('Atualizar').props.onClick();h.render();h.timers();
+  h.reply(h.pending('detail'),{...detail(),task:{...task(),body:'Verified detail A'}});await tick();h.render();
+  assert.ok(h.body().includes('Verified detail A'));
+  h.render({initialTaskId:'task-b'});h.timers();h.button('Task A').props.onClick();
+  h.render({initialTaskId:'task-a'});assert.ok(h.body().includes('Verified detail A'));
+ }finally{h.dispose();}
+});
+
+test('a card automatically selected after creation retains the saved detail and the live refresh when clicked',async()=>{
+ const h=harness(),seen=[];try{
+  h.render({onSelectTask:id=>seen.push(id)});await ready(h);h.button('Nova demanda').props.onClick();h.render();
+  const created={...detail(),task:{...task('new-task'),title:'Created task',body:'Saved creation detail'}};
+  const saving=h.component('TaskEditor').props.save({action:'task.create',operationKey:'synthetic-create'});h.reply(h.requests.at(-1),created);await saving;
+  h.render({initialTaskId:'new-task'});h.timers();h.render();
+  const request=h.pending('detail');h.reply(h.pending('catalog'),catalog());h.reply(h.pending('tasks'),{tasks:[created.task],hasMore:false,today:'2026-10-31'});await tick();h.render();
+  assert.ok(h.body().includes('Saved creation detail'));const count=h.requests.length;
+  h.button('Created task').props.onClick();h.render();assert.ok(h.body().includes('Saved creation detail'));
+  assert.equal(request.init.signal.aborted,false);assert.equal(h.requests.length,count);assert.deepEqual(seen,['','new-task']);
+  h.reply(request,{...created,task:{...created.task,body:'Refreshed creation detail'}});await tick();h.render();assert.ok(h.body().includes('Refreshed creation detail'));
+ }finally{h.dispose();}
+});
+
+test('selecting A then B then A still rejects both earlier details and preserves the final URL selection',async()=>{
+ const h=harness(),seen=[];try{
+  h.render({onSelectTask:id=>seen.push(id)});await ready(h);
+  h.button('Atualizar').props.onClick();h.render();h.timers();h.reply(h.pending('catalog'),catalog());h.reply(h.pending('tasks'),{tasks:[task(),{...task('task-b'),title:'Task B'}],hasMore:false});await tick();h.render();
+  h.button('Task A').props.onClick();h.render({initialTaskId:'task-a'});h.timers();h.render();const first=h.pending('detail');
+  h.button('Task B').props.onClick();h.render({initialTaskId:'task-b'});h.timers();h.render();const second=h.pending('detail');
+  h.button('Task A').props.onClick();h.render({initialTaskId:'task-a'});h.timers();h.render();const latest=h.pending('detail');
+  assert.equal(first.init.signal.aborted,true);assert.equal(second.init.signal.aborted,true);assert.equal(latest.init.signal.aborted,false);
+  h.reply(first,{...detail(),task:{...task(),body:'Stale A'}});h.reply(second,{...detail(),task:{...task('task-b'),body:'Stale B'}});await tick();h.render();
+  assert.ok(!h.body().includes('Stale A'));assert.ok(!h.body().includes('Stale B'));
+  h.reply(latest,{...detail(),task:{...task(),body:'Current A'}});await tick();h.render();assert.ok(h.body().includes('Current A'));assert.deepEqual(seen,['task-a','task-b','task-a']);
+ }finally{h.dispose();}
+});
+
+test('leaving the selected task for another organization still invalidates its response and clears the URL',async()=>{
+ const h=harness(),seen=[];try{
+  h.render({onSelectTask:id=>seen.push(id)});await ready(h);h.button('Task A').props.onClick();h.render();const old=h.pending('detail');
+  h.select('Projeto','project-b');h.render();h.timers();assert.equal(old.init.signal.aborted,true);
+  const other={...task('task-b'),title:'Task B',body:'Organization B detail',organization_id:'org-b',project_id:'project-b',organization_name:'Organization B',project_name:'Project B'};
+  h.reply(h.pending('catalog'),catalog());h.reply(h.pending('tasks'),{tasks:[other],hasMore:false});h.reply(old,detail());await tick();h.render();
+  assert.ok(!h.body().includes('Context A'));assert.equal(h.value('Organização'),'org-b');assert.deepEqual(seen,['task-a','']);
+  h.button('Task B').props.onClick();h.render();h.reply(h.pending('detail'),{...detail(),task:other});await tick();h.render();assert.ok(h.body().includes('Organization B detail'));assert.ok(!h.body().includes('Context A'));
+ }finally{h.dispose();}
+});
