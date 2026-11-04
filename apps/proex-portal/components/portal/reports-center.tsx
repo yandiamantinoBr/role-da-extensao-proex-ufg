@@ -226,16 +226,25 @@ const projectReportMetrics = [
 
 type ProjectBrand = NonNullable<ReportPdfPresentation['projectBrand']>;
 
+const ROLE_PROJECT_ID = 'role-da-extensao';
 const CONPEEX_2026_PROJECT_ID = 'ad875870-a443-4f47-9c06-5dd0a6178de0';
 
 function projectBrandFor(id: unknown, name: unknown, address: unknown): ProjectBrand | undefined {
-  if (id !== CONPEEX_2026_PROJECT_ID || typeof name !== 'string' || typeof address !== 'string') return;
+  if (typeof name !== 'string') return;
   const title = name.normalize('NFC').trim().toLocaleLowerCase('pt-BR');
+  const isRole = id === ROLE_PROJECT_ID && title === 'rolê da extensão';
+  const isConpeex = id === CONPEEX_2026_PROJECT_ID &&
+    (title === '23º conpeex' || title === '23º conpeex — congresso de pesquisa, ensino e extensão');
+  if (!isRole && !isConpeex) return;
+  if (isRole && (address == null || (typeof address === 'string' && !address.trim()))) return 'role-da-extensao';
+  if (typeof address !== 'string') return;
   let source: URL;
   try { source = new URL(address); } catch { return; }
   if (source.username || source.password) return;
   const path = source.pathname.replace(/\/$/, '');
-  if (title === '23º conpeex' || title === '23º conpeex — congresso de pesquisa, ensino e extensão') {
+  if (isRole && source.origin === 'https://proex.ufg.br' &&
+      (path === '/p/60194-role-da-extensao' || path === '/p/53193-role-da-extensao')) return 'role-da-extensao';
+  if (isConpeex) {
     if (source.origin === 'https://23conpeex.plateia.ufg.br' && !path) return 'conpeex-2026';
     if (source.origin === 'https://ufg.br' && path === '/e/39456-23-congresso-de-pesquisa-ensino-e-extensao-conpeex') return 'conpeex-2026';
   }
@@ -260,6 +269,7 @@ function ReportMasthead({ label, title, description, project = false, projectBra
     </div>
     <div className={styles.brandGroup}>
       <BrandMark variant="light" emphasis="university" className={styles.mastheadBrand} />
+      {projectBrand === 'role-da-extensao' && <Image className={styles.projectBrand} src="/brand/role-da-extensao.png" alt="Rolê da Extensão" width={86} height={54} unoptimized/>}
       {projectBrand === 'conpeex-2026' && <Image className={`${styles.projectBrand} ${styles.conpeexBrand}`} src="/brand/conpeex-2026.png" alt="23º CONPEEX" width={94} height={54} unoptimized/>}
     </div>
   </header>;

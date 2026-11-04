@@ -325,14 +325,30 @@ test('missing report values remain blank in exports while real zero survives', a
  } finally { h.dispose(); }
 });
 
-test('ambiguous Rolê records use institutional branding even with the official page', () => {
- const h = harness(), projectName = 'Rolê da Extensão';
+test('only the canonical Rolê project receives its mark with the official page or a blank source', async () => {
+ const h = harness(), id = 'role-da-extensao', duplicate = 'ac2e5e32-d4f7-4894-b177-b33383e10f3b';
+ const projectName = 'Rolê da Extensão', officialUrl = 'https://proex.ufg.br/p/60194-role-da-extensao';
+ const brand = tree => nodesInside(tree).find(node => node.type?.name === 'ReportMasthead').props.projectBrand;
  try {
-  for (const id of ['role-da-extensao','ac2e5e32-d4f7-4894-b177-b33383e10f3b']) {
-   const report = h.renderProject(id,{projectName,officialUrl:'https://proex.ufg.br/p/60194-role-da-extensao'});
-   assert.equal(nodesInside(report).find(node => node.type?.name === 'ReportMasthead').props.projectBrand,undefined);
-  }
+  assert.equal(brand(h.renderProject(duplicate,{projectName,officialUrl})),undefined);
+  assert.equal(brand(h.renderProject(id,{projectName,officialUrl:'https://proex.ufg.br.invalid/p/60194-role-da-extensao'})),undefined);
+  assert.equal(brand(h.renderProject(id,{projectName,officialUrl:'https://proex.ufg.br/p/outro-projeto'})),undefined);
+  assert.equal(brand(h.renderProject(id,{projectName:'Outro projeto',officialUrl})),undefined);
+  assert.equal(brand(h.renderProject(id,{projectName,officialUrl})),'role-da-extensao');
+  assert.equal(brand(h.renderProject(id,{projectName,officialUrl:null})),'role-da-extensao');
+  h.button('PDF').props.onClick();
+  h.requests.at(-1).resolve({ok:true,json:async()=>({dataset:'projects',rows:[{id,projeto:projectName}],truncated:false})});
+  await tick();
+  assert.equal(h.pdfInputs[0][5].presentation.projectBrand,'role-da-extensao');
  } finally { h.dispose(); }
+
+ const center = harness();
+ try {
+  const projectIdentity = {id,name:projectName,official_url:null};
+  assert.equal(brand(center.render({...base,projectId:id,projectIdentity})),'role-da-extensao');
+  assert.equal(brand(center.render({...base,projectId:duplicate,projectIdentity})),undefined);
+  assert.equal(brand(center.render({...base,projectId:duplicate,projectIdentity:{...projectIdentity,id:duplicate,official_url:officialUrl}})),undefined);
+ } finally { center.dispose(); }
 });
 
 test('the CONPEEX mark requires the official project ID, edition and address for preview and PDF', async () => {
