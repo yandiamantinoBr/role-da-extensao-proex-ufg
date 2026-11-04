@@ -9,3 +9,188 @@
 .metrics [data-tone=info] dt > svg { color: var(--brand-ink); }
 .metrics [data-tone=success] dt > svg { color: #15803d; }
 :global(html[data-theme=dark]) .metrics [data-tone=success] dt > svg { color: #86efac; }
+.visual {
+ min-width: 0;
+ padding-inline: 12px;
+ border: 1px solid var(--line);
+ border-radius: 12px;
+ background: var(--surface);
+}
+
+.visual summary {
+ min-height: 44px;
+ padding-block: 10px;
+ cursor: pointer;
+ font-size: 14px;
+ line-height: 1.5;
+ font-weight: 650;
+ color: var(--brand-ink);
+ overflow-wrap: anywhere;
+}
+
+.visual[open] {
+ padding-bottom: 12px;
+}
+
+.visual summary:focus-visible,
+.timeline button:focus-visible {
+ outline: 2px solid var(--focus);
+ outline-offset: 2px;
+ border-radius: 6px;
+}
+
+.breakdown {
+ display: grid;
+ grid-template-columns: repeat(auto-fit, minmax(min(100%, 245px), 1fr));
+ gap: 12px 20px;
+}
+
+.breakdown h4 {
+ margin-block: 4px 8px;
+ font-size: 13px;
+ line-height: 1.5;
+}
+
+.breakdown dl {
+ display: grid;
+ gap: 5px;
+ margin: 0;
+}
+
+.breakdown dl > div {
+ display: grid;
+ grid-template-columns: minmax(0, 136px) minmax(34px, 1fr);
+ align-items: center;
+ gap: 8px;
+}
+
+.breakdown dd {
+ display: grid;
+ grid-template-columns: minmax(0, 1fr) 2ch;
+ align-items: center;
+ gap: 5px;
+ margin: 0;
+ color: var(--ink);
+ text-align: end;
+ font-weight: 700;
+ font-size: 13px;
+ font-variant-numeric: tabular-nums;
+}
+
+.track {
+ display: block;
+ height: 6px;
+ overflow: hidden;
+ border-radius: 999px;
+ background: var(--line);
+}
+
+.track > span {
+ display: block;
+ height: 100%;
+ border-radius: inherit;
+ background: var(--brand-ink);
+}
+
+.timeline,
+.timeline ul {
+ display: grid;
+ gap: 8px;
+ margin: 0;
+ padding: 0;
+ list-style: none;
+}
+
+.timeline {
+ margin-block: 10px;
+}
+
+.timeline > li {
+ min-width: 0;
+ border-inline-start: 2px solid var(--line);
+ padding-inline-start: 10px;
+}
+
+.timeline h4 {
+ position: relative;
+ display: flex;
+ align-items: center;
+ flex-wrap: wrap;
+ gap: 6px;
+ margin-bottom: 5px;
+ color: var(--brand-ink);
+ font-size: 13px;
+ line-height: 1.5;
+}
+
+.timeline h4::before {
+ content: '';
+ position: absolute;
+ inset-inline-start: -16px;
+ width: 10px;
+ height: 10px;
+ border: 2px solid var(--surface);
+ border-radius: 50%;
+ background: var(--brand-ink);
+}
+
+.timeline h4 > span {
+ padding-inline: 5px;
+ border-radius: 6px;
+ background: var(--surface-soft);
+}
+
+.timeline ul > li {
+ min-width: 0;
+ padding: 4px 8px 8px;
+ border: 1px solid var(--line);
+ border-radius: 10px;
+}
+
+.timeline button {
+ display: flex;
+ justify-content: space-between;
+ align-items: center;
+ gap: 6px;
+ inline-size: 100%;
+ min-height: 44px;
+ text-align: start;
+ overflow-wrap: anywhere;
+ color: var(--ink);
+ font-weight: 650;
+ font-size: 14px;
+ line-height: 1.5;
+}
+
+.timeline button > svg {
+ flex-shrink: 0;
+ color: var(--brand-ink);
+}
+
+.timeline button:hover,
+.timeline button[aria-expanded=true] {
+ color: var(--brand-ink);
+ text-decoration: underline;
+ text-underline-offset: 3px;
+}
+
+.timeline button:disabled {
+ opacity: .65;
+}
+
+.signals {
+ display: flex;
+ align-items: center;
+ flex-wrap: wrap;
+ gap: 5px;
+}
+
+.deadline {
+ font-size: 12px;
+ font-weight: 650;
+ color: var(--brand-ink);
+}
+
+.deadline[data-tone=danger] {
+ color: var(--danger);
+}

@@ -193,3 +193,25 @@ test('leaving the selected task for another organization still invalidates its r
   h.button('Task B').props.onClick();h.render();h.reply(h.pending('detail'),{...detail(),task:other});await tick();h.render();assert.ok(h.body().includes('Organization B detail'));assert.ok(!h.body().includes('Context A'));
  }finally{h.dispose();}
 });
+
+test('opening a dated row from the timeline uses the existing selection flow and hides it on a scope change',async()=>{
+ const h=harness(),seen=[];
+ try{
+  h.render({onSelectTask:id=>seen.push(id)});
+  h.reply(h.pending('catalog'),catalog());
+  h.reply(h.pending('tasks'),{tasks:[{...task(),due_at:'2026-11-09'}],hasMore:false,today:'2026-11-04'});
+  await tick();
+  h.render();
+  const timelineButton=()=>h.find('button',node=>node.props['aria-label']==='Abrir demanda: Task A');
+  assert.equal(timelineButton().props['aria-expanded'],false);
+  timelineButton().props.onClick();
+  h.render();
+  assert.deepEqual(seen,['task-a']);
+  assert.equal(timelineButton().props['aria-expanded'],true);
+  const url=new URL(h.pending('detail').url,'http://127.0.0.1');
+  assert.equal(url.searchParams.get('id'),'task-a');
+  h.select('Projeto','project-b');
+  h.render();
+  assert.equal(timelineButton(),undefined);
+ }finally{h.dispose();}
+});

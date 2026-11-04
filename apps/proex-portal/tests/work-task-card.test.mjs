@@ -30,9 +30,35 @@ test('task cards keep status outside the primary action and preserve explicit re
 test('the page summary labels its population and does not turn completed or cancelled tasks into overdue work',()=>{
  const rows=[task('overdue','open','2026-10-30'),task('today','in_progress','2026-10-31'),task('done','completed','2020-01-01'),task('cancelled','cancelled','2020-01-01')];
  const tree=TaskPageSummary({tasks:rows,today:'2026-10-31'});assert.ok(text(tree).includes('Nesta página · 4 demandas'));
- const items=nodes(tree).filter(node=>node.type==='dd').map(text);assert.deepEqual(items,['1','1','1']);
+ const metrics=nodes(tree).find(node=>node.type==='dl'&&node.props.className==='metrics');
+ const items=nodes(metrics).filter(node=>node.type==='dd').map(text);assert.deepEqual(items,['1','1','1']);
 });
 
 test('missing server day shows unknown deadline attention instead of a false zero',()=>{
  const tree=TaskPageSummary({tasks:[task('a','open','2026-10-30')],today:''});assert.equal(text(nodes(tree).find(node=>node.type==='dd')),'—');assert.ok(text(tree).includes('Atualize para conferir os prazos'));
+});
+
+test('the page visual counts actual priorities and dates, keeps civil groups ordered and marks unknown deadlines',()=>{
+ const rows=[
+  {...task('future','open','2026-11-09'),priority:'medium'},
+  task('now','in_progress','2026-11-04'),
+  task('done','completed','2026-11-04'),
+  {...task('unknown','blocked','2026-02-30'),priority:'low'},
+  task('missing','open',null),
+ ];
+ const opened=[];
+ const tree=TaskPageSummary({tasks:rows,today:'2026-11-04',page:2,hasMore:true,selectedId:'done',onOpen:id=>opened.push(id)});
+ const [distribution,timeline]=nodes(tree).filter(node=>node.type==='details');
+ assert.match(text(tree),/Página 2.*Há mais na próxima página/);
+ assert.deepEqual(nodes(distribution).filter(node=>node.type==='dd').map(text),['2','1','1','1','0','3','1','1']);
+ assert.ok(nodes(distribution).filter(node=>node.props.className==='track').every(node=>node.props['aria-hidden']==='true'));
+ assert.deepEqual(nodes(timeline).filter(node=>node.type==='time').map(node=>node.props.dateTime),['2026-11-04','2026-11-09']);
+ assert.match(text(timeline),/04\/11\/2026Hoje/);
+ assert.match(text(timeline),/2 demandas sem prazo válido/);
+ assert.doesNotMatch(text(timeline),/Prazo vencido/);
+ const buttons=nodes(timeline).filter(node=>node.type==='button');
+ assert.equal(buttons.length,3);
+ const selected=buttons.find(node=>node.props['aria-expanded']);
+ selected.props.onClick();
+ assert.deepEqual(opened,['done']);
 });
