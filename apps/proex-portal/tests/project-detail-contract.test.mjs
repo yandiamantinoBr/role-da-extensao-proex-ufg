@@ -121,3 +121,14 @@ test('only a detail with report permission mounts the shortcut, including archiv
  assert.equal(allowed.all.find(node=>node.type==='ProjectReportExports').props.projectId,'project-a');
  assert.match(allowed.text,/Relatórios do projeto/);
 });
+
+test('project navigation keeps the project scope and reveals the spreadsheet shortcut only when there is a linked sheet', async () => {
+ const empty = await renderDetail({});
+ const getNav = ui => ui.all.find(node => node.type === 'nav' && node.props['aria-label'] === 'Atalhos do projeto');
+ assert.deepEqual(nodes(getNav(empty)).filter(node=>node.type==='a').map(node=>node.props.href),
+  ['/?module=demands&project=project-a','/?module=calendar&project=project-a']);
+ const sheet = {id:'local-sheet',label:'Contagem sintética',url:'https://docs.google.com/spreadsheets/d/SYNTHETIC/edit'};
+ const linked = await renderDetail({},[],false,{links:[sheet]});
+ assert.ok(nodes(getNav(linked)).some(node=>node.props.href==='#project-spreadsheets'));
+ assert.ok(linked.all.some(node=>node.props.id==='project-spreadsheets'));
+});

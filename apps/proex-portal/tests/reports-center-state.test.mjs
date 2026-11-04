@@ -33,11 +33,11 @@ function harness() {
  const require = name => name === 'react' ? hooks : name === 'react/jsx-runtime' ? jsx : name === './report-export' ? exporters : name === './report-pdf' ? { toPdf(...args) { pdfInputs.push(args); return new Blob(['synthetic pdf'], { type: 'application/pdf' }); } } : name === '@/lib/report-quantities' ? pure('lib/report-quantities.ts') : name === '@/lib/extension-catalog' ? { areaLabel: value => value } : name.endsWith('.css') ? { default: new Proxy({}, { get: (_object, key) => key }) } : new Proxy({}, { get: (_object, key) => String(key) });
  const compiledModule = { exports: {} };
  const window = { setTimeout(callback) { callback(); return 1; }, clearTimeout() {}, open() { opened++; return null; } };
- vm.runInNewContext(transpile('components/portal/reports-center.tsx'), { module: compiledModule, exports: compiledModule.exports, require, Blob, Intl, Date, Map, Set, URLSearchParams, AbortController, window, localStorage: { getItem: () => null }, fetch: (url, init) => new Promise((resolve, reject) => requests.push({ url, init, resolve, reject })) });
+ vm.runInNewContext(transpile('components/portal/reports-center.tsx'), { module: compiledModule, exports: compiledModule.exports, require, Blob, Intl, Date, Map, Set, URL, URLSearchParams, AbortController, window, localStorage: { getItem: () => null }, fetch: (url, init) => new Promise((resolve, reject) => requests.push({ url, init, resolve, reject })) });
  function nodes() { const result = []; const visit = node => { if (!node || typeof node !== 'object') return; if (Array.isArray(node)) { node.forEach(visit); return; } result.push(node); visit(node.props?.children); }; visit(tree); return result; }
  return {
   requests, downloads, pdfInputs,
-  renderProject(projectId) { index = 0; tree = compiledModule.exports.ProjectReportExports({projectId}); return tree; },
+  renderProject(projectId, identity = {}) { index = 0; tree = compiledModule.exports.ProjectReportExports({projectId,...identity}); return tree; },
   render(props = base) { index = 0; tree = compiledModule.exports.default(props); return tree; },
   flushEffects() { while (pendingEffects.length) pendingEffects.shift()(); },
   button(name) { const found = nodes().find(node => node.type === 'button' && text(node) === name); assert.ok(found, `button ${name}`); return found; },
@@ -275,5 +275,87 @@ test('project summary never downloads absent, mixed, partial, unauthorized or de
   abandoned.resolve({ok:true,json:async()=>body([same])});
   await tick();
   assert.equal(h.downloads.length,0);
+ } finally { h.dispose(); }
+});
+
+test('project preview and PDF share the verified project metrics and distinguish zero from missing data', async () => {
+ const h = harness(), projectId = 'project-a';
+ const row = {id:projectId,projeto:'Projeto A',materiais:0,eventos:3,emprestimos:null};
+ const resolveProject = async () => {
+  h.requests.at(-1).resolve({ok:true,json:async()=>({dataset:'projects',rows:[row],truncated:false})});
+  await tick();
+  return h.renderProject(projectId);
+ };
+ try {
+  h.renderProject(projectId);
+  h.button('Ver prévia').props.onClick();
+  const preview = await resolveProject();
+  const indicators = nodesInside(preview).find(node => node.type?.name === 'ReportMetrics');
+  const expected = [{label:'Materiais',value:0},{label:'Eventos',value:3},{label:'Empréstimos',value:null},{label:'Registros',value:null}];
+  assert.deepEqual(JSON.parse(JSON.stringify(indicators.props.metrics)),expected);
+  assert.match(text(indicators.type(indicators.props)),/Materiais0Eventos3EmpréstimosNão informadoRegistrosNão informado/);
+  assert.equal(h.downloads.length,0);
+  assert.equal(h.button('Ocultar prévia').props['aria-expanded'],true);
+
+  h.button('PDF').props.onClick();
+  await resolveProject();
+  assert.equal(h.requests.length,2,'export revalidates the project even with a preview');
+  assert.deepEqual(JSON.parse(JSON.stringify(h.pdfInputs[0][5].presentation)),{projectName:'Projeto A',metrics:expected});
+
+  h.button('Excel (XLSX)').props.onClick();
+  h.requests.at(-1).resolve({ok:false,json:async()=>({error:{message:'Acesso revogado'}})});
+  await tick();
+  const denied = h.renderProject(projectId);
+  assert.match(h.text(),/Acesso revogado/);
+  assert.equal(nodesInside(denied).some(node => node.type?.name === 'ReportMetrics'),false);
+  assert.equal(h.downloads.length,1);
+ } finally { h.dispose(); }
+});
+
+test('missing report values remain blank in exports while real zero survives', async () => {
+ const h = harness();
+ try {
+  h.render(); h.flushEffects();
+  h.requests.at(-1).resolve({ok:true,json:async()=>({dataset:'materials',rows:[{...row('a'),saldo:null,disponivel:0}],truncated:false})});
+  await tick();
+  h.render();
+  const file = await jsonDownload(h);
+  assert.equal(file.linhas[0].saldo,null);
+  assert.equal(file.linhas[0].disponivel,0);
+ } finally { h.dispose(); }
+});
+
+test('only the current verified Rolê title and official page can select the bundled mark', async () => {
+ const h = harness(), id = 'project-a', projectName = 'Rolê da Extensão';
+ const brand = tree => nodesInside(tree).find(node => node.type?.name === 'ReportMasthead').props.projectBrand;
+ try {
+  for (const officialUrl of [
+   undefined,
+   'https://proex.ufg.br.invalid/p/60194-role-da-extensao',
+   'https://example.invalid/?proex.ufg.br/p/60194-role-da-extensao',
+   'https://user@proex.ufg.br/p/60194-role-da-extensao',
+   'https://proex.ufg.br/p/60194-another-project',
+  ]) assert.equal(brand(h.renderProject(id,{projectName,officialUrl})),undefined);
+  const officialUrl = 'https://proex.ufg.br/p/53193-role-da-extensao/';
+  assert.equal(brand(h.renderProject(id,{projectName:'Outro projeto',officialUrl})),undefined);
+  assert.equal(brand(h.renderProject(id,{projectName,officialUrl})),'role-da-extensao');
+  h.button('PDF').props.onClick();
+  h.requests.at(-1).resolve({ok:true,json:async()=>({dataset:'projects',rows:[{id,projeto:'Outro projeto'}],truncated:false})});
+  await tick();
+  assert.equal(h.pdfInputs[0][5].presentation.projectBrand,undefined);
+ } finally { h.dispose(); }
+});
+
+test('the CONPEEX mark requires the matching edition and an approved official address', () => {
+ const h = harness(), projectId = 'project-a';
+ const projectName = '23º CONPEEX — Congresso de Pesquisa, Ensino e Extensão';
+ const currentBrand = (officialUrl, name = projectName) => nodesInside(h.renderProject(projectId,{projectName:name,officialUrl}))
+  .find(node => node.type?.name === 'ReportMasthead').props.projectBrand;
+ try {
+  assert.equal(currentBrand('https://23conpeex.plateia.ufg.br/'),'conpeex-2026');
+  assert.equal(currentBrand('https://ufg.br/e/39456-23-congresso-de-pesquisa-ensino-e-extensao-conpeex'),'conpeex-2026');
+  assert.equal(currentBrand('https://23conpeex.plateia.ufg.br/','22º CONPEEX'),undefined);
+  assert.equal(currentBrand('https://23conpeex.plateia.ufg.br.invalid/'),undefined);
+  assert.equal(currentBrand('https://ufg.br/'),undefined);
  } finally { h.dispose(); }
 });
