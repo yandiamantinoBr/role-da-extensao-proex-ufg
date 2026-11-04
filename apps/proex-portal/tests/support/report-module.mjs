@@ -10,6 +10,12 @@ const pdfCode = compile('report-pdf.ts').replace(/from ['"]\.\/report-export['"]
 export const reportExport = await import(exportsUrl);
 export const reportPdf = await import(asUrl(pdfCode));
 export const fontBytes = new Uint8Array(readFileSync(new URL('../../public/fonts/NotoSans-Regular.ttf', import.meta.url)));
+export const brandBytes = {
+  proex: new Uint8Array(readFileSync(new URL('../../public/brand/proex.png', import.meta.url))),
+  ufg: new Uint8Array(readFileSync(new URL('../../public/brand/ufg-white.png', import.meta.url))),
+  'role-da-extensao': new Uint8Array(readFileSync(new URL('../../public/brand/role-da-extensao.png', import.meta.url))),
+  'conpeex-2026': new Uint8Array(readFileSync(new URL('../../public/brand/conpeex-2026.png', import.meta.url))),
+};
 
 export async function zipEntries(blob) {
   const bytes = Buffer.from(await blob.arrayBuffer()), result = new Map();

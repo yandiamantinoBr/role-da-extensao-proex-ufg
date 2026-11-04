@@ -5,6 +5,9 @@ import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAx
 import { ArrowDown, ArrowUp, BarChart3, Boxes, CalendarRange, ClipboardList, Columns3, FileJson, FileSpreadsheet, FileText, FolderKanban, LoaderCircle, Printer, Repeat2, Save, Search, Sheet, Trash2, Truck, X } from 'lucide-react';
 import { areaLabel } from '@/lib/extension-catalog';
 import { quantityTotal } from '@/lib/report-quantities';
+import Image from 'next/image';
+import BrandMark from '@/components/theme/brand-mark';
+import type { ReportPdfPresentation } from './report-pdf';
 import { download, toCsv, toDocx, toJson, toXlsx, type ExportColumn, type ExportRow } from './report-export';
 import styles from './reports-center.module.css';
 
@@ -143,7 +146,8 @@ const STATUS: Partial<Record<DatasetId, Record<string, string>>> = {
   reviews: { open: 'Aberta', completed: 'Concluída' },
 };
 const MONTHS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
-const PRESETS_KEY = 'proex.reports.presets.v1';
+const LEGACY_PRESETS_KEY = 'proex.reports.presets.v1';
+const PRESETS_PREFIX = 'proex.reports.presets.v2:';
 const PAGE_SIZES = [25, 50, 100];
 const EMPTY_ROWS: ExportRow[] = [];
 
@@ -160,8 +164,25 @@ function monthOf(row: ExportRow, key?: string): string { const value = key ? Str
 function monthLabel(month: string) { const [year, index] = month.split('-'); return `${MONTHS[Number(index) - 1]}/${year.slice(2)}`; }
 function dateLabel(value: unknown) { const text = String(value ?? ''); return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text.split('-').reverse().join('/') : text; }
 const formatNumber = (value: number | null) => value === null ? '—' : value.toLocaleString('pt-BR', { maximumFractionDigits: 1 });
-function readPresets(): Preset[] { try { const parsed = JSON.parse(localStorage.getItem(PRESETS_KEY) || '[]'); return Array.isArray(parsed) ? parsed.slice(0, 20) : []; } catch { return []; } }
-function writePresets(presets: Preset[]) { try { localStorage.setItem(PRESETS_KEY, JSON.stringify(presets)); } catch { /* armazenamento indisponível */ } }
+function reportNumber(value: unknown): number | null {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+function readPresets(key: string): Preset[] {
+  try {
+    localStorage.removeItem(LEGACY_PRESETS_KEY);
+    const parsed: unknown = JSON.parse(localStorage.getItem(key) || '[]');
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(preset => preset && typeof preset.name === 'string' && Object.hasOwn(DATASETS, preset.dataset) &&
+      Array.isArray(preset.columns) && preset.columns.every((column: unknown) => typeof column === 'string') &&
+      typeof preset.groupBy === 'string' && typeof preset.measure === 'string' && typeof preset.search === 'string').slice(0, 20);
+  } catch { return []; }
+}
+function writePresets(key: string, presets: Preset[]) {
+  try { localStorage.setItem(key, JSON.stringify(presets)); } catch { /* armazenamento indisponível */ }
+}
 
 function ChartTooltip({ active, payload, label, unit }: { active?: boolean; payload?: { name?: string; value?: number; color?: string }[]; label?: string; unit: string }) {
   if (!active || !payload?.length) return null;
@@ -190,46 +211,124 @@ async function requestReport(query: URLSearchParams, signal: AbortSignal): Promi
 
 type DocumentFormat = 'xlsx' | 'docx' | 'pdf';
 
-function reportDocument(format: DocumentFormat, title: string, columns: ExportColumn[], rows: ExportRow[], value: (row: ExportRow, key: string) => unknown, info: [string, string][]): Blob | Promise<Blob> {
+function reportDocument(format: DocumentFormat, title: string, columns: ExportColumn[], rows: ExportRow[], value: (row: ExportRow, key: string) => unknown, info: [string, string][], presentation?: ReportPdfPresentation): Blob | Promise<Blob> {
   if (format === 'xlsx') return toXlsx(title, columns, rows, value, info);
   if (format === 'docx') return toDocx(title, columns, rows, value, info);
-  return import('./report-pdf').then(({ toPdf }) => toPdf(title, columns, rows, value, info));
+  return import('./report-pdf').then(({ toPdf }) => toPdf(title, columns, rows, value, info, { presentation }));
 }
 
-export function ProjectReportExports({ projectId }: { projectId: string }) {
+const projectReportMetrics = [
+  { key: 'materiais', label: 'Materiais' },
+  { key: 'eventos', label: 'Eventos' },
+  { key: 'emprestimos', label: 'Empréstimos' },
+  { key: 'registros', label: 'Registros' },
+] as const;
+
+type ProjectBrand = NonNullable<ReportPdfPresentation['projectBrand']>;
+
+const ROLE_PROJECT_ID = 'role-da-extensao';
+const CONPEEX_2026_PROJECT_ID = 'ad875870-a443-4f47-9c06-5dd0a6178de0';
+
+function projectBrandFor(id: unknown, name: unknown, address: unknown): ProjectBrand | undefined {
+  if (typeof name !== 'string') return;
+  const title = name.normalize('NFC').trim().toLocaleLowerCase('pt-BR');
+  const isRole = id === ROLE_PROJECT_ID && title === 'rolê da extensão';
+  const isConpeex = id === CONPEEX_2026_PROJECT_ID &&
+    (title === '23º conpeex' || title === '23º conpeex — congresso de pesquisa, ensino e extensão');
+  if (!isRole && !isConpeex) return;
+  if (isRole && (address == null || (typeof address === 'string' && !address.trim()))) return 'role-da-extensao';
+  if (typeof address !== 'string') return;
+  let source: URL;
+  try { source = new URL(address); } catch { return; }
+  if (source.username || source.password) return;
+  const path = source.pathname.replace(/\/$/, '');
+  if (isRole && source.origin === 'https://proex.ufg.br' &&
+      (path === '/p/60194-role-da-extensao' || path === '/p/53193-role-da-extensao')) return 'role-da-extensao';
+  if (isConpeex) {
+    if (source.origin === 'https://23conpeex.plateia.ufg.br' && !path) return 'conpeex-2026';
+    if (source.origin === 'https://ufg.br' && path === '/e/39456-23-congresso-de-pesquisa-ensino-e-extensao-conpeex') return 'conpeex-2026';
+  }
+}
+
+function projectReportPresentation(row: ExportRow, officialUrl?: unknown): ReportPdfPresentation {
+  const projectBrand = projectBrandFor(row.id, row.projeto, officialUrl);
+  return {
+    projectName: typeof row.projeto === 'string' && row.projeto.trim() ? row.projeto.trim() : 'Projeto selecionado',
+    metrics: projectReportMetrics.map(({ key, label }) => ({ label, value: reportNumber(row[key]) })),
+    ...(projectBrand ? { projectBrand } : {}),
+  };
+}
+
+function ReportMasthead({ label, title, description, project = false, projectBrand }: { label: string; title: string; description: string; project?: boolean; projectBrand?: ProjectBrand }) {
+  const Heading = project ? 'h3' : 'h2';
+  return <header className={styles.masthead}>
+    <div className={styles.mastheadCopy}>
+      <span className={styles.mastheadLabel}>{label}</span>
+      <Heading>{title}</Heading>
+      <p>{description}</p>
+    </div>
+    <div className={styles.brandGroup}>
+      <BrandMark variant="light" emphasis="university" className={styles.mastheadBrand} />
+      {projectBrand === 'role-da-extensao' && <Image className={styles.projectBrand} src="/brand/role-da-extensao.png" alt="Rolê da Extensão" width={86} height={54} unoptimized/>}
+      {projectBrand === 'conpeex-2026' && <Image className={`${styles.projectBrand} ${styles.conpeexBrand}`} src="/brand/conpeex-2026.png" alt="23º CONPEEX" width={94} height={54} unoptimized/>}
+    </div>
+  </header>;
+}
+
+function ReportMetrics({ metrics }: { metrics: readonly Kpi[] }) {
+  return <dl className={styles.kpis} aria-label="Indicadores do relatório">
+    {metrics.map(({ label, value, detail, tone }) => <div key={label} className={`${styles.kpi} ${tone === 'warn' && (value ?? 0) > 0 ? styles.kpiWarn : ''}`}>
+      <dt>{label}</dt><dd>{value === null ? <span className={styles.metricAbsent}>Não informado</span> : formatNumber(value)}</dd>
+      {detail && <dd className={styles.metricDetail}>{detail}</dd>}
+    </div>)}
+  </dl>;
+}
+
+export function ProjectReportExports({ projectId, projectName, officialUrl }: { projectId: string; projectName?: string; officialUrl?: string }) {
   const pending = useRef<AbortController | null>(null);
-  const [exporting, setExporting] = useState<DocumentFormat | null>(null);
+  const [exporting, setExporting] = useState<DocumentFormat | 'preview' | null>(null);
+  const [preview, setPreview] = useState<{ row: ExportRow; checkedAt: Date } | null>(null);
+  const previewRow = preview?.row.id === projectId ? preview.row : null;
   const [error, setError] = useState('');
   const detach = useCallback((element: HTMLElement | null) => {
     if (!element) pending.current?.abort();
   }, []);
 
-  async function save(format: DocumentFormat) {
+  async function save(format: DocumentFormat | 'preview') {
     if (!projectId || pending.current) return;
     const controller = new AbortController();
     pending.current = controller;
     setExporting(format);
     setError('');
+    let verified = false;
     try {
       const { rows, truncated } = await requestReport(new URLSearchParams({ dataset: 'projects', projectId }), controller.signal);
       if (controller.signal.aborted) return;
       if (!rows.length) throw new Error('O resumo do projeto está indisponível. Atualize o projeto e confira seu acesso.');
       if (truncated || rows.length !== 1 || rows[0].id !== projectId) throw new Error('A resposta não corresponde ao projeto selecionado.');
+      verified = true;
+      const [row] = rows;
+      const presentation = projectReportPresentation(row, officialUrl);
+      const now = new Date();
+      setPreview(current => format === 'preview' || current?.row.id === projectId ? { row, checkedAt: now } : current);
+      if (format === 'preview') return;
       const project = DATASETS.projects;
       const columns = project.columns.filter(column => project.defaults.includes(column.key));
-      const now = new Date();
       const info: [string, string][] = [
         ['Relatório', project.label],
-        ['Recorte', typeof rows[0].projeto === 'string' && rows[0].projeto ? rows[0].projeto : 'Projeto selecionado'],
+        ['Recorte', presentation.projectName ?? 'Projeto selecionado'],
         ['Período', 'Todo o período'],
         ['Linhas', '1'],
         ['Gerado em', now.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) + ' (Brasília)'],
       ];
-      const file = await reportDocument(format, project.label, columns, rows, (row, key) => display('projects', row, key), info);
+      const file = await reportDocument(format, project.label, columns, rows, (record, key) => display('projects', record, key), info, presentation);
       if (controller.signal.aborted) return;
       download(`proex-resumo-projeto-${now.toISOString().slice(0, 10)}.${format}`, file);
     } catch (cause) {
-      if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'Não foi possível gerar o resumo.');
+      if (!controller.signal.aborted) {
+        if (!verified) setPreview(null);
+        setError(cause instanceof Error ? cause.message : 'Não foi possível gerar o resumo.');
+      }
     } finally {
       if (pending.current === controller) {
         pending.current = null;
@@ -238,23 +337,42 @@ export function ProjectReportExports({ projectId }: { projectId: string }) {
     }
   }
 
-  return <section ref={detach} className="p-card grid min-w-0 gap-3" aria-label="Baixar resumo do projeto">
-    <div>
-      <h3>Baixar resumo do projeto</h3>
-      <p className="p-form-help">Ficha e totais deste projeto em todo o período. Para escolher dados, colunas ou datas, abra Relatórios do projeto.</p>
+  const summary = previewRow ? projectReportPresentation(previewRow, officialUrl) : null;
+  const details = previewRow ? DATASETS.projects.columns.filter(column =>
+    ['unidade_sigla', 'area_tematica', 'modalidade', 'abrangencia', 'etapa'].includes(column.key)) : [];
+  return <section ref={detach} className={`p-card ${styles.projectReport}`} aria-label="Baixar resumo do projeto">
+    <ReportMasthead label="Relatório do projeto" title={summary?.projectName || projectName || 'Resumo do projeto'} description="Ficha e totais do período completo" project projectBrand={summary ? summary.projectBrand : projectBrandFor(projectId, projectName, officialUrl)}/>
+    <div className={styles.projectReportBody}>
+      <div className={styles.projectReportActions}>
+        <p className={styles.reportHelp}>Para escolher dados, colunas ou datas, abra Relatórios do projeto.</p>
+        <button type="button" className="p-button p-button-subtle" aria-controls="project-report-preview" aria-expanded={!!previewRow} disabled={!!exporting}
+          onClick={() => previewRow ? setPreview(null) : void save('preview')}><BarChart3 size={16} aria-hidden="true"/>{previewRow ? 'Ocultar prévia' : 'Ver prévia'}</button>
+      </div>
+      <div className={styles.projectFormats} role="group" aria-label="Formatos do resumo">
+        <button type="button" className="p-button p-button-primary" disabled={!!exporting} onClick={() => void save('pdf')}><FileText size={16} aria-hidden="true"/>PDF</button>
+        <button type="button" className="p-button p-button-subtle" disabled={!!exporting} onClick={() => void save('xlsx')}><FileSpreadsheet size={16} aria-hidden="true"/>Excel (XLSX)</button>
+        <button type="button" className="p-button p-button-subtle" disabled={!!exporting} onClick={() => void save('docx')}><FileText size={16} aria-hidden="true"/>Word (DOCX)</button>
+      </div>
+      <div id="project-report-preview" className={styles.projectPreview}>
+        {summary && previewRow && preview && <>
+          <div className={styles.previewHead}>
+            <h4>Prévia do resumo</h4>
+            <p>Consultado às {preview.checkedAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' })}, horário de Brasília.</p>
+          </div>
+          <ReportMetrics metrics={summary.metrics ?? []}/>
+          <dl className={styles.projectFacts}>
+            {details.map(column => <div key={column.key}><dt>{column.label}</dt><dd>{String(display('projects', previewRow, column.key) || 'Não informado')}</dd></div>)}
+          </dl>
+        </>}
+      </div>
+      {exporting && <p className={styles.reportHelp} role="status">{exporting === 'preview' ? 'Consultando o resumo…' : `Preparando o resumo em ${exporting.toUpperCase()}…`}</p>}
+      {error && <p className="p-inline-error" role="alert">{error}</p>}
     </div>
-    <div className="flex flex-wrap gap-2" role="group" aria-label="Formatos do resumo">
-      <button type="button" className="p-button p-button-subtle" disabled={!!exporting} onClick={() => void save('xlsx')}><FileSpreadsheet size={16} aria-hidden="true"/>Excel (XLSX)</button>
-      <button type="button" className="p-button p-button-subtle" disabled={!!exporting} onClick={() => void save('docx')}><FileText size={16} aria-hidden="true"/>Word (DOCX)</button>
-      <button type="button" className="p-button p-button-subtle" disabled={!!exporting} onClick={() => void save('pdf')}><FileText size={16} aria-hidden="true"/>PDF</button>
-    </div>
-    {exporting && <p className="p-form-help" role="status">Preparando o resumo em {exporting.toUpperCase()}…</p>}
-    {error && <p className="p-inline-error" role="alert">{error}</p>}
   </section>;
 }
 
-export default function ReportsCenter({ projectId, unitId, area, from, to, scopeLabel, available, initialDataset }: {
-  projectId: string; unitId: string; area: string; from: string; to: string; scopeLabel: string; available: DatasetId[]; initialDataset?: DatasetId;
+export default function ReportsCenter({ userId, projectId, unitId, area, from, to, scopeLabel, available, initialDataset, projectIdentity }: {
+  userId: string; projectId: string; unitId: string; area: string; from: string; to: string; scopeLabel: string; available: DatasetId[]; initialDataset?: DatasetId; projectIdentity?: ExportRow;
 }) {
   const datasets = ORDER.filter(id => available.includes(id));
   const [dataset, setDataset] = useState<DatasetId>(initialDataset && datasets.includes(initialDataset) ? initialDataset : datasets[0] ?? 'projects');
@@ -266,22 +384,31 @@ export default function ReportsCenter({ projectId, unitId, area, from, to, scope
   const [groupBy, setGroupBy] = useState(config.groups[0]);
   const [measure, setMeasure] = useState('__count__');
   const [focus, setFocus] = useState('');
-  const [search, setSearch] = useState('');
+  const [searchState, setSearchState] = useState({ userId, value: '' });
+  const search = searchState.userId === userId ? searchState.value : '';
+  const setSearch = (value: string) => setSearchState({ userId, value });
   const [measurementUnit, setMeasurementUnit] = useState('');
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null);
   const [page, setPage] = useState(0), [pageSize, setPageSize] = useState(25);
-  const queryKey = JSON.stringify([dataset, projectId, unitId, area, from, to, assetDetails, includeNotes, outflowType, returnState]);
+  const queryKey = JSON.stringify([userId, dataset, projectId, unitId, area, from, to, assetDetails, includeNotes, outflowType, returnState]);
   const [loadedQueryKey, setLoadedQueryKey] = useState('');
   const [loadedRows, setRows] = useState<ExportRow[]>([]), [truncated, setTruncated] = useState(false);
   const [fetching, setLoading] = useState(true), [error, setError] = useState('');
   const rows = loadedQueryKey === queryKey ? loadedRows : EMPTY_ROWS;
   const loading = fetching || loadedQueryKey !== queryKey;
-  const [presets, setPresets] = useState<Preset[]>([]);
-  const [presetName, setPresetName] = useState('');
+  const presetKey = userId ? PRESETS_PREFIX + encodeURIComponent(userId) : '';
+  const [presetState, setPresetState] = useState<{ key: string; values: Preset[]; name: string }>({ key: '', values: [], name: '' });
+  const presetsReady = Boolean(presetKey) && presetState.key === presetKey;
+  const presetName = presetsReady ? presetState.name : '';
+  const visiblePresets = presetsReady ? presetState.values.filter(preset => datasets.includes(preset.dataset)) : [];
   const [exporting, setExporting] = useState<'pdf' | 'docx' | null>(null);
   const chartsRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => { const timer = window.setTimeout(() => setPresets(readPresets()), 0); return () => window.clearTimeout(timer); }, []);
+  useEffect(() => {
+    if (!presetKey) return;
+    const timer = window.setTimeout(() => setPresetState({ key: presetKey, values: readPresets(presetKey), name: '' }), 0);
+    return () => window.clearTimeout(timer);
+  }, [presetKey]);
   useEffect(() => {
     const controller = new AbortController();
     const query = new URLSearchParams({ dataset });
@@ -300,6 +427,7 @@ export default function ReportsCenter({ projectId, unitId, area, from, to, scope
   }, [dataset, projectId, unitId, area, from, to, queryKey, assetDetails, includeNotes, outflowType, returnState]);
 
   function chooseDataset(id: DatasetId, preset?: Preset) {
+    if (!datasets.includes(id)) return;
     const next = DATASETS[id];
     setDataset(id); setAssetDetails(false); setIncludeNotes(false); setOutflowType('all'); setReturnState('all'); setColumns(preset?.columns.filter(key => next.columns.some(column => column.key === key)) ?? next.defaults);
     setGroupBy(preset && next.groups.includes(preset.groupBy) ? preset.groupBy : next.groups[0]);
@@ -358,10 +486,13 @@ export default function ReportsCenter({ projectId, unitId, area, from, to, scope
   const visible = sorted.slice(current * pageSize, current * pageSize + pageSize);
   const chosen = config.columns.filter(column => columns.includes(column.key));
   const kpis = config.kpis(filtered);
+  const reportProject = projectId && projectIdentity?.id === projectId ? projectIdentity : null;
+  const reportProjectName = typeof reportProject?.name === 'string' ? reportProject.name : undefined;
+  const reportBrand = projectBrandFor(reportProject?.id, reportProjectName, reportProject?.official_url);
   const exportColumns: Column[] = chosen;
   const stamp = new Date().toISOString().slice(0, 10);
   const fileBase = `proex-${dataset}-${stamp}`;
-  const exportValue = (row: ExportRow, key: string) => { const column = config.columns.find(item => item.key === key); const value = valueOf(row, key); return column?.date ? dateLabel(value) : column?.numeric ? num(value) : value; };
+  const exportValue = (row: ExportRow, key: string) => { const column = config.columns.find(item => item.key === key); const value = valueOf(row, key); return column?.date ? dateLabel(value) : column?.numeric ? reportNumber(value) : value; };
   const info: [string, string][] = [['Relatório', config.label], ['Recorte', scopeLabel || 'Todos os projetos que você pode consultar'], ['Período', from || to ? `${from ? dateLabel(from) : 'início'} a ${to ? dateLabel(to) : 'hoje'}` : 'Todo o período'], ['Unidade de medida', measurementUnit || 'Todas, separadas em cada registro'], ['Busca', search || '—'], ['Destaque', focus ? `${config.columns.find(column => column.key === groupBy)?.label ?? 'Mês'}: ${focus}` : '—'], ['Linhas', String(sorted.length)], ['Gerado em', new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) + ' (Brasília)'], ['Compartilhamento', 'Recorte das suas permissões. Revise os textos livres antes de compartilhar.']];
   if (dataset === 'outflow_details') info.push(['Tipo de saída', outflowType === 'all' ? 'Todos' : LABELS.tipo[outflowType]], ['Devolução', returnState === 'all' ? 'Todas' : LABELS.situacao_retorno[returnState]],
     ['Referências', 'Unidade e saldo atuais do cadastro. Saldos repetidos por registro não devem ser somados. Uma unidade individual por retirada de equipamento; retornos não criam nova saída.'], ['Datas ausentes', 'Sem filtro de período é possível consultar retiradas sem data efetiva; previsões não substituem o histórico.'],
@@ -372,7 +503,7 @@ export default function ReportsCenter({ projectId, unitId, area, from, to, scope
     if (exporting || loading || !chosen.length) return;
     setExporting(format); setError('');
     try {
-      const blob = await reportDocument(format, config.label, exportColumns, sorted, exportValue, info);
+      const blob = await reportDocument(format, config.label, exportColumns, sorted, exportValue, info, reportProjectName ? { projectName: reportProjectName, projectBrand: reportBrand } : undefined);
       download(`${fileBase}.${format}`, blob);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Não foi possível gerar o documento. Tente novamente.');
@@ -381,24 +512,33 @@ export default function ReportsCenter({ projectId, unitId, area, from, to, scope
 
   function toggleColumn(key: string) { setColumns(current => current.includes(key) ? current.filter(item => item !== key) : config.columns.map(column => column.key).filter(item => item === key || current.includes(item))); }
   function savePreset() {
-    const name = presetName.trim().slice(0, 60); if (!name) return;
-    const next = [{ name, dataset, columns, groupBy, measure, search }, ...presets.filter(preset => preset.name !== name)].slice(0, 20);
-    setPresets(next); writePresets(next); setPresetName('');
+    const name = presetName.trim().slice(0, 60);
+    if (!presetsReady || !name) return;
+    const values = [{ name, dataset, columns, groupBy, measure, search }, ...presetState.values.filter(preset => preset.name !== name)].slice(0, 20);
+    setPresetState({ key: presetKey, values, name: '' });
+    writePresets(presetKey, values);
   }
-  function removePreset(name: string) { const next = presets.filter(preset => preset.name !== name); setPresets(next); writePresets(next); }
+  function removePreset(name: string) {
+    if (!presetsReady) return;
+    const values = presetState.values.filter(preset => preset.name !== name);
+    setPresetState({ ...presetState, values });
+    writePresets(presetKey, values);
+  }
   function print() {
     if (loading || !chosen.length) return;
     const popup = window.open('', '_blank', 'width=1100,height=800'); if (!popup) { setError('O navegador bloqueou a janela de impressão. Permita pop-ups para este site e tente de novo.'); return; }
     const charts = chartsRef.current?.querySelectorAll('svg.recharts-surface') ?? [];
     const escape = (value: unknown) => String(value ?? '').replace(/[&<>"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[char]!));
+    popup.opener = null;
+    const brandBase = escape(window.location.origin);
     popup.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${escape(config.label)} — PROEX/UFG</title><style>
-      :root{--rc-1:#2a78d6;--rc-2:#eb6834;--rc-grid:#e6e1ec;--rc-axis:#6b6275}body{font:12px/1.5 system-ui,sans-serif;color:#231b2b;margin:28px}h1{font-size:20px;margin:0 0 4px;color:#54216c}dl{display:grid;grid-template-columns:140px 1fr;gap:2px 12px;margin:12px 0 18px}dt{color:#6b6275}dd{margin:0}.k{display:flex;gap:10px;margin-bottom:16px}.k div{border:1px solid #ddd3e6;border-radius:8px;padding:8px 12px;min-width:120px}.k b{display:block;font-size:20px;color:#54216c}.c{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px}.c svg{max-width:100%;height:auto}table{width:100%;border-collapse:collapse;font-size:11px}th{background:#54216c;color:#fff;text-align:left;padding:5px}td{border-bottom:1px solid #e6e1ec;padding:4px 5px}td.n{text-align:right;font-variant-numeric:tabular-nums}@media print{body{margin:10mm}}</style></head><body>
-      <h1>${escape(config.label)}</h1><div>Pró-Reitoria de Extensão — UFG</div><dl>${info.map(([label, value]) => `<dt>${escape(label)}</dt><dd>${escape(value)}</dd>`).join('')}</dl>
+      :root{--rc-1:#2a78d6;--rc-2:#eb6834;--rc-grid:#e6e1ec;--rc-axis:#6b6275}body{font:12px/1.5 system-ui,sans-serif;color:#231b2b;margin:28px}h1{font-size:20px;margin:0 0 4px;color:#54216c}dl{display:grid;grid-template-columns:140px 1fr;gap:2px 12px;margin:12px 0 18px}dt{color:#6b6275}dd{margin:0}.k{display:flex;gap:10px;margin-bottom:16px}.k div{border:1px solid #ddd3e6;border-radius:8px;padding:8px 12px;min-width:120px}.k b{display:block;font-size:20px;color:#54216c}.c{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px}.c svg{max-width:100%;height:auto}table{width:100%;border-collapse:collapse;font-size:11px}th{background:#54216c;color:#fff;text-align:left;padding:5px}td{border-bottom:1px solid #e6e1ec;padding:4px 5px}td.n{text-align:right;font-variant-numeric:tabular-nums}@media print{body{margin:10mm}} .masthead{display:flex;justify-content:space-between;align-items:center;gap:14px;border-bottom:3px solid #ffaa3d;margin:0 0 14px;padding-bottom:12px}.masthead p{margin:0}.logos{display:flex;gap:10px;align-items:center;flex-shrink:0}.logos img{width:70px;height:40px;object-fit:contain;filter:brightness(0)}.k{display:grid;grid-template-columns:repeat(4,minmax(0,1fr))}.k div{min-width:0;break-inside:avoid}thead{display:table-header-group}tr{break-inside:avoid}th,td{overflow-wrap:anywhere}body{print-color-adjust:exact;-webkit-print-color-adjust:exact}</style></head><body>
+      <header class="masthead"><div><h1>${escape(config.label)}</h1><p>Pró-Reitoria de Extensão da UFG</p></div><div class="logos"><img src="${brandBase}/brand/proex.png" alt="PROEX"><img src="${brandBase}/brand/ufg-white.png" alt="Universidade Federal de Goiás"></div></header><dl>${info.map(([label, value]) => `<dt>${escape(label)}</dt><dd>${escape(value)}</dd>`).join('')}</dl>
       <div class="k">${kpis.map(kpi => `<div>${escape(kpi.label)}<b>${formatNumber(kpi.value)}</b></div>`).join('')}</div>
       <div class="c">${[...charts].map(svg => svg.outerHTML).join('')}</div>
       <table><thead><tr>${exportColumns.map(column => `<th>${escape(column.label)}</th>`).join('')}</tr></thead><tbody>${sorted.slice(0, 2000).map(row => `<tr>${exportColumns.map(column => `<td${column.numeric ? ' class="n"' : ''}>${escape(exportValue(row, column.key))}</td>`).join('')}</tr>`).join('')}</tbody></table>
       ${sorted.length > 2000 ? '<p>Impressão limitada às primeiras 2.000 linhas. Use a exportação em planilha para o conjunto completo.</p>' : ''}
-      <script>setTimeout(function(){print()},300)</script></body></html>`);
+      <script>window.addEventListener('load',function(){print()},{once:true})</script></body></html>`);
     popup.document.close();
   }
 
@@ -406,22 +546,15 @@ export default function ReportsCenter({ projectId, unitId, area, from, to, scope
   const groupLabel = groupBy === 'mes' ? 'Mês' : config.columns.find(column => column.key === groupBy)?.label ?? groupBy;
   const Icon = config.icon;
   const activeOptions = [assetDetails ? 'metadados patrimoniais' : '', includeNotes ? 'textos livres' : '', outflowType !== 'all' ? LABELS.tipo[outflowType] : '', returnState !== 'all' ? LABELS.situacao_retorno[returnState] : '', measurementUnit].filter(Boolean);
-  return <section className={styles.root} aria-labelledby="reports-center-title">
-    <header className={styles.header}>
-      <div>
-        <span className={styles.eyebrow}><BarChart3 size={15} />Central de relatórios</span>
-        <h2 id="reports-center-title">Relatório detalhado</h2>
-        <p>Escolha o assunto e confira as linhas antes de exportar.</p>
-      </div>
-
-    </header>
+  return <section className={styles.root} aria-label="Central de relatórios">
+    <ReportMasthead label="Central de relatórios" title={config.label} description={scopeLabel || 'Escolha o assunto e confira os dados antes de exportar.'} projectBrand={reportBrand}/>
 
     <label className={`p-field ${styles.subject}`}><span>Assunto do relatório</span><select value={dataset} onChange={event => chooseDataset(event.target.value as DatasetId)}>{datasets.map(id => <option key={id} value={id}>{DATASETS[id].label}</option>)}</select></label>
 
     <div className={styles.primaryControls}>
       <label className={`p-field ${styles.search}`}><span>Buscar nas linhas</span><span className={styles.searchBox}><Search size={15} /><input value={search} onChange={event => { setSearch(event.target.value); setPage(0); }} placeholder="Nome, material, título, observação…" />{search && <button type="button" aria-label="Limpar busca" onClick={() => setSearch('')}><X size={14} /></button>}</span></label>
     </div>
-    <details className={styles.options}><summary>Ajustar recorte e colunas <span>{chosen.length} colunas · {presets.length} modelos</span>{activeOptions.length > 0 && <small>{activeOptions.join(' · ')}</small>}</summary><div className={styles.optionsBody}>
+    <details className={styles.options}><summary>Ajustar recorte e colunas <span>{chosen.length} colunas · {visiblePresets.length} modelos</span>{activeOptions.length > 0 && <small>{activeOptions.join(' · ')}</small>}</summary><div className={styles.optionsBody}>
     {dataset === 'materials' && <label className="p-form-help"><input type="checkbox" checked={assetDetails} onChange={event => { setAssetDetails(event.target.checked); setColumns(DATASETS.materials.defaults); setRows([]); setFocus(''); setMeasure('__count__'); }}/>{' '}Consultar metadados patrimoniais privados (somente projetos com permissão vigente de inventário). A referência de responsável, processo e valor documentado só entra na exportação ao escolher essas colunas.</label>}
     {dataset === 'outflow_details' && <div className="space-y-3"><p className="p-form-help">A ação aparece quando foi vinculada no registro. O operador é quem registrou a saída, com nome atual do perfil; beneficiários e contatos não são consultados. Saldo e unidade são os atuais do cadastro.</p><label className="p-form-help"><input type="checkbox" checked={includeNotes} onChange={event => { setIncludeNotes(event.target.checked); setColumns(DATASETS.outflow_details.defaults); setRows([]); setFocus(''); setMeasure('__count__'); setPage(0); }}/>{' '}Disponibilizar motivos, observações e condições com permissão operacional vigente (textos livres podem conter dados pessoais). Selecione essas colunas e revise seu conteúdo antes de exportar.</label></div>}
     <div className={styles.controls}>
@@ -439,8 +572,8 @@ export default function ReportsCenter({ projectId, unitId, area, from, to, scope
     </div>
     <div className={styles.presets}>
       <span><Save size={14} />Modelos salvos</span>
-      {presets.length ? presets.map(preset => <span key={preset.name} className={styles.preset}><button type="button" onClick={() => chooseDataset(preset.dataset, preset)} title={`${DATASETS[preset.dataset]?.label}`}>{preset.name}</button><button type="button" aria-label={`Excluir modelo ${preset.name}`} onClick={() => removePreset(preset.name)}><Trash2 size={13} /></button></span>) : <small>Nenhum ainda. Salve a combinação atual de assunto, colunas e agrupamento.</small>}
-      <form onSubmit={event => { event.preventDefault(); savePreset(); }}><input value={presetName} onChange={event => setPresetName(event.target.value)} placeholder="Nome do modelo" aria-label="Nome do modelo" maxLength={60} /><button type="submit" className="p-button p-button-subtle" disabled={!presetName.trim()}>Salvar</button></form>
+      {visiblePresets.length ? visiblePresets.map(preset => <span key={preset.name} className={styles.preset}><button type="button" onClick={() => chooseDataset(preset.dataset, preset)} title={`${DATASETS[preset.dataset]?.label}`}>{preset.name}</button><button type="button" aria-label={`Excluir modelo ${preset.name}`} onClick={() => removePreset(preset.name)}><Trash2 size={13} /></button></span>) : <small>Nenhum ainda. Salve a combinação atual de assunto, colunas e agrupamento.</small>}
+      <form onSubmit={event => { event.preventDefault(); savePreset(); }}><input value={presetName} disabled={!presetsReady} onChange={event => setPresetState({ ...presetState, name: event.target.value })} placeholder="Nome do modelo" aria-label="Nome do modelo" maxLength={60} /><button type="submit" className="p-button p-button-subtle" disabled={!presetsReady || !presetName.trim()}>Salvar</button></form>
     </div>
 
     </div></details>
@@ -452,8 +585,10 @@ export default function ReportsCenter({ projectId, unitId, area, from, to, scope
       <span className={styles.summaryIcon}><Icon size={20} /></span>
       <p><strong>{config.label}</strong> · {loading ? 'carregando…' : `${formatNumber(filtered.length)} ${filtered.length === 1 ? 'linha' : 'linhas'}`}{scopeLabel ? ` · ${scopeLabel}` : ''}{from || to ? ` · ${from ? dateLabel(from) : 'início'} a ${to ? dateLabel(to) : 'hoje'}` : ''}</p>
       {focus && <button type="button" className={styles.focusChip} onClick={() => setFocus('')}>{groupLabel}: {groupBy === 'mes' && /^\d{4}-\d{2}$/.test(focus) ? monthLabel(focus) : focus}<X size={13} /></button>}
-      {truncated && <small className={styles.warn}>{dataset === 'outflow_details' ? 'Consulta parcial: limite de 5.000 linhas ou 3 MiB. Refine o recorte para consultar e exportar tudo.' : 'Mostrando as primeiras 5.000 linhas. Refine o recorte para ver tudo.'}</small>}
+      {!loading && truncated && <small className={styles.warn}>{dataset === 'outflow_details' ? 'Consulta parcial: limite de 5.000 linhas ou 3 MiB. Refine o recorte para consultar e exportar tudo.' : 'Mostrando as primeiras 5.000 linhas. Refine o recorte para ver tudo.'}</small>}
     </div>
+
+    {!loading && filtered.length > 0 && <ReportMetrics metrics={kpis}/>}
 
     {loading ? <div className={styles.loading}><LoaderCircle className="p-spin" size={22} />Carregando dados…</div> : !rows.length ? <div className={styles.empty}><FileText size={22} /><strong>Nada para mostrar neste recorte</strong><span>Altere os filtros, o período ou escolha outro assunto.</span></div> : <>
       <div className={styles.tableHead}>
@@ -468,7 +603,7 @@ export default function ReportsCenter({ projectId, unitId, area, from, to, scope
           <tbody>{visible.map((row, index) => <tr key={String(row.id ?? index)}>{chosen.map(column => {
             const value = valueOf(row, column.key);
             const tone = column.key === 'situacao_estoque' && row.situacao_estoque === 'baixo' || column.key === 'em_atraso' && row.em_atraso === 'sim' ? styles.badgeWarn : column.key === 'sentido' ? (row.sentido === 'entrada' ? styles.badgeIn : styles.badgeOut) : '';
-            return <td key={column.key} className={column.numeric ? styles.numeric : ''}>{tone ? <span className={`${styles.badge} ${tone}`}>{String(value)}</span> : column.date ? dateLabel(value) : column.numeric ? formatNumber(num(value)) : String(value ?? '') || '—'}</td>;
+            return <td key={column.key} className={column.numeric ? styles.numeric : ''}>{tone ? <span className={`${styles.badge} ${tone}`}>{String(value)}</span> : column.date ? dateLabel(value) : column.numeric ? formatNumber(reportNumber(value)) : String(value ?? '') || '—'}</td>;
           })}</tr>)}</tbody>
         </table>
       </div>
@@ -489,10 +624,6 @@ export default function ReportsCenter({ projectId, unitId, area, from, to, scope
         <button type="button" className="p-button p-button-subtle" disabled={loading || !chosen.length || !sorted.length || !!exporting} onClick={print}><Printer size={16} />Imprimir</button>
       </div>
     </details>
-    <div className={styles.kpis}>
-      {kpis.map(kpi => <div key={kpi.label} className={`${styles.kpi} ${kpi.tone === 'warn' && (kpi.value ?? 0) > 0 ? styles.kpiWarn : ''}`}><span>{kpi.label}</span><strong>{loading ? '…' : formatNumber(kpi.value)}</strong></div>)}
-    </div>
-
     {!loading && rows.length > 0 && <>
       <div className={styles.charts} ref={chartsRef}>
         <figure className={styles.chart}>

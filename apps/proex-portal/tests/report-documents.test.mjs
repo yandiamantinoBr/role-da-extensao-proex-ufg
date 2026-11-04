@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { PDFDocument } from 'pdf-lib';
-import { fontBytes, reportExport, reportPdf, zipEntries } from './support/report-module.mjs';
+import { PDFDict, PDFDocument, PDFName } from 'pdf-lib';
+import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
+import { brandBytes, fontBytes, reportExport, reportPdf, zipEntries } from './support/report-module.mjs';
 
 const columns = [{ key: 'material', label: 'Material' }, { key: 'project', label: 'Projeto' }, { key: 'quantity', label: 'Quantidade', numeric: true }, { key: 'unit', label: 'Unidade' }];
 const rows = [{ material: 'Caixa de som & projeção', project: 'Extensão e cultura', quantity: 3, unit: 'unidade', contact: 'nunca-exportar@example.test' }];
@@ -30,12 +31,78 @@ test('wide documents retain every field in labeled records without an unreadable
 
 test('PDF retains Unicode text in an embedded font and paginates long data as a valid document', async () => {
   const source = Array.from({ length: 80 }, (_, index) => ({ ...rows[0], material: `Material ${index} · ação, informação e extensão ${'descrição '.repeat(8)}` }));
-  const blob = await reportPdf.toPdf('Saídas de materiais institucionais', columns, source, display, info, { fontBytes });
+  const blob = await reportPdf.toPdf('Saídas de materiais institucionais', columns, source, display, info, { fontBytes, brandBytes });
   assert.equal(blob.type, 'application/pdf');
   const bytes = new Uint8Array(await blob.arrayBuffer()); assert.equal(Buffer.from(bytes.subarray(0, 5)).toString(), '%PDF-');
   const parsed = await PDFDocument.load(bytes);
   assert.equal(parsed.getTitle(), 'Saídas de materiais institucionais'); assert.ok(parsed.getPageCount() > 1);
   assert.ok(bytes.length > 1000);
+  assert.equal(parsed.getPage(0).node.Resources().lookup(PDFName.of('XObject'), PDFDict).keys().length, 2);
+});
+
+async function readPdfPages(blob) {
+  const task = getDocument({ data: new Uint8Array(await blob.arrayBuffer()), useSystemFonts: true, disableFontFace: true });
+  try {
+    const document = await task.promise;
+    return await Promise.all(Array.from({ length: document.numPages }, async (_, index) => {
+      const page = await document.getPage(index + 1);
+      return (await page.getTextContent()).items.map(item => 'str' in item ? item.str : '').join(' ');
+    }));
+  } finally { await task.destroy(); }
+}
+
+test('project PDF contains its scoped title, exact metrics, missing fields and no unselected data', async () => {
+  const projectName = 'Rolê da Extensão';
+  const secret = 'contato-restrito@example.test';
+  const blob = await reportPdf.toPdf('Projetos e ações', [
+    { key: 'projeto', label: 'Projeto' }, { key: 'unidade_sigla', label: 'Unidade' },
+    { key: 'materiais', label: 'Materiais', numeric: true },
+  ], [{ projeto: projectName, unidade_sigla: null, materiais: 0, contato: secret }], display, [
+    ['Relatório', 'Projetos e ações'], ['Recorte', projectName], ['Período', 'Todo o período'],
+    ['Linhas', '1'], ['Gerado em', '04/11/2026 (Brasília)'],
+  ], { fontBytes, brandBytes, presentation: { projectName, projectBrand: 'role-da-extensao', metrics: [
+    { label: 'Materiais', value: 0 }, { label: 'Eventos', value: null },
+  ] } });
+  const pages = await readPdfPages(blob);
+  assert.equal(pages.length, 1);
+  const page = pages[0].replace(/\s+/g, ' ');
+  assert.match(page, /FICHA DO PROJETO Rolê da Extensão/);
+  assert.match(page, /0 Materiais .* Eventos Não informado/);
+  assert.match(page, /Dados do projeto .* Unidade Não informado Materiais 0/);
+  assert.match(page, /Página 1 de 1/);
+  assert.ok(!page.includes(secret));
+  const pdf = await PDFDocument.load(new Uint8Array(await blob.arrayBuffer()));
+  assert.equal(pdf.getPage(0).node.Resources().lookup(PDFName.of('XObject'), PDFDict).keys().length, 3);
+});
+
+test('a long labeled field continues across pages and preserves selected data at both ends', async () => {
+  const long = 'INÍCIO DO CONTEÚDO ' + 'Linha de conferência detalhada. '.repeat(260) + 'FINAL DO CONTEÚDO';
+  const blob = await reportPdf.toPdf('Conferência da equipe', [
+    { key: 'registro', label: 'Observação' }, { key: 'fim', label: 'Etapa' },
+  ], [{ registro: long, fim: 'Concluída' }], display, info,
+  { fontBytes, brandBytes, presentation: { projectName: 'Projeto fictício' } });
+  const pages = await readPdfPages(blob);
+  assert.ok(pages.length > 1);
+  assert.match(pages[0], /INÍCIO DO CONTEÚDO/);
+  assert.match(pages.at(-1), /FINAL DO CONTEÚDO/);
+  assert.match(pages.at(-1), /Dados do projeto \(continuação\)/);
+  assert.match(pages.at(-1), /Concluída/);
+});
+
+test('a typical CONPEEX fiche with a long title and official mark fits one A4 page', async () => {
+  const projectName = '23º CONPEEX — Congresso de Pesquisa, Ensino e Extensão';
+  const fields = ['Projeto', 'Unidade', 'Área temática', 'Modalidade', 'Abrangência', 'Etapa', 'Materiais', 'Eventos', 'Empréstimos', 'Registros'];
+  const row = Object.fromEntries(fields.map((label, index) => [label, [projectName, '', null, 'Evento', 'Interno PROEX', 'Em andamento', 12, 5, 0, 3][index]]));
+  const blob = await reportPdf.toPdf('Projetos e ações', fields.map(label => ({ key: label, label })), [row], display, [
+    ['Recorte', projectName], ['Período', 'Todo o período'], ['Gerado em', '04/11/2026 (Brasília)'], ['Fonte', 'Dados sintéticos de homologação'],
+  ], { fontBytes, brandBytes, presentation: {
+    projectName, projectBrand: 'conpeex-2026', metrics: fields.slice(6).map(label => ({ label, value: row[label] })),
+  } });
+  const pdf = await PDFDocument.load(new Uint8Array(await blob.arrayBuffer()));
+  assert.equal(pdf.getPageCount(), 1);
+  assert.deepEqual(pdf.getPage(0).getSize(), { width: 595.28, height: 841.89 });
+  assert.equal(pdf.getPage(0).node.Resources().lookup(PDFName.of('XObject'), PDFDict).keys().length, 3);
+  assert.match((await readPdfPages(blob))[0], /Empréstimos\s+0\s+Registros\s+3/);
 });
 
 test('document limits reject excess data before rendering or fetching any resource', async () => {

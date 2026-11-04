@@ -134,6 +134,13 @@
       "when": 1793801225472,
       "tag": "0018_project_communication",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1793804127307,
+      "tag": "0019_followup_personal_inbox",
+      "breakpoints": true
     }
   ]
 }

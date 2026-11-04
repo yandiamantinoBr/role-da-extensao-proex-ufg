@@ -11,7 +11,7 @@ function harness(){
  document.addEventListener=on;document.removeEventListener=off;
  const window={location:{origin:'http://127.0.0.1:5173'},addEventListener:on,removeEventListener:off,setInterval(fn,delay){const id=nextTimer++;timers.set(id,{fn,delay,interval:true});return id;},setTimeout(fn,delay){const id=nextTimer++;timers.set(id,{fn,delay});return id;}};
  const clear=id=>timers.delete(id),hooks={useState(initial){const i=index++;if(!(i in slots))slots[i]=initial;return[slots[i],value=>slots[i]=typeof value==='function'?value(slots[i]):value];},useRef(initial){const i=index++;slots[i]??={current:initial};return slots[i];},useEffect(fn,deps){const i=index++,old=slots[i];if(!old||deps.some((v,n)=>v!==old.deps[n])){old?.cleanup?.();slots[i]={deps,cleanup:fn()};}}};
- function load(name){if(modules.has(name))return modules.get(name);const compiledModule={exports:{}};modules.set(name,compiledModule.exports);const require=name=>name.endsWith('.module.css')?{default:new Proxy({},{get:(_target,key)=>String(key)})}:name==='react'?hooks:name==='next/link'?{default:'a'}:name==='react/jsx-runtime'?{jsx:(type,props)=>({type,props}),jsxs:(type,props)=>({type,props})}:name==='lucide-react'?new Proxy({},{get:(_t,key)=>String(key)}):load(name==='../../lib/follow-up/notification-groups'?'lib/follow-up/notification-groups.ts':'components/portal/'+name.replace('./','')+'.ts');
+ function load(name){if(modules.has(name))return modules.get(name);const compiledModule={exports:{}};modules.set(name,compiledModule.exports);const require=name=>name.endsWith('.module.css')?{default:new Proxy({},{get:(_target,key)=>String(key)})}:name==='react'?hooks:name==='next/link'?{default:'a'}:name==='./work-signals'?{TaskSignals:'task-signals'}:name==='react/jsx-runtime'?{jsx:(type,props)=>({type,props}),jsxs:(type,props)=>({type,props})}:name==='lucide-react'?new Proxy({},{get:(_t,key)=>String(key)}):load(name==='../../lib/follow-up/notification-groups'?'lib/follow-up/notification-groups.ts':'components/portal/'+name.replace('./','')+'.ts');
  const code=ts.transpileModule(readFileSync(new URL('../'+name,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText;
  vm.runInNewContext(code,{module:compiledModule,exports:compiledModule.exports,require,URL,URLSearchParams,Date:class extends Date{static now(){return now;}},Intl,AbortController,Event,JSON,window,document,clearInterval:clear,clearTimeout:clear,fetch:(url,init)=>new Promise(resolve=>requests.push({url,init,resolve}))});return compiledModule.exports;
  }
@@ -40,7 +40,7 @@ test('large unread counts keep a bounded visible badge and the complete accessib
 
 test('the bell groups one task window without changing global unread and marks the task once on explicit opening',async()=>{
  const h=harness(),window={...inbox(),viewerId:'user-a',today:'2026-10-31',unread:120,hasMore:true,notifications:Array.from({length:5},(_,i)=>({...inbox().notifications[0],id:'notice-'+i,created_at:`2026-10-31T12:0${i}:00Z`,read_at:i<2?'2026-10-31T11:00:00Z':null})),pending:[{id:'task-a',title:'Pendente A',priority:'high',due_at:null}]};
- try{h.start();h.reply(0,window);await tick();h.render();h.button('Notificações: 120 não lidas').props.onClick();h.render();assert.equal(h.links('Aviso A').length,1);assert.match(h.body(),/5 atualizações · 3 não lidas nesta janela/);assert.match(h.body(),/Última atualização: 31\/10\/2026/);assert.match(h.body(),/Pendentes que você acompanha/);assert.match(h.body(),/criou ou recebeu/);assert.equal(h.link('Meu trabalho').props.href,'/?module=my-work');h.link('Aviso A').props.onClick({preventDefault(){}});assert.equal(h.requests.length,3);assert.deepEqual(JSON.parse(h.requests[2].init.body),{action:'notification.read',taskId:'task-a',read:true});assert.equal(h.requests[1].init.signal.aborted,true);
+ try{h.start();h.reply(0,window);await tick();h.render();h.button('Notificações: 120 não lidas').props.onClick();h.render();assert.equal(h.links('Aviso A').length,1);assert.match(h.body(),/5 atualizações · 3 não lidas nesta janela/);assert.match(h.body(),/Última atualização: 31\/10\/2026/);h.button('Pendentes').props.onClick();h.render();assert.match(h.body(),/Pendentes que você acompanha/);assert.match(h.body(),/criou ou recebeu/);assert.equal(h.link('Meu trabalho').props.href,'/?module=my-work');h.button('Avisos').props.onClick();h.render();h.link('Aviso A').props.onClick({preventDefault(){}});assert.equal(h.requests.length,3);assert.deepEqual(JSON.parse(h.requests[2].init.body),{action:'notification.read',taskId:'task-a',read:true});assert.equal(h.requests[1].init.signal.aborted,true);
  const read={...window,unread:117,notifications:window.notifications.map(n=>({...n,read_at:n.read_at??'2026-10-31T14:00:00Z'}))};h.reply(2,read);await tick();h.render();h.button('Notificações: 117 não lidas');h.reply(1,window);await tick();h.render();h.button('Notificações: 117 não lidas');
  }finally{h.dispose();}
 });
@@ -54,4 +54,62 @@ test('a forbidden task-read response clears protected inbox data and an old resp
 
 test('malformed new group DTOs and a mismatched viewer never replace the authorized inbox',async()=>{
  for(const data of [{...inbox(),groups:[{task_id:'task-a',title:'Invalid',status:'open',priority:'high',due_at:null,updates:0,unread:1,last_created_at:'invalid'}]},{...inbox('Aviso de outra conta'),viewerId:'user-b'}]){const h=harness();try{h.start();h.reply(0,data);await tick();h.render();h.button('Notificações').props.onClick();h.render();assert.equal(h.body().includes('Aviso A'),false);assert.equal(h.body().includes('Aviso de outra conta'),false);}finally{h.dispose();}}
+});
+
+test('cleaning captures the previous cursor even if new notices arrive before confirmation',async()=>{
+ const h=harness();
+ const first={...inbox(),clearThrough:'notice-a',viewerId:'user-a'};
+ const fresh={...inbox('Aviso posterior'),clearThrough:'notice-b',viewerId:'user-a',notifications:[{...inbox().notifications[0],id:'notice-b',title:'Aviso posterior'}]};
+ try{
+  h.start();h.reply(0,first);await tick();h.render();
+  h.button('Notificações: 1 não lidas').props.onClick();h.render();
+  h.button('Limpar todos os avisos').props.onClick();h.render();
+  assert.match(h.body(),/demandas e o histórico continuam disponíveis/);
+  h.reply(1,fresh);await tick();h.render();
+  h.button('Confirmar limpeza').props.onClick();
+  assert.deepEqual(JSON.parse(h.requests[2].init.body),{action:'notification.dismiss',through:'notice-a'});
+  h.reply(2,fresh);await tick();h.render();
+  assert.match(h.body(),/Avisos anteriores removidos da sua caixa/);
+  assert.ok(h.body().includes('Aviso posterior'));
+ }finally{h.dispose();}
+});
+
+test('followed tasks have separate personal hide and restore actions and keep their navigation',async()=>{
+ const h=harness(),pending={id:'task-a',title:'Pendência sintética',status:'open',priority:'high',due_at:'2026-11-09',version:2};
+ const first={...inbox(),pending:[pending],hiddenPending:[],clearThrough:'notice-a',viewerId:'user-a'};
+ try{
+  h.start();h.reply(0,first);await tick();h.render();
+  h.button('Notificações: 1 não lidas').props.onClick();h.render();
+  assert.ok(!h.body().includes('Pendentes que você acompanha'));
+  h.button('Pendentes').props.onClick();h.render();
+  assert.match(h.body(),/Pendentes que você acompanha/);
+  assert.equal(h.link('Pendência sintética').props.href,'/?module=demands&demandId=task-a');
+  h.button('Ocultar pendência: Pendência sintética').props.onClick();
+  assert.deepEqual(JSON.parse(h.requests[2].init.body),{action:'pending.visibility',taskId:'task-a',version:2,hidden:true});
+  h.reply(2,{...first,pending:[],hiddenPending:[pending],pendingVisibility:'confirmed'});await tick();h.render();
+  assert.match(h.body(),/Pendência ocultada da sua lista/);
+  assert.match(h.body(),/Pendências ocultadas \(1\)/);
+  h.button('Mostrar pendência: Pendência sintética').props.onClick();
+  assert.deepEqual(JSON.parse(h.requests[3].init.body),{action:'pending.visibility',taskId:'task-a',version:2,hidden:false});
+  h.reply(3,{...first,pendingVisibility:'confirmed'});await tick();h.render();
+  assert.match(h.body(),/Pendência de volta à sua lista/);
+ }finally{h.dispose();}
+});
+
+test('stale hide and restore show the refreshed list without a false success',async()=>{
+ for(const hidden of [false,true]){
+  const h=harness(),pending={id:'task-a',title:'Pendência anterior',status:'open',priority:'high',due_at:null,version:2};
+  const first={...inbox(),pending:hidden?[]:[pending],hiddenPending:hidden?[pending]:[],viewerId:'user-a'};
+  try{
+   h.start();h.reply(0,first);await tick();h.render();
+   h.button('Notificações: 1 não lidas').props.onClick();h.render();
+   h.button('Pendentes').props.onClick();h.render();
+   h.button(`${hidden?'Mostrar':'Ocultar'} pendência: Pendência anterior`).props.onClick();
+   h.reply(2,{...first,pending:[{...pending,title:'Pendência atualizada',version:3}],hiddenPending:[],pendingVisibility:'outdated'});await tick();h.render();
+   assert.match(h.body(),/Esta pendência mudou ou saiu da sua lista/);
+   assert.equal(h.links('Pendência anterior').length,0);
+   assert.equal(h.links('Pendência atualizada').length,1);
+   assert.doesNotMatch(h.body(),/Pendência ocultada da sua lista|Pendência de volta à sua lista/);
+  }finally{h.dispose();}
+ }
 });

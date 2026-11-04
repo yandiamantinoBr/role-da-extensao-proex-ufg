@@ -24,6 +24,108 @@
   .counter { border-color: var(--purple); }
 }
 
-.unread { border-color: #93c5fd; background: #eff6ff; color: #1e40af; }
-.unread a { color: inherit; }
-:global(html[data-theme=dark]) .unread { border-color: #47678e; background: #1d304d; color: #c4dcff; }
+
+.root { position: relative; flex-shrink: 0; }
+.panel {
+  position: absolute;
+  z-index: 50;
+  inset: calc(100% + 8px) 0 auto auto;
+  display: flex;
+  flex-direction: column;
+  width: min(90vw, 440px);
+  max-height: min(680px, 75dvh);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 12px 32px rgb(30 9 43 / 20%);
+}
+.header { flex-shrink: 0; padding: 14px 14px 0; border-bottom: 1px solid var(--line); }
+.headerRow { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.header h2 { font-size: 1.125rem; line-height: 1.25; }
+.headerActions { display: flex; gap: 4px; }
+.iconButton, .cardAction {
+  display: inline-flex;
+  width: 44px;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  color: var(--brand-ink);
+}
+.iconButton:hover, .cardAction:hover { background: var(--surface-soft); border-color: var(--line); }
+.panes { display: grid; grid-template-columns: 1fr 1fr; margin-top: 10px; gap: 8px; }
+.panes button {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-block-end: 3px solid transparent;
+  color: var(--text-secondary);
+  font-size: .875rem;
+  font-weight: 600;
+}
+.panes button[aria-pressed=true] { color: var(--brand-ink); border-block-end-color: currentColor; }
+.panes button span { padding: 2px 7px; border-radius: 999px; background: var(--surface-soft); color: var(--brand-ink); font-size: .75rem; }
+.content { display: grid; align-content: start; gap: 14px; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 14px; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; }
+.caption, .noticeDetails { color: var(--text-secondary); font-size: .8125rem; line-height: 1.45; }
+.feedback, .error, .confirmation, .empty { border: 1px solid var(--line); border-radius: 12px; background: var(--surface-soft); padding: 12px; font-size: .875rem; }
+.feedback { color: var(--brand-ink); }
+.error { color: var(--danger); }
+.confirmation, .list { display: grid; gap: 8px; }
+.empty { display: flex; align-items: center; gap: 8px; color: var(--text-secondary); }
+.empty svg { flex: none; }
+.pendingIntro h3 { font-size: 1rem; line-height: 1.35; }
+.pendingCard, .noticeCard {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0 4px;
+  min-width: 0;
+  padding: 6px 8px 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.noticeCard[data-unread=true] { border-inline-start: 3px solid var(--brand-ink); background: var(--surface-soft); }
+.cardLink {
+  grid-column: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 4px 0;
+  color: var(--ink);
+  font-size: .875rem;
+  font-weight: 600;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.cardLink svg { flex: none; color: var(--brand-ink); }
+.cardLink:hover span { text-decoration: underline; text-underline-offset: 3px; }
+.cardAction { grid-column: 2; }
+.pendingSignals, .noticeDetails { grid-column: 1 / -1; }
+.pendingSignals { margin-top: 2px; padding-inline-end: 4px; }
+.noticeDetails { display: grid; gap: 2px; }
+.hiddenList { border: 1px solid var(--line); border-radius: 12px; padding: 0 10px 8px; }
+.hiddenList summary { min-height: 44px; padding: 11px 0; cursor: pointer; color: var(--brand-ink); font-weight: 600; }
+.hiddenList[open] .list { margin-top: 8px; }
+.workLink { display: inline-flex; align-items: center; min-height: 44px; color: var(--brand-ink); text-decoration: underline; text-underline-offset: 3px; }
+.panel :is(button,a,summary):focus-visible { outline: 2px solid var(--brand-ink); outline-offset: 2px; }
+
+@media (max-width: 800px) {
+  .panel { margin: 0; }
+}
+@media (max-width: 420px) {
+  .header { padding-inline: 10px; }
+  .content { padding: 10px; }
+  .toolbar { gap: 6px; }
+  .toolbar button { padding-inline: 10px; }
+}
