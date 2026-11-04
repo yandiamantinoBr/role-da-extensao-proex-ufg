@@ -122,6 +122,7 @@ export async function toPdf(
       rule(height - 44);
       y = height - 61;
     }
+    return page;
   }
 
   const ensure = (required: number) => { if (y - required < bottom) addPage(); };
@@ -134,7 +135,7 @@ export async function toPdf(
   pdf.setTitle(projectName ? projectName + ' - ' + title : title);
   pdf.setAuthor('PROEX UFG');
   pdf.setSubject('Relatório do recorte autorizado no Portal PROEX');
-  addPage();
+  const firstPage = addPage();
 
   paint(projectName ? 'FICHA DO PROJETO' : 'RELATÓRIO INSTITUCIONAL', margin, y, 10, purple, bold);
   y -= 21;
@@ -142,7 +143,7 @@ export async function toPdf(
   if (projectMark) {
     const x = width - margin - 128;
     const dark = projectBrand === 'role-da-extensao';
-    page.drawRectangle({ x, y: heroTop - 65, width: 128, height: 65, color: dark ? purple : wash, borderColor: dark ? purple : border, borderWidth: .65 });
+    firstPage.drawRectangle({ x, y: heroTop - 65, width: 128, height: 65, color: dark ? purple : wash, borderColor: dark ? purple : border, borderWidth: .65 });
     logo(projectMark, x + 6, heroTop - 4, 116, 57);
   }
   const hero = text(mainTitle), heroFace = strongFont(hero);
