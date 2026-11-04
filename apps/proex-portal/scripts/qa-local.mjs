@@ -75,18 +75,20 @@ async function serve() {
   process.send({ event: 'listening', port: PORT });
 }
 
-function localClient() {
+export function localClient(port = PORT) {
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Informe a porta da bancada local.');
+  const origin = `http://${HOST}:${port}`;
   const cookies = new Map();
   return async function api(path, body, authenticated = true, binary = false) {
     if (!path.startsWith('/') || path.startsWith('//')) throw new Error('QA aceita somente caminhos locais.');
     const payload = body === undefined ? null : Buffer.from(JSON.stringify(body));
     const headers = { Accept: 'application/json' };
     if (authenticated && cookies.size) headers.Cookie = [...cookies].map(([key, value]) => `${key}=${value}`).join('; ');
-    if (payload) Object.assign(headers, { Origin: QA_ORIGIN, 'X-Proex-Action': '1', 'Content-Type': 'application/json', 'Content-Length': payload.byteLength });
+    if (payload) Object.assign(headers, { Origin: origin, 'X-Proex-Action': '1', 'Content-Type': 'application/json', 'Content-Length': payload.byteLength });
     // Native http.request connects directly to loopback and never follows redirects
     // or inherits an HTTP proxy agent. No browser session/cookie is written to disk.
     return new Promise((done, reject) => {
-      const request = httpRequest({ hostname: HOST, port: PORT, method: payload ? 'POST' : 'GET', path, headers }, response => {
+      const request = httpRequest({ hostname: HOST, port, method: payload ? 'POST' : 'GET', path, headers }, response => {
         const chunks = []; let size = 0;
         response.on('data', chunk => {
           size += chunk.byteLength;
@@ -194,6 +196,7 @@ async function syncSmoke(api, directory, redact) {
   const environment = qaEnvironment(directory, '', '');
   delete environment.BETTER_AUTH_SECRET; delete environment.SETUP_TOKEN;
   environment.PORTAL_URL = QA_ORIGIN; environment.SYNC_TOKEN = issued.token;
+  environment.PROEX_QA_PORTAL_EDIT = '1';
   const child = spawn(process.execPath, [join(projectRoot, 'scripts/apps-script-harness.mjs')], { cwd: projectRoot, env: environment, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
   let output = '';
   for (const stream of [child.stdout, child.stderr]) stream.on('data', chunk => { if (output.length < 100000) output += chunk.toString(); });

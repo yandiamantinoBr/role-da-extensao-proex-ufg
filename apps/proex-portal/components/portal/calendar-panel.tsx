@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { CalendarDays, ChevronLeft, ChevronRight, Copy, Download, ExternalLink, Link2, LoaderCircle, RefreshCw, ShieldCheck, X } from 'lucide-react';
 import type { CalendarCategory, CalendarEntry } from '@/lib/calendar';
 import styles from './calendar-panel.module.css';
@@ -10,7 +10,7 @@ import { offsetCivilDate } from '@/lib/civil-date';
 type Feed = { id: string; category: CalendarCategory; project_id: string | null; project_name: string | null; created_at: string; expires_at: string; revoked_at: string | null };
 type CalendarData = { entries: CalendarEntry[]; feeds: Feed[]; availableCategories: CalendarCategory[] };
 const labels: Record<CalendarCategory, string> = { loans: 'Empréstimos', materials: 'Materiais', projects: 'Projetos e eventos', consumption: 'Consumo' };
-const colors: Record<CalendarCategory, string> = { loans: '#54216C', materials: '#CE5F18', projects: '#19669C', consumption: '#307A55' };
+const colors: Record<CalendarCategory, string> = { loans: 'var(--brand-ink)', materials: 'var(--agenda-materials)', projects: 'var(--agenda-projects)', consumption: 'var(--success-ink)' };
 const weekday = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 const timeZone = 'America/Sao_Paulo';
 const googleCalendarAddByUrl = 'https://calendar.google.com/calendar/u/0/r/settings/addbyurl';
@@ -31,15 +31,34 @@ function when(event: CalendarEntry): string {
   return `${format.format(new Date(event.startsAt))} → ${format.format(new Date(event.endsAt))}`;
 }
 
-export default function CalendarPanel({ projects: sourceProjects, organizationalUnits = [] }: { projects: Record<string, unknown>[]; organizationalUnits?: Record<string,unknown>[] }) {
+export default function CalendarPanel({ projects: sourceProjects, organizationalUnits, selectedProjectId, selectedUnitId, onProjectChange, onUnitChange }: {
+  projects: Record<string, unknown>[];
+  organizationalUnits: Record<string, unknown>[];
+  selectedProjectId: string;
+  selectedUnitId: string;
+  onProjectChange: (projectId: string) => void;
+  onUnitChange: (unitId: string) => void;
+}) {
   const projects = useMemo(() => sourceProjects.filter(project => typeof project.id === 'string' && typeof project.name === 'string')
     .map(project => ({ id: project.id as string, name: project.name as string, unitId: typeof project.unit_id==='string'?project.unit_id:'' })), [sourceProjects]);
   const initial = useMemo(() => monthRange(civilDay(new Date())), []);
   const [from, setFrom] = useState(initial.from), [to, setTo] = useState(initial.to);
-  const [category, setCategory] = useState('all'), [projectId, setProjectId] = useState(''), [unitId,setUnitId]=useState('');
+  const [category, setCategory] = useState('all');
+  const unit = organizationalUnits.find(unit => unit.id === selectedUnitId);
+  const unitId = unit ? selectedUnitId : '';
+  const unitProjects = unitId ? projects.filter(project => project.unitId === unitId) : projects;
+  const project = unitProjects.find(project => project.id === selectedProjectId);
+  const projectId = project?.id ?? '';
   const [result,setResult]=useState<{key:string;data:CalendarData|null;error:string;receivedAt:number}|null>(null),[saving,setSaving]=useState(false);
   const [mountedAt]=useState(()=>Date.now());
   const [error, setError] = useState(''), [reload, setReload] = useState(0), [selectedDay, setSelectedDay] = useState('');
+  const dayTrigger = useRef<HTMLButtonElement | null>(null);
+  const listHeading = useRef<HTMLHeadingElement | null>(null);
+  useEffect(() => {
+    if (!selectedDay || !listHeading.current) return;
+    listHeading.current.focus({ preventScroll: true });
+    listHeading.current.scrollIntoView({ block: 'start' });
+  }, [selectedDay]);
   const [feedCategory, setFeedCategory] = useState<CalendarCategory>('projects'), [createdFeed, setCreatedFeed] = useState<{ id: string; feedUrl: string; expiresAt: string } | null>(null);
   const [copied, setCopied] = useState(false);
   const validRange=/^\d{4}-\d{2}-\d{2}$/.test(from)&&/^\d{4}-\d{2}-\d{2}$/.test(to)&&Number.isFinite(Date.parse(from))&&Number.isFinite(Date.parse(to))&&to>=from&&(Date.parse(to)-Date.parse(from))/86400000<732;
@@ -74,9 +93,7 @@ export default function CalendarPanel({ projects: sourceProjects, organizational
   const totalMap = new Map<CalendarCategory, number>(); for (const event of entries) totalMap.set(event.category, (totalMap.get(event.category) ?? 0) + 1);
   const totals = [...totalMap].sort((a, b) => b[1] - a[1]);
   const activeFeeds = data?.feeds.filter(feed => !feed.revoked_at && Date.parse(feed.expires_at) > (result?.receivedAt??mountedAt)) ?? [];
-  const unitProjects=unitId?projects.filter(project=>project.unitId===unitId):projects;
-  const unitName=organizationalUnits.find(unit=>unit.id===unitId)?.name;
-  const scopeName=projects.find(project=>project.id===projectId)?.name||String(unitName||'Todos os projetos permitidos');
+  const scopeName = project?.name || String(unit?.name || 'Todos os projetos permitidos');
   const downloadLabel=validRange?`Baixar .ics de ${from.split('-').reverse().join('/')} a ${to.split('-').reverse().join('/')}`:'Informe um período válido para baixar';
   return <div className={styles.panel}>
     <section className="p-card" aria-label="Filtros da agenda">
@@ -86,8 +103,8 @@ export default function CalendarPanel({ projects: sourceProjects, organizational
       <details className={styles.filterDisclosure}><summary>Filtrar período e contexto</summary><div className={styles.filterBody}>
       <div className={styles.filters}>
         <label className="p-field"><span>Categoria</span><select value={category} onChange={event=>{setCategory(event.target.value);setSelectedDay('');}}><option value="all">Todas as categorias permitidas</option>{(data?.availableCategories??Object.keys(labels)).map(value=><option key={value} value={value}>{labels[value as CalendarCategory]}</option>)}</select></label>
-        <label className="p-field"><span>Unidade responsável</span><select value={unitId} onChange={event=>{const next=event.target.value;setUnitId(next);if(next&&projects.find(project=>project.id===projectId)?.unitId!==next)setProjectId('');setSelectedDay('');}}><option value="">Todas as unidades</option>{groupUnits(organizationalUnits.map(unit=>({...unit,name:String(unit.name),group_label:String(unit.group_label??'')}) as typeof unit & {name:string;group_label:string;acronym?:unknown})).map(group=><optgroup key={group.group} label={group.group}>{group.units.map(unit=><option key={String(unit.id)} value={String(unit.id)}>{unit.acronym?`${unit.acronym} · `:''}{unit.name}</option>)}</optgroup>)}</select></label>
-        <label className="p-field"><span>Projeto</span><select value={projectId} onChange={event=>{setProjectId(event.target.value);setSelectedDay('');}}><option value="">{unitId?'Todos os projetos desta unidade':'Todos os projetos permitidos'}</option>{unitProjects.map(project=><option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
+        <label className="p-field"><span>Unidade responsável</span><select value={unitId} onChange={event=>{onUnitChange(event.target.value);setSelectedDay('');}}><option value="">Todas as unidades</option>{groupUnits(organizationalUnits.map(unit=>({...unit,name:String(unit.name),group_label:String(unit.group_label??'')}) as typeof unit & {name:string;group_label:string;acronym?:unknown})).map(group=><optgroup key={group.group} label={group.group}>{group.units.map(unit=><option key={String(unit.id)} value={String(unit.id)}>{unit.acronym?`${unit.acronym} · `:''}{unit.name}</option>)}</optgroup>)}</select></label>
+        <label className="p-field"><span>Projeto</span><select value={projectId} onChange={event=>{onProjectChange(event.target.value);setSelectedDay('');}}><option value="">{unitId?'Todos os projetos desta unidade':'Todos os projetos permitidos'}</option>{unitProjects.map(project=><option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
         <label className="p-field"><span>Data inicial</span><input type="date" value={from} onChange={event=>{setFrom(event.target.value);setSelectedDay('');}}/></label>
         <label className="p-field"><span>Data final (incluída)</span><input type="date" value={to} min={from} onChange={event=>{setTo(event.target.value);setSelectedDay('');}}/></label>
       </div>
@@ -99,20 +116,37 @@ export default function CalendarPanel({ projects: sourceProjects, organizational
 
     </section>
     <div className={styles.workspace}>
-    <section className="p-card" aria-label="Visão mensal da agenda" aria-busy={loading}>
+    <section className={`p-card ${styles.monthCard}`} aria-label="Visão mensal da agenda" aria-busy={loading}>
       <div className={styles.monthHeading}><button type="button" className="p-button p-button-subtle" aria-label="Consultar mês anterior" onClick={()=>shiftMonth(-1)}><ChevronLeft size={18}/></button><div><h3>{new Intl.DateTimeFormat('pt-BR',{timeZone,month:'long',year:'numeric'}).format(monthStart)}</h3><small>Mês inicial do período consultado</small></div><button type="button" className="p-button p-button-subtle" aria-label="Consultar próximo mês" onClick={()=>shiftMonth(1)}><ChevronRight size={18}/></button></div>
-      <div className={styles.monthGrid}>{weekday.map(day=><span key={day} className={styles.weekday}>{day}</span>)}{cells.map((day,index)=>{if(!day)return <span key={`empty-${index}`}/>;const dayEntries=entries.filter(event=>inDay(event,day));return <button type="button" key={day} className={`${styles.day} ${selectedDay===day?styles.selected:''}`} onClick={()=>setSelectedDay(current=>current===day?'':day)} aria-pressed={selectedDay===day} aria-label={`${prettyDay(day)}, ${dayEntries.length} registros`}><strong className={day===today?styles.today:undefined}>{Number(day.slice(-2))}</strong><span className={styles.dots}>{[...new Set(dayEntries.map(event=>event.category))].map(kind=><span key={kind} style={{background:colors[kind]}}/>)}</span>{dayEntries.slice(0,2).map(event=><em key={event.uid} className={styles.chip} style={{borderLeftColor:colors[event.category]}} title={event.title}>{event.title}</em>)}{dayEntries.length>2&&<small>+{dayEntries.length-2}</small>}</button>;})}</div>
+      <div className={styles.monthGrid}>
+        {weekday.map(day => <span key={day} className={styles.weekday}>{day}</span>)}
+        {cells.map((day, index) => {
+          if (!day) return <span key={`empty-${index}`}/>;
+          const dayEntries = entries.filter(event => inDay(event, day));
+          const count = dayEntries.length;
+          return <button type="button" key={day} className={`${styles.day} ${selectedDay === day ? styles.selected : ''}`}
+            onClick={event => { dayTrigger.current = event.currentTarget; setSelectedDay(current => current === day ? '' : day); }}
+            aria-pressed={selectedDay === day} aria-controls="calendar-day-entries" aria-current={day === today ? 'date' : undefined}
+            aria-label={`${prettyDay(day)}, ${count} ${count === 1 ? 'registro' : 'registros'}`}>
+            <strong className={day === today ? styles.today : undefined}>{Number(day.slice(-2))}</strong>
+            {count > 0 && <span className={styles.dayCount} aria-hidden="true">{count}</span>}
+            <span className={styles.dots} aria-hidden="true">{[...new Set(dayEntries.map(event => event.category))].map(kind => <span key={kind} style={{ background: colors[kind] }}/>)}</span>
+            {dayEntries.slice(0, 2).map(event => <em key={event.uid} className={styles.chip} style={{ borderLeftColor: colors[event.category] }} title={event.title}>{event.title}</em>)}
+            {count > 2 && <small className={styles.extraEntries}>+{count - 2}</small>}
+          </button>;
+        })}
+      </div>
       <div className={styles.legend}>{Object.entries(labels).map(([key,label])=><small key={key}><span style={{background:colors[key as CalendarCategory]}}/>{label}</small>)}</div>
     </section>
-    <section className={`p-card ${styles.listCard}`} aria-label="Lista de compromissos">
-      <div className="p-card-title"><div><h3>{selectedDay?prettyDay(selectedDay):'Registros do período'}</h3><p>{loading?'Consultando registros…':`${shown.length} registro(s)`}</p></div>{selectedDay&&<button type="button" className="p-button p-button-subtle" onClick={()=>setSelectedDay('')}><X size={15}/>Ver todo o período</button>}</div>
+    <section className={`p-card ${styles.listCard}`} id="calendar-day-entries" aria-labelledby="calendar-day-heading">
+      <div className="p-card-title"><div><h3 ref={listHeading} id="calendar-day-heading" className={styles.listHeading} tabIndex={-1}>{selectedDay?`Compromissos de ${prettyDay(selectedDay)}`:'Registros do período'}</h3><p role="status">{loading?'Consultando registros…':`${shown.length} ${shown.length===1?'registro':'registros'}`}</p></div>{selectedDay&&<button type="button" className="p-button p-button-subtle" onClick={()=>{setSelectedDay('');dayTrigger.current?.focus({preventScroll:true});dayTrigger.current?.scrollIntoView({block:'nearest'});}}><X size={15} aria-hidden="true"/>Ver todo o período</button>}</div>
       {loading?<p className="p-form-help"><LoaderCircle size={17} className="p-spin"/> Carregando agenda…</p>:!shown.length?<p className="p-form-help">{validRange?'Nenhum registro corresponde às datas e aos filtros escolhidos.':'Informe um período válido para consultar a agenda.'}</p>:<div className={styles.entries}>{shown.map(event=><article key={event.uid} className={styles.entry} style={{borderLeftColor:colors[event.category]}}><small>{labels[event.category]}</small><h4 className={event.status==='CANCELLED'?styles.cancelled:undefined}>{event.title}</h4><p>{when(event)}</p><p className={styles.entryContext}>{event.projectName}{event.location?` · ${event.location}`:''}{event.status==='CANCELLED'?' · Cancelado / arquivado':''}</p></article>)}</div>}
     </section>
     </div>
     <section className="p-card">
       <div className="p-card-title"><span className="p-icon-tile"><Link2 size={20}/></span><div><h3>Acompanhar no Google Calendar</h3><p>Assine uma categoria e um projeto para consultar atualizações.</p></div></div>
       <p className="p-form-help">A assinatura é diferente do download do período. Ela mostra um ano passado e um ano futuro. O Google decide quando atualizar; editar no Google não muda o portal. Importar um arquivo .ics cria uma cópia.</p>
-      <div className={styles.subscriptionFilters}><label className="p-field"><span>Categoria da assinatura</span><select value={feedCategory} onChange={event=>setFeedCategory(event.target.value as CalendarCategory)}>{(data?.availableCategories??[]).map(value=><option key={value} value={value}>{labels[value]}</option>)}</select></label><div className={styles.feedScope}><span>Projeto da assinatura</span><strong>{projectId?projects.find(project=>project.id===projectId)?.name:unitId?'Selecione um projeto no filtro acima':'Todos os projetos — exige permissão geral'}</strong></div></div>
+      <div className={styles.subscriptionFilters}><label className="p-field"><span>Categoria da assinatura</span><select value={feedCategory} onChange={event=>setFeedCategory(event.target.value as CalendarCategory)}>{(data?.availableCategories??[]).map(value=><option key={value} value={value}>{labels[value]}</option>)}</select></label><div className={styles.feedScope}><span>Projeto da assinatura</span><strong>{project?.name ?? (unitId?'Selecione um projeto no filtro acima':'Todos os projetos — exige permissão geral')}</strong></div></div>
       {unitId&&!projectId&&<p className="p-form-help">Para assinar uma agenda desta unidade, escolha um projeto. A assinatura não é criada por unidade.</p>}
       <button type="button" className="p-button p-button-primary" disabled={saving||!data?.availableCategories.length||Boolean(unitId&&!projectId)} onClick={()=>void mutate('feed.create',{category:feedCategory,projectId:projectId||null})}>{saving?<LoaderCircle size={16} className="p-spin"/>:<Link2 size={16}/>}Gerar link privado de assinatura</button>
       {createdFeed&&<div className={styles.createdFeed}><p><ShieldCheck size={17}/> Este link permite consultar a categoria escolhida. Guarde-o com cuidado; aparece somente agora e pode ser revogado.</p><label className="p-field"><span>URL privada de assinatura</span><input readOnly value={createdFeed.feedUrl} onFocus={event=>event.target.select()}/></label><div className={styles.actions}><button type="button" className="p-button p-button-subtle" onClick={()=>void navigator.clipboard.writeText(createdFeed.feedUrl).then(()=>setCopied(true)).catch(()=>setError('Selecione o link e copie pelo menu do aparelho.'))}><Copy size={15}/>{copied?'Copiado':'Copiar link'}</button><a className="p-button p-button-primary" href={googleCalendarAddByUrl} target="_blank" rel="noopener noreferrer"><ExternalLink size={15}/>Abrir Google Calendar</a></div><p className="p-form-help">No computador: 1. Copie o link privado acima. 2. Abra o Google Calendar na conta desejada. 3. Em “Do URL”, cole o link e confirme “Adicionar agenda”. O botão abre essa tela; não conclui a assinatura. Depois, ative a agenda no aplicativo do celular. Validade até {prettyDay(createdFeed.expiresAt.slice(0,10))}.</p></div>}

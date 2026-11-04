@@ -253,6 +253,20 @@ export default function RecordsPanel({ projects: sourceProjects, items, loans, c
     setRecords(current => current.map(update)); setSaved(current => current ? update(current) : current);
   }
   const createRef = useRef<HTMLFormElement>(null);
+  const newRecordButton = useRef<HTMLButtonElement>(null);
+  const createHeading = useRef<HTMLHeadingElement>(null);
+  const restoreCreateFocus = useRef(false);
+  const savedId = saved?.id;
+  useEffect(() => {
+    if (open) {
+      const heading = createHeading.current;
+      heading?.focus({ preventScroll: true });
+      heading?.scrollIntoView({ block: 'start' });
+    } else if (restoreCreateFocus.current) {
+      restoreCreateFocus.current = false;
+      newRecordButton.current?.focus();
+    }
+  }, [open, savedId]);
   const draft = useFormDraft(createRef, open && !saved ? 'record:new' : null);
   async function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -320,7 +334,7 @@ export default function RecordsPanel({ projects: sourceProjects, items, loans, c
 
   return <div style={{ display: 'grid', gap: 20 }}>
     <section className="p-card" aria-labelledby="records-title">
-      <div className="p-row-between" style={{ gap: 16, flexWrap: 'wrap', marginBottom: 20 }}><div style={{ display: 'flex', gap: 12, alignItems: 'center' }}><span className="p-icon-tile"><ClipboardList size={22} aria-hidden="true" /></span><div><h2 id="records-title" style={{ margin: '0 0 5px', fontSize: 21 }}>Registros e documentos</h2><p className="p-form-help" style={{ margin: 0 }}>Histórico dos projetos, materiais e empréstimos, com anexos privados.</p></div></div>{!!writableProjects.length && !open && <button type="button" className="p-button p-button-primary" onClick={begin} disabled={existingPending}><Plus size={17} />Novo registro</button>}</div>
+      <div className="p-row-between" style={{ gap: 16, flexWrap: 'wrap', marginBottom: 20 }}><div style={{ display: 'flex', gap: 12, alignItems: 'center' }}><span className="p-icon-tile"><ClipboardList size={22} aria-hidden="true" /></span><div><h2 id="records-title" style={{ margin: '0 0 5px', fontSize: 21 }}>Registros e documentos</h2><p className="p-form-help" style={{ margin: 0 }}>Histórico dos projetos, materiais e empréstimos, com anexos privados.</p></div></div>{!!writableProjects.length && !open && <button ref={newRecordButton} type="button" className="p-button p-button-primary" onClick={begin} disabled={existingPending}><Plus size={17} aria-hidden="true" />Novo registro</button>}</div>
       <form onSubmit={applyFilters} className={styles.filterBar}>
         <label className="p-field"><span>Projeto</span><select value={filterProject} onChange={event => setFilterProject(event.target.value)}><option value="">Todos os projetos permitidos</option>{projects.map(project => <option key={project.id as string} value={project.id as string}>{project.name as string}</option>)}</select></label>
         <label className="p-field"><span>De</span><input type="date" min="2000-01-01" max="2200-12-31" value={from} onChange={event => setFrom(event.target.value)} /></label>
@@ -333,7 +347,7 @@ export default function RecordsPanel({ projects: sourceProjects, items, loans, c
     </section>
 
     {open && <section className="p-card" aria-labelledby="record-create-title">
-      <div className="p-row-between" style={{ flexWrap: 'wrap', gap: 12, marginBottom: 16 }}><h3 id="record-create-title" style={{ margin: 0 }}>{saved ? 'Registro salvo · adicionar anexos' : '1. Criar registro'}</h3>{!unconfirmed && !saving && !savedPending && <button type="button" className="p-button p-button-subtle" onClick={() => { setOpen(false); setSaved(null); setSaveError(''); }}>{saved ? 'Concluir' : 'Fechar formulário'}</button>}</div>
+      <div className="p-row-between" style={{ flexWrap: 'wrap', gap: 12, marginBottom: 16 }}><h3 id="record-create-title" ref={createHeading} tabIndex={-1} className={styles.createHeading}>{saved ? 'Registro salvo · adicionar anexos' : 'Criar registro'}</h3>{!unconfirmed && !saving && !savedPending && <button type="button" className="p-button p-button-subtle" onClick={() => { restoreCreateFocus.current = true; setOpen(false); setSaved(null); setSaveError(''); }}>{saved ? 'Concluir' : 'Fechar formulário'}</button>}</div>
       {saved ? <div>
         <p role="status" style={{ color: 'var(--success-ink)', display: 'flex', alignItems: 'center', gap: 8 }}><Check size={18} aria-hidden="true" />Registro confirmado. Os anexos são enviados na próxima etapa.</p>
         <span className="p-badge">{kindLabel(saved.kind)}</span><h4 style={{ margin: '10px 0 0', overflowWrap: 'anywhere' }}>{saved.title}</h4>{entryDetails(saved)}

@@ -60,3 +60,5 @@
   .entryHead { flex-wrap: wrap; }
 }
 
+.createHeading { margin: 0; scroll-margin-block-start: 84px; }
+.createHeading:focus-visible { outline: 3px solid var(--focus); outline-offset: 4px; border-radius: 4px; }

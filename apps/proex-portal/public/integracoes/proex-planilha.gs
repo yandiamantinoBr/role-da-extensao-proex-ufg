@@ -34,7 +34,7 @@ var CONFLICTS_HEADER = ['id', 'entity_type', 'entity_id', 'expected_version', 'a
 var BASELINE_NOTE = 'portable-v1: original confirmado; preserve até nova leitura de retorno.';
 var EDITABLE_COLOR = '#FFF4D6', SYSTEM_COLOR = '#ECECEC';
 var ATTACHMENTS_FOLDER = 'PROEX · Anexos privados';
-var CONNECTOR_VERSION = '2026-10-31';
+var CONNECTOR_VERSION = '2026-11-04';
 // O Apps Script encerra execuções após 6 minutos; paramos com folga.
 var SYNC_BUDGET_MS = 5 * 60 * 1000, ATTACHMENTS_BUDGET_MS = 4 * 60 * 1000;
 var ISOLATE_CODES = ['sync_operation_changed', 'sync_invalid_change_key', 'sync_invalid_action', 'sync_system_field', 'sync_invalid_row', 'sync_invalid_version', 'sync_change_limit', 'sync_input_limit'];
@@ -44,6 +44,7 @@ var PARTIAL_METADATA_TABLES = ['project_types', 'projects', 'project_links', 'pr
 
 function onOpen() {
   SpreadsheetApp.getUi().createMenu('PROEX')
+    .addItem('Cadastrar material', 'cadastrarMaterial')
     .addItem('Sincronizar agora', 'sincronizarAgora')
     .addItem('Copiar fotos e termos para o Drive', 'copiarAnexos')
     .addSeparator()
@@ -131,6 +132,312 @@ function copiarAnexosAutomatico() { copiarAnexos_(); }
 function sincronizarAgora() { SpreadsheetApp.getActive().toast(sincronizar_(), 'PROEX', 8); }
 function copiarAnexos() { copiarAnexos_(); SpreadsheetApp.getActive().toast(resumoAnexos_(lerEstadoAnexos_()), 'PROEX', 8); }
 
+// ---------------------------------------------------------------- cadastro de material
+
+var CADASTRO_MATERIAL = 'CADASTRO_MATERIAL';
+var TIPOS_MATERIAL = {
+  gift: 'Brinde', equipment: 'Equipamento retornável',
+  distribution: 'Distribuição institucional', consumption: 'Consumo interno',
+};
+
+function cadastrarMaterial() {
+  var sidebar = HtmlService.createHtmlOutput(CADASTRO_MATERIAL_HTML).setTitle('Cadastrar material · PROEX');
+  SpreadsheetApp.getUi().showSidebar(sidebar);
+}
+
+function conferirPlanilhaCadastroMaterial_() {
+  var ss = SpreadsheetApp.getActive();
+  var status = chamar_('proex_sync_describe', {});
+  if (!ss || !status.configuration || status.configuration.spreadsheetId !== ss.getId()) {
+    throw new Error('Abra a planilha mestre configurada no Portal PROEX para cadastrar materiais.');
+  }
+}
+
+function rascunhoMaterial_() {
+  return JSON.parse(propriedades_().getProperty(CADASTRO_MATERIAL) || 'null');
+}
+
+function chaveMaterial_() { return { changeKey: 'material-' + Utilities.getUuid() }; }
+
+function carregarCadastroMaterial() {
+  conferirPlanilhaCadastroMaterial_();
+  var projects = lerTabela_('projects').filter(function (row) { return row.status === 'active'; }).map(function (row) {
+    return { id: row.id, name: row.name + (row.short_name ? ' · ' + row.short_name : '') };
+  });
+  projects.sort(function (a, b) { return a.name.localeCompare(b.name, 'pt-BR'); });
+  var active = new Set(projects.map(function (project) { return project.id; }));
+  var categories = lerTabela_('material_categories').filter(function (row) {
+    return row.status === 'active' && active.has(row.project_id) && Object.prototype.hasOwnProperty.call(TIPOS_MATERIAL, row.core_kind);
+  }).map(function (row) {
+    return { id: row.id, projectId: row.project_id, kind: row.core_kind, label: row.label };
+  });
+  categories.sort(function (a, b) { return a.label.localeCompare(b.label, 'pt-BR'); });
+  return { projects: projects, categories: categories, kinds: TIPOS_MATERIAL, draft: rascunhoMaterial_() || chaveMaterial_() };
+}
+
+function normalizarCadastroMaterial_(form) {
+  function campo(value, label, limit, required) {
+    if (value === undefined || value === null) value = '';
+    if (typeof value !== 'string' || value.trim().length > limit || (required && !value.trim())) {
+      throw new Error('Confira ' + label + ' (até ' + limit + ' caracteres).');
+    }
+    return value.trim();
+  }
+  if (!form || typeof form.changeKey !== 'string' || !/^material-[a-f0-9-]{36}$/i.test(form.changeKey)) {
+    throw new Error('Reabra o formulário pelo menu PROEX para iniciar o cadastro.');
+  }
+  if (typeof form.category !== 'string' || !Object.prototype.hasOwnProperty.call(TIPOS_MATERIAL, form.category)) {
+    throw new Error('Escolha um tipo de material.');
+  }
+  var alert = form.lowStock === undefined ? 0 : form.lowStock;
+  if (typeof alert !== 'number' || !Number.isSafeInteger(alert) || alert < 0 || alert > (form.category === 'equipment' ? 1 : 1000000)) {
+    throw new Error(form.category === 'equipment' ? 'O alerta de um equipamento individual pode ser zero ou uma unidade.' : 'Informe um alerta inteiro entre zero e 1.000.000.');
+  }
+  return {
+    projectId: campo(form.projectId, 'o projeto', 200, true),
+    category: form.category,
+    categoryId: campo(form.categoryId, 'a categoria', 100, false) || null,
+    name: campo(form.name, 'o nome', 200, true),
+    unit: campo(form.unit, 'a unidade', 40, true),
+    lowStock: alert,
+    description: campo(form.description, 'a descrição', 2000, false),
+    assetCode: campo(form.assetCode, 'o código patrimonial', 100, false),
+  };
+}
+
+function mensagemCadastroMaterial_(code) {
+  switch (code) {
+    case 'category_mismatch':
+    case 'category_not_found': return 'A categoria mudou ou deixou de estar disponível. Atualize o formulário e selecione outra categoria.';
+    case 'project_not_found': return 'O projeto deixou de estar disponível. Atualize o formulário para escolher um projeto.';
+    case 'equipment_unit': return 'O alerta de um equipamento individual pode ser zero ou uma unidade.';
+    case 'invalid_quantity':
+    case 'invalid_input': return 'Confira os campos e os limites informados no formulário.';
+    default: return 'O Portal recusou o cadastro. Confira o projeto, os campos e se o patrimônio já existe.';
+  }
+}
+
+function salvarCadastroMaterial(form) {
+  var input = normalizarCadastroMaterial_(form);
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(1500)) throw new Error('A planilha está sincronizando ou registrando uma operação. Aguarde e tente novamente.');
+  try {
+    conferirPlanilhaCadastroMaterial_();
+    var props = propriedades_(), draft = rascunhoMaterial_();
+    var serialized = JSON.stringify(input);
+    if (draft) {
+      var sameInput = draft.result ? draft.fingerprint === hex_(serialized) : JSON.stringify(draft.input) === serialized;
+      if (draft.changeKey !== form.changeKey || !sameInput) {
+        throw new Error('Há um cadastro para retomar nesta conta. Reabra o formulário para recuperar os dados e a confirmação.');
+      }
+      if (draft.result) return draft.result;
+    } else {
+      if (!lerTabela_('projects').some(function (row) { return row.id === input.projectId && row.status === 'active'; })) {
+        return { status: 'rejected', changeKey: chaveMaterial_().changeKey, message: mensagemCadastroMaterial_('project_not_found') };
+      }
+      if (input.assetCode && lerTabela_('items').some(function (row) { return row.project_id === input.projectId && row.asset_code === input.assetCode; })) {
+        return { status: 'rejected', changeKey: chaveMaterial_().changeKey, message: 'Já existe um material com esse patrimônio neste projeto. Confira a identificação.' };
+      }
+      draft = { changeKey: form.changeKey, input: input };
+      props.setProperty(CADASTRO_MATERIAL, JSON.stringify(draft));
+    }
+    var response;
+    try {
+      response = chamar_('proex_sync_apply', {
+        connectionId: 'google-sheets',
+        changes: [{ changeKey: draft.changeKey, action: 'item.create', input: draft.input }],
+      });
+    } catch (error) {
+      if (['sync_token_required', 'sync_token_invalid', 'sync_forbidden', 'unauthenticated'].indexOf(error.code) >= 0) throw error;
+      throw new Error('Não foi possível confirmar o envio. Reabra o formulário e retome o mesmo cadastro.');
+    }
+    var result = response && Array.isArray(response.results) && response.results[0];
+    if (!result || result.changeKey !== draft.changeKey) throw new Error('A confirmação ficou pendente. Retome o mesmo cadastro para conferir.');
+    if (result.status === 'rejected' || result.status === 'conflict') {
+      props.deleteProperty(CADASTRO_MATERIAL);
+      return { status: 'rejected', changeKey: chaveMaterial_().changeKey, message: mensagemCadastroMaterial_(result.code) };
+    }
+    if (result.status !== 'applied' && result.status !== 'duplicate') throw new Error('A confirmação ficou pendente. Retome o mesmo cadastro para conferir.');
+    var receipt = {
+      status: result.status,
+      entityId: result.entityId || null,
+      message: 'Material cadastrado no Portal com saldo zero. Para vê-lo na planilha, use PROEX → Sincronizar agora.',
+    };
+    props.setProperty(CADASTRO_MATERIAL, JSON.stringify({ changeKey: draft.changeKey, fingerprint: hex_(serialized), result: receipt }));
+    return receipt;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function novoCadastroMaterial(changeKey) {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(1500)) throw new Error('A planilha está ocupada. Aguarde e tente novamente.');
+  try {
+    var draft = rascunhoMaterial_();
+    if (!draft || draft.changeKey !== changeKey || !draft.result) {
+      throw new Error('Reabra o formulário para consultar o cadastro em andamento.');
+    }
+    propriedades_().deleteProperty(CADASTRO_MATERIAL);
+    return chaveMaterial_();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+var CADASTRO_MATERIAL_HTML = `<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { font: 14px/1.5 system-ui, sans-serif; color: #292333; }
+  body { margin: 16px; }
+  h1 { color: #3b1753; font-size: 20px; line-height: 1.2; margin: 0 0 8px; }
+  p { margin: 0 0 14px; }
+  fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+  label { display: grid; gap: 4px; margin: 0 0 12px; font-weight: 600; }
+  input, select, textarea, button { box-sizing: border-box; min-height: 44px; width: 100%; font: inherit; }
+  input, select, textarea { border: 1px solid #8d7e99; border-radius: 8px; padding: 8px; background: #fff; color: inherit; }
+  textarea { min-height: 72px; resize: vertical; }
+  :focus-visible { outline: 3px solid #54216c; outline-offset: 2px; }
+  button { background: #3b1753; color: #fff; border: 0; border-radius: 8px; padding: 8px; font-weight: 700; cursor: pointer; }
+  button:disabled { opacity: .65; cursor: default; }
+  small { color: #5d5168; font-weight: 400; }
+  #erro { color: #981f33; }
+</style>
+</head>
+<body>
+<h1>Cadastrar material</h1>
+<p>O cadastro começa com saldo zero. Registre entradas pelo fluxo de movimentações.</p>
+<p id="estado" role="status">Carregando projetos e categorias…</p>
+<p id="erro" role="alert" hidden></p>
+<form id="material" hidden>
+  <fieldset id="campos">
+    <label>Projeto <select name="projectId" required></select></label>
+    <label>Tipo de material <select name="category" required></select></label>
+    <label>Categoria do projeto <select name="categoryId"></select><small>Opcional. Mostra as categorias ativas do tipo selecionado.</small></label>
+    <label>Nome <input name="name" type="text" maxlength="200" required></label>
+    <label>Unidade de medida <input name="unit" type="text" list="unidades" maxlength="40" placeholder="Ex.: unidade ou kit" required></label>
+    <datalist id="unidades">
+      <option value="unidade"><option value="kit"><option value="par"><option value="pacote"><option value="caixa">
+      <option value="kg"><option value="g"><option value="L"><option value="mL"><option value="m">
+    </datalist>
+    <label>Alerta de estoque <input name="lowStock" type="number" min="0" max="1000000" step="1" inputmode="numeric" value="0"></label>
+    <label>Identificação patrimonial <input name="assetCode" type="text" maxlength="100"></label>
+    <label>Descrição <textarea name="description" maxlength="2000"></textarea><small>Registre características úteis do material.</small></label>
+  </fieldset>
+  <button id="enviar" type="submit">Cadastrar no Portal</button>
+  <button id="novo" type="button" hidden>Cadastrar outro material</button>
+</form>
+<script>
+(function () {
+  var form = document.getElementById('material'), fields = document.getElementById('campos');
+  var status = document.getElementById('estado'), error = document.getElementById('erro');
+  var submit = document.getElementById('enviar'), next = document.getElementById('novo');
+  var project = form.elements.projectId, kind = form.elements.category, category = form.elements.categoryId;
+  var model, busy = false;
+  function showError(message) { error.textContent = message || ''; error.hidden = !message; }
+  function setBusy(value) { busy = value; submit.disabled = value; next.disabled = value; }
+  function selectOptions(select, rows, placeholder, selected) {
+    select.replaceChildren(new Option(placeholder, ''));
+    rows.forEach(function (row) { select.add(new Option(row.label, row.id)); });
+    if (selected && !rows.some(function (row) { return row.id === selected; })) select.add(new Option('Seleção do cadastro em andamento', selected));
+    select.value = selected || '';
+  }
+  function categories(selected) {
+    selectOptions(category, model.categories.filter(function (row) {
+      return row.projectId === project.value && row.kind === kind.value;
+    }), 'Sem categoria específica', selected);
+    form.elements.lowStock.max = kind.value === 'equipment' ? '1' : '1000000';
+  }
+  function displayDraft(draft) {
+    model.draft = draft;
+    var input = draft.input;
+    var confirmed = Boolean(draft.result);
+    if (input) {
+      selectOptions(project, model.projects.map(function (p) { return { id: p.id, label: p.name }; }), 'Selecione um projeto', input.projectId);
+      kind.value = input.category;
+      categories(input.categoryId);
+      ['name', 'unit', 'lowStock', 'assetCode', 'description'].forEach(function (key) { form.elements[key].value = input[key]; });
+    }
+    fields.disabled = Boolean(input) || confirmed;
+    fields.hidden = confirmed;
+    submit.hidden = confirmed;
+    submit.textContent = input ? 'Retomar cadastro' : 'Cadastrar no Portal';
+    next.hidden = !confirmed;
+    status.textContent = confirmed ? draft.result.message : input ? 'Há um cadastro aguardando confirmação. Retome com os mesmos dados.' : '';
+  }
+  function start() {
+    google.script.run.withSuccessHandler(function (data) {
+      model = data;
+      if (!data.projects.length && !data.draft.input && !data.draft.result) {
+        status.textContent = 'Nenhum projeto ativo está disponível. Cadastre ou ative um projeto no Portal.';
+        return;
+      }
+      selectOptions(project, data.projects.map(function (p) { return { id: p.id, label: p.name }; }), 'Selecione um projeto', data.projects.length === 1 ? data.projects[0].id : '');
+      selectOptions(kind, Object.keys(data.kinds).map(function (key) { return { id: key, label: data.kinds[key] }; }), 'Selecione um tipo', '');
+      categories();
+      form.hidden = false;
+      displayDraft(data.draft);
+    }).withFailureHandler(function (problem) {
+      status.textContent = '';
+      showError(problem.message || 'Não foi possível carregar o formulário.');
+    }).carregarCadastroMaterial();
+  }
+  project.addEventListener('change', function () { categories(); });
+  kind.addEventListener('change', function () { categories(); });
+  form.addEventListener('submit', function (event) {
+    event.preventDefault();
+    if (busy || !model || model.draft.result) return;
+    var input = model.draft.input || {
+      projectId: project.value, category: kind.value, categoryId: category.value,
+      name: form.elements.name.value, unit: form.elements.unit.value,
+      lowStock: Number(form.elements.lowStock.value || 0), assetCode: form.elements.assetCode.value,
+      description: form.elements.description.value,
+    };
+    setBusy(true);
+    fields.disabled = true;
+    status.textContent = 'Confirmando no Portal…';
+    showError('');
+    google.script.run.withSuccessHandler(function (result) {
+      setBusy(false);
+      if (result.status === 'rejected') {
+        displayDraft({ changeKey: result.changeKey });
+        showError(result.message);
+        return;
+      }
+      displayDraft({ changeKey: model.draft.changeKey, input: input, result: result });
+      next.focus();
+    }).withFailureHandler(function (problem) {
+      setBusy(false);
+      fields.disabled = Boolean(model.draft.input);
+      status.textContent = '';
+      showError(problem.message || 'Não foi possível confirmar. Reabra o formulário para retomar o cadastro.');
+    }).salvarCadastroMaterial(Object.assign({ changeKey: model.draft.changeKey }, input));
+  });
+  next.addEventListener('click', function () {
+    if (busy) return;
+    setBusy(true);
+    showError('');
+    google.script.run.withSuccessHandler(function (draft) {
+      form.reset();
+      selectOptions(project, model.projects.map(function (p) { return { id: p.id, label: p.name }; }), 'Selecione um projeto', model.projects.length === 1 ? model.projects[0].id : '');
+      categories();
+      setBusy(false);
+      displayDraft(draft);
+      project.focus();
+    }).withFailureHandler(function (problem) {
+      setBusy(false);
+      showError(problem.message || 'Não foi possível iniciar outro cadastro.');
+    }).novoCadastroMaterial(model.draft.changeKey);
+  });
+  start();
+}());
+</script>
+</body>
+</html>`;
+
 // ---------------------------------------------------------------- sincronização
 
 function sincronizar_() {
@@ -158,7 +465,7 @@ function sincronizar_() {
         var r = results[change.changeKey];
         if (r && (r.status === 'conflict' || r.status === 'rejected')) conflicts.push(conflito_(r.conflictId || change.changeKey, change.table, change.id, change.expectedVersion, '', (r.code || r.status) + ' · conteúdo desejado: ' + JSON.stringify(change.fields)));
       });
-      gravarRetornoOperacoes_(ss, ops.rows, results);
+      conflicts = conflicts.concat(gravarRetornoOperacoes_(ss, ops.rows, results));
 
       // 3. Exportação tabela por tabela; a base de cada tabela é gravada logo após sua releitura.
       for (var i = 0; i < schemas.length; i++) {
@@ -203,14 +510,18 @@ function sincronizar_() {
 
 /** Envia em lotes de 25; se um lote for recusado por uma linha, reenvia linha a linha. */
 function aplicar_(changes, runId) {
-  var results = {};
+  var results = Object.create(null);
   for (var i = 0; i < changes.length; i += 25) {
     var batch = changes.slice(i, i + 25), response;
     try {
       response = chamar_('proex_sync_apply', { connectionId: 'google-sheets', runId: runId, changes: batch });
       response.results.forEach(function (r) { results[r.changeKey] = r; });
     } catch (error) {
-      if (!isolavel_(error) || batch.length === 1) throw error;
+      if (!isolavel_(error)) throw error;
+      if (batch.length === 1) {
+        results[batch[0].changeKey] = { changeKey: batch[0].changeKey, status: 'rejected', code: error.code };
+        continue;
+      }
       batch.forEach(function (change) {
         try {
           chamar_('proex_sync_apply', { connectionId: 'google-sheets', runId: runId, changes: [change] }).results.forEach(function (r) { results[r.changeKey] = r; });
@@ -298,11 +609,17 @@ function coletarOperacoes_(ss) {
   var sheet = ss.getSheetByName(OPERATIONS), rows = [], changes = [];
   if (sheet.getLastRow() < 2) return { rows: rows, changes: changes };
   var values = sheet.getRange(2, 1, sheet.getLastRow() - 1, OPERATIONS_HEADER.length).getDisplayValues();
+  var pendingCounts = Object.create(null);
+  values.forEach(function (cells) {
+    var key = cells[0].trim();
+    if (key && !cells[3]) pendingCounts[key] = (pendingCounts[key] || 0) + 1;
+  });
   values.forEach(function (cells) {
     var key = cells[0].trim(), action = cells[1].trim();
     if (!key || cells[3]) return; // linha vazia ou já processada
-    var entry = { changeKey: key };
+    var entry = { changeKey: key, action: action, rawInput: cells[2] };
     if (!/^[A-Za-z0-9_-]{8,120}$/.test(key)) { entry.local = { status: 'rejected', code: 'invalid_change_key' }; rows.push(entry); return; }
+    if (pendingCounts[key] > 1) { entry.local = { status: 'rejected', code: 'duplicate_pending_change_key' }; rows.push(entry); return; }
     try {
       var input = JSON.parse(cells[2] || '{}');
       if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('input');
@@ -313,20 +630,36 @@ function coletarOperacoes_(ss) {
   return { rows: rows, changes: changes };
 }
 
-/** Grava o retorno localizando cada operação pela chave, mesmo que linhas tenham sido movidas. */
+/** O recibo pertence à chave e ao conteúdo enviado, mesmo quando as linhas mudam de posição. */
 function gravarRetornoOperacoes_(ss, rows, results) {
-  if (!rows.length) return;
+  var conflicts = [];
+  if (!rows.length) return conflicts;
   var sheet = ss.getSheetByName(OPERATIONS);
   var current = sheet.getRange(2, 1, Math.max(sheet.getLastRow() - 1, 1), 4).getDisplayValues();
-  var pending = current.map(function (r) { return r[3] ? null : r[0].trim(); }); // só linhas ainda sem retorno
+  var used = Object.create(null);
+  function pendingKey(cells, entry) { return !cells[3] && cells[0].trim() === entry.changeKey; }
+  function sameInput(cells, entry) { return cells[1].trim() === entry.action && cells[2] === entry.rawInput; }
   rows.forEach(function (entry) {
-    var r = entry.local || results[entry.changeKey], index = pending.indexOf(entry.changeKey);
-    if (!r || index < 0) return;
-    pending[index] = null;
+    var r = entry.local || results[entry.changeKey];
+    if (!r) return;
+    var index = current.findIndex(function (cells, i) { return !used[i] && pendingKey(cells, entry) && sameInput(cells, entry); });
+    if (index < 0) index = current.findIndex(function (cells, i) { return !used[i] && pendingKey(cells, entry); });
+    if (index < 0) {
+      if (!entry.local) conflicts.push(conflito_('', OPERATIONS, r.entityId || '', '', '', 'operation_row_changed · A linha não está mais pendente com a chave enviada. Retorno anterior: ' + r.status + '. Confira o Portal antes de repetir.'));
+      return;
+    }
+    used[index] = true;
     var range = sheet.getRange(index + 2, 4, 1, 3);
     range.setNumberFormat('@');
+    var live = sheet.getRange(index + 2, 1, 1, 4).getDisplayValues()[0];
+    if (!pendingKey(live, entry) || !sameInput(live, entry)) {
+      if (pendingKey(live, entry)) range.setValues([['conflict', '', 'operation_row_changed']]);
+      conflicts.push(conflito_('', OPERATIONS, r.entityId || '', '', '', 'operation_row_changed · O conteúdo da operação mudou durante o envio. Retorno anterior: ' + r.status + '. Confira o Portal antes de usar uma nova chave.'));
+      return;
+    }
     range.setValues([[r.status || '', r.entityId || '', r.code || '']]);
   });
+  return conflicts;
 }
 
 function escreverTabela_(ss, schema, rows) {
