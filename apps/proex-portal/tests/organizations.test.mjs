@@ -33,6 +33,7 @@ const {portalSnapshot}=await import(compile('lib/portal-data.ts')),{projectActio
 const {campaignAction}=await import(compile('lib/campaigns.ts')),{materialsAction,materialDetail}=await import(compile('lib/materials.ts'));
 const {listRecords,createRecord}=await import(compile('lib/records.ts')),{reportRows}=await import(compile('lib/reports.ts'));
 const orgRoute=await import(compile('app/api/organizations/route.ts')),exportRoute=await import(compile('app/api/export/route.ts'));
+const syncRoute=await import(compile('app/api/sync/route.ts'));
 const calendarRoute=await import(compile('app/api/calendar/route.ts')),downloadRoute=await import(compile('app/api/files/[id]/route.ts'));
 const recordDownload=await import(compile('app/api/records/files/[id]/route.ts')),mcp=await import(compile('app/mcp/route.ts'));
 const {exportPortablePage,describePortableSchemas}=await import(compile('lib/sync/portable.ts'));
@@ -72,6 +73,32 @@ function fixture(t){
 const acting=(f,user)=>access.getActor(f.db,user);
 const post=input=>new Request(`${origin}/api/organizations`,{method:'POST',headers:{Origin:origin,'X-Proex-Action':'1','Content-Type':'application/json'},body:JSON.stringify(input)});
 const projectInput=organizationId=>({organizationId,name:'New project',status:'active',color:'#54216C',prizesEnabled:false,operationKey:crypto.randomUUID()});
+
+test('master tab shortcuts are available only to the current global owner through the authenticated sync route', async t => {
+ const f = fixture(t);
+ const get = () => syncRoute.GET(new Request(`${origin}/api/sync?sheetTabs=1`));
+ const save = (input, requestOrigin = origin) => syncRoute.POST(new Request(`${origin}/api/sync`, {
+  method: 'POST', headers: { Origin: requestOrigin, 'X-Proex-Action': '1', 'Content-Type': 'application/json' }, body: JSON.stringify(input),
+ }));
+ const spreadsheetId = 'qa-master-workbook-0001';
+ const input = { action: 'sheet_tabs.configure', spreadsheetId, expectedVersion: 0, operationKey: 'qa-sheet-tabs-http-001', tabs: { followup_checklists: 3 } };
+ for (const [user, status] of [[null, 401], [f.adminA, 403], [f.scholar, 403], [f.external, 403]]) {
+  f.observe(user);
+  assert.equal((await get()).status, status);
+  assert.equal((await save(input)).status, status);
+ }
+ f.observe(f.platform);
+ assert.equal((await save({ action: 'configure', spreadsheetId, folderId: 'qa-private-parent-0001', attachmentsFolderId: 'qa-private-attachments-0001' })).status, 200);
+ assert.equal((await save(input, 'https://foreign.example.invalid')).status, 403);
+ const response = await save(input);
+ assert.equal(response.status, 200);
+ const configured = await response.json();
+ assert.deepEqual(Object.keys(configured).sort(), ['spreadsheetId', 'spreadsheetUrl', 'tabs', 'version']);
+ assert.equal(configured.tabs.followup_checklists.gid, 3);
+ const reread = await get();
+ assert.equal(reread.headers.get('Cache-Control'), 'no-store');
+ assert.deepEqual(await reread.json(), configured);
+});
 
 test('organization administrators, project managers, scholars and external people see only assigned organizations and projects',async t=>{
  const f=fixture(t);

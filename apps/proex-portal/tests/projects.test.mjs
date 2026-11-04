@@ -306,6 +306,65 @@ test('concurrent project hierarchy edits cannot create a cycle or orphan mutatio
   }finally{db.native.close();}
 });
 
+test('manual master sheet links, their versions and mutation replays require current synchronization ownership',async()=>{
+ const db=database();
+ try{
+  const owner=actor(db,'owner',null),manager=actor(db,'manager','project-a'),viewer=actor(db,'viewer','project-a');
+  const master='synthetic-master-worksheet-123',own='synthetic-project-only-worksheet';
+  const aliases=[
+   `https://docs.google.com/spreadsheets/d/${master}/edit?usp=sharing#gid=12&fvid=34`,
+   `https://docs.google.com/spreadsheets/u/2/d/${master}/copy`,
+   `https://docs.google.com/a/ufg.br/spreadsheets/d/${master}/export?format=xlsx`,
+   `https://docs.google.com./spreadsheets/d/%73${master.slice(1)}/preview`,
+   `https://drive.google.com/open?id=${master}`,
+   `https://drive.google.com/file/d/${master}/view`,
+  ];
+  const create=url=>({projectId:'project-a',label:'Planilha sintética',kind:'other',url,operationKey:crypto.randomUUID()});
+  const legacy=aliases.map(create);
+  const originals=[];
+  for(const input of legacy) originals.push(await projectAction(db,manager,'project.link.create',input));
+  const ownUrl=`https://docs.google.com/spreadsheets/d/${own}/edit#gid=0`;
+  const projectSheet=await projectAction(db,manager,'project.link.create',create(ownUrl));
+  db.native.prepare('INSERT INTO settings(name,value,updated_at) VALUES(?,?,?)').run('sync.google_sheets.configuration',JSON.stringify({spreadsheetId:master}),new Date().toISOString());
+  for(const actorWithoutSync of [manager,viewer]){
+   const dto=await projectDetail(db,actorWithoutSync,'project-a');
+   assert.deepEqual(dto.links.map(link=>link.url),[ownUrl]);
+   assert.equal(JSON.stringify(dto).includes(master),false);
+  }
+  const full=await projectDetail(db,owner,'project-a');
+  assert.equal(full.links.length,aliases.length+1);
+  assert.equal(full.versions.filter(version=>version.entity_type==='project_link').length,aliases.length+1);
+  await assert.rejects(projectAction(db,manager,'project.link.create',legacy[0]),error=>error.status===403&&error.code==='access_changed');
+  const reserved=error=>error.status===400&&error.code==='project_link_master_sheet';
+  for(const url of aliases) await assert.rejects(projectAction(db,manager,'project.link.create',create(url)),reserved);
+  await assert.rejects(projectAction(db,owner,'project.link.update',{id:projectSheet.id,expectedVersion:1,url:aliases[0],operationKey:crypto.randomUUID()}),reserved);
+  const replaced=await projectAction(db,manager,'project.link.update',{id:originals[0].id,expectedVersion:1,url:ownUrl,operationKey:crypto.randomUUID()});
+  assert.equal(replaced.project_link.url,ownUrl);
+  await assert.rejects(projectAction(db,manager,'entity.restore',{entityType:'project_link',entityId:replaced.id,restoreVersion:1,expectedVersion:2,operationKey:crypto.randomUUID()}),reserved);
+  const repaired=await projectDetail(db,manager,'project-a');
+  assert.ok(repaired.versions.some(version=>version.entity_id===replaced.id&&version.version===2));
+  assert.equal(JSON.stringify(repaired).includes(master),false);
+  db.native.prepare("UPDATE members SET role='manager',project_id='project-a',organization_id=(SELECT organization_id FROM projects WHERE id='project-a') WHERE user_id=?").run(owner.userId);
+  assert.equal(JSON.stringify(await projectDetail(db,owner,'project-a')).includes(master),false,'a stale owner DTO never grants sync access');
+ }finally{db.native.close();}
+});
+
+test('configuring a sheet as master at commit time blocks a manual link without orphaning its receipt',async()=>{
+ const db=database();
+ try{
+  const owner=actor(db,'owner',null),master='synthetic-master-after-admission';
+  const batch=db.batch;
+  db.batch=statements=>{
+   db.native.prepare('INSERT INTO settings(name,value,updated_at) VALUES(?,?,?)').run('sync.google_sheets.configuration',JSON.stringify({spreadsheetId:master}),new Date().toISOString());
+   return batch(statements);
+  };
+  await assert.rejects(projectAction(db,owner,'project.link.create',{projectId:'project-a',label:'Planilha sintética',kind:'other',url:`https://docs.google.com/spreadsheets/d/${master}/edit`,operationKey:crypto.randomUUID()}),error=>error.code==='project_link_master_sheet');
+  assert.equal(db.native.prepare('SELECT COUNT(*) n FROM project_links').get().n,0);
+  assert.equal(db.native.prepare('SELECT COUNT(*) n FROM mutation_keys').get().n,0);
+  assert.equal(db.native.prepare('SELECT COUNT(*) n FROM entity_versions').get().n,0);
+ }finally{db.native.close();}
+});
+
 test('links and schedules validate input, save snapshots, restore by new CAS revision and replay safely', async () => {
   const db=database();try{
     const manager=actor(db,'manager','project-a');

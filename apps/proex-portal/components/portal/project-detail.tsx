@@ -8,8 +8,9 @@ import { isCivilDate } from '@/lib/civil-date';
 import { COMMUNICATION_CHANNELS, COMMUNICATION_NOTE_LIMIT, communicationLabel } from '@/lib/project-communication';
 import { useFormDraft, DraftNotice } from './use-form-draft';
 import { ProjectReportExports } from './reports-center';
+import { SheetShortcuts } from './sheet-shortcuts';
 export type ProjectShortcutModule = 'demands' | 'calendar';
-type Props={projectId:string;shortcutModules?:readonly ProjectShortcutModule[];projects:Row[];mutate:(action:string,payload:Row)=>Promise<Row>;onBack:()=>void;onEdit:(project:Row)=>void;onSelect?:(id:string)=>void;renderWorkContext?:(projectId:string)=>ReactNode};
+type Props={projectId:string;shortcutModules?:readonly ProjectShortcutModule[];sheetOwnerId?:string;projects:Row[];mutate:(action:string,payload:Row)=>Promise<Row>;onBack:()=>void;onEdit:(project:Row)=>void;onSelect?:(id:string)=>void;renderWorkContext?:(projectId:string)=>ReactNode};
 type Editor={kind:'link'|'call'|'schedule';row:Row|null};
 const lifecycle={active:'Em andamento',past:'Encerrado',catalog:'Catálogo'};
 const categories={gift:'Brinde',equipment:'Equipamento',distribution:'Distribuição',consumption:'Consumo'};
@@ -109,7 +110,7 @@ function MetadataForm({editor,projectId,projects,mutate,done}:{editor:Editor;pro
  {kind!=='link'&&<p className="p-form-help">Horários do aparelho. Uma atividade editorial não cria campanha, movimentação ou empréstimo.</p>}
  {error&&<p role="alert" className="p-inline-error">{error}</p>}<div className="p-form-footer"><button type="button" className="p-button p-button-subtle" onClick={done}>Cancelar</button><button className="p-button p-button-primary" type="submit">{saving?<LoaderCircle className="p-spin" size={16}/>:<Check size={16}/>}Salvar</button></div></fieldset></form>;
 }
-export default function ProjectDetail({projectId,projects,mutate,onBack,onEdit,onSelect,renderWorkContext,shortcutModules=[]}:Props){
+export default function ProjectDetail({projectId,projects,mutate,onBack,onEdit,onSelect,renderWorkContext,shortcutModules=[],sheetOwnerId}:Props){
  const [result,setResult]=useState<{key:string;data:Row|null;error:string;receivedAt:number}|null>(null),[error,setError]=useState(''),[reload,setReload]=useState(0),[editor,setEditor]=useState<Editor|null>(null),[restoring,setRestoring]=useState(false),[confirmVersion,setConfirmVersion]=useState<Row|null>(null),[allCalls,setAllCalls]=useState(false);
  const editorRef=useRef<HTMLElement|null>(null);
  useEffect(()=>{
@@ -118,7 +119,7 @@ export default function ProjectDetail({projectId,projects,mutate,onBack,onEdit,o
   target?.focus({preventScroll:true});
   target?.scrollIntoView({block:'start'});
  },[editor]);
- const requestKey=`${projectId}:${reload}`,data=result?.key===requestKey?result.data:null,loading=result?.key!==requestKey,displayError=error||(result?.key===requestKey?result.error:'');
+ const requestKey=JSON.stringify([projectId,reload,sheetOwnerId]),data=result?.key===requestKey?result.data:null,loading=result?.key!==requestKey,displayError=error||(result?.key===requestKey?result.error:'');
  useEffect(()=>{const controller=new AbortController();fetch(`/api/projects/${encodeURIComponent(projectId)}`,{cache:'no-store',signal:controller.signal}).then(async response=>{const body=await response.json() as Row;if(!response.ok)throw new Error(body.error||'Não foi possível abrir o projeto.');if(body?.project?.id!==projectId)throw new Error('A resposta não corresponde ao projeto solicitado.');if(!controller.signal.aborted)setResult({key:requestKey,data:body,error:'',receivedAt:Date.now()});}).catch(error=>{if(!controller.signal.aborted)setResult({key:requestKey,data:null,error:error.message,receivedAt:Date.now()});});return()=>controller.abort();},[projectId,requestKey]);
  function saved(){setError('');setEditor(null);setReload(value=>value+1);}
  async function restore(version:Row){if(!data||restoring)return;const entities=[data.project,...data.links,...data.calls,...data.schedule],current=entities.find(row=>row.id===version.entity_id);if(!current)return;setRestoring(true);setError('');try{await mutate('entity.restore',{entityType:version.entity_type,entityId:version.entity_id,restoreVersion:version.version,expectedVersion:current.version,operationKey:crypto.randomUUID()});setConfirmVersion(null);setReload(value=>value+1);}catch(error){setError(error instanceof Error?error.message:'Não foi possível restaurar.');}finally{setRestoring(false);}}
@@ -127,7 +128,7 @@ export default function ProjectDetail({projectId,projects,mutate,onBack,onEdit,o
  const projectLinks = (data?.links ?? []) as Row[];
  const communicationLinks = projectLinks.filter(link => communicationLabel(link.communication_channel));
  const referenceLinks = projectLinks.filter(link => !communicationLabel(link.communication_channel));
- const materialsUrl=safeUrl(data?.spreadsheetLinks?.materialsUrl),projectSheetLinks=(data?.links??[]).filter((link:Row)=>{try{return new URL(String(link.url)).hostname==='docs.google.com'&&new URL(String(link.url)).pathname.startsWith('/spreadsheets/');}catch{return false;}});
+ const materialsUrl=sheetOwnerId?safeUrl(data?.spreadsheetLinks?.materialsUrl):'',projectSheetLinks=(data?.links??[]).filter((link:Row)=>{try{return new URL(String(link.url)).hostname==='docs.google.com'&&new URL(String(link.url)).pathname.startsWith('/spreadsheets/');}catch{return false;}});
  const hasSpreadsheets = Boolean(materialsUrl || projectSheetLinks.length);
  const shortcuts = projects.some(candidate => candidate.id === projectId) ? shortcutModules : [];
  const rel=(key:string)=>relationships[key] as Row[]|null|undefined;
@@ -168,7 +169,8 @@ export default function ProjectDetail({projectId,projects,mutate,onBack,onEdit,o
  {renderWorkContext?.(project.id)}
  {data.permissions?.reports&&<ProjectReportExports key={project.id} projectId={project.id} projectName={project.name} officialUrl={project.official_url} hasLinkedSpreadsheets={hasSpreadsheets}/>}
  {data.relatedProjects.length>0&&<div className="p-card"><h3>Programas e projetos relacionados</h3><div className="p-inline" style={{flexWrap:'wrap',marginTop:12}}>{data.relatedProjects.map((related:Row)=><button key={related.id} type="button" className="p-button p-button-subtle" onClick={()=>onSelect?.(related.id)}><FolderKanban size={15}/>{related.name}</button>)}</div></div>}
- {(materialsUrl||projectSheetLinks.length>0)&&<section className="p-card" id="project-spreadsheets"><h3>Planilhas do projeto</h3><p className="p-form-help">Abra os materiais e referências no Google Sheets com a conta que recebeu acesso.</p><div className={styles.detailLinks}>{materialsUrl&&<a className={styles.quickLink} href={materialsUrl} target="_blank" rel="noopener noreferrer"><Package size={20}/><span><strong>Planilha de materiais</strong><small>Espelho geral de gestão · acesso do responsável global</small></span><ExternalLink size={15}/></a>}{projectSheetLinks.map((link:Row)=><a key={link.id} className={styles.quickLink} href={safeUrl(link.url)} target="_blank" rel="noopener noreferrer"><FileText size={20}/><span><strong>{link.label}</strong><small>Planilha específica vinculada ao projeto</small></span><ExternalLink size={15}/></a>)}</div><p className={styles.externalNote}>O acesso no Google depende do compartilhamento feito no Drive. Filtros e links não substituem as permissões da planilha.</p></section>}
+ {(materialsUrl||projectSheetLinks.length>0)&&<section className="p-card" id="project-spreadsheets"><h3>Planilhas do projeto</h3><p className="p-form-help">Abra os materiais e referências no Google Sheets com a conta que recebeu acesso.</p><div className={styles.detailLinks}>{materialsUrl&&<a className={styles.quickLink} href={materialsUrl} target="_blank" rel="noopener noreferrer"><Package size={20}/><span><strong>Materiais deste projeto na planilha mestre</strong><small>Visualização filtrada · acesso do responsável global</small></span><ExternalLink size={15}/></a>}{projectSheetLinks.map((link:Row)=><a key={link.id} className={styles.quickLink} href={safeUrl(link.url)} target="_blank" rel="noopener noreferrer"><FileText size={20}/><span><strong>{link.label}</strong><small>Planilha específica vinculada ao projeto</small></span><ExternalLink size={15}/></a>)}</div><p className={styles.externalNote}>O acesso no Google depende do compartilhamento feito no Drive. Filtros e links não substituem as permissões da planilha.</p></section>}
+ {sheetOwnerId && <SheetShortcuts canSync={true} userId={sheetOwnerId} context="project" projectScoped/>}
  <div className={styles.detailGrid}>
  <div className={styles.detailColumn}>
  <section className={`p-card ${styles.detailCard}`}>

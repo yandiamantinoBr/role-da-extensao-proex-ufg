@@ -21,6 +21,7 @@ const {materialsAction: syncMaterialsAction}=await import(compile('materials'));
 const {seedCatalog,catalogPreview}=await import(compile('sync/catalog'));
 const {configureSync,startSyncRun,finishSyncRun,syncStatus,requestSync}=await import(compile('sync/control'));
 const {projectSpreadsheetLinks,configureMaterialLinks}=await import(compile('sync/project-links'));
+const {configureSheetTabs,sheetTabsStatus,SHEET_TABS_KEY}=await import(compile('sync/sheet-tabs'));
 function fixture(){
  const native=new DatabaseSync(':memory:');native.exec('PRAGMA foreign_keys=ON');
  for(const name of readdirSync(`${directory}drizzle`).filter(name=>name.endsWith('.sql')).sort())native.exec(readFileSync(`${directory}drizzle/${name}`,'utf8'));
@@ -361,4 +362,60 @@ test('material links bind the configured spreadsheet and reject concurrent confi
   assert.match((await projectSpreadsheetLinks(f.db,f.actor,'project-a')).materialsUrl,/fvid=56$/);
   await configureSync(f.db,f.actor,{...syncConfiguration,spreadsheetId:'different-spreadsheet-v5-02'});assert.equal((await projectSpreadsheetLinks(f.db,f.actor,'project-a')).materialsUrl,null);
  }finally{f.close();}
+});
+
+test('master tab shortcuts keep allowed gids private, replace atomically and deduplicate saves', async () => {
+ const f = fixture();
+ try {
+  assert.deepEqual(await sheetTabsStatus(f.db, f.actor), { spreadsheetId: null, spreadsheetUrl: null, version: 0, tabs: {} });
+  const { spreadsheetId } = syncConfiguration;
+  const input = { spreadsheetId, expectedVersion: 0, operationKey: 'sheet-tabs-create-01', tabs: { items: 0, followup_tasks: 12, 'Operações': 99 } };
+  await assert.rejects(configureSheetTabs(f.db, f.actor, input), { code: 'sheet_tabs_configuration_changed' });
+  await configureSync(f.db, f.actor, syncConfiguration);
+  const spreadsheetUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`;
+  const saved = await configureSheetTabs(f.db, f.actor, input);
+  assert.deepEqual(saved, { spreadsheetId, spreadsheetUrl, version: 1, tabs: {
+   items: { gid: 0, url: `${spreadsheetUrl}?gid=0#gid=0` },
+   followup_tasks: { gid: 12, url: `${spreadsheetUrl}?gid=12#gid=12` },
+   'Operações': { gid: 99, url: `${spreadsheetUrl}?gid=99#gid=99` },
+  } });
+  assert.deepEqual(await configureSheetTabs(f.db, f.actor, input), saved);
+  await assert.rejects(configureSheetTabs(f.db, f.actor, { ...input, tabs: { items: 1 } }), { code: 'operation_changed' });
+  for (const tabs of [{ auth_sessions: 1 }, { items: 1, loans: 1 }, { items: '0' }, { items: -1 }, { items: 2 ** 31 }, { items: 0.5 }, JSON.parse('{"__proto__":1}')]) {
+   await assert.rejects(configureSheetTabs(f.db, f.actor, { ...input, tabs }), { code: 'invalid_sheet_tabs' });
+  }
+  await assert.rejects(configureSheetTabs(f.db, f.actor, { ...input, operationKey: 'sheet-tabs-stale-01' }), { code: 'sheet_tabs_changed' });
+  assert.equal(f.db.native.prepare("SELECT COUNT(*) n FROM audit WHERE action='sheet_tabs.configure'").get().n, 1);
+  assert.ok(!(await exportPortablePage(f.db, f.actor, { table: 'settings' })).rows.some(row => row.name === SHEET_TABS_KEY));
+  const cleared = await configureSheetTabs(f.db, f.actor, { ...input, expectedVersion: 1, operationKey: 'sheet-tabs-clear-01', tabs: {} });
+  assert.deepEqual(cleared, { spreadsheetId, spreadsheetUrl, version: 2, tabs: {} });
+ } finally { f.close(); }
+});
+
+test('master tab shortcuts reject stale workbook and mapping writes, including a swap away and back', async () => {
+ const f = fixture();
+ try {
+  await configureSync(f.db, f.actor, syncConfiguration);
+  const input = { spreadsheetId: syncConfiguration.spreadsheetId, expectedVersion: 0, operationKey: 'sheet-tabs-initial-01', tabs: { projects: 1 } };
+  await configureSheetTabs(f.db, f.actor, input);
+  await configureSync(f.db, f.actor, { ...syncConfiguration, folderId: 'qa-other-folder-01' });
+  assert.equal((await sheetTabsStatus(f.db, f.actor)).tabs.projects.gid, 1);
+  const concurrent = { spreadsheetId: input.spreadsheetId, version: 2, tabs: { projects: 2 } };
+  f.db.beforeBatch(() => f.db.native.prepare('UPDATE settings SET value=? WHERE name=?').run(JSON.stringify(concurrent), SHEET_TABS_KEY));
+  await assert.rejects(configureSheetTabs(f.db, f.actor, { ...input, expectedVersion: 1, operationKey: 'sheet-tabs-racing-01' }), { code: 'sheet_tabs_changed' });
+  assert.equal((await sheetTabsStatus(f.db, f.actor)).tabs.projects.gid, 2);
+  assert.equal(f.db.native.prepare('SELECT COUNT(*) n FROM mutation_keys WHERE entity_id=?').get(SHEET_TABS_KEY).n, 1);
+  const other = { ...syncConfiguration, spreadsheetId: 'spreadsheet-test-0002' };
+  f.db.beforeBatch(() => f.db.native.prepare("UPDATE settings SET value=json_set(value,'$.spreadsheetId',?) WHERE name='sync.google_sheets.configuration'").run(other.spreadsheetId));
+  await assert.rejects(configureSheetTabs(f.db, f.actor, { ...input, expectedVersion: 2, operationKey: 'sheet-tabs-racing-02' }), { code: 'sheet_tabs_configuration_changed' });
+  assert.deepEqual((await sheetTabsStatus(f.db, f.actor)).tabs, {});
+  await assert.rejects(configureSheetTabs(f.db, f.actor, input), { code: 'sheet_tabs_configuration_changed' });
+  await configureSync(f.db, f.actor, other);
+  await configureSync(f.db, f.actor, syncConfiguration);
+  assert.equal((await sheetTabsStatus(f.db, f.actor)).version, 0);
+  f.db.beforeBatch(() => f.db.native.prepare('UPDATE members SET revoked_at=? WHERE user_id=?').run(f.now, f.actor.userId));
+  await assert.rejects(configureSheetTabs(f.db, f.actor, { ...input, operationKey: 'sheet-tabs-revoked-01' }), { status: 403 });
+  assert.equal(f.db.native.prepare('SELECT value FROM settings WHERE name=?').get(SHEET_TABS_KEY), undefined);
+  assert.equal(f.db.native.prepare("SELECT COUNT(*) n FROM audit WHERE action='sheet_tabs.configure'").get().n, 1);
+ } finally { f.close(); }
 });

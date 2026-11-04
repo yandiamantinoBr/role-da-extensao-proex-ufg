@@ -8,6 +8,8 @@ A [revisão de interação](REVISAO-DE-INTERACAO-MOVEL.md) registra o caso de ro
 
 O [acabamento de Demandas e exportações](ACABAMENTO-DEMANDAS-E-EXPORTACOES.md) detalha o fluxo de edição móvel, a troca dos downloads CSV por XLSX e o acesso a planilhas vinculadas, além da alternativa de teclado para os gráficos.
 
+Os [atalhos para abas do Google Sheets](../apps/proex-portal/docs/SINCRONIZACAO.md#atalhos-de-materiais-e-permissões-do-drive) usam a planilha mestre já conectada e separam a base sincronizada do recorte baixado em XLSX. O teste de edição manual usa `qa-local.mjs --sync-smoke` com dados descartáveis.
+
 ## Histórico · V22 publicada
 
 Em 04/11/2026, PR #23 integrada em `51fedadfdc27ab7f05059ad6276b871d64f0e15e`, Vercel `dpl_2ei6jUVH2CgbRbVwvAdG9cXcuWiS` READY. CI 899 portal + 33 jogo. Ficha do CONPEEX baixada e renderizada em produção. Avisos e Pendentes têm ações pessoais e feedback de concorrência. A migração 0019 mantém 35 projeções Sheets. O GitHub remoto voltou a ter somente `main`. [Entrega V22](ENTREGA-V22.md).

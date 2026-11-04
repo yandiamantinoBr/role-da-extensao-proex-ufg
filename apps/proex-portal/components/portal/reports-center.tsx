@@ -9,9 +9,15 @@ import Image from 'next/image';
 import BrandMark from '@/components/theme/brand-mark';
 import type { ReportPdfPresentation } from './report-pdf';
 import { download, toDocx, toJson, toXlsx, type ExportColumn, type ExportRow } from './report-export';
+import { SheetShortcuts } from './sheet-shortcuts';
+import type { SheetTabKey } from '@/lib/sync/sheet-tab-catalog';
 import styles from './reports-center.module.css';
 
 type DatasetId = 'projects' | 'materials' | 'movements' | 'outflows' | 'outflow_details' | 'loans' | 'records' | 'campaigns' | 'demands' | 'reviews';
+const SHEET_TAB_BY_DATASET: Partial<Record<DatasetId, SheetTabKey>> = {
+  projects: 'projects', materials: 'items', movements: 'stock_movements', loans: 'loans',
+  records: 'records', campaigns: 'campaigns', demands: 'followup_tasks', reviews: 'followup_checklists',
+};
 type Column = ExportColumn & { date?: boolean; nonAdditive?: boolean };
 type Kpi = { label: string; value: number | null; detail?: string; tone?: 'warn' };
 type Series = { key: string; label: string; value: (row: ExportRow) => number };
@@ -376,8 +382,8 @@ export function ProjectReportExports({ projectId, projectName, officialUrl, hasL
   </section>;
 }
 
-export default function ReportsCenter({ userId, projectId, unitId, area, from, to, scopeLabel, available, initialDataset, projectIdentity }: {
-  userId: string; projectId: string; unitId: string; area: string; from: string; to: string; scopeLabel: string; available: DatasetId[]; initialDataset?: DatasetId; projectIdentity?: ExportRow;
+export default function ReportsCenter({ userId, projectId, unitId, area, from, to, scopeLabel, available, initialDataset, projectIdentity, canSync = false }: {
+  userId: string; projectId: string; unitId: string; area: string; from: string; to: string; scopeLabel: string; available: DatasetId[]; initialDataset?: DatasetId; projectIdentity?: ExportRow; canSync?: boolean;
 }) {
   const datasets = ORDER.filter(id => available.includes(id));
   const [dataset, setDataset] = useState<DatasetId>(initialDataset && datasets.includes(initialDataset) ? initialDataset : datasets[0] ?? 'projects');
@@ -566,6 +572,7 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
   const categoryLabelLimit = Math.floor((categoryAxisWidth - 10) / 6);
   const chartMeasureLabel = effectiveMeasure === '__count__' ? 'Total' : `Soma de ${measureLabel}`;
   const monthColumns = config.series ?? [{ key: 'value', label: chartMeasureLabel }];
+  const sheetTab = SHEET_TAB_BY_DATASET[dataset];
   const Icon = config.icon;
   const activeOptions = [assetDetails ? 'metadados patrimoniais' : '', includeNotes ? 'textos livres' : '', outflowType !== 'all' ? LABELS.tipo[outflowType] : '', returnState !== 'all' ? LABELS.situacao_retorno[returnState] : '', measurementUnit].filter(Boolean);
   return <section className={styles.root} aria-label="Central de relatórios">
@@ -599,6 +606,7 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
     </div>
 
     </div></details>
+    {canSync && <SheetShortcuts canSync={canSync} userId={userId} context="reports" projectScoped={Boolean(projectId)} tabKeys={sheetTab ? [sheetTab] : []}/>}
     {mixedUnits && <p className="p-form-help" role="status">Há medidas físicas diferentes neste recorte. Selecione uma unidade de medida para somar quantidades; os gráficos mostram contagens de registros.</p>}
 
     {includeNotes && <p className="p-form-help" role="status">Textos livres ativos: podem conter dados pessoais. Revise as colunas escolhidas antes de exportar.</p>}
