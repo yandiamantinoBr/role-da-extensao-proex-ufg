@@ -251,6 +251,80 @@ test('STT accepts real bounded PCM bytes, uses official HTTP adapter and encrypt
   const ciphertext=f.native.prepare('SELECT credentials_ciphertext FROM ai_organization_settings').get().credentials_ciphertext;await assert.rejects(decryptCredentials(secret,ciphertext,'unit-synthetic'),code('assistant_credentials_unavailable'));
  }finally{f.native.close();}
 });
+test('Groq is scoped to its explicit organization and uses reviewed multipart speech with the same durable reservation',async()=>{
+ const f=fixture(),deepgram=fakeSpeechProvider(),groqKey='test-only-groq-transcription-credential';
+ const environment={provider:'groq',organizationId:'org_proex',groqKey};
+ let calls=0;
+ const fetcher=async(url,init)=>{
+  calls++;
+  assert.equal(url,'https://api.groq.com/openai/v1/audio/transcriptions');
+  assert.equal(init.method,'POST');
+  assert.equal(init.redirect,'error');
+  assert.equal(init.cache,'no-store');
+  assert.deepEqual(init.headers,{Authorization:'Bearer '+groqKey});
+  assert.ok(init.signal);
+  assert.deepEqual([...init.body.keys()],['file','model','language','response_format']);
+  assert.equal(init.body.get('model'),'whisper-large-v3-turbo');
+  assert.equal(init.body.get('language'),'pt');
+  assert.equal(init.body.get('response_format'),'json');
+  const audio=init.body.get('file');
+  assert.equal(audio.name,'audio.wav');
+  assert.equal(validateSpeechAudio(new Uint8Array(await audio.arrayBuffer()),audio.type).duration,1);
+  return Response.json({text:'Transcrição de teste.',x_groq:{id:'provider-private-id'}});
+ };
+ try{
+  await configureAssistant(f.db,f.actors.owner,configInput({sttEnabled:true},{deepgramKey:key}),secret,environment);
+  const at=new Date().toISOString();
+  f.native.prepare("INSERT INTO projects(id,name,organization_id,created_at) VALUES('project-c','Projeto C','unit-synthetic',?)").run(at);
+  await configureAssistant(f.db,f.actors.owner,configInput({sttEnabled:true},{organizationId:'unit-synthetic',deepgramKey:key}),secret,environment);
+  const status=await assistantStatus(f.db,f.actors.owner,secret,'org_proex',environment);
+  assert.equal(status.organizations.find(org=>org.id==='org_proex').sttProvider,'groq');
+  assert.equal(status.organizations.find(org=>org.id==='unit-synthetic').sttProvider,'deepgram');
+  assert.equal(JSON.stringify(status).includes(groqKey),false);
+  const input=speechInput(wav(),{expectedProvider:'groq'});
+  await assert.rejects(transcribeSpeech(f.db,f.actors.inventory,speechInput(),secret,{environment,fetcher}),code('speech_provider_changed'));
+  await assert.rejects(transcribeSpeech(f.db,f.actors.inventory,{...input,consent:false},secret,{environment,fetcher}),code('speech_consent'));
+  await assert.rejects(transcribeSpeech(f.db,f.actors.inventory,input,secret,{environment:{...environment,groqKey:undefined},fetcher}),code('assistant_unavailable'));
+  assert.equal(calls,0);
+  const result=await transcribeSpeech(f.db,f.actors.inventory,input,secret,{environment,fetcher});
+  assert.equal(result.transcript,'Transcrição de teste.');
+  assert.equal(result.provenance.provider,'groq');
+  assert.equal(result.provenance.model,'whisper-large-v3-turbo');
+  assert.equal(result.provenance.returnedVersion,null);
+  assert.equal(JSON.stringify(result).includes('provider-private-id'),false);
+  const replay=await transcribeSpeech(f.db,f.actors.inventory,input,secret,{environment,fetcher});
+  assert.equal(replay.replayed,true);
+  await assert.rejects(transcribeSpeech(f.db,f.actors.inventory,speechInput(),secret,{fetcher:deepgram.fetch}),code('speech_operation_changed'));
+  const usage=f.native.prepare("SELECT calls,reserved_usd_micros FROM ai_organization_usage WHERE organization_id='org_proex'").get();
+  assert.equal(usage.calls,1);
+  assert.equal(usage.reserved_usd_micros,5000);
+  assert.equal(calls,1);
+  assert.equal(deepgram.calls,0);
+  await transcribeSpeech(f.db,f.actors.owner,speechInput(wav(),{projectId:'project-c'}),secret,{environment,fetcher:deepgram.fetch});
+  assert.equal(deepgram.calls,1);
+ }finally{f.native.close();}
+});
+
+test('Groq malformed output and reflected key are withheld without fallback or repeated transport',async()=>{
+ const environment={provider:'groq',organizationId:'org_proex',groqKey:'test-only-groq-transcription-credential'};
+ for(const response of [{text:' '},{text:environment.groqKey}]){
+  const f=fixture();
+  let calls=0;
+  const fetcher=async()=>{calls++;return Response.json(response);};
+  try{
+   await configureAssistant(f.db,f.actors.owner,configInput({sttEnabled:true}),secret,environment);
+   const input=speechInput(wav(),{expectedProvider:'groq'});
+   await assert.rejects(transcribeSpeech(f.db,f.actors.manager,input,secret,{environment,fetcher}),code('speech_schema'));
+   await assert.rejects(transcribeSpeech(f.db,f.actors.manager,input,secret,{environment,fetcher}),code('speech_replay'));
+   const stored=f.native.prepare('SELECT status,result_ciphertext FROM ai_transcriptions').get();
+   assert.equal(stored.status,'failed');
+   assert.equal(stored.result_ciphertext,null);
+   assert.equal(f.native.prepare('SELECT calls FROM ai_organization_usage').get().calls,1);
+   assert.equal(calls,1);
+  }finally{f.native.close();}
+ }
+});
+
 test('STT rejects mismatched MIME, corrupt headers, silence, excessive duration/size and SSRF before provider cost',async()=>{
  const f=fixture(),provider=fakeSpeechProvider();try{
   await configureAssistant(f.db,f.actors.owner,configInput({sttEnabled:true},{deepgramKey:key}),secret);

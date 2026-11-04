@@ -1,5 +1,6 @@
 import {env} from 'cloudflare:workers';
 import {HttpError} from './errors';
+import type {SpeechEnvironment} from './assistant/settings';
 type RuntimeVars=Record<string,string|undefined>;
 const vars=()=>env as unknown as RuntimeVars;
 export function database():D1Database{if(!env.DB)throw new HttpError(503,'O banco do portal ainda não está disponível.');return env.DB;}
@@ -7,6 +8,11 @@ export function bucket():R2Bucket{if(!env.BUCKET)throw new HttpError(503,'O arma
 export function ownerEmail():string|undefined{return vars().OWNER_EMAIL;}
 
 export function inviteSecret():string|undefined{return vars().BETTER_AUTH_SECRET;}
+/** Server-only routing for a single opt-in organization. */
+export function speechEnvironment():SpeechEnvironment {
+ const values=vars();
+ return {provider:values.PROEX_STT_PROVIDER,organizationId:values.PROEX_GROQ_STT_ORGANIZATION_ID,groqKey:values.GROQ_API_KEY};
+}
 /** Hospedagem própria (Cloudflare via GitHub). Nela não existe identidade nativa do Sites. */
 export function isStandalone():boolean{return vars().PROEX_STANDALONE==='1';}
 /** Segredo de uso único para criar o primeiro responsável fora do Sites. */

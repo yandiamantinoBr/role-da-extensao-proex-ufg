@@ -42,6 +42,14 @@ A pessoa escolhe solicitar transcrição; o texto retorna a um campo editável s
 
 Áudio bruto não é salvo pelo portal. O texto de recuperação fica cifrado por organização/ator/projeto e só é recuperável durante uma hora. Sua cifra expirada é removida oportunisticamente no próximo uso STT da mesma organização; não existe cron garantindo remoção no exato instante do vencimento. Hash, duração, versão e recibos de custo ficam auditados, sem texto/áudio/chave. Revogação durante a resposta impede entregar/salvar o texto. Metadados de custo/segurança do provedor podem existir conforme sua política.
 
+## Piloto opcional de transcrição Groq
+
+O Deepgram permanece o padrão. O piloto é configurado apenas no servidor com `PROEX_STT_PROVIDER=groq`, `PROEX_GROQ_STT_ORGANIZATION_ID` para uma organização específica e `GROQ_API_KEY` como segredo. A organização também precisa habilitar transcrição no assistente. Uma credencial ausente ou inválida bloqueia a transcrição no piloto. As demais organizações continuam usando sua configuração Deepgram. Antes de ativar, a instituição precisa validar termos, custos e retenção aplicáveis à sua conta. [Política de dados da Groq](https://console.groq.com/docs/your-data)
+
+O piloto envia ao endpoint oficial de transcrição um WAV canônico como multipart, com nome genérico, modelo `whisper-large-v3-turbo`, idioma `pt` e resposta JSON. O endpoint e o modelo são fixos no código. O formulário apresenta o provedor e registra o consentimento para ele. Clientes antigos continuam funcionando com Deepgram. Se houver troca de provedor, o portal pede recarga e nova confirmação antes de qualquer envio.
+
+Os mesmos limites de 4 MiB e 90 segundos, validação, escopo, criptografia e cotas continuam no fluxo. A reserva conservadora de US$0,03 por minuto considera no mínimo dez segundos de áudio para o Groq. O mesmo envio não pode consumir novamente após troca de provedor. A resposta documentada do Groq traz texto e não identifica a versão efetiva do modelo. O recibo guarda o nome solicitado e deixa a versão efetiva vazia. O teste local usa áudio sintético e transporte simulado. [Referência da API de transcrição](https://console.groq.com/docs/api-reference#create-transcription) · [Limites do Groq](https://console.groq.com/docs/speech-to-text)
+
 ## Validação
 
 Provedor HTTP inteiramente falso e MediaRecorder/microfone simulados: não houve gasto, leitura de chaves existentes, mudança no Kino, escrita Google ou produção. Testes cobrem criptografia/adulteração/AAD entre organizações/rotação, TI A/B/revogação de concessão e concedente, entrada e replay, SQL atômico, mudanças durante resposta, quota individual e concorrente, assinatura/expiração, material alterado, plano final revogado, resposta incerta, recuperação após falha de recibo e inexistência de segredo/ciphertext nos snapshots e em todas as páginas portáteis.
