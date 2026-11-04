@@ -33,6 +33,10 @@
   color: var(--danger);
 }
 
+.actions > button {
+  white-space: nowrap;
+}
+
 @container material-catalog (max-width: 38rem) {
   .catalog .frame:global(.p-card) {
     overflow: visible;

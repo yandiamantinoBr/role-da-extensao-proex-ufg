@@ -396,6 +396,14 @@ export default function PortalClient({ initial }: {
             items.some(item => item.id === record.recordId && get(item, 'projectId', 'project_id') === record.projectId));
     }
     const activeWorkRecord = workRecord?.module === tab && workRecord.projectId === filter && canOpenRecord(workRecord) ? workRecord : null;
+    const selectedMaterial = selectedMaterialId ? items.find(item => string(item.id) === selectedMaterialId) : null;
+    const materialDrawerId = selectedMaterial && canProject(string(get(selectedMaterial, 'projectId', 'project_id')), 'inventory.read') &&
+        (workRecord?.module !== 'materials' || activeWorkRecord) ? selectedMaterialId : null;
+    useEffect(() => {
+        if (!selectedMaterialId || materialDrawerId) return;
+        const timer = window.setTimeout(() => setSelectedMaterialId(current => current === selectedMaterialId ? null : current), 0);
+        return () => window.clearTimeout(timer);
+    }, [selectedMaterialId, materialDrawerId]);
     const displayedLoans = activeWorkRecord?.module === 'loans' ? visibleLoans.filter(row => row.id === activeWorkRecord.recordId) : visibleLoans;
     const displayedCampaigns = activeWorkRecord?.module === 'events' ? visibleCampaigns.filter(row => row.id === activeWorkRecord.recordId) : visibleCampaigns;
     const recordModule = activeWorkRecord?.module, recordId = activeWorkRecord?.recordId;
@@ -821,7 +829,7 @@ export default function PortalClient({ initial }: {
         </details>}
         <div hidden={showPrizeView}>
         {canAny('inventory.manage') && <details className={`p-card ${workStyles.catalogRegistration}`}><summary className="p-text-link">Cadastrar um patrimônio individual</summary>{filter && canProject(filter, 'inventory.manage') ? <AssetDetailsPanel key={filter} itemId={null} projectId={filter} onSaved={refreshModules}/> : <p className="p-form-help">Selecione um projeto no filtro acima para cadastrar seu patrimônio, com documentos e conferência antes de salvar.</p>}</details>}
-        <MaterialDetailDrawer itemId={workRecord?.module === 'materials' && !activeWorkRecord ? null : selectedMaterialId} onClose={() => { setSelectedMaterialId(null); setWorkRecord(null); }} onChanged={refreshModules} renderWorkContext={({itemId,projectId}) => workContext(projectId,'materials',{itemId})} />
+        <MaterialDetailDrawer itemId={materialDrawerId} onClose={() => { setSelectedMaterialId(null); setWorkRecord(null); }} onChanged={refreshModules} renderWorkContext={({itemId,projectId}) => workContext(projectId,'materials',{itemId})} />
         <Section title="Materiais e estoque" description="Saldo físico, reservas e unidades disponíveis ficam separados." aside={<div className="p-search">
             <Search size={17}/>
             <input aria-label="Buscar materiais" placeholder="Buscar material" value={query} onChange={e => setQuery(e.target.value)}/>
