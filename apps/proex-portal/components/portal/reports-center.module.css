@@ -158,7 +158,7 @@
   .datasets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .controls { grid-template-columns: 1fr; }
   .columns summary { width: 100%; justify-content: center; }
-  .columns > div { left: 0; right: auto; grid-template-columns: 1fr; }
+  .columns > div { left: 0; right: auto; width: min(340px, 100%); grid-template-columns: 1fr; }
   .exportBar { width: 100%; display: grid; grid-template-columns: 1fr 1fr; }
   .presets form { margin-left: 0; width: 100%; }
   .presets form input { flex: 1; width: auto; }
@@ -176,7 +176,7 @@
   .datasets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .controls { grid-template-columns: minmax(0, 1fr); }
   .columns summary { width: 100%; justify-content: center; }
-  .columns > div { position: static; width: 100%; margin-top: 8px; grid-template-columns: minmax(0, 1fr); box-shadow: none; }
+  .columns > div { position: static; width: 100%; margin-top: 8px; grid-template-columns: minmax(0, 1fr); box-shadow: none; overscroll-behavior-y: auto; }
   .columns label, .columnActions button, .searchBox button, .focusChip { min-height: 44px; }
   .searchBox button { min-width: 44px; justify-content: center; }
   .columnActions { flex-wrap: wrap; }
