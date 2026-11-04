@@ -23,16 +23,21 @@ test('server dates are optional for older lists but malformed clock metadata nev
 
 const text=node=>typeof node==='number'?String(node):typeof node==='string'?node:Array.isArray(node)?node.map(text).join(''):node&&typeof node==='object'?text(node.props?.children):'';
 function harness(){
- let index=0,tree,props={defaultProjectId:'project-a',defaultOrganizationId:'org-a'};const slots=[],effects=[],timers=new Map(),requests=[];let next=0;
+ let index=0,editorIndex,tree,props={defaultProjectId:'project-a',defaultOrganizationId:'org-a'};const slots=[],effects=[],timers=new Map(),requests=[];let next=0;
  const clear=id=>timers.delete(id),schedule=(fn,delay)=>{const id=++next;timers.set(id,{fn,delay});return id;};
+ class FakeFormData {
+  constructor(values){this.values=values;}
+  get(name){return this.values.get(name)??null;}
+  entries(){return this.values.entries();}
+ }
  const hooks={useState(initial){const i=index++;if(!(i in slots))slots[i]=initial;return[slots[i],value=>slots[i]=typeof value==='function'?value(slots[i]):value];},useRef(initial){const i=index++;slots[i]??={current:initial};return slots[i];},useEffect(fn,deps){const i=index++,old=slots[i];if(!old||deps.some((v,n)=>v!==old.deps[n]))effects.push(()=>{old?.cleanup?.();slots[i]={deps,cleanup:fn()};});}};
  const element=(type,props)=>typeof type==='function'&&['WorkTaskCard','TaskSignals','TaskStateBadge','TaskPriorityBadge','TaskDeadlineBadge','TaskPageSummary'].includes(type.name)?type(props):({type,props});const jsx={jsx:element,jsxs:element};
  const modules=new Map();function load(file){if(modules.has(file))return modules.get(file);const compiledModule={exports:{}};modules.set(file,compiledModule.exports);const require=name=>name.endsWith('.module.css')?{default:new Proxy({},{get:(_target,key)=>String(key)})}:name==='react'?hooks:name==='react/jsx-runtime'?jsx:name==='lucide-react'?new Proxy({},{get:(_target,key)=>String(key)}):name==='./use-form-draft'?{DraftNotice:'DraftNotice',useFormDraft:()=>({clear(){}})}:name==='../errors'?{HttpError:class extends Error{}}:name==='./work-task-card'?load('components/portal/work-task-card.tsx'):name==='./work-signals'?load('components/portal/work-signals.tsx'):name==='./task-page-summary'?load('components/portal/task-page-summary.tsx'):name==='@/lib/follow-up/presentation'?load('lib/follow-up/presentation.ts'):load(name==='@/lib/follow-up/contracts'?'lib/follow-up/contracts.ts':'components/portal/follow-up-api.ts');
  const code=ts.transpileModule(readFileSync(new URL('../'+file,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText;
- vm.runInNewContext(code,{module:compiledModule,exports:compiledModule.exports,require,URLSearchParams,URL,Intl,Date,JSON,Error,Event,AbortController,crypto,setTimeout:schedule,clearTimeout:clear,window:{location:{origin:'http://127.0.0.1:5173'},dispatchEvent(){}},fetch:(url,init)=>new Promise(resolve=>requests.push({url,init,resolve}))});return compiledModule.exports;}
+ vm.runInNewContext(code,{module:compiledModule,exports:compiledModule.exports,require,URLSearchParams,URL,Intl,Date,JSON,Error,Event,FormData:FakeFormData,AbortController,crypto,setTimeout:schedule,clearTimeout:clear,window:{location:{origin:'http://127.0.0.1:5173'},requestAnimationFrame:fn=>schedule(fn,0),dispatchEvent(){}},fetch:(url,init)=>new Promise(resolve=>requests.push({url,init,resolve}))});return compiledModule.exports;}
  const Component=load('components/portal/follow-up-panel.tsx').default;
  const nodes=()=>{const result=[];const visit=node=>{if(!node||typeof node!=='object')return;if(Array.isArray(node)){node.forEach(visit);return;}result.push(node);visit(node.props?.children);};visit(tree);return result;};
- const h={requests,find(type,predicate=()=>true){return nodes().find(node=>node.type===type&&predicate(node));},render(nextProps={}){props={...props,...nextProps};index=0;tree=Component(props);effects.splice(0).forEach(fn=>fn());},timers(){for(const[id,timer]of [...timers]){timers.delete(id);timer.fn();}},reply(request,data){request.resolve({ok:true,json:async()=>data});},view(request){return new URL(request.url,'http://127.0.0.1').searchParams.get('view');},pending(view){return requests.filter(r=>h.view(r)===view).at(-1);},button(name){const node=nodes().find(n=>n.type==='button'&&text(n)===name);assert.ok(node,name);return node;},hasButton(name){return nodes().some(n=>n.type==='button'&&text(n)===name);},select(name,value){const label=nodes().find(n=>n.type==='label'&&text(n).startsWith(name));assert.ok(label,name);const select=[label.props.children].flat().find(n=>n?.type==='select');assert.ok(select,name);select.props.onChange({target:{value}});},value(name){const label=nodes().find(n=>n.type==='label'&&text(n).startsWith(name));return [label.props.children].flat().find(n=>n?.type==='select').props.value;},body(){return text(tree);},component(name){const node=nodes().find(n=>typeof n.type==='function'&&n.type.name===name);assert.ok(node,name);return node;},dispose(){slots.forEach(slot=>slot?.cleanup?.());}};h.render();h.timers();return h;
+ const h={requests,find(type,predicate=()=>true){return nodes().find(node=>node.type===type&&predicate(node));},render(nextProps={}){props={...props,...nextProps};index=0;tree=Component(props);effects.splice(0).forEach(fn=>fn());},timers(){for(const[id,timer]of [...timers]){timers.delete(id);timer.fn();}},reply(request,data){request.resolve({ok:true,json:async()=>data});},view(request){return new URL(request.url,'http://127.0.0.1').searchParams.get('view');},pending(view){return requests.filter(r=>h.view(r)===view).at(-1);},button(name){const node=nodes().find(n=>n.type==='button'&&text(n)===name);assert.ok(node,name);return node;},hasButton(name){return nodes().some(n=>n.type==='button'&&text(n)===name);},select(name,value){const label=nodes().find(n=>n.type==='label'&&text(n).startsWith(name));assert.ok(label,name);const select=[label.props.children].flat().find(n=>n?.type==='select');assert.ok(select,name);select.props.onChange({target:{value}});},value(name){const label=nodes().find(n=>n.type==='label'&&text(n).startsWith(name));return [label.props.children].flat().find(n=>n?.type==='select').props.value;},body(){return text(tree);},hasComponent(name){return nodes().some(node=>typeof node.type==='function'&&node.type.name===name);},editor(){const node=h.component('TaskEditor'),previous=index;editorIndex??=slots.length;index=editorIndex;try{return node.type(node.props);}finally{index=previous;}},component(name){const node=nodes().find(n=>typeof n.type==='function'&&n.type.name===name);assert.ok(node,name);return node;},dispose(){slots.forEach(slot=>slot?.cleanup?.());}};h.render();h.timers();return h;
 }
 const catalog=()=>({organizations:[{id:'org-a',name:'Organization A',canManage:true},{id:'org-b',name:'Organization B',canManage:true}],projects:[{id:'project-a',name:'Project A',organization_id:'org-a',canEdit:true},{id:'project-b',name:'Project B',organization_id:'org-b',canEdit:true}],people:[],teamPeople:[],teams:[],items:[],campaigns:[],loans:[],canEdit:true,canManageTeams:true});
 const task=(id='task-a')=>({id,organization_id:'org-a',project_id:'project-a',title:'Task A',body:'Context A',priority:'medium',status:'open',due_at:null,version:1,created_at:'2026-10-31T12:00:00Z',updated_at:'2026-10-31T12:00:00Z',canEdit:true,canWork:false,canDelegateWork:false,project_name:'Project A',organization_name:'Organization A',campaign_id:null,item_id:null,loan_id:null,assignees:[]});
@@ -76,6 +81,47 @@ test('selection callbacks keep URL state current and its echo does not close a n
 });
 
 
+test('editing a task in another project waits for its catalog and reports a retryable failure without losing assignment values',async()=>{
+ const h=harness();
+ try{
+  await ready(h);
+  h.render({initialTaskId:'task-b'});
+  h.timers();h.render();
+  const taskB={...task('task-b'),project_id:'project-b',organization_id:'org-b',title:'Task B',assignees:[{user_id:'person-b',team_id:null,name:'Pessoa B'}]};
+  h.reply(h.pending('detail'),{...detail(),task:taskB});await tick();h.render();
+  assert.equal(h.hasComponent('TaskEditor'),false);
+  h.button('Carregar opções deste projeto para editar').props.onClick();
+  h.render();
+  assert.equal(h.hasComponent('TaskEditor'),false,'the matching project IDs alone do not make an empty catalog editable');
+  assert.match(h.body(),/Carregando opções de edição/);
+  h.pending('catalog').resolve({ok:false,json:async()=>({error:'Catálogo temporariamente indisponível.'})});
+  await tick();h.render();
+  assert.equal(h.hasComponent('TaskEditor'),false);
+  assert.match(h.body(),/Não foi possível atualizar as opções de edição/);
+  h.button('Tentar carregar opções').props.onClick();h.render();
+  assert.equal(h.hasComponent('TaskEditor'),false);
+  assert.match(h.body(),/Carregando opções de edição/);
+  const catalogB={...catalog(),people:[{userId:'person-b',name:'Pessoa B'}]};
+  h.reply(h.pending('catalog'),catalogB);await tick();h.render();
+  assert.equal(h.component('TaskEditor').props.catalog.people[0].userId,'person-b');
+  const values=new Map([['title','Task B editada'],['body','Context B'],['priority','medium'],['status','open'],['person:person-b','on']]);
+  h.editor().props.onSubmit({preventDefault(){},currentTarget:values});
+  const first=h.requests.at(-1),payload=JSON.parse(first.init.body);
+  assert.equal(payload.action,'task.update');
+  assert.equal(payload.id,'task-b');
+  assert.equal(payload.expectedVersion,1);
+  assert.deepEqual(payload.userIds,['person-b']);
+  first.resolve({ok:false,json:async()=>({error:'Falha simulada ao salvar.'})});
+  await tick();h.render();
+  assert.match(text(h.editor()),/Falha simulada ao salvar/);
+  h.editor().props.onSubmit({preventDefault(){},currentTarget:values});
+  const retry=h.requests.at(-1);
+  assert.equal(JSON.parse(retry.init.body).operationKey,payload.operationKey);
+  h.reply(retry,{...detail(),task:{...taskB,title:'Task B editada',version:2}});await tick();h.render();
+  assert.match(h.body(),/Demanda salva/);
+ }finally{h.dispose();}
+});
+
 test('a catalog resolving between a scope-change handler and its effect cleanup cannot reset the new organization',async()=>{
  const h=harness();try{await ready(h);h.button('Atualizar').props.onClick();h.render();const old=h.pending('catalog');h.select('Projeto','project-b');h.reply(old,catalog());await tick();h.render();assert.equal(h.value('Projeto'),'project-b');assert.equal(h.value('Organização'),'org-b');assert.ok(!h.hasButton('Nova demanda'));}finally{h.dispose();}
 });
@@ -85,6 +131,24 @@ test('advanced filters stay native and initially collapsed while active values s
  const h=harness();try{await ready(h);const filters=()=>h.find('details',node=>text(node).includes('Buscar e filtrar'));assert.ok(filters());assert.equal(filters().props.open,undefined);assert.ok(h.hasButton('Nova demanda'));assert.equal(h.find('summary',node=>text(node).startsWith('Buscar e filtrar')).props.onClick,undefined);
  h.select('Estado','blocked');h.render();h.select('Prioridade','high');h.render();const search=h.find('input',node=>node.props.placeholder==='Título ou contexto');search.props.onChange({target:{value:'coletes'}});h.render();h.timers();let query=new URL(h.pending('tasks').url,'http://127.0.0.1').searchParams;assert.equal(query.get('status'),'blocked');assert.equal(query.get('priority'),'high');assert.equal(query.get('search'),'coletes');assert.match(text(h.find('summary',node=>text(node).startsWith('Buscar e filtrar'))),/3 filtros ativos/);assert.equal(h.value('Estado'),'blocked');assert.equal(h.value('Prioridade'),'high');assert.equal(filters().props.open,undefined,'rerenders do not control or reset the native disclosure');
  h.select('Estado','all');h.render();h.select('Prioridade','all');h.render();h.find('input',node=>node.props.placeholder==='Título ou contexto').props.onChange({target:{value:''}});h.render();h.timers();query=new URL(h.pending('tasks').url,'http://127.0.0.1').searchParams;assert.equal(query.get('search'),null);assert.equal(query.get('status'),'all');assert.equal(query.get('priority'),'all');assert.equal(text(h.find('summary',node=>text(node).startsWith('Buscar e filtrar'))),'Buscar e filtrar');}finally{h.dispose();}
+});
+
+test('explicit close restores the opening card or the list heading for a detached trigger',async()=>{
+ const h=harness(),focused=[];
+ try{
+  await ready(h);
+  const trigger={isConnected:true,focus(){focused.push('card');}};
+  h.button('Task A').props.onClick({currentTarget:trigger});h.render();
+  h.reply(h.pending('detail'),detail());await tick();h.render();
+  h.button('Fechar').props.onClick();h.render();h.timers();
+  assert.deepEqual(focused,['card']);
+  h.button('Task A').props.onClick({currentTarget:trigger});h.render();
+  h.reply(h.pending('detail'),detail());await tick();h.render();
+  trigger.isConnected=false;
+  h.find('h3',node=>text(node)==='Demandas').props.ref.current={focus(){focused.push('list');}};
+  h.button('Fechar').props.onClick();h.render();h.timers();
+  assert.deepEqual(focused,['card','list']);
+ }finally{h.dispose();}
 });
 
 test('clicking the selected card preserves its loaded detail and does not rewrite the selection URL',async()=>{
