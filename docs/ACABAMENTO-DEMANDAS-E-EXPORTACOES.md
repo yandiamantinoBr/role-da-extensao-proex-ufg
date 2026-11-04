@@ -13,4 +13,11 @@ Esta rodada dá prioridade a quem consulta e edita demandas no celular e a quem 
 - Simular atraso e falha do catálogo: a edição não pode enviar dados parciais nem remover responsáveis existentes. Um perfil de leitura não pode editar.
 - Baixar PDF, DOCX e XLSX com dados fictícios e conferir extensão, estrutura e recorte. Abrir a ficha com e sem planilha vinculada e verificar que o atalho aparece apenas quando há vínculo.
 
+## Evidências em bancada
+
+- Demandas foi aberta e editada com toque emulado a 390 px; o título alterado e o recibo reapareceram. A tela ficou sem rolagem horizontal extra a 390 e 1366 px, nos dois temas.
+- Em Projetos, o início dos formulários Criar projeto e Adicionar link ficou a 84 px do topo, abaixo do cabeçalho de 66 px. Foco no editor e preferência de movimento reduzido conferidos.
+- Chrome baixou XLSX da Central e PDF, XLSX e DOCX da ficha. As três exportações completas responderam em XLSX com sessão válida e bloquearam sessão anônima. Um vínculo fictício fez aparecer o atalho para Planilhas; nenhum serviço Google foi chamado.
+- Os gráficos passaram a 320, 390 e 1366 px, nos dois temas, com toque, teclado, valores mensais, retorno de foco e impressão das linhas filtradas. Esses ensaios usaram dados sintéticos; não incluíram aparelhos físicos nem leitores de tela.
+
 O [roteiro de interação](REVISAO-DE-INTERACAO-MOVEL.md) guarda as regras reutilizáveis e o próximo recorte de navegação.

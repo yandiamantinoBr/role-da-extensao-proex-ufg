@@ -63,7 +63,7 @@ function renderer(Component, props) {
             return render(output, `${key}.output`);
         }
         const children = render(node.props?.children, `${path}.children`);
-        if (node.props?.ref && typeof node.props.ref === 'object') node.props.ref.current ??= { open: false, showModal() { this.open = true; }, scrollIntoView() {} };
+        if (node.props?.ref && typeof node.props.ref === 'object') node.props.ref.current ??= { open: false, showModal() { this.open = true; }, scrollIntoView() {}, focus() {} };
         return { type: node.type, props: { ...node.props, children } };
     }
     async function flush() {
