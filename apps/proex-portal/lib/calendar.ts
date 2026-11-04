@@ -135,9 +135,9 @@ export async function calendarEntries(db: D1Database, actor: PortalActor | null,
       rows = await all(db, `SELECT s.id,s.project_id,p.name project_name,'Atividade · ' || s.title title,
         s.starts_at,s.ends_at,s.status state,s.version revision,s.created_at,s.updated_at last_modified
         FROM project_schedule_items s JOIN projects p ON p.id=s.project_id WHERE ${filter.sql}
-        AND CASE WHEN length(s.starts_at)=10 AND length(s.ends_at)=10
+        AND CASE WHEN length(s.starts_at)=10 OR length(s.ends_at)=10
           THEN date(s.starts_at,'+0 days')=s.starts_at AND date(s.ends_at,'+0 days')=s.ends_at
-            AND s.starts_at<=? AND s.ends_at>=?
+            AND s.starts_at<=s.ends_at AND s.starts_at<=? AND s.ends_at>=?
           ELSE julianday(s.starts_at)<julianday(?) AND julianday(s.ends_at)>=julianday(?)
         END LIMIT ${MAX_ENTRIES + 1}`,
       [...filter.values, range.to, range.from, range.endsAt, range.startsAt]);

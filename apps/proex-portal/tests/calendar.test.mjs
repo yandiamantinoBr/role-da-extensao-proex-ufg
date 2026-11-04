@@ -126,9 +126,14 @@ test('date-only project activities overlap every included day and export the nex
     ['timed', 'project-a', '2026-11-09T12:00:00.000Z', '2026-11-09T16:00:00.000Z'],
     ['foreign-civil', 'project-b', '2026-11-09', '2026-11-13'],
     ['invalid-legacy', 'project-a', '2026-11-00', '2026-11-13'],
+    ['mixed-legacy', 'project-a', '2026-11-09', '2026-11-13T14:00:00.000Z'],
   ]) {
     f.insert('project_schedule_items', { id, project_id: projectId, title: id, starts_at: start, ends_at: end, status: 'planned', created_at: timestamp, updated_at: timestamp });
   }
+  f.sqlite.exec('PRAGMA ignore_check_constraints=ON');
+  f.insert('project_schedule_items', { id: 'inverted-legacy', project_id: 'project-a', title: 'inverted-legacy',
+    starts_at: '2026-11-13', ends_at: '2026-11-09', status: 'planned', created_at: timestamp, updated_at: timestamp });
+  f.sqlite.exec('PRAGMA ignore_check_constraints=OFF');
   const events = async (from, to = from) => (await calendar.calendarEntries(f.db, viewer, {
     range: calendar.calendarRange(from, to), category: 'projects',
   })).entries;
@@ -139,6 +144,7 @@ test('date-only project activities overlap every included day and export the nex
     ['timed', false, '2026-11-09T12:00:00.000Z', '2026-11-09T16:00:00.000Z'],
   ]);
   assert.deepEqual(final, [first[0]]);
+  assert.deepEqual(await events('2026-11-09', '2026-11-13'), first);
   assert.deepEqual(await events('2026-11-08'), []);
   assert.deepEqual(await events('2026-11-14'), []);
   assert.equal((await events('2026-11-30'))[0].endsAt, '2026-12-01');
