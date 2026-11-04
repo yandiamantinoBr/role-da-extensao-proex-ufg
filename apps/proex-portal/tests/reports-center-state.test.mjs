@@ -3,13 +3,14 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
+import { zipEntries } from './support/report-module.mjs';
 
 const root = new URL('../', import.meta.url);
 const transpile = file => ts.transpileModule(readFileSync(new URL(file, root), 'utf8'), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
 function pure(file) { const compiledModule = { exports: {} }; vm.runInNewContext(transpile(file), { module: compiledModule, exports: compiledModule.exports, Blob, TextEncoder, Uint8Array, DataView, ArrayBuffer }); return compiledModule.exports; }
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const text = node => typeof node === 'string' ? node : Array.isArray(node) ? node.map(text).join('') : node && typeof node === 'object' ? text(node.props?.children) : '';
-const exportNames = ['Excel', 'PDF', 'Word', 'CSV', 'JSON', 'Imprimir'];
+const exportNames = ['Excel', 'PDF', 'Word', 'JSON', 'Imprimir'];
 const base = { userId: 'report-user', projectId: 'project-a', unitId: '', area: '', from: '', to: '', scopeLabel: 'Projeto A', available: ['materials', 'loans'] };
 const row = project => ({ id: `item-${project}`, projeto: `Projeto ${project.toUpperCase()}`, material: `Material ${project.toUpperCase()}`, classe: 'gift', unidade_medida: 'unidade', saldo: 9, reservado: 0, disponivel: 9 });
 
@@ -232,7 +233,7 @@ test('traceable outflow filters travel to the server, immediately disable stale 
  const h=harness();try{
   h.render(detailedProps);h.flushEffects();await respondDetails(h);
   assert.ok(!text(h.input('Medida')).includes('saldo atual'));assert.ok(!text(h.input('Medida')).includes('reservado atual'));
-  h.input('Tipo de saída').props.onChange({target:{value:'loan'}});h.render(detailedProps);assert.equal(h.button('CSV').props.disabled,true);h.flushEffects();
+  h.input('Tipo de saída').props.onChange({target:{value:'loan'}});h.render(detailedProps);assert.equal(h.button('Excel').props.disabled,true);h.flushEffects();
   assert.equal(new URL('https://fixture.invalid'+h.requests.at(-1).url).searchParams.get('outflowType'),'loan');
   await respondDetails(h,[{...tracedRow,id:'loan:synthetic',tipo:'loan',quantidade:1,unidade_medida:'unidade',situacao_retorno:'out'}]);
   h.input('Situação da devolução').props.onChange({target:{value:'returned'}});h.render(detailedProps);assert.equal(h.button('JSON').props.disabled,true);h.flushEffects();
@@ -257,11 +258,15 @@ test('independent: malformed successful report JSON is an explicit failure rathe
  }
  assert.deepEqual(failures,[true,true,true,true,true],'invalid JSON, dataset, rows or coverage must be presented as data failures, not zero rows');
 });
-test('independent: a partial traceable CSV remains visibly partial after leaving the report screen',async()=>{
+test('the report offers XLSX, PDF and Word and marks partial XLSX in the filename and metadata',async()=>{
  const h=harness();try{h.render(detailedProps);h.flushEffects();h.requests.at(-1).resolve({ok:true,json:async()=>({dataset:'outflow_details',rows:[tracedRow],truncated:true})});await tick();h.render(detailedProps);
+  for(const name of ['Excel','PDF','Word']) assert.equal(h.button(name).props.disabled,false);
+  assert.ok(!nodesInside(h.render(detailedProps)).some(node=>node.type==='button'&&text(node)==='CSV'));
   const json=await jsonDownload(h);assert.match(json.filtros.Cobertura,/parcial/);
-  h.button('CSV').props.onClick();const csv=h.downloads.at(-1),body=await csv.blob.text();
-  assert.ok(/parcial|partial/i.test(csv.name+'\n'+body),'partial coverage must travel in the CSV filename or content');
+  h.button('Excel').props.onClick();
+  const xlsx=h.downloads.at(-1),entries=await zipEntries(xlsx.blob);
+  assert.match(xlsx.name,/-parcial\.xlsx$/);
+  assert.match(entries.get('xl/worksheets/sheet2.xml'),/Consulta parcial/);
  }finally{h.dispose();}
 });
 
@@ -295,6 +300,14 @@ test('project summary buttons download the same authorized singleton in each for
   assert.equal(formatValue(row,'emprestimos'),'');
   assert.equal(formatValue(row,'etapa'),'Encerrado');
   assert.ok(metadata.some(([label,value])=>label==='Recorte'&&value==='Projeto A'));
+ } finally { h.dispose(); }
+});
+
+test('the project report links only to spreadsheets already available in the project', () => {
+ const h = harness(), linked = tree => nodesInside(tree).find(node => node.type === 'a' && node.props.href === '#project-spreadsheets');
+ try {
+  assert.equal(linked(h.renderProject('project-a')), undefined);
+  assert.equal(text(linked(h.renderProject('project-a', { hasLinkedSpreadsheets: true }))), 'Planilhas do projeto');
  } finally { h.dispose(); }
 });
 

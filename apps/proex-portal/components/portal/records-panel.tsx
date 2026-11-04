@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent 
 import { BarChart3, Camera, Check, ClipboardList, Download, ExternalLink, FilePlus2, ImagePlus, LoaderCircle, Paperclip, Plus, RefreshCw, Search, Trash2, Upload } from 'lucide-react';
 import { useFormDraft, DraftNotice } from './use-form-draft';
 import styles from './records-panel.module.css';
-import { download, toCsv } from './report-export';
+import { download, toXlsx } from './report-export';
 import { MAX_UPLOAD_FILE_BYTES as MAX_FILE_BYTES, UPLOAD_LIMIT_LABEL, uploadErrorMessage } from '../../lib/upload-limits';
 
 type Row = Record<string, unknown>;
@@ -285,6 +285,18 @@ export default function RecordsPanel({ projects: sourceProjects, items, loans, c
   }
   const normalizedSearch = search.trim().toLocaleLowerCase('pt-BR');
   const shown = records.filter(record => (!category || record.kind === category) && (!normalizedSearch || `${record.title} ${record.body}`.toLocaleLowerCase('pt-BR').includes(normalizedSearch)));
+  function exportHistory() {
+    const columns = [
+      { key: 'data', label: 'Data (Brasília)' }, { key: 'projeto', label: 'Projeto' }, { key: 'categoria', label: 'Categoria' },
+      { key: 'titulo', label: 'Título' }, { key: 'descricao', label: 'Descrição' }, { key: 'anexos', label: 'Anexos', numeric: true },
+    ];
+    const rows = shown.map(record => ({
+      data: dateTime(record.occurred_at), projeto: projectName(record.project_id), categoria: kindLabel(record.kind),
+      titulo: record.title, descricao: record.body, anexos: record.attachments.length,
+    }));
+    const info: [string, string][] = [['Cobertura', 'Registros carregados que correspondem aos filtros visíveis.'], ['Linhas', String(rows.length)]];
+    download(`proex-registros-${new Date().toISOString().slice(0, 10)}.xlsx`, toXlsx('Registros', columns, rows, (row, key) => row[key], info));
+  }
   const projectName = (id: string) => String(projects.find(project => project.id === id)?.name ?? 'Projeto');
   const kindCounts = new Map<string, number>(); for (const record of records) kindCounts.set(record.kind, (kindCounts.get(record.kind) ?? 0) + 1);
   const groups: [string, Entry[]][] = []; for (const record of shown) { const key = monthKey(record.occurred_at); const last = groups[groups.length - 1]; if (last && last[0] === key) last[1].push(record); else groups.push([key, [record]]); }
@@ -347,7 +359,7 @@ export default function RecordsPanel({ projects: sourceProjects, items, loans, c
 
     <section className="p-card" aria-labelledby="records-list-title" aria-busy={loading}>
       <div className={styles.historyHead}><div><h3 id="records-list-title">Histórico</h3><p className="p-form-help" style={{ margin: 0 }}>{loading ? 'Consultando registros…' : `${shown.length} de ${records.length} registros carregados${filters.from || filters.to ? ' no período escolhido' : ''}`}</p></div>
-        <div className={styles.historyActions}><button type="button" className="p-button p-button-subtle" onClick={() => window.location.assign('/?module=reports')}><BarChart3 size={16} />Central de relatórios</button><button type="button" className="p-button p-button-subtle" disabled={!shown.length} onClick={() => download(`proex-registros-${new Date().toISOString().slice(0, 10)}.csv`, toCsv([{ key: 'data', label: 'Data (Brasília)' }, { key: 'projeto', label: 'Projeto' }, { key: 'categoria', label: 'Categoria' }, { key: 'titulo', label: 'Título' }, { key: 'descricao', label: 'Descrição' }, { key: 'anexos', label: 'Anexos', numeric: true }], shown.map(record => ({ data: dateTime(record.occurred_at), projeto: projectName(record.project_id), categoria: kindLabel(record.kind), titulo: record.title, descricao: record.body, anexos: record.attachments.length })), (row, key) => row[key]))}><Download size={16} />Exportar CSV</button></div></div>
+        <div className={styles.historyActions}><button type="button" className="p-button p-button-subtle" onClick={() => window.location.assign('/?module=reports')}><BarChart3 size={16} />Central de relatórios</button><button type="button" className="p-button p-button-subtle" disabled={loading || !shown.length} onClick={exportHistory}><Download size={16} />Baixar recorte em XLSX</button></div></div>
       <div className={styles.historyFilters}>
         <div className={styles.kindChips} role="group" aria-label="Filtrar por categoria">
           <button type="button" aria-pressed={!category} className={!category ? styles.chipActive : ''} disabled={existingPending} onClick={() => setCategory('')}>Todas <span>{records.length}</span></button>

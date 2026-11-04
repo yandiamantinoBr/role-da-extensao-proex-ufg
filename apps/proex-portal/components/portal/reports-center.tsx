@@ -2,13 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { ArrowDown, ArrowUp, BarChart3, Boxes, CalendarRange, ClipboardList, Columns3, FileJson, FileSpreadsheet, FileText, FolderKanban, LoaderCircle, Printer, Repeat2, Save, Search, Sheet, Trash2, Truck, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, BarChart3, Boxes, CalendarRange, ClipboardList, Columns3, FileJson, FileSpreadsheet, FileText, FolderKanban, LoaderCircle, Printer, Repeat2, Save, Search, Trash2, Truck, X } from 'lucide-react';
 import { areaLabel } from '@/lib/extension-catalog';
 import { quantityTotal } from '@/lib/report-quantities';
 import Image from 'next/image';
 import BrandMark from '@/components/theme/brand-mark';
 import type { ReportPdfPresentation } from './report-pdf';
-import { download, toCsv, toDocx, toJson, toXlsx, type ExportColumn, type ExportRow } from './report-export';
+import { download, toDocx, toJson, toXlsx, type ExportColumn, type ExportRow } from './report-export';
 import styles from './reports-center.module.css';
 
 type DatasetId = 'projects' | 'materials' | 'movements' | 'outflows' | 'outflow_details' | 'loans' | 'records' | 'campaigns' | 'demands' | 'reviews';
@@ -285,7 +285,7 @@ function ReportMetrics({ metrics }: { metrics: readonly Kpi[] }) {
   </dl>;
 }
 
-export function ProjectReportExports({ projectId, projectName, officialUrl }: { projectId: string; projectName?: string; officialUrl?: string }) {
+export function ProjectReportExports({ projectId, projectName, officialUrl, hasLinkedSpreadsheets }: { projectId: string; projectName?: string; officialUrl?: string; hasLinkedSpreadsheets?: boolean }) {
   const pending = useRef<AbortController | null>(null);
   const [exporting, setExporting] = useState<DocumentFormat | 'preview' | null>(null);
   const [preview, setPreview] = useState<{ row: ExportRow; checkedAt: Date } | null>(null);
@@ -354,6 +354,10 @@ export function ProjectReportExports({ projectId, projectName, officialUrl }: { 
         <button type="button" className="p-button p-button-subtle" disabled={!!exporting} onClick={() => void save('xlsx')}><FileSpreadsheet size={16} aria-hidden="true"/>Excel (XLSX)</button>
         <button type="button" className="p-button p-button-subtle" disabled={!!exporting} onClick={() => void save('docx')}><FileText size={16} aria-hidden="true"/>Word (DOCX)</button>
       </div>
+      {hasLinkedSpreadsheets && <div className={styles.projectReportActions}>
+        <p className={styles.reportHelp}>Para usar no Google Sheets, importe o XLSX em uma planilha que você pode editar.</p>
+        <a className="p-button p-button-subtle" href="#project-spreadsheets">Planilhas do projeto</a>
+      </div>}
       <div id="project-report-preview" className={styles.projectPreview}>
         {summary && previewRow && preview && <>
           <div className={styles.previewHead}>
@@ -495,7 +499,7 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
   const reportBrand = projectBrandFor(reportProject?.id, reportProjectName, reportProject?.official_url);
   const exportColumns: Column[] = chosen;
   const stamp = new Date().toISOString().slice(0, 10);
-  const fileBase = `proex-${dataset}-${stamp}`;
+  const fileBase = `proex-${dataset}-${stamp}${truncated ? '-parcial' : ''}`;
   const exportValue = (row: ExportRow, key: string) => { const column = config.columns.find(item => item.key === key); const value = valueOf(row, key); return column?.date ? dateLabel(value) : column?.numeric ? reportNumber(value) : value; };
   const positionOnly = dataset === 'projects' || dataset === 'materials';
   let periodLabel = 'Todo o período';
@@ -629,7 +633,6 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
         <button type="button" className="p-button p-button-primary" disabled={loading || !chosen.length || !sorted.length || !!exporting} onClick={() => download(`${fileBase}.xlsx`, toXlsx(config.label, exportColumns, sorted, exportValue, info))}><FileSpreadsheet size={16} />Excel</button>
         <button type="button" className="p-button p-button-subtle" disabled={loading || !chosen.length || !sorted.length || !!exporting} onClick={() => void exportDocument('pdf')}>{exporting === 'pdf' ? <LoaderCircle size={16} className="animate-spin" /> : <FileText size={16} />}PDF</button>
         <button type="button" className="p-button p-button-subtle" disabled={loading || !chosen.length || !sorted.length || !!exporting} onClick={() => void exportDocument('docx')}>{exporting === 'docx' ? <LoaderCircle size={16} className="animate-spin" /> : <FileText size={16} />}Word</button>
-        <button type="button" className="p-button p-button-subtle" disabled={loading || !chosen.length || !sorted.length || !!exporting} onClick={() => download(`${fileBase}${truncated ? '-parcial' : ''}.csv`, toCsv(exportColumns, sorted, exportValue))}><Sheet size={16} />CSV</button>
         <button type="button" className="p-button p-button-subtle" disabled={loading || !chosen.length || !sorted.length || !!exporting} onClick={() => download(`${fileBase}.json`, toJson({ relatorio: config.label, filtros: Object.fromEntries(info) }, exportColumns, sorted, exportValue))}><FileJson size={16} />JSON</button>
         <button type="button" className="p-button p-button-subtle" disabled={loading || !chosen.length || !sorted.length || !!exporting} onClick={print}><Printer size={16} />Imprimir</button>
       </div>

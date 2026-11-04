@@ -3,6 +3,7 @@ import { accessibleProjects, getActor, requireCapability, projectAuthoritySql } 
 import { all, csv, type Row } from '@/lib/database';
 import { HttpError, publicError } from '@/lib/errors';
 import { database } from '@/lib/platform';
+import { toXlsx } from '@/components/portal/report-export';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,6 +24,8 @@ export async function GET(request: Request): Promise<Response> {
     if (!['participations', 'stock', 'loans'].includes(kind)) {
       throw new HttpError(400, 'Escolha uma exportação válida.', 'invalid_export');
     }
+    const format = url.searchParams.get('format') ?? 'csv';
+    if (format !== 'csv' && format !== 'xlsx') throw new HttpError(400, 'Escolha um formato de exportação válido.', 'invalid_export_format');
     const projectId = url.searchParams.get('projectId');
     requireCapability(actor, 'reports.read', projectId === null ? undefined : projectId);
     const projects = projectId === null ? accessibleProjects(actor, 'reports.read') : [projectId];
@@ -74,10 +77,13 @@ export async function GET(request: Request): Promise<Response> {
         WHERE ${scope.sql} GROUP BY l.project_id,l.item_id,l.action_name,l.starts_at,l.ends_at,l.status
         ORDER BY l.starts_at,pr.name,i.name`, scope.params);
     }
-    return new Response(csv(rows), {
+    const content = format === 'xlsx'
+      ? toXlsx('Registros', Object.keys(rows[0] ?? { sem_registros: null }).map(key => ({ key, label: key })), rows, (row, key) => row[key], [['Linhas', String(rows.length)]])
+      : csv(rows);
+    return new Response(content, {
       headers: {
-        'Content-Type': 'text/csv; charset=utf-8',
-        'Content-Disposition': `attachment; filename="proex-${kind}-${new Date().toISOString().slice(0, 10)}.csv"`,
+        'Content-Type': typeof content === 'string' ? 'text/csv; charset=utf-8' : content.type,
+        'Content-Disposition': `attachment; filename="proex-${kind}-${new Date().toISOString().slice(0, 10)}.${format}"`,
         'Cache-Control': 'private, no-store',
         'X-Content-Type-Options': 'nosniff',
       },
