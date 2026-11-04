@@ -7,6 +7,7 @@ export function database():D1Database{if(!env.DB)throw new HttpError(503,'O banc
 export function bucket():R2Bucket{if(!env.BUCKET)throw new HttpError(503,'O armazenamento de anexos ainda não está disponível.');return env.BUCKET;}
 export function ownerEmail():string|undefined{return vars().OWNER_EMAIL;}
 
+export function taskTriageEnabled():boolean{return vars().PROEX_JEV_TASK_TRIAGE==='1';}
 export function inviteSecret():string|undefined{return vars().BETTER_AUTH_SECRET;}
 /** Server-only routing for a single opt-in organization. */
 export function speechEnvironment():SpeechEnvironment {

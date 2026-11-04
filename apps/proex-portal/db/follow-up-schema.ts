@@ -15,10 +15,10 @@ export const followupTeamMembers = sqliteTable('followup_team_members', {
 },t=>[uniqueIndex('followup_team_member_active_idx').on(t.teamId,t.userId).where(sql`${t.removedAt} IS NULL`)]);
 export const followupTasks = sqliteTable('followup_tasks', {
  id:text('id').primaryKey().notNull(), organizationId:text('organization_id').notNull().references(()=>organizations.id), projectId:text('project_id').references(()=>projects.id),
- title:text('title').notNull(),body:text('body').notNull().default(''),priority:text('priority').notNull().default('medium'),status:text('status').notNull().default('open'),dueAt:text('due_at'),
+ title:text('title').notNull(),body:text('body').notNull().default(''),priority:text('priority').notNull().default('medium'),importance:text('importance'),status:text('status').notNull().default('open'),dueAt:text('due_at'),
  campaignId:text('campaign_id').references(()=>campaigns.id),itemId:text('item_id').references(()=>items.id),loanId:text('loan_id').references(()=>loans.id),
  version:integer('version').notNull().default(1),createdBy:text('created_by').notNull(),createdAt:text('created_at').notNull(),updatedAt:text('updated_at').notNull(),
-},t=>[index('followup_tasks_scope_idx').on(t.organizationId,t.projectId,t.status,t.updatedAt,t.id),check('followup_task_title',sql`length(${t.title}) BETWEEN 1 AND 160`),check('followup_task_body',sql`length(${t.body})<=4000`),check('followup_task_priority',sql`${t.priority} IN ('high','medium','low')`),check('followup_task_status',sql`${t.status} IN ('open','in_progress','blocked','completed','cancelled')`),check('followup_task_version',sql`${t.version}>0`),check('followup_task_references',sql`${t.projectId} IS NOT NULL OR (${t.campaignId} IS NULL AND ${t.itemId} IS NULL AND ${t.loanId} IS NULL)`)]);
+},t=>[index('followup_tasks_scope_idx').on(t.organizationId,t.projectId,t.status,t.updatedAt,t.id),check('followup_task_title',sql`length(${t.title}) BETWEEN 1 AND 160`),check('followup_task_body',sql`length(${t.body})<=4000`),check('followup_task_priority',sql`${t.priority} IN ('high','medium','low')`),check('followup_task_importance',sql`${t.importance} IN ('high','medium','low')`),check('followup_task_status',sql`${t.status} IN ('open','in_progress','blocked','completed','cancelled')`),check('followup_task_version',sql`${t.version}>0`),check('followup_task_references',sql`${t.projectId} IS NOT NULL OR (${t.campaignId} IS NULL AND ${t.itemId} IS NULL AND ${t.loanId} IS NULL)`)]);
 export const followupAssignees = sqliteTable('followup_assignees', {
  id:text('id').primaryKey().notNull(),taskId:text('task_id').notNull().references(()=>followupTasks.id),userId:text('user_id').references(()=>portalUsers.userId),teamId:text('team_id').references(()=>followupTeams.id),createdAt:text('created_at').notNull(),removedAt:text('removed_at'),
 },t=>[uniqueIndex('followup_assignee_active_idx').on(t.taskId,sql`COALESCE(${t.userId},'')`,sql`COALESCE(${t.teamId},'')`).where(sql`${t.removedAt} IS NULL`),check('followup_assignee_one',sql`(${t.userId} IS NULL)!=(${t.teamId} IS NULL)`)]);
@@ -50,3 +50,11 @@ export const followupHiddenPending = sqliteTable('followup_hidden_pending', {
 export const followupWorkGrants = sqliteTable('followup_work_grants', {
  id:text('id').primaryKey().notNull(),taskId:text('task_id').notNull().references(()=>followupTasks.id),userId:text('user_id').notNull().references(()=>portalUsers.userId),grantorMemberId:text('grantor_member_id').notNull().references(()=>members.id),createdBy:text('created_by').notNull(),createdAt:text('created_at').notNull(),revokedAt:text('revoked_at'),
 },t=>[uniqueIndex('followup_work_grants_active_idx').on(t.taskId,t.userId).where(sql`${t.revokedAt} IS NULL`)]);
+
+export const aiTaskTriageCalls = sqliteTable('ai_task_triage_calls', {
+ id:text('id').primaryKey().notNull(), actorId:text('actor_id').notNull(), organizationId:text('organization_id').notNull().references(()=>organizations.id),
+ taskId:text('task_id').notNull().references(()=>followupTasks.id), taskVersion:integer('task_version').notNull(), configRevision:integer('config_revision').notNull(),
+ fingerprint:text('fingerprint').notNull(), admissionNonce:text('admission_nonce').notNull(), status:text('status').notNull(), model:text('model').notNull(),
+ reservedTokens:integer('reserved_tokens').notNull(), reservedUsdMicros:integer('reserved_usd_micros').notNull(), inputTokens:integer('input_tokens'),
+ proposalJson:text('proposal_json'), day:text('day').notNull(), expiresAt:integer('expires_at').notNull(), createdAt:text('created_at').notNull(),
+},t=>[index('ai_task_triage_usage_idx').on(t.organizationId,t.day),check('ai_task_triage_status',sql`${t.status} IN ('reserved','ready','abstained','applied','failed')`)]);
