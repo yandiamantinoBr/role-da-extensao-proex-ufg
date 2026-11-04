@@ -158,7 +158,7 @@ function sincronizar_() {
         var r = results[change.changeKey];
         if (r && (r.status === 'conflict' || r.status === 'rejected')) conflicts.push(conflito_(r.conflictId || change.changeKey, change.table, change.id, change.expectedVersion, '', (r.code || r.status) + ' · conteúdo desejado: ' + JSON.stringify(change.fields)));
       });
-      gravarRetornoOperacoes_(ss, ops.rows, results);
+      conflicts = conflicts.concat(gravarRetornoOperacoes_(ss, ops.rows, results));
 
       // 3. Exportação tabela por tabela; a base de cada tabela é gravada logo após sua releitura.
       for (var i = 0; i < schemas.length; i++) {
@@ -203,14 +203,18 @@ function sincronizar_() {
 
 /** Envia em lotes de 25; se um lote for recusado por uma linha, reenvia linha a linha. */
 function aplicar_(changes, runId) {
-  var results = {};
+  var results = Object.create(null);
   for (var i = 0; i < changes.length; i += 25) {
     var batch = changes.slice(i, i + 25), response;
     try {
       response = chamar_('proex_sync_apply', { connectionId: 'google-sheets', runId: runId, changes: batch });
       response.results.forEach(function (r) { results[r.changeKey] = r; });
     } catch (error) {
-      if (!isolavel_(error) || batch.length === 1) throw error;
+      if (!isolavel_(error)) throw error;
+      if (batch.length === 1) {
+        results[batch[0].changeKey] = { changeKey: batch[0].changeKey, status: 'rejected', code: error.code };
+        continue;
+      }
       batch.forEach(function (change) {
         try {
           chamar_('proex_sync_apply', { connectionId: 'google-sheets', runId: runId, changes: [change] }).results.forEach(function (r) { results[r.changeKey] = r; });
@@ -298,11 +302,17 @@ function coletarOperacoes_(ss) {
   var sheet = ss.getSheetByName(OPERATIONS), rows = [], changes = [];
   if (sheet.getLastRow() < 2) return { rows: rows, changes: changes };
   var values = sheet.getRange(2, 1, sheet.getLastRow() - 1, OPERATIONS_HEADER.length).getDisplayValues();
+  var pendingCounts = Object.create(null);
+  values.forEach(function (cells) {
+    var key = cells[0].trim();
+    if (key && !cells[3]) pendingCounts[key] = (pendingCounts[key] || 0) + 1;
+  });
   values.forEach(function (cells) {
     var key = cells[0].trim(), action = cells[1].trim();
     if (!key || cells[3]) return; // linha vazia ou já processada
-    var entry = { changeKey: key };
+    var entry = { changeKey: key, action: action, rawInput: cells[2] };
     if (!/^[A-Za-z0-9_-]{8,120}$/.test(key)) { entry.local = { status: 'rejected', code: 'invalid_change_key' }; rows.push(entry); return; }
+    if (pendingCounts[key] > 1) { entry.local = { status: 'rejected', code: 'duplicate_pending_change_key' }; rows.push(entry); return; }
     try {
       var input = JSON.parse(cells[2] || '{}');
       if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('input');
@@ -313,20 +323,36 @@ function coletarOperacoes_(ss) {
   return { rows: rows, changes: changes };
 }
 
-/** Grava o retorno localizando cada operação pela chave, mesmo que linhas tenham sido movidas. */
+/** O recibo pertence à chave e ao conteúdo enviado, mesmo quando as linhas mudam de posição. */
 function gravarRetornoOperacoes_(ss, rows, results) {
-  if (!rows.length) return;
+  var conflicts = [];
+  if (!rows.length) return conflicts;
   var sheet = ss.getSheetByName(OPERATIONS);
   var current = sheet.getRange(2, 1, Math.max(sheet.getLastRow() - 1, 1), 4).getDisplayValues();
-  var pending = current.map(function (r) { return r[3] ? null : r[0].trim(); }); // só linhas ainda sem retorno
+  var used = Object.create(null);
+  function pendingKey(cells, entry) { return !cells[3] && cells[0].trim() === entry.changeKey; }
+  function sameInput(cells, entry) { return cells[1].trim() === entry.action && cells[2] === entry.rawInput; }
   rows.forEach(function (entry) {
-    var r = entry.local || results[entry.changeKey], index = pending.indexOf(entry.changeKey);
-    if (!r || index < 0) return;
-    pending[index] = null;
+    var r = entry.local || results[entry.changeKey];
+    if (!r) return;
+    var index = current.findIndex(function (cells, i) { return !used[i] && pendingKey(cells, entry) && sameInput(cells, entry); });
+    if (index < 0) index = current.findIndex(function (cells, i) { return !used[i] && pendingKey(cells, entry); });
+    if (index < 0) {
+      if (!entry.local) conflicts.push(conflito_('', OPERATIONS, r.entityId || '', '', '', 'operation_row_changed · A linha não está mais pendente com a chave enviada. Retorno anterior: ' + r.status + '. Confira o Portal antes de repetir.'));
+      return;
+    }
+    used[index] = true;
     var range = sheet.getRange(index + 2, 4, 1, 3);
     range.setNumberFormat('@');
+    var live = sheet.getRange(index + 2, 1, 1, 4).getDisplayValues()[0];
+    if (!pendingKey(live, entry) || !sameInput(live, entry)) {
+      if (pendingKey(live, entry)) range.setValues([['conflict', '', 'operation_row_changed']]);
+      conflicts.push(conflito_('', OPERATIONS, r.entityId || '', '', '', 'operation_row_changed · O conteúdo da operação mudou durante o envio. Retorno anterior: ' + r.status + '. Confira o Portal antes de usar uma nova chave.'));
+      return;
+    }
     range.setValues([[r.status || '', r.entityId || '', r.code || '']]);
   });
+  return conflicts;
 }
 
 function escreverTabela_(ss, schema, rows) {
