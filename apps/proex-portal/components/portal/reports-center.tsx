@@ -146,7 +146,8 @@ const STATUS: Partial<Record<DatasetId, Record<string, string>>> = {
   reviews: { open: 'Aberta', completed: 'Concluída' },
 };
 const MONTHS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
-const PRESETS_KEY = 'proex.reports.presets.v1';
+const LEGACY_PRESETS_KEY = 'proex.reports.presets.v1';
+const PRESETS_PREFIX = 'proex.reports.presets.v2:';
 const PAGE_SIZES = [25, 50, 100];
 const EMPTY_ROWS: ExportRow[] = [];
 
@@ -169,8 +170,19 @@ function reportNumber(value: unknown): number | null {
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
 }
-function readPresets(): Preset[] { try { const parsed = JSON.parse(localStorage.getItem(PRESETS_KEY) || '[]'); return Array.isArray(parsed) ? parsed.slice(0, 20) : []; } catch { return []; } }
-function writePresets(presets: Preset[]) { try { localStorage.setItem(PRESETS_KEY, JSON.stringify(presets)); } catch { /* armazenamento indisponível */ } }
+function readPresets(key: string): Preset[] {
+  try {
+    localStorage.removeItem(LEGACY_PRESETS_KEY);
+    const parsed: unknown = JSON.parse(localStorage.getItem(key) || '[]');
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(preset => preset && typeof preset.name === 'string' && Object.hasOwn(DATASETS, preset.dataset) &&
+      Array.isArray(preset.columns) && preset.columns.every((column: unknown) => typeof column === 'string') &&
+      typeof preset.groupBy === 'string' && typeof preset.measure === 'string' && typeof preset.search === 'string').slice(0, 20);
+  } catch { return []; }
+}
+function writePresets(key: string, presets: Preset[]) {
+  try { localStorage.setItem(key, JSON.stringify(presets)); } catch { /* armazenamento indisponível */ }
+}
 
 function ChartTooltip({ active, payload, label, unit }: { active?: boolean; payload?: { name?: string; value?: number; color?: string }[]; label?: string; unit: string }) {
   if (!active || !payload?.length) return null;
@@ -349,8 +361,8 @@ export function ProjectReportExports({ projectId, projectName, officialUrl }: { 
   </section>;
 }
 
-export default function ReportsCenter({ projectId, unitId, area, from, to, scopeLabel, available, initialDataset, projectIdentity }: {
-  projectId: string; unitId: string; area: string; from: string; to: string; scopeLabel: string; available: DatasetId[]; initialDataset?: DatasetId; projectIdentity?: ExportRow;
+export default function ReportsCenter({ userId, projectId, unitId, area, from, to, scopeLabel, available, initialDataset, projectIdentity }: {
+  userId: string; projectId: string; unitId: string; area: string; from: string; to: string; scopeLabel: string; available: DatasetId[]; initialDataset?: DatasetId; projectIdentity?: ExportRow;
 }) {
   const datasets = ORDER.filter(id => available.includes(id));
   const [dataset, setDataset] = useState<DatasetId>(initialDataset && datasets.includes(initialDataset) ? initialDataset : datasets[0] ?? 'projects');
@@ -362,22 +374,31 @@ export default function ReportsCenter({ projectId, unitId, area, from, to, scope
   const [groupBy, setGroupBy] = useState(config.groups[0]);
   const [measure, setMeasure] = useState('__count__');
   const [focus, setFocus] = useState('');
-  const [search, setSearch] = useState('');
+  const [searchState, setSearchState] = useState({ userId, value: '' });
+  const search = searchState.userId === userId ? searchState.value : '';
+  const setSearch = (value: string) => setSearchState({ userId, value });
   const [measurementUnit, setMeasurementUnit] = useState('');
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null);
   const [page, setPage] = useState(0), [pageSize, setPageSize] = useState(25);
-  const queryKey = JSON.stringify([dataset, projectId, unitId, area, from, to, assetDetails, includeNotes, outflowType, returnState]);
+  const queryKey = JSON.stringify([userId, dataset, projectId, unitId, area, from, to, assetDetails, includeNotes, outflowType, returnState]);
   const [loadedQueryKey, setLoadedQueryKey] = useState('');
   const [loadedRows, setRows] = useState<ExportRow[]>([]), [truncated, setTruncated] = useState(false);
   const [fetching, setLoading] = useState(true), [error, setError] = useState('');
   const rows = loadedQueryKey === queryKey ? loadedRows : EMPTY_ROWS;
   const loading = fetching || loadedQueryKey !== queryKey;
-  const [presets, setPresets] = useState<Preset[]>([]);
-  const [presetName, setPresetName] = useState('');
+  const presetKey = userId ? PRESETS_PREFIX + encodeURIComponent(userId) : '';
+  const [presetState, setPresetState] = useState<{ key: string; values: Preset[]; name: string }>({ key: '', values: [], name: '' });
+  const presetsReady = Boolean(presetKey) && presetState.key === presetKey;
+  const presetName = presetsReady ? presetState.name : '';
+  const visiblePresets = presetsReady ? presetState.values.filter(preset => datasets.includes(preset.dataset)) : [];
   const [exporting, setExporting] = useState<'pdf' | 'docx' | null>(null);
   const chartsRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => { const timer = window.setTimeout(() => setPresets(readPresets()), 0); return () => window.clearTimeout(timer); }, []);
+  useEffect(() => {
+    if (!presetKey) return;
+    const timer = window.setTimeout(() => setPresetState({ key: presetKey, values: readPresets(presetKey), name: '' }), 0);
+    return () => window.clearTimeout(timer);
+  }, [presetKey]);
   useEffect(() => {
     const controller = new AbortController();
     const query = new URLSearchParams({ dataset });
@@ -396,6 +417,7 @@ export default function ReportsCenter({ projectId, unitId, area, from, to, scope
   }, [dataset, projectId, unitId, area, from, to, queryKey, assetDetails, includeNotes, outflowType, returnState]);
 
   function chooseDataset(id: DatasetId, preset?: Preset) {
+    if (!datasets.includes(id)) return;
     const next = DATASETS[id];
     setDataset(id); setAssetDetails(false); setIncludeNotes(false); setOutflowType('all'); setReturnState('all'); setColumns(preset?.columns.filter(key => next.columns.some(column => column.key === key)) ?? next.defaults);
     setGroupBy(preset && next.groups.includes(preset.groupBy) ? preset.groupBy : next.groups[0]);
@@ -480,11 +502,18 @@ export default function ReportsCenter({ projectId, unitId, area, from, to, scope
 
   function toggleColumn(key: string) { setColumns(current => current.includes(key) ? current.filter(item => item !== key) : config.columns.map(column => column.key).filter(item => item === key || current.includes(item))); }
   function savePreset() {
-    const name = presetName.trim().slice(0, 60); if (!name) return;
-    const next = [{ name, dataset, columns, groupBy, measure, search }, ...presets.filter(preset => preset.name !== name)].slice(0, 20);
-    setPresets(next); writePresets(next); setPresetName('');
+    const name = presetName.trim().slice(0, 60);
+    if (!presetsReady || !name) return;
+    const values = [{ name, dataset, columns, groupBy, measure, search }, ...presetState.values.filter(preset => preset.name !== name)].slice(0, 20);
+    setPresetState({ key: presetKey, values, name: '' });
+    writePresets(presetKey, values);
   }
-  function removePreset(name: string) { const next = presets.filter(preset => preset.name !== name); setPresets(next); writePresets(next); }
+  function removePreset(name: string) {
+    if (!presetsReady) return;
+    const values = presetState.values.filter(preset => preset.name !== name);
+    setPresetState({ ...presetState, values });
+    writePresets(presetKey, values);
+  }
   function print() {
     if (loading || !chosen.length) return;
     const popup = window.open('', '_blank', 'width=1100,height=800'); if (!popup) { setError('O navegador bloqueou a janela de impressão. Permita pop-ups para este site e tente de novo.'); return; }
@@ -515,7 +544,7 @@ export default function ReportsCenter({ projectId, unitId, area, from, to, scope
     <div className={styles.primaryControls}>
       <label className={`p-field ${styles.search}`}><span>Buscar nas linhas</span><span className={styles.searchBox}><Search size={15} /><input value={search} onChange={event => { setSearch(event.target.value); setPage(0); }} placeholder="Nome, material, título, observação…" />{search && <button type="button" aria-label="Limpar busca" onClick={() => setSearch('')}><X size={14} /></button>}</span></label>
     </div>
-    <details className={styles.options}><summary>Ajustar recorte e colunas <span>{chosen.length} colunas · {presets.length} modelos</span>{activeOptions.length > 0 && <small>{activeOptions.join(' · ')}</small>}</summary><div className={styles.optionsBody}>
+    <details className={styles.options}><summary>Ajustar recorte e colunas <span>{chosen.length} colunas · {visiblePresets.length} modelos</span>{activeOptions.length > 0 && <small>{activeOptions.join(' · ')}</small>}</summary><div className={styles.optionsBody}>
     {dataset === 'materials' && <label className="p-form-help"><input type="checkbox" checked={assetDetails} onChange={event => { setAssetDetails(event.target.checked); setColumns(DATASETS.materials.defaults); setRows([]); setFocus(''); setMeasure('__count__'); }}/>{' '}Consultar metadados patrimoniais privados (somente projetos com permissão vigente de inventário). A referência de responsável, processo e valor documentado só entra na exportação ao escolher essas colunas.</label>}
     {dataset === 'outflow_details' && <div className="space-y-3"><p className="p-form-help">A ação aparece quando foi vinculada no registro. O operador é quem registrou a saída, com nome atual do perfil; beneficiários e contatos não são consultados. Saldo e unidade são os atuais do cadastro.</p><label className="p-form-help"><input type="checkbox" checked={includeNotes} onChange={event => { setIncludeNotes(event.target.checked); setColumns(DATASETS.outflow_details.defaults); setRows([]); setFocus(''); setMeasure('__count__'); setPage(0); }}/>{' '}Disponibilizar motivos, observações e condições com permissão operacional vigente (textos livres podem conter dados pessoais). Selecione essas colunas e revise seu conteúdo antes de exportar.</label></div>}
     <div className={styles.controls}>
@@ -533,8 +562,8 @@ export default function ReportsCenter({ projectId, unitId, area, from, to, scope
     </div>
     <div className={styles.presets}>
       <span><Save size={14} />Modelos salvos</span>
-      {presets.length ? presets.map(preset => <span key={preset.name} className={styles.preset}><button type="button" onClick={() => chooseDataset(preset.dataset, preset)} title={`${DATASETS[preset.dataset]?.label}`}>{preset.name}</button><button type="button" aria-label={`Excluir modelo ${preset.name}`} onClick={() => removePreset(preset.name)}><Trash2 size={13} /></button></span>) : <small>Nenhum ainda. Salve a combinação atual de assunto, colunas e agrupamento.</small>}
-      <form onSubmit={event => { event.preventDefault(); savePreset(); }}><input value={presetName} onChange={event => setPresetName(event.target.value)} placeholder="Nome do modelo" aria-label="Nome do modelo" maxLength={60} /><button type="submit" className="p-button p-button-subtle" disabled={!presetName.trim()}>Salvar</button></form>
+      {visiblePresets.length ? visiblePresets.map(preset => <span key={preset.name} className={styles.preset}><button type="button" onClick={() => chooseDataset(preset.dataset, preset)} title={`${DATASETS[preset.dataset]?.label}`}>{preset.name}</button><button type="button" aria-label={`Excluir modelo ${preset.name}`} onClick={() => removePreset(preset.name)}><Trash2 size={13} /></button></span>) : <small>Nenhum ainda. Salve a combinação atual de assunto, colunas e agrupamento.</small>}
+      <form onSubmit={event => { event.preventDefault(); savePreset(); }}><input value={presetName} disabled={!presetsReady} onChange={event => setPresetState({ ...presetState, name: event.target.value })} placeholder="Nome do modelo" aria-label="Nome do modelo" maxLength={60} /><button type="submit" className="p-button p-button-subtle" disabled={!presetsReady || !presetName.trim()}>Salvar</button></form>
     </div>
 
     </div></details>

@@ -10,7 +10,7 @@ function pure(file) { const compiledModule = { exports: {} }; vm.runInNewContext
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const text = node => typeof node === 'string' ? node : Array.isArray(node) ? node.map(text).join('') : node && typeof node === 'object' ? text(node.props?.children) : '';
 const exportNames = ['Excel', 'PDF', 'Word', 'CSV', 'JSON', 'Imprimir'];
-const base = { projectId: 'project-a', unitId: '', area: '', from: '', to: '', scopeLabel: 'Projeto A', available: ['materials', 'loans'] };
+const base = { userId: 'report-user', projectId: 'project-a', unitId: '', area: '', from: '', to: '', scopeLabel: 'Projeto A', available: ['materials', 'loans'] };
 const row = project => ({ id: `item-${project}`, projeto: `Projeto ${project.toUpperCase()}`, material: `Material ${project.toUpperCase()}`, classe: 'gift', unidade_medida: 'unidade', saldo: 9, reservado: 0, disponivel: 9 });
 
 /** Run the real TSX and exporters with a minimal hook scheduler and virtual DOM.
@@ -18,7 +18,7 @@ const row = project => ({ id: `item-${project}`, projeto: `Projeto ${project.toU
  * and responses whose body resolves AFTER abort can both be exercised deterministically.
  * No DOM, network, filesystem writes or framework build is involved.
  */
-function harness() {
+function harness(storage = new Map()) {
  const slots = [], pendingEffects = [], requests = [], downloads = [], pdfInputs = []; let index = 0, tree, opened = 0;
  const same = (left, right) => left?.length === right?.length && left?.every((value, i) => Object.is(value, right[i]));
  const hooks = {
@@ -33,7 +33,7 @@ function harness() {
  const require = name => name === 'react' ? hooks : name === 'react/jsx-runtime' ? jsx : name === './report-export' ? exporters : name === './report-pdf' ? { toPdf(...args) { pdfInputs.push(args); return new Blob(['synthetic pdf'], { type: 'application/pdf' }); } } : name === '@/lib/report-quantities' ? pure('lib/report-quantities.ts') : name === '@/lib/extension-catalog' ? { areaLabel: value => value } : name.endsWith('.css') ? { default: new Proxy({}, { get: (_object, key) => key }) } : new Proxy({}, { get: (_object, key) => String(key) });
  const compiledModule = { exports: {} };
  const window = { setTimeout(callback) { callback(); return 1; }, clearTimeout() {}, open() { opened++; return null; } };
- vm.runInNewContext(transpile('components/portal/reports-center.tsx'), { module: compiledModule, exports: compiledModule.exports, require, Blob, Intl, Date, Map, Set, URL, URLSearchParams, AbortController, window, localStorage: { getItem: () => null }, fetch: (url, init) => new Promise((resolve, reject) => requests.push({ url, init, resolve, reject })) });
+ vm.runInNewContext(transpile('components/portal/reports-center.tsx'), { module: compiledModule, exports: compiledModule.exports, require, Blob, Intl, Date, Map, Set, URL, URLSearchParams, AbortController, window, localStorage: { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value), removeItem: key => storage.delete(key) }, fetch: (url, init) => new Promise((resolve, reject) => requests.push({ url, init, resolve, reject })) });
  function nodes() { const result = []; const visit = node => { if (!node || typeof node !== 'object') return; if (Array.isArray(node)) { node.forEach(visit); return; } result.push(node); visit(node.props?.children); }; visit(tree); return result; }
  return {
   requests, downloads, pdfInputs,
@@ -358,5 +358,47 @@ test('the CONPEEX mark requires the official project ID, edition and address for
   h.requests.at(-1).resolve({ok:true,json:async()=>({dataset:'projects',rows:[{id:projectId,projeto:projectName}],truncated:false})});
   await tick();
   assert.equal(h.pdfInputs[1][5].presentation.projectBrand,'conpeex-2026');
+ } finally { h.dispose(); }
+});
+
+test('report presets and unsaved search are isolated across account changes before any effects', () => {
+ const legacy = 'proex.reports.presets.v1';
+ const ownerKey = 'proex.reports.presets.v2:report-user';
+ const nextKey = 'proex.reports.presets.v2:other%3Auser';
+ const preset = (name, search) => JSON.stringify([{name,search,dataset:'materials',columns:['projeto'],groupBy:'projeto',measure:'__count__'}]);
+ const storage = new Map([[legacy,preset('Modelo compartilhado','termo legado')],[ownerKey,preset('Modelo da primeira pessoa','termo privado')],[nextKey,preset('Modelo da segunda pessoa','pesquisa própria')]]);
+ const h = harness(storage), second = {...base,userId:'other:user'};
+ const field = (tree, label) => nodesInside(tree).find(node => node.props?.['aria-label'] === label);
+ const form = tree => nodesInside(tree).find(node => node.type === 'form' && field(node,'Nome do modelo'));
+ try {
+  h.render(); h.flushEffects();
+  let tree = h.render();
+  assert.equal(storage.has(legacy),false);
+  assert.ok(h.button('Modelo da primeira pessoa'));
+  assert.equal(h.text().includes('Modelo compartilhado'),false);
+  h.button('Modelo da primeira pessoa').props.onClick();
+  tree = h.render();
+  assert.equal(h.input('Buscar nas linhas').props.value,'termo privado');
+  field(tree,'Nome do modelo').props.onChange({target:{value:'rascunho privado'}});
+  tree = h.render(second);
+  assert.equal(h.text().includes('Modelo da primeira pessoa'),false);
+  assert.equal(h.input('Buscar nas linhas').props.value,'');
+  assert.equal(field(tree,'Nome do modelo').props.value,'');
+  assert.equal(h.button('Salvar').props.disabled,true);
+  form(tree).props.onSubmit({preventDefault(){}});
+  assert.equal(storage.get(nextKey),preset('Modelo da segunda pessoa','pesquisa própria'));
+
+  h.flushEffects();
+  tree = h.render(second);
+  assert.ok(h.button('Modelo da segunda pessoa'));
+  field(tree,'Nome do modelo').props.onChange({target:{value:'Novo modelo'}});
+  h.input('Buscar nas linhas').props.onChange({target:{value:'novo termo'}});
+  tree = h.render(second);
+  form(tree).props.onSubmit({preventDefault(){}});
+  assert.equal(JSON.parse(storage.get(nextKey))[0].search,'novo termo');
+  assert.equal(storage.get(ownerKey),preset('Modelo da primeira pessoa','termo privado'));
+  h.render(); h.flushEffects(); h.render();
+  assert.ok(h.button('Modelo da primeira pessoa'));
+  assert.equal(h.text().includes('Novo modelo'),false);
  } finally { h.dispose(); }
 });

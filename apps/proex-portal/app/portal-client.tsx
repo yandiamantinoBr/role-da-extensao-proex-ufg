@@ -893,7 +893,7 @@ export default function PortalClient({ initial }: {
         <button className="p-button p-button-subtle" onClick={() => { setReportFrom(''); setReportTo(''); }}>Todo o período</button>
         <p>Período de todos os relatórios desta página, em datas de Brasília. Contagens de participação, tentativa e entrega usam a data de cada registro.</p>
         </div>
-        <ReportsCenter projectIdentity={projects.find(project => project.id === filter)} initialDataset={canAny('reports.read') ? reportInitialDataset : 'demands'} projectId={filter} unitId={unitFilter} area={areaFilter} from={reportFrom} to={reportTo} available={[
+        <ReportsCenter key={string(user.userId)} userId={string(user.userId)} projectIdentity={projects.find(project => project.id === filter)} initialDataset={canAny('reports.read') ? reportInitialDataset : 'demands'} projectId={filter} unitId={unitFilter} area={areaFilter} from={reportFrom} to={reportTo} available={[
           ...(projects.length ? ['projects' as const] : []),
           ...(canAny('inventory.read', 'reports.read') ? ['materials', 'movements', 'outflows'] as const : []),
           ...(canAny('inventory.read', 'loans.read', 'reports.read') ? ['outflow_details' as const] : []),
