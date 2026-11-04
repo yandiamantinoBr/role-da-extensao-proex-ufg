@@ -22,10 +22,35 @@ function pretty(value: unknown) {
  return date ? new Intl.DateTimeFormat('pt-BR', { timeZone: isCivilDate(value) ? 'UTC' : 'America/Sao_Paulo', day: '2-digit', month: 'short', year: 'numeric' }).format(date) : 'Não informado';
 }
 function localDate(value:unknown){const date=dateOf(value);if(!date)return '';const shifted=new Date(date.getTime()-date.getTimezoneOffset()*60000);return shifted.toISOString().slice(0,16);}
+const scheduleDayShape = /^\d{4}-\d{2}-\d{2}$/;
+const scheduleTimeShape = /^(\d{4}-\d{2}-\d{2})T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/;
+function editableScheduleDay(value: unknown): string {
+ return isCivilDate(value) && value >= '2000-01-01' && value <= '2200-12-31' ? value : '';
+}
+function scheduleEditorDates(row: Row | null) {
+ const fields = [
+  { name: 'startsAt', dayName: 'startsOn', label: 'Início', dayLabel: 'Dia de início', raw: row?.starts_at },
+  { name: 'endsAt', dayName: 'endsOn', label: 'Fim', dayLabel: 'Último dia (incluído)', raw: row?.ends_at },
+ ].map(field => {
+  const raw = typeof field.raw === 'string' ? field.raw : '';
+  return { ...field, raw, timeDay: scheduleTimeShape.exec(raw)?.[1] };
+ });
+ const hasDay = fields.some(field => scheduleDayShape.test(field.raw));
+ const hasTime = fields.some(field => field.timeDay !== undefined);
+ return {
+  allDay: hasDay && !hasTime,
+  fields: fields.map(field => ({
+   ...field,
+   dayValue: hasTime ? '' : editableScheduleDay(field.raw),
+   timeValue: !hasDay && editableScheduleDay(field.timeDay) ? localDate(field.raw) : '',
+  })),
+ };
+}
 function safeUrl(value:unknown){if(typeof value!=='string')return '';try{const url=new URL(value);return url.protocol==='https:'&&!url.username&&!url.password?url.href:'';}catch{return '';}}
 function MetadataForm({editor,projectId,projects,mutate,done}:{editor:Editor;projectId:string;projects:Row[];mutate:Props['mutate'];done:()=>void}){
  const {kind,row}=editor,[saving,setSaving]=useState(false),[error,setError]=useState(''),key=useRef<string|null>(null),formRef=useRef<HTMLFormElement>(null);
- const [allDay, setAllDay] = useState(isCivilDate(row?.starts_at) && isCivilDate(row?.ends_at));
+ const schedule = scheduleEditorDates(row);
+ const [allDay, setAllDay] = useState(schedule.allDay);
  const draft=useFormDraft(formRef,`project-${kind}:${projectId}:${row?.id??'new'}:${row?.version??0}`);
  async function submit(event:FormEvent<HTMLFormElement>){event.preventDefault();if(saving)return;const form=new FormData(event.currentTarget);setSaving(true);setError('');key.current??=crypto.randomUUID();
  try{const payload:Row={projectId,...(row?{id:row.id,expectedVersion:row.version}:{}),operationKey:key.current};const fields=kind==='link'?['label','url','kind']:kind==='call'?['title','referenceCode','description','status','officialUrl']:['title','status','note','url'];for(const name of fields)payload[name]=form.get(name)||'';
@@ -34,13 +59,12 @@ function MetadataForm({editor,projectId,projects,mutate,done}:{editor:Editor;pro
   payload.linkedProjectIds = form.getAll('linkedProjectIds');
  }
  if (kind === 'schedule') {
-  for (const [name, dayName, column] of [['startsAt', 'startsOn', 'starts_at'], ['endsAt', 'endsOn', 'ends_at']]) {
+  for (const { name, dayName, raw, timeValue } of schedule.fields) {
    if (allDay) {
     payload[name] = form.get(dayName);
    } else {
-    const entered = String(form.get(name) ?? ''), previous = row?.[column];
-    payload[name] = previous && !isCivilDate(previous) && entered === localDate(previous)
-      ? previous : new Date(entered).toISOString();
+    const entered = String(form.get(name) ?? '');
+    payload[name] = timeValue && entered === timeValue ? raw : new Date(entered).toISOString();
    }
   }
  }
@@ -54,10 +78,8 @@ function MetadataForm({editor,projectId,projects,mutate,done}:{editor:Editor;pro
    <option value="time">Com horário</option><option value="day">Dia inteiro (sem horário)</option>
   </select></label>
   {/* Keep both pairs mounted so the draft can restore the mode and its dates together. */}
-  <label className="p-field" hidden={allDay} style={allDay ? { display: 'none' } : undefined}><span>Início *</span><input name="startsAt" type="datetime-local" required={!allDay} disabled={allDay} defaultValue={isCivilDate(row?.starts_at) ? '' : localDate(row?.starts_at)}/></label>
-  <label className="p-field" hidden={allDay} style={allDay ? { display: 'none' } : undefined}><span>Fim *</span><input name="endsAt" type="datetime-local" required={!allDay} disabled={allDay} defaultValue={isCivilDate(row?.ends_at) ? '' : localDate(row?.ends_at)}/></label>
-  <label className="p-field" hidden={!allDay} style={!allDay ? { display: 'none' } : undefined}><span>Dia de início *</span><input name="startsOn" type="date" min="2000-01-01" max="2200-12-31" required={allDay} disabled={!allDay} defaultValue={isCivilDate(row?.starts_at) ? row.starts_at : ''}/></label>
-  <label className="p-field" hidden={!allDay} style={!allDay ? { display: 'none' } : undefined}><span>Último dia (incluído) *</span><input name="endsOn" type="date" min="2000-01-01" max="2200-12-31" required={allDay} disabled={!allDay} defaultValue={isCivilDate(row?.ends_at) ? row.ends_at : ''}/></label>
+  {schedule.fields.map(({ name, label, timeValue }) => <label key={name} className="p-field" hidden={allDay} style={allDay ? { display: 'none' } : undefined}><span>{label} *</span><input name={name} type="datetime-local" required={!allDay} disabled={allDay} defaultValue={timeValue}/></label>)}
+  {schedule.fields.map(({ dayName, dayLabel, dayValue }) => <label key={dayName} className="p-field" hidden={!allDay} style={!allDay ? { display: 'none' } : undefined}><span>{dayLabel} *</span><input name={dayName} type="date" min="2000-01-01" max="2200-12-31" required={allDay} disabled={!allDay} defaultValue={dayValue}/></label>)}
  </>}
  </>}
  </div>{kind!=='link'&&<label className="p-field"><span>{kind==='call'?'Finalidade e orientações':'Observação institucional'}</span><textarea name={kind==='call'?'description':'note'} maxLength={kind==='call'?4000:2000} rows={3} defaultValue={row?.[kind==='call'?'description':'note']??''}/><small>Use informações institucionais. Não inclua contatos, documentos ou dados pessoais.</small></label>}

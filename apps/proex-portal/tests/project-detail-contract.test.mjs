@@ -14,15 +14,24 @@ const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.Comm
 const civilDateSource=readFileSync(new URL('../lib/civil-date.ts',import.meta.url),'utf8');
 const civilDateCode=ts.transpileModule(civilDateSource,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
 const civilDates=await import(`data:text/javascript;base64,${Buffer.from(civilDateCode).toString('base64')}`);
-async function renderDetail(relationships,schedule=[]){
+async function renderDetail(relationships,schedule=[],canEdit=false){
  const slots=[],effects=[];let index=0,tree;
  const hooks={useState(initial){const key=index++;if(!(key in slots))slots[key]={value:typeof initial==='function'?initial():initial};return[slots[key].value,value=>{slots[key].value=typeof value==='function'?value(slots[key].value):value;}];},useRef(initial){const key=index++;return(slots[key]??={value:{current:initial}}).value;},useEffect(fn){const key=index++;if(!(key in slots)){slots[key]=true;effects.push(fn);}}};
  const jsx=(type,props)=>({type,props}),compiled={exports:{}};
- const payload={project:{id:'project-a',name:'Projeto sintético',status:'active',lifecycle:'active',scope:'internal',starts_at:'2026-10-31T13:00:00.000Z',description:'Projeto de contrato'},types:[],links:[],calls:[],schedule,versions:[],relatedProjects:[],organizationalUnits:[],permissions:{canEdit:false},relationships};
+ const payload={project:{id:'project-a',name:'Projeto sintético',status:'active',lifecycle:'active',scope:'internal',starts_at:'2026-10-31T13:00:00.000Z',description:'Projeto de contrato'},types:[],links:[],calls:[],schedule,versions:[],relatedProjects:[],organizationalUnits:[],permissions:{canEdit},relationships};
  vm.runInNewContext(code,{module:compiled,exports:compiled.exports,require:name=>name==='react'?hooks:name==='react/jsx-runtime'?{jsx,jsxs:jsx}:name==='lucide-react'?new Proxy({},{get:(_,key)=>String(key)}):name.endsWith('.css')?{default:new Proxy({},{get:(_,key)=>String(key)})}:name==='@/lib/extension-catalog'?{areaLabel:value=>value,lineLabel:value=>value}:name==='@/lib/civil-date'?civilDates:{DraftNotice:()=>null,useFormDraft:()=>({clear(){}})},Date:FixedDate,Intl,URL,AbortController,Number,fetch:async()=>({ok:true,json:async()=>payload})});
  function render(){index=0;tree=compiled.exports.default({projectId:'project-a',projects:[],mutate:async()=>({}),onBack(){},onEdit(){}});}
  render();effects.forEach(fn=>fn());await tick();render();
- return{tree,all:nodes(tree),text:text(tree)};
+ return{tree,all:nodes(tree),text:text(tree),editSchedule(title){
+  const row=nodes(tree).find(node=>node.type==='li'&&text(node).includes(title));
+  const edit=nodes(row).find(node=>node.type==='button'&&text(node)==='Editar');
+  assert.ok(edit);
+  edit.props.onClick();
+  render();
+  const editor=nodes(tree).find(node=>typeof node.type==='function'&&node.props.editor?.kind==='schedule');
+  assert.ok(editor);
+  return nodes(editor.type(editor.props));
+ }};
 }
 const loan=(id,ends_at,status='out')=>({id,item_id:'equipment',item_name:`Equipamento ${id}`,action_name:`Ação ${id}`,starts_at:Date.parse('2026-10-31T15:00:00.000Z'),ends_at,status});
 
@@ -61,4 +70,23 @@ test('project timeline renders date-only endpoints without shifting either civil
  const row = ui.all.find(node => node.type === 'li' && text(node).includes(activity.title));
  assert.match(text(row), /09 de nov\. de 2026 → 13 de nov\. de 2026/);
  assert.equal(nodes(row).find(node => node.type === 'a').props.href, activity.url);
+});
+
+test('editing malformed legacy schedule dates requires an explicit correction without inventing a clock time', async () => {
+ const activity = { id: 'legacy-activity', title: 'Atividade legada sintética', status: 'planned' };
+ for (const [starts_at, ends_at, mode] of [
+  ['2026-02-30', '2026-03-02', 'day'],
+  ['2026-02-30T10:00:00Z', '2026-03-02T11:00:00Z', 'time'],
+  ['2026-11-09', '2026-11-13T14:00:00Z', 'time'],
+ ]) {
+  const ui = await renderDetail({}, [{ ...activity, starts_at, ends_at }], true);
+  const editor = ui.editSchedule(activity.title);
+  const field = name => editor.find(node => node.props?.name === name).props;
+  assert.equal(field('schedulePrecision').value, mode);
+  assert.equal(field('startsAt').defaultValue, '');
+  assert.equal(field('startsOn').defaultValue, '');
+  assert.equal(field(mode === 'day' ? 'startsOn' : 'startsAt').required, true);
+  if (mode === 'day') assert.equal(field('endsOn').defaultValue, ends_at);
+  if (starts_at === '2026-11-09') assert.equal(field('endsAt').defaultValue, '');
+ }
 });
