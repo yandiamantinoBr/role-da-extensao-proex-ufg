@@ -127,6 +127,13 @@
       "when": 1793450000005,
       "tag": "0017_work_responsibilities",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1793801225472,
+      "tag": "0018_project_communication",
+      "breakpoints": true
     }
   ]
 }

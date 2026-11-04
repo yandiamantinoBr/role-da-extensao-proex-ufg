@@ -121,3 +121,9 @@
 .refine>summary>span{margin-left:10px;font-size:11px;color:var(--text-secondary)}
 .refineFields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;padding-top:16px}
 @container projects (max-width:620px){.refineFields{grid-template-columns:minmax(0,1fr)}.heading .actions{align-items:flex-start}.adminMenu{flex:1}.heading .actions>button{flex:1}}
+
+.communication { margin-top: 18px; }
+.communication h4 { margin: 0; }
+.linkContent { display: grid; gap: 5px; min-width: 0; overflow-wrap: anywhere; }
+.linkContent small, .linkContent p { margin: 0; color: var(--text-secondary); font-size: 13px; }
+.linkContent p { white-space: pre-wrap; }

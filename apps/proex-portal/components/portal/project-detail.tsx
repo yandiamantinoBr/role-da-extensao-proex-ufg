@@ -5,6 +5,7 @@ import { areaLabel, lineLabel } from '@/lib/extension-catalog';
 import { ArrowLeft, BarChart3, CalendarDays, Check, Clock3, ExternalLink, FileText, FolderKanban, History, Link2, LoaderCircle, Package, Pencil, Plus, RefreshCw, ShieldCheck, X } from 'lucide-react';
 import type { Row } from '@/lib/database';
 import { isCivilDate } from '@/lib/civil-date';
+import { COMMUNICATION_CHANNELS, COMMUNICATION_NOTE_LIMIT, communicationLabel } from '@/lib/project-communication';
 import { useFormDraft, DraftNotice } from './use-form-draft';
 type Props={projectId:string;projects:Row[];mutate:(action:string,payload:Row)=>Promise<Row>;onBack:()=>void;onEdit:(project:Row)=>void;onSelect?:(id:string)=>void;renderWorkContext?:(projectId:string)=>ReactNode};
 type Editor={kind:'link'|'call'|'schedule';row:Row|null};
@@ -47,13 +48,21 @@ function scheduleEditorDates(row: Row | null) {
  };
 }
 function safeUrl(value:unknown){if(typeof value!=='string')return '';try{const url=new URL(value);return url.protocol==='https:'&&!url.username&&!url.password?url.href:'';}catch{return '';}}
+function projectLinkSnapshot(version: Row): Row | null {
+ if (version.entity_type !== 'project_link' || typeof version.snapshot_json !== 'string') return null;
+ try {
+  const snapshot = JSON.parse(version.snapshot_json);
+  return snapshot && typeof snapshot.label === 'string' ? snapshot : null;
+ } catch { return null; }
+}
 function MetadataForm({editor,projectId,projects,mutate,done}:{editor:Editor;projectId:string;projects:Row[];mutate:Props['mutate'];done:()=>void}){
  const {kind,row}=editor,[saving,setSaving]=useState(false),[error,setError]=useState(''),key=useRef<string|null>(null),formRef=useRef<HTMLFormElement>(null);
  const schedule = scheduleEditorDates(row);
  const [allDay, setAllDay] = useState(schedule.allDay);
+ const [communicationChannel, setCommunicationChannel] = useState<string>(row?.communication_channel ?? '');
  const draft=useFormDraft(formRef,`project-${kind}:${projectId}:${row?.id??'new'}:${row?.version??0}`);
  async function submit(event:FormEvent<HTMLFormElement>){event.preventDefault();if(saving)return;const form=new FormData(event.currentTarget);setSaving(true);setError('');key.current??=crypto.randomUUID();
- try{const payload:Row={projectId,...(row?{id:row.id,expectedVersion:row.version}:{}),operationKey:key.current};const fields=kind==='link'?['label','url','kind']:kind==='call'?['title','referenceCode','description','status','officialUrl']:['title','status','note','url'];for(const name of fields)payload[name]=form.get(name)||'';
+ try{const payload:Row={projectId,...(row?{id:row.id,expectedVersion:row.version}:{}),operationKey:key.current};const fields=kind==='link'?['label','url','kind','communicationChannel','communicationNote']:kind==='call'?['title','referenceCode','description','status','officialUrl']:['title','status','note','url'];for(const name of fields)payload[name]=form.get(name)||'';
  if (kind === 'call') {
   for (const name of ['opensAt', 'closesAt']) payload[name] = form.get(name) ? new Date(String(form.get(name))).toISOString() : null;
   payload.linkedProjectIds = form.getAll('linkedProjectIds');
@@ -71,7 +80,12 @@ function MetadataForm({editor,projectId,projects,mutate,done}:{editor:Editor;pro
  await mutate(`${kind==='call'?'call':`project.${kind}`}.${row?'update':'create'}`,payload);key.current=null;draft.clear();done();}catch(error){setError(error instanceof Error?error.message:'Não foi possível salvar.');}finally{setSaving(false);}}
  const input=(name:string,title:string,extra:Row={})=><label className="p-field"><span>{title}</span><input name={name} defaultValue={row?.[name.replace(/[A-Z]/g,letter=>`_${letter.toLowerCase()}`)]??''} {...extra}/></label>;
  return <form ref={formRef} className="p-form" onSubmit={submit} onChange={()=>{if(!saving)key.current=null;}}><DraftNotice draft={draft}/><fieldset disabled={saving}><div className="p-form-grid">
- {kind==='link'?<>{input('label','Nome do link',{required:true,maxLength:150})}{input('url','Endereço HTTPS',{required:true,type:'url',maxLength:500})}<label className="p-field"><span>Categoria</span><select name="kind" defaultValue={row?.kind??'official'}><option value="official">Página oficial</option><option value="notice">Edital / chamada</option><option value="report">Relatório</option><option value="gallery">Galeria</option><option value="other">Outro recurso</option></select></label></>:<>{input('title',kind==='call'?'Título do edital':'Título do marco / atividade',{required:true,maxLength:200})}{kind==='call'&&input('referenceCode','Número ou referência',{maxLength:80})}<label className="p-field"><span>Situação</span><select name="status" defaultValue={row?.status??(kind==='call'?'draft':'planned')}>{(kind==='call'?['draft','open','closed','archived']:['planned','completed','cancelled']).map(value=><option key={value} value={value}>{label(value)}</option>)}</select></label>{input(kind==='call'?'officialUrl':'url','Fonte oficial / endereço HTTPS',{type:'url',maxLength:500})}
+ {kind==='link'?<>{input('label','Nome do link',{required:true,maxLength:150})}{input('url','Endereço HTTPS',{required:true,type:'url',maxLength:500})}<label className="p-field"><span>Categoria</span><select name="kind" defaultValue={row?.kind??'official'}><option value="official">Página oficial</option><option value="notice">Edital / chamada</option><option value="report">Relatório</option><option value="gallery">Galeria</option><option value="other">Outro recurso</option></select></label>
+ <label className="p-field"><span>Comunicação</span><select name="communicationChannel" value={communicationChannel} onChange={event => setCommunicationChannel(event.target.value)}>
+  <option value="">Sem classificação de comunicação</option>
+  {Object.entries(COMMUNICATION_CHANNELS).map(([value, title]) => <option key={value} value={value}>{title}</option>)}
+ </select></label>
+ </>:<>{input('title',kind==='call'?'Título do edital':'Título do marco / atividade',{required:true,maxLength:200})}{kind==='call'&&input('referenceCode','Número ou referência',{maxLength:80})}<label className="p-field"><span>Situação</span><select name="status" defaultValue={row?.status??(kind==='call'?'draft':'planned')}>{(kind==='call'?['draft','open','closed','archived']:['planned','completed','cancelled']).map(value=><option key={value} value={value}>{label(value)}</option>)}</select></label>{input(kind==='call'?'officialUrl':'url','Fonte oficial / endereço HTTPS',{type:'url',maxLength:500})}
  {kind === 'call' && [['opensAt', 'Abertura'], ['closesAt', 'Encerramento']].map(([name, title]) => <label key={name} className="p-field"><span>{title}</span><input name={name} type="datetime-local" defaultValue={localDate(row?.[name.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`)])}/></label>)}
  {kind === 'schedule' && <>
   <label className="p-field"><span>Formato do período</span><select name="schedulePrecision" value={allDay ? 'day' : 'time'} onChange={event => setAllDay(event.target.value === 'day')}>
@@ -82,7 +96,13 @@ function MetadataForm({editor,projectId,projects,mutate,done}:{editor:Editor;pro
   {schedule.fields.map(({ dayName, dayLabel, dayValue }) => <label key={dayName} className="p-field" hidden={!allDay} style={!allDay ? { display: 'none' } : undefined}><span>{dayLabel} *</span><input name={dayName} type="date" min="2000-01-01" max="2200-12-31" required={allDay} disabled={!allDay} defaultValue={dayValue}/></label>)}
  </>}
  </>}
- </div>{kind!=='link'&&<label className="p-field"><span>{kind==='call'?'Finalidade e orientações':'Observação institucional'}</span><textarea name={kind==='call'?'description':'note'} maxLength={kind==='call'?4000:2000} rows={3} defaultValue={row?.[kind==='call'?'description':'note']??''}/><small>Use informações institucionais. Não inclua contatos, documentos ou dados pessoais.</small></label>}
+ </div>
+ {kind === 'link' && <label className="p-field" hidden={communicationChannel !== 'canva'} style={communicationChannel !== 'canva' ? {display:'none'} : undefined}>
+  <span>Páginas e dimensões da arte</span>
+  <textarea name="communicationNote" rows={3} maxLength={COMMUNICATION_NOTE_LIMIT} disabled={communicationChannel !== 'canva'} defaultValue={row?.communication_note ?? ''}/>
+  <small>Exemplo 1080 × 1350 px nas páginas 1 e 2. Use um link de compartilhamento com acesso destinado à equipe.</small>
+ </label>}
+ {kind!=='link'&&<label className="p-field"><span>{kind==='call'?'Finalidade e orientações':'Observação institucional'}</span><textarea name={kind==='call'?'description':'note'} maxLength={kind==='call'?4000:2000} rows={3} defaultValue={row?.[kind==='call'?'description':'note']??''}/><small>Use informações institucionais. Não inclua contatos, documentos ou dados pessoais.</small></label>}
  {kind==='call'&&<label className="p-field"><span>Outros projetos relacionados (opcional)</span><select name="linkedProjectIds" multiple defaultValue={row?.linkedProjectIds??[]} size={Math.min(5,Math.max(2,projects.length))}>{projects.filter(project=>project.id!==projectId).map(project=><option key={project.id} value={project.id}>{project.name}</option>)}</select><small>É necessário poder administrar todos os projetos vinculados. Essa relação não transfere permissões.</small></label>}
  {kind!=='link'&&<p className="p-form-help">Horários do aparelho. Uma atividade editorial não cria campanha, movimentação ou empréstimo.</p>}
  {error&&<p role="alert" className="p-inline-error">{error}</p>}<div className="p-form-footer"><button type="button" className="p-button p-button-subtle" onClick={done}>Cancelar</button><button className="p-button p-button-primary" type="submit">{saving?<LoaderCircle className="p-spin" size={16}/>:<Check size={16}/>}Salvar</button></div></fieldset></form>;
@@ -95,6 +115,10 @@ export default function ProjectDetail({projectId,projects,mutate,onBack,onEdit,o
  function saved(){setError('');setEditor(null);setReload(value=>value+1);}
  async function restore(version:Row){if(!data||restoring)return;const entities=[data.project,...data.links,...data.calls,...data.schedule],current=entities.find(row=>row.id===version.entity_id);if(!current)return;setRestoring(true);setError('');try{await mutate('entity.restore',{entityType:version.entity_type,entityId:version.entity_id,restoreVersion:version.version,expectedVersion:current.version,operationKey:crypto.randomUUID()});setConfirmVersion(null);setReload(value=>value+1);}catch(error){setError(error instanceof Error?error.message:'Não foi possível restaurar.');}finally{setRestoring(false);}}
  const project=data?.project,canEdit=Boolean(data?.permissions?.canEdit),relationships=data?.relationships??{};
+ const [onlyCommunication, setOnlyCommunication] = useState(false);
+ const projectLinks = (data?.links ?? []) as Row[];
+ const communicationLinks = projectLinks.filter(link => communicationLabel(link.communication_channel));
+ const referenceLinks = projectLinks.filter(link => !communicationLabel(link.communication_channel));
  const materialsUrl=safeUrl(data?.spreadsheetLinks?.materialsUrl),projectSheetLinks=(data?.links??[]).filter((link:Row)=>{try{return new URL(String(link.url)).hostname==='docs.google.com'&&new URL(String(link.url)).pathname.startsWith('/spreadsheets/');}catch{return false;}});
  const rel=(key:string)=>relationships[key] as Row[]|null|undefined;
  const items=rel('items'),campaigns=rel('campaigns'),loans=rel('loans'),records=rel('records'),now=result?.receivedAt??0;
@@ -102,6 +126,23 @@ export default function ProjectDetail({projectId,projects,mutate,onBack,onEdit,o
  const lowStock=items?.filter(item=>{const available=availableOf(item);return available!==null&&available<=Number(item.low_stock||0);}).length??0;
  const kpis=[items&&{label:'Materiais',value:items.length,detail:lowStock?`${lowStock} com estoque baixo`:`${items.reduce((total,item)=>total+Number(item.stock||0),0)} unidades em saldo`,tone:lowStock?'warn':'',icon:Package},campaigns&&{label:'Eventos',value:campaigns.length,detail:`${campaigns.filter(c=>c.status==='active').length} ativos`,icon:CalendarDays},loans&&{label:'Empréstimos',value:loans.length,detail:lateLoans?`${lateLoans} em atraso`:`${activeLoans} em andamento`,tone:lateLoans?'warn':'',icon:Clock3},records&&{label:'Registros',value:records.length,detail:records[0]?`último em ${pretty(records[0].occurred_at)}`:'nenhum ainda',icon:FileText}].filter(Boolean) as {label:string;value:number;detail:string;tone?:string;icon:typeof Package}[];
  const empty=(text:string)=><p className={styles.relationEmpty}>{text}</p>;
+ const linkRow = (link: Row) => {
+  const channel = communicationLabel(link.communication_channel);
+  return <div key={link.id} className={styles.linkRow}>
+   <div className={styles.linkContent}>
+    {channel && <small>{channel}</small>}
+    <a href={safeUrl(link.url) || undefined} className="p-text-link" target="_blank" rel="noopener noreferrer"><Link2 size={15}/>{link.label}<ExternalLink size={13}/></a>
+    {link.communication_channel === 'canva' && link.communication_note && <p>{link.communication_note}</p>}
+   </div>
+   {canEdit && <button type="button" className="p-icon-button" aria-label={`Editar link ${link.label}`} onClick={() => setEditor({kind:'link',row:link})}><Pencil size={14}/></button>}
+  </div>;
+ };
+ const linkVersions = ((data?.versions ?? []) as Row[]).map(version => ({version, snapshot: projectLinkSnapshot(version)}));
+ const communicationIds = new Set([...communicationLinks.map(link => link.id),
+  ...linkVersions.filter(entry => communicationLabel(entry.snapshot?.communication_channel)).map(entry => entry.version.entity_id)]);
+ const visibleVersions = (onlyCommunication
+  ? linkVersions.filter(entry => entry.snapshot && communicationIds.has(entry.version.entity_id))
+  : linkVersions).slice(0,30);
  return <section className="p-section"><div className={styles.detailToolbar}><button type="button" className="p-button p-button-subtle" onClick={onBack}><ArrowLeft size={16}/>Todos os projetos</button><div className="p-inline" style={{flexWrap:'wrap'}}>{data?.permissions?.reports&&<a className="p-button p-button-subtle" href={`/?module=reports&project=${encodeURIComponent(projectId)}`}><BarChart3 size={16}/>Relatórios do projeto</a>}<button type="button" className="p-button p-button-subtle" disabled={loading} onClick={()=>{setError('');setEditor(null);setReload(value=>value+1);}}><RefreshCw size={16}/>Atualizar</button></div></div>
  {displayError&&<p className="p-inline-error" role="alert">{displayError}</p>}{loading?<div className="p-card"><LoaderCircle size={22} className="p-spin"/> Carregando o projeto…</div>:project&&<div className={styles.detailStack}>
  <header className={`p-card ${styles.detailHero}`} style={{['--project-color' as string]:project.color||'#54216C'}}><div className={styles.heroTop}><div className={styles.heroIdentity}><span className="p-kicker">{project.type_label||'Projeto / área de trabalho'}</span><h2>{project.name}{project.short_name&&<small>{project.short_name}</small>}</h2><div className={styles.chips}><span className={`${styles.chip} ${project.status==='archived'?styles.chipMuted:styles.chipGood}`}>{label(project.status)}</span><span className={styles.chip}>{lifecycle[project.lifecycle as keyof typeof lifecycle]||project.lifecycle}</span><span className={styles.chip}>{project.scope==='external'?'Externo à PROEX':'Interno PROEX'}</span>{areaLabel(project.thematic_area)&&<span className={`${styles.chip} ${styles.chipArea}`}>{areaLabel(project.thematic_area)}</span>}{lineLabel(project.extension_line)&&<span className={styles.chip} title="Linha de extensão (FORPROEX)">Linha {lineLabel(project.extension_line)}</span>}</div></div>{canEdit&&<button type="button" className="p-button p-button-subtle" onClick={()=>onEdit(project)}><Pencil size={15}/>Editar projeto</button>}</div>
@@ -114,7 +155,17 @@ export default function ProjectDetail({projectId,projects,mutate,onBack,onEdit,o
  {(materialsUrl||projectSheetLinks.length>0)&&<section className="p-card"><h3>Planilhas do projeto</h3><p className="p-form-help">Abra os materiais e referências no Google Sheets com a conta que recebeu acesso.</p><div className={styles.detailLinks}>{materialsUrl&&<a className={styles.quickLink} href={materialsUrl} target="_blank" rel="noopener noreferrer"><Package size={20}/><span><strong>Planilha de materiais</strong><small>Espelho geral de gestão · acesso do responsável global</small></span><ExternalLink size={15}/></a>}{projectSheetLinks.map((link:Row)=><a key={link.id} className={styles.quickLink} href={safeUrl(link.url)} target="_blank" rel="noopener noreferrer"><FileText size={20}/><span><strong>{link.label}</strong><small>Planilha específica vinculada ao projeto</small></span><ExternalLink size={15}/></a>)}</div><p className={styles.externalNote}>O acesso no Google depende do compartilhamento feito no Drive. Filtros e links não substituem as permissões da planilha.</p></section>}
  <div className={styles.detailGrid}>
  <div className={styles.detailColumn}>
- <section className={`p-card ${styles.detailCard}`}><div className={styles.cardHead}><div><h3><Link2 size={17}/>Links e documentos</h3><p>Páginas, relatórios, editais e arquivos de referência.</p></div>{canEdit&&<button type="button" className="p-button p-button-subtle" onClick={()=>setEditor({kind:'link',row:null})}><Plus size={15}/>Link</button>}</div>{!data.links.length?empty('Nenhum link cadastrado.'):data.links.map((link:Row)=><div key={link.id} className={styles.linkRow}><a href={safeUrl(link.url)||undefined} className="p-text-link" target="_blank" rel="noopener noreferrer"><Link2 size={15}/>{link.label}<ExternalLink size={13}/></a>{canEdit&&<button type="button" className="p-icon-button" aria-label={`Editar link ${link.label}`} onClick={()=>setEditor({kind:'link',row:link})}><Pencil size={14}/></button>}</div>)}</section>
+ <section className={`p-card ${styles.detailCard}`}>
+  <div className={styles.cardHead}><div><h3><Link2 size={17}/>Links e documentos</h3><p>Páginas, relatórios, editais e arquivos de referência.</p></div>
+   {canEdit && <button type="button" className="p-button p-button-subtle" onClick={() => setEditor({kind:'link',row:null})}><Plus size={15}/>Link</button>}
+  </div>
+  {referenceLinks.length ? referenceLinks.map(linkRow) : !communicationLinks.length && empty('Nenhum link cadastrado.')}
+  {(canEdit || communicationLinks.length > 0) && <div className={styles.communication}>
+   <h4>Comunicação</h4>
+   <p className="p-form-help">Referências cadastradas pela equipe para arte, site e Instagram.</p>
+   {communicationLinks.length ? communicationLinks.map(linkRow) : empty('No cadastro de link, selecione um canal de comunicação.')}
+  </div>}
+ </section>
  <section className={`p-card ${styles.detailCard}`}><div className={styles.cardHead}><div><h3><CalendarDays size={17}/>Linha do tempo</h3><p>Marcos documentados e próximas atividades.</p></div>{canEdit&&<button type="button" className="p-button p-button-subtle" onClick={()=>setEditor({kind:'schedule',row:null})}><Plus size={15}/>Atividade</button>}</div>{!data.schedule.length?empty('Nenhum marco cadastrado. As datas do projeto não fabricam um histórico.'):<ol className={styles.timeline}>{data.schedule.map((item:Row)=><li key={item.id} data-status={item.status}><small>{pretty(item.starts_at)}{item.ends_at!==item.starts_at?` → ${pretty(item.ends_at)}`:''} · {label(item.status)}</small><h4>{item.title}</h4>{item.note&&<p>{item.note}</p>}<div className="p-inline" style={{marginTop:6,flexWrap:'wrap'}}>{safeUrl(item.url)&&<a className="p-text-link" href={safeUrl(item.url)} target="_blank" rel="noopener noreferrer">Ver fonte <ExternalLink size={14}/></a>}{canEdit&&<button type="button" className="p-button p-button-subtle" onClick={()=>setEditor({kind:'schedule',row:item})}><Pencil size={14}/>Editar</button>}</div></li>)}</ol>}</section>
  </div>
  <div className={styles.detailColumn}>
@@ -128,7 +179,20 @@ export default function ProjectDetail({projectId,projects,mutate,onBack,onEdit,o
  {loans&&<div className={styles.relation}><h4><Clock3 size={16}/>Empréstimos <span>{loans.length}</span></h4>{!loans.length?empty('Nenhum empréstimo registrado.'):<ul className={styles.relationList}>{loans.slice(0,8).map(loan=>{const late=loanIsLate(loan,now);return <li key={loan.id}><span><strong>{loan.item_name}</strong><small>{loan.action_name} · {pretty(loan.starts_at)} → {pretty(loan.ends_at)}</small></span><span className={`p-badge ${late?'p-status-late':loan.status==='out'?'p-status-pending':loan.status==='reserved'?'p-status-reserved':loan.status==='returned'?'p-status-accepted':'p-status-revoked'}`}>{late?'Em atraso':loanLabels[loan.status as keyof typeof loanLabels]||loan.status}</span></li>;})}</ul>}{loans.length>8&&<p className={styles.relationMore}>Mais {loans.length-8} no módulo Empréstimos.</p>}</div>}
  {records&&<div className={styles.relation}><h4><FileText size={16}/>Registros <span>{records.length}</span></h4>{!records.length?empty('Nenhum registro ainda.'):<ul className={styles.relationList}>{records.slice(0,8).map(record=><li key={record.id}><span><strong>{record.title}</strong><small>{pretty(record.occurred_at)}</small></span><span className="p-badge">{recordKinds[record.kind as keyof typeof recordKinds]||record.kind}</span></li>)}</ul>}{records.length>8&&<p className={styles.relationMore}>Mais {records.length-8} no módulo Registros.</p>}</div>}
  </div></section>}
- {canEdit&&<section className="p-card"><div className="p-card-title"><History size={20}/><div><h3>Histórico de versões</h3><p>Restaurar cria uma nova revisão; versões anteriores permanecem.</p></div></div>{!data.versions.length?<p className="p-form-help">O histórico será preservado a partir da próxima alteração.</p>:data.versions.slice(0,30).map((version:Row)=><div key={version.id} className="p-row-between" style={{padding:'10px 0',gap:12,borderBottom:'1px solid var(--line)'}}><span><strong>{version.entity_type} · versão {version.version}</strong><small style={{display:'block'}}>{pretty(version.created_at)}</small></span><button type="button" className="p-button p-button-subtle" onClick={()=>setConfirmVersion(version)}>Restaurar</button></div>)}{confirmVersion&&<div className="p-inline-confirm"><p>Restaurar a versão {confirmVersion.version} dos metadados selecionados? Estoque, participações e anexos não são alterados.</p><div className="p-inline"><button type="button" className="p-button p-button-primary" disabled={restoring} onClick={()=>void restore(confirmVersion)}>{restoring&&<LoaderCircle size={15} className="p-spin"/>}Confirmar restauração</button><button type="button" className="p-button p-button-subtle" disabled={restoring} onClick={()=>setConfirmVersion(null)}>Cancelar</button></div></div>}</section>}
+ {canEdit&&<section className="p-card"><div className="p-card-title"><History size={20}/><div><h3>Histórico de versões</h3><p>Restaurar cria uma nova revisão; versões anteriores permanecem.</p></div></div>{communicationIds.size > 0 && <label className="p-field"><span>Histórico exibido</span><select value={onlyCommunication ? 'communication' : 'all'} onChange={event => setOnlyCommunication(event.target.value === 'communication')}><option value="all">Todos os metadados</option><option value="communication">Comunicação</option></select></label>}
+ {!visibleVersions.length ? <p className="p-form-help">Nenhuma versão registrada neste recorte.</p> : visibleVersions.map(({version, snapshot}) => <div key={version.id} className="p-row-between" style={{padding:'10px 0',gap:12,borderBottom:'1px solid var(--line)'}}>
+  <div className={styles.linkContent}>
+   <strong>{snapshot?.label ?? version.entity_type} · versão {version.version}</strong>
+   <small>{pretty(version.created_at)}</small>
+   {snapshot && communicationIds.has(version.entity_id) && <details>
+    <summary>Ver detalhes desta versão</summary>
+    <p>{communicationLabel(snapshot.communication_channel) ?? 'Sem classificação de comunicação'}</p>
+    {snapshot.communication_channel === 'canva' && snapshot.communication_note && <p>{snapshot.communication_note}</p>}
+    {safeUrl(snapshot.url) && <a className="p-text-link" href={safeUrl(snapshot.url)} target="_blank" rel="noopener noreferrer">Abrir link desta versão <ExternalLink size={13}/></a>}
+   </details>}
+  </div>
+  <button type="button" className="p-button p-button-subtle" onClick={() => setConfirmVersion(version)}>Restaurar</button>
+ </div>)}{confirmVersion&&<div className="p-inline-confirm"><p>Restaurar a versão {confirmVersion.version} dos metadados selecionados? Estoque, participações e anexos não são alterados.</p><div className="p-inline"><button type="button" className="p-button p-button-primary" disabled={restoring} onClick={()=>void restore(confirmVersion)}>{restoring&&<LoaderCircle size={15} className="p-spin"/>}Confirmar restauração</button><button type="button" className="p-button p-button-subtle" disabled={restoring} onClick={()=>setConfirmVersion(null)}>Cancelar</button></div></div>}</section>}
  </div>}
  </section>;
 }

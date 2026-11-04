@@ -6,6 +6,7 @@ import { listRecords } from './records';
 import { projectSpreadsheetLinks } from './sync/project-links';
 import { isExtensionLine, isThematicArea } from './extension-catalog';
 import { isCivilDate } from './civil-date';
+import { COMMUNICATION_CHANNELS, COMMUNICATION_NOTE_LIMIT } from './project-communication';
 
 type Entity = 'project' | 'call' | 'project_link' | 'project_schedule_item';
 const TABLES: Record<Entity, string> = { project: 'projects', call: 'calls', project_link: 'project_links', project_schedule_item: 'project_schedule_items' };
@@ -13,7 +14,7 @@ const PREFIX: Record<Entity, string> = { project: 'project', call: 'call', proje
 const FIELDS: Record<Entity, string[]> = {
   project: ['name','short_name','description','status','lifecycle','type_id','parent_id','unit_id','prizes_enabled','scope','thematic_area','extension_line','color','official_url','starts_at','ends_at','location','organization_id'],
   call: ['project_id','title','reference_code','description','status','opens_at','closes_at','official_url'],
-  project_link: ['project_id','label','url','kind'],
+  project_link: ['project_id','label','url','kind','communication_channel','communication_note'],
   project_schedule_item: ['project_id','title','starts_at','ends_at','status','note','url'],
 };
 function text(value: unknown, label: string, max: number, optional = false): string {
@@ -101,8 +102,24 @@ async function normalize(db: D1Database, actor: PortalActor, entity: Entity, inp
       linked = [...new Set(values.map(value=>identifier(value)!))].filter(id=>id!==projectId).sort();
       for (const id of [...new Set([...linked,...previous.map(row=>row.project_id)])]) { manage(actor,id); if (!await one(db,'SELECT id FROM projects WHERE id=?',[id])) throw new HttpError(400,'Projeto vinculado não encontrado.'); }
       fields={project_id:projectId,title:text(get('title'),'o título',200),reference_code:text(get('referenceCode','reference_code'),'a referência',80,true),description:text(get('description'),'a descrição',4000,true),status:choice(get('status','status','draft'),['draft','open','closed','archived'],'um estado'),opens_at:date(get('opensAt','opens_at',null)),closes_at:date(get('closesAt','closes_at',null)),official_url:url(get('officialUrl','official_url'))};
-    } else if (entity === 'project_link') fields={project_id:projectId,label:text(get('label'),'o nome do link',150),url:url(get('url'),false),kind:choice(get('kind','kind','other'),['official','notice','report','gallery','other'],'um tipo de link')};
-    else fields={project_id:projectId,title:text(get('title'),'o título',200),...scheduleDates(get('startsAt','starts_at'),get('endsAt','ends_at')),status:choice(get('status','status','planned'),['planned','completed','cancelled'],'um estado'),note:text(get('note'),'a observação institucional',2000,true),url:url(get('url'))};
+    } else if (entity === 'project_link') {
+      const channel = choice(get('communicationChannel', 'communication_channel'), ['', ...Object.keys(COMMUNICATION_CHANNELS)], 'um canal de comunicação');
+      const linkUrl = url(get('url'), false);
+      const host = new URL(linkUrl).hostname;
+      if ((channel === 'canva' && !['canva.com', 'www.canva.com'].includes(host)) ||
+          (channel === 'instagram' && !['instagram.com', 'www.instagram.com'].includes(host))) {
+        throw new HttpError(400, 'Informe o endereço da arte no Canva ou da publicação no Instagram, conforme o canal escolhido.', 'invalid_communication_url');
+      }
+      const note = text(get('communicationNote', 'communication_note'), 'a nota de páginas e dimensões', COMMUNICATION_NOTE_LIMIT, true);
+      if (channel !== 'canva' && input.communicationNote !== undefined && note) {
+        throw new HttpError(400, 'A nota de páginas e dimensões pertence a uma arte no Canva.', 'invalid_communication_note');
+      }
+      fields = {
+        project_id: projectId, label: text(get('label'), 'o nome do link', 150), url: linkUrl,
+        kind: choice(get('kind', 'kind', 'other'), ['official','notice','report','gallery','other'], 'um tipo de link'),
+        communication_channel: channel, communication_note: channel === 'canva' ? note : '',
+      };
+    } else fields={project_id:projectId,title:text(get('title'),'o título',200),...scheduleDates(get('startsAt','starts_at'),get('endsAt','ends_at')),status:choice(get('status','status','planned'),['planned','completed','cancelled'],'um estado'),note:text(get('note'),'a observação institucional',2000,true),url:url(get('url'))};
   }
   const start = fields.starts_at ?? fields.opens_at, end = fields.ends_at ?? fields.closes_at;
   if (start && end && (entity === 'project_schedule_item' ? end < start : end <= start)) throw new HttpError(400,entity === 'project_schedule_item' ? 'O fim deve ser igual ou posterior ao início.' : 'A data final deve ser posterior à inicial.','invalid_interval');
@@ -183,6 +200,10 @@ export async function projectAction(db:D1Database,actor:PortalActor,action:strin
     // clearing a current unit or disabling dynamics when restoring only older metadata.
     for(const field of FIELDS[entity])if(Object.hasOwn(source,field))restored[field.replace(/_([a-z])/g,(_,letter)=>letter.toUpperCase())]=source[field];
     if(entity==='call')restored.linkedProjectIds=source.linked_project_ids??[];
+    if (entity === 'project_link') {
+      restored.communicationChannel = source.communication_channel ?? '';
+      restored.communicationNote = source.communication_note ?? '';
+    }
     return saveEntity(db,actor,entity,`${PREFIX[entity]}.update`,restored);
   }
   return null;
@@ -196,11 +217,13 @@ export async function projectDetail(db:D1Database,actor:PortalActor|null,id:stri
   const canEdit=permitted(actor,'campaigns.manage',id)||permitted(actor,'projects.manage',null),inventory=permitted(actor,'inventory.read',id),loans=permitted(actor,'loans.read',id),reports=permitted(actor,'reports.read',id),campaigns=canEdit||permitted(actor,'participation.operate',id);
   const visible=accessibleProjects(actor),visibility=visible===null?'1=1':visible.length?`p.id IN (${visible.map(()=>'?').join(',')})`:'1=0';
   const availabilityNow=Date.now(),inventoryAuthority=projectAuthoritySql(actor,['inventory.read'],'i.project_id');
+  const linksAuthority = projectAuthoritySql(actor, [], 'pl.project_id');
+  const versionsAuthority = guard(actor, id);
   const [types,links,calls,schedule,versions,relatedProjects,items,events,loanRows,records]=await Promise.all([
-    all(db,'SELECT * FROM project_types ORDER BY label,id'),all(db,'SELECT * FROM project_links WHERE project_id=? ORDER BY kind,label,id',[id]),
+    all(db,'SELECT * FROM project_types ORDER BY label,id'),all(db,`SELECT pl.* FROM project_links pl WHERE pl.project_id=? AND (${linksAuthority.sql}) ORDER BY pl.kind,pl.label,pl.id`,[id,...linksAuthority.values]),
     all(db,`SELECT c.*,(SELECT json_group_array(pc.project_id) FROM project_calls pc WHERE pc.call_id=c.id) linked_ids_json FROM calls c WHERE c.project_id=? OR EXISTS(SELECT 1 FROM project_calls pc WHERE pc.call_id=c.id AND pc.project_id=?) ORDER BY c.opens_at DESC,c.title`,[id,id]),
     all(db,'SELECT * FROM project_schedule_items WHERE project_id=? ORDER BY starts_at DESC,id',[id]),
-    canEdit?all(db,`SELECT id,entity_type,entity_id,version,snapshot_json,created_at FROM entity_versions WHERE project_id=? AND entity_type IN ('project','call','project_link','project_schedule_item') ORDER BY created_at DESC,id DESC LIMIT 200`,[id]):Promise.resolve([]),
+    canEdit?all(db,`SELECT id,entity_type,entity_id,version,snapshot_json,created_at FROM entity_versions WHERE project_id=? AND (${versionsAuthority.sql}) AND entity_type IN ('project','call','project_link','project_schedule_item') ORDER BY created_at DESC,id DESC LIMIT 200`,[id,...versionsAuthority.values]):Promise.resolve([]),
     all(db,`SELECT p.id,p.name,p.status,p.lifecycle,p.parent_id FROM projects p WHERE (p.parent_id=? OR p.id=?) AND (${visibility}) ORDER BY p.name`,[id,project.parent_id??'',...(visible??[])]),
     inventory?all(db,`SELECT i.id,i.name,i.category,i.unit,i.stock,i.reserved,i.low_stock,i.condition,
       CASE WHEN i.condition='active' AND (i.category<>'equipment' OR NOT EXISTS (

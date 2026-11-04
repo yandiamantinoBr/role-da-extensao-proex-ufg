@@ -14,12 +14,15 @@ const code=ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.Comm
 const civilDateSource=readFileSync(new URL('../lib/civil-date.ts',import.meta.url),'utf8');
 const civilDateCode=ts.transpileModule(civilDateSource,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
 const civilDates=await import(`data:text/javascript;base64,${Buffer.from(civilDateCode).toString('base64')}`);
-async function renderDetail(relationships,schedule=[],canEdit=false){
+const communicationSource = readFileSync(new URL('../lib/project-communication.ts', import.meta.url), 'utf8');
+const communicationCode = ts.transpileModule(communicationSource, {compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
+const communication = await import(`data:text/javascript;base64,${Buffer.from(communicationCode).toString('base64')}`);
+async function renderDetail(relationships,schedule=[],canEdit=false,metadata={}){
  const slots=[],effects=[];let index=0,tree;
  const hooks={useState(initial){const key=index++;if(!(key in slots))slots[key]={value:typeof initial==='function'?initial():initial};return[slots[key].value,value=>{slots[key].value=typeof value==='function'?value(slots[key].value):value;}];},useRef(initial){const key=index++;return(slots[key]??={value:{current:initial}}).value;},useEffect(fn){const key=index++;if(!(key in slots)){slots[key]=true;effects.push(fn);}}};
  const jsx=(type,props)=>({type,props}),compiled={exports:{}};
- const payload={project:{id:'project-a',name:'Projeto sintético',status:'active',lifecycle:'active',scope:'internal',starts_at:'2026-10-31T13:00:00.000Z',description:'Projeto de contrato'},types:[],links:[],calls:[],schedule,versions:[],relatedProjects:[],organizationalUnits:[],permissions:{canEdit},relationships};
- vm.runInNewContext(code,{module:compiled,exports:compiled.exports,require:name=>name==='react'?hooks:name==='react/jsx-runtime'?{jsx,jsxs:jsx}:name==='lucide-react'?new Proxy({},{get:(_,key)=>String(key)}):name.endsWith('.css')?{default:new Proxy({},{get:(_,key)=>String(key)})}:name==='@/lib/extension-catalog'?{areaLabel:value=>value,lineLabel:value=>value}:name==='@/lib/civil-date'?civilDates:{DraftNotice:()=>null,useFormDraft:()=>({clear(){}})},Date:FixedDate,Intl,URL,AbortController,Number,fetch:async()=>({ok:true,json:async()=>payload})});
+ const payload={project:{id:'project-a',name:'Projeto sintético',status:'active',lifecycle:'active',scope:'internal',starts_at:'2026-10-31T13:00:00.000Z',description:'Projeto de contrato'},types:[],links:[],calls:[],schedule,versions:[],relatedProjects:[],organizationalUnits:[],permissions:{canEdit},relationships,...metadata};
+ vm.runInNewContext(code,{module:compiled,exports:compiled.exports,require:name=>name==='react'?hooks:name==='react/jsx-runtime'?{jsx,jsxs:jsx}:name==='lucide-react'?new Proxy({},{get:(_,key)=>String(key)}):name.endsWith('.css')?{default:new Proxy({},{get:(_,key)=>String(key)})}:name==='@/lib/extension-catalog'?{areaLabel:value=>value,lineLabel:value=>value}:name==='@/lib/civil-date'?civilDates:name==='@/lib/project-communication'?communication:{DraftNotice:()=>null,useFormDraft:()=>({clear(){}})},Date:FixedDate,Intl,URL,AbortController,Number,fetch:async()=>({ok:true,json:async()=>payload})});
  function render(){index=0;tree=compiled.exports.default({projectId:'project-a',projects:[],mutate:async()=>({}),onBack(){},onEdit(){}});}
  render();effects.forEach(fn=>fn());await tick();render();
  return{tree,all:nodes(tree),text:text(tree),editSchedule(title){
@@ -89,4 +92,24 @@ test('editing malformed legacy schedule dates requires an explicit correction wi
   if (mode === 'day') assert.equal(field('endsOn').defaultValue, ends_at);
   if (starts_at === '2026-11-09') assert.equal(field('endsAt').defaultValue, '');
  }
+});
+
+test('the detail distinguishes communication channels, leaves legacy links ordinary and hides history from viewers', async () => {
+ const links = [
+  {id:'old',label:'Edital anterior',url:'https://example.invalid/edital',kind:'notice'},
+  {id:'canva',label:'Arte do estande',url:'https://www.canva.com/design/SYNTHETIC/view',communication_channel:'canva',communication_note:'Página 2 · 1080 × 1350 px'},
+  {id:'site',label:'Notícia no portal',url:'https://example.invalid/noticia',communication_channel:'site'},
+  {id:'instagram',label:'Publicação da equipe',url:'https://www.instagram.com/p/SYNTHETIC/',communication_channel:'instagram'},
+ ];
+ const versions = [{id:'old-art',entity_id:'canva',entity_type:'project_link',version:1,created_at:'2026-11-04T12:00:00Z',snapshot_json:JSON.stringify({...links[1],communication_note:'Nota histórica'})}];
+ const editor = await renderDetail({}, [], true, {links, versions});
+ const group = editor.all.find(node => node.type === 'div' && node.props.className === 'communication');
+ assert.match(text(group), /Arte no CanvaArte do estandePágina 2 · 1080 × 1350 px/);
+ assert.match(text(group), /Publicação no siteNotícia no portal/);
+ assert.match(text(group), /Publicação no InstagramPublicação da equipe/);
+ assert.doesNotMatch(text(group), /Edital anterior/);
+ assert.equal(editor.all.filter(node => node.type === 'a' && text(node) === 'Edital anterior').length, 1);
+ assert.match(editor.text, /Nota histórica/);
+ const viewer = await renderDetail({}, [], false, {links, versions});
+ assert.doesNotMatch(viewer.text, /Nota histórica|Restaurar/);
 });
