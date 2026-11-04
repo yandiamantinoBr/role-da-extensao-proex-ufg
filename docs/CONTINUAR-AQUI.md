@@ -2,6 +2,8 @@
 
 Em 31/10/2026, a PR #18 integrou a V17 em `f77736262089c97aab226f956fd622ae3b407ad4`, Vercel `dpl_9FpsCmBEfQPeTZ8q9j8TmTxETivG` READY. CI com 854 testes do portal e 33 do jogo. O piloto próprio chegou à caixa de entrada, seu link abriu a demanda e ela foi concluída. O gatilho único de dez minutos está instalado. Em 04/11, o histórico do Google confirmou quatro execuções automáticas concluídas, entre 09:42 e 10:12. Credencial ativa até 30/11. Leia [ENTREGA-V17.md](ENTREGA-V17.md) para os limites, escopos e provas.
 
+Em 04/11, a aba Controle confirmou **35 tabelas verificadas** às `13:09:15.920Z`, conector 2026-10-31. O Apps Script de dados registrou as execuções automáticas de sincronização às 10:05:47, anexos às 09:53:32 e backup às 03:53:52, todas concluídas. A pasta privada continha cópias de 01 a 04/11. A de 04/11 foi criada às `06:53:58.114Z`, tem 531.305 bytes e somente o proprietário tem acesso. A restauração física confirmada continua a de 31/10. Metadados privados na Vault.
+
 ## Histórico · V16 publicada
 
 Em 31/10/2026, [PR #17](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/17) integrada: merge funcional `f8c3718abcb654b0b8b06679fe8dfba87cf6deff`; Vercel `dpl_GsN2Q4ZZJGH8foUMmtTzcXBREsAf` READY nesse SHA. CI: 838 testes do portal e 33 do jogo, sem falhas; tipos/builds Worker e Node aprovados, lint sem erros e três avisos anteriores. QA 375/1250 sem overflow. O botão da agenda segue o fluxo oficial Do URL, com ICS passivo conforme e verificação fresca de acesso. [ENTREGA-V16.md](ENTREGA-V16.md) traz provas e limites. O usuário já tem a assinatura criada no Google; a fonte consultada de projetos/eventos retorna zero registros no horizonte da assinatura. Não criar compromissos fictícios para preenchê-la.
