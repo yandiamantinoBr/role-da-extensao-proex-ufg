@@ -1,6 +1,7 @@
 import { accessibleProjects, getActor, writeAudit, projectAuthoritySql, type PortalActor } from './access';
 import { all, one, type Row } from './database';
 import { HttpError } from './errors';
+import { isCivilDate, offsetCivilDate } from './civil-date';
 
 export const CALENDAR_CATEGORIES = ['loans', 'materials', 'projects', 'consumption'] as const;
 export type CalendarCategory = typeof CALENDAR_CATEGORIES[number];
@@ -9,7 +10,9 @@ export const CALENDAR_LABELS: Record<CalendarCategory, string> = {
 };
 export type CalendarEntry = {
   uid: string; sourceId: string; sourceKind: string; projectId: string; projectName: string;
-  category: CalendarCategory; title: string; startsAt: string; endsAt: string; allDay: boolean;
+  category: CalendarCategory; title: string; startsAt: string;
+  /** Exclusive civil date for all-day entries, as in iCalendar. */
+  endsAt: string; allDay: boolean;
   status: 'CONFIRMED' | 'CANCELLED'; state: string; revision: number; lastModified: string;
   transparent: boolean; location: string;
 };
@@ -37,16 +40,12 @@ function projectValue(value: unknown): string | null {
 function dayInBrazil(value: string | number | Date): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(value));
 }
-function dateOnly(value: string): boolean {
-  return /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(value))
-    && new Date(value).toISOString().slice(0, 10) === value;
-}
 export function calendarRange(from?: string | null, to?: string | null, now = new Date()): CalendarRange {
   const today = dayInBrazil(now);
   const first = `${today.slice(0, 7)}-01`;
   const next = new Date(`${first}T12:00:00Z`); next.setUTCMonth(next.getUTCMonth() + 1); next.setUTCDate(0);
   const start = from || first, end = to || next.toISOString().slice(0, 10);
-  if (!dateOnly(start) || !dateOnly(end)) throw new HttpError(400, 'Informe datas válidas para a agenda.', 'invalid_calendar_range');
+  if (!isCivilDate(start) || !isCivilDate(end)) throw new HttpError(400, 'Informe datas válidas para a agenda.', 'invalid_calendar_range');
   // Dates are civil days in Brasília. Explicit UTC-03 matches this portal's supported event period.
   const startsAt = new Date(`${start}T00:00:00-03:00`), endsAt = new Date(Date.parse(`${end}T00:00:00-03:00`) + DAY);
   if (endsAt.getTime() <= startsAt.getTime() || endsAt.getTime() - startsAt.getTime() > 732 * DAY) {
@@ -136,13 +135,21 @@ export async function calendarEntries(db: D1Database, actor: PortalActor | null,
       rows = await all(db, `SELECT s.id,s.project_id,p.name project_name,'Atividade · ' || s.title title,
         s.starts_at,s.ends_at,s.status state,s.version revision,s.created_at,s.updated_at last_modified
         FROM project_schedule_items s JOIN projects p ON p.id=s.project_id WHERE ${filter.sql}
-        AND julianday(s.starts_at)<julianday(?) AND julianday(s.ends_at)>=julianday(?) LIMIT ${MAX_ENTRIES + 1}`,
-      [...filter.values, range.endsAt, range.startsAt]);
+        AND CASE WHEN length(s.starts_at)=10 OR length(s.ends_at)=10
+          THEN date(s.starts_at,'+0 days')=s.starts_at AND date(s.ends_at,'+0 days')=s.ends_at
+            AND s.starts_at<=s.ends_at AND s.starts_at<=? AND s.ends_at>=?
+          ELSE julianday(s.starts_at)<julianday(?) AND julianday(s.ends_at)>=julianday(?)
+        END LIMIT ${MAX_ENTRIES + 1}`,
+      [...filter.values, range.to, range.from, range.endsAt, range.startsAt]);
       for (const row of rows) {
+        if (isCivilDate(row.starts_at) && isCivilDate(row.ends_at)) {
+          result.push(entry({ ...row, ends_at: offsetCivilDate(row.ends_at, 1) }, category, 'project-schedule', true));
+          continue;
+        }
         // A source milestone with a single timestamp is a civil-day reference, not an invented appointment.
         if (Date.parse(row.ends_at) <= Date.parse(row.starts_at)) {
           row.starts_at = dayInBrazil(row.starts_at);
-          row.ends_at = new Date(Date.parse(`${row.starts_at}T12:00:00Z`) + DAY).toISOString().slice(0,10);
+          row.ends_at = offsetCivilDate(row.starts_at, 1);
           result.push(entry(row,category,'project-schedule',true));
         } else result.push(entry(row,category,'project-schedule'));
       }

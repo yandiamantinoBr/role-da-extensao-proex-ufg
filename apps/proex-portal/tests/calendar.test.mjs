@@ -15,7 +15,7 @@ function compile(source) {
   return ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText
     .replace(/from '(\.\/[^']+)'/g, (_, path) => `from '${path}.js'`).replace(/@\/lib\/([A-Za-z-]+)/g, './$1.js');
 }
-for (const name of ['access', 'database', 'errors', 'http', 'calendar', 'mutations']) {
+for (const name of ['access', 'database', 'errors', 'http', 'calendar', 'mutations', 'civil-date']) {
   writeFileSync(join(directory, `${name}.js`), compile(readFileSync(new URL(`../lib/${name}.ts`, import.meta.url), 'utf8')));
 }
 writeFileSync(join(directory, 'session.js'), 'export async function getPortalUser(){return globalThis.__calendarUser ?? null;}');
@@ -116,6 +116,45 @@ test('project schedule metadata appears in the central agenda with source revisi
   assert.equal(event.sourceId,'schedule-a');assert.equal(event.revision,4);assert.equal(event.status,'CANCELLED');assert.equal(event.allDay,true);assert.equal(event.startsAt,'2026-10-19');
   assert.ok(!JSON.stringify(result).includes('PRIVATE SCHEDULE NOTE'));assert.ok(!result.entries.some(entry=>entry.sourceId==='schedule-b'));
   assert.ok(!(await calendar.calendarEntries(f.db,inventory,{range})).entries.some(entry=>entry.sourceKind==='project-schedule'));
+});
+
+test('date-only project activities overlap every included day and export the next day as exclusive end', async t => {
+  const f = fixture(t), viewerUser = f.member('viewer'), viewer = await getActor(f.db, viewerUser);
+  for (const [id, projectId, start, end] of [
+    ['civil-range', 'project-a', '2026-11-09', '2026-11-13'],
+    ['same-day', 'project-a', '2026-11-30', '2026-11-30'],
+    ['timed', 'project-a', '2026-11-09T12:00:00.000Z', '2026-11-09T16:00:00.000Z'],
+    ['foreign-civil', 'project-b', '2026-11-09', '2026-11-13'],
+    ['invalid-legacy', 'project-a', '2026-11-00', '2026-11-13'],
+    ['mixed-legacy', 'project-a', '2026-11-09', '2026-11-13T14:00:00.000Z'],
+  ]) {
+    f.insert('project_schedule_items', { id, project_id: projectId, title: id, starts_at: start, ends_at: end, status: 'planned', created_at: timestamp, updated_at: timestamp });
+  }
+  f.sqlite.exec('PRAGMA ignore_check_constraints=ON');
+  f.insert('project_schedule_items', { id: 'inverted-legacy', project_id: 'project-a', title: 'inverted-legacy',
+    starts_at: '2026-11-13', ends_at: '2026-11-09', status: 'planned', created_at: timestamp, updated_at: timestamp });
+  f.sqlite.exec('PRAGMA ignore_check_constraints=OFF');
+  const events = async (from, to = from) => (await calendar.calendarEntries(f.db, viewer, {
+    range: calendar.calendarRange(from, to), category: 'projects',
+  })).entries;
+  const first = await events('2026-11-09');
+  const final = await events('2026-11-13');
+  assert.deepEqual(first.map(event => [event.sourceId, event.allDay, event.startsAt, event.endsAt]), [
+    ['civil-range', true, '2026-11-09', '2026-11-14'],
+    ['timed', false, '2026-11-09T12:00:00.000Z', '2026-11-09T16:00:00.000Z'],
+  ]);
+  assert.deepEqual(final, [first[0]]);
+  assert.deepEqual(await events('2026-11-09', '2026-11-13'), first);
+  assert.deepEqual(await events('2026-11-08'), []);
+  assert.deepEqual(await events('2026-11-14'), []);
+  assert.equal((await events('2026-11-30'))[0].endsAt, '2026-12-01');
+  assert.deepEqual(await events('2026-12-01'), []);
+  observe(f, viewerUser);
+  const download = await route.GET(new Request('https://portal.example.test/api/calendar?from=2026-11-13&to=2026-11-13&category=projects&format=ics'));
+  assert.equal(download.status, 200);
+  const body = await download.text();
+  assert.match(body, /DTSTART;VALUE=DATE:20261109\r\nDTEND;VALUE=DATE:20261114\r\n/);
+  assert.equal((body.match(/BEGIN:VEVENT/g) ?? []).length, 1);
 });
 
 test('records linked to loans require loan permission in the same project in agenda and anonymous feeds', async t => {

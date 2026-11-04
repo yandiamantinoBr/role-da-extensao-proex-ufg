@@ -127,6 +127,28 @@ test('legacy edits also retain backend defaults instead of inventing values for 
   } finally { native.close(); }
 });
 
+test('Sheets date-only schedule edit round-trips literal dates through the existing columns', async () => {
+  const { native, db, actor } = databaseFixture();
+  try {
+    const now = new Date().toISOString();
+    native.prepare(`INSERT INTO project_schedule_items(id,project_id,title,starts_at,ends_at,status,created_at,updated_at)
+      VALUES('qa-schedule','qa-project','Atividade sintética','2026-11-09','2026-11-13','planned',?,?)`).run(now, now);
+    const schema = schemaFor('project_schedule_items');
+    const original = (await exportPortablePage(db, actor, { table: schema.table })).rows[0];
+    const fixture = sheetFixture(schema, original);
+    fixture.edit('ends_at', '2026-11-14');
+    const collected = fixture.collect();
+    assert.deepEqual(collected.problems, []);
+    assert.equal(collected.changes.length, 1);
+    const result = await applyPortableChanges(db, actor, { changes: collected.changes });
+    assert.equal(result.results[0].status, 'applied');
+    const refreshed = (await exportPortablePage(db, actor, { table: schema.table })).rows[0];
+    assert.deepEqual([refreshed.starts_at, refreshed.ends_at], ['2026-11-09', '2026-11-14']);
+    fixture.context.escreverTabela_(fixture.ss, schema, [refreshed]);
+    assert.equal(fixture.context.conferirTabela_(fixture.ss, schema, [refreshed]), true);
+  } finally { native.close(); }
+});
+
 test('legacy columns are omitted only for update services that preserve absent fields', () => {
   for (const [table, missing, edited] of [['project_types', 'description', 'label'], ['project_links', 'url', 'label'], ['project_schedule_items', 'note', 'title'], ['calls', 'description', 'title'], ['material_categories', 'description', 'label'], ['items', 'description', 'name'], ['organizational_units', 'campus', 'name']]) {
     const schema = schemaFor(table), fixture = sheetFixture(schema, syntheticRow(schema), [missing]);
