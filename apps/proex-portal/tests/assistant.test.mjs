@@ -19,6 +19,7 @@ const { configureAssistant, assistantStatus, prepareAssistantPlan, applyAssistan
 const { providerEndpoint } = await import(compile('assistant/provider'));
 const { encryptCredentials, decryptCredentials, encryptProviderCredentials, decryptProviderCredentials, verifyPlan } = await import(compile('assistant/crypto'));
 const { migrateAssistantCredentials } = await import(compile('assistant/credential-migration'));
+const { assistantCredentialVault, manageAssistantCredential } = await import(compile('assistant/credential-vault'));
 const { portalSnapshot } = await import(compile('portal-data'));
 const { describePortableSchemas, exportPortablePage } = await import(compile('sync/portable'));
 const { syncStatus } = await import(compile('sync/control'));
@@ -30,6 +31,9 @@ const { encodeSpeechWav, prepareSpeechWav } = await import(compile('../component
 const secret = 'test-only-assistant-auth-secret-no-production-access';
 const key = 'test-only-fake-provider-credential';
 const keys = { current: 'synthetic-only-independent-key-for-credential-migration' };
+const vaultInput = (action, expectedRevision, extra = {}) => ({ action, organizationId: 'org_proex', provider: 'deepseek', expectedRevision, ...extra });
+const saveVault = (f, expectedRevision = 0) => manageAssistantCredential(f.db, f.actors.owner,
+ vaultInput('save', expectedRevision, { label: 'Chave sintética', secret: key }), secret, keys);
 function fixture() {
  const native = new DatabaseSync(':memory:'); native.exec('PRAGMA foreign_keys=ON');
  for (const migration of readdirSync(`${root}drizzle`).filter(file => file.endsWith('.sql')).sort()) native.exec(readFileSync(`${root}drizzle/${migration}`, 'utf8'));
@@ -141,13 +145,98 @@ test('reciphering and settings saves use compare-and-swap in both directions and
 test('a rotated dedicated key can migrate older v2 envelopes and signed plans still use the login secret', async () => {
  const f = fixture();
  try {
-  await configureAssistant(f.db, f.actors.owner, configInput(), secret, undefined, keys);
+  await saveVault(f);
+  await configureAssistant(f.db, f.actors.owner, { action: 'configure', organizationId: 'org_proex', expectedRevision: 1, config: { ...DEFAULT_ASSISTANT_CONFIG, enabled: true } }, secret, undefined, keys);
   const rotated = { current: keys.current + '-rotation', previous: keys.current };
   const preview = await prepareAssistantPlan(f.db, f.actors.inventory, request(), secret, { fetcher: fakeProvider().fetch, keys: rotated });
   assert.equal((await migrateAssistantCredentials(f.db, f.actors.owner, {}, secret, rotated)).migrated, 1);
   const result = await applyAssistantPlan(f.db, f.actors.inventory, confirm(preview), secret, undefined, { current: rotated.current });
   assert.ok(result.movementId);
  } finally { f.native.close(); }
+});
+
+test('the owner-only vault masks credentials, preserves delegated configuration, and disables dependent features', async () => {
+ const f = fixture();
+ try {
+  const read = () => assistantCredentialVault(f.db, f.actors.owner, 'org_proex', secret, keys);
+  const write = (action, revision, extra) => manageAssistantCredential(f.db, f.actors.owner, vaultInput(action, revision, extra), secret, keys);
+  const config = (revision, changes = {}) => ({ action: 'configure', organizationId: 'org_proex', expectedRevision: revision, config: { ...DEFAULT_ASSISTANT_CONFIG, ...changes } });
+  const syntheticKey = 'sk-only-synthetic-credential-zW12';
+  await manageAssistantGrant(f.db, f.actors.owner, { action: 'grant.create', organizationId: 'org_proex', userId: f.actors.manager.userId });
+  await assert.rejects(assistantCredentialVault(f.db, f.actors.manager, 'org_proex', secret, keys), code('assistant_key_admin'));
+  await assert.rejects(manageAssistantCredential(f.db, f.actors.manager, vaultInput('save', 0, { label: 'Outra chave', secret: syntheticKey }), secret, keys), code('assistant_key_admin'));
+  await assert.rejects(write('save', 0, { label: syntheticKey, secret: syntheticKey }), code('assistant_key_label'));
+  const saved = await write('save', 0, { label: 'DeepSeek QA', secret: syntheticKey });
+  assert.equal(saved.keys[0].mask, 'sk-…zW12');
+  assert.equal(saved.keys[0].status, 'active');
+  await assert.rejects(configureAssistant(f.db, f.actors.manager, { ...config(1), deepseekKey: key }, secret, undefined, keys), code('assistant_key_admin'));
+  assert.equal((await configureAssistant(f.db, f.actors.manager, config(1, { enabled: true, documentEnabled: true }), secret, undefined, keys)).revision, 2);
+  const disabled = await write('disable', 2);
+  assert.equal(disabled.keys[0].status, 'disabled');
+  const disabledEnvelope = f.native.prepare('SELECT credentials_ciphertext FROM ai_organization_settings').get().credentials_ciphertext;
+  assert.equal((await decryptProviderCredentials(secret, disabledEnvelope, 'org_proex', keys)).deepseek, undefined);
+  await assert.rejects(configureAssistant(f.db, f.actors.manager, config(3, { enabled: true }), secret, undefined, keys), code('assistant_credentials'));
+  assert.equal((await assistantStatus(f.db, f.actors.owner, secret, 'org_proex', undefined, keys)).config.documentEnabled, false);
+  assert.equal((await write('enable', 3)).keys[0].status, 'active');
+  assert.equal((await assistantStatus(f.db, f.actors.owner, secret, 'org_proex', undefined, keys)).available, false);
+  await assert.rejects(write('remove', 3), code('assistant_configuration_changed'));
+  assert.equal((await write('remove', 4)).keys[0].status, 'removed');
+  const row = f.native.prepare("SELECT credentials_ciphertext FROM ai_organization_settings WHERE organization_id='org_proex'").get();
+  assert.equal((await decryptProviderCredentials(secret, row.credentials_ciphertext, 'org_proex', keys)).deepseek, undefined);
+  const audit = f.native.prepare("SELECT details FROM audit WHERE action LIKE 'assistant.credentials.%'").all();
+  assert.equal(audit.length, 4);
+  const exposed = JSON.stringify({ vault: await read(), audit });
+  for (const value of [syntheticKey, keys.current, row.credentials_ciphertext]) assert.ok(!exposed.includes(value));
+ } finally { f.native.close(); }
+});
+
+test('vault owner and revision are checked again inside the write transaction, and recovery needs explicit confirmation', async () => {
+ const f = fixture();
+ try {
+  await saveVault(f);
+  const sql = f.native.prepare("UPDATE ai_organization_settings SET credentials_ciphertext='v1.lost.ciphertext' WHERE organization_id='org_proex'");
+  sql.run();
+  assert.equal((await assistantCredentialVault(f.db, f.actors.owner, 'org_proex', secret, keys)).recoverable, true);
+  await assert.rejects(saveVault(f, 1), code('assistant_key_recovery'));
+  const replacement = vaultInput('save', 1, { label: 'Recuperação sintética', secret: key, replaceUnavailable: true });
+  f.raceBatch(/vault_authority_changed/, () => f.native.prepare("UPDATE members SET revoked_at=? WHERE user_id=?").run(new Date().toISOString(), f.actors.owner.userId));
+  await assert.rejects(manageAssistantCredential(f.db, f.actors.owner, replacement, secret, keys), code('assistant_key_admin'));
+  assert.equal(f.native.prepare('SELECT credentials_ciphertext FROM ai_organization_settings').get().credentials_ciphertext, 'v1.lost.ciphertext');
+  f.native.prepare('UPDATE members SET revoked_at=NULL WHERE user_id=?').run(f.actors.owner.userId);
+  const result = await manageAssistantCredential(f.db, f.actors.owner, replacement, secret, keys);
+  assert.equal(result.recoverable, false);
+  assert.equal(result.keys[0].status, 'active');
+ } finally { f.native.close(); }
+});
+
+test('vault reservations follow Brasília day and month, and missing dedicated key never advertises a v2 downgrade', async () => {
+ const f = fixture(), DateConstructor = globalThis.Date;
+ try {
+  const day = DateConstructor.parse('2026-11-01T02:30:00.000Z');
+  globalThis.Date = class extends DateConstructor {
+   constructor(...args) { super(...(args.length ? args : [day])); }
+   static now() { return day; }
+  };
+  const insert = f.native.prepare('INSERT INTO ai_organization_usage(organization_id,day,reserved_usd_micros) VALUES(?,?,?)');
+  insert.run('org_proex', '2026-10-01', 7);
+  insert.run('org_proex', '2026-10-31', 11);
+  insert.run('org_proex', '2026-11-01', 23);
+  await configureAssistant(f.db, f.actors.owner, configInput(), secret);
+  const legacy = await assistantCredentialVault(f.db, f.actors.owner, 'org_proex', secret, {});
+  assert.equal(legacy.legacyAvailable, true);
+  assert.equal(legacy.storageReady, false);
+  assert.equal(legacy.keys[0].status, 'active');
+  assert.equal(legacy.keys[0].mask, null);
+  assert.deepEqual(legacy.reserved, { today: 11, month: 18, dailyLimit: 1000000 });
+  assert.equal((await assistantStatus(f.db, f.actors.owner, secret, 'org_proex')).credentialVaultManaged, false);
+  await migrateAssistantCredentials(f.db, f.actors.owner, {}, secret, keys);
+  const missing = await assistantCredentialVault(f.db, f.actors.owner, 'org_proex', secret, {});
+  assert.equal(missing.legacyAvailable, false);
+  assert.equal(missing.storageReady, false);
+  assert.equal(missing.keys[0].status, 'unavailable');
+  assert.equal((await assistantStatus(f.db, f.actors.owner, secret, 'org_proex')).credentialVaultManaged, true);
+  await assert.rejects(configureAssistant(f.db, f.actors.owner, configInput({}, { expectedRevision: 1, replaceCredentials: true }), secret), code('assistant_key_configuration'));
+ } finally { globalThis.Date = DateConstructor; f.native.close(); }
 });
 test('only platform owner configures; no endpoint override, no plaintext echo, optimistic revision required', async () => {
  const f = fixture(); try {
@@ -286,10 +375,10 @@ test('strict schema rejects invented fields, foreign IDs, quantities and fabrica
 });
 test('AI secrets and internal state cannot enter portal snapshot, MCP/Sheets pages or Drive attachment manifest', async () => {
  const f = fixture(); try {
-  await configureAssistant(f.db, f.actors.owner, configInput(), secret, undefined, keys); const ciphertext = f.native.prepare('SELECT credentials_ciphertext FROM ai_organization_settings').get().credentials_ciphertext;
+  await saveVault(f); const ciphertext = f.native.prepare('SELECT credentials_ciphertext FROM ai_organization_settings').get().credentials_ciphertext;
   assert.match(ciphertext, /^v2\./);
   const schemas = describePortableSchemas(), snapshot = await portalSnapshot(f.db, f.actors.owner), status = await syncStatus(f.db, f.actors.owner), attachments = await listSyncAttachments(f.db, f.actors.owner);
-  for (const table of ['ai_settings', 'ai_plans', 'ai_calls', 'ai_daily_usage', 'ai_organization_settings', 'ai_configuration_grants', 'ai_organization_usage', 'ai_transcriptions']) { assert.equal(schemas.tables.some(row => row.table === table), false); await assert.rejects(exportPortablePage(f.db, f.actors.owner, { table })); }
+  for (const table of ['ai_settings', 'ai_plans', 'ai_calls', 'ai_daily_usage', 'ai_organization_settings', 'ai_configuration_grants', 'ai_organization_usage', 'ai_transcriptions', 'ai_provider_credential_metadata']) { assert.equal(schemas.tables.some(row => row.table === table), false); await assert.rejects(exportPortablePage(f.db, f.actors.owner, { table })); }
   const pages = []; for (const schema of schemas.tables) pages.push(await exportPortablePage(f.db, f.actors.owner, { table: schema.table }));
   const exposed = JSON.stringify({ snapshot, status, attachments, pages }); for (const forbidden of [key, keys.current, ciphertext, 'credentials_ciphertext', 'config_json', 'ai_settings']) assert.equal(exposed.includes(forbidden), false, forbidden);
  } finally { f.native.close(); }

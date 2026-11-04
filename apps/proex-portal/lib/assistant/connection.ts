@@ -2,7 +2,7 @@ import {type PortalActor} from '../access';
 import {all,one} from '../database';
 import {HttpError} from '../errors';
 import {prepareMutation} from '../mutations';
-import {object,onlyKeys,validateConfig} from './contracts';
+import {availableProviderCredentials,object,onlyKeys,validateConfig} from './contracts';
 import {decryptProviderCredentials,digest,type CredentialKeys} from './crypto';
 import {configurationActor} from './settings';
 import {CONNECTION_PROVIDERS,connectionReceipt,type ConnectionProvider,type ConnectionReceipt} from './connection-contracts';
@@ -36,7 +36,7 @@ export async function testAssistantConnection(db:D1Database,actor:PortalActor|nu
  if(options.signal?.aborted)throw new HttpError(499,'O diagnóstico foi cancelado.','assistant_connection_cancelled');
  const mutation=await prepareMutation(db,c.current.userId,'assistant.connection.test',input);
  if(mutation.existingId)return storedReceipt(db,c,mutation.existingId,provider);
- const credentials=object(await decryptProviderCredentials(secret,c.credentialsCiphertext,c.organizationId,options.keys));let credential=credentials[provider];if(typeof credential!=='string'||credential.length<12)throw new HttpError(409,'Cadastre e salve a credencial deste provedor antes de testar.','assistant_credentials');
+ const credentials=availableProviderCredentials(object(await decryptProviderCredentials(secret,c.credentialsCiphertext,c.organizationId,options.keys)));let credential=credentials[provider];if(typeof credential!=='string'||credential.length<12)throw new HttpError(409,'Cadastre ou libere a credencial deste provedor antes de testar.','assistant_credentials');
  const id=crypto.randomUUID(),start=Date.now(),at=new Date(start).toISOString(),tenMinuteKey=await digest(`assistant.connection/10m/${c.organizationId}/${provider}`),dailyKey=await digest(`assistant.connection/24h/${c.organizationId}/${provider}`);
  // mutation_keys retains its existing meaning: this operation creates the
  // durable audit record identified by entity_id, in the very same transaction.
@@ -49,7 +49,7 @@ export async function testAssistantConnection(db:D1Database,actor:PortalActor|nu
   if(controller.signal.aborted)throw new Error('probe_cancelled');
   result=await probeConnection(provider,credential,provider==='deepseek'?c.config.model:provider==='typesafe'?c.config.jevModel:'nova-3',controller.signal,options.fetcher,async()=>{await batch(db,guards(db,c));});
  }catch(error){if(error instanceof HttpError)throw error;result={outcome:timedOut?'timeout':controller.signal.aborted?'cancelled':'unavailable',httpStatus:null,modelListed:null,authenticationChecked:false};}
- finally{clearTimeout(timer);options.signal?.removeEventListener('abort',abort);credential='';for(const key of Object.keys(credentials))credentials[key]='';}
+ finally{clearTimeout(timer);options.signal?.removeEventListener('abort',abort);credential='';for(const key of CONNECTION_PROVIDERS)credentials[key]='';}
  const receipt:ConnectionReceipt={id,provider,organizationId:c.organizationId,revision:c.revision,checkedAt:new Date().toISOString(),elapsedMs:Math.max(0,Date.now()-start),...result,inferenceTested:false,replayed:false};
  await batch(db,[...guards(db,c),db.prepare("INSERT INTO audit(id,actor_id,organization_id,action,entity_id,details,created_at) VALUES(?,?,?,'assistant.connection.result',?,?,?)").bind(crypto.randomUUID(),c.current.userId,c.organizationId,id,JSON.stringify(receipt),receipt.checkedAt)]);
  return receipt;

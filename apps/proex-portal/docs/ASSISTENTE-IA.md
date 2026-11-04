@@ -14,6 +14,14 @@ As migrações 0008 (organizações), 0009 (base do assistente), 0010 (patrimôn
 
 A pessoa responsável pela organização, ou responsável global da plataforma, pode cadastrar provedores e conceder autorização explícita de configuração a uma pessoa ativa da mesma organização. A concessão fica em `ai_configuration_grants` e pode ser revogada. Cargo TI, texto “responsável”, domínio de e-mail e catálogo público não conferem acesso. A autorização técnica permite configurar provedores/limites; não amplia acesso a projetos, registros ou estoque, não mostra chaves e não permite delegar novamente. Revogação/bloqueio da pessoa, retirada de seu vínculo ou perda da autoridade do concedente invalida a concessão. Escritas de configuração revalidam isso dentro do mesmo batch SQL.
 
+### Chaves e modelos
+
+A administração geral abre **Configurações → Chaves e modelos**. Enquanto o ambiente não tiver `PROEX_KEYS_SECRET`, a tela mostra o estado das credenciais v1 e orienta a continuar o cadastro em **Conta → Assistente com revisão → Configurar IA**. Depois da configuração do segredo dedicado, apenas o cofre global aceita novas chaves. Responsáveis e delegados continuam ajustando funções, cotas e o diagnóstico já autorizado da organização.
+
+O cofre cadastra, troca, desliga, libera e remove as credenciais DeepSeek, TypeSafe e Deepgram. A chave permanece cifrada e a tela recebe só a dica mascarada. Desligar retira a chave do uso operacional e mantém seu valor cifrado para futura liberação. Remover retira o valor do cofre ativo e preserva o registro de auditoria. Cadastro, troca e liberação não ativam funções de IA. As reservas do dia e do mês seguem o horário de Brasília. O piloto Groq permanece vinculado ao servidor e aparece somente quando atribuído à organização selecionada. O cofre não dispara chamadas nem apresenta a reserva como cobrança.
+
+O endpoint `/api/assistant/credentials` exige sessão da administração geral. As escritas revalidam o papel, a organização e a versão na transação. A tabela `ai_provider_credential_metadata` guarda somente nome, dica, estado e histórico administrativo. Fica fora das projeções para MCP, Sheets e Drive.
+
 Chaves DeepSeek, TypeSafe e Deepgram são campos de escrita. A API e a interface devolvem somente o estado de configuração. A interface limpa os três campos ao trocar organização, bloqueia salvamento durante carregamento e ignora respostas antigas. Disponibilidade indica configuração habilitada e credencial cadastrada. O diagnóstico de conexão é separado.
 
 Tabelas internas, fora da allowlist de snapshots/MCP/Sheets/Drive: `ai_settings`, `ai_daily_usage` (legadas), `ai_calls`, `ai_plans`, `ai_organization_settings`, `ai_configuration_grants`, `ai_organization_usage`, `ai_transcriptions`. Backups privados completos do banco contêm envelopes cifrados. Guarde as chaves de recuperação separadamente do backup.

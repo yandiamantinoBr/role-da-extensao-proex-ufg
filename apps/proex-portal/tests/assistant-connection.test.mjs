@@ -21,7 +21,7 @@ test('declared and streamed responses over 32KiB and invalid JSON never become s
 function intercept(f,pattern,change){const prepare=f.db.prepare.bind(f.db),batch=f.db.batch.bind(f.db),sql=new WeakMap();let armed=true;function wrap(statement,text){sql.set(statement,text);const bind=statement.bind;statement.bind=(...args)=>wrap(bind(...args),text);return statement;}f.db.prepare=text=>wrap(prepare(text),text);f.db.batch=async statements=>{if(armed&&statements.some(statement=>pattern.test(sql.get(statement)??''))){armed=false;change();}return batch(statements);};}
 test('fresh pre-dispatch and final transaction fences stop revoked TI and rotated configuration',async()=>{for(const stage of['before','after']){const f=await fixture(),provider=fake();intercept(f,stage==='before'?/assistant.connection.started/:/assistant.connection.result/,()=>f.native.exec("UPDATE ai_configuration_grants SET revoked_at='2026-10-31'"));await assert.rejects(service.testAssistantConnection(f.db,f.ti,input(f),secret,{fetcher:provider.fetch}),code('assistant_configuration_forbidden'));assert.equal(provider.calls.length,stage==='before'?0:2);assert.equal(f.native.prepare("SELECT COUNT(*) n FROM audit WHERE action='assistant.connection.result'").get().n,0);}const f=await fixture(),provider=fake();intercept(f,/assistant.connection.result/,()=>f.native.exec('UPDATE ai_organization_settings SET revision=revision+1'));await assert.rejects(service.testAssistantConnection(f.db,f.owner,input(f),secret,{fetcher:provider.fetch}),code('assistant_configuration_changed'));});
 test('abort is recoverable as the same receipt, and new configuration invalidates old diagnostic presentation',async()=>{const f=await fixture(),abort=new AbortController(),provider=fake({handle:()=>{abort.abort();throw new Error('synthetic network with '+keys.typesafe);}}),request=input(f,'typesafe');const result=await service.testAssistantConnection(f.db,f.ti,request,secret,{fetcher:provider.fetch,signal:abort.signal});assert.equal(result.outcome,'cancelled');const replay=await service.testAssistantConnection(f.db,f.ti,request,secret,{fetcher:provider.fetch});assert.equal(replay.outcome,'cancelled');assert.equal(provider.calls.length,1);f.native.exec('UPDATE ai_organization_settings SET revision=revision+1');assert.equal((await service.assistantConnectionStatus(f.db,f.ti,f.org)).checks.length,0);});
-const replacements=new Map([[resolve(root,'lib/platform.ts'),`export function database(){return globalThis.__connectionRoute.db;}export function inviteSecret(){return ${JSON.stringify(secret)};}export function assistantCredentialKeys(){return globalThis.__connectionRoute.keys ?? {};}`],[resolve(root,'lib/session.ts'),'export async function getPortalUser(){return globalThis.__connectionRoute.actor;}']]);const route=await import(compile('app/api/assistant/connection/route.ts',replacements));
+const replacements=new Map([[resolve(root,'lib/platform.ts'),`export function database(){return globalThis.__connectionRoute.db;}export function inviteSecret(){return ${JSON.stringify(secret)};}export function assistantCredentialKeys(){return globalThis.__connectionRoute.keys ?? {};}export function speechEnvironment(){return {};}`],[resolve(root,'lib/session.ts'),'export async function getPortalUser(){return globalThis.__connectionRoute.actor;}']]);const route=await import(compile('app/api/assistant/connection/route.ts',replacements));
 
 test('credential migration HTTP is private, owner-only and serves v2 to the existing diagnostic without exposing secrets', async () => {
  const f = await fixture(), provider = fake(), keyring = { current: 'synthetic-only-credential-key-independent-of-auth' };
@@ -61,6 +61,38 @@ test('credential migration HTTP is private, owner-only and serves v2 to the exis
   assert.deepEqual(await verification.json(), { migrated: 0, changed: 0, unreadable: 1, remaining: 0, nextCursor: null });
   assert.equal(provider.calls.length, 1);
  } finally { globalThis.fetch = originalFetch; console.error = originalError; }
+});
+
+test('vault HTTP leaves the legacy path readable and rejects delegated, cross-origin and stale credential writes', async () => {
+ const f = await fixture(), vault = await import(compile('app/api/assistant/credentials/route.ts', replacements));
+ globalThis.__connectionRoute = { db: f.db, actor: f.owner };
+ const address = 'https://synthetic.invalid/api/assistant/credentials';
+ const write = (body, origin = 'https://synthetic.invalid') => vault.POST(new Request(address, {
+  method: 'POST', headers: { Origin: origin, 'X-Proex-Action': '1', 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+ }));
+ const synthetic = 'sk-replacement-for-synthetic-test-only-ABCD';
+ const input = { action: 'save', organizationId: f.org, provider: 'deepseek', expectedRevision: 1, label: 'DeepSeek QA', secret: synthetic };
+ const legacy = await vault.GET(new Request(address));
+ assert.equal(legacy.headers.get('Cache-Control'), 'private, no-store');
+ const legacyData = await legacy.json();
+ assert.equal(legacyData.legacyAvailable, true);
+ assert.equal(legacyData.storageReady, false);
+ assert.equal((await write(input)).status, 503);
+ globalThis.__connectionRoute.keys = { current: 'synthetic-independent-vault-key-for-http' };
+ globalThis.__connectionRoute.actor = f.ti;
+ assert.equal((await vault.GET(new Request(address))).status, 403);
+ assert.equal((await write(input)).status, 403);
+ globalThis.__connectionRoute.actor = f.owner;
+ assert.equal((await write(input, 'https://outside.invalid')).status, 403);
+ const response = await write(input);
+ assert.equal(response.status, 200);
+ const result = await response.json();
+ assert.equal(result.keys[0].mask, 'sk-…ABCD');
+ assert.equal(result.revision, 2);
+ assert.equal((await write(input)).status, 409);
+ const raw = f.native.prepare('SELECT credentials_ciphertext FROM ai_organization_settings').get().credentials_ciphertext;
+ const observed = JSON.stringify([legacyData, result, await (await vault.GET(new Request(address))).json()]);
+ for (const value of [synthetic, raw, ...Object.values(keys)]) assert.ok(!observed.includes(value));
 });
 test('HTTP requires session, strict origin/action/bounded JSON, and returns only sanitized connection receipts',async()=>{const f=await fixture(),provider=fake();globalThis.__connectionRoute={db:f.db,actor:f.ti};const request=(body,headers={})=>new Request('https://synthetic.invalid/api/assistant/connection',{method:'POST',headers:{Origin:'https://synthetic.invalid','X-Proex-Action':'1','Content-Type':'application/json',...headers},body:JSON.stringify(body)});for(const headers of[{Origin:'https://foreign.invalid'},{'X-Proex-Action':''},{'Content-Type':'application/json-bad'}])assert.equal((await route.POST(request(input(f),headers))).status,403);assert.equal((await route.POST(request({...input(f),extra:'x'.repeat(3000)}))).status,413);const original=globalThis.fetch;globalThis.fetch=provider.fetch;try{const response=await route.POST(request(input(f,'typesafe')));assert.equal(response.status,200);assert.equal(response.headers.get('Cache-Control'),'private, no-store');assert.equal((await response.json()).outcome,'authenticated');const before=f.stats.commits;await route.GET(new Request('https://synthetic.invalid/api/assistant/connection?organizationId='+f.org));assert.equal(f.stats.commits,before);}finally{globalThis.fetch=original;}globalThis.__connectionRoute.actor=null;assert.equal((await route.POST(request(input(f),{Authorization:'Bearer pne_'+'x'.repeat(43)}))).status,401);});
 

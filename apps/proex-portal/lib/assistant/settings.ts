@@ -1,7 +1,7 @@
 import { getActor, organizationAuthoritySql, type PortalActor } from '../access';
 import { all, one } from '../database';
 import { HttpError } from '../errors';
-import { DEFAULT_ASSISTANT_CONFIG, object, onlyKeys, validateConfig, type AssistantCredentials } from './contracts';
+import { availableProviderCredentials, DEFAULT_ASSISTANT_CONFIG, object, onlyKeys, validateConfig } from './contracts';
 import { decryptProviderCredentials, encryptProviderCredentials, type CredentialKeys } from './crypto';
 
 export type SpeechProvider = 'deepgram' | 'groq';
@@ -10,7 +10,7 @@ export type SpeechEnvironment = { provider?: string; organizationId?: string; gr
 export function speechProviderForOrganization(organizationId: string, environment?: SpeechEnvironment): SpeechProvider {
  return environment?.provider === 'groq' && environment.organizationId === organizationId ? 'groq' : 'deepgram';
 }
-function validProviderKey(value: unknown): value is string {
+export function validProviderKey(value: unknown): value is string {
  return typeof value === 'string' && value.length >= 12 && value.length <= 512 && !/\s|[\u0000-\u001f]/u.test(value);
 }
 export function groqSpeechKey(environment?: SpeechEnvironment): string {
@@ -38,23 +38,28 @@ export async function configurationActor(db: D1Database, actor: PortalActor | nu
 export async function loadAssistantSettings(db: D1Database, secret: string, organizationId: string, speech: boolean | SpeechProvider = false, keys?: CredentialKeys) {
  const row = await one(db, "SELECT s.* FROM ai_organization_settings s JOIN organizations o ON o.id=s.organization_id AND o.status='active' WHERE s.organization_id=?", [organizationId]);
  if (!row) throw new HttpError(503, 'Esta organização ainda não configurou o assistente.', 'assistant_unavailable');
- const config = validateConfig(JSON.parse(row.config_json)), credentials = object(await decryptProviderCredentials(secret, row.credentials_ciphertext, organizationId, keys));
+ const config = validateConfig(JSON.parse(row.config_json)), credentials = availableProviderCredentials(object(await decryptProviderCredentials(secret, row.credentials_ciphertext, organizationId, keys)));
  if (speech ? !config.sttEnabled || (speech !== 'groq' && (typeof credentials.deepgram !== 'string' || !credentials.deepgram)) : !config.enabled || typeof credentials.deepseek !== 'string' || !credentials.deepseek || config.jevEnabled && !credentials.typesafe) throw new HttpError(503, speech ? 'A transcrição desta organização está desativada ou sem credencial.' : 'O assistente desta organização está desativado ou sem credencial.', 'assistant_unavailable');
- return { config, credentials: credentials as AssistantCredentials, revision: Number(row.revision) };
+ return { config, credentials, revision: Number(row.revision) };
 }
 function id(value: unknown): string { if (typeof value !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(value)) throw new HttpError(400, 'Escolha uma organização válida.', 'assistant_organization'); return value; }
 function key(value: unknown): string { if (!validProviderKey(value)) throw new HttpError(400, 'Informe uma chave válida no campo do provedor.', 'assistant_credentials'); return value; }
 export async function configureAssistant(db: D1Database, actor: PortalActor | null, input: Record<string, unknown>, secret: string, speechEnvironment?: SpeechEnvironment, keys?: CredentialKeys) {
  onlyKeys(input, ['action','organizationId','config','deepseekKey','typesafeKey','deepgramKey','expectedRevision','replaceCredentials']);
  const organizationId = id(input.organizationId), { current, auth } = await configurationActor(db, actor, organizationId), config = validateConfig(input.config);
+ const writesKeys = input.replaceCredentials === true || input.deepseekKey || input.typesafeKey || input.deepgramKey;
+ if ((keys?.current || keys?.previous) && writesKeys) throw new HttpError(403, 'Use Chaves e modelos em Configurações para cadastrar ou trocar credenciais.', 'assistant_key_admin');
  const old = await one(db, 'SELECT revision,credentials_ciphertext FROM ai_organization_settings WHERE organization_id=?', [organizationId]);
  if (!Number.isSafeInteger(input.expectedRevision) || input.expectedRevision !== (old?.revision ?? 0)) throw new HttpError(409, 'A configuração mudou. Atualize antes de salvar.', 'assistant_configuration_changed');
  const previous = old && input.replaceCredentials !== true ? object(await decryptProviderCredentials(secret, old.credentials_ciphertext, organizationId, keys)) : {};
- const credentials = { deepseek: input.deepseekKey ? key(input.deepseekKey) : String(previous.deepseek ?? ''), typesafe: input.typesafeKey ? key(input.typesafeKey) : String(previous.typesafe ?? ''), deepgram: input.deepgramKey ? key(input.deepgramKey) : String(previous.deepgram ?? '') };
+ const credentials = availableProviderCredentials(previous);
+ if (input.deepseekKey) credentials.deepseek = key(input.deepseekKey);
+ if (input.typesafeKey) credentials.typesafe = key(input.typesafeKey);
+ if (input.deepgramKey) credentials.deepgram = key(input.deepgramKey);
  const speechProvider = speechProviderForOrganization(organizationId, speechEnvironment);
  if (config.sttEnabled && speechProvider === 'groq') groqSpeechKey(speechEnvironment);
- if (config.enabled && !credentials.deepseek || config.jevEnabled && !credentials.typesafe || config.sttEnabled && speechProvider === 'deepgram' && !credentials.deepgram) throw new HttpError(400, 'Cadastre as credenciais dos provedores habilitados.', 'assistant_credentials');
- const credentialsChanged = !old || input.replaceCredentials === true || input.deepseekKey || input.typesafeKey || input.deepgramKey;
+ if ((config.enabled || config.documentEnabled) && !credentials.deepseek || config.jevEnabled && !credentials.typesafe || config.sttEnabled && speechProvider === 'deepgram' && !credentials.deepgram) throw new HttpError(400, 'Cadastre as credenciais dos provedores habilitados.', 'assistant_credentials');
+ const credentialsChanged = !old || writesKeys;
  const ciphertext = old && !credentialsChanged ? old.credentials_ciphertext : await encryptProviderCredentials(secret, credentials, organizationId, keys, old?.credentials_ciphertext);
  const revision = Number(input.expectedRevision) + 1, at = new Date().toISOString();
  const assertion = db.prepare(`SELECT CASE WHEN ${auth.sql} THEN 1 ELSE json_extract('[]','ai_configuration_revoked') END`).bind(...auth.values);
@@ -82,9 +87,9 @@ export async function assistantStatus(db: D1Database, actor: PortalActor | null,
  const selected = visible.find(organization => organization.id === selectedId) ?? (visible.length === 1 ? visible[0] : undefined);
  const result = { available: selected?.available ?? false, documentAvailable:selected?.documentAvailable??false, canConfigure: selected?.canConfigure ?? false, canDelegate: selected?.canDelegate ?? false, organizationId: selected?.id ?? '', organizations: visible, voice: { dictation: 'browser-optional', uploadStt: selected?.sttAvailable ?? false } };
  if (!selected?.canConfigure) return result;
- const row = await one(db, 'SELECT revision,config_json FROM ai_organization_settings WHERE organization_id=?', [selected.id]);
+ const row = await one(db, "SELECT revision,config_json,substr(credentials_ciphertext,1,3) AS credential_format FROM ai_organization_settings WHERE organization_id=?", [selected.id]);
  const day=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
- const details = { config: row ? validateConfig(JSON.parse(row.config_json)) : DEFAULT_ASSISTANT_CONFIG, revision: row?.revision ?? 0, credentialsConfigured: !!row, usage:await one(db,'SELECT reserved_usd_micros,reserved_tokens,reserved_ms,calls FROM ai_organization_usage WHERE organization_id=? AND day=?',[selected.id,day])??{reserved_usd_micros:0,reserved_tokens:0,reserved_ms:0,calls:0} };
+ const details = { config: row ? validateConfig(JSON.parse(row.config_json)) : DEFAULT_ASSISTANT_CONFIG, revision: row?.revision ?? 0, credentialsConfigured: !!row, credentialVaultManaged: Boolean(keys?.current || keys?.previous || (row && row.credential_format !== 'v1.')), usage:await one(db,'SELECT reserved_usd_micros,reserved_tokens,reserved_ms,calls FROM ai_organization_usage WHERE organization_id=? AND day=?',[selected.id,day])??{reserved_usd_micros:0,reserved_tokens:0,reserved_ms:0,calls:0} };
  if (!selected.canDelegate) return { ...result, ...details };
  const candidates = await all(db, "SELECT DISTINCT m.user_id AS userId,COALESCE(NULLIF(p.display_name,''),m.user_id) AS name FROM members m JOIN portal_users u ON u.user_id=m.user_id LEFT JOIN profiles p ON p.user_id=m.user_id WHERE m.organization_id=? AND m.revoked_at IS NULL AND u.status='active' AND u.activation_pending=0 AND u.anonymized_at IS NULL ORDER BY name", [selected.id]);
  const grants = await all(db, 'SELECT id,user_id AS userId,created_at AS createdAt FROM ai_configuration_grants WHERE organization_id=? AND revoked_at IS NULL', [selected.id]);
