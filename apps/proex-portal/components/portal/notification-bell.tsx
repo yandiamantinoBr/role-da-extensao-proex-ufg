@@ -22,6 +22,7 @@ type Inbox = {
  pendingHasMore:boolean;
  hiddenPending?:PendingTask[];
  hiddenPendingHasMore?:boolean;
+ pendingVisibility?:'confirmed'|'outdated';
 };
 type Mutation =
  | { action:'notification.read'; read:true; all?:true; taskId?:string }
@@ -129,7 +130,9 @@ export default function NotificationBell({userId,onSelectTask,basePath='/?module
    if(currentUser.current===owner&&!controller.signal.aborted){
     readEpoch.current++;
     setStored({owner,data});
-    setMessage(success?{owner,error:false,text:success}:null);
+    const outdated=body.action==='pending.visibility'&&data.pendingVisibility==='outdated';
+    setMessage(outdated?{owner,error:true,text:'Esta pendência mudou ou saiu da sua lista. Confira a lista atualizada.'}
+      :success?{owner,error:false,text:success}:null);
     if(success)heading.current?.focus();
    }
   }catch(cause){

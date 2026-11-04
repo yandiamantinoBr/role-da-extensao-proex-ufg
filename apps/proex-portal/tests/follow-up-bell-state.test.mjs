@@ -86,11 +86,30 @@ test('followed tasks have separate personal hide and restore actions and keep th
   assert.equal(h.link('Pendência sintética').props.href,'/?module=demands&demandId=task-a');
   h.button('Ocultar pendência: Pendência sintética').props.onClick();
   assert.deepEqual(JSON.parse(h.requests[2].init.body),{action:'pending.visibility',taskId:'task-a',version:2,hidden:true});
-  h.reply(2,{...first,pending:[],hiddenPending:[pending]});await tick();h.render();
+  h.reply(2,{...first,pending:[],hiddenPending:[pending],pendingVisibility:'confirmed'});await tick();h.render();
+  assert.match(h.body(),/Pendência ocultada da sua lista/);
   assert.match(h.body(),/Pendências ocultadas \(1\)/);
   h.button('Mostrar pendência: Pendência sintética').props.onClick();
   assert.deepEqual(JSON.parse(h.requests[3].init.body),{action:'pending.visibility',taskId:'task-a',version:2,hidden:false});
-  h.reply(3,first);await tick();h.render();
+  h.reply(3,{...first,pendingVisibility:'confirmed'});await tick();h.render();
   assert.match(h.body(),/Pendência de volta à sua lista/);
  }finally{h.dispose();}
+});
+
+test('stale hide and restore show the refreshed list without a false success',async()=>{
+ for(const hidden of [false,true]){
+  const h=harness(),pending={id:'task-a',title:'Pendência anterior',status:'open',priority:'high',due_at:null,version:2};
+  const first={...inbox(),pending:hidden?[]:[pending],hiddenPending:hidden?[pending]:[],viewerId:'user-a'};
+  try{
+   h.start();h.reply(0,first);await tick();h.render();
+   h.button('Notificações: 1 não lidas').props.onClick();h.render();
+   h.button('Pendentes').props.onClick();h.render();
+   h.button(`${hidden?'Mostrar':'Ocultar'} pendência: Pendência anterior`).props.onClick();
+   h.reply(2,{...first,pending:[{...pending,title:'Pendência atualizada',version:3}],hiddenPending:[],pendingVisibility:'outdated'});await tick();h.render();
+   assert.match(h.body(),/Esta pendência mudou ou saiu da sua lista/);
+   assert.equal(h.links('Pendência anterior').length,0);
+   assert.equal(h.links('Pendência atualizada').length,1);
+   assert.doesNotMatch(h.body(),/Pendência ocultada da sua lista|Pendência de volta à sua lista/);
+  }finally{h.dispose();}
+ }
 });

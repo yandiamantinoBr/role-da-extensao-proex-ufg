@@ -236,14 +236,23 @@ test('dismissing a notice group and hiding followed work use separate personal c
  const dismissed=await act(f,worker,'notification.dismiss',{through:before.clearThrough,taskId:first.id});
  assert.deepEqual(dismissed.notifications.map(row=>row.task_id),[second.id]);
  assert.equal(dismissed.pending.length,2);
- assert.equal((await act(f,other,'pending.visibility',{taskId:first.id,version:first.version,hidden:true})).hiddenPending.length,0);
+ const forbidden=await act(f,other,'pending.visibility',{taskId:first.id,version:first.version,hidden:true});
+ assert.equal(forbidden.hiddenPending.length,0);
+ assert.equal(forbidden.pendingVisibility,'outdated');
  const hidden=await act(f,worker,'pending.visibility',{taskId:first.id,version:first.version,hidden:true});
+ assert.equal(hidden.pendingVisibility,'confirmed');
  assert.deepEqual(hidden.pending.map(row=>row.id),[second.id]);
  assert.deepEqual(hidden.hiddenPending.map(row=>row.id),[first.id]);
  assert.equal(hidden.unread,1);
  assert.equal((await notificationInbox(f.db,admin)).pending.length,2);
- assert.equal((await act(f,worker,'pending.visibility',{taskId:first.id,version:first.version,hidden:true})).hiddenPending.length,1);
- assert.equal((await act(f,worker,'pending.visibility',{taskId:first.id,version:first.version,hidden:false})).pending.length,2);
+ const hideAgain=await act(f,worker,'pending.visibility',{taskId:first.id,version:first.version,hidden:true});
+ assert.equal(hideAgain.hiddenPending.length,1);
+ assert.equal(hideAgain.pendingVisibility,'confirmed');
+ for(let attempt=0;attempt<2;attempt++){
+  const restored=await act(f,worker,'pending.visibility',{taskId:first.id,version:first.version,hidden:false});
+  assert.equal(restored.pending.length,2);
+  assert.equal(restored.pendingVisibility,'confirmed');
+ }
  await act(f,worker,'pending.visibility',{taskId:first.id,version:first.version,hidden:true});
  const updated=(await act(f,admin,'task.update',{id:first.id,expectedVersion:first.version,title:'Novo contexto sintético',operationKey:crypto.randomUUID()})).task;
  const fresh=await notificationInbox(f.db,worker);
@@ -252,6 +261,11 @@ test('dismissing a notice group and hiding followed work use separate personal c
  assert.ok(fresh.notifications.some(row=>row.task_id===first.id));
  const stale=await act(f,worker,'pending.visibility',{taskId:first.id,version:first.version,hidden:true});
  assert.equal(stale.pending.length,2);
+ assert.equal(stale.pendingVisibility,'outdated');
+ await act(f,worker,'pending.visibility',{taskId:first.id,version:updated.version,hidden:true});
+ const staleRestore=await act(f,worker,'pending.visibility',{taskId:first.id,version:first.version,hidden:false});
+ assert.equal(staleRestore.pendingVisibility,'outdated');
+ assert.ok(staleRestore.hiddenPending.some(row=>row.id===first.id&&row.version===updated.version));
  f.native.prepare("UPDATE members SET revoked_at=? WHERE user_id='worker-a'").run(f.now);
  await act(f,worker,'notification.dismiss',{through:fresh.clearThrough});
  await act(f,worker,'pending.visibility',{taskId:second.id,version:second.version,hidden:true});

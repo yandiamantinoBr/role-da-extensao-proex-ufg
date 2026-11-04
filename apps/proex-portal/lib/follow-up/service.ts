@@ -194,10 +194,17 @@ const pendingSource = `
 `;
 const pendingOrder = `ORDER BY CASE t.priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,COALESCE(t.due_at,'9999'),t.id`;
 
-export async function notificationInbox(db:D1Database,actor:PortalActor|null){
+type PendingVisibilityChange = { write:D1PreparedStatement; confirm:D1PreparedStatement };
+
+export function notificationInbox(db:D1Database,actor:PortalActor|null){
+ return readInbox(db,actor);
+}
+
+async function readInbox(db:D1Database,actor:PortalActor|null,visibility?:PendingVisibilityChange){
  actorRequired(actor);
- // A single read snapshot keeps the scope, the counts and the clear boundary consistent.
+ // One transaction keeps the visibility receipt, scope, counts and clear boundary consistent.
  const results=await db.batch([
+  ...(visibility?[visibility.write]:[]),
   db.prepare(`SELECT n.id,n.task_id,n.read_at,n.created_at,t.title,t.status,t.priority,t.due_at,t.project_id ${inboxSource}
    ORDER BY n.created_at DESC,n.id LIMIT 100`).bind(actor.userId),
   db.prepare(`SELECT COUNT(*) total,COALESCE(SUM(CASE WHEN n.read_at IS NULL THEN 1 ELSE 0 END),0) unread ${inboxSource}`).bind(actor.userId),
@@ -208,7 +215,8 @@ export async function notificationInbox(db:D1Database,actor:PortalActor|null){
    FROM followup_hidden_pending hidden JOIN followup_tasks t ON t.id=hidden.task_id AND t.version=hidden.task_version
    WHERE hidden.user_id=? AND t.status NOT IN ('completed','cancelled') AND ${inboxTaskScope('hidden.user_id')}
    ${pendingOrder} LIMIT 21`).bind(actor.userId),
- ]);
+  ...(visibility?[visibility.confirm]:[]),
+ ]).then(result=>visibility?result.slice(1):result);
  const notifications=(results[0].results??[]) as Row[],counts=(results[1].results?.[0]??{}) as Row;
  const anchor=(results[2].results?.[0]??{}) as Row,pending=(results[3].results??[]) as Row[],hidden=(results[4].results??[]) as Row[];
  return{
@@ -216,6 +224,7 @@ export async function notificationInbox(db:D1Database,actor:PortalActor|null){
   viewerId:actor.userId,unread:Number(counts.unread??0),hasMore:Number(counts.total??0)>100,
   clearThrough:anchor.id??null,pending:pending.slice(0,100),pendingHasMore:pending.length>100,
   hiddenPending:hidden.slice(0,20),hiddenPendingHasMore:hidden.length>20,
+  ...(visibility?{pendingVisibility:results[5].results?.length?'confirmed':'outdated'}:{}),
   email:{enabled:false,reason:'Somente notificações internas. Nenhum e-mail é enviado por este incremento.'},
  };
 }
@@ -258,16 +267,20 @@ async function pendingVisibility(db:D1Database,actor:PortalActor,input:Record<st
  const source=`FROM followup_tasks t JOIN(SELECT ? user_id) recipient
   WHERE t.id=? AND t.version=? AND t.status NOT IN ('completed','cancelled')
   AND ${inboxTaskScope('recipient.user_id')}`;
- if(input.hidden){
-  await db.prepare(`INSERT INTO followup_hidden_pending(user_id,task_id,task_version)
+ const write=input.hidden
+  ?db.prepare(`INSERT INTO followup_hidden_pending(user_id,task_id,task_version)
    SELECT recipient.user_id,t.id,t.version ${source}
    ON CONFLICT(user_id,task_id) DO UPDATE SET task_version=excluded.task_version
-   WHERE task_version<excluded.task_version`).bind(actor.userId,taskId,expected).run();
- }else{
-  await db.prepare(`DELETE FROM followup_hidden_pending WHERE user_id=? AND task_id=? AND task_version=?
-   AND EXISTS(SELECT 1 ${source})`).bind(actor.userId,taskId,expected,actor.userId,taskId,expected).run();
- }
- return notificationInbox(db,actor);
+   WHERE task_version<excluded.task_version`).bind(actor.userId,taskId,expected)
+  :db.prepare(`DELETE FROM followup_hidden_pending WHERE user_id=? AND task_id=? AND task_version=?
+   AND EXISTS(SELECT 1 ${source})`).bind(actor.userId,taskId,expected,actor.userId,taskId,expected);
+ // Confirm the requested state even on an idempotent retry. A stale version,
+ // an unavailable task and revoked access all produce the same receipt.
+ const confirm=db.prepare(`SELECT 1 ${source} AND EXISTS(
+  SELECT 1 FROM followup_hidden_pending hidden
+  WHERE hidden.user_id=recipient.user_id AND hidden.task_id=t.id AND hidden.task_version=t.version
+ )=?`).bind(actor.userId,taskId,expected,input.hidden?1:0);
+ return readInbox(db,actor,{write,confirm});
 }
 
 export async function followupAction(db:D1Database,actor:PortalActor|null,action:string,input:Record<string,unknown>):Promise<Row>{actorRequired(actor);try{
