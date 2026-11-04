@@ -124,13 +124,27 @@ input:is([type=checkbox],[type=radio]){appearance:auto;display:inline-block;widt
 @media(max-width:800px){#followup-notification-center{position:fixed;inset:78px 12px auto;width:auto;max-height:calc(100dvh - 160px)}}
 @media(max-width:420px){.p-topbar .p-refresh-button{display:none}}
 
+.pn-brand:focus-visible, .p-mobile-brand:focus-visible { outline-color: #fff; }
+
 @media (max-width: 720px) {
   .theme-switch select { font-size: 16px; }
+  .p-mobile-brand {
+    justify-content: center;
+    flex-shrink: 0;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+  }
+  .p-mobile-brand:active { background: #ffffff20; }
+  .p-account-trigger { min-width: 44px; justify-content: center; }
 }
 
 /* Keep the brand and all three controls separate on narrow phones. */
 @media (max-width: 350px) {
-  .p-topbar { gap: 8px; }
-  .p-mobile-brand, .p-topbar-actions { flex-shrink: 0; }
+  .p-topbar { gap: 8px; padding-inline: 12px; }
+  .p-topbar-actions { gap: 5px; flex-shrink: 0; }
   .p-topbar .theme-switch > span[aria-hidden=true], .p-account-trigger > svg { display: none; }
 }

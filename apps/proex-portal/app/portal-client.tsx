@@ -553,10 +553,9 @@ export default function PortalClient({ initial }: {
     <DesktopSidebar modules={allowedTabs} active={tab} onNavigate={navigate} pinned={navigation.pinned} role={role} collapsed={navigation.collapsed} onToggle={navigation.toggleCollapsed} />
     <div className="p-workspace">
     <header className="p-topbar">
-    <div className="p-mobile-brand">
+    <button type="button" className="p-mobile-brand" aria-label="PROEX UFG, ir para o início" onClick={() => navigate('overview')}>
     <BrandMark variant="light" showUfg={false}/>
-    <span>Gestão</span>
-    </div>
+    </button>
     <div className="p-breadcrumb">PROEX <ChevronRight size={14}/>
     <strong>{title}</strong>
     </div>
