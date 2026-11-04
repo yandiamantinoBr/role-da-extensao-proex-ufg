@@ -125,7 +125,7 @@
 .tableHead { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
 .tableHead strong { font-size: 14px; color: var(--ink); }
 .tableHead small { font-size: 11px; color: var(--text-secondary); }
-.table { max-height: 560px; max-width: 100%; min-width: 0; overscroll-behavior: contain; }
+.table { max-height: 560px; max-width: 100%; min-width: 0; }
 .table table { width: max-content; min-width: 100%; }
 .table th { position: sticky; top: 0; z-index: 1; padding: 0 !important; width: auto !important; }
 .table th button { display: inline-flex; align-items: center; gap: 4px; width: 100%; min-height: 44px; min-width: 44px; border: 0; background: none; padding: 12px 14px; font: inherit; color: inherit; text-transform: inherit; letter-spacing: inherit; text-align: inherit; cursor: pointer; white-space: nowrap; }
@@ -152,6 +152,8 @@
   .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 720px) {
+  /* A tabela rola só na horizontal; o gesto vertical move a página. */
+  .table { max-height: none; }
   .root { padding: 16px; border-radius: 14px; }
   .datasets { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .controls { grid-template-columns: 1fr; }
