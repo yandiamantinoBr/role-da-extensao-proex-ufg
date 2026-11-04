@@ -1,0 +1,215 @@
+.dashboard {
+  container: proex-home / inline-size;
+  gap: 28px;
+}
+
+.dashboard :global(.pd-heading) {
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.dashboard :global(.pd-heading) > div {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+
+.dashboard :global(.pd-heading h2) {
+  font-size: 20px;
+  overflow-wrap: anywhere;
+}
+
+.dashboard :global(.pd-heading p),
+.dashboard :global(.pd-heading .p-button) {
+  font-size: 13px;
+}
+
+.dashboard :global(.pd-heading .p-button) {
+  min-height: 44px;
+}
+
+.dashboard :global(.pd-summaries),
+.dashboard :global(.pd-shortcuts),
+.dashboard :global(.pd-lower) {
+  gap: 12px;
+}
+
+.dashboard :global(.pd-summaries) {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.dashboard :global(.pd-summary) {
+  min-height: 0;
+  padding: 14px;
+  gap: 8px;
+  transform: none;
+}
+
+.dashboard :global(.pd-summary-label) {
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.dashboard :global(.pd-summary-label) > svg:last-child {
+  flex-shrink: 0;
+  color: var(--brand-ink);
+  opacity: 1;
+  transform: none;
+}
+
+.summaryIcon,
+.attentionIcon {
+  display: inline-grid;
+  flex-shrink: 0;
+  place-items: center;
+  inline-size: 32px;
+  block-size: 32px;
+  border-radius: 9px;
+  background: var(--surface-soft);
+  color: var(--brand-ink);
+}
+
+.dashboard :global(.pd-summary) > strong {
+  margin: 2px 0 0;
+  line-height: 1.1;
+}
+
+.dashboard :global(.pd-summary-detail) {
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.dashboard :global(.pd-summary-note) {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 0;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.dashboard :global(.pd-summary-note) svg {
+  flex-shrink: 0;
+}
+
+.distribution {
+  display: block;
+  inline-size: 100%;
+  block-size: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--line);
+}
+
+.distribution > span {
+  display: block;
+  block-size: 100%;
+  background: var(--brand-ink);
+}
+
+.dashboard :global(.pd-shortcuts) {
+  grid-template-columns: 1fr;
+}
+
+.dashboard :global(.pd-shortcut-link) {
+  min-height: 64px;
+  padding-block: 10px;
+}
+
+.dashboard :global(.pd-shortcut-link) > svg {
+  flex-shrink: 0;
+}
+
+.dashboard :global(.pd-shortcut-link strong),
+.dashboard :global(.pd-attention strong),
+.dashboard :global(.pd-projects strong) {
+  font-size: 14px;
+}
+
+.dashboard :global(.pd-shortcut-link small),
+.dashboard :global(.pd-attention small),
+.dashboard :global(.pd-projects small) {
+  font-size: 12px;
+}
+
+.dashboard :global(.pd-frequent button),
+.dashboard :global(.pd-shortcut-options button) {
+  min-height: 44px;
+}
+
+.dashboard :global(.pd-lower) {
+  grid-template-columns: 1fr;
+  align-items: start;
+}
+
+.dashboard :global(.pd-attention > button),
+.dashboard :global(.pd-projects > button),
+.dashboard :global(.pd-upcoming > button) {
+  min-height: 52px;
+}
+
+.attentionIcon[data-kind='late'] {
+  color: var(--danger);
+}
+
+.attentionIcon[data-kind='stock'] {
+  background: #fff1de;
+  color: #7c4e17;
+}
+
+:global(html[data-theme='dark']) .attentionIcon[data-kind='stock'] {
+  background: #49351f;
+  color: #f0c58e;
+}
+
+.dashboard button:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+@container proex-home (min-width: 640px) {
+  .dashboard :global(.pd-shortcuts:not(.pd-single-shortcut)),
+  .dashboard :global(.pd-lower) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container proex-home (min-width: 760px) {
+  .dashboard :global(.pd-summaries) {
+    grid-template-columns: repeat(auto-fit, minmax(164px, 1fr));
+  }
+
+  .dashboard :global(.pd-summary) {
+    padding: 16px;
+  }
+}
+
+@container proex-home (max-width: 400px) {
+  .dashboard :global(.pd-summary) {
+    padding: 11px;
+  }
+
+  .dashboard :global(.pd-summary-label) {
+    flex-wrap: wrap;
+    gap: 6px;
+    overflow-wrap: anywhere;
+  }
+
+  .summaryIcon {
+    inline-size: 26px;
+    block-size: 26px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboard :global(.pd-summary),
+  .dashboard :global(.pd-summary:hover),
+  .dashboard :global(.pd-shortcut) {
+    transition: none;
+    transform: none;
+  }
+}
