@@ -96,6 +96,20 @@ test('review reports retain sizes, unknown counts, damage, units and stock while
   } finally { db.native.close(); }
 });
 
+test('project summaries keep active agenda milestones separate from dynamics and other projects', async () => {
+  const db = fixture(), start = '2026-11-09';
+  try {
+    const insert = db.native.prepare('INSERT INTO project_schedule_items(id,project_id,title,starts_at,ends_at,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)');
+    insert.run('milestone-a', 'project-a', 'Período oficial', start, start, 'planned', start, start);
+    insert.run('cancelled-a', 'project-a', 'Cancelado', start, start, 'cancelled', start, start);
+    insert.run('milestone-b', 'project-b', 'Outro projeto', start, start, 'planned', start, start);
+    const viewer = actor(db, 'viewer', 'project-a');
+    const { rows } = await reportRows(db, viewer, { dataset: 'projects' });
+    assert.deepEqual(rows.map(row => [row.id, row.eventos, row.marcos_agenda]), [['project-a', 0, 1]]);
+    assert.doesNotMatch(JSON.stringify(rows), /Período oficial|Outro projeto/);
+  } finally { db.native.close(); }
+});
+
 test('reports respect project scope and the capability of each dataset', async () => {
   const db = fixture();
   const owner = await reportRows(db, actor(db, 'owner'), { dataset: 'projects' });
