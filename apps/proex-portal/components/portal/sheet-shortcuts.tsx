@@ -15,6 +15,7 @@ type Props = {
 };
 type LinkSet = { master: string; tabs: Partial<Record<SheetTabKey, string>> };
 type Result = { status: 'loading' | 'empty' | 'error' } | { status: 'ready'; links: LinkSet };
+const EDITABLE_REPORT_TABS = new Set<SheetTabKey>(['projects', 'items', 'campaigns', 'project_schedule_items']);
 
 function shortcutLinks(body: unknown): LinkSet | null {
   if (!body || typeof body !== 'object') return null;
@@ -77,10 +78,11 @@ function AvailableShortcuts({ context, tabKeys, projectScoped }: Pick<Props, 'co
       </a>
     </div>
     {context === 'reports' && <p className={styles.help}>A planilha mostra a base geral. O Excel e os demais arquivos baixados seguem os filtros deste relatório.</p>}
+    {mainTab && !EDITABLE_REPORT_TABS.has(mainTab) && <p className={styles.help}>Os registros existentes desta aba são alterados pelo Portal.</p>}
     {context === 'settings' && linkedTabs.length > 0 && <ul className={styles.tabs} aria-label="Abas da planilha mestre">
       {linkedTabs.map(key => <li key={key}><a className="p-button p-button-subtle" href={tabs[key]} target="_blank" rel="noopener noreferrer">{SHEET_TAB_LABELS[key]}<ExternalLink size={14} aria-hidden="true" /></a></li>)}
     </ul>}
-    <p className={styles.help}>Para editar pela planilha, use as colunas em creme ou a aba <strong>Operações</strong>. Na planilha, use <strong>PROEX → Sincronizar agora</strong> para enviar as mudanças ao portal.</p>
+    <p className={styles.help}>Faça as alterações permitidas nas colunas em creme ou na aba <strong>Operações</strong>. Na planilha, use <strong>PROEX → Sincronizar agora</strong> para enviar as mudanças ao portal.</p>
   </aside>;
 }
 
