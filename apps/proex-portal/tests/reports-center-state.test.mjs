@@ -217,9 +217,10 @@ test('project summary buttons download the same authorized singleton in each for
  const row = {id:'project-a',projeto:'Projeto A',abrangencia:'internal',etapa:'past',materiais:0};
  const h = harness();
  try {
-  h.renderProject(row.id);
+  const report = h.renderProject(row.id);
   assert.equal(h.requests.length,0);
-  assert.match(h.text(),/Ficha e totais deste projeto em todo o período/);
+  const masthead = nodesInside(report).find(node => node.type?.name === 'ReportMasthead');
+  assert.match(masthead.props.description,/Ficha e totais do período completo/);
   for (const [button, ext] of [['Excel (XLSX)','xlsx'],['Word (DOCX)','docx'],['PDF','pdf']]) {
    h.button(button).props.onClick();
    const request = h.requests.at(-1);
