@@ -173,18 +173,102 @@ async function checklistAction(db:D1Database,actor:PortalActor,action:string,inp
  statements.push(history(db,actor,taskId,at),fanout(db,taskId,`checklist:${checklist.id}:${expected+1}`,at));
  try{await taskAtomic(db,actor,taskId,statements);}catch(error){if(error instanceof HttpError)throw error;const recovered=await mutation.recover(error);await taskWorkPermission(db,actor,recovered);return{...await followupDetail(db,actor,recovered),duplicate:true};}return followupDetail(db,actor,taskId);
 }
-const inboxPredicate=`${authority('?','t.organization_id','t.project_id')} AND EXISTS(SELECT 1 FROM organizations inbox_org WHERE inbox_org.id=t.organization_id AND inbox_org.status='active') AND ${effectiveRecipient('n.user_id')} AND EXISTS(SELECT 1 FROM portal_users inbox_user WHERE inbox_user.user_id=n.user_id AND ${activeAccount('inbox_user')})`;
-export async function notificationInbox(db:D1Database,actor:PortalActor|null){actorRequired(actor);
- // Window, global counts and followed tasks use the same fresh read snapshot.
+const inboxTaskScope = (user: string) => `
+ ${authority(user,'t.organization_id','t.project_id')}
+ AND EXISTS(SELECT 1 FROM organizations inbox_org WHERE inbox_org.id=t.organization_id AND inbox_org.status='active')
+ AND ${effectiveRecipient(user)}
+ AND EXISTS(SELECT 1 FROM portal_users inbox_user WHERE inbox_user.user_id=${user} AND ${activeAccount('inbox_user')})
+`;
+const inboxSource = `
+ FROM followup_notifications n
+ JOIN followup_inbox_entries e ON e.notification_id=n.id
+ JOIN followup_tasks t ON t.id=n.task_id
+ WHERE n.user_id=? AND e.dismissed_at IS NULL AND ${inboxTaskScope('n.user_id')}
+`;
+const pendingSource = `
+ FROM followup_tasks t
+ JOIN (SELECT ? user_id) recipient
+ LEFT JOIN followup_hidden_pending hidden
+   ON hidden.user_id=recipient.user_id AND hidden.task_id=t.id AND hidden.task_version=t.version
+ WHERE t.status NOT IN ('completed','cancelled') AND ${inboxTaskScope('recipient.user_id')}
+`;
+const pendingOrder = `ORDER BY CASE t.priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,COALESCE(t.due_at,'9999'),t.id`;
+
+export async function notificationInbox(db:D1Database,actor:PortalActor|null){
+ actorRequired(actor);
+ // A single read snapshot keeps the scope, the counts and the clear boundary consistent.
  const results=await db.batch([
- db.prepare(`SELECT n.id,n.task_id,n.read_at,n.created_at,t.title,t.status,t.priority,t.due_at,t.project_id FROM followup_notifications n JOIN followup_tasks t ON t.id=n.task_id WHERE n.user_id=? AND ${inboxPredicate} ORDER BY n.created_at DESC,n.id LIMIT 100`).bind(actor.userId,actor.userId),
- db.prepare(`SELECT COUNT(*) total,COALESCE(SUM(CASE WHEN n.read_at IS NULL THEN 1 ELSE 0 END),0) unread FROM followup_notifications n JOIN followup_tasks t ON t.id=n.task_id WHERE n.user_id=? AND ${inboxPredicate}`).bind(actor.userId,actor.userId),
- db.prepare(`SELECT t.id,t.title,t.priority,t.due_at,t.project_id FROM followup_tasks t JOIN(SELECT ? user_id) recipient WHERE t.status NOT IN ('completed','cancelled') AND EXISTS(SELECT 1 FROM organizations inbox_org WHERE inbox_org.id=t.organization_id AND inbox_org.status='active') AND ${authority('recipient.user_id','t.organization_id','t.project_id')} AND ${effectiveRecipient('recipient.user_id')} ORDER BY CASE t.priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,COALESCE(t.due_at,'9999'),t.id LIMIT 101`).bind(actor.userId),
+  db.prepare(`SELECT n.id,n.task_id,n.read_at,n.created_at,t.title,t.status,t.priority,t.due_at,t.project_id ${inboxSource}
+   ORDER BY n.created_at DESC,n.id LIMIT 100`).bind(actor.userId),
+  db.prepare(`SELECT COUNT(*) total,COALESCE(SUM(CASE WHEN n.read_at IS NULL THEN 1 ELSE 0 END),0) unread ${inboxSource}`).bind(actor.userId),
+  db.prepare(`SELECT n.id ${inboxSource} ORDER BY e.sequence DESC LIMIT 1`).bind(actor.userId),
+  db.prepare(`SELECT t.id,t.title,t.status,t.priority,t.due_at,t.project_id,t.version ${pendingSource}
+   AND hidden.task_id IS NULL ${pendingOrder} LIMIT 101`).bind(actor.userId),
+  db.prepare(`SELECT t.id,t.title,t.status,t.priority,t.due_at,t.project_id,t.version
+   FROM followup_hidden_pending hidden JOIN followup_tasks t ON t.id=hidden.task_id AND t.version=hidden.task_version
+   WHERE hidden.user_id=? AND t.status NOT IN ('completed','cancelled') AND ${inboxTaskScope('hidden.user_id')}
+   ${pendingOrder} LIMIT 21`).bind(actor.userId),
  ]);
- const notifications=(results[0].results??[]) as Row[],counts=(results[1].results?.[0]??{}) as Row,pending=(results[2].results??[]) as Row[];
- return{notifications,groups:groupNotifications(notifications as NoticeForGroup[]),windowLimit:100,...serverWorkClock(),viewerId:actor.userId,unread:Number(counts?.unread??0),hasMore:Number(counts?.total??0)>100,pending:pending.slice(0,100),pendingHasMore:pending.length>100,email:{enabled:false,reason:'Somente notificações internas. Nenhum e-mail é enviado por este incremento.'}};
+ const notifications=(results[0].results??[]) as Row[],counts=(results[1].results?.[0]??{}) as Row;
+ const anchor=(results[2].results?.[0]??{}) as Row,pending=(results[3].results??[]) as Row[],hidden=(results[4].results??[]) as Row[];
+ return{
+  notifications,groups:groupNotifications(notifications as NoticeForGroup[]),windowLimit:100,...serverWorkClock(),
+  viewerId:actor.userId,unread:Number(counts.unread??0),hasMore:Number(counts.total??0)>100,
+  clearThrough:anchor.id??null,pending:pending.slice(0,100),pendingHasMore:pending.length>100,
+  hiddenPending:hidden.slice(0,20),hiddenPendingHasMore:hidden.length>20,
+  email:{enabled:false,reason:'Somente notificações internas. Nenhum e-mail é enviado por este incremento.'},
+ };
 }
-async function notificationRead(db:D1Database,actor:PortalActor,input:Record<string,unknown>){onlyKeys(input,['action','id','taskId','read','all']);if(typeof input.read!=='boolean')fail('Escolha marcar como lida ou não lida.');const selectors=['id','taskId','all'].filter(key=>input[key]!==undefined);if(selectors.length!==1||selectors[0]==='all'&&input.all!==true)fail('Escolha apenas um aviso, uma demanda ou todos os avisos.');const at=input.read?iso():null,noticeId=selectors[0]==='id'?id(input.id):null,taskId=selectors[0]==='taskId'?id(input.taskId):null;await db.prepare(`UPDATE followup_notifications SET read_at=? WHERE user_id=? ${noticeId?'AND id=?':taskId?'AND task_id=?':''} AND read_at IS ${input.read?'NULL':'NOT NULL'} AND EXISTS(SELECT 1 FROM followup_tasks t WHERE t.id=followup_notifications.task_id AND EXISTS(SELECT 1 FROM organizations notify_org WHERE notify_org.id=t.organization_id AND notify_org.status='active') AND ${authority('?','t.organization_id','t.project_id')} AND ${effectiveRecipient('followup_notifications.user_id')}) AND EXISTS(SELECT 1 FROM portal_users u WHERE u.user_id=followup_notifications.user_id AND ${activeAccount('u')})`).bind(at,actor.userId,...(noticeId?[noticeId]:taskId?[taskId]:[]),actor.userId).run();return notificationInbox(db,actor);}
+
+async function notificationRead(db:D1Database,actor:PortalActor,input:Record<string,unknown>){
+ onlyKeys(input,['action','id','taskId','read','all']);
+ if(typeof input.read!=='boolean')fail('Escolha marcar como lida ou não lida.');
+ const selectors=['id','taskId','all'].filter(key=>input[key]!==undefined);
+ if(selectors.length!==1||selectors[0]==='all'&&input.all!==true)fail('Escolha apenas um aviso, uma demanda ou todos os avisos.');
+ const at=input.read?iso():null,noticeId=selectors[0]==='id'?id(input.id):null,taskId=selectors[0]==='taskId'?id(input.taskId):null;
+ await db.prepare(`UPDATE followup_notifications AS n SET read_at=? WHERE n.user_id=?
+  ${noticeId?'AND n.id=?':taskId?'AND n.task_id=?':''} AND n.read_at IS ${input.read?'NULL':'NOT NULL'}
+  AND EXISTS(SELECT 1 FROM followup_inbox_entries e WHERE e.notification_id=n.id AND e.dismissed_at IS NULL)
+  AND EXISTS(SELECT 1 FROM followup_tasks t WHERE t.id=n.task_id AND ${inboxTaskScope('n.user_id')})`)
+  .bind(at,actor.userId,...(noticeId?[noticeId]:taskId?[taskId]:[])).run();
+ return notificationInbox(db,actor);
+}
+
+async function notificationDismiss(db:D1Database,actor:PortalActor,input:Record<string,unknown>){
+ onlyKeys(input,['action','through','taskId']);
+ const through=id(input.through),taskId=id(input.taskId,true);
+ // The browser sends an ID, never a sequence or a wall-clock cutoff. The old
+ // anchor stays available for idempotent retries even after it has been cleared.
+ await db.prepare(`UPDATE followup_inbox_entries SET dismissed_at=? WHERE notification_id IN (
+  SELECT n.id ${inboxSource}
+  ${taskId?'AND n.task_id=?':''}
+  AND e.sequence<=(
+   SELECT cursor.sequence FROM followup_inbox_entries cursor
+   JOIN followup_notifications anchor ON anchor.id=cursor.notification_id
+   WHERE anchor.id=? AND anchor.user_id=?
+  )
+ )`).bind(iso(),actor.userId,...(taskId?[taskId]:[]),through,actor.userId).run();
+ return notificationInbox(db,actor);
+}
+
+async function pendingVisibility(db:D1Database,actor:PortalActor,input:Record<string,unknown>){
+ onlyKeys(input,['action','taskId','version','hidden']);
+ if(typeof input.hidden!=='boolean')fail('Escolha ocultar ou mostrar a pendência.');
+ const taskId=id(input.taskId),expected=version(input.version);
+ const source=`FROM followup_tasks t JOIN(SELECT ? user_id) recipient
+  WHERE t.id=? AND t.version=? AND t.status NOT IN ('completed','cancelled')
+  AND ${inboxTaskScope('recipient.user_id')}`;
+ if(input.hidden){
+  await db.prepare(`INSERT INTO followup_hidden_pending(user_id,task_id,task_version)
+   SELECT recipient.user_id,t.id,t.version ${source}
+   ON CONFLICT(user_id,task_id) DO UPDATE SET task_version=excluded.task_version
+   WHERE task_version<excluded.task_version`).bind(actor.userId,taskId,expected).run();
+ }else{
+  await db.prepare(`DELETE FROM followup_hidden_pending WHERE user_id=? AND task_id=? AND task_version=?
+   AND EXISTS(SELECT 1 ${source})`).bind(actor.userId,taskId,expected,actor.userId,taskId,expected).run();
+ }
+ return notificationInbox(db,actor);
+}
 
 export async function followupAction(db:D1Database,actor:PortalActor|null,action:string,input:Record<string,unknown>):Promise<Row>{actorRequired(actor);try{
  if(action==='task.create'||action==='task.update')return await taskAction(db,actor,action,input);
@@ -192,5 +276,7 @@ export async function followupAction(db:D1Database,actor:PortalActor|null,action
  if(action.startsWith('team.'))return await teamAction(db,actor,action,input);
  if(action.startsWith('checklist.'))return await checklistAction(db,actor,action,input);
  if(action==='notification.read')return await notificationRead(db,actor,input);
+ if(action==='notification.dismiss')return await notificationDismiss(db,actor,input);
+ if(action==='pending.visibility')return await pendingVisibility(db,actor,input);
  fail('Escolha uma operação válida.','followup_action');
  }catch(error){if(error instanceof HttpError)throw error;const message=String(error);if(message.includes('followup_assignee_changed'))fail('Um responsável ou equipe mudou. Reabra a demanda.','followup_assignee',409);if(message.includes('followup_reference_mismatch')||message.includes('followup_scope_mismatch'))fail('As referências precisam pertencer ao mesmo projeto.','followup_reference',409);if(message.includes('followup_too_many_recipients'))fail('Divida a demanda entre equipes menores.','followup_recipient_limit',409);throw error;}}

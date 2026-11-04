@@ -196,3 +196,89 @@ test('partial team metadata updates preserve its roster; removing everyone requi
  await act(f,admin,'team.update',{id:team.teamId,expectedVersion:2,status:'archived',userIds:[],operationKey:crypto.randomUUID()});
  assert.equal(f.native.prepare('SELECT COUNT(*) n FROM followup_team_members WHERE team_id=? AND removed_at IS NULL').get(team.teamId).n,0);
 });
+
+test('clearing all dismisses the whole authorized window without reading, deleting or consuming later notices',async t=>{
+ const f=fixture(t),admin=await f.actor('admin-a'),worker=await f.actor('worker-a'),other=await f.actor('worker-b');
+ const first=await act(f,admin,'task.create',create());
+ for(let i=0;i<105;i++){
+  f.insert('followup_notifications',{id:'older-'+i,task_id:first.task.id,user_id:'worker-a',cause_key:'synthetic:'+i,created_at:f.now});
+ }
+ const before=await notificationInbox(f.db,worker);
+ assert.equal(before.notifications.length,100);
+ assert.equal(before.hasMore,true);
+ assert.equal(before.unread,106);
+ assert.equal(before.clearThrough,'older-104');
+ f.insert('followup_notifications',{id:'later',task_id:first.task.id,user_id:'worker-a',cause_key:'synthetic:later',created_at:f.now});
+ const otherResult=await act(f,other,'notification.dismiss',{through:before.clearThrough});
+ assert.equal(otherResult.unread,0);
+ assert.equal((await notificationInbox(f.db,worker)).unread,107);
+ const result=await act(f,worker,'notification.dismiss',{through:before.clearThrough});
+ assert.deepEqual(result.notifications.map(row=>row.id),['later']);
+ assert.equal(result.hasMore,false);
+ assert.equal(result.unread,1);
+ assert.equal(result.pending.length,1);
+ assert.equal((await notificationInbox(f.db,admin)).unread,1);
+ const metadata=()=>f.native.prepare("SELECT COUNT(*) n,MIN(dismissed_at) first,MAX(dismissed_at) last FROM followup_inbox_entries WHERE dismissed_at IS NOT NULL").get();
+ assert.equal(metadata().n,106);
+ const saved=metadata();
+ assert.equal((await act(f,worker,'notification.dismiss',{through:before.clearThrough})).unread,1);
+ assert.deepEqual(metadata(),saved);
+ assert.equal(f.native.prepare("SELECT COUNT(*) n FROM followup_notifications WHERE user_id='worker-a' AND read_at IS NULL").get().n,107);
+ assert.equal(f.native.prepare('SELECT COUNT(*) n FROM followup_tasks').get().n,1);
+ assert.equal(f.native.prepare('SELECT COUNT(*) n FROM followup_history').get().n,1);
+});
+
+test('dismissing a notice group and hiding followed work use separate personal controls and live authority',async t=>{
+ const f=fixture(t),admin=await f.actor('admin-a'),worker=await f.actor('worker-a'),other=await f.actor('worker-b');
+ const first=(await act(f,admin,'task.create',create())).task;
+ const second=(await act(f,admin,'task.create',create({title:'Outro item sintético'}))).task;
+ const before=await notificationInbox(f.db,worker);
+ const dismissed=await act(f,worker,'notification.dismiss',{through:before.clearThrough,taskId:first.id});
+ assert.deepEqual(dismissed.notifications.map(row=>row.task_id),[second.id]);
+ assert.equal(dismissed.pending.length,2);
+ assert.equal((await act(f,other,'pending.visibility',{taskId:first.id,version:first.version,hidden:true})).hiddenPending.length,0);
+ const hidden=await act(f,worker,'pending.visibility',{taskId:first.id,version:first.version,hidden:true});
+ assert.deepEqual(hidden.pending.map(row=>row.id),[second.id]);
+ assert.deepEqual(hidden.hiddenPending.map(row=>row.id),[first.id]);
+ assert.equal(hidden.unread,1);
+ assert.equal((await notificationInbox(f.db,admin)).pending.length,2);
+ assert.equal((await act(f,worker,'pending.visibility',{taskId:first.id,version:first.version,hidden:true})).hiddenPending.length,1);
+ assert.equal((await act(f,worker,'pending.visibility',{taskId:first.id,version:first.version,hidden:false})).pending.length,2);
+ await act(f,worker,'pending.visibility',{taskId:first.id,version:first.version,hidden:true});
+ const updated=(await act(f,admin,'task.update',{id:first.id,expectedVersion:first.version,title:'Novo contexto sintético',operationKey:crypto.randomUUID()})).task;
+ const fresh=await notificationInbox(f.db,worker);
+ assert.ok(fresh.pending.some(row=>row.id===first.id&&row.version===updated.version));
+ assert.equal(fresh.hiddenPending.length,0);
+ assert.ok(fresh.notifications.some(row=>row.task_id===first.id));
+ const stale=await act(f,worker,'pending.visibility',{taskId:first.id,version:first.version,hidden:true});
+ assert.equal(stale.pending.length,2);
+ f.native.prepare("UPDATE members SET revoked_at=? WHERE user_id='worker-a'").run(f.now);
+ await act(f,worker,'notification.dismiss',{through:fresh.clearThrough});
+ await act(f,worker,'pending.visibility',{taskId:second.id,version:second.version,hidden:true});
+ assert.equal(f.native.prepare("SELECT COUNT(*) n FROM followup_inbox_entries WHERE dismissed_at IS NOT NULL").get().n,1);
+ assert.equal(f.native.prepare("SELECT COUNT(*) n FROM followup_hidden_pending WHERE task_id=?").get(second.id).n,0);
+ assert.equal((await notificationInbox(f.db,worker)).pending.length,0);
+});
+
+test('migration backfills old notices and allocates fresh immutable ordering after removal',()=>{
+ const native=new DatabaseSync(':memory:');
+ try{
+  native.exec('PRAGMA foreign_keys=ON');
+  const files=readdirSync(root+'drizzle').filter(n=>n.endsWith('.sql')).sort();
+  const file=files.find(n=>n==='0019_followup_personal_inbox.sql');
+  for(const name of files.filter(n=>n<file))native.exec(readFileSync(root+'drizzle/'+name,'utf8'));
+  native.exec(`
+   INSERT INTO portal_users(user_id,email,created_at,updated_at) VALUES('p','p@example.invalid','2026-11-04','2026-11-04');
+   INSERT INTO organizations(id,name,slug,created_at,updated_at) VALUES('org-test','Org test','org-test','2026-11-04','2026-11-04');
+   INSERT INTO followup_tasks(id,organization_id,title,created_by,created_at,updated_at) VALUES('t','org-test','Synthetic','p','2026-11-04','2026-11-04');
+   INSERT INTO followup_notifications(id,task_id,user_id,cause_key,created_at) VALUES('n','t','p','one','2026-11-04');
+  `);
+  native.exec(readFileSync(root+'drizzle/'+file,'utf8'));
+  const first=native.prepare("SELECT sequence FROM followup_inbox_entries WHERE notification_id='n'").get().sequence;
+  native.exec(`DELETE FROM followup_notifications WHERE id='n';
+    INSERT INTO followup_notifications(id,task_id,user_id,cause_key,created_at) VALUES('n2','t','p','two','2026-11-04');`);
+  assert.equal(native.prepare('SELECT COUNT(*) n FROM followup_inbox_entries').get().n,1);
+  assert.ok(native.prepare("SELECT sequence FROM followup_inbox_entries WHERE notification_id='n2'").get().sequence>first);
+  assert.deepEqual(native.prepare('PRAGMA foreign_key_check').all(),[]);
+ }finally{native.close();}
+});

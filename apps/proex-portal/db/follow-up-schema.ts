@@ -37,6 +37,16 @@ export const followupChecklistActions = sqliteTable('followup_checklist_actions'
 export const followupNotifications = sqliteTable('followup_notifications', {
  id:text('id').primaryKey().notNull(),taskId:text('task_id').notNull().references(()=>followupTasks.id),userId:text('user_id').notNull().references(()=>portalUsers.userId),causeKey:text('cause_key').notNull(),readAt:text('read_at'),createdAt:text('created_at').notNull(),
 },t=>[unique().on(t.taskId,t.userId,t.causeKey),index('followup_notifications_inbox_idx').on(t.userId,t.readAt,t.createdAt,t.id)]);
+export const followupInboxEntries = sqliteTable('followup_inbox_entries', {
+ sequence:integer('sequence').primaryKey({autoIncrement:true}),
+ notificationId:text('notification_id').notNull().unique().references(()=>followupNotifications.id,{onDelete:'cascade'}),
+ dismissedAt:text('dismissed_at'),
+});
+export const followupHiddenPending = sqliteTable('followup_hidden_pending', {
+ userId:text('user_id').notNull().references(()=>portalUsers.userId),
+ taskId:text('task_id').notNull().references(()=>followupTasks.id),
+ taskVersion:integer('task_version').notNull(),
+},t=>[primaryKey({columns:[t.userId,t.taskId]}),check('followup_hidden_pending_version',sql`${t.taskVersion}>0`)]);
 export const followupWorkGrants = sqliteTable('followup_work_grants', {
  id:text('id').primaryKey().notNull(),taskId:text('task_id').notNull().references(()=>followupTasks.id),userId:text('user_id').notNull().references(()=>portalUsers.userId),grantorMemberId:text('grantor_member_id').notNull().references(()=>members.id),createdBy:text('created_by').notNull(),createdAt:text('created_at').notNull(),revokedAt:text('revoked_at'),
 },t=>[uniqueIndex('followup_work_grants_active_idx').on(t.taskId,t.userId).where(sql`${t.revokedAt} IS NULL`)]);

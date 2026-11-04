@@ -1,23 +1,271 @@
 'use client';
+
 import { useEffect, useRef, useState } from 'react';
-import { Bell, CheckCheck, RefreshCw, X } from 'lucide-react';
+import { Bell, CheckCheck, ChevronRight, Eye, EyeOff, Inbox as InboxIcon, RefreshCw, X } from 'lucide-react';
 import Link from 'next/link';
 import styles from './notification-bell.module.css';
 import { FOLLOWUP_CHANGED, followupApi, dueLabel } from './follow-up-api';
-import { groupNotifications, type NotificationGroup } from '../../lib/follow-up/notification-groups';
-type Notice={id:string;task_id:string;title:string;status:string;priority:string;due_at:string|null;read_at:string|null;created_at:string};
-type Inbox={notifications:Notice[];groups?:NotificationGroup[];windowLimit?:number;today?:string;viewerId?:string;unread:number;hasMore:boolean;pending:{id:string;title:string;priority:string;due_at:string|null}[];pendingHasMore:boolean};
-function lastUpdate(value:string|null){return value?new Intl.DateTimeFormat('pt-BR',{timeZone:'America/Sao_Paulo',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}).format(new Date(value)):'Data não informada';}
-export default function NotificationBell({userId,onSelectTask,basePath='/?module=demands'}:{userId:string;onSelectTask?:(id:string)=>void;basePath?:string}){
- const [stored,setStored]=useState<{owner:string;data:Inbox}|null>(null),[open,setOpen]=useState(false),[error,setError]=useState(''),[readState,setReadState]=useState<{owner:string;pending:boolean}|null>(null);const trigger=useRef<HTMLButtonElement|null>(null),active=useRef<AbortController|null>(null),readRequest=useRef<AbortController|null>(null),readEpoch=useRef(0),currentUser=useRef(userId),refresh=useRef<()=>void>(()=>{});const inbox=stored?.owner===userId?stored.data:null,busy=readState?.owner===userId&&readState.pending,groups=inbox?(inbox.groups??groupNotifications(inbox.notifications)):[];
- useEffect(()=>{currentUser.current=userId;let alive=true,last=0,pending=false,queued=false;const update=async(force=false)=>{if(document.visibilityState==='hidden')return;if(pending){queued=queued||force;return;}if(!force&&Date.now()-last<60000)return;pending=true;const epoch=readEpoch.current,controller=new AbortController();active.current=controller;try{const data=await followupApi<Inbox>('view=inbox',undefined,controller.signal);if(data.viewerId&&data.viewerId!==userId)throw new Error('A conta mudou. Atualize o portal para consultar seus avisos.');if(alive&&epoch===readEpoch.current){setStored({owner:userId,data});setError('');last=Date.now();}}catch(cause){if(alive&&epoch===readEpoch.current&&!controller.signal.aborted){setStored(null);setError(cause instanceof Error?cause.message:'Não foi possível consultar notificações.');}}finally{pending=false;if(alive&&queued){queued=false;void update(true);}}};refresh.current=()=>void update(true);const visible=()=>void update(),changed=()=>void update(true),timer=window.setInterval(visible,60000),start=window.setTimeout(changed,0);window.addEventListener('focus',visible);document.addEventListener('visibilitychange',visible);window.addEventListener(FOLLOWUP_CHANGED,changed);return()=>{alive=false;active.current?.abort();readRequest.current?.abort();clearInterval(timer);clearTimeout(start);window.removeEventListener('focus',visible);document.removeEventListener('visibilitychange',visible);window.removeEventListener(FOLLOWUP_CHANGED,changed);};},[userId]);
- useEffect(()=>{if(!open)return;const escape=(event:KeyboardEvent)=>{if(event.key==='Escape'){setOpen(false);trigger.current?.focus();}};document.addEventListener('keydown',escape);return()=>document.removeEventListener('keydown',escape);},[open]);
- async function mark(taskId?:string){if(busy)return;const owner=userId,controller=new AbortController();readRequest.current=controller;readEpoch.current++;active.current?.abort();setReadState({owner,pending:true});try{const data=await followupApi<Inbox>('',{action:'notification.read',...(taskId?{taskId}:{all:true}),read:true},controller.signal);if(data.viewerId&&data.viewerId!==owner)throw new Error('A conta mudou. Atualize o portal para consultar seus avisos.');if(currentUser.current===owner&&!controller.signal.aborted){readEpoch.current++;setStored({owner,data});setError('');}}catch(cause){if(currentUser.current===owner&&!controller.signal.aborted){readEpoch.current++;setStored(null);setError(cause instanceof Error?cause.message:'Não foi possível marcar a leitura.');}}finally{if(readRequest.current===controller)setReadState({owner,pending:false});}}
- function link(id:string){const query=new URL(basePath,window.location.origin);query.searchParams.set('demandId',id);return query.pathname+query.search;}
- return <div className="relative shrink-0"><button ref={trigger} type="button" className={`p-icon-button ${styles.trigger}`} aria-label={`Notificações${inbox?`: ${inbox.unread} não lidas` :''}`} aria-expanded={open} aria-controls="followup-notification-center" onClick={()=>{setOpen(value=>!value);if(!open)refresh.current();}}><Bell size={20} aria-hidden="true"/>{!!inbox?.unread&&<span aria-hidden="true" className={styles.counter}>{inbox.unread>99?'99+':inbox.unread}</span>}</button>
- {open&&<section id="followup-notification-center" aria-label="Central de notificações" className="absolute right-0 top-full z-50 mt-2 max-h-[75vh] w-[min(90vw,420px)] overflow-y-auto rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-4 text-[var(--ink)] shadow-xl"><div className="flex items-center justify-between gap-3"><h2 className="font-bold">Notificações e pendências</h2><button type="button" className="min-h-11 min-w-11" aria-label="Fechar notificações" onClick={()=>{setOpen(false);trigger.current?.focus();}}><X size={18}/></button></div><p role="status" aria-live="polite" className="text-sm text-[var(--muted)]">{inbox?`${inbox.unread} não lidas · ${inbox.pending.length}${inbox.pendingHasMore?'+':''} demandas pendentes`:'Consultando…'}</p><div className="my-2 flex flex-wrap gap-2"><button type="button" className="inline-flex min-h-11 items-center gap-2 rounded-lg border px-3" disabled={busy} onClick={()=>refresh.current()}><RefreshCw size={14}/>Atualizar</button><button type="button" className="inline-flex min-h-11 items-center gap-2 rounded-lg border px-3" disabled={busy||!inbox?.unread} onClick={()=>void mark()}><CheckCheck size={14}/>Marcar todas como lidas</button></div>{error&&<p role="alert" className="text-sm text-[var(--danger)]">{error}</p>}
- {inbox&&!groups.length&&<p className="py-4 text-sm">Nenhuma notificação disponível.</p>}{!!groups.length&&<p className="my-2 text-xs text-[var(--muted)]">Agrupadas por demanda na janela de até 100 avisos recentes. As contagens de cada grupo se referem a esta janela.</p>}<ul className="space-y-2">{groups.map(group=><li key={group.task_id} className={`rounded-xl border p-3 ${group.unread?styles.unread:'opacity-75'}`}><a href={typeof window==='undefined'?basePath:link(group.task_id)} className="block min-h-11 break-words font-semibold underline decoration-dotted" onClick={event=>{if(onSelectTask){event.preventDefault();onSelectTask(group.task_id);}void mark(group.task_id);setOpen(false);}}>{group.title}</a><p className="text-xs">{group.updates} {group.updates===1?'atualização':'atualizações'} · {group.unread} {group.unread===1?'não lida':'não lidas'} nesta janela</p><p className="text-xs">Última atualização: <time dateTime={group.last_created_at??undefined}>{lastUpdate(group.last_created_at)}</time></p><p className="text-xs">{inbox?.today&&group.due_at&&group.due_at<inbox.today&&!['completed','cancelled'].includes(group.status)?'Prazo vencido · ':''}{dueLabel(group.due_at)}</p></li>)}</ul>
- <p className="mt-3 text-xs text-[var(--muted)]"><Link className="inline-flex min-h-11 items-center underline" href="/?module=my-work" prefetch={false}>Meu trabalho</Link> mostra somente atribuições explícitas.</p>
- {!!inbox?.pending.length&&<div className="mt-4 border-t pt-3"><h3 className="font-semibold">Pendentes que você acompanha</h3><p className="text-xs text-[var(--muted)]">Inclui demandas que você criou ou recebeu.</p><ul>{inbox.pending.slice(0,20).map(task=><li key={task.id}><a className="block min-h-11 break-words py-2 text-sm underline" href={typeof window==='undefined'?basePath:link(task.id)} onClick={event=>{if(onSelectTask){event.preventDefault();onSelectTask(task.id);}setOpen(false);}}>{task.title} · {dueLabel(task.due_at)}</a></li>)}</ul>{inbox.pending.length>20&&<p className="text-xs">Abra Demandas para acompanhar as demais pendências.</p>}</div>}{inbox?.hasMore&&<p className="mt-3 text-xs">Há avisos anteriores fora desta janela das 100 notificações mais recentes. O total de não lidas acima inclui todos os avisos autorizados.</p>}<p className="mt-3 text-xs text-[var(--muted)]">Avisos internos. Configure o recebimento por e-mail em Demandas. O envio por WhatsApp é manual.</p></section>}
+import { TaskSignals } from './work-signals';
+import { groupNotifications, type NoticeForGroup } from '../../lib/follow-up/notification-groups';
+import type { TaskPriority, TaskStatus } from '../../lib/follow-up/contracts';
+
+type PendingTask = { id:string; title:string; status?:TaskStatus; priority?:TaskPriority; due_at:string|null; version?:number };
+type Inbox = {
+ notifications:NoticeForGroup[];
+ groups?:ReturnType<typeof groupNotifications>;
+ today?:string;
+ viewerId?:string;
+ unread:number;
+ hasMore:boolean;
+ clearThrough?:string|null;
+ pending:PendingTask[];
+ pendingHasMore:boolean;
+ hiddenPending?:PendingTask[];
+ hiddenPendingHasMore?:boolean;
+};
+type Mutation =
+ | { action:'notification.read'; read:true; all?:true; taskId?:string }
+ | { action:'notification.dismiss'; through:string; taskId?:string }
+ | { action:'pending.visibility'; taskId:string; version:number; hidden:boolean };
+
+const updateFormatter=new Intl.DateTimeFormat('pt-BR',{timeZone:'America/Sao_Paulo',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+function lastUpdate(value:string|null) {
+ return value?updateFormatter.format(new Date(value)):'Data não informada';
+}
+
+export default function NotificationBell({userId,onSelectTask,basePath='/?module=demands'}:{userId:string;onSelectTask?:(id:string)=>void;basePath?:string}) {
+ const [stored,setStored]=useState<{owner:string;data:Inbox}|null>(null);
+ const [open,setOpen]=useState(false);
+ const [pane,setPane]=useState<'notices'|'pending'>('notices');
+ const [message,setMessage]=useState<{owner:string;error:boolean;text:string}|null>(null);
+ const [writing,setWriting]=useState<{owner:string;controller:AbortController}|null>(null);
+ const [confirmation,setConfirmation]=useState<{owner:string;through:string}|null>(null);
+ const trigger=useRef<HTMLButtonElement|null>(null);
+ const heading=useRef<HTMLHeadingElement|null>(null);
+ const active=useRef<AbortController|null>(null);
+ const mutationRequest=useRef<AbortController|null>(null);
+ const readEpoch=useRef(0);
+ const currentUser=useRef(userId);
+ const refresh=useRef<()=>void>(()=>{});
+ const inbox=stored?.owner===userId?stored.data:null;
+ const feedback=message?.owner===userId?message:null;
+ const busy=writing?.owner===userId&&!writing.controller.signal.aborted;
+ const groups=inbox?(inbox.groups??groupNotifications(inbox.notifications)):[];
+ const hidden=inbox?.hiddenPending??[];
+ const confirming=confirmation?.owner===userId?confirmation:null;
+
+ useEffect(()=>{
+  currentUser.current=userId;
+  let alive=true,last=0,pending=false,queued=false;
+  const update=async(force=false)=>{
+   if(document.visibilityState==='hidden')return;
+   if(pending){queued=queued||force;return;}
+   if(!force&&Date.now()-last<60000)return;
+   pending=true;
+   const epoch=readEpoch.current,controller=new AbortController();
+   active.current=controller;
+   try{
+    const data=await followupApi<Inbox>('view=inbox',undefined,controller.signal);
+    if(data.viewerId&&data.viewerId!==userId)throw new Error('A conta mudou. Atualize o portal para consultar seus avisos.');
+    if(alive&&epoch===readEpoch.current&&!mutationRequest.current){
+     setStored({owner:userId,data});
+     setMessage(old=>old?.error?null:old);
+     last=Date.now();
+    }
+   }catch(cause){
+    if(alive&&epoch===readEpoch.current&&!controller.signal.aborted){
+     setStored(null);
+     setMessage({owner:userId,error:true,text:cause instanceof Error?cause.message:'Não foi possível consultar notificações.'});
+    }
+   }finally{
+    pending=false;
+    if(alive&&queued){queued=false;void update(true);}
+   }
+  };
+  refresh.current=()=>void update(true);
+  const visible=()=>void update(),changed=()=>void update(true);
+  const timer=window.setInterval(visible,60000),start=window.setTimeout(changed,0);
+  window.addEventListener('focus',visible);
+  document.addEventListener('visibilitychange',visible);
+  window.addEventListener(FOLLOWUP_CHANGED,changed);
+  return()=>{
+   alive=false;
+   active.current?.abort();
+   mutationRequest.current?.abort();
+   mutationRequest.current=null;
+   clearInterval(timer);
+   clearTimeout(start);
+   window.removeEventListener('focus',visible);
+   document.removeEventListener('visibilitychange',visible);
+   window.removeEventListener(FOLLOWUP_CHANGED,changed);
+  };
+ },[userId]);
+
+ function close(restoreFocus=false) {
+  setOpen(false);
+  setConfirmation(null);
+  if(restoreFocus)trigger.current?.focus();
+ }
+
+ useEffect(()=>{
+  if(!open)return;
+  const escape=(event:KeyboardEvent)=>{
+   if(event.key==='Escape'){setOpen(false);setConfirmation(null);trigger.current?.focus();}
+  };
+  document.addEventListener('keydown',escape);
+  return()=>document.removeEventListener('keydown',escape);
+ },[open]);
+
+ async function mutate(body:Mutation,success='') {
+  if(busy||mutationRequest.current)return;
+  const owner=userId,controller=new AbortController();
+  mutationRequest.current=controller;
+  readEpoch.current++;
+  active.current?.abort();
+  setWriting({owner,controller});
+  try{
+   const data=await followupApi<Inbox>('',body,controller.signal);
+   if(data.viewerId&&data.viewerId!==owner)throw new Error('A conta mudou. Atualize o portal para consultar seus avisos.');
+   if(currentUser.current===owner&&!controller.signal.aborted){
+    readEpoch.current++;
+    setStored({owner,data});
+    setMessage(success?{owner,error:false,text:success}:null);
+    if(success)heading.current?.focus();
+   }
+  }catch(cause){
+   if(currentUser.current===owner&&!controller.signal.aborted){
+    readEpoch.current++;
+    setStored(null);
+    setMessage({owner,error:true,text:cause instanceof Error?cause.message:'Não foi possível atualizar a caixa.'});
+   }
+  }finally{
+   if(mutationRequest.current===controller){
+    mutationRequest.current=null;
+    setWriting(null);
+   }
+  }
+ }
+
+ function link(id:string) {
+  if(typeof window==='undefined')return basePath;
+  const query=new URL(basePath,window.location.origin);
+  query.searchParams.set('demandId',id);
+  return query.pathname+query.search;
+ }
+
+ function selectTask(event:React.MouseEvent<HTMLAnchorElement>,id:string,markRead=false) {
+  if(onSelectTask){event.preventDefault();onSelectTask(id);}
+  if(markRead)void mutate({action:'notification.read',taskId:id,read:true});
+  close();
+ }
+
+ function pendingCard(task:PendingTask,isHidden=false) {
+  return <li className={styles.pendingCard} key={task.id}>
+   <a href={link(task.id)} className={styles.cardLink} onClick={event=>selectTask(event,task.id)}>
+    <span>{task.title}</span><ChevronRight size={16} aria-hidden="true"/>
+   </a>
+   {task.version!==undefined&&<button className={styles.cardAction} type="button" disabled={busy}
+    title={isHidden?'Voltar a acompanhar':'Ocultar desta lista'}
+    aria-label={isHidden?`Mostrar pendência: ${task.title}`:`Ocultar pendência: ${task.title}`}
+    onClick={()=>void mutate({action:'pending.visibility',taskId:task.id,version:task.version!,hidden:!isHidden},
+     isHidden?'Pendência de volta à sua lista.':'Pendência ocultada da sua lista.')}>
+    {isHidden?<Eye size={17} aria-hidden="true"/>:<EyeOff size={17} aria-hidden="true"/>}
+   </button>}
+   <div className={styles.pendingSignals}>
+    {task.status&&task.priority?<TaskSignals status={task.status} priority={task.priority} dueAt={task.due_at} today={inbox?.today??''}/>
+     :<span>{dueLabel(task.due_at)}</span>}
+   </div>
+  </li>;
+ }
+
+ return <div className={styles.root}>
+  <button ref={trigger} type="button" className={`p-icon-button ${styles.trigger}`}
+   aria-label={`Notificações${inbox?`: ${inbox.unread} não lidas`:''}`}
+   aria-expanded={open} aria-controls="followup-notification-center"
+   onClick={()=>{if(open)close();else{setOpen(true);refresh.current();}}}>
+   <Bell size={20} aria-hidden="true"/>
+   {!!inbox?.unread&&<span aria-hidden="true" className={styles.counter}>{inbox.unread>99?'99+':inbox.unread}</span>}
+  </button>
+  {open&&<section id="followup-notification-center" aria-label="Central de notificações" className={styles.panel}>
+   <header className={styles.header}>
+    <div className={styles.headerRow}>
+     <div>
+      <h2 ref={heading} tabIndex={-1}>Notificações</h2>
+      <p role="status" aria-live="polite" className={styles.caption}>
+       {inbox?`${inbox.unread} não lidas`:feedback?.error?'Caixa indisponível':'Consultando…'}
+      </p>
+     </div>
+     <div className={styles.headerActions}>
+      <button type="button" className={styles.iconButton} title="Atualizar" aria-label="Atualizar" disabled={busy} onClick={()=>refresh.current()}>
+       <RefreshCw size={17} aria-hidden="true"/>
+      </button>
+      <button type="button" className={styles.iconButton} title="Fechar" aria-label="Fechar notificações" onClick={()=>close(true)}>
+       <X size={19} aria-hidden="true"/>
+      </button>
+     </div>
+    </div>
+    <div className={styles.panes} role="group" aria-label="Conteúdo da central">
+     <button type="button" aria-pressed={pane==='notices'} onClick={()=>{setPane('notices');setConfirmation(null);}}>Avisos</button>
+     <button type="button" aria-label="Pendentes" aria-pressed={pane==='pending'} onClick={()=>{setPane('pending');setConfirmation(null);}}>
+      Pendentes{inbox&&<span aria-hidden="true">{inbox.pending.length}{inbox.pendingHasMore?'+':''}</span>}
+     </button>
+    </div>
+   </header>
+   <div className={styles.content} key={pane}>
+    {feedback&&<p role={feedback.error?'alert':'status'} className={feedback.error?styles.error:styles.feedback}>{feedback.text}</p>}
+    {pane==='notices'?<>
+     <div className={styles.toolbar}>
+      <button type="button" className="p-button p-button-subtle" disabled={busy||!inbox?.unread}
+       onClick={()=>void mutate({action:'notification.read',all:true,read:true})}><CheckCheck size={16} aria-hidden="true"/>Marcar todas como lidas</button>
+      {inbox?.clearThrough&&<button type="button" className="p-button p-button-subtle" disabled={busy||!!confirming}
+       onClick={()=>setConfirmation({owner:userId,through:inbox.clearThrough!})}><InboxIcon size={16} aria-hidden="true"/>Limpar todos os avisos</button>}
+     </div>
+     {confirming&&<div className={styles.confirmation}>
+      <p>Retirar da sua caixa todos os avisos que já estavam nela? As demandas e o histórico continuam disponíveis.</p>
+      <div className={styles.toolbar}>
+       <button type="button" className="p-button p-button-primary" disabled={busy} onClick={()=>{
+        setConfirmation(null);
+        void mutate({action:'notification.dismiss',through:confirming.through},'Avisos anteriores removidos da sua caixa.');
+       }}>Confirmar limpeza</button>
+       <button type="button" className="p-button p-button-subtle" onClick={()=>setConfirmation(null)}>Voltar</button>
+      </div>
+     </div>}
+     {inbox&&!groups.length&&<div className={styles.empty}><InboxIcon size={19} aria-hidden="true"/><p>Nenhuma notificação disponível.</p></div>}
+     {!!groups.length&&<ul className={styles.list}>
+      {groups.map(group=><li key={group.task_id} className={styles.noticeCard} data-unread={group.unread>0}>
+       <a href={link(group.task_id)} className={styles.cardLink} onClick={event=>selectTask(event,group.task_id,true)}>
+        <span>{group.title}</span><ChevronRight size={16} aria-hidden="true"/>
+       </a>
+       {inbox?.clearThrough&&<button type="button" className={styles.cardAction} disabled={busy}
+        title="Retirar estes avisos da caixa" aria-label={`Retirar avisos de: ${group.title}`}
+        onClick={()=>void mutate({action:'notification.dismiss',through:inbox.clearThrough!,taskId:group.task_id},'Avisos desta demanda retirados da sua caixa.')}>
+        <X size={17} aria-hidden="true"/>
+       </button>}
+       <div className={styles.noticeDetails}>
+        <p>{group.updates} {group.updates===1?'atualização':'atualizações'} · {group.unread} {group.unread===1?'não lida':'não lidas'} nesta janela</p>
+        <p>Última atualização: <time dateTime={group.last_created_at??undefined}>{lastUpdate(group.last_created_at)}</time></p>
+        <p>{inbox?.today&&group.due_at&&group.due_at<inbox.today&&!['completed','cancelled'].includes(group.status)?'Prazo vencido · ':''}{dueLabel(group.due_at)}</p>
+       </div>
+      </li>)}
+     </ul>}
+     {inbox?.hasMore&&<p className={styles.caption}>A lista agrupa até 100 avisos recentes. O total de não lidas inclui todos os avisos da sua caixa.</p>}
+     <p className={styles.caption}>Avisos internos. Configure o recebimento por e-mail em Demandas.</p>
+    </>:<>
+     <div className={styles.pendingIntro}>
+      <h3>Pendentes que você acompanha</h3>
+      <p className={styles.caption}>Inclui demandas que você criou ou recebeu. Use o ícone de olho para ocultar uma pendência só para você.</p>
+     </div>
+     {inbox&&!inbox.pending.length&&<p className={styles.empty}>Nenhuma pendência nesta lista.</p>}
+     {!!inbox?.pending.length&&<ul className={styles.list}>{inbox.pending.slice(0,20).map(task=>pendingCard(task))}</ul>}
+     {(inbox?.pending.length??0)>20&&<p className={styles.caption}>Abra Demandas para acompanhar as demais pendências.</p>}
+     {!!hidden.length&&<details className={styles.hiddenList}>
+      <summary>Pendências ocultadas ({hidden.length}{inbox?.hiddenPendingHasMore?'+':''})</summary>
+      <p className={styles.caption}>Elas voltam a aparecer quando a demanda é atualizada.</p>
+      <ul className={styles.list}>{hidden.map(task=>pendingCard(task,true))}</ul>
+     </details>}
+     <p className={styles.caption}><Link className={styles.workLink} href="/?module=my-work" prefetch={false}>Meu trabalho</Link> mostra somente atribuições explícitas.</p>
+    </>}
+   </div>
+  </section>}
  </div>;
 }

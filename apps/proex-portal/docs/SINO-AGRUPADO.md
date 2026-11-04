@@ -13,3 +13,11 @@ As três consultas do inbox usam um único batch somente de leitura, com ACL, co
 A UI mantém atualização moderada de sessenta segundos, pausa em aba oculta, deduplicação e descarte de requisições antigas. Marcação aborta a consulta anterior; uma resposta tardia não restaura contadores anteriores à leitura. Mudança de conta cancela a marcação em curso e respostas com outro `viewerId` são recusadas. Erro de acesso remove os dados do inbox exibido. Prazos vencidos usam `today` do servidor; sem esse campo legado, exibe-se apenas a data absoluta.
 
 Testes sintéticos cobrem janela 100 versus contador global 151, contagem/ordenação por grupo, leitura em um UPDATE, timestamps preservados, seletores incompatíveis, outro usuário/projeto, conta bloqueada, equipe/atribuição removida, revogação antes do SQL, leitura atômica e corridas no cliente. As suítes de e-mail são reexecutadas, sem chamada real, para conferir que as filas não foram alteradas. CUA/build/publicação e revisão independente ficam a cargo do coordenador.
+
+## Caixa pessoal e pendências
+
+A central divide **Avisos** e **Pendentes**. **Limpar todos os avisos** remove da caixa da conta os avisos existentes até o limite da consulta confirmada, inclusive os anteriores aos 100 exibidos. Cada grupo também pode ser retirado separadamente. Limpar preserva a leitura, a fila de e-mail, as demandas e a auditoria. Novas notificações aparecem normalmente.
+
+Nas pendências acompanhadas, título, andamento, prioridade e prazo ficam separados. Ocultar uma pendência afeta somente essa lista pessoal. A opção **Pendências ocultadas** permite restaurá-la, e uma atualização da demanda também a torna visível novamente. As permissões, atribuições e a lista Meu trabalho são independentes dessa preferência.
+
+A migração 0019 preenche metadados para notificações anteriores e registra as novas com sequência crescente. O servidor resolve o identificador de referência da consulta na própria caixa e revalida o acesso ao gravar. Os metadados ficam no backup interno e fora das projeções do Sheets.
