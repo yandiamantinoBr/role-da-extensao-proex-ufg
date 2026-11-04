@@ -23,10 +23,10 @@ function actor(db, role, projectId) {
   db.native.prepare('INSERT INTO members(id,user_id,email,role,project_id,revoked_at,created_at) VALUES(?,?,?,?,?,?,?)').run(...Object.values(member));
   return { userId: member.user_id, email: member.email, displayName: role, members: [member], capabilities: ['projects.manage', 'campaigns.manage'] };
 }
-function database() {
+function database({ beforeCommunication = false } = {}) {
   const native = new DatabaseSync(':memory:');
   native.exec('PRAGMA foreign_keys=ON');
-  for (const migration of readdirSync(`${directory}drizzle`).filter(name => name.endsWith('.sql')).sort()) native.exec(readFileSync(`${directory}drizzle/${migration}`, 'utf8'));
+  for (const migration of readdirSync(`${directory}drizzle`).filter(name => name.endsWith('.sql') && (!beforeCommunication || !name.startsWith('0018_'))).sort()) native.exec(readFileSync(`${directory}drizzle/${migration}`, 'utf8'));
   for (const id of ['project-a', 'project-b']) native.prepare('INSERT INTO projects(id,name,created_at) VALUES(?,?,?)').run(id, id, new Date().toISOString());
   const prepare = sql => {
     let values = [];
@@ -400,4 +400,74 @@ test('project scope separates internal PROEX actions from external partners with
     assert.equal(kept.project.scope,'external','omitted scope keeps the stored value');
     await assert.rejects(projectDetail(db,manager,external.project.id),error=>error.status===404,'scope never widens a project grant');
   } finally {db.native.close();}
+});
+
+test('communication links migrate, preserve notes in revisions and restore legacy links under the same project authority', async () => {
+ const db = database({ beforeCommunication: true });
+ try {
+  const manager = actor(db, 'manager', 'project-a'), viewer = actor(db, 'viewer', 'project-a'), outsider = actor(db, 'manager', 'project-b');
+  const createdAt = '2026-11-04T12:00:00.000Z';
+  const legacy = { id:'legacy-link', project_id:'project-a', label:'Referência antiga', url:'https://example.invalid/antiga', kind:'official', version:1, created_at:createdAt, updated_at:createdAt };
+  db.native.prepare('INSERT INTO project_links(id,project_id,label,url,kind,version,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)').run(...Object.values(legacy));
+  db.native.prepare("INSERT INTO entity_versions(id,entity_type,entity_id,project_id,version,snapshot_json,actor_id,created_at) VALUES('legacy-version','project_link',?,?,1,?,?,?)")
+   .run(legacy.id, legacy.project_id, JSON.stringify(legacy), manager.userId, createdAt);
+  db.native.exec(readFileSync(`${directory}drizzle/0018_project_communication.sql`, 'utf8'));
+  const upgraded = db.native.prepare('SELECT * FROM project_links WHERE id=?').get(legacy.id);
+  assert.deepEqual({...upgraded}, {...legacy, communication_channel:'', communication_note:''});
+  assert.deepEqual(db.native.prepare('PRAGMA foreign_key_check').all(), []);
+
+  const canvaUrl = 'https://www.canva.com/design/SYNTHETIC/view';
+  const create = (channel, url, note = '') => projectAction(db, manager, 'project.link.create', {
+   projectId:'project-a', label:'Referência sintética', kind:'other', url, communicationChannel:channel,
+   communicationNote:note, operationKey:crypto.randomUUID(),
+  });
+  const art = await create('canva', canvaUrl, 'Páginas 1 e 2 · 1080 × 1350 px');
+  const sameUrl = await create('canva', canvaUrl, 'Página 3 · 1080 × 1920 px');
+  assert.notEqual(art.id, sameUrl.id);
+  await create('site', 'https://example.invalid/publicacao');
+  await create('instagram', 'https://www.instagram.com/p/SYNTHETIC/');
+  await assert.rejects(create('canva', 'https://www.canva.com.example.invalid/design/123'), error => error.code === 'invalid_communication_url');
+  await assert.rejects(create('instagram', 'https://www.instagram.com@external.invalid/p/123'), error => error.code === 'invalid_url');
+  await assert.rejects(create('site', 'https://example.invalid/p', 'nota fora de Canva'), error => error.code === 'invalid_communication_note');
+  await assert.rejects(create('canva', canvaUrl, 'x'.repeat(601)), error => error.code === 'invalid_input');
+
+  const edit = (id, version, fields) => projectAction(db, manager, 'project.link.update', {
+   id, expectedVersion:version, operationKey:crypto.randomUUID(), ...fields,
+  });
+  const unchanged = await edit(art.id, 1, {label:'Edição compatível com a planilha'});
+  assert.equal(unchanged.project_link.communication_note, 'Páginas 1 e 2 · 1080 × 1350 px');
+  await edit(art.id, 2, {communicationNote:'Nova nota'});
+  await edit(legacy.id, 1, {communicationChannel:'site'});
+  const restore = (id, version) => projectAction(db, manager, 'entity.restore', {
+   entityType:'project_link', entityId:id, restoreVersion:1, expectedVersion:version, operationKey:crypto.randomUUID(),
+  });
+  assert.equal((await restore(art.id, 3)).project_link.communication_note, 'Páginas 1 e 2 · 1080 × 1350 px');
+  const restoredLegacy = (await restore(legacy.id, 2)).project_link;
+  assert.equal(restoredLegacy.communication_channel, '');
+  assert.equal(restoredLegacy.communication_note, '');
+
+  const detail = await projectDetail(db, manager, 'project-a');
+  assert.deepEqual([...new Set(detail.links.map(link => link.communication_channel))].sort(), ['', 'canva', 'instagram', 'site']);
+  assert.ok(detail.versions.some(version => version.entity_id === art.id && JSON.parse(version.snapshot_json).communication_note === 'Nova nota'));
+  const readOnly = await projectDetail(db, viewer, 'project-a');
+  assert.equal(readOnly.links.length, 5);
+  assert.deepEqual(readOnly.versions, []);
+  await assert.rejects(projectDetail(db, outsider, 'project-a'), error => error.status === 404);
+  await assert.rejects(projectAction(db, outsider, 'project.link.update', {
+   id:art.id, expectedVersion:4, communicationNote:'Outro projeto', operationKey:crypto.randomUUID(),
+  }), error => error.status === 403);
+
+  const prepare = db.prepare;
+  let demoted = false;
+  db.prepare = sql => {
+   if (sql.includes('FROM entity_versions WHERE project_id=')) {
+    db.native.prepare("UPDATE members SET role='viewer' WHERE user_id=?").run(manager.userId);
+    demoted = true;
+   }
+   return prepare(sql);
+  };
+  const staleManager = await projectDetail(db, manager, 'project-a');
+  assert.equal(demoted, true);
+  assert.deepEqual(staleManager.versions, []);
+ } finally { db.native.close(); }
 });

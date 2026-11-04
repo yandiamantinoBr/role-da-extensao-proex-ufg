@@ -403,8 +403,15 @@ export const privateObjectDeletions = sqliteTable('private_object_deletions', {
 export const projectLinks = sqliteTable('project_links', {
   id: text('id').primaryKey(), projectId: text('project_id').notNull().references(() => projects.id),
   label: text('label').notNull(), url: text('url').notNull(), kind: text('kind').notNull(),
+  communicationChannel: text('communication_channel').notNull().default(''),
+  communicationNote: text('communication_note').notNull().default(''),
   version: integer('version').notNull().default(1), createdAt: text('created_at').notNull(), updatedAt: text('updated_at').notNull(),
-}, t => [index('project_links_project_idx').on(t.projectId), check('project_links_kind_check', sql`${t.kind} IN ('official','notice','report','gallery','other')`)]);
+}, t => [
+  index('project_links_project_idx').on(t.projectId),
+  check('project_links_kind_check', sql`${t.kind} IN ('official','notice','report','gallery','other')`),
+  check('project_links_communication_channel_check', sql`${t.communicationChannel} IN ('','canva','site','instagram')`),
+  check('project_links_communication_note_check', sql`length(${t.communicationNote}) <= 600 AND (${t.communicationChannel} = 'canva' OR ${t.communicationNote} = '')`),
+]);
 export const projectScheduleItems = sqliteTable('project_schedule_items', {
   id: text('id').primaryKey(), projectId: text('project_id').notNull().references(() => projects.id),
   title: text('title').notNull(), startsAt: text('starts_at').notNull(), endsAt: text('ends_at').notNull(),

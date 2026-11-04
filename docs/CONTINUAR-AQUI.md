@@ -1,4 +1,10 @@
-# Continuar Portal PROEX · V19 publicada
+# Continuar Portal PROEX · V20 publicada
+
+Em 04/11/2026, a PR #21 integrou a V20 em `e4b528c`, READY na Vercel. A marca mobile volta ao Início, o resumo prioriza o recorte selecionado e Meu trabalho exporta as páginas exibidas em Markdown. Foram verificadas nove demandas do CONPEEX em produção e o link da planilha de contagem e lotes no Drive institucional Equipe PROEC. [Entrega V20](ENTREGA-V20.md).
+
+A V21 reúne Comunicação por projeto, gráficos e prazos de Demandas, exportação direta e o piloto opcional de Groq. Consulte a entrega e confirme o estado da publicação pelo SHA. [Entrega V21](ENTREGA-V21.md).
+
+## Histórico · V19 publicada
 
 Em 04/11/2026, a PR #20 integrou a V19 em `bf662b4d271e65ca3c50cde2ebcbe09b7170a758`, READY na Vercel. O CI aprovou 871 testes do portal e 33 do jogo. A atividade oficial do 23º CONPEEX aparece de 9 a 13 de novembro na Agenda, como dia inteiro. A V18 corrigiu a seleção repetida da mesma demanda, conferida em produção ao reabrir o cartão pela demanda do piloto. [Entrega V19](ENTREGA-V19.md), [entrega V18](ENTREGA-V18.md).
 
