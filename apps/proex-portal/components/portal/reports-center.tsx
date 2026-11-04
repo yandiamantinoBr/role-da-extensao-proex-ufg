@@ -344,9 +344,14 @@ export function ProjectReportExports({ projectId, projectName, officialUrl }: { 
     <ReportMasthead label="Relatório do projeto" title={summary?.projectName || projectName || 'Resumo do projeto'} description="Ficha e totais do período completo" project projectBrand={summary ? summary.projectBrand : projectBrandFor(projectId, projectName, officialUrl)}/>
     <div className={styles.projectReportBody}>
       <div className={styles.projectReportActions}>
-        <p className={styles.reportHelp}>Ficha e totais deste projeto em todo o período. Para escolher dados, colunas ou datas, abra Relatórios do projeto.</p>
+        <p className={styles.reportHelp}>Para escolher dados, colunas ou datas, abra Relatórios do projeto.</p>
         <button type="button" className="p-button p-button-subtle" aria-controls="project-report-preview" aria-expanded={!!previewRow} disabled={!!exporting}
           onClick={() => previewRow ? setPreview(null) : void save('preview')}><BarChart3 size={16} aria-hidden="true"/>{previewRow ? 'Ocultar prévia' : 'Ver prévia'}</button>
+      </div>
+      <div className={styles.projectFormats} role="group" aria-label="Formatos do resumo">
+        <button type="button" className="p-button p-button-primary" disabled={!!exporting} onClick={() => void save('pdf')}><FileText size={16} aria-hidden="true"/>PDF</button>
+        <button type="button" className="p-button p-button-subtle" disabled={!!exporting} onClick={() => void save('xlsx')}><FileSpreadsheet size={16} aria-hidden="true"/>Excel (XLSX)</button>
+        <button type="button" className="p-button p-button-subtle" disabled={!!exporting} onClick={() => void save('docx')}><FileText size={16} aria-hidden="true"/>Word (DOCX)</button>
       </div>
       <div id="project-report-preview" className={styles.projectPreview}>
         {summary && previewRow && preview && <>
@@ -359,11 +364,6 @@ export function ProjectReportExports({ projectId, projectName, officialUrl }: { 
             {details.map(column => <div key={column.key}><dt>{column.label}</dt><dd>{String(display('projects', previewRow, column.key) || 'Não informado')}</dd></div>)}
           </dl>
         </>}
-      </div>
-      <div className={styles.projectFormats} role="group" aria-label="Formatos do resumo">
-        <button type="button" className="p-button p-button-primary" disabled={!!exporting} onClick={() => void save('pdf')}><FileText size={16} aria-hidden="true"/>PDF</button>
-        <button type="button" className="p-button p-button-subtle" disabled={!!exporting} onClick={() => void save('xlsx')}><FileSpreadsheet size={16} aria-hidden="true"/>Excel (XLSX)</button>
-        <button type="button" className="p-button p-button-subtle" disabled={!!exporting} onClick={() => void save('docx')}><FileText size={16} aria-hidden="true"/>Word (DOCX)</button>
       </div>
       {exporting && <p className={styles.reportHelp} role="status">{exporting === 'preview' ? 'Consultando o resumo…' : `Preparando o resumo em ${exporting.toUpperCase()}…`}</p>}
       {error && <p className="p-inline-error" role="alert">{error}</p>}
