@@ -3,7 +3,7 @@ import { all, one, uid, iso, type Row } from './database';
 import { HttpError } from './errors';
 import { prepareMutation } from './mutations';
 import { listRecords } from './records';
-import { projectSpreadsheetLinks } from './sync/project-links';
+import { googleSpreadsheetId, masterSpreadsheetAccess, projectLinkSpreadsheetGuard, projectSpreadsheetLinks } from './sync/project-links';
 import { isExtensionLine, isThematicArea } from './extension-catalog';
 import { isCivilDate } from './civil-date';
 import { COMMUNICATION_CHANNELS, COMMUNICATION_NOTE_LIMIT } from './project-communication';
@@ -73,6 +73,8 @@ async function presentEntity(db: D1Database, actor: PortalActor, entity: Entity 
     SELECT 1 FROM members m LEFT JOIN portal_users u ON u.user_id=m.user_id WHERE m.user_id=? AND m.revoked_at IS NULL
     AND COALESCE(u.status,'active')='active' AND COALESCE(u.activation_pending,0)=0 AND u.anonymized_at IS NULL AND ${scope})`,[id,actor.userId]);
   if(!row)throw new HttpError(403,'Seu acesso mudou. Atualize a página.','access_changed');
+  const spreadsheet=entity==='project_link'?googleSpreadsheetId(row.url):null;
+  if(spreadsheet&&spreadsheet===(await masterSpreadsheetAccess(db,actor)).hiddenMasterId)throw new HttpError(403,'Este link não está disponível para sua conta.','access_changed');
   return row;
 }
 async function normalize(db: D1Database, actor: PortalActor, entity: Entity, input: Row, existing: Row | null): Promise<{ fields: Row; linked: string[] }> {
@@ -155,6 +157,8 @@ async function saveEntity(db: D1Database, actor: PortalActor, entity: Entity, ac
   const target=existing?`EXISTS(SELECT 1 FROM ${table} WHERE id=? AND version=?) AND (${authorization})`:`(${authorization})`;
   const targetValues=existing?[id,input.expectedVersion,...authValues]:authValues;
   const statements:D1PreparedStatement[]=[];
+  const spreadsheet=entity==='project_link'?googleSpreadsheetId(fields.url):null;
+  if(spreadsheet)statements.push(projectLinkSpreadsheetGuard(db,spreadsheet));
   if(mutation)statements.push(db.prepare(`INSERT INTO mutation_keys(scope,fingerprint,entity_id,created_at) SELECT ?,?,?,? WHERE ${target}`).bind(mutation.scope,mutation.fingerprint,id,now,...targetValues));
   if(existing)statements.push(versionStatement(db,entity,existing,actor,now,target,targetValues,previousLinked));
   const mutationIndex=statements.length;
@@ -170,7 +174,12 @@ async function saveEntity(db: D1Database, actor: PortalActor, entity: Entity, ac
     statements.push(db.prepare(`INSERT INTO audit(id,actor_id,project_id,action,entity_id,details,created_at) SELECT ?,?,?,?,?,?,? WHERE ${ownsClaim} AND EXISTS(SELECT 1 FROM calls WHERE id=? AND version=?)`).bind(uid(),actor.userId,projectId,action,id,JSON.stringify({previousVersion:existing?.version??null,version:revision}),now,mutation!.scope,id,id,revision));
   }else statements.push(db.prepare(`INSERT INTO audit(id,actor_id,project_id,action,entity_id,details,created_at) SELECT ?,?,?,?,?,?,? WHERE changes()=1`).bind(uid(),actor.userId,entity==='project'?id:projectId,action,id,JSON.stringify({previousVersion:existing?.version??null,version:revision}),now));
   let results:D1Result[];
-  try{results=await db.batch(statements);}catch(error){if(!mutation)throw error;const replayId=await mutation.recover(error);return {id:replayId,[entity]:await presentEntity(db,actor,entity,replayId,action),duplicate:true};}
+  try{results=await db.batch(statements);}catch(error){
+    if(spreadsheet&&String(error).includes('project_link_master_sheet'))throw new HttpError(400,'Use uma planilha própria do projeto. Este endereço é reservado à integração.','project_link_master_sheet');
+    if(!mutation)throw error;
+    const replayId=await mutation.recover(error);
+    return {id:replayId,[entity]:await presentEntity(db,actor,entity,replayId,action),duplicate:true};
+  }
   if(results[mutationIndex].meta.changes!==1)throw new HttpError(existing?409:403,'O registro ou seu acesso mudou. Atualize a página.',existing?'project_changed':'access_changed');
   return {id,[entity]:await presentEntity(db,actor,entity,id,action)};
 }
@@ -238,5 +247,23 @@ export async function projectDetail(db:D1Database,actor:PortalActor|null,id:stri
   ]);
   const projectedCalls=calls.map((call):Row=>{let linked:string[]=[];try{linked=JSON.parse(call.linked_ids_json||'[]');}catch{}const safe={...call};delete safe.linked_ids_json;return{...safe,linkedProjectIds:linked.filter(project=>canSee(actor,project)),canEdit:[call.project_id,...linked].every(project=>permitted(actor,'campaigns.manage',project)||permitted(actor,'projects.manage',null))};});
   const editableCalls=new Set(projectedCalls.filter(call=>call.canEdit).map(call=>call.id));
-  return {project,types,organizationalUnits:await all(db,'SELECT id,name,acronym,kind,status,version,group_label,campus FROM organizational_units ORDER BY name,id'),spreadsheetLinks:await projectSpreadsheetLinks(db,actor,id),links,calls:projectedCalls,schedule,versions:versions.filter(version=>version.entity_type!=='call'||editableCalls.has(version.entity_id)),relatedProjects,relationships:{items,campaigns:events,loans:loanRows,records:records.records},permissions:{canEdit,canManageTypes:permitted(actor,'projects.manage',null),inventory,loans,reports,campaigns}};
+  const organizationalUnits=await all(db,'SELECT id,name,acronym,kind,status,version,group_label,campus FROM organizational_units ORDER BY name,id');
+  const spreadsheetLinks=await projectSpreadsheetLinks(db,actor,id);
+  const manualLinks=links.map(link=>({link,spreadsheet:googleSpreadsheetId(link.url)}));
+  const history=versions.filter(version=>version.entity_type!=='call'||editableCalls.has(version.entity_id)).flatMap(version=>{
+    if(version.entity_type!=='project_link')return [{version,spreadsheet:null}];
+    try{return [{version,spreadsheet:googleSpreadsheetId(JSON.parse(version.snapshot_json)?.url)}];}catch{return [];}
+  });
+  const hasSheet=spreadsheetLinks.materialsUrl||manualLinks.some(row=>row.spreadsheet)||history.some(row=>row.spreadsheet);
+  const access=hasSheet?await masterSpreadsheetAccess(db,actor):null;
+  const hiddenMaster=access?.hiddenMasterId;
+  if(access&&!access.canReadMaster)spreadsheetLinks.materialsUrl=null;
+  return {
+    project,types,organizationalUnits,spreadsheetLinks,
+    links:manualLinks.filter(row=>!hiddenMaster||row.spreadsheet!==hiddenMaster).map(row=>row.link),
+    calls:projectedCalls,schedule,
+    versions:history.filter(row=>!hiddenMaster||row.spreadsheet!==hiddenMaster).map(row=>row.version),
+    relatedProjects,relationships:{items,campaigns:events,loans:loanRows,records:records.records},
+    permissions:{canEdit,canManageTypes:permitted(actor,'projects.manage',null),inventory,loans,reports,campaigns},
+  };
 }

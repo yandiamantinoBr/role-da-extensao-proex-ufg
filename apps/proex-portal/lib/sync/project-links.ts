@@ -5,12 +5,48 @@ import { prepareMutation } from '../mutations';
 import { requireSyncOwner, SYNC_OWNER_SQL } from './contracts';
 
 const KEY='sync.google_sheets.material_links';
+const SHEETS_CONFIG='sync.google_sheets.configuration';
+const configuredSpreadsheetIdSql="CASE WHEN json_valid(value) THEN json_extract(value,'$.spreadsheetId') END";
+function spreadsheetId(value:unknown):value is string {
+ return typeof value==='string'&&/^[-_A-Za-z0-9]{10,200}$/.test(value);
+}
+
+/** Recognize direct Google file URLs without following redirects or resolving Drive permissions. */
+export function googleSpreadsheetId(value:unknown):string|null {
+ if(typeof value!=='string')return null;
+ try {
+  const url=new URL(value);
+  if(!['https:','http:'].includes(url.protocol))return null;
+  const host=url.hostname.replace(/\.$/,''),pathname=decodeURIComponent(url.pathname);
+  let id:string|null|undefined;
+  if(host==='docs.google.com'){
+   id=pathname.match(/^\/(?:a\/[^/]+\/)?spreadsheets\/(?:u\/\d+\/)?d\/([^/]+)(?:\/|$)/)?.[1];
+  }else if(host==='drive.google.com'){
+   id=pathname.match(/^\/(?:u\/\d+\/)?file\/d\/([^/]+)(?:\/|$)/)?.[1];
+   if(!id&&/^\/(?:open|uc)\/?$/.test(pathname))id=url.searchParams.get('id');
+  }
+  return spreadsheetId(id)?id:null;
+ }catch{return null;}
+}
+
+export async function masterSpreadsheetAccess(db:D1Database,actor:PortalActor) {
+ const row=await one(db,`SELECT (${SYNC_OWNER_SQL}) AS can_read_master,
+   (SELECT ${configuredSpreadsheetIdSql} FROM settings WHERE name=?) AS spreadsheet_id`,[actor.userId,SHEETS_CONFIG]);
+ const canReadMaster=Boolean(row?.can_read_master);
+ return {canReadMaster,hiddenMasterId:!canReadMaster&&spreadsheetId(row?.spreadsheet_id)?row.spreadsheet_id:null};
+}
+
+/** Check at the time of the write, including when Sheets is configured concurrently. */
+export function projectLinkSpreadsheetGuard(db:D1Database,id:string):D1PreparedStatement {
+ return db.prepare(`SELECT CASE WHEN EXISTS(SELECT 1 FROM settings WHERE name=? AND ${configuredSpreadsheetIdSql}=?)
+   THEN json_extract('[]','project_link_master_sheet') ELSE 1 END`).bind(SHEETS_CONFIG,id);
+}
 type Configuration={spreadsheetId:string;sheetId:number;views:Record<string,number>;version:number};
 function integer(value:unknown):value is number{return typeof value==='number'&&Number.isSafeInteger(value)&&value>=0&&value<=2147483647;}
 function configuration(value:unknown):value is Configuration {
  if(!value||typeof value!=='object'||Array.isArray(value))return false;
  const v=value as Configuration;
- return typeof v.spreadsheetId==='string'&&/^[-_A-Za-z0-9]{10,200}$/.test(v.spreadsheetId)&&integer(v.sheetId)&&Number.isSafeInteger(v.version)&&v.version>0&&!!v.views&&typeof v.views==='object'&&!Array.isArray(v.views)&&Object.keys(v.views).length<=500&&Object.entries(v.views).every(([key,id])=>/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(key)&&integer(id));
+ return spreadsheetId(v.spreadsheetId)&&integer(v.sheetId)&&Number.isSafeInteger(v.version)&&v.version>0&&!!v.views&&typeof v.views==='object'&&!Array.isArray(v.views)&&Object.keys(v.views).length<=500&&Object.entries(v.views).every(([key,id])=>/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(key)&&integer(id));
 }
 async function stored(db:D1Database):Promise<{value:string;configuration:Configuration}|null>{const row=await one(db,'SELECT value FROM settings WHERE name=?',[KEY]);if(!row)return null;try{const c=JSON.parse(row.value);return configuration(c)?{value:row.value,configuration:c}:null;}catch{return null;}}
 
@@ -18,10 +54,10 @@ async function stored(db:D1Database):Promise<{value:string;configuration:Configu
  * operational spreadsheet link is visible only to a current global owner. */
 export async function projectSpreadsheetLinks(db:D1Database,actor:PortalActor|null,projectId:string):Promise<{materialsUrl:string|null}>{
  try{await requireSyncOwner(db,actor);}catch(error){if(error instanceof HttpError&&[401,403].includes(error.status))return {materialsUrl:null};throw error;}
- const row=await one(db,"SELECT value FROM settings WHERE name='sync.google_sheets.configuration'"),links=await stored(db);
+ const row=await one(db,'SELECT value FROM settings WHERE name=?',[SHEETS_CONFIG]),links=await stored(db);
  if(!row||!links)return {materialsUrl:null};
  let config:Record<string,unknown>;try{config=JSON.parse(row.value);}catch{return {materialsUrl:null};}
- if(typeof config.spreadsheetId!=='string'||!/^[-_A-Za-z0-9]{10,200}$/.test(config.spreadsheetId))return {materialsUrl:null};
+ if(!spreadsheetId(config.spreadsheetId))return {materialsUrl:null};
  if(links.configuration.spreadsheetId!==config.spreadsheetId)return {materialsUrl:null};
  const view=links.configuration.views[projectId];
  // Never send a global/unfiltered substitute when the selected project's view
@@ -35,7 +71,7 @@ export async function configureMaterialLinks(db:D1Database,actor:PortalActor|nul
  await requireSyncOwner(db,actor);if(!actor)throw new HttpError(401,'Entre para configurar as planilhas.');
  const previous=await stored(db),expectedVersion=input.expectedVersion??0;
  if(!Number.isSafeInteger(expectedVersion)||Number(expectedVersion)<0)throw new HttpError(400,'Informe a versão dos atalhos de planilha.','invalid_material_links_version');
- const configRow=await one(db,"SELECT value FROM settings WHERE name='sync.google_sheets.configuration'");
+ const configRow=await one(db,'SELECT value FROM settings WHERE name=?',[SHEETS_CONFIG]);
  let spreadsheetId:unknown;try{spreadsheetId=JSON.parse(configRow?.value??'{}').spreadsheetId;}catch{spreadsheetId=null;}
  const next={spreadsheetId,sheetId:input.sheetId,views:input.views,version:Number(expectedVersion)+1};
  if(!configuration(next))throw new HttpError(400,'Informe a aba e as visualizações verificadas no Google Planilhas.','invalid_material_links');
