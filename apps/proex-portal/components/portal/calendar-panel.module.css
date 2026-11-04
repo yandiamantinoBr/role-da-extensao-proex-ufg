@@ -36,6 +36,12 @@
 .entry p,.feedRow small,.createdFeed>p{overflow-wrap:anywhere}
 .monthHeading>button{flex-shrink:0}
 .monthGrid{min-width:0}
+.panel{--agenda-materials:#ce5f18;--agenda-projects:#19669c}
+:global(html[data-theme=dark]) .panel{--agenda-materials:var(--orange);--agenda-projects:var(--aqua)}
+.dayCount{display:none}
+.listHeading,.day{scroll-margin-block:82px 80px}
+.listHeading:focus-visible{outline:2px solid var(--focus);outline-offset:4px;border-radius:3px}
+@container agenda (max-width:420px){.monthCard:global(.p-card){padding-inline:9px}}
 @container agenda (max-width:620px){
   .monthHeading{gap:6px}.monthHeading>button{min-width:44px;min-height:44px;padding:8px}
   .monthHeading h3{font-size:18px;line-height:1.35}
@@ -43,4 +49,8 @@
   .subscriptionFilters{grid-template-columns:minmax(0,1fr)}
   .summaryRow .actions{display:grid;grid-template-columns:minmax(0,1fr)}
   .summaryRow .actions :global(.p-button){min-height:44px;width:100%}
+}
+@media(max-width:720px){
+  .dayCount{display:block;color:var(--brand-ink);font-size:10px;font-weight:600;font-variant-numeric:tabular-nums}
+  .day .extraEntries{display:none}
 }

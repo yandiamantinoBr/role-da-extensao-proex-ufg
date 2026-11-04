@@ -10,10 +10,13 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
 const civilDateSource = readFileSync(new URL('../lib/civil-date.ts', import.meta.url), 'utf8');
 const civilDateCode = ts.transpileModule(civilDateSource, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
 const civilDates = await import(`data:text/javascript;base64,${Buffer.from(civilDateCode).toString('base64')}`);
-function harness() {
+function harness(initialProject = '', initialUnit = '') {
   const slots = [], effects = [], requests = [], copied = []; let index = 0, tree;
+  let selectedProjectId = initialProject;
+  let selectedUnitId = initialUnit;
   const hooks = {
     useState(initial) { const key = index++; if (!(key in slots)) slots[key] = { value: typeof initial === 'function' ? initial() : initial }; return [slots[key].value, next => { slots[key].value = typeof next === 'function' ? next(slots[key].value) : next; }]; },
+    useRef(initial) { const key = index++; return slots[key] ??= { current: initial }; },
     useMemo(fn) { index++; return fn(); },
     useEffect(fn, deps) { const key = index++; if (!slots[key] || deps.some((value, i) => !Object.is(value, slots[key].deps[i]))) { const previous = slots[key]; slots[key] = { deps }; effects.push(() => { previous?.cleanup?.(); slots[key].cleanup = fn(); }); } },
   };
@@ -28,7 +31,17 @@ function harness() {
   });
   const h = {
     requests, copied,
-    render() { index = 0; tree = compiled.exports.default({ projects: [{ id: 'project-a', name: 'Projeto sintético A' }] }); while (effects.length) effects.shift()(); },
+    render() {
+      index = 0;
+      tree = compiled.exports.default({
+        projects: [{ id: 'project-a', name: 'Projeto sintético A', unit_id: 'unit-a' }],
+        organizationalUnits: [{ id: 'unit-a', name: 'Unidade sintética A' }, { id: 'unit-b', name: 'Unidade sintética B' }],
+        selectedProjectId, selectedUnitId,
+        onProjectChange: id => { selectedProjectId = id; },
+        onUnitChange: id => { selectedUnitId = id; selectedProjectId = ''; },
+      });
+      while (effects.length) effects.shift()();
+    },
     all() { return nodes(tree); },
     button(label) { const result = this.all().find(node => node.type === 'button' && text(node).trim() === label); assert.ok(result, label); return result; },
     respond(request, body, ok = true) { request.resolve({ ok, json: async () => body }); },
@@ -38,6 +51,58 @@ function harness() {
   h.render(); return h;
 }
 async function ready(h) { h.respond(h.requests[0], { entries: [], feeds: [], availableCategories: ['projects'] }); await tick(); h.render(); }
+
+test('the project and unit from the route scope the calendar query and ICS, and clearing the project keeps the unit', async () => {
+  const h = harness('project-a', 'unit-a');
+  try {
+    const query = new URL(h.requests[0].url, 'https://example.test').searchParams;
+    assert.equal(query.get('projectId'), 'project-a');
+    assert.equal(query.get('unitId'), 'unit-a');
+    await ready(h);
+    const ics = h.all().find(node => node.type === 'a' && node.props.href.includes('format=ics'));
+    const icsQuery = new URL(ics.props.href, 'https://example.test').searchParams;
+    assert.equal(icsQuery.get('projectId'), 'project-a');
+    assert.equal(icsQuery.get('unitId'), 'unit-a');
+    const project = h.all().find(node => node.type === 'select' && node.props.value === 'project-a');
+    project.props.onChange({ target: { value: '' } });
+    h.render();
+    const unitQuery = new URL(h.requests.at(-1).url, 'https://example.test').searchParams;
+    assert.equal(unitQuery.has('projectId'), false);
+    assert.equal(unitQuery.get('unitId'), 'unit-a');
+    h.respond(h.requests.at(-1), { entries: [], feeds: [], availableCategories: ['projects'] });
+    await tick(); h.render();
+    assert.equal(h.button('Gerar link privado de assinatura').props.disabled, true);
+  } finally { h.dispose(); }
+  const outside = harness('projeto-sem-acesso');
+  try {
+    assert.equal(new URL(outside.requests[0].url, 'https://example.test').searchParams.has('projectId'), false);
+  } finally { outside.dispose(); }
+  const mismatched = harness('project-a', 'unit-b');
+  try {
+    const query = new URL(mismatched.requests[0].url, 'https://example.test').searchParams;
+    assert.equal(query.has('projectId'), false);
+    assert.equal(query.get('unitId'), 'unit-b');
+  } finally { mismatched.dispose(); }
+});
+
+test('activating a day focuses its commitments and returning restores focus to the selected day', async () => {
+  const h = harness(), calls = [];
+  try {
+    await ready(h);
+    const day = h.all().find(node => node.props?.['aria-controls'] === 'calendar-day-entries');
+    const heading = h.all().find(node => node.props?.id === 'calendar-day-heading');
+    const focusTarget = label => ({ focus: () => calls.push(`${label}:focus`), scrollIntoView: () => calls.push(`${label}:scroll`) });
+    heading.props.ref.current = focusTarget('list');
+    day.props.onClick({ currentTarget: focusTarget('day') });
+    h.render();
+    assert.match(h.body(), /Compromissos de /);
+    assert.deepEqual(calls, ['list:focus', 'list:scroll']);
+    h.button('Ver todo o período').props.onClick();
+    h.render();
+    assert.doesNotMatch(h.body(), /Compromissos de /);
+    assert.deepEqual(calls, ['list:focus', 'list:scroll', 'day:focus', 'day:scroll']);
+  } finally { h.dispose(); }
+});
 
 test('subscription copies its private HTTPS URL and opens the documented Google URL screen without putting the bearer in the external link', async () => {
   const h = harness();

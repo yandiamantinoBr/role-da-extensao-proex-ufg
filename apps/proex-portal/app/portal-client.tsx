@@ -333,8 +333,27 @@ export default function PortalClient({ initial }: {
     useEffect(() => { const change = () => { setOnline(navigator.onLine); }; const timer = window.setTimeout(() => { setUpdatedAt(new Date()); setNow(Date.now()); change(); }, 0); const clock = window.setInterval(() => setNow(Date.now()), 60000); window.addEventListener('online', change); window.addEventListener('offline', change); return () => { window.clearTimeout(timer); window.clearInterval(clock); window.removeEventListener('online', change); window.removeEventListener('offline', change); }; }, []);
     // Links diretos (?module=…&project=…) esperam as permissões carregarem antes de serem descartados.
     const pendingLink = useRef<{ tab: string; project: string } | null>(null);
-    useEffect(() => { const url = new URL(window.location.href); const candidate = url.searchParams.get('demandId') || ''; const demandId = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(candidate) ? candidate : ''; const requested = url.searchParams.get('module') || (demandId ? 'demands' : ''); pendingLink.current = { tab: requested && tabs.some(t => t.id === requested) ? requested : '', project: url.searchParams.get('project') || '' }; const timer = window.setTimeout(() => { if (tabs.some(t => t.id === requested))
-        setTab(requested as Tab); const record = workRecordFromParams(url.searchParams); setWorkRecord(record); if (record?.module === 'materials') setSelectedMaterialId(record.recordId); setSelectedDemandId(demandId); setFilter(url.searchParams.get('project') || ''); setUnitFilter(requested === 'my-work' ? '' : url.searchParams.get('unit') || ''); setAreaFilter(requested === 'my-work' ? '' : url.searchParams.get('area') || ''); }, 0); return () => window.clearTimeout(timer); }, []);
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const candidate = params.get('demandId') || '';
+        const demandId = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(candidate) ? candidate : '';
+        const requested = params.get('module') || (demandId ? 'demands' : '');
+        const requestedTab = tabs.find(module => module.id === requested);
+        const projectId = params.get('project') || '';
+        const unitId = params.get('unit') || '';
+        const record = workRecordFromParams(params);
+        pendingLink.current = { tab: requestedTab?.id || '', project: projectId };
+        const timer = window.setTimeout(() => {
+            if (requestedTab) setTab(requestedTab.id);
+            setWorkRecord(record);
+            if (record?.module === 'materials') setSelectedMaterialId(record.recordId);
+            setSelectedDemandId(demandId);
+            setFilter(projectId);
+            setUnitFilter(requested === 'my-work' || (requested === 'calendar' && unitId === '__unassigned__') ? '' : unitId);
+            setAreaFilter(requested === 'my-work' || requested === 'calendar' ? '' : params.get('area') || '');
+        }, 0);
+        return () => window.clearTimeout(timer);
+    }, []);
     useEffect(() => { const url = new URL(window.location.href); if (tab === 'overview')
         url.searchParams.delete('module');
     else
@@ -436,7 +455,9 @@ export default function PortalClient({ initial }: {
         if (!allowedTabs.some(module => module.id === id)) return;
         pendingLink.current = null;
         if (id !== tab) navigation.recordVisit(id);
-        setTab(id); setQuery(''); setAccountOpen(false); setSelectedMaterialId(null); setWorkRecord(null); if (id === 'my-work') { setUnitFilter(''); setAreaFilter(''); }
+        setTab(id); setQuery(''); setAccountOpen(false); setSelectedMaterialId(null); setWorkRecord(null);
+        if (id === 'my-work' || (id === 'calendar' && unitFilter === '__unassigned__')) setUnitFilter('');
+        if (id === 'my-work' || id === 'calendar') setAreaFilter('');
         window.requestAnimationFrame(() => { document.getElementById('main')?.focus({ preventScroll: true }); window.scrollTo({ top: 0, behavior: 'auto' }); });
     }
     function selectProject(id: string) { const project = projects.find(row => row.id === id); if (id && !project) return; setWorkRecord(null); setSelectedMaterialId(null); if (project && unitFilter && unitOf(project) !== unitFilter) setUnitFilter(unitOf(project) || '__unassigned__'); if (project && areaFilter && !inArea(project)) setAreaFilter(''); setFilter(id); setDraftProject(id); setOfferProject(''); }
@@ -903,7 +924,7 @@ export default function PortalClient({ initial }: {
 
       {tab === 'team' && <><OrganizationsPanel organizations={organizations} currentActor={{ userId: string(user.userId), isPlatformOwner }} people={organizationPeople} onChanged={refreshModules}/><OfficialTeamDirectory onSelect={canAny('access.invite') ? setOfficialSuggestion : undefined}/><TeamPanel key={officialSuggestion?.selectionKey ?? 'manual'} officialSuggestion={officialSuggestion} onClearOfficialSuggestion={() => setOfficialSuggestion(null)} users={list(data.users)} members={members} invites={invites} projects={projects} selectedProjectId={filter} globalAdmin={isPlatformOwner} canManageManagers={(projectId, organizationId) => isPlatformOwner || organizations.some(organization => organization.canManage && organization.id === (projectId ? projects.find(project => project.id === projectId)?.organization_id : organizationId))} canProject={canProject} mutate={mutate} now={now}/>{canGlobal('organization.manage') && <AdminPrivacyPanel />}</>}
       {tab === 'profile' && <><AssistantPanel key={string(user.userId)} projects={assistantProjects} defaultProjectId={filter} onApplied={refreshModules}/><ProfilePanel onUpdated={() => { void refresh(); }}/></>}
-      {tab === 'calendar' && <CalendarPanel projects={projects} organizationalUnits={organizationalUnits}/>}
+      {tab === 'calendar' && <CalendarPanel projects={projects} organizationalUnits={visibleUnits} selectedProjectId={filter} selectedUnitId={unitFilter} onProjectChange={selectProject} onUnitChange={selectUnit}/>}
       {tab === 'records' && <RecordsPanel projects={projects} items={items} loans={loans} canWrite={(capability: string, projectId?: string | null) => projectId ? canProject(projectId, capability) : canGlobal(capability)}/>}
 
       {tab === 'reports' && <>
