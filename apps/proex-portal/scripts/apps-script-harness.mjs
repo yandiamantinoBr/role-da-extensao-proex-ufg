@@ -247,4 +247,27 @@ assert.equal(updatedBaseline.version, updatedItem.version);
 assert.equal(controlValue('syncState'), 'verified');
 assert.equal(controlValue('tablesVerified'), String(expectedTables));
 
+if (process.env.PROEX_QA_PORTAL_EDIT === '1') {
+  console.log('10. Editar pelo Portal autenticado e conferir a projeção na planilha');
+  const { localClient, QA_EMAIL, QA_TEST_PASSWORD } = await import('./qa-local.mjs');
+  const loopback = new URL(localOrigin);
+  assert.equal(loopback.hostname, '127.0.0.1', 'edição pela sessão sintética só na bancada QA');
+  const api = localClient(Number(loopback.port));
+  const login = await api('/api/account', { action: 'login', identifier: QA_EMAIL, password: QA_TEST_PASSWORD, returnTo: '/' });
+  assert.equal(login.status, 200);
+  const portalDescription = 'Descrição alterada no Portal pela conta sintética.';
+  const response = await api('/api/portal', { action: 'item.update', id: created.entityId, expectedVersion: Number(updatedItem.version), description: portalDescription, operationKey: randomUUID() });
+  assert.equal(response.status, 200);
+  assert.equal(response.value.item.description, portalDescription);
+  assert.equal(Number(response.value.item.version), Number(updatedItem.version) + 1);
+  assert.equal(reexportedItem.row[reexportedItem.col], updatedDescription, 'a célula ainda guarda o valor anterior à sincronização');
+  assert.match(context.sincronizar_(), /^Sincronizado:/);
+  const projected = cell('items', row => row.id === created.entityId, 'description');
+  assert.equal(projected.row[projected.col], portalDescription);
+  assert.equal(projected.row[projected.s.cells[0].indexOf('version')], String(response.value.item.version));
+  assert.equal(JSON.parse(controlValue(`baseline:items:${created.entityId}`)).description, portalDescription);
+  assert.equal(controlValue('syncState'), 'verified');
+  assert.equal(controlValue('tablesVerified'), String(expectedTables));
+}
+
 console.log('OK — conector validado contra', portal);
