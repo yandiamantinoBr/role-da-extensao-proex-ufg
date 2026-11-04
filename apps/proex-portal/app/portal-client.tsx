@@ -1036,7 +1036,7 @@ export default function PortalClient({ initial }: {
           <CredentialVaultSettings key={string(user.userId)} groupClass={settingsStyles.group} bodyClass={settingsStyles.body} onConfigure={() => navigate('profile')}/>
           <details className={settingsStyles.group}>
             <summary><strong>Planilha e anexos</strong><small>Conexão, sincronização, arquivos no Drive e exportação portátil.</small></summary>
-            <div className={settingsStyles.body}><SyncSettingsPanel includeBackups={false}/></div>
+            <div className={settingsStyles.body}><SyncSettingsPanel key={string(user.userId)} userId={string(user.userId)} includeBackups={false}/></div>
           </details>
           <details className={settingsStyles.group}>
             <summary><strong>Backup e recuperação</strong><small>Cópias completas cifradas, conferência da recuperação e rotina externa.</small></summary>
