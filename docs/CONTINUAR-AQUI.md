@@ -1,4 +1,10 @@
-# Continuar Portal PROEX · V22 publicada
+# Continuar Portal PROEX · V23 e V24 publicadas
+
+PR #26 integrou `bed5b69496f22f6ba18a89dce98c05938a4d989e` e ficou READY na Vercel. O CI aprovou 922 testes do portal e 33 do jogo. [Entrega V23/V24](ENTREGA-V23-V24.md) reúne o caminho para cadastrar chaves, as evidências do cofre e a classificação das demandas. O segredo dedicado está pendente no ambiente. O JEV em produção depende de ativação própria. [Login Google](V25-LOGIN-GOOGLE.md) registra os testes exigidos antes do piloto.
+
+As PRs #24 e #25 corrigiram os cartões de projetos no Início, a escolha da atualização de empréstimo, a lista de ocultadas e os marcos da Agenda no relatório. [Revisão de fluxos](ENTREGA-V22.md#revisão-de-fluxos-após-a-v22--04112026)
+
+## Histórico · V22 publicada
 
 Em 04/11/2026, PR #23 integrada em `51fedadfdc27ab7f05059ad6276b871d64f0e15e`, Vercel `dpl_2ei6jUVH2CgbRbVwvAdG9cXcuWiS` READY. CI 899 portal + 33 jogo. Ficha do CONPEEX baixada e renderizada em produção. Avisos e Pendentes têm ações pessoais e feedback de concorrência. A migração 0019 mantém 35 projeções Sheets. O GitHub remoto voltou a ter somente `main`. [Entrega V22](ENTREGA-V22.md).
 
