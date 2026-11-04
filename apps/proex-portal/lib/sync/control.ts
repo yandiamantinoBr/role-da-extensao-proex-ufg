@@ -13,6 +13,7 @@ async function translateControlError(db:D1Database,actor:PortalActor,error:unkno
  const message=String(error);
  if(message.includes('sync_running'))throw new HttpError(409,'Já existe uma sincronização em andamento.','sync_running');
  if(message.includes('sync_not_configured'))throw new HttpError(409,'Configure a planilha primeiro.','sync_not_configured');
+ if(message.includes('sync_workbook_changed'))throw new HttpError(409,'Esta planilha não é mais a mestre configurada. Confira o vínculo no Portal.','sync_workbook_changed');
  if(message.includes('sync_run_not_running'))throw new HttpError(409,'Execução encerrada ou não encontrada.','sync_run_not_running');
  if(message.includes('sync_open_conflicts'))throw new HttpError(409,'Resolva os conflitos pendentes antes de concluir esta execução.','sync_open_conflicts');
  throw error;
@@ -51,13 +52,16 @@ export async function requestSync(db:D1Database,actor:PortalActor|null){
 }
 export async function startSyncRun(db:D1Database,actor:PortalActor|null,input:Record<string,unknown>){
  await requireSyncOwner(db,actor);if(!actor)throw new HttpError(401,'Entre para continuar.');
- const connection=await one(db,"SELECT id FROM sync_connections WHERE id='google-sheets'");if(!connection)throw new HttpError(409,'Configure a planilha primeiro.','sync_not_configured');
+ const workbook=input.spreadsheetId===undefined?null:externalId(input.spreadsheetId,'planilha');
+ const connection=await one(db,"SELECT external_id FROM sync_connections WHERE id='google-sheets'");if(!connection)throw new HttpError(409,'Configure a planilha primeiro.','sync_not_configured');
+ if(workbook&&connection.external_id!==workbook)throw new HttpError(409,'Esta planilha não é mais a mestre configurada. Confira o vínculo no Portal.','sync_workbook_changed');
  const cutoff=new Date(Date.now()-RUN_LEASE_MS).toISOString();
  const previous=await one(db,"SELECT id FROM sync_runs WHERE connection_id='google-sheets' AND status='running' AND started_at>?",[cutoff]);
  if(previous)throw new HttpError(409,'Já existe uma sincronização em andamento.','sync_running');
  const id=uid(),now=iso();try{await db.batch([
  db.prepare(`SELECT CASE WHEN ${SYNC_OWNER_SQL} THEN 1 ELSE json_extract('sync_forbidden','$') END`).bind(actor.userId),
  assertion(db,"EXISTS(SELECT 1 FROM sync_connections WHERE id='google-sheets')",[],'sync_not_configured'),
+ ...(workbook?[assertion(db,"EXISTS(SELECT 1 FROM sync_connections WHERE id='google-sheets' AND external_id=?)",[workbook],'sync_workbook_changed')]:[]),
  assertion(db,"NOT EXISTS(SELECT 1 FROM sync_runs WHERE connection_id='google-sheets' AND status='running' AND started_at>?)",[cutoff],'sync_running'),
  db.prepare("UPDATE sync_runs SET status='failed',finished_at=?,error_code='interrupted' WHERE connection_id='google-sheets' AND status='running'").bind(now),
  db.prepare("INSERT INTO sync_runs(id,connection_id,status,direction,started_by,started_at) VALUES(?,'google-sheets','running','bidirectional',?,?)").bind(id,actor.userId,now),

@@ -1,0 +1,131 @@
+.catalog {
+  container: material-catalog / inline-size;
+}
+
+.catalog .row > td {
+  overflow-wrap: anywhere;
+}
+
+.identity .nameLink {
+  text-align: left;
+}
+
+.catalog .mobileName,
+.metricLabel {
+  display: none;
+}
+
+.metric .number {
+  font-variant-numeric: tabular-nums;
+}
+
+.available {
+  color: var(--success-ink);
+  font-weight: 700;
+}
+
+.low {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.catalog .metric .warning {
+  color: var(--danger);
+}
+
+.actions > button {
+  white-space: nowrap;
+}
+
+@container material-catalog (max-width: 38rem) {
+  .catalog .frame:global(.p-card) {
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .catalog .table {
+    display: block;
+    min-width: 0;
+  }
+
+  .header {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .rows {
+    display: grid;
+    gap: 12px;
+  }
+
+  .row {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px 8px;
+    padding: 14px;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: var(--surface);
+  }
+
+  .catalog .row > td {
+    min-width: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  .identity,
+  .actions {
+    grid-column: 1 / -1;
+  }
+
+  .identity .nameLink {
+    display: none;
+  }
+
+  .catalog .identity .materialName {
+    display: block;
+    color: var(--text-strong);
+    font-size: 15px;
+    line-height: 1.35;
+  }
+
+  .catalog .row small,
+  .metricLabel {
+    color: var(--text-secondary);
+    font-size: 12px;
+    line-height: 1.35;
+  }
+
+  .catalog .row .metric {
+    padding: 8px;
+    border-radius: 8px;
+    background: var(--surface-soft);
+  }
+
+  .metricLabel {
+    display: block;
+  }
+
+  .metric .number {
+    display: block;
+    margin-top: 4px;
+    font-size: 16px;
+    font-weight: 700;
+  }
+
+  .actions > button {
+    width: 100%;
+    min-height: 44px;
+    justify-content: space-between;
+  }
+}

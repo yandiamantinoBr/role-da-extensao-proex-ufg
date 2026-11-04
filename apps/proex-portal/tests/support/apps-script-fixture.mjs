@@ -30,8 +30,8 @@ export function scriptFixture() {
   let now = Date.parse('2026-10-31T15:00:00.000Z'), locked = false, nextFile = 0;
   class Clock extends Date { constructor(...args) { super(...(args.length ? args : [now])); } static now() { return now; } }
   const folder = { getSharingAccess: () => 'PRIVATE', getEditors: () => [], getViewers: () => [], createFile: blob => { const id = `synthetic-file-${++nextFile}`; files.set(id, blob); return { getId: () => id }; } };
-  const ss = { getSheetByName: name => sheets.get(name) ?? null, insertSheet: name => { const sheet = new Sheet(name); sheets.set(name, sheet); return sheet; }, toast: value => alerts.push(value) };
-  const fixture = { ss, sheets, properties, calls, alerts, files, triggers, schemas: [], rows: {}, attachments: [],
+  const ss = { getId: () => 'synthetic-workbook', getSheetByName: name => sheets.get(name) ?? null, insertSheet: name => { const sheet = new Sheet(name); sheets.set(name, sheet); return sheet; }, toast: value => alerts.push(value) };
+  const fixture = { ss, sheets, properties, calls, alerts, files, triggers, schemas: [], rows: {}, attachments: [], configuredWorkbook: ss.getId(),
     advance(milliseconds) { now += milliseconds; }, lock(value) { locked = value; },
     addSheet(name, cells) { const sheet = new Sheet(name, cells); sheets.set(name, sheet); return sheet; },
     control() { return Object.fromEntries(sheets.get('Controle').cells.slice(1).map(row => [row[0], row[1]])); },
@@ -49,7 +49,7 @@ export function scriptFixture() {
   vm.runInContext(readFileSync(new URL('../../public/integracoes/proex-planilha.gs', import.meta.url), 'utf8'), context);
   context.chamar_ = (tool, args) => {
     calls.push({ tool, args: structuredClone(args) }); fixture.onCall(tool, args);
-    if (tool === 'proex_sync_describe') return { schemas: { tables: fixture.schemas }, runs: [], conflicts: [] };
+    if (tool === 'proex_sync_describe') return { configuration: { spreadsheetId: fixture.configuredWorkbook }, schemas: { tables: fixture.schemas }, runs: [], conflicts: [] };
     if (tool === 'proex_sync_run_start') return { id: 'synthetic-run' };
     if (tool === 'proex_sync_apply') return { results: [] };
     if (tool === 'proex_sync_read') return { rows: fixture.rows[args.table] ?? [], nextCursor: null };

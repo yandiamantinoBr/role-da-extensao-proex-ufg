@@ -3,7 +3,7 @@ import Image from 'next/image';
 import scopeStyles from './scope-filters.module.css';
 import settingsStyles from './settings-groups.module.css';
 import headingStyles from './module-heading.module.css';
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from 'react';
 import PhysicalAttendance from '@/components/portal/physical-attendance';
 import CampaignForm from '@/components/portal/campaign-form';
 import PendingPrizes from '@/components/portal/pending-prizes';
@@ -31,11 +31,13 @@ import MeuTrabalhoPanel from '@/components/portal/meu-trabalho-panel';
 import { workDayFromServerTimestamp } from '@/lib/follow-up/time';
 import WorkContextPanel from '@/components/portal/work-context-panel';
 import type { WorkArea } from '@/lib/my-work/contracts';
-import { workRecordFromParams, writeWorkRecordParams, type WorkRecordSelection } from '@/lib/work-navigation';
+import { commitPortalLocation, portalLocationKey, readPortalLocation, type PortalLocation } from '@/lib/portal-history';
+import type { WorkRecordSelection } from '@/lib/work-navigation';
 import workStyles from './work-integration.module.css';
 import NotificationBell from '@/components/portal/notification-bell';
 import OrganizationEmailSettings from '@/components/portal/organization-email-settings';
 import MaterialDetailDrawer from '@/components/portal/material-detail-drawer';
+import MaterialCatalog from '@/components/portal/material-catalog';
 import { ThemeSwitch } from '@/components/theme/theme-switch';
 import { BrandMark } from '@/components/theme/brand-mark';
 import DashboardPanel from '@/components/portal/dashboard-panel';
@@ -265,7 +267,9 @@ export default function PortalClient({ initial }: {
 }) {
     const [data, setData] = useState<Snapshot>(initial ?? {});
     const sessionIdentity = useRef(string(initial?.user?.userId));
-    const [tab, setTab] = useState<Tab>('overview');
+    const [requestedTab, setTab] = useState<Tab>('overview');
+    const [historyReady, setHistoryReady] = useState(false);
+    const pushNavigation = useRef(false);
     const [selectedDemandId, setSelectedDemandId] = useState('');
     const [reportInitialDataset, setReportInitialDataset] = useState<'projects' | 'demands'>('projects');
     const [accountOpen, setAccountOpen] = useState(false);
@@ -331,36 +335,6 @@ export default function PortalClient({ initial }: {
     }, []);
     const refreshModules = useCallback(async () => { if (!await refresh()) throw new Error('A alteração pode estar salva. Atualize a página para conferir os dados atuais.'); }, [refresh]);
     useEffect(() => { const change = () => { setOnline(navigator.onLine); }; const timer = window.setTimeout(() => { setUpdatedAt(new Date()); setNow(Date.now()); change(); }, 0); const clock = window.setInterval(() => setNow(Date.now()), 60000); window.addEventListener('online', change); window.addEventListener('offline', change); return () => { window.clearTimeout(timer); window.clearInterval(clock); window.removeEventListener('online', change); window.removeEventListener('offline', change); }; }, []);
-    // Links diretos (?module=…&project=…) esperam as permissões carregarem antes de serem descartados.
-    const pendingLink = useRef<{ tab: string; project: string } | null>(null);
-    useEffect(() => {
-        const params = new URLSearchParams(window.location.search);
-        const candidate = params.get('demandId') || '';
-        const demandId = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(candidate) ? candidate : '';
-        const requested = params.get('module') || (demandId ? 'demands' : '');
-        const requestedTab = tabs.find(module => module.id === requested);
-        const projectId = params.get('project') || '';
-        const unitId = params.get('unit') || '';
-        const record = workRecordFromParams(params);
-        pendingLink.current = { tab: requestedTab?.id || '', project: projectId };
-        const timer = window.setTimeout(() => {
-            if (requestedTab) setTab(requestedTab.id);
-            setWorkRecord(record);
-            if (record?.module === 'materials') setSelectedMaterialId(record.recordId);
-            setSelectedDemandId(demandId);
-            setFilter(projectId);
-            setUnitFilter(requested === 'my-work' || (requested === 'calendar' && unitId === '__unassigned__') ? '' : unitId);
-            setAreaFilter(requested === 'my-work' || requested === 'calendar' ? '' : params.get('area') || '');
-        }, 0);
-        return () => window.clearTimeout(timer);
-    }, []);
-    useEffect(() => { const url = new URL(window.location.href); if (tab === 'overview')
-        url.searchParams.delete('module');
-    else
-        url.searchParams.set('module', tab); if (filter)
-        url.searchParams.set('project', filter);
-    else
-        url.searchParams.delete('project'); if (unitFilter) url.searchParams.set('unit', unitFilter); else url.searchParams.delete('unit'); if (areaFilter) url.searchParams.set('area', areaFilter); else url.searchParams.delete('area'); if (tab === 'demands' && selectedDemandId) url.searchParams.set('demandId', selectedDemandId); else url.searchParams.delete('demandId'); writeWorkRecordParams(url.searchParams, workRecord, tab, filter); window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`); }, [tab, filter, unitFilter, areaFilter, selectedDemandId, workRecord]);
     useEffect(() => { const update = () => { if (navigator.onLine && !document.hidden)
         void refresh(); }; const timer = window.setInterval(update, 30000); window.addEventListener('online', update); document.addEventListener('visibilitychange', update); return () => { window.clearInterval(timer); window.removeEventListener('online', update); document.removeEventListener('visibilitychange', update); }; }, [refresh]);
     useEffect(() => { if (!accountOpen)
@@ -393,6 +367,8 @@ export default function PortalClient({ initial }: {
     const canManageOrganization = organizations.some(organization => organization.canManage);
     const canCreateProjects = canGlobal('projects.manage') || organizations.some(organization => organization.canManage && organization.status === 'active');
     const canFollowUp = canManageOrganization || projects.length > 0;
+    const allowedTabs = tabs.filter(t => ['overview', 'projects', 'profile', 'calendar', 'records', 'my-work'].includes(t.id) || (t.id === 'events' && canAny('campaigns.manage', 'participation.operate', 'inventory.deliver')) || (t.id === 'materials' && canAny('inventory.read', 'inventory.manage', 'inventory.deliver')) || (t.id === 'loans' && canAny('loans.read', 'loans.manage', 'loans.checkout')) || (t.id === 'demands' && canFollowUp) || (t.id === 'team' && (canManageOrganization || canAny('access.invite', 'access.manage'))) || (t.id === 'reports' && (canFollowUp || canAny('reports.read'))) || (t.id === 'settings' && canGlobal('organization.manage')));
+    const tab = allowedTabs.some(module => module.id === requestedTab) ? requestedTab : 'overview';
     const organizationalUnits = list(data.organizationalUnits);
     const unitOf = (project: Row) => string(get(project, 'unit_id', 'unitId'));
     const accessibleUnitIds = new Set(projects.map(unitOf).filter(Boolean));
@@ -415,7 +391,19 @@ export default function PortalClient({ initial }: {
     const byProject = (rows: Row[]) => filter || unitFilter || areaFilter ? rows.filter(row => selectedProjectIds.has(string(get(row, 'projectId', 'project_id')))) : rows;
     const visibleCampaigns = byProject(campaigns), visibleItems = byProject(items), visibleLoans = byProject(loans);
     const projectName = (id: unknown) => projects.find(p => p.id === id)?.name || 'PROEX';
-    const activeWorkRecord = workRecord?.module === tab && workRecord.projectId === filter ? workRecord : null;
+    function canOpenRecord(record: WorkRecordSelection) {
+        return record.module !== 'materials' || (canProject(record.projectId, 'inventory.read') &&
+            items.some(item => item.id === record.recordId && get(item, 'projectId', 'project_id') === record.projectId));
+    }
+    const activeWorkRecord = workRecord?.module === tab && workRecord.projectId === filter && canOpenRecord(workRecord) ? workRecord : null;
+    const selectedMaterial = selectedMaterialId ? items.find(item => string(item.id) === selectedMaterialId) : null;
+    const materialDrawerId = selectedMaterial && canProject(string(get(selectedMaterial, 'projectId', 'project_id')), 'inventory.read') &&
+        (workRecord?.module !== 'materials' || activeWorkRecord) ? selectedMaterialId : null;
+    useEffect(() => {
+        if (!selectedMaterialId || materialDrawerId) return;
+        const timer = window.setTimeout(() => setSelectedMaterialId(current => current === selectedMaterialId ? null : current), 0);
+        return () => window.clearTimeout(timer);
+    }, [selectedMaterialId, materialDrawerId]);
     const displayedLoans = activeWorkRecord?.module === 'loans' ? visibleLoans.filter(row => row.id === activeWorkRecord.recordId) : visibleLoans;
     const displayedCampaigns = activeWorkRecord?.module === 'events' ? visibleCampaigns.filter(row => row.id === activeWorkRecord.recordId) : visibleCampaigns;
     const recordModule = activeWorkRecord?.module, recordId = activeWorkRecord?.recordId;
@@ -439,30 +427,96 @@ export default function PortalClient({ initial }: {
     const formItems = items.filter(i => effectiveProject && get(i, 'projectId', 'project_id') === effectiveProject);
     const available = (item: Row) => item.available !== undefined && item.available !== null ? Number(item.available) : Number(item.stock ?? item.quantity ?? 0) - Number(item.reserved ?? 0);
     const searchItems = visibleItems.filter(i => !query || `${i.name} ${i.description ?? ''}`.toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR')));
-    const allowedTabs = tabs.filter(t => ['overview', 'projects', 'profile', 'calendar', 'records', 'my-work'].includes(t.id) || (t.id === 'events' && canAny('campaigns.manage', 'participation.operate', 'inventory.deliver')) || (t.id === 'materials' && canAny('inventory.read', 'inventory.manage', 'inventory.deliver')) || (t.id === 'loans' && canAny('loans.read', 'loans.manage', 'loans.checkout')) || (t.id === 'demands' && canFollowUp) || (t.id === 'team' && (canManageOrganization || canAny('access.invite', 'access.manage'))) || (t.id === 'reports' && (canFollowUp || canAny('reports.read'))) || (t.id === 'settings' && canGlobal('organization.manage')));
-    const allowedModuleKey = allowedTabs.map(module => module.id).join('|');
     const accessibleProjectKey = scopedProjects.map(project => project.id).join('|');
     const accessibleUnitKey = [...visibleUnits.map(unit => string(unit.id)), ...(hasUnassignedProjects ? ['__unassigned__'] : [])].join('|');
-    useEffect(() => { if (allowedModuleKey.split('|').includes(tab)) return; const timer = window.setTimeout(() => setTab('overview'), 0); return () => window.clearTimeout(timer); }, [allowedModuleKey, tab]);
-    useEffect(() => { const link = pendingLink.current; if (!link) return; const timer = window.setTimeout(() => { if (link.tab && allowedModuleKey.split('|').includes(link.tab)) { setTab(link.tab as Tab); link.tab = ''; } if (link.project && accessibleProjectKey.split('|').includes(link.project)) { setFilter(link.project); setDraftProject(link.project); link.project = ''; } if (!link.tab && !link.project) pendingLink.current = null; }, 0); return () => window.clearTimeout(timer); }, [allowedModuleKey, accessibleProjectKey]);
-    useEffect(() => { if (!filter || accessibleProjectKey.split('|').includes(filter)) return; const timer = window.setTimeout(() => { setFilter(''); setDraftProject(''); }, 0); return () => window.clearTimeout(timer); }, [accessibleProjectKey, filter]);
+    useEffect(() => { if (tab === requestedTab) return; const timer = window.setTimeout(() => { setTab(tab); setWorkRecord(null); setSelectedMaterialId(null); setSelectedDemandId(''); }, 0); return () => window.clearTimeout(timer); }, [tab, requestedTab]);
+    useEffect(() => { if (!filter || accessibleProjectKey.split('|').includes(filter)) return; const timer = window.setTimeout(() => { setFilter(''); setDraftProject(''); setWorkRecord(null); setSelectedMaterialId(null); }, 0); return () => window.clearTimeout(timer); }, [accessibleProjectKey, filter]);
     useEffect(() => { if (!unitFilter || accessibleUnitKey.split('|').includes(unitFilter)) return; const timer = window.setTimeout(() => { setUnitFilter(''); setFilter(''); setDraftProject(''); }, 0); return () => window.clearTimeout(timer); }, [accessibleUnitKey, unitFilter]);
     const navigation = useNavigationPreferences(string(user.userId), allowedTabs.map(module => module.id));
     setDraftScope(string(user.userId));
     const draftUserId = string(user.userId);
     useEffect(() => watchDraftLogout(draftUserId), [draftUserId]);
-    function navigate(id: ModuleId) {
+
+    const route: PortalLocation = { tab, project: filter, unit: unitFilter, area: areaFilter, demand: selectedDemandId, record: activeWorkRecord, report: reportInitialDataset };
+    function readLocation(params: URLSearchParams) {
+        return readPortalLocation(params, {
+            modules: allowedTabs.map(module => module.id),
+            units: accessibleUnitKey.split('|'),
+            areas: [...THEMATIC_AREAS.map(area => area.key), '__none__'],
+            canSelectProject: (id, unit, area) => projects.some(project => project.id === id && inUnit(project, unit) && inArea(project, area)),
+            canOpenRecord,
+        });
+    }
+    function focusModule(scrollToTop: boolean) {
+        window.requestAnimationFrame(() => {
+            document.getElementById('main')?.focus({ preventScroll: true });
+            if (scrollToTop) window.scrollTo({ top: 0, behavior: 'auto' });
+        });
+    }
+    function applyLocation(next: PortalLocation) {
+        setTab(next.tab);
+        setFilter(next.project); setDraftProject(next.project); setOfferProject('');
+        setUnitFilter(next.unit); setAreaFilter(next.area);
+        setWorkRecord(next.record); setSelectedMaterialId(next.record?.module === 'materials' ? next.record.recordId : null);
+        setSelectedDemandId(next.demand); setReportInitialDataset(next.report);
+        setQuery(''); setAccountOpen(false);
+    }
+    const restoreLocation = useEffectEvent((traversal: boolean) => {
+        const url = new URL(window.location.href);
+        const next = readLocation(url.searchParams);
+        pushNavigation.current = false;
+        if (!traversal || portalLocationKey(next) !== portalLocationKey(route)) {
+            applyLocation(next);
+            if (traversal) focusModule(false);
+        }
+        if (!traversal) setHistoryReady(true);
+        commitPortalLocation(window.history, url.href, next, false);
+    });
+    useEffect(() => {
+        const restore = () => restoreLocation(true);
+        const start = window.setTimeout(() => restoreLocation(false), 0);
+        window.addEventListener('popstate', restore);
+        return () => { window.clearTimeout(start); window.removeEventListener('popstate', restore); };
+    }, []);
+    const writeLocation = useEffectEvent(() => {
+        const push = pushNavigation.current;
+        pushNavigation.current = false;
+        commitPortalLocation(window.history, window.location.href, route, push);
+    });
+    const routeKey = portalLocationKey(route);
+    useEffect(() => { if (historyReady) writeLocation(); }, [historyReady, routeKey]);
+
+    function navigate(id: ModuleId, report: PortalLocation['report'] = 'projects') {
         if (!allowedTabs.some(module => module.id === id)) return;
-        pendingLink.current = null;
-        if (id !== tab) navigation.recordVisit(id);
+        if (id !== tab) {
+            pushNavigation.current = true;
+            navigation.recordVisit(id);
+        }
         setTab(id); setQuery(''); setAccountOpen(false); setSelectedMaterialId(null); setWorkRecord(null);
+        if (id === 'reports') setReportInitialDataset(report);
         if (id === 'my-work' || (id === 'calendar' && unitFilter === '__unassigned__')) setUnitFilter('');
         if (id === 'my-work' || id === 'calendar') setAreaFilter('');
-        window.requestAnimationFrame(() => { document.getElementById('main')?.focus({ preventScroll: true }); window.scrollTo({ top: 0, behavior: 'auto' }); });
+        focusModule(true);
+    }
+    function followModuleLink(event: MouseEvent) {
+        if (event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+        const link = (event.target as Element).closest<HTMLAnchorElement>('a[href]');
+        if (!link || link.hasAttribute('download') || link.hasAttribute('data-notice-task') || (link.target && link.target !== '_self')) return;
+        const destination = new URL(link.href);
+        if (destination.origin !== window.location.origin || destination.pathname !== window.location.pathname || destination.hash) return;
+        if (!allowedTabs.some(module => module.id === destination.searchParams.get('module'))) return;
+        event.preventDefault();
+        const next = readLocation(destination.searchParams);
+        if (portalLocationKey(next) === routeKey) return;
+        pushNavigation.current = true;
+        if (next.tab !== tab) navigation.recordVisit(next.tab);
+        applyLocation(next);
+        focusModule(true);
     }
     function selectProject(id: string) { const project = projects.find(row => row.id === id); if (id && !project) return; setWorkRecord(null); setSelectedMaterialId(null); if (project && unitFilter && unitOf(project) !== unitFilter) setUnitFilter(unitOf(project) || '__unassigned__'); if (project && areaFilter && !inArea(project)) setAreaFilter(''); setFilter(id); setDraftProject(id); setOfferProject(''); }
     function openProject(id: string) {
         if (!projects.some(project => project.id === id)) return;
+        if (tab !== 'projects' || activeWorkRecord?.recordId !== id) pushNavigation.current = true;
         navigate('projects');
         selectProject(id);
         setWorkRecord({ module: 'projects', projectId: id, recordId: id });
@@ -590,7 +644,7 @@ export default function PortalClient({ initial }: {
         </section>
         <ProfilePanel onUpdated={() => { void refresh(); }}/>
         </main>;
-    return <div className={`p-shell pn-shell ${navigation.collapsed ? 'pn-is-collapsed' : ''} ${navigation.ready ? 'pn-navigation-ready' : ''}`}>
+    return <div className={`p-shell pn-shell ${navigation.collapsed ? 'pn-is-collapsed' : ''} ${navigation.ready ? 'pn-navigation-ready' : ''}`} onClickCapture={followModuleLink}>
     <a className="p-skip-link" href="#main">Pular para o conteúdo</a>
     <DesktopSidebar modules={allowedTabs} active={tab} onNavigate={navigate} pinned={navigation.pinned} role={role} collapsed={navigation.collapsed} onToggle={navigation.toggleCollapsed} />
     <div className="p-workspace">
@@ -605,7 +659,7 @@ export default function PortalClient({ initial }: {
     <button className="p-icon-button p-refresh-button" title="Atualizar dados" aria-label="Atualizar dados" disabled={refreshing} onClick={() => void refresh()}>
     <RefreshCw size={18} className={refreshing ? 'p-spin' : ''}/>
     </button>
-    {canFollowUp && <NotificationBell key={string(user.userId)} userId={string(user.userId)} onSelectTask={id => { setSelectedDemandId(id); setFilter(''); setUnitFilter(''); setAreaFilter(''); navigate('demands'); }}/>}
+    {canFollowUp && <NotificationBell key={string(user.userId)} userId={string(user.userId)} onSelectTask={id => { if (id !== selectedDemandId) pushNavigation.current = true; setSelectedDemandId(id); setFilter(''); setUnitFilter(''); setAreaFilter(''); navigate('demands'); }}/>}
     <ThemeSwitch />
     <div className="p-account" ref={accountRef}>
     <button className="p-account-trigger" aria-label="Abrir menu da minha conta" aria-expanded={accountOpen} aria-controls="account-menu" onClick={() => setAccountOpen(v => !v)} onKeyDown={e => { if (e.key === 'ArrowDown') {
@@ -708,12 +762,12 @@ export default function PortalClient({ initial }: {
       {tab === 'my-work' && <><div className={workStyles.projectFilter}><label className="p-field"><span>Projeto</span><select value={filter} onChange={event => selectProject(event.target.value)}><option value="">Todos os projetos autorizados</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label></div><MeuTrabalhoPanel key={string(user.userId)} userId={string(user.userId)} projectId={filter || null} serverDay={workDayFromServerTimestamp(data?.updatedAt)}/></>}
       {(['materials','loans','events'] as string[]).includes(tab) && workContext(filter || null,tab === 'events' ? 'campaigns' : tab as WorkArea)}
       {activeWorkRecord && ['loans','events'].includes(activeWorkRecord.module) && <div className={workStyles.focusNotice} role="status"><p>{(activeWorkRecord.module === 'loans' ? displayedLoans : displayedCampaigns).length ? 'Registro vinculado ao seu trabalho. Use as ações abaixo para acompanhar.' : 'O registro não está na lista disponível para esta conta. Atualize ou consulte a lista completa.'}</p><button type="button" className="p-button p-button-subtle" onClick={() => setWorkRecord(null)}>Ver todos</button></div>}
-      {tab === 'demands' && <><FollowUpPanel key={string(user.userId)} defaultProjectId={filter} initialTaskId={selectedDemandId} serverDay={workDayFromServerTimestamp(data?.updatedAt)} onSelectTask={setSelectedDemandId} onChanged={refreshModules} onOpenReports={() => { setReportInitialDataset('demands'); navigate('reports'); }}/><OrganizationEmailSettings key={string(user.userId)} userId={string(user.userId)} organizations={organizations}/></>}
+      {tab === 'demands' && <><FollowUpPanel key={string(user.userId)} defaultProjectId={filter} initialTaskId={selectedDemandId} serverDay={workDayFromServerTimestamp(data?.updatedAt)} onSelectTask={setSelectedDemandId} onChanged={refreshModules} onOpenReports={() => navigate('reports', 'demands')}/><OrganizationEmailSettings key={string(user.userId)} userId={string(user.userId)} organizations={organizations}/></>}
       {tab === 'overview' && <><section className={workStyles.entry} aria-label="Seu trabalho pessoal"><div><strong>Meu trabalho</strong><p>Demandas, responsabilidades e prazos atribuídos a você ou às suas equipes.</p></div><button type="button" className="p-button p-button-primary" onClick={() => navigate('my-work')}>Ver meu trabalho</button></section><DashboardPanel modules={allowedTabs} pinned={navigation.pinned} frequent={navigation.frequent} onNavigate={navigate} onTogglePin={navigation.togglePin} displayName={string(user.displayName)} role={role} roleLabel={roleNames[role] || 'Equipe PROEX'} projects={scopedProjects} items={visibleItems} loans={visibleLoans} campaigns={visibleCampaigns} selectedProjectId={filter} unitName={unitFilter === '__unassigned__' ? 'Sem unidade vinculada' : string(visibleUnits.find(unit => unit.id === unitFilter)?.acronym || visibleUnits.find(unit => unit.id === unitFilter)?.name)} now={now} onOpenProject={openProject} known={{ projects: Array.isArray(data.projects), items: Array.isArray(data.items), loans: Array.isArray(data.loans), campaigns: Array.isArray(data.campaigns) }} /></>}
 
       {tab === 'projects' && <>
         <AssistedImportPanel kind="project" organizations={organizations} projects={projects.map(project => ({ id: string(project.id), name: string(project.name), organization_id: string(get(project, 'organization_id', 'organizationId')), version: Number(project.version ?? 1) }))} projectTypes={list(data.projectTypes).map(type => ({ id: string(type.id), label: string(type.label) }))} organizationalUnits={organizationalUnits.map(unit => ({ id: string(unit.id), name: string(unit.name), acronym: string(unit.acronym) }))} canCreateProject={canCreateProjects} canWrite={id => canProject(id, 'campaigns.manage')} defaultProjectId={filter} onImported={refreshModules}/>
-        <ProjectPanel key={string(user.userId)} userId={string(user.userId)} shortcutModules={allowedTabs.map(module => module.id).filter(id => id === 'demands' || id === 'calendar')} initialProjectId={workRecord?.module === 'projects' ? workRecord.recordId : undefined} onDetailChange={id => { if (id) { selectProject(id); setWorkRecord({module:'projects',projectId:id,recordId:id}); } else setWorkRecord(null); }} renderWorkContext={projectId => workContext(projectId,'projects')} organizations={organizations} isPlatformOwner={isPlatformOwner} projects={projects} projectTypes={list(data.projectTypes)} organizationalUnits={organizationalUnits} canCreate={canCreateProjects} canEdit={id => canProject(id, 'campaigns.manage')} mutate={mutate} onSelect={id => { selectProject(id); navigate('overview'); }}/>
+        <ProjectPanel key={string(user.userId)} userId={string(user.userId)} shortcutModules={allowedTabs.map(module => module.id).filter(id => id === 'demands' || id === 'calendar')} initialProjectId={activeWorkRecord?.module === 'projects' ? activeWorkRecord.recordId : undefined} onDetailChange={id => { if (id) { if (id !== activeWorkRecord?.recordId) pushNavigation.current = true; selectProject(id); setWorkRecord({module:'projects',projectId:id,recordId:id}); } else setWorkRecord(null); }} renderWorkContext={projectId => workContext(projectId,'projects')} organizations={organizations} isPlatformOwner={isPlatformOwner} projects={projects} projectTypes={list(data.projectTypes)} organizationalUnits={organizationalUnits} canCreate={canCreateProjects} canEdit={id => canProject(id, 'campaigns.manage')} mutate={mutate} onSelect={id => { selectProject(id); navigate('overview'); }}/>
       </>}
 
       {tab === 'events' && <>
@@ -775,36 +829,32 @@ export default function PortalClient({ initial }: {
         </details>}
         <div hidden={showPrizeView}>
         {canAny('inventory.manage') && <details className={`p-card ${workStyles.catalogRegistration}`}><summary className="p-text-link">Cadastrar um patrimônio individual</summary>{filter && canProject(filter, 'inventory.manage') ? <AssetDetailsPanel key={filter} itemId={null} projectId={filter} onSaved={refreshModules}/> : <p className="p-form-help">Selecione um projeto no filtro acima para cadastrar seu patrimônio, com documentos e conferência antes de salvar.</p>}</details>}
-        <MaterialDetailDrawer itemId={selectedMaterialId} onClose={() => { setSelectedMaterialId(null); setWorkRecord(null); }} onChanged={refreshModules} renderWorkContext={({itemId,projectId}) => workContext(projectId,'materials',{itemId})} />
+        <MaterialDetailDrawer itemId={materialDrawerId} onClose={() => { setSelectedMaterialId(null); setWorkRecord(null); }} onChanged={refreshModules} renderWorkContext={({itemId,projectId}) => workContext(projectId,'materials',{itemId})} />
         <Section title="Materiais e estoque" description="Saldo físico, reservas e unidades disponíveis ficam separados." aside={<div className="p-search">
             <Search size={17}/>
             <input aria-label="Buscar materiais" placeholder="Buscar material" value={query} onChange={e => setQuery(e.target.value)}/>
-            </div>}>{searchItems.length ? <div className="p-card p-table-wrap">
-            <table>
-            <thead>
-            <tr>
-            <th>Material</th>
-            <th>Físico</th>
-            <th>Reservado</th>
-            <th>Disponível</th>
-            <th>Ações</th>
-            </tr>
-            </thead>
-            <tbody>{searchItems.map(i => <tr key={i.id}>
-                <td>
-                <button type="button" className="p-text-link" aria-label={`Abrir detalhes de ${i.name}`} onClick={() => setSelectedMaterialId(string(i.id))}><strong>{i.name}</strong></button>
-                <small>{categoryNames[i.category] || i.category} · {projectName(get(i, 'projectId', 'project_id'))}</small>{(i.asset_code || i.assetCode) && <small>Código: {i.asset_code || i.assetCode}</small>}{i.condition !== 'active' && <span className="p-badge p-status-paused">{i.condition === 'maintenance' ? 'Em manutenção' : 'Inativo'}</span>}
-                </td>
-                <td>{i.stock ?? i.quantity ?? 0}<small>{i.unit || 'unidade'}</small>
-                </td>
-                <td>{i.reserved ?? 0}</td>
-                <td>
-                <span className={available(i) <= Number(get(i, 'lowStock', 'low_stock') ?? 0) ? 'p-low' : 'p-available'}>{available(i)}</span>
-                </td>
-                <td><button className="p-button p-button-subtle" onClick={() => setSelectedMaterialId(string(i.id))} aria-label={`Abrir detalhes de ${i.name}`}>Detalhes <ArrowRight size={15} /></button></td>
-                </tr>)}</tbody>
-            </table>
-            </div> : <Empty title={query ? 'Nenhum material encontrado' : 'Seu catálogo ainda está vazio'} text={query ? 'Tente outro nome ou selecione outro projeto.' : 'Cadastre os materiais e registre o recebimento após conferir a quantidade real.'}/>}</Section>{can('inventory.manage') && formProjects.length > 0 && <div className="p-two-columns">
+            </div>}>{searchItems.length ? <MaterialCatalog onOpen={setSelectedMaterialId} materials={searchItems.map(item => {
+                const availableQuantity = available(item);
+                const projectId = string(get(item, 'projectId', 'project_id'));
+                const hasLoan = Number(get(item, 'onLoan', 'on_loan')) === 1;
+                const reservedNow = Number(get(item, 'reservedNow', 'reserved_now')) === 1;
+                const availabilityNote = hasLoan ? 'Emprestado' : reservedNow ? 'Reserva em andamento' : '';
+                return {
+                    id: string(item.id),
+                    name: string(item.name),
+                    category: string(categoryNames[item.category] || item.category),
+                    project: string(projectName(projectId)),
+                    assetCode: string(item.asset_code || item.assetCode),
+                    condition: string(item.condition),
+                    unit: string(item.unit || 'unidade'),
+                    physical: item.stock ?? item.quantity ?? 0,
+                    reserved: reservedNow ? 1 : item.reserved ?? 0,
+                    available: availableQuantity,
+                    availabilityNote,
+                    lowStock: item.condition === 'active' && !availabilityNote && availableQuantity <= Number(get(item, 'lowStock', 'low_stock') ?? 0),
+                    canOpen: canProject(projectId, 'inventory.read'),
+                };
+            })} /> : <Empty title={query ? 'Nenhum material encontrado' : 'Seu catálogo ainda está vazio'} text={query ? 'Tente outro nome ou selecione outro projeto.' : 'Cadastre os materiais e registre o recebimento após conferir a quantidade real.'}/>}</Section>{can('inventory.manage') && formProjects.length > 0 && <div className="p-two-columns">
             <Section title="Cadastrar material" description="O cadastro começa sem saldo. Registre o recebimento depois da contagem.">
             <OperationForm onProjectFocus={setDraftProject} action="item.create" mutate={mutate} submit="Cadastrar material" make={f => ({ projectId: f.get('projectId'), name: f.get('name'), category: f.get('category'), categoryId: f.get('categoryId') || null, unit: f.get('unit'), lowStock: Number(f.get('lowStock')), description: f.get('description'), assetCode: f.get('assetCode') })}>
             <div className="p-form-grid">{projectField}<Field label="Nome">

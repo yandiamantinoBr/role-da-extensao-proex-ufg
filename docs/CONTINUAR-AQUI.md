@@ -1,5 +1,9 @@
 # Continuar Portal PROEX
 
+## Voltar e Avançar entre os módulos · 04/11/2026
+
+Cada troca de módulo preserva uma etapa no histórico do navegador. Mudanças nos filtros de contexto atualizam a etapa atual. A volta a um endereço antigo respeita os acessos atuais e os rascunhos automáticos guardam a digitação feita imediatamente antes da saída. [Reprodução e testes](NAVEGACAO-PORTAL.md).
+
 ## Cadastro de materiais no Sheets e revisão dos módulos · 04/11/2026
 
 - **Uso:** na planilha mestre, abra **PROEX → Cadastrar material**. O registro entra no Portal com saldo zero e a próxima sincronização traz a linha para **Materiais**. Use as células em creme para editar. [Operação, cuidados e teste nos dois sentidos](../apps/proex-portal/docs/SINCRONIZACAO.md#atalhos-de-materiais-e-permissões-do-drive).

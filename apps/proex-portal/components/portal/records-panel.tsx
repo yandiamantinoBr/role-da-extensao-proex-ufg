@@ -1,5 +1,7 @@
 'use client';
 
+import Link from 'next/link';
+
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { BarChart3, Camera, Check, ClipboardList, Download, ExternalLink, FilePlus2, ImagePlus, LoaderCircle, Paperclip, Plus, RefreshCw, Search, Trash2, Upload } from 'lucide-react';
 import { useFormDraft, DraftNotice } from './use-form-draft';
@@ -373,7 +375,7 @@ export default function RecordsPanel({ projects: sourceProjects, items, loans, c
 
     <section className="p-card" aria-labelledby="records-list-title" aria-busy={loading}>
       <div className={styles.historyHead}><div><h3 id="records-list-title">Histórico</h3><p className="p-form-help" style={{ margin: 0 }}>{loading ? 'Consultando registros…' : `${shown.length} de ${records.length} registros carregados${filters.from || filters.to ? ' no período escolhido' : ''}`}</p></div>
-        <div className={styles.historyActions}><button type="button" className="p-button p-button-subtle" onClick={() => window.location.assign('/?module=reports')}><BarChart3 size={16} />Central de relatórios</button><button type="button" className="p-button p-button-subtle" disabled={loading || !shown.length} onClick={exportHistory}><Download size={16} />Baixar recorte em XLSX</button></div></div>
+        <div className={styles.historyActions}><Link className="p-button p-button-subtle" href="/?module=reports" prefetch={false}><BarChart3 size={16} />Central de relatórios</Link><button type="button" className="p-button p-button-subtle" disabled={loading || !shown.length} onClick={exportHistory}><Download size={16} />Baixar recorte em XLSX</button></div></div>
       <div className={styles.historyFilters}>
         <div className={styles.kindChips} role="group" aria-label="Filtrar por categoria">
           <button type="button" aria-pressed={!category} className={!category ? styles.chipActive : ''} disabled={existingPending} onClick={() => setCategory('')}>Todas <span>{records.length}</span></button>

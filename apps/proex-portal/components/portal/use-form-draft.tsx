@@ -93,6 +93,7 @@ export function useFormDraft(formRef: RefObject<HTMLFormElement | null>, key: st
     const stopLogoutListener = onDraftLogout(window, formScope, () => {
       draftScope.invalidate(formScope);
       window.clearTimeout(timer.current);
+      timer.current = undefined;
       try { clearDraftStorage(localStorage, formScope); } catch { /* storage may be disabled */ }
       setSavedAt(null); setRestored(false);
     });
@@ -103,25 +104,42 @@ export function useFormDraft(formRef: RefObject<HTMLFormElement | null>, key: st
       const stored = load(key);
       if (stored && !same(stored.values, baseline.current)) { apply(form, stored.values); setSavedAt(stored.savedAt); setRestored(true); }
     }, 0);
+    const persist = (announce: boolean) => {
+      window.clearTimeout(timer.current);
+      timer.current = undefined;
+      if (!baseline.current || draftScope.current !== formScope) return;
+      const values = read(form);
+      try {
+        if (same(values, baseline.current)) {
+          localStorage.removeItem(storageKey(key));
+          if (announce) setSavedAt(null);
+          return;
+        }
+        const savedNow = new Date().toISOString();
+        localStorage.setItem(storageKey(key), JSON.stringify({ savedAt: savedNow, values } satisfies Stored));
+        if (announce) setSavedAt(savedNow);
+      } catch { /* navegador sem armazenamento local: segue sem rascunho */ }
+    };
     const save = () => {
       window.clearTimeout(timer.current);
-      timer.current = window.setTimeout(() => {
-        if (!baseline.current || draftScope.current !== formScope) return;
-        const values = read(form);
-        try {
-          if (same(values, baseline.current)) { localStorage.removeItem(storageKey(key)); setSavedAt(null); return; }
-          const savedNow = new Date().toISOString();
-          localStorage.setItem(storageKey(key), JSON.stringify({ savedAt: savedNow, values } satisfies Stored));
-          setSavedAt(savedNow);
-        } catch { /* navegador sem armazenamento local: segue sem rascunho */ }
-      }, 600);
+      timer.current = window.setTimeout(() => persist(true), 600);
     };
+    const flush = () => { if (timer.current !== undefined) persist(false); };
     form.addEventListener('input', save);
     form.addEventListener('change', save);
-    return () => { stopLogoutListener(); window.clearTimeout(start); window.clearTimeout(timer.current); form.removeEventListener('input', save); form.removeEventListener('change', save); };
+    window.addEventListener('pagehide', flush);
+    return () => {
+      flush();
+      stopLogoutListener();
+      window.clearTimeout(start);
+      window.removeEventListener('pagehide', flush);
+      form.removeEventListener('input', save);
+      form.removeEventListener('change', save);
+    };
   }, [formRef, key]);
   const clear = useCallback(() => {
     window.clearTimeout(timer.current);
+    timer.current = undefined;
     if (key) try { localStorage.removeItem(storageKey(key)); } catch { /* sem armazenamento */ }
     if (formRef.current) baseline.current = read(formRef.current);
     setSavedAt(null); setRestored(false);

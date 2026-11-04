@@ -34,7 +34,7 @@ function harness(){
  const element=(type,props)=>typeof type==='function'&&['WorkTaskCard','TaskSignals','TaskStateBadge','TaskPriorityBadge','TaskDeadlineBadge','TaskPageSummary'].includes(type.name)?type(props):({type,props});const jsx={jsx:element,jsxs:element};
  const modules=new Map();function load(file){if(modules.has(file))return modules.get(file);const compiledModule={exports:{}};modules.set(file,compiledModule.exports);const require=name=>name.endsWith('.module.css')?{default:new Proxy({},{get:(_target,key)=>String(key)})}:name==='react'?hooks:name==='react/jsx-runtime'?jsx:name==='lucide-react'?new Proxy({},{get:(_target,key)=>String(key)}):name==='./use-form-draft'?{DraftNotice:'DraftNotice',useFormDraft:()=>({clear(){}})}:name==='../errors'?{HttpError:class extends Error{}}:name==='./work-task-card'?load('components/portal/work-task-card.tsx'):name==='./work-signals'?load('components/portal/work-signals.tsx'):name==='./task-page-summary'?load('components/portal/task-page-summary.tsx'):name==='@/lib/follow-up/presentation'?load('lib/follow-up/presentation.ts'):load(name==='@/lib/follow-up/contracts'?'lib/follow-up/contracts.ts':'components/portal/follow-up-api.ts');
  const code=ts.transpileModule(readFileSync(new URL('../'+file,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText;
- vm.runInNewContext(code,{module:compiledModule,exports:compiledModule.exports,require,URLSearchParams,URL,Intl,Date,JSON,Error,Event,FormData:FakeFormData,AbortController,crypto,setTimeout:schedule,clearTimeout:clear,window:{location:{origin:'http://127.0.0.1:5173'},requestAnimationFrame:fn=>schedule(fn,0),dispatchEvent(){}},fetch:(url,init)=>new Promise(resolve=>requests.push({url,init,resolve}))});return compiledModule.exports;}
+ vm.runInNewContext(code,{module:compiledModule,exports:compiledModule.exports,require,URLSearchParams,URL,Intl,Date,JSON,Error,Event,FormData:FakeFormData,AbortController,crypto,document:{body:{},activeElement:null},setTimeout:schedule,clearTimeout:clear,window:{location:{origin:'http://127.0.0.1:5173'},requestAnimationFrame:fn=>schedule(fn,0),dispatchEvent(){}},fetch:(url,init)=>new Promise(resolve=>requests.push({url,init,resolve}))});return compiledModule.exports;}
  const Component=load('components/portal/follow-up-panel.tsx').default;
  const nodes=()=>{const result=[];const visit=node=>{if(!node||typeof node!=='object')return;if(Array.isArray(node)){node.forEach(visit);return;}result.push(node);visit(node.props?.children);};visit(tree);return result;};
  const h={requests,find(type,predicate=()=>true){return nodes().find(node=>node.type===type&&predicate(node));},render(nextProps={}){props={...props,...nextProps};index=0;tree=Component(props);effects.splice(0).forEach(fn=>fn());},timers(){for(const[id,timer]of [...timers]){timers.delete(id);timer.fn();}},reply(request,data){request.resolve({ok:true,json:async()=>data});},view(request){return new URL(request.url,'http://127.0.0.1').searchParams.get('view');},pending(view){return requests.filter(r=>h.view(r)===view).at(-1);},button(name){const node=nodes().find(n=>n.type==='button'&&text(n)===name);assert.ok(node,name);return node;},hasButton(name){return nodes().some(n=>n.type==='button'&&text(n)===name);},select(name,value){const label=nodes().find(n=>n.type==='label'&&text(n).startsWith(name));assert.ok(label,name);const select=[label.props.children].flat().find(n=>n?.type==='select');assert.ok(select,name);select.props.onChange({target:{value}});},value(name){const label=nodes().find(n=>n.type==='label'&&text(n).startsWith(name));return [label.props.children].flat().find(n=>n?.type==='select').props.value;},body(){return text(tree);},hasComponent(name){return nodes().some(node=>typeof node.type==='function'&&node.type.name===name);},editor(){const node=h.component('TaskEditor'),previous=index;editorIndex??=slots.length;index=editorIndex;try{return node.type(node.props);}finally{index=previous;}},component(name){const node=nodes().find(n=>typeof n.type==='function'&&n.type.name===name);assert.ok(node,name);return node;},dispose(){slots.forEach(slot=>slot?.cleanup?.());}};h.render();h.timers();return h;
@@ -43,6 +43,29 @@ const catalog=()=>({organizations:[{id:'org-a',name:'Organization A',canManage:t
 const task=(id='task-a')=>({id,organization_id:'org-a',project_id:'project-a',title:'Task A',body:'Context A',priority:'medium',status:'open',due_at:null,version:1,created_at:'2026-10-31T12:00:00Z',updated_at:'2026-10-31T12:00:00Z',canEdit:true,canWork:false,canDelegateWork:false,project_name:'Project A',organization_name:'Organization A',campaign_id:null,item_id:null,loan_id:null,assignees:[]});
 const detail=()=>({task:task(),checklist:null,workCandidates:[],workGrants:[],history:[]});
 async function ready(h){h.reply(h.pending('catalog'),catalog());h.reply(h.pending('tasks'),{tasks:[task()],hasMore:false,today:'2026-10-31'});await tick();h.render();}
+
+test('a failed demand list offers a retry, and changing search clears the old failure before the next response',async()=>{
+ const h=harness();
+ try{
+  await ready(h);
+  const status='Estado', name='Tentar carregar demandas novamente';
+  h.select(status,'open');h.render();h.timers();
+  const failed=h.pending('tasks');
+  failed.resolve({ok:false,json:async()=>({error:'Consulta sintética indisponível.'})});await tick();h.render();
+  assert.match(h.body(),/Consulta sintética indisponível/);
+  assert.doesNotMatch(h.body(),/Nenhuma demanda neste recorte/);
+  h.button(name).props.onClick();h.render();h.timers();
+  const retry=h.pending('tasks');
+  assert.notEqual(retry,failed);
+  assert.equal(retry.url,failed.url);
+  retry.resolve({ok:false,json:async()=>({error:'A segunda consulta falhou.'})});await tick();h.render();
+  h.select(status,'in_progress');h.render();h.timers();
+  assert.doesNotMatch(h.body(),/A segunda consulta falhou/);
+  assert.equal(h.hasButton(name),false);
+  h.reply(h.pending('tasks'),{tasks:[],hasMore:false});await tick();h.render();
+  assert.match(h.body(),/Nenhuma demanda neste recorte/);
+ }finally{h.dispose();}
+});
 
 test('the server day renews the list and its deadlines without resetting filters or querying the catalog again',async()=>{
  const h=harness();try{
