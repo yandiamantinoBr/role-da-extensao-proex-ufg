@@ -41,19 +41,25 @@ export default function FollowUpPanel({defaultProjectId='',defaultOrganizationId
  const [projectId,setProjectId]=useState(defaultProjectId),[organizationId,setOrganizationId]=useState(defaultOrganizationId),[catalogStored,setCatalogStored]=useState<{key:string;data:Catalog}|null>(null),[tasksStored,setTasksStored]=useState<{key:string;tasks:Task[];hasMore:boolean;today:string}|null>(null),[loadedDetail,setDetail]=useState<Detail|null>(null),[selectedTask,setSelectedTask]=useState(initialTaskId),[appliedInitialTaskId,setAppliedInitialTaskId]=useState(initialTaskId),[form,setForm]=useState<'task'|'checklist'|null>(null),[status,setStatus]=useState('all'),[priority,setPriority]=useState('all'),[search,setSearch]=useState(''),[offset,setOffset]=useState(0),[busy,setBusy]=useState(false),[loading,setLoading]=useState(false),[error,setError]=useState(''),[revision,setRevision]=useState(0),[teamCatalog,setTeamCatalog]=useState<Catalog|null>(null),[teamOrg,setTeamOrg]=useState('');
  const generation=useRef(0),listGeneration=useRef(0),detailGeneration=useRef(0),interactionEpoch=useRef(0),selectionEcho=useRef(initialTaskId),mutationPending=useRef(false),detailElement=useRef<HTMLElement|null>(null),teamRequest=useRef<AbortController|null>(null);
  const initialSelectionTimer=useRef<ReturnType<typeof setTimeout>|undefined>(undefined);
+ const detailRejectedFor=useRef<string|null>(null);
  const catalogKey=JSON.stringify([projectId,organizationId]),listKey=JSON.stringify([projectId,organizationId,status,priority,search,offset,serverDay]);
  const catalog=catalogStored?.key===catalogKey?catalogStored.data:emptyCatalog,tasks=tasksStored?.key===listKey?tasksStored.tasks:[],hasMore=tasksStored?.key===listKey&&tasksStored.hasMore,detail=appliedInitialTaskId===initialTaskId&&loadedDetail?.task.id===selectedTask?loadedDetail:null;
  function selectTask(value:string){
   if(value&&value===selectedTask){
-   if(selectionEcho.current!==value){
+   const selectionQueued=selectionEcho.current!==value;
+   const urlChanged=value!==initialTaskId;
+   if(selectionQueued){
     // A URL timer may have queued another selection while this card is still on screen.
     selectionEcho.current=value;
     setSelectedTask(value);
-    if(loadedDetail?.task.id===value){
-     setDetail(current=>current?.task.id===value?current:loadedDetail);
-    }
    }
-   if(value!==initialTaskId){
+   if((selectionQueued||urlChanged)&&detailRejectedFor.current===value){
+    // The rejection can be known before React applies the asynchronous state update.
+    setDetail(null);
+   }else if(selectionQueued&&loadedDetail?.task.id===value){
+    setDetail(current=>current?.task.id===value?current:loadedDetail);
+   }
+   if(urlChanged){
     clearTimeout(initialSelectionTimer.current);
     setAppliedInitialTaskId(onSelectTask?value:initialTaskId);
     onSelectTask?.(value);
@@ -90,7 +96,24 @@ export default function FollowUpPanel({defaultProjectId='',defaultOrganizationId
  },[initialTaskId]);
  useEffect(()=>{const controller=new AbortController(),current=++generation.current,query=new URLSearchParams({view:'catalog'});if(projectId)query.set('projectId',projectId);else if(organizationId)query.set('organizationId',organizationId);const start=setTimeout(()=>{setLoading(true);setError('');},0);void followupApi<Catalog>(query,undefined,controller.signal).then(value=>{if(controller.signal.aborted||current!==generation.current)return;setCatalogStored({key:catalogKey,data:value});const project=value.projects.find(p=>p.id===projectId);if(project&&project.organization_id!==organizationId)setOrganizationId(project.organization_id);setLoading(false);}).catch(cause=>{if(controller.signal.aborted||current!==generation.current)return;setCatalogStored(null);setLoading(false);setError(cause instanceof Error?cause.message:'Não foi possível consultar o contexto.');});return()=>{controller.abort();clearTimeout(start);};},[projectId,organizationId,revision,catalogKey]);
  useEffect(()=>{const controller=new AbortController(),current=++listGeneration.current,query=new URLSearchParams({view:'tasks',status,priority,offset:String(offset)});if(projectId)query.set('projectId',projectId);if(organizationId)query.set('organizationId',organizationId);if(search)query.set('search',search);const timer=setTimeout(()=>void followupApi<{tasks:Task[];hasMore:boolean;today?:string}>(query,undefined,controller.signal).then(value=>{if(controller.signal.aborted||current!==listGeneration.current)return;setTasksStored({key:listKey,tasks:value.tasks,hasMore:value.hasMore,today:value.today??''});}).catch(cause=>{if(!controller.signal.aborted&&current===listGeneration.current){setTasksStored(null);setError(cause instanceof Error?cause.message:'Não foi possível consultar as demandas.');}}),200);return()=>{clearTimeout(timer);controller.abort();};},[projectId,organizationId,status,priority,search,offset,revision,listKey]);
- useEffect(()=>{const current=++detailGeneration.current;if(!selectedTask)return;const controller=new AbortController();void followupApi<Detail>(new URLSearchParams({view:'detail',id:selectedTask}),undefined,controller.signal).then(value=>{if(!controller.signal.aborted&&current===detailGeneration.current){setDetail(value);setForm(null);}}).catch(cause=>{if(!controller.signal.aborted&&current===detailGeneration.current){setDetail(null);setError(cause instanceof Error?cause.message:'Não foi possível abrir a demanda.');}});return()=>controller.abort();},[selectedTask,revision]);
+ useEffect(()=>{
+  const current=++detailGeneration.current;
+  if(!selectedTask)return;
+  const controller=new AbortController();
+  const query=new URLSearchParams({view:'detail',id:selectedTask});
+  void followupApi<Detail>(query,undefined,controller.signal).then(value=>{
+   if(controller.signal.aborted||current!==detailGeneration.current)return;
+   if(value.task.id===selectedTask&&detailRejectedFor.current===selectedTask)detailRejectedFor.current=null;
+   setDetail(value);
+   setForm(null);
+  }).catch(cause=>{
+   if(controller.signal.aborted||current!==detailGeneration.current)return;
+   detailRejectedFor.current=selectedTask;
+   setDetail(null);
+   setError(cause instanceof Error?cause.message:'Não foi possível abrir a demanda.');
+  });
+  return()=>controller.abort();
+ },[selectedTask,revision]);
  async function mutate(input:Record<string,unknown>){if(mutationPending.current)throw new Error('Aguarde a gravação atual.');mutationPending.current=true;const epoch=interactionEpoch.current;setBusy(true);setError('');try{const result=await followupApi<Detail>('',input);if(result.task&&epoch===interactionEpoch.current){detailGeneration.current++;selectionEcho.current=result.task.id;setSelectedTask(result.task.id);setDetail(result);setForm(null);onSelectTask?.(result.task.id);}setRevision(value=>value+1);followupChanged();await onChanged?.();}catch(cause){setError(cause instanceof Error?cause.message:'Não foi possível salvar.');throw cause;}finally{mutationPending.current=false;setBusy(false);}}
  function chooseProject(value:string){generation.current++;listGeneration.current++;setProjectId(value);const chosen=catalog.projects.find(p=>p.id===value);if(chosen)setOrganizationId(chosen.organization_id);selectTask('');teamRequest.current?.abort();setOffset(0);setTeamCatalog(null);}
  async function openTeams(){teamRequest.current?.abort();const controller=new AbortController();teamRequest.current=controller;setError('');try{const value=await followupApi<Catalog>(new URLSearchParams({view:'catalog',organizationId}),undefined,controller.signal);if(controller.signal.aborted)return;setTeamCatalog(value);setTeamOrg(organizationId);}catch(cause){if(!controller.signal.aborted)setError(cause instanceof Error?cause.message:'Não foi possível consultar as equipes.');}}

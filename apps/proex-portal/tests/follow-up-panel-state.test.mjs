@@ -134,6 +134,27 @@ test('clicking A supersedes a pending or queued URL selection of B without disca
  });
 });
 
+test('reasserting a selected card cannot restore detail rejected by its latest request',async()=>{
+ const h=harness(),seen=[];
+ try{
+  h.render({onSelectTask:id=>seen.push(id)});await ready(h);
+  h.button('Task A').props.onClick();h.render({initialTaskId:'task-a'});h.timers();h.render();
+  h.reply(h.pending('detail'),detail());await tick();h.render();assert.ok(h.body().includes('Context A'));
+  h.button('Atualizar').props.onClick();h.render();h.timers();h.render();const recheck=h.pending('detail');
+  h.render({initialTaskId:'task-b'});h.timers();const count=h.requests.length;
+  recheck.resolve({ok:false,status:403,json:async()=>({error:'Acesso revogado'})});await tick();
+  h.button('Task A').props.onClick();h.render({initialTaskId:'task-a'});h.timers();h.render();
+  assert.ok(!h.body().includes('Context A'));assert.ok(h.body().includes('Acesso revogado'));
+  assert.equal(h.requests.length,count);assert.deepEqual(seen,['task-a','task-a']);
+
+  h.button('Atualizar').props.onClick();h.render();h.timers();
+  h.reply(h.pending('detail'),{...detail(),task:{...task(),body:'Verified detail A'}});await tick();h.render();
+  assert.ok(h.body().includes('Verified detail A'));
+  h.render({initialTaskId:'task-b'});h.timers();h.button('Task A').props.onClick();
+  h.render({initialTaskId:'task-a'});assert.ok(h.body().includes('Verified detail A'));
+ }finally{h.dispose();}
+});
+
 test('a card automatically selected after creation retains the saved detail and the live refresh when clicked',async()=>{
  const h=harness(),seen=[];try{
   h.render({onSelectTask:id=>seen.push(id)});await ready(h);h.button('Nova demanda').props.onClick();h.render();
