@@ -214,15 +214,15 @@ const projectReportMetrics = [
 
 type ProjectBrand = NonNullable<ReportPdfPresentation['projectBrand']>;
 
-function projectBrandFor(name: unknown, address: unknown): ProjectBrand | undefined {
-  if (typeof name !== 'string' || typeof address !== 'string') return;
+const CONPEEX_2026_PROJECT_ID = 'ad875870-a443-4f47-9c06-5dd0a6178de0';
+
+function projectBrandFor(id: unknown, name: unknown, address: unknown): ProjectBrand | undefined {
+  if (id !== CONPEEX_2026_PROJECT_ID || typeof name !== 'string' || typeof address !== 'string') return;
   const title = name.normalize('NFC').trim().toLocaleLowerCase('pt-BR');
   let source: URL;
   try { source = new URL(address); } catch { return; }
   if (source.username || source.password) return;
   const path = source.pathname.replace(/\/$/, '');
-  if (title === 'rolê da extensão' && source.origin === 'https://proex.ufg.br' &&
-      (path === '/p/60194-role-da-extensao' || path === '/p/53193-role-da-extensao')) return 'role-da-extensao';
   if (title === '23º conpeex' || title === '23º conpeex — congresso de pesquisa, ensino e extensão') {
     if (source.origin === 'https://23conpeex.plateia.ufg.br' && !path) return 'conpeex-2026';
     if (source.origin === 'https://ufg.br' && path === '/e/39456-23-congresso-de-pesquisa-ensino-e-extensao-conpeex') return 'conpeex-2026';
@@ -230,7 +230,7 @@ function projectBrandFor(name: unknown, address: unknown): ProjectBrand | undefi
 }
 
 function projectReportPresentation(row: ExportRow, officialUrl?: unknown): ReportPdfPresentation {
-  const projectBrand = projectBrandFor(row.projeto, officialUrl);
+  const projectBrand = projectBrandFor(row.id, row.projeto, officialUrl);
   return {
     projectName: typeof row.projeto === 'string' && row.projeto.trim() ? row.projeto.trim() : 'Projeto selecionado',
     metrics: projectReportMetrics.map(({ key, label }) => ({ label, value: reportNumber(row[key]) })),
@@ -248,7 +248,6 @@ function ReportMasthead({ label, title, description, project = false, projectBra
     </div>
     <div className={styles.brandGroup}>
       <BrandMark variant="light" emphasis="university" className={styles.mastheadBrand} />
-      {projectBrand === 'role-da-extensao' && <Image className={styles.projectBrand} src="/brand/role-da-extensao.png" alt="Rolê da Extensão" width={86} height={54} unoptimized/>}
       {projectBrand === 'conpeex-2026' && <Image className={`${styles.projectBrand} ${styles.conpeexBrand}`} src="/brand/conpeex-2026.png" alt="23º CONPEEX" width={94} height={54} unoptimized/>}
     </div>
   </header>;
@@ -320,7 +319,7 @@ export function ProjectReportExports({ projectId, projectName, officialUrl }: { 
   const details = previewRow ? DATASETS.projects.columns.filter(column =>
     ['unidade_sigla', 'area_tematica', 'modalidade', 'abrangencia', 'etapa'].includes(column.key)) : [];
   return <section ref={detach} className={`p-card ${styles.projectReport}`} aria-label="Baixar resumo do projeto">
-    <ReportMasthead label="Relatório do projeto" title={summary?.projectName || projectName || 'Resumo do projeto'} description="Ficha e totais do período completo" project projectBrand={summary ? summary.projectBrand : projectBrandFor(projectName, officialUrl)}/>
+    <ReportMasthead label="Relatório do projeto" title={summary?.projectName || projectName || 'Resumo do projeto'} description="Ficha e totais do período completo" project projectBrand={summary ? summary.projectBrand : projectBrandFor(projectId, projectName, officialUrl)}/>
     <div className={styles.projectReportBody}>
       <div className={styles.projectReportActions}>
         <p className={styles.reportHelp}>Ficha e totais deste projeto em todo o período. Para escolher dados, colunas ou datas, abra Relatórios do projeto.</p>
@@ -457,7 +456,7 @@ export default function ReportsCenter({ projectId, unitId, area, from, to, scope
   const kpis = config.kpis(filtered);
   const reportProject = projectId && projectIdentity?.id === projectId ? projectIdentity : null;
   const reportProjectName = typeof reportProject?.name === 'string' ? reportProject.name : undefined;
-  const reportBrand = projectBrandFor(reportProjectName, reportProject?.official_url);
+  const reportBrand = projectBrandFor(reportProject?.id, reportProjectName, reportProject?.official_url);
   const exportColumns: Column[] = chosen;
   const stamp = new Date().toISOString().slice(0, 10);
   const fileBase = `proex-${dataset}-${stamp}`;

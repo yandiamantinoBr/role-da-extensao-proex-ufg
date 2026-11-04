@@ -325,37 +325,38 @@ test('missing report values remain blank in exports while real zero survives', a
  } finally { h.dispose(); }
 });
 
-test('only the current verified Rolê title and official page can select the bundled mark', async () => {
- const h = harness(), id = 'project-a', projectName = 'Rolê da Extensão';
- const brand = tree => nodesInside(tree).find(node => node.type?.name === 'ReportMasthead').props.projectBrand;
+test('ambiguous Rolê records use institutional branding even with the official page', () => {
+ const h = harness(), projectName = 'Rolê da Extensão';
  try {
-  for (const officialUrl of [
-   undefined,
-   'https://proex.ufg.br.invalid/p/60194-role-da-extensao',
-   'https://example.invalid/?proex.ufg.br/p/60194-role-da-extensao',
-   'https://user@proex.ufg.br/p/60194-role-da-extensao',
-   'https://proex.ufg.br/p/60194-another-project',
-  ]) assert.equal(brand(h.renderProject(id,{projectName,officialUrl})),undefined);
-  const officialUrl = 'https://proex.ufg.br/p/53193-role-da-extensao/';
-  assert.equal(brand(h.renderProject(id,{projectName:'Outro projeto',officialUrl})),undefined);
-  assert.equal(brand(h.renderProject(id,{projectName,officialUrl})),'role-da-extensao');
-  h.button('PDF').props.onClick();
-  h.requests.at(-1).resolve({ok:true,json:async()=>({dataset:'projects',rows:[{id,projeto:'Outro projeto'}],truncated:false})});
-  await tick();
-  assert.equal(h.pdfInputs[0][5].presentation.projectBrand,undefined);
+  for (const id of ['role-da-extensao','ac2e5e32-d4f7-4894-b177-b33383e10f3b']) {
+   const report = h.renderProject(id,{projectName,officialUrl:'https://proex.ufg.br/p/60194-role-da-extensao'});
+   assert.equal(nodesInside(report).find(node => node.type?.name === 'ReportMasthead').props.projectBrand,undefined);
+  }
  } finally { h.dispose(); }
 });
 
-test('the CONPEEX mark requires the matching edition and an approved official address', () => {
- const h = harness(), projectId = 'project-a';
+test('the CONPEEX mark requires the official project ID, edition and address for preview and PDF', async () => {
+ const h = harness(), projectId = 'ad875870-a443-4f47-9c06-5dd0a6178de0';
  const projectName = '23º CONPEEX — Congresso de Pesquisa, Ensino e Extensão';
- const currentBrand = (officialUrl, name = projectName) => nodesInside(h.renderProject(projectId,{projectName:name,officialUrl}))
+ const officialSource = 'https://23conpeex.plateia.ufg.br/';
+ const currentBrand = (officialUrl, name = projectName, id = projectId) => nodesInside(h.renderProject(id,{projectName:name,officialUrl}))
   .find(node => node.type?.name === 'ReportMasthead').props.projectBrand;
  try {
-  assert.equal(currentBrand('https://23conpeex.plateia.ufg.br/'),'conpeex-2026');
+  assert.equal(currentBrand(officialSource),'conpeex-2026');
   assert.equal(currentBrand('https://ufg.br/e/39456-23-congresso-de-pesquisa-ensino-e-extensao-conpeex'),'conpeex-2026');
-  assert.equal(currentBrand('https://23conpeex.plateia.ufg.br/','22º CONPEEX'),undefined);
+  assert.equal(currentBrand(officialSource,'22º CONPEEX'),undefined);
   assert.equal(currentBrand('https://23conpeex.plateia.ufg.br.invalid/'),undefined);
+  assert.equal(currentBrand('https://user@23conpeex.plateia.ufg.br/'),undefined);
   assert.equal(currentBrand('https://ufg.br/'),undefined);
+  assert.equal(currentBrand(officialSource,projectName,'clone-project'),undefined);
+  h.button('PDF').props.onClick();
+  h.requests.at(-1).resolve({ok:true,json:async()=>({dataset:'projects',rows:[{id:'clone-project',projeto:projectName}],truncated:false})});
+  await tick();
+  assert.equal(h.pdfInputs[0][5].presentation.projectBrand,undefined);
+  currentBrand(officialSource);
+  h.button('PDF').props.onClick();
+  h.requests.at(-1).resolve({ok:true,json:async()=>({dataset:'projects',rows:[{id:projectId,projeto:projectName}],truncated:false})});
+  await tick();
+  assert.equal(h.pdfInputs[1][5].presentation.projectBrand,'conpeex-2026');
  } finally { h.dispose(); }
 });
