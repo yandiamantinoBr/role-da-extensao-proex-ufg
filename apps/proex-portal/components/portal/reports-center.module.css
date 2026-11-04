@@ -75,12 +75,12 @@
 .datasets button.active { background: var(--surface-soft); border-color: var(--brand-ink); color: var(--brand-ink); box-shadow: inset 0 -3px 0 var(--brand-ink); }
 .controls { display: grid; grid-template-columns: minmax(220px, 2fr) minmax(160px, 1fr) minmax(160px, 1fr) auto; gap: 12px; align-items: end; }
 .controls :global(.p-field) { max-width: none; min-width: 0; margin: 0; }
-.searchBox { display: flex; align-items: center; gap: 7px; border: 1px solid var(--control-border); border-radius: 9px; padding: 0 10px; background: var(--surface); color: var(--muted); font-weight: 400; }
+.searchBox { display: flex; align-items: center; gap: 7px; border: 1px solid var(--muted); border-radius: 9px; padding: 0 10px; background: var(--surface); color: var(--muted); font-weight: 400; }
 .searchBox input { border: 0 !important; background: transparent !important; padding: 10px 0 !important; flex: 1; min-width: 0; outline: none; box-shadow: none !important; }
 .searchBox:focus-within { outline: 3px solid var(--focus); outline-offset: 1px; }
 .searchBox button { border: 0; background: none; color: var(--muted); display: flex; padding: 4px; min-height: 44px; min-width: 44px; align-items: center; justify-content: center; }
 .columns { position: relative; }
-.columns summary { list-style: none; display: inline-flex; align-items: center; gap: 7px; min-height: 44px; padding: 0 14px; border: 1px solid var(--control-border); border-radius: 9px; font-size: 12px; font-weight: 600; color: var(--brand-ink); cursor: pointer; white-space: nowrap; background: var(--surface); }
+.columns summary { list-style: none; display: inline-flex; align-items: center; gap: 7px; min-height: 44px; padding: 0 14px; border: 1px solid var(--muted); border-radius: 9px; font-size: 12px; font-weight: 600; color: var(--brand-ink); cursor: pointer; white-space: nowrap; background: var(--surface); }
 .columns summary::-webkit-details-marker { display: none; }
 .columns[open] summary { background: var(--surface-soft); }
 .columns > div { position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; width: min(340px, calc(100vw - 48px)); max-height: 360px; overflow: auto; overscroll-behavior: contain; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 14px 40px #190b2926; padding: 10px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 2px 8px; }
@@ -98,8 +98,9 @@
 .presets form { display: flex; gap: 6px; margin-left: auto; }
 .presets form input { min-height: 44px; padding: 8px 10px; font-size: 12px; width: 170px; }
 .presets form :global(.p-button) { min-height: 44px; padding: 8px 12px; }
-.summary { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin: 20px 0 12px; }
+.summary { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin: 20px 0 12px; scroll-margin-block: 96px 112px; }
 .summary p { font-size: 12px; color: var(--text-secondary); }
+.summary:focus { outline: 3px solid var(--focus); outline-offset: 3px; }
 .summary strong { color: var(--ink); }
 .summaryIcon { display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 10px; background: var(--surface-soft); color: var(--brand-ink); }
 .focusChip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--rc-1); color: var(--ink); background: transparent; border-radius: 999px; padding: 8px 10px; font-size: 11px; min-height: 44px; }

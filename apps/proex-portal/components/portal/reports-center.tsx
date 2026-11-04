@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { ArrowDown, ArrowUp, BarChart3, Boxes, CalendarRange, ClipboardList, Columns3, FileJson, FileSpreadsheet, FileText, FolderKanban, LoaderCircle, Printer, Repeat2, Save, Search, Trash2, Truck, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, BarChart3, Boxes, CalendarRange, ClipboardList, Columns3, FileJson, FileSpreadsheet, FileText, FolderKanban, LoaderCircle, Printer, RefreshCw, Repeat2, Save, Search, Trash2, Truck, X } from 'lucide-react';
 import { areaLabel } from '@/lib/extension-catalog';
 import { quantityTotal } from '@/lib/report-quantities';
 import Image from 'next/image';
@@ -407,9 +407,13 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
   const updateView = (changes: Partial<Omit<typeof view, 'queryKey'>>) => setView(current => ({ ...current, ...changes }));
   const [loadedQueryKey, setLoadedQueryKey] = useState('');
   const [loadedRows, setRows] = useState<ExportRow[]>([]), [truncated, setTruncated] = useState(false);
-  const [fetching, setLoading] = useState(true), [error, setError] = useState('');
+  const [fetching, setLoading] = useState(true);
+  const [queryError, setQueryError] = useState<{ key: string; message: string } | null>(null);
+  const [exportError, setExportError] = useState<{ key: string; message: string } | null>(null);
+  const [attempt, setAttempt] = useState(0);
   const rows = loadedQueryKey === queryKey ? loadedRows : EMPTY_ROWS;
   const loading = fetching || loadedQueryKey !== queryKey;
+  const queryFailure = !loading && queryError?.key === queryKey ? queryError.message : '';
   const presetKey = userId ? PRESETS_PREFIX + encodeURIComponent(userId) : '';
   const [presetState, setPresetState] = useState<{ key: string; values: Preset[]; name: string }>({ key: '', values: [], name: '' });
   const presetsReady = Boolean(presetKey) && presetState.key === presetKey;
@@ -419,6 +423,7 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
   const [categoryAxisWidth, setCategoryAxisWidth] = useState(150);
   const chartsRef = useRef<HTMLDivElement>(null);
   const reportSearchRef = useRef<HTMLInputElement>(null);
+  const reportResultRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!presetKey) return;
@@ -435,12 +440,35 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
     if (area) query.set('thematicArea', area);
     if (from) query.set('from', from);
     if (to) query.set('to', to);
-    const start = window.setTimeout(() => { setLoading(true); setError(''); }, 0);
+    const start = window.setTimeout(() => setLoading(true), 0);
     requestReport(query, controller.signal)
-      .then(body => { if (controller.signal.aborted) return; setRows(body.rows); setLoadedQueryKey(queryKey); setTruncated(body.truncated); setLoading(false); })
-      .catch(reason => { if (controller.signal.aborted) return; setRows([]); setLoadedQueryKey(queryKey); setTruncated(false); setError(reason instanceof Error ? reason.message : 'Não foi possível carregar o relatório.'); setLoading(false); });
+      .then(body => {
+        if (controller.signal.aborted) return;
+        window.clearTimeout(start);
+        setRows(body.rows);
+        setLoadedQueryKey(queryKey);
+        setTruncated(body.truncated);
+        setQueryError(null);
+        setLoading(false);
+      })
+      .catch(reason => {
+        if (controller.signal.aborted) return;
+        window.clearTimeout(start);
+        setRows([]);
+        setLoadedQueryKey(queryKey);
+        setTruncated(false);
+        setQueryError({ key: queryKey, message: reason instanceof Error ? reason.message : 'Não foi possível carregar o relatório.' });
+        setLoading(false);
+      });
     return () => { window.clearTimeout(start); controller.abort(); };
-  }, [dataset, projectId, unitId, area, from, to, queryKey, assetDetails, includeNotes, outflowType, returnState]);
+  }, [dataset, projectId, unitId, area, from, to, queryKey, assetDetails, includeNotes, outflowType, returnState, attempt]);
+
+  function retryReport() {
+    reportResultRef.current?.focus();
+    setQueryError(null);
+    setLoading(true);
+    setAttempt(value => value + 1);
+  }
 
   function chooseDataset(id: DatasetId, preset?: Preset) {
     if (!datasets.includes(id)) return;
@@ -522,13 +550,13 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
     ['Cobertura', truncated ? 'Consulta parcial por limite de linhas ou tamanho. Refine os filtros antes de considerar o relatório completo.' : 'Registros do recorte retornados pela consulta.']);
 
   async function exportDocument(format: 'pdf' | 'docx') {
-    if (exporting || loading || !chosen.length) return;
-    setExporting(format); setError('');
+    if (exporting || loading || !chosen.length || !sorted.length) return;
+    setExporting(format); setExportError(null);
     try {
       const blob = await reportDocument(format, config.label, exportColumns, sorted, exportValue, info, reportProjectName ? { projectName: reportProjectName, projectBrand: reportBrand } : undefined);
       download(`${fileBase}.${format}`, blob);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Não foi possível gerar o documento. Tente novamente.');
+      setExportError({ key: queryKey, message: cause instanceof Error ? cause.message : 'Não foi possível gerar o documento. Tente novamente.' });
     } finally { setExporting(null); }
   }
 
@@ -547,8 +575,13 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
     writePresets(presetKey, values);
   }
   function print() {
-    if (loading || !chosen.length) return;
-    const popup = window.open('', '_blank', 'width=1100,height=800'); if (!popup) { setError('O navegador bloqueou a janela de impressão. Permita pop-ups para este site e tente de novo.'); return; }
+    if (loading || !chosen.length || !sorted.length) return;
+    setExportError(null);
+    const popup = window.open('', '_blank', 'width=1100,height=800');
+    if (!popup) {
+      setExportError({ key: queryKey, message: 'O navegador bloqueou a janela de impressão. Permita pop-ups para este site e tente de novo.' });
+      return;
+    }
     const charts = chartsRef.current?.querySelectorAll('svg.recharts-surface') ?? [];
     const escape = (value: unknown) => String(value ?? '').replace(/[&<>"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[char]!));
     popup.opener = null;
@@ -610,17 +643,18 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
     {mixedUnits && <p className="p-form-help" role="status">Há medidas físicas diferentes neste recorte. Selecione uma unidade de medida para somar quantidades; os gráficos mostram contagens de registros.</p>}
 
     {includeNotes && <p className="p-form-help" role="status">Textos livres ativos: podem conter dados pessoais. Revise as colunas escolhidas antes de exportar.</p>}
-    {error ? <p className="p-notice p-notice-error" role="alert">{error}</p> : null}
-    <div className={styles.summary} aria-live="polite">
+    <div className={styles.summary} ref={reportResultRef} tabIndex={-1} role="group" aria-label="Resultado da consulta">
       <span className={styles.summaryIcon}><Icon size={20} /></span>
-      <p><strong>{config.label}</strong> · {loading ? 'carregando…' : `${formatNumber(filtered.length)} ${filtered.length === 1 ? 'linha' : 'linhas'}`}{scopeLabel ? ` · ${scopeLabel}` : ''}{positionOnly || from || to ? ` · ${periodLabel}` : ''}</p>
+      <p role="status"><strong>{config.label}</strong> · {loading ? 'carregando…' : queryFailure ? 'consulta indisponível' : `${formatNumber(filtered.length)} ${filtered.length === 1 ? 'linha' : 'linhas'}`}{scopeLabel ? ` · ${scopeLabel}` : ''}{positionOnly || from || to ? ` · ${periodLabel}` : ''}</p>
       {focus && <button type="button" className={styles.focusChip} aria-label={`Limpar filtro de grupo: ${focusLabel}`} onClick={event => { setGroupFocus(''); if (event.detail === 0) reportSearchRef.current?.focus(); }}>{groupLabel}: {focusLabel}<X size={13} aria-hidden="true" /></button>}
       {!loading && truncated && <small className={styles.warn}>{dataset === 'outflow_details' ? 'Consulta parcial: limite de 5.000 linhas ou 3 MiB. Refine o recorte para consultar e exportar tudo.' : 'Mostrando as primeiras 5.000 linhas. Refine o recorte para ver tudo.'}</small>}
     </div>
 
     {!loading && filtered.length > 0 && <ReportMetrics metrics={kpis}/>}
 
-    {loading ? <div className={styles.loading}><LoaderCircle className="p-spin" size={22} />Carregando dados…</div> : !rows.length ? <div className={styles.empty}><FileText size={22} /><strong>Nada para mostrar neste recorte</strong><span>Altere os filtros, o período ou escolha outro assunto.</span></div> : <>
+    <div role="alert">{queryFailure && <p className="p-notice p-notice-error">{queryFailure}</p>}</div>
+    {queryFailure && <button type="button" className="p-button p-button-subtle" onClick={retryReport}><RefreshCw size={16} aria-hidden="true" />Tentar carregar relatório novamente</button>}
+    {loading ? <div className={styles.loading}><LoaderCircle className="p-spin" size={22} aria-hidden="true" />Carregando dados…</div> : queryFailure ? null : !rows.length ? <div className={styles.empty}><FileText size={22} aria-hidden="true" /><strong>Nada para mostrar neste recorte</strong><span>Altere os filtros, o período ou escolha outro assunto.</span></div> : <>
       <div className={styles.tableHead}>
         <strong>Tabela detalhada</strong>
         <small>{chosen.length ? `${chosen.length} colunas · clique no título para ordenar` : 'Escolha ao menos uma coluna'}</small>
@@ -652,6 +686,7 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
         <button type="button" className="p-button p-button-subtle" disabled={loading || !chosen.length || !sorted.length || !!exporting} onClick={() => download(`${fileBase}.json`, toJson({ relatorio: config.label, filtros: Object.fromEntries(info) }, exportColumns, sorted, exportValue))}><FileJson size={16} />JSON</button>
         <button type="button" className="p-button p-button-subtle" disabled={loading || !chosen.length || !sorted.length || !!exporting} onClick={print}><Printer size={16} />Imprimir</button>
       </div>
+      <div role="alert">{exportError?.key === queryKey && <p className="p-notice p-notice-error">{exportError.message}</p>}</div>
     </details>
     {!loading && breakdown.length > 0 && <>
       <div className={styles.charts} ref={chartsRef}>
