@@ -229,11 +229,35 @@ test('a new successful response enables exports only with matching scope metadat
  } finally { h.dispose(); }
 });
 
-test('a failed response clears previous rows and cannot export the previous project', async () => {
+test('a failed response clears stale rows, stays distinct from an empty report, and can retry the same scope', async () => {
  const h = harness(), next = { ...base, projectId: 'project-b', scopeLabel: 'Projeto B' }; try {
   await load(h); h.render(next); h.flushEffects(); h.requests.at(-1).resolve({ ok: false, json: async () => ({ error: 'Falha sintética da consulta' }) }); await tick(); h.render(next);
   for (const name of exportNames) assert.equal(h.button(name).props.disabled, true, name);
   assert.match(h.text(), /Falha sintética/); assert.equal(h.text().includes('Material A'), false); assert.equal(h.downloads.length, 0);
+  assert.match(h.text(), /consulta indisponível/);
+  assert.doesNotMatch(h.text(), /Nada para mostrar neste recorte/);
+  const failedRequest = h.requests.at(-1);
+  h.button('Tentar carregar relatório novamente').props.onClick(); h.render(next); h.flushEffects();
+  const retry = h.requests.at(-1);
+  assert.notEqual(retry, failedRequest);
+  assert.equal(retry.url, failedRequest.url);
+  assert.equal(h.button('JSON').props.disabled, true);
+  retry.resolve({ ok: true, json: async () => ({ dataset: 'materials', rows: [], truncated: false }) });
+  await tick(); h.render(next);
+  assert.match(h.text(), /Nada para mostrar neste recorte/);
+  assert.doesNotMatch(h.text(), /Falha sintética|consulta indisponível/);
+ } finally { h.dispose(); }
+});
+
+test('a blocked print is announced beside export actions while the loaded rows stay usable', async () => {
+ const h = harness(); try {
+  await load(h);
+  h.button('Imprimir').props.onClick();
+  const exportOptions = nodesInside(h.render()).find(node => node.type === 'details' && text(node.props.children?.[0]) === 'Exportar linhas deste recorte');
+  assert.match(text(nodesInside(exportOptions).find(node => node.props?.role === 'alert')), /bloqueou a janela/);
+  assert.match(h.text(), /Material A/);
+  assert.equal(h.button('Excel').props.disabled, false);
+  assert.doesNotMatch(h.text(), /consulta indisponível/);
  } finally { h.dispose(); }
 });
 
