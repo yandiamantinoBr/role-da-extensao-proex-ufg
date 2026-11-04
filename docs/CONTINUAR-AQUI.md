@@ -1,4 +1,12 @@
-# Continuar Portal PROEX · V23 e V24 publicadas
+# Continuar Portal PROEX
+
+## Cadastro de materiais no Sheets e revisão dos módulos · 04/11/2026
+
+- **Uso:** na planilha mestre, abra **PROEX → Cadastrar material**. O registro entra no Portal com saldo zero e a próxima sincronização traz a linha para **Materiais**. Use as células em creme para editar. [Operação, cuidados e teste nos dois sentidos](../apps/proex-portal/docs/SINCRONIZACAO.md#atalhos-de-materiais-e-permissões-do-drive).
+- **Verificação:** publicação na Vercel, instalação do `.gs` vinculado e execução do gatilho são marcos independentes. Rode `node scripts/qa-local.mjs --sync-smoke` em `apps/proex-portal` depois de construir a aplicação para testar o fluxo com base descartável; não use materiais de teste na mestre.
+- **Interface:** [auditoria dos 13 módulos e da Agenda](QA-AGENDA-E-MODULOS.md). Próximos recortes: catálogo de Materiais em telas estreitas, navegação Voltar entre módulos e testes mais profundos por papel e com leitor de tela.
+
+## Histórico · V23 e V24 publicadas
 
 PR #26 integrou `bed5b69496f22f6ba18a89dce98c05938a4d989e` e ficou READY na Vercel. O CI aprovou 922 testes do portal e 33 do jogo. [Entrega V23/V24](ENTREGA-V23-V24.md) reúne o caminho para cadastrar chaves, as evidências do cofre e a classificação das demandas. O segredo dedicado está pendente no ambiente. O JEV em produção depende de ativação própria. [Login Google](V25-LOGIN-GOOGLE.md) registra os testes exigidos antes do piloto.
 
