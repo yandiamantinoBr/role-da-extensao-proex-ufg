@@ -70,15 +70,26 @@ test('people list offers an early invitation shortcut only to someone allowed to
 });
 
 test('agenda keeps its five filters unique and preserves context, dates and month navigation in real requests', () => {
- const h = harness('calendar-panel', { projects, organizationalUnits: units });
+ const props = {
+  projects, organizationalUnits: units, selectedProjectId: '', selectedUnitId: '',
+  onProjectChange(projectId) { props.selectedProjectId = projectId; },
+  onUnitChange(unitId) { props.selectedUnitId = unitId; props.selectedProjectId = ''; },
+ };
+ const h = harness('calendar-panel', props);
  try {
+  const query = () => new URL(h.requests.at(-1).url, 'https://synthetic.example.invalid').searchParams;
   const detail = h.disclosure('Filtrar período e contexto');
   assert.equal(detail.props.open, undefined);
   assert.equal(nodes(detail).filter(node => ['input', 'select'].includes(node.type)).length, 5);
-  h.change('Categoria', 'loans'); h.change('Projeto', 'a'); h.change('Unidade responsável', 'unit-b');
+  h.change('Categoria', 'loans');
+  h.change('Projeto', 'a');
+  assert.equal(query().get('projectId'), 'a');
+  assert.equal(query().has('unitId'), false);
+  h.change('Unidade responsável', 'unit-b');
   assert.equal(h.field('Projeto').props.value, '');
+  assert.equal(query().get('unitId'), 'unit-b');
+  assert.equal(query().has('projectId'), false);
   h.change('Projeto', 'b'); h.change('Data final (incluída)', '2026-11-30'); h.change('Data inicial', '2026-11-01');
-  const query = () => new URL(h.requests.at(-1).url, 'https://synthetic.example.invalid').searchParams;
   for (const [key, value] of [['category', 'loans'], ['projectId', 'b'], ['unitId', 'unit-b'], ['from', '2026-11-01'], ['to', '2026-11-30']]) assert.equal(query().get(key), value);
   const summary = h.all().find(node => node.props.className === 'summaryRow');
   assert.ok(text(summary).includes('Projeto B'));
@@ -87,5 +98,6 @@ test('agenda keeps its five filters unique and preserves context, dates and mont
   assert.equal(query().get('from'), '2026-12-01');
   assert.equal(query().get('category'), 'loans');
   assert.equal(query().get('projectId'), 'b');
+  assert.equal(query().get('unitId'), 'unit-b');
  } finally { h.dispose(); }
 });
