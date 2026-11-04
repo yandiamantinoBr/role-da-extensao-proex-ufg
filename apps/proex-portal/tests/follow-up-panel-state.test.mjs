@@ -107,6 +107,30 @@ test('clicking the selected card while its detail is pending keeps that request 
  }finally{h.dispose();}
 });
 
+test('clicking A supersedes a pending URL selection of B without discarding A',async t=>{
+ for(const loaded of [true,false])await t.test(loaded?'loaded detail':'live request',async()=>{
+  const h=harness(),seen=[];
+  try{
+   h.render({onSelectTask:id=>seen.push(id)});await ready(h);
+   h.button('Task A').props.onClick();h.render({initialTaskId:'task-a'});h.timers();h.render();
+   const request=h.pending('detail');
+   if(loaded){h.reply(request,detail());await tick();h.render();assert.ok(h.body().includes('Context A'));}
+   const count=h.requests.length;
+   h.render({initialTaskId:'task-b'});
+   h.button('Task A').props.onClick();
+   // The stale B timer would run here, before the parent echoes A back.
+   h.timers();h.render();
+   assert.equal(h.requests.length,count);assert.equal(request.init.signal.aborted,false);
+   assert.deepEqual(seen,['task-a','task-a']);
+   h.render({initialTaskId:'task-a'});h.timers();h.render();
+   if(!loaded){h.reply(request,detail());await tick();h.render();}
+   assert.ok(h.body().includes('Context A'));assert.equal(h.requests.length,count);
+   h.render({initialTaskId:'task-b'});h.timers();h.render();
+   assert.equal(new URL(h.pending('detail').url,'http://127.0.0.1').searchParams.get('id'),'task-b');
+  }finally{h.dispose();}
+ });
+});
+
 test('a card automatically selected after creation retains the saved detail and the live refresh when clicked',async()=>{
  const h=harness(),seen=[];try{
   h.render({onSelectTask:id=>seen.push(id)});await ready(h);h.button('Nova demanda').props.onClick();h.render();

@@ -40,12 +40,47 @@ function TeamEditor({catalog,organizationId,team,busy,save}:{catalog:Catalog;org
 export default function FollowUpPanel({defaultProjectId='',defaultOrganizationId='',initialTaskId='',serverDay='',onChanged,onSelectTask,onOpenReports,basePath='/?module=demands'}:Props){
  const [projectId,setProjectId]=useState(defaultProjectId),[organizationId,setOrganizationId]=useState(defaultOrganizationId),[catalogStored,setCatalogStored]=useState<{key:string;data:Catalog}|null>(null),[tasksStored,setTasksStored]=useState<{key:string;tasks:Task[];hasMore:boolean;today:string}|null>(null),[loadedDetail,setDetail]=useState<Detail|null>(null),[selectedTask,setSelectedTask]=useState(initialTaskId),[appliedInitialTaskId,setAppliedInitialTaskId]=useState(initialTaskId),[form,setForm]=useState<'task'|'checklist'|null>(null),[status,setStatus]=useState('all'),[priority,setPriority]=useState('all'),[search,setSearch]=useState(''),[offset,setOffset]=useState(0),[busy,setBusy]=useState(false),[loading,setLoading]=useState(false),[error,setError]=useState(''),[revision,setRevision]=useState(0),[teamCatalog,setTeamCatalog]=useState<Catalog|null>(null),[teamOrg,setTeamOrg]=useState('');
  const generation=useRef(0),listGeneration=useRef(0),detailGeneration=useRef(0),interactionEpoch=useRef(0),selectionEcho=useRef(initialTaskId),mutationPending=useRef(false),detailElement=useRef<HTMLElement|null>(null),teamRequest=useRef<AbortController|null>(null);
+ const initialSelectionTimer=useRef<ReturnType<typeof setTimeout>|undefined>(undefined);
  const catalogKey=JSON.stringify([projectId,organizationId]),listKey=JSON.stringify([projectId,organizationId,status,priority,search,offset,serverDay]);
  const catalog=catalogStored?.key===catalogKey?catalogStored.data:emptyCatalog,tasks=tasksStored?.key===listKey?tasksStored.tasks:[],hasMore=tasksStored?.key===listKey&&tasksStored.hasMore,detail=appliedInitialTaskId===initialTaskId&&loadedDetail?.task.id===selectedTask?loadedDetail:null;
- function selectTask(value:string){if(value&&value===selectedTask)return;detailGeneration.current++;interactionEpoch.current++;selectionEcho.current=value;setSelectedTask(value);setDetail(null);setForm(null);onSelectTask?.(value);}
+ function selectTask(value:string){
+  if(value&&value===selectedTask){
+   if(value!==initialTaskId){
+    clearTimeout(initialSelectionTimer.current);
+    selectionEcho.current=value;
+    if(onSelectTask)onSelectTask(value);
+    else setAppliedInitialTaskId(initialTaskId);
+   }
+   return;
+  }
+  detailGeneration.current++;
+  interactionEpoch.current++;
+  selectionEcho.current=value;
+  setSelectedTask(value);
+  setDetail(null);
+  setForm(null);
+  onSelectTask?.(value);
+ }
  useEffect(()=>()=>teamRequest.current?.abort(),[]);
  useEffect(()=>{if(detail?.task.id)detailElement.current?.focus();},[detail?.task.id]);
- useEffect(()=>{const timer=setTimeout(()=>{setAppliedInitialTaskId(initialTaskId);if(selectionEcho.current!==initialTaskId){selectionEcho.current=initialTaskId;detailGeneration.current++;interactionEpoch.current++;setSelectedTask(initialTaskId);setDetail(null);setForm(null);}},0);return()=>clearTimeout(timer);},[initialTaskId]);
+ useEffect(()=>{
+  const timer=setTimeout(()=>{
+   initialSelectionTimer.current=undefined;
+   setAppliedInitialTaskId(initialTaskId);
+   if(selectionEcho.current===initialTaskId)return;
+   selectionEcho.current=initialTaskId;
+   detailGeneration.current++;
+   interactionEpoch.current++;
+   setSelectedTask(initialTaskId);
+   setDetail(null);
+   setForm(null);
+  },0);
+  initialSelectionTimer.current=timer;
+  return()=>{
+   clearTimeout(timer);
+   initialSelectionTimer.current=undefined;
+  };
+ },[initialTaskId]);
  useEffect(()=>{const controller=new AbortController(),current=++generation.current,query=new URLSearchParams({view:'catalog'});if(projectId)query.set('projectId',projectId);else if(organizationId)query.set('organizationId',organizationId);const start=setTimeout(()=>{setLoading(true);setError('');},0);void followupApi<Catalog>(query,undefined,controller.signal).then(value=>{if(controller.signal.aborted||current!==generation.current)return;setCatalogStored({key:catalogKey,data:value});const project=value.projects.find(p=>p.id===projectId);if(project&&project.organization_id!==organizationId)setOrganizationId(project.organization_id);setLoading(false);}).catch(cause=>{if(controller.signal.aborted||current!==generation.current)return;setCatalogStored(null);setLoading(false);setError(cause instanceof Error?cause.message:'Não foi possível consultar o contexto.');});return()=>{controller.abort();clearTimeout(start);};},[projectId,organizationId,revision,catalogKey]);
  useEffect(()=>{const controller=new AbortController(),current=++listGeneration.current,query=new URLSearchParams({view:'tasks',status,priority,offset:String(offset)});if(projectId)query.set('projectId',projectId);if(organizationId)query.set('organizationId',organizationId);if(search)query.set('search',search);const timer=setTimeout(()=>void followupApi<{tasks:Task[];hasMore:boolean;today?:string}>(query,undefined,controller.signal).then(value=>{if(controller.signal.aborted||current!==listGeneration.current)return;setTasksStored({key:listKey,tasks:value.tasks,hasMore:value.hasMore,today:value.today??''});}).catch(cause=>{if(!controller.signal.aborted&&current===listGeneration.current){setTasksStored(null);setError(cause instanceof Error?cause.message:'Não foi possível consultar as demandas.');}}),200);return()=>{clearTimeout(timer);controller.abort();};},[projectId,organizationId,status,priority,search,offset,revision,listKey]);
  useEffect(()=>{const current=++detailGeneration.current;if(!selectedTask)return;const controller=new AbortController();void followupApi<Detail>(new URLSearchParams({view:'detail',id:selectedTask}),undefined,controller.signal).then(value=>{if(!controller.signal.aborted&&current===detailGeneration.current){setDetail(value);setForm(null);}}).catch(cause=>{if(!controller.signal.aborted&&current===detailGeneration.current){setDetail(null);setError(cause instanceof Error?cause.message:'Não foi possível abrir a demanda.');}});return()=>controller.abort();},[selectedTask,revision]);
