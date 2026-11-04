@@ -7,6 +7,9 @@ import ts from 'typescript';
 const text = node => typeof node === 'string' || typeof node === 'number' ? String(node) : Array.isArray(node) ? node.map(text).join('') : node && typeof node === 'object' ? text(node.props?.children) : '';
 const nodes = tree => { const result = []; function visit(node) { if (!node || typeof node !== 'object') return; if (Array.isArray(node)) return node.forEach(visit); result.push(node); visit(node.props?.children); } visit(tree); return result; };
 const tick = () => new Promise(resolve => setImmediate(resolve));
+const civilDateSource = readFileSync(new URL('../lib/civil-date.ts', import.meta.url), 'utf8');
+const civilDateCode = ts.transpileModule(civilDateSource, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
+const civilDates = await import(`data:text/javascript;base64,${Buffer.from(civilDateCode).toString('base64')}`);
 function harness() {
   const slots = [], effects = [], requests = [], copied = []; let index = 0, tree;
   const hooks = {
@@ -18,7 +21,7 @@ function harness() {
   const source = ts.transpileModule(readFileSync(new URL('../components/portal/calendar-panel.tsx', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
   vm.runInNewContext(source, {
     module: compiled, exports: compiled.exports,
-    require: name => name === 'react' ? hooks : name === 'react/jsx-runtime' ? { jsx, jsxs: jsx } : name === 'lucide-react' ? new Proxy({}, { get: (_, key) => String(key) }) : name.endsWith('.css') ? { default: new Proxy({}, { get: (_, key) => String(key) }) } : { groupUnits: () => [] },
+    require: name => name === 'react' ? hooks : name === 'react/jsx-runtime' ? { jsx, jsxs: jsx } : name === 'lucide-react' ? new Proxy({}, { get: (_, key) => String(key) }) : name.endsWith('.css') ? { default: new Proxy({}, { get: (_, key) => String(key) }) } : name === '@/lib/civil-date' ? civilDates : { groupUnits: () => [] },
     Date, Intl, URLSearchParams, AbortController, Map, Error,
     fetch: (url, init) => new Promise(resolve => requests.push({ url, init, resolve })),
     navigator: { clipboard: { async writeText(value) { copied.push(value); } } },
@@ -66,5 +69,19 @@ test('a failed feed creation never offers a fabricated subscription link', async
     assert.ok(h.body().includes('Você não tem permissão'));
     assert.equal(h.all().some(node => node.type === 'a' && text(node).includes('Abrir Google Calendar')), false);
     assert.deepEqual(h.copied, []);
+  } finally { h.dispose(); }
+});
+
+test('the agenda label uses the last included day rather than the exclusive ICS end', async () => {
+  const h = harness();
+  try {
+    h.respond(h.requests[0], { entries: [{ uid: 'civil-period', projectId: 'project-a', projectName: 'Projeto sintético A',
+      category: 'projects', title: 'Atividade sintética', allDay: true, startsAt: '2026-11-09', endsAt: '2026-11-14' }],
+      feeds: [], availableCategories: ['projects'] });
+    await tick();
+    h.render();
+    const activity = h.all().find(node => node.type === 'article' && text(node).includes('Atividade sintética'));
+    assert.match(text(activity), /9 de novembro de 2026 a 13 de novembro de 2026 · Dia inteiro/);
+    assert.doesNotMatch(text(activity), /14 de novembro/);
   } finally { h.dispose(); }
 });
