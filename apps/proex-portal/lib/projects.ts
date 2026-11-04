@@ -5,6 +5,7 @@ import { prepareMutation } from './mutations';
 import { listRecords } from './records';
 import { projectSpreadsheetLinks } from './sync/project-links';
 import { isExtensionLine, isThematicArea } from './extension-catalog';
+import { isCivilDate } from './civil-date';
 
 type Entity = 'project' | 'call' | 'project_link' | 'project_schedule_item';
 const TABLES: Record<Entity, string> = { project: 'projects', call: 'calls', project_link: 'project_links', project_schedule_item: 'project_schedule_items' };
@@ -36,6 +37,15 @@ function date(value: unknown, optional = true): string | null {
   const time = Date.parse(value), [year,month,day] = value.slice(0,10).split('-').map(Number);
   if (!Number.isFinite(time) || year < 2000 || year > 2200 || month < 1 || month > 12 || day < 1 || day > new Date(Date.UTC(year,month,0)).getUTCDate()) throw new HttpError(400, 'Informe uma data válida.', 'invalid_date');
   return new Date(time).toISOString();
+}
+function scheduleDates(start: unknown, end: unknown) {
+  const startIsDay = isCivilDate(start), endIsDay = isCivilDate(end);
+  if (startIsDay || endIsDay) {
+    if (!startIsDay || !endIsDay) throw new HttpError(400, 'Informe duas datas sem horário ou informe data e horário em ambos os campos.', 'invalid_date');
+    if ([start, end].some(day => day < '2000-01-01' || day > '2200-12-31')) throw new HttpError(400, 'Informe datas entre 2000 e 2200.', 'invalid_date');
+    return { starts_at: start, ends_at: end };
+  }
+  return { starts_at: date(start, false), ends_at: date(end, false) };
 }
 function url(value: unknown, optional = true): string {
   const result = text(value, 'o endereço', 500, optional); if (!result) return '';
@@ -92,10 +102,10 @@ async function normalize(db: D1Database, actor: PortalActor, entity: Entity, inp
       for (const id of [...new Set([...linked,...previous.map(row=>row.project_id)])]) { manage(actor,id); if (!await one(db,'SELECT id FROM projects WHERE id=?',[id])) throw new HttpError(400,'Projeto vinculado não encontrado.'); }
       fields={project_id:projectId,title:text(get('title'),'o título',200),reference_code:text(get('referenceCode','reference_code'),'a referência',80,true),description:text(get('description'),'a descrição',4000,true),status:choice(get('status','status','draft'),['draft','open','closed','archived'],'um estado'),opens_at:date(get('opensAt','opens_at',null)),closes_at:date(get('closesAt','closes_at',null)),official_url:url(get('officialUrl','official_url'))};
     } else if (entity === 'project_link') fields={project_id:projectId,label:text(get('label'),'o nome do link',150),url:url(get('url'),false),kind:choice(get('kind','kind','other'),['official','notice','report','gallery','other'],'um tipo de link')};
-    else fields={project_id:projectId,title:text(get('title'),'o título',200),starts_at:date(get('startsAt','starts_at'),false),ends_at:date(get('endsAt','ends_at'),false),status:choice(get('status','status','planned'),['planned','completed','cancelled'],'um estado'),note:text(get('note'),'a observação institucional',2000,true),url:url(get('url'))};
+    else fields={project_id:projectId,title:text(get('title'),'o título',200),...scheduleDates(get('startsAt','starts_at'),get('endsAt','ends_at')),status:choice(get('status','status','planned'),['planned','completed','cancelled'],'um estado'),note:text(get('note'),'a observação institucional',2000,true),url:url(get('url'))};
   }
   const start = fields.starts_at ?? fields.opens_at, end = fields.ends_at ?? fields.closes_at;
-  if (start && end && (entity === 'project_schedule_item' ? end < start : end <= start)) throw new HttpError(400,'A data final deve ser posterior à inicial.','invalid_interval');
+  if (start && end && (entity === 'project_schedule_item' ? end < start : end <= start)) throw new HttpError(400,entity === 'project_schedule_item' ? 'O fim deve ser igual ou posterior ao início.' : 'A data final deve ser posterior à inicial.','invalid_interval');
   return {fields,linked};
 }
 function snapshot(entity: Entity, row: Row, linked: string[] = []): Row { return Object.fromEntries(['id',...FIELDS[entity],'version','created_at',...(entity==='project'?[]:['updated_at'])].map(key=>[key,row[key]??null]).concat(entity==='call'?[['linked_project_ids',linked]]:[])); }

@@ -5,6 +5,7 @@ import { CalendarDays, ChevronLeft, ChevronRight, Copy, Download, ExternalLink, 
 import type { CalendarCategory, CalendarEntry } from '@/lib/calendar';
 import styles from './calendar-panel.module.css';
 import { groupUnits } from '@/lib/extension-catalog';
+import { offsetCivilDate } from '@/lib/civil-date';
 
 type Feed = { id: string; category: CalendarCategory; project_id: string | null; project_name: string | null; created_at: string; expires_at: string; revoked_at: string | null };
 type CalendarData = { entries: CalendarEntry[]; feeds: Feed[]; availableCategories: CalendarCategory[] };
@@ -21,7 +22,11 @@ function inDay(event: CalendarEntry, day: string): boolean {
 }
 function prettyDay(day: string): string { return new Intl.DateTimeFormat('pt-BR', { timeZone, day: 'numeric', month: 'long', year: 'numeric' }).format(new Date(`${day}T12:00:00Z`)); }
 function when(event: CalendarEntry): string {
-  if (event.allDay) return `${prettyDay(event.startsAt)} · Dia inteiro`;
+  if (event.allDay) {
+    const lastDay = offsetCivilDate(event.endsAt, -1);
+    const period = lastDay === event.startsAt ? prettyDay(event.startsAt) : `${prettyDay(event.startsAt)} a ${prettyDay(lastDay)}`;
+    return `${period} · Dia inteiro`;
+  }
   const format = new Intl.DateTimeFormat('pt-BR', { timeZone, day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
   return `${format.format(new Date(event.startsAt))} → ${format.format(new Date(event.endsAt))}`;
 }

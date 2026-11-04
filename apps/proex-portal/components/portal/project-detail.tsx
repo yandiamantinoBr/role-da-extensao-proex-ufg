@@ -4,6 +4,7 @@ import styles from './project-panel.module.css';
 import { areaLabel, lineLabel } from '@/lib/extension-catalog';
 import { ArrowLeft, BarChart3, CalendarDays, Check, Clock3, ExternalLink, FileText, FolderKanban, History, Link2, LoaderCircle, Package, Pencil, Plus, RefreshCw, ShieldCheck, X } from 'lucide-react';
 import type { Row } from '@/lib/database';
+import { isCivilDate } from '@/lib/civil-date';
 import { useFormDraft, DraftNotice } from './use-form-draft';
 type Props={projectId:string;projects:Row[];mutate:(action:string,payload:Row)=>Promise<Row>;onBack:()=>void;onEdit:(project:Row)=>void;onSelect?:(id:string)=>void;renderWorkContext?:(projectId:string)=>ReactNode};
 type Editor={kind:'link'|'call'|'schedule';row:Row|null};
@@ -16,21 +17,48 @@ function label(value:string){return labels[value as keyof typeof labels]||value;
 function dateOf(value:unknown){if(value===null||value===undefined||value==='')return null;const date=new Date(typeof value==='number'?value:String(value));return Number.isFinite(date.getTime())?date:null;}
 function availableOf(item:Row){return typeof item.available==='number'&&Number.isFinite(item.available)?item.available:null;}
 function loanIsLate(loan:Row,now:number){const end=dateOf(loan.ends_at);return loan.status==='out'&&end!==null&&end.getTime()<now;}
-function pretty(value:unknown){const date=dateOf(value);if(!date)return 'Não informado';return Number.isFinite(date.getTime())?new Intl.DateTimeFormat('pt-BR',{timeZone:'America/Sao_Paulo',day:'2-digit',month:'short',year:'numeric'}).format(date):'Não informado';}
+function pretty(value: unknown) {
+ const date = dateOf(value);
+ return date ? new Intl.DateTimeFormat('pt-BR', { timeZone: isCivilDate(value) ? 'UTC' : 'America/Sao_Paulo', day: '2-digit', month: 'short', year: 'numeric' }).format(date) : 'Não informado';
+}
 function localDate(value:unknown){const date=dateOf(value);if(!date)return '';const shifted=new Date(date.getTime()-date.getTimezoneOffset()*60000);return shifted.toISOString().slice(0,16);}
 function safeUrl(value:unknown){if(typeof value!=='string')return '';try{const url=new URL(value);return url.protocol==='https:'&&!url.username&&!url.password?url.href:'';}catch{return '';}}
 function MetadataForm({editor,projectId,projects,mutate,done}:{editor:Editor;projectId:string;projects:Row[];mutate:Props['mutate'];done:()=>void}){
  const {kind,row}=editor,[saving,setSaving]=useState(false),[error,setError]=useState(''),key=useRef<string|null>(null),formRef=useRef<HTMLFormElement>(null);
+ const [allDay, setAllDay] = useState(isCivilDate(row?.starts_at) && isCivilDate(row?.ends_at));
  const draft=useFormDraft(formRef,`project-${kind}:${projectId}:${row?.id??'new'}:${row?.version??0}`);
  async function submit(event:FormEvent<HTMLFormElement>){event.preventDefault();if(saving)return;const form=new FormData(event.currentTarget);setSaving(true);setError('');key.current??=crypto.randomUUID();
  try{const payload:Row={projectId,...(row?{id:row.id,expectedVersion:row.version}:{}),operationKey:key.current};const fields=kind==='link'?['label','url','kind']:kind==='call'?['title','referenceCode','description','status','officialUrl']:['title','status','note','url'];for(const name of fields)payload[name]=form.get(name)||'';
- for(const name of kind==='call'?['opensAt','closesAt']:kind==='schedule'?['startsAt','endsAt']:[])payload[name]=form.get(name)?new Date(String(form.get(name))).toISOString():null;
- if(kind==='call')payload.linkedProjectIds=form.getAll('linkedProjectIds');
+ if (kind === 'call') {
+  for (const name of ['opensAt', 'closesAt']) payload[name] = form.get(name) ? new Date(String(form.get(name))).toISOString() : null;
+  payload.linkedProjectIds = form.getAll('linkedProjectIds');
+ }
+ if (kind === 'schedule') {
+  for (const [name, dayName, column] of [['startsAt', 'startsOn', 'starts_at'], ['endsAt', 'endsOn', 'ends_at']]) {
+   if (allDay) {
+    payload[name] = form.get(dayName);
+   } else {
+    const entered = String(form.get(name) ?? ''), previous = row?.[column];
+    payload[name] = previous && !isCivilDate(previous) && entered === localDate(previous)
+      ? previous : new Date(entered).toISOString();
+   }
+  }
+ }
  await mutate(`${kind==='call'?'call':`project.${kind}`}.${row?'update':'create'}`,payload);key.current=null;draft.clear();done();}catch(error){setError(error instanceof Error?error.message:'Não foi possível salvar.');}finally{setSaving(false);}}
  const input=(name:string,title:string,extra:Row={})=><label className="p-field"><span>{title}</span><input name={name} defaultValue={row?.[name.replace(/[A-Z]/g,letter=>`_${letter.toLowerCase()}`)]??''} {...extra}/></label>;
  return <form ref={formRef} className="p-form" onSubmit={submit} onChange={()=>{if(!saving)key.current=null;}}><DraftNotice draft={draft}/><fieldset disabled={saving}><div className="p-form-grid">
  {kind==='link'?<>{input('label','Nome do link',{required:true,maxLength:150})}{input('url','Endereço HTTPS',{required:true,type:'url',maxLength:500})}<label className="p-field"><span>Categoria</span><select name="kind" defaultValue={row?.kind??'official'}><option value="official">Página oficial</option><option value="notice">Edital / chamada</option><option value="report">Relatório</option><option value="gallery">Galeria</option><option value="other">Outro recurso</option></select></label></>:<>{input('title',kind==='call'?'Título do edital':'Título do marco / atividade',{required:true,maxLength:200})}{kind==='call'&&input('referenceCode','Número ou referência',{maxLength:80})}<label className="p-field"><span>Situação</span><select name="status" defaultValue={row?.status??(kind==='call'?'draft':'planned')}>{(kind==='call'?['draft','open','closed','archived']:['planned','completed','cancelled']).map(value=><option key={value} value={value}>{label(value)}</option>)}</select></label>{input(kind==='call'?'officialUrl':'url','Fonte oficial / endereço HTTPS',{type:'url',maxLength:500})}
- {(kind==='call'?[['opensAt','Abertura'],['closesAt','Encerramento']]:[['startsAt','Início'],['endsAt','Fim']]).map(([name,title])=><label key={name} className="p-field"><span>{title}{kind==='schedule'?' *':''}</span><input name={name} type="datetime-local" required={kind==='schedule'} defaultValue={localDate(row?.[name.replace(/[A-Z]/g,letter=>`_${letter.toLowerCase()}`)])}/></label>)}
+ {kind === 'call' && [['opensAt', 'Abertura'], ['closesAt', 'Encerramento']].map(([name, title]) => <label key={name} className="p-field"><span>{title}</span><input name={name} type="datetime-local" defaultValue={localDate(row?.[name.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`)])}/></label>)}
+ {kind === 'schedule' && <>
+  <label className="p-field"><span>Formato do período</span><select name="schedulePrecision" value={allDay ? 'day' : 'time'} onChange={event => setAllDay(event.target.value === 'day')}>
+   <option value="time">Com horário</option><option value="day">Dia inteiro (sem horário)</option>
+  </select></label>
+  {/* Keep both pairs mounted so the draft can restore the mode and its dates together. */}
+  <label className="p-field" hidden={allDay} style={allDay ? { display: 'none' } : undefined}><span>Início *</span><input name="startsAt" type="datetime-local" required={!allDay} disabled={allDay} defaultValue={isCivilDate(row?.starts_at) ? '' : localDate(row?.starts_at)}/></label>
+  <label className="p-field" hidden={allDay} style={allDay ? { display: 'none' } : undefined}><span>Fim *</span><input name="endsAt" type="datetime-local" required={!allDay} disabled={allDay} defaultValue={isCivilDate(row?.ends_at) ? '' : localDate(row?.ends_at)}/></label>
+  <label className="p-field" hidden={!allDay} style={!allDay ? { display: 'none' } : undefined}><span>Dia de início *</span><input name="startsOn" type="date" min="2000-01-01" max="2200-12-31" required={allDay} disabled={!allDay} defaultValue={isCivilDate(row?.starts_at) ? row.starts_at : ''}/></label>
+  <label className="p-field" hidden={!allDay} style={!allDay ? { display: 'none' } : undefined}><span>Último dia (incluído) *</span><input name="endsOn" type="date" min="2000-01-01" max="2200-12-31" required={allDay} disabled={!allDay} defaultValue={isCivilDate(row?.ends_at) ? row.ends_at : ''}/></label>
+ </>}
  </>}
  </div>{kind!=='link'&&<label className="p-field"><span>{kind==='call'?'Finalidade e orientações':'Observação institucional'}</span><textarea name={kind==='call'?'description':'note'} maxLength={kind==='call'?4000:2000} rows={3} defaultValue={row?.[kind==='call'?'description':'note']??''}/><small>Use informações institucionais. Não inclua contatos, documentos ou dados pessoais.</small></label>}
  {kind==='call'&&<label className="p-field"><span>Outros projetos relacionados (opcional)</span><select name="linkedProjectIds" multiple defaultValue={row?.linkedProjectIds??[]} size={Math.min(5,Math.max(2,projects.length))}>{projects.filter(project=>project.id!==projectId).map(project=><option key={project.id} value={project.id}>{project.name}</option>)}</select><small>É necessário poder administrar todos os projetos vinculados. Essa relação não transfere permissões.</small></label>}

@@ -327,6 +327,40 @@ test('links and schedules validate input, save snapshots, restore by new CAS rev
   }finally{db.native.close();}
 });
 
+test('project activities save and restore date-only ranges without changing legacy timestamp precision', async () => {
+  const db = database();
+  try {
+    const manager = actor(db, 'manager', 'project-a');
+    const civil = { projectId: 'project-a', title: 'Atividade sintética', startsAt: '2026-11-09', endsAt: '2026-11-13',
+      status: 'planned', note: 'Período geral sem horário', url: 'https://example.invalid/fonte' };
+    const create = input => projectAction(db, manager, 'project.schedule.create', { ...civil, ...input, operationKey: crypto.randomUUID() });
+    const created = (await create({})).project_schedule_item;
+    assert.deepEqual([created.starts_at, created.ends_at, created.note, created.url], [civil.startsAt, civil.endsAt, civil.note, civil.url]);
+    const single = (await create({ endsAt: civil.startsAt })).project_schedule_item;
+    assert.equal(single.starts_at, single.ends_at);
+    for (const dates of [
+      { startsAt: '2026-02-30' }, { startsAt: '2026-11-9' }, { startsAt: '1999-12-31' },
+      { endsAt: '' }, { endsAt: '2026-11-13T14:00:00Z' },
+    ]) await assert.rejects(create(dates), error => error.code === 'invalid_date');
+    await assert.rejects(create({ endsAt: '2026-11-08' }), error => error.code === 'invalid_interval');
+    const update = (version, fields) => projectAction(db, manager, 'project.schedule.update', {
+      id: created.id, expectedVersion: version, operationKey: crypto.randomUUID(), ...fields,
+    });
+    const titled = (await update(1, { title: 'Atividade renomeada' })).project_schedule_item;
+    assert.deepEqual([titled.starts_at, titled.ends_at], [civil.startsAt, civil.endsAt]);
+    const startsAt = '2026-11-09T12:34:56.123Z', endsAt = '2026-11-13T14:01:02.345Z';
+    const timed = (await update(2, { startsAt, endsAt })).project_schedule_item;
+    assert.deepEqual([timed.starts_at, timed.ends_at], [startsAt, endsAt]);
+    const restore = (restoreVersion, expectedVersion) => projectAction(db, manager, 'entity.restore', {
+      entityType: 'project_schedule_item', entityId: created.id, restoreVersion, expectedVersion, operationKey: crypto.randomUUID(),
+    });
+    const restored = (await restore(1, 3)).project_schedule_item;
+    assert.deepEqual([restored.starts_at, restored.ends_at], [civil.startsAt, civil.endsAt]);
+    const restoredTime = (await restore(3, 4)).project_schedule_item;
+    assert.deepEqual([restoredTime.starts_at, restoredTime.ends_at], [startsAt, endsAt]);
+  } finally { db.native.close(); }
+});
+
 test('shared calls require current authority for every project and remain editable only by authorized managers', async () => {
   const db=database();try{
     const owner=actor(db,'owner',null),manager=actor(db,'manager','project-a');
