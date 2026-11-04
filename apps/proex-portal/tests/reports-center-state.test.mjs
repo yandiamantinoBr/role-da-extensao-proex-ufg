@@ -281,7 +281,7 @@ test('project summary never downloads absent, mixed, partial, unauthorized or de
 
 test('project preview and PDF share the verified project metrics and distinguish zero from missing data', async () => {
  const h = harness(), projectId = 'project-a';
- const row = {id:projectId,projeto:'Projeto A',materiais:0,eventos:3,emprestimos:null};
+ const row = {id:projectId,projeto:'Projeto A',materiais:0,eventos:3,marcos_agenda:2,emprestimos:null};
  const resolveProject = async () => {
   h.requests.at(-1).resolve({ok:true,json:async()=>({dataset:'projects',rows:[row],truncated:false})});
   await tick();
@@ -292,9 +292,10 @@ test('project preview and PDF share the verified project metrics and distinguish
   h.button('Ver prévia').props.onClick();
   const preview = await resolveProject();
   const indicators = nodesInside(preview).find(node => node.type?.name === 'ReportMetrics');
-  const expected = [{label:'Materiais',value:0},{label:'Eventos',value:3},{label:'Empréstimos',value:null},{label:'Registros',value:null}];
+  const expected = [{label:'Materiais',value:0},{label:'Dinâmicas',value:3},{label:'Empréstimos',value:null},{label:'Registros',value:null}];
   assert.deepEqual(JSON.parse(JSON.stringify(indicators.props.metrics)),expected);
-  assert.match(text(indicators.type(indicators.props)),/Materiais0Eventos3EmpréstimosNão informadoRegistrosNão informado/);
+  assert.match(text(indicators.type(indicators.props)),/Materiais0Dinâmicas3EmpréstimosNão informadoRegistrosNão informado/);
+  assert.match(text(preview), /Marcos na Agenda2/);
   assert.equal(h.downloads.length,0);
   assert.equal(h.button('Ocultar prévia').props['aria-expanded'],true);
 

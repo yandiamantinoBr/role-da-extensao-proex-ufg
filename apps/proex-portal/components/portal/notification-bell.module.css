@@ -117,6 +117,8 @@
 .hiddenList { border: 1px solid var(--line); border-radius: 12px; padding: 0 10px 8px; }
 .hiddenList summary { min-height: 44px; padding: 11px 0; cursor: pointer; color: var(--brand-ink); font-weight: 600; }
 .hiddenList[open] .list { margin-top: 8px; }
+.hiddenPager { align-items: center; margin-block: 8px 2px; }
+.hiddenPager p { flex-basis: 100%; }
 .workLink { display: inline-flex; align-items: center; min-height: 44px; color: var(--brand-ink); text-decoration: underline; text-underline-offset: 3px; }
 .panel :is(button,a,summary):focus-visible { outline: 2px solid var(--brand-ink); outline-offset: 2px; }
 

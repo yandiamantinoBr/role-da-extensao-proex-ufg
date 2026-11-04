@@ -101,6 +101,7 @@ export async function reportRows(db: D1Database, actor: PortalActor | null, inpu
     rows = await run(`SELECT p.id,${projectColumns},p.short_name AS sigla,p.extension_line AS linha_extensao,p.scope AS abrangencia,p.status AS situacao,p.lifecycle AS etapa,
       date(p.starts_at,'-3 hours') AS inicio,date(p.ends_at,'-3 hours') AS fim,p.location AS local,
       (SELECT COUNT(*) FROM items i WHERE i.project_id=p.id) AS materiais,(SELECT COUNT(*) FROM campaigns c WHERE c.project_id=p.id) AS eventos,
+      (SELECT COUNT(*) FROM project_schedule_items s WHERE s.project_id=p.id AND s.status<>'cancelled') AS marcos_agenda,
       (SELECT COUNT(*) FROM loans l WHERE l.project_id=p.id) AS emprestimos,(SELECT COUNT(*) FROM records r WHERE r.project_id=p.id) AS registros,
       date(p.created_at,'-3 hours') AS criado_em FROM ${base} /*WHERE*/ ORDER BY p.name`);
   } else if (dataset === 'materials') {

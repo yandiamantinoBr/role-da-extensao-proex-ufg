@@ -17,7 +17,7 @@ function harness(){
  }
  const Component=load('components/portal/notification-bell.tsx').default;
  const nodes=()=>{const result=[];const visit=node=>{if(!node||typeof node!=='object')return;if(Array.isArray(node)){node.forEach(visit);return;}result.push(node);visit(node.props?.children);};visit(tree);return result;};
- const h={requests,timers,document,render(next){props={...props,...next};index=0;tree=Component(props);return tree;},emit(name,event){listeners.get(name)?.(event);},advance(ms){now+=ms;},start(){for(const[id,timer]of timers)if(!timer.interval){timers.delete(id);timer.fn();}},interval(){for(const timer of timers.values())if(timer.interval)timer.fn();},reply(i,data,status=200){requests[i].resolve({ok:status>=200&&status<300,status,json:async()=>data});},button(name){const found=nodes().find(node=>node.type==='button'&&(node.props['aria-label']===name||text(node)===name));assert.ok(found,name);return found;},link(name){const found=nodes().find(node=>node.type==='a'&&text(node)===name);assert.ok(found,name);return found;},links(name){return nodes().filter(node=>node.type==='a'&&text(node)===name);},body(){return text(tree);},dispose(){for(const slot of slots)slot?.cleanup?.();}};
+ const h={requests,timers,document,render(next){props={...props,...next};index=0;tree=Component(props);return tree;},emit(name,event){listeners.get(name)?.(event);},advance(ms){now+=ms;},start(){for(const[id,timer]of timers)if(!timer.interval){timers.delete(id);timer.fn();}},interval(){for(const timer of timers.values())if(timer.interval)timer.fn();},reply(i,data,status=200){requests[i].resolve({ok:status>=200&&status<300,status,json:async()=>data});},button(name){const found=nodes().find(node=>node.type==='button'&&(node.props['aria-label']===name||text(node)===name));assert.ok(found,name);return found;},link(name){const found=nodes().find(node=>node.type==='a'&&text(node)===name);assert.ok(found,name);return found;},links(name){return nodes().filter(node=>node.type==='a'&&text(node)===name);},summary(name){const found=nodes().find(node=>node.type==='summary'&&text(node)===name);assert.ok(found,name);return found;},body(){return text(tree);},dispose(){for(const slot of slots)slot?.cleanup?.();}};
  h.render();return h;
 }
 const inbox=(title='Aviso A')=>({notifications:[{id:'notice-a',task_id:'task-a',title,status:'open',priority:'high',due_at:'2026-11-01',read_at:null,created_at:'2026-10-31T12:00:00Z'}],unread:1,hasMore:false,pending:[],pendingHasMore:false});
@@ -27,7 +27,7 @@ test('bell deduplicates pending fetches, pauses hidden tabs, throttles refreshes
 });
 
 test('changing account hides the previous inbox and aborts its request; reading requires an explicit action',async()=>{
- const h=harness();try{h.start();h.reply(0,inbox());await tick();h.render();h.button('Notificações: 1 não lidas').props.onClick();h.render();assert.ok(h.body().includes('Aviso A'));assert.equal(h.requests.length,2);const previous=h.requests[1];h.render({userId:'user-b'});assert.equal(previous.init.signal.aborted,true);assert.ok(!h.body().includes('Aviso A'));h.start();assert.equal(h.requests.length,3);h.reply(2,inbox('Aviso B'));await tick();h.render();h.button('Marcar todas como lidas').props.onClick();assert.equal(h.requests[3].init.method,'POST');assert.equal(JSON.parse(h.requests[3].init.body).action,'notification.read');assert.ok(!JSON.stringify(h.requests[3].init.body).includes('user-a'));}finally{h.dispose();}
+ const h=harness();try{h.start();h.reply(0,inbox());await tick();h.render();h.button('Notificações: 1 não lida').props.onClick();h.render();assert.ok(h.body().includes('Aviso A'));assert.equal(h.requests.length,2);const previous=h.requests[1];h.render({userId:'user-b'});assert.equal(previous.init.signal.aborted,true);assert.ok(!h.body().includes('Aviso A'));h.start();assert.equal(h.requests.length,3);h.reply(2,inbox('Aviso B'));await tick();h.render();h.button('Marcar todas como lidas').props.onClick();assert.equal(h.requests[3].init.method,'POST');assert.equal(JSON.parse(h.requests[3].init.body).action,'notification.read');assert.ok(!JSON.stringify(h.requests[3].init.body).includes('user-a'));}finally{h.dispose();}
 });
 
 
@@ -46,9 +46,9 @@ test('the bell groups one task window without changing global unread and marks t
 });
 
 test('a forbidden task-read response clears protected inbox data and an old response cannot replace a different account',async()=>{
- for(const mode of ['forbidden','account']){const h=harness();try{h.start();h.reply(0,{...inbox(),viewerId:'user-a'});await tick();h.render();h.button('Notificações: 1 não lidas').props.onClick();h.render();h.link('Aviso A').props.onClick({preventDefault(){}});
+ for(const mode of ['forbidden','account']){const h=harness();try{h.start();h.reply(0,{...inbox(),viewerId:'user-a'});await tick();h.render();h.button('Notificações: 1 não lida').props.onClick();h.render();h.link('Aviso A').props.onClick({preventDefault(){}});
  if(mode==='forbidden'){h.reply(2,{error:'Seu acesso mudou.'},403);await tick();h.render();h.button('Notificações');h.reply(1,inbox());await tick();h.render();h.button('Notificações');assert.equal(h.body().includes('Aviso A'),false);}
- else{h.render({userId:'user-b'});assert.equal(h.requests[2].init.signal.aborted,true);h.start();h.reply(3,{...inbox('Aviso B'),viewerId:'user-b'});await tick();h.render();h.reply(2,{...inbox(),viewerId:'user-a'});await tick();h.render();h.button('Notificações: 1 não lidas').props.onClick();h.render();assert.ok(h.body().includes('Aviso B'));assert.equal(h.body().includes('Aviso A'),false);}
+ else{h.render({userId:'user-b'});assert.equal(h.requests[2].init.signal.aborted,true);h.start();h.reply(3,{...inbox('Aviso B'),viewerId:'user-b'});await tick();h.render();h.reply(2,{...inbox(),viewerId:'user-a'});await tick();h.render();h.button('Notificações: 1 não lida').props.onClick();h.render();assert.ok(h.body().includes('Aviso B'));assert.equal(h.body().includes('Aviso A'),false);}
  }finally{h.dispose();}}
 });
 
@@ -62,7 +62,7 @@ test('cleaning captures the previous cursor even if new notices arrive before co
  const fresh={...inbox('Aviso posterior'),clearThrough:'notice-b',viewerId:'user-a',notifications:[{...inbox().notifications[0],id:'notice-b',title:'Aviso posterior'}]};
  try{
   h.start();h.reply(0,first);await tick();h.render();
-  h.button('Notificações: 1 não lidas').props.onClick();h.render();
+  h.button('Notificações: 1 não lida').props.onClick();h.render();
   h.button('Limpar todos os avisos').props.onClick();h.render();
   assert.match(h.body(),/demandas e o histórico continuam disponíveis/);
   h.reply(1,fresh);await tick();h.render();
@@ -79,7 +79,7 @@ test('followed tasks have separate personal hide and restore actions and keep th
  const first={...inbox(),pending:[pending],hiddenPending:[],clearThrough:'notice-a',viewerId:'user-a'};
  try{
   h.start();h.reply(0,first);await tick();h.render();
-  h.button('Notificações: 1 não lidas').props.onClick();h.render();
+  h.button('Notificações: 1 não lida').props.onClick();h.render();
   assert.ok(!h.body().includes('Pendentes que você acompanha'));
   h.button('Pendentes').props.onClick();h.render();
   assert.match(h.body(),/Pendentes que você acompanha/);
@@ -102,7 +102,7 @@ test('stale hide and restore show the refreshed list without a false success',as
   const first={...inbox(),pending:hidden?[]:[pending],hiddenPending:hidden?[pending]:[],viewerId:'user-a'};
   try{
    h.start();h.reply(0,first);await tick();h.render();
-   h.button('Notificações: 1 não lidas').props.onClick();h.render();
+   h.button('Notificações: 1 não lida').props.onClick();h.render();
    h.button('Pendentes').props.onClick();h.render();
    h.button(`${hidden?'Mostrar':'Ocultar'} pendência: Pendência anterior`).props.onClick();
    h.reply(2,{...first,pending:[{...pending,title:'Pendência atualizada',version:3}],hiddenPending:[],pendingVisibility:'outdated'});await tick();h.render();
@@ -112,4 +112,41 @@ test('stale hide and restore show the refreshed list without a false success',as
    assert.doesNotMatch(h.body(),/Pendência ocultada da sua lista|Pendência de volta à sua lista/);
   }finally{h.dispose();}
  }
+});
+
+test('hidden pending pages are navigable by cursor and can restore a later item without touching earlier ones',async()=>{
+ const h=harness(),after='0~2026-11-09~task-19';let focused=0;
+ const tasks=Array.from({length:20},(_,index)=>({id:'task-'+index,title:'Ocultada '+index,status:'open',priority:'high',due_at:'2026-11-09',version:1}));
+ const later={...tasks[0],id:'task-20',title:'Ocultada 20'};
+ const base={...inbox(),viewerId:'user-a',hiddenPendingAfter:null,hiddenPending:tasks,hiddenPendingHasMore:true,hiddenPendingCursor:after};
+ const next={...base,hiddenPendingAfter:after,hiddenPending:[later],hiddenPendingHasMore:false,hiddenPendingCursor:null};
+ try{
+  h.start();h.reply(0,base);await tick();h.render();
+  h.button('Notificações: 1 não lida').props.onClick();h.render();
+  h.button('Pendentes').props.onClick();h.render();
+  assert.match(h.body(),/Pendências ocultadas \(20\+\)/);
+  h.summary('Pendências ocultadas (20+)').props.ref.current={focus(){focused++;}};
+  assert.equal(h.button('Anterior').props.disabled,true);
+  h.button('Próxima').props.onClick();h.render();
+  assert.equal(h.requests[1].init.signal.aborted,true);
+  assert.match(h.body(),/Carregando pendências ocultadas/);
+  h.reply(1,base);await tick();h.render();
+  assert.equal(new URL(h.requests[2].url,'https://example.invalid').searchParams.get('hiddenAfter'),after);
+  h.reply(2,next);await tick();h.render();
+  assert.match(h.body(),/Página 2/);
+  assert.equal(focused,1);
+  assert.equal(h.button('Próxima').props.disabled,true);
+  h.button('Anterior').props.onClick();
+  assert.equal(new URL(h.requests[3].url,'https://example.invalid').searchParams.get('hiddenAfter'),null);
+  h.reply(3,base);await tick();h.render();
+  assert.match(h.body(),/Página 1/);
+  h.button('Próxima').props.onClick();
+  h.reply(4,next);await tick();h.render();
+  h.button('Mostrar pendência: Ocultada 20').props.onClick();
+  assert.deepEqual(JSON.parse(h.requests[5].init.body),{action:'pending.visibility',taskId:'task-20',version:1,hidden:false});
+  h.reply(5,{...base,hiddenPendingCursor:null,hiddenPendingHasMore:false,pending:[later],pendingVisibility:'confirmed'});await tick();h.render();
+  assert.match(h.body(),/Pendência de volta à sua lista/);
+  assert.match(h.body(),/Pendências ocultadas \(20\)/);
+  assert.equal(h.link('Ocultada 20').props.href,'/?module=demands&demandId=task-20');
+ }finally{h.dispose();}
 });

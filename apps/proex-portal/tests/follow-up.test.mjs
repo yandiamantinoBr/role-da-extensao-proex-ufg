@@ -296,3 +296,38 @@ test('migration backfills old notices and allocates fresh immutable ordering aft
   assert.deepEqual(native.prepare('PRAGMA foreign_key_check').all(),[]);
  }finally{native.close();}
 });
+
+test('hidden pending cursor preserves priority, due date and ID after a concurrent removal and rechecks live scope',async t=>{
+ const f=fixture(t),worker=await f.actor('worker-a'),other=await f.actor('worker-b');
+ const priorities=['high','medium','low'];
+ const sample=Array.from({length:46},(_,index)=>({
+  id:'hidden-'+String(index).padStart(2,'0'),rank:index%3,due:index%4===0?null:'2026-11-'+String(5+index%4).padStart(2,'0'),
+ }));
+ function hiddenTask(row,owner,org,project){
+  f.insert('followup_tasks',{id:row.id,title:'Pendência '+row.id,priority:priorities[row.rank],due_at:row.due,created_by:owner,organization_id:org,project_id:project,created_at:f.now,updated_at:f.now});
+  f.insert('followup_hidden_pending',{task_id:row.id,user_id:owner,task_version:1});
+ }
+ for(const row of sample)hiddenTask(row,'worker-a','org-a','project-a');
+ hiddenTask({id:'foreign-hidden',rank:1,due:null},'worker-b','org-b','project-b');
+ const expected=[...sample].sort((left,right)=>left.rank-right.rank||(left.due??'9999').localeCompare(right.due??'9999')||left.id.localeCompare(right.id)).map(row=>row.id);
+ const first=await notificationInbox(f.db,worker);
+ assert.deepEqual(first.hiddenPending.map(row=>row.id),expected.slice(0,20));
+ assert.ok(first.hiddenPendingCursor);
+ assert.equal(first.hiddenPendingAfter,null);
+ assert.equal(first.hiddenPendingHasMore,true);
+ f.native.prepare('UPDATE followup_tasks SET version=2 WHERE id=?').run(expected[0]);
+ const second=await notificationInbox(f.db,worker,first.hiddenPendingCursor);
+ assert.deepEqual(second.hiddenPending.map(row=>row.id),expected.slice(20,40));
+ assert.equal(second.hiddenPendingAfter,first.hiddenPendingCursor);
+ assert.equal(second.hiddenPendingHasMore,true);
+ const third=await notificationInbox(f.db,worker,second.hiddenPendingCursor);
+ assert.deepEqual(third.hiddenPending.map(row=>row.id),expected.slice(40));
+ assert.equal(third.hiddenPendingHasMore,false);
+ assert.equal(third.hiddenPendingCursor,null);
+ assert.ok(!(await notificationInbox(f.db,other,first.hiddenPendingCursor)).hiddenPending.some(row=>expected.includes(row.id)));
+ await assert.rejects(notificationInbox(f.db,worker,"0~2026-11-05~' OR 1=1"),{status:400});
+ f.db.before=()=>f.native.prepare("UPDATE members SET revoked_at=? WHERE user_id='worker-a'").run(f.now);
+ const revoked=await notificationInbox(f.db,worker,first.hiddenPendingCursor);
+ assert.equal(revoked.hiddenPending.length,0);
+ assert.equal(revoked.hiddenPendingCursor,null);
+});

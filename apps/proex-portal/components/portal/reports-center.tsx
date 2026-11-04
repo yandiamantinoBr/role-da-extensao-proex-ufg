@@ -46,8 +46,8 @@ const ASSET_COLUMNS: Column[] = [
 const DATASETS: Record<DatasetId, Dataset> = {
   projects: {
     label: 'Projetos e ações', description: 'Cadastro, classificação e volume de operação de cada iniciativa.', icon: FolderKanban,
-    columns: [...shared, { key: 'sigla', label: 'Sigla' }, { key: 'linha_extensao', label: 'Linha de extensão' }, { key: 'abrangencia', label: 'Abrangência' }, { key: 'situacao', label: 'Situação' }, { key: 'etapa', label: 'Etapa' }, { key: 'inicio', label: 'Início', date: true }, { key: 'fim', label: 'Fim', date: true }, { key: 'local', label: 'Local' }, { key: 'materiais', label: 'Materiais', numeric: true }, { key: 'eventos', label: 'Eventos', numeric: true }, { key: 'emprestimos', label: 'Empréstimos', numeric: true }, { key: 'registros', label: 'Registros', numeric: true }, { key: 'criado_em', label: 'Cadastrado em', date: true }],
-    defaults: ['projeto', 'unidade_sigla', 'area_tematica', 'modalidade', 'abrangencia', 'etapa', 'materiais', 'eventos', 'emprestimos', 'registros'],
+    columns: [...shared, { key: 'sigla', label: 'Sigla' }, { key: 'linha_extensao', label: 'Linha de extensão' }, { key: 'abrangencia', label: 'Abrangência' }, { key: 'situacao', label: 'Situação' }, { key: 'etapa', label: 'Etapa' }, { key: 'inicio', label: 'Início', date: true }, { key: 'fim', label: 'Fim', date: true }, { key: 'local', label: 'Local' }, { key: 'materiais', label: 'Materiais', numeric: true }, { key: 'eventos', label: 'Dinâmicas cadastradas', numeric: true }, { key: 'marcos_agenda', label: 'Marcos na Agenda', numeric: true }, { key: 'emprestimos', label: 'Empréstimos', numeric: true }, { key: 'registros', label: 'Registros', numeric: true }, { key: 'criado_em', label: 'Cadastrado em', date: true }],
+    defaults: ['projeto', 'unidade_sigla', 'area_tematica', 'modalidade', 'abrangencia', 'etapa', 'materiais', 'eventos', 'marcos_agenda', 'emprestimos', 'registros'],
     groups: ['unidade_sigla', 'area_tematica', 'modalidade', 'abrangencia', 'etapa', 'unidade_grupo'], dateKey: 'inicio',
     kpis: rows => [{ label: 'Projetos', value: rows.length }, { label: 'Em andamento', value: count(rows, row => row.etapa === 'active') }, { label: 'Externos à PROEX', value: count(rows, row => row.abrangencia === 'external') }, { label: 'Unidades envolvidas', value: distinct(rows, 'unidade_sigla') }],
   },
@@ -219,7 +219,7 @@ function reportDocument(format: DocumentFormat, title: string, columns: ExportCo
 
 const projectReportMetrics = [
   { key: 'materiais', label: 'Materiais' },
-  { key: 'eventos', label: 'Eventos' },
+  { key: 'eventos', label: 'Dinâmicas' },
   { key: 'emprestimos', label: 'Empréstimos' },
   { key: 'registros', label: 'Registros' },
 ] as const;
@@ -339,7 +339,7 @@ export function ProjectReportExports({ projectId, projectName, officialUrl }: { 
 
   const summary = previewRow ? projectReportPresentation(previewRow, officialUrl) : null;
   const details = previewRow ? DATASETS.projects.columns.filter(column =>
-    ['unidade_sigla', 'area_tematica', 'modalidade', 'abrangencia', 'etapa'].includes(column.key)) : [];
+    ['unidade_sigla', 'area_tematica', 'modalidade', 'abrangencia', 'etapa', 'marcos_agenda'].includes(column.key)) : [];
   return <section ref={detach} className={`p-card ${styles.projectReport}`} aria-label="Baixar resumo do projeto">
     <ReportMasthead label="Relatório do projeto" title={summary?.projectName || projectName || 'Resumo do projeto'} description="Ficha e totais do período completo" project projectBrand={summary ? summary.projectBrand : projectBrandFor(projectId, projectName, officialUrl)}/>
     <div className={styles.projectReportBody}>
@@ -361,7 +361,7 @@ export function ProjectReportExports({ projectId, projectName, officialUrl }: { 
           </div>
           <ReportMetrics metrics={summary.metrics ?? []}/>
           <dl className={styles.projectFacts}>
-            {details.map(column => <div key={column.key}><dt>{column.label}</dt><dd>{String(display('projects', previewRow, column.key) || 'Não informado')}</dd></div>)}
+            {details.map(column => <div key={column.key}><dt>{column.label}</dt><dd>{String(display('projects', previewRow, column.key)) || 'Não informado'}</dd></div>)}
           </dl>
         </>}
       </div>
