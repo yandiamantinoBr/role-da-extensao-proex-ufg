@@ -1,6 +1,6 @@
 # Portal PROEX · Requisitos e continuidade
 
-Atualizado em 31/10/2026. Pedido humano registrado no chat Codex `01a18ce6-234a-7133-8517-772004a71bfb` e na Vault, em `Portal PROEX - Decisões` e `Portal PROEX - Requisitos e continuidade`.
+Atualizado em 04/11/2026. Pedido humano registrado no chat Codex `01a18ce6-234a-7133-8517-772004a71bfb` e na Vault, em `Portal PROEX - Decisões` e `Portal PROEX - Requisitos e continuidade`.
 
 ## Autorização vigente
 
@@ -8,11 +8,11 @@ Yan declarou: “Autorizo push, PR, merge e deploy da V9 e de todas as próximas
 
 ## Estado e coordenação
 
-- Último aceite publicado em 04/11: V17, PR #18, merge f777362, Vercel READY no mesmo SHA e CI 854/854 portal e 33/33 jogo. R21 tem um piloto próprio recebido e rotina automática observada no Google. O parecer visual 9,1/10 refere-se ao incremento R24/V15. [Entrega V17](ENTREGA-V17.md), [entrega V15](ENTREGA-V15.md).
+- Último aceite publicado em 04/11. V19, PR #20, merge bf662b4, Vercel READY no mesmo SHA e CI 871/871 portal e 33/33 jogo. O período oficial do CONPEEX aparece na Agenda de 9 a 13/11, em dias inteiros. [Entrega V19](ENTREGA-V19.md). R21 tem um piloto próprio recebido e rotina automática observada no Google. O parecer visual 9,1/10 refere-se ao incremento R24/V15. [Entrega V17](ENTREGA-V17.md), [entrega V15](ENTREGA-V15.md).
 - V13/V14 tinham 83 tabelas (0000–0016). A V15 aplicada tem 86 tabelas e 35 projeções portáteis/Sheets; designações são somente leitura, sem responsáveis/histórico. Migração, releitura real e restauração do novo backup publicado foram conferidas. A entrega V15 registra evidências e limites.
 - V9: implementação `441649a`, integrada por [PR #8](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/8), merge `c19b6439cc17d904ff9c183b86291f8faf7d6cfc`; GitHub Actions e preview aprovados. Produção Vercel `READY` nesse merge em 31/10. Validação pós-publicação é registrada no relatório da entrega.
 - Coordenador integra e publica. Agentes trabalham em worktrees distintas, com commits locais e dono de arquivos explícito. Conferir `git status`, branch e HEAD ao retomar.
-- Frentes em execução: acessos/convites/revogação; sincronização/Apps Script; importação de fontes oficiais/projetos/patrimônio. Relatórios e IA/voz são coordenados junto dessas interfaces.
+- A [matriz R01–R24](COBERTURA-DE-REQUISITOS.md) separa as entregas verificadas dos aceites pendentes, incluindo provedores IA/voz, política de retenção, cadastro público e custódia independente do backup.
 - Conteúdo real, credenciais, arquivos pessoais e capturas de produção permanecem fora do repositório público. Usar fixtures sintéticas e URLs públicas de fontes oficiais.
 
 ## Registro completo do pedido de 31/10

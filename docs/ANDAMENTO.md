@@ -1,10 +1,14 @@
-# Checkpoint atual · V17 publicada e avisos em operação
+# Checkpoint atual · V19 publicada
+
+Em 04/11/2026, V19 publicada a partir da PR #20, merge `bf662b4d271e65ca3c50cde2ebcbe09b7170a758`, Vercel READY e CI 871 portal + 33 jogo. O período oficial do 23º CONPEEX foi cadastrado como atividade de dia inteiro e conferido na Agenda. A V18, PR #19, corrigiu o detalhe de Demandas ao clicar no cartão selecionado e passou pela conferência em produção. [Entrega V19](ENTREGA-V19.md), [entrega V18](ENTREGA-V18.md).
+
+## Histórico · V17 publicada e avisos em operação
 
 PR #18 integrada em `f77736262089c97aab226f956fd622ae3b407ad4`, Vercel READY no mesmo commit. CI aprovou 854 testes do portal e 33 do jogo. Piloto único recebido em 31/10, demanda operacional concluída e gatilho de dez minutos instalado. Em 04/11, quatro execuções por relógio constaram como concluídas no projeto Google. Credencial vigente até 30/11. Provas em [ENTREGA-V17.md](ENTREGA-V17.md).
 
 # Histórico · V16 publicada
 
-Em 31/10/2026, PR #17 integrada em `f8c3718abcb654b0b8b06679fe8dfba87cf6deff`; Vercel `dpl_GsN2Q4ZZJGH8foUMmtTzcXBREsAf` READY no mesmo SHA. CI 838 portal + 33 jogo, sem falhas; revisão independente do calendário aprovada. Fluxo oficial Do URL criou a assinatura existente no Google antes do patch; fonte real de projetos/eventos está vazia no horizonte consultado. Ver [ENTREGA-V16.md](ENTREGA-V16.md). R21 autorizado e conectado, ainda OFF/sem envio; V17 prepara piloto próprio com proteção de destinatário. As seções abaixo preservam o histórico.
+Em 31/10/2026, PR #17 integrada em `f8c3718abcb654b0b8b06679fe8dfba87cf6deff`; Vercel `dpl_GsN2Q4ZZJGH8foUMmtTzcXBREsAf` READY no mesmo SHA. CI 838 portal + 33 jogo, sem falhas; revisão independente do calendário aprovada. Fluxo oficial Do URL criou a assinatura existente no Google antes do patch; a fonte de projetos/eventos estava vazia no horizonte consultado durante a V16. Ver [ENTREGA-V16.md](ENTREGA-V16.md). R21 autorizado e conectado, ainda OFF/sem envio; V17 prepara piloto próprio com proteção de destinatário. As seções abaixo preservam o histórico.
 
 # Histórico · V15 publicada e conferida
 
@@ -24,7 +28,7 @@ PR #14, revisão funcional d069c7f, Vercel READY no mesmo SHA. 726/726 testes do
 
 Leia `AGENTS.md` e `REQUISITOS-E-CONTINUIDADE.md`. Push/PR/merge/deploy de todas as versões do Portal PROEX estão autorizados por Yan. Não solicite novamente essa autorização. Não publique dados privados ou segredos.
 
-## Estado mais recente · V11 publicada
+## Checkpoint histórico · V11 publicada
 
 Produção V11, PR #10, merge `55bf5f7962ae7862c4a00cbce538179a79f99642`; Vercel READY `dpl_G2MRkbXCSBtPQEtG63p4B3PuvfLm` no mesmo SHA. GitHub/main aprovado. Sessão real, organizações, 11 materiais, PDF/DOCX válidos e health200 conferidos; sem registros de QA ou chamadas pagas. Checkout coordenador agora `v12-coordenacao`, baseado nesse merge. 520 testes Node24/26, tipos/lint/builds e CUA375/414/1250 passaram; migrações no backup real offline preservaram49tabelas. Veja `ENTREGA-V11.md`. WAF bloqueia URLs geradas antigas; não voltar para código anteriorà0008 com banco novo. Sheets/anexos tiveram primeiras execuções automáticas confirmadas em31/10.
 
