@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync, existsSync} from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
+import {resolveObjectURL} from 'node:buffer';
 import ts from 'typescript';
 
 const root = path.resolve(import.meta.dirname, '..');
@@ -12,7 +13,7 @@ const text = node => typeof node === 'string' || typeof node === 'number' ? Stri
 /** Executes the actual component, effects, handlers, helper and canonical validators. No HTTP server. */
 function harness(file = 'meu-trabalho-panel', initialProps = {}) {
   let index = 0, tree, props = {userId: 'user-a', organizationId: 'org-a', projectId: 'project-a', ...initialProps};
-  const slots = [], effects = [], requests = [], listeners = new Map(), modules = new Map();
+  const slots = [], effects = [], requests = [], downloads = [], listeners = new Map(), modules = new Map();
   const hooks = {
     useState(initial) { const i = index++; if (!(i in slots)) slots[i] = typeof initial === 'function' ? initial() : initial; return [slots[i], next => slots[i] = typeof next === 'function' ? next(slots[i]) : next]; },
     useRef(initial) { const i = index++; slots[i] ??= {current: initial}; return slots[i]; },
@@ -32,7 +33,9 @@ function harness(file = 'meu-trabalho-panel', initialProps = {}) {
       assert.ok(target, name); return load(target);
     };
     const code = ts.transpileModule(readFileSync(file, 'utf8'), {compilerOptions: {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX}}).outputText;
-    vm.runInNewContext(code, {module: compiledModule, exports: compiledModule.exports, require, URLSearchParams, Intl, Date, JSON, Error, Event, AbortController, crypto, window: {addEventListener(name, fn) {listeners.set(name, fn);}, removeEventListener(name) {listeners.delete(name);}, dispatchEvent(event) {listeners.get(event.type)?.();}}, fetch: (url, init) => new Promise(resolve => requests.push({url, init, resolve}))});
+    const document = {body: {appendChild() {}}, createElement: () => ({click() {downloads.push({name: this.download, blob: resolveObjectURL(this.href)});}, remove() {}})};
+    const window = {location: {origin: 'https://portal.example'}, setTimeout(fn) {fn();}, addEventListener(name, fn) {listeners.set(name, fn);}, removeEventListener(name) {listeners.delete(name);}, dispatchEvent(event) {listeners.get(event.type)?.();}};
+    vm.runInNewContext(code, {module: compiledModule, exports: compiledModule.exports, require, URL, URLSearchParams, Blob, Intl, Date, JSON, Error, Event, AbortController, crypto, document, window, fetch: (url, init) => new Promise(resolve => requests.push({url, init, resolve}))});
     return compiledModule.exports;
   }
   const Component = load(path.join(root, 'components/portal', file + '.tsx')).default;
@@ -44,7 +47,7 @@ function harness(file = 'meu-trabalho-panel', initialProps = {}) {
   };
   function nodes() { const result = []; const visit = node => {if (!node || typeof node !== 'object') return; if (Array.isArray(node)) return node.forEach(visit); result.push(node); visit(node.props?.children);}; visit(tree); return result; }
   const h = {
-    requests,
+    requests, downloads,
     render(patch = {}, flush = true) {props = {...props, ...patch}; index = 0; tree = expand(Component(props)); if (flush) h.effects();},
     effects() {effects.splice(0).forEach(effect => effect());},
     body() {return text(tree);},
@@ -119,6 +122,46 @@ test('restricted targets never display a supplied hidden title or link; valid ta
 
 test('a restricted task target with canonical null identifiers still explains that assignment does not grant access', async () => {
   const h = harness(); try {await h.ready(response({tasks: {...response().tasks, items: [task({target: target({id: null, name: null, href: null, canOpen: false})})]}, responsibilities: {items: [], total: 0, hasMore: false, nextOffset: null}})); assert.match(h.body(), /Registro de acesso restrito/); assert.ok(!h.find('a', node => node.props.href.includes('materials')));} finally {h.dispose();}
+});
+
+test('Markdown downloads only the current pages and neutralizes supplied syntax and unexpected links', async () => {
+  const h = harness();
+  const button = 'Baixar para Obsidian (.md)';
+  try {
+    assert.ok(!h.find('button', n => text(n).includes(button)));
+    const data = response();
+    data.tasks.items.push(task({
+      id: 'task-b',
+      title: 'Contar brindes\n# Título ![[segredo]] [externo](https://exemplo.test) <img>',
+      href: '/?module=demands&demandId=task-b&redirect=https://exemplo.test',
+      due_at: '2026-10-31',
+      body: 'Anotação privada',
+    }));
+    data.responsibilities.items.push(responsibility({
+      id: 'responsibility-b',
+      target: target({name: 'Entidade restrita', canOpen: false, href: '/?module=materials&project=secret'}),
+    }));
+    await h.ready(data);
+    h.find('button', n => text(n).trim() === button).props.onClick();
+    assert.equal(h.downloads[0].name, 'meu-trabalho-proex-2026-10-31.md');
+    assert.equal(h.downloads[0].blob.type, 'text/markdown;charset=utf-8');
+    const markdown = await h.downloads[0].blob.text();
+    assert.match(markdown, /## Demandas \(2 de 90\)/);
+    assert.match(markdown, /## Responsabilidades \(2 de 12\)/);
+    assert.match(markdown, /Contar brindes \\# Título \\!\\\[\\\[segredo\\\]\\\]/);
+    assert.match(markdown, /\\<img\\>/);
+    assert.match(markdown, /Registro de acesso restrito/);
+    assert.match(markdown, /\(<https:\/\/portal\.example\/\?module=demands&demandId=task-a>\)/);
+    assert.match(markdown, /\(<https:\/\/portal\.example\/\?module=materials&project=project-a>\)/);
+    assert.doesNotMatch(markdown, /redirect|Entidade restrita|project=secret|Pessoa A|Equipe A|Anotação privada/);
+    assert.equal(h.requests.length, 1);
+
+    h.changeStatus('completed'); h.render();
+    assert.ok(!h.find('button', n => text(n).includes(button)));
+    h.reply(h.last(), {}, 403); await tick(); h.render();
+    assert.ok(!h.find('button', n => text(n).includes(button)));
+    assert.equal(h.downloads.length, 1);
+  } finally {h.dispose();}
 });
 
 test('malformed JSON and nested DTOs show an error rather than false empty results; unmounted requests are cancelled', async () => {
