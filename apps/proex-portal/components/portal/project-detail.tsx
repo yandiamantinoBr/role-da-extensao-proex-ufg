@@ -8,8 +8,9 @@ import { isCivilDate } from '@/lib/civil-date';
 import { COMMUNICATION_CHANNELS, COMMUNICATION_NOTE_LIMIT, communicationLabel } from '@/lib/project-communication';
 import { useFormDraft, DraftNotice } from './use-form-draft';
 import { ProjectReportExports } from './reports-center';
+import { SheetShortcuts } from './sheet-shortcuts';
 export type ProjectShortcutModule = 'demands' | 'calendar';
-type Props={projectId:string;shortcutModules?:readonly ProjectShortcutModule[];projects:Row[];mutate:(action:string,payload:Row)=>Promise<Row>;onBack:()=>void;onEdit:(project:Row)=>void;onSelect?:(id:string)=>void;renderWorkContext?:(projectId:string)=>ReactNode};
+type Props={projectId:string;shortcutModules?:readonly ProjectShortcutModule[];sheetOwnerId?:string;projects:Row[];mutate:(action:string,payload:Row)=>Promise<Row>;onBack:()=>void;onEdit:(project:Row)=>void;onSelect?:(id:string)=>void;renderWorkContext?:(projectId:string)=>ReactNode};
 type Editor={kind:'link'|'call'|'schedule';row:Row|null};
 const lifecycle={active:'Em andamento',past:'Encerrado',catalog:'Catálogo'};
 const categories={gift:'Brinde',equipment:'Equipamento',distribution:'Distribuição',consumption:'Consumo'};
@@ -109,7 +110,7 @@ function MetadataForm({editor,projectId,projects,mutate,done}:{editor:Editor;pro
  {kind!=='link'&&<p className="p-form-help">Horários do aparelho. Uma atividade editorial não cria campanha, movimentação ou empréstimo.</p>}
  {error&&<p role="alert" className="p-inline-error">{error}</p>}<div className="p-form-footer"><button type="button" className="p-button p-button-subtle" onClick={done}>Cancelar</button><button className="p-button p-button-primary" type="submit">{saving?<LoaderCircle className="p-spin" size={16}/>:<Check size={16}/>}Salvar</button></div></fieldset></form>;
 }
-export default function ProjectDetail({projectId,projects,mutate,onBack,onEdit,onSelect,renderWorkContext,shortcutModules=[]}:Props){
+export default function ProjectDetail({projectId,projects,mutate,onBack,onEdit,onSelect,renderWorkContext,shortcutModules=[],sheetOwnerId}:Props){
  const [result,setResult]=useState<{key:string;data:Row|null;error:string;receivedAt:number}|null>(null),[error,setError]=useState(''),[reload,setReload]=useState(0),[editor,setEditor]=useState<Editor|null>(null),[restoring,setRestoring]=useState(false),[confirmVersion,setConfirmVersion]=useState<Row|null>(null),[allCalls,setAllCalls]=useState(false);
  const editorRef=useRef<HTMLElement|null>(null);
  useEffect(()=>{
@@ -169,6 +170,7 @@ export default function ProjectDetail({projectId,projects,mutate,onBack,onEdit,o
  {data.permissions?.reports&&<ProjectReportExports key={project.id} projectId={project.id} projectName={project.name} officialUrl={project.official_url} hasLinkedSpreadsheets={hasSpreadsheets}/>}
  {data.relatedProjects.length>0&&<div className="p-card"><h3>Programas e projetos relacionados</h3><div className="p-inline" style={{flexWrap:'wrap',marginTop:12}}>{data.relatedProjects.map((related:Row)=><button key={related.id} type="button" className="p-button p-button-subtle" onClick={()=>onSelect?.(related.id)}><FolderKanban size={15}/>{related.name}</button>)}</div></div>}
  {(materialsUrl||projectSheetLinks.length>0)&&<section className="p-card" id="project-spreadsheets"><h3>Planilhas do projeto</h3><p className="p-form-help">Abra os materiais e referências no Google Sheets com a conta que recebeu acesso.</p><div className={styles.detailLinks}>{materialsUrl&&<a className={styles.quickLink} href={materialsUrl} target="_blank" rel="noopener noreferrer"><Package size={20}/><span><strong>Planilha de materiais</strong><small>Espelho geral de gestão · acesso do responsável global</small></span><ExternalLink size={15}/></a>}{projectSheetLinks.map((link:Row)=><a key={link.id} className={styles.quickLink} href={safeUrl(link.url)} target="_blank" rel="noopener noreferrer"><FileText size={20}/><span><strong>{link.label}</strong><small>Planilha específica vinculada ao projeto</small></span><ExternalLink size={15}/></a>)}</div><p className={styles.externalNote}>O acesso no Google depende do compartilhamento feito no Drive. Filtros e links não substituem as permissões da planilha.</p></section>}
+ {sheetOwnerId && <SheetShortcuts canSync={true} userId={sheetOwnerId} context="project" projectScoped/>}
  <div className={styles.detailGrid}>
  <div className={styles.detailColumn}>
  <section className={`p-card ${styles.detailCard}`}>

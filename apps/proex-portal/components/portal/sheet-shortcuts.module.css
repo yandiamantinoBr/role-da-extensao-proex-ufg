@@ -1,0 +1,20 @@
+.root {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 14px;
+  margin-block: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+.heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; }
+.heading > div { min-width: 0; }
+.heading > div > strong { display: flex; gap: 7px; align-items: center; color: var(--brand-ink); font-size: 14px; }
+.help { margin: 0; color: var(--text-secondary); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.heading .help { margin-top: 4px; }
+.root :global(.p-button) { min-height: 44px; max-width: 100%; white-space: normal; }
+.tabs { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr)); gap: 8px; list-style: none; margin: 0; padding: 0; }
+.tabs li { min-width: 0; }
+.tabs :global(.p-button) { width: 100%; justify-content: space-between; text-align: start; }
+.root :global(.p-button) svg { flex-shrink: 0; }
