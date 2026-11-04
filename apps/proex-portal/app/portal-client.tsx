@@ -2,6 +2,7 @@
 import Image from 'next/image';
 import scopeStyles from './scope-filters.module.css';
 import settingsStyles from './settings-groups.module.css';
+import headingStyles from './module-heading.module.css';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import PhysicalAttendance from '@/components/portal/physical-attendance';
 import CampaignForm from '@/components/portal/campaign-form';
@@ -516,7 +517,7 @@ export default function PortalClient({ initial }: {
     else if (filter) {
         const row = list(metrics.byProject).find(p => get(p, 'projectId', 'project_id') === filter);
         value = row ? get(row, normalized, ...keys) : ['participations', 'attempts', 'deliveries', 'visits', 'tickets'].includes(normalized) ? list(metrics.campaigns).filter(c => get(c, 'projectId', 'project_id') === filter).reduce((total, row) => total + Number(row[normalized] ?? 0), 0) : undefined;
-    } else if (unitFilter) {
+    } else if (unitFilter || areaFilter) {
         const rows = byProject(list(metrics.byProject));
         value = rows.length && rows.every(row => get(row, normalized, ...keys) !== undefined) ? rows.reduce((total, row) => total + Number(get(row, normalized, ...keys) ?? 0), 0) : undefined;
     } return value === undefined || value === null ? '—' : Number(value).toLocaleString('pt-BR'); };
@@ -530,7 +531,9 @@ export default function PortalClient({ initial }: {
         const rows = dailyRows.map(row => ({ ...row, modality: modalities[string(row.modality)] ?? row.modality }));
         download('proex-resumo-diario.xlsx', toXlsx('Resumo diário', columns, rows, (row, key) => row[key], [['Linhas', String(rows.length)]]));
     }
-    const title = tabs.find(t => t.id === tab)?.label ?? 'Visão geral';
+    const activeModule = tabs.find(module => module.id === tab);
+    const title = activeModule?.label ?? 'Visão geral';
+    const ModuleIcon = activeModule?.icon;
     if (!user.userId)
         return <main className="p-login">
         <div className="p-login-card">
@@ -611,13 +614,14 @@ export default function PortalClient({ initial }: {
     </header>
       <MobileNavigation modules={allowedTabs} active={tab} onNavigate={navigate} pinned={navigation.pinned} role={role} onTogglePin={navigation.togglePin} />
       <main className="p-main" id="main" tabIndex={-1}>
-    <div className="p-page-heading">
-    <div>
-    <span className="p-eyebrow">GESTÃO DA EXTENSÃO</span>
-    <h1>{tab === 'overview' ? `Olá, ${string(user.displayName).trim().split(/\s+/)[0] || 'equipe'}.` : title}</h1>
-    <p>{tab === 'overview' ? 'Seu início, seus projetos e o que precisa da sua atenção.' : tabs.find(module => module.id === tab)?.description}</p>
-    </div>
-    </div>
+    <header className={headingStyles.heading}>
+      {ModuleIcon && <span className={headingStyles.mark} aria-hidden="true"><ModuleIcon size={22}/></span>}
+      <div className={headingStyles.copy}>
+        <span className={headingStyles.label}>Gestão da extensão</span>
+        <h1>{tab === 'overview' ? `Olá, ${string(user.displayName).trim().split(/\s+/)[0] || 'equipe'}.` : title}</h1>
+        <p>{tab === 'overview' ? 'Seu início, seus projetos e o que precisa da sua atenção.' : activeModule?.description}</p>
+      </div>
+    </header>
     {['overview', 'materials', 'loans', 'events', 'reports'].includes(tab) && <section className={`p-scope-filters ${scopeStyles.scope}`} aria-label="Filtrar registros por unidade, área temática e projeto">
         <div className={scopeStyles.layout}>
         <Field label="Projeto">
@@ -740,9 +744,14 @@ export default function PortalClient({ initial }: {
             </Section>}{can('campaigns.manage') && !prizeProjects.length && <div className="p-explainer"><Gift size={22} /><div><h3>Quais projetos usam roleta e dado?</h3><p>No cadastro do projeto, marque “Habilitar dinâmicas e brindes” para preparar campanhas e compor os kits desta área.</p><button type="button" className="p-text-link" onClick={() => navigate('projects')}>Abrir projetos <ArrowRight size={15} /></button></div></div>}</>}
 
       {tab === 'materials' && <div className="p-materials-panel">
-        <AssistantPanel key={string(user.userId)} projects={assistantProjects} defaultProjectId={filter} onApplied={refreshModules}/>
-        <AssistedImportPanel kind="asset" organizations={organizations} projects={projects.map(project => ({ id: string(project.id), name: string(project.name), organization_id: string(get(project, 'organization_id', 'organizationId')), version: Number(project.version ?? 1) }))} items={items.map(item => ({ id: string(item.id), name: string(item.name), project_id: string(get(item, 'projectId', 'project_id')), asset_code: string(item.asset_code) }))} canWrite={id => canProject(id, 'inventory.manage')} defaultProjectId={filter} onImported={refreshModules}/>
         {prizeProjects.length > 0 && <nav className="p-material-tabs" aria-label="Áreas de materiais"><button type="button" aria-pressed={!showPrizeView} className={!showPrizeView ? 'is-active' : ''} onClick={() => setMaterialsView('catalog')}><Boxes size={18} />Catálogo e estoque</button><button type="button" aria-pressed={showPrizeView} className={showPrizeView ? 'is-active' : ''} onClick={() => setMaterialsView('prizes')}><Gift size={18} />Brindes e kits</button></nav>}
+        {(assistantProjects.length > 0 || canAny('inventory.manage')) && <details className={workStyles.tools}>
+          <summary>Assistente e importação de materiais</summary>
+          <div className={workStyles.toolsBody}>
+            <AssistantPanel key={string(user.userId)} projects={assistantProjects} defaultProjectId={filter} onApplied={refreshModules}/>
+            <AssistedImportPanel kind="asset" organizations={organizations} projects={projects.map(project => ({ id: string(project.id), name: string(project.name), organization_id: string(get(project, 'organization_id', 'organizationId')), version: Number(project.version ?? 1) }))} items={items.map(item => ({ id: string(item.id), name: string(item.name), project_id: string(get(item, 'projectId', 'project_id')), asset_code: string(item.asset_code) }))} canWrite={id => canProject(id, 'inventory.manage')} defaultProjectId={filter} onImported={refreshModules}/>
+          </div>
+        </details>}
         <div hidden={showPrizeView}>
         {canAny('inventory.manage') && <details className="p-card"><summary className="p-text-link">Cadastrar um patrimônio individual</summary>{filter && canProject(filter, 'inventory.manage') ? <AssetDetailsPanel key={filter} itemId={null} projectId={filter} onSaved={refreshModules}/> : <p className="p-form-help">Selecione um projeto no filtro acima para cadastrar seu patrimônio, com documentos e conferência antes de salvar.</p>}</details>}
         <MaterialDetailDrawer itemId={selectedMaterialId} onClose={() => { setSelectedMaterialId(null); setWorkRecord(null); }} onChanged={refreshModules} renderWorkContext={({itemId,projectId}) => workContext(projectId,'materials',{itemId})} />
@@ -826,7 +835,7 @@ export default function PortalClient({ initial }: {
       </div>}
 
       {tab === 'loans' && <>
-        <Section title="Agenda de empréstimos" description="A reserva é confirmada por intervalo. Um bem em atraso continua indisponível.">{displayedLoans.length ? <div className="p-loan-list">{displayedLoans.map(l => {
+        <Section title="Agenda de empréstimos" description="A reserva é confirmada por intervalo. Um bem em atraso continua indisponível." aside={can('loans.manage') && formProjects.length > 0 ? <button type="button" className="p-button p-button-primary" onClick={() => { const form = document.getElementById('loan-reservation'); form?.focus({preventScroll:true}); form?.scrollIntoView({block:'start'}); }}><Plus size={16} aria-hidden="true"/>Nova reserva</button> : undefined}>{displayedLoans.length ? <div className="p-loan-list">{displayedLoans.map(l => {
                     const item = items.find(i => i.id === get(l, 'itemId', 'item_id'));
                     const late = l.status === 'out' && new Date(get(l, 'endsAt', 'ends_at')).getTime() < now;
                     return <article className={`p-card p-loan-card ${workStyles.record}`} id={`work-record-${l.id}`} tabIndex={-1} key={l.id}>
@@ -863,7 +872,8 @@ export default function PortalClient({ initial }: {
                         </OperationForm>}</div>
                     </details>
                     </article>;
-                })}</div> : <Empty title="Nenhuma reserva nos filtros selecionados" text="Cadastre o equipamento, confira a disponibilidade e registre a ação que fará a retirada." icon={Truck}/>}</Section>{can('loans.manage') && formProjects.length > 0 && <Section title="Reservar equipamento" description="Conflitos de horário e bens indisponíveis são conferidos antes da confirmação.">
+                })}</div> : <Empty title="Nenhuma reserva nos filtros selecionados" text="Cadastre o equipamento, confira a disponibilidade e registre a ação que fará a retirada." icon={Truck}/>}</Section>{can('loans.manage') && formProjects.length > 0 && <div id="loan-reservation" className={workStyles.record} tabIndex={-1} role="region" aria-label="Formulário de reserva de equipamento">
+            <Section title="Reservar equipamento" description="Conflitos de horário e bens indisponíveis são conferidos antes da confirmação.">
             <OperationForm onProjectFocus={setDraftProject} action="loan.create" mutate={mutate} submit="Confirmar reserva" make={f => ({ projectId: f.get('projectId'), itemId: f.get('itemId'), actionName: f.get('actionName'), borrowerName: f.get('borrowerName'), borrowerContact: f.get('borrowerContact'), startsAt: iso(f.get('startsAt')), endsAt: iso(f.get('endsAt')), note: f.get('note') })}>
             <div className="p-form-grid">{projectField}<Field label="Equipamento">
             <select name="itemId" required>
@@ -889,7 +899,7 @@ export default function PortalClient({ initial }: {
             <textarea name="note" rows={3} maxLength={1000} placeholder="Finalidade, acessórios e informações necessárias"/>
             </Field>
             </OperationForm>
-            </Section>}</>}
+            </Section></div>}</>}
 
       {tab === 'team' && <><OrganizationsPanel organizations={organizations} currentActor={{ userId: string(user.userId), isPlatformOwner }} people={organizationPeople} onChanged={refreshModules}/><OfficialTeamDirectory onSelect={canAny('access.invite') ? setOfficialSuggestion : undefined}/><TeamPanel key={officialSuggestion?.selectionKey ?? 'manual'} officialSuggestion={officialSuggestion} onClearOfficialSuggestion={() => setOfficialSuggestion(null)} users={list(data.users)} members={members} invites={invites} projects={projects} selectedProjectId={filter} globalAdmin={isPlatformOwner} canManageManagers={(projectId, organizationId) => isPlatformOwner || organizations.some(organization => organization.canManage && organization.id === (projectId ? projects.find(project => project.id === projectId)?.organization_id : organizationId))} canProject={canProject} mutate={mutate} now={now}/>{canGlobal('organization.manage') && <AdminPrivacyPanel />}</>}
       {tab === 'profile' && <><AssistantPanel key={string(user.userId)} projects={assistantProjects} defaultProjectId={filter} onApplied={refreshModules}/><ProfilePanel onUpdated={() => { void refresh(); }}/></>}

@@ -7,3 +7,6 @@
 .focusNotice p { flex: 1 1 220px; color: var(--text-secondary); font-size: 13px; line-height: 1.6; }
 .record { scroll-margin-block: 90px 110px; }
 .record:focus { outline: 3px solid var(--focus); outline-offset: 4px; }
+.tools { padding: 0 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+.tools > summary { min-height: 44px; padding-block: 11px; color: var(--brand-ink); cursor: pointer; font-weight: 650; }
+.toolsBody { display: grid; min-width: 0; gap: 12px; padding-block: 4px 16px; }
