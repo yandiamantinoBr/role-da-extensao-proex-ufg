@@ -7,6 +7,7 @@ export const MAX_PORTABLE_PAGE = 100;
 export const MAX_PORTABLE_TABLE_ROWS = 5000;
 export const MAX_PORTABLE_TABLE_BYTES = 8 * 1024 * 1024;
 export const MAX_SYNC_CHANGES = 25;
+export const SYNC_CONFIGURATION_KEY = 'sync.google_sheets.configuration';
 export type PortableCell = string | number | boolean | null;
 export type PortableColumn = { name: string; label: string; type: 'text' | 'number' | 'boolean' | 'datetime'; editable: boolean; required: boolean; system: boolean; private: boolean };
 export type PortableSchema = { table: string; label: string; sheetName: string; columns: PortableColumn[]; mode: 'metadata' | 'append_only' | 'read_only'; updateAction?: string; versionColumn?: string; omitted: string[] };

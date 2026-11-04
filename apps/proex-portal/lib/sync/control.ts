@@ -1,11 +1,11 @@
 import { all, one, iso, uid } from '../database';
 import { HttpError } from '../errors';
 import { type PortalActor } from '../access';
-import { requireSyncOwner, SYNC_OWNER_SQL } from './contracts';
+import { requireSyncOwner, SYNC_CONFIGURATION_KEY as CONFIG, SYNC_OWNER_SQL } from './contracts';
+import { SHEET_TABS_KEY } from './sheet-tabs';
 import { describePortableSchemas } from './portable';
 import { materialLinksStatus } from './project-links';
 
-const CONFIG = 'sync.google_sheets.configuration';
 const RUN_LEASE_MS = 30 * 60 * 1000;
 function assertion(db:D1Database,predicate:string,values:unknown[],code:string){return db.prepare(`SELECT CASE WHEN (${predicate}) THEN 1 ELSE json_extract('[]','${code}') END`).bind(...values);}
 async function translateControlError(db:D1Database,actor:PortalActor,error:unknown):Promise<never>{
@@ -38,6 +38,7 @@ export async function configureSync(db:D1Database,actor:PortalActor|null,input:R
   db.prepare(`SELECT CASE WHEN ${SYNC_OWNER_SQL} THEN 1 ELSE json_extract('sync_forbidden','$') END`).bind(actor.userId),
   assertion(db,"NOT EXISTS(SELECT 1 FROM sync_runs WHERE connection_id='google-sheets' AND status='running' AND started_at>?)",[new Date(Date.now()-RUN_LEASE_MS).toISOString()],'sync_running'),
   db.prepare("UPDATE sync_runs SET status='failed',finished_at=?,error_code='interrupted' WHERE connection_id='google-sheets' AND status='running'").bind(now),
+  db.prepare("DELETE FROM settings WHERE name=? AND (SELECT CASE WHEN json_valid(value) THEN json_extract(value,'$.spreadsheetId') END FROM settings WHERE name=?) IS NOT ?").bind(SHEET_TABS_KEY,CONFIG,spreadsheetId),
   db.prepare("INSERT INTO sync_connections(id,provider,label,external_id,enabled,created_by,created_at,updated_at) VALUES('google-sheets','google_sheets','Planilha operacional PROEX',?,0,?,?,?) ON CONFLICT(id) DO UPDATE SET external_id=excluded.external_id,enabled=CASE WHEN EXISTS(SELECT 1 FROM settings WHERE name=? AND value=?) THEN sync_connections.enabled ELSE 0 END,updated_at=excluded.updated_at").bind(spreadsheetId,actor.userId,now,now,CONFIG,JSON.stringify(configuration)),
   db.prepare('INSERT INTO settings(name,value,updated_at) VALUES(?,?,?) ON CONFLICT(name) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at').bind(CONFIG,JSON.stringify(configuration),now),
   db.prepare("INSERT INTO audit(id,actor_id,action,entity_id,details,created_at) VALUES(?,?,'sync.configure','google-sheets','{}',?)").bind(uid(),actor.userId,now),
