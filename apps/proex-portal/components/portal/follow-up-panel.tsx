@@ -45,11 +45,18 @@ export default function FollowUpPanel({defaultProjectId='',defaultOrganizationId
  const catalog=catalogStored?.key===catalogKey?catalogStored.data:emptyCatalog,tasks=tasksStored?.key===listKey?tasksStored.tasks:[],hasMore=tasksStored?.key===listKey&&tasksStored.hasMore,detail=appliedInitialTaskId===initialTaskId&&loadedDetail?.task.id===selectedTask?loadedDetail:null;
  function selectTask(value:string){
   if(value&&value===selectedTask){
+   if(selectionEcho.current!==value){
+    // A URL timer may have queued another selection while this card is still on screen.
+    selectionEcho.current=value;
+    setSelectedTask(value);
+    if(loadedDetail?.task.id===value){
+     setDetail(current=>current?.task.id===value?current:loadedDetail);
+    }
+   }
    if(value!==initialTaskId){
     clearTimeout(initialSelectionTimer.current);
-    selectionEcho.current=value;
-    if(onSelectTask)onSelectTask(value);
-    else setAppliedInitialTaskId(initialTaskId);
+    setAppliedInitialTaskId(onSelectTask?value:initialTaskId);
+    onSelectTask?.(value);
    }
    return;
   }
@@ -69,8 +76,8 @@ export default function FollowUpPanel({defaultProjectId='',defaultOrganizationId
    setAppliedInitialTaskId(initialTaskId);
    if(selectionEcho.current===initialTaskId)return;
    selectionEcho.current=initialTaskId;
-   detailGeneration.current++;
    interactionEpoch.current++;
+   // The detail effect cancels the old request when this selection is committed.
    setSelectedTask(initialTaskId);
    setDetail(null);
    setForm(null);
