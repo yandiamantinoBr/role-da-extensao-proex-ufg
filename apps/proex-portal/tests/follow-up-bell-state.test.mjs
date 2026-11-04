@@ -40,13 +40,13 @@ test('large unread counts keep a bounded visible badge and the complete accessib
 
 test('the bell groups one task window without changing global unread and marks the task once on explicit opening',async()=>{
  const h=harness(),window={...inbox(),viewerId:'user-a',today:'2026-10-31',unread:120,hasMore:true,notifications:Array.from({length:5},(_,i)=>({...inbox().notifications[0],id:'notice-'+i,created_at:`2026-10-31T12:0${i}:00Z`,read_at:i<2?'2026-10-31T11:00:00Z':null})),pending:[{id:'task-a',title:'Pendente A',priority:'high',due_at:null}]};
- try{h.start();h.reply(0,window);await tick();h.render();h.button('Notificações: 120 não lidas').props.onClick();h.render();assert.equal(h.links('Aviso A').length,1);assert.match(h.body(),/5 atualizações · 3 não lidas nesta janela/);assert.match(h.body(),/Última atualização: 31\/10\/2026/);h.button('Pendentes').props.onClick();h.render();assert.match(h.body(),/Pendentes que você acompanha/);assert.match(h.body(),/criou ou recebeu/);assert.equal(h.link('Meu trabalho').props.href,'/?module=my-work');h.button('Avisos').props.onClick();h.render();h.link('Aviso A').props.onClick({preventDefault(){}});assert.equal(h.requests.length,3);assert.deepEqual(JSON.parse(h.requests[2].init.body),{action:'notification.read',taskId:'task-a',read:true});assert.equal(h.requests[1].init.signal.aborted,true);
+ try{h.start();h.reply(0,window);await tick();h.render();h.button('Notificações: 120 não lidas').props.onClick();h.render();assert.equal(h.links('Aviso A').length,1);assert.match(h.body(),/5 atualizações · 3 não lidas nesta janela/);assert.match(h.body(),/Última atualização: 31\/10\/2026/);h.button('Pendentes').props.onClick();h.render();assert.match(h.body(),/Pendentes que você acompanha/);assert.match(h.body(),/criou ou recebeu/);assert.equal(h.link('Meu trabalho').props.href,'/?module=my-work');h.button('Avisos').props.onClick();h.render();h.link('Aviso A').props.onClick({button:0,preventDefault(){}});assert.equal(h.requests.length,3);assert.deepEqual(JSON.parse(h.requests[2].init.body),{action:'notification.read',taskId:'task-a',read:true});assert.equal(h.requests[1].init.signal.aborted,true);
  const read={...window,unread:117,notifications:window.notifications.map(n=>({...n,read_at:n.read_at??'2026-10-31T14:00:00Z'}))};h.reply(2,read);await tick();h.render();h.button('Notificações: 117 não lidas');h.reply(1,window);await tick();h.render();h.button('Notificações: 117 não lidas');
  }finally{h.dispose();}
 });
 
 test('a forbidden task-read response clears protected inbox data and an old response cannot replace a different account',async()=>{
- for(const mode of ['forbidden','account']){const h=harness();try{h.start();h.reply(0,{...inbox(),viewerId:'user-a'});await tick();h.render();h.button('Notificações: 1 não lida').props.onClick();h.render();h.link('Aviso A').props.onClick({preventDefault(){}});
+ for(const mode of ['forbidden','account']){const h=harness();try{h.start();h.reply(0,{...inbox(),viewerId:'user-a'});await tick();h.render();h.button('Notificações: 1 não lida').props.onClick();h.render();h.link('Aviso A').props.onClick({button:0,preventDefault(){}});
  if(mode==='forbidden'){h.reply(2,{error:'Seu acesso mudou.'},403);await tick();h.render();h.button('Notificações');h.reply(1,inbox());await tick();h.render();h.button('Notificações');assert.equal(h.body().includes('Aviso A'),false);}
  else{h.render({userId:'user-b'});assert.equal(h.requests[2].init.signal.aborted,true);h.start();h.reply(3,{...inbox('Aviso B'),viewerId:'user-b'});await tick();h.render();h.reply(2,{...inbox(),viewerId:'user-a'});await tick();h.render();h.button('Notificações: 1 não lida').props.onClick();h.render();assert.ok(h.body().includes('Aviso B'));assert.equal(h.body().includes('Aviso A'),false);}
  }finally{h.dispose();}}
@@ -71,6 +71,28 @@ test('cleaning captures the previous cursor even if new notices arrive before co
   h.reply(2,fresh);await tick();h.render();
   assert.match(h.body(),/Avisos anteriores removidos da sua caixa/);
   assert.ok(h.body().includes('Aviso posterior'));
+ }finally{h.dispose();}
+});
+
+test('opening a notice in another tab leaves the current inbox and unread state alone',async()=>{
+ const h=harness(),opened=[];
+ try{
+  h.render({onSelectTask:id=>opened.push(id)});
+  h.start();h.reply(0,inbox());await tick();h.render();
+  h.button('Notificações: 1 não lida').props.onClick();h.render();
+  h.reply(1,inbox());await tick();h.render();
+  for(const modifiers of [{ctrlKey:true},{metaKey:true},{shiftKey:true},{button:1},{defaultPrevented:true}]){
+   h.link('Aviso A').props.onClick({button:0,...modifiers,preventDefault(){assert.fail('O navegador deve lidar com o gesto');}});
+  }
+  assert.deepEqual(opened,[]);
+  assert.equal(h.requests.length,2);
+  assert.equal(h.button('Notificações: 1 não lida').props['aria-expanded'],true);
+  let prevented=false;
+  h.link('Aviso A').props.onClick({button:0,preventDefault(){prevented=true;}});h.render();
+  assert.equal(prevented,true);
+  assert.equal(opened.length,1);
+  assert.deepEqual(JSON.parse(h.requests[2].init.body),{action:'notification.read',taskId:opened[0],read:true});
+  assert.equal(h.button('Notificações: 1 não lida').props['aria-expanded'],false);
  }finally{h.dispose();}
 });
 

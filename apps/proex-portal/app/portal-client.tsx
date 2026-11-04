@@ -898,7 +898,7 @@ export default function PortalClient({ initial }: {
             setReportFrom(e.target.value); }}/>
         </label>
         <button className="p-button p-button-subtle" onClick={() => { setReportFrom(''); setReportTo(''); }}>Todo o período</button>
-        <p>Período de todos os relatórios desta página, em datas de Brasília. Contagens de participação, tentativa e entrega usam a data de cada registro.</p>
+        <p>Datas de Brasília para os relatórios com período. Projetos e materiais mostram a posição atual. Nos indicadores de dinâmicas, participações, tentativas e entregas usam a data de cada registro.</p>
         </div>
         <ReportsCenter key={string(user.userId)} userId={string(user.userId)} projectIdentity={projects.find(project => project.id === filter)} initialDataset={canAny('reports.read') ? reportInitialDataset : 'demands'} projectId={filter} unitId={unitFilter} area={areaFilter} from={reportFrom} to={reportTo} available={[
           ...(projects.length ? ['projects' as const] : []),
