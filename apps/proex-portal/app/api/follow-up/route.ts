@@ -9,7 +9,7 @@ const privateResponse=(response:Response)=>{response.headers.set('Cache-Control'
 export async function GET(request:Request){try{
  const db=database(),actor=await getActor(db,await getPortalUser()),query=new URL(request.url).searchParams,view=query.get('view')??'tasks';
  const input={projectId:query.get('projectId')??undefined,organizationId:query.get('organizationId')??undefined,status:query.get('status')??undefined,priority:query.get('priority')??undefined,search:query.get('search')??undefined,offset:query.has('offset')?Number(query.get('offset')):undefined};
- const result=view==='tasks'?await followupList(db,actor,input):view==='catalog'?await followupCatalog(db,actor,input):view==='detail'?await followupDetail(db,actor,query.get('id')):view==='inbox'?await notificationInbox(db,actor):null;
+ const result=view==='tasks'?await followupList(db,actor,input):view==='catalog'?await followupCatalog(db,actor,input):view==='detail'?await followupDetail(db,actor,query.get('id')):view==='inbox'?await notificationInbox(db,actor,query.get('hiddenAfter')):null;
  if(!result)throw new HttpError(400,'Escolha uma consulta válida.','followup_view');return privateResponse(Response.json(result));
  }catch(error){return privateResponse(publicError(error));}}
 export async function POST(request:Request){try{

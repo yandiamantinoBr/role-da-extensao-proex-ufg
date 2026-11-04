@@ -22,6 +22,8 @@ type Inbox = {
  pendingHasMore:boolean;
  hiddenPending?:PendingTask[];
  hiddenPendingHasMore?:boolean;
+ hiddenPendingAfter?:string|null;
+ hiddenPendingCursor?:string|null;
  pendingVisibility?:'confirmed'|'outdated';
 };
 type Mutation =
@@ -30,33 +32,45 @@ type Mutation =
  | { action:'pending.visibility'; taskId:string; version:number; hidden:boolean };
 
 const updateFormatter=new Intl.DateTimeFormat('pt-BR',{timeZone:'America/Sao_Paulo',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+function unreadLabel(count:number) {
+ return `${count} ${count===1?'não lida':'não lidas'}`;
+}
 function lastUpdate(value:string|null) {
  return value?updateFormatter.format(new Date(value)):'Data não informada';
 }
 
 export default function NotificationBell({userId,onSelectTask,basePath='/?module=demands'}:{userId:string;onSelectTask?:(id:string)=>void;basePath?:string}) {
- const [stored,setStored]=useState<{owner:string;data:Inbox}|null>(null);
+ const [stored,setStored]=useState<{owner:string;data:Inbox;hiddenPage:number}|null>(null);
  const [open,setOpen]=useState(false);
  const [pane,setPane]=useState<'notices'|'pending'>('notices');
  const [message,setMessage]=useState<{owner:string;error:boolean;text:string}|null>(null);
  const [writing,setWriting]=useState<{owner:string;controller:AbortController}|null>(null);
+ const [pagingOwner,setPagingOwner]=useState<string|null>(null);
  const [confirmation,setConfirmation]=useState<{owner:string;through:string}|null>(null);
  const trigger=useRef<HTMLButtonElement|null>(null);
  const heading=useRef<HTMLHeadingElement|null>(null);
+ const hiddenSummary=useRef<HTMLElement|null>(null);
+ const focusHiddenPage=useRef(false);
+ const hiddenPages=useRef({owner:userId,cursors:[''],requested:0});
  const active=useRef<AbortController|null>(null);
  const mutationRequest=useRef<AbortController|null>(null);
  const readEpoch=useRef(0);
  const currentUser=useRef(userId);
  const refresh=useRef<()=>void>(()=>{});
- const inbox=stored?.owner===userId?stored.data:null;
+ const currentInbox=stored?.owner===userId?stored:null;
+ const inbox=currentInbox?.data??null;
  const feedback=message?.owner===userId?message:null;
  const busy=writing?.owner===userId&&!writing.controller.signal.aborted;
  const groups=inbox?(inbox.groups??groupNotifications(inbox.notifications)):[];
  const hidden=inbox?.hiddenPending??[];
+ const paging=pagingOwner===userId;
+ const hiddenPage=currentInbox?.hiddenPage??0;
  const confirming=confirmation?.owner===userId?confirmation:null;
 
  useEffect(()=>{
   currentUser.current=userId;
+  hiddenPages.current={owner:userId,cursors:[''],requested:0};
+  focusHiddenPage.current=false;
   let alive=true,last=0,pending=false,queued=false;
   const update=async(force=false)=>{
    if(document.visibilityState==='hidden')return;
@@ -66,16 +80,25 @@ export default function NotificationBell({userId,onSelectTask,basePath='/?module
    const epoch=readEpoch.current,controller=new AbortController();
    active.current=controller;
    try{
-    const data=await followupApi<Inbox>('view=inbox',undefined,controller.signal);
+    const page=hiddenPages.current;
+    const requested=page.owner===userId?page.requested:0;
+    const cursor=page.cursors[requested]??'';
+    const query=new URLSearchParams({view:'inbox'});
+    if(cursor)query.set('hiddenAfter',cursor);
+    const data=await followupApi<Inbox>(query,undefined,controller.signal);
+    if((data.hiddenPendingAfter??'')!==cursor)throw new Error('A página de pendências mudou. Atualize para tentar novamente.');
     if(data.viewerId&&data.viewerId!==userId)throw new Error('A conta mudou. Atualize o portal para consultar seus avisos.');
     if(alive&&epoch===readEpoch.current&&!mutationRequest.current){
-     setStored({owner:userId,data});
+     setStored({owner:userId,data,hiddenPage:requested});
+     setPagingOwner(null);
      setMessage(old=>old?.error?null:old);
      last=Date.now();
     }
    }catch(cause){
     if(alive&&epoch===readEpoch.current&&!controller.signal.aborted){
      setStored(null);
+     setPagingOwner(null);
+     focusHiddenPage.current=false;
      setMessage({owner:userId,error:true,text:cause instanceof Error?cause.message:'Não foi possível consultar notificações.'});
     }
    }finally{
@@ -102,7 +125,30 @@ export default function NotificationBell({userId,onSelectTask,basePath='/?module
   };
  },[userId]);
 
+ useEffect(()=>{
+  if(inbox&&!paging&&focusHiddenPage.current){
+   focusHiddenPage.current=false;
+   hiddenSummary.current?.focus();
+  }
+ },[inbox,paging]);
+
+ function stepHidden(direction:'next'|'previous') {
+  if(busy||paging||!inbox)return;
+  const page=hiddenPages.current;
+  const next=direction==='next'?hiddenPage+1:hiddenPage-1;
+  const cursor=direction==='next'?inbox.hiddenPendingCursor:page.cursors[next];
+  if(page.owner!==userId||next<0||cursor==null)return;
+  page.cursors[next]=cursor;
+  page.requested=next;
+  focusHiddenPage.current=true;
+  setPagingOwner(userId);
+  readEpoch.current++;
+  active.current?.abort();
+  refresh.current();
+ }
+
  function close(restoreFocus=false) {
+  focusHiddenPage.current=false;
   setOpen(false);
   setConfirmation(null);
   if(restoreFocus)trigger.current?.focus();
@@ -111,14 +157,14 @@ export default function NotificationBell({userId,onSelectTask,basePath='/?module
  useEffect(()=>{
   if(!open)return;
   const escape=(event:KeyboardEvent)=>{
-   if(event.key==='Escape'){setOpen(false);setConfirmation(null);trigger.current?.focus();}
+   if(event.key==='Escape'){focusHiddenPage.current=false;setOpen(false);setConfirmation(null);trigger.current?.focus();}
   };
   document.addEventListener('keydown',escape);
   return()=>document.removeEventListener('keydown',escape);
  },[open]);
 
  async function mutate(body:Mutation,success='') {
-  if(busy||mutationRequest.current)return;
+  if(busy||paging||mutationRequest.current)return;
   const owner=userId,controller=new AbortController();
   mutationRequest.current=controller;
   readEpoch.current++;
@@ -129,7 +175,9 @@ export default function NotificationBell({userId,onSelectTask,basePath='/?module
    if(data.viewerId&&data.viewerId!==owner)throw new Error('A conta mudou. Atualize o portal para consultar seus avisos.');
    if(currentUser.current===owner&&!controller.signal.aborted){
     readEpoch.current++;
-    setStored({owner,data});
+    hiddenPages.current={owner,cursors:[''],requested:0};
+    setPagingOwner(null);
+    setStored({owner,data,hiddenPage:0});
     const outdated=body.action==='pending.visibility'&&data.pendingVisibility==='outdated';
     setMessage(outdated?{owner,error:true,text:'Esta pendência mudou ou saiu da sua lista. Confira a lista atualizada.'}
       :success?{owner,error:false,text:success}:null);
@@ -138,6 +186,8 @@ export default function NotificationBell({userId,onSelectTask,basePath='/?module
   }catch(cause){
    if(currentUser.current===owner&&!controller.signal.aborted){
     readEpoch.current++;
+    hiddenPages.current={owner,cursors:[''],requested:0};
+    setPagingOwner(null);
     setStored(null);
     setMessage({owner,error:true,text:cause instanceof Error?cause.message:'Não foi possível atualizar a caixa.'});
    }
@@ -167,7 +217,7 @@ export default function NotificationBell({userId,onSelectTask,basePath='/?module
    <a href={link(task.id)} className={styles.cardLink} onClick={event=>selectTask(event,task.id)}>
     <span>{task.title}</span><ChevronRight size={16} aria-hidden="true"/>
    </a>
-   {task.version!==undefined&&<button className={styles.cardAction} type="button" disabled={busy}
+   {task.version!==undefined&&<button className={styles.cardAction} type="button" disabled={busy||paging}
     title={isHidden?'Voltar a acompanhar':'Ocultar desta lista'}
     aria-label={isHidden?`Mostrar pendência: ${task.title}`:`Ocultar pendência: ${task.title}`}
     onClick={()=>void mutate({action:'pending.visibility',taskId:task.id,version:task.version!,hidden:!isHidden},
@@ -183,7 +233,7 @@ export default function NotificationBell({userId,onSelectTask,basePath='/?module
 
  return <div className={styles.root}>
   <button ref={trigger} type="button" className={`p-icon-button ${styles.trigger}`}
-   aria-label={`Notificações${inbox?`: ${inbox.unread} não lidas`:''}`}
+   aria-label={`Notificações${inbox?`: ${unreadLabel(inbox.unread)}`:''}`}
    aria-expanded={open} aria-controls="followup-notification-center"
    onClick={()=>{if(open)close();else{setOpen(true);refresh.current();}}}>
    <Bell size={20} aria-hidden="true"/>
@@ -195,7 +245,7 @@ export default function NotificationBell({userId,onSelectTask,basePath='/?module
      <div>
       <h2 ref={heading} tabIndex={-1}>Notificações</h2>
       <p role="status" aria-live="polite" className={styles.caption}>
-       {inbox?`${inbox.unread} não lidas`:feedback?.error?'Caixa indisponível':'Consultando…'}
+       {inbox?unreadLabel(inbox.unread):feedback?.error?'Caixa indisponível':'Consultando…'}
       </p>
      </div>
      <div className={styles.headerActions}>
@@ -218,9 +268,9 @@ export default function NotificationBell({userId,onSelectTask,basePath='/?module
     {feedback&&<p role={feedback.error?'alert':'status'} className={feedback.error?styles.error:styles.feedback}>{feedback.text}</p>}
     {pane==='notices'?<>
      <div className={styles.toolbar}>
-      <button type="button" className="p-button p-button-subtle" disabled={busy||!inbox?.unread}
+      <button type="button" className="p-button p-button-subtle" disabled={busy||paging||!inbox?.unread}
        onClick={()=>void mutate({action:'notification.read',all:true,read:true})}><CheckCheck size={16} aria-hidden="true"/>Marcar todas como lidas</button>
-      {inbox?.clearThrough&&<button type="button" className="p-button p-button-subtle" disabled={busy||!!confirming}
+      {inbox?.clearThrough&&<button type="button" className="p-button p-button-subtle" disabled={busy||paging||!!confirming}
        onClick={()=>setConfirmation({owner:userId,through:inbox.clearThrough!})}><InboxIcon size={16} aria-hidden="true"/>Limpar todos os avisos</button>}
      </div>
      {confirming&&<div className={styles.confirmation}>
@@ -239,7 +289,7 @@ export default function NotificationBell({userId,onSelectTask,basePath='/?module
        <a href={link(group.task_id)} className={styles.cardLink} onClick={event=>selectTask(event,group.task_id,true)}>
         <span>{group.title}</span><ChevronRight size={16} aria-hidden="true"/>
        </a>
-       {inbox?.clearThrough&&<button type="button" className={styles.cardAction} disabled={busy}
+       {inbox?.clearThrough&&<button type="button" className={styles.cardAction} disabled={busy||paging}
         title="Retirar estes avisos da caixa" aria-label={`Retirar avisos de: ${group.title}`}
         onClick={()=>void mutate({action:'notification.dismiss',through:inbox.clearThrough!,taskId:group.task_id},'Avisos desta demanda retirados da sua caixa.')}>
         <X size={17} aria-hidden="true"/>
@@ -261,10 +311,18 @@ export default function NotificationBell({userId,onSelectTask,basePath='/?module
      {inbox&&!inbox.pending.length&&<p className={styles.empty}>Nenhuma pendência nesta lista.</p>}
      {!!inbox?.pending.length&&<ul className={styles.list}>{inbox.pending.slice(0,20).map(task=>pendingCard(task))}</ul>}
      {(inbox?.pending.length??0)>20&&<p className={styles.caption}>Abra Demandas para acompanhar as demais pendências.</p>}
-     {!!hidden.length&&<details className={styles.hiddenList}>
-      <summary>Pendências ocultadas ({hidden.length}{inbox?.hiddenPendingHasMore?'+':''})</summary>
+     {(hidden.length>0||hiddenPage>0)&&<details className={styles.hiddenList}>
+      <summary ref={hiddenSummary}>Pendências ocultadas{hiddenPage===0? ` (${hidden.length}${inbox?.hiddenPendingHasMore?'+':''})`:''}</summary>
       <p className={styles.caption}>Elas voltam a aparecer quando a demanda é atualizada.</p>
-      <ul className={styles.list}>{hidden.map(task=>pendingCard(task,true))}</ul>
+      <div aria-busy={paging}>
+       {hidden.length?<ul className={styles.list}>{hidden.map(task=>pendingCard(task,true))}</ul>
+        :<p className={styles.empty}>Nenhuma pendência ocultada nesta página.</p>}
+      </div>
+      {(hiddenPage>0||inbox?.hiddenPendingCursor)&&<nav className={`${styles.toolbar} ${styles.hiddenPager}`} aria-label="Páginas de pendências ocultadas">
+       <p role="status" className={styles.caption}>{paging?'Carregando pendências ocultadas…':`Página ${hiddenPage+1}`}</p>
+       <button type="button" className="p-button p-button-subtle" disabled={busy||paging||hiddenPage===0} onClick={()=>stepHidden('previous')}>Anterior</button>
+       <button type="button" className="p-button p-button-subtle" disabled={busy||paging||!inbox?.hiddenPendingCursor} onClick={()=>stepHidden('next')}>Próxima</button>
+      </nav>}
      </details>}
      <p className={styles.caption}><Link className={styles.workLink} href="/?module=my-work" prefetch={false}>Meu trabalho</Link> mostra somente atribuições explícitas.</p>
     </>}

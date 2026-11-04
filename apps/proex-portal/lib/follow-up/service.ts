@@ -192,16 +192,31 @@ const pendingSource = `
    ON hidden.user_id=recipient.user_id AND hidden.task_id=t.id AND hidden.task_version=t.version
  WHERE t.status NOT IN ('completed','cancelled') AND ${inboxTaskScope('recipient.user_id')}
 `;
-const pendingOrder = `ORDER BY CASE t.priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,COALESCE(t.due_at,'9999'),t.id`;
+const pendingSort = `CASE t.priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,COALESCE(t.due_at,'9999'),t.id`;
+const pendingOrder = `ORDER BY ${pendingSort}`;
+const hiddenPageSize = 20;
+
+function hiddenBoundary(cursor: string | null) {
+ if (cursor === null) return [];
+ const match = /^([012])~(9999|\d{4}-\d{2}-\d{2})~([A-Za-z0-9][A-Za-z0-9._:-]{0,199})$/.exec(cursor);
+ if (!match) fail('Página de pendências inválida. Volte ao início da lista.', 'followup_hidden_cursor');
+ return [Number(match[1]), match[2], match[3]];
+}
+
+function hiddenCursor(row: Row) {
+ const rank = row.priority === 'high' ? 0 : row.priority === 'medium' ? 1 : 2;
+ return `${rank}~${row.due_at ?? '9999'}~${row.id}`;
+}
 
 type PendingVisibilityChange = { write:D1PreparedStatement; confirm:D1PreparedStatement };
 
-export function notificationInbox(db:D1Database,actor:PortalActor|null){
- return readInbox(db,actor);
+export function notificationInbox(db:D1Database,actor:PortalActor|null,hiddenAfter:string|null=null){
+ return readInbox(db,actor,undefined,hiddenAfter);
 }
 
-async function readInbox(db:D1Database,actor:PortalActor|null,visibility?:PendingVisibilityChange){
+async function readInbox(db:D1Database,actor:PortalActor|null,visibility?:PendingVisibilityChange,hiddenAfter:string|null=null){
  actorRequired(actor);
+ const boundary=hiddenBoundary(hiddenAfter);
  // One transaction keeps the visibility receipt, scope, counts and clear boundary consistent.
  const results=await db.batch([
   ...(visibility?[visibility.write]:[]),
@@ -214,7 +229,8 @@ async function readInbox(db:D1Database,actor:PortalActor|null,visibility?:Pendin
   db.prepare(`SELECT t.id,t.title,t.status,t.priority,t.due_at,t.project_id,t.version
    FROM followup_hidden_pending hidden JOIN followup_tasks t ON t.id=hidden.task_id AND t.version=hidden.task_version
    WHERE hidden.user_id=? AND t.status NOT IN ('completed','cancelled') AND ${inboxTaskScope('hidden.user_id')}
-   ${pendingOrder} LIMIT 21`).bind(actor.userId),
+   ${boundary.length ? `AND (${pendingSort}) > (?,?,?)` : ''}
+   ${pendingOrder} LIMIT ${hiddenPageSize+1}`).bind(actor.userId,...boundary),
   ...(visibility?[visibility.confirm]:[]),
  ]).then(result=>visibility?result.slice(1):result);
  const notifications=(results[0].results??[]) as Row[],counts=(results[1].results?.[0]??{}) as Row;
@@ -223,7 +239,8 @@ async function readInbox(db:D1Database,actor:PortalActor|null,visibility?:Pendin
   notifications,groups:groupNotifications(notifications as NoticeForGroup[]),windowLimit:100,...serverWorkClock(),
   viewerId:actor.userId,unread:Number(counts.unread??0),hasMore:Number(counts.total??0)>100,
   clearThrough:anchor.id??null,pending:pending.slice(0,100),pendingHasMore:pending.length>100,
-  hiddenPending:hidden.slice(0,20),hiddenPendingHasMore:hidden.length>20,
+  hiddenPending:hidden.slice(0,hiddenPageSize),hiddenPendingHasMore:hidden.length>hiddenPageSize,
+  hiddenPendingAfter:hiddenAfter,hiddenPendingCursor:hidden.length>hiddenPageSize ? hiddenCursor(hidden[hiddenPageSize-1]) : null,
   ...(visibility?{pendingVisibility:results[5].results?.length?'confirmed':'outdated'}:{}),
   email:{enabled:false,reason:'Somente notificações internas. Nenhum e-mail é enviado por este incremento.'},
  };
