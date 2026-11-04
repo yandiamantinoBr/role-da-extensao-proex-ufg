@@ -215,7 +215,7 @@ export default function NotificationBell({userId,onSelectTask,basePath='/?module
 
  function pendingCard(task:PendingTask,isHidden=false) {
   return <li className={styles.pendingCard} key={task.id}>
-   <a href={link(task.id)} className={styles.cardLink} onClick={event=>selectTask(event,task.id)}>
+   <a href={link(task.id)} className={styles.cardLink} data-notice-task onClick={event=>selectTask(event,task.id)}>
     <span>{task.title}</span><ChevronRight size={16} aria-hidden="true"/>
    </a>
    {task.version!==undefined&&<button className={styles.cardAction} type="button" disabled={busy||paging}
@@ -287,7 +287,7 @@ export default function NotificationBell({userId,onSelectTask,basePath='/?module
      {inbox&&!groups.length&&<div className={styles.empty}><InboxIcon size={19} aria-hidden="true"/><p>Nenhuma notificação disponível.</p></div>}
      {!!groups.length&&<ul className={styles.list}>
       {groups.map(group=><li key={group.task_id} className={styles.noticeCard} data-unread={group.unread>0}>
-       <a href={link(group.task_id)} className={styles.cardLink} onClick={event=>selectTask(event,group.task_id,true)}>
+       <a href={link(group.task_id)} className={styles.cardLink} data-notice-task onClick={event=>selectTask(event,group.task_id,true)}>
         <span>{group.title}</span><ChevronRight size={16} aria-hidden="true"/>
        </a>
        {inbox?.clearThrough&&<button type="button" className={styles.cardAction} disabled={busy||paging}
