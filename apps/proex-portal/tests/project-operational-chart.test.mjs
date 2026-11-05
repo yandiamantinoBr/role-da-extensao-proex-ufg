@@ -19,5 +19,5 @@ test('material bars count distinct records without adding incompatible units',()
 test('loan categories are disjoint and invalid dates never imply lateness',()=>{
  const result=datasets({loans:[{id:'late',status:'out',ends_at:'2026-11-04'},{id:'future',status:'out',ends_at:'2026-11-06'},{id:'missing',status:'out',ends_at:null},{id:'reserved',status:'reserved',ends_at:'2026-11-04'},{id:'returned',status:'returned',ends_at:'2026-11-04'},{id:'cancelled',status:'cancelled'}]}).find(row=>row.id==='loans');
  assert.deepEqual(Array.from(result.groups,row=>row.rows.length),[1,3,1,1]);
- assert.match(result.unit,/100 recentes/);
+ assert.equal(result.unit,'empréstimos carregados · até 100 mais recentes');
 });

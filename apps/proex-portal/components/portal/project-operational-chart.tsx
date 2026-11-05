@@ -20,7 +20,7 @@ export function projectOperationalDatasets({ schedule, items, loans, now }: Prop
   { id: 'available', label: 'Acima do mínimo', rows: items.filter(row => row.condition === 'active' && typeof row.available === 'number' && row.available > Number(row.low_stock || 0)), tone: 'success', Icon: Package },
   { id: 'other', label: 'Outras condições', rows: items.filter(row => row.condition !== 'active' || typeof row.available !== 'number'), tone: 'muted', Icon: CircleDot },
  ] });
- if (loans) datasets.push({ id: 'loans', label: 'Empréstimos', unit: 'empréstimos carregados (até 100 recentes)', rows: loans, target: 'loans', groups: [
+ if (loans) datasets.push({ id: 'loans', label: 'Empréstimos', unit: 'empréstimos carregados · até 100 mais recentes', rows: loans, target: 'loans', groups: [
   { id: 'late', label: 'Em atraso', rows: loans.filter(row => loanLate(row, now)), tone: 'danger', Icon: TriangleAlert },
   { id: 'current', label: 'Em andamento', rows: loans.filter(row => row.status === 'reserved' || row.status === 'out' && !loanLate(row, now)), tone: 'brand', Icon: Clock3 },
   { id: 'returned', label: 'Devolvidos', rows: loans.filter(row => row.status === 'returned'), tone: 'success', Icon: CheckCircle2 },
@@ -45,6 +45,6 @@ export default function ProjectOperationalChart(props: Props) {
     {dataset.groups.map(({ id, label, rows, tone, Icon }) => <button key={id} type="button" data-tone={tone} aria-pressed={selected?.id === id} title={`${label}: ${rows.length} de ${total}`} onClick={() => setSelection({ dataset: dataset.id, group: selected?.id === id ? '' : id })}><span className={styles.barLabel}><Icon size={16} aria-hidden="true"/>{label}<strong>{rows.length}</strong></span><span className={styles.track} aria-hidden="true"><span style={{ width: `${rows.length / total * 100}%` }}/></span></button>)}
    </div>
    <div className={styles.records} aria-live="polite"><div className={styles.recordsHeading}><strong>{selected?.label ?? 'Todos os registros'} <span>({rows.length})</span></strong>{selected && <button type="button" onClick={() => setSelection({ dataset: dataset.id, group: '' })}>Ver todos</button>}</div>{rows.length ? <ul>{rows.slice(0, 5).map(row => <li key={row.id}><a href={detailHref(row)}>{row.title || row.name || row.item_name || row.action_name}<ArrowUpRight size={15} aria-hidden="true"/></a></li>)}</ul> : <p>Nenhum registro nesta situação.</p>}{rows.length > 5 && <p>Exibindo 5 de {rows.length}. {dataset.target ? <a href={`/?module=${dataset.target}&project=${encodeURIComponent(props.projectId)}`}>Abrir todos</a> : <a href="#project-timeline">Ver linha do tempo</a>}</p>}</div>
-  </div> : <p className={styles.empty}>Nenhum registro nesta área. {dataset.id === 'schedule' ? 'Cadastre uma atividade na linha do tempo abaixo.' : 'Os registros cadastrados aparecerão aqui.'}</p>}
+  </div> : <p className={styles.empty}>{dataset.id === 'loans' ? 'Nenhum registro carregado.' : 'Nenhum registro nesta área.'} {dataset.id === 'schedule' ? 'Cadastre uma atividade na linha do tempo abaixo.' : 'Os registros cadastrados aparecerão aqui.'}</p>}
  </section>;
 }
