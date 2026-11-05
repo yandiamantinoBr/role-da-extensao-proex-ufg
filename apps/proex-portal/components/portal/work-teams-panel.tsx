@@ -17,6 +17,7 @@ type Props = {
  projects: { id: string; name: string; organization_id: string }[];
  onChanged?: () => void | Promise<void>;
  onOpenDemand: (id: string, projectId: string | null) => void;
+ canOpenAccess?: boolean;
 };
 const stateIcons = { open: Circle, in_progress: CircleDot, blocked: PauseCircle, completed: CheckCircle2, cancelled: CircleX };
 const message = (cause: unknown) => cause instanceof Error ? cause.message : 'Não foi possível concluir. Tente novamente.';
@@ -52,7 +53,7 @@ function TeamForm({ team, people, organizationId, busy, onSave }: { team?: WorkT
  </form>;
 }
 
-export default function WorkTeamsPanel({ userId, defaultProjectId = '', organizations, projects, onChanged, onOpenDemand }: Props) {
+export default function WorkTeamsPanel({ userId, defaultProjectId = '', organizations, projects, onChanged, onOpenDemand, canOpenAccess = false }: Props) {
  const initialProject = projects.find(project => project.id === defaultProjectId) ?? projects[0];
  const [organizationId, setOrganizationId] = useState(initialProject?.organization_id ?? organizations[0]?.id ?? '');
  const [projectId, setProjectId] = useState(initialProject?.id ?? '');
@@ -145,7 +146,7 @@ export default function WorkTeamsPanel({ userId, defaultProjectId = '', organiza
    <label>Projeto<select value={projectId} disabled={busy || exporting} onChange={event => changeContext(organizationId, event.target.value)}>{selectedOrganization?.canManage && <option value="">Todos os projetos da organização</option>}{ownProjects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
    <label className={styles.search}>Buscar equipe<div><Search size={17} aria-hidden="true"/><input type="search" value={search} maxLength={100} placeholder="Nome da equipe" onChange={event => setSearch(event.target.value)}/></div></label>
   </div>
-  <p className={styles.help}><ShieldCheck size={16} aria-hidden="true"/>Equipes organizam o trabalho; pessoas e permissões são gerenciadas em <a href="?module=team">Pessoas e acessos</a>.</p>
+  <p className={styles.help}><ShieldCheck size={16} aria-hidden="true"/><span>Equipes organizam o trabalho; pessoas e permissões são gerenciadas {canOpenAccess ? <>em <a href="?module=team">Pessoas e acessos</a></> : 'pelos responsáveis do projeto'}.</span></p>
   {error && <div role="alert" className="p-notice p-notice-error"><p>{error}</p><button className="p-button" onClick={() => { setTeamId(''); setOffset(0); setAttempt(value => value + 1); }}>Consultar novamente</button></div>}
   {!data && !error && <p role="status">{organizationId && (projectId || selectedOrganization?.canManage) ? 'Consultando equipes e demandas…' : 'Escolha um projeto para consultar as equipes.'}</p>}
   {data && <>
