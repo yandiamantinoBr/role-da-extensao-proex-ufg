@@ -23,6 +23,16 @@ test('only explicit organization owners can mutate: project manager, affiliation
  await assert.rejects(f.read('viewer-a',{organizationId:'org-a',projectId:'project-a'}),{status:403});
  assert.equal(f.native.prepare('SELECT COUNT(*) n FROM institutional_structures').get().n,0);
 });
+test('project management, team affiliation and AI configuration delegation are three independent negative grants',async t=>{
+ for(const grant of ['project-manager','team-affiliation-only','ai-configuration']){
+  const f=await scenario(t),who=grant==='team-affiliation-only'?'worker-b':'viewer-a';
+  if(grant==='project-manager')f.native.prepare("UPDATE members SET role='manager' WHERE user_id='viewer-a'").run();
+  if(grant==='team-affiliation-only')f.insert('followup_team_members',{id:'foreign-affiliation',team_id:f.a,user_id:who,added_by:'owner-a',created_at:f.now});
+  if(grant==='ai-configuration')f.insert('ai_configuration_grants',{id:'separate-ai-grant',organization_id:'org-a',user_id:who,grantor_member_id:'member-owner-a',granted_by:'owner-a',created_at:f.now});
+  await assert.rejects(f.write(node('Não deve cadastrar'),who),{status:403});
+  assert.equal(f.native.prepare('SELECT COUNT(*) n FROM institutional_structures').get().n,0);
+ }
+});
 test('project readers receive the formal tree but only team links they already can see, with no roster or hidden identifiers',async t=>{
  const f=await scenario(t),root=await f.write(node('Pró-reitoria de exemplo'));
  for(const teamId of [f.a,f.hidden])await f.write({action:'link.save',nodeId:root.entityId,teamId,linked:true});
