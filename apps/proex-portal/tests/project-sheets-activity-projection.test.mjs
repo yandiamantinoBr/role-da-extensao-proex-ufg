@@ -11,6 +11,7 @@ const {getActor}=await import(compile('lib/access.ts'));
 const {followupAction}=await import(compile('lib/follow-up/service.ts'));
 const {configureProjectSheet,createProjectSheetToken,projectSheetPrincipal}=await import(compile('lib/sync/project-sheets.ts'));
 const {exportProjectSheetPage,callProjectSheetTool}=await import(compile('lib/sync/project-sheets-data.ts'));
+const {describePortableSchemas,exportPortablePage}=await import(compile('lib/sync/portable.ts'));
 function fixture(t){const native=new DatabaseSync(':memory:');native.exec('PRAGMA foreign_keys=ON');for(const name of readdirSync(root+'drizzle').filter(n=>n.endsWith('.sql')).sort())native.exec(readFileSync(root+'drizzle/'+name,'utf8'));t.after(()=>native.close());const now=new Date().toISOString();
  const insert=(table,row)=>{const cols=Object.keys(row);native.prepare(`INSERT INTO ${table}(${cols.join(',')}) VALUES(${cols.map(()=>'?').join(',')})`).run(...Object.values(row));};
  for(const suffix of ['a','b']){insert('organizations',{id:`org-${suffix}`,name:`Organization ${suffix}`,slug:`org-${suffix}`,created_at:now,updated_at:now});insert('projects',{id:`project-${suffix}`,organization_id:`org-${suffix}`,name:`Project ${suffix}`,created_at:now});insert('items',{id:`item-${suffix}`,project_id:`project-${suffix}`,name:suffix==='a'?'Coletes P/M/G':'Private organization B item',category:'distribution',unit:'un',stock:40,created_at:now});insert('campaigns',{id:`campaign-${suffix}`,project_id:`project-${suffix}`,name:`Event ${suffix}`,starts_at:now,ends_at:new Date(Date.now()+86400000).toISOString(),status:'active',created_at:now});}
@@ -24,6 +25,11 @@ test('activity checklist details remain private with Sheets opt-in off and with 
  const f=fixture(t),manager=await f.actor('manager-a');
  const detail=await followupAction(f.db,manager,'checklist.activity.create',{action:'checklist.activity.create',projectId:'project-a',organizationId:'org-a',title:'Resumo público na planilha da equipe',body:'PRIVATE_ACTIVITY_BODY_SENTINEL',rows:[{label:'PRIVATE_STEP_LABEL_SENTINEL'}],userIds:[],teamIds:[],operationKey:crypto.randomUUID()});
  await followupAction(f.db,manager,'checklist.activity.answer',{action:'checklist.activity.answer',id:detail.checklist.id,rowId:detail.checklist.rows[0].id,expectedVersion:1,answer:'no',note:'PRIVATE_STEP_NOTE_SENTINEL',operationKey:crypto.randomUUID()});
+ const masterSchema=describePortableSchemas().tables.find(table=>table.table==='followup_checklists');
+ assert.match(masterSchema.label,/materiais e atividades/);
+ const masterPage=await exportPortablePage(f.db,await f.actor('platform'),{table:'followup_checklists'});
+ assert.equal(masterPage.rows.find(row=>row.id===detail.checklist.id).kind,'activity');
+ assert.ok(!JSON.stringify(masterPage).includes('PRIVATE_STEP_NOTE_SENTINEL'));
  const spreadsheetId='synthetic_activity_projection_workbook';
  const connect=async(includeTasks,expectedVersion)=>{
   const configuration={spreadsheetId,label:'Planilha da atividade',expectedVersion,...(includeTasks===undefined?{}:{includeTasks})};

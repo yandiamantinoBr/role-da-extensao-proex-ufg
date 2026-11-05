@@ -36,6 +36,8 @@ export async function listMcpTokens(db: D1Database, supplied: PortalActor | null
   const actor = await liveActor(db, supplied.userId), guard = projectAuthoritySql(actor, [], 'p.id');
   const projects = await all(db, `SELECT p.id,p.name FROM projects p JOIN organizations o ON o.id=p.organization_id AND o.status='active' WHERE ${guard.sql} ORDER BY p.name,p.id`, guard.values);
   const tokens = await all(db, 'SELECT id,label,scope_json,projects_json,expires_at,revoked_at,created_at FROM mcp_personal_tokens WHERE user_id=? ORDER BY CASE WHEN revoked_at IS NULL AND expires_at>? THEN 0 ELSE 1 END,created_at DESC,id DESC LIMIT 100', [actor.userId, new Date().toISOString()]);
+  const current = await liveActor(db, actor.userId);
+  if (projects.length) await projectAccess(db, current, projects.map(project => project.id));
   return { projects, tokens: tokens.map(row => ({ id: row.id, label: row.label, scopes: JSON.parse(row.scope_json), projectIds: JSON.parse(row.projects_json), expiresAt: row.expires_at, revokedAt: row.revoked_at, createdAt: row.created_at })) };
 }
 export async function manageMcpToken(db: D1Database, supplied: PortalActor | null, raw: unknown, now = Date.now()) {

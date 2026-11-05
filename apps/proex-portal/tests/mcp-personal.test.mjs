@@ -58,6 +58,20 @@ test('MCP 2026 discovery, tools and project resources work without legacy handsh
   assert.equal(f.stats.commits, 0); assert.equal(egress, 0); assert.equal(list.headers.get('Cache-Control'), 'private, no-store');
 });
 
+test('management metadata never returns a stale project list after membership revocation or account blocking', async t => {
+  for (const scenario of ['membership','account']) {
+    const f=fixture(t); await f.issue({},f.member); const base=f.db.prepare;
+    f.db.prepare=sql=>{
+      const wrap=statement=>({...statement,bind:(...values)=>wrap(statement.bind(...values)),async all(){
+        const result=await statement.all();
+        if(sql.startsWith('SELECT id,label,scope_json')) f.native.exec(scenario==='membership'?"UPDATE members SET revoked_at='2026-01-01' WHERE id='member-a-role'":"UPDATE portal_users SET status='blocked' WHERE user_id='member-a'");
+        return result;
+      }}); return wrap(base(sql));
+    };
+    await assert.rejects(tokens.listMcpTokens(f.db,f.member),error=>error.status===(scenario==='account'?401:403));
+  }
+});
+
 test('schemas, metadata/header mirrors, JSON framing and unsupported versions fail closed', async t => {
   const f = fixture(t), { token } = await f.issue();
   for (const [override, status, code] of [
