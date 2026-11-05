@@ -144,6 +144,25 @@ test('a signed OpenAI document preview applies selected fields once through the 
  const replay=await applyImport(f.db,f.owner,input,secret);assert.equal(replay.recordId,result.recordId);assert.equal(provider.requests.length,1);assert.equal(f.native.prepare('SELECT count(*) n FROM stock_movements').get().n,0);
 });
 
+test('document-only OpenAI and DeepSeek allow preview/replay/apply while operations stay off and disabling documents invalidates pending confirmation',async t=>{
+ for(const textProvider of ['openai','deepseek']){
+  const f=await fixture(t),key=textProvider==='openai'?providerKey:'synthetic-document-only-deepseek-key';await f.save(textProvider,key);await f.configure({textProvider,enabled:false,documentEnabled:true});
+  let calls=0;const name=`Projeto documental ${textProvider}`,content='Nome: '+name;
+  const fields={fields:[{key:'name',value:name,quote:content}]};
+  const fetcher=async(url,init)=>{calls++;assert.equal(init.headers.Authorization,'Bearer '+key);assert.equal(init.redirect,'error');assert.equal(url,PROVIDERS[textProvider].endpoint);if(textProvider==='openai')return Response.json(response(fields));return Response.json({model:'deepseek-flash',choices:[{finish_reason:'stop',message:{content:JSON.stringify(fields)}}],usage:{prompt_tokens:100,completion_tokens:100}});};
+  await assert.rejects(prepareAssistantPlan(f.db,f.owner,query(),secret,{keys,fetcher}),code('assistant_unavailable'));assert.equal(calls,0);
+  const input={kind:'project',sourceMode:'document',content,format:'text',projectId,useAi:true,aiConsent:true,aiOperationKey:crypto.randomUUID()};
+  const preview=await previewImport(f.db,f.owner,input,secret,fetcher,undefined,keys);assert.equal(preview.provenance.ai.provider,textProvider);assert.equal(f.native.prepare('SELECT name FROM projects WHERE id=?').get(projectId).name,'Synthetic project');
+  await previewImport(f.db,f.owner,input,secret,fetcher,undefined,keys);assert.equal(calls,1);
+  const confirmation={reviewToken:preview.reviewToken,candidateKey:preview.candidates[0].key,selectedFields:['name'],confirmed:true,operationKey:crypto.randomUUID()};
+  const applied=await applyImport(f.db,f.owner,confirmation,secret),replayed=await applyImport(f.db,f.owner,confirmation,secret);assert.equal(applied.recordId,replayed.recordId);assert.equal(f.native.prepare('SELECT name FROM projects WHERE id=?').get(projectId).name,name);assert.equal(calls,1);
+  const pending=await previewImport(f.db,f.owner,{...input,aiOperationKey:crypto.randomUUID()},secret,fetcher,undefined,keys),version=f.native.prepare('SELECT version FROM projects WHERE id=?').get(projectId).version;
+  await f.configure({textProvider,enabled:false,documentEnabled:false});
+  await assert.rejects(applyImport(f.db,f.owner,{reviewToken:pending.reviewToken,candidateKey:pending.candidates[0].key,selectedFields:['name'],confirmed:true,operationKey:crypto.randomUUID()},secret),code('document_ai_forbidden'));
+  assert.equal(f.native.prepare('SELECT version FROM projects WHERE id=?').get(projectId).version,version);assert.equal(f.native.prepare('SELECT count(*) n FROM stock_movements').get().n,0);assert.equal(calls,2);
+ }
+});
+
 test('OpenAI dispatch checks policy after awaited decryption and rejects provider usage exceeding its reservation',async t=>{
  const f=await fixture(t);await f.save();await f.configure();const provider=fake(),decrypt=crypto.subtle.decrypt;let once=true;
  crypto.subtle.decrypt=async function(...args){const value=await decrypt.apply(this,args);if(once){once=false;f.native.prepare("UPDATE ai_organization_settings SET config_json=json_set(config_json,'$.usageScope','private','$.usageUserId',?)").run(f.owner.userId);}return value;};
