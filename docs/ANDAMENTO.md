@@ -107,3 +107,8 @@ Revisão independente adicional de0014 encontrou P1: operacional rebaixado aview
 Correção de leiturasfoi isolada naPR#11 https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/11, headf53fcec2655da302bff08cb551a026f13143d8bf, sobreV11, sem backend0014. CI em andamento. Sete probesindependentes passaram; árvoreintegradamantémversõesautoritatativas, semGETwrite. Isso permite publicá-la sem esperar funcionalidades novas. Produção permaneceV11SHA55bf5f7nestecheckpoint.
 
 Backupnovo foiensaiadoOFFLINE comconteúdo do backuprealV10/snapshot97, convertidoaoformato2:1objeto, SQLite761.856bytes, arquivo cifrado465.984bytes, recuperação física e hashes relidos, zero chamadasexternas e réplicaprópria removida. Não é ainda execução da rotinaautomáticaprodução. A chave pública será configuradaapóspublicação; chaveprivadanuncaservidor/AppsScript/Drive. Custódiaexternaindependente pendente.
+
+
+## 2026-11-05 - Recibo PR34
+
+Merge bd36d084ce475c6f43fc765b2f36ebded6594193, Vercel dpl_HfBiVwe913M2kuWawJc2jNjc1y3o READY e alias oficial conferidos. CI42037080311 aprovado,1072 testes na revisão funcional; saúde200/rotas privadas401/no-store/aposentados403. Chrome não anexado; UI de produção dessa revisão ainda não reinspecionada. [Entrega](ENTREGA-05NOV-IA-E-EQUIPES.md). No remoto, apenas main após fetch/prune; branches antigas já haviam sido removidas no GitHub. OpenAI27, Meu trabalho3formatos e Sheets equipe28 seguem isolados na próxima composição.

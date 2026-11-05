@@ -2,7 +2,9 @@
 
 ## Resultado e estado
 
-PR #34, branch `codex/proex-integracoes-05nov`. Revisão funcional `a9bb470fb466efefed48494ff2d1ec346a7c2dd3`, ainda candidata neste registro. CI `42035968476`: **1072/1072 testes do Portal**, tipos, builds Worker/Node e smoke de autenticação aprovados; verificações do jogo independentes também passaram. O recibo de merge/deploy será acrescentado após a publicação. A PR33 anterior já está publicada em `c8182d2`.
+[PR #34](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/34) publicada no merge `bd36d084ce475c6f43fc765b2f36ebded6594193`. Vercel `dpl_HfBiVwe913M2kuWawJc2jNjc1y3o` READY no mesmo SHA e vinculada ao domínio oficial. CI final `42037080311` aprovado; revisão funcional `a9bb470` passou **1072/1072 testes do Portal**, tipos, builds Worker/Node e smoke de autenticação; jogo também aprovado.
+
+Conferência posterior ao deploy: saúde200, raiz307 para login, Equipes/cofre/credenciais MCP401 sem sessão e `private, no-store`, dois deploys aposentados403. O Chrome retornou `Debugger unattached`; portanto não foi realizada nova inspeção visual autenticada dessa revisão em produção. A evidência visual abaixo é sintética e identificada por fluxo.
 
 ## O que muda
 
