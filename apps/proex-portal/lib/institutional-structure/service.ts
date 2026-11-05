@@ -60,6 +60,7 @@ function nodeInsert(db:D1Database,org:string,nodeId:string,value:ReturnType<type
 function translate(error:unknown):never{
  const cause=String(error);
  if(cause.includes('followup_authority_changed'))fail('Seu acesso à organização mudou.','structure_forbidden',403);
+ if(cause.includes('structure_no_change'))fail('Não há alteração a aplicar. Atualize e confira o estado atual.','structure_unchanged',409);
  if(cause.includes('structure_version_changed'))fail('Outra pessoa atualizou a estrutura. Reabra a edição.','structure_conflict',409);
  if(/structure_(cycle|depth_limit|archive_in_use|parent_inactive|link_inactive|node_limit|link_limit)|FOREIGN KEY constraint failed/.test(cause))fail(cause.includes('archive_in_use')?'Desvincule as equipes e arquive os setores subordinados antes de arquivar esta unidade.':cause.includes('cycle')?'Esta relação criaria um ciclo. Escolha outra unidade superior.':'A unidade superior ou a equipe mudou, está arquivada ou ultrapassa os limites da estrutura. Atualize a edição.','structure_relationship',409);
  throw error;
@@ -85,14 +86,14 @@ export async function structureAction(db:D1Database,actor:PortalActor|null,input
  }else if(action==='node.status'){
   const status=choices(input.status,['active','archived']);adapted=true;
   if(!await one(db,'SELECT 1 FROM institutional_nodes WHERE id=? AND organization_id=?',[entityId,organizationId]))fail('Unidade não encontrada neste contexto.','structure_not_found',404);
-  changes.push(db.prepare("SELECT CASE WHEN EXISTS(SELECT 1 FROM institutional_nodes WHERE id=? AND organization_id=? AND status!=?) THEN 1 ELSE json_extract('[]','structure_version_changed') END").bind(entityId,organizationId,status));
+  changes.push(db.prepare("SELECT CASE WHEN EXISTS(SELECT 1 FROM institutional_nodes WHERE id=? AND organization_id=? AND status!=?) THEN 1 ELSE json_extract('[]','structure_no_change') END").bind(entityId,organizationId,status));
   changes.push(db.prepare('UPDATE institutional_nodes SET status=?,updated_at=? WHERE id=? AND organization_id=?').bind(status,at,entityId,organizationId));
  }else if(action==='link.save'){
   const nodeId=id(input.nodeId)!,teamId=id(input.teamId)!;if(typeof input.linked!=='boolean')fail('Escolha vincular ou desvincular.');
   // Unlinking remains possible if a team was archived since the original link.
   if(!await one(db,'SELECT 1 FROM followup_teams t JOIN institutional_nodes n ON n.organization_id=t.organization_id WHERE t.id=? AND n.id=? AND n.organization_id=?',[teamId,nodeId,organizationId]))fail('Equipe e unidade devem pertencer à organização escolhida.','structure_not_found',404);
-  if(!input.linked)changes.push(db.prepare("SELECT CASE WHEN EXISTS(SELECT 1 FROM institutional_team_links WHERE organization_id=? AND node_id=? AND team_id=? AND revoked_at IS NULL) THEN 1 ELSE json_extract('[]','structure_version_changed') END").bind(organizationId,nodeId,teamId));
-  changes.push(input.linked?db.prepare('INSERT INTO institutional_team_links(organization_id,node_id,team_id,created_at) VALUES(?,?,?,?) ON CONFLICT(organization_id,node_id,team_id) DO UPDATE SET created_at=CASE WHEN institutional_team_links.revoked_at IS NULL THEN institutional_team_links.created_at ELSE excluded.created_at END,revoked_at=NULL').bind(organizationId,nodeId,teamId,at):db.prepare('UPDATE institutional_team_links SET revoked_at=? WHERE organization_id=? AND node_id=? AND team_id=? AND revoked_at IS NULL').bind(at,organizationId,nodeId,teamId));
+  if(!input.linked)changes.push(db.prepare("SELECT CASE WHEN EXISTS(SELECT 1 FROM institutional_team_links WHERE organization_id=? AND node_id=? AND team_id=? AND revoked_at IS NULL) THEN 1 ELSE json_extract('[]','structure_no_change') END").bind(organizationId,nodeId,teamId));
+  changes.push(input.linked?db.prepare('INSERT INTO institutional_team_links(organization_id,node_id,team_id,created_at) VALUES(?,?,?,?) ON CONFLICT(organization_id,node_id,team_id) DO UPDATE SET created_at=CASE WHEN institutional_team_links.revoked_at IS NULL THEN institutional_team_links.created_at ELSE excluded.created_at END,revoked_at=NULL WHERE institutional_team_links.revoked_at IS NOT NULL').bind(organizationId,nodeId,teamId,at):db.prepare('UPDATE institutional_team_links SET revoked_at=? WHERE organization_id=? AND node_id=? AND team_id=? AND revoked_at IS NULL').bind(at,organizationId,nodeId,teamId));
  }else{
   if(!Array.isArray(input.nodes)||input.nodes.length<1||input.nodes.length>50)fail('Revise um modelo de 1 a 50 unidades.');
   const ids=new Map<string,string>(),parsed:TemplateNode[]=[];
@@ -103,9 +104,10 @@ export async function structureAction(db:D1Database,actor:PortalActor|null,input
   for(const row of parsed)changes.push(nodeInsert(db,organizationId,ids.get(row.key)!,nodeInput({...row,parentId:row.parentKey?ids.get(row.parentKey):null}),at));
  }
  const statements=[scopeStatement(db,actor,scope,true),db.prepare('INSERT OR IGNORE INTO institutional_structures(organization_id,created_at,updated_at) VALUES(?,?,?)').bind(organizationId,at,at),db.prepare("SELECT CASE WHEN EXISTS(SELECT 1 FROM institutional_structures WHERE organization_id=? AND version=?) THEN 1 ELSE json_extract('[]','structure_version_changed') END").bind(organizationId,revision),mutation.claimStatement(entityId),...changes,
-  db.prepare(`UPDATE institutional_structures SET version=version+1,updated_at=?${adapted?',adapted=1':''} WHERE organization_id=?`).bind(at,organizationId),
-  db.prepare('INSERT INTO audit(id,actor_id,project_id,organization_id,action,entity_id,details,created_at) VALUES(?,?,NULL,?,?,?,?,?)').bind(uid(),actor.userId,organizationId,`structure.${action}`,entityId,JSON.stringify({version:revision+1,kind:action}),at)];
- try{await db.batch(statements);}catch(error){try{const recovered=await mutation.recover(error);await activeScope(db,actor,scope,true);return{viewerId:actor.userId,organizationId,entityId:recovered,duplicate:true};}catch(recovered){translate(recovered);}}
+  db.prepare(`UPDATE institutional_structures SET version=version+1,updated_at=?${adapted?',adapted=1':''} WHERE organization_id=?${action==='link.save'&&input.linked===true?' AND changes()>0':''}`).bind(at,organizationId),
+  db.prepare('INSERT INTO audit(id,actor_id,project_id,organization_id,action,entity_id,details,created_at) SELECT ?,?,NULL,?,?,?,?,? WHERE changes()>0').bind(uid(),actor.userId,organizationId,`structure.${action}`,entityId,JSON.stringify({version:revision+1,kind:action,...(action==='link.save'?{nodeId:id(input.nodeId),teamId:id(input.teamId),linked:input.linked}:{})}),at)];
+ let applied=true;
+ try{const results=await db.batch(statements);applied=Number(results[statements.length-2].meta?.changes??0)>0;}catch(error){try{const recovered=await mutation.recover(error);await activeScope(db,actor,scope,true);return{viewerId:actor.userId,organizationId,entityId:recovered,duplicate:true};}catch(recovered){translate(recovered);}}
  await activeScope(db,actor,scope,true);
- return{viewerId:actor.userId,organizationId,entityId,version:revision+1,duplicate:false};
+ return{viewerId:actor.userId,organizationId,entityId,version:revision+(applied?1:0),duplicate:false};
 }
