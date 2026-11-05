@@ -1,6 +1,12 @@
 # Continuar Portal PROEX
 
-## Rodada atual em integração · 05/11/2026
+## Publicação confirmada e próxima composição · 05/11/2026
+
+PR #33 publicada: merge `c8182d2e4b34f99033b861daa8064e12f1e2d937`, Vercel `dpl_7vA9LLPkEtiJoewFzEThQAfiKqFy` READY. CI `42030415419`: 1003 testes do Portal, tipos, builds Worker/Node e autenticação aprovados. Chrome autenticado confirmou versão no rodapé, cartão do CONPEEX abrindo a ficha, calendário em português no mês atual e campo `05/11/2026`, além do feedback com versão. Nenhuma demanda/aviso de QA foi criada em produção.
+
+Próxima composição: branch `codex/proex-integracoes-05nov`, migrações 0024 MCP pessoal, 0025 Groq e 0026 checklist de atividade com snapshots em ordem. Configurações de IA e página Equipes entram após revisão. Não confundir esta composição com o site publicado. `PROEX_KEYS_SECRET` continua ausente: a revisão automática bloqueou o provisionamento antes da execução; não contornar a rejeição ou apresentar o cofre como pronto. Bitwarden bloqueado, usuário recebeu instruções para desbloquear; a proteção de computador também impediu abrir o aplicativo automaticamente. Nenhum segredo foi lido ou criado nessas tentativas.
+
+## Primeira entrega da rodada · 05/11/2026
 
 PR #33, branch `codex/proex-evolucao-05nov`: filtros/datas brasileiras, favoritos/gráfico de projetos, origem da demanda, planilha exclusiva por projeto, versão/feedback e PDF/DOCX/XLSX em Registros e Resumo diário. [Resultado, testes e limites](ENTREGA-05NOV-UX-E-SHEETS.md) e [fila completa](RODADA-05NOV-UX-E-PLANILHAS.md). Não confundir esta branch com produção antes do recibo de merge/deploy.
 
