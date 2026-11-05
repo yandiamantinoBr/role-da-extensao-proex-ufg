@@ -8,7 +8,7 @@ PR #34 publicada em `bd36d084ce475c6f43fc765b2f36ebded6594193`, Vercel `dpl_HfBi
 
 `PROEX_KEYS_SECRET` continua ausente: a revisão automática bloqueou o provisionamento antes da execução; não contornar a rejeição ou apresentar o cofre como pronto. Usuário informou Bitwarden desbloqueado, CLI continuou bloqueada; abertura do aplicativo pela ferramenta também foi impedida. Nenhum segredo foi lido ou criado nessas tentativas.
 
-Frentes seguintes isoladas: OpenAI texto/cofre0027 e Sheets equipe + projeto0028. Nenhuma chave ou modelo real foi usado. As solicitações de organograma formal e migração institucional seguem na fila; a pesquisa e IDs privados estão na Vault.
+Frentes seguintes isoladas: OpenAI texto/cofre0027, Meu trabalho PDF/DOCX/XLSX e Sheets equipe + projeto0028. Nenhuma chave ou modelo real foi usado. As solicitações de organograma formal e migração institucional seguem na fila; a pesquisa e IDs privados estão na Vault.
 
 ## Primeira entrega da rodada · 05/11/2026
 
@@ -137,3 +137,8 @@ Smoke local de Sheets/conflitos e backup de 5,29 MB / 161 chunks com recuperaç�
 Requisitos R01–R22 e achados A01–A28 continuam rastreados. Não declarar tudo concluído: política institucional/retensão, custódia independente, ativação de provedores/público, escolhas de catálogo e demais pendências são distintas de código pronto. R12 já oferece áudio→transcrição revisada→proposta/confirmar no assistente; não espalhar microfones sem necessidade. Nunca ler/imprimir .env/.dev.vars, arquivos de segredo ou valores de chaves.
 
 Leia docs/COBERTURA-DE-REQUISITOS.md e docs/ENTREGA-V13.md; V12 é histórico em docs/ENTREGA-V12.md. Histórico em docs/ANDAMENTO.md; Vault salva/relida localmente não comprova sincronização em nuvem.
+
+
+## Verificações em continuidade - 05/11
+
+A reconsulta Google Calendar da assinatura existente PROEX · Projetos e eventos,9–13/11, retornou zero eventos às10h54 de Brasília. Coleta ainda pendente; não criar cópia ou revogar link para esconder a lacuna. A conexão de inventário dos chats não devolveu resultado e foi encerrada sem envio; não declarar comunicação das novas entregas aos oito chats. A próxima composição recebeu snapshot0027, nove colunas/PK/FK preservadas e rollback sob falha.26focais passaram. Rodada ampla1094/1095 teve falso positivo antigo na busca de prefixo CPF de três dígitos em UUID/timestamp; f4b744d agora valida as duas formas completas e JSON exato de auditoria. Focal passou; repetir integrado depois das novas mudanças, sem registrar100% antecipadamente.
