@@ -15,6 +15,7 @@ function compile(name) {
  const result = `data:text/javascript;base64,${Buffer.from(`${source}\n//# sourceURL=${name}-assistant-test.mjs`).toString('base64')}`; modules.set(name, result); return result;
 }
 const { DEFAULT_ASSISTANT_CONFIG, validateProposal } = await import(compile('assistant/contracts'));
+const { documentText } = await import(compile('importer/assistant'));
 const { configureAssistant, assistantStatus, prepareAssistantPlan, applyAssistantPlan } = await import(compile('assistant/service'));
 const { providerEndpoint } = await import(compile('assistant/provider'));
 const { encryptCredentials, decryptCredentials, encryptProviderCredentials, decryptProviderCredentials, verifyPlan } = await import(compile('assistant/crypto'));
@@ -57,6 +58,21 @@ const proposal = (extra = {}) => ({ intent: 'stock.receive', itemId: 'item-a', q
 function fakeProvider(overrides = {}) { let calls = 0; return { get calls() { return calls; }, fetch: async (url, init) => { calls++; assert.equal(init.redirect, 'error'); assert.ok(init.signal); assert.match(init.headers.Authorization, /^Bearer test-only/); const body = JSON.parse(init.body); if (String(url).includes('typesafe')) return Response.json({ model: body.model, answers: { faithful: { type: 'choice', choice: 'supported', confidence: 0.99, probabilities: { supported: 0.99, review: 0.01 }, ...overrides.decision } }, usage: { input_tokens: 500 } }); assert.equal(body.thinking.type, 'disabled'); assert.equal(body.response_format.type, 'json_object'); return Response.json({ model: 'deepseek-flash', choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(proposal(overrides.proposal)) } }], usage: { prompt_tokens: 500, completion_tokens: 100 }, ...overrides.response }); } }; }
 const confirm = preview => ({ action: 'apply', planToken: preview.planToken, confirmed: true });
 const code = expected => error => error?.code === expected;
+
+test('bare Portal, email and provider credentials stop before quota, outbound transport or document processing',async()=>{
+ const f=fixture(),provider=fakeProvider();
+ try{
+  await configureAssistant(f.db,f.actors.owner,configInput(),secret);
+  for(const prefix of ['pxs_','pxp_','pxm_','pne_','gsk_','sk-','sk_']){
+   const raw=prefix+'a'.repeat(43);
+   await assert.rejects(prepareAssistantPlan(f.db,f.actors.inventory,request({request:'Consultar saldo usando '+raw}),secret,{fetcher:provider.fetch}),code('assistant_sensitive'));
+   assert.throws(()=>documentText('Trecho documental com '+raw,'text'),code('document_ai_sensitive'));
+  }
+  assert.equal(provider.calls,0);
+  assert.equal(f.native.prepare('SELECT COUNT(*) n FROM ai_organization_usage').get().n,0);
+  assert.equal(f.native.prepare('SELECT COUNT(*) n FROM ai_plans').get().n,0);
+ }finally{f.native.close();}
+});
 
 test('credentials use authenticated encryption, cannot be decrypted after tampering or key rotation', async () => {
  const ciphertext = await encryptCredentials(secret, { deepseek: key }); assert.equal(ciphertext.includes(key), false); assert.deepEqual(await decryptCredentials(secret, ciphertext), { deepseek: key });

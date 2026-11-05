@@ -1,4 +1,5 @@
 import { HttpError } from '../errors';
+import { containsCredential } from './sensitive';
 
 export const ASSISTANT_CONTRACT = 'proex.assistant/v2';
 export const PROVIDERS = {
@@ -37,7 +38,7 @@ export function validateConfig(value: unknown): AssistantConfig {
 }
 export function safeRequest(value: unknown): string {
  if (typeof value !== 'string' || !value.trim() || value.length > 4000 || /[\u0000\u000b\u000c]/u.test(value)) throw new HttpError(400, 'Descreva o pedido em até 4.000 caracteres.', 'assistant_request');
- if (/(?:api[_ -]?key|authorization|password|senha|secret|access[_ -]?token)\s*[:=]|\b(?:sk-|Bearer\s)[A-Za-z0-9_-]{15,}/i.test(value)) throw new HttpError(400, 'Remova senhas, tokens e chaves antes de continuar.', 'assistant_sensitive');
+ if (containsCredential(value)) throw new HttpError(400, 'Remova senhas, tokens e chaves antes de continuar.', 'assistant_sensitive');
  return value.trim().replace(/[^\s@]+@[^\s@]+\.[^\s@]+/g, '[e-mail omitido]').replace(/\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b/g, '[documento omitido]');
 }
 export function validateProposal(value: unknown, request: string, items: AssistantItem[]): AssistantProposal {
