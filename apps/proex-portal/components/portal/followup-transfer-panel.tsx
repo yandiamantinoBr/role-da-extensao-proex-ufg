@@ -85,7 +85,7 @@ export default function FollowupTransferPanel({userId,taskId,onTransferred}:Prop
    const name=preview.candidates.find(c=>c.projectId===receipt.projectId)?.name??'o projeto escolhido';
    operation.current=null;setReason('');setConfirmed(false);setPreview(null);setOpen(false);
    setNotice({tone:'success',text:`Demanda movida para ${name}.${receipt.duplicate?' (operação já registrada)':''}`});
-   toast.success(`Demanda movida para ${name}. Histórico preservado.`);
+   toast.success(`Demanda movida para ${name}. Histórico preservado.`,{position:'bottom-right',duration:2500});
    onTransferred?.(receipt);
   }catch(cause){
    if(isAbort(cause)||mine!==epoch.current)return;
@@ -121,7 +121,8 @@ export default function FollowupTransferPanel({userId,taskId,onTransferred}:Prop
       {preview.candidates.map(c=><option key={c.projectId} value={c.projectId}>{c.name}</option>)}
      </select>
      {candidate&&candidate.assigneesWithoutAccess>0&&<p role="note">{candidate.assigneesWithoutAccess===1?'1 responsável individual não tem acesso ao destino e deixará de ver esta demanda.':`${candidate.assigneesWithoutAccess} responsáveis individuais não têm acesso ao destino e deixarão de ver esta demanda.`}</p>}
-     <p>Integrantes de equipe e o autor também dependem de acesso ao destino. A contagem acima considera apenas atribuições individuais.</p>
+     {candidate&&candidate.assigneesWithoutAccess===0&&<p role="note">Nenhum responsável individual perderá acesso a esta demanda no projeto de destino.</p>}
+     <p>Atenção: integrantes de equipe e o autor só continuam vendo esta demanda se tiverem acesso a {candidate?.name??'o projeto de destino'}. A verificação acima considera apenas atribuições individuais.</p>
      <label htmlFor={`${ids}-reason`}>Motivo (obrigatório)</label>
      <p id={`${ids}-reason-help`}>O motivo fica no histórico do destino. Use informações operacionais e evite dados pessoais.</p>
      <textarea id={`${ids}-reason`} aria-describedby={`${ids}-reason-help`} value={reason} onChange={e=>setReason(e.target.value)} maxLength={TRANSFER_REASON_MAX} required rows={3} style={{width:'100%',minHeight:88}} disabled={saving}/>
@@ -129,8 +130,8 @@ export default function FollowupTransferPanel({userId,taskId,onTransferred}:Prop
       <input type="checkbox" checked={confirmed} onChange={e=>setConfirmed(e.target.checked)} style={{minWidth:24,minHeight:24}} disabled={saving}/>
       <span>Entendo que o histórico atual desta demanda ficará visível às pessoas autorizadas no projeto de destino e que acessos antigos podem deixar de valer.</span>
      </label>
-     <button type="submit" className="p-button p-button-primary" style={{...TOUCH,display:'inline-flex',alignItems:'center',justifyContent:'center',gap:8}} disabled={saving||!target||!reason.trim()||!confirmed}>
-      <ArrowRightLeft aria-hidden size={16}/>{saving?'Movendo…':'Mover demanda'}
+     <button type="submit" aria-label="Mover demanda" className="p-button p-button-primary" style={{...TOUCH,display:'inline-flex',alignItems:'center',justifyContent:'center',gap:8}} disabled={saving||!target||!reason.trim()||!confirmed}>
+      <ArrowRightLeft aria-hidden size={16}/>{saving?'Movendo…':candidate?`Mover para ${candidate.name}`:'Mover demanda'}
      </button>
     </form>}
    </div>

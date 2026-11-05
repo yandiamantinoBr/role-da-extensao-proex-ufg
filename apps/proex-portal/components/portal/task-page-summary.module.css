@@ -194,3 +194,7 @@
 .deadline[data-tone=danger] {
  color: var(--danger);
 }
+
+/* Keep totals aligned when a metric label wraps. */
+.metrics > div {display:flex;flex-direction:column;}
+.metrics dd {margin-block-start:auto;padding-block-start:4px;}

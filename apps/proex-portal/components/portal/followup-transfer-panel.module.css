@@ -6,3 +6,5 @@
 .notice {display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--surface-soft);color:var(--ink);}
 .notice[data-tone=error] {border-color:var(--control-border);color:var(--ink);}
 @media(prefers-reduced-motion:reduce){.panel * {scroll-behavior:auto;}}
+
+.panel button[type=submit] {font-size:15px;}

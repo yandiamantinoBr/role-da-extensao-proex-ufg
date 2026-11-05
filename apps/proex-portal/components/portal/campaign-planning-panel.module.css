@@ -29,16 +29,18 @@
 /* Only this panel's own buttons; the DateField trigger keeps its own styles. */
 .panel :is(.primary, .secondary, .quiet), .alert button, .failure button, .stale button {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; padding: 0 14px;
-  border: 1px solid var(--control-border); border-radius: 10px; background: var(--surface); color: var(--brand-ink);
-  font: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
+  border-width: 1px; border-style: solid; border-radius: 10px;
+  font: inherit; font-size: 14px; font-weight: 600; line-height: 1.35; cursor: pointer;
 }
+/* Colours for every button except the primary, which takes the site's global .p-button-primary token (light and dark). */
+.panel :is(.secondary, .quiet), .alert button, .failure button, .stale button { border-color: var(--control-border); background: var(--surface); color: var(--brand-ink); }
 .panel button:disabled { cursor: default; opacity: .55; }
 .panel button svg { flex-shrink: 0; }
-.alert button, .failure button, .stale button { background: var(--surface); }
-.panel .primary { background: var(--brand-ink); border-color: var(--brand-ink); color: var(--surface); }
 .panel .secondary { background: var(--canvas); }
-.panel .quiet { background: transparent; border-style: dashed; color: var(--muted); }
-.panel .quiet:hover:not(:disabled) { color: var(--ink); border-color: var(--muted); }
+.panel .secondary:hover:not(:disabled), .stale button:hover:not(:disabled) { border-color: var(--brand-ink); }
+/* Destructive actions: solid border with the danger token, never dashed. */
+.panel .quiet { background: transparent; border-color: var(--danger); color: var(--danger); }
+.panel .quiet:hover:not(:disabled) { background: var(--canvas); }
 
 .liveRegion { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .muted { color: var(--muted); font-size: 14px; }
@@ -54,7 +56,21 @@
 .alert, .failure { border-color: var(--danger); color: var(--ink); }
 .alert p, .failure p, .stale p, .confirm p { flex: 1 1 16rem; min-width: 0; max-width: 75ch; }
 .success { border-color: var(--plan-green-line); background: var(--plan-green-bg); color: var(--plan-green-ink); }
-.stale { border-color: var(--plan-amber-line); background: var(--plan-amber-bg); color: var(--plan-amber-ink); }
+.stale { display: grid; gap: 10px; border-color: var(--plan-amber-line); background: var(--plan-amber-bg); color: var(--plan-amber-ink); }
+.stale > p { max-width: 75ch; }
+
+/* Conflict comparison: one column of fields; each field lists the draft and the current value. */
+.compare { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; margin: 0; padding: 0; list-style: none; min-width: 0; }
+.compareRow { display: grid; gap: 4px; min-width: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); }
+.compareRow[data-changed] { border-color: var(--plan-amber-line); border-left-width: 4px; }
+.compareField { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 8px; font-weight: 700; }
+.compareFlag { color: var(--muted); font-size: 14px; font-weight: 600; }
+.compareRow[data-changed] .compareFlag { color: var(--plan-amber-ink); }
+.compareValues { display: grid; gap: 2px; margin: 0; min-width: 0; }
+.compareValues > div { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 10px; min-width: 0; }
+.compareValues dt { color: var(--muted); font-size: 14px; }
+.compareValues dd { margin: 0; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.staleActions { display: flex; flex-wrap: wrap; gap: 8px; }
 
 .section { display: grid; gap: 10px; min-width: 0; }
 .sectionHead { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
@@ -66,10 +82,18 @@
 /* Sessions: list grouped by civil date; never a wide table. */
 .days, .sessions, .hosts { margin: 0; padding: 0; list-style: none; }
 .days { display: grid; gap: 14px; min-width: 0; }
-.day { display: grid; gap: 8px; min-width: 0; }
-.dayTitle { font-size: 14px; font-weight: 700; color: var(--ink); line-height: 1.45; }
+.day { min-width: 0; }
+.dayGroup { min-width: 0; border: 1px solid var(--line); border-radius: 10px; }
+.daySummary { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; min-height: 44px; padding: 8px 12px; cursor: pointer; list-style: none; border-radius: 10px; }
+.daySummary::-webkit-details-marker { display: none; }
+.dayChevron { flex-shrink: 0; color: var(--brand-ink); transform: rotate(-90deg); transition: transform .15s; }
+.dayGroup[open] > .daySummary .dayChevron { transform: none; }
+.dayGroup[open] > .daySummary { border-bottom: 1px solid var(--line); border-radius: 10px 10px 0 0; }
+.dayTitle { flex: 1 1 12rem; min-width: 0; font-size: 14px; font-weight: 700; color: var(--ink); line-height: 1.45; }
+.dayCount { color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; }
+.dayGroup > .sessions { padding: 10px; }
 .sessions { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
-.session { display: grid; gap: 6px; min-width: 0; padding: 10px 12px; border: 1px solid var(--line); border-left: 4px solid var(--plan-purple-line); border-radius: 10px; background: var(--surface); }
+.session { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 10px 12px; border: 1px solid var(--line); border-left: 4px solid var(--plan-purple-line); border-radius: 10px; background: var(--surface); }
 .session[data-status=tentative] { border-left-color: var(--plan-amber-line); }
 .session[data-status=confirmed] { border-left-color: var(--brand-ink); }
 .session[data-status=done] { border-left-color: var(--plan-green-line); }
@@ -88,7 +112,7 @@
 .time svg { flex-shrink: 0; color: var(--muted); }
 .time[data-pending] { color: var(--muted); font-style: italic; }
 .note { color: var(--muted); font-size: 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
-.sessionActions { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 2px; }
+.sessionActions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; padding-top: 2px; }
 
 /* Compact editor: one column on phones, denser grid when the container allows. */
 .editor { display: grid; gap: 10px; min-width: 0; padding: 12px; border: 1px solid var(--control-border); border-radius: 12px; background: var(--canvas); }
@@ -96,15 +120,20 @@
 .editor h5:focus { outline: none; }
 .editor h5:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 .fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; min-width: 0; }
-.field { display: grid; gap: 4px; min-width: 0; font-size: 14px; font-weight: 600; }
+.field { display: grid; align-content: start; align-self: start; gap: 4px; min-width: 0; font-size: 14px; font-weight: 600; }
 .field > span, .field > label { color: var(--ink); }
 .field :is(input, select, textarea) { width: 100%; min-width: 0; min-height: 44px; font: inherit; font-size: 16px; font-weight: 400; }
 .field textarea { min-height: 88px; resize: vertical; }
 .field small { color: var(--muted); font-size: 14px; font-weight: 400; }
-.fields > .field:first-child, .wide, .full { grid-column: 1 / -1; }
+/* Phones: Date and Order each take the full row, so no empty cell next to Order. */
+.fields > .field:first-child, .ordinalField, .wide, .full, .timePair { grid-column: 1 / -1; }
+/* Start/End side by side with their help text directly below the pair. */
+.timePair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 10px; min-width: 0; }
+.timeHelp { grid-column: 1 / -1; }
 .hintWarning { color: var(--plan-amber-ink); background: var(--plan-amber-bg); border-radius: 8px; padding: 6px 10px; font-size: 14px; }
 .formError { color: var(--danger); font-size: 14px; font-weight: 600; }
-.formActions { display: flex; flex-wrap: wrap; gap: 8px; }
+.formActions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.blocked { flex: 1 1 14rem; min-width: 0; color: var(--plan-amber-ink); font-size: 14px; font-weight: 600; }
 
 /* Hosts */
 .hosts { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
@@ -119,8 +148,9 @@
   .body { padding: 16px 18px; }
   .sessions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .fields { grid-template-columns: minmax(0, 1.4fr) repeat(3, minmax(0, 1fr)); }
-  .fields > .field:first-child { grid-column: auto; }
-  .wide { grid-column: span 2; }
+  .fields > .field:first-child, .ordinalField { grid-column: auto; }
+  .wide, .timePair { grid-column: span 2; }
+  .compareValues > div { grid-template-columns: minmax(7rem, auto) minmax(0, 1fr); }
   .linkForm { grid-template-columns: minmax(0, 22rem) auto; align-items: end; }
   .linkForm > .hint { grid-column: 1 / -1; }
 }
@@ -128,4 +158,9 @@
   .sessions { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .hosts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
-@media (prefers-reduced-motion: reduce) { .chevron { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .chevron, .dayChevron { transition: none; } }
+
+@container (max-width: 480px) {
+ .editor { padding-inline: 0; border-inline: 0; background: transparent; }
+ .stale { padding-inline: 0; border: 0; background: transparent; }
+}

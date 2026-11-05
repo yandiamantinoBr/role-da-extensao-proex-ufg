@@ -1,9 +1,10 @@
 # Continuar Portal PROEX
 
-## Frente em implementação: Rolê no CONPEEX (05/11)
+## Frente Rolê no CONPEEX — PR37 em revisão final
 
-Worktree `role-conpeex-contexto-05nov`, branch `codex/role-conpeex-contexto-05nov`, base00be420. Planilha original preservada e vinculada ao Rolê, referência contextual mantida no CONPEEX; IDs privados/recibos na Vault. [Fontes e modelo operacional](CONPEEX-2026-OPERACAO-E-FONTES.md). Código local: planejamento de sessões/anfitrião,PDF/XLSX/DOCX, transferência preservadora de demandas simples (0030/0031),108tabelas no modelo.1.234testes completos passaram; mais1teste de corrida também passou; tipos/lint/builds/smoke Worker passaram. Ensaio navegador e revisão final em andamento. **Não transferir dados reais nem afirmar nova publicação até concluir gates e confirmar deploy.** As nove demandas reais ainda estão no CONPEEX; contagens continuam no mesmo Sheets.
+Branch `codex/role-conpeex-contexto-05nov`, head funcional6dc7eac, base00be420. **1.236/1.236**, tipos, lint, Worker/Node, smoke e CI42090990830 aprovados. Ensaio autenticado local concluído:15sessões, estados/conflitos, anfitrião, três downloads e transferência preservadora;390/1366, claro/escuro, sem overflow. Segurança independente semP0/P1/P2; crítica visual em andamento. [Entrega e limites](ENTREGA-05NOV-ROLE-CONPEEX.md), [fontes oficiais](CONPEEX-2026-OPERACAO-E-FONTES.md), [evidências sintéticas](evidencias/2026-11-05-role-conpeex/README.md).
 
+Planilha original preservada no mesmo arquivo/aba/linhas, vinculada ao Rolê e mantida como referência no CONPEEX. Auxiliar nativa15propostas, sem horários/contagens inventados. **As nove demandas reais ainda estão no CONPEEX; não migrar antes de confirmar publicação e UI.** Produção comprovada continua no checkpoint anterior abaixo. Este arquivo não tem sincronização automática ativa; mestre é canal separado. IDs privados/recibos na Vault.
 
 ## Checkpoint atual · PR36 publicada · 2026-11-05
 

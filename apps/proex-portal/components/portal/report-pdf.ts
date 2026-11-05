@@ -10,6 +10,12 @@ type ProjectMark = keyof typeof PROJECT_MARK_PATHS;
 export type ReportPdfPresentation = {
   /** Branded multi-row reports opt into a compact table; project summary defaults stay unchanged. */
   layout?: 'table' | 'records';
+  headingLabel?: string;
+  mainTitle?: string;
+  subtitle?: string;
+  recordsLabel?: string;
+  /** Dense operational tables keep type readable while reducing cell padding. */
+  compactRows?: boolean;
   projectName?: string;
   projectBrand?: ProjectMark;
   metrics?: readonly { label: string; value: number | null; detail?: string }[];
@@ -94,7 +100,8 @@ export async function toPdf(
   const muted = rgb(.34, .29, .38), border = rgb(.86, .82, .89), tint = rgb(.96, .94, .97);
   const wash = rgb(.98, .97, .985);
   const projectSheet = Boolean(projectName && data.length === 1 && options?.presentation?.layout !== 'table');
-  const mainTitle = projectName || title;
+  const mainTitle = options?.presentation?.mainTitle?.trim() || projectName || title;
+  const recordsLabel = options?.presentation?.recordsLabel?.trim() || 'Registros do relatório';
   let page: PDFPage;
   let y = 0;
 
@@ -151,7 +158,7 @@ export async function toPdf(
   pdf.setSubject('Relatório do recorte autorizado no Portal PROEX');
   const firstPage = addPage();
 
-  paint(projectName ? options?.presentation?.layout === 'table' ? 'RELATÓRIO DO PROJETO' : 'FICHA DO PROJETO' : 'RELATÓRIO INSTITUCIONAL', margin, y, 10, purple, bold);
+  paint(fit(text(options?.presentation?.headingLabel?.trim() || (projectName ? options?.presentation?.layout === 'table' ? 'RELATÓRIO DO PROJETO' : 'FICHA DO PROJETO' : 'RELATÓRIO INSTITUCIONAL')), bold, 10, usable), margin, y, 10, purple, bold);
   y -= 21;
   const heroTop = y, heroWidth = projectMark ? usable - 146 : usable;
   if (projectMark) {
@@ -169,7 +176,7 @@ export async function toPdf(
     y -= heroSize + 6;
   });
   if (projectName) {
-    paint(fit(text(title).replace(/\s+/g, ' '), font, 10, heroWidth), margin, y - 3, 10, muted);
+    paint(fit(text(options?.presentation?.subtitle?.trim() || title).replace(/\s+/g, ' '), font, 10, heroWidth), margin, y - 3, 10, muted);
     y -= 18;
   }
   if (projectMark) y = Math.min(y, heroTop - 65);
@@ -208,7 +215,7 @@ export async function toPdf(
    */
   function tableRow(values: string[], widths: number[], aligns: (boolean | undefined)[], background: Color, onBreak: () => void, isHeader = false) {
     const size = isHeader ? 9.5 : 10, leading = 14;
-    const padding = projectSheet && !isHeader ? 6 : 9;
+    const padding = !isHeader && (projectSheet || options?.presentation?.compactRows) ? 6 : 9;
     const faces = values.map(value => isHeader ? strongFont(value) : font);
     const cells = values.map((value, index) => wrap(value, faces[index], size, widths[index] - 2 * padding));
     const total = Math.max(1, ...cells.map(lines => lines.length));
@@ -251,7 +258,7 @@ export async function toPdf(
   }
 
   if (!data.length) {
-    heading('Registros do relatório');
+    heading(recordsLabel);
     paint('Nenhum registro corresponde ao recorte selecionado.', margin, y, 10, muted);
   } else if (tableColumns.length <= 6 && (!projectName || options?.presentation?.layout === 'table')) {
     const weights = requestedWeights?[...requestedWeights]:tableColumns.map(column => column.numeric ? .8 : 1.15);
@@ -263,7 +270,7 @@ export async function toPdf(
     const normalizedRows=data.map(row=>row.map(value=>text(value.trim()?value:'—')));
     const tableHeading = (continued = false,firstRow=normalizedRows[0]) => {
       const firstRowHeight=Math.max(...firstRow.map((value,index)=>wrap(value,font,10,widths[index]-18).length))*14+18;
-      heading(continued ? 'Registros do relatório (continuação)' : 'Registros do relatório', headerHeight + Math.min(firstRowHeight,height-160-headerHeight));
+      heading(continued ? recordsLabel+' (continuação)' : recordsLabel, headerHeight + Math.min(firstRowHeight,height-160-headerHeight));
       tableRow(headers, widths, numeric, purple, addPage, true);
     };
     tableHeading();
