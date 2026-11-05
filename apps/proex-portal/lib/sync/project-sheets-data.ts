@@ -19,7 +19,7 @@ const PROJECTIONS: Record<string,{fields:string;where:string;editable?:string}> 
  followup_tasks:{fields:'id,project_id,title,priority,status,due_at,version,created_at,updated_at',where:'project_id=?'},
 };
 function schemas(principal: ProjectSheetPrincipal): PortableSchema[] {
- return PROJECT_SHEET_TABLES.map(table=>{
+ return PROJECT_SHEET_TABLES.filter(table=>table!=='followup_tasks'||principal.includeTasks).map(table=>{
   const original=portableDefinition(table)!,p=PROJECTIONS[table],fields=new Set(['_rowKey','_rowHash',...p.fields.split(',')]),editable=new Set(principal.scope==='materials'?(p.editable??'').split(','):[]);
   return {...original,sheetName:'PROEX · '+table,mode:p.editable&&principal.scope==='materials'?'metadata':'read_only',updateAction:p.editable&&principal.scope==='materials'?original.updateAction:undefined,columns:original.columns.filter(column=>fields.has(column.name)).map(column=>({...column,editable:editable.has(column.name),system:!editable.has(column.name),private:false})),omitted:original.columns.filter(column=>!fields.has(column.name)).map(column=>column.name)};
  });
@@ -27,7 +27,7 @@ function schemas(principal: ProjectSheetPrincipal): PortableSchema[] {
 export async function exportProjectSheetPage(db:D1Database,principal:ProjectSheetPrincipal,input:Record<string,unknown>) {
  await requireProjectSheetPrincipal(db,principal);
  const table=typeof input.table==='string'?input.table:'',definition=PROJECTIONS[table];
- if(!Object.hasOwn(PROJECTIONS,table))throw new HttpError(400,'Tabela indisponível neste projeto.','sync_invalid_table');
+ if(!Object.hasOwn(PROJECTIONS,table)||(table==='followup_tasks'&&!principal.includeTasks))throw new HttpError(400,'Tabela indisponível neste projeto.','sync_invalid_table');
  const limit=input.limit===undefined?100:input.limit;
  if(typeof limit!=='number'||!Number.isSafeInteger(limit)||limit<1||limit>100)throw new HttpError(400,'Use de 1 a 100 linhas por página.','sync_invalid_limit');
  if(input.after!==undefined&&typeof input.after!=='string')throw new HttpError(400,'Cursor inválido.','sync_invalid_cursor');
@@ -88,7 +88,7 @@ async function existingReceipt(db:D1Database,key:string,fingerprint:string):Prom
  const result=JSON.parse(row.result_json) as PortableChangeResult;
  return {...result,...(result.status==='applied'?{status:'duplicate' as const}:{})};
 }
-function resultId(result:Record<string,unknown>,fallback:string|null){for(const key of ['item','category','movement']){const value=result[key];if(isObject(value)&&typeof value.id==='string')return value.id;}return fallback;}
+function resultId(result:Record<string,unknown>,fallback:string|null){for(const key of ['movement','item','category']){const value=result[key];if(isObject(value)&&typeof value.id==='string')return value.id;}return fallback;}
 export async function applyProjectSheetChanges(db:D1Database,principal:ProjectSheetPrincipal,input:Record<string,unknown>){
  await requireProjectSheetPrincipal(db,principal);
  if(principal.scope!=='materials')throw new HttpError(403,'A chave é somente de leitura.','project_sheet_read_only');
@@ -142,7 +142,7 @@ async function describe(db:D1Database,principal:ProjectSheetPrincipal){
  const runs=await all(db,'SELECT id,status,started_at,finished_at,exported_count,applied_count,conflict_count FROM project_sheet_runs WHERE connection_id=? ORDER BY started_at DESC LIMIT 10',[principal.connectionId]);
  const conflicts=await all(db,"SELECT id,entity_type,entity_id,expected_version,reason,status,created_at FROM project_sheet_conflicts WHERE connection_id=? AND status='open' ORDER BY created_at DESC LIMIT 100",[principal.connectionId]);
  await requireProjectSheetPrincipal(db,principal);
- return {configuration:{spreadsheetId:principal.spreadsheetId,projectId:principal.projectId,scope:principal.scope},schemas:{formatVersion:1,tables:schemas(principal),limits:{page:100,tableRows:MAX_PORTABLE_TABLE_ROWS,tableBytes:MAX_PORTABLE_TABLE_BYTES}},runs,conflicts};
+ return {configuration:{spreadsheetId:principal.spreadsheetId,projectId:principal.projectId,scope:principal.scope,includeTasks:principal.includeTasks},schemas:{formatVersion:1,tables:schemas(principal),limits:{page:100,tableRows:MAX_PORTABLE_TABLE_ROWS,tableBytes:MAX_PORTABLE_TABLE_BYTES}},runs,conflicts};
 }
 export async function callProjectSheetTool(db:D1Database,principal:ProjectSheetPrincipal,tool:unknown,args:Record<string,unknown>){
  await requireProjectSheetPrincipal(db,principal);
@@ -156,14 +156,14 @@ export async function callProjectSheetTool(db:D1Database,principal:ProjectSheetP
  }
  if(tool==='proex_sync_run_finish'){
   if(!validId(args.id)||!['completed','conflict','failed'].includes(String(args.status))||typeof args.exportedCount!=='number'||!Number.isSafeInteger(args.exportedCount)||args.exportedCount<0||args.exportedCount>PROJECT_SHEET_TABLES.length*MAX_PORTABLE_TABLE_ROWS)throw new HttpError(400,'Resultado de execução inválido.','invalid_input');
-  const status=args.status==='completed'&&(args.readbackVerified!==true||args.tablesVerified!==PROJECT_SHEET_TABLES.length)?'failed':args.status;
+  const status=args.status==='completed'&&(args.readbackVerified!==true||args.tablesVerified!==schemas(principal).length)?'failed':args.status;
   await db.batch([projectSheetGuard(db,principal),...runGuard(db,principal,args.id),db.prepare('UPDATE project_sheet_runs SET status=?,finished_at=?,exported_count=? WHERE id=? AND token_id=?').bind(status,iso(),args.exportedCount,args.id,principal.tokenId)]);
   return {id:args.id,status};
  }
  if(tool==='proex_project_sheet_tabs'){
   if(!isObject(args.tabs))throw new HttpError(400,'Informe as abas.','invalid_input');
   const entries=Object.entries(args.tabs),seen=new Set<number>();
-  for(const [key,gid] of entries){if(!PROJECT_SHEET_TABLES.some(table=>key===table)||typeof gid!=='number'||!Number.isSafeInteger(gid)||gid<0||gid>2147483647||seen.has(gid))throw new HttpError(400,'Abas inválidas.','invalid_input');seen.add(gid);}
+  for(const [key,gid] of entries){if(!schemas(principal).some(schema=>key===schema.table)||typeof gid!=='number'||!Number.isSafeInteger(gid)||gid<0||gid>2147483647||seen.has(gid))throw new HttpError(400,'Abas inválidas.','invalid_input');seen.add(gid);}
   await db.batch([projectSheetGuard(db,principal),db.prepare('UPDATE project_sheet_connections SET tabs_json=?,tabs_version=tabs_version+1 WHERE id=?').bind(JSON.stringify(args.tabs),principal.connectionId)]);
   return {ok:true};
  }

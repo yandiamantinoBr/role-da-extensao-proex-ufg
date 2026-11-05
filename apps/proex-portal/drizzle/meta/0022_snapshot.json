@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "fbabbb47-dcf3-481f-ac16-82c4b679e660",
+  "id": "50c87e3e-004e-42d9-a28c-9df6a7d3a3d7",
   "prevId": "9c3d0919-d606-4655-a8b6-d9e5aacdb6f5",
   "tables": {
     "activity_groups": {
@@ -9857,6 +9857,14 @@
           "autoincrement": false,
           "default": 1
         },
+        "include_tasks": {
+          "name": "include_tasks",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
         "version": {
           "name": "version",
           "type": "integer",
@@ -9940,6 +9948,10 @@
         "project_sheet_enabled_check": {
           "name": "project_sheet_enabled_check",
           "value": "\"project_sheet_connections\".\"enabled\" IN (0,1)"
+        },
+        "project_sheet_tasks_check": {
+          "name": "project_sheet_tasks_check",
+          "value": "\"project_sheet_connections\".\"include_tasks\" IN (0,1)"
         },
         "project_sheet_version_check": {
           "name": "project_sheet_version_check",

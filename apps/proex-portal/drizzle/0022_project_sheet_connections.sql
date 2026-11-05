@@ -17,6 +17,7 @@ CREATE TABLE `project_sheet_connections` (
 	`spreadsheet_id` text NOT NULL,
 	`label` text NOT NULL,
 	`enabled` integer DEFAULT 1 NOT NULL,
+	`include_tasks` integer DEFAULT 0 NOT NULL,
 	`version` integer DEFAULT 1 NOT NULL,
 	`tabs_json` text DEFAULT '{}' NOT NULL,
 	`tabs_version` integer DEFAULT 0 NOT NULL,
@@ -25,6 +26,7 @@ CREATE TABLE `project_sheet_connections` (
 	`updated_at` text NOT NULL,
 	FOREIGN KEY (`project_id`) REFERENCES `projects`(`id`) ON UPDATE no action ON DELETE no action,
 	CONSTRAINT "project_sheet_enabled_check" CHECK("project_sheet_connections"."enabled" IN (0,1)),
+	CONSTRAINT "project_sheet_tasks_check" CHECK("project_sheet_connections"."include_tasks" IN (0,1)),
 	CONSTRAINT "project_sheet_version_check" CHECK("project_sheet_connections"."version">0)
 );
 --> statement-breakpoint
