@@ -31,7 +31,7 @@ Pedido vigente de Yan, consolidado a partir da conversa. Publicação está auto
 
 ## Locais e migração
 
-Código local: `C:/Users/yan1n/Documents/Projetos/role-da-extensao-proex-ufg`. GitHub: `yandiamantinoBr/role-da-extensao-proex-ufg`. Aplicação: `apps/proex-portal`. Produção: https://proex-gestao.vercel.app/. Persistência: SQLite com instantâneos versionados no Supabase. Os caminhos locais de código, chat e Vault não comprovam sincronização com Google Drive.
+Código local: checkout do repositório; caminho exato no inventário privado da Vault. GitHub: `yandiamantinoBr/role-da-extensao-proex-ufg`. Aplicação: `apps/proex-portal`. Produção: https://proex-gestao.vercel.app/. Persistência: SQLite com instantâneos versionados no Supabase. Os caminhos locais de código, chat e Vault não comprovam sincronização com Google Drive.
 
 A planilha mestre **Gestão PROEX · Dados e sincronização** está no Drive pessoal. O arquivo específico **CONPEEX 2026 — Controle de brindes** fica no Drive institucional compartilhado, conforme inventário privado na Vault. IDs e permissões reais ficam somente nas notas privadas, não neste repositório público.
 

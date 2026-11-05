@@ -1,5 +1,12 @@
 # Continuar Portal PROEX
 
+## Rodada atual em integração · 05/11/2026
+
+PR #33, branch `codex/proex-evolucao-05nov`: filtros/datas brasileiras, favoritos/gráfico de projetos, origem da demanda, planilha exclusiva por projeto, versão/feedback e PDF/DOCX/XLSX em Registros e Resumo diário. [Resultado, testes e limites](ENTREGA-05NOV-UX-E-SHEETS.md) e [fila completa](RODADA-05NOV-UX-E-PLANILHAS.md). Não confundir esta branch com produção antes do recibo de merge/deploy.
+
+Agentes mantêm frentes separadas de MCP pessoal (0024), Groq no cofre (0025) e checklist de atividade (0026). Integrar e gerar snapshots em ordem após os respectivos testes. Não ler segredos, usar dados reais em QA ou iniciar chamadas pagas. A instalação do script por projeto é uma etapa própria no Google; preservar script/gatilhos da mestre.
+
+
 ## Voltar e Avançar entre os módulos · 04/11/2026
 
 Cada troca de módulo preserva uma etapa no histórico do navegador. Mudanças nos filtros de contexto atualizam a etapa atual. A volta a um endereço antigo respeita os acessos atuais e os rascunhos automáticos guardam a digitação feita imediatamente antes da saída. [Reprodução e testes](NAVEGACAO-PORTAL.md).
