@@ -1,0 +1,39 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {resolve} from 'node:path';
+import {PDFDict,PDFDocument,PDFName} from 'pdf-lib';
+import {getDocument} from 'pdfjs-dist/legacy/build/pdf.mjs';
+import {compile,root} from './support/traffic-fixture.mjs';
+import {brandBytes,fontBytes,reportPdf,zipEntries} from './support/report-module.mjs';
+
+const {structureExportReport,structureFingerprint}=await import(compile('components/portal/institutional-structure-export.ts'));
+const {isStructureWorkspace}=await import(compile('components/portal/institutional-structure-api.ts'));
+globalThis.__structureActualPdf=(title,columns,rows,display,info,options)=>reportPdf.toPdf(title,columns,rows,display,info,{...options,fontBytes,brandBytes});
+const {documentExport}=await import(compile('components/portal/document-export.ts',new Map([[resolve(root,'components/portal/report-pdf.ts'),'export async function toPdf(...args){return globalThis.__structureActualPdf(...args);}']])));
+const fixture=()=>({viewerId:'viewer-private-id',scope:{organizationId:'organization-private-id',organizationName:'PROEX sintética',projectId:'project-private-id',projectName:'CONPEEX sintético',canManage:true},version:9,canApplyTemplate:false,source:{label:'Organograma PROEX UFG',revision:'5.0.3',issuedOn:'2026-07-28',referenceUrl:'https://official.example/secret-path.pdf',adapted:true},nodes:[{id:'council-private-id',parentId:null,name:'Câmara de Extensão e Cultura',acronym:'CEC',kind:'council',relation:'root',position:0,status:'active'},{id:'office-private-id',parentId:'council-private-id',name:'Pró-reitoria de Extensão',acronym:'PROEX',kind:'office',relation:'governance',position:0,status:'active'},{id:'unit-private-id',parentId:'office-private-id',name:'Coordenação de Eventos Institucionais',acronym:'',kind:'coordination',relation:'subordination',position:0,status:'active'}],teams:[{id:'team-private-id',name:'Comunicação',status:'active',members:[{name:'Pessoa privada',email:'private@example.invalid'}]}],links:[{nodeId:'unit-private-id',teamId:'team-private-id'}],asOf:'2026-11-05T15:12:13Z',notes:'Anotação privada',drive:'https://private.invalid',body:'Corpo privado'});
+const forbidden=/private-id|Pessoa privada|private@example|Anotação privada|Corpo privado|secret-path|private\.invalid|referenceUrl|user_id|teamId|nodeId/;
+const render=(format,report)=>documentExport(format,report.title,report.columns,report.rows,(row,key)=>row[key]??'',report.info,report.presentation);
+
+test('reduced projection identifies governance separately and includes version, source nature, scope and Brazilian date',()=>{
+ const report=structureExportReport(fixture()),serialized=JSON.stringify(report);assert.equal(report.columns.length,6);assert.equal(report.rows.length,3);assert.equal(report.rows[1].relacao,'Governança');assert.equal(report.rows[2].relacao,'Subordinação');assert.equal(report.rows[1].superior,'Câmara de Extensão e Cultura');assert.equal(report.rows[2].equipes,'Comunicação');assert.equal(report.info.find(([key])=>key==='Versão do cadastro')[1],'9');assert.match(serialized,/Cadastro adaptado localmente/);assert.match(serialized,/28\/07\/2026/);assert.match(serialized,/05\/11\/2026, 12:12:13/);assert.match(serialized,/não concede permissões/);assert.match(serialized,/CONPEEX sintético/);assert.doesNotMatch(serialized,forbidden);assert.doesNotMatch(serialized,/https?:/);assert.deepEqual(report.presentation.metrics.map(metric=>metric.value),[3,1,1]);
+});
+
+test('all returned nodes must form a valid finite tree, known links and an internally consistent template capability',()=>{
+ const good=fixture();assert.equal(isStructureWorkspace(good),true);
+ for(const data of [{...good,source:{...good.source,referenceUrl:'javascript:alert(1)'}},{...good,source:{...good.source,referenceUrl:'https://user:password@official.example/file'}},{...good,source:{...good.source,referenceUrl:'https://official.example/file?secret=x'}},{...good,nodes:[{...good.nodes[0],parentId:'office-private-id',relation:'subordination'},good.nodes[1]]},{...good,nodes:[good.nodes[0],good.nodes[0]]},{...good,links:[{nodeId:'missing',teamId:'team-private-id'}]},{...good,canApplyTemplate:true},{...good,canApplyTemplate:true,nodes:[],links:[],scope:{...good.scope,canManage:false}},{...good,version:NaN}]){assert.equal(isStructureWorkspace(data),false);assert.throws(()=>structureExportReport(data),/incompleta/);}
+});
+
+test('fingerprint ignores only asOf; source adaptations, membership visibility, hierarchy and CAS all fence the document',()=>{
+ const data=fixture(),fingerprint=structureFingerprint(data);assert.equal(structureFingerprint({...data,asOf:'2026-11-05T15:12:14Z'}),fingerprint);
+ for(const changed of [{...data,version:10},{...data,source:{...data.source,adapted:false}},{...data,teams:[],links:[]},{...data,nodes:data.nodes.map((node,index)=>index===2?{...node,parentId:'council-private-id'}:node)},{...data,scope:{...data.scope,canManage:false}},{...data,canApplyTemplate:true}])assert.notEqual(structureFingerprint(changed),fingerprint);
+});
+
+test('Word and Excel are literal packages with the same six allowed columns, source/version and no private extras',async()=>{
+ const data=fixture();data.nodes[2].name='=HYPERLINK("https://example.invalid","Texto <literal>")';const report=structureExportReport(data,true);
+ for(const format of ['docx','xlsx']){const entries=await zipEntries(await render(format,report)),xml=[...entries.values()].join('');assert.ok(entries.has(format==='docx'?'word/document.xml':'xl/worksheets/sheet1.xml'));assert.match(xml,/Versão do cadastro/);assert.match(xml,/Cadastro adaptado localmente/);assert.match(xml,/Inclui unidades arquivadas autorizadas/);assert.match(xml,/PROEX UFG/);assert.match(xml,/Governança/);assert.match(xml,/Comunicação/);assert.doesNotMatch(xml,forbidden);assert.match(xml,/&lt;literal&gt;/);if(format==='xlsx'){assert.match(entries.get('xl/worksheets/sheet1.xml'),/inlineStr/);assert.match(entries.get('xl/worksheets/sheet1.xml'),/'=HYPERLINK/);assert.doesNotMatch(xml,/<f[ >]/);}}
+});
+
+test('real branded PDF has Unicode hierarchy labels, source/version and only the same authorized literal rows',async()=>{
+ const report=structureExportReport(fixture()),blob=await render('pdf',report),bytes=new Uint8Array(await blob.arrayBuffer()),pdf=await PDFDocument.load(bytes);assert.equal(blob.type,'application/pdf');assert.equal(pdf.getTitle(),report.title);assert.ok(pdf.getPage(0).node.Resources().lookup(PDFName.of('XObject'),PDFDict).keys().length>=2);
+ const loading=getDocument({data:bytes.slice(),useSystemFonts:true,disableFontFace:true});try{const document=await loading.promise,pages=[];for(let i=1;i<=document.numPages;i++){const page=await document.getPage(i);pages.push((await page.getTextContent()).items.map(item=>'str'in item?item.str:'').join(' '));}const text=pages.join(' ').replace(/\s+/g,' ');assert.match(text,/Estrutura institucional e equipes/);assert.match(text,/Versão do cadastro/);assert.match(text,/Cadastro adaptado localmente/);assert.match(text,/Governança/);assert.match(text,/Subordinação/);assert.match(text,/Coordenação de Eventos Institucionais/);assert.match(text,/Comunicação/);assert.match(text,/05\/11\/2026, 12:12:13/);assert.doesNotMatch(text,forbidden);assert.doesNotMatch(text,/https?:/);}finally{await loading.destroy();}
+});
