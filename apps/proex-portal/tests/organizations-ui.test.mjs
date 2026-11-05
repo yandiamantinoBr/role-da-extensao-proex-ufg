@@ -15,7 +15,7 @@ const moduleUrl = code => `data:text/javascript;base64,${Buffer.from(code).toStr
 const hooks = moduleUrl(`export const useState=(v)=>globalThis.__orgUiHooks.state(v),useRef=(v)=>globalThis.__orgUiHooks.ref(v),useId=()=>globalThis.__orgUiHooks.id(),useCallback=(fn)=>fn,useEffect=(fn,deps)=>globalThis.__orgUiHooks.effect(fn,deps);`);
 const replacements = new Map([
     ['react', hooks], ['react/jsx-runtime', pathToFileURL(require.resolve('react/jsx-runtime')).href],
-    ['lucide-react', moduleUrl(`export const ${['Building2','Check','LoaderCircle','Pencil','Plus','RefreshCw','ShieldCheck','UserMinus','UserPlus','X','ArrowRight','CalendarDays','ExternalLink','FolderKanban','MapPin'].map(name => `${name}=()=>null`).join(',')};`)],
+    ['lucide-react', moduleUrl(`export const ${['Building2','Check','LoaderCircle','Pencil','Plus','RefreshCw','ShieldCheck','UserMinus','UserPlus','X','ArrowRight','CalendarDays','ExternalLink','FolderKanban','Pin','PinOff','MapPin'].map(name => `${name}=()=>null`).join(',')};`)],
     [resolve(root, 'components/portal/use-form-draft.tsx'), moduleUrl('export function useFormDraft(){return{clear(){}}} export function DraftNotice(){return null;}')],
     [resolve(root, 'components/portal/project-detail.tsx'), moduleUrl('export default function ProjectDetail(){return null;}')],
     [resolve(root, 'lib/session.ts'), moduleUrl('export async function getPortalUser(){return globalThis.__orgUiServer.user;}')],
