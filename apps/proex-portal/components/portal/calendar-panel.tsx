@@ -1,4 +1,5 @@
 'use client';
+import DateField from './date-field';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { CalendarDays, ChevronLeft, ChevronRight, Copy, Download, ExternalLink, Link2, LoaderCircle, RefreshCw, ShieldCheck, X } from 'lucide-react';
@@ -105,8 +106,8 @@ export default function CalendarPanel({ projects: sourceProjects, organizational
         <label className="p-field"><span>Categoria</span><select value={category} onChange={event=>{setCategory(event.target.value);setSelectedDay('');}}><option value="all">Todas as categorias permitidas</option>{(data?.availableCategories??Object.keys(labels)).map(value=><option key={value} value={value}>{labels[value as CalendarCategory]}</option>)}</select></label>
         <label className="p-field"><span>Unidade responsável</span><select value={unitId} onChange={event=>{onUnitChange(event.target.value);setSelectedDay('');}}><option value="">Todas as unidades</option>{groupUnits(organizationalUnits.map(unit=>({...unit,name:String(unit.name),group_label:String(unit.group_label??'')}) as typeof unit & {name:string;group_label:string;acronym?:unknown})).map(group=><optgroup key={group.group} label={group.group}>{group.units.map(unit=><option key={String(unit.id)} value={String(unit.id)}>{unit.acronym?`${unit.acronym} · `:''}{unit.name}</option>)}</optgroup>)}</select></label>
         <label className="p-field"><span>Projeto</span><select value={projectId} onChange={event=>{onProjectChange(event.target.value);setSelectedDay('');}}><option value="">{unitId?'Todos os projetos desta unidade':'Todos os projetos permitidos'}</option>{unitProjects.map(project=><option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
-        <label className="p-field"><span>Data inicial</span><input type="date" value={from} onChange={event=>{setFrom(event.target.value);setSelectedDay('');}}/></label>
-        <label className="p-field"><span>Data final (incluída)</span><input type="date" value={to} min={from} onChange={event=>{setTo(event.target.value);setSelectedDay('');}}/></label>
+        <label className="p-field"><span>Data inicial</span><DateField aria-label="Data inicial" value={from} onValueChange={next=>{setFrom(next);setSelectedDay('');}}/></label>
+        <label className="p-field"><span>Data final (incluída)</span><DateField aria-label="Data final (incluída)" value={to} min={from} onValueChange={next=>{setTo(next);setSelectedDay('');}}/></label>
       </div>
       <div className={styles.actions}><button type="button" className="p-button p-button-subtle" onClick={()=>setReload(value=>value+1)} disabled={loading||!validRange}><RefreshCw size={16}/>Atualizar consulta</button>{validRange?<a className="p-button p-button-subtle" href={`/api/calendar?${query}&format=ics`}><Download size={16}/>{downloadLabel}</a>:<button type="button" className="p-button p-button-subtle" disabled><Download size={16}/>{downloadLabel}</button>}</div>
       <p className={styles.help}>O arquivo .ics inclui as datas e os filtros acima. Materiais e consumo mostram movimentações registradas; contatos e observações internas ficam no portal.</p>

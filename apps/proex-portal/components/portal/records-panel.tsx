@@ -1,4 +1,5 @@
 'use client';
+import DateField from './date-field';
 
 import Link from 'next/link';
 
@@ -342,8 +343,8 @@ export default function RecordsPanel({ projects: sourceProjects, items, loans, c
       <div className="p-row-between" style={{ gap: 16, flexWrap: 'wrap', marginBottom: 20 }}><div style={{ display: 'flex', gap: 12, alignItems: 'center' }}><span className="p-icon-tile"><ClipboardList size={22} aria-hidden="true" /></span><div><h2 id="records-title" style={{ margin: '0 0 5px', fontSize: 21 }}>Registros e documentos</h2><p className="p-form-help" style={{ margin: 0 }}>Histórico dos projetos, materiais e empréstimos, com anexos privados.</p></div></div>{!!writableProjects.length && !open && <button ref={newRecordButton} type="button" className="p-button p-button-primary" onClick={begin} disabled={existingPending}><Plus size={17} aria-hidden="true" />Novo registro</button>}</div>
       <form onSubmit={applyFilters} className={styles.filterBar}>
         <label className="p-field"><span>Projeto</span><select value={filterProject} onChange={event => setFilterProject(event.target.value)}><option value="">Todos os projetos permitidos</option>{projects.map(project => <option key={project.id as string} value={project.id as string}>{project.name as string}</option>)}</select></label>
-        <label className="p-field"><span>De</span><input type="date" min="2000-01-01" max="2200-12-31" value={from} onChange={event => setFrom(event.target.value)} /></label>
-        <label className="p-field"><span>Até (inclusive)</span><input type="date" min={from || '2000-01-01'} max="2200-12-31" value={to} onChange={event => setTo(event.target.value)} /></label>
+        <label className="p-field"><span>De</span><DateField aria-label="De" min="2000-01-01" max="2200-12-31" value={from} onValueChange={next => setFrom(next)} /></label>
+        <label className="p-field"><span>Até (inclusive)</span><DateField aria-label="Até (inclusive)" min={from || '2000-01-01'} max="2200-12-31" value={to} onValueChange={next => setTo(next)} /></label>
         <div className={styles.filterActions}><button type="submit" className="p-button p-button-primary" disabled={loading || existingPending}><Search size={16} />Consultar</button><button type="button" className="p-button p-button-subtle" aria-label="Atualizar consulta" title="Atualizar consulta" disabled={loading || existingPending} onClick={refresh}><RefreshCw size={16} /></button>{(from || to || filterProject) && <button type="button" className="p-button p-button-subtle" disabled={loading || existingPending} onClick={() => { setFrom(''); setTo(''); setFilterProject(''); setLoading(true); setFilters({ projectId: '', from: '', to: '' }); setReload(value => value + 1); }}>Limpar</button>}</div>
         <p className={styles.filterHelp}>O filtro por dias usa o fuso deste aparelho; a lista mostra o horário de Brasília.</p>
         {existingPending && <p role="status" className="p-form-help">Confirme os anexos na lista antes de consultar outro período ou criar um novo registro.</p>}

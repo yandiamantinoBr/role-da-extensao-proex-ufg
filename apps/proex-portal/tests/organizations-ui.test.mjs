@@ -17,6 +17,9 @@ const replacements = new Map([
     ['react', hooks], ['react/jsx-runtime', pathToFileURL(require.resolve('react/jsx-runtime')).href],
     ['lucide-react', moduleUrl(`export const ${['Building2','Check','LoaderCircle','Pencil','Plus','RefreshCw','ShieldCheck','UserMinus','UserPlus','X','ArrowRight','CalendarDays','ExternalLink','FolderKanban','Pin','PinOff','MapPin'].map(name => `${name}=()=>null`).join(',')};`)],
     [resolve(root, 'components/portal/use-form-draft.tsx'), moduleUrl('export function useFormDraft(){return{clear(){}}} export function DraftNotice(){return null;}')],
+    // Calendar geometry/keyboard/locale have browser coverage; this API-scope harness
+    // keeps the canonical form value without importing DOM-only Radix primitives.
+    [resolve(root, 'components/portal/date-field.tsx'), moduleUrl(`import {jsx} from ${JSON.stringify(pathToFileURL(require.resolve('react/jsx-runtime')).href)}; export default function DateField({onValueChange,...props}){return jsx('input',{...props,type:'date',onChange:onValueChange?event=>onValueChange(event.target.value):undefined});}`)],
     [resolve(root, 'components/portal/project-detail.tsx'), moduleUrl('export default function ProjectDetail(){return null;}')],
     [resolve(root, 'lib/session.ts'), moduleUrl('export async function getPortalUser(){return globalThis.__orgUiServer.user;}')],
     [resolve(root, 'lib/platform.ts'), moduleUrl('export function database(){return globalThis.__orgUiServer.db;} export function ownerEmail(){return undefined;}')],

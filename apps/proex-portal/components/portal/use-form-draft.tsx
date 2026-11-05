@@ -40,7 +40,7 @@ export function clearCurrentDrafts() {
 type Field = HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
 function fields(form: HTMLFormElement): Field[] {
   return ([...form.elements] as Element[]).filter(el => (el instanceof HTMLInputElement || el instanceof HTMLSelectElement || el instanceof HTMLTextAreaElement)
-    && !!el.name && el.dataset.noDraft !== 'true' && !PRIVATE.test(el.name) && !(el instanceof HTMLInputElement && ['password', 'file', 'hidden', 'submit', 'button', 'reset'].includes(el.type))) as Field[];
+    && !!el.name && el.dataset.noDraft !== 'true' && !PRIVATE.test(el.name) && !(el instanceof HTMLInputElement && (['password', 'file', 'submit', 'button', 'reset'].includes(el.type) || (el.type === 'hidden' && el.dataset.draftDate !== 'true')))) as Field[];
 }
 function read(form: HTMLFormElement): Values {
   const values: Values = {};

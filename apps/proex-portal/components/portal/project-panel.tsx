@@ -1,4 +1,5 @@
 'use client';
+import DateField from './date-field';
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import ProjectDetail, { type ProjectShortcutModule } from './project-detail';
 import { useFormDraft, DraftNotice } from './use-form-draft';
@@ -142,11 +143,11 @@ function ProjectForm({ project, projects, types, units, organizations, mutate, d
     </label>
     <label className="p-field">
     <span>Data de início</span>
-    <input name="startsAt" type="date" defaultValue={day(value(project, 'starts_at', 'startsAt'))}/>
+    <DateField aria-label="Início previsto" name="startsAt" defaultValue={day(value(project, 'starts_at', 'startsAt'))}/>
     </label>
     <label className="p-field">
     <span>Data de término</span>
-    <input name="endsAt" type="date" defaultValue={day(value(project, 'ends_at', 'endsAt'))}/>
+    <DateField aria-label="Fim previsto" name="endsAt" defaultValue={day(value(project, 'ends_at', 'endsAt'))}/>
     </label>
     </div>
     <label className={styles.featureOption}><input type="checkbox" name="prizesEnabled" defaultChecked={Boolean(project?.prizes_enabled)}/><span><strong>Habilitar dinâmicas e brindes</strong><small>Permite organizar roleta, dado e premiações neste projeto. Campanhas e estoque têm configuração própria; o histórico é preservado ao desabilitar.</small></span></label>
