@@ -6,7 +6,7 @@ Produção funcional: **4992afac14151ac66ae3be5b4e7139c8071e21ad**, PR #35. Verc
 
 Chrome restaurado, mas extensão sem debugger e captura nativa divergente da janela pedida; não continuar cliques com geometria incerta. A conferência visual autenticada da PR35 não foi concluída. O cofre ainda depende do segredo dedicado: provisionamento rejeitado antes de executar, sem contorno nem redução das proteções do Bitwarden.
 
-A próxima composição está isolada em `codex/proex-resumo-e-estrutura-05nov`: organograma formal0029, estrutura/equipes com permissões separadas, exportações e resumo pessoal do Início com totais privados. Não foi publicada. [Registro, gates e próximos aceites](ENTREGA-05NOV-RESUMO-E-ESTRUTURA.md). Ler o registro antes de continuar; a interrupção dos subagentes por limite de uso não constitui aceite de revisão. Os checkpoints antigos abaixo permanecem históricos.
+A próxima composição está na [PR #36, rascunho](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/36), branch `codex/proex-resumo-e-estrutura-05nov`: organograma formal0029, estrutura/equipes com permissões separadas, exportações e resumo pessoal do Início com totais privados. Não foi publicada. [Registro, gates e próximos aceites](ENTREGA-05NOV-RESUMO-E-ESTRUTURA.md). Ler o registro antes de continuar; a interrupção dos subagentes por limite de uso não constitui aceite de revisão. Os checkpoints antigos abaixo permanecem históricos.
 
 
 ## Publicação confirmada e próxima composição · 05/11/2026

@@ -42,3 +42,12 @@ Contratos: [Resumo pessoal](../apps/proex-portal/docs/RESUMO-PESSOAL-DASHBOARD.m
 Fonte `c2de498`: Worker compilado, smoke de autenticação/CPF/cookies/logout/revogação e MCP aprovado na ordem correta, depois build Node aprovado. A bancada do fluxo institucional foi recriada limpa após esses builds; o processo anterior foi encerrado pelo próprio comando `parar`, sem tocar servidores de outros projetos. A entrega permanece sem publicação até fechar o navegador da estrutura e a revisão independente.
 
 Main documental `cec980f33ef93df17dfe1b2298e280b71e5989ca` ficou READY na Vercel `dpl_Ee4k5zxEcM9nYNvxbkCbzYbiX9C5` e alias oficial conferido. Não muda o código funcional da PR35. Os registros anteriores de4992afa continuam como recibo do merge funcional.
+
+
+## Estrutura no navegador e refinamento do PDF
+
+Fonte `c2de498` passou o fluxo completo no navegador local: prévia oficial editável/aplicação, unidade com nome longo, edição, vínculo e navegação à equipe, arquivamento bloqueado por vínculo, desvinculação/arquivamento/reativação e fonte com data brasileira. Foram 22 capturas de vazio/prévia/árvore/edição/exportação em 390/1366 px, temas claro/escuro; nenhum overflow, alvo interativo menor que 44 px, erro JS ou requisição externa. PDF 64.389 bytes, DOCX 33.315 e XLSX 13.571; duas consultas atuais por arquivo e OpenXML reaberto sem identificadores/contatos.
+
+O PDF de três páginas foi renderizado e inspecionado. A coluna Tipo quebrava a última letra de Coordenação; pesos foram equilibrados e a ordem foi alterada para respeitar a hierarquia, antes de ordenar irmãos. Fonte `d52bc59`: seis testes de exportação passaram, incluindo texto inteiro na coordenada da coluna e árvore de entrada embaralhada. O gerador real com o estado sintético da API produziu o PDF refinado de 64.179 bytes, renderizado e conferido; não é arquivo de produção nem captura do build antigo. As demais provas de UI continuam no build anterior, sem alteração visual dos componentes entre esses dois commits. CI do head final refaz os alvos.
+
+PR #36: https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/36 . Permanece rascunho: a revisão independente final não concluiu por limite dos agentes. A árvore móvel pode ganhar recolhimento por ramo para reduzir a extensão e facilitar a leitura; é refinamento proposto, sem nota9/10 atribuída ou promessa de perfeição. Não instalar fonte/dados reais a partir da bancada.
