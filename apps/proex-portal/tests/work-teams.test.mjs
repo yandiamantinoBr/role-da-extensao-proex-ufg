@@ -102,3 +102,20 @@ test('team writes retain the existing CSRF/CAS/idempotency contract and reject m
  fetch.mock.mockImplementation(async()=>Response.json({}));await assert.rejects(saveWorkTeam(input),{status:502});
  fetch.mock.mockImplementation(async()=>Response.json({error:'Sem permissão.'},{status:403}));await assert.rejects(saveWorkTeam(input),{status:403});
 });
+
+test('losing affiliation or the sole visible assignment during a read discards the complete team response and export', async t => {
+ for(const kind of ['affiliation','assignment','roster']) for(const exporting of [false,true]) {
+  const f=await teamScenario(t);
+  const team=await f.act('owner-a','team.create',{organizationId:'org-a',name:'Equipe temporária de revisão',userIds:kind==='assignment'?['owner-a']:['viewer-a','owner-a']});
+  if(kind==='assignment')await f.act('owner-a','task.create',{projectId:'project-a',title:'Único vínculo visível',teamIds:[team.teamId]});
+  let fired=false;
+  f.db.afterRead=sql=>{
+   if(fired||!sql.startsWith(kind==='roster'?'SELECT tm.team_id':'SELECT team.id'))return;
+   fired=true;
+   if(kind==='assignment')f.native.prepare('UPDATE followup_assignees SET removed_at=? WHERE team_id=?').run(f.now,team.teamId);
+   else f.native.prepare('UPDATE followup_team_members SET removed_at=? WHERE team_id=? AND user_id=?').run(f.now,team.teamId,kind==='roster'?'owner-a':'viewer-a');
+  };
+  await assert.rejects(teamsWorkspace(f.db,await f.actor('viewer-a'),{projectId:'project-a',teamId:team.teamId},exporting),{status:403,code:'team_access_changed'});
+  assert.equal(fired,true);
+ }
+});
