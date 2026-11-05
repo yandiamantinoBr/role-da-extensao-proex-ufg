@@ -47,13 +47,13 @@ async function projection(db:D1Database,actor:PortalActor,taskId:string):Promise
 }
 export async function followupDetail(db:D1Database,actor:PortalActor|null,taskId:unknown){actorRequired(actor);const task=await projection(db,actor,id(taskId)!);
  const checklist=task.checklist_id?await checklistRow(db,actor,task.checklist_id):null;
- const rows=checklist?await all(db,`SELECT r.id,r.item_id,i.name material,r.size,r.expected,r.counted,r.damaged,r.note FROM followup_checklist_items r JOIN followup_checklists c ON c.id=r.checklist_id JOIN items i ON i.id=r.item_id AND i.project_id=c.project_id WHERE r.checklist_id=? AND ${authority('?','c.organization_id','c.project_id')} ORDER BY i.name,r.size,r.id`,[checklist.id,actor.userId]):[];
+ const rows=checklist?.kind==='activity'?await all(db,`SELECT s.id,s.position,s.label,s.answer,s.note,s.version,s.updated_at FROM followup_checklist_steps s JOIN followup_checklists c ON c.id=s.checklist_id WHERE c.id=? AND c.kind='activity' AND ${authority('?','c.organization_id','c.project_id')} ORDER BY s.position,s.id`,[checklist.id,actor.userId]):checklist?await all(db,`SELECT r.id,r.item_id,i.name material,r.size,r.expected,r.counted,r.damaged,r.note FROM followup_checklist_items r JOIN followup_checklists c ON c.id=r.checklist_id JOIN items i ON i.id=r.item_id AND i.project_id=c.project_id WHERE r.checklist_id=? AND ${authority('?','c.organization_id','c.project_id')} ORDER BY i.name,r.size,r.id`,[checklist.id,actor.userId]):[];
  const followups=checklist?await all(db,`SELECT a.row_id,a.task_id FROM followup_checklist_actions a JOIN followup_checklists c ON c.id=a.checklist_id WHERE a.checklist_id=? AND ${authority('?','c.organization_id','c.project_id')}`,[checklist.id,actor.userId]):[];
  const revisions=await all(db,`SELECT h.version,h.snapshot_json,h.created_at FROM followup_history h JOIN followup_tasks t ON t.id=h.task_id WHERE t.id=? AND ${authority('?','t.organization_id','t.project_id')} ORDER BY h.version DESC LIMIT 30`,[task.id,actor.userId]);
  const workCandidates=task.canDelegateWork?await all(db,`SELECT u.user_id userId,COALESCE(NULLIF(p.display_name,''),'Integrante') name FROM portal_users u LEFT JOIN profiles p ON p.user_id=u.user_id JOIN followup_tasks t ON t.id=? WHERE ${activeAccount('u')} AND ${authority('u.user_id','t.organization_id','t.project_id')} AND ${assignedRecipient('u.user_id')} AND ${authority('?','t.organization_id','t.project_id',true,true)} ORDER BY name,u.user_id`,[task.id,actor.userId]):[];
  const workGrants=task.canDelegateWork?await all(db,`SELECT g.id,g.user_id userId FROM followup_work_grants g JOIN followup_tasks t ON t.id=g.task_id WHERE g.task_id=? AND g.revoked_at IS NULL AND ${authority('?','t.organization_id','t.project_id',true,true)}`,[task.id,actor.userId]):[];
  await requireScope(db,actor,scopeOf(task));
- return{task,checklist:checklist?{id:checklist.id,task_id:checklist.task_id,title:checklist.title,status:checklist.status,version:checklist.version,rows,followups}:null,workCandidates,workGrants,history:revisions.map(r=>({version:r.version,createdAt:r.created_at,snapshot:JSON.parse(r.snapshot_json)}))};
+ return{task,checklist:checklist?{id:checklist.id,task_id:checklist.task_id,title:checklist.title,kind:checklist.kind,status:checklist.status,version:checklist.version,rows,followups}:null,workCandidates,workGrants,history:revisions.map(r=>({version:r.version,createdAt:r.created_at,snapshot:JSON.parse(r.snapshot_json)}))};
 }
 export async function followupList(db:D1Database,actor:PortalActor|null,input:Record<string,unknown>={}){actorRequired(actor);const conditions=[authority('caller.user_id','t.organization_id','t.project_id')],values:unknown[]=[actor.userId];
  if(input.projectId){conditions.push('t.project_id=?');values.push(id(input.projectId));}if(input.organizationId){conditions.push('t.organization_id=?');values.push(id(input.organizationId));}
@@ -159,7 +159,7 @@ async function checklistAction(db:D1Database,actor:PortalActor,action:string,inp
  }
  if(!['checklist.count','checklist.complete'].includes(action))fail('Operação de conferência inválida.');
  onlyKeys(input,['action','id','rowId','expectedVersion','counted','damaged','note','createFollowups','operationKey']);
- const checklist=await checklistRow(db,actor,id(input.id)!),scope=scopeOf(checklist),taskId=checklist.task_id,work=await taskWorkPermission(db,actor,taskId);
+ const checklist=await checklistRow(db,actor,id(input.id)!);if(checklist.kind!=='materials')fail('Esta operação é exclusiva da conferência de materiais.','followup_checklist_kind');const scope=scopeOf(checklist),taskId=checklist.task_id,work=await taskWorkPermission(db,actor,taskId);
  const mutation=await prepareMutation(db,actor.userId,action,input);if(mutation.existingId){await taskWorkPermission(db,actor,taskId);return{...await followupDetail(db,actor,mutation.existingId),duplicate:true};}
  if(checklist.status==='completed'){await taskWorkPermission(db,actor,taskId);return{...await followupDetail(db,actor,taskId),duplicate:true};}
  const expected=version(input.expectedVersion),at=iso(),statements=[cas(db,'followup_checklists',checklist.id,expected),mutation.claimStatement(taskId)];
@@ -182,6 +182,49 @@ async function checklistAction(db:D1Database,actor:PortalActor,action:string,inp
  }
  statements.push(history(db,actor,taskId,at),fanout(db,taskId,`checklist:${checklist.id}:${expected+1}`,at));
  try{await taskAtomic(db,actor,taskId,statements);}catch(error){if(error instanceof HttpError)throw error;const recovered=await mutation.recover(error);await taskWorkPermission(db,actor,recovered);return{...await followupDetail(db,actor,recovered),duplicate:true};}return followupDetail(db,actor,taskId);
+}
+
+function activityHistory(db:D1Database,actor:PortalActor,taskId:string,at:string,change:Row) {
+ return db.prepare(`INSERT INTO followup_history(id,task_id,version,snapshot_json,actor_id,created_at) SELECT ?,id,version,json_object('title',title,'body',body,'priority',priority,'importance',importance,'status',status,'dueAt',due_at,'campaignId',campaign_id,'itemId',item_id,'loanId',loan_id,'activityChecklistChange',json(?)),?,? FROM followup_tasks WHERE id=?`).bind(uid(),JSON.stringify(change),actor.userId,at,taskId);
+}
+async function activityChecklistAction(db:D1Database,actor:PortalActor,action:string,input:Record<string,unknown>):Promise<Row> {
+ if(action==='checklist.activity.create') {
+  onlyKeys(input,['action','projectId','organizationId','title','body','priority','dueAt','campaignId','rows','userIds','teamIds','operationKey']);
+  const scope=await resolveScope(db,input);if(!scope.projectId)fail('O checklist de atividade deve pertencer a um projeto.');await requireScope(db,actor,scope,true);
+  const mutation=await prepareMutation(db,actor.userId,action,input);if(mutation.existingId)return{...await followupDetail(db,actor,mutation.existingId),duplicate:true};
+  if(!Array.isArray(input.rows)||!input.rows.length||input.rows.length>100)fail('Inclua de 1 a 100 verificações.');
+  const rows=input.rows.map(row=>{if(!row||typeof row!=='object'||Array.isArray(row))fail('Confira as verificações da atividade.');onlyKeys(row,['label']);return{label:text(row.label,160)};});
+  const title=text(input.title??'Checklist de atividade',160),campaignId=id(input.campaignId,true),users=ids(input.userIds),teams=ids(input.teamIds,8);await assignmentValidation(db,scope,users,teams);
+  if(campaignId&&!await one(db,'SELECT id FROM campaigns WHERE id=? AND project_id=?',[campaignId,scope.projectId]))fail('Escolha uma atividade do mesmo projeto.','followup_reference');
+  const taskId=uid(),checklistId=uid(),at=iso(),task=fields({title,body:input.body??'Registre as verificações da atividade. Este checklist não movimenta materiais ou estoque.',priority:input.priority??'medium',dueAt:input.dueAt??null,campaignId});
+  const statements=[...assignmentAssertions(db,scope,users,teams),mutation.claimStatement(taskId),insertTask(db,actor,scope,taskId,task,at),...assignmentStatements(db,taskId,users,teams,at),db.prepare("INSERT INTO followup_checklists(id,organization_id,project_id,campaign_id,task_id,title,kind,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,'activity',?,?,?)").bind(checklistId,scope.organizationId,scope.projectId,campaignId,taskId,title,actor.userId,at,at),...rows.map((row,position)=>db.prepare('INSERT INTO followup_checklist_steps(id,checklist_id,position,label,updated_at) VALUES(?,?,?,?,?)').bind(uid(),checklistId,position,row.label,at)),recipientLimit(db,taskId),activityHistory(db,actor,taskId,at,{kind:'created',checklistId,steps:rows.length}),audit(db,actor,scope,action,checklistId,{steps:rows.length,campaignId,stockChanged:false},at),fanout(db,taskId,'task:1',at)];
+  try{await atomic(db,actor,scope,statements);}catch(error){if(error instanceof HttpError)throw error;const recovered=await mutation.recover(error);return{...await followupDetail(db,actor,recovered),duplicate:true};}
+  return followupDetail(db,actor,taskId);
+ }
+ if(!['checklist.activity.answer','checklist.activity.complete'].includes(action))fail('Escolha uma operação válida de checklist de atividade.');
+ onlyKeys(input,action==='checklist.activity.answer'?['action','id','rowId','answer','note','expectedVersion','operationKey']:['action','id','expectedVersion','operationKey']);
+ const checklist=await checklistRow(db,actor,id(input.id)!);if(checklist.kind!=='activity')fail('Esta operação é exclusiva do checklist de atividade.','followup_checklist_kind');
+ const taskId=checklist.task_id,scope=scopeOf(checklist),work=await taskWorkPermission(db,actor,taskId),mutation=await prepareMutation(db,actor.userId,action,input);
+ if(mutation.existingId){await taskWorkPermission(db,actor,taskId);return{...await followupDetail(db,actor,taskId),duplicate:true};}
+ if(checklist.status==='completed')fail('Este checklist foi concluído. Peça revisão à gestão.','followup_conflict',409);
+ const at=iso(),expected=version(input.expectedVersion),statements:D1PreparedStatement[]=[db.prepare("SELECT CASE WHEN EXISTS(SELECT 1 FROM followup_checklists c JOIN followup_tasks t ON t.id=c.task_id WHERE c.id=? AND c.kind='activity' AND c.status='open' AND t.status IN ('open','in_progress','blocked')) THEN 1 ELSE json_extract('[]','followup_version_changed') END").bind(checklist.id)];let change:Row;
+ if(action==='checklist.activity.answer') {
+  const row=await one(db,'SELECT * FROM followup_checklist_steps WHERE id=? AND checklist_id=?',[id(input.rowId),checklist.id]);if(!row)fail('Verificação não encontrada neste checklist.','followup_not_found',404);
+  const answer=input.answer===null?null:choices(input.answer,['yes','no','not_applicable']),note=text(input.note,600,true);
+  change={kind:'answer',checklistId:checklist.id,rowId:row!.id,label:row!.label,before:{answer:row!.answer,note:row!.note},after:{answer,note}};
+  statements.push(cas(db,'followup_checklist_steps',row!.id,expected),mutation.claimStatement(taskId),db.prepare('UPDATE followup_checklist_steps SET answer=?,note=?,version=version+1,updated_at=? WHERE id=? AND checklist_id=?').bind(answer,note,at,row!.id,checklist.id),db.prepare("UPDATE followup_checklists SET version=version+1,updated_at=? WHERE id=? AND status='open' AND kind='activity'").bind(at,checklist.id),db.prepare("UPDATE followup_tasks SET status=CASE WHEN status='open' THEN 'in_progress' ELSE status END,version=version+1,updated_at=? WHERE id=?").bind(at,taskId));
+ } else {
+  const counts=await one(db,"SELECT COUNT(*) total,SUM(CASE WHEN answer IS NULL THEN 1 ELSE 0 END) pending,SUM(CASE WHEN answer='no' THEN 1 ELSE 0 END) negative FROM followup_checklist_steps WHERE checklist_id=?",[checklist.id]);
+  if(!counts?.total||counts.pending)fail('Responda todas as verificações antes de concluir.','followup_checklist_pending');
+  if(work.delegatedOnly&&counts.negative)fail('A gestão precisa revisar as respostas Não antes de concluir. Suas respostas continuam salvas.','followup_manager_review',409);
+  change={kind:'completed',checklistId:checklist.id,answered:counts.total,negative:counts.negative};
+  statements.push(cas(db,'followup_checklists',checklist.id,expected),mutation.claimStatement(taskId),db.prepare("SELECT CASE WHEN EXISTS(SELECT 1 FROM followup_checklist_steps WHERE checklist_id=?) AND NOT EXISTS(SELECT 1 FROM followup_checklist_steps WHERE checklist_id=? AND answer IS NULL) THEN 1 ELSE json_extract('[]','followup_version_changed') END").bind(checklist.id,checklist.id));
+  if(counts.negative)statements.push(scopeStatement(db,actor,scope,true));
+  statements.push(db.prepare("UPDATE followup_checklists SET status='completed',version=version+1,updated_at=? WHERE id=? AND kind='activity' AND status='open'").bind(at,checklist.id),db.prepare("UPDATE followup_tasks SET status='completed',version=version+1,updated_at=? WHERE id=?").bind(at,taskId));
+ }
+ statements.push(activityHistory(db,actor,taskId,at,change),audit(db,actor,scope,action,checklist.id,{...change,stockChanged:false},at),fanout(db,taskId,`${action}:${checklist.id}:${input.rowId??'complete'}:${expected+1}`,at));
+ try{await taskAtomic(db,actor,taskId,statements);}catch(error){if(error instanceof HttpError)throw error;await mutation.recover(error);await taskWorkPermission(db,actor,taskId);return{...await followupDetail(db,actor,taskId),duplicate:true};}
+ return followupDetail(db,actor,taskId);
 }
 const inboxTaskScope = (user: string) => `
  ${authority(user,'t.organization_id','t.project_id')}
@@ -314,6 +357,7 @@ export async function followupAction(db:D1Database,actor:PortalActor|null,action
  if(action==='task.create'||action==='task.update')return await taskAction(db,actor,action,input);
  if(action==='task.work'||action.startsWith('task.worker.'))return await workerAction(db,actor,action,input);
  if(action.startsWith('team.'))return await teamAction(db,actor,action,input);
+ if(action.startsWith('checklist.activity.'))return await activityChecklistAction(db,actor,action,input);
  if(action.startsWith('checklist.'))return await checklistAction(db,actor,action,input);
  if(action==='notification.read')return await notificationRead(db,actor,input);
  if(action==='notification.dismiss')return await notificationDismiss(db,actor,input);

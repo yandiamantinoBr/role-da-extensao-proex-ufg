@@ -331,3 +331,74 @@ test('hidden pending cursor preserves priority, due date and ID after a concurre
  assert.equal(revoked.hiddenPending.length,0);
  assert.equal(revoked.hiddenPendingCursor,null);
 });
+
+
+const activityInput=(extra={})=>({organizationId:'org-a',projectId:'project-a',title:'Mesa de apresentação QA',rows:[{label:'Apresentação realizada?'},{label:'Avaliação registrada?'}],userIds:['viewer-a'],operationKey:crypto.randomUUID(),...extra});
+async function activityGrant(f,manager,taskId,userId='viewer-a'){return act(f,manager,'task.worker.grant',{id:taskId,userId,confirmed:true,operationKey:crypto.randomUUID()});}
+const answerStep=(f,actor,detail,index,answer='yes',note='')=>act(f,actor,'checklist.activity.answer',{id:detail.checklist.id,rowId:detail.checklist.rows[index].id,expectedVersion:detail.checklist.rows[index].version,answer,note,operationKey:crypto.randomUUID()});
+
+test('activity checklists preserve material contracts and never complete through the material branch or alter stock',async t=>{
+ const f=fixture(t),manager=await f.actor('manager-a'),viewer=await f.actor('viewer-a'),before=f.native.prepare('SELECT stock,reserved FROM items WHERE id=?').get('item-a');
+ let detail=await act(f,manager,'checklist.activity.create',activityInput());assert.equal(detail.checklist.kind,'activity');assert.equal(detail.checklist.rows.length,2);assert.ok(detail.checklist.rows.every(row=>row.answer===null));
+ await activityGrant(f,manager,detail.task.id);assert.equal((await followupDetail(f.db,viewer,detail.task.id)).task.canWork,true);
+ await assert.rejects(act(f,manager,'checklist.complete',{id:detail.checklist.id,expectedVersion:1,operationKey:crypto.randomUUID()}),{status:400});
+ await assert.rejects(act(f,manager,'checklist.count',{id:detail.checklist.id,rowId:detail.checklist.rows[0].id,counted:2,expectedVersion:1,operationKey:crypto.randomUUID()}),{status:400});
+ await assert.rejects(act(f,viewer,'checklist.activity.complete',{id:detail.checklist.id,expectedVersion:1,operationKey:crypto.randomUUID()}),{status:400});
+ await assert.rejects(act(f,manager,'task.update',{id:detail.task.id,status:'completed',expectedVersion:1,operationKey:crypto.randomUUID()}),{status:400});
+ detail=await answerStep(f,viewer,detail,0);detail=await answerStep(f,viewer,detail,1,'not_applicable','Atividade não exigiu este registro.');
+ detail=await act(f,viewer,'checklist.activity.complete',{id:detail.checklist.id,expectedVersion:detail.checklist.version,operationKey:crypto.randomUUID()});assert.equal(detail.task.status,'completed');assert.equal(detail.checklist.status,'completed');assert.deepEqual(f.native.prepare('SELECT stock,reserved FROM items WHERE id=?').get('item-a'),before);
+ await assert.rejects(answerStep(f,viewer,detail,0,'no'),{status:409});
+ assert.equal(f.native.prepare('SELECT COUNT(*) n FROM followup_checklist_items').get().n,0);
+});
+
+test('two activity monitors can answer different steps concurrently; same-step writes use CAS and retries remain idempotent',async t=>{
+ const f=fixture(t),manager=await f.actor('manager-a'),first=await f.actor('viewer-a');
+ f.insert('portal_users',{user_id:'viewer-two',email:'viewer-two@example.invalid',status:'active',created_at:f.now,updated_at:f.now});f.insert('members',{id:'member-viewer-two',user_id:'viewer-two',email:'viewer-two@example.invalid',role:'viewer',project_id:'project-a',organization_id:'org-a',created_at:f.now});f.users['viewer-two']={userId:'viewer-two',email:'viewer-two@example.invalid',displayName:'Monitor QA'};
+ const second=await f.actor('viewer-two');let detail=await act(f,manager,'checklist.activity.create',activityInput({userIds:['viewer-a','viewer-two']}));await activityGrant(f,manager,detail.task.id);await activityGrant(f,manager,detail.task.id,'viewer-two');
+ const results=await Promise.all([answerStep(f,first,detail,0),answerStep(f,second,detail,1)]);assert.equal(results.length,2);detail=await followupDetail(f.db,manager,detail.task.id);assert.deepEqual(detail.checklist.rows.map(row=>row.version),[2,2]);assert.equal(detail.checklist.version,3);
+ const update={id:detail.checklist.id,rowId:detail.checklist.rows[0].id,expectedVersion:2,answer:'yes',note:'Confirmado',operationKey:crypto.randomUUID()};const changed=await act(f,first,'checklist.activity.answer',update);const replay=await act(f,first,'checklist.activity.answer',update);assert.equal(replay.duplicate,true);assert.equal(changed.checklist.rows[0].version,3);
+ const outcomes=await Promise.allSettled([answerStep(f,first,detail,1,'yes','Primeira resposta'),answerStep(f,second,detail,1,'no','Segunda resposta')]);assert.equal(outcomes.filter(row=>row.status==='fulfilled').length,1);assert.equal(outcomes.find(row=>row.status==='rejected').reason.status,409);
+ assert.equal(f.native.prepare('SELECT COUNT(*) n FROM followup_history WHERE task_id=?').get(detail.task.id).n,5);
+});
+
+test('activity answer and lost-reply replay honor grant/issuer revocation at the commit boundary and cross-project scope',async t=>{
+ for(const condition of ['grant','issuer']){const f=fixture(t),manager=await f.actor('manager-a'),viewer=await f.actor('viewer-a'),outsider=await f.actor('worker-b');const detail=await act(f,manager,'checklist.activity.create',activityInput());await activityGrant(f,manager,detail.task.id);
+ await assert.rejects(answerStep(f,outsider,detail,0),{status:404});
+ const before=f.native.prepare('SELECT COUNT(*) n FROM mutation_keys').get().n;
+ f.db.before=()=>condition==='grant'?f.native.prepare('UPDATE followup_work_grants SET revoked_at=? WHERE task_id=?').run(f.now,detail.task.id):f.native.prepare("UPDATE members SET revoked_at=? WHERE user_id='manager-a'").run(f.now);
+ await assert.rejects(answerStep(f,viewer,detail,0),{status:403});assert.equal(f.native.prepare('SELECT COUNT(*) n FROM mutation_keys').get().n,before);assert.equal(f.native.prepare('SELECT answer FROM followup_checklist_steps WHERE id=?').get(detail.checklist.rows[0].id).answer,null);
+ }
+});
+
+test('activity negative answers require operational review and retain a restricted change history',async t=>{
+ const f=fixture(t),manager=await f.actor('manager-a'),viewer=await f.actor('viewer-a');let detail=await act(f,manager,'checklist.activity.create',activityInput());await activityGrant(f,manager,detail.task.id);detail=await answerStep(f,viewer,detail,0,'no','Ausência registrada para revisão.');detail=await answerStep(f,viewer,detail,1,'yes');
+ assert.equal(detail.history.find(row=>row.snapshot.activityChecklistChange?.rowId===detail.checklist.rows[0].id).snapshot.activityChecklistChange.after.note,'Ausência registrada para revisão.');
+ await assert.rejects(act(f,viewer,'checklist.activity.complete',{id:detail.checklist.id,expectedVersion:detail.checklist.version,operationKey:crypto.randomUUID()}),{status:409});
+ detail=await act(f,manager,'checklist.activity.complete',{id:detail.checklist.id,expectedVersion:detail.checklist.version,operationKey:crypto.randomUUID()});assert.equal(detail.task.status,'completed');
+ const tables=describePortableSchemas().tables.map(row=>row.table);assert.ok(!tables.includes('followup_checklist_steps'));assert.ok(!JSON.stringify(describePortableSchemas()).includes('activityChecklistChange'));
+});
+
+test('activity checkpoints reject foreign rows, oversize text and material rows in the wrong kind; failed storage rolls back',async t=>{
+ const f=fixture(t),manager=await f.actor('manager-a');const first=await act(f,manager,'checklist.activity.create',activityInput()),second=await act(f,manager,'checklist.activity.create',activityInput());
+ await assert.rejects(act(f,manager,'checklist.activity.answer',{id:first.checklist.id,rowId:second.checklist.rows[0].id,expectedVersion:1,answer:'yes',note:'',operationKey:crypto.randomUUID()}),{status:404});
+ await assert.rejects(answerStep(f,manager,first,0,'yes','x'.repeat(601)),{status:400});
+ await assert.rejects(act(f,manager,'checklist.activity.create',activityInput({rows:[{label:'x'.repeat(161)}]})),{status:400});
+ assert.throws(()=>f.native.prepare("INSERT INTO followup_checklist_items(id,checklist_id,item_id,expected) VALUES('forged',?,'item-a',1)").run(first.checklist.id),/followup_reference_mismatch/);
+ assert.throws(()=>f.native.prepare("UPDATE followup_checklists SET kind='materials' WHERE id=?").run(first.checklist.id),/followup_scope_immutable/);
+ const before=f.native.prepare('SELECT COUNT(*) n FROM mutation_keys').get().n;f.db.fail=/UPDATE followup_checklist_steps/;await assert.rejects(answerStep(f,manager,first,0));assert.equal(f.native.prepare('SELECT COUNT(*) n FROM mutation_keys').get().n,before);assert.equal(f.native.prepare('SELECT answer FROM followup_checklist_steps WHERE id=?').get(first.checklist.rows[0].id).answer,null);
+});
+
+
+test('cancelling the parent demand fences activity answers and completion inside the same atomic transaction',async t=>{
+ const f=fixture(t),manager=await f.actor('manager-a'),detail=await act(f,manager,'checklist.activity.create',activityInput());const before=f.native.prepare('SELECT COUNT(*) n FROM mutation_keys').get().n;
+ f.db.before=()=>f.native.prepare("UPDATE followup_tasks SET status='cancelled' WHERE id=?").run(detail.task.id);
+ await assert.rejects(answerStep(f,manager,detail,0),{status:409});assert.equal(f.native.prepare('SELECT COUNT(*) n FROM mutation_keys').get().n,before);assert.equal(f.native.prepare('SELECT answer FROM followup_checklist_steps WHERE id=?').get(detail.checklist.rows[0].id).answer,null);
+});
+
+
+test('a successful activity answer cannot be replayed after its work grant is revoked',async t=>{
+ const f=fixture(t),manager=await f.actor('manager-a'),viewer=await f.actor('viewer-a'),detail=await act(f,manager,'checklist.activity.create',activityInput());await activityGrant(f,manager,detail.task.id);
+ const update={id:detail.checklist.id,rowId:detail.checklist.rows[0].id,expectedVersion:1,answer:'yes',note:'Confirmado na atividade QA',operationKey:crypto.randomUUID()};await act(f,viewer,'checklist.activity.answer',update);
+ f.native.prepare('UPDATE followup_work_grants SET revoked_at=? WHERE task_id=?').run(f.now,detail.task.id);
+ await assert.rejects(act(f,viewer,'checklist.activity.answer',update),{status:403});assert.equal(f.native.prepare('SELECT version FROM followup_checklist_steps WHERE id=?').get(detail.checklist.rows[0].id).version,2);
+});
