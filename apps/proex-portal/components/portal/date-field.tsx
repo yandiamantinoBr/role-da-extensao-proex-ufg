@@ -1,13 +1,12 @@
 'use client';
 
-import { useEffect, useId, useRef, useState, type InputHTMLAttributes } from 'react';
-import { CalendarDays, ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { lazy, Suspense, useEffect, useId, useRef, useState, type InputHTMLAttributes } from 'react';
+import { CalendarDays, X } from 'lucide-react';
 import { Popover } from 'radix-ui';
-import { DayPicker } from 'react-day-picker';
-import { ptBR } from 'react-day-picker/locale';
 import { isCivilDate } from '../../lib/civil-date';
-import { calendarCivilDate, calendarDate, dateFieldError, displayCivilDate, parseBrazilianDate } from '../../lib/date-field';
+import { calendarCivilDate, dateFieldError, displayCivilDate, parseBrazilianDate } from '../../lib/date-field';
 import styles from './date-field.module.css';
+const DateCalendar=lazy(()=>import('./date-calendar').catch(()=>({default:()=> <p role="alert" style={{padding:16}}>Calendário indisponível. Digite a data em dd/mm/aaaa no campo.</p>})));
 
 type Props = Omit<InputHTMLAttributes<HTMLInputElement>, 'type' | 'value' | 'defaultValue' | 'onChange' | 'min' | 'max'> & {
   value?: string; defaultValue?: string; min?: string; max?: string;
@@ -24,7 +23,6 @@ export default function DateField({ value, defaultValue = '', onValueChange, min
   const iso = value === undefined ? local : isCivilDate(value) ? value : '';
   const text = edit?.iso === iso ? edit.text : displayCivilDate(iso);
   const error = dateFieldError(text, min, max);
-  const selected = calendarDate(iso);
   const label = props['aria-label'] ?? 'Data';
   const today = calendarCivilDate(new Date()), todayAllowed = (!min || today >= min) && (!max || today <= max);
 
@@ -66,14 +64,7 @@ export default function DateField({ value, defaultValue = '', onValueChange, min
         <Popover.Trigger asChild><button type="button" className={styles.trigger} disabled={disabled || props.readOnly} aria-label={`Abrir calendário: ${label}`}><CalendarDays size={19} aria-hidden="true" /></button></Popover.Trigger>
         <Popover.Portal><Popover.Content className={styles.popover} align="end" sideOffset={6} collisionPadding={8} aria-label={`Escolher ${label.toLocaleLowerCase('pt-BR')}`}>
           <div className={styles.heading}><strong>Escolher data</strong><Popover.Close className={styles.close} aria-label="Fechar calendário"><X size={18} aria-hidden="true" /></Popover.Close></div>
-          <DayPicker mode="single" locale={ptBR} selected={selected} defaultMonth={selected ?? calendarDate(min ?? '')} autoFocus
-            startMonth={calendarDate(min ?? '')} endMonth={calendarDate(max ?? '')} showOutsideDays
-            disabled={[...(min && calendarDate(min) ? [{ before: calendarDate(min)! }] : []), ...(max && calendarDate(max) ? [{ after: calendarDate(max)! }] : [])]}
-            onSelect={date => { if (date) { commit(calendarCivilDate(date)); setTouched(false); setOpen(false); } }}
-            classNames={{ root: styles.calendar, months: styles.months, month: styles.month, month_caption: styles.caption, caption_label: styles.captionLabel, nav: styles.nav,
-              button_previous: styles.navigation, button_next: styles.navigation, month_grid: styles.grid, weekdays: styles.weekdays, weekday: styles.weekday, week: styles.week,
-              day: styles.day, day_button: styles.dayButton, selected: styles.selected, today: styles.today, outside: styles.outside, disabled: styles.disabled, hidden: styles.hidden }}
-            components={{ Chevron: ({ orientation }) => orientation === 'left' ? <ChevronLeft size={18} aria-hidden="true" /> : <ChevronRight size={18} aria-hidden="true" /> }} />
+          {open && <Suspense fallback={<p role="status" style={{minHeight:308,padding:16}}>Carregando calendário…</p>}><DateCalendar value={iso} min={min} max={max} onSelect={next=>{commit(next);setTouched(false);setOpen(false);}}/></Suspense>}
           <div className={styles.actions}><button type="button" disabled={!todayAllowed} onClick={() => { commit(today); setTouched(true); setOpen(false); }}>Hoje</button>
             {!required && <button type="button" onClick={() => { commit(''); setTouched(false); setOpen(false); }}>Limpar</button>}</div>
           <span className={styles.hint}>Dia/mês/ano · use as setas para navegar.</span>

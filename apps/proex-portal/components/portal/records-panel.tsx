@@ -314,7 +314,7 @@ export default function RecordsPanel({ projects: sourceProjects, items, loans, c
       data: dateTime(record.occurred_at), projeto: projectName(record.project_id), categoria: kindLabel(record.kind),
       titulo: record.title, descricao: record.body, anexos: record.attachments.length,
     }));
-    const info: [string, string][] = [['Cobertura', 'Registros carregados que correspondem aos filtros visíveis.'], ['Projeto',filters.projectId?projectName(filters.projectId):'Todos os projetos permitidos'],['Período',`${filters.from||'Início disponível'} → ${filters.to||'Última data disponível'}`],['Categoria',category?kindLabel(category as Kind):'Todas'],['Busca',search||'Sem busca'],['Linhas', String(rows.length)],['Gerado em',dateTime(new Date().toISOString())+' (Brasília)']];
+    const info: [string, string][] = [['Cobertura', 'Registros carregados que correspondem aos filtros visíveis.'], ['Projeto',filters.projectId?projectName(filters.projectId):'Todos os projetos permitidos'],['Período',`${filters.from||'Início disponível'} a ${filters.to||'Última data disponível'}`],['Categoria',category?kindLabel(category as Kind):'Todas'],['Busca',search||'Sem busca'],['Linhas', String(rows.length)],['Gerado em',dateTime(new Date().toISOString())+' (Brasília)']];
     download(`proex-registros-${new Date().toISOString().slice(0, 10)}.${format}`, await documentExport(format,'Registros',columns,rows,(row,key)=>row[key],info,filters.projectId?{projectName:projectName(filters.projectId)}:undefined));
   }
   const projectName = (id: string) => String(projects.find(project => project.id === id)?.name ?? 'Projeto');

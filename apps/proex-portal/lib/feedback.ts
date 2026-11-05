@@ -29,7 +29,7 @@ export async function feedbackAction(db: D1Database, actor: PortalActor | null, 
   if (!await one(db, `SELECT 1 WHERE ${active.sql}`, active.values)) throw new HttpError(403, 'Seu acesso mudou. Atualize a página.', 'feedback_access_changed');
   if (input.action === 'create') {
     const body = typeof input.body === 'string' ? input.body.normalize('NFC').trim() : '';
-    if (body.length < 10 || body.length > 2000 || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(body)) throw new HttpError(400, 'Descreva o que aconteceu em 10 a 2.000 caracteres.', 'invalid_feedback');
+    if (Array.from(body).length < 10 || body.length > 2000 || /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(body)) throw new HttpError(400, 'Descreva o que aconteceu em 10 a 2.000 caracteres.', 'invalid_feedback');
     if (!modules.includes(String(input.module)) || !['problem','suggestion'].includes(String(input.kind))) throw new HttpError(400, 'Escolha o tipo e a área do feedback.', 'invalid_feedback_context');
     const projectId = input.projectId == null || input.projectId === '' ? null : input.projectId;
     if (projectId !== null && (typeof projectId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(projectId))) throw new HttpError(400, 'Escolha um projeto permitido.', 'invalid_project');
@@ -42,12 +42,14 @@ export async function feedbackAction(db: D1Database, actor: PortalActor | null, 
     try {
       await db.batch([
         db.prepare(`SELECT CASE WHEN ${guard.sql} THEN 1 ELSE json_extract('[]','feedback_access_changed') END`).bind(...guard.values),
+        db.prepare("SELECT CASE WHEN (SELECT COUNT(*) FROM portal_feedback WHERE author_id=? AND created_at>?)<100 THEN 1 ELSE json_extract('[]','feedback_rate_limited') END").bind(actor.userId,new Date(Date.now()-86400000).toISOString()),
         db.prepare('INSERT INTO portal_feedback(id,author_id,project_id,kind,module,body,release,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)').bind(id,actor.userId,projectId,input.kind,input.module,body,portalRelease(),now,now),
         mutation.claimStatement(id),
         db.prepare("INSERT INTO audit(id,actor_id,project_id,action,entity_id,details,created_at) VALUES(?,?,?,'feedback.create',?,'{}',?)").bind(uid(),actor.userId,projectId,id,now),
       ]);
     } catch (error) {
       if (String(error).includes('feedback_access_changed')) throw new HttpError(403, 'Seu acesso mudou. Reabra o formulário.', 'feedback_access_changed');
+      if (String(error).includes('feedback_rate_limited')) throw new HttpError(429,'Você já enviou 100 registros nas últimas 24 horas. Aguarde para enviar novamente.','feedback_rate_limited');
       return {id: await mutation.recover(error), duplicate:true};
     }
     return { id, duplicate: false };

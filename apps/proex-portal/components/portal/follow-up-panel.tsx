@@ -1,5 +1,6 @@
 'use client';
 import DateField from './date-field';
+import { toast } from 'sonner';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { ArrowUpRight, FolderKanban, ChartColumn, ClipboardCheck, Pencil, Plus, RefreshCw, Share2, Users, X } from 'lucide-react';
 import { type Catalog, type Task, type Checklist, type Team, stateLabels, priorityLabels, TASK_STATES, TASK_PRIORITIES, manualShareUrl } from '@/lib/follow-up/contracts';
@@ -178,7 +179,7 @@ export default function FollowUpPanel({defaultProjectId='',defaultOrganizationId
     detailGeneration.current++;selectionEcho.current=result.task.id;setSelectedTask(result.task.id);setDetail(result);setForm(null);onSelectTask?.(result.task.id);
     if(isTaskEditor)setTaskReceipt({id:result.task.id,message:'Demanda salva.'});
    }
-   setRevision(value=>value+1);followupChanged();
+   setRevision(value=>value+1);followupChanged();toast.success(isTaskEditor?'Demanda salva.':'Atualização registrada.');
    if(isTaskEditor){
     try{await onChanged?.();}catch{
      if(result.task&&epoch===interactionEpoch.current)setTaskReceipt({id:result.task.id,message:'Demanda salva. Atualize o portal para conferir as outras telas.'});

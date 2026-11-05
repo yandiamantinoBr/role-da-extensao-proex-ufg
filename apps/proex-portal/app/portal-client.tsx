@@ -27,7 +27,7 @@ import PublicParticipantsSettingsPanel from '@/components/portal/public-particip
 import ProfilePanel from '@/components/portal/profile-panel';
 import CalendarPanel from '@/components/portal/calendar-panel';
 import RecordsPanel from '@/components/portal/records-panel';
-import ReportsCenter from '@/components/portal/reports-center';
+import ReportsCenter, { projectBrandFor } from '@/components/portal/reports-center';
 import { download } from '@/components/portal/report-export';
 import ExportFormats, {type DocumentFormat} from '@/components/portal/export-formats';
 import { documentExport } from '@/components/portal/document-export';
@@ -606,14 +606,16 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
     } return value === undefined || value === null ? '—' : Number(value).toLocaleString('pt-BR'); };
     async function downloadDaily(format: DocumentFormat) {
         const columns = [
-            { key: 'day', label: 'Data' }, { key: 'campaign_name', label: 'Evento' }, { key: 'modality', label: 'Modalidade' },
+            { key: 'day', label: 'Data' }, { key: 'project_name', label: 'Projeto' }, { key: 'campaign_name', label: 'Evento' }, { key: 'modality', label: 'Modalidade' },
             { key: 'participations', label: 'Participações', numeric: true }, { key: 'attempts', label: 'Tentativas', numeric: true },
             { key: 'deliveries', label: 'Entregas', numeric: true }, { key: 'tickets', label: 'Atendimentos assistidos', numeric: true },
         ];
         const modalities: Record<string, string> = { physical: 'Presencial', dice: 'Dado', wheel: 'Roleta' };
-        const rows = dailyRows.map(row => ({ ...row, day: /^\d{4}-\d{2}-\d{2}$/.test(string(row.day)) ? string(row.day).split('-').reverse().join('/') : row.day, modality: modalities[string(row.modality)] ?? row.modality }));
-        const info: [string,string][] = [['Projeto',filter?projectName(filter):'Todos os projetos do recorte'],['Período',`${reportFrom||'Início disponível'} → ${reportTo||'Última data disponível'}`],['Linhas',String(rows.length)],['Gerado em',when(new Date().toISOString())+' (Brasília)']];
-        download(`proex-resumo-diario.${format}`, await documentExport(format,'Resumo diário',columns,rows,(row,key)=>row[key],info,filter?{projectName:projectName(filter)}:undefined));
+        const rows = dailyRows.map(row => ({ ...row, project_name:projectName(string(row.project_id)), day: /^\d{4}-\d{2}-\d{2}$/.test(string(row.day)) ? string(row.day).split('-').reverse().join('/') : row.day, modality: modalities[string(row.modality)] ?? row.modality }));
+        const info: [string,string][] = [['Projeto',filter?projectName(filter):'Todos os projetos do recorte'],['Período',`${reportFrom||'Início disponível'} a ${reportTo||'Última data disponível'}`],['Linhas',String(rows.length)],['Gerado em',when(new Date().toISOString())+' (Brasília)']];
+        const selectedProject=projects.find(project=>project.id===filter);
+        const presentation={...(selectedProject?{projectName:string(selectedProject.name),projectBrand:projectBrandFor(selectedProject.id,selectedProject.name,selectedProject.official_url)}:{}),metrics:[{label:'Participações',value:dailyRows.reduce((sum,row)=>sum+Number(row.participations??0),0)},{label:'Entregas',value:dailyRows.reduce((sum,row)=>sum+Number(row.deliveries??0),0)}]};
+        download(`proex-resumo-diario.${format}`, await documentExport(format,'Resumo diário',columns,rows,(row,key)=>row[key],info,presentation));
     }
     const activeModule = tabs.find(module => module.id === tab);
     const title = activeModule?.label ?? 'Visão geral';
@@ -982,7 +984,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
             </OperationForm>
             </Section></div>}</>}
 
-      {tab === 'team' && <><OrganizationsPanel organizations={organizations} currentActor={{ userId: string(user.userId), isPlatformOwner }} people={organizationPeople} onChanged={refreshModules}/><OfficialTeamDirectory onSelect={canAny('access.invite') ? setOfficialSuggestion : undefined}/><TeamPanel key={officialSuggestion?.selectionKey ?? 'manual'} officialSuggestion={officialSuggestion} onClearOfficialSuggestion={() => setOfficialSuggestion(null)} users={list(data.users)} members={members} invites={invites} projects={projects} selectedProjectId={filter} globalAdmin={isPlatformOwner} canManageManagers={(projectId, organizationId) => isPlatformOwner || organizations.some(organization => organization.canManage && organization.id === (projectId ? projects.find(project => project.id === projectId)?.organization_id : organizationId))} canProject={canProject} mutate={mutate} now={now}/>{canGlobal('organization.manage') && <AdminPrivacyPanel />}</>}
+      {tab === 'team' && <><OrganizationsPanel organizations={organizations} currentActor={{ userId: string(user.userId), isPlatformOwner }} people={organizationPeople} onChanged={refreshModules}/><OfficialTeamDirectory onSelect={canAny('access.invite') ? setOfficialSuggestion : undefined}/><TeamPanel key={officialSuggestion?.selectionKey ?? `manual:${filter}`} officialSuggestion={officialSuggestion} onClearOfficialSuggestion={() => setOfficialSuggestion(null)} users={list(data.users)} members={members} invites={invites} projects={projects} selectedProjectId={filter} globalAdmin={isPlatformOwner} canManageManagers={(projectId, organizationId) => isPlatformOwner || organizations.some(organization => organization.canManage && organization.id === (projectId ? projects.find(project => project.id === projectId)?.organization_id : organizationId))} canProject={canProject} mutate={mutate} now={now}/>{canGlobal('organization.manage') && <AdminPrivacyPanel />}</>}
       {tab === 'profile' && <><AssistantPanel key={string(user.userId)} projects={assistantProjects} defaultProjectId={filter} onApplied={refreshModules}/><ProfilePanel onUpdated={() => { void refresh(); }}/></>}
       {tab === 'calendar' && <CalendarPanel projects={projects} organizationalUnits={visibleUnits} selectedProjectId={filter} selectedUnitId={unitFilter} onProjectChange={selectProject} onUnitChange={selectUnit}/>}
       {tab === 'records' && <RecordsPanel projects={projects} items={items} loans={loans} canWrite={(capability: string, projectId?: string | null) => projectId ? canProject(projectId, capability) : canGlobal(capability)}/>}
