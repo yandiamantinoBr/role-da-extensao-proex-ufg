@@ -1,7 +1,7 @@
 import { platformOwnerAuthoritySql, type PortalActor } from '../access';
 import { all, iso, one } from '../database';
 import { HttpError } from '../errors';
-import { credentialProviders, DEFAULT_ASSISTANT_CONFIG, object, onlyKeys, validateConfig, type AssistantConfig, type CredentialProvider } from './contracts';
+import { credentialProviders, DEFAULT_ASSISTANT_CONFIG, newAssistantConfig, object, onlyKeys, validateConfig, type AssistantConfig, type CredentialProvider } from './contracts';
 import { credentialKeyId, decryptProviderCredentials, encryptProviderCredentials, type CredentialKeys } from './crypto';
 import { speechProviderForOrganization, validProviderKey, type SpeechEnvironment } from './settings';
 
@@ -151,7 +151,7 @@ export async function manageAssistantCredential(db: D1Database, caller: PortalAc
   if (action === 'disable' || action === 'remove') delete current[provider];
   if (action === 'enable') current[provider] = previousKey;
   current.disabledCredentials = disabled;
-  const config = row ? validateConfig(JSON.parse(row.config_json)) : { ...DEFAULT_ASSISTANT_CONFIG };
+  const config = row ? validateConfig(JSON.parse(row.config_json)) : newAssistantConfig(actor.userId);
   if (recover) credentialProviders.forEach(name => suspendDependentFeatures(config, name, id, speech));
   if (action !== 'enable') suspendDependentFeatures(config, provider, id, speech);
   const ciphertext = await encryptProviderCredentials(authSecret, current, id, keys, row?.credentials_ciphertext);

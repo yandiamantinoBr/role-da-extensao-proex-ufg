@@ -33,3 +33,7 @@ test('revoked vault access clears Groq masks/forms and late previous-organizatio
   h.find('button',node=>node.props['aria-label']==='Desligar chave Groq').props.onClick({currentTarget:{focus(){}}});h.render();h.find('form',node=>node.props['aria-label']==='Desligar chave Groq').props.onSubmit({preventDefault(){},currentTarget:{fields:{},elements:{namedItem:()=>null}}});await tick();h.requests[3].resolve({ok:false,status:403,json:async()=>({error:'Acesso revogado'})});await tick();h.render();assert.equal(h.nodes().some(node=>node.type==='select'),false);assert.equal(h.nodes().some(node=>node.type==='form'),false);assert.equal(text(h.nodes()).includes('…AB99'),false);
  }finally{h.dispose();}
 });
+
+test('an unprepared environment blocks key registration and explains the missing server preparation without a legacy account path',async()=>{
+ const h=harness();try{await load(h,{...vault(),storageReady:false,legacyAvailable:true});assert.equal(h.nodes().some(node=>node.type==='input'&&node.props.type==='password'),false);assert.equal(h.nodes().some(node=>node.type==='button'&&node.props['aria-label']==='Cadastrar chave Groq'),false);const rendered=text(h.nodes());assert.match(rendered,/Cadastro de chaves indisponível neste ambiente/);assert.match(rendered,/PROEX_KEYS_SECRET/);assert.equal(rendered.includes('Conta →'),false);assert.equal(rendered.includes('Configurar IA'),false);}finally{h.dispose();}
+});
