@@ -24,6 +24,14 @@ export function calendarCivilDate(date: Date): string {
   return `${String(date.getFullYear()).padStart(4, '0')}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
+/** Empty editors open today, clamped to the allowed range, rather than at min. */
+export function calendarOpeningDay(value: string, min?: string, max?: string, today = calendarCivilDate(new Date())): string {
+  let day = isCivilDate(value) ? value : today;
+  if (min && isCivilDate(min) && day < min) day = min;
+  if (max && isCivilDate(max) && day > max) day = max;
+  return day;
+}
+
 export function dateFieldError(text: string, min?: string, max?: string): string {
   if (!text.trim()) return '';
   const iso = parseBrazilianDate(text);

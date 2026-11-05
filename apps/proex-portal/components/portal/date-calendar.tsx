@@ -2,11 +2,11 @@
 import {DayPicker} from 'react-day-picker';
 import {ptBR} from 'react-day-picker/locale';
 import {ChevronLeft,ChevronRight} from 'lucide-react';
-import {calendarDate,calendarCivilDate} from '../../lib/date-field';
+import {calendarDate,calendarCivilDate,calendarOpeningDay} from '../../lib/date-field';
 import styles from './date-field.module.css';
 export default function DateCalendar({value,min,max,onSelect}:{value:string;min?:string;max?:string;onSelect:(iso:string)=>void}){
   const selected=calendarDate(value);
-  return <DayPicker mode="single" locale={ptBR} selected={selected} defaultMonth={selected??calendarDate(min??'')} autoFocus
+  return <DayPicker mode="single" locale={ptBR} selected={selected} defaultMonth={calendarDate(calendarOpeningDay(value,min,max))} autoFocus
     startMonth={calendarDate(min??'')} endMonth={calendarDate(max??'')} showOutsideDays
     disabled={[...(min&&calendarDate(min)?[{before:calendarDate(min)!}]:[]),...(max&&calendarDate(max)?[{after:calendarDate(max)!}]:[])]}
     onSelect={date=>{if(date)onSelect(calendarCivilDate(date));}}
