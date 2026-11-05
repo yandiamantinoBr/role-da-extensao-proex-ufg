@@ -1,5 +1,14 @@
 # Continuar Portal PROEX
 
+## Checkpoint atual · 2026-11-05 · PR35 publicada
+
+Produção funcional: **4992afac14151ac66ae3be5b4e7139c8071e21ad**, PR #35. Vercel **dpl_Azn3XQoa3LsUQS8FsdwPZxinmGaP READY**, alias oficial conferido. CI42049279531: **1.135 testes**, tipos, lint, builds Worker/Node e smoke de autenticação aprovados. Saúde200, APIs privadas401/no-store e versões aposentadas403. Script de equipe publicado idêntico ao Git. [Recibo e limites](ENTREGA-05NOV-PROVEDORES-E-RELATORIOS.md#publicação-comprovada-em-2026-11-05).
+
+Chrome restaurado, mas extensão sem debugger e captura nativa divergente da janela pedida; não continuar cliques com geometria incerta. A conferência visual autenticada da PR35 não foi concluída. O cofre ainda depende do segredo dedicado: provisionamento rejeitado antes de executar, sem contorno nem redução das proteções do Bitwarden.
+
+A próxima composição está isolada em `codex/proex-resumo-e-estrutura-05nov`: organograma formal0029, estrutura/equipes com permissões separadas, exportações e resumo pessoal do Início com totais privados. Não foi publicada. Ler seu registro antes de continuar; a interrupção dos subagentes por limite de uso não constitui aceite de revisão. Os checkpoints antigos abaixo permanecem históricos.
+
+
 ## Publicação confirmada e próxima composição · 05/11/2026
 
 PR #33 publicada: merge `c8182d2e4b34f99033b861daa8064e12f1e2d937`, Vercel `dpl_7vA9LLPkEtiJoewFzEThQAfiKqFy` READY. CI `42030415419`: 1003 testes do Portal, tipos, builds Worker/Node e autenticação aprovados. Chrome autenticado confirmou versão no rodapé, cartão do CONPEEX abrindo a ficha, calendário em português no mês atual e campo `05/11/2026`, além do feedback com versão. Nenhuma demanda/aviso de QA foi criada em produção.

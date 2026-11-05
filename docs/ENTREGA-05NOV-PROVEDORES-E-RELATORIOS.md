@@ -4,6 +4,16 @@
 
 [PR #35](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/35), branch `codex/proex-provedores-e-relatorios-05nov`. Candidata em validação; este registro ainda não atesta publicação. A composição `f8c253f` passou **1129/1129 testes**, tipos e lint sem erros, com dois avisos antigos de imagem. O CI42043696074 também passou nesse SHA. A opção complementar de Markdown entrou depois em `e2c9f6c`; os43 testes focais de exportação passaram. Builds e inspeção integrada finais terão recibos próprios abaixo.
 
+## Publicação comprovada em 2026-11-05
+
+PR #35 mesclada em `4992afac14151ac66ae3be5b4e7139c8071e21ad`. O CI final [42049279531](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/actions/runs/42049279531), sobre `de4dc6d6b1142b82e6fc11fbb9039e925ea52941`, passou **1.135/1.135 testes do portal**, tipos, lint, builds Worker/Node e verificações de autenticação. A primeira execução do CI dessa rodada falhou em uma expectativa antiga de plural; a expectativa foi alinhada ao texto novo e o CI final passou.
+
+Vercel `dpl_Azn3XQoa3LsUQS8FsdwPZxinmGaP` ficou READY no mesmo SHA do merge. O alias `proex-gestao.vercel.app` foi conferido. Saúde canônica 200; rotas de equipes, credenciais, MCP e Meu trabalho retornaram 401 sem sessão e `private, no-store`; dois deploys aposentados continuam 403. O script publicado de equipe tem 9.108 bytes e SHA-256 `2b3f913bceeb4c97ad6ec1ebd5fcc5332b78b21587c66ba929fd48b3bdb26113`, idêntico ao Git.
+
+Chrome restaurado por `launch_app`, confirmado no inventário e na árvore nativa. A extensão continuou sem debugger; na tentativa nativa, a captura veio de outra janela e o clique foi recusado por ausência de geometria. Nenhuma ação por coordenada foi feita depois dessa divergência. A inspeção autenticada pós-deploy continua pendente. Os dados e uploads abertos do usuário foram preservados.
+
+O texto de candidata abaixo preserva a sequência de validação e fica superado, quanto ao estado de publicação, por este recibo.
+
 ## Comportamento entregue
 
 - **Meu trabalho:** PDF, DOCX e XLSX das páginas atuais, com até seis demandas e seis designações, filtros, intervalos, totais e horários explícitos. A opção de Markdown para a Vault fica secundária. Baixar um arquivo não escreve nem sincroniza uma Vault.
