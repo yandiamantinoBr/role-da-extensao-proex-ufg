@@ -95,6 +95,15 @@ test('direct/team and both pagers change the server query and keep the other pag
   } finally {h.dispose();}
 });
 
+test('a routed personal status applies before requests and Back changes only status/pages, preserving explicit assignment', async()=>{
+ const seen=[],h=harness('meu-trabalho-panel',{workStatus:'attention',onWorkStatusChange:value=>seen.push(value)});try{
+  assert.equal(new URL(h.last().url,'http://fixture').searchParams.get('status'),'attention');await h.ready(response({scope:{...response().scope,status:'attention'}}));
+  h.click('Por equipe');h.render();await h.ready(response({scope:{...response().scope,status:'attention',assignment:'team'}}));
+  h.changeStatus('completed');assert.deepEqual(seen,['completed']);h.render({workStatus:'completed'});let query=new URL(h.last().url,'http://fixture').searchParams;assert.equal(query.get('assignment'),'team');assert.equal(query.get('status'),'completed');
+  const old=h.last();h.render({workStatus:'attention'},false);assert.ok(!h.body().includes('Pessoa A'));h.effects();assert.equal(old.init.signal.aborted,true);query=new URL(h.last().url,'http://fixture').searchParams;assert.equal(query.get('status'),'attention');assert.equal(query.get('assignment'),'team');assert.equal(query.get('taskOffset'),'0');assert.deepEqual(seen,['completed'],'history traversal must not issue a new user filter action');
+ }finally{h.dispose();}
+});
+
 test('account/context changes hide old data before effects; late responses, wrong viewer and wrong context cannot populate it', async () => {
   const h = harness(); try {
     await h.ready(); h.click('Atualizar meu trabalho'); h.render(); const old = h.last();

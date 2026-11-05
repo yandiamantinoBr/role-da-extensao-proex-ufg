@@ -163,3 +163,6 @@
 .description{line-height:1.65;-webkit-line-clamp:2}.metadata{gap:6px}.badges{gap:8px}
 .cardFooter{gap:6px;padding-top:10px}.cardFooter>a{min-height:36px;align-items:center}.cardActions>button{min-height:44px}
 @container projects (max-width:620px){.card{padding:17px!important}.identity h3{font-size:18px}.pinnedHeading small{font-size:11px}.pinnedProject>button:first-child{padding-block:8px}}
+
+/* On narrow project details, the edit action must not squeeze a long project name. */
+@container portal (max-width:620px){.heroIdentity{flex-basis:100%}.heroTop>button{align-self:flex-start}}

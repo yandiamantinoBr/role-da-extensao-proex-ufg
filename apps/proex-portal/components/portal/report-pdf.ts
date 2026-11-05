@@ -12,6 +12,8 @@ export type ReportPdfPresentation = {
   projectBrand?: ProjectMark;
   metrics?: readonly { label: string; value: number | null; detail?: string }[];
   columnWeights?: readonly number[];
+  /** Print-only grouping preserves every authorized field; spreadsheet/Word keep original columns. */
+  columnGroups?: readonly { label: string; keys: readonly string[] }[];
 };
 
 type Marks = Partial<Record<'proex' | 'ufg' | ProjectMark, Uint8Array>>;
@@ -49,9 +51,16 @@ export async function toPdf(
   info: [string, string][],
   options?: Options,
 ): Promise<Blob> {
-  const data = documentRows(columns, rows, display);
+  const sourceData = documentRows(columns, rows, display);
+  const groups=options?.presentation?.columnGroups;
+  if(groups){
+    const keys=groups.flatMap(group=>[...group.keys]);
+    if(groups.length<2||groups.length>6||groups.some(group=>!group.label.trim()||!group.keys.length)||keys.length!==columns.length||new Set(keys).size!==columns.length||keys.some(key=>!columns.some(column=>column.key===key)))throw new Error('O agrupamento do PDF deve preservar cada coluna autorizada uma única vez.');
+  }
+  const data=groups?sourceData.map(row=>groups.map(group=>group.keys.map((key,index)=>{const at=columns.findIndex(column=>column.key===key);return (index?columns[at].label+': ':'')+row[at];}).join('\n'))):sourceData;
+  const tableColumns=groups?groups.map(group=>({key:group.keys[0],label:group.label,numeric:false})):columns;
   const requestedWeights=options?.presentation?.columnWeights;
-  if(requestedWeights!==undefined&&(requestedWeights.length!==columns.length||requestedWeights.some(weight=>!Number.isFinite(weight)||weight<.5||weight>4)||Math.max(...requestedWeights)/Math.min(...requestedWeights)>3))throw new Error('Escolha larguras de colunas equilibradas e válidas para o PDF.');
+  if(requestedWeights!==undefined&&(requestedWeights.length!==tableColumns.length||requestedWeights.some(weight=>!Number.isFinite(weight)||weight<.5||weight>4)||Math.max(...requestedWeights)/Math.min(...requestedWeights)>3))throw new Error('Escolha larguras de colunas equilibradas e válidas para o PDF.');
   const projectName = options?.presentation?.projectName?.trim() || '';
   const selectedBrand = options?.presentation?.projectBrand;
   const projectBrand = projectName && selectedBrand && Object.hasOwn(PROJECT_MARK_PATHS, selectedBrand) ? selectedBrand : undefined;
@@ -242,12 +251,12 @@ export async function toPdf(
   if (!data.length) {
     heading('Registros do relatório');
     paint('Nenhum registro corresponde ao recorte selecionado.', margin, y, 10, muted);
-  } else if (columns.length <= 6 && !projectName) {
-    const weights = requestedWeights?[...requestedWeights]:columns.map(column => column.numeric ? .8 : 1.15);
+  } else if (tableColumns.length <= 6 && !projectName) {
+    const weights = requestedWeights?[...requestedWeights]:tableColumns.map(column => column.numeric ? .8 : 1.15);
     const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
     const widths = weights.map(weight => weight * usable / totalWeight);
-    const numeric = columns.map(column => column.numeric);
-    const headers = columns.map(column => text(column.label));
+    const numeric = tableColumns.map(column => column.numeric);
+    const headers = tableColumns.map(column => text(column.label));
     const headerHeight = Math.max(...headers.map((label, index) => wrap(label, strongFont(label), 9.5, widths[index] - 18).length)) * 14 + 18;
     const normalizedRows=data.map(row=>row.map(value=>text(value.trim()?value:'—')));
     const tableHeading = (continued = false,firstRow=normalizedRows[0]) => {
@@ -266,7 +275,7 @@ export async function toPdf(
       const label = projectSheet ? 'Dados do projeto' : 'Registro ' + (index + 1);
       heading(label, 64);
       tableRow(['Campo', 'Informação'], widths, [], purple, addPage, true);
-      row.forEach((value, column) => tableRow([text(columns[column].label), text(value.trim() ? value : 'Não informado')], widths, [], column % 2 ? wash : white, () => {
+      row.forEach((value, column) => tableRow([text(tableColumns[column].label), text(value.trim() ? value : 'Não informado')], widths, [], column % 2 ? wash : white, () => {
         addPage();
         heading(label + ' (continuação)', 64);
         tableRow(['Campo', 'Informação'], widths, [], purple, addPage, true);

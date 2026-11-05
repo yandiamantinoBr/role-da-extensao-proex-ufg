@@ -14,7 +14,7 @@ function load(file, dependencies = {}) {
     return compiledModule.exports;
 }
 
-const { readPortalLocation, commitPortalLocation } = load('portal-history', { './work-navigation': load('work-navigation') });
+const { readPortalLocation, commitPortalLocation } = load('portal-history', { './work-navigation': load('work-navigation'), './my-work/contracts': load('my-work/contracts') });
 const origin = 'https://example.test';
 const scope = {
     modules: ['overview', 'projects', 'materials', 'calendar', 'reports', 'demands', 'my-work'],
@@ -22,6 +22,7 @@ const scope = {
     areas: ['culture', '__none__'],
     canSelectProject: (id, unit, area) => id === 'project-a' && (!unit || unit === 'unit-a') && (!area || area === 'culture'),
     canOpenRecord: record => record.recordId !== 'unknown-item',
+    canSelectOrganization: (organization, project) => organization === 'org-a' && (!project || project === 'project-a'),
 };
 const read = (query, current = scope) => readPortalLocation(new URLSearchParams(query), current);
 
@@ -60,6 +61,21 @@ test('module navigation retains each view, replaces filter edits, and restores b
     position++;
     assert.equal(restore().tab, 'calendar');
     assert.equal(restore().project, 'project-a');
+});
+
+test('personal status and organization links survive reload and Back, validate scopes and leave unrelated draft state intact', () => {
+    const entries=[origin+'/?draft=keep'], history={state:{draft:'keep'},pushState(_state,_title,url){entries.push(url.href);},replaceState(_state,_title,url){entries[entries.length-1]=url.href;}};
+    const commit=query=>commitPortalLocation(history,entries.at(-1),read(query),true);
+    commit('module=my-work&project=project-a&organizationId=org-a&workStatus=attention&unit=unit-a&area=culture');
+    let restored=read(new URL(entries.at(-1)).searchParams);
+    assert.equal(restored.workStatus,'attention');assert.equal(restored.organization,'org-a');assert.equal(restored.project,'project-a');assert.equal(restored.unit,'');assert.equal(restored.area,'');
+    assert.equal(new URL(entries.at(-1)).searchParams.get('draft'),'keep');assert.deepEqual(history.state,{draft:'keep'});
+    commit('module=my-work&project=project-a&organizationId=org-a&workStatus=due_today');
+    assert.equal(read(new URL(entries.at(-1)).searchParams).workStatus,'due_today');
+    restored=read(new URL(entries.at(-2)).searchParams);assert.equal(restored.workStatus,'attention');
+    assert.equal(read('module=my-work&workStatus=bogus&organizationId=org-b').workStatus,'pending');assert.equal(read('module=my-work&organizationId=org-b').organization,'');
+    const demand=read('module=demands&demandId=task-a&workStatus=attention&organizationId=org-a');assert.equal(demand.demand,'task-a');assert.equal(demand.workStatus,'pending');assert.equal(demand.organization,'');
+    commitPortalLocation(history,entries.at(-1),demand,false);const params=new URL(entries.at(-1)).searchParams;assert.equal(params.get('demandId'),'task-a');assert.equal(params.has('workStatus'),false);assert.equal(params.has('organizationId'),false);assert.equal(params.get('draft'),'keep');
 });
 
 test('traversal validates the snapshot again and removes stale selections without reviving permissions', () => {

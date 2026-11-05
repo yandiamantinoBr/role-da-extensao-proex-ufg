@@ -1,26 +1,15 @@
 import { type PortalActor } from '../access';
 import { type Row } from '../database';
-import { actorRequired, authority, assignedRecipient } from '../follow-up/scope';
+import { actorRequired } from '../follow-up/scope';
 import { id, choices, integer, fail } from '../follow-up/contracts';
 import { taskProjectionSql, projectedTask } from '../follow-up/service';
 import { serverWorkClock } from '../follow-up/time';
 import { responsibilityProjection, projectResponsibility, workTarget } from '../responsibilities/service';
-import { responsibilityRead, responsibilityDirect, responsibilityTeam, taskDirect, taskTeam, targetAccess, assignmentVia } from '../responsibilities/scope';
-import { MY_WORK_STATUSES, type TaskCounts, type OperationalArea, type MyWorkResponse, type MyWorkTask, type AssignmentFilter } from './contracts';
+import { taskDirect, taskTeam, targetAccess, assignmentVia } from '../responsibilities/scope';
+import { MY_WORK_STATUSES, type TaskCounts, type OperationalArea, type MyWorkResponse, type MyWorkTask } from './contracts';
+import {areaSql,emptyCounts,countSelect,myWorkPredicates} from './queries';
 
-const areaSql=`CASE WHEN t.loan_id IS NOT NULL THEN 'loans' WHEN t.item_id IS NOT NULL THEN 'materials' WHEN t.campaign_id IS NOT NULL THEN 'campaigns' WHEN t.project_id IS NOT NULL THEN 'projects' ELSE 'general' END`;
-const emptyCounts=():TaskCounts=>({total:0,pending:0,attention:0,overdue:0,dueToday:0,inProgress:0,blocked:0,completed:0,cancelled:0});
-function countSelect(today:string) {const pending="t.status NOT IN ('completed','cancelled')",overdue=`(${pending} AND t.due_at<'${today}')`;return `COUNT(DISTINCT t.id) total,
- COUNT(DISTINCT CASE WHEN ${pending} THEN t.id END) pending,
- COUNT(DISTINCT CASE WHEN ${overdue} OR t.status='blocked' THEN t.id END) attention,
- COUNT(DISTINCT CASE WHEN ${overdue} THEN t.id END) overdue,
- COUNT(DISTINCT CASE WHEN ${pending} AND t.due_at='${today}' THEN t.id END) dueToday,
- COUNT(DISTINCT CASE WHEN t.status='in_progress' THEN t.id END) inProgress,
- COUNT(DISTINCT CASE WHEN t.status='blocked' THEN t.id END) blocked,
- COUNT(DISTINCT CASE WHEN t.status='completed' THEN t.id END) completed,
- COUNT(DISTINCT CASE WHEN t.status='cancelled' THEN t.id END) cancelled`;}
 function statusSql(status:string,today:string){const pending="t.status NOT IN ('completed','cancelled')";return status==='all'?'1=1':status==='pending'?pending:status==='overdue'?`${pending} AND t.due_at<'${today}'`:status==='due_today'?`${pending} AND t.due_at='${today}'`:status==='attention'?`((${pending} AND t.due_at<'${today}') OR t.status='blocked')`:`t.status='${status}'`;}
-function relation(direct:string,team:string,filter:AssignmentFilter){return filter==='direct'?direct:filter==='team'?team:`(${direct} OR ${team})`;}
 function taskProjection(actor:PortalActor) {
  const accesses=(['materials','loans','campaigns'] as const).map(area=>({area,...targetAccess(actor,area,'t.project_id')}));
  const allowed=`CASE ${areaSql} ${accesses.map(a=>`WHEN '${a.area}' THEN (${a.sql})`).join(' ')} ELSE t.project_id IS NOT NULL END`,values=accesses.flatMap(a=>a.values);
@@ -32,11 +21,8 @@ export async function myWork(db:D1Database,actor:PortalActor|null,input:Record<s
  actorRequired(actor);const organizationId=id(input.organizationId,true),projectId=id(input.projectId,true),assignment=choices(input.assignment??'all',['all','direct','team']),status=choices(input.status??'pending',MY_WORK_STATUSES);
  const limit=input.limit===undefined?20:integer(input.limit,50),taskOffset=input.taskOffset===undefined?0:integer(input.taskOffset,50000),responsibilityOffset=input.responsibilityOffset===undefined?0:integer(input.responsibilityOffset,50000);if(!limit)fail('Escolha de 1 a 50 registros.');
  const {asOf,today}=serverWorkClock();
- const taskConditions=[authority('caller.user_id','t.organization_id','t.project_id'),assignedRecipient('caller.user_id'),"EXISTS(SELECT 1 FROM organizations active_org WHERE active_org.id=t.organization_id AND active_org.status='active')",relation(taskDirect('caller.user_id'),taskTeam('caller.user_id'),assignment)],taskValues:unknown[]=[];
- const responsibilityConditions=[responsibilityRead('caller.user_id'),"s.status='active'","EXISTS(SELECT 1 FROM organizations active_org WHERE active_org.id=s.organization_id AND active_org.status='active')",relation(responsibilityDirect('caller.user_id'),responsibilityTeam('caller.user_id'),assignment)],responsibilityValues:unknown[]=[];
- if(organizationId){taskConditions.push('t.organization_id=?');taskValues.push(organizationId);responsibilityConditions.push('s.organization_id=?');responsibilityValues.push(organizationId);}
- if(projectId){taskConditions.push('t.project_id=?');taskValues.push(projectId);responsibilityConditions.push('s.project_id=?');responsibilityValues.push(projectId);}
- const taskWhere=taskConditions.join(' AND '),responsibilityWhere=responsibilityConditions.join(' AND '),tp=taskProjection(actor),rp=responsibilityProjection(actor);
+ const {taskWhere,responsibilityWhere,taskValues,responsibilityValues}=myWorkPredicates(organizationId,projectId,assignment);
+ const tp=taskProjection(actor),rp=responsibilityProjection(actor);
  // Four guarded reads share one strong snapshot; no fanout writes, receipts,
  // notification read markers or per-item requests occur on a personal GET.
  const results=await db.batch([
