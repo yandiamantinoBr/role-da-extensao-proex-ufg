@@ -179,7 +179,12 @@ test('Groq metadata migration preserves three populated providers and ciphertext
 test('credentials use authenticated encryption, cannot be decrypted after tampering or key rotation', async () => {
  const ciphertext = await encryptCredentials(secret, { deepseek: key }); assert.equal(ciphertext.includes(key), false); assert.deepEqual(await decryptCredentials(secret, ciphertext), { deepseek: key });
  await assert.rejects(decryptCredentials(secret + '-rotated', ciphertext), code('assistant_credentials_unavailable'));
- const [version, iv, bytes] = ciphertext.split('.'); await assert.rejects(decryptCredentials(secret, `${version}.${iv}.${bytes.slice(0, -2)}aa`), code('assistant_credentials_unavailable'));
+ const [version, iv, bytes] = ciphertext.split('.');
+ // Flip an authenticated byte, not a random base64 suffix that can be unchanged
+ // or differ only in unused padding bits.
+ const altered=Buffer.from(bytes,'base64url');altered[0]^=1;
+ const tampered=altered.toString('base64url');assert.notEqual(tampered,bytes);
+ await assert.rejects(decryptCredentials(secret, `${version}.${iv}.${tampered}`), code('assistant_credentials_unavailable'));
 });
 
 test('provider envelopes distinguish the legacy and dedicated secrets, organization, version and rotation', async () => {

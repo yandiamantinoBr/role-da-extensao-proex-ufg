@@ -55,3 +55,11 @@ CREATE TRIGGER institutional_link_update BEFORE UPDATE ON institutional_team_lin
  SELECT CASE WHEN NEW.revoked_at IS NULL AND NOT EXISTS(SELECT 1 FROM followup_teams t JOIN institutional_nodes n ON n.organization_id=t.organization_id WHERE t.id=NEW.team_id AND n.id=NEW.node_id AND n.organization_id=NEW.organization_id AND t.status='active' AND n.status='active') THEN RAISE(ABORT,'structure_link_inactive') END;
  SELECT CASE WHEN NEW.revoked_at IS NULL AND OLD.revoked_at IS NOT NULL AND (SELECT COUNT(*) FROM institutional_team_links WHERE organization_id=NEW.organization_id AND revoked_at IS NULL)>=500 THEN RAISE(ABORT,'structure_link_limit') END;
 END;
+
+-- A referenced team's identity cannot move to a different organization and
+-- invalidate active or historical links. No application path moves teams.
+CREATE TRIGGER institutional_team_organization_guard BEFORE UPDATE OF organization_id ON followup_teams
+WHEN NEW.organization_id!=OLD.organization_id AND EXISTS(SELECT 1 FROM institutional_team_links WHERE team_id=OLD.id)
+BEGIN
+ SELECT RAISE(ABORT,'structure_identity_immutable');
+END;

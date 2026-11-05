@@ -15,6 +15,9 @@
 .panel button:disabled { cursor:default; opacity:.55; }
 .scope { display:flex; align-items:flex-start; gap:8px; color:var(--muted); font-size:12px; line-height:1.6; }
 .scope svg { flex-shrink:0; margin-top:2px; }
+.scope strong { color:var(--ink); font-weight:650; }
+.scope>span,.heading p,.reference p,.export p,.form p,.editor>p { max-width:75ch; }
+.srOnly { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
 .heading { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; min-width:0; }
 .heading h3 { font-size:19px; font-weight:750; line-height:1.4; overflow-wrap:anywhere; }
 .heading h4,.export h4,.editor h4 { font-size:15px; font-weight:750; line-height:1.5; }
@@ -39,26 +42,30 @@
 .check { display:flex; align-items:center; gap:9px; min-height:44px; cursor:pointer; font-size:12px; }
 .check input { width:18px; height:18px; accent-color:var(--brand-ink); }
 .tree { min-width:0; }
-.branch { display:grid; gap:12px; min-width:0; list-style:none; padding:0; margin:0; }
+.branch { display:grid; gap:8px; min-width:0; list-style:none; padding:0; margin:0; }
 .node { min-width:0; }
-.node>.branch { margin-top:12px; margin-left:10px; padding-left:12px; border-left:2px solid var(--line); }
 .node[data-relation=governance] { border-left:2px dashed var(--muted); padding-left:10px; }
 .node[data-relation=subordination]>.nodeCard { border-left:3px solid var(--brand-ink); }
-.nodeCard { min-width:0; padding:14px; border:1px solid var(--line); border-radius:13px; background:var(--surface); }
+/* Title and actions share one row when there is room; linked teams always take a row of their own. */
+.nodeCard { min-width:0; display:flex; flex-wrap:wrap; align-items:center; gap:8px 12px; padding:10px 12px; border:1px solid var(--line); border-radius:13px; background:var(--surface); }
 .nodeCard[data-archived=true] { background:var(--canvas); }
-.nodeTitle { display:flex; flex-wrap:wrap; align-items:flex-start; gap:10px; }
+.nodeTitle { flex:1 1 15rem; min-width:0; display:flex; align-items:center; gap:10px; }
 .nodeIcon { width:33px; height:33px; border-radius:9px; }
-.nodeTitle>div { flex:1; min-width:140px; }
+.nodeTitle>div { flex:1; min-width:0; }
 .eyebrow { color:var(--brand-ink); font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.045em; overflow-wrap:anywhere; }
-.nodeTitle h4 { margin-top:2px; font-size:14px; font-weight:700; line-height:1.5; overflow-wrap:anywhere; }
-.badge { align-self:flex-start; max-width:100%; padding:4px 7px; border-radius:6px; color:var(--muted); background:var(--surface-soft); font-size:10px; font-weight:650; overflow-wrap:anywhere; }
+.nodeTitle h4 { margin-top:1px; font-size:14px; font-weight:700; line-height:1.45; overflow-wrap:anywhere; }
+.badge { flex-shrink:0; align-self:flex-start; max-width:45%; padding:4px 7px; border-radius:6px; color:var(--muted); background:var(--surface-soft); font-size:10px; font-weight:650; overflow-wrap:anywhere; }
 .node[data-relation=governance]>.nodeCard .badge { border:1px dashed var(--muted); background:var(--canvas); }
-.nodeFooter { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px 12px; margin-top:12px; }
-.teamCount { display:inline-flex; align-items:center; gap:6px; color:var(--muted); font-size:11px; line-height:1.6; }
-.teamCount svg { flex-shrink:0; }
-.nodeFooter .actions { gap:6px; }
-.nodeFooter button { background:var(--canvas); }
-.linkedTeams { display:flex; flex-wrap:wrap; gap:7px; margin:10px 0 0; list-style:none; padding:0; }
+.nodeActions { display:flex; flex-wrap:nowrap; gap:6px; margin-left:auto; }
+.nodeActions button { font-size:12px; padding-inline:11px; background:var(--canvas); }
+.children { min-width:0; margin-top:4px; }
+.childrenSummary { display:inline-flex; align-items:center; gap:6px; min-height:44px; padding:0 10px; border-radius:10px; color:var(--brand-ink); font-size:12px; font-weight:650; line-height:1.4; cursor:pointer; list-style:none; }
+.childrenSummary::-webkit-details-marker { display:none; }
+.childrenSummary:hover { background:var(--surface-soft); }
+.childrenSummary svg { flex-shrink:0; transition:transform .15s; }
+.children:not([open])>.childrenSummary svg { transform:rotate(-90deg); }
+.children>.branch { margin-left:10px; padding-left:12px; border-left:2px solid var(--line); }
+.linkedTeams { flex-basis:100%; display:flex; flex-wrap:wrap; gap:7px; margin:0; list-style:none; padding:0; }
 .linkedTeams li { min-width:0; max-width:100%; }
 .linkedTeams li>span,.teamLink { display:flex; align-items:center; gap:7px; min-height:44px; padding:8px 10px; border:1px solid var(--line); border-radius:10px; background:var(--surface-soft); color:var(--brand-ink); font-size:12px; text-align:left; }
 .teamLink>span { overflow-wrap:anywhere; min-width:0; }
@@ -69,6 +76,9 @@
 .empty p { margin:5px auto 12px; max-width:460px; color:var(--muted); font-size:12px; line-height:1.6; }
 .editor { display:grid; gap:15px; min-width:0; padding:15px; border:1px solid var(--brand-ink); border-radius:14px; background:var(--canvas); scroll-margin-top:110px; }
 .editor h4 { scroll-margin-top:125px; }
+.editorTitle { min-width:0; overflow-wrap:anywhere; }
+.editorTitle>span { font-weight:650; color:var(--brand-ink); }
+.formActions { grid-column:1/-1; display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
 .form { min-width:0; display:grid; align-items:start; gap:13px; border:0; padding:0; }
 .form label { min-width:0; display:grid; gap:5px; color:var(--ink); font-size:12px; font-weight:650; }
 .form :is(input:not([type=checkbox]),select) { min-width:0; width:100%; min-height:44px; padding:9px 10px; border:1px solid var(--line); border-radius:9px; background:var(--surface); color:var(--ink); font-size:16px; font-weight:400; }
@@ -91,6 +101,8 @@
 .updated { font-size:11px; }
 .loading { padding:18px 0; color:var(--muted); font-size:13px; }
 .feedback { border:1px solid var(--line); background:var(--surface-soft); color:var(--ink); border-radius:10px; padding:12px; font-size:13px; line-height:1.6; overflow-wrap:anywhere; }
-@container (min-width:600px) { .form { grid-template-columns:repeat(2,minmax(0,1fr)); } .wide { grid-column:1/-1; } .node>.branch { margin-left:17px; padding-left:18px; } .metrics>div { grid-template-columns:auto 1fr; column-gap:10px; align-items:center; } .metrics svg { grid-row:1/3; } .metrics span { grid-column:2; } }
-@container (max-width:380px) { .body { padding:13px; gap:15px; } .summary { padding:13px; gap:9px; } .metrics>div { padding:10px 8px; } .metrics strong { font-size:22px; } .nodeCard { padding:11px; } .nodeTitle>div { min-width:100px; } .node>.branch { margin-left:4px; padding-left:8px; } .reference { padding:11px; } .editor { padding:12px; } }
-@media (prefers-reduced-motion:reduce) { .chevron { transition:none; } }
+@container (min-width:600px) { .form { grid-template-columns:repeat(2,minmax(0,1fr)); } .wide { grid-column:1/-1; } .children>.branch { margin-left:17px; padding-left:18px; } .metrics>div { grid-template-columns:auto 1fr; column-gap:10px; align-items:center; } .metrics svg { grid-row:1/3; } .metrics span { grid-column:2; } }
+/* Narrow panels: repeated node actions become 44px icon buttons; the aria-label keeps action and unit. */
+@container (max-width:599px) { .nodeActions .actionLabel { display:none; } .nodeActions button { justify-content:center; min-width:44px; padding-inline:0; } .nodeTitle { flex-basis:12rem; } }
+@container (max-width:380px) { .body { padding:13px; gap:15px; } .summary { padding:13px; gap:9px; } .metrics>div { padding:10px 8px; } .metrics strong { font-size:22px; } .nodeCard { padding:9px 10px; } .nodeIcon { display:none; } .children>.branch { margin-left:4px; padding-left:8px; } .reference { padding:11px; } .editor { padding:12px; } }
+@media (prefers-reduced-motion:reduce) { .chevron,.childrenSummary svg { transition:none; } }
