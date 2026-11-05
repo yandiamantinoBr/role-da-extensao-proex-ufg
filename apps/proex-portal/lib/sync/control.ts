@@ -16,6 +16,7 @@ async function translateControlError(db:D1Database,actor:PortalActor,error:unkno
  if(message.includes('sync_workbook_changed'))throw new HttpError(409,'Esta planilha não é mais a mestre configurada. Confira o vínculo no Portal.','sync_workbook_changed');
  if(message.includes('sync_run_not_running'))throw new HttpError(409,'Execução encerrada ou não encontrada.','sync_run_not_running');
  if(message.includes('sync_open_conflicts'))throw new HttpError(409,'Resolva os conflitos pendentes antes de concluir esta execução.','sync_open_conflicts');
+ if(message.includes('sync_project_workbook'))throw new HttpError(409,'Este arquivo está vinculado a um projeto e não pode ser a mestre. Use um arquivo exclusivo da administração.','sync_project_workbook');
  throw error;
 }
 export async function syncStatus(db:D1Database,actor:PortalActor|null) {
@@ -37,6 +38,7 @@ export async function configureSync(db:D1Database,actor:PortalActor|null,input:R
  const now=iso(),configuration={spreadsheetId,spreadsheetUrl:`https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`,folderId,attachmentsFolderId,formatVersion:1};
  try{await db.batch([
   db.prepare(`SELECT CASE WHEN ${SYNC_OWNER_SQL} THEN 1 ELSE json_extract('sync_forbidden','$') END`).bind(actor.userId),
+  assertion(db,'NOT EXISTS(SELECT 1 FROM project_sheet_connections WHERE spreadsheet_id=?)',[spreadsheetId],'sync_project_workbook'),
   assertion(db,"NOT EXISTS(SELECT 1 FROM sync_runs WHERE connection_id='google-sheets' AND status='running' AND started_at>?)",[new Date(Date.now()-RUN_LEASE_MS).toISOString()],'sync_running'),
   db.prepare("UPDATE sync_runs SET status='failed',finished_at=?,error_code='interrupted' WHERE connection_id='google-sheets' AND status='running'").bind(now),
   db.prepare("DELETE FROM settings WHERE name=? AND (SELECT CASE WHEN json_valid(value) THEN json_extract(value,'$.spreadsheetId') END FROM settings WHERE name=?) IS NOT ?").bind(SHEET_TABS_KEY,CONFIG,spreadsheetId),

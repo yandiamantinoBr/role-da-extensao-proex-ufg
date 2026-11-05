@@ -1,8 +1,9 @@
 /** PROEX · Planilha exclusiva de um projeto
+ * @OnlyCurrentDoc
  * Instale em Extensões → Apps Script no arquivo indicado na ficha do projeto.
  * Use a chave pxp_ gerada nessa ficha, nunca uma chave da mestre.
  * As abas PROEX · … são reservadas à projeção. As outras abas são preservadas.
- * Uma chave vale30dias. Gere outra na ficha, reconecte e revogue a anterior.
+ * Uma chave vale 30 dias. Gere outra na ficha, reconecte e revogue a anterior.
  * Compartilhar este arquivo é uma ação independente no Google Drive. Editores
  * também podem editar o script: conceda edição apenas para o escopo de materiais
  * deste projeto. Demandas, agenda, empréstimos e saldos são somente leitura.

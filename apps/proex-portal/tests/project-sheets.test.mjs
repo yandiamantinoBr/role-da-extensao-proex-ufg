@@ -17,7 +17,9 @@ function compile(name){
 const {configureProjectSheet,createProjectSheetToken,revokeProjectSheetToken,projectSheetPrincipal,projectSheetStatus}=await import(compile('sync/project-sheets'));
 const {applyProjectSheetChanges,exportProjectSheetPage,callProjectSheetTool}=await import(compile('sync/project-sheets-data'));
 const {materialsAction}=await import(compile('materials'));
-const {exportPortablePage}=await import(compile('sync/portable'));
+const {exportPortablePage,describePortableSchemas}=await import(compile('sync/portable'));
+const {rateLimit}=await import(compile('rate-limit'));
+const {configureSync}=await import(compile('sync/control'));
 function fixture(){
  const native=new DatabaseSync(':memory:');native.exec('PRAGMA foreign_keys=ON');
  for(const name of readdirSync(`${directory}drizzle`).filter(name=>name.endsWith('.sql')).sort())native.exec(readFileSync(`${directory}drizzle/${name}`,'utf8'));
@@ -37,7 +39,7 @@ function fixture(){
  return {db,actor,now,close:()=>native.close()};
 }
 async function connected(f,scope='materials'){
- await configureProjectSheet(f.db,f.actor,'project-a',{spreadsheetId:'synthetic-project-workbook',label:'Planilha projeto A',expectedVersion:0});
+ await configureProjectSheet(f.db,f.actor,'project-a',{spreadsheetId:'synthetic-project-workbook',label:'Planilha projeto A',expectedVersion:0,includeTasks:true});
  const token=await createProjectSheetToken(f.db,f.actor,'project-a',{scope,expectedVersion:1,label:'Pilot'});
  const principal=await projectSheetPrincipal(f.db,'Bearer '+token.token,'synthetic-project-workbook');
  return {principal,token};
@@ -131,5 +133,81 @@ test('master workbook is rejected at configure time and also invalidates an exis
   await assert.rejects(configureProjectSheet(f.db,f.actor,'project-a',{spreadsheetId:'synthetic-master-workbook',expectedVersion:0}),error=>error.code==='project_sheet_master_forbidden');
   const {principal}=await connected(f);f.db.native.prepare('UPDATE settings SET value=?').run(JSON.stringify({spreadsheetId:'synthetic-project-workbook'}));
   await assert.rejects(exportProjectSheetPage(f.db,principal,{table:'items'}),error=>error.status===403);
+  await assert.rejects(projectSheetStatus(f.db,f.actor,'project-a'),error=>error.code==='project_sheet_master_forbidden');
+ }finally{f.close();}
+});
+test('organization owner losing the organization and an archived organization immediately invalidate issued credentials',async()=>{
+ for(const move of [f=>{f.db.native.prepare("UPDATE members SET revoked_at=? WHERE id='org-owner'").run(f.now);f.db.native.prepare("INSERT INTO members(id,user_id,email,role,project_id,organization_id,created_at) VALUES('org-owner-b',?,?,'owner',NULL,'org-b',?)").run(f.actor.userId,f.actor.email,f.now);},f=>f.db.native.prepare("UPDATE organizations SET status='archived' WHERE id='org-a'").run()]){
+  const f=fixture();try{
+   f.db.native.prepare("UPDATE members SET revoked_at=? WHERE id='member-manager'").run(f.now);
+   f.db.native.prepare("INSERT INTO members(id,user_id,email,role,project_id,organization_id,created_at) VALUES('org-owner',?,?,'owner',NULL,'org-a',?)").run(f.actor.userId,f.actor.email,f.now);
+   f.actor.members=[{...f.actor.members[0],id:'org-owner',role:'owner',project_id:null}];
+   const {principal}=await connected(f);move(f);
+   await assert.rejects(exportProjectSheetPage(f.db,principal,{table:'items'}),error=>error.status===403);
+   await assert.rejects(applyProjectSheetChanges(f.db,principal,{changes:[rename()]}),error=>error.status===403);
+  }finally{f.close();}
+ }
+});
+test('read revalidation after collecting a page suppresses its response when issuer access was revoked mid-request',async()=>{
+ const f=fixture();try{
+  const {principal}=await connected(f),prepare=f.db.prepare.bind(f.db);let revoked=false;
+  f.db.prepare=sql=>{const statement=prepare(sql);if(sql.includes('FROM items WHERE project_id=')){const all=statement.all.bind(statement);statement.all=async()=>{const result=await all();f.db.native.prepare("UPDATE members SET revoked_at=? WHERE id='member-manager'").run(f.now);revoked=true;return result;};}return statement;};
+  await assert.rejects(exportProjectSheetPage(f.db,principal,{table:'items'}),error=>error.status===403);assert.equal(revoked,true);
+ }finally{f.close();}
+});
+test('create and movement receipts contain the domain entity ID in the same atomic batch, before response assembly',async()=>{
+ const f=fixture();try{
+  const {principal}=await connected(f),batch=f.db.batch.bind(f.db);let checks=0;
+  f.db.batch=async statements=>{const result=await batch(statements);for(const row of f.db.native.prepare('SELECT entity_id,result_json FROM project_sheet_receipts').all()){assert.ok(row.entity_id);assert.equal(JSON.parse(row.result_json).entityId,row.entity_id);checks++;}return result;};
+  const created=await applyProjectSheetChanges(f.db,principal,{changes:[{changeKey:'atomic-material-create',action:'item.create',input:{projectId:'project-a',name:'Novo',category:'gift',unit:'unidade'}}]});
+  const id=created.results[0].entityId;
+  const moved=await applyProjectSheetChanges(f.db,principal,{changes:[{changeKey:'atomic-movement-create',action:'stock.move',input:{itemId:id,kind:'receive',delta:3}}]});
+  assert.notEqual(moved.results[0].entityId,id);assert.ok(checks>=2);
+ }finally{f.close();}
+});
+test('run lifecycle is credential-bound and ended runs cannot authorize mutations; tabs cannot reference arbitrary resources',async()=>{
+ const f=fixture();try{
+  const {principal}=await connected(f),run=await callProjectSheetTool(f.db,principal,'proex_sync_run_start',{requestId:'run-request-0001'});
+  assert.equal((await callProjectSheetTool(f.db,principal,'proex_sync_run_start',{requestId:'run-request-0001'})).id,run.id);
+  const otherToken=await createProjectSheetToken(f.db,f.actor,'project-a',{scope:'materials',expectedVersion:1}),other=await projectSheetPrincipal(f.db,'Bearer '+otherToken.token,'synthetic-project-workbook');
+  await assert.rejects(applyProjectSheetChanges(f.db,other,{runId:run.id,changes:[rename()]}),error=>error.code==='sync_run_not_running');
+  await applyProjectSheetChanges(f.db,principal,{runId:run.id,changes:[rename()]});
+  const finished=await callProjectSheetTool(f.db,principal,'proex_sync_run_finish',{id:run.id,status:'completed',exportedCount:3,readbackVerified:true,tablesVerified:9});assert.equal(finished.status,'completed');
+  await assert.rejects(applyProjectSheetChanges(f.db,principal,{runId:run.id,changes:[rename()]}),error=>error.code==='sync_run_not_running');
+  for(const tabs of [{items:17,followup_tasks:17},{items:-1},{items:Infinity},{'__proto__':18,settings:19}])await assert.rejects(callProjectSheetTool(f.db,principal,'proex_project_sheet_tabs',{tabs}),error=>error.status===400);
+ }finally{f.close();}
+});
+test('task summaries require explicit configuration opt-in; default projection and direct reads exclude them',async()=>{
+ const f=fixture();try{
+  const configured=await configureProjectSheet(f.db,f.actor,'project-a',{spreadsheetId:'synthetic-project-workbook',expectedVersion:0});assert.equal(configured.connection.includeTasks,false);
+  const token=await createProjectSheetToken(f.db,f.actor,'project-a',{scope:'read',expectedVersion:1}),principal=await projectSheetPrincipal(f.db,'Bearer '+token.token,'synthetic-project-workbook');
+  const status=await callProjectSheetTool(f.db,principal,'proex_sync_describe',{});assert.equal(status.schemas.tables.length,8);assert.ok(!status.schemas.tables.some(schema=>schema.table==='followup_tasks'));
+  await assert.rejects(exportProjectSheetPage(f.db,principal,{table:'followup_tasks'}),error=>error.code==='sync_invalid_table');
+  await assert.rejects(callProjectSheetTool(f.db,principal,'proex_project_sheet_tabs',{tabs:{followup_tasks:17}}),error=>error.status===400);
+ }finally{f.close();}
+});
+test('global master configuration cannot promote a project workbook, including a binding created immediately before commit',async()=>{
+ const f=fixture();try{
+  await connected(f);f.db.native.prepare('INSERT INTO members(id,user_id,email,role,project_id,created_at) VALUES(?,?,?,?,NULL,?)').run('global-owner',f.actor.userId,f.actor.email,'owner',f.now);
+  const config={spreadsheetId:'synthetic-project-workbook',folderId:'synthetic-folder-id',attachmentsFolderId:'synthetic-attachments-folder'};
+  await assert.rejects(configureSync(f.db,f.actor,config),error=>error.code==='sync_project_workbook');
+  assert.equal(f.db.native.prepare("SELECT COUNT(*) n FROM settings WHERE name='sync.google_sheets.configuration'").get().n,0);
+  f.db.beforeBatch(()=>f.db.native.prepare('UPDATE project_sheet_connections SET spreadsheet_id=?').run('synthetic-replacement-workbook'));
+  await assert.rejects(configureSync(f.db,f.actor,{...config,spreadsheetId:'synthetic-replacement-workbook'}),error=>error.code==='sync_project_workbook');
+ }finally{f.close();}
+});
+test('synthetic benchmark compares complete project/master pagination including the persistent limiter cost',async t=>{
+ const f=fixture();try{
+  await configureProjectSheet(f.db,f.actor,'project-a',{spreadsheetId:'synthetic-project-workbook',expectedVersion:0});
+  const token=await createProjectSheetToken(f.db,f.actor,'project-a',{scope:'read',expectedVersion:1}),principal=await projectSheetPrincipal(f.db,'Bearer '+token.token,'synthetic-project-workbook');
+  f.db.native.prepare('INSERT INTO members(id,user_id,email,role,project_id,created_at) VALUES(?,?,?,?,NULL,?)').run('global-owner',f.actor.userId,f.actor.email,'owner',f.now);
+  const insert=f.db.native.prepare('INSERT INTO items(id,project_id,name,category,unit,created_at,updated_at) VALUES(?,?,?,?,?,?,?)');
+  f.db.native.exec('BEGIN');for(const letter of ['a','b'])for(let i=0;i<500;i++)insert.run(`bench-${letter}-${String(i).padStart(4,'0')}`,'project-'+letter,'Material sintético '+i,'gift','unidade',f.now,f.now);f.db.native.exec('COMMIT');
+  const projectTables=(await callProjectSheetTool(f.db,principal,'proex_sync_describe',{})).schemas.tables;
+  async function measure(tables,read,bucket){let calls=0,rows=0;const start=performance.now();for(const schema of tables){let after,digest;do{await rateLimit(f.db,bucket,2000,600000);calls++;const page=await read({table:schema.table,...(after?{after,expectedDigest:digest}:{})});after=page.nextCursor;digest=page.digest;rows+=page.rows.length;}while(after);}return{calls,rows,milliseconds:Math.round(performance.now()-start)};}
+  const project=await measure(projectTables,args=>exportProjectSheetPage(f.db,principal,args),'benchmark-project'),master=await measure(describePortableSchemas().tables,args=>exportPortablePage(f.db,f.actor,args),'benchmark-master');
+  assert.equal(project.calls,13);assert.equal(master.calls,45);assert.ok(project.rows<master.rows);
+  assert.equal(f.db.native.prepare('SELECT SUM(count) n FROM portal_rate_limits').get().n,58);
+  t.diagnostic(JSON.stringify({fixture:'2 organizations,1002 items,total data reads including persistent rate-limit transaction',project,master,persistenceReductionPercent:Math.round((1-project.calls/master.calls)*100)}));
  }finally{f.close();}
 });

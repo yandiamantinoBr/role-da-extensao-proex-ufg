@@ -93,3 +93,8 @@ Configurar IDs, criar uma planilha, instalar o plugin, criar um agendamento e ex
 A rota `/api/health` consulta o banco para verificar disponibilidade. Uma resposta bem-sucedida ou a execução de seu cron não exporta dados, não copia anexos e não verifica restauração. O histórico de instantâneos no mesmo Supabase também não substitui backup externo com restauração testada; veja [Hospedagem própria — backup](HOSPEDAGEM-PROPRIA.md#backup-e-recuperação).
 
 Na alternativa legada do ChatGPT Sites, as credenciais das conexões Google pertencem à plataforma e não são extraídas para o aplicativo, repositório ou planilha. Se o plugin criado não aparecer, usar `get_site(include_mcp_connection=true)` e o plugin_id retornado na interface de instalação. No conector Apps Script, a chave de sincronização é uma credencial própria do portal, guardada nas propriedades do usuário Google que conectou conforme o manual. Não publique credenciais nem as imprima em logs.
+
+## Planilhas de projeto
+
+O conector restrito por projeto é independente do conector da mestre. Use [Planilhas por projeto](PLANILHAS-POR-PROJETO.md) para instalação, escopos, migração de Drive, permissões e evidências. A inclusão do resumo de Demandas é uma opção explícita do gestor e fica desligada por padrão. A preparação do código não comprova instalação ou compartilhamento no Google.
+
