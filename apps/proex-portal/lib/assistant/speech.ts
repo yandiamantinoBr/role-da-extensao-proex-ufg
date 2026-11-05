@@ -3,7 +3,7 @@ import { one } from '../database';
 import { HttpError } from '../errors';
 import { object, safeRequest } from './contracts';
 import { decryptCredentials, digest, encryptCredentials, type CredentialKeys } from './crypto';
-import { loadSpeechSettings, type SpeechEnvironment, type SpeechProvider } from './settings';
+import { assistantUsageSql, loadSpeechSettings, type SpeechEnvironment, type SpeechProvider } from './settings';
 
 export const GROQ_SPEECH_ENDPOINT = 'https://api.groq.com/openai/v1/audio/transcriptions';
 export const GROQ_SPEECH_MODEL = 'whisper-large-v3-turbo';
@@ -62,7 +62,7 @@ export async function transcribeSpeech(db:D1Database, actor:PortalActor|null, in
  if(!input.consent)throw new HttpError(400,'Autorize o envio deste áudio ao provedor configurado.','speech_consent');
  if(!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(input.projectId)||!/^[A-Za-z0-9_-]{8,100}$/.test(input.operationKey))throw new HttpError(400,'Escolha o projeto e prepare um envio válido.','speech_input');
  const {current,organizationId}=await speechActor(db,actor,input.projectId);
- const settings=await loadSpeechSettings(db,secret,organizationId,options.environment,options.keys),provider=settings.provider;
+ const settings=await loadSpeechSettings(db,secret,organizationId,options.environment,options.keys,current.userId),provider=settings.provider;
  if ((input.expectedProvider ?? 'deepgram') !== provider) throw new HttpError(409,'O provedor de transcrição mudou. Atualize o portal e confirme novamente.','speech_provider_changed');
  const audio=validateSpeechAudio(input.bytes,input.mime),now=options.now??Date.now(),apiKey=settings.apiKey;
  const model=provider==='groq'?GROQ_SPEECH_MODEL:'nova-3';
@@ -72,7 +72,8 @@ export async function transcribeSpeech(db:D1Database, actor:PortalActor|null, in
  const fingerprint=await digest(`${audioSha256}:${settings.revision}${provider === 'groq' ? ':groq' : ''}`);
  const day=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(now)),cost=speechReservedUsdMicros(provider,audio.duration);
  const auth=projectAuthoritySql(current,['inventory.read'],'?');
- const assertion=db.prepare(`SELECT CASE WHEN ${auth.sql} AND EXISTS(SELECT 1 FROM ai_organization_settings s JOIN organizations o ON o.id=s.organization_id WHERE s.organization_id=? AND s.revision=? AND json_extract(s.config_json,'$.sttEnabled')=1 AND o.status='active') THEN 1 ELSE json_extract('[]','speech_authority_changed') END`).bind(...auth.values,input.projectId,organizationId,settings.revision);
+ const usage=assistantUsageSql(current.userId);
+ const assertion=db.prepare(`SELECT CASE WHEN ${auth.sql} AND EXISTS(SELECT 1 FROM ai_organization_settings s JOIN organizations o ON o.id=s.organization_id WHERE s.organization_id=? AND s.revision=? AND json_extract(s.config_json,'$.sttEnabled')=1 AND o.status='active' AND ${usage.sql}) THEN 1 ELSE json_extract('[]','speech_authority_changed') END`).bind(...auth.values,input.projectId,organizationId,settings.revision,...usage.values);
  async function authorized(){try{await assertion.first();}catch(error){if(String(error).includes('speech_authority_changed'))throw new HttpError(403,'Seu acesso ou a configuração mudou.','speech_forbidden');throw error;}if(options.signal?.aborted)throw new HttpError(499,'Envio cancelado.','speech_aborted');}
  async function replay(){const row=await one(db,'SELECT * FROM ai_transcriptions WHERE id=?',[id]);if(!row)return null;if(row.fingerprint!==fingerprint||row.actor_id!==current.userId||row.project_id!==input.projectId||row.organization_id!==organizationId)throw new HttpError(409,'Este envio já foi usado com outro áudio ou configuração.','speech_operation_changed');await speechActor(db,current,input.projectId);if(row.status==='complete'&&now-Date.parse(row.created_at)<3600000){const result={...object(await decryptCredentials(secret,row.result_ciphertext,`speech:${organizationId}:${id}`)),replayed:true};await authorized();return result;}throw new HttpError(409,'Este envio já foi processado ou falhou. Para uma nova tentativa paga, escolha explicitamente novo envio.','speech_replay');}
  const admissionNonce=crypto.randomUUID();
@@ -84,12 +85,12 @@ export async function transcribeSpeech(db:D1Database, actor:PortalActor|null, in
  if(!admitted)throw new HttpError(429,'O limite diário da organização foi atingido.','assistant_quota');
  const controller=new AbortController(),abort=()=>controller.abort(),timer=setTimeout(abort,settings.config.timeoutMs);options.signal?.addEventListener('abort',abort,{once:true});
  try{
-  await speechActor(db,current,input.projectId);if((await loadSpeechSettings(db,secret,organizationId,options.environment,options.keys)).revision!==settings.revision)throw new HttpError(409,'A configuração mudou antes da transcrição.','speech_configuration_changed');await authorized();if(controller.signal.aborted)throw new HttpError(503,'A transcrição excedeu o tempo reservado.','speech_provider');
+  await speechActor(db,current,input.projectId);if((await loadSpeechSettings(db,secret,organizationId,options.environment,options.keys,current.userId)).revision!==settings.revision)throw new HttpError(409,'A configuração mudou antes da transcrição.','speech_configuration_changed');await authorized();if(controller.signal.aborted)throw new HttpError(503,'A transcrição excedeu o tempo reservado.','speech_provider');
   const response=await providerSpeech(provider,input.bytes,apiKey,controller.signal,options.fetcher??fetch);
   if(JSON.stringify(response).includes(apiKey))throw new HttpError(502,'O provedor retornou dados que não podem ser apresentados.','speech_schema');
   const { transcript, returnedVersion } = validatedTranscript(response, provider, audio.duration);
   const result={transcript,provenance:{provider,model,credentialSource:settings.credentialSource,returnedVersion,organizationId,projectId:input.projectId,audioSha256,duration:audio.duration,at:new Date(now).toISOString()}};
-  await speechActor(db,current,input.projectId);if((await loadSpeechSettings(db,secret,organizationId,options.environment,options.keys)).revision!==settings.revision)throw new HttpError(409,'A configuração mudou. A transcrição não será apresentada.','speech_configuration_changed');
+  await speechActor(db,current,input.projectId);if((await loadSpeechSettings(db,secret,organizationId,options.environment,options.keys,current.userId)).revision!==settings.revision)throw new HttpError(409,'A configuração mudou. A transcrição não será apresentada.','speech_configuration_changed');
   const ciphertext=await encryptCredentials(secret,result,`speech:${organizationId}:${id}`);await db.batch([assertion,db.prepare("UPDATE ai_transcriptions SET status='complete',result_ciphertext=? WHERE id=? AND status='reserved'").bind(ciphertext,id),db.prepare("INSERT INTO audit(id,actor_id,project_id,organization_id,action,entity_id,details,created_at) SELECT ?,?,?,?,'assistant.transcribe',?,?,? WHERE changes()=1").bind(crypto.randomUUID(),current.userId,input.projectId,organizationId,id,JSON.stringify({duration:audio.duration,provider,model,audioSha256,reservedUsdMicros:cost}),new Date(now).toISOString())]);await authorized();return result;
  }catch(error){await db.prepare("UPDATE ai_transcriptions SET status='failed' WHERE id=? AND status='reserved'").bind(id).run();if(error instanceof HttpError)throw error;if(String(error).includes('speech_authority_changed'))throw new HttpError(403,'Seu acesso ou a configuração mudou.','speech_forbidden');throw new HttpError(502,'A resposta de transcrição não pôde ser validada.','speech_schema');}finally{clearTimeout(timer);options.signal?.removeEventListener('abort',abort);}
 }

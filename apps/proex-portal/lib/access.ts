@@ -111,6 +111,17 @@ export function platformOwnerAuthoritySql(actor: PortalActor) {
     WHERE m.user_id=? AND m.role='owner' AND m.organization_id IS NULL AND m.project_id IS NULL AND m.revoked_at IS NULL
     AND u.status='active' AND u.activation_pending=0 AND u.anonymized_at IS NULL)`, values: [actor.userId] };
 }
+/** Configuration delegation does not grant access to provider credentials. */
+export function aiConfigurationAuthority(actor: PortalActor, organizationId: string) {
+  const owner = organizationAuthoritySql(actor, organizationId);
+  return { sql: `EXISTS(SELECT 1 FROM organizations WHERE id=? AND status='active') AND (${owner.sql} OR EXISTS(
+    SELECT 1 FROM ai_configuration_grants g JOIN members issuer ON issuer.id=g.grantor_member_id
+    JOIN portal_users u ON u.user_id=issuer.user_id
+    WHERE g.organization_id=? AND g.user_id=? AND g.revoked_at IS NULL
+    AND issuer.role='owner' AND issuer.project_id IS NULL AND (issuer.organization_id IS NULL OR issuer.organization_id=g.organization_id) AND issuer.revoked_at IS NULL
+    AND u.status='active' AND u.activation_pending=0 AND u.anonymized_at IS NULL
+    AND EXISTS(SELECT 1 FROM members target JOIN portal_users account ON account.user_id=target.user_id WHERE target.user_id=g.user_id AND target.organization_id=g.organization_id AND target.revoked_at IS NULL AND account.status='active' AND account.activation_pending=0 AND account.anonymized_at IS NULL)))`, values: [organizationId, ...owner.values, organizationId, actor.userId] };
+}
 /** SQL authorization is evaluated with the resource, including revocation after getActor. */
 export function projectAuthoritySql(actor: PortalActor, capabilities: readonly string[], projectSql: string) {
   const roles=Object.entries(ROLE_CAPABILITIES).filter(([,available])=>!capabilities.length||capabilities.some(capability=>available.includes(capability))).map(([role])=>role);
