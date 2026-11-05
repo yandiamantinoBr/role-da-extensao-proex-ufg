@@ -55,7 +55,7 @@ export async function callTeamSheetTool(db:D1Database,p:TeamSheetPrincipal,tool:
  if(tool==='proex_sync_apply'||tool==='proex_sync_configure')invalid('Esta conexão é somente de consulta. Abra a demanda no Portal para editar.','team_sheet_read_only',403);
  if(tool==='proex_sync_describe'){
   only(args,[]);const context=await one(db,'SELECT t.name team_name,p.name project_name FROM followup_teams t JOIN projects p ON p.id=? WHERE t.id=?',[p.projectId,p.teamId]);
-  const runs=await all(db,'SELECT id,status,started_at,finished_at,exported_count,readback_verified FROM team_sheet_runs WHERE connection_id=? ORDER BY started_at DESC,id DESC LIMIT 5',[p.connectionId]);await requireTeamSheetPrincipal(db,p);
+  const runs=await all(db,'SELECT id,status,started_at,finished_at,exported_count,readback_verified FROM team_sheet_runs WHERE connection_id=? AND connection_version=? ORDER BY started_at DESC,id DESC LIMIT 5',[p.connectionId,p.connectionVersion]);await requireTeamSheetPrincipal(db,p);
   return{configuration:{teamId:p.teamId,projectId:p.projectId,spreadsheetId:p.spreadsheetId,teamName:context!.team_name,projectName:context!.project_name,scope:'read',readOnly:true},schemas:{formatVersion:1,tables:[SCHEMA],limits:{page:100,tableRows:5000,tableBytes:MAX_PORTABLE_TABLE_BYTES}},runs};
  }
  if(tool==='proex_sync_read')return exportTeamSheetPage(db,p,args,portalOrigin);

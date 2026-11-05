@@ -23,6 +23,7 @@ function conectarEquipe() {
  props.setProperties({PROEX_TEAM_ORIGIN:origin,PROEX_TEAM_KEY:key.getResponseText().trim(),PROEX_TEAM_FILE:SpreadsheetApp.getActive().getId()});
  try { var result=consultarEquipe_('proex_sync_describe',{});if(!result.configuration.readOnly||result.configuration.spreadsheetId!==SpreadsheetApp.getActive().getId())throw new Error('O arquivo não corresponde ao vínculo.'); }
  catch(error){['PROEX_TEAM_ORIGIN','PROEX_TEAM_KEY','PROEX_TEAM_FILE'].forEach(function(name){if(previous[name]===undefined)props.deleteProperty(name);else props.setProperty(name,previous[name]);});throw error;}
+ props.deleteProperty('PROEX_TEAM_LAST_OK');
  ui.alert('Conexão conferida. Use Atualizar demandas para preencher a aba reservada. A edição continua no Portal.');
 }
 function consultarEquipe_(tool,args) {

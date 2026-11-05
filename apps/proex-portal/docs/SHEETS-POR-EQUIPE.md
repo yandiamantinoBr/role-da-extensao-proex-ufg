@@ -42,7 +42,7 @@ A chave fica em UserProperties da conta executora. Scripts vinculados podem ser 
 
 A aba reservada `PROEX · Demandas da equipe` é sobrescrita somente depois de uma leitura completa bem-sucedida. Outras abas são preservadas. Dados são gravados com RichText literal, inclusive títulos começando por `=`, `+`, `-` ou `@`; somente a coluna de URL gerada pelo servidor recebe hiperlink. Não usa fórmulas provenientes de dados, `DriveApp`, chave em URL, `ScriptProperties`, biblioteca remota ou `eval`. Erro de quota, rede ou autorização antes da coleta completa mantém o conteúdo anterior. Falha após escrita não gera confirmação positiva e permite nova tentativa manual ou pelo próximo acionamento, sem retry pago.
 
-Fontes oficiais consultadas em 2026-11-05: [scripts vinculados e colaboração](https://developers.google.com/apps-script/guides/bound), [UserProperties](https://developers.google.com/apps-script/guides/properties), [identidade de gatilhos instaláveis](https://developers.google.com/apps-script/guides/triggers/installable), [Range.setRichTextValues](https://developers.google.com/apps-script/reference/spreadsheet/range#setRichTextValues(RichTextValue)), [RichTextValueBuilder](https://developers.google.com/apps-script/reference/spreadsheet/rich-text-value-builder).
+Fontes oficiais consultadas em 2026-11-05: [scripts vinculados e colaboração](https://developers.google.com/apps-script/guides/bound), [UserProperties](https://developers.google.com/apps-script/guides/properties), [identidade de gatilhos instaláveis](https://developers.google.com/apps-script/guides/triggers/installable), [Range.setRichTextValues](https://developers.google.com/apps-script/reference/spreadsheet/range), [RichTextValueBuilder](https://developers.google.com/apps-script/reference/spreadsheet/rich-text-value-builder).
 
 ## Edição em Sheets: próxima etapa concreta
 
@@ -52,8 +52,11 @@ A evolução formal do organograma (nós, relações, fontes oficiais e vínculo
 
 ## Evidências locais
 
-- Serviço/SQL: 11 testes específicos, incluindo duas organizações, equipes/projetos distintos, propósito/arquivo, rename, remoção/reentrada, revogação durante leitura/recibo/replay e colisões SQL.
-- UI: 5 testes de parser/CAS, chave mascarada e cópia explícita, resposta tardia após fechar/reabrir, troca de projeto/conta, desmontagem e 401/403.
+- Serviço/SQL: 12 testes específicos, incluindo duas organizações, equipes/projetos distintos, propósito/arquivo, rename, remoção/reentrada, revogação durante leitura/recibo/replay e colisões SQL.
+- UI: 7 testes de parser/CAS, chave mascarada e cópia explícita, resposta tardia após fechar/reabrir, troca de projeto/conta, desmontagem e 401/403.
 - Apps Script: testes em VM de protocolo real, ferramentas mínimas, RichText literal, falha de releitura/recibo e recusa antes de tocar a aba. Google nativo ainda não ensaiado neste canal.
 - Navegador: 375/390/1366 px, claro/escuro, navegador en-US, zero overflow, controles de ao menos 44 px. Percurso navegador → API real → SQLite em RAM: salvar vínculo, emitir chave mascarada, ler duas demandas, concluir recibo, fechar/reabrir sem chave, revogar e obter 403. Visão de todos os projetos não oferece link.
 - Capturas/relatório sintéticos locais: `.sites-runtime/team-sheets-qa/`. Nenhuma chave/dado real utilizado. Revisão independente de SQL/serviço encerrou os P2s de corrida; revisão final de UI/script será registrada no recibo do coordenador.
+
+
+Revisão independente final do painel isolado: **9,0/10** nos seis recortes capturados, sem P1/P2 visual, sem extrapolar à produção. Subpassos de instalação numerados após sugestão do revisor. Follow-up: mutações usam AbortController e identidade própria por operação; fechar, trocar contexto ou desmontar cancela a requisição, descarta a resposta tardia e libera o novo contexto. O `finally` de uma operação antiga não pode destravar a operação nova. Duas regressões adicionais cobrem POST A pendurado → POST B e resposta de A enquanto B ainda está em andamento. A criação pode já ter sido efetivada no servidor antes do cancelamento; a lista atualizada permite conferir/revogar a conexão sem reapresentar o segredo.

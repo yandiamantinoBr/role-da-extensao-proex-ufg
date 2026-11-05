@@ -142,3 +142,12 @@ test('completed receipt replay revalidates the projected set atomically after it
  await f.call('proex_sync_run_finish',args);let fired=false;f.db.afterRead=sql=>{if(!fired&&sql.startsWith('SELECT t.id _rowKey')){fired=true;f.native.prepare('UPDATE followup_assignees SET removed_at=? WHERE team_id=? AND task_id=?').run(f.now,f.a,f.shared);}};
  await assert.rejects(f.call('proex_sync_run_finish',args),{status:409,code:'sync_snapshot_changed'});assert.equal(fired,true);
 });
+
+
+test('a new workbook/configuration cannot inherit the confirmed receipt from an earlier version',async t=>{
+ const f=await connected(t),{run,page}=await read(f);await f.call('proex_sync_run_finish',{id:run.id,status:'completed',exportedCount:page.total,readbackVerified:true,tablesVerified:1,snapshotDigest:page.digest});
+ assert.equal((await api.teamSheetStatus(f.db,f.owner,f.a,'project-a')).runs.length,1);
+ const next=await f.configure('SyntheticTeamWorkbook02',{expectedVersion:1});assert.equal(next.connection.version,2);assert.deepEqual(next.runs,[]);
+ const key=await api.createTeamSheetToken(f.db,f.owner,f.a,'project-a',{action:'token.create',expectedVersion:2});const principal=await api.teamSheetPrincipal(f.db,'Bearer '+key.token,'SyntheticTeamWorkbook02');
+ assert.deepEqual((await callTeamSheetTool(f.db,principal,'proex_sync_describe',{},origin)).runs,[]);
+});
