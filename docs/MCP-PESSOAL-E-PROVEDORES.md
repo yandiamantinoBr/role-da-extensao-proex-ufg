@@ -8,7 +8,7 @@ O novo **`/api/mcp`** atende consultas pessoais limitadas, sem depender do Sites
 
 ## Onde configurar
 
-Na **Conta → Conectar uma IA ao meu trabalho**. Link após publicação: [abrir conexões pessoais](https://proex-gestao.vercel.app/?tab=profile#mcp-connections).
+Na **Conta → Conectar uma IA ao meu trabalho**. Link após publicação: [abrir conexões pessoais](https://proex-gestao.vercel.app/?module=profile#mcp-connections).
 
 1. Dê um nome à conexão, escolha os tipos de consulta e marque explicitamente os projetos.
 2. Gere e copie a credencial exibida uma vez. Ela fica somente na memória da página; não entra em rascunho, armazenamento Web ou resposta posterior da listagem.
@@ -110,6 +110,7 @@ Fontes: [DeepSeek — API e modelo atual](https://api-docs.deepseek.com/), [Groq
 - Testes integrados usam a migração SQL real e SQLite em memória: escopos, propósito de token, expiração, bloqueio/anônimização/pendência, troca de vínculo, CSRF, projeções, paginação, metadados e protocolos, revogação concorrente à emissão/leitura e ausência de escrita/custo em consultas.
 - QA Chromium local usa **a interface real, API real e SQLite sintético**, criando e revogando uma credencial efêmera pelo próprio painel; a mesma credencial autentica o endpoint MCP. Claro/escuro em 375, 390 e 1366 px, sem overflow. Nenhum segredo real foi usado ou registrado.
 - Tipos e lint passaram (zero erros; dois avisos de imagem anteriores em Equipe); `build:node` passou. Os oito testes focados MCP passaram. A suíte geral teve 986 testes: 984 passaram, a conferência do journal 0024 ficou pendente da integração coordenada e o teste anterior de avatar em workerd atingiu seu timeout de 30 segundos, com descarte Miniflare travado no Windows. Não foi alterado código de avatar.
+- Revisão posterior: respostas tardias de emissão não atravessam fechamento/reabertura ou troca da conta; GETs são abortados e invalidados por geração; 401/403 limpam credencial, listas e seleções. Quatro testes de estado reproduzem essas corridas. O parser de paginação rejeita `null` e retorna cursor `null` ao terminar, incluindo recursos vazios.
 - Revisão visual independente do coordenador: **9/10 neste recorte**, sem certificação de leitor de tela ou compatibilidade universal. O botão de emissão só habilita após escolher projeto e consulta, com orientação acessível; não gera credenciais automaticamente.
 - Benchmark local de 50 consultas HTTP de ficha: p50 **14,11 ms**, p95 **41,21 ms**, zero erros, SQLite sintético em RAM e processo único. Não estima capacidade serverless/Vercel nem valida carga de produção.
 - Artefatos locais ignorados: `apps/proex-portal/.sites-runtime/mcp-qa/` (capturas mascaradas, relatório, benchmark e harness).
