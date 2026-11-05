@@ -54,3 +54,8 @@ PR #36: https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/36 . 
 
 
 A recaptura do primeiro ajuste de larguras revelou que o cabeçalho Situação também precisava de espaço. O ajuste final conserva esse espaço e mede as palavras com as fontes reais, sem compensar com fonte menor. O teste agora exige Coordenação e Situação inteiras nas posições da tabela. Seis testes passaram; a fixture final de três unidades produziu PDF de 60.418 bytes, renderizado e inspecionado. A prova anterior de 12 unidades/64.179 bytes é intermediária. Mantidas todas as colunas permitidas e a ordem hierárquica; sem mudança de escopo ou dados.
+
+
+A revisão final de navegação encontrou um estado residual: ao trazer um filtro pessoal de organização e depois selecionar no Início um projeto de outra organização, o cliente podia consultar o par incompatível e receber403. A seleção agora limpa o filtro pessoal anterior ao trocar para um projeto de outra organização, alinhada à validação já feita pela URL e pelo servidor. Não concede acesso adicional. Testes focais de histórico/escopo passaram; o cenário entre organizações em navegador real ainda integra o aceite independente pendente.
+
+Calendar relido no destino canônico informado pelo usuário:200/text-calendar,1VEVENT,636bytes, CRLF conforme, DTSTART20261109 e DTEND exclusivo20261114. A assinatura Google existente ainda retornou0eventos nessa janela. O link privado não é publicado; nenhuma agenda foi duplicada, alterada ou revogada. Fonte com evento e coleta Google são aceites distintos, sem causa presumida.

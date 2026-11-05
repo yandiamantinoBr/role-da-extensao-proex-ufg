@@ -527,7 +527,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         applyLocation(next);
         focusModule(true);
     }
-    function selectProject(id: string) { const project = projects.find(row => row.id === id); if (id && !project) return; setWorkRecord(null); setSelectedMaterialId(null); if (project && unitFilter && unitOf(project) !== unitFilter) setUnitFilter(unitOf(project) || '__unassigned__'); if (project && areaFilter && !inArea(project)) setAreaFilter(''); setFilter(id); setDraftProject(id); setOfferProject(''); }
+    function selectProject(id: string) { const project = projects.find(row => row.id === id); if (id && !project) return; if (project && personalOrganization && project.organization_id !== personalOrganization) setPersonalOrganization(''); setWorkRecord(null); setSelectedMaterialId(null); if (project && unitFilter && unitOf(project) !== unitFilter) setUnitFilter(unitOf(project) || '__unassigned__'); if (project && areaFilter && !inArea(project)) setAreaFilter(''); setFilter(id); setDraftProject(id); setOfferProject(''); }
     function openProject(id: string) {
         if (!projects.some(project => project.id === id)) return;
         if (tab !== 'projects' || activeWorkRecord?.recordId !== id) pushNavigation.current = true;
