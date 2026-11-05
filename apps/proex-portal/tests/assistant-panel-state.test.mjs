@@ -37,3 +37,14 @@ test('changing organization clears write-only credentials and blocks saving the 
 test('late organization status cannot replace the current selection or redirect a configuration save',async()=>{
  const h=harness();try{await open(h);h.selector().props.onChange({target:{value:'org-b'}});h.render();h.selector().props.onChange({target:{value:'org-c'}});h.render();h.requests[2].resolve({ok:true,json:async()=>h.status('org-c')});await tick();h.render();h.requests[1].resolve({ok:true,json:async()=>h.status('org-b')});await tick();h.render();assert.equal(h.selector().props.value,'org-c');h.button('Salvar configuração').props.onClick();await tick();assert.equal(JSON.parse(h.requests[3].init.body).organizationId,'org-c');}finally{h.dispose();}
 });
+
+test('choosing Groq stages the provider, disables transcription until explicit confirmation and sends no key or operation',async()=>{
+ const h=harness();try{
+  await open(h,{credentialVaultManaged:true,config:{...h.status('org-a').config,sttEnabled:true}});
+  const provider=h.find('label',node=>text(node).startsWith('Provedor de transcrição')).props.children.find(node=>node?.type==='select');provider.props.onChange({target:{value:'groq'}});h.render();
+  const enabled=h.find('label',node=>text(node).startsWith('Habilitar transcrição Groq')).props.children.find(node=>node?.type==='input');assert.equal(enabled.props.checked,false);
+  assert.equal(h.requests.length,1,'changing provider does not send a request');
+  enabled.props.onChange({target:{checked:true}});h.render();h.button('Salvar configuração').props.onClick();await tick();
+  const body=JSON.parse(h.requests[1].init.body);assert.equal(body.config.sttProvider,'groq');assert.equal(body.config.sttEnabled,true);assert.equal(body.action,'configure');assert.equal(Object.hasOwn(body,'groqKey'),false);
+ }finally{h.dispose();}
+});

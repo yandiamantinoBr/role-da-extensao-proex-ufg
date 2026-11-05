@@ -1,7 +1,7 @@
 'use client';
 import {useCallback,useEffect,useRef,useState} from 'react';
 import {CONNECTION_PROVIDERS,connectionReceipt,connectionStatus,type ConnectionProvider,type ConnectionReceipt} from '@/lib/assistant/connection-contracts';
-const labels:Record<ConnectionProvider,string>={deepseek:'DeepSeek',typesafe:'TypeSafe / Jev',deepgram:'Deepgram'};
+const labels:Record<ConnectionProvider,string>={deepseek:'DeepSeek',typesafe:'TypeSafe / Jev',deepgram:'Deepgram',groq:'Groq'};
 const outcomes:Record<ConnectionReceipt['outcome'],string>={authenticated:'Consulta autenticada respondeu',rejected:'Credencial rejeitada ou sem permissão neste endpoint',rate_limited:'Provedor limitou a consulta',timeout:'Consulta excedeu o prazo',cancelled:'Consulta cancelada',unavailable:'Não foi possível consultar o endpoint',invalid_response:'Resposta fora do contrato esperado',pending:'Consulta iniciada, resultado ainda não confirmado'};
 async function responseJson(response:Response){const value=await response.json() as unknown;if(!response.ok){const row=value&&typeof value==='object'?value as {error?:unknown}:{};throw new Error(typeof row.error==='string'?row.error:'Não foi possível consultar o diagnóstico.');}return value;}
 function ConnectionForm({orgId,revision}:{orgId:string;revision:number}){
