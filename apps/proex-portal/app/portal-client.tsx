@@ -1,6 +1,8 @@
 'use client';
 import Image from 'next/image';
 import scopeStyles from './scope-filters.module.css';
+import FeedbackPanel from '@/components/portal/feedback-panel';
+import { toast } from 'sonner';
 import settingsStyles from './settings-groups.module.css';
 import headingStyles from './module-heading.module.css';
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from 'react';
@@ -25,7 +27,9 @@ import ProfilePanel from '@/components/portal/profile-panel';
 import CalendarPanel from '@/components/portal/calendar-panel';
 import RecordsPanel from '@/components/portal/records-panel';
 import ReportsCenter from '@/components/portal/reports-center';
-import { download, toXlsx } from '@/components/portal/report-export';
+import { download } from '@/components/portal/report-export';
+import ExportFormats, {type DocumentFormat} from '@/components/portal/export-formats';
+import { documentExport } from '@/components/portal/document-export';
 import FollowUpPanel from '@/components/portal/follow-up-panel';
 import MeuTrabalhoPanel from '@/components/portal/meu-trabalho-panel';
 import { workDayFromServerTimestamp } from '@/lib/follow-up/time';
@@ -262,8 +266,9 @@ function PrizeKits({ projects, offers, items, projectId, onProjectChange, projec
         </div>}
     </Section>;
 }
-export default function PortalClient({ initial }: {
+export default function PortalClient({ initial, release = 'Versão local' }: {
     initial: Snapshot;
+    release?: string;
 }) {
     const [data, setData] = useState<Snapshot>(initial ?? {});
     const sessionIdentity = useRef(string(initial?.user?.userId));
@@ -538,7 +543,9 @@ export default function PortalClient({ initial }: {
             throw new Error(r.status === 401 ? 'Sua sessão terminou. Entre novamente para continuar.' : readableError(body?.error, 'Não foi possível concluir. Verifique sua conexão e tente novamente.'));
         const updated = await refresh();
         setMessageKind(body.alreadyDelivered ? 'warning' : 'success');
-        setMessage(body.alreadyDelivered ? `Este prêmio${body.offerName ? ` (${body.offerName})` : ''} já foi entregue. Não entregue novamente.` : action === 'prize.redeem' ? 'Entrega registrada. Entregue os materiais indicados à pessoa.' : updated ? 'Registro salvo. Os dados foram atualizados.' : 'Registro salvo. A atualização da tela está pendente; use Atualizar dados.');
+        const receipt = body.alreadyDelivered ? `Este prêmio${body.offerName ? ` (${body.offerName})` : ''} já foi entregue. Não entregue novamente.` : action === 'prize.redeem' ? 'Entrega registrada. Entregue os materiais indicados à pessoa.' : updated ? 'Registro salvo. Os dados foram atualizados.' : 'Registro salvo. A atualização da tela está pendente; use Atualizar dados.';
+        setMessage(receipt);
+        if(body.alreadyDelivered || !updated) toast.warning(receipt); else toast.success(receipt);
         return body;
     }
     async function quick(action: string, payload: Payload) {
@@ -596,15 +603,16 @@ export default function PortalClient({ initial }: {
         const rows = byProject(list(metrics.byProject));
         value = rows.length && rows.every(row => get(row, normalized, ...keys) !== undefined) ? rows.reduce((total, row) => total + Number(get(row, normalized, ...keys) ?? 0), 0) : undefined;
     } return value === undefined || value === null ? '—' : Number(value).toLocaleString('pt-BR'); };
-    function downloadDaily() {
+    async function downloadDaily(format: DocumentFormat) {
         const columns = [
             { key: 'day', label: 'Data' }, { key: 'campaign_name', label: 'Evento' }, { key: 'modality', label: 'Modalidade' },
             { key: 'participations', label: 'Participações', numeric: true }, { key: 'attempts', label: 'Tentativas', numeric: true },
             { key: 'deliveries', label: 'Entregas', numeric: true }, { key: 'tickets', label: 'Atendimentos assistidos', numeric: true },
         ];
         const modalities: Record<string, string> = { physical: 'Presencial', dice: 'Dado', wheel: 'Roleta' };
-        const rows = dailyRows.map(row => ({ ...row, modality: modalities[string(row.modality)] ?? row.modality }));
-        download('proex-resumo-diario.xlsx', toXlsx('Resumo diário', columns, rows, (row, key) => row[key], [['Linhas', String(rows.length)]]));
+        const rows = dailyRows.map(row => ({ ...row, day: /^\d{4}-\d{2}-\d{2}$/.test(string(row.day)) ? string(row.day).split('-').reverse().join('/') : row.day, modality: modalities[string(row.modality)] ?? row.modality }));
+        const info: [string,string][] = [['Projeto',filter?projectName(filter):'Todos os projetos do recorte'],['Período',`${reportFrom||'Início disponível'} → ${reportTo||'Última data disponível'}`],['Linhas',String(rows.length)],['Gerado em',when(new Date().toISOString())+' (Brasília)']];
+        download(`proex-resumo-diario.${format}`, await documentExport(format,'Resumo diário',columns,rows,(row,key)=>row[key],info,filter?{projectName:projectName(filter)}:undefined));
     }
     const activeModule = tabs.find(module => module.id === tab);
     const title = activeModule?.label ?? 'Visão geral';
@@ -1063,8 +1071,7 @@ export default function PortalClient({ initial }: {
                 </tr>)}</tbody>
             </table>
             </div>
-            </Section>}<Section title="Resumo diário" description="Participações e entregas podem acontecer em dias diferentes." aside={<button className="p-button p-button-subtle" onClick={downloadDaily} disabled={!dailyRows.length}>
-            <ArrowDownToLine size={16}/>Baixar resumo em XLSX</button>}>{dailyRows.length ? <div className="p-card p-table-wrap">
+            </Section>}<Section title="Resumo diário" description="Participações e entregas podem acontecer em dias diferentes." aside={<ExportFormats onExport={downloadDaily} disabled={!dailyRows.length} label="Baixar resumo diário"/>}>{dailyRows.length ? <div className="p-card p-table-wrap">
             <table>
             <thead>
             <tr>
@@ -1155,7 +1162,7 @@ export default function PortalClient({ initial }: {
 
       <footer className="p-footer">
     <span>{online ? <Wifi size={14}/> : <WifiOff size={14}/>}{online ? 'Conectado' : 'Sem conexão'}{updatedAt && ` · atualizado às ${updatedAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`}</span>
-    <span>PROEX · Universidade Federal de Goiás</span>
+    <div style={{display:'flex',alignItems:'center',flexWrap:'wrap',gap:12}}><small>PROEX · {release}</small><FeedbackPanel release={release} module={tab} projects={projects.map(project=>({id:string(project.id),name:string(project.name)}))} projectId={filter}/></div>
     </footer>
       </main>
     </div>
