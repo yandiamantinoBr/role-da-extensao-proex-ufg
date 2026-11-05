@@ -43,18 +43,18 @@ export default function PersonalWorkSummary({userId,organizationId=null,organiza
  useEffect(()=>{if(!data)return;const timer=window.setTimeout(refresh,nextWorkDayDelay(data));return()=>window.clearTimeout(timer);},[data,refresh]);
  const metrics=[
   {label:'Atenção',status:'attention' as const,count:data?.tasks.attention,help:'Em atraso ou bloqueadas',Icon:AlertTriangle,tone:'danger'},
-  {label:'Prazo hoje',status:'due_today' as const,count:data?.tasks.dueToday,help:'Pendentes para hoje',Icon:CalendarClock,tone:'warning'},
+  {label:'Prazo hoje',status:'due_today' as const,count:data?.tasks.dueToday,help:'Pendentes com prazo para hoje',Icon:CalendarClock,tone:'warning'},
   {label:'Pendentes',status:'pending' as const,count:data?.tasks.pending,help:'Ainda não finalizadas',Icon:ClipboardList,tone:'brand'},
   {label:'Em andamento',status:'in_progress' as const,count:data?.tasks.inProgress,help:'Trabalho iniciado',Icon:CircleDot,tone:'info'},
  ];
  const scope=projectId?`Projeto: ${projectName||'projeto selecionado'}`:organizationId?`Organização: ${organizationName||'organização selecionada'}`:'Todos os projetos e organizações autorizados';
  return <section className={styles.panel} aria-labelledby="personal-work-title" aria-busy={loading}>
-  <header className={styles.heading}><div><h2 id="personal-work-title"><ClipboardList size={21} aria-hidden="true"/>Meu trabalho</h2><p>Atribuições diretas e das suas equipes.</p></div><button type="button" className="p-button p-button-subtle" onClick={refresh} aria-label="Atualizar resumo pessoal"><RefreshCw size={16} aria-hidden="true"/><span>Atualizar</span></button></header>
-  <p className={styles.scope}>{scope}</p>
-  <div className={styles.metrics} aria-label="Resumo de suas demandas">{metrics.map(({label,status,count,help,Icon,tone})=><a key={status} className={styles.metric} data-tone={tone} href={personalWorkHref(status,organizationId,projectId)} aria-label={`Abrir ${label.toLocaleLowerCase('pt-BR')} de Meu trabalho${count===undefined?'':`: ${count}`}`}><span><Icon size={18} aria-hidden="true"/>{label}</span><strong>{count??'—'}</strong><small>{help}</small><ArrowRight className={styles.arrow} size={16} aria-hidden="true"/></a>)}</div>
+  <header className={styles.heading}><div><h2 id="personal-work-title"><ClipboardList size={21} aria-hidden="true"/>Meu trabalho</h2><p>Atribuições diretas e das suas equipes.</p><p className={styles.scope}>{scope}</p></div><button type="button" className="p-button p-button-subtle" onClick={refresh} aria-label="Atualizar resumo pessoal"><RefreshCw size={16} aria-hidden="true"/><span>Atualizar</span></button></header>
+  {/* The card name replaces its content for assistive tech, so the visible help is linked as its description. */}
+  <div className={styles.metrics} aria-label="Resumo de suas demandas">{metrics.map(({label,status,count,help,Icon,tone})=><a key={status} className={styles.metric} data-tone={tone} href={personalWorkHref(status,organizationId,projectId)} aria-label={`Abrir ${label.toLocaleLowerCase('pt-BR')} de Meu trabalho${count===undefined?'':`: ${count}`}`} aria-describedby={`personal-work-${status}-help`}><span><Icon size={18} aria-hidden="true"/>{label}</span><strong>{count??'—'}</strong><small id={`personal-work-${status}-help`}>{help}</small><ArrowRight className={styles.arrow} size={16} aria-hidden="true"/></a>)}</div>
   {current?.error&&<p className={styles.error} role="alert">{current.error} Os totais estão indisponíveis; use Atualizar para consultar novamente.</p>}
-  <div className={styles.footer}><p role="status" aria-live="polite" aria-atomic="true">{loading?'Consultando suas atribuições…':data?<><Users size={16} aria-hidden="true"/>{data.responsibilities.active} designaç{data.responsibilities.active===1?'ão ativa':'ões ativas'}</>:'Consulta não concluída.'}</p><a href={personalWorkHref('pending',organizationId,projectId)}>Ver meu trabalho<ArrowRight size={15} aria-hidden="true"/></a></div>
-  <p className={styles.help}>Os grupos podem se sobrepor. Unidade e área temática não reduzem suas atribuições pessoais.</p>
+  <div className={styles.footer}><p role="status" aria-live="polite" aria-atomic="true">{loading?'Consultando suas atribuições…':data?<><Users size={16} aria-hidden="true"/>{data.responsibilities.active} responsabilidade{data.responsibilities.active===1?' ativa':'s ativas'}</>:'Consulta não concluída.'}</p></div>
+  <p className={styles.help}>Cada demanda pode aparecer em mais de um grupo. Este resumo considera organização e projeto; outros filtros da página não mudam os totais.</p>
   {data&&<p className={styles.asOf}>Consulta em {time(data.asOf)} · Brasília.</p>}
  </section>;
 }

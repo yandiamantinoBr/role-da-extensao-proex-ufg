@@ -96,7 +96,7 @@ test('revocation between validation and atomic write rolls back header, operatio
     else if(kind==='node-edit')f.native.prepare('UPDATE institutional_nodes SET name=? WHERE id=?').run('Nome mudou',root.entityId);
     else f.native.prepare("UPDATE organizations SET status='archived' WHERE id='org-a'").run();
    };
-   await assert.rejects(f.read('viewer-a',{organizationId:'org-a',projectId:'project-a'}),{status:403});assert.equal(fired,true);
+   await assert.rejects(f.read('viewer-a',{organizationId:'org-a',projectId:'project-a'}),{status:kind==='node-edit'?409:403});assert.equal(fired,true);
   }
  }
 });
@@ -134,4 +134,18 @@ test('revocation after an authorized commit hides its receipt and forbids replay
  assert.equal(f.native.prepare('SELECT COUNT(*) n FROM institutional_nodes').get().n,1);
  await assert.rejects(structureAction(f.db,actor,input),{status:403});
  assert.equal(f.native.prepare("SELECT COUNT(*) n FROM audit WHERE action='structure.node.save'").get().n,1);
+});
+
+
+test('reaffirming links retains original date, no-op unlink/status leave audit and version intact, and linked teams cannot move organizations',async t=>{
+ const f=await scenario(t),root=await f.write(node('Unidade para integridade'));
+ const command={action:'link.save',nodeId:root.entityId,teamId:f.hidden,linked:true};await f.write(command);
+ const original='2026-01-01T00:00:00.000Z';f.native.prepare('UPDATE institutional_team_links SET created_at=? WHERE team_id=?').run(original,f.hidden);
+ await f.write(command);assert.equal(f.native.prepare('SELECT created_at FROM institutional_team_links WHERE team_id=?').get(f.hidden).created_at,original);
+ const statusVersion=(await f.read()).version,statusAudit=f.native.prepare('SELECT COUNT(*) n FROM audit').get().n;
+ await assert.rejects(f.write({action:'node.status',id:root.entityId,status:'active'}),{status:409});assert.equal((await f.read()).version,statusVersion);assert.equal(f.native.prepare('SELECT COUNT(*) n FROM audit').get().n,statusAudit);
+ await f.write({...command,linked:false});const before=(await f.read()).version,audit=f.native.prepare('SELECT COUNT(*) n FROM audit').get().n;
+ await assert.rejects(f.write({...command,linked:false}),{status:409});assert.equal((await f.read()).version,before);assert.equal(f.native.prepare('SELECT COUNT(*) n FROM audit').get().n,audit);
+ assert.throws(()=>f.native.prepare("UPDATE followup_teams SET organization_id='org-b' WHERE id=?").run(f.hidden),/structure_identity_immutable/);
+ assert.equal(f.native.prepare('PRAGMA foreign_key_check').all().length,0);
 });

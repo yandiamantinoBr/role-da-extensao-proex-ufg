@@ -42,7 +42,13 @@ export async function structureWorkspace(db:D1Database,actor:PortalActor|null,in
   return{organizationName:result.organization_name as string,projectName:result.project_name as string,canManage:Boolean(result.can_manage),canApplyTemplate:Boolean(result.can_apply_template),header,nodes,teams,links};
  };
  const first=await read(),last=await read();
- if(JSON.stringify(first)!==JSON.stringify(last))fail('A estrutura ou seus vínculos mudaram durante a consulta. Atualize o recorte.','structure_access_changed',403);
+ if(JSON.stringify(first)!==JSON.stringify(last)){
+  // Content edits are a conflict, while changes to the visible authorization set
+  // retain the stricter access error. No extra await after the final snapshot.
+  const visibility=(value:typeof first)=>JSON.stringify({canManage:value.canManage,teams:value.teams.map(team=>({id:team.id,status:team.status})),links:value.links});
+  if(visibility(first)!==visibility(last))fail('Seu acesso ou os vínculos visíveis mudaram. Atualize o recorte.','structure_access_changed',403);
+  fail('A estrutura mudou durante a consulta. Atualize para conferir a nova versão.','structure_changed',409);
+ }
  const h=last.header;
  return{viewerId:actor.userId,scope:{organizationId,organizationName:last.organizationName,projectId,projectName:last.projectName,canManage:last.canManage},version:h?.version??0,canApplyTemplate:last.canApplyTemplate,
   source:h?.source_label?{label:h.source_label,revision:h.source_revision,issuedOn:h.source_issued_on,referenceUrl:h.source_url,adapted:Boolean(h.adapted)}:null,
@@ -79,12 +85,14 @@ export async function structureAction(db:D1Database,actor:PortalActor|null,input
  }else if(action==='node.status'){
   const status=choices(input.status,['active','archived']);adapted=true;
   if(!await one(db,'SELECT 1 FROM institutional_nodes WHERE id=? AND organization_id=?',[entityId,organizationId]))fail('Unidade não encontrada neste contexto.','structure_not_found',404);
+  changes.push(db.prepare("SELECT CASE WHEN EXISTS(SELECT 1 FROM institutional_nodes WHERE id=? AND organization_id=? AND status!=?) THEN 1 ELSE json_extract('[]','structure_version_changed') END").bind(entityId,organizationId,status));
   changes.push(db.prepare('UPDATE institutional_nodes SET status=?,updated_at=? WHERE id=? AND organization_id=?').bind(status,at,entityId,organizationId));
  }else if(action==='link.save'){
   const nodeId=id(input.nodeId)!,teamId=id(input.teamId)!;if(typeof input.linked!=='boolean')fail('Escolha vincular ou desvincular.');
   // Unlinking remains possible if a team was archived since the original link.
   if(!await one(db,'SELECT 1 FROM followup_teams t JOIN institutional_nodes n ON n.organization_id=t.organization_id WHERE t.id=? AND n.id=? AND n.organization_id=?',[teamId,nodeId,organizationId]))fail('Equipe e unidade devem pertencer à organização escolhida.','structure_not_found',404);
-  changes.push(input.linked?db.prepare('INSERT INTO institutional_team_links(organization_id,node_id,team_id,created_at) VALUES(?,?,?,?) ON CONFLICT(organization_id,node_id,team_id) DO UPDATE SET revoked_at=NULL,created_at=excluded.created_at').bind(organizationId,nodeId,teamId,at):db.prepare('UPDATE institutional_team_links SET revoked_at=? WHERE organization_id=? AND node_id=? AND team_id=? AND revoked_at IS NULL').bind(at,organizationId,nodeId,teamId));
+  if(!input.linked)changes.push(db.prepare("SELECT CASE WHEN EXISTS(SELECT 1 FROM institutional_team_links WHERE organization_id=? AND node_id=? AND team_id=? AND revoked_at IS NULL) THEN 1 ELSE json_extract('[]','structure_version_changed') END").bind(organizationId,nodeId,teamId));
+  changes.push(input.linked?db.prepare('INSERT INTO institutional_team_links(organization_id,node_id,team_id,created_at) VALUES(?,?,?,?) ON CONFLICT(organization_id,node_id,team_id) DO UPDATE SET created_at=CASE WHEN institutional_team_links.revoked_at IS NULL THEN institutional_team_links.created_at ELSE excluded.created_at END,revoked_at=NULL').bind(organizationId,nodeId,teamId,at):db.prepare('UPDATE institutional_team_links SET revoked_at=? WHERE organization_id=? AND node_id=? AND team_id=? AND revoked_at IS NULL').bind(at,organizationId,nodeId,teamId));
  }else{
   if(!Array.isArray(input.nodes)||input.nodes.length<1||input.nodes.length>50)fail('Revise um modelo de 1 a 50 unidades.');
   const ids=new Map<string,string>(),parsed:TemplateNode[]=[];

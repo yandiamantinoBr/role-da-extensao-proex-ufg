@@ -62,3 +62,18 @@ Calendar relido no destino canônico informado pelo usuário:200/text-calendar,1
 
 
 CI69 encontrou duas falhas na fixture que extrai os handlers reais do Portal: o novo personalOrganization não estava declarado no contexto sintético. A aplicação declara esse estado no componente e os tipos passaram. A fixture recebeu o estado e seu setter, com organizações distintas nos projetos; nova verificação executa o handler real e exige preservar organização compatível, limpar a incompatível, recusar projeto desconhecido e conservar organização explícita ao limpar somente o projeto. O CI69 não foi aprovado; o run posterior precisa ser conferido no head correto.
+
+
+## Crítica independente e nova rodada de acabamento
+
+CI70 do headc2d0937 passou **1.185/1.185 testes**, tipos, Worker/Node, autenticação/MCP e jogo legado. A revisão independente por Claude Code foi então executada com ferramentas de leitura, sem segredo, escrita ou navegador. O parecer de segurança não encontrou P0/P1/P2, com quatro P3; o de design rejeitou a apresentação (resumo7, estrutura desktop5/mobile4, PDF4). São notas reais do candidato anterior, não nota atual nem certificação geral. [Design](REVISAO-INDEPENDENTE-05NOV-DESIGN.md) e [segurança](REVISAO-INDEPENDENTE-05NOV-SECURITY.md) preservam escopo e limitações.
+
+A frente isolada de acabamento remove repetição de avisos e contagens vazias, recolhe ramos, preserva governança, compacta ações móveis em44px com nomes acessíveis, identifica a unidade no editor e permite Cancelar com retorno do foco. O resumo retira o link duplicado, inclui descrição acessível em cada cartão e usa responsabilidades em linguagem simples. Um agente de implementação recebeu somente os seis arquivos de UI/testes permitidos, sem ferramenta de execução; os gates são do coordenador.
+
+O relatório mantém as seis colunas permitidas e todos os campos de proveniência, reunidos em cinco linhas de contexto. Numeração hierárquica torna pais/filhos explícitos, com larguras medidas pelas fontes reais. A fixture de três unidades agora cabe em uma página, com logos e nota de privacidade; teste exige uma página e palavras inteiras. Para a proteção de fórmulas, a nova fixture ataca também a coluna de equipe, que não recebe o prefixo hierárquico.
+
+Foram tratados os P3 de integridade: edição concorrente de conteúdo retorna409 quando o conjunto de visibilidade continua igual, sem await posterior ao snapshot final; mudança de visibilidade mantém403. Status já vigente e desvinculação inexistente recusam sem incrementar versão/auditoria; reafirmar vínculo ativo conserva created_at. SQL impede transferir de organização uma equipe já referenciada, inclusive no histórico. Vinte e um testes de serviço/exportação/modelo passaram. A migração0029 ainda não foi publicada; somente essa migração nova recebeu a trigger, sem mudar SQL anterior ou modelos/tabelas.
+
+O ensaio entre duas organizações passou no navegador/API/banco do headc2d0937: selecionar projeto de outra organização limpa o recorte pessoal incompatível e consulta200, sem aviso. Ele revelou também seletores globais sem rótulo preciso para busca por nome; Projeto/Unidade/Área receberam aria-label explícito. Dois falsos negativos anteriores foram da seleção por texto de label, sem falha do handler; não apresentá-los como problema de autorização.
+
+A suíte ampliada encontrou uma verificação antiga de cifra intermitente: substituir os últimos caracteres base64 por aa podia não alterar os bytes. O teste agora inverte um bit de um byte autenticado e verifica a alteração antes de exigir rejeição. Não se modificou a criptografia nem se afrouxou a exigência de autenticação. A suite e os builds da fonte nova ainda recebem recibos; não publicar pelo resultado deCI70 anterior.
