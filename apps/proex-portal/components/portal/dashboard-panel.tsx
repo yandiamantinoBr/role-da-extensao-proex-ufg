@@ -201,8 +201,8 @@ export default function DashboardPanel({ modules, pinned, frequent, onNavigate, 
     <section className="pd-panel">
     <div className="pd-heading">
     <div>
-    <h2>Para acompanhar</h2>
-    <p>O que merece atenção nos projetos selecionados.</p>
+    <h2>Alertas operacionais</h2>
+    <p>Estoque, empréstimos e dinâmicas nos projetos selecionados.</p>
     </div>
     </div>{attention.length ? <div className="pd-attention">{attention.map(({ id, title, detail, kind, icon: Icon }) => <button type="button" key={id} onClick={() => onNavigate(id)}>
             <span className={styles.attentionIcon} data-kind={kind}><Icon size={17} aria-hidden="true"/></span>
@@ -214,8 +214,8 @@ export default function DashboardPanel({ modules, pinned, frequent, onNavigate, 
             </button>)}</div> : <div className="pd-calm">
         {partialAttention ? <Info size={24} aria-hidden="true"/> : <CheckCircle2 size={24} aria-hidden="true"/>}
         <div>
-        <strong>{partialAttention ? 'Resumo de alertas indisponível' : 'Nenhuma pendência indicada'}</strong>
-        <p>{partialAttention ? 'Abra os módulos para conferir os registros deste recorte.' : 'Os alertas aparecem aqui conforme os registros disponíveis.'}</p>
+        <strong>{partialAttention ? 'Resumo de alertas indisponível' : 'Nenhum alerta operacional neste recorte'}</strong>
+        <p>{partialAttention ? 'Abra os módulos para conferir os registros deste recorte.' : 'Suas demandas e seus prazos aparecem no resumo Meu trabalho acima.'}</p>
         </div>
         </div>}{find('loans') && known.loans && upcoming.length > 0 && <div className="pd-upcoming">
         <h3>Próximas retiradas</h3>{upcoming.map(loan => <button key={loan.id} onClick={() => onNavigate('loans')}>

@@ -18,6 +18,8 @@ export type MeuTrabalhoPanelProps = {
   organizationId?: string | null;
   projectId?: string | null;
   serverDay?: string;
+  workStatus?: MyWorkStatus;
+  onWorkStatusChange?: (status: MyWorkStatus) => void;
   onOpenTask?: (id: string, context: MyWorkContext) => void;
   onOpenTarget?: (target: WorkTarget, context: MyWorkContext) => void;
 };
@@ -27,7 +29,7 @@ const areaIcons = {projects: Building2, materials: Gift, loans: Handshake, campa
 const viaLabels: Record<AssignmentVia, string> = {direct: 'Atribuição direta', team: 'Pela sua equipe', both: 'Direta e pela equipe'};
 const statusLabels=MY_WORK_STATUS_LABELS;
 type Selection = {owner: string; assignment: AssignmentFilter; status: MyWorkStatus; taskOffset: number; responsibilityOffset: number};
-const initial = (owner: string): Selection => ({owner, assignment: 'all', status: 'pending', taskOffset: 0, responsibilityOffset: 0});
+const initial = (owner: string, status: MyWorkStatus = 'pending'): Selection => ({owner, assignment: 'all', status, taskOffset: 0, responsibilityOffset: 0});
 type Loaded = {key: string; data?: MyWorkResponse; error?: string};
 
 function AssignmentLabel({via}: {via: AssignmentVia}) {
@@ -48,24 +50,29 @@ function consultationTime(value: string) {
 }
 const visibleRange = (offset: number, length: number, total: number) => length ? `${offset + 1}–${offset + length}\u00a0de\u00a0${total}` : `0\u00a0de\u00a0${total}`;
 
-export default function MeuTrabalhoPanel({userId, organizationId = null, projectId = null, serverDay = '', onOpenTask, onOpenTarget}: MeuTrabalhoPanelProps) {
+export default function MeuTrabalhoPanel({userId, organizationId = null, projectId = null, serverDay = '', workStatus, onWorkStatusChange, onOpenTask, onOpenTarget}: MeuTrabalhoPanelProps) {
   const owner = JSON.stringify([userId, organizationId, projectId]);
-  const [selection, setSelection] = useState<Selection>(() => initial(owner));
-  const selected = selection.owner === owner ? selection : initial(owner);
+  // Back may revisit a query whose previous result is still in memory. Give each
+  // incoming route a new read epoch before rendering, without resetting assignment.
+  const [routeRead, setRouteRead] = useState({status: workStatus, epoch: 0});
+  const incomingRead = routeRead.status === workStatus ? routeRead : {status: workStatus, epoch: routeRead.epoch + 1};
+  if (incomingRead !== routeRead) setRouteRead(incomingRead);
+  const [selection, setSelection] = useState<Selection>(() => initial(owner, workStatus));
+  const selected = selection.owner !== owner ? initial(owner, workStatus) : workStatus && workStatus !== selection.status ? {...selection, status: workStatus, taskOffset: 0, responsibilityOffset: 0} : selection;
   const {assignment, status, taskOffset, responsibilityOffset} = selected;
   const [revision, setRevision] = useState(0), [loaded, setLoaded] = useState<Loaded | null>(null);
   const [exporting,setExporting]=useState<{key:string;format:DocumentFormat|'md'}|null>(null),[vaultFeedback,setVaultFeedback]=useState<{key:string;error:boolean;message:string}|null>(null);
   const active = useRef<AbortController | null>(null), generation = useRef(0), exportRequest=useRef<AbortController|null>(null),exportEpoch=useRef(0),mounted=useRef(true);
-  const key = JSON.stringify([owner, assignment, status, taskOffset, responsibilityOffset, revision, serverDay]);
+  const key = JSON.stringify([owner, assignment, status, taskOffset, responsibilityOffset, revision, serverDay, incomingRead.epoch]);
   const latestKey=useRef(key);
   const cancelExport=useCallback(()=>{exportEpoch.current++;exportRequest.current?.abort();exportRequest.current=null;},[]);
   const query={userId,organizationId,projectId,assignment,status,taskOffset,responsibilityOffset};
   const queryPath=myWorkQuery(query);
   const current = loaded?.key === key ? loaded : null, data = current?.data, loading = !current;
   function invalidate() { generation.current++; active.current?.abort();cancelExport(); }
-  function choose(patch: Partial<Omit<Selection, 'owner'>>) { invalidate(); setSelection({...selected, taskOffset: 0, responsibilityOffset: 0, ...patch}); }
+  function choose(patch: Partial<Omit<Selection, 'owner'>>) { invalidate(); setSelection({...selected, taskOffset: 0, responsibilityOffset: 0, ...patch}); if (patch.status && patch.status !== status) onWorkStatusChange?.(patch.status); }
   function refresh() { invalidate(); setRevision(value => value + 1); }
-  useLayoutEffect(()=>{latestKey.current=key;cancelExport();return cancelExport;},[key,cancelExport]);
+  useLayoutEffect(()=>{latestKey.current=key;cancelExport();return()=>{generation.current++;active.current?.abort();cancelExport();};},[key,cancelExport]);
   useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;cancelExport();};},[cancelExport]);
   useEffect(() => {
     const changed = () => { generation.current++; active.current?.abort();cancelExport(); setRevision(value => value + 1); };
@@ -76,11 +83,11 @@ export default function MeuTrabalhoPanel({userId, organizationId = null, project
     const controller = new AbortController(), epoch = ++generation.current;
     active.current = controller;
     void workApi(queryPath, isMyWorkResponse, controller.signal).then(result => {
-      if (controller.signal.aborted || epoch !== generation.current) return;
+      if (controller.signal.aborted || epoch !== generation.current || latestKey.current !== key) return;
       assertMyWorkContext(result,{userId,organizationId,projectId,assignment,status,taskOffset,responsibilityOffset});
       setLoaded({key, data: result});
     }).catch(error => {
-      if (!controller.signal.aborted && epoch === generation.current) setLoaded({key, error: error instanceof Error ? error.message : 'Não foi possível consultar seu trabalho.'});
+      if (!controller.signal.aborted && epoch === generation.current && latestKey.current === key) setLoaded({key, error: error instanceof Error ? error.message : 'Não foi possível consultar seu trabalho.'});
     });
     return () => controller.abort();
   }, [key, queryPath, userId, organizationId, projectId, assignment, status, taskOffset, responsibilityOffset]);
