@@ -22,3 +22,10 @@ O escopo pessoal usa organização/projeto quando informados. Unidade e área te
 ## Próxima etapa deste recorte
 
 Ligar os cartões aos filtros validados de Meu trabalho no histórico/URL; distinguir erro, carregamento e zero; mostrar última consulta; descartar respostas antigas por conta/contexto; atualizar por eventos/foco/virada do dia sem consulta periódica persistente. Conferir 375/390/1366 px, dois temas, teclado, navegação Voltar/reload e revisão independente antes da integração. A primeira entrega deste documento é de backend; não comprova interface ou produção.
+
+
+## Interface integrada · 2026-11-05
+
+Os cartões já estão ligados ao Início e aos filtros validados de Meu trabalho. Exibem traço durante consulta ou erro, quatro totais com ícones e cores semânticas nos dois temas, recorte e última consulta em Brasília. Status sobrevive à URL/recarga e ao histórico; filtro direto/equipe permanece independente. Eventos, foco e mudança do dia atualizam o resumo sem polling persistente.
+
+A retomada pelo histórico recebeu época nova de leitura para não reapresentar a resposta antiga de um status já visitado. Cancelamento em layout e comparação da chave atual protegem respostas e exportações. A suíte focal de resumo/navegação passou 45 testes. No navegador local, seis contextos (375/390/1366 px, dois temas), 24 aberturas por cartão e recarga/Voltar/Avançar passaram. Quatro cartões em desktop e dois por linha no mobile, alvos de pelo menos44px medidos e zero overflow/erroJS. Erro403 de transporte simulado não exibiu zero. São provas sintéticas locais; revisão independente final e produção ainda pendentes.
