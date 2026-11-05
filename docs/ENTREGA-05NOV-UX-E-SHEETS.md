@@ -1,5 +1,9 @@
 # Filtros, projetos, arquivos e feedback
 
+## Publicação comprovada
+
+PR #33 integrada em `c8182d2e4b34f99033b861daa8064e12f1e2d937`. Vercel `dpl_7vA9LLPkEtiJoewFzEThQAfiKqFy` READY no mesmo SHA. CI `42030415419`: 1003/1003 testes do Portal, tipos, builds Worker/Node e smoke de autenticação aprovados. No Chrome com sessão real, o cartão do CONPEEX abriu a ficha, o calendário abriu Novembro 2026 em português e escolheu `05/11/2026`, e o feedback mostrou a versão publicada. A ficha distingue a conexão por projeto da mestre e do link institucional anterior. O conector novo do CONPEEX ainda não foi instalado/autorizado no Google; não há recibo nativo de sincronização por projeto nesta publicação.
+
 ## Resultado desta etapa
 
 Filtros de contexto deixam de reservar um espaço vazio quando expandidos. O campo de data apresenta dd/mm/aaaa e um calendário português mesmo em navegador en-US. Um campo vazio abre o mês atual dentro dos limites permitidos. O calendário carrega quando solicitado; se o recurso falhar, o campo digitável continua disponível. Favoritos pessoais são atalhos compactos e a demanda tem um link para o projeto de origem. O panorama do projeto permite selecionar uma situação para conferir os registros correspondentes, com valores e texto além da cor. Empréstimos declaram a janela dos 100 mais recentes.

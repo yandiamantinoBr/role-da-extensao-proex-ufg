@@ -3,7 +3,7 @@ import { one, uid, type Row } from '../database';
 import { digest, type CredentialKeys } from '../assistant/crypto';
 import { PROVIDERS, safeRequest } from '../assistant/contracts';
 import { containsCredential } from '../assistant/sensitive';
-import { loadAssistantSettings } from '../assistant/settings';
+import { assistantUsageSql, loadAssistantSettings } from '../assistant/settings';
 import { reservationStatements } from '../assistant/admission';
 import { classifyTaskTriage, taskTriageBody } from '../assistant/provider';
 import { TASK_PRIORITIES, choices, fail, id, onlyKeys, text, version } from './contracts';
@@ -24,8 +24,9 @@ const sensitiveSummary = [
 
 export async function taskTriageAvailable(db:D1Database, actor:PortalActor, taskId:unknown):Promise<boolean> {
  const task = await getTask(db,actor,id(taskId)!);
+ const usage = assistantUsageSql(actor.userId);
  return Boolean(!['completed','cancelled'].includes(task.status) &&
-  await one(db, `SELECT 1 FROM ai_organization_settings s WHERE s.organization_id=? AND ${configEnabled}`, [task.organization_id]));
+  await one(db, `SELECT 1 FROM ai_organization_settings s WHERE s.organization_id=? AND ${configEnabled} AND ${usage.sql}`, [task.organization_id,...usage.values]));
 }
 
 async function getTask(db:D1Database, actor:PortalActor, taskId:string) {
@@ -36,12 +37,13 @@ async function getTask(db:D1Database, actor:PortalActor, taskId:string) {
 }
 const scopeOf = (task:Row):Scope => ({organizationId:task.organization_id,projectId:task.project_id});
 function guard(db:D1Database, actor:PortalActor, task:Row, revision:number) {
+ const usage = assistantUsageSql(actor.userId);
  return db.prepare(`SELECT CASE WHEN EXISTS(SELECT 1 FROM followup_tasks t
   JOIN ai_organization_settings s ON s.organization_id=t.organization_id WHERE t.id=? AND t.version=? AND t.organization_id=?
-  AND s.revision=? AND ${configEnabled} AND ${activeTask}
+  AND s.revision=? AND ${configEnabled} AND ${activeTask} AND ${usage.sql}
   AND ${authority('?','t.organization_id','t.project_id',true)})
   THEN 1 ELSE json_extract('[]','triage_authority_or_version_changed') END`)
-  .bind(task.id,task.version,task.organization_id,revision,actor.userId);
+  .bind(task.id,task.version,task.organization_id,revision,...usage.values,actor.userId);
 }
 function guardError(error:unknown):never {
  if (String(error).includes('triage_authority_or_version_changed')) return stale();
@@ -63,7 +65,7 @@ export async function prepareTaskTriage(db:D1Database, actor:PortalActor, input:
  }
  const task = await getTask(db,actor,id(input.id)!);
  if (task.version!==version(input.expectedVersion) || ['completed','cancelled'].includes(task.status)) return stale();
- const {config, credentials, revision} = await loadAssistantSettings(db,secret,task.organization_id,'triage',options.keys);
+ const {config, credentials, revision} = await loadAssistantSettings(db,secret,task.organization_id,'triage',options.keys,actor.userId);
  const now = options.now ?? Date.now(), {asOf:createdAt,today:day} = serverWorkClock(now);
  const proposalId = await digest(JSON.stringify(['triage',actor.userId,task.id,input.operationKey]));
  const fingerprint = await digest(JSON.stringify([task.id,task.version,revision,context]));

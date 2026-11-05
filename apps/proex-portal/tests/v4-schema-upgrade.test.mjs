@@ -17,7 +17,13 @@ test('V4 upgrade is additive and preserves production ledgers, references and gu
     const beforeTriggers = native.prepare("SELECT name FROM sqlite_master WHERE type='trigger'").all().map(row => row.name);
     for (const name of migrations.filter(name => name >= '0004')) {
       const sql = readFileSync(new URL(name, root), 'utf8');
-      assert.doesNotMatch(sql, /DROP\s+TABLE|RENAME\s+TO|foreign_keys\s*=\s*OFF/i);
+      // SQLite cannot widen a CHECK in place. This reviewed metadata-only
+      // rebuild has populated preservation and rollback tests below; no domain
+      // table or other destructive statement is allowed through this exception.
+      const guardedSql = name==='0025_groq_organization_credentials.sql'
+        ? sql.replace('DROP TABLE ai_provider_credential_metadata;','').replace('ALTER TABLE ai_provider_credential_metadata_groq RENAME TO ai_provider_credential_metadata;','')
+        : sql;
+      assert.doesNotMatch(guardedSql, /DROP\s+TABLE|RENAME\s+TO|foreign_keys\s*=\s*OFF/i);
       native.exec(sql);
     }
     assert.equal(native.prepare("SELECT stock,category_id FROM items WHERE id='existing-gift'").get().stock, 9);
@@ -35,4 +41,33 @@ test('V4 upgrade is additive and preserves production ledgers, references and gu
     assert.throws(() => native.prepare("UPDATE items SET category_id='wrong-core' WHERE id='existing-gift'").run(), /material_category_mismatch/);
     for (const table of ['sync_attachment_tickets', 'sync_attachment_exports', 'sync_receipts', 'privacy_requests']) assert.ok(native.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(table));
   } finally { native.close(); }
+});
+
+test('reviewed Groq metadata rebuild preserves populated rows, keys and foreign keys and rolls back a failed rename',()=>{
+ const migration=readFileSync(new URL('0025_groq_organization_credentials.sql',root),'utf8');
+ for(const failAtRename of [false,true]){
+  const db=new DatabaseSync(':memory:');try{
+   db.exec('PRAGMA foreign_keys=ON');
+   for(const name of readdirSync(root).filter(name=>name.endsWith('.sql')&&name<'0025').sort())db.exec(readFileSync(new URL(name,root),'utf8'));
+   const at='2026-11-05T12:00:00.000Z',put=db.prepare('INSERT INTO ai_provider_credential_metadata(organization_id,provider,label,mask,state,created_at,created_by,updated_at,updated_by)VALUES(?,?,?,?,?,?,?,?,?)');
+   for(const [provider,state]of [['deepseek','active'],['typesafe','disabled'],['deepgram','removed']])put.run('org_proex',provider,'Synthetic '+provider,'…test',state,at,'synthetic-owner',at,'synthetic-editor');
+   const before=db.prepare('SELECT * FROM ai_provider_credential_metadata ORDER BY provider').all(),columns=db.prepare('PRAGMA table_info(ai_provider_credential_metadata)').all(),fks=db.prepare('PRAGMA foreign_key_list(ai_provider_credential_metadata)').all();
+   db.exec('BEGIN');
+   if(failAtRename){
+    const interrupted=migration.replace('ALTER TABLE ai_provider_credential_metadata_groq RENAME','SELECT json_extract(\'[]\',\'synthetic_failure\'); ALTER TABLE ai_provider_credential_metadata_groq RENAME');
+    assert.throws(()=>db.exec(interrupted));db.exec('ROLLBACK');
+    assert.equal(db.prepare("SELECT name FROM sqlite_master WHERE name='ai_provider_credential_metadata_groq'").get(),undefined);
+    assert.throws(()=>put.run('org_proex','groq','Synthetic','…test','active',at,'synthetic-owner',at,'synthetic-editor'),/CHECK/);
+   }else{db.exec(migration);db.exec('COMMIT');}
+   assert.deepEqual(db.prepare('SELECT * FROM ai_provider_credential_metadata ORDER BY provider').all(),before);
+   assert.deepEqual(db.prepare('PRAGMA table_info(ai_provider_credential_metadata)').all(),columns);
+   assert.deepEqual(db.prepare('PRAGMA foreign_key_list(ai_provider_credential_metadata)').all(),fks);
+   assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
+   if(!failAtRename){
+    put.run('org_proex','groq','Synthetic','…test','active',at,'synthetic-owner',at,'synthetic-editor');
+    assert.throws(()=>put.run('org_proex','groq','Duplicate','…test','active',at,'synthetic-owner',at,'synthetic-editor'),/UNIQUE/);
+    assert.throws(()=>put.run('foreign-org','groq','Foreign','…test','active',at,'synthetic-owner',at,'synthetic-editor'),/FOREIGN KEY/);
+   }
+  }finally{db.close();}
+ }
 });

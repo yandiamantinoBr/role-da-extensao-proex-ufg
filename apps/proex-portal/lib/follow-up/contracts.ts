@@ -7,7 +7,10 @@ export type TaskStatus = typeof TASK_STATES[number];
 export type TaskPriority = typeof TASK_PRIORITIES[number];
 export type Task = { id:string;organization_id:string;project_id:string|null;title:string;body:string;priority:TaskPriority;importance?:TaskPriority|null;status:TaskStatus;due_at:string|null;version:number;created_at:string;updated_at:string;canEdit:boolean;canWork:boolean;canDelegateWork:boolean;project_name:string;organization_name:string;campaign_id:string|null;item_id:string|null;loan_id:string|null;assignees:{user_id:string|null;team_id:string|null;name:string}[];checklist_id?:string|null };
 export type ChecklistRow = {id:string;item_id:string;material:string;size:string;expected:number;counted:number|null;damaged:number;note:string};
-export type Checklist = {id:string;task_id:string;title:string;status:'open'|'completed';version:number;rows:ChecklistRow[];followups:{row_id:string;task_id:string}[]};
+export type MaterialChecklist = {kind?:'materials';id:string;task_id:string;title:string;status:'open'|'completed';version:number;rows:ChecklistRow[];followups:{row_id:string;task_id:string}[]};
+export type ActivityStep = {id:string;position:number;label:string;answer:null|'yes'|'no'|'not_applicable';note:string;version:number;updated_at:string};
+export type ActivityChecklist = {kind:'activity';id:string;task_id:string;title:string;status:'open'|'completed';version:number;rows:ActivityStep[];followups:{row_id:string;task_id:string}[]};
+export type Checklist = MaterialChecklist | ActivityChecklist;
 export type Team = {id:string;name:string;status:'active'|'archived';version:number;members:{userId:string;name:string}[]};
 export type Catalog = {organizations:{id:string;name:string;canManage:boolean}[];projects:{id:string;name:string;organization_id:string;canEdit:boolean}[];people:{userId:string;name:string}[];teamPeople:{userId:string;name:string}[];teams:Team[];items:{id:string;name:string;unit:string;stock:number}[];campaigns:{id:string;name:string;status:string;version:number}[];loans:{id:string;action_name:string}[];canEdit:boolean;canManageTeams:boolean};
 export function fail(message:string,code='followup_invalid',status=400):never {throw new HttpError(status,message,code);}

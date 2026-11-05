@@ -74,6 +74,16 @@ const acting=(f,user)=>access.getActor(f.db,user);
 const post=input=>new Request(`${origin}/api/organizations`,{method:'POST',headers:{Origin:origin,'X-Proex-Action':'1','Content-Type':'application/json'},body:JSON.stringify(input)});
 const projectInput=organizationId=>({organizationId,name:'New project',status:'active',color:'#54216C',prizesEnabled:false,operationKey:crypto.randomUUID()});
 
+test('standalone hides the Sites synchronization routine while preserving its legacy backend',async t=>{
+ const f=fixture(t);f.observe(f.platform);
+ const get=()=>syncRoute.GET(new Request(`${origin}/api/sync`));
+ assert.equal((await (await get()).json()).legacyRoutineAvailable,false);
+ globalThis.__organizationTest.standalone=false;
+ assert.equal((await (await get()).json()).legacyRoutineAvailable,true);
+ const response=await syncRoute.POST(new Request(`${origin}/api/sync`,{method:'POST',headers:{Origin:origin,'X-Proex-Action':'1','Content-Type':'application/json'},body:JSON.stringify({action:'request'})}));
+ assert.equal(response.status,200);
+});
+
 test('master tab shortcuts are available only to the current global owner through the authenticated sync route', async t => {
  const f = fixture(t);
  const get = () => syncRoute.GET(new Request(`${origin}/api/sync?sheetTabs=1`));

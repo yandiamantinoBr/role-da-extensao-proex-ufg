@@ -12,7 +12,7 @@ const DEFINITIONS: Record<string, Definition> = {
  work_responsibility_scopes: {label:'Designações por área e entidade',fields:'id,organization_id,project_id,area,item_id,loan_id,campaign_id,status,version,created_at,updated_at',mode:'read_only',omitted:['created_by','assignees','history']},
  followup_teams: {label:'Equipes de acompanhamento',fields:'id,organization_id,name,status,version,created_at,updated_at',mode:'read_only',omitted:['created_by','roster']},
  followup_tasks: {label:'Demandas e pendências',fields:'id,organization_id,project_id,title,priority,status,due_at,campaign_id,item_id,loan_id,version,created_at,updated_at',mode:'read_only',omitted:['body','created_by','assignees','work_grants']},
- followup_checklists: {label:'Conferências de materiais',fields:'id,organization_id,project_id,campaign_id,task_id,title,status,version,created_at,updated_at',mode:'read_only',omitted:['created_by']},
+ followup_checklists: {label:'Checklists de materiais e atividades',fields:'id,organization_id,project_id,campaign_id,task_id,title,kind,status,version,created_at,updated_at',mode:'read_only',omitted:['created_by','steps','notes','history']},
  followup_checklist_items: {label:'Contagens por material e tamanho',fields:'id,checklist_id,item_id,size,expected,counted,damaged',mode:'read_only',omitted:['note']},
  followup_checklist_actions: {label:'Pendências das conferências',fields:'checklist_id,row_id,task_id',key:'json_array(checklist_id,row_id)',mode:'read_only'},
  project_types: {label:'Tipos de projeto',fields:'id,key,label,description,status,version,created_at,updated_at',editable:'label,description,status',action:'project.type.update'},

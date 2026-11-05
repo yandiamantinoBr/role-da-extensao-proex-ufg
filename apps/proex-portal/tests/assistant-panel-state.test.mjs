@@ -15,25 +15,10 @@ function harness(){
  function nodes(){const result=[];const visit=node=>{if(!node||typeof node!=='object')return;if(Array.isArray(node)){node.forEach(visit);return;}result.push(node);visit(node.props?.children);};visit(tree);return result;}
  const h={requests,render(){index=0;tree=Component({projects:[{id:'project-a',name:'Projeto A',organization_id:'org-a'}],defaultProjectId:'project-a'});},find(type,predicate){const found=nodes().find(node=>node.type===type&&predicate(node));assert.ok(found,type);return found;},button(name){return h.find('button',node=>text(node)===name);},selector(){return h.find('label',node=>text(node).startsWith('Organização da configuração')).props.children.find(child=>child?.type==='select');},keys(){return nodes().filter(node=>node.type==='input'&&node.props.type==='password');},status(id){return{available:true,canConfigure:true,canDelegate:true,organizationId:id,revision:1,config:{...defaults,enabled:true},organizations:['org-a','org-b','org-c'].map(value=>({id:value,name:value,canConfigure:true,available:true,sttAvailable:false})),candidates:[],grants:[]};},dispose(){cleanups.forEach(cleanup=>cleanup?.());}};h.render();return h;
 }
-async function open(h, extra={}){h.button('Assistente com revisão').props.onClick();await tick();h.requests[0].resolve({ok:true,json:async()=>({...h.status('org-a'),...extra})});await tick();h.render();h.button('Configurar IA').props.onClick();h.render();}
-test('legacy credentials stay writable before vault activation; delegated configuration remains after activation',async()=>{
- const legacy=harness(),managed=harness();
- try {
-  await open(legacy,{credentialVaultManaged:false,canDelegate:false});
-  assert.equal(legacy.keys().length,3);
-  await open(managed,{credentialVaultManaged:true,canDelegate:false});
-  assert.equal(managed.keys().length,0);
-  managed.find('p',node=>text(node).includes('Configurações → Chaves e modelos'));
-  managed.button('Salvar configuração').props.onClick();await tick();
-  const body=JSON.parse(managed.requests[1].init.body);
-  assert.equal(body.action,'configure');
-  assert.equal(body.config.enabled,true);
-  for(const name of ['deepseekKey','typesafeKey','deepgramKey','replaceCredentials'])assert.equal(Object.hasOwn(body,name),false);
- }finally{legacy.dispose();managed.dispose();}
+async function open(h, extra={}){h.button('Assistente com revisão').props.onClick();await tick();h.requests[0].resolve({ok:true,json:async()=>({...h.status('org-a'),...extra})});await tick();h.render();}
+test('operational assistant has no credential, configuration, grant or diagnostic administration even for an owner',async()=>{
+ const h=harness();try{await open(h);assert.equal(h.keys().length,0);for(const forbidden of ['Configurar IA','Salvar configuração','Nova chave','Testar autenticação','Autorizar integrante'])assert.equal(text(h.find('section',()=>true)).includes(forbidden),false,forbidden);assert.ok(h.button('Preparar proposta'));}finally{h.dispose();}
 });
-test('changing organization clears write-only credentials and blocks saving the old configuration while the new status loads',async()=>{
- const h=harness();try{await open(h);h.keys()[0].props.onChange({target:{value:'test-only-key-for-org-a'}});h.render();assert.equal(h.keys()[0].props.value,'test-only-key-for-org-a');h.selector().props.onChange({target:{value:'org-b'}});h.render();h.button('Salvar configuração').props.onClick();await tick();assert.equal(h.requests.length,2);assert.equal(h.requests[1].init.method,undefined);h.requests[1].resolve({ok:true,json:async()=>h.status('org-b')});await tick();h.render();assert.ok(h.keys().every(input=>input.props.value===''));h.button('Salvar configuração').props.onClick();await tick();const body=JSON.parse(h.requests[2].init.body);assert.equal(body.organizationId,'org-b');assert.equal(body.deepseekKey,undefined);assert.equal(JSON.stringify(body).includes('test-only-key-for-org-a'),false);}finally{h.dispose();}
-});
-test('late organization status cannot replace the current selection or redirect a configuration save',async()=>{
- const h=harness();try{await open(h);h.selector().props.onChange({target:{value:'org-b'}});h.render();h.selector().props.onChange({target:{value:'org-c'}});h.render();h.requests[2].resolve({ok:true,json:async()=>h.status('org-c')});await tick();h.render();h.requests[1].resolve({ok:true,json:async()=>h.status('org-b')});await tick();h.render();assert.equal(h.selector().props.value,'org-c');h.button('Salvar configuração').props.onClick();await tick();assert.equal(JSON.parse(h.requests[3].init.body).organizationId,'org-c');}finally{h.dispose();}
+test('account renders only profile while authorized configuration remains in Settings',()=>{
+ const source=readFileSync(new URL('../app/portal-client.tsx',import.meta.url),'utf8');const profile=source.slice(source.indexOf("{tab === 'profile'"),source.indexOf("{tab === 'records'"));assert.match(profile,/ProfilePanel/);assert.doesNotMatch(profile,/AssistantPanel/);assert.ok(source.includes('data.canConfigureAi === true'));assert.ok(source.includes('canManageKeys={isPlatformOwner}'));
 });

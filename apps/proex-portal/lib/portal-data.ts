@@ -1,4 +1,4 @@
-import { accessibleProjects, requireCapability, projectAuthoritySql, type PortalActor } from './access';
+import { accessibleProjects, aiConfigurationAuthority, requireCapability, projectAuthoritySql, type PortalActor } from './access';
 import { all, one, type Row } from './database';
 import { HttpError } from './errors';
 import { listManagedUsers } from './users';
@@ -291,9 +291,15 @@ export async function portalSnapshot(db: D1Database, actor: PortalActor | null):
     version: profileVersion,
   };
   const hasPassword = Boolean(ownProfile?.has_password);
+  // Navigation uses the same live authority as the configuration API; no credential data is loaded.
+  let canConfigureAi = false;
+  for (const organization of actor.organizations ?? []) {
+    const authority = aiConfigurationAuthority(actor, organization.id);
+    if (await one(db, `SELECT 1 WHERE ${authority.sql}`, authority.values)) { canConfigureAi = true; break; }
+  }
   return {
     user: { userId: actor.userId, ...profile, hasPassword }, profile, hasPassword,
-    role, capabilities, globalCapabilities, capabilitiesByProject, organizations: await listOrganizations(db,actor), projects, campaigns,
+    role, capabilities, globalCapabilities, capabilitiesByProject, canConfigureAi, organizations: await listOrganizations(db,actor), projects, campaigns,
     projectTypes: await all(db,'SELECT id,key,label,description,status,version FROM project_types ORDER BY label,id'),
     organizationalUnits: await all(db,'SELECT id,name,acronym,kind,status,version,group_label,campus FROM organizational_units ORDER BY name,id'),
     items: items.map(item => ({ ...item, on_loan: Boolean(item.on_loan), reserved_now: Boolean(item.reserved_now),

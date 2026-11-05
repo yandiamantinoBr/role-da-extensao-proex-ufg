@@ -1,5 +1,6 @@
 'use client';
 import DateField from '@/components/portal/date-field';
+import McpConnectionsPanel from '@/components/portal/mcp-connections-panel';
 import Image from 'next/image';
 import scopeStyles from './scope-filters.module.css';
 import FeedbackPanel from '@/components/portal/feedback-panel';
@@ -13,6 +14,7 @@ import PendingPrizes from '@/components/portal/pending-prizes';
 import ProjectPanel from '@/components/portal/project-panel';
 import AssistedImportPanel from '@/components/portal/assisted-import-panel';
 import TeamPanel from '@/components/portal/team-panel';
+import WorkTeamsPanel from '@/components/portal/work-teams-panel';
 import OfficialTeamDirectory from '@/components/portal/official-team-directory';
 import OrganizationsPanel, { type OrganizationSummary, type OrganizationPerson } from '@/components/portal/organizations-panel';
 import AssetDetailsPanel from '@/components/portal/asset-details-panel';
@@ -373,7 +375,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
     const canManageOrganization = organizations.some(organization => organization.canManage);
     const canCreateProjects = canGlobal('projects.manage') || organizations.some(organization => organization.canManage && organization.status === 'active');
     const canFollowUp = canManageOrganization || projects.length > 0;
-    const allowedTabs = tabs.filter(t => ['overview', 'projects', 'profile', 'calendar', 'records', 'my-work'].includes(t.id) || (t.id === 'events' && canAny('campaigns.manage', 'participation.operate', 'inventory.deliver')) || (t.id === 'materials' && canAny('inventory.read', 'inventory.manage', 'inventory.deliver')) || (t.id === 'loans' && canAny('loans.read', 'loans.manage', 'loans.checkout')) || (t.id === 'demands' && canFollowUp) || (t.id === 'team' && (canManageOrganization || canAny('access.invite', 'access.manage'))) || (t.id === 'reports' && (canFollowUp || canAny('reports.read'))) || (t.id === 'settings' && canGlobal('organization.manage')));
+    const allowedTabs = tabs.filter(t => ['overview', 'projects', 'profile', 'calendar', 'records', 'my-work'].includes(t.id) || (t.id === 'events' && canAny('campaigns.manage', 'participation.operate', 'inventory.deliver')) || (t.id === 'materials' && canAny('inventory.read', 'inventory.manage', 'inventory.deliver')) || (t.id === 'loans' && canAny('loans.read', 'loans.manage', 'loans.checkout')) || ((t.id === 'demands' || t.id === 'work-teams') && canFollowUp) || (t.id === 'team' && (canManageOrganization || canAny('access.invite', 'access.manage'))) || (t.id === 'reports' && (canFollowUp || canAny('reports.read'))) || (t.id === 'settings' && (isPlatformOwner || data.canConfigureAi === true)));
     const tab = allowedTabs.some(module => module.id === requestedTab) ? requestedTab : 'overview';
     const organizationalUnits = list(data.organizationalUnits);
     const unitOf = (project: Row) => string(get(project, 'unit_id', 'unitId'));
@@ -984,8 +986,9 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
             </OperationForm>
             </Section></div>}</>}
 
+      {tab === 'work-teams' && <WorkTeamsPanel key={`${string(user.userId)}:${filter}`} userId={string(user.userId)} defaultProjectId={filter} organizations={organizations} projects={projects.map(project => ({id:string(project.id),name:string(project.name),organization_id:string(project.organization_id)}))} canOpenAccess={allowedTabs.some(module=>module.id==='team')} onChanged={refreshModules} onOpenDemand={(id,projectId)=>{selectProject(projectId??'');setSelectedDemandId(id);navigate('demands');}}/>}
       {tab === 'team' && <><OrganizationsPanel organizations={organizations} currentActor={{ userId: string(user.userId), isPlatformOwner }} people={organizationPeople} onChanged={refreshModules}/><OfficialTeamDirectory onSelect={canAny('access.invite') ? setOfficialSuggestion : undefined}/><TeamPanel key={officialSuggestion?.selectionKey ?? `manual:${filter}`} officialSuggestion={officialSuggestion} onClearOfficialSuggestion={() => setOfficialSuggestion(null)} users={list(data.users)} members={members} invites={invites} projects={projects} selectedProjectId={filter} globalAdmin={isPlatformOwner} canManageManagers={(projectId, organizationId) => isPlatformOwner || organizations.some(organization => organization.canManage && organization.id === (projectId ? projects.find(project => project.id === projectId)?.organization_id : organizationId))} canProject={canProject} mutate={mutate} now={now}/>{canGlobal('organization.manage') && <AdminPrivacyPanel />}</>}
-      {tab === 'profile' && <><AssistantPanel key={string(user.userId)} projects={assistantProjects} defaultProjectId={filter} onApplied={refreshModules}/><ProfilePanel onUpdated={() => { void refresh(); }}/></>}
+      {tab === 'profile' && <><McpConnectionsPanel key={`mcp-${string(user.userId)}`}/><ProfilePanel onUpdated={() => { void refresh(); }}/></>}
       {tab === 'calendar' && <CalendarPanel projects={projects} organizationalUnits={visibleUnits} selectedProjectId={filter} selectedUnitId={unitFilter} onProjectChange={selectProject} onUnitChange={selectUnit}/>}
       {tab === 'records' && <RecordsPanel projects={projects} items={items} loans={loans} canWrite={(capability: string, projectId?: string | null) => projectId ? canProject(projectId, capability) : canGlobal(capability)}/>}
 
@@ -1124,8 +1127,8 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         </>}
 
       {tab === 'settings' && <div className={settingsStyles.groups}>
+        <CredentialVaultSettings key={string(user.userId)} groupClass={settingsStyles.group} bodyClass={settingsStyles.body} canManageKeys={isPlatformOwner}/>
         {canGlobal('organization.manage') && <>
-          <CredentialVaultSettings key={string(user.userId)} groupClass={settingsStyles.group} bodyClass={settingsStyles.body} onConfigure={() => navigate('profile')}/>
           <details className={settingsStyles.group}>
             <summary><strong>Planilha e anexos</strong><small>Conexão, sincronização, arquivos no Drive e exportação portátil.</small></summary>
             <div className={settingsStyles.body}><SyncSettingsPanel key={string(user.userId)} userId={string(user.userId)} includeBackups={false}/></div>
@@ -1139,7 +1142,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
             <div className={settingsStyles.body}><PublicParticipantsSettingsPanel canManage={canGlobal('organization.manage')} onChanged={refreshModules}/></div>
           </details>
         </>}
-        <details className={settingsStyles.group}>
+        {isPlatformOwner && <details className={settingsStyles.group}>
           <summary><strong>Operação e canais</strong><small>Canais institucionais e aviso de privacidade da operação.</small></summary>
           <div className={settingsStyles.body}>
         <Section title="Canais e informações da operação" description="Use os canais institucionais confirmados e o aviso aprovado para o serviço.">
@@ -1161,7 +1164,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         </div>
         </div>
           </div>
-        </details>
+        </details>}
       </div>}
 
       <footer className="p-footer">
