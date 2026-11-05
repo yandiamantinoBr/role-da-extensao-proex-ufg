@@ -13,11 +13,13 @@ const text = node => typeof node === 'string' || typeof node === 'number' ? Stri
 /** Executes the actual component, effects, handlers, helper and canonical validators. No HTTP server. */
 function harness(file = 'meu-trabalho-panel', initialProps = {}) {
   let index = 0, tree, props = {userId: 'user-a', organizationId: 'org-a', projectId: 'project-a', ...initialProps};
-  const slots = [], effects = [], requests = [], downloads = [], listeners = new Map(), modules = new Map();
+  const slots = [], effects = [], layouts=[],requests = [], downloads = [], artifacts=[],toasts=[],listeners = new Map(), modules = new Map();let artifactGate=null;
   const hooks = {
     useState(initial) { const i = index++; if (!(i in slots)) slots[i] = typeof initial === 'function' ? initial() : initial; return [slots[i], next => slots[i] = typeof next === 'function' ? next(slots[i]) : next]; },
     useRef(initial) { const i = index++; slots[i] ??= {current: initial}; return slots[i]; },
     useEffect(fn, deps) { const i = index++, old = slots[i]; if (!old || deps.some((value, n) => value !== old.deps[n])) effects.push(() => { old?.cleanup?.(); slots[i] = {deps, cleanup: fn()}; }); },
+    useLayoutEffect(fn,deps){const i=index++,old=slots[i];if(!old||deps.some((value,n)=>value!==old.deps[n]))layouts.push(()=>{old?.cleanup?.();slots[i]={deps,cleanup:fn()};});},
+    useCallback(fn,deps){const i=index++,old=slots[i];if(!old||deps.some((value,n)=>value!==old.deps[n]))slots[i]={deps,value:fn};return slots[i].value;},
   };
   const jsx = {jsx: (type, props) => ({type, props}), jsxs: (type, props) => ({type, props})};
   function load(file) {
@@ -28,6 +30,8 @@ function harness(file = 'meu-trabalho-panel', initialProps = {}) {
       if (name === 'react') return hooks;
       if (name === 'react/jsx-runtime') return jsx;
       if (name === 'lucide-react') return new Proxy({}, {get: (_target, key) => String(key)});
+      if(name==='sonner')return{toast:{success:value=>toasts.push(['success',value]),error:value=>toasts.push(['error',value])}};
+      if(name==='./document-export')return{documentExport:async(format,title,columns,rows,display,info,presentation)=>{artifacts.push({format,title,columns,rows,info,presentation});if(artifactGate)await artifactGate;return new Blob([JSON.stringify({rows,info})],{type:'application/'+format});}};
       let target = name.startsWith('@/') ? path.join(root, name.slice(2)) : path.resolve(path.dirname(file), name);
       target = [target, target + '.ts', target + '.tsx'].find(existsSync);
       assert.ok(target, name); return load(target);
@@ -47,8 +51,9 @@ function harness(file = 'meu-trabalho-panel', initialProps = {}) {
   };
   function nodes() { const result = []; const visit = node => {if (!node || typeof node !== 'object') return; if (Array.isArray(node)) return node.forEach(visit); result.push(node); visit(node.props?.children);}; visit(tree); return result; }
   const h = {
-    requests, downloads,
-    render(patch = {}, flush = true) {props = {...props, ...patch}; index = 0; tree = expand(Component(props)); if (flush) h.effects();},
+    requests, downloads,artifacts,toasts,
+    blockArtifact(){let release;artifactGate=new Promise(resolve=>release=()=>{artifactGate=null;resolve();});return release;},
+    render(patch = {}, flush = true) {props = {...props, ...patch}; index = 0; tree = expand(Component(props));layouts.splice(0).forEach(effect=>effect()); if (flush) h.effects();},
     effects() {effects.splice(0).forEach(effect => effect());},
     body() {return text(tree);},
     find(type, predicate = () => true) {return nodes().find(node => node.type === type && predicate(node));},
@@ -124,44 +129,34 @@ test('a restricted task target with canonical null identifiers still explains th
   const h = harness(); try {await h.ready(response({tasks: {...response().tasks, items: [task({target: target({id: null, name: null, href: null, canOpen: false})})]}, responsibilities: {items: [], total: 0, hasMore: false, nextOffset: null}})); assert.match(h.body(), /Registro de acesso restrito/); assert.ok(!h.find('a', node => node.props.href.includes('materials')));} finally {h.dispose();}
 });
 
-test('Markdown downloads only the current pages and neutralizes supplied syntax and unexpected links', async () => {
-  const h = harness();
-  const button = 'Baixar para Obsidian (.md)';
-  try {
-    assert.ok(!h.find('button', n => text(n).includes(button)));
-    const data = response();
-    data.tasks.items.push(task({
-      id: 'task-b',
-      title: 'Contar brindes\n# Título ![[segredo]] [externo](https://exemplo.test) <img>',
-      href: '/?module=demands&demandId=task-b&redirect=https://exemplo.test',
-      due_at: '2026-10-31',
-      body: 'Anotação privada',
-    }));
-    data.responsibilities.items.push(responsibility({
-      id: 'responsibility-b',
-      target: target({name: 'Entidade restrita', canOpen: false, href: '/?module=materials&project=secret'}),
-    }));
-    await h.ready(data);
-    h.find('button', n => text(n).trim() === button).props.onClick();
-    assert.equal(h.downloads[0].name, 'meu-trabalho-proex-2026-10-31.md');
-    assert.equal(h.downloads[0].blob.type, 'text/markdown;charset=utf-8');
-    const markdown = await h.downloads[0].blob.text();
-    assert.match(markdown, /## Demandas \(2 de 90\)/);
-    assert.match(markdown, /## Responsabilidades \(2 de 12\)/);
-    assert.match(markdown, /Contar brindes \\# Título \\!\\\[\\\[segredo\\\]\\\]/);
-    assert.match(markdown, /\\<img\\>/);
-    assert.match(markdown, /Registro de acesso restrito/);
-    assert.match(markdown, /\(<https:\/\/portal\.example\/\?module=demands&demandId=task-a>\)/);
-    assert.match(markdown, /\(<https:\/\/portal\.example\/\?module=materials&project=project-a>\)/);
-    assert.doesNotMatch(markdown, /redirect|Entidade restrita|project=secret|Pessoa A|Equipe A|Anotação privada/);
-    assert.equal(h.requests.length, 1);
+test('PDF DOCX XLSX replace Markdown and export a freshly authorized identical query with current-page metadata',async()=>{
+ for(const format of ['PDF','DOCX','XLSX']){const h=harness();try{
+  await h.ready();assert.doesNotMatch(h.body(),/Obsidian|\.md/);const path=h.last().url;
+  h.click('Baixar resumo de Meu trabalho em '+format);assert.equal(h.requests.length,2);assert.equal(h.last().url,path);assert.equal(h.downloads.length,0);
+  const fresh=response({tasks:{...response().tasks,items:[task({title:'Título da consulta nova'})]}});h.reply(h.last(),fresh);await tick();h.render();
+  assert.equal(h.artifacts.length,1);assert.equal(h.artifacts[0].format,format.toLowerCase());assert.equal(h.last().url,path);assert.equal(h.requests.length,3);assert.equal(h.downloads.length,0);
+  h.reply(h.last(),{...fresh,asOf:'2026-10-31T12:00:01Z'});await tick();h.render();
+  assert.equal(h.downloads.length,1);assert.equal(h.downloads[0].name,`meu-trabalho-proex-2026-10-31.${format.toLowerCase()}`);
+  const exported=await h.downloads[0].blob.text();assert.match(exported,/Título da consulta nova/);assert.match(exported,/Somente as páginas atuais/);assert.match(exported,/deslocamento 0/);assert.doesNotMatch(exported,/Pessoa A|Equipe A|task-a|project-a|user-a|responsibility-a|https:|href/);
+ }finally{h.dispose();}}
+});
 
-    h.changeStatus('completed'); h.render();
-    assert.ok(!h.find('button', n => text(n).includes(button)));
-    h.reply(h.last(), {}, 403); await tick(); h.render();
-    assert.ok(!h.find('button', n => text(n).includes(button)));
-    assert.equal(h.downloads.length, 1);
-  } finally {h.dispose();}
+test('revocation on either fresh export read clears old names and never downloads a previously loaded list',async()=>{
+ for(const point of ['before','after']){const h=harness();try{await h.ready();h.click('Baixar resumo de Meu trabalho em PDF');if(point==='after'){h.reply(h.last(),response());await tick();h.render();assert.equal(h.artifacts.length,1);}h.reply(h.last(),{},403);await tick();h.render();assert.equal(h.downloads.length,0);assert.doesNotMatch(h.body(),/Pessoa A|Recontar material A/);assert.match(h.body(),/Seu acesso mudou/);}finally{h.dispose();}}
+});
+
+test('account context or filter changes before fresh reply or during document rendering stop the old export',async()=>{
+ for(const point of ['read','artifact'])for(const change of ['account','filter','unmount']){const h=harness();try{await h.ready();const release=h.blockArtifact();h.click('Baixar resumo de Meu trabalho em PDF');const request=h.last();if(point==='artifact'){h.reply(request,response());await tick();h.render();assert.equal(h.artifacts.length,1);}
+  if(change==='account')h.render({userId:'user-b',organizationId:'org-b',projectId:'project-b'},false);else if(change==='filter'){h.changeStatus('completed');h.render();}else h.dispose();
+  if(point==='read')h.reply(request,response());release();await tick();h.render();assert.equal(h.downloads.length,0);assert.equal(h.toasts.some(([kind])=>kind==='success'),false);
+ }finally{h.dispose();}}
+});
+
+test('a privacy change or wrong viewer during final export validation withholds the file',async()=>{
+ for(const change of ['restricted','viewer']){const h=harness();try{await h.ready();h.click('Baixar resumo de Meu trabalho em XLSX');h.reply(h.last(),response());await tick();h.render();
+  const final=change==='viewer'?response({viewerId:'user-b'}):response({responsibilities:{...response().responsibilities,items:[responsibility({target:target({canOpen:false,name:'Hidden entity',href:'/?module=materials&project=secret'})})]}});
+  h.reply(h.last(),final);await tick();h.render();assert.equal(h.downloads.length,0);assert.ok(h.toasts.some(([kind])=>kind==='error'));
+ }finally{h.dispose();}}
 });
 
 test('malformed JSON and nested DTOs show an error rather than false empty results; unmounted requests are cancelled', async () => {
@@ -177,8 +172,8 @@ test('refresh events preserve the selected filters, without polling or storing p
 
 test('a persistent polite result summary announces the loaded scope and page after filtering', async () => {
   const h = harness(); try {
-    await h.ready(); let summary = h.find('p', node => node.props.role === 'status'); assert.equal(summary.props['aria-live'], 'polite'); assert.match(text(summary), /Demandas \(Pendentes\): 1–1 de 90/);
-    h.changeStatus('completed'); h.render(); await h.ready(response({scope: {...response().scope, status: 'completed'}, tasks: {items: [], total: 0, hasMore: false, nextOffset: null}})); summary = h.find('p', node => node.props.role === 'status'); assert.match(text(summary), /Demandas \(Concluídas\): 0 de 0/); assert.equal(summary.props['aria-atomic'], 'true');
+    await h.ready(); let summary = h.find('p', node => node.props.role === 'status'); assert.equal(summary.props['aria-live'], 'polite'); assert.match(text(summary), /Demandas \(Pendentes\): 1–1\sde\s90/);
+    h.changeStatus('completed'); h.render(); await h.ready(response({scope: {...response().scope, status: 'completed'}, tasks: {items: [], total: 0, hasMore: false, nextOffset: null}})); summary = h.find('p', node => node.props.role === 'status'); assert.match(text(summary), /Demandas \(Concluídas\): 0\sde\s0/); assert.equal(summary.props['aria-atomic'], 'true');
   } finally {h.dispose();}
 });
 

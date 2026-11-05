@@ -1,4 +1,5 @@
 .panel{min-width:0;display:grid;gap:20px;container:my-work / inline-size;color:var(--ink)}
+.exports{display:flex;flex-wrap:wrap;gap:14px;align-items:center;justify-content:space-between;min-width:0;padding:16px;border:1px solid var(--line);border-radius:13px;background:var(--surface-soft)}.exports>div:first-child{flex:1 1 300px;min-width:0}.exports h3{display:flex;align-items:center;gap:8px;margin:0;font-size:15px;line-height:1.5}.exports h3 svg{color:var(--brand-ink);flex-shrink:0}.exports p{margin:5px 0 0;max-width:700px;color:var(--text-secondary);font-size:12px;line-height:1.7;overflow-wrap:anywhere}.exports button{min-height:44px}
 .heading,.listHeading,.rowTop,.pager{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;min-width:0}
 .heading h2,.listHeading h3{margin:0;font-size:19px;line-height:1.4}.heading p,.help{margin:4px 0 0;color:var(--text-secondary);font-size:13px;line-height:1.7;overflow-wrap:anywhere}
 .heading>div{flex:1;min-width:0}.heading button{min-height:44px;min-width:44px}

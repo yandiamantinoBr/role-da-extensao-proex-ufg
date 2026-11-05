@@ -1,11 +1,13 @@
 'use client';
 
-import {useEffect, useRef, useState} from 'react';
-import {AlertTriangle, Building2, CalendarClock, CircleCheck, CircleDot, ClipboardList, Download, Gift, Handshake, Layers, RefreshCw, Users, UserRound} from 'lucide-react';
+import {useCallback,useEffect,useLayoutEffect,useRef,useState} from 'react';
+import {AlertTriangle, Building2, CalendarClock, CircleCheck, CircleDot, ClipboardList, FileDown, Gift, Handshake, Layers, RefreshCw, Users, UserRound} from 'lucide-react';
 import {isMyWorkResponse, MY_WORK_STATUSES, type AssignmentFilter, type AssignmentVia, type MyWorkResponse, type MyWorkStatus, type OperationalArea, type WorkTarget} from '@/lib/my-work/contracts';
 import {FOLLOWUP_CHANGED} from './follow-up-api';
 import {workApi} from './my-work-api';
-import {myWorkMarkdown} from './my-work-markdown';
+import {assertMyWorkContext,MY_WORK_PAGE_SIZE,MY_WORK_STATUS_LABELS,myWorkExportFingerprint,myWorkExportReport,myWorkQuery} from './my-work-export';
+import ExportFormats,{type DocumentFormat} from './export-formats';
+import {documentExport} from './document-export';
 import {download} from './report-export';
 import {TaskSignals} from './work-signals';
 import styles from './meu-trabalho-panel.module.css';
@@ -19,11 +21,11 @@ export type MeuTrabalhoPanelProps = {
   onOpenTask?: (id: string, context: MyWorkContext) => void;
   onOpenTarget?: (target: WorkTarget, context: MyWorkContext) => void;
 };
-const PAGE_SIZE = 6;
+const PAGE_SIZE = MY_WORK_PAGE_SIZE;
 const areaLabels: Record<OperationalArea, string> = {projects: 'Projetos', materials: 'Materiais', loans: 'Empréstimos', campaigns: 'Dinâmicas e eventos', general: 'Organização'};
 const areaIcons = {projects: Building2, materials: Gift, loans: Handshake, campaigns: CalendarClock, general: Layers};
 const viaLabels: Record<AssignmentVia, string> = {direct: 'Atribuição direta', team: 'Pela sua equipe', both: 'Direta e pela equipe'};
-const statusLabels: Record<MyWorkStatus, string> = {pending: 'Pendentes', all: 'Todas', completed: 'Concluídas', attention: 'Precisam de atenção', overdue: 'Em atraso', due_today: 'Prazo hoje', in_progress: 'Em andamento', blocked: 'Bloqueadas', open: 'Abertas', cancelled: 'Canceladas'};
+const statusLabels=MY_WORK_STATUS_LABELS;
 type Selection = {owner: string; assignment: AssignmentFilter; status: MyWorkStatus; taskOffset: number; responsibilityOffset: number};
 const initial = (owner: string): Selection => ({owner, assignment: 'all', status: 'pending', taskOffset: 0, responsibilityOffset: 0});
 type Loaded = {key: string; data?: MyWorkResponse; error?: string};
@@ -44,7 +46,7 @@ function consultationTime(value: string) {
   const date = new Date(value);
   return Number.isFinite(date.getTime()) ? new Intl.DateTimeFormat('pt-BR', {dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Sao_Paulo'}).format(date) : 'horário não informado';
 }
-const visibleRange = (offset: number, length: number, total: number) => length ? `${offset + 1}–${offset + length} de ${total}` : `0 de ${total}`;
+const visibleRange = (offset: number, length: number, total: number) => length ? `${offset + 1}–${offset + length}\u00a0de\u00a0${total}` : `0\u00a0de\u00a0${total}`;
 
 export default function MeuTrabalhoPanel({userId, organizationId = null, projectId = null, serverDay = '', onOpenTask, onOpenTarget}: MeuTrabalhoPanelProps) {
   const owner = JSON.stringify([userId, organizationId, projectId]);
@@ -52,33 +54,49 @@ export default function MeuTrabalhoPanel({userId, organizationId = null, project
   const selected = selection.owner === owner ? selection : initial(owner);
   const {assignment, status, taskOffset, responsibilityOffset} = selected;
   const [revision, setRevision] = useState(0), [loaded, setLoaded] = useState<Loaded | null>(null);
-  const active = useRef<AbortController | null>(null), generation = useRef(0);
+  const active = useRef<AbortController | null>(null), generation = useRef(0), exportRequest=useRef<AbortController|null>(null),exportEpoch=useRef(0),mounted=useRef(true);
   const key = JSON.stringify([owner, assignment, status, taskOffset, responsibilityOffset, revision, serverDay]);
+  const latestKey=useRef(key);
+  const cancelExport=useCallback(()=>{exportEpoch.current++;exportRequest.current?.abort();exportRequest.current=null;},[]);
+  const query={userId,organizationId,projectId,assignment,status,taskOffset,responsibilityOffset};
+  const queryPath=myWorkQuery(query);
   const current = loaded?.key === key ? loaded : null, data = current?.data, loading = !current;
-  function invalidate() { generation.current++; active.current?.abort(); }
+  function invalidate() { generation.current++; active.current?.abort();cancelExport(); }
   function choose(patch: Partial<Omit<Selection, 'owner'>>) { invalidate(); setSelection({...selected, taskOffset: 0, responsibilityOffset: 0, ...patch}); }
   function refresh() { invalidate(); setRevision(value => value + 1); }
+  useLayoutEffect(()=>{latestKey.current=key;cancelExport();return cancelExport;},[key,cancelExport]);
+  useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;cancelExport();};},[cancelExport]);
   useEffect(() => {
-    const changed = () => { generation.current++; active.current?.abort(); setRevision(value => value + 1); };
+    const changed = () => { generation.current++; active.current?.abort();cancelExport(); setRevision(value => value + 1); };
     window.addEventListener(FOLLOWUP_CHANGED, changed);
     return () => window.removeEventListener(FOLLOWUP_CHANGED, changed);
-  }, []);
+  }, [cancelExport]);
   useEffect(() => {
     const controller = new AbortController(), epoch = ++generation.current;
     active.current = controller;
-    const query = new URLSearchParams({assignment, status, taskOffset: String(taskOffset), responsibilityOffset: String(responsibilityOffset), limit: String(PAGE_SIZE)});
-    if (organizationId) query.set('organizationId', organizationId);
-    if (projectId) query.set('projectId', projectId);
-    void workApi(`/api/my-work?${query}`, isMyWorkResponse, controller.signal).then(result => {
+    void workApi(queryPath, isMyWorkResponse, controller.signal).then(result => {
       if (controller.signal.aborted || epoch !== generation.current) return;
-      const rowsMatchScope = [...result.tasks.items, ...result.responsibilities.items].every(row => (!organizationId || row.organization_id === organizationId) && (!projectId || row.project_id === projectId));
-      if (result.viewerId !== userId || result.scope.organizationId !== organizationId || result.scope.projectId !== projectId || result.scope.assignment !== assignment || result.scope.status !== status || !rowsMatchScope) throw new Error('A sessão ou o contexto da resposta mudou. Atualize a página.');
+      assertMyWorkContext(result,{userId,organizationId,projectId,assignment,status,taskOffset,responsibilityOffset});
       setLoaded({key, data: result});
     }).catch(error => {
       if (!controller.signal.aborted && epoch === generation.current) setLoaded({key, error: error instanceof Error ? error.message : 'Não foi possível consultar seu trabalho.'});
     });
     return () => controller.abort();
-  }, [key, userId, organizationId, projectId, assignment, status, taskOffset, responsibilityOffset]);
+  }, [key, queryPath, userId, organizationId, projectId, assignment, status, taskOffset, responsibilityOffset]);
+  async function exportCurrent(format:DocumentFormat){
+    if(!data||exportRequest.current)throw new Error('Aguarde a consulta antes de baixar seu resumo.');
+    const controller=new AbortController(),epoch=++exportEpoch.current,requestKey=key;exportRequest.current=controller;
+    const isCurrent=()=>mounted.current&&!controller.signal.aborted&&epoch===exportEpoch.current&&requestKey===latestKey.current;
+    const guard=()=>{if(!isCurrent())throw new Error('O contexto mudou. Confira a página atual antes de baixar.');};
+    const freshRead=async()=>{guard();try{const result=await workApi(queryPath,isMyWorkResponse,controller.signal);guard();assertMyWorkContext(result,query);return result;}catch(error){if(isCurrent())setLoaded({key:requestKey,error:error instanceof Error?error.message:'Não foi possível conferir seu acesso ao resumo.'});throw error;}};
+    try{
+      const fresh=await freshRead(),report=myWorkExportReport(fresh,query),fingerprint=myWorkExportFingerprint(fresh,query);
+      guard();const blob=await documentExport(format,report.title,report.columns,report.rows,(row,column)=>row[column],report.info,report.presentation);
+      guard();const verified=await freshRead();guard();
+      if(myWorkExportFingerprint(verified,query)!==fingerprint){setLoaded({key:requestKey,data:verified});throw new Error('Suas atribuições ou permissões mudaram durante a preparação. Confira a lista atualizada e baixe novamente.');}
+      setLoaded({key:requestKey,data:verified});guard();download(`meu-trabalho-proex-${fresh.today}.${format}`,blob);
+    }finally{if(exportRequest.current===controller)exportRequest.current=null;}
+  }
   const counts = data?.totals.tasks;
   const metrics = [
     {name: 'Atenção', count: counts?.attention, status: 'attention' as const, icon: AlertTriangle, tone: 'warning', help: 'Em atraso ou bloqueadas'},
@@ -94,13 +112,7 @@ export default function MeuTrabalhoPanel({userId, organizationId = null, project
     <p className={styles.help}>Os totais abrangem todas as páginas do contexto e da origem escolhida. O filtro de estado abaixo altera a lista de demandas.</p>
     {current?.error && <p role="alert" className={`${styles.notice} ${styles.error}`}>{current.error}</p>}
     <p className={loading ? styles.notice : styles.help} role="status" aria-live="polite" aria-atomic="true">{loading ? 'Consultando atribuições…' : data ? `Demandas (${statusLabels[status]}): ${visibleRange(taskOffset, data.tasks.items.length, data.tasks.total)}. Responsabilidades: ${visibleRange(responsibilityOffset, data.responsibilities.items.length, data.responsibilities.total)}.` : 'Consulta não concluída.'}</p>
-    {data && (data.tasks.items.length > 0 || data.responsibilities.items.length > 0) && <div>
-      <button type="button" className="p-button p-button-subtle min-h-11" aria-describedby="my-work-markdown-help" onClick={() => {
-        const markdown = myWorkMarkdown(data, window.location.origin);
-        download(`meu-trabalho-proex-${data.today}.md`, new Blob([markdown], {type: 'text/markdown;charset=utf-8'}));
-      }}><Download size={16} aria-hidden="true"/> Baixar para Obsidian (.md)</button>
-      <p className={styles.help} id="my-work-markdown-help">Inclui só os itens destas páginas. Salve o arquivo na sua Vault.</p>
-    </div>}
+    {data&&<section className={styles.exports} aria-labelledby="my-work-export-title"><div><h3 id="my-work-export-title"><FileDown size={19} aria-hidden="true"/>Resumo destas páginas</h3><p>Até 6 demandas e 6 acompanhamentos, conforme os filtros e as páginas atuais. O arquivo informa os totais e a consulta; confira o recorte antes de compartilhar.</p></div><ExportFormats label="Baixar resumo de Meu trabalho" disabled={!data.tasks.items.length&&!data.responsibilities.items.length} onExport={exportCurrent}/></section>}
     {data && <>
       <section className={styles.listSection} aria-label="Minhas demandas"><div className={styles.listHeading}><h3><ClipboardList size={18} aria-hidden="true"/> Demandas · {data.tasks.total}</h3><label>Estado da lista<select value={status} onChange={event => choose({status: event.target.value as MyWorkStatus})}>{MY_WORK_STATUSES.map(value => <option key={value} value={value}>{statusLabels[value]}</option>)}</select></label></div>
         {!data.tasks.items.length ? <div className={styles.empty}><strong>Nenhuma demanda neste recorte.</strong><p>Ser criador de um registro ou ter acesso ao projeto não significa ser responsável por ele.</p></div> : <ul className={styles.list}>{data.tasks.items.map(task => { const context = {organizationId: task.organization_id, projectId: task.project_id}; return <li key={task.id} className={styles.card}><div className={styles.rowTop}><TaskSignals status={task.status} priority={task.priority} dueAt={task.due_at} today={data.today}/><AssignmentLabel via={task.assignmentVia}/></div><h4>{onOpenTask ? <button type="button" onClick={() => onOpenTask(task.id, context)}>{task.title}</button> : <a href={task.href}>{task.title}</a>}</h4><p className={styles.context}>{task.organization_name}{task.project_name && ` · ${task.project_name}`} · {areaLabels[task.area]}</p><p className={styles.assignees}>Responsáveis: {task.assignees.map(person => person.name).join(', ') || 'Não informado'}</p>{task.area !== 'general' && <TargetLink target={task.target} context={context} onOpen={onOpenTarget}/>}</li>; })}</ul>}

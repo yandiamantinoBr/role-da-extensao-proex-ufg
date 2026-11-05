@@ -51,6 +51,17 @@ async function readPdfPages(blob) {
   } finally { await task.destroy(); }
 }
 
+test('PDF keeps a table heading with its first row and terminates when one row exceeds a full page',async()=>{
+ const longColumns=[{key:'name',label:'Registro'},{key:'details',label:'Conteúdo'}],source=[{name:'PRIMEIRA LINHA ALTA',details:'Conteúdo conferido da extensão. '.repeat(260)+' FIM DA LINHA ALTA'},{name:'SEGUNDA LINHA FINAL',details:'Texto conferido final.'}];
+ const blob=await reportPdf.toPdf('Paginação com linha alta',longColumns,source,(row,key)=>row[key],Array.from({length:12},(_,i)=>['Contexto '+i,'Metadado de recorte conferido '.repeat(2)]),{fontBytes,brandBytes,presentation:{columnWeights:[1,2]}});
+ const pages=await readPdfPages(blob);assert.ok(pages.length>=2&&pages.length<20);const all=pages.join(' ');assert.match(all,/FIM DA LINHA ALTA/);assert.match(all,/SEGUNDA LINHA FINAL/);
+ for(const page of pages)if(page.includes('Registros do relatório'))assert.match(page,/PRIMEIRA LINHA ALTA|Conteúdo conferido|FIM DA LINHA ALTA|SEGUNDA LINHA FINAL/);
+});
+
+test('PDF column weights reject missing non-finite negative and unbalanced values instead of shrinking unreadable columns',async()=>{
+ for(const columnWeights of [[1],[1,NaN,1,1],[1,-1,1,1],[.5,4,.5,.5]])await assert.rejects(reportPdf.toPdf('Pesos inválidos',columns,rows,display,info,{fontBytes,brandBytes,presentation:{columnWeights}}),/larguras de colunas equilibradas/);
+});
+
 test('project PDF contains its scoped title, exact metrics, missing fields and no unselected data', async () => {
   const projectName = 'Rolê da Extensão';
   const secret = 'contato-restrito@example.test';
