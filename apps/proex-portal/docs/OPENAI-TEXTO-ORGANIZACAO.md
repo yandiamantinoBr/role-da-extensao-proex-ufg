@@ -44,6 +44,6 @@ Anthropic, Gemini, NVIDIA, visão, vídeo e endpoints personalizados continuam f
 Aprendizado: em controles nativos envolvidos por um `label`, o nome acessível pode conter o valor selecionado. A automação deve consultar o papel `combobox` e o rótulo relevante, sem exigir texto literal exato que exclua esse valor. Uma falha desse seletor foi distinguida de falha da interface pelas capturas e pela leitura da árvore; a seleção real funcionou na verificação corrigida.
 
 
-## Revisao independente do identificador retornado - 2026-11-05
+## Revisão independente do identificador retornado - 2026-11-05
 
 A seção Snapshots do catálogo oficial consultada novamente lista apenas gpt-5.6-luna. As fontes consultadas não provaram se Responses retornará esse alias ou outro identificador nessa conta; não existe base para inventar uma data ou aceitar qualquer prefixo. A igualdade exata permanece e rejeitará outro identificador, sem retry ou fallback. Isso é uma lacuna externa de disponibilidade, bloqueante para declarar inferência real funcionando, não uma equivalência presumida. No piloto autorizado, registrar somente requestedModel/returnedModel sanitizados; qualquer ampliação precisa de identificador exato, fonte/contrato, preço e avaliação. O guia oficial recomenda versões fixas quando disponíveis: https://developers.openai.com/api/docs/guides/prompt-engineering. Nenhuma chamada real foi feita.
