@@ -8,3 +8,4 @@ export * from './feedback-schema';
 export * from './project-sheet-schema';
 export * from './mcp-schema';
 export * from './team-sheet-schema';
+export * from './institutional-structure-schema';
