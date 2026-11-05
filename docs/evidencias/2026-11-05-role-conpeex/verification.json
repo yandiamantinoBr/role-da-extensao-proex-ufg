@@ -1,0 +1,135 @@
+{
+  "synthetic": true,
+  "formats": [
+    {
+      "format": "pdf",
+      "bytes": 62286,
+      "freshReads": 2
+    },
+    {
+      "format": "xlsx",
+      "bytes": 14712,
+      "freshReads": 2
+    },
+    {
+      "format": "docx",
+      "bytes": 29756,
+      "freshReads": 2
+    }
+  ],
+  "geometry": [
+    {
+      "width": 390,
+      "scrollWidth": 390,
+      "small": [],
+      "theme": "light"
+    },
+    {
+      "width": 390,
+      "scrollWidth": 390,
+      "small": [],
+      "theme": "dark"
+    },
+    {
+      "width": 1366,
+      "scrollWidth": 1366,
+      "small": [],
+      "theme": "light"
+    },
+    {
+      "width": 1366,
+      "scrollWidth": 1366,
+      "small": [],
+      "theme": "dark"
+    }
+  ],
+  "transferGeometry": [
+    {
+      "width": 390,
+      "scrollWidth": 390,
+      "small": [],
+      "theme": "light"
+    },
+    {
+      "width": 390,
+      "scrollWidth": 390,
+      "small": [],
+      "theme": "dark"
+    },
+    {
+      "width": 1366,
+      "scrollWidth": 1366,
+      "small": [],
+      "theme": "light"
+    },
+    {
+      "width": 1366,
+      "scrollWidth": 1366,
+      "small": [],
+      "theme": "dark"
+    }
+  ],
+  "captures": [
+    "1366-light-campaign-closed.png",
+    "1366-light-editor.png",
+    "1366-light-conflict.png",
+    "1366-light-conflict-actions.png",
+    "390-light-conflict.png",
+    "390-light-conflict-actions.png",
+    "390-light-planning.png",
+    "390-light-hosts.png",
+    "390-light-editor.png",
+    "390-dark-planning.png",
+    "390-dark-hosts.png",
+    "390-dark-editor.png",
+    "1366-light-planning.png",
+    "1366-light-hosts.png",
+    "1366-light-editor.png",
+    "1366-dark-planning.png",
+    "1366-dark-hosts.png",
+    "1366-dark-editor.png",
+    "390-light-transfer.png",
+    "390-dark-transfer.png",
+    "1366-light-transfer.png",
+    "1366-dark-transfer.png",
+    "1366-dark-transfer-history.png"
+  ],
+  "jsErrors": [],
+  "externalRequests": 0,
+  "sessions": 15,
+  "hosts": 1,
+  "transfer": {
+    "sameId": true,
+    "sameBusinessFields": true,
+    "historyPreserved": true,
+    "stockUnchanged": true
+  },
+  "flows": [
+    "tentative NULL times",
+    "create/edit",
+    "concurrent fields visible and explicit review",
+    "confirm/done/undo/cancel/reopen",
+    "link/unlink/relink host",
+    "project detail deep link",
+    "3 formats with 2 fresh reads",
+    "Escape cancel",
+    "mobile/desktop light/dark",
+    "preserving task transfer and history"
+  ],
+  "pdf": {
+    "pages": 2,
+    "size": "A4",
+    "renderedAndInspected": true
+  },
+  "gates": {
+    "tests": 1237,
+    "passed": 1237,
+    "types": "pass",
+    "lintErrors": 0,
+    "lintExistingWarnings": 2,
+    "workerBuild": "pass",
+    "workerAuthSmoke": "pass",
+    "nodeBuild": "pass"
+  },
+  "phase": "refinement after rejected 6/10 and 8/10 reviews; acceptance pending"
+}

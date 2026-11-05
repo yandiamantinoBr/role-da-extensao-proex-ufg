@@ -1,0 +1,5 @@
+.grid:global(.p-event-grid){grid-template-columns:repeat(auto-fit,minmax(min(100%,20rem),1fr));align-items:start;gap:16px;}
+.grid>article:has(>details[data-campaign-planning][open]){grid-column:1/-1;}
+.grid>article>details[data-campaign-planning]{margin-top:16px;}
+.grid>article:has(>details[data-campaign-planning][open])>h3{font-size:22px;line-height:1.4;}
+@media(prefers-reduced-motion:reduce){.grid *{scroll-behavior:auto;}}

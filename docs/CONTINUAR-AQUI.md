@@ -1,5 +1,11 @@
 # Continuar Portal PROEX
 
+## Frente Rolê no CONPEEX — PR37 em revisão final
+
+Branch `codex/role-conpeex-contexto-05nov`, head funcional6dc7eac, base00be420. **1.236/1.236**, tipos, lint, Worker/Node, smoke e CI42090990830 aprovados. Ensaio autenticado local concluído:15sessões, estados/conflitos, anfitrião, três downloads e transferência preservadora;390/1366, claro/escuro, sem overflow. Segurança independente semP0/P1/P2; crítica visual em andamento. [Entrega e limites](ENTREGA-05NOV-ROLE-CONPEEX.md), [fontes oficiais](CONPEEX-2026-OPERACAO-E-FONTES.md), [evidências sintéticas](evidencias/2026-11-05-role-conpeex/README.md).
+
+Planilha original preservada no mesmo arquivo/aba/linhas, vinculada ao Rolê e mantida como referência no CONPEEX. Auxiliar nativa15propostas, sem horários/contagens inventados. **As nove demandas reais ainda estão no CONPEEX; não migrar antes de confirmar publicação e UI.** Produção comprovada continua no checkpoint anterior abaixo. Este arquivo não tem sincronização automática ativa; mestre é canal separado. IDs privados/recibos na Vault.
+
 ## Checkpoint atual · PR36 publicada · 2026-11-05
 
 Produção funcional **b94814c227b2eabf8eeaf27ffdadac1d0601b20e**, Vercel **dpl_B7zEtBnpmBczYYRfpXtyg3j8vCE7 READY**, alias oficial conferido. CI42077711627: **1.196/1.196**, tipos, Worker/Node, autenticação/MCP e legado aprovados. Chrome autenticado confirmou o resumo, navegação à lista, estrutura/prévia descartada, marca e projeto móvel, rodapé e abertura das abas. Saúde200, privadas401/no-store, aposentados403. [Recibo completo](ENTREGA-05NOV-RESUMO-E-ESTRUTURA.md#publicação-e-aceite--2026-11-05).
