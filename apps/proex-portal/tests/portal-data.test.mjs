@@ -475,3 +475,18 @@ test('owner directory materialization never recreates profile or contact data fo
   assert.equal(retained.email,null);assert.equal(retained.status,'blocked');assert.equal(retained.anonymized_at,timestamp);
   assert.equal(f.sqlite.prepare("SELECT COUNT(*) n FROM identity_aliases WHERE user_id='legacy-anonymized'").get().n,0);
 });
+
+test('AI settings navigation follows the live nominal grant without exposing global settings or other organizations',async t=>{
+  const f=fixture(t),owner=f.member('owner'),technician=f.member('manager');
+  const actor=await getActor(f.db,technician);
+  assert.equal((await portalSnapshot(f.db,actor)).canConfigureAi,false);
+  f.insert('ai_configuration_grants',{id:'ai-tech-grant',organization_id:'org_proex',user_id:technician.userId,grantor_member_id:'member-owner',granted_by:owner.userId,created_at:timestamp});
+  let data=await portalSnapshot(f.db,actor);
+  assert.equal(data.canConfigureAi,true);assert.equal(data.globalCapabilities.includes('organization.manage'),false);
+  assert.equal(JSON.stringify(data).includes('credentials_ciphertext'),false);
+  f.sqlite.prepare('UPDATE members SET revoked_at=? WHERE id=?').run(timestamp,'member-owner');
+  assert.equal((await portalSnapshot(f.db,actor)).canConfigureAi,false,'revoking the issuer removes configuration navigation');
+  f.sqlite.prepare('UPDATE members SET revoked_at=NULL WHERE id=?').run('member-owner');
+  f.sqlite.prepare('UPDATE ai_configuration_grants SET revoked_at=? WHERE id=?').run(timestamp,'ai-tech-grant');
+  assert.equal((await portalSnapshot(f.db,actor)).canConfigureAi,false);
+});

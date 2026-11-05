@@ -1,5 +1,5 @@
 import {getPortalUser} from '@/lib/session';
-import {database} from '@/lib/platform';
+import {database,isStandalone} from '@/lib/platform';
 import {getActor} from '@/lib/access';
 import {HttpError,publicError} from '@/lib/errors';
 import {boundedJson} from '@/lib/http';
@@ -10,7 +10,7 @@ import {seedCatalog,catalogPreview} from '@/lib/sync/catalog';
 import {createSyncToken,listSyncTokens,revokeSyncToken} from '@/lib/sync/tokens';
 import {configureSheetTabs,sheetTabsStatus} from '@/lib/sync/sheet-tabs';
 export const dynamic='force-dynamic';
-export async function GET(request:Request){try{const db=database(),actor=await getActor(db,await getPortalUser()),q=new URL(request.url).searchParams;const result=q.get('sheetTabs')==='1'?await sheetTabsStatus(db,actor):q.get('table')?await exportPortablePage(db,actor,{table:q.get('table')!,after:q.get('after')??undefined,expectedDigest:q.get('digest')??undefined}):{...await syncStatus(db,actor),catalog:catalogPreview()};return Response.json(result,{headers:{'Cache-Control':'no-store'}});}catch(e){return publicError(e);}}
+export async function GET(request:Request){try{const db=database(),actor=await getActor(db,await getPortalUser()),q=new URL(request.url).searchParams;const result=q.get('sheetTabs')==='1'?await sheetTabsStatus(db,actor):q.get('table')?await exportPortablePage(db,actor,{table:q.get('table')!,after:q.get('after')??undefined,expectedDigest:q.get('digest')??undefined}):{...await syncStatus(db,actor),catalog:catalogPreview(),legacyRoutineAvailable:!isStandalone()};return Response.json(result,{headers:{'Cache-Control':'no-store'}});}catch(e){return publicError(e);}}
 export async function POST(request:Request){try{
  const url=new URL(request.url),origin=request.headers.get('origin');if(request.headers.get('X-Proex-Action')!=='1'||!request.headers.get('content-type')?.includes('application/json')||(origin&&origin!==url.origin))throw new HttpError(403,'Origem inválida.');
  const input=await boundedJson(request,144*1024),db=database(),actor=await getActor(db,await getPortalUser());

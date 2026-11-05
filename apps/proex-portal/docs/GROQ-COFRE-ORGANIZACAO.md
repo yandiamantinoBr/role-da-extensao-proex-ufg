@@ -8,7 +8,7 @@ Na sessão da administração geral, abra [Configurações → Chaves e modelos]
 
 O cofre precisa do segredo independente `PROEX_KEYS_SECRET` no ambiente privado. Sua ausência bloqueia novas chaves Groq na interface e é apresentada como configuração pendente. Não se deve colar esse segredo no campo da Groq, usar uma chave do provedor como segredo de cifra ou colocá-los no GitHub/Vault. Os caminhos legados de DeepSeek, TypeSafe e Deepgram continuam como antes.
 
-Em **Conta → Assistente com revisão → Configurar IA**, uma pessoa atualmente autorizada a configurar aquela organização pode escolher **Groq · Whisper Large V3 Turbo**, marcar **Habilitar transcrição** e salvar. Trocar a seleção desmarca a habilitação para exigir uma decisão explícita. O seletor usa somente adaptadores verificados; não aceita endpoint, nome de modelo ou chave de outro provedor.
+Em **Configurações → Chaves e modelos → Funções e modelos revisados**, uma pessoa atualmente autorizada a configurar aquela organização pode escolher **Groq · Whisper Large V3 Turbo**, marcar **Habilitar transcrição** e salvar. Trocar a seleção desmarca a habilitação para exigir uma decisão explícita. O seletor usa somente adaptadores verificados; não aceita endpoint, nome de modelo ou chave de outro provedor.
 
 **Testar Groq**, no diagnóstico de conexão, exige consentimento próprio e usa apenas a chave cifrada já salva da organização. Consulta `GET https://api.groq.com/openai/v1/models`, sem pedido, áudio, documento ou inferência. Confirma resposta autenticada e presença/ausência do modelo no catálogo; não comprova acurácia, créditos, permissão de transcrição ou funcionamento de um áudio real. Uma consulta de metadados não habilita função de IA.
 
