@@ -5,3 +5,4 @@ export * from './assistant-document-schema';
 export * from './work-responsibility-schema';
 export * from './assistant-credential-schema';
 export * from './feedback-schema';
+export * from './project-sheet-schema';
