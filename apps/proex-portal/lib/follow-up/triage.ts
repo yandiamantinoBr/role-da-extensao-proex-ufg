@@ -2,6 +2,7 @@ import { type PortalActor } from '../access';
 import { one, uid, type Row } from '../database';
 import { digest, type CredentialKeys } from '../assistant/crypto';
 import { PROVIDERS, safeRequest } from '../assistant/contracts';
+import { containsCredential } from '../assistant/sensitive';
 import { loadAssistantSettings } from '../assistant/settings';
 import { reservationStatements } from '../assistant/admission';
 import { classifyTaskTriage, taskTriageBody } from '../assistant/provider';
@@ -52,7 +53,11 @@ export async function prepareTaskTriage(db:D1Database, actor:PortalActor, input:
  onlyKeys(input,['id','expectedVersion','operationKey','context','consent']);
  if (input.consent!==true) fail('Confirme o envio do resumo operacional ao provedor.', 'triage_consent');
  if (typeof input.operationKey!=='string' || !/^[A-Za-z0-9_-]{8,100}$/.test(input.operationKey)) fail('Abra a triagem novamente.', 'triage_operation');
- const context = safeRequest(text(input.context,TRIAGE_CONTEXT_LIMIT));
+ const rawContext = text(input.context,TRIAGE_CONTEXT_LIMIT);
+ if (containsCredential(rawContext)) {
+  fail('Retire senhas, tokens e chaves do resumo operacional antes de enviar.', 'triage_sensitive');
+ }
+ const context = safeRequest(rawContext);
  if (sensitiveSummary.some(pattern => pattern.test(context))) {
   fail('Retire links, contatos e documentos do resumo operacional antes de enviar.', 'triage_sensitive');
  }

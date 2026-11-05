@@ -20,6 +20,16 @@ Pedido vigente de Yan, consolidado a partir da conversa. Publicação está auto
 
 ## Critérios comuns
 
+### Complemento de 05/11: configurações de IA e equipes
+
+Pedido explícito adicional: concentrar cadastro, edição, seleção de modelo, limites e diagnóstico em **Configurações → Chaves e modelos**, removendo a duplicidade administrativa em Conta. Separar configuração do uso operacional, mostrar modalidades e estado real, permitir uso pessoal ou pela organização com capacidades verificadas no servidor. A equipe de TI pode configurar o que foi concedido; isso não equivale a poder ler ou trocar chaves. Ocultar a rotina legada do ChatGPT/Sites na hospedagem independente, preservando compatibilidade do destino legado. Não apresentar provedores sem adaptador como funcionais.
+
+Criar uma página de **Equipes de trabalho**, dentro da organização, reutilizando os cadastros existentes e permitindo participação em várias equipes. Mostrar meus vínculos, demandas e totais autorizados, além de PDF/DOCX/XLSX. Estrutura institucional, vínculo funcional e papel de acesso são conceitos distintos. Os exemplos de nomes citados na conversa não autorizam inventar contas ou associar pessoas por aproximação.
+
+O [organograma oficial de 2026](https://files.cercomp.ufg.br/weby/up/694/o/Estrutura_Organizacional_-_2026.pdf), versão 5.0.3 de 28/07, é a referência estrutural; o [diretório oficial](https://proex.ufg.br/p/equipe-proex) complementa as funções. A pesquisa identificou um export anterior no Drive com a mesma numeração: localização e comparação ficam na Vault privada. Equipes operacionais como TI e Comunicação não devem ser apresentadas como coordenações formais sem fonte.
+
+Sheets restrito a equipe exige recorte **equipe + projeto + dados permitidos**, credencial/projetor próprios e revogação viva. A projeção do projeto inteiro não se torna restrita apenas por filtros ou proteção de abas. O conector por projeto desta primeira entrega não satisfaz sozinho esse novo recorte. Registrar essa etapa separadamente, sem ampliar acesso à mestre.
+
 - Manter React/TypeScript e os serviços existentes. Não reescrever a plataforma ou adicionar um framework por aparência. Centralizar componentes e tokens quando isso reduz inconsistências.
 - Projetar primeiro para celular: alvos de pelo menos 44 px, conteúdo sem excesso horizontal, rolagem vertical iniciada em tabelas, ações claras, menos informação repetida e expansão sem saltos desnecessários.
 - Cor acompanha símbolo e texto. Diferenciar prioridade, prazo, andamento e importância. Gráficos mostram valores, amostra e recorte; dados incompletos não viram zero nem percentual de conclusão.
