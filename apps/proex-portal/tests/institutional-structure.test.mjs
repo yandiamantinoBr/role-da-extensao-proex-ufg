@@ -7,7 +7,7 @@ async function scenario(t){const f=await teamScenario(t);return{...f,read:async(
 const node=(name,parentId=null)=>({action:'node.save',name,parentId,kind:'unit',relation:parentId?'subordination':'root',acronym:'',position:0});
 test('migration is empty and reads have no writes; official model is explicit and preserves legacy data',async t=>{
  const f=await scenario(t),before=f.native.prepare('SELECT COUNT(*) n FROM followup_tasks').get().n,changes=f.native.prepare('SELECT total_changes() n').get().n;
- const empty=await f.read();assert.equal(empty.version,0);assert.deepEqual(empty.nodes,[]);assert.equal(f.native.prepare('SELECT total_changes() n').get().n,changes);
+ const empty=await f.read();assert.equal(empty.version,0);assert.equal(empty.canApplyTemplate,true);assert.deepEqual(empty.nodes,[]);assert.equal(f.native.prepare('SELECT total_changes() n').get().n,changes);
  await f.write({action:'template.apply',nodes:OFFICIAL_TEMPLATE});const result=await f.read();assert.equal(result.nodes.length,11);assert.equal(result.version,1);assert.equal(result.source.adapted,false);assert.equal(result.source.referenceUrl,OFFICIAL_SOURCE.referenceUrl);
  const cec=result.nodes.find(n=>n.acronym==='CEC'),proex=result.nodes.find(n=>n.acronym==='PROEX');assert.equal(proex.parentId,cec.id);assert.equal(proex.relation,'governance');
  assert.equal(f.native.prepare('SELECT COUNT(*) n FROM followup_tasks').get().n,before);assert.equal(f.native.prepare("SELECT role FROM members WHERE user_id='viewer-a'").get().role,'viewer');
@@ -57,6 +57,18 @@ test('SQL independently rejects cycles, cross-org parents/links and archived par
  await f.write({action:'node.status',id:child.entityId,status:'archived'});await assert.rejects(f.write({action:'node.status',id:leaf.entityId,status:'active'}),{status:409});
  assert.equal((await f.read()).nodes.length,1);assert.equal((await f.read('owner-a',{organizationId:'org-a',includeArchived:true})).nodes.length,3);
  await assert.rejects(f.read('viewer-a',{organizationId:'org-a',projectId:'project-a',includeArchived:true}),{status:403});
+ await f.write({action:'node.status',id:root.entityId,status:'archived'});assert.deepEqual((await f.read()).nodes,[]);assert.equal((await f.read()).canApplyTemplate,false);
+});
+test('link boundary permits reaffirmation at 500 but denies a new pair and reactivation of a removed pair',async t=>{
+ const f=await scenario(t),root=await f.write(node('Raiz')),second=await f.write(node('Outra unidade'));
+ const teams=[f.a,f.a2,f.hidden];for(let i=teams.length;i<500;i++){const id=`boundary-team-${i}`;teams.push(id);f.insert('followup_teams',{id,organization_id:'org-a',name:`Equipe ${i}`,created_by:'owner-a',created_at:f.now,updated_at:f.now});}
+ for(const teamId of teams)f.insert('institutional_team_links',{organization_id:'org-a',node_id:root.entityId,team_id:teamId,created_at:f.now});
+ const count=()=>f.native.prepare("SELECT COUNT(*) n FROM institutional_team_links WHERE organization_id='org-a' AND revoked_at IS NULL").get().n;
+ await f.write({action:'link.save',nodeId:root.entityId,teamId:teams[0],linked:true});assert.equal(count(),500);
+ await assert.rejects(f.write({action:'link.save',nodeId:second.entityId,teamId:teams[0],linked:true}),{status:409});assert.equal(count(),500);
+ await f.write({action:'link.save',nodeId:root.entityId,teamId:teams[0],linked:false});assert.equal(count(),499);
+ await f.write({action:'link.save',nodeId:second.entityId,teamId:teams[0],linked:true});assert.equal(count(),500);
+ await assert.rejects(f.write({action:'link.save',nodeId:root.entityId,teamId:teams[0],linked:true}),{status:409});assert.equal(count(),500);
 });
 test('header CAS serializes edits, mutation keys are actor-scoped, replay is read-authorized and audit never repeats',async t=>{
  const f=await scenario(t),input={...node('Primeira'),operationKey:'stable-operation-01',expectedVersion:0};

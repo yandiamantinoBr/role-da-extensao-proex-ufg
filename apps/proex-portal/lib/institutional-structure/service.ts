@@ -29,6 +29,7 @@ export async function structureWorkspace(db:D1Database,actor:PortalActor|null,in
    OR EXISTS(SELECT 1 FROM followup_assignees a JOIN followup_tasks t ON t.id=a.task_id WHERE a.team_id=team.id AND a.removed_at IS NULL AND t.organization_id=team.organization_id AND(caller.project_id IS NULL OR t.project_id=caller.project_id) AND ${authority('caller.user_id','t.organization_id','t.project_id')}))
    ORDER BY team.name,team.id LIMIT 501)
    SELECT o.name organization_name,COALESCE(p.name,'Organização') project_name,management.can_manage,
+   (management.can_manage=1 AND NOT EXISTS(SELECT 1 FROM institutional_nodes WHERE organization_id=caller.organization_id)) can_apply_template,
    (SELECT json_object('version',version,'source_label',source_label,'source_revision',source_revision,'source_issued_on',source_issued_on,'source_url',source_url,'adapted',adapted) FROM institutional_structures WHERE organization_id=caller.organization_id) header,
    (SELECT json_group_array(json_object('id',id,'parent_id',parent_id,'name',name,'acronym',acronym,'kind',kind,'relation',relation,'position',position,'status',status)) FROM visible_nodes) nodes,
    (SELECT json_group_array(json_object('id',id,'name',name,'status',status)) FROM visible_teams) teams,
@@ -38,12 +39,12 @@ export async function structureWorkspace(db:D1Database,actor:PortalActor|null,in
   if(!result)fail('Seu acesso à estrutura ou a este recorte mudou.','structure_forbidden',403);
   const header=result.header?JSON.parse(result.header) as Row:null,nodes=JSON.parse(result.nodes) as Row[],teams=JSON.parse(result.teams) as Row[],links=JSON.parse(result.links) as Row[];
   if(nodes.length>200||teams.length>500||links.length>500)fail('Este conjunto excede o limite de consulta. Peça uma revisão aos responsáveis.','structure_limit',409);
-  return{organizationName:result.organization_name as string,projectName:result.project_name as string,canManage:Boolean(result.can_manage),header,nodes,teams,links};
+  return{organizationName:result.organization_name as string,projectName:result.project_name as string,canManage:Boolean(result.can_manage),canApplyTemplate:Boolean(result.can_apply_template),header,nodes,teams,links};
  };
  const first=await read(),last=await read();
  if(JSON.stringify(first)!==JSON.stringify(last))fail('A estrutura ou seus vínculos mudaram durante a consulta. Atualize o recorte.','structure_access_changed',403);
  const h=last.header;
- return{viewerId:actor.userId,scope:{organizationId,organizationName:last.organizationName,projectId,projectName:last.projectName,canManage:last.canManage},version:h?.version??0,
+ return{viewerId:actor.userId,scope:{organizationId,organizationName:last.organizationName,projectId,projectName:last.projectName,canManage:last.canManage},version:h?.version??0,canApplyTemplate:last.canApplyTemplate,
   source:h?.source_label?{label:h.source_label,revision:h.source_revision,issuedOn:h.source_issued_on,referenceUrl:h.source_url,adapted:Boolean(h.adapted)}:null,
   nodes:last.nodes.map(nodeProjection),teams:last.teams.map(t=>({id:t.id,name:t.name,status:t.status})),links:last.links.map(l=>({nodeId:l.node_id,teamId:l.team_id})),asOf:iso()};
 }

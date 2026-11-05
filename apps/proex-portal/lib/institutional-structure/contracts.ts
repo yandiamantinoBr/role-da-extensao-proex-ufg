@@ -6,7 +6,7 @@ export const kindLabels: Record<NodeKind,string> = {council:'Colegiado',office:'
 export const relationLabels: Record<Relation,string> = {root:'Raiz',subordination:'Subordinação',governance:'Governança'};
 export type StructureNode = {id:string;parentId:string|null;name:string;acronym:string;kind:NodeKind;relation:Relation;position:number;status:'active'|'archived'};
 export type StructureSource = {label:string;revision:string;issuedOn:string|null;referenceUrl:string|null;adapted:boolean};
-export type StructureWorkspace = {viewerId:string;scope:{organizationId:string;organizationName:string;projectId:string|null;projectName:string;canManage:boolean};version:number;source:StructureSource|null;nodes:StructureNode[];teams:{id:string;name:string;status:'active'|'archived'}[];links:{nodeId:string;teamId:string}[];asOf:string};
+export type StructureWorkspace = {viewerId:string;scope:{organizationId:string;organizationName:string;projectId:string|null;projectName:string;canManage:boolean};version:number;canApplyTemplate:boolean;source:StructureSource|null;nodes:StructureNode[];teams:{id:string;name:string;status:'active'|'archived'}[];links:{nodeId:string;teamId:string}[];asOf:string};
 export const OFFICIAL_SOURCE = {label:'Organograma PROEX UFG',revision:'5.0.3',issuedOn:'2026-07-28',referenceUrl:'https://files.cercomp.ufg.br/weby/up/694/o/Estrutura_Organizacional_-_2026.pdf',sha256:'db862c20ab4b9d5328651e129d4a2ffe5dbfa371715293f1a2fac2293d48dc91'} as const;
 export type TemplateNode = {key:string;parentKey:string|null;name:string;acronym:string;kind:NodeKind;relation:Relation;position:number};
 /** Public reference only. Applying it never assigns people, teams or permissions. */

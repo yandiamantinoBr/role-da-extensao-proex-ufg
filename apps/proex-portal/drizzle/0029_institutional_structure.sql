@@ -48,7 +48,7 @@ CREATE TRIGGER institutional_node_parent_update BEFORE UPDATE OF parent_id,statu
 END;
 CREATE TRIGGER institutional_link_insert BEFORE INSERT ON institutional_team_links BEGIN
  SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM followup_teams t JOIN institutional_nodes n ON n.organization_id=t.organization_id WHERE t.id=NEW.team_id AND n.id=NEW.node_id AND n.organization_id=NEW.organization_id AND t.status='active' AND n.status='active') THEN RAISE(ABORT,'structure_link_inactive') END;
- SELECT CASE WHEN (SELECT COUNT(*) FROM institutional_team_links WHERE organization_id=NEW.organization_id AND revoked_at IS NULL)>=500 THEN RAISE(ABORT,'structure_link_limit') END;
+ SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM institutional_team_links WHERE organization_id=NEW.organization_id AND node_id=NEW.node_id AND team_id=NEW.team_id AND revoked_at IS NULL) AND (SELECT COUNT(*) FROM institutional_team_links WHERE organization_id=NEW.organization_id AND revoked_at IS NULL)>=500 THEN RAISE(ABORT,'structure_link_limit') END;
 END;
 CREATE TRIGGER institutional_link_update BEFORE UPDATE ON institutional_team_links BEGIN
  SELECT CASE WHEN NEW.organization_id!=OLD.organization_id OR NEW.node_id!=OLD.node_id OR NEW.team_id!=OLD.team_id THEN RAISE(ABORT,'structure_identity_immutable') END;
