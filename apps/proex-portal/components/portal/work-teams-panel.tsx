@@ -11,6 +11,7 @@ import { WorkTaskCard } from './work-task-card';
 import { DraftNotice, useFormDraft } from './use-form-draft';
 import styles from './work-teams-panel.module.css';
 import TeamSheetsPanel from './team-sheets-panel';
+import InstitutionalStructurePanel from './institutional-structure-panel';
 
 type Props = {
  userId: string; defaultProjectId?: string;
@@ -151,6 +152,7 @@ export default function WorkTeamsPanel({ userId, defaultProjectId = '', organiza
    <label>Projeto<select aria-label="Projeto" value={projectId} disabled={busy || exporting} onChange={event => changeContext(organizationId, event.target.value)}>{selectedOrganization?.canManage && <option value="">Todos os projetos da organização</option>}{!canQuery && <option value={projectId} disabled>Escolha um projeto permitido</option>}{ownProjects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
    <label className={styles.search}>Buscar equipe<div><Search size={17} aria-hidden="true"/><input type="search" value={search} maxLength={100} placeholder="Nome da equipe" onChange={event => setSearch(event.target.value)}/></div></label>
   </div>
+  {canQuery&&<InstitutionalStructurePanel userId={userId} organizationId={organizationId} projectId={projectId||null} onSelectTeam={chooseTeam}/>}
   <p className={styles.help}><ShieldCheck size={16} aria-hidden="true"/><span>Equipes organizam o trabalho; pessoas e permissões são gerenciadas {canOpenAccess ? <>em <a href="?module=team">Pessoas e acessos</a></> : 'pelos responsáveis do projeto'}.</span></p>
   {error && <div role="alert" className="p-notice p-notice-error"><p>{error}</p><button className="p-button" onClick={() => { setTeamId(''); setOffset(0); setAttempt(value => value + 1); }}>Consultar novamente</button></div>}
   {!data && !error && <p role="status">{canQuery ? 'Consultando equipes e demandas…' : 'Escolha um projeto permitido para consultar as equipes.'}</p>}
