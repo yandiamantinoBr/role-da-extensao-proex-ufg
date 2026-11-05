@@ -102,8 +102,56 @@ test('a deep unit opens a named editor; Cancelar sends nothing, explains the res
  }finally{h.dispose();}
 });
 
+const contains=(root,predicate)=>{let found=false;(function walk(value){if(found||!value||typeof value!=='object')return;if(Array.isArray(value))return value.forEach(walk);if(predicate(value)){found=true;return;}walk(value.props?.children);})(root);return found;};
+const escape=(patch={})=>({key:'Escape',defaultPrevented:false,preventDefault(){},stopPropagation(){},...patch});
+const editorSection=h=>h.find('section',entry=>entry.props['aria-labelledby']==='institutional-structure-editor-title');
+
+test('one live region exists before opening and carries loading, then feedback, without being replaced',async()=>{
+ const h=harness();try{const regions=()=>h.all('p').filter(entry=>entry.props.role==='status');assert.equal(regions().length,1);assert.equal(text(regions()[0]),'');assert.equal(h.requests.length,0);
+  h.toggle(true);assert.equal(regions().length,1);assert.match(text(regions()[0]),/Consultando/);assert.equal(regions()[0].props['aria-live'],'polite');
+  await h.ready();assert.equal(regions().length,1);assert.equal(text(regions()[0]),'');assert.equal(regions()[0].props.className,'srOnly');
+  h.click('Editar fonte');h.click('Cancelar');assert.equal(regions().length,1);assert.match(text(regions()[0]),/Edição cancelada/);assert.equal(regions()[0].props.className,'feedback');
+ }finally{h.dispose();}
+});
+
+test('compact preamble: metrics are one list and the source is a closed native disclosure that keeps its meaning and edit action',async()=>{
+ const h=harness();try{await h.open();
+  const metrics=h.find('ul',entry=>entry.props['aria-label']==='Resumo da estrutura');assert.ok(metrics);assert.equal(metrics.props.children.length,3);assert.match(text(metrics),/Unidades visíveis.*Relações de governança.*Equipes vinculadas/);
+  const reference=h.find('details',entry=>entry.props.className==='reference');assert.ok(reference);assert.equal(reference.props.open,undefined);
+  const summary=reference.props.children.find(child=>child?.type==='summary');assert.match(text(summary),/^Fonte: Organograma público/);assert.match(text(summary),/não certifica a estrutura vigente/);
+  assert.equal(h.body().split('não certifica').length-1,1);assert.equal(h.body().split('não concede').length-1,1);
+  assert.ok(contains(reference,entry=>entry.type==='button'&&text(entry)==='Editar fonte'));assert.ok(contains(reference,entry=>entry.type==='a'&&entry.props.href==='https://official.example/organograma.pdf'));
+  h.click('Editar fonte');const tree=h.find('div',entry=>entry.props.className==='tree');assert.ok(editorSection(h));assert.equal(contains(tree,entry=>entry.type==='section'),false);
+ }finally{h.dispose();}
+ const reader=harness();try{await reader.open(response({scope:{...response().scope,canManage:false}}));const reference=reader.find('details',entry=>entry.props.className==='reference');assert.ok(reference);assert.equal(contains(reference,entry=>entry.type==='button'),false);}finally{reader.dispose();}
+});
+
+test('icon actions carry full titles, archive is the quiet action, and new units still open above the tree',async()=>{
+ const h=harness();try{await h.open();
+  for(const label of ['Editar Câmara de Extensão e Cultura','Vincular equipes: Câmara de Extensão e Cultura','Arquivar Câmara de Extensão e Cultura'])assert.equal(h.button(label).props.title,label);
+  assert.match(h.button('Arquivar Câmara de Extensão e Cultura').props.className,/quietAction/);assert.doesNotMatch(h.button('Editar Câmara de Extensão e Cultura').props.className,/quietAction/);
+  h.click('Nova unidade');assert.ok(editorSection(h));assert.equal(contains(h.find('div',entry=>entry.props.className==='tree'),entry=>entry.type==='section'),false);assert.match(text(h.find('h4',entry=>entry.props.tabIndex===-1)),/^Nova unidade formal$/);
+ }finally{h.dispose();}
+});
+
+test('an existing unit is edited inside its own tree item; Escape cancels like Cancelar, but never during a save',async()=>{
+ const name='Pró-reitoria de Extensão';
+ const h=harness();try{await h.open();
+  let restored=0;const count=h.requests.length;h.button('Editar '+name).props.onClick({currentTarget:{isConnected:true,focus(){restored++;}}});h.render();
+  const item=h.all('li').find(entry=>entry.props.className==='node'&&text(entry.props.children[0]).includes(name));assert.equal(item.props.children[0].type,'article');assert.equal(item.props.children[1]?.type,'section');
+  assert.equal(contains(h.find('div',entry=>entry.props.className==='tree'),entry=>entry.props?.['aria-labelledby']==='institutional-structure-editor-title'),true);
+  const title=h.find('h4',entry=>entry.props.tabIndex===-1);assert.equal(text(title),'Editar unidade · '+name);assert.equal(h.find('span',entry=>entry.props.className==='editorName').props.title,name);assert.ok(h.focus.length>=2);
+  editorSection(h).props.onKeyDown(escape({defaultPrevented:true}));h.render();assert.ok(h.find('form'));
+  editorSection(h).props.onKeyDown(escape());h.render();assert.equal(h.find('form'),undefined);assert.equal(h.requests.length,count);assert.equal(restored,1);assert.match(h.body(),/Edição cancelada/);
+  h.button('Editar '+name).props.onClick({currentTarget:{isConnected:true,focus(){restored++;}}});h.render();
+  h.submit('Salvar unidade',{name:'Pró-reitoria revisada',acronym:'PROEX',kind:'office',position:'0'});const pending=h.last();assert.equal(pending.init.method,'POST');
+  editorSection(h).props.onKeyDown(escape());h.render();assert.ok(h.find('form'));assert.equal(pending.init.signal.aborted,false);assert.equal(restored,1);assert.doesNotMatch(h.body(),/Edição cancelada/);
+  h.reply(pending,{error:'Conflito',code:'structure_version'},409);await tick();h.render();assert.ok(h.find('form'));
+ }finally{h.dispose();}
+});
+
 test('canApplyTemplate distinguishes truly empty state from a filtered archived catalog; nothing seeds automatically',async()=>{
- for(const canApplyTemplate of [false,true]){const h=harness();try{await h.open(response({nodes:[],links:[],canApplyTemplate}));assert.equal(h.requests.length,1);const prepare=h.find('button',entry=>text(entry)==='Preparar referência oficial');assert.equal(Boolean(prepare),canApplyTemplate);if(canApplyTemplate){h.click('Preparar referência oficial');assert.equal(h.requests.length,1);assert.match(h.body(),/Revise antes de aplicar/);assert.equal(h.all('details').length,12);h.all('input').find(entry=>entry.props.value==='Câmara de Extensão e Cultura').props.onChange({target:{value:'Colegiado revisado'}});h.render();h.submit('Aplicar estrutura revisada',{});const input=JSON.parse(h.last().init.body);assert.equal(input.action,'template.apply');assert.equal(input.nodes.length,11);assert.equal(input.nodes[0].name,'Colegiado revisado');assert.equal(input.expectedVersion,2);assert.equal(input.organizationId,'org-a');assert.equal(typeof input.operationKey,'string');assert.equal(h.last().init.headers['X-Proex-Action'],'1');}}finally{h.dispose();}}
+ for(const canApplyTemplate of [false,true]){const h=harness();try{await h.open(response({nodes:[],links:[],canApplyTemplate}));assert.equal(h.requests.length,1);const prepare=h.find('button',entry=>text(entry)==='Preparar referência oficial');assert.equal(Boolean(prepare),canApplyTemplate);if(canApplyTemplate){h.click('Preparar referência oficial');assert.equal(h.requests.length,1);assert.match(h.body(),/Revise antes de aplicar/);assert.equal(h.all('details').filter(entry=>entry.props.className==='templateItem').length,11);h.all('input').find(entry=>entry.props.value==='Câmara de Extensão e Cultura').props.onChange({target:{value:'Colegiado revisado'}});h.render();h.submit('Aplicar estrutura revisada',{});const input=JSON.parse(h.last().init.body);assert.equal(input.action,'template.apply');assert.equal(input.nodes.length,11);assert.equal(input.nodes[0].name,'Colegiado revisado');assert.equal(input.expectedVersion,2);assert.equal(input.organizationId,'org-a');assert.equal(typeof input.operationKey,'string');assert.equal(h.last().init.headers['X-Proex-Action'],'1');}}finally{h.dispose();}}
 });
 
 test('editing a node uses CAS, omits current descendants from parents, and only acknowledges after a fresh GET',async()=>{

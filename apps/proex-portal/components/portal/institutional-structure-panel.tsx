@@ -1,6 +1,6 @@
 'use client';
 
-import {useEffect,useLayoutEffect,useRef,useState,type FormEvent} from 'react';
+import {useEffect,useLayoutEffect,useRef,useState,type FormEvent,type KeyboardEvent,type ReactNode,type Ref} from 'react';
 import {Archive,ArrowUpRight,BookOpen,Check,ChevronDown,GitBranch,Landmark,Link2,Network,Pencil,Plus,RefreshCw,ShieldCheck,Unlink,Users,X} from 'lucide-react';
 import {toast} from 'sonner';
 import {kindLabels,NODE_KINDS,OFFICIAL_SOURCE,OFFICIAL_TEMPLATE,relationLabels,type NodeKind,type Relation,type StructureNode,type StructureWorkspace,type TemplateNode} from '@/lib/institutional-structure/contracts';
@@ -90,48 +90,68 @@ function StructureBody({userId,organizationId,projectId,onSelectTeam}:Props){
   finally{if(exportJob.current===job){exportJob.current=null;if(mounted.current)setExporting(false);}}
  }
  const linkedTeams=data?new Set(data.links.map(link=>link.teamId)).size:0;
+ /* Existing units are edited in place, inside their own tree item; new units and the source stay above the tree.
+    The section is one element built here and only placed by the tree, so inputs keep their identity. */
+ const editingId=editor&&editor.kind!=='source'&&editor.node&&data?.nodes.some(node=>node.id===editor.node!.id)?editor.node.id:null;
+ const editorSection=editor&&data?.scope.canManage?<EditorSection editor={editor} data={data} busy={locked} headingRef={editorHeading} onCancel={cancelEditor} onSave={input=>void save(input)}/>:null;
  return <details className={styles.panel} open={open} onToggle={event=>toggle(event.currentTarget.open)}>
   <summary className={styles.summary}><span className={styles.mark}><Network size={22} aria-hidden="true"/></span><span><strong>Estrutura institucional</strong><span>Unidades, governança e vínculos com as equipes</span></span><ChevronDown size={20} aria-hidden="true" className={styles.chevron}/></summary>
-  {open&&<div className={styles.body}>
-   <p className={styles.scope}><ShieldCheck size={16} aria-hidden="true"/><span>Vincular uma equipe a uma unidade não concede acesso a projetos ou dados. Você vê só os vínculos das equipes que já pode acessar.{data?.scope.canManage&&<strong> Alterações em unidades e na fonte valem para toda a organização.</strong>}</span></p>
-   {loading&&<p role="status" className={styles.loading}>Consultando a estrutura e os vínculos permitidos…</p>}
+  {/* The body (and its live region) exists before the panel opens, so the first status is a change, not an insertion. */}
+  <div className={styles.body}>
+   {open&&<p className={styles.scope}><ShieldCheck size={16} aria-hidden="true"/><span>Vincular equipes não concede acesso a projetos ou dados. Exibimos somente vínculos autorizados.{data?.scope.canManage&&<strong> Alterações em unidades e na fonte valem para toda a organização.</strong>}</span></p>}
    {error&&<div role="alert" className="p-notice p-notice-error"><p>{error}</p><button type="button" className="p-button" onClick={()=>refresh()}>Consultar novamente</button></div>}
    {data&&<>
     <div className={styles.heading}><div><h3>{data.scope.organizationName}</h3><p>{data.scope.projectName} · versão {data.version}</p></div><div className={styles.actions}><button type="button" className="p-button" disabled={locked} onClick={()=>refresh()}><RefreshCw size={16} aria-hidden="true"/>Atualizar estrutura</button>{data.scope.canManage&&<button type="button" className="p-button p-button-primary" disabled={locked} onClick={event=>showEditor({kind:'node'},opener(event))}><Plus size={16} aria-hidden="true"/>Nova unidade</button>}</div></div>
-    <div className={styles.metrics} aria-label="Resumo da estrutura"><div><Landmark size={18} aria-hidden="true"/><strong>{data.nodes.length}</strong><span>Unidades visíveis</span></div><div><GitBranch size={18} aria-hidden="true"/><strong>{data.nodes.filter(node=>node.relation==='governance').length}</strong><span>Relações de governança</span></div><div><Users size={18} aria-hidden="true"/><strong>{linkedTeams}</strong><span>Equipes vinculadas</span></div></div>
-    <div className={styles.reference}><BookOpen size={19} aria-hidden="true"/><div><strong>{data.source?.label||'Fonte ainda não registrada'}</strong><p>{data.source?`${data.source.revision?'Revisão '+data.source.revision+' · ':''}${dateLabel(data.source.issuedOn)} · ${data.source.adapted?'Adaptada localmente':'Referência oficial aplicada'}`:'Registre uma referência ou prepare o organograma público para revisão.'}</p><p>Fonte de referência; não certifica a estrutura vigente.</p>{data.source?.referenceUrl&&<a href={data.source.referenceUrl} target="_blank" rel="noopener noreferrer" className={styles.referenceLink}>Consultar documento oficial<ArrowUpRight size={15} aria-hidden="true"/></a>}</div>{data.scope.canManage&&<button className="p-button" type="button" disabled={locked} onClick={event=>showEditor({kind:'source'},opener(event))}><Pencil size={16} aria-hidden="true"/>Editar fonte</button>}</div>
+    <ul className={styles.metrics} aria-label="Resumo da estrutura"><li><Landmark size={18} aria-hidden="true"/><strong>{data.nodes.length}</strong><span>Unidades visíveis</span></li><li><GitBranch size={18} aria-hidden="true"/><strong>{data.nodes.filter(node=>node.relation==='governance').length}</strong><span>Relações de governança</span></li><li><Users size={18} aria-hidden="true"/><strong>{linkedTeams}</strong><span>Equipes vinculadas</span></li></ul>
+    {/* Collapsed by default: the summary keeps the source name and its meaning visible; details and the edit action expand on request. */}
+    <details className={styles.reference}><summary className={styles.referenceSummary}><BookOpen size={18} aria-hidden="true"/><span><strong>Fonte: {data.source?.label||'ainda não registrada'}</strong><small>Fonte de referência; não certifica a estrutura vigente.</small></span><ChevronDown size={18} aria-hidden="true" className={styles.referenceChevron}/></summary>
+     <div className={styles.referenceBody}><div><p>{data.source?`${data.source.revision?'Revisão '+data.source.revision+' · ':''}${dateLabel(data.source.issuedOn)} · ${data.source.adapted?'Adaptada localmente':'Referência oficial aplicada'}`:'Registre uma referência ou prepare o organograma público para revisão.'}</p>{data.source?.referenceUrl&&<a href={data.source.referenceUrl} target="_blank" rel="noopener noreferrer" className={styles.referenceLink}>Consultar documento oficial<ArrowUpRight size={15} aria-hidden="true"/></a>}</div>{data.scope.canManage&&<button className="p-button" type="button" disabled={locked} onClick={event=>showEditor({kind:'source'},opener(event))}><Pencil size={16} aria-hidden="true"/>Editar fonte</button>}</div>
+    </details>
     <div className={styles.legend}><span><i aria-hidden="true"/>Subordinação</span><span><i className={styles.dashed} aria-hidden="true"/>Governança · relação consultiva ou colegiada</span>{data.scope.canManage&&<label className={styles.check}><input type="checkbox" checked={includeArchived} disabled={locked} onChange={event=>refresh(event.target.checked)}/>Mostrar arquivadas</label>}</div>
     {!data.nodes.length&&<div className={styles.empty}><Landmark size={28} aria-hidden="true"/><h4>Nenhuma unidade neste recorte</h4><p>{data.canApplyTemplate?'Cadastre uma unidade ou revise a referência pública antes de aplicá-la.':data.scope.canManage?'Cadastre uma unidade ou consulte as arquivadas para conferir o histórico.':'A estrutura institucional ainda não está disponível neste contexto.'}</p>{data.canApplyTemplate&&!preview&&<button type="button" className="p-button" disabled={locked} onClick={()=>{setEditor(null);setPreview(OFFICIAL_TEMPLATE.map(node=>({...node})));setFeedback('');}}>Preparar referência oficial</button>}</div>}
     {preview&&data.canApplyTemplate&&!data.nodes.length&&<TemplatePreview nodes={preview} busy={locked} onChange={setPreview} onCancel={()=>setPreview(null)} onApply={()=>void save({action:'template.apply',nodes:preview})}/>}
-    {editor&&data.scope.canManage&&<section className={styles.editor} aria-label="Editar estrutura"><h4 ref={editorHeading} tabIndex={-1} className={styles.editorTitle}>{editor.kind==='source'?'Referência do cadastro':editor.kind==='links'?'Vínculos com equipes':editor.kind==='status'?'Confirmar situação':editor.node?'Editar unidade':'Nova unidade formal'}{editor.kind!=='source'&&editor.node&&<span> · {editor.node.name}</span>}</h4>
-     {editor.kind==='node'&&<NodeForm key={editor.node?.id??'new'} node={editor.node} nodes={data.nodes} busy={locked} onCancel={cancelEditor} onSave={input=>void save({action:'node.save',...input})}/>}
-     {editor.kind==='source'&&<SourceForm data={data} busy={locked} onCancel={cancelEditor} onSave={input=>void save({action:'source.save',...input})}/>}
-     {editor.kind==='links'&&<LinkEditor data={data} node={editor.node} busy={locked} onCancel={cancelEditor} onSave={input=>void save({action:'link.save',...input})}/>}
-     {editor.kind==='status'&&<StatusEditor data={data} node={editor.node} busy={locked} onCancel={cancelEditor} onSave={()=>void save({action:'node.status',id:editor.node.id,status:editor.node.status==='active'?'archived':'active'})}/>}
-    </section>}
-    {!!data.nodes.length&&<div className={styles.tree} aria-label="Organograma institucional"><NodeBranch parentId={null} depth={0} data={data} locked={locked} onEdit={showEditor} onSelectTeam={onSelectTeam}/></div>}
+    {!editingId&&editorSection}
+    {!!data.nodes.length&&<div className={styles.tree} aria-label="Organograma institucional"><NodeBranch parentId={null} depth={0} data={data} locked={locked} onEdit={showEditor} onSelectTeam={onSelectTeam} editingId={editingId} nodeEditor={editorSection}/></div>}
     <div className={styles.export}><div><h4>Levar a estrutura para um documento</h4><p>Unidades e vínculos visíveis neste recorte. Acesso e conteúdo são conferidos novamente antes de baixar.</p></div><ExportFormats onExport={exportFile} disabled={locked||!data.nodes.length} label="Baixar estrutura institucional"/></div>
     <p className={styles.updated}>Consultado em {new Date(data.asOf).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'})} (Brasília)</p>
    </>}
-   {feedback&&<p role="status" aria-live="polite" className={styles.feedback}>{feedback}</p>}
-  </div>}
+   {/* One polite region, mounted with the body and never replaced: it carries both the loading notice and later feedback. */}
+   <p role="status" aria-live="polite" aria-atomic="true" className={loading?styles.loading:feedback?styles.feedback:styles.srOnly}>{loading?'Consultando a estrutura e os vínculos permitidos…':feedback}</p>
+  </div>
  </details>;
+}
+
+type EditorProps={editor:Editor;data:StructureWorkspace;busy:boolean;headingRef:Ref<HTMLHeadingElement>;onCancel:()=>void;onSave:(input:Record<string,unknown>)=>void};
+const editorTitles={source:'Referência do cadastro',links:'Vínculos com equipes',status:'Confirmar situação'} as const;
+/** Top-level so its forms keep identity wherever the tree places it. Escape behaves like Cancelar and is ignored while anything is saving or exporting. */
+function EditorSection(props:EditorProps){
+ const {editor,data,busy,headingRef,onCancel,onSave}=props,node=editor.kind==='source'?undefined:editor.node,title=editor.kind==='node'?node?'Editar unidade':'Nova unidade formal':editorTitles[editor.kind];
+ function keyDown(event:KeyboardEvent<HTMLElement>){if(event.key!=='Escape'||event.defaultPrevented||busy)return;event.preventDefault();event.stopPropagation();onCancel();}
+ return <section className={styles.editor} aria-labelledby="institutional-structure-editor-title" onKeyDown={keyDown}>
+  <h4 id="institutional-structure-editor-title" ref={headingRef} tabIndex={-1} className={styles.editorTitle}>{title}{node&&<><span className={styles.srOnly}> · </span><span className={styles.editorName} title={node.name}>{node.name}</span></>}</h4>
+  {editor.kind==='node'&&<NodeForm key={editor.node?.id??'new'} node={editor.node} nodes={data.nodes} busy={busy} onCancel={onCancel} onSave={input=>onSave({action:'node.save',...input})}/>}
+  {editor.kind==='source'&&<SourceForm data={data} busy={busy} onCancel={onCancel} onSave={input=>onSave({action:'source.save',...input})}/>}
+  {editor.kind==='links'&&<LinkEditor data={data} node={editor.node} busy={busy} onCancel={onCancel} onSave={input=>onSave({action:'link.save',...input})}/>}
+  {editor.kind==='status'&&<StatusEditor data={data} node={editor.node} busy={busy} onCancel={onCancel} onSave={()=>onSave({action:'node.status',id:editor.node.id,status:editor.node.status==='active'?'archived':'active'})}/>}
+ </section>;
 }
 
 /** Branches up to the second level start open; deeper ones stay closed behind a summary that names and counts them. */
 const OPEN_DEPTH=2;
-function NodeBranch({parentId,depth,data,locked,onEdit,onSelectTeam}:{parentId:string|null;depth:number;data:StructureWorkspace;locked:boolean;onEdit:OpenEditor;onSelectTeam?:Props['onSelectTeam']}){
+type BranchProps={parentId:string|null;depth:number;data:StructureWorkspace;locked:boolean;onEdit:OpenEditor;onSelectTeam?:Props['onSelectTeam'];editingId:string|null;nodeEditor:ReactNode};
+function NodeBranch({parentId,depth,data,locked,onEdit,onSelectTeam,editingId,nodeEditor}:BranchProps){
  const nodes=data.nodes.filter(node=>node.parentId===parentId).sort((a,b)=>a.position-b.position||a.name.localeCompare(b.name,'pt-BR'));
  return <ul className={styles.branch}>{nodes.map(node=>{
   const teams=data.links.filter(link=>link.nodeId===node.id).map(link=>data.teams.find(team=>team.id===link.teamId)!);
   const children=data.nodes.filter(child=>child.parentId===node.id),governance=children.filter(child=>child.relation==='governance').length,subordinate=children.length-governance;
   const badge=node.status==='archived'?'Arquivada':node.relation==='governance'?relationLabels.governance:'';
   const childLabel=[subordinate&&plural(subordinate,'unidade subordinada','unidades subordinadas'),governance&&plural(governance,'unidade em governança','unidades em governança')].filter(Boolean).join(' · ');
-  const action=(label:string,Icon:typeof Pencil,next:Editor,name:string)=><button type="button" className="p-button" disabled={locked} aria-label={name} onClick={event=>onEdit(next,opener(event))}><Icon size={15} aria-hidden="true"/><span className={styles.actionLabel}>{label}</span></button>;
+  /* Below 600px only the icon shows: title gives pointer users the same full name that aria-label gives assistive tech. */
+  const action=(label:string,Icon:typeof Pencil,next:Editor,name:string,quiet=false)=><button type="button" className={quiet?`p-button ${styles.quietAction}`:'p-button'} disabled={locked} aria-label={name} title={name} onClick={event=>onEdit(next,opener(event))}><Icon size={15} aria-hidden="true"/><span className={styles.actionLabel}>{label}</span></button>;
   return <li key={node.id} className={styles.node} data-relation={node.relation}><article className={styles.nodeCard} data-archived={node.status==='archived'}><div className={styles.nodeTitle}><span className={styles.nodeIcon}>{node.kind==='council'?<Users size={18} aria-hidden="true"/>:<Landmark size={18} aria-hidden="true"/>}</span><div><span className={styles.eyebrow}>{kindLabels[node.kind]}{node.acronym?' · '+node.acronym:''}</span><h4>{node.name}</h4></div>{badge&&<span className={styles.badge}>{badge}</span>}</div>
-   {data.scope.canManage&&<div className={styles.nodeActions}>{node.status==='active'&&<>{action('Editar',Pencil,{kind:'node',node},`Editar ${node.name}`)}{action('Equipes',Link2,{kind:'links',node},`Vincular equipes: ${node.name}`)}</>}{node.status==='active'?action('Arquivar',Archive,{kind:'status',node},`Arquivar ${node.name}`):action('Reativar',RefreshCw,{kind:'status',node},`Reativar ${node.name}`)}</div>}
+   {data.scope.canManage&&<div className={styles.nodeActions}>{node.status==='active'&&<>{action('Editar',Pencil,{kind:'node',node},`Editar ${node.name}`)}{action('Equipes',Link2,{kind:'links',node},`Vincular equipes: ${node.name}`)}</>}{node.status==='active'?action('Arquivar',Archive,{kind:'status',node},`Arquivar ${node.name}`,true):action('Reativar',RefreshCw,{kind:'status',node},`Reativar ${node.name}`)}</div>}
    {!!teams.length&&<ul className={styles.linkedTeams} aria-label={`Equipes vinculadas a ${node.name}`}>{teams.map(team=><li key={team.id}>{onSelectTeam?<button type="button" disabled={locked} className={styles.teamLink} onClick={()=>onSelectTeam(team.id)}><Users size={15} aria-hidden="true"/><span>{team.name}{team.status==='archived'?' · arquivada':''}</span><ArrowUpRight size={15} aria-hidden="true"/></button>:<span><Users size={15} aria-hidden="true"/>{team.name}{team.status==='archived'?' · arquivada':''}</span>}</li>)}</ul>}
-  </article>{!!children.length&&<details className={styles.children} open={depth<OPEN_DEPTH}><summary className={styles.childrenSummary}><ChevronDown size={16} aria-hidden="true"/><span>{childLabel}</span><span className={styles.srOnly}> de {node.name}</span></summary><NodeBranch parentId={node.id} depth={depth+1} data={data} locked={locked} onEdit={onEdit} onSelectTeam={onSelectTeam}/></details>}</li>;
+  </article>{editingId===node.id&&nodeEditor}{!!children.length&&<details className={styles.children} open={depth<OPEN_DEPTH}><summary className={styles.childrenSummary}><ChevronDown size={16} aria-hidden="true"/><span>{childLabel}</span><span className={styles.srOnly}> de {node.name}</span></summary><NodeBranch parentId={node.id} depth={depth+1} data={data} locked={locked} onEdit={onEdit} onSelectTeam={onSelectTeam} editingId={editingId} nodeEditor={nodeEditor}/></details>}</li>;
  })}</ul>;
 }
 function CancelEdit({busy,onCancel}:{busy:boolean;onCancel:()=>void}){return <button type="button" className="p-button" disabled={busy} onClick={onCancel}><X size={16} aria-hidden="true"/>Cancelar</button>;}
