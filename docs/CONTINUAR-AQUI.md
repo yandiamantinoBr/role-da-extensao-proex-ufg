@@ -1,12 +1,14 @@
 # Continuar Portal PROEX
 
-## Frente Rolê no CONPEEX — PR37 em revisão final
+## Checkpoint atual — PR37 publicada e migração conferida · 2026-11-05
 
-Branch `codex/role-conpeex-contexto-05nov`, head funcional6dc7eac, base00be420. **1.236/1.236**, tipos, lint, Worker/Node, smoke e CI42090990830 aprovados. Ensaio autenticado local concluído:15sessões, estados/conflitos, anfitrião, três downloads e transferência preservadora;390/1366, claro/escuro, sem overflow. Segurança independente semP0/P1/P2; crítica visual em andamento. [Entrega e limites](ENTREGA-05NOV-ROLE-CONPEEX.md), [fontes oficiais](CONPEEX-2026-OPERACAO-E-FONTES.md), [evidências sintéticas](evidencias/2026-11-05-role-conpeex/README.md).
+Produção funcional **5ad7025d58a7d3351edc301377c72079ed0cb961**, Vercel **dpl_FnF94q2dLgVWgLgVyo1993UUcawo READY**, alias oficial e Chrome autenticado conferidos. Head funcional testado **dc5796e**: **1.237/1.237**, tipos, lint sem erros (dois avisos antigos), Worker/Node e smoke; CI42094055194 aprovado. Saúde200; APIs novas com consulta válida sem sessão401/no-store. [Entrega](ENTREGA-05NOV-ROLE-CONPEEX.md), [aceite independente9/10 no escopo](REVISAO-05NOV-ROLE-CONPEEX-DESIGN-ACEITE.md), [recibos e imagens sintéticas](evidencias/2026-11-05-role-conpeex/README.md).
 
-Planilha original preservada no mesmo arquivo/aba/linhas, vinculada ao Rolê e mantida como referência no CONPEEX. Auxiliar nativa15propostas, sem horários/contagens inventados. **As nove demandas reais ainda estão no CONPEEX; não migrar antes de confirmar publicação e UI.** Produção comprovada continua no checkpoint anterior abaixo. Este arquivo não tem sincronização automática ativa; mestre é canal separado. IDs privados/recibos na Vault.
+**Operação real concluída:** nove demandas saíram do contexto CONPEEX para Rolê, mantendo ID, campos, atribuições e histórico original, com recibo de transferência. Mesmo arquivo/aba/linhas de contagem preservados. Dinâmica do Rolê em rascunho, CONPEEX anfitrião,15propostas sem horários e sexta condicional; persistência confirmada após recarregar. Não ativar jogo nem inventar quantidades. A mestre foi atualizada pelo menu instalado e relida:35tabelas/completed em19:45:23.914Z; nove demandas emRolê/versão2 e campanha draft. Recibos reais/IDs somente na Vault.
 
-## Checkpoint atual · PR36 publicada · 2026-11-05
+**Pendências reais:** integração bidirecional do arquivo de contagem (continua manual, não é a mestre); confirmar agenda/rodadas e sexta; canais Sheets por projeto/equipe e custódia; cofre/recuperação bloqueados pela política da ferramenta, Calendar/IA/MCP reais e P3 cosméticos. [Fontes e operação do CONPEEX](CONPEEX-2026-OPERACAO-E-FONTES.md). Não atribuir esta entrega à conclusão de todos os pedidos. Os checkpoints abaixo são históricos.
+
+## Histórico · PR36 publicada · 2026-11-05
 
 Produção funcional **b94814c227b2eabf8eeaf27ffdadac1d0601b20e**, Vercel **dpl_B7zEtBnpmBczYYRfpXtyg3j8vCE7 READY**, alias oficial conferido. CI42077711627: **1.196/1.196**, tipos, Worker/Node, autenticação/MCP e legado aprovados. Chrome autenticado confirmou o resumo, navegação à lista, estrutura/prévia descartada, marca e projeto móvel, rodapé e abertura das abas. Saúde200, privadas401/no-store, aposentados403. [Recibo completo](ENTREGA-05NOV-RESUMO-E-ESTRUTURA.md#publicação-e-aceite--2026-11-05).
 

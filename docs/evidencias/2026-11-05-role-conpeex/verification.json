@@ -131,5 +131,6 @@
     "workerAuthSmoke": "pass",
     "nodeBuild": "pass"
   },
-  "phase": "refinement after rejected 6/10 and 8/10 reviews; acceptance pending"
+  "phase": "accepted:9/10 scoped; no P0/P1/P2",
+  "headTested": "dc5796e9d5875512c71ec3aed2af0c5bacbef811"
 }

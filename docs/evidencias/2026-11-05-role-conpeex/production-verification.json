@@ -1,0 +1,63 @@
+{
+  "functionalCommit": "5ad7025d58a7d3351edc301377c72079ed0cb961",
+  "testedHead": "dc5796e9d5875512c71ec3aed2af0c5bacbef811",
+  "pullRequest": 37,
+  "ciRun": 42094055194,
+  "testsPassed": 1237,
+  "deployment": {
+    "id": "dpl_FnF94q2dLgVWgLgVyo1993UUcawo",
+    "state": "READY",
+    "alias": "proex-gestao.vercel.app"
+  },
+  "health": {
+    "status": 200,
+    "cache": "no-store"
+  },
+  "privateEndpoints": {
+    "wellFormedUnauthenticatedGet": 401,
+    "cache": "no-store, private",
+    "missingRequiredQuery": 400
+  },
+  "browser": {
+    "authenticated": true,
+    "footerRevision": "5ad7025",
+    "persistentAfterReload": true
+  },
+  "realMigration": {
+    "tasks": 9,
+    "sameIds": true,
+    "sameFieldValues": true,
+    "originalHistoryPreserved": true,
+    "transferHistoryAdded": true,
+    "rolesNotGranted": true,
+    "stockNotChanged": true,
+    "noRealEmailSent": true,
+    "originalCountingFilePreserved": true,
+    "countingTabRowsAndColumnsPreserved": true
+  },
+  "planning": {
+    "owner": "Rolê da Extensão",
+    "host": "23º CONPEEX",
+    "status": "draft",
+    "tentativeSessions": 15,
+    "allTimesUnknown": true,
+    "fridayConditional": true,
+    "activated": false
+  },
+  "masterReadback": {
+    "lastVerifiedAt": "2026-11-05T19:45:23.914Z",
+    "state": "verified",
+    "status": "completed",
+    "tablesVerified": 35,
+    "migratedRowsFound": 9,
+    "allInPrimaryProject": true,
+    "allTaskVersions": 2,
+    "campaignStatus": "draft"
+  },
+  "limits": [
+    "Counting workbook remains manual and distinct from the master; no bidirectional integration claimed.",
+    "Real records, file IDs and screenshots kept only in private Vault/workspace.",
+    "No physical Android gesture, screen reader or visual DOCX acceptance claimed.",
+    "Design9/10 applies only to inspected synthetic scope, not the whole site."
+  ]
+}

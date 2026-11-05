@@ -1,0 +1,14 @@
+{
+  "synthetic": true,
+  "environment": "loopback QA only; no production traffic",
+  "head": "dc5796e9d5875512c71ec3aed2af0c5bacbef811",
+  "metric": "browser API roundtrip including automation bridge, not isolated database time",
+  "samples": 20,
+  "sessions": 15,
+  "firstMs": 13.46,
+  "medianMs": 11.22,
+  "p95Ms": 13.46,
+  "maxMs": 13.65,
+  "errors": 0,
+  "limits": "Not a production capacity or mobile network estimate; no external benchmark claim."
+}

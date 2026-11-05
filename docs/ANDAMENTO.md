@@ -133,3 +133,8 @@ Chrome foi recuperado com aba própria, sem cookies exportados ou interferência
 
 Pendências continuam no [escopo completo](REQUISITOS-E-CONTINUIDADE.md): ativação de Sheets nativo por projeto/equipe, custódia externa/segredo dedicado, migração institucional, coleta do Calendar, IA real e interoperabilidade MCP. O cadastro atual de credenciais permanece indisponível sem o segredo dedicado. A sincronização mestre e uma cópia da nota de continuidade na nuvem foram relidas pelo conector; recibos e IDs privados ficam somente na Vault. Refinamentos P3 não bloqueantes dos pareceres permanecem na fila.
 
+
+
+## 2026-11-05 — PR37: Rolê no CONPEEX publicado e preservado
+
+Merge5ad7025, Vercel dpl_FnF94q2dLgVWgLgVyo1993UUcawo READY, alias/Chrome confirmados. CI42094055194,1.237testes, tipos, lint, Worker/Node e smoke aprovados. Revisões independentes6→8→9/10 no escopo, semP0/P1/P2 no aceite. Nove demandas reais transferidas com ID/campos/histórico; arquivo de contagem mantido; dinâmica draft do Rolê com CONPEEX anfitrião e15propostas sem horários. Mestre35tabelas relida após atualização em19:45:23.914Z com os nove destinos/versões corretos. [Entrega, evidências e limites](ENTREGA-05NOV-ROLE-CONPEEX.md). Integração do arquivo manual, sexta e demais frentes seguem explicitamente pendentes.

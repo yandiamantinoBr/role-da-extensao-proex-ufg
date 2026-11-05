@@ -102,3 +102,10 @@ Entregues resumo visual pessoal, navegação/histórico entre recortes, estrutur
 - Conciliar dados conhecidos do CONPEEX: período/local ainda ausentes na ficha, embora a atividade oficial na linha do tempo tenha as datas e o local. Não inventar horário para campos datetime; usar a fonte e um modelo explícito para datas sem horário. Materiais ainda não cadastrados nesse projeto, sem inventar contagens.
 - Tratar osP3 dos pareceres: rotular melhor superior/relação no PDF, alinhar família do cabeçalho, feedback de Cancelar perto da edição/quieto para leitor de tela, texto de sessão e duplicação de escopo, escudo junto à ajuda, base/contraste dos botões e maior concisão móvel.
 - Encerrar somente os aceites comprovados. Downloads em produção foram acionados mas não tiveram arquivo salvo/reaberto confirmado pela ferramenta; arquivos reais do QA foram conferidos. Nenhuma pessoa/equipe/modelo real foi cadastrado pelo teste.
+
+
+## Atualização — Rolê no CONPEEX · 2026-11-05
+
+[Entrega PR37](ENTREGA-05NOV-ROLE-CONPEEX.md) publicada em5ad7025: planejamento de dinâmica/anfitrião, quinze propostas provisórias, PDF/DOCX/XLSX, transferência preservadora de nove demandas e mesmo arquivo de contagem em uso. Mestre reconferida35tabelas. Fontes oficiais e frentes específicas estão em [CONPEEX-2026-OPERACAO-E-FONTES](CONPEEX-2026-OPERACAO-E-FONTES.md). Aceite visual9/10 somente no escopo; críticas anteriores preservadas.
+
+Permanecem: confirmar horários/rodadas/sexta, ativar canais específicos de Sheets com versões/conflitos sem regravar contagens, custódia institucional, cofre/recuperação, Calendar/IA/MCP reais e demais requisitos já registrados. Não apresentar referência manual como sincronização automática. A fonte pode ser oficialmente9–12paraRolê mesmo com o congresso9–13; não fabricar presença/seleção/certificado nem dados de participantes a partir dos PDFs públicos.
