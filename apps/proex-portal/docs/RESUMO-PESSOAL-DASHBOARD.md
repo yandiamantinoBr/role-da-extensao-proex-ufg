@@ -1,5 +1,7 @@
 # Resumo pessoal no início
 
+Estado2026-11-05: entregue na PR36, mergeb94814c, CI42077711627 com1196testes e dois alvos aprovados, Chrome autenticado conferido. Pareceres e limites atuais em `docs/ENTREGA-05NOV-RESUMO-E-ESTRUTURA.md` na raiz. Os checkpoints de implementação abaixo são históricos; o escopo completo continua aberto para ativações externas e refinamentosP3.
+
 ## Objetivo e contrato · 2026-11-05
 
 Para quem entra no portal para saber o que precisa fazer: mostrar totais pessoais pequenos e links para o filtro correspondente em Meu trabalho. O quadro de alertas de estoque, empréstimos e dinâmicas tem outro escopo e deve ser identificado como operacional.

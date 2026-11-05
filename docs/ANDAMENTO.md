@@ -117,3 +117,19 @@ Merge bd36d084ce475c6f43fc765b2f36ebded6594193, Vercel dpl_HfBiVwe913M2kuWawJc2j
 ## 2026-11-05 · Recibo PR35
 
 PR35 mesclada em4992afac14151ac66ae3be5b4e7139c8071e21ad; Vercel dpl_Azn3XQoa3LsUQS8FsdwPZxinmGaP READY e domínio oficial conferidos. CI42049279531 aprovado:1.135 testes, tipos, lint, Worker/Node e autenticação. Saúde200, APIs401/no-store, scripts publicados iguais ao Git e dois deploys aposentados403. [Entrega e limitações](ENTREGA-05NOV-PROVEDORES-E-RELATORIOS.md). Chrome restaurado, mas captura nativa mostrou janela diferente: inspeção autenticada ainda pendente. Nenhuma chave criada nem permissão Google ampliada. Estrutura0029 e resumo pessoal seguem em composição isolada; limite de uso interrompeu os subagentes e suas alterações foram preservadas pelo coordenador.
+
+
+## Publicação e aceite · 2026-11-05
+
+PR [#36](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/36) mesclada em **b94814c227b2eabf8eeaf27ffdadac1d0601b20e**. Vercel **dpl_B7zEtBnpmBczYYRfpXtyg3j8vCE7 READY**, alias `proex-gestao.vercel.app` conferido. CI **42077711627**, head e275d8c83878506e8a5201e6234b1b8df4b3701d: **1.196/1.196**, tipos, Worker/Node, autenticação/MCP e legado aprovados.
+
+A [crítica final](REVISAO-INDEPENDENTE-05NOV-DESIGN-FINAL.md) encerrou o bloqueio de evidência deixado na [terceira revisão](REVISAO-INDEPENDENTE-05NOV-DESIGN-TERCEIRA.md): nota9 para resumo pessoal, estrutura móvel/desktop e PDFs, sem P0/P1/P2. Não é nota do site inteiro. As imagens anteriores claras foram capturadas durante transições; recapturas esperam fontes e animações finitas com movimento reduzido. Sem alteração do produto para ocultar o problema. [Capturas sintéticas, geometria, contraste e benchmark](evidencias/2026-11-05-resumo-estrutura/README.md).
+
+Chrome autenticado em produção confirmou rodapé b94814c, cartões do resumo e lista de Meu trabalho concordantes, navegação/Voltar, estrutura vazia e prévia oficial editável de11unidades descartada sem aplicar, marca móvel→Início e projeto abrindo com Editar abaixo do título. Abertura de11outras abas verificada sem alerta visível ou overflow em1366px; não é certificação de cada operação de gravação nessas abas.390px nos temas claro/escuro: título305px em cartão347px, sem overflow, além dos375/390/1366testados localmente. Nenhum dado de QA, equipe ou organograma foi gravado em produção.
+
+Saúde200; resumo/estrutura/credenciais/equipes retornam401`private,no-store` sem sessão; dois hosts aposentados403. Na exportação de Meu trabalho, os três comandos foram acionados e voltaram ao estado disponível, com mensagem de preparação observada no XLSX, sem alerta de erro. A API de recibo de download da ferramenta interrompeu e reiniciou a sessão: **não há verificação do arquivo salvo em produção**. PDF/DOCX/XLSX reais foram gerados e reabertos no QA do mesmo código, com duas leituras por formato; ver limites nas evidências.
+
+Chrome foi recuperado com aba própria, sem cookies exportados ou interferência em abas do usuário; outra aba própria recuperou o controle após a interrupção de download. Viewport de teste removido, tema claro restaurado e portal deixado aberto. A abertura e o provisionamento bloqueados do Bitwarden/cofre não foram contornados.
+
+Pendências continuam no [escopo completo](REQUISITOS-E-CONTINUIDADE.md): ativação de Sheets nativo por projeto/equipe, custódia externa/segredo dedicado, migração institucional, coleta do Calendar, IA real e interoperabilidade MCP. O cadastro atual de credenciais permanece indisponível sem o segredo dedicado. A sincronização mestre e uma cópia da nota de continuidade na nuvem foram relidas pelo conector; recibos e IDs privados ficam somente na Vault. Refinamentos P3 não bloqueantes dos pareceres permanecem na fila.
+

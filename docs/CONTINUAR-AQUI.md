@@ -1,6 +1,14 @@
 # Continuar Portal PROEX
 
-## Checkpoint atual · 2026-11-05 · PR35 publicada
+## Checkpoint atual · PR36 publicada · 2026-11-05
+
+Produção funcional **b94814c227b2eabf8eeaf27ffdadac1d0601b20e**, Vercel **dpl_B7zEtBnpmBczYYRfpXtyg3j8vCE7 READY**, alias oficial conferido. CI42077711627: **1.196/1.196**, tipos, Worker/Node, autenticação/MCP e legado aprovados. Chrome autenticado confirmou o resumo, navegação à lista, estrutura/prévia descartada, marca e projeto móvel, rodapé e abertura das abas. Saúde200, privadas401/no-store, aposentados403. [Recibo completo](ENTREGA-05NOV-RESUMO-E-ESTRUTURA.md#publicação-e-aceite--2026-11-05).
+
+Resumo pessoal, organograma/equipes, integridade de vínculos e PDFs refinados receberam nota9 **no escopo sintético avaliado**, semP0/P1/P2; [parecer final](REVISAO-INDEPENDENTE-05NOV-DESIGN-FINAL.md), [evidências](evidencias/2026-11-05-resumo-estrutura/README.md). Histórico negativo preservado. **Não reaplicar PR36 nem misturar os checkpoints antigos abaixo com o estado atual.** Fontes dos agentes/worktrees preservadas; não descartar trabalho não integrado.
+
+Próximos aceites: Sheets por projeto/equipe e custódia institucional; cofre dedicado/recuperação externa bloqueados pela política da ferramenta, sem segredo novo; Calendar com feed válido mas coleta Google ainda não comprovada; IA real e MCP; refinamentos P3 dos pareceres. Chrome foi recuperado por aba própria. O recibo de download em produção falhou na ferramenta; não confundir com os arquivos reais conferidos localmente ou afirmar que o arquivo salvo em produção foi reaberto. Todos os pedidos anteriores continuam em REQUISITOS-E-CONTINUIDADE e na Vault.
+
+## Histórico · PR35 (substituído pelo checkpoint da PR36)
 
 Produção funcional: **4992afac14151ac66ae3be5b4e7139c8071e21ad**, PR #35. Vercel **dpl_Azn3XQoa3LsUQS8FsdwPZxinmGaP READY**, alias oficial conferido. CI42049279531: **1.135 testes**, tipos, lint, builds Worker/Node e smoke de autenticação aprovados. Saúde200, APIs privadas401/no-store e versões aposentadas403. Script de equipe publicado idêntico ao Git. [Recibo e limites](ENTREGA-05NOV-PROVEDORES-E-RELATORIOS.md#publicação-comprovada-em-2026-11-05).
 

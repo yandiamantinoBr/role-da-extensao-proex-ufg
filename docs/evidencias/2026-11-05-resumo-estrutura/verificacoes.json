@@ -1,0 +1,718 @@
+{
+  "source": "App code d631dba; same app code as PR36 e275d8c; all images synthetic local, no real contacts, private links or secrets.",
+  "benchmark": {
+    "environment": "local compiled Node, synthetic5tasks4responsibilities12nodes; loopback only, not production load capacity",
+    "requests": 180,
+    "results": [
+      {
+        "name": "health",
+        "concurrency": 1,
+        "n": 30,
+        "p50Ms": 3.5,
+        "p95Ms": 5.4,
+        "maxMs": 6
+      },
+      {
+        "name": "health",
+        "concurrency": 5,
+        "n": 30,
+        "p50Ms": 24,
+        "p95Ms": 35.2,
+        "maxMs": 35.8
+      },
+      {
+        "name": "summary",
+        "concurrency": 1,
+        "n": 30,
+        "p50Ms": 29.1,
+        "p95Ms": 34.7,
+        "maxMs": 37.1
+      },
+      {
+        "name": "summary",
+        "concurrency": 5,
+        "n": 30,
+        "p50Ms": 143.4,
+        "p95Ms": 154,
+        "maxMs": 154
+      },
+      {
+        "name": "structure",
+        "concurrency": 1,
+        "n": 30,
+        "p50Ms": 30.6,
+        "p95Ms": 42.4,
+        "maxMs": 46.7
+      },
+      {
+        "name": "structure",
+        "concurrency": 5,
+        "n": 30,
+        "p50Ms": 143.1,
+        "p95Ms": 174.9,
+        "maxMs": 175.1
+      }
+    ]
+  },
+  "contrast": {
+    "checks": [
+      {
+        "theme": "light",
+        "width": 1366,
+        "scrollWidth": 1366,
+        "buttons": [
+          {
+            "name": "Editar Câmara de Extensão e Cultura",
+            "color": "rgb(41, 35, 51)",
+            "background": "rgb(247, 246, 250)",
+            "opacity": "1",
+            "contrast": 14.12
+          },
+          {
+            "name": "Vincular equipes: Câmara de Extensão e Cultura",
+            "color": "rgb(41, 35, 51)",
+            "background": "rgb(247, 246, 250)",
+            "opacity": "1",
+            "contrast": 14.12
+          },
+          {
+            "name": "Arquivar Câmara de Extensão e Cultura",
+            "color": "rgb(116, 108, 126)",
+            "background": "rgba(0, 0, 0, 0)",
+            "opacity": "1",
+            "contrast": 5.01
+          },
+          {
+            "name": "Editar Pró-reitoria de Extensão",
+            "color": "rgb(41, 35, 51)",
+            "background": "rgb(247, 246, 250)",
+            "opacity": "1",
+            "contrast": 14.12
+          },
+          {
+            "name": "Vincular equipes: Pró-reitoria de Extensão",
+            "color": "rgb(41, 35, 51)",
+            "background": "rgb(247, 246, 250)",
+            "opacity": "1",
+            "contrast": 14.12
+          },
+          {
+            "name": "Arquivar Pró-reitoria de Extensão",
+            "color": "rgb(116, 108, 126)",
+            "background": "rgba(0, 0, 0, 0)",
+            "opacity": "1",
+            "contrast": 5.01
+          },
+          {
+            "name": "Editar Diretoria de Extensão",
+            "color": "rgb(41, 35, 51)",
+            "background": "rgb(247, 246, 250)",
+            "opacity": "1",
+            "contrast": 14.12
+          },
+          {
+            "name": "Vincular equipes: Diretoria de Extensão",
+            "color": "rgb(41, 35, 51)",
+            "background": "rgb(247, 246, 250)",
+            "opacity": "1",
+            "contrast": 14.12
+          },
+          {
+            "name": "Arquivar Diretoria de Extensão",
+            "color": "rgb(116, 108, 126)",
+            "background": "rgba(0, 0, 0, 0)",
+            "opacity": "1",
+            "contrast": 5.01
+          },
+          {
+            "name": "Editar Coordenação de Ações de Extensão",
+            "color": "rgb(41, 35, 51)",
+            "background": "rgb(247, 246, 250)",
+            "opacity": "1",
+            "contrast": 14.12
+          },
+          {
+            "name": "Vincular equipes: Coordenação de Ações de Extensão",
+            "color": "rgb(41, 35, 51)",
+            "background": "rgb(247, 246, 250)",
+            "opacity": "1",
+            "contrast": 14.12
+          },
+          {
+            "name": "Arquivar Coordenação de Ações de Extensão",
+            "color": "rgb(116, 108, 126)",
+            "background": "rgba(0, 0, 0, 0)",
+            "opacity": "1",
+            "contrast": 5.01
+          },
+          {
+            "name": "Editar Coordenação Casa Projetos Sociais",
+            "color": "rgb(41, 35, 51)",
+            "background": "rgb(247, 246, 250)",
+            "opacity": "1",
+            "contrast": 14.12
+          },
+          {
+            "name": "Vincular equipes: Coordenação Casa Projetos Sociais",
+            "color": "rgb(41, 35, 51)",
+            "background": "rgb(247, 246, 250)",
+            "opacity": "1",
+            "contrast": 14.12
+          },
+          {
+            "name": "Arquivar Coordenação Casa Projetos Sociais",
+            "color": "rgb(116, 108, 126)",
+            "background": "rgba(0, 0, 0, 0)",
+            "opacity": "1",
+            "contrast": 5.01
+          },
+          {
+            "name": "Editar Diretoria de Articulação e Logística",
+            "color": "rgb(41, 35, 51)",
+            "background": "rgb(247, 246, 250)",
+            "opacity": "1",
+            "contrast": 14.12
+          },
+          {
+            "name": "Vincular equipes: Diretoria de Articulação e Logística",
+            "color": "rgb(41, 35, 51)",
+            "background": "rgb(247, 246, 250)",
+            "opacity": "1",
+            "contrast": 14.12
+          },
+          {
+            "name": "Arquivar Diretoria de Articulação e Logística",
+            "color": "rgb(116, 108, 126)",
+            "background": "rgba(0, 0, 0, 0)",
+            "opacity": "1",
+            "contrast": 5.01
+          },
+          {
+            "name": "Editar Coordenação de Acompanhamento de Editais",
+            "color": "rgb(41, 35, 51)",
+            "background": "rgb(247, 246, 250)",
+            "opacity": "1",
+            "contrast": 14.12
+          },
+          {
+            "name": "Vincular equipes: Coordenação de Acompanhamento de Editais",
+            "color": "rgb(41, 35, 51)",
+            "background": "rgb(247, 246, 250)",
+            "opacity": "1",
+            "contrast": 14.12
+          },
+          {
+            "name": "Arquivar Coordenação de Acompanhamento de Editais",
+            "color": "rgb(116, 108, 126)",
+            "background": "rgba(0, 0, 0, 0)",
+            "opacity": "1",
+            "contrast": 5.01
+          },
+          {
+            "name": "Editar Coordenação de Eventos Institucionais",
+            "color": "rgb(41, 35, 51)",
+            "background": "rgb(247, 246, 250)",
+            "opacity": "1",
+            "contrast": 14.12
+          },
+          {
+            "name": "Vincular equipes: Coordenação de Eventos Institucionais",
+            "color": "rgb(41, 35, 51)",
+            "background": "rgb(247, 246, 250)",
+            "opacity": "1",
+            "contrast": 14.12
+          },
+          {
+            "name": "Arquivar Coordenação de Eventos Institucionais",
+            "color": "rgb(116, 108, 126)",
+            "background": "rgba(0, 0, 0, 0)",
+            "opacity": "1",
+            "contrast": 5.01
+          },
+          {
+            "name": "Editar Coordenação Centro de Cultura e Eventos",
+            "color": "rgb(41, 35, 51)",
+            "background": "rgb(247, 246, 250)",
+            "opacity": "1",
+            "contrast": 14.12
+          },
+          {
+            "name": "Vincular equipes: Coordenação Centro de Cultura e Eventos",
+            "color": "rgb(41, 35, 51)",
+            "background": "rgb(247, 246, 250)",
+            "opacity": "1",
+            "contrast": 14.12
+          },
+          {
+            "name": "Arquivar Coordenação Centro de Cultura e Eventos",
+            "color": "rgb(116, 108, 126)",
+            "background": "rgba(0, 0, 0, 0)",
+            "opacity": "1",
+            "contrast": 5.01
+          },
+          {
+            "name": "Editar Coordenação Administrativa",
+            "color": "rgb(41, 35, 51)",
+            "background": "rgb(247, 246, 250)",
+            "opacity": "1",
+            "contrast": 14.12
+          },
+          {
+            "name": "Vincular equipes: Coordenação Administrativa",
+            "color": "rgb(41, 35, 51)",
+            "background": "rgb(247, 246, 250)",
+            "opacity": "1",
+            "contrast": 14.12
+          },
+          {
+            "name": "Arquivar Coordenação Administrativa",
+            "color": "rgb(116, 108, 126)",
+            "background": "rgba(0, 0, 0, 0)",
+            "opacity": "1",
+            "contrast": 5.01
+          },
+          {
+            "name": "Editar Revista UFG",
+            "color": "rgb(41, 35, 51)",
+            "background": "rgb(247, 246, 250)",
+            "opacity": "1",
+            "contrast": 14.12
+          },
+          {
+            "name": "Vincular equipes: Revista UFG",
+            "color": "rgb(41, 35, 51)",
+            "background": "rgb(247, 246, 250)",
+            "opacity": "1",
+            "contrast": 14.12
+          },
+          {
+            "name": "Arquivar Revista UFG",
+            "color": "rgb(116, 108, 126)",
+            "background": "rgba(0, 0, 0, 0)",
+            "opacity": "1",
+            "contrast": 5.01
+          },
+          {
+            "name": "Editar Coordenação sintética de acompanhamento das atividades e dos materiais institucionais em eventos, projetos e ações de extensão da universidade",
+            "color": "rgb(41, 35, 51)",
+            "background": "rgb(247, 246, 250)",
+            "opacity": "1",
+            "contrast": 14.12
+          },
+          {
+            "name": "Vincular equipes: Coordenação sintética de acompanhamento das atividades e dos materiais institucionais em eventos, projetos e ações de extensão da universidade",
+            "color": "rgb(41, 35, 51)",
+            "background": "rgb(247, 246, 250)",
+            "opacity": "1",
+            "contrast": 14.12
+          },
+          {
+            "name": "Arquivar Coordenação sintética de acompanhamento das atividades e dos materiais institucionais em eventos, projetos e ações de extensão da universidade",
+            "color": "rgb(116, 108, 126)",
+            "background": "rgba(0, 0, 0, 0)",
+            "opacity": "1",
+            "contrast": 5.01
+          },
+          {
+            "name": "Baixar estrutura institucional em PDF",
+            "color": "rgb(59, 23, 83)",
+            "background": "rgb(243, 238, 247)",
+            "opacity": "1",
+            "contrast": 12.83
+          },
+          {
+            "name": "Baixar estrutura institucional em XLSX",
+            "color": "rgb(59, 23, 83)",
+            "background": "rgb(243, 238, 247)",
+            "opacity": "1",
+            "contrast": 12.83
+          },
+          {
+            "name": "Baixar estrutura institucional em DOCX",
+            "color": "rgb(59, 23, 83)",
+            "background": "rgb(243, 238, 247)",
+            "opacity": "1",
+            "contrast": 12.83
+          },
+          {
+            "name": "Sugestão ou problema",
+            "color": "rgb(59, 23, 83)",
+            "background": "rgb(243, 238, 247)",
+            "opacity": "1",
+            "contrast": 12.83
+          }
+        ]
+      },
+      {
+        "theme": "dark",
+        "width": 1366,
+        "scrollWidth": 1366,
+        "buttons": [
+          {
+            "name": "Editar Câmara de Extensão e Cultura",
+            "color": "rgb(242, 235, 248)",
+            "background": "rgb(23, 17, 31)",
+            "opacity": "1",
+            "contrast": 15.85
+          },
+          {
+            "name": "Vincular equipes: Câmara de Extensão e Cultura",
+            "color": "rgb(242, 235, 248)",
+            "background": "rgb(23, 17, 31)",
+            "opacity": "1",
+            "contrast": 15.85
+          },
+          {
+            "name": "Arquivar Câmara de Extensão e Cultura",
+            "color": "rgb(185, 168, 199)",
+            "background": "rgba(0, 0, 0, 0)",
+            "opacity": "1",
+            "contrast": 7.46
+          },
+          {
+            "name": "Editar Pró-reitoria de Extensão",
+            "color": "rgb(242, 235, 248)",
+            "background": "rgb(23, 17, 31)",
+            "opacity": "1",
+            "contrast": 15.85
+          },
+          {
+            "name": "Vincular equipes: Pró-reitoria de Extensão",
+            "color": "rgb(242, 235, 248)",
+            "background": "rgb(23, 17, 31)",
+            "opacity": "1",
+            "contrast": 15.85
+          },
+          {
+            "name": "Arquivar Pró-reitoria de Extensão",
+            "color": "rgb(185, 168, 199)",
+            "background": "rgba(0, 0, 0, 0)",
+            "opacity": "1",
+            "contrast": 7.46
+          },
+          {
+            "name": "Editar Diretoria de Extensão",
+            "color": "rgb(242, 235, 248)",
+            "background": "rgb(23, 17, 31)",
+            "opacity": "1",
+            "contrast": 15.85
+          },
+          {
+            "name": "Vincular equipes: Diretoria de Extensão",
+            "color": "rgb(242, 235, 248)",
+            "background": "rgb(23, 17, 31)",
+            "opacity": "1",
+            "contrast": 15.85
+          },
+          {
+            "name": "Arquivar Diretoria de Extensão",
+            "color": "rgb(185, 168, 199)",
+            "background": "rgba(0, 0, 0, 0)",
+            "opacity": "1",
+            "contrast": 7.46
+          },
+          {
+            "name": "Editar Coordenação de Ações de Extensão",
+            "color": "rgb(242, 235, 248)",
+            "background": "rgb(23, 17, 31)",
+            "opacity": "1",
+            "contrast": 15.85
+          },
+          {
+            "name": "Vincular equipes: Coordenação de Ações de Extensão",
+            "color": "rgb(242, 235, 248)",
+            "background": "rgb(23, 17, 31)",
+            "opacity": "1",
+            "contrast": 15.85
+          },
+          {
+            "name": "Arquivar Coordenação de Ações de Extensão",
+            "color": "rgb(185, 168, 199)",
+            "background": "rgba(0, 0, 0, 0)",
+            "opacity": "1",
+            "contrast": 7.46
+          },
+          {
+            "name": "Editar Coordenação Casa Projetos Sociais",
+            "color": "rgb(242, 235, 248)",
+            "background": "rgb(23, 17, 31)",
+            "opacity": "1",
+            "contrast": 15.85
+          },
+          {
+            "name": "Vincular equipes: Coordenação Casa Projetos Sociais",
+            "color": "rgb(242, 235, 248)",
+            "background": "rgb(23, 17, 31)",
+            "opacity": "1",
+            "contrast": 15.85
+          },
+          {
+            "name": "Arquivar Coordenação Casa Projetos Sociais",
+            "color": "rgb(185, 168, 199)",
+            "background": "rgba(0, 0, 0, 0)",
+            "opacity": "1",
+            "contrast": 7.46
+          },
+          {
+            "name": "Editar Diretoria de Articulação e Logística",
+            "color": "rgb(242, 235, 248)",
+            "background": "rgb(23, 17, 31)",
+            "opacity": "1",
+            "contrast": 15.85
+          },
+          {
+            "name": "Vincular equipes: Diretoria de Articulação e Logística",
+            "color": "rgb(242, 235, 248)",
+            "background": "rgb(23, 17, 31)",
+            "opacity": "1",
+            "contrast": 15.85
+          },
+          {
+            "name": "Arquivar Diretoria de Articulação e Logística",
+            "color": "rgb(185, 168, 199)",
+            "background": "rgba(0, 0, 0, 0)",
+            "opacity": "1",
+            "contrast": 7.46
+          },
+          {
+            "name": "Editar Coordenação de Acompanhamento de Editais",
+            "color": "rgb(242, 235, 248)",
+            "background": "rgb(23, 17, 31)",
+            "opacity": "1",
+            "contrast": 15.85
+          },
+          {
+            "name": "Vincular equipes: Coordenação de Acompanhamento de Editais",
+            "color": "rgb(242, 235, 248)",
+            "background": "rgb(23, 17, 31)",
+            "opacity": "1",
+            "contrast": 15.85
+          },
+          {
+            "name": "Arquivar Coordenação de Acompanhamento de Editais",
+            "color": "rgb(185, 168, 199)",
+            "background": "rgba(0, 0, 0, 0)",
+            "opacity": "1",
+            "contrast": 7.46
+          },
+          {
+            "name": "Editar Coordenação de Eventos Institucionais",
+            "color": "rgb(242, 235, 248)",
+            "background": "rgb(23, 17, 31)",
+            "opacity": "1",
+            "contrast": 15.85
+          },
+          {
+            "name": "Vincular equipes: Coordenação de Eventos Institucionais",
+            "color": "rgb(242, 235, 248)",
+            "background": "rgb(23, 17, 31)",
+            "opacity": "1",
+            "contrast": 15.85
+          },
+          {
+            "name": "Arquivar Coordenação de Eventos Institucionais",
+            "color": "rgb(185, 168, 199)",
+            "background": "rgba(0, 0, 0, 0)",
+            "opacity": "1",
+            "contrast": 7.46
+          },
+          {
+            "name": "Editar Coordenação Centro de Cultura e Eventos",
+            "color": "rgb(242, 235, 248)",
+            "background": "rgb(23, 17, 31)",
+            "opacity": "1",
+            "contrast": 15.85
+          },
+          {
+            "name": "Vincular equipes: Coordenação Centro de Cultura e Eventos",
+            "color": "rgb(242, 235, 248)",
+            "background": "rgb(23, 17, 31)",
+            "opacity": "1",
+            "contrast": 15.85
+          },
+          {
+            "name": "Arquivar Coordenação Centro de Cultura e Eventos",
+            "color": "rgb(185, 168, 199)",
+            "background": "rgba(0, 0, 0, 0)",
+            "opacity": "1",
+            "contrast": 7.46
+          },
+          {
+            "name": "Editar Coordenação Administrativa",
+            "color": "rgb(242, 235, 248)",
+            "background": "rgb(23, 17, 31)",
+            "opacity": "1",
+            "contrast": 15.85
+          },
+          {
+            "name": "Vincular equipes: Coordenação Administrativa",
+            "color": "rgb(242, 235, 248)",
+            "background": "rgb(23, 17, 31)",
+            "opacity": "1",
+            "contrast": 15.85
+          },
+          {
+            "name": "Arquivar Coordenação Administrativa",
+            "color": "rgb(185, 168, 199)",
+            "background": "rgba(0, 0, 0, 0)",
+            "opacity": "1",
+            "contrast": 7.46
+          },
+          {
+            "name": "Editar Revista UFG",
+            "color": "rgb(242, 235, 248)",
+            "background": "rgb(23, 17, 31)",
+            "opacity": "1",
+            "contrast": 15.85
+          },
+          {
+            "name": "Vincular equipes: Revista UFG",
+            "color": "rgb(242, 235, 248)",
+            "background": "rgb(23, 17, 31)",
+            "opacity": "1",
+            "contrast": 15.85
+          },
+          {
+            "name": "Arquivar Revista UFG",
+            "color": "rgb(185, 168, 199)",
+            "background": "rgba(0, 0, 0, 0)",
+            "opacity": "1",
+            "contrast": 7.46
+          },
+          {
+            "name": "Editar Coordenação sintética de acompanhamento das atividades e dos materiais institucionais em eventos, projetos e ações de extensão da universidade",
+            "color": "rgb(242, 235, 248)",
+            "background": "rgb(23, 17, 31)",
+            "opacity": "1",
+            "contrast": 15.85
+          },
+          {
+            "name": "Vincular equipes: Coordenação sintética de acompanhamento das atividades e dos materiais institucionais em eventos, projetos e ações de extensão da universidade",
+            "color": "rgb(242, 235, 248)",
+            "background": "rgb(23, 17, 31)",
+            "opacity": "1",
+            "contrast": 15.85
+          },
+          {
+            "name": "Arquivar Coordenação sintética de acompanhamento das atividades e dos materiais institucionais em eventos, projetos e ações de extensão da universidade",
+            "color": "rgb(185, 168, 199)",
+            "background": "rgba(0, 0, 0, 0)",
+            "opacity": "1",
+            "contrast": 7.46
+          },
+          {
+            "name": "Baixar estrutura institucional em PDF",
+            "color": "rgb(230, 201, 246)",
+            "background": "rgb(52, 37, 63)",
+            "opacity": "1",
+            "contrast": 9.48
+          },
+          {
+            "name": "Baixar estrutura institucional em XLSX",
+            "color": "rgb(230, 201, 246)",
+            "background": "rgb(52, 37, 63)",
+            "opacity": "1",
+            "contrast": 9.48
+          },
+          {
+            "name": "Baixar estrutura institucional em DOCX",
+            "color": "rgb(230, 201, 246)",
+            "background": "rgb(52, 37, 63)",
+            "opacity": "1",
+            "contrast": 9.48
+          },
+          {
+            "name": "Sugestão ou problema",
+            "color": "rgb(230, 201, 246)",
+            "background": "rgb(52, 37, 63)",
+            "opacity": "1",
+            "contrast": 9.48
+          }
+        ]
+      }
+    ]
+  },
+  "layout": {
+    "checks": [
+      {
+        "width": 390,
+        "theme": "light",
+        "sourceCollapsed": true,
+        "firstNodeRelativeToPanel": 558.46875
+      },
+      {
+        "width": 390,
+        "theme": "dark",
+        "sourceCollapsed": true,
+        "firstNodeRelativeToPanel": 558.46875
+      },
+      {
+        "width": 1366,
+        "theme": "light",
+        "sourceCollapsed": true,
+        "firstNodeRelativeToPanel": 450.1875
+      },
+      {
+        "width": 1366,
+        "theme": "dark",
+        "sourceCollapsed": true,
+        "firstNodeRelativeToPanel": 450.1875
+      },
+      {
+        "viewport": 375,
+        "documentWidth": 375,
+        "titleWidth": 305,
+        "cardWidth": 347,
+        "titleBottom": 223.671875,
+        "editTop": 277.0625,
+        "theme": "light"
+      },
+      {
+        "viewport": 375,
+        "documentWidth": 375,
+        "titleWidth": 305,
+        "cardWidth": 347,
+        "titleBottom": 223.671875,
+        "editTop": 277.0625,
+        "theme": "dark"
+      },
+      {
+        "viewport": 390,
+        "documentWidth": 390,
+        "titleWidth": 320,
+        "cardWidth": 362,
+        "titleBottom": 223.671875,
+        "editTop": 277.0625,
+        "theme": "light"
+      },
+      {
+        "viewport": 390,
+        "documentWidth": 390,
+        "titleWidth": 320,
+        "cardWidth": 362,
+        "titleBottom": 223.671875,
+        "editTop": 277.0625,
+        "theme": "dark"
+      },
+      {
+        "viewport": 1366,
+        "documentWidth": 1366,
+        "titleWidth": 826.984375,
+        "cardWidth": 1034,
+        "titleBottom": 211.75,
+        "editTop": 119.75,
+        "theme": "light"
+      },
+      {
+        "viewport": 1366,
+        "documentWidth": 1366,
+        "titleWidth": 826.984375,
+        "cardWidth": 1034,
+        "titleBottom": 211.75,
+        "editTop": 119.75,
+        "theme": "dark"
+      }
+    ],
+    "errors": []
+  }
+}

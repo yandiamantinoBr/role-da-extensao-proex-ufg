@@ -1,5 +1,7 @@
 # Estrutura institucional e equipes
 
+Estado2026-11-05: entregue na PR36, mergeb94814c, CI42077711627 com1196testes e dois alvos aprovados, Chrome autenticado conferido. Pareceres e limites atuais em `docs/ENTREGA-05NOV-RESUMO-E-ESTRUTURA.md` na raiz. Os checkpoints de implementação abaixo são históricos; o escopo completo continua aberto para ativações externas e refinamentosP3.
+
 A estrutura formal descreve unidades e suas relações. Equipes organizam o trabalho; pessoas e permissões continuam nos mecanismos existentes. Vincular uma equipe a uma unidade não concede acesso a projetos, contas, documentos, planilhas ou chaves de IA. Nenhuma pessoa é cadastrada pelo modelo.
 
 ## Fonte e aplicação

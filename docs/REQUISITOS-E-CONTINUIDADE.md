@@ -90,3 +90,15 @@ Yan forneceu duas capturas e apontou toolbar `flex flex-wrap gap-2` colada aos f
 R24 e sino agrupado foram publicados pela PR #16, funcional 737a14b, CI 827 portal + 33 jogo e Vercel READY no mesmo SHA. A entrega V15 documenta CUA real, Sheets com 35 tabelas com releitura, modelo com 86 e backup cifrado restaurado em RAM. O parecer independente 9,1/10 vale para o incremento observado, sem certificação WCAG/zoom 200%. A matriz continua a separar implementação, configuração e decisões institucionais.
 
 O conector MCP PROEX retornou 27 tabelas e histórico de 25/10 na verificação anterior, divergindo do canônico de 35 tabelas. Revalidar origem e esquema antes de usar essa conexão para alterações. Consulte o checkpoint atual para a operação de R21. [Continuidade](CONTINUAR-AQUI.md).
+
+
+## Continuidade após PR36 — 2026-11-05
+
+Entregues resumo visual pessoal, navegação/histórico entre recortes, estrutura formal separada de ACL, auditoria de vínculos e documentos institucionais refinados. CI1196e revisão independente9no escopo; não encerrar o plano inteiro.
+
+- Priorizar ativação real do arquivo nativo por projeto/equipe. O arquivo institucional do CONPEEX continua referência; não é canal sincronizado só por estar vinculado. Preservar a mestre, controles de conflito e acesso mínimo ao dividir. A mestre verifica35projeções, não todas as104tabelas privadas.
+- Resolver custódia e segredo dedicado sem ler chaves ou desativar proteções; o provedor configurável não está operacional enquanto a UI informar indisponibilidade. Catálogo atual não significa suporte irrestrito a qualquer modelo/endpoint.
+- Confirmar coleta pelo Calendar existente antes de duplicar/revogar agenda. O feed válido já contém o evento oficial; link privado e IDs ficam na Vault.
+- Conciliar dados conhecidos do CONPEEX: período/local ainda ausentes na ficha, embora a atividade oficial na linha do tempo tenha as datas e o local. Não inventar horário para campos datetime; usar a fonte e um modelo explícito para datas sem horário. Materiais ainda não cadastrados nesse projeto, sem inventar contagens.
+- Tratar osP3 dos pareceres: rotular melhor superior/relação no PDF, alinhar família do cabeçalho, feedback de Cancelar perto da edição/quieto para leitor de tela, texto de sessão e duplicação de escopo, escudo junto à ajuda, base/contraste dos botões e maior concisão móvel.
+- Encerrar somente os aceites comprovados. Downloads em produção foram acionados mas não tiveram arquivo salvo/reaberto confirmado pela ferramenta; arquivos reais do QA foram conferidos. Nenhuma pessoa/equipe/modelo real foi cadastrado pelo teste.
