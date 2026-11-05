@@ -1,0 +1,8 @@
+ .panel {border:1px solid var(--line);border-radius:14px;padding:0 14px;background:var(--surface);color:var(--ink);font-size:14px;min-width:0;overflow-wrap:anywhere;}
+.panel summary {color:var(--brand-ink);line-height:1.5;}
+.panel :is(select,textarea) {box-sizing:border-box;min-width:0;max-width:100%;border:1px solid var(--control-border);border-radius:10px;background:var(--canvas);color:var(--ink);font:inherit;font-size:16px;padding:10px 12px;}
+.panel label {font-weight:600;}
+.panel :is(button,summary,input,select,textarea):focus-visible {outline:3px solid var(--focus);outline-offset:2px;}
+.notice {display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--surface-soft);color:var(--ink);}
+.notice[data-tone=error] {border-color:var(--control-border);color:var(--ink);}
+@media(prefers-reduced-motion:reduce){.panel * {scroll-behavior:auto;}}

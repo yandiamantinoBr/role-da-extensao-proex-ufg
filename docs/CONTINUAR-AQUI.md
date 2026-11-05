@@ -1,5 +1,10 @@
 # Continuar Portal PROEX
 
+## Frente em implementação: Rolê no CONPEEX (05/11)
+
+Worktree `role-conpeex-contexto-05nov`, branch `codex/role-conpeex-contexto-05nov`, base00be420. Planilha original preservada e vinculada ao Rolê, referência contextual mantida no CONPEEX; IDs privados/recibos na Vault. [Fontes e modelo operacional](CONPEEX-2026-OPERACAO-E-FONTES.md). Código local: planejamento de sessões/anfitrião,PDF/XLSX/DOCX, transferência preservadora de demandas simples (0030/0031),108tabelas no modelo.1.234testes completos passaram; mais1teste de corrida também passou; tipos/lint/builds/smoke Worker passaram. Ensaio navegador e revisão final em andamento. **Não transferir dados reais nem afirmar nova publicação até concluir gates e confirmar deploy.** As nove demandas reais ainda estão no CONPEEX; contagens continuam no mesmo Sheets.
+
+
 ## Checkpoint atual · PR36 publicada · 2026-11-05
 
 Produção funcional **b94814c227b2eabf8eeaf27ffdadac1d0601b20e**, Vercel **dpl_B7zEtBnpmBczYYRfpXtyg3j8vCE7 READY**, alias oficial conferido. CI42077711627: **1.196/1.196**, tipos, Worker/Node, autenticação/MCP e legado aprovados. Chrome autenticado confirmou o resumo, navegação à lista, estrutura/prévia descartada, marca e projeto móvel, rodapé e abertura das abas. Saúde200, privadas401/no-store, aposentados403. [Recibo completo](ENTREGA-05NOV-RESUMO-E-ESTRUTURA.md#publicação-e-aceite--2026-11-05).

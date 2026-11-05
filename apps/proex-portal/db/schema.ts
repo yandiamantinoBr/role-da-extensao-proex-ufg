@@ -9,3 +9,5 @@ export * from './project-sheet-schema';
 export * from './mcp-schema';
 export * from './team-sheet-schema';
 export * from './institutional-structure-schema';
+export * from './campaign-planning-schema';
+export * from './followup-transfer-schema';

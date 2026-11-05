@@ -8,6 +8,8 @@ const PROJECT_MARK_PATHS = {
 
 type ProjectMark = keyof typeof PROJECT_MARK_PATHS;
 export type ReportPdfPresentation = {
+  /** Branded multi-row reports opt into a compact table; project summary defaults stay unchanged. */
+  layout?: 'table' | 'records';
   projectName?: string;
   projectBrand?: ProjectMark;
   metrics?: readonly { label: string; value: number | null; detail?: string }[];
@@ -91,7 +93,7 @@ export async function toPdf(
   const orange = rgb(1, 170 / 255, 61 / 255), white = rgb(1, 1, 1);
   const muted = rgb(.34, .29, .38), border = rgb(.86, .82, .89), tint = rgb(.96, .94, .97);
   const wash = rgb(.98, .97, .985);
-  const projectSheet = Boolean(projectName && data.length === 1);
+  const projectSheet = Boolean(projectName && data.length === 1 && options?.presentation?.layout !== 'table');
   const mainTitle = projectName || title;
   let page: PDFPage;
   let y = 0;
@@ -149,7 +151,7 @@ export async function toPdf(
   pdf.setSubject('Relatório do recorte autorizado no Portal PROEX');
   const firstPage = addPage();
 
-  paint(projectName ? 'FICHA DO PROJETO' : 'RELATÓRIO INSTITUCIONAL', margin, y, 10, purple, bold);
+  paint(projectName ? options?.presentation?.layout === 'table' ? 'RELATÓRIO DO PROJETO' : 'FICHA DO PROJETO' : 'RELATÓRIO INSTITUCIONAL', margin, y, 10, purple, bold);
   y -= 21;
   const heroTop = y, heroWidth = projectMark ? usable - 146 : usable;
   if (projectMark) {
@@ -251,7 +253,7 @@ export async function toPdf(
   if (!data.length) {
     heading('Registros do relatório');
     paint('Nenhum registro corresponde ao recorte selecionado.', margin, y, 10, muted);
-  } else if (tableColumns.length <= 6 && !projectName) {
+  } else if (tableColumns.length <= 6 && (!projectName || options?.presentation?.layout === 'table')) {
     const weights = requestedWeights?[...requestedWeights]:tableColumns.map(column => column.numeric ? .8 : 1.15);
     const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
     const widths = weights.map(weight => weight * usable / totalWeight);
