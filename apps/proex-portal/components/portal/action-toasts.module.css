@@ -3,6 +3,11 @@
   padding-inline-end: 64px;
 }
 
+/* Queued cards must not leave invisible buttons in keyboard navigation. */
+.toast[data-sonner-toast][data-visible='false'] {
+  visibility: hidden;
+}
+
 .toast[data-sonner-toast][data-styled='true'] [data-close-button] {
   width: 44px;
   height: 44px;
