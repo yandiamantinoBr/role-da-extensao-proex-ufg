@@ -112,3 +112,8 @@ Backupnovo foiensaiadoOFFLINE comconteúdo do backuprealV10/snapshot97, converti
 ## 2026-11-05 - Recibo PR34
 
 Merge bd36d084ce475c6f43fc765b2f36ebded6594193, Vercel dpl_HfBiVwe913M2kuWawJc2jNjc1y3o READY e alias oficial conferidos. CI42037080311 aprovado,1072 testes na revisão funcional; saúde200/rotas privadas401/no-store/aposentados403. Chrome não anexado; UI de produção dessa revisão ainda não reinspecionada. [Entrega](ENTREGA-05NOV-IA-E-EQUIPES.md). No remoto, apenas main após fetch/prune; branches antigas já haviam sido removidas no GitHub. OpenAI27, Meu trabalho3formatos e Sheets equipe28 seguem isolados na próxima composição.
+
+
+## 2026-11-05 · Recibo PR35
+
+PR35 mesclada em4992afac14151ac66ae3be5b4e7139c8071e21ad; Vercel dpl_Azn3XQoa3LsUQS8FsdwPZxinmGaP READY e domínio oficial conferidos. CI42049279531 aprovado:1.135 testes, tipos, lint, Worker/Node e autenticação. Saúde200, APIs401/no-store, scripts publicados iguais ao Git e dois deploys aposentados403. [Entrega e limitações](ENTREGA-05NOV-PROVEDORES-E-RELATORIOS.md). Chrome restaurado, mas captura nativa mostrou janela diferente: inspeção autenticada ainda pendente. Nenhuma chave criada nem permissão Google ampliada. Estrutura0029 e resumo pessoal seguem em composição isolada; limite de uso interrompeu os subagentes e suas alterações foram preservadas pelo coordenador.
