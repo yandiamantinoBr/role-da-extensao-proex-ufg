@@ -1,4 +1,5 @@
 import type { ModuleId } from '../components/portal/navigation-model';
+import { MY_WORK_STATUSES, type MyWorkStatus } from './my-work/contracts';
 import { workRecordFromParams, writeWorkRecordParams, type WorkRecordSelection } from './work-navigation';
 
 export type PortalLocation = {
@@ -9,6 +10,8 @@ export type PortalLocation = {
     demand: string;
     record: WorkRecordSelection | null;
     report: 'projects' | 'demands';
+    workStatus?: MyWorkStatus;
+    organization?: string;
 };
 
 type Scope = {
@@ -17,6 +20,7 @@ type Scope = {
     areas: readonly string[];
     canSelectProject: (project: string, unit: string, area: string) => boolean;
     canOpenRecord: (record: WorkRecordSelection) => boolean;
+    canSelectOrganization?: (organization: string, project: string) => boolean;
 };
 
 export function readPortalLocation(params: URLSearchParams, scope: Scope): PortalLocation {
@@ -33,12 +37,16 @@ export function readPortalLocation(params: URLSearchParams, scope: Scope): Porta
     const area = tab !== 'my-work' && tab !== 'calendar' && scope.areas.includes(areaId) ? areaId : '';
     const projectId = params.get('project') || '';
     const project = projectId && scope.canSelectProject(projectId, unit, area) ? projectId : '';
+    const organizationId = params.get('organizationId') || '';
+    const organization = (tab === 'my-work' || tab === 'overview') && organizationId && scope.canSelectOrganization?.(organizationId, project) ? organizationId : '';
     const record = workRecordFromParams(params);
     return {
         tab, project, unit, area,
         demand: tab === 'demands' ? demand : '',
         record: record?.module === tab && record.projectId === project && scope.canOpenRecord(record) ? record : null,
         report: tab === 'reports' && params.get('report') === 'demands' ? 'demands' : 'projects',
+        workStatus: tab === 'my-work' ? MY_WORK_STATUSES.find(value => value === params.get('workStatus')) ?? 'pending' : 'pending',
+        organization,
     };
 }
 
@@ -50,6 +58,8 @@ export function writePortalLocation(params: URLSearchParams, route: PortalLocati
         area: route.area,
         demandId: route.tab === 'demands' ? route.demand : '',
         report: route.tab === 'reports' && route.report === 'demands' ? 'demands' : '',
+        workStatus: route.tab === 'my-work' && route.workStatus && MY_WORK_STATUSES.includes(route.workStatus) && route.workStatus !== 'pending' ? route.workStatus : '',
+        organizationId: route.tab === 'my-work' || route.tab === 'overview' ? route.organization || '' : '',
     })) {
         if (value) params.set(key, value);
         else params.delete(key);
