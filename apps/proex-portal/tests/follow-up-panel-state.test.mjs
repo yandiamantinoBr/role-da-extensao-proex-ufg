@@ -302,3 +302,16 @@ test('opening a dated row from the timeline uses the existing selection flow and
   assert.equal(timelineButton(),undefined);
  }finally{h.dispose();}
 });
+
+
+test('the demand source uses the actual authorized project identity and opens its detail route',async()=>{
+ const h=harness();try{
+  await ready(h);h.button('Task A').props.onClick();h.render();
+  h.reply(h.pending('detail'),detail());await tick();h.render();
+  const link=h.find('a',node=>node.props.href==='/?module=projects&project=project-a&detailProject=project-a');
+  assert.ok(link);assert.match(text(link),/Project A/);assert.match(text(link),/Abrir projeto de origem/);
+  h.render({initialTaskId:'task-b'});h.timers();h.render();
+  h.reply(h.pending('detail'),{...detail(),task:{...task('task-b'),project_id:null,project_name:''}});await tick();h.render();
+  assert.equal(h.find('a',node=>node.props.href?.includes('detailProject=')),undefined);
+ }finally{h.dispose();}
+});

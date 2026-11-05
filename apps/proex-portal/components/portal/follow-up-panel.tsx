@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { ChartColumn, ClipboardCheck, Pencil, Plus, RefreshCw, Share2, Users, X } from 'lucide-react';
+import { ArrowUpRight, FolderKanban, ChartColumn, ClipboardCheck, Pencil, Plus, RefreshCw, Share2, Users, X } from 'lucide-react';
 import { type Catalog, type Task, type Checklist, type Team, stateLabels, priorityLabels, TASK_STATES, TASK_PRIORITIES, manualShareUrl } from '@/lib/follow-up/contracts';
 import { followupApi, followupChanged } from './follow-up-api';
 import { DraftNotice, useFormDraft } from './use-form-draft';
@@ -246,7 +246,7 @@ export default function FollowUpPanel({defaultProjectId='',defaultOrganizationId
   <header className="flex flex-wrap items-start justify-between gap-3">
    <div className="min-w-0 flex-1">
     <h3 ref={detailElement} tabIndex={-1} className={'text-xl font-bold [overflow-wrap:anywhere] '+focusAnchor}>{currentTask.title}</h3>
-    <p className="mt-1 text-sm text-[var(--text-secondary)] [overflow-wrap:anywhere]">{currentTask.organization_name}{currentTask.project_name&&` · ${currentTask.project_name}`}</p>
+    <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 text-sm text-[var(--text-secondary)]"><span>{currentTask.organization_name}</span>{currentTask.project_name&&(currentTask.project_id&&catalog.projects.some(project=>project.id===currentTask.project_id)?<a className="p-text-link inline-flex min-h-11 max-w-full items-center gap-2 [overflow-wrap:anywhere]" href={`/?module=projects&project=${encodeURIComponent(currentTask.project_id)}&detailProject=${encodeURIComponent(currentTask.project_id)}`}><FolderKanban size={16} className="shrink-0" aria-hidden="true"/>{currentTask.project_name}<ArrowUpRight size={15} className="shrink-0" aria-hidden="true"/><span className="sr-only"> · Abrir projeto de origem</span></a>:<span>{currentTask.project_name}</span>)}</div>
    </div>
    <button className={button} disabled={busy} type="button" onClick={closeTask}><X size={16} aria-hidden="true"/>Fechar</button>
   </header>

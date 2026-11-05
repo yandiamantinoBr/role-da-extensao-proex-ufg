@@ -138,3 +138,28 @@
   .heroKpis > div { min-width: 0; padding: 10px; overflow-wrap: anywhere; }
   .heroKpis span svg { flex-shrink: 0; }
 }
+
+/* Personal project shortcuts are deliberately smaller than catalogue cards. */
+.pinnedSection{display:grid;gap:10px;min-width:0;margin-bottom:20px}
+.pinnedHeading{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.pinnedHeading h3{display:flex;align-items:center;gap:8px;margin:0;font-size:15px;color:var(--ink)}
+.pinnedHeading small,.pinnedSection>p{margin:0;color:var(--text-secondary);font-size:12px;line-height:1.6}
+.pinnedGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:10px}
+.pinnedProject{display:flex;align-items:center;min-width:0;border:1px solid var(--control-border);border-radius:12px;background:var(--surface-soft);padding:3px}
+.pinnedProject>button:first-child{display:flex;align-items:center;gap:8px;min-width:0;min-height:44px;flex:1;padding:8px;border:0;background:transparent;color:var(--brand-ink);text-align:left;cursor:pointer;font-size:13px;font-weight:650;line-height:1.4}
+.pinnedProject>button:first-child span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
+.pinnedProject svg{flex-shrink:0}
+.pinButton{display:inline-flex;align-items:center;justify-content:center;flex:0 0 44px;width:44px;min-height:44px;padding:9px;border:1px solid transparent;border-radius:10px;background:transparent;color:var(--text-secondary);cursor:pointer}
+.pinButton:hover,.pinButton[aria-pressed=true]{border-color:var(--control-border);background:var(--surface-soft);color:var(--brand-ink)}
+.pinnedProject .pinButton:hover{background:var(--surface)}
+.pinButton:focus-visible,.pinnedProject button:focus-visible,.titleButton:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.pinFeedback:empty{display:none}
+.card{gap:12px;padding:18px!important}
+.cardTop{gap:10px;flex-wrap:wrap}.cardTop>:global(.p-icon-tile){width:40px;height:40px;flex-shrink:0;border-radius:11px}
+.cardTop>:global(.p-badge){margin-left:auto}.cardTop .pinButton{margin-left:-4px}
+.identity{gap:5px}.identity h3{font-size:18px;line-height:1.35}
+.titleButton{display:block;min-height:44px;text-align:left;padding:0;background:transparent;border:0;color:var(--ink);font:inherit;font-weight:700;cursor:pointer;overflow-wrap:anywhere;border-radius:5px}
+.titleButton:hover{color:var(--brand-ink);text-decoration:underline;text-underline-offset:3px}
+.description{line-height:1.65;-webkit-line-clamp:2}.metadata{gap:6px}.badges{gap:8px}
+.cardFooter{gap:6px;padding-top:10px}.cardFooter>a{min-height:36px;align-items:center}.cardActions>button{min-height:44px}
+@container projects (max-width:620px){.card{padding:17px!important}.identity h3{font-size:18px}.pinnedHeading small{font-size:11px}.pinnedProject>button:first-child{padding-block:8px}}
