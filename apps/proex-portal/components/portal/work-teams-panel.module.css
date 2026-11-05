@@ -15,6 +15,7 @@
 .search input { padding-left: 35px; }
 .help { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 4px 6px; color: var(--muted); font-size: 12px; line-height: 1.6; }
 .help svg { flex-shrink: 0; margin-top: 2px; }
+.help > span { flex: 1; min-width: 0; }
 .help a { color: var(--brand-ink); text-decoration: underline; text-underline-offset: 3px; }
 .viewBar { font-size: 13px; color: var(--muted); }
 .viewBar button[aria-pressed=true] { border-color: var(--brand-ink); background: var(--surface-soft); color: var(--brand-ink); }
