@@ -1,0 +1,19 @@
+import { check, index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { sql } from 'drizzle-orm';
+import { members, portalUsers, projects } from './base-schema';
+import { followupTeams, followupTeamMembers } from './follow-up-schema';
+
+export const teamSheetConnections = sqliteTable('team_sheet_connections', {
+ id:text('id').primaryKey().notNull(),teamId:text('team_id').notNull().references(()=>followupTeams.id),projectId:text('project_id').notNull().references(()=>projects.id),
+ spreadsheetId:text('spreadsheet_id').notNull(),label:text('label').notNull(),enabled:integer('enabled').notNull().default(1),version:integer('version').notNull().default(1),
+ sheetGid:integer('sheet_gid'),tabsVersion:integer('tabs_version').notNull().default(0),createdBy:text('created_by').notNull(),createdAt:text('created_at').notNull(),updatedAt:text('updated_at').notNull(),
+},t=>[uniqueIndex('team_sheet_scope_unique').on(t.teamId,t.projectId),uniqueIndex('team_sheet_file_unique').on(t.spreadsheetId),check('team_sheet_enabled',sql`${t.enabled} IN (0,1)`),check('team_sheet_version',sql`${t.version}>0`),check('team_sheet_gid',sql`${t.sheetGid} IS NULL OR ${t.sheetGid} BETWEEN 0 AND 2147483647`),check('team_sheet_tabs_version',sql`${t.tabsVersion}>=0`),check('team_sheet_label',sql`length(${t.label}) BETWEEN 1 AND 100`),check('team_sheet_file_id',sql`length(${t.spreadsheetId}) BETWEEN 10 AND 200 AND ${t.spreadsheetId} NOT GLOB '*[^A-Za-z0-9_-]*'`)]);
+export const teamSheetTokens = sqliteTable('team_sheet_tokens', {
+ id:text('id').primaryKey().notNull(),connectionId:text('connection_id').notNull().references(()=>teamSheetConnections.id),connectionVersion:integer('connection_version').notNull(),tokenHash:text('token_hash').notNull(),
+ userId:text('user_id').notNull().references(()=>portalUsers.userId),memberId:text('member_id').notNull().references(()=>members.id),teamMemberId:text('team_member_id').notNull().references(()=>followupTeamMembers.id),
+ label:text('label').notNull(),createdAt:text('created_at').notNull(),expiresAt:text('expires_at').notNull(),revokedAt:text('revoked_at'),
+},t=>[uniqueIndex('team_sheet_token_hash_unique').on(t.tokenHash),index('team_sheet_tokens_connection_idx').on(t.connectionId,t.revokedAt,t.expiresAt),check('team_sheet_token_version',sql`${t.connectionVersion}>0`),check('team_sheet_token_hash',sql`length(${t.tokenHash})=64`),check('team_sheet_token_label',sql`length(${t.label}) BETWEEN 1 AND 80`),check('team_sheet_token_ttl',sql`julianday(${t.expiresAt}) IS NOT NULL AND julianday(${t.createdAt}) IS NOT NULL AND julianday(${t.expiresAt})>julianday(${t.createdAt}) AND julianday(${t.expiresAt})-julianday(${t.createdAt})<=30.00001`)]);
+export const teamSheetRuns = sqliteTable('team_sheet_runs', {
+ id:text('id').primaryKey().notNull(),connectionId:text('connection_id').notNull().references(()=>teamSheetConnections.id),tokenId:text('token_id').notNull().references(()=>teamSheetTokens.id),connectionVersion:integer('connection_version').notNull(),
+ requestId:text('request_id').notNull(),status:text('status').notNull(),startedAt:text('started_at').notNull(),finishedAt:text('finished_at'),snapshotDigest:text('snapshot_digest'),expectedCount:integer('expected_count'),exportedCount:integer('exported_count').notNull().default(0),readbackVerified:integer('readback_verified').notNull().default(0),
+},t=>[uniqueIndex('team_sheet_runs_request_unique').on(t.tokenId,t.requestId),index('team_sheet_runs_connection_idx').on(t.connectionId,t.startedAt),check('team_sheet_run_status',sql`${t.status} IN ('running','completed','failed')`),check('team_sheet_expected_count',sql`${t.expectedCount} IS NULL OR ${t.expectedCount} BETWEEN 0 AND 5000`),check('team_sheet_exported_count',sql`${t.exportedCount} BETWEEN 0 AND 5000`),check('team_sheet_readback',sql`${t.readbackVerified} IN (0,1)`)]);

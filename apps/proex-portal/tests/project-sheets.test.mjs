@@ -131,7 +131,10 @@ test('master workbook is rejected at configure time and also invalidates an exis
  const f=fixture();try{
   f.db.native.prepare('INSERT INTO settings(name,value,updated_at)VALUES(?,?,?)').run('sync.google_sheets.configuration',JSON.stringify({spreadsheetId:'synthetic-master-workbook'}),f.now);
   await assert.rejects(configureProjectSheet(f.db,f.actor,'project-a',{spreadsheetId:'synthetic-master-workbook',expectedVersion:0}),error=>error.code==='project_sheet_master_forbidden');
-  const {principal}=await connected(f);f.db.native.prepare('UPDATE settings SET value=?').run(JSON.stringify({spreadsheetId:'synthetic-project-workbook'}));
+  const {principal}=await connected(f);assert.throws(()=>f.db.native.prepare('UPDATE settings SET value=?').run(JSON.stringify({spreadsheetId:'synthetic-project-workbook'})),/sync_project_workbook/);
+  // Simulate a restored pre-0028 collision to retain the independent runtime fence.
+  f.db.native.exec('DROP TRIGGER master_sheet_project_file_update');
+  f.db.native.prepare('UPDATE settings SET value=?').run(JSON.stringify({spreadsheetId:'synthetic-project-workbook'}));
   await assert.rejects(exportProjectSheetPage(f.db,principal,{table:'items'}),error=>error.status===403);
   await assert.rejects(projectSheetStatus(f.db,f.actor,'project-a'),error=>error.code==='project_sheet_master_forbidden');
  }finally{f.close();}

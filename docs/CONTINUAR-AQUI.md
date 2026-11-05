@@ -4,9 +4,13 @@
 
 PR #33 publicada: merge `c8182d2e4b34f99033b861daa8064e12f1e2d937`, Vercel `dpl_7vA9LLPkEtiJoewFzEThQAfiKqFy` READY. CI `42030415419`: 1003 testes do Portal, tipos, builds Worker/Node e autenticação aprovados. Chrome autenticado confirmou versão no rodapé, cartão do CONPEEX abrindo a ficha, calendário em português no mês atual e campo `05/11/2026`, além do feedback com versão. Nenhuma demanda/aviso de QA foi criada em produção.
 
-PR #34 pronta para validação final: branch `codex/proex-integracoes-05nov`, migrações0024–0026, snapshots em ordem, central de IA, página Equipes e correções de revisão. Revisão funcional `a9bb470`, CI1072/1072 e builds aprovados. [Evidências, notas e limites](ENTREGA-05NOV-IA-E-EQUIPES.md). Não confundir esta composição com o site publicado antes do recibo de merge/deploy. `PROEX_KEYS_SECRET` continua ausente: a revisão automática bloqueou o provisionamento antes da execução; não contornar a rejeição ou apresentar o cofre como pronto. Usuário informou Bitwarden desbloqueado, CLI continuou bloqueada; abertura do aplicativo pela ferramenta também foi impedida. Nenhum segredo foi lido ou criado nessas tentativas.
+PR #34 publicada em `bd36d084ce475c6f43fc765b2f36ebded6594193`, Vercel `dpl_HfBiVwe913M2kuWawJc2jNjc1y3o` READY, domínio canônico conferido. CI final42037080311 aprovado, funcional1072/1072 e builds. Saúde200, raiz exige login, novas APIs privadas401/no-store, aposentados403. Chrome indisponível (`Debugger unattached`); inspeção visual autenticada pós-deploy ainda não realizada. [Evidências e limites](ENTREGA-05NOV-IA-E-EQUIPES.md).
 
-Frentes seguintes isoladas: OpenAI texto/cofre0027 e Sheets equipe + projeto0028. Nenhuma chave ou modelo real foi usado. As solicitações de organograma formal e migração institucional seguem na fila; a pesquisa e IDs privados estão na Vault.
+`PROEX_KEYS_SECRET` continua ausente: a revisão automática bloqueou o provisionamento antes da execução; não contornar a rejeição ou apresentar o cofre como pronto. Usuário informou Bitwarden desbloqueado, CLI continuou bloqueada; abertura do aplicativo pela ferramenta também foi impedida. Nenhum segredo foi lido ou criado nessas tentativas.
+
+PR35 em rascunho: `codex/proex-provedores-e-relatorios-05nov`, com OpenAI0027, Meu trabalho em PDF/DOCX/XLSX e Markdown opcional, Sheets de equipe/projeto0028 e correções dos avisos/PDF. A composiçãof8c253f passou1129/1129, tipos, lint e CI42043696074; MD entrou depois em e2c9f6c com43focais aprovados e build Worker/Node/smoke de autenticação aprovados. Snapshot0028 reconciliado,101 tabelas. O ajuste posterior59b7360 expande avisos e retira botões ocultos do foco; recompilação e recaptura integradas em andamento. [Entrega e limites](ENTREGA-05NOV-PROVEDORES-E-RELATORIOS.md). Ainda não atribuir PR35 à produção sem recibo de merge/deploy.
+
+Frente seguinte iniciada em worktree isolada: estrutura institucional formal dentro de Equipes, migração0029 reservada, sem snapshot/journal pelo agente. Não altera unidades globais nem concede ACL por equipe/nó. Modelo oficial deve ser prévia editável, sem inventar pessoas ou criar dados reais como efeito da migração. Pesquisa e IDs privados ficam na Vault.
 
 ## Primeira entrega da rodada · 05/11/2026
 
@@ -135,3 +139,15 @@ Smoke local de Sheets/conflitos e backup de 5,29 MB / 161 chunks com recuperaç�
 Requisitos R01–R22 e achados A01–A28 continuam rastreados. Não declarar tudo concluído: política institucional/retensão, custódia independente, ativação de provedores/público, escolhas de catálogo e demais pendências são distintas de código pronto. R12 já oferece áudio→transcrição revisada→proposta/confirmar no assistente; não espalhar microfones sem necessidade. Nunca ler/imprimir .env/.dev.vars, arquivos de segredo ou valores de chaves.
 
 Leia docs/COBERTURA-DE-REQUISITOS.md e docs/ENTREGA-V13.md; V12 é histórico em docs/ENTREGA-V12.md. Histórico em docs/ANDAMENTO.md; Vault salva/relida localmente não comprova sincronização em nuvem.
+
+
+## Verificações em continuidade - 05/11
+
+A reconsulta Google Calendar da assinatura existente PROEX · Projetos e eventos,9–13/11, retornou zero eventos às10h54 de Brasília. Coleta ainda pendente; não criar cópia ou revogar link para esconder a lacuna. A conexão de inventário dos chats não devolveu resultado e foi encerrada sem envio; não declarar comunicação das novas entregas aos oito chats. A próxima composição recebeu snapshot0027, nove colunas/PK/FK preservadas e rollback sob falha.26focais passaram. Rodada ampla1094/1095 teve falso positivo antigo na busca de prefixo CPF de três dígitos em UUID/timestamp; f4b744d agora valida as duas formas completas e JSON exato de auditoria. Focal passou; repetir integrado depois das novas mudanças, sem registrar100% antecipadamente.
+
+
+## QA final e frente seguinte em paralelo - 05/11
+
+59b7360 passou tipos/lint/Node e56 estados dos14 módulos mais4deavisos; alvos44reais, teclado, semoverflow/erroJS/HTTPfalho. Testes completos1129 na composição anterior aoMD;43focais da exportação apósMD; head final ainda depende CI. [Evidências, benchmark e limites](ENTREGA-05NOV-PROVEDORES-E-RELATORIOS.md). O appPROEX instalado continua retornando27projeções/run25out, sem origem editável exposta; proibir sua escrita até revalidar, sem confundir com35canônicas atuais.
+
+Estrutura0029: WTestrutura-institucional, backend0928dbe +81ad4c7 +doc7cbb8d2 +negativasfe0f7c6; não integrar naPR35. UI com planilhas_escopo/auditoria_ia_config; root revisará serviço e fronteiras. Resumo pessoal: WTresumo-pessoal-dashboard sobre59b7360, filtros_datas, sem migração. Deve corrigir a ambiguidade dos alertas operacionais e mostrar contagens pessoais com DTO mínimo, ACL viva e linkworkStatus/reload/Voltar, sem alterar candidato35.

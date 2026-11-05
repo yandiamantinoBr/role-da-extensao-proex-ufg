@@ -2,7 +2,9 @@
 
 ## Resultado e estado
 
-PR #34, branch `codex/proex-integracoes-05nov`. Revisão funcional `a9bb470fb466efefed48494ff2d1ec346a7c2dd3`, ainda candidata neste registro. CI `42035968476`: **1072/1072 testes do Portal**, tipos, builds Worker/Node e smoke de autenticação aprovados; verificações do jogo independentes também passaram. O recibo de merge/deploy será acrescentado após a publicação. A PR33 anterior já está publicada em `c8182d2`.
+[PR #34](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/34) publicada no merge `bd36d084ce475c6f43fc765b2f36ebded6594193`. Vercel `dpl_HfBiVwe913M2kuWawJc2jNjc1y3o` READY no mesmo SHA e vinculada ao domínio oficial. CI final `42037080311` aprovado; revisão funcional `a9bb470` passou **1072/1072 testes do Portal**, tipos, builds Worker/Node e smoke de autenticação; jogo também aprovado.
+
+Conferência posterior ao deploy: saúde200, raiz307 para login, Equipes/cofre/credenciais MCP401 sem sessão e `private, no-store`, dois deploys aposentados403. O Chrome retornou `Debugger unattached`; portanto não foi realizada nova inspeção visual autenticada dessa revisão em produção. A evidência visual abaixo é sintética e identificada por fluxo.
 
 ## O que muda
 
@@ -37,3 +39,8 @@ Pareceres independentes: **9,0/10** para Central de IA, Equipes, checklist e MCP
 OpenAI está em implementação separada, sem chave/modelo real; Anthropic/Gemini/NVIDIA e endpoints personalizados exigem adaptadores próprios. A central não apresenta seletores inoperantes como integrações prontas.
 
 Sheets por equipe + projeto, edição de demandas em arquivo restrito, organograma formal editável, migração institucional e instalação Google por projeto permanecem etapas próprias na fila. O arquivo institucional do CONPEEX mantém seu link anterior; não há recibo novo de conector nativo instalado. A conexão do Chrome ficou indisponível na preparação; não foi confirmado salvamento do vínculo e não houve emissão de chave real. Nenhum convite, aviso de QA, e-mail real, dado de presença ou quantidade de material foi inventado em produção.
+
+
+## Recibo Sheets posterior ao deploy - 05/11/2026
+
+A mestre existente confirmou no Controle syncState=verified,35 tabelas e completed em2026-11-05T14:07:07.699Z (11h07 de Brasília), com o conector2026-11-04.1. O cabeçalho da projeção followup_checklists inclui kind. Leitura pelo conector Google Sheets, sem disparo manual/edição nessa rodada; IDs e detalhes privados na Vault. Confirma o recibo posterior à PR34 e a nova coluna, não o conjunto inteiro de células, o gatilho executor, escrita bidirecional em dados reais nem instalação dos novos arquivos por projeto/equipe.

@@ -514,7 +514,12 @@ test('optional username and CPF require the current password and reuse the canon
   const stored=f.sqlite.prepare('SELECT * FROM login_identifiers WHERE kind=\'cpf\'').get();
   assert.match(stored.lookup_hash,/^[a-f0-9]{64}$/);
   assert.ok(!JSON.stringify(stored).includes('52998224725'));assert.ok(!JSON.stringify(stored).includes(cpf));
-  assert.ok(!JSON.stringify(f.sqlite.prepare('SELECT * FROM audit').all()).includes('529'));
+  const auditRows=f.sqlite.prepare('SELECT * FROM audit ORDER BY rowid').all();
+  // A three-digit prefix can occur by chance in a UUID or timestamp. Check
+  // both complete forms and the exact permitted identifier audit payload.
+  assert.ok(!JSON.stringify(auditRows).includes('52998224725'));
+  assert.ok(!JSON.stringify(auditRows).includes(cpf));
+  assert.deepEqual(auditRows.filter(row=>row.action==='account.identifier-set').map(row=>JSON.parse(row.details)),[{kind:'username'},{kind:'cpf'}]);
   assert.equal((await accountRequest(f,{action:'login',identifier:cpf,password:originalPassword})).status,200);
   assert.equal((await accountRequest(f,{...update,action:'identifiers.remove',kind:'cpf'},{cookie})).status,200);
   assert.equal((await accountRequest(f,{action:'login',identifier:cpf,password:originalPassword})).status,401);

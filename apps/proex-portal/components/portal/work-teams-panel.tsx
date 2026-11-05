@@ -10,6 +10,7 @@ import { saveWorkTeam, TeamsApiError, workTeamsApi } from './work-teams-api';
 import { WorkTaskCard } from './work-task-card';
 import { DraftNotice, useFormDraft } from './use-form-draft';
 import styles from './work-teams-panel.module.css';
+import TeamSheetsPanel from './team-sheets-panel';
 
 type Props = {
  userId: string; defaultProjectId?: string;
@@ -175,6 +176,7 @@ export default function WorkTeamsPanel({ userId, defaultProjectId = '', organiza
      </section>
      <section className={styles.members}><h4>Integrantes neste recorte</h4><p>Somente pessoas ativas com acesso ao contexto escolhido.</p><div>{selected.members.map(person => <span className={styles.person} key={person.userId}><span className={styles.avatar} aria-hidden="true">{initials(person.name)}</span><span>{person.name}{person.userId === userId && <small>Você</small>}</span></span>)}</div>{!selected.members.length && <p>Nenhum integrante visível neste contexto.</p>}</section>
     </div>
+    {selected.status === 'active' && <TeamSheetsPanel key={`${userId}:${selected.id}:${projectId}`} userId={userId} teamId={selected.id} projectId={projectId}/>}
     <div className={styles.taskHeading}><div><h4>Demandas da equipe</h4><p>{displayedStatus ? stateLabels[displayedStatus] + ' · ' : ''}{data.tasks.length} nesta página{data.hasMore ? ' · há mais resultados' : ''}</p></div><div className={styles.exports} role="group" aria-label="Exportar demandas da equipe"><Download size={17} aria-hidden="true"/>{(['pdf','xlsx','docx'] as const).map(format => <button className="p-button" key={format} disabled={exporting || busy || loading} onClick={() => void exportTeam(format)}>{format.toUpperCase()}</button>)}</div></div>
     {exporting && <p role="status">Preparando o arquivo com uma consulta atualizada…</p>}
     {status && <button className="p-button" onClick={() => { setStatus(''); setOffset(0); }}><X size={16} aria-hidden="true"/>Mostrar todos os estados</button>}

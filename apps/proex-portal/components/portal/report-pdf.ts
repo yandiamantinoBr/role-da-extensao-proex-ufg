@@ -11,6 +11,7 @@ export type ReportPdfPresentation = {
   projectName?: string;
   projectBrand?: ProjectMark;
   metrics?: readonly { label: string; value: number | null; detail?: string }[];
+  columnWeights?: readonly number[];
 };
 
 type Marks = Partial<Record<'proex' | 'ufg' | ProjectMark, Uint8Array>>;
@@ -49,6 +50,8 @@ export async function toPdf(
   options?: Options,
 ): Promise<Blob> {
   const data = documentRows(columns, rows, display);
+  const requestedWeights=options?.presentation?.columnWeights;
+  if(requestedWeights!==undefined&&(requestedWeights.length!==columns.length||requestedWeights.some(weight=>!Number.isFinite(weight)||weight<.5||weight>4)||Math.max(...requestedWeights)/Math.min(...requestedWeights)>3))throw new Error('Escolha larguras de colunas equilibradas e válidas para o PDF.');
   const projectName = options?.presentation?.projectName?.trim() || '';
   const selectedBrand = options?.presentation?.projectBrand;
   const projectBrand = projectName && selectedBrand && Object.hasOwn(PROJECT_MARK_PATHS, selectedBrand) ? selectedBrand : undefined;
@@ -240,20 +243,22 @@ export async function toPdf(
     heading('Registros do relatório');
     paint('Nenhum registro corresponde ao recorte selecionado.', margin, y, 10, muted);
   } else if (columns.length <= 6 && !projectName) {
-    const weights = columns.map(column => column.numeric ? .8 : 1.15);
+    const weights = requestedWeights?[...requestedWeights]:columns.map(column => column.numeric ? .8 : 1.15);
     const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
     const widths = weights.map(weight => weight * usable / totalWeight);
     const numeric = columns.map(column => column.numeric);
     const headers = columns.map(column => text(column.label));
     const headerHeight = Math.max(...headers.map((label, index) => wrap(label, strongFont(label), 9.5, widths[index] - 18).length)) * 14 + 18;
-    const tableHeading = (continued = false) => {
-      heading(continued ? 'Registros do relatório (continuação)' : 'Registros do relatório', headerHeight + 32);
+    const normalizedRows=data.map(row=>row.map(value=>text(value.trim()?value:'—')));
+    const tableHeading = (continued = false,firstRow=normalizedRows[0]) => {
+      const firstRowHeight=Math.max(...firstRow.map((value,index)=>wrap(value,font,10,widths[index]-18).length))*14+18;
+      heading(continued ? 'Registros do relatório (continuação)' : 'Registros do relatório', headerHeight + Math.min(firstRowHeight,height-160-headerHeight));
       tableRow(headers, widths, numeric, purple, addPage, true);
     };
     tableHeading();
-    data.forEach((row, index) => tableRow(row.map(value => text(value.trim() ? value : '—')), widths, numeric, index % 2 ? wash : white, () => {
+    normalizedRows.forEach((row, index) => tableRow(row, widths, numeric, index % 2 ? wash : white, () => {
       addPage();
-      tableHeading(true);
+      tableHeading(true,row);
     }));
   } else {
     const widths = [171, usable - 171];

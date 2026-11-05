@@ -15,8 +15,8 @@ type Vault = {
 };
 type Decision = { entry: Entry; action: 'save' | 'enable' | 'disable' | 'remove' };
 const statusLabels = { active: 'Disponível', disabled: 'Desligada', removed: 'Removida', missing: 'Sem chave', unavailable: 'Indisponível' };
-const providerLabels = { deepseek: 'DeepSeek', typesafe: 'TypeSafe', deepgram: 'Deepgram', groq: 'Groq' };
-const models = { deepseek: PROVIDERS.deepseek.model, typesafe: PROVIDERS.typesafe.model, deepgram: 'Nova-3', groq: 'whisper-large-v3-turbo' };
+const providerLabels = { deepseek: 'DeepSeek', openai: 'OpenAI', typesafe: 'TypeSafe', deepgram: 'Deepgram', groq: 'Groq' };
+const models = { deepseek: PROVIDERS.deepseek.model, openai: PROVIDERS.openai.model, typesafe: PROVIDERS.typesafe.model, deepgram: 'Nova-3', groq: 'whisper-large-v3-turbo' };
 const submitLabels = { save: 'Salvar chave', enable: 'Disponibilizar chave', disable: 'Desligar chave', remove: 'Remover chave' };
 const currency = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'USD', maximumFractionDigits: 6 });
 const date = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Sao_Paulo' });

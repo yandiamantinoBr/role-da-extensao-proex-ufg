@@ -78,7 +78,7 @@ test('sensitive or unapproved requests never reserve or dispatch, and an explici
  }});
  await assert.rejects(prepare(f,source,prepareInput(f,{consent:false})),{code:'triage_consent'});
  for(const fragment of ['Contato: fake@example.invalid','Abrir https://example.invalid','Chave pxs_synthetic_only_not_a_key',
-  'pxm_synthetic_only_not_a_key','pxp_synthetic_only_not_a_key','gsk_synthetic_only_not_a_key',
+  'pxm_synthetic_only_not_a_key','pxp_synthetic_only_not_a_key','pxt_synthetic_only_not_a_key','gsk_synthetic_only_not_a_key',
   'Telefone (62) 99999-8888','Telefone (62) 9 9999-9999','Documento 123 456 789 09','Documento 12.345.678/0001-99',
   'Acesse sigaa.example.test/consulta','Use ftp://example.invalid/registro']){
   await assert.rejects(prepare(f,source,prepareInput(f,{context:fragment})),{code:'triage_sensitive'});

@@ -11,6 +11,7 @@ function assertion(db:D1Database,predicate:string,values:unknown[],code:string){
 async function translateControlError(db:D1Database,actor:PortalActor,error:unknown):Promise<never>{
  await requireSyncOwner(db,actor);
  const message=String(error);
+ if(message.includes('team_sheet_file_collision'))throw new HttpError(409,'Este arquivo pertence a uma equipe e não pode ser a mestre. Escolha um arquivo exclusivo.','team_sheet_file_collision');
  if(message.includes('sync_running'))throw new HttpError(409,'Já existe uma sincronização em andamento.','sync_running');
  if(message.includes('sync_not_configured'))throw new HttpError(409,'Configure a planilha primeiro.','sync_not_configured');
  if(message.includes('sync_workbook_changed'))throw new HttpError(409,'Esta planilha não é mais a mestre configurada. Confira o vínculo no Portal.','sync_workbook_changed');
@@ -39,6 +40,7 @@ export async function configureSync(db:D1Database,actor:PortalActor|null,input:R
  try{await db.batch([
   db.prepare(`SELECT CASE WHEN ${SYNC_OWNER_SQL} THEN 1 ELSE json_extract('sync_forbidden','$') END`).bind(actor.userId),
   assertion(db,'NOT EXISTS(SELECT 1 FROM project_sheet_connections WHERE spreadsheet_id=?)',[spreadsheetId],'sync_project_workbook'),
+  assertion(db,'NOT EXISTS(SELECT 1 FROM team_sheet_connections WHERE spreadsheet_id=?)',[spreadsheetId],'team_sheet_file_collision'),
   assertion(db,"NOT EXISTS(SELECT 1 FROM sync_runs WHERE connection_id='google-sheets' AND status='running' AND started_at>?)",[new Date(Date.now()-RUN_LEASE_MS).toISOString()],'sync_running'),
   db.prepare("UPDATE sync_runs SET status='failed',finished_at=?,error_code='interrupted' WHERE connection_id='google-sheets' AND status='running'").bind(now),
   db.prepare("DELETE FROM settings WHERE name=? AND (SELECT CASE WHEN json_valid(value) THEN json_extract(value,'$.spreadsheetId') END FROM settings WHERE name=?) IS NOT ?").bind(SHEET_TABS_KEY,CONFIG,spreadsheetId),

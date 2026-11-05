@@ -44,3 +44,17 @@ test('a concurrent credential refresh cannot leave configuration permanently bus
 test('owner areas shorten the flow without fetching diagnostics or exposing credential content to a delegated configurator',async()=>{
  const h=harness({canManageKeys:true});try{await ready(h);assert.equal(h.nodes().some(node=>node.type==='credential-area'),true);assert.equal(h.nodes().some(node=>node.type==='select'&&node.props.value==='organization'),false);h.button('Funções e acesso').props.onClick();h.render({canManageKeys:true});assert.equal(h.nodes().some(node=>node.type==='credential-area'),false);assert.ok(h.button('Salvar funções, acesso e limites'));assert.equal(h.requests.length,2,'switching areas does not contact a provider or fetch diagnostics');}finally{h.dispose();}
 });
+
+test('explicit OpenAI selection clears both text functions without starting inference or altering speech and usage choices',async()=>{
+ const h=harness();try{
+  await ready(h,{config:{...defaults,enabled:true,documentEnabled:true,sttProvider:'groq',sttEnabled:true,usageScope:'private',usageUserId:'member-a'}});
+  h.select('Provedor de texto e documentos').props.onChange({target:{value:'openai'}});h.render();
+  assert.match(h.text(),/Pedidos de operações · OpenAI/);
+  const functions=h.nodes().filter(node=>node.type==='label'&&['Pedidos de operações','Interpretação de documentos'].some(label=>text(node).startsWith(label)));
+  assert.equal(functions.length,2);for(const node of functions)assert.equal(node.props.children.find(child=>child?.type==='input').props.checked,false);
+  assert.equal(h.requests.length,2);h.button('Salvar funções, acesso e limites').props.onClick();await tick();
+  const config=JSON.parse(h.requests[2].init.body).config;
+  assert.equal(config.textProvider,'openai');assert.equal(config.openaiModel,'gpt-5.6-luna');assert.equal(config.enabled,false);assert.equal(config.documentEnabled,false);
+  assert.equal(config.usageScope,'private');assert.equal(config.sttEnabled,true);assert.equal(config.sttProvider,'groq');
+ }finally{h.dispose();}
+});
