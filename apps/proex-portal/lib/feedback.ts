@@ -55,8 +55,11 @@ export async function feedbackAction(db: D1Database, actor: PortalActor | null, 
   if (input.action === 'status') {
     if (typeof input.id !== 'string' || !['new','reviewing','resolved'].includes(String(input.status)) || !Number.isSafeInteger(input.expectedVersion)) throw new HttpError(400, 'Confira a atualização do feedback.', 'invalid_feedback_status');
     const permission = management(actor), now = iso();
-    const result = await db.prepare(`UPDATE portal_feedback SET status=?,version=version+1,updated_at=? WHERE id=? AND version=? AND ${active.sql} AND ${permission.sql}`).bind(input.status,now,input.id,input.expectedVersion,...active.values,...permission.values).run();
-    if (result.meta.changes !== 1) throw new HttpError(409, 'O feedback ou seu acesso mudou. Atualize a lista.', 'feedback_changed');
+    const results = await db.batch([
+      db.prepare(`UPDATE portal_feedback SET status=?,version=version+1,updated_at=? WHERE id=? AND version=? AND ${active.sql} AND ${permission.sql}`).bind(input.status,now,input.id,input.expectedVersion,...active.values,...permission.values),
+      db.prepare("INSERT INTO audit(id,actor_id,project_id,action,entity_id,details,created_at) SELECT ?,?,project_id,'feedback.status',id,?,? FROM portal_feedback WHERE id=? AND changes()=1").bind(uid(),actor.userId,JSON.stringify({status:input.status}),now,input.id),
+    ]);
+    if (results[0].meta.changes !== 1) throw new HttpError(409, 'O feedback ou seu acesso mudou. Atualize a lista.', 'feedback_changed');
     return { id: input.id };
   }
   throw new HttpError(400, 'Operação de feedback inválida.', 'invalid_action');

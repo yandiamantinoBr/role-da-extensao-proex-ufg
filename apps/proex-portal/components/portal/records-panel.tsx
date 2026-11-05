@@ -3,7 +3,7 @@
 import Link from 'next/link';
 
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
-import { BarChart3, Camera, Check, ClipboardList, Download, ExternalLink, FilePlus2, ImagePlus, LoaderCircle, Paperclip, Plus, RefreshCw, Search, Trash2, Upload } from 'lucide-react';
+import { BarChart3, Camera, Check, ClipboardList, ExternalLink, FilePlus2, ImagePlus, LoaderCircle, Paperclip, Plus, RefreshCw, Search, Trash2, Upload } from 'lucide-react';
 import { useFormDraft, DraftNotice } from './use-form-draft';
 import styles from './records-panel.module.css';
 import { download } from './report-export';
