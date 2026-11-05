@@ -63,7 +63,7 @@ test('bare Portal, email and provider credentials stop before quota, outbound tr
  const f=fixture(),provider=fakeProvider();
  try{
   await configureAssistant(f.db,f.actors.owner,configInput(),secret);
-  for(const prefix of ['pxs_','pxp_','pxm_','pne_','gsk_','sk-','sk_']){
+  for(const prefix of ['pxs_','pxp_','pxm_','pxt_','pne_','gsk_','sk-','sk_']){
    const raw=prefix+'a'.repeat(43);
    await assert.rejects(prepareAssistantPlan(f.db,f.actors.inventory,request({request:'Consultar saldo usando '+raw}),secret,{fetcher:provider.fetch}),code('assistant_sensitive'));
    assert.throws(()=>documentText('Trecho documental com '+raw,'text'),code('document_ai_sensitive'));
