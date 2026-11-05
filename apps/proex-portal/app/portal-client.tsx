@@ -1,4 +1,5 @@
 'use client';
+import DateField from '@/components/portal/date-field';
 import Image from 'next/image';
 import scopeStyles from './scope-filters.module.css';
 import settingsStyles from './settings-groups.module.css';
@@ -47,7 +48,7 @@ import { useNavigationPreferences } from '@/components/portal/use-navigation-pre
 import { useFormDraft, DraftNotice, setDraftScope, clearCurrentDrafts, watchDraftLogout } from '@/components/portal/use-form-draft';
 import { THEMATIC_AREAS, groupUnits } from '@/lib/extension-catalog';
 import { MAX_UPLOAD_FILE_BYTES, UPLOAD_LIMIT_LABEL, uploadErrorMessage } from '@/lib/upload-limits';
-import { ArrowDownToLine, ArrowRight, Boxes, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronRight, ExternalLink, FileText, Gift, LoaderCircle, LogOut, Plus, RefreshCw, Search, ShieldCheck, Truck, Users, Wifi, WifiOff, X } from 'lucide-react';
+import { ArrowDownToLine, ArrowRight, Boxes, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronRight, ExternalLink, FileText, Filter, Gift, LoaderCircle, LogOut, Plus, RefreshCw, Search, ShieldCheck, Truck, Users, Wifi, WifiOff, X } from 'lucide-react';
 // API projections vary by module; the server validates every mutation.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = Record<string, any>;
@@ -701,14 +702,15 @@ export default function PortalClient({ initial }: {
         <div className={scopeStyles.layout}>
         <Field label="Projeto">
             <select value={filter} onChange={event => selectProject(event.target.value)}>
-                <option value="">{scopedProjects.length === projects.length ? 'Todos os projetos' : `Todos os ${scopedProjects.length} projeto(s) deste recorte`}</option>
+                <option value="">{scopedProjects.length === projects.length ? 'Todos os projetos' : scopedProjects.length === 0 ? 'Nenhum projeto neste recorte' : scopedProjects.length === 1 ? '1 projeto neste recorte' : `${scopedProjects.length} projetos neste recorte`}</option>
                 {scopedProjects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}
             </select>
         </Field>
-        {(filter || unitFilter || areaFilter) && <button type="button" className={`p-button p-button-subtle p-filter-clear ${scopeStyles.clear}`} onClick={clearScope}><X size={15} />Limpar filtros</button>}
+        {(filter || unitFilter || areaFilter) && <button type="button" className={`p-button p-button-subtle p-filter-clear ${scopeStyles.clear}`} aria-label="Limpar filtros" onClick={clearScope}><X size={15} aria-hidden="true" /><span className={scopeStyles.clearText}>Limpar filtros</span></button>}
         <details className={scopeStyles.refine}>
-            <summary>Refinar contexto
+            <summary><Filter size={16} aria-hidden="true" /><span className={scopeStyles.summaryText}>Refinar contexto
                 {(unitFilter || areaFilter) && <span className={scopeStyles.active}>{[unitFilter ? (unitFilter === '__unassigned__' ? 'Sem unidade vinculada' : string(visibleUnits.find(unit => unit.id === unitFilter)?.acronym || visibleUnits.find(unit => unit.id === unitFilter)?.name) || 'Unidade selecionada') : '', areaFilter ? (areaFilter === '__none__' ? 'Área não informada' : THEMATIC_AREAS.find(area => area.key === areaFilter)?.label || 'Área selecionada') : ''].filter(Boolean).join(' · ')}</span>}
+                </span><ChevronDown size={16} className={scopeStyles.chevron} aria-hidden="true" />
             </summary>
             <div className={scopeStyles.fields}>
         <Field label="Unidade responsável">
@@ -981,13 +983,13 @@ export default function PortalClient({ initial }: {
         <div className="p-card p-report-filters">
         <label className="p-field">
         <span>De</span>
-        <input type="date" value={reportFrom} onChange={e => { setReportFrom(e.target.value); if (reportTo && e.target.value > reportTo)
-            setReportTo(e.target.value); }}/>
+        <DateField aria-label="De" value={reportFrom} onValueChange={next => { setReportFrom(next); if (reportTo && next > reportTo)
+            setReportTo(next); }}/>
         </label>
         <label className="p-field">
         <span>Até</span>
-        <input type="date" value={reportTo} min={reportFrom || undefined} onChange={e => { setReportTo(e.target.value); if (e.target.value && reportFrom && e.target.value < reportFrom)
-            setReportFrom(e.target.value); }}/>
+        <DateField aria-label="Até" value={reportTo} min={reportFrom || undefined} onValueChange={next => { setReportTo(next); if (next && reportFrom && next < reportFrom)
+            setReportFrom(next); }}/>
         </label>
         <button className="p-button p-button-subtle" onClick={() => { setReportFrom(''); setReportTo(''); }}>Todo o período</button>
         <p>Datas de Brasília para os relatórios com período. Projetos e materiais mostram a posição atual. Nos indicadores de dinâmicas, participações, tentativas e entregas usam a data de cada registro.</p>

@@ -1,4 +1,5 @@
 'use client';
+import DateField from './date-field';
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import styles from './project-panel.module.css';
 import { areaLabel, lineLabel } from '@/lib/extension-catalog';
@@ -96,7 +97,7 @@ function MetadataForm({editor,projectId,projects,mutate,done}:{editor:Editor;pro
   </select></label>
   {/* Keep both pairs mounted so the draft can restore the mode and its dates together. */}
   {schedule.fields.map(({ name, label, timeValue }) => <label key={name} className="p-field" hidden={allDay} style={allDay ? { display: 'none' } : undefined}><span>{label} *</span><input name={name} type="datetime-local" required={!allDay} disabled={allDay} defaultValue={timeValue}/></label>)}
-  {schedule.fields.map(({ dayName, dayLabel, dayValue }) => <label key={dayName} className="p-field" hidden={!allDay} style={!allDay ? { display: 'none' } : undefined}><span>{dayLabel} *</span><input name={dayName} type="date" min="2000-01-01" max="2200-12-31" required={allDay} disabled={!allDay} defaultValue={dayValue}/></label>)}
+  {schedule.fields.map(({ dayName, dayLabel, dayValue }) => <label key={dayName} className="p-field" hidden={!allDay} style={!allDay ? { display: 'none' } : undefined}><span>{dayLabel} *</span><DateField aria-label={dayLabel} name={dayName} min="2000-01-01" max="2200-12-31" required={allDay} disabled={!allDay} defaultValue={dayValue}/></label>)}
  </>}
  </>}
  </div>
