@@ -218,6 +218,14 @@ export async function projectAction(db:D1Database,actor:PortalActor,action:strin
   return null;
 }
 
+/** Minimal project projection shared with bounded read-only integrations. */
+export async function projectSummary(db:D1Database,actor:PortalActor|null,id:string):Promise<Row>{
+  if(!actor)throw new HttpError(401,'Entre para acessar este projeto.','unauthenticated');identifier(id);
+  if(!canSee(actor,id))throw new HttpError(404,'Projeto não encontrado.');
+  const authority=projectAuthoritySql(actor,[],'p.id');
+  const project=await one(db,`SELECT p.id,p.name,p.short_name,p.description,p.status,p.lifecycle,p.starts_at,p.ends_at,p.location,p.version,p.thematic_area,p.official_url,t.label type_label,u.name unit_name FROM projects p JOIN organizations o ON o.id=p.organization_id AND o.status='active' LEFT JOIN project_types t ON t.id=p.type_id LEFT JOIN organizational_units u ON u.id=p.unit_id WHERE p.id=? AND ${authority.sql}`,[id,...authority.values]);
+  if(!project)throw new HttpError(404,'Projeto não encontrado.');return project;
+}
 export async function projectDetail(db:D1Database,actor:PortalActor|null,id:string):Promise<Row>{
   if(!actor)throw new HttpError(401,'Entre para acessar este projeto.','unauthenticated');identifier(id);
   if(!canSee(actor,id))throw new HttpError(404,'Projeto não encontrado.');

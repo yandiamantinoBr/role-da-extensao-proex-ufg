@@ -1,5 +1,6 @@
 'use client';
 import DateField from '@/components/portal/date-field';
+import McpConnectionsPanel from '@/components/portal/mcp-connections-panel';
 import Image from 'next/image';
 import scopeStyles from './scope-filters.module.css';
 import FeedbackPanel from '@/components/portal/feedback-panel';
@@ -985,7 +986,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
             </Section></div>}</>}
 
       {tab === 'team' && <><OrganizationsPanel organizations={organizations} currentActor={{ userId: string(user.userId), isPlatformOwner }} people={organizationPeople} onChanged={refreshModules}/><OfficialTeamDirectory onSelect={canAny('access.invite') ? setOfficialSuggestion : undefined}/><TeamPanel key={officialSuggestion?.selectionKey ?? `manual:${filter}`} officialSuggestion={officialSuggestion} onClearOfficialSuggestion={() => setOfficialSuggestion(null)} users={list(data.users)} members={members} invites={invites} projects={projects} selectedProjectId={filter} globalAdmin={isPlatformOwner} canManageManagers={(projectId, organizationId) => isPlatformOwner || organizations.some(organization => organization.canManage && organization.id === (projectId ? projects.find(project => project.id === projectId)?.organization_id : organizationId))} canProject={canProject} mutate={mutate} now={now}/>{canGlobal('organization.manage') && <AdminPrivacyPanel />}</>}
-      {tab === 'profile' && <><AssistantPanel key={string(user.userId)} projects={assistantProjects} defaultProjectId={filter} onApplied={refreshModules}/><ProfilePanel onUpdated={() => { void refresh(); }}/></>}
+      {tab === 'profile' && <><AssistantPanel key={string(user.userId)} projects={assistantProjects} defaultProjectId={filter} onApplied={refreshModules}/><McpConnectionsPanel key={`mcp-${string(user.userId)}`}/><ProfilePanel onUpdated={() => { void refresh(); }}/></>}
       {tab === 'calendar' && <CalendarPanel projects={projects} organizationalUnits={visibleUnits} selectedProjectId={filter} selectedUnitId={unitFilter} onProjectChange={selectProject} onUnitChange={selectUnit}/>}
       {tab === 'records' && <RecordsPanel projects={projects} items={items} loans={loans} canWrite={(capability: string, projectId?: string | null) => projectId ? canProject(projectId, capability) : canGlobal(capability)}/>}
 
