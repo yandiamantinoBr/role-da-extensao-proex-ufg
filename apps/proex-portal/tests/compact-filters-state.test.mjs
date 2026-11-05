@@ -36,12 +36,12 @@ test('collapsed project refinements preserve unique working filters, count activ
   assert.equal(h.all().filter(node => node.type === 'article').length, 2);
   for (const [label, value] of [['Unidade responsável', 'unit-a'], ['Área temática', 'education'], ['Modalidade', 'type-a'], ['Situação', 'active']]) h.change(label, value);
   assert.equal(h.all().filter(node => node.type === 'article').length, 1);
-  assert.ok(text(h.disclosure('Refinar projetos')).includes('4 ativo(s)'));
+  assert.ok(text(h.disclosure('Refinar projetos')).includes('4 ativos'));
   h.button('Limpar filtros').props.onClick(); h.render();
   assert.equal(h.all().filter(node => node.type === 'article').length, 2);
   assert.equal(h.field('Unidade responsável').props.value, '');
   assert.equal(h.field('Situação').props.value, 'all');
-  assert.equal(text(h.disclosure('Refinar projetos')).includes('ativo(s)'), false);
+  assert.doesNotMatch(text(h.disclosure('Refinar projetos')), /\d+\s+ativos?\b/);
  } finally { h.dispose(); }
 });
 
