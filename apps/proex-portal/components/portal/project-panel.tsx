@@ -1,11 +1,12 @@
 'use client';
+import DateField from './date-field';
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import ProjectDetail, { type ProjectShortcutModule } from './project-detail';
 import { useFormDraft, DraftNotice } from './use-form-draft';
 import { EXTENSION_LINES, THEMATIC_AREAS, areaLabel, groupUnits } from '@/lib/extension-catalog';
 import styles from './project-panel.module.css';
 import type { OrganizationSummary } from './organizations-panel';
-import { ArrowRight, CalendarDays, Check, ExternalLink, FolderKanban, LoaderCircle, MapPin, Pencil, Plus, X } from 'lucide-react';
+import { ArrowRight, CalendarDays, Check, ExternalLink, FolderKanban, Pin, PinOff, LoaderCircle, MapPin, Pencil, Plus, X } from 'lucide-react';
 // The protected API projects module-specific metadata.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = Record<string, any>;
@@ -142,11 +143,11 @@ function ProjectForm({ project, projects, types, units, organizations, mutate, d
     </label>
     <label className="p-field">
     <span>Data de início</span>
-    <input name="startsAt" type="date" defaultValue={day(value(project, 'starts_at', 'startsAt'))}/>
+    <DateField aria-label="Início previsto" name="startsAt" defaultValue={day(value(project, 'starts_at', 'startsAt'))}/>
     </label>
     <label className="p-field">
     <span>Data de término</span>
-    <input name="endsAt" type="date" defaultValue={day(value(project, 'ends_at', 'endsAt'))}/>
+    <DateField aria-label="Fim previsto" name="endsAt" defaultValue={day(value(project, 'ends_at', 'endsAt'))}/>
     </label>
     </div>
     <label className={styles.featureOption}><input type="checkbox" name="prizesEnabled" defaultChecked={Boolean(project?.prizes_enabled)}/><span><strong>Habilitar dinâmicas e brindes</strong><small>Permite organizar roleta, dado e premiações neste projeto. Campanhas e estoque têm configuração própria; o histórico é preservado ao desabilitar.</small></span></label>
@@ -159,6 +160,15 @@ function ProjectForm({ project, projects, types, units, organizations, mutate, d
     </div>
     </fieldset>
     </form>;
+}
+export function projectPinKey(userId: string) { return userId ? `proex:project-pins:v1:${encodeURIComponent(userId)}` : ''; }
+export function parseProjectPins(raw: string | null): string[] {
+  if (!raw || raw.length > 6000) return [];
+  try { const value: unknown = JSON.parse(raw); return Array.isArray(value) ? [...new Set(value.filter((id): id is string => typeof id === 'string' && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(id)))].slice(0, 12) : []; } catch { return []; }
+}
+function distinctShortName(project: Row) {
+  const name = String(project.name ?? '').trim().toLocaleLowerCase('pt-BR'), short = String(project.short_name ?? '').trim().toLocaleLowerCase('pt-BR');
+  return short && !name.startsWith(short) && !short.startsWith(name) ? project.short_name : '';
 }
 export default function ProjectPanel({ projects, projectTypes = [], organizationalUnits = [], organizations = [], isPlatformOwner = false, userId, initialProjectId = '', onDetailChange, renderWorkContext, shortcutModules, onSelect, canCreate, canEdit, mutate }: Props) {
     type Workspace = {request: string; detail: string; editing: Row | null | undefined; echo: string | null};
@@ -180,6 +190,30 @@ export default function ProjectPanel({ projects, projectTypes = [], organization
     }
     function setDetail(id: string) {setWorkspace(current => ({...(current.request === initialProjectId ? current : initialWorkspace()), detail: id, editing: undefined, echo: id})); onDetailChange?.(id || null);}
     function setEditing(project: Row | null | undefined) {setWorkspace(current => current.request === initialProjectId ? {...current, editing: project} : current);}
+    const [pinState, setPinState] = useState<{owner: string; ids: string[]} | null>(null);
+    const [pinFeedback, setPinFeedback] = useState('');
+    const pinKey = projectPinKey(userId ?? '');
+    useEffect(() => {
+      if (!pinKey) return;
+      const restore = () => { let ids: string[] = []; try { if (pinKey) ids = parseProjectPins(localStorage.getItem(pinKey)); } catch { } setPinState({owner: userId ?? '', ids}); };
+      const timer = window.setTimeout(restore, 0);
+      const sync = (event: StorageEvent) => { if (event.key === pinKey || event.key === null) restore(); };
+      window.addEventListener('storage', sync);
+      return () => { window.clearTimeout(timer); window.removeEventListener('storage', sync); };
+    }, [pinKey, userId]);
+    const pinnedIds = pinState && pinState.owner === userId ? pinState.ids : [];
+    const pinnedProjects = pinnedIds.flatMap(id => projects.filter(project => project.id === id));
+    function togglePin(project: Row) {
+      if (!pinKey || !projects.some(row => row.id === project.id)) return;
+      let base = pinnedIds;
+      try { base = parseProjectPins(localStorage.getItem(pinKey)); } catch { }
+      const removing = base.includes(project.id);
+      if (!removing && base.length >= 12) { setPinFeedback('Você pode fixar até 12 projetos. Remova um para incluir outro.'); return; }
+      const ids = removing ? base.filter(id => id !== project.id) : [...base, project.id];
+      setPinState({owner: userId ?? '', ids});
+      try { localStorage.setItem(pinKey, JSON.stringify(ids)); setPinFeedback(removing ? 'Projeto removido dos fixados.' : 'Projeto fixado neste navegador.'); }
+      catch { setPinFeedback('Fixado nesta sessão. O navegador não permitiu salvar sua preferência.'); }
+    }
     const [query, setQuery] = useState(''), [unitId,setUnitId]=useState(''), [typeId,setTypeId]=useState(''), [situation,setSituation]=useState('all'), [area,setArea]=useState(''), [scope,setScope]=useState<'all'|'internal'|'external'>('all');
     const [detailRevision,setDetailRevision]=useState(0),[opening,setOpening]=useState(false),[error,setError]=useState(''),[typeEditor,setTypeEditor]=useState(false),[unitEditor,setUnitEditor]=useState(false);
     const editorRef=useRef<HTMLDivElement|null>(null);
@@ -215,12 +249,13 @@ export default function ProjectPanel({ projects, projectTypes = [], organization
       {editing!==undefined&&(editing || createAllowed)&&<div ref={editorRef} className={`p-editor-panel ${styles.editor}`} tabIndex={-1} aria-labelledby="project-editor-title"><div className="p-row-between"><h3 id="project-editor-title">{editing?`Editar ${editing.name}`:'Criar projeto'}</h3><button type="button" className="p-icon-button" aria-label="Fechar formulário de projeto" onClick={()=>setEditing(undefined)}><X size={18}/></button></div><ProjectForm key={`${editing?.id??'new'}-${editing?.version??0}`} project={editing} projects={projects} types={types} units={units} organizations={editing ? organizations : creatableOrganizations} mutate={mutate} done={done}/></div>}
       {error&&<p className="p-inline-error" role="alert">{error}</p>}
       {detail?<ProjectDetail key={JSON.stringify([detail,detailRevision,isPlatformOwner])} projectId={detail} projects={projects} mutate={mutate} onBack={()=>showDetail('')} onEdit={project=>void edit(project)} onSelect={showDetail} renderWorkContext={renderWorkContext} shortcutModules={shortcutModules} sheetOwnerId={isPlatformOwner ? userId : undefined}/>:<>
+        {userId && <section className={styles.pinnedSection} aria-label="Projetos fixados"><div className={styles.pinnedHeading}><h3><Pin size={16} aria-hidden="true"/>Fixados</h3><small>Seus atalhos neste navegador</small></div>{pinnedProjects.length ? <div className={styles.pinnedGrid}>{pinnedProjects.map(project => <div key={project.id} className={styles.pinnedProject}><button type="button" onClick={() => showDetail(project.id)}><FolderKanban size={17} aria-hidden="true"/><span>{distinctShortName(project) || project.name}</span><ArrowRight size={15} aria-hidden="true"/></button><button type="button" className={styles.pinButton} aria-label={`Desafixar ${project.name}`} onClick={() => togglePin(project)}><PinOff size={16} aria-hidden="true"/></button></div>)}</div> : <p>Use o alfinete de um projeto para deixá-lo à mão.</p>}<p className={styles.pinFeedback} role="status">{pinState?.owner===userId?pinFeedback:''}</p></section>}
         <div className={`p-card ${styles.filters}`} aria-label="Filtros dos projetos"><label className={`p-field ${styles.search}`}><span>Buscar projeto</span><input value={query} onChange={event=>setQuery(event.target.value)} placeholder="Nome, sigla, unidade ou finalidade"/></label><details className={styles.refine}><summary>Refinar projetos{refinedCount > 0 && <span>{refinedCount} ativo(s)</span>}</summary><div className={styles.refineFields}><label className="p-field"><span>Unidade responsável</span><select value={unitId} onChange={event=>setUnitId(event.target.value)}><option value="">Todas as unidades</option><option value="unassigned">Sem unidade definida</option><UnitOptions units={units}/></select></label><label className="p-field"><span>Área temática</span><select value={area} onChange={event=>setArea(event.target.value)}><option value="">Todas as áreas</option>{THEMATIC_AREAS.map(item=><option key={item.key} value={item.key}>{item.label}</option>)}<option value="none">Área não informada</option></select></label><label className="p-field"><span>Modalidade</span><select value={typeId} onChange={event=>setTypeId(event.target.value)}><option value="">Todas as modalidades</option><option value="unassigned">Sem tipo definido</option>{types.map(type=><option key={type.id} value={type.id}>{type.label}</option>)}</select></label><label className="p-field"><span>Situação</span><select value={situation} onChange={event=>setSituation(event.target.value)}><option value="all">Todas as situações</option><option value="active">Em atividade</option><option value="past">Passados / históricos</option><option value="catalog">Catálogo / referência</option><option value="archived">Arquivados</option></select></label></div></details><div className={styles.scopeTabs} role="group" aria-label="Abrangência">{([['all','Todos',projects.length],['internal','Internos PROEX',scopeCount('internal')],['external','Externos e parceiros',scopeCount('external')]] as const).map(([id,label,count])=><button key={id} type="button" aria-pressed={scope===id} className={scope===id?styles.scopeTabActive:styles.scopeTab} onClick={()=>setScope(id)}>{label}<span>{count}</span></button>)}</div><div className={styles.filterSummary}><span>{visible.length} de {projects.length} projeto(s)</span>{hasFilters&&<button type="button" className="p-text-link" onClick={()=>{setQuery('');setUnitId('');setTypeId('');setArea('');setSituation('all');setScope('all');}}>Limpar filtros <X size={14}/></button>}</div></div>
         {visible.length?<div className={styles.grid}>{visible.map(project=>{const unit=units.find(unit=>unit.id===project.unit_id);return <article className={`p-card ${styles.card}`} key={project.id}>
-          <div className="p-row-between"><span className="p-icon-tile" style={{borderTop:`3px solid ${/^#[\da-f]{6}$/i.test(project.color??'')?project.color:'#54216C'}`}}><FolderKanban size={22}/></span><span className={`p-badge ${project.status==='archived'?'p-status-closed':'p-status-active'}`}>{project.status==='archived'?'Arquivado':project.lifecycle==='past'?'Histórico':project.lifecycle==='catalog'?'Catálogo':'Em atividade'}</span></div>
-          <div className={styles.identity}><span className="p-kicker">{types.find(type=>type.id===project.type_id)?.label||'Tipo ainda não definido'}</span><h3>{project.name}</h3>{project.short_name&&<small>{project.short_name}</small>}</div>
-          <p className={styles.description}>{project.description||'Finalidade ainda não informada.'}</p>
-          <div className={styles.metadata}><p><MapPin size={14}/>{unit?unit.acronym||unit.name:'Unidade ainda não definida'}</p>{project.location&&<p>{project.location}</p>}{project.starts_at&&<p><CalendarDays size={14}/>{prettyDay(project.starts_at)}{project.ends_at?` até ${prettyDay(project.ends_at)}`:''}</p>}<div className={styles.badges}><span className={project.scope==='external'?styles.scopeExternal:styles.scopeInternal}>{project.scope==='external'?'Externo':'Interno PROEX'}</span>{project.thematic_area&&<span className={styles.featureBadge}>{areaLabel(project.thematic_area)}</span>}{Boolean(project.prizes_enabled)&&<span className={styles.featureBadge}>Dinâmicas e brindes</span>}</div></div>
+          <div className={`p-row-between ${styles.cardTop}`}><span className="p-icon-tile" style={{borderTop:`3px solid ${/^#[\da-f]{6}$/i.test(project.color??'')?project.color:'#54216C'}`}}><FolderKanban size={22}/></span><span className={`p-badge ${project.status==='archived'?'p-status-closed':'p-status-active'}`}>{project.status==='archived'?'Arquivado':project.lifecycle==='past'?'Histórico':project.lifecycle==='catalog'?'Catálogo':'Em atividade'}</span>{userId&&<button type="button" className={styles.pinButton} aria-pressed={pinnedIds.includes(project.id)} aria-label={`${pinnedIds.includes(project.id)?'Desafixar':'Fixar'} ${project.name}`} onClick={()=>togglePin(project)}><Pin size={17} aria-hidden="true"/></button>}</div>
+          <div className={styles.identity}>{types.find(type=>type.id===project.type_id)?.label&&<span className="p-kicker">{types.find(type=>type.id===project.type_id)?.label}</span>}<h3><button type="button" className={styles.titleButton} onClick={()=>showDetail(project.id)}>{project.name}</button></h3>{distinctShortName(project)&&<small>{distinctShortName(project)}</small>}</div>
+          {project.description&&<p className={styles.description}>{project.description}</p>}
+          <div className={styles.metadata}>{unit&&<p><MapPin size={14}/>{unit.acronym||unit.name}</p>}{project.location&&<p>{project.location}</p>}{project.starts_at&&<p><CalendarDays size={14}/>{prettyDay(project.starts_at)}{project.ends_at?` até ${prettyDay(project.ends_at)}`:''}</p>}<div className={styles.badges}><span className={project.scope==='external'?styles.scopeExternal:styles.scopeInternal}>{project.scope==='external'?'Externo':'Interno PROEX'}</span>{project.thematic_area&&<span className={styles.featureBadge}>{areaLabel(project.thematic_area)}</span>}{Boolean(project.prizes_enabled)&&<span className={styles.featureBadge}>Dinâmicas e brindes</span>}</div></div>
           <div className={styles.cardFooter}>{project.official_url&&<a className="p-text-link" href={project.official_url} target="_blank" rel="noopener noreferrer">Página oficial <ExternalLink size={14}/></a>}<div className={styles.cardActions}><button type="button" className="p-text-link" onClick={()=>showDetail(project.id)}>Acessar projeto <ArrowRight size={15}/></button>{canEdit(project.id)&&<button type="button" className="p-button p-button-subtle" disabled={opening} onClick={()=>void edit(project)}><Pencil size={14}/>Editar</button>}</div></div>
         </article>;})}</div>:<div className="p-empty"><FolderKanban size={29}/><h3>{hasFilters?'Nenhum projeto encontrado':'Seus projetos aparecerão aqui'}</h3><p>{hasFilters?'Tente outro termo ou limpe os filtros.':canCreate?'Cadastre um projeto para organizar os materiais, a equipe e as próximas ações.':'Os projetos aparecem conforme os acessos concedidos à sua conta.'}</p></div>}
       </>}

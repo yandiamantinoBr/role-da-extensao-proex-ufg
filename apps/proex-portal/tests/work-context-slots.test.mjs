@@ -10,6 +10,7 @@ const projects = [{id: 'project-a', name: 'Projeto A'}, {id: 'project-b', name: 
 const ProjectDetailBoundary = 'ProjectDetailBoundary';
 function harness(file, props = {}, internalMaterial = false) {
   let index = 0, tree, pendingRender = false;
+  const storage = new Map(), timers = new Map(), listeners = new Map(); let timerId = 0;
   const slots = [], effects = [], requests = [], scrolls = [], compiledModule = {exports: {}};
   const sameDeps = (a, b) => a && a.length === b.length && a.every((value, n) => value === b[n]);
   const hooks = {
@@ -23,12 +24,14 @@ function harness(file, props = {}, internalMaterial = false) {
   const code = ts.transpileModule(source, {compilerOptions: {module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX}}).outputText;
   vm.runInNewContext(code + (internalMaterial ? '\nmodule.exports.MaterialDialogForTest = MaterialDialog;' : ''), {
     module: compiledModule, exports: compiledModule.exports, require: name => name === 'react' ? hooks : name === 'react/jsx-runtime' ? {jsx, jsxs: jsx} : name === 'lucide-react' ? new Proxy({}, {get: (_target, key) => String(key)}) : name.endsWith('.css') ? {default: new Proxy({}, {get: (_target, key) => String(key)})} : name === './project-detail' ? {default: ProjectDetailBoundary} : name === '@/lib/extension-catalog' ? {areaLabel: value => value, lineLabel: value => value, groupUnits: () => [], EXTENSION_LINES: [], THEMATIC_AREAS: []} : {default: () => null, useFormDraft: () => ({clear() {}}), DraftNotice: () => null},
-    URL, Date, Intl, Error, AbortController, FormData, crypto, window: {requestAnimationFrame: run => run(), scrollTo: options => scrolls.push(options.top)}, fetch: (url, init) => new Promise(resolve => requests.push({url, init, resolve})),
+    URL, Date, Intl, Error, AbortController, FormData, crypto, localStorage: {getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value)}, window: {setTimeout: fn => {timers.set(++timerId, fn); return timerId;}, clearTimeout: id => timers.delete(id), addEventListener: (name, fn) => listeners.set(name, fn), removeEventListener: name => listeners.delete(name), requestAnimationFrame: run => run(), scrollTo: options => scrolls.push(options.top)}, fetch: (url, init) => new Promise(resolve => requests.push({url, init, resolve})),
   });
   const Component = internalMaterial ? compiledModule.exports.MaterialDialogForTest : compiledModule.exports.default;
   function nodes() {const result = []; const visit = node => {if (!node || typeof node !== 'object') return; if (Array.isArray(node)) return node.forEach(visit); result.push(node); visit(node.props?.children);}; visit(tree); return result;}
   const h = {
-    requests, scrolls,
+    requests, scrolls, storage, exports: compiledModule.exports,
+    flushTimers() {const queued = [...timers.values()]; timers.clear(); queued.forEach(fn => fn()); h.render();},
+    storageEvent(key) {listeners.get('storage')?.({key}); h.render();},
     render(patch = {}, flush = true) {props = {...props, ...patch}; let count = 0; do {pendingRender = false; index = 0; effects.length = 0; tree = Component(props); assert.ok(++count < 5, 'render converges after a controlled target change');} while (pendingRender); for (const node of nodes()) if (node.props?.ref && !node.props.ref.current) node.props.ref.current = {open: false, showModal() {this.open = true;}, close() {this.open = false;}, scrollIntoView() {}, focus() {}}; if (flush) h.effects();},
     effects() {effects.splice(0).forEach(effect => effect());},
     body() {return text(tree);},
@@ -114,4 +117,41 @@ test('material target replacement hides the old slot before cleanup and discards
   const calls = [], h = material({renderWorkContext: context => {calls.push(context.itemId); return `work:${context.itemId}`;}}); try {
     await h.ready(materialPayload()); h.click('Acompanhamento'); h.render(); const before = calls.length; h.click('Atualizar material'); const old = h.requests.at(-1); h.render({itemId: 'item-b'}, false); assert.ok(!h.body().includes('work:item-a')); assert.equal(calls.length, before); h.effects(); h.reply(old, materialPayload()); await tick(); h.render(); assert.equal(calls.length, before); await h.ready(materialPayload('item-b', 'project-b')); assert.equal(calls.at(-1), 'item-b'); assert.ok(!h.body().includes('work:item-a'));
   } finally {h.dispose();}
+});
+
+
+test('project pins persist only IDs per canonical account and immediately respect current visibility', () => {
+ const h = panel(); try {
+  h.render({userId:'person-a'}); h.flushTimers();
+  h.click('Fixar Projeto A'); h.render();
+  const key = h.exports.projectPinKey('person-a');
+  assert.deepEqual(JSON.parse(h.storage.get(key)), ['project-a']);
+  assert.ok(h.node('button', node => node.props['aria-label'] === 'Desafixar Projeto A'));
+  h.render({userId:'person-b'}, false);
+  assert.equal(h.node('button', node => node.props['aria-label'] === 'Desafixar Projeto A'), undefined, 'previous account pins are hidden before effects');
+  h.effects(); h.flushTimers();
+  h.click('Fixar Projeto B'); h.render();
+  assert.deepEqual(JSON.parse(h.storage.get(h.exports.projectPinKey('person-b'))), ['project-b']);
+  h.render({userId:'person-a'}); h.flushTimers();
+  assert.ok(h.node('button', node => node.props['aria-label'] === 'Desafixar Projeto A'));
+  h.render({projects:[projects[1]]}, false);
+  assert.equal(h.node('button', node => node.props['aria-label'] === 'Desafixar Projeto A'), undefined, 'revoked project cannot remain in shortcuts');
+  assert.ok(!h.body().includes('Projeto A'));
+  h.render({projects}); h.storage.set(key, JSON.stringify(['hidden-project','project-b'])); h.storageEvent(key);
+  assert.ok(h.node('button', node => node.props['aria-label'] === 'Desafixar Projeto B'));
+  assert.ok(!h.body().includes('hidden-project'));
+  h.click('Desafixar Projeto B'); h.render();
+  assert.deepEqual(JSON.parse(h.storage.get(key)), ['hidden-project']);
+ } finally {h.dispose();}
+});
+
+test('project pin preferences reject malformed, oversized and non-ID values', () => {
+ const h=panel(); try {
+  const parse = raw => Array.from(h.exports.parseProjectPins(raw));
+  for(const raw of [null, '', '{}', '{bad', 'x'.repeat(6001)]) assert.deepEqual(parse(raw), []);
+  assert.deepEqual(parse(JSON.stringify(['project-a','project-a','../private','<script>',null,42,'project-b'])), ['project-a','project-b']);
+  assert.equal(parse(JSON.stringify(Array.from({length:20},(_,i)=>`p-${i}`))).length, 12);
+  assert.notEqual(h.exports.projectPinKey('a:b'), h.exports.projectPinKey('a%3Ab'));
+  assert.equal(h.exports.projectPinKey(''), '');
+ } finally {h.dispose();}
 });

@@ -1,6 +1,9 @@
 'use client';
+import DateField from '@/components/portal/date-field';
 import Image from 'next/image';
 import scopeStyles from './scope-filters.module.css';
+import FeedbackPanel from '@/components/portal/feedback-panel';
+import { toast } from 'sonner';
 import settingsStyles from './settings-groups.module.css';
 import headingStyles from './module-heading.module.css';
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from 'react';
@@ -24,8 +27,10 @@ import PublicParticipantsSettingsPanel from '@/components/portal/public-particip
 import ProfilePanel from '@/components/portal/profile-panel';
 import CalendarPanel from '@/components/portal/calendar-panel';
 import RecordsPanel from '@/components/portal/records-panel';
-import ReportsCenter from '@/components/portal/reports-center';
-import { download, toXlsx } from '@/components/portal/report-export';
+import ReportsCenter, { projectBrandFor } from '@/components/portal/reports-center';
+import { download } from '@/components/portal/report-export';
+import ExportFormats, {type DocumentFormat} from '@/components/portal/export-formats';
+import { documentExport } from '@/components/portal/document-export';
 import FollowUpPanel from '@/components/portal/follow-up-panel';
 import MeuTrabalhoPanel from '@/components/portal/meu-trabalho-panel';
 import { workDayFromServerTimestamp } from '@/lib/follow-up/time';
@@ -47,7 +52,7 @@ import { useNavigationPreferences } from '@/components/portal/use-navigation-pre
 import { useFormDraft, DraftNotice, setDraftScope, clearCurrentDrafts, watchDraftLogout } from '@/components/portal/use-form-draft';
 import { THEMATIC_AREAS, groupUnits } from '@/lib/extension-catalog';
 import { MAX_UPLOAD_FILE_BYTES, UPLOAD_LIMIT_LABEL, uploadErrorMessage } from '@/lib/upload-limits';
-import { ArrowDownToLine, ArrowRight, Boxes, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronRight, ExternalLink, FileText, Gift, LoaderCircle, LogOut, Plus, RefreshCw, Search, ShieldCheck, Truck, Users, Wifi, WifiOff, X } from 'lucide-react';
+import { ArrowDownToLine, ArrowRight, Boxes, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronRight, ExternalLink, FileText, Filter, Gift, LoaderCircle, LogOut, Plus, RefreshCw, Search, ShieldCheck, Truck, Users, Wifi, WifiOff, X } from 'lucide-react';
 // API projections vary by module; the server validates every mutation.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = Record<string, any>;
@@ -262,8 +267,9 @@ function PrizeKits({ projects, offers, items, projectId, onProjectChange, projec
         </div>}
     </Section>;
 }
-export default function PortalClient({ initial }: {
+export default function PortalClient({ initial, release = 'Versão local' }: {
     initial: Snapshot;
+    release?: string;
 }) {
     const [data, setData] = useState<Snapshot>(initial ?? {});
     const sessionIdentity = useRef(string(initial?.user?.userId));
@@ -538,7 +544,9 @@ export default function PortalClient({ initial }: {
             throw new Error(r.status === 401 ? 'Sua sessão terminou. Entre novamente para continuar.' : readableError(body?.error, 'Não foi possível concluir. Verifique sua conexão e tente novamente.'));
         const updated = await refresh();
         setMessageKind(body.alreadyDelivered ? 'warning' : 'success');
-        setMessage(body.alreadyDelivered ? `Este prêmio${body.offerName ? ` (${body.offerName})` : ''} já foi entregue. Não entregue novamente.` : action === 'prize.redeem' ? 'Entrega registrada. Entregue os materiais indicados à pessoa.' : updated ? 'Registro salvo. Os dados foram atualizados.' : 'Registro salvo. A atualização da tela está pendente; use Atualizar dados.');
+        const receipt = body.alreadyDelivered ? `Este prêmio${body.offerName ? ` (${body.offerName})` : ''} já foi entregue. Não entregue novamente.` : action === 'prize.redeem' ? 'Entrega registrada. Entregue os materiais indicados à pessoa.' : updated ? 'Registro salvo. Os dados foram atualizados.' : 'Registro salvo. A atualização da tela está pendente; use Atualizar dados.';
+        setMessage(receipt);
+        if(body.alreadyDelivered || !updated) toast.warning(receipt); else toast.success(receipt);
         return body;
     }
     async function quick(action: string, payload: Payload) {
@@ -596,15 +604,18 @@ export default function PortalClient({ initial }: {
         const rows = byProject(list(metrics.byProject));
         value = rows.length && rows.every(row => get(row, normalized, ...keys) !== undefined) ? rows.reduce((total, row) => total + Number(get(row, normalized, ...keys) ?? 0), 0) : undefined;
     } return value === undefined || value === null ? '—' : Number(value).toLocaleString('pt-BR'); };
-    function downloadDaily() {
+    async function downloadDaily(format: DocumentFormat) {
         const columns = [
-            { key: 'day', label: 'Data' }, { key: 'campaign_name', label: 'Evento' }, { key: 'modality', label: 'Modalidade' },
+            { key: 'day', label: 'Data' }, { key: 'project_name', label: 'Projeto' }, { key: 'campaign_name', label: 'Evento' }, { key: 'modality', label: 'Modalidade' },
             { key: 'participations', label: 'Participações', numeric: true }, { key: 'attempts', label: 'Tentativas', numeric: true },
             { key: 'deliveries', label: 'Entregas', numeric: true }, { key: 'tickets', label: 'Atendimentos assistidos', numeric: true },
         ];
         const modalities: Record<string, string> = { physical: 'Presencial', dice: 'Dado', wheel: 'Roleta' };
-        const rows = dailyRows.map(row => ({ ...row, modality: modalities[string(row.modality)] ?? row.modality }));
-        download('proex-resumo-diario.xlsx', toXlsx('Resumo diário', columns, rows, (row, key) => row[key], [['Linhas', String(rows.length)]]));
+        const rows = dailyRows.map(row => ({ ...row, project_name:projectName(string(row.project_id)), day: /^\d{4}-\d{2}-\d{2}$/.test(string(row.day)) ? string(row.day).split('-').reverse().join('/') : row.day, modality: modalities[string(row.modality)] ?? row.modality }));
+        const info: [string,string][] = [['Projeto',filter?projectName(filter):'Todos os projetos do recorte'],['Período',`${reportFrom||'Início disponível'} a ${reportTo||'Última data disponível'}`],['Linhas',String(rows.length)],['Gerado em',when(new Date().toISOString())+' (Brasília)']];
+        const selectedProject=projects.find(project=>project.id===filter);
+        const presentation={...(selectedProject?{projectName:string(selectedProject.name),projectBrand:projectBrandFor(selectedProject.id,selectedProject.name,selectedProject.official_url)}:{}),metrics:[{label:'Participações',value:dailyRows.reduce((sum,row)=>sum+Number(row.participations??0),0)},{label:'Entregas',value:dailyRows.reduce((sum,row)=>sum+Number(row.deliveries??0),0)}]};
+        download(`proex-resumo-diario.${format}`, await documentExport(format,'Resumo diário',columns,rows,(row,key)=>row[key],info,presentation));
     }
     const activeModule = tabs.find(module => module.id === tab);
     const title = activeModule?.label ?? 'Visão geral';
@@ -701,14 +712,15 @@ export default function PortalClient({ initial }: {
         <div className={scopeStyles.layout}>
         <Field label="Projeto">
             <select value={filter} onChange={event => selectProject(event.target.value)}>
-                <option value="">{scopedProjects.length === projects.length ? 'Todos os projetos' : `Todos os ${scopedProjects.length} projeto(s) deste recorte`}</option>
+                <option value="">{scopedProjects.length === projects.length ? 'Todos os projetos' : scopedProjects.length === 0 ? 'Nenhum projeto neste recorte' : scopedProjects.length === 1 ? '1 projeto neste recorte' : `${scopedProjects.length} projetos neste recorte`}</option>
                 {scopedProjects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}
             </select>
         </Field>
-        {(filter || unitFilter || areaFilter) && <button type="button" className={`p-button p-button-subtle p-filter-clear ${scopeStyles.clear}`} onClick={clearScope}><X size={15} />Limpar filtros</button>}
+        {(filter || unitFilter || areaFilter) && <button type="button" className={`p-button p-button-subtle p-filter-clear ${scopeStyles.clear}`} aria-label="Limpar filtros" onClick={clearScope}><X size={15} aria-hidden="true" /><span className={scopeStyles.clearText}>Limpar filtros</span></button>}
         <details className={scopeStyles.refine}>
-            <summary>Refinar contexto
+            <summary><Filter size={16} aria-hidden="true" /><span className={scopeStyles.summaryText}>Refinar contexto
                 {(unitFilter || areaFilter) && <span className={scopeStyles.active}>{[unitFilter ? (unitFilter === '__unassigned__' ? 'Sem unidade vinculada' : string(visibleUnits.find(unit => unit.id === unitFilter)?.acronym || visibleUnits.find(unit => unit.id === unitFilter)?.name) || 'Unidade selecionada') : '', areaFilter ? (areaFilter === '__none__' ? 'Área não informada' : THEMATIC_AREAS.find(area => area.key === areaFilter)?.label || 'Área selecionada') : ''].filter(Boolean).join(' · ')}</span>}
+                </span><ChevronDown size={16} className={scopeStyles.chevron} aria-hidden="true" />
             </summary>
             <div className={scopeStyles.fields}>
         <Field label="Unidade responsável">
@@ -972,7 +984,7 @@ export default function PortalClient({ initial }: {
             </OperationForm>
             </Section></div>}</>}
 
-      {tab === 'team' && <><OrganizationsPanel organizations={organizations} currentActor={{ userId: string(user.userId), isPlatformOwner }} people={organizationPeople} onChanged={refreshModules}/><OfficialTeamDirectory onSelect={canAny('access.invite') ? setOfficialSuggestion : undefined}/><TeamPanel key={officialSuggestion?.selectionKey ?? 'manual'} officialSuggestion={officialSuggestion} onClearOfficialSuggestion={() => setOfficialSuggestion(null)} users={list(data.users)} members={members} invites={invites} projects={projects} selectedProjectId={filter} globalAdmin={isPlatformOwner} canManageManagers={(projectId, organizationId) => isPlatformOwner || organizations.some(organization => organization.canManage && organization.id === (projectId ? projects.find(project => project.id === projectId)?.organization_id : organizationId))} canProject={canProject} mutate={mutate} now={now}/>{canGlobal('organization.manage') && <AdminPrivacyPanel />}</>}
+      {tab === 'team' && <><OrganizationsPanel organizations={organizations} currentActor={{ userId: string(user.userId), isPlatformOwner }} people={organizationPeople} onChanged={refreshModules}/><OfficialTeamDirectory onSelect={canAny('access.invite') ? setOfficialSuggestion : undefined}/><TeamPanel key={officialSuggestion?.selectionKey ?? `manual:${filter}`} officialSuggestion={officialSuggestion} onClearOfficialSuggestion={() => setOfficialSuggestion(null)} users={list(data.users)} members={members} invites={invites} projects={projects} selectedProjectId={filter} globalAdmin={isPlatformOwner} canManageManagers={(projectId, organizationId) => isPlatformOwner || organizations.some(organization => organization.canManage && organization.id === (projectId ? projects.find(project => project.id === projectId)?.organization_id : organizationId))} canProject={canProject} mutate={mutate} now={now}/>{canGlobal('organization.manage') && <AdminPrivacyPanel />}</>}
       {tab === 'profile' && <><AssistantPanel key={string(user.userId)} projects={assistantProjects} defaultProjectId={filter} onApplied={refreshModules}/><ProfilePanel onUpdated={() => { void refresh(); }}/></>}
       {tab === 'calendar' && <CalendarPanel projects={projects} organizationalUnits={visibleUnits} selectedProjectId={filter} selectedUnitId={unitFilter} onProjectChange={selectProject} onUnitChange={selectUnit}/>}
       {tab === 'records' && <RecordsPanel projects={projects} items={items} loans={loans} canWrite={(capability: string, projectId?: string | null) => projectId ? canProject(projectId, capability) : canGlobal(capability)}/>}
@@ -981,13 +993,13 @@ export default function PortalClient({ initial }: {
         <div className="p-card p-report-filters">
         <label className="p-field">
         <span>De</span>
-        <input type="date" value={reportFrom} onChange={e => { setReportFrom(e.target.value); if (reportTo && e.target.value > reportTo)
-            setReportTo(e.target.value); }}/>
+        <DateField aria-label="De" value={reportFrom} onValueChange={next => { setReportFrom(next); if (reportTo && next > reportTo)
+            setReportTo(next); }}/>
         </label>
         <label className="p-field">
         <span>Até</span>
-        <input type="date" value={reportTo} min={reportFrom || undefined} onChange={e => { setReportTo(e.target.value); if (e.target.value && reportFrom && e.target.value < reportFrom)
-            setReportFrom(e.target.value); }}/>
+        <DateField aria-label="Até" value={reportTo} min={reportFrom || undefined} onValueChange={next => { setReportTo(next); if (next && reportFrom && next < reportFrom)
+            setReportFrom(next); }}/>
         </label>
         <button className="p-button p-button-subtle" onClick={() => { setReportFrom(''); setReportTo(''); }}>Todo o período</button>
         <p>Datas de Brasília para os relatórios com período. Projetos e materiais mostram a posição atual. Nos indicadores de dinâmicas, participações, tentativas e entregas usam a data de cada registro.</p>
@@ -1063,8 +1075,7 @@ export default function PortalClient({ initial }: {
                 </tr>)}</tbody>
             </table>
             </div>
-            </Section>}<Section title="Resumo diário" description="Participações e entregas podem acontecer em dias diferentes." aside={<button className="p-button p-button-subtle" onClick={downloadDaily} disabled={!dailyRows.length}>
-            <ArrowDownToLine size={16}/>Baixar resumo em XLSX</button>}>{dailyRows.length ? <div className="p-card p-table-wrap">
+            </Section>}<Section title="Resumo diário" description="Participações e entregas podem acontecer em dias diferentes." aside={<ExportFormats onExport={downloadDaily} disabled={!dailyRows.length} label="Baixar resumo diário"/>}>{dailyRows.length ? <div className="p-card p-table-wrap">
             <table>
             <thead>
             <tr>
@@ -1155,7 +1166,7 @@ export default function PortalClient({ initial }: {
 
       <footer className="p-footer">
     <span>{online ? <Wifi size={14}/> : <WifiOff size={14}/>}{online ? 'Conectado' : 'Sem conexão'}{updatedAt && ` · atualizado às ${updatedAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`}</span>
-    <span>PROEX · Universidade Federal de Goiás</span>
+    <div style={{display:'flex',alignItems:'center',flexWrap:'wrap',gap:12}}><small>PROEX · {release}</small><FeedbackPanel release={release} module={tab} projects={projects.map(project=>({id:string(project.id),name:string(project.name)}))} projectId={filter}/></div>
     </footer>
       </main>
     </div>

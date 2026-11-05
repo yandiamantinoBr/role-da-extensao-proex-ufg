@@ -1,6 +1,8 @@
 'use client';
+import DateField from './date-field';
+import { toast } from 'sonner';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { ChartColumn, ClipboardCheck, Pencil, Plus, RefreshCw, Share2, Users, X } from 'lucide-react';
+import { ArrowUpRight, FolderKanban, ChartColumn, ClipboardCheck, Pencil, Plus, RefreshCw, Share2, Users, X } from 'lucide-react';
 import { type Catalog, type Task, type Checklist, type Team, stateLabels, priorityLabels, TASK_STATES, TASK_PRIORITIES, manualShareUrl } from '@/lib/follow-up/contracts';
 import { followupApi, followupChanged } from './follow-up-api';
 import { DraftNotice, useFormDraft } from './use-form-draft';
@@ -41,7 +43,7 @@ function TaskEditor({catalog,task,organizationId,projectId,busy,save}:{catalog:C
    setSaveError(cause instanceof Error?cause.message:'Não foi possível salvar a demanda.');
   }
  }
- return <form ref={form} onSubmit={event=>void submit(event)} className="mt-3 grid min-w-0 gap-4"><DraftNotice draft={draft}/><fieldset disabled={busy} className="grid min-w-0 gap-4"><label className="block min-w-0">Título<input name="title" required maxLength={160} defaultValue={task?.title} className={field} placeholder="Ex.: recontar bottons ou repor coletes"/></label><label className="block min-w-0">Orientações e contexto<textarea name="body" maxLength={4000} defaultValue={task?.body} rows={3} className={field}/></label><div className="grid min-w-0 gap-3 @min-[560px]:grid-cols-2"><label className="min-w-0">Prioridade (urgência)<select name="priority" defaultValue={task?.priority??'medium'} className={field}>{TASK_PRIORITIES.map(p=><option value={p} key={p}>{priorityLabels[p]}</option>)}</select></label><label className="min-w-0">Importância<select name="importance" defaultValue={task?.importance??''} className={field}><option value="">Sem classificação</option>{TASK_PRIORITIES.map(p=><option value={p} key={p}>{priorityLabels[p]}</option>)}</select></label><label className="min-w-0">Estado<select name="status" defaultValue={task?.status??'open'} className={field}>{TASK_STATES.map(s=><option value={s} key={s}>{stateLabels[s]}</option>)}</select></label><label className="min-w-0">Prazo<input name="dueAt" type="date" defaultValue={task?.due_at??''} className={field}/></label></div>
+ return <form ref={form} onSubmit={event=>void submit(event)} className="mt-3 grid min-w-0 gap-4"><DraftNotice draft={draft}/><fieldset disabled={busy} className="grid min-w-0 gap-4"><label className="block min-w-0">Título<input name="title" required maxLength={160} defaultValue={task?.title} className={field} placeholder="Ex.: recontar bottons ou repor coletes"/></label><label className="block min-w-0">Orientações e contexto<textarea name="body" maxLength={4000} defaultValue={task?.body} rows={3} className={field}/></label><div className="grid min-w-0 gap-3 @min-[560px]:grid-cols-2"><label className="min-w-0">Prioridade (urgência)<select name="priority" defaultValue={task?.priority??'medium'} className={field}>{TASK_PRIORITIES.map(p=><option value={p} key={p}>{priorityLabels[p]}</option>)}</select></label><label className="min-w-0">Importância<select name="importance" defaultValue={task?.importance??''} className={field}><option value="">Sem classificação</option>{TASK_PRIORITIES.map(p=><option value={p} key={p}>{priorityLabels[p]}</option>)}</select></label><label className="min-w-0">Estado<select name="status" defaultValue={task?.status??'open'} className={field}>{TASK_STATES.map(s=><option value={s} key={s}>{stateLabels[s]}</option>)}</select></label><label className="min-w-0">Prazo<DateField aria-label="Prazo" name="dueAt" defaultValue={task?.due_at??''} className={field}/></label></div>
  {!!projectId&&<details className="rounded-xl border border-[var(--line)] p-3"><summary className="min-h-11 cursor-pointer font-medium">Relacionar evento, material ou empréstimo</summary><div className="mt-2 grid gap-3 @min-[560px]:grid-cols-3"><label>Evento<select name="campaignId" defaultValue={task?.campaign_id??''} className={field}><option value="">Sem vínculo</option>{catalog.campaigns.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label><label>Material<select name="itemId" defaultValue={task?.item_id??''} className={field}><option value="">Sem vínculo</option>{catalog.items.map(i=><option key={i.id} value={i.id}>{i.name}</option>)}</select></label><label>Empréstimo<select name="loanId" defaultValue={task?.loan_id??''} className={field}><option value="">Sem vínculo</option>{catalog.loans.map(l=><option key={l.id} value={l.id}>{l.action_name}</option>)}</select></label></div></details>}
  <Assignments catalog={catalog} users={task?.assignees.flatMap(a=>a.user_id?[a.user_id]:[])} teams={task?.assignees.flatMap(a=>a.team_id?[a.team_id]:[])}/><div><div role="alert">{saveError&&<p className="p-notice p-notice-error">{saveError}</p>}</div><button ref={saveButton} className={primary} type="submit">{busy?'Salvando…':task?'Salvar demanda':'Criar demanda'}</button></div></fieldset></form>;
 }
@@ -177,7 +179,7 @@ export default function FollowUpPanel({defaultProjectId='',defaultOrganizationId
     detailGeneration.current++;selectionEcho.current=result.task.id;setSelectedTask(result.task.id);setDetail(result);setForm(null);onSelectTask?.(result.task.id);
     if(isTaskEditor)setTaskReceipt({id:result.task.id,message:'Demanda salva.'});
    }
-   setRevision(value=>value+1);followupChanged();
+   setRevision(value=>value+1);followupChanged();toast.success(isTaskEditor?'Demanda salva.':'Atualização registrada.');
    if(isTaskEditor){
     try{await onChanged?.();}catch{
      if(result.task&&epoch===interactionEpoch.current)setTaskReceipt({id:result.task.id,message:'Demanda salva. Atualize o portal para conferir as outras telas.'});
@@ -246,7 +248,7 @@ export default function FollowUpPanel({defaultProjectId='',defaultOrganizationId
   <header className="flex flex-wrap items-start justify-between gap-3">
    <div className="min-w-0 flex-1">
     <h3 ref={detailElement} tabIndex={-1} className={'text-xl font-bold [overflow-wrap:anywhere] '+focusAnchor}>{currentTask.title}</h3>
-    <p className="mt-1 text-sm text-[var(--text-secondary)] [overflow-wrap:anywhere]">{currentTask.organization_name}{currentTask.project_name&&` · ${currentTask.project_name}`}</p>
+    <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 text-sm text-[var(--text-secondary)]"><span>{currentTask.organization_name}</span>{currentTask.project_name&&(currentTask.project_id&&catalog.projects.some(project=>project.id===currentTask.project_id)?<a className="p-text-link inline-flex min-h-11 max-w-full items-center gap-2 [overflow-wrap:anywhere]" href={`/?module=projects&project=${encodeURIComponent(currentTask.project_id)}&detailProject=${encodeURIComponent(currentTask.project_id)}`}><FolderKanban size={16} className="shrink-0" aria-hidden="true"/>{currentTask.project_name}<ArrowUpRight size={15} className="shrink-0" aria-hidden="true"/><span className="sr-only"> · Abrir projeto de origem</span></a>:<span>{currentTask.project_name}</span>)}</div>
    </div>
    <button className={button} disabled={busy} type="button" onClick={closeTask}><X size={16} aria-hidden="true"/>Fechar</button>
   </header>

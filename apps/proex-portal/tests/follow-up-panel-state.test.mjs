@@ -32,7 +32,7 @@ function harness(){
  }
  const hooks={useState(initial){const i=index++;if(!(i in slots))slots[i]=initial;return[slots[i],value=>slots[i]=typeof value==='function'?value(slots[i]):value];},useRef(initial){const i=index++;slots[i]??={current:initial};return slots[i];},useEffect(fn,deps){const i=index++,old=slots[i];if(!old||deps.some((v,n)=>v!==old.deps[n]))effects.push(()=>{old?.cleanup?.();slots[i]={deps,cleanup:fn()};});}};
  const element=(type,props)=>typeof type==='function'&&['WorkTaskCard','TaskSignals','TaskStateBadge','TaskPriorityBadge','TaskDeadlineBadge','TaskPageSummary'].includes(type.name)?type(props):({type,props});const jsx={jsx:element,jsxs:element};
- const modules=new Map();function load(file){if(modules.has(file))return modules.get(file);const compiledModule={exports:{}};modules.set(file,compiledModule.exports);const require=name=>name.endsWith('.module.css')?{default:new Proxy({},{get:(_target,key)=>String(key)})}:name==='react'?hooks:name==='react/jsx-runtime'?jsx:name==='lucide-react'?new Proxy({},{get:(_target,key)=>String(key)}):name==='./use-form-draft'?{DraftNotice:'DraftNotice',useFormDraft:()=>({clear(){}})}:name==='../errors'?{HttpError:class extends Error{}}:name==='./work-task-card'?load('components/portal/work-task-card.tsx'):name==='./work-signals'?load('components/portal/work-signals.tsx'):name==='./task-page-summary'?load('components/portal/task-page-summary.tsx'):name==='@/lib/follow-up/presentation'?load('lib/follow-up/presentation.ts'):load(name==='@/lib/follow-up/contracts'?'lib/follow-up/contracts.ts':'components/portal/follow-up-api.ts');
+ const modules=new Map();function load(file){if(modules.has(file))return modules.get(file);const compiledModule={exports:{}};modules.set(file,compiledModule.exports);const require=name=>name.endsWith('.module.css')?{default:new Proxy({},{get:(_target,key)=>String(key)})}:name==='sonner'?{toast:{success(){},warning(){},error(){}}}:name==='react'?hooks:name==='react/jsx-runtime'?jsx:name==='lucide-react'?new Proxy({},{get:(_target,key)=>String(key)}):name==='./use-form-draft'?{DraftNotice:'DraftNotice',useFormDraft:()=>({clear(){}})}:name==='../errors'?{HttpError:class extends Error{}}:name==='./work-task-card'?load('components/portal/work-task-card.tsx'):name==='./work-signals'?load('components/portal/work-signals.tsx'):name==='./task-page-summary'?load('components/portal/task-page-summary.tsx'):name==='@/lib/follow-up/presentation'?load('lib/follow-up/presentation.ts'):load(name==='@/lib/follow-up/contracts'?'lib/follow-up/contracts.ts':'components/portal/follow-up-api.ts');
  const code=ts.transpileModule(readFileSync(new URL('../'+file,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText;
  vm.runInNewContext(code,{module:compiledModule,exports:compiledModule.exports,require,URLSearchParams,URL,Intl,Date,JSON,Error,Event,FormData:FakeFormData,AbortController,crypto,document:{body:{},activeElement:null},setTimeout:schedule,clearTimeout:clear,window:{location:{origin:'http://127.0.0.1:5173'},requestAnimationFrame:fn=>schedule(fn,0),dispatchEvent(){}},fetch:(url,init)=>new Promise(resolve=>requests.push({url,init,resolve}))});return compiledModule.exports;}
  const Component=load('components/portal/follow-up-panel.tsx').default;
@@ -300,5 +300,18 @@ test('opening a dated row from the timeline uses the existing selection flow and
   h.select('Projeto','project-b');
   h.render();
   assert.equal(timelineButton(),undefined);
+ }finally{h.dispose();}
+});
+
+
+test('the demand source uses the actual authorized project identity and opens its detail route',async()=>{
+ const h=harness();try{
+  await ready(h);h.button('Task A').props.onClick();h.render();
+  h.reply(h.pending('detail'),detail());await tick();h.render();
+  const link=h.find('a',node=>node.props.href==='/?module=projects&project=project-a&detailProject=project-a');
+  assert.ok(link);assert.match(text(link),/Project A/);assert.match(text(link),/Abrir projeto de origem/);
+  h.render({initialTaskId:'task-b'});h.timers();h.render();
+  h.reply(h.pending('detail'),{...detail(),task:{...task('task-b'),project_id:null,project_name:''}});await tick();h.render();
+  assert.equal(h.find('a',node=>node.props.href?.includes('detailProject=')),undefined);
  }finally{h.dispose();}
 });

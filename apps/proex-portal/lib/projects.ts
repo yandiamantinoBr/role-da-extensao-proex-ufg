@@ -264,6 +264,6 @@ export async function projectDetail(db:D1Database,actor:PortalActor|null,id:stri
     calls:projectedCalls,schedule,
     versions:history.filter(row=>!hiddenMaster||row.spreadsheet!==hiddenMaster).map(row=>row.version),
     relatedProjects,relationships:{items,campaigns:events,loans:loanRows,records:records.records},
-    permissions:{canEdit,canManageTypes:permitted(actor,'projects.manage',null),inventory,loans,reports,campaigns},
+    permissions:{canEdit,canManageTypes:permitted(actor,'projects.manage',null),accessManage:permitted(actor,'access.manage',id),inventory,loans,reports,campaigns},
   };
 }

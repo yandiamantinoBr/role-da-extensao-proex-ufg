@@ -152,7 +152,7 @@ export default function TeamPanel(props: Props) {
     const suggestionKey = official ? `${props.officialSuggestion!.selectionKey}:${official.id}` : 'manual';
     // A catalog choice starts a new, explicit scope decision. Never restore an
     // older person's project/role draft into the official prefill flow.
-    const draft = useFormDraft(inviteRef, official ? null : 'team:invite');
+    const draft = useFormDraft(inviteRef, official ? null : `team:invite:${props.selectedProjectId || 'unscoped'}`);
     const allowed = props.projects.filter(p => props.globalAdmin || props.canProject(p.id, 'access.invite'));
     const defaultInviteProject = official ? '' : allowed.some(project => project.id === props.selectedProjectId) ? props.selectedProjectId : allowed.length === 1 ? String(allowed[0].id) : '';
     const [inviteProject, setInviteProject] = useState(defaultInviteProject), [globalConfirmed, setGlobalConfirmed] = useState(false);
@@ -202,7 +202,7 @@ export default function TeamPanel(props: Props) {
         <div className="p-section-heading">
         <div>
         <h2>Convidar uma pessoa</h2>
-        <p>O link fica vinculado ao e-mail, à função e ao projeto escolhido. E-mail institucional ou vínculo de bolsista não concede permissões adicionais.</p>
+        <p>Use o e-mail institucional ou pessoal. O convite vale para a função e o projeto escolhidos. Para monitores, escolha Operador de evento; a gestão do projeto permanece com o gestor.</p>
         </div>
         </div>
         {official && <p className="p-form-help" role="status">Sugestão da fonte oficial: {official.name}. Confira o e-mail e escolha projeto e função. O nome é apenas referência; a pessoa define seu próprio perfil na ativação. {props.onClearOfficialSuggestion && <button type="button" className="p-text-link" disabled={saving} onClick={props.onClearOfficialSuggestion}>Limpar sugestão</button>}</p>}

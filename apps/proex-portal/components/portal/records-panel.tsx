@@ -1,12 +1,16 @@
 'use client';
+import DateField from './date-field';
 
 import Link from 'next/link';
 
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
-import { BarChart3, Camera, Check, ClipboardList, Download, ExternalLink, FilePlus2, ImagePlus, LoaderCircle, Paperclip, Plus, RefreshCw, Search, Trash2, Upload } from 'lucide-react';
+import { BarChart3, Camera, Check, ClipboardList, ExternalLink, FilePlus2, ImagePlus, LoaderCircle, Paperclip, Plus, RefreshCw, Search, Trash2, Upload } from 'lucide-react';
 import { useFormDraft, DraftNotice } from './use-form-draft';
 import styles from './records-panel.module.css';
-import { download, toXlsx } from './report-export';
+import { download } from './report-export';
+import ExportFormats, {type DocumentFormat} from './export-formats';
+import { documentExport } from './document-export';
+import { toast } from 'sonner';
 import { MAX_UPLOAD_FILE_BYTES as MAX_FILE_BYTES, UPLOAD_LIMIT_LABEL, uploadErrorMessage } from '../../lib/upload-limits';
 
 type Row = Record<string, unknown>;
@@ -290,7 +294,7 @@ export default function RecordsPanel({ projects: sourceProjects, items, loans, c
       const result = await requestJson('/api/records', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Proex-Action': '1' }, body: JSON.stringify(currentAttempt.payload) });
       const record = asEntry(result.record);
       if (record.id !== result.id) throw new RequestFailure('A confirmação do registro não pôde ser lida. Tente novamente.');
-      setSaved(record); setUnconfirmed(false); attempt.current = null; draft.clear(); refresh();
+      setSaved(record); setUnconfirmed(false); attempt.current = null; draft.clear(); refresh(); toast.success('Registro salvo. Você pode adicionar os anexos.');
     } catch (cause) {
       const uncertain = currentAttempt.uncertain || !confirmedRejection(cause);
       currentAttempt.uncertain = uncertain;
@@ -301,7 +305,7 @@ export default function RecordsPanel({ projects: sourceProjects, items, loans, c
   }
   const normalizedSearch = search.trim().toLocaleLowerCase('pt-BR');
   const shown = records.filter(record => (!category || record.kind === category) && (!normalizedSearch || `${record.title} ${record.body}`.toLocaleLowerCase('pt-BR').includes(normalizedSearch)));
-  function exportHistory() {
+  async function exportHistory(format: DocumentFormat) {
     const columns = [
       { key: 'data', label: 'Data (Brasília)' }, { key: 'projeto', label: 'Projeto' }, { key: 'categoria', label: 'Categoria' },
       { key: 'titulo', label: 'Título' }, { key: 'descricao', label: 'Descrição' }, { key: 'anexos', label: 'Anexos', numeric: true },
@@ -310,8 +314,8 @@ export default function RecordsPanel({ projects: sourceProjects, items, loans, c
       data: dateTime(record.occurred_at), projeto: projectName(record.project_id), categoria: kindLabel(record.kind),
       titulo: record.title, descricao: record.body, anexos: record.attachments.length,
     }));
-    const info: [string, string][] = [['Cobertura', 'Registros carregados que correspondem aos filtros visíveis.'], ['Linhas', String(rows.length)]];
-    download(`proex-registros-${new Date().toISOString().slice(0, 10)}.xlsx`, toXlsx('Registros', columns, rows, (row, key) => row[key], info));
+    const info: [string, string][] = [['Cobertura', 'Registros carregados que correspondem aos filtros visíveis.'], ['Projeto',filters.projectId?projectName(filters.projectId):'Todos os projetos permitidos'],['Período',`${filters.from||'Início disponível'} a ${filters.to||'Última data disponível'}`],['Categoria',category?kindLabel(category as Kind):'Todas'],['Busca',search||'Sem busca'],['Linhas', String(rows.length)],['Gerado em',dateTime(new Date().toISOString())+' (Brasília)']];
+    download(`proex-registros-${new Date().toISOString().slice(0, 10)}.${format}`, await documentExport(format,'Registros',columns,rows,(row,key)=>row[key],info,filters.projectId?{projectName:projectName(filters.projectId)}:undefined));
   }
   const projectName = (id: string) => String(projects.find(project => project.id === id)?.name ?? 'Projeto');
   const kindCounts = new Map<string, number>(); for (const record of records) kindCounts.set(record.kind, (kindCounts.get(record.kind) ?? 0) + 1);
@@ -339,8 +343,8 @@ export default function RecordsPanel({ projects: sourceProjects, items, loans, c
       <div className="p-row-between" style={{ gap: 16, flexWrap: 'wrap', marginBottom: 20 }}><div style={{ display: 'flex', gap: 12, alignItems: 'center' }}><span className="p-icon-tile"><ClipboardList size={22} aria-hidden="true" /></span><div><h2 id="records-title" style={{ margin: '0 0 5px', fontSize: 21 }}>Registros e documentos</h2><p className="p-form-help" style={{ margin: 0 }}>Histórico dos projetos, materiais e empréstimos, com anexos privados.</p></div></div>{!!writableProjects.length && !open && <button ref={newRecordButton} type="button" className="p-button p-button-primary" onClick={begin} disabled={existingPending}><Plus size={17} aria-hidden="true" />Novo registro</button>}</div>
       <form onSubmit={applyFilters} className={styles.filterBar}>
         <label className="p-field"><span>Projeto</span><select value={filterProject} onChange={event => setFilterProject(event.target.value)}><option value="">Todos os projetos permitidos</option>{projects.map(project => <option key={project.id as string} value={project.id as string}>{project.name as string}</option>)}</select></label>
-        <label className="p-field"><span>De</span><input type="date" min="2000-01-01" max="2200-12-31" value={from} onChange={event => setFrom(event.target.value)} /></label>
-        <label className="p-field"><span>Até (inclusive)</span><input type="date" min={from || '2000-01-01'} max="2200-12-31" value={to} onChange={event => setTo(event.target.value)} /></label>
+        <label className="p-field"><span>De</span><DateField aria-label="De" min="2000-01-01" max="2200-12-31" value={from} onValueChange={next => setFrom(next)} /></label>
+        <label className="p-field"><span>Até (inclusive)</span><DateField aria-label="Até (inclusive)" min={from || '2000-01-01'} max="2200-12-31" value={to} onValueChange={next => setTo(next)} /></label>
         <div className={styles.filterActions}><button type="submit" className="p-button p-button-primary" disabled={loading || existingPending}><Search size={16} />Consultar</button><button type="button" className="p-button p-button-subtle" aria-label="Atualizar consulta" title="Atualizar consulta" disabled={loading || existingPending} onClick={refresh}><RefreshCw size={16} /></button>{(from || to || filterProject) && <button type="button" className="p-button p-button-subtle" disabled={loading || existingPending} onClick={() => { setFrom(''); setTo(''); setFilterProject(''); setLoading(true); setFilters({ projectId: '', from: '', to: '' }); setReload(value => value + 1); }}>Limpar</button>}</div>
         <p className={styles.filterHelp}>O filtro por dias usa o fuso deste aparelho; a lista mostra o horário de Brasília.</p>
         {existingPending && <p role="status" className="p-form-help">Confirme os anexos na lista antes de consultar outro período ou criar um novo registro.</p>}
@@ -375,7 +379,7 @@ export default function RecordsPanel({ projects: sourceProjects, items, loans, c
 
     <section className="p-card" aria-labelledby="records-list-title" aria-busy={loading}>
       <div className={styles.historyHead}><div><h3 id="records-list-title">Histórico</h3><p className="p-form-help" style={{ margin: 0 }}>{loading ? 'Consultando registros…' : `${shown.length} de ${records.length} registros carregados${filters.from || filters.to ? ' no período escolhido' : ''}`}</p></div>
-        <div className={styles.historyActions}><Link className="p-button p-button-subtle" href="/?module=reports" prefetch={false}><BarChart3 size={16} />Central de relatórios</Link><button type="button" className="p-button p-button-subtle" disabled={loading || !shown.length} onClick={exportHistory}><Download size={16} />Baixar recorte em XLSX</button></div></div>
+        <div className={styles.historyActions}><Link className="p-button p-button-subtle" href="/?module=reports" prefetch={false}><BarChart3 size={16} />Central de relatórios</Link><ExportFormats disabled={loading || !shown.length || !!readError} onExport={exportHistory}/></div></div>
       <div className={styles.historyFilters}>
         <div className={styles.kindChips} role="group" aria-label="Filtrar por categoria">
           <button type="button" aria-pressed={!category} className={!category ? styles.chipActive : ''} disabled={existingPending} onClick={() => setCategory('')}>Todas <span>{records.length}</span></button>

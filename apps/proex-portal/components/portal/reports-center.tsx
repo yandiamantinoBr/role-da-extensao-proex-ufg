@@ -236,7 +236,7 @@ type ProjectBrand = NonNullable<ReportPdfPresentation['projectBrand']>;
 const ROLE_PROJECT_ID = 'role-da-extensao';
 const CONPEEX_2026_PROJECT_ID = 'ad875870-a443-4f47-9c06-5dd0a6178de0';
 
-function projectBrandFor(id: unknown, name: unknown, address: unknown): ProjectBrand | undefined {
+export function projectBrandFor(id: unknown, name: unknown, address: unknown): ProjectBrand | undefined {
   if (typeof name !== 'string') return;
   const title = name.normalize('NFC').trim().toLocaleLowerCase('pt-BR');
   const isRole = id === ROLE_PROJECT_ID && title === 'rolê da extensão';
@@ -291,7 +291,7 @@ function ReportMetrics({ metrics }: { metrics: readonly Kpi[] }) {
   </dl>;
 }
 
-export function ProjectReportExports({ projectId, projectName, officialUrl, hasLinkedSpreadsheets }: { projectId: string; projectName?: string; officialUrl?: string; hasLinkedSpreadsheets?: boolean }) {
+export function ProjectReportExports({ projectId, projectName, officialUrl, hasLinkedSpreadsheets, sheetAnchor }: { projectId: string; projectName?: string; officialUrl?: string; hasLinkedSpreadsheets?: boolean; sheetAnchor?: '#project-sheets-live' }) {
   const pending = useRef<AbortController | null>(null);
   const [exporting, setExporting] = useState<DocumentFormat | 'preview' | null>(null);
   const [preview, setPreview] = useState<{ row: ExportRow; checkedAt: Date } | null>(null);
@@ -360,9 +360,9 @@ export function ProjectReportExports({ projectId, projectName, officialUrl, hasL
         <button type="button" className="p-button p-button-subtle" disabled={!!exporting} onClick={() => void save('xlsx')}><FileSpreadsheet size={16} aria-hidden="true"/>Excel (XLSX)</button>
         <button type="button" className="p-button p-button-subtle" disabled={!!exporting} onClick={() => void save('docx')}><FileText size={16} aria-hidden="true"/>Word (DOCX)</button>
       </div>
-      {hasLinkedSpreadsheets && <div className={styles.projectReportActions}>
-        <p className={styles.reportHelp}>Para usar no Google Sheets, importe o XLSX em uma planilha que você pode editar.</p>
-        <a className="p-button p-button-subtle" href="#project-spreadsheets">Planilhas do projeto</a>
+      {(hasLinkedSpreadsheets || sheetAnchor) && <div className={styles.projectReportActions}>
+        <p className={styles.reportHelp}>Consulte o vínculo e abra o arquivo nativo na seção Planilha do projeto. O download guarda o recorte consultado.</p>
+        <a className="p-button p-button-subtle" href={sheetAnchor || '#project-spreadsheets'}>Planilhas do projeto</a>
       </div>}
       <div id="project-report-preview" className={styles.projectPreview}>
         {summary && previewRow && preview && <>
