@@ -69,10 +69,10 @@ export default function MeuTrabalhoPanel({userId, organizationId = null, project
   const query={userId,organizationId,projectId,assignment,status,taskOffset,responsibilityOffset};
   const queryPath=myWorkQuery(query);
   const current = loaded?.key === key ? loaded : null, data = current?.data, loading = !current;
-  function invalidate() { generation.current++; active.current?.abort();cancelExport(); }
+  const invalidate=useCallback(()=>{generation.current++;active.current?.abort();cancelExport();},[cancelExport]);
   function choose(patch: Partial<Omit<Selection, 'owner'>>) { invalidate(); setSelection({...selected, taskOffset: 0, responsibilityOffset: 0, ...patch}); if (patch.status && patch.status !== status) onWorkStatusChange?.(patch.status); }
   function refresh() { invalidate(); setRevision(value => value + 1); }
-  useLayoutEffect(()=>{latestKey.current=key;cancelExport();return()=>{generation.current++;active.current?.abort();cancelExport();};},[key,cancelExport]);
+  useLayoutEffect(()=>{latestKey.current=key;cancelExport();return invalidate;},[key,cancelExport,invalidate]);
   useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;cancelExport();};},[cancelExport]);
   useEffect(() => {
     const changed = () => { generation.current++; active.current?.abort();cancelExport(); setRevision(value => value + 1); };

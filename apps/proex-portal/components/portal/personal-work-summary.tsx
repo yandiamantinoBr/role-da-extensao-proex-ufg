@@ -20,8 +20,9 @@ const time=(value:string)=>new Intl.DateTimeFormat('pt-BR',{dateStyle:'short',ti
 export default function PersonalWorkSummary({userId,organizationId=null,organizationName='',projectId=null,projectName='',serverDay=''}:Props){
  const owner=JSON.stringify([userId,organizationId,projectId]),[revision,setRevision]=useState(0),[loaded,setLoaded]=useState<Loaded|null>(null);
  const key=JSON.stringify([owner,revision,serverDay]),latest=useRef(key),active=useRef<AbortController|null>(null),epoch=useRef(0),lastStarted=useRef(0);
- const refresh=useCallback(()=>{epoch.current++;active.current?.abort();setRevision(value=>value+1);},[]);
- useLayoutEffect(()=>{latest.current=key;return()=>{epoch.current++;active.current?.abort();};},[key]);
+ const cancelRead=useCallback(()=>{epoch.current++;active.current?.abort();},[]);
+ const refresh=useCallback(()=>{cancelRead();setRevision(value=>value+1);},[cancelRead,setRevision]);
+ useLayoutEffect(()=>{latest.current=key;return cancelRead;},[key,cancelRead]);
  useEffect(()=>{
   const controller=new AbortController(),generation=++epoch.current;active.current=controller;lastStarted.current=Date.now();
   const params=new URLSearchParams();if(organizationId)params.set('organizationId',organizationId);if(projectId)params.set('projectId',projectId);
