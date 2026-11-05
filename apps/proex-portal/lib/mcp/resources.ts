@@ -20,10 +20,11 @@ export async function callPersonalTool(db: D1Database, identity: McpIdentity, na
   if (Object.keys(args).some(key => !Object.hasOwn(tool.inputSchema.properties, key))) throw new HttpError(400, 'A consulta contém campos não permitidos.', 'mcp_arguments');
   allowed(identity, args.projectId, tool.scope);
   if (name === 'proex_project_summary') return projectSummary(db, identity.actor, args.projectId);
-  const offset = args.offset ?? 0, limit = args.limit ?? 25;
+  const offset = args.offset === undefined ? 0 : args.offset, limit = args.limit === undefined ? 25 : args.limit;
   if (!Number.isSafeInteger(offset) || Number(offset) < 0 || Number(offset) > 50000 || !Number.isSafeInteger(limit) || Number(limit) < 1 || Number(limit) > 25) throw new HttpError(400, 'Confira o limite e a página de demandas.', 'mcp_arguments');
   const result = await followupList(db, identity.actor, { projectId: args.projectId, offset });
-  return { projectId: args.projectId, tasks: result.tasks.slice(0, Number(limit)).map(task => ({ id: task.id, projectId: task.project_id, title: task.title, status: task.status, priority: task.priority, importance: task.importance, dueAt: task.due_at, updatedAt: task.updated_at, version: task.version })), hasMore: Number(offset) + Number(limit) <= 50000 && (result.hasMore || result.tasks.length > Number(limit)), nextOffset: Number(offset) + Number(limit) <= 50000 ? Number(offset) + Number(limit) : null };
+  const hasMore = Number(offset) + Number(limit) <= 50000 && (result.hasMore || result.tasks.length > Number(limit));
+  return { projectId: args.projectId, tasks: result.tasks.slice(0, Number(limit)).map(task => ({ id: task.id, projectId: task.project_id, title: task.title, status: task.status, priority: task.priority, importance: task.importance, dueAt: task.due_at, updatedAt: task.updated_at, version: task.version })), hasMore, nextOffset: hasMore ? Number(offset) + Number(limit) : null };
 }
 const uri = (id: string, kind: string) => `proex://projects/${encodeURIComponent(id)}/${kind}`;
 export function personalResources(identity: McpIdentity) {

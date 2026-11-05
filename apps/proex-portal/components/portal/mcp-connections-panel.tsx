@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Check, Copy, KeyRound, Link2, LoaderCircle, Plus, ShieldCheck, Unplug } from 'lucide-react';
 import styles from './mcp-connections-panel.module.css';
 
@@ -11,7 +11,7 @@ async function responseValue(response: Response): Promise<Record<string, unknown
   let value: unknown; try { value = await response.json(); } catch { throw new Error('Resposta de conexão inválida. Atualize a página.'); }
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Resposta de conexão inválida. Atualize a página.');
   const result = value as Record<string, unknown>;
-  if (!response.ok) throw Object.assign(new Error(typeof result.error === 'string' ? result.error : 'Não foi possível atualizar a conexão.'), { code: result.code });
+  if (!response.ok) throw Object.assign(new Error(typeof result.error === 'string' ? result.error : 'Não foi possível atualizar a conexão.'), { code: result.code, status: response.status });
   return result;
 }
 function connectionData(value: Record<string, unknown>): Data {
@@ -24,49 +24,96 @@ export default function McpConnectionsPanel() {
   const [clock, setClock] = useState(() => Date.now());
   const [selectedProjects, setSelectedProjects] = useState<string[]>([]), [selectedScopes, setSelectedScopes] = useState<string[]>(['project.summary']);
   const requestId = useRef<string | null>(null), receipt = useRef<HTMLInputElement>(null), group = useRef<HTMLDetailsElement>(null), confirmation = useRef<HTMLDivElement>(null), failureRef = useRef<HTMLParagraphElement>(null);
+  const mounted = useRef(false), open = useRef(false), generation = useRef(0), readSequence = useRef(0), copySequence = useRef(0);
+  const reads = useRef(new Set<AbortController>()), mutation = useRef<symbol | null>(null);
+  const current = useCallback((epoch: number) => mounted.current && open.current && group.current?.open !== false && generation.current === epoch, []);
+  const abortReads = useCallback(() => { readSequence.current++; for (const controller of reads.current) controller.abort(); reads.current.clear(); }, []);
+  const clearSensitive = useCallback(() => { copySequence.current++; setIssued(null); setData(null); setCopied(false); setRevoking(null); setNotice(''); setSelectedProjects([]); setSelectedScopes(['project.summary']); }, []);
+  const failed = useCallback((error: unknown, epoch: number) => {
+    if (!current(epoch)) return;
+    if (error && typeof error === 'object' && 'status' in error && (error.status === 401 || error.status === 403)) clearSensitive();
+    setFailure(error instanceof Error ? error.message : 'Não foi possível atualizar suas conexões.');
+  }, [clearSensitive, current]);
+  const reload = useCallback(async (epoch: number = generation.current) => {
+    if (!current(epoch)) return;
+    const sequence = ++readSequence.current, controller = new AbortController(); reads.current.add(controller);
+    try {
+      const value = connectionData(await responseValue(await fetch('/api/mcp/tokens', { cache: 'no-store', signal: controller.signal })));
+      if (current(epoch) && sequence === readSequence.current) setData(value);
+    } catch (error) { if (!controller.signal.aborted && current(epoch) && sequence === readSequence.current) { failed(error, epoch); throw error; } }
+    finally { reads.current.delete(controller); }
+  }, [current, failed]);
+  const stop = useCallback(() => { mounted.current = false; generation.current++; open.current = false; abortReads(); }, [abortReads]);
+  function toggle(next: boolean) {
+    if (open.current === next) { setOpened(next); return; }
+    generation.current++; open.current = next; abortReads(); setOpened(next);
+    if (!next) { clearSensitive(); setFailure(''); }
+  }
+  useEffect(() => { mounted.current = true; open.current = Boolean(group.current?.open); return stop; }, [stop]);
   useEffect(() => { if (window.location.hash === '#mcp-connections' && group.current) { group.current.open = true; group.current.querySelector('summary')?.focus({ preventScroll: true }); group.current.scrollIntoView({ block: 'start' }); } }, []);
   useEffect(() => { if (!opened) return; const timer = window.setInterval(() => setClock(Date.now()), 60000); return () => window.clearInterval(timer); }, [opened]);
   useEffect(() => { if (revoking) confirmation.current?.focus(); }, [revoking]);
   useEffect(() => { if (failure) failureRef.current?.focus(); }, [failure]);
   useEffect(() => {
     if (!opened) return;
-    const controller = new AbortController();
-    void fetch('/api/mcp/tokens', { cache: 'no-store', signal: controller.signal }).then(async response => {
-      setData(connectionData(await responseValue(response)));
-    }).catch(error => { if (!controller.signal.aborted) setFailure(error instanceof Error ? error.message : 'Não foi possível consultar suas conexões.'); });
-    return () => { controller.abort(); setIssued(null); };
-  }, [opened]);
+    const epoch = generation.current, timer = window.setTimeout(() => { void reload(epoch).catch(() => {}); }, 0);
+    return () => { window.clearTimeout(timer); abortReads(); };
+  }, [opened, reload, abortReads]);
   useEffect(() => { if (issued) { receipt.current?.focus(); receipt.current?.select(); } }, [issued]);
-  async function reload() { setData(connectionData(await responseValue(await fetch('/api/mcp/tokens', { cache: 'no-store' })))); }
   async function post(input: Record<string, unknown>) {
     const response = await fetch('/api/mcp/tokens', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Proex-Action': '1' }, body: JSON.stringify(input) });
     return responseValue(response);
   }
+  function settled(epoch: number, operation: symbol) {
+    if (!mounted.current || mutation.current !== operation) return;
+    mutation.current = null; setBusy(false);
+    // A late POST may have reached the server. Refresh only current metadata;
+    // never transfer its one-time secret or feedback to a newer opening.
+    if (open.current && epoch !== generation.current) void reload().catch(() => {});
+  }
   async function create(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault(); if (busy) return;
+    event.preventDefault(); if (busy || mutation.current || !current(generation.current)) return;
     const form = event.currentTarget, values = new FormData(form), projectIds = values.getAll('projectId'), scopes = values.getAll('scope');
     if (!projectIds.length || !scopes.length) { setFailure('Escolha pelo menos um projeto e um tipo de consulta.'); return; }
+    const epoch = generation.current, operation = Symbol('create'); mutation.current = operation; copySequence.current++;
     setBusy(true); setFailure(''); setNotice(''); setIssued(null); setCopied(false); requestId.current ??= crypto.randomUUID();
-    try { const value = await post({ action: 'create', label: values.get('label'), projectIds, scopes, days: Number(values.get('days')), requestId: requestId.current }); if (typeof value.id !== 'string' || typeof value.token !== 'string' || !/^pxm_[\w-]{43}$/.test(value.token) || typeof value.expiresAt !== 'string' || !Number.isFinite(Date.parse(value.expiresAt))) throw new Error('A resposta não confirmou uma credencial válida. Consulte suas conexões e revogue a tentativa.'); setIssued({ id: value.id, token: value.token, expiresAt: value.expiresAt }); requestId.current = null; form.reset(); setSelectedProjects([]); setSelectedScopes(['project.summary']); await reload(); }
-    catch (error) { if (error && typeof error === 'object' && 'code' in error && error.code === 'mcp_token_created') { requestId.current = null; await reload().catch(() => {}); } setFailure(error instanceof Error ? error.message : 'Não foi possível criar a conexão.'); }
-    finally { setBusy(false); }
+    try {
+      const value = await post({ action: 'create', label: values.get('label'), projectIds, scopes, days: Number(values.get('days')), requestId: requestId.current });
+      if (typeof value.id !== 'string' || typeof value.token !== 'string' || !/^pxm_[\w-]{43}$/.test(value.token) || typeof value.expiresAt !== 'string' || !Number.isFinite(Date.parse(value.expiresAt))) throw new Error('A resposta não confirmou uma credencial válida. Consulte suas conexões e revogue a tentativa.');
+      requestId.current = null;
+      if (!current(epoch)) return;
+      setIssued({ id: value.id, token: value.token, expiresAt: value.expiresAt }); form.reset(); setSelectedProjects([]); setSelectedScopes(['project.summary']); await reload(epoch);
+    } catch (error) {
+      if (!current(epoch)) return;
+      if (error && typeof error === 'object' && 'code' in error && error.code === 'mcp_token_created') { requestId.current = null; await reload(epoch).catch(() => {}); }
+      failed(error, epoch);
+    } finally { settled(epoch, operation); }
   }
   async function revoke() {
-    if (!revoking || busy) return; setBusy(true); setFailure('');
-    try { await post({ action: 'revoke', id: revoking.id }); if (issued?.id === revoking.id) setIssued(null); setRevoking(null); setNotice('Conexão revogada. Novas consultas serão recusadas.'); await reload(); }
-    catch (error) { setFailure(error instanceof Error ? error.message : 'Não foi possível revogar a conexão.'); }
-    finally { setBusy(false); }
+    if (!revoking || busy || mutation.current || !current(generation.current)) return;
+    const epoch = generation.current, operation = Symbol('revoke'); mutation.current = operation; setBusy(true); setFailure('');
+    try { await post({ action: 'revoke', id: revoking.id }); if (!current(epoch)) return; if (issued?.id === revoking.id) setIssued(null); setRevoking(null); setNotice('Conexão revogada. Novas consultas serão recusadas.'); await reload(epoch); }
+    catch (error) { failed(error, epoch); }
+    finally { settled(epoch, operation); }
   }
-  return <details ref={group} className={`p-card ${styles.panel}`} id="mcp-connections" onToggle={event => { setOpened(event.currentTarget.open); if (!event.currentTarget.open) setIssued(null); }}>
-    <summary className={styles.summary}><Link2 size={20} aria-hidden="true"/><span><strong>Conectar uma IA ao meu trabalho</strong><small>Consultas pessoais por MCP, com prazo e projetos escolhidos.</small></span></summary>
+  function copyIssued() {
+    if (!issued || !current(generation.current)) return;
+    const epoch = generation.current, sequence = ++copySequence.current;
+    void (navigator.clipboard?.writeText(issued.token) ?? Promise.reject()).then(() => { if (current(epoch) && sequence === copySequence.current) setCopied(true); }).catch(() => {
+      if (!current(epoch) || sequence !== copySequence.current) return;
+      receipt.current?.focus(); receipt.current?.select(); setFailure('Use copiar no campo da credencial. O navegador recusou a cópia automática.');
+    });
+  }
+  return <details ref={group} className={`p-card ${styles.panel}`} id="mcp-connections" onToggle={event => toggle(event.currentTarget.open)}>
+    <summary className={styles.summary} onClick={() => { if (group.current?.open) toggle(false); }}><Link2 size={20} aria-hidden="true"/><span><strong>Conectar uma IA ao meu trabalho</strong><small>Consultas pessoais por MCP, com prazo e projetos escolhidos.</small></span></summary>
     {opened && <div className={styles.body}>
       <p className={styles.note}><ShieldCheck size={18} aria-hidden="true"/><span>Essa conexão consulta somente os resumos e demandas selecionados. Não altera estoque, envia avisos ou usa chaves de modelos. Seu acesso atual continua sendo conferido em cada consulta.</span></p>
       {failure && <p ref={failureRef} tabIndex={-1} className="p-inline-error" role="alert">{failure}</p>}{notice && <p role="status" className={styles.note}><Check size={16} aria-hidden="true"/>{notice}</p>}
-      {failure && !data && <button type="button" className="p-button p-button-subtle" onClick={() => { setFailure(''); void reload().catch(error => setFailure(error instanceof Error ? error.message : 'Não foi possível atualizar.')); }}>Tentar novamente</button>}
+      {failure && !data && <button type="button" className="p-button p-button-subtle" onClick={() => { setFailure(''); void reload().catch(() => {}); }}>Tentar novamente</button>}
       {!data ? <p role="status"><LoaderCircle size={16} aria-hidden="true"/>Consultando suas conexões…</p> : <>
         {issued && <div className={styles.receipt}><h3><KeyRound size={19} aria-hidden="true"/>Credencial criada</h3><p>Copie agora. Ela aparece somente nesta janela e vence em {date(issued.expiresAt)}. Cole no campo Authorization do cliente MCP de sua confiança.</p>
           <label className="p-field"><span>Sua credencial pessoal MCP</span><input ref={receipt} readOnly type="password" autoComplete="off" data-no-draft="true" value={issued.token}/></label>
-          <div className={styles.actions}><button type="button" className="p-button p-button-primary" onClick={() => { void (navigator.clipboard?.writeText(issued.token) ?? Promise.reject()).then(() => setCopied(true)).catch(() => { receipt.current?.focus(); receipt.current?.select(); setFailure('Use copiar no campo da credencial. O navegador recusou a cópia automática.'); }); }}><Copy size={16} aria-hidden="true"/>{copied ? 'Copiada' : 'Copiar credencial'}</button><button type="button" className="p-button p-button-subtle" onClick={() => setIssued(null)}>Ocultar credencial</button></div>
+          <div className={styles.actions}><button type="button" className="p-button p-button-primary" onClick={copyIssued}><Copy size={16} aria-hidden="true"/>{copied ? 'Copiada' : 'Copiar credencial'}</button><button type="button" className="p-button p-button-subtle" onClick={() => setIssued(null)}>Ocultar credencial</button></div>
         </div>}
         <form onSubmit={create} className={styles.form} autoComplete="off"><h3>Nova conexão pessoal</h3><fieldset disabled={busy || !data.projects.length}>
           <div className={styles.grid}><label className="p-field"><span>Nome da conexão</span><input name="label" required maxLength={80} placeholder="Ex.: Claude · demandas do CONPEEX"/></label><label className="p-field"><span>Validade</span><select name="days" defaultValue="7"><option value="1">1 dia</option><option value="7">7 dias</option><option value="30">30 dias</option></select></label></div>

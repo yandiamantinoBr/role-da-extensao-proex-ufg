@@ -54,7 +54,7 @@ test('MCP 2026 discovery, tools and project resources work without legacy handsh
   const resources = await rpc(f, issued.token, 'resources/list'); assert.equal(resources.body.result.resources.length, 2); assert.ok(resources.body.result.resources.every(resource => !resource.name.includes('Other')));
   const summary = await rpc(f, issued.token, 'resources/read', { uri: 'proex://projects/project-fixture/summary' }); assert.equal(summary.status, 200); assert.equal(JSON.parse(summary.body.result.contents[0].text).id, 'project-fixture');
   const tasks = await rpc(f, issued.token, 'tools/call', { name: 'proex_tasks_list', arguments: { projectId: 'project-fixture', limit: 10 } }); assert.equal(tasks.body.result.structuredContent.tasks.length, 10); assert.equal(tasks.body.result.structuredContent.nextOffset, 10); assert.equal(tasks.body.result.structuredContent.hasMore, true); assert.ok(!JSON.stringify(tasks).includes('private-body-not-exported'));
-  const page = await rpc(f, issued.token, 'tools/call', { name: 'proex_tasks_list', arguments: { projectId: 'project-fixture', offset: 25 } }); assert.equal(page.body.result.structuredContent.tasks.length, 5); assert.equal(page.body.result.structuredContent.hasMore, false);
+  const page = await rpc(f, issued.token, 'tools/call', { name: 'proex_tasks_list', arguments: { projectId: 'project-fixture', offset: 25 } }); assert.equal(page.body.result.structuredContent.tasks.length, 5); assert.equal(page.body.result.structuredContent.hasMore, false); assert.equal(page.body.result.structuredContent.nextOffset, null);
   assert.equal(f.stats.commits, 0); assert.equal(egress, 0); assert.equal(list.headers.get('Cache-Control'), 'private, no-store');
 });
 
@@ -71,7 +71,7 @@ test('schemas, metadata/header mirrors, JSON framing and unsupported versions fa
   assert.equal((await rpc(f, token, 'tools/list', {}, {headers:{Accept:'APPLICATION/JSON, TEXT/EVENT-STREAM',Authorization:'bearer '+token}})).status,200);
   const legacy = await rpc(f, token, 'initialize'); assert.equal(legacy.status, 404); assert.equal(legacy.body.error.code, -32601);
   const mirrored = await rpc(f, token, 'tools/call', { name: 'proex_project_summary', arguments: { projectId: 'project-fixture' } }, { headers: { 'Mcp-Name': '=?base64?cHJvZXhfcHJvamVjdF9zdW1tYXJ5?=' } }); assert.equal(mirrored.status, 200);
-  for (const args of [{ projectId: 'project-other' }, { projectId: 'project-fixture', sql: 'SELECT * FROM portal_users' }, { projectId: 'project-fixture', limit: 26 }, { projectId: 'project-fixture', offset: -1 }]) assert.ok((await rpc(f, token, 'tools/call', { name: 'proex_tasks_list', arguments: args })).status >= 400);
+  for (const args of [{ projectId: 'project-other' }, { projectId: 'project-fixture', sql: 'SELECT * FROM portal_users' }, { projectId: 'project-fixture', limit: 26 }, { projectId: 'project-fixture', offset: -1 }, { projectId: 'project-fixture', limit: null }, { projectId: 'project-fixture', offset: null }]) assert.ok((await rpc(f, token, 'tools/call', { name: 'proex_tasks_list', arguments: args })).status >= 400);
   for (const uri of ['file:///secrets', 'https://evil.invalid', 'proex://projects/project-other/summary', 'proex://projects/project-fixture/summary?x=1']) assert.ok((await rpc(f, token, 'resources/read', { uri })).status >= 400);
 });
 
@@ -81,6 +81,16 @@ test('token scopes do not authorize sync/admin actions, foreign projects, cookie
   assert.equal((await rpc(f, token, 'tools/call', { name: 'proex_tasks_list', arguments: { projectId: 'project-fixture' } })).status, 403);
   for (const name of ['proex_sync_apply', 'proex_sync_read', 'proex_catalog_seed', 'execute_sql']) assert.ok((await rpc(f, token, 'tools/call', { name, arguments: { projectId: 'project-fixture' } })).status >= 400);
   for (const other of [undefined, 'pxs_' + 'a'.repeat(43), 'sk-' + 'b'.repeat(43), 'pxm_' + 'c'.repeat(43)]) assert.equal((await rpc(f, other, 'tools/list', {}, { headers: { Cookie: 'synthetic-session', 'oai-authenticated-user-id': f.owner.userId } })).status, 401);
+});
+
+test('empty task resources and final tool pages return no cursor, and null never becomes an integer default', async t => {
+  const f = fixture(t), { token } = await f.issue({ scopes: ['tasks.read'] });
+  const resource = await rpc(f, token, 'resources/read', { uri: 'proex://projects/project-fixture/tasks' });
+  const value = JSON.parse(resource.body.result.contents[0].text); assert.deepEqual(value.tasks, []); assert.equal(value.hasMore, false); assert.equal(value.nextOffset, null);
+  for (const args of [{ projectId: 'project-fixture' }, { projectId: 'project-fixture', offset: 50000, limit: 1 }]) {
+    const result = await rpc(f, token, 'tools/call', { name: 'proex_tasks_list', arguments: args }); assert.equal(result.body.result.structuredContent.hasMore, false); assert.equal(result.body.result.structuredContent.nextOffset, null);
+  }
+  for (const field of ['limit', 'offset']) { const result = await rpc(f, token, 'tools/call', { name: 'proex_tasks_list', arguments: { projectId: 'project-fixture', [field]: null } }); assert.equal(result.status, 400); assert.equal(result.body.error.code, -32602); }
 });
 
 test('expiry, revocation, account blocking and membership changes invalidate existing MCP credentials', async t => {
