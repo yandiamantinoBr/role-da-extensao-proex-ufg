@@ -6,11 +6,13 @@ A página `?module=work-teams` acompanha equipes, integrantes visíveis, demanda
 
 O usuário escolhe organização e projeto. Somente responsáveis pela organização podem consultar todos os seus projetos e gerenciar equipes. A edição ocorre na visão da organização, onde a lista completa de integrantes elegíveis está disponível; editar uma lista parcial de projeto não pode remover pessoas ocultas do cadastro da equipe.
 
-Uma pessoa pode participar de várias equipes. Pertencer à equipe, ter e-mail institucional ou possuir vínculo de estágio/bolsa não concede permissão. Um usuário de projeto vê suas equipes e as equipes atribuídas às demandas que já pode consultar, com integrantes que também tenham acesso ao projeto. Os serviços revalidam o acesso antes de retornar os dados. Não exportam contatos, e-mails, conteúdo de anexos ou histórico pessoal.
+Uma pessoa pode participar de várias equipes. Pertencer à equipe, ter e-mail institucional ou possuir vínculo de estágio/bolsa não concede permissão. Um usuário de projeto vê suas equipes e as equipes atribuídas às demandas que já pode consultar, com integrantes que também tenham acesso ao projeto. Os serviços revalidam o acesso, a visibilidade da equipe e o quadro de integrantes antes de retornar os dados; uma mudança durante a leitura descarta a resposta inteira, incluindo exportações. Não exportam contatos, e-mails, conteúdo de anexos ou histórico pessoal.
 
 Os gráficos e contadores incluem todas as demandas autorizadas do recorte, sem depender da paginação de seis registros. Clicar em um estado filtra a lista no servidor; abrir uma demanda leva ao contexto de origem. Selecionar uma equipe leva o foco ao painel correspondente. As equipes mostram somente atribuições explícitas à equipe, não toda demanda de qualquer integrante. Uma demanda pode ser contada em várias equipes, sem representar várias demandas distintas.
 
-PDF, DOCX e XLSX fazem uma nova leitura autorizada e incluem metadados do recorte. O limite é 5.000 demandas: ultrapassá-lo pede um recorte menor e não gera arquivo parcial silenciosamente. A interface não oferece CSV. Os arquivos são cópias; esta etapa não cria uma planilha nativa sincronizada por equipe.
+PDF, DOCX e XLSX fazem uma nova leitura autorizada e incluem metadados do recorte, inclusive o nome atual da equipe. O limite é 5.000 demandas: ultrapassá-lo pede um recorte menor e não gera arquivo parcial silenciosamente. A interface não oferece CSV. Os arquivos são cópias; esta etapa não cria uma planilha nativa sincronizada por equipe.
+
+Durante uma atualização no mesmo contexto, o resultado anterior permanece identificado e as ações sobre demandas/exportações aguardam a confirmação. Isso preserva foco e rolagem ao filtrar o gráfico. Trocar organização/projeto, perder um recorte nos dados de sessão ou receber 401/403 oculta os dados anteriores. Respostas tardias de consultas canceladas são descartadas.
 
 ## Estrutura oficial consultada em 05/11/2026
 

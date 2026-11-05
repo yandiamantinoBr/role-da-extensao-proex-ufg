@@ -24,7 +24,8 @@ export function TaskPriorityBadge({ priority }: { priority: TaskPriority }) {
 export function TaskDeadlineBadge({ dueAt, status, today }: { dueAt: string | null; status: TaskStatus; today: string }) {
  const deadline = taskDeadline(dueAt, status, today);
  const Icon = deadline.kind === 'overdue' ? AlertTriangle : deadline.kind === 'today' || deadline.kind === 'soon' ? CalendarClock : deadline.kind === 'none' || deadline.kind === 'invalid' ? CalendarX2 : CalendarDays;
- return <span className={styles.signal} data-tone={deadline.tone} title={deadline.date ?? undefined}><Icon size={15} aria-hidden="true"/><span>{deadline.label}</span>{deadline.date && ['today', 'soon', 'overdue'].includes(deadline.kind) && <span className={styles.date}>{deadline.date}</span>}</span>;
+ const label = deadline.label.replace(/(há|em) (\d+) (dias?)/g, '$1\u00a0$2\u00a0$3');
+ return <span className={styles.signal} data-tone={deadline.tone} data-deadline="true" title={deadline.date ?? undefined}><Icon size={15} aria-hidden="true"/><span>{label}</span>{deadline.date && ['today', 'soon', 'overdue'].includes(deadline.kind) && <time dateTime={dueAt ?? undefined} className={styles.date}>{deadline.date}</time>}</span>;
 }
 export function TaskSignals({ status, priority, dueAt, today }: { status: TaskStatus; priority: TaskPriority; dueAt: string | null; today: string }) {
  return <div className={styles.signals} role="group" aria-label="Andamento, prioridade e prazo"><TaskStateBadge status={status}/><TaskPriorityBadge priority={priority}/><TaskDeadlineBadge dueAt={dueAt} status={status} today={today}/></div>;
