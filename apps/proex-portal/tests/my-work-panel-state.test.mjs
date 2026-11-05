@@ -129,9 +129,9 @@ test('a restricted task target with canonical null identifiers still explains th
   const h = harness(); try {await h.ready(response({tasks: {...response().tasks, items: [task({target: target({id: null, name: null, href: null, canOpen: false})})]}, responsibilities: {items: [], total: 0, hasMore: false, nextOffset: null}})); assert.match(h.body(), /Registro de acesso restrito/); assert.ok(!h.find('a', node => node.props.href.includes('materials')));} finally {h.dispose();}
 });
 
-test('PDF DOCX XLSX replace Markdown and export a freshly authorized identical query with current-page metadata',async()=>{
+test('PDF DOCX XLSX are primary formats and export a freshly authorized identical query with current-page metadata',async()=>{
  for(const format of ['PDF','DOCX','XLSX']){const h=harness();try{
-  await h.ready();assert.doesNotMatch(h.body(),/Obsidian|\.md/);const path=h.last().url;
+  await h.ready();assert.doesNotMatch(h.body(),/Baixar para Obsidian/);assert.match(h.body(),/Outras opções/);const path=h.last().url;
   h.click('Baixar resumo de Meu trabalho em '+format);assert.equal(h.requests.length,2);assert.equal(h.last().url,path);assert.equal(h.downloads.length,0);
   const fresh=response({tasks:{...response().tasks,items:[task({title:'Título da consulta nova'})]}});h.reply(h.last(),fresh);await tick();h.render();
   assert.equal(h.artifacts.length,1);assert.equal(h.artifacts[0].format,format.toLowerCase());assert.equal(h.last().url,path);assert.equal(h.requests.length,3);assert.equal(h.downloads.length,0);
@@ -139,6 +139,17 @@ test('PDF DOCX XLSX replace Markdown and export a freshly authorized identical q
   assert.equal(h.downloads.length,1);assert.equal(h.downloads[0].name,`meu-trabalho-proex-2026-10-31.${format.toLowerCase()}`);
   const exported=await h.downloads[0].blob.text();assert.match(exported,/Título da consulta nova/);assert.match(exported,/Somente as páginas atuais/);assert.match(exported,/deslocamento 0/);assert.doesNotMatch(exported,/Pessoa A|Equipe A|task-a|project-a|user-a|responsibility-a|https:|href/);
  }finally{h.dispose();}}
+});
+
+test('the secondary Vault option uses the same two fresh reads and privacy projection without a document serializer',async()=>{
+ const h=harness();try{const data=response({responsibilities:{...response().responsibilities,items:[responsibility({target:target({canOpen:false,name:'Entidade oculta',href:'/?module=materials&project=secret'})})]}});await h.ready(data);const path=h.last().url;
+  h.click('Para a sua Vault (.md)');assert.equal(h.last().url,path);h.reply(h.last(),data);await tick();h.render();assert.equal(h.requests.length,3);assert.equal(h.artifacts.length,0);assert.equal(h.downloads.length,0);
+  h.reply(h.last(),data);await tick();h.render();assert.equal(h.downloads.length,1);assert.equal(h.downloads[0].name,'meu-trabalho-proex-2026-10-31.md');assert.equal(h.downloads[0].blob.type,'text/markdown;charset=utf-8');const markdown=await h.downloads[0].blob.text();assert.match(markdown,/Registro de acesso restrito/);assert.doesNotMatch(markdown,/Entidade oculta|project=secret|task-a|responsibility-a|Pessoa A|Equipe A|href/);assert.match(h.body(),/Arquivo Markdown preparado/);
+ }finally{h.dispose();}
+});
+
+test('Vault downloads are refused on final revocation and account changes while either fresh read is pending',async()=>{
+ for(const point of ['initial','final'])for(const change of ['revoked','account']){const h=harness();try{await h.ready();h.click('Para a sua Vault (.md)');if(point==='final'){h.reply(h.last(),response());await tick();h.render();}const request=h.last();if(change==='account')h.render({userId:'user-b',organizationId:'org-b',projectId:'project-b'},false);h.reply(request,change==='revoked'?{}:response(),change==='revoked'?403:200);await tick();h.render();assert.equal(h.downloads.length,0);assert.doesNotMatch(h.body(),/Arquivo Markdown preparado/);}finally{h.dispose();}}
 });
 
 test('revocation on either fresh export read clears old names and never downloads a previously loaded list',async()=>{

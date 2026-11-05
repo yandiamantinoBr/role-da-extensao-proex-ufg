@@ -45,3 +45,11 @@ export function myWorkExportReport(data:MyWorkResponse,query:MyWorkExportQuery){
 /** Ignore consultation timestamps, but fence any change to records, privacy,
  * counts, filters or pagination while the local artifact is being rendered. */
 export function myWorkExportFingerprint(data:MyWorkResponse,query:MyWorkExportQuery){return JSON.stringify({scope:data.scope,today:data.today,rows:myWorkExportRows(data),totals:data.totals,tasks:{total:data.tasks.total,hasMore:data.tasks.hasMore,nextOffset:data.tasks.nextOffset},responsibilities:{total:data.responsibilities.total,hasMore:data.responsibilities.hasMore,nextOffset:data.responsibilities.nextOffset},offsets:[query.taskOffset,query.responsibilityOffset]});}
+
+/** Optional Vault copy of exactly the same reduced report. Text is literal,
+ * including Obsidian syntax; no raw HTML, embeds, URLs or record IDs are added. */
+export function myWorkMarkdownReport(report:ReturnType<typeof myWorkExportReport>){
+ const literal=(value:unknown)=>clean(String(value??'')).replace(/[\\`*{}\[\]<>()#+.!_~|^=$:%/@&-]/g,'\\$&');
+ const table=(values:unknown[])=>'| '+values.map(literal).join(' | ')+' |';
+ return['# Meu trabalho no Portal PROEX','','## Sobre o recorte','',...report.info.map(([label,value])=>`- **${literal(label)}:** ${literal(value)}`),'','## Registros destas páginas','',table(report.columns.map(column=>column.label)),'| '+report.columns.map(()=>'---').join(' | ')+' |',...report.rows.map(row=>table(report.columns.map(column=>row[column.key]))),''].join('\n');
+}
