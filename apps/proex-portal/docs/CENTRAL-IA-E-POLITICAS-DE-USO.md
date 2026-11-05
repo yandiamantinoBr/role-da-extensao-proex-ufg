@@ -10,7 +10,7 @@ Pronto quando: o cadastro não remete à Conta; indisponibilidade do ambiente é
 
 1. Escolha a organização. A lista respeita as permissões atuais.
 2. A administração geral cadastra ou troca a chave do provedor no cofre. Uma chave salva não ativa função alguma.
-3. Escolha “Só eu” ou “Organização”, habilite as funções desejadas e salve os limites. Cada pedido operacional ainda exige seu consentimento/revisão normal.
+3. Escolha “Só eu” ou “Organização”, selecione o provedor de texto (DeepSeek ou OpenAI), habilite as funções desejadas e salve os limites. A troca de provedor desmarca texto e documentos para nova confirmação; não há fallback entre eles. Cada pedido operacional ainda exige seu consentimento/revisão normal.
 4. Se desejar conferir autenticação, abra o diagnóstico e autorize a consulta de metadados. O resultado não comprova inferência, qualidade ou transcrição.
 
 As áreas **Chaves**, **Funções e acesso** e **Diagnóstico** mostram um fluxo por vez. Trocar de área não inicia inferência. Os limites avançados ficam recolhidos e a ação de salvar permanece fora deles. Pessoas com concessão nominal de configuração começam em Funções e acesso e não recebem a área de cadastro de chaves.
@@ -40,7 +40,7 @@ A ação “Rotina do ChatGPT/Codex” é legada do ChatGPT Sites. No runtime pr
 
 ## Contrato proposto para outros provedores
 
-OpenAI, Anthropic e endpoints personalizados continuam sem campo genérico de chave enquanto não tiverem adaptador exercitado. O futuro cadastro precisa de uma definição tipada revisada, por exemplo:
+OpenAI possui agora um adaptador restrito de texto/documentos, com um único modelo permitido e sem ativação automática; consulte [OpenAI por organização](OPENAI-TEXTO-ORGANIZACAO.md). Anthropic, Gemini, NVIDIA e endpoints personalizados continuam sem campo genérico de chave enquanto não tiverem adaptador exercitado. O futuro cadastro precisa de uma definição tipada revisada, por exemplo:
 
 ```ts
 type ProviderAdapterDefinition = {

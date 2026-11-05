@@ -5,8 +5,8 @@ import { credentialProviders, DEFAULT_ASSISTANT_CONFIG, newAssistantConfig, obje
 import { credentialKeyId, decryptProviderCredentials, encryptProviderCredentials, type CredentialKeys } from './crypto';
 import { speechProviderForOrganization, validProviderKey, type SpeechEnvironment } from './settings';
 
-const providers = { deepseek: 'DeepSeek', typesafe: 'TypeSafe JEV', deepgram: 'Deepgram', groq: 'Groq' } as const;
-const purposes = { deepseek: 'Texto e documentos', typesafe: 'Decisão e conferência', deepgram: 'Transcrição de voz', groq: 'Transcrição de voz em português' } as const;
+const providers = { deepseek: 'DeepSeek', typesafe: 'TypeSafe JEV', deepgram: 'Deepgram', groq: 'Groq',openai:'OpenAI' } as const;
+const purposes = { deepseek: 'Texto e documentos', typesafe: 'Decisão e conferência', deepgram: 'Transcrição de voz', groq: 'Transcrição de voz em português',openai:'Propostas de operações e documentos textuais' } as const;
 const dayInBrazil = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' });
 const conflict = () => new HttpError(409, 'As credenciais mudaram. Atualize a lista antes de salvar.', 'assistant_configuration_changed');
 const forbidden = () => new HttpError(403, 'Somente a administração geral pode gerenciar credenciais.', 'assistant_key_admin');
@@ -36,14 +36,14 @@ async function storedSettings(db: D1Database, id: string, authSecret: string, ke
 }
 
 function credentialMask(provider: CredentialProvider, key: string) {
-  const prefix = provider === 'deepseek' && key.startsWith('sk-') ? 'sk-' : '';
+  const prefix = (provider === 'deepseek'||provider==='openai') && key.startsWith('sk-') ? 'sk-' : '';
   const tail = key.slice(-4);
   return prefix + '…' + (/^[A-Za-z0-9_-]{4}$/.test(tail) ? tail : '••••');
 }
 
 function safeMask(provider: CredentialProvider, value: unknown): string | null {
   if (typeof value !== 'string') return null;
-  const suffix = provider === 'deepseek' ? value.replace(/^sk-/, '') : value;
+  const suffix = provider === 'deepseek'||provider==='openai' ? value.replace(/^sk-/, '') : value;
   return /^…(?:[A-Za-z0-9_-]{4}|••••)$/u.test(suffix) ? value : null;
 }
 
@@ -107,7 +107,7 @@ export async function assistantCredentialVault(db: D1Database, actor: PortalActo
 }
 
 function suspendDependentFeatures(config: AssistantConfig, provider: CredentialProvider, id: string, speech?: SpeechEnvironment) {
-  if (provider === 'deepseek') { config.enabled = false; config.documentEnabled = false; }
+  if ((provider === 'deepseek'||provider==='openai')&&config.textProvider===provider) { config.enabled = false; config.documentEnabled = false; }
   if (provider === 'typesafe') config.jevEnabled = false;
   if ((provider === 'deepgram'||provider==='groq') && speechProviderForOrganization(id, speech, config.sttProvider) === provider) config.sttEnabled = false;
 }

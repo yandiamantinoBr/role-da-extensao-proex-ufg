@@ -1,4 +1,4 @@
-export const CONNECTION_PROVIDERS=['deepseek','typesafe','deepgram','groq'] as const;
+export const CONNECTION_PROVIDERS=['deepseek','openai','typesafe','deepgram','groq'] as const;
 export type ConnectionProvider=typeof CONNECTION_PROVIDERS[number];
 export const CONNECTION_OUTCOMES=['authenticated','rejected','rate_limited','timeout','cancelled','unavailable','invalid_response','pending'] as const;
 export type ConnectionOutcome=typeof CONNECTION_OUTCOMES[number];

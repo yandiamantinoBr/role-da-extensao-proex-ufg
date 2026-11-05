@@ -3,11 +3,11 @@ import { all, one } from '../database';
 import { HttpError } from '../errors';
 import { materialsAction } from '../materials';
 import { createRecord } from '../records';
-import { ASSISTANT_CONTRACT, PROVIDERS, object, onlyKeys, safeRequest, validateProposal, type AssistantItem, type AssistantPlan } from './contracts';
+import { ASSISTANT_CONTRACT, object, onlyKeys, safeRequest, textModel,validateProposal, type AssistantItem, type AssistantPlan } from './contracts';
 import { digest, signPlan, verifyPlan, type CredentialKeys } from './crypto';
 import { assistantUsageSql, loadAssistantSettings as loadSettings } from './settings';
 import { aiReservation, reservationStatements } from './admission';
-import { checkDecision, decisionBody, generateProposal, generationBody } from './provider';
+import { checkDecision, decisionBody, generateProposal, generationBody,providerGenerationBody } from './provider';
 
 const nowIso = () => new Date().toISOString();
 async function currentActor(db: D1Database, actor: PortalActor | null): Promise<PortalActor> { const current = actor && await getActor(db, actor); if (!current) throw new HttpError(403, 'Seu acesso mudou. Entre novamente.', 'assistant_forbidden'); return current; }
@@ -31,10 +31,11 @@ export async function prepareAssistantPlan(db: D1Database, actor: PortalActor | 
  const project = projectId(input.projectId), current = await scopedActor(db, actor, project), request = safeRequest(input.request), now = options.now ?? Date.now();
  const organizationId = String((await one(db, 'SELECT organization_id FROM projects WHERE id=?', [project]))?.organization_id);
  const { config, credentials, revision } = await loadSettings(db, secret, organizationId, false, options.keys, current.userId);
+ const selectedText=textModel(config);
  const rows = await all(db, 'SELECT id,name,category,unit,stock,reserved,condition FROM items WHERE project_id=? ORDER BY id LIMIT 101', [project]);
  if (rows.length > 100) throw new HttpError(400, 'Este projeto possui mais de 100 materiais. Use os filtros de Materiais para esta consulta.', 'assistant_context_limit');
  const items = rows.map(row => ({ ...row, name: safeRequest(row.name), unit: safeRequest(row.unit) })) as AssistantItem[], body = generationBody(config, request, items);
- const bodyBytes = new TextEncoder().encode(JSON.stringify(body)).byteLength + 2048;
+ const bodyBytes = new TextEncoder().encode(JSON.stringify(providerGenerationBody(config,body))).byteLength + 2048;
  if (bodyBytes > 24000) throw new HttpError(400, 'Reduza o pedido ou a quantidade de materiais do contexto.', 'assistant_context_limit');
  const reservation=aiReservation(config,bodyBytes),reservedCost=reservation.cost;
  const id = await digest(`${current.userId}\n${project}\n${input.operationKey}`), fingerprint = await digest(JSON.stringify({ request, project, revision })), day = dayKey(now);
@@ -60,9 +61,9 @@ export async function prepareAssistantPlan(db: D1Database, actor: PortalActor | 
   if ((await loadSettings(db, secret, organizationId, false, options.keys,current.userId)).revision !== revision) throw new HttpError(409, 'A configuração de IA mudou. Prepare a proposta novamente.', 'assistant_configuration_changed');
   const before = proposal.itemId ? items.find(item => item.id === proposal.itemId)! : null, delta = proposal.intent === 'stock.receive' ? proposal.quantity : ['stock.distribute', 'stock.consume'].includes(proposal.intent) ? -proposal.quantity : 0;
   if (before && delta && (before.condition !== 'active' || before.stock + delta < before.reserved || before.category === 'equipment' && (delta < 0 || before.stock + delta > 1))) throw new HttpError(409, 'O material não permite essa movimentação. Confira disponibilidade e categoria em Materiais.', 'assistant_stock');
-  const plan: AssistantPlan = { contract: ASSISTANT_CONTRACT, id: crypto.randomUUID(), actorId: current.userId, organizationId, projectId: project, configRevision: revision, proposal, before, after: before ? { stock: before.stock + delta, available: before.stock + delta - before.reserved } : null, provenance: { requestSha256: await digest(request), contextSha256: await digest(JSON.stringify(items)), provider: 'deepseek', model: config.model, modelRevision: PROVIDERS.deepseek.revision, returnedModel: generated.returnedModel, jevModel, reviewedAt: new Date(now).toISOString() }, expiresAt: now + 10 * 60000 }, payload = JSON.stringify(plan), hash = await digest(payload);
+  const plan: AssistantPlan = { contract: ASSISTANT_CONTRACT, id: crypto.randomUUID(), actorId: current.userId, organizationId, projectId: project, configRevision: revision, proposal, before, after: before ? { stock: before.stock + delta, available: before.stock + delta - before.reserved } : null, provenance: { requestSha256: await digest(request), contextSha256: await digest(JSON.stringify(items)), provider: selectedText.provider, model: selectedText.model, modelRevision: selectedText.revision, returnedModel: generated.returnedModel, jevModel, reviewedAt: new Date(now).toISOString() }, expiresAt: now + 10 * 60000 }, payload = JSON.stringify(plan), hash = await digest(payload);
   await scopedActor(db, current, project);
-  await db.batch([authorization,db.prepare('INSERT INTO ai_plans(id,actor_id,project_id,payload_json,payload_digest,expires_at,created_at) VALUES(?,?,?,?,?,?,?)').bind(plan.id, current.userId, project, payload, hash, plan.expiresAt, new Date(now).toISOString()), db.prepare("UPDATE ai_calls SET status='complete',plan_id=? WHERE id=?").bind(plan.id, id), db.prepare("INSERT INTO audit(id,actor_id,project_id,action,entity_id,details,created_at) VALUES(?,?,?,'assistant.plan',?,?,?)").bind(crypto.randomUUID(), current.userId, project, plan.id, JSON.stringify({ intent: proposal.intent, model: config.model, jevModel, configRevision: revision, requestSha256: plan.provenance.requestSha256, reservedUsdMicros: reservedCost }), nowIso())]);
+  await db.batch([authorization,db.prepare('INSERT INTO ai_plans(id,actor_id,project_id,payload_json,payload_digest,expires_at,created_at) VALUES(?,?,?,?,?,?,?)').bind(plan.id, current.userId, project, payload, hash, plan.expiresAt, new Date(now).toISOString()), db.prepare("UPDATE ai_calls SET status='complete',plan_id=? WHERE id=?").bind(plan.id, id), db.prepare("INSERT INTO audit(id,actor_id,project_id,action,entity_id,details,created_at) VALUES(?,?,?,'assistant.plan',?,?,?)").bind(crypto.randomUUID(), current.userId, project, plan.id, JSON.stringify({ intent: proposal.intent, model: selectedText.model, provider:selectedText.provider, jevModel, configRevision: revision, requestSha256: plan.provenance.requestSha256, reservedUsdMicros: reservedCost }), nowIso())]);
   const result=await presentPlan(plan,hash,secret); await assertPlanAuthorization(authorization); return result;
  } catch (error) { await db.prepare("UPDATE ai_calls SET status='failed' WHERE id=? AND status='reserved'").bind(id).run(); if(String(error).includes('assistant_authority_changed'))throw new HttpError(403,'Seu acesso ou a configuração mudou antes de salvar a prévia.','assistant_forbidden'); throw error; } finally { clearTimeout(timer); }
 }

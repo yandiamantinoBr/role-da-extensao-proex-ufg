@@ -1,6 +1,6 @@
 import {HttpError} from '../errors';
 import {type ConnectionOutcome,type ConnectionProvider} from './connection-contracts';
-const URLS={deepseek:{metadata:'https://api.deepseek.com/user/balance',models:'https://api.deepseek.com/models'},typesafe:{metadata:'https://api.typesafe.ai/v1/models'},deepgram:{metadata:'https://api.deepgram.com/v1/auth/token'},groq:{metadata:'https://api.groq.com/openai/v1/models'}} as const;
+const URLS={deepseek:{metadata:'https://api.deepseek.com/user/balance',models:'https://api.deepseek.com/models'},openai:{metadata:'https://api.openai.com/v1/models/gpt-5.6-luna'},typesafe:{metadata:'https://api.typesafe.ai/v1/models'},deepgram:{metadata:'https://api.deepgram.com/v1/auth/token'},groq:{metadata:'https://api.groq.com/openai/v1/models'}} as const;
 export const CONNECTION_RESPONSE_BYTES=32*1024;
 export type ProbeResult={outcome:ConnectionOutcome;httpStatus:number|null;modelListed:boolean|null;authenticationChecked:boolean};
 class ProbeFailure extends Error{constructor(readonly outcome:ConnectionOutcome,readonly httpStatus:number|null=null){super('provider_probe_failed');}}
@@ -25,6 +25,7 @@ export async function probeConnection(provider:ConnectionProvider,key:string,mod
   if(provider==='deepseek'){if(typeof metadata.body.is_available!=='boolean')throw new ProbeFailure('invalid_response',metadata.status);const models=await get(provider,key,'models',signal,fetcher,beforeEachRequest);if(models.body.object!=='list'||!Array.isArray(models.body.data)||models.body.data.length>200||models.body.data.some(row=>!row||typeof row!=='object'||typeof row.id!=='string'))throw new ProbeFailure('invalid_response',models.status);modelListed=models.body.data.some(row=>row.id===model);}
   if(provider==='typesafe'){if(!Array.isArray(metadata.body.models)||metadata.body.models.length>200||metadata.body.models.some(row=>!row||typeof row!=='object'||typeof row.name!=='string'))throw new ProbeFailure('invalid_response',metadata.status);modelListed=metadata.body.models.some(row=>row.name===model);}
   if(provider==='groq'){if(metadata.body.object!=='list'||!Array.isArray(metadata.body.data)||metadata.body.data.length>200||metadata.body.data.some(row=>!row||typeof row!=='object'||typeof row.id!=='string'))throw new ProbeFailure('invalid_response',metadata.status);modelListed=metadata.body.data.some(row=>row.id===model);}
+  if(provider==='openai'){if(metadata.body.object!=='model'||metadata.body.id!==model)throw new ProbeFailure('invalid_response',metadata.status);modelListed=true;}
   // Deepgram documents GET /auth/token as key verification. Its metadata is not
   // retained or returned; it does not prove permission/model for a paid STT call.
   return{outcome:'authenticated',httpStatus:metadata.status,modelListed,authenticationChecked:true};

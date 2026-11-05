@@ -47,7 +47,7 @@ export async function testAssistantConnection(db:D1Database,actor:PortalActor|nu
  const timer=setTimeout(()=>{timedOut=true;controller.abort();},Math.min(c.config.timeoutMs,8000));let result:Awaited<ReturnType<typeof probeConnection>>;
  try{
   if(controller.signal.aborted)throw new Error('probe_cancelled');
-  result=await probeConnection(provider,credential,provider==='deepseek'?c.config.model:provider==='typesafe'?c.config.jevModel:provider==='groq'?'whisper-large-v3-turbo':'nova-3',controller.signal,options.fetcher,async()=>{await batch(db,guards(db,c));});
+  result=await probeConnection(provider,credential,provider==='deepseek'?c.config.model:provider==='openai'?c.config.openaiModel:provider==='typesafe'?c.config.jevModel:provider==='groq'?'whisper-large-v3-turbo':'nova-3',controller.signal,options.fetcher,async()=>{await batch(db,guards(db,c));});
  }catch(error){if(error instanceof HttpError)throw error;result={outcome:timedOut?'timeout':controller.signal.aborted?'cancelled':'unavailable',httpStatus:null,modelListed:null,authenticationChecked:false};}
  finally{clearTimeout(timer);options.signal?.removeEventListener('abort',abort);credential='';for(const key of CONNECTION_PROVIDERS)credentials[key]='';}
  const receipt:ConnectionReceipt={id,provider,organizationId:c.organizationId,revision:c.revision,checkedAt:new Date().toISOString(),elapsedMs:Math.max(0,Date.now()-start),...result,inferenceTested:false,replayed:false};

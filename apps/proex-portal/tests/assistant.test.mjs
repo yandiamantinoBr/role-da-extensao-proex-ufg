@@ -82,7 +82,7 @@ test('Groq vault preserves existing encrypted providers and makes no function or
   const vault=await manageAssistantCredential(f.db,f.actors.owner,{...vaultInput('save',1),provider:'groq',label:'Voz da organização',secret:groqKey},secret,keys);
   const row=f.native.prepare("SELECT * FROM ai_organization_settings WHERE organization_id='org_proex'").get(),after=await decryptProviderCredentials(secret,row.credentials_ciphertext,'org_proex',keys);
   for(const provider of ['deepseek','typesafe','deepgram'])assert.equal(after[provider],before[provider]);assert.equal(after.groq,groqKey);assert.match(row.credentials_ciphertext,/^v2\./);
-  assert.equal(vault.keys.length,4);assert.equal(vault.keys.find(entry=>entry.provider==='groq').status,'active');assert.equal(JSON.parse(row.config_json).sttEnabled,false);assert.equal(f.native.prepare('SELECT COUNT(*) n FROM ai_transcriptions').get().n,0);
+  assert.equal(vault.keys.length,5);assert.equal(vault.keys.find(entry=>entry.provider==='groq').status,'active');assert.equal(JSON.parse(row.config_json).sttEnabled,false);assert.equal(f.native.prepare('SELECT COUNT(*) n FROM ai_transcriptions').get().n,0);
   const exposed=JSON.stringify({vault,audit:f.native.prepare('SELECT details FROM audit').all()});for(const value of [groqKey,key,keys.current,row.credentials_ciphertext])assert.equal(exposed.includes(value),false);
  }finally{f.native.close();}
 });

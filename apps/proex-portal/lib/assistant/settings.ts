@@ -38,7 +38,7 @@ export async function configurationActor(db: D1Database, actor: PortalActor | nu
  if (!await one(db, `SELECT id FROM organizations WHERE id=? AND status='active' AND ${auth.sql}`, [organizationId, ...auth.values])) throw new HttpError(403, 'Seu acesso à configuração desta organização mudou.', 'assistant_configuration_forbidden');
  return { current, auth };
 }
-export async function loadAssistantSettings(db: D1Database, secret: string, organizationId: string, mode: boolean | SpeechProvider | 'triage' | 'configuration' = false, keys?: CredentialKeys, actorId?: string) {
+export async function loadAssistantSettings(db: D1Database, secret: string, organizationId: string, mode: boolean | SpeechProvider | 'triage' | 'document' | 'configuration' = false, keys?: CredentialKeys, actorId?: string) {
  const row = await one(db, "SELECT s.* FROM ai_organization_settings s JOIN organizations o ON o.id=s.organization_id AND o.status='active' WHERE s.organization_id=?", [organizationId]);
  if (!row) throw new HttpError(503, 'Esta organização ainda não configurou o assistente.', 'assistant_unavailable');
  const config = validateConfig(JSON.parse(row.config_json));
@@ -54,8 +54,8 @@ export async function loadAssistantSettings(db: D1Database, secret: string, orga
  if(mode==='configuration'){ /* Private loader for explicit speech routing below. No feature is enabled here. */ }
  else if (mode === 'triage') {
   if (!config.jevEnabled || !credentials.typesafe) throw new HttpError(503, 'A triagem com JEV está indisponível nesta organização. Você pode classificar a demanda manualmente.', 'triage_disabled');
- } else if (mode ? !config.sttEnabled || (mode !== 'groq' && !credentials.deepgram) || (mode === 'groq' && config.sttProvider==='groq' && !credentials.groq) : !config.enabled || !credentials.deepseek || config.jevEnabled && !credentials.typesafe) {
-  throw new HttpError(503, mode ? 'A transcrição desta organização está desativada ou sem credencial.' : 'O assistente desta organização está desativado ou sem credencial.', 'assistant_unavailable');
+ } else if (mode==='document' ? !config.documentEnabled || !credentials[config.textProvider] || config.jevEnabled && !credentials.typesafe : mode ? !config.sttEnabled || (mode !== 'groq' && !credentials.deepgram) || (mode === 'groq' && config.sttProvider==='groq' && !credentials.groq) : !config.enabled || !credentials[config.textProvider] || config.jevEnabled && !credentials.typesafe) {
+  throw new HttpError(503, mode==='document'?'A interpretação documental desta organização está desativada ou sem credencial.':mode ? 'A transcrição desta organização está desativada ou sem credencial.' : 'O assistente desta organização está desativado ou sem credencial.', mode==='document'?'document_ai_unavailable':'assistant_unavailable');
  }
  return { config, credentials, revision: Number(row.revision) };
 }
@@ -91,7 +91,7 @@ export async function configureAssistant(db: D1Database, actor: PortalActor | nu
   if(config.sttProvider==='legacy')groqSpeechKey(speechEnvironment);
   else if(!validProviderKey(credentials.groq))throw new HttpError(400,'Cadastre a chave Groq desta organização no cofre antes de habilitar a transcrição.','assistant_credentials');
  }
- if ((config.enabled || config.documentEnabled) && !credentials.deepseek || config.jevEnabled && !credentials.typesafe || config.sttEnabled && speechProvider === 'deepgram' && !credentials.deepgram) throw new HttpError(400, 'Cadastre as credenciais dos provedores habilitados.', 'assistant_credentials');
+ if ((config.enabled || config.documentEnabled) && !credentials[config.textProvider] || config.jevEnabled && !credentials.typesafe || config.sttEnabled && speechProvider === 'deepgram' && !credentials.deepgram) throw new HttpError(400, 'Cadastre as credenciais dos provedores habilitados.', 'assistant_credentials');
  const credentialsChanged = !old || writesKeys;
  const ciphertext = old && !credentialsChanged ? old.credentials_ciphertext : await encryptProviderCredentials(secret, credentials, organizationId, keys, old?.credentials_ciphertext);
  const revision = Number(input.expectedRevision) + 1, at = new Date().toISOString();
@@ -112,7 +112,8 @@ export async function assistantStatus(db: D1Database, actor: PortalActor | null,
   const canUseAi = savedPolicy ? Boolean(await one(db, `SELECT 1 FROM ai_organization_settings s JOIN organizations o ON o.id=s.organization_id WHERE s.organization_id=? AND o.status='active' AND ${usagePolicy.sql}`, [organization.id,...usagePolicy.values])) : false;
   try { await configurationActor(db, current, organization.id); canConfigure = true; } catch { /* deny */ }
   try { await configurationActor(db, current, organization.id, true); canDelegate = true; } catch { /* deny */ }
-  try { const setting=await loadAssistantSettings(db, secret, organization.id, false, keys, current.userId); available = true;documentAvailable=setting.config.documentEnabled; } catch { /* unavailable */ }
+  try { await loadAssistantSettings(db, secret, organization.id, false, keys, current.userId); available = true; } catch { /* unavailable */ }
+  try { await loadAssistantSettings(db, secret, organization.id, 'document', keys, current.userId); documentAvailable = true; } catch { /* unavailable */ }
   let sttProvider = speechProviderForOrganization(organization.id, speechEnvironment),sttCredentialSource='vault';
   try {
    const speech=await loadSpeechSettings(db,secret,organization.id,speechEnvironment,keys,current.userId);

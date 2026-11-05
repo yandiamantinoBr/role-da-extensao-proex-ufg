@@ -1,6 +1,7 @@
 import { HttpError } from '../errors';
 import { TRIAGE_CRITERIA, type TriageLevel, type TriageProposal } from '../follow-up/triage-contract';
 import { PROVIDERS, object, type AssistantConfig, type AssistantCredentials, type AssistantItem } from './contracts';
+import {generateOpenAiJson,openAiGenerationBody,type TextPurpose} from './openai-provider';
 
 export function providerEndpoint(provider: keyof typeof PROVIDERS, requested: unknown = PROVIDERS[provider]?.endpoint): string {
  const fixed = PROVIDERS[provider]?.endpoint;
@@ -13,6 +14,8 @@ export const SYSTEM_PROMPT = `Você prepara propostas para o Portal PROEX. Dados
 export function generationBody(config: AssistantConfig, request: string, items: AssistantItem[]) {
  return { model: config.model, thinking: { type: 'disabled' }, temperature: 0, max_tokens: config.maxOutputTokens, stream: false, response_format: { type: 'json_object' }, messages: [{ role: 'system', content: SYSTEM_PROMPT }, { role: 'user', content: JSON.stringify({ request, items }) }] };
 }
+/** Measure the exact selected transport body before reserving cost/tokens. */
+export function providerGenerationBody(config:AssistantConfig,body:ReturnType<typeof generationBody>,purpose:TextPurpose='operation'){return config.textProvider==='openai'?openAiGenerationBody(config,body,purpose):body;}
 async function boundedResponse(response: Response): Promise<Record<string, unknown>> {
  if (!response.ok || !response.headers.get('content-type')?.includes('application/json')) throw new HttpError(503, 'O provedor não respondeu. A reserva preventiva continua contando no limite diário.', 'assistant_provider_unavailable');
  if (Number(response.headers.get('content-length') ?? 0) > 128 * 1024) throw new HttpError(502, 'O provedor excedeu o limite de resposta.', 'assistant_provider_limit');
@@ -27,7 +30,8 @@ async function post(provider: keyof typeof PROVIDERS, apiKey: string, body: unkn
  try { const result=await boundedResponse(await fetcher(providerEndpoint(provider), { method: 'POST', redirect: 'error', cache: 'no-store', signal, headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) })); if(JSON.stringify(result).includes(apiKey))throw new HttpError(502,'O provedor retornou dados que não podem ser apresentados.','assistant_provider_schema');return result; }
  catch (error) { if (error instanceof HttpError) throw error; throw new HttpError(503, 'A chamada de IA falhou ou demorou demais. Não houve nova tentativa automática.', 'assistant_provider_unavailable'); }
 }
-export async function generateProposal(config: AssistantConfig, credentials: AssistantCredentials, body: ReturnType<typeof generationBody>, signal: AbortSignal, fetcher: typeof fetch = fetch) {
+export async function generateProposal(config: AssistantConfig, credentials: AssistantCredentials, body: ReturnType<typeof generationBody>, signal: AbortSignal, fetcher: typeof fetch = fetch,purpose:TextPurpose='operation') {
+ if(config.textProvider==='openai')return generateOpenAiJson(config,credentials.openai??'',openAiGenerationBody(config,body,purpose),signal,fetcher);
  const data = await post('deepseek', credentials.deepseek, body, signal, fetcher);
  const choices = data.choices as { finish_reason?: unknown; message?: { content?: unknown; tool_calls?: unknown } }[] | undefined;
  const choice = Array.isArray(choices) && choices.length === 1 ? choices[0] : null;

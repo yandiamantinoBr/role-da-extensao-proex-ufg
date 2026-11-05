@@ -1,6 +1,6 @@
-import { type AssistantConfig, PROVIDERS } from './contracts';
+import { type AssistantConfig, PROVIDERS,textModel } from './contracts';
 export type AiReservation = {tokens:number;cost:number;calls:number;milliseconds:number};
-export function aiReservation(config:AssistantConfig,bodyBytes:number):AiReservation{return{tokens:bodyBytes+config.maxOutputTokens+(config.jevEnabled?bodyBytes+18000:0),calls:config.jevEnabled?2:1,milliseconds:config.timeoutMs,cost:Math.ceil(bodyBytes*PROVIDERS.deepseek.inputMicrosPerToken+config.maxOutputTokens*PROVIDERS.deepseek.outputMicrosPerToken+(config.jevEnabled?(bodyBytes+18000)*PROVIDERS.typesafe.inputMicrosPerToken:0))};}
+export function aiReservation(config:AssistantConfig,bodyBytes:number):AiReservation{const prices=textModel(config);return{tokens:bodyBytes+config.maxOutputTokens+(config.jevEnabled?bodyBytes+18000:0),calls:config.jevEnabled?2:1,milliseconds:config.timeoutMs,cost:Math.ceil(bodyBytes*prices.inputMicrosPerToken+config.maxOutputTokens*prices.outputMicrosPerToken+(config.jevEnabled?(bodyBytes+18000)*PROVIDERS.typesafe.inputMicrosPerToken:0))};}
 type Request={table:'ai_calls'|'ai_document_calls'|'ai_task_triage_calls';authorization:D1PreparedStatement;id:string;fingerprint:string;nonce:string;actorId:string;projectId:string|null;organizationId:string;day:string;createdAt:string;revision:number;config:AssistantConfig;reservation:AiReservation;document?:{kind:'project'|'asset';sourceDigest:string;expiresAt:number};triage?:{taskId:string;taskVersion:number;expiresAt:number}};
 /** Fixed table adapters share the same org budget and nonce-owned reservation.
  * The caller runs this array in one atomic batch and checks nonce before dispatch.
