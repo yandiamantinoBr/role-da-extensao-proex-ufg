@@ -125,3 +125,5 @@
 }
 @container (max-width:380px) { .body { padding:13px; gap:15px; } .summary { padding:13px; gap:9px; } .metrics>li { padding:8px 7px; } .nodeCard { padding:9px 10px; } .nodeIcon { display:none; } .children>.branch { margin-left:4px; padding-left:8px; } .referenceSummary,.referenceBody { padding-inline:11px; } .editor { padding:12px; } }
 @media (prefers-reduced-motion:reduce) { .chevron,.childrenSummary svg,.referenceChevron { transition:none; } }
+
+@container (max-width:599px){.heading>div:first-child{flex:1 1 125px}.heading>.actions{flex:0 0 auto;gap:6px}.actions button:first-child{width:44px;padding-inline:0;justify-content:center}.refreshLabel{display:none}.actions button{padding-inline:9px}.legend{gap:6px 10px}}
