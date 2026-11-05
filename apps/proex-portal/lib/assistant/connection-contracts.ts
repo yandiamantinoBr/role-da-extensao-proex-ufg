@@ -1,4 +1,4 @@
-export const CONNECTION_PROVIDERS=['deepseek','typesafe','deepgram'] as const;
+export const CONNECTION_PROVIDERS=['deepseek','typesafe','deepgram','groq'] as const;
 export type ConnectionProvider=typeof CONNECTION_PROVIDERS[number];
 export const CONNECTION_OUTCOMES=['authenticated','rejected','rate_limited','timeout','cancelled','unavailable','invalid_response','pending'] as const;
 export type ConnectionOutcome=typeof CONNECTION_OUTCOMES[number];
@@ -11,6 +11,6 @@ export function connectionReceipt(value:unknown):ConnectionReceipt{
 }
 export function connectionStatus(value:unknown,organizationId:string,revision:number):ConnectionStatus{
  if(!value||typeof value!=='object')throw new Error('Resposta de diagnóstico inválida.');const row=value as Record<string,unknown>;
- if(row.organizationId!==organizationId||row.revision!==revision||!Array.isArray(row.checks)||row.checks.length>3)throw new Error('A configuração mudou; atualize o assistente.');
+ if(row.organizationId!==organizationId||row.revision!==revision||!Array.isArray(row.checks)||row.checks.length>CONNECTION_PROVIDERS.length)throw new Error('A configuração mudou; atualize o assistente.');
  const checks=row.checks.map(connectionReceipt);if(checks.some(check=>check.organizationId!==organizationId||check.revision!==revision)||new Set(checks.map(check=>check.provider)).size!==checks.length)throw new Error('Resposta de diagnóstico inválida.');return{organizationId,revision,checks};
 }

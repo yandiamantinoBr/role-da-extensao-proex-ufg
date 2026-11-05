@@ -26,8 +26,8 @@ const { describePortableSchemas, exportPortablePage } = await import(compile('sy
 const { syncStatus } = await import(compile('sync/control'));
 const { listSyncAttachments } = await import(compile('sync/attachments'));
 const { startReviewedDictation } = await import(compile('assistant/dictation'));
-const { manageAssistantGrant } = await import(compile('assistant/settings'));
-const { transcribeSpeech, validateSpeechAudio, speechEndpoint, SPEECH_ENDPOINT } = await import(compile('assistant/speech'));
+const { manageAssistantGrant, loadSpeechSettings } = await import(compile('assistant/settings'));
+const { transcribeSpeech, validateSpeechAudio, speechEndpoint, SPEECH_ENDPOINT, speechReservedUsdMicros } = await import(compile('assistant/speech'));
 const { encodeSpeechWav, prepareSpeechWav } = await import(compile('../components/portal/speech-audio'));
 const secret = 'test-only-assistant-auth-secret-no-production-access';
 const key = 'test-only-fake-provider-credential';
@@ -72,6 +72,108 @@ test('bare Portal, email and provider credentials stop before quota, outbound tr
   assert.equal(f.native.prepare('SELECT COUNT(*) n FROM ai_organization_usage').get().n,0);
   assert.equal(f.native.prepare('SELECT COUNT(*) n FROM ai_plans').get().n,0);
  }finally{f.native.close();}
+});
+
+test('Groq vault preserves existing encrypted providers and makes no function or transport active merely by saving a key',async()=>{
+ const f=fixture(),groqKey='gsk-synthetic-only-organization-groq';
+ try{
+  await configureAssistant(f.db,f.actors.owner,configInput({sttEnabled:false},{deepgramKey:key,typesafeKey:key}),secret);
+  const before=await decryptProviderCredentials(secret,f.native.prepare('SELECT credentials_ciphertext FROM ai_organization_settings').get().credentials_ciphertext,'org_proex',keys);
+  const vault=await manageAssistantCredential(f.db,f.actors.owner,{...vaultInput('save',1),provider:'groq',label:'Voz da organização',secret:groqKey},secret,keys);
+  const row=f.native.prepare("SELECT * FROM ai_organization_settings WHERE organization_id='org_proex'").get(),after=await decryptProviderCredentials(secret,row.credentials_ciphertext,'org_proex',keys);
+  for(const provider of ['deepseek','typesafe','deepgram'])assert.equal(after[provider],before[provider]);assert.equal(after.groq,groqKey);assert.match(row.credentials_ciphertext,/^v2\./);
+  assert.equal(vault.keys.length,4);assert.equal(vault.keys.find(entry=>entry.provider==='groq').status,'active');assert.equal(JSON.parse(row.config_json).sttEnabled,false);assert.equal(f.native.prepare('SELECT COUNT(*) n FROM ai_transcriptions').get().n,0);
+  const exposed=JSON.stringify({vault,audit:f.native.prepare('SELECT details FROM audit').all()});for(const value of [groqKey,key,keys.current,row.credentials_ciphertext])assert.equal(exposed.includes(value),false);
+ }finally{f.native.close();}
+});
+
+test('explicit Groq uses its organization vault key, replays without another charge and never uses an available environment key',async()=>{
+ const f=fixture(),groqKey='test-only-vault-groq-org-a',environment={provider:'groq',organizationId:'org_proex',groqKey:'test-only-different-env-key'};let calls=0;
+ try{
+  await manageAssistantCredential(f.db,f.actors.owner,{...vaultInput('save',0),provider:'groq',label:'Voz institucional',secret:groqKey},secret,keys,environment);
+  await configureAssistant(f.db,f.actors.owner,{action:'configure',organizationId:'org_proex',expectedRevision:1,config:{...DEFAULT_ASSISTANT_CONFIG,sttProvider:'groq',sttEnabled:true}},secret,environment,keys);
+  const fetcher=async(url,init)=>{calls++;assert.equal(url,'https://api.groq.com/openai/v1/audio/transcriptions');assert.equal(init.headers.Authorization,'Bearer '+groqKey);assert.equal(init.body.get('model'),'whisper-large-v3-turbo');assert.equal(init.redirect,'error');return Response.json({text:'Texto para revisão humana.'});};
+  const input=speechInput(wav(),{expectedProvider:'groq'}),result=await transcribeSpeech(f.db,f.actors.inventory,input,secret,{environment,keys,fetcher});assert.equal(result.provenance.credentialSource,'vault');
+  assert.equal((await transcribeSpeech(f.db,f.actors.inventory,input,secret,{environment,keys,fetcher})).replayed,true);assert.equal(calls,1);
+  assert.equal(f.native.prepare('SELECT reserved_usd_micros FROM ai_organization_usage').get().reserved_usd_micros,112);
+  const status=await assistantStatus(f.db,f.actors.owner,secret,'org_proex',environment,keys);assert.equal(status.organizations.find(org=>org.id==='org_proex').sttCredentialSource,'vault');assert.equal(JSON.stringify(status).includes(groqKey),false);
+  assert.equal(f.native.prepare('SELECT COUNT(*) n FROM stock_movements').get().n,0,'transcription does not apply a stock operation');
+ }finally{f.native.close();}
+});
+
+test('Groq disable/remove cannot silently resume from legacy environment; re-enabling a key does not enable STT',async()=>{
+ for(const action of ['disable','remove']){
+  const f=fixture(),environment={provider:'groq',organizationId:'org_proex',groqKey:'test-only-env-groq-fallback'};let calls=0;
+  try{
+   await manageAssistantCredential(f.db,f.actors.owner,{...vaultInput('save',0),provider:'groq',label:'Voz institucional',secret:'test-only-vault-groq-credential'},secret,keys,environment);
+   const config={...DEFAULT_ASSISTANT_CONFIG,sttProvider:'groq',sttEnabled:true};await configureAssistant(f.db,f.actors.owner,{action:'configure',organizationId:'org_proex',expectedRevision:1,config},secret,environment,keys);
+   await manageAssistantCredential(f.db,f.actors.owner,{...vaultInput(action,2),provider:'groq'},secret,keys,environment);
+   const stored=JSON.parse(f.native.prepare('SELECT config_json FROM ai_organization_settings').get().config_json);assert.equal(stored.sttEnabled,false);assert.equal(stored.sttProvider,'groq');
+   await assert.rejects(configureAssistant(f.db,f.actors.owner,{action:'configure',organizationId:'org_proex',expectedRevision:3,config},secret,environment,keys),code('assistant_credentials'));
+   await assert.rejects(transcribeSpeech(f.db,f.actors.inventory,speechInput(wav(),{expectedProvider:'groq'}),secret,{environment,keys,fetcher:async()=>{calls++;return Response.json({text:'Denied'});}}),code('assistant_unavailable'));assert.equal(calls,0);
+   if(action==='disable'){await manageAssistantCredential(f.db,f.actors.owner,{...vaultInput('enable',3),provider:'groq'},secret,keys,environment);assert.equal(JSON.parse(f.native.prepare('SELECT config_json FROM ai_organization_settings').get().config_json).sttEnabled,false);}
+  }finally{f.native.close();}
+ }
+});
+
+test('Groq credentials and quotas are organization-specific while prior environment routing remains limited to its authorized organization',async()=>{
+ const f=fixture(),environment={provider:'groq',organizationId:'org_proex',groqKey:'test-only-authorized-pilot-key'};
+ try{
+  for(const [id,value] of [['org_proex','test-only-groq-key-org-a'],['unit-synthetic','test-only-groq-key-org-b']]){
+   await manageAssistantCredential(f.db,f.actors.owner,{action:'save',organizationId:id,provider:'groq',expectedRevision:0,label:'Voz da unidade',secret:value},secret,keys,environment);
+   await configureAssistant(f.db,f.actors.owner,{action:'configure',organizationId:id,expectedRevision:1,config:{...DEFAULT_ASSISTANT_CONFIG,sttProvider:'groq',sttEnabled:true,dailyCalls:1}},secret,environment,keys);
+   assert.equal((await loadSpeechSettings(f.db,secret,id,environment,keys)).apiKey,value);
+  }
+  const at=new Date().toISOString();f.native.prepare("INSERT INTO projects(id,name,organization_id,created_at)VALUES('project-c','Outra unidade','unit-synthetic',?)").run(at);let calls=0;
+  const fetcher=async(_url,init)=>{calls++;assert.match(init.headers.Authorization,/key-org-[ab]$/);return Response.json({text:'Transcrição isolada.'});};
+  await assert.rejects(transcribeSpeech(f.db,f.actors.inventory,speechInput(wav(),{projectId:'project-c',expectedProvider:'groq'}),secret,{environment,keys,fetcher}),code('forbidden'));assert.equal(calls,0);
+  await transcribeSpeech(f.db,f.actors.inventory,speechInput(wav(),{expectedProvider:'groq'}),secret,{environment,keys,fetcher});
+  await transcribeSpeech(f.db,f.actors.owner,speechInput(wav(),{projectId:'project-c',expectedProvider:'groq'}),secret,{environment,keys,fetcher});
+  assert.deepEqual(f.native.prepare('SELECT organization_id,calls,reserved_usd_micros FROM ai_organization_usage ORDER BY organization_id').all().map(row=>({...row})),[{organization_id:'org_proex',calls:1,reserved_usd_micros:112},{organization_id:'unit-synthetic',calls:1,reserved_usd_micros:112}]);
+  // A missing provider selection in stored legacy JSON still follows the prior
+  // environment only for its explicitly configured organization.
+  const legacy={...DEFAULT_ASSISTANT_CONFIG,sttEnabled:true};delete legacy.sttProvider;
+  const cipher=await encryptProviderCredentials(secret,{deepgram:key},'unit-synthetic',keys);
+  f.native.prepare("UPDATE ai_organization_settings SET config_json=?,credentials_ciphertext=?,revision=revision+1 WHERE organization_id='unit-synthetic'").run(JSON.stringify(legacy),cipher);
+  const fallback=await loadSpeechSettings(f.db,secret,'unit-synthetic',environment,keys);assert.equal(fallback.provider,'deepgram');assert.equal(fallback.apiKey,key);
+ }finally{f.native.close();}
+});
+
+test('Groq vault writes recheck owner/CAS and invalidate in-flight transcription after provider reply',async()=>{
+ const f=fixture();try{
+  const input={...vaultInput('save',0),provider:'groq',label:'Voz institucional',secret:'test-only-vault-groq-credential'};await manageAssistantCredential(f.db,f.actors.owner,input,secret,keys);
+  const before=f.native.prepare('SELECT credentials_ciphertext FROM ai_organization_settings').get().credentials_ciphertext;
+  await assert.rejects(manageAssistantCredential(f.db,f.actors.owner,{...input,secret:'test-only-stale-groq-credential'},secret,keys),code('assistant_configuration_changed'));assert.equal(f.native.prepare('SELECT credentials_ciphertext FROM ai_organization_settings').get().credentials_ciphertext,before);
+  await configureAssistant(f.db,f.actors.owner,{action:'configure',organizationId:'org_proex',expectedRevision:1,config:{...DEFAULT_ASSISTANT_CONFIG,sttProvider:'groq',sttEnabled:true}},secret,undefined,keys);
+  const fetcher=async()=>{await manageAssistantCredential(f.db,f.actors.owner,{...vaultInput('disable',2),provider:'groq'},secret,keys);return Response.json({text:'This reply must be withheld.'});};
+  await assert.rejects(transcribeSpeech(f.db,f.actors.inventory,speechInput(wav(),{expectedProvider:'groq'}),secret,{keys,fetcher}),error=>['assistant_unavailable','speech_configuration_changed','speech_forbidden'].includes(error.code));
+  assert.equal(f.native.prepare('SELECT result_ciphertext FROM ai_transcriptions').get().result_ciphertext,null);
+  f.raceBatch(/UPDATE ai_organization_settings/,()=>f.native.prepare("UPDATE members SET revoked_at=? WHERE id='owner-qa'").run(new Date().toISOString()));
+  await assert.rejects(manageAssistantCredential(f.db,f.actors.owner,{...vaultInput('enable',3),provider:'groq'},secret,keys),code('assistant_key_admin'));
+ }finally{f.native.close();}
+});
+
+test('Groq cost uses official hourly integer micro-USD rounding and minimum10seconds while preserving Deepgram reservations',()=>{
+ assert.equal(speechReservedUsdMicros('groq',1),112);assert.equal(speechReservedUsdMicros('groq',10),112);assert.equal(speechReservedUsdMicros('groq',30),334);assert.equal(speechReservedUsdMicros('groq',60),667);assert.equal(speechReservedUsdMicros('groq',3600),40000);assert.equal(speechReservedUsdMicros('deepgram',1),500);assert.equal(speechReservedUsdMicros('deepgram',60),30000);
+});
+
+test('a plausible Groq credential pasted into a request is rejected before transport or admission',async()=>{
+ const f=fixture(),provider=fakeProvider();try{await configureAssistant(f.db,f.actors.owner,configInput(),secret);await assert.rejects(prepareAssistantPlan(f.db,f.actors.inventory,request({request:'Consulte o estoque com gsk_synthetic_key_never_send_to_a_provider'}),secret,{fetcher:provider.fetch}),code('assistant_sensitive'));assert.equal(provider.calls,0);assert.equal(f.native.prepare('SELECT COUNT(*) n FROM ai_calls').get().n,0);}finally{f.native.close();}
+});
+
+test('Groq metadata migration preserves three populated providers and ciphertext/settings without touching collateral tables',async()=>{
+ const native=new DatabaseSync(':memory:');native.exec('PRAGMA foreign_keys=ON');
+ try{
+  for(const migration of readdirSync(`${root}drizzle`).filter(file=>file.endsWith('.sql')&&!file.startsWith('0025')).sort())native.exec(readFileSync(`${root}drizzle/${migration}`,'utf8'));
+  const at=new Date().toISOString(),cipher=await encryptProviderCredentials(secret,{deepseek:key,typesafe:key,deepgram:key},'org_proex',keys),config=JSON.stringify({...DEFAULT_ASSISTANT_CONFIG,enabled:true});
+  native.prepare('INSERT INTO ai_organization_settings(organization_id,revision,config_json,credentials_ciphertext,updated_by,updated_at)VALUES(?,1,?,?,?,?)').run('org_proex',config,cipher,'synthetic-owner',at);
+  for(const [i,provider] of ['deepseek','typesafe','deepgram'].entries())native.prepare('INSERT INTO ai_provider_credential_metadata(organization_id,provider,label,mask,state,created_at,created_by,updated_at,updated_by)VALUES(?,?,?,?,?,?,?,?,?)').run('org_proex',provider,'Chave '+provider,'…tail',['active','disabled','removed'][i],at,'synthetic-owner',at,'synthetic-owner');
+  const metadata=native.prepare('SELECT * FROM ai_provider_credential_metadata ORDER BY provider').all(),settings=native.prepare('SELECT * FROM ai_organization_settings').all(),tables=native.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all();
+  native.exec(readFileSync(`${root}drizzle/0025_groq_organization_credentials.sql`,'utf8'));
+  assert.deepEqual(native.prepare('SELECT * FROM ai_provider_credential_metadata ORDER BY provider').all(),metadata);assert.deepEqual(native.prepare('SELECT * FROM ai_organization_settings').all(),settings);assert.deepEqual(native.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all(),tables);assert.equal(native.prepare('PRAGMA foreign_key_check').all().length,0);
+  native.prepare('INSERT INTO ai_provider_credential_metadata(organization_id,provider,label,mask,state,created_at,created_by,updated_at,updated_by)VALUES(?,?,?,?,?,?,?,?,?)').run('org_proex','groq','Voz','…tail','active',at,'synthetic-owner',at,'synthetic-owner');
+  assert.throws(()=>native.prepare('UPDATE ai_provider_credential_metadata SET provider=? WHERE provider=?').run('unverified-provider','groq'),/CHECK/);
+ }finally{native.close();}
 });
 
 test('credentials use authenticated encryption, cannot be decrypted after tampering or key rotation', async () => {
@@ -532,7 +634,7 @@ test('Groq is scoped to its explicit organization and uses reviewed multipart sp
   await assert.rejects(transcribeSpeech(f.db,f.actors.inventory,speechInput(),secret,{fetcher:deepgram.fetch}),code('speech_operation_changed'));
   const usage=f.native.prepare("SELECT calls,reserved_usd_micros FROM ai_organization_usage WHERE organization_id='org_proex'").get();
   assert.equal(usage.calls,1);
-  assert.equal(usage.reserved_usd_micros,5000);
+  assert.equal(usage.reserved_usd_micros,112);
   assert.equal(calls,1);
   assert.equal(deepgram.calls,0);
   await transcribeSpeech(f.db,f.actors.owner,speechInput(wav(),{projectId:'project-c'}),secret,{environment,fetcher:deepgram.fetch});

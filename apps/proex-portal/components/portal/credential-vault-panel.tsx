@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { KeyRound, LoaderCircle } from 'lucide-react';
-import { PROVIDERS, type CredentialProvider } from '@/lib/assistant/contracts';
+import { PROVIDERS, credentialProviders, type CredentialProvider } from '@/lib/assistant/contracts';
 import styles from './credential-vault-panel.module.css';
 
 type Entry = { provider: CredentialProvider; label: string; purpose: string; status: 'active' | 'disabled' | 'removed' | 'missing' | 'unavailable'; mask: string | null; createdAt: string | null; createdBy: string | null; updatedAt: string | null; updatedBy: string | null };
@@ -14,8 +14,8 @@ type Vault = {
 };
 type Decision = { entry: Entry; action: 'save' | 'enable' | 'disable' | 'remove' };
 const statusLabels = { active: 'Disponível', disabled: 'Desligada', removed: 'Removida', missing: 'Sem chave', unavailable: 'Indisponível' };
-const providerLabels = { deepseek: 'DeepSeek', typesafe: 'TypeSafe', deepgram: 'Deepgram' };
-const models = { deepseek: PROVIDERS.deepseek.model, typesafe: PROVIDERS.typesafe.model, deepgram: 'Nova-3' };
+const providerLabels = { deepseek: 'DeepSeek', typesafe: 'TypeSafe', deepgram: 'Deepgram', groq: 'Groq' };
+const models = { deepseek: PROVIDERS.deepseek.model, typesafe: PROVIDERS.typesafe.model, deepgram: 'Nova-3', groq: 'whisper-large-v3-turbo' };
 const submitLabels = { save: 'Salvar chave', enable: 'Disponibilizar chave', disable: 'Desligar chave', remove: 'Remover chave' };
 const currency = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'USD', maximumFractionDigits: 6 });
 const date = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Sao_Paulo' });
@@ -34,7 +34,7 @@ async function api(path: string, signal?: AbortSignal, input?: Record<string, un
   if (!response.ok) throw new VaultRequestError(response.status, typeof data?.error === 'string' ? data.error : 'Não foi possível acessar o cofre.');
   if (!data || !Array.isArray(data.keys) || !Array.isArray(data.organizations) || !Number.isSafeInteger(data.revision) ||
       typeof data.storageReady !== 'boolean' || !data.reserved ||
-      !data.keys.every(entry => entry && Object.hasOwn(statusLabels, entry.status))) {
+      !data.keys.every(entry => entry && credentialProviders.includes(entry.provider) && Object.hasOwn(statusLabels, entry.status))) {
     throw new Error('A resposta do cofre chegou incompleta. Atualize a consulta.');
   }
   return data as Vault;
@@ -155,7 +155,7 @@ function CredentialVaultPanel({onConfigure}: {onConfigure: () => void}) {
         <div><dt>Reserva no mês</dt><dd>{currency.format(vault.reserved.month / 1_000_000)}</dd></div>
       </dl>
       <p className="p-form-help">As reservas são estimativas de uso agregado da organização. O cofre não faz chamadas aos provedores.</p>
-      {vault.groqPilot && <p className={styles.note}>Piloto Groq · {vault.groqPilot === 'configured' ? 'Credencial configurada no servidor' : 'Credencial pendente no servidor'}.</p>}
+      {vault.groqPilot && <p className={styles.note}>Compatibilidade do piloto Groq · {vault.groqPilot === 'configured' ? 'Credencial do servidor disponível apenas para esta organização' : 'Credencial pendente no servidor'}. A seleção explícita Groq usa a chave do cofre e não recorre a essa alternativa.</p>}
     </>}
   </div>;
 }

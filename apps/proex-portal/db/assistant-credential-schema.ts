@@ -14,6 +14,6 @@ export const aiProviderCredentialMetadata = sqliteTable('ai_provider_credential_
   updatedBy: text('updated_by').notNull(),
 }, table => [
   primaryKey({ columns: [table.organizationId, table.provider] }),
-  check('ai_provider_credential_name', sql`${table.provider} IN ('deepseek','typesafe','deepgram')`),
+  check('ai_provider_credential_name', sql`${table.provider} IN ('deepseek','typesafe','deepgram','groq')`),
   check('ai_provider_credential_state', sql`${table.state} IN ('active','disabled','removed')`),
 ]);

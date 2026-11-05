@@ -47,7 +47,7 @@ export async function testAssistantConnection(db:D1Database,actor:PortalActor|nu
  const timer=setTimeout(()=>{timedOut=true;controller.abort();},Math.min(c.config.timeoutMs,8000));let result:Awaited<ReturnType<typeof probeConnection>>;
  try{
   if(controller.signal.aborted)throw new Error('probe_cancelled');
-  result=await probeConnection(provider,credential,provider==='deepseek'?c.config.model:provider==='typesafe'?c.config.jevModel:'nova-3',controller.signal,options.fetcher,async()=>{await batch(db,guards(db,c));});
+  result=await probeConnection(provider,credential,provider==='deepseek'?c.config.model:provider==='typesafe'?c.config.jevModel:provider==='groq'?'whisper-large-v3-turbo':'nova-3',controller.signal,options.fetcher,async()=>{await batch(db,guards(db,c));});
  }catch(error){if(error instanceof HttpError)throw error;result={outcome:timedOut?'timeout':controller.signal.aborted?'cancelled':'unavailable',httpStatus:null,modelListed:null,authenticationChecked:false};}
  finally{clearTimeout(timer);options.signal?.removeEventListener('abort',abort);credential='';for(const key of CONNECTION_PROVIDERS)credentials[key]='';}
  const receipt:ConnectionReceipt={id,provider,organizationId:c.organizationId,revision:c.revision,checkedAt:new Date().toISOString(),elapsedMs:Math.max(0,Date.now()-start),...result,inferenceTested:false,replayed:false};
@@ -56,6 +56,6 @@ export async function testAssistantConnection(db:D1Database,actor:PortalActor|nu
 }
 export async function assistantConnectionStatus(db:D1Database,actor:PortalActor|null,organizationId:unknown){
  const c=await context(db,actor,organizationId),starts=await all(db,"SELECT id,details,created_at FROM audit WHERE organization_id=? AND action='assistant.connection.started' ORDER BY created_at DESC,id DESC LIMIT 60",[c.organizationId]),checks:ConnectionReceipt[]=[];
- for(const start of starts){let details:Record<string,unknown>;try{details=object(JSON.parse(start.details));}catch{continue;}const provider=details.provider as ConnectionProvider;if(!CONNECTION_PROVIDERS.includes(provider)||details.revision!==c.revision||checks.some(check=>check.provider===provider))continue;checks.push(await storedReceipt(db,c,String(start.id),provider));if(checks.length===3)break;}
+ for(const start of starts){let details:Record<string,unknown>;try{details=object(JSON.parse(start.details));}catch{continue;}const provider=details.provider as ConnectionProvider;if(!CONNECTION_PROVIDERS.includes(provider)||details.revision!==c.revision||checks.some(check=>check.provider===provider))continue;checks.push(await storedReceipt(db,c,String(start.id),provider));if(checks.length===CONNECTION_PROVIDERS.length)break;}
  await batch(db,guards(db,c));return{organizationId:c.organizationId,revision:c.revision,checks};
 }

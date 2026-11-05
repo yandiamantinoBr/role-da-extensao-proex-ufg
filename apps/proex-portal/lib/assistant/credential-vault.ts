@@ -5,8 +5,8 @@ import { credentialProviders, DEFAULT_ASSISTANT_CONFIG, object, onlyKeys, valida
 import { credentialKeyId, decryptProviderCredentials, encryptProviderCredentials, type CredentialKeys } from './crypto';
 import { speechProviderForOrganization, validProviderKey, type SpeechEnvironment } from './settings';
 
-const providers = { deepseek: 'DeepSeek', typesafe: 'TypeSafe JEV', deepgram: 'Deepgram' } as const;
-const purposes = { deepseek: 'Texto e documentos', typesafe: 'Decisão e conferência', deepgram: 'Transcrição de voz' } as const;
+const providers = { deepseek: 'DeepSeek', typesafe: 'TypeSafe JEV', deepgram: 'Deepgram', groq: 'Groq' } as const;
+const purposes = { deepseek: 'Texto e documentos', typesafe: 'Decisão e conferência', deepgram: 'Transcrição de voz', groq: 'Transcrição de voz em português' } as const;
 const dayInBrazil = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' });
 const conflict = () => new HttpError(409, 'As credenciais mudaram. Atualize a lista antes de salvar.', 'assistant_configuration_changed');
 const forbidden = () => new HttpError(403, 'Somente a administração geral pode gerenciar credenciais.', 'assistant_key_admin');
@@ -109,7 +109,7 @@ export async function assistantCredentialVault(db: D1Database, actor: PortalActo
 function suspendDependentFeatures(config: AssistantConfig, provider: CredentialProvider, id: string, speech?: SpeechEnvironment) {
   if (provider === 'deepseek') { config.enabled = false; config.documentEnabled = false; }
   if (provider === 'typesafe') config.jevEnabled = false;
-  if (provider === 'deepgram' && speechProviderForOrganization(id, speech) === 'deepgram') config.sttEnabled = false;
+  if ((provider === 'deepgram'||provider==='groq') && speechProviderForOrganization(id, speech, config.sttProvider) === provider) config.sttEnabled = false;
 }
 
 export async function manageAssistantCredential(db: D1Database, caller: PortalActor | null, input: Record<string, unknown>, authSecret: string, keys: CredentialKeys, speech?: SpeechEnvironment) {
