@@ -112,3 +112,14 @@ test('concurrent writes have one winner and global owners remain explicit organi
  f.insert('members',{id:'explicit-global-grant',user_id:'owner-a',email:'owner-a@example.invalid',role:'owner',organization_id:null,project_id:null,created_at:f.now});
  const created=await f.write({...node('Administração global explícita'),organizationId:'org-b',expectedVersion:0});assert.ok(created.entityId);assert.equal((await f.read('owner-a',{organizationId:'org-b'})).scope.canManage,true);
 });
+test('revocation after an authorized commit hides its receipt and forbids replay instead of returning stale authority',async t=>{
+ const f=await scenario(t),actor=await f.actor('owner-a'),batch=f.db.batch;
+ f.db.batch=async statements=>{const result=await batch(statements);f.native.prepare("UPDATE members SET revoked_at=? WHERE user_id='owner-a'").run(f.now);return result;};
+ const input={organizationId:'org-a',operationKey:'receipt-revocation-01',expectedVersion:0,...node('Gravada antes da revogação')};
+ await assert.rejects(structureAction(f.db,actor,input),{status:403});
+ // The transaction was authorized at commit time. Losing authority afterwards
+ // prevents disclosing its receipt; it cannot retroactively undo a committed edit.
+ assert.equal(f.native.prepare('SELECT COUNT(*) n FROM institutional_nodes').get().n,1);
+ await assert.rejects(structureAction(f.db,actor,input),{status:403});
+ assert.equal(f.native.prepare("SELECT COUNT(*) n FROM audit WHERE action='structure.node.save'").get().n,1);
+});
