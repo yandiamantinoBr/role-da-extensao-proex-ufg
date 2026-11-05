@@ -3,13 +3,13 @@ import {one,iso,uid,type Row} from '../database';
 import {HttpError} from '../errors';
 import {prepareMutation} from '../mutations';
 import {id,text,date,integer,choices,onlyKeys} from '../follow-up/contracts';
-import {actorRequired,authority,requireScope,scopeStatement,type Scope} from '../follow-up/scope';
+import {actorRequired,authority,scopeStatement,type Scope} from '../follow-up/scope';
 import {NODE_KINDS,RELATIONS,OFFICIAL_SOURCE,OFFICIAL_TEMPLATE,type StructureNode,type StructureWorkspace,type TemplateNode} from './contracts';
 function fail(message:string,code='structure_invalid',status=400):never{throw new HttpError(status,message,code);}
 
 async function activeScope(db:D1Database,actor:PortalActor,scope:Scope,write=false){
- await requireScope(db,actor,scope,write);
- if(!await one(db,"SELECT 1 FROM organizations WHERE id=? AND status='active'",[scope.organizationId]))fail('A organização não está ativa.','structure_forbidden',403);
+ if(!await one(db,`SELECT 1 FROM(SELECT ? organization_id,? project_id) scope JOIN organizations o ON o.id=scope.organization_id
+ WHERE o.status='active' AND ${authority('?','scope.organization_id','scope.project_id',write)}`,[scope.organizationId,scope.projectId,actor.userId]))fail('Seu acesso à organização ou a este projeto mudou.','structure_forbidden',403);
 }
 function nodeProjection(row:Row):StructureNode{return{id:row.id,parentId:row.parent_id,name:row.name,acronym:row.acronym,kind:row.kind,relation:row.relation,position:row.position,status:row.status};}
 export async function structureWorkspace(db:D1Database,actor:PortalActor|null,input:Record<string,unknown>={}):Promise<StructureWorkspace>{
