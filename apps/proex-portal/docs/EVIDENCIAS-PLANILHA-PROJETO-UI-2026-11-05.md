@@ -34,6 +34,10 @@ A revisão do coordenador também reforçou a janela do panorama: o cartão usa 
 
 Esta frente não criou nem autorizou um documento no Google e não verificou ida e volta em uma planilha real. O navegador verificou a interface contra respostas simuladas do contrato novo. Os testes reais do serviço/conector pertencem à outra frente e a revisão integrada pertence ao coordenador. Nenhuma chave ou documento real foi usado nas capturas.
 
+## Revisão de densidade da gestão
+
+A crítica independente do coordenador aprovou o painel cotidiano (9/10) e pediu reduzir linhas longas e altura da gestão desktop. A gestão agora coloca as etapas 1/2 lado a lado a partir de 850 px de container, mantém a chave emitida na largura completa e organiza a instalação em quatro passos em duas colunas. No celular continua em uma coluna. O estado cotidiano continua recolhido.
+
 ## Aprendizados
 
 Um link filtrado da planilha mestre não isola a informação no Drive. O documento por projeto precisa ser independente e compartilhado com a equipe correta. Sincronização é um comportamento do conector instalado, não uma propriedade de uma URL. Campos de credencial em interfaces reativas precisam mascarar a identidade anterior antes dos efeitos e também rejeitar respostas que terminem após o contexto mudar.
