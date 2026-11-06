@@ -12,7 +12,7 @@ O diretório administrativo prepara pessoas sem criar conta, convite ou acesso. 
 
 ## Verificação
 
-- Suíte integral local: 1.309 testes aprovados antes da contraprova adicional da Agenda; essa contraprova passou 6/6 no arquivo correspondente. Tipos, builds Worker e Node e smoke de autenticação/MCP aprovados. O CI da PR deve confirmar a composição final.
+- Registro local pré-publicação: 1.309 testes aprovados antes da contraprova adicional da Agenda; essa contraprova passou 6/6 no arquivo correspondente. Tipos, builds Worker e Node e smoke de autenticação/MCP aprovados. Os recibos de CI concluídos das PRs 38 e 39 estão abaixo.
 - Edição real na base sintética: criar material, editar, receber 100, consumir 7, conferir saldo 93, abrir unidade/histórico e baixar os três formatos. PDF renderizado em A4; arquivos XLSX e DOCX conferidos.
 - Avisos: queda até o mínimo, marcação como lido, dispensa, restauração, recuperação do saldo e novo episódio. Diretório: criar, editar versão 2, histórico e arquivar.
 - Eventos: busca e filtros; entrada efetiva pelo cartão de um evento ativo; rascunho autorizado e anônimo; data/hora inválida, restauração e reset de formulário.
@@ -47,6 +47,6 @@ A conferência posterior encontrou dois `input type=time` no planejamento das se
 
 ## Publicação do acabamento · PR39
 
-PR [39](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/39) MERGED em `c972f8ec1d0ca3e8ea43e56ac0ad5f54e18a70de`, head testado `12e9c2593412a0516a553eb6780f2edeacd7e37a`. CI [42301818366](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/actions/runs/42301818366) aprovado: **1.323/1.323 testes do Portal e 33/33 do jogo**. Vercel `dpl_5wcAVHtaoXtkq7b9px6sMGvAdLbq` READY, com o alias oficial no mesmo SHA. Este é o recibo da produção atual; o recibo da PR38 acima permanece como histórico da composição base.
+PR [39](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/39) MERGED em `c972f8ec1d0ca3e8ea43e56ac0ad5f54e18a70de`, head testado `12e9c2593412a0516a553eb6780f2edeacd7e37a`. CI [42301818366](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/actions/runs/42301818366) aprovado: **1.323/1.323 testes do Portal e 33/33 do jogo**. Vercel `dpl_5wcAVHtaoXtkq7b9px6sMGvAdLbq` READY, com o alias oficial no SHA de merge `c972f8e`. Este é o recibo da produção atual; o recibo da PR38 acima permanece como histórico da composição base.
 
 Chrome confirmou a versão `c972f8e` / 2026.11.06 e releu no DOM os horários reais persistidos em HH:mm. Sessões provisórias revisadas e sessões canceladas preservadas foram conferidas após a gravação. A campanha permanece em rascunho, sem ativação ou movimentação de estoque. Pessoas, horários, contagens e localizadores operacionais não integram este recibo público; as fontes e provas reais ficam no registro privado.
