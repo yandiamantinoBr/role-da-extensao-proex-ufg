@@ -150,3 +150,37 @@ test('the agenda label uses the last included day rather than the exclusive ICS 
     assert.doesNotMatch(text(activity), /14 de novembro/);
   } finally { h.dispose(); }
 });
+
+test('month days announce all visible categories and update the label together with badges, previews and day details', async () => {
+  const h = harness();
+  try {
+    await ready(h);
+    const month = new URL(h.requests[0].url, 'https://example.test').searchParams.get('from').slice(0, 7);
+    const day = n => `${month}-${String(n).padStart(2, '0')}`;
+    const button = n => h.all().find(node => node.type === 'button' && node.props['aria-controls'] === 'calendar-day-entries' && node.props['aria-label'].startsWith(`${n} de `));
+    assert.match(button(10).props['aria-label'], /, 0 registros$/);
+    h.button('Atualizar consulta').props.onClick(); h.render();
+    const entry = (uid, category, startsAt, endsAt, allDay = false) => ({ uid, category, title: `Atividade ${uid}`, projectId: 'project-a', projectName: 'Projeto sintético A', startsAt, endsAt, allDay });
+    const entries = [
+      entry('loan-spanning', 'loans', day(9), day(11), true),
+      entry('material', 'materials', `${day(10)}T12:00:00Z`, `${day(10)}T12:01:00Z`),
+      entry('project', 'projects', `${day(10)}T21:00:00Z`, `${day(10)}T22:00:00Z`),
+      entry('consumption', 'consumption', `${day(10)}T10:00:00Z`, `${day(10)}T10:01:00Z`),
+      entry('another-day', 'projects', day(12), day(13), true),
+    ];
+    h.respond(h.requests.at(-1), { entries, feeds: [], availableCategories: ['loans', 'materials', 'projects', 'consumption'] }); await tick(); h.render();
+    assert.match(button(10).props['aria-label'], /, 4 registros$/);
+    assert.match(text(button(10)), /\+2$/);
+    assert.equal(nodes(button(10)).filter(node => node.type === 'em').length, 2);
+    assert.match(button(9).props['aria-label'], /, 1 registro$/);
+    assert.match(button(11).props['aria-label'], /, 0 registros$/);
+    button(10).props.onClick({ currentTarget: {} }); h.render();
+    assert.equal(h.all().filter(node => node.type === 'article').length, 4);
+    assert.ok(h.all().filter(node => node.type === 'article').every(node => !text(node).includes('another-day')));
+    const projectFilter = h.all().find(node => node.type === 'select' && node.props.value === 'all');
+    projectFilter.props.onChange({ target: { value: 'projects' } }); h.render();
+    h.respond(h.requests.at(-1), { entries: entries.filter(entry => entry.category === 'projects'), feeds: [], availableCategories: ['loans', 'materials', 'projects', 'consumption'] }); await tick(); h.render();
+    assert.match(button(10).props['aria-label'], /, 1 registro$/);
+    assert.equal(nodes(button(10)).filter(node => node.type === 'em').length, 1);
+  } finally { h.dispose(); }
+});

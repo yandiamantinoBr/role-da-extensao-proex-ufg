@@ -1,4 +1,5 @@
 'use client';
+import DateTimeField from './date-time-field';
 import DateField from './date-field';
 
 import Link from 'next/link';
@@ -22,6 +23,7 @@ type Entry = {
   attachments: Attachment[];
 };
 type Props = {
+  initialProjectId?:string;
   projects: Row[]; items: Row[]; loans: Row[];
   canWrite?(capability: string, projectId: string): boolean;
 };
@@ -176,13 +178,13 @@ function AttachmentQueue({ recordId, onAttachment, onPendingChange }: {
   </div>;
 }
 
-export default function RecordsPanel({ projects: sourceProjects, items, loans, canWrite = noWrite }: Props) {
+export default function RecordsPanel({ projects: sourceProjects, items, loans, initialProjectId='', canWrite = noWrite }: Props) {
   const projects = useMemo(() => sourceProjects.filter(project => text(project, 'id') && text(project, 'name')).map(project => ({ id: text(project, 'id'), name: text(project, 'name') })), [sourceProjects]);
   const writableProjects = projects.filter(project => kinds.some(kind => canWrite(kind.capability, project.id)));
   const [records, setRecords] = useState<Entry[]>([]), [truncated, setTruncated] = useState(false);
   const [loading, setLoading] = useState(true), [readError, setReadError] = useState(''), [reload, setReload] = useState(0);
-  const [filterProject, setFilterProject] = useState(''), [from, setFrom] = useState(''), [to, setTo] = useState('');
-  const [filters, setFilters] = useState<Filters>({ projectId: '', from: '', to: '' });
+  const [filterProject, setFilterProject] = useState(initialProjectId), [from, setFrom] = useState(''), [to, setTo] = useState('');
+  const [filters, setFilters] = useState<Filters>({ projectId: initialProjectId, from: '', to: '' });
   const [category, setCategory] = useState(''), [search, setSearch] = useState('');
   const [open, setOpen] = useState(false), [projectId, setProjectId] = useState(''), [kind, setKind] = useState<Kind>('observation');
   const [title, setTitle] = useState(''), [body, setBody] = useState(''), [occurredAt, setOccurredAt] = useState('');
@@ -365,10 +367,10 @@ export default function RecordsPanel({ projects: sourceProjects, items, loans, c
           <div className="p-form-grid"><label className="p-field"><span>Projeto</span><select name="projectId" required value={projectId} onChange={event => changeProject(event.target.value)}>{writableProjects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label><label className="p-field"><span>Categoria</span><select name="kind" required value={kind} onChange={event => changeKind(event.target.value as Kind)}>{allowedKinds.map(value => <option key={value.value} value={value.value}>{value.label}</option>)}</select></label></div>
           <label className="p-field"><span>Título</span><input name="title" required maxLength={160} value={title} onChange={event => setTitle(event.target.value)} placeholder="Ex.: devolução e conferência da caixa de som" /></label>
           <label className="p-field"><span>Descrição e observações</span><textarea name="body" rows={5} maxLength={6000} value={body} onChange={event => setBody(event.target.value)} placeholder="Registre apenas as informações necessárias para a equipe." /></label>
-          <label className="p-field"><span>Data e hora da ocorrência</span><input name="occurredAt" type="datetime-local" required min="2000-01-01T00:00" max="2200-12-31T23:59" value={occurredAt} onChange={event => setOccurredAt(event.target.value)} /></label>
+          <label className="p-field"><span>Data e hora da ocorrência</span><DateTimeField aria-label="Data e hora da ocorrência" name="occurredAt"  required min="2000-01-01T00:00" max="2200-12-31T23:59" value={occurredAt} onChange={event => setOccurredAt(event.target.value)} /></label>
           <label style={{ display: 'flex', gap: 10, alignItems: 'center', minHeight: 44 }}><input name="hasInterval" type="checkbox" checked={hasInterval} onChange={event => setHasInterval(event.target.checked)} />Informar período de uma atividade</label>
           {/* Mantém os campos no formulário para restaurar período e checkbox juntos. */}
-          <div className="p-form-grid" hidden={!hasInterval} style={hasInterval ? undefined : { display: 'none' }}><label className="p-field"><span>Início da atividade</span><input name="startsAt" type="datetime-local" required={hasInterval} disabled={!hasInterval} min="2000-01-01T00:00" max="2200-12-31T23:59" value={startsAt} onChange={event => setStartsAt(event.target.value)} /></label><label className="p-field"><span>Fim da atividade</span><input name="endsAt" type="datetime-local" required={hasInterval} disabled={!hasInterval} min={startsAt || '2000-01-01T00:00'} max="2200-12-31T23:59" value={endsAt} onChange={event => setEndsAt(event.target.value)} /></label></div>
+          <div className="p-form-grid" hidden={!hasInterval} style={hasInterval ? undefined : { display: 'none' }}><label className="p-field"><span>Início da atividade</span><DateTimeField aria-label="Início da atividade" name="startsAt"  required={hasInterval} disabled={!hasInterval} min="2000-01-01T00:00" max="2200-12-31T23:59" value={startsAt} onChange={event => setStartsAt(event.target.value)} /></label><label className="p-field"><span>Fim da atividade</span><DateTimeField aria-label="Fim da atividade" name="endsAt"  required={hasInterval} disabled={!hasInterval} min={startsAt || '2000-01-01T00:00'} max="2200-12-31T23:59" value={endsAt} onChange={event => setEndsAt(event.target.value)} /></label></div>
           <div className="p-form-grid"><label className="p-field"><span>Material vinculado (opcional)</span><select name="itemId" value={itemId} disabled={!!loanId} onChange={event => setItemId(event.target.value)}><option value="">Sem vínculo com material</option>{projectItems.map(item => <option key={text(item, 'id')} value={text(item, 'id')}>{text(item, 'name') || 'Material'}</option>)}</select></label>{allowLoanLink && <label className="p-field"><span>Empréstimo vinculado (opcional)</span><select name="loanId" value={loanId} onChange={event => { const selected = projectLoans.find(loan => text(loan, 'id') === event.target.value); setLoanId(event.target.value); if (selected) setItemId(text(selected, 'item_id')); }}><option value="">Sem vínculo com empréstimo</option>{projectLoans.map(loan => <option key={text(loan, 'id')} value={text(loan, 'id')}>{itemName(text(loan, 'item_id')) || 'Equipamento'} · {text(loan, 'starts_at') ? dateTime(text(loan, 'starts_at')) : `#${text(loan, 'id').slice(0, 12)}`}</option>)}</select></label>}</div>
         </fieldset>
         {unconfirmed && <p role="status" className="p-form-help">{saving ? 'Enviando o registro…' : 'A confirmação está pendente. O próximo envio repete os mesmos dados e a mesma operação.'} Mantenha esta tela aberta para recuperar a confirmação.</p>}

@@ -315,3 +315,16 @@ test('calendar JSON, ICS and subscription creation reject a foreign project even
   assert.equal((await route.POST(post('feed.create', { category: 'loans', projectId: 'project-b' }))).status, 403);
   assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM calendar_feeds').get().n, 0);
 });
+
+
+test('material calendar uses the declared occurrence and preserves separate recorded measures without exposing SEI or beneficiary',async t=>{
+ const f=fixture(t),inventory=await actor(f,'inventory');
+ const add=(id,unit,delta)=>{f.insert('stock_movements',{id,item_id:'material-a',kind:'consume',delta,note:'PRIVATE NOTE',actor_id:'PRIVATE ACTOR',created_at:timestamp});f.insert('stock_movement_contexts',{movement_id:id,project_id:'project-a',process_reference:'PRIVATE SEI',beneficiary_reference:'PRIVATE BENEFICIARY',occurred_at:'2026-10-12T02:00:00Z',date_source:'declared',material_name:'Material a',measurement_unit:unit,created_at:timestamp});};
+ add('context-units','unidades',-2);f.sqlite.prepare("UPDATE items SET unit='caixas' WHERE id='material-a'").run();add('context-boxes','caixas',-3);
+ const result=await calendar.calendarEntries(f.db,inventory,{category:'consumption',projectId:'project-a',range:calendar.calendarRange('2026-10-11','2026-10-11')});
+ assert.equal(result.entries.length,2);assert.equal(new Set(result.entries.map(row=>row.uid)).size,2);
+ assert.ok(result.entries.some(row=>row.title.endsWith('-2 unidades')));assert.ok(result.entries.some(row=>row.title.endsWith('-3 caixas')));
+ for(const row of result.entries){assert.equal(row.startsAt,'2026-10-11');assert.equal(row.endsAt,'2026-10-12');}
+ assert.doesNotMatch(JSON.stringify(result),/PRIVATE SEI|PRIVATE BENEFICIARY|PRIVATE NOTE|PRIVATE ACTOR/);
+ const registered=await calendar.calendarEntries(f.db,inventory,{category:'consumption',projectId:'project-a',range:calendar.calendarRange('2026-10-19','2026-10-19')});assert.equal(registered.entries.length,1);
+});

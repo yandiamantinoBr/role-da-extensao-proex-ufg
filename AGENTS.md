@@ -25,3 +25,7 @@ Para retomar rapidamente, leia `docs/CONTINUAR-AQUI.md`; ele resume produção, 
 - Não leia nem imprima valores de `.dev.vars`, `.env*`, `~/.codex/auth*`, `~/.claude`, `.obsidian/` ou `proex-secrets.env`. Não use `vercel env pull`, `bws secret list`, `bws secret get` nem comandos que imprimam todo o ambiente. O exemplo de ambiente contém somente nomes, sem valores.
 - A publicação do Portal PROEX está autorizada conforme o parágrafo acima. Alterações de provedor/Sheets/Drive devem servir ao pedido vigente, preservar acesso mínimo e ser verificadas; não reative workflows legados nem execute rotinas de outro destino. Uma autorização existente não precisa ser pedida novamente.
 - Atualize a Vault somente no escopo autorizado e segundo o AGENTS dela. Registre resultados comprovados, pendências e a revisão testada; nunca confunda código local com publicação.
+
+## Migrações com SQL complementar · aprendizado de 2026-11-06
+
+Antes de gerar metadados Drizzle para uma migração com gatilhos próprios, copie seu SQL para um arquivo ignorado e confira sua restauração imediatamente após `generate`: o gerador pode sobrescrever o arquivo de mesmo nome. Gere snapshots em ordem, valide paridade de colunas/FKs, rode os testes de gatilhos, imutabilidade e rollback e preserve as migrações já publicadas. Não troque o SQL adicional pelo DDL gerado.

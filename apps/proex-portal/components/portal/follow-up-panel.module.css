@@ -11,3 +11,7 @@
   outline: 3px solid var(--focus);
   outline-offset: 2px;
 }
+
+.detailActions{display:flex;flex-wrap:wrap;align-items:center;gap:8px;max-width:100%}.detailActions>button[aria-expanded=true]{border-color:var(--brand-ink);background:var(--surface-soft);color:var(--brand-ink)}
+.editHeading{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;margin:4px 0 16px}.editHeading h4{margin:0;font-size:15px;font-weight:700;color:var(--brand-ink)}
+@container (max-width:470px){.detailActions{width:100%}.detailActions>button{flex:1;justify-content:center;padding-inline:10px}.editHeading>button{font-size:12px;padding-inline:10px}}

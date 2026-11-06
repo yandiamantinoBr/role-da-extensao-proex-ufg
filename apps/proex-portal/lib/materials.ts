@@ -2,6 +2,7 @@ import { memberProjectScopeSql, accessibleProjects, requireCapability, requireLi
 import { HttpError } from './errors';
 import { prepareMutation } from './mutations';
 import { assetMetadata, assetMetadataValues, ASSET_METADATA_COLUMNS, ASSET_METADATA_KEYS } from './asset-metadata';
+import { stockContextInput, prepareStockContext, matchingStockContext, fencedMovementContexts } from './stock-context';
 
 type Item = { id: string; project_id: string; name: string; category: string; unit: string; stock: number; reserved: number; condition: string; description: string; low_stock: number; asset_code: string; version: number; updated_at: string; category_id: string | null };
 type Loan = { id: string; project_id: string; item_id: string; status: string; note: string; starts_at: number; ends_at: number; condition_out: string; condition_in: string; checked_out_at: string | null; returned_at: string | null; updated_at: string };
@@ -82,6 +83,7 @@ function matchingMovement(existing: Movement, item: Item, delta: number, kind: s
 function translateDatabaseError(error: unknown): never {
   if (error instanceof HttpError) throw error;
   const message = String(error).toLowerCase();
+  if(message.includes('stock_context_'))throw new HttpError(409,'O projeto, a origem ou o destino mudou. Reabra a movimentação.','stock_context_changed');
   if (message.includes('loan_checkout_window')) throw new HttpError(409, 'A retirada só pode ser registrada dentro do período reservado.', 'loan_checkout_window');
   if (message.includes('loan_overlap') || message.includes('loan_conflict') || message.includes('loan_unavailable') || message.includes('loan_overdue') || message.includes('equipment_unavailable')) {
     throw new HttpError(409, 'O equipamento já está reservado, emprestado ou com devolução pendente. Confira a agenda.', 'loan_conflict');
@@ -265,9 +267,11 @@ export async function materialsAction(db: D1Database, actor: PortalActor, action
       const operationKey = textValue(input.operationKey, 'o identificador da operação', 120);
       if (!/^[a-zA-Z0-9_-]{8,120}$/.test(operationKey)) throw new HttpError(400, 'Identificador da operação inválido. Atualize a página.', 'invalid_operation');
       const refId = `manual:${actor.userId}:${operationKey}`;
+      const contextInput=stockContextInput(input,now);
       const existing = await statement(db, 'SELECT * FROM stock_movements WHERE ref_id=?', [refId]).first<Movement>();
       if (existing) {
         matchingMovement(existing, item, delta, kind, note, groupId);
+        await matchingStockContext(db,existing.id,contextInput);
         return { movement: existing, item, duplicate: true };
       }
       if (item.category === 'equipment' && ['distribute', 'consume'].includes(kind)) throw new HttpError(400, 'Registre a saída de equipamento na área de empréstimos.', 'equipment_movement');
@@ -279,10 +283,13 @@ export async function materialsAction(db: D1Database, actor: PortalActor, action
         if (activeLoan) throw new HttpError(409, 'Cancele as reservas ou registre a devolução antes de retirar este equipamento do estoque.', 'asset_in_use');
       }
       const id = crypto.randomUUID();
+      const context=await prepareStockContext(db,actor,item,contextInput);
       try {
         await capabilityBatch(db,actor,'inventory.manage',item.project_id,[
+          ...context.assertions,
           statement(db, 'INSERT INTO stock_movements (id,item_id,delta,kind,note,ref_id,actor_id,created_at,group_id) VALUES (?,?,?,?,?,?,?,?,?)', [id, item.id, delta, kind, note, refId, actor.userId, now, groupId]),
-          auditStatement(db, actor, action, id, item.project_id, { itemId: item.id, delta, kind, note }, now),
+          context.insert(id,now),
+          auditStatement(db, actor, action, id, item.project_id, { itemId: item.id, delta, kind, note, context:contextInput }, now),
         ]);
       } catch (error) {
         if(error instanceof HttpError&&error.status===403)throw error;
@@ -290,6 +297,7 @@ export async function materialsAction(db: D1Database, actor: PortalActor, action
         const retry = await statement(db, 'SELECT * FROM stock_movements WHERE ref_id=?', [refId]).first<Movement>();
         if (!retry) throw error;
         matchingMovement(retry, item, delta, kind, note, groupId);
+        await matchingStockContext(db,retry.id,contextInput);
         return { movement: retry, item: await itemById(db, item.id), duplicate: true };
       }
       return { movement: { id, item_id: item.id, delta, kind, note, ref_id: refId, group_id: groupId, created_at: now }, item: await itemById(db, item.id) };
@@ -431,12 +439,15 @@ export async function materialDetail(db: D1Database, actor: PortalActor | null, 
   let canManage = false;
   try { requireCapability(actor, 'inventory.manage', item.project_id); canManage = true; } catch { /* Read-only catalog role. */ }
   const versions = canManage ? (await statement(db, "SELECT id,version,created_at FROM entity_versions WHERE entity_type='item' AND entity_id=? AND project_id=? ORDER BY version DESC LIMIT 30", [item.id, item.project_id]).all()).results ?? [] : [];
-  // A revocation during the asynchronous history reads must suppress the whole payload.
-  await inventoryRead(db, actor, item.project_id);
+  const category=item.category_id?await categoryById(db,item.category_id):null,categories=await listMaterialCategories(db,actor,item.project_id);
+  // The last atomic read fences owner access and counterpart labels together.
+  let contexts:Awaited<ReturnType<typeof fencedMovementContexts>>;
+  try{contexts=await fencedMovementContexts(db,actor,item.project_id,movementRows.slice(0,limit).map(row=>String(row.id)));}
+  catch(error){if(String(error).includes('stock_context_access_changed'))throw new HttpError(403,'Seu acesso mudou. Atualize a página.','access_changed');throw error;}
   const files = attachments.slice(0, 100).map<Record<string, unknown>>(attachment => ({ ...attachment, url: `/api/records/files/${attachment.id}` }));
   return {
-    item, category: item.category_id ? await categoryById(db, item.category_id) : null,
-    categories: await listMaterialCategories(db, actor, item.project_id), movements: movementRows.slice(0, limit),
+    item, category,
+    categories, movements: movementRows.slice(0, limit).map(row=>({...row,context:contexts.get(String(row.id))??null})),
     photos: files.filter(file => String(file.mime).startsWith('image/')),
     attachments: files, attachmentsTruncated: attachments.length > 100,
     loanHistory: loanHistory.slice(0, 100), loanHistoryTruncated: loanHistory.length > 100,

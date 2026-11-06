@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Bell, CheckCheck, ChevronRight, Eye, EyeOff, Inbox as InboxIcon, RefreshCw, X } from 'lucide-react';
 import Link from 'next/link';
 import styles from './notification-bell.module.css';
+import MaterialAttentionInbox, {MATERIAL_ATTENTION_CHANGED} from './material-attention-inbox';
 import { FOLLOWUP_CHANGED, followupApi, dueLabel } from './follow-up-api';
 import { TaskSignals } from './work-signals';
 import { groupNotifications, type NoticeForGroup } from '../../lib/follow-up/notification-groups';
@@ -39,10 +40,11 @@ function lastUpdate(value:string|null) {
  return value?updateFormatter.format(new Date(value)):'Data não informada';
 }
 
-export default function NotificationBell({userId,onSelectTask,basePath='/?module=demands'}:{userId:string;onSelectTask?:(id:string)=>void;basePath?:string}) {
+export default function NotificationBell({userId,onSelectTask,onSelectMaterial,basePath='/?module=demands'}:{userId:string;onSelectTask?:(id:string)=>void;onSelectMaterial?:(itemId:string,projectId:string)=>void;basePath?:string}) {
  const [stored,setStored]=useState<{owner:string;data:Inbox;hiddenPage:number}|null>(null);
  const [open,setOpen]=useState(false);
- const [pane,setPane]=useState<'notices'|'pending'>('notices');
+ const [materialUnread,setMaterialUnread]=useState({owner:'',count:0});
+ const [pane,setPane]=useState<'notices'|'pending'|'stock'>('notices');
  const [message,setMessage]=useState<{owner:string;error:boolean;text:string}|null>(null);
  const [writing,setWriting]=useState<{owner:string;controller:AbortController}|null>(null);
  const [pagingOwner,setPagingOwner]=useState<string|null>(null);
@@ -59,6 +61,7 @@ export default function NotificationBell({userId,onSelectTask,basePath='/?module
  const refresh=useRef<()=>void>(()=>{});
  const currentInbox=stored?.owner===userId?stored:null;
  const inbox=currentInbox?.data??null;
+ const unread=(inbox?.unread??0)+(materialUnread.owner===userId?materialUnread.count:0);
  const feedback=message?.owner===userId?message:null;
  const busy=writing?.owner===userId&&!writing.controller.signal.aborted;
  const groups=inbox?(inbox.groups??groupNotifications(inbox.notifications)):[];
@@ -234,23 +237,23 @@ export default function NotificationBell({userId,onSelectTask,basePath='/?module
 
  return <div className={styles.root}>
   <button ref={trigger} type="button" className={`p-icon-button ${styles.trigger}`}
-   aria-label={`Notificações${inbox?`: ${unreadLabel(inbox.unread)}`:''}`}
+   aria-label={`Notificações${inbox||materialUnread.owner===userId?`: ${unreadLabel(unread)}`:''}`}
    aria-expanded={open} aria-controls="followup-notification-center"
-   onClick={()=>{if(open)close();else{setOpen(true);refresh.current();}}}>
+   onClick={()=>{if(open)close();else{setOpen(true);refresh.current();window.dispatchEvent(new Event(MATERIAL_ATTENTION_CHANGED));}}}>
    <Bell size={20} aria-hidden="true"/>
-   {!!inbox?.unread&&<span aria-hidden="true" className={styles.counter}>{inbox.unread>99?'99+':inbox.unread}</span>}
+   {!!unread&&<span aria-hidden="true" className={styles.counter}>{unread>99?'99+':unread}</span>}
   </button>
-  {open&&<section id="followup-notification-center" aria-label="Central de notificações" className={styles.panel}>
+  <section hidden={!open} style={!open?{display:'none'}:undefined} id="followup-notification-center" aria-label="Central de notificações" className={styles.panel}>
    <header className={styles.header}>
     <div className={styles.headerRow}>
      <div>
       <h2 ref={heading} tabIndex={-1}>Notificações</h2>
       <p role="status" aria-live="polite" className={styles.caption}>
-       {inbox?unreadLabel(inbox.unread):feedback?.error?'Caixa indisponível':'Consultando…'}
+       {inbox?unreadLabel(unread):feedback?.error?'Caixa indisponível':'Consultando…'}
       </p>
      </div>
      <div className={styles.headerActions}>
-      <button type="button" className={styles.iconButton} title="Atualizar" aria-label="Atualizar" disabled={busy} onClick={()=>refresh.current()}>
+      <button type="button" className={styles.iconButton} title="Atualizar" aria-label="Atualizar" disabled={busy} onClick={()=>{refresh.current();window.dispatchEvent(new Event(MATERIAL_ATTENTION_CHANGED));}}>
        <RefreshCw size={17} aria-hidden="true"/>
       </button>
       <button type="button" className={styles.iconButton} title="Fechar" aria-label="Fechar notificações" onClick={()=>close(true)}>
@@ -263,9 +266,11 @@ export default function NotificationBell({userId,onSelectTask,basePath='/?module
      <button type="button" aria-label="Pendentes" aria-pressed={pane==='pending'} onClick={()=>{setPane('pending');setConfirmation(null);}}>
       Pendentes{inbox&&<span aria-hidden="true">{inbox.pending.length}{inbox.pendingHasMore?'+':''}</span>}
      </button>
+     <button type="button" aria-pressed={pane==='stock'} onClick={()=>{setPane('stock');setConfirmation(null);window.dispatchEvent(new Event(MATERIAL_ATTENTION_CHANGED));}}>Estoque{materialUnread.owner===userId&&materialUnread.count>0&&<span>{materialUnread.count}</span>}</button>
     </div>
    </header>
-   <div className={styles.content} key={pane}>
+   <div className={styles.content} hidden={!open||pane!=='stock'} style={!open||pane!=='stock'?{display:'none'}:undefined}><MaterialAttentionInbox userId={userId} onUnreadChange={count=>setMaterialUnread({owner:userId,count})} onOpenMaterial={onSelectMaterial?(itemId,projectId)=>{close(true);onSelectMaterial(itemId,projectId);}:undefined}/></div>
+   {open&&pane!=='stock'&&<div className={styles.content} key={pane}>
     {feedback&&<p role={feedback.error?'alert':'status'} className={feedback.error?styles.error:styles.feedback}>{feedback.text}</p>}
     {pane==='notices'?<>
      <div className={styles.toolbar}>
@@ -327,7 +332,7 @@ export default function NotificationBell({userId,onSelectTask,basePath='/?module
      </details>}
      <p className={styles.caption}><Link className={styles.workLink} href="/?module=my-work" prefetch={false}>Meu trabalho</Link> mostra somente atribuições explícitas.</p>
     </>}
-   </div>
-  </section>}
+   </div>}
+  </section>
  </div>;
 }

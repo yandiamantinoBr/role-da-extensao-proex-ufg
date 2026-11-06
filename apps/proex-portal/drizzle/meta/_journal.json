@@ -225,6 +225,27 @@
       "when": 1793904139110,
       "tag": "0031_followup_task_transfers",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "6",
+      "when": 1793982173153,
+      "tag": "0032_stock_movement_context",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "6",
+      "when": 1793982191355,
+      "tag": "0033_directory_people",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "6",
+      "when": 1793990296470,
+      "tag": "0034_material_attention",
+      "breakpoints": true
     }
   ]
 }

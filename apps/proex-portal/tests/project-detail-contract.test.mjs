@@ -25,7 +25,7 @@ async function renderDetail(relationships,schedule=[],canEdit=false,metadata={},
  vm.runInNewContext(code,{module:compiled,exports:compiled.exports,require:name=>name==='react'?hooks:name==='react/jsx-runtime'?{jsx,jsxs:jsx}:name==='lucide-react'?new Proxy({},{get:(_,key)=>String(key)}):name.endsWith('.css')?{default:new Proxy({},{get:(_,key)=>String(key)})}:name==='@/lib/extension-catalog'?{areaLabel:value=>value,lineLabel:value=>value}:name==='@/lib/civil-date'?civilDates:name==='@/lib/project-communication'?communication:name==='./reports-center'?{ProjectReportExports:'ProjectReportExports'}:{DraftNotice:()=>null,useFormDraft:()=>({clear(){}})},Date:FixedDate,Intl,URL,AbortController,Number,fetch:async()=>({ok:true,json:async()=>payload})});
  function render(){index=0;tree=compiled.exports.default({projectId:'project-a',projects:[],mutate:async()=>({}),onBack(){},onEdit(){},...props});}
  render();effects.forEach(fn=>fn());await tick();render();
- return{tree,all:nodes(tree),text:text(tree),editSchedule(title){
+ return{get tree(){return tree;},get all(){return nodes(tree);},get text(){return text(tree);},expandMaterials(){const button=nodes(tree).find(node=>node.type==='button'&&text(node).startsWith('Ver os '));assert.ok(button);button.props.onClick();render();},editSchedule(title){
   const row=nodes(tree).find(node=>node.type==='li'&&text(node).includes(title));
   const edit=nodes(row).find(node=>node.type==='button'&&text(node)==='Editar');
   assert.ok(edit);
@@ -59,10 +59,11 @@ test('ISO, invalid and missing date values use finite comparisons and only a pas
 test('item availability consumes the server projection even without loan visibility and never invents a value for an absent field',async()=>{
  const items=[{id:'blocked',name:'Emprestado',category:'equipment',condition:'active',stock:1,reserved:0,available:0,unit:'unidade'},{id:'gifts',name:'Brindes reservados',category:'gift',condition:'active',stock:5,reserved:3,available:2,unit:'unidade'},...[['unknown','Sem projeção',undefined],['null','Nulo',null],['invalid','Inválido','invalid']].map(([id,name,available])=>({id,name,available,category:'equipment',condition:'active',stock:1,reserved:0,unit:'unidade'}))];
  const ui=await renderDetail({items,loans:null});
- const cells=name=>nodes(ui.all.find(node=>node.type==='tr'&&text(node).startsWith(name))).filter(node=>node.type==='td').map(text);
- assert.equal(cells('Emprestado').at(-1),'0');
- assert.equal(cells('Brindes reservados').at(-1),'2');
- for(const name of ['Sem projeção','Nulo','Inválido']) assert.equal(cells(name).at(-1),'Não informado');
+ ui.expandMaterials();
+ const available=name=>{const row=ui.all.find(node=>node.type==='li'&&text(node).startsWith(name));const pair=nodes(row).find(node=>node.type==='div'&&Array.isArray(node.props.children)&&node.props.children.some(child=>child?.type==='dt'&&text(child)==='Disponível'));return text(nodes(pair).find(node=>node.type==='dd'));};
+ assert.equal(available('Emprestado'),'0 unidade');
+ assert.equal(available('Brindes reservados'),'2 unidade');
+ for(const name of ['Sem projeção','Nulo','Inválido']) assert.equal(available(name),'Não informado');
  assert.equal(ui.text.includes('Empréstimos'),false);
 });
 
@@ -141,4 +142,18 @@ test('project navigation keeps scope and exposes the dedicated workbook setup ev
  assert.ok(nodes(getNav(manager)).some(node=>node.props.href==='/?module=team&project=project-a'));
  assert.ok(!nodes(getNav(empty)).some(node=>node.props.href?.startsWith('/?module=team')));
  assert.ok(linked.all.some(node=>node.props.id==='project-spreadsheets'));
+});
+
+test('project operations open material in place and expose create/edit only for the specific capability',async()=>{
+ const item={id:'stock-a',name:'Material de teste',category:'consumption',stock:12,available:10,unit:'caixa',condition:'active'};
+ const opened=[],props={onMaterialOpen:(...args)=>opened.push(args)};
+ let ui=await renderDetail({items:[item]},[],true,{permissions:{canEdit:true,inventory:true,inventoryManage:false}},props);
+ assert.equal(ui.all.some(node=>node.type==='button'&&text(node)==='Adicionar material'),false);
+ assert.equal(ui.all.some(node=>node.type==='button'&&node.props['aria-label']==='Editar Material de teste'),false);
+ ui.all.find(node=>node.type==='button'&&text(node).startsWith(item.name)).props.onClick();assert.deepEqual(opened,[['stock-a']]);
+ ui=await renderDetail({items:[item]},[],false,{permissions:{canEdit:false,inventory:true,inventoryManage:true}},props);
+ assert.ok(ui.all.some(node=>node.type==='button'&&text(node)==='Adicionar material'));
+ ui.all.find(node=>node.type==='button'&&node.props['aria-label']==='Editar Material de teste').props.onClick();assert.deepEqual(opened.at(-1),['stock-a','edit']);
+ ui.all.find(node=>node.type==='button'&&node.props['aria-label']==='Movimentar Material de teste').props.onClick();assert.deepEqual(opened.at(-1),['stock-a','move']);
+ assert.equal(ui.all.some(node=>node.type==='button'&&text(node)==='Editar projeto'),false);
 });

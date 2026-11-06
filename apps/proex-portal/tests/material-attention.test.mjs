@@ -1,0 +1,69 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {compile,teamFixture} from './support/work-teams-fixture.mjs';
+const {materialsAction}=await import(compile('lib/materials.ts'));
+const {materialAttentionInbox,materialAttentionAction}=await import(compile('lib/material-attention.ts'));
+const {participationAction}=await import(compile('lib/participation.ts'));
+async function fixture(t){const f=teamFixture(t),actor=await f.actor('owner-a');const create=async(patch={})=>(await materialsAction(f.db,actor,'item.create',{projectId:'project-a',name:'Pasta de exemplo',category:'consumption',unit:'unidade',lowStock:5,operationKey:crypto.randomUUID(),...patch})).item;const item=await create();return{...f,item,create,
+ duty(itemId=item.id,who='owner-a',area='materials',teamId=null){const key=`scope-${itemId??'all'}-${area}`;if(!f.native.prepare('SELECT id FROM work_responsibility_scopes WHERE id=?').get(key))f.insert('work_responsibility_scopes',{id:key,organization_id:'org-a',project_id:'project-a',area,item_id:itemId,target_key:itemId??'',created_by:'owner-a',created_at:f.now,updated_at:f.now});const assignee=crypto.randomUUID();f.insert('work_responsibility_assignees',{id:assignee,scope_id:key,user_id:teamId?null:who,team_id:teamId,created_at:f.now});return assignee;},
+ move:async(delta,itemId=item.id,extra={})=>materialsAction(f.db,await f.actor('owner-a'),'stock.move',{itemId,delta,kind:delta>0?'receive':'consume',note:'Operação sintética',operationKey:crypto.randomUUID(),...extra}),
+ inbox:async(who='owner-a',input={})=>materialAttentionInbox(f.db,await f.actor(who),input),
+ receipt:async(action,episodeIds,who='owner-a',extra={})=>materialAttentionAction(f.db,await f.actor(who),{action,episodeIds,operationKey:crypto.randomUUID(),...extra})};}
+const episodes=f=>f.native.prepare('SELECT * FROM material_attention_episodes ORDER BY sequence').all();
+
+test('zero creation and pre-existing low balances never backfill; a real stock edge opens only one persisted episode',async t=>{
+ const f=await fixture(t);f.duty();assert.equal(episodes(f).length,0);assert.equal((await f.inbox()).unread,0);await f.move(3);assert.equal(episodes(f).length,0);await f.move(7);assert.equal(episodes(f).length,0);
+ const key=crypto.randomUUID();await f.move(-5,f.item.id,{operationKey:key});const one=await f.inbox();assert.equal(one.unread,1);assert.equal(one.notices[0].available,5);assert.equal(one.notices[0].threshold,5);assert.equal(one.notices[0].cause,'stock');
+ await f.move(-5,f.item.id,{operationKey:key});assert.equal(episodes(f).length,1);await f.move(-1);assert.equal(episodes(f).length,1);assert.equal((await f.inbox()).notices[0].available,4);
+});
+test('threshold edit is an explicit crossing, metadata-only edits do not repeat and initial low equipment/inactive records are excluded',async t=>{
+ const f=await fixture(t);f.duty();await f.move(10);const actor=await f.actor('owner-a');let current=f.native.prepare('SELECT * FROM items WHERE id=?').get(f.item.id);
+ await materialsAction(f.db,actor,'item.update',{id:f.item.id,expectedVersion:current.version,lowStock:10});assert.equal(episodes(f).length,1);assert.equal(episodes(f)[0].cause,'threshold');current=f.native.prepare('SELECT * FROM items WHERE id=?').get(f.item.id);
+ await materialsAction(f.db,actor,'item.update',{id:f.item.id,expectedVersion:current.version,name:'Pasta com novo nome'});assert.equal(episodes(f).length,1);
+ const equipment=await f.create({name:'Equipamento sintético',category:'equipment',lowStock:1});await f.move(1,equipment.id);await f.move(-1,equipment.id,{kind:'adjust'});assert.equal(episodes(f).length,1);
+ f.native.prepare("UPDATE items SET condition='inactive',version=version+1 WHERE id=?").run(f.item.id);assert.equal(episodes(f)[0].resolution,'inactive');assert.equal((await f.inbox()).total,0);
+});
+test('recovery closes episode and a new crossing creates fresh unread notices independent from old receipts',async t=>{
+ const f=await fixture(t);f.duty();await f.move(10);await f.move(-6);const first=(await f.inbox()).notices[0];await f.receipt('dismiss',[first.id]);assert.equal((await f.inbox()).total,0);await f.move(10);assert.equal(episodes(f)[0].resolution,'recovered');assert.equal((await f.inbox('owner-a',{includeDismissed:true})).total,0);await f.move(-10);
+ const fresh=await f.inbox();assert.equal(fresh.total,1);assert.equal(fresh.unread,1);assert.notEqual(fresh.notices[0].id,first.id);assert.equal(episodes(f).length,2);assert.equal(f.native.prepare('SELECT COUNT(*) n FROM material_attention_receipts').get().n,1);
+});
+test('reservation-only depletion starts no new episode, but release resolving an existing episode is persistent',async t=>{
+ const f=await fixture(t);f.duty();await f.move(10);f.native.prepare('UPDATE items SET reserved=6 WHERE id=?').run(f.item.id);assert.equal(episodes(f).length,0);f.native.prepare('UPDATE items SET reserved=0 WHERE id=?').run(f.item.id);f.native.prepare('UPDATE items SET reserved=2 WHERE id=?').run(f.item.id);await f.move(-4);assert.equal(episodes(f).length,1);assert.equal(episodes(f)[0].resolved_at,null);
+ f.native.prepare('UPDATE items SET reserved=0 WHERE id=?').run(f.item.id);assert.ok(episodes(f)[0].resolved_at);assert.equal(episodes(f)[0].resolved_available,6);
+});
+test('a matching current duty and material ACL are both mandatory; no automatic owner or fake profile recipients',async t=>{
+ const f=await fixture(t);await f.move(10);await f.move(-6);assert.equal((await f.inbox()).total,0);const assignee=f.duty();assert.equal((await f.inbox()).total,1);
+ f.duty(f.item.id,'viewer-a');assert.equal((await f.inbox('viewer-a')).total,0);f.native.prepare("UPDATE members SET role='inventory' WHERE user_id='viewer-a'").run();assert.equal((await f.inbox('viewer-a')).total,1);
+ f.native.prepare('UPDATE work_responsibility_assignees SET revoked_at=? WHERE id=?').run(f.now,assignee);assert.equal((await f.inbox()).total,0);
+ assert.equal(f.native.prepare('SELECT COUNT(*) n FROM followup_notifications').get().n,0);assert.equal(f.native.prepare('SELECT COUNT(*) n FROM invites').get().n,0);
+});
+test('area/project duties and overlapping teams deduplicate; removing team/ACL or blocking account hides the episode immediately',async t=>{
+ const f=await fixture(t);await f.move(10);await f.move(-6);f.native.prepare("UPDATE members SET role='inventory' WHERE user_id='viewer-a'").run();f.insert('followup_teams',{id:'team-alerts',organization_id:'org-a',name:'Apoio sintético',created_by:'owner-a',created_at:f.now,updated_at:f.now});f.insert('followup_team_members',{id:'team-member',team_id:'team-alerts',user_id:'viewer-a',added_by:'owner-a',created_at:f.now});f.duty(null,null,'materials','team-alerts');f.duty(null,'viewer-a','projects');assert.equal((await f.inbox('viewer-a')).total,1);
+ f.native.prepare("UPDATE work_responsibility_assignees SET revoked_at=? WHERE user_id='viewer-a'").run(f.now);f.native.prepare("UPDATE followup_team_members SET removed_at=? WHERE id='team-member'").run(f.now);assert.equal((await f.inbox('viewer-a')).total,0);
+ f.duty(f.item.id,'viewer-a');f.native.prepare("UPDATE members SET revoked_at=? WHERE user_id='viewer-a'").run(f.now);assert.equal((await f.inbox('viewer-a')).total,0);f.native.prepare("UPDATE portal_users SET status='blocked' WHERE user_id='owner-a'").run();await assert.rejects(f.inbox(),e=>e.status===401);
+});
+test('per-user read/dismiss/restore receipts persist, respect replay and do not modify the underlying ledger',async t=>{
+ const f=await fixture(t);f.duty();await f.move(10);await f.move(-6);const id=(await f.inbox()).notices[0].id,before=f.native.prepare('SELECT COUNT(*) n FROM stock_movements').get().n,key=crypto.randomUUID();await f.receipt('read',[id],'owner-a',{operationKey:key});await f.receipt('read',[id],'owner-a',{operationKey:key});assert.equal((await f.inbox()).unread,0);assert.equal(f.native.prepare("SELECT COUNT(*) n FROM audit WHERE action='material-attention.read'").get().n,1);
+ await f.receipt('dismiss',[id]);assert.equal((await f.inbox()).total,0);assert.equal((await f.inbox('owner-a',{includeDismissed:true})).total,1);await f.receipt('restore',[id]);assert.equal((await f.inbox()).total,1);assert.equal((await f.inbox()).unread,0);assert.equal(f.native.prepare('SELECT COUNT(*) n FROM stock_movements').get().n,before);
+ await assert.rejects(f.receipt('read',[id,'another-episode'],'owner-a',{operationKey:key}),e=>e.status===409);await assert.rejects(f.receipt('read',[id],'owner-b'),e=>e.status===403);
+ const raceKey=crypto.randomUUID(),responses=await Promise.all([f.receipt('dismiss',[id],'owner-a',{operationKey:raceKey}),f.receipt('dismiss',[id],'owner-a',{operationKey:raceKey})]);assert.equal(responses.filter(response=>response.duplicate).length,1);
+});
+test('revocation before commit rolls back receipts/audit; after commit blocks receipt disclosure and replay',async t=>{
+ for(const timing of ['before','after']){const f=await fixture(t);f.duty();await f.move(10);await f.move(-6);const id=(await f.inbox()).notices[0].id,actor=await f.actor('owner-a'),batch=f.db.batch;let fired=false;f.db.batch=async statements=>{if(!fired){fired=true;if(timing==='before')f.native.prepare("UPDATE members SET revoked_at=? WHERE user_id='owner-a'").run(f.now);const result=await batch(statements);if(timing==='after')f.native.prepare("UPDATE members SET revoked_at=? WHERE user_id='owner-a'").run(f.now);return result;}return batch(statements);};const input={action:'read',episodeIds:[id],operationKey:'receipt-revocation-01'};await assert.rejects(materialAttentionAction(f.db,actor,input),e=>e.status===403);assert.equal(f.native.prepare('SELECT COUNT(*) n FROM material_attention_receipts').get().n,timing==='before'?0:1);await assert.rejects(materialAttentionAction(f.db,actor,input),e=>e.status===403);}
+});
+test('late stock recovery or duty revocation fences list content instead of leaking stale titles; pagination is bounded and current',async t=>{
+ for(const change of ['duty','recover']){const f=await fixture(t);f.duty();await f.move(10);await f.move(-6);let changed=false;f.db.afterRead=sql=>{if(changed||!sql.startsWith('WITH caller AS'))return;changed=true;if(change==='duty')f.native.prepare('UPDATE work_responsibility_assignees SET revoked_at=?').run(f.now);else f.native.prepare('UPDATE items SET stock=20 WHERE id=?').run(f.item.id);};await assert.rejects(f.inbox(),e=>e.status===409);}
+ const f=await fixture(t);f.duty(null,'owner-a','materials');for(let n=0;n<8;n++){const item=n===0?f.item:await f.create({name:`Material ${n}`});await f.move(10,item.id);await f.move(-6,item.id);}const first=await f.inbox();assert.equal(first.notices.length,6);assert.equal(first.total,8);assert.equal(first.hasMore,true);const second=await f.inbox('owner-a',{before:first.nextBefore});assert.equal(second.notices.length,2);assert.equal(second.hasMore,false);assert.ok(!first.notices.some(a=>second.notices.some(b=>a.id===b.id)));
+});
+test('failed ledger transaction creates no episode and episode identity/history cannot be rewritten or deleted',async t=>{
+ const f=await fixture(t);f.duty();await f.move(10);f.native.exec('BEGIN');f.insert('stock_movements',{id:'rollback-move',item_id:f.item.id,delta:-6,kind:'consume',note:'synthetic',ref_id:'manual:owner-a:rollback-01',actor_id:'owner-a',created_at:f.now});assert.equal(episodes(f).length,1);f.native.exec('ROLLBACK');assert.equal(episodes(f).length,0);await f.move(-6);const id=episodes(f)[0].id;assert.throws(()=>f.native.prepare("UPDATE material_attention_episodes SET opened_threshold=99 WHERE id=?").run(id),/material_attention_immutable/);assert.throws(()=>f.native.prepare('DELETE FROM material_attention_episodes WHERE id=?').run(id),/material_attention_immutable/);assert.deepEqual(f.native.prepare('PRAGMA foreign_key_check').all(),[]);
+});
+test('real prize redemption neither closes nor creates an episode through its temporary reservation release',async t=>{
+ for(const existing of [false,true]){const f=await fixture(t),actor=await f.actor('owner-a'),gift=await f.create({category:'gift',name:'Brinde sintético'});f.duty(gift.id);await f.move(existing?30:10,gift.id);const offers={};for(const[kind,quantity]of[['brinde',6],['super',1]])offers[kind]=(await materialsAction(f.db,actor,'offer.create',{projectId:'project-a',name:`Oferta ${kind}`,kind,components:[{itemId:gift.id,quantity}],operationKey:crypto.randomUUID()})).offer.id;
+  f.insert('campaigns',{id:'campaign-prize',project_id:'project-a',name:'Evento fictício',starts_at:new Date(Date.now()-60000).toISOString(),ends_at:new Date(Date.now()+3600000).toISOString(),status:'active',rules_text:'Regras fictícias para QA.',retry_limit:1,brinde_offer_id:offers.brinde,super_offer_id:offers.super,created_at:f.now});
+  f.native.prepare("INSERT OR REPLACE INTO settings(name,value,updated_at) VALUES('privacyNotice','Aviso sintético para testes locais','2026-11-06T12:00:00Z')").run();const ticket=await participationAction(f.db,actor,'participation.ticket',{campaignId:'campaign-prize',operationKey:crypto.randomUUID()});await participationAction(f.db,actor,'participation.physical',{attemptId:ticket.attemptId,result:'brinde'});
+  if(existing)await f.move(-20,gift.id);
+  const before=f.native.prepare('SELECT stock-reserved available FROM items WHERE id=?').get(gift.id).available,original=episodes(f);const entitlement=f.native.prepare('SELECT id FROM entitlements WHERE attempt_id=?').get(ticket.attemptId).id;
+  await participationAction(f.db,actor,'prize.redeem',{code:entitlement,operationKey:crypto.randomUUID()});const after=f.native.prepare('SELECT stock-reserved available FROM items WHERE id=?').get(gift.id).available;assert.equal(after,before);assert.equal(episodes(f).length,original.length);if(existing)assert.equal(episodes(f)[0].resolved_at,null);
+ }
+});

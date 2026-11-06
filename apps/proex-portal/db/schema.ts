@@ -11,3 +11,6 @@ export * from './team-sheet-schema';
 export * from './institutional-structure-schema';
 export * from './campaign-planning-schema';
 export * from './followup-transfer-schema';
+export * from './stock-context-schema';
+export * from './directory-schema';
+export * from './material-attention-schema';

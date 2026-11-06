@@ -3,6 +3,7 @@
 import { useRef, useState, type FormEvent } from 'react';
 import { Check, LoaderCircle } from 'lucide-react';
 import { useFormDraft, DraftNotice } from './use-form-draft';
+import DateTimeField from './date-time-field';
 
 // Campaign projections and mutation responses are validated by the server.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -49,8 +50,8 @@ export default function CampaignForm({ projects, offers, initial, defaultProject
       <label className="p-field"><span>Nome do evento</span><input name="name" required maxLength={120} defaultValue={initial?.name ?? ''} placeholder="Nome da ação ou do evento" /></label>
       <label className="p-field"><span>Local</span><input name="location" maxLength={200} defaultValue={initial?.location ?? ''} placeholder="Unidade, escola ou espaço" /></label>
       <label className="p-field"><span>Quando sair Tente novamente</span><select name="retryLimit" defaultValue={initial?.retry_limit ?? initial?.retryLimit ?? ''}><option value="">Definir antes de ativar</option><option value="0">Sem repetição; Tente novamente encerra</option><option value="1">Conceder até 1 repetição</option><option value="2">Conceder até 2 repetições</option><option value="3">Conceder até 3 repetições</option></select><small>A regra precisa ser decidida pela equipe e publicada ao participante.</small></label>
-      <label className="p-field"><span>Início</span><input name="startsAt" type="datetime-local" required defaultValue={localDate(initial?.starts_at ?? initial?.startsAt)} /></label>
-      <label className="p-field"><span>Fim</span><input name="endsAt" type="datetime-local" required defaultValue={localDate(initial?.ends_at ?? initial?.endsAt)} /></label>
+      <label className="p-field"><span>Início</span><DateTimeField name="startsAt" aria-label="Início" required defaultValue={localDate(initial?.starts_at ?? initial?.startsAt)} /></label>
+      <label className="p-field"><span>Fim</span><DateTimeField name="endsAt" aria-label="Fim" required defaultValue={localDate(initial?.ends_at ?? initial?.endsAt)} /></label>
       <label className="p-field"><span>Oferta de Brinde</span><select name="brindeOfferId" defaultValue={initial?.brinde_offer_id ?? initial?.brindeOfferId ?? ''}><option value="">Definir antes de ativar</option>{scopedOffers.filter(o => o.kind === 'brinde').map(o => <option key={o.id} value={o.id}>{o.name}</option>)}</select></label>
       <label className="p-field"><span>Oferta de Super Brinde</span><select name="superOfferId" defaultValue={initial?.super_offer_id ?? initial?.superOfferId ?? ''}><option value="">Definir antes de ativar</option>{scopedOffers.filter(o => o.kind === 'super').map(o => <option key={o.id} value={o.id}>{o.name}</option>)}</select></label>
     </div>

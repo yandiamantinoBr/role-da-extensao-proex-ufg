@@ -1,0 +1,2 @@
+export type MaterialAttentionNotice={id:string;sequence:number;itemId:string;projectId:string;material:string;projectName:string;unit:string;available:number;threshold:number;openedAvailable:number;openedThreshold:number;openedAt:string;cause:'stock'|'threshold';readAt:string|null;dismissedAt:string|null};
+export type MaterialAttentionInbox={viewerId:string;notices:MaterialAttentionNotice[];unread:number;total:number;hasMore:boolean;nextBefore:number|null;asOf:string;includeDismissed:boolean};

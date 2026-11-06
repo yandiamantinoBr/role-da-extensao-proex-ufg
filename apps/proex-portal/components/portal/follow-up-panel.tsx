@@ -68,6 +68,8 @@ export default function FollowUpPanel({userId='',onTaskTransferred,defaultProjec
  const [taskReceipt,setTaskReceipt]=useState<{id:string;message:string}|null>(null);
  const [listError,setListError]=useState<{key:string;message:string}|null>(null);
  const [listAttempt,setListAttempt]=useState(0);
+ const [editingTaskId,setEditingTaskId]=useState('');
+ const editTrigger=useRef<HTMLButtonElement>(null),editHeading=useRef<HTMLHeadingElement>(null),pendingEditFocus=useRef<string|null>(null);
  const generation=useRef(0),listGeneration=useRef(0),detailGeneration=useRef(0),interactionEpoch=useRef(0),selectionEcho=useRef(initialTaskId),mutationPending=useRef(false),detailElement=useRef<HTMLHeadingElement>(null),teamRequest=useRef<AbortController|null>(null);
  const initialSelectionTimer=useRef<ReturnType<typeof setTimeout>|undefined>(undefined);
  const detailRejectedFor=useRef<string|null>(null);
@@ -106,6 +108,8 @@ export default function FollowUpPanel({userId='',onTaskTransferred,defaultProjec
   detailTrigger.current=null;
   setSelectedTask(value);
   setTaskReceipt(null);
+  setEditingTaskId('');
+  pendingEditFocus.current=null;
   setDetail(null);
   setForm(null);
   onSelectTask?.(value);
@@ -204,6 +208,15 @@ export default function FollowUpPanel({userId='',onTaskTransferred,defaultProjec
  const editingContextMatches=!!currentTask&&(currentTask.project_id??'')===projectId&&currentTask.organization_id===organizationId;
  const scopedCatalog=editingContextMatches?catalogState?.data:null;
  const editingCatalogUnavailable=editingContextMatches&&catalogState?.data===null;
+ const editOpen=Boolean(currentTask?.canEdit&&editingTaskId===currentTask.id);
+ useEffect(()=>{
+  if(!editOpen||pendingEditFocus.current!==currentTask?.id)return;
+  const target=editHeading.current;
+  if(!target)return;
+  pendingEditFocus.current=null;
+  target.focus({preventScroll:true});
+  target.scrollIntoView({block:'nearest'});
+ },[editOpen,currentTask?.id]);
  function openTask(id:string,button?:HTMLButtonElement){
   selectTask(id);
   detailTrigger.current=button?{id,button}:null;
@@ -242,6 +255,18 @@ export default function FollowUpPanel({userId='',onTaskTransferred,defaultProjec
   setOrganizationId(currentTask.organization_id);
   setProjectId(currentTask.project_id??'');
  }
+ function openTaskEditor(){
+  if(!currentTask?.canEdit||busy)return;
+  pendingEditFocus.current=currentTask.id;
+  setEditingTaskId(currentTask.id);
+  if(!editingContextMatches||editingCatalogUnavailable)loadEditingCatalog();
+  if(editOpen){pendingEditFocus.current=null;editHeading.current?.focus();}
+ }
+ function closeTaskEditor(restoreFocus=true){
+  if(busy)return;
+  pendingEditFocus.current=null;setEditingTaskId('');
+  if(restoreFocus)editTrigger.current?.focus({preventScroll:true});
+ }
  return <section className="@container grid min-w-0 gap-6" aria-labelledby="followup-title"><header className="flex flex-wrap items-start justify-between gap-4"><div className="grid gap-1"><h2 className="sr-only" id="followup-title">Demandas e conferências</h2><p className="text-sm text-[var(--muted)]">Conferências registram diferenças e avarias sem alterar o estoque.</p></div><div className="flex flex-wrap gap-2">{onOpenReports&&<button className={button} type="button" onClick={onOpenReports}><ChartColumn size={16} aria-hidden="true"/>Relatórios</button>}<button className={button} type="button" disabled={busy} onClick={()=>setRevision(value=>value+1)}><RefreshCw size={16} aria-hidden="true"/>Atualizar</button></div></header>
  <div><div role="alert">{error&&<p className="p-notice p-notice-error">{error}</p>}</div><fieldset aria-label="Filtrar demandas" disabled={busy} className="grid min-w-0 grid-cols-1 gap-3 rounded-2xl border border-[var(--line)] p-4 @min-[470px]:grid-cols-2"><label className="min-w-0">Organização<select value={organizationId} className={field} onChange={event=>{const org=event.target.value,first=catalog.projects.find(p=>p.organization_id===org);setOrganizationId(org);chooseProject(first?.id??'');setOrganizationId(org);}}><option value="">Todos os meus contextos</option>{catalog.organizations.map(o=><option key={o.id} value={o.id}>{o.name}</option>)}</select></label><label className="min-w-0">Projeto<select value={projectId} className={field} onChange={event=>chooseProject(event.target.value)}><option value="" disabled={!!organizationId&&!catalog.organizations.find(o=>o.id===organizationId)?.canManage}>{organizationId?'Demandas gerais da organização':'Todos os projetos autorizados'}</option>{catalog.projects.filter(p=>!organizationId||p.organization_id===organizationId).map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label><details className="min-w-0 border-t border-[var(--line)] pt-1 @min-[470px]:col-span-2"><summary className="min-h-11 cursor-pointer py-2 font-semibold">Buscar e filtrar{activeFilters>0&&<span className="ml-2 text-sm font-normal text-[var(--text-secondary)]">{activeFilters} {activeFilters===1?'filtro ativo':'filtros ativos'}</span>}</summary><div className="grid gap-3 pb-1 @min-[560px]:grid-cols-3"><label>Buscar<input value={search} className={field} maxLength={120} onChange={event=>{setSearch(event.target.value);setOffset(0);}} placeholder="Título ou contexto"/></label><label>Estado<select value={status} className={field} onChange={event=>{setStatus(event.target.value);setOffset(0);}}><option value="all">Todos</option>{TASK_STATES.map(s=><option key={s} value={s}>{stateLabels[s]}</option>)}</select></label><label>Prioridade<select value={priority} className={field} onChange={event=>{setPriority(event.target.value);setOffset(0);}}><option value="all">Todas</option>{TASK_PRIORITIES.map(p=><option key={p} value={p}>{priorityLabels[p]}</option>)}</select></label></div></details></fieldset></div>
  {loading&&<p role="status" className="text-sm">Carregando contexto…</p>}<div role="group" aria-label="Ações de demandas" className="flex flex-wrap gap-3">{catalog.canEdit&&contextOrg&&<button className={primary} type="button" disabled={busy} onClick={event=>openForm('task',event?.currentTarget)}><Plus size={16} aria-hidden="true"/>Nova demanda</button>}{catalog.canEdit&&projectId&&<button className={button} type="button" disabled={busy} onClick={event=>openForm('checklist',event.currentTarget)}><ClipboardCheck size={16} aria-hidden="true"/>Conferência pós-evento</button>}{catalog.canEdit&&projectId&&<button className={button} type="button" disabled={busy} onClick={event=>openForm('activity',event.currentTarget)}><ClipboardCheck size={16} aria-hidden="true"/>Checklist de atividade</button>}{catalog.canManageTeams&&contextOrg&&<button className={button} type="button" disabled={busy} onClick={()=>void openTeams()}><Users size={16} aria-hidden="true"/>Equipes da organização</button>}</div>
@@ -254,15 +279,16 @@ export default function FollowUpPanel({userId='',onTaskTransferred,defaultProjec
     <h3 ref={detailElement} tabIndex={-1} className={'text-xl font-bold [overflow-wrap:anywhere] '+focusAnchor}>{currentTask.title}</h3>
     <div className="mt-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 text-sm text-[var(--text-secondary)]"><span>{currentTask.organization_name}</span>{currentTask.project_name&&(currentTask.project_id&&catalog.projects.some(project=>project.id===currentTask.project_id)?<a className="p-text-link inline-flex min-h-11 max-w-full items-center gap-2 [overflow-wrap:anywhere]" href={`/?module=projects&project=${encodeURIComponent(currentTask.project_id)}&detailProject=${encodeURIComponent(currentTask.project_id)}`}><FolderKanban size={16} className="shrink-0" aria-hidden="true"/>{currentTask.project_name}<ArrowUpRight size={15} className="shrink-0" aria-hidden="true"/><span className="sr-only"> · Abrir projeto de origem</span></a>:<span>{currentTask.project_name}</span>)}</div>
    </div>
-   <button className={button} disabled={busy} type="button" onClick={closeTask}><X size={16} aria-hidden="true"/>Fechar</button>
+   <div className={styles.detailActions}>{currentTask.canEdit&&<button ref={editTrigger} className={button} disabled={busy} type="button" aria-expanded={editOpen} aria-controls={`followup-task-editor-${currentTask.id}`} onClick={openTaskEditor}><Pencil size={16} aria-hidden="true"/>Editar demanda</button>}<button className={button} disabled={busy} type="button" onClick={closeTask}><X size={16} aria-hidden="true"/>Fechar</button></div>
   </header>
   <div className="grid min-w-0 gap-2">
    <TaskSignals status={currentTask.status} priority={currentTask.priority} dueAt={currentTask.due_at} today={visualToday}/>
    <p className="text-sm text-[var(--text-secondary)]">Importância: {currentTask.importance?priorityLabels[currentTask.importance]:'Sem classificação'}</p>
   </div>
   {taskReceipt?.id===currentTask.id&&<p role="status" className="rounded-lg border border-[var(--line)] bg-[var(--surface-soft)] px-3 py-2 text-sm font-semibold text-[var(--brand-ink)]">{taskReceipt.message}</p>}
-  {currentTask.canEdit&&<details key={currentTask.id} className="min-w-0 rounded-xl border border-[var(--line)] bg-[var(--surface-soft)] p-3">
-   <summary className="min-h-11 cursor-pointer rounded-lg py-2 font-semibold text-[var(--brand-ink)]"><Pencil size={16} aria-hidden="true" className="mr-2 inline align-text-bottom"/>Editar demanda e responsáveis</summary>
+  {currentTask.canEdit&&<details key={currentTask.id} id={`followup-task-editor-${currentTask.id}`} open={editOpen} className="min-w-0 rounded-xl border border-[var(--line)] bg-[var(--surface-soft)] p-3" onToggle={event=>{if(event.currentTarget.open){if(!editOpen)openTaskEditor();}else if(editOpen)closeTaskEditor(false);}} onKeyDown={event=>{if(event.key==='Escape'&&!event.defaultPrevented&&editOpen&&!busy){event.preventDefault();event.stopPropagation();closeTaskEditor();}}}>
+   <summary aria-disabled={busy||undefined} onClick={event=>{if(busy)event.preventDefault();}} className="min-h-11 cursor-pointer rounded-lg py-2 font-semibold text-[var(--brand-ink)]"><Pencil size={16} aria-hidden="true" className="mr-2 inline align-text-bottom"/>Cadastro e responsáveis</summary>
+   <div className={styles.editHeading}><h4 ref={editHeading} tabIndex={-1} className={focusAnchor}>Editar demanda</h4><button type="button" className={button} disabled={busy} onClick={()=>closeTaskEditor()}><X size={15} aria-hidden="true"/>Fechar edição</button></div>
    {scopedCatalog?.canEdit?<TaskEditor key={`${currentTask.id}:${currentTask.version}`} catalog={scopedCatalog} task={currentTask} organizationId={currentTask.organization_id} projectId={currentTask.project_id??''} busy={busy} save={mutate}/>
     :scopedCatalog?<p role="status" className="text-sm">A edição está indisponível neste contexto.</p>
     :editingCatalogUnavailable?<div className="grid gap-2">
