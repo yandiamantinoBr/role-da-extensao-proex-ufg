@@ -29,11 +29,11 @@ O clique real nos links públicos encontrou uma exceção no roteador cliente do
 
 Migrações aditivas: 0032 (contexto de movimentação), 0033 (pré-cadastros) e 0034 (avisos). Os snapshots Drizzle correspondem a 113 tabelas; os gatilhos complementares foram preservados. Não gerar novamente um arquivo SQL customizado sem cópia e conferência. A aplicação mantém SQLite com persistência por instantâneos no Supabase.
 
-As 35 projeções existentes da mestre não passam a incluir automaticamente as novas tabelas. O arquivo manual de contagem por projeto também não se torna sincronizado apenas por receber um link. A operação e os dados reais ficam registrados na Vault, separados das evidências sintéticas públicas.
+As 35 projeções existentes da mestre não passam a incluir automaticamente as novas tabelas. O arquivo de contagem por projeto continua manual e não é bidirecional; receber um link não o torna sincronizado. A operação e os dados reais ficam registrados na Vault, separados das evidências sintéticas públicas.
 
 Não foram substituídos saldos pela estimativa da fotografia. O DOCX recebido posteriormente é um cronograma, sem contagem física ou metadado de contagem. Os novos horários da equipe substituem as hipóteses anteriores de três rodadas por dia. Quantidades de planejamento, estoque histórico, saldo registrado e contagem conferida devem permanecer distintos.
 
-Ainda exigem aceites próprios: conexão bidirecional da planilha de contagem, custódia institucional, coleta dos feeds pelo Google, cofre e recuperação, provedores reais de IA/MCP e o terceiro nível de prêmio. O jogo atual possui dois níveis de prêmio; simular um terceiro não o ativa. Esta entrega não encerra todas as solicitações da plataforma.
+Ainda exigem aceites próprios: conexão bidirecional da planilha de contagem, custódia institucional, coleta dos feeds pelo Google, cofre e recuperação e provedores reais de IA/MCP. Um feed válido não comprova sua coleta pelo Google. O jogo atual possui dois níveis de prêmio; o terceiro permanece apenas hipótese de planejamento, sem ativação. Esta entrega não encerra todas as solicitações da plataforma.
 
 ## Publicação
 
@@ -44,3 +44,9 @@ Em produção: saúde200/no-store, `/events`200, novas APIs privadas401/private,
 ## Conferência adicional dos relógios de sessão
 
 A conferência posterior encontrou dois `input type=time` no planejamento das sessões, separados dos formulários de campanha já corrigidos. Eles passam a texto de 24 horas, compartilham `parseClock` e validam no blur e no envio. Os nomes acessíveis e os contratos de API/CAS permanecem. 13 testes novos de interação e 27 regressões passaram; a QA descartável gravou `13:30`/`15:00`, rejeitou `24:00` sem POST e preservou o rascunho, relendo a gravação na API. Cancelar e reabrir esvazia os campos. Quatro capturas adicionais cobrem 390/1366 e ambos os temas. O recibo desse acabamento é distinto da PR38.
+
+## Publicação do acabamento · PR39
+
+PR [39](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/39) MERGED em `c972f8ec1d0ca3e8ea43e56ac0ad5f54e18a70de`, head testado `12e9c2593412a0516a553eb6780f2edeacd7e37a`. CI [42301818366](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/actions/runs/42301818366) aprovado: **1.323/1.323 testes do Portal e 33/33 do jogo**. Vercel `dpl_5wcAVHtaoXtkq7b9px6sMGvAdLbq` READY, com o alias oficial no mesmo SHA. Este é o recibo da produção atual; o recibo da PR38 acima permanece como histórico da composição base.
+
+Chrome confirmou a versão `c972f8e` / 2026.11.06 e releu no DOM os horários reais persistidos em HH:mm. Sessões provisórias revisadas e sessões canceladas preservadas foram conferidas após a gravação. A campanha permanece em rascunho, sem ativação ou movimentação de estoque. Pessoas, horários, contagens e localizadores operacionais não integram este recibo público; as fontes e provas reais ficam no registro privado.
