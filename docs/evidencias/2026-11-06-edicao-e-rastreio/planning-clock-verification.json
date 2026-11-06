@@ -1,0 +1,18 @@
+{
+  "synthetic": true,
+  "checks": [
+    "24-hour text controls",
+    "four-digit normalization on blur and submit",
+    "invalid clock blocks business POST and preserves draft",
+    "saved canonical values read back from API",
+    "cancel and reopen clears clocks"
+  ],
+  "captures": [
+    "390-light-planning-clock",
+    "390-dark-planning-clock",
+    "1366-light-planning-clock",
+    "1366-dark-planning-clock"
+  ],
+  "errors": [],
+  "businessWrites": 1
+}

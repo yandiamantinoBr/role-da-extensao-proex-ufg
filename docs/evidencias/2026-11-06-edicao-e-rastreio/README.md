@@ -15,3 +15,5 @@ A bateria anterior `events-qa` usou três DTOs sintéticos por interceptação p
 Os três formatos do histórico foram baixados na QA: PDF de uma página A4, XLSX sem fórmula no conjunto sintético e DOCX válido. A prévia `historico-preview.png` permite inspecionar o PDF. Não há ensaio visual de um histórico extenso entre páginas.
 
 Resultados locais: suíte integral 1.309/1.309 antes da contraprova adicional da Agenda; ver o CI da PR para o total final. As revisões de [segurança](../../REVISAO-06NOV-SEGURANCA.md) e [design](../../REVISAO-06NOV-DESIGN.md) delimitam o que foi efetivamente examinado. Registros reais de Agenda, fontes do Drive e estimativas de estoque ficam somente na Vault e no arquivo institucional.
+
+O CI42299838784 confirmou o total final de **1.310 testes do Portal e 33 do jogo**. O acabamento posterior de relógios de sessão está nas imagens `*-planning-clock.png` e no recibo `planning-clock-verification.json`: uma escrita sintética válida, inválido sem escrita, rascunho preservado e reabertura limpa; zero erros de página. Essas quatro imagens não integram a nota da rodada anterior sem a contraprova específica.
