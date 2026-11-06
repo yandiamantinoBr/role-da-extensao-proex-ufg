@@ -37,4 +37,10 @@ Ainda exigem aceites próprios: conexão bidirecional da planilha de contagem, c
 
 ## Publicação
 
-Este documento acompanha o código testado. O recibo de PR, CI, merge, implantação e conferência autenticada deve ser registrado no checkpoint da Vault após as ações reais. Não atribuir publicação a uma branch local.
+PR [38](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/38) integrada em `078c6aba20126956d744ac1787b9b097c106e1e8`, head testado `874fbfec86049ca017dcc1411849f3cf07d2d8c7`. CI [42299838784](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/actions/runs/42299838784) aprovado: **1.310/1.310 do Portal e 33/33 do jogo**, tipos, Worker, autenticação/MCP e Node. Vercel `dpl_Ff1LUdNVGWKPY9bb3BMpnwj7Uwxn` READY, domínio oficial conferido no SHA.
+
+Em produção: saúde200/no-store, `/events`200, novas APIs privadas401/private,no-store. Chrome autenticado mostrou o SHA, ficha com ações no contexto e redirecionamento do endereço de rascunho para a equipe. O índice público foi conferido em 390 px nos dois temas; nenhum evento foi ativado para simular conteúdo publicado. As capturas e operações reais permanecem privadas na Vault.
+
+## Conferência adicional dos relógios de sessão
+
+A conferência posterior encontrou dois `input type=time` no planejamento das sessões, separados dos formulários de campanha já corrigidos. Eles passam a texto de 24 horas, compartilham `parseClock` e validam no blur e no envio. Os nomes acessíveis e os contratos de API/CAS permanecem. 13 testes novos de interação e 27 regressões passaram; a QA descartável gravou `13:30`/`15:00`, rejeitou `24:00` sem POST e preservou o rascunho, relendo a gravação na API. Cancelar e reabrir esvazia os campos. Quatro capturas adicionais cobrem 390/1366 e ambos os temas. O recibo desse acabamento é distinto da PR38.

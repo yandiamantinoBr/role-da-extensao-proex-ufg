@@ -4,6 +4,7 @@ import {useEffect,useLayoutEffect,useRef,useState,type FormEvent,type KeyboardEv
 import {ArrowUpRight,Ban,CalendarClock,CheckCheck,ChevronDown,CircleCheck,CircleDashed,Clock,Link2,Lock,Pencil,Plus,RefreshCw,RotateCcw,Unlink,X} from 'lucide-react';
 import {toast} from 'sonner';
 import {PLANNING_LIMITS,SESSION_STATUSES,isCivilDate,isLocalTime,sessionTimeProblem,type HostLinkInput,type PlanningActionResult,type PlanningHost,type PlanningSession,type PlanningWorkspace,type SessionSaveInput,type SessionStatus,type SessionStatusInput} from '@/lib/campaign-planning/contracts';
+import {parseClock} from '@/lib/date-time-field';
 import DateField from './date-field';
 import styles from './campaign-planning-panel.module.css';
 import ExportFormats,{type DocumentFormat} from './export-formats';
@@ -252,6 +253,7 @@ function PlanningBody({userId,campaignId,projectId,projects}:Props){
  function openEditor(draft:Draft,trigger:HTMLElement|null){returnFocus.current=trigger;dismissToast();setEditor(draft);setFormError('');setNotice(null);setConfirmUnlink(null);}
  function cancelEditor(){if(mutation.current)return;dismissToast();setEditor(null);setFormError('');operation.current=null;setNotice({tone:'success',text:'Edição cancelada. Nada foi alterado.'});}
  function update<K extends keyof Draft>(field:K,value:Draft[K]){setEditor(current=>current&&{...current,[field]:value});setFormError('');}
+ function normalizeTime(field:'startsAt'|'endsAt',value:string){const normalized=parseClock(value);if(normalized)update(field,normalized);}
  function editorKey(event:KeyboardEvent<HTMLFormElement>){
   // The date picker renders in a portal: its Escape closes only the calendar.
   if(event.key!=='Escape'||!event.currentTarget.contains(event.target as Node))return;
@@ -270,7 +272,7 @@ function PlanningBody({userId,campaignId,projectId,projects}:Props){
  function submitSession(event:FormEvent<HTMLFormElement>){
   event.preventDefault();
   if(!data||!editor||locked)return;
-  const ordinal=Number(editor.ordinal),startsAt=editor.startsAt?timeValue(editor.startsAt):null,endsAt=editor.endsAt?timeValue(editor.endsAt):null;
+  const ordinal=Number(editor.ordinal),startsAt=editor.startsAt?parseClock(editor.startsAt):null,endsAt=editor.endsAt?parseClock(editor.endsAt):null;
   if(!isCivilDate(editor.sessionDate))return setFormError('Informe a data da sessão em dd/mm/aaaa.');
   if(!Number.isInteger(ordinal)||ordinal<PLANNING_LIMITS.ordinalMin||ordinal>PLANNING_LIMITS.ordinalMax)return setFormError('A ordem da sessão no dia vai de 1 a 10.');
   if(editor.label.length>PLANNING_LIMITS.label)return setFormError('Use até 100 caracteres no nome.');
@@ -300,7 +302,7 @@ function PlanningBody({userId,campaignId,projectId,projects}:Props){
 
  const editedRow=editor?.id?sessions.find(session=>session.id===editor.id):undefined;
  const stale=!!(data&&editor&&(editor.baseHeader!==data.version||editor.id&&(!editedRow||editedRow.version!==editor.baseVersion)));
- const draftProblem=editor?sessionTimeProblem(editor.status,editor.startsAt?timeValue(editor.startsAt):null,editor.endsAt?timeValue(editor.endsAt):null):null;
+ const draftProblem=editor?sessionTimeProblem(editor.status,editor.startsAt?parseClock(editor.startsAt):null,editor.endsAt?parseClock(editor.endsAt):null):null;
  const comparison=editor&&editedRow&&stale?compareRows(editor,editedRow):[];
  const rowUnchanged=!!(editor&&editedRow&&editedRow.version===editor.baseVersion);
  const blockedText=!stale?'':editor?.id&&!editedRow?'Esta sessão saiu do planejamento. Cancele a edição para continuar.':'Revise as diferenças acima para liberar o salvamento.';
@@ -388,12 +390,12 @@ function PlanningBody({userId,campaignId,projectId,projects}:Props){
        </label>
        <div className={styles.timePair}>
         <label className={styles.field}><span>Início</span>
-         <input type="time" step={60} value={editor.startsAt} onChange={event=>update('startsAt',event.target.value)} aria-describedby={timeHelpIds} disabled={busy}/>
+         <input type="text" lang="pt-BR" inputMode="numeric" autoComplete="off" maxLength={5} placeholder="hh:mm" value={editor.startsAt} onChange={event=>update('startsAt',event.target.value)} onBlur={event=>normalizeTime('startsAt',event.currentTarget.value)} aria-invalid={editor.startsAt&&!parseClock(editor.startsAt)?true:undefined} aria-describedby={timeHelpIds} disabled={busy}/>
         </label>
         <label className={styles.field}><span>Fim</span>
-         <input type="time" step={60} value={editor.endsAt} onChange={event=>update('endsAt',event.target.value)} aria-describedby={timeHelpIds} disabled={busy}/>
+         <input type="text" lang="pt-BR" inputMode="numeric" autoComplete="off" maxLength={5} placeholder="hh:mm" value={editor.endsAt} onChange={event=>update('endsAt',event.target.value)} onBlur={event=>normalizeTime('endsAt',event.currentTarget.value)} aria-invalid={editor.endsAt&&!parseClock(editor.endsAt)?true:undefined} aria-describedby={timeHelpIds} disabled={busy}/>
         </label>
-        <p id={`plan-time-help-${campaignId}`} className={`${styles.hint} ${styles.timeHelp}`}>Deixe início e fim em branco enquanto o horário não estiver definido; a sessão aparece como “Horário a confirmar”. Em sessão provisória, o horário é uma sugestão até a gestão confirmar. Para confirmar ou marcar como realizada, informe os dois.</p>
+        <p id={`plan-time-help-${campaignId}`} className={`${styles.hint} ${styles.timeHelp}`}>Use o formato de 24 horas, como 13:30. Deixe início e fim em branco enquanto o horário não estiver definido; a sessão aparece como “Horário a confirmar”. Em sessão provisória, o horário é uma sugestão até a gestão confirmar. Para confirmar ou marcar como realizada, informe os dois.</p>
         {showDraftProblem&&<p id={`plan-time-warning-${campaignId}`} className={`${styles.hintWarning} ${styles.timeHelp}`}>{draftProblem}</p>}
        </div>
        <label className={`${styles.field} ${styles.wide}`}><span>Situação</span>
