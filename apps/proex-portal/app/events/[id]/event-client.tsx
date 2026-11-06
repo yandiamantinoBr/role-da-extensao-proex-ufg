@@ -1,6 +1,7 @@
 'use client';
+/* eslint-disable @next/next/no-html-link-for-pages -- Use document navigation consistently with the events index; Vinext client links failed the real-click QA. */
 
-import Link from 'next/link';
+
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowRight, Check, CheckCircle2, Copy, Dices, Gift, Camera, LoaderCircle, Settings2, ShieldCheck, Ticket, Volume2, VolumeX, X } from 'lucide-react';
 import { BrandMark } from '@/components/theme/brand-mark';
@@ -16,7 +17,7 @@ type Attempt = { id: string; number: number; result: Result; state?: string };
 type Entitlement = { id: string; state: string; offer_name?: string | null };
 type Participation = { id: string; state: string; modality: string; attempts: Attempt[]; entitlements: Entitlement[] };
 type EventData = {
-  campaign: { id: string; name: string; project_id: string; location?: string | null; status: string; rules_text?: string | null; retry_limit: number | null; starts_at?: string | null; ends_at?: string | null };
+  campaign: { id: string; name: string; location?: string | null; status: string; rules_text?: string | null; retry_limit: number | null; starts_at?: string | null; ends_at?: string | null };
   authenticated: boolean; participation: Participation | null; instagramUrl: string | null; privacyNotice: string | null;
 };
 const RESULTS: Record<Result, { title: string; text: string; emoji: string }> = {
@@ -183,9 +184,9 @@ export default function EventClient({ eventId, signedIn, signInHref }: { eventId
   async function copyCode() { if (!receiptCode) return; try { await navigator.clipboard.writeText(receiptCode); setCopied(true); } catch { setError('Não foi possível copiar. Você pode mostrar o código à equipe.'); } }
 
   return <main className="proex-event">
-    <header className="pe-top"><a className="pe-brand" href="https://proex.ufg.br/" target="_blank" rel="noreferrer" aria-label="Conheça a PROEX UFG"><BrandMark variant="auto" /></a><div className="pe-header-actions"><ThemeSwitch /><Link className="pe-team-link" href="/">Área da equipe <ArrowRight size={15}/></Link></div></header>
+    <header className="pe-top"><a className="pe-brand" href="https://proex.ufg.br/" target="_blank" rel="noreferrer" aria-label="Conheça a PROEX UFG"><BrandMark variant="auto" /></a><div className="pe-header-actions"><ThemeSwitch /><a className="pe-team-link" href="/">Área da equipe <ArrowRight size={15}/></a></div></header>
     <section className="pe-heading"><span className="pe-eyebrow">UMA CONEXÃO COM A UFG</span><h1>Rolê da <em>Extensão</em><span aria-hidden="true">😎</span></h1><p>{campaign?.name ?? 'Vamos viver esse rolê?'}</p>{campaign?.location && <span className="pe-location">{campaign.location}</span>}</section>
-    {loading && !data ? <section className="pe-message" aria-live="polite"><LoaderCircle className="pe-loader"/><h2>Preparando o rolê</h2><p>Estamos consultando as informações do evento.</p></section> : !data ? <section className="pe-message"><span className="pe-big-emoji" aria-hidden="true">🔎</span><h2>Não encontramos este evento</h2><p>{error || 'Confira o link ou procure a equipe do Rolê da Extensão.'}</p><button className="pe-secondary" onClick={update}>Tentar carregar novamente</button></section> : <>
+    {loading && !data ? <section className="pe-message" aria-live="polite"><LoaderCircle className="pe-loader"/><h2>Preparando o rolê</h2><p>Estamos consultando as informações do evento.</p></section> : !data ? <section className="pe-message"><span className="pe-big-emoji" aria-hidden="true">🔎</span><h2>Evento indisponível</h2><p>{error || 'Confira o link ou consulte os eventos publicados.'}</p><div className="pe-stage-actions"><a className="pe-secondary" href="/events">Ver eventos</a><a className="pe-secondary" href={signInHref}>Entrar como equipe</a></div><button className="pe-minimal" onClick={update}>Tentar novamente</button></section> : <>
       <div className="pe-event-meta"><span><ShieldCheck size={16}/> Participação oficial</span><span>Uma participação por conta neste evento</span></div>
       <div className="pe-workspace">
         <section className="pe-game" aria-label="Escolha e apresentação da dinâmica">

@@ -1,0 +1,5 @@
+.dialog{width:min(680px,calc(100% - 24px));max-height:calc(100dvh - 28px);margin:auto;padding:22px;border:1px solid var(--line);border-radius:20px;background:var(--surface);color:var(--ink);overflow:auto;overscroll-behavior-y:contain}
+.dialog::backdrop{background:var(--overlay,rgba(20,12,30,.6))}
+.header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:18px}.header h2{display:flex;align-items:center;gap:8px;font-size:20px;margin:6px 0;overflow-wrap:anywhere}.header>div{min-width:0}.header :global(.p-kicker){display:block;overflow-wrap:anywhere}
+.fields{display:grid;grid-template-columns:1fr 1fr;gap:14px}.fields>*{min-width:0}.wide{grid-column:1/-1}.footer{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:10px;padding-top:18px}.dialog fieldset{border:0;padding:0;margin:0;min-width:0}.dialog :global(.p-form-help){margin-top:14px}.dialog :global(.p-button){min-height:44px}
+@media(max-width:540px){.dialog{padding:18px}.fields{grid-template-columns:1fr}.wide{grid-column:auto}.footer>*{flex:1;justify-content:center}}

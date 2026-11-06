@@ -1,5 +1,16 @@
 # Continuar Portal PROEX
 
+## Em validação local · edição, estoque e eventos · 2026-11-06
+
+**Produção continua em e87159d/PR37 neste checkpoint.** A composição `codex/edicao-e-rastreio-06nov` reúne edição contextual, origem/destino/SEI (0032), diretório privado (0033), avisos persistentes (0034), `/events`, marcas e datas brasileiras. [Entrega, testes e limites](ENTREGA-06NOV-EDICAO-ESTOQUE-E-EVENTOS.md), [brief](RODADA-06NOV-EDICAO-E-RASTREIO.md), [revisão independente](REVISAO-06NOV-SEGURANCA.md). Local: 1.309/1.309 antes da contraprova adicional da Agenda, tipos, Worker/Node e smoke aprovados; 44 capturas finais com tema real e zero erro de página. O CI da PR confirma a composição final. Não confundir código local com publicação.
+
+**Operação real separada:** a consulta inicial à programação pública resultou em quatro janelas na Agenda. O cronograma da equipe recebido depois trouxe restrições e turnos específicos, incorporados sem apagar os registros anteriores. A Agenda agora distingue exposição sem brindes, turnos principais e reservas condicionais. Fontes, pessoas, horários e recibos reais ficam na Vault e no arquivo institucional; nenhuma campanha foi ativada.
+
+**Contagem e planejamento:** o DOCX fornecido é um cronograma, sem quantidade de materiais ou metadado de contagem. A fotografia informa quantidade aproximada por pacote. A autorização para substituir saldos não deve converter aproximação em contagem exata nem apagar entidades gerais do Portal. Foram preservadas as abas em uso e acrescentadas abas de planejamento e conferência ao mesmo arquivo institucional, com fontes e hipóteses separadas. O terceiro nível de prêmio continua simulação, não ativação do jogo. Saldos permanecem preservados até conciliação comprovada.
+
+**Continuidade técnica:** snapshots e journal estão em ordem até 0034, com SQL complementar preservado. Não gerar novamente uma migração customizada sem cópia e conferência. Não reconstruir `dist` enquanto o servidor de QA estiver rodando. As projeções da mestre não incluem automaticamente as novas tabelas. Validar CI antes do merge e conferir o fluxo autenticado após o deploy. Pendências de Sheets, cofre e coleta pelo Google permanecem separadas.
+
+
 ## Checkpoint atual — PR37 publicada e migração conferida · 2026-11-05
 
 Produção funcional **5ad7025d58a7d3351edc301377c72079ed0cb961**, Vercel **dpl_FnF94q2dLgVWgLgVyo1993UUcawo READY**, alias oficial e Chrome autenticado conferidos. Head funcional testado **dc5796e**: **1.237/1.237**, tipos, lint sem erros (dois avisos antigos), Worker/Node e smoke; CI42094055194 aprovado. Saúde200; APIs novas com consulta válida sem sessão401/no-store. [Entrega](ENTREGA-05NOV-ROLE-CONPEEX.md), [aceite independente9/10 no escopo](REVISAO-05NOV-ROLE-CONPEEX-DESIGN-ACEITE.md), [recibos e imagens sintéticas](evidencias/2026-11-05-role-conpeex/README.md).

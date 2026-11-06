@@ -155,14 +155,17 @@ export async function calendarEntries(db: D1Database, actor: PortalActor | null,
       }
     } else {
       // These are actual ledger dates, grouped by item/kind/civil day, never invented future reservations.
-      rows = await all(db, `SELECT i.id || '.' || m.kind || '.' || date(m.created_at,'-3 hours') id,
-        i.project_id,p.name project_name,? || ' · ' || i.name || ' · ' || SUM(m.delta) || ' ' || i.unit title,
-        date(m.created_at,'-3 hours') starts_at,date(m.created_at,'-3 hours','+1 day') ends_at,
+      const occurred='COALESCE(smc.occurred_at,m.created_at)',measure='COALESCE(smc.measurement_unit,i.unit)';
+      rows = await all(db, `SELECT i.id || '.' || m.kind || '.' || date(${occurred},'-3 hours') ||
+        CASE WHEN smc.movement_id IS NULL THEN '' ELSE '.ctx.' || hex(smc.measurement_unit) END id,
+        i.project_id,p.name project_name,? || ' · ' || MAX(COALESCE(smc.material_name,i.name)) || ' · ' || SUM(m.delta) || ' ' || ${measure} title,
+        date(${occurred},'-3 hours') starts_at,date(${occurred},'-3 hours','+1 day') ends_at,
         'recorded' state,COUNT(*) revision,MIN(m.created_at) created_at,MAX(m.created_at) last_modified
         FROM stock_movements m JOIN items i ON i.id=m.item_id JOIN projects p ON p.id=i.project_id
+        LEFT JOIN stock_movement_contexts smc ON smc.movement_id=m.id
         WHERE ${filter.sql} AND m.kind${category === 'consumption' ? '=' : '!='}'consume'
-        AND julianday(m.created_at)>=julianday(?) AND julianday(m.created_at)<julianday(?)
-        GROUP BY i.id,m.kind,date(m.created_at,'-3 hours') LIMIT ${MAX_ENTRIES + 1}`,
+        AND julianday(${occurred})>=julianday(?) AND julianday(${occurred})<julianday(?)
+        GROUP BY i.id,m.kind,date(${occurred},'-3 hours'),CASE WHEN smc.movement_id IS NULL THEN '' ELSE smc.measurement_unit END LIMIT ${MAX_ENTRIES + 1}`,
       [CALENDAR_LABELS[category], ...filter.values, range.startsAt, range.endsAt]);
       result.push(...rows.map(row => entry(row, category, 'movement', true)));
     }

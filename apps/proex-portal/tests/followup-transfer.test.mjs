@@ -34,7 +34,7 @@ async function scenario(t){
 const unchanged=(f,fn)=>async()=>{const before=f.count('SELECT total_changes() n');await fn();assert.equal(f.count('SELECT total_changes() n'),before);};
 
 test('0031 applies over 0000..0030, keeps foreign keys and every original scope validation; ordinary scope UPDATE stays blocked',async t=>{
- const files=readdirSync(drizzle).filter(n=>n.endsWith('.sql')).sort();assert.match(files.at(-1),/^0031_followup_task_transfers\.sql$/);
+ const files=readdirSync(drizzle).filter(n=>n.endsWith('.sql')).sort();assert.equal(files[31],'0031_followup_task_transfers.sql');
  const native=new DatabaseSync(':memory:');t.after(()=>native.close());native.exec('PRAGMA foreign_keys=ON');for(const name of files)native.exec(readFileSync(drizzle+name,'utf8'));
  assert.equal(native.prepare('PRAGMA foreign_keys').get().foreign_keys,1);assert.equal(native.prepare('PRAGMA foreign_key_check').all().length,0);
  const triggers=native.prepare("SELECT name FROM sqlite_master WHERE type='trigger' AND (tbl_name='followup_tasks' OR tbl_name='followup_task_transfers') ORDER BY name").all().map(r=>r.name);

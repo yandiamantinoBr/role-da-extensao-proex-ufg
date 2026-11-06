@@ -1,0 +1,57 @@
+{
+  "synthetic": true,
+  "checks": [
+    {
+      "width": 390,
+      "theme": "light",
+      "errorVisible": true,
+      "noInfiniteLoading": true,
+      "retryReadSucceeded": true,
+      "version": 1,
+      "unsavedDraftPreserved": true
+    },
+    {
+      "width": 390,
+      "theme": "dark",
+      "errorVisible": true,
+      "noInfiniteLoading": true,
+      "retryReadSucceeded": true,
+      "version": 1,
+      "unsavedDraftPreserved": true
+    },
+    {
+      "width": 1366,
+      "theme": "light",
+      "errorVisible": true,
+      "noInfiniteLoading": true,
+      "retryReadSucceeded": true,
+      "version": 1,
+      "unsavedDraftPreserved": true
+    },
+    {
+      "width": 1366,
+      "theme": "dark",
+      "errorVisible": true,
+      "noInfiniteLoading": true,
+      "retryReadSucceeded": true,
+      "version": 1,
+      "unsavedDraftPreserved": true
+    }
+  ],
+  "captures": [
+    "erro-directory-390-light",
+    "erro-directory-retry-390-light",
+    "erro-directory-390-dark",
+    "erro-directory-retry-390-dark",
+    "erro-directory-1366-light",
+    "erro-directory-retry-1366-light",
+    "erro-directory-1366-dark",
+    "erro-directory-retry-1366-dark"
+  ],
+  "forcedFailures": 4,
+  "detailReads": 8,
+  "sessionPosts": 1,
+  "businessWrites": 0,
+  "blockedWrites": [],
+  "errors": []
+}
