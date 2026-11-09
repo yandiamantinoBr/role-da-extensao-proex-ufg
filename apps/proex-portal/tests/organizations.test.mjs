@@ -10,7 +10,7 @@ const root=fileURLToPath(new URL('../',import.meta.url)),modules=new Map();
 const moduleUrl=code=>`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`;
 const replacements=new Map([
  [resolve(root,'lib/session.ts'),moduleUrl('export async function getPortalUser(){return globalThis.__organizationTest?.user??null;}')],
- [resolve(root,'lib/platform.ts'),moduleUrl("export function database(){return globalThis.__organizationTest.db;} export function bucket(){return globalThis.__organizationTest.storage;} export function ownerEmail(){return undefined;} export function inviteSecret(){return 'synthetic-only-organization-invitation-secret';} export function isStandalone(){return globalThis.__organizationTest?.standalone!==false;}")],
+ [resolve(root,'lib/platform.ts'),moduleUrl("export function database(){return globalThis.__organizationTest.db;} export function bucket(){return globalThis.__organizationTest.storage;} export function ownerEmail(){return undefined;} export function inviteSecret(){return 'synthetic-only-organization-invitation-secret';} export function isStandalone(){return globalThis.__organizationTest?.standalone!==false;} export function portalOrigin(){return undefined;}")],
  ['next/headers',moduleUrl('export async function headers(){return globalThis.__organizationTest?.headers??new Headers();}')],
  ['next/navigation',moduleUrl('export function redirect(){throw new Error("Unexpected redirect");}')],
 ]);

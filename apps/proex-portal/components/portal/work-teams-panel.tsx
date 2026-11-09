@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { ArrowUpRight, CheckCircle2, Circle, CircleDot, CircleX, Download, Flag, FolderKanban, PauseCircle, Pencil, Plus, RefreshCw, Search, ShieldCheck, UserRoundCheck, Users, X } from 'lucide-react';
+import { ArrowUpRight, CheckCircle2, Circle, CircleDot, CircleX, Flag, FolderKanban, PauseCircle, Pencil, Plus, RefreshCw, Search, ShieldCheck, UserRoundCheck, Users, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { priorityLabels, stateLabels, TASK_STATES, type TaskStatus } from '@/lib/follow-up/contracts';
 import { TEAM_TASK_PAGE_SIZE, type TeamsWorkspace, type WorkTeam, type TeamPerson } from '@/lib/follow-up/teams-contract';
@@ -10,6 +10,7 @@ import { saveWorkTeam, TeamsApiError, workTeamsApi } from './work-teams-api';
 import { WorkTaskCard } from './work-task-card';
 import { DraftNotice, useFormDraft } from './use-form-draft';
 import styles from './work-teams-panel.module.css';
+import ExportFormats, { type DocumentFormat } from './export-formats';
 import TeamSheetsPanel from './team-sheets-panel';
 import InstitutionalStructurePanel from './institutional-structure-panel';
 
@@ -116,7 +117,7 @@ export default function WorkTeamsPanel({ userId, defaultProjectId = '', organiza
    throw cause;
   } finally { pendingMutation.current = false; if (mounted.current) setBusy(false); }
  }
- async function exportTeam(format: 'pdf' | 'xlsx' | 'docx') {
+ async function exportTeam(format: DocumentFormat) {
   if (!selected || exporting || loading) return;
   const controller = new AbortController(), sequence = generation.current;
   exportRequest.current?.abort(); exportRequest.current = controller; setExporting(true);
@@ -179,7 +180,7 @@ export default function WorkTeamsPanel({ userId, defaultProjectId = '', organiza
      <section className={styles.members}><h4>Integrantes neste recorte</h4><p>Somente pessoas ativas com acesso ao contexto escolhido.</p><div>{selected.members.map(person => <span className={styles.person} key={person.userId}><span className={styles.avatar} aria-hidden="true">{initials(person.name)}</span><span>{person.name}{person.userId === userId && <small>Você</small>}</span></span>)}</div>{!selected.members.length && <p>Nenhum integrante visível neste contexto.</p>}</section>
     </div>
     {selected.status === 'active' && <TeamSheetsPanel key={`${userId}:${selected.id}:${projectId}`} userId={userId} teamId={selected.id} projectId={projectId}/>}
-    <div className={styles.taskHeading}><div><h4>Demandas da equipe</h4><p>{displayedStatus ? stateLabels[displayedStatus] + ' · ' : ''}{data.tasks.length} nesta página{data.hasMore ? ' · há mais resultados' : ''}</p></div><div className={styles.exports} role="group" aria-label="Exportar demandas da equipe"><Download size={17} aria-hidden="true"/>{(['pdf','xlsx','docx'] as const).map(format => <button className="p-button" key={format} disabled={exporting || busy || loading} onClick={() => void exportTeam(format)}>{format.toUpperCase()}</button>)}</div></div>
+    <div className={styles.taskHeading}><div><h4>Demandas da equipe</h4><p>{displayedStatus ? stateLabels[displayedStatus] + ' · ' : ''}{data.tasks.length} nesta página{data.hasMore ? ' · há mais resultados' : ''}</p></div><ExportFormats label="Exportar demandas da equipe" announce={false} disabled={exporting || busy || loading} onExport={exportTeam}/></div>
     {exporting && <p role="status">Preparando o arquivo com uma consulta atualizada…</p>}
     {status && <button className="p-button" onClick={() => { setStatus(''); setOffset(0); }}><X size={16} aria-hidden="true"/>Mostrar todos os estados</button>}
     <div className={styles.tasks}>{data.tasks.map(task => <WorkTaskCard key={task.id} task={task} today={data.today} disabled={busy || exporting || loading} onOpen={() => onOpenDemand(task.id, task.project_id)}/>)}</div>

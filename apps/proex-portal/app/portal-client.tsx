@@ -7,6 +7,7 @@ import scopeStyles from './scope-filters.module.css';
 import FeedbackPanel from '@/components/portal/feedback-panel';
 import { toast } from 'sonner';
 import settingsStyles from './settings-groups.module.css';
+import { SettingsIndex, SettingsSection } from '@/components/portal/settings-layout';
 import headingStyles from './module-heading.module.css';
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from 'react';
 import PhysicalAttendance from '@/components/portal/physical-attendance';
@@ -36,7 +37,7 @@ import CalendarPanel from '@/components/portal/calendar-panel';
 import RecordsPanel from '@/components/portal/records-panel';
 import ReportsCenter, { projectBrandFor } from '@/components/portal/reports-center';
 import { download } from '@/components/portal/report-export';
-import ExportFormats, {type DocumentFormat} from '@/components/portal/export-formats';
+import ExportFormats, {downloadFromServer, type DocumentFormat} from '@/components/portal/export-formats';
 import { documentExport } from '@/components/portal/document-export';
 import FollowUpPanel from '@/components/portal/follow-up-panel';
 import MeuTrabalhoPanel from '@/components/portal/meu-trabalho-panel';
@@ -67,7 +68,7 @@ import { useNavigationPreferences } from '@/components/portal/use-navigation-pre
 import { useFormDraft, DraftNotice, setDraftScope, clearCurrentDrafts, watchDraftLogout } from '@/components/portal/use-form-draft';
 import { THEMATIC_AREAS, groupUnits } from '@/lib/extension-catalog';
 import { MAX_UPLOAD_FILE_BYTES, UPLOAD_LIMIT_LABEL, uploadErrorMessage } from '@/lib/upload-limits';
-import { ArrowDownToLine, ArrowRight, Boxes, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronRight, ExternalLink, FileText, Filter, Gift, LoaderCircle, LogOut, Plus, RefreshCw, Search, ShieldCheck, Truck, Users, Wifi, WifiOff, X } from 'lucide-react';
+import { ArrowRight, Boxes, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronRight, ExternalLink, FileText, Filter, Gift, LoaderCircle, LogOut, Plus, RefreshCw, Search, ShieldCheck, Truck, Users, Wifi, WifiOff, X } from 'lucide-react';
 // API projections vary by module; the server validates every mutation.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = Record<string, any>;
@@ -888,6 +889,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
                     availabilityNote,
                     lowStock: item.condition === 'active' && !availabilityNote && availableQuantity <= Number(get(item, 'lowStock', 'low_stock') ?? 0),
                     canOpen: canProject(projectId, 'inventory.read'),
+                    photoUrl: typeof item.primary_photo_id === 'string' && item.primary_photo_id ? `/api/records/files/${encodeURIComponent(item.primary_photo_id)}?v=list` : null,
                 };
             })} /> : <Empty title={query ? 'Nenhum material encontrado' : 'Seu catálogo ainda está vazio'} text={query ? 'Tente outro nome ou selecione outro projeto.' : 'Cadastre os materiais e registre o recebimento após conferir a quantidade real.'}/>}</Section>
         {visibleItems.length > 0 && <ProjectOperationalChart key={`materials-${filter || 'all'}`} variant="overview" title="Panorama dos materiais" projectId={filter || undefined} schedule={null} items={visibleItems.map(item => ({ ...item, available: available(item), low_stock: get(item, 'lowStock', 'low_stock') ?? 0, project_id: get(item, 'projectId', 'project_id') }))} now={now}/>}
@@ -1140,7 +1142,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
                 </tr>)}</tbody>
             </table>
             </div> : <Empty title="Sem registros neste período" text="Altere as datas ou o projeto para consultar outro recorte." icon={CalendarDays}/>}</Section>
-        {(filter ? canProject(filter, 'reports.read') : canAny('reports.read')) && <Section title="Exportar registros completos" description="Planilhas do recorte autorizado, sem corte por data. O resumo diário acima usa as datas escolhidas.">
+        {(filter ? canProject(filter, 'reports.read') : canAny('reports.read')) && <Section title="Exportar registros completos" description="Planilha, documento ou PDF do recorte autorizado, sem corte por data. O resumo diário acima usa as datas escolhidas.">
         {exportNeedsProject && <p className="p-form-help">Com filtro de unidade ou área, escolha um projeto para baixar os registros completos. O resumo diário já usa o recorte selecionado.</p>}
         <div className="p-export-grid">{[{ kind: 'participations', title: 'Participação nas dinâmicas', text: 'Modalidades, resultados e contagens por campanha.', icon: Users }, { kind: 'stock', title: 'Materiais e movimentos', text: 'Saldo, reservas e quantidade disponível por item.', icon: Boxes }, { kind: 'loans', title: 'Empréstimos', text: 'Agenda, etapas e devoluções pendentes.', icon: Truck }].map(({ kind, title: exportTitle, text, icon: Icon }) => {
             const content = <>
@@ -1149,10 +1151,9 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
             </span>
             <h3>{exportTitle}</h3>
             <p>{text}</p>
-            <span className="p-text-link">{exportNeedsProject ? 'Escolha um projeto' : 'Baixar XLSX'} <ArrowDownToLine size={16}/>
-            </span>
+            {exportNeedsProject ? <span className="p-text-link">Escolha um projeto</span> : <ExportFormats tiles label={`Baixar ${exportTitle.toLowerCase()}`} onExport={format => downloadFromServer(`/api/export?kind=${kind}&format=${format}${filter ? `&projectId=${encodeURIComponent(filter)}` : ''}`, `proex-${kind}.${format}`)}/>}
             </>;
-            return exportNeedsProject ? <article className="p-card p-export-card p-export-unavailable" key={kind}>{content}</article> : <a className="p-card p-export-card" href={`/api/export?kind=${kind}&format=xlsx${filter ? `&projectId=${encodeURIComponent(filter)}` : ''}`} key={kind}>{content}</a>;
+            return <article className={`p-card p-export-card${exportNeedsProject ? ' p-export-unavailable' : ''}`} key={kind}>{content}</article>;
         })}</div>
         </Section>}
         <div className="p-explainer">
@@ -1160,50 +1161,47 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         <div>
         <h3>Contagens com significado</h3>
         <p>Uma premiação com três buttons representa uma participação e três unidades entregues. Cliques no Instagram, declarações e confirmações de seguimento são sinais diferentes; nenhum deles será somado automaticamente como “novos seguidores”.</p>
-        <p>Você pode importar os arquivos XLSX no Google Sheets. As planilhas vinculadas ao projeto ficam em Projetos, com o acesso concedido no Drive.</p>
+        <p>A planilha (XLSX) pode ser importada no Google Sheets; o documento (DOCX) abre no Word ou no Google Docs. As planilhas vinculadas ao projeto ficam em Projetos, com o acesso concedido no Drive.</p>
         </div>
         </div>
         </>}
 
+      {/* Configurações por tarefa (09/11/2026). Cada grupo aparece só para quem pode usá-lo; a aba inteira
+          já exige dono da plataforma ou permissão de IA. A central de chaves (sessão do Rolê) só mudou de posição. */}
       {tab === 'settings' && <div className={settingsStyles.groups}>
-        <CredentialVaultSettings key={string(user.userId)} groupClass={settingsStyles.group} bodyClass={settingsStyles.body} canManageKeys={isPlatformOwner}/>
-        {canGlobal('organization.manage') && <>
-          <details className={settingsStyles.group}>
-            <summary><strong>Planilha e anexos</strong><small>Conexão, sincronização, arquivos no Drive e exportação portátil.</small></summary>
-            <div className={settingsStyles.body}><SyncSettingsPanel key={string(user.userId)} userId={string(user.userId)} includeBackups={false}/></div>
-          </details>
-          <details className={settingsStyles.group}>
-            <summary><strong>Backup e recuperação</strong><small>Cópias completas cifradas, conferência da recuperação e rotina externa.</small></summary>
-            <div className={settingsStyles.body}><CompleteBackupPanel/><BackupAutomationPanel/></div>
-          </details>
-          <details className={settingsStyles.group}>
-            <summary><strong>Acesso público</strong><small>Prontidão, aviso e abertura explícita do cadastro de participantes.</small></summary>
-            <div className={settingsStyles.body}><PublicParticipantsSettingsPanel canManage={canGlobal('organization.manage')} onChanged={refreshModules}/></div>
-          </details>
-        </>}
-        {isPlatformOwner && <details className={settingsStyles.group}>
-          <summary><strong>Operação e canais</strong><small>Canais institucionais e aviso de privacidade da operação.</small></summary>
-          <div className={settingsStyles.body}>
-        <Section title="Canais e informações da operação" description="Use os canais institucionais confirmados e o aviso aprovado para o serviço.">
-        <OperationForm action="setting.update" mutate={mutate} submit="Salvar configurações" make={f => ({ instagramUrl: f.get('instagramUrl'), privacyNotice: f.get('privacyNotice') })}>
-        <Field label="Perfil oficial no Instagram" help="O link divulga o canal. Ele não verifica automaticamente se a pessoa segue o perfil.">
-        <input name="instagramUrl" type="url" placeholder="https://www.instagram.com/perfil-confirmado/" defaultValue={data.settings?.instagramUrl || data.settings?.instagram_url || ''} maxLength={500}/>
-        </Field>
-        <Field label="Aviso de privacidade e contato institucional" help="Descreva finalidade, dados mínimos, responsável, guarda e canal para direitos. Não use um aceite genérico como substituto dessa definição.">
+        <SettingsIndex items={[...(canGlobal('organization.manage') ? [{ id: 'settings-event-page', label: 'Página das dinâmicas' }, { id: 'settings-public-signup', label: 'Cadastro público' }, { id: 'settings-spreadsheet', label: 'Planilha Google' }, { id: 'settings-backup', label: 'Backup' }] : []), { id: 'ai-credentials', label: 'Chaves e modelos' }]} intro={<>Seu nome, sua senha e as conexões pessoais ficam em <button type="button" className="p-text-link" onClick={() => navigate('profile')}>Conta</button>; os avisos por e-mail, em Demandas.</>}/>
+        <SettingsSection show={canGlobal('organization.manage')} title="Evento e participantes" description="O que o público vê nas dinâmicas e o cadastro pelo celular.">
+          <details id="settings-event-page" className={settingsStyles.group}>
+            <summary><strong>Página das dinâmicas</strong><small>Aviso de privacidade e perfil oficial no Instagram mostrados a quem participa.</small></summary>
+            <div className={settingsStyles.body}>
+        <OperationForm action="setting.update" mutate={mutate} submit="Salvar página das dinâmicas" make={f => ({ instagramUrl: f.get('instagramUrl'), privacyNotice: f.get('privacyNotice') })}>
+        <Field label="Aviso de privacidade das dinâmicas" help="Aparece em “Seu registro e sua privacidade” e é exigido para ativar uma dinâmica. Descreva finalidade, dados mínimos, responsável, guarda e canal para direitos.">
         <textarea name="privacyNotice" rows={8} maxLength={6000} defaultValue={data.settings?.privacyNotice || data.settings?.privacy_notice || ''} placeholder="Texto validado institucionalmente para esta operação"/>
         </Field>
+        <Field label="Perfil oficial no Instagram" help="O link divulga o canal. Seguir o perfil é opcional e não é verificado.">
+        <input name="instagramUrl" type="url" placeholder="https://www.instagram.com/perfil-confirmado/" defaultValue={data.settings?.instagramUrl || data.settings?.instagram_url || ''} maxLength={500}/>
+        </Field>
         </OperationForm>
-        </Section>
-        <div className="p-explainer">
-        <ShieldCheck size={21}/>
-        <div>
-        <h3>Integrações com estado explícito</h3>
-        <p>Gerencie seu nome, suas preferências e sua senha na aba Conta. O Instagram é um canal institucional; seguir o perfil não é verificado automaticamente.</p>
-        <p>A roleta livre segue independente. As campanhas oficiais usam os registros e as regras deste portal.</p>
-        </div>
-        </div>
-          </div>
-        </details>}
+            </div>
+          </details>
+          <details id="settings-public-signup" className={settingsStyles.group}>
+            <summary><strong>Cadastro público por celular</strong><small>Confira se o e-mail funciona, ajuste o aviso e abra ou feche o cadastro.</small></summary>
+            <div className={settingsStyles.body}><PublicParticipantsSettingsPanel canManage={canGlobal('organization.manage')} onChanged={refreshModules}/></div>
+          </details>
+        </SettingsSection>
+        <SettingsSection show={canGlobal('organization.manage')} title="Dados e cópias" description="Planilha conectada, fotos no Drive e cópias de segurança.">
+          <details id="settings-spreadsheet" className={settingsStyles.group}>
+            <summary><strong>Planilha Google</strong><small>Conexão com a planilha, atalhos, fotos no Drive e cópia dos dados para levar a outro lugar.</small></summary>
+            <div className={settingsStyles.body}><SyncSettingsPanel key={string(user.userId)} userId={string(user.userId)} includeBackups={false} embedded/></div>
+          </details>
+          <details id="settings-backup" className={settingsStyles.group}>
+            <summary><strong>Backup e recuperação</strong><small>Cópias protegidas de todos os dados, teste de recuperação e cópia automática.</small></summary>
+            <div className={settingsStyles.body}><CompleteBackupPanel/><BackupAutomationPanel/></div>
+          </details>
+        </SettingsSection>
+        <SettingsSection title="Inteligência artificial" description="Chaves dos provedores, o assistente Rolê, quem pode usar e o limite de gasto.">
+          <CredentialVaultSettings key={string(user.userId)} groupClass={settingsStyles.group} bodyClass={settingsStyles.body} canManageKeys={isPlatformOwner}/>
+        </SettingsSection>
       </div>}
 
       <MaterialDetailDrawer onUnitOpen={setStockUnit} itemId={materialDrawerId} initialMode={materialMode} onClose={() => {setSelectedMaterialId(null);setMaterialMode('view');setMaterialMode('view');if(tab==='materials')setWorkRecord(null);}} onChanged={refreshModules} renderWorkContext={({itemId,projectId}) => workContext(projectId,'materials',{itemId})}/>

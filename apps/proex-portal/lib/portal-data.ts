@@ -3,6 +3,7 @@ import { all, one, type Row } from './database';
 import { HttpError } from './errors';
 import { listManagedUsers } from './users';
 import { listOrganizations } from './organizations';
+import { LIST_PRIMARY_PHOTO_SQL } from './material-photos';
 
 type Scope = string[] | null;
 type Filter = { sql: string; params: unknown[] };
@@ -191,6 +192,8 @@ export async function portalSnapshot(db: D1Database, actor: PortalActor | null):
   const campaignsFilter = authorizedFilter('campaigns.project_id', campaignScope,actor,['campaigns.manage','participation.operate','reports.read']);
   const inventoryFilter = authorizedFilter('items.project_id', inventoryScope,actor,['inventory.read','inventory.manage','inventory.deliver','reports.read']);
   const equipmentFilter = authorizedFilter('items.project_id', loanPrivateScope,actor,['loans.read']);
+  // A rota de arquivos exige inventory.read para fotos de material; a miniatura segue a mesma regra.
+  const photoFilter = authorizedFilter('items.project_id', accessibleProjects(actor, 'inventory.read'),actor,['inventory.read']);
   const offersFilter = authorizedFilter('o.project_id', offerScope,actor,['campaigns.manage','participation.operate','inventory.read','inventory.manage','inventory.deliver','reports.read']);
   const loansFilter = authorizedFilter('loans.project_id', loanScope,actor,['loans.read','reports.read']);
   const privateLoansFilter = authorizedFilter('loans.project_id', loanPrivateScope,actor,['loans.read']);
@@ -219,9 +222,11 @@ export async function portalSnapshot(db: D1Database, actor: PortalActor | null):
       asset_code,version,updated_at,
       CASE WHEN category='equipment' AND EXISTS (SELECT 1 FROM loans l WHERE l.item_id=items.id AND l.status='out') THEN 1 ELSE 0 END AS on_loan,
       CASE WHEN category='equipment' AND EXISTS (SELECT 1 FROM loans l WHERE l.item_id=items.id AND l.status='reserved'
-        AND l.starts_at<=? AND l.ends_at>?) THEN 1 ELSE 0 END AS reserved_now
+        AND l.starts_at<=? AND l.ends_at>?) THEN 1 ELSE 0 END AS reserved_now,
+      -- Miniatura só para quem lê o estoque do projeto (inventory.read), como a rota de arquivos.
+      CASE WHEN (${photoFilter.sql}) THEN ${LIST_PRIMARY_PHOTO_SQL} END AS primary_photo_id
       FROM items WHERE (${inventoryFilter.sql}) OR (category='equipment' AND (${equipmentFilter.sql}))
-      ORDER BY name,id`, [snapshotTime, snapshotTime, ...inventoryFilter.params, ...equipmentFilter.params]),
+      ORDER BY name,id`, [snapshotTime, snapshotTime, ...photoFilter.params, ...inventoryFilter.params, ...equipmentFilter.params]),
     all(db, `SELECT o.id,o.project_id,o.name,o.kind,o.active FROM offers o
       WHERE ${offersFilter.sql} ORDER BY o.name,o.id`, offersFilter.params),
     all(db, `SELECT oc.offer_id,oc.item_id,oc.quantity,i.name,i.unit

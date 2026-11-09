@@ -56,3 +56,6 @@
 }
 /* Celular (09/11): dias mais baixos; os pontinhos já mostram o que há em cada dia. */
 @media(max-width:720px){.day{min-height:52px}}
+/* Atalho explícito para a lista do dia quando ela fica abaixo do mês; some quando a lista está ao lado. */
+.jump{display:inline-flex;margin-top:6px}
+@container agenda (min-width:860px){.jump{display:none}}

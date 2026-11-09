@@ -41,7 +41,14 @@ function harness(storage = new Map()) {
   renderProject(projectId, identity = {}) { index = 0; tree = compiledModule.exports.ProjectReportExports({projectId,...identity}); return tree; },
   render(props = base) { index = 0; tree = compiledModule.exports.default(props); return tree; },
   flushEffects() { while (pendingEffects.length) pendingEffects.shift()(); },
-  button(name) { const found = nodes().find(node => node.type === 'button' && text(node) === name); assert.ok(found, `button ${name}`); return found; },
+  button(name) {
+   const found = nodes().find(node => node.type === 'button' && text(node) === name);
+   // Os três formatos vêm do componente comum ExportFormats (aqui um nó simulado): o "clique" chama onExport.
+   const format = { Excel: 'xlsx', 'Excel (XLSX)': 'xlsx', Word: 'docx', 'Word (DOCX)': 'docx', PDF: 'pdf' }[name];
+   const formats = !found && format ? nodes().find(node => typeof node.props?.onExport === 'function') : null;
+   if (formats) return { type: 'button', props: { disabled: Boolean(formats.props.disabled), onClick: () => { const result = formats.props.onExport(format); result?.catch?.(() => {}); } } };
+   assert.ok(found, `button ${name}`); return found;
+  },
   input(label) { const node=nodes().find(node=>node.type==='label'&&text(node).includes(label)),input=node&&nodesInside(node).find(child=>['input','select'].includes(child.type));assert.ok(input,label);return input; },
   columnToggles() { const detail=nodes().find(node=>node.type==='details'&&text(node.props.children?.[0]).includes('Colunas')),result=[];const visit=node=>{if(!node||typeof node!=='object')return;if(Array.isArray(node)){node.forEach(visit);return;}if(node.type==='input'&&node.props.type==='checkbox')result.push(node);visit(node.props?.children);};visit(detail);return result; },
   text() { return text(tree); },
