@@ -2,13 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { ArrowDown, ArrowUp, BarChart3, Boxes, CalendarRange, ClipboardList, Columns3, FileJson, FileSpreadsheet, FileText, FolderKanban, LoaderCircle, Printer, RefreshCw, Repeat2, Save, Search, Trash2, Truck, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, BarChart3, Boxes, CalendarRange, ClipboardList, Columns3, FileJson, FileText, FolderKanban, LoaderCircle, Printer, RefreshCw, Repeat2, Save, Search, Trash2, Truck, X } from 'lucide-react';
 import { areaLabel } from '@/lib/extension-catalog';
 import { quantityTotal } from '@/lib/report-quantities';
 import Image from 'next/image';
 import BrandMark from '@/components/theme/brand-mark';
 import type { ReportPdfPresentation } from './report-pdf';
 import { download, toDocx, toJson, toXlsx, type ExportColumn, type ExportRow } from './report-export';
+import ExportFormats, { type DocumentFormat } from './export-formats';
 import { SheetShortcuts } from './sheet-shortcuts';
 import type { SheetTabKey } from '@/lib/sync/sheet-tab-catalog';
 import styles from './reports-center.module.css';
@@ -216,7 +217,6 @@ async function requestReport(query: URLSearchParams, signal: AbortSignal): Promi
   return { rows: body.rows as ExportRow[], truncated: body.truncated };
 }
 
-type DocumentFormat = 'xlsx' | 'docx' | 'pdf';
 
 function reportDocument(format: DocumentFormat, title: string, columns: ExportColumn[], rows: ExportRow[], value: (row: ExportRow, key: string) => unknown, info: [string, string][], presentation?: ReportPdfPresentation): Blob | Promise<Blob> {
   if (format === 'xlsx') return toXlsx(title, columns, rows, value, info);
@@ -334,6 +334,8 @@ export function ProjectReportExports({ projectId, projectName, officialUrl, hasL
     } catch (cause) {
       if (!controller.signal.aborted) {
         if (!verified) setPreview(null);
+        // Formatos mostram o aviso junto aos botões de exportação; a prévia usa o aviso da seção.
+        if (format !== 'preview') throw cause;
         setError(cause instanceof Error ? cause.message : 'Não foi possível gerar o resumo.');
       }
     } finally {
@@ -355,11 +357,7 @@ export function ProjectReportExports({ projectId, projectName, officialUrl, hasL
         <button type="button" className="p-button p-button-subtle" aria-controls="project-report-preview" aria-expanded={!!previewRow} disabled={!!exporting}
           onClick={() => previewRow ? setPreview(null) : void save('preview')}><BarChart3 size={16} aria-hidden="true"/>{previewRow ? 'Ocultar prévia' : 'Ver prévia'}</button>
       </div>
-      <div className={styles.projectFormats} role="group" aria-label="Formatos do resumo">
-        <button type="button" className="p-button p-button-primary" disabled={!!exporting} onClick={() => void save('pdf')}><FileText size={16} aria-hidden="true"/>PDF</button>
-        <button type="button" className="p-button p-button-subtle" disabled={!!exporting} onClick={() => void save('xlsx')}><FileSpreadsheet size={16} aria-hidden="true"/>Excel (XLSX)</button>
-        <button type="button" className="p-button p-button-subtle" disabled={!!exporting} onClick={() => void save('docx')}><FileText size={16} aria-hidden="true"/>Word (DOCX)</button>
-      </div>
+      <ExportFormats className={styles.projectFormats} label="Baixar resumo do projeto" disabled={exporting === 'preview'} onExport={format => save(format)}/>
       {(hasLinkedSpreadsheets || sheetAnchor) && <div className={styles.projectReportActions}>
         <p className={styles.reportHelp}>Consulte o vínculo e abra o arquivo nativo na seção Planilha do projeto. O download guarda o recorte consultado.</p>
         <a className="p-button p-button-subtle" href={sheetAnchor || '#project-spreadsheets'}>Planilhas do projeto</a>
@@ -419,7 +417,7 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
   const presetsReady = Boolean(presetKey) && presetState.key === presetKey;
   const presetName = presetsReady ? presetState.name : '';
   const visiblePresets = presetsReady ? presetState.values.filter(preset => datasets.includes(preset.dataset)) : [];
-  const [exporting, setExporting] = useState<'pdf' | 'docx' | null>(null);
+  const [exporting, setExporting] = useState<DocumentFormat | null>(null);
   const [categoryAxisWidth, setCategoryAxisWidth] = useState(150);
   const chartsRef = useRef<HTMLDivElement>(null);
   const reportSearchRef = useRef<HTMLInputElement>(null);
@@ -549,14 +547,12 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
     ['Operador', 'Nome atual do perfil, somente para quem tem permissão operacional vigente; não identifica o beneficiário.'], ['Textos livres', includeNotes ? 'Consulta opcional sujeita à permissão operacional atual; confira as colunas antes de compartilhar.' : 'Não consultados nem exportados.'],
     ['Cobertura', truncated ? 'Consulta parcial por limite de linhas ou tamanho. Refine os filtros antes de considerar o relatório completo.' : 'Registros do recorte retornados pela consulta.']);
 
-  async function exportDocument(format: 'pdf' | 'docx') {
+  async function exportDocument(format: DocumentFormat) {
     if (exporting || loading || !chosen.length || !sorted.length) return;
     setExporting(format); setExportError(null);
     try {
       const blob = await reportDocument(format, config.label, exportColumns, sorted, exportValue, info, reportProjectName ? { projectName: reportProjectName, projectBrand: reportBrand } : undefined);
       download(`${fileBase}.${format}`, blob);
-    } catch (cause) {
-      setExportError({ key: queryKey, message: cause instanceof Error ? cause.message : 'Não foi possível gerar o documento. Tente novamente.' });
     } finally { setExporting(null); }
   }
 
@@ -679,13 +675,10 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
       </div>
     </>}
     <details className={styles.exportOptions}><summary>Exportar linhas deste recorte</summary>
-      <div className={styles.exportBar} role="group" aria-label="Exportar relatório">
-        <button type="button" className="p-button p-button-primary" disabled={loading || !chosen.length || !sorted.length || !!exporting} onClick={() => download(`${fileBase}.xlsx`, toXlsx(config.label, exportColumns, sorted, exportValue, info))}><FileSpreadsheet size={16} />Excel</button>
-        <button type="button" className="p-button p-button-subtle" disabled={loading || !chosen.length || !sorted.length || !!exporting} onClick={() => void exportDocument('pdf')}>{exporting === 'pdf' ? <LoaderCircle size={16} className="animate-spin" /> : <FileText size={16} />}PDF</button>
-        <button type="button" className="p-button p-button-subtle" disabled={loading || !chosen.length || !sorted.length || !!exporting} onClick={() => void exportDocument('docx')}>{exporting === 'docx' ? <LoaderCircle size={16} className="animate-spin" /> : <FileText size={16} />}Word</button>
+      <ExportFormats className={styles.exportBar} label="Exportar relatório" disabled={loading || !chosen.length || !sorted.length} onExport={exportDocument}>
         <button type="button" className="p-button p-button-subtle" disabled={loading || !chosen.length || !sorted.length || !!exporting} onClick={() => download(`${fileBase}.json`, toJson({ relatorio: config.label, filtros: Object.fromEntries(info) }, exportColumns, sorted, exportValue))}><FileJson size={16} />JSON</button>
         <button type="button" className="p-button p-button-subtle" disabled={loading || !chosen.length || !sorted.length || !!exporting} onClick={print}><Printer size={16} />Imprimir</button>
-      </div>
+      </ExportFormats>
       <div role="alert">{exportError?.key === queryKey && <p className="p-notice p-notice-error">{exportError.message}</p>}</div>
     </details>
     {!loading && breakdown.length > 0 && <>

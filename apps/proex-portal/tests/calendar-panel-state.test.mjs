@@ -85,23 +85,41 @@ test('the project and unit from the route scope the calendar query and ICS, and 
   } finally { mismatched.dispose(); }
 });
 
-test('activating a day focuses its commitments and returning restores focus to the selected day', async () => {
+test('opening and closing a day never scrolls the page or moves focus away from the day (relato de 09/11/2026)', async () => {
   const h = harness(), calls = [];
   try {
     await ready(h);
-    const day = h.all().find(node => node.props?.['aria-controls'] === 'calendar-day-entries');
+    const dayButton = () => h.all().find(node => node.type === 'button' && node.props?.['aria-pressed'] !== undefined && node.props?.['aria-controls'] === 'calendar-day-entries');
     const heading = h.all().find(node => node.props?.id === 'calendar-day-heading');
-    const focusTarget = label => ({ focus: () => calls.push(`${label}:focus`), scrollIntoView: () => calls.push(`${label}:scroll`) });
-    heading.props.ref.current = focusTarget('list');
-    day.props.onClick({ currentTarget: focusTarget('day') });
-    h.render();
-    assert.match(h.body(), /Compromissos de /);
+    const target = label => ({ focus: () => calls.push(`${label}:focus`), scrollIntoView: () => calls.push(`${label}:scroll`) });
+    heading.props.ref.current = target('list');
+    // Abrir e fechar o mesmo dia várias vezes: antes, cada abertura descia a página (scrollIntoView na lista fixa).
+    for (let round = 0; round < 4; round++) {
+      dayButton().props.onClick({ currentTarget: target('day') }); h.render();
+      assert.match(h.body(), /Compromissos de /);
+      assert.equal(dayButton().props['aria-pressed'], true);
+      dayButton().props.onClick({ currentTarget: target('day') }); h.render();
+      assert.doesNotMatch(h.body(), /Compromissos de /);
+    }
+    assert.deepEqual(calls, [], 'abrir ou fechar um dia não pode rolar a página nem tirar o foco do dia');
+    // No celular, a lista fica abaixo do mês: o atalho explícito leva até ela só quando a pessoa pede.
+    dayButton().props.onClick({ currentTarget: target('day') }); h.render();
+    const jump = h.all().find(node => node.type === 'button' && /^Ver \d+ compromissos? de /.test(text(node).trim()));
+    assert.ok(jump, 'atalho para a lista do dia');
+    jump.props.onClick(); h.render();
     assert.deepEqual(calls, ['list:focus', 'list:scroll']);
-    h.button('Ver todo o período').props.onClick();
-    h.render();
+    h.button('Ver todo o período').props.onClick(); h.render();
     assert.doesNotMatch(h.body(), /Compromissos de /);
     assert.deepEqual(calls, ['list:focus', 'list:scroll', 'day:focus', 'day:scroll']);
   } finally { h.dispose(); }
+});
+
+test('the day list never combines an automatic scroll with the sticky side column', () => {
+  const source = readFileSync(new URL('../components/portal/calendar-panel.tsx', import.meta.url), 'utf8');
+  const effects = source.match(/useEffect\(\(\) => \{[\s\S]*?\}, \[[^\]]*\]\);/g) ?? [];
+  for (const effect of effects) assert.doesNotMatch(effect, /scrollIntoView|scrollTo|\.focus\(/, 'nenhum efeito pode rolar a página ou mover o foco sozinho');
+  const css = readFileSync(new URL('../components/portal/calendar-panel.module.css', import.meta.url), 'utf8');
+  assert.match(css, /@container agenda \(min-width:860px\)\{\.jump\{display:none\}\}/, 'o atalho some quando a lista está ao lado do mês');
 });
 
 test('subscription copies its private HTTPS URL and opens the documented Google URL screen without putting the bearer in the external link', async () => {

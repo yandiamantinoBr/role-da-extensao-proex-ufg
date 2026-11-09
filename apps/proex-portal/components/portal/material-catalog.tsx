@@ -1,4 +1,6 @@
-import { ArrowRight } from 'lucide-react';
+'use client';
+import { useState } from 'react';
+import { ArrowRight, Package } from 'lucide-react';
 import styles from './material-catalog.module.css';
 
 type CatalogMaterial = {
@@ -15,7 +17,18 @@ type CatalogMaterial = {
   availabilityNote: string;
   lowStock: boolean;
   canOpen: boolean;
+  /** Foto principal (já autorizada pelo servidor); sem ela, um marcador neutro. */
+  photoUrl?: string | null;
 };
+
+/** Miniatura decorativa: o nome ao lado já identifica o material para leitores de tela. */
+function MaterialThumb({ url }: { url?: string | null }) {
+  const [failed, setFailed] = useState<string | null>(null);
+  const showPhoto = Boolean(url) && failed !== url;
+  return <span className={`${styles.thumb} ${showPhoto ? '' : styles.thumbEmpty}`} aria-hidden="true">
+    {showPhoto ? <img src={url!} alt="" width={48} height={48} loading="lazy" decoding="async" onError={() => setFailed(url!)}/> : <Package size={20}/>}
+  </span>;
+}
 
 export default function MaterialCatalog({ materials, onOpen }: {
   materials: CatalogMaterial[];
@@ -40,6 +53,9 @@ export default function MaterialCatalog({ materials, onOpen }: {
             const availabilityColor = material.lowStock ? styles.low : material.available > 0 ? styles.available : '';
             return <tr className={styles.row} key={material.id} role="row">
               <td className={styles.identity} role="rowheader">
+                <div className={styles.identityRow}>
+                <MaterialThumb url={material.canOpen ? material.photoUrl : null}/>
+                <div className={styles.identityText}>
                 {material.canOpen && <button type="button" className={`p-text-link ${styles.nameLink}`} aria-label={detailsLabel} onClick={() => onOpen(material.id)}>
                   <strong>{material.name}</strong>
                 </button>}
@@ -50,6 +66,8 @@ export default function MaterialCatalog({ materials, onOpen }: {
                 {material.condition !== 'active' && <span className="p-badge p-status-paused">
                   {material.condition === 'maintenance' ? 'Em manutenção' : 'Inativo'}
                 </span>}
+                </div>
+                </div>
               </td>
               <td className={styles.metric} role="cell">
                 <span className={styles.metricLabel} aria-hidden="true">Físico <span className={styles.labelUnit}>({material.unit})</span></span>

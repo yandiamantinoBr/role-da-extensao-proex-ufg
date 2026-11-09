@@ -151,3 +151,14 @@
 @container material-catalog (max-width: 38rem) { .labelUnit { display: inline; } }
 .catalog .mobileNote { display: none; }
 @container material-catalog (max-width: 38rem) { .catalog .row .mobileNote { display: inline-flex; width: fit-content; margin-top: 4px; } .catalog .row .desktopNote { display: none; } }
+
+/* Miniatura da foto principal (09/11): carregamento preguiçoso, tamanho fixo e marcador neutro sem foto. */
+.identityRow { display: flex; align-items: flex-start; gap: 12px; min-width: 0; }
+.identityText { min-width: 0; flex: 1 1 auto; }
+.thumb { flex: 0 0 auto; width: 48px; height: 48px; border-radius: 10px; overflow: hidden; background: var(--surface-soft); border: 1px solid var(--line); display: inline-flex; align-items: center; justify-content: center; }
+.thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.thumbEmpty { color: var(--text-secondary); }
+@container material-catalog (max-width: 38rem) {
+  .thumb { width: 44px; height: 44px; border-radius: 9px; }
+  .identityRow { gap: 10px; }
+}

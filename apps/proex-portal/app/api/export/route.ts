@@ -3,7 +3,40 @@ import { accessibleProjects, getActor, requireCapability, projectAuthoritySql } 
 import { all, csv, type Row } from '@/lib/database';
 import { HttpError, publicError } from '@/lib/errors';
 import { database } from '@/lib/platform';
-import { toXlsx } from '@/components/portal/report-export';
+import { toDocx, toXlsx, type ExportColumn, type ExportRow } from '@/components/portal/report-export';
+
+const FORMATS = ['csv', 'xlsx', 'docx', 'pdf'] as const;
+type Format = typeof FORMATS[number];
+const TITLES: Record<string, string> = { participations: 'Participação nas dinâmicas', stock: 'Materiais e movimentos', loans: 'Empréstimos' };
+/** Rótulos legíveis para DOCX e PDF; o XLSX mantém as chaves usadas em importações já existentes. */
+const LABELS: Record<string, string> = {
+  tipo: 'Tipo', projeto: 'Projeto', campanha: 'Campanha', dia_brasilia: 'Dia', modalidade: 'Modalidade', identificacao: 'Identificação',
+  estado: 'Estado', resultado: 'Resultado', quantidade: 'Quantidade', material: 'Material', categoria: 'Categoria', unidade: 'Unidade',
+  saldo_fisico: 'Saldo físico', reservado: 'Reservado', disponivel: 'Disponível', condicao: 'Condição', equipamento: 'Equipamento', acao: 'Ação',
+  retirada_prevista_brasilia: 'Retirada prevista', devolucao_prevista_brasilia: 'Devolução prevista', sem_registros: 'Sem registros',
+};
+/** Agrupamento só do PDF: mantém cada coluna autorizada uma vez, em tabela legível. */
+const PDF_GROUPS: Record<string, { label: string; keys: string[] }[]> = {
+  participations: [{ label: 'Campanha', keys: ['campanha', 'projeto'] }, { label: 'Dia', keys: ['dia_brasilia'] }, { label: 'Registro', keys: ['tipo', 'modalidade', 'identificacao'] }, { label: 'Situação', keys: ['estado', 'resultado'] }, { label: 'Quantidade', keys: ['quantidade'] }],
+  stock: [{ label: 'Material', keys: ['material', 'categoria', 'unidade'] }, { label: 'Projeto', keys: ['projeto'] }, { label: 'Saldo', keys: ['saldo_fisico', 'reservado', 'disponivel'] }, { label: 'Condição', keys: ['condicao'] }],
+  loans: [{ label: 'Equipamento', keys: ['equipamento', 'acao'] }, { label: 'Projeto', keys: ['projeto'] }, { label: 'Período', keys: ['retirada_prevista_brasilia', 'devolucao_prevista_brasilia'] }, { label: 'Estado', keys: ['estado'] }, { label: 'Quantidade', keys: ['quantidade'] }],
+};
+const VALUES: Record<string, Record<string, string>> = {
+  tipo: { participacao: 'Participação', tentativa: 'Tentativa', premiacao: 'Premiação', acesso: 'Acesso' },
+  modalidade: { physical: 'Presencial', dice: 'Dado', wheel: 'Roleta' },
+  categoria: { gift: 'Brinde', equipment: 'Equipamento', distribution: 'Distribuição', consumption: 'Consumo' },
+  condicao: { active: 'Ativo', maintenance: 'Em manutenção', inactive: 'Inativo' },
+};
+const NUMERIC = new Set(['quantidade', 'saldo_fisico', 'reservado', 'disponivel']);
+const MIME: Record<Format, string> = { csv: 'text/csv; charset=utf-8', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', pdf: 'application/pdf' };
+
+async function fontFor(request: Request): Promise<Uint8Array> {
+  const response = await fetch(new URL('/fonts/NotoSans-Regular.ttf', request.url), { redirect: 'error' });
+  if (!response.ok) throw new HttpError(503, 'Não foi possível preparar o PDF agora. Tente novamente ou baixe a planilha.', 'pdf_font_unavailable');
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  if (bytes.length > 2 * 1024 * 1024) throw new HttpError(503, 'Não foi possível preparar o PDF agora.', 'pdf_font_unavailable');
+  return bytes;
+}
 
 export const dynamic = 'force-dynamic';
 
@@ -24,8 +57,8 @@ export async function GET(request: Request): Promise<Response> {
     if (!['participations', 'stock', 'loans'].includes(kind)) {
       throw new HttpError(400, 'Escolha uma exportação válida.', 'invalid_export');
     }
-    const format = url.searchParams.get('format') ?? 'csv';
-    if (format !== 'csv' && format !== 'xlsx') throw new HttpError(400, 'Escolha um formato de exportação válido.', 'invalid_export_format');
+    const format = (url.searchParams.get('format') ?? 'csv') as Format;
+    if (!FORMATS.includes(format)) throw new HttpError(400, 'Escolha um formato de exportação válido.', 'invalid_export_format');
     const projectId = url.searchParams.get('projectId');
     requireCapability(actor, 'reports.read', projectId === null ? undefined : projectId);
     const projects = projectId === null ? accessibleProjects(actor, 'reports.read') : [projectId];
@@ -77,12 +110,29 @@ export async function GET(request: Request): Promise<Response> {
         WHERE ${scope.sql} GROUP BY l.project_id,l.item_id,l.action_name,l.starts_at,l.ends_at,l.status
         ORDER BY l.starts_at,pr.name,i.name`, scope.params);
     }
-    const content = format === 'xlsx'
-      ? toXlsx('Registros', Object.keys(rows[0] ?? { sem_registros: null }).map(key => ({ key, label: key })), rows, (row, key) => row[key], [['Linhas', String(rows.length)]])
-      : csv(rows);
+    const keys = Object.keys(rows[0] ?? { sem_registros: null });
+    const value = (row: ExportRow, key: string) => row[key];
+    const info: [string, string][] = [['Linhas', String(rows.length)], ['Recorte', projectId ? 'Projeto escolhido' : 'Projetos autorizados para o seu perfil'], ['Gerado em', new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })]];
+    let content: string | Blob;
+    if (format === 'csv') content = csv(rows);
+    else if (format === 'xlsx') content = toXlsx('Registros', keys.map(key => ({ key, label: key })), rows, value, [['Linhas', String(rows.length)]]);
+    else {
+      const columns: ExportColumn[] = keys.map(key => ({ key, label: LABELS[key] ?? key, numeric: NUMERIC.has(key) }));
+      const readable = (row: ExportRow, key: string) => { const raw = row[key]; return typeof raw === 'string' && VALUES[key]?.[raw] ? VALUES[key][raw] : raw; };
+      const groups = PDF_GROUPS[kind];
+      const grouped = groups && groups.flatMap(group => group.keys).sort().join() === [...keys].sort().join();
+      try {
+        content = format === 'docx'
+          ? toDocx(TITLES[kind], columns, rows, readable, info)
+          : await (await import('@/components/portal/report-pdf')).toPdf(TITLES[kind], columns, rows, readable, info, { fontBytes: await fontFor(request), brandBytes: {}, presentation: { layout: 'table', compactRows: true, recordsLabel: 'Registros', ...(grouped ? { columnGroups: groups } : {}) } });
+      } catch (cause) {
+        if (cause instanceof HttpError) throw cause;
+        throw new HttpError(413, cause instanceof Error ? cause.message : 'O documento ficou muito extenso. Use a planilha.', 'export_too_large');
+      }
+    }
     return new Response(content, {
       headers: {
-        'Content-Type': typeof content === 'string' ? 'text/csv; charset=utf-8' : content.type,
+        'Content-Type': MIME[format],
         'Content-Disposition': `attachment; filename="proex-${kind}-${new Date().toISOString().slice(0, 10)}.${format}"`,
         'Cache-Control': 'private, no-store',
         'X-Content-Type-Options': 'nosniff',

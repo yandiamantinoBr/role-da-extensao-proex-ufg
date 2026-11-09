@@ -2,7 +2,7 @@
 import DateField from './date-field';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { CalendarDays, ChevronLeft, ChevronRight, Copy, Download, ExternalLink, Link2, LoaderCircle, RefreshCw, ShieldCheck, X } from 'lucide-react';
+import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Copy, Download, ExternalLink, Link2, LoaderCircle, RefreshCw, ShieldCheck, X } from 'lucide-react';
 import type { CalendarCategory, CalendarEntry } from '@/lib/calendar';
 import styles from './calendar-panel.module.css';
 import { groupUnits } from '@/lib/extension-catalog';
@@ -55,11 +55,15 @@ export default function CalendarPanel({ projects: sourceProjects, organizational
   const [error, setError] = useState(''), [reload, setReload] = useState(0), [selectedDay, setSelectedDay] = useState('');
   const dayTrigger = useRef<HTMLButtonElement | null>(null);
   const listHeading = useRef<HTMLHeadingElement | null>(null);
-  useEffect(() => {
-    if (!selectedDay || !listHeading.current) return;
-    listHeading.current.focus({ preventScroll: true });
-    listHeading.current.scrollIntoView({ block: 'start' });
-  }, [selectedDay]);
+  // Abrir ou fechar um dia nunca rola a página: a lista fica ao lado (fixa) nas telas largas e,
+  // empilhada no celular, o atalho "Ver compromissos" leva até ela só quando a pessoa pede.
+  // Antes, scrollIntoView num título dentro da lista fixa (sticky) descia a página a cada clique.
+  function showDayList() {
+    const heading = listHeading.current;
+    if (!heading) return;
+    heading.focus({ preventScroll: true });
+    heading.scrollIntoView({ block: 'start', behavior: typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  }
   const [feedCategory, setFeedCategory] = useState<CalendarCategory>('projects'), [createdFeed, setCreatedFeed] = useState<{ id: string; feedUrl: string; expiresAt: string } | null>(null);
   const [copied, setCopied] = useState(false);
   const validRange=/^\d{4}-\d{2}-\d{2}$/.test(from)&&/^\d{4}-\d{2}-\d{2}$/.test(to)&&Number.isFinite(Date.parse(from))&&Number.isFinite(Date.parse(to))&&to>=from&&(Date.parse(to)-Date.parse(from))/86400000<732;
@@ -137,6 +141,7 @@ export default function CalendarPanel({ projects: sourceProjects, organizational
           </button>;
         })}
       </div>
+      {selectedDay&&<button type="button" className={`p-text-link ${styles.jump}`} onClick={showDayList} aria-controls="calendar-day-entries">Ver {shown.length} {shown.length===1?'compromisso':'compromissos'} de {prettyDay(selectedDay)}<ChevronDown size={16} aria-hidden="true"/></button>}
       <div className={styles.legend}>{Object.entries(labels).map(([key,label])=><small key={key}><span style={{background:colors[key as CalendarCategory]}}/>{label}</small>)}</div>
     </section>
     <section className={`p-card ${styles.listCard}`} id="calendar-day-entries" aria-labelledby="calendar-day-heading">

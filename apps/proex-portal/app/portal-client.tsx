@@ -36,7 +36,7 @@ import CalendarPanel from '@/components/portal/calendar-panel';
 import RecordsPanel from '@/components/portal/records-panel';
 import ReportsCenter, { projectBrandFor } from '@/components/portal/reports-center';
 import { download } from '@/components/portal/report-export';
-import ExportFormats, {type DocumentFormat} from '@/components/portal/export-formats';
+import ExportFormats, {downloadFromServer, type DocumentFormat} from '@/components/portal/export-formats';
 import { documentExport } from '@/components/portal/document-export';
 import FollowUpPanel from '@/components/portal/follow-up-panel';
 import MeuTrabalhoPanel from '@/components/portal/meu-trabalho-panel';
@@ -67,7 +67,7 @@ import { useNavigationPreferences } from '@/components/portal/use-navigation-pre
 import { useFormDraft, DraftNotice, setDraftScope, clearCurrentDrafts, watchDraftLogout } from '@/components/portal/use-form-draft';
 import { THEMATIC_AREAS, groupUnits } from '@/lib/extension-catalog';
 import { MAX_UPLOAD_FILE_BYTES, UPLOAD_LIMIT_LABEL, uploadErrorMessage } from '@/lib/upload-limits';
-import { ArrowDownToLine, ArrowRight, Boxes, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronRight, ExternalLink, FileText, Filter, Gift, LoaderCircle, LogOut, Plus, RefreshCw, Search, ShieldCheck, Truck, Users, Wifi, WifiOff, X } from 'lucide-react';
+import { ArrowRight, Boxes, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronRight, ExternalLink, FileText, Filter, Gift, LoaderCircle, LogOut, Plus, RefreshCw, Search, ShieldCheck, Truck, Users, Wifi, WifiOff, X } from 'lucide-react';
 // API projections vary by module; the server validates every mutation.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = Record<string, any>;
@@ -888,6 +888,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
                     availabilityNote,
                     lowStock: item.condition === 'active' && !availabilityNote && availableQuantity <= Number(get(item, 'lowStock', 'low_stock') ?? 0),
                     canOpen: canProject(projectId, 'inventory.read'),
+                    photoUrl: typeof item.primary_photo_id === 'string' && item.primary_photo_id ? `/api/records/files/${encodeURIComponent(item.primary_photo_id)}?v=list` : null,
                 };
             })} /> : <Empty title={query ? 'Nenhum material encontrado' : 'Seu catálogo ainda está vazio'} text={query ? 'Tente outro nome ou selecione outro projeto.' : 'Cadastre os materiais e registre o recebimento após conferir a quantidade real.'}/>}</Section>
         {visibleItems.length > 0 && <ProjectOperationalChart key={`materials-${filter || 'all'}`} variant="overview" title="Panorama dos materiais" projectId={filter || undefined} schedule={null} items={visibleItems.map(item => ({ ...item, available: available(item), low_stock: get(item, 'lowStock', 'low_stock') ?? 0, project_id: get(item, 'projectId', 'project_id') }))} now={now}/>}
@@ -1140,7 +1141,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
                 </tr>)}</tbody>
             </table>
             </div> : <Empty title="Sem registros neste período" text="Altere as datas ou o projeto para consultar outro recorte." icon={CalendarDays}/>}</Section>
-        {(filter ? canProject(filter, 'reports.read') : canAny('reports.read')) && <Section title="Exportar registros completos" description="Planilhas do recorte autorizado, sem corte por data. O resumo diário acima usa as datas escolhidas.">
+        {(filter ? canProject(filter, 'reports.read') : canAny('reports.read')) && <Section title="Exportar registros completos" description="Planilha, documento ou PDF do recorte autorizado, sem corte por data. O resumo diário acima usa as datas escolhidas.">
         {exportNeedsProject && <p className="p-form-help">Com filtro de unidade ou área, escolha um projeto para baixar os registros completos. O resumo diário já usa o recorte selecionado.</p>}
         <div className="p-export-grid">{[{ kind: 'participations', title: 'Participação nas dinâmicas', text: 'Modalidades, resultados e contagens por campanha.', icon: Users }, { kind: 'stock', title: 'Materiais e movimentos', text: 'Saldo, reservas e quantidade disponível por item.', icon: Boxes }, { kind: 'loans', title: 'Empréstimos', text: 'Agenda, etapas e devoluções pendentes.', icon: Truck }].map(({ kind, title: exportTitle, text, icon: Icon }) => {
             const content = <>
@@ -1149,10 +1150,9 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
             </span>
             <h3>{exportTitle}</h3>
             <p>{text}</p>
-            <span className="p-text-link">{exportNeedsProject ? 'Escolha um projeto' : 'Baixar XLSX'} <ArrowDownToLine size={16}/>
-            </span>
+            {exportNeedsProject ? <span className="p-text-link">Escolha um projeto</span> : <ExportFormats label={`Baixar ${exportTitle.toLowerCase()}`} onExport={format => downloadFromServer(`/api/export?kind=${kind}&format=${format}${filter ? `&projectId=${encodeURIComponent(filter)}` : ''}`, `proex-${kind}.${format}`)}/>}
             </>;
-            return exportNeedsProject ? <article className="p-card p-export-card p-export-unavailable" key={kind}>{content}</article> : <a className="p-card p-export-card" href={`/api/export?kind=${kind}&format=xlsx${filter ? `&projectId=${encodeURIComponent(filter)}` : ''}`} key={kind}>{content}</a>;
+            return <article className={`p-card p-export-card${exportNeedsProject ? ' p-export-unavailable' : ''}`} key={kind}>{content}</article>;
         })}</div>
         </Section>}
         <div className="p-explainer">
@@ -1160,7 +1160,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         <div>
         <h3>Contagens com significado</h3>
         <p>Uma premiação com três buttons representa uma participação e três unidades entregues. Cliques no Instagram, declarações e confirmações de seguimento são sinais diferentes; nenhum deles será somado automaticamente como “novos seguidores”.</p>
-        <p>Você pode importar os arquivos XLSX no Google Sheets. As planilhas vinculadas ao projeto ficam em Projetos, com o acesso concedido no Drive.</p>
+        <p>A planilha (XLSX) pode ser importada no Google Sheets; o documento (DOCX) abre no Word ou no Google Docs. As planilhas vinculadas ao projeto ficam em Projetos, com o acesso concedido no Drive.</p>
         </div>
         </div>
         </>}
