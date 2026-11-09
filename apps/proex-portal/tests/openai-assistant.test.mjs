@@ -113,7 +113,7 @@ test('OpenAI admission measures the actual Responses schema/body and uses select
 
 test('each OpenAI daily ceiling rejects before transport and unknown failure retains the reservation',async t=>{
  for(const setting of [{dailyUsdMicros:1000},{dailyTokens:1000},{dailyMs:1000}]){const f=await fixture(t);await f.save();await f.configure(setting);const provider=fake();await assert.rejects(prepareAssistantPlan(f.db,f.operator,query(),secret,{keys,fetcher:provider.fetcher}),code('assistant_quota'));assert.equal(provider.requests.length,0);}
- const f=await fixture(t);await f.save();await f.configure();let calls=0;const input=query();const fetcher=async()=>{calls++;throw new Error('synthetic network outage');};await assert.rejects(prepareAssistantPlan(f.db,f.operator,input,secret,{keys,fetcher}),code('assistant_provider_unavailable'));await assert.rejects(prepareAssistantPlan(f.db,f.operator,input,secret,{keys,fetcher}),code('assistant_call_replay'));assert.equal(calls,1);assert.equal(f.native.prepare('SELECT calls FROM ai_organization_usage').get().calls,1);
+ const f=await fixture(t);await f.save();await f.configure();let calls=0;const input=query();const fetcher=async()=>{calls++;throw new Error('synthetic network outage');};await assert.rejects(prepareAssistantPlan(f.db,f.operator,input,secret,{keys,fetcher}),code('assistant_provider_unavailable'));await assert.rejects(prepareAssistantPlan(f.db,f.operator,input,secret,{keys,fetcher}),code('assistant_call_failed'));assert.equal(calls,1);assert.equal(f.native.prepare('SELECT calls FROM ai_organization_usage').get().calls,1);
 });
 
 test('private policy, cross-organization scope and separate OpenAI credentials prevent unintended model use',async t=>{
