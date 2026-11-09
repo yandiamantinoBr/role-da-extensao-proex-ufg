@@ -80,7 +80,7 @@
 .textButton:focus-visible{outline:3px solid var(--focus);outline-offset:3px}
 .textButton:disabled{opacity:.45}
 .disclaimer{margin:0;font-size:max(12px,.75rem);color:var(--text-secondary)}
-.help{display:flex;align-items:center;gap:.35rem}
+.loadingLine{display:flex;align-items:center;gap:.35rem;margin:0;font-size:max(13px,.85rem);color:var(--text-secondary)}
 /* Folga para o botão flutuante não cobrir o fim da página. */
 :global(.p-main):has(.launcher){padding-bottom:96px}
 @media (max-width:720px){:global(.pn-shell .p-main):has(.launcher){padding-bottom:calc(176px + env(safe-area-inset-bottom,0px))}}

@@ -90,6 +90,14 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
     catch (cause) { if (mounted.current) setStatusError(cause instanceof Error ? cause.message : 'Não foi possível consultar o Rolê.'); }
   }, []);
   const openRole = useCallback(() => { setOpen(true); void loadStatus(projectId); }, [loadStatus, projectId]);
+  // Sonda grátis (sem provedor): o botão só aparece quando o Rolê está ligado para esta pessoa.
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    if (!projectId) return;
+    let alive = true;
+    call<Status>(`/api/assistant/role?projectId=${encodeURIComponent(projectId)}`).then(next => { if (alive) setReady(next.available); }).catch(() => { if (alive) setReady(false); });
+    return () => { alive = false; };
+  }, [projectId]);
 
   const close = useCallback(() => {
     if (recorder.current?.state === 'recording') recorder.current.stop();
@@ -98,11 +106,11 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
   }, []);
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
-      if (event.altKey && !event.ctrlKey && !event.metaKey && (event.key === 'r' || event.key === 'R')) { event.preventDefault(); if (open) close(); else openRole(); }
+      if (event.altKey && !event.ctrlKey && !event.metaKey && (event.key === 'r' || event.key === 'R')) { if (!ready && !open) return; event.preventDefault(); if (open) close(); else openRole(); }
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, close, openRole]);
+  }, [open, close, openRole, ready]);
   useEffect(() => { if (open) window.requestAnimationFrame(() => input.current?.focus()); }, [open]);
   useEffect(() => { log.current?.lastElementChild?.scrollIntoView({ block: 'nearest' }); }, [messages, busy]);
 
@@ -227,7 +235,7 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
   if (!projects.length) return null;
   const speechCost = recorded && status ? formatMicros(roleSpeechCeilingMicros(status.speech.provider, recorded.seconds)) : '';
   return <>
-    {!open && <button ref={trigger} type="button" className={styles.launcher} aria-haspopup="dialog" aria-keyshortcuts="Alt+R" onClick={openRole} title="Falar com o Rolê (Alt + R)">
+    {!open && ready && <button ref={trigger} type="button" className={styles.launcher} aria-haspopup="dialog" aria-keyshortcuts="Alt+R" onClick={openRole} title="Falar com o Rolê (Alt + R)">
       <img src="/brand/role-mascote/role-rosto.svg" alt="" width={44} height={44}/>
       <span className={styles.launcherLabel}>Falar com o Rolê</span>
     </button>}
@@ -269,7 +277,7 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
                       ? <label className={styles.editable}><span>Revise ou corrija o pedido:</span><textarea value={message.operation.request} maxLength={600} rows={2} disabled={busy} onChange={event => updateOperation(message.id, { request: event.target.value, stale: true })}/></label>
                       : message.operation.stage !== 'preview' && message.operation.stage !== 'done' && <p>{message.operation.request}</p>}
                     {message.operation.stage === 'idle' && !status?.operationsAvailable && <p className={styles.help}>As operações pelo Rolê estão desligadas nesta organização. Faça o registro em Materiais.</p>}
-                    {message.operation.stage === 'idle' && status?.operationsAvailable && <p className={styles.help}><LoaderCircle size={14} className="p-spin" aria-hidden="true"/> Calculando o custo…</p>}
+                    {message.operation.stage === 'idle' && status?.operationsAvailable && <p className={styles.loadingLine}><LoaderCircle size={14} className="p-spin" aria-hidden="true"/> Calculando o custo…</p>}
                     {message.operation.stage === 'estimated' && <>
                       {message.operation.stale
                         ? <button type="button" className="p-button p-button-subtle" disabled={busy} onClick={() => void estimateOperation(message)}>Atualizar o custo do pedido corrigido</button>
