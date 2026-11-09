@@ -1,0 +1,173 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { DatabaseSync } from 'node:sqlite';
+import { readFileSync, readdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
+import ts from 'typescript';
+
+const root = fileURLToPath(new URL('../', import.meta.url));
+const dataModule = source => `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`;
+const overrides = new Map([
+  [resolve(root, 'lib/session.ts'), dataModule('export async function getPortalUser(){return globalThis.__activityUser??null;}')],
+  [resolve(root, 'lib/platform.ts'), dataModule('export function database(){return globalThis.__activityDb;} export function bucket(){return null;}')],
+]);
+const modules = new Map();
+function compile(file) {
+  file = resolve(root, file);
+  if (overrides.has(file)) return overrides.get(file);
+  if (modules.has(file)) return modules.get(file);
+  let code = ts.transpileModule(readFileSync(file, 'utf8'), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
+  code = code.replace(/from (['"])(\.[^'"]+)\1/g, (_match, _quote, dependency) => `from ${JSON.stringify(compile(resolve(dirname(file), dependency.endsWith('.ts') ? dependency : `${dependency}.ts`)))}`);
+  const url = dataModule(`${code}\n//# sourceURL=${file.replace(root, '')}-under-test.mjs`);
+  modules.set(file, url);
+  return url;
+}
+const { activityFeed, activityRange, brasiliaDay } = await import(compile('lib/activity.ts'));
+const route = await import(compile('app/api/activity/route.ts'));
+
+// Relógio fixo: 10/11/2026 12:00 em Brasília.
+const NOW = Date.parse('2026-11-10T15:00:00.000Z');
+const at = (day, hour = 12) => new Date(Date.parse(`${day}T${String(hour + 3).padStart(2, '0')}:00:00.000Z`)).toISOString();
+
+function fixture() {
+  const native = new DatabaseSync(':memory:');
+  native.exec('PRAGMA foreign_keys=ON');
+  for (const migration of readdirSync(`${root}drizzle`).filter(name => name.endsWith('.sql')).sort()) native.exec(readFileSync(`${root}drizzle/${migration}`, 'utf8'));
+  const created = at('2026-10-01');
+  for (const id of ['project-a', 'project-b']) native.prepare('INSERT INTO projects(id,name,created_at) VALUES(?,?,?)').run(id, `Projeto ${id.slice(-1).toUpperCase()}`, created);
+  native.prepare("INSERT INTO items(id,project_id,name,category,unit,stock,created_at) VALUES('item-a','project-a','Planner','gift','unidade',50,?),('item-b','project-b','Caneca','gift','unidade',10,?),('asset-a','project-a','Projetor','equipment','unidade',1,?)").run(created, created, created);
+  const prepare = sql => {
+    let values = [];
+    return {
+      sql,
+      bind(...args) { values = args; return this; },
+      async first(column) { const row = native.prepare(sql).get(...values); return column ? row?.[column] ?? null : row ?? null; },
+      async all() { return { success: true, results: native.prepare(sql).all(...values) }; },
+      async run() { const result = native.prepare(sql).run(...values); return { success: true, results: [], meta: { changes: Number(result.changes) } }; },
+    };
+  };
+  return { native, prepare, async batch() { throw new Error('não usado'); } };
+}
+function person(db, role, { project = null, organization = null, name = role, revoked = false, anonymized = false } = {}) {
+  const userId = crypto.randomUUID(), now = at('2026-10-01');
+  const member = { id: crypto.randomUUID(), user_id: userId, email: `${userId}@example.invalid`, role, project_id: project, revoked_at: revoked ? now : null, created_at: now, organization_id: organization };
+  db.native.prepare('INSERT INTO members(id,user_id,email,role,project_id,revoked_at,created_at,organization_id) VALUES(?,?,?,?,?,?,?,?)').run(...Object.values(member));
+  db.native.prepare('INSERT INTO portal_users(user_id,email,status,created_at,updated_at,anonymized_at) VALUES(?,?,?,?,?,?)').run(userId, member.email, 'active', now, now, anonymized ? now : null);
+  db.native.prepare('INSERT INTO profiles(user_id,display_name,version,created_at,updated_at) VALUES(?,?,1,?,?)').run(userId, name, now, now);
+  return { userId, email: member.email, displayName: name, members: revoked ? [] : [member], capabilities: [] };
+}
+function seed(db, actors) {
+  const move = (id, item, delta, kind, actor, day, ref = null) => db.native.prepare('INSERT INTO stock_movements(id,item_id,delta,kind,note,ref_id,actor_id,created_at) VALUES(?,?,?,?,?,?,?,?)').run(id, item, delta, kind, 'NOTA-PRIVADA', ref, actor, at(day));
+  move('mov-a1', 'item-a', 100, 'receive', actors.inventoryA.userId, '2026-11-09');
+  move('mov-a2', 'item-a', -20, 'distribute', actors.colleagueA.userId, '2026-11-10', `manual:${actors.colleagueA.userId}:ai_plan123`);
+  move('mov-b1', 'item-b', -3, 'consume', actors.viewerB.userId, '2026-11-10');
+  move('mov-old', 'item-a', 5, 'receive', actors.inventoryA.userId, '2026-06-01');
+  db.native.prepare("INSERT INTO loans(id,project_id,item_id,action_name,borrower_name,borrower_contact,starts_at,ends_at,status,created_by,created_at,checked_out_at) VALUES('loan-a','project-a','asset-a','Ação CONPEEX','Pessoa Privada','contato@privado.invalid',?,?,'out',?,?,?)")
+    .run(at('2026-11-09'), at('2026-11-09', 18), actors.manager.userId, at('2026-11-08'), at('2026-11-09', 9));
+  const task = (id, project, title, created, by) => db.native.prepare("INSERT INTO followup_tasks(id,organization_id,project_id,title,body,priority,status,created_by,created_at,updated_at) VALUES(?, 'org_proex', ?, ?, 'CORPO-PRIVADO', 'high', 'open', ?, ?, ?)").run(id, project, title, by, at(created), at(created));
+  task('task-a', 'project-a', 'Contar planners', '2026-11-08', actors.manager.userId);
+  task('task-b', 'project-b', 'Revisar canecas', '2026-11-09', actors.manager.userId);
+  const history = (id, taskId, version, status, day, actor) => db.native.prepare('INSERT INTO followup_history(id,task_id,version,snapshot_json,actor_id,created_at) VALUES(?,?,?,?,?,?)').run(id, taskId, version, JSON.stringify({ status }), actor, at(day, 14));
+  history('h1', 'task-a', 1, 'open', '2026-11-08', actors.manager.userId);
+  history('h2', 'task-a', 2, 'completed', '2026-11-10', actors.inventoryA.userId);
+  history('h3', 'task-a', 3, 'completed', '2026-11-10', actors.inventoryA.userId);
+  db.native.prepare("INSERT INTO project_schedule_items(id,project_id,title,starts_at,ends_at,status,note,version,created_at,updated_at) VALUES('sched-a','project-a','Turno da manhã',?,?,'planned','NOTA-AGENDA',1,?,?)").run(at('2026-11-10', 9), at('2026-11-10', 12), at('2026-11-01'), at('2026-11-01'));
+}
+function setup() {
+  const db = fixture();
+  const actors = {
+    manager: person(db, 'manager', { organization: 'org_proex', name: 'Gestora Técnica' }),
+    inventoryA: person(db, 'inventory', { project: 'project-a', name: 'Bolsista A' }),
+    colleagueA: person(db, 'inventory', { project: 'project-a', name: 'Colega A' }),
+    viewerB: person(db, 'viewer', { project: 'project-b', name: 'Leitor B' }),
+  };
+  seed(db, actors);
+  return { db, actors };
+}
+const range = { from: '2026-11-01', to: '2026-11-10' };
+const projectsOf = feed => [...new Set(feed.events.map(event => event.projectId))].sort();
+
+test('organization-wide staff see every project, every type, and never private fields', async () => {
+  const { db, actors } = setup();
+  const feed = await activityFeed(db, actors.manager, range, NOW);
+  assert.deepEqual(projectsOf(feed), ['project-a', 'project-b']);
+  assert.deepEqual([...new Set(feed.events.map(event => event.type))].sort(), ['agenda', 'demands', 'loans', 'materials']);
+  assert.ok(!feed.events.some(event => event.id === 'materials:mov-old'), 'fora do período');
+  const json = JSON.stringify(feed);
+  for (const secret of ['Pessoa Privada', 'contato@privado.invalid', 'NOTA-PRIVADA', 'CORPO-PRIVADO', 'NOTA-AGENDA', '@example.invalid']) assert.ok(!json.includes(secret), secret);
+  assert.deepEqual(feed.loansNow, { active: 1, late: 1 });
+  const completions = feed.events.filter(event => event.action === 'Demanda concluída');
+  assert.equal(completions.length, 1, 'uma conclusão, mesmo com duas versões concluídas seguidas');
+  assert.equal(completions[0].href, '/?module=demands&project=project-a&demandId=task-a');
+});
+
+test('project members see only their projects, including what colleagues did there', async () => {
+  const { db, actors } = setup();
+  const feed = await activityFeed(db, actors.inventoryA, range, NOW);
+  assert.deepEqual(projectsOf(feed), ['project-a']);
+  const colleague = feed.events.find(event => event.id === 'materials:mov-a2');
+  assert.equal(colleague.actorName, 'Colega A');
+  assert.equal(colleague.viaRole, true, 'pedido ao Rolê e confirmado pela pessoa');
+  assert.equal(colleague.href, '/?module=materials&project=project-a&itemId=item-a');
+  assert.ok(!feed.events.some(event => event.type === 'loans'), 'estoque não lê empréstimos');
+  assert.ok(!feed.events.some(event => event.type === 'agenda'), 'estoque não lê a agenda do projeto');
+  assert.equal(feed.loansNow, null, 'sem leitura de empréstimos, sem contagem');
+  assert.ok(!feed.people.some(entry => entry.name === 'Leitor B'), 'nome de outro projeto não vaza');
+});
+
+test('a reader of another project gets nothing from project A, even when asking for it', async () => {
+  const { db, actors } = setup();
+  const feed = await activityFeed(db, actors.viewerB, range, NOW);
+  assert.ok(feed.events.every(event => event.projectId === 'project-b'));
+  assert.ok(feed.events.some(event => event.type === 'demands'));
+  const forced = await activityFeed(db, actors.viewerB, { ...range, projectId: 'project-a' }, NOW);
+  assert.equal(forced.events.length, 0);
+});
+
+test('revoked access, anonymized authors and person filter behave safely', async () => {
+  const { db, actors } = setup();
+  const revoked = person(db, 'manager', { organization: 'org_proex', revoked: true });
+  assert.equal((await activityFeed(db, { ...revoked, members: [{ ...actors.manager.members[0], user_id: revoked.userId }] }, range, NOW)).events.length, 0, 'autoridade é conferida ao vivo no banco');
+  db.native.prepare('UPDATE portal_users SET anonymized_at=? WHERE user_id=?').run(at('2026-11-10'), actors.colleagueA.userId);
+  const feed = await activityFeed(db, actors.manager, range, NOW);
+  assert.equal(feed.events.find(event => event.id === 'materials:mov-a2').actorName, 'Pessoa removida');
+  const mine = await activityFeed(db, actors.manager, { ...range, person: actors.inventoryA.userId }, NOW);
+  assert.ok(mine.events.length > 0 && mine.events.every(event => event.actorId === actors.inventoryA.userId));
+});
+
+test('ranges are civil days in Brasília with a 92-day ceiling and strict inputs', async () => {
+  const { db, actors } = setup();
+  assert.equal(brasiliaDay('2026-11-10T02:30:00.000Z'), '2026-11-09');
+  const window = activityRange(undefined, undefined, NOW);
+  assert.equal(window.to, '2026-11-10'); assert.equal(window.days.length, 30);
+  await assert.rejects(activityFeed(db, actors.manager, { from: '2026-01-01', to: '2026-11-10' }, NOW), /até 92 dias/);
+  await assert.rejects(activityFeed(db, actors.manager, { from: '10/11/2026' }, NOW), /aaaa-mm-dd/);
+  await assert.rejects(activityFeed(db, actors.manager, { ...range, types: 'materials,secrets' }, NOW), /tipos de registro/);
+  await assert.rejects(activityFeed(db, null, range, NOW), error => error.status === 401);
+});
+
+test('the route is private and refuses anonymous reads', async () => {
+  const { db } = setup();
+  globalThis.__activityDb = db; globalThis.__activityUser = null;
+  const response = await route.GET(new Request('https://portal.test/api/activity?from=2026-11-01&to=2026-11-10'));
+  assert.equal(response.status, 401);
+  assert.equal(response.headers.get('Cache-Control'), 'private, no-store');
+});
+
+test('chart totals come from the database and stay exact when the list is cut', async () => {
+  const { db, actors } = setup();
+  const feed = await activityFeed(db, actors.manager, range, NOW);
+  const day10 = feed.summary.days.find(row => row.day === '2026-11-10');
+  assert.deepEqual({ materials: day10.materials, completed: day10.demandsCompleted, agenda: day10.agenda }, { materials: 2, completed: 1, agenda: 1 });
+  const planner = feed.summary.stock.find(row => row.name === 'Planner');
+  assert.deepEqual({ entradas: planner.entradas, saidas: planner.saidas, href: planner.href }, { entradas: 100, saidas: 20, href: '/?module=materials&project=project-a&itemId=item-a' });
+  const insert = db.native.prepare("INSERT INTO stock_movements(id,item_id,delta,kind,note,actor_id,created_at) VALUES(?,?,?,?,'',?,?)");
+  for (let n = 0; n < 700; n++) insert.run(`bulk-${n}`, 'item-a', 1, 'receive', actors.inventoryA.userId, at('2026-11-05', 10));
+  const big = await activityFeed(db, actors.manager, range, NOW);
+  assert.equal(big.truncated, true);
+  assert.equal(big.summary.days.find(row => row.day === '2026-11-05').materials, 700);
+  const scoped = await activityFeed(db, actors.viewerB, range, NOW);
+  assert.ok(scoped.summary.stock.every(row => row.projectId === 'project-b'), 'totais também respeitam o projeto');
+  assert.equal(scoped.summary.days.reduce((total, row) => total + row.materials, 0), 0, 'leitor sem estoque não vê movimentos');
+});

@@ -58,6 +58,7 @@ import StockContextFields, {stockContextFields} from '@/components/portal/stock-
 import DirectoryPanel from '@/components/portal/directory-panel';
 import { ThemeSwitch } from '@/components/theme/theme-switch';
 import { BrandMark } from '@/components/theme/brand-mark';
+import ActivityPanel from '@/components/portal/activity-panel';
 import ProjectOperationalChart from '@/components/portal/project-operational-chart';
 import DashboardPanel from '@/components/portal/dashboard-panel';
 import { DesktopSidebar, MobileNavigation } from '@/components/portal/portal-navigation';
@@ -291,6 +292,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
     const [historyReady, setHistoryReady] = useState(false);
     const pushNavigation = useRef(false);
     const [selectedDemandId, setSelectedDemandId] = useState('');
+    const [recordsView, setRecordsView] = useState<'history' | 'documents'>('history');
     const [reportInitialDataset, setReportInitialDataset] = useState<'projects' | 'demands'>('projects');
     const [personalStatus, setPersonalStatus] = useState<MyWorkStatus>('pending');
     const [personalOrganization, setPersonalOrganization] = useState('');
@@ -894,7 +896,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
             <details className={workStyles.tools}><summary><Plus size={17} aria-hidden="true"/>Novo material</summary><div className={workStyles.toolsBody}>
             <OperationForm onProjectFocus={setDraftProject} action="item.create" mutate={mutate} submit="Cadastrar material" make={f => ({ projectId: f.get('projectId'), name: f.get('name'), category: f.get('category'), categoryId: f.get('categoryId') || null, unit: f.get('unit'), lowStock: Number(f.get('lowStock')), description: f.get('description'), assetCode: f.get('assetCode') })}>
             <div className="p-form-grid">{projectField}<Field label="Nome">
-            <input name="name" required maxLength={120} placeholder="Ex.: Button azul 2,5 cm"/>
+            <input name="name" required maxLength={120} placeholder="Ex.: Botton azul 2,5 cm"/>
             </Field>
             <MaterialCategoryFields projectId={effectiveProject} refreshKey={updatedAt?.getTime() ?? 0} />
             <Field label="Unidade de controle">
@@ -1023,7 +1025,11 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
       {tab === 'team' && <><OrganizationsPanel organizations={organizations} currentActor={{ userId: string(user.userId), isPlatformOwner }} people={organizationPeople} onChanged={refreshModules}/>{organizations.filter(organization=>organization.canManage||isPlatformOwner).map(organization=><DirectoryPanel key={organization.id} userId={string(user.userId)} organizationId={organization.id}/>)}<OfficialTeamDirectory onSelect={canAny('access.invite') ? setOfficialSuggestion : undefined}/><TeamPanel key={officialSuggestion?.selectionKey ?? `manual:${filter}`} officialSuggestion={officialSuggestion} onClearOfficialSuggestion={() => setOfficialSuggestion(null)} users={list(data.users)} members={members} invites={invites} projects={projects} selectedProjectId={filter} globalAdmin={isPlatformOwner} canManageManagers={(projectId, organizationId) => isPlatformOwner || organizations.some(organization => organization.canManage && organization.id === (projectId ? projects.find(project => project.id === projectId)?.organization_id : organizationId))} canProject={canProject} mutate={mutate} now={now}/>{canGlobal('organization.manage') && <AdminPrivacyPanel />}</>}
       {tab === 'profile' && <><McpConnectionsPanel key={`mcp-${string(user.userId)}`}/><ProfilePanel onUpdated={() => { void refresh(); }}/></>}
       {tab === 'calendar' && <CalendarPanel projects={projects} organizationalUnits={visibleUnits} selectedProjectId={filter} selectedUnitId={unitFilter} onProjectChange={selectProject} onUnitChange={selectUnit}/>}
-      {tab === 'records' && <RecordsPanel key={filter} initialProjectId={filter} projects={projects} items={items} loans={loans} canWrite={(capability: string, projectId?: string | null) => projectId ? canProject(projectId, capability) : canGlobal(capability)}/>}
+      {tab === 'records' && <>
+        <nav className="p-material-tabs" aria-label="Partes de Registros"><button type="button" aria-pressed={recordsView === 'history'} className={recordsView === 'history' ? 'is-active' : ''} onClick={() => setRecordsView('history')}><CalendarDays size={18}/>Histórico</button><button type="button" aria-pressed={recordsView === 'documents'} className={recordsView === 'documents' ? 'is-active' : ''} onClick={() => setRecordsView('documents')}><FileText size={18}/>Registros e documentos</button></nav>
+        {recordsView === 'history' && <ActivityPanel key={filter} initialProjectId={filter} projects={projects.map(project => ({ id: string(project.id), name: string(project.name) }))}/>}
+        <div hidden={recordsView !== 'documents'}><RecordsPanel key={filter} initialProjectId={filter} projects={projects} items={items} loans={loans} canWrite={(capability: string, projectId?: string | null) => projectId ? canProject(projectId, capability) : canGlobal(capability)}/></div>
+      </>}
 
       {tab === 'reports' && <>
         <div className="p-card p-report-filters">
