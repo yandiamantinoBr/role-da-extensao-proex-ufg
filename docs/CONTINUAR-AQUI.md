@@ -1,5 +1,9 @@
 # Continuar Portal PROEX
 
+## Exportação, Agenda, fotos e Configurações · 2026-11-09
+
+Branch `claude/mystifying-sanderson-7b4c51` (Claude Code). Agenda não rola mais a página ao abrir/fechar um dia (causa: `scrollIntoView` na coluna sticky); miniatura da foto principal na lista de materiais (só `inventory.read`); componente comum de exportação (planilha verde, documento azul, PDF vermelho) e `/api/export` com DOCX/PDF no servidor; Configurações agrupadas por tarefa, central de chaves só reposicionada. 1375/1375 testes, tipos, lint, `build`, `build:node`. [Entrega, provas e limites](ENTREGA-09NOV-EXPORTACAO-AGENDA-FOTOS-CONFIG.md). Confirmar merge e deploy no recibo da PR antes de tratar como produção.
+
 ## Acabamento visual e coerência · PR42 · 2026-11-09
 
 Branch `claude/visual-coerencia-09nov` (Claude Code), PR [42](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/42), atualizada com a `main` da PR41 (níveis de brinde e foto) sem desfazer aquele trabalho. Só apresentação: tipografia própria do portal (DM Sans + Sora), filtros "Projeto + funil", Materiais/Dinâmicas/Demandas compactos no celular, Panorama clicável no Início e em Materiais, barra inferior com os módulos do evento. 1.339/1.339 testes, tipos, lint, `build` e `build:node`. Crítica independente final 9,0/10 sem P0/P1. [Entrega, pendências e perguntas](ENTREGA-09NOV-VISUAL-E-COERENCIA.md). Confirmar merge e deploy no recibo da entrega antes de tratar como produção.

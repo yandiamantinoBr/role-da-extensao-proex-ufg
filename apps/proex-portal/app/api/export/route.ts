@@ -2,8 +2,76 @@ import {getPortalUser} from '@/lib/session';
 import { accessibleProjects, getActor, requireCapability, projectAuthoritySql } from '@/lib/access';
 import { all, csv, type Row } from '@/lib/database';
 import { HttpError, publicError } from '@/lib/errors';
-import { database } from '@/lib/platform';
-import { toXlsx } from '@/components/portal/report-export';
+import { database, portalOrigin } from '@/lib/platform';
+import { toDocx, toXlsx, type ExportColumn, type ExportRow } from '@/components/portal/report-export';
+
+const FORMATS = ['csv', 'xlsx', 'docx', 'pdf'] as const;
+type Format = typeof FORMATS[number];
+const TITLES: Record<string, string> = { participations: 'Participação nas dinâmicas', stock: 'Materiais e movimentos', loans: 'Empréstimos' };
+/** Rótulos legíveis para DOCX e PDF; o XLSX mantém as chaves usadas em importações já existentes. */
+const LABELS: Record<string, string> = {
+  tipo: 'Tipo', projeto: 'Projeto', campanha: 'Campanha', dia_brasilia: 'Dia', modalidade: 'Modalidade', identificacao: 'Identificação',
+  estado: 'Estado', resultado: 'Resultado', quantidade: 'Quantidade', material: 'Material', categoria: 'Categoria', unidade: 'Unidade',
+  saldo_fisico: 'Saldo físico', reservado: 'Reservado', disponivel: 'Disponível', condicao: 'Condição', equipamento: 'Equipamento', acao: 'Ação',
+  retirada_prevista_brasilia: 'Retirada prevista', devolucao_prevista_brasilia: 'Devolução prevista', sem_registros: 'Sem registros',
+};
+/** Agrupamento só do PDF: mantém cada coluna autorizada uma vez, em tabela legível. */
+const PDF_GROUPS: Record<string, { label: string; keys: string[] }[]> = {
+  participations: [{ label: 'Campanha', keys: ['campanha', 'projeto'] }, { label: 'Dia', keys: ['dia_brasilia'] }, { label: 'Registro', keys: ['tipo', 'modalidade', 'identificacao'] }, { label: 'Situação', keys: ['estado', 'resultado'] }, { label: 'Quantidade', keys: ['quantidade'] }],
+  stock: [{ label: 'Material', keys: ['material', 'categoria', 'unidade'] }, { label: 'Projeto', keys: ['projeto'] }, { label: 'Saldo', keys: ['saldo_fisico', 'reservado', 'disponivel'] }, { label: 'Condição', keys: ['condicao'] }],
+  loans: [{ label: 'Equipamento', keys: ['equipamento', 'acao'] }, { label: 'Projeto', keys: ['projeto'] }, { label: 'Período', keys: ['retirada_prevista_brasilia', 'devolucao_prevista_brasilia'] }, { label: 'Estado', keys: ['estado'] }, { label: 'Quantidade', keys: ['quantidade'] }],
+};
+const VALUES: Record<string, Record<string, string>> = {
+  tipo: { participacao: 'Participação', tentativa: 'Tentativa', premiacao: 'Premiação', acesso: 'Acesso' },
+  modalidade: { physical: 'Presencial', dice: 'Dado', wheel: 'Roleta' },
+  categoria: { gift: 'Brinde', equipment: 'Equipamento', distribution: 'Distribuição', consumption: 'Consumo' },
+  condicao: { active: 'Ativo', maintenance: 'Em manutenção', inactive: 'Inativo' },
+  identificacao: { account: 'Conta', ticket: 'Ficha presencial' },
+  resultado: { brinde: 'Brinde', super: 'Prêmio especial', retry: 'Nova tentativa', miss: 'Não foi dessa vez', retry_exhausted: 'Tentativas esgotadas', pending: 'Aguardando resultado' },
+  estado: { ready: 'Pronta', done: 'Concluída', pending: 'Pendente', physical_pending: 'Aguardando atendimento', retry_ready: 'Nova tentativa liberada', reserved: 'Reservado', delivered: 'Entregue', cancelled: 'Cancelado', out: 'Retirado', returned: 'Devolvido' },
+};
+const FILE_SLUG: Record<string, string> = { participations: 'participacao', stock: 'materiais', loans: 'emprestimos' };
+const FONT_LIMIT = 2 * 1024 * 1024;
+/** Mensagens que podem ir à tela; qualquer outra falha vira um aviso genérico em português. */
+const KNOWN_LIMITS = /2\.000 linhas|muito extenso|páginas/;
+const NUMERIC = new Set(['quantidade', 'saldo_fisico', 'reservado', 'disponivel']);
+const MIME: Record<Format, string> = { csv: 'text/csv; charset=utf-8', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', pdf: 'application/pdf' };
+
+/** Origem de onde o servidor lê os próprios arquivos públicos (fonte e marcas do PDF). */
+function assetOrigin(request: Request): string | null {
+  // Em produção, só a origem configurada (BETTER_AUTH_URL). Fora dela, a bancada local sem essa variável usa
+  // a própria origem de loopback. Um cabeçalho Host forjado nunca escolhe para onde o servidor faz a busca.
+  const configured = portalOrigin();
+  if (configured) return configured;
+  const local = new URL(request.url), loopback = local.hostname === '127.0.0.1' || local.hostname === 'localhost';
+  return loopback && (typeof process === 'undefined' || process.env?.NODE_ENV !== 'production') ? local.origin : null;
+}
+const assetCache = new Map<string, Promise<Uint8Array>>();
+function publicAsset(origin: string, path: string, limit: number): Promise<Uint8Array> {
+  const key = origin + path, saved = assetCache.get(key);
+  if (saved) return saved;
+  const request = (async () => {
+    const response = await fetch(new URL(path, origin), { redirect: 'error', signal: AbortSignal.timeout(5000) });
+    if (!response.ok || Number(response.headers.get('Content-Length') || 0) > limit) throw new Error('asset_unavailable');
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (bytes.length > limit) throw new Error('asset_unavailable');
+    return bytes;
+  })().catch(error => { assetCache.delete(key); throw error; });
+  assetCache.set(key, request);
+  return request;
+}
+async function pdfAssets(request: Request): Promise<{ fontBytes: Uint8Array; brandBytes: { proex?: Uint8Array; ufg?: Uint8Array } }> {
+  const unavailable = new HttpError(503, 'Não foi possível preparar o PDF agora. Tente novamente ou baixe a planilha.', 'pdf_font_unavailable');
+  const origin = assetOrigin(request);
+  if (!origin) throw unavailable;
+  // As marcas PROEX e UFG são opcionais: sem elas o PDF sai igual, só sem o cabeçalho com logotipos.
+  const [fontBytes, proex, ufg] = await Promise.all([
+    publicAsset(origin, '/fonts/NotoSans-Regular.ttf', FONT_LIMIT).catch(() => { throw unavailable; }),
+    publicAsset(origin, '/brand/proex.png', 256 * 1024).catch(() => undefined),
+    publicAsset(origin, '/brand/ufg-white.png', 256 * 1024).catch(() => undefined),
+  ]);
+  return { fontBytes, brandBytes: { proex, ufg } };
+}
 
 export const dynamic = 'force-dynamic';
 
@@ -24,8 +92,8 @@ export async function GET(request: Request): Promise<Response> {
     if (!['participations', 'stock', 'loans'].includes(kind)) {
       throw new HttpError(400, 'Escolha uma exportação válida.', 'invalid_export');
     }
-    const format = url.searchParams.get('format') ?? 'csv';
-    if (format !== 'csv' && format !== 'xlsx') throw new HttpError(400, 'Escolha um formato de exportação válido.', 'invalid_export_format');
+    const format = (url.searchParams.get('format') ?? 'csv') as Format;
+    if (!FORMATS.includes(format)) throw new HttpError(400, 'Escolha um formato de exportação válido.', 'invalid_export_format');
     const projectId = url.searchParams.get('projectId');
     requireCapability(actor, 'reports.read', projectId === null ? undefined : projectId);
     const projects = projectId === null ? accessibleProjects(actor, 'reports.read') : [projectId];
@@ -77,13 +145,33 @@ export async function GET(request: Request): Promise<Response> {
         WHERE ${scope.sql} GROUP BY l.project_id,l.item_id,l.action_name,l.starts_at,l.ends_at,l.status
         ORDER BY l.starts_at,pr.name,i.name`, scope.params);
     }
-    const content = format === 'xlsx'
-      ? toXlsx('Registros', Object.keys(rows[0] ?? { sem_registros: null }).map(key => ({ key, label: key })), rows, (row, key) => row[key], [['Linhas', String(rows.length)]])
-      : csv(rows);
+    const keys = Object.keys(rows[0] ?? { sem_registros: null });
+    const value = (row: ExportRow, key: string) => row[key];
+    const info: [string, string][] = [['Linhas', String(rows.length)], ['Recorte', projectId ? 'Projeto escolhido' : 'Projetos autorizados para o seu perfil'], ['Gerado em', new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })]];
+    let content: string | Blob;
+    if (format === 'csv') content = csv(rows);
+    else if (format === 'xlsx') content = toXlsx('Registros', keys.map(key => ({ key, label: key })), rows, value, [['Linhas', String(rows.length)]]);
+    else {
+      const columns: ExportColumn[] = keys.map(key => ({ key, label: LABELS[key] ?? key, numeric: NUMERIC.has(key) }));
+      const readable = (row: ExportRow, key: string) => { const raw = row[key]; return typeof raw === 'string' && VALUES[key]?.[raw] ? VALUES[key][raw] : raw; };
+      const groups = PDF_GROUPS[kind];
+      const grouped = groups && groups.flatMap(group => group.keys).sort().join() === [...keys].sort().join();
+      try {
+        content = format === 'docx'
+          ? toDocx(TITLES[kind], columns, rows, readable, info)
+          : await (await import('@/components/portal/report-pdf')).toPdf(TITLES[kind], columns, rows, readable, info, { ...(await pdfAssets(request)), presentation: { layout: 'table', compactRows: true, recordsLabel: 'Registros', ...(grouped ? { columnGroups: groups } : {}) } });
+      } catch (cause) {
+        if (cause instanceof HttpError) throw cause;
+        const message = cause instanceof Error ? cause.message : '';
+        if (/2\.000 linhas/.test(message)) throw new HttpError(413, 'Este recorte tem mais de 2.000 linhas. Para documento ou PDF, escolha um projeto; o recorte completo sai na planilha (XLSX).', 'export_too_large');
+        if (KNOWN_LIMITS.test(message)) throw new HttpError(413, message, 'export_too_large');
+        throw new HttpError(500, 'Não foi possível preparar o arquivo. Baixe a planilha ou tente novamente.', 'export_failed');
+      }
+    }
     return new Response(content, {
       headers: {
-        'Content-Type': typeof content === 'string' ? 'text/csv; charset=utf-8' : content.type,
-        'Content-Disposition': `attachment; filename="proex-${kind}-${new Date().toISOString().slice(0, 10)}.${format}"`,
+        'Content-Type': MIME[format],
+        'Content-Disposition': `attachment; filename="proex-${FILE_SLUG[kind]}-${new Date().toISOString().slice(0, 10)}.${format}"`,
         'Cache-Control': 'private, no-store',
         'X-Content-Type-Options': 'nosniff',
       },

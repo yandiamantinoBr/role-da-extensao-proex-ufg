@@ -253,6 +253,13 @@
       "when": 1794223862202,
       "tag": "0035_prize_tiers_and_primary_photos",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "6",
+      "when": 1794232484433,
+      "tag": "0036_community",
+      "breakpoints": true
     }
   ]
 }

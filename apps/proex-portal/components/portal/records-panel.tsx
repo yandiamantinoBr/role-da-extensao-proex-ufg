@@ -381,7 +381,7 @@ export default function RecordsPanel({ projects: sourceProjects, items, loans, i
 
     <section className="p-card" aria-labelledby="records-list-title" aria-busy={loading}>
       <div className={styles.historyHead}><div><h3 id="records-list-title">Histórico</h3><p className="p-form-help" style={{ margin: 0 }}>{loading ? 'Consultando registros…' : `${shown.length} de ${records.length} registros carregados${filters.from || filters.to ? ' no período escolhido' : ''}`}</p></div>
-        <div className={styles.historyActions}><Link className="p-button p-button-subtle" href="/?module=reports" prefetch={false}><BarChart3 size={16} />Central de relatórios</Link><ExportFormats disabled={loading || !shown.length || !!readError} onExport={exportHistory}/></div></div>
+        <div className={styles.historyActions}><Link className="p-button p-button-subtle" href="/?module=reports" prefetch={false}><BarChart3 size={16} />Central de relatórios</Link><ExportFormats label="Baixar registros" disabled={loading || !shown.length || !!readError} onExport={exportHistory}/></div></div>
       <div className={styles.historyFilters}>
         <div className={styles.kindChips} role="group" aria-label="Filtrar por categoria">
           <button type="button" aria-pressed={!category} className={!category ? styles.chipActive : ''} disabled={existingPending} onClick={() => setCategory('')}>Todas <span>{records.length}</span></button>

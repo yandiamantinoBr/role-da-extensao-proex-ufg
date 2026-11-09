@@ -13,7 +13,7 @@ import { zipEntries } from './support/report-module.mjs';
 // at the transport boundary. These synthetic, in-memory fixtures never reach production.
 const temporary = mkdtempSync(join(tmpdir(), 'proex-portal-data-'));
 writeFileSync(join(temporary, 'package.json'), '{"type":"module"}');
-for (const name of ['access', 'database', 'errors', 'portal-data', 'users', 'mutations', 'organizations']) {
+for (const name of ['access', 'database', 'errors', 'portal-data', 'users', 'mutations', 'organizations', 'material-photos']) {
   const source = readFileSync(new URL(`../lib/${name}.ts`, import.meta.url), 'utf8');
   const output = ts.transpileModule(source, {
     compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
@@ -22,15 +22,19 @@ for (const name of ['access', 'database', 'errors', 'portal-data', 'users', 'mut
 }
 writeFileSync(join(temporary, 'native-auth.js'), 'export async function getChatGPTUser(){return globalThis.__proexReportTestUser ?? null;}');
 writeFileSync(join(temporary, 'session.js'), 'export async function getPortalUser(){return globalThis.__proexReportTestUser ?? null;}');
-writeFileSync(join(temporary, 'platform.js'), 'export function database(){return globalThis.__proexReportTestDatabase;} export function ownerEmail(){return undefined;}');
+writeFileSync(join(temporary, 'platform.js'), 'export function database(){return globalThis.__proexReportTestDatabase;} export function ownerEmail(){return undefined;} export function portalOrigin(){return globalThis.__proexReportTestOrigin;}');
 const routeSource = readFileSync(new URL('../app/api/export/route.ts', import.meta.url), 'utf8');
 const spreadsheetSource = readFileSync(new URL('../components/portal/report-export.ts', import.meta.url), 'utf8');
 const compilerOptions = { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 };
 writeFileSync(join(temporary, 'report-export.js'), ts.transpileModule(spreadsheetSource, { compilerOptions }).outputText);
 const routeOutput = ts.transpileModule(routeSource, {
   compilerOptions,
-}).outputText.replace('@/app/chatgpt-auth', './native-auth.js').replace(/@\/lib\/([A-Za-z-]+)/g, './$1.js').replace('@/components/portal/report-export', './report-export.js');
+}).outputText.replace('@/app/chatgpt-auth', './native-auth.js').replace(/@\/lib\/([A-Za-z-]+)/g, './$1.js').replace('@/components/portal/report-export', './report-export.js').replace('@/components/portal/report-pdf', './report-pdf.js');
 writeFileSync(join(temporary, 'export-route.js'), routeOutput);
+// O PDF do servidor usa o mesmo gerador do navegador; as bibliotecas resolvem a partir do projeto.
+writeFileSync(join(temporary, 'report-pdf.js'), ts.transpileModule(readFileSync(new URL('../components/portal/report-pdf.ts', import.meta.url), 'utf8'), { compilerOptions }).outputText
+  .replace(/from ['"]\.\/report-export['"]/g, "from './report-export.js'")
+  .replace(/import\(['"](pdf-lib|@pdf-lib\/fontkit)['"]\)/g, (_match, name) => `import(${JSON.stringify(import.meta.resolve(name))})`));
 after(() => {
   rmSync(temporary, { recursive: true, force: true });
   delete globalThis.__proexReportTestUser;
@@ -440,6 +444,98 @@ test('three exports share authorized columns and data in XLSX and legacy CSV', a
     if (kind === 'participations') for (const type of ['participacao', 'tentativa', 'premiacao', 'acesso', 'brinde', '2026-10-19']) assert.ok(xml.includes(type));
     if (kind === 'stock') assert.ok(xml.includes("'=Button A"));
   }
+});
+
+test('registros completos also download as server DOCX and PDF with the same authorized rows and readable labels', async t => {
+  const f = fixture(t);
+  f.participation('a', 'a', { results: ['retry', 'brinde'], prize: 'delivered' });
+  f.participation('a', 'c', { results: ['miss'] });
+  f.participation('a', 'd', { results: ['retry', 'retry_exhausted'] });
+  f.participation('b', 'b', { identity: 'account', modality: 'wheel', results: ['super'], prize: 'delivered' });
+  observeExport(f, f.member('viewer'));
+  const publicFile = path => readFileSync(new URL(`../public${path}`, import.meta.url));
+  const originalFetch = globalThis.fetch, fetched = [];
+  const serve = async url => { fetched.push(String(url)); return new Response(publicFile(new URL(String(url)).pathname), { status: 200 }); };
+  globalThis.fetch = serve;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  globalThis.__proexReportTestOrigin = 'https://portal.example.test';
+  t.after(() => { delete globalThis.__proexReportTestOrigin; });
+  const titles = { participations: 'Participação nas dinâmicas', stock: 'Materiais e movimentos', loans: 'Empréstimos' };
+  const { PDFDocument } = await import('pdf-lib');
+  for (const kind of ['participations', 'stock', 'loans']) {
+    const word = await GET(new Request(`https://portal.example.test/api/export?kind=${kind}&format=docx`));
+    assert.equal(word.status, 200);
+    assert.equal(word.headers.get('Cache-Control'), 'private, no-store');
+    assert.match(word.headers.get('Content-Type'), /wordprocessingml\.document$/);
+    assert.match(word.headers.get('Content-Disposition'), /\.docx"$/);
+    const entries = await zipEntries(await word.blob());
+    for (const part of ['[Content_Types].xml', '_rels/.rels', 'word/document.xml', 'word/styles.xml']) assert.ok(entries.has(part), part);
+    const documentXml = entries.get('word/document.xml');
+    assert.ok(documentXml.includes(titles[kind]));
+    assert.ok(!/PRIVATE|SECRET PROJECT B|SECRET ITEM B|@example\.test/.test(documentXml));
+    if (kind === 'participations') for (const label of ['Participação', 'Tentativa', 'Premiação', 'Presencial', 'Não foi dessa vez', 'Tentativas esgotadas']) assert.ok(documentXml.includes(label), label);
+    if (kind === 'participations') { assert.ok(documentXml.includes('Brinde')); assert.ok(!/>(miss|retry|retry_exhausted|pending|brinde|super|physical|ticket|account|done|ready|delivered)</.test(documentXml), 'nenhum código interno sai cru no documento'); }
+    if (kind === 'stock') assert.ok(documentXml.includes('Saldo físico') && documentXml.includes('Brinde'));
+    assert.match(word.headers.get('Content-Disposition'), { participations: /proex-participacao-/, stock: /proex-materiais-/, loans: /proex-emprestimos-/ }[kind]);
+    if (kind === 'loans') assert.ok(!/borrower|contato|note|observa/i.test(documentXml));
+    const pdf = await GET(new Request(`https://portal.example.test/api/export?kind=${kind}&format=pdf`));
+    assert.equal(pdf.status, 200, await pdf.clone().text());
+    assert.equal(pdf.headers.get('Content-Type'), 'application/pdf');
+    assert.match(pdf.headers.get('Content-Disposition'), /\.pdf"$/);
+    const bytes = Buffer.from(await pdf.arrayBuffer());
+    assert.equal(bytes.subarray(0, 5).toString('latin1'), '%PDF-');
+    assert.ok((await PDFDocument.load(bytes)).getPageCount() >= 1, 'o PDF abre e tem páginas');
+  }
+  const allowed = ['/fonts/NotoSans-Regular.ttf', '/brand/proex.png', '/brand/ufg-white.png'].map(path => 'https://portal.example.test' + path);
+  assert.ok(fetched.length > 0 && fetched.every(url => allowed.includes(url)), 'só a fonte e as marcas da origem configurada são buscadas');
+  assert.equal(fetched.filter(url => url.endsWith('.ttf')).length, 1, 'a fonte é buscada uma vez e reaproveitada');
+  // Com a origem configurada, um Host forjado não muda de onde a fonte é buscada.
+  globalThis.__proexReportTestOrigin = 'https://portal-oficial.example.test';
+  assert.equal((await GET(new Request('https://forjado.example.test/api/export?kind=stock&format=pdf'))).status, 200);
+  assert.ok(fetched.includes('https://portal-oficial.example.test/fonts/NotoSans-Regular.ttf'));
+  assert.ok(!fetched.some(url => url.includes('forjado')));
+  // Sem origem configurada, só a bancada local usa a própria origem; outro Host recebe aviso, sem busca.
+  delete globalThis.__proexReportTestOrigin;
+  const before = fetched.length, refused = await GET(new Request('https://forjado.example.test/api/export?kind=stock&format=pdf'));
+  assert.equal(refused.status, 503);
+  assert.match((await refused.json()).error, /Não foi possível preparar o PDF/);
+  assert.equal(fetched.length, before);
+  assert.equal((await GET(new Request('http://127.0.0.1:5173/api/export?kind=stock&format=pdf'))).status, 200);
+  assert.ok(fetched.includes('http://127.0.0.1:5173/fonts/NotoSans-Regular.ttf'));
+  // Falha inesperada da biblioteca não aparece crua: vira aviso em português.
+  globalThis.fetch = async () => new Response(new Uint8Array([1, 2, 3]), { status: 200 });
+  const broken = await GET(new Request('http://localhost:5199/api/export?kind=stock&format=pdf'));
+  assert.equal(broken.status, 500);
+  assert.equal((await broken.json()).error, 'Não foi possível preparar o arquivo. Baixe a planilha ou tente novamente.');
+  globalThis.fetch = serve;
+  // Outro projeto, formato inválido e falta de permissão continuam recusados nos formatos novos.
+  for (const format of ['docx', 'pdf']) assert.equal((await GET(new Request(`https://portal.example.test/api/export?kind=stock&format=${format}&projectId=project-b`))).status, 403);
+  assert.equal((await GET(new Request('https://portal.example.test/api/export?kind=stock&format=odt'))).status, 400);
+  observeExport(f, f.member('inventory'));
+  assert.equal((await GET(new Request('https://portal.example.test/api/export?kind=stock&format=docx'))).status, 403);
+});
+
+test('material list carries the primary photo only to people who can read the stock', async t => {
+  const f = fixture(t);
+  const photo = (item, project, id, at) => {
+    f.insert('records', { id: `record-${id}`, project_id: project, kind: 'material', title: 'Foto sintética', occurred_at: at, item_id: item, created_by: 'owner', created_at: at });
+    f.insert('record_attachments', { id, record_id: `record-${id}`, project_id: project, object_key: `synthetic/${id}`, name: `${id}.jpg`, mime: 'image/jpeg', size: 10, operation_key: `op-${id}`, created_by: 'owner', created_at: at });
+  };
+  photo('gift-a', 'project-a', 'photo-old', '2026-10-01T10:00:00.000Z');
+  photo('gift-a', 'project-a', 'photo-new', '2026-10-02T10:00:00.000Z');
+  photo('equipment-a', 'project-a', 'photo-equipment', '2026-10-02T10:00:00.000Z');
+  const inventory = await snapshot(f, 'inventory');
+  const byId = id => inventory.items.find(item => item.id === id);
+  assert.equal(byId('gift-a').primary_photo_id, 'photo-new', 'antes de escolher, vale a foto mais recente');
+  assert.equal(byId('equipment-a').primary_photo_id, 'photo-equipment');
+  assert.equal(inventory.items.find(item => item.id === 'gift-b'), undefined);
+  f.insert('item_primary_photos', { id: 'pin-1', item_id: 'gift-a', project_id: 'project-a', attachment_id: 'photo-old', previous_attachment_id: null, actor_id: 'owner', created_at: timestamp });
+  assert.equal((await snapshot(f, 'manager')).items.find(item => item.id === 'gift-a').primary_photo_id, 'photo-old', 'a escolha registrada vence a ordem da galeria');
+  const loans = await snapshot(f, 'loans');
+  const equipment = loans.items.find(item => item.id === 'equipment-a');
+  assert.ok(equipment, 'quem cuida de empréstimos vê o equipamento');
+  assert.equal(equipment.primary_photo_id ?? null, null, 'mas não recebe a foto, que exige leitura do estoque');
+  for (const item of (await snapshot(f, 'viewer')).items) assert.equal(item.primary_photo_id ?? null, null);
 });
 
 test('CSV rejects other projects, missing permission, revocation and anonymous requests without caching errors', async t => {

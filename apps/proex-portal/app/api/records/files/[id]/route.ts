@@ -12,7 +12,7 @@ function privateResponse(response: Response): Response {
   response.headers.set('Content-Security-Policy', "sandbox; default-src 'none'");
   return response;
 }
-export async function GET(_request: Request, context: { params: Promise<{ id: string }> }): Promise<Response> {
+export async function GET(request: Request, context: { params: Promise<{ id: string }> }): Promise<Response> {
   try {
     const db = database(), actor = await getActor(db, await getPortalUser()), { id } = await context.params;
     const attachment = await recordAttachment(db, actor, id), object = await bucket().get(attachment.object_key);
@@ -21,9 +21,15 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     await recordAttachment(db, await getActor(db, await getPortalUser()), id);
     const name = attachment.name.replace(/[\r\n\x00-\x1f\x7f"\\/]/g, '_').slice(0, 160) || 'anexo';
     const encoded = encodeURIComponent(name).replace(/['()*]/g, char => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
-    return privateResponse(new Response(object.body, { headers: {
+    const response = privateResponse(new Response(object.body, { headers: {
       'Content-Type': attachment.mime, 'Content-Length': String(object.size),
       'Content-Disposition': `${attachment.mime === 'application/pdf' ? 'attachment' : 'inline'}; filename="${name.replace(/[^\x20-\x7e]/g, '_')}"; filename*=UTF-8''${encoded}`,
     } }));
+    // Miniaturas da lista de materiais: o conteúdo de um anexo não muda, então o navegador da
+    // própria pessoa pode reaproveitar a imagem por 10 minutos (nunca em cache compartilhado nem
+    // entre sessões diferentes no mesmo navegador; o logout limpa o cache). Decisão aceita: quem perder o
+    // acesso sem sair da conta ainda pode ver essa miniatura, só nesse navegador, por até 10 minutos.
+    if (attachment.mime.startsWith('image/') && new URL(request.url).searchParams.get('v') === 'list') { response.headers.set('Cache-Control', 'private, max-age=600'); response.headers.set('Vary', 'Cookie'); }
+    return response;
   } catch (error) { return privateResponse(publicError(error)); }
 }

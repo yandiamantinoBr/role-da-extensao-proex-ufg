@@ -13,7 +13,8 @@ import styles from './role-assistant.module.css';
 
 type Project = { id: string; name: string; organization_id?: string };
 type Props = { projects: Project[]; defaultProjectId?: string; onApplied?: () => void | Promise<void>; onOpenSettings?: () => void };
-type Status = { available: boolean; reason: string | null; provider: 'deepseek' | 'groq'; model: string; visionAvailable: boolean; operationsAvailable: boolean; speech: { available: boolean; provider: 'groq' | 'deepgram' }; dailyLimitMicros: number; reservedTodayMicros: number };
+type Pricing = { model: string; label: string; inputMicrosPerToken: number; outputMicrosPerToken: number };
+type Status = { available: boolean; reason: string | null; provider: string; model: string; textPricing?: Pricing | null; visionPricing?: Pricing | null; visionAvailable: boolean; operationsAvailable: boolean; speech: { available: boolean; provider: 'groq' | 'deepgram' }; dailyLimitMicros: number; reservedTodayMicros: number };
 type Match = { projectId: string; projectName: string; itemName: string; score: number };
 type Operation = { request: string; stage: 'idle' | 'estimated' | 'preview' | 'done'; costMicros?: number; provider?: string; jev?: boolean; shareConsent?: boolean; stale?: boolean; projectId?: string; matches?: Match[]; ambiguous?: boolean; error?: string; preview?: { plan: Omit<AssistantPlan, 'actorId'>; planToken: string; undoReason: string }; confirmed?: boolean; receipt?: string; key: string };
 type Message = { id: string; role: 'user' | 'assistant'; content: string; image?: string; meta?: string; operation?: Operation };
@@ -117,9 +118,9 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
 
   const sanitized = useMemo(() => { if (!draft.trim()) return { text: '', problem: '' }; try { return { text: safeRequest(draft), problem: '' }; } catch (cause) { return { text: '', problem: cause instanceof Error ? cause.message : 'Revise a mensagem.' }; } }, [draft]);
   const history = useMemo(() => trimmedHistory(messages), [messages]);
-  const estimate = useMemo(() => status && sanitized.text ? roleEstimate({ textProvider: status.provider, textBytes: roleConversationBytes(history, sanitized.text, project?.name ?? ''), hasImage: !!picked }) : null, [status, sanitized.text, history, project?.name, picked]);
+  const estimate = useMemo(() => status && sanitized.text ? roleEstimate({ textProvider: status.provider === 'groq' ? 'groq' : 'deepseek', textBytes: roleConversationBytes(history, sanitized.text, project?.name ?? ''), hasImage: !!picked, text: status.textPricing, vision: status.visionPricing }) : null, [status, sanitized.text, history, project?.name, picked]);
   const tooLong = draft.length > ROLE_MAX_MESSAGE_CHARS;
-  const modelLabel = status ? (picked ? ROLE_MODELS.deepseek.label : ROLE_MODELS[status.provider].label) : '';
+  const modelLabel = status ? (picked ? status.visionPricing?.label ?? ROLE_MODELS.deepseek.label : status.textPricing?.label ?? status.model) : '';
   const canSend = !!status?.available && !!estimate && !busy && !tooLong && consent && (!picked || status.visionAvailable);
 
   // Só em memória: some ao recarregar ou trocar de conta.

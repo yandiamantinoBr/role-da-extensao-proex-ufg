@@ -31,6 +31,7 @@ Os scripts das sondas ficaram fora do repositório. Eles usam a senha pública d
 | A6 | Baixa | Segurança (camada extra) | A CSP de produção só tem `frame-ancestors`, sem `script-src`. O React já escapa os textos (o teste com `<img onerror>` foi tratado como texto) e os anexos saem com `sandbox`. | Recomendação: CSP com `script-src 'self'` e hash do script de tema, testada antes num deploy de prévia. |
 | A7 | Baixa | Desempenho | O pacote principal `portal-client` tem 1,4 MB, ou 305 KB com brotli. PDF e fontkit já carregam só quando são usados. | Recomendação: dividir os módulos pesados (Relatórios, Equipes) por rota. |
 | A8 | Baixa | Desempenho | `/api/material-attention` é chamado duas vezes ao abrir o Início. | Recomendação: deduplicar a busca. |
+| A9 | Média | Privacidade | Apontado pela sessão Comunidade (ouvidoria anônima, PR51). `auth_session` guardava IP e navegador de cada login. Quem administra hospedagem e banco poderia cruzar esses dados com o log da Vercel de um relato anônimo e estimar o autor. Nada no portal lia esses campos. | **Corrigido em PR própria.** Um gancho do Better Auth grava os dois campos vazios. O limitador continua usando o IP, em baldes próprios com hash e sem ligação com a conta. **Resta:** sessões abertas antes do deploy guardam os valores até expirar (no máximo 7 dias), e os logs da própria Vercel continuam existindo. |
 
 ## Segurança: o que foi testado (108/108 aprovadas)
 
