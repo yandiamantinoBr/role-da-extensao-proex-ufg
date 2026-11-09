@@ -189,3 +189,6 @@
 }
 .catalog small.destination { display: flex; align-items: center; gap: 4px; }
 .catalog small.destination svg { display: inline-block; flex-shrink: 0; }
+
+.kits li { font-size: 13px; }
+.kits li small { font-size: 12px; }

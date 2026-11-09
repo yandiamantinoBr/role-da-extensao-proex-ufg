@@ -133,3 +133,13 @@
 .rows li b{white-space:nowrap;text-align:right;font-variant-numeric:tabular-nums}
 .dialog{overflow:hidden}
 .body{overflow-x:hidden}
+
+/* Crítica visual 09/11: leitura, contraste e alvos de toque. */
+.meta{font-size:13px}
+.meta small,.rows li small,.steps small,.fileBody small,.deleted{font-size:12px;color:var(--text-secondary,var(--muted))}
+.chip{font-size:12px}
+.filters button{min-height:44px}
+.dialog :global(.p-text-link){min-height:44px;display:inline-flex;align-items:center;gap:6px}
+.form .actions{position:sticky;bottom:0;z-index:1;padding:12px 0 4px;margin-bottom:-4px;background:var(--surface,var(--paper));border-top:1px solid var(--line)}
+.fileActions a,.fileActions button,.confirm button{min-height:44px}
+.linkButton{min-height:32px;display:inline-flex;align-items:center;gap:4px}

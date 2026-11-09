@@ -314,7 +314,7 @@ test('soft-deleted record attachments cannot be listed, downloaded or restored b
  try{
   const manager=principal(db,'manager'),record=await createRecord(db,manager,input({})),payload=file(record.id);
   const uploaded=await uploadRecordAttachment(db,storage,manager,payload);
-  // 0037: hiding an attachment requires its deletion log (who, when, why) in the same batch.
+  // 0038: hiding an attachment requires its deletion log (who, when, why) in the same batch.
   db.native.prepare("INSERT INTO record_attachment_deletions(attachment_id,project_id,reason,actor_id,created_at) SELECT id,project_id,'Arquivo sintético enviado por engano','manager',? FROM record_attachments WHERE id=?").run(new Date().toISOString(),uploaded.attachment.id);
   db.native.prepare('UPDATE record_attachments SET deleted_at=? WHERE id=?').run(new Date().toISOString(),uploaded.attachment.id);
   assert.deepEqual((await listRecords(db,manager)).records[0].attachments,[]);

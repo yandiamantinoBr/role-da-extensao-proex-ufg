@@ -81,7 +81,7 @@ test('history and photos are kept: pointers cannot be edited or deleted; the cur
   assert.throws(()=>f.native.prepare('UPDATE record_attachments SET deleted_at=? WHERE id=?').run(f.now,id),/attachment_deletion_required|primary_photo_immutable/);
   assert.throws(()=>f.native.prepare('DELETE FROM record_attachments WHERE id=?').run(id),/primary_photo_immutable/);
  }
- // 0037: the current main photo stays protected even with a log; an earlier main photo may be hidden with one.
+ // 0038: the current main photo stays protected even with a log; an earlier main photo may be hidden with one.
  log(a);assert.throws(()=>f.native.prepare('UPDATE record_attachments SET deleted_at=? WHERE id=?').run(f.now,a),/primary_photo_immutable/);
  log(loose);f.native.prepare('UPDATE record_attachments SET deleted_at=? WHERE id=?').run(f.now,loose);
  assert.throws(()=>f.native.prepare('UPDATE record_attachments SET deleted_at=NULL WHERE id=?').run(loose),/attachment_deletion_required/);
