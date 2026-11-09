@@ -155,7 +155,7 @@ const withheld = () => new HttpError(502, 'A resposta do provedor não pôde ser
 async function boundedJson(response: Response): Promise<Record<string, unknown>> {
   if (!response.ok || !/^application\/json(?:\s*;|$)/i.test(response.headers.get('content-type') ?? '')) {
     await response.body?.cancel().catch(() => {});
-    throw new HttpError(503, response.status === 401 || response.status === 403 ? 'O provedor recusou a chave. Peça à administração para testar ou trocar a chave.' : response.status === 429 ? 'O provedor atingiu o limite de uso agora. Tente de novo em alguns minutos.' : 'O provedor não respondeu. A reserva preventiva continua contando no limite diário.', 'role_provider_unavailable');
+    throw new HttpError(503, response.status === 401 || response.status === 403 ? 'O Rolê está sem acesso ao serviço de IA agora. Avise a administração do portal para conferir a chave em Configurações → Chaves e modelos.' : response.status === 429 ? 'O provedor atingiu o limite de uso agora. Tente de novo em alguns minutos.' : 'O provedor não respondeu. A reserva preventiva continua contando no limite diário.', 'role_provider_unavailable');
   }
   const reader = response.body?.getReader();
   if (!reader) throw withheld();

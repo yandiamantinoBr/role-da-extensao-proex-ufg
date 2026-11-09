@@ -196,7 +196,7 @@ test('reflected keys, refused keys and the daily ceiling never reach the person 
     await assert.rejects(roleChat(f.db, f.actors.viewer, chatInput(f), secret, { keys, fetcher: echo.fetch }), error => { assert.equal(error.code, 'role_provider_schema'); assert.equal(String(error.message).includes(CANARY), false); return true; });
     assert.equal(f.native.prepare("SELECT status FROM ai_calls").get().status, 'failed');
     const refused = fakeProvider({ status: 401 });
-    await assert.rejects(roleChat(f.db, f.actors.viewer, chatInput(f), secret, { keys, fetcher: refused.fetch }), error => /recusou a chave/.test(error.message));
+    await assert.rejects(roleChat(f.db, f.actors.viewer, chatInput(f), secret, { keys, fetcher: refused.fetch }), error => /sem acesso ao serviço de IA/.test(error.message));
     const ok = fakeProvider();
     await assert.rejects(roleChat(f.db, f.actors.viewer, chatInput(f), secret, { keys, fetcher: ok.fetch }), error => error.code === 'assistant_quota');
     assert.equal(ok.calls.length, 0, 'third call refused before transport');

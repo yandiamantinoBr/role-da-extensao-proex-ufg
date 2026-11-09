@@ -29,10 +29,10 @@ const prices: Record<CredentialProvider, string> = {
   groq: 'Voz: US$ 0,04 por hora de áudio. Conversa: menos de 1 centavo por mensagem.',
   typesafe: 'Menos de 1 centavo por decisão. Ainda em fase de teste no provedor.',
   deepgram: 'US$ 0,0043 por minuto de áudio. Crédito inicial de US$ 200.',
-  openai: 'Alternativa paga, sem cota grátis. Use só se as outras falharem.',
+  openai: 'Reserva paga. Use só se as outras falharem.',
 };
 const outcomeLabels: Record<string, string> = { authenticated: 'chave aceita', rejected: 'chave recusada', rate_limited: 'limite do provedor', timeout: 'sem resposta a tempo', cancelled: 'cancelado', unavailable: 'provedor indisponível', invalid_response: 'resposta inesperada', pending: 'em andamento' };
-const historyLabels: Record<HistoryEntry['action'], string> = { save: 'Chave salva', disable: 'Chave desligada', enable: 'Chave religada', remove: 'Chave removida', recover: 'Cofre recriado', reencrypted: 'Chaves cifradas de novo', test: 'Teste' };
+const historyLabels: Record<HistoryEntry['action'], string> = { save: 'Chave salva', disable: 'Chave desligada', enable: 'Chave religada', remove: 'Chave removida', recover: 'Proteção das chaves refeita', reencrypted: 'Proteção das chaves refeita', test: 'Teste' };
 const currency = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'USD', maximumFractionDigits: 6 });
 const date = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Sao_Paulo' });
 const url = '/api/assistant/credentials';
@@ -124,7 +124,7 @@ function CredentialVaultPanel({organizationId,onChanged}: {organizationId?:strin
       if (result.organizationId !== vault.organizationId) throw new Error('A organização mudou. Atualize a consulta.');
       setData({ scope: selection, vault: result });
       setDecision(null);
-      setReceipt(action === 'save' ? 'Credencial salva.' : action === 'remove' ? 'Credencial removida.' : action === 'enable' ? 'Chave religada. Ligue as funções em “Funções e acesso”.' : 'Credencial desligada.');
+      setReceipt(action === 'save' ? 'Chave salva.' : action === 'remove' ? 'Chave removida.' : action === 'enable' ? 'Chave religada. Ligue as funções em “Funções e acesso”.' : 'Chave desligada.');
       onChanged?.();
     } catch (error) {
       if(!active.current||mutation.current?.signal.aborted)return;
@@ -204,7 +204,7 @@ function CredentialVaultPanel({organizationId,onChanged}: {organizationId?:strin
           </> : decision.action === 'test' ? <>
             <p><strong>Custo previsto: US$ 0,00.</strong> O portal pede ao provedor apenas a lista de modelos, para saber se a chave é aceita. Nenhum texto é gerado.</p>
             <p className="p-form-help">Há um limite de testes por hora para proteger a conta. O resultado entra no histórico abaixo.</p>
-          </> : <p>{decision.action === 'remove' ? 'O valor cifrado desta credencial será retirado do cofre e as funções que a usam serão desligadas.' : decision.action === 'disable' ? 'As funções que usam esta chave serão desligadas. A credencial cifrada fica guardada para uso posterior.' : 'A credencial volta a ficar disponível. As funções permanecem conforme os ajustes da organização.'}</p>}
+          </> : <p>{decision.action === 'remove' ? 'A chave será apagada do portal e as funções que a usam serão desligadas.' : decision.action === 'disable' ? 'As funções que usam esta chave serão desligadas. A credencial cifrada fica guardada para uso posterior.' : 'A credencial volta a ficar disponível. As funções permanecem conforme os ajustes da organização.'}</p>}
           {failure && <p role="alert" className="p-inline-error">{failure}</p>}
           <div className={styles.actions}><button className={`p-button ${decision.action === 'remove' ? 'p-button-danger' : 'p-button-primary'}`} type="submit" disabled={busy}>{busy ? 'Salvando…' : submitLabels[decision.action]}</button><button className="p-button p-button-subtle" type="button" disabled={busy} onClick={cancelDecision}>Cancelar</button>{failure && <button type="button" className="p-button p-button-subtle" disabled={busy} onClick={reload}>Atualizar consulta</button>}</div>
         </form>}

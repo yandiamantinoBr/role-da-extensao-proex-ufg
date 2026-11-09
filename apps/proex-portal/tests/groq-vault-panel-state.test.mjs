@@ -24,7 +24,7 @@ test('Groq vault card has its reviewed model and scoped form; saving only calls 
   const form=h.find('form',node=>node.props['aria-label']==='Salvar chave Groq'),input=new h.FakeInput();
   form.props.onSubmit({preventDefault(){},currentTarget:{fields:{label:'Voz institucional',credentialValue:input.value},elements:{namedItem:()=>input}}});await tick();h.render();
   assert.equal(input.value,'');assert.equal(h.requests.length,2);assert.equal(h.requests[1].url,'/api/assistant/credentials');const body=JSON.parse(h.requests[1].init.body);assert.equal(body.provider,'groq');assert.equal(body.organizationId,'org-a');assert.equal(body.action,'save');assert.equal(Object.hasOwn(body,'sttEnabled'),false);
-  h.requests[1].resolve({ok:true,json:async()=>({...vault('org-a','active'),revision:2})});await tick();h.render();h.find('p',node=>text(node)==='Credencial salva.');assert.equal(h.nodes().some(node=>node.type==='input'&&node.props.type==='password'),false);
+  h.requests[1].resolve({ok:true,json:async()=>({...vault('org-a','active'),revision:2})});await tick();h.render();h.find('p',node=>text(node)==='Chave salva.');assert.equal(h.nodes().some(node=>node.type==='input'&&node.props.type==='password'),false);
  }finally{h.dispose();}
 });
 test('revoked vault access clears Groq masks/forms and late previous-organization responses cannot overwrite the selected organization',async()=>{

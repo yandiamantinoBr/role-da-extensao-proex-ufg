@@ -6,7 +6,7 @@ import { credentialKeyId, decryptProviderCredentials, encryptProviderCredentials
 import { speechProviderForOrganization, validProviderKey, type SpeechEnvironment } from './settings';
 
 const providers = { deepseek: 'DeepSeek', typesafe: 'TypeSafe JEV', deepgram: 'Deepgram', groq: 'Groq',openai:'OpenAI' } as const;
-const purposes = { deepseek: 'Conversa e imagens do Rolê, operações e documentos', typesafe: 'Decisão e triagem de demandas (JEV)', deepgram: 'Voz para texto (alternativa)', groq: 'Voz para texto (Whisper) e conversa econômica do Rolê', openai: 'Alternativa paga para operações e documentos' } as const;
+const purposes = { deepseek: 'Conversa e imagens do Rolê, operações e documentos', typesafe: 'Ajuda a separar e priorizar demandas', deepgram: 'Voz para texto (alternativa)', groq: 'Transforma áudio em texto e faz a conversa econômica do Rolê', openai: 'Alternativa paga para operações e documentos' } as const;
 const dayInBrazil = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' });
 const conflict = () => new HttpError(409, 'As credenciais mudaram. Atualize a lista antes de salvar.', 'assistant_configuration_changed');
 const forbidden = () => new HttpError(403, 'Somente a administração geral pode gerenciar credenciais.', 'assistant_key_admin');

@@ -48,7 +48,7 @@ test('owner areas shorten the flow without fetching diagnostics or exposing cred
 test('explicit OpenAI selection clears both text functions without starting inference or altering speech and usage choices',async()=>{
  const h=harness();try{
   await ready(h,{config:{...defaults,enabled:true,documentEnabled:true,sttProvider:'groq',sttEnabled:true,usageScope:'private',usageUserId:'member-a'}});
-  h.select('Provedor de texto e documentos').props.onChange({target:{value:'openai'}});h.render();
+  h.select('Serviço de IA para operações e documentos').props.onChange({target:{value:'openai'}});h.render();
   assert.match(h.text(),/Pedidos de operações · OpenAI/);
   const functions=h.nodes().filter(node=>node.type==='label'&&['Pedidos de operações','Interpretação de documentos'].some(label=>text(node).startsWith(label)));
   assert.equal(functions.length,2);for(const node of functions)assert.equal(node.props.children.find(child=>child?.type==='input').props.checked,false);

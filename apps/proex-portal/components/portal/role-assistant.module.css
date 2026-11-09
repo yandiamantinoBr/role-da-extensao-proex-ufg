@@ -66,7 +66,7 @@
 .cost strong{color:var(--text-strong)}
 .send{display:inline-flex;align-items:center;gap:.45rem;min-height:44px;padding:0 1rem;border:0;border-radius:12px;background:var(--purple);color:#fff;font:inherit;font-weight:700;cursor:pointer}
 .send:disabled{opacity:.45;cursor:not-allowed}
-.error{margin:0;color:var(--danger);font-size:max(13px,.85rem)}
+.error{margin:0;padding:.6rem .75rem;border-radius:10px;border:1px solid color-mix(in srgb,var(--danger) 35%,transparent);background:color-mix(in srgb,var(--danger) 8%,transparent);color:var(--danger);font-size:max(13px,.85rem)}
 .notice{margin:0;color:var(--success-ink);font-size:max(13px,.85rem)}
 @container (max-width:360px){.send span{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}.send{padding:0 .8rem}}
 :global(html[data-theme=dark]) .mine .bubble{background:#6b3a8a;border-color:#6b3a8a}
@@ -76,7 +76,6 @@
 .editable textarea{width:100%;min-height:56px;padding:.5rem .65rem;border:1px solid var(--control-border);border-radius:10px;background:var(--surface);color:var(--text-strong);font:inherit;font-size:16px}
 .proposalBody{padding:.5rem .6rem;border-radius:10px;background:var(--surface-soft)}
 .proposalBody span{font-weight:700}
-.cost strong{white-space:nowrap}
 .textButton{display:inline-flex;align-items:center;gap:.35rem;min-height:44px;padding:0 .7rem;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--brand-ink);font:inherit;font-size:.82rem;font-weight:700;cursor:pointer;flex-shrink:0}
 .textButton:focus-visible{outline:3px solid var(--focus);outline-offset:3px}
 .textButton:disabled{opacity:.45}
@@ -85,5 +84,8 @@
 /* Folga para o botão flutuante não cobrir o fim da página. */
 :global(.p-main):has(.launcher){padding-bottom:96px}
 @media (max-width:720px){:global(.pn-shell .p-main):has(.launcher){padding-bottom:calc(176px + env(safe-area-inset-bottom,0px))}}
-@container (max-width:430px){.textButton{min-width:44px;justify-content:center;padding:0}.textButton span{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}}
+@container (max-width:430px){.textButton{padding:0 .6rem}.textButton span{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}}
 :global(html[data-theme=dark]) .operation{border-left-color:#b48ad6}
+.composer{grid-template-columns:minmax(0,1fr)}
+.nowrap{white-space:nowrap}
+.operation textarea{resize:none}

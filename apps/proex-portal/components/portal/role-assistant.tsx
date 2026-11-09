@@ -2,7 +2,7 @@
 /* eslint-disable @next/next/no-img-element -- mascote em SVG estático e imagens locais em data URL */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react';
-import { ImagePlus, LoaderCircle, Mic, RotateCcw, Send, Square, Trash2, X } from 'lucide-react';
+import { ImagePlus, LoaderCircle, MessageSquarePlus, Mic, Send, Square, Trash2, X } from 'lucide-react';
 import { safeRequest, type AssistantPlan } from '@/lib/assistant/contracts';
 import {
   ROLE_MAX_HISTORY, ROLE_MAX_HISTORY_CHARS, ROLE_MAX_IMAGE_BYTES, ROLE_MAX_IMAGE_SIDE, ROLE_MAX_MESSAGE_CHARS, ROLE_MODELS,
@@ -21,6 +21,12 @@ type Recorded = { file: File; seconds: number; url: string };
 
 const intentLabels: Record<string, string> = { 'stock.query': 'Consultar estoque', 'stock.receive': 'Registrar entrada', 'stock.distribute': 'Registrar distribuição', 'stock.consume': 'Registrar consumo', 'record.create': 'Criar registro' };
 const suggestions = ['Como registro a entrega de brindes no CONPEEX?', 'Escreva um aviso curto para a equipe sobre o plantão de amanhã.', 'Quais materiais devo conferir antes de uma dinâmica?'];
+
+/** "320 unidades": plural simples para as unidades mais comuns. */
+function quantity(value: number, unit: string): string {
+  const plural: Record<string, string> = { unidade: 'unidades', caixa: 'caixas', pacote: 'pacotes', kit: 'kits', folha: 'folhas', par: 'pares' };
+  return `${value} ${value === 1 ? unit : plural[unit] ?? unit}`;
+}
 
 class RequestError extends Error { constructor(readonly status: number, message: string, readonly code?: string) { super(message); } }
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
@@ -121,7 +127,7 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
         action: 'chat', projectId, operationKey: crypto.randomUUID(), consent: true, history, message: text, ...(image ? { image } : {}), acceptedCostMicros: estimate.costMicros,
       });
       if (!mounted.current) return;
-      const reply: Message = { id: crypto.randomUUID(), role: 'assistant', content: result.reply, meta: `Custou ${formatMicros(result.costMicros)} (máximo previsto: ${formatMicros(result.reservedMicros)})`,
+      const reply: Message = { id: crypto.randomUUID(), role: 'assistant', content: result.reply, meta: `Custou ${friendlyMicros(result.costMicros)}`,
         operation: result.operation ? { request: result.operation, stage: 'idle', key: crypto.randomUUID() } : undefined };
       setMessages(current => [...current, reply]);
       if (reply.operation && status.operationsAvailable) void estimateOperation(reply);
@@ -230,7 +236,7 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
         <header className={styles.header}>
           <img className={styles.avatar} src="/brand/role-mascote/role-rosto.svg" alt="" width={48} height={48}/>
           <div className={styles.headerText}><h2 id="role-title">Rolê</h2><p id="role-subtitle">Assistente da PROEX</p></div>
-          {messages.length > 0 && <button type="button" className={styles.textButton} onClick={newConversation} disabled={busy} aria-label="Nova conversa"><RotateCcw size={16} aria-hidden="true"/><span>Nova conversa</span></button>}
+          {messages.length > 0 && <button type="button" className={styles.textButton} onClick={newConversation} disabled={busy} aria-label="Nova conversa"><MessageSquarePlus size={16} aria-hidden="true"/>Nova<span> conversa</span></button>}
           <button type="button" className={styles.iconButton} onClick={close} aria-label="Fechar o Rolê"><X size={20} aria-hidden="true"/></button>
         </header>
         {projects.length > 1 && <label className={styles.project}><span>Projeto</span><select value={projectId} disabled={busy} onChange={event => { setProjectId(event.target.value); setMessages([]); void loadStatus(event.target.value); }}>{projects.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}
@@ -274,11 +280,11 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
                     {message.operation.stage === 'preview' && message.operation.preview && <div className={styles.preview}>
                       <p><strong>Confira: {intentLabels[message.operation.preview.plan.proposal.intent] ?? 'Operação'}</strong></p>
                       <p>{message.operation.preview.plan.before?.name ?? message.operation.preview.plan.proposal.title}</p>
-                      {message.operation.preview.plan.before && message.operation.preview.plan.after && <dl className={styles.beforeAfter}><div><dt>Antes</dt><dd>{message.operation.preview.plan.before.stock} {message.operation.preview.plan.before.unit}</dd></div><div><dt>Depois</dt><dd>{message.operation.preview.plan.after.stock} {message.operation.preview.plan.before.unit}</dd></div></dl>}
+                      {message.operation.preview.plan.before && message.operation.preview.plan.after && <dl className={styles.beforeAfter}><div><dt>Antes</dt><dd>{quantity(message.operation.preview.plan.before.stock, message.operation.preview.plan.before.unit)}</dd></div><div><dt>Depois</dt><dd>{quantity(message.operation.preview.plan.after.stock, message.operation.preview.plan.before.unit)}</dd></div></dl>}
                       <p>Quantidade: {message.operation.preview.plan.proposal.quantity || 'sem movimentação'} · Projeto: {projects.find(item => item.id === message.operation?.preview?.plan.projectId)?.name ?? project?.name ?? 'projeto atual'}</p>
                       {message.operation.preview.plan.proposal.body && <p className={styles.proposalBody}><span>Texto que será gravado:</span> {message.operation.preview.plan.proposal.body}</p>}
-                      <label className={styles.check}><input type="checkbox" checked={!!message.operation.confirmed} disabled={busy} onChange={event => updateOperation(message.id, { confirmed: event.target.checked })}/>Conferi projeto, material, quantidade e efeito. Autorizo.</label>
-                      <button type="button" className="p-button p-button-primary" disabled={busy || !message.operation.confirmed} onClick={() => void applyOperation(message)}>{message.operation.preview.plan.proposal.intent === 'stock.query' ? 'Conferir saldo atual' : 'Confirmar operação'}</button>
+                      <label className={styles.check}><input type="checkbox" checked={!!message.operation.confirmed} disabled={busy} onChange={event => updateOperation(message.id, { confirmed: event.target.checked })}/>Conferi os dados acima e autorizo gravar no estoque.</label>
+                      <button type="button" className="p-button p-button-primary" disabled={busy || !message.operation.confirmed} onClick={() => void applyOperation(message)}>{message.operation.preview.plan.proposal.intent === 'stock.query' ? 'Conferir saldo atual' : message.operation.preview.plan.proposal.intent === 'record.create' ? 'Gravar o registro' : 'Gravar no estoque'}</button>
                     </div>}
                     {message.operation.stage === 'done' && <p role="status" className={styles.done}>{message.operation.receipt}</p>}
                   </div>}
@@ -308,7 +314,7 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
             <button type="button" className={`${styles.iconButton} ${recording ? styles.recording : ''}`} disabled={!status.speech.available || !consent || busy || transcribing} onClick={() => recording ? recorder.current?.stop() : void startRecording()} aria-label={recording ? 'Parar gravação' : 'Gravar áudio'} title={status.speech.available ? (recording ? 'Parar gravação' : 'Gravar áudio (até 60 s)') : 'Transcrição desligada'}>
               {recording ? <Square size={18} aria-hidden="true"/> : <Mic size={20} aria-hidden="true"/>}
             </button>
-            <p className={styles.cost} aria-live="polite">{!consent ? 'Marque o aviso acima para conversar.' : estimate ? <>Custo máximo: <strong>{friendlyMicros(estimate.costMicros)}</strong></> : 'O custo aparece aqui antes de enviar.'}</p>
+            <p className={styles.cost} aria-live="polite">{!consent ? 'Marque o aviso acima para conversar.' : estimate ? <>Custo máximo: <strong>{(() => { const [words, exact] = friendlyMicros(estimate.costMicros).split(' ('); return exact ? <><span className={styles.nowrap}>{words}</span> <span className={styles.nowrap}>({exact}</span></> : <span className={styles.nowrap}>{words}</span>; })()}</strong></> : 'O custo aparece aqui antes de enviar.'}</p>
             <button type="submit" className={styles.send} disabled={!canSend} aria-label={estimate ? `Enviar, custo máximo ${formatMicros(estimate.costMicros)}` : 'Enviar'}><Send size={18} aria-hidden="true"/><span>Enviar</span></button>
           </div>
           <p className={styles.disclaimer}>O Rolê pode errar. Confira antes de usar. Modelo: {modelLabel}.</p>
