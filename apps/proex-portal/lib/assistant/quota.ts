@@ -14,7 +14,7 @@ const usd = formatUsd, thousand = formatThousands, seconds = formatDuration;
 export async function quotaRefusal(db: D1Database, actor: PortalActor, organizationId: string, day: string, config: AssistantConfig, need: QuotaNeed, personalCap?: { used: number; max: number }) {
   if (personalCap && personalCap.used >= personalCap.max) {
     const who = await responsibleName(db, actor, organizationId);
-    return new HttpError(429, `Você já usou sua parte das chamadas de IA de hoje (${personalCap.used} de ${personalCap.max}); cada pessoa usa no máximo metade das chamadas do dia. O limite volta à meia-noite. ${who.canConfigure ? 'Você pode aumentar as chamadas por dia em Configurações → Chaves e modelos → Funções e acesso.' : `Peça a ${who.name} para aumentar o limite.`}`, 'role_user_quota');
+    return new HttpError(429, `Você já usou sua parte das chamadas de IA de hoje (${personalCap.used} de ${personalCap.max}); cada pessoa usa no máximo metade das chamadas do dia. O limite volta à meia-noite. ${who.canConfigure ? 'Você pode aumentar as chamadas por dia em Configurações → Chaves e modelos → Funções e acesso → Limites e cotas.' : `Peça a ${who.name} para aumentar o limite.`}`, 'role_user_quota');
   }
   const usage = await one(db, 'SELECT reserved_usd_micros,reserved_tokens,reserved_ms,calls FROM ai_organization_usage WHERE organization_id=? AND day=?', [organizationId, day]);
   const used = { cost: Number(usage?.reserved_usd_micros ?? 0), tokens: Number(usage?.reserved_tokens ?? 0), ms: Number(usage?.reserved_ms ?? 0), calls: Number(usage?.calls ?? 0) };
@@ -31,7 +31,7 @@ export async function quotaRefusal(db: D1Database, actor: PortalActor, organizat
   const situation = hit.need > hit.max
     ? `Este pedido é maior que o limite de ${hit.label} do dia (precisa de até ${hit.fmt(hit.need)}${hit.unit(hit.need)}; o limite é ${hit.fmt(hit.max)}${hit.unit(hit.max)}).`
     : `Acabou o limite de ${hit.label} de hoje (uso: ${hit.fmt(hit.used)} de ${hit.fmt(hit.max)}${hit.unit(hit.max)}; este pedido precisa de até ${hit.fmt(hit.need)}${hit.unit(hit.need)}). O limite volta à meia-noite.`;
-  const message = `${situation} ${who.canConfigure ? 'Você pode aumentar o limite em Configurações → Chaves e modelos → Funções e acesso.' : `Peça a ${who.name} para aumentar o limite.`}`;
+  const message = `${situation} ${who.canConfigure ? 'Você pode aumentar o limite em Configurações → Chaves e modelos → Funções e acesso → Limites e cotas.' : `Peça a ${who.name} para aumentar o limite.`}`;
   return new HttpError(429, message, 'assistant_quota');
 }
 

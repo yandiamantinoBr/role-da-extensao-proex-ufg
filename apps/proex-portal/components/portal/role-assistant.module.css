@@ -91,4 +91,4 @@
 .operation textarea{resize:none}
 .editable select{width:100%;min-height:44px;padding:0 .6rem;border:1px solid var(--control-border);border-radius:10px;background:var(--surface);color:var(--text-strong);font:inherit;font-size:16px}
 .warn{color:var(--warning-ink);font-weight:650}
-.limitsButton{justify-self:start;align-self:flex-start;min-height:44px;margin-top:.25rem;font-size:max(14px,.9rem)}
+.limitsButton{justify-self:start;align-self:flex-start;min-height:44px;margin-top:.25rem;font-size:max(14px,.9rem);box-shadow:none}

@@ -147,7 +147,7 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
     } catch (cause) {
       if (!mounted.current) return;
       setMessages(current => current.filter(message => message.id !== user.id)); setDraft(text); if (image && picked) setPicked(picked);
-      setError(cause instanceof Error ? cause.message : 'O Rolê não conseguiu responder.'); setLimitHit(isLimit(cause));
+      setError(cause instanceof Error ? limitText(cause) : 'O Rolê não conseguiu responder.'); setLimitHit(isLimit(cause));
       if (cause instanceof RequestError && (cause.status === 401 || cause.status === 403)) void loadStatus(projectId);
     } finally { if (mounted.current) setBusy(false); }
   }
@@ -185,7 +185,7 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
       // O servidor respondeu: a próxima tentativa é outra chamada paga, com chave nova e custo mostrado de novo.
       // Tempo esgotado mantém a chave para recuperar o resultado sem pagar duas vezes.
       const answered = cause instanceof RequestError && cause.code !== 'assistant_call_replay';
-      updateOperation(message.id, { error: cause instanceof Error ? cause.message : 'Não foi possível preparar a operação.', limit: isLimit(cause), ...(answered ? { key: crypto.randomUUID() } : {}) });
+      updateOperation(message.id, { error: cause instanceof Error ? limitText(cause) : 'Não foi possível preparar a operação.', limit: isLimit(cause), ...(answered ? { key: crypto.randomUUID() } : {}) });
     }
     finally { setBusy(false); }
   }
@@ -242,7 +242,7 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
       setDraft(current => (current ? current + ' ' : '') + result.transcript); discardRecording();
       setNotice('Áudio transcrito. Revise o texto antes de enviar.');
       window.requestAnimationFrame(() => input.current?.focus());
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Não foi possível transcrever.'); setLimitHit(isLimit(cause)); }
+    } catch (cause) { setError(cause instanceof Error ? limitText(cause) : 'Não foi possível transcrever.'); setLimitHit(isLimit(cause)); }
     finally { setTranscribing(false); }
   }
 
@@ -258,6 +258,8 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
 
   if (!projects.length) return null;
   const speechCost = recorded && status ? formatMicros(roleSpeechCeilingMicros(status.speech.provider, recorded.seconds)) : '';
+  // Com o botão na tela, a mensagem aponta para ele em vez de repetir o caminho do menu.
+  const limitText = (cause: Error) => isLimit(cause) && status?.canConfigure && onOpenLimits ? cause.message.replace(/Você pode aumentar [^.]*\.$/, 'Use o botão Ajustar limites abaixo.') : cause.message;
   // Quem pode configurar vai direto a Limites e cotas; os outros já recebem na mensagem o nome de quem ajusta.
   const limitsButton = status?.canConfigure && onOpenLimits ? <button type="button" className={`p-button p-button-primary ${styles.limitsButton}`} onClick={() => { close(); onOpenLimits(); }}>Ajustar limites</button> : null;
 
