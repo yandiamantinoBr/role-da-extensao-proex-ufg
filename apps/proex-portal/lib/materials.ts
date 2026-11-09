@@ -3,6 +3,7 @@ import { HttpError } from './errors';
 import { prepareMutation } from './mutations';
 import { assetMetadata, assetMetadataValues, ASSET_METADATA_COLUMNS, ASSET_METADATA_KEYS } from './asset-metadata';
 import { stockContextInput, prepareStockContext, matchingStockContext, fencedMovementContexts } from './stock-context';
+import { setPrimaryPhoto, currentPrimaryPhoto, primaryPhotoHistory } from './material-photos';
 
 type Item = { id: string; project_id: string; name: string; category: string; unit: string; stock: number; reserved: number; condition: string; description: string; low_stock: number; asset_code: string; version: number; updated_at: string; category_id: string | null };
 type Loan = { id: string; project_id: string; item_id: string; status: string; note: string; starts_at: number; ends_at: number; condition_out: string; condition_in: string; checked_out_at: string | null; returned_at: string | null; updated_at: string };
@@ -141,8 +142,9 @@ async function assignedGroup(db: D1Database, groupId: unknown, projectId: string
 
 /** Scoped inventory and equipment mutations. Stock and reservations are maintained by database triggers. */
 export async function materialsAction(db: D1Database, actor: PortalActor, action: string, input: Record<string, unknown>): Promise<Record<string, unknown> | null> {
-  if (!['item.create', 'item.update', 'stock.move', 'offer.create', 'loan.create', 'loan.status', 'material.category.create', 'material.category.update', 'material.category.restore', 'item.restore', 'activity.group.create'].includes(action)) return null;
+  if (!['item.create', 'item.update', 'stock.move', 'offer.create', 'loan.create', 'loan.status', 'material.category.create', 'material.category.update', 'material.category.restore', 'item.restore', 'activity.group.create', 'item.photo.primary'].includes(action)) return null;
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new HttpError(400, 'Envie os dados da operação.', 'invalid_input');
+  if (action === 'item.photo.primary') return setPrimaryPhoto(db, actor, input);
   const now = new Date().toISOString();
   try {
     if (action === 'material.category.create' || action === 'material.category.update' || action === 'material.category.restore') {
@@ -445,10 +447,15 @@ export async function materialDetail(db: D1Database, actor: PortalActor | null, 
   try{contexts=await fencedMovementContexts(db,actor,item.project_id,movementRows.slice(0,limit).map(row=>String(row.id)));}
   catch(error){if(String(error).includes('stock_context_access_changed'))throw new HttpError(403,'Seu acesso mudou. Atualize a página.','access_changed');throw error;}
   const files = attachments.slice(0, 100).map<Record<string, unknown>>(attachment => ({ ...attachment, url: `/api/records/files/${attachment.id}` }));
+  // The chosen primary photo leads the gallery; older photos stay listed and in its history.
+  const primary = await currentPrimaryPhoto(db, item), photoHistory = await primaryPhotoHistory(db, item);
+  const images = files.filter(file => String(file.mime).startsWith('image/'));
+  const primaryIndex = primary.attachmentId ? images.findIndex(file => file.id === primary.attachmentId) : -1;
+  if (primaryIndex > 0) images.unshift(...images.splice(primaryIndex, 1));
   return {
     item, category,
     categories, movements: movementRows.slice(0, limit).map(row=>({...row,context:contexts.get(String(row.id))??null})),
-    photos: files.filter(file => String(file.mime).startsWith('image/')),
+    photos: images, primaryPhotoId: primaryIndex >= 0 ? primary.attachmentId : null, primaryPhotoPinned: primary.fromPointer, photoHistory,
     attachments: files, attachmentsTruncated: attachments.length > 100,
     loanHistory: loanHistory.slice(0, 100), loanHistoryTruncated: loanHistory.length > 100,
     records: records.slice(0, 100), recordsTruncated: records.length > 100,
