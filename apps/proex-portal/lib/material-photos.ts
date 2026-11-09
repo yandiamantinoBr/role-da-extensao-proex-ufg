@@ -9,8 +9,9 @@ import {prepareMutation} from './mutations';
  * Write: inventory.manage on the material's project (live SQL in the same batch).
  * Read: whoever can read the material (materialDetail already fences inventory.read).
  */
-export type PrimaryPhotoChange={id:string;attachmentId:string;previousAttachmentId:string|null;url:string;previousUrl:string|null;actorName:string;createdAt:string};
-const PHOTO_RECORD=`r.item_id=? AND r.project_id=? AND r.loan_id IS NULL AND r.kind IN ('material','maintenance','distribution','consumption')`;
+export type PrimaryPhotoChange={id:string;attachmentId:string;previousAttachmentId:string|null;url:string|null;previousUrl:string|null;deleted:boolean;previousDeleted:boolean;actorName:string;createdAt:string};
+// Evidence of a stock movement (stock_movement_records) is not a photo of the material.
+const PHOTO_RECORD=`r.item_id=? AND r.project_id=? AND r.loan_id IS NULL AND r.kind IN ('material','maintenance','distribution','consumption') AND NOT EXISTS(SELECT 1 FROM stock_movement_records evidence WHERE evidence.record_id=r.id)`;
 const fileUrl=(attachmentId:string)=>`/api/records/files/${attachmentId}`;
 function identifier(value:unknown,label:string,optional=false):string|null{
  if(optional&&(value===null||value===undefined||value===''))return null;
@@ -25,7 +26,7 @@ export const LIST_PRIMARY_PHOTO_SQL=`COALESCE(
  (SELECT pp.attachment_id FROM item_primary_photos pp WHERE pp.item_id=items.id AND pp.project_id=items.project_id ORDER BY pp.sequence DESC LIMIT 1),
  (SELECT a.id FROM record_attachments a JOIN records r ON r.id=a.record_id AND r.project_id=a.project_id
   WHERE r.item_id=items.id AND r.project_id=items.project_id AND r.loan_id IS NULL AND r.kind IN ('material','maintenance','distribution','consumption')
-  AND a.deleted_at IS NULL AND a.mime LIKE 'image/%' ORDER BY a.display_order,a.created_at DESC,a.id LIMIT 1))`;
+  AND NOT EXISTS(SELECT 1 FROM stock_movement_records evidence WHERE evidence.record_id=r.id) AND a.deleted_at IS NULL AND a.mime LIKE 'image/%' ORDER BY a.display_order,a.created_at DESC,a.id LIMIT 1))`;
 /** Before anyone chooses, the gallery order decides (newest first), as it always did. */
 async function fallbackPhoto(db:D1Database,item:{id:string;project_id:string},exclude:string|null=null):Promise<string|null>{
  const row=await db.prepare(`SELECT a.id FROM record_attachments a JOIN records r ON r.id=a.record_id AND r.project_id=a.project_id
@@ -40,8 +41,11 @@ export async function currentPrimaryPhoto(db:D1Database,item:{id:string;project_
 }
 export async function primaryPhotoHistory(db:D1Database,item:{id:string;project_id:string},limit=20):Promise<PrimaryPhotoChange[]>{
  const rows=(await db.prepare(`SELECT h.id,h.attachment_id,h.previous_attachment_id,h.created_at,COALESCE(NULLIF(p.display_name,''),'Equipe') actor_name
-  FROM item_primary_photos h LEFT JOIN profiles p ON p.user_id=h.actor_id WHERE h.item_id=? AND h.project_id=? ORDER BY h.sequence DESC LIMIT ?`).bind(item.id,item.project_id,limit).all<Record<string,string|null>>()).results??[];
- return rows.map(row=>({id:String(row.id),attachmentId:String(row.attachment_id),previousAttachmentId:row.previous_attachment_id??null,url:fileUrl(String(row.attachment_id)),previousUrl:row.previous_attachment_id?fileUrl(row.previous_attachment_id):null,actorName:String(row.actor_name),createdAt:String(row.created_at)}));
+  ,CASE WHEN EXISTS(SELECT 1 FROM record_attachments a WHERE a.id=h.attachment_id AND a.deleted_at IS NOT NULL) THEN 1 ELSE 0 END deleted
+  ,CASE WHEN EXISTS(SELECT 1 FROM record_attachments a WHERE a.id=h.previous_attachment_id AND a.deleted_at IS NOT NULL) THEN 1 ELSE 0 END previous_deleted
+  FROM item_primary_photos h LEFT JOIN profiles p ON p.user_id=h.actor_id WHERE h.item_id=? AND h.project_id=? ORDER BY h.sequence DESC LIMIT ?`).bind(item.id,item.project_id,limit).all<Record<string,string|number|null>>()).results??[];
+ // A photo hidden later is no longer served; the change itself stays in the history.
+ return rows.map(row=>({id:String(row.id),attachmentId:String(row.attachment_id),previousAttachmentId:row.previous_attachment_id?String(row.previous_attachment_id):null,url:row.deleted?null:fileUrl(String(row.attachment_id)),previousUrl:row.previous_attachment_id&&!row.previous_deleted?fileUrl(String(row.previous_attachment_id)):null,deleted:Boolean(row.deleted),previousDeleted:Boolean(row.previous_deleted),actorName:String(row.actor_name),createdAt:String(row.created_at)}));
 }
 export async function setPrimaryPhoto(db:D1Database,actor:PortalActor,input:Record<string,unknown>):Promise<Record<string,unknown>>{
  if(Object.keys(input).some(key=>!['action','itemId','attachmentId','expectedAttachmentId','operationKey'].includes(key)))throw new HttpError(400,'Há campos não permitidos nesta operação.','invalid_input');

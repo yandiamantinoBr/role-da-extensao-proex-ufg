@@ -162,3 +162,33 @@
   .thumb { width: 44px; height: 44px; border-radius: 9px; }
   .identityRow { gap: 10px; }
 }
+
+/* Filtros do catálogo (09/11): dono, tipo, categoria, situação e foto. */
+.filterBar { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
+.filterToggle { display: none; align-self: flex-start; min-height: 44px; }
+.filterBody { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.filter { display: flex; flex-direction: column; gap: 5px; font-size: 12px; font-weight: 600; color: var(--text-secondary); min-width: 0; }
+.filter select { min-height: 42px; width: 100%; min-width: 0; color: var(--ink); background: var(--surface); }
+.filterCount { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; margin: 0; font-size: 12px; color: var(--text-secondary); }
+.filterCount button { display: inline-flex; align-items: center; gap: 4px; min-height: 36px; }
+.noResults { padding: 22px; text-align: center; font-size: 13px; color: var(--text-secondary); border: 1px dashed var(--line); border-radius: 14px; }
+.destination { display: inline-flex; align-items: center; gap: 4px; color: var(--brand-ink) !important; }
+.kits { margin-top: 18px; border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; background: var(--surface); }
+.kits h3 { display: flex; align-items: center; gap: 8px; font-size: 14px; margin: 0 0 6px; }
+.kits ul { list-style: none; margin: 0; padding: 0; }
+.kits li { display: flex; justify-content: space-between; gap: 12px; padding: 11px 0; border-top: 1px solid var(--line); font-size: 12px; }
+.kits li div { display: flex; flex-direction: column; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.kits li small { color: var(--text-secondary); }
+.kits li > span { font-size: 17px; font-weight: 700; white-space: nowrap; text-align: right; }
+.kits li > span small { font-size: 11px; font-weight: 500; }
+@container material-catalog (max-width: 38rem) {
+  .filterToggle { display: inline-flex; }
+  .filterBody { display: none; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .filterBody.filterOpen { display: grid; }
+  .filter select { font-size: 16px; }
+}
+.catalog small.destination { display: flex; align-items: center; gap: 4px; }
+.catalog small.destination svg { display: inline-block; flex-shrink: 0; }
+
+.kits li { font-size: 13px; }
+.kits li small { font-size: 12px; }

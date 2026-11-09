@@ -222,7 +222,10 @@ export async function portalSnapshot(db: D1Database, actor: PortalActor | null):
         AND h.host_project_id!=campaigns.project_id AND h.host_project_id IN (SELECT projects.id FROM projects WHERE ${projectsFilter.sql})) AS host_project_ids
       FROM campaigns WHERE ${campaignsFilter.sql} ORDER BY starts_at DESC,id`, [...projectsFilter.params, ...campaignsFilter.params]),
     all(db, `SELECT id,project_id,name,category,unit,stock,reserved,low_stock,description,condition,created_at,
-      asset_code,version,updated_at,
+      asset_code,version,updated_at,category_id,owner_unit_id,event_destination_id,
+      (SELECT mc.label FROM material_categories mc WHERE mc.id=items.category_id AND mc.project_id=items.project_id) AS category_label,
+      (SELECT COALESCE(NULLIF(u.acronym,''),u.name) FROM organizational_units u WHERE u.id=items.owner_unit_id) AS owner_unit_name,
+      (SELECT d.name FROM material_destinations d JOIN projects dp ON dp.organization_id=d.organization_id WHERE d.id=items.event_destination_id AND dp.id=items.project_id) AS event_destination_name,
       CASE WHEN category='equipment' AND EXISTS (SELECT 1 FROM loans l WHERE l.item_id=items.id AND l.status='out') THEN 1 ELSE 0 END AS on_loan,
       CASE WHEN category='equipment' AND EXISTS (SELECT 1 FROM loans l WHERE l.item_id=items.id AND l.status='reserved'
         AND l.starts_at<=? AND l.ends_at>?) THEN 1 ELSE 0 END AS reserved_now,
