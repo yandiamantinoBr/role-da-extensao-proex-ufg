@@ -17,6 +17,15 @@ function identifier(value:unknown,label:string,optional=false):string|null{
  if(typeof value!=='string'||!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(value))throw new HttpError(400,`Selecione ${label}.`,'invalid_input');
  return value;
 }
+/**
+ * Lista de materiais: id da foto principal de cada item, na mesma regra de `currentPrimaryPhoto`
+ * (última escolha registrada ou, antes dela, a primeira foto da galeria). `items` é o alias da tabela.
+ */
+export const LIST_PRIMARY_PHOTO_SQL=`COALESCE(
+ (SELECT pp.attachment_id FROM item_primary_photos pp WHERE pp.item_id=items.id AND pp.project_id=items.project_id ORDER BY pp.sequence DESC LIMIT 1),
+ (SELECT a.id FROM record_attachments a JOIN records r ON r.id=a.record_id AND r.project_id=a.project_id
+  WHERE r.item_id=items.id AND r.project_id=items.project_id AND r.loan_id IS NULL AND r.kind IN ('material','maintenance','distribution','consumption')
+  AND a.deleted_at IS NULL AND a.mime LIKE 'image/%' ORDER BY a.display_order,a.created_at DESC,a.id LIMIT 1))`;
 /** Before anyone chooses, the gallery order decides (newest first), as it always did. */
 async function fallbackPhoto(db:D1Database,item:{id:string;project_id:string},exclude:string|null=null):Promise<string|null>{
  const row=await db.prepare(`SELECT a.id FROM record_attachments a JOIN records r ON r.id=a.record_id AND r.project_id=a.project_id
