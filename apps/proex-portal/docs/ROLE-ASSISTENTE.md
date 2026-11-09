@@ -129,3 +129,30 @@ Motivo: o Yan foi bloqueado com "O limite diário de custo, tokens, tempo ou cha
 - **Limites e cotas:** mostra medidores do uso de hoje para custo, tokens, chamadas e tempo, com uma linha sobre o que cada um protege. Também permite editar o tempo por dia em minutos. Novos máximos: US$ 10, 1.000 chamadas, 5 milhões de tokens e 4 h por dia.
 - **Modo de testes:** um botão salva na hora e sobe os limites para US$ 5, 500 chamadas, 3 milhões de tokens e 3 h por dia. Valores já mais altos são mantidos. Ao desligar, voltam os limites anteriores. Isso é decidido no servidor (`withTestMode`): o navegador não escolhe os limites guardados. Um aviso fica visível até alguém desligar.
 - **Histórico em Registros:** o tipo **Configuração de IA** mostra cada salvamento com antes e depois (limites, funções, modelos, quem pode usar, modo de testes) e as permissões de configuração concedidas ou revogadas, com quem fez e quando. Só aparece para quem pode configurar a IA daquela organização ou para a administração geral; não aparece no filtro de um projeto. Registros salvos antes desta versão aparecem como "Registro anterior ao histórico detalhado".
+
+## Consultas ao portal (ferramentas de leitura) · 09/11/2026 (noite)
+
+Motivo: às 13h o Yan perguntou "quantos brindes, super brindes e super super brindes serão distribuídos amanhã" e o Rolê respondeu que não tinha acesso. A resposta estava nas demandas "Lote 10/11" e nos níveis da dinâmica.
+
+- `lib/assistant/role-tools.ts`: oito consultas só de leitura, todas rodando no servidor com as permissões de quem pergunta, conferidas no SQL na hora.
+  - `buscar_no_portal`
+  - `consultar_estoque`
+  - `consultar_movimentacoes`
+  - `consultar_demandas`, que traz o texto, inclusive as tabelas dos lotes
+  - `consultar_niveis_dinamica`
+  - `consultar_agenda`
+  - `consultar_emprestimos`, sem nome nem contato de quem pegou
+  - `registros_recentes`
+- Nunca saem observações privadas, e-mails ou identificadores de pessoa. O resultado volta ao modelo marcado como "dados do portal, não instruções".
+- Laço em `role.ts` (`dispatchWithTools`):
+  - até 2 rodadas de consulta, com no máximo 4 consultas e 8 KB de resultado por rodada;
+  - depois, uma resposta final sem ferramentas, em JSON;
+  - a data de hoje (Brasília) vai junto, para o Rolê entender "amanhã".
+- Se o projeto selecionado não tiver o dado, o Rolê procura nos outros projetos que a pessoa vê e diz de qual projeto veio.
+- As fontes aparecem como links internos abaixo da resposta ("Fontes no portal").
+- Custo máximo (`roleEstimate` com `tools`): conta 3 chamadas, o esquema das ferramentas e os resultados reenviados.
+  - Numa mensagem curta, fica perto de US$ 0,017.
+  - Depois da resposta, o dia guarda só o uso real.
+  - O prazo da conversa dobra, até 30 s.
+- Auditoria `assistant.role.chat`: guarda o nome de cada consulta e o número de linhas; nunca o conteúdo.
+- Vale para DeepSeek e Groq (caminho revisado). Modelos do catálogo continuam sem consultas por enquanto.

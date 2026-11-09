@@ -7,8 +7,9 @@ import { onlyKeys, safeRequest, type AssistantConfig, type AssistantCredentials 
 import { digest, type CredentialKeys } from './crypto';
 import {
   ROLE_CONTRACT, ROLE_MAX_HISTORY, ROLE_MAX_HISTORY_CHARS, ROLE_MAX_IMAGE_BYTES, ROLE_MAX_IMAGE_SIDE, ROLE_MAX_MESSAGE_CHARS, ROLE_MAX_OUTPUT_TOKENS, ROLE_MODELS,
-  ROLE_SYSTEM_PROMPT, roleConversationBytes, roleEstimate, validateRoleReply, type RoleTurn,
+  ROLE_SYSTEM_PROMPT, ROLE_SYSTEM_PROMPT_TOOLS, ROLE_TOOL_CALLS_PER_ROUND, ROLE_TOOL_RESULT_BYTES, ROLE_TOOL_ROUNDS, roleConversationBytes, roleEstimate, roleTimeoutMs, validateRoleReply, type RoleSource, type RoleTurn,
 } from './role-contracts';
+import { ROLE_TOOLS, runRoleTool, type RoleToolResult } from './role-tools';
 import { containsCredential } from './sensitive';
 import { ChargedError, firstJsonObject, genericChat } from './generic-provider';
 import { fitsFunction, type CatalogModel, type CatalogProvider, type ModelCatalog } from './model-catalog';
@@ -79,6 +80,8 @@ export type RoleAvailability = {
   textPricing: RolePricing | null; visionPricing: RolePricing | null;
   speech: { available: boolean; provider: 'groq' | 'deepgram' };
   dailyLimitMicros: number; reservedTodayMicros: number;
+  /** Consultas ao portal (só leitura) disponíveis na conversa e na foto. */
+  tools: { text: boolean; vision: boolean };
 };
 
 type Route = { kind: 'legacy'; provider: 'deepseek' | 'groq'; apiKey: string; pricing: RolePricing } | { kind: 'catalog'; provider: CatalogProvider; model: CatalogModel; apiKey: string; pricing: RolePricing };
@@ -121,11 +124,11 @@ export async function roleStatus(db: D1Database, actor: PortalActor | null, inpu
     const catalog = config.roleModel || config.roleVisionModel ? (await loadCatalog(db, organizationId)).catalog : null;
     const { text, vision, ...state } = availability(config, credentials, organizationId, options.speech, rawCredentials, catalog);
     return { ...base, ...state, provider: text?.kind === 'catalog' ? text.provider.id : config.roleProvider, model: text?.pricing.label ?? ROLE_MODELS[config.roleProvider].label,
-      textPricing: text?.pricing ?? null, visionPricing: vision?.pricing ?? null, dailyLimitMicros: config.dailyUsdMicros,
+      textPricing: text?.pricing ?? null, visionPricing: vision?.pricing ?? null, dailyLimitMicros: config.dailyUsdMicros, tools: { text: text?.kind === 'legacy', vision: vision?.kind === 'legacy' },
       reason: state.available ? null : !config.roleEnabled ? 'O Rolê ainda não foi ligado nesta organização.' : 'Falta a chave do provedor escolhido para o Rolê.' };
   } catch (error) {
     const reason = error instanceof HttpError && error.status === 403 ? 'A IA desta organização está liberada só para outra pessoa.' : 'O Rolê ainda não foi configurado nesta organização.';
-    return { ...base, available: false, reason, provider: 'deepseek', model: ROLE_MODELS.deepseek.label, visionAvailable: false, operationsAvailable: false, textPricing: null, visionPricing: null, speech: { available: false, provider: 'groq' }, dailyLimitMicros: 0 };
+    return { ...base, available: false, reason, provider: 'deepseek', model: ROLE_MODELS.deepseek.label, visionAvailable: false, operationsAvailable: false, textPricing: null, visionPricing: null, speech: { available: false, provider: 'groq' }, dailyLimitMicros: 0, tools: { text: false, vision: false } };
   }
 }
 
@@ -164,10 +167,15 @@ export function parseRoleImage(value: unknown): { dataUrl: string; bytes: number
   return { dataUrl: value as string, bytes, mime };
 }
 
-function transportBody(provider: 'deepseek' | 'groq', turns: RoleTurn[], message: string, projectName: string, image: string | null) {
-  const user = `Projeto atual: ${projectName}\nMensagem: ${message}`;
+/** "Hoje: 2026-11-09 (segunda-feira)", em Brasília: o modelo precisa da data para "amanhã" e "esta semana". */
+export function brasiliaToday(now: number): string {
+  const date = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(now));
+  return `${date} (${new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'long' }).format(new Date(now))})`;
+}
+function transportBody(provider: 'deepseek' | 'groq', turns: RoleTurn[], message: string, projectName: string, image: string | null, today: string | null = null) {
+  const user = `${today ? `Hoje: ${today}, horário de Brasília\n` : ''}Projeto atual: ${projectName}\nMensagem: ${message}`;
   const messages = [
-    { role: 'system', content: ROLE_SYSTEM_PROMPT },
+    { role: 'system', content: today ? ROLE_SYSTEM_PROMPT_TOOLS : ROLE_SYSTEM_PROMPT },
     ...turns.map(turn => ({ role: turn.role, content: turn.content })),
     { role: 'user', content: image ? [{ type: 'text', text: user }, { type: 'image_url', image_url: { url: image } }] : user },
   ];
@@ -195,7 +203,9 @@ async function boundedJson(response: Response): Promise<Record<string, unknown>>
   finally { bytes.fill(0); }
 }
 
-async function dispatch(provider: 'deepseek' | 'groq', apiKey: string, body: unknown, signal: AbortSignal, fetcher: typeof fetch) {
+type ToolCall = { id: string; type: 'function'; function: { name: string; arguments: string } };
+/** One provider step of the tool loop: a reply or tool calls, with confirmed usage. */
+async function toolStep(provider: 'deepseek' | 'groq', apiKey: string, body: unknown, signal: AbortSignal, fetcher: typeof fetch) {
   const model = ROLE_MODELS[provider];
   let data: Record<string, unknown>;
   try {
@@ -207,14 +217,74 @@ async function dispatch(provider: 'deepseek' | 'groq', apiKey: string, body: unk
   if (JSON.stringify(data).includes(apiKey)) throw withheld();
   const choices = Array.isArray(data.choices) ? data.choices as { finish_reason?: unknown; message?: { content?: unknown; tool_calls?: unknown } }[] : [];
   const choice = choices.length === 1 ? choices[0] : null;
-  if (data.model !== model.model || !choice || choice.finish_reason !== 'stop' || choice.message?.tool_calls || typeof choice.message?.content !== 'string' || choice.message.content.length > 16000) throw withheld();
   const usage = data.usage && typeof data.usage === 'object' ? data.usage as Record<string, unknown> : {};
   const inputTokens = Number(usage.prompt_tokens), outputTokens = Number(usage.completion_tokens);
-  if (!Number.isSafeInteger(inputTokens) || !Number.isSafeInteger(outputTokens) || inputTokens < 0 || outputTokens < 0 || outputTokens > ROLE_MAX_OUTPUT_TOKENS) throw withheld();
-  let reply;
-  try { reply = validateRoleReply(JSON.parse(choice.message.content)); } catch { throw withheld(); }
-  if (containsCredential(reply.reply) || reply.operation && containsCredential(reply.operation)) throw withheld();
-  return { ...reply, inputTokens, outputTokens, costMicros: Math.ceil(inputTokens * model.inputMicrosPerToken + outputTokens * model.outputMicrosPerToken) };
+  if (data.model !== model.model || !choice || !Number.isSafeInteger(inputTokens) || !Number.isSafeInteger(outputTokens) || inputTokens < 0 || outputTokens < 0 || outputTokens > ROLE_MAX_OUTPUT_TOKENS) throw withheld();
+  const costMicros = Math.ceil(inputTokens * model.inputMicrosPerToken + outputTokens * model.outputMicrosPerToken);
+  const charged = (message: string) => new ChargedError(message, costMicros, inputTokens + outputTokens);
+  const raw = choice.message?.tool_calls, content = typeof choice.message?.content === 'string' ? choice.message.content : '';
+  if (content.length > 16000) throw charged('A resposta do provedor não pôde ser mostrada.');
+  let toolCalls: ToolCall[] = [];
+  if (raw !== undefined && raw !== null) {
+    const valid = Array.isArray(raw) && raw.length <= 8 && raw.every(call => call && typeof call.id === 'string' && call.id.length <= 100 && call.type === 'function' && typeof call.function?.name === 'string' && call.function.name.length <= 60 && typeof call.function?.arguments === 'string' && call.function.arguments.length <= 2000);
+    if (!valid) throw charged('A resposta do provedor não pôde ser mostrada.');
+    toolCalls = (raw as ToolCall[]).map(call => ({ id: call.id, type: 'function', function: { name: call.function.name, arguments: call.function.arguments } }));
+  }
+  if (!toolCalls.length && choice.finish_reason !== 'stop') throw charged('A resposta do Rolê veio incompleta. O custo foi registrado.');
+  return { content, toolCalls, inputTokens, outputTokens, costMicros };
+}
+
+/**
+ * Read-only tool loop: up to ROLE_TOOL_ROUNDS rounds of portal lookups (run here, with the asking
+ * person's live permissions), then a final answer without tools. Lookup results are data, never
+ * instructions; nothing is written; only tool names and row counts are audited.
+ */
+async function dispatchWithTools(provider: 'deepseek' | 'groq', apiKey: string, body: { messages: Record<string, unknown>[] } & Record<string, unknown>, run: (name: string, args: Record<string, unknown>, budget: number) => Promise<RoleToolResult>, signal: AbortSignal, fetcher: typeof fetch) {
+  const messages = [...body.messages], used: { name: string; rows: number }[] = [], sources = new Map<string, RoleSource>();
+  let inputTokens = 0, outputTokens = 0, costMicros = 0;
+  const charged = (message: string) => new ChargedError(message, costMicros, inputTokens + outputTokens);
+  const { response_format: _format, ...free } = body; void _format;
+  for (let round = 0; ; round++) {
+    const offer = round < ROLE_TOOL_ROUNDS;
+    let step;
+    try { step = await toolStep(provider, apiKey, offer ? { ...free, messages, tools: ROLE_TOOLS, tool_choice: 'auto' } : { ...body, messages }, signal, fetcher); }
+    catch (error) {
+      if (error instanceof ChargedError) throw new ChargedError(error.message, costMicros + error.chargedMicros, inputTokens + outputTokens + error.chargedTokens);
+      if (costMicros > 0) throw charged(error instanceof HttpError ? error.message : 'A chamada ao Rolê falhou.');
+      throw error;
+    }
+    inputTokens += step.inputTokens; outputTokens += step.outputTokens; costMicros += step.costMicros;
+    if (step.toolCalls.length) {
+      if (!offer) throw charged('O Rolê tentou consultar demais. Reformule a pergunta de um jeito mais direto.');
+      messages.push({ role: 'assistant', content: step.content, tool_calls: step.toolCalls });
+      let budget = ROLE_TOOL_RESULT_BYTES;
+      for (const [index, call] of step.toolCalls.entries()) {
+        let content: string;
+        if (index >= ROLE_TOOL_CALLS_PER_ROUND || budget < 600) content = JSON.stringify({ erro: 'Limite de consultas desta pergunta. Responda com o que já tem.' });
+        else {
+          try {
+            const args: unknown = call.function.arguments.trim() ? JSON.parse(call.function.arguments) : {};
+            if (!args || typeof args !== 'object' || Array.isArray(args)) throw new HttpError(400, 'Consulta com dados inválidos.', 'role_tool_input');
+            const result = await run(call.function.name, args as Record<string, unknown>, budget);
+            content = result.content; budget -= new TextEncoder().encode(content).byteLength;
+            used.push({ name: call.function.name, rows: result.rows });
+            for (const source of result.sources) if (sources.size < 8) sources.set(source.href, source);
+          } catch (error) {
+            content = JSON.stringify({ erro: error instanceof HttpError && error.status < 500 ? error.message : 'Consulta indisponível agora.' });
+            used.push({ name: call.function.name.slice(0, 40), rows: -1 });
+          }
+        }
+        messages.push({ role: 'tool', tool_call_id: call.id, content });
+      }
+      continue;
+    }
+    let reply: { reply: string; operation: string | null };
+    try { reply = validateRoleReply(firstJsonObject(step.content)); }
+    catch { reply = { reply: step.content.trim().slice(0, 4000), operation: null }; }
+    if (!reply.reply) throw charged('A resposta do Rolê veio vazia. O custo foi registrado.');
+    if (containsCredential(reply.reply) || reply.operation && containsCredential(reply.operation)) throw charged('A resposta do provedor não pôde ser mostrada.');
+    return { ...reply, inputTokens, outputTokens, costMicros, tools: used, sources: [...sources.values()] };
+  }
 }
 
 const STOP = new Set(['para', 'com', 'dos', 'das', 'uma', 'uns', 'umas', 'por', 'que', 'saida', 'saidas', 'entrada', 'entradas', 'registrar', 'registro', 'distribuicao', 'consumo', 'projeto', 'estoque', 'material', 'materiais', 'unidade', 'unidades', 'centro', 'eventos', 'evento']);
@@ -286,11 +356,12 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
   const chosen = (image ? state.vision : state.text)!;
   const provider = chosen.kind === 'catalog' ? chosen.provider.id : chosen.provider, modelName = chosen.kind === 'catalog' ? chosen.model.model : ROLE_MODELS[chosen.provider].model;
   const apiKey = chosen.apiKey;
-  const estimate = roleEstimate({ textProvider: config.roleProvider, textBytes: roleConversationBytes(turns, message, projectName), hasImage: !!image, text: state.text?.pricing, vision: state.vision?.pricing });
+  const toolsOn = chosen.kind === 'legacy', timeoutMs = roleTimeoutMs(config.timeoutMs, toolsOn);
+  const estimate = roleEstimate({ textProvider: config.roleProvider, textBytes: roleConversationBytes(turns, message, projectName), hasImage: !!image, text: state.text?.pricing, vision: state.vision?.pricing, tools: toolsOn });
   if (!Number.isSafeInteger(input.acceptedCostMicros) || Number(input.acceptedCostMicros) < estimate.costMicros) {
     throw new HttpError(409, 'O custo previsto mudou. Confira o novo valor e envie de novo.', 'role_cost_changed');
   }
-  const reservation = { tokens: estimate.tokens, cost: estimate.costMicros, calls: 1, milliseconds: config.timeoutMs };
+  const reservation = { tokens: estimate.tokens, cost: estimate.costMicros, calls: 1, milliseconds: timeoutMs };
   const id = await digest(`role\n${current.userId}\n${project}\n${input.operationKey}`);
   const fingerprint = await digest(JSON.stringify({ contract: ROLE_CONTRACT, message, turns, image: image ? await digest(image.dataUrl) : null, revision }));
   const authorization = roleAuthorization(db, current, project, organizationId, revision), nonce = crypto.randomUUID(), day = dayKey(now);
@@ -312,20 +383,20 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
   }
   const admitted = await one(db, 'SELECT admission_nonce FROM ai_calls WHERE id=?', [id]);
   if (admitted?.admission_nonce !== nonce) throw await quotaRefusal(db, current, organizationId, day, config, { cost: reservation.cost, tokens: reservation.tokens, ms: reservation.milliseconds, calls: 1 });
-  const controller = new AbortController(), timer = setTimeout(() => controller.abort(), config.timeoutMs);
+  const controller = new AbortController(), timer = setTimeout(() => controller.abort(), timeoutMs);
   const abort = () => controller.abort();
   options.signal?.addEventListener('abort', abort, { once: true });
   try {
     // Last live fence before money leaves: access or configuration may have changed during decryption.
     await authorization.first();
     const startedAt = Date.now();
-    const result = chosen.kind === 'legacy'
-      ? await dispatch(chosen.provider, apiKey, transportBody(chosen.provider, turns, message, projectName, image?.dataUrl ?? null), controller.signal, options.fetcher ?? fetch)
+    const result: { reply: string; operation: string | null; inputTokens: number; outputTokens: number; costMicros: number; tools?: { name: string; rows: number }[]; sources?: RoleSource[] } = chosen.kind === 'legacy'
+      ? await dispatchWithTools(chosen.provider, apiKey, transportBody(chosen.provider, turns, message, projectName, image?.dataUrl ?? null, brasiliaToday(now)), (name, args, budget) => runRoleTool(db, current, name, args, budget), controller.signal, options.fetcher ?? fetch)
       : await catalogDispatch(chosen, turns, message, projectName, image?.dataUrl ?? null, controller.signal, options.fetcher ?? fetch);
     const dropped = !!result.operation && !operationNumbersAllowed(result.operation, [message, ...turns.filter(turn => turn.role === 'user').map(turn => turn.content)]);
     if (dropped) result.operation = null;
     const extraCost = Math.max(0, result.costMicros - estimate.costMicros), extraTokens = Math.max(0, result.inputTokens + result.outputTokens - estimate.tokens), elapsed = Date.now() - startedAt;
-    const details = { provider, model: modelName, hasImage: !!image, inputTokens: result.inputTokens, outputTokens: result.outputTokens, reservedUsdMicros: estimate.costMicros, usdMicros: result.costMicros, operationSuggested: !!result.operation, operationDropped: dropped, overrun: extraCost > 0 || extraTokens > 0 };
+    const details = { provider, model: modelName, hasImage: !!image, inputTokens: result.inputTokens, outputTokens: result.outputTokens, reservedUsdMicros: estimate.costMicros, usdMicros: result.costMicros, operationSuggested: !!result.operation, operationDropped: dropped, overrun: extraCost > 0 || extraTokens > 0, tools: result.tools ?? [] };
     await db.batch([
       authorization,
       db.prepare("UPDATE ai_calls SET status='complete' WHERE id=? AND admission_nonce=? AND status='reserved'").bind(id, nonce),
@@ -335,7 +406,8 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
         .bind(crypto.randomUUID(), current.userId, project, organizationId, id, JSON.stringify(details), new Date().toISOString()),
     ]);
     return { contract: ROLE_CONTRACT, reply: result.reply, operation: result.operation, operationDropped: dropped, provider, model: modelName,
-      reservedMicros: estimate.costMicros, costMicros: result.costMicros, inputTokens: result.inputTokens, outputTokens: result.outputTokens };
+      reservedMicros: estimate.costMicros, costMicros: result.costMicros, inputTokens: result.inputTokens, outputTokens: result.outputTokens,
+      sources: result.sources ?? [], lookups: (result.tools ?? []).length };
   } catch (error) {
     await db.prepare("UPDATE ai_calls SET status='failed' WHERE id=? AND status='reserved'").bind(id).run();
     if (error instanceof ChargedError && (error.chargedMicros > estimate.costMicros || error.chargedTokens > estimate.tokens)) {

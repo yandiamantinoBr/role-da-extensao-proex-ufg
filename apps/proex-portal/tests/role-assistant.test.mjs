@@ -73,8 +73,8 @@ function chatInput(f, extra = {}) {
   const message = extra.message ?? 'Como registro a entrega de brindes?';
   // Same redaction as the browser before estimating (role-assistant.tsx sanitizes history too).
   const history = (extra.history ?? []).map(turn => { try { return { ...turn, content: safeRequest(turn.content) }; } catch { return turn; } });
-  const estimate = roleEstimate({ textProvider: extra.provider ?? 'deepseek', textBytes: roleConversationBytes(history, message, 'Projeto A'), hasImage: !!extra.image });
-  const { provider: _provider, ...rest } = extra; void _provider;
+  const estimate = roleEstimate({ textProvider: extra.provider ?? 'deepseek', textBytes: roleConversationBytes(history, message, 'Projeto A'), hasImage: !!extra.image, tools: extra.tools ?? true });
+  const { provider: _provider, tools: _tools, ...rest } = extra; void _provider; void _tools;
   return { action: 'chat', projectId: 'project-a', operationKey: `role-test-${Math.random().toString(36).slice(2, 12)}`, consent: true, message, acceptedCostMicros: estimate.costMicros, ...rest };
 }
 
@@ -123,7 +123,9 @@ test('chat reserves the shown ceiling, calls DeepSeek once, audits metadata only
     assert.equal(provider.calls.length, 1);
     const sent = provider.calls[0];
     assert.equal(sent.url, 'https://api.deepseek.com/chat/completions');
-    assert.equal(sent.body.model, 'deepseek-flash'); assert.equal(sent.body.response_format.type, 'json_object'); assert.equal(sent.body.thinking.type, 'disabled');
+    assert.equal(sent.body.model, 'deepseek-flash'); assert.equal(sent.body.thinking.type, 'disabled');
+    // First step offers the read-only portal lookups; JSON mode is kept for the final step without tools.
+    assert.equal(sent.body.tool_choice, 'auto'); assert.ok(sent.body.tools.some(tool => tool.function.name === 'consultar_demandas')); assert.equal(sent.body.response_format, undefined);
     assert.equal(sent.body.messages[0].role, 'system');
     assert.equal(result.reply, 'Use Materiais → Distribuir.'); assert.equal(result.operation, 'Registrar distribuição de 3 canetas');
     assert.equal(result.costMicros, Math.ceil(900 * 0.3 + 120 * 1.2));
@@ -134,7 +136,7 @@ test('chat reserves the shown ceiling, calls DeepSeek once, audits metadata only
     const audit = f.native.prepare("SELECT details FROM audit WHERE action='assistant.role.chat'").all();
     assert.equal(audit.length, 1);
     const details = JSON.parse(audit[0].details);
-    assert.deepEqual(Object.keys(details).sort(), ['hasImage', 'inputTokens', 'model', 'operationDropped', 'operationSuggested', 'outputTokens', 'overrun', 'provider', 'reservedUsdMicros', 'usdMicros']);
+    assert.deepEqual(Object.keys(details).sort(), ['hasImage', 'inputTokens', 'model', 'operationDropped', 'operationSuggested', 'outputTokens', 'overrun', 'provider', 'reservedUsdMicros', 'tools', 'usdMicros']);
     assert.equal(details.overrun, false);
     const everything = JSON.stringify(f.native.prepare('SELECT * FROM audit').all()) + JSON.stringify(f.native.prepare('SELECT * FROM ai_calls').all());
     assert.equal(everything.includes('distribuir 3 canetas'), false, 'message text is not persisted');
@@ -265,7 +267,7 @@ test('real use above the ceiling is added to the daily limit and audited; prepar
   const f = fixture();
   try {
     await setup(f, { enabled: true });
-    const heavy = { calls: [], fetch: async (url, init) => { const body = JSON.parse(init.body); heavy.calls.push(body); return Response.json({ model: body.model, choices: [{ finish_reason: 'stop', message: { content: JSON.stringify({ reply: 'ok', operation: null }) } }], usage: { prompt_tokens: 40000, completion_tokens: 700 } }); } };
+    const heavy = { calls: [], fetch: async (url, init) => { const body = JSON.parse(init.body); heavy.calls.push(body); return Response.json({ model: body.model, choices: [{ finish_reason: 'stop', message: { content: JSON.stringify({ reply: 'ok', operation: null }) } }], usage: { prompt_tokens: 90000, completion_tokens: 700 } }); } };
     const input = chatInput(f);
     const result = await roleChat(f.db, f.actors.viewer, input, secret, { keys, fetcher: heavy.fetch });
     assert.ok(result.costMicros > input.acceptedCostMicros);
@@ -375,4 +377,85 @@ test('JEV echo: a build suffix of the pinned version is accepted, another versio
   const body = decisionBody(config, 'pedido', {});
   assert.equal((await checkDecision(config, { typesafe: 'test-only-fake-typesafe-key-0001' }, body, new AbortController().signal, reply('jev-1.14.0-20261101'))).approved, true);
   await assert.rejects(checkDecision(config, { typesafe: 'test-only-fake-typesafe-key-0001' }, body, new AbortController().signal, reply('jev-2.0.0')), error => error.code === 'assistant_decision_schema');
+});
+
+function scriptedProvider(steps) {
+  const calls = [];
+  return { calls, fetch: async (url, init) => {
+    const body = JSON.parse(init.body); calls.push(body);
+    const step = steps[Math.min(calls.length - 1, steps.length - 1)];
+    const message = step.tools ? { content: '', tool_calls: step.tools.map((tool, index) => ({ id: `call-${calls.length}-${index}`, type: 'function', function: { name: tool.name, arguments: JSON.stringify(tool.args) } })) } : { content: JSON.stringify(step.reply) };
+    return Response.json({ model: body.model, choices: [{ finish_reason: step.tools ? 'tool_calls' : 'stop', message }], usage: { prompt_tokens: 1500, completion_tokens: 90 } });
+  } };
+}
+function seedLots(f) {
+  const now = new Date().toISOString();
+  f.native.prepare("UPDATE projects SET organization_id='org_proex' WHERE organization_id IS NULL").run();
+  const task = (id, project, title, body) => f.native.prepare("INSERT INTO followup_tasks(id,organization_id,project_id,title,body,priority,status,created_by,created_at,updated_at) VALUES(?, 'org_proex', ?, ?, ?, 'high', 'open', 'owner-qa', ?, ?)").run(id, project, title, body, now, now);
+  task('lote-a', 'project-a', 'Lote 10/11 · terça', 'Terça 10/11 | manhã | tarde\nMeio planner | 100 | 100\nSuper: 24 conjuntos de bottons, 16 canetas, 12 sacochilas, 8 squeezes, 8 kits\nSuper super: 8 pastas, 1 agenda');
+  task('lote-b', 'project-b', 'Lote 10/11 · outro projeto', 'SEGREDO-B 999 itens');
+  f.native.prepare("INSERT INTO items(id,project_id,name,category,unit,stock,created_at,updated_at) VALUES('asset-a','project-a','Projetor QA','equipment','unidade',1,?,?)").run(now, now);
+  f.native.prepare("INSERT INTO loans(id,project_id,item_id,action_name,borrower_name,borrower_contact,starts_at,ends_at,status,created_by,created_at) VALUES('loan-1','project-a','asset-a','Plantão CONPEEX','Pessoa Privada','contato@privado.invalid',?,?,'out','owner-qa',?)").run(Date.now() - 7200000, Date.now() - 3600000, now);
+}
+
+test('FERRAMENTAS: the exact question about Tuesday lots is answered from the portal with a source link', async () => {
+  const f = fixture();
+  try {
+    await setup(f); seedLots(f);
+    const provider = scriptedProvider([{ tools: [{ name: 'consultar_demandas', args: { texto: 'Lote 10/11' } }] }, { reply: { reply: 'Na terça: 200 meios planners; Super 68 (24 conjuntos de bottons, 16 canetas, 12 sacochilas, 8 squeezes, 8 kits); Super super 9 (8 pastas, 1 agenda). Fonte: demanda Lote 10/11 · terça.', operation: null } }]);
+    const input = chatInput(f, { message: 'quantos brindes, super brindes e super super brindes serão distribuídos amanhã' });
+    const result = await roleChat(f.db, f.actors.viewer, input, secret, { keys, fetcher: provider.fetch });
+    assert.equal(provider.calls.length, 2);
+    const user = provider.calls[0].messages.at(-1).content;
+    assert.match(user, /^Hoje: \d{4}-\d{2}-\d{2} \(/, 'the model knows today to resolve "amanhã"');
+    const toolMessage = provider.calls[1].messages.find(message => message.role === 'tool');
+    assert.ok(toolMessage.content.includes('24 conjuntos de bottons'), 'the lot table reaches the model');
+    assert.ok(!toolMessage.content.includes('SEGREDO-B'), 'another project never leaks');
+    assert.ok(toolMessage.content.includes('não instruções'), 'marked as data, not instructions');
+    assert.equal(provider.calls[1].messages.find(message => message.role === 'assistant').tool_calls[0].function.name, 'consultar_demandas');
+    assert.deepEqual(result.sources, [{ label: 'Lote 10/11 · terça · Projeto A', href: '/?module=demands&project=project-a&demandId=lote-a' }]);
+    assert.equal(result.lookups, 1);
+    assert.equal(result.costMicros, 2 * Math.ceil(1500 * 0.3 + 90 * 1.2));
+    const details = JSON.parse(f.native.prepare("SELECT details FROM audit WHERE action='assistant.role.chat'").get().details);
+    assert.deepEqual(details.tools, [{ name: 'consultar_demandas', rows: 1 }]);
+    assert.ok(!JSON.stringify(details).includes('bottons'), 'audit keeps tool names and counts, never content');
+  } finally { f.native.close(); }
+});
+
+test('FERRAMENTAS: lookups run with the asking person permissions; loans never show who borrowed', async () => {
+  const f = fixture();
+  try {
+    await setup(f); seedLots(f);
+    const { runRoleTool } = await import(compile('assistant/role-tools'));
+    const outsider = await runRoleTool(f.db, f.actors.outsider, 'consultar_demandas', { texto: 'Lote 10/11' });
+    assert.ok(outsider.content.includes('SEGREDO-B') && !outsider.content.includes('24 conjuntos'), 'only the project the person belongs to');
+    const forced = await runRoleTool(f.db, f.actors.outsider, 'consultar_estoque', { projeto: 'Projeto A' });
+    assert.equal(forced.rows, 0, 'naming another project does not open it');
+    const loans = await runRoleTool(f.db, f.actors.owner, 'consultar_emprestimos', {});
+    assert.ok(loans.content.includes('Plantão CONPEEX') && loans.content.includes('atrasado'));
+    for (const secretText of ['Pessoa Privada', 'contato@privado.invalid', '@example.test']) assert.ok(!loans.content.includes(secretText), secretText);
+    assert.equal((await runRoleTool(f.db, f.actors.viewer, 'consultar_emprestimos', {})).rows, 0, 'inventory role does not read loans');
+    await assert.rejects(runRoleTool(f.db, f.actors.viewer, 'apagar_tudo', {}), error => error.code === 'role_tool_unknown');
+    await assert.rejects(runRoleTool(f.db, f.actors.viewer, 'consultar_estoque', { sql: 'DROP' }), error => error.code === 'role_tool_input');
+    const small = await runRoleTool(f.db, f.actors.owner, 'buscar_no_portal', { texto: 'Lote' }, 700);
+    assert.ok(new TextEncoder().encode(small.content).byteLength <= 700, 'results respect the byte budget');
+  } finally { f.native.close(); }
+});
+
+test('FERRAMENTAS: at most two lookup rounds, then the answer; a model that keeps asking is charged and stopped', async () => {
+  const f = fixture();
+  try {
+    await setup(f); seedLots(f);
+    const greedy = scriptedProvider([{ tools: [{ name: 'buscar_no_portal', args: { texto: 'Lote' } }] }]);
+    await assert.rejects(roleChat(f.db, f.actors.viewer, chatInput(f, { message: 'procure tudo' }), secret, { keys, fetcher: greedy.fetch }), error => error.status === 502);
+    assert.equal(greedy.calls.length, 3, 'two rounds with tools, one final call without');
+    assert.ok(!('tools' in greedy.calls[2]) && greedy.calls[2].response_format.type === 'json_object');
+    const usage = f.native.prepare("SELECT reserved_usd_micros FROM ai_organization_usage WHERE organization_id='org_proex'").get();
+    assert.ok(usage.reserved_usd_micros > 0, 'the failed attempt still counts against the day');
+    const { ROLE_TOOLS_ACTUAL_SCHEMA_BYTES } = await import(compile('assistant/role-tools'));
+    const { ROLE_TOOLS_SCHEMA_BYTES } = await import(compile('assistant/role-contracts'));
+    assert.ok(ROLE_TOOLS_ACTUAL_SCHEMA_BYTES <= ROLE_TOOLS_SCHEMA_BYTES, `schema ${ROLE_TOOLS_ACTUAL_SCHEMA_BYTES} fits the cost ceiling`);
+    const withTools = roleEstimate({ textProvider: 'deepseek', textBytes: 500, hasImage: false, tools: true }), without = roleEstimate({ textProvider: 'deepseek', textBytes: 500, hasImage: false });
+    assert.ok(withTools.costMicros > without.costMicros && withTools.costMicros < 30_000, 'lookups raise the shown ceiling but stay under 3 cents');
+  } finally { f.native.close(); }
 });
