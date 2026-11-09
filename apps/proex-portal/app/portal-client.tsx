@@ -320,8 +320,9 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
     const [busy, setBusy] = useState(false);
     const [online, setOnline] = useState(true);
     const [message, setMessage] = useState('');
-    // Aviso de sucesso pertence ao módulo onde a ação aconteceu: some ao trocar de módulo.
-    useEffect(() => { setMessage(''); }, [requestedTab]);
+    // Aviso de sucesso pertence ao módulo onde a ação aconteceu: some ao trocar de módulo (ajuste durante a renderização, sem efeito).
+    const [messageTab, setMessageTab] = useState(requestedTab);
+    if (messageTab !== requestedTab) { setMessageTab(requestedTab); setMessage(''); }
     const [messageKind, setMessageKind] = useState<'success' | 'warning'>('success');
     const [failure, setFailure] = useState('');
     const [now, setNow] = useState(() => new Date(initial?.updatedAt ?? 0).getTime());

@@ -240,11 +240,11 @@ function Deadlines({ data, href }: { data: { onTime: number; late: number; noDue
   const total = data.onTime + data.late + data.noDue;
   const parts = [{ key: 'onTime', label: 'No prazo', value: data.onTime, color: 'var(--viz-3)' }, { key: 'late', label: 'Com atraso', value: data.late, color: 'var(--viz-2)' }, { key: 'noDue', label: 'Sem prazo', value: data.noDue, color: 'var(--viz-muted)' }];
   return <figure className={styles.chart}>
-    <figcaption><strong>Prazos das demandas</strong><span>Demandas concluídas no período, comparadas com o prazo combinado.</span></figcaption>
+    <figcaption><strong>Prazos das demandas</strong><span>Comparadas com o prazo combinado.</span></figcaption>
     {total > 0 ? <>
-      <p className={styles.teamTotal}><b>{total}</b> {total === 1 ? 'demanda concluída' : 'demandas concluídas'} no período: {parts.filter(part => part.value > 0).map(part => `${part.value} ${part.label.toLocaleLowerCase('pt-BR')}`).join(', ')}.</p>
+      <p className={styles.teamTotal}><b>{total}</b> {total === 1 ? 'demanda concluída' : 'demandas concluídas'}: {parts.filter(part => part.value > 0).map(part => `${part.value} ${part.label.toLocaleLowerCase('pt-BR')}`).join(', ')}.</p>
       {total >= 5 && <div className={styles.deadlineBar} role="img" aria-label={parts.map(part => `${part.value} ${part.label.toLocaleLowerCase('pt-BR')}`).join(', ')}>{parts.filter(part => part.value > 0).map(part => <span key={part.key} style={{ flexGrow: part.value, background: part.color }} title={`${part.label}: ${part.value}`}/>)}</div>}
-      <ul className={styles.deadlineLegend}>{parts.map(part => <li key={part.key}><i style={{ background: part.color }}/>{part.label}<b>{part.value}</b></li>)}</ul>
+      {total >= 5 && <ul className={styles.deadlineLegend}>{parts.map(part => <li key={part.key}><i style={{ background: part.color }}/>{part.label}<b>{part.value}</b></li>)}</ul>}
     </> : <p className={styles.chartEmpty}>Nenhuma demanda concluída neste período.</p>}
     <a className={`${styles.overdue} ${data.overdueNow > 0 ? styles.overdueAlert : ''}`} href={href}>{data.overdueNow > 0 ? <TriangleAlert size={15} aria-hidden="true"/> : <Check size={15} aria-hidden="true"/>}{data.overdueNow > 0 ? `${data.overdueNow} ${data.overdueNow === 1 ? 'demanda aberta já passou do prazo' : 'demandas abertas já passaram do prazo'}` : 'Nenhuma demanda aberta fora do prazo'}<ArrowUpRight size={14} aria-hidden="true"/></a>
   </figure>;

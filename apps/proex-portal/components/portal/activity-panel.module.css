@@ -151,3 +151,4 @@ a.row:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 .deadlineLegend b { color: var(--ink); font-variant-numeric: tabular-nums; }
 .overdue { display: inline-flex; align-items: center; gap: 6px; margin-top: auto; padding-top: 6px; color: var(--success-ink); font-size: 13px; font-weight: 600; text-decoration: none; }
 .overdueAlert { color: var(--danger); }
+@container (max-width: 480px) { .people button { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'name' 'numbers' 'bar'; } }

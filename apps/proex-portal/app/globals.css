@@ -221,3 +221,5 @@ html[data-theme=dark] .p-material-tabs button.is-active{background:#3a2a48;color
 .p-loan-card details.p-loan-next>summary{justify-content:flex-start;gap:10px;min-height:44px;margin-top:6px;padding:8px 14px;border:1px solid var(--brand-ink);border-radius:10px;background:var(--surface-soft);color:var(--brand-ink);font-size:14px;font-weight:600}
 .p-loan-card details.p-loan-next>summary small{color:var(--text-secondary);font-size:12px;font-weight:400}
 .p-loan-card details.p-loan-next>summary>svg{margin-left:auto}
+.p-loan-card details.p-loan-next>summary{background:#efe4f7}
+html[data-theme=dark] .p-loan-card details.p-loan-next>summary{background:#3a2a48}
