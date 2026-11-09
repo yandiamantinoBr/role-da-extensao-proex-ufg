@@ -112,6 +112,9 @@ export const items = sqliteTable('items', {
   conservationState: text('conservation_state'), assetStatus: text('asset_status'), origin: text('origin'), destination: text('destination'),
   processReference: text('process_reference'), responsibilityTerm: text('responsibility_term'), invoiceReference: text('invoice_reference'),
   sourceReference: text('source_reference'), acquisitionDate: text('acquisition_date'), acquisitionValueCents: integer('acquisition_value_cents'),
+  // 0039: an organizational unit may own the material (the project keeps access control);
+  // the event destination is checked by trigger against material_destinations of the same organization.
+  ownerUnitId: text('owner_unit_id').references(() => organizationalUnits.id), eventDestinationId: text('event_destination_id'),
 }, t => [
   index('items_project_idx').on(t.projectId),
   uniqueIndex('items_asset_code_unique').on(t.projectId, t.assetCode).where(sql`${t.assetCode} != ''`),

@@ -1,3 +1,4 @@
+import { effectiveMovementSql } from './movement-ledger';
 import { projectAuthoritySql, type PortalActor } from './access';
 import { all } from './database';
 import { HttpError } from './errors';
@@ -17,7 +18,7 @@ export async function detailedOutflowRows(db: D1Database, actor: PortalActor, in
   const stockOperator = projectAuthoritySql(actor, ['inventory.read'], 'p.id');
   const loanOperator = projectAuthoritySql(actor, ['loans.read'], 'p.id');
   const stockRange = context.period('m.created_at'), loanDate = 'COALESCE(l.checked_out_at,checkout.created_at)', loanRange = context.period(loanDate);
-  const stockWhere = ['p.stock_read=1', 'm.delta<0', "m.kind IN ('distribute','redeem')", ...stockRange.clauses];
+  const stockWhere = ['p.stock_read=1', 'm.delta<0', "m.kind IN ('distribute','redeem')", effectiveMovementSql('m'), ...stockRange.clauses];
   const loanWhere = ['p.loan_read=1', "i.category='equipment'", "l.status IN ('out','returned')", ...loanRange.clauses];
   const stockParams = [...stockRange.values], loanParams = [...loanRange.values];
   if (type === 'loan' || returned === 'out' || returned === 'returned') stockWhere.push('0=1');

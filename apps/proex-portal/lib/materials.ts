@@ -4,8 +4,10 @@ import { prepareMutation } from './mutations';
 import { assetMetadata, assetMetadataValues, ASSET_METADATA_COLUMNS, ASSET_METADATA_KEYS } from './asset-metadata';
 import { stockContextInput, prepareStockContext, matchingStockContext, fencedMovementContexts } from './stock-context';
 import { setPrimaryPhoto, currentPrimaryPhoto, primaryPhotoHistory } from './material-photos';
+import { movementAction, annotateMovements, attachmentDeletions, HIDE_MIRRORS_SQL } from './material-movements';
+import { destinationAction, resolveDestination } from './material-destinations';
 
-type Item = { id: string; project_id: string; name: string; category: string; unit: string; stock: number; reserved: number; condition: string; description: string; low_stock: number; asset_code: string; version: number; updated_at: string; category_id: string | null };
+type Item = { id: string; project_id: string; name: string; category: string; unit: string; stock: number; reserved: number; condition: string; description: string; low_stock: number; asset_code: string; version: number; updated_at: string; category_id: string | null; owner_unit_id: string | null; event_destination_id: string | null };
 type Loan = { id: string; project_id: string; item_id: string; status: string; note: string; starts_at: number; ends_at: number; condition_out: string; condition_in: string; checked_out_at: string | null; returned_at: string | null; updated_at: string };
 type Movement = { id: string; item_id: string; delta: number; kind: string; note: string; ref_id: string; group_id: string | null };
 type MaterialCategory = { id: string; project_id: string; label: string; label_key: string; core_kind: string; description: string; status: string; version: number; created_at: string; updated_at: string };
@@ -84,6 +86,8 @@ function matchingMovement(existing: Movement, item: Item, delta: number, kind: s
 function translateDatabaseError(error: unknown): never {
   if (error instanceof HttpError) throw error;
   const message = String(error).toLowerCase();
+  if(message.includes('item_owner_scope'))throw new HttpError(409,'Escolha uma unidade ativa e um destino ativo desta organização.','item_owner_scope');
+  if(message.includes('stock_destination_'))throw new HttpError(409,'O destino escolhido está arquivado ou é de outra organização. Escolha outro.','stock_destination_scope');
   if(message.includes('stock_context_'))throw new HttpError(409,'O projeto, a origem ou o destino mudou. Reabra a movimentação.','stock_context_changed');
   if (message.includes('loan_checkout_window')) throw new HttpError(409, 'A retirada só pode ser registrada dentro do período reservado.', 'loan_checkout_window');
   if (message.includes('loan_overlap') || message.includes('loan_conflict') || message.includes('loan_unavailable') || message.includes('loan_overdue') || message.includes('equipment_unavailable')) {
@@ -119,7 +123,7 @@ async function metadataSnapshot(db: D1Database, type: 'item' | 'category', id: s
   if (!row) throw new HttpError(404, 'Esta versão do cadastro não foi encontrada.', 'version_not_found');
   const parsed: unknown = JSON.parse(row.snapshot_json);
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new HttpError(409, 'A versão não contém um cadastro válido.', 'invalid_snapshot');
-  const allowed = type === 'item' ? ['name','category','unit','lowStock','description','assetCode','categoryId','condition', ...ASSET_METADATA_KEYS] : ['label','description','status','coreKind'];
+  const allowed = type === 'item' ? ['name','category','unit','lowStock','description','assetCode','categoryId','condition','ownerUnitId','eventDestinationId', ...ASSET_METADATA_KEYS] : ['label','description','status','coreKind'];
   return Object.fromEntries(Object.entries(parsed).filter(([key]) => allowed.includes(key)));
 }
 async function categoryById(db: D1Database, id: string): Promise<MaterialCategory> {
@@ -140,8 +144,27 @@ async function assignedGroup(db: D1Database, groupId: unknown, projectId: string
   return id;
 }
 
+async function ownerUnit(db: D1Database, value: unknown, previous: string | null): Promise<string | null> {
+  if (value === null || value === '') return null;
+  const id = textValue(value, 'a unidade dona do material', 200);
+  const unit = await statement(db, 'SELECT id,status FROM organizational_units WHERE id=?', [id]).first<{ id: string; status: string }>();
+  if (!unit || (unit.status !== 'active' && unit.id !== previous)) throw new HttpError(400, 'Escolha uma unidade ativa como dona do material.', 'item_owner_scope');
+  return unit.id;
+}
+async function eventDestination(db: D1Database, value: unknown, projectId: string, previous: string | null): Promise<string | null> {
+  if (value === null || value === '') return null;
+  const id = textValue(value, 'o destino do material', 200);
+  const row = await statement(db, 'SELECT d.id,d.status FROM material_destinations d JOIN projects p ON p.organization_id=d.organization_id WHERE d.id=? AND p.id=?', [id, projectId]).first<{ id: string; status: string }>();
+  if (!row || (row.status !== 'active' && row.id !== previous)) throw new HttpError(400, 'Escolha um destino ativo desta organização.', 'item_owner_scope');
+  return row.id;
+}
+
 /** Scoped inventory and equipment mutations. Stock and reservations are maintained by database triggers. */
 export async function materialsAction(db: D1Database, actor: PortalActor, action: string, input: Record<string, unknown>): Promise<Record<string, unknown> | null> {
+  if (['stock.revise', 'stock.evidence.prepare', 'item.photo.delete', 'stock.attachment.delete', 'destination.create', 'destination.update'].includes(action)) {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) throw new HttpError(400, 'Envie os dados da operação.', 'invalid_input');
+    return (await movementAction(db, actor, action, input)) ?? destinationAction(db, actor, action, input);
+  }
   if (!['item.create', 'item.update', 'stock.move', 'offer.create', 'loan.create', 'loan.status', 'material.category.create', 'material.category.update', 'material.category.restore', 'item.restore', 'activity.group.create', 'item.photo.primary'].includes(action)) return null;
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new HttpError(400, 'Envie os dados da operação.', 'invalid_input');
   if (action === 'item.photo.primary') return setPrimaryPhoto(db, actor, input);
@@ -238,18 +261,20 @@ export async function materialsAction(db: D1Database, actor: PortalActor, action
       if (!['active', 'maintenance', 'inactive'].includes(condition)) throw new HttpError(400, 'Escolha uma condição válida.', 'invalid_condition');
       const assetCode = textValue(input.assetCode ?? item.asset_code, 'a identificação patrimonial', 100, true);
       const metadata = assetMetadata(input, item);
+      const ownerUnitId = input.ownerUnitId === undefined ? item.owner_unit_id ?? null : await ownerUnit(db, input.ownerUnitId, item.owner_unit_id);
+      const eventDestinationId = input.eventDestinationId === undefined ? item.event_destination_id ?? null : await eventDestination(db, input.eventDestinationId, item.project_id, item.event_destination_id);
       if (condition !== 'active') {
         if (item.reserved > 0) throw new HttpError(409, 'Há unidades prometidas em brindes. Conclua ou cancele as reservas antes de desativar o material.', 'item_reserved');
         const out = await statement(db, "SELECT id FROM loans WHERE item_id=? AND status='out' LIMIT 1", [item.id]).first();
         if (out) throw new HttpError(409, 'Registre a devolução antes de colocar o equipamento em manutenção ou desativá-lo.', 'asset_in_use');
       }
       const results = await capabilityBatch(db,actor,'inventory.manage',item.project_id,[
-        statement(db, `UPDATE items SET name=?,unit=?,description=?,low_stock=?,condition=?,asset_code=?,category_id=?,${ASSET_METADATA_COLUMNS.map(column => `${column}=?`).join(',')},version=version+1,updated_at=?
+        statement(db, `UPDATE items SET name=?,unit=?,description=?,low_stock=?,condition=?,asset_code=?,category_id=?,owner_unit_id=?,event_destination_id=?,${ASSET_METADATA_COLUMNS.map(column => `${column}=?`).join(',')},version=version+1,updated_at=?
           WHERE id=? AND version=? AND (?='active' OR (reserved=0 AND NOT EXISTS (SELECT 1 FROM loans WHERE item_id=items.id AND status='out')))
           AND ${inventoryAuthorization('items.project_id')}`,
-          [name, unit, description, lowStock, condition, assetCode, categoryId, ...assetMetadataValues(metadata), now, item.id, input.expectedVersion, condition, actor.userId, actor.userId]),
-        versionStatement(db, actor, 'item', item.id, item.project_id, item.version + 1, { name, category: item.category, unit, description, lowStock, condition, assetCode, categoryId, ...metadata }, now, true),
-        conditionalAudit(db, actor, action, item.id, item.project_id, { previousVersion: item.version, condition, assetCode, ...(action === 'item.restore' ? { restoredFromVersion: input.restoreVersion } : {}) }, now),
+          [name, unit, description, lowStock, condition, assetCode, categoryId, ownerUnitId, eventDestinationId, ...assetMetadataValues(metadata), now, item.id, input.expectedVersion, condition, actor.userId, actor.userId]),
+        versionStatement(db, actor, 'item', item.id, item.project_id, item.version + 1, { name, category: item.category, unit, description, lowStock, condition, assetCode, categoryId, ownerUnitId, eventDestinationId, ...metadata }, now, true),
+        conditionalAudit(db, actor, action, item.id, item.project_id, { previousVersion: item.version, condition, assetCode, ...(ownerUnitId !== (item.owner_unit_id ?? null) ? { ownerUnitId, previousOwnerUnitId: item.owner_unit_id ?? null } : {}), ...(eventDestinationId !== (item.event_destination_id ?? null) ? { eventDestinationId, previousEventDestinationId: item.event_destination_id ?? null } : {}), ...(action === 'item.restore' ? { restoredFromVersion: input.restoreVersion } : {}) }, now),
       ]);
       if (results[0].meta.changes !== 1) throw new HttpError(409, 'O material, sua disponibilidade ou seu acesso mudou. Atualize a página.', 'item_changed');
       await inventoryRead(db, actor, item.project_id);
@@ -286,12 +311,15 @@ export async function materialsAction(db: D1Database, actor: PortalActor, action
       }
       const id = crypto.randomUUID();
       const context=await prepareStockContext(db,actor,item,contextInput);
+      const destination=await resolveDestination(db,actor,item.project_id,input,now);
       try {
         await capabilityBatch(db,actor,'inventory.manage',item.project_id,[
           ...context.assertions,
+          ...(destination?.statements ?? []),
           statement(db, 'INSERT INTO stock_movements (id,item_id,delta,kind,note,ref_id,actor_id,created_at,group_id) VALUES (?,?,?,?,?,?,?,?,?)', [id, item.id, delta, kind, note, refId, actor.userId, now, groupId]),
           context.insert(id,now),
-          auditStatement(db, actor, action, id, item.project_id, { itemId: item.id, delta, kind, note, context:contextInput }, now),
+          ...(destination ? [destination.link(id, now)] : []),
+          auditStatement(db, actor, action, id, item.project_id, { itemId: item.id, delta, kind, note, context:contextInput, ...(destination ? { destinationId: destination.id, destinationName: destination.name } : {}) }, now),
         ]);
       } catch (error) {
         if(error instanceof HttpError&&error.status===403)throw error;
@@ -302,7 +330,7 @@ export async function materialsAction(db: D1Database, actor: PortalActor, action
         await matchingStockContext(db,retry.id,contextInput);
         return { movement: retry, item: await itemById(db, item.id), duplicate: true };
       }
-      return { movement: { id, item_id: item.id, delta, kind, note, ref_id: refId, group_id: groupId, created_at: now }, item: await itemById(db, item.id) };
+      return { movement: { id, item_id: item.id, delta, kind, note, ref_id: refId, group_id: groupId, created_at: now, ...(destination ? { destination: { id: destination.id, name: destination.name } } : {}) }, item: await itemById(db, item.id) };
     }
 
     if (action === 'offer.create') {
@@ -427,12 +455,13 @@ export async function materialDetail(db: D1Database, actor: PortalActor | null, 
     if (cursor.length > 2 || (cursor[1] && !/^[A-Za-z0-9_-]{1,100}$/.test(cursor[1]))) throw new HttpError(400, 'Posição do histórico inválida.', 'invalid_cursor');
     beforeId = cursor[1] || null;
   }
-  const movementRows = (await statement(db, `SELECT m.id,m.delta,m.kind,m.note AS reason,m.created_at,m.group_id,g.title AS group_title,
+  const movementRows = (await statement(db, `SELECT m.id,m.delta,m.kind,m.note AS reason,m.created_at,m.group_id,m.ref_id,g.title AS group_title,
     COALESCE(NULLIF(p.display_name,''),'Equipe') AS actor_name FROM stock_movements m LEFT JOIN profiles p ON p.user_id=m.actor_id
-    LEFT JOIN activity_groups g ON g.id=m.group_id AND g.project_id=? WHERE m.item_id=?${before ? beforeId ? ' AND (m.created_at<? OR (m.created_at=? AND m.id<?))' : ' AND m.created_at<?' : ''} ORDER BY m.created_at DESC,m.id DESC LIMIT ?`, [item.project_id, item.id, ...(before ? beforeId ? [before, before, beforeId] : [before] : []), limit + 1]).all<Record<string, unknown>>()).results ?? [];
+    LEFT JOIN activity_groups g ON g.id=m.group_id AND g.project_id=? WHERE m.item_id=? AND ${HIDE_MIRRORS_SQL('m')}${before ? beforeId ? ' AND (m.created_at<? OR (m.created_at=? AND m.id<?))' : ' AND m.created_at<?' : ''} ORDER BY m.created_at DESC,m.id DESC LIMIT ?`, [item.project_id, item.id, ...(before ? beforeId ? [before, before, beforeId] : [before] : []), limit + 1]).all<Record<string, unknown>>()).results ?? [];
   const attachments = (await statement(db, `SELECT a.id,a.name,a.mime,a.size,a.caption,a.attachment_role,a.created_at,r.id AS record_id,r.title
     FROM record_attachments a JOIN records r ON r.id=a.record_id AND r.project_id=a.project_id
     WHERE r.item_id=? AND r.project_id=? AND r.loan_id IS NULL AND r.kind IN ('material','maintenance','distribution','consumption') AND a.deleted_at IS NULL
+    AND NOT EXISTS(SELECT 1 FROM stock_movement_records evidence WHERE evidence.record_id=r.id)
     ORDER BY a.display_order,a.created_at DESC,a.id LIMIT 101`, [item.id, item.project_id]).all<Record<string, unknown>>()).results ?? [];
   const loanHistory = (await statement(db, `SELECT id,status,starts_at,ends_at,checked_out_at,returned_at FROM loans WHERE item_id=? AND project_id=? ORDER BY starts_at DESC,id DESC LIMIT 101`, [item.id, item.project_id]).all()).results ?? [];
   const records = (await statement(db, `SELECT id,kind,title,occurred_at,created_at FROM records WHERE item_id=? AND project_id=? AND loan_id IS NULL AND kind IN ('material','maintenance','distribution','consumption') ORDER BY occurred_at DESC,id DESC LIMIT 101`, [item.id, item.project_id]).all()).results ?? [];
@@ -449,13 +478,18 @@ export async function materialDetail(db: D1Database, actor: PortalActor | null, 
   const files = attachments.slice(0, 100).map<Record<string, unknown>>(attachment => ({ ...attachment, url: `/api/records/files/${attachment.id}` }));
   // The chosen primary photo leads the gallery; older photos stay listed and in its history.
   const primary = await currentPrimaryPhoto(db, item), photoHistory = await primaryPhotoHistory(db, item);
+  const deletedPhotos = await attachmentDeletions(db, 'd.item_id=? AND d.movement_id IS NULL', [item.id]);
+  const owner = await statement(db, `SELECT u.id unit_id,u.name unit_name,u.acronym unit_acronym,d.id destination_id,d.name destination_name,d.kind destination_kind,p.name project_name FROM items i JOIN projects p ON p.id=i.project_id
+    LEFT JOIN organizational_units u ON u.id=i.owner_unit_id LEFT JOIN material_destinations d ON d.id=i.event_destination_id WHERE i.id=?`, [item.id]).first<Record<string, string | null>>();
+  const annotated = await annotateMovements(db, movementRows.slice(0, limit));
   const images = files.filter(file => String(file.mime).startsWith('image/'));
   const primaryIndex = primary.attachmentId ? images.findIndex(file => file.id === primary.attachmentId) : -1;
   if (primaryIndex > 0) images.unshift(...images.splice(primaryIndex, 1));
   return {
     item, category,
-    categories, movements: movementRows.slice(0, limit).map(row=>({...row,context:contexts.get(String(row.id))??null})),
-    photos: images, primaryPhotoId: primaryIndex >= 0 ? primary.attachmentId : null, primaryPhotoPinned: primary.fromPointer, photoHistory,
+    categories, movements: annotated.map(row=>({...row,context:contexts.get(String(row.id))??null})),
+    photos: images, primaryPhotoId: primaryIndex >= 0 ? primary.attachmentId : null, primaryPhotoPinned: primary.fromPointer, photoHistory, deletedPhotos,
+    ownership: { projectName: owner?.project_name ?? null, ownerUnit: owner?.unit_id ? { id: owner.unit_id, name: owner.unit_name, acronym: owner.unit_acronym } : null, eventDestination: owner?.destination_id ? { id: owner.destination_id, name: owner.destination_name, kind: owner.destination_kind, href: `/?module=materials&destinationId=${encodeURIComponent(owner.destination_id)}` } : null },
     attachments: files, attachmentsTruncated: attachments.length > 100,
     loanHistory: loanHistory.slice(0, 100), loanHistoryTruncated: loanHistory.length > 100,
     records: records.slice(0, 100), recordsTruncated: records.length > 100,

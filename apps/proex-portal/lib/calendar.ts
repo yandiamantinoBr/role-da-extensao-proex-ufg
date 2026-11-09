@@ -1,3 +1,4 @@
+import { effectiveMovementSql } from './movement-ledger';
 import { accessibleProjects, getActor, writeAudit, projectAuthoritySql, type PortalActor } from './access';
 import { all, one, type Row } from './database';
 import { HttpError } from './errors';
@@ -163,7 +164,7 @@ export async function calendarEntries(db: D1Database, actor: PortalActor | null,
         'recorded' state,COUNT(*) revision,MIN(m.created_at) created_at,MAX(m.created_at) last_modified
         FROM stock_movements m JOIN items i ON i.id=m.item_id JOIN projects p ON p.id=i.project_id
         LEFT JOIN stock_movement_contexts smc ON smc.movement_id=m.id
-        WHERE ${filter.sql} AND m.kind${category === 'consumption' ? '=' : '!='}'consume'
+        WHERE ${filter.sql} AND m.kind${category === 'consumption' ? '=' : '!='}'consume' AND ${effectiveMovementSql('m')}
         AND julianday(${occurred})>=julianday(?) AND julianday(${occurred})<julianday(?)
         GROUP BY i.id,m.kind,date(${occurred},'-3 hours'),CASE WHEN smc.movement_id IS NULL THEN '' ELSE smc.measurement_unit END LIMIT ${MAX_ENTRIES + 1}`,
       [CALENDAR_LABELS[category], ...filter.values, range.startsAt, range.endsAt]);

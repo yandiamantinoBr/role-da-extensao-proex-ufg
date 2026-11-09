@@ -17,3 +17,4 @@ export * from './material-attention-schema';
 export * from './prize-tier-schema';
 export * from './community-schema';
 export * from './preferences-schema';
+export * from './material-movement-schema';

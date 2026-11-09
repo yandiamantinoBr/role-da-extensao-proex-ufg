@@ -70,3 +70,11 @@
 :global(html[data-theme=dark]) .photoPair img,:global(html[data-theme=dark]) .compare img,:global(html[data-theme=dark]) .gallery img{outline:1px solid #8d7aa3;outline-offset:-1px}
 .photoConfirm .photoWarning{padding:8px 10px;font-size:11px}
 @media(max-width:650px){.compare{gap:9px}.photoDecision button{flex:1 1 100%;justify-content:center}.photoHistory li{flex-direction:column;align-items:flex-start;gap:8px}.gallery figcaption{padding:9px 9px 3px}.photoAction{margin:4px 9px 11px}}
+.deletedList{list-style:none;margin:0;padding:6px 18px 16px;display:flex;flex-direction:column;gap:10px}.deletedList li{display:flex;flex-direction:column;gap:2px;font-size:12px;overflow-wrap:anywhere}.deletedList small{font-size:11px;color:var(--text-secondary,var(--muted))}.photoReason{display:flex;flex-direction:column;gap:6px;font-size:12px;font-weight:600}.photoReason textarea{width:100%;min-width:0;font-weight:400}.photoNote{display:block;font-size:11px;color:var(--text-secondary,var(--muted));padding:0 11px 11px}
+
+/* 09/11: no celular, os atalhos Editar/Movimentar aparecem só no Resumo (as abas já levam a eles)
+   e a galeria vira uma coluna, para a exclusão com motivo caber com folga. */
+@media(max-width:650px){.dialog:not([data-mode=summary]):not([data-mode=edit]) .recordActions{display:none}.gallery{grid-template-columns:1fr}.gallery img{height:200px}.photoConfirm button,.photoAction{min-height:44px}}
+
+/* 09/11: abas da ficha em uma linha só, com rolagem lateral, no celular. */
+@media(max-width:650px){.toolbar{flex-wrap:nowrap;align-items:center}.toolbar nav{flex:1 1 auto;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;-webkit-mask-image:linear-gradient(90deg,#000 88%,transparent)}.toolbar nav::-webkit-scrollbar{display:none}.toolbar nav button{flex:0 0 auto}.photoConfirm>div{display:flex;flex-wrap:wrap;gap:12px}.photoConfirm button{min-height:44px;min-width:96px;font-size:14px}}

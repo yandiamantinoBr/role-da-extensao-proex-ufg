@@ -1,6 +1,6 @@
 'use client';
-import { useState } from 'react';
-import { ArrowRight, Package } from 'lucide-react';
+import { useMemo, useState, type ChangeEvent, type ReactNode } from 'react';
+import { ArrowRight, Gift, MapPin, Package, SlidersHorizontal, X } from 'lucide-react';
 import styles from './material-catalog.module.css';
 
 type CatalogMaterial = {
@@ -19,7 +19,29 @@ type CatalogMaterial = {
   canOpen: boolean;
   /** Foto principal (já autorizada pelo servidor); sem ela, um marcador neutro. */
   photoUrl?: string | null;
+  /** Filtros: tipo de controle, categoria própria, dono (projeto ou unidade) e destino reservado. */
+  typeKey?: string;
+  categoryLabel?: string;
+  ownerKey?: string;
+  ownerLabel?: string;
+  destinationName?: string;
 };
+export type CatalogKit = { id: string; name: string; kind: string; project: string; active: boolean; components: { name: string; quantity: number; unit: string; available: number }[] };
+type Filters = { owner: string; type: string; category: string; situation: string; photo: string };
+const EMPTY: Filters = { owner: '', type: '', category: '', situation: '', photo: '' };
+const TYPE_NAMES: Record<string, string> = { gift: 'Brindes', equipment: 'Equipamentos', distribution: 'Distribuição institucional', consumption: 'Consumo interno', kit: 'Kits de brinde' };
+const SITUATIONS: Record<string, string> = { active: 'Em uso', low: 'Estoque baixo', empty: 'Sem saldo disponível', maintenance: 'Em manutenção', inactive: 'Fora de uso' };
+function matches(material: CatalogMaterial, filters: Filters): boolean {
+  if (filters.type === 'kit') return false;
+  if (filters.owner && material.ownerKey !== filters.owner) return false;
+  if (filters.type && material.typeKey !== filters.type) return false;
+  if (filters.category && (material.categoryLabel || '') !== filters.category) return false;
+  if (filters.photo && (filters.photo === 'with') !== Boolean(material.photoUrl)) return false;
+  if (filters.situation === 'low') return material.lowStock;
+  if (filters.situation === 'empty') return material.condition === 'active' && material.available <= 0;
+  if (filters.situation) return material.condition === filters.situation;
+  return true;
+}
 
 /** Miniatura decorativa: o nome ao lado já identifica o material para leitores de tela. */
 function MaterialThumb({ url }: { url?: string | null }) {
@@ -31,6 +53,44 @@ function MaterialThumb({ url }: { url?: string | null }) {
   </span>;
 }
 
+/** Catalog with filters (owner, type, category, situation, photo) and the gift kits of the selection. */
+export function FilterableMaterialCatalog({ materials: everything, kits = [], onOpen, empty }: {
+  materials: CatalogMaterial[];
+  kits?: CatalogKit[];
+  onOpen: (id: string) => void;
+  empty?: ReactNode;
+}) {
+  const [filters, setFilters] = useState<Filters>(EMPTY), [open, setOpen] = useState(false);
+  const options = useMemo(() => {
+    const owners = new Map<string, string>(), categories = new Set<string>(), types = new Set<string>();
+    for (const material of everything) { if (material.ownerKey) owners.set(material.ownerKey, material.ownerLabel || material.ownerKey); if (material.categoryLabel) categories.add(material.categoryLabel); if (material.typeKey) types.add(material.typeKey); }
+    if (kits.length) types.add('kit');
+    return { owners: [...owners].sort((a, b) => a[1].localeCompare(b[1], 'pt-BR')), categories: [...categories].sort((a, b) => a.localeCompare(b, 'pt-BR')), types: [...types] };
+  }, [everything, kits.length]);
+  const materials = everything.filter(material => matches(material, filters));
+  const showKits = kits.length > 0 && (!filters.type || filters.type === 'kit' || filters.type === 'gift') && !filters.category && !filters.situation && !filters.photo && !filters.owner;
+  const active = Object.values(filters).filter(Boolean).length;
+  const set = (key: keyof Filters) => (event: ChangeEvent<HTMLSelectElement>) => setFilters(current => ({ ...current, [key]: event.target.value }));
+  const select = (key: keyof Filters, label: string, entries: [string, string][], allLabel: string) => entries.length > (key === 'photo' || key === 'situation' ? 0 : 1) || filters[key] ? <label className={styles.filter}><span>{label}</span><select value={filters[key]} onChange={set(key)}><option value="">{allLabel}</option>{entries.map(([value, name]) => <option key={value} value={value}>{name}</option>)}</select></label> : null;
+  return <div className={styles.catalog}>
+    {everything.length > 0 && <div className={styles.filterBar}>
+      <button type="button" className={`p-button p-button-subtle ${styles.filterToggle}`} aria-expanded={open} aria-controls="material-filters" onClick={() => setOpen(value => !value)}><SlidersHorizontal size={16} aria-hidden="true"/>Filtros{active ? ` (${active})` : ''}</button>
+      <div id="material-filters" className={`${styles.filterBody} ${open ? styles.filterOpen : ''}`} role="group" aria-label="Filtrar catálogo de materiais">
+        {select('owner', 'Dono', options.owners, 'Todos os donos')}
+        {select('type', 'Tipo', options.types.map(type => [type, TYPE_NAMES[type] ?? type] as [string, string]), 'Todos os tipos')}
+        {select('category', 'Categoria', options.categories.map(label => [label, label] as [string, string]), 'Todas as categorias')}
+        {select('situation', 'Situação', Object.entries(SITUATIONS), 'Todas')}
+        {select('photo', 'Foto', [['with', 'Com foto'], ['without', 'Sem foto']], 'Todas')}
+      </div>
+      <p className={styles.filterCount} role="status">{filters.type === 'kit' ? `${kits.length} ${kits.length === 1 ? 'kit' : 'kits'}` : `${materials.length} de ${everything.length} ${everything.length === 1 ? 'material' : 'materiais'}`}{active > 0 && <button type="button" className="p-text-link" onClick={() => setFilters(EMPTY)}><X size={14} aria-hidden="true"/>Limpar filtros</button>}</p>
+    </div>}
+    {materials.length === 0 && filters.type !== 'kit' && (everything.length ? <p className={styles.noResults}>Nenhum material com esses filtros.</p> : empty)}
+    {materials.length > 0 && <MaterialCatalog materials={materials} onOpen={onOpen}/>}
+    {showKits && <section className={styles.kits} aria-labelledby="catalog-kits"><h3 id="catalog-kits"><Gift size={17} aria-hidden="true"/>Kits de brinde</h3><ul>{kits.map(kit => { const possible = kit.components.length ? Math.max(0, Math.min(...kit.components.map(component => Math.floor(component.available / Math.max(1, component.quantity))))) : 0; return <li key={kit.id}><div><strong>{kit.name}</strong><small>{kit.kind === 'super' ? 'Super brinde' : 'Brinde'} · {kit.project}{kit.active ? '' : ' · inativo'}</small><small>{kit.components.map(component => `${component.quantity} × ${component.name}`).join(' + ')}</small></div><span className={possible > 0 ? styles.available : styles.low}>{possible}<small> {possible === 1 ? 'kit possível' : 'kits possíveis'}</small></span></li>; })}</ul></section>}
+  </div>;
+}
+
+/** Plain balance table (no hooks): rows already filtered by the caller. */
 export default function MaterialCatalog({ materials, onOpen }: {
   materials: CatalogMaterial[];
   onOpen: (id: string) => void;
@@ -61,7 +121,8 @@ export default function MaterialCatalog({ materials, onOpen }: {
                   <strong>{material.name}</strong>
                 </button>}
                 <strong className={`${styles.materialName} ${material.canOpen ? styles.mobileName : ''}`}>{material.name}</strong>
-                <small>{material.category} · {material.project}</small>
+                <small>{material.category} · {material.ownerLabel && material.ownerLabel !== material.project ? `${material.ownerLabel} (em ${material.project})` : material.project}</small>
+                {material.destinationName && <small className={styles.destination}><MapPin size={12} aria-hidden="true"/>Para {material.destinationName}</small>}
                 {material.assetCode && <small>Código: {material.assetCode}</small>}
                 {material.availabilityNote && <span className={`p-badge p-status-paused ${styles.mobileNote}`}>{material.availabilityNote}</span>}
                 {material.condition !== 'active' && <span className="p-badge p-status-paused">
