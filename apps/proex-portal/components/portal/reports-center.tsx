@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { ArrowDown, ArrowUp, BarChart3, Boxes, CalendarRange, ClipboardList, Columns3, FileJson, FileText, FolderKanban, LoaderCircle, Printer, RefreshCw, Repeat2, Save, Search, Trash2, Truck, X } from 'lucide-react';
 import { areaLabel } from '@/lib/extension-catalog';
@@ -383,6 +383,8 @@ export function ProjectReportExports({ projectId, projectName, officialUrl, hasL
 export default function ReportsCenter({ userId, projectId, unitId, area, from, to, scopeLabel, available, initialDataset, projectIdentity, canSync = false }: {
   userId: string; projectId: string; unitId: string; area: string; from: string; to: string; scopeLabel: string; available: DatasetId[]; initialDataset?: DatasetId; projectIdentity?: ExportRow; canSync?: boolean;
 }) {
+  // Ids estáveis para os campos (painel Issues do DevTools); não mudam o FormData.
+  const fieldId = useId();
   const datasets = ORDER.filter(id => available.includes(id));
   const [dataset, setDataset] = useState<DatasetId>(initialDataset && datasets.includes(initialDataset) ? initialDataset : datasets[0] ?? 'projects');
   const [assetDetails, setAssetDetails] = useState(false);
@@ -607,31 +609,31 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
   return <section className={styles.root} aria-label="Central de relatórios">
     <ReportMasthead label="Central de relatórios" title={config.label} description={scopeLabel || 'Escolha o assunto e confira os dados antes de exportar.'} projectBrand={reportBrand}/>
 
-    <label className={`p-field ${styles.subject}`}><span>Assunto do relatório</span><select value={dataset} onChange={event => chooseDataset(event.target.value as DatasetId)}>{datasets.map(id => <option key={id} value={id}>{DATASETS[id].label}</option>)}</select></label>
+    <label className={`p-field ${styles.subject}`}><span>Assunto do relatório</span><select id={`${fieldId}-subject`} value={dataset} onChange={event => chooseDataset(event.target.value as DatasetId)}>{datasets.map(id => <option key={id} value={id}>{DATASETS[id].label}</option>)}</select></label>
 
     <div className={styles.primaryControls}>
-      <label className={`p-field ${styles.search}`}><span>Buscar nas linhas</span><span className={styles.searchBox}><Search size={15} /><input ref={reportSearchRef} value={search} onChange={event => { setSearch(event.target.value); updateView({ page: 0 }); }} placeholder="Nome, material, título, observação…" />{search && <button type="button" aria-label="Limpar busca" onClick={() => { setSearch(''); updateView({ page: 0 }); }}><X size={14} /></button>}</span></label>
+      <label className={`p-field ${styles.search}`}><span>Buscar nas linhas</span><span className={styles.searchBox}><Search size={15} /><input id={`${fieldId}-search`} ref={reportSearchRef} value={search} onChange={event => { setSearch(event.target.value); updateView({ page: 0 }); }} placeholder="Nome, material, título, observação…" />{search && <button type="button" aria-label="Limpar busca" onClick={() => { setSearch(''); updateView({ page: 0 }); }}><X size={14} /></button>}</span></label>
     </div>
     <details className={styles.options}><summary>Ajustar recorte e colunas <span>{chosen.length} colunas · {visiblePresets.length} modelos</span>{activeOptions.length > 0 && <small>{activeOptions.join(' · ')}</small>}</summary><div className={styles.optionsBody}>
-    {dataset === 'materials' && <label className="p-form-help"><input type="checkbox" checked={assetDetails} onChange={event => { setAssetDetails(event.target.checked); setColumns(DATASETS.materials.defaults); setRows([]); setMeasure('__count__'); }}/>{' '}Consultar metadados patrimoniais privados (somente projetos com permissão vigente de inventário). A referência de responsável, processo e valor documentado só entra na exportação ao escolher essas colunas.</label>}
-    {dataset === 'outflow_details' && <div className="space-y-3"><p className="p-form-help">A ação aparece quando foi vinculada no registro. O operador é quem registrou a saída, com nome atual do perfil; beneficiários e contatos não são consultados. Saldo e unidade são os atuais do cadastro.</p><label className="p-form-help"><input type="checkbox" checked={includeNotes} onChange={event => { setIncludeNotes(event.target.checked); setColumns(DATASETS.outflow_details.defaults); setRows([]); setMeasure('__count__'); }}/>{' '}Disponibilizar motivos, observações e condições com permissão operacional vigente (textos livres podem conter dados pessoais). Selecione essas colunas e revise seu conteúdo antes de exportar.</label></div>}
+    {dataset === 'materials' && <label className="p-form-help"><input id={`${fieldId}-asset-details`} type="checkbox" checked={assetDetails} onChange={event => { setAssetDetails(event.target.checked); setColumns(DATASETS.materials.defaults); setRows([]); setMeasure('__count__'); }}/>{' '}Consultar metadados patrimoniais privados (somente projetos com permissão vigente de inventário). A referência de responsável, processo e valor documentado só entra na exportação ao escolher essas colunas.</label>}
+    {dataset === 'outflow_details' && <div className="space-y-3"><p className="p-form-help">A ação aparece quando foi vinculada no registro. O operador é quem registrou a saída, com nome atual do perfil; beneficiários e contatos não são consultados. Saldo e unidade são os atuais do cadastro.</p><label className="p-form-help"><input id={`${fieldId}-include-notes`} type="checkbox" checked={includeNotes} onChange={event => { setIncludeNotes(event.target.checked); setColumns(DATASETS.outflow_details.defaults); setRows([]); setMeasure('__count__'); }}/>{' '}Disponibilizar motivos, observações e condições com permissão operacional vigente (textos livres podem conter dados pessoais). Selecione essas colunas e revise seu conteúdo antes de exportar.</label></div>}
     <div className={styles.controls}>
-      {dataset === 'outflow_details' && <><label className="p-field"><span>Tipo de saída</span><select value={outflowType} onChange={event => setOutflowType(event.target.value)}><option value="all">Todas as saídas</option>{['distribute', 'redeem', 'loan'].map(type => <option value={type} key={type}>{LABELS.tipo[type]}</option>)}</select></label><label className="p-field"><span>Situação da devolução</span><select value={returnState} onChange={event => setReturnState(event.target.value)}><option value="all">Todas as situações</option>{['not_applicable', 'out', 'returned'].map(state => <option value={state} key={state}>{LABELS.situacao_retorno[state]}</option>)}</select></label></>}
-      <label className="p-field"><span>Agrupar gráfico por</span><select value={groupBy} onChange={event => { setGroupBy(event.target.value); updateView({ focus: '', page: 0 }); }}>{config.groups.map(key => <option key={key} value={key}>{key === 'mes' ? 'Mês' : config.columns.find(column => column.key === key)?.label}</option>)}</select></label>
-      <label className="p-field"><span>Medida</span><select value={effectiveMeasure} onChange={event => setMeasure(event.target.value)}><option value="__count__">Quantidade de {dataset === 'movements' ? 'movimentações' : 'linhas'}</option>{numericColumns.map(column => <option key={column.key} value={column.key} disabled={mixedUnits && PHYSICAL_MEASURES.includes(column.key)}>Soma de {column.label.toLowerCase()}</option>)}</select></label>
-      {unitOptions.length > 0 && <label className="p-field"><span>Unidade de medida</span><select value={measurementUnit} onChange={event => updateView({ measurementUnit: event.target.value, focus: '', page: 0 })}><option value="">Todas as medidas</option>{unitOptions.map(unit => <option key={unit} value={unit}>{unit}</option>)}</select></label>}
+      {dataset === 'outflow_details' && <><label className="p-field"><span>Tipo de saída</span><select id={`${fieldId}-outflow-type`} value={outflowType} onChange={event => setOutflowType(event.target.value)}><option value="all">Todas as saídas</option>{['distribute', 'redeem', 'loan'].map(type => <option value={type} key={type}>{LABELS.tipo[type]}</option>)}</select></label><label className="p-field"><span>Situação da devolução</span><select id={`${fieldId}-return-state`} value={returnState} onChange={event => setReturnState(event.target.value)}><option value="all">Todas as situações</option>{['not_applicable', 'out', 'returned'].map(state => <option value={state} key={state}>{LABELS.situacao_retorno[state]}</option>)}</select></label></>}
+      <label className="p-field"><span>Agrupar gráfico por</span><select id={`${fieldId}-group-by`} value={groupBy} onChange={event => { setGroupBy(event.target.value); updateView({ focus: '', page: 0 }); }}>{config.groups.map(key => <option key={key} value={key}>{key === 'mes' ? 'Mês' : config.columns.find(column => column.key === key)?.label}</option>)}</select></label>
+      <label className="p-field"><span>Medida</span><select id={`${fieldId}-measure`} value={effectiveMeasure} onChange={event => setMeasure(event.target.value)}><option value="__count__">Quantidade de {dataset === 'movements' ? 'movimentações' : 'linhas'}</option>{numericColumns.map(column => <option key={column.key} value={column.key} disabled={mixedUnits && PHYSICAL_MEASURES.includes(column.key)}>Soma de {column.label.toLowerCase()}</option>)}</select></label>
+      {unitOptions.length > 0 && <label className="p-field"><span>Unidade de medida</span><select id={`${fieldId}-unit`} value={measurementUnit} onChange={event => updateView({ measurementUnit: event.target.value, focus: '', page: 0 })}><option value="">Todas as medidas</option>{unitOptions.map(unit => <option key={unit} value={unit}>{unit}</option>)}</select></label>}
       <details className={styles.columns}>
         <summary><Columns3 size={16} />Colunas ({chosen.length}/{config.columns.length})</summary>
         <div>
           <div className={styles.columnActions}><button type="button" onClick={() => setColumns(config.columns.map(column => column.key))}>Todas</button><button type="button" onClick={() => setColumns(config.defaults)}>Padrão</button><button type="button" onClick={() => setColumns([])}>Nenhuma</button></div>
-          {config.columns.map(column => <label key={column.key}><input type="checkbox" checked={columns.includes(column.key)} onChange={() => toggleColumn(column.key)} />{column.label}</label>)}
+          {config.columns.map(column => <label key={column.key}><input id={`${fieldId}-column-${column.key}`} type="checkbox" checked={columns.includes(column.key)} onChange={() => toggleColumn(column.key)} />{column.label}</label>)}
         </div>
       </details>
     </div>
     <div className={styles.presets}>
       <span><Save size={14} />Modelos salvos</span>
       {visiblePresets.length ? visiblePresets.map(preset => <span key={preset.name} className={styles.preset}><button type="button" onClick={() => chooseDataset(preset.dataset, preset)} title={`${DATASETS[preset.dataset]?.label}`}>{preset.name}</button><button type="button" aria-label={`Excluir modelo ${preset.name}`} onClick={() => removePreset(preset.name)}><Trash2 size={13} /></button></span>) : <small>Nenhum ainda. Salve a combinação atual de assunto, colunas e agrupamento.</small>}
-      <form onSubmit={event => { event.preventDefault(); savePreset(); }}><input value={presetName} disabled={!presetsReady} onChange={event => setPresetState({ ...presetState, name: event.target.value })} placeholder="Nome do modelo" aria-label="Nome do modelo" maxLength={60} /><button type="submit" className="p-button p-button-subtle" disabled={!presetsReady || !presetName.trim()}>Salvar</button></form>
+      <form onSubmit={event => { event.preventDefault(); savePreset(); }}><input id={`${fieldId}-preset-name`} value={presetName} disabled={!presetsReady} onChange={event => setPresetState({ ...presetState, name: event.target.value })} placeholder="Nome do modelo" aria-label="Nome do modelo" maxLength={60} /><button type="submit" className="p-button p-button-subtle" disabled={!presetsReady || !presetName.trim()}>Salvar</button></form>
     </div>
 
     </div></details>
@@ -669,7 +671,7 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
       </div>
       <div className={styles.pager}>
         <span>{sorted.length ? `${current * pageSize + 1}–${Math.min(sorted.length, (current + 1) * pageSize)} de ${formatNumber(sorted.length)}` : 'Nenhuma linha com esta busca'}</span>
-        <label className={styles.pageSize}>Por página <select value={pageSize} onChange={event => { setPageSize(Number(event.target.value)); updateView({ page: 0 }); }}>{PAGE_SIZES.map(size => <option key={size} value={size}>{size}</option>)}</select></label>
+        <label className={styles.pageSize}>Por página <select id={`${fieldId}-page-size`} value={pageSize} onChange={event => { setPageSize(Number(event.target.value)); updateView({ page: 0 }); }}>{PAGE_SIZES.map(size => <option key={size} value={size}>{size}</option>)}</select></label>
         <button type="button" className="p-button p-button-subtle" disabled={current === 0} onClick={() => updateView({ page: current - 1 })}>Anterior</button>
         <button type="button" className="p-button p-button-subtle" disabled={current >= pages - 1} onClick={() => updateView({ page: current + 1 })}>Próxima</button>
       </div>
@@ -686,7 +688,7 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
         <figure className={styles.chart}>
           <figcaption><strong>{effectiveMeasure === '__count__' ? 'Distribuição' : `Soma de ${measureLabel}`} por {groupLabel.toLowerCase()}</strong><small>Selecione um grupo ou toque em uma barra para filtrar as linhas da tabela.</small></figcaption>
           <label className={`p-field ${styles.chartGroup}`}><span>Filtrar tabela por grupo</span>
-            <select value={focus} onChange={event => setGroupFocus(event.target.value)}>
+            <select id={`${fieldId}-focus`} value={focus} onChange={event => setGroupFocus(event.target.value)}>
               <option value="">Todos os grupos</option>
               {focus && !breakdown.some(item => item.raw === focus) && <option value={focus}>{focusLabel}</option>}
               {breakdown.filter(item => item.raw).map(item => <option key={item.raw} value={item.raw}>{item.name}</option>)}
