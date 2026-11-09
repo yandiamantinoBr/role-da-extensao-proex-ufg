@@ -88,6 +88,16 @@ export async function passwordAuth(db: D1Database, options: PasswordAuthOptions 
         },
       } : {}),
     },
+    // Sessions never keep the client IP or browser. Nothing in the portal reads them,
+    // and together with hosting request logs they could help guess the author of an
+    // anonymous ombudsman report (docs/COMUNIDADE.md). The login limiters key by IP
+    // in their own buckets (hashed), without linking the address to an account.
+    databaseHooks: {
+      session: {
+        create: { before: async (session: Record<string, unknown>) => ({ data: { ...session, ipAddress: '', userAgent: '' } }) },
+        update: { before: async (session: Record<string, unknown>) => ('ipAddress' in session || 'userAgent' in session ? { data: { ...session, ipAddress: '', userAgent: '' } } : undefined) },
+      },
+    },
     session: {
       expiresIn: 7 * 24 * 60 * 60,
       updateAge: 24 * 60 * 60,
