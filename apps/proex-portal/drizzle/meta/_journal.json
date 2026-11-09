@@ -246,6 +246,13 @@
       "when": 1793990296470,
       "tag": "0034_material_attention",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "6",
+      "when": 1794223862202,
+      "tag": "0035_prize_tiers_and_primary_photos",
+      "breakpoints": true
     }
   ]
 }

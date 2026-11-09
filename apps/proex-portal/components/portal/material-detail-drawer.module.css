@@ -30,3 +30,43 @@
  .dialog[data-mode=move] .balances span,.dialog[data-mode=edit] .balances span{display:none}
  .dialog[data-mode=move] .balances>div:first-child span,.dialog[data-mode=edit] .balances>div:first-child span{display:block;font-size:10px}
 }
+
+/* Primary photo: gallery badge, review before saving and change history. */
+.gallery figure{margin:0;min-width:0;display:flex;flex-direction:column;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--surface,var(--paper))}
+.gallery figure.primaryPhoto{border-color:var(--brand-ink,var(--purple));box-shadow:0 0 0 1px var(--brand-ink,var(--purple))}
+.gallery figure>a{display:block}
+.gallery figcaption{display:flex;flex-direction:column;gap:6px;padding:10px 11px 4px;min-width:0}
+.gallery figcaption span{padding:0;font-size:10px;line-height:1.6;overflow-wrap:anywhere}
+.primaryBadge{display:inline-flex;align-items:center;gap:5px;align-self:flex-start;font-size:10px;font-weight:700;color:var(--brand-ink,var(--purple));background:var(--surface-soft,#f4edf8);border-radius:7px;padding:3px 8px}
+.photoAction{font-size:12px!important;margin:4px 11px 12px;min-height:44px;justify-content:center;gap:6px}
+.photoConfirm{padding:8px 11px 12px;display:flex;flex-direction:column;gap:9px}
+.photoConfirm p{font-size:11px;line-height:1.6}
+.photoConfirm div{display:flex;gap:7px;flex-wrap:wrap}
+.photoConfirm button{min-height:40px;font-size:11px;padding-inline:12px}
+.photoReview{margin-top:17px;padding-top:17px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:13px}
+.photoReview h4{font-size:15px;font-weight:700;margin:0}
+.photoReview .helper{margin:0}
+.compare{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.compare figure{margin:0;display:flex;flex-direction:column;gap:7px;min-width:0}
+.compare figcaption{font-size:11px;font-weight:600;color:var(--text-secondary,var(--muted))}
+.compare img{width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:11px;border:1px solid var(--line);background:var(--surface,var(--paper))}
+.compareEmpty{width:100%;aspect-ratio:4/3;border:1px dashed var(--line);border-radius:11px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;font-size:11px;color:var(--text-secondary,var(--muted));background:var(--surface,var(--paper))}
+.photoWarning{display:flex;gap:9px;align-items:flex-start;font-size:12px;line-height:1.7;padding:11px 13px;border-radius:10px;border:1px solid var(--warning-line,#e2b35a);background:var(--warning-soft,#fbf1dc);color:var(--warning-ink,#6b4a0c)}
+.photoWarning svg{flex-shrink:0;margin-top:3px}
+.photoDecision{display:flex;gap:9px;flex-wrap:wrap}
+.photoDecision button{min-height:44px}
+.photoHistory{border:1px solid var(--line);border-radius:13px;padding:15px 16px;margin:0 0 18px;background:var(--surface,var(--paper))}
+.photoHistory h4{font-size:13px;font-weight:700;margin:0 0 6px}
+.photoHistory ol{list-style:none;margin:0;padding:0}
+.photoHistory li{display:flex;gap:14px;align-items:center;padding:11px 0;border-top:1px solid var(--line)}
+.photoHistory li:first-child{border-top:0}
+.photoHistory p{display:flex;flex-direction:column;gap:4px;min-width:0;font-size:12px}
+.photoHistory small{font-size:10px;color:var(--text-secondary,var(--muted))}
+.photoPair{display:flex;align-items:center;gap:7px;flex-shrink:0}.photoPair figure{margin:0;display:flex;flex-direction:column;gap:3px}.photoPair figcaption{font-size:10px;font-weight:600;color:var(--text-secondary,var(--muted))}.photoPair .photoArrow{margin-top:14px}
+.photoPair img,.photoPair .compareEmpty{width:64px;height:64px;aspect-ratio:auto;object-fit:cover;border-radius:9px;border:1px solid var(--line);font-size:9px;text-align:center}
+.photoArrow{transform:rotate(45deg);color:var(--text-secondary,var(--muted))}
+
+:global(html[data-theme=dark]) .photoWarning{background:#3a2d12;color:#f3d9a3;border-color:#7a5c22}
+:global(html[data-theme=dark]) .photoPair img,:global(html[data-theme=dark]) .compare img,:global(html[data-theme=dark]) .gallery img{outline:1px solid #8d7aa3;outline-offset:-1px}
+.photoConfirm .photoWarning{padding:8px 10px;font-size:11px}
+@media(max-width:650px){.compare{gap:9px}.photoDecision button{flex:1 1 100%;justify-content:center}.photoHistory li{flex-direction:column;align-items:flex-start;gap:8px}.gallery figcaption{padding:9px 9px 3px}.photoAction{margin:4px 9px 11px}}
