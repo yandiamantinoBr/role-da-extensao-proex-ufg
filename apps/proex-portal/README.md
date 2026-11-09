@@ -2,7 +2,7 @@
 
 Portal para organizar projetos, equipe, eventos, materiais, participação no Rolê da Extensão e empréstimos. A interface prioriza o celular. O jogo livre existente continua independente, público e ilimitado em https://role-da-extensao-ufg.yandiamantinobr.chatgpt.site/ e em sua publicação GitHub Pages.
 
-Este diretório contém o portal, incluindo as entregas [V7](../../docs/ENTREGA-V7.md) e [V8](../../docs/ENTREGA-V8.md). O [Manual de operação](docs/MANUAL-PROEX.md) reúne os fluxos para a equipe. O endereço de produção é <https://proex-gestao.vercel.app/>. A existência do código não comprova publicação nem validação de todos os fluxos: confira a revisão do deployment e os resultados registrados. Testes locais devem usar somente dados sintéticos.
+Este diretório contém o portal, incluindo as entregas [V7](../../docs/ENTREGA-V7.md) e [V8](../../docs/ENTREGA-V8.md). O [Manual de operação](docs/MANUAL-PROEX.md) reúne os fluxos para a equipe. O [Glossário](docs/GLOSSARIO.md) liga cada termo da tela ao nome no código e às tabelas. O endereço de produção é <https://proex-gestao.vercel.app/>. A existência do código não comprova publicação nem validação de todos os fluxos: confira a revisão do deployment e os resultados registrados. Testes locais devem usar somente dados sintéticos.
 
 Para preparar e verificar o ambiente, consulte [Verificação do repositório](docs/VERIFICACAO-REPOSITORIO.md) e o [AGENTS.md](../../AGENTS.md). O arquivo `.dev.vars.example` contém apenas os nomes das variáveis locais, sem valores; credenciais de produção não são necessárias para desenvolver.
 
