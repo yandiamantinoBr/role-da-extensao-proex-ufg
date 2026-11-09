@@ -57,4 +57,4 @@ export function tierOdds(percent:number,retryLimit:number|null):TierOdds{
 }
 export function percentLabel(value:number):string{return `${(value*100).toLocaleString('pt-BR',{maximumFractionDigits:1})}%`;}
 /** Rounded expected count for a group size, never shown as a promise. */
-export function expected(value:number,people:number):string{return (value*people).toLocaleString('pt-BR',{maximumFractionDigits:1});}
+export function expected(value:number,people:number):string{const count=value*people,rounded=Math.round(count);return count>0&&rounded===0?'menos de 1':`cerca de ${rounded}`;}

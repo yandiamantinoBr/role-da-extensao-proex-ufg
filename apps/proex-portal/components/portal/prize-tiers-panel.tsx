@@ -61,7 +61,7 @@ function PrizeTiersBody({userId,campaignId}:Props){
  function savePercent(event:FormEvent<HTMLFormElement>){
   event.preventDefault();if(!data)return;const value=Number(percent);
   if(!Number.isInteger(value)||value<0||value>100)return setNotice({tone:'error',text:'Use um número inteiro de 0 a 100.'});
-  void mutate({action:'percent.set',campaignId,expectedVersion:data.version,superSuperPercent:value},`Premissa salva: ${value}% dos resultados Super viram Super Super.`);
+  void mutate({action:'percent.set',campaignId,expectedVersion:data.version,superSuperPercent:value},`Salvo: ${value}% dos sorteios Super viram Super Super.`);
  }
  function createOption(event:FormEvent<HTMLFormElement>){
   event.preventDefault();if(!data)return;const name=draft.name.trim(),rows=draft.rows.filter(row=>row.itemId);
@@ -92,24 +92,25 @@ function PrizeTiersBody({userId,campaignId}:Props){
    {data&&odds&&<>
     <header className={styles.heading}>
      <p className={styles.muted}>A pessoa escolhe <strong>uma</strong> opção do nível sorteado. Mudar o nível de uma opção não mexe no estoque nem nas entregas já registradas.</p>
-     <button type="button" className={styles.secondary} onClick={()=>void load()} disabled={locked}><RefreshCw size={16} aria-hidden="true"/>Atualizar</button>
+     <button type="button" className={styles.secondary} onClick={()=>void load()} disabled={locked} aria-label="Recarregar os níveis desta dinâmica"><RefreshCw size={16} aria-hidden="true"/>Recarregar</button>
     </header>
     {!data.canManage&&<p className={styles.readOnly}><Lock size={16} aria-hidden="true"/><span>{data.campaign.status==='closed'?'Dinâmica encerrada: os níveis ficam guardados como histórico.':'Somente consulta. Quem gerencia as dinâmicas do projeto pode mudar os níveis.'}</span></p>}
 
     <section className={styles.odds} aria-labelledby={`tier-odds-${campaignId}`}>
-     <div className={styles.oddsHead}><h4 id={`tier-odds-${campaignId}`}><Sparkles size={17} aria-hidden="true"/>Chances por pessoa</h4>{data.percentIsDefault&&<span className={styles.badge}>Premissa padrão, ainda não confirmada</span>}</div>
+     <div className={styles.oddsHead}><h4 id={`tier-odds-${campaignId}`}><Sparkles size={17} aria-hidden="true"/>Chances por pessoa</h4>{data.percentIsDefault?<span className={styles.badge}>Usando o padrão ({DEFAULT_SUPER_SUPER_PERCENT}%), ainda não confirmado</span>:<span className={styles.badgeOk}>Confirmado: {data.superSuperPercent}%</span>}</div>
      <dl className={styles.oddsGrid}>
-      <div><dt>Brinde</dt><dd>{percentLabel(odds.brinde)}</dd><small>~{expected(odds.brinde,20)} a cada 20 pessoas</small></div>
-      <div><dt>Super</dt><dd>{percentLabel(odds.super)}</dd><small>~{expected(odds.super,20)} a cada 20 pessoas</small></div>
-      <div data-tier="super_super"><dt>Super Super</dt><dd>{percentLabel(odds.superSuper)}</dd><small>~{expected(odds.superSuper,20)} a cada 20 pessoas</small></div>
+      <div><dt>Brinde</dt><dd>{percentLabel(odds.brinde)}</dd><small>{expected(odds.brinde,20)} em cada 20 pessoas</small></div>
+      <div><dt>Super</dt><dd>{percentLabel(odds.super)}</dd><small>{expected(odds.super,20)} em cada 20 pessoas</small></div>
+      <div data-tier="super_super"><dt>Super Super</dt><dd>{percentLabel(odds.superSuper)}</dd><small>{expected(odds.superSuper,20)} em cada 20 pessoas</small></div>
       <div><dt>Sem brinde</dt><dd>{percentLabel(odds.nothing)}</dd><small>Não foi dessa vez</small></div>
      </dl>
-     <p className={styles.muted}>Roleta e dado com 3 faces Brinde, 1 Super, 1 Tente novamente e 1 Não foi; {odds.retryLimit===1?'até 1 repetição':`até ${odds.retryLimit} repetições`}{data.campaign.retryLimit===null?' (premissa; a dinâmica ainda não definiu)':''}. {drawHint(data.superSuperPercent)} São estimativas para separar os lotes, não promessas.</p>
+     <p className={styles.muted}>{drawHint(data.superSuperPercent)}</p>
+     <details className={styles.how}><summary>Como calculamos</summary><p>A roleta e o dado têm 6 faces: 3 Brinde, 1 Super, 1 Tente novamente e 1 Não foi. A conta considera {odds.retryLimit===1?'até 1 repetição':`até ${odds.retryLimit} repetições`} depois de “Tente novamente”{data.campaign.retryLimit===null?' (a dinâmica ainda não definiu esse limite; usamos 1)':''}. A porcentagem abaixo é uma premissa da equipe. São estimativas para separar os lotes, não promessas.</p></details>
      {data.canManage&&<form className={styles.percentForm} onSubmit={savePercent}>
-      <label htmlFor={`tier-percent-${campaignId}`}>Dos resultados Super, quantos % viram Super Super?</label>
+      <label htmlFor={`tier-percent-${campaignId}`}>Dos sorteios Super, quantos % viram Super Super?</label>
       <div><input id={`tier-percent-${campaignId}`} type="number" inputMode="numeric" min={0} max={100} step={1} value={percent} onChange={event=>setPercent(event.target.value)} disabled={locked} aria-describedby={`tier-percent-help-${campaignId}`}/><span aria-hidden="true">%</span>
-      <button type="submit" className={`${styles.primary} p-button-primary`} disabled={locked||percent===''||(!data.percentIsDefault&&Number(percent)===data.superSuperPercent)}>{data.percentIsDefault&&Number(percent)===data.superSuperPercent?'Confirmar premissa':'Salvar premissa'}</button></div>
-      <small id={`tier-percent-help-${campaignId}`}>Padrão: {DEFAULT_SUPER_SUPER_PERCENT}% (1 em 4). Cada mudança fica no histórico abaixo.</small>
+      <button type="submit" className={`${styles.primary} p-button-primary`} disabled={locked||percent===''||(!data.percentIsDefault&&Number(percent)===data.superSuperPercent)}>{data.percentIsDefault&&Number(percent)===data.superSuperPercent?`Confirmar ${data.superSuperPercent}%`:'Salvar'}</button></div>
+      <small id={`tier-percent-help-${campaignId}`}>Padrão: {DEFAULT_SUPER_SUPER_PERCENT}% (1 em 4). Cada mudança fica no histórico abaixo, com nome e horário.</small>
      </form>}
     </section>
 
@@ -120,7 +121,7 @@ function PrizeTiersBody({userId,campaignId}:Props){
       <h4 id={`tier-${group.key}-${campaignId}`}>{group.label}<span className={styles.count}>{options.length} {options.length===1?'opção':'opções'}</span></h4>
       <p className={styles.hint}>{group.hint}</p>
       {options.length?<ul className={styles.options}>{options.map(option=><li key={option.offerId} className={styles.option}>
-       <div className={styles.optionText}><strong>{option.name}</strong><span>{option.components.map(component=>`${component.quantity} × ${component.name}`).join(' + ')||'Sem materiais'}</span>{option.updatedAt&&<small>Mudado por {option.updatedBy??'Equipe'} em {when.format(new Date(option.updatedAt))}</small>}</div>
+       <div className={styles.optionText}><strong>{option.name}</strong><span>{option.components.map(component=>`${component.quantity} × ${component.name}`).join(' + ')||'Sem materiais'}</span></div>
        {data.canManage&&<label className={styles.move}><span>Nível</span><select value={option.tier??OUT} disabled={locked} onChange={event=>moveOption(option,event.target.value)} aria-label={`Nível de ${option.name}`}>{PRIZE_TIERS.map(tier=><option key={tier} value={tier}>{TIER_LABELS[tier]}</option>)}<option value={OUT}>Fora desta dinâmica</option></select></label>}
       </li>)}</ul>:<p className={styles.empty}>Nenhuma opção neste nível.</p>}
      </section>;
@@ -150,7 +151,7 @@ function PrizeTiersBody({userId,campaignId}:Props){
 
     <section className={styles.history} aria-labelledby={`tier-history-${campaignId}`}>
      <h4 id={`tier-history-${campaignId}`}><History size={17} aria-hidden="true"/>Histórico de mudanças</h4>
-     {data.history.length?<><ol>{(allHistory?data.history:data.history.slice(0,8)).map(entry=><li key={entry.id}><p>{historyText(entry)}</p><small>{entry.actorName} · {when.format(new Date(entry.createdAt))}</small></li>)}</ol>{data.history.length>8&&<button type="button" className={styles.quiet} onClick={()=>setAllHistory(value=>!value)} aria-expanded={allHistory}>{allHistory?'Mostrar só as recentes':`Ver todas (${data.history.length})`}</button>}</>:<p className={styles.muted}>Ainda sem mudanças registradas nesta dinâmica.</p>}
+     {data.history.length?<><ol>{(allHistory?data.history:data.history.slice(0,8)).map(entry=><li key={entry.id}><p>{historyText(entry)}</p><small>{entry.actorName} · {when.format(new Date(entry.createdAt))}</small></li>)}</ol>{data.history.length>8&&<button type="button" className={styles.more} onClick={()=>setAllHistory(value=>!value)} aria-expanded={allHistory}>{allHistory?'Mostrar só as recentes':`Ver todas (${data.history.length})`}</button>}</>:<p className={styles.muted}>Ainda sem mudanças registradas nesta dinâmica.</p>}
     </section>
    </>}
   </div>
