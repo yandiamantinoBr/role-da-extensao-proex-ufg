@@ -42,9 +42,9 @@ O anonimato vem do que **não é gravado**:
 
 Riscos que o código não elimina (revisão independente de 09/11):
 
-- **Quem administra a hospedagem e o banco** pode cruzar o registro de pedidos da Vercel (hora, rede, navegador) com `auth_session` (que guarda IP e navegador do login) e estimar o autor. O instantâneo atual guarda `updated_at`; o histórico guarda uma cópia na primeira gravação depois de 6 horas, que pode coincidir com o relato; um gatilho no Postgres ou PITR também guardariam versões. A tela diz que o anonimato vale para quem lê pelo portal, não contra quem administra a infraestrutura.
+- **Quem administra a hospedagem** pode cruzar o registro de pedidos da Vercel (hora, rede, navegador) com outros acessos e estimar o autor. O instantâneo atual guarda `updated_at`; o histórico guarda uma cópia na primeira gravação depois de 6 horas, que pode coincidir com o relato; um gatilho no Postgres ou PITR também guardariam versões. A tela diz que o anonimato vale para quem lê pelo portal, não contra quem administra a infraestrutura.
 - O texto pode identificar quem escreveu; equipes muito pequenas reduzem o anonimato.
-- Pendência para a frente de segurança: avaliar desligar o registro de IP e navegador nas sessões do Better Auth (`advanced.ipAddress.disableIpTracking` e user-agent), pesando o efeito no limite de tentativas de login. A longo prazo, um token cego emitido fora do momento do envio desligaria conta e relato.
+- Resolvido pela frente de segurança na PR #52: um gancho do Better Auth grava `ip_address` e `user_agent` vazios em `auth_session` (o limitador de login continua usando o IP em baldes próprios, com hash e sem ligação com a conta). Sessões abertas antes daquele deploy guardam os valores até expirar (no máximo 7 dias). Os registros da Vercel continuam existindo. A longo prazo, um token cego emitido fora do momento do envio desligaria conta e relato.
 
 ## Testes
 
