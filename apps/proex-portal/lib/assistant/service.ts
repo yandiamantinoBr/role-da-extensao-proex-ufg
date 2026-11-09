@@ -24,9 +24,23 @@ async function assertPlanAuthorization(statement: D1PreparedStatement) {
  try { await statement.first(); } catch(error) { if(String(error).includes('assistant_authority_changed'))throw new HttpError(403,'Seu acesso ou a configuração mudou.','assistant_forbidden'); throw error; }
 }
 function dayKey(now: number): string { const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(now)); return ['year', 'month', 'day'].map(type => parts.find(part => part.type === type)!.value).join('-'); }
+/** Free preview of the paid preparation ceiling. No reservation and no provider call. */
+export async function estimateAssistantPlan(db: D1Database, actor: PortalActor | null, input: Record<string, unknown>, secret: string, options: { keys?: CredentialKeys } = {}) {
+ const project = projectId(input.projectId), current = await scopedActor(db, actor, project), request = safeRequest(input.request);
+ const organizationId = String((await one(db, 'SELECT organization_id FROM projects WHERE id=?', [project]))?.organization_id);
+ const { config } = await loadSettings(db, secret, organizationId, false, options.keys, current.userId);
+ const rows = await all(db, 'SELECT id,name,category,unit,stock,reserved,condition FROM items WHERE project_id=? ORDER BY id LIMIT 101', [project]);
+ if (rows.length > 100) throw new HttpError(400, 'Este projeto possui mais de 100 materiais. Use os filtros de Materiais para esta consulta.', 'assistant_context_limit');
+ const items = rows.map(row => ({ ...row, name: safeRequest(row.name), unit: safeRequest(row.unit) })) as AssistantItem[], body = generationBody(config, request, items);
+ const bodyBytes = new TextEncoder().encode(JSON.stringify(providerGenerationBody(config,body))).byteLength + 2048;
+ if (bodyBytes > 24000) throw new HttpError(400, 'Reduza o pedido ou a quantidade de materiais do contexto.', 'assistant_context_limit');
+ const reservation = aiReservation(config, bodyBytes), selected = textModel(config);
+ return { costMicros: reservation.cost, calls: reservation.calls, provider: selected.provider, model: selected.model, jev: config.jevEnabled };
+}
 export async function prepareAssistantPlan(db: D1Database, actor: PortalActor | null, input: Record<string, unknown>, secret: string, options: { fetcher?: typeof fetch; now?: number; keys?: CredentialKeys } = {}) {
- onlyKeys(input, ['action', 'projectId', 'request', 'operationKey', 'consent']);
+ onlyKeys(input, ['action', 'projectId', 'request', 'operationKey', 'consent', 'acceptedCostMicros']);
  if (input.consent !== true) throw new HttpError(400, 'Confirme o envio do pedido e do estoque deste projeto aos provedores configurados.', 'assistant_consent');
+ if (input.acceptedCostMicros !== undefined && (!Number.isSafeInteger(input.acceptedCostMicros) || Number(input.acceptedCostMicros) < 0)) throw new HttpError(400, 'Confira o custo previsto antes de preparar.', 'assistant_cost');
  if (typeof input.operationKey !== 'string' || !/^[A-Za-z0-9_-]{8,100}$/.test(input.operationKey)) throw new HttpError(400, 'Reabra o assistente antes de enviar.', 'assistant_operation');
  const project = projectId(input.projectId), current = await scopedActor(db, actor, project), request = safeRequest(input.request), now = options.now ?? Date.now();
  const organizationId = String((await one(db, 'SELECT organization_id FROM projects WHERE id=?', [project]))?.organization_id);
@@ -38,6 +52,7 @@ export async function prepareAssistantPlan(db: D1Database, actor: PortalActor | 
  const bodyBytes = new TextEncoder().encode(JSON.stringify(providerGenerationBody(config,body))).byteLength + 2048;
  if (bodyBytes > 24000) throw new HttpError(400, 'Reduza o pedido ou a quantidade de materiais do contexto.', 'assistant_context_limit');
  const reservation=aiReservation(config,bodyBytes),reservedCost=reservation.cost;
+ if (input.acceptedCostMicros !== undefined && reservedCost > Number(input.acceptedCostMicros)) throw new HttpError(409, 'O custo previsto mudou. Confira o novo valor e prepare de novo.', 'assistant_cost_changed');
  const id = await digest(`${current.userId}\n${project}\n${input.operationKey}`), fingerprint = await digest(JSON.stringify({ request, project, revision })), day = dayKey(now);
  const authorization = planAuthorization(db,current,project,organizationId,revision);
  async function existingCall() { const call = await one(db, 'SELECT fingerprint,status,plan_id FROM ai_calls WHERE id=?', [id]); if (call && call.fingerprint !== fingerprint) throw new HttpError(409, 'Este envio já foi usado com outro pedido. Prepare uma nova solicitação.', 'assistant_operation_changed'); if (!call) return null; if (call.status === 'complete') { const stored = await one(db, 'SELECT payload_json,payload_digest,status FROM ai_plans WHERE id=?', [call.plan_id]); if (stored?.status === 'ready') { const plan = JSON.parse(stored.payload_json) as AssistantPlan; if (plan.expiresAt > now) { const result=await presentPlan(plan, stored.payload_digest, secret); await assertPlanAuthorization(authorization); return result; } } } throw new HttpError(409, 'Este envio já foi processado ou está em andamento. Prepare um novo pedido se necessário.', 'assistant_call_replay'); }

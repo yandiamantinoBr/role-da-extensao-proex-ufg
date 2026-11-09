@@ -37,7 +37,7 @@ function harness() {
     requests, lifecycle,
     render(next=props) { props=next; index=0; tree=Component({canManageKeys:true,...props}); pending.splice(0).forEach(effect=>effect()); reconcile(); },
     button(label) { const node = nodes().find(node => node.type === 'button' && text(node) === label); assert.ok(node, label); return node; },
-    selector() { const label = nodes().find(node => node.type === 'label' && text(node).startsWith('Organização dos ajustes de IA')); assert.ok(label); return label.props.children.find(node => node?.type === 'select'); },
+    selector() { const label = nodes().find(node => node.type === 'label' && text(node).startsWith('Organização da IA')); assert.ok(label); return label.props.children.find(node => node?.type === 'select'); },
     status(org = 'org-a', extra = {}) { return { available: true, canConfigure: true, canDelegate: false, organizationId: org, revision: 1, config: defaults, organizations: ['org-a', 'org-b'].map(id => ({ id, name: id, canConfigure: true, available: true, sttAvailable: false })), ...extra }; },
     get boundary() { return mounted; },
     async reply(index, body) { requests[index].resolve({ ok: true, json: async () => body }); await tick(); h.render(); },
