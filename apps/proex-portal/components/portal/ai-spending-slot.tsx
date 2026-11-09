@@ -1,5 +1,6 @@
 'use client';
-/** Ponto de troca do painel de gastos (o painel completo entra nesta mesma rodada). */
+/** Ponto de troca do painel de gastos: hoje o painel completo; outra tela pode substituí-lo aqui. */
+import AiSpendingPanel from './ai-spending-panel';
 export default function AiSpendingSlot({ organizationId }: { organizationId: string }) {
-  return <p role="status" data-organization={organizationId}>O painel de gastos está sendo preparado.</p>;
+  return <AiSpendingPanel organizationId={organizationId}/>;
 }

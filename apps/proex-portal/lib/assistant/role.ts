@@ -9,7 +9,7 @@ import {
   ROLE_SYSTEM_PROMPT, roleConversationBytes, roleEstimate, validateRoleReply, type RoleTurn,
 } from './role-contracts';
 import { containsCredential } from './sensitive';
-import { firstJsonObject, genericChat } from './generic-provider';
+import { ChargedError, firstJsonObject, genericChat } from './generic-provider';
 import { fitsFunction, type CatalogModel, type CatalogProvider, type ModelCatalog } from './model-catalog';
 import { loadCatalog } from './model-catalog-store';
 import { catalogPricing, type RolePricing } from './role-contracts';
@@ -261,11 +261,11 @@ export function operationNumbersAllowed(operation: string, userTexts: string[]):
 async function catalogDispatch(chosen: Extract<Route, { kind: 'catalog' }>, turns: RoleTurn[], message: string, projectName: string, image: string | null, signal: AbortSignal, fetcher: typeof fetch) {
   const result = await genericChat({ provider: chosen.provider, model: chosen.model, apiKey: chosen.apiKey, system: ROLE_SYSTEM_PROMPT, maxTokens: ROLE_MAX_OUTPUT_TOKENS, json: chosen.provider.kind === 'openai_chat', signal, fetcher,
     turns: [...turns, { role: 'user', content: `Projeto atual: ${projectName}\nMensagem: ${message}`, image }] });
-  if (result.outputTokens > ROLE_MAX_OUTPUT_TOKENS * 2) throw withheld();
+  if (result.outputTokens > ROLE_MAX_OUTPUT_TOKENS * 2) throw new ChargedError('O modelo passou do limite de resposta. O custo foi registrado.', result.costMicros, result.inputTokens + result.outputTokens);
   let reply: { reply: string; operation: string | null };
   try { reply = validateRoleReply(firstJsonObject(result.text)); }
   catch { reply = { reply: result.text.trim().slice(0, 4000), operation: null }; }
-  if (containsCredential(reply.reply) || reply.operation && containsCredential(reply.operation)) throw withheld();
+  if (containsCredential(reply.reply) || reply.operation && containsCredential(reply.operation)) throw new ChargedError('A resposta do provedor não pôde ser mostrada.', result.costMicros, result.inputTokens + result.outputTokens);
   return { ...reply, inputTokens: result.inputTokens, outputTokens: result.outputTokens, costMicros: result.costMicros };
 }
 
@@ -336,6 +336,9 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
       reservedMicros: estimate.costMicros, costMicros: result.costMicros, inputTokens: result.inputTokens, outputTokens: result.outputTokens };
   } catch (error) {
     await db.prepare("UPDATE ai_calls SET status='failed' WHERE id=? AND status='reserved'").bind(id).run();
+    if (error instanceof ChargedError && (error.chargedMicros > estimate.costMicros || error.chargedTokens > estimate.tokens)) {
+      await db.prepare('UPDATE ai_organization_usage SET reserved_usd_micros=reserved_usd_micros+?,reserved_tokens=reserved_tokens+? WHERE organization_id=? AND day=?').bind(Math.max(0, error.chargedMicros - estimate.costMicros), Math.max(0, error.chargedTokens - estimate.tokens), organizationId, day).run();
+    }
     if (String(error).includes('assistant_authority_changed')) throw new HttpError(403, 'Seu acesso ou a configuração mudou antes da resposta.', 'assistant_forbidden');
     throw error;
   } finally {

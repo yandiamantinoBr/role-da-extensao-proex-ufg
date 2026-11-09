@@ -3,7 +3,7 @@ import { one } from '../database';
 import { HttpError } from '../errors';
 import { onlyKeys, safeRequest } from './contracts';
 import type { CredentialKeys } from './crypto';
-import { genericChat } from './generic-provider';
+import { ChargedError, genericChat } from './generic-provider';
 import { COMPARE_MAX_OUTPUT, COMPARE_SYSTEM, compareEstimate, fitsFunction, type CatalogModel, type CatalogProvider } from './model-catalog';
 import { loadCatalog } from './model-catalog-store';
 import { loadAssistantSettings } from './settings';
@@ -32,7 +32,7 @@ export async function compareModels(db: D1Database, actor: PortalActor | null, i
   const { config, rawCredentials } = await loadAssistantSettings(db, secret, organizationId, 'configuration', keys, actor.userId);
   const chosen = ids.map(id => {
     const model = catalog.models.find(entry => entry.id === id && entry.enabled), provider = catalog.providers.find(entry => entry.id === model?.providerId);
-    if (!model || !provider || fitsFunction(model, provider, 'chat')) throw new HttpError(400, 'Escolha modelos de texto do catálogo.', 'compare_models');
+    if (!model || !provider || fitsFunction({ ...model, testOnly: false }, provider, 'chat')) throw new HttpError(400, 'Escolha modelos de texto do catálogo.', 'compare_models');
     const apiKey = rawCredentials[provider.keyRef];
     if (typeof apiKey !== 'string' || apiKey.length < 12) throw new HttpError(400, `Falta a chave de ${provider.label}.`, 'compare_key');
     return { model, provider, apiKey } as { model: CatalogModel; provider: CatalogProvider; apiKey: string };
@@ -44,8 +44,8 @@ export async function compareModels(db: D1Database, actor: PortalActor | null, i
     await db.batch([
       db.prepare(`SELECT CASE WHEN ${authority.sql} THEN 1 ELSE json_extract('[]','compare_authority') END`).bind(...authority.values),
       db.prepare('INSERT INTO ai_organization_usage(organization_id,day) VALUES(?,?) ON CONFLICT(organization_id,day) DO NOTHING').bind(organizationId, day),
-      db.prepare('UPDATE ai_organization_usage SET reserved_usd_micros=reserved_usd_micros+?,reserved_tokens=reserved_tokens+?,reserved_ms=reserved_ms+?,calls=calls+? WHERE organization_id=? AND day=? AND reserved_usd_micros+?<=? AND reserved_tokens+?<=? AND calls+?<=?')
-        .bind(estimate.total, estimate.tokens, ms, chosen.length, organizationId, day, estimate.total, config.dailyUsdMicros, estimate.tokens, config.dailyTokens, chosen.length, config.dailyCalls),
+      db.prepare('UPDATE ai_organization_usage SET reserved_usd_micros=reserved_usd_micros+?,reserved_tokens=reserved_tokens+?,reserved_ms=reserved_ms+?,calls=calls+? WHERE organization_id=? AND day=? AND reserved_usd_micros+?<=? AND reserved_tokens+?<=? AND reserved_ms+?<=? AND calls+?<=?')
+        .bind(estimate.total, estimate.tokens, ms, chosen.length, organizationId, day, estimate.total, config.dailyUsdMicros, estimate.tokens, config.dailyTokens, ms, config.dailyMs, chosen.length, config.dailyCalls),
       db.prepare("SELECT CASE WHEN changes()=1 THEN 1 ELSE json_extract('[]','compare_quota') END"),
     ]);
   } catch (error) {
@@ -60,7 +60,7 @@ export async function compareModels(db: D1Database, actor: PortalActor | null, i
       const result = await genericChat({ provider, model, apiKey, system: COMPARE_SYSTEM, turns: [{ role: 'user', content: prompt }], maxTokens: COMPARE_MAX_OUTPUT, json: false, signal: controller.signal, fetcher: options.fetcher });
       return { modelId: model.id, label: model.label, provider: provider.label, text: result.text.slice(0, 4000), ms: Date.now() - started, inputTokens: result.inputTokens, outputTokens: result.outputTokens, usdMicros: result.costMicros, reservedUsdMicros: estimate.each[index], error: null as string | null };
     } catch (error) {
-      return { modelId: model.id, label: model.label, provider: provider.label, text: '', ms: Date.now() - started, inputTokens: 0, outputTokens: 0, usdMicros: 0, reservedUsdMicros: estimate.each[index], error: error instanceof HttpError ? error.message : 'Falhou ou demorou demais.' };
+      return { modelId: model.id, label: model.label, provider: provider.label, text: '', ms: Date.now() - started, inputTokens: 0, outputTokens: 0, usdMicros: error instanceof ChargedError ? error.chargedMicros : 0, reservedUsdMicros: estimate.each[index], error: error instanceof HttpError ? error.message : 'Falhou ou demorou demais.' };
     } finally { clearTimeout(timer); options.signal?.removeEventListener('abort', abort); }
   }));
   const real = results.reduce((sum, row) => sum + row.usdMicros, 0), extra = Math.max(0, real - estimate.total);

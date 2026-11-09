@@ -4,6 +4,8 @@ import { safeBaseUrl, type CatalogModel, type CatalogProvider } from './model-ca
 export type ChatTurn = { role: 'user' | 'assistant'; content: string; image?: string | null };
 export type GenericResult = { text: string; inputTokens: number; outputTokens: number; returnedModel: string; costMicros: number };
 const withheld = () => new HttpError(502, 'A resposta do provedor não pôde ser mostrada.', 'generic_provider_schema');
+/** Erro depois de o provedor já ter cobrado: leva o custo conhecido para entrar no limite diário. */
+export class ChargedError extends HttpError { constructor(message: string, readonly chargedMicros: number, readonly chargedTokens: number) { super(502, message, 'generic_provider_schema'); } }
 
 export async function boundedJson(response: Response, limit = 256 * 1024): Promise<Record<string, unknown>> {
   if (!response.ok || !/^application\/json(?:\s*;|$)/i.test(response.headers.get('content-type') ?? '')) {
@@ -68,8 +70,9 @@ export async function genericChat(options: { provider: CatalogProvider; model: C
     const usage = data.usage && typeof data.usage === 'object' ? data.usage as Record<string, unknown> : {};
     inputTokens = tokens(usage.prompt_tokens); outputTokens = tokens(usage.completion_tokens);
   }
-  if (!text.trim() || text.length > 32000 || inputTokens === null || outputTokens === null) throw withheld();
+  if (inputTokens === null || outputTokens === null) throw withheld();
   const costMicros = Math.ceil(inputTokens * model.price.inputPerM + outputTokens * model.price.outputPerM);
+  if (!text.trim() || text.length > 32000) throw new ChargedError('O modelo respondeu vazio ou longo demais. O custo foi registrado.', costMicros, inputTokens + outputTokens);
   return { text, inputTokens, outputTokens, returnedModel: typeof data.model === 'string' ? data.model.slice(0, 120) : model.model, costMicros };
 }
 

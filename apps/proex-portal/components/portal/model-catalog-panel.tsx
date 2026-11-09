@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react
 import { BarChart3, Boxes, KeyRound, LoaderCircle, Plus, Scale, Trash2 } from 'lucide-react';
 import { CAPABILITIES, CAPABILITY_LABELS, KIND_LABELS, compareEstimate, type Capability, type CatalogModel, type CatalogProvider } from '@/lib/assistant/model-catalog';
 import { friendlyMicros } from '@/lib/assistant/role-contracts';
+import { safeRequest } from '@/lib/assistant/contracts';
 import styles from './model-catalog-panel.module.css';
 
 type Provider = CatalogProvider & { hasKey: boolean };
@@ -17,7 +18,7 @@ const GROUPS: { title: string; capability: Capability; hint: string }[] = [
   { title: 'Decisão', capability: 'decision', hint: 'Respondem perguntas fechadas (sim/não, categoria). Em uso: JEV 1.14. Os outros ficam para teste comparativo.' },
 ];
 const usdPerM = (value: number) => value ? `US$ ${value.toLocaleString('pt-BR', { maximumFractionDigits: 4 })}` : 'grátis';
-const blankModel = { id: '', providerId: '', model: '', label: '', capabilities: ['text'] as Capability[], inputPerM: '', outputPerM: '', perHour: '', sourceUrl: '', readAt: new Date().toISOString().slice(0, 10), notes: '' };
+const blankModel = { id: '', providerId: '', model: '', label: '', capabilities: ['text'] as Capability[], inputPerM: '', outputPerM: '', perHour: '', sourceUrl: '', readAt: new Date().toISOString().slice(0, 10), notes: '', testOnly: false };
 
 async function request<T>(path: string, body?: unknown): Promise<T> {
   const response = await fetch(path, { credentials: 'same-origin', cache: 'no-store', redirect: 'error', ...(body ? { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Proex-Action': '1' }, body: JSON.stringify(body) } : {}) });
@@ -42,7 +43,7 @@ export default function ModelCatalogPanel({ organizationId }: { organizationId: 
   const providers = useMemo(() => new Map((view?.catalog.providers ?? []).map(provider => [provider.id, provider])), [view]);
   const chatModels = (view?.catalog.models ?? []).filter(model => model.enabled && model.capabilities.includes('text') && ['openai_chat', 'anthropic_messages'].includes(providers.get(model.providerId)?.kind ?? ''));
   // Mesma conta do servidor (compareEstimate); ele recalcula e recusa se o valor aceito ficar abaixo.
-  const compareCost = useMemo(() => compareEstimate(compareIds.flatMap(id => view?.catalog.models.filter(entry => entry.id === id) ?? []), prompt.trim()).total, [compareIds, prompt, view]);
+  const compareCost = useMemo(() => compareEstimate(compareIds.flatMap(id => view?.catalog.models.filter(entry => entry.id === id) ?? []), (() => { try { return safeRequest(prompt); } catch { return prompt.trim(); } })()).total, [compareIds, prompt, view]);
 
   async function act(body: Record<string, unknown>, done: string) {
     if (!view) return;
@@ -54,7 +55,7 @@ export default function ModelCatalogPanel({ organizationId }: { organizationId: 
   async function saveModel(event: FormEvent) {
     event.preventDefault();
     if (!editing) return;
-    const ok = await act({ action: 'model.save', ...(editing.replaceId ? { replaceId: editing.replaceId } : {}), model: { id: editing.id, providerId: editing.providerId, model: editing.model, label: editing.label, capabilities: editing.capabilities, notes: editing.notes,
+    const ok = await act({ action: 'model.save', ...(editing.replaceId ? { replaceId: editing.replaceId } : {}), model: { id: editing.id, providerId: editing.providerId, model: editing.model, label: editing.label, capabilities: editing.capabilities, notes: editing.notes, testOnly: editing.testOnly,
       price: { inputPerM: Number(editing.inputPerM || 0), outputPerM: Number(editing.outputPerM || 0), perHour: Number(editing.perHour || 0) }, source: editing.sourceUrl ? { url: editing.sourceUrl, readAt: editing.readAt } : null } }, 'Modelo salvo.');
     if (ok) setEditing(null);
   }
@@ -75,7 +76,7 @@ export default function ModelCatalogPanel({ organizationId }: { organizationId: 
     finally { setBusy(false); }
   }
   function edit(model?: CatalogModel) {
-    setEditing(model ? { id: model.id, providerId: model.providerId, model: model.model, label: model.label, capabilities: model.capabilities, inputPerM: String(model.price.inputPerM || ''), outputPerM: String(model.price.outputPerM || ''), perHour: String(model.price.perHour || ''), sourceUrl: model.source?.url ?? '', readAt: model.source?.readAt ?? blankModel.readAt, notes: model.notes, replaceId: model.id } : { ...blankModel, providerId: view?.catalog.providers[0]?.id ?? '' });
+    setEditing(model ? { id: model.id, providerId: model.providerId, model: model.model, label: model.label, capabilities: model.capabilities, inputPerM: String(model.price.inputPerM || ''), outputPerM: String(model.price.outputPerM || ''), perHour: String(model.price.perHour || ''), sourceUrl: model.source?.url ?? '', readAt: model.source?.readAt ?? blankModel.readAt, notes: model.notes, testOnly: model.testOnly, replaceId: model.id } : { ...blankModel, providerId: view?.catalog.providers[0]?.id ?? '' });
   }
 
   if (!view) return <div className={styles.panel}>{error ? <p role="alert" className="p-inline-error">{error}</p> : <p role="status" className={styles.muted}><LoaderCircle size={16} className="p-spin" aria-hidden="true"/> Abrindo o catálogo…</p>}</div>;
@@ -87,7 +88,7 @@ export default function ModelCatalogPanel({ organizationId }: { organizationId: 
     {GROUPS.map(group => { const list = view.catalog.models.filter(model => model.capabilities.includes(group.capability)); return <section key={group.capability} className={styles.group} aria-labelledby={`group-${group.capability}`}>
       <h4 id={`group-${group.capability}`}>{group.title}</h4><p className={styles.muted}>{group.hint}</p>
       {list.length ? <ul className={styles.models}>{list.map(model => { const provider = providers.get(model.providerId); return <li key={`${group.capability}-${model.id}`} className={styles.model}>
-        <div className={styles.modelTop}><strong>{model.label}</strong><span className={provider?.hasKey ? styles.ok : styles.warn}>{provider?.hasKey ? 'Chave pronta' : 'Falta chave'}</span></div>
+        <div className={styles.modelTop}><strong>{model.label}{model.testOnly ? ' · somente teste' : ''}</strong><span className={provider?.hasKey ? styles.ok : styles.warn}>{provider?.hasKey ? 'Chave pronta' : 'Falta chave'}</span></div>
         <p className={styles.muted}>{provider?.label ?? 'Provedor removido'} · <code>{model.model}</code></p>
         <p className={styles.chips}>{model.capabilities.map(capability => <span key={capability}>{CAPABILITY_LABELS[capability]}</span>)}</p>
         <p>{model.price.perHour ? `US$ ${model.price.perHour.toLocaleString('pt-BR')} por hora de áudio` : `Entrada ${usdPerM(model.price.inputPerM)} · saída ${usdPerM(model.price.outputPerM)} por milhão de tokens`}{model.score ? ` · nota ${model.score.value} (${model.score.source}, ${model.score.readAt.split('-').reverse().join('/')})` : ''}</p>
@@ -111,6 +112,8 @@ export default function ModelCatalogPanel({ organizationId }: { organizationId: 
         <label className="p-field"><span>Data da leitura</span><input type="date" value={editing.readAt} onChange={event => setEditing({ ...editing, readAt: event.target.value })}/></label>
       </div>
       <fieldset className={styles.capabilities}><legend>Para que serve</legend>{CAPABILITIES.map(capability => <label key={capability}><input type="checkbox" checked={editing.capabilities.includes(capability)} onChange={event => setEditing({ ...editing, capabilities: event.target.checked ? [...editing.capabilities, capability] : editing.capabilities.filter(item => item !== capability) })}/>{CAPABILITY_LABELS[capability]}</label>)}</fieldset>
+      <label className={styles.check}><input type="checkbox" checked={editing.testOnly} onChange={event => setEditing({ ...editing, testOnly: event.target.checked })}/>Somente teste (grátis, com dados de exemplo). Não pode ser usado pelo Rolê.</label>
+      {!editing.testOnly && <p className={styles.muted}>Modelos pagos precisam de preço de entrada e de saída maior que zero, para o custo previsto ser real.</p>}
       {editing.capabilities.includes('speech') && editing.capabilities.length > 1 && <p className={styles.warnText}>Modelos de voz só transcrevem áudio. Confira se ele também faz o resto.</p>}
       <label className="p-field"><span>Observação</span><input maxLength={200} value={editing.notes} onChange={event => setEditing({ ...editing, notes: event.target.value })}/></label>
       <div className={styles.actions}><button type="submit" className="p-button p-button-primary" disabled={busy}>Salvar modelo</button><button type="button" className="p-button p-button-subtle" onClick={() => setEditing(null)}>Cancelar</button></div>
@@ -156,7 +159,7 @@ export default function ModelCatalogPanel({ organizationId }: { organizationId: 
     <section className={styles.group} aria-labelledby="compare-title">
       <h4 id="compare-title"><Scale size={18} aria-hidden="true"/> Comparar modelos</h4>
       <p className={styles.muted}>Envie a mesma pergunta a 2 ou 3 modelos e veja lado a lado a resposta, o custo e o tempo. Use só dados de exemplo.</p>
-      <fieldset className={styles.capabilities}><legend>Modelos (2 a 3)</legend>{chatModels.map(model => { const ready = providers.get(model.providerId)?.hasKey; return <label key={model.id} className={!ready ? styles.disabled : ''}><input type="checkbox" disabled={!ready || (!compareIds.includes(model.id) && compareIds.length >= 3)} checked={compareIds.includes(model.id)} onChange={event => setCompareIds(event.target.checked ? [...compareIds, model.id] : compareIds.filter(id => id !== model.id))}/>{model.label}{!ready ? ' (sem chave)' : ''}</label>; })}</fieldset>
+      <fieldset className={styles.capabilities}><legend>Modelos (2 a 3)</legend>{chatModels.map(model => { const ready = providers.get(model.providerId)?.hasKey; return <label key={model.id} className={!ready ? styles.disabled : ''}><input type="checkbox" disabled={!ready || (!compareIds.includes(model.id) && compareIds.length >= 3)} checked={compareIds.includes(model.id)} onChange={event => setCompareIds(event.target.checked ? [...compareIds, model.id] : compareIds.filter(id => id !== model.id))}/>{model.label}{model.testOnly ? ' (teste: só dados de exemplo)' : ''}{!ready ? ' (sem chave)' : ''}</label>; })}</fieldset>
       <label className="p-field"><span>Pergunta</span><textarea rows={3} maxLength={2000} value={prompt} onChange={event => setPrompt(event.target.value)}/></label>
       <p><strong>Custo máximo: {friendlyMicros(compareCost)}</strong> para {compareIds.length || 'nenhum'} {compareIds.length === 1 ? 'modelo' : 'modelos'}.</p>
       <label className={styles.check}><input type="checkbox" checked={compareConsent} onChange={event => setCompareConsent(event.target.checked)}/>Autorizo enviar esta pergunta aos provedores escolhidos. Não há dados pessoais nela.</label>

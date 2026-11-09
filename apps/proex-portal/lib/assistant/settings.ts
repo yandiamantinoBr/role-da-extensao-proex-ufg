@@ -1,4 +1,4 @@
-import { aiConfigurationAuthority, getActor, organizationAuthoritySql, type PortalActor } from '../access';
+import { aiConfigurationAuthority, getActor, organizationAuthoritySql, platformOwnerAuthoritySql, type PortalActor } from '../access';
 import { all, one } from '../database';
 import { HttpError } from '../errors';
 import { availableProviderCredentials, newAssistantConfig, object, onlyKeys, validateConfig, type AssistantConfig } from './contracts';
@@ -86,6 +86,7 @@ export async function configureAssistant(db: D1Database, actor: PortalActor | nu
  const config = validateConfig({ ...proposed, usageScope, usageUserId: usageScope === 'private' ? current.userId : null });
  const previous = old && input.replaceCredentials !== true ? object(await decryptProviderCredentials(secret, old.credentials_ciphertext, organizationId, keys)) : {};
  const credentials = availableProviderCredentials(previous);
+ const catalogKeys = Object.fromEntries(Object.entries(previous).filter(([name]) => /^p:[a-z0-9-]+$/.test(name)));
  if (input.deepseekKey) credentials.deepseek = key(input.deepseekKey);
  if (input.typesafeKey) credentials.typesafe = key(input.typesafeKey);
  if (input.deepgramKey) credentials.deepgram = key(input.deepgramKey);
@@ -102,11 +103,15 @@ export async function configureAssistant(db: D1Database, actor: PortalActor | nu
   if (!model || fitsFunction(model, provider, need)) throw new HttpError(400, need === 'vision' ? 'Escolha para fotos um modelo do catálogo marcado com Foto.' : 'Escolha para a conversa um modelo do catálogo marcado com Texto.', 'assistant_model');
   return validProviderKey(previous[provider!.keyRef]);
  };
+ if (config.roleModel !== previousConfig.roleModel || config.roleVisionModel !== previousConfig.roleVisionModel) {
+  const owner = platformOwnerAuthoritySql(current);
+  if (!await one(db, `SELECT 1 WHERE ${owner.sql}`, owner.values)) throw new HttpError(403, 'Só a administração geral escolhe modelos do catálogo para o Rolê.', 'catalog_admin');
+ }
  const roleTextKey = config.roleModel ? catalogKey(config.roleModel, 'chat') : !!credentials[config.roleProvider];
  const roleVisionKey = config.roleVisionModel ? catalogKey(config.roleVisionModel, 'vision') : !!credentials.deepseek;
  if (config.roleEnabled && !roleTextKey || config.roleVisionEnabled && (!config.roleEnabled || !roleVisionKey) || (config.enabled || config.documentEnabled) && !credentials[config.textProvider] || config.jevEnabled && !credentials.typesafe || config.sttEnabled && speechProvider === 'deepgram' && !credentials.deepgram) throw new HttpError(400, 'Cadastre as credenciais dos provedores habilitados.', 'assistant_credentials');
  const credentialsChanged = !old || writesKeys;
- const ciphertext = old && !credentialsChanged ? old.credentials_ciphertext : await encryptProviderCredentials(secret, credentials, organizationId, keys, old?.credentials_ciphertext);
+ const ciphertext = old && !credentialsChanged ? old.credentials_ciphertext : await encryptProviderCredentials(secret, { ...catalogKeys, ...credentials }, organizationId, keys, old?.credentials_ciphertext);
  const revision = Number(input.expectedRevision) + 1, at = new Date().toISOString();
  const assertion = db.prepare(`SELECT CASE WHEN ${auth.sql} THEN 1 ELSE json_extract('[]','ai_configuration_revoked') END`).bind(...auth.values);
  const statement = old ? db.prepare('UPDATE ai_organization_settings SET revision=?,config_json=?,credentials_ciphertext=?,updated_by=?,updated_at=? WHERE organization_id=? AND revision=? AND credentials_ciphertext=?').bind(revision, JSON.stringify(config), ciphertext, current.userId, at, organizationId, input.expectedRevision, old.credentials_ciphertext) : db.prepare('INSERT INTO ai_organization_settings(organization_id,revision,config_json,credentials_ciphertext,updated_by,updated_at) VALUES(?,?,?,?,?,?)').bind(organizationId, revision, JSON.stringify(config), ciphertext, current.userId, at);

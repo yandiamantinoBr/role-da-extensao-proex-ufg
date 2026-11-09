@@ -61,7 +61,8 @@ function safeLabel(value: unknown, secrets: readonly unknown[]): string | null {
 function protectedValues(authSecret: string, keys: CredentialKeys, speech: SpeechEnvironment | undefined,
   credentials: Record<string, unknown> | null, disabled: Record<string, unknown>) {
   return [authSecret, keys.current, keys.previous, speech?.groqKey,
-    ...credentialProviders.flatMap(provider => [credentials?.[provider], disabled[provider]])];
+    ...credentialProviders.flatMap(provider => [credentials?.[provider], disabled[provider]]),
+    ...Object.entries(credentials ?? {}).filter(([name]) => name.startsWith('p:')).map(([, value]) => value)];
 }
 
 function disabledCredentials(credentials: Record<string, unknown> | null): Record<string, unknown> {

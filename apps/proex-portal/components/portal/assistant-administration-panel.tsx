@@ -45,19 +45,19 @@ export default function AssistantAdministrationPanel({ canManageKeys=false, refr
     return () => controller.abort();
   }, [selection,refresh,refreshKey]);
   useEffect(() => { if (notice||failure) message.current?.focus(); }, [notice,failure]);
-  // Catalog models for the Rolê selects (administração geral only; delegated configurers keep the reviewed options).
-  useEffect(() => {
-    if (!canManageKeys || !selection) return;
-    let alive = true;
+  // Catalog models for the Rolê selects, loaded only when a select is opened (administração geral only).
+  const optionsFor = useRef('');
+  function loadRoleOptions() {
+    if (!canManageKeys || !selection || optionsFor.current === selection) return;
+    optionsFor.current = selection;
     fetch(`/api/assistant/catalog?organizationId=${encodeURIComponent(selection)}`, { cache:'no-store', credentials:'same-origin', redirect:'error' })
       .then(response => response.ok ? response.json() as Promise<unknown> : null)
       .then((raw: unknown) => { const data = raw as { catalog?: { providers: { id:string; kind:string; hasKey:boolean }[]; models: { id:string; label:string; providerId:string; capabilities:string[]; enabled:boolean }[] } } | null;
-        if (!alive || !data?.catalog) return;
+        if (!active.current || !data?.catalog) return;
         const providers = new Map(data.catalog.providers.map(provider => [provider.id, provider]));
         setRoleOptions(data.catalog.models.filter(model => model.enabled && model.capabilities.includes('text') && ['openai_chat','anthropic_messages'].includes(providers.get(model.providerId)?.kind ?? '')).map(model => ({ id:model.id, label:model.label, vision:model.capabilities.includes('vision'), hasKey:!!providers.get(model.providerId)?.hasKey })));
-      }).catch(() => {});
-    return () => { alive = false; };
-  }, [canManageKeys, selection, refresh]);
+      }).catch(() => { optionsFor.current = ''; });
+  }
   function selectOrganization(value: string) { mutation.current?.abort(); ++epoch.current; ++mutationEpoch.current; setSelection(value); setData(null); setFailure(''); setNotice(''); setDelegateId(''); setBusy(false); }
   async function save(action: 'configure'|'grant.create'|'grant.revoke', grantId?: string) {
     if (busy || !status?.canConfigure || !status.organizationId || status.organizationId!==selection) return;
@@ -99,11 +99,11 @@ export default function AssistantAdministrationPanel({ canManageKeys=false, refr
       </section>
       <section className={styles.configuration} aria-labelledby="ai-role-title"><div className={styles.heading}><img className={styles.roleAvatar} src="/brand/role-mascote/role-rosto.svg" alt="" width={44} height={44}/><div><h4 id="ai-role-title">Rolê, o assistente da PROEX</h4><p>Conversa, lê fotos e ouve áudios. Antes de cada envio a pessoa vê o custo máximo, e nada muda no estoque sem a confirmação dela.</p></div></div>
         <label className={styles.confirm}><input type="checkbox" disabled={busy} checked={config.roleEnabled} onChange={event=>setConfig({...config,roleEnabled:event.target.checked,roleVisionEnabled:event.target.checked?config.roleVisionEnabled:false})}/><span><strong>Ligar o Rolê</strong><small>Aparece um botão com o rosto do Rolê no canto da tela (atalho Alt + R) para quem pode usar a IA.</small></span></label>
-        <label className="p-field"><span>Modelo do Rolê</span><select disabled={busy} value={config.roleModel?`catalog:${config.roleModel}`:config.roleProvider} onChange={event=>{const value=event.target.value;setConfig(value.startsWith('catalog:')?{...config,roleModel:value.slice(8),roleEnabled:false,roleVisionEnabled:false}:{...config,roleModel:'',roleProvider:value as AssistantConfig['roleProvider'],roleEnabled:false,roleVisionEnabled:false});}}><option value="deepseek">DeepSeek Flash (recomendado)</option><option value="groq">Groq GPT-OSS (mais barato)</option>{roleOptions.filter(option=>option.id!=='deepseek-flash'&&option.id!=='groq-gpt-oss-120b').map(option=><option key={option.id} value={`catalog:${option.id}`}>{option.label}{option.hasKey?'':' (sem chave)'}</option>)}</select></label>
+        <label className="p-field"><span>Modelo do Rolê</span><select onFocus={loadRoleOptions} onPointerDown={loadRoleOptions} disabled={busy} value={config.roleModel?`catalog:${config.roleModel}`:config.roleProvider} onChange={event=>{const value=event.target.value;setConfig(value.startsWith('catalog:')?{...config,roleModel:value.slice(8),roleEnabled:false,roleVisionEnabled:false}:{...config,roleModel:'',roleProvider:value as AssistantConfig['roleProvider'],roleEnabled:false,roleVisionEnabled:false});}}><option value="deepseek">DeepSeek Flash (recomendado)</option><option value="groq">Groq GPT-OSS (mais barato)</option>{config.roleModel&&!roleOptions.some(option=>option.id===config.roleModel)&&<option value={`catalog:${config.roleModel}`}>{config.roleModel}</option>}{roleOptions.filter(option=>option.id!=='deepseek-flash'&&option.id!=='groq-gpt-oss-120b').map(option=><option key={option.id} value={`catalog:${option.id}`}>{option.label}{option.hasKey?'':' (sem chave)'}</option>)}</select></label>
         <p className="p-form-help">{config.roleProvider==='groq'?'Só texto, menos de 1 centavo de dólar por mensagem. Usa a mesma chave da voz (Groq).':'Texto e foto, menos de 1 centavo de dólar por mensagem.'} Se trocar o modelo, o Rolê fica desligado até você confirmar de novo.</p>
         <details className={styles.priceDetails}><summary>Ver preço detalhado</summary><p>{config.roleProvider==='groq'?'GPT-OSS 120B na Groq: US$ 0,15 por milhão de tokens de entrada e US$ 0,60 de saída (página oficial lida em 09/11/2026).':'DeepSeek Flash: US$ 0,30 por milhão de tokens de entrada e US$ 1,20 de saída, metade fora do horário de pico (página oficial lida em 09/11/2026).'}</p></details>
         <label className={styles.confirm}><input type="checkbox" disabled={busy||!config.roleEnabled} checked={config.roleVisionEnabled} onChange={event=>setConfig({...config,roleVisionEnabled:event.target.checked})}/><span><strong>Ler fotos</strong><small>A foto é reduzida no aparelho antes de sair.</small></span></label>
-        {config.roleVisionEnabled&&<label className="p-field"><span>Modelo para fotos</span><select disabled={busy} value={config.roleVisionModel} onChange={event=>setConfig({...config,roleVisionModel:event.target.value,roleVisionEnabled:false})}><option value="">DeepSeek Flash (recomendado)</option>{roleOptions.filter(option=>option.vision&&option.id!=='deepseek-flash').map(option=><option key={option.id} value={option.id}>{option.label}{option.hasKey?'':' (sem chave)'}</option>)}</select></label>}
+        {config.roleVisionEnabled&&<label className="p-field"><span>Modelo para fotos</span><select onFocus={loadRoleOptions} onPointerDown={loadRoleOptions} disabled={busy} value={config.roleVisionModel} onChange={event=>setConfig({...config,roleVisionModel:event.target.value,roleVisionEnabled:false})}><option value="">DeepSeek Flash (recomendado)</option>{config.roleVisionModel&&!roleOptions.some(option=>option.id===config.roleVisionModel)&&<option value={config.roleVisionModel}>{config.roleVisionModel}</option>}{roleOptions.filter(option=>option.vision&&option.id!=='deepseek-flash').map(option=><option key={option.id} value={option.id}>{option.label}{option.hasKey?'':' (sem chave)'}</option>)}</select></label>}
         {canManageKeys&&<p className="p-form-help">Outros modelos (OpenAI, Anthropic, NVIDIA, qualquer serviço compatível com OpenAI) entram pela aba Modelos e aparecem nestas listas.</p>}
         <p className="p-form-help">Para ouvir áudio, ligue também “Voz para texto” abaixo. O áudio vira texto primeiro, e a pessoa revisa antes de enviar.</p>
       </section>

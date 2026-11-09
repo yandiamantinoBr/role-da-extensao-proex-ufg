@@ -47,12 +47,16 @@ async function requireOwner(db: D1Database, actor: PortalActor | null) {
 function organization(value: unknown) { if (typeof value !== 'string' || !ORG.test(value)) throw new HttpError(400, 'Escolha uma organização.', 'catalog_organization'); return value; }
 
 /** Leitura usada também pelo Rolê em tempo de execução (sem exigir dono). */
-export async function loadCatalog(db: D1Database, organizationId: string): Promise<{ catalog: ModelCatalog; stamp: string }> {
+export async function loadCatalog(db: D1Database, organizationId: string): Promise<{ catalog: ModelCatalog; stamp: string; raw: string | null }> {
   const row = await one(db, 'SELECT value,updated_at FROM settings WHERE name=?', [catalogSettingName(organizationId)]);
-  return { catalog: parseCatalog(row ? String(row.value) : null), stamp: row ? String(row.updated_at) : '' };
+  return { catalog: parseCatalog(row ? String(row.value) : null), stamp: row ? String(row.updated_at) : '', raw: row ? String(row.value) : null };
 }
 
-function mask(key: string) { const tail = key.slice(-4); return (/^[A-Za-z0-9]{2,6}[-_]/.exec(key)?.[0] ?? '') + '…' + (/^[A-Za-z0-9_-]{4}$/.test(tail) ? tail : '••••'); }
+function mask(key: string) {
+  if (key.length < 24) return '…••••';
+  const prefix = /^(sk-ant-|sk-|nvapi-|gsk_|pplx-|aa_)/.exec(key)?.[0] ?? '', tail = key.slice(-4);
+  return prefix + '…' + (/^[A-Za-z0-9_-]{4}$/.test(tail) ? tail : '••••');
+}
 
 async function decrypted(db: D1Database, organizationId: string, secret: string, keys: CredentialKeys) {
   const row = await one(db, 'SELECT revision,credentials_ciphertext FROM ai_organization_settings WHERE organization_id=?', [organizationId]);
@@ -71,13 +75,13 @@ export async function catalogView(db: D1Database, actor: PortalActor | null, org
   return { organizationId, stamp, catalog: { ...catalog, providers } };
 }
 
-async function saveCatalog(db: D1Database, actor: PortalActor, organizationId: string, catalog: ModelCatalog, expected: string, audit: { action: string; details: Record<string, unknown> }) {
+async function saveCatalog(db: D1Database, actor: PortalActor, organizationId: string, catalog: ModelCatalog, expected: string, audit: { action: string; details: Record<string, unknown> }, raw: string | null = null) {
   const at = new Date().toISOString(), name = catalogSettingName(organizationId);
   const next = { ...catalog, updatedAt: at, updatedBy: actor.displayName || 'Administração geral' };
   const authority = platformOwnerAuthoritySql(actor);
-  const guard = db.prepare(`SELECT CASE WHEN ${authority.sql} THEN 1 ELSE json_extract('[]','catalog_authority_changed') END`).bind(...authority.values);
+  const guard = db.prepare(`SELECT CASE WHEN ${authority.sql} AND EXISTS(SELECT 1 FROM organizations WHERE id=? AND status='active') THEN 1 ELSE json_extract('[]','catalog_authority_changed') END`).bind(...authority.values, organizationId);
   const write = expected
-    ? db.prepare('UPDATE settings SET value=?,updated_at=? WHERE name=? AND updated_at=?').bind(JSON.stringify(next), at, name, expected)
+    ? db.prepare('UPDATE settings SET value=?,updated_at=? WHERE name=? AND updated_at=? AND value=?').bind(JSON.stringify(next), at, name, expected, raw ?? '')
     : db.prepare('INSERT INTO settings(name,value,updated_at) VALUES(?,?,?)').bind(name, JSON.stringify(next), at);
   const verify = db.prepare("SELECT CASE WHEN changes()=1 THEN 1 ELSE json_extract('[]','catalog_revision_changed') END");
   const log = db.prepare('INSERT INTO audit(id,actor_id,organization_id,action,entity_id,details,created_at) VALUES(?,?,?,?,?,?,?)').bind(crypto.randomUUID(), actor.userId, organizationId, audit.action, organizationId, JSON.stringify(audit.details), at);
@@ -96,8 +100,10 @@ export async function manageCatalog(db: D1Database, actor: PortalActor | null, i
   await requireOwner(db, actor);
   const current = actor!;
   const organizationId = organization(input.organizationId);
-  const { catalog, stamp } = await loadCatalog(db, organizationId);
+  if (!await one(db, "SELECT 1 FROM organizations WHERE id=? AND status='active'", [organizationId])) throw new HttpError(404, 'Organização indisponível.', 'catalog_organization');
+  const { catalog, stamp, raw } = await loadCatalog(db, organizationId);
   if (typeof input.expected !== 'string' || input.expected !== stamp) throw changed();
+  const inUse = async () => { const row = await one(db, 'SELECT config_json FROM ai_organization_settings WHERE organization_id=?', [organizationId]); const parsed = row ? JSON.parse(String(row.config_json)) as Record<string, unknown> : {}; return new Set([parsed.roleModel, parsed.roleVisionModel].filter((value): value is string => typeof value === 'string' && !!value)); };
   const action = input.action;
   if (action === 'model.save') {
     onlyKeys(input, ['action', 'organizationId', 'expected', 'model', 'replaceId']);
@@ -106,34 +112,37 @@ export async function manageCatalog(db: D1Database, actor: PortalActor | null, i
     if (catalog.models.some(entry => entry.id === model.id && entry.id !== replaceId)) throw new HttpError(409, 'Já existe um modelo com esse identificador.', 'catalog_duplicate');
     const models = replaceId ? catalog.models.map(entry => entry.id === replaceId ? model : entry) : [...catalog.models, model];
     if (replaceId && !catalog.models.some(entry => entry.id === replaceId)) throw changed();
-    await saveCatalog(db, current, organizationId, { ...catalog, models }, stamp, { action: 'assistant.catalog.model.save', details: { model: model.id, provider: model.providerId, capabilities: model.capabilities } });
+    const before = replaceId ? catalog.models.find(entry => entry.id === replaceId) : null;
+    if (before && (await inUse()).has(before.id) && (model.id !== before.id || model.providerId !== before.providerId || model.model !== before.model || model.enabled !== before.enabled || model.testOnly !== before.testOnly || before.capabilities.some(capability => !model.capabilities.includes(capability)))) throw new HttpError(409, 'Este modelo está em uso pelo Rolê. Só preço, fonte e observação podem mudar; para o resto, escolha outro modelo em Funções e acesso.', 'catalog_in_use');
+    await saveCatalog(db, current, organizationId, { ...catalog, models }, stamp, { action: 'assistant.catalog.model.save', details: { model: model.id, provider: model.providerId, capabilities: model.capabilities } }, raw);
   } else if (action === 'model.delete') {
     onlyKeys(input, ['action', 'organizationId', 'expected', 'modelId']);
-    const config = await one(db, 'SELECT config_json FROM ai_organization_settings WHERE organization_id=?', [organizationId]);
-    const parsed = config ? JSON.parse(String(config.config_json)) as Record<string, unknown> : {};
-    if (input.modelId === parsed.roleModel || input.modelId === parsed.roleVisionModel) throw new HttpError(409, 'Este modelo está em uso pelo Rolê. Escolha outro em Funções e acesso antes de apagar.', 'catalog_in_use');
+    if ((await inUse()).has(String(input.modelId))) throw new HttpError(409, 'Este modelo está em uso pelo Rolê. Escolha outro em Funções e acesso antes de apagar.', 'catalog_in_use');
     if (!catalog.models.some(entry => entry.id === input.modelId)) throw changed();
-    await saveCatalog(db, current, organizationId, { ...catalog, models: catalog.models.filter(entry => entry.id !== input.modelId) }, stamp, { action: 'assistant.catalog.model.delete', details: { model: String(input.modelId) } });
+    await saveCatalog(db, current, organizationId, { ...catalog, models: catalog.models.filter(entry => entry.id !== input.modelId) }, stamp, { action: 'assistant.catalog.model.delete', details: { model: String(input.modelId) } }, raw);
   } else if (action === 'provider.save') {
     onlyKeys(input, ['action', 'organizationId', 'expected', 'provider']);
     const provider = validateProvider(object(input.provider));
     if (catalog.providers.some(entry => entry.id === provider.id)) throw new HttpError(409, 'Já existe um provedor com esse identificador.', 'catalog_duplicate');
-    await saveCatalog(db, current, organizationId, { ...catalog, providers: [...catalog.providers, provider] }, stamp, { action: 'assistant.catalog.provider.save', details: { provider: provider.id, kind: provider.kind, host: new URL(provider.baseUrl).hostname } });
+    const vault = await decrypted(db, organizationId, secret, keys);
+    if (vault.credentials && provider.keyRef in vault.credentials) throw new HttpError(409, 'Já existe uma chave guardada com esse identificador. Use outro identificador.', 'catalog_duplicate');
+    await saveCatalog(db, current, organizationId, { ...catalog, providers: [...catalog.providers, provider] }, stamp, { action: 'assistant.catalog.provider.save', details: { provider: provider.id, kind: provider.kind, host: new URL(provider.baseUrl).hostname } }, raw);
   } else if (action === 'provider.delete') {
     onlyKeys(input, ['action', 'organizationId', 'expected', 'providerId']);
     const provider = catalog.providers.find(entry => entry.id === input.providerId);
     if (!provider) throw changed();
     if (provider.builtin && (VAULT_KEYS as readonly string[]).includes(provider.keyRef)) throw new HttpError(409, 'Este provedor faz parte das integrações revisadas e não pode ser apagado. Desligue a chave, se quiser.', 'catalog_builtin');
     if (catalog.models.some(model => model.providerId === provider.id)) throw new HttpError(409, 'Apague antes os modelos deste provedor.', 'catalog_in_use');
-    if (provider.key?.state === 'active') throw new HttpError(409, 'Remova antes a chave deste provedor.', 'catalog_in_use');
-    await saveCatalog(db, current, organizationId, { ...catalog, providers: catalog.providers.filter(entry => entry.id !== provider.id) }, stamp, { action: 'assistant.catalog.provider.delete', details: { provider: provider.id } });
+    const vault = await decrypted(db, organizationId, secret, keys);
+    if (provider.key?.state === 'active' || !vault.credentials || provider.keyRef in vault.credentials) throw new HttpError(409, 'Remova antes a chave deste provedor.', 'catalog_in_use');
+    await saveCatalog(db, current, organizationId, { ...catalog, providers: catalog.providers.filter(entry => entry.id !== provider.id) }, stamp, { action: 'assistant.catalog.provider.delete', details: { provider: provider.id } }, raw);
   } else if (action === 'key.save' || action === 'key.remove') {
     onlyKeys(input, ['action', 'organizationId', 'expected', 'providerId', ...(action === 'key.save' ? ['label', 'secret'] : [])]);
     const provider = catalog.providers.find(entry => entry.id === input.providerId);
     if (!provider || !provider.keyRef.startsWith('p:')) throw new HttpError(400, 'As chaves dos provedores revisados ficam na aba Chaves.', 'catalog_key_builtin');
     await credentialKeyId(keys.current, secret);
     const label = action === 'key.save' ? String(input.label ?? '').trim().slice(0, 72) || provider.label : '';
-    if (action === 'key.save' && (!validProviderKey(input.secret) || looksLikeSecret(label))) throw new HttpError(400, 'Cole uma chave válida e um nome curto sem a chave.', 'catalog_key');
+    if (action === 'key.save' && (!validProviderKey(input.secret) || looksLikeSecret(label) || label.includes(String(input.secret).slice(-8)) || /[A-Za-z0-9_-]{24,}/.test(label))) throw new HttpError(400, 'Cole uma chave válida e um nome curto sem a chave.', 'catalog_key');
     const { row, credentials } = await decrypted(db, organizationId, secret, keys);
     if (credentials === null) throw new HttpError(409, 'O cofre desta organização precisa ser recriado na aba Chaves antes.', 'assistant_key_recovery');
     const next: Record<string, unknown> = { ...credentials };
@@ -151,7 +160,7 @@ export async function manageCatalog(db: D1Database, actor: PortalActor | null, i
       await db.batch([
         db.prepare(`SELECT CASE WHEN ${authority.sql} THEN 1 ELSE json_extract('[]','catalog_authority_changed') END`).bind(...authority.values),
         write, db.prepare("SELECT CASE WHEN changes()=1 THEN 1 ELSE json_extract('[]','catalog_revision_changed') END"),
-        stamp ? db.prepare('UPDATE settings SET value=?,updated_at=? WHERE name=? AND updated_at=?').bind(JSON.stringify(nextCatalog), at, catalogSettingName(organizationId), stamp)
+        stamp ? db.prepare('UPDATE settings SET value=?,updated_at=? WHERE name=? AND updated_at=? AND value=?').bind(JSON.stringify(nextCatalog), at, catalogSettingName(organizationId), stamp, raw ?? '')
           : db.prepare('INSERT INTO settings(name,value,updated_at) VALUES(?,?,?)').bind(catalogSettingName(organizationId), JSON.stringify(nextCatalog), at),
         db.prepare("SELECT CASE WHEN changes()=1 THEN 1 ELSE json_extract('[]','catalog_revision_changed') END"),
         db.prepare('INSERT INTO audit(id,actor_id,organization_id,action,entity_id,details,created_at) VALUES(?,?,?,?,?,?,?)').bind(crypto.randomUUID(), current.userId, organizationId, action === 'key.save' ? 'assistant.credentials.save' : 'assistant.credentials.remove', organizationId, JSON.stringify({ provider: provider.keyRef, state: keyMeta.state, revision, mask: keyMeta.mask }), at),
@@ -176,7 +185,7 @@ export async function manageCatalog(db: D1Database, actor: PortalActor | null, i
       matched++;
       return { ...model, score: { value: found.score, source: 'Artificial Analysis', readAt: today } };
     });
-    await saveCatalog(db, current, organizationId, { ...catalog, models }, stamp, { action: 'assistant.catalog.scores', details: { matched, total: rows.length } });
+    await saveCatalog(db, current, organizationId, { ...catalog, models }, stamp, { action: 'assistant.catalog.scores', details: { matched, total: rows.length } }, raw);
     return { ...(await catalogView(db, current, organizationId, secret, keys)), refreshed: { matched, total: rows.length } };
   } else throw new HttpError(400, 'Escolha uma ação do catálogo.', 'catalog_action');
   return catalogView(db, current, organizationId, secret, keys);

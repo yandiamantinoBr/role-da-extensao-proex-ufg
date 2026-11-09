@@ -24,6 +24,8 @@ export type CatalogModel = {
   id: string; providerId: string; model: string; label: string; capabilities: Capability[];
   price: { inputPerM: number; outputPerM: number; perHour: number };
   source: { url: string; readAt: string } | null; notes: string; enabled: boolean;
+  /** Grátis só para teste (ex.: NVIDIA): nunca usado pelo Rolê com dados reais; só na comparação. */
+  testOnly: boolean;
   score: { value: number; source: string; readAt: string } | null;
 };
 export type ModelCatalog = { version: 1; providers: CatalogProvider[]; models: CatalogModel[]; updatedAt: string; updatedBy: string };
@@ -31,7 +33,7 @@ export type ModelCatalog = { version: 1; providers: CatalogProvider[]; models: C
 const read = '2026-11-09';
 const P = (id: string, label: string, kind: ProviderKind, baseUrl: string, keyRef: string): CatalogProvider => ({ id, label, kind, baseUrl, keyRef, builtin: true, key: null });
 const M = (id: string, providerId: string, model: string, label: string, capabilities: Capability[], price: Partial<CatalogModel['price']>, url: string, notes = ''): CatalogModel =>
-  ({ id, providerId, model, label, capabilities, price: { inputPerM: 0, outputPerM: 0, perHour: 0, ...price }, source: { url, readAt: read }, notes, enabled: true, score: null });
+  ({ id, providerId, model, label, capabilities, price: { inputPerM: 0, outputPerM: 0, perHour: 0, ...price }, source: { url, readAt: read }, notes, enabled: true, testOnly: providerId === 'nvidia', score: null });
 
 export function defaultCatalog(now = new Date().toISOString()): ModelCatalog {
   return {
@@ -75,7 +77,7 @@ export function safeBaseUrl(value: unknown): string {
   if (typeof value !== 'string' || value.length > 200) throw bad('Informe o endereço da API (https://…).');
   let url: URL;
   try { url = new URL(value.trim()); } catch { throw bad('Endereço da API inválido.'); }
-  const host = url.hostname.toLowerCase();
+  const host = url.hostname.toLowerCase().replace(/\.+$/, '');
   if (url.protocol !== 'https:' || url.username || url.password || url.port || url.search || url.hash) throw bad('Use um endereço https:// sem porta, usuário ou parâmetros.');
   if (!host.includes('.') || /^[\d.]+$/.test(host) || host.startsWith('[') || /(^|\.)(localhost|local|internal|intranet|lan|home|corp)$/.test(host) || /^(metadata|169\.254)/.test(host)) throw bad('Use o endereço público do provedor (não IP, localhost ou rede interna).');
   return url.origin + url.pathname.replace(/\/+$/, '');
@@ -114,8 +116,12 @@ export function validateModel(input: Record<string, unknown>, providers: Catalog
   if (readAt && !/^\d{4}-\d{2}-\d{2}$/.test(readAt)) throw bad('Data da fonte no formato AAAA-MM-DD.');
   for (const field of [label, notes, model]) if (looksLikeSecret(field)) throw bad('Parece haver uma chave nesse campo. Cole chaves só no cofre.');
   const score = input.score && typeof input.score === 'object' ? input.score as Record<string, unknown> : null;
-  return { id, providerId, model, label, capabilities, notes, enabled: input.enabled !== false,
-    price: { inputPerM: price(raw.inputPerM), outputPerM: price(raw.outputPerM), perHour: price(raw.perHour) },
+  const testOnly = input.testOnly === true;
+  const parsedPrice = { inputPerM: price(raw.inputPerM), outputPerM: price(raw.outputPerM), perHour: price(raw.perHour) };
+  const paid = capabilities.some(capability => capability === 'text' || capability === 'vision' || capability === 'document');
+  if (paid && !testOnly && (parsedPrice.inputPerM <= 0 || parsedPrice.outputPerM <= 0)) throw bad('Informe o preço de entrada e de saída (maior que zero). Modelos grátis só podem ser marcados como “somente teste”.');
+  return { id, providerId, model, label, capabilities, notes, enabled: input.enabled !== false, testOnly,
+    price: parsedPrice,
     source: sourceUrl ? { url: sourceUrl, readAt: readAt || new Date().toISOString().slice(0, 10) } : null,
     score: score && Number.isFinite(Number(score.value)) && Number(score.value) >= 0 && Number(score.value) <= 1000 ? { value: Number(score.value), source: String(score.source ?? '').slice(0, 120), readAt: String(score.readAt ?? '').slice(0, 10) } : null };
 }
@@ -137,7 +143,7 @@ export function parseCatalog(raw: string | null | undefined): ModelCatalog {
     const value = JSON.parse(raw) as ModelCatalog;
     if (value?.version !== 1 || !Array.isArray(value.providers) || !Array.isArray(value.models)) return defaultCatalog();
     const providers = value.providers.filter(provider => provider && ID.test(provider.id) && PROVIDER_KINDS.includes(provider.kind));
-    const models = value.models.filter(model => model && ID.test(model.id) && providers.some(provider => provider.id === model.providerId));
+    const models = value.models.filter(model => model && ID.test(model.id) && providers.some(provider => provider.id === model.providerId)).map(model => ({ ...model, testOnly: model.testOnly === true || model.providerId === 'nvidia' }));
     return { version: 1, providers, models, updatedAt: String(value.updatedAt ?? ''), updatedBy: String(value.updatedBy ?? '') };
   } catch { return defaultCatalog(); }
 }
@@ -146,6 +152,7 @@ export function modelMicrosPerToken(model: CatalogModel) { return { input: model
 export function fitsFunction(model: CatalogModel, provider: CatalogProvider | undefined, need: 'chat' | 'vision'): string | null {
   if (!provider) return 'Provedor removido.';
   if (provider.kind !== 'openai_chat' && provider.kind !== 'anthropic_messages') return 'Esse provedor não conversa por texto.';
+  if (model.testOnly) return 'Modelo só para teste: não pode receber conversas reais.';
   if (!model.capabilities.includes('text')) return 'Este modelo não está marcado para texto.';
   if (need === 'vision' && !model.capabilities.includes('vision')) return 'Este modelo não está marcado para foto.';
   return null;
