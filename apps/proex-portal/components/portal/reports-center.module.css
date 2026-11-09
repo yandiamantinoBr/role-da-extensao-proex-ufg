@@ -64,7 +64,7 @@
 .primaryControls :global(.p-field) { margin: 0; }
 .options, .exportOptions { min-width: 0; margin-block: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
 .options > summary, .exportOptions > summary { cursor: pointer; min-height: 44px; padding: 11px 12px; font-size: 12px; font-weight: 600; color: var(--brand-ink); }
-.options > summary > span, .options > summary > small { color: var(--text-secondary); font-weight: 400; font-size: 11px; margin-left: 8px; overflow-wrap: anywhere; }
+.options > summary > span, .options > summary > small { color: var(--text-secondary); font-weight: 400; font-size: 12px; margin-left: 8px; overflow-wrap: anywhere; }
 .optionsBody { display: grid; gap: 16px; padding: 16px; border-top: 1px solid var(--line); min-width: 0; }
 .exportOptions .exportBar { padding: 12px; border-top: 1px solid var(--line); }
 .options .presets { margin-top: 0; }
@@ -92,12 +92,12 @@
 .columns label:hover { background: var(--surface-soft); }
 .columns input { width: 20px; height: 20px; min-height: 20px; max-height: 20px; flex: 0 0 20px; padding: 0; accent-color: var(--brand-ink); }
 .columnActions { grid-column: 1 / -1; display: flex; gap: 6px; padding-bottom: 6px; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
-.columnActions button { border: 1px solid var(--line); background: var(--surface-soft); color: var(--brand-ink); border-radius: 7px; font-size: 11px; padding: 8px 10px; min-height: 44px; }
+.columnActions button { border: 1px solid var(--line); background: var(--surface-soft); color: var(--brand-ink); border-radius: 7px; font-size: 12px; padding: 8px 10px; min-height: 44px; }
 .presets { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--line); font-size: 12px; }
 .presets > span:first-child { display: inline-flex; align-items: center; gap: 6px; color: var(--text-secondary); font-weight: 600; }
-.presets small { color: var(--text-secondary); font-size: 11px; }
+.presets small { color: var(--text-secondary); font-size: 12px; }
 .preset { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 999px; background: var(--surface-soft); overflow: hidden; }
-.preset button { border: 0; background: none; color: var(--brand-ink); font-size: 11px; padding: 8px 4px 8px 11px; min-height: 44px; }
+.preset button { border: 0; background: none; color: var(--brand-ink); font-size: 12px; padding: 8px 4px 8px 11px; min-height: 44px; }
 .preset button + button { padding: 8px 9px 8px 5px; color: var(--muted); min-width: 44px; }
 .presets form { display: flex; gap: 6px; margin-left: auto; }
 .presets form input { min-height: 44px; padding: 8px 10px; font-size: 12px; width: 170px; }
@@ -107,8 +107,8 @@
 .summary:focus { outline: 3px solid var(--focus); outline-offset: 3px; }
 .summary strong { color: var(--ink); }
 .summaryIcon { display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 10px; background: var(--surface-soft); color: var(--brand-ink); }
-.focusChip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--rc-1); color: var(--ink); background: transparent; border-radius: 999px; padding: 8px 10px; font-size: 11px; min-height: 44px; }
-.warn { color: var(--rc-warn-ink); background: var(--rc-warn-bg); border-radius: 6px; padding: 4px 8px; font-size: 11px; }
+.focusChip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--rc-1); color: var(--ink); background: transparent; border-radius: 999px; padding: 8px 10px; font-size: 12px; min-height: 44px; }
+.warn { color: var(--rc-warn-ink); background: var(--rc-warn-bg); border-radius: 6px; padding: 4px 8px; font-size: 12px; }
 .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 132px), 1fr)); gap: 12px; margin: 16px 0 20px; }
 .kpi { border: 1px solid var(--line); border-radius: 13px; padding: 14px 16px; min-width: 0; background: var(--surface); }
 .kpi dt { font-size: 13px; font-weight: 600; color: var(--text-secondary); overflow-wrap: anywhere; }
@@ -120,7 +120,7 @@
 .chart { border: 1px solid var(--line); border-radius: 14px; padding: 16px 14px 10px; margin: 0; min-width: 0; }
 .chart figcaption { display: flex; flex-direction: column; gap: 3px; margin: 0 4px 10px; }
 .chart figcaption strong { font-size: 13px; color: var(--ink); }
-.chart figcaption small { font-size: 11px; color: var(--text-secondary); }
+.chart figcaption small { font-size: 12px; color: var(--text-secondary); }
 .chartGroup { margin: 12px 4px 6px; min-width: 0; }
 .chartGroup select { width: 100%; min-width: 0; min-height: 44px; text-overflow: ellipsis; }
 .chartHelp { margin: 6px 4px; color: var(--text-secondary); font-size: 12px; }
@@ -138,7 +138,7 @@
 .tooltip b { margin-left: auto; color: var(--ink); font-variant-numeric: tabular-nums; }
 .tableHead { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
 .tableHead strong { font-size: 14px; color: var(--ink); }
-.tableHead small { font-size: 11px; color: var(--text-secondary); }
+.tableHead small { font-size: 12px; color: var(--text-secondary); }
 .table { max-height: 560px; max-width: 100%; min-width: 0; }
 .table table { width: max-content; min-width: 100%; }
 .table th { position: sticky; top: 0; z-index: 1; padding: 0 !important; width: auto !important; }
@@ -148,7 +148,7 @@
 .table tbody tr:hover td { background: var(--surface-soft); }
 .numeric { text-align: right !important; }
 .numeric button { justify-content: flex-end; }
-.badge { display: inline-block; border-radius: 999px; padding: 2px 9px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+.badge { display: inline-block; border-radius: 999px; padding: 2px 9px; font-size: 12px; font-weight: 600; white-space: nowrap; }
 .badgeWarn { background: var(--rc-warn-bg); color: var(--rc-warn-ink); }
 .badgeIn { background: var(--rc-in-bg); color: var(--rc-in-ink); }
 .badgeOut { background: var(--rc-out-bg); color: var(--rc-out-ink); }

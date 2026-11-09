@@ -60,8 +60,9 @@ export function MobileNavigation({ modules, active, onNavigate, pinned, role, on
     const allowed = modules.map(module => module.id);
     // The bottom bar moves only when the person changes pins or their access changes.
     const candidates = [...pinned, ...recommendedModules(role, allowed)];
-    const primary = [...new Set(candidates)].filter(id => id !== 'overview' && id !== 'profile' && allowed.includes(id)).slice(0, 2);
-    const primaryIds: ModuleId[] = ['overview', ...primary, 'profile'].filter((id): id is ModuleId => allowed.includes(id as ModuleId));
+    // Conta fica no avatar do topo; a barra guarda só Início, três atalhos de trabalho e Mais.
+    const primary = [...new Set(candidates)].filter(id => id !== 'overview' && id !== 'profile' && allowed.includes(id)).slice(0, 3);
+    const primaryIds: ModuleId[] = ['overview', ...primary].filter((id): id is ModuleId => allowed.includes(id as ModuleId));
     const items = primaryIds.map(id => modules.find(module => module.id === id)).filter((module): module is PortalModule => Boolean(module));
     const close = useCallback(() => {
         setOpen(false);

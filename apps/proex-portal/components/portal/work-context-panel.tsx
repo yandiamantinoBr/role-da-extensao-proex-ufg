@@ -15,8 +15,8 @@ export default function WorkContextPanel({ userId, projectId, area, itemId, loan
  const manager = projectId ? openedOwner === owner && <ResponsibilityManager key={owner} userId={userId} projectId={projectId} area={area} itemId={itemId} loanId={loanId} campaignId={campaignId}/> : <p>Selecione um projeto no filtro para consultar ou nomear responsáveis. A nomeação organiza o trabalho e não concede acesso.</p>;
  if (compact) return <details key={owner} className={styles.compact} onToggle={event => { if (event.currentTarget.open) setOpenedOwner(owner); }}><summary><Users size={16} aria-hidden="true"/>Responsáveis e demandas</summary><div className={styles.compactBody}>{actions}{manager}</div></details>;
  return <section className={styles.panel} aria-label="Acompanhamento deste contexto">
-  <div className={styles.heading}><span className={styles.icon}><ClipboardList size={19} aria-hidden="true"/></span><div><strong>Acompanhamento</strong><p>Responsáveis e demandas relacionados a este contexto.</p></div></div>
-  {actions}
+  <div className={styles.row}><div className={styles.heading}><span className={styles.icon}><ClipboardList size={18} aria-hidden="true"/></span><div><strong>Acompanhamento</strong><p>Responsáveis e demandas relacionados a este contexto.</p></div></div>
+  {actions}</div>
   <details key={owner} className={styles.details} onToggle={event => { if (event.currentTarget.open) setOpenedOwner(owner); }}><summary><Users size={16} aria-hidden="true"/>Responsáveis deste contexto</summary>{manager}</details>
  </section>;
 }

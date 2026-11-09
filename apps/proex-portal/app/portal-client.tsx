@@ -721,10 +721,10 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
     </header>
       <MobileNavigation modules={allowedTabs} active={tab} onNavigate={navigate} pinned={navigation.pinned} role={role} onTogglePin={navigation.togglePin} />
       <main className="p-main" id="main" tabIndex={-1}>
-    <header className={headingStyles.heading}>
+    <header className={`${headingStyles.heading} ${tab === 'overview' ? headingStyles.welcome : ''}`}>
       {ModuleIcon && <span className={headingStyles.mark} aria-hidden="true"><ModuleIcon size={22}/></span>}
       <div className={headingStyles.copy}>
-        <span className={headingStyles.label}>Gestão da extensão</span>
+        <span className={headingStyles.label}>{tab === 'overview' && data?.updatedAt && Number.isFinite(Date.parse(String(data.updatedAt))) ? new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'America/Sao_Paulo' }).format(new Date(String(data.updatedAt))) : 'Gestão da extensão'}</span>
         <h1>{tab === 'overview' ? `Olá, ${string(user.displayName).trim().split(/\s+/)[0] || 'equipe'}.` : title}</h1>
         <p>{tab === 'overview' ? 'Seu início, seus projetos e o que precisa da sua atenção.' : activeModule?.description}</p>
       </div>
@@ -799,8 +799,9 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
       {tab === 'overview' && <><PersonalWorkSummary userId={string(user.userId)} organizationId={personalOrganization||null} organizationName={organizations.find(organization=>organization.id===personalOrganization)?.name} projectId={filter||null} projectName={string(projects.find(project=>project.id===filter)?.name)} serverDay={workDayFromServerTimestamp(data?.updatedAt)}/><DashboardPanel modules={allowedTabs} pinned={navigation.pinned} frequent={navigation.frequent} onNavigate={navigate} onTogglePin={navigation.togglePin} displayName={string(user.displayName)} role={role} roleLabel={roleNames[role] || 'Equipe PROEX'} projects={scopedProjects} items={visibleItems} loans={visibleLoans} campaigns={visibleCampaigns} selectedProjectId={filter} unitName={unitFilter === '__unassigned__' ? 'Sem unidade vinculada' : string(visibleUnits.find(unit => unit.id === unitFilter)?.acronym || visibleUnits.find(unit => unit.id === unitFilter)?.name)} now={now} onOpenProject={openProject} known={{ projects: Array.isArray(data.projects), items: Array.isArray(data.items), loans: Array.isArray(data.loans), campaigns: Array.isArray(data.campaigns) }} /></>}
 
       {tab === 'projects' && <>
-        <AssistedImportPanel kind="project" organizations={organizations} projects={projects.map(project => ({ id: string(project.id), name: string(project.name), organization_id: string(get(project, 'organization_id', 'organizationId')), version: Number(project.version ?? 1) }))} projectTypes={list(data.projectTypes).map(type => ({ id: string(type.id), label: string(type.label) }))} organizationalUnits={organizationalUnits.map(unit => ({ id: string(unit.id), name: string(unit.name), acronym: string(unit.acronym) }))} canCreateProject={canCreateProjects} canWrite={id => canProject(id, 'campaigns.manage')} defaultProjectId={filter} onImported={refreshModules}/>
         <ProjectPanel refreshKey={updatedAt?.getTime() ?? 0} onMaterialOpen={(id,mode='view')=>{setMaterialMode(mode);setSelectedMaterialId(id);}} key={string(user.userId)} userId={string(user.userId)} shortcutModules={allowedTabs.map(module => module.id).filter(id => id === 'demands' || id === 'calendar')} initialProjectId={activeWorkRecord?.module === 'projects' ? activeWorkRecord.recordId : undefined} onDetailChange={id => { if (id) { if (id !== activeWorkRecord?.recordId) pushNavigation.current = true; selectProject(id); setWorkRecord({module:'projects',projectId:id,recordId:id}); } else setWorkRecord(null); }} renderWorkContext={projectId => workContext(projectId,'projects')} organizations={organizations} isPlatformOwner={isPlatformOwner} projects={projects} projectTypes={list(data.projectTypes)} organizationalUnits={organizationalUnits} canCreate={canCreateProjects} canEdit={id => canGlobal('projects.manage') || canProject(id, 'campaigns.manage')} mutate={mutate} onSelect={id => { selectProject(id); navigate('overview'); }}/>
+        {/* Importar fica depois da lista e some na ficha aberta: o projeto vem primeiro. */}
+        {!(activeWorkRecord?.module === 'projects' && activeWorkRecord.recordId) && <AssistedImportPanel kind="project" organizations={organizations} projects={projects.map(project => ({ id: string(project.id), name: string(project.name), organization_id: string(get(project, 'organization_id', 'organizationId')), version: Number(project.version ?? 1) }))} projectTypes={list(data.projectTypes).map(type => ({ id: string(type.id), label: string(type.label) }))} organizationalUnits={organizationalUnits.map(unit => ({ id: string(unit.id), name: string(unit.name), acronym: string(unit.acronym) }))} canCreateProject={canCreateProjects} canWrite={id => canProject(id, 'campaigns.manage')} defaultProjectId={filter} onImported={refreshModules}/>}
       </>}
 
       {tab === 'events' && <>
@@ -1192,7 +1193,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
       {stockUnit&&<StockUnitDialog key={stockUnit} unitId={stockUnit} onClose={()=>setStockUnit('')} onOpenMaterial={id=>{setMaterialMode('view');setSelectedMaterialId(id);}}/>}
       <footer className="p-footer">
     <span>{online ? <Wifi size={14}/> : <WifiOff size={14}/>}{online ? 'Conectado' : 'Sem conexão'}{updatedAt && ` · atualizado às ${updatedAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`}</span>
-    <div style={{display:'flex',alignItems:'center',flexWrap:'wrap',gap:12}}><small>PROEX · {release}</small><FeedbackPanel release={release} module={tab} projects={projects.map(project=>({id:string(project.id),name:string(project.name)}))} projectId={filter}/></div>
+    <div className="p-footer-actions"><small className="p-version" title="Versão publicada do portal. Informe-a ao relatar um problema.">Versão {release}</small><FeedbackPanel release={release} module={tab} projects={projects.map(project=>({id:string(project.id),name:string(project.name)}))} projectId={filter}/></div>
     </footer>
       </main>
     </div>

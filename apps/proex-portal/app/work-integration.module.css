@@ -7,7 +7,11 @@
 .focusNotice p { flex: 1 1 220px; color: var(--text-secondary); font-size: 13px; line-height: 1.6; }
 .record { scroll-margin-block: 90px 110px; }
 .record:focus { outline: 3px solid var(--focus); outline-offset: 4px; }
-.tools { margin-block-end: 14px; padding: 0 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
-.tools > summary { min-height: 44px; padding-block: 11px; color: var(--brand-ink); cursor: pointer; font-weight: 650; }
-.toolsBody { display: grid; min-width: 0; gap: 12px; padding-block: 10px 16px; }
-.catalogRegistration { margin-block-end: 14px; }
+.tools, .catalogRegistration:global(.p-card) { margin-block-end: 12px; padding: 0 16px; border: 1px solid var(--line); border-radius: var(--radius-card, 16px); background: var(--surface); box-shadow: var(--shadow-card); }
+.tools > summary, .catalogRegistration > summary { display: flex; align-items: center; gap: 10px; min-height: 52px; padding-block: 10px; color: var(--brand-ink); cursor: pointer; font-size: 14px; font-weight: 600; list-style: none; text-decoration: none; }
+.tools > summary::-webkit-details-marker, .catalogRegistration > summary::-webkit-details-marker { display: none; }
+.tools > summary::after, .catalogRegistration > summary::after { content: ''; flex-shrink: 0; width: 7px; height: 7px; margin-left: auto; margin-right: 4px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(45deg) translateY(-2px); transition: transform .15s ease; }
+.tools[open] > summary::after, .catalogRegistration[open] > summary::after { transform: rotate(-135deg) translateY(-2px); }
+.catalogRegistration[open] { padding-bottom: 16px; }
+.toolsBody { display: grid; min-width: 0; gap: 12px; padding-block: 4px 16px; }
+@media (prefers-reduced-motion: reduce) { .tools > summary::after, .catalogRegistration > summary::after { transition: none; } }

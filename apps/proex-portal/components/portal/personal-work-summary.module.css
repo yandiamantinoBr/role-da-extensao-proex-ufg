@@ -5,3 +5,16 @@
 @container personal-work (max-width:620px){.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.metric{min-height:112px}.heading h2{font-size:18px}.heading button span{display:none}.heading p{font-size:12px}}
 @media(max-width:430px){.panel{padding:14px;gap:10px}}
 @media(prefers-reduced-motion:no-preference){.metric{transition:border-color .15s,background .15s}}
+.progress{display:grid;gap:8px;min-width:0}
+.progressBar{display:flex;gap:3px;height:10px;overflow:hidden;border-radius:999px;background:var(--surface-soft)}
+.progressBar>span{display:block;min-width:6px;height:100%}
+.progressBar>span:first-child{border-radius:999px 0 0 999px}.progressBar>span:last-child{border-radius:0 999px 999px 0}.progressBar>span:only-child{border-radius:999px}
+[data-part=done]{--part:var(--success-ink,#23644d)}[data-part=doing]{--part:var(--info-ink,#245fae)}[data-part=waiting]{--part:var(--orange)}
+.progressBar>span{background:var(--part)}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;margin:0;padding:0;list-style:none;color:var(--text-secondary);font-size:12.5px;line-height:1.4}
+.legend li{display:inline-flex;align-items:center;gap:6px}
+.legend li::before{content:'';width:10px;height:10px;border-radius:3px;background:var(--part)}
+.legend strong{color:var(--ink);font-variant-numeric:tabular-nums}
+.panel{border-radius:var(--radius-card,16px);box-shadow:var(--shadow-card)}
+.heading h2{font-family:var(--font-display);letter-spacing:-.02em}
+.metric strong{font-family:var(--font-display);letter-spacing:-.03em}

@@ -27,7 +27,7 @@
 .cardTop > :last-child { margin-left: auto; color: var(--brand-ink); }
 .mark { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 11px; background: var(--surface-soft); color: var(--brand-ink); }
 .teamCard > strong { font-size: 16px; line-height: 1.4; overflow-wrap: anywhere; }
-.mine { display: inline-block; padding: 3px 7px; border-radius: 6px; background: var(--surface-soft); color: var(--brand-ink); font-size: 11px; font-weight: 650; }
+.mine { display: inline-block; padding: 3px 7px; border-radius: 6px; background: var(--surface-soft); color: var(--brand-ink); font-size: 12px; font-weight: 650; }
 .cardMeta,.cardBottom { font-size: 12px; color: var(--muted); }
 .meter { height: 6px; overflow: hidden; border-radius: 99px; background: var(--line); }
 .meter > span { display: block; height: 100%; background: #168057; border-radius: inherit; }
@@ -39,7 +39,7 @@
 .detailHeading h3 { scroll-margin-top: 110px; }
 .detailHeading h3:focus-visible { outline: 3px solid var(--focus); outline-offset: 4px; border-radius: 4px; }
 .detailHeading p { display: flex; align-items: center; gap: 6px; }
-.eyebrow { font-size: 10px; font-weight: 750; text-transform: uppercase; letter-spacing: .08em; color: var(--brand-ink); }
+.eyebrow { font-size: 11px; font-weight: 750; text-transform: uppercase; letter-spacing: .08em; color: var(--brand-ink); }
 .detailGrid { display: grid; gap: 18px; }
 .workspace h4 { font-size: 15px; font-weight: 750; }
 .chart { min-width: 0; padding: 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--canvas); }
@@ -54,12 +54,12 @@
 .chartRow[data-state=blocked] .bar > span { background: #b57913; }
 .chartRow[data-state=completed] .bar > span { background: #168057; }
 .chartRow[data-state=cancelled] .bar > span { background: #8c8491; }
-.chartFoot { border-top: 1px solid var(--line); padding-top: 9px; font-size: 11px !important; }
+.chartFoot { border-top: 1px solid var(--line); padding-top: 9px; font-size: 12px !important; }
 .members { min-width: 0; }
 .members > div { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 12px; max-height: 270px; overflow: auto; }
 .person { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; padding: 7px 10px 7px 7px; border: 1px solid var(--line); border-radius: 99px; font-size: 12px; }
 .person > span:last-child { overflow-wrap: anywhere; }
-.person small { display: block; color: var(--brand-ink); font-size: 10px; }
+.person small { display: block; color: var(--brand-ink); font-size: 11px; }
 .avatar { flex-shrink: 0; display: grid; place-items: center; width: 29px; height: 29px; border-radius: 50%; background: var(--surface-soft); color: var(--brand-ink); font-weight: 700; }
 .taskHeading { padding-top: 16px; border-top: 1px solid var(--line); }
 .exports > svg { color: var(--muted); }
@@ -78,7 +78,7 @@
 .roster label { display: flex; gap: 9px; align-items: center; min-height: 44px; overflow-wrap: anywhere; font-weight: 400; }
 .roster input { width: 18px; height: 18px; accent-color: var(--brand-ink); }
 .pagination { display: flex; gap: 10px; flex-wrap: wrap; justify-content: space-between; align-items: center; font-size: 12px; }
-.updated { font-size: 11px; }
+.updated { font-size: 12px; }
 :global(html[data-theme=dark]) .attention { color: #ffbbce; }
 :global(html[data-theme=dark]) .meter > span { background: #5fce9b; }
 @container (min-width: 580px) { .teamGrid { grid-template-columns: repeat(2,minmax(0,1fr)); } .filters { grid-template-columns: repeat(2,minmax(0,1fr)); } .search { grid-column: 1/-1; } .tasks { grid-template-columns: repeat(2,minmax(0,1fr)); } .detail,.editor { padding: 22px; } }

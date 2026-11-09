@@ -96,19 +96,36 @@
   flex-shrink: 0;
 }
 
+/* Duas cores: a parte roxa é a primeira categoria do texto abaixo (internos, retirados, ativadas)
+   e a laranja, a segunda (externos, reservados, em preparação). */
 .distribution {
   display: block;
   inline-size: 100%;
-  block-size: 6px;
+  block-size: 8px;
   overflow: hidden;
   border-radius: 999px;
-  background: var(--line);
+  background: var(--orange);
 }
 
 .distribution > span {
   display: block;
   block-size: 100%;
   background: var(--brand-ink);
+  border-inline-end: 2px solid var(--surface);
+}
+
+.dashboard :global(.pd-summary) {
+  box-shadow: var(--shadow-card);
+}
+
+.dashboard :global(.pd-summary:hover) {
+  border-color: var(--brand-ink);
+  box-shadow: var(--shadow-raised);
+}
+
+.dashboard :global(.pd-summary) > strong {
+  font-family: var(--font-display);
+  color: var(--brand-ink);
 }
 
 .dashboard :global(.pd-shortcuts) {
