@@ -9,8 +9,8 @@ type View = { stamp: string; catalog: { providers: Provider[] } };
 const HINTS: Record<string, string> = {
   nvidia: 'Grátis só para teste: a NVIDIA pode usar o que for enviado. Use apenas dados de exemplo.',
   anthropic: 'Modelos Claude (conversa, fotos e documentos).',
-  perplexity: 'Decider: responde perguntas fechadas (como “é urgente?”), igual ao JEV. Para um teste comparativo.',
-  nace: 'Drex: também responde perguntas fechadas, como o JEV. Para um teste comparativo.',
+  perplexity: 'Decider: responde perguntas fechadas (como “é urgente?”), como a triagem que o portal já usa. Para um teste comparativo.',
+  nace: 'Drex: também responde perguntas fechadas, como a triagem que o portal já usa. Para um teste comparativo.',
   artificialanalysis: 'Busca as notas dos modelos (aba Modelos → Atualizar notas). Grátis, até 100 consultas por dia.',
 };
 
