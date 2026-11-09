@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
-import { Inbox, MessageSquareHeart, ShieldCheck, ShieldQuestion } from 'lucide-react';
+import { Inbox, MailOpen, MessageSquareHeart, ShieldQuestion } from 'lucide-react';
 import type { ModuleId } from './navigation-model';
 import { communityGet, errorText } from './community-api';
 import { FeedbackForm, FeedbackManagement, type CommunityEvent } from './community-feedback';
@@ -9,6 +9,7 @@ import styles from './community.module.css';
 
 type Access = { manageFeedback: boolean; ombuds: boolean; events: CommunityEvent[] };
 type Tab = 'feedback' | 'ombuds' | 'manage' | 'ombuds-inbox';
+const MANAGEMENT: Tab[] = ['manage', 'ombuds-inbox'];
 export type CommunityPrefill = { area: ModuleId; projectId: string; nonce: number };
 
 /** Community module, phase 1: feedback box, anonymous ombuds and the management boxes. */
@@ -23,10 +24,10 @@ export default function CommunityPanel({ userId, projects, prefill }: { userId: 
   const [seenPrefill, setSeenPrefill] = useState(prefill?.nonce ?? 0);
   if (prefill && prefill.nonce !== seenPrefill) { setSeenPrefill(prefill.nonce); setTab('feedback'); }
   const available: { id: Tab; label: string; icon: typeof Inbox }[] = [
-    { id: 'feedback', label: 'Enviar retorno', icon: MessageSquareHeart },
+    { id: 'feedback', label: 'Fale com a gestão', icon: MessageSquareHeart },
     { id: 'ombuds', label: 'Ouvidoria anônima', icon: ShieldQuestion },
     ...(access?.manageFeedback ? [{ id: 'manage' as Tab, label: 'Caixa da gestão', icon: Inbox }] : []),
-    ...(access?.ombuds ? [{ id: 'ombuds-inbox' as Tab, label: 'Relatos recebidos', icon: ShieldCheck }] : []),
+    ...(access?.ombuds ? [{ id: 'ombuds-inbox' as Tab, label: 'Relatos anônimos', icon: MailOpen }] : []),
   ];
   function keyboard(event: KeyboardEvent<HTMLDivElement>) {
     const index = available.findIndex(item => item.id === tab);
@@ -39,7 +40,7 @@ export default function CommunityPanel({ userId, projects, prefill }: { userId: 
   if (error) return <p role="alert" className="p-inline-error">{error}</p>;
   return <div className={styles.community}>
     <div className={styles.tabs} role="tablist" aria-label="Seções da Comunidade" onKeyDown={keyboard}>
-      {available.map(item => { const Icon = item.icon; return <button key={item.id} ref={node => { tabs.current[item.id] = node; }} type="button" role="tab" id={`${id}-${item.id}`} aria-controls={`${id}-${item.id}-panel`} aria-selected={tab === item.id} tabIndex={tab === item.id ? 0 : -1} onClick={() => setTab(item.id)}><Icon size={17} aria-hidden="true"/>{item.label}</button>; })}
+      {available.map((item, index) => { const Icon = item.icon; return <button key={item.id} data-management={MANAGEMENT.includes(item.id) || undefined} data-first-management={(MANAGEMENT.includes(item.id) && !MANAGEMENT.includes(available[index - 1]?.id)) || undefined} ref={node => { tabs.current[item.id] = node; }} type="button" role="tab" id={`${id}-${item.id}`} aria-controls={`${id}-${item.id}-panel`} aria-selected={tab === item.id} tabIndex={tab === item.id ? 0 : -1} onClick={() => setTab(item.id)}><Icon size={17} aria-hidden="true"/>{item.label}</button>; })}
     </div>
     <div role="tabpanel" id={`${id}-${tab}-panel`} aria-labelledby={`${id}-${tab}`} className={styles.tabPanel}>
       {tab === 'feedback' && <FeedbackForm key={prefill?.nonce ?? 0} projects={projects} events={access?.events ?? []} prefill={prefill} onOmbuds={() => setTab('ombuds')}/>}

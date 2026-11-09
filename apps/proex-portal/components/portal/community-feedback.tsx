@@ -18,7 +18,7 @@ const KINDS: { id: Kind; label: string; icon: LucideIcon; hint: string }[] = [
 ];
 export const STATUS_LABELS: Record<Status, string> = { new: 'Recebido', reviewing: 'Em análise', resolved: 'Resolvido' };
 const kindLabel = (kind: Kind) => KINDS.find(item => item.id === kind)?.label ?? 'Retorno';
-const target = (entry: Entry) => entry.campaign_name ? `Evento: ${entry.campaign_name}${entry.project_name ? ` · ${entry.project_name}` : ''}` : entry.project_name ? `Projeto: ${entry.project_name}` : 'Plataforma';
+const target = (entry: Entry) => entry.campaign_name ? `${entry.campaign_name} (evento${entry.project_name ? ` de ${entry.project_name}` : ''})` : entry.project_name ? entry.project_name : 'Plataforma';
 
 export function FeedbackForm({ projects, events, prefill, onOmbuds }: { projects: { id: string; name: string }[]; events: CommunityEvent[]; prefill: CommunityPrefill | null; onOmbuds(): void }) {
   const id = useId(), key = useRef('');
@@ -39,7 +39,7 @@ export function FeedbackForm({ projects, events, prefill, onOmbuds }: { projects
   const recipient = about === 'platform' ? 'a administração do portal' : about === 'project' ? 'a gestão deste projeto' : 'a gestão do projeto deste evento';
   return <div className={styles.split}>
     <form className={styles.card} onSubmit={submit} aria-labelledby={`${id}-title`}>
-      <div className={styles.cardHead}><h2 id={`${id}-title`}>Enviar retorno</h2><p>Sugestão, problema ou elogio. Quem recebe responde por aqui.</p></div>
+      <div className={styles.cardHead}><h2 id={`${id}-title`}>Fale com a gestão</h2><p>Sugestão, problema ou elogio. Quem recebe responde por aqui.</p></div>
       <fieldset className={styles.kinds} disabled={busy}><legend>Tipo</legend>
         {KINDS.map(item => { const Icon = item.icon; return <label key={item.id} data-kind={item.id} className={kind === item.id ? styles.kindActive : undefined}><input type="radio" name={`${id}-kind`} value={item.id} checked={kind === item.id} onChange={() => { setKind(item.id); touch(); }}/><Icon size={18} aria-hidden="true"/><span><strong>{item.label}</strong><small>{item.hint}</small></span></label>; })}
       </fieldset>
@@ -97,7 +97,7 @@ export function FeedbackManagement() {
   const visible = (entries ?? []).filter(entry => filter === 'all' || entry.status === filter);
   const counts = (entries ?? []).reduce((total, entry) => ({ ...total, [entry.status]: (total[entry.status] ?? 0) + 1 }), {} as Record<Status, number>);
   return <section className={styles.card} aria-labelledby={`${id}-title`} aria-busy={entries === null}>
-    <div className={styles.cardHead}><div><h2 id={`${id}-title`}>Caixa da gestão</h2><p>Retornos dos projetos e eventos que você gerencia{entries?.some(entry => !entry.project_name) ? ' e da plataforma' : ''}. Responder avisa a pessoa na lista dela.</p></div><button type="button" className="p-icon-button" aria-label="Atualizar caixa da gestão" onClick={() => void load()}><RefreshCw size={18}/></button></div>
+    <div className={styles.cardHead}><div><h2 id={`${id}-title`}>Caixa da gestão</h2><p>Retornos dos projetos e eventos que você gerencia{entries?.some(entry => !entry.project_name) ? ' e da plataforma' : ''}. A resposta aparece na lista de quem enviou.</p></div><button type="button" className="p-icon-button" aria-label="Atualizar caixa da gestão" onClick={() => void load()}><RefreshCw size={18}/></button></div>
     <div className={styles.filters} role="group" aria-label="Filtrar por estado">{(['all', 'new', 'reviewing', 'resolved'] as const).map(value => <button key={value} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)}>{value === 'all' ? 'Todos' : STATUS_LABELS[value]}{value !== 'all' && counts[value] ? <span>{counts[value]}</span> : null}</button>)}</div>
     {error ? <p role="alert" className="p-inline-error">{error}</p> : entries === null ? <p role="status" className={styles.help}>Consultando…</p> : !visible.length ? <p className={styles.empty}>{filter === 'all' ? 'Nenhum retorno recebido ainda.' : 'Nada neste estado.'}</p>
       : <ul className={styles.entries}>{visible.map(entry => <ManagedEntry key={`${entry.id}:${entry.version}`} entry={entry} onChange={load}/>)}</ul>}
@@ -115,9 +115,9 @@ function ManagedEntry({ entry, onChange }: { entry: Entry; onChange(): Promise<v
   return <li className={styles.entry}>
     <div className={styles.entryMeta}><span className={styles.kind} data-kind={entry.kind}>{kindLabel(entry.kind)}</span><span className={styles.status} data-status={entry.status}>{STATUS_LABELS[entry.status]}</span><small>{entry.author_name ?? 'Pessoa da equipe'} · {target(entry)} · {instantDay(entry.created_at)}</small></div>
     <p className={styles.entryBody}>{entry.body}</p>
-    {entry.response && <div className={styles.reply}><strong>Sua equipe respondeu · {instantDay(entry.responded_at)}</strong><p>{entry.response}</p></div>}
+    {entry.response && <div className={styles.reply}><strong>Resposta da gestão · {instantDay(entry.responded_at)}</strong><p>{entry.response}</p></div>}
     {entry.canManage && <div className={styles.manageRow}>
-      <label className={styles.inlineField}><span>Estado</span><select value={entry.status} disabled={busy} onChange={event => void send({ action: 'status', status: event.target.value }, 'Estado atualizado')}>{Object.entries(STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+      <label className={styles.inlineField}><span>Estado (salva ao mudar)</span><select value={entry.status} disabled={busy} onChange={event => void send({ action: 'status', status: event.target.value }, 'Estado atualizado')}>{Object.entries(STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
       <button type="button" className="p-button p-button-subtle" aria-expanded={open} aria-controls={`${id}-reply`} onClick={() => setOpen(value => !value)}>{entry.response ? 'Responder de novo' : 'Responder'}</button>
     </div>}
     {open && <form id={`${id}-reply`} className={styles.replyForm} onSubmit={event => { event.preventDefault(); void send({ action: 'respond', response, status }, 'Resposta enviada').then(ok => { if (ok) setOpen(false); }); }}>

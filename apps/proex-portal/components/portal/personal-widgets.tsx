@@ -37,7 +37,7 @@ export default function PersonalWidgets({ userId, serverDay, roleAvailable }: { 
   return <section className={styles.panel} aria-labelledby={`widgets-${userId}`}>
     <div className={styles.heading}>
       <div><h2 id={`widgets-${userId}`}>Seus widgets</h2><p>Só você vê. Ligue apenas o que ajuda no seu dia.</p></div>
-      <button type="button" className="p-button p-button-subtle" aria-expanded={customizing} onClick={() => setCustomizing(value => !value)}>{customizing ? <X size={16}/> : <Settings2 size={16}/>}<span>{customizing ? 'Fechar' : 'Personalizar'}</span></button>
+      <button type="button" className="p-button p-button-subtle" aria-expanded={customizing} aria-label={customizing ? 'Fechar personalização dos widgets' : 'Personalizar widgets'} onClick={() => setCustomizing(value => !value)}>{customizing ? <X size={16}/> : <Settings2 size={16}/>}<span>{customizing ? 'Fechar' : 'Personalizar'}</span></button>
     </div>
     {customizing && <WidgetSettings settings={settings} roleAvailable={roleAvailable} onSaved={next => { setState(current => current && { ...current, settings: next }); setCustomizing(false); void load(); }}/>}
     {anyOn && <div className={styles.grid}>
@@ -113,7 +113,7 @@ function Reminders({ items, serverDay, onChange }: { items: Reminder[]; serverDa
         <label className={styles.field}><span>Data (opcional)</span><DateField value={dueOn} onValueChange={value => { setDueOn(value); key.current = ''; }} disabled={busy} aria-label="Data do lembrete"/></label>
         <label className={styles.field}><span>Hora</span><input inputMode="numeric" placeholder="14:30" value={dueTime} maxLength={5} disabled={busy || !dueOn} onChange={event => { const digits = event.target.value.replace(/\D/g, '').slice(0, 4); setDueTime(digits.length > 2 ? `${digits.slice(0, 2)}:${digits.slice(2)}` : digits); key.current = ''; }} aria-describedby={`${id}-time`}/></label>
       </div>
-      <small id={`${id}-time`} className={styles.help}>Hora em 24 horas, depois de escolher a data.</small>
+      <small id={`${id}-time`} className={styles.help}>{dueOn ? 'Hora opcional, em 24 horas.' : 'Escolha a data para poder informar a hora.'}</small>
       <button type="submit" className="p-button p-button-primary" disabled={busy || !body.trim()}>{busy ? <LoaderCircle className="p-spin" size={16}/> : <Plus size={16}/>}Adicionar lembrete</button>
     </form>
     {error && <p role="alert" className="p-inline-error">{error}</p>}

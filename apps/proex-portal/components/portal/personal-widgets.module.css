@@ -57,3 +57,4 @@
 .done summary{min-height:44px;display:flex;align-items:center;cursor:pointer;color:var(--text-secondary);font-size:12.5px;font-weight:600}
 @container personal-widgets (max-width:640px){.grid{grid-template-columns:minmax(0,1fr)}.heading button span{display:none}.heading button{min-width:44px;padding-inline:12px}}
 @media(max-width:430px){.panel{padding:14px}}
+.when input:disabled{background:var(--surface-soft);color:var(--text-secondary);cursor:not-allowed;opacity:1}
