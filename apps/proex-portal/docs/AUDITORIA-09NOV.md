@@ -120,6 +120,45 @@ Roteiros feitos no servidor local, no celular (375 px) e no computador (1366 px)
 
 U8 e U9 foram repassados à sessão da página Registros. U1–U7 e U10 são sugestões de interface: ficaram fora desta PR, que trata de segurança e desempenho.
 
+## Legibilidade, console e exploração por perfil (2ª frente, 09/11 à tarde)
+
+Pedido do Yan, transmitido pela sessão coordenadora: deixar o código legível para pessoas e IAs, olhar os erros que aparecem ao clicar no ícone de atenção do navegador e explorar o portal ativamente.
+
+**Nomes de classe legíveis.**
+- O inspetor agora mostra `Arquivo_classe__hash` (ex.: `NotificationBell_trigger__3693d`) em vez de `_trigger_x8k2_1`. A configuração está em `scripts/vite/readable-class-names.mjs`, com teste próprio, e nenhum arquivo foi renomeado.
+- Custo medido no build Node: CSS compactado de 95,9 KB para 101,3 KB (+5,4 KB, +5,7%) e pacote JS principal compactado de 419,3 KB para 424,9 KB (+1,3%).
+- Sem erro de hidratação: o servidor e o navegador geram o mesmo nome.
+
+**Console em produção, com o login do Yan:**
+- **Nenhum erro.**
+- Laços e requisições repetidas: não há. O Início faz 6 chamadas ao abrir e nenhuma nova em 20 segundos.
+- Um único **aviso** do Recharts ("width(-1) and height(-1)") se repete a cada gráfico montado, porque o `ResponsiveContainer` começa com tamanho -1. Fontes e donos:
+  - `activity-panel` (Registros e visual);
+  - `reports-center` (Relatórios);
+  - `ai-spending-panel` (Rolê e chaves).
+
+  A correção de uma linha foi enviada a cada sessão.
+
+**O ícone de atenção** é o painel *Issues* do DevTools: "A form field element should have an id or name attribute". Em produção eram de 3 a 31 campos por página.
+- Corrigido aqui, por serem compartilhados ou sem dono:
+  - seletor de tema;
+  - filtros Projeto, Unidade e Área;
+  - hora do `DateTimeField`;
+  - situação da dinâmica;
+  - Conta (perfil, senha, apelido e CPF);
+  - filtros de Projetos e Demandas;
+  - Meu trabalho.
+- Medido no servidor local depois da correção: o Início e a Conta passaram a **0** campos sem `id`/`name`.
+- Os restantes foram enviados às sessões donas: Relatórios (27), Registros (4), Agenda (4), Pessoas e acessos (4), Equipes (3), Comunidade (2), Materiais, Empréstimos e Dinâmicas (1 cada).
+
+**Exploração por perfil** (servidor local com dados sintéticos; bolsista no celular, técnico e administração no computador):
+- Os 14 módulos abrem sem erro na tela, sem estouro de largura e sem mensagem técnica vazada.
+- O bolsista (estoque) não vê Empréstimos, Dinâmicas nem Pessoas e acessos.
+- Para o técnico, Configurações volta ao Início em silêncio (sem permissão). Sugestão: mostrar um aviso curto.
+- Achados de interface U1–U10 já enviados (seção "Testes de usuário").
+
+**Glossário:** `docs/GLOSSARIO.md`, com termos, tabelas, sinônimos, mapa de pastas e plano de consolidação em quatro fases para depois de 13/11. Linkado no `AGENTS.md` e no `README`.
+
 ## Não verificado
 
 - Escrita em produção, de propósito. As correções serão conferidas lá depois do deploy, com chamadas que não gravam.
