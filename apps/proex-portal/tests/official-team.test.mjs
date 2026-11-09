@@ -53,7 +53,7 @@ test('institutional domains confer no role or identity and prefills are a pure e
 
 // Execute the real component event handlers with inert hooks and JSX nodes.
 // This verifies selection/submission behavior, not browser layout or hydration.
-writeFileSync(join(temporary, 'react.js'), 'export const useState=value=>[typeof value==="function"?value():value,()=>{}];export const useRef=value=>({current:value});');
+writeFileSync(join(temporary, 'react.js'), 'export const useState=value=>[typeof value==="function"?value():value,()=>{}];export const useRef=value=>({current:value});export const useId=()=>"synthetic-id";');
 writeFileSync(join(temporary, 'jsx.js'), 'export const Fragment="fragment";export const jsx=(type,props,key)=>({type,props:props??{},key});export const jsxs=jsx;');
 writeFileSync(join(temporary, 'css.js'), 'export default new Proxy({},{get:(_target,key)=>String(key)});');
 function component(name) {

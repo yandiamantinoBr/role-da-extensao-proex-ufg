@@ -1,5 +1,5 @@
 'use client';
-import { useRef, useState, type FormEvent } from 'react';
+import { useId, useRef, useState, type FormEvent } from 'react';
 import { ArrowUpRight, Check, Copy, KeyRound, LoaderCircle, Mail, Search, ShieldCheck, UserPlus, Users } from 'lucide-react';
 import TeamPersonDetail from './team-person-detail';
 import styles from './team-person.module.css';
@@ -31,14 +31,14 @@ function CopyLink({ url, label }: {
     url: string;
     label: string;
 }) {
-    const [copied, setCopied] = useState(false);
+    const [copied, setCopied] = useState(false), fieldId = useId();
     return <div className="p-invite-result">
     <ShieldCheck size={20}/>
     <div>
     <strong>{label}</strong>
     <p>Compartilhe este link somente com a pessoa indicada. Nenhum e-mail foi enviado automaticamente.</p>
     <div className="p-copy-row">
-    <input aria-label={label} readOnly value={url} onFocus={e => e.target.select()}/>
+    <input id={fieldId} aria-label={label} readOnly value={url} onFocus={e => e.target.select()}/>
     <button type="button" className="p-button p-button-subtle" onClick={() => void navigator.clipboard.writeText(url).then(() => setCopied(true)).catch(() => setCopied(false))}>
     <Copy size={16}/>{copied ? 'Copiado' : 'Copiar link'}</button>
     </div>
@@ -52,7 +52,7 @@ function Membership({ member, editable, globalAdmin, projectName, mutate }: {
     projectName: string;
     mutate: Props['mutate'];
 }) {
-    const [role, setRole] = useState(String(member.role));
+    const [role, setRole] = useState(String(member.role)), roleId = useId();
     const [saving, setSaving] = useState(false), [error, setError] = useState(''), [revoke, setRevoke] = useState(false);
     const key = useRef<string | null>(null);
     async function send(action: 'member.change' | 'member.revoke') { if (saving)
@@ -77,7 +77,7 @@ function Membership({ member, editable, globalAdmin, projectName, mutate }: {
         <div className="p-access-controls">
         <label className="p-field">
         <span>Função neste escopo</span>
-        <select value={role} disabled={saving} onChange={e => { setRole(e.target.value); key.current = null; }}>{Object.entries(roles).filter(([key]) => key !== 'owner' && (globalAdmin || key !== 'manager')).map(([key, label]) => <option value={key} key={key}>{label}</option>)}</select>
+        <select id={roleId} value={role} disabled={saving} onChange={e => { setRole(e.target.value); key.current = null; }}>{Object.entries(roles).filter(([key]) => key !== 'owner' && (globalAdmin || key !== 'manager')).map(([key, label]) => <option value={key} key={key}>{label}</option>)}</select>
         </label>
         <button type="button" className="p-button p-button-primary" disabled={saving || role === member.role} onClick={() => void send('member.change')}>{saving ? <LoaderCircle size={16} className="p-spin"/> : <Check size={16}/>}Salvar função</button>
         </div>{revoke ? <div className="p-inline-confirm">
@@ -192,7 +192,7 @@ export default function TeamPanel(props: Props) {
     <span>Buscar pessoa</span>
     <div className="p-search">
     <Search size={17}/>
-    <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Nome ou e-mail"/>
+    <input name="memberSearch" value={query} onChange={e => setQuery(e.target.value)} placeholder="Nome ou e-mail"/>
     </div>
     </label>{filtered.length ? <div className="p-directory">{filtered.map((u, index) => <DirectoryUser key={u.userId ?? `${u.email}-${index}`} user={u} props={props} onOpen={setSelectedUserId}/>)}</div> : <div className="p-empty">
         <Users size={28}/>
@@ -210,7 +210,7 @@ export default function TeamPanel(props: Props) {
             { key.current = null; setInviteUrl(''); } }}>{!official && <DraftNotice draft={draft}/>}
         <fieldset disabled={saving}>
         <div className="p-form-grid">
-        {official && <label className="p-field"><span>Nome na fonte oficial</span><input readOnly value={official.name} aria-label="Nome na fonte oficial"/></label>}
+        {official && <label className="p-field"><span>Nome na fonte oficial</span><input id="team-invite-official-name" readOnly value={official.name} aria-label="Nome na fonte oficial"/></label>}
         <label className="p-field">
         <span>E-mail da pessoa *</span>
         <input key={`email-${suggestionKey}`} name="email" type="email" required maxLength={254} autoComplete="off" placeholder="nome@exemplo.com" defaultValue={official?.email ?? ''}/>
@@ -225,7 +225,7 @@ export default function TeamPanel(props: Props) {
         <small>O acesso a um projeto não concede permissão nos demais.</small>
         </label>
         </div>
-        {props.globalAdmin && inviteProject === '__global__' && <label className="p-field"><span><input type="checkbox" checked={globalConfirmed} onChange={event => setGlobalConfirmed(event.target.checked)} required/> Confirmo que esta pessoa pode atuar em todos os projetos do portal, inclusive futuros.</span><small>Use este alcance somente para a equipe institucional autorizada. Esta confirmação não fica no rascunho.</small></label>}
+        {props.globalAdmin && inviteProject === '__global__' && <label className="p-field"><span><input id="team-invite-global-confirm" type="checkbox" checked={globalConfirmed} onChange={event => setGlobalConfirmed(event.target.checked)} required/> Confirmo que esta pessoa pode atuar em todos os projetos do portal, inclusive futuros.</span><small>Use este alcance somente para a equipe institucional autorizada. Esta confirmação não fica no rascunho.</small></label>}
         <div className="p-form-footer">{error && <p className="p-inline-error" role="alert">{error}</p>}<button className="p-button p-button-primary" type="submit">{saving ? <LoaderCircle size={17} className="p-spin"/> : <UserPlus size={17}/>}{saving ? 'Criando…' : 'Gerar convite'}</button>
         </div>
         </fieldset>
