@@ -88,3 +88,5 @@
 .exact{display:block;font-size:max(12px,.72rem);font-weight:500;color:var(--text-secondary)}
 .controlGroup{display:grid;gap:.3rem}
 .controlLabel{font-size:max(12px,.78rem);font-weight:650;color:var(--text-secondary)}
+.segmented{display:grid;grid-auto-flow:column;grid-auto-columns:1fr;gap:.5rem}
+.segmented button{white-space:nowrap}

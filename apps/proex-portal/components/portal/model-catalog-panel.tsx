@@ -88,7 +88,7 @@ export default function ModelCatalogPanel({ organizationId }: { organizationId: 
       <div className={styles.filters} role="group" aria-label="Mostrar modelos de">{FILTERS.map(option => <button key={option.key} type="button" aria-pressed={filter === option.key} onClick={() => setFilter(option.key)}>{option.label}</button>)}</div>
       <p className={styles.muted}>{FILTERS.find(option => option.key === filter)?.hint}</p>
       {(() => { const list = view.catalog.models.filter(model => filter === 'all' || model.capabilities.includes(filter)); return list.length ? <ul className={styles.models}>{list.map(model => { const provider = providers.get(model.providerId); return <li key={model.id} className={styles.model}>
-        <div className={styles.modelTop}><strong>{model.label}{model.testOnly ? ' · somente teste' : ''}</strong><span className={provider?.hasKey ? styles.ok : styles.warn}>{provider?.hasKey ? 'Chave pronta' : 'Falta chave'}</span></div>
+        <div className={styles.modelTop}><strong>{model.label}{model.testOnly ? ' · somente teste' : ''}</strong><span className={provider?.hasKey ? styles.ok : styles.warn}>{provider?.hasKey ? 'Chave pronta' : 'Sem chave'}</span></div>
         <p className={styles.muted}>{provider?.label ?? 'Provedor removido'} · <code>{model.model}</code></p>
         <p className={styles.chips}>{model.capabilities.map(capability => <span key={capability}>{CAPABILITY_LABELS[capability]}</span>)}</p>
         <p>{priceLine(model)}{model.score ? ` · nota ${model.score.value} (${model.score.source}, ${model.score.readAt.split('-').reverse().join('/')})` : ''}</p>
@@ -158,8 +158,8 @@ export default function ModelCatalogPanel({ organizationId }: { organizationId: 
       <label className="p-field"><span>Pergunta</span><textarea rows={3} maxLength={2000} value={prompt} onChange={event => setPrompt(event.target.value)}/></label>
       {compareIds.length < 2 ? <p>Escolha 2 ou 3 modelos para ver o custo máximo.</p> : <p><strong>Custo máximo: {friendlyMicros(compareCost)}</strong> para {compareIds.length} modelos.</p>}
       <label className={styles.check}><input type="checkbox" checked={compareConsent} onChange={event => setCompareConsent(event.target.checked)}/>Autorizo enviar esta pergunta aos provedores escolhidos. Não há dados pessoais nela.</label>
+      {!busy && (compareIds.length < 2 || !compareConsent || !prompt.trim()) && <p className={styles.muted}>Para comparar: {(items => items.length > 1 ? `${items.slice(0, -1).join(', ')} e ${items.at(-1)}` : items[0])([compareIds.length < 2 ? 'escolha 2 modelos' : '', !prompt.trim() ? 'escreva a pergunta' : '', !compareConsent ? 'marque a autorização' : ''].filter(Boolean))}.</p>}
       <button type="button" className={`p-button p-button-primary ${styles.compareButton}`} disabled={busy || compareIds.length < 2 || !compareConsent || !prompt.trim()} onClick={() => void compare()}>{busy ? 'Comparando…' : 'Comparar agora'}</button>
-      {!busy && (compareIds.length < 2 || !compareConsent || !prompt.trim()) && <p className={styles.muted}>Para comparar: {[compareIds.length < 2 ? 'escolha 2 modelos' : '', !prompt.trim() ? 'escreva a pergunta' : '', !compareConsent ? 'marque a autorização' : ''].filter(Boolean).join(', ')}.</p>}
       {results && <div className={styles.results}>{results.map(row => <article key={row.modelId} className={styles.result}>
         <h5>{row.label}</h5><p className={styles.muted}>{row.provider} · {(row.ms / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} s · custou {friendlyMicros(row.usdMicros)}</p>
         {row.error ? <p role="alert" className="p-inline-error">{row.error}</p> : <pre className={styles.answer}>{row.text}</pre>}

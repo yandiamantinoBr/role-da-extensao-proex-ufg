@@ -180,7 +180,7 @@ export default function AiSpendingPanel({ organizationId }: { organizationId: st
 
     {data && <>
       <dl className={styles.metrics}>
-        <div><dt>Gasto real hoje</dt><dd><Money micros={data.today.realUsdMicros} zero="Nada gasto hoje"/></dd></div>
+        <div><dt>Gasto real hoje</dt><dd><Money micros={data.today.realUsdMicros} zero="Nada gasto"/></dd></div>
         <div><dt>Limite por dia</dt><dd>{usd2.format(data.dailyLimitUsdMicros / 1_000_000)}</dd></div>
         <div><dt>Gasto real no período</dt><dd><Money micros={data.totals.realUsdMicros} zero="Nada gasto"/></dd></div>
         <div><dt>Reservado no período (máximo possível)</dt><dd><Money micros={data.totals.reservedUsdMicros} zero="Nada reservado"/></dd></div>
@@ -188,7 +188,7 @@ export default function AiSpendingPanel({ organizationId }: { organizationId: st
       <ul className={styles.glossary}>
         <li><strong>Gasto real:</strong> o custo que o provedor informou. Algumas funções ainda não informam o custo.</li>
         <li><strong>Reservado:</strong> antes de cada uso, o portal separa o custo máximo possível. O limite por dia conta esse valor.</li>
-        <li>Hoje já foram reservados {formatUsdMicros(data.today.reservedUsdMicros)} de {formatUsdMicros(data.dailyLimitUsdMicros)}.</li>
+        <li>{data.today.reservedUsdMicros ? `Hoje: ${data.today.reservedUsdMicros < 10_000 ? 'menos de US$ 0,01' : usd2.format(data.today.reservedUsdMicros / 1_000_000)} reservados do limite de ${usd2.format(data.dailyLimitUsdMicros / 1_000_000)}.` : `Hoje: nada reservado do limite de ${usd2.format(data.dailyLimitUsdMicros / 1_000_000)}.`}</li>
       </ul>
       {data.partial && <p className={styles.warning} role="note">Há chamadas demais neste período; os números mostram só uma parte. Escolha um período menor.</p>}
 
@@ -196,17 +196,17 @@ export default function AiSpendingPanel({ organizationId }: { organizationId: st
         <figure className={styles.chart}>
           <figcaption>
             <strong>Gasto por dia, {view === 'provider' ? 'por provedor' : 'por função'}</strong>
-            <small>Cada barra soma o gasto real; quando o provedor não informa o custo, usa o teto da chamada. {showLimit ? 'A linha tracejada é o limite por dia.' : `O limite por dia (${usd2.format(data.dailyLimitUsdMicros / 1_000_000)}) está bem acima destes valores e fica fora da escala.`}</small>
+            <small>Valores em dólar (US$). Cada barra soma o gasto real; quando o provedor não informa o custo, usa o valor reservado. {showLimit ? 'A linha tracejada é o limite por dia.' : `O limite por dia (${usd2.format(data.dailyLimitUsdMicros / 1_000_000)}) fica bem acima e não aparece no gráfico.`}</small>
           </figcaption>
           <ul className={styles.legend} aria-label="Legenda">
             {usedKeys.map(key => <li key={key}><i style={{ background: `var(--as-${keys.indexOf(key) + 1})` }} />{names[key] ?? key}</li>)}
           </ul>
           <div className={styles.chartArea} role="img" aria-label={`Gráfico de barras com o gasto de ${data.days.length} dias. Use a lista abaixo para abrir as chamadas de um dia.`}>
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chart} margin={{ top: 12, right: 8, bottom: 4, left: 4 }} barCategoryGap={period === 90 ? 1 : 3}>
+              <BarChart data={chart} margin={{ top: 12, right: 8, bottom: 4, left: 4 }} barCategoryGap={period === 90 ? '8%' : '18%'}>
                 <CartesianGrid vertical={false} stroke="var(--as-grid)" />
                 <XAxis dataKey="day" tickFormatter={shortDay} tick={{ fill: 'var(--as-axis)', fontSize: 11 }} axisLine={false} tickLine={false} minTickGap={14} />
-                <YAxis width={78} tick={{ fill: 'var(--as-axis)', fontSize: 12 }} axisLine={false} tickLine={false} ticks={axis.ticks} domain={[0, axis.ticks[axis.ticks.length - 1]]} tickFormatter={(value: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'USD', minimumFractionDigits: axis.digits, maximumFractionDigits: axis.digits }).format(value)} />
+                <YAxis width={54} tick={{ fill: 'var(--as-axis)', fontSize: 12 }} axisLine={false} tickLine={false} ticks={axis.ticks} domain={[0, axis.ticks[axis.ticks.length - 1]]} tickFormatter={(value: number) => value.toLocaleString('pt-BR', { minimumFractionDigits: axis.digits, maximumFractionDigits: axis.digits })} />
                 <Tooltip cursor={{ fill: 'var(--as-hover)' }} content={<SpendingTooltip rows={rowsByDay} names={names} />} />
                 {showLimit && <ReferenceLine y={limit} stroke="var(--as-limit)" strokeDasharray="6 4" strokeWidth={1.5} ifOverflow="extendDomain" label={{ value: 'Limite por dia', position: 'insideTopRight', fill: 'var(--as-limit)', fontSize: 11 }} />}
                 {usedKeys.map((key, index) => <Bar key={key} dataKey={key} name={names[key] ?? key} stackId="spent" fill={`var(--as-${keys.indexOf(key) + 1})`} maxBarSize={36} cursor="pointer"
