@@ -23,7 +23,7 @@
 .meter[data-level=mid] .track i{background:var(--orange)}
 .meter[data-level=high] .track i{background:var(--danger)}
 .meter[data-level=high] .meterTop span{color:var(--danger);font-weight:700}
-.fields{display:grid;gap:1rem;row-gap:1.25rem;align-items:start;margin:.75rem 0 0;padding:0;border:0;min-width:0}
+.fields{display:grid;gap:1rem;align-items:start;margin:.75rem 0 0;padding:0;border:0;min-width:0}
 .fields legend{padding:0;margin-bottom:.5rem;font-weight:700}
 .test{display:grid;gap:.75rem;padding:.85rem;border:1px solid var(--line);border-radius:.8rem}
 .testing .test{border:1px dashed color-mix(in srgb,var(--orange) 60%,var(--line))}
