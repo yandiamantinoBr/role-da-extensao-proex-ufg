@@ -47,3 +47,4 @@
 .model>.actions{margin-top:auto}
 .compareButton{justify-self:start}
 :global(html[data-theme=dark]) .compareButton:disabled{color:#fff;opacity:.6}
+.neutral{font-size:max(12px,.78rem);font-weight:700;padding:.15rem .55rem;border-radius:999px;border:1px solid var(--line);color:var(--text-secondary);background:var(--surface)}

@@ -88,7 +88,7 @@ export default function ModelCatalogPanel({ organizationId }: { organizationId: 
       <div className={styles.filters} role="group" aria-label="Mostrar modelos de">{FILTERS.map(option => <button key={option.key} type="button" aria-pressed={filter === option.key} onClick={() => setFilter(option.key)}>{option.label}</button>)}</div>
       <p className={styles.muted}>{FILTERS.find(option => option.key === filter)?.hint}</p>
       {(() => { const list = view.catalog.models.filter(model => filter === 'all' || model.capabilities.includes(filter)); return list.length ? <ul className={styles.models}>{list.map(model => { const provider = providers.get(model.providerId); return <li key={model.id} className={styles.model}>
-        <div className={styles.modelTop}><strong>{model.label}{model.testOnly ? ' · somente teste' : ''}</strong><span className={provider?.hasKey ? styles.ok : styles.warn}>{provider?.hasKey ? 'Chave pronta' : 'Sem chave'}</span></div>
+        <div className={styles.modelTop}><strong>{model.label}{model.testOnly ? ' · somente teste' : ''}</strong><span className={provider?.hasKey ? styles.ok : styles.neutral}>{provider?.hasKey ? 'Chave pronta' : 'Sem chave'}</span></div>
         <p className={styles.muted}>{provider?.label ?? 'Provedor removido'} · <code>{model.model}</code></p>
         <p className={styles.chips}>{model.capabilities.map(capability => <span key={capability}>{CAPABILITY_LABELS[capability]}</span>)}</p>
         <p>{priceLine(model)}{model.score ? ` · nota ${model.score.value} (${model.score.source}, ${model.score.readAt.split('-').reverse().join('/')})` : ''}</p>
@@ -123,7 +123,7 @@ export default function ModelCatalogPanel({ organizationId }: { organizationId: 
       <h4 id="providers-title"><KeyRound size={18} aria-hidden="true"/> Provedores</h4>
       <p className={styles.muted}>A chave de cada provedor fica na aba Chaves. Aqui você cadastra provedores novos, compatíveis com OpenAI ou Anthropic.</p>
       <ul className={styles.models}>{view.catalog.providers.map(provider => <li key={provider.id} className={styles.model}>
-        <div className={styles.modelTop}><strong>{provider.label}</strong><span className={provider.hasKey ? styles.ok : styles.warn}>{provider.hasKey ? `Chave pronta${provider.key?.mask ? ` (${provider.key.mask})` : ''}` : 'Sem chave'}</span></div>
+        <div className={styles.modelTop}><strong>{provider.label}</strong><span className={provider.hasKey ? styles.ok : styles.neutral}>{provider.hasKey ? `Chave pronta${provider.key?.mask ? ` (${provider.key.mask})` : ''}` : 'Sem chave'}</span></div>
         <p className={styles.muted}>{KIND_LABELS[provider.kind]} · {provider.baseUrl.replace('https://', '')}</p>
         {provider.id === 'nvidia' && <p className={styles.warnText}>Grátis só para teste: a NVIDIA pode usar o que for enviado. Use apenas dados sintéticos.</p>}
         {!provider.builtin && <div className={styles.actions}><button type="button" className="p-button p-button-subtle" disabled={busy} onClick={() => { if (window.confirm(`Apagar o provedor ${provider.label}?`)) void act({ action: 'provider.delete', providerId: provider.id }, 'Provedor apagado.'); }}>Apagar provedor</button></div>}
