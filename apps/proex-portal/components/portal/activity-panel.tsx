@@ -146,7 +146,7 @@ export default function ActivityPanel({ projects, initialProjectId = '' }: Props
         {demandBuckets.length ? <>
           {concentrated(demandBuckets) && <p className={styles.insight}>{demandBuckets.length === 1 ? 'Tudo aconteceu' : 'Concentrado'} {demandBuckets.map(row => `${/^(sábado|domingo)/i.test(row.title) ? 'no' : 'na'} ${row.title.toLocaleLowerCase('pt-BR')}`).join(' e ')}: {totals.demandsOpened} {totals.demandsOpened === 1 ? 'demanda criada' : 'demandas criadas'} e {totals.demandsDone} {totals.demandsDone === 1 ? 'concluída' : 'concluídas'}.</p>}
           <div className={styles.legend} aria-hidden="true"><span><i style={{ background: 'var(--viz-1)' }}/>Criadas</span><span><i style={{ background: 'var(--viz-3)' }}/>Concluídas</span></div>
-          <div className={styles.plot} onClick={() => follow(root.current, projectLink('demands', projectId))}><ResponsiveContainer width="100%" height="100%"><BarChart data={buckets} barGap={2} barCategoryGap="22%" margin={{ top: 8, right: 4, left: -18, bottom: 0 }}>
+          <div className={styles.plot} onClick={() => follow(root.current, projectLink('demands', projectId))}><ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 320, height: 200 }}><BarChart data={buckets} barGap={2} barCategoryGap="22%" margin={{ top: 8, right: 4, left: -18, bottom: 0 }}>
             <CartesianGrid vertical={false} stroke="var(--viz-grid)"/>
             <XAxis dataKey="label" tickLine={false} axisLine={false} interval="preserveStartEnd" minTickGap={12} tick={{ fill: 'var(--viz-text)', fontSize: 11 }}/>
             <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={40} tick={{ fill: 'var(--viz-text)', fontSize: 11 }}/>
@@ -172,7 +172,7 @@ export default function ActivityPanel({ projects, initialProjectId = '' }: Props
       {types.includes('agenda') && <figure className={styles.chart} data-empty={agendaBuckets.length ? 'false' : 'true'}>
         <figcaption><strong>Ocupação da agenda</strong><span>{weekly ? 'Atividades por semana.' : 'Atividades por dia.'}{agendaBuckets.length ? ' Toque para abrir a Agenda.' : ''}</span></figcaption>
         {agendaBuckets.length ? <>
-          <div className={styles.plot} onClick={() => follow(root.current, projectLink('calendar', projectId))}><ResponsiveContainer width="100%" height="100%"><BarChart data={buckets} barCategoryGap="22%" margin={{ top: 8, right: 4, left: -18, bottom: 0 }}>
+          <div className={styles.plot} onClick={() => follow(root.current, projectLink('calendar', projectId))}><ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 320, height: 200 }}><BarChart data={buckets} barCategoryGap="22%" margin={{ top: 8, right: 4, left: -18, bottom: 0 }}>
             <CartesianGrid vertical={false} stroke="var(--viz-grid)"/>
             <XAxis dataKey="label" tickLine={false} axisLine={false} interval="preserveStartEnd" minTickGap={12} tick={{ fill: 'var(--viz-text)', fontSize: 11 }}/>
             <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={40} tick={{ fill: 'var(--viz-text)', fontSize: 11 }}/>
