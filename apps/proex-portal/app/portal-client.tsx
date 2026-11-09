@@ -563,7 +563,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         navigate('projects'); selectProject(id); setWorkRecord({module:'projects',projectId:id,recordId:id});
     }
     function openTeams(intent: { kind: 'open' | 'new'; teamId?: string; organizationId?: string }) {
-        setTeamIntent({ ...intent, nonce: Date.now() }); navigate('work-teams');
+        setTeamIntent(current => ({ ...intent, nonce: (current?.nonce ?? 0) + 1 })); navigate('work-teams');
     }
     const navSubitems: NavSubitems = {
         projects: pins.projectPins.flatMap(id => projects.filter(project => project.id === id)).map(project => ({ id: string(project.id), label: string(project.short_name) || string(project.name), onOpen: () => openPinnedProject(string(project.id)) })),
@@ -836,11 +836,11 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
       </>}
 
       {tab === 'events' && <>
-        <DynamicsExplainer dynamics={visibleCampaigns.map(c => ({ id: string(c.id), name: string(c.name), status: string(c.status), projectId: string(get(c, 'projectId', 'project_id')), projectName: projectName(get(c, 'projectId', 'project_id')), hosts: (Array.isArray(c.host_project_ids) ? c.host_project_ids as string[] : []).flatMap(id => projects.filter(project => project.id === id)).map(project => ({ id: string(project.id), name: string(project.name) })) }))} onOpenProject={allowedTabs.some(module => module.id === 'projects') ? openPinnedProject : undefined}/>
         {/* No evento, o atendimento vem antes da lista de dinâmicas. */}
         {can('participation.operate') && <Section title="Operação presencial" description="A equipe acompanha o resultado e utiliza as mesmas regras de participação da campanha.">
             <PhysicalAttendance campaigns={visibleCampaigns.filter(c => canProject(get(c, 'projectId', 'project_id'), 'participation.operate'))} tickets={byProject(list(data.physicalTickets))} mutate={mutate}/>
             </Section>}
+        <DynamicsExplainer dynamics={visibleCampaigns.map(c => ({ id: string(c.id), name: string(c.name), status: string(c.status), projectId: string(get(c, 'projectId', 'project_id')), projectName: projectName(get(c, 'projectId', 'project_id')), hosts: (Array.isArray(c.host_project_ids) ? c.host_project_ids as string[] : []).flatMap(id => projects.filter(project => project.id === id)).map(project => ({ id: string(project.id), name: string(project.name) })) }))} onOpenProject={allowedTabs.some(module => module.id === 'projects') ? openPinnedProject : undefined}/>
         <Section title="Roleta e dado" description="Prepare as regras, os brindes e o atendimento das dinâmicas de cada ação.">{displayedCampaigns.length ? <div className={`p-event-grid ${campaignLayout.grid}`}>{displayedCampaigns.map(c => <article className={`p-card p-event-card ${workStyles.record}`} id={`work-record-${c.id}`} tabIndex={-1} key={c.id}>
                 <div className="p-row-between">
                 <span className="p-kicker">{projectName(get(c, 'projectId', 'project_id'))}</span>

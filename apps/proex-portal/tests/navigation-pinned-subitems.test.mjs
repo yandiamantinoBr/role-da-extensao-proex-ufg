@@ -24,12 +24,12 @@ test('projects and teams with pins get an arrow that expands the pinned items; o
   const opened = [];
   const h = sidebar({ subitems: { projects: [{ id: 'p1', label: 'Rolê da Extensão', onOpen: () => opened.push('p1') }, { id: 'p2', label: 'CONPEEX', onOpen: () => opened.push('p2') }], 'work-teams': [{ id: 't1', label: 'Comunicação', onOpen: () => opened.push('t1') }] } });
   const toggle = label => h.find(node => node.type === 'button' && node.props['aria-label'] === label);
-  assert.ok(toggle('Mostrar fixados de Projetos'));
-  assert.ok(toggle('Mostrar fixados de Equipes'));
-  assert.equal(toggle('Mostrar fixados de Materiais'), undefined, 'sem fixados, sem seta');
+  assert.ok(toggle('Mostrar projetos fixados'));
+  assert.ok(toggle('Mostrar equipes fixadas'));
+  assert.equal(toggle('Mostrar materiais fixados'), undefined, 'sem fixados, sem seta');
   assert.doesNotMatch(h.body(), /Rolê da Extensão/, 'fechado por padrão fora da página');
-  toggle('Mostrar fixados de Projetos').props.onClick(); h.render();
-  assert.equal(toggle('Ocultar fixados de Projetos').props['aria-expanded'], true);
+  toggle('Mostrar projetos fixados').props.onClick(); h.render();
+  assert.equal(toggle('Ocultar projetos fixados').props['aria-expanded'], true);
   const items = h.all().filter(node => node.type === 'button' && node.props.title && /Rolê|CONPEEX/.test(node.props.title));
   assert.deepEqual(items.map(node => node.props.title), ['Rolê da Extensão', 'CONPEEX']);
   items[1].props.onClick();
@@ -37,5 +37,10 @@ test('projects and teams with pins get an arrow that expands the pinned items; o
   assert.doesNotMatch(h.body(), /Comunicação/, 'cada módulo abre sozinho');
   // Na página do módulo, a lista já vem aberta; recolhido, o menu não mostra subitens.
   h.render({ active: 'work-teams' }); assert.match(h.body(), /Comunicação/);
-  h.render({ collapsed: true }); assert.equal(toggle('Ocultar fixados de Equipes') ?? toggle('Mostrar fixados de Equipes'), undefined);
+  // Mais de 6 fixados: o menu mostra 6 e um atalho para a página com todos.
+  const many = Array.from({ length: 9 }, (_, i) => ({ id: `x${i}`, label: `Projeto ${i}`, onOpen() {} }));
+  h.render({ active: 'projects', subitems: { projects: many } });
+  assert.equal(h.all().filter(node => node.type === 'button' && /^Projeto \d$/.test(node.props.title ?? '')).length, 6);
+  assert.match(h.body(), /Ver os 9 fixados/);
+  h.render({ collapsed: true }); assert.equal(toggle('Ocultar equipes fixadas') ?? toggle('Mostrar equipes fixadas'), undefined);
 });

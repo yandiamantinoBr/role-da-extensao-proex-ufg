@@ -173,7 +173,7 @@
 .relationGrid{grid-template-columns:minmax(0,1.1fr) minmax(0,1fr)}.relationGrid[data-has-materials=false]{grid-template-columns:1fr}.otherOperations{display:grid;gap:16px;align-content:start;min-width:0}.relationAll:is(button){width:100%;background:none;border-right:0;border-left:0;border-bottom:0;cursor:pointer;text-align:left}
 @media(max-width:820px){.relationGrid{grid-template-columns:1fr}.otherOperations{gap:14px}}
 /* Fixados (09/11): largura previsível (uma coluna por projeto, mesmo sozinho), alfinete ao lado do nome. */
-.pinnedGrid{list-style:none;margin:0;padding:0;grid-template-columns:repeat(auto-fill,minmax(min(100%,220px),1fr))}
+.pinnedGrid{list-style:none;margin:0;padding:0;grid-template-columns:repeat(auto-fill,minmax(min(100%,170px),1fr))}
 .pinnedProject{gap:2px}
 .pinnedProject .pinButton{flex:0 0 40px;width:40px}
 .pinnedOpen{display:flex;align-items:center;gap:6px;min-width:0;min-height:44px;flex:1;padding:6px 8px 6px 2px;border:0;background:transparent;color:var(--brand-ink);text-align:left;cursor:pointer;font-size:13px;font-weight:650;line-height:1.3}

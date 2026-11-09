@@ -1,20 +1,25 @@
 /* Subitens fixados no menu lateral (Projetos e Equipes). Fundo roxo do menu: texto claro. */
-.group { display: grid; min-width: 0; }
+.group { display: grid; min-width: 0; width: 100%; contain: inline-size; }
 .row { display: flex; align-items: center; gap: 2px; min-width: 0; }
 .row > :global(.pn-link) { flex: 1; min-width: 0; }
 .toggle { flex: 0 0 36px; width: 36px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 9px; background: transparent; color: #e2d0eb; cursor: pointer; }
 .toggle:hover { background: #ffffff14; color: #fff; }
 .toggle:focus-visible, .item:focus-visible { outline: 2px solid var(--aqua); outline-offset: 1px; }
-.list { list-style: none; margin: 2px 0 6px; padding: 0 0 0 22px; display: grid; gap: 1px; border-left: 1px solid #ffffff26; margin-left: 21px; }
-.item { width: 100%; min-height: 40px; display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 0; border-radius: 8px; background: transparent; color: #e2d0eb; font-size: 12.5px; text-align: left; cursor: pointer; }
+.list li { min-width: 0; }
+.list { min-width: 0; list-style: none; margin: 2px 0 6px; padding: 0 0 0 22px; display: grid; gap: 1px; border-left: 1px solid #ffffff26; margin-left: 21px; }
+.item { width: 100%; max-width: 100%; min-width: 0; min-height: 40px; display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 0; border-radius: 8px; background: transparent; color: #e2d0eb; font-size: 12.5px; text-align: left; cursor: pointer; }
 .item:hover { background: #ffffff11; color: #fff; }
 .item span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .item svg { flex-shrink: 0; opacity: .7; transform: rotate(30deg); }
 /* Gaveta "Mais" no celular: fixados logo abaixo do módulo. */
-.mobileList { grid-column: 1 / -1; list-style: none; margin: 0; padding: 0 0 6px 52px; display: grid; gap: 2px; }
+.mobileList li { min-width: 0; }
+.mobileList { min-width: 0; contain: inline-size; grid-column: 1 / -1; list-style: none; margin: 0; padding: 0 0 6px 52px; display: grid; gap: 2px; }
 .mobileItem { width: 100%; min-height: 44px; display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--brand-ink); font-size: 13px; font-weight: 600; text-align: left; }
 .mobileItem span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mobileItem svg { flex-shrink: 0; transform: rotate(30deg); }
 @media (prefers-reduced-motion: reduce) { .toggle, .item { transition: none; } }
 :global(.pn-drawer-modules) > div:has(> .mobileList) { flex-wrap: wrap; }
 .mobileList { flex: 0 0 100%; }
+.more { width: 100%; min-height: 40px; padding: 8px 10px; border: 0; border-radius: 8px; background: transparent; color: #f1e6f7; font-size: 12px; font-weight: 600; text-align: left; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.more:hover { background: #ffffff11; }
+.more:focus-visible { outline: 2px solid var(--aqua); outline-offset: 1px; }
