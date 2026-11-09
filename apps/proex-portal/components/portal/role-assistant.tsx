@@ -14,7 +14,8 @@ import styles from './role-assistant.module.css';
 type Project = { id: string; name: string; organization_id?: string };
 type Props = { projects: Project[]; defaultProjectId?: string; onApplied?: () => void | Promise<void>; onOpenSettings?: () => void };
 type Status = { available: boolean; reason: string | null; provider: 'deepseek' | 'groq'; model: string; visionAvailable: boolean; operationsAvailable: boolean; speech: { available: boolean; provider: 'groq' | 'deepgram' }; dailyLimitMicros: number; reservedTodayMicros: number };
-type Operation = { request: string; stage: 'idle' | 'estimated' | 'preview' | 'done'; costMicros?: number; provider?: string; jev?: boolean; shareConsent?: boolean; stale?: boolean; preview?: { plan: Omit<AssistantPlan, 'actorId'>; planToken: string; undoReason: string }; confirmed?: boolean; receipt?: string; key: string };
+type Match = { projectId: string; projectName: string; itemName: string; score: number };
+type Operation = { request: string; stage: 'idle' | 'estimated' | 'preview' | 'done'; costMicros?: number; provider?: string; jev?: boolean; shareConsent?: boolean; stale?: boolean; projectId?: string; matches?: Match[]; ambiguous?: boolean; error?: string; preview?: { plan: Omit<AssistantPlan, 'actorId'>; planToken: string; undoReason: string }; confirmed?: boolean; receipt?: string; key: string };
 type Message = { id: string; role: 'user' | 'assistant'; content: string; image?: string; meta?: string; operation?: Operation };
 type Picked = { dataUrl: string; bytes: number };
 type Recorded = { file: File; seconds: number; url: string };
@@ -131,14 +132,14 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
     const user: Message = { id: crypto.randomUUID(), role: 'user', content: text, image };
     setMessages(current => [...current, user]); setDraft(''); setPicked(null); setBusy(true); setError(''); setNotice('');
     try {
-      const result = await post<{ reply: string; operation: string | null; model: string; costMicros: number; reservedMicros: number }>('/api/assistant/role', {
+      const result = await post<{ reply: string; operation: string | null; operationDropped?: boolean; model: string; costMicros: number; reservedMicros: number }>('/api/assistant/role', {
         action: 'chat', projectId, operationKey: crypto.randomUUID(), consent: true, history, message: text, ...(image ? { image } : {}), acceptedCostMicros: estimate.costMicros,
       });
       if (!mounted.current) return;
-      const reply: Message = { id: crypto.randomUUID(), role: 'assistant', content: result.reply, meta: `Custou ${friendlyMicros(result.costMicros)}`,
+      const reply: Message = { id: crypto.randomUUID(), role: 'assistant', content: result.reply, meta: `Custou ${friendlyMicros(result.costMicros)}${result.operationDropped ? ' · Não preparei operação: a quantidade não estava na sua mensagem.' : ''}`,
         operation: result.operation ? { request: result.operation, stage: 'idle', key: crypto.randomUUID() } : undefined };
       setMessages(current => [...current, reply]);
-      if (reply.operation && status.operationsAvailable) void estimateOperation(reply);
+      if (reply.operation && status.operationsAvailable) void locateOperation(reply);
       void loadStatus(projectId);
     } catch (cause) {
       if (!mounted.current) return;
@@ -151,18 +152,38 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
   function updateOperation(messageId: string, change: Partial<Operation>) {
     setMessages(current => current.map(message => message.id === messageId && message.operation ? { ...message, operation: { ...message.operation, ...change } } : message));
   }
-  async function estimateOperation(message: Message) {
+  /** Grátis: descobre em quais projetos da pessoa existe o material citado e escolhe sozinho só quando não há empate. */
+  async function locateOperation(message: Message) {
     if (!message.operation) return;
-    setError('');
-    try { const result = await post<{ costMicros: number; provider: string; jev: boolean }>('/api/assistant/role', { action: 'estimate.operation', projectId, request: message.operation.request }); updateOperation(message.id, { stage: 'estimated', costMicros: result.costMicros, provider: result.provider, jev: result.jev, stale: false }); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : 'Não foi possível calcular o custo da operação.'); }
+    let chosen = projectId, matches: Match[] = [], ambiguous = false;
+    try {
+      const found = await post<{ matches: Match[]; ambiguous: boolean }>('/api/assistant/role', { action: 'match.operation', request: message.operation.request });
+      matches = found.matches.filter(match => projects.some(item => item.id === match.projectId)); ambiguous = found.ambiguous;
+      const top = matches[0];
+      chosen = top ? (matches.some(match => match.projectId === projectId && match.score === top.score) ? projectId : ambiguous ? '' : top.projectId) : projectId;
+    } catch { /* sem sugestão: fica o projeto da conversa */ }
+    const located = { ...message.operation, projectId: chosen, matches, ambiguous };
+    updateOperation(message.id, { projectId: chosen, matches, ambiguous });
+    if (chosen) void estimateOperation({ ...message, operation: located });
+    else updateOperation(message.id, { stage: 'estimated', stale: true });
+  }
+  async function estimateOperation(message: Message) {
+    if (!message.operation?.projectId) return;
+    updateOperation(message.id, { error: '' });
+    try { const result = await post<{ costMicros: number; provider: string; jev: boolean }>('/api/assistant/role', { action: 'estimate.operation', projectId: message.operation.projectId, request: message.operation.request }); updateOperation(message.id, { stage: 'estimated', costMicros: result.costMicros, provider: result.provider, jev: result.jev, stale: false }); }
+    catch (cause) { updateOperation(message.id, { stage: 'estimated', stale: true, error: cause instanceof Error ? cause.message : 'Não foi possível calcular o custo da operação.' }); }
   }
   function newConversation() { setMessages([]); setDraft(''); setPicked(null); discardRecording(); setError(''); setNotice(''); window.requestAnimationFrame(() => input.current?.focus()); }
   async function prepareOperation(message: Message) {
-    if (!message.operation?.shareConsent) return;
-    setBusy(true); setError('');
-    try { const preview = await post<Operation['preview']>('/api/assistant', { action: 'prepare', projectId, request: message.operation.request, consent: true, operationKey: message.operation.key, acceptedCostMicros: message.operation.costMicros }); updateOperation(message.id, { stage: 'preview', preview, confirmed: false }); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : 'Não foi possível preparar a operação.'); }
+    if (!message.operation?.shareConsent || !message.operation.projectId) return;
+    setBusy(true); setError(''); updateOperation(message.id, { error: '' });
+    try { const preview = await post<Operation['preview']>('/api/assistant', { action: 'prepare', projectId: message.operation.projectId, request: message.operation.request, consent: true, operationKey: message.operation.key, acceptedCostMicros: message.operation.costMicros }); updateOperation(message.id, { stage: 'preview', preview, confirmed: false }); }
+    catch (cause) {
+      // O servidor respondeu: a próxima tentativa é outra chamada paga, com chave nova e custo mostrado de novo.
+      // Tempo esgotado mantém a chave para recuperar o resultado sem pagar duas vezes.
+      const answered = cause instanceof RequestError && cause.code !== 'assistant_call_replay';
+      updateOperation(message.id, { error: cause instanceof Error ? cause.message : 'Não foi possível preparar a operação.', ...(answered ? { key: crypto.randomUUID() } : {}) });
+    }
     finally { setBusy(false); }
   }
   async function applyOperation(message: Message) {
@@ -173,7 +194,7 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
       const saved = await post<{ queried?: boolean; replayed?: boolean }>('/api/assistant', { action: 'apply', planToken: operation.preview.planToken, confirmed: true });
       updateOperation(message.id, { stage: 'done', receipt: saved.queried ? 'Consulta conferida com o saldo atual.' : saved.replayed ? 'Esta operação já tinha sido feita; nada foi repetido.' : 'Operação concluída e registrada no histórico.' });
       await onApplied?.();
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Não foi possível concluir a operação.'); }
+    } catch (cause) { updateOperation(message.id, { error: cause instanceof Error ? cause.message : 'Não foi possível concluir a operação.' }); }
     finally { setBusy(false); }
   }
 
@@ -278,22 +299,31 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
                       : message.operation.stage !== 'preview' && message.operation.stage !== 'done' && <p>{message.operation.request}</p>}
                     {message.operation.stage === 'idle' && !status?.operationsAvailable && <p className={styles.help}>As operações pelo Rolê estão desligadas nesta organização. Faça o registro em Materiais.</p>}
                     {message.operation.stage === 'idle' && status?.operationsAvailable && <p className={styles.loadingLine}><LoaderCircle size={14} className="p-spin" aria-hidden="true"/> Calculando o custo…</p>}
+                    {(message.operation.stage === 'idle' || message.operation.stage === 'estimated') && status?.operationsAvailable && <label className={styles.editable}><span>Projeto da operação</span>
+                      <select value={message.operation.projectId ?? ''} disabled={busy} onChange={event => { updateOperation(message.id, { projectId: event.target.value, stale: true, key: crypto.randomUUID(), error: '' }); }}>
+                        <option value="" disabled>Escolha o projeto</option>
+                        {projects.map(item => { const match = message.operation?.matches?.find(entry => entry.projectId === item.id); return <option key={item.id} value={item.id}>{item.name}{match ? ` · tem “${match.itemName}”` : ''}</option>; })}
+                      </select>
+                      {message.operation.ambiguous && !message.operation.projectId && <span className={styles.warn}>Encontrei este material em mais de um projeto. Escolha qual.</span>}
+                      {!!message.operation.matches && !message.operation.matches.length && <span className={styles.warn}>Não achei esse material nos seus projetos. Confira o nome ou o projeto.</span>}
+                    </label>}
                     {message.operation.stage === 'estimated' && <>
                       {message.operation.stale
-                        ? <button type="button" className="p-button p-button-subtle" disabled={busy} onClick={() => void estimateOperation(message)}>Atualizar o custo do pedido corrigido</button>
+                        ? <button type="button" className="p-button p-button-subtle" disabled={busy || !message.operation.projectId} onClick={() => void estimateOperation(message)}>Calcular o custo</button>
                         : <p><strong>Custo máximo: {friendlyMicros(message.operation.costMicros ?? 0)}.</strong> Nada muda no estoque até você confirmar.</p>}
                       <label className={styles.check}><input type="checkbox" checked={!!message.operation.shareConsent} disabled={busy} onChange={event => updateOperation(message.id, { shareConsent: event.target.checked })}/>Autorizo enviar este pedido e a lista de materiais do projeto para {message.operation.provider === 'openai' ? 'a OpenAI' : 'a DeepSeek'}{message.operation.jev ? ' e para a conferência JEV (TypeSafe)' : ''}.</label>
-                      <button type="button" className="p-button p-button-primary" disabled={busy || !message.operation.shareConsent || message.operation.stale} onClick={() => void prepareOperation(message)}>Preparar registro</button>
+                      <button type="button" className="p-button p-button-primary" disabled={busy || !message.operation.shareConsent || message.operation.stale || !message.operation.projectId} onClick={() => void prepareOperation(message)}>{message.operation.error ? 'Preparar de novo' : 'Preparar registro'}</button>
                     </>}
                     {message.operation.stage === 'preview' && message.operation.preview && <div className={styles.preview}>
                       <p><strong>Confira: {intentLabels[message.operation.preview.plan.proposal.intent] ?? 'Operação'}</strong></p>
                       <p>{message.operation.preview.plan.before?.name ?? message.operation.preview.plan.proposal.title}</p>
                       {message.operation.preview.plan.before && message.operation.preview.plan.after && <dl className={styles.beforeAfter}><div><dt>Antes</dt><dd>{quantity(message.operation.preview.plan.before.stock, message.operation.preview.plan.before.unit)}</dd></div><div><dt>Depois</dt><dd>{quantity(message.operation.preview.plan.after.stock, message.operation.preview.plan.before.unit)}</dd></div></dl>}
-                      <p>Quantidade: {message.operation.preview.plan.proposal.quantity || 'sem movimentação'} · Projeto: {projects.find(item => item.id === message.operation?.preview?.plan.projectId)?.name ?? project?.name ?? 'projeto atual'}</p>
+                      <p>Quantidade: {message.operation.preview.plan.proposal.quantity || 'sem movimentação'} · Projeto: {projects.find(item => item.id === message.operation?.preview?.plan.projectId)?.name ?? 'projeto escolhido'}</p>
                       {message.operation.preview.plan.proposal.body && <p className={styles.proposalBody}><span>Texto que será gravado:</span> {message.operation.preview.plan.proposal.body}</p>}
                       <label className={styles.check}><input type="checkbox" checked={!!message.operation.confirmed} disabled={busy} onChange={event => updateOperation(message.id, { confirmed: event.target.checked })}/>Conferi os dados acima e autorizo gravar no estoque.</label>
                       <button type="button" className="p-button p-button-primary" disabled={busy || !message.operation.confirmed} onClick={() => void applyOperation(message)}>{message.operation.preview.plan.proposal.intent === 'stock.query' ? 'Conferir saldo atual' : message.operation.preview.plan.proposal.intent === 'record.create' ? 'Gravar o registro' : 'Gravar no estoque'}</button>
                     </div>}
+                    {message.operation.error && <p role="alert" className={styles.error}>{message.operation.error}</p>}
                     {message.operation.stage === 'done' && <p role="status" className={styles.done}>{message.operation.receipt}</p>}
                   </div>}
                 </div>

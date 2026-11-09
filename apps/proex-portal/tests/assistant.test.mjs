@@ -475,7 +475,7 @@ test('quotas reserve before call, duplicate retries cannot pay again, unknown fa
   await configureAssistant(f.db, f.actors.owner, configInput({ dailyCalls: 1 }), secret);
   await assert.rejects(prepareAssistantPlan(f.db, f.actors.inventory, request(), secret, { fetcher: async () => { throw new Error('test-only-network-failure'); } }), code('assistant_provider_unavailable'));
   const usage = f.native.prepare('SELECT * FROM ai_organization_usage').get(); assert.equal(usage.calls, 1); assert.ok(usage.reserved_usd_micros > 0); assert.ok(usage.reserved_tokens > 0); assert.ok(usage.reserved_ms > 0);
-  await assert.rejects(prepareAssistantPlan(f.db, f.actors.inventory, request(), secret, { fetcher: provider.fetch }), code('assistant_call_replay'));
+  await assert.rejects(prepareAssistantPlan(f.db, f.actors.inventory, request(), secret, { fetcher: provider.fetch }), code('assistant_call_failed'));
   await assert.rejects(prepareAssistantPlan(f.db, f.actors.inventory, request({ operationKey: 'test-only-second-call' }), secret, { fetcher: provider.fetch }), code('assistant_quota'));
   assert.equal(provider.calls, 0); assert.deepEqual(f.native.prepare('SELECT * FROM ai_organization_usage').get(), usage);
  } finally { f.native.close(); }

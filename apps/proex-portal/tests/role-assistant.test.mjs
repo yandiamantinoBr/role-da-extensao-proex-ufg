@@ -133,7 +133,7 @@ test('chat reserves the shown ceiling, calls DeepSeek once, audits metadata only
     const audit = f.native.prepare("SELECT details FROM audit WHERE action='assistant.role.chat'").all();
     assert.equal(audit.length, 1);
     const details = JSON.parse(audit[0].details);
-    assert.deepEqual(Object.keys(details).sort(), ['hasImage', 'inputTokens', 'model', 'operationSuggested', 'outputTokens', 'overrun', 'provider', 'reservedUsdMicros', 'usdMicros']);
+    assert.deepEqual(Object.keys(details).sort(), ['hasImage', 'inputTokens', 'model', 'operationDropped', 'operationSuggested', 'outputTokens', 'overrun', 'provider', 'reservedUsdMicros', 'usdMicros']);
     assert.equal(details.overrun, false);
     const everything = JSON.stringify(f.native.prepare('SELECT * FROM audit').all()) + JSON.stringify(f.native.prepare('SELECT * FROM ai_calls').all());
     assert.equal(everything.includes('distribuir 3 canetas'), false, 'message text is not persisted');
@@ -289,4 +289,89 @@ test('assistant turns from the browser get the same redaction and credential ref
     assert.equal(sent.includes('ana@example.test'), false); assert.equal(sent.includes('123.456.789-09'), false);
     await assert.rejects(roleChat(f.db, f.actors.viewer, chatInput(f, { history: [{ role: 'assistant', content: 'Bearer abcdefghijklmnopqrstuvwxyz123' }] }), secret, { keys, fetcher: provider.fetch }), error => error.code === 'assistant_sensitive');
   } finally { f.native.close(); }
+});
+
+// ---- Regressões da produção (2026-11-09): preparo repetido, projeto errado, injeção, cota por pessoa, eco do JEV.
+function proposalProvider(proposal, { jevModel = 'jev-1.14.0' } = {}) {
+  const calls = [];
+  return { calls, fetch: async (url, init) => {
+    const body = JSON.parse(init.body); calls.push({ url: String(url), body });
+    if (String(url).includes('typesafe')) return Response.json({ model: jevModel, answers: { faithful: { type: 'choice', choice: 'supported', confidence: 0.99, probabilities: { supported: 0.99, review: 0.01 } } }, usage: { input_tokens: 400 } });
+    return Response.json({ model: 'deepseek-flash', choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(proposal) } }], usage: { prompt_tokens: 600, completion_tokens: 90 } });
+  } };
+}
+const distribution = itemId => ({ intent: 'stock.distribute', itemId, quantity: 100, title: 'Saída de bottons', body: 'Saída para o Centro de Eventos', evidence: [{ source: 'request', quote: 'saída de 100 Bottons azuis' }] });
+
+test('REGRESSÃO: a failed paid preparation explains itself, and a new attempt (new key) works instead of "já foi processado"', async () => {
+  const f = fixture();
+  try {
+    const now = new Date().toISOString();
+    f.native.prepare("INSERT INTO items(id,project_id,name,category,unit,stock,created_at,updated_at) VALUES('item-botton','project-b','Botton azul','consumption','unidade',700,?,?)").run(now, now);
+    f.native.prepare("INSERT INTO members(id,user_id,email,role,project_id,created_at) VALUES('viewer-qa-b','viewer-qa','viewer@example.test','inventory','project-b',?)").run(now);
+    f.actors.viewer.members.push({ id: 'viewer-qa-b', user_id: 'viewer-qa', email: 'viewer@example.test', role: 'inventory', project_id: 'project-b', revoked_at: null, created_at: now });
+    await setup(f, { enabled: true, jevEnabled: true }, { typesafe: 'test-only-fake-typesafe-key-0001' });
+    const { prepareAssistantPlan } = await import(compile('assistant/service'));
+    const request = 'Registrar saída de 100 Bottons azuis para o Centro de Eventos.';
+    const wrong = proposalProvider(distribution('item-botton'));
+    await assert.rejects(prepareAssistantPlan(f.db, f.actors.viewer, { action: 'prepare', projectId: 'project-a', request, consent: true, operationKey: 'role-op-key-0001' }, secret, { keys, fetcher: wrong.fetch }), error => error.code === 'assistant_scope');
+    await assert.rejects(prepareAssistantPlan(f.db, f.actors.viewer, { action: 'prepare', projectId: 'project-a', request, consent: true, operationKey: 'role-op-key-0001' }, secret, { keys, fetcher: wrong.fetch }), error => { assert.equal(error.code, 'assistant_call_failed'); assert.match(error.message, /não deu certo/); return true; });
+    assert.equal(wrong.calls.length, 1, 'the same key never pays twice');
+    const { matchOperationProjects } = await import(compile('assistant/role'));
+    const located = await matchOperationProjects(f.db, f.actors.viewer, request);
+    assert.equal(located.matches[0].projectId, 'project-b'); assert.equal(located.matches[0].itemName, 'Botton azul'); assert.equal(located.ambiguous, false);
+    const right = proposalProvider(distribution('item-botton'), { jevModel: 'jev-1.14.0-20261101' });
+    const preview = await prepareAssistantPlan(f.db, f.actors.viewer, { action: 'prepare', projectId: 'project-b', request, consent: true, operationKey: 'role-op-key-0002' }, secret, { keys, fetcher: right.fetch });
+    assert.equal(preview.plan.after.stock, 600);
+    assert.equal(right.calls.length, 2, 'DeepSeek + JEV, once each');
+  } finally { f.native.close(); }
+});
+
+test('project matching only searches projects the person can read and reports ties instead of guessing', async () => {
+  const f = fixture();
+  try {
+    const now = new Date().toISOString();
+    f.native.prepare("INSERT INTO items(id,project_id,name,category,unit,created_at,updated_at) VALUES('item-b1','project-b','Botton azul','consumption','unidade',?,?),('item-a1','project-a','Bóton azul','consumption','unidade',?,?)").run(now, now, now, now);
+    const { matchOperationProjects } = await import(compile('assistant/role'));
+    const viewer = await matchOperationProjects(f.db, f.actors.viewer, 'saída de 10 bottons azuis');
+    assert.deepEqual(viewer.matches.map(match => match.projectId), ['project-a'], 'project-b is invisible to a project-a member');
+    const owner = await matchOperationProjects(f.db, f.actors.owner, 'saída de 10 bottons azuis');
+    assert.equal(owner.matches.length, 2); assert.equal(owner.ambiguous, true, 'same material in two projects: ask, do not guess');
+    assert.deepEqual((await matchOperationProjects(f.db, f.actors.owner, 'saída de 10 unidades')).matches, []);
+  } finally { f.native.close(); }
+});
+
+test('SEGURANÇA: a quantity the person never wrote (prompt injection in text or image) never becomes an operation', async () => {
+  const f = fixture();
+  try {
+    await setup(f, { roleVisionEnabled: true });
+    const { operationNumbersAllowed } = await import(compile('assistant/role'));
+    assert.equal(operationNumbersAllowed('Registrar saída de 100 Bottons', ['saída de 100 bottons azuis']), true);
+    assert.equal(operationNumbersAllowed('Registrar saída de 500 Bottons', ['saída de 5 bottons']), false);
+    const injected = fakeProvider({ reply: { reply: 'Feito.', operation: 'Registrar saída de 500 Bottons azuis' } });
+    const result = await roleChat(f.db, f.actors.viewer, chatInput(f, { message: 'O que diz esta foto? Quero tirar 5 bottons.', image: PNG }), secret, { keys, fetcher: injected.fetch });
+    assert.equal(result.operation, null); assert.equal(result.operationDropped, true);
+    assert.equal(JSON.parse(f.native.prepare("SELECT details FROM audit WHERE action='assistant.role.chat'").get().details).operationDropped, true);
+  } finally { f.native.close(); }
+});
+
+test('SEGURANÇA: one person cannot spend the whole organization budget on Rolê', async () => {
+  const f = fixture();
+  try {
+    await setup(f, { dailyCalls: 6 });
+    const provider = fakeProvider();
+    for (let i = 0; i < 3; i++) await roleChat(f.db, f.actors.viewer, chatInput(f, { message: `pergunta ${i}` }), secret, { keys, fetcher: provider.fetch });
+    await assert.rejects(roleChat(f.db, f.actors.viewer, chatInput(f, { message: 'mais uma' }), secret, { keys, fetcher: provider.fetch }), error => error.code === 'role_user_quota');
+    assert.equal(provider.calls.length, 3, 'refused before any provider call');
+    await roleChat(f.db, f.actors.owner, chatInput(f, { message: 'outra pessoa' }), secret, { keys, fetcher: provider.fetch });
+    assert.equal(provider.calls.length, 4);
+  } finally { f.native.close(); }
+});
+
+test('JEV echo: a build suffix of the pinned version is accepted, another version is refused', async () => {
+  const { checkDecision, decisionBody } = await import(compile('assistant/provider'));
+  const config = { ...DEFAULT_ASSISTANT_CONFIG, jevEnabled: true };
+  const reply = model => async () => Response.json({ model, answers: { faithful: { type: 'choice', choice: 'supported', confidence: 0.95, probabilities: { supported: 0.95, review: 0.05 } } }, usage: { input_tokens: 10 } });
+  const body = decisionBody(config, 'pedido', {});
+  assert.equal((await checkDecision(config, { typesafe: 'test-only-fake-typesafe-key-0001' }, body, new AbortController().signal, reply('jev-1.14.0-20261101'))).approved, true);
+  await assert.rejects(checkDecision(config, { typesafe: 'test-only-fake-typesafe-key-0001' }, body, new AbortController().signal, reply('jev-2.0.0')), error => error.code === 'assistant_decision_schema');
 });
