@@ -22,7 +22,7 @@ for (const name of ['access', 'database', 'errors', 'portal-data', 'users', 'mut
 }
 writeFileSync(join(temporary, 'native-auth.js'), 'export async function getChatGPTUser(){return globalThis.__proexReportTestUser ?? null;}');
 writeFileSync(join(temporary, 'session.js'), 'export async function getPortalUser(){return globalThis.__proexReportTestUser ?? null;}');
-writeFileSync(join(temporary, 'platform.js'), 'export function database(){return globalThis.__proexReportTestDatabase;} export function ownerEmail(){return undefined;}');
+writeFileSync(join(temporary, 'platform.js'), 'export function database(){return globalThis.__proexReportTestDatabase;} export function ownerEmail(){return undefined;} export function portalOrigin(){return globalThis.__proexReportTestOrigin;}');
 const routeSource = readFileSync(new URL('../app/api/export/route.ts', import.meta.url), 'utf8');
 const spreadsheetSource = readFileSync(new URL('../components/portal/report-export.ts', import.meta.url), 'utf8');
 const compilerOptions = { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 };
@@ -480,6 +480,12 @@ test('registros completos also download as server DOCX and PDF with the same aut
     assert.ok((await PDFDocument.load(bytes)).getPageCount() >= 1, 'o PDF abre e tem páginas');
   }
   assert.ok(fetched.length > 0 && fetched.every(url => url === 'https://portal.example.test/fonts/NotoSans-Regular.ttf'), 'só a fonte do próprio portal é buscada');
+  // Com a origem configurada, um Host forjado não muda de onde a fonte é buscada.
+  globalThis.__proexReportTestOrigin = 'https://portal-oficial.example.test';
+  t.after(() => { delete globalThis.__proexReportTestOrigin; });
+  assert.equal((await GET(new Request('https://forjado.example.test/api/export?kind=stock&format=pdf'))).status, 200);
+  assert.equal(fetched.at(-1), 'https://portal-oficial.example.test/fonts/NotoSans-Regular.ttf');
+  delete globalThis.__proexReportTestOrigin;
   // Outro projeto, formato inválido e falta de permissão continuam recusados nos formatos novos.
   for (const format of ['docx', 'pdf']) assert.equal((await GET(new Request(`https://portal.example.test/api/export?kind=stock&format=${format}&projectId=project-b`))).status, 403);
   assert.equal((await GET(new Request('https://portal.example.test/api/export?kind=stock&format=odt'))).status, 400);

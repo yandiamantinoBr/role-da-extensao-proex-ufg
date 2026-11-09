@@ -2,7 +2,7 @@ import {getPortalUser} from '@/lib/session';
 import { accessibleProjects, getActor, requireCapability, projectAuthoritySql } from '@/lib/access';
 import { all, csv, type Row } from '@/lib/database';
 import { HttpError, publicError } from '@/lib/errors';
-import { database } from '@/lib/platform';
+import { database, portalOrigin } from '@/lib/platform';
 import { toDocx, toXlsx, type ExportColumn, type ExportRow } from '@/components/portal/report-export';
 
 const FORMATS = ['csv', 'xlsx', 'docx', 'pdf'] as const;
@@ -31,7 +31,8 @@ const NUMERIC = new Set(['quantidade', 'saldo_fisico', 'reservado', 'disponivel'
 const MIME: Record<Format, string> = { csv: 'text/csv; charset=utf-8', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', pdf: 'application/pdf' };
 
 async function fontFor(request: Request): Promise<Uint8Array> {
-  const response = await fetch(new URL('/fonts/NotoSans-Regular.ttf', request.url), { redirect: 'error' });
+  // A fonte vem da origem configurada do portal; o Host enviado pelo cliente só vale sem essa configuração.
+  const response = await fetch(new URL('/fonts/NotoSans-Regular.ttf', portalOrigin() ?? request.url), { redirect: 'error' });
   if (!response.ok) throw new HttpError(503, 'Não foi possível preparar o PDF agora. Tente novamente ou baixe a planilha.', 'pdf_font_unavailable');
   const bytes = new Uint8Array(await response.arrayBuffer());
   if (bytes.length > 2 * 1024 * 1024) throw new HttpError(503, 'Não foi possível preparar o PDF agora.', 'pdf_font_unavailable');

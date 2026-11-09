@@ -7,6 +7,8 @@ const vars=()=>env as unknown as RuntimeVars;
 export function database():D1Database{if(!env.DB)throw new HttpError(503,'O banco do portal ainda não está disponível.');return env.DB;}
 export function bucket():R2Bucket{if(!env.BUCKET)throw new HttpError(503,'O armazenamento de anexos ainda não está disponível.');return env.BUCKET;}
 export function ownerEmail():string|undefined{return vars().OWNER_EMAIL;}
+/** Origem pública configurada do portal (BETTER_AUTH_URL), sem depender do cabeçalho Host do pedido. */
+export function portalOrigin():string|undefined{try{const value=vars().BETTER_AUTH_URL;if(typeof value!=='string'||!value)return undefined;const url=new URL(value);return url.protocol==='https:'||url.hostname==='127.0.0.1'||url.hostname==='localhost'?url.origin:undefined;}catch{return undefined;}}
 
 export function taskTriageEnabled():boolean{return vars().PROEX_JEV_TASK_TRIAGE==='1';}
 export function inviteSecret():string|undefined{return vars().BETTER_AUTH_SECRET;}
