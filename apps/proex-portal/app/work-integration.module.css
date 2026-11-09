@@ -13,3 +13,10 @@
 .catalogRegistration[open] { padding-bottom: 16px; }
 .toolsBody { display: grid; min-width: 0; gap: 12px; padding-block: 4px 16px; }
 .formStack { display: grid; gap: 4px; min-width: 0; }
+/* "Consumo por unidade" com a mesma cara das linhas recolhíveis vizinhas. */
+.consumption:global(.p-card) { margin-block: 12px; padding: 0 16px; border-radius: var(--radius-card, 16px); box-shadow: var(--shadow-card); }
+.consumption > :global(.p-button) { width: 100%; min-height: 52px; justify-content: flex-start; padding: 14px 0; border: 0; background: transparent; color: var(--brand-ink); font-size: 14px; }
+.consumption > :global(.p-button)::before { content: '▸'; margin-right: 2px; font-size: .9em; }
+.consumption > :global(.p-button[aria-expanded=true])::before { content: '▾'; }
+.consumption > :global(.p-button) > svg { display: none; }
+.formStack { max-width: 880px; }

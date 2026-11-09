@@ -18,7 +18,7 @@ export default function OrganizationEmailSettings({ userId, organizations }: {
   if (!organizationId) return null;
 
   return <details className="p-card mt-5 min-w-0" onToggle={event => setExpanded(event.currentTarget.open)}>
-    <summary className="min-h-11 cursor-pointer py-2 text-lg font-semibold">Avisos por e-mail</summary>
+    <summary className="min-h-11 cursor-pointer py-2.5 font-semibold text-[var(--brand-ink)]">Avisos por e-mail</summary>
     {expanded && <div className="space-y-4 pt-3" role="region" aria-label="Preferências de e-mail por organização">
     <div>
       <p className="text-sm text-[var(--muted)]">Escolha em quais organizações deseja receber avisos. A equipe precisa configurar a conta remetente antes do primeiro envio.</p>

@@ -28,3 +28,13 @@
   .fieldset { --refine-size: 176px; --refine-top: 25px; padding: 14px calc(var(--refine-size) + 24px) 14px 16px; }
   .summary { top: calc(14px + var(--refine-top)); right: 16px; justify-content: flex-start; }
 }
+/* Celular: "Atualizar" vira ícone ao lado do filtro; o atalho de Relatórios fica no menu Mais. */
+@media (max-width: 720px) {
+  .section { grid-template-columns: minmax(0, 1fr) auto; column-gap: 8px; }
+  .section > * { grid-column: 1 / -1; }
+  .section > .header { grid-column: 2; grid-row: 1; gap: 0; margin-top: 12px; }
+  .section > .filterRow { grid-column: 1; grid-row: 1; }
+  .reports { display: none !important; }
+  .refresh { width: 44px; min-width: 44px; padding: 0 !important; justify-content: center; }
+  .btnText { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+}

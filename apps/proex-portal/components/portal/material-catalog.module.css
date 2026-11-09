@@ -149,3 +149,5 @@
 }
 .labelUnit { display: none; }
 @container material-catalog (max-width: 38rem) { .labelUnit { display: inline; } }
+.catalog .mobileNote { display: none; }
+@container material-catalog (max-width: 38rem) { .catalog .row .mobileNote { display: inline-flex; width: fit-content; margin-top: 4px; } .catalog .row .desktopNote { display: none; } }

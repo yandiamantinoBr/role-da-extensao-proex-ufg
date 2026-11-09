@@ -18,3 +18,4 @@
 /* Mesmo bloco de números do Início (09/11). */
 .metric{background:var(--surface-soft);box-shadow:none}
 .metric strong{font-family:var(--font-display);letter-spacing:-.03em;color:var(--metric-tone,var(--brand-ink))}
+.metric{border:1px solid var(--line)}
