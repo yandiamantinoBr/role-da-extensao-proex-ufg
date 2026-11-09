@@ -745,7 +745,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
     {['overview', 'materials', 'loans', 'events', 'reports'].includes(tab) && <section className={`p-scope-filters ${scopeStyles.scope}`} aria-label="Filtrar registros por unidade, área temática e projeto">
         <div className={scopeStyles.layout}>
         <Field label="Projeto">
-            <select aria-label="Projeto" value={filter} onChange={event => selectProject(event.target.value)}>
+            <select id="filtro-projeto" aria-label="Projeto" value={filter} onChange={event => selectProject(event.target.value)}>
                 <option value="">{scopedProjects.length === projects.length ? 'Todos os projetos' : scopedProjects.length === 0 ? 'Nenhum projeto neste recorte' : scopedProjects.length === 1 ? '1 projeto neste recorte' : `${scopedProjects.length} projetos neste recorte`}</option>
                 {scopedProjects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}
             </select>
@@ -758,14 +758,14 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
             </summary>
             <div className={scopeStyles.fields}>
         <Field label="Unidade responsável">
-            <select aria-label="Unidade responsável" value={unitFilter} onChange={event => selectUnit(event.target.value)}>
+            <select id="filtro-unidade" aria-label="Unidade responsável" value={unitFilter} onChange={event => selectUnit(event.target.value)}>
                 <option value="">Todas as unidades ({projects.filter(project => inArea(project)).length})</option>
                 {unitGroups.map(group => <optgroup key={group.group} label={group.group}>{group.units.map(unit => <option key={unit.id} value={unit.id}>{unit.acronym ? `${unit.acronym} · ` : ''}{unit.name}{unit.status === 'archived' ? ' (arquivada)' : ''} ({unitCounts.get(string(unit.id)) ?? 0})</option>)}</optgroup>)}
                 {hasUnassignedProjects && <option value="__unassigned__">Sem unidade vinculada ({unitCounts.get('__unassigned__') ?? 0})</option>}
             </select>
         </Field>
         <Field label="Área temática">
-            <select aria-label="Área temática" value={areaFilter} onChange={event => selectArea(event.target.value)}>
+            <select id="filtro-area" aria-label="Área temática" value={areaFilter} onChange={event => selectArea(event.target.value)}>
                 <option value="">Todas as áreas ({projects.filter(project => inUnit(project)).length})</option>
                 {THEMATIC_AREAS.map(area => <option key={area.key} value={area.key} disabled={!areaCounts.get(area.key) && areaFilter !== area.key}>{area.label} ({areaCounts.get(area.key) ?? 0})</option>)}
                 {areaCounts.get('__none__') ? <option value="__none__">Área não informada ({areaCounts.get('__none__')})</option> : null}
@@ -805,7 +805,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         </button>
         </div>}
 
-      {tab === 'my-work' && <><div className={workStyles.projectFilter}>{personalOrganization&&<p className="p-form-help">Organização: {organizations.find(organization=>organization.id===personalOrganization)?.name||'organização selecionada'} <button type="button" className="p-text-link" onClick={()=>setPersonalOrganization('')}>Ver todas as organizações autorizadas</button></p>}<label className="p-field"><span>Projeto</span><select aria-label="Projeto" value={filter} onChange={event => selectProject(event.target.value)}><option value="">{personalOrganization?'Todos os projetos desta organização':'Todos os projetos autorizados'}</option>{projects.filter(project=>!personalOrganization||project.organization_id===personalOrganization).map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label></div><MeuTrabalhoPanel key={string(user.userId)} userId={string(user.userId)} organizationId={personalOrganization||null} projectId={filter || null} serverDay={workDayFromServerTimestamp(data?.updatedAt)} workStatus={personalStatus} onWorkStatusChange={setPersonalStatus}/></>}
+      {tab === 'my-work' && <><div className={workStyles.projectFilter}>{personalOrganization&&<p className="p-form-help">Organização: {organizations.find(organization=>organization.id===personalOrganization)?.name||'organização selecionada'} <button type="button" className="p-text-link" onClick={()=>setPersonalOrganization('')}>Ver todas as organizações autorizadas</button></p>}<label className="p-field"><span>Projeto</span><select id="meu-trabalho-projeto" aria-label="Projeto" value={filter} onChange={event => selectProject(event.target.value)}><option value="">{personalOrganization?'Todos os projetos desta organização':'Todos os projetos autorizados'}</option>{projects.filter(project=>!personalOrganization||project.organization_id===personalOrganization).map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label></div><MeuTrabalhoPanel key={string(user.userId)} userId={string(user.userId)} organizationId={personalOrganization||null} projectId={filter || null} serverDay={workDayFromServerTimestamp(data?.updatedAt)} workStatus={personalStatus} onWorkStatusChange={setPersonalStatus}/></>}
       {(['materials','loans','events'] as string[]).includes(tab) && workContext(filter || null,tab === 'events' ? 'campaigns' : tab as WorkArea)}
       {activeWorkRecord && ['loans','events'].includes(activeWorkRecord.module) && <div className={workStyles.focusNotice} role="status"><p>{(activeWorkRecord.module === 'loans' ? displayedLoans : displayedCampaigns).length ? 'Registro vinculado ao seu trabalho. Use as ações abaixo para acompanhar.' : 'O registro não está na lista disponível para esta conta. Atualize ou consulte a lista completa.'}</p><button type="button" className="p-button p-button-subtle" onClick={() => setWorkRecord(null)}>Ver todos</button></div>}
       {tab === 'demands' && <><FollowUpPanel key={string(user.userId)} userId={string(user.userId)} onTaskTransferred={receipt=>{selectProject(receipt.projectId);setSelectedDemandId(receipt.taskId);}} defaultProjectId={filter} initialTaskId={selectedDemandId} serverDay={workDayFromServerTimestamp(data?.updatedAt)} onSelectTask={setSelectedDemandId} onChanged={refreshModules} onOpenReports={() => navigate('reports', 'demands')}/><OrganizationEmailSettings key={string(user.userId)} userId={string(user.userId)} organizations={organizations}/></>}
@@ -839,7 +839,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
                 <div className="p-rule-summary">{get(c, 'retryLimit', 'retry_limit') === undefined ? 'Política de repetição pendente' : `Uma participação · até ${get(c, 'retryLimit', 'retry_limit')} ${Number(get(c, 'retryLimit', 'retry_limit')) === 1 ? 'repetição' : 'repetições'} quando sair Tente novamente`}</div>
                 <div className="p-card-actions">
                 <a className="p-button p-button-subtle" href={c.status==='draft'?`/?module=events&project=${encodeURIComponent(get(c,'projectId','project_id'))}&campaignId=${encodeURIComponent(c.id)}`:`/events/${encodeURIComponent(c.id)}`} target="_blank" rel="noreferrer">{c.status==='draft'?'Abrir na equipe':'Página do evento'} <ExternalLink size={15}/>
-                </a>{canProject(get(c, 'projectId', 'project_id'), 'campaigns.manage') && <select aria-label={`Situação do evento ${c.name}`} value={c.status} disabled={busy || c.status === 'closed'} onChange={e => e.target.value === 'closed' ? setClosingCampaign(c.id) : void quick('campaign.status', { id: c.id, status: e.target.value })}>
+                </a>{canProject(get(c, 'projectId', 'project_id'), 'campaigns.manage') && <select id={`situacao-evento-${c.id}`} aria-label={`Situação do evento ${c.name}`} value={c.status} disabled={busy || c.status === 'closed'} onChange={e => e.target.value === 'closed' ? setClosingCampaign(c.id) : void quick('campaign.status', { id: c.id, status: e.target.value })}>
                     <option value="draft" disabled>Rascunho</option>
                     <option value="active">Ativo</option>
                     <option value="paused">Pausado</option>

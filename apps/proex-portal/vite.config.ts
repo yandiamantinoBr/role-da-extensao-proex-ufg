@@ -6,6 +6,7 @@ import { readExecutionProfile } from "./scripts/execution-profile.mjs";
 import { configureToolEnvironment } from "./scripts/tool-environment.mjs";
 import { sites } from "./scripts/vite/sites-vite-plugin";
 import { connectorPreview } from "./scripts/vite/connector-preview-plugin.mjs";
+import { readableScopedName } from "./scripts/vite/readable-class-names.mjs";
 
 const SITE_CREATOR_PLACEHOLDER_DATABASE_ID =
   "00000000-0000-4000-8000-000000000000";
@@ -38,6 +39,9 @@ const localBindingConfig = {
     : [],
 };
 
+// Nomes de classe legíveis: ver scripts/vite/readable-class-names.mjs e docs/GLOSSARIO.md.
+const cssModules = { css: { modules: { generateScopedName: readableScopedName(fileURLToPath(new URL(".", import.meta.url))) } } };
+
 // Alvo Node (Vercel via api/index.mjs, VPS ou servidor próprio com `vinext start`): o mesmo app, com
 // `cloudflare:workers` substituído por platform-node/env.ts (SQLite persistido em
 // Postgres ou disco). O alvo padrão continua sendo Cloudflare/Sites.
@@ -48,6 +52,7 @@ export default defineConfig(async ({ command }): Promise<UserConfig> => {
   if (nodeTarget) {
     const nodeEnv = fileURLToPath(new URL("./platform-node/env.ts", import.meta.url));
     return {
+      ...cssModules,
       ...(process.env.PROEX_DEBUG_BUILD === "1" ? { build: { minify: false } } : {}),
       // Servidor autocontido: só react, react-dom e ipaddr.js ficam externos (o vinext exige).
       ssr: { noExternal: true },
@@ -70,6 +75,7 @@ export default defineConfig(async ({ command }): Promise<UserConfig> => {
   const { cloudflare } = await import("@cloudflare/vite-plugin");
 
   return {
+    ...cssModules,
     server: {
       ...(managedLinux
         ? { host: "0.0.0.0", allowedHosts: ["terminal.local"] }
