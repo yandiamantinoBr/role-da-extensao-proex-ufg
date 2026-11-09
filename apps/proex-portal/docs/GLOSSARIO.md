@@ -34,6 +34,7 @@ Atualizado em 09/11/2026, sobre a `main` depois da PR52.
 | **Planilha mestre / do projeto** | Cópia do portal no Google Sheets, sincronizada. | `sync`, `projectSheet`, `teamSheet` | `sync_*`, `project_sheet_*`, `team_sheet_*` | `lib/sync/`, `public/integracoes/*.gs` |
 | **Rolê (assistente)** | Assistente de IA do portal. Não confundir com o projeto "Rolê da Extensão". | `roleAssistant`, `assistant` | `ai_*` | `lib/assistant/`, `role-assistant`, central de chaves |
 | **Comunidade** | Mural, feedback e ouvidoria. | `community`, `ombuds` | `ombuds_reports`, `ombuds_messages`, `portal_feedback`, `personal_widget_settings` | módulo `community`, `lib/community/` |
+| **Fixado** | Projeto ou equipe que a pessoa deixou à mão: vem primeiro em Projetos e aparece como subitem no menu lateral. Só a própria pessoa vê; a conta guarda apenas ids (até 12 de cada) e a anonimização apaga. | `pin`, `projectPins`, `teamPins` | `user_preferences` (0038) | `lib/preferences.ts`, `app/api/preferences`, `use-pinned-items.ts`, `portal-navigation.tsx` |
 
 ## Sinônimos que convivem hoje (e o nome oficial proposto)
 

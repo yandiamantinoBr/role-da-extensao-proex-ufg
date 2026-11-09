@@ -15,3 +15,4 @@
 .link { display: inline-flex; align-items: center; gap: 3px; min-height: 32px; padding: 0 2px; border: 0; background: none; color: var(--brand-ink); font: inherit; font-weight: 650; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 .link:focus-visible, .box > summary:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; border-radius: 6px; }
 @media (max-width: 760px) { .steps { grid-template-columns: 1fr; } }
+.more { margin: 8px 0 0; font-size: 12px; color: var(--text-secondary); }

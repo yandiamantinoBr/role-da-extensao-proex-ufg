@@ -22,35 +22,51 @@ async function call(body?: Record<string, unknown>): Promise<{ projectPins: stri
   return { projectPins: data.projectPins ?? [], teamPins: data.teamPins ?? [], teams: data.teams ?? [] };
 }
 
+const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
+let sequence = 0;
+
 async function load(userId: string) {
   if (!userId || loading === userId || (state.userId === userId && state.ready)) return;
   loading = userId;
   try {
     let saved = await call();
     let legacy: string[] = [];
-    try { const raw = localStorage.getItem(legacyKey(userId)); const parsed = raw ? JSON.parse(raw) : []; legacy = Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string') : []; } catch { /* navegador sem armazenamento */ }
+    try { const raw = localStorage.getItem(legacyKey(userId)); const parsed = raw ? JSON.parse(raw) : []; legacy = Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === 'string' && ID.test(id)) : []; } catch { /* navegador sem armazenamento */ }
     if (legacy.length) {
-      saved = await call({ action: 'import', projectPins: legacy.slice(0, 12) });
-      try { localStorage.removeItem(legacyKey(userId)); } catch { /* manter não causa duplicidade: a importação une as listas */ }
+      // Se a importação falhar, a tela segue com o que já está na conta; a próxima carga tenta de novo.
+      try { saved = await call({ action: 'import', projectPins: legacy.slice(0, 12) }); localStorage.removeItem(legacyKey(userId)); }
+      catch { /* mantém os fixados antigos guardados para outra tentativa */ }
     }
     if (loading === userId) emit({ userId, ...saved, ready: true, error: '' });
   } catch (error) {
-    if (loading === userId) emit({ ...EMPTY, userId, ready: true, error: error instanceof Error ? error.message : 'Não foi possível carregar seus fixados.' });
+    // ready continua falso: ao voltar à página, uma nova tentativa acontece.
+    if (loading === userId) emit({ ...EMPTY, userId, error: error instanceof Error ? error.message : 'Não foi possível carregar seus fixados.' });
   } finally { if (loading === userId) loading = null; }
 }
 
-/** Fixa ou desafixa; a tela muda na hora e volta atrás se o servidor recusar. */
+/** Fixa ou desafixa; a tela muda na hora. Só a resposta mais recente vale, e uma recusa desfaz apenas este item. */
 export async function setPinned(kind: PinKind, id: string, pinned: boolean): Promise<void> {
-  const key = kind === 'project' ? 'projectPins' : 'teamPins', before = state;
-  const list = state[key].filter(item => item !== id);
-  if (pinned && list.length >= 12) throw new Error(`Você pode fixar até 12 ${kind === 'project' ? 'projetos' : 'equipes'}. Remova um para incluir outro.`);
-  emit({ ...state, [key]: pinned ? [...list, id] : list });
-  try { const saved = await call({ action: 'pin', kind, id, pinned }); if (state.userId === before.userId) emit({ ...state, ...saved, error: '' }); }
-  catch (error) { if (state.userId === before.userId) emit(before); throw error; }
+  const key = kind === 'project' ? 'projectPins' : 'teamPins', owner = state.userId, mine = ++sequence;
+  const apply = (list: string[], on: boolean) => on ? [...list.filter(item => item !== id), id] : list.filter(item => item !== id);
+  emit({ ...state, [key]: apply(state[key], pinned) });
+  try {
+    const saved = await call({ action: 'pin', kind, id, pinned });
+    if (state.userId === owner && mine === sequence) emit({ ...state, ...saved, error: '' });
+  } catch (error) {
+    if (state.userId === owner) emit({ ...state, [key]: apply(state[key], !pinned) });
+    throw error;
+  }
 }
 
 export function usePinnedItems(userId: string): Snapshot {
   const snapshot = useSyncExternalStore(listener => { listeners.add(listener); return () => listeners.delete(listener); }, () => state, () => EMPTY);
-  useEffect(() => { if (userId) void load(userId); }, [userId]);
+  useEffect(() => {
+    if (!userId) return;
+    void load(userId);
+    // Depois de uma falha, tenta de novo quando a pessoa volta à janela (sem repetir em laço).
+    const retry = () => { if (!(state.userId === userId && state.ready)) void load(userId); };
+    window.addEventListener('focus', retry);
+    return () => window.removeEventListener('focus', retry);
+  }, [userId]);
   return snapshot.userId === userId ? snapshot : { ...EMPTY, userId };
 }

@@ -28,7 +28,8 @@ test('pinned teams only reveal names the person can still see', async t => {
   // viewer-a participa de "Comunicação e Design", mas não da equipe interna nem da equipe de outra organização.
   for (const id of [f.a, f.hidden, f.b]) await preferencesAction(f.db, viewer, { action: 'pin', kind: 'team', id, pinned: true });
   const view = await preferencesFor(f.db, viewer);
-  assert.deepEqual(plain(view.teamPins), [f.a, f.hidden, f.b], 'os ids continuam guardados');
+  // Uma equipe que a pessoa não vê sai da lista ao fixar a próxima, para não ocupar vaga do limite.
+  assert.deepEqual(plain(view.teamPins), [f.a, f.b]);
   assert.deepEqual(view.teams.map(team => team.name), ['Comunicação e Design'], 'nomes de equipes sem acesso nunca aparecem');
   assert.doesNotMatch(JSON.stringify(view), /interna Horizonte|reservada B/);
   // Quem integra a equipe interna vê o nome dela.
@@ -43,14 +44,20 @@ test('pinned teams only reveal names the person can still see', async t => {
 });
 
 test('limit, import from the old browser storage and invalid input', async t => {
-  const f = await teamScenario(t), owner = await f.actor('owner-a');
+  const f = await teamScenario(t);
   const ids = Array.from({ length: PIN_LIMIT }, (_, index) => `project-${index}`);
+  for (const id of [...ids, 'project-13']) f.insert('projects', { id, organization_id: 'org-a', name: `Projeto sintético ${id}`, created_at: f.now });
+  const owner = await f.actor('owner-a');
   const imported = await preferencesAction(f.db, owner, { action: 'import', projectPins: [...ids, 'project-extra'] });
   assert.equal(imported.projectPins.length, PIN_LIMIT);
   await assert.rejects(preferencesAction(f.db, owner, { action: 'pin', kind: 'project', id: 'project-13', pinned: true }), /até 12 projetos/);
-  // A importação une, não apaga o que já está na conta.
+  // Um fixado que a pessoa não vê mais (aqui, um id que não existe) libera a vaga ao fixar outro.
+  await preferencesAction(f.db, owner, { action: 'pin', kind: 'project', id: 'project-11', pinned: false });
+  await preferencesAction(f.db, owner, { action: 'import', projectPins: ['projeto-removido'] });
+  const freed = await preferencesAction(f.db, owner, { action: 'pin', kind: 'project', id: 'project-13', pinned: true });
+  assert.ok(!freed.projectPins.includes('projeto-removido') && freed.projectPins.includes('project-13'));
   await preferencesAction(f.db, owner, { action: 'pin', kind: 'project', id: 'project-0', pinned: false });
-  assert.deepEqual(plain((await preferencesAction(f.db, owner, { action: 'import', projectPins: ['project-0'] })).projectPins).at(-1), 'project-0');
+  assert.deepEqual(plain((await preferencesAction(f.db, owner, { action: 'import', projectPins: ['project-0'] })).projectPins).at(-1), 'project-0', 'a importação une, não apaga');
   for (const input of [
     { action: 'pin', kind: 'unit', id: 'x', pinned: true },
     { action: 'pin', kind: 'project', id: '../segredo', pinned: true },

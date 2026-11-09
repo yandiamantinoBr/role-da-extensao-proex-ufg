@@ -1,4 +1,4 @@
-import type { PortalActor } from './access';
+import { accessibleProjects, type PortalActor } from './access';
 import { all, iso, one } from './database';
 import { activeAccount, authority } from './follow-up/scope';
 import { HttpError } from './errors';
@@ -48,6 +48,14 @@ async function visibleTeams(db: D1Database, userId: string, teamIds: string[]): 
   return teamIds.flatMap(id => rows.filter(row => row.id === id).map(row => ({ id: String(row.id), name: String(row.name), organizationId: String(row.organization_id) })));
 }
 
+async function visibleIds(db: D1Database, actor: PortalActor, kind: PinKind, ids: string[]): Promise<Set<string>> {
+  if (!ids.length) return new Set();
+  if (kind === 'team') return new Set((await visibleTeams(db, actor.userId, ids)).map(team => team.id));
+  const scope = accessibleProjects(actor);
+  const rows = await all(db, `SELECT id FROM projects WHERE id IN (${ids.map(() => '?').join(',')})`, ids);
+  return new Set(rows.map(row => String(row.id)).filter(id => scope === null || scope.includes(id)));
+}
+
 export async function preferencesFor(db: D1Database, rawActor: PortalActor | null): Promise<Preferences & { teams: PinnedTeam[] }> {
   const actor = actorRequired(rawActor), current = await read(db, actor.userId);
   return { ...current, teams: await visibleTeams(db, actor.userId, current.teamPins) };
@@ -80,8 +88,12 @@ async function applyAction(db: D1Database, rawActor: PortalActor | null, input: 
     const [id] = ids([input.id], 'fixados');
     if (typeof input.pinned !== 'boolean') throw new HttpError(400, 'Informe se o item fica fixado.', 'invalid_pin');
     const pinned = input.pinned, key = kind === 'project' ? 'projectPins' : 'teamPins';
+    // Fixados que a pessoa não vê mais (acesso retirado, equipe arquivada) saem ao fixar algo novo,
+    // para não ocupar vagas do limite sem aparecer em lugar nenhum.
+    const before = pinned ? (await read(db, actor.userId))[key] : [];
+    const visible = await visibleIds(db, actor, kind, before), hidden = new Set(before.filter(item => !visible.has(item)));
     return write(db, actor.userId, current => {
-      const list = current[key].filter(item => item !== id);
+      const list = current[key].filter(item => item !== id && !hidden.has(item));
       if (pinned && list.length >= PIN_LIMIT) throw new HttpError(409, `Você pode fixar até ${PIN_LIMIT} ${kind === 'project' ? 'projetos' : 'equipes'}. Remova um para incluir outro.`, 'pin_limit');
       return { ...current, [key]: pinned ? [...list, id] : list };
     });

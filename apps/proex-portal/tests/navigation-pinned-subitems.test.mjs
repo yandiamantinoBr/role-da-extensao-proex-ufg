@@ -41,6 +41,10 @@ test('projects and teams with pins get an arrow that expands the pinned items; o
   const many = Array.from({ length: 9 }, (_, i) => ({ id: `x${i}`, label: `Projeto ${i}`, onOpen() {} }));
   h.render({ active: 'projects', subitems: { projects: many } });
   assert.equal(h.all().filter(node => node.type === 'button' && /^Projeto \d$/.test(node.props.title ?? '')).length, 6);
-  assert.match(h.body(), /Ver os 9 fixados/);
+  assert.match(h.body(), /Ver todos os 9 projetos fixados/);
+  const more = h.find(node => node.type === 'button' && node.props['aria-expanded'] === false && /Ver todos/.test(text(node)));
+  more.props.onClick(); h.render({ active: 'projects', subitems: { projects: many } });
+  assert.equal(h.all().filter(node => node.type === 'button' && /^Projeto \d$/.test(node.props.title ?? '')).length, 9, 'a lista expande no próprio menu');
+  assert.match(h.body(), /Mostrar menos/);
   h.render({ collapsed: true }); assert.equal(toggle('Ocultar equipes fixadas') ?? toggle('Mostrar equipes fixadas'), undefined);
 });

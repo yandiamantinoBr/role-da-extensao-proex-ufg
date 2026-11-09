@@ -125,7 +125,7 @@ test('pinned projects come first in the grid, are marked as pinned and only show
  const h = panel({userId:'person-a', pinnedProjectIds:['project-b','hidden-project'], onTogglePin: async (id, pinned) => { calls.push([id, pinned]); }}); try {
   const cards = () => h.exports && (() => { const result = []; const visit = node => { if (!node || typeof node !== 'object') return; if (Array.isArray(node)) return node.forEach(visit); if (node.type === 'article') result.push(node); visit(node.props?.children); }; visit(h.node('div', node => node.props?.className === 'grid')); return result; })();
   assert.deepEqual(cards().map(card => text(card).includes('Projeto B') ? 'B' : 'A'), ['B', 'A'], 'o fixado vem primeiro na grade');
-  assert.ok(h.node('button', node => node.props['aria-label'] === 'Desafixar Projeto B' && node.props['aria-pressed'] === true), 'o cartão fixado aparece marcado');
+  assert.ok(h.node('button', node => node.props['aria-label'] === 'Fixar Projeto B' && node.props['aria-pressed'] === true), 'o cartão fixado aparece marcado');
   assert.match(text(h.node('section', node => node.props['aria-label'] === 'Projetos fixados')), /Projeto B/);
   assert.ok(!h.body().includes('hidden-project'), 'id sem acesso atual nunca aparece');
   assert.match(h.body(), /Salvos na sua conta/);

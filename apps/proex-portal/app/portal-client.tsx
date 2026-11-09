@@ -475,6 +475,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
     // Fixados de projetos e equipes, salvos na conta (0038) e mostrados também no menu lateral.
     const pins = usePinnedItems(string(user.userId));
     const [teamIntent, setTeamIntent] = useState<{ kind: 'open' | 'new'; teamId?: string; organizationId?: string; nonce: number } | null>(null);
+    const teamIntentPending = useRef(false);
     setDraftScope(string(user.userId));
     const draftUserId = string(user.userId);
     useEffect(() => watchDraftLogout(draftUserId), [draftUserId]);
@@ -537,6 +538,9 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
             navigation.recordVisit(id);
         }
         setTab(id); setQuery(''); setAccountOpen(false); setSelectedMaterialId(null);setMaterialMode('view'); setWorkRecord(null);
+        // Um pedido de Equipes (abrir fixada, criar) vale só para esta ida; voltar pelo menu abre a página normal.
+        if (!teamIntentPending.current) setTeamIntent(null);
+        teamIntentPending.current = false;
         if (id !== 'my-work' && id !== 'overview') setPersonalOrganization('');
         if (id === 'reports') setReportInitialDataset(report);
         if (id === 'my-work' || (id === 'calendar' && unitFilter === '__unassigned__')) setUnitFilter('');
@@ -563,11 +567,12 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         navigate('projects'); selectProject(id); setWorkRecord({module:'projects',projectId:id,recordId:id});
     }
     function openTeams(intent: { kind: 'open' | 'new'; teamId?: string; organizationId?: string }) {
+        teamIntentPending.current = true;
         setTeamIntent(current => ({ ...intent, nonce: (current?.nonce ?? 0) + 1 })); navigate('work-teams');
     }
     const navSubitems: NavSubitems = {
-        projects: pins.projectPins.flatMap(id => projects.filter(project => project.id === id)).map(project => ({ id: string(project.id), label: string(project.short_name) || string(project.name), onOpen: () => openPinnedProject(string(project.id)) })),
-        'work-teams': pins.teams.filter(team => pins.teamPins.includes(team.id)).map(team => ({ id: team.id, label: team.name, onOpen: () => openTeams({ kind: 'open', teamId: team.id, organizationId: team.organizationId }) })),
+        projects: pins.projectPins.flatMap(id => projects.filter(project => project.id === id)).map(project => ({ id: string(project.id), label: string(project.short_name) || string(project.name), current: tab === 'projects' && activeWorkRecord?.module === 'projects' && activeWorkRecord.recordId === project.id, onOpen: () => openPinnedProject(string(project.id)) })),
+        'work-teams': pins.teams.filter(team => pins.teamPins.includes(team.id)).map(team => ({ id: team.id, label: team.name, current: tab === 'work-teams' && teamIntent?.kind === 'open' && teamIntent.teamId === team.id, onOpen: () => openTeams({ kind: 'open', teamId: team.id, organizationId: team.organizationId }) })),
     };
     function selectProject(id: string) { const project = projects.find(row => row.id === id); if (id && !project) return; if (project && personalOrganization && project.organization_id !== personalOrganization) setPersonalOrganization(''); setWorkRecord(null); setSelectedMaterialId(null);setMaterialMode('view'); if (project && unitFilter && unitOf(project) !== unitFilter) setUnitFilter(unitOf(project) || '__unassigned__'); if (project && areaFilter && !inArea(project)) setAreaFilter(''); setFilter(id); setDraftProject(id); setOfferProject(''); }
     function openProject(id: string) {
