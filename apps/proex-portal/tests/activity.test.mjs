@@ -241,3 +241,29 @@ test('management view: team activity only for people managers, deadlines for eve
   assert.equal(viewer.team, null);
   assert.equal((await activityFeed(db, actors.manager, { ...range, types: 'materials' }, NOW)).deadlines, null);
 });
+
+test('AI configuration history shows before and after only to whoever can configure the organization', async () => {
+  const { db, actors } = setup();
+  const owner = person(db, 'owner', { organization: 'org_proex', name: 'Coordenação' });
+  const audit = (id, action, details, day) => db.native.prepare("INSERT INTO audit(id,actor_id,project_id,organization_id,action,entity_id,details,created_at) VALUES(?,?,NULL,'org_proex',?,'org_proex',?,?)").run(id, owner.userId, action, JSON.stringify(details), at(day));
+  audit('cfg-1', 'assistant.configure', { revision: 5, changes: [{ field: 'dailyTokens', before: 100000, after: 1000000 }, { field: 'dailyUsdMicros', before: 1000000, after: 3000000 }, { field: 'dailyMs', before: 300000, after: 3600000 }] }, '2026-11-09');
+  audit('cfg-2', 'assistant.configure', { revision: 6, testMode: true, changes: [{ field: 'testMode', before: false, after: true }, { field: 'dailyCalls', before: 100, after: 500 }] }, '2026-11-10');
+  audit('cfg-3', 'assistant.configure', { revision: 4, enabled: true }, '2026-11-08');
+  audit('cfg-key', 'assistant.credential.save', { provider: 'deepseek' }, '2026-11-10');
+  const feed = await activityFeed(db, owner, range, NOW);
+  assert.equal(feed.aiVisible, true);
+  const ai = feed.events.filter(event => event.type === 'ai');
+  assert.deepEqual(ai.map(event => event.id), ['ai:cfg-2', 'ai:cfg-1', 'ai:cfg-3']);
+  assert.equal(ai[1].title, 'Limites alterados');
+  assert.equal(ai[1].detail.replace(/ /g, ' '), 'Tokens por dia: 100 mil → 1 milhão\nCusto por dia: US$ 1,00 → US$ 3,00\nTempo por dia: 5 min → 1 h');
+  assert.equal(ai[0].title, 'Modo de testes ligado');
+  assert.equal(ai[0].actorName, 'Coordenação');
+  assert.equal(ai[2].detail, 'Registro anterior ao histórico detalhado');
+  for (const reader of [actors.manager, actors.inventoryA, actors.viewerB]) {
+    const other = await activityFeed(db, reader, range, NOW);
+    assert.equal(other.aiVisible, false);
+    assert.ok(!other.events.some(event => event.type === 'ai'), 'sem permissão de configurar, sem histórico de IA');
+  }
+  const project = await activityFeed(db, owner, { ...range, projectId: 'project-a' }, NOW);
+  assert.ok(!project.events.some(event => event.type === 'ai'), 'configuração da organização não aparece no filtro de projeto');
+});

@@ -1,4 +1,5 @@
-import { projectAuthoritySql, type PortalActor } from './access';
+import { aiConfigurationAuthority, projectAuthoritySql, type PortalActor } from './access';
+import { describeChange, CONFIG_FIELDS, type ConfigChange } from './assistant/quota';
 import { isCivilDate, offsetCivilDate } from './civil-date';
 import { all, type Row } from './database';
 import { HttpError } from './errors';
@@ -12,7 +13,7 @@ import { listRecords } from './records';
  * dos colegas do mesmo projeto). Nada de contato, observação livre, nome de quem pegou
  * emprestado ou identificador interno sai daqui.
  */
-export const ACTIVITY_TYPES = ['materials', 'loans', 'demands', 'agenda', 'records'] as const;
+export const ACTIVITY_TYPES = ['materials', 'loans', 'demands', 'agenda', 'records', 'ai'] as const;
 export type ActivityType = typeof ACTIVITY_TYPES[number];
 export type ActivityEvent = {
   id: string; type: ActivityType; action: string; title: string; detail: string;
@@ -26,6 +27,8 @@ export type ActivityFeed = {
   truncated: boolean;
   people: { id: string; name: string }[];
   loansNow: { active: number; late: number } | null;
+  /** Só quem configura a IA de alguma organização vê o tipo "Configuração de IA". */
+  aiVisible: boolean;
   /** Totais por dia e por material calculados no banco: não dependem do corte da lista. */
   summary: { days: { day: string; materials: number; demandsOpened: number; demandsCompleted: number; agenda: number }[]; stock: { name: string; projectId: string; href: string; entradas: number; saidas: number }[] };
   /** Prazos das demandas: concluídas no período (no prazo, com atraso, sem prazo) e abertas já vencidas agora. */
@@ -217,6 +220,24 @@ export async function activityFeed(db: D1Database, actor: PortalActor | null, in
       actorId: authorOf.get(String(record.id)) ?? null, actorName: '', viaRole: false, href: link('records', String(record.project_id)), quantity: null });
   }
 
+  // Configuração de IA: limites, funções e permissões, com antes e depois. Visível só para quem
+  // pode configurar a IA daquela organização (ou a administração geral); não pertence a projeto.
+  const configurable: Row[] = [];
+  for (const organization of await all(db, "SELECT id,name FROM organizations WHERE status='active' ORDER BY name")) {
+    const auth = aiConfigurationAuthority(actor, String(organization.id));
+    if ((await all(db, `SELECT 1 WHERE ${auth.sql}`, auth.values)).length) configurable.push(organization);
+    if (configurable.length && !(wanted.includes('ai') && !projectId)) break; // basta saber que o tipo aparece
+  }
+  if (wanted.includes('ai') && !projectId && configurable.length) {
+    const names = new Map(configurable.map(row => [String(row.id), String(row.name)]));
+    const rows = take(await all(db, `SELECT id,actor_id,organization_id,action,details,created_at FROM audit
+      WHERE action IN ('assistant.configure','assistant.grant.create','assistant.grant.revoke') AND organization_id IN (${configurable.map(() => '?').join(',')})
+      AND created_at>=? AND created_at<? ORDER BY created_at DESC LIMIT ${MAX_PER_SOURCE + 1}`, [...configurable.map(row => row.id), range.startsAt, range.endsAt]));
+    for (const row of rows) events.push({ id: `ai:${row.id}`, type: 'ai', ...aiConfigurationEvent(String(row.action), String(row.details ?? '{}')),
+      at: String(row.created_at), day: brasiliaDay(String(row.created_at)), projectId: null, projectName: names.get(String(row.organization_id)) ?? '',
+      actorId: row.actor_id ? String(row.actor_id) : null, actorName: '', viaRole: false, href: '/?module=settings', quantity: null });
+  }
+
   // Nomes só das pessoas que aparecem em eventos já autorizados; conta removida não tem nome.
   const ids = [...new Set(events.map(event => event.actorId).filter((id): id is string => Boolean(id)))];
   const people = ids.length ? await all(db, `SELECT u.user_id id,COALESCE(NULLIF(pr.display_name,''),'Pessoa da equipe') name FROM portal_users u LEFT JOIN profiles pr ON pr.user_id=u.user_id
@@ -247,8 +268,26 @@ export async function activityFeed(db: D1Database, actor: PortalActor | null, in
   }
   if (filtered.length > MAX_EVENTS) truncated = true;
   return { range: { from: range.from, to: range.to, days: range.days }, types: wanted, events: filtered.slice(0, MAX_EVENTS), truncated,
-    people: [...nameOf].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')), loansNow,
+    people: [...nameOf].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')), loansNow, aiVisible: configurable.length > 0,
     summary: { days: [...perDay.values()], stock }, deadlines, team };
+}
+
+const LIMIT_FIELDS = new Set(['dailyUsdMicros', 'dailyTokens', 'dailyCalls', 'dailyMs', 'timeoutMs', 'maxOutputTokens']);
+/** Texto de um registro de configuração de IA: o que mudou, de quanto para quanto. Sem chave nem identificador. */
+export function aiConfigurationEvent(action: string, raw: string): { action: string; title: string; detail: string } {
+  if (action === 'assistant.grant.create') return { action: 'Configuração de IA', title: 'Permissão para configurar concedida', detail: '' };
+  if (action === 'assistant.grant.revoke') return { action: 'Configuração de IA', title: 'Permissão para configurar revogada', detail: '' };
+  let details: Record<string, unknown> = {};
+  try { const parsed: unknown = JSON.parse(raw); if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) details = parsed as Record<string, unknown>; } catch { /* registro antigo sem detalhes */ }
+  const known = new Set(CONFIG_FIELDS.map(field => String(field.key)));
+  const changes = Array.isArray(details.changes) ? (details.changes as ConfigChange[]).filter(change => change && known.has(String(change.field))) : null;
+  if (!changes) return { action: 'Configuração de IA', title: 'Configuração salva', detail: 'Registro anterior ao histórico detalhado' };
+  if (!changes.length) return { action: 'Configuração de IA', title: 'Configuração salva', detail: 'Nenhum valor mudou' };
+  const test = changes.find(change => change.field === 'testMode');
+  const title = test ? (test.after ? 'Modo de testes ligado' : 'Modo de testes desligado') : changes.every(change => LIMIT_FIELDS.has(change.field)) ? 'Limites alterados' : changes.some(change => LIMIT_FIELDS.has(change.field)) ? 'Funções e limites alterados' : 'Funções alteradas';
+  // Uma mudança por linha (a tela mostra cada uma em sua linha).
+  const lines = changes.filter(change => change.field !== 'testMode').map(describeChange).filter(Boolean);
+  return { action: 'Configuração de IA', title, detail: lines.length > 6 ? [...lines.slice(0, 6), `e mais ${lines.length - 6}`].join('\n') : lines.join('\n') };
 }
 
 async function projectNames(db: D1Database, ids: string[]): Promise<Map<string, string>> {

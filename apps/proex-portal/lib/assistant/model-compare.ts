@@ -7,6 +7,7 @@ import { ChargedError, genericChat } from './generic-provider';
 import { COMPARE_MAX_OUTPUT, COMPARE_SYSTEM, compareEstimate, fitsFunction, type CatalogModel, type CatalogProvider } from './model-catalog';
 import { loadCatalog } from './model-catalog-store';
 import { loadAssistantSettings } from './settings';
+import { quotaRefusal } from './quota';
 
 const ORG = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
 
@@ -50,7 +51,7 @@ export async function compareModels(db: D1Database, actor: PortalActor | null, i
     ]);
   } catch (error) {
     if (String(error).includes('compare_authority')) throw new HttpError(403, 'Seu acesso mudou.', 'catalog_admin');
-    if (String(error).includes('compare_quota')) throw new HttpError(429, 'O limite diário de IA desta organização não comporta esta comparação.', 'assistant_quota');
+    if (String(error).includes('compare_quota')) throw await quotaRefusal(db, actor, organizationId, day, config, { cost: estimate.total, tokens: estimate.tokens, ms, calls: chosen.length });
     throw error;
   }
   const results = await Promise.all(chosen.map(async ({ model, provider, apiKey }, index) => {

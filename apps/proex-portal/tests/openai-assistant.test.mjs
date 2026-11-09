@@ -107,7 +107,11 @@ test('explicit OpenAI prepares once with provenance and confirms through invento
 test('OpenAI admission measures the actual Responses schema/body and uses selected provider integer quota prices',async t=>{
  const f=await fixture(t);await f.save();await f.configure({dailyCalls:1});const provider=fake();await prepareAssistantPlan(f.db,f.operator,query(),secret,{keys,fetcher:provider.fetcher});
  const config=JSON.parse(f.native.prepare('SELECT config_json FROM ai_organization_settings').get().config_json),bytes=new TextEncoder().encode(JSON.stringify(provider.requests[0].body)).byteLength+2048,reservation=aiReservation(config,bytes);
- const usage=f.native.prepare('SELECT * FROM ai_organization_usage').get();assert.equal(usage.calls,1);assert.equal(usage.reserved_tokens,reservation.tokens);assert.equal(usage.reserved_usd_micros,Math.ceil(bytes*.25+config.maxOutputTokens*1.2));assert.equal(usage.reserved_usd_micros,reservation.cost);
+ const usage=f.native.prepare('SELECT * FROM ai_organization_usage').get(),plan=JSON.parse(f.native.prepare("SELECT details FROM audit WHERE action='assistant.plan'").get().details);assert.equal(usage.calls,1);
+ // The admission reserved the measured ceiling; after a valid reply the day keeps only the confirmed use.
+ assert.equal(plan.reservedUsdMicros,Math.ceil(bytes*.25+config.maxOutputTokens*1.2));assert.equal(plan.reservedUsdMicros,reservation.cost);
+ assert.equal(usage.reserved_tokens,plan.inputTokens+plan.outputTokens+plan.jevTokens);assert.ok(usage.reserved_tokens<reservation.tokens);
+ assert.equal(usage.reserved_usd_micros,Math.ceil(plan.inputTokens*.25+plan.outputTokens*1.2));assert.equal(usage.reserved_usd_micros,plan.usdMicros);assert.ok(usage.reserved_ms<config.timeoutMs);
  await assert.rejects(prepareAssistantPlan(f.db,f.operator,query(),secret,{keys,fetcher:provider.fetcher}),code('assistant_quota'));assert.equal(provider.requests.length,1);
 });
 

@@ -1,0 +1,42 @@
+{
+  "origin": "http://127.0.0.1:5174",
+  "base": "descartável, loopback, dados sintéticos; uso de hoje simulado só na tela; recusa por limite real do servidor local (nenhum provedor chamado)",
+  "shots": [
+    "1366-light-limites",
+    "1366-dark-limites",
+    "390-light-limites",
+    "390-light-limites-campos",
+    "390-dark-limites",
+    "390-dark-limites-campos",
+    "1366-light-modo-testes",
+    "1366-light-modo-testes-botao",
+    "1366-dark-modo-testes",
+    "1366-dark-modo-testes-botao",
+    "390-light-modo-testes",
+    "390-light-modo-testes-botao",
+    "390-dark-modo-testes",
+    "390-dark-modo-testes-botao",
+    "1366-light-role-limite",
+    "1366-light-ajustar-limites",
+    "1366-dark-role-limite",
+    "1366-dark-ajustar-limites",
+    "390-light-role-limite",
+    "390-light-ajustar-limites",
+    "390-dark-role-limite",
+    "390-dark-ajustar-limites",
+    "1366-light-registros-ia",
+    "1366-light-registros-filtro",
+    "1366-dark-registros-ia",
+    "1366-dark-registros-filtro",
+    "390-light-registros-ia",
+    "390-light-registros-filtro",
+    "390-dark-registros-ia",
+    "390-dark-registros-filtro"
+  ],
+  "pageErrors": [
+    "Failed to load resource: the server responded with a status of 429 (Too Many Requests)",
+    "Failed to load resource: the server responded with a status of 429 (Too Many Requests)",
+    "Failed to load resource: the server responded with a status of 429 (Too Many Requests)",
+    "Failed to load resource: the server responded with a status of 429 (Too Many Requests)"
+  ]
+}

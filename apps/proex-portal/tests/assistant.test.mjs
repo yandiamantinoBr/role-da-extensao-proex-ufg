@@ -489,6 +489,55 @@ test('atomic stock predicate closes a concurrent change between preflight and do
   assert.equal(f.native.prepare('SELECT stock FROM items WHERE id=?').get('item-a').stock, 1); assert.equal(f.native.prepare('SELECT COUNT(*) n FROM stock_movements').get().n, 1); assert.equal(f.native.prepare("SELECT status FROM ai_plans WHERE id=?").get(preview.plan.id).status, 'ready');
  } finally { f.native.close(); }
 });
+test('a refused request says which daily limit was hit, how much is used and who can change it', async () => {
+ for (const [ceiling, label] of [[{ dailyTokens: 1000 }, /^Este pedido é maior que o limite de tokens do dia \(precisa de até \d+ mil tokens; o limite é 1 mil tokens\)\./], [{ dailyUsdMicros: 1000 }, /^Este pedido é maior que o limite de custo do dia \(precisa de até US\$\s0,0\d+; o limite é US\$\s0,001\d?\)/], [{ dailyMs: 1000 }, /^Este pedido é maior que o limite de tempo do dia \(precisa de até 12 s; o limite é 1 s\)\./]]) {
+  const f = fixture(), provider = fakeProvider(); try {
+   await configureAssistant(f.db, f.actors.owner, configInput(ceiling), secret);
+   const worker = await prepareAssistantPlan(f.db, f.actors.inventory, request(), secret, { fetcher: provider.fetch }).catch(error => error);
+   assert.equal(worker.code, 'assistant_quota'); assert.match(worker.message, label); assert.match(worker.message, /Peça a .+ para aumentar o limite\.$/);
+   assert.ok(!worker.message.includes('@'), 'nunca mostra e-mail de quem ajusta');
+   const owner = await prepareAssistantPlan(f.db, f.actors.owner, request({ operationKey: 'owner-quota-check' }), secret, { fetcher: provider.fetch }).catch(error => error);
+   assert.equal(owner.code, 'assistant_quota'); assert.match(owner.message, /Você pode aumentar o limite em Configurações → Chaves e modelos → Funções e acesso → Limites e cotas\.$/);
+   assert.equal(provider.calls, 0);
+  } finally { f.native.close(); }
+ }
+});
+test('a limit that runs out during the day says how much was used and that it comes back at midnight', async () => {
+ const f = fixture(), provider = fakeProvider(); try {
+  await configureAssistant(f.db, f.actors.owner, configInput({ dailyCalls: 1 }), secret);
+  f.native.prepare("INSERT INTO ai_organization_usage(organization_id,day,calls) VALUES('org_proex',?,1) ON CONFLICT(organization_id,day) DO UPDATE SET calls=1").run(new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()));
+  const refused = await prepareAssistantPlan(f.db, f.actors.inventory, request(), secret, { fetcher: provider.fetch }).catch(error => error);
+  assert.equal(refused.code, 'assistant_quota');
+  assert.match(refused.message, /^Acabou o limite de chamadas de hoje \(uso: 1 de 1 chamada; este pedido precisa de até 1 chamada\)\. O limite volta à meia-noite\./);
+  assert.equal(provider.calls, 0);
+ } finally { f.native.close(); }
+});
+test('test mode raises the daily limits until turned off, restores the previous ones and every click is audited with before and after', async () => {
+ const f = fixture(); try {
+  await configureAssistant(f.db, f.actors.owner, configInput({ dailyUsdMicros: 3_000_000, dailyTokens: 1_000_000, dailyCalls: 100, dailyMs: 3_600_000 }), secret);
+  const stored = () => JSON.parse(f.native.prepare('SELECT config_json FROM ai_organization_settings').get().config_json);
+  const audits = () => f.native.prepare("SELECT details FROM audit WHERE action='assistant.configure' ORDER BY rowid").all().map(row => JSON.parse(row.details));
+  await configureAssistant(f.db, f.actors.owner, configInput({ ...stored(), testMode: true, testModeRestore: { dailyUsdMicros: 10_000_000, dailyTokens: 5_000_000, dailyCalls: 1000, dailyMs: 14_400_000 } }, { expectedRevision: 1, deepseekKey: undefined }), secret);
+  let config = stored();
+  assert.equal(config.testMode, true);
+  assert.deepEqual([config.dailyUsdMicros, config.dailyTokens, config.dailyCalls, config.dailyMs], [5_000_000, 3_000_000, 500, 10_800_000]);
+  assert.deepEqual(config.testModeRestore, { dailyUsdMicros: 3_000_000, dailyTokens: 1_000_000, dailyCalls: 100, dailyMs: 3_600_000 }, 'o navegador não escolhe os limites guardados');
+  const on = audits().at(-1);
+  assert.equal(on.testMode, true);
+  assert.deepEqual(on.changes.find(change => change.field === 'dailyTokens'), { field: 'dailyTokens', before: 1_000_000, after: 3_000_000 });
+  assert.deepEqual(on.changes.find(change => change.field === 'testMode'), { field: 'testMode', before: false, after: true });
+  await configureAssistant(f.db, f.actors.owner, configInput({ ...stored(), dailyCalls: 600, testModeRestore: null }, { expectedRevision: 2, deepseekKey: undefined }), secret);
+  assert.deepEqual(stored().testModeRestore, { dailyUsdMicros: 3_000_000, dailyTokens: 1_000_000, dailyCalls: 100, dailyMs: 3_600_000 }, 'editar durante o teste mantém os limites guardados');
+  await configureAssistant(f.db, f.actors.owner, configInput({ ...stored(), testMode: false }, { expectedRevision: 3, deepseekKey: undefined }), secret);
+  config = stored();
+  assert.deepEqual([config.testMode, config.dailyUsdMicros, config.dailyTokens, config.dailyCalls, config.dailyMs, config.testModeRestore], [false, 3_000_000, 1_000_000, 100, 3_600_000, null]);
+  const off = audits().at(-1);
+  assert.deepEqual(off.changes.find(change => change.field === 'dailyCalls'), { field: 'dailyCalls', before: 600, after: 100 });
+  assert.equal(audits().length, 4);
+  assert.ok(!JSON.stringify(audits()).includes(key), 'histórico nunca guarda chave');
+  await assert.rejects(configureAssistant(f.db, f.actors.owner, configInput({ ...stored(), dailyCalls: 1001 }, { expectedRevision: 4, deepseekKey: undefined }), secret), error => error.code === 'assistant_budget' && /chamadas por dia/.test(error.message));
+ } finally { f.native.close(); }
+});
 test('each daily ceiling independently refuses a request before provider transport', async () => {
  for (const ceiling of [{ dailyUsdMicros: 1000 }, { dailyTokens: 1000 }, { dailyMs: 1000 }]) {
   const f = fixture(), provider = fakeProvider(); try { await configureAssistant(f.db, f.actors.owner, configInput(ceiling), secret); await assert.rejects(prepareAssistantPlan(f.db, f.actors.inventory, request(), secret, { fetcher: provider.fetch }), code('assistant_quota')); assert.equal(provider.calls, 0); assert.equal(f.native.prepare('SELECT COUNT(*) n FROM ai_calls').get().n, 0); assert.equal(f.native.prepare('SELECT calls FROM ai_organization_usage').get().calls, 0); } finally { f.native.close(); }

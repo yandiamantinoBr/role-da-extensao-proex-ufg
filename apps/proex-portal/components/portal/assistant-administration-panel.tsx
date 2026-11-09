@@ -7,10 +7,12 @@ import { DEFAULT_ASSISTANT_CONFIG, validateConfig, type AssistantConfig } from '
 import AssistantConnectionPanel from './assistant-connection-panel';
 import ModelCatalogPanel from './model-catalog-panel';
 import AiSpendingSlot from './ai-spending-slot';
+import AiLimitsSection, { type AiUsage } from './ai-limits-section';
+import { AI_LIMITS_EVENT, takeAiLimitsRequest } from './ai-limits-link';
 import styles from './credential-vault-panel.module.css';
 
 type Organization = { id: string; name: string; canConfigure: boolean; legacySttProvider?: 'groq' | 'deepgram'; usageIsMine?: boolean };
-type Status = { organizationId: string; canConfigure: boolean; canDelegate?: boolean; revision?: number; config?: AssistantConfig; organizations: Organization[]; candidates?: {userId:string;name:string}[]; grants?: {id:string;userId:string}[] };
+type Status = { organizationId: string; canConfigure: boolean; canDelegate?: boolean; revision?: number; config?: AssistantConfig; organizations: Organization[]; candidates?: {userId:string;name:string}[]; grants?: {id:string;userId:string}[]; usage?: AiUsage };
 type Props = { canManageKeys?: boolean; refreshKey?: number; onChanged?: () => void; renderCredentials?: (organizationId: string, configurationBusy: boolean) => ReactNode };
 class AdminError extends Error { constructor(readonly status: number, message: string) { super(message); } }
 async function responseValue(response: Response): Promise<Record<string, unknown>> {
@@ -29,7 +31,7 @@ const post = async (input: Record<string, unknown>, signal: AbortSignal) => resp
 
 export default function AssistantAdministrationPanel({ canManageKeys=false, refreshKey = 0, onChanged, renderCredentials }: Props) {
   const [selection,setSelection] = useState(''), [data,setData] = useState<{scope:string;status:Status}|null>(null), [refresh,setRefresh] = useState(0);
-  const [config,setConfig] = useState<AssistantConfig>(DEFAULT_ASSISTANT_CONFIG), [busy,setBusy] = useState(false), [failure,setFailure] = useState(''), [notice,setNotice] = useState(''), [delegateId,setDelegateId] = useState(''), [view,setView] = useState<'keys'|'functions'|'models'|'spending'|'diagnostics'>(canManageKeys?'keys':'functions'), [roleOptions,setRoleOptions] = useState<{id:string;label:string;vision:boolean;hasKey:boolean}[]>([]);
+  const [config,setConfig] = useState<AssistantConfig>(DEFAULT_ASSISTANT_CONFIG), [busy,setBusy] = useState(false), [failure,setFailure] = useState(''), [notice,setNotice] = useState(''), [delegateId,setDelegateId] = useState(''), [view,setView] = useState<'keys'|'functions'|'models'|'spending'|'diagnostics'>(canManageKeys?'keys':'functions'), [roleOptions,setRoleOptions] = useState<{id:string;label:string;vision:boolean;hasKey:boolean}[]>([]), [limitsOpen,setLimitsOpen] = useState(false), [revealLimits,setRevealLimits] = useState(false);
   const active = useRef(true), epoch = useRef(0), mutationEpoch=useRef(0), mutation = useRef<AbortController|null>(null), message = useRef<HTMLParagraphElement>(null);
   const status = data?.scope === selection ? data.status : null;
   useEffect(() => { active.current=true; return () => { active.current=false; mutation.current?.abort(); }; }, []);
@@ -45,6 +47,16 @@ export default function AssistantAdministrationPanel({ canManageKeys=false, refr
     return () => controller.abort();
   }, [selection,refresh,refreshKey]);
   useEffect(() => { if (notice||failure) message.current?.focus(); }, [notice,failure]);
+  // "Ajustar limites" (mensagem de limite atingido no Rolê): abre Funções e acesso → Limites e cotas.
+  useEffect(() => {
+    const take = () => { if (takeAiLimitsRequest()) { setView('functions'); setLimitsOpen(true); setRevealLimits(true); } };
+    take(); window.addEventListener(AI_LIMITS_EVENT, take); return () => window.removeEventListener(AI_LIMITS_EVENT, take);
+  }, []);
+  useEffect(() => {
+    if (!revealLimits || !status?.canConfigure || view!=='functions') return;
+    const frame = window.requestAnimationFrame(() => { const target = document.getElementById('ai-limits'); if (!target) return; setRevealLimits(false); target.scrollIntoView({ block:'start', behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); target.querySelector('summary')?.focus({ preventScroll:true }); });
+    return () => window.cancelAnimationFrame(frame);
+  }, [revealLimits,status,view]);
   // Catalog models for the Rolê selects, loaded only when a select is opened (administração geral only).
   const optionsFor = useRef('');
   function loadRoleOptions() {
@@ -59,14 +71,14 @@ export default function AssistantAdministrationPanel({ canManageKeys=false, refr
       }).catch(() => { optionsFor.current = ''; });
   }
   function selectOrganization(value: string) { mutation.current?.abort(); ++epoch.current; ++mutationEpoch.current; setSelection(value); setData(null); setFailure(''); setNotice(''); setDelegateId(''); setBusy(false); }
-  async function save(action: 'configure'|'grant.create'|'grant.revoke', grantId?: string) {
+  async function save(action: 'configure'|'grant.create'|'grant.revoke', grantId?: string, override?: AssistantConfig) {
     if (busy || !status?.canConfigure || !status.organizationId || status.organizationId!==selection) return;
     const request=++mutationEpoch.current, controller=new AbortController(); mutation.current?.abort(); mutation.current=controller;
     setBusy(true); setFailure(''); setNotice('');
     try {
-      await post({action,organizationId:selection,...(action==='configure'?{config,expectedRevision:status.revision??0}:grantId?{grantId}:{userId:delegateId})},controller.signal);
+      await post({action,organizationId:selection,...(action==='configure'?{config:override??config,expectedRevision:status.revision??0}:grantId?{grantId}:{userId:delegateId})},controller.signal);
       if (!active.current||controller.signal.aborted||request!==mutationEpoch.current) return;
-      setNotice(action==='configure'?'Funções, acesso e limites salvos. Nenhuma chamada de IA foi iniciada.':action==='grant.create'?'Permissão de configuração concedida. Isso não libera cadastro de chaves.':'Permissão de configuração revogada.'); setDelegateId(''); setData(null); setRefresh(value=>value+1); onChanged?.();
+      setNotice(action==='configure'?(override?(override.testMode?'Modo de testes ligado. Os limites ficam altos até alguém desligar; a mudança está em Registros.':'Modo de testes desligado. Os limites de antes voltaram; a mudança está em Registros.'):'Funções, acesso e limites salvos. Nenhuma chamada de IA foi iniciada.'):action==='grant.create'?'Permissão de configuração concedida. Isso não libera cadastro de chaves.':'Permissão de configuração revogada.'); setDelegateId(''); setData(null); setRefresh(value=>value+1); onChanged?.();
     } catch(error) {
       if (!active.current||controller.signal.aborted||request!==mutationEpoch.current) return;
       if (error instanceof AdminError&&(error.status===401||error.status===403)) { setData(null); setDelegateId(''); }
@@ -77,6 +89,7 @@ export default function AssistantAdministrationPanel({ canManageKeys=false, refr
   const provider=config.sttProvider==='groq'||config.sttProvider==='deepgram'?config.sttProvider:status?.organizations.find(org=>org.id===selection)?.legacySttProvider??'deepgram';
   return <div className={styles.panel}>
     <p className={styles.lead}>{canManageKeys?'Três passos: cole e teste a chave, ligue só o que for usar e defina o limite por dia.':'Ajuste o uso, as funções e os limites autorizados. O cadastro de chaves fica com a administração geral.'}</p>
+    {status?.canConfigure&&status.config?.testMode&&<p className={styles.note} role="status"><strong>Modo de testes ligado:</strong> os limites de IA estão altos até alguém desligar em Funções e acesso → Limites e cotas.</p>}
     {(failure||notice)&&<p ref={message} tabIndex={-1} role={failure?'alert':'status'} className={failure?'p-inline-error':styles.note}>{failure||notice}</p>}
     {!status&&!failure&&<p role="status">Consultando suas permissões e os ajustes…</p>}
     {failure&&<button type="button" className="p-button p-button-subtle" disabled={busy} onClick={()=>{setFailure('');setRefresh(value=>value+1);}}>Atualizar ajustes</button>}
@@ -117,12 +130,7 @@ export default function AssistantAdministrationPanel({ canManageKeys=false, refr
           <label className={styles.confirm}><input type="checkbox" disabled={busy} checked={config.sttEnabled} onChange={event=>setConfig({...config,sttEnabled:event.target.checked})}/><span>Habilitar transcrição {provider==='groq'?'Groq':'Deepgram'} em português</span></label><p className="p-form-help">Trocar o provedor desmarca a função para nova confirmação. O texto transcrito só é usado depois de revisado. {provider==='groq'?'Reserva estimada de US$ 0,04 por hora, com mínimo de 10 segundos por envio. A faixa gratuita depende da conta Groq.':'O custo e a autorização de transcrição dependem da conta Deepgram.'}</p>
         </div>
       </section>
-      <details className={styles.configuration}><summary><CircleDollarSign size={20} aria-hidden="true"/>Limites e cotas · até US$ {config.dailyUsdMicros/1_000_000}/dia</summary><p>Os limites são compartilhados pela organização. As reservas bloqueiam novas chamadas ao atingir o teto. Falhas também consomem a reserva preventiva.</p><div className={styles.limitGrid}>
-        <label className="p-field"><span>Teto diário em dólares (US$)</span><input disabled={busy} type="number" min="0.001" max="10" step="0.001" value={config.dailyUsdMicros/1_000_000} onChange={event=>setConfig({...config,dailyUsdMicros:Math.round(Number(event.target.value)*1_000_000)})}/></label>
-        <label className="p-field"><span>Chamadas por dia</span><input disabled={busy} type="number" min="1" max="100" step="1" value={config.dailyCalls} onChange={event=>setConfig({...config,dailyCalls:Number(event.target.value)})}/></label>
-        <label className="p-field"><span>Tokens por dia</span><input disabled={busy} type="number" min="1000" max="1000000" step="1" value={config.dailyTokens} onChange={event=>setConfig({...config,dailyTokens:Number(event.target.value)})}/></label>
-        <label className="p-field"><span>Prazo por chamada em segundos</span><input disabled={busy} type="number" min="1" max="20" step="1" value={config.timeoutMs/1000} onChange={event=>setConfig({...config,timeoutMs:Number(event.target.value)*1000})}/></label>
-      </div></details><div className={styles.actions}><button type="button" disabled={busy} className="p-button p-button-primary" onClick={()=>void save('configure')}><Check size={18} aria-hidden="true"/>{busy?'Salvando…':'Salvar funções, acesso e limites'}</button></div>
+      {status.config&&<AiLimitsSection config={config} saved={status.config} usage={status.usage} busy={busy} open={limitsOpen} onOpenChange={setLimitsOpen} onChange={setConfig} onTestMode={on=>void save('configure',undefined,{...status.config!,testMode:on})}/>}<div className={styles.actions}><button type="button" disabled={busy} className="p-button p-button-primary" onClick={()=>void save('configure')}><Check size={18} aria-hidden="true"/>{busy?'Salvando…':'Salvar funções, acesso e limites'}</button></div>
       {status.canDelegate&&<details className={styles.configuration}><summary><Users size={19} aria-hidden="true"/>Quem pode configurar esta organização</summary><p className="p-form-help">A permissão é nominal, não vem do nome da equipe TI. Ela permite ajustar funções, acesso, limites e diagnóstico; não permite cadastrar ou recuperar chaves.</p><label className="p-field"><span>Integrante autorizado</span><select disabled={busy} value={delegateId} onChange={event=>setDelegateId(event.target.value)}><option value="">Escolha uma pessoa da organização</option>{status.candidates?.map(person=><option key={person.userId} value={person.userId}>{person.name}</option>)}</select></label><button type="button" disabled={busy||!delegateId} className="p-button p-button-subtle" onClick={()=>void save('grant.create')}>Permitir configuração de IA</button><ul className={styles.list}>{status.grants?.map(grant=><li className={styles.delegate} key={grant.id}><span>{status.candidates?.find(person=>person.userId===grant.userId)?.name??'Integrante autorizado'}</span><button type="button" className="p-button p-button-subtle" disabled={busy} onClick={()=>void save('grant.revoke',grant.id)}>Revogar permissão</button></li>)}</ul></details>}
       </>}
       {view==='models'&&canManageKeys&&<ModelCatalogPanel organizationId={selection}/>}

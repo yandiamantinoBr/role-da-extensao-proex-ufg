@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { AudioLines, History, KeyRound, LoaderCircle, ScanText, ShieldCheck } from 'lucide-react';
 import { PROVIDERS, credentialProviders, type CredentialProvider } from '@/lib/assistant/contracts';
 import AssistantAdministrationPanel from './assistant-administration-panel';
+import { AI_LIMITS_EVENT, hasAiLimitsRequest } from './ai-limits-link';
 import CatalogKeysGroup from './catalog-keys-group';
 import styles from './credential-vault-panel.module.css';
 
@@ -237,6 +238,11 @@ export default function CredentialVaultSettings({ groupClass, bodyClass, canMana
   const [opened, setOpened] = useState(false);
   const [configurationRevision,setConfigurationRevision]=useState(0),[vaultRevision,setVaultRevision]=useState(0);
   const group = useRef<HTMLDetailsElement>(null);
+  // "Ajustar limites": abre este grupo; o painel de IA consome o pedido e leva até Limites e cotas.
+  useEffect(() => {
+    const open = () => { if (hasAiLimitsRequest() && group.current && !group.current.open) group.current.open = true; };
+    open(); window.addEventListener(AI_LIMITS_EVENT, open); return () => window.removeEventListener(AI_LIMITS_EVENT, open);
+  }, []);
   useEffect(() => {
     if (window.location.hash !== '#ai-credentials') return;
     const frame = window.requestAnimationFrame(() => {
