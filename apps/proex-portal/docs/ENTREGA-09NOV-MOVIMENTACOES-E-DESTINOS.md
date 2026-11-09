@@ -41,7 +41,7 @@ Pedido do Yan (09/11), a partir do Histórico do Botton azul: desfazer ou corrig
    - O catálogo ganhou filtros por dono, tipo, categoria, situação e foto. Também passou a listar os kits de brinde com quantos podem ser montados.
 8. **Relatórios sem contagem dupla.** Relatório de saídas, detalhamento, consumo por unidade, previsão, agenda e gráficos de atividade contam cada cadeia uma vez, pela versão atual (`effectiveMovementSql`). O histórico bruto continua íntegro.
 
-## Migração 0038 (`drizzle/0038_material_movement_revisions.sql`)
+## Migração 0039 (`drizzle/0039_material_movement_revisions.sql`)
 
 - A migração só acrescenta: cinco tabelas, duas colunas nulas em `items` e gatilhos.
 - Não altera nenhum saldo, movimento, contexto ou foto existente, nem os brindes do CONPEEX.

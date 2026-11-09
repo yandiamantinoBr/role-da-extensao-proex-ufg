@@ -61,7 +61,7 @@ test('attachment inventory is owner-only, paginated and excludes names, contacts
   const second=await listSyncAttachments(f.db,f.actor,{limit:1,after:first.nextCursor});assert.equal(second.attachments[0].id,'attachment-a');assert.equal(second.nextCursor,null);
   assert.doesNotMatch(JSON.stringify([first,second]),/private-r2|Private name|private-photo-name|owner@example/);
   await assert.rejects(listSyncAttachments(f.db,{...f.actor,userId:'forged-owner'}),error=>error.status===403);
-  // 0038: hiding an attachment requires its deletion log in the same batch.
+  // 0039: hiding an attachment requires its deletion log in the same batch.
   f.db.native.prepare("INSERT INTO record_attachment_deletions(attachment_id,project_id,reason,actor_id,created_at) SELECT id,project_id,'Arquivo sintético removido','owner-a',? FROM record_attachments WHERE id='attachment-a'").run(f.now);
   f.db.native.prepare("UPDATE record_attachments SET deleted_at=? WHERE id='attachment-a'").run(f.now);
   assert.equal((await listSyncAttachments(f.db,f.actor)).attachments.length,1);

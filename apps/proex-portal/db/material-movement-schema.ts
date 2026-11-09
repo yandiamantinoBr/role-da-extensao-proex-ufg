@@ -2,7 +2,7 @@ import {sql} from 'drizzle-orm';
 import {check,index,integer,sqliteTable,text,uniqueIndex} from 'drizzle-orm/sqlite-core';
 import {items,organizationalUnits,organizations,projects,recordAttachments,records,stockMovements} from './base-schema';
 /**
- * Mirrors drizzle/0038_material_movement_revisions.sql. Triggers (scope, immutability and the
+ * Mirrors drizzle/0039_material_movement_revisions.sql. Triggers (scope, immutability and the
  * deletion log required before hiding an attachment) live only in the SQL migration.
  */
 export const materialDestinations=sqliteTable('material_destinations',{
