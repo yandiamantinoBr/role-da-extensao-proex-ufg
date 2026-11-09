@@ -30,10 +30,11 @@ export async function ensureNativePrincipal(){
  db.prepare("INSERT OR IGNORE INTO identity_aliases(provider,subject,user_id,created_at) SELECT 'native',?,?,? FROM portal_users WHERE user_id=? AND status='active' AND activation_pending=0 AND anonymized_at IS NULL").bind(native.userId,native.userId,now,native.userId)]);
  return present(db,native.userId,email,'native');
 }
-export async function getPortalUser():Promise<PortalUser|null>{
+/** `refresh:false` reads the session without sliding its expiry, so the request writes nothing about the account (used by the anonymous ombuds). */
+export async function getPortalUser(options:{refresh?:boolean}={}):Promise<PortalUser|null>{
  const h=await headers(),db=database();
  if((h.get('cookie')||'').includes('proex.')){
-  const auth=await authForRequest(db),session=await auth.api.getSession({headers:h,query:{disableCookieCache:true}});
+  const auth=await authForRequest(db),session=await auth.api.getSession({headers:h,query:{disableCookieCache:true,...(options.refresh===false?{disableRefresh:true}:{})}});
   if(session){const alias=await one(db,"SELECT user_id FROM identity_aliases WHERE provider='password' AND subject=?",[session.user.id]);return alias?present(db,alias.user_id,session.user.email.toLowerCase(),'password',session.user.id):null;}
  }
  // Native proof is accepted only by the explicit initial-password bridge.
