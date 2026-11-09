@@ -74,3 +74,53 @@ Riscos que o código não elimina (revisão independente de 09/11):
 `tests/community-phase2.test.mjs`: recados só entre quem compartilha a organização, só nomes, leitura só por quem recebeu, ocultar por pessoa, bloqueio, revogação dentro do lote, repetição idempotente, teto diário; selos só em horário útil de dias úteis, um por tipo por semana, nível, leitura repetida sem gravação, desligar e pausar sem cálculo, ninguém vê selos de outra pessoa, anonimização.
 
 O smoke do Worker reabre o D1 local depois de migração com `SELECT` solto (guarda da 0028), que travava `DROP TABLE` no Miniflare.
+
+# Comunidade · fase 3 (migração 0040)
+
+Premissas combinadas com a sessão coordenadora em 2026-11-09, para avançar sem esperar o Yan (fáceis de trocar; listadas também na aba "Espaço e premissas", visível à administração geral):
+
+1. **Armazenamento (opção A):** imagens no mesmo armazenamento privado das fotos de materiais (tabela de objetos no Postgres). Todo acesso passa por `lib/community/media-store.ts` (`MediaStore`); para usar Supabase Storage com bucket privado, troque só `chatMediaStore()`.
+2. **Onde se conversa:** uma conversa por projeto (quem lê o projeto) e conversas diretas com o mesmo alcance dos recados. Nada entre organizações.
+3. Demais pontos seguem as premissas da especificação na Vault.
+
+## Chat
+
+- `lib/community/chat.ts`, rotas `/api/community/chat` (lista, mensagens, abrir, enviar, ler, apagar), `/api/community/chat/media` (envio de imagem) e `/api/community/chat/media/[id]` (leitura), tela `components/portal/community-chat.tsx`.
+- **Ler nunca grava.** A tela consulta novas mensagens a cada 8 segundos só com a página visível; marcar como lido é um pedido explícito, feito só quando há mensagem nova de outra pessoa. Isso evita regravar o instantâneo do banco a cada consulta.
+- Texto até 2.000 caracteres, com emoji; 300 mensagens por pessoa em 24 h. Cada pessoa apaga as próprias mensagens (a imagem é removida do armazenamento na hora).
+- **Imagens:** o navegador reduz para até 1.600 px e recodifica (WebP ou JPEG), o que remove EXIF/GPS e mantém a orientação. O servidor confere o tipo real pelos primeiros bytes (JPEG, PNG, WebP; recusa GIF e HEIC) e **recusa** imagem com EXIF/XMP. Até 1,5 MB por arquivo, 20 por pessoa em 24 h e 150 MB ativos por organização. Servidas só a quem lê a conversa, com `nosniff`, `sandbox` e cache privado de 1 hora.
+- **Prazo de 180 dias:** depois disso a imagem deixa de ser servida e é removida em lotes de 10, a cada envio de imagem. A mensagem mostra "Foto removida após 180 dias".
+- A anonimização apaga o texto das mensagens da pessoa, agenda a remoção das imagens dela (`private_object_deletions`) e limpa leituras e fila de e-mail.
+
+## Espaço do banco
+
+- `GET /api/community/storage` (só administração geral) e aba "Espaço e premissas". Na Vercel + Supabase mede `pg_database_size` e o tamanho das tabelas do instantâneo, do histórico (60 dias) e dos objetos, por funções de catálogo somente leitura (`platform-node/store.ts`, `usage()`). Alerta a partir de 70% de 500 MB. Em outro ambiente mostra "não informado", nunca zero.
+
+## Aviso de recado por e-mail
+
+- Mesmo canal dos avisos de demanda (MailApp, credencial `pne_`, configuração, consentimento, cotas e intervalo), com fila própria `community_email_queue` (ids `cm-…`) em `lib/community/message-email.ts`. A rota `/api/follow-up/email` encaminha `begin`, `ack`, `recover` e `reconcile` pelo prefixo do id.
+- O e-mail diz só "Você recebeu um recado no Portal PROEX" e o link `/?module=community&tab=messages`: sem conteúdo, sem remetente.
+- Vale quando a pessoa já ligou os avisos por e-mail (em Demandas) **e** não desligou o interruptor "Avisar por e-mail quando eu receber um recado", em Recados (ligado por padrão). Não sai se o recado já foi lido, ocultado, se houver bloqueio ou se as pessoas deixaram de se alcançar.
+- **Passo necessário na conta Google:** o script `public/integracoes/proex-notificacoes.gs` foi atualizado para aceitar o modelo de recado e pedir esse tipo no `dispatch.claim` (`kinds`). Enquanto o projeto Apps Script de avisos não receber a versão nova, ele continua enviando só avisos de demanda (o servidor não oferece recados a um script que não os pede).
+
+## Testes da fase 3
+
+`tests/community-phase3.test.mjs` (chat do projeto e direto, ler sem gravar, bloqueio, imagens com tipo real e sem metadados, limites, acesso, apagar, prazo, espaço só para a administração, anonimização, e-mail de recado sem conteúdo com consentimento, interruptor, leitura e bloqueio) e um caso novo em `tests/follow-up-email-apps-script.test.mjs` (modelo de recado aceito; variações recusadas).
+
+## Quem lê a ouvidoria (designações, 0040)
+
+Resposta do Yan em 2026-11-09 (Decisões): "pode ser alguém designado pela Proex também, mas a princípio... é a administração geral e as pessoas que têm acesso total... designar melhor isso".
+
+- Lê por padrão: responsável ou gestor ativo **sem restrição de projeto**, no portal inteiro ou na organização PROEX (`org_proex`; a migração 0008 coloca nela os vínculos sem projeto de quem não é responsável). Premissa para "acesso total"; trocar em `PORTAL_WIDE_READER` (`lib/community/ombuds.ts`).
+- A administração geral (responsável global) designa pessoas com início, fim e motivo (`ombuds_designations`), e revoga com motivo. Cada designação e revogação fica na tabela e na auditoria (`ombuds.designate`, `ombuds.designation.revoke`); o histórico só aparece para a administração geral.
+- Um designado lê entre as datas, enquanto a conta e algum vínculo estiverem ativos; revogado ou fora do prazo, deixa de ler.
+- Antes de escrever, a pessoa vê "Quem pode ler os relatos agora" (só nomes e se é acesso total ou designação até tal data). Ninguém que lê, inclusive designados, vê o autor: não há autor gravado.
+
+## Correções após a revisão de segurança da fase 3
+
+- Lista de conversas diretas respeita bloqueio e alcance (apelidos próprios na consulta de acesso); chat de projeto arquivado fecha.
+- Aviso de recado: no máximo um aviso pendente por pessoa até ela ler; cotas próprias de recados (um terço da cota diária da organização; 2 por pessoa por dia), além das compartilhadas, para não consumir os avisos de demanda.
+- Imagens: largura e altura lidas do cabeçalho; mais de 1.600 px de um lado é recusado. A linha é gravada antes do objeto; se o armazenamento falhar, a linha fica apagada (sem arquivo órfão). A limpeza só marca como apagada depois de remover o arquivo e roda também a cada mensagem enviada. Cache da imagem: 60 s. O corpo do envio é lido com teto, mesmo se o cabeçalho de tamanho mentir.
+- Leitor de objetos local (`platform-node/env.ts`, `ObjectBucket.arrayBuffer`) pode devolver um buffer maior que o objeto no armazenamento em disco; o chat lê pelo `body`. Observação para quem mantém a plataforma.
+
+Limites conhecidos: a limpeza dos 180 dias depende de uso (envios de imagem ou mensagem), não de uma rotina agendada; a consulta a cada 8 s traz só mensagens novas (uma mensagem apagada some para os outros ao reabrir a conversa); a caixa de enviados da conta Google que manda os avisos registra quem recebeu aviso e quando.

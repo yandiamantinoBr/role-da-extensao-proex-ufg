@@ -22,3 +22,14 @@ Crítica visual independente: 6,9 → 8,0 → nota final registrada na PR. Não 
 - `fase2-*-selos.png`: nível, quatro selos com arte provisória, regras e pausa.
 
 Crítica visual independente da fase 2: 8,7 → 9,2, sem P0/P1/P2. Depois das capturas, "Bloquear" voltou a ter nome visível.
+
+## Fase 3 (conversas, espaço, aviso de recado, designações da ouvidoria)
+
+- `fase3-*-conversa-projeto.png`: conversa de um projeto com emoji e uma foto sintética (gradiente desenhado no próprio navegador, sem foto real).
+- `fase3-390-*-conversas-lista.png`: lista de conversas no celular.
+- `fase3-1366-*-espaco.png`: espaço do banco e premissas em uso (no QA local o tamanho total não é medido; a tela diz isso).
+- `fase3-*-recados-email.png`: interruptor do aviso de recado por e-mail.
+- `fase3-*-ouvidoria-leitores.png`: quem pode ler a ouvidoria, mostrado antes de escrever.
+- `fase3-1366-*-designacoes.png`: designação de leitores da ouvidoria com prazo e motivo, e histórico.
+
+Crítica visual independente da fase 3: 8,6 → 9,0, sem P0/P1. Revisão de segurança independente: sem P0/P1; os P2 foram corrigidos.

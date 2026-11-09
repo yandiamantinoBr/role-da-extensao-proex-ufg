@@ -96,13 +96,15 @@ function avisoProcessar_(pilot) {
       if (Date.now() - start >= NOTIFY_BUDGET_MS) throw avisoErro_('email_time_budget');
       if (avisoConta_() !== actual) throw avisoErro_('email_sender_mismatch');
       var quota = MailApp.getRemainingDailyQuota(); if (!Number.isSafeInteger(quota) || quota < 1) { avisoEstado_({ status: 'google_quota', at: new Date().toISOString(), accepted: accepted, remainingQuota: Math.max(0, quota || 0) }); return { accepted: accepted, state: 'google_quota' }; }
-      var response = avisoApi_(Object.assign({}, common, { action: pilot ? 'dispatch.pilot.claim' : 'dispatch.claim', remainingQuota: quota }));
+      var response = avisoApi_(Object.assign({}, common, pilot ? { action: 'dispatch.pilot.claim', remainingQuota: quota } : { action: 'dispatch.claim', remainingQuota: quota, kinds: ['demand', 'message'] }));
       if (!response.claim) { avisoEstado_({ status: response.state || 'idle', at: new Date().toISOString(), accepted: accepted, remainingQuota: quota }); return { accepted: accepted, state: response.state || 'idle' }; }
       pending = { organizationId: organizationId, installerEmail: actual, id: response.claim.id, claimToken: response.claim.claimToken, stage: 'begin_pending', pilot: !!pilot }; avisoPending_(pending);
       var message = avisoApi_(Object.assign({}, common, { action: pilot ? 'dispatch.pilot.begin' : 'dispatch.begin', id: pending.id, claimToken: pending.claimToken, remainingQuota: quota }));
-      if (message.senderEmail !== actual || !message.acceptanceToken || !/^[A-Za-z0-9_-]{20,100}$/.test(message.acceptanceToken) || message.subject !== 'PROEX · Nova demanda' || typeof message.body !== 'string' || message.body.length > 800 || !/^Você recebeu uma demanda na PROEX\.\n\nAcesse o portal para consultar os detalhes:\nhttps:\/\//.test(message.body) || avisoEmail_(message.to) !== message.to || /[,;\r\n]/.test(message.to)) throw avisoErro_('email_message_invalid');
-      var linkLines = message.body.split('\n'), link = linkLines[linkLines.length - 1], expectedLink = props.getProperty('PORTAL_URL').replace(/:443$/, '') + '/?module=demands&demandId=';
-      if (link.indexOf(expectedLink) !== 0 || !/^[A-Za-z0-9._~%:-]+$/.test(link.slice(expectedLink.length))) throw avisoErro_('email_message_invalid');
+      // Dois modelos fixos: aviso de demanda (com o identificador) ou aviso de recado (sem conteúdo nem remetente).
+      var recado = !pilot && message.subject === 'PROEX · Novo recado';
+      if (message.senderEmail !== actual || !message.acceptanceToken || !/^[A-Za-z0-9_-]{20,100}$/.test(message.acceptanceToken) || (message.subject !== 'PROEX · Nova demanda' && !recado) || typeof message.body !== 'string' || message.body.length > 800 || !(recado ? /^Você recebeu um recado no Portal PROEX\.\n\nAcesse o portal para ler:\nhttps:\/\//.test(message.body) : /^Você recebeu uma demanda na PROEX\.\n\nAcesse o portal para consultar os detalhes:\nhttps:\/\//.test(message.body)) || avisoEmail_(message.to) !== message.to || /[,;\r\n]/.test(message.to)) throw avisoErro_('email_message_invalid');
+      var linkLines = message.body.split('\n'), link = linkLines[linkLines.length - 1], portalBase = props.getProperty('PORTAL_URL').replace(/:443$/, ''), expectedLink = portalBase + '/?module=demands&demandId=';
+      if (recado ? link !== portalBase + '/?module=community&tab=messages' : (link.indexOf(expectedLink) !== 0 || !/^[A-Za-z0-9._~%:-]+$/.test(link.slice(expectedLink.length)))) throw avisoErro_('email_message_invalid');
       if (pilot && message.to !== actual) throw avisoErro_('email_pilot_recipient_mismatch');
       if (Date.now() - start >= NOTIFY_BUDGET_MS || avisoConta_() !== actual || MailApp.getRemainingDailyQuota() < 1) throw avisoErro_('email_pre_send_changed');
       pending.stage = 'sending'; pending.acceptanceToken = message.acceptanceToken; avisoPending_(pending);

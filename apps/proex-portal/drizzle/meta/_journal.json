@@ -281,6 +281,13 @@
       "when": 1794242770422,
       "tag": "0039_material_movement_revisions",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "6",
+      "when": 1794244061548,
+      "tag": "0040_community_chat",
+      "breakpoints": true
     }
   ]
 }

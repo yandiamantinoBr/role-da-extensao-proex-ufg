@@ -6,6 +6,8 @@ type RuntimeVars=Record<string,string|undefined>;
 const vars=()=>env as unknown as RuntimeVars;
 export function database():D1Database{if(!env.DB)throw new HttpError(503,'O banco do portal ainda não está disponível.');return env.DB;}
 export function bucket():R2Bucket{if(!env.BUCKET)throw new HttpError(503,'O armazenamento de anexos ainda não está disponível.');return env.BUCKET;}
+/** Space used by the hosting database, when the runtime can measure it (Node + Postgres). Never throws. */
+export async function storageUsage():Promise<{backend:string;databaseBytes:number|null;snapshotBytes:number|null;historyBytes:number|null;objectBytes:number|null}|null>{try{const measure=(env as unknown as Record<string,unknown>).PROEX_STORAGE_USAGE;return typeof measure==='function'?await (measure as ()=>Promise<never>)():null;}catch{return null;}}
 export function ownerEmail():string|undefined{return vars().OWNER_EMAIL;}
 /** Origem pública configurada do portal (BETTER_AUTH_URL), sem depender do cabeçalho Host do pedido. */
 export function portalOrigin():string|undefined{try{const value=vars().BETTER_AUTH_URL;if(typeof value!=='string'||!value)return undefined;const url=new URL(value);return url.protocol==='https:'||url.hostname==='127.0.0.1'||url.hostname==='localhost'?url.origin:undefined;}catch{return undefined;}}

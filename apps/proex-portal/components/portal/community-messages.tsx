@@ -8,8 +8,10 @@ import styles from './community.module.css';
 type Person = { id: string; name: string };
 type Organization = { id: string; name: string; people: Person[] };
 type Message = { id: string; organizationId: string; organizationName: string; body: string; createdAt: string; readAt: string | null; senderId: string; senderName: string; recipientId: string; recipientName: string };
-type List = { inbox: Message[]; sent: Message[]; unread: number };
+type List = { inbox: Message[]; sent: Message[]; unread: number; email?: { messageEmail: boolean; emailConsent: boolean } };
 const API = '/api/community/messages';
+/** In-portal module link (the portal client intercepts same-origin module links). */
+const DEMANDS_HREF = ['/', '?module=demands'].join('');
 
 /** Direct messages between people of the same organization. Only sender and recipient read them. */
 export function CommunityMessages({ onUnreadChange }: { onUnreadChange?(count: number): void }) {
@@ -36,7 +38,7 @@ export function CommunityMessages({ onUnreadChange }: { onUnreadChange?(count: n
   return <div className={`${styles.split} ${styles.messagesSplit}`}>
     <NewMessage key={replyTo?.nonce ?? 0} organizations={people.organizations} blocked={people.blocked} initial={replyTo} onSent={refresh}/>
     <section className={styles.card} aria-labelledby="community-messages-title">
-      <div className={styles.cardHead}><div><h2 id="community-messages-title">Seus recados</h2><p>Só você e a outra pessoa leem pelo portal. O backup completo, guardado pela administração, inclui o banco; recados ocultados pelos dois lados são apagados.</p></div><button type="button" className="p-icon-button" aria-label="Atualizar recados" onClick={refresh}><RefreshCw size={18}/></button></div>
+      <div className={styles.cardHead}><div><h2 id="community-messages-title">Seus recados</h2><p>A gestão não lê seus recados pelo portal; eles só entram na cópia de segurança guardada pela administração. Quando os dois lados ocultam um recado, ele é apagado.</p></div><button type="button" className="p-icon-button" aria-label="Atualizar recados" onClick={refresh}><RefreshCw size={18}/></button></div>
       <div className={styles.segmented} role="group" aria-label="Caixa de recados">
         <button type="button" aria-pressed={box === 'inbox'} onClick={() => setBox('inbox')}><Mail size={16} aria-hidden="true"/>Recebidos{list.unread > 0 && <span className={styles.count}>{list.unread}</span>}</button>
         <button type="button" aria-pressed={box === 'sent'} onClick={() => setBox('sent')}><Send size={16} aria-hidden="true"/>Enviados</button>
@@ -51,13 +53,15 @@ export function CommunityMessages({ onUnreadChange }: { onUnreadChange?(count: n
               {incoming && <button type="button" className="p-button p-button-subtle" onClick={() => { setReplyTo({ organizationId: message.organizationId, recipientId: message.senderId, nonce: Date.now() }); if (unread) void act({ action: 'read', id: message.id }); }}><Reply size={16}/>Responder</button>}
               {unread && <button type="button" className={styles.textButton} onClick={() => void act({ action: 'read', id: message.id })}><MailOpen size={15} aria-hidden="true"/>Marcar como lido</button>}
               <span className={styles.quietActions}>
-                <button type="button" className={styles.iconAction} aria-label="Ocultar este recado" title="Ocultar" onClick={() => void act({ action: 'hide', id: message.id }, 'Recado ocultado')}><EyeOff size={17}/></button>
+                <button type="button" className={styles.textButton} aria-label="Ocultar este recado" onClick={() => void act({ action: 'hide', id: message.id }, 'Recado ocultado')}><EyeOff size={15} aria-hidden="true"/>Ocultar</button>
                 {incoming && <button type="button" className={styles.textButton} aria-label={`Bloquear ${message.senderName}`} onClick={() => void act({ action: 'block', userId: message.senderId }, `${message.senderName} não pode mais mandar recados para você`)}><Ban size={15} aria-hidden="true"/>Bloquear</button>}
               </span>
             </div>
           </li>;
         })}</ul>}
       {blocked.length > 0 && <details className={styles.anonymity}><summary><Ban size={16} aria-hidden="true"/>Pessoas bloqueadas ({blocked.length})</summary><ul>{blocked.map(person => <li key={person.id}>{person.name} <button type="button" className={styles.textButton} onClick={() => void act({ action: 'unblock', userId: person.id }, 'Desbloqueado')}>Desbloquear</button></li>)}</ul></details>}
+      {list.email && <label className={styles.checkLine}><input type="checkbox" name="community-message-email" checked={list.email.messageEmail} onChange={event => void act({ action: 'email', enabled: event.target.checked }, event.target.checked ? 'Aviso por e-mail ligado' : 'Aviso por e-mail desligado')}/><span>Avisar por e-mail quando eu receber um recado (sem o conteúdo).</span></label>}
+      {list.email && !list.email.emailConsent && <p className={styles.callout}><Mail size={16} aria-hidden="true"/><span>Seus avisos por e-mail estão desligados, então nenhum aviso sai agora. <a className={styles.inlineLink} href={DEMANDS_HREF}>Ligar em Demandas</a>.</span></p>}
       <p className={styles.help}>Mostramos os 100 mais recentes de cada caixa. Para denunciar abuso sem se identificar, use a ouvidoria.</p>
     </section>
   </div>;
@@ -84,7 +88,7 @@ function NewMessage({ organizations, blocked, initial, onSent }: { organizations
     <label className={styles.field} htmlFor={`${id}-body`}><span>Recado</span></label>
     <textarea name="community-field-3" id={`${id}-body`} className={styles.textarea} maxLength={1000} value={body} disabled={busy} onChange={event => { setBody(event.target.value); key.current = ''; }} placeholder="Escreva o recado. Para passar uma demanda, use a transferência em Demandas e avise por aqui." aria-describedby={`${id}-help`}/>
     <p id={`${id}-help`} className={styles.help}>{body.length}/1.000{missing.length ? ` · Para enviar, falta ${missing.join(' e ')}.` : ''}</p>
-    <p className={styles.callout}><Lock size={16} aria-hidden="true"/><span>Só você e a pessoa leem este recado. Não use para senhas ou dados pessoais desnecessários.</span></p>
+    <p className={styles.callout}><Lock size={16} aria-hidden="true"/><span>A gestão não lê seus recados pelo portal. Não use para senhas ou dados pessoais desnecessários.</span></p>
     {error && <p role="alert" className="p-inline-error">{error}</p>}
     <button type="submit" className="p-button p-button-primary" disabled={busy || missing.length > 0}>{busy ? <LoaderCircle className="p-spin" size={16}/> : <Send size={16}/>}Enviar recado</button>
   </form>;
