@@ -30,7 +30,7 @@ function crc32(bytes: Uint8Array): number {
   for (const byte of bytes) crc = crcTable[(crc ^ byte) & 0xff] ^ (crc >>> 8);
   return (crc ^ 0xffffffff) >>> 0;
 }
-function zip(files: { name: string; data: string }[], mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'): Blob {
+export function zip(files: { name: string; data: string }[], mime = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'): Blob {
   const encoder = new TextEncoder(), parts: Uint8Array[] = [], central: Uint8Array[] = [];
   let offset = 0;
   for (const file of files) {

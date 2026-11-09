@@ -13,7 +13,7 @@ import type { Row } from '@/lib/database';
 import { isCivilDate } from '@/lib/civil-date';
 import { COMMUNICATION_CHANNELS, COMMUNICATION_NOTE_LIMIT, communicationLabel } from '@/lib/project-communication';
 import { useFormDraft, DraftNotice } from './use-form-draft';
-import { ProjectReportExports } from './reports-center';
+import ProjectReportBuilder from './project-report/builder';
 import { SheetShortcuts } from './sheet-shortcuts';
 export type ProjectShortcutModule = 'demands' | 'calendar';
 export type ProjectMaterialAction = (itemId:string, mode?:'view'|'edit'|'move') => void;
@@ -136,7 +136,10 @@ export default function ProjectDetail({projectId,projects,mutate,onBack,onEdit,o
   target?.focus({preventScroll:true});
   target?.scrollIntoView({block:'start'});
  },[editor]);
- const requestKey=JSON.stringify([projectId,reload,sheetOwnerId,refreshKey]),data=result?.key===requestKey?result.data:null,loading=result?.key!==requestKey,displayError=error||(result?.key===requestKey?result.error:'');
+ // Atualizações em segundo plano do MESMO projeto (a cada recarga do portal) mantêm a ficha na tela;
+ // outro projeto ou um erro nunca reaproveitam os dados anteriores: desmontar o
+ // conteúdo tirava o foco de quem digitava (relatório, formulários) e jogava a página para o topo.
+ const requestKey=JSON.stringify([projectId,reload,sheetOwnerId,refreshKey]),fresh=result?.key===requestKey,stale=!fresh&&result?.data?.project?.id===projectId?result.data:null,data=fresh?result.data:stale,loading=!fresh&&!stale,displayError=error||(fresh?result.error:'');
  useEffect(()=>{const controller=new AbortController();fetch(`/api/projects/${encodeURIComponent(projectId)}`,{cache:'no-store',signal:controller.signal}).then(async response=>{const body=await response.json() as Row;if(!response.ok)throw new Error(body.error||'Não foi possível abrir o projeto.');if(body?.project?.id!==projectId)throw new Error('A resposta não corresponde ao projeto solicitado.');if(!controller.signal.aborted)setResult({key:requestKey,data:body,error:'',receivedAt:Date.now()});}).catch(error=>{if(!controller.signal.aborted)setResult({key:requestKey,data:null,error:error.message,receivedAt:Date.now()});});return()=>controller.abort();},[projectId,requestKey]);
  function saved(){setError('');setEditor(null);setReload(value=>value+1);}
  async function restore(version:Row){if(!data||restoring)return;const entities=[data.project,...data.links,...data.calls,...data.schedule],current=entities.find(row=>row.id===version.entity_id);if(!current)return;setRestoring(true);setError('');try{await mutate('entity.restore',{entityType:version.entity_type,entityId:version.entity_id,restoreVersion:version.version,expectedVersion:current.version,operationKey:crypto.randomUUID()});setConfirmVersion(null);setReload(value=>value+1);}catch(error){setError(error instanceof Error?error.message:'Não foi possível restaurar.');}finally{setRestoring(false);}}
@@ -146,7 +149,6 @@ export default function ProjectDetail({projectId,projects,mutate,onBack,onEdit,o
  const communicationLinks = projectLinks.filter(link => communicationLabel(link.communication_channel));
  const referenceLinks = projectLinks.filter(link => !communicationLabel(link.communication_channel));
  const materialsUrl=sheetOwnerId?safeUrl(data?.spreadsheetLinks?.materialsUrl):'',projectSheetLinks=(data?.links??[]).filter((link:Row)=>{try{return new URL(String(link.url)).hostname==='docs.google.com'&&new URL(String(link.url)).pathname.startsWith('/spreadsheets/');}catch{return false;}});
- const hasSpreadsheets = Boolean(materialsUrl || projectSheetLinks.length);
  const shortcuts = projects.some(candidate => candidate.id === projectId) ? shortcutModules : [];
  const rel=(key:string)=>relationships[key] as Row[]|null|undefined;
  const items=rel('items'),campaigns=rel('campaigns'),loans=rel('loans'),records=rel('records'),now=result?.receivedAt??0;
@@ -202,7 +204,7 @@ export default function ProjectDetail({projectId,projects,mutate,onBack,onEdit,o
  {items&&<section className="p-card"><button type="button" className="p-button p-button-subtle" aria-expanded={consumptionOpen} onClick={()=>setConsumptionOpen(value=>!value)}><BarChart3 size={18}/>Consumo e unidades</button>{consumptionOpen&&<StockConsumptionPanel projectId={project.id} onOpenMaterial={onMaterialOpen}/>}</section>}
  <ProjectOperationalChart key={project.id} projectId={project.id} schedule={data.schedule} items={items} loans={loans} now={now}/>
  {renderWorkContext?.(project.id)}
- {data.permissions?.reports&&<ProjectReportExports key={project.id} projectId={project.id} projectName={project.name} officialUrl={project.official_url} hasLinkedSpreadsheets={hasSpreadsheets} sheetAnchor="#project-sheets-live"/>}
+ <ProjectReportBuilder key={project.id} projectId={project.id} projectName={project.name} officialUrl={project.official_url} refreshKey={`${refreshKey}|${reload}|${(data.links as Row[]).map(link=>`${link.id}:${link.version}`).join(',')}`} onAddReference={canEdit?()=>setEditor({kind:'link',row:null}):undefined}/>
  {data.relatedProjects.length>0&&<div className="p-card"><h3>Programas e projetos relacionados</h3><div className="p-inline" style={{flexWrap:'wrap',marginTop:12}}>{data.relatedProjects.map((related:Row)=><button key={related.id} type="button" className="p-button p-button-subtle" onClick={()=>onSelect?.(related.id)}><FolderKanban size={15}/>{related.name}</button>)}</div></div>}
  <ProjectSheetsPanel key={project.id} projectId={project.id} projectName={project.name}/>
  {(materialsUrl||projectSheetLinks.length>0)&&<section className="p-card" id="project-spreadsheets"><h3>Outras planilhas e referências</h3><p className="p-form-help">Links já cadastrados pela equipe. A conexão de sincronização fica na seção acima.</p><div className={styles.detailLinks}>{materialsUrl&&<a className={styles.quickLink} href={materialsUrl} target="_blank" rel="noopener noreferrer"><Package size={20}/><span><strong>Materiais deste projeto na planilha mestre</strong><small>Visualização filtrada · acesso do responsável global</small></span><ExternalLink size={15}/></a>}{projectSheetLinks.map((link:Row)=><a key={link.id} className={styles.quickLink} href={safeUrl(link.url)} target="_blank" rel="noopener noreferrer"><FileText size={20}/><span><strong>{link.label}</strong><small>Planilha específica vinculada ao projeto</small></span><ExternalLink size={15}/></a>)}</div><p className={styles.externalNote}>O acesso no Google depende do compartilhamento feito no Drive. Filtros e links não substituem as permissões da planilha.</p></section>}

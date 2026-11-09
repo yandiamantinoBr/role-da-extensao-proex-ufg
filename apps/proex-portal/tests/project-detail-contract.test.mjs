@@ -22,7 +22,7 @@ async function renderDetail(relationships,schedule=[],canEdit=false,metadata={},
  const hooks={useState(initial){const key=index++;if(!(key in slots))slots[key]={value:typeof initial==='function'?initial():initial};return[slots[key].value,value=>{slots[key].value=typeof value==='function'?value(slots[key].value):value;}];},useRef(initial){const key=index++;return(slots[key]??={value:{current:initial}}).value;},useEffect(fn){const key=index++;if(!(key in slots)){slots[key]=true;effects.push(fn);}}};
  const jsx=(type,props)=>({type,props}),compiled={exports:{}};
  const payload={project:{id:'project-a',name:'Projeto sintético',status:'active',lifecycle:'active',scope:'internal',starts_at:'2026-10-31T13:00:00.000Z',description:'Projeto de contrato'},types:[],links:[],calls:[],schedule,versions:[],relatedProjects:[],organizationalUnits:[],permissions:{canEdit},relationships,...metadata};
- vm.runInNewContext(code,{module:compiled,exports:compiled.exports,require:name=>name==='react'?hooks:name==='react/jsx-runtime'?{jsx,jsxs:jsx}:name==='lucide-react'?new Proxy({},{get:(_,key)=>String(key)}):name.endsWith('.css')?{default:new Proxy({},{get:(_,key)=>String(key)})}:name==='@/lib/extension-catalog'?{areaLabel:value=>value,lineLabel:value=>value}:name==='@/lib/civil-date'?civilDates:name==='@/lib/project-communication'?communication:name==='./reports-center'?{ProjectReportExports:'ProjectReportExports'}:{DraftNotice:()=>null,useFormDraft:()=>({clear(){}})},Date:FixedDate,Intl,URL,AbortController,Number,fetch:async()=>({ok:true,json:async()=>payload})});
+ vm.runInNewContext(code,{module:compiled,exports:compiled.exports,require:name=>name==='react'?hooks:name==='react/jsx-runtime'?{jsx,jsxs:jsx}:name==='lucide-react'?new Proxy({},{get:(_,key)=>String(key)}):name.endsWith('.css')?{default:new Proxy({},{get:(_,key)=>String(key)})}:name==='@/lib/extension-catalog'?{areaLabel:value=>value,lineLabel:value=>value}:name==='@/lib/civil-date'?civilDates:name==='@/lib/project-communication'?communication:name==='./reports-center'?{ProjectReportExports:'ProjectReportExports'}:name==='./project-report/builder'?{default:'ProjectReportBuilder'}:{DraftNotice:()=>null,useFormDraft:()=>({clear(){}})},Date:FixedDate,Intl,URL,AbortController,Number,fetch:async()=>({ok:true,json:async()=>payload})});
  function render(){index=0;tree=compiled.exports.default({projectId:'project-a',projects:[],mutate:async()=>({}),onBack(){},onEdit(){},...props});}
  render();effects.forEach(fn=>fn());await tick();render();
  return{get tree(){return tree;},get all(){return nodes(tree);},get text(){return text(tree);},expandMaterials(){const button=nodes(tree).find(node=>node.type==='button'&&text(node).startsWith('Ver os '));assert.ok(button);button.props.onClick();render();},editSchedule(title){
@@ -115,11 +115,16 @@ test('the detail distinguishes communication channels, leaves legacy links ordin
  assert.doesNotMatch(viewer.text, /Nota histórica|Restaurar/);
 });
 
-test('only a detail with report permission mounts the shortcut, including archived projects',async()=>{
+test('everyone who sees the project gets the report builder; only report access shows the reports shortcut',async()=>{
  const denied=await renderDetail({},[],false,{permissions:{reports:false}});
- assert.equal(denied.all.some(node=>node.type==='ProjectReportExports'),false);
- const allowed=await renderDetail({},[],false,{permissions:{reports:true},project:{id:'project-a',name:'Projeto arquivado',status:'archived',lifecycle:'past',scope:'internal'}});
- assert.equal(allowed.all.find(node=>node.type==='ProjectReportExports').props.projectId,'project-a');
+ const viewerBuilder=denied.all.find(node=>node.type==='ProjectReportBuilder');
+ assert.ok(viewerBuilder,'the builder itself filters each section by permission');
+ assert.equal(viewerBuilder.props.onAddReference,undefined,'only editors register references');
+ assert.doesNotMatch(denied.text,/Relatórios do projeto/);
+ const allowed=await renderDetail({},[],true,{permissions:{reports:true,canEdit:true},project:{id:'project-a',name:'Projeto arquivado',status:'archived',lifecycle:'past',scope:'internal'}});
+ const builder=allowed.all.find(node=>node.type==='ProjectReportBuilder');
+ assert.equal(builder.props.projectId,'project-a');
+ assert.equal(typeof builder.props.onAddReference,'function');
  assert.match(allowed.text,/Relatórios do projeto/);
 });
 

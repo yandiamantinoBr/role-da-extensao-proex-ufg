@@ -28,7 +28,7 @@ type Marks = Partial<Record<'proex' | 'ufg' | ProjectMark, Uint8Array>>;
 type Options = { fontBytes?: Uint8Array; brandBytes?: Marks; presentation?: ReportPdfPresentation };
 
 const assetRequests = new Map<string, Promise<Uint8Array>>();
-function localAsset(path: string, limit: number): Promise<Uint8Array> {
+export function localAsset(path: string, limit: number): Promise<Uint8Array> {
   const saved = assetRequests.get(path);
   if (saved) return saved;
   const request = fetch(path, { redirect: 'error' }).then(async response => {
@@ -305,7 +305,7 @@ export async function toPdf(
   return new Blob([output as BlobPart], { type: 'application/pdf' });
 }
 
-function fit(value: string, font: PDFFont, size: number, width: number): string {
+export function fit(value: string, font: PDFFont, size: number, width: number): string {
   if (font.widthOfTextAtSize(value, size) <= width) return value;
   const chars = Array.from(value);
   let low = 0, high = chars.length;
@@ -317,7 +317,7 @@ function fit(value: string, font: PDFFont, size: number, width: number): string 
   return chars.slice(0, low).join('') + '…';
 }
 
-function wrap(value: string, font: PDFFont, size: number, width: number): string[] {
+export function wrap(value: string, font: PDFFont, size: number, width: number): string[] {
   const lines: string[] = [];
   for (const paragraph of value.split(/\r?\n/)) {
     let line = '';

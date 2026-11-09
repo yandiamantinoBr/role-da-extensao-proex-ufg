@@ -92,6 +92,14 @@ test('ProjectDetail mounts work only after an authorized matching response; targ
   } finally {h.dispose();}
 });
 
+test('a background refresh of the same project keeps the detail on screen; an error then removes it', async () => {
+  const calls = [], h = detail({renderWorkContext: id => {calls.push(id); return `work:${id}`;}}); try {
+    await h.ready(projectPayload('project-a')); assert.match(h.body(), /work:project-a/);
+    h.render({refreshKey: 1}); assert.match(h.body(), /work:project-a/); assert.doesNotMatch(h.body(), /Carregando o projeto/);
+    h.effects(); await h.ready({}, 403); assert.ok(!h.body().includes('work:project-a'));
+  } finally {h.dispose();}
+});
+
 test('a late project response cannot create a work slot for a different requested detail', async () => {
   const calls = [], h = detail({renderWorkContext: id => {calls.push(id); return 'work';}}); try {
     const old = h.requests[0]; h.render({projectId: 'project-b'}); assert.equal(old.init.signal.aborted, true); h.reply(old, projectPayload('project-a')); await tick(); h.render(); assert.deepEqual(calls, []); await h.ready(projectPayload('project-b')); assert.deepEqual(calls, ['project-b']);

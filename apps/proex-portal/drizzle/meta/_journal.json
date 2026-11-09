@@ -288,6 +288,13 @@
       "when": 1794244061548,
       "tag": "0040_community_chat",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "6",
+      "when": 1794244850525,
+      "tag": "0041_project_report_templates",
+      "breakpoints": true
     }
   ]
 }
