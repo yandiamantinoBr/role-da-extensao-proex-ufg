@@ -136,7 +136,7 @@ test('chat reserves the shown ceiling, calls DeepSeek once, audits metadata only
     const audit = f.native.prepare("SELECT details FROM audit WHERE action='assistant.role.chat'").all();
     assert.equal(audit.length, 1);
     const details = JSON.parse(audit[0].details);
-    assert.deepEqual(Object.keys(details).sort(), ['hasImage', 'inputTokens', 'model', 'operationDropped', 'operationSuggested', 'outputTokens', 'overrun', 'provider', 'reservedUsdMicros', 'tools', 'usdMicros']);
+    assert.deepEqual(Object.keys(details).sort(), ['hasImage', 'inputTokens', 'model', 'operationDropped', 'operationSuggested', 'outputTokens', 'overrun', 'provider', 'reservedUsdMicros', 'steps', 'tools', 'usdMicros']);
     assert.equal(details.overrun, false);
     const everything = JSON.stringify(f.native.prepare('SELECT * FROM audit').all()) + JSON.stringify(f.native.prepare('SELECT * FROM ai_calls').all());
     assert.equal(everything.includes('distribuir 3 canetas'), false, 'message text is not persisted');
@@ -415,9 +415,10 @@ test('FERRAMENTAS: the exact question about Tuesday lots is answered from the po
     assert.equal(provider.calls[1].messages.find(message => message.role === 'assistant').tool_calls[0].function.name, 'consultar_demandas');
     assert.deepEqual(result.sources, [{ label: 'Lote 10/11 · terça · Projeto A', href: '/?module=demands&project=project-a&demandId=lote-a' }]);
     assert.equal(result.lookups, 1);
+    assert.equal(f.native.prepare("SELECT calls FROM ai_organization_usage WHERE organization_id='org_proex'").get().calls, 1, 'one question counts as one use');
     assert.equal(result.costMicros, 2 * Math.ceil(1500 * 0.3 + 90 * 1.2));
     const details = JSON.parse(f.native.prepare("SELECT details FROM audit WHERE action='assistant.role.chat'").get().details);
-    assert.deepEqual(details.tools, [{ name: 'consultar_demandas', rows: 1 }]);
+    assert.deepEqual(details.tools, [{ name: 'consultar_demandas', rows: 1 }]); assert.equal(details.steps, 2);
     assert.ok(!JSON.stringify(details).includes('bottons'), 'audit keeps tool names and counts, never content');
   } finally { f.native.close(); }
 });
@@ -427,17 +428,24 @@ test('FERRAMENTAS: lookups run with the asking person permissions; loans never s
   try {
     await setup(f); seedLots(f);
     const { runRoleTool } = await import(compile('assistant/role-tools'));
-    const outsider = await runRoleTool(f.db, f.actors.outsider, 'consultar_demandas', { texto: 'Lote 10/11' });
+    const outsider = await runRoleTool(f.db, f.actors.outsider, 'org_proex', 'consultar_demandas', { texto: 'Lote 10/11' });
     assert.ok(outsider.content.includes('SEGREDO-B') && !outsider.content.includes('24 conjuntos'), 'only the project the person belongs to');
-    const forced = await runRoleTool(f.db, f.actors.outsider, 'consultar_estoque', { projeto: 'Projeto A' });
+    const forced = await runRoleTool(f.db, f.actors.outsider, 'org_proex', 'consultar_estoque', { projeto: 'Projeto A' });
     assert.equal(forced.rows, 0, 'naming another project does not open it');
-    const loans = await runRoleTool(f.db, f.actors.owner, 'consultar_emprestimos', {});
+    const loans = await runRoleTool(f.db, f.actors.owner, 'org_proex', 'consultar_emprestimos', {});
+    // Another organization the same person can see never reaches this conversation's provider.
+    f.native.prepare("INSERT INTO organizations(id,name,slug,status,created_at,updated_at) SELECT 'org_outra','Outra organização','outra-qa','active',created_at,updated_at FROM organizations WHERE id='org_proex'").run();
+    f.native.prepare("INSERT INTO projects(id,name,description,scope,organization_id,created_at) VALUES('project-c','Projeto C','','external','org_outra',?)").run(new Date().toISOString());
+    f.native.prepare("INSERT INTO followup_tasks(id,organization_id,project_id,title,body,priority,status,created_by,created_at,updated_at) VALUES('lote-c','org_outra','project-c','Lote 10/11 · outra organização','SEGREDO-C','high','open','owner-qa',?,?)").run(new Date().toISOString(), new Date().toISOString());
+    const crossOrg = await runRoleTool(f.db, f.actors.owner, 'org_proex', 'consultar_demandas', { texto: 'Lote 10/11' });
+    assert.ok(crossOrg.content.includes('24 conjuntos') && !crossOrg.content.includes('SEGREDO-C'), 'only projects of the conversation organization');
+    assert.ok((await runRoleTool(f.db, f.actors.owner, 'org_outra', 'consultar_demandas', { texto: 'Lote 10/11' })).content.includes('SEGREDO-C'), 'the other organization answers only in its own conversations');
     assert.ok(loans.content.includes('Plantão CONPEEX') && loans.content.includes('atrasado'));
     for (const secretText of ['Pessoa Privada', 'contato@privado.invalid', '@example.test']) assert.ok(!loans.content.includes(secretText), secretText);
-    assert.equal((await runRoleTool(f.db, f.actors.viewer, 'consultar_emprestimos', {})).rows, 0, 'inventory role does not read loans');
-    await assert.rejects(runRoleTool(f.db, f.actors.viewer, 'apagar_tudo', {}), error => error.code === 'role_tool_unknown');
-    await assert.rejects(runRoleTool(f.db, f.actors.viewer, 'consultar_estoque', { sql: 'DROP' }), error => error.code === 'role_tool_input');
-    const small = await runRoleTool(f.db, f.actors.owner, 'buscar_no_portal', { texto: 'Lote' }, 700);
+    assert.equal((await runRoleTool(f.db, f.actors.viewer, 'org_proex', 'consultar_emprestimos', {})).rows, 0, 'inventory role does not read loans');
+    await assert.rejects(runRoleTool(f.db, f.actors.viewer, 'org_proex', 'apagar_tudo', {}), error => error.code === 'role_tool_unknown');
+    await assert.rejects(runRoleTool(f.db, f.actors.viewer, 'org_proex', 'consultar_estoque', { sql: 'DROP' }), error => error.code === 'role_tool_input');
+    const small = await runRoleTool(f.db, f.actors.owner, 'org_proex', 'buscar_no_portal', { texto: 'Lote' }, 700);
     assert.ok(new TextEncoder().encode(small.content).byteLength <= 700, 'results respect the byte budget');
   } finally { f.native.close(); }
 });

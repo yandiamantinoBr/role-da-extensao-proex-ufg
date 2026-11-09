@@ -148,7 +148,8 @@ Motivo: às 13h o Yan perguntou "quantos brindes, super brindes e super super br
   - até 2 rodadas de consulta, com no máximo 4 consultas e 8 KB de resultado por rodada;
   - depois, uma resposta final sem ferramentas, em JSON;
   - a data de hoje (Brasília) vai junto, para o Rolê entender "amanhã".
-- Se o projeto selecionado não tiver o dado, o Rolê procura nos outros projetos que a pessoa vê e diz de qual projeto veio.
+- Se o projeto selecionado não tiver o dado, o Rolê procura nos outros projetos que a pessoa vê **da mesma organização** e diz de qual projeto veio. Dados de outra organização nunca vão para o provedor desta, que tem chave e política de IA próprias.
+- Uma pergunta conta como 1 chamada no limite diário, mesmo quando faz até 3 requisições ao modelo. Custo, tokens e tempo contam todas.
 - As fontes aparecem como links internos abaixo da resposta ("Fontes no portal").
 - Custo máximo (`roleEstimate` com `tools`): conta 3 chamadas, o esquema das ferramentas e os resultados reenviados.
   - Numa mensagem curta, fica perto de US$ 0,017.

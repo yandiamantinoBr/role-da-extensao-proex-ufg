@@ -9,7 +9,7 @@ import {
   ROLE_CONTRACT, ROLE_MAX_HISTORY, ROLE_MAX_HISTORY_CHARS, ROLE_MAX_IMAGE_BYTES, ROLE_MAX_IMAGE_SIDE, ROLE_MAX_MESSAGE_CHARS, ROLE_MAX_OUTPUT_TOKENS, ROLE_MODELS,
   ROLE_SYSTEM_PROMPT, ROLE_SYSTEM_PROMPT_TOOLS, ROLE_TOOL_CALLS_PER_ROUND, ROLE_TOOL_RESULT_BYTES, ROLE_TOOL_ROUNDS, roleConversationBytes, roleEstimate, roleTimeoutMs, validateRoleReply, type RoleSource, type RoleTurn,
 } from './role-contracts';
-import { ROLE_TOOLS, runRoleTool, type RoleToolResult } from './role-tools';
+import { ROLE_TOOL_NAMES, ROLE_TOOLS, runRoleTool, type RoleToolResult } from './role-tools';
 import { containsCredential } from './sensitive';
 import { ChargedError, firstJsonObject, genericChat } from './generic-provider';
 import { fitsFunction, type CatalogModel, type CatalogProvider, type ModelCatalog } from './model-catalog';
@@ -241,7 +241,7 @@ async function toolStep(provider: 'deepseek' | 'groq', apiKey: string, body: unk
  */
 async function dispatchWithTools(provider: 'deepseek' | 'groq', apiKey: string, body: { messages: Record<string, unknown>[] } & Record<string, unknown>, run: (name: string, args: Record<string, unknown>, budget: number) => Promise<RoleToolResult>, signal: AbortSignal, fetcher: typeof fetch) {
   const messages = [...body.messages], used: { name: string; rows: number }[] = [], sources = new Map<string, RoleSource>();
-  let inputTokens = 0, outputTokens = 0, costMicros = 0;
+  let inputTokens = 0, outputTokens = 0, costMicros = 0, steps = 0;
   const charged = (message: string) => new ChargedError(message, costMicros, inputTokens + outputTokens);
   const { response_format: _format, ...free } = body; void _format;
   for (let round = 0; ; round++) {
@@ -253,7 +253,7 @@ async function dispatchWithTools(provider: 'deepseek' | 'groq', apiKey: string, 
       if (costMicros > 0) throw charged(error instanceof HttpError ? error.message : 'A chamada ao Rolê falhou.');
       throw error;
     }
-    inputTokens += step.inputTokens; outputTokens += step.outputTokens; costMicros += step.costMicros;
+    inputTokens += step.inputTokens; outputTokens += step.outputTokens; costMicros += step.costMicros; steps++;
     if (step.toolCalls.length) {
       if (!offer) throw charged('O Rolê tentou consultar demais. Reformule a pergunta de um jeito mais direto.');
       messages.push({ role: 'assistant', content: step.content, tool_calls: step.toolCalls });
@@ -271,7 +271,7 @@ async function dispatchWithTools(provider: 'deepseek' | 'groq', apiKey: string, 
             for (const source of result.sources) if (sources.size < 8) sources.set(source.href, source);
           } catch (error) {
             content = JSON.stringify({ erro: error instanceof HttpError && error.status < 500 ? error.message : 'Consulta indisponível agora.' });
-            used.push({ name: call.function.name.slice(0, 40), rows: -1 });
+            used.push({ name: ROLE_TOOL_NAMES.includes(call.function.name) ? call.function.name : 'desconhecida', rows: -1 });
           }
         }
         messages.push({ role: 'tool', tool_call_id: call.id, content });
@@ -283,7 +283,7 @@ async function dispatchWithTools(provider: 'deepseek' | 'groq', apiKey: string, 
     catch { reply = { reply: step.content.trim().slice(0, 4000), operation: null }; }
     if (!reply.reply) throw charged('A resposta do Rolê veio vazia. O custo foi registrado.');
     if (containsCredential(reply.reply) || reply.operation && containsCredential(reply.operation)) throw charged('A resposta do provedor não pôde ser mostrada.');
-    return { ...reply, inputTokens, outputTokens, costMicros, tools: used, sources: [...sources.values()] };
+    return { ...reply, inputTokens, outputTokens, costMicros, steps, tools: used, sources: [...sources.values()] };
   }
 }
 
@@ -361,7 +361,7 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
   if (!Number.isSafeInteger(input.acceptedCostMicros) || Number(input.acceptedCostMicros) < estimate.costMicros) {
     throw new HttpError(409, 'O custo previsto mudou. Confira o novo valor e envie de novo.', 'role_cost_changed');
   }
-  const reservation = { tokens: estimate.tokens, cost: estimate.costMicros, calls: 1, milliseconds: timeoutMs };
+  const reservation = { tokens: estimate.tokens, cost: estimate.costMicros, calls: 1, milliseconds: timeoutMs }; // uma pergunta = uma chamada; custo, tokens e tempo cobrem as até 3 requisições
   const id = await digest(`role\n${current.userId}\n${project}\n${input.operationKey}`);
   const fingerprint = await digest(JSON.stringify({ contract: ROLE_CONTRACT, message, turns, image: image ? await digest(image.dataUrl) : null, revision }));
   const authorization = roleAuthorization(db, current, project, organizationId, revision), nonce = crypto.randomUUID(), day = dayKey(now);
@@ -390,13 +390,13 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
     // Last live fence before money leaves: access or configuration may have changed during decryption.
     await authorization.first();
     const startedAt = Date.now();
-    const result: { reply: string; operation: string | null; inputTokens: number; outputTokens: number; costMicros: number; tools?: { name: string; rows: number }[]; sources?: RoleSource[] } = chosen.kind === 'legacy'
-      ? await dispatchWithTools(chosen.provider, apiKey, transportBody(chosen.provider, turns, message, projectName, image?.dataUrl ?? null, brasiliaToday(now)), (name, args, budget) => runRoleTool(db, current, name, args, budget), controller.signal, options.fetcher ?? fetch)
+    const result: { reply: string; operation: string | null; inputTokens: number; outputTokens: number; costMicros: number; tools?: { name: string; rows: number }[]; sources?: RoleSource[]; steps?: number } = chosen.kind === 'legacy'
+      ? await dispatchWithTools(chosen.provider, apiKey, transportBody(chosen.provider, turns, message, projectName, image?.dataUrl ?? null, brasiliaToday(now)), (name, args, budget) => runRoleTool(db, current, organizationId, name, args, budget), controller.signal, options.fetcher ?? fetch)
       : await catalogDispatch(chosen, turns, message, projectName, image?.dataUrl ?? null, controller.signal, options.fetcher ?? fetch);
     const dropped = !!result.operation && !operationNumbersAllowed(result.operation, [message, ...turns.filter(turn => turn.role === 'user').map(turn => turn.content)]);
     if (dropped) result.operation = null;
     const extraCost = Math.max(0, result.costMicros - estimate.costMicros), extraTokens = Math.max(0, result.inputTokens + result.outputTokens - estimate.tokens), elapsed = Date.now() - startedAt;
-    const details = { provider, model: modelName, hasImage: !!image, inputTokens: result.inputTokens, outputTokens: result.outputTokens, reservedUsdMicros: estimate.costMicros, usdMicros: result.costMicros, operationSuggested: !!result.operation, operationDropped: dropped, overrun: extraCost > 0 || extraTokens > 0, tools: result.tools ?? [] };
+    const details = { provider, model: modelName, hasImage: !!image, inputTokens: result.inputTokens, outputTokens: result.outputTokens, reservedUsdMicros: estimate.costMicros, usdMicros: result.costMicros, operationSuggested: !!result.operation, operationDropped: dropped, overrun: extraCost > 0 || extraTokens > 0, tools: result.tools ?? [], steps: result.steps ?? 1 };
     await db.batch([
       authorization,
       db.prepare("UPDATE ai_calls SET status='complete' WHERE id=? AND admission_nonce=? AND status='reserved'").bind(id, nonce),

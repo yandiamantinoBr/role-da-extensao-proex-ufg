@@ -57,9 +57,12 @@ const STATUS: Record<string, string> = { open: 'aberta', in_progress: 'em andame
 const MOVES: Record<string, string> = { receive: 'entrada', distribute: 'distribuição', consume: 'consumo', adjust: 'ajuste', redeem: 'brinde entregue', reserve: 'reserva', release: 'reserva liberada' };
 const brasilia = (iso: string) => { const t = Date.parse(iso); return Number.isFinite(t) ? new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' }).format(new Date(t)) : iso; };
 
-/** Projetos que a pessoa enxerga, filtrados pelo nome pedido (ou todos). */
-async function visibleProjects(db: D1Database, actor: PortalActor, wanted: string): Promise<Map<string, string>> {
-  const rows = await all(db, `SELECT p.id,p.name FROM projects p JOIN organizations o ON o.id=p.organization_id AND o.status='active' WHERE ${followupAuthority('?', 'p.organization_id', 'p.id')} ORDER BY p.name LIMIT 400`, [actor.userId]);
+/**
+ * Projetos que a pessoa enxerga, só da organização da conversa (a chave, o provedor e a política
+ * de IA são dessa organização: dados de outra organização nunca vão para este provedor).
+ */
+async function visibleProjects(db: D1Database, actor: PortalActor, organizationId: string, wanted: string): Promise<Map<string, string>> {
+  const rows = await all(db, `SELECT p.id,p.name FROM projects p JOIN organizations o ON o.id=p.organization_id AND o.status='active' WHERE p.organization_id=? AND ${followupAuthority('?', 'p.organization_id', 'p.id')} ORDER BY p.name LIMIT 400`, [organizationId, actor.userId]);
   const query = terms(wanted);
   return new Map(rows.filter(row => !query.length || score(`${row.name} ${row.id}`, query) > 0).map(row => [String(row.id), String(row.name)]));
 }
@@ -74,10 +77,10 @@ function pack(kind: string, items: Record<string, unknown>[], sources: RoleToolS
   return { content: envelope(kept, items.length - kept.length), sources: sources.filter(source => used.has(source.href)), rows: kept.length };
 }
 
-export async function runRoleTool(db: D1Database, actor: PortalActor, name: string, args: Record<string, unknown>, budget = ROLE_TOOL_RESULT_BYTES): Promise<RoleToolResult> {
+export async function runRoleTool(db: D1Database, actor: PortalActor, organizationId: string, name: string, args: Record<string, unknown>, budget = ROLE_TOOL_RESULT_BYTES): Promise<RoleToolResult> {
   if (!ROLE_TOOL_NAMES.includes(name)) throw new HttpError(400, 'Consulta desconhecida.', 'role_tool_unknown');
   if (Object.keys(args).some(key => !['texto', 'projeto', 'material', 'dias', 'situacao', 'dinamica', 'de', 'ate'].includes(key))) throw new HttpError(400, 'Consulta com campos não permitidos.', 'role_tool_input');
-  const projects = await visibleProjects(db, actor, str(args.projeto, 'o projeto'));
+  const projects = await visibleProjects(db, actor, organizationId, str(args.projeto, 'o projeto'));
   const ids = [...projects.keys()];
   if (!ids.length) return pack(name, [], [], budget, 'Nenhum projeto visível para você com esse nome.');
 
