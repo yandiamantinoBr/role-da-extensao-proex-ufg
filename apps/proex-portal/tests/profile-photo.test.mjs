@@ -74,8 +74,8 @@ test('bitmap preparation keeps the aspect ratio, produces a bounded PNG and clos
   const result = await prepareProfilePhoto(photo());
   const decoded = PNG.sync.read(Buffer.from(await result.arrayBuffer()));
   assert.equal(result.type, 'image/png'); assert.ok(result.size <= 2 * 1024 * 1024);
-  assert.equal(decoded.width, 512); assert.equal(decoded.height, 288);
-  assert.equal(calls.bitmapClosed, 1); assert.deepEqual(calls.draw, [{ width: 512, height: 288 }]);
+  assert.equal(decoded.width, 256); assert.equal(decoded.height, 144);
+  assert.equal(calls.bitmapClosed, 1); assert.deepEqual(calls.draw, [{ width: 256, height: 144 }]);
 });
 
 test('an embedded browser with blocked blob URLs uses FileReader and a document image', async t => {
@@ -83,7 +83,7 @@ test('an embedded browser with blocked blob URLs uses FileReader and a document 
   const result = await prepareProfilePhoto(photo('', 'camera-photo.jpg'));
   assert.deepEqual(calls.imageLoads, ['data']);
   const decoded = PNG.sync.read(Buffer.from(await result.arrayBuffer()));
-  assert.equal(decoded.width, 512); assert.equal(decoded.height, 384);
+  assert.equal(decoded.width, 256); assert.equal(decoded.height, 192);
 });
 
 test('a partially implemented bitmap decoder falls back to a normal image', async t => {
@@ -98,7 +98,7 @@ for (const mode of ['blobNull', 'blobThrows']) {
     const calls = environment(t, { [mode]: true });
     const result = await prepareProfilePhoto(photo());
     assert.equal(calls.dataUrl, 1); assert.equal(result.type, 'image/png');
-    assert.equal(PNG.sync.read(Buffer.from(await result.arrayBuffer())).width, 512);
+    assert.equal(PNG.sync.read(Buffer.from(await result.arrayBuffer())).width, 256);
   });
 }
 
