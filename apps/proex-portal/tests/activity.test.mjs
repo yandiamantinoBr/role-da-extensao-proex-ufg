@@ -255,7 +255,7 @@ test('AI configuration history shows before and after only to whoever can config
   const ai = feed.events.filter(event => event.type === 'ai');
   assert.deepEqual(ai.map(event => event.id), ['ai:cfg-2', 'ai:cfg-1', 'ai:cfg-3']);
   assert.equal(ai[1].title, 'Limites alterados');
-  assert.equal(ai[1].detail.replace(/ /g, ' '), 'Limite de tokens por dia: 100.000 → 1.000.000 · Limite de custo por dia: US$ 1,00 → US$ 3,00 · Limite de tempo por dia: 5 min → 1 h');
+  assert.equal(ai[1].detail.replace(/ /g, ' '), 'Tokens por dia: 100 mil → 1 milhão\nCusto por dia: US$ 1,00 → US$ 3,00\nTempo por dia: 5 min → 1 h');
   assert.equal(ai[0].title, 'Modo de testes ligado');
   assert.equal(ai[0].actorName, 'Coordenação');
   assert.equal(ai[2].detail, 'Registro anterior ao histórico detalhado');

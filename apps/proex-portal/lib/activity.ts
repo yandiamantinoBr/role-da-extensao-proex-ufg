@@ -285,8 +285,9 @@ export function aiConfigurationEvent(action: string, raw: string): { action: str
   if (!changes.length) return { action: 'Configuração de IA', title: 'Configuração salva', detail: 'Nenhum valor mudou' };
   const test = changes.find(change => change.field === 'testMode');
   const title = test ? (test.after ? 'Modo de testes ligado' : 'Modo de testes desligado') : changes.every(change => LIMIT_FIELDS.has(change.field)) ? 'Limites alterados' : changes.some(change => LIMIT_FIELDS.has(change.field)) ? 'Funções e limites alterados' : 'Funções alteradas';
+  // Uma mudança por linha (a tela mostra cada uma em sua linha).
   const lines = changes.filter(change => change.field !== 'testMode').map(describeChange).filter(Boolean);
-  return { action: 'Configuração de IA', title, detail: lines.length > 5 ? `${lines.slice(0, 5).join(' · ')} · e mais ${lines.length - 5}` : lines.join(' · ') };
+  return { action: 'Configuração de IA', title, detail: lines.length > 6 ? [...lines.slice(0, 6), `e mais ${lines.length - 6}`].join('\n') : lines.join('\n') };
 }
 
 async function projectNames(db: D1Database, ids: string[]): Promise<Map<string, string>> {

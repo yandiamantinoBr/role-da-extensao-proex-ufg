@@ -490,17 +490,27 @@ test('atomic stock predicate closes a concurrent change between preflight and do
  } finally { f.native.close(); }
 });
 test('a refused request says which daily limit was hit, how much is used and who can change it', async () => {
- for (const [ceiling, label] of [[{ dailyTokens: 1000 }, /^Limite de tokens de hoje atingido \(0 de 1 mil usados; este pedido precisa de até \d+ mil\)\./], [{ dailyUsdMicros: 1000 }, /^Limite de custo de hoje atingido \(US\$\s0,00 de US\$\s0,001\d? usados/], [{ dailyMs: 1000 }, /^Limite de tempo de hoje atingido \(0 s de 1 s usados; este pedido precisa de até 12 s\)\./]]) {
+ for (const [ceiling, label] of [[{ dailyTokens: 1000 }, /^Este pedido é maior que o limite de tokens do dia \(precisa de até \d+ mil tokens; o limite é 1 mil tokens\)\./], [{ dailyUsdMicros: 1000 }, /^Este pedido é maior que o limite de custo do dia \(precisa de até US\$\s0,0\d+; o limite é US\$\s0,001\d?\)/], [{ dailyMs: 1000 }, /^Este pedido é maior que o limite de tempo do dia \(precisa de até 12 s; o limite é 1 s\)\./]]) {
   const f = fixture(), provider = fakeProvider(); try {
    await configureAssistant(f.db, f.actors.owner, configInput(ceiling), secret);
    const worker = await prepareAssistantPlan(f.db, f.actors.inventory, request(), secret, { fetcher: provider.fetch }).catch(error => error);
-   assert.equal(worker.code, 'assistant_quota'); assert.match(worker.message, label); assert.match(worker.message, /Peça a .+ para ajustar o limite\.$/);
+   assert.equal(worker.code, 'assistant_quota'); assert.match(worker.message, label); assert.match(worker.message, /Peça a .+ para aumentar o limite\.$/);
    assert.ok(!worker.message.includes('@'), 'nunca mostra e-mail de quem ajusta');
    const owner = await prepareAssistantPlan(f.db, f.actors.owner, request({ operationKey: 'owner-quota-check' }), secret, { fetcher: provider.fetch }).catch(error => error);
-   assert.equal(owner.code, 'assistant_quota'); assert.match(owner.message, /Ajuste em Configurações → Chaves e modelos → Funções e acesso → Limites\.$/);
+   assert.equal(owner.code, 'assistant_quota'); assert.match(owner.message, /Você pode aumentar o limite em Configurações → Chaves e modelos → Funções e acesso\.$/);
    assert.equal(provider.calls, 0);
   } finally { f.native.close(); }
  }
+});
+test('a limit that runs out during the day says how much was used and that it comes back at midnight', async () => {
+ const f = fixture(), provider = fakeProvider(); try {
+  await configureAssistant(f.db, f.actors.owner, configInput({ dailyCalls: 1 }), secret);
+  f.native.prepare("INSERT INTO ai_organization_usage(organization_id,day,calls) VALUES('org_proex',?,1) ON CONFLICT(organization_id,day) DO UPDATE SET calls=1").run(new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()));
+  const refused = await prepareAssistantPlan(f.db, f.actors.inventory, request(), secret, { fetcher: provider.fetch }).catch(error => error);
+  assert.equal(refused.code, 'assistant_quota');
+  assert.match(refused.message, /^Acabou o limite de chamadas de hoje \(uso: 1 de 1 chamada; este pedido precisa de até 1 chamada\)\. O limite volta à meia-noite\./);
+  assert.equal(provider.calls, 0);
+ } finally { f.native.close(); }
 });
 test('test mode raises the daily limits until turned off, restores the previous ones and every click is audited with before and after', async () => {
  const f = fixture(); try {

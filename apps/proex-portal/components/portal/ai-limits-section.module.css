@@ -17,16 +17,20 @@
 .meterTop span{font-variant-numeric:tabular-nums;color:var(--text-secondary);font-size:max(13px,.88rem)}
 .meter small{color:var(--text-secondary);line-height:1.45;font-size:max(12px,.8rem)}
 .track{height:.55rem;border-radius:999px;background:var(--meter-track);overflow:hidden}
-.section{--meter-fill:#6b3c85;--meter-track:color-mix(in srgb,var(--line) 70%,transparent)}
+.section{--meter-fill:#6b3c85;--meter-track:var(--line)}
 :global(html[data-theme=dark]) .section{--meter-fill:#c99be6;--meter-track:rgb(255 255 255 / .14)}
 .track i{display:block;height:100%;border-radius:inherit;background:var(--meter-fill)}
 .meter[data-level=mid] .track i{background:var(--orange)}
 .meter[data-level=high] .track i{background:var(--danger)}
 .meter[data-level=high] .meterTop span{color:var(--danger);font-weight:700}
-.fields{display:grid;gap:1rem;margin:.5rem 0 0;padding:0;border:0;min-width:0}
+.fields{display:grid;gap:1rem;margin:.75rem 0 0;padding:0;border:0;min-width:0}
 .fields legend{padding:0;margin-bottom:.5rem;font-weight:700}
-.test{display:grid;gap:.75rem;padding:.85rem;border:1px dashed color-mix(in srgb,var(--orange) 60%,var(--line));border-radius:.8rem}
+.test{display:grid;gap:.75rem;padding:.85rem;border:1px solid var(--line);border-radius:.8rem}
+.testing .test{border:1px dashed color-mix(in srgb,var(--orange) 60%,var(--line))}
 .test p{margin:.25rem 0 0;line-height:1.55;color:var(--text-secondary);font-size:max(13px,.88rem)}
 .test :global(.p-button){justify-self:start;min-height:44px;display:inline-flex;align-items:center;gap:.4rem}
-@container (min-width:620px){.meters{grid-template-columns:repeat(2,minmax(0,1fr))}.fields{grid-template-columns:repeat(3,minmax(0,1fr))}.fields legend{grid-column:1/-1}.test{grid-template-columns:1fr auto;align-items:center}}
+@container (min-width:620px){.meters{grid-template-columns:repeat(2,minmax(0,1fr))}.fields{grid-template-columns:repeat(3,minmax(0,1fr))}.fields legend{grid-column:1/-1}}
 @media (prefers-reduced-motion:reduce){.section>summary::before{transition:none}}
+.body{display:grid;gap:1rem;margin-top:.75rem;min-width:0}
+.hint{display:block;margin-top:.35rem;color:var(--text-secondary);font-size:max(12px,.8rem);font-weight:500;line-height:1.4}
+

@@ -152,3 +152,6 @@ a.row:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 .overdue { display: inline-flex; align-items: center; gap: 6px; margin-top: auto; padding-top: 6px; color: var(--success-ink); font-size: 13px; font-weight: 600; text-decoration: none; }
 .overdueAlert { color: var(--danger); }
 @container (max-width: 480px) { .people button { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'name' 'numbers' 'bar'; } }
+.changes { display: grid; gap: 4px; margin: 6px 0 2px; padding: 0; list-style: none; color: var(--text-secondary); font-size: 13px; line-height: 1.45; font-variant-numeric: tabular-nums; }
+.changes s { text-decoration: none; opacity: .85; }
+.changes strong { color: var(--ink); font-weight: 650; }

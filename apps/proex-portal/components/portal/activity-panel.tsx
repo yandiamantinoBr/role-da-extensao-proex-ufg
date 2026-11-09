@@ -218,7 +218,8 @@ function EventRow({ event, hideProject, hidePerson, compact = false }: { event: 
   const content = <>
     {!compact && <TypeIcon type={event.type}/>}
     <span className={styles.body}>
-      <span className={styles.line}><strong>{event.action}</strong>{event.title && <> · {event.title}</>}{event.detail && <span className={styles.detail}>{event.detail}</span>}</span>
+      <span className={styles.line}><strong>{event.action}</strong>{event.title && <> · {event.title}</>}{event.detail && event.type !== 'ai' && <span className={styles.detail}>{event.detail}</span>}</span>
+      {event.type === 'ai' && event.detail && <ul className={styles.changes}>{event.detail.split('\n').map(line => { const [label, values] = line.includes(': ') ? [line.slice(0, line.indexOf(': ')), line.slice(line.indexOf(': ') + 2)] : ['', line]; const [before, after] = values.split(' → '); return <li key={line}>{label && <span>{label}: </span>}{after !== undefined ? <><s aria-label={`antes ${before}`}>{before}</s> → <strong>{after}</strong></> : values}</li>; })}</ul>}
       <span className={styles.meta}>{event.type !== 'agenda' && !compact && <time dateTime={event.at}>{TIME.format(new Date(event.at))}</time>}{!hideProject && event.projectName && <span>{event.projectName}</span>}{!hidePerson && event.actorName && <span>{event.actorName}</span>}{event.viaRole && <span className={styles.role}><Sparkles size={13} aria-hidden="true"/>Pedido ao Rolê{event.actorName ? `, confirmado por ${event.actorName}` : ''}</span>}</span>
     </span>
     {event.href && <ArrowUpRight className={styles.go} size={16} aria-hidden="true"/>}
