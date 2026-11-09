@@ -28,7 +28,7 @@ test('administrator saves usage/provider choices only on explicit save with sele
  }finally{h.dispose();}
 });
 test('late previous-organization settings cannot redirect a save and access loss clears admin forms and credential content',async()=>{
- const h=harness();try{await ready(h);const change=h.select('Organização dos ajustes de IA').props.onChange;change({target:{value:'org-b'}});h.render();change({target:{value:'org-c'}});h.render();await reply(h,3,status('org-c'));await reply(h,2,status('org-b'));assert.equal(h.select('Organização dos ajustes de IA').props.value,'org-c');h.button('Salvar funções, acesso e limites').props.onClick();await tick();assert.equal(JSON.parse(h.requests[4].init.body).organizationId,'org-c');h.requests[4].resolve({ok:false,status:403,json:async()=>({error:'Permissão revogada'})});await tick();h.render();assert.equal(h.nodes().some(node=>node.type==='credential-area'),false);assert.equal(h.nodes().some(node=>node.type==='select'),false);assert.match(h.text(),/Permissão revogada/);
+ const h=harness();try{await ready(h);const change=h.select('Organização da IA').props.onChange;change({target:{value:'org-b'}});h.render();change({target:{value:'org-c'}});h.render();await reply(h,3,status('org-c'));await reply(h,2,status('org-b'));assert.equal(h.select('Organização da IA').props.value,'org-c');h.button('Salvar funções, acesso e limites').props.onClick();await tick();assert.equal(JSON.parse(h.requests[4].init.body).organizationId,'org-c');h.requests[4].resolve({ok:false,status:403,json:async()=>({error:'Permissão revogada'})});await tick();h.render();assert.equal(h.nodes().some(node=>node.type==='credential-area'),false);assert.equal(h.nodes().some(node=>node.type==='select'),false);assert.match(h.text(),/Permissão revogada/);
  }finally{h.dispose();}
 });
 test('closed administration discards late save results and an unauthorized actor gets no forms or diagnostics',async()=>{
@@ -48,7 +48,7 @@ test('owner areas shorten the flow without fetching diagnostics or exposing cred
 test('explicit OpenAI selection clears both text functions without starting inference or altering speech and usage choices',async()=>{
  const h=harness();try{
   await ready(h,{config:{...defaults,enabled:true,documentEnabled:true,sttProvider:'groq',sttEnabled:true,usageScope:'private',usageUserId:'member-a'}});
-  h.select('Provedor de texto e documentos').props.onChange({target:{value:'openai'}});h.render();
+  h.select('Serviço de IA para operações e documentos').props.onChange({target:{value:'openai'}});h.render();
   assert.match(h.text(),/Pedidos de operações · OpenAI/);
   const functions=h.nodes().filter(node=>node.type==='label'&&['Pedidos de operações','Interpretação de documentos'].some(label=>text(node).startsWith(label)));
   assert.equal(functions.length,2);for(const node of functions)assert.equal(node.props.children.find(child=>child?.type==='input').props.checked,false);

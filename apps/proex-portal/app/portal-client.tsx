@@ -23,6 +23,7 @@ import OfficialTeamDirectory from '@/components/portal/official-team-directory';
 import OrganizationsPanel, { type OrganizationSummary, type OrganizationPerson } from '@/components/portal/organizations-panel';
 import AssetDetailsPanel from '@/components/portal/asset-details-panel';
 import AssistantPanel from '@/components/portal/assistant-panel';
+import RoleAssistant from '@/components/portal/role-assistant';
 import type { OfficialTeamSelection } from '@/lib/catalog/proex-team';
 import AdminPrivacyPanel from '@/components/portal/admin-privacy-panel';
 import SyncSettingsPanel from '@/components/portal/sync-settings-panel';
@@ -1191,6 +1192,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
 
       <MaterialDetailDrawer onUnitOpen={setStockUnit} itemId={materialDrawerId} initialMode={materialMode} onClose={() => {setSelectedMaterialId(null);setMaterialMode('view');setMaterialMode('view');if(tab==='materials')setWorkRecord(null);}} onChanged={refreshModules} renderWorkContext={({itemId,projectId}) => workContext(projectId,'materials',{itemId})}/>
       {stockUnit&&<StockUnitDialog key={stockUnit} unitId={stockUnit} onClose={()=>setStockUnit('')} onOpenMaterial={id=>{setMaterialMode('view');setSelectedMaterialId(id);}}/>}
+      {assistantProjects.length > 0 && <RoleAssistant key={`role:${string(user.userId)}`} projects={assistantProjects} defaultProjectId={filter} onApplied={refreshModules} onOpenSettings={allowedTabs.some(item => item.id === 'settings') ? () => navigate('settings') : undefined}/>}
       <footer className="p-footer">
     <span>{online ? <Wifi size={14}/> : <WifiOff size={14}/>}{online ? 'Conectado' : 'Sem conexão'}{updatedAt && ` · atualizado às ${updatedAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`}</span>
     <div style={{display:'flex',alignItems:'center',flexWrap:'wrap',gap:12}}><small>PROEX · {release}</small><FeedbackPanel release={release} module={tab} projects={projects.map(project=>({id:string(project.id),name:string(project.name)}))} projectId={filter}/></div>
