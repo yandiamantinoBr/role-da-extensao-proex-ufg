@@ -267,3 +267,29 @@ test('AI configuration history shows before and after only to whoever can config
   const project = await activityFeed(db, owner, { ...range, projectId: 'project-a' }, NOW);
   assert.ok(!project.events.some(event => event.type === 'ai'), 'configuração da organização não aparece no filtro de projeto');
 });
+
+test('corrected and undone stock movements carry their status, mirrors stay hidden and totals count the current version', async () => {
+  const { db, actors } = setup();
+  const move = (id, item, delta, kind, actor, when) => db.native.prepare("INSERT INTO stock_movements(id,item_id,delta,kind,note,actor_id,created_at) VALUES(?,?,?,?,'',?,?)").run(id, item, delta, kind, actor, when);
+  // Correção: mov-a1 (+100) vira +80. Desfazer: mov-b1 (-3) é anulado.
+  move('mirror-a1', 'item-a', -100, 'receive', actors.manager.userId, at('2026-11-10', 15));
+  move('fix-a1', 'item-a', 80, 'receive', actors.manager.userId, at('2026-11-10', 15));
+  move('mirror-b1', 'item-b', 3, 'consume', actors.manager.userId, at('2026-11-10', 16));
+  const revise = (id, item, project, target, kind, reversal, replacement, reason, hour) => db.native.prepare("INSERT INTO stock_movement_revisions(id,item_id,project_id,root_movement_id,target_movement_id,kind,reversal_movement_id,replacement_movement_id,reason,changes_json,actor_id,created_at) VALUES(?,?,?,?,?,?,?,?,?,'{}',?,?)")
+    .run(id, item, project, target, target, kind, reversal, replacement, reason, actors.manager.userId, at('2026-11-10', hour));
+  revise('rev-a1', 'item-a', 'project-a', 'mov-a1', 'correction', 'mirror-a1', 'fix-a1', 'Contagem refeita: eram 80', 15);
+  revise('rev-b1', 'item-b', 'project-b', 'mov-b1', 'reversal', 'mirror-b1', null, 'Lançado no item errado', 16);
+  const feed = await activityFeed(db, actors.manager, range, NOW);
+  const byId = id => feed.events.find(event => event.id === `materials:${id}`);
+  assert.equal(byId('mirror-a1'), undefined); assert.equal(byId('mirror-b1'), undefined);
+  assert.deepEqual({ status: byId('mov-a1').status, reason: byId('mov-a1').statusReason, by: byId('mov-a1').statusBy }, { status: 'corrected', reason: 'Contagem refeita: eram 80', by: 'Gestora Técnica' });
+  assert.equal(byId('fix-a1').status, 'correction');
+  assert.equal(byId('mov-b1').status, 'undone');
+  assert.equal(byId('mov-a2').status, undefined);
+  const planner = feed.summary.stock.find(row => row.name === 'Planner');
+  assert.deepEqual({ entradas: planner.entradas, saidas: planner.saidas }, { entradas: 80, saidas: 20 }, 'só a versão vigente entra na soma');
+  assert.equal(feed.summary.days.find(row => row.day === '2026-11-10').materials, 3, 'linhas de anulação não contam como movimentação');
+  assert.ok(!feed.summary.stock.some(row => row.name === 'Caneca'), 'movimento desfeito não soma');
+  const inventory = await activityFeed(db, actors.inventoryA, range, NOW);
+  assert.ok(!inventory.events.some(event => event.id === 'materials:mov-b1'), 'revisão de outro projeto não aparece');
+});

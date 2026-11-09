@@ -7,7 +7,8 @@ import DateField from './date-field';
 import styles from './activity-panel.module.css';
 
 type ActivityType = 'materials' | 'loans' | 'demands' | 'agenda' | 'records' | 'ai';
-type ActivityEvent = { id: string; type: ActivityType; action: string; title: string; detail: string; at: string; day: string; projectId: string | null; projectName: string; actorId: string | null; actorName: string; viaRole: boolean; href: string | null; quantity: number | null };
+type ActivityEvent = { id: string; type: ActivityType; action: string; title: string; detail: string; at: string; day: string; projectId: string | null; projectName: string; actorId: string | null; actorName: string; viaRole: boolean; href: string | null; quantity: number | null ; status?: 'corrected' | 'undone' | 'correction'; statusReason?: string; statusBy?: string };
+const STATUS_LABELS = { corrected: 'Corrigida', undone: 'Desfeita', correction: 'Correção' } as const;
 type SummaryDay = { day: string; materials: number; demandsOpened: number; demandsCompleted: number; agenda: number };
 type StockRow = { name: string; projectId: string; href: string; entradas: number; saidas: number };
 type Feed = { range: { from: string; to: string; days: string[] }; types: ActivityType[]; events: ActivityEvent[]; truncated: boolean; people: { id: string; name: string }[]; loansNow: { active: number; late: number } | null; aiVisible?: boolean; summary: { days: SummaryDay[]; stock: StockRow[] }; deadlines: { onTime: number; late: number; noDue: number; overdueNow: number } | null; team: { activePeople: number; perDay: { day: string; people: number }[]; people: { id: string; name: string; days: number; actions: number; last: string }[] } | null };
@@ -57,7 +58,7 @@ export function groupEntries(events: ActivityEvent[]): Entry[] {
     const first = events[index], minute = first.at.slice(0, 16);
     let end = index + 1;
     // Configuração de IA nunca agrupa: cada mudança de limite precisa ficar visível no histórico.
-    while (first.type !== 'ai' && end < events.length && events[end].type === first.type && events[end].action === first.action && events[end].at.slice(0, 16) === minute) end++;
+    while (first.type !== 'ai' && !first.status && end < events.length && !events[end].status && events[end].type === first.type && events[end].action === first.action && events[end].at.slice(0, 16) === minute) end++;
     if (end - index >= 3) entries.push({ kind: 'group', key: `${first.id}-group`, events: events.slice(index, end) });
     else for (let item = index; item < end; item++) entries.push({ kind: 'event', event: events[item] });
     index = end;
@@ -218,7 +219,8 @@ function EventRow({ event, hideProject, hidePerson, compact = false }: { event: 
   const content = <>
     {!compact && <TypeIcon type={event.type}/>}
     <span className={styles.body}>
-      <span className={styles.line}><strong>{event.action}</strong>{event.title && <> · {event.title}</>}{event.detail && event.type !== 'ai' && <span className={styles.detail}>{event.detail}</span>}</span>
+      <span className={styles.line}><strong>{event.action}</strong>{event.title && <> · {event.title}</>}{event.detail && event.type !== 'ai' && <span className={styles.detail} data-struck={event.status === 'corrected' || event.status === 'undone' ? 'true' : undefined}>{event.detail}</span>}{event.status && <span className={styles.revision} data-status={event.status}>{STATUS_LABELS[event.status]}</span>}</span>
+      {event.status && (event.statusReason || event.statusBy) && <span className={styles.revisionNote}>{event.status === 'correction' ? 'Corrige um lançamento anterior' : event.status === 'undone' ? 'Desfeita' : 'Substituída por uma correção'}{event.statusReason ? `: ${event.statusReason}` : ''}{event.statusBy ? ` · por ${event.statusBy}` : ''}</span>}
       {event.type === 'ai' && event.detail && <ul className={styles.changes}>{event.detail.split('\n').map(line => { const [label, values] = line.includes(': ') ? [line.slice(0, line.indexOf(': ')), line.slice(line.indexOf(': ') + 2)] : ['', line]; const [before, after] = values.split(' → '); return <li key={line}>{label && <span>{label}: </span>}{after !== undefined ? <><s aria-label={`antes ${before}`}>{before}</s> → <strong>{after}</strong></> : values}</li>; })}</ul>}
       <span className={styles.meta}>{event.type !== 'agenda' && !compact && <time dateTime={event.at}>{TIME.format(new Date(event.at))}</time>}{!hideProject && event.projectName && <span>{event.projectName}</span>}{!hidePerson && event.actorName && <span>{event.actorName}</span>}{event.viaRole && <span className={styles.role}><Sparkles size={13} aria-hidden="true"/>Pedido ao Rolê{event.actorName ? `, confirmado por ${event.actorName}` : ''}</span>}</span>
     </span>

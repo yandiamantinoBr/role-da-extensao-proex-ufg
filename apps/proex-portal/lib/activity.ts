@@ -20,6 +20,8 @@ export type ActivityEvent = {
   id: string; type: ActivityType; action: string; title: string; detail: string;
   at: string; day: string; projectId: string | null; projectName: string;
   actorId: string | null; actorName: string; viaRole: boolean; href: string | null; quantity: number | null;
+  /** Situação de movimentos de estoque revistos: versão substituída (corrigida), desfeita, ou a versão nova (correção). */
+  status?: 'corrected' | 'undone' | 'correction'; statusReason?: string; statusById?: string | null; statusBy?: string;
 };
 export type ActivityFeed = {
   range: { from: string; to: string; days: string[] };
@@ -109,20 +111,24 @@ export async function activityFeed(db: D1Database, actor: PortalActor | null, in
 
   if (wanted.includes('materials')) {
     const scope = scoped(actor, ['inventory.read'], 'p.id', projectId);
-    const rows = take(await all(db, `SELECT m.id,m.kind,m.delta,m.created_at,m.actor_id,m.ref_id,i.id item_id,i.name item_name,i.unit,p.id project_id,p.name project_name
+    const rows = take(await all(db, `SELECT m.id,m.kind,m.delta,m.created_at,m.actor_id,m.ref_id,i.id item_id,i.name item_name,i.unit,p.id project_id,p.name project_name,
+        sup.kind sup_kind,sup.reason sup_reason,sup.actor_id sup_actor,rep.reason rep_reason,rep.actor_id rep_actor
       FROM stock_movements m JOIN items i ON i.id=m.item_id JOIN projects p ON p.id=i.project_id
+      LEFT JOIN stock_movement_revisions sup ON sup.target_movement_id=m.id LEFT JOIN stock_movement_revisions rep ON rep.replacement_movement_id=m.id
       WHERE ${scope.sql} AND m.created_at>=? AND m.created_at<? AND NOT EXISTS(SELECT 1 FROM stock_movement_revisions mirror WHERE mirror.reversal_movement_id=m.id) ORDER BY m.created_at DESC LIMIT ${MAX_PER_SOURCE + 1}`, [...scope.values, range.startsAt, range.endsAt]));
     for (const row of rows) {
       const delta = Number(row.delta) || 0, unitName = String(row.unit || 'unidade'), unit = Math.abs(delta) === 1 || /s$/i.test(unitName) ? unitName : `${unitName}s`;
       events.push({ id: `materials:${row.id}`, type: 'materials', action: MOVEMENT_LABELS[String(row.kind)] ?? 'Movimentação', title: String(row.item_name), detail: `${delta > 0 ? '+' : ''}${delta} ${unit}`,
         at: String(row.created_at), day: brasiliaDay(String(row.created_at)), projectId: String(row.project_id), projectName: String(row.project_name),
         actorId: row.actor_id ? String(row.actor_id) : null, actorName: '', viaRole: /^manual:[^:]+:ai_/.test(String(row.ref_id ?? '')),
-        href: link('materials', String(row.project_id), `&itemId=${encodeURIComponent(String(row.item_id))}`), quantity: delta });
+        href: link('materials', String(row.project_id), `&itemId=${encodeURIComponent(String(row.item_id))}`), quantity: delta,
+        ...(row.sup_kind ? { status: row.sup_kind === 'reversal' ? 'undone' as const : 'corrected' as const, statusReason: String(row.sup_reason ?? ''), statusById: row.sup_actor ? String(row.sup_actor) : null }
+          : row.rep_reason !== null && row.rep_reason !== undefined ? { status: 'correction' as const, statusReason: String(row.rep_reason), statusById: row.rep_actor ? String(row.rep_actor) : null } : {}) });
     }
 
     const who = actorFilter('m.actor_id');
     bump(await all(db, `SELECT ${dayOf('m.created_at')} day,COUNT(*) n FROM stock_movements m JOIN items i ON i.id=m.item_id JOIN projects p ON p.id=i.project_id
-      WHERE ${scope.sql} AND m.created_at>=? AND m.created_at<?${who.sql} GROUP BY day`, [...scope.values, range.startsAt, range.endsAt, ...who.values]), 'materials');
+      WHERE ${scope.sql} AND m.created_at>=? AND m.created_at<?${who.sql} AND NOT EXISTS(SELECT 1 FROM stock_movement_revisions mirror WHERE mirror.reversal_movement_id=m.id) GROUP BY day`, [...scope.values, range.startsAt, range.endsAt, ...who.values]), 'materials');
     stock = (await all(db, `SELECT i.id item_id,i.name,p.id project_id,SUM(CASE WHEN m.delta>0 THEN m.delta ELSE 0 END) entradas,SUM(CASE WHEN m.delta<0 THEN -m.delta ELSE 0 END) saidas
       FROM stock_movements m JOIN items i ON i.id=m.item_id JOIN projects p ON p.id=i.project_id
       WHERE ${scope.sql} AND m.created_at>=? AND m.created_at<?${who.sql} AND ${effectiveMovementSql('m')} GROUP BY i.id ORDER BY entradas+saidas DESC,i.name LIMIT 8`, [...scope.values, range.startsAt, range.endsAt, ...who.values]))
@@ -240,7 +246,7 @@ export async function activityFeed(db: D1Database, actor: PortalActor | null, in
   }
 
   // Nomes só das pessoas que aparecem em eventos já autorizados; conta removida não tem nome.
-  const ids = [...new Set(events.map(event => event.actorId).filter((id): id is string => Boolean(id)))];
+  const ids = [...new Set(events.flatMap(event => [event.actorId, event.statusById ?? null]).filter((id): id is string => Boolean(id)))];
   const people = ids.length ? await all(db, `SELECT u.user_id id,COALESCE(NULLIF(pr.display_name,''),'Pessoa da equipe') name FROM portal_users u LEFT JOIN profiles pr ON pr.user_id=u.user_id
     WHERE u.user_id IN (${ids.map(() => '?').join(',')}) AND u.anonymized_at IS NULL`, ids) : [];
   const nameOf = new Map(people.map(row => [String(row.id), String(row.name)]));
@@ -248,6 +254,7 @@ export async function activityFeed(db: D1Database, actor: PortalActor | null, in
   for (const event of events) {
     if (event.actorId && !nameOf.has(event.actorId)) { event.actorId = null; event.actorName = 'Pessoa removida'; }
     else event.actorName = event.actorId ? nameOf.get(event.actorId)! : '';
+    if (event.status) { if (event.statusById && !nameOf.has(event.statusById)) { event.statusById = null; event.statusBy = 'Pessoa removida'; } else event.statusBy = event.statusById ? nameOf.get(event.statusById)! : ''; }
   }
   const filtered = person ? (nameOf.has(person) ? events.filter(event => event.actorId === person) : []) : events;
   filtered.sort((a, b) => b.at.localeCompare(a.at) || a.id.localeCompare(b.id));

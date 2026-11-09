@@ -155,3 +155,11 @@ a.row:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 .changes { display: grid; gap: 4px; margin: 6px 0 2px; padding: 0; list-style: none; color: var(--text-secondary); font-size: 13px; line-height: 1.45; font-variant-numeric: tabular-nums; }
 .changes s { text-decoration: none; opacity: .85; }
 .changes strong { color: var(--ink); font-weight: 650; }
+/* Movimentos revistos: o mesmo vocabulário da ficha do material. */
+.detail[data-struck=true] { text-decoration: line-through; text-decoration-color: var(--muted); }
+.revision { display: inline-flex; align-items: center; margin-left: 8px; padding: 1px 8px; border: 1px solid var(--line); border-radius: 999px; font-size: 12px; font-weight: 600; vertical-align: 1px; }
+.revision[data-status=corrected], .revision[data-status=undone] { color: #8a4b00; background: #fff3e3; border-color: #f2c98f; }
+.revision[data-status=correction] { color: #582771; background: #f3eef8; border-color: #d9c6e8; }
+:global(html[data-theme=dark]) .revision[data-status=corrected], :global(html[data-theme=dark]) .revision[data-status=undone] { color: #ffc983; background: #3b2a16; border-color: #7a5424; }
+:global(html[data-theme=dark]) .revision[data-status=correction] { color: #e3cdf3; background: #33243f; border-color: #6a4c80; }
+.revisionNote { color: var(--text-secondary); font-size: 12.5px; line-height: 1.4; overflow-wrap: anywhere; }
