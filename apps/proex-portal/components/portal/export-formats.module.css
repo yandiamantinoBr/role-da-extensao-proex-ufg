@@ -26,7 +26,8 @@
 .pdf{--fmt:var(--fmt-pdf);--fmt-soft:var(--fmt-pdf-soft)}
 .root > :global(.p-inline-error){margin:0;max-width:480px}
 @media (prefers-reduced-motion:reduce){.button{transition:none}}
-@media (max-width:420px){.group{display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr))}.button{justify-content:center;padding-inline:8px}}
+/* Celular estreito: três colunas no formato de ladrilho, para "Documento DOCX" nunca vazar do botão. */
+@media (max-width:420px){.group{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}.button{flex-direction:column;justify-content:center;gap:4px;padding:8px 6px;min-height:56px;white-space:normal;text-align:center}.text{flex-direction:column;align-items:center;gap:1px}.text small{font-size:10px}.group > :not(.button){grid-column:1/-1}}
 :global(.p-export-card) > .root{margin-top:auto;grid-column:2}
 :global(.p-export-card):has(> .root):hover{transform:none;border-color:var(--line)}
 /* Ladrilhos: três colunas iguais com ícone em cima, para cartões estreitos. */

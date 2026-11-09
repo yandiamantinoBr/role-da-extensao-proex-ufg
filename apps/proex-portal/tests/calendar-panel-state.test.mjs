@@ -108,7 +108,7 @@ test('opening and closing a day never scrolls the page or moves focus away from 
     assert.deepEqual(calls, [], 'abrir ou fechar um dia não pode rolar a página nem tirar o foco do dia');
     // No celular, a lista fica abaixo do mês: o atalho explícito leva até ela só quando a pessoa pede.
     dayButton().props.onClick({ currentTarget: target('day') }); h.render();
-    const jump = h.all().find(node => node.type === 'button' && /^Ver \d+ registros? do dia \d+$/.test(text(node).trim()));
+    const jump = h.all().find(node => node.type === 'button' && /^Ver \d+ compromissos? do dia \d+$/.test(text(node).trim()));
     assert.ok(jump, 'atalho para a lista do dia');
     jump.props.onClick(); h.render();
     assert.deepEqual(calls, ['list:focus', 'list:scroll']);

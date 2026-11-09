@@ -449,11 +449,14 @@ test('three exports share authorized columns and data in XLSX and legacy CSV', a
 test('registros completos also download as server DOCX and PDF with the same authorized rows and readable labels', async t => {
   const f = fixture(t);
   f.participation('a', 'a', { results: ['retry', 'brinde'], prize: 'delivered' });
+  f.participation('a', 'c', { results: ['miss'] });
+  f.participation('a', 'd', { results: ['retry', 'retry_exhausted'] });
   f.participation('b', 'b', { identity: 'account', modality: 'wheel', results: ['super'], prize: 'delivered' });
   observeExport(f, f.member('viewer'));
-  const font = readFileSync(new URL('../public/fonts/NotoSans-Regular.ttf', import.meta.url));
+  const publicFile = path => readFileSync(new URL(`../public${path}`, import.meta.url));
   const originalFetch = globalThis.fetch, fetched = [];
-  globalThis.fetch = async url => { fetched.push(String(url)); return new Response(font, { status: 200 }); };
+  const serve = async url => { fetched.push(String(url)); return new Response(publicFile(new URL(String(url)).pathname), { status: 200 }); };
+  globalThis.fetch = serve;
   t.after(() => { globalThis.fetch = originalFetch; });
   globalThis.__proexReportTestOrigin = 'https://portal.example.test';
   t.after(() => { delete globalThis.__proexReportTestOrigin; });
@@ -470,7 +473,8 @@ test('registros completos also download as server DOCX and PDF with the same aut
     const documentXml = entries.get('word/document.xml');
     assert.ok(documentXml.includes(titles[kind]));
     assert.ok(!/PRIVATE|SECRET PROJECT B|SECRET ITEM B|@example\.test/.test(documentXml));
-    if (kind === 'participations') for (const label of ['Participação', 'Tentativa', 'Premiação', 'Presencial']) assert.ok(documentXml.includes(label), label);
+    if (kind === 'participations') for (const label of ['Participação', 'Tentativa', 'Premiação', 'Presencial', 'Não foi dessa vez', 'Tentativas esgotadas']) assert.ok(documentXml.includes(label), label);
+    if (kind === 'participations') { assert.ok(documentXml.includes('Brinde')); assert.ok(!/>(miss|retry|retry_exhausted|pending|brinde|super|physical|ticket|account|done|ready|delivered)</.test(documentXml), 'nenhum código interno sai cru no documento'); }
     if (kind === 'stock') assert.ok(documentXml.includes('Saldo físico') && documentXml.includes('Brinde'));
     assert.match(word.headers.get('Content-Disposition'), { participations: /proex-participacao-/, stock: /proex-materiais-/, loans: /proex-emprestimos-/ }[kind]);
     if (kind === 'loans') assert.ok(!/borrower|contato|note|observa/i.test(documentXml));
@@ -482,11 +486,14 @@ test('registros completos also download as server DOCX and PDF with the same aut
     assert.equal(bytes.subarray(0, 5).toString('latin1'), '%PDF-');
     assert.ok((await PDFDocument.load(bytes)).getPageCount() >= 1, 'o PDF abre e tem páginas');
   }
-  assert.ok(fetched.length > 0 && fetched.every(url => url === 'https://portal.example.test/fonts/NotoSans-Regular.ttf'), 'só a fonte da origem configurada do portal é buscada');
+  const allowed = ['/fonts/NotoSans-Regular.ttf', '/brand/proex.png', '/brand/ufg-white.png'].map(path => 'https://portal.example.test' + path);
+  assert.ok(fetched.length > 0 && fetched.every(url => allowed.includes(url)), 'só a fonte e as marcas da origem configurada são buscadas');
+  assert.equal(fetched.filter(url => url.endsWith('.ttf')).length, 1, 'a fonte é buscada uma vez e reaproveitada');
   // Com a origem configurada, um Host forjado não muda de onde a fonte é buscada.
   globalThis.__proexReportTestOrigin = 'https://portal-oficial.example.test';
   assert.equal((await GET(new Request('https://forjado.example.test/api/export?kind=stock&format=pdf'))).status, 200);
-  assert.equal(fetched.at(-1), 'https://portal-oficial.example.test/fonts/NotoSans-Regular.ttf');
+  assert.ok(fetched.includes('https://portal-oficial.example.test/fonts/NotoSans-Regular.ttf'));
+  assert.ok(!fetched.some(url => url.includes('forjado')));
   // Sem origem configurada, só a bancada local usa a própria origem; outro Host recebe aviso, sem busca.
   delete globalThis.__proexReportTestOrigin;
   const before = fetched.length, refused = await GET(new Request('https://forjado.example.test/api/export?kind=stock&format=pdf'));
@@ -494,13 +501,13 @@ test('registros completos also download as server DOCX and PDF with the same aut
   assert.match((await refused.json()).error, /Não foi possível preparar o PDF/);
   assert.equal(fetched.length, before);
   assert.equal((await GET(new Request('http://127.0.0.1:5173/api/export?kind=stock&format=pdf'))).status, 200);
-  assert.equal(fetched.at(-1), 'http://127.0.0.1:5173/fonts/NotoSans-Regular.ttf');
+  assert.ok(fetched.includes('http://127.0.0.1:5173/fonts/NotoSans-Regular.ttf'));
   // Falha inesperada da biblioteca não aparece crua: vira aviso em português.
   globalThis.fetch = async () => new Response(new Uint8Array([1, 2, 3]), { status: 200 });
-  const broken = await GET(new Request('http://127.0.0.1:5173/api/export?kind=stock&format=pdf'));
+  const broken = await GET(new Request('http://localhost:5199/api/export?kind=stock&format=pdf'));
   assert.equal(broken.status, 500);
   assert.equal((await broken.json()).error, 'Não foi possível preparar o arquivo. Baixe a planilha ou tente novamente.');
-  globalThis.fetch = async url => { fetched.push(String(url)); return new Response(font, { status: 200 }); };
+  globalThis.fetch = serve;
   // Outro projeto, formato inválido e falta de permissão continuam recusados nos formatos novos.
   for (const format of ['docx', 'pdf']) assert.equal((await GET(new Request(`https://portal.example.test/api/export?kind=stock&format=${format}&projectId=project-b`))).status, 403);
   assert.equal((await GET(new Request('https://portal.example.test/api/export?kind=stock&format=odt'))).status, 400);
