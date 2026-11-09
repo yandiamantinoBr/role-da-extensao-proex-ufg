@@ -13,6 +13,7 @@ import ExportFormats, {type DocumentFormat} from './export-formats';
 import { documentExport } from './document-export';
 import { toast } from 'sonner';
 import { MAX_UPLOAD_FILE_BYTES as MAX_FILE_BYTES, UPLOAD_LIMIT_LABEL, uploadErrorMessage } from '../../lib/upload-limits';
+import DriveSaveButton from './drive-save-button';
 
 type Row = Record<string, unknown>;
 type Kind = 'observation' | 'maintenance' | 'distribution' | 'consumption' | 'project' | 'material' | 'loan';
@@ -336,7 +337,7 @@ export default function RecordsPanel({ projects: sourceProjects, items, loans, i
         {record.loan_id && <div><dt style={{ fontWeight: 700 }}>Empréstimo vinculado</dt><dd style={{ margin: '3px 0 0', overflowWrap: 'anywhere' }}>#{record.loan_id}</dd></div>}
       </dl>}
       {!!record.attachments.length && <ul style={{ listStyle: 'none', margin: '14px 0 0', padding: 0, display: 'grid', gap: 8 }} aria-label={`Anexos de ${record.title}`}>
-        {record.attachments.map(attachment => <li key={attachment.id}><a className="p-text-link" href={`/api/records/files/${encodeURIComponent(attachment.id)}`} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: 7, overflowWrap: 'anywhere', minHeight: 36 }}><Paperclip size={15} style={{ flexShrink: 0 }} aria-hidden="true" /><span>{attachment.name} <small>({sizeLabel(attachment.size)})</small></span><ExternalLink size={13} style={{ flexShrink: 0 }} aria-hidden="true" /><span className="sr-only"> — abre em nova aba ou baixa o arquivo</span></a></li>)}
+        {record.attachments.map(attachment => <li key={attachment.id}><a className="p-text-link" href={`/api/records/files/${encodeURIComponent(attachment.id)}`} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: 7, overflowWrap: 'anywhere', minHeight: 36 }}><Paperclip size={15} style={{ flexShrink: 0 }} aria-hidden="true" /><span>{attachment.name} <small>({sizeLabel(attachment.size)})</small></span><ExternalLink size={13} style={{ flexShrink: 0 }} aria-hidden="true" /><span className="sr-only"> — abre em nova aba ou baixa o arquivo</span></a> <DriveSaveButton source={{ kind: 'record_attachment', id: attachment.id }} label={attachment.name}/></li>)}
       </ul>}
     </>;
   }

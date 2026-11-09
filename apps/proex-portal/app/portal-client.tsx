@@ -2,6 +2,9 @@
 import DateTimeField from '@/components/portal/date-time-field';
 import DateField from '@/components/portal/date-field';
 import McpConnectionsPanel from '@/components/portal/mcp-connections-panel';
+import GoogleDriveConnectionPanel from '@/components/portal/google-drive-connection-panel';
+import GoogleDriveFoldersPanel from '@/components/portal/google-drive-folders-panel';
+import DriveSaveButton from '@/components/portal/drive-save-button';
 import Image from 'next/image';
 import scopeStyles from './scope-filters.module.css';
 import FeedbackPanel from '@/components/portal/feedback-panel';
@@ -1030,7 +1033,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
                         <strong>Contato:</strong> {get(l, 'borrowerContact', 'borrower_contact')}</p>}{l.note && <p>
                         <strong>Observações:</strong> {l.note}</p>}{documents.filter(d => get(d, 'loanId', 'loan_id') === l.id).map(d => <a className="p-file-link" key={d.id} href={`/api/files/${d.id}`} target="_blank" rel="noreferrer">
                         <FileText size={16}/>{d.name || 'Termo anexado'}<ExternalLink size={13}/>
-                        </a>)}{canProject(get(l, 'projectId', 'project_id'), 'loans.manage', 'loans.checkout') && <LoanAttachment loanId={l.id} onSaved={refresh}/>}{canProject(get(l, 'projectId', 'project_id'), 'loans.manage', 'loans.checkout') && l.status !== 'returned' && l.status !== 'cancelled' && <OperationForm action="loan.status" draftKey={`loan-status:${l.id}:${l.status}`} mutate={mutate} submit="Registrar atualização" make={f => ({ id: l.id, status: f.get('status'), note: f.get('note') })}>
+                        </a>)}{documents.filter(d => get(d, 'loanId', 'loan_id') === l.id).length > 0 && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, margin: '6px 0' }}>{documents.filter(d => get(d, 'loanId', 'loan_id') === l.id).map(d => <DriveSaveButton key={`drive-${d.id}`} source={{ kind: 'loan_document', id: d.id }} label={d.name || 'Termo anexado'}/>)}</div>}{canProject(get(l, 'projectId', 'project_id'), 'loans.manage', 'loans.checkout') && <LoanAttachment loanId={l.id} onSaved={refresh}/>}{canProject(get(l, 'projectId', 'project_id'), 'loans.manage', 'loans.checkout') && l.status !== 'returned' && l.status !== 'cancelled' && <OperationForm action="loan.status" draftKey={`loan-status:${l.id}:${l.status}`} mutate={mutate} submit="Registrar atualização" make={f => ({ id: l.id, status: f.get('status'), note: f.get('note') })}>
                         <Field label="Atualização do empréstimo">
                         <select name="status" data-no-draft="true" required defaultValue=""><option value="" disabled>Escolha a ação</option>{l.status === 'reserved' && <option value="out">Registrar retirada</option>}{l.status === 'out' && <option value="returned">Registrar devolução</option>}{l.status === 'reserved' && <option value="cancelled">Cancelar reserva</option>}</select>
                         </Field>
@@ -1071,7 +1074,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
 
       {tab === 'work-teams' && <WorkTeamsPanel key={`${string(user.userId)}:${filter}:${teamIntent?.nonce ?? 0}`} userId={string(user.userId)} intent={teamIntent} pinnedTeamIds={pins.teamPins} onTogglePin={(id, pinned) => setPinned('team', id, pinned)} defaultProjectId={filter} organizations={organizations} projects={projects.map(project => ({id:string(project.id),name:string(project.name),organization_id:string(project.organization_id)}))} canOpenAccess={allowedTabs.some(module=>module.id==='team')} onChanged={refreshModules} onOpenDemand={(id,projectId)=>{selectProject(projectId??'');setSelectedDemandId(id);navigate('demands');}}/>}
       {tab === 'team' && <><OrganizationsPanel organizations={organizations} currentActor={{ userId: string(user.userId), isPlatformOwner }} people={organizationPeople} onChanged={refreshModules}/>{organizations.filter(organization=>organization.canManage||isPlatformOwner).map(organization=><DirectoryPanel key={organization.id} userId={string(user.userId)} organizationId={organization.id}/>)}<OfficialTeamDirectory onSelect={canAny('access.invite') ? setOfficialSuggestion : undefined}/><TeamPanel key={officialSuggestion?.selectionKey ?? `manual:${filter}`} officialSuggestion={officialSuggestion} onClearOfficialSuggestion={() => setOfficialSuggestion(null)} users={list(data.users)} members={members} invites={invites} projects={projects} selectedProjectId={filter} globalAdmin={isPlatformOwner} canManageManagers={(projectId, organizationId) => isPlatformOwner || organizations.some(organization => organization.canManage && organization.id === (projectId ? projects.find(project => project.id === projectId)?.organization_id : organizationId))} canProject={canProject} mutate={mutate} now={now}/>{canGlobal('organization.manage') && <AdminPrivacyPanel />}</>}
-      {tab === 'profile' && <><McpConnectionsPanel key={`mcp-${string(user.userId)}`}/><ProfilePanel onUpdated={() => { void refresh(); }}/></>}
+      {tab === 'profile' && <><McpConnectionsPanel key={`mcp-${string(user.userId)}`}/><GoogleDriveConnectionPanel key={`drive-${string(user.userId)}`}/><ProfilePanel onUpdated={() => { void refresh(); }}/></>}
       {tab === 'calendar' && <CalendarPanel projects={projects} organizationalUnits={visibleUnits} selectedProjectId={filter} selectedUnitId={unitFilter} onProjectChange={selectProject} onUnitChange={selectUnit}/>}
       {tab === 'records' && <>
         <nav className="p-material-tabs" aria-label="Partes de Registros"><button type="button" aria-pressed={recordsView === 'history'} className={recordsView === 'history' ? 'is-active' : ''} onClick={() => setRecordsView('history')}><CalendarDays size={18}/>Histórico</button><button type="button" aria-pressed={recordsView === 'documents'} className={recordsView === 'documents' ? 'is-active' : ''} onClick={() => setRecordsView('documents')}><FileText size={18}/>Documentos</button></nav>
@@ -1215,7 +1218,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
       {/* Configurações por tarefa (09/11/2026). Cada grupo aparece só para quem pode usá-lo; a aba inteira
           já exige dono da plataforma ou permissão de IA. A central de chaves (sessão do Rolê) só mudou de posição. */}
       {tab === 'settings' && <div className={settingsStyles.groups}>
-        <SettingsIndex items={[...(canGlobal('organization.manage') ? [{ id: 'settings-event-page', label: 'Página das dinâmicas' }, { id: 'settings-public-signup', label: 'Cadastro público' }, { id: 'settings-spreadsheet', label: 'Planilha Google' }, { id: 'settings-backup', label: 'Backup' }] : []), { id: 'ai-credentials', label: 'Chaves e modelos' }]} intro={<>Seu nome, sua senha e as conexões pessoais ficam em <button type="button" className="p-text-link" onClick={() => navigate('profile')}>Conta</button>{allowedTabs.some(item => item.id === 'demands') && <>; os avisos por e-mail, em <button type="button" className="p-text-link" onClick={() => navigate('demands')}>Demandas</button></>}.</>}/>
+        <SettingsIndex items={[...(canGlobal('organization.manage') ? [{ id: 'settings-event-page', label: 'Página das dinâmicas' }, { id: 'settings-public-signup', label: 'Cadastro público' }, { id: 'settings-spreadsheet', label: 'Planilha Google' }, { id: 'settings-drive-folders', label: 'Pastas do Drive' }, { id: 'settings-backup', label: 'Backup' }] : []), { id: 'ai-credentials', label: 'Chaves e modelos' }]} intro={<>Seu nome, sua senha e as conexões pessoais ficam em <button type="button" className="p-text-link" onClick={() => navigate('profile')}>Conta</button>{allowedTabs.some(item => item.id === 'demands') && <>; os avisos por e-mail, em <button type="button" className="p-text-link" onClick={() => navigate('demands')}>Demandas</button></>}.</>}/>
         <SettingsSection show={canGlobal('organization.manage')} title="Evento e participantes" description="O que o público vê nas dinâmicas e o cadastro pelo celular.">
           <details id="settings-event-page" className={settingsStyles.group}>
             <summary><strong>Página das dinâmicas</strong><small>Aviso de privacidade e perfil oficial no Instagram mostrados a quem participa.</small></summary>
@@ -1239,6 +1242,10 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
           <details id="settings-spreadsheet" className={settingsStyles.group}>
             <summary><strong>Planilha Google</strong><small>Conexão com a planilha, atalhos, fotos no Drive e cópia dos dados para levar a outro lugar.</small></summary>
             <div className={settingsStyles.body}><SyncSettingsPanel key={string(user.userId)} userId={string(user.userId)} includeBackups={false} embedded/></div>
+          </details>
+          <details id="settings-drive-folders" className={settingsStyles.group}>
+            <summary><strong>Pastas do Drive</strong><small>Quais pastas da PROEX recebem arquivos do portal, para que servem e quem pode usar.</small></summary>
+            <div className={settingsStyles.body}><GoogleDriveFoldersPanel key={string(user.userId)}/></div>
           </details>
           <details id="settings-backup" className={settingsStyles.group}>
             <summary><strong>Backup e recuperação</strong><small>Cópias protegidas de todos os dados, teste de recuperação e cópia automática.</small></summary>

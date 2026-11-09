@@ -95,6 +95,7 @@ Todas as peças de Apps Script **rodam com a conta de quem as instalou**. Hoje �
 | Projeto Apps Script de avisos por e-mail (MailApp) | Avisos automáticos a cada 10 min, limite 50/dia por organização e 3 por pessoa | Projeto privado separado, conta pessoal do Yan. Credencial `pne_` provisória **vence em 30/11/2026** | **Médio**: só param os avisos |
 | Planilhas por projeto e por equipe | Visão limitada por projeto ou equipe, com chaves próprias | Arquivos escolhidos por cada gestor. Podem estar em Drives institucionais. | **Baixo** |
 | Planilha "CONPEEX 2026 — Controle de brindes" | Controle operacional da equipe | Drive institucional (Equipe PROEC), não do Yan | **Baixo** para este tema; já está no lugar certo |
+| Cliente OAuth "Portal PROEX" (Google Drive por pessoa) | Deixa cada pessoa conectar a própria conta e enviar arquivos às pastas registradas (escopo `drive.file`). Variáveis `PROEX_GOOGLE_*` na Vercel | Projeto do Google Cloud na conta do Yan (quando configurado). Os arquivos ficam nos Drives da PROEX, com a autoria de quem enviou | **Médio**: param os envios ao Drive; nada se perde (as pastas e os arquivos não dependem do cliente) |
 | Google Calendar | O portal **não** grava no Calendar. Ele só publica um feed `.ics` em `/api/calendar/feed` que cada pessoa assina | Sem conta envolvida | Sem risco de conta |
 
 Cotas do Google dependem do tipo de conta (pessoal ou Workspace): **a confirmar** com a conta institucional.
@@ -187,6 +188,7 @@ Prepare tudo **antes** do dia da virada e só então congele o portal. Tempos s�
 3. **Backup diário:** criar a pasta privada na conta institucional, configurar a chave **pública** nova no portal e guardar a **privada** em duas custódias. Rodar "Executar backup completo agora" e conferir com `restore-backup.mjs --dry-run`.
 4. **Avisos por e-mail:** criar o projeto separado na conta institucional, uma credencial `pne_` nova e repetir o piloto próprio. Decida o prazo da credencial (1 a 90 dias).
 5. Atualizar os links das abas em **Configurações → Planilha e anexos** para a planilha nova.
+6. **Google Drive por pessoa** (só se estiver em uso). Na conta institucional, recriar o projeto do Google Cloud seguindo `docs/GOOGLE-DRIVE.md`, seção 6: ativar Drive API e Picker API, configurar a Google Auth Platform (Interno, se for Workspace da UFG; senão Externo e "Em produção"), escopos `openid`, `userinfo.email` e `drive.file`, cliente Web com a origem e o redirecionamento do **domínio novo** (`https://<domínio>/api/drive/oauth/callback`) e uma chave de API restrita à Picker API. Trocar na Vercel nova as quatro variáveis `PROEX_GOOGLE_CLIENT_ID`, `PROEX_GOOGLE_CLIENT_SECRET` (sensível), `PROEX_GOOGLE_PICKER_API_KEY` e `PROEX_GOOGLE_CLOUD_PROJECT_NUMBER` e publicar. **Efeito:** as conexões antigas pertencem ao cliente antigo e deixam de funcionar; cada pessoa vê "Precisa reconectar" e conecta de novo (um clique) e libera cada pasta outra vez no primeiro envio. O registro de pastas e o histórico de envios ficam no banco e vêm na migração. Depois, apagar o cliente antigo no projeto da conta do Yan. Se `PROEX_KEYS_SECRET` mudar na migração, o efeito é o mesmo: reconectar.
 
 ### Passo 6. Virar a chave — 15 min, é aqui que o portal antigo para
 
@@ -222,6 +224,7 @@ Prepare tudo **antes** do dia da virada e só então congele o portal. Tempos s�
 - [ ] Planilha mestre e conector novos; primeira sincronização `verified`
 - [ ] Backup diário novo configurado; chave privada em 2 custódias; um `--dry-run` do primeiro arquivo
 - [ ] Avisos por e-mail novos com credencial da conta institucional
+- [ ] Se o Google Drive por pessoa estiver em uso: cliente OAuth institucional criado, variáveis `PROEX_GOOGLE_*` trocadas, um envio de teste conferido e o cliente antigo apagado
 - [ ] Chaves antigas revogadas; gatilhos antigos removidos
 - [ ] Domínio apontando para o projeto novo; `BETTER_AUTH_URL` conferido
 - [ ] Ambiente antigo parado, mantido 30 dias e depois encerrado
