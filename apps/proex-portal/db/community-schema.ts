@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm';
-import { check, index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
-import { portalUsers } from './base-schema';
+import { check, index, integer, primaryKey, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { organizations, portalUsers } from './base-schema';
 /*
  * Community layer (0036). Personal widgets are private to their owner (no management view).
  * The ombuds tables intentionally have NO author column and keep only civil days, never instants:
@@ -29,3 +29,22 @@ export const ombudsMessages = sqliteTable('ombuds_messages', {
   side:text('side').notNull(), body:text('body').notNull(), sentOn:text('sent_on').notNull(), seq:integer('seq').notNull(),
 },t=>[uniqueIndex('ombuds_messages_seq_idx').on(t.reportId,t.seq),
   check('ombuds_messages_side',sql`${t.side} IN ('reporter','ombuds')`),check('ombuds_messages_body',sql`length(${t.body}) BETWEEN 1 AND 4000`)]);
+/* Phase 2 (0037): direct messages between people of the same organization, personal blocks, preferences and badges. */
+export const communityMessages = sqliteTable('community_messages', {
+  id:text('id').primaryKey().notNull(), organizationId:text('organization_id').notNull().references(()=>organizations.id),
+  senderId:text('sender_id').notNull().references(()=>portalUsers.userId), recipientId:text('recipient_id').notNull().references(()=>portalUsers.userId),
+  body:text('body').notNull(), createdAt:text('created_at').notNull(), readAt:text('read_at'),
+  senderHiddenAt:text('sender_hidden_at'), recipientHiddenAt:text('recipient_hidden_at'),
+},t=>[index('community_messages_inbox_idx').on(t.recipientId,t.readAt,t.createdAt),index('community_messages_sent_idx').on(t.senderId,t.createdAt),
+  check('community_messages_body',sql`length(${t.body}) BETWEEN 1 AND 1000`),check('community_messages_people',sql`${t.senderId}!=${t.recipientId}`)]);
+export const communityBlocks = sqliteTable('community_blocks', {
+  userId:text('user_id').notNull().references(()=>portalUsers.userId), blockedId:text('blocked_id').notNull().references(()=>portalUsers.userId), createdAt:text('created_at').notNull(),
+},t=>[primaryKey({columns:[t.userId,t.blockedId]}),check('community_blocks_people',sql`${t.userId}!=${t.blockedId}`)]);
+export const communityPreferences = sqliteTable('community_preferences', {
+  userId:text('user_id').primaryKey().notNull().references(()=>portalUsers.userId),
+  badges:integer('badges').notNull().default(1), pausedUntil:text('paused_until'), seenLevel:integer('seen_level').notNull().default(1),
+  version:integer('version').notNull().default(1), updatedAt:text('updated_at').notNull(),
+},t=>[check('community_preferences_badges',sql`${t.badges} IN (0,1)`)]);
+export const communityBadges = sqliteTable('community_badges', {
+  userId:text('user_id').notNull().references(()=>portalUsers.userId), badge:text('badge').notNull(), week:text('week').notNull(), earnedAt:text('earned_at').notNull(),
+},t=>[primaryKey({columns:[t.userId,t.badge,t.week]}),check('community_badges_badge',sql`${t.badge} IN ('closer','helpful','thanks','field')`)]);
