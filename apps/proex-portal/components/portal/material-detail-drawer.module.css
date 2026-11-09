@@ -75,3 +75,6 @@
 /* 09/11: no celular, os atalhos Editar/Movimentar aparecem só no Resumo (as abas já levam a eles)
    e a galeria vira uma coluna, para a exclusão com motivo caber com folga. */
 @media(max-width:650px){.dialog:not([data-mode=summary]):not([data-mode=edit]) .recordActions{display:none}.gallery{grid-template-columns:1fr}.gallery img{height:200px}.photoConfirm button,.photoAction{min-height:44px}}
+
+/* 09/11: abas da ficha em uma linha só, com rolagem lateral, no celular. */
+@media(max-width:650px){.toolbar{flex-wrap:nowrap;align-items:center}.toolbar nav{flex:1 1 auto;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;-webkit-mask-image:linear-gradient(90deg,#000 88%,transparent)}.toolbar nav::-webkit-scrollbar{display:none}.toolbar nav button{flex:0 0 auto}.photoConfirm>div{display:flex;flex-wrap:wrap;gap:12px}.photoConfirm button{min-height:44px;min-width:96px;font-size:14px}}

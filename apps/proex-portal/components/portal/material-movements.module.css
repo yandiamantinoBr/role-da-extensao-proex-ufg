@@ -64,7 +64,7 @@
 .diff{margin:6px 0 0;padding:0;list-style:none;display:flex;flex-direction:column;gap:3px}
 .diff li::before{display:none}
 .diff del{color:var(--text-secondary,var(--muted))}
-.files{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.files{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}
 .file{border:1px solid var(--line);border-radius:12px;overflow:hidden;display:flex;flex-direction:column;min-width:0;background:var(--surface,var(--paper))}
 .file img{width:100%;height:120px;object-fit:cover;display:block;background:var(--surface-soft,#f3eef7)}
 .filePdf{height:120px;display:flex;align-items:center;justify-content:center;background:var(--surface-soft,#f3eef7);color:var(--brand-ink,var(--purple))}
@@ -143,3 +143,9 @@
 .form .actions{position:sticky;bottom:0;z-index:1;padding:12px 0 4px;margin-bottom:-4px;background:var(--surface,var(--paper));border-top:1px solid var(--line)}
 .fileActions a,.fileActions button,.confirm button{min-height:44px}
 .linkButton{min-height:32px;display:inline-flex;align-items:center;gap:4px}
+
+.fileBody span{overflow-wrap:anywhere;word-break:break-word}
+.upload p,.meta small,.rows li small,.steps small,.fileBody small,.deleted{font-size:13px}
+.body{scroll-padding-bottom:96px}
+.form{padding-bottom:0}
+.fileActions{justify-content:flex-end}
