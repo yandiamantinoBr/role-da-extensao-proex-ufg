@@ -13,7 +13,7 @@ A exceção é a vista nova **Histórico** de Registros (PR49), que não tem exp
 
 ## 1. Projetos fixados
 
-- Os fixados agora ficam **na conta**, em qualquer aparelho. A migração `0037_user_preferences` guarda só os ids, com no máximo 12 projetos e 12 equipes. Os fixados antigos, que ficavam só no navegador, são trazidos uma vez para a conta.
+- Os fixados agora ficam **na conta**, em qualquer aparelho. A migração `0038_user_preferences` guarda só os ids, com no máximo 12 projetos e 12 equipes. Os fixados antigos, que ficavam só no navegador, são trazidos uma vez para a conta.
 - Na grade, os fixados vêm **primeiro** e marcados como "Fixado".
 - A faixa de fixados tem **largura uniforme**: uma coluna por projeto, mesmo quando há um só (247 px em 1366; duas colunas de 176 px no celular). O alfinete para desafixar fica **ao lado do nome**. Testado com 1, 2, 4 e 10 fixados.
 
