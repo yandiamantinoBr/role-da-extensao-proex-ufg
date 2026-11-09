@@ -27,6 +27,9 @@ export function FormatIcon({ format, size = 22 }: { format: DocumentFormat; size
   </svg>;
 }
 
+/** Lance quando a falha já foi mostrada por quem chamou: o componente não repete o aviso nem anuncia sucesso. */
+export class ExportHandledError extends Error { constructor() { super('Exportação não concluída.'); this.name = 'ExportHandledError'; } }
+
 /** Baixa um arquivo gerado no servidor, mostrando a mensagem da API quando o pedido for recusado. */
 export async function downloadFromServer(url: string, fallbackName: string): Promise<void> {
   const response = await fetch(url, { credentials: 'same-origin', cache: 'no-store' });
@@ -57,9 +60,11 @@ type Props = {
   className?: string;
   /** Desligue quando `onExport` já avisa o resultado por conta própria. */
   announce?: boolean;
+  /** Três ladrilhos lado a lado (ícone em cima), para cartões estreitos. */
+  tiles?: boolean;
 };
 
-export default function ExportFormats({ onExport, disabled, label = 'Baixar recorte', formats = DOCUMENT_FORMATS, showLabel = false, children, className, announce = true }: Props) {
+export default function ExportFormats({ onExport, disabled, label = 'Baixar recorte', formats = DOCUMENT_FORMATS, showLabel = false, children, className, announce = true, tiles = false }: Props) {
   const [busy, setBusy] = useState<DocumentFormat | null>(null), [error, setError] = useState('');
   async function run(format: DocumentFormat) {
     if (busy) return;
@@ -68,15 +73,16 @@ export default function ExportFormats({ onExport, disabled, label = 'Baixar reco
       await onExport(format);
       if (announce) toast.success(`${FORMAT_META[format].name} (${FORMAT_META[format].extension}) preparado para download`);
     } catch (cause) {
+      if (cause instanceof ExportHandledError) return;
       setError(cause instanceof Error ? cause.message : 'Não foi possível preparar o arquivo. Tente novamente.');
       if (announce) toast.error('O arquivo não foi preparado. Confira o aviso junto às exportações.');
     } finally { setBusy(null); }
   }
   return <div className={`${styles.root}${className ? ` ${className}` : ''}`}>
     {showLabel && <p className={styles.caption}>{label}</p>}
-    <div role="group" aria-label={label} className={styles.group}>
+    <div role="group" aria-label={label} className={`${styles.group}${tiles ? ` ${styles.tiles}` : ''}`}>
       {formats.map(format => <button key={format} type="button" className={styles.button} data-format={format} disabled={disabled || !!busy} aria-busy={busy === format || undefined}
-        onClick={() => void run(format)} aria-label={`${label}: ${FORMAT_META[format].spoken}`}>
+        onClick={() => void run(format)} aria-label={`${label} em ${FORMAT_META[format].extension}`} title={`${FORMAT_META[format].name} (${FORMAT_META[format].extension})`}>
         {busy === format ? <LoaderCircle size={20} className="p-spin" aria-hidden="true" /> : <FormatIcon format={format} />}
         <span className={styles.text}><span>{FORMAT_META[format].name}</span>{format !== 'pdf' && <small>{FORMAT_META[format].extension}</small>}</span>
       </button>)}

@@ -19,7 +19,7 @@ export const PORTAL_MODULES: PortalModule[] = [
     { id: 'records', label: 'Registros', description: 'Observações, documentos e ocorrências.', icon: FileText },
     { id: 'team', label: 'Pessoas e acessos', description: 'Pessoas, convites e permissões de acesso.', icon: UserCog },
     { id: 'reports', label: 'Relatórios', description: 'Consulte resultados e exporte registros.', icon: BarChart3 },
-    { id: 'settings', label: 'Configurações', description: 'Canais e informações institucionais.', icon: Settings2 },
+    { id: 'settings', label: 'Configurações', description: 'Ajustes da organização, agrupados por tarefa.', icon: Settings2 },
     { id: 'profile', label: 'Conta', description: 'Seu perfil, sua foto e sua senha.', icon: UserRound },
 ];
 export const isModuleId = (value: unknown): value is ModuleId => typeof value === 'string' && PORTAL_MODULES.some(module => module.id === value);

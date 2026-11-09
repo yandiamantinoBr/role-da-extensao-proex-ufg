@@ -9,7 +9,7 @@ import Image from 'next/image';
 import BrandMark from '@/components/theme/brand-mark';
 import type { ReportPdfPresentation } from './report-pdf';
 import { download, toDocx, toJson, toXlsx, type ExportColumn, type ExportRow } from './report-export';
-import ExportFormats, { type DocumentFormat } from './export-formats';
+import ExportFormats, { ExportHandledError, type DocumentFormat } from './export-formats';
 import { SheetShortcuts } from './sheet-shortcuts';
 import type { SheetTabKey } from '@/lib/sync/sheet-tab-catalog';
 import styles from './reports-center.module.css';
@@ -301,8 +301,8 @@ export function ProjectReportExports({ projectId, projectName, officialUrl, hasL
     if (!element) pending.current?.abort();
   }, []);
 
-  async function save(format: DocumentFormat | 'preview') {
-    if (!projectId || pending.current) return;
+  async function save(format: DocumentFormat | 'preview'): Promise<boolean> {
+    if (!projectId || pending.current) return false;
     const controller = new AbortController();
     pending.current = controller;
     setExporting(format);
@@ -310,7 +310,7 @@ export function ProjectReportExports({ projectId, projectName, officialUrl, hasL
     let verified = false;
     try {
       const { rows, truncated } = await requestReport(new URLSearchParams({ dataset: 'projects', projectId }), controller.signal);
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted) return false;
       if (!rows.length) throw new Error('O resumo do projeto está indisponível. Atualize o projeto e confira seu acesso.');
       if (truncated || rows.length !== 1 || rows[0].id !== projectId) throw new Error('A resposta não corresponde ao projeto selecionado.');
       verified = true;
@@ -318,7 +318,7 @@ export function ProjectReportExports({ projectId, projectName, officialUrl, hasL
       const presentation = projectReportPresentation(row, officialUrl);
       const now = new Date();
       setPreview(current => format === 'preview' || current?.row.id === projectId ? { row, checkedAt: now } : current);
-      if (format === 'preview') return;
+      if (format === 'preview') return true;
       const project = DATASETS.projects;
       const columns = project.columns.filter(column => project.defaults.includes(column.key));
       const info: [string, string][] = [
@@ -329,15 +329,15 @@ export function ProjectReportExports({ projectId, projectName, officialUrl, hasL
         ['Gerado em', now.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) + ' (Brasília)'],
       ];
       const file = await reportDocument(format, project.label, columns, rows, (record, key) => display('projects', record, key), info, presentation);
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted) return false;
       download(`proex-resumo-projeto-${now.toISOString().slice(0, 10)}.${format}`, file);
+      return true;
     } catch (cause) {
       if (!controller.signal.aborted) {
         if (!verified) setPreview(null);
-        // Formatos mostram o aviso junto aos botões de exportação; a prévia usa o aviso da seção.
-        if (format !== 'preview') throw cause;
         setError(cause instanceof Error ? cause.message : 'Não foi possível gerar o resumo.');
       }
+      return false;
     } finally {
       if (pending.current === controller) {
         pending.current = null;
@@ -357,7 +357,7 @@ export function ProjectReportExports({ projectId, projectName, officialUrl, hasL
         <button type="button" className="p-button p-button-subtle" aria-controls="project-report-preview" aria-expanded={!!previewRow} disabled={!!exporting}
           onClick={() => previewRow ? setPreview(null) : void save('preview')}><BarChart3 size={16} aria-hidden="true"/>{previewRow ? 'Ocultar prévia' : 'Ver prévia'}</button>
       </div>
-      <ExportFormats className={styles.projectFormats} label="Baixar resumo do projeto" disabled={exporting === 'preview'} onExport={format => save(format)}/>
+      <ExportFormats className={styles.projectFormats} label="Baixar resumo do projeto" disabled={!!exporting} onExport={async format => { if (!await save(format)) throw new ExportHandledError(); }}/>
       {(hasLinkedSpreadsheets || sheetAnchor) && <div className={styles.projectReportActions}>
         <p className={styles.reportHelp}>Consulte o vínculo e abra o arquivo nativo na seção Planilha do projeto. O download guarda o recorte consultado.</p>
         <a className="p-button p-button-subtle" href={sheetAnchor || '#project-spreadsheets'}>Planilhas do projeto</a>
@@ -675,7 +675,7 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
       </div>
     </>}
     <details className={styles.exportOptions}><summary>Exportar linhas deste recorte</summary>
-      <ExportFormats className={styles.exportBar} label="Exportar relatório" disabled={loading || !chosen.length || !sorted.length} onExport={exportDocument}>
+      <ExportFormats className={styles.exportBar} label="Exportar relatório" disabled={loading || !chosen.length || !sorted.length} onExport={format => format === 'xlsx' ? download(`${fileBase}.xlsx`, toXlsx(config.label, exportColumns, sorted, exportValue, info)) : exportDocument(format)}>
         <button type="button" className="p-button p-button-subtle" disabled={loading || !chosen.length || !sorted.length || !!exporting} onClick={() => download(`${fileBase}.json`, toJson({ relatorio: config.label, filtros: Object.fromEntries(info) }, exportColumns, sorted, exportValue))}><FileJson size={16} />JSON</button>
         <button type="button" className="p-button p-button-subtle" disabled={loading || !chosen.length || !sorted.length || !!exporting} onClick={print}><Printer size={16} />Imprimir</button>
       </ExportFormats>

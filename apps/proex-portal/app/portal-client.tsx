@@ -7,6 +7,7 @@ import scopeStyles from './scope-filters.module.css';
 import FeedbackPanel from '@/components/portal/feedback-panel';
 import { toast } from 'sonner';
 import settingsStyles from './settings-groups.module.css';
+import { SettingsIndex, SettingsSection } from '@/components/portal/settings-layout';
 import headingStyles from './module-heading.module.css';
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from 'react';
 import PhysicalAttendance from '@/components/portal/physical-attendance';
@@ -1150,7 +1151,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
             </span>
             <h3>{exportTitle}</h3>
             <p>{text}</p>
-            {exportNeedsProject ? <span className="p-text-link">Escolha um projeto</span> : <ExportFormats label={`Baixar ${exportTitle.toLowerCase()}`} onExport={format => downloadFromServer(`/api/export?kind=${kind}&format=${format}${filter ? `&projectId=${encodeURIComponent(filter)}` : ''}`, `proex-${kind}.${format}`)}/>}
+            {exportNeedsProject ? <span className="p-text-link">Escolha um projeto</span> : <ExportFormats tiles label={`Baixar ${exportTitle.toLowerCase()}`} onExport={format => downloadFromServer(`/api/export?kind=${kind}&format=${format}${filter ? `&projectId=${encodeURIComponent(filter)}` : ''}`, `proex-${kind}.${format}`)}/>}
             </>;
             return <article className={`p-card p-export-card${exportNeedsProject ? ' p-export-unavailable' : ''}`} key={kind}>{content}</article>;
         })}</div>
@@ -1165,45 +1166,42 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         </div>
         </>}
 
+      {/* Configurações por tarefa (09/11/2026). Cada grupo aparece só para quem pode usá-lo; a aba inteira
+          já exige dono da plataforma ou permissão de IA. A central de chaves (sessão do Rolê) só mudou de posição. */}
       {tab === 'settings' && <div className={settingsStyles.groups}>
-        <CredentialVaultSettings key={string(user.userId)} groupClass={settingsStyles.group} bodyClass={settingsStyles.body} canManageKeys={isPlatformOwner}/>
-        {canGlobal('organization.manage') && <>
-          <details className={settingsStyles.group}>
-            <summary><strong>Planilha e anexos</strong><small>Conexão, sincronização, arquivos no Drive e exportação portátil.</small></summary>
-            <div className={settingsStyles.body}><SyncSettingsPanel key={string(user.userId)} userId={string(user.userId)} includeBackups={false}/></div>
+        <SettingsIndex items={[...(canGlobal('organization.manage') ? [{ id: 'settings-event-page', label: 'Página das dinâmicas' }, { id: 'settings-public-signup', label: 'Cadastro público' }, { id: 'settings-spreadsheet', label: 'Planilha Google' }, { id: 'settings-backup', label: 'Backup' }] : []), { id: 'ai-credentials', label: 'Chaves e modelos' }]} intro={<>Seu nome, sua senha e as conexões pessoais ficam em <button type="button" className="p-text-link" onClick={() => navigate('profile')}>Conta</button>; os avisos por e-mail, em Demandas.</>}/>
+        <SettingsSection show={canGlobal('organization.manage')} title="Evento e participantes" description="O que o público vê nas dinâmicas e o cadastro pelo celular.">
+          <details id="settings-event-page" className={settingsStyles.group}>
+            <summary><strong>Página das dinâmicas</strong><small>Aviso de privacidade e perfil oficial no Instagram mostrados a quem participa.</small></summary>
+            <div className={settingsStyles.body}>
+        <OperationForm action="setting.update" mutate={mutate} submit="Salvar página das dinâmicas" make={f => ({ instagramUrl: f.get('instagramUrl'), privacyNotice: f.get('privacyNotice') })}>
+        <Field label="Aviso de privacidade das dinâmicas" help="Aparece em “Seu registro e sua privacidade” e é exigido para ativar uma dinâmica. Descreva finalidade, dados mínimos, responsável, guarda e canal para direitos.">
+        <textarea name="privacyNotice" rows={8} maxLength={6000} defaultValue={data.settings?.privacyNotice || data.settings?.privacy_notice || ''} placeholder="Texto validado institucionalmente para esta operação"/>
+        </Field>
+        <Field label="Perfil oficial no Instagram" help="O link divulga o canal. Seguir o perfil é opcional e não é verificado.">
+        <input name="instagramUrl" type="url" placeholder="https://www.instagram.com/perfil-confirmado/" defaultValue={data.settings?.instagramUrl || data.settings?.instagram_url || ''} maxLength={500}/>
+        </Field>
+        </OperationForm>
+            </div>
           </details>
-          <details className={settingsStyles.group}>
+          <details id="settings-public-signup" className={settingsStyles.group}>
+            <summary><strong>Cadastro público por celular</strong><small>Prontidão do envio de e-mail, aviso do cadastro e abertura explícita.</small></summary>
+            <div className={settingsStyles.body}><PublicParticipantsSettingsPanel canManage={canGlobal('organization.manage')} onChanged={refreshModules}/></div>
+          </details>
+        </SettingsSection>
+        <SettingsSection show={canGlobal('organization.manage')} title="Dados e cópias" description="Planilha conectada, fotos no Drive, exportação portátil e backup.">
+          <details id="settings-spreadsheet" className={settingsStyles.group}>
+            <summary><strong>Planilha Google</strong><small>Conexão, abas, atalhos, fotos no Drive e exportação portátil.</small></summary>
+            <div className={settingsStyles.body}><SyncSettingsPanel key={string(user.userId)} userId={string(user.userId)} includeBackups={false} embedded/></div>
+          </details>
+          <details id="settings-backup" className={settingsStyles.group}>
             <summary><strong>Backup e recuperação</strong><small>Cópias completas cifradas, conferência da recuperação e rotina externa.</small></summary>
             <div className={settingsStyles.body}><CompleteBackupPanel/><BackupAutomationPanel/></div>
           </details>
-          <details className={settingsStyles.group}>
-            <summary><strong>Acesso público</strong><small>Prontidão, aviso e abertura explícita do cadastro de participantes.</small></summary>
-            <div className={settingsStyles.body}><PublicParticipantsSettingsPanel canManage={canGlobal('organization.manage')} onChanged={refreshModules}/></div>
-          </details>
-        </>}
-        {isPlatformOwner && <details className={settingsStyles.group}>
-          <summary><strong>Operação e canais</strong><small>Canais institucionais e aviso de privacidade da operação.</small></summary>
-          <div className={settingsStyles.body}>
-        <Section title="Canais e informações da operação" description="Use os canais institucionais confirmados e o aviso aprovado para o serviço.">
-        <OperationForm action="setting.update" mutate={mutate} submit="Salvar configurações" make={f => ({ instagramUrl: f.get('instagramUrl'), privacyNotice: f.get('privacyNotice') })}>
-        <Field label="Perfil oficial no Instagram" help="O link divulga o canal. Ele não verifica automaticamente se a pessoa segue o perfil.">
-        <input name="instagramUrl" type="url" placeholder="https://www.instagram.com/perfil-confirmado/" defaultValue={data.settings?.instagramUrl || data.settings?.instagram_url || ''} maxLength={500}/>
-        </Field>
-        <Field label="Aviso de privacidade e contato institucional" help="Descreva finalidade, dados mínimos, responsável, guarda e canal para direitos. Não use um aceite genérico como substituto dessa definição.">
-        <textarea name="privacyNotice" rows={8} maxLength={6000} defaultValue={data.settings?.privacyNotice || data.settings?.privacy_notice || ''} placeholder="Texto validado institucionalmente para esta operação"/>
-        </Field>
-        </OperationForm>
-        </Section>
-        <div className="p-explainer">
-        <ShieldCheck size={21}/>
-        <div>
-        <h3>Integrações com estado explícito</h3>
-        <p>Gerencie seu nome, suas preferências e sua senha na aba Conta. O Instagram é um canal institucional; seguir o perfil não é verificado automaticamente.</p>
-        <p>A roleta livre segue independente. As campanhas oficiais usam os registros e as regras deste portal.</p>
-        </div>
-        </div>
-          </div>
-        </details>}
+        </SettingsSection>
+        <SettingsSection title="Inteligência artificial" description="Chaves dos provedores, o assistente Rolê, quem pode usar e o limite de gasto.">
+          <CredentialVaultSettings key={string(user.userId)} groupClass={settingsStyles.group} bodyClass={settingsStyles.body} canManageKeys={isPlatformOwner}/>
+        </SettingsSection>
       </div>}
 
       <MaterialDetailDrawer onUnitOpen={setStockUnit} itemId={materialDrawerId} initialMode={materialMode} onClose={() => {setSelectedMaterialId(null);setMaterialMode('view');setMaterialMode('view');if(tab==='materials')setWorkRecord(null);}} onChanged={refreshModules} renderWorkContext={({itemId,projectId}) => workContext(projectId,'materials',{itemId})}/>

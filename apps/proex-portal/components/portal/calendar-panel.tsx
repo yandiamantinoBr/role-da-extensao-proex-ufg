@@ -141,7 +141,7 @@ export default function CalendarPanel({ projects: sourceProjects, organizational
           </button>;
         })}
       </div>
-      {selectedDay&&<button type="button" className={`p-text-link ${styles.jump}`} onClick={showDayList} aria-controls="calendar-day-entries">Ver {shown.length} {shown.length===1?'compromisso':'compromissos'} de {prettyDay(selectedDay)}<ChevronDown size={16} aria-hidden="true"/></button>}
+      {selectedDay&&<button type="button" className={`p-text-link ${styles.jump}`} onClick={showDayList} aria-controls="calendar-day-entries">Ver {shown.length} {shown.length===1?"compromisso":"compromissos"} do dia {Number(selectedDay.slice(-2))}<ChevronDown size={16} aria-hidden="true"/></button>}
       <div className={styles.legend}>{Object.entries(labels).map(([key,label])=><small key={key}><span style={{background:colors[key as CalendarCategory]}}/>{label}</small>)}</div>
     </section>
     <section className={`p-card ${styles.listCard}`} id="calendar-day-entries" aria-labelledby="calendar-day-heading">
