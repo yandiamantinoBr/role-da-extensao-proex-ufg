@@ -3,7 +3,7 @@ import { getActor } from '@/lib/access';
 import { boundedJson } from '@/lib/http';
 import { publicError } from '@/lib/errors';
 import { database, privateResponse, requireAction } from '@/lib/community/route-support';
-import { ombudsInbox, ombudsManageAction, ombudsReporterAction } from '@/lib/community/ombuds';
+import { ombudsDesignationAction, ombudsInbox, ombudsManageAction, ombudsReporterAction } from '@/lib/community/ombuds';
 export const dynamic = 'force-dynamic';
 /*
  * Anonymous ombuds. The session is read WITHOUT refresh (nothing about the account is written by this
@@ -14,12 +14,14 @@ export async function GET() {
   try { const db = database(); return privateResponse(Response.json(await ombudsInbox(db, await getActor(db, await getPortalUser())))); }
   catch (error) { return privateResponse(publicError(error)); }
 }
-const REPORTER = new Set(['submit', 'track', 'reply']);
+const REPORTER = new Set(['submit', 'track', 'reply', 'readers']);
+const DESIGNATION = new Set(['designations', 'designate', 'revoke']);
 export async function POST(request: Request) {
   try {
     requireAction(request);
     const input = await boundedJson(request, 20000), db = database();
     if (REPORTER.has(String(input.action))) return privateResponse(Response.json(await ombudsReporterAction(db, await getActor(db, await getPortalUser({ refresh: false })), input)));
+    if (DESIGNATION.has(String(input.action))) return privateResponse(Response.json(await ombudsDesignationAction(db, await getActor(db, await getPortalUser()), input)));
     return privateResponse(Response.json(await ombudsManageAction(db, await getActor(db, await getPortalUser()), input)));
   } catch (error) { return privateResponse(publicError(error)); }
 }

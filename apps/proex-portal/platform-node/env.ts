@@ -47,6 +47,8 @@ export const env = new Proxy({} as Record<string, unknown>, {
     if (key === 'BUCKET') return bucket ??= new ObjectBucket(backend().objects);
     if (key === 'PROEX_BACKUP') return backup ??= completeBackupService(backend(), migrations, process.env.VERCEL_GIT_COMMIT_SHA);
     // Fora do Sites não existe identidade nativa: força o modo de hospedagem própria.
+    // Read-only space report for the administration panel (Postgres catalog sizes; null on disk).
+    if (key === 'PROEX_STORAGE_USAGE') return () => backend().usage?.() ?? Promise.resolve(null);
     if (key === 'PROEX_STANDALONE') return '1';
     return process.env[key];
   },

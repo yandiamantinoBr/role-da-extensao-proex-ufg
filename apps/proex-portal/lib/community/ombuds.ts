@@ -1,4 +1,4 @@
-import { platformOwnerAuthoritySql, type PortalActor } from '../access';
+import { LEGACY_ORGANIZATION_ID, platformOwnerAuthoritySql, type PortalActor } from '../access';
 import { all, one, uid, iso } from '../database';
 import { HttpError } from '../errors';
 import { serverWorkClock } from '../follow-up/time';
@@ -91,6 +91,10 @@ export async function ombudsReporterAction(db: D1Database, rawActor: PortalActor
     }
     return { received: true, duplicate: false };
   }
+  if (input.action === 'readers') {
+    only(input, ['action']);
+    return { readers: await ombudsReaders(db) };
+  }
   if (input.action === 'track') {
     only(input, ['action', 'code']);
     const report = await one(db, 'SELECT id,category,status,received_on receivedOn,updated_on updatedOn,version FROM ombuds_reports WHERE code_hash=?', [await codeHash(code(input.code))]);
@@ -122,11 +126,98 @@ export async function ombudsReporterAction(db: D1Database, rawActor: PortalActor
 }
 
 /** Ombuds side: platform owners only. Never returns or stores anything about the reporter. */
-function ombudsAuthority(actor: PortalActor) { return platformOwnerAuthoritySql(actor); }
+/*
+ * Who reads the ombuds (Yan, 2026-11-09: "a princípio... é a administração geral e as pessoas que têm acesso total";
+ * "pode ser alguém designado pela Proex também"):
+ * - by default, active owners and managers with no project restriction, portal-wide or in the PROEX organization itself
+ *   (`org_proex`: non-owner members without a project are filled into it by migration 0008);
+ * - plus people designated by the general administration, between the start and end dates, until revoked.
+ * Readers never see the author: there is no author anywhere to see.
+ */
+const PORTAL_WIDE_READER = (userSql: string) => `EXISTS(SELECT 1 FROM members ow JOIN portal_users owu ON owu.user_id=ow.user_id WHERE ow.user_id=${userSql}
+  AND ow.role IN ('owner','manager') AND ow.project_id IS NULL AND (ow.organization_id IS NULL OR ow.organization_id='${LEGACY_ORGANIZATION_ID}') AND ow.revoked_at IS NULL
+  AND owu.status='active' AND owu.activation_pending=0 AND owu.anonymized_at IS NULL)`;
+const DESIGNATED_READER = (userSql: string, daySql: string) => `EXISTS(SELECT 1 FROM ombuds_designations od JOIN portal_users odu ON odu.user_id=od.user_id
+  WHERE od.user_id=${userSql} AND od.revoked_at IS NULL AND od.starts_on<=${daySql} AND od.ends_on>=${daySql}
+  AND odu.status='active' AND odu.activation_pending=0 AND odu.anonymized_at IS NULL
+  AND EXISTS(SELECT 1 FROM members odm WHERE odm.user_id=od.user_id AND odm.revoked_at IS NULL))`;
+function ombudsAuthority(actor: PortalActor) {
+  return { sql: `(SELECT 1 FROM (SELECT ? me,? day) oa WHERE ${PORTAL_WIDE_READER('oa.me')} OR ${DESIGNATED_READER('oa.me', 'oa.day')}) IS NOT NULL`, values: [actor.userId, today()] };
+}
 async function requireOmbuds(db: D1Database, actor: PortalActor) {
   const authority = ombudsAuthority(actor);
-  if (!await db.prepare(`SELECT 1 AS ok WHERE ${authority.sql}`).bind(...authority.values).first()) throw new HttpError(403, 'Só a ouvidoria (administração geral) consulta os relatos.', 'ombuds_forbidden');
+  if (!await db.prepare(`SELECT 1 AS ok WHERE ${authority.sql}`).bind(...authority.values).first()) throw new HttpError(403, 'Só quem lê a ouvidoria (administração geral, acesso total ou pessoa designada) consulta os relatos.', 'ombuds_forbidden');
   return authority;
+}
+/** Names of who can read the ombuds right now, shown to the person before writing. Names only. */
+export async function ombudsReaders(db: D1Database) {
+  const day = today();
+  const rows = await all(db, `SELECT u.user_id id,COALESCE(NULLIF(p.display_name,''),'Pessoa da equipe') name,
+      CASE WHEN ${PORTAL_WIDE_READER('u.user_id')} THEN 'access' ELSE 'designated' END basis,
+      (SELECT MAX(od.ends_on) FROM ombuds_designations od WHERE od.user_id=u.user_id AND od.revoked_at IS NULL AND od.starts_on<=? AND od.ends_on>=?) until
+    FROM portal_users u LEFT JOIN profiles p ON p.user_id=u.user_id
+    WHERE ${PORTAL_WIDE_READER('u.user_id')} OR ${DESIGNATED_READER('u.user_id', '?')} ORDER BY basis,name LIMIT 100`, [day, day, day, day]);
+  // Names, basis and end date only: no internal ids leave for every member.
+  return rows.map(row => ({ name: String(row.name), basis: row.basis === 'access' ? 'access' : 'designated', until: row.basis === 'access' ? null : row.until ?? null }));
+}
+/** Designations are managed only by the general administration (active global owner). */
+async function requireAdministration(db: D1Database, actor: PortalActor) {
+  const owner = platformOwnerAuthoritySql(actor);
+  if (!await db.prepare(`SELECT 1 AS ok WHERE ${owner.sql}`).bind(...owner.values).first()) throw new HttpError(403, 'Só a administração geral designa quem lê a ouvidoria.', 'ombuds_designation_forbidden');
+  return owner;
+}
+export async function canManageOmbudsDesignations(db: D1Database, actor: PortalActor | null) {
+  if (!actor) return false;
+  const owner = platformOwnerAuthoritySql(actor);
+  return !!await db.prepare(`SELECT 1 AS ok WHERE ${owner.sql}`).bind(...owner.values).first();
+}
+const civil = (value: unknown, label: string) => { if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value) || new Date(value).toISOString().slice(0, 10) !== value) throw new HttpError(400, `Escolha a data de ${label}.`, 'invalid_designation_date'); return value; };
+export async function ombudsDesignationAction(db: D1Database, rawActor: PortalActor | null, input: Record<string, unknown>) {
+  const actor = requireActor(rawActor);
+  const owner = await requireAdministration(db, actor);
+  const now = iso();
+  if (input.action === 'designations') {
+    only(input, ['action']);
+    const history = await all(db, `SELECT d.id,d.user_id userId,COALESCE(NULLIF(p.display_name,''),'Pessoa da equipe') name,d.reason,d.starts_on startsOn,d.ends_on endsOn,d.created_at createdAt,
+      COALESCE(NULLIF(bp.display_name,''),'Administração') designatedByName,d.revoked_at revokedAt,COALESCE(NULLIF(rp.display_name,''),'Administração') revokedByName,d.revoke_reason revokeReason
+      FROM ombuds_designations d LEFT JOIN profiles p ON p.user_id=d.user_id LEFT JOIN profiles bp ON bp.user_id=d.designated_by LEFT JOIN profiles rp ON rp.user_id=d.revoked_by
+      ORDER BY d.revoked_at IS NOT NULL, d.created_at DESC LIMIT 200`);
+    const candidates = await all(db, `SELECT DISTINCT u.user_id id,COALESCE(NULLIF(p.display_name,''),'Pessoa da equipe') name FROM portal_users u JOIN members m ON m.user_id=u.user_id AND m.revoked_at IS NULL
+      LEFT JOIN profiles p ON p.user_id=u.user_id WHERE u.status='active' AND u.activation_pending=0 AND u.anonymized_at IS NULL ORDER BY name LIMIT 1000`);
+    return { history, candidates, readers: await ombudsReaders(db), today: today() };
+  }
+  if (input.action === 'designate') {
+    only(input, ['action', 'userId', 'reason', 'startsOn', 'endsOn']);
+    const userId = identifier(input.userId, 'a pessoa'), reason = personText(input.reason, 3, 300, 'Explique o motivo em 3 a 300 caracteres.');
+    const startsOn = civil(input.startsOn, 'início'), endsOn = civil(input.endsOn, 'fim');
+    if (endsOn < startsOn) throw new HttpError(400, 'O fim precisa ser igual ou depois do início.', 'invalid_designation_date');
+    if (endsOn < today()) throw new HttpError(400, 'Uma designação que já terminou não dá acesso. Escolha outra data de fim.', 'invalid_designation_date');
+    const id = uid();
+    try {
+      await db.batch([
+        db.prepare(`SELECT CASE WHEN ${owner.sql} THEN 1 ELSE json_extract('[]','ombuds_designation_forbidden') END`).bind(...owner.values),
+        db.prepare("SELECT CASE WHEN EXISTS(SELECT 1 FROM portal_users u JOIN members m ON m.user_id=u.user_id AND m.revoked_at IS NULL WHERE u.user_id=? AND u.status='active' AND u.activation_pending=0 AND u.anonymized_at IS NULL) THEN 1 ELSE json_extract('[]','ombuds_designee_unavailable') END").bind(userId),
+        db.prepare('INSERT INTO ombuds_designations(id,user_id,designated_by,reason,starts_on,ends_on,created_at) VALUES(?,?,?,?,?,?,?)').bind(id, userId, actor.userId, reason, startsOn, endsOn, now),
+        db.prepare("INSERT INTO audit(id,actor_id,project_id,action,entity_id,details,created_at) VALUES(?,?,NULL,'ombuds.designate',?,?,?)").bind(uid(), actor.userId, id, JSON.stringify({ startsOn, endsOn }), now),
+      ]);
+    } catch (error) {
+      if (String(error).includes('ombuds_designee_unavailable')) throw new HttpError(409, 'Esta pessoa não tem acesso ativo ao portal.', 'ombuds_designee_unavailable');
+      if (String(error).includes('ombuds_designation_forbidden')) throw new HttpError(403, 'Seu acesso mudou. Atualize a página.', 'ombuds_designation_forbidden');
+      throw error;
+    }
+    return { id };
+  }
+  if (input.action === 'revoke') {
+    only(input, ['action', 'id', 'reason']);
+    const id = identifier(input.id, 'a designação'), reason = personText(input.reason, 3, 300, 'Explique o motivo em 3 a 300 caracteres.');
+    const results = await db.batch([
+      db.prepare(`UPDATE ombuds_designations SET revoked_at=?,revoked_by=?,revoke_reason=? WHERE id=? AND revoked_at IS NULL AND ${owner.sql}`).bind(now, actor.userId, reason, id, ...owner.values),
+      db.prepare("INSERT INTO audit(id,actor_id,project_id,action,entity_id,details,created_at) SELECT ?,?,NULL,'ombuds.designation.revoke',?,'{}',? WHERE changes()=1").bind(uid(), actor.userId, id, now),
+    ]);
+    if (results[0].meta.changes !== 1) throw new HttpError(409, 'Esta designação já foi revogada ou mudou. Atualize a lista.', 'ombuds_designation_changed');
+    return { id };
+  }
+  throw new HttpError(400, 'Operação de designação inválida.', 'invalid_action');
 }
 export async function canReadOmbuds(db: D1Database, actor: PortalActor | null) {
   if (!actor) return false;

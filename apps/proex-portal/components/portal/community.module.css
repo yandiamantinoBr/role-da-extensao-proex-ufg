@@ -1,6 +1,6 @@
 .community{container:community / inline-size;display:grid;gap:16px;min-width:0}
-.tabs{display:flex;gap:6px;min-width:0;overflow-x:auto;padding:4px;border:1px solid var(--line);border-radius:14px;background:var(--surface);scrollbar-width:thin}
-.tabs button{display:inline-flex;align-items:center;gap:8px;flex-shrink:0;min-height:44px;padding:0 14px;border:0;border-radius:10px;background:none;color:var(--text-secondary);font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;white-space:nowrap}
+.tabs{display:flex;flex-wrap:wrap;gap:2px;min-width:0;overflow-x:auto;padding:4px;border:1px solid var(--line);border-radius:14px;background:var(--surface);scrollbar-width:thin}
+.tabs button{display:inline-flex;align-items:center;gap:6px;flex-shrink:0;min-height:44px;padding:0 9px;border:0;border-radius:10px;background:none;color:var(--text-secondary);font:inherit;font-size:13.5px;font-weight:600;cursor:pointer;white-space:nowrap}
 .tabs button[aria-selected=true]{background:var(--brand-ink);color:var(--surface)}
 .tabs button:not([aria-selected=true]):hover{background:var(--surface-soft);color:var(--brand-ink)}
 .tabs button:focus-visible,.filters button:focus-visible,.inlineLink:focus-visible,.back:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
@@ -103,7 +103,7 @@
 .confirmInline{display:inline-flex;align-items:center;flex-wrap:wrap;gap:6px 10px;color:var(--text-secondary);font-size:12.5px}
 .openCode{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px 12px;padding:8px 8px 8px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-soft)}
 .openCode>span{display:inline-flex;align-items:center;gap:8px;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:13.5px;font-weight:650;color:var(--brand-ink)}
-.tabs button[data-first-management]{margin-left:auto;position:relative}
+.tabs button[data-first-management]{margin-left:10px;position:relative}
 .tabs button[data-first-management]::before{content:'';position:absolute;left:-5px;top:10px;bottom:10px;width:1px;background:var(--line)}
 @container community (max-width:560px){.tabs button[data-first-management]{margin-left:0}.tabs button[data-first-management]::before{display:none}.tabs button[data-management]:not([aria-selected=true]){border:1px solid var(--line)}.filters{display:grid;grid-template-columns:1fr 1fr;overflow:visible}.filters button{justify-content:center}.segmented{display:grid;grid-template-columns:1fr 1fr;justify-self:stretch}.segmented button{justify-content:center;padding:0 8px;font-size:13px}}
 .status[data-status=reviewing]{border-color:color-mix(in srgb,var(--warning-ink) 45%,var(--surface));color:var(--warning-ink)}
@@ -148,3 +148,17 @@
 .entry .manageRow{align-items:center}
 @container community (max-width:760px){.messagesSplit>section{order:-1}}
 @container community (max-width:560px){.tabs button{justify-content:center!important;text-align:center}}
+.facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:0}
+.facts>div{display:grid;gap:2px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+.facts dt{color:var(--text-secondary);font-size:12px}
+.facts dd{margin:0;font-weight:650;font-variant-numeric:tabular-nums}
+.progress>span[data-alert]{background:var(--danger)}
+@container community (max-width:560px){.facts{grid-template-columns:minmax(0,1fr)}}
+.sectionPicker{display:none}
+@container community (max-width:560px){.tabs{display:none}.sectionPicker{display:grid;gap:6px;font-size:12px;font-weight:650;color:var(--text-secondary)}.sectionPicker select{min-height:48px;width:100%;font-size:16px;font-weight:600;color:var(--ink)}}
+.readerList{display:flex;flex-wrap:wrap;gap:8px;margin:0;padding:0;list-style:none}
+.readerList li{display:grid;gap:1px;padding:8px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface-soft)}
+.readerList strong{font-size:13px}
+.readerList small{color:var(--text-secondary);font-size:11.5px}
+.subhead{margin:6px 0 0;font-size:14px}
+.detailsNote{padding:0 14px 12px 32px}
