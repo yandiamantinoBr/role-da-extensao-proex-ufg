@@ -28,6 +28,13 @@ export type ActivityFeed = {
   loansNow: { active: number; late: number } | null;
   /** Totais por dia e por material calculados no banco: não dependem do corte da lista. */
   summary: { days: { day: string; materials: number; demandsOpened: number; demandsCompleted: number; agenda: number }[]; stock: { name: string; projectId: string; href: string; entradas: number; saidas: number }[] };
+  /** Prazos das demandas: concluídas no período (no prazo, com atraso, sem prazo) e abertas já vencidas agora. */
+  deadlines: { onTime: number; late: number; noDue: number; overdueNow: number } | null;
+  /**
+   * Atividade registrada por pessoa (não é registro de login). Só para quem gerencia acessos
+   * (access.manage) e só com acontecimentos dos projetos que essa pessoa gerencia.
+   */
+  team: { activePeople: number; perDay: { day: string; people: number }[]; people: { id: string; name: string; days: number; actions: number; last: string }[] } | null;
 };
 
 export const MAX_RANGE_DAYS = 92;
@@ -92,6 +99,7 @@ export async function activityFeed(db: D1Database, actor: PortalActor | null, in
   const perDay = new Map(range.days.map(day => [day, { day, materials: 0, demandsOpened: 0, demandsCompleted: 0, agenda: 0 }]));
   const bump = (rows: Row[], key: 'materials' | 'demandsOpened' | 'demandsCompleted' | 'agenda') => { for (const row of rows) { const entry = perDay.get(String(row.day)); if (entry) entry[key] += Number(row.n) || 0; } };
   let stock: ActivityFeed['summary']['stock'] = [];
+  let deadlines: ActivityFeed['deadlines'] = null;
   const actorFilter = (column: string) => person ? { sql: ` AND ${column}=?`, values: [person] } : { sql: '', values: [] };
   const take = (rows: Row[]) => { if (rows.length > MAX_PER_SOURCE) { truncated = true; return rows.slice(0, MAX_PER_SOURCE); } return rows; };
 
@@ -166,6 +174,16 @@ export async function activityFeed(db: D1Database, actor: PortalActor | null, in
     bump(await all(db, `SELECT ${dayOf('h.created_at')} day,COUNT(*) n FROM followup_history h JOIN followup_tasks f ON f.id=h.task_id
       WHERE ${visible}${projectFilter} AND h.created_at>=? AND h.created_at<?${closer.sql} AND json_extract(h.snapshot_json,'$.status')='completed'
         AND NOT EXISTS(SELECT 1 FROM followup_history prev WHERE prev.task_id=h.task_id AND prev.version=h.version-1 AND json_extract(prev.snapshot_json,'$.status')='completed') GROUP BY day`, [...values, range.startsAt, range.endsAt, ...closer.values]), 'demandsCompleted');
+    // f.due_at é data civil (aaaa-mm-dd) ou vazio; "no prazo" = concluída até o fim do dia do prazo, em Brasília.
+    const [due] = await all(db, `SELECT
+        SUM(CASE WHEN f.due_at IS NULL OR f.due_at='' THEN 1 ELSE 0 END) no_due,
+        SUM(CASE WHEN f.due_at IS NOT NULL AND f.due_at<>'' AND ${dayOf('h.created_at')}<=substr(f.due_at,1,10) THEN 1 ELSE 0 END) on_time,
+        SUM(CASE WHEN f.due_at IS NOT NULL AND f.due_at<>'' AND ${dayOf('h.created_at')}>substr(f.due_at,1,10) THEN 1 ELSE 0 END) late
+      FROM followup_history h JOIN followup_tasks f ON f.id=h.task_id
+      WHERE ${visible}${projectFilter} AND h.created_at>=? AND h.created_at<?${closer.sql} AND json_extract(h.snapshot_json,'$.status')='completed'
+        AND NOT EXISTS(SELECT 1 FROM followup_history prev WHERE prev.task_id=h.task_id AND prev.version=h.version-1 AND json_extract(prev.snapshot_json,'$.status')='completed')`, [...values, range.startsAt, range.endsAt, ...closer.values]);
+    const [open] = await all(db, `SELECT COUNT(*) n FROM followup_tasks f WHERE ${visible}${projectFilter} AND f.status IN ('open','in_progress','blocked') AND f.due_at IS NOT NULL AND f.due_at<>'' AND substr(f.due_at,1,10)<?${opener.sql}`, [...values, todayInBrasilia(now), ...opener.values]);
+    deadlines = { onTime: Number(due?.on_time) || 0, late: Number(due?.late) || 0, noDue: Number(due?.no_due) || 0, overdueNow: Number(open?.n) || 0 };
   }
 
   if (wanted.includes('agenda')) {
@@ -211,10 +229,26 @@ export async function activityFeed(db: D1Database, actor: PortalActor | null, in
   }
   const filtered = person ? (nameOf.has(person) ? events.filter(event => event.actorId === person) : []) : events;
   filtered.sort((a, b) => b.at.localeCompare(a.at) || a.id.localeCompare(b.id));
+  let team: ActivityFeed['team'] = null;
+  const managing = scoped(actor, ['access.manage'], 'p.id', projectId);
+  const managed = new Set((await all(db, `SELECT p.id FROM projects p WHERE ${managing.sql}`, managing.values)).map(row => String(row.id)));
+  if (managed.size) {
+    const perPerson = new Map<string, { days: Set<string>; actions: number; last: string }>(), activeByDay = new Map<string, Set<string>>();
+    for (const event of filtered) {
+      if (!event.actorId || !event.projectId || !managed.has(event.projectId) || event.type === 'agenda') continue;
+      const entry = perPerson.get(event.actorId) ?? { days: new Set<string>(), actions: 0, last: '' };
+      entry.days.add(event.day); entry.actions++; if (event.at > entry.last) entry.last = event.at;
+      perPerson.set(event.actorId, entry);
+      activeByDay.set(event.day, (activeByDay.get(event.day) ?? new Set()).add(event.actorId));
+    }
+    team = { activePeople: perPerson.size, perDay: range.days.map(day => ({ day, people: activeByDay.get(day)?.size ?? 0 })),
+      people: [...perPerson].map(([id, entry]) => ({ id, name: nameOf.get(id) ?? 'Pessoa da equipe', days: entry.days.size, actions: entry.actions, last: entry.last }))
+        .sort((a, b) => b.days - a.days || b.actions - a.actions || a.name.localeCompare(b.name, 'pt-BR')).slice(0, 20) };
+  }
   if (filtered.length > MAX_EVENTS) truncated = true;
   return { range: { from: range.from, to: range.to, days: range.days }, types: wanted, events: filtered.slice(0, MAX_EVENTS), truncated,
     people: [...nameOf].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')), loansNow,
-    summary: { days: [...perDay.values()], stock } };
+    summary: { days: [...perDay.values()], stock }, deadlines, team };
 }
 
 async function projectNames(db: D1Database, ids: string[]): Promise<Map<string, string>> {

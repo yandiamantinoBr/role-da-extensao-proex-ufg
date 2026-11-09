@@ -244,7 +244,8 @@ function LoanAttachment({ loanId, onSaved }: {
     return <div className="p-upload">
     <label className="p-field">
     <span>Foto ou PDF do termo</span>
-    <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" disabled={saving} onChange={choose}/>
+    <input className="p-file-input" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" disabled={saving} onChange={choose}/>
+    <span className="p-button p-button-subtle p-file-button" aria-hidden="true"><FileText size={16}/>{file ? 'Trocar arquivo' : 'Escolher arquivo'}</span>
     <small>Até {UPLOAD_LIMIT_LABEL}. O arquivo fica restrito à equipe autorizada.</small>
     </label>{file && <div className="p-file-ready">
         <p>
@@ -312,13 +313,15 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
     const [selectedMaterialId, setSelectedMaterialId] = useState<string | null>(null);
     const [stockUnit,setStockUnit]=useState('');
     const [showConsumption,setShowConsumption]=useState(false);
-    const [movementItemId,setMovementItemId]=useState(''),[movementKind,setMovementKind]=useState('receive');
+    const [movementItemId,setMovementItemId]=useState(''),[movementKind,setMovementKind]=useState('');
     const [materialMode,setMaterialMode] = useState<'view'|'edit'|'move'>('view');
     const [workRecord, setWorkRecord] = useState<WorkRecordSelection | null>(null);
     const [refreshing, setRefreshing] = useState(false);
     const [busy, setBusy] = useState(false);
     const [online, setOnline] = useState(true);
     const [message, setMessage] = useState('');
+    // Aviso de sucesso pertence ao módulo onde a ação aconteceu: some ao trocar de módulo.
+    useEffect(() => { setMessage(''); }, [requestedTab]);
     const [messageKind, setMessageKind] = useState<'success' | 'warning'>('success');
     const [failure, setFailure] = useState('');
     const [now, setNow] = useState(() => new Date(initial?.updatedAt ?? 0).getTime());
@@ -865,10 +868,10 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         <div hidden={showPrizeView}>
 
 
-        <Section title="Materiais e estoque" description="Saldo físico, reservas e unidades disponíveis ficam separados." aside={<div className="p-search">
+        <Section title="Materiais e estoque" description="Saldo físico, reservas e unidades disponíveis ficam separados." aside={<div className={workStyles.catalogAside}>{can('inventory.manage') && formProjects.length > 0 && <a className="p-button p-button-subtle" href="#movimentar-estoque">Registrar movimento<ArrowRight size={15} aria-hidden="true"/></a>}<div className="p-search">
             <Search size={17}/>
             <input aria-label="Buscar materiais" placeholder="Buscar material" value={query} onChange={e => setQuery(e.target.value)}/>
-            </div>}>{searchItems.length ? <MaterialCatalog onOpen={id=>{setMaterialMode('view');setSelectedMaterialId(id);}} materials={searchItems.map(item => {
+            </div></div>}>{searchItems.length ? <MaterialCatalog onOpen={id=>{setMaterialMode('view');setSelectedMaterialId(id);}} materials={searchItems.map(item => {
                 const availableQuantity = available(item);
                 const projectId = string(get(item, 'projectId', 'project_id'));
                 const hasLoan = Number(get(item, 'onLoan', 'on_loan')) === 1;
@@ -915,6 +918,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
             <p className="p-form-help">Para equipamentos, cadastre cada bem individualmente para controlar sua reserva e devolução.</p>
             </OperationForm></div></details>
             </Section>
+            <div id="movimentar-estoque" className={workStyles.anchor}/>
             <Section title="Movimentar estoque" description="Toda alteração registra finalidade, quantidade e responsável.">
             <OperationForm action="stock.move" mutate={mutate} submit="Registrar movimento" make={f => { const qty = Number(f.get('quantity')); const kind = String(f.get('kind')); return { itemId: f.get('itemId'), delta: kind === 'receive' ? qty : kind === 'adjust' ? qty : -Math.abs(qty), kind, note: f.get('note'), ...stockContextFields(f) }; }}>
             <Field label="Material">
@@ -923,7 +927,8 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
             </Field>
             <div className="p-form-grid">
             <Field label="Operação">
-            <select name="kind" value={movementKind} onChange={event=>setMovementKind(event.target.value)}>
+            <select name="kind" required value={movementKind} onChange={event=>setMovementKind(event.target.value)}>
+            <option value="" disabled>Escolha a operação</option>
             <option value="receive">Recebimento</option>
             <option value="distribute">Distribuição</option>
             <option value="consume">Consumo interno</option>
@@ -934,7 +939,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
             <input name="quantity" type="number" step="1" required defaultValue="1"/>
             </Field>
             </div>
-            <StockContextFields key={movementItemId} projectId={string(get(items.find(item=>item.id===movementItemId)??{},'projectId','project_id'))} kind={movementKind}/>
+            {movementKind && <StockContextFields key={movementItemId} projectId={string(get(items.find(item=>item.id===movementItemId)??{},'projectId','project_id'))} kind={movementKind}/>}
             <Field label="Finalidade ou justificativa">
             <textarea name="note" rows={3} required maxLength={1000} placeholder="Ex.: Recebimento conferido pela equipe"/>
             </Field>
@@ -973,8 +978,8 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
                     <span>até {when(get(l, 'endsAt', 'ends_at'))}</span>
                     </div>
                     </div>
-                    <details>
-                    <summary>Detalhes, termos e ocorrências <ChevronDown size={16}/>
+                    <details className={l.status === 'out' || l.status === 'reserved' ? 'p-loan-next' : undefined}>
+                    <summary>{l.status === 'out' ? 'Registrar devolução' : l.status === 'reserved' ? 'Registrar retirada' : 'Detalhes, termos e ocorrências'}{(l.status === 'out' || l.status === 'reserved') && <small>termos e ocorrências</small>} <ChevronDown size={16}/>
                     </summary>
                     <div className="p-loan-details">
                     <p>

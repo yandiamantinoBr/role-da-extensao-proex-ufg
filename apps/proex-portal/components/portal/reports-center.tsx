@@ -673,7 +673,7 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
       </div>
       <div className={styles.pager}>
         <span>{sorted.length ? `${current * pageSize + 1}–${Math.min(sorted.length, (current + 1) * pageSize)} de ${formatNumber(sorted.length)}` : 'Nenhuma linha com esta busca'}</span>
-        <label>Por página <select value={pageSize} onChange={event => { setPageSize(Number(event.target.value)); updateView({ page: 0 }); }}>{PAGE_SIZES.map(size => <option key={size} value={size}>{size}</option>)}</select></label>
+        <label className={styles.pageSize}>Por página <select value={pageSize} onChange={event => { setPageSize(Number(event.target.value)); updateView({ page: 0 }); }}>{PAGE_SIZES.map(size => <option key={size} value={size}>{size}</option>)}</select></label>
         <button type="button" className="p-button p-button-subtle" disabled={current === 0} onClick={() => updateView({ page: current - 1 })}>Anterior</button>
         <button type="button" className="p-button p-button-subtle" disabled={current >= pages - 1} onClick={() => updateView({ page: current + 1 })}>Próxima</button>
       </div>
@@ -699,12 +699,13 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
               {breakdown.filter(item => item.raw).map(item => <option key={item.raw} value={item.raw}>{item.name}</option>)}
             </select>
           </label>
+          {breakdown.length === 1 && breakdown[0].name === 'Sem informação' && <p className={styles.chartHelp}>Nenhuma linha deste recorte tem {groupLabel.toLowerCase()} informada. Complete o cadastro para o gráfico mostrar a divisão.</p>}
           {breakdown.some(item => !item.raw) && <p className={styles.chartHelp}>“Outros” reúne os grupos menores. Esses grupos aparecem só no gráfico, sem seleção individual.</p>}
-          <div style={{ height: Math.max(180, breakdown.length * 34 + 40) }} role="img" aria-label={`Gráfico de barras: ${breakdown.map(item => `${item.name} ${formatNumber(item.value)}`).join(', ')}`}>
+          <div style={{ height: Math.max(110, breakdown.length * 36 + 48) }} role="img" aria-label={`Gráfico de barras: ${breakdown.map(item => `${item.name} ${formatNumber(item.value)}`).join(', ')}`}>
             <ResponsiveContainer width="100%" height="100%" onResize={width => setCategoryAxisWidth(Math.max(70, Math.min(150, Math.floor(width / 3))))}>
-              <BarChart data={breakdown} layout="vertical" margin={{ top: 4, right: 44, bottom: 4, left: 4 }} barCategoryGap={6}>
+              <BarChart data={breakdown} layout="vertical" margin={{ top: 4, right: 32, bottom: 4, left: 0 }} barCategoryGap={6}>
                 <CartesianGrid horizontal={false} stroke="var(--rc-grid)" />
-                <XAxis type="number" allowDecimals={false} tick={{ fill: 'var(--rc-axis)', fontSize: 11 }} axisLine={false} tickLine={false} />
+                <XAxis type="number" allowDecimals={false} domain={[0, 'dataMax']} tick={{ fill: 'var(--rc-axis)', fontSize: 11 }} axisLine={false} tickLine={false} />
                 <YAxis type="category" dataKey="name" width={categoryAxisWidth} tick={{ fill: 'var(--rc-axis)', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(value: string) => value.length > categoryLabelLimit ? `${value.slice(0, categoryLabelLimit - 1)}…` : value} />
                 <Tooltip cursor={{ fill: 'var(--rc-hover)' }} content={<ChartTooltip unit={measureLabel} />} />
                 <Bar dataKey="value" name={chartMeasureLabel} fill="var(--rc-1)" radius={[0, 4, 4, 0]} maxBarSize={22} cursor="pointer" label={{ position: 'right', fill: 'var(--rc-axis)', fontSize: 11, formatter: (value: unknown) => formatNumber(Number(value) || 0) }}

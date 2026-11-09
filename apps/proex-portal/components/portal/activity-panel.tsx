@@ -10,7 +10,7 @@ type ActivityType = 'materials' | 'loans' | 'demands' | 'agenda' | 'records';
 type ActivityEvent = { id: string; type: ActivityType; action: string; title: string; detail: string; at: string; day: string; projectId: string | null; projectName: string; actorId: string | null; actorName: string; viaRole: boolean; href: string | null; quantity: number | null };
 type SummaryDay = { day: string; materials: number; demandsOpened: number; demandsCompleted: number; agenda: number };
 type StockRow = { name: string; projectId: string; href: string; entradas: number; saidas: number };
-type Feed = { range: { from: string; to: string; days: string[] }; types: ActivityType[]; events: ActivityEvent[]; truncated: boolean; people: { id: string; name: string }[]; loansNow: { active: number; late: number } | null; summary: { days: SummaryDay[]; stock: StockRow[] } };
+type Feed = { range: { from: string; to: string; days: string[] }; types: ActivityType[]; events: ActivityEvent[]; truncated: boolean; people: { id: string; name: string }[]; loansNow: { active: number; late: number } | null; summary: { days: SummaryDay[]; stock: StockRow[] }; deadlines: { onTime: number; late: number; noDue: number; overdueNow: number } | null; team: { activePeople: number; perDay: { day: string; people: number }[]; people: { id: string; name: string; days: number; actions: number; last: string }[] } | null };
 type Props = { projects: { id: string; name: string }[]; initialProjectId?: string };
 type Period = 'today' | '7' | '30' | 'month' | 'custom';
 type Entry = { kind: 'event'; event: ActivityEvent } | { kind: 'group'; key: string; events: ActivityEvent[] };
@@ -145,14 +145,14 @@ export default function ActivityPanel({ projects, initialProjectId = '' }: Props
         <figcaption><strong>Demandas ao longo do tempo</strong><span>{weekly ? 'Por semana. ' : 'Por dia. '}Toque numa coluna para abrir as demandas.</span></figcaption>
         {demandBuckets.length ? <>
           {concentrated(demandBuckets) && <p className={styles.insight}>{demandBuckets.length === 1 ? 'Tudo aconteceu' : 'Concentrado'} {demandBuckets.map(row => `${/^(sábado|domingo)/i.test(row.title) ? 'no' : 'na'} ${row.title.toLocaleLowerCase('pt-BR')}`).join(' e ')}: {totals.demandsOpened} {totals.demandsOpened === 1 ? 'demanda criada' : 'demandas criadas'} e {totals.demandsDone} {totals.demandsDone === 1 ? 'concluída' : 'concluídas'}.</p>}
-          <div className={styles.legend} aria-hidden="true"><span><i style={{ background: 'var(--viz-1)' }}/>Criadas</span><span><i style={{ background: 'var(--viz-2)' }}/>Concluídas</span></div>
+          <div className={styles.legend} aria-hidden="true"><span><i style={{ background: 'var(--viz-1)' }}/>Criadas</span><span><i style={{ background: 'var(--viz-3)' }}/>Concluídas</span></div>
           <div className={styles.plot} onClick={() => follow(root.current, projectLink('demands', projectId))}><ResponsiveContainer width="100%" height="100%"><BarChart data={buckets} barGap={2} barCategoryGap="22%" margin={{ top: 8, right: 4, left: -18, bottom: 0 }}>
             <CartesianGrid vertical={false} stroke="var(--viz-grid)"/>
             <XAxis dataKey="label" tickLine={false} axisLine={false} interval="preserveStartEnd" minTickGap={12} tick={{ fill: 'var(--viz-text)', fontSize: 11 }}/>
             <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={40} tick={{ fill: 'var(--viz-text)', fontSize: 11 }}/>
             <Tooltip cursor={{ fill: 'var(--viz-hover)' }} content={<VizTooltip/>}/>
             <Bar dataKey="criadas" name="Criadas" fill="var(--viz-1)" radius={[4, 4, 0, 0]}/>
-            <Bar dataKey="concluidas" name="Concluídas" fill="var(--viz-2)" radius={[4, 4, 0, 0]}/>
+            <Bar dataKey="concluidas" name="Concluídas" fill="var(--viz-3)" radius={[4, 4, 0, 0]}/>
           </BarChart></ResponsiveContainer></div>
           <DataTable caption="Demandas no período" columns={[weekly ? 'Semana' : 'Dia', 'Criadas', 'Concluídas']} rows={demandBuckets.map(row => [row.title, row.criadas, row.concluidas])} href={projectLink('demands', projectId)} linkLabel="Abrir Demandas"/>
         </> : <ChartEmpty text="Nenhuma demanda criada ou concluída neste período." href={projectLink('demands', projectId)} label="Abrir Demandas"/>}
@@ -183,6 +183,22 @@ export default function ActivityPanel({ projects, initialProjectId = '' }: Props
         </> : <ChartEmpty text="Nenhuma atividade na agenda neste período." href={projectLink('calendar', projectId)} label="Abrir Agenda"/>}
       </figure>}
     </div>}
+
+    {shown && (shown.deadlines || shown.team) && <section className={styles.management} aria-labelledby="activity-management">
+      <h2 id="activity-management">Prazos e equipe</h2>
+      <div className={styles.charts}>
+        {shown.deadlines && types.includes('demands') && <Deadlines data={shown.deadlines} href={projectLink('demands', projectId)}/>}
+        {shown.team && <figure className={styles.chart}>
+          <figcaption><strong>Atividade da equipe</strong><span>O que cada pessoa registrou nos projetos que você gerencia. Não é controle de ponto nem de login.</span></figcaption>
+          <p className={styles.teamTotal}><b>{shown.team.activePeople}</b> {shown.team.activePeople === 1 ? 'pessoa registrou atividade' : 'pessoas registraram atividade'} no período{shown.truncated ? ' (com base nos acontecimentos mais recentes)' : ''}.</p>
+          {shown.team.people.length > 0 ? <ul className={styles.people}>{shown.team.people.map(entry => <li key={entry.id}><button type="button" onClick={() => setPerson(entry.id)} title={`Ver só o que ${entry.name} registrou`}>
+            <span className={styles.personName}>{entry.name}</span>
+            <span className={styles.personBar} aria-hidden="true"><span style={{ width: `${entry.days / Math.max(1, summaryDays.length) * 100}%` }}/></span>
+            <span className={styles.personNumbers}>{entry.days} de {summaryDays.length} {summaryDays.length === 1 ? 'dia' : 'dias'} com registro · {entry.actions} {entry.actions === 1 ? 'registro' : 'registros'}</span>
+          </button></li>)}</ul> : <p className={styles.chartEmpty}>Ninguém registrou atividade neste período.</p>}
+        </figure>}
+      </div>
+    </section>}
 
     {shown && <section className={styles.timeline} aria-label="Linha do tempo">
       <div className={styles.timelineHeading}><h2>Linha do tempo</h2>{months.length > 1 && <nav className={styles.months} aria-label="Ir para o mês">{months.map(([month, count]) => <a key={month} href={`#activity-day-${lastDayOf(month)}`}>{capital(MONTH.format(civilDate(`${month}-15`)))} <span>{count}</span></a>)}</nav>}</div>
@@ -219,4 +235,17 @@ function DataTable({ caption, columns, rows, href, linkLabel }: { caption: strin
   return <details className={styles.table}><summary>Ver em tabela</summary><table><caption className="sr-only">{caption}</caption><thead><tr>{columns.map(column => <th key={column} scope="col">{column}</th>)}</tr></thead>
     <tbody>{rows.map((row, index) => <tr key={index}>{row.map((cell, cellIndex) => <td key={cellIndex}>{cell}</td>)}</tr>)}</tbody></table>
     <a className="p-text-link" href={href}>{linkLabel}<ArrowUpRight size={14} aria-hidden="true"/></a></details>;
+}
+function Deadlines({ data, href }: { data: { onTime: number; late: number; noDue: number; overdueNow: number }; href: string }) {
+  const total = data.onTime + data.late + data.noDue;
+  const parts = [{ key: 'onTime', label: 'No prazo', value: data.onTime, color: 'var(--viz-3)' }, { key: 'late', label: 'Com atraso', value: data.late, color: 'var(--viz-2)' }, { key: 'noDue', label: 'Sem prazo', value: data.noDue, color: 'var(--viz-muted)' }];
+  return <figure className={styles.chart}>
+    <figcaption><strong>Prazos das demandas</strong><span>Demandas concluídas no período, comparadas com o prazo combinado.</span></figcaption>
+    {total > 0 ? <>
+      <p className={styles.teamTotal}><b>{total}</b> {total === 1 ? 'demanda concluída' : 'demandas concluídas'} no período: {parts.filter(part => part.value > 0).map(part => `${part.value} ${part.label.toLocaleLowerCase('pt-BR')}`).join(', ')}.</p>
+      {total >= 5 && <div className={styles.deadlineBar} role="img" aria-label={parts.map(part => `${part.value} ${part.label.toLocaleLowerCase('pt-BR')}`).join(', ')}>{parts.filter(part => part.value > 0).map(part => <span key={part.key} style={{ flexGrow: part.value, background: part.color }} title={`${part.label}: ${part.value}`}/>)}</div>}
+      <ul className={styles.deadlineLegend}>{parts.map(part => <li key={part.key}><i style={{ background: part.color }}/>{part.label}<b>{part.value}</b></li>)}</ul>
+    </> : <p className={styles.chartEmpty}>Nenhuma demanda concluída neste período.</p>}
+    <a className={`${styles.overdue} ${data.overdueNow > 0 ? styles.overdueAlert : ''}`} href={href}>{data.overdueNow > 0 ? <TriangleAlert size={15} aria-hidden="true"/> : <Check size={15} aria-hidden="true"/>}{data.overdueNow > 0 ? `${data.overdueNow} ${data.overdueNow === 1 ? 'demanda aberta já passou do prazo' : 'demandas abertas já passaram do prazo'}` : 'Nenhuma demanda aberta fora do prazo'}<ArrowUpRight size={14} aria-hidden="true"/></a>
+  </figure>;
 }

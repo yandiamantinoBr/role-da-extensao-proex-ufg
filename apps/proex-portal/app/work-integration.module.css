@@ -21,3 +21,5 @@
 .consumption > :global(.p-button[aria-expanded=true])::before { content: '▾'; }
 .consumption > :global(.p-button) > svg { display: none; }
 .formStack :global(.p-form) { max-width: 880px; }
+.catalogAside { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.anchor { scroll-margin-top: 84px; }

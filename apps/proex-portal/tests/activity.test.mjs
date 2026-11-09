@@ -213,3 +213,31 @@ test('each role keeps the read rule of its own module, across organizations and 
   assert.equal(operator.loansNow, null);
   assert.equal(operator.summary.stock.length, 0);
 });
+
+test('stock exits, loan returns and demand completions all reach the history (auditoria U8)', async () => {
+  const { db, actors } = setup();
+  db.native.prepare("INSERT INTO loans(id,project_id,item_id,action_name,borrower_name,starts_at,ends_at,status,created_by,created_at,checked_out_at,returned_at) VALUES('loan-back','project-a','asset-a2','Ação devolvida','Pessoa X',?,?,'returned',?,?,?,?)")
+    .run(Date.parse(at('2026-11-03', 8)), Date.parse(at('2026-11-03', 18)), actors.manager.userId, at('2026-11-02'), at('2026-11-03', 8), at('2026-11-03', 17));
+  const feed = await activityFeed(db, actors.manager, range, NOW);
+  const actions = new Set(feed.events.map(event => event.action));
+  for (const action of ['Distribuição', 'Consumo', 'Devolução', 'Retirada', 'Demanda concluída']) assert.ok(actions.has(action), action);
+  assert.equal(feed.events.find(event => event.id === 'materials:mov-a2').detail, '-20 unidades');
+});
+
+test('management view: team activity only for people managers, deadlines for everyone who reads demands', async () => {
+  const { db, actors } = setup();
+  db.native.prepare("UPDATE followup_tasks SET due_at='2026-11-09', status='completed' WHERE id='task-a'").run();
+  db.native.prepare("INSERT INTO followup_tasks(id,organization_id,project_id,title,body,priority,status,due_at,created_by,created_at,updated_at) VALUES('task-late','org_proex','project-a','Vencida','','low','open','2026-11-05',?,?,?)").run(actors.manager.userId, at('2026-11-01'), at('2026-11-01'));
+  const staff = await activityFeed(db, actors.manager, range, NOW);
+  assert.deepEqual(staff.deadlines, { onTime: 0, late: 1, noDue: 0, overdueNow: 1 });
+  assert.ok(staff.team && staff.team.activePeople >= 2);
+  const bolsista = staff.team.people.find(entry => entry.name === 'Bolsista A');
+  assert.ok(bolsista.days >= 1 && bolsista.actions >= 1);
+  assert.equal(staff.team.perDay.length, staff.range.days.length);
+  const inventory = await activityFeed(db, actors.inventoryA, range, NOW);
+  assert.equal(inventory.team, null, 'bolsista não vê a atividade dos colegas como painel');
+  assert.ok(inventory.deadlines, 'bolsista vê os prazos das demandas que pode ler');
+  const viewer = await activityFeed(db, actors.viewerB, range, NOW);
+  assert.equal(viewer.team, null);
+  assert.equal((await activityFeed(db, actors.manager, { ...range, types: 'materials' }, NOW)).deadlines, null);
+});
