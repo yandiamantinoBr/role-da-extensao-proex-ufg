@@ -39,7 +39,7 @@ export async function POST(request:Request){try{
   await rateLimit(db,`account:canonical-login:${admitted.userId}`,10,600000);
   return await admittedSignIn(db,await authForRequest(db),admitted.email,input.password,h,safePath(input.returnTo),admitted);
  }
- if(input.action==='logout')return privateResponse(await(await authForRequest(db)).api.signOut({headers:h,asResponse:true}));
+ if(input.action==='logout'){const response=privateResponse(await(await authForRequest(db)).api.signOut({headers:h,asResponse:true}));response.headers.set('Clear-Site-Data','"cache"');return response;}
  if(input.action==='initialPassword'){
   const native=await getChatGPTUser(),user=await ensureNativePrincipal();if(!native||!user)throw new HttpError(403,'Comprove o acesso anterior pelo link de configuração inicial.');
   await accountRate(db,request,`initial:${user.userId}`);const auth=await authForRequest(db),newPassword=password(input.password),name=text(input.name,120)||user.displayName;

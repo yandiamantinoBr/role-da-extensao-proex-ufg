@@ -489,6 +489,30 @@ test('HTTP auth wrapper keeps session responses private and hides signup, reset 
   }
 });
 
+test('anonymous session-lifecycle calls never write rate rows (each row would rewrite the whole snapshot)', async t => {
+  const f = fixture(t);
+  let batches = 0; f.hooks.afterBatch = () => { batches++; };
+  const before = f.sqlite.prepare('SELECT total_changes() n').get().n;
+  for (let i = 0; i < 25; i++) {
+    const response = await authGet(new Request(`${origin}/api/auth/get-session`));
+    assert.equal(response.status, 200);
+  }
+  assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM auth_rate_limit').get().n, 0);
+  assert.equal(f.sqlite.prepare('SELECT total_changes() n').get().n, before);
+  assert.equal(batches, 0);
+});
+
+test('on Vercel the auth limiter keys by the platform IP instead of one bucket shared by everyone', async t => {
+  const f = fixture(t);
+  f.runtimeEnv.VERCEL = '1';
+  const auth = await passwordAuth(f.db, { runtimeEnv: f.runtimeEnv });
+  assert.deepEqual(auth.options.advanced.ipAddress.ipAddressHeaders, ['x-real-ip']);
+  assert.equal(auth.options.rateLimit.storage, 'memory');
+  delete f.runtimeEnv.VERCEL;
+  const elsewhere = await passwordAuth(f.db, { runtimeEnv: f.runtimeEnv });
+  assert.deepEqual(elsewhere.options.advanced.ipAddress.ipAddressHeaders, ['cf-connecting-ip']);
+});
+
 async function accountRead(f, action, cookie) {
   const request=new Request(`${origin}/api/account?action=${action}`,{headers:{cookie}});
   f.context.headers=request.headers;
