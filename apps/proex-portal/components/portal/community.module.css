@@ -41,7 +41,7 @@
 .entry:first-child{border-top:0;padding-top:4px}
 .entry>button{justify-self:start}
 .entryMeta{display:flex;align-items:center;flex-wrap:wrap;gap:6px 8px;min-width:0}
-.entryMeta small{color:var(--text-secondary);font-size:12px;line-height:1.45;overflow-wrap:anywhere}
+.entryMeta small{flex-basis:100%;color:var(--text-secondary);font-size:12px;line-height:1.45;overflow-wrap:anywhere}
 .entryBody{margin:0;font-size:14px;line-height:1.6;white-space:pre-line;overflow-wrap:anywhere}
 .kind,.status{display:inline-flex;align-items:center;padding:2px 9px;border-radius:999px;font-size:11.5px;font-weight:650;line-height:1.6}
 .kind{background:var(--surface-soft);color:var(--brand-ink)}
