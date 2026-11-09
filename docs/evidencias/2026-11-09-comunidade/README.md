@@ -15,3 +15,10 @@ Larguras de 1366 e 390 px, temas `light` e `dark`:
 Nas capturas de página inteira do celular, a barra inferior fixa aparece no meio da imagem; é efeito da captura.
 
 Crítica visual independente: 6,9 → 8,0 → nota final registrada na PR. Não cobre leitor de tela, zoom de 200% nem aparelho físico.
+
+## Fase 2 (recados e selos)
+
+- `fase2-*-recados.png`: recados recebidos de uma segunda pessoa sintética (convidada só na base descartável), com responder, marcar como lido, ocultar e bloquear.
+- `fase2-*-selos.png`: nível, quatro selos com arte provisória, regras e pausa.
+
+Crítica visual independente da fase 2: 8,7 → 9,2, sem P0/P1/P2. Depois das capturas, "Bloquear" voltou a ter nome visível.

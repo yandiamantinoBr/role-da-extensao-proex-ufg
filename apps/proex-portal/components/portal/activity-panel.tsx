@@ -126,8 +126,8 @@ export default function ActivityPanel({ projects, initialProjectId = '' }: Props
       {period === 'custom' && <div className={styles.dates}><label className="p-field"><span>De</span><DateField value={custom.from} max={custom.to} onValueChange={from => setCustom(value => ({ ...value, from: from || value.from }))}/></label><label className="p-field"><span>Até</span><DateField value={custom.to} min={custom.from} onValueChange={to => setCustom(value => ({ ...value, to: to || value.to }))}/></label></div>}
       <div className={styles.filterRow}><span className={styles.filterLabel} id="activity-types">Tipo</span><div className={styles.chips} role="group" aria-labelledby="activity-types">{TYPES.filter(type => type.id !== 'ai' || shown?.aiVisible).map(({ id, label, Icon }) => <button key={id} type="button" aria-pressed={types.includes(id)} onClick={() => toggle(id)}>{types.includes(id) ? <Check size={14} aria-hidden="true"/> : <Icon size={14} aria-hidden="true"/>}{label}</button>)}</div></div>
       <div className={styles.selects}>
-        <label className="p-field"><span>Projeto</span><select value={projectId} onChange={event => setProjectId(event.target.value)}><option value="">Todos os projetos</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
-        <label className="p-field"><span>Pessoa</span><select value={person} onChange={event => setPerson(event.target.value)}><option value="">Todas as pessoas</option>{(shown?.people ?? []).map(entry => <option key={entry.id} value={entry.id}>{entry.name}</option>)}</select></label>
+        <label className="p-field"><span>Projeto</span><select id="activity-project" value={projectId} onChange={event => setProjectId(event.target.value)}><option value="">Todos os projetos</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
+        <label className="p-field"><span>Pessoa</span><select id="activity-person" value={person} onChange={event => setPerson(event.target.value)}><option value="">Todas as pessoas</option>{(shown?.people ?? []).map(entry => <option key={entry.id} value={entry.id}>{entry.name}</option>)}</select></label>
       </div>
     </section>
 
@@ -147,7 +147,7 @@ export default function ActivityPanel({ projects, initialProjectId = '' }: Props
         {demandBuckets.length ? <>
           {concentrated(demandBuckets) && <p className={styles.insight}>{demandBuckets.length === 1 ? 'Tudo aconteceu' : 'Concentrado'} {demandBuckets.map(row => `${/^(sábado|domingo)/i.test(row.title) ? 'no' : 'na'} ${row.title.toLocaleLowerCase('pt-BR')}`).join(' e ')}: {totals.demandsOpened} {totals.demandsOpened === 1 ? 'demanda criada' : 'demandas criadas'} e {totals.demandsDone} {totals.demandsDone === 1 ? 'concluída' : 'concluídas'}.</p>}
           <div className={styles.legend} aria-hidden="true"><span><i style={{ background: 'var(--viz-1)' }}/>Criadas</span><span><i style={{ background: 'var(--viz-3)' }}/>Concluídas</span></div>
-          <div className={styles.plot} onClick={() => follow(root.current, projectLink('demands', projectId))}><ResponsiveContainer width="100%" height="100%"><BarChart data={buckets} barGap={2} barCategoryGap="22%" margin={{ top: 8, right: 4, left: -18, bottom: 0 }}>
+          <div className={styles.plot} onClick={() => follow(root.current, projectLink('demands', projectId))}><ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 320, height: 200 }}><BarChart data={buckets} barGap={2} barCategoryGap="22%" margin={{ top: 8, right: 4, left: -18, bottom: 0 }}>
             <CartesianGrid vertical={false} stroke="var(--viz-grid)"/>
             <XAxis dataKey="label" tickLine={false} axisLine={false} interval="preserveStartEnd" minTickGap={12} tick={{ fill: 'var(--viz-text)', fontSize: 11 }}/>
             <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={40} tick={{ fill: 'var(--viz-text)', fontSize: 11 }}/>
@@ -173,7 +173,7 @@ export default function ActivityPanel({ projects, initialProjectId = '' }: Props
       {types.includes('agenda') && <figure className={styles.chart} data-empty={agendaBuckets.length ? 'false' : 'true'}>
         <figcaption><strong>Ocupação da agenda</strong><span>{weekly ? 'Atividades por semana.' : 'Atividades por dia.'}{agendaBuckets.length ? ' Toque para abrir a Agenda.' : ''}</span></figcaption>
         {agendaBuckets.length ? <>
-          <div className={styles.plot} onClick={() => follow(root.current, projectLink('calendar', projectId))}><ResponsiveContainer width="100%" height="100%"><BarChart data={buckets} barCategoryGap="22%" margin={{ top: 8, right: 4, left: -18, bottom: 0 }}>
+          <div className={styles.plot} onClick={() => follow(root.current, projectLink('calendar', projectId))}><ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 320, height: 200 }}><BarChart data={buckets} barCategoryGap="22%" margin={{ top: 8, right: 4, left: -18, bottom: 0 }}>
             <CartesianGrid vertical={false} stroke="var(--viz-grid)"/>
             <XAxis dataKey="label" tickLine={false} axisLine={false} interval="preserveStartEnd" minTickGap={12} tick={{ fill: 'var(--viz-text)', fontSize: 11 }}/>
             <YAxis allowDecimals={false} tickLine={false} axisLine={false} width={40} tick={{ fill: 'var(--viz-text)', fontSize: 11 }}/>

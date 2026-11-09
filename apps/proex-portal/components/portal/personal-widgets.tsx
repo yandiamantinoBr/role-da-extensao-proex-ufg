@@ -62,7 +62,7 @@ function WidgetSettings({ settings, roleAvailable, onSaved }: { settings: Settin
   }
   return <form className={styles.settings} onSubmit={save}>
     <fieldset disabled={busy}><legend>Escolha os widgets</legend>
-      {options.map(([key, label, help]) => <label key={key} className={styles.toggle}><input type="checkbox" checked={draft[key]} onChange={event => setDraft(current => ({ ...current, [key]: event.target.checked }))}/><span><strong>{label}</strong><small>{help}</small></span></label>)}
+      {options.map(([key, label, help]) => <label key={key} className={styles.toggle}><input name="community-field-1" type="checkbox" checked={draft[key]} onChange={event => setDraft(current => ({ ...current, [key]: event.target.checked }))}/><span><strong>{label}</strong><small>{help}</small></span></label>)}
     </fieldset>
     {error && <p role="alert" className="p-inline-error">{error}</p>}
     <div className={styles.actions}><button type="submit" className="p-button p-button-primary" disabled={busy}>{busy ? <LoaderCircle className="p-spin" size={16}/> : <Check size={16}/>}Salvar escolha</button></div>
@@ -89,7 +89,7 @@ function Notes({ items, onChange }: { items: Note[]; onChange(): Promise<void> }
     <h3 id={`${id}-title`}><StickyNote size={17} aria-hidden="true"/>Anotações</h3>
     <form className={styles.addRow} onSubmit={add}>
       <label className="visually-hidden" htmlFor={`${id}-new`}>Nova anotação</label>
-      <input id={`${id}-new`} value={body} maxLength={500} placeholder="Escreva uma anotação" disabled={busy} onChange={event => { setBody(event.target.value); key.current = ''; }}/>
+      <input name="community-field-2" id={`${id}-new`} value={body} maxLength={500} placeholder="Escreva uma anotação" disabled={busy} onChange={event => { setBody(event.target.value); key.current = ''; }}/>
       <button type="submit" className="p-icon-button" aria-label="Adicionar anotação" disabled={busy || !body.trim()}>{busy ? <LoaderCircle className="p-spin" size={18}/> : <Plus size={18}/>}</button>
     </form>
     {error && <p role="alert" className="p-inline-error">{error}</p>}
@@ -110,12 +110,12 @@ function Reminders({ items, serverDay, onChange }: { items: Reminder[]; serverDa
     <form className={styles.reminderForm} onSubmit={add}>
       <div className={styles.addRow}>
         <label className="visually-hidden" htmlFor={`${id}-new`}>Novo lembrete</label>
-        <input id={`${id}-new`} value={body} maxLength={500} placeholder="Novo lembrete" disabled={busy} onChange={event => { setBody(event.target.value); key.current = ''; }}/>
+        <input name="community-field-3" id={`${id}-new`} value={body} maxLength={500} placeholder="Novo lembrete" disabled={busy} onChange={event => { setBody(event.target.value); key.current = ''; }}/>
         <button type="submit" className="p-icon-button" aria-label="Adicionar lembrete" disabled={busy || !body.trim()}>{busy ? <LoaderCircle className="p-spin" size={18}/> : <Plus size={18}/>}</button>
       </div>
       {withDate ? <div className={styles.when}>
         <label className={styles.field}><span>Data</span><DateField value={dueOn} onValueChange={value => { setDueOn(value); key.current = ''; }} disabled={busy} aria-label="Data do lembrete"/></label>
-        <label className={styles.field}><span>Hora (opcional)</span><input inputMode="numeric" placeholder={dueOn ? 'hh:mm' : '--:--'} value={dueTime} maxLength={5} disabled={busy || !dueOn} onChange={event => { const digits = event.target.value.replace(/\D/g, '').slice(0, 4); setDueTime(digits.length > 2 ? `${digits.slice(0, 2)}:${digits.slice(2)}` : digits); key.current = ''; }} aria-describedby={`${id}-time`}/></label>
+        <label className={styles.field}><span>Hora (opcional)</span><input name="community-field-4" inputMode="numeric" placeholder={dueOn ? 'hh:mm' : '--:--'} value={dueTime} maxLength={5} disabled={busy || !dueOn} onChange={event => { const digits = event.target.value.replace(/\D/g, '').slice(0, 4); setDueTime(digits.length > 2 ? `${digits.slice(0, 2)}:${digits.slice(2)}` : digits); key.current = ''; }} aria-describedby={`${id}-time`}/></label>
         <small id={`${id}-time`} className={styles.help}>{dueOn ? 'Hora em 24 horas, como 14:30.' : 'Escolha a data para poder informar a hora.'}</small>
       </div> : <button type="button" className={styles.linkButton} onClick={() => setWithDate(true)}><CalendarPlus size={16} aria-hidden="true"/>Pôr data e hora</button>}
     </form>
@@ -129,7 +129,7 @@ function ReminderItem({ item, serverDay, onChange }: { item: Reminder; serverDay
   const { busy, error, run } = useOperation(), [confirming, setConfirming] = useState(false);
   const tone = item.doneAt ? 'done' : item.dueOn && serverDay ? item.dueOn < serverDay ? 'late' : item.dueOn === serverDay ? 'today' : '' : '';
   return <li className={styles.item} data-tone={tone || undefined}>
-    <label className={styles.check}><input type="checkbox" checked={!!item.doneAt} disabled={busy} onChange={event => void run({ action: 'done', id: item.id, done: event.target.checked, expectedVersion: item.version }, onChange)}/>
+    <label className={styles.check}><input name="community-field-5" type="checkbox" checked={!!item.doneAt} disabled={busy} onChange={event => void run({ action: 'done', id: item.id, done: event.target.checked, expectedVersion: item.version }, onChange)}/>
       <span><span className={styles.body}>{item.body}</span>{item.dueOn && <small>{tone === 'late' ? 'Atrasado · ' : tone === 'today' ? 'Hoje · ' : ''}{civilDay(item.dueOn)}{item.dueTime ? ` às ${item.dueTime}` : ''}</small>}</span></label>
     {confirming ? <span className={styles.confirm}><button type="button" className="p-text-link p-text-danger" disabled={busy} onClick={() => void run({ action: 'delete', id: item.id, expectedVersion: item.version }, onChange)}>Apagar</button><button type="button" className="p-text-link" onClick={() => setConfirming(false)}>Manter</button></span>
       : <button type="button" className={styles.iconAction} aria-label={`Apagar lembrete: ${item.body}`} disabled={busy} onClick={() => setConfirming(true)}><Trash2 size={16}/></button>}
@@ -141,7 +141,7 @@ function EditableItem({ item, onChange }: { item: Note; onChange(): Promise<void
   const [editing, setEditing] = useState(false), [body, setBody] = useState(item.body), [confirming, setConfirming] = useState(false), { busy, error, run } = useOperation();
   if (editing) return <li className={styles.item}><form className={styles.addRow} onSubmit={async event => { event.preventDefault(); if (await run({ action: 'update', id: item.id, body, expectedVersion: item.version }, onChange)) setEditing(false); }}>
     <label className="visually-hidden" htmlFor={`edit-${item.id}`}>Editar anotação</label>
-    <input id={`edit-${item.id}`} autoFocus value={body} maxLength={500} disabled={busy} onChange={event => setBody(event.target.value)}/>
+    <input name="community-field-6" id={`edit-${item.id}`} autoFocus value={body} maxLength={500} disabled={busy} onChange={event => setBody(event.target.value)}/>
     <button type="submit" className="p-icon-button" aria-label="Salvar anotação" disabled={busy || !body.trim()}><Check size={18}/></button>
     <button type="button" className="p-icon-button" aria-label="Cancelar edição" onClick={() => { setBody(item.body); setEditing(false); }}><X size={18}/></button>
   </form>{error && <p role="alert" className="p-inline-error">{error}</p>}</li>;

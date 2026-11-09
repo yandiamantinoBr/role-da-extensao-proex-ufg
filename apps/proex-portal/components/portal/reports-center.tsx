@@ -695,7 +695,7 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
           {breakdown.length === 1 && breakdown[0].name === 'Sem informação' && <p className={styles.chartHelp}>Nenhuma linha deste recorte tem {groupLabel.toLowerCase()} informada. Complete o cadastro para o gráfico mostrar a divisão.</p>}
           {breakdown.some(item => !item.raw) && <p className={styles.chartHelp}>“Outros” reúne os grupos menores. Esses grupos aparecem só no gráfico, sem seleção individual.</p>}
           <div style={{ height: Math.max(110, breakdown.length * 36 + 48) }} role="img" aria-label={`Gráfico de barras: ${breakdown.map(item => `${item.name} ${formatNumber(item.value)}`).join(', ')}`}>
-            <ResponsiveContainer width="100%" height="100%" onResize={width => setCategoryAxisWidth(Math.max(70, Math.min(150, Math.floor(width / 3))))}>
+            <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 320, height: 200 }} onResize={width => setCategoryAxisWidth(Math.max(70, Math.min(150, Math.floor(width / 3))))}>
               <BarChart data={breakdown} layout="vertical" margin={{ top: 4, right: 32, bottom: 4, left: 0 }} barCategoryGap={6}>
                 <CartesianGrid horizontal={false} stroke="var(--rc-grid)" />
                 <XAxis type="number" allowDecimals={false} domain={[0, 'dataMax']} tick={{ fill: 'var(--rc-axis)', fontSize: 11 }} axisLine={false} tickLine={false} />
@@ -710,7 +710,7 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
         {timeline.length > 0 && <figure className={styles.chart}>
           <figcaption><strong>Evolução por mês</strong><small>{config.series ? (mixedUnits ? 'Contagem de movimentações de entrada e saída, sem somar medidas diferentes.' : `Quantidades em ${measurementUnit || unitOptions[0] || 'unidade informada'} que entraram e saíram do estoque.`) : `${effectiveMeasure === '__count__' ? 'Quantidade' : `Soma de ${measureLabel}`} por mês${DATASETS[dataset].dateKey === 'inicio' ? ' de início' : ''}.`}</small></figcaption>
           <div style={{ height: 260 }} role="img" aria-label={`Gráfico mensal com ${timeline.length} meses`}>
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 320, height: 200 }}>
               <BarChart data={timeline} margin={{ top: 8, right: 8, bottom: 4, left: -12 }} barGap={2}>
                 <CartesianGrid vertical={false} stroke="var(--rc-grid)" />
                 <XAxis dataKey="name" tick={{ fill: 'var(--rc-axis)', fontSize: 11 }} axisLine={false} tickLine={false} />

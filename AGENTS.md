@@ -10,7 +10,7 @@ Antes de agir, leia `C:/Users/yan1n/Documents/Vault Yan/AGENTS.md`, `00 Início.
 
 Autorização vigente de Yan em 2026-10-31: push, PR, merge e deploy da V9 e das próximas versões do Portal PROEX estão autorizados. Execute os testes, confira a revisão em produção e registre os resultados sem pedir essa autorização novamente. O escopo completo e os critérios de continuidade estão em `docs/REQUISITOS-E-CONTINUIDADE.md` e na Vault. Os limites anteriores de publicação ficam superados por essa decisão; segredo, isolamento de acesso e preservação de dados continuam obrigatórios.
 
-Para retomar rapidamente, leia `docs/CONTINUAR-AQUI.md`; ele resume produção, branch do coordenador, agentes, gates e dependências. `docs/ANDAMENTO.md` preserva o histórico. Confirme os estados vivos antes de tratar qualquer checkpoint como atual.
+Para retomar rapidamente, leia `docs/CONTINUAR-AQUI.md`; ele resume produção, branch do coordenador, agentes, gates e dependências. `docs/ANDAMENTO.md` preserva o histórico. Confirme os estados vivos antes de tratar qualquer checkpoint como atual. O dicionário de termos (nome na tela, no código e no banco), o mapa das pastas e o plano de consolidação de nomes estão em `apps/proex-portal/docs/GLOSSARIO.md`.
 
 - O portal fica em `apps/proex-portal`; a raiz preserva o jogo livre. Execute comandos na aplicação correta.
 - Use `npx --yes pnpm@11.25.0 install --frozen-lockfile`, sem instalar dependências novas fora do escopo autorizado.

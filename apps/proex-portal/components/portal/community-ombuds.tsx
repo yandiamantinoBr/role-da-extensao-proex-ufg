@@ -78,10 +78,10 @@ function NewReport({ code, onRegenerate, onSent }: { code: string; onRegenerate(
   return <form className={styles.card} onSubmit={submit} aria-labelledby={`${id}-title`} autoComplete="off">
     <div className={styles.cardHead}><h2 id={`${id}-title`}>Novo relato anônimo</h2><p>Para falar de algo difícil sem se identificar. A ouvidoria responde pelo código.</p></div>
     <CodeBox code={code} onRegenerate={busy ? undefined : () => { onRegenerate(); setSaved(false); }}/>
-    <label className={styles.checkLine}><input type="checkbox" checked={saved} disabled={busy} onChange={event => setSaved(event.target.checked)}/><span>Guardei o código. Sem ele não há como acompanhar a resposta.</span></label>
-    <label className={styles.field}><span>Tema</span><select required value={category} disabled={busy} onChange={event => setCategory(event.target.value as Category)}><option value="">Escolha um tema</option>{Object.entries(CATEGORIES).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+    <label className={styles.checkLine}><input name="community-field-1" type="checkbox" checked={saved} disabled={busy} onChange={event => setSaved(event.target.checked)}/><span>Guardei o código. Sem ele não há como acompanhar a resposta.</span></label>
+    <label className={styles.field}><span>Tema</span><select name="community-field-2" required value={category} disabled={busy} onChange={event => setCategory(event.target.value as Category)}><option value="">Escolha um tema</option>{Object.entries(CATEGORIES).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
     <label className={styles.field} htmlFor={`${id}-body`}><span>Relato</span></label>
-    <textarea id={`${id}-body`} className={styles.textarea} required minLength={10} maxLength={4000} value={body} disabled={busy} spellCheck autoComplete="off" onChange={event => setBody(event.target.value)} aria-describedby={`${id}-help`} placeholder="Conte o que aconteceu e o que ajudaria. Evite nomes e detalhes que identifiquem você."/>
+    <textarea name="community-field-3" id={`${id}-body`} className={styles.textarea} required minLength={10} maxLength={4000} value={body} disabled={busy} spellCheck autoComplete="off" onChange={event => setBody(event.target.value)} aria-describedby={`${id}-help`} placeholder="Conte o que aconteceu e o que ajudaria. Evite nomes e detalhes que identifiquem você."/>
     <p id={`${id}-help`} className={styles.help}>{body.length}/4.000 · O texto não fica salvo como rascunho neste aparelho.</p>
     <Anonymity/>
     {error && <p role="alert" className="p-inline-error">{error}</p>}
@@ -118,7 +118,7 @@ function Track({ initialCode }: { initialCode: string }) {
     {result ? <div className={styles.openCode}><span><KeyRound size={16} aria-hidden="true"/>Relato {masked(formatOmbudsInput(code))}</span><button type="button" className="p-button p-button-subtle" onClick={close}><X size={16}/>Fechar conversa</button></div>
       : <form className={styles.trackRow} onSubmit={track} autoComplete="off">
         <label className="visually-hidden" htmlFor={`${id}-code`}>Código de acompanhamento</label>
-        <input id={`${id}-code`} className={styles.codeInput} value={code} maxLength={40} spellCheck={false} autoCapitalize="characters" placeholder="OUV-XXXX-XXXX-XXXX-XXXX-XXXX" disabled={busy} onChange={event => setCode(formatOmbudsInput(event.target.value))}/>
+        <input name="community-field-4" id={`${id}-code`} className={styles.codeInput} value={code} maxLength={40} spellCheck={false} autoCapitalize="characters" placeholder="OUV-XXXX-XXXX-XXXX-XXXX-XXXX" disabled={busy} onChange={event => setCode(formatOmbudsInput(event.target.value))}/>
         <button type="submit" className="p-button p-button-primary" disabled={busy || code.replace(/[^0-9A-Z]/gi, '').length < 23}>{busy ? <LoaderCircle className="p-spin" size={16}/> : <Search size={16}/>}Consultar</button>
       </form>}
     {error && <p role="alert" className="p-inline-error">{error}</p>}
@@ -126,7 +126,7 @@ function Track({ initialCode }: { initialCode: string }) {
       <div className={styles.entryMeta}><span className={styles.status} data-status={result.report.status}>{STATUS[result.report.status]}</span><small>{CATEGORIES[result.report.category]} · recebido em {civilDay(result.report.receivedOn)}</small></div>
       <Thread messages={result.messages} mine="reporter"/>
       {result.report.status === 'closed' ? <p className={styles.help}>A ouvidoria encerrou este relato. Para um assunto novo, escreva outro relato.</p>
-        : <form className={styles.replyForm} onSubmit={send}><label className={styles.field} htmlFor={`${id}-reply`}><span>Acrescentar algo</span></label><textarea id={`${id}-reply`} className={styles.textarea} required minLength={2} maxLength={4000} value={reply} disabled={busy} onChange={event => setReply(event.target.value)} placeholder="Responda a uma pergunta da ouvidoria ou acrescente um detalhe."/><p className={styles.help}>{reply.length}/4.000{reply.trim().length < 2 ? ' · Escreva algo para enviar.' : ''}</p><button type="submit" className="p-button p-button-primary" disabled={busy || reply.trim().length < 2}><Send size={16}/>Enviar à ouvidoria</button></form>}
+        : <form className={styles.replyForm} onSubmit={send}><label className={styles.field} htmlFor={`${id}-reply`}><span>Acrescentar algo</span></label><textarea name="community-field-5" id={`${id}-reply`} className={styles.textarea} required minLength={2} maxLength={4000} value={reply} disabled={busy} onChange={event => setReply(event.target.value)} placeholder="Responda a uma pergunta da ouvidoria ou acrescente um detalhe."/><p className={styles.help}>{reply.length}/4.000{reply.trim().length < 2 ? ' · Escreva algo para enviar.' : ''}</p><button type="submit" className="p-button p-button-primary" disabled={busy || reply.trim().length < 2}><Send size={16}/>Enviar à ouvidoria</button></form>}
       <p className={styles.help}>Em computador compartilhado, feche a conversa ao terminar.</p>
     </div>}
   </section>;
@@ -185,7 +185,7 @@ function OmbudsDetail({ id: reportId, onBack }: { id: string; onBack(): void }) 
       <Thread messages={data.messages} mine="ombuds"/>
       {data.report.status !== 'closed' && <form className={styles.replyForm} onSubmit={event => { event.preventDefault(); void act({ action: 'respond', body: reply, status: 'answered' }, 'Resposta enviada'); }}>
         <label className={styles.field} htmlFor={`${id}-reply`}><span>Resposta da ouvidoria</span></label>
-        <textarea id={`${id}-reply`} className={styles.textarea} required minLength={2} maxLength={4000} value={reply} disabled={busy} onChange={event => setReply(event.target.value)} placeholder="A pessoa lê esta resposta quando consultar o código."/>
+        <textarea name="community-field-6" id={`${id}-reply`} className={styles.textarea} required minLength={2} maxLength={4000} value={reply} disabled={busy} onChange={event => setReply(event.target.value)} placeholder="A pessoa lê esta resposta quando consultar o código."/>
         <p className={styles.help}>{reply.length}/4.000{reply.trim().length < 2 ? ' · Escreva a resposta para enviar.' : ''}</p>
         <div className={styles.manageRow}><button type="submit" className="p-button p-button-primary" disabled={busy || reply.trim().length < 2}>{busy ? <LoaderCircle className="p-spin" size={16}/> : <Send size={16}/>}Responder</button>
           {data.report.status !== 'reviewing' && <button type="button" className="p-button p-button-subtle" disabled={busy} onClick={() => void act({ action: 'status', status: 'reviewing' }, 'Marcado como em análise')}>Marcar em análise</button>}

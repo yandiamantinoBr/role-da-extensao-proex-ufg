@@ -1,5 +1,12 @@
 # Continuar Portal PROEX
 
+## Comunidade · fases 1 e 2 · 2026-11-09
+
+Módulo **Comunidade** (sessão Claude Code "comunidade"). Fase 1 publicada pela PR [51](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/51) (merge `5ee5a42`, migração 0036): widgets pessoais no Início (desligados por padrão), "Fale com a gestão" (sugestão, problema, elogio por plataforma, projeto ou evento, com resposta da gestão) e ouvidoria anônima com código de acompanhamento. Fase 2 na PR [56](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/56) (migração 0037): recados entre pessoas e selos com arte provisória. Comportamento, limites honestos do anonimato e testes em [COMUNIDADE.md](../apps/proex-portal/docs/COMUNIDADE.md); evidências sintéticas em [evidencias/2026-11-09-comunidade](evidencias/2026-11-09-comunidade/README.md); especificação e perguntas ao Yan na Vault (`Portal PROEX - Comunidade (especificação)`).
+
+- **Não fazer:** gerar de novo 0036 com o Drizzle (o SQL é escrito à mão e recria `portal_feedback`); trocar o atributo `aria-keyshortcuts="Alt+R"` do botão do Rolê sem atualizar `personal-widgets.tsx`; gravar autoria, hora ou contador por pessoa na ouvidoria.
+- **Falta:** aviso de recado por e-mail (fila do MailApp presa às demandas), recados no sino, arte definitiva dos selos (comunicação) e a fase 3 (chat com imagens), que espera a decisão do Yan sobre armazenamento.
+
 ## Exportação, Agenda, fotos e Configurações · 2026-11-09
 
 Branch `claude/mystifying-sanderson-7b4c51` (Claude Code). Agenda não rola mais a página ao abrir/fechar um dia (causa: `scrollIntoView` na coluna sticky); miniatura da foto principal na lista de materiais (só `inventory.read`); componente comum de exportação (planilha verde, documento azul, PDF vermelho) e `/api/export` com DOCX/PDF no servidor; Configurações agrupadas por tarefa, central de chaves só reposicionada. 1375/1375 testes, tipos, lint, `build`, `build:node`. [Entrega, provas e limites](ENTREGA-09NOV-EXPORTACAO-AGENDA-FOTOS-CONFIG.md). Confirmar merge e deploy no recibo da PR antes de tratar como produção.
