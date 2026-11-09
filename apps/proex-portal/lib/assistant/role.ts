@@ -204,6 +204,7 @@ async function boundedJson(response: Response): Promise<Record<string, unknown>>
 }
 
 type ToolCall = { id: string; type: 'function'; function: { name: string; arguments: string } };
+const FINAL_INSTRUCTION = 'Agora responda à pessoa usando só os dados consultados acima (não há mais consultas). Responda somente em JSON: {"reply":"texto para a pessoa","operation":null}.';
 /** One provider step of the tool loop: a reply or tool calls, with confirmed usage. */
 async function toolStep(provider: 'deepseek' | 'groq', apiKey: string, body: unknown, signal: AbortSignal, fetcher: typeof fetch) {
   const model = ROLE_MODELS[provider];
@@ -231,7 +232,7 @@ async function toolStep(provider: 'deepseek' | 'groq', apiKey: string, body: unk
     toolCalls = (raw as ToolCall[]).map(call => ({ id: call.id, type: 'function', function: { name: call.function.name, arguments: call.function.arguments } }));
   }
   if (!toolCalls.length && choice.finish_reason !== 'stop') throw charged('A resposta do Rolê veio incompleta. O custo foi registrado.');
-  return { content, toolCalls, inputTokens, outputTokens, costMicros };
+  return { content, toolCalls, inputTokens, outputTokens, costMicros, finish: String(choice.finish_reason ?? '').slice(0, 20) };
 }
 
 /**
@@ -243,11 +244,15 @@ async function dispatchWithTools(provider: 'deepseek' | 'groq', apiKey: string, 
   const messages = [...body.messages], used: { name: string; rows: number }[] = [], sources = new Map<string, RoleSource>();
   let inputTokens = 0, outputTokens = 0, costMicros = 0, steps = 0;
   const charged = (message: string) => new ChargedError(message, costMicros, inputTokens + outputTokens);
+  // No JSON mode in the loop: after lookups, DeepSeek's JSON mode can return an empty message.
+  // The reply is parsed leniently (JSON or plain text); the final step gets a closing instruction.
   const { response_format: _format, ...free } = body; void _format;
+  let finalNudged = false;
   for (let round = 0; ; round++) {
     const offer = round < ROLE_TOOL_ROUNDS;
+    if (!offer && !finalNudged) { messages.push({ role: 'system', content: FINAL_INSTRUCTION }); finalNudged = true; }
     let step;
-    try { step = await toolStep(provider, apiKey, offer ? { ...free, messages, tools: ROLE_TOOLS, tool_choice: 'auto' } : { ...body, messages }, signal, fetcher); }
+    try { step = await toolStep(provider, apiKey, offer ? { ...free, messages, tools: ROLE_TOOLS, tool_choice: 'auto' } : { ...free, messages }, signal, fetcher); }
     catch (error) {
       if (error instanceof ChargedError) throw new ChargedError(error.message, costMicros + error.chargedMicros, inputTokens + outputTokens + error.chargedTokens);
       if (costMicros > 0) throw charged(error instanceof HttpError ? error.message : 'A chamada ao Rolê falhou.');
@@ -277,6 +282,12 @@ async function dispatchWithTools(provider: 'deepseek' | 'groq', apiKey: string, 
         messages.push({ role: 'tool', tool_call_id: call.id, content });
       }
       continue;
+    }
+    if (!step.content.trim()) {
+      // Empty message in a lookup round: one closing call without tools. Empty at the end: stop.
+      console.warn('role_empty_reply', JSON.stringify({ provider, steps, round, finish: step.finish, lookups: used.map(entry => entry.name) }));
+      if (offer) { round = ROLE_TOOL_ROUNDS - 1; continue; }
+      throw charged('O Rolê não conseguiu montar a resposta agora. Tente de novo com uma pergunta mais curta. O custo foi registrado.');
     }
     let reply: { reply: string; operation: string | null };
     try { reply = validateRoleReply(firstJsonObject(step.content)); }

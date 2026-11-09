@@ -384,7 +384,7 @@ function scriptedProvider(steps) {
   return { calls, fetch: async (url, init) => {
     const body = JSON.parse(init.body); calls.push(body);
     const step = steps[Math.min(calls.length - 1, steps.length - 1)];
-    const message = step.tools ? { content: '', tool_calls: step.tools.map((tool, index) => ({ id: `call-${calls.length}-${index}`, type: 'function', function: { name: tool.name, arguments: JSON.stringify(tool.args) } })) } : { content: JSON.stringify(step.reply) };
+    const message = step.tools ? { content: '', tool_calls: step.tools.map((tool, index) => ({ id: `call-${calls.length}-${index}`, type: 'function', function: { name: tool.name, arguments: JSON.stringify(tool.args) } })) } : { content: step.empty ? '' : typeof step.text === 'string' ? step.text : JSON.stringify(step.reply) };
     return Response.json({ model: body.model, choices: [{ finish_reason: step.tools ? 'tool_calls' : 'stop', message }], usage: { prompt_tokens: 1500, completion_tokens: 90 } });
   } };
 }
@@ -457,7 +457,8 @@ test('FERRAMENTAS: at most two lookup rounds, then the answer; a model that keep
     const greedy = scriptedProvider([{ tools: [{ name: 'buscar_no_portal', args: { texto: 'Lote' } }] }]);
     await assert.rejects(roleChat(f.db, f.actors.viewer, chatInput(f, { message: 'procure tudo' }), secret, { keys, fetcher: greedy.fetch }), error => error.status === 502);
     assert.equal(greedy.calls.length, 3, 'two rounds with tools, one final call without');
-    assert.ok(!('tools' in greedy.calls[2]) && greedy.calls[2].response_format.type === 'json_object');
+    assert.ok(!('tools' in greedy.calls[2]) && !('response_format' in greedy.calls[2]), 'final call without tools and without JSON mode');
+    assert.equal(greedy.calls[2].messages.at(-1).role, 'system', 'closing instruction before the final answer');
     const usage = f.native.prepare("SELECT reserved_usd_micros FROM ai_organization_usage WHERE organization_id='org_proex'").get();
     assert.ok(usage.reserved_usd_micros > 0, 'the failed attempt still counts against the day');
     const { ROLE_TOOLS_ACTUAL_SCHEMA_BYTES } = await import(compile('assistant/role-tools'));
@@ -465,5 +466,21 @@ test('FERRAMENTAS: at most two lookup rounds, then the answer; a model that keep
     assert.ok(ROLE_TOOLS_ACTUAL_SCHEMA_BYTES <= ROLE_TOOLS_SCHEMA_BYTES, `schema ${ROLE_TOOLS_ACTUAL_SCHEMA_BYTES} fits the cost ceiling`);
     const withTools = roleEstimate({ textProvider: 'deepseek', textBytes: 500, hasImage: false, tools: true }), without = roleEstimate({ textProvider: 'deepseek', textBytes: 500, hasImage: false });
     assert.ok(withTools.costMicros > without.costMicros && withTools.costMicros < 30_000, 'lookups raise the shown ceiling but stay under 3 cents');
+  } finally { f.native.close(); }
+});
+
+test('FERRAMENTAS: an empty message after a lookup gets one closing call; plain text replies are accepted', async () => {
+  const f = fixture();
+  try {
+    await setup(f); seedLots(f);
+    const provider = scriptedProvider([{ tools: [{ name: 'consultar_demandas', args: { texto: 'Lote 10/11' } }] }, { empty: true }, { text: 'Na terça: 200 meios planners. Fonte: demanda Lote 10/11 · terça.' }]);
+    const result = await roleChat(f.db, f.actors.viewer, chatInput(f, { message: 'quantos brindes amanhã?' }), secret, { keys, fetcher: provider.fetch });
+    assert.equal(provider.calls.length, 3);
+    assert.ok(!('tools' in provider.calls[2]), 'the closing call has no tools');
+    assert.equal(result.reply, 'Na terça: 200 meios planners. Fonte: demanda Lote 10/11 · terça.');
+    assert.equal(result.sources.length, 1);
+    const stuck = scriptedProvider([{ empty: true }]);
+    await assert.rejects(roleChat(f.db, f.actors.viewer, chatInput(f, { message: 'oi?' }), secret, { keys, fetcher: stuck.fetch }), error => error.status === 502 && /não conseguiu montar a resposta/.test(error.message));
+    assert.equal(stuck.calls.length, 2, 'one empty lookup round, one closing call, then stop');
   } finally { f.native.close(); }
 });
