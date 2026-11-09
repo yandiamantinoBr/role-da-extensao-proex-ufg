@@ -17,7 +17,7 @@ export async function requireInternalMember(db: D1Database, actor: PortalActor) 
 export function personText(value: unknown, min: number, max: number, message: string): string {
   const text = typeof value === 'string' ? value.normalize('NFC').trim() : '';
   const length = Array.from(text).length;
-  if (length < min || text.length > max || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(text)) throw new HttpError(400, message, 'invalid_text');
+  if (length < min || text.length > max || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f\u202a-\u202e\u2066-\u2069]/.test(text)) throw new HttpError(400, message, 'invalid_text');
   return text;
 }
 export function only(input: Record<string, unknown>, keys: string[]) {

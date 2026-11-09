@@ -36,7 +36,7 @@ export function CommunityMessages({ onUnreadChange }: { onUnreadChange?(count: n
   return <div className={`${styles.split} ${styles.messagesSplit}`}>
     <NewMessage key={replyTo?.nonce ?? 0} organizations={people.organizations} blocked={people.blocked} initial={replyTo} onSent={refresh}/>
     <section className={styles.card} aria-labelledby="community-messages-title">
-      <div className={styles.cardHead}><div><h2 id="community-messages-title">Seus recados</h2><p>Só você e a outra pessoa leem. A gestão não vê seus recados pelo portal.</p></div><button type="button" className="p-icon-button" aria-label="Atualizar recados" onClick={refresh}><RefreshCw size={18}/></button></div>
+      <div className={styles.cardHead}><div><h2 id="community-messages-title">Seus recados</h2><p>Só você e a outra pessoa leem pelo portal. O backup completo, guardado pela administração, inclui o banco; recados ocultados pelos dois lados são apagados.</p></div><button type="button" className="p-icon-button" aria-label="Atualizar recados" onClick={refresh}><RefreshCw size={18}/></button></div>
       <div className={styles.segmented} role="group" aria-label="Caixa de recados">
         <button type="button" aria-pressed={box === 'inbox'} onClick={() => setBox('inbox')}><Mail size={16} aria-hidden="true"/>Recebidos{list.unread > 0 && <span className={styles.count}>{list.unread}</span>}</button>
         <button type="button" aria-pressed={box === 'sent'} onClick={() => setBox('sent')}><Send size={16} aria-hidden="true"/>Enviados</button>

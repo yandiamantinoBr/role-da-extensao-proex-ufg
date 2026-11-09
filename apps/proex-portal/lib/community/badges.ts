@@ -52,12 +52,15 @@ export async function badgeState(db: D1Database, rawActor: PortalActor | null, n
   const paused = !!prefs.pausedUntil && prefs.pausedUntil >= period.today;
   if (!prefs.enabled) return { enabled: false, paused: false, pausedUntil: prefs.pausedUntil, version: prefs.version };
   if (!paused) {
+    // After a pause ends mid-week, only actions from the day after the pause count.
+    const resumeAt = prefs.pausedUntil ? new Date(Date.parse(`${prefs.pausedUntil}T03:00:00.000Z`) + 86400000).toISOString() : null;
+    const from = resumeAt && resumeAt > period.start ? resumeAt : period.start;
     // Record only what was newly earned this week; a repeated read writes nothing.
     const already = new Set((await all(db, 'SELECT badge FROM community_badges WHERE user_id=? AND week=?', [actor.userId, period.week])).map(row => String(row.badge)));
     const missing = (Object.keys(BADGES) as Badge[]).filter(badge => !already.has(badge));
     if (missing.length) {
       const checks = earnedSql(), earned: Badge[] = [];
-      for (const badge of missing) if (await one(db, `SELECT 1 ok WHERE ${checks[badge]}`, [actor.userId, period.start, period.end])) earned.push(badge);
+      for (const badge of missing) if (await one(db, `SELECT 1 ok WHERE ${checks[badge]}`, [actor.userId, from, period.end])) earned.push(badge);
       if (earned.length) await db.batch(earned.map(badge => db.prepare('INSERT OR IGNORE INTO community_badges(user_id,badge,week,earned_at) VALUES(?,?,?,?)').bind(actor.userId, badge, period.week, iso())));
     }
   }

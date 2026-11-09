@@ -32,6 +32,7 @@ test('recados: only people who share the organization; recipient-only read; no m
 test('recados: block, revocation inside the batch, retry and daily ceiling',async t=>{const f=fixture(t),a=await f.user('a','viewer','p-a','o-a'),b=await f.user('b','viewer','p-a','o-a');
  await messages.messageAction(f.db,b,{action:'block',userId:'a'});await assert.rejects(()=>send(f,a,'b'),e=>e.status===409);await messages.messageAction(f.db,b,{action:'unblock',userId:'a'});await send(f,a,'b');
  await send(f,b,'a');await messages.messageAction(f.db,a,{action:'block',userId:'b'});assert.equal((await messages.messageList(f.db,a)).inbox.length,0,'blocked sender is hidden from the inbox');assert.equal(await messages.unreadMessages(f.db,'a'),0);
+ await assert.rejects(()=>send(f,a,'b'),e=>e.status===409,'a block works in both directions');await messages.messageAction(f.db,a,{action:'unblock',userId:'b'});
  f.db.beforeBatch=()=>f.native.prepare('UPDATE members SET revoked_at=? WHERE user_id=?').run(f.now,'b');await assert.rejects(()=>send(f,a,'b'),e=>e.status===409);f.native.prepare('UPDATE members SET revoked_at=NULL WHERE user_id=?').run('b');
  const key=crypto.randomUUID(),input={action:'send',organizationId:'o-a',recipientId:'b',body:'Repetido',operationKey:key};const first=await messages.messageAction(f.db,a,input);assert.equal((await messages.messageAction(f.db,a,input)).id,first.id);
  for(const bad of [{body:''},{body:'x'.repeat(1001)},{recipientId:'nada inválido'},{extra:1}])await assert.rejects(()=>messages.messageAction(f.db,a,{action:'send',organizationId:'o-a',recipientId:'b',body:'ok',operationKey:crypto.randomUUID(),...bad}),e=>e.status===400);
@@ -63,3 +64,10 @@ test('selos: off and pause stop all computation; only the owner sees them; anony
  await send(f,a,'b');await messages.messageAction(f.db,b,{action:'block',userId:'a'});f.insert('community_badges',{user_id:'a',badge:'thanks',week:'2026-11-02',earned_at:f.now});
  const request=await privacy.requestPrivacy(f.db,'a');await privacy.resolvePrivacy(f.db,owner,{requestId:request.id,decision:'anonymize'},{async delete(){}});
  for(const table of ['community_messages','community_blocks','community_preferences','community_badges'])assert.equal(count(f,table),0,table);});
+
+test('recados: a person who works in only one project does not reach the whole organization',async t=>{const f=fixture(t);f.insert('projects',{id:'p-a2',name:'Projeto a2',organization_id:'o-a',created_at:f.now});
+ const a=await f.user('a','viewer','p-a','o-a'),other=await f.user('x','viewer','p-a2','o-a'),orgOwner=await f.user('oo','owner',null,'o-a');
+ assert.ok(!(await messages.messagePeople(f.db,a)).organizations.flatMap(o=>o.people).some(p=>p.id==='x'));await assert.rejects(()=>send(f,a,'x'),e=>e.status===409);
+ assert.ok((await messages.messagePeople(f.db,a)).organizations.flatMap(o=>o.people).some(p=>p.id==='oo'),'organization-wide people stay reachable');await send(f,a,'oo');await send(f,orgOwner,'x');
+ await messages.messageAction(f.db,a,{action:'block',userId:'nobody-here'});assert.equal(count(f,'community_blocks'),0,'same answer, no row, for an unknown account');
+ const sent=await send(f,orgOwner,'a');await messages.messageAction(f.db,orgOwner,{action:'hide',id:sent.id});assert.equal(count(f,'community_messages','id=?',sent.id),1);await messages.messageAction(f.db,a,{action:'hide',id:sent.id});assert.equal(count(f,'community_messages','id=?',sent.id),0,'hidden by both sides means deleted');});
