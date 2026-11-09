@@ -1,3 +1,4 @@
+import { effectiveMovementSql } from './movement-ledger';
 import { accessibleProjects, projectAuthoritySql, type PortalActor } from './access';
 import { all, type Row } from './database';
 import { HttpError } from './errors';
@@ -121,7 +122,7 @@ export async function reportRows(db: D1Database, actor: PortalActor | null, inpu
     const range = period('m.created_at');
     rows = await run(`SELECT i.id||':'||m.kind AS id,${projectColumns},i.name AS material,i.category AS classe,i.unit AS unidade_medida,m.kind AS tipo,
       SUM(-m.delta) AS quantidade,COUNT(*) AS movimentacoes,MIN(date(m.created_at,'-3 hours')) AS primeira_saida,MAX(date(m.created_at,'-3 hours')) AS ultima_saida
-      FROM stock_movements m JOIN items i ON i.id=m.item_id JOIN ${base.replace('projects p', 'projects p ON p.id=i.project_id')} /*WHERE*/ GROUP BY i.id,m.kind ORDER BY p.name,i.name,m.kind`, { clauses: [...range.clauses, "m.delta<0", "m.kind IN ('distribute','redeem')"], values: range.values });
+      FROM stock_movements m JOIN items i ON i.id=m.item_id JOIN ${base.replace('projects p', 'projects p ON p.id=i.project_id')} /*WHERE*/ GROUP BY i.id,m.kind ORDER BY p.name,i.name,m.kind`, { clauses: [...range.clauses, "m.delta<0", "m.kind IN ('distribute','redeem')", effectiveMovementSql('m')], values: range.values });
   } else if (dataset === 'loans') {
     rows = await run(`SELECT l.id,${projectColumns},i.name AS material,l.action_name AS acao,date(l.starts_at/1000,'unixepoch','-3 hours') AS inicio,date(l.ends_at/1000,'unixepoch','-3 hours') AS fim,
       l.status AS situacao,date(l.checked_out_at,'-3 hours') AS retirado_em,date(l.returned_at,'-3 hours') AS devolvido_em,

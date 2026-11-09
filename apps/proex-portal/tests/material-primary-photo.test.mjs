@@ -72,15 +72,20 @@ test('permission: only stock managers of the project change it; whoever reads th
  f.native.prepare("UPDATE members SET role='viewer' WHERE user_id='viewer-a'").run();await assert.rejects(f.detail('viewer-a'),e=>e.status===403);await assert.rejects(f.detail('owner-b'),e=>e.status===403);
 });
 
-test('history and photos are kept: pointers cannot be edited or deleted and referenced photos cannot be hidden or removed',async t=>{
+test('history and photos are kept: pointers cannot be edited or deleted; the current main photo cannot be hidden and no photo is hidden without a log',async t=>{
  const f=await fixture(t);const a=f.photo(),b=f.photo(),loose=f.photo();await f.choose(a,loose);
  assert.throws(()=>f.native.prepare('UPDATE item_primary_photos SET attachment_id=?').run(b),/primary_photo_immutable/);
  assert.throws(()=>f.native.prepare('DELETE FROM item_primary_photos').run(),/primary_photo_immutable/);
+ const log=id=>f.native.prepare("INSERT INTO record_attachment_deletions(attachment_id,project_id,item_id,reason,actor_id,created_at) VALUES(?,?,?,?,?,?)").run(id,'project-a',f.item.id,'Foto sintética errada','owner-a',f.now);
  for(const id of [a,loose]){
-  assert.throws(()=>f.native.prepare('UPDATE record_attachments SET deleted_at=? WHERE id=?').run(f.now,id),/primary_photo_immutable/);
+  assert.throws(()=>f.native.prepare('UPDATE record_attachments SET deleted_at=? WHERE id=?').run(f.now,id),/attachment_deletion_required|primary_photo_immutable/);
   assert.throws(()=>f.native.prepare('DELETE FROM record_attachments WHERE id=?').run(id),/primary_photo_immutable/);
  }
+ // 0037: the current main photo stays protected even with a log; an earlier main photo may be hidden with one.
+ log(a);assert.throws(()=>f.native.prepare('UPDATE record_attachments SET deleted_at=? WHERE id=?').run(f.now,a),/primary_photo_immutable/);
+ log(loose);f.native.prepare('UPDATE record_attachments SET deleted_at=? WHERE id=?').run(f.now,loose);
+ assert.throws(()=>f.native.prepare('UPDATE record_attachments SET deleted_at=NULL WHERE id=?').run(loose),/attachment_deletion_required/);
  f.native.prepare('UPDATE record_attachments SET caption=? WHERE id=?').run('Legenda sintética',a);
- f.native.prepare('UPDATE record_attachments SET deleted_at=? WHERE id=?').run(f.now,b);
+ log(b);f.native.prepare('UPDATE record_attachments SET deleted_at=? WHERE id=?').run(f.now,b);
  assert.deepEqual(f.native.prepare('PRAGMA foreign_key_check').all(),[]);
 });

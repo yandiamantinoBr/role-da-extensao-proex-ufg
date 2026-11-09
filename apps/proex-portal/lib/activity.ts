@@ -1,3 +1,4 @@
+import { effectiveMovementSql } from './movement-ledger';
 import { aiConfigurationAuthority, projectAuthoritySql, type PortalActor } from './access';
 import { describeChange, CONFIG_FIELDS, type ConfigChange } from './assistant/quota';
 import { isCivilDate, offsetCivilDate } from './civil-date';
@@ -124,7 +125,7 @@ export async function activityFeed(db: D1Database, actor: PortalActor | null, in
       WHERE ${scope.sql} AND m.created_at>=? AND m.created_at<?${who.sql} GROUP BY day`, [...scope.values, range.startsAt, range.endsAt, ...who.values]), 'materials');
     stock = (await all(db, `SELECT i.id item_id,i.name,p.id project_id,SUM(CASE WHEN m.delta>0 THEN m.delta ELSE 0 END) entradas,SUM(CASE WHEN m.delta<0 THEN -m.delta ELSE 0 END) saidas
       FROM stock_movements m JOIN items i ON i.id=m.item_id JOIN projects p ON p.id=i.project_id
-      WHERE ${scope.sql} AND m.created_at>=? AND m.created_at<?${who.sql} GROUP BY i.id ORDER BY entradas+saidas DESC,i.name LIMIT 8`, [...scope.values, range.startsAt, range.endsAt, ...who.values]))
+      WHERE ${scope.sql} AND m.created_at>=? AND m.created_at<?${who.sql} AND ${effectiveMovementSql('m')} GROUP BY i.id ORDER BY entradas+saidas DESC,i.name LIMIT 8`, [...scope.values, range.startsAt, range.endsAt, ...who.values]))
       .map(row => ({ name: String(row.name), projectId: String(row.project_id), href: link('materials', String(row.project_id), `&itemId=${encodeURIComponent(String(row.item_id))}`), entradas: Number(row.entradas) || 0, saidas: Number(row.saidas) || 0 }));
   }
 

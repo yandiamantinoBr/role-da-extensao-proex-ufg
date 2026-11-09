@@ -15,7 +15,7 @@ function compile(source) {
   return ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText
     .replace(/from '(\.\/[^']+)'/g, (_, path) => `from '${path}.js'`).replace(/@\/lib\/([A-Za-z-]+)/g, './$1.js');
 }
-for (const name of ['access', 'database', 'errors', 'http', 'calendar', 'mutations', 'civil-date']) {
+for (const name of ['access', 'database', 'errors', 'http', 'calendar', 'mutations', 'civil-date', 'movement-ledger']) {
   writeFileSync(join(directory, `${name}.js`), compile(readFileSync(new URL(`../lib/${name}.ts`, import.meta.url), 'utf8')));
 }
 writeFileSync(join(directory, 'session.js'), 'export async function getPortalUser(){return globalThis.__calendarUser ?? null;}');
