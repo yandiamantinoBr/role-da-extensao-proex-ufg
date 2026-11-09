@@ -240,6 +240,7 @@ test('management view: team activity only for people managers, deadlines for eve
   const viewer = await activityFeed(db, actors.viewerB, range, NOW);
   assert.equal(viewer.team, null);
   assert.equal((await activityFeed(db, actors.manager, { ...range, types: 'materials' }, NOW)).deadlines, null);
+});
 
 test('AI configuration history shows before and after only to whoever can configure the organization', async () => {
   const { db, actors } = setup();
