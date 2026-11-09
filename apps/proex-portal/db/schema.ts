@@ -16,3 +16,4 @@ export * from './directory-schema';
 export * from './material-attention-schema';
 export * from './prize-tier-schema';
 export * from './community-schema';
+export * from './preferences-schema';

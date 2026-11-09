@@ -91,6 +91,8 @@ export async function resolvePrivacy(db:D1Database,actor:PortalActor,input:Recor
   cleanup(`DELETE FROM community_blocks WHERE (user_id=? OR blocked_id=?) AND ${confirmed}`,target,target),
   cleanup(`DELETE FROM community_preferences WHERE user_id=? AND ${confirmed}`,target),
   cleanup(`DELETE FROM community_badges WHERE user_id=? AND ${confirmed}`,target),
+  // Fixados de navegação são preferências pessoais (0038).
+  cleanup(`DELETE FROM user_preferences WHERE user_id=? AND ${confirmed}`,target),
   cleanup(`UPDATE privacy_requests SET status='cleanup_pending',reviewed_by=?,reviewed_at=? WHERE id=? AND status='pending' AND ${confirmed}`,actor.userId,now,request.id),
  ]);
  if(results[0].meta.changes!==1||results[1].meta.changes!==1)throw new HttpError(409,'A solicitação ou seu acesso mudou. Preserve ao menos um responsável ativo.','privacy_conflict');
