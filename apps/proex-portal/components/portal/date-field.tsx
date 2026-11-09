@@ -47,7 +47,7 @@ export default function DateField({ value, defaultValue = '', onValueChange, min
   }
 
   return <span className={styles.field}>
-    <input ref={hidden} type="hidden" name={name} value={iso} disabled={disabled} data-draft-date="true" onInput={event => {
+    <input ref={hidden} type="hidden" name={name} id={name ? undefined : `${inputId}-valor`} value={iso} disabled={disabled} data-draft-date="true" onInput={event => {
       // useFormDraft restores canonical values via native setters + input events.
       const next = isCivilDate(event.currentTarget.value) ? event.currentTarget.value : '';
       input.current?.setCustomValidity(dateFieldError(displayCivilDate(next), min, max));

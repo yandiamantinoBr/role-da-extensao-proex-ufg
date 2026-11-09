@@ -20,8 +20,8 @@ export default function OfficialTeamDirectory({ onSelect }: Props) {
     {selected && <p role="status" className={styles.result}>Seleção de {selected} disponível no formulário. <a href="#team-invite-form" className="p-text-link">Revisar projeto e função do convite</a></p>}
     <details ref={details}><summary className={styles.summary}>Consultar catálogo oficial ({PROEX_TEAM.length} pessoas)</summary>
     <div className={styles.filters}>
-      <label className="p-field"><span>Buscar na equipe oficial</span><div className="p-search"><Search size={17}/><input value={query} maxLength={120} onChange={event => setQuery(event.target.value)} placeholder="Nome, setor, atuação ou e-mail"/></div></label>
-      <label className="p-field"><span>Setor publicado</span><select value={sector} onChange={event => setSector(event.target.value)}><option value="">Todos os setores</option>{PROEX_TEAM_SECTORS.map(value => <option value={value} key={value}>{value}</option>)}</select></label>
+      <label className="p-field"><span>Buscar na equipe oficial</span><div className="p-search"><Search size={17}/><input name="officialTeamSearch" value={query} maxLength={120} onChange={event => setQuery(event.target.value)} placeholder="Nome, setor, atuação ou e-mail"/></div></label>
+      <label className="p-field"><span>Setor publicado</span><select name="officialTeamSector" value={sector} onChange={event => setSector(event.target.value)}><option value="">Todos os setores</option>{PROEX_TEAM_SECTORS.map(value => <option value={value} key={value}>{value}</option>)}</select></label>
     </div>
     <p className={styles.result} role="status">{people.length} de {PROEX_TEAM.length} pessoas publicadas.</p>
     {people.length ? <ul className={styles.cards}>{people.map(person => {
