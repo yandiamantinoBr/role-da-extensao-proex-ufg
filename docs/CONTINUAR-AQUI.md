@@ -1,5 +1,9 @@
 # Continuar Portal PROEX
 
+## Relatório do projeto completo e customizável · PR68 · 2026-11-09
+
+Branch `claude/relatorio-projeto-v2` (Claude Code). Em Projetos → projeto → Relatório do projeto: montador com seções marcáveis e reordenáveis, período, observação por seção, referências escolhidas, linha do tempo Marcos/Tudo e modelos salvos por projeto (migração **0041**, aditiva). PDF, DOCX e XLSX saem iguais à prévia (capa, sumário, numeração, referências no fim). Quem vê o projeto vê o relatório, só com o que pode ver. A ficha do projeto não desmonta mais a cada atualização automática. 1.458 testes, tipos, lint, `build` e `build:node`. [Uso e limites](../apps/proex-portal/docs/RELATORIO-DO-PROJETO.md). Confirmar merge e deploy no recibo da PR antes de tratar como produção (a PR67 da Comunidade entrou antes com a 0040).
+
 ## Comunidade · fases 1 e 2 · 2026-11-09
 
 Módulo **Comunidade** (sessão Claude Code "comunidade"). Fase 1 publicada pela PR [51](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/51) (merge `5ee5a42`, migração 0036): widgets pessoais no Início (desligados por padrão), "Fale com a gestão" (sugestão, problema, elogio por plataforma, projeto ou evento, com resposta da gestão) e ouvidoria anônima com código de acompanhamento. Fase 2 publicada pela PR [56](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/56) (merge `4e446cc`, migração 0037): recados entre pessoas e selos com arte provisória. Comportamento, limites honestos do anonimato e testes em [COMUNIDADE.md](../apps/proex-portal/docs/COMUNIDADE.md); evidências sintéticas em [evidencias/2026-11-09-comunidade](evidencias/2026-11-09-comunidade/README.md); especificação e perguntas ao Yan na Vault (`Portal PROEX - Comunidade (especificação)`).

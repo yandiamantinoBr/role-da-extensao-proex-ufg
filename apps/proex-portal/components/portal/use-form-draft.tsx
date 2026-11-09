@@ -69,6 +69,8 @@ function apply(form: HTMLFormElement, values: Values) {
 }
 const same = (a: Values, b: Values) => JSON.stringify(a) === JSON.stringify(b);
 const storageKey = (key: string) => `${PREFIX}${draftScope.current}:${key}`;
+/** Chave por pessoa para rascunhos que não são formulários (ex.: montador do relatório); `null` fora de uma sessão. Apagada ao sair. */
+export function personalDraftKey(key: string): string | null { return draftScope.current === 'anon' ? null : storageKey(key); }
 function load(key: string): Stored | null {
   try {
     const parsed = JSON.parse(localStorage.getItem(storageKey(key)) || 'null') as Stored | null;
