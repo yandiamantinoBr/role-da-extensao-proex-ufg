@@ -92,3 +92,8 @@
 .editable select{width:100%;min-height:44px;padding:0 .6rem;border:1px solid var(--control-border);border-radius:10px;background:var(--surface);color:var(--text-strong);font:inherit;font-size:16px}
 .warn{color:var(--warning-ink);font-weight:650}
 .limitsButton{justify-self:start;align-self:flex-start;min-height:44px;margin-top:.25rem;font-size:max(14px,.9rem);box-shadow:none}
+.sources{display:grid;gap:.3rem;margin-top:.5rem;padding-top:.5rem;border-top:1px solid var(--line)}
+.sources span{font-size:max(12px,.78rem);font-weight:700;color:var(--text-secondary)}
+.sources ul{display:grid;gap:.15rem;margin:0;padding:0;list-style:none}
+.sources a{display:inline-flex;align-items:center;min-height:32px;color:var(--brand-ink);font-weight:650;font-size:max(13px,.85rem);text-decoration:underline;text-underline-offset:2px;overflow-wrap:anywhere}
+.sources a:focus-visible{outline:3px solid var(--focus);outline-offset:2px;border-radius:4px}
