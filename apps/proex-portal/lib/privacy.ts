@@ -100,6 +100,9 @@ export async function resolvePrivacy(db:D1Database,actor:PortalActor,input:Recor
   cleanup(`UPDATE chat_attachments SET deleted_at=COALESCE(deleted_at,?) WHERE uploader_id=? AND ${confirmed}`,now,target),
   cleanup(`DELETE FROM chat_reads WHERE user_id=? AND ${confirmed}`,target),
   cleanup(`DELETE FROM community_email_queue WHERE user_id=? AND ${confirmed}`,target),
+  // Google Drive por pessoa (0042): sai o e-mail Google e a permissão cifrada; o histórico de envios fica.
+  cleanup(`DELETE FROM google_drive_folder_grants WHERE user_id=? AND ${confirmed}`,target),
+  cleanup(`DELETE FROM google_drive_connections WHERE user_id=? AND ${confirmed}`,target),
   cleanup(`UPDATE privacy_requests SET status='cleanup_pending',reviewed_by=?,reviewed_at=? WHERE id=? AND status='pending' AND ${confirmed}`,actor.userId,now,request.id),
  ]);
  if(results[0].meta.changes!==1||results[1].meta.changes!==1)throw new HttpError(409,'A solicitação ou seu acesso mudou. Preserve ao menos um responsável ativo.','privacy_conflict');

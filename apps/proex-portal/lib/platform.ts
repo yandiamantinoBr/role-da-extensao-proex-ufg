@@ -29,3 +29,5 @@ export function isStandalone():boolean{return vars().PROEX_STANDALONE==='1';}
 export function setupToken():string|undefined{const value=vars().SETUP_TOKEN;return value&&value.length>=24?value:undefined;}
 /** Dedicated sender; values remain server-only and never belong in public responses/logs. */
 export function participantEmailEnvironment(){const values=vars();return{provider:values.PUBLIC_PARTICIPANT_EMAIL_PROVIDER,apiKey:values.PUBLIC_PARTICIPANT_EMAIL_API_KEY,from:values.PUBLIC_PARTICIPANT_EMAIL_FROM,domainId:values.PUBLIC_PARTICIPANT_EMAIL_DOMAIN_ID,origin:values.BETTER_AUTH_URL};}
+/** Google Drive por pessoa (docs/GOOGLE-DRIVE.md). O segredo do cliente fica só no servidor; id, chave do Picker e número do projeto são públicos por natureza. */
+export function googleDriveEnvironment(){const values=vars();return{clientId:values.PROEX_GOOGLE_CLIENT_ID||undefined,clientSecret:values.PROEX_GOOGLE_CLIENT_SECRET||undefined,pickerApiKey:values.PROEX_GOOGLE_PICKER_API_KEY||undefined,appId:values.PROEX_GOOGLE_CLOUD_PROJECT_NUMBER||undefined,origin:portalOrigin()};}
