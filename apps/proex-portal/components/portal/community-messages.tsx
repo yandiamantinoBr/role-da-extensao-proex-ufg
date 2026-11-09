@@ -78,11 +78,11 @@ function NewMessage({ organizations, blocked, initial, onSent }: { organizations
   return <form className={styles.card} onSubmit={submit} aria-labelledby={`${id}-title`}>
     <div className={styles.cardHead}><h2 id={`${id}-title`}>Novo recado</h2><p>Uma mensagem direta, sem WhatsApp nem e-mail.</p></div>
     <div className={styles.fields}>
-      {organizations.length > 1 && <label className={styles.field}><span>Organização</span><select value={organizationId} disabled={busy} onChange={event => { setOrganizationId(event.target.value); setRecipientId(''); key.current = ''; }}>{organizations.map(org => <option key={org.id} value={org.id}>{org.name}</option>)}</select></label>}
-      <label className={styles.field}><span>Para</span><select value={recipientId} disabled={busy} onChange={event => { setRecipientId(event.target.value); key.current = ''; }}><option value="">Escolha a pessoa</option>{recipients.map(person => <option key={person.id} value={person.id}>{person.name}</option>)}</select></label>
+      {organizations.length > 1 && <label className={styles.field}><span>Organização</span><select name="community-field-1" value={organizationId} disabled={busy} onChange={event => { setOrganizationId(event.target.value); setRecipientId(''); key.current = ''; }}>{organizations.map(org => <option key={org.id} value={org.id}>{org.name}</option>)}</select></label>}
+      <label className={styles.field}><span>Para</span><select name="community-field-2" value={recipientId} disabled={busy} onChange={event => { setRecipientId(event.target.value); key.current = ''; }}><option value="">Escolha a pessoa</option>{recipients.map(person => <option key={person.id} value={person.id}>{person.name}</option>)}</select></label>
     </div>
     <label className={styles.field} htmlFor={`${id}-body`}><span>Recado</span></label>
-    <textarea id={`${id}-body`} className={styles.textarea} maxLength={1000} value={body} disabled={busy} onChange={event => { setBody(event.target.value); key.current = ''; }} placeholder="Escreva o recado. Para passar uma demanda, use a transferência em Demandas e avise por aqui." aria-describedby={`${id}-help`}/>
+    <textarea name="community-field-3" id={`${id}-body`} className={styles.textarea} maxLength={1000} value={body} disabled={busy} onChange={event => { setBody(event.target.value); key.current = ''; }} placeholder="Escreva o recado. Para passar uma demanda, use a transferência em Demandas e avise por aqui." aria-describedby={`${id}-help`}/>
     <p id={`${id}-help`} className={styles.help}>{body.length}/1.000{missing.length ? ` · Para enviar, falta ${missing.join(' e ')}.` : ''}</p>
     <p className={styles.callout}><Lock size={16} aria-hidden="true"/><span>Só você e a pessoa leem este recado. Não use para senhas ou dados pessoais desnecessários.</span></p>
     {error && <p role="alert" className="p-inline-error">{error}</p>}
