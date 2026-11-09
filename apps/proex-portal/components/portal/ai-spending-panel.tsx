@@ -14,7 +14,19 @@ const PROVIDER_KEYS: SpendingProvider[] = ['deepseek', 'groq', 'openai', 'typesa
 const FUNCTION_KEYS: SpendingFunction[] = ['role', 'photos', 'operations', 'documents', 'speech', 'triage', 'compare'];
 
 const usd = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'USD', minimumFractionDigits: 4, maximumFractionDigits: 4 });
-const usdAxis = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 4 });
+const usd2 = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 });
+/** Marcas redondas no eixo (1, 2, 2,5 ou 5 × 10ⁿ). */
+function niceTicks(top: number) {
+  const raw = Math.max(top, 0.0001) / 4, power = 10 ** Math.floor(Math.log10(raw)), n = raw / power;
+  const step = (n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10) * power;
+  const ticks = Array.from({ length: Math.ceil(top / step) + 1 }, (_, index) => Number((index * step).toFixed(6)));
+  return { ticks, digits: Math.max(2, -Math.floor(Math.log10(step)) + (n <= 2.5 && n > 2 ? 1 : 0)) };
+}
+/** Valor grande com 2 casas e o exato pequeno, para leigos. */
+function Money({ micros, zero }: { micros: number; zero?: string }) {
+  if (!micros) return <>{zero ?? 'US$ 0,00'}</>;
+  return <>{micros < 10_000 ? 'menos de US$ 0,01' : usd2.format(micros / 1_000_000)}<small className={styles.exact}> ({formatUsdMicros(micros)})</small></>;
+}
 const integer = new Intl.NumberFormat('pt-BR');
 /** US$ com 4 casas (ex.: US$ 0,0012) e espaço fixo para não quebrar a linha. */
 function formatUsdMicros(micros: number | null | undefined): string {
@@ -115,6 +127,7 @@ export default function AiSpendingPanel({ organizationId }: { organizationId: st
   // Gastos de milésimos de dólar sumiriam numa escala até o limite: a linha só entra quando o gasto chega perto dele.
   const peak = chart.reduce((max, row) => Math.max(max, usedKeys.reduce((sum, key) => sum + Number((row as Record<string, unknown>)[key] ?? 0), 0)), 0);
   const showLimit = limit > 0 && peak >= limit * 0.3;
+  const axis = niceTicks(showLimit ? Math.max(peak, limit) : peak);
 
   async function exportFile(format: DocumentFormat) {
     if (!data) throw new Error('Carregue os gastos antes de baixar.');
@@ -153,13 +166,13 @@ export default function AiSpendingPanel({ organizationId }: { organizationId: st
     </header>
 
     <div className={styles.controls}>
-      <div role="group" aria-label="Período" className={styles.segmented}>
+      <div className={styles.controlGroup}><span className={styles.controlLabel}>Período</span><div role="group" aria-label="Período" className={styles.segmented}>
         {PERIODS.map(value => <button key={value} type="button" aria-pressed={period === value} onClick={() => setPeriod(value)}>{value} dias</button>)}
-      </div>
-      <div role="group" aria-label="Separar o gráfico" className={styles.segmented}>
+      </div></div>
+      <div className={styles.controlGroup}><span className={styles.controlLabel}>Mostrar por</span><div role="group" aria-label="Separar o gráfico" className={styles.segmented}>
         <button type="button" aria-pressed={view === 'provider'} onClick={() => setView('provider')}>Por provedor</button>
         <button type="button" aria-pressed={view === 'function'} onClick={() => setView('function')}>Por função</button>
-      </div>
+      </div></div>
     </div>
 
     {error && <div className={styles.error} role="alert"><p>{error}</p><button type="button" className="p-button p-button-subtle" onClick={() => setReload(value => value + 1)}>Tentar de novo</button></div>}
@@ -167,14 +180,14 @@ export default function AiSpendingPanel({ organizationId }: { organizationId: st
 
     {data && <>
       <dl className={styles.metrics}>
-        <div><dt>Gasto real hoje</dt><dd>{formatUsdMicros(data.today.realUsdMicros)}</dd></div>
-        <div><dt>Limite por dia</dt><dd>{formatUsdMicros(data.dailyLimitUsdMicros)}</dd></div>
-        <div><dt>Gasto real no período</dt><dd>{formatUsdMicros(data.totals.realUsdMicros)}</dd></div>
-        <div><dt>Teto reservado no período</dt><dd>{formatUsdMicros(data.totals.reservedUsdMicros)}</dd></div>
+        <div><dt>Gasto real hoje</dt><dd><Money micros={data.today.realUsdMicros} zero="Nada gasto hoje"/></dd></div>
+        <div><dt>Limite por dia</dt><dd>{usd2.format(data.dailyLimitUsdMicros / 1_000_000)}</dd></div>
+        <div><dt>Gasto real no período</dt><dd><Money micros={data.totals.realUsdMicros} zero="Nada gasto"/></dd></div>
+        <div><dt>Reservado no período (máximo possível)</dt><dd><Money micros={data.totals.reservedUsdMicros} zero="Nada reservado"/></dd></div>
       </dl>
       <ul className={styles.glossary}>
         <li><strong>Gasto real:</strong> o custo que o provedor informou. Algumas funções ainda não informam o custo.</li>
-        <li><strong>Teto reservado:</strong> o valor máximo guardado antes de cada chamada. O limite por dia vale para ele.</li>
+        <li><strong>Reservado:</strong> antes de cada uso, o portal separa o custo máximo possível. O limite por dia conta esse valor.</li>
         <li>Hoje já foram reservados {formatUsdMicros(data.today.reservedUsdMicros)} de {formatUsdMicros(data.dailyLimitUsdMicros)}.</li>
       </ul>
       {data.partial && <p className={styles.warning} role="note">Há chamadas demais neste período; os números mostram só uma parte. Escolha um período menor.</p>}
@@ -183,7 +196,7 @@ export default function AiSpendingPanel({ organizationId }: { organizationId: st
         <figure className={styles.chart}>
           <figcaption>
             <strong>Gasto por dia, {view === 'provider' ? 'por provedor' : 'por função'}</strong>
-            <small>Cada barra soma o gasto real; quando o provedor não informa o custo, usa o teto da chamada. {showLimit ? 'A linha tracejada é o limite por dia.' : `O limite por dia (${formatUsdMicros(data.dailyLimitUsdMicros)}) está bem acima destes valores e fica fora da escala.`}</small>
+            <small>Cada barra soma o gasto real; quando o provedor não informa o custo, usa o teto da chamada. {showLimit ? 'A linha tracejada é o limite por dia.' : `O limite por dia (${usd2.format(data.dailyLimitUsdMicros / 1_000_000)}) está bem acima destes valores e fica fora da escala.`}</small>
           </figcaption>
           <ul className={styles.legend} aria-label="Legenda">
             {usedKeys.map(key => <li key={key}><i style={{ background: `var(--as-${keys.indexOf(key) + 1})` }} />{names[key] ?? key}</li>)}
@@ -193,7 +206,7 @@ export default function AiSpendingPanel({ organizationId }: { organizationId: st
               <BarChart data={chart} margin={{ top: 12, right: 8, bottom: 4, left: 4 }} barCategoryGap={period === 90 ? 1 : 3}>
                 <CartesianGrid vertical={false} stroke="var(--as-grid)" />
                 <XAxis dataKey="day" tickFormatter={shortDay} tick={{ fill: 'var(--as-axis)', fontSize: 11 }} axisLine={false} tickLine={false} minTickGap={14} />
-                <YAxis width={72} tick={{ fill: 'var(--as-axis)', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(value: number) => usdAxis.format(value)} domain={[0, (max: number) => (showLimit ? Math.max(max, limit) : Math.max(max, 0.0001)) * 1.1]} />
+                <YAxis width={78} tick={{ fill: 'var(--as-axis)', fontSize: 12 }} axisLine={false} tickLine={false} ticks={axis.ticks} domain={[0, axis.ticks[axis.ticks.length - 1]]} tickFormatter={(value: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'USD', minimumFractionDigits: axis.digits, maximumFractionDigits: axis.digits }).format(value)} />
                 <Tooltip cursor={{ fill: 'var(--as-hover)' }} content={<SpendingTooltip rows={rowsByDay} names={names} />} />
                 {showLimit && <ReferenceLine y={limit} stroke="var(--as-limit)" strokeDasharray="6 4" strokeWidth={1.5} ifOverflow="extendDomain" label={{ value: 'Limite por dia', position: 'insideTopRight', fill: 'var(--as-limit)', fontSize: 11 }} />}
                 {usedKeys.map((key, index) => <Bar key={key} dataKey={key} name={names[key] ?? key} stackId="spent" fill={`var(--as-${keys.indexOf(key) + 1})`} maxBarSize={36} cursor="pointer"

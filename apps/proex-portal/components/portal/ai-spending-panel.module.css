@@ -85,3 +85,6 @@
   .dayPicker :global(.p-field) { max-width: none; }
   .chartArea { height: 230px; }
 }
+.exact{display:block;font-size:max(12px,.72rem);font-weight:500;color:var(--text-secondary)}
+.controlGroup{display:grid;gap:.3rem}
+.controlLabel{font-size:max(12px,.78rem);font-weight:650;color:var(--text-secondary)}

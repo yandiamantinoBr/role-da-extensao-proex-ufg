@@ -10,14 +10,18 @@ import styles from './model-catalog-panel.module.css';
 type Provider = CatalogProvider & { hasKey: boolean };
 type View = { organizationId: string; stamp: string; catalog: { providers: Provider[]; models: CatalogModel[]; updatedAt: string; updatedBy: string }; refreshed?: { matched: number; total: number } };
 type CompareRow = { modelId: string; label: string; provider: string; text: string; ms: number; inputTokens: number; outputTokens: number; usdMicros: number; reservedUsdMicros: number; error: string | null };
-const GROUPS: { title: string; capability: Capability; hint: string }[] = [
-  { title: 'Conversa e texto', capability: 'text', hint: 'Usados pelo Rolê e nas comparações.' },
-  { title: 'Fotos', capability: 'vision', hint: 'Precisam ler imagem. Para o Rolê, escolha em Funções e acesso.' },
-  { title: 'Documentos', capability: 'document', hint: 'Extração de campos. A interpretação de documentos do portal segue com o modelo revisado.' },
-  { title: 'Voz para texto', capability: 'speech', hint: 'Só transcrevem áudio; não servem para conversa nem documento.' },
-  { title: 'Decisão', capability: 'decision', hint: 'Respondem perguntas fechadas (sim/não, categoria). Em uso: JEV 1.14. Os outros ficam para teste comparativo.' },
+const FILTERS: { key: 'all' | Capability; label: string; hint: string }[] = [
+  { key: 'all', label: 'Todos', hint: 'Todos os modelos cadastrados.' },
+  { key: 'text', label: 'Conversa', hint: 'Usados pelo Rolê e nas comparações.' },
+  { key: 'vision', label: 'Foto', hint: 'Leem imagem. Para o Rolê, escolha em Funções e acesso.' },
+  { key: 'document', label: 'Documento', hint: 'Extração de campos. A interpretação de documentos do portal segue com o modelo revisado.' },
+  { key: 'speech', label: 'Voz', hint: 'Só transcrevem áudio; não servem para conversa nem documento.' },
+  { key: 'decision', label: 'Decisão', hint: 'Respondem perguntas fechadas. Em uso: JEV 1.14. Os outros ficam para teste comparativo.' },
 ];
-const usdPerM = (value: number) => value ? `US$ ${value.toLocaleString('pt-BR', { maximumFractionDigits: 4 })}` : 'grátis';
+const usdPerM = (value: number) => `US$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`;
+/** Mensagem típica do Rolê: 1.500 tokens lidos e 400 escritos. */
+const perMessage = (model: CatalogModel) => (1500 * model.price.inputPerM + 400 * model.price.outputPerM);
+const priceLine = (model: CatalogModel) => model.price.perHour ? `US$ ${model.price.perHour.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 3 })} por hora de áudio` : !model.price.inputPerM && !model.price.outputPerM ? 'Grátis (somente teste)' : `${friendlyMicros(Math.ceil(perMessage(model))).replace(/^m/, 'M')} por mensagem · ${usdPerM(model.price.inputPerM)} lidos e ${usdPerM(model.price.outputPerM)} escritos por milhão de tokens`;
 const blankModel = { id: '', providerId: '', model: '', label: '', capabilities: ['text'] as Capability[], inputPerM: '', outputPerM: '', perHour: '', sourceUrl: '', readAt: new Date().toISOString().slice(0, 10), notes: '', testOnly: false };
 
 async function request<T>(path: string, body?: unknown): Promise<T> {
@@ -31,8 +35,8 @@ export default function ModelCatalogPanel({ organizationId }: { organizationId: 
   const [view, setView] = useState<View | null>(null), [error, setError] = useState(''), [notice, setNotice] = useState(''), [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState<typeof blankModel & { replaceId?: string } | null>(null);
   const [providerForm, setProviderForm] = useState<{ id: string; label: string; kind: 'openai_chat' | 'anthropic_messages'; baseUrl: string } | null>(null);
-  const [keyFor, setKeyFor] = useState<string | null>(null);
-  const [compareIds, setCompareIds] = useState<string[]>([]), [prompt, setPrompt] = useState('Extraia em JSON {"material":"","quantidade":0}: "Saíram 12 canetas touch para a oficina."'), [compareConsent, setCompareConsent] = useState(false), [results, setResults] = useState<CompareRow[] | null>(null);
+  const [filter, setFilter] = useState<'all' | Capability>('all');
+  const [compareIds, setCompareIds] = useState<string[]>([]), [prompt, setPrompt] = useState('Resuma em uma frase: saíram 12 canetas touch para a oficina de robótica.'), [compareConsent, setCompareConsent] = useState(false), [results, setResults] = useState<CompareRow[] | null>(null);
 
   const load = useCallback(async () => {
     try { const next = await request<View>(`/api/assistant/catalog?organizationId=${encodeURIComponent(organizationId)}`); setView(next); setError(''); }
@@ -63,12 +67,6 @@ export default function ModelCatalogPanel({ organizationId }: { organizationId: 
     event.preventDefault();
     if (providerForm && await act({ action: 'provider.save', provider: providerForm }, 'Provedor salvo. Cole a chave dele para usar.')) setProviderForm(null);
   }
-  async function saveKey(event: FormEvent<HTMLFormElement>, provider: Provider) {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget), secret = String(form.get('secret') ?? '');
-    (event.currentTarget.elements.namedItem('secret') as HTMLInputElement | null)?.setAttribute('value', '');
-    if (await act({ action: 'key.save', providerId: provider.id, label: String(form.get('label') ?? ''), secret }, 'Chave salva. Ela não volta para a tela.')) setKeyFor(null);
-  }
   async function compare() {
     setBusy(true); setError(''); setResults(null);
     try { const data = await request<{ results: CompareRow[] }>('/api/assistant/catalog', { action: 'compare', organizationId, modelIds: compareIds, prompt, consent: true, acceptedCostMicros: compareCost }); setResults(data.results); }
@@ -82,21 +80,23 @@ export default function ModelCatalogPanel({ organizationId }: { organizationId: 
   if (!view) return <div className={styles.panel}>{error ? <p role="alert" className="p-inline-error">{error}</p> : <p role="status" className={styles.muted}><LoaderCircle size={16} className="p-spin" aria-hidden="true"/> Abrindo o catálogo…</p>}</div>;
   const reference = view.catalog.providers.find(provider => provider.kind === 'reference');
   return <div className={styles.panel}>
-    <div className={styles.heading}><span className="p-icon-tile"><Boxes size={20} aria-hidden="true"/></span><div><h3>Modelos</h3><p>Cadastre qualquer modelo por API: escolha o provedor, diga para que ele serve e quanto custa. Nada aqui gasta dinheiro; só a comparação, com custo mostrado antes.</p></div></div>
+    <div className={styles.heading}><span className="p-icon-tile"><Boxes size={20} aria-hidden="true"/></span><div><h3>Modelos</h3><p>Cadastre qualquer modelo por API: escolha o provedor, diga para que ele serve e quanto custa. Nada aqui gasta dinheiro; só a comparação, com custo mostrado antes.</p></div>{!editing && <button type="button" className={`p-button p-button-primary ${styles.headAdd}`} disabled={busy} onClick={() => edit()}><Plus size={16} aria-hidden="true"/>Cadastrar modelo</button>}</div>
     {(error || notice) && <p role={error ? 'alert' : 'status'} className={error ? 'p-inline-error' : styles.notice}>{error || notice}</p>}
 
-    {GROUPS.map(group => { const list = view.catalog.models.filter(model => model.capabilities.includes(group.capability)); return <section key={group.capability} className={styles.group} aria-labelledby={`group-${group.capability}`}>
-      <h4 id={`group-${group.capability}`}>{group.title}</h4><p className={styles.muted}>{group.hint}</p>
-      {list.length ? <ul className={styles.models}>{list.map(model => { const provider = providers.get(model.providerId); return <li key={`${group.capability}-${model.id}`} className={styles.model}>
+    <section className={styles.group} aria-labelledby="models-title">
+      <h4 id="models-title">Modelos cadastrados</h4>
+      <div className={styles.filters} role="group" aria-label="Mostrar modelos de">{FILTERS.map(option => <button key={option.key} type="button" aria-pressed={filter === option.key} onClick={() => setFilter(option.key)}>{option.label}</button>)}</div>
+      <p className={styles.muted}>{FILTERS.find(option => option.key === filter)?.hint}</p>
+      {(() => { const list = view.catalog.models.filter(model => filter === 'all' || model.capabilities.includes(filter)); return list.length ? <ul className={styles.models}>{list.map(model => { const provider = providers.get(model.providerId); return <li key={model.id} className={styles.model}>
         <div className={styles.modelTop}><strong>{model.label}{model.testOnly ? ' · somente teste' : ''}</strong><span className={provider?.hasKey ? styles.ok : styles.warn}>{provider?.hasKey ? 'Chave pronta' : 'Falta chave'}</span></div>
         <p className={styles.muted}>{provider?.label ?? 'Provedor removido'} · <code>{model.model}</code></p>
         <p className={styles.chips}>{model.capabilities.map(capability => <span key={capability}>{CAPABILITY_LABELS[capability]}</span>)}</p>
-        <p>{model.price.perHour ? `US$ ${model.price.perHour.toLocaleString('pt-BR')} por hora de áudio` : `Entrada ${usdPerM(model.price.inputPerM)} · saída ${usdPerM(model.price.outputPerM)} por milhão de tokens`}{model.score ? ` · nota ${model.score.value} (${model.score.source}, ${model.score.readAt.split('-').reverse().join('/')})` : ''}</p>
+        <p>{priceLine(model)}{model.score ? ` · nota ${model.score.value} (${model.score.source}, ${model.score.readAt.split('-').reverse().join('/')})` : ''}</p>
         {model.notes && <p className={styles.muted}>{model.notes}</p>}
         {model.source && <p className={styles.muted}>Preço: <a href={model.source.url} target="_blank" rel="noreferrer noopener">fonte oficial</a>, lida em {model.source.readAt.split('-').reverse().join('/')}</p>}
-        <div className={styles.actions}><button type="button" className="p-button p-button-subtle" disabled={busy} onClick={() => edit(model)}>Editar</button><button type="button" className={`p-button p-button-subtle ${styles.danger}`} disabled={busy} onClick={() => { if (window.confirm(`Apagar ${model.label} do catálogo?`)) void act({ action: 'model.delete', modelId: model.id }, 'Modelo apagado.'); }}><Trash2 size={16} aria-hidden="true"/>Apagar</button></div>
-      </li>; })}</ul> : <p className={styles.muted}>Nenhum modelo com esta capacidade.</p>}
-    </section>; })}
+        <div className={styles.actions}><button type="button" className="p-button p-button-subtle" disabled={busy} onClick={() => edit(model)}>Editar</button><button type="button" className="p-button p-button-subtle" disabled={busy} onClick={() => { if (window.confirm(`Apagar ${model.label} do catálogo? Esta ação não pode ser desfeita.`)) void act({ action: 'model.delete', modelId: model.id }, 'Modelo apagado.'); }}><Trash2 size={16} aria-hidden="true"/>Apagar</button></div>
+      </li>; })}</ul> : <p className={styles.muted}>Nenhum modelo com esta capacidade.</p>; })()}
+    </section>
 
     {editing ? <form className={styles.form} onSubmit={saveModel} aria-label="Modelo do catálogo">
       <h4>{editing.replaceId ? `Editar ${editing.label}` : 'Novo modelo'}</h4>
@@ -117,24 +117,16 @@ export default function ModelCatalogPanel({ organizationId }: { organizationId: 
       {editing.capabilities.includes('speech') && editing.capabilities.length > 1 && <p className={styles.warnText}>Modelos de voz só transcrevem áudio. Confira se ele também faz o resto.</p>}
       <label className="p-field"><span>Observação</span><input maxLength={200} value={editing.notes} onChange={event => setEditing({ ...editing, notes: event.target.value })}/></label>
       <div className={styles.actions}><button type="submit" className="p-button p-button-primary" disabled={busy}>Salvar modelo</button><button type="button" className="p-button p-button-subtle" onClick={() => setEditing(null)}>Cancelar</button></div>
-    </form> : <button type="button" className={`p-button p-button-subtle ${styles.add}`} disabled={busy} onClick={() => edit()}><Plus size={16} aria-hidden="true"/>Cadastrar modelo</button>}
+    </form> : null}
 
     <section className={styles.group} aria-labelledby="providers-title">
       <h4 id="providers-title"><KeyRound size={18} aria-hidden="true"/> Provedores</h4>
-      <p className={styles.muted}>DeepSeek, Groq, OpenAI, TypeSafe e Deepgram têm a chave na aba Chaves. Os outros têm a chave aqui. A chave nunca volta para a tela.</p>
+      <p className={styles.muted}>A chave de cada provedor fica na aba Chaves. Aqui você cadastra provedores novos, compatíveis com OpenAI ou Anthropic.</p>
       <ul className={styles.models}>{view.catalog.providers.map(provider => <li key={provider.id} className={styles.model}>
         <div className={styles.modelTop}><strong>{provider.label}</strong><span className={provider.hasKey ? styles.ok : styles.warn}>{provider.hasKey ? `Chave pronta${provider.key?.mask ? ` (${provider.key.mask})` : ''}` : 'Sem chave'}</span></div>
         <p className={styles.muted}>{KIND_LABELS[provider.kind]} · {provider.baseUrl.replace('https://', '')}</p>
         {provider.id === 'nvidia' && <p className={styles.warnText}>Grátis só para teste: a NVIDIA pode usar o que for enviado. Use apenas dados sintéticos.</p>}
-        {provider.keyRef.startsWith('p:') && (keyFor === provider.id ? <form className={styles.inline} onSubmit={event => void saveKey(event, provider)}>
-          <label className="p-field"><span>Nome da chave</span><input name="label" maxLength={72} defaultValue={provider.key?.label ?? provider.label}/></label>
-          <label className="p-field"><span>Chave</span><input name="secret" type="password" autoComplete="off" data-no-draft="true" minLength={12} maxLength={512} required spellCheck={false}/></label>
-          <div className={styles.actions}><button type="submit" className="p-button p-button-primary" disabled={busy}>Salvar chave</button><button type="button" className="p-button p-button-subtle" onClick={() => setKeyFor(null)}>Cancelar</button></div>
-        </form> : <div className={styles.actions}>
-          <button type="button" className="p-button p-button-subtle" disabled={busy} onClick={() => setKeyFor(provider.id)}>{provider.hasKey ? 'Trocar chave' : 'Cadastrar chave'}</button>
-          {provider.hasKey && <button type="button" className={`p-button p-button-subtle ${styles.danger}`} disabled={busy} onClick={() => { if (window.confirm(`Remover a chave de ${provider.label}?`)) void act({ action: 'key.remove', providerId: provider.id }, 'Chave removida.'); }}>Remover chave</button>}
-          {!provider.builtin && <button type="button" className={`p-button p-button-subtle ${styles.danger}`} disabled={busy} onClick={() => { if (window.confirm(`Apagar o provedor ${provider.label}?`)) void act({ action: 'provider.delete', providerId: provider.id }, 'Provedor apagado.'); }}>Apagar provedor</button>}
-        </div>)}
+        {!provider.builtin && <div className={styles.actions}><button type="button" className="p-button p-button-subtle" disabled={busy} onClick={() => { if (window.confirm(`Apagar o provedor ${provider.label}?`)) void act({ action: 'provider.delete', providerId: provider.id }, 'Provedor apagado.'); }}>Apagar provedor</button></div>}
       </li>)}</ul>
       {providerForm ? <form className={styles.form} onSubmit={saveProvider} aria-label="Novo provedor">
         <div className={styles.grid}>
@@ -150,7 +142,7 @@ export default function ModelCatalogPanel({ organizationId }: { organizationId: 
 
     {reference && <section className={styles.group} aria-labelledby="aa-title">
       <h4 id="aa-title"><BarChart3 size={18} aria-hidden="true"/> Notas do Artificial Analysis</h4>
-      <p className={styles.muted}>Com a chave do Artificial Analysis cadastrada acima, o portal busca a nota de inteligência de cada modelo do catálogo. A conta grátis permite 100 consultas por dia; cada atualização usa uma.</p>
+      <p className={styles.muted}>Com a chave do Artificial Analysis cadastrada na aba Chaves, o portal busca a nota de inteligência de cada modelo do catálogo. A conta grátis permite 100 consultas por dia; cada atualização usa uma.</p>
       <div className={styles.actions}><button type="button" className="p-button p-button-primary" disabled={busy || !reference.hasKey} onClick={() => void act({ action: 'scores.refresh' }, 'Notas atualizadas.')}>Atualizar notas agora</button>
         <a className="p-button p-button-subtle" href="https://artificialanalysis.ai/leaderboards/models" target="_blank" rel="noreferrer noopener">Abrir o placar</a></div>
       <p className={styles.muted}>Dados de notas: <a href="https://artificialanalysis.ai" target="_blank" rel="noreferrer noopener">Artificial Analysis</a>.</p>
@@ -159,16 +151,20 @@ export default function ModelCatalogPanel({ organizationId }: { organizationId: 
     <section className={styles.group} aria-labelledby="compare-title">
       <h4 id="compare-title"><Scale size={18} aria-hidden="true"/> Comparar modelos</h4>
       <p className={styles.muted}>Envie a mesma pergunta a 2 ou 3 modelos e veja lado a lado a resposta, o custo e o tempo. Use só dados de exemplo.</p>
-      <fieldset className={styles.capabilities}><legend>Modelos (2 a 3)</legend>{chatModels.map(model => { const ready = providers.get(model.providerId)?.hasKey; return <label key={model.id} className={!ready ? styles.disabled : ''}><input type="checkbox" disabled={!ready || (!compareIds.includes(model.id) && compareIds.length >= 3)} checked={compareIds.includes(model.id)} onChange={event => setCompareIds(event.target.checked ? [...compareIds, model.id] : compareIds.filter(id => id !== model.id))}/>{model.label}{model.testOnly && !/teste/i.test(model.label) ? ' (só teste)' : ''}{!ready ? ' (sem chave)' : ''}</label>; })}</fieldset>
+      {(() => { const ready = chatModels.filter(model => providers.get(model.providerId)?.hasKey), missing = chatModels.length - ready.length; return <>
+        <fieldset className={styles.capabilities}><legend>Modelos (2 a 3)</legend>{ready.length ? ready.map(model => <label key={model.id}><input type="checkbox" disabled={!compareIds.includes(model.id) && compareIds.length >= 3} checked={compareIds.includes(model.id)} onChange={event => setCompareIds(event.target.checked ? [...compareIds, model.id] : compareIds.filter(id => id !== model.id))}/>{model.label}{model.testOnly && !/teste/i.test(model.label) ? ' (só teste)' : ''}</label>) : <span className={styles.muted}>Nenhum modelo com chave pronta.</span>}</fieldset>
+        {missing > 0 && <p className={styles.muted}>{missing} {missing === 1 ? 'modelo sem chave não aparece' : 'modelos sem chave não aparecem'} aqui. Cadastre a chave na aba Chaves.</p>}
+      </>; })()}
       <label className="p-field"><span>Pergunta</span><textarea rows={3} maxLength={2000} value={prompt} onChange={event => setPrompt(event.target.value)}/></label>
-      <p><strong>Custo máximo: {friendlyMicros(compareCost)}</strong> para {compareIds.length || 'nenhum'} {compareIds.length === 1 ? 'modelo' : 'modelos'}.</p>
+      {compareIds.length < 2 ? <p>Escolha 2 ou 3 modelos para ver o custo máximo.</p> : <p><strong>Custo máximo: {friendlyMicros(compareCost)}</strong> para {compareIds.length} modelos.</p>}
       <label className={styles.check}><input type="checkbox" checked={compareConsent} onChange={event => setCompareConsent(event.target.checked)}/>Autorizo enviar esta pergunta aos provedores escolhidos. Não há dados pessoais nela.</label>
-      <button type="button" className="p-button p-button-primary" disabled={busy || compareIds.length < 2 || !compareConsent || !prompt.trim()} onClick={() => void compare()}>{busy ? 'Comparando…' : 'Comparar agora'}</button>
+      <button type="button" className={`p-button p-button-primary ${styles.compareButton}`} disabled={busy || compareIds.length < 2 || !compareConsent || !prompt.trim()} onClick={() => void compare()}>{busy ? 'Comparando…' : 'Comparar agora'}</button>
+      {!busy && (compareIds.length < 2 || !compareConsent || !prompt.trim()) && <p className={styles.muted}>Para comparar: {[compareIds.length < 2 ? 'escolha 2 modelos' : '', !prompt.trim() ? 'escreva a pergunta' : '', !compareConsent ? 'marque a autorização' : ''].filter(Boolean).join(', ')}.</p>}
       {results && <div className={styles.results}>{results.map(row => <article key={row.modelId} className={styles.result}>
         <h5>{row.label}</h5><p className={styles.muted}>{row.provider} · {(row.ms / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} s · custou {friendlyMicros(row.usdMicros)}</p>
         {row.error ? <p role="alert" className="p-inline-error">{row.error}</p> : <pre className={styles.answer}>{row.text}</pre>}
       </article>)}</div>}
     </section>
-    <p className={styles.muted}>Catálogo atualizado {view.catalog.updatedAt ? `em ${new Date(view.catalog.updatedAt).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })} por ${view.catalog.updatedBy}` : 'com os modelos padrão de 09/11/2026'}. <button type="button" className={styles.link} onClick={() => void load()}>Atualizar</button></p>
+    <p className={styles.muted}>{view.catalog.updatedBy && view.catalog.updatedBy !== 'padrão' ? `Catálogo alterado em ${new Date(view.catalog.updatedAt).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' })} por ${view.catalog.updatedBy}.` : 'Catálogo padrão, de 09/11/2026.'} <button type="button" className={styles.link} onClick={() => void load()}>Recarregar lista</button></p>
   </div>;
 }

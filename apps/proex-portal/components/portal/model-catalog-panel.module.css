@@ -6,7 +6,7 @@
 .group{display:grid;gap:.6rem;padding:1rem;border:1px solid var(--line);border-radius:.9rem;background:var(--surface)}
 .group h4{display:flex;align-items:center;gap:.45rem;margin:0;font-size:1rem;font-weight:700}
 .models{display:grid;gap:.7rem;margin:0;padding:0;list-style:none}
-.model{display:grid;gap:.35rem;padding:.8rem .9rem;border:1px solid var(--line);border-radius:.8rem;background:var(--surface-soft);min-width:0;overflow-wrap:anywhere}
+.model{display:flex;flex-direction:column;gap:.35rem;padding:.8rem .9rem;border:1px solid var(--line);border-radius:.8rem;background:var(--surface-soft);min-width:0;overflow-wrap:anywhere}
 .model p{margin:0;font-size:max(13px,.85rem);line-height:1.5}
 .model code{font-size:.8rem}
 .modelTop{display:flex;flex-wrap:wrap;justify-content:space-between;gap:.4rem .8rem;align-items:center}
@@ -37,3 +37,11 @@
 .answer{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;font-size:max(13px,.88rem);line-height:1.55;max-height:22rem;overflow:auto}
 .link{border:0;background:none;padding:0;color:var(--brand-ink);font:inherit;font-weight:700;text-decoration:underline;cursor:pointer;min-height:44px}
 @container (min-width:620px){.models{grid-template-columns:repeat(2,minmax(0,1fr))}.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.results{grid-template-columns:repeat(auto-fit,minmax(14rem,1fr))}}
+.headAdd{margin-left:auto;display:inline-flex;align-items:center;gap:.4rem;flex-shrink:0;min-height:44px}
+.filters{display:flex;flex-wrap:wrap;gap:.45rem}
+.filters button{min-height:44px;padding:0 .9rem;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--text-secondary);font:inherit;font-weight:650;cursor:pointer}
+.filters button[aria-pressed=true]{background:var(--purple);border-color:var(--purple);color:#fff}
+.filters button:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+.compareButton:disabled{opacity:.6;color:#fff}
+@container (max-width:520px){.heading{flex-wrap:wrap}.heading :global(.p-icon-tile){display:none}.headAdd{margin-left:0;width:100%;justify-content:center}}
+.model>.actions{margin-top:auto}
