@@ -905,7 +905,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
 
         <Section title="Materiais e estoque" description="Saldo físico, reservas e unidades disponíveis ficam separados." aside={<div className={workStyles.catalogAside}>{can('inventory.manage') && formProjects.length > 0 && <a className="p-button p-button-subtle" href="#movimentar-estoque">Registrar movimento<ArrowRight size={15} aria-hidden="true"/></a>}<div className="p-search">
             <Search size={17}/>
-            <input aria-label="Buscar materiais" placeholder="Buscar material" value={query} onChange={e => setQuery(e.target.value)}/>
+            <input id="material-search" name="materialSearch" aria-label="Buscar materiais" placeholder="Buscar material" value={query} onChange={e => setQuery(e.target.value)}/>
             </div></div>}>{searchItems.length ? <MaterialCatalog onOpen={id=>{setMaterialMode('view');setSelectedMaterialId(id);}} materials={searchItems.map(item => {
                 const availableQuantity = available(item);
                 const projectId = string(get(item, 'projectId', 'project_id'));
