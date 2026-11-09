@@ -96,7 +96,7 @@ a.row:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 .group summary > span:last-child { display: grid; gap: 2px; }
 .group summary strong { color: var(--ink); font-size: 14px; }
 .group summary small { color: var(--text-secondary); font-size: 12.5px; }
-.group summary::after { content: 'Ver todas'; margin-left: auto; color: var(--brand-ink); font-size: 12.5px; font-weight: 600; }
+.group summary::after { content: 'Ver todas'; flex-shrink: 0; margin-left: auto; color: var(--brand-ink); font-size: 12.5px; font-weight: 600; white-space: nowrap; }
 .group details[open] summary::after { content: 'Fechar'; }
 .group details[open] ol { padding: 0 10px 10px; }
 .more { justify-self: start; min-height: 40px; margin-top: 8px; padding: 6px 14px; border: 1px solid var(--control-border); border-radius: 999px; background: var(--surface); color: var(--brand-ink); font-size: 13px; font-weight: 600; cursor: pointer; }
@@ -115,6 +115,17 @@ a.row:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
   .row > .icon { display: none; }
   .dayHeading { top: 60px; }
   .kpi { padding: 12px; }
-  .kpiGo { display: none; }
+  .kpiGo { position: absolute; top: 12px; right: 12px; margin: 0; font-size: 0; }
+  .kpiGo svg { width: 16px; height: 16px; }
 }
 @media (prefers-reduced-motion: reduce) { .kpi { transition: none; } }
+/* Gráfico sem dado vira faixa baixa ocupando a linha toda. */
+.chart[data-empty=true] { grid-column: 1 / -1; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 4px 16px; }
+.chart[data-empty=true] figcaption { margin: 0; }
+.chart[data-empty=true] .chartEmpty { margin: 0 0 0 auto; padding: 8px 12px; }
+.groupMeta { display: flex; flex-wrap: wrap; gap: 2px 14px; }
+.group summary small { overflow-wrap: anywhere; }
+.chartFoot { margin-top: auto; padding-top: 10px; }
+.kpi { align-content: start; }
+.kpi > span { min-height: 22px; }
+@container (max-width: 520px) { .group summary > .icon { display: none; } }

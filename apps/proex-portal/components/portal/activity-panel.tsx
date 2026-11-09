@@ -48,7 +48,7 @@ export function bucketDays(days: SummaryDay[]): { label: string; title: string; 
     week.end = row.day; week.criadas += row.demandsOpened; week.concluidas += row.demandsCompleted; week.atividades += row.agenda;
     weeks.set(start, week);
   }
-  return [...weeks.values()].map(week => ({ label: SHORT.format(civilDate(week.start)), title: week.start === week.end ? capital(DAY.format(civilDate(week.start))) : `Semana de ${short(week.start)} a ${short(week.end)}`, criadas: week.criadas, concluidas: week.concluidas, atividades: week.atividades }));
+  return [...weeks].map(([monday, week]) => ({ label: SHORT.format(civilDate(monday)), title: week.start === week.end ? capital(DAY.format(civilDate(week.start))) : `Semana de ${short(week.start)} a ${short(week.end)}`, criadas: week.criadas, concluidas: week.concluidas, atividades: week.atividades }));
 }
 /** Acontecimentos seguidos do mesmo tipo, no mesmo minuto, viram um grupo que abre. */
 export function groupEntries(events: ActivityEvent[]): Entry[] {
@@ -141,10 +141,10 @@ export default function ActivityPanel({ projects, initialProjectId = '' }: Props
     </div>}
 
     {shown && <div className={styles.charts}>
-      {types.includes('demands') && <figure className={styles.chart}>
+      {types.includes('demands') && <figure className={styles.chart} data-empty={demandBuckets.length ? 'false' : 'true'}>
         <figcaption><strong>Demandas ao longo do tempo</strong><span>{weekly ? 'Por semana. ' : 'Por dia. '}Toque numa coluna para abrir as demandas.</span></figcaption>
         {demandBuckets.length ? <>
-          {concentrated(demandBuckets) && <p className={styles.insight}>{demandBuckets.length === 1 ? 'Tudo aconteceu' : 'Concentrado'} {demandBuckets.map(row => row.title.startsWith('Semana') ? `na ${row.title.toLocaleLowerCase('pt-BR')}` : `em ${row.title.toLocaleLowerCase('pt-BR')}`).join(' e ')}: {totals.demandsOpened} {totals.demandsOpened === 1 ? 'demanda criada' : 'demandas criadas'} e {totals.demandsDone} {totals.demandsDone === 1 ? 'concluída' : 'concluídas'}.</p>}
+          {concentrated(demandBuckets) && <p className={styles.insight}>{demandBuckets.length === 1 ? 'Tudo aconteceu' : 'Concentrado'} {demandBuckets.map(row => `${/^(sábado|domingo)/i.test(row.title) ? 'no' : 'na'} ${row.title.toLocaleLowerCase('pt-BR')}`).join(' e ')}: {totals.demandsOpened} {totals.demandsOpened === 1 ? 'demanda criada' : 'demandas criadas'} e {totals.demandsDone} {totals.demandsDone === 1 ? 'concluída' : 'concluídas'}.</p>}
           <div className={styles.legend} aria-hidden="true"><span><i style={{ background: 'var(--viz-1)' }}/>Criadas</span><span><i style={{ background: 'var(--viz-2)' }}/>Concluídas</span></div>
           <div className={styles.plot} onClick={() => follow(root.current, projectLink('demands', projectId))}><ResponsiveContainer width="100%" height="100%"><BarChart data={buckets} barGap={2} barCategoryGap="22%" margin={{ top: 8, right: 4, left: -18, bottom: 0 }}>
             <CartesianGrid vertical={false} stroke="var(--viz-grid)"/>
@@ -157,19 +157,20 @@ export default function ActivityPanel({ projects, initialProjectId = '' }: Props
           <DataTable caption="Demandas no período" columns={[weekly ? 'Semana' : 'Dia', 'Criadas', 'Concluídas']} rows={demandBuckets.map(row => [row.title, row.criadas, row.concluidas])} href={projectLink('demands', projectId)} linkLabel="Abrir Demandas"/>
         </> : <ChartEmpty text="Nenhuma demanda criada ou concluída neste período." href={projectLink('demands', projectId)} label="Abrir Demandas"/>}
       </figure>}
-      {types.includes('materials') && <figure className={styles.chart}>
-        <figcaption><strong>Movimento de estoque por material</strong><span>Os 8 materiais com mais movimento. Toque num material para abrir a ficha.</span></figcaption>
+      {types.includes('materials') && <figure className={styles.chart} data-empty={stock.length ? 'false' : 'true'}>
+        <figcaption><strong>Movimento de estoque por material</strong><span>Até 8 materiais com mais movimento. Toque num material para abrir a ficha.</span></figcaption>
         {stock.length ? <>
-          <div className={styles.legend} aria-hidden="true"><span><i style={{ background: 'var(--viz-3)' }}/>Entradas</span><span><i style={{ background: 'var(--viz-2)' }}/>Saídas</span></div>
+          <div className={styles.legend} aria-hidden="true">{stock.some(row => row.entradas > 0) && <span><i style={{ background: 'var(--viz-3)' }}/>Entradas</span>}{stock.some(row => row.saidas > 0) && <span><i style={{ background: 'var(--viz-2)' }}/>Saídas</span>}</div>
           <ul className={styles.stock}>{stock.map(row => <li key={row.href}><a href={row.href} title={`${row.name}: ${row.entradas} de entrada e ${row.saidas} de saída`}>
             <span className={styles.stockName}>{row.name}</span>
             <span className={styles.stockBars} aria-hidden="true">{row.entradas > 0 && <span style={{ width: `${row.entradas / stockMax * 100}%`, background: 'var(--viz-3)' }}/>}{row.saidas > 0 && <span style={{ width: `${row.saidas / stockMax * 100}%`, background: 'var(--viz-2)' }}/>}</span>
-            <span className={styles.stockValues}><b>+{row.entradas}</b><b>−{row.saidas}</b></span>
+            <span className={styles.stockValues}>{row.entradas > 0 && <b>+{row.entradas}</b>}{row.saidas > 0 && <b>−{row.saidas}</b>}</span>
           </a></li>)}</ul>
+          <a className={`p-text-link ${styles.chartFoot}`} href={projectLink('materials', projectId)}>Ver todos os materiais<ArrowUpRight size={14} aria-hidden="true"/></a>
         </> : <ChartEmpty text="Nenhuma movimentação de estoque neste período." href={projectLink('materials', projectId)} label="Abrir Materiais"/>}
       </figure>}
-      {types.includes('agenda') && <figure className={styles.chart}>
-        <figcaption><strong>Ocupação da agenda</strong><span>{weekly ? 'Atividades por semana. ' : 'Atividades por dia. '}Toque para abrir a Agenda.</span></figcaption>
+      {types.includes('agenda') && <figure className={styles.chart} data-empty={agendaBuckets.length ? 'false' : 'true'}>
+        <figcaption><strong>Ocupação da agenda</strong><span>{weekly ? 'Atividades por semana.' : 'Atividades por dia.'}{agendaBuckets.length ? ' Toque para abrir a Agenda.' : ''}</span></figcaption>
         {agendaBuckets.length ? <>
           <div className={styles.plot} onClick={() => follow(root.current, projectLink('calendar', projectId))}><ResponsiveContainer width="100%" height="100%"><BarChart data={buckets} barCategoryGap="22%" margin={{ top: 8, right: 4, left: -18, bottom: 0 }}>
             <CartesianGrid vertical={false} stroke="var(--viz-grid)"/>
@@ -188,8 +189,8 @@ export default function ActivityPanel({ projects, initialProjectId = '' }: Props
       {events.length === 0 ? <div className="p-empty"><span><FileText size={22} aria-hidden="true"/></span><h3>Nada registrado neste período</h3><p>Escolha outro período, projeto ou tipo. Só aparecem os projetos que você pode acessar.</p></div>
       : [...byDay.keys()].sort().reverse().map(day => { const entries = groupEntries(byDay.get(day)!), open = expanded.includes(day), visible = open ? entries : entries.slice(0, PER_DAY); return <div key={day} className={styles.day} id={`activity-day-${day}`}>
         <h3 className={styles.dayHeading}>{capital(DAY.format(civilDate(day)))}<span>{byDay.get(day)!.length}</span></h3>
-        <ol className={styles.events}>{visible.map(entry => entry.kind === 'event' ? <EventRow key={entry.event.id} event={entry.event} hideProject={Boolean(projectId)} hidePerson={Boolean(person)}/> : <li key={entry.key} className={styles.group}><details><summary><TypeIcon type={entry.events[0].type}/><span><strong>{groupLabel(entry.events[0].action, entry.events.length)}</strong><small>{TIME.format(new Date(entry.events[0].at))}{!projectId && entry.events[0].projectName ? ` · ${entry.events[0].projectName}` : ''}</small></span></summary><ol>{entry.events.map(event => <EventRow key={event.id} event={event} hideProject hidePerson={Boolean(person)} compact/>)}</ol></details></li>)}</ol>
-        {entries.length > PER_DAY && !open && <button type="button" className={styles.more} onClick={() => setExpanded(list => [...list, day])}>Ver mais {entries.length - PER_DAY}</button>}
+        <ol className={styles.events}>{visible.map(entry => entry.kind === 'event' ? <EventRow key={entry.event.id} event={entry.event} hideProject={Boolean(projectId)} hidePerson={Boolean(person)}/> : <li key={entry.key} className={styles.group}><details><summary><TypeIcon type={entry.events[0].type}/><span><strong>{groupLabel(entry.events[0].action, entry.events.length)}</strong><small>{entry.events.slice(0, 2).map(event => event.title).join(', ')}{entry.events.length > 2 ? ` e mais ${entry.events.length - 2}` : ''}</small><small className={styles.groupMeta}><span>{TIME.format(new Date(entry.events[0].at))}</span>{!projectId && entry.events[0].projectName && <span>{entry.events[0].projectName}</span>}</small></span></summary><ol>{entry.events.map(event => <EventRow key={event.id} event={event} hideProject hidePerson={Boolean(person)} compact/>)}</ol></details></li>)}</ol>
+        {entries.length > PER_DAY && !open && <button type="button" className={styles.more} onClick={() => setExpanded(list => [...list, day])}>Ver mais {entries.length - PER_DAY} {entries.length - PER_DAY === 1 ? 'item' : 'itens'}</button>}
       </div>; })}
     </section>}
   </div>;
