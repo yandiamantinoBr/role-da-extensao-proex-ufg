@@ -216,8 +216,11 @@ export async function portalSnapshot(db: D1Database, actor: PortalActor | null):
     all(db, `SELECT id,name,description,created_at,short_name,status,color,official_url,starts_at,ends_at,location,version,lifecycle,type_id,parent_id,unit_id,prizes_enabled,scope,thematic_area,extension_line,organization_id
       FROM projects WHERE ${projectsFilter.sql} ORDER BY name,id`, projectsFilter.params),
     all(db, `SELECT id,project_id,name,location,starts_at,ends_at,status,retry_limit,
-      brinde_offer_id,super_offer_id,rules_text,version,created_at
-      FROM campaigns WHERE ${campaignsFilter.sql} ORDER BY starts_at DESC,id`, campaignsFilter.params),
+      brinde_offer_id,super_offer_id,rules_text,version,created_at,
+      -- Eventos anfitriões (planejamento): só projetos que a pessoa também pode ver; os demais nem são contados.
+      (SELECT json_group_array(h.host_project_id) FROM campaign_host_contexts h WHERE h.campaign_id=campaigns.id AND h.revoked_at IS NULL
+        AND h.host_project_id!=campaigns.project_id AND h.host_project_id IN (SELECT projects.id FROM projects WHERE ${projectsFilter.sql})) AS host_project_ids
+      FROM campaigns WHERE ${campaignsFilter.sql} ORDER BY starts_at DESC,id`, [...projectsFilter.params, ...campaignsFilter.params]),
     all(db, `SELECT id,project_id,name,category,unit,stock,reserved,low_stock,description,condition,created_at,
       asset_code,version,updated_at,
       CASE WHEN category='equipment' AND EXISTS (SELECT 1 FROM loans l WHERE l.item_id=items.id AND l.status='out') THEN 1 ELSE 0 END AS on_loan,
@@ -304,7 +307,7 @@ export async function portalSnapshot(db: D1Database, actor: PortalActor | null):
   }
   return {
     user: { userId: actor.userId, ...profile, hasPassword }, profile, hasPassword,
-    role, capabilities, globalCapabilities, capabilitiesByProject, canConfigureAi, organizations: await listOrganizations(db,actor), projects, campaigns,
+    role, capabilities, globalCapabilities, capabilitiesByProject, canConfigureAi, organizations: await listOrganizations(db,actor), projects, campaigns: campaigns.map(campaign => ({ ...campaign, host_project_ids: (() => { try { const ids = JSON.parse(String(campaign.host_project_ids ?? '[]')); return Array.isArray(ids) ? ids.filter((id): id is string => typeof id === 'string') : []; } catch { return []; } })() })),
     projectTypes: await all(db,'SELECT id,key,label,description,status,version FROM project_types ORDER BY label,id'),
     organizationalUnits: await all(db,'SELECT id,name,acronym,kind,status,version,group_label,campus FROM organizational_units ORDER BY name,id'),
     items: items.map(item => ({ ...item, on_loan: Boolean(item.on_loan), reserved_now: Boolean(item.reserved_now),

@@ -120,38 +120,30 @@ test('material target replacement hides the old slot before cleanup and discards
 });
 
 
-test('project pins persist only IDs per canonical account and immediately respect current visibility', () => {
- const h = panel(); try {
-  h.render({userId:'person-a'}); h.flushTimers();
-  h.click('Fixar Projeto A'); h.render();
-  const key = h.exports.projectPinKey('person-a');
-  assert.deepEqual(JSON.parse(h.storage.get(key)), ['project-a']);
-  assert.ok(h.node('button', node => node.props['aria-label'] === 'Desafixar Projeto A'));
-  h.render({userId:'person-b'}, false);
-  assert.equal(h.node('button', node => node.props['aria-label'] === 'Desafixar Projeto A'), undefined, 'previous account pins are hidden before effects');
-  h.effects(); h.flushTimers();
-  h.click('Fixar Projeto B'); h.render();
-  assert.deepEqual(JSON.parse(h.storage.get(h.exports.projectPinKey('person-b'))), ['project-b']);
-  h.render({userId:'person-a'}); h.flushTimers();
-  assert.ok(h.node('button', node => node.props['aria-label'] === 'Desafixar Projeto A'));
-  h.render({projects:[projects[1]]}, false);
-  assert.equal(h.node('button', node => node.props['aria-label'] === 'Desafixar Projeto A'), undefined, 'revoked project cannot remain in shortcuts');
-  assert.ok(!h.body().includes('Projeto A'));
-  h.render({projects}); h.storage.set(key, JSON.stringify(['hidden-project','project-b'])); h.storageEvent(key);
-  assert.ok(h.node('button', node => node.props['aria-label'] === 'Desafixar Projeto B'));
-  assert.ok(!h.body().includes('hidden-project'));
-  h.click('Desafixar Projeto B'); h.render();
-  assert.deepEqual(JSON.parse(h.storage.get(key)), ['hidden-project']);
+test('pinned projects come first in the grid, are marked as pinned and only show projects still visible', async () => {
+ const calls = [];
+ const h = panel({userId:'person-a', pinnedProjectIds:['project-b','hidden-project'], onTogglePin: async (id, pinned) => { calls.push([id, pinned]); }}); try {
+  const cards = () => h.exports && (() => { const result = []; const visit = node => { if (!node || typeof node !== 'object') return; if (Array.isArray(node)) return node.forEach(visit); if (node.type === 'article') result.push(node); visit(node.props?.children); }; visit(h.node('div', node => node.props?.className === 'grid')); return result; })();
+  assert.deepEqual(cards().map(card => text(card).includes('Projeto B') ? 'B' : 'A'), ['B', 'A'], 'o fixado vem primeiro na grade');
+  assert.ok(h.node('button', node => node.props['aria-label'] === 'Desafixar Projeto B' && node.props['aria-pressed'] === true), 'o cartão fixado aparece marcado');
+  assert.match(text(h.node('section', node => node.props['aria-label'] === 'Projetos fixados')), /Projeto B/);
+  assert.ok(!h.body().includes('hidden-project'), 'id sem acesso atual nunca aparece');
+  assert.match(h.body(), /Salvos na sua conta/);
+  h.click('Fixar Projeto A'); await tick(); h.render();
+  h.node('button', node => node.props['aria-label'] === 'Desafixar Projeto B' && node.props.title === 'Desafixar').props.onClick(); await tick(); h.render();
+  assert.deepEqual(calls, [['project-a', true], ['project-b', false]]);
+  assert.match(h.body(), /Projeto B saiu dos fixados/);
+  h.render({pinnedProjectIds:['project-a'], projects:[projects[1]]});
+  assert.equal(h.node('button', node => node.props['aria-label'] === 'Desafixar Projeto A'), undefined, 'projeto revogado não fica nos atalhos');
  } finally {h.dispose();}
 });
 
-test('project pin preferences reject malformed, oversized and non-ID values', () => {
- const h=panel(); try {
-  const parse = raw => Array.from(h.exports.parseProjectPins(raw));
-  for(const raw of [null, '', '{}', '{bad', 'x'.repeat(6001)]) assert.deepEqual(parse(raw), []);
-  assert.deepEqual(parse(JSON.stringify(['project-a','project-a','../private','<script>',null,42,'project-b'])), ['project-a','project-b']);
-  assert.equal(parse(JSON.stringify(Array.from({length:20},(_,i)=>`p-${i}`))).length, 12);
-  assert.notEqual(h.exports.projectPinKey('a:b'), h.exports.projectPinKey('a%3Ab'));
-  assert.equal(h.exports.projectPinKey(''), '');
+test('a refused pin keeps the screen honest with the server message', async () => {
+ const h = panel({userId:'person-a', pinnedProjectIds:[], onTogglePin: async () => { throw new Error('Você pode fixar até 12 projetos. Remova um para incluir outro.'); }}); try {
+  h.click('Fixar Projeto A'); await tick(); h.render();
+  assert.match(h.body(), /até 12 projetos/);
+  assert.equal(h.node('section', node => node.props['aria-label'] === 'Projetos fixados') !== undefined, true);
  } finally {h.dispose();}
+ const anonymous = panel({}); try { assert.equal(anonymous.node('section', node => node.props['aria-label'] === 'Projetos fixados'), undefined, 'sem conta e sem ação, não há fixados'); } finally {anonymous.dispose();}
 });
+

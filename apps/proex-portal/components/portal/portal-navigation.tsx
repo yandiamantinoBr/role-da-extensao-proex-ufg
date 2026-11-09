@@ -1,23 +1,39 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowRight, ChevronRight, ExternalLink, Menu, PanelLeftClose, PanelLeftOpen, Pin, Search, ShieldCheck, Sparkles, X } from 'lucide-react';
+import { ArrowRight, ChevronDown, ChevronRight, ExternalLink, Menu, PanelLeftClose, PanelLeftOpen, Pin, Search, ShieldCheck, Sparkles, X } from 'lucide-react';
 import { BrandMark } from '@/components/theme/brand-mark';
 import { recommendedModules, type ModuleId, type PortalModule } from './navigation-model';
+import subStyles from './portal-navigation.module.css';
+/** Projetos e equipes fixados que aparecem como subitens do módulo (09/11/2026). */
+export type NavSubitem = { id: string; label: string; onOpen: () => void };
+export type NavSubitems = Partial<Record<ModuleId, NavSubitem[]>>;
 type Props = {
     modules: PortalModule[];
     active: ModuleId;
     onNavigate: (id: ModuleId) => void;
     pinned: ModuleId[];
     role: string;
+    subitems?: NavSubitems;
 };
-export function DesktopSidebar({ modules, active, onNavigate, pinned, collapsed, onToggle }: Props & {
+export function DesktopSidebar({ modules, active, onNavigate, pinned, collapsed, onToggle, subitems = {} }: Props & {
     collapsed: boolean;
     onToggle: () => void;
 }) {
     const favorites = modules.filter(module => pinned.includes(module.id));
     const work = modules.filter(module => !['team', 'reports', 'settings', 'profile', 'overview'].includes(module.id) && !pinned.includes(module.id));
     const management = modules.filter(module => ['team', 'reports', 'settings'].includes(module.id) && !pinned.includes(module.id));
+    const [expanded, setExpanded] = useState<Partial<Record<ModuleId, boolean>>>({});
     function link(module: PortalModule) {
+        const children = collapsed ? [] : subitems[module.id] ?? [];
+        if (!children.length) return plainLink(module);
+        // A seta abre os fixados como subitens; o nome do módulo continua levando à página.
+        const open = expanded[module.id] ?? active === module.id, listId = `pn-sub-${module.id}`;
+        return <div key={module.id} className={subStyles.group}>
+            <div className={subStyles.row}>{plainLink(module)}<button type="button" className={subStyles.toggle} aria-expanded={open} aria-controls={listId} aria-label={`${open ? 'Ocultar' : 'Mostrar'} fixados de ${module.label}`} title={`${open ? 'Ocultar' : 'Mostrar'} fixados`} onClick={() => setExpanded(current => ({ ...current, [module.id]: !open }))}>{open ? <ChevronDown size={16} aria-hidden="true"/> : <ChevronRight size={16} aria-hidden="true"/>}</button></div>
+            {open && <ul id={listId} className={subStyles.list} aria-label={`${module.label} fixados`}>{children.map(item => <li key={item.id}><button type="button" className={subStyles.item} title={item.label} onClick={item.onOpen}><Pin size={12} aria-hidden="true"/><span>{item.label}</span></button></li>)}</ul>}
+        </div>;
+    }
+    function plainLink(module: PortalModule) {
         const Icon = module.icon;
         return <button type="button" key={module.id} className={`pn-link ${active === module.id ? 'is-active' : ''}`} aria-label={module.label} title={collapsed ? module.label : undefined} aria-current={active === module.id ? 'page' : undefined} onClick={() => onNavigate(module.id)}>
         <Icon size={20}/>
@@ -52,7 +68,7 @@ export function DesktopSidebar({ modules, active, onNavigate, pinned, collapsed,
     </aside>;
 }
 const MOBILE_FIELD_MODULES: ModuleId[] = ['materials', 'events', 'demands', 'calendar'];
-export function MobileNavigation({ modules, active, onNavigate, pinned, role, onTogglePin }: Props & {
+export function MobileNavigation({ modules, active, onNavigate, pinned, role, onTogglePin, subitems = {} }: Props & {
     onTogglePin: (id: ModuleId) => void;
 }) {
     const [open, setOpen] = useState(false), [query, setQuery] = useState('');
@@ -145,6 +161,6 @@ export function MobileNavigation({ modules, active, onNavigate, pinned, role, on
             <ArrowRight size={16}/>
             </button>{id !== 'overview' && <button className={`pn-pin-button ${pinned.includes(id) ? 'is-pinned' : ''}`} aria-label={`${pinned.includes(id) ? 'Remover' : 'Fixar'} ${label} ${pinned.includes(id) ? 'dos' : 'nos'} atalhos`} aria-pressed={pinned.includes(id)} onClick={() => onTogglePin(id)}>
                 <Pin size={17}/>
-                </button>}</div>)}</div>{!modules.some(module => `${module.label} ${module.description}`.toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR'))) && <p className="pn-no-results">Nenhum módulo encontrado. Tente outro nome.</p>}</div>
+                </button>}{(subitems[id]?.length ?? 0) > 0 && <ul className={subStyles.mobileList} aria-label={`${label} fixados`}>{subitems[id]!.map(item => <li key={item.id}><button type="button" className={subStyles.mobileItem} onClick={() => { item.onOpen(); close(); }}><Pin size={13} aria-hidden="true"/><span>{item.label}</span></button></li>)}</ul>}</div>)}</div>{!modules.some(module => `${module.label} ${module.description}`.toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR'))) && <p className="pn-no-results">Nenhum módulo encontrado. Tente outro nome.</p>}</div>
         </div>}</>;
 }

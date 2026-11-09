@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { ArrowUpRight, CheckCircle2, Circle, CircleDot, CircleX, Flag, FolderKanban, PauseCircle, Pencil, Plus, RefreshCw, Search, ShieldCheck, UserRoundCheck, Users, X } from 'lucide-react';
+import { ArrowUpRight, CheckCircle2, Pin, PinOff, Circle, CircleDot, CircleX, Flag, FolderKanban, PauseCircle, Pencil, Plus, RefreshCw, Search, ShieldCheck, UserRoundCheck, Users, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { priorityLabels, stateLabels, TASK_STATES, type TaskStatus } from '@/lib/follow-up/contracts';
 import { TEAM_TASK_PAGE_SIZE, type TeamsWorkspace, type WorkTeam, type TeamPerson } from '@/lib/follow-up/teams-contract';
@@ -21,6 +21,11 @@ type Props = {
  onChanged?: () => void | Promise<void>;
  onOpenDemand: (id: string, projectId: string | null) => void;
  canOpenAccess?: boolean;
+ /** Equipes fixadas na conta (0038) e ação para fixar ou desafixar. */
+ pinnedTeamIds?: string[];
+ onTogglePin?: (teamId: string, pinned: boolean) => Promise<void>;
+ /** Vindo do menu lateral (abrir equipe fixada) ou do empréstimo (criar equipe). O painel é remontado a cada pedido. */
+ intent?: { kind: 'open' | 'new'; teamId?: string; organizationId?: string } | null;
 };
 const stateIcons = { open: Circle, in_progress: CircleDot, blocked: PauseCircle, completed: CheckCircle2, cancelled: CircleX };
 const message = (cause: unknown) => cause instanceof Error ? cause.message : 'Não foi possível concluir. Tente novamente.';
@@ -56,14 +61,20 @@ function TeamForm({ team, people, organizationId, busy, onSave }: { team?: WorkT
  </form>;
 }
 
-export default function WorkTeamsPanel({ userId, defaultProjectId = '', organizations, projects, onChanged, onOpenDemand, canOpenAccess = false }: Props) {
+export default function WorkTeamsPanel({ userId, defaultProjectId = '', organizations, projects, onChanged, onOpenDemand, canOpenAccess = false, pinnedTeamIds = [], onTogglePin, intent = null }: Props) {
  const initialProject = projects.find(project => project.id === defaultProjectId) ?? projects[0];
- const [organizationId, setOrganizationId] = useState(initialProject?.organization_id ?? organizations[0]?.id ?? '');
- const [projectId, setProjectId] = useState(initialProject?.id ?? '');
- const [teamId, setTeamId] = useState(''), [status, setStatus] = useState<TaskStatus | ''>(''), [offset, setOffset] = useState(0);
+ // Um pedido vindo de fora escolhe a organização: abrir uma equipe fixada ou criar uma nova.
+ const intentOrg = organizations.find(organization => organization.id === intent?.organizationId)
+  ?? (intent?.kind === 'new' ? organizations.find(organization => organization.canManage && organization.id === initialProject?.organization_id) ?? organizations.find(organization => organization.canManage) : undefined);
+ const startOrg = intentOrg?.id ?? initialProject?.organization_id ?? organizations[0]?.id ?? '';
+ const startProject = intentOrg ? (intentOrg.canManage ? '' : projects.find(project => project.organization_id === intentOrg.id)?.id ?? '') : initialProject?.id ?? '';
+ const [organizationId, setOrganizationId] = useState(startOrg);
+ const [projectId, setProjectId] = useState(startProject);
+ const [pinMessage, setPinMessage] = useState('');
+ const [teamId, setTeamId] = useState(intent?.kind === 'open' && intentOrg ? intent.teamId ?? '' : ''), [status, setStatus] = useState<TaskStatus | ''>(''), [offset, setOffset] = useState(0);
  const [mine, setMine] = useState(false), [search, setSearch] = useState(''), [attempt, setAttempt] = useState(0);
  const [stored, setStored] = useState<{ key: string; context: string; status: TaskStatus | ''; offset: number; data: TeamsWorkspace } | null>(null), [error, setError] = useState('');
- const [editor, setEditor] = useState<string | null>(null), [busy, setBusy] = useState(false), [exporting, setExporting] = useState(false);
+ const [editor, setEditor] = useState<string | null>(intent?.kind === 'new' && intentOrg?.canManage ? 'new' : null), [busy, setBusy] = useState(false), [exporting, setExporting] = useState(false);
  const mounted = useRef(true), generation = useRef(0), pendingMutation = useRef(false), exportRequest = useRef<AbortController | null>(null);
  const detailHeading = useRef<HTMLHeadingElement>(null), focusNextTeam = useRef(false);
  const selectedOrganization = organizations.find(organization => organization.id === organizationId);
@@ -99,6 +110,18 @@ export default function WorkTeamsPanel({ userId, defaultProjectId = '', organiza
 
  function invalidate() { generation.current++; exportRequest.current?.abort(); setExporting(false); setError(''); }
  function changeContext(org: string, project: string) { invalidate(); setOrganizationId(org); setProjectId(project); setTeamId(''); setStatus(''); setOffset(0); setEditor(null); }
+ /** Equipes pertencem à organização: a criação acontece na visão da organização inteira. */
+ function startNewTeam() {
+  if (canEditTeams) { setEditor('new'); return; }
+  if (!selectedOrganization?.canManage) return;
+  changeContext(organizationId, ''); setEditor('new');
+ }
+ async function togglePin(team: WorkTeam) {
+  if (!onTogglePin) return;
+  const pinned = pinnedTeamIds.includes(team.id);
+  try { await onTogglePin(team.id, !pinned); setPinMessage(pinned ? `${team.name} saiu dos fixados.` : `${team.name} fixada: aparece no menu lateral, em Equipes.`); }
+  catch (cause) { setPinMessage(message(cause)); }
+ }
  function chooseTeam(id: string) {
   if (!loading && data?.selectedTeamId === id && !status && !offset) { detailHeading.current?.focus({ preventScroll: true }); detailHeading.current?.scrollIntoView({ block: 'start', behavior: 'auto' }); return; }
   focusNextTeam.current = true; invalidate(); setTeamId(id); setStatus(''); setOffset(0); setEditor(null);
@@ -146,7 +169,7 @@ export default function WorkTeamsPanel({ userId, defaultProjectId = '', organiza
  return <section className={styles.workspace} aria-label="Equipes de trabalho">
   <div className={styles.intro}><div><h2><Users size={22} aria-hidden="true"/>Trabalho em equipe</h2><p>Acompanhe entregas e integrantes no contexto que você pode acessar.</p></div><div className={styles.actions}>
    <button className="p-button" disabled={busy || exporting} onClick={() => { setEditor(null); setAttempt(value => value + 1); }}><RefreshCw size={17} aria-hidden="true"/>Atualizar</button>
-   {canEditTeams && <button className="p-button p-button-primary" disabled={busy || exporting || loading} onClick={() => setEditor('new')}><Plus size={17} aria-hidden="true"/>Nova equipe</button>}
+   {(canEditTeams || data?.scope.canManage) && <button className="p-button p-button-primary" disabled={busy || exporting || loading} onClick={startNewTeam}><Plus size={17} aria-hidden="true"/>Nova equipe</button>}
   </div></div>
   <div className={styles.filters}>
    <label>Organização<select aria-label="Organização" value={organizationId} disabled={busy || exporting} onChange={event => { const org = organizations.find(row => row.id === event.target.value); changeContext(event.target.value, org?.canManage ? '' : projects.find(project => project.organization_id === event.target.value)?.id ?? ''); }}>{!selectedOrganization && <option value={organizationId} disabled>Escolha uma organização disponível</option>}{organizations.map(org => <option value={org.id} key={org.id}>{org.name}</option>)}</select></label>
@@ -154,7 +177,8 @@ export default function WorkTeamsPanel({ userId, defaultProjectId = '', organiza
    <label className={styles.search}>Buscar equipe<div><Search size={17} aria-hidden="true"/><input type="search" value={search} maxLength={100} placeholder="Nome da equipe" onChange={event => setSearch(event.target.value)}/></div></label>
   </div>
   {canQuery&&<InstitutionalStructurePanel userId={userId} organizationId={organizationId} projectId={projectId||null} onSelectTeam={chooseTeam}/>}
-  <p className={styles.help}><ShieldCheck size={16} aria-hidden="true"/><span>Equipes organizam o trabalho; pessoas e permissões são gerenciadas {canOpenAccess ? <>em <a href="?module=team">Pessoas e acessos</a></> : 'pelos responsáveis do projeto'}.</span></p>
+  <p className={styles.help}><ShieldCheck size={16} aria-hidden="true"/><span>Aqui você cria e edita as equipes de trabalho da organização. Elas recebem demandas e podem ser responsáveis por empréstimos, materiais e dinâmicas. Quem entra no portal e com qual permissão fica {canOpenAccess ? <>em <a href="?module=team">Pessoas e acessos</a></> : 'com os responsáveis do projeto'}.</span></p>
+  <p role="status" className={styles.help} hidden={!pinMessage}>{pinMessage}</p>
   {error && <div role="alert" className="p-notice p-notice-error"><p>{error}</p><button className="p-button" onClick={() => { setTeamId(''); setOffset(0); setAttempt(value => value + 1); }}>Consultar novamente</button></div>}
   {!data && !error && <p role="status">{canQuery ? 'Consultando equipes e demandas…' : 'Escolha um projeto permitido para consultar as equipes.'}</p>}
   {loading && <p role="status" className={styles.help}>Atualizando o recorte. O resultado anterior permanece visível até a confirmação.</p>}
@@ -167,9 +191,10 @@ export default function WorkTeamsPanel({ userId, defaultProjectId = '', organiza
     <span className={styles.meter} role="progressbar" aria-valuemin={0} aria-valuemax={Math.max(1,team.counts.total)} aria-valuenow={team.counts.completed} aria-label="Demandas concluídas" aria-valuetext={team.counts.total ? `${team.counts.completed} de ${team.counts.total} demandas concluídas` : 'Sem demandas neste recorte'}><span style={{ width: `${team.counts.total ? team.counts.completed / team.counts.total * 100 : 0}%` }}/></span>
     <span className={styles.cardBottom}><span><CheckCircle2 size={14} aria-hidden="true"/>{quantity(team.counts.completed,'concluída','concluídas')}</span>{Boolean(team.counts.high || team.counts.overdue) && <span className={styles.attention}><Flag size={14} aria-hidden="true"/>{team.counts.overdue ? quantity(team.counts.overdue,'vencida','vencidas') : quantity(team.counts.high,'alta','altas')}</span>}</span>
    </button>)}</div>
-   {!visible.length && <div className={styles.empty}><Users size={28} aria-hidden="true"/><h3>{data.teams.length ? 'Nenhuma equipe neste filtro' : 'Nenhuma equipe disponível neste recorte'}</h3><p>{data.teams.length ? 'Ajuste a busca ou desative Só minhas equipes.' : data.scope.canManage ? 'Cadastre uma equipe na visão da organização e escolha os integrantes.' : 'As equipes aparecem quando você participa delas ou acompanha uma demanda atribuída a elas.'}</p></div>}
+   {!visible.length && <div className={styles.empty}><Users size={28} aria-hidden="true"/><h3>{data.teams.length ? 'Nenhuma equipe neste filtro' : 'Nenhuma equipe disponível neste recorte'}</h3><p>{data.teams.length ? 'Ajuste a busca ou desative Só minhas equipes.' : data.scope.canManage ? 'Crie a primeira equipe da organização e escolha os integrantes. Depois ela aparece para receber demandas e como responsável em empréstimos, materiais e dinâmicas.' : 'As equipes aparecem quando você participa delas ou acompanha uma demanda atribuída a elas. Peça a criação a quem gerencia a organização.'}</p>{!data.teams.length && data.scope.canManage && <button className="p-button p-button-primary" disabled={busy || exporting || loading} onClick={startNewTeam}><Plus size={17} aria-hidden="true"/>Criar equipe</button>}</div>}
    {selected && visible.some(team => team.id === selected.id) && <section className={styles.detail} aria-busy={loading} aria-label={`Equipe ${selected.name}`}>
     <div className={styles.detailHeading}><div><span className={styles.eyebrow}>Equipe de trabalho</span><h3 ref={detailHeading} tabIndex={-1}>{selected.name}</h3><p><FolderKanban size={15} aria-hidden="true"/>{data.scope.projectName}</p></div><div className={styles.actions}>
+     {onTogglePin && selected.status === 'active' && <button className="p-button" aria-pressed={pinnedTeamIds.includes(selected.id)} onClick={() => void togglePin(selected)}>{pinnedTeamIds.includes(selected.id) ? <><PinOff size={16} aria-hidden="true"/>Desafixar</> : <><Pin size={16} aria-hidden="true"/>Fixar no menu</>}</button>}
      {canEditTeams ? <button className="p-button" disabled={busy || exporting || loading} onClick={() => setEditor(selected.id)}><Pencil size={16} aria-hidden="true"/>Editar equipe</button> : data.scope.canManage && <button className="p-button" disabled={busy || exporting} onClick={() => changeContext(organizationId, '')}>Gerenciar equipes da organização</button>}
     </div></div>
     <div className={styles.detailGrid}>

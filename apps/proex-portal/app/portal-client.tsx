@@ -56,6 +56,7 @@ import {MATERIAL_ATTENTION_CHANGED} from '@/components/portal/material-attention
 import OrganizationEmailSettings from '@/components/portal/organization-email-settings';
 import MaterialDetailDrawer from '@/components/portal/material-detail-drawer';
 import MaterialCatalog from '@/components/portal/material-catalog';
+import DynamicsExplainer from '@/components/portal/dynamics-explainer';
 import StockConsumptionPanel from '@/components/portal/stock-consumption-panel';
 import StockUnitDialog from '@/components/portal/stock-unit-dialog';
 import StockContextFields, {stockContextFields} from '@/components/portal/stock-context-fields';
@@ -65,7 +66,8 @@ import { BrandMark } from '@/components/theme/brand-mark';
 import ActivityPanel from '@/components/portal/activity-panel';
 import ProjectOperationalChart from '@/components/portal/project-operational-chart';
 import DashboardPanel from '@/components/portal/dashboard-panel';
-import { DesktopSidebar, MobileNavigation } from '@/components/portal/portal-navigation';
+import { DesktopSidebar, MobileNavigation, type NavSubitems } from '@/components/portal/portal-navigation';
+import { setPinned, usePinnedItems } from '@/components/portal/use-pinned-items';
 import { PORTAL_MODULES, type ModuleId } from '@/components/portal/navigation-model';
 import { useNavigationPreferences } from '@/components/portal/use-navigation-preferences';
 import { useFormDraft, DraftNotice, setDraftScope, clearCurrentDrafts, watchDraftLogout } from '@/components/portal/use-form-draft';
@@ -470,6 +472,9 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
     useEffect(() => { if (!filter || accessibleProjectKey.split('|').includes(filter)) return; const timer = window.setTimeout(() => { setFilter(''); setDraftProject(''); setWorkRecord(null); setSelectedMaterialId(null);setMaterialMode('view'); }, 0); return () => window.clearTimeout(timer); }, [accessibleProjectKey, filter]);
     useEffect(() => { if (!unitFilter || accessibleUnitKey.split('|').includes(unitFilter)) return; const timer = window.setTimeout(() => { setUnitFilter(''); setFilter(''); setDraftProject(''); }, 0); return () => window.clearTimeout(timer); }, [accessibleUnitKey, unitFilter]);
     const navigation = useNavigationPreferences(string(user.userId), allowedTabs.map(module => module.id));
+    // Fixados de projetos e equipes, salvos na conta (0038) e mostrados também no menu lateral.
+    const pins = usePinnedItems(string(user.userId));
+    const [teamIntent, setTeamIntent] = useState<{ kind: 'open' | 'new'; teamId?: string; organizationId?: string; nonce: number } | null>(null);
     setDraftScope(string(user.userId));
     const draftUserId = string(user.userId);
     useEffect(() => watchDraftLogout(draftUserId), [draftUserId]);
@@ -553,6 +558,17 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         applyLocation(next);
         focusModule(true);
     }
+    function openPinnedProject(id: string) {
+        if (!projects.some(project => project.id === id)) return;
+        navigate('projects'); selectProject(id); setWorkRecord({module:'projects',projectId:id,recordId:id});
+    }
+    function openTeams(intent: { kind: 'open' | 'new'; teamId?: string; organizationId?: string }) {
+        setTeamIntent({ ...intent, nonce: Date.now() }); navigate('work-teams');
+    }
+    const navSubitems: NavSubitems = {
+        projects: pins.projectPins.flatMap(id => projects.filter(project => project.id === id)).map(project => ({ id: string(project.id), label: string(project.short_name) || string(project.name), onOpen: () => openPinnedProject(string(project.id)) })),
+        'work-teams': pins.teams.filter(team => pins.teamPins.includes(team.id)).map(team => ({ id: team.id, label: team.name, onOpen: () => openTeams({ kind: 'open', teamId: team.id, organizationId: team.organizationId }) })),
+    };
     function selectProject(id: string) { const project = projects.find(row => row.id === id); if (id && !project) return; if (project && personalOrganization && project.organization_id !== personalOrganization) setPersonalOrganization(''); setWorkRecord(null); setSelectedMaterialId(null);setMaterialMode('view'); if (project && unitFilter && unitOf(project) !== unitFilter) setUnitFilter(unitOf(project) || '__unassigned__'); if (project && areaFilter && !inArea(project)) setAreaFilter(''); setFilter(id); setDraftProject(id); setOfferProject(''); }
     function openProject(id: string) {
         if (!projects.some(project => project.id === id)) return;
@@ -562,7 +578,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         setWorkRecord({ module: 'projects', projectId: id, recordId: id });
     }
     function workContext(projectId: string | null, area: WorkArea, target: {itemId?:string;loanId?:string;campaignId?:string} = {}) {
-        return <WorkContextPanel key={JSON.stringify([user.userId,projectId,area,target])} userId={string(user.userId)} projectId={projectId} area={area} {...target} compact={area === 'projects' || Object.keys(target).length > 0} onPersonal={() => { if (projectId) selectProject(projectId); navigate('my-work'); }} onDemands={allowedTabs.some(module => module.id === 'demands') ? () => { if (projectId) selectProject(projectId); setSelectedDemandId(''); navigate('demands'); } : undefined}/>;
+        return <WorkContextPanel key={JSON.stringify([user.userId,projectId,area,target])} userId={string(user.userId)} projectId={projectId} area={area} {...target} compact={area === 'projects' || Object.keys(target).length > 0} onPersonal={() => { if (projectId) selectProject(projectId); navigate('my-work'); }} onDemands={allowedTabs.some(module => module.id === 'demands') ? () => { if (projectId) selectProject(projectId); setSelectedDemandId(''); navigate('demands'); } : undefined} onCreateTeam={allowedTabs.some(module => module.id === 'work-teams') ? () => openTeams({ kind: 'new', organizationId: string(projects.find(project => project.id === projectId)?.organization_id) || undefined }) : undefined}/>;
     }
     function selectUnit(id: string) { setWorkRecord(null); setSelectedMaterialId(null);setMaterialMode('view'); setUnitFilter(id); setFilter(''); setDraftProject(''); setOfferProject(''); setQuery(''); }
     function selectArea(key: string) { setWorkRecord(null); setSelectedMaterialId(null);setMaterialMode('view'); setAreaFilter(key); setFilter(''); setDraftProject(''); setOfferProject(''); }
@@ -692,7 +708,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         </main>;
     return <div className={`p-shell pn-shell ${navigation.collapsed ? 'pn-is-collapsed' : ''} ${navigation.ready ? 'pn-navigation-ready' : ''}`} onClickCapture={followModuleLink}>
     <a className="p-skip-link" href="#main">Pular para o conteúdo</a>
-    <DesktopSidebar modules={allowedTabs} active={tab} onNavigate={navigate} pinned={navigation.pinned} role={role} collapsed={navigation.collapsed} onToggle={navigation.toggleCollapsed} />
+    <DesktopSidebar modules={allowedTabs} active={tab} onNavigate={navigate} pinned={navigation.pinned} role={role} subitems={navSubitems} collapsed={navigation.collapsed} onToggle={navigation.toggleCollapsed} />
     <div className="p-workspace">
     <header className="p-topbar">
     <button type="button" className="p-mobile-brand" aria-label="PROEX UFG, ir para o início" onClick={() => navigate('overview')}>
@@ -733,7 +749,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         </div>}</div>
     </div>
     </header>
-      <MobileNavigation modules={allowedTabs} active={tab} onNavigate={navigate} pinned={navigation.pinned} role={role} onTogglePin={navigation.togglePin} />
+      <MobileNavigation modules={allowedTabs} active={tab} onNavigate={navigate} pinned={navigation.pinned} role={role} subitems={navSubitems} onTogglePin={navigation.togglePin} />
       <main className="p-main" id="main" tabIndex={-1}>
     <header className={`${headingStyles.heading} ${tab === 'overview' ? headingStyles.welcome : ''}`}>
       {ModuleIcon && <span className={headingStyles.mark} aria-hidden="true"><ModuleIcon size={22}/></span>}
@@ -814,12 +830,13 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
       {tab === 'community' && <CommunityPanel key={`community:${string(user.userId)}`} userId={string(user.userId)} projects={projects.map(project => ({ id: string(project.id), name: string(project.name) }))} prefill={communityPrefill}/>}
 
       {tab === 'projects' && <>
-        <ProjectPanel refreshKey={updatedAt?.getTime() ?? 0} onMaterialOpen={(id,mode='view')=>{setMaterialMode(mode);setSelectedMaterialId(id);}} key={string(user.userId)} userId={string(user.userId)} shortcutModules={allowedTabs.map(module => module.id).filter(id => id === 'demands' || id === 'calendar')} initialProjectId={activeWorkRecord?.module === 'projects' ? activeWorkRecord.recordId : undefined} onDetailChange={id => { if (id) { if (id !== activeWorkRecord?.recordId) pushNavigation.current = true; selectProject(id); setWorkRecord({module:'projects',projectId:id,recordId:id}); } else setWorkRecord(null); }} renderWorkContext={projectId => workContext(projectId,'projects')} organizations={organizations} isPlatformOwner={isPlatformOwner} projects={projects} projectTypes={list(data.projectTypes)} organizationalUnits={organizationalUnits} canCreate={canCreateProjects} canEdit={id => canGlobal('projects.manage') || canProject(id, 'campaigns.manage')} mutate={mutate} onSelect={id => { selectProject(id); navigate('overview'); }}/>
+        <ProjectPanel refreshKey={updatedAt?.getTime() ?? 0} onMaterialOpen={(id,mode='view')=>{setMaterialMode(mode);setSelectedMaterialId(id);}} key={string(user.userId)} userId={string(user.userId)} pinnedProjectIds={pins.projectPins} onTogglePin={(id, pinned) => setPinned('project', id, pinned)} shortcutModules={allowedTabs.map(module => module.id).filter(id => id === 'demands' || id === 'calendar')} initialProjectId={activeWorkRecord?.module === 'projects' ? activeWorkRecord.recordId : undefined} onDetailChange={id => { if (id) { if (id !== activeWorkRecord?.recordId) pushNavigation.current = true; selectProject(id); setWorkRecord({module:'projects',projectId:id,recordId:id}); } else setWorkRecord(null); }} renderWorkContext={projectId => workContext(projectId,'projects')} organizations={organizations} isPlatformOwner={isPlatformOwner} projects={projects} projectTypes={list(data.projectTypes)} organizationalUnits={organizationalUnits} canCreate={canCreateProjects} canEdit={id => canGlobal('projects.manage') || canProject(id, 'campaigns.manage')} mutate={mutate} onSelect={id => { selectProject(id); navigate('overview'); }}/>
         {/* Importar fica depois da lista e se esconde (sem perder a prévia) na ficha aberta: o projeto vem primeiro. */}
         <div hidden={Boolean(activeWorkRecord?.module === 'projects' && activeWorkRecord.recordId)}><AssistedImportPanel kind="project" organizations={organizations} projects={projects.map(project => ({ id: string(project.id), name: string(project.name), organization_id: string(get(project, 'organization_id', 'organizationId')), version: Number(project.version ?? 1) }))} projectTypes={list(data.projectTypes).map(type => ({ id: string(type.id), label: string(type.label) }))} organizationalUnits={organizationalUnits.map(unit => ({ id: string(unit.id), name: string(unit.name), acronym: string(unit.acronym) }))} canCreateProject={canCreateProjects} canWrite={id => canProject(id, 'campaigns.manage')} defaultProjectId={filter} onImported={refreshModules}/></div>
       </>}
 
       {tab === 'events' && <>
+        <DynamicsExplainer dynamics={visibleCampaigns.map(c => ({ id: string(c.id), name: string(c.name), status: string(c.status), projectId: string(get(c, 'projectId', 'project_id')), projectName: projectName(get(c, 'projectId', 'project_id')), hosts: (Array.isArray(c.host_project_ids) ? c.host_project_ids as string[] : []).flatMap(id => projects.filter(project => project.id === id)).map(project => ({ id: string(project.id), name: string(project.name) })) }))} onOpenProject={allowedTabs.some(module => module.id === 'projects') ? openPinnedProject : undefined}/>
         {/* No evento, o atendimento vem antes da lista de dinâmicas. */}
         {can('participation.operate') && <Section title="Operação presencial" description="A equipe acompanha o resultado e utiliza as mesmas regras de participação da campanha.">
             <PhysicalAttendance campaigns={visibleCampaigns.filter(c => canProject(get(c, 'projectId', 'project_id'), 'participation.operate'))} tickets={byProject(list(data.physicalTickets))} mutate={mutate}/>
@@ -829,7 +846,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
                 <span className="p-kicker">{projectName(get(c, 'projectId', 'project_id'))}</span>
                 <Badge status={c.status}/>
                 </div>
-                <h3>{c.name}</h3>{workContext(string(get(c,'projectId','project_id')),'campaigns',{campaignId:string(c.id)})}
+                <h3>{c.name}</h3>{Array.isArray(c.host_project_ids) && (c.host_project_ids as string[]).some(id => projects.some(project => project.id === id)) && <p className="p-form-help">No evento {(c.host_project_ids as string[]).flatMap(id => projects.filter(project => project.id === id)).map(project => string(project.name)).join(', ')}</p>}{workContext(string(get(c,'projectId','project_id')),'campaigns',{campaignId:string(c.id)})}
                 <p>{c.location || 'Local não informado'}</p>
                 <div className="p-event-date">
                 <CalendarDays size={17}/>
@@ -1034,7 +1051,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
             </OperationForm>
             </Section></div>}</>}
 
-      {tab === 'work-teams' && <WorkTeamsPanel key={`${string(user.userId)}:${filter}`} userId={string(user.userId)} defaultProjectId={filter} organizations={organizations} projects={projects.map(project => ({id:string(project.id),name:string(project.name),organization_id:string(project.organization_id)}))} canOpenAccess={allowedTabs.some(module=>module.id==='team')} onChanged={refreshModules} onOpenDemand={(id,projectId)=>{selectProject(projectId??'');setSelectedDemandId(id);navigate('demands');}}/>}
+      {tab === 'work-teams' && <WorkTeamsPanel key={`${string(user.userId)}:${filter}:${teamIntent?.nonce ?? 0}`} userId={string(user.userId)} intent={teamIntent} pinnedTeamIds={pins.teamPins} onTogglePin={(id, pinned) => setPinned('team', id, pinned)} defaultProjectId={filter} organizations={organizations} projects={projects.map(project => ({id:string(project.id),name:string(project.name),organization_id:string(project.organization_id)}))} canOpenAccess={allowedTabs.some(module=>module.id==='team')} onChanged={refreshModules} onOpenDemand={(id,projectId)=>{selectProject(projectId??'');setSelectedDemandId(id);navigate('demands');}}/>}
       {tab === 'team' && <><OrganizationsPanel organizations={organizations} currentActor={{ userId: string(user.userId), isPlatformOwner }} people={organizationPeople} onChanged={refreshModules}/>{organizations.filter(organization=>organization.canManage||isPlatformOwner).map(organization=><DirectoryPanel key={organization.id} userId={string(user.userId)} organizationId={organization.id}/>)}<OfficialTeamDirectory onSelect={canAny('access.invite') ? setOfficialSuggestion : undefined}/><TeamPanel key={officialSuggestion?.selectionKey ?? `manual:${filter}`} officialSuggestion={officialSuggestion} onClearOfficialSuggestion={() => setOfficialSuggestion(null)} users={list(data.users)} members={members} invites={invites} projects={projects} selectedProjectId={filter} globalAdmin={isPlatformOwner} canManageManagers={(projectId, organizationId) => isPlatformOwner || organizations.some(organization => organization.canManage && organization.id === (projectId ? projects.find(project => project.id === projectId)?.organization_id : organizationId))} canProject={canProject} mutate={mutate} now={now}/>{canGlobal('organization.manage') && <AdminPrivacyPanel />}</>}
       {tab === 'profile' && <><McpConnectionsPanel key={`mcp-${string(user.userId)}`}/><ProfilePanel onUpdated={() => { void refresh(); }}/></>}
       {tab === 'calendar' && <CalendarPanel projects={projects} organizationalUnits={visibleUnits} selectedProjectId={filter} selectedUnitId={unitFilter} onProjectChange={selectProject} onUnitChange={selectUnit}/>}

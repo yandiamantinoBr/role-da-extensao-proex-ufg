@@ -16,6 +16,8 @@ export type ResponsibilityManagerProps = {
   loanId?: string | null;
   campaignId?: string | null;
   onChanged?: () => void;
+  /** Leva à página Equipes com o formulário de nova equipe aberto. */
+  onCreateTeam?: () => void;
 };
 type Draft = {owner: string; userIds: string[]; teamIds: string[]};
 type Load = {key: string; catalog?: ResponsibilityCatalog; record?: Responsibility; error?: string};
@@ -27,7 +29,7 @@ function sameTarget(row: Responsibility, projectId: string, area: WorkArea, item
   return row.project_id === projectId && row.area === area && row.item_id === itemId && row.loan_id === loanId && row.campaign_id === campaignId;
 }
 
-export default function ResponsibilityManager({userId, projectId, area, itemId = null, loanId = null, campaignId = null, onChanged}: ResponsibilityManagerProps) {
+export default function ResponsibilityManager({userId, projectId, area, itemId = null, loanId = null, campaignId = null, onChanged, onCreateTeam}: ResponsibilityManagerProps) {
   const owner = JSON.stringify([userId, projectId, area, itemId, loanId, campaignId]);
   const [revision, setRevision] = useState(0), [stored, setStored] = useState<Load | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null), [feedback, setFeedback] = useState<Feedback | null>(null);
@@ -113,7 +115,7 @@ export default function ResponsibilityManager({userId, projectId, area, itemId =
       {catalog && Object.values(catalog.truncated).some(Boolean) && <p className={styles.help}>O catálogo de registros é parcial. Esta edição se refere somente ao alvo selecionado acima.</p>}
       <form className={styles.form} onSubmit={save}><fieldset disabled={busy}><div className={styles.choices}>
         <fieldset><legend>Pessoas responsáveis</legend><div className={styles.options}>{catalog?.people.map(person => <label key={person.userId}><input type="checkbox" name={`person:${person.userId}`} checked={selected.userIds.includes(person.userId)} onChange={() => toggle('userIds', person.userId)}/><span>{person.name}</span></label>)}{!catalog?.people.length && <p>Nenhuma pessoa elegível neste contexto.</p>}</div></fieldset>
-        <fieldset><legend>Equipes responsáveis</legend><div className={styles.options}>{catalog?.teams.map(team => <label key={team.id}><input type="checkbox" name={`team:${team.id}`} checked={selected.teamIds.includes(team.id)} onChange={() => toggle('teamIds', team.id)}/><span>{team.name}</span></label>)}{!catalog?.teams.length && <p>Nenhuma equipe elegível neste contexto.</p>}</div></fieldset>
+        <fieldset><legend>Equipes responsáveis</legend><div className={styles.options}>{catalog?.teams.map(team => <label key={team.id}><input type="checkbox" name={`team:${team.id}`} checked={selected.teamIds.includes(team.id)} onChange={() => toggle('teamIds', team.id)}/><span>{team.name}</span></label>)}{!catalog?.teams.length && <p>Nenhuma equipe criada nesta organização ainda. As equipes são criadas e editadas na página Equipes.{onCreateTeam && <> <button type="button" className="p-text-link" onClick={onCreateTeam}>Criar equipe em Equipes</button></>}</p>}</div></fieldset>
       </div><p className={styles.summary}>{selected.userIds.length} pessoa{selected.userIds.length !== 1 && 's'} e {selected.teamIds.length} equipe{selected.teamIds.length !== 1 && 's'} selecionadas. A designação não concede acesso ao projeto, estoque ou administração.</p><div className={styles.actions}><button type="submit" className="p-button p-button-primary">{busy ? 'Confirmando…' : record?.status === 'active' ? 'Salvar responsáveis' : 'Designar responsáveis'}</button>{record?.status === 'active' && <button type="button" className={`p-button ${styles.danger}`} onClick={() => setConfirmOwner(owner)}>Revogar designação</button>}</div></fieldset></form>
       {confirming && <section className={styles.confirmation} aria-label="Confirmar revogação"><h4>Revogar esta designação?</h4><p>As pessoas e equipes deixam de ser responsáveis por este registro. O histórico será preservado.</p><div className={styles.actions}><button type="button" className={`p-button ${styles.danger}`} disabled={busy} onClick={() => void submit(true)}>Confirmar revogação</button><button type="button" className="p-button" disabled={busy} onClick={() => setConfirmOwner(null)}>Manter designação</button></div></section>}
     </>}
