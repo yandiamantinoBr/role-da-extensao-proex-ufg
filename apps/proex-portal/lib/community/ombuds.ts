@@ -17,6 +17,21 @@ export const OMBUDS_CATEGORIES = ['conduct', 'workload', 'environment', 'process
 const STATUSES = ['received', 'reviewing', 'answered', 'closed'] as const;
 export const OMBUDS_DAILY_REPORTS = 40;
 export const OMBUDS_DAILY_MESSAGES_PER_REPORT = 10;
+/** Collective ceiling for reporter messages per day, so the shared database cannot be inflated. */
+export const OMBUDS_DAILY_MESSAGES = 200;
+/*
+ * Per-person brake kept ONLY in this process's memory (never written anywhere, lost on restart or on another
+ * serverless instance). It slows down one person flooding the collective ceiling without creating a record.
+ */
+export const OMBUDS_MEMORY_LIMIT = 5, OMBUDS_MEMORY_WINDOW_MS = 3600000;
+const memoryBrake = new Map<string, number[]>();
+export function resetOmbudsMemoryBrake() { memoryBrake.clear(); }
+function brake(userId: string, now = Date.now()) {
+  const recent = (memoryBrake.get(userId) ?? []).filter(at => now - at < OMBUDS_MEMORY_WINDOW_MS);
+  if (recent.length >= OMBUDS_MEMORY_LIMIT) throw new HttpError(429, 'Você enviou muitas mensagens à ouvidoria em pouco tempo. Tente de novo mais tarde.', 'ombuds_memory_limit');
+  recent.push(now); memoryBrake.set(userId, recent);
+  if (memoryBrake.size > 5000) for (const [key, times] of memoryBrake) if (!times.some(at => now - at < OMBUDS_MEMORY_WINDOW_MS)) memoryBrake.delete(key);
+}
 const today = () => serverWorkClock().today;
 
 async function codeHash(code: string) {
@@ -57,6 +72,7 @@ export async function ombudsReporterAction(db: D1Database, rawActor: PortalActor
       if (existing.first === body) return { received: true, duplicate: true };
       throw new HttpError(409, 'Este código já foi usado. Gere um novo código antes de enviar.', 'ombuds_code_used');
     }
+    brake(actor.userId);
     const id = uid(), day = today();
     try {
       await db.batch([
@@ -88,11 +104,13 @@ export async function ombudsReporterAction(db: D1Database, rawActor: PortalActor
     const body = personText(input.body, 2, 4000, 'Escreva a mensagem em 2 a 4.000 caracteres.');
     const report = await one(db, 'SELECT id FROM ombuds_reports WHERE code_hash=?', [hash]);
     if (!report) throw new HttpError(404, 'Nenhum relato com este código. Confira as letras e os números.', 'ombuds_not_found');
+    brake(actor.userId);
     const day = today();
     try {
       await db.batch([
         db.prepare(guard(member.sql, 'community_access_changed')).bind(...member.values),
         db.prepare(guard("(SELECT status FROM ombuds_reports WHERE id=?)!='closed'", 'ombuds_closed')).bind(report.id),
+        db.prepare(guard("(SELECT COUNT(*) FROM ombuds_messages WHERE side='reporter' AND sent_on=? AND seq>1)<?", 'ombuds_message_limit')).bind(day, OMBUDS_DAILY_MESSAGES),
         db.prepare(guard("(SELECT COUNT(*) FROM ombuds_messages WHERE report_id=? AND side='reporter' AND sent_on=?)<?", 'ombuds_message_limit')).bind(report.id, day, OMBUDS_DAILY_MESSAGES_PER_REPORT),
         db.prepare("INSERT INTO ombuds_messages(id,report_id,side,body,sent_on,seq) VALUES(?,?,'reporter',?,?,(SELECT COALESCE(MAX(seq),0)+1 FROM ombuds_messages WHERE report_id=?))").bind(uid(), report.id, body, day, report.id),
         db.prepare("UPDATE ombuds_reports SET status='received',updated_on=?,version=version+1 WHERE id=?").bind(day, report.id),

@@ -69,7 +69,8 @@ export async function widgetAction(db: D1Database, rawActor: PortalActor | null,
     const day = input.kind === 'reminder' ? dueOn(input.dueOn) : null, time = input.kind === 'reminder' ? dueTime(input.dueTime) : null;
     if (input.kind === 'note' && (input.dueOn || input.dueTime)) throw new HttpError(400, 'Anotações não têm data. Use um lembrete.', 'invalid_note_fields');
     if (time && !day) throw new HttpError(400, 'Escolha a data antes da hora.', 'invalid_reminder_time');
-    const mutation = await prepareMutation(db, actor.userId, `widget.${input.kind}.create`, { kind: input.kind, body, dueOn: day, dueTime: time, operationKey: input.operationKey });
+    // The private text is deliberately left out of the idempotency fingerprint (mutation_keys outlives the note).
+    const mutation = await prepareMutation(db, actor.userId, `widget.${input.kind}.create`, { kind: input.kind, dueOn: day, dueTime: time, operationKey: input.operationKey });
     if (mutation.existingId) return { id: mutation.existingId, duplicate: true };
     const id = uid();
     const limit = input.kind === 'note'

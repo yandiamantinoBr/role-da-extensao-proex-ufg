@@ -17,7 +17,7 @@ const access=await import(compile('lib/access.ts')),feedback=await import(compil
 const ombuds=await import(compile('lib/community/ombuds.ts')),widgets=await import(compile('lib/community/widgets.ts')),codes=await import(compile('lib/community/ombuds-code.ts'));
 const ombudsRoute=await import(compile('app/api/community/ombuds/route.ts')),privacy=await import(compile('lib/privacy.ts'));
 
-function fixture(t){const native=new DatabaseSync(':memory:');native.exec('PRAGMA foreign_keys=ON');for(const f of readdirSync(`${root}drizzle`).filter(x=>x.endsWith('.sql')).sort())native.exec(readFileSync(`${root}drizzle/${f}`,'utf8'));const now=new Date().toISOString();
+function fixture(t){ombuds.resetOmbudsMemoryBrake();const native=new DatabaseSync(':memory:');native.exec('PRAGMA foreign_keys=ON');for(const f of readdirSync(`${root}drizzle`).filter(x=>x.endsWith('.sql')).sort())native.exec(readFileSync(`${root}drizzle/${f}`,'utf8'));const now=new Date().toISOString();
  const insert=(table,row)=>{const cols=Object.keys(row);native.prepare(`INSERT INTO ${table}(${cols.join(',')}) VALUES(${cols.map(()=>'?').join(',')})`).run(...Object.values(row));};
  const db={beforeBatch:null,prepare(sql){let values=[];return{bind(...args){values=args;return this;},async first(column){const row=native.prepare(sql).get(...values)??null;return column?row?.[column]??null:row;},async all(){return{results:native.prepare(sql).all(...values),success:true};},async run(){return this.execute();},execute(){const results=native.prepare(sql).all(...values);return{results,success:true,meta:{changes:Number(native.prepare('SELECT changes() AS n').get().n)}};}};},async batch(statements){if(this.beforeBatch){const hook=this.beforeBatch;this.beforeBatch=null;hook();}native.exec('BEGIN');try{const r=statements.map(s=>s.execute());native.exec('COMMIT');return r;}catch(e){native.exec('ROLLBACK');throw e;}}};
  const user=async(id,role,project=null,org=null)=>{insert('portal_users',{user_id:id,email:`${id}@example.invalid`,status:'active',created_at:now,updated_at:now});insert('profiles',{user_id:id,display_name:`Pessoa ${id}`,created_at:now,updated_at:now});if(role)insert('members',{id:`m-${id}`,user_id:id,email:`${id}@example.invalid`,role,project_id:project,organization_id:org,created_at:now});return access.getActor(db,{userId:id,email:`${id}@example.invalid`,displayName:`Pessoa ${id}`});};
@@ -68,10 +68,12 @@ test('only the platform owner reads the ombuds inbox and replies; the reply is a
  await assert.rejects(()=>ombuds.ombudsReporterAction(f.db,a,{action:'reply',code,body:'Mais um detalhe.'}),e=>e.status===409&&e.code==='ombuds_closed');
  await assert.rejects(()=>ombuds.ombudsManageAction(f.db,owner,{action:'status',id:report.id,status:'received',expectedVersion:report.version+2}),e=>e.status===400);});
 
-test('ombuds abuse limits are collective, never per person',async t=>{const f=fixture(t),a=await f.user('a','viewer','p-a','o-a');for(let i=0;i<ombuds.OMBUDS_DAILY_REPORTS;i++)await ombuds.ombudsReporterAction(f.db,a,{action:'submit',code:codes.newOmbudsCode(),category:'other',body:`Relato sintético número ${i} para o limite.`});
+test('ombuds abuse limits are collective, never per person',async t=>{const f=fixture(t),a=await f.user('a','viewer','p-a','o-a');for(let i=0;i<ombuds.OMBUDS_DAILY_REPORTS;i++){ombuds.resetOmbudsMemoryBrake();await ombuds.ombudsReporterAction(f.db,a,{action:'submit',code:codes.newOmbudsCode(),category:'other',body:`Relato sintético número ${i} para o limite.`});}
+ ombuds.resetOmbudsMemoryBrake();
  await assert.rejects(()=>ombuds.ombudsReporterAction(f.db,a,{action:'submit',code:codes.newOmbudsCode(),category:'other',body:'Um relato além do limite do dia.'}),e=>e.status===429);
  const code=codes.newOmbudsCode();f.native.exec('DELETE FROM ombuds_messages;DELETE FROM ombuds_reports');await ombuds.ombudsReporterAction(f.db,a,{action:'submit',code,category:'other',body:'Relato para o limite de mensagens.'});
- for(let i=1;i<ombuds.OMBUDS_DAILY_MESSAGES_PER_REPORT;i++)await ombuds.ombudsReporterAction(f.db,a,{action:'reply',code,body:`Complemento ${i}`});
+ for(let i=1;i<ombuds.OMBUDS_DAILY_MESSAGES_PER_REPORT;i++){ombuds.resetOmbudsMemoryBrake();await ombuds.ombudsReporterAction(f.db,a,{action:'reply',code,body:`Complemento ${i}`});}
+ ombuds.resetOmbudsMemoryBrake();
  await assert.rejects(()=>ombuds.ombudsReporterAction(f.db,a,{action:'reply',code,body:'Complemento além do limite'}),e=>e.status===429);});
 
 test('ombuds route: reporter actions read the session without refresh, CSRF and private headers',async t=>{const f=fixture(t);await f.user('a','viewer','p-a','o-a');globalThis.__communityTest={db:f.db,user:{userId:'a',email:'a@example.invalid',displayName:'Pessoa a'}};const origin='https://portal.example.invalid',headers={Origin:origin,'X-Proex-Action':'1','Content-Type':'application/json'};const post=(h,body)=>new Request(`${origin}/api/community/ombuds`,{method:'POST',headers:h,body});
@@ -113,3 +115,12 @@ test('feedback: praise and event feedback reach the managers of the event projec
  const own=(await feedback.feedbackList(f.db,a)).entries[0];assert.equal(own.response,'Obrigado! Vamos repassar à equipe.');assert.equal(own.status,'resolved');assert.ok(own.responded_at);
  assert.equal(count(f,'audit',"action='feedback.respond' AND actor_id='m'"),1);
  await assert.rejects(()=>feedback.feedbackAction(f.db,manager,{action:'respond',id:created.id,status:'resolved',response:'x',expectedVersion:2}),e=>e.status===400);});
+
+test('ombuds per-person brake lives only in memory and the collective message ceiling holds',async t=>{const f=fixture(t),a=await f.user('a','viewer','p-a','o-a');const before=dump(f.native).size;
+ for(let i=0;i<ombuds.OMBUDS_MEMORY_LIMIT;i++)await ombuds.ombudsReporterAction(f.db,a,{action:'submit',code:codes.newOmbudsCode(),category:'other',body:`Relato sintético do freio ${i}.`});
+ await assert.rejects(()=>ombuds.ombudsReporterAction(f.db,a,{action:'submit',code:codes.newOmbudsCode(),category:'other',body:'Um a mais dentro da hora.'}),e=>e.status===429&&e.code==='ombuds_memory_limit');
+ assert.equal(dump(f.native).size-before,ombuds.OMBUDS_MEMORY_LIMIT*2,'the brake writes nothing: only the reports and their first messages');
+ ombuds.resetOmbudsMemoryBrake();const code=codes.newOmbudsCode();await ombuds.ombudsReporterAction(f.db,a,{action:'submit',code,category:'other',body:'Relato para o teto coletivo.'});
+ const id=f.native.prepare('SELECT report_id FROM ombuds_messages WHERE seq=1 LIMIT 1').get().report_id,day=f.native.prepare('SELECT sent_on FROM ombuds_messages LIMIT 1').get().sent_on;
+ const put=f.native.prepare("INSERT INTO ombuds_messages(id,report_id,side,body,sent_on,seq) VALUES(?,?,'reporter','x',?,?)");for(let i=0;i<ombuds.OMBUDS_DAILY_MESSAGES;i++)put.run(crypto.randomUUID(),id,day,100+i);
+ ombuds.resetOmbudsMemoryBrake();await assert.rejects(()=>ombuds.ombudsReporterAction(f.db,a,{action:'reply',code,body:'Além do teto coletivo.'}),e=>e.status===429);});

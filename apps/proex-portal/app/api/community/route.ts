@@ -9,7 +9,8 @@ export const dynamic = 'force-dynamic';
 /** What the Community module may show to this person: management boxes and the events they can give feedback on. */
 export async function GET() {
   try {
-    const db = database(), actor = requireActor(await getActor(db, await getPortalUser()));
+    // No session refresh: opening the Community tab must not write anything about the account (ombuds lives here).
+    const db = database(), actor = requireActor(await getActor(db, await getPortalUser({ refresh: false })));
     await requireInternalMember(db, actor);
     const read = projectAuthoritySql(actor, [], 'c.project_id');
     const events = await all(db, `SELECT c.id,c.name,c.project_id projectId,p.name projectName,c.starts_at startsAt FROM campaigns c JOIN projects p ON p.id=c.project_id

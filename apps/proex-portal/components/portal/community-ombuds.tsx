@@ -34,7 +34,7 @@ export function OmbudsReporter() {
       <button type="button" aria-pressed={mode === 'new'} onClick={() => setMode('new')}><Send size={16} aria-hidden="true"/>Fazer um relato</button>
       <button type="button" aria-pressed={mode === 'track'} onClick={() => setMode('track')}><KeyRound size={16} aria-hidden="true"/>Já tenho um código</button>
     </div>
-    <p className={styles.guarantee}><ShieldCheck size={18} aria-hidden="true"/><span><strong>Este relato não fica ligado à sua conta.</strong> O portal não grava seu nome, seu e-mail, seu projeto nem a hora do envio, e nem a administração consegue ver quem escreveu.</span></p>
+    <p className={styles.guarantee}><ShieldCheck size={18} aria-hidden="true"/><span><strong>Este relato não fica ligado à sua conta.</strong> O portal não grava seu nome, seu e-mail, seu projeto nem a hora do envio, e a tela da ouvidoria não mostra quem escreveu.</span></p>
     {mode === 'track' ? <Track initialCode={submitted}/>
       : submitted ? <Submitted code={submitted} onTrack={() => setMode('track')} onNew={() => { setSubmitted(''); setCode(newOmbudsCode()); }}/>
       : <NewReport code={code} onRegenerate={() => setCode(newOmbudsCode())} onSent={() => setSubmitted(code)}/>}
@@ -48,7 +48,8 @@ function Anonymity() {
       <li>Fica guardado só o tema, o texto, as respostas e o dia (sem hora).</li>
       <li>O código fica só com você. O portal guarda apenas uma impressão dele, que não permite descobrir o código.</li>
       <li>Você entra com sua conta só para provar que é da equipe. Esse vínculo não é gravado com o relato.</li>
-      <li>Limites: a hospedagem do site registra horários e endereços de rede dos acessos, e o próprio texto pode identificar você. Evite nomes e detalhes que só você saberia.</li>
+      <li>Limites: quem administra a hospedagem e o banco poderia, com esforço técnico, cruzar horários de acesso e endereços de rede com o momento aproximado do envio. O próprio texto também pode identificar você. Evite nomes e detalhes que só você saberia.</li>
+      <li>Se copiar o código, lembre que o Windows e alguns celulares guardam o histórico do que foi copiado.</li>
     </ul>
   </details>;
 }

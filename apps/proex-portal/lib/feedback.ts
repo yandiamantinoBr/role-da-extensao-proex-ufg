@@ -57,7 +57,7 @@ export async function feedbackAction(db: D1Database, actor: PortalActor | null, 
     for (const value of [projectId, campaignId]) if (value !== null && (typeof value !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(value))) throw new HttpError(400, 'Escolha um projeto ou evento permitido.', 'invalid_project');
     if (campaignId !== null) {
       const campaign = await one(db, 'SELECT project_id FROM campaigns WHERE id=?', [campaignId]);
-      if (!campaign || (projectId !== null && projectId !== campaign.project_id)) throw new HttpError(403, 'Você não tem mais acesso a este evento.', 'feedback_access_changed');
+      if (!campaign || (projectId !== null && projectId !== campaign.project_id)) throw new HttpError(403, 'Você não tem mais acesso a este projeto.', 'feedback_access_changed');
       projectId = String(campaign.project_id);
     }
     const project = projectAuthoritySql(actor, [], '?');

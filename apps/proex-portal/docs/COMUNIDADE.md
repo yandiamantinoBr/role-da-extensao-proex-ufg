@@ -34,11 +34,17 @@ O anonimato vem do que **não é gravado**:
 - As tabelas são `WITHOUT ROWID` com identificador aleatório; a ordem física não revela a ordem de chegada.
 - O código de acompanhamento (`OUV-` + 20 símbolos Crockford, 100 bits) é gerado no navegador. O servidor guarda só `SHA-256("proex-ouvidoria:v1:" + código)`. O código viaja no corpo do POST, nunca na URL.
 - As ações de quem relata (`submit`, `track`, `reply`) leem a sessão com `getPortalUser({ refresh: false })`: confirmam o vínculo interno e não renovam a sessão, para não gravar nada da conta naquele momento. Não gravam auditoria, `mutation_keys` nem contador de limite por pessoa.
-- Limites coletivos: 40 relatos novos por dia no portal e 10 mensagens de quem relata por relato por dia.
+- Limites coletivos: 40 relatos novos por dia no portal, 10 mensagens de quem relata por relato por dia e 200 mensagens de acompanhamento por dia no portal. Há também um freio por pessoa (5 envios por hora) guardado **só na memória do processo**: não é gravado, some ao reiniciar e não vale entre instâncias.
+- A leitura `GET /api/community` (abrir a Comunidade) também não renova a sessão.
+- O texto das anotações pessoais não entra na impressão de idempotência (`mutation_keys`), que sobrevive à anotação.
 - O formulário não usa rascunho local, não fica no `localStorage` e não passa pelo Rolê.
 - As respostas da ouvidoria são auditadas com o identificador de quem respondeu (`ombuds.respond`, `ombuds.status`).
 
-Riscos que o código não elimina: registros de acesso da hospedagem (hora e rede), texto que identifica quem escreveu e equipes muito pequenas. O histórico de instantâneos no Supabase guarda no máximo uma cópia a cada 6 horas, então não permite localizar o envio pela ordem das gravações.
+Riscos que o código não elimina (revisão independente de 09/11):
+
+- **Quem administra a hospedagem e o banco** pode cruzar o registro de pedidos da Vercel (hora, rede, navegador) com `auth_session` (que guarda IP e navegador do login) e estimar o autor. O instantâneo atual guarda `updated_at`; o histórico guarda uma cópia na primeira gravação depois de 6 horas, que pode coincidir com o relato; um gatilho no Postgres ou PITR também guardariam versões. A tela diz que o anonimato vale para quem lê pelo portal, não contra quem administra a infraestrutura.
+- O texto pode identificar quem escreveu; equipes muito pequenas reduzem o anonimato.
+- Pendência para a frente de segurança: avaliar desligar o registro de IP e navegador nas sessões do Better Auth (`advanced.ipAddress.disableIpTracking` e user-agent), pesando o efeito no limite de tentativas de login. A longo prazo, um token cego emitido fora do momento do envio desligaria conta e relato.
 
 ## Testes
 
