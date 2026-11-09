@@ -26,6 +26,7 @@ function harness(storage = new Map()) {
   useState(initial) { const key = index++; if (!(key in slots)) slots[key] = { value: typeof initial === 'function' ? initial() : initial }; return [slots[key].value, next => { slots[key].value = typeof next === 'function' ? next(slots[key].value) : next; }]; },
   useRef(initial) { const key = index++; slots[key] ??= { value: { current: initial } }; return slots[key].value; },
   useMemo(callback) { index++; return callback(); },
+  useId() { index++; return "report"; },
   useCallback(callback) { index++; return callback; },
   useEffect(callback, deps) { const key = index++; if (!same(slots[key]?.deps, deps)) pendingEffects.push(() => { slots[key]?.cleanup?.(); slots[key] = { deps, cleanup: callback() }; }); },
  };
