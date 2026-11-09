@@ -19,3 +19,5 @@
 .metric{background:var(--surface-soft);box-shadow:none}
 .metric strong{font-family:var(--font-display);letter-spacing:-.03em;color:var(--metric-tone,var(--brand-ink))}
 .metric{border:1px solid var(--line)}
+.metric strong{font-size:28px}
+.metric>span{font-weight:600;color:var(--ink)}
