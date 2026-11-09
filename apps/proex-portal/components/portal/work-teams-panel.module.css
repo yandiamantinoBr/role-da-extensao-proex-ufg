@@ -3,7 +3,7 @@
 /* O título do módulo já diz "Equipes": este h2 fica só para leitores de tela. */
 .intro h2 { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .intro p,.detailHeading p,.chart > p,.members > p,.taskHeading p,.updated { color: var(--muted); font-size: 13px; line-height: 1.6; }
-.actions,.exports { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .workspace :is(button,a) { touch-action: manipulation; }
 .workspace :is(button,a,input,select):focus-visible { outline: 3px solid var(--brand-ink); outline-offset: 3px; }
 .workspace button { cursor: pointer; }
@@ -63,8 +63,6 @@
 .person small { display: block; color: var(--brand-ink); font-size: 11px; }
 .avatar { flex-shrink: 0; display: grid; place-items: center; width: 29px; height: 29px; border-radius: 50%; background: var(--surface-soft); color: var(--brand-ink); font-weight: 700; }
 .taskHeading { padding-top: 16px; border-top: 1px solid var(--line); }
-.exports > svg { color: var(--muted); }
-.exports button { font-size: 12px; padding-inline: 11px; }
 .tasks { display: grid; gap: 12px; }
 .empty,.emptyTasks { padding: 24px 16px; border: 1px dashed var(--line); border-radius: 15px; background: var(--surface); text-align: center; color: var(--muted); font-size: 13px; line-height: 1.6; }
 .empty > svg { margin: 0 auto 10px; color: var(--brand-ink); }

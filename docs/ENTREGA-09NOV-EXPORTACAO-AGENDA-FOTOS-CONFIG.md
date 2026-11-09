@@ -43,3 +43,23 @@ Branch `claude/mystifying-sanderson-7b4c51`. Quatro pontos de uso pedidos pelo Y
 - 1375/1375 testes do portal, tipos, lint (0 erros), `build` e `build:node`.
 - QA local sintético na porta 5174. A 5173 estava com o QA da sessão visual, então usei uma cópia temporária do script, apagada depois. Capturas em 390 e 1366 px, nos temas claro e escuro, de Agenda, Materiais, Relatórios, central e Configurações, sem rolagem horizontal.
 - Revisão independente (segurança e interface): 8/10 sem P0/P1. Os quatro P2 e os P3 de texto, cache, calendário e central foram corrigidos e testados.
+
+## Publicação e acabamento (PR50 e PR de acabamento)
+
+- PR50 publicada em `79e169a` (`dpl_J4MwUHWBD9LxMzz8vxRGAWfcoWFb`). No Chrome, com a conta do Yan e só leitura:
+  - oito cliques no dia 19, e um clique real de mouse, deixaram a página em 300 px;
+  - 2 miniaturas carregaram e 14 itens mostram o marcador neutro, sem imagem quebrada;
+  - os nove arquivos do servidor vieram com status 200, nomes em português e estrutura válida (conferida na página, sem salvar em disco);
+  - Configurações aparece reorganizada, e a central de chaves abre e carrega.
+- Segunda revisão independente: 8,6/10, sem P0/P1. Corrigido no acabamento:
+  - valores `miss`, `retry_exhausted` e `pending` agora saem em português;
+  - os botões não vazam mais entre 375 e 420 px (passam a ladrilhos);
+  - aviso de sucesso "Arquivo XLSX pronto para baixar.";
+  - fonte e marcas PROEX/UFG do PDF com tempo limite e reaproveitadas entre pedidos;
+  - loopback só fora de produção;
+  - "compromissos" na Agenda;
+  - "Demandas" só aparece em Configurações para quem tem a aba;
+  - CSS sem uso removido;
+  - o índice de Configurações espera a central carregar antes de rolar;
+  - Registros com rótulo "Baixar registros".
+- Fica para outra versão: variante pequena (96 px) da foto, gerada no envio, para a lista.

@@ -27,7 +27,7 @@ const VALUES: Record<string, Record<string, string>> = {
   categoria: { gift: 'Brinde', equipment: 'Equipamento', distribution: 'Distribuição', consumption: 'Consumo' },
   condicao: { active: 'Ativo', maintenance: 'Em manutenção', inactive: 'Inativo' },
   identificacao: { account: 'Conta', ticket: 'Ficha presencial' },
-  resultado: { brinde: 'Brinde', super: 'Prêmio especial', retry: 'Nova tentativa' },
+  resultado: { brinde: 'Brinde', super: 'Prêmio especial', retry: 'Nova tentativa', miss: 'Não foi dessa vez', retry_exhausted: 'Tentativas esgotadas', pending: 'Aguardando resultado' },
   estado: { ready: 'Pronta', done: 'Concluída', pending: 'Pendente', physical_pending: 'Aguardando atendimento', retry_ready: 'Nova tentativa liberada', reserved: 'Reservado', delivered: 'Entregue', cancelled: 'Cancelado', out: 'Retirado', returned: 'Devolvido' },
 };
 const FILE_SLUG: Record<string, string> = { participations: 'participacao', stock: 'materiais', loans: 'emprestimos' };
@@ -37,19 +37,40 @@ const KNOWN_LIMITS = /2\.000 linhas|muito extenso|páginas/;
 const NUMERIC = new Set(['quantidade', 'saldo_fisico', 'reservado', 'disponivel']);
 const MIME: Record<Format, string> = { csv: 'text/csv; charset=utf-8', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', pdf: 'application/pdf' };
 
-async function fontFor(request: Request): Promise<Uint8Array> {
-  // A fonte vem da origem configurada do portal. Sem ela, só a bancada local (loopback) usa a própria origem:
-  // um cabeçalho Host forjado nunca escolhe para onde o servidor faz a busca.
+/** Origem de onde o servidor lê os próprios arquivos públicos (fonte e marcas do PDF). */
+function assetOrigin(request: Request): string | null {
+  // Em produção, só a origem configurada (BETTER_AUTH_URL). Fora dela, a bancada local sem essa variável usa
+  // a própria origem de loopback. Um cabeçalho Host forjado nunca escolhe para onde o servidor faz a busca.
+  const configured = portalOrigin();
+  if (configured) return configured;
   const local = new URL(request.url), loopback = local.hostname === '127.0.0.1' || local.hostname === 'localhost';
-  const origin = portalOrigin() ?? (loopback ? local.origin : null);
-  const unavailable = () => new HttpError(503, 'Não foi possível preparar o PDF agora. Tente novamente ou baixe a planilha.', 'pdf_font_unavailable');
-  if (!origin) throw unavailable();
-  let response: Response;
-  try { response = await fetch(new URL('/fonts/NotoSans-Regular.ttf', origin), { redirect: 'error' }); } catch { throw unavailable(); }
-  if (!response.ok || Number(response.headers.get('Content-Length') || 0) > FONT_LIMIT) throw unavailable();
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  if (bytes.length > FONT_LIMIT) throw unavailable();
-  return bytes;
+  return loopback && (typeof process === 'undefined' || process.env?.NODE_ENV !== 'production') ? local.origin : null;
+}
+const assetCache = new Map<string, Promise<Uint8Array>>();
+function publicAsset(origin: string, path: string, limit: number): Promise<Uint8Array> {
+  const key = origin + path, saved = assetCache.get(key);
+  if (saved) return saved;
+  const request = (async () => {
+    const response = await fetch(new URL(path, origin), { redirect: 'error', signal: AbortSignal.timeout(5000) });
+    if (!response.ok || Number(response.headers.get('Content-Length') || 0) > limit) throw new Error('asset_unavailable');
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (bytes.length > limit) throw new Error('asset_unavailable');
+    return bytes;
+  })().catch(error => { assetCache.delete(key); throw error; });
+  assetCache.set(key, request);
+  return request;
+}
+async function pdfAssets(request: Request): Promise<{ fontBytes: Uint8Array; brandBytes: { proex?: Uint8Array; ufg?: Uint8Array } }> {
+  const unavailable = new HttpError(503, 'Não foi possível preparar o PDF agora. Tente novamente ou baixe a planilha.', 'pdf_font_unavailable');
+  const origin = assetOrigin(request);
+  if (!origin) throw unavailable;
+  // As marcas PROEX e UFG são opcionais: sem elas o PDF sai igual, só sem o cabeçalho com logotipos.
+  const [fontBytes, proex, ufg] = await Promise.all([
+    publicAsset(origin, '/fonts/NotoSans-Regular.ttf', FONT_LIMIT).catch(() => { throw unavailable; }),
+    publicAsset(origin, '/brand/proex.png', 256 * 1024).catch(() => undefined),
+    publicAsset(origin, '/brand/ufg-white.png', 256 * 1024).catch(() => undefined),
+  ]);
+  return { fontBytes, brandBytes: { proex, ufg } };
 }
 
 export const dynamic = 'force-dynamic';
@@ -138,7 +159,7 @@ export async function GET(request: Request): Promise<Response> {
       try {
         content = format === 'docx'
           ? toDocx(TITLES[kind], columns, rows, readable, info)
-          : await (await import('@/components/portal/report-pdf')).toPdf(TITLES[kind], columns, rows, readable, info, { fontBytes: await fontFor(request), brandBytes: {}, presentation: { layout: 'table', compactRows: true, recordsLabel: 'Registros', ...(grouped ? { columnGroups: groups } : {}) } });
+          : await (await import('@/components/portal/report-pdf')).toPdf(TITLES[kind], columns, rows, readable, info, { ...(await pdfAssets(request)), presentation: { layout: 'table', compactRows: true, recordsLabel: 'Registros', ...(grouped ? { columnGroups: groups } : {}) } });
       } catch (cause) {
         if (cause instanceof HttpError) throw cause;
         const message = cause instanceof Error ? cause.message : '';

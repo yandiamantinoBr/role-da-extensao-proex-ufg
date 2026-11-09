@@ -8,9 +8,18 @@ export type SettingsIndexItem = { id: string; label: string };
 export function openSettingsGroup(id: string) {
   const element = document.getElementById(id);
   if (!element) return;
-  const behavior: ScrollBehavior = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
-  // Espera o grupo aberto desenhar o conteúdo: antes disso a página pode não ter altura para chegar até ele.
-  const reveal = () => window.setTimeout(() => element.scrollIntoView({ block: 'start', behavior }), 60);
+  // O conteúdo do grupo pode chegar depois (a central de chaves consulta o servidor) e, antes disso, a página
+  // não tem altura para chegar até ele. Tenta de novo enquanto o conteúdo cresce, mas para se a pessoa rolar.
+  const reveal = () => {
+    let expected: number | null = null;
+    const align = () => {
+      if (expected !== null && Math.abs(window.scrollY - expected) > 2) return;
+      if (Math.abs(element.getBoundingClientRect().top - (parseFloat(getComputedStyle(element).scrollMarginTop) || 0)) < 4) return;
+      element.scrollIntoView({ block: 'start' });
+      expected = window.scrollY;
+    };
+    for (const delay of [60, 450, 1200, 2500]) window.setTimeout(align, delay);
+  };
   if (element instanceof HTMLDetailsElement && !element.open) { element.addEventListener('toggle', reveal, { once: true }); element.open = true; }
   else reveal();
   element.querySelector('summary')?.focus({ preventScroll: true });
