@@ -3,7 +3,7 @@
 Imagens **sintéticas** (servidor local descartável `scripts/qa-local.mjs`, conta `qa@proex.example.test`, projetos e materiais fictícios). Nenhum dado real.
 
 - `antes-*`: código da `main` em `97d7304` (produção de 06/11).
-- `depois-*`: branch `claude/visual-coerencia-09nov`.
+- `depois-*`: branch `claude/visual-coerencia-09nov`, versão final avaliada (rodada 4 da crítica, nota 9,0).
 - Nome: `<etapa>-<módulo>-<largura>-<tema>.webp`. Módulos: `overview` (Início), `materials`, `events` (Dinâmicas), `demands`.
 - Topo de cada tela: 1300 px no celular (390) e 1000 px no computador (1366, reduzido a 2/3).
 - `depois-refinar-aberto-*`: Materiais com "Refinar contexto" aberto no celular.

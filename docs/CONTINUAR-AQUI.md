@@ -1,5 +1,9 @@
 # Continuar Portal PROEX
 
+## Acabamento visual e coerência · PR42 · 2026-11-09
+
+Branch `claude/visual-coerencia-09nov` (Claude Code), PR [42](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/42), atualizada com a `main` da PR41 (níveis de brinde e foto) sem desfazer aquele trabalho. Só apresentação: tipografia própria do portal (DM Sans + Sora), filtros "Projeto + funil", Materiais/Dinâmicas/Demandas compactos no celular, Panorama clicável no Início e em Materiais, barra inferior com os módulos do evento. 1.339/1.339 testes, tipos, lint, `build` e `build:node`. Crítica independente final 9,0/10 sem P0/P1. [Entrega, pendências e perguntas](ENTREGA-09NOV-VISUAL-E-COERENCIA.md). Confirmar merge e deploy no recibo da entrega antes de tratar como produção.
+
 ## PR39 publicada sobre a PR38 · edição, estoque e eventos · 2026-11-06
 
 **Base publicada pela PR38 em 078c6aba20126956d744ac1787b9b097c106e1e8.** Vercel `dpl_Ff1LUdNVGWKPY9bb3BMpnwj7Uwxn` READY e domínio oficial vinculados ao SHA. A composição reúne edição contextual, origem/destino/SEI (0032), diretório privado (0033), avisos persistentes (0034), `/events`, marcas e datas brasileiras. [Entrega e recibo](ENTREGA-06NOV-EDICAO-ESTOQUE-E-EVENTOS.md), [brief](RODADA-06NOV-EDICAO-E-RASTREIO.md), [revisão independente](REVISAO-06NOV-SEGURANCA.md). CI42299838784 aprovou **1.310 testes do Portal + 33 do jogo**, tipos, Worker/Node e smoke. Parecer visual independente **9,1/10 no escopo**, 52 imagens sintéticas. Saúde200; APIs novas401/private,no-store; `/events`200. Chrome autenticado confirmou a nova ficha e o redirecionamento do rascunho; o índice público foi visto no celular nos dois temas.
