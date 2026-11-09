@@ -100,7 +100,6 @@
 .how { font-size: 14px; color: var(--muted); }
 .how summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; font-weight: 600; color: var(--brand-ink); }
 .how p { max-width: 75ch; }
-.oddsGrid > div[data-tier=super_super] dt::after { content: ' · muda com a %'; font-weight: 400; }
 .history small { font-size: 12px; color: var(--muted); }
 
 @container (min-width: 560px) {
