@@ -18,15 +18,16 @@ type Vault = {
 type Decision = { entry: Entry; action: 'save' | 'enable' | 'disable' | 'remove' | 'test' };
 const statusLabels = { active: 'Pronta', disabled: 'Desligada', removed: 'Removida', missing: 'Sem chave', unavailable: 'Indisponível' };
 const providerLabels = { deepseek: 'DeepSeek', openai: 'OpenAI', typesafe: 'TypeSafe', deepgram: 'Deepgram', groq: 'Groq' };
-const models = { deepseek: PROVIDERS.deepseek.model, openai: PROVIDERS.openai.model, typesafe: PROVIDERS.typesafe.model, deepgram: 'Nova-3', groq: 'whisper-large-v3-turbo' };
+const models = { deepseek: 'DeepSeek Flash', openai: 'GPT-5.6 Luna · OpenAI', typesafe: 'JEV · TypeSafe', deepgram: 'Nova-3 · Deepgram', groq: 'Whisper turbo · Groq' };
+void PROVIDERS;
 const submitLabels = { save: 'Salvar chave', enable: 'Religar chave', disable: 'Desligar chave', remove: 'Remover chave', test: 'Testar agora' };
 const order: CredentialProvider[] = ['deepseek', 'groq', 'typesafe', 'deepgram', 'openai'];
 const recommended: Partial<Record<CredentialProvider, string>> = { deepseek: 'Recomendado para o Rolê', groq: 'Recomendado para voz' };
 /** Preços oficiais lidos em 09/11/2026; detalhes e fontes em docs/ROLE-ASSISTENTE.md. */
 const prices: Record<CredentialProvider, string> = {
-  deepseek: 'Cerca de US$ 0,001 por mensagem do Rolê. Pré-pago, sem cota grátis.',
-  groq: 'Voz: US$ 0,04 por hora de áudio. Conversa: cerca de US$ 0,0005 por mensagem.',
-  typesafe: 'Cerca de US$ 0,00006 por decisão. Acesso antecipado.',
+  deepseek: 'Menos de 1 centavo de dólar por mensagem do Rolê. Precisa de crédito comprado antes.',
+  groq: 'Voz: US$ 0,04 por hora de áudio. Conversa: menos de 1 centavo por mensagem.',
+  typesafe: 'Menos de 1 centavo por decisão. Ainda em fase de teste no provedor.',
   deepgram: 'US$ 0,0043 por minuto de áudio. Crédito inicial de US$ 200.',
   openai: 'Alternativa paga, sem cota grátis. Use só se as outras falharem.',
 };
@@ -165,7 +166,7 @@ function CredentialVaultPanel({organizationId,onChanged}: {organizationId?:strin
       <div><h3>Chaves dos provedores</h3><p>Só a administração geral vê esta área. Depois de salva, a chave nunca mais aparece: fica só o nome, o começo e os quatro últimos caracteres.</p></div>
     </div>
     <ol className={styles.steps} aria-label="Como ligar a inteligência artificial">
-      <li><strong>1. Cole a chave</strong><span>Copie no site do provedor e cole aqui.</span></li>
+      <li><strong>1. Cadastre</strong><span>Toque em Cadastrar no provedor e cole a chave copiada do site dele.</span></li>
       <li><strong>2. Teste</strong><span>Grátis: só confere se o provedor aceita a chave.</span></li>
       <li><strong>3. Ligue as funções</strong><span>Em “Funções e acesso”, escolha o que usar e o limite por dia.</span></li>
     </ol>
@@ -181,9 +182,9 @@ function CredentialVaultPanel({organizationId,onChanged}: {organizationId?:strin
       {vault.organizationId && <ul className={styles.list}>{entries.map(entry => <li className={styles.entry} key={entry.provider}>
         <div className={styles.entryTop}><span className="p-icon-tile">{entry.provider==='groq'||entry.provider==='deepgram'?<AudioLines size={20} aria-hidden="true"/>:entry.provider==='typesafe'?<ShieldCheck size={20} aria-hidden="true"/>:<ScanText size={20} aria-hidden="true"/>}</span><div><h4>{entry.label}</h4><p>{entry.purpose}</p></div><span className={entry.status === 'active' ? 'p-badge p-status-active' : 'p-badge'}>{statusLabels[entry.status]}</span></div>
         {recommended[entry.provider] && <p className={styles.recommended}>{recommended[entry.provider]}</p>}
-        <p className={styles.model}>{providerLabels[entry.provider]} · {models[entry.provider]}</p>
+        <p className={styles.model}>Modelo: {models[entry.provider]}</p>
         <p className={styles.price}>{prices[entry.provider]}</p>
-        {(entry.mask||entry.status==='active')&&<p className={styles.keyDetails}>{entry.mask || 'Chave legada sem dica cadastrada'}</p>}
+        {(entry.mask||entry.status==='active')&&<p className={styles.keyDetails}>Chave: <strong>{entry.mask || 'antiga, sem dica cadastrada'}</strong></p>}
         {entry.createdAt && <p className="p-form-help">Cadastrada em {date.format(new Date(entry.createdAt))} · {entry.createdBy}</p>}
         {entry.updatedAt && entry.updatedAt !== entry.createdAt && <p className="p-form-help">Atualizada em {date.format(new Date(entry.updatedAt))} · {entry.updatedBy}</p>}
         {(() => { const test = lastTest(entry.provider); return test && entry.status === 'active' ? <p className={test.outcome === 'authenticated' ? styles.testOk : styles.testWarn}>Último teste: {outcomeLabels[test.outcome ?? ''] ?? 'registrado'} · {date.format(new Date(test.at))}</p> : null; })()}
@@ -192,7 +193,7 @@ function CredentialVaultPanel({organizationId,onChanged}: {organizationId?:strin
           <button className="p-button p-button-subtle" type="button" disabled={busy} aria-label={`${entry.status === 'active' || entry.status === 'disabled' ? 'Trocar' : 'Cadastrar'} chave ${providerLabels[entry.provider]}`} onClick={event => choose(entry, 'save', event.currentTarget)}>{entry.status === 'active' || entry.status === 'disabled' ? 'Trocar' : 'Cadastrar'}</button>
           {entry.status === 'active' && <button className="p-button p-button-subtle" type="button" disabled={busy} aria-label={`Desligar chave ${providerLabels[entry.provider]}`} onClick={event => choose(entry, 'disable', event.currentTarget)}>Desligar</button>}
           {entry.status === 'disabled' && <button className="p-button p-button-subtle" type="button" disabled={busy} aria-label={`Religar chave ${providerLabels[entry.provider]}`} onClick={event => choose(entry, 'enable', event.currentTarget)}>Religar</button>}
-          {(entry.status === 'active' || entry.status === 'disabled') && <button className="p-button p-button-subtle" type="button" disabled={busy} aria-label={`Remover chave ${providerLabels[entry.provider]}`} onClick={event => choose(entry, 'remove', event.currentTarget)}>Remover</button>}
+          {(entry.status === 'active' || entry.status === 'disabled') && <button className={`p-button p-button-subtle ${styles.danger}`} type="button" disabled={busy} aria-label={`Remover chave ${providerLabels[entry.provider]}`} onClick={event => choose(entry, 'remove', event.currentTarget)}>Remover</button>}
         </div>}
         {decision?.entry.provider === entry.provider && <form ref={decisionForm} tabIndex={-1} aria-label={`${submitLabels[decision.action]} ${providerLabels[entry.provider]}`} className={styles.form} onSubmit={submit} key={decision.action}>
           {decision.action === 'save' ? <>
@@ -209,11 +210,11 @@ function CredentialVaultPanel({organizationId,onChanged}: {organizationId?:strin
         </form>}
       </li>)}</ul>}
       <dl className={styles.metrics} aria-label="Gasto previsto da organização">
-        <div><dt>Previsto hoje</dt><dd>{currency.format(vault.reserved.today / 1_000_000)}</dd></div>
+        <div><dt>Gasto hoje</dt><dd>{currency.format(vault.reserved.today / 1_000_000)}</dd></div>
         <div><dt>Limite por dia</dt><dd>{currency.format(vault.reserved.dailyLimit / 1_000_000)}</dd></div>
-        <div><dt>Previsto no mês</dt><dd>{currency.format(vault.reserved.month / 1_000_000)}</dd></div>
+        <div><dt>Gasto no mês</dt><dd>{currency.format(vault.reserved.month / 1_000_000)}</dd></div>
       </dl>
-      <p className="p-form-help">O portal guarda o teto de cada chamada antes de enviá-la; o gasto real costuma ser menor. Ao atingir o limite por dia, novas chamadas ficam para o dia seguinte.</p>
+      <p className="p-form-help">Contamos o valor máximo de cada pedido; o gasto real costuma ser menor. Se o limite do dia acabar, a IA volta no dia seguinte.</p>
       {vault.organizationId && <section className={styles.history} aria-labelledby="vault-history-title">
         <h4 id="vault-history-title"><History size={18} aria-hidden="true"/>Histórico das chaves</h4>
         {vault.history?.length ? <ol>{vault.history.map((item, index) => <li key={`${item.at}-${index}`}>
@@ -241,7 +242,7 @@ export default function CredentialVaultSettings({ groupClass, bodyClass, canMana
     return () => window.cancelAnimationFrame(frame);
   }, []);
   return <details ref={group} id="ai-credentials" className={`${groupClass} ${styles.anchor}`} onToggle={event => setOpened(event.currentTarget.open)}>
-    <summary><strong>Chaves e modelos</strong><small>Cadastro, funções, acesso, limites e diagnóstico de IA em um só lugar.</small></summary>
+    <summary><strong>Chaves e modelos</strong><small>Chaves de IA, o assistente Rolê, quem pode usar e o limite de gasto.</small></summary>
     {opened && <div className={bodyClass}><AssistantAdministrationPanel canManageKeys={canManageKeys} refreshKey={configurationRevision} onChanged={()=>setVaultRevision(value=>value+1)} renderCredentials={(organizationId,configurationBusy)=><fieldset disabled={configurationBusy} className={styles.credentialsGroup}><CredentialVaultPanel key={`${organizationId}:${vaultRevision}`} organizationId={organizationId} onChanged={()=>setConfigurationRevision(value=>value+1)}/></fieldset>}/></div>}
   </details>;
 }

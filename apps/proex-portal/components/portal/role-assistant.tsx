@@ -2,26 +2,25 @@
 /* eslint-disable @next/next/no-img-element -- mascote em SVG estático e imagens locais em data URL */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react';
-import { ImagePlus, LoaderCircle, Mic, Send, Square, Trash2, X } from 'lucide-react';
+import { ImagePlus, LoaderCircle, Mic, RotateCcw, Send, Square, Trash2, X } from 'lucide-react';
 import { safeRequest, type AssistantPlan } from '@/lib/assistant/contracts';
 import {
   ROLE_MAX_HISTORY, ROLE_MAX_HISTORY_CHARS, ROLE_MAX_IMAGE_BYTES, ROLE_MAX_IMAGE_SIDE, ROLE_MAX_MESSAGE_CHARS, ROLE_MODELS,
-  formatMicros, roleConversationBytes, roleEstimate, roleSpeechCeilingMicros, type RoleTurn,
+  formatMicros, friendlyMicros, roleConversationBytes, roleEstimate, roleSpeechCeilingMicros, type RoleTurn,
 } from '@/lib/assistant/role-contracts';
 import { prepareSpeechWav } from './speech-audio';
 import styles from './role-assistant.module.css';
 
 type Project = { id: string; name: string; organization_id?: string };
 type Props = { projects: Project[]; defaultProjectId?: string; onApplied?: () => void | Promise<void>; onOpenSettings?: () => void };
-type Status = { available: boolean; reason: string | null; provider: 'deepseek' | 'groq'; model: string; visionAvailable: boolean; speech: { available: boolean; provider: 'groq' | 'deepgram' }; dailyLimitMicros: number; reservedTodayMicros: number };
-type Operation = { request: string; stage: 'idle' | 'estimated' | 'preview' | 'done'; costMicros?: number; preview?: { plan: Omit<AssistantPlan, 'actorId'>; planToken: string; undoReason: string }; confirmed?: boolean; receipt?: string; key: string };
+type Status = { available: boolean; reason: string | null; provider: 'deepseek' | 'groq'; model: string; visionAvailable: boolean; operationsAvailable: boolean; speech: { available: boolean; provider: 'groq' | 'deepgram' }; dailyLimitMicros: number; reservedTodayMicros: number };
+type Operation = { request: string; stage: 'idle' | 'estimated' | 'preview' | 'done'; costMicros?: number; provider?: string; jev?: boolean; shareConsent?: boolean; stale?: boolean; preview?: { plan: Omit<AssistantPlan, 'actorId'>; planToken: string; undoReason: string }; confirmed?: boolean; receipt?: string; key: string };
 type Message = { id: string; role: 'user' | 'assistant'; content: string; image?: string; meta?: string; operation?: Operation };
 type Picked = { dataUrl: string; bytes: number };
 type Recorded = { file: File; seconds: number; url: string };
 
 const intentLabels: Record<string, string> = { 'stock.query': 'Consultar estoque', 'stock.receive': 'Registrar entrada', 'stock.distribute': 'Registrar distribuição', 'stock.consume': 'Registrar consumo', 'record.create': 'Criar registro' };
 const suggestions = ['Como registro a entrega de brindes no CONPEEX?', 'Escreva um aviso curto para a equipe sobre o plantão de amanhã.', 'Quais materiais devo conferir antes de uma dinâmica?'];
-const consentKey = 'proex.role.consent.v1';
 
 class RequestError extends Error { constructor(readonly status: number, message: string, readonly code?: string) { super(message); } }
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
@@ -58,7 +57,8 @@ async function shrinkImage(file: File): Promise<Picked> {
 }
 
 function trimmedHistory(messages: Message[]): RoleTurn[] {
-  const turns: RoleTurn[] = messages.filter(message => message.content.trim()).map(message => ({ role: message.role, content: message.content.slice(0, 4000) }));
+  // Mesma limpeza do servidor (e-mail e CPF omitidos), para o custo previsto bater com o dele.
+  const turns: RoleTurn[] = messages.filter(message => message.content.trim()).flatMap(message => { try { return [{ role: message.role, content: safeRequest(message.content.slice(0, 4000)) }]; } catch { return []; } });
   const recent = turns.slice(-ROLE_MAX_HISTORY);
   while (recent.length && recent.reduce((total, turn) => total + turn.content.length, 0) > ROLE_MAX_HISTORY_CHARS) recent.shift();
   return recent;
@@ -69,7 +69,7 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
   const projectId = projects.some(item => item.id === chosenProjectId) ? chosenProjectId : projects[0]?.id ?? '';
   const [status, setStatus] = useState<Status | null>(null), [statusError, setStatusError] = useState('');
   const [messages, setMessages] = useState<Message[]>([]), [draft, setDraft] = useState(''), [picked, setPicked] = useState<Picked | null>(null);
-  const [consent, setConsent] = useState(() => { try { return typeof window !== 'undefined' && window.sessionStorage.getItem(consentKey) === '1'; } catch { return false; } }), [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState('');
+  const [consent, setConsent] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState('');
   const [recording, setRecording] = useState(false), [recorded, setRecorded] = useState<Recorded | null>(null), [transcribing, setTranscribing] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null), dialog = useRef<HTMLDivElement>(null), input = useRef<HTMLTextAreaElement>(null), log = useRef<HTMLOListElement>(null);
   const recorder = useRef<MediaRecorder | null>(null), stream = useRef<MediaStream | null>(null), stopTimer = useRef<number | null>(null), mounted = useRef(true);
@@ -107,7 +107,8 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
   const modelLabel = status ? (picked ? ROLE_MODELS.deepseek.label : ROLE_MODELS[status.provider].label) : '';
   const canSend = !!status?.available && !!estimate && !busy && !tooLong && consent && (!picked || status.visionAvailable);
 
-  function rememberConsent(value: boolean) { setConsent(value); try { if (value) window.sessionStorage.setItem(consentKey, '1'); else window.sessionStorage.removeItem(consentKey); } catch { /* sem armazenamento */ } }
+  // Só em memória: some ao recarregar ou trocar de conta.
+  function rememberConsent(value: boolean) { setConsent(value); }
 
   async function send(event?: FormEvent) {
     event?.preventDefault();
@@ -120,8 +121,10 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
         action: 'chat', projectId, operationKey: crypto.randomUUID(), consent: true, history, message: text, ...(image ? { image } : {}), acceptedCostMicros: estimate.costMicros,
       });
       if (!mounted.current) return;
-      setMessages(current => [...current, { id: crypto.randomUUID(), role: 'assistant', content: result.reply, meta: `${modelLabel} · custou ${formatMicros(result.costMicros)} (teto ${formatMicros(result.reservedMicros)})`,
-        operation: result.operation ? { request: result.operation, stage: 'idle', key: crypto.randomUUID() } : undefined }]);
+      const reply: Message = { id: crypto.randomUUID(), role: 'assistant', content: result.reply, meta: `Custou ${formatMicros(result.costMicros)} (máximo previsto: ${formatMicros(result.reservedMicros)})`,
+        operation: result.operation ? { request: result.operation, stage: 'idle', key: crypto.randomUUID() } : undefined };
+      setMessages(current => [...current, reply]);
+      if (reply.operation && status.operationsAvailable) void estimateOperation(reply);
       void loadStatus(projectId);
     } catch (cause) {
       if (!mounted.current) return;
@@ -136,15 +139,15 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
   }
   async function estimateOperation(message: Message) {
     if (!message.operation) return;
-    setBusy(true); setError('');
-    try { const result = await post<{ costMicros: number }>('/api/assistant/role', { action: 'estimate.operation', projectId, request: message.operation.request }); updateOperation(message.id, { stage: 'estimated', costMicros: result.costMicros }); }
+    setError('');
+    try { const result = await post<{ costMicros: number; provider: string; jev: boolean }>('/api/assistant/role', { action: 'estimate.operation', projectId, request: message.operation.request }); updateOperation(message.id, { stage: 'estimated', costMicros: result.costMicros, provider: result.provider, jev: result.jev, stale: false }); }
     catch (cause) { setError(cause instanceof Error ? cause.message : 'Não foi possível calcular o custo da operação.'); }
-    finally { setBusy(false); }
   }
+  function newConversation() { setMessages([]); setDraft(''); setPicked(null); discardRecording(); setError(''); setNotice(''); window.requestAnimationFrame(() => input.current?.focus()); }
   async function prepareOperation(message: Message) {
-    if (!message.operation) return;
+    if (!message.operation?.shareConsent) return;
     setBusy(true); setError('');
-    try { const preview = await post<Operation['preview']>('/api/assistant', { action: 'prepare', projectId, request: message.operation.request, consent: true, operationKey: message.operation.key }); updateOperation(message.id, { stage: 'preview', preview, confirmed: false }); }
+    try { const preview = await post<Operation['preview']>('/api/assistant', { action: 'prepare', projectId, request: message.operation.request, consent: true, operationKey: message.operation.key, acceptedCostMicros: message.operation.costMicros }); updateOperation(message.id, { stage: 'preview', preview, confirmed: false }); }
     catch (cause) { setError(cause instanceof Error ? cause.message : 'Não foi possível preparar a operação.'); }
     finally { setBusy(false); }
   }
@@ -226,7 +229,8 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
       <div ref={dialog} className={styles.dialog} role="dialog" aria-modal="true" aria-labelledby="role-title" aria-describedby="role-subtitle" onKeyDown={onDialogKey}>
         <header className={styles.header}>
           <img className={styles.avatar} src="/brand/role-mascote/role-rosto.svg" alt="" width={48} height={48}/>
-          <div className={styles.headerText}><h2 id="role-title">Rolê</h2><p id="role-subtitle">Assistente da PROEX{status?.available ? ` · ${ROLE_MODELS[status.provider].label}` : ''}</p></div>
+          <div className={styles.headerText}><h2 id="role-title">Rolê</h2><p id="role-subtitle">Assistente da PROEX</p></div>
+          {messages.length > 0 && <button type="button" className={styles.textButton} onClick={newConversation} disabled={busy} aria-label="Nova conversa"><RotateCcw size={16} aria-hidden="true"/><span>Nova conversa</span></button>}
           <button type="button" className={styles.iconButton} onClick={close} aria-label="Fechar o Rolê"><X size={20} aria-hidden="true"/></button>
         </header>
         {projects.length > 1 && <label className={styles.project}><span>Projeto</span><select value={projectId} disabled={busy} onChange={event => { setProjectId(event.target.value); setMessages([]); void loadStatus(event.target.value); }}>{projects.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}
@@ -254,18 +258,25 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
                   <p>{message.content}</p>
                   {message.meta && <small>{message.meta}</small>}
                   {message.operation && <div className={styles.operation}>
-                    <p className={styles.operationTitle}>Operação sugerida</p>
-                    <p>{message.operation.request}</p>
-                    {message.operation.stage === 'idle' && <button type="button" className="p-button p-button-subtle" disabled={busy} onClick={() => void estimateOperation(message)}>Ver custo para preparar</button>}
+                    <p className={styles.operationTitle}>Posso preparar isto para você</p>
+                    {(message.operation.stage === 'idle' || message.operation.stage === 'estimated') && status?.operationsAvailable
+                      ? <label className={styles.editable}><span>Revise ou corrija o pedido:</span><textarea value={message.operation.request} maxLength={600} rows={2} disabled={busy} onChange={event => updateOperation(message.id, { request: event.target.value, stale: true })}/></label>
+                      : message.operation.stage !== 'preview' && message.operation.stage !== 'done' && <p>{message.operation.request}</p>}
+                    {message.operation.stage === 'idle' && !status?.operationsAvailable && <p className={styles.help}>As operações pelo Rolê estão desligadas nesta organização. Faça o registro em Materiais.</p>}
+                    {message.operation.stage === 'idle' && status?.operationsAvailable && <p className={styles.help}><LoaderCircle size={14} className="p-spin" aria-hidden="true"/> Calculando o custo…</p>}
                     {message.operation.stage === 'estimated' && <>
-                      <p><strong>Custo máximo previsto: {formatMicros(message.operation.costMicros ?? 0)}.</strong> O Rolê prepara a proposta; nada muda no estoque até você confirmar.</p>
-                      <button type="button" className="p-button p-button-primary" disabled={busy} onClick={() => void prepareOperation(message)}>Preparar para eu conferir</button>
+                      {message.operation.stale
+                        ? <button type="button" className="p-button p-button-subtle" disabled={busy} onClick={() => void estimateOperation(message)}>Atualizar o custo do pedido corrigido</button>
+                        : <p><strong>Custo máximo: {friendlyMicros(message.operation.costMicros ?? 0)}.</strong> Nada muda no estoque até você confirmar.</p>}
+                      <label className={styles.check}><input type="checkbox" checked={!!message.operation.shareConsent} disabled={busy} onChange={event => updateOperation(message.id, { shareConsent: event.target.checked })}/>Autorizo enviar este pedido e a lista de materiais do projeto para {message.operation.provider === 'openai' ? 'a OpenAI' : 'a DeepSeek'}{message.operation.jev ? ' e para a conferência JEV (TypeSafe)' : ''}.</label>
+                      <button type="button" className="p-button p-button-primary" disabled={busy || !message.operation.shareConsent || message.operation.stale} onClick={() => void prepareOperation(message)}>Preparar registro</button>
                     </>}
                     {message.operation.stage === 'preview' && message.operation.preview && <div className={styles.preview}>
                       <p><strong>Confira: {intentLabels[message.operation.preview.plan.proposal.intent] ?? 'Operação'}</strong></p>
                       <p>{message.operation.preview.plan.before?.name ?? message.operation.preview.plan.proposal.title}</p>
                       {message.operation.preview.plan.before && message.operation.preview.plan.after && <dl className={styles.beforeAfter}><div><dt>Antes</dt><dd>{message.operation.preview.plan.before.stock} {message.operation.preview.plan.before.unit}</dd></div><div><dt>Depois</dt><dd>{message.operation.preview.plan.after.stock} {message.operation.preview.plan.before.unit}</dd></div></dl>}
-                      <p>Quantidade: {message.operation.preview.plan.proposal.quantity || 'sem movimentação'}</p>
+                      <p>Quantidade: {message.operation.preview.plan.proposal.quantity || 'sem movimentação'} · Projeto: {projects.find(item => item.id === message.operation?.preview?.plan.projectId)?.name ?? project?.name ?? 'projeto atual'}</p>
+                      {message.operation.preview.plan.proposal.body && <p className={styles.proposalBody}><span>Texto que será gravado:</span> {message.operation.preview.plan.proposal.body}</p>}
                       <label className={styles.check}><input type="checkbox" checked={!!message.operation.confirmed} disabled={busy} onChange={event => updateOperation(message.id, { confirmed: event.target.checked })}/>Conferi projeto, material, quantidade e efeito. Autorizo.</label>
                       <button type="button" className="p-button p-button-primary" disabled={busy || !message.operation.confirmed} onClick={() => void applyOperation(message)}>{message.operation.preview.plan.proposal.intent === 'stock.query' ? 'Conferir saldo atual' : 'Confirmar operação'}</button>
                     </div>}
@@ -280,7 +291,7 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
         {status?.available && <form className={styles.composer} onSubmit={send}>
           {error && <p role="alert" className={styles.error}>{error}</p>}
           {notice && !error && <p role="status" className={styles.notice}>{notice}</p>}
-          {!consent && <label className={styles.check}><input type="checkbox" checked={consent} onChange={event => rememberConsent(event.target.checked)}/>Entendo que o texto, a imagem e o áudio vão para o provedor de IA escolhido pela PROEX. Não vou enviar senhas nem dados pessoais.</label>}
+          {!consent && <label className={styles.check}><input type="checkbox" checked={consent} onChange={event => rememberConsent(event.target.checked)}/>Entendo que minha mensagem, foto ou áudio vai para um serviço de IA escolhido pela PROEX. Não vou enviar senhas, CPF nem dados pessoais.</label>}
           {picked && <div className={styles.attachment}><img src={picked.dataUrl} alt="Imagem anexada"/><span>Imagem pronta ({Math.round(picked.bytes / 1024)} KB, reduzida no aparelho)</span><button type="button" className={styles.iconButton} onClick={() => setPicked(null)} aria-label="Remover imagem"><Trash2 size={18} aria-hidden="true"/></button></div>}
           {recorded && <div className={styles.attachment}><audio controls src={recorded.url} aria-label="Ouvir a gravação antes de transcrever"/><button type="button" className="p-button p-button-primary" disabled={transcribing || !status.speech.available} onClick={() => void transcribe()}>{transcribing ? 'Transcrevendo…' : `Transcrever · até ${speechCost}`}</button><button type="button" className={styles.iconButton} onClick={discardRecording} aria-label="Descartar gravação"><Trash2 size={18} aria-hidden="true"/></button></div>}
           <label className="visually-hidden" htmlFor="role-message">Mensagem para o Rolê</label>
@@ -290,16 +301,17 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
           {(sanitized.problem || tooLong) && <p className={styles.error}>{tooLong ? 'Use até 2.000 caracteres.' : sanitized.problem}</p>}
           {picked && !status.visionAvailable && <p className={styles.error}>A leitura de imagens não está ligada nesta organização.</p>}
           <div className={styles.toolbar}>
-            <label className={`${styles.iconButton} ${!status.visionAvailable || busy ? styles.disabled : ''}`} title={status.visionAvailable ? 'Anexar foto' : 'Leitura de imagens desligada'}>
+            <label className={`${styles.iconButton} ${!status.visionAvailable || busy || !consent ? styles.disabled : ''}`} title={status.visionAvailable ? 'Anexar foto' : 'Leitura de imagens desligada'}>
               <ImagePlus size={20} aria-hidden="true"/><span className="visually-hidden">Anexar foto</span>
-              <input type="file" accept="image/*" disabled={!status.visionAvailable || busy} onChange={event => { void pickImage(event.target.files?.[0]); event.target.value = ''; }}/>
+              <input type="file" accept="image/*" disabled={!status.visionAvailable || busy || !consent} onChange={event => { void pickImage(event.target.files?.[0]); event.target.value = ''; }}/>
             </label>
             <button type="button" className={`${styles.iconButton} ${recording ? styles.recording : ''}`} disabled={!status.speech.available || !consent || busy || transcribing} onClick={() => recording ? recorder.current?.stop() : void startRecording()} aria-label={recording ? 'Parar gravação' : 'Gravar áudio'} title={status.speech.available ? (recording ? 'Parar gravação' : 'Gravar áudio (até 60 s)') : 'Transcrição desligada'}>
               {recording ? <Square size={18} aria-hidden="true"/> : <Mic size={20} aria-hidden="true"/>}
             </button>
-            <p className={styles.cost} aria-live="polite">{estimate ? <>Custo máximo: <strong>{formatMicros(estimate.costMicros)}</strong> · {modelLabel}</> : 'O custo aparece aqui antes de enviar.'}</p>
+            <p className={styles.cost} aria-live="polite">{!consent ? 'Marque o aviso acima para conversar.' : estimate ? <>Custo máximo: <strong>{friendlyMicros(estimate.costMicros)}</strong></> : 'O custo aparece aqui antes de enviar.'}</p>
             <button type="submit" className={styles.send} disabled={!canSend} aria-label={estimate ? `Enviar, custo máximo ${formatMicros(estimate.costMicros)}` : 'Enviar'}><Send size={18} aria-hidden="true"/><span>Enviar</span></button>
           </div>
+          <p className={styles.disclaimer}>O Rolê pode errar. Confira antes de usar. Modelo: {modelLabel}.</p>
         </form>}
       </div>
     </div>}

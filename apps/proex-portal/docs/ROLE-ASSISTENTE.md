@@ -28,6 +28,14 @@ Regras do servidor (`lib/assistant/role.ts`):
 - A auditoria `assistant.role.chat` guarda só provedor, modelo, tokens, teto, custo real e se havia imagem. O texto e a imagem não são gravados.
 - Uma resposta que repete a chave ou parece conter credencial é retida (`role_provider_schema`).
 - Desligar ou remover a chave do provedor do Rolê desliga o Rolê. Desligar a DeepSeek desliga a leitura de imagens.
+- Imagem conferida no servidor: decodificação completa do base64, assinatura (PNG, JPEG ou WebP com `WEBP`), largura e altura lidas do cabeçalho (até 1024 px) e no máximo 1,5 MB.
+- Os turnos anteriores enviados pelo navegador passam pela mesma limpeza (e-mail e CPF omitidos, credenciais recusadas), seja do usuário ou do Rolê.
+- O servidor reconfere permissão e configuração logo antes de enviar ao provedor.
+- Se o uso real passar do teto, a diferença entra no limite diário e a auditoria marca `overrun: true`.
+- No Rolê, a operação sugerida pode ser editada. O custo é calculado de graça e a pessoa autoriza o envio do pedido e da lista de materiais. O `prepare` recebe `acceptedCostMicros` e recusa (`assistant_cost_changed`) se a reserva real ficar maior. A prévia mostra projeto, quantidade, antes e depois, e o texto que será gravado.
+- O consentimento do chat fica só na memória da página e some ao recarregar ou trocar de conta.
+
+Reversão: uma versão anterior do portal recusa qualquer configuração de IA salva por esta versão, porque o JSON passa a ter `roleEnabled`, `roleProvider` e `roleVisionEnabled`. Não volte o deploy para um SHA anterior depois que alguém salvar "Funções e acesso". Para desfazer, publique um commit novo que esconda a interface e mantenha `validateConfig` aceitando esses três campos.
 
 Configuração nova (sem migração; JSON antigo continua válido): `roleEnabled`, `roleProvider` (`deepseek` | `groq`) e `roleVisionEnabled`.
 

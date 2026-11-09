@@ -55,8 +55,13 @@ export function roleConversationBytes(turns: readonly RoleTurn[], message: strin
 
 const usd = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'USD', minimumFractionDigits: 4, maximumFractionDigits: 4 });
 export function formatMicros(micros: number): string {
-  if (!Number.isFinite(micros) || micros <= 0) return 'US$ 0,0000';
-  return micros < 100 ? 'menos de US$ 0,0001' : usd.format(micros / 1_000_000).replace(/ /g, ' ');
+  if (!Number.isFinite(micros) || micros <= 0) return 'US$ 0,0000';
+  return micros < 100 ? 'menos de US$ 0,0001' : usd.format(micros / 1_000_000).replace(/\s/g, ' ');
+}
+/** Para leigos: diz se é menos de 1 centavo de dólar e mostra o valor exato entre parênteses. */
+export function friendlyMicros(micros: number): string {
+  const exact = formatMicros(micros);
+  return micros > 0 && micros < 10_000 ? `menos de 1 centavo (${exact})` : exact;
 }
 
 export type RoleReply = { reply: string; operation: string | null };

@@ -15,11 +15,11 @@ function compile(name) {
   source = source.replace(/from (['"])(\.{1,2}\/[^'"]+)\1/g, (_m, _q, dependency) => `from ${JSON.stringify(compile(path.posix.normalize(path.posix.join(path.posix.dirname(name), dependency)).replace(/\.ts$/, '')))}`);
   const result = `data:text/javascript;base64,${Buffer.from(`${source}\n//# sourceURL=${name}-role-test.mjs`).toString('base64')}`; modules.set(name, result); return result;
 }
-const { DEFAULT_ASSISTANT_CONFIG } = await import(compile('assistant/contracts'));
+const { DEFAULT_ASSISTANT_CONFIG, safeRequest } = await import(compile('assistant/contracts'));
 const { configureAssistant, estimateAssistantPlan } = await import(compile('assistant/service'));
 const { manageAssistantCredential, assistantCredentialVault } = await import(compile('assistant/credential-vault'));
 const { roleChat, roleStatus, parseRoleImage } = await import(compile('assistant/role'));
-const { roleEstimate, roleConversationBytes, validateRoleReply, formatMicros, roleSpeechCeilingMicros, ROLE_SYSTEM_PROMPT, ROLE_SYSTEM_PROMPT_BYTES, ROLE_MODELS } = await import(compile('assistant/role-contracts'));
+const { roleEstimate, roleConversationBytes, validateRoleReply, formatMicros, friendlyMicros, roleSpeechCeilingMicros, ROLE_SYSTEM_PROMPT, ROLE_SYSTEM_PROMPT_BYTES, ROLE_MODELS } = await import(compile('assistant/role-contracts'));
 const { speechReservedUsdMicros } = await import(compile('assistant/speech'));
 const { portalSnapshot } = await import(compile('portal-data'));
 const { describePortableSchemas, exportPortablePage } = await import(compile('sync/portable'));
@@ -29,7 +29,8 @@ const keys = { current: 'synthetic-only-independent-key-for-role-tests-000' };
 // Canário: se este valor aparecer em qualquer saída, o teste falha.
 const CANARY = 'sk-CANARIO-role-synthetic-0000-ZZ99';
 const GROQ_CANARY = 'gsk_CANARIO_groq_synthetic_0000_YY88';
-const PNG = 'data:image/png;base64,' + Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(120, 7)]).toString('base64');
+function png(width, height) { const header = Buffer.alloc(33); Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(header, 0); header.writeUInt32BE(13, 8); header.write('IHDR', 12, 'ascii'); header.writeUInt32BE(width, 16); header.writeUInt32BE(height, 20); return 'data:image/png;base64,' + Buffer.concat([header, Buffer.alloc(99, 7)]).toString('base64'); }
+const PNG = png(640, 480);
 
 function fixture() {
   const native = new DatabaseSync(':memory:'); native.exec('PRAGMA foreign_keys=ON');
@@ -70,7 +71,9 @@ function fakeProvider({ reply = { reply: 'Oi! Posso ajudar.', operation: null },
 
 function chatInput(f, extra = {}) {
   const message = extra.message ?? 'Como registro a entrega de brindes?';
-  const estimate = roleEstimate({ textProvider: extra.provider ?? 'deepseek', textBytes: roleConversationBytes(extra.history ?? [], message, 'Projeto A'), hasImage: !!extra.image });
+  // Same redaction as the browser before estimating (role-assistant.tsx sanitizes history too).
+  const history = (extra.history ?? []).map(turn => { try { return { ...turn, content: safeRequest(turn.content) }; } catch { return turn; } });
+  const estimate = roleEstimate({ textProvider: extra.provider ?? 'deepseek', textBytes: roleConversationBytes(history, message, 'Projeto A'), hasImage: !!extra.image });
   const { provider: _provider, ...rest } = extra; void _provider;
   return { action: 'chat', projectId: 'project-a', operationKey: `role-test-${Math.random().toString(36).slice(2, 12)}`, consent: true, message, acceptedCostMicros: estimate.costMicros, ...rest };
 }
@@ -89,8 +92,9 @@ test('pure contract: shared cost ceiling, image surcharge, prompt budget and str
   assert.equal(roleSpeechCeilingMicros('deepgram', 30), speechReservedUsdMicros('deepgram', 30));
   assert.deepEqual(validateRoleReply({ reply: ' ok ', operation: null }), { reply: 'ok', operation: null });
   for (const bad of [{ reply: 'x', operation: null, sql: 1 }, { reply: '', operation: null }, { reply: 'x', operation: 5 }, [], null]) assert.throws(() => validateRoleReply(bad));
-  assert.equal(formatMicros(0), 'US$ 0,0000');
-  assert.match(formatMicros(1234), /^US\$ 0,0012$/);
+  assert.equal(formatMicros(0), 'US$\u00a00,0000');
+  assert.match(formatMicros(1234), /^US\$\u00a00,0012$/);
+  assert.match(friendlyMicros(1600), /^menos de 1 centavo \(US\$\u00a00,0016\)$/);
   assert.equal(ROLE_MODELS.groq.acceptsImage, false);
   assert.equal(ROLE_MODELS.deepseek.acceptsAudio, false, 'audio is always transcribed first');
 });
@@ -129,7 +133,8 @@ test('chat reserves the shown ceiling, calls DeepSeek once, audits metadata only
     const audit = f.native.prepare("SELECT details FROM audit WHERE action='assistant.role.chat'").all();
     assert.equal(audit.length, 1);
     const details = JSON.parse(audit[0].details);
-    assert.deepEqual(Object.keys(details).sort(), ['hasImage', 'inputTokens', 'model', 'operationSuggested', 'outputTokens', 'provider', 'reservedUsdMicros', 'usdMicros']);
+    assert.deepEqual(Object.keys(details).sort(), ['hasImage', 'inputTokens', 'model', 'operationSuggested', 'outputTokens', 'overrun', 'provider', 'reservedUsdMicros', 'usdMicros']);
+    assert.equal(details.overrun, false);
     const everything = JSON.stringify(f.native.prepare('SELECT * FROM audit').all()) + JSON.stringify(f.native.prepare('SELECT * FROM ai_calls').all());
     assert.equal(everything.includes('distribuir 3 canetas'), false, 'message text is not persisted');
     await assert.rejects(roleChat(f.db, f.actors.viewer, input, secret, { keys, fetcher: provider.fetch }), error => error.code === 'assistant_call_replay');
@@ -161,6 +166,10 @@ test('images need the vision switch, are validated by signature and always go to
     assert.throws(() => parseRoleImage('data:image/jpeg;base64,' + Buffer.alloc(200, 1).toString('base64')), error => error.code === 'role_image');
     assert.throws(() => parseRoleImage('https://example.test/foto.png'), error => error.code === 'role_image');
     assert.throws(() => parseRoleImage('data:image/png;base64,' + Buffer.alloc(1_600_000, 1).toString('base64')), error => error.status === 413);
+    assert.throws(() => parseRoleImage(png(8000, 8000)), error => error.status === 413 && error.code === 'role_image', 'pixel size is checked on the server, not only in the browser');
+    assert.throws(() => parseRoleImage('data:image/webp;base64,' + Buffer.concat([Buffer.from('RIFF0000WAVEfmt '), Buffer.alloc(100, 1)]).toString('base64')), error => error.code === 'role_image');
+    assert.throws(() => parseRoleImage(PNG.slice(0, -1)), error => error.code === 'role_image', 'truncated base64');
+    assert.equal(parseRoleImage(PNG).mime, 'image/png');
     const vault = await assistantCredentialVault(f.db, f.actors.owner, 'org_proex', secret, keys);
     await configureAssistant(f.db, f.actors.owner, { action: 'configure', organizationId: 'org_proex', expectedRevision: vault.revision, config: { ...DEFAULT_ASSISTANT_CONFIG, usageScope: 'organization', roleEnabled: true, roleProvider: 'groq', roleVisionEnabled: true } }, secret, undefined, keys);
     const text = await roleChat(f.db, f.actors.viewer, chatInput(f, { provider: 'groq' }), secret, { keys, fetcher: provider.fetch });
@@ -249,4 +258,35 @@ test('LEAK GUARD: a saved key never appears in responses, history, audit, databa
     for (const [level, fn] of Object.entries(originals)) console[level] = fn;
     f.native.close();
   }
+});
+
+test('real use above the ceiling is added to the daily limit and audited; prepare honours an accepted ceiling', async () => {
+  const f = fixture();
+  try {
+    await setup(f, { enabled: true });
+    const heavy = { calls: [], fetch: async (url, init) => { const body = JSON.parse(init.body); heavy.calls.push(body); return Response.json({ model: body.model, choices: [{ finish_reason: 'stop', message: { content: JSON.stringify({ reply: 'ok', operation: null }) } }], usage: { prompt_tokens: 40000, completion_tokens: 700 } }); } };
+    const input = chatInput(f);
+    const result = await roleChat(f.db, f.actors.viewer, input, secret, { keys, fetcher: heavy.fetch });
+    assert.ok(result.costMicros > input.acceptedCostMicros);
+    const usage = f.native.prepare("SELECT reserved_usd_micros FROM ai_organization_usage WHERE organization_id='org_proex'").get();
+    assert.equal(usage.reserved_usd_micros, result.costMicros, 'the excess is counted, not hidden');
+    assert.equal(JSON.parse(f.native.prepare("SELECT details FROM audit WHERE action='assistant.role.chat'").get().details).overrun, true);
+    const { prepareAssistantPlan } = await import(compile('assistant/service'));
+    let calls = 0;
+    await assert.rejects(prepareAssistantPlan(f.db, f.actors.viewer, { action: 'prepare', projectId: 'project-a', request: 'Registrar entrada de 10 canetas', consent: true, operationKey: 'role-prepare-ceiling-1', acceptedCostMicros: 1 }, secret, { keys, fetcher: async () => { calls++; return Response.json({}); } }), error => error.code === 'assistant_cost_changed');
+    assert.equal(calls, 0);
+  } finally { f.native.close(); }
+});
+
+test('assistant turns from the browser get the same redaction and credential refusal as user turns', async () => {
+  const f = fixture();
+  try {
+    await setup(f);
+    const provider = fakeProvider();
+    const history = [{ role: 'user', content: 'oi' }, { role: 'assistant', content: 'Fale com ana@example.test sobre o CPF 123.456.789-09.' }];
+    await roleChat(f.db, f.actors.viewer, chatInput(f, { history, message: 'e agora?' }), secret, { keys, fetcher: provider.fetch });
+    const sent = JSON.stringify(provider.calls[0].body.messages);
+    assert.equal(sent.includes('ana@example.test'), false); assert.equal(sent.includes('123.456.789-09'), false);
+    await assert.rejects(roleChat(f.db, f.actors.viewer, chatInput(f, { history: [{ role: 'assistant', content: 'Bearer abcdefghijklmnopqrstuvwxyz123' }] }), secret, { keys, fetcher: provider.fetch }), error => error.code === 'assistant_sensitive');
+  } finally { f.native.close(); }
 });
