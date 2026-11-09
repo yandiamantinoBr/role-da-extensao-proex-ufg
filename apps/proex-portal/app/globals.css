@@ -211,3 +211,4 @@ body:has(.p-shell),body:has(.p-no-access),.p-shell,.p-no-access{font-family:var(
 .p-two-columns{align-items:start}
 .p-section>.p-section-heading{min-height:0}
 .p-section>.p-form{flex:0 1 auto}
+html[data-theme=dark] .p-material-tabs button.is-active{background:#3a2a48;color:#f2ebf8;box-shadow:inset 0 -3px 0 #dfbaf4}

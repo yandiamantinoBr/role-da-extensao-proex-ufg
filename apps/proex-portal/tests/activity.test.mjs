@@ -36,7 +36,7 @@ function fixture() {
   for (const migration of readdirSync(`${root}drizzle`).filter(name => name.endsWith('.sql')).sort()) native.exec(readFileSync(`${root}drizzle/${migration}`, 'utf8'));
   const created = at('2026-10-01');
   for (const id of ['project-a', 'project-b']) native.prepare('INSERT INTO projects(id,name,created_at) VALUES(?,?,?)').run(id, `Projeto ${id.slice(-1).toUpperCase()}`, created);
-  native.prepare("INSERT INTO items(id,project_id,name,category,unit,stock,created_at) VALUES('item-a','project-a','Planner','gift','unidade',50,?),('item-b','project-b','Caneca','gift','unidade',10,?),('asset-a','project-a','Projetor','equipment','unidade',1,?)").run(created, created, created);
+  native.prepare("INSERT INTO items(id,project_id,name,category,unit,stock,created_at) VALUES('item-a','project-a','Planner','gift','unidade',50,?),('item-b','project-b','Caneca','gift','unidade',10,?),('asset-a','project-a','Projetor','equipment','unidade',1,?),('asset-a2','project-a','Caixa de som','equipment','unidade',1,?)").run(created, created, created, created);
   const prepare = sql => {
     let values = [];
     return {
@@ -55,7 +55,9 @@ function person(db, role, { project = null, organization = null, name = role, re
   db.native.prepare('INSERT INTO members(id,user_id,email,role,project_id,revoked_at,created_at,organization_id) VALUES(?,?,?,?,?,?,?,?)').run(...Object.values(member));
   db.native.prepare('INSERT INTO portal_users(user_id,email,status,created_at,updated_at,anonymized_at) VALUES(?,?,?,?,?,?)').run(userId, member.email, 'active', now, now, anonymized ? now : null);
   db.native.prepare('INSERT INTO profiles(user_id,display_name,version,created_at,updated_at) VALUES(?,?,1,?,?)').run(userId, name, now, now);
-  return { userId, email: member.email, displayName: name, members: revoked ? [] : [member], capabilities: [] };
+  // Igual ao getActor real: membro da organização recebe a lista de projetos dela.
+  const organizationProjects = organization ? { [organization]: db.native.prepare('SELECT id FROM projects WHERE organization_id=?').all(organization).map(row => row.id) } : {};
+  return { userId, email: member.email, displayName: name, members: revoked ? [] : [member], capabilities: [], organizationProjects };
 }
 function seed(db, actors) {
   const move = (id, item, delta, kind, actor, day, ref = null) => db.native.prepare('INSERT INTO stock_movements(id,item_id,delta,kind,note,ref_id,actor_id,created_at) VALUES(?,?,?,?,?,?,?,?)').run(id, item, delta, kind, 'NOTA-PRIVADA', ref, actor, at(day));
@@ -64,7 +66,9 @@ function seed(db, actors) {
   move('mov-b1', 'item-b', -3, 'consume', actors.viewerB.userId, '2026-11-10');
   move('mov-old', 'item-a', 5, 'receive', actors.inventoryA.userId, '2026-06-01');
   db.native.prepare("INSERT INTO loans(id,project_id,item_id,action_name,borrower_name,borrower_contact,starts_at,ends_at,status,created_by,created_at,checked_out_at) VALUES('loan-a','project-a','asset-a','Ação CONPEEX','Pessoa Privada','contato@privado.invalid',?,?,'out',?,?,?)")
-    .run(at('2026-11-09'), at('2026-11-09', 18), actors.manager.userId, at('2026-11-08'), at('2026-11-09', 9));
+    .run(Date.parse(at('2026-11-09')), Date.parse(at('2026-11-09', 18)), actors.manager.userId, at('2026-11-08'), at('2026-11-09', 9));
+  db.native.prepare("INSERT INTO loans(id,project_id,item_id,action_name,borrower_name,starts_at,ends_at,status,created_by,created_at,checked_out_at) VALUES('loan-future','project-a','asset-a2','Ação futura','Outra Pessoa',?,?,'out',?,?,?)")
+    .run(Date.parse(at('2026-11-10', 8)), Date.parse('2030-01-01T12:00:00.000Z'), actors.manager.userId, at('2026-11-10', 8), at('2026-11-10', 8));
   const task = (id, project, title, created, by) => db.native.prepare("INSERT INTO followup_tasks(id,organization_id,project_id,title,body,priority,status,created_by,created_at,updated_at) VALUES(?, 'org_proex', ?, ?, 'CORPO-PRIVADO', 'high', 'open', ?, ?, ?)").run(id, project, title, by, at(created), at(created));
   task('task-a', 'project-a', 'Contar planners', '2026-11-08', actors.manager.userId);
   task('task-b', 'project-b', 'Revisar canecas', '2026-11-09', actors.manager.userId);
@@ -96,7 +100,7 @@ test('organization-wide staff see every project, every type, and never private f
   assert.ok(!feed.events.some(event => event.id === 'materials:mov-old'), 'fora do período');
   const json = JSON.stringify(feed);
   for (const secret of ['Pessoa Privada', 'contato@privado.invalid', 'NOTA-PRIVADA', 'CORPO-PRIVADO', 'NOTA-AGENDA', '@example.invalid']) assert.ok(!json.includes(secret), secret);
-  assert.deepEqual(feed.loansNow, { active: 1, late: 1 });
+  assert.deepEqual(feed.loansNow, { active: 2, late: 1 }, 'só o que já passou do fim conta como atraso');
   const completions = feed.events.filter(event => event.action === 'Demanda concluída');
   assert.equal(completions.length, 1, 'uma conclusão, mesmo com duas versões concluídas seguidas');
   assert.equal(completions[0].href, '/?module=demands&project=project-a&demandId=task-a');
@@ -131,7 +135,10 @@ test('revoked access, anonymized authors and person filter behave safely', async
   assert.equal((await activityFeed(db, { ...revoked, members: [{ ...actors.manager.members[0], user_id: revoked.userId }] }, range, NOW)).events.length, 0, 'autoridade é conferida ao vivo no banco');
   db.native.prepare('UPDATE portal_users SET anonymized_at=? WHERE user_id=?').run(at('2026-11-10'), actors.colleagueA.userId);
   const feed = await activityFeed(db, actors.manager, range, NOW);
-  assert.equal(feed.events.find(event => event.id === 'materials:mov-a2').actorName, 'Pessoa removida');
+  const removed = feed.events.find(event => event.id === 'materials:mov-a2');
+  assert.deepEqual({ name: removed.actorName, id: removed.actorId }, { name: 'Pessoa removida', id: null });
+  const anonymized = await activityFeed(db, actors.manager, { ...range, person: actors.colleagueA.userId }, NOW);
+  assert.equal(anonymized.events.length, 0); assert.equal(anonymized.summary.days.reduce((total, row) => total + row.materials, 0), 0);
   const mine = await activityFeed(db, actors.manager, { ...range, person: actors.inventoryA.userId }, NOW);
   assert.ok(mine.events.length > 0 && mine.events.every(event => event.actorId === actors.inventoryA.userId));
 });
@@ -170,4 +177,39 @@ test('chart totals come from the database and stay exact when the list is cut', 
   const scoped = await activityFeed(db, actors.viewerB, range, NOW);
   assert.ok(scoped.summary.stock.every(row => row.projectId === 'project-b'), 'totais também respeitam o projeto');
   assert.equal(scoped.summary.days.reduce((total, row) => total + row.materials, 0), 0, 'leitor sem estoque não vê movimentos');
+});
+
+test('each role keeps the read rule of its own module, across organizations and manual records', async () => {
+  const { db, actors } = setup();
+  const created = at('2026-10-01');
+  db.native.prepare("INSERT INTO organizations(id,name,slug,created_at,updated_at) VALUES('org-b','Outra organização','outra',?,?)").run(created, created);
+  db.native.prepare("INSERT INTO projects(id,name,created_at,organization_id) VALUES('project-x','Projeto X',?, 'org-b')").run(created);
+  db.native.prepare("UPDATE projects SET organization_id='org-b' WHERE id='project-x'").run();
+  db.native.prepare("INSERT INTO items(id,project_id,name,category,unit,stock,created_at) VALUES('item-x','project-x','Item X','gift','unidade',10,?)").run(created);
+  db.native.prepare("INSERT INTO stock_movements(id,item_id,delta,kind,note,actor_id,created_at) VALUES('mov-x','item-x',5,'receive','',?,?)").run(actors.manager.userId, at('2026-11-10'));
+  db.native.prepare("INSERT INTO followup_tasks(id,organization_id,project_id,title,body,priority,status,created_by,created_at,updated_at) VALUES('task-org','org_proex',NULL,'Demanda geral','','medium','open',?,?,?)").run(actors.manager.userId, at('2026-11-10'), at('2026-11-10'));
+  const record = (id, kind, title) => db.native.prepare('INSERT INTO records(id,project_id,kind,title,body,occurred_at,created_by,created_at) VALUES(?,?,?,?,?,?,?,?)').run(id, 'project-a', kind, title, 'TEXTO-PRIVADO', at('2026-11-10', 9), actors.manager.userId, at('2026-11-10', 9));
+  record('rec-obs', 'observation', 'Observação do turno'); record('rec-maint', 'maintenance', 'Manutenção do projetor');
+  const owner = person(db, 'owner', { name: 'Dona' }), loansA = person(db, 'loans', { project: 'project-a', name: 'Empréstimos A' }), operatorA = person(db, 'operator', { project: 'project-a', name: 'Operador A' });
+  const managerX = person(db, 'manager', { organization: 'org-b', name: 'Gestor X' });
+
+  const staff = await activityFeed(db, actors.manager, range, NOW);
+  assert.ok(!staff.events.some(event => event.projectId === 'project-x'), 'gestor da PROEX não vê outra organização');
+  assert.ok(!staff.events.some(event => event.title === 'Demanda geral'), 'demanda sem projeto: só a dona da organização, como em Demandas');
+  assert.ok(staff.events.some(event => event.id === 'records:rec-obs') && staff.events.some(event => event.id === 'records:rec-maint'));
+  assert.ok(!JSON.stringify(staff).includes('TEXTO-PRIVADO'), 'texto do registro não sai no histórico');
+  const other = await activityFeed(db, managerX, range, NOW);
+  assert.deepEqual([...new Set(other.events.map(event => event.projectId))], ['project-x']);
+  const platform = await activityFeed(db, owner, range, NOW);
+  assert.ok(platform.events.some(event => event.projectId === 'project-x') && platform.events.some(event => event.title === 'Demanda geral'));
+
+  const loans = await activityFeed(db, loansA, range, NOW);
+  assert.ok(loans.events.length > 0 && loans.events.every(event => event.projectId === 'project-a'));
+  assert.ok(loans.events.some(event => event.type === 'loans') && !loans.events.some(event => event.type === 'materials'));
+  assert.deepEqual(loans.loansNow, { active: 2, late: 1 });
+  assert.ok(!JSON.stringify(loans).includes('Pessoa Privada'));
+  const operator = await activityFeed(db, operatorA, range, NOW);
+  assert.deepEqual([...new Set(operator.events.map(event => event.type))], ['demands'], 'operador só lê demandas, como hoje');
+  assert.equal(operator.loansNow, null);
+  assert.equal(operator.summary.stock.length, 0);
 });

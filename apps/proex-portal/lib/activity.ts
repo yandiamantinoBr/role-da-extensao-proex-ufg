@@ -83,7 +83,10 @@ function scoped(actor: PortalActor, capabilities: string[], projectSql: string, 
 export async function activityFeed(db: D1Database, actor: PortalActor | null, input: Record<string, unknown> = {}, now = Date.now()): Promise<ActivityFeed> {
   if (!actor) throw new HttpError(401, 'Entre para consultar os registros.', 'unauthenticated');
   const range = activityRange(input.from, input.to, now), wanted = types(input.types);
-  const projectId = optionalId(input.projectId, 'o projeto'), person = optionalId(input.person, 'a pessoa');
+  const projectId = optionalId(input.projectId, 'o projeto');
+  let person = optionalId(input.person, 'a pessoa');
+  // Filtro por pessoa só para contas ativas e não anonimizadas; senão, nada corresponde.
+  if (person && !(await all(db, 'SELECT 1 FROM portal_users WHERE user_id=? AND anonymized_at IS NULL LIMIT 1', [person])).length) person = 'conta-indisponivel';
   const events: ActivityEvent[] = [];
   let truncated = false, loansNow: ActivityFeed['loansNow'] = null;
   const perDay = new Map(range.days.map(day => [day, { day, materials: 0, demandsOpened: 0, demandsCompleted: 0, agenda: 0 }]));
@@ -98,7 +101,7 @@ export async function activityFeed(db: D1Database, actor: PortalActor | null, in
       FROM stock_movements m JOIN items i ON i.id=m.item_id JOIN projects p ON p.id=i.project_id
       WHERE ${scope.sql} AND m.created_at>=? AND m.created_at<? ORDER BY m.created_at DESC LIMIT ${MAX_PER_SOURCE + 1}`, [...scope.values, range.startsAt, range.endsAt]));
     for (const row of rows) {
-      const delta = Number(row.delta) || 0, unit = String(row.unit || 'unidade');
+      const delta = Number(row.delta) || 0, unitName = String(row.unit || 'unidade'), unit = Math.abs(delta) === 1 || /s$/i.test(unitName) ? unitName : `${unitName}s`;
       events.push({ id: `materials:${row.id}`, type: 'materials', action: MOVEMENT_LABELS[String(row.kind)] ?? 'Movimentação', title: String(row.item_name), detail: `${delta > 0 ? '+' : ''}${delta} ${unit}`,
         at: String(row.created_at), day: brasiliaDay(String(row.created_at)), projectId: String(row.project_id), projectName: String(row.project_name),
         actorId: row.actor_id ? String(row.actor_id) : null, actorName: '', viaRole: /^manual:[^:]+:ai_/.test(String(row.ref_id ?? '')),
@@ -131,9 +134,10 @@ export async function activityFeed(db: D1Database, actor: PortalActor | null, in
     }
     const reachable = scoped(actor, ['loans.read'], 'p.id', projectId);
     if ((await all(db, `SELECT 1 FROM projects p WHERE ${reachable.sql} LIMIT 1`, reachable.values)).length) {
-    const now_ = new Date(now).toISOString(), current = scoped(actor, ['loans.read'], 'l.project_id', projectId);
+    // loans.ends_at é inteiro (milissegundos): comparar com número, nunca com texto ISO.
+    const current = scoped(actor, ['loans.read'], 'l.project_id', projectId);
     const [counts] = await all(db, `SELECT SUM(CASE WHEN l.status IN ('reserved','out') THEN 1 ELSE 0 END) active,
-      SUM(CASE WHEN l.status='out' AND l.ends_at<? THEN 1 ELSE 0 END) late FROM loans l WHERE ${current.sql}`, [now_, ...current.values]);
+      SUM(CASE WHEN l.status='out' AND CAST(l.ends_at AS INTEGER)<? THEN 1 ELSE 0 END) late FROM loans l WHERE ${current.sql}`, [now, ...current.values]);
     loansNow = { active: Number(counts?.active) || 0, late: Number(counts?.late) || 0 };
     }
   }
@@ -200,8 +204,12 @@ export async function activityFeed(db: D1Database, actor: PortalActor | null, in
   const people = ids.length ? await all(db, `SELECT u.user_id id,COALESCE(NULLIF(pr.display_name,''),'Pessoa da equipe') name FROM portal_users u LEFT JOIN profiles pr ON pr.user_id=u.user_id
     WHERE u.user_id IN (${ids.map(() => '?').join(',')}) AND u.anonymized_at IS NULL`, ids) : [];
   const nameOf = new Map(people.map(row => [String(row.id), String(row.name)]));
-  for (const event of events) event.actorName = event.actorId ? nameOf.get(event.actorId) ?? 'Pessoa removida' : '';
-  const filtered = person ? events.filter(event => event.actorId === person) : events;
+  // Conta anonimizada: sem nome e sem identificador, para as ações dela não ficarem ligadas entre si.
+  for (const event of events) {
+    if (event.actorId && !nameOf.has(event.actorId)) { event.actorId = null; event.actorName = 'Pessoa removida'; }
+    else event.actorName = event.actorId ? nameOf.get(event.actorId)! : '';
+  }
+  const filtered = person ? (nameOf.has(person) ? events.filter(event => event.actorId === person) : []) : events;
   filtered.sort((a, b) => b.at.localeCompare(a.at) || a.id.localeCompare(b.id));
   if (filtered.length > MAX_EVENTS) truncated = true;
   return { range: { from: range.from, to: range.to, days: range.days }, types: wanted, events: filtered.slice(0, MAX_EVENTS), truncated,
