@@ -52,7 +52,7 @@ export function CommunityMessages({ onUnreadChange }: { onUnreadChange?(count: n
               {unread && <button type="button" className={styles.textButton} onClick={() => void act({ action: 'read', id: message.id })}><MailOpen size={15} aria-hidden="true"/>Marcar como lido</button>}
               <span className={styles.quietActions}>
                 <button type="button" className={styles.iconAction} aria-label="Ocultar este recado" title="Ocultar" onClick={() => void act({ action: 'hide', id: message.id }, 'Recado ocultado')}><EyeOff size={17}/></button>
-                {incoming && <button type="button" className={styles.iconAction} aria-label={`Bloquear ${message.senderName}`} title="Bloquear quem enviou" onClick={() => void act({ action: 'block', userId: message.senderId }, `${message.senderName} não pode mais mandar recados para você`)}><Ban size={17}/></button>}
+                {incoming && <button type="button" className={styles.textButton} aria-label={`Bloquear ${message.senderName}`} onClick={() => void act({ action: 'block', userId: message.senderId }, `${message.senderName} não pode mais mandar recados para você`)}><Ban size={15} aria-hidden="true"/>Bloquear</button>}
               </span>
             </div>
           </li>;
