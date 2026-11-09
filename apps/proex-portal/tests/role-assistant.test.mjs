@@ -445,6 +445,10 @@ test('FERRAMENTAS: lookups run with the asking person permissions; loans never s
     assert.equal((await runRoleTool(f.db, f.actors.viewer, 'org_proex', 'consultar_emprestimos', {})).rows, 0, 'inventory role does not read loans');
     await assert.rejects(runRoleTool(f.db, f.actors.viewer, 'org_proex', 'apagar_tudo', {}), error => error.code === 'role_tool_unknown');
     await assert.rejects(runRoleTool(f.db, f.actors.viewer, 'org_proex', 'consultar_estoque', { sql: 'DROP' }), error => error.code === 'role_tool_input');
+    const search = await runRoleTool(f.db, f.actors.viewer, 'org_proex', 'buscar_no_portal', { texto: 'lote 10/11' });
+    assert.ok(search.content.includes('24 conjuntos de bottons') && !search.content.includes('SEGREDO-B'), 'the general search already brings the lot table, in one round');
+    const { ROLE_SYSTEM_PROMPT_TOOLS } = await import(compile('assistant/role-contracts'));
+    assert.ok(new TextEncoder().encode(JSON.stringify(ROLE_SYSTEM_PROMPT_TOOLS)).byteLength + 200 <= ROLE_SYSTEM_PROMPT_BYTES, 'tools prompt fits the cost ceiling');
     const small = await runRoleTool(f.db, f.actors.owner, 'org_proex', 'buscar_no_portal', { texto: 'Lote' }, 700);
     assert.ok(new TextEncoder().encode(small.content).byteLength <= 700, 'results respect the byte budget');
   } finally { f.native.close(); }

@@ -122,8 +122,19 @@ export async function runRoleTool(db: D1Database, actor: PortalActor, organizati
     ]);
     const hits: { s: number; item: Record<string, unknown>; source: RoleToolSource }[] = [];
     for (const row of items) { const s = score(String(row.name), wanted); if (s) { const href = link('materials', String(row.project_id), `&itemId=${encodeURIComponent(String(row.id))}`); hits.push({ s: s + 1, item: { tipo: 'material', nome: row.name, projeto: row.project_name, disponivel: Number(row.stock) - Number(row.reserved), unidade: row.unit, link: href }, source: { label: `${row.name} · ${row.project_name}`, href } }); } }
-    for (const row of demandHits.slice(0, 8)) { const href = demandLink(row); hits.push({ s: 2, item: { tipo: 'demanda', nome: row.title, projeto: row.project_name, situacao: STATUS[String(row.status)] ?? row.status, link: href, dica: 'Use consultar_demandas para ler o texto.' }, source: { label: `${row.title} · ${row.project_name}`, href } }); }
-    for (const row of campaigns) { const s = score(String(row.name), wanted); if (s) { const href = link('events', String(row.project_id), `&campaignId=${encodeURIComponent(String(row.id))}`); hits.push({ s, item: { tipo: 'dinâmica', nome: row.name, projeto: row.project_name, link: href, dica: 'Use consultar_niveis_dinamica para os níveis.' }, source: { label: `${row.name} · ${row.project_name}`, href } }); } }
+    // As 3 demandas mais próximas já vêm com o texto (tabelas de lotes), para fechar em uma rodada.
+    for (const [index, row] of demandHits.slice(0, 8).entries()) { const href = demandLink(row); hits.push({ s: 3 + score(String(row.title), wanted), item: { tipo: 'demanda', nome: row.title, projeto: row.project_name, situacao: STATUS[String(row.status)] ?? row.status, ...(index < 3 ? { texto: String(row.body ?? '').slice(0, 1500) } : { dica: 'Use consultar_demandas para ler o texto.' }), link: href }, source: { label: `${row.title} · ${row.project_name}`, href } }); }
+    let tiersShown = false;
+    for (const row of campaigns) {
+      const s = score(String(row.name), wanted); if (!s) continue;
+      const href = link('events', String(row.project_id), `&campaignId=${encodeURIComponent(String(row.id))}`);
+      let niveis: Record<string, string[]> | null = null;
+      if (!tiersShown) {
+        try { const workspace = await prizeTiersWorkspace(db, actor, { campaignId: String(row.id) }); const names = (tier: string) => workspace.options.filter(option => option.tier === tier).map(option => option.name); niveis = { brinde: names('brinde'), super: names('super'), superSuper: names('super_super') }; tiersShown = true; }
+        catch (error) { if (!(error instanceof HttpError && error.status === 403)) throw error; }
+      }
+      hits.push({ s: s + (niveis ? 2 : 0), item: { tipo: 'dinâmica', nome: row.name, projeto: row.project_name, ...(niveis ? { niveis } : { dica: 'Use consultar_niveis_dinamica para os níveis.' }), link: href }, source: { label: `${row.name} · ${row.project_name}`, href } });
+    }
     for (const row of schedule) { const s = score(String(row.title), wanted); if (s) { const href = link('calendar', String(row.project_id)); hits.push({ s, item: { tipo: 'agenda', nome: row.title, quando: String(row.starts_at).length === 10 ? row.starts_at : brasilia(String(row.starts_at)), projeto: row.project_name, link: href }, source: { label: `Agenda · ${row.project_name}`, href } }); } }
     hits.sort((a, b) => b.s - a.s);
     const top = hits.slice(0, 20);
