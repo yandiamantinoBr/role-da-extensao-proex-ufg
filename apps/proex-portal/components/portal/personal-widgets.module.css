@@ -1,8 +1,8 @@
-.quiet{display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px;margin:4px 0 22px;color:var(--text-secondary);font-size:13px;line-height:1.5}
+.quiet{display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px;margin:var(--section-gap,28px) 0 22px;color:var(--text-secondary);font-size:13px;line-height:1.5}
 .quiet svg{color:var(--brand-ink);flex-shrink:0}
 .linkButton{display:inline-flex;align-items:center;gap:6px;justify-self:start;min-height:44px;padding:0 4px;border:0;background:none;color:var(--brand-ink);font:inherit;font-weight:650;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
 .linkButton:focus-visible,.iconAction:focus-visible{outline:3px solid var(--focus);outline-offset:2px;border-radius:8px}
-.panel{container:personal-widgets / inline-size;display:grid;gap:14px;min-width:0;margin-bottom:22px;padding:18px;border:1px solid var(--line);border-radius:var(--radius-card,16px);background:var(--surface);box-shadow:var(--shadow-card);color:var(--ink)}
+.panel{container:personal-widgets / inline-size;display:grid;gap:14px;min-width:0;margin:var(--section-gap,28px) 0 22px;padding:18px;border:1px solid var(--line);border-radius:var(--radius-card,16px);background:var(--surface);box-shadow:var(--shadow-card);color:var(--ink)}
 .heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;min-width:0}
 .heading>div{min-width:0}
 .heading h2{margin:0;font-family:var(--font-display);font-size:19px;line-height:1.35;letter-spacing:-.02em}
