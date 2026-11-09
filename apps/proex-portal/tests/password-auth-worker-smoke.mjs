@@ -24,7 +24,7 @@ const modules = [entry, ...chunks.filter(file => file !== entry)].map(file => ({
 let worker;
 
 try {
-  worker = new Miniflare({
+  const options = {
     cf: false, name: 'proex-auth-worker-smoke', modules, modulesRoot: server,
     compatibilityDate: config.compatibility_date, compatibilityFlags: config.compatibility_flags,
     d1Databases: { DB: 'qa-auth-db' }, d1Persist: path.join(temporary, 'd1'),
@@ -35,12 +35,17 @@ try {
     },
     bindings: { BETTER_AUTH_URL: origin, BETTER_AUTH_SECRET: crypto.randomBytes(32).toString('base64url') },
     log: new Log(LogLevel.WARN),
-  });
-  const db = await worker.getD1Database('DB');
+  };
+  worker = new Miniflare(options);
+  let db = await worker.getD1Database('DB');
   const migrations = path.join(project, 'drizzle');
   for (const file of fs.readdirSync(migrations).filter(name => name.endsWith('.sql')).sort()) {
     const statements = fs.readFileSync(path.join(migrations, file), 'utf8').split('--> statement-breakpoint').filter(sql => sql.trim());
     for (const sql of statements) await db.prepare(sql).run();
+    // A top-level SELECT guard (e.g. 0028) stays open inside local D1 and would make a later DROP TABLE fail
+    // with SQLITE_LOCKED. Reopen the same persisted database; production applies each file with exec().
+    const firstLine = sql => sql.split('\n').map(line => line.trim()).find(line => line && !line.startsWith('--')) ?? '';
+    if (statements.some(sql => /^SELECT\b/i.test(firstLine(sql)))) { await worker.dispose(); worker = new Miniflare(options); db = await worker.getD1Database('DB'); }
   }
 
   // New public access remains closed even in a deployed/compiled runtime until
