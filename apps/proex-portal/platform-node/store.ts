@@ -23,7 +23,8 @@ export interface ObjectStore {
 }
 export type CaptureLimits = { totalBytes: number; objectBytes: number; objects: number };
 export type BackupCapture = { backend: 'disk' | 'postgres'; snapshot: Snapshot; objects: { storageId: string; key: string | null; contentType: string; data: Uint8Array }[] };
-export type BackendStores = { snapshots: SnapshotStore; objects: ObjectStore; backup: { authoritySnapshot(limits: CaptureLimits): Promise<Snapshot>; capture(limits: CaptureLimits): Promise<BackupCapture> } };
+export type StorageUsage = { backend: 'disk' | 'postgres'; databaseBytes: number | null; snapshotBytes: number | null; historyBytes: number | null; objectBytes: number | null };
+export type BackendStores = { snapshots: SnapshotStore; objects: ObjectStore; backup: { authoritySnapshot(limits: CaptureLimits): Promise<Snapshot>; capture(limits: CaptureLimits): Promise<BackupCapture> }; usage?(): Promise<StorageUsage> };
 function captureError(code: 'backup_limit' | 'backup_source'): never { throw Object.assign(new Error('Backup source unavailable.'), { name: 'BackupSourceError', code }); }
 
 /** Disco local: VPS, servidor da UFG ou desenvolvimento. */
@@ -91,6 +92,12 @@ export function postgresStores(url: string, schema = 'proex'): BackendStores {
   const sql = postgres(url, { prepare: false, max: 3, idle_timeout: 20, connect_timeout: 15 });
   const snapshot = sql(`${schema}.sqlite_snapshot`), history = sql(`${schema}.sqlite_history`), objects = sql(`${schema}.objects`);
   return {
+    /** Space actually used in Postgres (read-only catalog functions; the schema name is validated above). */
+    async usage() {
+      const [row] = await sql.unsafe(`select pg_database_size(current_database())::bigint db, pg_total_relation_size('${schema}.sqlite_snapshot')::bigint snap,
+        pg_total_relation_size('${schema}.sqlite_history')::bigint hist, pg_total_relation_size('${schema}.objects')::bigint obj`) as unknown as { db: string; snap: string; hist: string; obj: string }[];
+      return { backend: 'postgres' as const, databaseBytes: Number(row.db), snapshotBytes: Number(row.snap), historyBytes: Number(row.hist), objectBytes: Number(row.obj) };
+    },
     snapshots: {
       async version() {
         const [row] = await sql<{ version: string }[]>`select version from ${snapshot} where id = 1`;

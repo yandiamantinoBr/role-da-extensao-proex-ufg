@@ -71,7 +71,7 @@ export function FilterableMaterialCatalog({ materials: everything, kits = [], on
   const showKits = kits.length > 0 && (!filters.type || filters.type === 'kit' || filters.type === 'gift') && !filters.category && !filters.situation && !filters.photo && !filters.owner;
   const active = Object.values(filters).filter(Boolean).length;
   const set = (key: keyof Filters) => (event: ChangeEvent<HTMLSelectElement>) => setFilters(current => ({ ...current, [key]: event.target.value }));
-  const select = (key: keyof Filters, label: string, entries: [string, string][], allLabel: string) => entries.length > (key === 'photo' || key === 'situation' ? 0 : 1) || filters[key] ? <label className={styles.filter}><span>{label}</span><select value={filters[key]} onChange={set(key)}><option value="">{allLabel}</option>{entries.map(([value, name]) => <option key={value} value={value}>{name}</option>)}</select></label> : null;
+  const select = (key: keyof Filters, label: string, entries: [string, string][], allLabel: string) => entries.length > (key === 'photo' || key === 'situation' ? 0 : 1) || filters[key] ? <label className={styles.filter}><span>{label}</span><select name={`materialFilter-${key}`} value={filters[key]} onChange={set(key)}><option value="">{allLabel}</option>{entries.map(([value, name]) => <option key={value} value={value}>{name}</option>)}</select></label> : null;
   return <div className={styles.catalog}>
     {everything.length > 0 && <div className={styles.filterBar}>
       <button type="button" className={`p-button p-button-subtle ${styles.filterToggle}`} aria-expanded={open} aria-controls="material-filters" onClick={() => setOpen(value => !value)}><SlidersHorizontal size={16} aria-hidden="true"/>Filtros{active ? ` (${active})` : ''}</button>

@@ -20,6 +20,7 @@ function harness(initial={}){
  const hooks={
   useState(initial){const slot=frame.index++,owner=frame;if(!(slot in owner.slots))owner.slots[slot]=typeof initial==='function'?initial():initial;return[owner.slots[slot],next=>{owner.slots[slot]=typeof next==='function'?next(owner.slots[slot]):next;}];},
   useRef(initial){const slot=frame.index++;return frame.slots[slot]??={current:initial};},
+  useId(){const slot=frame.index++;return frame.slots[slot]??=`campo-${slot}`;},
   useEffect(fn,deps){effect(fn,deps,effects);},useLayoutEffect(fn,deps){effect(fn,deps,layouts);},
  };
  function effect(fn,deps,queue){const slot=frame.index++,owner=frame,old=owner.slots[slot];if(!same(old?.deps,deps))queue.push(()=>{old?.cleanup?.();owner.slots[slot]={deps,cleanup:fn()};});}

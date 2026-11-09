@@ -14,10 +14,11 @@ import styles from './role-assistant.module.css';
 type Project = { id: string; name: string; organization_id?: string };
 type Props = { projects: Project[]; defaultProjectId?: string; onApplied?: () => void | Promise<void>; onOpenSettings?: () => void; onOpenLimits?: () => void };
 type Pricing = { model: string; label: string; inputMicrosPerToken: number; outputMicrosPerToken: number };
-type Status = { available: boolean; reason: string | null; provider: string; model: string; textPricing?: Pricing | null; visionPricing?: Pricing | null; visionAvailable: boolean; operationsAvailable: boolean; speech: { available: boolean; provider: 'groq' | 'deepgram' }; dailyLimitMicros: number; reservedTodayMicros: number; canConfigure?: boolean };
+type Status = { available: boolean; reason: string | null; provider: string; model: string; textPricing?: Pricing | null; visionPricing?: Pricing | null; visionAvailable: boolean; operationsAvailable: boolean; speech: { available: boolean; provider: 'groq' | 'deepgram' }; dailyLimitMicros: number; reservedTodayMicros: number; canConfigure?: boolean; tools?: { text: boolean; vision: boolean } };
 type Match = { projectId: string; projectName: string; itemName: string; score: number };
 type Operation = { request: string; stage: 'idle' | 'estimated' | 'preview' | 'done'; costMicros?: number; provider?: string; jev?: boolean; shareConsent?: boolean; stale?: boolean; projectId?: string; matches?: Match[]; ambiguous?: boolean; error?: string; limit?: boolean; preview?: { plan: Omit<AssistantPlan, 'actorId'>; planToken: string; undoReason: string }; confirmed?: boolean; receipt?: string; key: string };
-type Message = { id: string; role: 'user' | 'assistant'; content: string; image?: string; meta?: string; operation?: Operation };
+type Source = { label: string; href: string };
+type Message = { id: string; role: 'user' | 'assistant'; content: string; image?: string; meta?: string; operation?: Operation; sources?: Source[] };
 type Picked = { dataUrl: string; bytes: number };
 type Recorded = { file: File; seconds: number; url: string };
 
@@ -120,7 +121,7 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
 
   const sanitized = useMemo(() => { if (!draft.trim()) return { text: '', problem: '' }; try { return { text: safeRequest(draft), problem: '' }; } catch (cause) { return { text: '', problem: cause instanceof Error ? cause.message : 'Revise a mensagem.' }; } }, [draft]);
   const history = useMemo(() => trimmedHistory(messages), [messages]);
-  const estimate = useMemo(() => status && sanitized.text ? roleEstimate({ textProvider: status.provider === 'groq' ? 'groq' : 'deepseek', textBytes: roleConversationBytes(history, sanitized.text, project?.name ?? ''), hasImage: !!picked, text: status.textPricing, vision: status.visionPricing }) : null, [status, sanitized.text, history, project?.name, picked]);
+  const estimate = useMemo(() => status && sanitized.text ? roleEstimate({ textProvider: status.provider === 'groq' ? 'groq' : 'deepseek', textBytes: roleConversationBytes(history, sanitized.text, project?.name ?? ''), hasImage: !!picked, text: status.textPricing, vision: status.visionPricing, tools: picked ? !!status.tools?.vision : !!status.tools?.text }) : null, [status, sanitized.text, history, project?.name, picked]);
   const tooLong = draft.length > ROLE_MAX_MESSAGE_CHARS;
   const modelLabel = status ? (picked ? status.visionPricing?.label ?? ROLE_MODELS.deepseek.label : status.textPricing?.label ?? status.model) : '';
   const canSend = !!status?.available && !!estimate && !busy && !tooLong && consent && (!picked || status.visionAvailable);
@@ -135,11 +136,11 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
     const user: Message = { id: crypto.randomUUID(), role: 'user', content: text, image };
     setMessages(current => [...current, user]); setDraft(''); setPicked(null); setBusy(true); setError(''); setNotice(''); setLimitHit(false);
     try {
-      const result = await post<{ reply: string; operation: string | null; operationDropped?: boolean; model: string; costMicros: number; reservedMicros: number }>('/api/assistant/role', {
+      const result = await post<{ reply: string; operation: string | null; operationDropped?: boolean; model: string; costMicros: number; reservedMicros: number; sources?: Source[]; lookups?: number }>('/api/assistant/role', {
         action: 'chat', projectId, operationKey: crypto.randomUUID(), consent: true, history, message: text, ...(image ? { image } : {}), acceptedCostMicros: estimate.costMicros,
       });
       if (!mounted.current) return;
-      const reply: Message = { id: crypto.randomUUID(), role: 'assistant', content: result.reply, meta: `Custou ${friendlyMicros(result.costMicros)}${result.operationDropped ? ' · Não preparei operação: a quantidade não estava na sua mensagem.' : ''}`,
+      const reply: Message = { id: crypto.randomUUID(), role: 'assistant', content: result.reply, sources: (result.sources ?? []).filter(source => source.href.startsWith('/?module=')).slice(0, 6), meta: `Custou ${friendlyMicros(result.costMicros)}${result.lookups ? ` · consultou o portal ${result.lookups === 1 ? '1 vez' : `${result.lookups} vezes`}` : ''}${result.operationDropped ? ' · Não preparei operação: a quantidade não estava na sua mensagem.' : ''}`,
         operation: result.operation ? { request: result.operation, stage: 'idle', key: crypto.randomUUID() } : undefined };
       setMessages(current => [...current, reply]);
       if (reply.operation && status.operationsAvailable) void locateOperation(reply);
@@ -299,6 +300,7 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
                   <span className="visually-hidden">{message.role === 'user' ? 'Você disse:' : 'Rolê respondeu:'}</span>
                   {message.image && <img className={styles.sentImage} src={message.image} alt="Imagem enviada ao Rolê"/>}
                   <p>{message.content}</p>
+                  {!!message.sources?.length && <div className={styles.sources}><span>Fontes no portal</span><ul>{message.sources.map(source => <li key={source.href}><a href={source.href} onClick={() => close()}>{source.label}</a></li>)}</ul></div>}
                   {message.meta && <small>{message.meta}</small>}
                   {message.operation && <div className={styles.operation}>
                     <p className={styles.operationTitle}>Posso preparar isto para você</p>

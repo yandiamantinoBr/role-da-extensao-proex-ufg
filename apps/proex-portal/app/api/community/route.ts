@@ -3,7 +3,7 @@ import { getActor, projectAuthoritySql } from '@/lib/access';
 import { database, all } from '@/lib/community/route-support';
 import { publicError } from '@/lib/errors';
 import { canManageFeedback } from '@/lib/feedback';
-import { canReadOmbuds } from '@/lib/community/ombuds';
+import { canManageOmbudsDesignations, canReadOmbuds } from '@/lib/community/ombuds';
 import { unreadMessages } from '@/lib/community/messages';
 import { requireActor, requireInternalMember } from '@/lib/community/shared';
 export const dynamic = 'force-dynamic';
@@ -16,7 +16,7 @@ export async function GET() {
     const read = projectAuthoritySql(actor, [], 'c.project_id');
     const events = await all(db, `SELECT c.id,c.name,c.project_id projectId,p.name projectName,c.starts_at startsAt FROM campaigns c JOIN projects p ON p.id=c.project_id
       WHERE ${read.sql} ORDER BY c.starts_at DESC,c.id LIMIT 200`, read.values);
-    const response = Response.json({ manageFeedback: canManageFeedback(actor), ombuds: await canReadOmbuds(db, actor), events, unreadMessages: await unreadMessages(db, actor.userId) });
+    const response = Response.json({ manageFeedback: canManageFeedback(actor), ombuds: await canReadOmbuds(db, actor), administration: await canManageOmbudsDesignations(db, actor), events, unreadMessages: await unreadMessages(db, actor.userId) });
     response.headers.set('Cache-Control', 'private, no-store');
     return response;
   } catch (error) { const response = publicError(error); response.headers.set('Cache-Control', 'private, no-store'); return response; }

@@ -1,6 +1,7 @@
 'use client';
 import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from 'react';
-import { ArrowLeft, Check, Copy, EyeOff, KeyRound, LoaderCircle, RefreshCw, Search, Send, ShieldCheck, X } from 'lucide-react';
+import { ArrowLeft, Check, Copy, EyeOff, KeyRound, LoaderCircle, RefreshCw, Search, Send, ShieldCheck, UserPlus, Users, X } from 'lucide-react';
+import DateField from './date-field';
 import { toast } from 'sonner';
 import { newOmbudsCode } from '@/lib/community/ombuds-code';
 import { civilDay, communityGet, communityPost, errorText } from './community-api';
@@ -35,6 +36,7 @@ export function OmbudsReporter() {
       <button type="button" aria-pressed={mode === 'track'} onClick={() => setMode('track')}><KeyRound size={16} aria-hidden="true"/>Já tenho um código</button>
     </div>
     <p className={styles.guarantee}><ShieldCheck size={18} aria-hidden="true"/><span><strong>Este relato não fica ligado à sua conta.</strong> O portal não grava seu nome, seu e-mail, seu projeto nem a hora do envio, e a tela da ouvidoria não mostra quem escreveu.</span></p>
+    <OmbudsReadersPanel/>
     {mode === 'track' ? <Track initialCode={submitted}/>
       : submitted ? <Submitted code={submitted} onTrack={() => setMode('track')} onNew={() => { setSubmitted(''); setCode(newOmbudsCode()); }}/>
       : <NewReport code={code} onRegenerate={() => setCode(newOmbudsCode())} onSent={() => setSubmitted(code)}/>}
@@ -138,7 +140,7 @@ function Thread({ messages, mine }: { messages: Message[]; mine: Message['side']
   </li>)}</ol>;
 }
 
-export function OmbudsInbox() {
+export function OmbudsInbox({ administration = false }: { administration?: boolean }) {
   const id = useId(), [reports, setReports] = useState<Report[] | null>(null), [error, setError] = useState(''), [selected, setSelected] = useState<string | null>(null), generation = useRef(0);
   const load = useCallback(() => {
     const epoch = ++generation.current, current = generation;
@@ -155,15 +157,15 @@ export function OmbudsInbox() {
     return () => { current.current++; };
   }, [opened]);
   if (selected) return <OmbudsDetail id={selected} onBack={() => { setSelected(null); setOpened(value => value + 1); }}/>;
-  return <section className={styles.card} aria-labelledby={`${id}-title`} aria-busy={reports === null}>
-    <div className={styles.cardHead}><div><h2 id={`${id}-title`}>Ouvidoria · relatos recebidos</h2><p>Relatos anônimos da equipe. O portal não sabe quem escreveu, e esta tela também não.</p></div><button type="button" className="p-icon-button" aria-label="Atualizar relatos" onClick={() => void load()}><RefreshCw size={18}/></button></div>
+  return <div className={styles.single}><section className={styles.card} aria-labelledby={`${id}-title`} aria-busy={reports === null}>
+    <div className={styles.cardHead}><div><h2 id={`${id}-title`}>Relatos anônimos</h2><p>Relatos anônimos da equipe. O portal não sabe quem escreveu, e esta tela também não.</p></div><button type="button" className="p-icon-button" aria-label="Atualizar relatos" onClick={() => void load()}><RefreshCw size={18}/></button></div>
     {error ? <p role="alert" className="p-inline-error">{error}</p> : reports === null ? <p role="status" className={styles.help}>Consultando…</p> : !reports.length ? <p className={styles.empty}>Nenhum relato recebido.</p>
       : <ul className={styles.entries}>{reports.map(report => <li key={report.id} className={styles.entry}>
         <div className={styles.entryMeta}><span className={styles.status} data-status={report.status}>{STATUS[report.status]}</span><small>{CATEGORIES[report.category]} · recebido em {civilDay(report.receivedOn)} · {report.messages} {report.messages === 1 ? 'mensagem' : 'mensagens'}</small></div>
         <p className={styles.entryBody}>{report.excerpt}{(report.excerpt?.length ?? 0) >= 160 ? '…' : ''}</p>
         <button type="button" className="p-button p-button-subtle" onClick={() => setSelected(report.id!)}>Abrir relato</button>
       </li>)}</ul>}
-  </section>;
+  </section>{administration && <OmbudsDesignations/>}</div>;
 }
 
 function OmbudsDetail({ id: reportId, onBack }: { id: string; onBack(): void }) {
@@ -194,5 +196,56 @@ function OmbudsDetail({ id: reportId, onBack }: { id: string; onBack(): void }) 
       </form>}
       {data.report.status === 'closed' && <button type="button" className="p-button p-button-subtle" disabled={busy} onClick={() => void act({ action: 'status', status: 'reviewing' }, 'Relato reaberto')}>Reabrir relato</button>}
     </>}
+  </section>;
+}
+
+type Reader = { name: string; basis: 'access' | 'designated'; until: string | null };
+/** Who can read the ombuds right now — shown before writing. Names only; they never see the author. */
+function OmbudsReadersPanel() {
+  const [readers, setReaders] = useState<Reader[] | null>(null);
+  useEffect(() => { let live = true; communityPost<{ readers: Reader[] }>(API, { action: 'readers' }).then(result => { if (live) setReaders(result.readers); }).catch(() => { if (live) setReaders([]); }); return () => { live = false; }; }, []);
+  if (!readers) return null;
+  return <details className={styles.anonymity}>
+    <summary><Users size={16} aria-hidden="true"/>Quem pode ler os relatos agora ({readers.length})</summary>
+    <ul>{readers.map((reader, index) => <li key={`${reader.name}-${index}`}><strong>{reader.name}</strong> · {reader.basis === 'access' ? 'administração geral ou acesso total' : `designada pela PROEX${reader.until ? ` até ${civilDay(reader.until)}` : ''}`}</li>)}</ul>
+    <p className={`${styles.help} ${styles.detailsNote}`}>Nenhuma dessas pessoas vê quem escreveu.</p>
+  </details>;
+}
+
+type Designation = { id: string; userId: string; name: string; reason: string; startsOn: string; endsOn: string; createdAt: string; designatedByName: string; revokedAt: string | null; revokedByName: string; revokeReason: string | null };
+/** Administration only: name people to read the ombuds, with dates and reason; every change stays in the history. */
+export function OmbudsDesignations() {
+  const id = useId(), [data, setData] = useState<{ history: Designation[]; candidates: { id: string; name: string }[]; readers: Reader[]; today: string } | null>(null), [error, setError] = useState(''), [revision, setRevision] = useState(0);
+  const [userId, setUserId] = useState(''), [reason, setReason] = useState(''), [startsOn, setStartsOn] = useState(''), [endsOn, setEndsOn] = useState(''), [busy, setBusy] = useState(false), [revoking, setRevoking] = useState<string | null>(null), [revokeReason, setRevokeReason] = useState('');
+  useEffect(() => { let live = true; communityPost<NonNullable<typeof data>>(API, { action: 'designations' }).then(result => { if (live) { setData(result); setStartsOn(current => current || result.today); } }).catch(cause => { if (live) setError(errorText(cause)); }); return () => { live = false; }; }, [revision]);
+  async function act(body: Record<string, unknown>, done: string) {
+    setBusy(true); setError('');
+    try { await communityPost(API, body); toast.success(done); setRevision(value => value + 1); return true; } catch (cause) { setError(errorText(cause)); return false; } finally { setBusy(false); }
+  }
+  if (!data) return error ? <p role="alert" className="p-inline-error">{error}</p> : <p role="status" className={styles.help}>Carregando designações…</p>;
+  const missing = [!userId && 'a pessoa', reason.trim().length < 3 && 'o motivo', !startsOn && 'o início', !endsOn && 'o fim'].filter(Boolean) as string[];
+  return <section className={styles.card} aria-labelledby={`${id}-title`}>
+    <div className={styles.cardHead}><div><h2 id={`${id}-title`}>Quem lê a ouvidoria</h2><p>Por padrão, a administração geral e quem tem acesso total. Você pode designar outras pessoas, com prazo e motivo.</p></div></div>
+    <ul className={styles.readerList}>{data.readers.map((reader, index) => <li key={`${reader.name}-${index}`}><strong>{reader.name}</strong><small>{reader.basis === 'access' ? 'Administração geral ou acesso total' : `Designada até ${civilDay(reader.until)}`}</small></li>)}</ul>
+    <form className={styles.replyForm} onSubmit={event => { event.preventDefault(); if (missing.length) return; void act({ action: 'designate', userId, reason, startsOn, endsOn }, 'Pessoa designada').then(ok => { if (ok) { setUserId(''); setReason(''); setEndsOn(''); } }); }}>
+      <div className={styles.fields}>
+        <label className={styles.field}><span>Pessoa</span><select name="ombuds-designee" value={userId} disabled={busy} onChange={event => setUserId(event.target.value)}><option value="">Escolha a pessoa</option>{data.candidates.map(person => <option key={person.id} value={person.id}>{person.name}</option>)}</select></label>
+        <label className={styles.field}><span>Motivo</span><input name="ombuds-designation-reason" value={reason} maxLength={300} disabled={busy} placeholder="Ex.: apoio à ouvidoria neste semestre" onChange={event => setReason(event.target.value)}/></label>
+        <label className={styles.field}><span>Início</span><DateField value={startsOn} onValueChange={setStartsOn} disabled={busy} aria-label="Início da designação"/></label>
+        <label className={styles.field}><span>Fim</span><DateField value={endsOn} onValueChange={setEndsOn} min={startsOn || data.today} disabled={busy} aria-label="Fim da designação"/></label>
+      </div>
+      {missing.length > 0 && <p className={styles.help}>Para designar, falta {missing.join(', ')}.</p>}
+      {error && <p role="alert" className="p-inline-error">{error}</p>}
+      <button type="submit" className="p-button p-button-primary" disabled={busy || missing.length > 0}><UserPlus size={16}/>Designar</button>
+    </form>
+    <h3 className={styles.subhead}>Histórico (só a administração vê)</h3>
+    {!data.history.length ? <p className={styles.empty}>Nenhuma designação ainda.</p> : <ul className={styles.entries}>{data.history.map(item => <li key={item.id} className={styles.entry}>
+      <div className={styles.entryMeta}><span className={styles.status} data-status={item.revokedAt ? 'closed' : item.endsOn < data.today ? 'closed' : item.startsOn > data.today ? 'reviewing' : 'answered'}>{item.revokedAt ? 'Revogada' : item.endsOn < data.today ? 'Encerrada' : item.startsOn > data.today ? 'Agendada' : 'Ativa'}</span><strong className={styles.person}>{item.name}</strong><small>{civilDay(item.startsOn)} a {civilDay(item.endsOn)} · designada por {item.designatedByName}</small></div>
+      <p className={styles.entryBody}>Motivo: {item.reason}</p>
+      {item.revokedAt && <p className={styles.help}>Revogada por {item.revokedByName}: {item.revokeReason}</p>}
+      {!item.revokedAt && item.endsOn >= data.today && (revoking === item.id
+        ? <form className={styles.manageRow} onSubmit={event => { event.preventDefault(); void act({ action: 'revoke', id: item.id, reason: revokeReason }, 'Designação revogada').then(ok => { if (ok) { setRevoking(null); setRevokeReason(''); } }); }}><label className={styles.field}><span>Motivo da revogação</span><input name="ombuds-revoke-reason" value={revokeReason} maxLength={300} onChange={event => setRevokeReason(event.target.value)}/></label><button type="submit" className={styles.dangerButton} disabled={busy || revokeReason.trim().length < 3}>Revogar</button><button type="button" className={styles.textButton} onClick={() => setRevoking(null)}>Cancelar</button></form>
+        : <button type="button" className={styles.dangerButton} onClick={() => setRevoking(item.id)}>Revogar designação</button>)}
+    </li>)}</ul>}
   </section>;
 }

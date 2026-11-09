@@ -11,7 +11,7 @@ import { toast } from 'sonner';
 import settingsStyles from './settings-groups.module.css';
 import { SettingsIndex, SettingsSection } from '@/components/portal/settings-layout';
 import headingStyles from './module-heading.module.css';
-import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useEffectEvent, useId, useMemo, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from 'react';
 import PhysicalAttendance from '@/components/portal/physical-attendance';
 import CampaignForm from '@/components/portal/campaign-form';
 import CampaignPlanningPanel from '@/components/portal/campaign-planning-panel';
@@ -222,6 +222,7 @@ function LoanAttachment({ loanId, onSaved }: {
     loanId: string;
     onSaved: () => Promise<boolean>;
 }) {
+    const fileId = useId();
     const [file, setFile] = useState<File | null>(null), [saving, setSaving] = useState(false), [error, setError] = useState(''), [message, setMessage] = useState('');
     const key = useRef<string | null>(null);
     function choose(event: React.ChangeEvent<HTMLInputElement>) { const chosen = event.currentTarget.files?.[0]; event.currentTarget.value = ''; if (!chosen)
@@ -252,7 +253,7 @@ function LoanAttachment({ loanId, onSaved }: {
     return <div className="p-upload">
     <label className="p-field">
     <span>Foto ou PDF do termo</span>
-    <input className="p-file-input" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" disabled={saving} onChange={choose}/>
+    <input id={fileId} className="p-file-input" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" disabled={saving} onChange={choose}/>
     <span className="p-button p-button-subtle p-file-button" aria-hidden="true"><FileText size={16}/>{file ? 'Trocar arquivo' : 'Escolher arquivo'}</span>
     <small>Até {UPLOAD_LIMIT_LABEL}. O arquivo fica restrito à equipe autorizada.</small>
     </label>{file && <div className="p-file-ready">
@@ -905,7 +906,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
 
         <Section title="Materiais e estoque" description="Saldo físico, reservas e unidades disponíveis ficam separados." aside={<div className={workStyles.catalogAside}>{can('inventory.manage') && formProjects.length > 0 && <a className="p-button p-button-subtle" href="#movimentar-estoque">Registrar movimento<ArrowRight size={15} aria-hidden="true"/></a>}<div className="p-search">
             <Search size={17}/>
-            <input aria-label="Buscar materiais" placeholder="Buscar material" value={query} onChange={e => setQuery(e.target.value)}/>
+            <input name="materialSearch" aria-label="Buscar materiais" placeholder="Buscar material" value={query} onChange={e => setQuery(e.target.value)}/>
             </div></div>}>{searchItems.length ? <MaterialCatalog onOpen={id=>{setMaterialMode('view');setSelectedMaterialId(id);}} materials={searchItems.map(item => {
                 const availableQuantity = available(item);
                 const projectId = string(get(item, 'projectId', 'project_id'));

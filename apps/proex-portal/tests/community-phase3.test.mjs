@@ -1,0 +1,113 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {DatabaseSync} from 'node:sqlite';
+import {readFileSync,readdirSync} from 'node:fs';
+import {fileURLToPath} from 'node:url';
+import {resolve,dirname} from 'node:path';
+import ts from 'typescript';
+
+// Comunidade fase 3 (0040): chat com imagens e aviso de recado por e-mail. Dados sintéticos.
+const root=fileURLToPath(new URL('../',import.meta.url)),cache=new Map(),url=code=>`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`;
+const replacements=new Map([[resolve(root,'lib/session.ts'),url('export async function getPortalUser(){return null;}')],[resolve(root,'lib/platform.ts'),url('export function database(){return null;} export function bucket(){return null;} export async function storageUsage(){return globalThis.__chatUsage??null;}')]]);
+function compile(file){file=resolve(root,file);if(replacements.has(file))return replacements.get(file);if(cache.has(file))return cache.get(file);let code=ts.transpileModule(readFileSync(file,'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;code=code.replace(/from (['"])([^'"]+)\1/g,(match,_quote,dep)=>{if(!dep.startsWith('.')&&!dep.startsWith('@/'))return match;const target=dep.startsWith('@/')?resolve(root,dep.slice(2)):resolve(dirname(file),dep);return `from ${JSON.stringify(compile(target.endsWith('.ts')?target:`${target}.ts`))}`;});const result=url(code);cache.set(file,result);return result;}
+const access=await import(compile('lib/access.ts')),chat=await import(compile('lib/community/chat.ts')),messages=await import(compile('lib/community/messages.ts')),privacy=await import(compile('lib/privacy.ts'));
+const mail=await import(compile('lib/community/message-email.ts')),email=await import(compile('lib/follow-up/email.ts')),tokenApi=await import(compile('lib/follow-up/email-tokens.ts'));
+function fixture(t){const native=new DatabaseSync(':memory:');native.exec('PRAGMA foreign_keys=ON');for(const f of readdirSync(`${root}drizzle`).filter(x=>x.endsWith('.sql')).sort())native.exec(readFileSync(`${root}drizzle/${f}`,'utf8'));const now=new Date().toISOString();
+ const insert=(table,row)=>{const cols=Object.keys(row);native.prepare(`INSERT INTO ${table}(${cols.join(',')}) VALUES(${cols.map(()=>'?').join(',')})`).run(...Object.values(row));};
+ const db={beforeBatch:null,prepare(sql){let values=[];return{bind(...args){values=args;return this;},async first(column){const row=native.prepare(sql).get(...values)??null;return column?row?.[column]??null:row;},async all(){return{results:native.prepare(sql).all(...values),success:true};},async run(){return this.execute();},execute(){const results=native.prepare(sql).all(...values);return{results,success:true,meta:{changes:Number(native.prepare('SELECT changes() AS n').get().n)}};}};},async batch(statements){if(this.beforeBatch){const hook=this.beforeBatch;this.beforeBatch=null;hook();}native.exec('BEGIN');try{const r=statements.map(s=>s.execute());native.exec('COMMIT');return r;}catch(e){native.exec('ROLLBACK');throw e;}}};
+ const user=async(id,role,project=null,org=null,email=`${id}@example.invalid`)=>{insert('portal_users',{user_id:id,email,status:'active',created_at:now,updated_at:now});insert('profiles',{user_id:id,display_name:`Pessoa ${id}`,created_at:now,updated_at:now});if(role)insert('members',{id:`m-${id}`,user_id:id,email,role,project_id:project,organization_id:org,created_at:now});return access.getActor(db,{userId:id,email,displayName:`Pessoa ${id}`});};
+ for(const id of ['a','b']){insert('organizations',{id:`o-${id}`,name:`Org ${id}`,slug:`org-${id}`,created_at:now,updated_at:now});insert('projects',{id:`p-${id}`,name:`Projeto ${id}`,organization_id:`o-${id}`,created_at:now});}
+ const objects=new Map(),store={async put(key,data,type){objects.set(key,{data,contentType:type});},async get(key){return objects.get(key)??null;},async delete(key){objects.delete(key);}};
+ t.after(()=>native.close());return{native,db,user,now,insert,store,objects};}
+const count=(f,table,where='1=1',...values)=>Number(f.native.prepare(`SELECT count(*) n FROM ${table} WHERE ${where}`).get(...values).n);
+const dump=native=>{const rows=[];for(const {name} of native.prepare("SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%'").all())rows.push(...native.prepare(`SELECT * FROM "${name}"`).all().map(row=>`${name}:${JSON.stringify(row)}`));return rows.sort().join('\n');};
+const jpeg=(extra=[],w=800,h=600)=>new Uint8Array([0xff,0xd8,0xff,0xdb,0,4,1,2,...extra,0xff,0xc0,0,17,8,h>>8,h&255,w>>8,w&255,3,1,0x11,0,2,0x11,1,3,0x11,1,0xff,0xd9]);
+const png=(w=800,h=600)=>new Uint8Array([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a,0,0,0,13,...Buffer.from('IHDR'),w>>>24,(w>>16)&255,(w>>8)&255,w&255,h>>>24,(h>>16)&255,(h>>8)&255,h&255,8,2,0,0,0]);
+const webp=(w=800,h=600)=>new Uint8Array([...Buffer.from('RIFF'),30,0,0,0,...Buffer.from('WEBPVP8X'),10,0,0,0,0,0,0,0,(w-1)&255,((w-1)>>8)&255,0,(h-1)&255,((h-1)>>8)&255,0]);
+const send=(f,actor,conversationId,body='Olá, equipe!',attachmentId=null)=>chat.chatAction(f.db,actor,{action:'send',conversationId,body,attachmentId,operationKey:crypto.randomUUID()},f.store);
+
+test('chat do projeto: só quem acessa o projeto abre, lê e escreve; ler não grava nada',async t=>{const f=fixture(t),a=await f.user('a','viewer','p-a','o-a'),b=await f.user('b','operator','p-a','o-a'),c=await f.user('c','viewer','p-b','o-b');
+ const {conversationId}=await chat.chatAction(f.db,a,{action:'open',kind:'project',projectId:'p-a'},f.store);assert.equal((await chat.chatAction(f.db,b,{action:'open',kind:'project',projectId:'p-a'},f.store)).conversationId,conversationId,'one conversation per project');
+ await assert.rejects(()=>chat.chatAction(f.db,c,{action:'open',kind:'project',projectId:'p-a'},f.store),e=>e.status===404);
+ await send(f,a,conversationId,'Bom dia! 🎉');
+ await assert.rejects(()=>chat.chatMessages(f.db,c,conversationId),e=>e.status===404);await assert.rejects(()=>send(f,c,conversationId),e=>e.status===404);
+ const before=dump(f.native);const thread=await chat.chatMessages(f.db,b,conversationId);await chat.chatOverview(f.db,b);assert.equal(dump(f.native),before,'polling and the overview write nothing');
+ assert.equal(thread.messages[0].body,'Bom dia! 🎉');assert.equal(thread.messages[0].mine,false);
+ const overview=await chat.chatOverview(f.db,b);assert.equal(overview.projects.find(p=>p.projectId==='p-a').unread,1);
+ await chat.chatAction(f.db,b,{action:'read',conversationId},f.store);assert.equal((await chat.chatOverview(f.db,b)).projects.find(p=>p.projectId==='p-a').unread,0);
+ assert.equal((await chat.chatMessages(f.db,b,conversationId,thread.messages[0].createdAt)).messages.length,0,'after returns only newer messages');
+ await assert.rejects(()=>send(f,a,conversationId,''),e=>e.status===400);await assert.rejects(()=>send(f,a,conversationId,'x'.repeat(2001)),e=>e.status===400);
+ f.db.beforeBatch=()=>f.native.prepare('UPDATE members SET revoked_at=? WHERE user_id=?').run(f.now,'a');await assert.rejects(()=>send(f,a,conversationId),e=>e.status===403);
+ assert.equal(count(f,'audit',"action LIKE 'community.chat%'"),0);});
+
+test('chat direto: mesmo alcance dos recados, bloqueio nos dois sentidos e ninguém de fora lê',async t=>{const f=fixture(t);f.insert('projects',{id:'p-a2',name:'Projeto a2',organization_id:'o-a',created_at:f.now});
+ const a=await f.user('a','viewer','p-a','o-a'),b=await f.user('b','viewer','p-a','o-a'),x=await f.user('x','viewer','p-a2','o-a'),c=await f.user('c','viewer','p-b','o-b');
+ const {conversationId}=await chat.chatAction(f.db,a,{action:'open',kind:'direct',organizationId:'o-a',userId:'b'},f.store);assert.equal((await chat.chatAction(f.db,b,{action:'open',kind:'direct',organizationId:'o-a',userId:'a'},f.store)).conversationId,conversationId);
+ await assert.rejects(()=>chat.chatAction(f.db,a,{action:'open',kind:'direct',organizationId:'o-a',userId:'x'},f.store),e=>e.status===409,'one-project people do not reach the whole organization');
+ await assert.rejects(()=>chat.chatAction(f.db,a,{action:'open',kind:'direct',organizationId:'o-b',userId:'c'},f.store),e=>e.status===409,'nothing across organizations');
+ await chat.chatAction(f.db,a,{action:'open',kind:'project',projectId:'p-a'},f.store);await send(f,a,conversationId);for(const outsider of [x,c])await assert.rejects(()=>chat.chatMessages(f.db,outsider,conversationId),e=>e.status===404);
+ await messages.messageAction(f.db,b,{action:'block',userId:'a'});await assert.rejects(()=>send(f,a,conversationId),e=>e.status===404);await assert.rejects(()=>send(f,b,conversationId),e=>e.status===404,'a block closes the conversation both ways');
+ assert.equal((await chat.chatOverview(f.db,a)).directs.length,0);});
+
+test('imagens: tipo real, sem metadados, limites, acesso só pela conversa, apagar e prazo de 180 dias',async t=>{const f=fixture(t),a=await f.user('a','viewer','p-a','o-a'),c=await f.user('c','viewer','p-b','o-b');
+ for(const ok of [jpeg(),png(),webp()]){const info=chat.inspectChatImage(ok);assert.equal(info.width,800);assert.equal(info.height,600);}for(const huge of [png(4000,10),jpeg([],1601,10),webp(10,20000)])assert.throws(()=>chat.inspectChatImage(huge),e=>e.code==='chat_image_dimensions');
+ for(const bad of [new Uint8Array([0x47,0x49,0x46,0x38]),new Uint8Array([1,2,3]),jpeg([0xff,0xe1,0,10,...Buffer.from('Exif\0\0')]),new Uint8Array([...png(),...Buffer.from('eXIf')])])assert.throws(()=>chat.inspectChatImage(bad),e=>e.status===415);
+ const {conversationId}=await chat.chatAction(f.db,a,{action:'open',kind:'project',projectId:'p-a'},f.store);
+ const up=await chat.chatUpload(f.db,a,conversationId,jpeg(),f.store);assert.equal(f.objects.size,1);assert.equal(up.mime,'image/jpeg');
+ await assert.rejects(()=>chat.chatUpload(f.db,c,conversationId,jpeg(),f.store),e=>e.status===404);assert.equal(f.objects.size,1,'nothing stored for an outsider');
+ await assert.rejects(()=>chat.chatUpload(f.db,a,conversationId,new Uint8Array(chat.CHAT_IMAGE_MAX_BYTES+1),f.store),e=>e.status===413);
+ const sent=await send(f,a,conversationId,'',up.attachmentId);await assert.rejects(()=>send(f,a,conversationId,'',up.attachmentId),e=>e.status===409,'an image is used once');
+ assert.equal((await chat.chatMedia(f.db,a,up.attachmentId,f.store)).mime,'image/jpeg');await assert.rejects(()=>chat.chatMedia(f.db,c,up.attachmentId,f.store),e=>e.status===404);
+ const {conversationId:other}=await chat.chatAction(f.db,c,{action:'open',kind:'project',projectId:'p-b'},f.store);const foreign=await chat.chatUpload(f.db,c,other,png(),f.store);await assert.rejects(()=>send(f,a,conversationId,'',foreign.attachmentId),e=>e.status===409,'an image from another conversation is refused');
+ await assert.rejects(()=>chat.chatAction(f.db,c,{action:'delete',messageId:sent.id},f.store),e=>e.status===404);await chat.chatAction(f.db,a,{action:'delete',messageId:sent.id},f.store);assert.ok(!f.objects.has(f.native.prepare('SELECT object_key FROM chat_attachments WHERE id=?').get(up.attachmentId).object_key),'deleting removes the object');
+ const old=await chat.chatUpload(f.db,a,conversationId,webp(),f.store);f.native.prepare("UPDATE chat_attachments SET expires_at='2000-01-01T00:00:00.000Z' WHERE id=?").run(old.attachmentId);
+ await assert.rejects(()=>chat.chatMedia(f.db,a,old.attachmentId,f.store),e=>e.status===404,'expired images are not served');assert.equal(await chat.purgeExpiredChatMedia(f.db,f.store),1);assert.ok(f.native.prepare('SELECT deleted_at FROM chat_attachments WHERE id=?').get(old.attachmentId).deleted_at);
+ for(let i=count(f,'chat_attachments',"uploader_id='a'");i<chat.CHAT_DAILY_IMAGES;i++)f.insert('chat_attachments',{id:crypto.randomUUID(),conversation_id:conversationId,uploader_id:'a',object_key:`k-${i}`,mime:'image/png',size:1,created_at:f.now,expires_at:'2099-01-01T00:00:00.000Z'});
+ await assert.rejects(()=>chat.chatUpload(f.db,a,conversationId,png(),f.store),e=>e.status===429);});
+
+test('espaço: só a administração geral vê; anonimização limpa chat e fila de e-mail',async t=>{const f=fixture(t),a=await f.user('a','viewer','p-a','o-a'),m=await f.user('m','manager','p-a','o-a'),owner=await f.user('owner','owner');
+ for(const actor of [a,m])await assert.rejects(()=>chat.communityStorageReport(f.db,actor),e=>e.status===403);
+ globalThis.__chatUsage={backend:'postgres',databaseBytes:400*1024*1024,snapshotBytes:1,historyBytes:2,objectBytes:3};const report=await chat.communityStorageReport(f.db,owner);assert.equal(report.alert,true);assert.equal(report.plan.bytes,500*1024*1024);delete globalThis.__chatUsage;
+ assert.equal((await chat.communityStorageReport(f.db,owner)).usedRatio,null,'unknown size is reported as unknown, not zero');
+ const {conversationId}=await chat.chatAction(f.db,a,{action:'open',kind:'project',projectId:'p-a'},f.store);const up=await chat.chatUpload(f.db,a,conversationId,jpeg(),f.store);await send(f,a,conversationId,'Texto pessoal',up.attachmentId);
+ const request=await privacy.requestPrivacy(f.db,'a');await privacy.resolvePrivacy(f.db,owner,{requestId:request.id,decision:'anonymize'},f.store);
+ assert.equal(count(f,'chat_messages',"sender_id='a' AND body!=''"),0);assert.equal(count(f,'chat_attachments',"uploader_id='a' AND deleted_at IS NULL"),0);assert.equal(count(f,'chat_reads',"user_id='a'"),0);});
+
+test('aviso de recado por e-mail: sem conteúdo, com consentimento, interruptor próprio e só para quem ainda alcança',async t=>{const f=fixture(t),owner=await f.user('owner','owner',null,null,'sender@example.test'),b=await f.user('b','viewer','p-a','o-a','recipient@example.test');
+ const origin='https://synthetic.invalid',sender='sender@example.test';
+ const token=await tokenApi.createEmailDispatchToken(f.db,owner,{organizationId:'o-a'}),principal=await tokenApi.emailDispatcherFromToken(f.db,'Bearer '+token.token),common={organizationId:'o-a',installerEmail:sender};
+ await email.configureEmail(f.db,owner,{organizationId:'o-a',enabled:true,senderEmail:sender,expectedVersion:0,dailyLimit:50,personDailyLimit:3,eventLimit:100,intervalSeconds:60,senderConfirmed:true},origin);
+ await email.emailPreference(f.db,b,{organizationId:'o-a',enabled:true});
+ f.insert('community_messages',{id:'old-unread',organization_id:'o-a',sender_id:'owner',recipient_id:'b',body:'Antigo, antes do consentimento',created_at:'2026-01-01T12:00:00.000Z'});// an old ineligible unread message must not silence new notices
+ const sent=await messages.messageAction(f.db,owner,{action:'send',organizationId:'o-a',recipientId:'b',body:'CONTEÚDO PRIVADO DO RECADO',operationKey:crypto.randomUUID()});
+ const claim=(now)=>mail.claimMessageEmail(f.db,principal,{...common,remainingQuota:100},origin,now);
+ const first=await claim();assert.ok(mail.isMessageEmailId(first.claim.id));
+ const message=await mail.beginMessageEmail(f.db,principal,{...common,id:first.claim.id,claimToken:first.claim.claimToken,remainingQuota:100},origin);
+ assert.equal(message.subject,'PROEX · Novo recado');assert.equal(message.to,'recipient@example.test');assert.doesNotMatch(message.body,/PRIVADO|Pessoa owner/);assert.match(message.body,/\/\?module=community&tab=messages$/);
+ assert.equal((await mail.acknowledgeMessageEmail(f.db,principal,{...common,id:first.claim.id,claimToken:first.claim.claimToken,acceptanceToken:message.acceptanceToken},origin)).status,'accepted');
+ assert.equal((await claim(Date.now()+120000)).claim,null,'one notice per message');
+ await mail.messageEmailPreference(f.db,'b',false);await messages.messageAction(f.db,owner,{action:'send',organizationId:'o-a',recipientId:'b',body:'Outro',operationKey:crypto.randomUUID()});assert.equal((await claim(Date.now()+240000)).claim,null,'the person turned it off');
+ await mail.messageEmailPreference(f.db,'b',true);const read=await messages.messageAction(f.db,owner,{action:'send',organizationId:'o-a',recipientId:'b',body:'Lido',operationKey:crypto.randomUUID()});await messages.messageAction(f.db,b,{action:'read',id:read.id});
+ assert.equal((await claim(Date.now()+360000)).claim,null,'no second notice while the first one is still unread');await messages.messageAction(f.db,b,{action:'read',id:sent.id});
+ const pending=await claim(Date.now()+480000);assert.ok(pending.claim,'after reading, the oldest unread message gets one notice');
+ await messages.messageAction(f.db,b,{action:'block',userId:'owner'});await assert.rejects(()=>mail.beginMessageEmail(f.db,principal,{...common,id:pending.claim.id,claimToken:pending.claim.claimToken,remainingQuota:100},origin,Date.now()+480000),e=>e.code==='email_recipient_changed','a block cancels the notice before any content leaves');
+ assert.ok(sent.id);});
+
+test('ouvidoria: administração geral e acesso total leem; designado lê no prazo; ex-designado não; ninguém vê o autor',async t=>{const f=fixture(t);const ombuds=await import(compile('lib/community/ombuds.ts')),codes=await import(compile('lib/community/ombuds-code.ts'));
+ const reporter=await f.user('reporter','viewer','p-a','o-a'),owner=await f.user('owner','owner'),portalManager=await f.user('pm','manager'),orgOwner=await f.user('oo','owner',null,'o-a'),designee=await f.user('d','viewer','p-a','o-a'),later=await f.user('l','viewer','p-a','o-a');
+ const code=codes.newOmbudsCode();ombuds.resetOmbudsMemoryBrake();await ombuds.ombudsReporterAction(f.db,reporter,{action:'submit',code,category:'workload',body:'Relato sintético sobre a escala da semana.'});
+ assert.equal((await ombuds.ombudsInbox(f.db,owner)).reports.length,1);assert.equal((await ombuds.ombudsInbox(f.db,portalManager)).reports.length,1,'portal-wide access reads by default');
+ for(const actor of [orgOwner,designee,reporter])await assert.rejects(()=>ombuds.ombudsInbox(f.db,actor),e=>e.status===403);
+ await assert.rejects(()=>ombuds.ombudsDesignationAction(f.db,portalManager,{action:'designate',userId:'d',reason:'Apoio à ouvidoria',startsOn:'2026-01-01',endsOn:'2099-12-31'}),e=>e.status===403,'only the general administration designates');
+ const today=new Date(Date.now()-3*3600000).toISOString().slice(0,10),yesterday=new Date(Date.now()-27*3600000).toISOString().slice(0,10);
+ const {id}=await ombuds.ombudsDesignationAction(f.db,owner,{action:'designate',userId:'d',reason:'Apoio à ouvidoria no semestre',startsOn:today,endsOn:'2099-12-31'});
+ const inbox=await ombuds.ombudsInbox(f.db,designee);assert.equal(inbox.reports.length,1);assert.doesNotMatch(JSON.stringify(inbox),/reporter|Pessoa reporter|example\.invalid/,'the designee does not see the author either');
+ const detail=await ombuds.ombudsManageAction(f.db,designee,{action:'detail',id:inbox.reports[0].id});assert.doesNotMatch(JSON.stringify(detail),/Pessoa reporter|example.invalid/);
+ const readers=(await ombuds.ombudsReporterAction(f.db,reporter,{action:'readers'})).readers;assert.deepEqual(readers.map(r=>r.name).sort(),['Pessoa d','Pessoa owner','Pessoa pm']);assert.equal(readers.find(r=>r.name==='Pessoa d').basis,'designated');assert.ok(readers.every(r=>!('id' in r)),'no internal ids in the public list');assert.ok(!JSON.stringify(readers).includes('example.invalid'));
+ await ombuds.ombudsDesignationAction(f.db,owner,{action:'revoke',id,reason:'Fim do apoio'});await assert.rejects(()=>ombuds.ombudsInbox(f.db,designee),e=>e.status===403,'an ex-designee stops reading');
+ await assert.rejects(()=>ombuds.ombudsDesignationAction(f.db,owner,{action:'revoke',id,reason:'De novo'}),e=>e.status===409);
+ f.insert('ombuds_designations',{id:'old',user_id:'l',designated_by:'owner',reason:'Prazo encerrado',starts_on:'2026-01-01',ends_on:yesterday,created_at:f.now});f.insert('ombuds_designations',{id:'future',user_id:'l',designated_by:'owner',reason:'Ainda não começou',starts_on:'2099-01-01',ends_on:'2099-12-31',created_at:f.now});
+ await assert.rejects(()=>ombuds.ombudsInbox(f.db,later),e=>e.status===403,'outside the dates there is no access');
+ await assert.rejects(()=>ombuds.ombudsDesignationAction(f.db,owner,{action:'designate',userId:'l',reason:'Data errada',startsOn:'2026-01-01',endsOn:yesterday}),e=>e.status===400);
+ const history=await ombuds.ombudsDesignationAction(f.db,owner,{action:'designations'});assert.ok(history.history.find(h=>h.id===id).revokedAt);assert.equal(history.history.find(h=>h.id===id).revokeReason,'Fim do apoio');
+ assert.equal(count(f,'audit',"action IN ('ombuds.designate','ombuds.designation.revoke')"),2);await assert.rejects(()=>ombuds.ombudsDesignationAction(f.db,designee,{action:'designations'}),e=>e.status===403,'history only for the administration');});
