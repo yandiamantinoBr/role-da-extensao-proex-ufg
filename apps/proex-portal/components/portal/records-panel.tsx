@@ -4,7 +4,7 @@ import DateField from './date-field';
 
 import Link from 'next/link';
 
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { BarChart3, Camera, Check, ClipboardList, ExternalLink, FilePlus2, ImagePlus, LoaderCircle, Paperclip, Plus, RefreshCw, Search, Trash2, Upload } from 'lucide-react';
 import { useFormDraft, DraftNotice } from './use-form-draft';
 import styles from './records-panel.module.css';
@@ -109,6 +109,7 @@ function AttachmentQueue({ recordId, onAttachment, onPendingChange }: {
   const [error, setError] = useState(''), [message, setMessage] = useState('');
   const entriesRef = useRef<UploadEntry[]>([]), busyRef = useRef(false);
   const cameraRef = useRef<HTMLInputElement>(null), galleryRef = useRef<HTMLInputElement>(null);
+  const inputId = `attachment-${useId().replace(/:/g, '')}`; // um par de campos por registro: id único
   const pending = entries.some(entry => entry.status !== 'done');
   useEffect(() => {
     if (!pending) return;
@@ -163,8 +164,8 @@ function AttachmentQueue({ recordId, onAttachment, onPendingChange }: {
       <button type="button" className="p-button p-button-subtle" disabled={busy} onClick={() => cameraRef.current?.click()}><Camera size={17} aria-hidden="true" />Usar câmera</button>
       <button type="button" className="p-button p-button-subtle" disabled={busy} onClick={() => galleryRef.current?.click()}><ImagePlus size={17} aria-hidden="true" />Galeria ou PDF</button>
     </div>
-    <input ref={cameraRef} type="file" accept="image/*" capture="environment" hidden onChange={choose} />
-    <input ref={galleryRef} type="file" accept="application/pdf,image/jpeg,image/png,image/webp,.pdf,.jpg,.jpeg,.png,.webp" multiple hidden onChange={choose} />
+    <input ref={cameraRef} id={`${inputId}-camera`} aria-label="Tirar foto do anexo" type="file" accept="image/*" capture="environment" hidden onChange={choose} />
+    <input ref={galleryRef} id={`${inputId}-file`} aria-label="Escolher arquivo do anexo" type="file" accept="application/pdf,image/jpeg,image/png,image/webp,.pdf,.jpg,.jpeg,.png,.webp" multiple hidden onChange={choose} />
     {!!entries.length && <ul style={{ padding: 0, margin: '14px 0', listStyle: 'none', display: 'grid', gap: 8 }} aria-label="Fila de anexos">
       {entries.map(entry => <li key={entry.key} style={{ border: '1px solid var(--line)', borderRadius: 12, padding: 12, display: 'flex', gap: 10, alignItems: 'flex-start', justifyContent: 'space-between' }}>
         <div style={{ minWidth: 0, overflowWrap: 'anywhere' }}><strong style={{ fontSize: 14 }}>{entry.file.name}</strong><small style={{ display: 'block', color: 'var(--text-secondary)', marginTop: 4 }}>{sizeLabel(entry.file.size)} · {entry.status === 'done' ? 'Envio confirmado' : entry.status === 'sending' ? 'Enviando…' : entry.status === 'uncertain' ? 'Aguardando confirmação' : entry.status === 'error' ? 'Envio recusado' : 'Aguardando envio'}</small>{entry.error && <small style={{ display: 'block', color: 'var(--danger)', marginTop: 5 }}>{entry.error}</small>}{entry.uncertain && <small className="p-form-help" style={{ display: 'block' }}>Repita o envio nesta tela para confirmar se o arquivo foi salvo.</small>}</div>
