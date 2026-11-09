@@ -2,9 +2,11 @@
 /* eslint-disable @next/next/no-img-element -- mascote em SVG estático */
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { AudioLines, Check, CircleDollarSign, KeyRound, ScanText, Settings2, ShieldCheck, Stethoscope, Users } from 'lucide-react';
+import { AudioLines, Boxes, Check, CircleDollarSign, KeyRound, ScanText, Settings2, ShieldCheck, Stethoscope, Users } from 'lucide-react';
 import { DEFAULT_ASSISTANT_CONFIG, validateConfig, type AssistantConfig } from '@/lib/assistant/contracts';
 import AssistantConnectionPanel from './assistant-connection-panel';
+import ModelCatalogPanel from './model-catalog-panel';
+import AiSpendingSlot from './ai-spending-slot';
 import styles from './credential-vault-panel.module.css';
 
 type Organization = { id: string; name: string; canConfigure: boolean; legacySttProvider?: 'groq' | 'deepgram'; usageIsMine?: boolean };
@@ -27,7 +29,7 @@ const post = async (input: Record<string, unknown>, signal: AbortSignal) => resp
 
 export default function AssistantAdministrationPanel({ canManageKeys=false, refreshKey = 0, onChanged, renderCredentials }: Props) {
   const [selection,setSelection] = useState(''), [data,setData] = useState<{scope:string;status:Status}|null>(null), [refresh,setRefresh] = useState(0);
-  const [config,setConfig] = useState<AssistantConfig>(DEFAULT_ASSISTANT_CONFIG), [busy,setBusy] = useState(false), [failure,setFailure] = useState(''), [notice,setNotice] = useState(''), [delegateId,setDelegateId] = useState(''), [view,setView] = useState<'keys'|'functions'|'diagnostics'>(canManageKeys?'keys':'functions');
+  const [config,setConfig] = useState<AssistantConfig>(DEFAULT_ASSISTANT_CONFIG), [busy,setBusy] = useState(false), [failure,setFailure] = useState(''), [notice,setNotice] = useState(''), [delegateId,setDelegateId] = useState(''), [view,setView] = useState<'keys'|'functions'|'models'|'spending'|'diagnostics'>(canManageKeys?'keys':'functions'), [roleOptions,setRoleOptions] = useState<{id:string;label:string;vision:boolean;hasKey:boolean}[]>([]);
   const active = useRef(true), epoch = useRef(0), mutationEpoch=useRef(0), mutation = useRef<AbortController|null>(null), message = useRef<HTMLParagraphElement>(null);
   const status = data?.scope === selection ? data.status : null;
   useEffect(() => { active.current=true; return () => { active.current=false; mutation.current?.abort(); }; }, []);
@@ -43,6 +45,19 @@ export default function AssistantAdministrationPanel({ canManageKeys=false, refr
     return () => controller.abort();
   }, [selection,refresh,refreshKey]);
   useEffect(() => { if (notice||failure) message.current?.focus(); }, [notice,failure]);
+  // Catalog models for the Rolê selects, loaded only when a select is opened (administração geral only).
+  const optionsFor = useRef('');
+  function loadRoleOptions() {
+    if (!canManageKeys || !selection || optionsFor.current === selection) return;
+    optionsFor.current = selection;
+    fetch(`/api/assistant/catalog?organizationId=${encodeURIComponent(selection)}`, { cache:'no-store', credentials:'same-origin', redirect:'error' })
+      .then(response => response.ok ? response.json() as Promise<unknown> : null)
+      .then((raw: unknown) => { const data = raw as { catalog?: { providers: { id:string; kind:string; hasKey:boolean }[]; models: { id:string; label:string; providerId:string; capabilities:string[]; enabled:boolean }[] } } | null;
+        if (!active.current || !data?.catalog) return;
+        const providers = new Map(data.catalog.providers.map(provider => [provider.id, provider]));
+        setRoleOptions(data.catalog.models.filter(model => model.enabled && model.capabilities.includes('text') && ['openai_chat','anthropic_messages'].includes(providers.get(model.providerId)?.kind ?? '')).map(model => ({ id:model.id, label:model.label, vision:model.capabilities.includes('vision'), hasKey:!!providers.get(model.providerId)?.hasKey })));
+      }).catch(() => { optionsFor.current = ''; });
+  }
   function selectOrganization(value: string) { mutation.current?.abort(); ++epoch.current; ++mutationEpoch.current; setSelection(value); setData(null); setFailure(''); setNotice(''); setDelegateId(''); setBusy(false); }
   async function save(action: 'configure'|'grant.create'|'grant.revoke', grantId?: string) {
     if (busy || !status?.canConfigure || !status.organizationId || status.organizationId!==selection) return;
@@ -71,9 +86,11 @@ export default function AssistantAdministrationPanel({ canManageKeys=false, refr
       <div className={styles.views} role="group" aria-label="Áreas da central de IA">
         {canManageKeys&&<button type="button" disabled={busy} aria-pressed={view==='keys'} onClick={()=>setView('keys')}><KeyRound size={18} aria-hidden="true"/>Chaves</button>}
         <button type="button" disabled={busy} aria-pressed={view==='functions'} onClick={()=>setView('functions')}><Settings2 size={18} aria-hidden="true"/>Funções e acesso</button>
+        {canManageKeys&&<button type="button" disabled={busy} aria-pressed={view==='models'} onClick={()=>setView('models')}><Boxes size={18} aria-hidden="true"/>Modelos</button>}
+        {canManageKeys&&<button type="button" disabled={busy} aria-pressed={view==='spending'} onClick={()=>setView('spending')}><CircleDollarSign size={18} aria-hidden="true"/>Gastos</button>}
         <button type="button" disabled={busy} aria-pressed={view==='diagnostics'} onClick={()=>setView('diagnostics')}><Stethoscope size={18} aria-hidden="true"/>Diagnóstico</button>
       </div>
-      {view==='keys'&&canManageKeys&&<>{renderCredentials?.(selection,busy)}<details className={styles.configuration}><summary>Outros provedores e modelos</summary><p>Anthropic, Gemini, NVIDIA e endereços personalizados ainda não têm adaptadores de operação neste portal. Cada integração precisa de modelo e endereço permitidos, limite de custo, contrato de resposta, permissões e testes próprios antes de receber uma chave. Não há cadastro genérico que prometa funcionar com qualquer API.</p></details><button type="button" className={`p-button p-button-primary ${styles.next}`} disabled={busy} onClick={()=>setView('functions')}>Próximo passo: ligar as funções →</button></>}
+      {view==='keys'&&canManageKeys&&<>{renderCredentials?.(selection,busy)}<details className={styles.configuration}><summary>Para que servem os outros provedores</summary><p>Anthropic e qualquer serviço compatível com OpenAI podem responder no Rolê (conversa e fotos): cadastre o modelo na aba Modelos, cole a chave aqui e escolha o modelo em Funções e acesso. A NVIDIA é grátis só para teste e serve apenas para comparar modelos com dados de exemplo. Perplexity e Nace oferecem modelos de decisão (respondem perguntas fechadas, como “é urgente?”), cadastrados para um teste comparativo futuro. O Artificial Analysis busca as notas dos modelos. Operações, documentos, triagem e voz continuam com os provedores dos grupos acima.</p></details><button type="button" className={`p-button p-button-primary ${styles.next}`} disabled={busy} onClick={()=>setView('functions')}>Próximo passo: ligar as funções →</button></>}
       {view==='functions'&&<>
       <section className={styles.configuration} aria-labelledby="ai-usage-title"><div className={styles.heading}><ShieldCheck size={21} aria-hidden="true"/><div><h4 id="ai-usage-title">Quem pode usar a IA</h4><p>É uma política única para todas as funções e modelos desta organização. Alterar aqui afeta os demais integrantes. As permissões de cada projeto continuam valendo.</p></div></div>
         <label className="p-field"><span>Acesso ao uso</span><select disabled={busy} value={config.usageScope??'organization'} onChange={event=>setConfig({...config,usageScope:event.target.value as AssistantConfig['usageScope']})}><option value="private">Só eu</option><option value="organization">Organização</option></select></label>
@@ -82,10 +99,12 @@ export default function AssistantAdministrationPanel({ canManageKeys=false, refr
       </section>
       <section className={styles.configuration} aria-labelledby="ai-role-title"><div className={styles.heading}><img className={styles.roleAvatar} src="/brand/role-mascote/role-rosto.svg" alt="" width={44} height={44}/><div><h4 id="ai-role-title">Rolê, o assistente da PROEX</h4><p>Conversa, lê fotos e ouve áudios. Antes de cada envio a pessoa vê o custo máximo, e nada muda no estoque sem a confirmação dela.</p></div></div>
         <label className={styles.confirm}><input type="checkbox" disabled={busy} checked={config.roleEnabled} onChange={event=>setConfig({...config,roleEnabled:event.target.checked,roleVisionEnabled:event.target.checked?config.roleVisionEnabled:false})}/><span><strong>Ligar o Rolê</strong><small>Aparece um botão com o rosto do Rolê no canto da tela (atalho Alt + R) para quem pode usar a IA.</small></span></label>
-        <label className="p-field"><span>Modelo do Rolê</span><select disabled={busy} value={config.roleProvider} onChange={event=>setConfig({...config,roleProvider:event.target.value as AssistantConfig['roleProvider'],roleEnabled:false,roleVisionEnabled:false})}><option value="deepseek">DeepSeek Flash (recomendado)</option><option value="groq">Groq GPT-OSS (mais barato)</option></select></label>
+        <label className="p-field"><span>Modelo do Rolê</span><select onFocus={loadRoleOptions} onPointerDown={loadRoleOptions} disabled={busy} value={config.roleModel?`catalog:${config.roleModel}`:config.roleProvider} onChange={event=>{const value=event.target.value;setConfig(value.startsWith('catalog:')?{...config,roleModel:value.slice(8),roleEnabled:false,roleVisionEnabled:false}:{...config,roleModel:'',roleProvider:value as AssistantConfig['roleProvider'],roleEnabled:false,roleVisionEnabled:false});}}><option value="deepseek">DeepSeek Flash (recomendado)</option><option value="groq">Groq GPT-OSS (mais barato)</option>{config.roleModel&&!roleOptions.some(option=>option.id===config.roleModel)&&<option value={`catalog:${config.roleModel}`}>{config.roleModel}</option>}{roleOptions.filter(option=>option.id!=='deepseek-flash'&&option.id!=='groq-gpt-oss-120b').map(option=><option key={option.id} value={`catalog:${option.id}`}>{option.label}{option.hasKey?'':' (sem chave)'}</option>)}</select></label>
         <p className="p-form-help">{config.roleProvider==='groq'?'Só texto, menos de 1 centavo de dólar por mensagem. Usa a mesma chave da voz (Groq).':'Texto e foto, menos de 1 centavo de dólar por mensagem.'} Se trocar o modelo, o Rolê fica desligado até você confirmar de novo.</p>
         <details className={styles.priceDetails}><summary>Ver preço detalhado</summary><p>{config.roleProvider==='groq'?'GPT-OSS 120B na Groq: US$ 0,15 por milhão de tokens de entrada e US$ 0,60 de saída (página oficial lida em 09/11/2026).':'DeepSeek Flash: US$ 0,30 por milhão de tokens de entrada e US$ 1,20 de saída, metade fora do horário de pico (página oficial lida em 09/11/2026).'}</p></details>
-        <label className={styles.confirm}><input type="checkbox" disabled={busy||!config.roleEnabled} checked={config.roleVisionEnabled} onChange={event=>setConfig({...config,roleVisionEnabled:event.target.checked})}/><span><strong>Ler fotos</strong><small>A foto é reduzida no aparelho antes de sair. Usa a chave DeepSeek.</small></span></label>
+        <label className={styles.confirm}><input type="checkbox" disabled={busy||!config.roleEnabled} checked={config.roleVisionEnabled} onChange={event=>setConfig({...config,roleVisionEnabled:event.target.checked})}/><span><strong>Ler fotos</strong><small>A foto é reduzida no aparelho antes de sair.</small></span></label>
+        {config.roleVisionEnabled&&<label className="p-field"><span>Modelo para fotos</span><select onFocus={loadRoleOptions} onPointerDown={loadRoleOptions} disabled={busy} value={config.roleVisionModel} onChange={event=>setConfig({...config,roleVisionModel:event.target.value,roleVisionEnabled:false})}><option value="">DeepSeek Flash (recomendado)</option>{config.roleVisionModel&&!roleOptions.some(option=>option.id===config.roleVisionModel)&&<option value={config.roleVisionModel}>{config.roleVisionModel}</option>}{roleOptions.filter(option=>option.vision&&option.id!=='deepseek-flash').map(option=><option key={option.id} value={option.id}>{option.label}{option.hasKey?'':' (sem chave)'}</option>)}</select></label>}
+        {canManageKeys&&<p className="p-form-help">Outros modelos (OpenAI, Anthropic, NVIDIA, qualquer serviço compatível com OpenAI) entram pela aba Modelos e aparecem nestas listas.</p>}
         <p className="p-form-help">Para ouvir áudio, ligue também “Voz para texto” abaixo. O áudio vira texto primeiro, e a pessoa revisa antes de enviar.</p>
       </section>
       <section className={styles.configuration} aria-labelledby="ai-functions-title"><div className={styles.heading}><ScanText size={21} aria-hidden="true"/><div><h4 id="ai-functions-title">Outras funções com IA</h4><p>Ter a chave cadastrada não liga nada sozinho: marque o que quer usar.</p></div></div>
@@ -106,6 +125,8 @@ export default function AssistantAdministrationPanel({ canManageKeys=false, refr
       </div></details><div className={styles.actions}><button type="button" disabled={busy} className="p-button p-button-primary" onClick={()=>void save('configure')}><Check size={18} aria-hidden="true"/>{busy?'Salvando…':'Salvar funções, acesso e limites'}</button></div>
       {status.canDelegate&&<details className={styles.configuration}><summary><Users size={19} aria-hidden="true"/>Quem pode configurar esta organização</summary><p className="p-form-help">A permissão é nominal, não vem do nome da equipe TI. Ela permite ajustar funções, acesso, limites e diagnóstico; não permite cadastrar ou recuperar chaves.</p><label className="p-field"><span>Integrante autorizado</span><select disabled={busy} value={delegateId} onChange={event=>setDelegateId(event.target.value)}><option value="">Escolha uma pessoa da organização</option>{status.candidates?.map(person=><option key={person.userId} value={person.userId}>{person.name}</option>)}</select></label><button type="button" disabled={busy||!delegateId} className="p-button p-button-subtle" onClick={()=>void save('grant.create')}>Permitir configuração de IA</button><ul className={styles.list}>{status.grants?.map(grant=><li className={styles.delegate} key={grant.id}><span>{status.candidates?.find(person=>person.userId===grant.userId)?.name??'Integrante autorizado'}</span><button type="button" className="p-button p-button-subtle" disabled={busy} onClick={()=>void save('grant.revoke',grant.id)}>Revogar permissão</button></li>)}</ul></details>}
       </>}
+      {view==='models'&&canManageKeys&&<ModelCatalogPanel organizationId={selection}/>}
+      {view==='spending'&&canManageKeys&&<AiSpendingSlot organizationId={selection}/>}
       {view==='diagnostics'&&(Number(status.revision)>0?<AssistantConnectionPanel key={`${selection}:${status.revision}`} orgId={selection} revision={status.revision!}/>:<p className={styles.note} role="status">Salve as funções e as credenciais antes de consultar os diagnósticos.</p>)}
     </>}
   </div>;

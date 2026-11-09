@@ -93,3 +93,29 @@ O Gemini Flash-Lite cobriria tudo com uma chave e de graça. Mas o plano gratuit
 - `node --test tests/role-assistant.test.mjs`: 9 testes, cobrindo contrato, status sem custo, reserva, auditoria sem conteúdo, consentimento, teto, permissão, imagem, Groq, chave refletida, teto diário, política privada, estimativa de operação e LEAK GUARD.
 - `tests/assistant.test.mjs`: atualizado para aceitar `mask` na auditoria do cofre, que segue sem valor.
 - Capturas e crítica independente: ver `docs/evidencias/2026-11-09-role-chaves/`.
+
+## Catálogo de modelos, comparação e gastos · 09/11/2026 (tarde)
+
+Pedido do Yan: poder cadastrar qualquer modelo por API (OpenAI, Anthropic, NVIDIA e serviços compatíveis), apagar e editar, organizar as chaves por função, comparar modelos testando e acompanhar os gastos com gráfico e exportação.
+
+- **Catálogo por organização**, em Configurações → Chaves e modelos → **Modelos**, só para a administração geral. Fica salvo na tabela `settings` (`ai.catalog.v1:<organização>`), sem migração. Cada modelo tem provedor, nome na API, capacidades (texto, foto, documento, voz, decisão), preço por milhão de tokens ou por hora, fonte e data do preço e uma observação. Os modelos padrão são linhas editáveis. Enquanto ninguém salvar, o portal mostra sempre os padrões mais recentes do código.
+- **Provedores:** DeepSeek, Groq, OpenAI, TypeSafe e Deepgram já existiam, e a chave deles fica na aba Chaves. Os novos (NVIDIA, Anthropic, Perplexity, Nace, Artificial Analysis e qualquer serviço compatível com OpenAI ou Anthropic) guardam a chave no mesmo cofre cifrado, como `p:<id>`. A dica mascarada fica no catálogo, e o histórico das chaves registra cada troca.
+- **Endereço de API seguro:** só `https://` com nome público. Ficam de fora IP literal, porta, usuário, parâmetros, `localhost` e nomes de rede interna. A chamada usa `redirect: 'error'` e respostas de até 256 KB. Uma resposta que repete a chave é retida. Resta um risco: um nome público que aponte para um endereço interno. A tela é só da administração geral.
+- **Rolê:** a conversa e as fotos podem usar qualquer modelo do catálogo marcado com Texto ou Foto, escolhido em "Funções e acesso". O custo previsto usa o preço do catálogo, e o servidor recalcula e recusa se divergir. Em modelos que não devolvem JSON, a resposta vira texto simples, sem operação sugerida.
+- **Comparar modelos:** a mesma pergunta vai para 2 ou 3 modelos de texto, com custo máximo mostrado e autorização antes. O valor é reservado no limite diário e a auditoria `assistant.compare` não guarda a pergunta.
+- **Notas do Artificial Analysis:** com a chave colada no cartão dele, o botão "Atualizar notas" busca `GET https://artificialanalysis.ai/api/v2/language/models` com `x-api-key` e grava só a nota de inteligência e a data. A conta grátis permite 100 consultas por dia, e o crédito ao Artificial Analysis aparece na tela, como os termos exigem.
+- **Gastos:** aba **Gastos**. Mostra o gasto real e o teto reservado por dia, por provedor e por função; ao clicar num dia, aparecem as chamadas dele. Mostra também o limite diário, períodos de 7, 30 e 90 dias e exportação em PDF, XLSX e DOCX (`lib/assistant/spending.ts`).
+- **Integrações que continuam fixas:** operações e documentos (DeepSeek ou GPT-5.6 Luna), triagem (JEV 1.14) e voz (Groq ou Deepgram). Trocar essas peças exige rodada própria com testes de contrato. O catálogo já mostra as alternativas.
+
+### Estudo de modelos (páginas oficiais e Artificial Analysis, lidos em 09/11/2026)
+
+| Tarefa | Padrão mantido | Alternativa cadastrada | Motivo |
+|---|---|---|---|
+| Conversa | DeepSeek Flash (US$ 0,30/1,20) | GPT-6 Luna (US$ 0,10/0,50), Claude Haiku 5.5 (US$ 0,10/0,50) | DeepSeek tem a melhor relação nota/custo no AA entre os testados; Luna é mais barata por token, mas tem nota menor (28 contra 33). Vale testar na comparação. |
+| Foto | DeepSeek Flash | GPT-6 Luna (JSON Schema estrito) | O JEV 1.14 aceita imagem (prévia), mas só responde perguntas, não extrai texto nem lê PDF. |
+| Documento | DeepSeek Flash (páginas como imagem) | GPT-6.1 Terra no esforço `low` (US$ 1/5; nota 38) | Terra é mais inteligente; usar só se a Luna não bastar. |
+| Voz | Groq Whisper turbo (US$ 0,04/h) | Deepgram Nova-3 | Não houve mudança. |
+| Decisão | JEV 1.14 (nota 67; US$ 156 por milhão de decisões; 93 ms) | Decider v1.2 da Perplexity (70; US$ 68) e Drex Max v1.1 da Nace (73; preço de lançamento) | O Decider é melhor e mais barato no Decision Index v2. **Trocar só depois de um teste A/B com casos sintéticos**: o formato é parecido com o do JEV, mas o caminho é outro. |
+| Protótipo grátis | NVIDIA `deepseek-ai/deepseek-v4.1-flash`, Nemotron 3.5 Super VL | — | Só para teste: os termos permitem que a NVIDIA use o conteúdo e proíbem dados pessoais. |
+
+"Raio" não aparece nas páginas da OpenAI. "Sol" no esforço médio tem nota 46, mas custa o dobro do Terra, e para extrair JSON é exagero. Fontes: `docs.typesafe.ai`, `typesafe.ai/blog/jev-1-14`, `artificialanalysis.ai/evaluations/artificial-analysis-decision-index`, `docs.perplexity.ai/docs/decisions`, `nace.ai/drex.md`, `developers.openai.com/api/docs/pricing`, `platform.claude.com/docs/en/about-claude/pricing`, `build.nvidia.com` e os termos de teste da NVIDIA, `artificialanalysis.ai/data-api/docs`.
