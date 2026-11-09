@@ -112,22 +112,24 @@ export async function assistantCredentialVault(db: D1Database, actor: PortalActo
 
 const historyActions = { save: 'save', disable: 'disable', enable: 'enable', remove: 'remove', recover: 'recover', reencrypted: 'reencrypted' } as const;
 const outcomes = ['authenticated', 'rejected', 'rate_limited', 'timeout', 'cancelled', 'unavailable', 'invalid_response', 'pending'] as const;
-export type VaultHistoryEntry = { action: keyof typeof historyActions | 'test'; provider: CredentialProvider | null; mask: string | null; outcome: (typeof outcomes)[number] | null; at: string; actor: string };
+export type VaultHistoryEntry = { action: keyof typeof historyActions | 'test'; provider: CredentialProvider | `p:${string}` | null; mask: string | null; outcome: (typeof outcomes)[number] | null; at: string; actor: string };
 /** Audit rows are rebuilt from an allowlist: no free-text detail ever reaches the browser. */
 function historyEntry(row: Record<string, unknown>): VaultHistoryEntry | null {
   let details: Record<string, unknown> = {};
   try { const parsed: unknown = JSON.parse(String(row.details ?? '{}')); if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) details = parsed as Record<string, unknown>; } catch { /* legacy detail */ }
   const raw = String(row.action ?? ''), at = String(row.created_at ?? '');
-  const provider = credentialProviders.includes(details.provider as CredentialProvider) ? details.provider as CredentialProvider : null;
+  const provider = credentialProviders.includes(details.provider as CredentialProvider) ? details.provider as CredentialProvider : typeof details.provider === 'string' && /^p:[a-z0-9][a-z0-9-]{1,47}$/.test(details.provider) ? details.provider as `p:${string}` : null;
   const actor = typeof row.actor === 'string' && row.actor.length <= 120 ? row.actor : 'Administração geral';
   if (!Number.isFinite(Date.parse(at))) return null;
+  if (raw === 'assistant.connection.result' && provider?.startsWith('p:')) return null;
   if (raw === 'assistant.connection.result') {
     const outcome = outcomes.includes(details.outcome as (typeof outcomes)[number]) ? details.outcome as (typeof outcomes)[number] : null;
     return provider ? { action: 'test', provider, mask: null, outcome, at, actor } : null;
   }
   const action = raw.replace('assistant.credentials.', '');
   if (!Object.hasOwn(historyActions, action)) return null;
-  return { action: action as keyof typeof historyActions, provider, mask: provider ? safeMask(provider, details.mask) : null, outcome: null, at, actor };
+  const mask = !provider ? null : provider.startsWith('p:') ? (typeof details.mask === 'string' && /^[A-Za-z0-9_-]{0,7}…(?:[A-Za-z0-9_-]{4}|••••)$/u.test(details.mask) ? details.mask : null) : safeMask(provider as CredentialProvider, details.mask);
+  return { action: action as keyof typeof historyActions, provider, mask, outcome: null, at, actor };
 }
 
 function suspendDependentFeatures(config: AssistantConfig, provider: CredentialProvider, id: string, speech?: SpeechEnvironment) {

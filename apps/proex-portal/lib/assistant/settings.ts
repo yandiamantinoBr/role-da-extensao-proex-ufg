@@ -3,6 +3,8 @@ import { all, one } from '../database';
 import { HttpError } from '../errors';
 import { availableProviderCredentials, newAssistantConfig, object, onlyKeys, validateConfig, type AssistantConfig } from './contracts';
 import { decryptProviderCredentials, encryptProviderCredentials, type CredentialKeys } from './crypto';
+import { fitsFunction } from './model-catalog';
+import { loadCatalog } from './model-catalog-store';
 
 export type SpeechProvider = 'deepgram' | 'groq';
 export type SpeechEnvironment = { provider?: string; organizationId?: string; groqKey?: string };
@@ -44,7 +46,8 @@ export async function loadAssistantSettings(db: D1Database, secret: string, orga
  const config = validateConfig(JSON.parse(row.config_json));
  const runtime = mode !== 'configuration' || actorId !== undefined;
  if (runtime) requireUsage(config, actorId);
- const credentials = availableProviderCredentials(object(await decryptProviderCredentials(secret, row.credentials_ciphertext, organizationId, keys)));
+ const rawCredentials = object(await decryptProviderCredentials(secret, row.credentials_ciphertext, organizationId, keys));
+ const credentials = availableProviderCredentials(rawCredentials);
  if (runtime) {
   // Decryption yields control. Recheck the live policy and revision afterwards,
   // even when a caller still holds a valid organization configuration grant.
@@ -57,7 +60,7 @@ export async function loadAssistantSettings(db: D1Database, secret: string, orga
  } else if (mode==='document' ? !config.documentEnabled || !credentials[config.textProvider] || config.jevEnabled && !credentials.typesafe : mode ? !config.sttEnabled || (mode !== 'groq' && !credentials.deepgram) || (mode === 'groq' && config.sttProvider==='groq' && !credentials.groq) : !config.enabled || !credentials[config.textProvider] || config.jevEnabled && !credentials.typesafe) {
   throw new HttpError(503, mode==='document'?'A interpretação documental desta organização está desativada ou sem credencial.':mode ? 'A transcrição desta organização está desativada ou sem credencial.' : 'O assistente desta organização está desativado ou sem credencial.', mode==='document'?'document_ai_unavailable':'assistant_unavailable');
  }
- return { config, credentials, revision: Number(row.revision) };
+ return { config, credentials, rawCredentials, revision: Number(row.revision) };
 }
 /** Explicit Groq selection never falls back to an environment key. Legacy routes
  * retain the already-authorized pilot organization until deliberately changed. */
@@ -91,7 +94,17 @@ export async function configureAssistant(db: D1Database, actor: PortalActor | nu
   if(config.sttProvider==='legacy')groqSpeechKey(speechEnvironment);
   else if(!validProviderKey(credentials.groq))throw new HttpError(400,'Cadastre a chave Groq desta organização no cofre antes de habilitar a transcrição.','assistant_credentials');
  }
- if (config.roleEnabled && !credentials[config.roleProvider] || config.roleVisionEnabled && (!config.roleEnabled || !credentials.deepseek) || (config.enabled || config.documentEnabled) && !credentials[config.textProvider] || config.jevEnabled && !credentials.typesafe || config.sttEnabled && speechProvider === 'deepgram' && !credentials.deepgram) throw new HttpError(400, 'Cadastre as credenciais dos provedores habilitados.', 'assistant_credentials');
+
+ // Catalog-backed Rolê: the chosen models must exist, fit the function and have a key.
+ const catalog = config.roleModel || config.roleVisionModel ? (await loadCatalog(db, organizationId)).catalog : null;
+ const catalogKey = (modelId: string, need: 'chat' | 'vision') => {
+  const model = catalog?.models.find(entry => entry.id === modelId && entry.enabled), provider = catalog?.providers.find(entry => entry.id === model?.providerId);
+  if (!model || fitsFunction(model, provider, need)) throw new HttpError(400, need === 'vision' ? 'Escolha para fotos um modelo do catálogo marcado com Foto.' : 'Escolha para a conversa um modelo do catálogo marcado com Texto.', 'assistant_model');
+  return validProviderKey(previous[provider!.keyRef]);
+ };
+ const roleTextKey = config.roleModel ? catalogKey(config.roleModel, 'chat') : !!credentials[config.roleProvider];
+ const roleVisionKey = config.roleVisionModel ? catalogKey(config.roleVisionModel, 'vision') : !!credentials.deepseek;
+ if (config.roleEnabled && !roleTextKey || config.roleVisionEnabled && (!config.roleEnabled || !roleVisionKey) || (config.enabled || config.documentEnabled) && !credentials[config.textProvider] || config.jevEnabled && !credentials.typesafe || config.sttEnabled && speechProvider === 'deepgram' && !credentials.deepgram) throw new HttpError(400, 'Cadastre as credenciais dos provedores habilitados.', 'assistant_credentials');
  const credentialsChanged = !old || writesKeys;
  const ciphertext = old && !credentialsChanged ? old.credentials_ciphertext : await encryptProviderCredentials(secret, credentials, organizationId, keys, old?.credentials_ciphertext);
  const revision = Number(input.expectedRevision) + 1, at = new Date().toISOString();

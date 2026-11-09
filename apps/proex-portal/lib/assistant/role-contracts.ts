@@ -36,15 +36,20 @@ export function roleSpeechCeilingMicros(provider: 'groq' | 'deepgram', seconds: 
 }
 
 export type RoleTurn = { role: 'user' | 'assistant'; content: string };
-export type RoleEstimateInput = { textProvider: RoleProvider; textBytes: number; hasImage: boolean };
+export type RolePricing = { model: string; label: string; inputMicrosPerToken: number; outputMicrosPerToken: number };
+export type RoleEstimateInput = { textProvider: RoleProvider; textBytes: number; hasImage: boolean; text?: RolePricing | null; vision?: RolePricing | null };
 export type RoleEstimate = { model: string; visionModel: string | null; tokens: number; costMicros: number; calls: number };
 
 /** Mesma conta no navegador e no servidor. O servidor recusa se o teto aceito ficar abaixo do seu cálculo. */
-export function roleEstimate({ textProvider, textBytes, hasImage }: RoleEstimateInput): RoleEstimate {
-  const model = hasImage ? ROLE_MODELS.deepseek : ROLE_MODELS[textProvider];
+export function roleEstimate({ textProvider, textBytes, hasImage, text, vision }: RoleEstimateInput): RoleEstimate {
+  const model: RolePricing = hasImage ? vision ?? ROLE_MODELS.deepseek : text ?? ROLE_MODELS[textProvider];
   const input = Math.max(0, Math.ceil(textBytes)) + ROLE_SYSTEM_PROMPT_BYTES + (hasImage ? ROLE_IMAGE_TOKEN_CEILING : 0);
   const cost = Math.ceil(input * model.inputMicrosPerToken + ROLE_MAX_OUTPUT_TOKENS * model.outputMicrosPerToken);
-  return { model: model.model, visionModel: hasImage ? ROLE_MODELS.deepseek.model : null, tokens: input + ROLE_MAX_OUTPUT_TOKENS, costMicros: cost, calls: 1 };
+  return { model: model.model, visionModel: hasImage ? model.model : null, tokens: input + ROLE_MAX_OUTPUT_TOKENS, costMicros: cost, calls: 1 };
+}
+/** Preço de um modelo do catálogo (US$ por milhão de tokens = micro-US$ por token). */
+export function catalogPricing(model: { id: string; label: string; price: { inputPerM: number; outputPerM: number } }): RolePricing {
+  return { model: model.id, label: model.label, inputMicrosPerToken: model.price.inputPerM, outputMicrosPerToken: model.price.outputPerM };
 }
 
 /** Bytes usados no teto: conversa + mensagem + nome do projeto + margem fixa do envelope. */

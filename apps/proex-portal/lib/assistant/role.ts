@@ -9,6 +9,10 @@ import {
   ROLE_SYSTEM_PROMPT, roleConversationBytes, roleEstimate, validateRoleReply, type RoleTurn,
 } from './role-contracts';
 import { containsCredential } from './sensitive';
+import { firstJsonObject, genericChat } from './generic-provider';
+import { fitsFunction, type CatalogModel, type CatalogProvider, type ModelCatalog } from './model-catalog';
+import { loadCatalog } from './model-catalog-store';
+import { catalogPricing, type RolePricing } from './role-contracts';
 import { assistantUsageSql, loadAssistantSettings, speechProviderForOrganization, validProviderKey, type SpeechEnvironment } from './settings';
 
 type Options = { fetcher?: typeof fetch; now?: number; keys?: CredentialKeys; signal?: AbortSignal; speech?: SpeechEnvironment };
@@ -70,17 +74,36 @@ function roleAuthorization(db: D1Database, actor: PortalActor, project: string, 
 
 export type RoleAvailability = {
   contract: string; organizationId: string; projectId: string; available: boolean; reason: string | null;
-  provider: 'deepseek' | 'groq'; model: string; visionAvailable: boolean; operationsAvailable: boolean;
+  provider: string; model: string; visionAvailable: boolean; operationsAvailable: boolean;
+  textPricing: RolePricing | null; visionPricing: RolePricing | null;
   speech: { available: boolean; provider: 'groq' | 'deepgram' };
   dailyLimitMicros: number; reservedTodayMicros: number;
 };
 
-function availability(config: AssistantConfig, credentials: AssistantCredentials | null, organizationId: string, speech?: SpeechEnvironment) {
+type Route = { kind: 'legacy'; provider: 'deepseek' | 'groq'; apiKey: string; pricing: RolePricing } | { kind: 'catalog'; provider: CatalogProvider; model: CatalogModel; apiKey: string; pricing: RolePricing };
+/** Which model answers: the reviewed DeepSeek/Groq path, or a catalog model chosen by the administration. */
+function route(config: AssistantConfig, raw: Record<string, unknown> | null, catalog: ModelCatalog | null, need: 'chat' | 'vision'): Route | null {
+  if (!raw) return null;
+  const chosen = need === 'chat' ? config.roleModel : config.roleVisionModel;
+  if (!chosen) {
+    const provider = need === 'vision' ? 'deepseek' : config.roleProvider, apiKey = raw[provider];
+    return validProviderKey(apiKey) ? { kind: 'legacy', provider, apiKey, pricing: { ...ROLE_MODELS[provider], model: ROLE_MODELS[provider].model } } : null;
+  }
+  const model = catalog?.models.find(entry => entry.id === chosen && entry.enabled), provider = catalog?.providers.find(entry => entry.id === model?.providerId);
+  if (!model || !provider || fitsFunction(model, provider, need)) return null;
+  const apiKey = raw[provider.keyRef];
+  return validProviderKey(apiKey) ? { kind: 'catalog', provider, model, apiKey, pricing: catalogPricing(model) } : null;
+}
+
+function availability(config: AssistantConfig, credentials: AssistantCredentials | null, organizationId: string, speech?: SpeechEnvironment, raw: Record<string, unknown> | null = credentials as Record<string, unknown> | null, catalog: ModelCatalog | null = null) {
   const speechProvider = speechProviderForOrganization(organizationId, speech, config.sttProvider);
   const speechKey = speechProvider === 'groq' ? (config.sttProvider === 'legacy' ? speech?.groqKey : credentials?.groq) : credentials?.deepgram;
+  const text = config.roleEnabled ? route(config, raw, catalog, 'chat') : null;
+  const vision = config.roleEnabled && config.roleVisionEnabled ? route(config, raw, catalog, 'vision') : null;
   return {
-    available: !!credentials && config.roleEnabled && validProviderKey(credentials[config.roleProvider]),
-    visionAvailable: !!credentials && config.roleEnabled && config.roleVisionEnabled && validProviderKey(credentials.deepseek),
+    text, vision,
+    available: !!credentials && !!text,
+    visionAvailable: !!credentials && !!vision,
     operationsAvailable: !!credentials && config.enabled && validProviderKey(credentials[config.textProvider]) && (!config.jevEnabled || validProviderKey(credentials.typesafe)),
     speech: { available: config.sttEnabled && validProviderKey(speechKey), provider: speechProvider },
   };
@@ -93,13 +116,15 @@ export async function roleStatus(db: D1Database, actor: PortalActor | null, inpu
   const usage = await one(db, 'SELECT reserved_usd_micros FROM ai_organization_usage WHERE organization_id=? AND day=?', [organizationId, today]);
   const base = { contract: ROLE_CONTRACT, organizationId, projectId: project, reservedTodayMicros: Number(usage?.reserved_usd_micros ?? 0) };
   try {
-    const { config, credentials } = await loadAssistantSettings(db, secret, organizationId, 'configuration', options.keys, current.userId);
-    const state = availability(config, credentials, organizationId, options.speech);
-    return { ...base, ...state, provider: config.roleProvider, model: ROLE_MODELS[config.roleProvider].model, dailyLimitMicros: config.dailyUsdMicros,
+    const { config, credentials, rawCredentials } = await loadAssistantSettings(db, secret, organizationId, 'configuration', options.keys, current.userId);
+    const catalog = config.roleModel || config.roleVisionModel ? (await loadCatalog(db, organizationId)).catalog : null;
+    const { text, vision, ...state } = availability(config, credentials, organizationId, options.speech, rawCredentials, catalog);
+    return { ...base, ...state, provider: text?.kind === 'catalog' ? text.provider.id : config.roleProvider, model: text?.pricing.label ?? ROLE_MODELS[config.roleProvider].label,
+      textPricing: text?.pricing ?? null, visionPricing: vision?.pricing ?? null, dailyLimitMicros: config.dailyUsdMicros,
       reason: state.available ? null : !config.roleEnabled ? 'O Rolê ainda não foi ligado nesta organização.' : 'Falta a chave do provedor escolhido para o Rolê.' };
   } catch (error) {
     const reason = error instanceof HttpError && error.status === 403 ? 'A IA desta organização está liberada só para outra pessoa.' : 'O Rolê ainda não foi configurado nesta organização.';
-    return { ...base, available: false, reason, provider: 'deepseek', model: ROLE_MODELS.deepseek.model, visionAvailable: false, operationsAvailable: false, speech: { available: false, provider: 'groq' }, dailyLimitMicros: 0 };
+    return { ...base, available: false, reason, provider: 'deepseek', model: ROLE_MODELS.deepseek.label, visionAvailable: false, operationsAvailable: false, textPricing: null, visionPricing: null, speech: { available: false, provider: 'groq' }, dailyLimitMicros: 0 };
   }
 }
 
@@ -232,6 +257,18 @@ export function operationNumbersAllowed(operation: string, userTexts: string[]):
   return (operation.match(/\d+/g) ?? []).every(value => said.has(String(Number(value))));
 }
 
+/** Catalog models: same prompt and limits; JSON parsed leniently, plain text kept as the reply. */
+async function catalogDispatch(chosen: Extract<Route, { kind: 'catalog' }>, turns: RoleTurn[], message: string, projectName: string, image: string | null, signal: AbortSignal, fetcher: typeof fetch) {
+  const result = await genericChat({ provider: chosen.provider, model: chosen.model, apiKey: chosen.apiKey, system: ROLE_SYSTEM_PROMPT, maxTokens: ROLE_MAX_OUTPUT_TOKENS, json: chosen.provider.kind === 'openai_chat', signal, fetcher,
+    turns: [...turns, { role: 'user', content: `Projeto atual: ${projectName}\nMensagem: ${message}`, image }] });
+  if (result.outputTokens > ROLE_MAX_OUTPUT_TOKENS * 2) throw withheld();
+  let reply: { reply: string; operation: string | null };
+  try { reply = validateRoleReply(firstJsonObject(result.text)); }
+  catch { reply = { reply: result.text.trim().slice(0, 4000), operation: null }; }
+  if (containsCredential(reply.reply) || reply.operation && containsCredential(reply.operation)) throw withheld();
+  return { ...reply, inputTokens: result.inputTokens, outputTokens: result.outputTokens, costMicros: result.costMicros };
+}
+
 /** One paid call, only after the person accepted a cost ceiling at least as high as the server's. */
 export async function roleChat(db: D1Database, actor: PortalActor | null, input: Record<string, unknown>, secret: string, options: Options = {}) {
   onlyKeys(input, ['action', 'projectId', 'operationKey', 'consent', 'history', 'message', 'image', 'acceptedCostMicros']);
@@ -240,14 +277,15 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
   if (typeof input.message !== 'string' || input.message.length > ROLE_MAX_MESSAGE_CHARS) throw new HttpError(400, 'Escreva até 2.000 caracteres por mensagem.', 'assistant_request');
   const project = projectId(input.projectId), message = safeRequest(input.message), turns = history(input.history), image = parseRoleImage(input.image);
   const { current, organizationId, projectName } = await scopedActor(db, actor, project), now = options.now ?? Date.now();
-  const { config, credentials, revision } = await loadAssistantSettings(db, secret, organizationId, 'configuration', options.keys, current.userId);
-  const state = availability(config, credentials, organizationId, options.speech);
+  const { config, credentials, rawCredentials, revision } = await loadAssistantSettings(db, secret, organizationId, 'configuration', options.keys, current.userId);
+  const catalog = config.roleModel || config.roleVisionModel ? (await loadCatalog(db, organizationId)).catalog : null;
+  const state = availability(config, credentials, organizationId, options.speech, rawCredentials, catalog);
   if (!state.available) throw new HttpError(503, 'O Rolê está desligado ou sem chave nesta organização.', 'role_unavailable');
   if (image && !state.visionAvailable) throw new HttpError(503, 'A leitura de imagens não está ligada nesta organização. Envie só o texto.', 'role_vision_unavailable');
-  const provider = image ? 'deepseek' as const : config.roleProvider;
-  const apiKey = credentials[provider];
-  if (!validProviderKey(apiKey)) throw new HttpError(503, 'Falta a chave do provedor escolhido para o Rolê.', 'role_unavailable');
-  const estimate = roleEstimate({ textProvider: config.roleProvider, textBytes: roleConversationBytes(turns, message, projectName), hasImage: !!image });
+  const chosen = (image ? state.vision : state.text)!;
+  const provider = chosen.kind === 'catalog' ? chosen.provider.id : chosen.provider, modelName = chosen.kind === 'catalog' ? chosen.model.model : ROLE_MODELS[chosen.provider].model;
+  const apiKey = chosen.apiKey;
+  const estimate = roleEstimate({ textProvider: config.roleProvider, textBytes: roleConversationBytes(turns, message, projectName), hasImage: !!image, text: state.text?.pricing, vision: state.vision?.pricing });
   if (!Number.isSafeInteger(input.acceptedCostMicros) || Number(input.acceptedCostMicros) < estimate.costMicros) {
     throw new HttpError(409, 'O custo previsto mudou. Confira o novo valor e envie de novo.', 'role_cost_changed');
   }
@@ -279,11 +317,13 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
   try {
     // Last live fence before money leaves: access or configuration may have changed during decryption.
     await authorization.first();
-    const result = await dispatch(provider, apiKey, transportBody(provider, turns, message, projectName, image?.dataUrl ?? null), controller.signal, options.fetcher ?? fetch);
+    const result = chosen.kind === 'legacy'
+      ? await dispatch(chosen.provider, apiKey, transportBody(chosen.provider, turns, message, projectName, image?.dataUrl ?? null), controller.signal, options.fetcher ?? fetch)
+      : await catalogDispatch(chosen, turns, message, projectName, image?.dataUrl ?? null, controller.signal, options.fetcher ?? fetch);
     const dropped = !!result.operation && !operationNumbersAllowed(result.operation, [message, ...turns.filter(turn => turn.role === 'user').map(turn => turn.content)]);
     if (dropped) result.operation = null;
     const extraCost = Math.max(0, result.costMicros - estimate.costMicros), extraTokens = Math.max(0, result.inputTokens + result.outputTokens - estimate.tokens);
-    const details = { provider, model: ROLE_MODELS[provider].model, hasImage: !!image, inputTokens: result.inputTokens, outputTokens: result.outputTokens, reservedUsdMicros: estimate.costMicros, usdMicros: result.costMicros, operationSuggested: !!result.operation, operationDropped: dropped, overrun: extraCost > 0 || extraTokens > 0 };
+    const details = { provider, model: modelName, hasImage: !!image, inputTokens: result.inputTokens, outputTokens: result.outputTokens, reservedUsdMicros: estimate.costMicros, usdMicros: result.costMicros, operationSuggested: !!result.operation, operationDropped: dropped, overrun: extraCost > 0 || extraTokens > 0 };
     await db.batch([
       authorization,
       db.prepare("UPDATE ai_calls SET status='complete' WHERE id=? AND admission_nonce=? AND status='reserved'").bind(id, nonce),
@@ -292,7 +332,7 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
       db.prepare("INSERT INTO audit(id,actor_id,project_id,organization_id,action,entity_id,details,created_at) VALUES(?,?,?,?,'assistant.role.chat',?,?,?)")
         .bind(crypto.randomUUID(), current.userId, project, organizationId, id, JSON.stringify(details), new Date().toISOString()),
     ]);
-    return { contract: ROLE_CONTRACT, reply: result.reply, operation: result.operation, operationDropped: dropped, provider, model: ROLE_MODELS[provider].model,
+    return { contract: ROLE_CONTRACT, reply: result.reply, operation: result.operation, operationDropped: dropped, provider, model: modelName,
       reservedMicros: estimate.costMicros, costMicros: result.costMicros, inputTokens: result.inputTokens, outputTokens: result.outputTokens };
   } catch (error) {
     await db.prepare("UPDATE ai_calls SET status='failed' WHERE id=? AND status='reserved'").bind(id).run();

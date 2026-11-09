@@ -7,7 +7,7 @@ import AssistantAdministrationPanel from './assistant-administration-panel';
 import styles from './credential-vault-panel.module.css';
 
 type Entry = { provider: CredentialProvider; label: string; purpose: string; status: 'active' | 'disabled' | 'removed' | 'missing' | 'unavailable'; mask: string | null; createdAt: string | null; createdBy: string | null; updatedAt: string | null; updatedBy: string | null };
-type HistoryEntry = { action: 'save' | 'disable' | 'enable' | 'remove' | 'recover' | 'reencrypted' | 'test'; provider: CredentialProvider | null; mask: string | null; outcome: string | null; at: string; actor: string };
+type HistoryEntry = { action: 'save' | 'disable' | 'enable' | 'remove' | 'recover' | 'reencrypted' | 'test'; provider: string | null; mask: string | null; outcome: string | null; at: string; actor: string };
 type Vault = {
   history?: HistoryEntry[];
   organizations: { id: string; name: string }[]; organizationId: string | null; revision: number;
@@ -21,6 +21,11 @@ const providerLabels = { deepseek: 'DeepSeek', openai: 'OpenAI', typesafe: 'Type
 const models = { deepseek: 'DeepSeek Flash', openai: 'GPT-5.6 Luna · OpenAI', typesafe: 'JEV · TypeSafe', deepgram: 'Nova-3 · Deepgram', groq: 'Whisper turbo · Groq' };
 void PROVIDERS;
 const submitLabels = { save: 'Salvar chave', enable: 'Religar chave', disable: 'Desligar chave', remove: 'Remover chave', test: 'Testar agora' };
+const KEY_GROUPS: { title: string; hint: string; providers: CredentialProvider[] }[] = [
+  { title: 'Conversa e fotos', hint: 'Usadas pelo Rolê, pelas operações e pelos documentos.', providers: ['deepseek', 'openai'] },
+  { title: 'Voz para texto', hint: 'Transcrevem áudio. A Groq também faz uma conversa mais barata do Rolê, só com texto.', providers: ['groq', 'deepgram'] },
+  { title: 'Decisão', hint: 'Respondem perguntas fechadas, como a triagem de demandas.', providers: ['typesafe'] },
+];
 const order: CredentialProvider[] = ['deepseek', 'groq', 'typesafe', 'deepgram', 'openai'];
 const recommended: Partial<Record<CredentialProvider, string>> = { deepseek: 'Recomendado para o Rolê', groq: 'Recomendado para voz' };
 /** Preços oficiais lidos em 09/11/2026; detalhes e fontes em docs/ROLE-ASSISTENTE.md. */
@@ -179,7 +184,7 @@ function CredentialVaultPanel({organizationId,onChanged}: {organizationId?:strin
         setDecision(null); setFailure(''); setReceipt(''); setLocalSelection(event.target.value);
       }}>{vault.organizations.length ? vault.organizations.map(org => <option key={org.id} value={org.id}>{org.name}</option>) : <option value="">Nenhuma organização ativa</option>}</select></label>}
       {!vault.storageReady && <div className={styles.note} role="status"><strong>Cadastro de chaves indisponível neste ambiente</strong><p>A administração precisa configurar o segredo dedicado do cofre no servidor. As chaves já existentes podem continuar conforme os ajustes; cadastrar, trocar ou remover fica bloqueado até essa preparação.</p><details><summary>Orientação para a administração técnica</summary><p>Defina PROEX_KEYS_SECRET no ambiente do portal, com segredo próprio e diferente do login. Em uma rotação, use também PROEX_KEYS_PREVIOUS_SECRET até concluir a migração verificada. Os valores não devem aparecer em notas, capturas ou campos de outros serviços.</p></details></div>}
-      {vault.organizationId && <ul className={styles.list}>{entries.map(entry => <li className={styles.entry} key={entry.provider}>
+      {vault.organizationId && KEY_GROUPS.map(group => { const list = entries.filter(entry => group.providers.includes(entry.provider)); return list.length ? <section key={group.title} className={styles.keyGroup} aria-label={group.title}><h4 className={styles.keyGroupTitle}>{group.title}</h4><p className="p-form-help">{group.hint}</p><ul className={styles.list}>{list.map(entry => <li className={styles.entry} key={entry.provider}>
         <div className={styles.entryTop}><span className="p-icon-tile">{entry.provider==='groq'||entry.provider==='deepgram'?<AudioLines size={20} aria-hidden="true"/>:entry.provider==='typesafe'?<ShieldCheck size={20} aria-hidden="true"/>:<ScanText size={20} aria-hidden="true"/>}</span><div><h4>{entry.label}</h4><p>{entry.purpose}</p></div><span className={entry.status === 'active' ? 'p-badge p-status-active' : 'p-badge'}>{statusLabels[entry.status]}</span></div>
         {recommended[entry.provider] && <p className={styles.recommended}>{recommended[entry.provider]}</p>}
         <p className={styles.model}>Modelo: {models[entry.provider]}</p>
@@ -208,7 +213,8 @@ function CredentialVaultPanel({organizationId,onChanged}: {organizationId?:strin
           {failure && <p role="alert" className="p-inline-error">{failure}</p>}
           <div className={styles.actions}><button className={`p-button ${decision.action === 'remove' ? 'p-button-danger' : 'p-button-primary'}`} type="submit" disabled={busy}>{busy ? 'Salvando…' : submitLabels[decision.action]}</button><button className="p-button p-button-subtle" type="button" disabled={busy} onClick={cancelDecision}>Cancelar</button>{failure && <button type="button" className="p-button p-button-subtle" disabled={busy} onClick={reload}>Atualizar consulta</button>}</div>
         </form>}
-      </li>)}</ul>}
+      </li>)}</ul></section> : null; })}
+      {vault.organizationId && <p className="p-form-help">NVIDIA, Anthropic e qualquer serviço compatível com OpenAI têm a chave na aba Modelos.</p>}
       <dl className={styles.metrics} aria-label="Gasto previsto da organização">
         <div><dt>Gasto hoje</dt><dd>{currency.format(vault.reserved.today / 1_000_000)}</dd></div>
         <div><dt>Limite por dia</dt><dd>{currency.format(vault.reserved.dailyLimit / 1_000_000)}</dd></div>
@@ -218,7 +224,7 @@ function CredentialVaultPanel({organizationId,onChanged}: {organizationId?:strin
       {vault.organizationId && <section className={styles.history} aria-labelledby="vault-history-title">
         <h4 id="vault-history-title"><History size={18} aria-hidden="true"/>Histórico das chaves</h4>
         {vault.history?.length ? <ol>{vault.history.map((item, index) => <li key={`${item.at}-${index}`}>
-          <span><strong>{historyLabels[item.action]}{item.provider ? ` · ${providerLabels[item.provider]}` : ''}</strong>{item.mask ? ` (${item.mask})` : ''}{item.action === 'test' && item.outcome ? `: ${outcomeLabels[item.outcome] ?? item.outcome}` : ''}</span>
+          <span><strong>{historyLabels[item.action]}{item.provider ? ` · ${providerLabels[item.provider as CredentialProvider] ?? item.provider.replace(/^p:/, '')}` : ''}</strong>{item.mask ? ` (${item.mask})` : ''}{item.action === 'test' && item.outcome ? `: ${outcomeLabels[item.outcome] ?? item.outcome}` : ''}</span>
           <small>{date.format(new Date(item.at))} · {item.actor}</small>
         </li>)}</ol> : <p className="p-form-help">Nada registrado ainda. Cada cadastro, troca, teste, desligamento e remoção aparece aqui, sem o valor da chave.</p>}
       </section>}
