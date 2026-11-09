@@ -66,10 +66,42 @@ test('rate-limit cleanup removes only expired buckets in the same commit as the 
     assert.equal(f.stats.commits, 1);
     await rate.rateLimit(f.db, 'fixture-bucket', 2, 1000);
     await assert.rejects(rate.rateLimit(f.db, 'fixture-bucket', 2, 1000), error => error.status === 429);
-    assert.equal(f.stats.commits, 3);
+    // A full bucket refuses with a read only: insisting never rewrites the snapshot.
+    assert.equal(f.stats.commits, 2);
     t.mock.method(Date, 'now', () => now + 1000);
     await rate.rateLimit(f.db, 'fixture-bucket', 2, 1000);
     assert.equal(f.native.prepare('SELECT count FROM portal_rate_limits').get().count, 1);
+  } finally { f.close(); }
+});
+
+test('full buckets refuse without writes, so anonymous retries cannot force snapshot uploads', async t => {
+  const f = nativeFixture(), now = Date.now();
+  t.mock.method(Date, 'now', () => now);
+  try {
+    for (let i = 0; i < 3; i++) await rate.rateLimit(f.db, 'flood-bucket', 3, 60000);
+    assert.equal(f.stats.commits, 3);
+    for (let i = 0; i < 50; i++) await assert.rejects(rate.rateLimit(f.db, 'flood-bucket', 3, 60000), error => error.status === 429 && error.code === 'rate_limited');
+    assert.equal(f.stats.commits, 3);
+    assert.equal(f.native.prepare('SELECT count FROM portal_rate_limits').get().count, 3);
+    t.mock.method(Date, 'now', () => now + 60000);
+    await rate.rateLimit(f.db, 'flood-bucket', 3, 60000);
+    assert.equal(f.stats.commits, 4);
+  } finally { f.close(); }
+});
+
+test('account attempts count global, subject and IP buckets in one commit and stop counting once any is full', async () => {
+  const f = nativeFixture();
+  const request = new Request('https://portal.example.invalid/api/account', { method: 'POST', headers: { 'cf-connecting-ip': '192.0.2.10' } });
+  try {
+    await rate.accountRate(f.db, request, 'login:fixture');
+    assert.equal(f.stats.commits, 1);
+    assert.equal(f.native.prepare('SELECT COUNT(*) n FROM portal_rate_limits').get().n, 3);
+    for (let i = 1; i < 10; i++) await rate.accountRate(f.db, request, 'login:fixture');
+    assert.equal(f.stats.commits, 10);
+    await assert.rejects(rate.accountRate(f.db, request, 'login:fixture'), error => error.status === 429);
+    assert.equal(f.stats.commits, 10);
+    // The refused attempt did not inflate the shared global bucket.
+    assert.deepEqual(f.native.prepare('SELECT count FROM portal_rate_limits ORDER BY count').all().map(row => row.count), [10, 10, 10]);
   } finally { f.close(); }
 });
 

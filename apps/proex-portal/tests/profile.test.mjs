@@ -24,7 +24,7 @@ const errors = compile('errors');
 const profileModule = compile('profile', { './errors': errors, pngjs: pathToFileURL(require.resolve('pngjs')).href });
 const {
   getOwnProfile, updateOwnProfile, normalizeAvatarPng, replaceOwnAvatar,
-  getOwnAvatar, requireProfileMutation, readAvatarForm, MAX_AVATAR_BYTES,
+  getOwnAvatar, requireProfileMutation, readAvatarForm, MAX_AVATAR_BYTES, AVATAR_STORED_SIZE,
 } = await import(profileModule);
 const user = { userId: 'canonical-user', email: 'person@example.test', displayName: 'Pessoa' };
 
@@ -209,7 +209,43 @@ test('PNG decompression cannot exceed the dimensions declared in its bounded hea
   const oversizedPixels = Buffer.concat([input.subarray(0, 33), idat, input.subarray(-12)]);
   await assert.rejects(normalizeAvatarPng(new Uint8Array(oversizedPixels)), { status: 415, code: 'invalid_avatar' });
   const largest = await normalizeAvatarPng(new Uint8Array(png(512, 512)));
-  assert.equal(PNG.sync.read(Buffer.from(largest)).width, 512);
+  assert.equal(PNG.sync.read(Buffer.from(largest)).width, AVATAR_STORED_SIZE);
+});
+
+// Deterministic photo-like pixels (gradients plus fine texture): synthetic, no real image.
+function photoLike(width, height, alpha = () => 255) {
+  const data = Buffer.alloc(width * height * 4);
+  let seed = 7;
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+    seed = (seed * 1103515245 + 12345) >>> 0;
+    const noise = (seed >>> 24) % 24, o = (y * width + x) * 4;
+    data[o] = (x * 255 / width + noise) & 255; data[o + 1] = (y * 255 / height + noise) & 255;
+    data[o + 2] = (128 + 60 * Math.sin(x / 9) * Math.cos(y / 13) + noise) & 255; data[o + 3] = alpha(x, y);
+  }
+  return PNG.sync.write({ width, height, data });
+}
+const colorType = bytes => Buffer.from(bytes)[25];
+
+test('stored photos are reduced to 256 px RGB, keeping the aspect ratio, and older 512 px uploads stay valid', async () => {
+  const before = photoLike(512, 384), stored = await normalizeAvatarPng(new Uint8Array(before));
+  const decoded = PNG.sync.read(Buffer.from(stored));
+  assert.equal(decoded.width, 256); assert.equal(decoded.height, 192);
+  assert.equal(colorType(stored), 2, 'opaque photos drop the alpha channel');
+  assert.ok(stored.byteLength * 3 < before.byteLength, `stored ${stored.byteLength} B vs uploaded ${before.byteLength} B`);
+  // Area averaging keeps the picture: the corner color matches the source corner region.
+  const source = PNG.sync.read(before);
+  assert.ok(Math.abs(decoded.data[0] - (source.data[0] + source.data[4] + source.data[512 * 4] + source.data[512 * 4 + 4]) / 4) <= 1);
+  // A photo already at or below the stored size is only re-encoded, never enlarged.
+  const small = PNG.sync.read(Buffer.from(await normalizeAvatarPng(new Uint8Array(photoLike(200, 120)))));
+  assert.equal(small.width, 200); assert.equal(small.height, 120);
+});
+
+test('transparent PNG photos keep their alpha channel when reduced', async () => {
+  const input = photoLike(400, 400, x => x < 200 ? 0 : 255);
+  const stored = await normalizeAvatarPng(new Uint8Array(input));
+  assert.equal(colorType(stored), 6);
+  const decoded = PNG.sync.read(Buffer.from(stored));
+  assert.equal(decoded.width, 256); assert.equal(decoded.data[3], 0); assert.equal(decoded.data[(256 * 4) - 1], 255);
 });
 
 function crc32(bytes) {

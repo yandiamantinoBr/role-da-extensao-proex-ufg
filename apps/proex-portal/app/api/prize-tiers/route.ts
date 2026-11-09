@@ -2,7 +2,7 @@ import {getActor} from '@/lib/access';
 import {database} from '@/lib/platform';
 import {getPortalUser} from '@/lib/session';
 import {boundedJson} from '@/lib/http';
-import {rateLimit} from '@/lib/rate-limit';
+import {rateLimitStatements} from '@/lib/rate-limit';
 import {HttpError,publicError} from '@/lib/errors';
 import {prizeTiersAction,prizeTiersWorkspace} from '@/lib/prize-tiers/service';
 export const dynamic='force-dynamic';
@@ -18,6 +18,7 @@ export async function GET(request:Request){try{
 export async function POST(request:Request){try{
  if(request.headers.get('Origin')!==new URL(request.url).origin||request.headers.get('X-Proex-Action')!=='1'||!request.headers.get('Content-Type')?.includes('application/json'))throw new HttpError(403,'Atualize o portal antes de salvar.','invalid_origin');
  const input=await boundedJson(request,16*1024),db=database(),actor=await getActor(db,await getPortalUser());
- if(actor)await rateLimit(db,`prize-tiers:${actor.userId}`,60,60000);
- return privateResponse(Response.json(await prizeTiersAction(db,actor,input)));
+ // A full bucket refuses here with a read only; otherwise the count joins the action's own batch (one commit).
+ const rateCount=actor?await rateLimitStatements(db,[{bucket:`prize-tiers:${actor.userId}`,limit:60,windowMs:60000}]):[];
+ return privateResponse(Response.json(await prizeTiersAction(db,actor,input,rateCount)));
  }catch(error){return privateResponse(publicError(error));}}

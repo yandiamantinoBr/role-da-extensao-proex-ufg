@@ -101,9 +101,13 @@ export async function passwordAuth(db: D1Database, options: PasswordAuthOptions 
       accountLinking: { enabled: false, disableImplicitLinking: true },
     },
     verification: { storeIdentifier: 'hashed' },
+    // Memory, not 'database': on the Node target every stored row would rewrite the
+    // whole SQLite snapshot, so anonymous calls to /api/auth/* could force one full
+    // database upload per request. Sensitive flows keep their own DB-backed limits
+    // in /api/account (lib/rate-limit.ts), which refuse without writing once full.
     rateLimit: {
       enabled: true,
-      storage: 'database',
+      storage: 'memory',
       modelName: 'rateLimit',
       window: 60,
       max: 100,
@@ -116,7 +120,10 @@ export async function passwordAuth(db: D1Database, options: PasswordAuthOptions 
     advanced: {
       cookiePrefix: 'proex',
       useSecureCookies: secureCookies,
-      ipAddress: { ipAddressHeaders: ['cf-connecting-ip'] },
+      // Vercel sets x-real-ip itself (lib/rate-limit.ts clientIp uses the same rule);
+      // elsewhere only Cloudflare's header is trusted. Without an IP, Better Auth
+      // falls back to one bucket shared by everyone.
+      ipAddress: { ipAddressHeaders: (runtimeEnv as Record<string, unknown>).VERCEL === '1' ? ['x-real-ip'] : ['cf-connecting-ip'] },
     },
     plugins: [admin({ defaultRole: 'user', adminRoles: ['admin'] })],
   });

@@ -1,5 +1,5 @@
 import { getActor, projectAuthoritySql, requireCapability, requireLiveCapability, type PortalActor } from '../access';
-import { one } from '../database';
+import { all, one } from '../database';
 import { HttpError } from '../errors';
 import { reservationStatements } from './admission';
 import { onlyKeys, safeRequest, type AssistantConfig, type AssistantCredentials } from './contracts';
@@ -191,6 +191,47 @@ async function dispatch(provider: 'deepseek' | 'groq', apiKey: string, body: unk
   return { ...reply, inputTokens, outputTokens, costMicros: Math.ceil(inputTokens * model.inputMicrosPerToken + outputTokens * model.outputMicrosPerToken) };
 }
 
+const STOP = new Set(['para', 'com', 'dos', 'das', 'uma', 'uns', 'umas', 'por', 'que', 'saida', 'saidas', 'entrada', 'entradas', 'registrar', 'registro', 'distribuicao', 'consumo', 'projeto', 'estoque', 'material', 'materiais', 'unidade', 'unidades', 'centro', 'eventos', 'evento']);
+function words(value: string): string[] {
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().split(/[^a-z0-9]+/)
+    .filter(word => word.length >= 3 && !/^\d+$/.test(word) && !STOP.has(word))
+    .map(word => word.length > 4 && word.endsWith('s') ? word.slice(0, -1) : word)
+    .map(word => word === 'bottom' || word === 'boton' || word === 'button' ? 'botton' : word);
+}
+export type ProjectMatch = { projectId: string; projectName: string; itemName: string; score: number };
+/**
+ * Where is the material named in an operation? Only projects the person can read are searched,
+ * and only item names leave the server. No provider call, no cost.
+ */
+export async function matchOperationProjects(db: D1Database, actor: PortalActor | null, request: string): Promise<{ matches: ProjectMatch[]; ambiguous: boolean }> {
+  const current = actor && await getActor(db, actor);
+  if (!current) throw new HttpError(403, 'Seu acesso mudou. Entre novamente.', 'assistant_forbidden');
+  const wanted = new Set(words(safeRequest(request)));
+  if (!wanted.size) return { matches: [], ambiguous: false };
+  const authority = projectAuthoritySql(current, ['inventory.read'], 'p.id');
+  const rows = await all(db, `SELECT p.id AS project_id,p.name AS project_name,i.name AS item_name FROM items i
+    JOIN projects p ON p.id=i.project_id JOIN organizations o ON o.id=p.organization_id AND o.status='active'
+    WHERE ${authority.sql} ORDER BY p.name,i.name LIMIT 2000`, authority.values);
+  const best = new Map<string, ProjectMatch>();
+  for (const row of rows) {
+    const itemWords = words(String(row.item_name));
+    if (!itemWords.length) continue;
+    const hits = itemWords.filter(word => wanted.has(word)).length;
+    if (!hits) continue;
+    const score = Math.round(hits / itemWords.length * 100) + hits;
+    const projectId = String(row.project_id), previous = best.get(projectId);
+    if (!previous || score > previous.score) best.set(projectId, { projectId, projectName: String(row.project_name), itemName: String(row.item_name), score });
+  }
+  const matches = [...best.values()].sort((a, b) => b.score - a.score || a.projectName.localeCompare(b.projectName)).slice(0, 5);
+  return { matches, ambiguous: matches.length > 1 && matches[0].score === matches[1].score };
+}
+
+/** Numbers in a suggested operation must come from what the person wrote (blocks "dê saída de 500" hidden in a photo). */
+export function operationNumbersAllowed(operation: string, userTexts: string[]): boolean {
+  const said = new Set(userTexts.flatMap(text => text.match(/\d+/g) ?? []).map(value => String(Number(value))));
+  return (operation.match(/\d+/g) ?? []).every(value => said.has(String(Number(value))));
+}
+
 /** One paid call, only after the person accepted a cost ceiling at least as high as the server's. */
 export async function roleChat(db: D1Database, actor: PortalActor | null, input: Record<string, unknown>, secret: string, options: Options = {}) {
   onlyKeys(input, ['action', 'projectId', 'operationKey', 'consent', 'history', 'message', 'image', 'acceptedCostMicros']);
@@ -214,15 +255,19 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
   const id = await digest(`role\n${current.userId}\n${project}\n${input.operationKey}`);
   const fingerprint = await digest(JSON.stringify({ contract: ROLE_CONTRACT, message, turns, image: image ? await digest(image.dataUrl) : null, revision }));
   const authorization = roleAuthorization(db, current, project, organizationId, revision), nonce = crypto.randomUUID(), day = dayKey(now);
+  // One person cannot use up the whole organization budget: half of the daily calls (all of them under private use).
+  const personalCap = config.usageScope === 'private' ? config.dailyCalls : Math.max(3, Math.ceil(config.dailyCalls / 2));
+  const personalQuota = db.prepare("SELECT CASE WHEN (SELECT COUNT(*) FROM ai_calls WHERE actor_id=? AND day=?) < ? THEN 1 ELSE json_extract('[]','role_user_quota') END").bind(current.userId, day, personalCap);
   const replay = async () => {
     const call = await one(db, 'SELECT fingerprint FROM ai_calls WHERE id=?', [id]);
     if (call) throw new HttpError(409, call.fingerprint === fingerprint ? 'Esta mensagem já foi enviada. Escreva de novo para uma nova resposta.' : 'Este envio já foi usado com outra mensagem.', 'assistant_call_replay');
   };
   await replay();
   try {
-    await db.batch(reservationStatements(db, { table: 'ai_calls', authorization, id, fingerprint, nonce, actorId: current.userId, projectId: project, organizationId, day, createdAt: new Date(now).toISOString(), revision, config, reservation }));
+    await db.batch([personalQuota, ...reservationStatements(db, { table: 'ai_calls', authorization, id, fingerprint, nonce, actorId: current.userId, projectId: project, organizationId, day, createdAt: new Date(now).toISOString(), revision, config, reservation })]);
   } catch (error) {
     if (String(error).includes('assistant_authority_changed')) throw new HttpError(403, 'Seu acesso ou a configuração mudou.', 'assistant_forbidden');
+    if (String(error).includes('role_user_quota')) throw new HttpError(429, 'Você já usou sua parte do limite de IA de hoje. Tente amanhã ou peça para ampliar o limite.', 'role_user_quota');
     await replay();
     throw error;
   }
@@ -235,8 +280,10 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
     // Last live fence before money leaves: access or configuration may have changed during decryption.
     await authorization.first();
     const result = await dispatch(provider, apiKey, transportBody(provider, turns, message, projectName, image?.dataUrl ?? null), controller.signal, options.fetcher ?? fetch);
+    const dropped = !!result.operation && !operationNumbersAllowed(result.operation, [message, ...turns.filter(turn => turn.role === 'user').map(turn => turn.content)]);
+    if (dropped) result.operation = null;
     const extraCost = Math.max(0, result.costMicros - estimate.costMicros), extraTokens = Math.max(0, result.inputTokens + result.outputTokens - estimate.tokens);
-    const details = { provider, model: ROLE_MODELS[provider].model, hasImage: !!image, inputTokens: result.inputTokens, outputTokens: result.outputTokens, reservedUsdMicros: estimate.costMicros, usdMicros: result.costMicros, operationSuggested: !!result.operation, overrun: extraCost > 0 || extraTokens > 0 };
+    const details = { provider, model: ROLE_MODELS[provider].model, hasImage: !!image, inputTokens: result.inputTokens, outputTokens: result.outputTokens, reservedUsdMicros: estimate.costMicros, usdMicros: result.costMicros, operationSuggested: !!result.operation, operationDropped: dropped, overrun: extraCost > 0 || extraTokens > 0 };
     await db.batch([
       authorization,
       db.prepare("UPDATE ai_calls SET status='complete' WHERE id=? AND admission_nonce=? AND status='reserved'").bind(id, nonce),
@@ -245,7 +292,7 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
       db.prepare("INSERT INTO audit(id,actor_id,project_id,organization_id,action,entity_id,details,created_at) VALUES(?,?,?,?,'assistant.role.chat',?,?,?)")
         .bind(crypto.randomUUID(), current.userId, project, organizationId, id, JSON.stringify(details), new Date().toISOString()),
     ]);
-    return { contract: ROLE_CONTRACT, reply: result.reply, operation: result.operation, provider, model: ROLE_MODELS[provider].model,
+    return { contract: ROLE_CONTRACT, reply: result.reply, operation: result.operation, operationDropped: dropped, provider, model: ROLE_MODELS[provider].model,
       reservedMicros: estimate.costMicros, costMicros: result.costMicros, inputTokens: result.inputTokens, outputTokens: result.outputTokens };
   } catch (error) {
     await db.prepare("UPDATE ai_calls SET status='failed' WHERE id=? AND status='reserved'").bind(id).run();

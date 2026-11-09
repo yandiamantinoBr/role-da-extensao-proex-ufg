@@ -134,7 +134,8 @@ export async function prepareProfilePhoto(file: File): Promise<Blob> {
   }
   const decoded = await decodePhoto(file);
   try {
-    const scale = Math.min(1, 512 / Math.max(decoded.width, decoded.height));
+    // Same bound as AVATAR_STORED_SIZE on the server (lib/profile.ts), which re-encodes anyway.
+    const scale = Math.min(1, 256 / Math.max(decoded.width, decoded.height));
     const width = Math.max(1, Math.round(decoded.width * scale)), height = Math.max(1, Math.round(decoded.height * scale));
     let blob: Blob;
     try {
@@ -312,7 +313,7 @@ export default function ProfilePanel({ onUpdated }: Props) {
             <div><dt>Vínculo principal</dt><dd>{affiliations[profile.affiliation]}{profile.jobTitle && <small>{profile.jobTitle}</small>}</dd></div>
             <div><dt>Registro institucional</dt><dd>{profile.registrationNumber || 'Não informado'}{profile.registrationType && <small>{registrationTypes[profile.registrationType]}</small>}</dd></div>
           </dl>
-          <p className={styles.photoHelp}>Foto de até 20 MB em JPEG, PNG ou WebP. Ela é salva assim que escolhida: o portal prepara uma imagem de até 512 pixels e remove os metadados. Fotos HEIC do iPhone dependem do navegador; se não abrir, ajuste a câmera para “Mais compatível” ou escolha outra imagem.</p>
+          <p className={styles.photoHelp}>Foto de até 20 MB em JPEG, PNG ou WebP. Ela é salva assim que escolhida: o portal prepara uma imagem de até 256 pixels e remove os metadados. Fotos HEIC do iPhone dependem do navegador; se não abrir, ajuste a câmera para “Mais compatível” ou escolha outra imagem.</p>
           {photo && !busy && <div className="p-inline"><button type="button" className="p-button p-button-primary" disabled={disabled} onClick={() => void retryPhoto()}>Tentar salvar a foto novamente</button><button type="button" className="p-text-link" disabled={disabled} onClick={discardPhoto}>Descartar foto escolhida</button></div>}
           {preparing && <p role="status" className={styles.busy}><LoaderCircle size={16} className="p-spin" aria-hidden="true" />Preparando a foto neste aparelho…</p>}
         </div>

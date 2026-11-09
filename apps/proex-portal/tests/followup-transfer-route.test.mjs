@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
+import {createHash} from 'node:crypto';
 import ts from 'typescript';
 import {compile,teamFixture} from './support/work-teams-fixture.mjs';
 // The real route module runs against the real transfer service, errors, JSON bounding and rate
@@ -58,6 +59,13 @@ test('POST end to end: minimal receipt, lost-reply replay, changed payload, noop
  const noop=await post(f,move(f,{operationKey:'route-transfer-02',expectedVersion:2}));assert.equal(noop.status,409);assert.equal((await noop.json()).code,'followup_transfer_noop');
  const stale=await post(f,move(f,{operationKey:'route-transfer-03',targetProjectId:'project-a'}));assert.equal(stale.status,409);assert.equal((await stale.json()).code,'followup_conflict');
  assert.equal(f.count('SELECT COUNT(*) n FROM followup_task_transfers'),1);assert.equal(f.count('SELECT version n FROM followup_tasks'),2);
- let last;for(let i=0;i<60;i++)last=await post(f,{});assert.equal(last.status,429);
+ // Invalid, replayed and refused attempts write nothing, so only the one applied transfer was counted.
+ for(let i=0;i<60;i++)assert.equal((await post(f,{})).status,400);
+ const bucket=createHash('sha256').update('followup-transfer:owner-a').digest('hex');
+ assert.equal(f.count(`SELECT count n FROM portal_rate_limits WHERE bucket_key='${bucket}'`),1);
+ f.native.prepare('UPDATE portal_rate_limits SET count=60 WHERE bucket_key=?').run(bucket);
+ const changes=f.count('SELECT total_changes() n');
+ const last=await post(f,move(f,{operationKey:'route-transfer-05',targetProjectId:'project-a',expectedVersion:2}));assert.equal(last.status,429);
+ assert.equal(f.count('SELECT total_changes() n'),changes,'a full bucket refuses with reads only');
  const body=await last.json();assert.equal(body.code,'rate_limited');assert.doesNotMatch(JSON.stringify(body),/owner-a|@example/);
 });

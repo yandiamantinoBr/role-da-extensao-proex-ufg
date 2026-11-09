@@ -3,7 +3,7 @@ import { assistantCredentialKeys, database, inviteSecret, speechEnvironment } fr
 import { getPortalUser } from '@/lib/session';
 import { HttpError, publicError } from '@/lib/errors';
 import { boundedJson } from '@/lib/http';
-import { roleChat, roleStatus } from '@/lib/assistant/role';
+import { matchOperationProjects, roleChat, roleStatus } from '@/lib/assistant/role';
 import { estimateAssistantPlan } from '@/lib/assistant/service';
 
 export const dynamic = 'force-dynamic';
@@ -29,6 +29,7 @@ export async function POST(request: Request): Promise<Response> {
     // A imagem reduzida no navegador cabe em 1,5 MB; base64 + conversa ficam abaixo de 2,2 MB.
     const input = await boundedJson(request, 2_200_000);
     if (input.action === 'chat') return Response.json(await roleChat(db, actor, input, secret, { keys: assistantCredentialKeys(), speech: speechEnvironment(), signal: request.signal }), { headers });
+    if (input.action === 'match.operation') return Response.json(await matchOperationProjects(db, actor, String(input.request ?? '')), { headers });
     if (input.action === 'estimate.operation') {
       const { action: _action, ...rest } = input;
       void _action;

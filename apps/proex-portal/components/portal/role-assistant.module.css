@@ -89,3 +89,5 @@
 .composer{grid-template-columns:minmax(0,1fr)}
 .nowrap{white-space:nowrap}
 .operation textarea{resize:none}
+.editable select{width:100%;min-height:44px;padding:0 .6rem;border:1px solid var(--control-border);border-radius:10px;background:var(--surface);color:var(--text-strong);font:inherit;font-size:16px}
+.warn{color:var(--warning-ink);font-weight:650}
