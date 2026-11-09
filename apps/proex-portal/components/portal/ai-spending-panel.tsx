@@ -202,7 +202,7 @@ export default function AiSpendingPanel({ organizationId }: { organizationId: st
             {usedKeys.map(key => <li key={key}><i style={{ background: `var(--as-${keys.indexOf(key) + 1})` }} />{names[key] ?? key}</li>)}
           </ul>
           <div className={styles.chartArea} role="img" aria-label={`Gráfico de barras com o gasto de ${data.days.length} dias. Use a lista abaixo para abrir as chamadas de um dia.`}>
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 320, height: 200 }}>
               <BarChart data={chart} margin={{ top: 12, right: 8, bottom: 4, left: 4 }} barCategoryGap={period === 90 ? '8%' : '18%'}>
                 <CartesianGrid vertical={false} stroke="var(--as-grid)" />
                 <XAxis dataKey="day" tickFormatter={shortDay} tick={{ fill: 'var(--as-axis)', fontSize: 11 }} axisLine={false} tickLine={false} minTickGap={14} />
