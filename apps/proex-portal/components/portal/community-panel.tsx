@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
-import { Inbox, MailOpen, MessageSquareHeart, ShieldQuestion } from 'lucide-react';
+import { Inbox, MessageSquareHeart, ShieldCheck, ShieldQuestion } from 'lucide-react';
 import type { ModuleId } from './navigation-model';
 import { communityGet, errorText } from './community-api';
 import { FeedbackForm, FeedbackManagement, type CommunityEvent } from './community-feedback';
@@ -27,7 +27,7 @@ export default function CommunityPanel({ userId, projects, prefill }: { userId: 
     { id: 'feedback', label: 'Fale com a gestão', icon: MessageSquareHeart },
     { id: 'ombuds', label: 'Ouvidoria anônima', icon: ShieldQuestion },
     ...(access?.manageFeedback ? [{ id: 'manage' as Tab, label: 'Caixa da gestão', icon: Inbox }] : []),
-    ...(access?.ombuds ? [{ id: 'ombuds-inbox' as Tab, label: 'Relatos anônimos', icon: MailOpen }] : []),
+    ...(access?.ombuds ? [{ id: 'ombuds-inbox' as Tab, label: 'Relatos anônimos', icon: ShieldCheck }] : []),
   ];
   function keyboard(event: KeyboardEvent<HTMLDivElement>) {
     const index = available.findIndex(item => item.id === tab);

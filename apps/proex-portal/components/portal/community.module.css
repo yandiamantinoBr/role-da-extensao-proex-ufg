@@ -105,4 +105,6 @@
 .openCode>span{display:inline-flex;align-items:center;gap:8px;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:13.5px;font-weight:650;color:var(--brand-ink)}
 .tabs button[data-first-management]{margin-left:auto;position:relative}
 .tabs button[data-first-management]::before{content:'';position:absolute;left:-5px;top:10px;bottom:10px;width:1px;background:var(--line)}
-@container community (max-width:560px){.tabs button[data-first-management]{margin-left:0}.tabs button[data-first-management]::before{display:none}.tabs button[data-management]{border:1px dashed var(--line)}.segmented{display:grid;grid-template-columns:1fr 1fr;justify-self:stretch}.segmented button{justify-content:center;padding:0 8px;font-size:13px}}
+@container community (max-width:560px){.tabs button[data-first-management]{margin-left:0}.tabs button[data-first-management]::before{display:none}.tabs button[data-management]:not([aria-selected=true]){border:1px dashed var(--line)}.filters{display:grid;grid-template-columns:1fr 1fr;overflow:visible}.filters button{justify-content:center}.segmented{display:grid;grid-template-columns:1fr 1fr;justify-self:stretch}.segmented button{justify-content:center;padding:0 8px;font-size:13px}}
+.status[data-status=reviewing]{border-color:color-mix(in srgb,var(--warning-ink) 45%,var(--surface));color:var(--warning-ink)}
+.checkLine input{width:22px;height:22px;color-scheme:light dark}

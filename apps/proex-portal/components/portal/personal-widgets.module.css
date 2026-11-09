@@ -1,6 +1,6 @@
 .quiet{display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px;margin:4px 0 22px;color:var(--text-secondary);font-size:13px;line-height:1.5}
 .quiet svg{color:var(--brand-ink);flex-shrink:0}
-.linkButton{min-height:44px;padding:0 4px;border:0;background:none;color:var(--brand-ink);font:inherit;font-weight:650;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+.linkButton{display:inline-flex;align-items:center;gap:6px;justify-self:start;min-height:44px;padding:0 4px;border:0;background:none;color:var(--brand-ink);font:inherit;font-weight:650;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
 .linkButton:focus-visible,.iconAction:focus-visible{outline:3px solid var(--focus);outline-offset:2px;border-radius:8px}
 .panel{container:personal-widgets / inline-size;display:grid;gap:14px;min-width:0;margin-bottom:22px;padding:18px;border:1px solid var(--line);border-radius:var(--radius-card,16px);background:var(--surface);box-shadow:var(--shadow-card);color:var(--ink)}
 .heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;min-width:0}
@@ -34,7 +34,8 @@
 .reminderForm>button{justify-self:start}
 .field{display:grid;gap:4px;min-width:0;font-size:12px;font-weight:600;color:var(--text-secondary)}
 .field input{min-height:44px;width:100%}
-.when{display:grid;grid-template-columns:minmax(0,1fr) 96px;gap:8px;min-width:0}
+.when{display:grid;grid-template-columns:minmax(0,1fr) 112px;gap:8px;min-width:0}
+.when>small{grid-column:1/-1}
 .help{color:var(--text-secondary);font-size:12px;line-height:1.5;margin:0}
 .list{display:grid;gap:2px;margin:0;padding:0;list-style:none;min-width:0}
 .item{display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;min-width:0;padding:6px 0;border-top:1px solid var(--line)}
@@ -42,7 +43,7 @@
 .item>.p-inline-error,.item>p{flex-basis:100%;margin:0}
 .body{flex:1;min-width:0;font-size:13.5px;line-height:1.5;overflow-wrap:anywhere;white-space:pre-line}
 .check{display:flex;align-items:flex-start;gap:10px;flex:1;min-width:0;min-height:44px;padding-top:4px;cursor:pointer}
-.check input{width:20px;height:20px;margin:1px 0 0;flex-shrink:0;accent-color:var(--brand-ink)}
+.check input{width:22px;height:22px;margin:1px 0 0;flex-shrink:0;accent-color:var(--brand-ink)}
 .check>span{display:grid;gap:2px;min-width:0}
 .check small{color:var(--text-secondary);font-size:12px}
 .item[data-tone=late] small{color:var(--danger);font-weight:650}
@@ -55,6 +56,7 @@
 .iconAction:hover{background:var(--surface-soft);color:var(--brand-ink)}
 .empty{margin:0;color:var(--text-secondary);font-size:13px}
 .done summary{min-height:44px;display:flex;align-items:center;cursor:pointer;color:var(--text-secondary);font-size:12.5px;font-weight:600}
-@container personal-widgets (max-width:640px){.grid{grid-template-columns:minmax(0,1fr)}.heading button span{display:none}.heading button{min-width:44px;padding-inline:12px}}
+@container personal-widgets (max-width:640px){.grid{grid-template-columns:minmax(0,1fr)}}
 @media(max-width:430px){.panel{padding:14px}}
 .when input:disabled{background:var(--surface-soft);color:var(--text-secondary);cursor:not-allowed;opacity:1}
+.check input,.toggle input{color-scheme:light dark}

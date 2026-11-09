@@ -1,6 +1,6 @@
 'use client';
 import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from 'react';
-import { Bell, Check, LoaderCircle, Pencil, Plus, Settings2, Sparkles, StickyNote, Trash2, X } from 'lucide-react';
+import { Bell, CalendarPlus, Check, LoaderCircle, Pencil, Plus, Settings2, Sparkles, StickyNote, Trash2, X } from 'lucide-react';
 import DateField from './date-field';
 import { civilDay, communityGet, communityPost, errorText } from './community-api';
 import styles from './personal-widgets.module.css';
@@ -98,23 +98,26 @@ function Notes({ items, onChange }: { items: Note[]; onChange(): Promise<void> }
 }
 
 function Reminders({ items, serverDay, onChange }: { items: Reminder[]; serverDay: string; onChange(): Promise<void> }) {
-  const id = useId(), [body, setBody] = useState(''), [dueOn, setDueOn] = useState(''), [dueTime, setDueTime] = useState(''), key = useRef(''), { busy, error, run } = useOperation();
+  const id = useId(), [body, setBody] = useState(''), [dueOn, setDueOn] = useState(''), [dueTime, setDueTime] = useState(''), [withDate, setWithDate] = useState(false), key = useRef(''), { busy, error, run } = useOperation();
   const open = items.filter(item => !item.doneAt), done = items.filter(item => item.doneAt);
   async function add(event: FormEvent) {
     event.preventDefault(); if (!body.trim()) return; key.current ||= crypto.randomUUID();
-    if (await run({ action: 'create', kind: 'reminder', body, dueOn: dueOn || null, dueTime: dueTime || null, operationKey: key.current }, onChange)) { setBody(''); setDueOn(''); setDueTime(''); key.current = ''; }
+    if (await run({ action: 'create', kind: 'reminder', body, dueOn: dueOn || null, dueTime: dueTime || null, operationKey: key.current }, onChange)) { setBody(''); setDueOn(''); setDueTime(''); setWithDate(false); key.current = ''; }
   }
   const late = open.filter(item => item.dueOn && serverDay && item.dueOn < serverDay).length;
   return <article className={styles.card} aria-labelledby={`${id}-title`}>
     <h3 id={`${id}-title`}><Bell size={17} aria-hidden="true"/>Lembretes{late > 0 && <span className={styles.badge} data-tone="late">{late} {late === 1 ? 'atrasado' : 'atrasados'}</span>}</h3>
     <form className={styles.reminderForm} onSubmit={add}>
-      <label className={styles.field}><span>Lembrar de</span><input value={body} maxLength={500} placeholder="Ex.: devolver a chave da sala" disabled={busy} onChange={event => { setBody(event.target.value); key.current = ''; }}/></label>
-      <div className={styles.when}>
-        <label className={styles.field}><span>Data (opcional)</span><DateField value={dueOn} onValueChange={value => { setDueOn(value); key.current = ''; }} disabled={busy} aria-label="Data do lembrete"/></label>
-        <label className={styles.field}><span>Hora</span><input inputMode="numeric" placeholder="14:30" value={dueTime} maxLength={5} disabled={busy || !dueOn} onChange={event => { const digits = event.target.value.replace(/\D/g, '').slice(0, 4); setDueTime(digits.length > 2 ? `${digits.slice(0, 2)}:${digits.slice(2)}` : digits); key.current = ''; }} aria-describedby={`${id}-time`}/></label>
+      <div className={styles.addRow}>
+        <label className="visually-hidden" htmlFor={`${id}-new`}>Novo lembrete</label>
+        <input id={`${id}-new`} value={body} maxLength={500} placeholder="Novo lembrete" disabled={busy} onChange={event => { setBody(event.target.value); key.current = ''; }}/>
+        <button type="submit" className="p-icon-button" aria-label="Adicionar lembrete" disabled={busy || !body.trim()}>{busy ? <LoaderCircle className="p-spin" size={18}/> : <Plus size={18}/>}</button>
       </div>
-      <small id={`${id}-time`} className={styles.help}>{dueOn ? 'Hora opcional, em 24 horas.' : 'Escolha a data para poder informar a hora.'}</small>
-      <button type="submit" className="p-button p-button-primary" disabled={busy || !body.trim()}>{busy ? <LoaderCircle className="p-spin" size={16}/> : <Plus size={16}/>}Adicionar lembrete</button>
+      {withDate ? <div className={styles.when}>
+        <label className={styles.field}><span>Data</span><DateField value={dueOn} onValueChange={value => { setDueOn(value); key.current = ''; }} disabled={busy} aria-label="Data do lembrete"/></label>
+        <label className={styles.field}><span>Hora (opcional)</span><input inputMode="numeric" placeholder={dueOn ? 'hh:mm' : '--:--'} value={dueTime} maxLength={5} disabled={busy || !dueOn} onChange={event => { const digits = event.target.value.replace(/\D/g, '').slice(0, 4); setDueTime(digits.length > 2 ? `${digits.slice(0, 2)}:${digits.slice(2)}` : digits); key.current = ''; }} aria-describedby={`${id}-time`}/></label>
+        <small id={`${id}-time`} className={styles.help}>{dueOn ? 'Hora em 24 horas, como 14:30.' : 'Escolha a data para poder informar a hora.'}</small>
+      </div> : <button type="button" className={styles.linkButton} onClick={() => setWithDate(true)}><CalendarPlus size={16} aria-hidden="true"/>Pôr data e hora</button>}
     </form>
     {error && <p role="alert" className="p-inline-error">{error}</p>}
     {open.length ? <ul className={styles.list}>{open.map(item => <ReminderItem key={item.id} item={item} serverDay={serverDay} onChange={onChange}/>)}</ul> : <p className={styles.empty}>Nada pendente. Bom trabalho.</p>}

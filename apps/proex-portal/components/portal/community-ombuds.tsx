@@ -25,7 +25,7 @@ export function formatOmbudsInput(value: string) {
   text = text.slice(0, 20);
   return text ? `OUV-${text.match(/.{1,4}/g)!.join('-')}` : '';
 }
-const masked = (code: string) => code.length > 8 ? `${code.slice(0, 4)}••••-…-${code.slice(-4)}` : code;
+const masked = (code: string) => `terminado em ${code.slice(-4)}`;
 
 export function OmbudsReporter() {
   const [mode, setMode] = useState<'new' | 'track'>('new'), [code, setCode] = useState(() => newOmbudsCode()), [submitted, setSubmitted] = useState('');
@@ -125,7 +125,7 @@ function Track({ initialCode }: { initialCode: string }) {
       <div className={styles.entryMeta}><span className={styles.status} data-status={result.report.status}>{STATUS[result.report.status]}</span><small>{CATEGORIES[result.report.category]} · recebido em {civilDay(result.report.receivedOn)}</small></div>
       <Thread messages={result.messages} mine="reporter"/>
       {result.report.status === 'closed' ? <p className={styles.help}>A ouvidoria encerrou este relato. Para um assunto novo, escreva outro relato.</p>
-        : <form className={styles.replyForm} onSubmit={send}><label className={styles.field} htmlFor={`${id}-reply`}><span>Acrescentar algo</span></label><textarea id={`${id}-reply`} className={styles.textarea} required minLength={2} maxLength={4000} value={reply} disabled={busy} onChange={event => setReply(event.target.value)}/><button type="submit" className="p-button p-button-primary" disabled={busy || reply.trim().length < 2}><Send size={16}/>Enviar à ouvidoria</button></form>}
+        : <form className={styles.replyForm} onSubmit={send}><label className={styles.field} htmlFor={`${id}-reply`}><span>Acrescentar algo</span></label><textarea id={`${id}-reply`} className={styles.textarea} required minLength={2} maxLength={4000} value={reply} disabled={busy} onChange={event => setReply(event.target.value)} placeholder="Responda a uma pergunta da ouvidoria ou acrescente um detalhe."/><p className={styles.help}>{reply.length}/4.000{reply.trim().length < 2 ? ' · Escreva algo para enviar.' : ''}</p><button type="submit" className="p-button p-button-primary" disabled={busy || reply.trim().length < 2}><Send size={16}/>Enviar à ouvidoria</button></form>}
       <p className={styles.help}>Em computador compartilhado, feche a conversa ao terminar.</p>
     </div>}
   </section>;
@@ -176,13 +176,16 @@ function OmbudsDetail({ id: reportId, onBack }: { id: string; onBack(): void }) 
   }
   return <section className={styles.card} aria-labelledby={`${id}-title`} aria-busy={!data}>
     <button type="button" className={styles.back} onClick={onBack}><ArrowLeft size={16}/>Voltar aos relatos</button>
-    <div className={styles.cardHead}><h2 id={`${id}-title`}>{data ? CATEGORIES[data.report.category] : 'Relato'}</h2>{data && <p>Recebido em {civilDay(data.report.receivedOn)} · {STATUS[data.report.status]}</p>}</div>
+    <div className={styles.cardHead}><h2 id={`${id}-title`}>{data ? CATEGORIES[data.report.category] : 'Relato'}</h2></div>
+    {data && <div className={styles.entryMeta}><span className={styles.status} data-status={data.report.status}>{STATUS[data.report.status]}</span><small>Recebido em {civilDay(data.report.receivedOn)}</small></div>}
+    {data && <p className={styles.callout}><EyeOff size={16} aria-hidden="true"/><span>Não é possível saber quem escreveu. Responda sem tentar identificar a pessoa.</span></p>}
     {error && <p role="alert" className="p-inline-error">{error}</p>}
     {data && <>
       <Thread messages={data.messages} mine="ombuds"/>
       {data.report.status !== 'closed' && <form className={styles.replyForm} onSubmit={event => { event.preventDefault(); void act({ action: 'respond', body: reply, status: 'answered' }, 'Resposta enviada'); }}>
         <label className={styles.field} htmlFor={`${id}-reply`}><span>Resposta da ouvidoria</span></label>
         <textarea id={`${id}-reply`} className={styles.textarea} required minLength={2} maxLength={4000} value={reply} disabled={busy} onChange={event => setReply(event.target.value)} placeholder="A pessoa lê esta resposta quando consultar o código."/>
+        <p className={styles.help}>{reply.length}/4.000{reply.trim().length < 2 ? ' · Escreva a resposta para enviar.' : ''}</p>
         <div className={styles.manageRow}><button type="submit" className="p-button p-button-primary" disabled={busy || reply.trim().length < 2}>{busy ? <LoaderCircle className="p-spin" size={16}/> : <Send size={16}/>}Responder</button>
           {data.report.status !== 'reviewing' && <button type="button" className="p-button p-button-subtle" disabled={busy} onClick={() => void act({ action: 'status', status: 'reviewing' }, 'Marcado como em análise')}>Marcar em análise</button>}
           {confirmClose ? <span className={styles.confirmInline}>Encerrar impede novas mensagens de quem relatou. <button type="button" className={styles.dangerButton} disabled={busy} onClick={() => void act({ action: 'status', status: 'closed' }, 'Relato encerrado').then(() => setConfirmClose(false))}>Encerrar</button><button type="button" className={styles.textButton} onClick={() => setConfirmClose(false)}>Cancelar</button></span>

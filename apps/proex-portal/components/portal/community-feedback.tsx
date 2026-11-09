@@ -55,7 +55,8 @@ export function FeedbackForm({ projects, events, prefill, onOmbuds }: { projects
       <p className={styles.callout}><ShieldQuestion size={16} aria-hidden="true"/><span>Prefere não se identificar? <button type="button" className={styles.inlineLink} onClick={onOmbuds}>Use a ouvidoria anônima</button>.</span></p>
       {error && <p role="alert" className="p-inline-error">{error}</p>}
       {sent && <p role="status" className={styles.success}><Check size={16} aria-hidden="true"/>{sent}</p>}
-      <button type="submit" className="p-button p-button-primary" disabled={busy || (about === 'event' && !campaignId)}>{busy ? <LoaderCircle className="p-spin" size={16}/> : <Send size={16}/>}Enviar {kindLabel(kind).toLowerCase()}</button>
+      {body.trim().length < 10 && <p className={styles.help}>Escreva pelo menos 10 caracteres para enviar.</p>}
+      <button type="submit" className="p-button p-button-primary" disabled={busy || body.trim().length < 10 || (about === 'event' && !campaignId)}>{busy ? <LoaderCircle className="p-spin" size={16}/> : <Send size={16}/>}Enviar {kindLabel(kind).toLowerCase()}</button>
     </form>
     <FeedbackHistory revision={revision}/>
   </div>;
@@ -106,7 +107,7 @@ export function FeedbackManagement() {
 }
 
 function ManagedEntry({ entry, onChange }: { entry: Entry; onChange(): Promise<void> }) {
-  const id = useId(), [response, setResponse] = useState(''), [status, setStatus] = useState<Status>(entry.status === 'new' ? 'resolved' : entry.status), [busy, setBusy] = useState(false), [error, setError] = useState(''), [open, setOpen] = useState(false);
+  const id = useId(), [response, setResponse] = useState(''), [status, setStatus] = useState<Status>(entry.status === 'new' ? 'resolved' : entry.status), [busy, setBusy] = useState(false), [error, setError] = useState(''), [open, setOpen] = useState(false), [nextStatus, setNextStatus] = useState<Status>(entry.status);
   async function send(body: Record<string, unknown>, done: string) {
     setBusy(true); setError('');
     try { await communityPost('/api/feedback', { id: entry.id, expectedVersion: entry.version, ...body }); toast.success(done); await onChange(); return true; }
@@ -117,12 +118,14 @@ function ManagedEntry({ entry, onChange }: { entry: Entry; onChange(): Promise<v
     <p className={styles.entryBody}>{entry.body}</p>
     {entry.response && <div className={styles.reply}><strong>Resposta da gestão · {instantDay(entry.responded_at)}</strong><p>{entry.response}</p></div>}
     {entry.canManage && <div className={styles.manageRow}>
-      <label className={styles.inlineField}><span>Estado (salva ao mudar)</span><select value={entry.status} disabled={busy} onChange={event => void send({ action: 'status', status: event.target.value }, 'Estado atualizado')}>{Object.entries(STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+      <label className={styles.inlineField}><span>Estado</span><select value={nextStatus} disabled={busy} onChange={event => setNextStatus(event.target.value as Status)}>{Object.entries(STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+      {nextStatus !== entry.status && <button type="button" className="p-button p-button-primary" disabled={busy} onClick={() => void send({ action: 'status', status: nextStatus }, 'Estado salvo')}><Check size={16}/>Salvar estado</button>}
       <button type="button" className="p-button p-button-subtle" aria-expanded={open} aria-controls={`${id}-reply`} onClick={() => setOpen(value => !value)}>{entry.response ? 'Responder de novo' : 'Responder'}</button>
     </div>}
     {open && <form id={`${id}-reply`} className={styles.replyForm} onSubmit={event => { event.preventDefault(); void send({ action: 'respond', response, status }, 'Resposta enviada').then(ok => { if (ok) setOpen(false); }); }}>
       <label className={styles.field} htmlFor={`${id}-text`}><span>Resposta para {entry.author_name ?? 'a pessoa'}</span></label>
-      <textarea id={`${id}-text`} className={styles.textarea} required minLength={2} maxLength={2000} value={response} disabled={busy} onChange={event => setResponse(event.target.value)}/>
+      <textarea id={`${id}-text`} className={styles.textarea} required minLength={2} maxLength={2000} value={response} disabled={busy} onChange={event => setResponse(event.target.value)} placeholder="Agradeça, diga o que será feito ou explique por que não será possível."/>
+      <p className={styles.help}>{response.length}/2.000{response.trim().length < 2 ? ' · Escreva a resposta para enviar.' : ''}</p>
       <div className={styles.manageRow}><label className={styles.inlineField}><span>Depois de responder</span><select value={status} disabled={busy} onChange={event => setStatus(event.target.value as Status)}><option value="reviewing">Em análise</option><option value="resolved">Resolvido</option></select></label>
         <button type="submit" className="p-button p-button-primary" disabled={busy || response.trim().length < 2}>{busy ? <LoaderCircle className="p-spin" size={16}/> : <Send size={16}/>}Enviar resposta</button></div>
     </form>}
