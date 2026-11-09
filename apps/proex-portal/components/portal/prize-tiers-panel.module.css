@@ -98,7 +98,10 @@
 .history > .more { width: 100%; min-height: 44px; border: 1px solid var(--control-border); border-radius: 10px; background: var(--canvas); color: var(--brand-ink); font: inherit; font-weight: 600; cursor: pointer; }
 .badgeOk { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--tier-green-line); background: var(--tier-green-bg); color: var(--tier-green-ink); font-size: 12px; font-weight: 600; }
 .how { font-size: 14px; color: var(--muted); }
-.how summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; font-weight: 600; color: var(--brand-ink); }
+.how summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; gap: 6px; font-weight: 600; color: var(--brand-ink); list-style: none; }
+.how summary::-webkit-details-marker { display: none; }
+.how summary::before { content: '▸'; transition: transform .15s; }
+.how[open] summary::before { transform: rotate(90deg); }
 .how p { max-width: 75ch; }
 .history small { font-size: 12px; color: var(--muted); }
 

@@ -97,7 +97,7 @@ function PrizeTiersBody({userId,campaignId}:Props){
     {!data.canManage&&<p className={styles.readOnly}><Lock size={16} aria-hidden="true"/><span>{data.campaign.status==='closed'?'Dinâmica encerrada: os níveis ficam guardados como histórico.':'Somente consulta. Quem gerencia as dinâmicas do projeto pode mudar os níveis.'}</span></p>}
 
     <section className={styles.odds} aria-labelledby={`tier-odds-${campaignId}`}>
-     <div className={styles.oddsHead}><h4 id={`tier-odds-${campaignId}`}><Sparkles size={17} aria-hidden="true"/>Chances por pessoa</h4>{data.percentIsDefault?<span className={styles.badge}>Usando o padrão ({DEFAULT_SUPER_SUPER_PERCENT}%), ainda não confirmado</span>:<span className={styles.badgeOk}>Confirmado: {data.superSuperPercent}%</span>}</div>
+     <div className={styles.oddsHead}><h4 id={`tier-odds-${campaignId}`}><Sparkles size={17} aria-hidden="true"/>Chances por pessoa</h4>{data.percentIsDefault?<span className={styles.badge}>Padrão {DEFAULT_SUPER_SUPER_PERCENT}% · não confirmado</span>:<span className={styles.badgeOk}>Confirmado: {data.superSuperPercent}%</span>}</div>
      <dl className={styles.oddsGrid}>
       <div><dt>Brinde</dt><dd>{percentLabel(odds.brinde)}</dd><small>{expected(odds.brinde,20)} em cada 20 pessoas</small></div>
       <div><dt>Super</dt><dd>{percentLabel(odds.super)}</dd><small>{expected(odds.super,20)} em cada 20 pessoas</small></div>
