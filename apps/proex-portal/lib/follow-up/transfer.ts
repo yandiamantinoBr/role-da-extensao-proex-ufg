@@ -1,5 +1,6 @@
 import { memberProjectScopeSql, type PortalActor } from '../access';
 import { all, one, uid, iso, type Row } from '../database';
+import { isRateLimitedError, rateLimitedError } from '../rate-limit';
 import { fail } from './contracts';
 import { authority, activeAccount, actorRequired, fanout, recipientLimit } from './scope';
 import { transferInput, transferTaskId, type TransferBlocker, type TransferPreview, type TransferReceipt } from './transfer-contracts';
@@ -105,7 +106,8 @@ function replay(actor:PortalActor,row:Row,fingerprint:string):TransferReceipt{
  return {viewerId:actor.userId,taskId:String(row.task_id),projectId:String(row.dest_project_id),version:Number(row.to_version),duplicate:true};
 }
 
-export async function transferTask(db:D1Database,actor:PortalActor|null,raw:Record<string,unknown>):Promise<TransferReceipt>{
+/** `rateCount` (from rateLimitStatements) enters the same write batch: an allowed transfer costs one commit. */
+export async function transferTask(db:D1Database,actor:PortalActor|null,raw:Record<string,unknown>,rateCount:D1PreparedStatement[]=[]):Promise<TransferReceipt>{
  actorRequired(actor);const input=transferInput(raw);
  const operationHash=await digest(`${actor.userId}\n${ACTION}\n${input.operationKey}`);
  const fingerprint=await digest(JSON.stringify({taskId:input.taskId,targetProjectId:input.targetProjectId,expectedVersion:input.expectedVersion,reason:input.reason}));
@@ -123,6 +125,7 @@ export async function transferTask(db:D1Database,actor:PortalActor|null,raw:Reco
 
  const at=iso(),receiptId=uid(),org=String(task.organization_id),source=String(task.project_id),dest=input.targetProjectId,from=input.expectedVersion,to=from+1;
  const statements=[
+  ...rateCount,
   // Live authority inside the transaction: a revocation between validation and commit rolls back.
   assertion(db,`EXISTS(SELECT 1 FROM projects s JOIN(SELECT ? user_id) caller WHERE s.id=? AND s.organization_id=? AND ${transferManageSql('caller.user_id','s.organization_id','s.id')})`,[actor.userId,source,org],'followup_transfer_forbidden'),
   assertion(db,`EXISTS(SELECT 1 FROM projects d JOIN(SELECT ? user_id) caller WHERE d.id=? AND d.organization_id=? AND ${transferManageSql('caller.user_id','d.organization_id','d.id')})`,[actor.userId,dest,org],'followup_transfer_forbidden'),
@@ -158,6 +161,7 @@ export async function transferTask(db:D1Database,actor:PortalActor|null,raw:Reco
    AND NOT EXISTS(SELECT 1 FROM followup_task_transfers WHERE task_id=? AND state='pending')`,[receiptId,input.taskId],'followup_transfer_conflict'),
  ];
  try{await db.batch(statements);}catch(error){
+  if(isRateLimitedError(error))rateLimitedError();
   const message=String(error);
   // A concurrent request with the same key may have committed first (lost reply): the
   // receipt, not this attempt's error, is the answer, still under the live replay fence.

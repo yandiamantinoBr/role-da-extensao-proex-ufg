@@ -2,6 +2,7 @@ import type {PortalActor} from '../access';
 import {one,iso,uid} from '../database';
 import {HttpError} from '../errors';
 import {prepareMutation} from '../mutations';
+import {isRateLimitedError,rateLimitedError} from '../rate-limit';
 import {id,text,integer,choices,onlyKeys} from '../follow-up/contracts';
 import {actorRequired,authority} from '../follow-up/scope';
 import {DEFAULT_SUPER_SUPER_PERCENT,PRIZE_TIERS,PRIZE_TIER_ACTIONS,PRIZE_TIER_LIMITS,type PrizeHistoryEntry,type PrizeOption,type PrizeTier,type PrizeTierActionResult,type PrizeTiersWorkspace} from './contracts';
@@ -69,8 +70,12 @@ function translate(error:unknown):never{
  throw error;
 }
 
-/** Mutations. Idempotency keys are scoped per actor + action + dynamic. */
-export async function prizeTiersAction(db:D1Database,actor:PortalActor|null,input:Record<string,unknown>):Promise<PrizeTierActionResult>{
+/**
+ * Mutations. Idempotency keys are scoped per actor + action + dynamic.
+ * `rateCount` (from rateLimitStatements) enters the same write batch: an allowed action costs one commit,
+ * and a replay or refused attempt writes nothing.
+ */
+export async function prizeTiersAction(db:D1Database,actor:PortalActor|null,input:Record<string,unknown>,rateCount:D1PreparedStatement[]=[]):Promise<PrizeTierActionResult>{
  actorRequired(actor);if(!input||typeof input!=='object'||Array.isArray(input))fail('Dados inválidos.');
  const action=choices(input.action,PRIZE_TIER_ACTIONS);
  onlyKeys(input,['action','campaignId','expectedVersion','operationKey',...(action==='tier.set'?['offerId','tier']:action==='percent.set'?['superSuperPercent']:['name','tier','components'])]);
@@ -135,6 +140,7 @@ export async function prizeTiersAction(db:D1Database,actor:PortalActor|null,inpu
    db.prepare('INSERT INTO campaign_prize_tiers(campaign_id,offer_id,tier,updated_by,updated_at) VALUES(?,?,?,?,?)').bind(campaignId,entityId,tier,actor.userId,at));
  }
  const statements=[
+  ...rateCount,
   manageFence(db,campaignId,actor.userId),
   db.prepare("SELECT CASE WHEN COALESCE((SELECT version FROM campaign_prize_settings WHERE campaign_id=?),0)=? THEN 1 ELSE json_extract('[]','prize_version_changed') END").bind(campaignId,revision),
   mutation.claimStatement(entityId),...changes,
@@ -142,6 +148,7 @@ export async function prizeTiersAction(db:D1Database,actor:PortalActor|null,inpu
  ];
  try{await db.batch(statements);}
  catch(error){
+  if(isRateLimitedError(error))rateLimitedError();
   let recovered:string;try{recovered=await mutation.recover(error);}catch(cause){translate(cause);}
   return{viewerId:actor.userId,campaignId,entityId:recovered,version:await currentVersion(db,actor.userId,campaignId),duplicate:true};
  }
