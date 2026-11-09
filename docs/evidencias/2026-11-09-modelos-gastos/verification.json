@@ -1,0 +1,23 @@
+{
+  "origin": "http://127.0.0.1:5174",
+  "base": "descartável, loopback, dados sintéticos; resposta do chat simulada no navegador (sem provedor real)",
+  "shots": [
+    "1366-light-chaves-por-funcao",
+    "1366-light-modelos",
+    "1366-light-comparar",
+    "1366-light-gastos",
+    "1366-dark-chaves-por-funcao",
+    "1366-dark-modelos",
+    "1366-dark-comparar",
+    "1366-dark-gastos",
+    "390-light-chaves-por-funcao",
+    "390-light-modelos",
+    "390-light-comparar",
+    "390-light-gastos",
+    "390-dark-chaves-por-funcao",
+    "390-dark-modelos",
+    "390-dark-comparar",
+    "390-dark-gastos"
+  ],
+  "pageErrors": []
+}

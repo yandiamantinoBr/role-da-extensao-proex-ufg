@@ -112,6 +112,9 @@ export default function AiSpendingPanel({ organizationId }: { organizationId: st
   }), [data, usedKeys, view]);
   const hasCalls = !!data && (data.totals.calls > 0 || data.totals.reservedUsdMicros > 0);
   const limit = data ? data.dailyLimitUsdMicros / 1_000_000 : 0;
+  // Gastos de milésimos de dólar sumiriam numa escala até o limite: a linha só entra quando o gasto chega perto dele.
+  const peak = chart.reduce((max, row) => Math.max(max, usedKeys.reduce((sum, key) => sum + Number((row as Record<string, unknown>)[key] ?? 0), 0)), 0);
+  const showLimit = limit > 0 && peak >= limit * 0.3;
 
   async function exportFile(format: DocumentFormat) {
     if (!data) throw new Error('Carregue os gastos antes de baixar.');
@@ -180,7 +183,7 @@ export default function AiSpendingPanel({ organizationId }: { organizationId: st
         <figure className={styles.chart}>
           <figcaption>
             <strong>Gasto por dia, {view === 'provider' ? 'por provedor' : 'por função'}</strong>
-            <small>Cada barra soma o gasto real; quando o provedor não informa o custo, usa o teto da chamada. A linha tracejada é o limite por dia.</small>
+            <small>Cada barra soma o gasto real; quando o provedor não informa o custo, usa o teto da chamada. {showLimit ? 'A linha tracejada é o limite por dia.' : `O limite por dia (${formatUsdMicros(data.dailyLimitUsdMicros)}) está bem acima destes valores e fica fora da escala.`}</small>
           </figcaption>
           <ul className={styles.legend} aria-label="Legenda">
             {usedKeys.map(key => <li key={key}><i style={{ background: `var(--as-${keys.indexOf(key) + 1})` }} />{names[key] ?? key}</li>)}
@@ -190,9 +193,9 @@ export default function AiSpendingPanel({ organizationId }: { organizationId: st
               <BarChart data={chart} margin={{ top: 12, right: 8, bottom: 4, left: 4 }} barCategoryGap={period === 90 ? 1 : 3}>
                 <CartesianGrid vertical={false} stroke="var(--as-grid)" />
                 <XAxis dataKey="day" tickFormatter={shortDay} tick={{ fill: 'var(--as-axis)', fontSize: 11 }} axisLine={false} tickLine={false} minTickGap={14} />
-                <YAxis width={72} tick={{ fill: 'var(--as-axis)', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(value: number) => usdAxis.format(value)} domain={[0, (max: number) => Math.max(max, limit) * 1.08]} />
+                <YAxis width={72} tick={{ fill: 'var(--as-axis)', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(value: number) => usdAxis.format(value)} domain={[0, (max: number) => (showLimit ? Math.max(max, limit) : Math.max(max, 0.0001)) * 1.1]} />
                 <Tooltip cursor={{ fill: 'var(--as-hover)' }} content={<SpendingTooltip rows={rowsByDay} names={names} />} />
-                {limit > 0 && <ReferenceLine y={limit} stroke="var(--as-limit)" strokeDasharray="6 4" strokeWidth={1.5} ifOverflow="extendDomain" label={{ value: 'Limite por dia', position: 'insideTopRight', fill: 'var(--as-limit)', fontSize: 11 }} />}
+                {showLimit && <ReferenceLine y={limit} stroke="var(--as-limit)" strokeDasharray="6 4" strokeWidth={1.5} ifOverflow="extendDomain" label={{ value: 'Limite por dia', position: 'insideTopRight', fill: 'var(--as-limit)', fontSize: 11 }} />}
                 {usedKeys.map((key, index) => <Bar key={key} dataKey={key} name={names[key] ?? key} stackId="spent" fill={`var(--as-${keys.indexOf(key) + 1})`} maxBarSize={36} cursor="pointer"
                   radius={index === usedKeys.length - 1 ? [4, 4, 0, 0] : 0} isAnimationActive={false}
                   onClick={(entry: { payload?: { day?: unknown } }) => { const value = entry?.payload?.day; if (typeof value === 'string') openDay(value); }} />)}
