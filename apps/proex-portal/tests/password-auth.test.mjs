@@ -502,6 +502,19 @@ test('anonymous session-lifecycle calls never write rate rows (each row would re
   assert.equal(batches, 0);
 });
 
+test('sessions never store the client IP or browser, so they cannot be matched with hosting request logs', async t => {
+  const f = fixture(t), { user } = await createAccount(f);
+  f.runtimeEnv.VERCEL = '1';
+  const auth = await passwordAuth(f.db, { runtimeEnv: f.runtimeEnv });
+  const signed = await auth.api.signInEmail({ body: { email: user.email, password: originalPassword }, headers: new Headers({ 'x-real-ip': '198.51.100.7', 'cf-connecting-ip': '198.51.100.7', 'user-agent': 'Synthetic Browser/1.0' }), asResponse: true });
+  assert.equal(signed.status, 200);
+  const rows = f.sqlite.prepare('SELECT ip_address,user_agent FROM auth_session WHERE user_id=?').all(user.id).map(row => ({ ...row }));
+  assert.ok(rows.length >= 1);
+  for (const row of rows) assert.deepEqual(row, { ip_address: '', user_agent: '' });
+  const dump = JSON.stringify(f.sqlite.prepare('SELECT * FROM auth_session').all());
+  assert.equal(dump.includes('198.51.100.7') || dump.includes('Synthetic Browser'), false);
+});
+
 test('on Vercel the auth limiter keys by the platform IP instead of one bucket shared by everyone', async t => {
   const f = fixture(t);
   f.runtimeEnv.VERCEL = '1';
