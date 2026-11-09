@@ -17,6 +17,11 @@ type StoredProfile = {
   registration_type: ProfileRegistrationType; registration_number: string; version: number; email: string | null; status: string;
 };
 export const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
+/**
+ * Longest side of the stored photo. The largest display is 144 CSS px, so 256 px covers
+ * 2x screens; 512 px uploads (older open tabs) are still accepted and reduced here.
+ */
+export const AVATAR_STORED_SIZE = 256;
 const MAX_FORM_BYTES = MAX_AVATAR_BYTES + 64 * 1024;
 
 function requireUser(user: ProfileUser | null): asserts user is ProfileUser {
@@ -145,6 +150,48 @@ export async function updateOwnProfile(
   return getOwnProfile(db, user, hasPassword);
 }
 
+/** Separable area-average weights: each target pixel covers an exact span of source pixels. */
+function areaWeights(source: number, target: number): { index: number; weight: number }[][] {
+  const scale = source / target;
+  return Array.from({ length: target }, (_, i) => {
+    const start = i * scale, end = (i + 1) * scale, spans: { index: number; weight: number }[] = [];
+    for (let j = Math.floor(start); j < Math.min(source, Math.ceil(end)); j++) {
+      const overlap = Math.min(end, j + 1) - Math.max(start, j);
+      if (overlap > 0) spans.push({ index: j, weight: overlap / scale });
+    }
+    return spans;
+  });
+}
+/** Downscale RGBA pixels by area averaging, with colors weighted by alpha (no dark fringes). */
+function downscaleRgba(data: Uint8Array, width: number, height: number, targetWidth: number, targetHeight: number): Buffer {
+  const columns = areaWeights(width, targetWidth), rows = areaWeights(height, targetHeight);
+  const horizontal = new Float64Array(height * targetWidth * 4);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < targetWidth; x++) {
+      let r = 0, g = 0, b = 0, a = 0;
+      for (const { index, weight } of columns[x]) {
+        const o = (y * width + index) * 4, alpha = data[o + 3] * weight;
+        r += data[o] * alpha; g += data[o + 1] * alpha; b += data[o + 2] * alpha; a += alpha;
+      }
+      const t = (y * targetWidth + x) * 4; horizontal[t] = r; horizontal[t + 1] = g; horizontal[t + 2] = b; horizontal[t + 3] = a;
+    }
+  }
+  const output = Buffer.alloc(targetWidth * targetHeight * 4);
+  for (let y = 0; y < targetHeight; y++) {
+    for (let x = 0; x < targetWidth; x++) {
+      let r = 0, g = 0, b = 0, a = 0;
+      for (const { index, weight } of rows[y]) {
+        const o = (index * targetWidth + x) * 4;
+        r += horizontal[o] * weight; g += horizontal[o + 1] * weight; b += horizontal[o + 2] * weight; a += horizontal[o + 3] * weight;
+      }
+      const t = (y * targetWidth + x) * 4;
+      if (a > 0) { output[t] = Math.round(r / a); output[t + 1] = Math.round(g / a); output[t + 2] = Math.round(b / a); }
+      output[t + 3] = Math.round(a);
+    }
+  }
+  return output;
+}
+
 /** Check size and IHDR before allocating pixels; re-encoding discards ancillary/private metadata. */
 export async function normalizeAvatarPng(bytes: Uint8Array): Promise<Uint8Array> {
   if (!bytes.byteLength || bytes.byteLength > MAX_AVATAR_BYTES) {
@@ -182,9 +229,16 @@ export async function normalizeAvatarPng(bytes: Uint8Array): Promise<Uint8Array>
       new PNG({ checkCRC: true }).parse(Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength), (error, image) => error ? reject(error) : resolve(image));
     });
     if (decoded.width !== width || decoded.height !== height) throw new Error('invalid_dimensions');
-    const clean = new PNG({ width, height });
-    clean.data = decoded.data;
-    const encoded = PNG.sync.write(clean, { colorType: 6, inputColorType: 6, bitDepth: 8, deflateLevel: 6 });
+    // Store at most AVATAR_STORED_SIZE px and drop the alpha channel when every pixel is opaque
+    // (camera photos): about a sixth of the bytes of a 512 px RGBA file, still a plain PNG.
+    const scale = Math.min(1, AVATAR_STORED_SIZE / Math.max(width, height));
+    const outWidth = Math.max(1, Math.round(width * scale)), outHeight = Math.max(1, Math.round(height * scale));
+    const pixels = scale < 1 ? downscaleRgba(decoded.data, width, height, outWidth, outHeight) : decoded.data;
+    let opaque = true;
+    for (let index = 3; index < pixels.length; index += 4) if (pixels[index] !== 255) { opaque = false; break; }
+    const clean = new PNG({ width: outWidth, height: outHeight });
+    clean.data = pixels;
+    const encoded = PNG.sync.write(clean, { colorType: opaque ? 2 : 6, inputColorType: 6, bitDepth: 8, deflateLevel: 9 });
     if (encoded.byteLength > MAX_AVATAR_BYTES) throw new Error('encoded_avatar_too_large');
     return new Uint8Array(encoded);
   } catch {

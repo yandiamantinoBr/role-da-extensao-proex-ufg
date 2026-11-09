@@ -2,7 +2,7 @@ import {getActor} from '@/lib/access';
 import {database} from '@/lib/platform';
 import {getPortalUser} from '@/lib/session';
 import {boundedJson} from '@/lib/http';
-import {rateLimit} from '@/lib/rate-limit';
+import {rateLimitStatements} from '@/lib/rate-limit';
 import {HttpError,publicError} from '@/lib/errors';
 import {transferPreview,transferTask} from '@/lib/follow-up/transfer';
 export const dynamic='force-dynamic';
@@ -20,6 +20,7 @@ export async function POST(request:Request){try{
  if(request.headers.get('Origin')!==new URL(request.url).origin||request.headers.get('X-Proex-Action')!=='1'||!request.headers.get('Content-Type')?.includes('application/json'))throw new HttpError(403,'Atualize o portal antes de salvar.','invalid_origin');
  const input=await boundedJson(request,16*1024),db=database(),actor=await getActor(db,await getPortalUser());
  if(!actor)throw new HttpError(401,'Entre para acompanhar as demandas.','unauthenticated');
- await rateLimit(db,`followup-transfer:${actor.userId}`,60,60000);
- return privateResponse(Response.json(await transferTask(db,actor,input)));
+ // A full bucket refuses here with a read only; otherwise the count joins the transfer's own batch (one commit).
+ const rateCount=await rateLimitStatements(db,[{bucket:`followup-transfer:${actor.userId}`,limit:60,windowMs:60000}]);
+ return privateResponse(Response.json(await transferTask(db,actor,input,rateCount)));
  }catch(error){return privateResponse(publicError(error));}}

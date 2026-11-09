@@ -2,6 +2,7 @@ import type {PortalActor} from '../access';
 import {one,iso,uid,type Row} from '../database';
 import {HttpError} from '../errors';
 import {prepareMutation} from '../mutations';
+import {isRateLimitedError,rateLimitedError} from '../rate-limit';
 import {id,text,integer,choices,onlyKeys} from '../follow-up/contracts';
 import {actorRequired,authority} from '../follow-up/scope';
 import {PLANNING_ACTIONS,PLANNING_LIMITS,SESSION_STATUSES,isCivilDate,isLocalTime,sessionTimeProblem,type PlanningActionResult,type PlanningHost,type PlanningSession,type PlanningWorkspace,type SessionStatus} from './contracts';
@@ -100,8 +101,12 @@ function translate(error:unknown):never{
  throw error;
 }
 
-/** Mutations. Idempotency keys are scoped per actor + action + campaign. */
-export async function planningAction(db:D1Database,actor:PortalActor|null,input:Record<string,unknown>):Promise<PlanningActionResult>{
+/**
+ * Mutations. Idempotency keys are scoped per actor + action + campaign.
+ * `rateCount` (from rateLimitStatements) enters the same write batch: an allowed action costs one commit,
+ * and a replay or refused attempt writes nothing.
+ */
+export async function planningAction(db:D1Database,actor:PortalActor|null,input:Record<string,unknown>,rateCount:D1PreparedStatement[]=[]):Promise<PlanningActionResult>{
  actorRequired(actor);if(!input||typeof input!=='object'||Array.isArray(input))fail('Dados inválidos.');
  const action=choices(input.action,PLANNING_ACTIONS);
  onlyKeys(input,['action','campaignId','projectId','expectedVersion','operationKey',...(action==='host.link'?['hostProjectId','linked']:action==='session.save'?['id','expectedSessionVersion','sessionDate','ordinal','label','startsAt','endsAt','status','note']:['id','expectedSessionVersion','status'])]);
@@ -164,6 +169,7 @@ export async function planningAction(db:D1Database,actor:PortalActor|null,input:
  // The header version moves exactly once, and only when the last domain statement changed a row
  // (an already-active link or an already-revoked unlink is an idempotent success: no version, no audit).
  const statements=[
+  ...rateCount,
   db.prepare(`SELECT CASE WHEN ${manageExists(!!hostProjectId)} THEN 1 ELSE json_extract('[]','planning_authority_changed') END`).bind(...guardValues(actor.userId,campaignId,projectId,hostProjectId)),
   ...(action==='host.link'&&!input.linked?[db.prepare("SELECT CASE WHEN EXISTS(SELECT 1 FROM campaign_planning WHERE campaign_id=?) THEN 1 ELSE json_extract('[]','planning_no_change') END").bind(campaignId)]:[]),
   db.prepare('INSERT OR IGNORE INTO campaign_planning(campaign_id,version,created_at,updated_at) VALUES(?,0,?,?)').bind(campaignId,at,at),
@@ -175,6 +181,7 @@ export async function planningAction(db:D1Database,actor:PortalActor|null,input:
  let applied=true;
  try{const results=await db.batch(statements);applied=Number(results[statements.length-2].meta?.changes??0)>0;}
  catch(error){
+  if(isRateLimitedError(error))rateLimitedError();
   let recovered:string;try{recovered=await mutation.recover(error);}catch(cause){translate(cause);}
   const version=await fence(db,actor.userId,campaignId,projectId,hostProjectId);return{viewerId:actor.userId,campaignId,entityId:recovered,version,duplicate:true};
  }

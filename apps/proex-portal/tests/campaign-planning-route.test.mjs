@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
+import {createHash} from 'node:crypto';
 import ts from 'typescript';
 import {compile,teamFixture} from './support/work-teams-fixture.mjs';
 // The real route module runs against the real service, errors, JSON bounding and rate limiter
@@ -54,6 +55,14 @@ test('POST end to end: create, lost-reply replay, changed payload, stale CAS, te
  const confirmed=await post(f,session({operationKey:'route-operation-03',expectedVersion:1,ordinal:2,status:'confirmed'}));assert.equal(confirmed.status,400);
  f.as('host-manager');assert.equal((await post(f,session({operationKey:'route-operation-04',expectedVersion:1,ordinal:3}))).status,403);
  assert.equal(f.native.prepare('SELECT COUNT(*) n FROM campaign_sessions').get().n,1);
- f.as('owner-a');let last;for(let i=0;i<60;i++)last=await post(f,{});assert.equal(last.status===429,true);
+ f.as('owner-a');
+ // Invalid, replayed and conflicting attempts write nothing, so only the one applied action was counted.
+ for(let i=0;i<60;i++)assert.equal((await post(f,{})).status,400);
+ const bucket=createHash('sha256').update('campaign-planning:owner-a').digest('hex');
+ assert.equal(f.native.prepare('SELECT count n FROM portal_rate_limits WHERE bucket_key=?').get(bucket).n,1);
+ f.native.prepare('UPDATE portal_rate_limits SET count=60 WHERE bucket_key=?').run(bucket);
+ const changes=f.native.prepare('SELECT total_changes() n').get().n;
+ const last=await post(f,session({operationKey:'route-operation-05',expectedVersion:1,ordinal:5}));assert.equal(last.status,429);
+ assert.equal(f.native.prepare('SELECT total_changes() n').get().n,changes,'a full bucket refuses with reads only');
  const body=await last.json();assert.equal(body.code,'rate_limited');assert.doesNotMatch(JSON.stringify(body),/owner-a|@example/);
 });
