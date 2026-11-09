@@ -1,7 +1,8 @@
 import { aiConfigurationAuthority, getActor, organizationAuthoritySql, platformOwnerAuthoritySql, type PortalActor } from '../access';
 import { all, one } from '../database';
 import { HttpError } from '../errors';
-import { availableProviderCredentials, newAssistantConfig, object, onlyKeys, validateConfig, type AssistantConfig } from './contracts';
+import { availableProviderCredentials, dailyLimits, newAssistantConfig, object, onlyKeys, TEST_MODE_LIMITS, validateConfig, type AssistantConfig, type DailyLimits } from './contracts';
+import { configChanges } from './quota';
 import { decryptProviderCredentials, encryptProviderCredentials, type CredentialKeys } from './crypto';
 import { fitsFunction } from './model-catalog';
 import { loadCatalog } from './model-catalog-store';
@@ -74,6 +75,15 @@ export async function loadSpeechSettings(db:D1Database,secret:string,organizatio
 }
 function id(value: unknown): string { if (typeof value !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(value)) throw new HttpError(400, 'Escolha uma organização válida.', 'assistant_organization'); return value; }
 function key(value: unknown): string { if (!validProviderKey(value)) throw new HttpError(400, 'Informe uma chave válida no campo do provedor.', 'assistant_credentials'); return value; }
+/**
+ * Modo de testes decidido no servidor: ligar guarda os limites atuais e aplica limites altos;
+ * desligar devolve os limites guardados. O navegador não consegue forjar os limites guardados.
+ */
+export function withTestMode(previous: AssistantConfig, next: AssistantConfig): AssistantConfig {
+ if (next.testMode && !previous.testMode) { const high = Object.fromEntries(Object.entries(TEST_MODE_LIMITS).map(([key, value]) => [key, Math.max(value, next[key as keyof DailyLimits])])) as DailyLimits; return { ...next, ...high, testModeRestore: dailyLimits(previous) }; }
+ if (!next.testMode && previous.testMode) return { ...next, ...(previous.testModeRestore ?? dailyLimits(next)), testModeRestore: null };
+ return { ...next, testModeRestore: next.testMode ? previous.testModeRestore : null };
+}
 export async function configureAssistant(db: D1Database, actor: PortalActor | null, input: Record<string, unknown>, secret: string, speechEnvironment?: SpeechEnvironment, keys?: CredentialKeys) {
  onlyKeys(input, ['action','organizationId','config','deepseekKey','typesafeKey','deepgramKey','expectedRevision','replaceCredentials']);
  const organizationId = id(input.organizationId), { current, auth } = await configurationActor(db, actor, organizationId);
@@ -83,7 +93,7 @@ export async function configureAssistant(db: D1Database, actor: PortalActor | nu
  if (!Number.isSafeInteger(input.expectedRevision) || input.expectedRevision !== (old?.revision ?? 0)) throw new HttpError(409, 'A configuração mudou. Atualize antes de salvar.', 'assistant_configuration_changed');
  const proposed = object(input.config), previousConfig = old ? validateConfig(JSON.parse(old.config_json)) : newAssistantConfig(current.userId);
  const usageScope = Object.hasOwn(proposed,'usageScope') ? proposed.usageScope : previousConfig.usageScope;
- const config = validateConfig({ ...proposed, usageScope, usageUserId: usageScope === 'private' ? current.userId : null });
+ const config = withTestMode(previousConfig, validateConfig({ ...proposed, usageScope, usageUserId: usageScope === 'private' ? current.userId : null }));
  const previous = old && input.replaceCredentials !== true ? object(await decryptProviderCredentials(secret, old.credentials_ciphertext, organizationId, keys)) : {};
  const credentials = availableProviderCredentials(previous);
  const catalogKeys = Object.fromEntries(Object.entries(previous).filter(([name]) => /^p:[a-z0-9-]+$/.test(name)));
@@ -115,7 +125,7 @@ export async function configureAssistant(db: D1Database, actor: PortalActor | nu
  const revision = Number(input.expectedRevision) + 1, at = new Date().toISOString();
  const assertion = db.prepare(`SELECT CASE WHEN ${auth.sql} THEN 1 ELSE json_extract('[]','ai_configuration_revoked') END`).bind(...auth.values);
  const statement = old ? db.prepare('UPDATE ai_organization_settings SET revision=?,config_json=?,credentials_ciphertext=?,updated_by=?,updated_at=? WHERE organization_id=? AND revision=? AND credentials_ciphertext=?').bind(revision, JSON.stringify(config), ciphertext, current.userId, at, organizationId, input.expectedRevision, old.credentials_ciphertext) : db.prepare('INSERT INTO ai_organization_settings(organization_id,revision,config_json,credentials_ciphertext,updated_by,updated_at) VALUES(?,?,?,?,?,?)').bind(organizationId, revision, JSON.stringify(config), ciphertext, current.userId, at);
- try { const result = await db.batch([assertion, statement, db.prepare("INSERT INTO audit(id,actor_id,project_id,organization_id,action,entity_id,details,created_at) SELECT ?,?,NULL,?,'assistant.configure',?,?,? WHERE changes()=1").bind(crypto.randomUUID(), current.userId, organizationId, organizationId, JSON.stringify({ revision, enabled: config.enabled, sttEnabled: config.sttEnabled, jevEnabled: config.jevEnabled, roleEnabled: config.roleEnabled, roleProvider: config.roleProvider, roleVisionEnabled: config.roleVisionEnabled }), at)]); if (result[1].meta.changes !== 1) throw new HttpError(409, 'A configuração mudou. Atualize a página.', 'assistant_configuration_changed'); }
+ try { const result = await db.batch([assertion, statement, db.prepare("INSERT INTO audit(id,actor_id,project_id,organization_id,action,entity_id,details,created_at) SELECT ?,?,NULL,?,'assistant.configure',?,?,? WHERE changes()=1").bind(crypto.randomUUID(), current.userId, organizationId, organizationId, JSON.stringify({ revision, enabled: config.enabled, sttEnabled: config.sttEnabled, jevEnabled: config.jevEnabled, roleEnabled: config.roleEnabled, roleProvider: config.roleProvider, roleVisionEnabled: config.roleVisionEnabled, testMode: config.testMode, changes: configChanges(previousConfig, config) }), at)]); if (result[1].meta.changes !== 1) throw new HttpError(409, 'A configuração mudou. Atualize a página.', 'assistant_configuration_changed'); }
  catch (error) { if (String(error).includes('ai_configuration_revoked')) throw new HttpError(403, 'A autorização de configuração foi revogada.', 'assistant_configuration_forbidden'); throw error; }
  return { ok: true, revision };
 }

@@ -2,6 +2,7 @@ import { getActor, projectAuthoritySql, requireCapability, requireLiveCapability
 import { all, one } from '../database';
 import { HttpError } from '../errors';
 import { reservationStatements } from './admission';
+import { quotaRefusal, responsibleName } from './quota';
 import { onlyKeys, safeRequest, type AssistantConfig, type AssistantCredentials } from './contracts';
 import { digest, type CredentialKeys } from './crypto';
 import {
@@ -114,7 +115,7 @@ export async function roleStatus(db: D1Database, actor: PortalActor | null, inpu
   const project = projectId(input.projectId), { current, organizationId } = await scopedActor(db, actor, project);
   const today = dayKey(options.now ?? Date.now());
   const usage = await one(db, 'SELECT reserved_usd_micros FROM ai_organization_usage WHERE organization_id=? AND day=?', [organizationId, today]);
-  const base = { contract: ROLE_CONTRACT, organizationId, projectId: project, reservedTodayMicros: Number(usage?.reserved_usd_micros ?? 0) };
+  const base = { contract: ROLE_CONTRACT, organizationId, projectId: project, reservedTodayMicros: Number(usage?.reserved_usd_micros ?? 0), canConfigure: (await responsibleName(db, current, organizationId)).canConfigure };
   try {
     const { config, credentials, rawCredentials } = await loadAssistantSettings(db, secret, organizationId, 'configuration', options.keys, current.userId);
     const catalog = config.roleModel || config.roleVisionModel ? (await loadCatalog(db, organizationId)).catalog : null;
@@ -305,30 +306,31 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
     await db.batch([personalQuota, ...reservationStatements(db, { table: 'ai_calls', authorization, id, fingerprint, nonce, actorId: current.userId, projectId: project, organizationId, day, createdAt: new Date(now).toISOString(), revision, config, reservation })]);
   } catch (error) {
     if (String(error).includes('assistant_authority_changed')) throw new HttpError(403, 'Seu acesso ou a configuração mudou.', 'assistant_forbidden');
-    if (String(error).includes('role_user_quota')) throw new HttpError(429, 'Você já usou sua parte do limite de IA de hoje. Tente amanhã ou peça para ampliar o limite.', 'role_user_quota');
+    if (String(error).includes('role_user_quota')) throw await quotaRefusal(db, current, organizationId, day, config, { cost: reservation.cost, tokens: reservation.tokens, ms: reservation.milliseconds, calls: 1 }, { used: Number((await one(db, 'SELECT COUNT(*) n FROM ai_calls WHERE actor_id=? AND day=?', [current.userId, day]))?.n ?? personalCap), max: personalCap });
     await replay();
     throw error;
   }
   const admitted = await one(db, 'SELECT admission_nonce FROM ai_calls WHERE id=?', [id]);
-  if (admitted?.admission_nonce !== nonce) throw new HttpError(429, 'O limite diário de IA desta organização foi atingido. Tente amanhã ou peça para ampliar o limite.', 'assistant_quota');
+  if (admitted?.admission_nonce !== nonce) throw await quotaRefusal(db, current, organizationId, day, config, { cost: reservation.cost, tokens: reservation.tokens, ms: reservation.milliseconds, calls: 1 });
   const controller = new AbortController(), timer = setTimeout(() => controller.abort(), config.timeoutMs);
   const abort = () => controller.abort();
   options.signal?.addEventListener('abort', abort, { once: true });
   try {
     // Last live fence before money leaves: access or configuration may have changed during decryption.
     await authorization.first();
+    const startedAt = Date.now();
     const result = chosen.kind === 'legacy'
       ? await dispatch(chosen.provider, apiKey, transportBody(chosen.provider, turns, message, projectName, image?.dataUrl ?? null), controller.signal, options.fetcher ?? fetch)
       : await catalogDispatch(chosen, turns, message, projectName, image?.dataUrl ?? null, controller.signal, options.fetcher ?? fetch);
     const dropped = !!result.operation && !operationNumbersAllowed(result.operation, [message, ...turns.filter(turn => turn.role === 'user').map(turn => turn.content)]);
     if (dropped) result.operation = null;
-    const extraCost = Math.max(0, result.costMicros - estimate.costMicros), extraTokens = Math.max(0, result.inputTokens + result.outputTokens - estimate.tokens);
+    const extraCost = Math.max(0, result.costMicros - estimate.costMicros), extraTokens = Math.max(0, result.inputTokens + result.outputTokens - estimate.tokens), elapsed = Date.now() - startedAt;
     const details = { provider, model: modelName, hasImage: !!image, inputTokens: result.inputTokens, outputTokens: result.outputTokens, reservedUsdMicros: estimate.costMicros, usdMicros: result.costMicros, operationSuggested: !!result.operation, operationDropped: dropped, overrun: extraCost > 0 || extraTokens > 0 };
     await db.batch([
       authorization,
       db.prepare("UPDATE ai_calls SET status='complete' WHERE id=? AND admission_nonce=? AND status='reserved'").bind(id, nonce),
-      // Real use above the ceiling still counts against the daily limit.
-      db.prepare('UPDATE ai_organization_usage SET reserved_usd_micros=reserved_usd_micros+?,reserved_tokens=reserved_tokens+? WHERE organization_id=? AND day=?').bind(extraCost, extraTokens, organizationId, day),
+      // The day keeps the real use: unused reservation goes back, use above the ceiling still counts.
+      db.prepare('UPDATE ai_organization_usage SET reserved_usd_micros=MAX(0,reserved_usd_micros+?),reserved_tokens=MAX(0,reserved_tokens+?),reserved_ms=MAX(0,reserved_ms-?) WHERE organization_id=? AND day=? AND changes()=1').bind(result.costMicros - estimate.costMicros, result.inputTokens + result.outputTokens - estimate.tokens, Math.max(0, reservation.milliseconds - elapsed), organizationId, day),
       db.prepare("INSERT INTO audit(id,actor_id,project_id,organization_id,action,entity_id,details,created_at) VALUES(?,?,?,?,'assistant.role.chat',?,?,?)")
         .bind(crypto.randomUUID(), current.userId, project, organizationId, id, JSON.stringify(details), new Date().toISOString()),
     ]);

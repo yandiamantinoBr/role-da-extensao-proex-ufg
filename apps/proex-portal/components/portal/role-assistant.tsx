@@ -12,11 +12,11 @@ import { prepareSpeechWav } from './speech-audio';
 import styles from './role-assistant.module.css';
 
 type Project = { id: string; name: string; organization_id?: string };
-type Props = { projects: Project[]; defaultProjectId?: string; onApplied?: () => void | Promise<void>; onOpenSettings?: () => void };
+type Props = { projects: Project[]; defaultProjectId?: string; onApplied?: () => void | Promise<void>; onOpenSettings?: () => void; onOpenLimits?: () => void };
 type Pricing = { model: string; label: string; inputMicrosPerToken: number; outputMicrosPerToken: number };
-type Status = { available: boolean; reason: string | null; provider: string; model: string; textPricing?: Pricing | null; visionPricing?: Pricing | null; visionAvailable: boolean; operationsAvailable: boolean; speech: { available: boolean; provider: 'groq' | 'deepgram' }; dailyLimitMicros: number; reservedTodayMicros: number };
+type Status = { available: boolean; reason: string | null; provider: string; model: string; textPricing?: Pricing | null; visionPricing?: Pricing | null; visionAvailable: boolean; operationsAvailable: boolean; speech: { available: boolean; provider: 'groq' | 'deepgram' }; dailyLimitMicros: number; reservedTodayMicros: number; canConfigure?: boolean };
 type Match = { projectId: string; projectName: string; itemName: string; score: number };
-type Operation = { request: string; stage: 'idle' | 'estimated' | 'preview' | 'done'; costMicros?: number; provider?: string; jev?: boolean; shareConsent?: boolean; stale?: boolean; projectId?: string; matches?: Match[]; ambiguous?: boolean; error?: string; preview?: { plan: Omit<AssistantPlan, 'actorId'>; planToken: string; undoReason: string }; confirmed?: boolean; receipt?: string; key: string };
+type Operation = { request: string; stage: 'idle' | 'estimated' | 'preview' | 'done'; costMicros?: number; provider?: string; jev?: boolean; shareConsent?: boolean; stale?: boolean; projectId?: string; matches?: Match[]; ambiguous?: boolean; error?: string; limit?: boolean; preview?: { plan: Omit<AssistantPlan, 'actorId'>; planToken: string; undoReason: string }; confirmed?: boolean; receipt?: string; key: string };
 type Message = { id: string; role: 'user' | 'assistant'; content: string; image?: string; meta?: string; operation?: Operation };
 type Picked = { dataUrl: string; bytes: number };
 type Recorded = { file: File; seconds: number; url: string };
@@ -31,6 +31,8 @@ function quantity(value: number, unit: string): string {
 }
 
 class RequestError extends Error { constructor(readonly status: number, message: string, readonly code?: string) { super(message); } }
+/** Recusa por limite diário (da organização ou a parte de cada pessoa). */
+const isLimit = (cause: unknown) => cause instanceof RequestError && (cause.code === 'assistant_quota' || cause.code === 'role_user_quota');
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const controller = new AbortController(), timer = window.setTimeout(() => controller.abort(), 45_000);
   try {
@@ -72,12 +74,12 @@ function trimmedHistory(messages: Message[]): RoleTurn[] {
   return recent;
 }
 
-export default function RoleAssistant({ projects, defaultProjectId, onApplied, onOpenSettings }: Props) {
+export default function RoleAssistant({ projects, defaultProjectId, onApplied, onOpenSettings, onOpenLimits }: Props) {
   const [open, setOpen] = useState(false), [chosenProjectId, setProjectId] = useState(defaultProjectId ?? '');
   const projectId = projects.some(item => item.id === chosenProjectId) ? chosenProjectId : projects[0]?.id ?? '';
   const [status, setStatus] = useState<Status | null>(null), [statusError, setStatusError] = useState('');
   const [messages, setMessages] = useState<Message[]>([]), [draft, setDraft] = useState(''), [picked, setPicked] = useState<Picked | null>(null);
-  const [consent, setConsent] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState('');
+  const [consent, setConsent] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState(''), [limitHit, setLimitHit] = useState(false);
   const [recording, setRecording] = useState(false), [recorded, setRecorded] = useState<Recorded | null>(null), [transcribing, setTranscribing] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null), dialog = useRef<HTMLDivElement>(null), input = useRef<HTMLTextAreaElement>(null), log = useRef<HTMLOListElement>(null);
   const recorder = useRef<MediaRecorder | null>(null), stream = useRef<MediaStream | null>(null), stopTimer = useRef<number | null>(null), mounted = useRef(true);
@@ -131,7 +133,7 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
     if (!canSend || !estimate || !status) return;
     const text = sanitized.text, image = picked?.dataUrl;
     const user: Message = { id: crypto.randomUUID(), role: 'user', content: text, image };
-    setMessages(current => [...current, user]); setDraft(''); setPicked(null); setBusy(true); setError(''); setNotice('');
+    setMessages(current => [...current, user]); setDraft(''); setPicked(null); setBusy(true); setError(''); setNotice(''); setLimitHit(false);
     try {
       const result = await post<{ reply: string; operation: string | null; operationDropped?: boolean; model: string; costMicros: number; reservedMicros: number }>('/api/assistant/role', {
         action: 'chat', projectId, operationKey: crypto.randomUUID(), consent: true, history, message: text, ...(image ? { image } : {}), acceptedCostMicros: estimate.costMicros,
@@ -145,7 +147,7 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
     } catch (cause) {
       if (!mounted.current) return;
       setMessages(current => current.filter(message => message.id !== user.id)); setDraft(text); if (image && picked) setPicked(picked);
-      setError(cause instanceof Error ? cause.message : 'O Rolê não conseguiu responder.');
+      setError(cause instanceof Error ? cause.message : 'O Rolê não conseguiu responder.'); setLimitHit(isLimit(cause));
       if (cause instanceof RequestError && (cause.status === 401 || cause.status === 403)) void loadStatus(projectId);
     } finally { if (mounted.current) setBusy(false); }
   }
@@ -177,13 +179,13 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
   function newConversation() { setMessages([]); setDraft(''); setPicked(null); discardRecording(); setError(''); setNotice(''); window.requestAnimationFrame(() => input.current?.focus()); }
   async function prepareOperation(message: Message) {
     if (!message.operation?.shareConsent || !message.operation.projectId) return;
-    setBusy(true); setError(''); updateOperation(message.id, { error: '' });
+    setBusy(true); setError(''); updateOperation(message.id, { error: '', limit: false });
     try { const preview = await post<Operation['preview']>('/api/assistant', { action: 'prepare', projectId: message.operation.projectId, request: message.operation.request, consent: true, operationKey: message.operation.key, acceptedCostMicros: message.operation.costMicros }); updateOperation(message.id, { stage: 'preview', preview, confirmed: false }); }
     catch (cause) {
       // O servidor respondeu: a próxima tentativa é outra chamada paga, com chave nova e custo mostrado de novo.
       // Tempo esgotado mantém a chave para recuperar o resultado sem pagar duas vezes.
       const answered = cause instanceof RequestError && cause.code !== 'assistant_call_replay';
-      updateOperation(message.id, { error: cause instanceof Error ? cause.message : 'Não foi possível preparar a operação.', ...(answered ? { key: crypto.randomUUID() } : {}) });
+      updateOperation(message.id, { error: cause instanceof Error ? cause.message : 'Não foi possível preparar a operação.', limit: isLimit(cause), ...(answered ? { key: crypto.randomUUID() } : {}) });
     }
     finally { setBusy(false); }
   }
@@ -231,7 +233,7 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
   function discardRecording() { if (recorded) URL.revokeObjectURL(recorded.url); setRecorded(null); }
   async function transcribe() {
     if (!recorded || !status?.speech.available || transcribing) return;
-    setTranscribing(true); setError('');
+    setTranscribing(true); setError(''); setLimitHit(false);
     try {
       const body = new FormData();
       body.set('audio', recorded.file); body.set('projectId', projectId); body.set('operationKey', crypto.randomUUID()); body.set('consent', 'true'); body.set('provider', status.speech.provider);
@@ -240,7 +242,7 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
       setDraft(current => (current ? current + ' ' : '') + result.transcript); discardRecording();
       setNotice('Áudio transcrito. Revise o texto antes de enviar.');
       window.requestAnimationFrame(() => input.current?.focus());
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Não foi possível transcrever.'); }
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Não foi possível transcrever.'); setLimitHit(isLimit(cause)); }
     finally { setTranscribing(false); }
   }
 
@@ -256,6 +258,9 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
 
   if (!projects.length) return null;
   const speechCost = recorded && status ? formatMicros(roleSpeechCeilingMicros(status.speech.provider, recorded.seconds)) : '';
+  // Quem pode configurar vai direto a Limites e cotas; os outros já recebem na mensagem o nome de quem ajusta.
+  const limitsButton = status?.canConfigure && onOpenLimits ? <button type="button" className={`p-button p-button-subtle ${styles.limitsButton}`} onClick={() => { close(); onOpenLimits(); }}>Ajustar limites</button> : null;
+
   return <>
     {!open && ready && <button ref={trigger} type="button" className={styles.launcher} aria-haspopup="dialog" aria-keyshortcuts="Alt+R" onClick={openRole} title="Falar com o Rolê (Alt + R)">
       <img src="/brand/role-mascote/role-rosto.svg" alt="" width={44} height={44}/>
@@ -325,6 +330,7 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
                       <button type="button" className="p-button p-button-primary" disabled={busy || !message.operation.confirmed} onClick={() => void applyOperation(message)}>{message.operation.preview.plan.proposal.intent === 'stock.query' ? 'Conferir saldo atual' : message.operation.preview.plan.proposal.intent === 'record.create' ? 'Gravar o registro' : 'Gravar no estoque'}</button>
                     </div>}
                     {message.operation.error && <p role="alert" className={styles.error}>{message.operation.error}</p>}
+                    {message.operation.limit && limitsButton}
                     {message.operation.stage === 'done' && <p role="status" className={styles.done}>{message.operation.receipt}</p>}
                   </div>}
                 </div>
@@ -335,6 +341,7 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
         </div>
         {status?.available && <form className={styles.composer} onSubmit={send}>
           {error && <p role="alert" className={styles.error}>{error}</p>}
+          {error && limitHit && limitsButton}
           {notice && !error && <p role="status" className={styles.notice}>{notice}</p>}
           {!consent && <label className={styles.check}><input type="checkbox" checked={consent} onChange={event => rememberConsent(event.target.checked)}/>Entendo que minha mensagem, foto ou áudio vai para um serviço de IA escolhido pela PROEX. Não vou enviar senhas, CPF nem dados pessoais.</label>}
           {picked && <div className={styles.attachment}><img src={picked.dataUrl} alt="Imagem anexada"/><span>Imagem pronta ({Math.round(picked.bytes / 1024)} KB, reduzida no aparelho)</span><button type="button" className={styles.iconButton} onClick={() => setPicked(null)} aria-label="Remover imagem"><Trash2 size={18} aria-hidden="true"/></button></div>}

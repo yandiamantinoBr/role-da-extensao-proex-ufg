@@ -33,6 +33,7 @@ import SyncSettingsPanel from '@/components/portal/sync-settings-panel';
 import CompleteBackupPanel from '@/components/portal/complete-backup-panel';
 import BackupAutomationPanel from '@/components/portal/backup-automation-panel';
 import CredentialVaultSettings from '@/components/portal/credential-vault-panel';
+import { requestAiLimits } from '@/components/portal/ai-limits-link';
 import PublicParticipantsSettingsPanel from '@/components/portal/public-participants-settings-panel';
 import ProfilePanel from '@/components/portal/profile-panel';
 import CalendarPanel from '@/components/portal/calendar-panel';
@@ -1216,7 +1217,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
 
       <MaterialDetailDrawer onUnitOpen={setStockUnit} itemId={materialDrawerId} initialMode={materialMode} onClose={() => {setSelectedMaterialId(null);setMaterialMode('view');setMaterialMode('view');if(tab==='materials')setWorkRecord(null);}} onChanged={refreshModules} renderWorkContext={({itemId,projectId}) => workContext(projectId,'materials',{itemId})}/>
       {stockUnit&&<StockUnitDialog key={stockUnit} unitId={stockUnit} onClose={()=>setStockUnit('')} onOpenMaterial={id=>{setMaterialMode('view');setSelectedMaterialId(id);}}/>}
-      {assistantProjects.length > 0 && <RoleAssistant key={`role:${string(user.userId)}`} projects={assistantProjects} defaultProjectId={filter} onApplied={refreshModules} onOpenSettings={allowedTabs.some(item => item.id === 'settings') ? () => navigate('settings') : undefined}/>}
+      {assistantProjects.length > 0 && <RoleAssistant key={`role:${string(user.userId)}`} projects={assistantProjects} defaultProjectId={filter} onApplied={refreshModules} onOpenSettings={allowedTabs.some(item => item.id === 'settings') ? () => navigate('settings') : undefined} onOpenLimits={allowedTabs.some(item => item.id === 'settings') ? () => { requestAiLimits(); navigate('settings'); } : undefined}/>}
       <footer className="p-footer">
     <span>{online ? <Wifi size={14}/> : <WifiOff size={14}/>}{online ? 'Conectado' : 'Sem conexão'}{updatedAt && ` · atualizado às ${updatedAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`}</span>
     <div className="p-footer-actions"><small className="p-version" title="Versão publicada do portal. Informe-a ao relatar um problema.">Versão {release}</small>{allowedTabs.some(module => module.id === 'community') ? <button type="button" className="p-button p-button-subtle" onClick={() => { setCommunityPrefill({ area: tab, projectId: filter, nonce: Date.now() }); navigate('community'); }}><MessageSquarePlus size={16}/>Sugestão ou problema</button> : <FeedbackPanel release={release} module={tab} projects={projects.map(project=>({id:string(project.id),name:string(project.name)}))} projectId={filter}/>}</div>

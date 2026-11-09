@@ -489,6 +489,45 @@ test('atomic stock predicate closes a concurrent change between preflight and do
   assert.equal(f.native.prepare('SELECT stock FROM items WHERE id=?').get('item-a').stock, 1); assert.equal(f.native.prepare('SELECT COUNT(*) n FROM stock_movements').get().n, 1); assert.equal(f.native.prepare("SELECT status FROM ai_plans WHERE id=?").get(preview.plan.id).status, 'ready');
  } finally { f.native.close(); }
 });
+test('a refused request says which daily limit was hit, how much is used and who can change it', async () => {
+ for (const [ceiling, label] of [[{ dailyTokens: 1000 }, /^Limite de tokens de hoje atingido \(0 de 1 mil usados; este pedido precisa de até \d+ mil\)\./], [{ dailyUsdMicros: 1000 }, /^Limite de custo de hoje atingido \(US\$\s0,00 de US\$\s0,001\d? usados/], [{ dailyMs: 1000 }, /^Limite de tempo de hoje atingido \(0 s de 1 s usados; este pedido precisa de até 12 s\)\./]]) {
+  const f = fixture(), provider = fakeProvider(); try {
+   await configureAssistant(f.db, f.actors.owner, configInput(ceiling), secret);
+   const worker = await prepareAssistantPlan(f.db, f.actors.inventory, request(), secret, { fetcher: provider.fetch }).catch(error => error);
+   assert.equal(worker.code, 'assistant_quota'); assert.match(worker.message, label); assert.match(worker.message, /Peça a .+ para ajustar o limite\.$/);
+   assert.ok(!worker.message.includes('@'), 'nunca mostra e-mail de quem ajusta');
+   const owner = await prepareAssistantPlan(f.db, f.actors.owner, request({ operationKey: 'owner-quota-check' }), secret, { fetcher: provider.fetch }).catch(error => error);
+   assert.equal(owner.code, 'assistant_quota'); assert.match(owner.message, /Ajuste em Configurações → Chaves e modelos → Funções e acesso → Limites\.$/);
+   assert.equal(provider.calls, 0);
+  } finally { f.native.close(); }
+ }
+});
+test('test mode raises the daily limits until turned off, restores the previous ones and every click is audited with before and after', async () => {
+ const f = fixture(); try {
+  await configureAssistant(f.db, f.actors.owner, configInput({ dailyUsdMicros: 3_000_000, dailyTokens: 1_000_000, dailyCalls: 100, dailyMs: 3_600_000 }), secret);
+  const stored = () => JSON.parse(f.native.prepare('SELECT config_json FROM ai_organization_settings').get().config_json);
+  const audits = () => f.native.prepare("SELECT details FROM audit WHERE action='assistant.configure' ORDER BY rowid").all().map(row => JSON.parse(row.details));
+  await configureAssistant(f.db, f.actors.owner, configInput({ ...stored(), testMode: true, testModeRestore: { dailyUsdMicros: 10_000_000, dailyTokens: 5_000_000, dailyCalls: 1000, dailyMs: 14_400_000 } }, { expectedRevision: 1, deepseekKey: undefined }), secret);
+  let config = stored();
+  assert.equal(config.testMode, true);
+  assert.deepEqual([config.dailyUsdMicros, config.dailyTokens, config.dailyCalls, config.dailyMs], [5_000_000, 3_000_000, 500, 10_800_000]);
+  assert.deepEqual(config.testModeRestore, { dailyUsdMicros: 3_000_000, dailyTokens: 1_000_000, dailyCalls: 100, dailyMs: 3_600_000 }, 'o navegador não escolhe os limites guardados');
+  const on = audits().at(-1);
+  assert.equal(on.testMode, true);
+  assert.deepEqual(on.changes.find(change => change.field === 'dailyTokens'), { field: 'dailyTokens', before: 1_000_000, after: 3_000_000 });
+  assert.deepEqual(on.changes.find(change => change.field === 'testMode'), { field: 'testMode', before: false, after: true });
+  await configureAssistant(f.db, f.actors.owner, configInput({ ...stored(), dailyCalls: 600, testModeRestore: null }, { expectedRevision: 2, deepseekKey: undefined }), secret);
+  assert.deepEqual(stored().testModeRestore, { dailyUsdMicros: 3_000_000, dailyTokens: 1_000_000, dailyCalls: 100, dailyMs: 3_600_000 }, 'editar durante o teste mantém os limites guardados');
+  await configureAssistant(f.db, f.actors.owner, configInput({ ...stored(), testMode: false }, { expectedRevision: 3, deepseekKey: undefined }), secret);
+  config = stored();
+  assert.deepEqual([config.testMode, config.dailyUsdMicros, config.dailyTokens, config.dailyCalls, config.dailyMs, config.testModeRestore], [false, 3_000_000, 1_000_000, 100, 3_600_000, null]);
+  const off = audits().at(-1);
+  assert.deepEqual(off.changes.find(change => change.field === 'dailyCalls'), { field: 'dailyCalls', before: 600, after: 100 });
+  assert.equal(audits().length, 4);
+  assert.ok(!JSON.stringify(audits()).includes(key), 'histórico nunca guarda chave');
+  await assert.rejects(configureAssistant(f.db, f.actors.owner, configInput({ ...stored(), dailyCalls: 1001 }, { expectedRevision: 4, deepseekKey: undefined }), secret), error => error.code === 'assistant_budget' && /chamadas por dia/.test(error.message));
+ } finally { f.native.close(); }
+});
 test('each daily ceiling independently refuses a request before provider transport', async () => {
  for (const ceiling of [{ dailyUsdMicros: 1000 }, { dailyTokens: 1000 }, { dailyMs: 1000 }]) {
   const f = fixture(), provider = fakeProvider(); try { await configureAssistant(f.db, f.actors.owner, configInput(ceiling), secret); await assert.rejects(prepareAssistantPlan(f.db, f.actors.inventory, request(), secret, { fetcher: provider.fetch }), code('assistant_quota')); assert.equal(provider.calls, 0); assert.equal(f.native.prepare('SELECT COUNT(*) n FROM ai_calls').get().n, 0); assert.equal(f.native.prepare('SELECT calls FROM ai_organization_usage').get().calls, 0); } finally { f.native.close(); }

@@ -13,6 +13,7 @@ export function speechReservedUsdMicros(provider:SpeechProvider,duration:number)
 export const SPEECH_ENDPOINT = 'https://api.deepgram.com/v1/listen?model=nova-3&language=pt-BR&mip_opt_out=true';
 export function speechEndpoint(value: unknown = SPEECH_ENDPOINT): string { if (value !== SPEECH_ENDPOINT) throw new HttpError(400, 'Use apenas o endpoint oficial de transcrição autorizado.', 'speech_endpoint'); return SPEECH_ENDPOINT; }
 import { validateSpeechAudio } from './audio';
+import { quotaRefusal } from './quota';
 export { validateSpeechAudio } from './audio';
 export async function speechActor(db: D1Database, actor: PortalActor | null, projectId: string) {
  const current = actor && await getActor(db,actor); if (!current) throw new HttpError(403,'Entre novamente para transcrever.','speech_forbidden');
@@ -82,7 +83,7 @@ export async function transcribeSpeech(db:D1Database, actor:PortalActor|null, in
  try{await db.batch([assertion,db.prepare('INSERT INTO ai_organization_usage(organization_id,day) VALUES(?,?) ON CONFLICT(organization_id,day) DO NOTHING').bind(organizationId,day),db.prepare(`INSERT INTO ai_transcriptions(id,fingerprint,admission_nonce,actor_id,project_id,organization_id,config_revision,status,created_at) SELECT ?,?,?,?,?,?,?,'reserved',? FROM ai_organization_usage WHERE organization_id=? AND day=? AND calls+1<=? AND reserved_usd_micros+?<=? AND reserved_ms+?<=?`).bind(id,fingerprint,admissionNonce,current.userId,input.projectId,organizationId,settings.revision,new Date(now).toISOString(),organizationId,day,settings.config.dailyCalls,cost,settings.config.dailyUsdMicros,settings.config.timeoutMs,settings.config.dailyMs),db.prepare('UPDATE ai_organization_usage SET calls=calls+1,reserved_usd_micros=reserved_usd_micros+?,reserved_ms=reserved_ms+? WHERE organization_id=? AND day=? AND EXISTS(SELECT 1 FROM ai_transcriptions WHERE id=? AND admission_nonce=?)').bind(cost,settings.config.timeoutMs,organizationId,day,id,admissionNonce)]);}catch(error){if(String(error).includes('speech_authority_changed'))throw new HttpError(403,'Seu acesso ou a configuração mudou.','speech_forbidden');const recovered=await replay();if(recovered)return recovered;throw error;}
  const admitted=await one(db,'SELECT admission_nonce FROM ai_transcriptions WHERE id=?',[id]);
  if(admitted&&admitted.admission_nonce!==admissionNonce){const recovered=await replay();if(recovered)return recovered;throw new HttpError(409,'Este envio já está em processamento.','speech_replay');}
- if(!admitted)throw new HttpError(429,'O limite diário da organização foi atingido.','assistant_quota');
+ if(!admitted)throw await quotaRefusal(db,current,organizationId,day,settings.config,{cost,tokens:0,ms:settings.config.timeoutMs,calls:1});
  const controller=new AbortController(),abort=()=>controller.abort(),timer=setTimeout(abort,settings.config.timeoutMs);options.signal?.addEventListener('abort',abort,{once:true});
  try{
   await speechActor(db,current,input.projectId);if((await loadSpeechSettings(db,secret,organizationId,options.environment,options.keys,current.userId)).revision!==settings.revision)throw new HttpError(409,'A configuração mudou antes da transcrição.','speech_configuration_changed');await authorized();if(controller.signal.aborted)throw new HttpError(503,'A transcrição excedeu o tempo reservado.','speech_provider');

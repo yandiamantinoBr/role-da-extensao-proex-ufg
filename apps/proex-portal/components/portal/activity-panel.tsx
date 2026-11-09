@@ -1,16 +1,16 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowRight, ArrowUpRight, Boxes, CalendarDays, Check, FileText, ListChecks, Sparkles, TriangleAlert, Truck, type LucideIcon } from 'lucide-react';
+import { ArrowRight, ArrowUpRight, Boxes, CalendarDays, Check, FileText, ListChecks, SlidersHorizontal, Sparkles, TriangleAlert, Truck, type LucideIcon } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import DateField from './date-field';
 import styles from './activity-panel.module.css';
 
-type ActivityType = 'materials' | 'loans' | 'demands' | 'agenda' | 'records';
+type ActivityType = 'materials' | 'loans' | 'demands' | 'agenda' | 'records' | 'ai';
 type ActivityEvent = { id: string; type: ActivityType; action: string; title: string; detail: string; at: string; day: string; projectId: string | null; projectName: string; actorId: string | null; actorName: string; viaRole: boolean; href: string | null; quantity: number | null };
 type SummaryDay = { day: string; materials: number; demandsOpened: number; demandsCompleted: number; agenda: number };
 type StockRow = { name: string; projectId: string; href: string; entradas: number; saidas: number };
-type Feed = { range: { from: string; to: string; days: string[] }; types: ActivityType[]; events: ActivityEvent[]; truncated: boolean; people: { id: string; name: string }[]; loansNow: { active: number; late: number } | null; summary: { days: SummaryDay[]; stock: StockRow[] }; deadlines: { onTime: number; late: number; noDue: number; overdueNow: number } | null; team: { activePeople: number; perDay: { day: string; people: number }[]; people: { id: string; name: string; days: number; actions: number; last: string }[] } | null };
+type Feed = { range: { from: string; to: string; days: string[] }; types: ActivityType[]; events: ActivityEvent[]; truncated: boolean; people: { id: string; name: string }[]; loansNow: { active: number; late: number } | null; aiVisible?: boolean; summary: { days: SummaryDay[]; stock: StockRow[] }; deadlines: { onTime: number; late: number; noDue: number; overdueNow: number } | null; team: { activePeople: number; perDay: { day: string; people: number }[]; people: { id: string; name: string; days: number; actions: number; last: string }[] } | null };
 type Props = { projects: { id: string; name: string }[]; initialProjectId?: string };
 type Period = 'today' | '7' | '30' | 'month' | 'custom';
 type Entry = { kind: 'event'; event: ActivityEvent } | { kind: 'group'; key: string; events: ActivityEvent[] };
@@ -18,7 +18,7 @@ type Entry = { kind: 'event'; event: ActivityEvent } | { kind: 'group'; key: str
 const TYPES: { id: ActivityType; label: string; Icon: LucideIcon }[] = [
   { id: 'materials', label: 'Estoque', Icon: Boxes }, { id: 'loans', label: 'Empréstimos', Icon: Truck },
   { id: 'demands', label: 'Demandas', Icon: ListChecks }, { id: 'agenda', label: 'Agenda', Icon: CalendarDays },
-  { id: 'records', label: 'Registros', Icon: FileText },
+  { id: 'records', label: 'Registros', Icon: FileText }, { id: 'ai', label: 'Configuração de IA', Icon: SlidersHorizontal },
 ];
 const PERIODS: { id: Period; label: string }[] = [{ id: 'today', label: 'Hoje' }, { id: '7', label: '7 dias' }, { id: '30', label: '30 dias' }, { id: 'month', label: 'Este mês' }, { id: 'custom', label: 'Escolher datas' }];
 const DAY = new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
@@ -123,7 +123,7 @@ export default function ActivityPanel({ projects, initialProjectId = '' }: Props
     <section className={styles.filters} aria-label="Filtros do histórico">
       <div className={styles.filterRow}><span className={styles.filterLabel} id="activity-period">Período</span><div className={styles.chips} role="group" aria-labelledby="activity-period">{PERIODS.map(item => <button key={item.id} type="button" aria-pressed={period === item.id} onClick={() => { if (item.id === 'custom') setCustom(range); setPeriod(item.id); }}>{period === item.id && <Check size={14} aria-hidden="true"/>}{item.label}</button>)}</div></div>
       {period === 'custom' && <div className={styles.dates}><label className="p-field"><span>De</span><DateField value={custom.from} max={custom.to} onValueChange={from => setCustom(value => ({ ...value, from: from || value.from }))}/></label><label className="p-field"><span>Até</span><DateField value={custom.to} min={custom.from} onValueChange={to => setCustom(value => ({ ...value, to: to || value.to }))}/></label></div>}
-      <div className={styles.filterRow}><span className={styles.filterLabel} id="activity-types">Tipo</span><div className={styles.chips} role="group" aria-labelledby="activity-types">{TYPES.map(({ id, label, Icon }) => <button key={id} type="button" aria-pressed={types.includes(id)} onClick={() => toggle(id)}>{types.includes(id) ? <Check size={14} aria-hidden="true"/> : <Icon size={14} aria-hidden="true"/>}{label}</button>)}</div></div>
+      <div className={styles.filterRow}><span className={styles.filterLabel} id="activity-types">Tipo</span><div className={styles.chips} role="group" aria-labelledby="activity-types">{TYPES.filter(type => type.id !== 'ai' || shown?.aiVisible).map(({ id, label, Icon }) => <button key={id} type="button" aria-pressed={types.includes(id)} onClick={() => toggle(id)}>{types.includes(id) ? <Check size={14} aria-hidden="true"/> : <Icon size={14} aria-hidden="true"/>}{label}</button>)}</div></div>
       <div className={styles.selects}>
         <label className="p-field"><span>Projeto</span><select value={projectId} onChange={event => setProjectId(event.target.value)}><option value="">Todos os projetos</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
         <label className="p-field"><span>Pessoa</span><select value={person} onChange={event => setPerson(event.target.value)}><option value="">Todas as pessoas</option>{(shown?.people ?? []).map(entry => <option key={entry.id} value={entry.id}>{entry.name}</option>)}</select></label>

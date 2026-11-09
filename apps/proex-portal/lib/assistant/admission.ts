@@ -1,6 +1,13 @@
 import { type AssistantConfig, PROVIDERS,textModel } from './contracts';
 export type AiReservation = {tokens:number;cost:number;calls:number;milliseconds:number};
 export function aiReservation(config:AssistantConfig,bodyBytes:number):AiReservation{const prices=textModel(config);return{tokens:bodyBytes+config.maxOutputTokens+(config.jevEnabled?bodyBytes+18000:0),calls:config.jevEnabled?2:1,milliseconds:config.timeoutMs,cost:Math.ceil(bodyBytes*prices.inputMicrosPerToken+config.maxOutputTokens*prices.outputMicrosPerToken+(config.jevEnabled?(bodyBytes+18000)*PROVIDERS.typesafe.inputMicrosPerToken:0))};}
+/**
+ * Depois de uma resposta válida, devolve ao dia o que foi reservado e não usado (tokens e custo
+ * confirmados pelo provedor; tempo medido). Nunca aumenta: o uso já foi limitado pela reserva.
+ */
+export function aiSettlement(config:AssistantConfig,r:AiReservation,used:{input:number;output:number;jev:number},elapsedMs:number){const prices=textModel(config);const cost=Math.ceil(used.input*prices.inputMicrosPerToken+used.output*prices.outputMicrosPerToken+used.jev*PROVIDERS.typesafe.inputMicrosPerToken);return{cost:Math.max(0,r.cost-cost),tokens:Math.max(0,r.tokens-used.input-used.output-used.jev),milliseconds:Math.max(0,r.milliseconds-Math.ceil(elapsedMs))};}
+/** Must run right after the statement that marks the call complete (changes()=1), in the same batch. */
+export function settlementStatement(db:D1Database,organizationId:string,day:string,refund:{cost:number;tokens:number;milliseconds:number}){return db.prepare('UPDATE ai_organization_usage SET reserved_usd_micros=MAX(0,reserved_usd_micros-?),reserved_tokens=MAX(0,reserved_tokens-?),reserved_ms=MAX(0,reserved_ms-?) WHERE organization_id=? AND day=? AND changes()=1').bind(refund.cost,refund.tokens,refund.milliseconds,organizationId,day);}
 type Request={table:'ai_calls'|'ai_document_calls'|'ai_task_triage_calls';authorization:D1PreparedStatement;id:string;fingerprint:string;nonce:string;actorId:string;projectId:string|null;organizationId:string;day:string;createdAt:string;revision:number;config:AssistantConfig;reservation:AiReservation;document?:{kind:'project'|'asset';sourceDigest:string;expiresAt:number};triage?:{taskId:string;taskVersion:number;expiresAt:number}};
 /** Fixed table adapters share the same org budget and nonce-owned reservation.
  * The caller runs this array in one atomic batch and checks nonce before dispatch.

@@ -129,7 +129,8 @@ test('chat reserves the shown ceiling, calls DeepSeek once, audits metadata only
     assert.equal(result.costMicros, Math.ceil(900 * 0.3 + 120 * 1.2));
     assert.equal(result.reservedMicros, input.acceptedCostMicros);
     const usage = f.native.prepare("SELECT reserved_usd_micros,calls FROM ai_organization_usage WHERE organization_id='org_proex'").get();
-    assert.equal(usage.reserved_usd_micros, input.acceptedCostMicros); assert.equal(usage.calls, 1);
+    // The ceiling was reserved; after the reply the day keeps only the real cost.
+    assert.equal(usage.reserved_usd_micros, result.costMicros); assert.ok(result.costMicros <= input.acceptedCostMicros); assert.equal(usage.calls, 1);
     const audit = f.native.prepare("SELECT details FROM audit WHERE action='assistant.role.chat'").all();
     assert.equal(audit.length, 1);
     const details = JSON.parse(audit[0].details);
