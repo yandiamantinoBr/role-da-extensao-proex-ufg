@@ -223,9 +223,10 @@ export async function activityFeed(db: D1Database, actor: PortalActor | null, in
   // Configuração de IA: limites, funções e permissões, com antes e depois. Visível só para quem
   // pode configurar a IA daquela organização (ou a administração geral); não pertence a projeto.
   const configurable: Row[] = [];
-  for (const organization of await all(db, "SELECT id,name FROM organizations WHERE status='active' ORDER BY name LIMIT 50")) {
+  for (const organization of await all(db, "SELECT id,name FROM organizations WHERE status='active' ORDER BY name")) {
     const auth = aiConfigurationAuthority(actor, String(organization.id));
     if ((await all(db, `SELECT 1 WHERE ${auth.sql}`, auth.values)).length) configurable.push(organization);
+    if (configurable.length && !(wanted.includes('ai') && !projectId)) break; // basta saber que o tipo aparece
   }
   if (wanted.includes('ai') && !projectId && configurable.length) {
     const names = new Map(configurable.map(row => [String(row.id), String(row.name)]));

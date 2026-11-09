@@ -56,7 +56,8 @@ export function groupEntries(events: ActivityEvent[]): Entry[] {
   for (let index = 0; index < events.length;) {
     const first = events[index], minute = first.at.slice(0, 16);
     let end = index + 1;
-    while (end < events.length && events[end].type === first.type && events[end].action === first.action && events[end].at.slice(0, 16) === minute) end++;
+    // Configuração de IA nunca agrupa: cada mudança de limite precisa ficar visível no histórico.
+    while (first.type !== 'ai' && end < events.length && events[end].type === first.type && events[end].action === first.action && events[end].at.slice(0, 16) === minute) end++;
     if (end - index >= 3) entries.push({ kind: 'group', key: `${first.id}-group`, events: events.slice(index, end) });
     else for (let item = index; item < end; item++) entries.push({ kind: 'event', event: events[item] });
     index = end;

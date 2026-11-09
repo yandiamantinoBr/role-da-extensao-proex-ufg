@@ -38,7 +38,7 @@ export async function responsibleName(db: D1Database, actor: PortalActor, organi
   const auth = aiConfigurationAuthority(actor, organizationId);
   const canConfigure = !!await one(db, `SELECT 1 FROM organizations WHERE id=? AND ${auth.sql}`, [organizationId, ...auth.values]);
   if (canConfigure) return { canConfigure, name: '' };
-  const row = await one(db, `SELECT COALESCE(NULLIF(p.display_name,''),'a administração') AS name FROM members m LEFT JOIN profiles p ON p.user_id=m.user_id
+  const row = await one(db, `SELECT COALESCE(NULLIF(p.display_name,''),'a administração') AS name FROM members m JOIN portal_users u ON u.user_id=m.user_id AND u.status='active' AND u.activation_pending=0 AND u.anonymized_at IS NULL LEFT JOIN profiles p ON p.user_id=m.user_id
     WHERE m.role='owner' AND m.revoked_at IS NULL AND (m.organization_id=? OR (m.organization_id IS NULL AND m.project_id IS NULL)) ORDER BY m.organization_id IS NULL, m.created_at LIMIT 1`, [organizationId]);
   return { canConfigure, name: String(row?.name ?? 'a administração') };
 }
