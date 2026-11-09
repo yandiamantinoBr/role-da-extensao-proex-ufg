@@ -66,7 +66,7 @@ test('selos: off and pause stop all computation; only the owner sees them; anony
  for(const table of ['community_messages','community_blocks','community_preferences','community_badges'])assert.equal(count(f,table),0,table);});
 
 test('recados: a person who works in only one project does not reach the whole organization',async t=>{const f=fixture(t);f.insert('projects',{id:'p-a2',name:'Projeto a2',organization_id:'o-a',created_at:f.now});
- const a=await f.user('a','viewer','p-a','o-a'),other=await f.user('x','viewer','p-a2','o-a'),orgOwner=await f.user('oo','owner',null,'o-a');
+ const a=await f.user('a','viewer','p-a','o-a');await f.user('x','viewer','p-a2','o-a');const orgOwner=await f.user('oo','owner',null,'o-a');
  assert.ok(!(await messages.messagePeople(f.db,a)).organizations.flatMap(o=>o.people).some(p=>p.id==='x'));await assert.rejects(()=>send(f,a,'x'),e=>e.status===409);
  assert.ok((await messages.messagePeople(f.db,a)).organizations.flatMap(o=>o.people).some(p=>p.id==='oo'),'organization-wide people stay reachable');await send(f,a,'oo');await send(f,orgOwner,'x');
  await messages.messageAction(f.db,a,{action:'block',userId:'nobody-here'});assert.equal(count(f,'community_blocks'),0,'same answer, no row, for an unknown account');
