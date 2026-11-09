@@ -14,3 +14,4 @@ export * from './followup-transfer-schema';
 export * from './stock-context-schema';
 export * from './directory-schema';
 export * from './material-attention-schema';
+export * from './prize-tier-schema';

@@ -12,6 +12,7 @@ import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState, type
 import PhysicalAttendance from '@/components/portal/physical-attendance';
 import CampaignForm from '@/components/portal/campaign-form';
 import CampaignPlanningPanel from '@/components/portal/campaign-planning-panel';
+import PrizeTiersPanel from '@/components/portal/prize-tiers-panel';
 import campaignLayout from './campaign-workspace.module.css';
 import PendingPrizes from '@/components/portal/pending-prizes';
 import ProjectPanel from '@/components/portal/project-panel';
@@ -836,7 +837,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
                     <summary>Editar rascunho <ChevronDown size={15}/>
                     </summary>
                     <CampaignForm projects={projects.filter(p => canProject(p.id, 'campaigns.manage'))} offers={offers} initial={c} mutate={mutate}/>
-                    </details>}<CampaignPlanningPanel userId={string(user.userId)} campaignId={string(c.id)} projectId={string(get(c, 'projectId', 'project_id'))} projects={projects.filter(project => project.id === get(c, 'projectId', 'project_id') || canProject(project.id, 'campaigns.manage')).map(project => ({id:string(project.id),name:string(project.name),organizationId:string(get(project, 'organizationId', 'organization_id'))}))}/></article>)}</div> : <Empty title="Nenhuma dinâmica cadastrada" text="As campanhas de roleta e dado dos projetos selecionados aparecerão aqui." icon={CalendarDays}/>}</Section>{can('participation.operate') && <Section title="Operação presencial" description="A equipe acompanha o resultado e utiliza as mesmas regras de participação da campanha.">
+                    </details>}<CampaignPlanningPanel userId={string(user.userId)} campaignId={string(c.id)} projectId={string(get(c, 'projectId', 'project_id'))} projects={projects.filter(project => project.id === get(c, 'projectId', 'project_id') || canProject(project.id, 'campaigns.manage')).map(project => ({id:string(project.id),name:string(project.name),organizationId:string(get(project, 'organizationId', 'organization_id'))}))}/><PrizeTiersPanel userId={string(user.userId)} campaignId={string(c.id)}/></article>)}</div> : <Empty title="Nenhuma dinâmica cadastrada" text="As campanhas de roleta e dado dos projetos selecionados aparecerão aqui." icon={CalendarDays}/>}</Section>{can('participation.operate') && <Section title="Operação presencial" description="A equipe acompanha o resultado e utiliza as mesmas regras de participação da campanha.">
             <PhysicalAttendance campaigns={visibleCampaigns.filter(c => canProject(get(c, 'projectId', 'project_id'), 'participation.operate'))} tickets={byProject(list(data.physicalTickets))} mutate={mutate}/>
             </Section>}{can('participation.operate', 'inventory.deliver') && (byProject(list(data.pendingPrizes)).length > 0 || data.pendingPrizesTruncated) && <Section title="Prêmios aguardando entrega" description="Reservas que continuam disponíveis após atualizar a página. Confirme a entrega somente depois de conferir o código.">{data.pendingPrizesTruncated && <div className="p-notice p-notice-warning">
                 <Gift size={17}/>
