@@ -128,4 +128,13 @@
     min-height: 44px;
     justify-content: space-between;
   }
+
+  /* Compacto (09/11): números numa linha só e "Detalhes" ao lado, sem caixas de fundo. */
+  .rows { gap: 10px; }
+  .row { grid-template-columns: repeat(3, minmax(0, 1fr)) auto; align-items: end; gap: 8px 10px; padding: 12px 14px; box-shadow: var(--shadow-card); }
+  .catalog .row .metric { padding: 0; background: transparent; }
+  .metric .number { display: inline; margin: 0 4px 0 0; font-size: 17px; font-family: var(--font-display); }
+  .metric .unit { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .actions { grid-column: auto; }
+  .actions > button { width: auto; min-width: 44px; padding-inline: 12px; }
 }

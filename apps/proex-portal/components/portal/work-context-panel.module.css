@@ -7,16 +7,10 @@
 .actions { display: flex; flex: 0 1 auto; flex-wrap: wrap; justify-content: end; gap: 8px; align-items: center; min-width: 0; }
 .actions > button { min-width: 0; white-space: normal; }
 .details { min-width: 0; margin-top: 8px; border-top: 1px solid var(--line); }
-.details > summary { display: flex; align-items: center; gap: 8px; min-height: 44px; cursor: pointer; color: var(--brand-ink); font-size: 13px; font-weight: 600; list-style: none; }
-.details > summary::-webkit-details-marker { display: none; }
-.details > summary::after { content: ''; width: 7px; height: 7px; margin-left: auto; margin-right: 4px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(45deg) translateY(-2px); transition: transform .15s ease; }
-.details[open] > summary::after { transform: rotate(-135deg) translateY(-2px); }
+.details > summary { display: list-item; min-height: 44px; padding-block: 12px; cursor: pointer; color: var(--brand-ink); font-size: 13px; font-weight: 600; }
 .details[open] { padding-bottom: 10px; }
 .compact { min-width: 0; margin-block: 10px; padding: 0 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-soft); }
-.compact > summary { display: flex; align-items: center; gap: 8px; min-height: 44px; color: var(--brand-ink); font-size: 13px; font-weight: 600; cursor: pointer; list-style: none; }
-.compact > summary::-webkit-details-marker { display: none; }
-.compact > summary::after { content: ''; width: 7px; height: 7px; margin-left: auto; margin-right: 4px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(45deg) translateY(-2px); transition: transform .15s ease; }
-.compact[open] > summary::after { transform: rotate(-135deg) translateY(-2px); }
+.compact > summary { display: list-item; min-height: 44px; padding-block: 12px; cursor: pointer; color: var(--brand-ink); font-size: 13px; font-weight: 600; }
 .compactBody { display: grid; gap: 12px; min-width: 0; padding-block: 4px 12px; }
 /* Celular: descrição some, botões ficam lado a lado em uma linha só. */
 @container (max-width: 520px) {
@@ -25,4 +19,10 @@
   .actions { flex: 1 1 100%; justify-content: stretch; flex-wrap: nowrap; }
   .actions > button { flex: 1; padding-inline: 10px; }
 }
-@media (prefers-reduced-motion: reduce) { .details > summary::after, .compact > summary::after { transition: none; } }
+.narrowOnly { display: none; }
+.narrowOnly.compact { margin-block: 0 14px; background: var(--surface); box-shadow: var(--shadow-card); border-radius: var(--radius-card, 16px); }
+@media (max-width: 720px) {
+  .narrowOnly { display: block; }
+  .wideOnly { display: none; }
+}
+.details > summary svg, .compact > summary svg { display: inline; vertical-align: -3px; margin-right: 6px; }

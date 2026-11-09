@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { ArrowUpRight, BarChart3, CalendarDays, CheckCircle2, CircleDot, Clock3, Package, TriangleAlert } from 'lucide-react';
 import type { Row } from '@/lib/database';
 import styles from './project-operational-chart.module.css';
-type Props = { projectId?: string; schedule: Row[] | null; items?: Row[] | null; loans?: Row[] | null; now: number; variant?: 'project' | 'overview' };
+type Props = { projectId?: string; schedule: Row[] | null; items?: Row[] | null; loans?: Row[] | null; now: number; variant?: 'project' | 'overview'; title?: string };
 type Group = { id: string; label: string; rows: Row[]; tone: string; Icon: typeof Package };
 type Dataset = { id: string; label: string; unit: string; rows: Row[]; groups: Group[]; target?: 'materials' | 'loans' };
 function loanLate(loan: Row, now: number) { const end = loan.ends_at ? new Date(loan.ends_at).getTime() : NaN; return loan.status === 'out' && Number.isFinite(end) && end < now; }
@@ -37,20 +37,24 @@ export default function ProjectOperationalChart(props: Props) {
  if (!dataset) return null;
  // In the Início the rows come from several projects, so each link keeps its own project.
  const rowProject = (row: Row) => String((overview ? row.project_id ?? row.projectId : props.projectId) ?? '');
- const listHref = `/?module=${dataset.target}${!overview && props.projectId ? `&project=${encodeURIComponent(props.projectId)}` : ''}`;
+ const listHref = `/?module=${dataset.target}${props.projectId ? `&project=${encodeURIComponent(props.projectId)}` : ''}`;
  const selected = dataset.groups.find(group => group.id === selection.group);
  const rows = selected ? selected.rows : dataset.rows;
  const total = dataset.rows.length;
  const detailHref = (row: Row) => dataset.target ? `/?module=${dataset.target}&project=${encodeURIComponent(rowProject(row))}&${dataset.target === 'materials' ? 'itemId' : 'loanId'}=${encodeURIComponent(row.id)}` : '#project-timeline';
  return <section className={`p-card ${styles.chart}`} aria-label={overview ? 'Panorama visual dos seus projetos' : 'Panorama visual do projeto'}>
-  <div className={styles.heading}><div><h3><BarChart3 size={18} aria-hidden="true"/>{overview ? 'Panorama dos seus projetos' : 'Panorama do projeto'}</h3><p>Toque em uma barra para conferir os registros.</p></div></div>
-  <div className={styles.tabs} role="group" aria-label="Dados do panorama">{datasets.map(item => <button type="button" key={item.id} aria-pressed={item.id === dataset.id} onClick={() => setSelection({ dataset: item.id, group: '' })}>{item.label}<span>{item.rows.length}</span></button>)}</div>
+  <div className={styles.heading}><div><h3><BarChart3 size={18} aria-hidden="true"/>{props.title ?? (overview ? 'Panorama dos seus projetos' : 'Panorama do projeto')}</h3><p>Toque em uma barra para conferir os registros.</p></div></div>
+  {datasets.length > 1 && <div className={styles.tabs} role="group" aria-label="Dados do panorama">{datasets.map(item => <button type="button" key={item.id} aria-pressed={item.id === dataset.id} onClick={() => setSelection({ dataset: item.id, group: '' })}>{item.label}<span>{item.rows.length}</span></button>)}</div>}
   <p className={styles.caption}>{total} {dataset.unit}{dataset.id === 'materials' ? ' · saldo disponível agora' : ''}.</p>
   {total > 0 ? <div className={styles.body}>
-   <div className={styles.bars} role="group" aria-label={`Distribuição de ${dataset.label.toLocaleLowerCase('pt-BR')}`}>
-    {dataset.groups.map(({ id, label, rows, tone, Icon }) => <button key={id} type="button" data-tone={tone} aria-pressed={selected?.id === id} title={`${label}: ${rows.length} de ${total}`} onClick={() => setSelection({ dataset: dataset.id, group: selected?.id === id ? '' : id })}><span className={styles.barLabel}><Icon size={16} aria-hidden="true"/>{label}<strong>{rows.length}</strong></span><span className={styles.track} aria-hidden="true"><span style={{ width: `${rows.length / total * 100}%` }}/></span></button>)}
+   <div className={styles.visual}>
+    {/* Barra empilhada para toque e mouse; os botões da legenda abaixo dão o mesmo controle ao teclado e ao leitor de tela. */}
+    <div className={styles.stack} aria-hidden="true" data-has-selection={selected ? 'true' : 'false'}>{dataset.groups.filter(group => group.rows.length > 0).map(({ id, label, rows, tone }) => <span key={id} data-tone={tone} data-selected={selected?.id === id ? 'true' : 'false'} style={{ flexGrow: rows.length }} title={`${label}: ${rows.length} de ${total}`} onClick={() => setSelection({ dataset: dataset.id, group: selected?.id === id ? '' : id })}/>)}</div>
+    <div className={styles.bars} role="group" aria-label={`Distribuição de ${dataset.label.toLocaleLowerCase('pt-BR')}`}>
+     {dataset.groups.map(({ id, label, rows, tone, Icon }) => <button key={id} type="button" data-tone={tone} aria-pressed={selected?.id === id} title={`${label}: ${rows.length} de ${total}`} onClick={() => setSelection({ dataset: dataset.id, group: selected?.id === id ? '' : id })}><span className={styles.barLabel}><Icon size={16} aria-hidden="true"/>{label}<strong>{rows.length}</strong></span><span className={styles.share} aria-hidden="true">{Math.round(rows.length / total * 100)}%</span></button>)}
+    </div>
    </div>
-   <div className={styles.records} aria-live="polite"><div className={styles.recordsHeading}><strong>{selected?.label ?? 'Todos os registros'} <span>({rows.length})</span></strong>{selected && <button type="button" onClick={() => setSelection({ dataset: dataset.id, group: '' })}>Ver todos</button>}</div>{rows.length ? <ul>{rows.slice(0, 5).map(row => <li key={row.id}><a href={detailHref(row)}>{row.title || row.name || row.item_name || row.action_name}<ArrowUpRight size={15} aria-hidden="true"/></a></li>)}</ul> : <p>Nenhum registro nesta situação.</p>}{rows.length > 5 && <p>Exibindo 5 de {rows.length}. {dataset.target ? <a href={listHref}>Abrir todos</a> : <a href="#project-timeline">Ver linha do tempo</a>}</p>}</div>
+   <div className={styles.records} aria-live="polite" data-has-selection={selected ? 'true' : 'false'}><div className={styles.recordsHeading}><strong>{selected?.label ?? 'Todos os registros'} <span>({rows.length})</span></strong>{selected && <button type="button" onClick={() => setSelection({ dataset: dataset.id, group: '' })}>Ver todos</button>}</div>{rows.length ? <ul>{rows.slice(0, 5).map(row => <li key={row.id}><a href={detailHref(row)}>{row.title || row.name || row.item_name || row.action_name}<ArrowUpRight size={15} aria-hidden="true"/></a></li>)}</ul> : <p>Nenhum registro nesta situação.</p>}{rows.length > 5 && <p>Exibindo 5 de {rows.length}. {dataset.target ? <a href={listHref}>Abrir todos</a> : <a href="#project-timeline">Ver linha do tempo</a>}</p>}</div>
   </div> : <p className={styles.empty}>{dataset.id === 'loans' ? 'Nenhum registro carregado.' : 'Nenhum registro nesta área.'} {dataset.id === 'schedule' ? 'Cadastre uma atividade na linha do tempo abaixo.' : 'Os registros cadastrados aparecerão aqui.'}</p>}
  </section>;
 }

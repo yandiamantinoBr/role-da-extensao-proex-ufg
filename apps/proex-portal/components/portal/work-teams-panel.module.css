@@ -1,6 +1,7 @@
 .workspace { container-type: inline-size; display: grid; gap: 20px; min-width: 0; color: var(--ink); }
 .intro,.detailHeading,.taskHeading,.viewBar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px 20px; min-width: 0; }
-.intro h2 { display: flex; align-items: center; gap: 10px; font-size: 21px; font-weight: 750; }
+/* O título do módulo já diz "Equipes": este h2 fica só para leitores de tela. */
+.intro h2 { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .intro p,.detailHeading p,.chart > p,.members > p,.taskHeading p,.updated { color: var(--muted); font-size: 13px; line-height: 1.6; }
 .actions,.exports { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .workspace :is(button,a) { touch-action: manipulation; }

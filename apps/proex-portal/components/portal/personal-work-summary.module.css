@@ -18,3 +18,4 @@
 .panel{border-radius:var(--radius-card,16px);box-shadow:var(--shadow-card)}
 .heading h2{font-family:var(--font-display);letter-spacing:-.02em}
 .metric strong{font-family:var(--font-display);letter-spacing:-.03em}
+@container personal-work (max-width:620px){.help{display:none}}

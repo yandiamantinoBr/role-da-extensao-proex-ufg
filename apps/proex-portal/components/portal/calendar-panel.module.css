@@ -54,3 +54,5 @@
   .dayCount{display:block;color:var(--brand-ink);font-size:11px;font-weight:600;font-variant-numeric:tabular-nums}
   .day .extraEntries{display:none}
 }
+/* Celular (09/11): dias mais baixos; os pontinhos já mostram o que há em cada dia. */
+@media(max-width:720px){.day{min-height:52px}}

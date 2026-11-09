@@ -230,3 +230,12 @@
     transform: none;
   }
 }
+
+/* Celular (09/11): atalhos em grade 2×2, só ícone e nome; a descrição continua no nome acessível do módulo. */
+@container proex-home (max-width: 560px) {
+  .dashboard :global(.pd-shortcuts) { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .dashboard :global(.pd-shortcut) { position: relative; }
+  .dashboard :global(.pd-shortcut-link) { flex-direction: column; align-items: flex-start; gap: 8px; min-height: 0; padding: 12px; }
+  .dashboard :global(.pd-shortcut-link small), .dashboard :global(.pd-shortcut-link > svg:last-child) { display: none; }
+  .dashboard :global(.pd-pin) { position: absolute; top: 4px; right: 4px; margin: 0; }
+}

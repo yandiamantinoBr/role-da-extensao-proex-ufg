@@ -157,7 +157,7 @@ export default function OrganizationsPanel({ organizations, currentActor, people
         setCreating(false); setSelectedId(organization.id); setNotice('Organização salva.'); await refresh();
     }
     const visible = rows.filter(row => row.name.toLocaleLowerCase('pt-BR').includes(query.trim().toLocaleLowerCase('pt-BR')));
-    return <section className="p-section"><details className={styles.catalogDisclosure}><summary>Organizações e administração <span>{rows.length} disponível(is)</span></summary><div className={styles.panel}>
+    return <section className="p-section"><details className={styles.catalogDisclosure}><summary>Organizações e administração <span>{rows.length} {rows.length === 1 ? 'disponível' : 'disponíveis'}</span></summary><div className={styles.panel}>
         <div className={styles.sectionHeading}><div><h2>Organizações</h2><p className="p-form-help">Projetos e acessos separados por organização. As unidades UFG continuam no catálogo institucional.</p></div>{currentActor.isPlatformOwner && <button type="button" className="p-button p-button-primary" onClick={() => { setCreating(true); setNotice(''); }}><Plus size={17} />Nova organização</button>}</div>
         {notice && <p className={styles.notice} role="status">{notice}</p>}
         {creating && currentActor.isPlatformOwner && <section className="p-card"><div className={styles.sectionHeading}><h3>Nova organização</h3><button type="button" className="p-icon-button" aria-label="Fechar criação de organização" onClick={() => setCreating(false)}><X size={18} /></button></div><OrganizationEditor organization={null} onSaved={saved} onCancel={() => setCreating(false)} /></section>}

@@ -21,3 +21,11 @@ test('loan categories are disjoint and invalid dates never imply lateness',()=>{
  assert.deepEqual(Array.from(result.groups,row=>row.rows.length),[1,3,1,1]);
  assert.equal(result.unit,'empréstimos carregados · até 100 mais recentes');
 });
+test('overview variant (Início and Materiais) omits activities, keeps null datasets absent and labels loans by scope',()=>{
+ assert.deepEqual(Array.from(datasets({schedule:null,items:null,loans:null,variant:'overview'}),row=>row.id),[]);
+ assert.deepEqual(Array.from(datasets({schedule:null,items:[],loans:null,variant:'overview'}),row=>row.id),['materials']);
+ const result=datasets({schedule:null,items:[{id:'a',condition:'active',available:0,low_stock:1,project_id:'p1'}],loans:[{id:'l',status:'returned',project_id:'p2'}],variant:'overview'});
+ assert.deepEqual(Array.from(result,row=>row.id),['materials','loans']);
+ assert.equal(result.find(row=>row.id==='loans').unit,'empréstimos nos projetos selecionados');
+ assert.equal(result.find(row=>row.id==='materials').groups[0].rows[0].project_id,'p1');
+});

@@ -23,7 +23,7 @@
 :global(html[data-theme=dark]) .mark { color: var(--purple); background: linear-gradient(140deg, #e9d2f7 0%, #c79ae2 100%); box-shadow: none; }
 
 .copy { min-width: 0; overflow-wrap: anywhere; }
-.label { display: block; margin: 0 0 2px; color: var(--text-secondary); font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+.label { display: none; margin: 0 0 2px; color: var(--text-secondary); font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
 .copy h1 { margin: 0; font-size: clamp(1.5rem, 2.2vw, 1.875rem); line-height: 1.15; }
 .copy p { max-width: 68ch; margin-top: 4px; color: var(--text-secondary); font-size: 13.5px; line-height: 1.5; }
 
@@ -49,10 +49,10 @@
   box-shadow: 0 18px 40px -26px rgb(59 23 83 / .9);
 }
 .welcome::before, .welcome::after { content: ''; position: absolute; z-index: -1; border-radius: 50%; pointer-events: none; }
-.welcome::before { width: 220px; height: 220px; right: -60px; top: -90px; background: radial-gradient(circle at 35% 35%, #ffaa3d 0 38%, transparent 39%), radial-gradient(circle, rgb(255 255 255 / .07) 0 60%, transparent 61%); }
-.welcome::after { width: 120px; height: 120px; right: 120px; bottom: -70px; border: 14px solid rgb(119 220 229 / .55); }
+.welcome::before { width: 96px; height: 96px; right: clamp(24px, 6vw, 72px); top: 50%; transform: translateY(-50%); background: #ffaa3d; box-shadow: 0 0 0 18px rgb(255 170 61 / .14); }
+.welcome::after { width: 54px; height: 54px; right: calc(clamp(24px, 6vw, 72px) + 104px); top: 50%; transform: translateY(-20%); border: 8px solid rgb(119 220 229 / .6); }
 .welcome .mark { color: var(--purple); background: #fff; box-shadow: 0 10px 22px -12px rgb(0 0 0 / .5); }
-.welcome .label { color: #ffcb83; letter-spacing: .06em; text-transform: none; font-size: 13px; font-weight: 600; }
+.welcome .label { display: block; color: #ffcb83; letter-spacing: .06em; text-transform: none; font-size: 13px; font-weight: 600; }
 .welcome .label::first-letter { text-transform: uppercase; }
 .welcome .copy h1 { color: #fff; font-size: clamp(1.625rem, 2.6vw, 2.25rem); }
 .welcome .copy p { color: #e7dbef; }
@@ -60,7 +60,8 @@
 :global(html[data-theme=dark]) .welcome .mark { color: var(--purple); background: #f2ebf8; }
 @media (max-width: 720px) {
   .welcome { padding: 16px; border-radius: 16px; margin-bottom: 14px; }
-  .welcome::before { width: 150px; height: 150px; right: -50px; top: -70px; }
+  .welcome::before { width: 56px; height: 56px; right: 16px; top: 16px; transform: none; box-shadow: 0 0 0 10px rgb(255 170 61 / .14); }
   .welcome::after { display: none; }
+  .welcome .copy { padding-right: 72px; }
   .welcome .label { display: block; font-size: 12px; }
 }
