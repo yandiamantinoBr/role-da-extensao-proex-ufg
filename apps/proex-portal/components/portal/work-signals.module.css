@@ -12,3 +12,11 @@
 :global(html[data-theme=dark]) .signal[data-tone=warning] { background: #392d1d; color: #f4d09a; border-color: #795a32; }
 :global(html[data-theme=dark]) .signal[data-tone=danger] { background: #452233; color: #ffd0dd; border-color: #85455f; }
 :global(html[data-theme=dark]) .signal[data-tone=success] { background: #19382e; color: #b8edd3; border-color: #376a55; }
+/* Paleta única do portal (09/11): roxo = em andamento/informação, aqua = concluída, laranja = atenção.
+   Vermelho fica reservado ao estado crítico (prazo vencido), sempre com ícone e texto. */
+.signal[data-tone=info] { background: #f3eef8; color: #582771; border-color: #d9c6e8; }
+.signal[data-tone=success] { background: #e6f5f6; color: #0f5f68; border-color: #a9dde2; }
+.signal[data-tone=warning] { background: #fff3e3; color: #8a4b00; border-color: #f2c98f; }
+:global(html[data-theme=dark]) .signal[data-tone=info] { background: #33243f; color: #e3cdf3; border-color: #6a4c80; }
+:global(html[data-theme=dark]) .signal[data-tone=success] { background: #143438; color: #a8e6ec; border-color: #2f6d74; }
+:global(html[data-theme=dark]) .signal[data-tone=warning] { background: #3b2a16; color: #ffc983; border-color: #7a5424; }

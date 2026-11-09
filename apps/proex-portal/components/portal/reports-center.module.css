@@ -1,11 +1,11 @@
 .root {
-  --rc-1: #2a78d6; --rc-2: #eb6834; --rc-grid: #ece7f1; --rc-axis: #6b6275; --rc-hover: #54216c0d;
+  --rc-1: #6b3c85; --rc-2: #d06f00; --rc-grid: #ece7f1; --rc-axis: #6b6275; --rc-hover: #54216c0d;
   --rc-warn-bg: #fff1de; --rc-warn-ink: #8a4f0c; --rc-in-bg: #e3f4ec; --rc-in-ink: #1d6b4c; --rc-out-bg: #fdebe3; --rc-out-ink: #9a3d17;
   background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 24px; margin-bottom: 28px; min-width: 0;
   container-name: reports; container-type: inline-size;
 }
 :global(html[data-theme=dark]) .root {
-  --rc-1: #3987e5; --rc-2: #d95926; --rc-grid: #3a2c45; --rc-axis: #c2b0ce; --rc-hover: #ffffff0d;
+  --rc-1: #9f6bcc; --rc-2: #d06f00; --rc-grid: #3a2c45; --rc-axis: #c2b0ce; --rc-hover: #ffffff0d;
   --rc-warn-bg: #49351f; --rc-warn-ink: #f0c58e; --rc-in-bg: #173a2d; --rc-in-ink: #a9ecd0; --rc-out-bg: #47261a; --rc-out-ink: #ffc2a8;
 }
 .root select,
@@ -199,3 +199,10 @@
   .pager select, .pager :global(.p-button) { min-height: 44px; }
   .tableHead { flex-wrap: wrap; gap: 4px 10px; }
 }
+
+/* Celular (09/11): o gráfico ganha largura útil (menos margem interna nos cartões aninhados). */
+@media (max-width: 720px) {
+  /* Sem cartão dentro de cartão: o gráfico vira uma seção com divisória e ganha a largura toda. */
+  .chart { padding: 14px 0 6px; border: 0; border-top: 1px solid var(--line); border-radius: 0; }
+}
+.pageSize { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }

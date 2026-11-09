@@ -129,3 +129,26 @@ a.row:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 .kpi { align-content: start; }
 .kpi > span { min-height: 22px; }
 @container (max-width: 520px) { .group summary > .icon { display: none; } }
+/* Acompanhamento da gestão */
+.panel { --viz-muted: #9b8fa6; }
+:global(html[data-theme=dark]) .panel { --viz-muted: #8a7d96; }
+.management { display: grid; gap: 10px; }
+.teamTotal { margin-bottom: 6px; color: var(--text-secondary); font-size: 13px; }
+.teamTotal b { color: var(--ink); font-family: var(--font-display); font-size: 18px; }
+.people { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.people button { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: 'name numbers' 'bar bar'; gap: 4px 10px; width: 100%; padding: 8px 6px; border: 0; border-radius: 10px; background: transparent; color: var(--ink); text-align: left; cursor: pointer; }
+.people button:hover { background: var(--viz-hover); }
+.people button:focus-visible { outline: 3px solid var(--focus); outline-offset: 1px; }
+.personName { grid-area: name; min-width: 0; font-size: 13.5px; font-weight: 600; overflow-wrap: anywhere; }
+.personNumbers { grid-area: numbers; color: var(--text-secondary); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.personBar { grid-area: bar; display: block; height: 8px; border-radius: 999px; background: var(--surface-soft); overflow: hidden; }
+.personBar span { display: block; height: 100%; border-radius: 999px; background: var(--viz-1); }
+.deadlineBar { display: flex; gap: 2px; height: 14px; margin: 4px 0 8px; overflow: hidden; border-radius: 999px; background: var(--surface-soft); }
+.deadlineBar span { display: block; min-width: 6px; height: 100%; }
+.deadlineLegend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0 0 10px; padding: 0; list-style: none; color: var(--text-secondary); font-size: 12.5px; }
+.deadlineLegend li { display: inline-flex; align-items: center; gap: 6px; }
+.deadlineLegend i { width: 10px; height: 10px; border-radius: 3px; }
+.deadlineLegend b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.overdue { display: inline-flex; align-items: center; gap: 6px; margin-top: auto; padding-top: 6px; color: var(--success-ink); font-size: 13px; font-weight: 600; text-decoration: none; }
+.overdueAlert { color: var(--danger); }
+@container (max-width: 480px) { .people button { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'name' 'numbers' 'bar'; } }

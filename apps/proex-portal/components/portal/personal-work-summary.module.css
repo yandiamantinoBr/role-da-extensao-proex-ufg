@@ -19,3 +19,8 @@
 .heading h2{font-family:var(--font-display);letter-spacing:-.02em}
 .metric strong{font-family:var(--font-display);letter-spacing:-.03em}
 @container personal-work (max-width:620px){.help{display:none}}
+/* Cores validadas da marca: aqua = concluídas, roxo = em andamento, laranja = a iniciar. */
+.panel{--done:#1a9aa8;--doing:#6b3c85;--waiting:#d06f00}
+:global(html[data-theme=dark]) .panel{--done:#14a5b0;--doing:#9f6bcc;--waiting:#d06f00}
+[data-part=done]{--part:var(--done)}[data-part=doing]{--part:var(--doing)}[data-part=waiting]{--part:var(--waiting)}
+.metric[data-tone=info]{--metric-tone:var(--doing)}

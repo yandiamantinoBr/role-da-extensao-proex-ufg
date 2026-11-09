@@ -16,3 +16,10 @@
 @container(max-width:560px){.records[data-has-selection=false]{display:none}}
 @media(prefers-reduced-motion:reduce){.stack>span{transition:none}}
 .chart{margin-bottom:18px}:global(.pd-dashboard)>.chart{margin-bottom:0}
+/* Sem vermelho encostado em verde (daltonismo): laranja = sem disponibilidade, roxo = no mínimo, aqua = acima. */
+.chart{--tone-danger:#d06f00;--tone-brand:#6b3c85;--tone-success:#1a9aa8}
+:global(html[data-theme=dark]) .chart{--tone-danger:#d06f00;--tone-brand:#9f6bcc;--tone-success:#14a5b0}
+.stack>span[data-tone=danger],.bars button[data-tone=danger]{--bar-color:var(--tone-danger)}
+.stack>span[data-tone=brand],.bars button[data-tone=brand]{--bar-color:var(--tone-brand)}
+.stack>span[data-tone=success],.bars button[data-tone=success]{--bar-color:var(--tone-success)}
+.stack>span{box-shadow:2px 0 0 var(--surface)}

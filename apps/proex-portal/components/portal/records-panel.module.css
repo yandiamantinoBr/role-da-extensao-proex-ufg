@@ -23,7 +23,7 @@
 .monthBars b { position: absolute; top: 0; font-size: 11px; color: var(--text-secondary); font-weight: 600; opacity: 0; transition: opacity .15s; }
 .monthBars > div:hover b { opacity: 1; }
 .timeline { display: grid; gap: 22px; }
-.monthTitle { display: flex; align-items: center; gap: 8px; font-size: 13px; text-transform: capitalize; color: var(--brand-ink); margin: 0 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+.monthTitle { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--brand-ink); margin: 0 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
 .monthTitle span { font-size: 11px; background: var(--surface-soft); border-radius: 999px; padding: 2px 8px; }
 .entries { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 380px), 1fr)); gap: 12px; align-items: start; }
 .entry { border: 1px solid var(--line); border-left: 4px solid var(--tone); border-radius: 12px; padding: 14px 16px; background: var(--surface); min-width: 0; }

@@ -9,7 +9,7 @@
 .details { min-width: 0; margin-top: 8px; border-top: 1px solid var(--line); }
 .details > summary { display: list-item; min-height: 44px; padding-block: 12px; cursor: pointer; color: var(--brand-ink); font-size: 13px; font-weight: 600; }
 .details[open] { padding-bottom: 10px; }
-.compact { min-width: 0; margin-block: 10px; padding: 0 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-soft); }
+.compact { min-width: 0; margin-block: 8px; padding: 0 12px; border: 1px solid var(--line); border-radius: 12px; background: transparent; }
 .compact > summary { display: list-item; min-height: 44px; padding-block: 12px; cursor: pointer; color: var(--brand-ink); font-size: 13px; font-weight: 600; }
 .compactBody { display: grid; gap: 12px; min-width: 0; padding-block: 4px 12px; }
 /* Celular: descrição some, botões ficam lado a lado em uma linha só. */

@@ -24,7 +24,7 @@
 
 .copy { min-width: 0; overflow-wrap: anywhere; }
 .label { display: none; margin: 0 0 2px; color: var(--text-secondary); font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
-.copy h1 { margin: 0; font-size: clamp(1.5rem, 2.2vw, 1.875rem); line-height: 1.15; }
+.copy h1 { margin: 0; font-size: clamp(1.5rem, 2.2vw, 1.875rem); line-height: 1.15; letter-spacing: -.012em; }
 .copy p { max-width: 68ch; margin-top: 4px; color: var(--text-secondary); font-size: 13.5px; line-height: 1.5; }
 
 @media (max-width: 720px) {
@@ -45,22 +45,22 @@
   border: 0;
   border-radius: 20px;
   color: #fff;
-  background: linear-gradient(118deg, #3b1753 0%, #54216f 58%, #6b3c85 100%);
+  /* Faixa nas três cores da marca na base, desenhada no próprio fundo (sem degrau no canto arredondado). */
+  background: linear-gradient(90deg, #c79ae2 0 33.3%, #ffaa3d 33.3% 66.6%, #77dce5 66.6% 100%) bottom / 100% 5px no-repeat, linear-gradient(118deg, #3b1753 0%, #54216f 58%, #6b3c85 100%);
   box-shadow: 0 18px 40px -26px rgb(59 23 83 / .9);
 }
-.welcome::before, .welcome::after { content: ''; position: absolute; z-index: -1; border-radius: 50%; pointer-events: none; }
-.welcome::before { width: 96px; height: 96px; right: clamp(24px, 6vw, 72px); top: 50%; transform: translateY(-50%); background: #ffaa3d; box-shadow: 0 0 0 18px rgb(255 170 61 / .14); }
-.welcome::after { width: 54px; height: 54px; right: calc(clamp(24px, 6vw, 72px) + 104px); top: 50%; transform: translateY(-20%); border: 8px solid #77dce5; }
+.welcome::before, .welcome::after { content: ''; position: absolute; pointer-events: none; }
+/* Faixa nas três cores da marca (roxo claro, laranja, aqua) na base da faixa: identidade, sem formas soltas. */
+.welcome::after { display: none; }
+.welcome::before { display: none; }
 .welcome .mark { color: var(--purple); background: #fff; box-shadow: 0 10px 22px -12px rgb(0 0 0 / .5); }
 .welcome .label { display: block; color: #ffcb83; letter-spacing: .06em; text-transform: none; font-size: 13px; font-weight: 600; }
 .welcome .label::first-letter { text-transform: uppercase; }
-.welcome .copy h1 { color: #fff; font-size: clamp(1.625rem, 2.6vw, 2.25rem); }
+.welcome .copy h1 { color: #fff; font-size: clamp(1.625rem, 2.6vw, 2.25rem); font-weight: 600; letter-spacing: 0; font-kerning: normal; }
 .welcome .copy p { color: #e7dbef; }
-:global(html[data-theme=dark]) .welcome { background: linear-gradient(118deg, #2a1040 0%, #45195e 60%, #5b2d75 100%); box-shadow: 0 0 0 1px #44314f; }
+:global(html[data-theme=dark]) .welcome { background: linear-gradient(90deg, #c79ae2 0 33.3%, #ffaa3d 33.3% 66.6%, #77dce5 66.6% 100%) bottom / 100% 5px no-repeat, linear-gradient(118deg, #2a1040 0%, #45195e 60%, #5b2d75 100%); box-shadow: 0 0 0 1px #44314f; }
 :global(html[data-theme=dark]) .welcome .mark { color: var(--purple); background: #f2ebf8; }
 @media (max-width: 720px) {
   .welcome { padding: 16px; border-radius: 16px; margin-bottom: 14px; }
-  .welcome::before { display: none; }
-  .welcome::after { display: none; }
   .welcome .label { display: block; font-size: 12px; }
 }
