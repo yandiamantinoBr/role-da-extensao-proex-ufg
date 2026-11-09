@@ -26,8 +26,9 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       'Content-Disposition': `${attachment.mime === 'application/pdf' ? 'attachment' : 'inline'}; filename="${name.replace(/[^\x20-\x7e]/g, '_')}"; filename*=UTF-8''${encoded}`,
     } }));
     // Miniaturas da lista de materiais: o conteúdo de um anexo não muda, então o navegador da
-    // própria pessoa pode reaproveitar a imagem por uma hora (nunca em cache compartilhado).
-    if (attachment.mime.startsWith('image/') && new URL(request.url).searchParams.get('v') === 'list') response.headers.set('Cache-Control', 'private, max-age=3600');
+    // própria pessoa pode reaproveitar a imagem por 10 minutos (nunca em cache compartilhado nem
+    // entre sessões diferentes no mesmo navegador; o logout limpa o cache).
+    if (attachment.mime.startsWith('image/') && new URL(request.url).searchParams.get('v') === 'list') { response.headers.set('Cache-Control', 'private, max-age=600'); response.headers.set('Vary', 'Cookie'); }
     return response;
   } catch (error) { return privateResponse(publicError(error)); }
 }

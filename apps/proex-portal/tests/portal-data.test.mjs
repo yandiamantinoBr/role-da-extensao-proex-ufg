@@ -455,6 +455,8 @@ test('registros completos also download as server DOCX and PDF with the same aut
   const originalFetch = globalThis.fetch, fetched = [];
   globalThis.fetch = async url => { fetched.push(String(url)); return new Response(font, { status: 200 }); };
   t.after(() => { globalThis.fetch = originalFetch; });
+  globalThis.__proexReportTestOrigin = 'https://portal.example.test';
+  t.after(() => { delete globalThis.__proexReportTestOrigin; });
   const titles = { participations: 'Participação nas dinâmicas', stock: 'Materiais e movimentos', loans: 'Empréstimos' };
   const { PDFDocument } = await import('pdf-lib');
   for (const kind of ['participations', 'stock', 'loans']) {
@@ -470,6 +472,7 @@ test('registros completos also download as server DOCX and PDF with the same aut
     assert.ok(!/PRIVATE|SECRET PROJECT B|SECRET ITEM B|@example\.test/.test(documentXml));
     if (kind === 'participations') for (const label of ['Participação', 'Tentativa', 'Premiação', 'Presencial']) assert.ok(documentXml.includes(label), label);
     if (kind === 'stock') assert.ok(documentXml.includes('Saldo físico') && documentXml.includes('Brinde'));
+    assert.match(word.headers.get('Content-Disposition'), { participations: /proex-participacao-/, stock: /proex-materiais-/, loans: /proex-emprestimos-/ }[kind]);
     if (kind === 'loans') assert.ok(!/borrower|contato|note|observa/i.test(documentXml));
     const pdf = await GET(new Request(`https://portal.example.test/api/export?kind=${kind}&format=pdf`));
     assert.equal(pdf.status, 200, await pdf.clone().text());
@@ -479,13 +482,25 @@ test('registros completos also download as server DOCX and PDF with the same aut
     assert.equal(bytes.subarray(0, 5).toString('latin1'), '%PDF-');
     assert.ok((await PDFDocument.load(bytes)).getPageCount() >= 1, 'o PDF abre e tem páginas');
   }
-  assert.ok(fetched.length > 0 && fetched.every(url => url === 'https://portal.example.test/fonts/NotoSans-Regular.ttf'), 'só a fonte do próprio portal é buscada');
+  assert.ok(fetched.length > 0 && fetched.every(url => url === 'https://portal.example.test/fonts/NotoSans-Regular.ttf'), 'só a fonte da origem configurada do portal é buscada');
   // Com a origem configurada, um Host forjado não muda de onde a fonte é buscada.
   globalThis.__proexReportTestOrigin = 'https://portal-oficial.example.test';
-  t.after(() => { delete globalThis.__proexReportTestOrigin; });
   assert.equal((await GET(new Request('https://forjado.example.test/api/export?kind=stock&format=pdf'))).status, 200);
   assert.equal(fetched.at(-1), 'https://portal-oficial.example.test/fonts/NotoSans-Regular.ttf');
+  // Sem origem configurada, só a bancada local usa a própria origem; outro Host recebe aviso, sem busca.
   delete globalThis.__proexReportTestOrigin;
+  const before = fetched.length, refused = await GET(new Request('https://forjado.example.test/api/export?kind=stock&format=pdf'));
+  assert.equal(refused.status, 503);
+  assert.match((await refused.json()).error, /Não foi possível preparar o PDF/);
+  assert.equal(fetched.length, before);
+  assert.equal((await GET(new Request('http://127.0.0.1:5173/api/export?kind=stock&format=pdf'))).status, 200);
+  assert.equal(fetched.at(-1), 'http://127.0.0.1:5173/fonts/NotoSans-Regular.ttf');
+  // Falha inesperada da biblioteca não aparece crua: vira aviso em português.
+  globalThis.fetch = async () => new Response(new Uint8Array([1, 2, 3]), { status: 200 });
+  const broken = await GET(new Request('http://127.0.0.1:5173/api/export?kind=stock&format=pdf'));
+  assert.equal(broken.status, 500);
+  assert.equal((await broken.json()).error, 'Não foi possível preparar o arquivo. Baixe a planilha ou tente novamente.');
+  globalThis.fetch = async url => { fetched.push(String(url)); return new Response(font, { status: 200 }); };
   // Outro projeto, formato inválido e falta de permissão continuam recusados nos formatos novos.
   for (const format of ['docx', 'pdf']) assert.equal((await GET(new Request(`https://portal.example.test/api/export?kind=stock&format=${format}&projectId=project-b`))).status, 403);
   assert.equal((await GET(new Request('https://portal.example.test/api/export?kind=stock&format=odt'))).status, 400);

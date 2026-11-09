@@ -15,6 +15,9 @@ export const FORMAT_META: Record<DocumentFormat, { name: string; extension: stri
   pdf: { name: 'PDF', extension: 'PDF', spoken: 'PDF' },
 };
 
+/** Texto visível do botão; o nome acessível começa por ele para o controle por voz (WCAG 2.5.3). */
+export const visibleName = (format: DocumentFormat) => format === 'pdf' ? 'PDF' : `${FORMAT_META[format].name} ${FORMAT_META[format].extension}`;
+
 /** Ícones genéricos, sem marca: folha verde com grade, folha azul com linhas e folha vermelha com faixa. */
 export function FormatIcon({ format, size = 22 }: { format: DocumentFormat; size?: number }) {
   const page = <path d="M5 2.75h9.2L19 7.55V20a1.25 1.25 0 0 1-1.25 1.25H5A1.25 1.25 0 0 1 3.75 20V4A1.25 1.25 0 0 1 5 2.75Z" className={styles.page} />;
@@ -82,7 +85,7 @@ export default function ExportFormats({ onExport, disabled, label = 'Baixar reco
     {showLabel && <p className={styles.caption}>{label}</p>}
     <div role="group" aria-label={label} className={`${styles.group}${tiles ? ` ${styles.tiles}` : ''}`}>
       {formats.map(format => <button key={format} type="button" className={styles.button} data-format={format} disabled={disabled || !!busy} aria-busy={busy === format || undefined}
-        onClick={() => void run(format)} aria-label={`${label} em ${FORMAT_META[format].extension}`} title={`${FORMAT_META[format].name} (${FORMAT_META[format].extension})`}>
+        onClick={() => void run(format)} aria-label={`${visibleName(format)} — ${label}`}>
         {busy === format ? <LoaderCircle size={20} className="p-spin" aria-hidden="true" /> : <FormatIcon format={format} />}
         <span className={styles.text}><span>{FORMAT_META[format].name}</span>{format !== 'pdf' && <small>{FORMAT_META[format].extension}</small>}</span>
       </button>)}

@@ -141,7 +141,7 @@ test('a restricted task target with canonical null identifiers still explains th
 test('PDF DOCX XLSX are primary formats and export a freshly authorized identical query with current-page metadata',async()=>{
  for(const format of ['PDF','DOCX','XLSX']){const h=harness();try{
   await h.ready();assert.doesNotMatch(h.body(),/Baixar para Obsidian/);assert.match(h.body(),/Outras opções/);const path=h.last().url;
-  h.click('Baixar resumo de Meu trabalho em '+format);assert.equal(h.requests.length,2);assert.equal(h.last().url,path);assert.equal(h.downloads.length,0);
+  h.click({PDF:'PDF',DOCX:'Documento DOCX',XLSX:'Planilha XLSX'}[format]+' — Baixar resumo de Meu trabalho');assert.equal(h.requests.length,2);assert.equal(h.last().url,path);assert.equal(h.downloads.length,0);
   const fresh=response({tasks:{...response().tasks,items:[task({title:'Título da consulta nova'})]}});h.reply(h.last(),fresh);await tick();h.render();
   assert.equal(h.artifacts.length,1);assert.equal(h.artifacts[0].format,format.toLowerCase());assert.equal(h.last().url,path);assert.equal(h.requests.length,3);assert.equal(h.downloads.length,0);
   h.reply(h.last(),{...fresh,asOf:'2026-10-31T12:00:01Z'});await tick();h.render();
@@ -162,18 +162,18 @@ test('Vault downloads are refused on final revocation and account changes while 
 });
 
 test('revocation on either fresh export read clears old names and never downloads a previously loaded list',async()=>{
- for(const point of ['before','after']){const h=harness();try{await h.ready();h.click('Baixar resumo de Meu trabalho em PDF');if(point==='after'){h.reply(h.last(),response());await tick();h.render();assert.equal(h.artifacts.length,1);}h.reply(h.last(),{},403);await tick();h.render();assert.equal(h.downloads.length,0);assert.doesNotMatch(h.body(),/Pessoa A|Recontar material A/);assert.match(h.body(),/Seu acesso mudou/);}finally{h.dispose();}}
+ for(const point of ['before','after']){const h=harness();try{await h.ready();h.click('PDF — Baixar resumo de Meu trabalho');if(point==='after'){h.reply(h.last(),response());await tick();h.render();assert.equal(h.artifacts.length,1);}h.reply(h.last(),{},403);await tick();h.render();assert.equal(h.downloads.length,0);assert.doesNotMatch(h.body(),/Pessoa A|Recontar material A/);assert.match(h.body(),/Seu acesso mudou/);}finally{h.dispose();}}
 });
 
 test('account context or filter changes before fresh reply or during document rendering stop the old export',async()=>{
- for(const point of ['read','artifact'])for(const change of ['account','filter','unmount']){const h=harness();try{await h.ready();const release=h.blockArtifact();h.click('Baixar resumo de Meu trabalho em PDF');const request=h.last();if(point==='artifact'){h.reply(request,response());await tick();h.render();assert.equal(h.artifacts.length,1);}
+ for(const point of ['read','artifact'])for(const change of ['account','filter','unmount']){const h=harness();try{await h.ready();const release=h.blockArtifact();h.click('PDF — Baixar resumo de Meu trabalho');const request=h.last();if(point==='artifact'){h.reply(request,response());await tick();h.render();assert.equal(h.artifacts.length,1);}
   if(change==='account')h.render({userId:'user-b',organizationId:'org-b',projectId:'project-b'},false);else if(change==='filter'){h.changeStatus('completed');h.render();}else h.dispose();
   if(point==='read')h.reply(request,response());release();await tick();h.render();assert.equal(h.downloads.length,0);assert.equal(h.toasts.some(([kind])=>kind==='success'),false);
  }finally{h.dispose();}}
 });
 
 test('a privacy change or wrong viewer during final export validation withholds the file',async()=>{
- for(const change of ['restricted','viewer']){const h=harness();try{await h.ready();h.click('Baixar resumo de Meu trabalho em XLSX');h.reply(h.last(),response());await tick();h.render();
+ for(const change of ['restricted','viewer']){const h=harness();try{await h.ready();h.click('Planilha XLSX — Baixar resumo de Meu trabalho');h.reply(h.last(),response());await tick();h.render();
   const final=change==='viewer'?response({viewerId:'user-b'}):response({responsibilities:{...response().responsibilities,items:[responsibility({target:target({canOpen:false,name:'Hidden entity',href:'/?module=materials&project=secret'})})]}});
   h.reply(h.last(),final);await tick();h.render();assert.equal(h.downloads.length,0);assert.ok(h.toasts.some(([kind])=>kind==='error'));
  }finally{h.dispose();}}

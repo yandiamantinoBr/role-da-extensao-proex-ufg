@@ -1185,17 +1185,17 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
             </div>
           </details>
           <details id="settings-public-signup" className={settingsStyles.group}>
-            <summary><strong>Cadastro público por celular</strong><small>Prontidão do envio de e-mail, aviso do cadastro e abertura explícita.</small></summary>
+            <summary><strong>Cadastro público por celular</strong><small>Confira se o e-mail funciona, ajuste o aviso e abra ou feche o cadastro.</small></summary>
             <div className={settingsStyles.body}><PublicParticipantsSettingsPanel canManage={canGlobal('organization.manage')} onChanged={refreshModules}/></div>
           </details>
         </SettingsSection>
-        <SettingsSection show={canGlobal('organization.manage')} title="Dados e cópias" description="Planilha conectada, fotos no Drive, exportação portátil e backup.">
+        <SettingsSection show={canGlobal('organization.manage')} title="Dados e cópias" description="Planilha conectada, fotos no Drive e cópias de segurança.">
           <details id="settings-spreadsheet" className={settingsStyles.group}>
-            <summary><strong>Planilha Google</strong><small>Conexão, abas, atalhos, fotos no Drive e exportação portátil.</small></summary>
+            <summary><strong>Planilha Google</strong><small>Conexão com a planilha, atalhos, fotos no Drive e cópia dos dados para levar a outro lugar.</small></summary>
             <div className={settingsStyles.body}><SyncSettingsPanel key={string(user.userId)} userId={string(user.userId)} includeBackups={false} embedded/></div>
           </details>
           <details id="settings-backup" className={settingsStyles.group}>
-            <summary><strong>Backup e recuperação</strong><small>Cópias completas cifradas, conferência da recuperação e rotina externa.</small></summary>
+            <summary><strong>Backup e recuperação</strong><small>Cópias protegidas de todos os dados, teste de recuperação e cópia automática.</small></summary>
             <div className={settingsStyles.body}><CompleteBackupPanel/><BackupAutomationPanel/></div>
           </details>
         </SettingsSection>

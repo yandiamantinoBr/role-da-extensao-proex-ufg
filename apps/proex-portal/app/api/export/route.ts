@@ -26,16 +26,29 @@ const VALUES: Record<string, Record<string, string>> = {
   modalidade: { physical: 'Presencial', dice: 'Dado', wheel: 'Roleta' },
   categoria: { gift: 'Brinde', equipment: 'Equipamento', distribution: 'Distribuição', consumption: 'Consumo' },
   condicao: { active: 'Ativo', maintenance: 'Em manutenção', inactive: 'Inativo' },
+  identificacao: { account: 'Conta', ticket: 'Ficha presencial' },
+  resultado: { brinde: 'Brinde', super: 'Prêmio especial', retry: 'Nova tentativa' },
+  estado: { ready: 'Pronta', done: 'Concluída', pending: 'Pendente', physical_pending: 'Aguardando atendimento', retry_ready: 'Nova tentativa liberada', reserved: 'Reservado', delivered: 'Entregue', cancelled: 'Cancelado', out: 'Retirado', returned: 'Devolvido' },
 };
+const FILE_SLUG: Record<string, string> = { participations: 'participacao', stock: 'materiais', loans: 'emprestimos' };
+const FONT_LIMIT = 2 * 1024 * 1024;
+/** Mensagens que podem ir à tela; qualquer outra falha vira um aviso genérico em português. */
+const KNOWN_LIMITS = /2\.000 linhas|muito extenso|páginas/;
 const NUMERIC = new Set(['quantidade', 'saldo_fisico', 'reservado', 'disponivel']);
 const MIME: Record<Format, string> = { csv: 'text/csv; charset=utf-8', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', pdf: 'application/pdf' };
 
 async function fontFor(request: Request): Promise<Uint8Array> {
-  // A fonte vem da origem configurada do portal; o Host enviado pelo cliente só vale sem essa configuração.
-  const response = await fetch(new URL('/fonts/NotoSans-Regular.ttf', portalOrigin() ?? request.url), { redirect: 'error' });
-  if (!response.ok) throw new HttpError(503, 'Não foi possível preparar o PDF agora. Tente novamente ou baixe a planilha.', 'pdf_font_unavailable');
+  // A fonte vem da origem configurada do portal. Sem ela, só a bancada local (loopback) usa a própria origem:
+  // um cabeçalho Host forjado nunca escolhe para onde o servidor faz a busca.
+  const local = new URL(request.url), loopback = local.hostname === '127.0.0.1' || local.hostname === 'localhost';
+  const origin = portalOrigin() ?? (loopback ? local.origin : null);
+  const unavailable = () => new HttpError(503, 'Não foi possível preparar o PDF agora. Tente novamente ou baixe a planilha.', 'pdf_font_unavailable');
+  if (!origin) throw unavailable();
+  let response: Response;
+  try { response = await fetch(new URL('/fonts/NotoSans-Regular.ttf', origin), { redirect: 'error' }); } catch { throw unavailable(); }
+  if (!response.ok || Number(response.headers.get('Content-Length') || 0) > FONT_LIMIT) throw unavailable();
   const bytes = new Uint8Array(await response.arrayBuffer());
-  if (bytes.length > 2 * 1024 * 1024) throw new HttpError(503, 'Não foi possível preparar o PDF agora.', 'pdf_font_unavailable');
+  if (bytes.length > FONT_LIMIT) throw unavailable();
   return bytes;
 }
 
@@ -128,13 +141,16 @@ export async function GET(request: Request): Promise<Response> {
           : await (await import('@/components/portal/report-pdf')).toPdf(TITLES[kind], columns, rows, readable, info, { fontBytes: await fontFor(request), brandBytes: {}, presentation: { layout: 'table', compactRows: true, recordsLabel: 'Registros', ...(grouped ? { columnGroups: groups } : {}) } });
       } catch (cause) {
         if (cause instanceof HttpError) throw cause;
-        throw new HttpError(413, cause instanceof Error ? cause.message : 'O documento ficou muito extenso. Use a planilha.', 'export_too_large');
+        const message = cause instanceof Error ? cause.message : '';
+        if (/2\.000 linhas/.test(message)) throw new HttpError(413, 'Este recorte tem mais de 2.000 linhas. Para documento ou PDF, escolha um projeto; o recorte completo sai na planilha (XLSX).', 'export_too_large');
+        if (KNOWN_LIMITS.test(message)) throw new HttpError(413, message, 'export_too_large');
+        throw new HttpError(500, 'Não foi possível preparar o arquivo. Baixe a planilha ou tente novamente.', 'export_failed');
       }
     }
     return new Response(content, {
       headers: {
         'Content-Type': MIME[format],
-        'Content-Disposition': `attachment; filename="proex-${kind}-${new Date().toISOString().slice(0, 10)}.${format}"`,
+        'Content-Disposition': `attachment; filename="proex-${FILE_SLUG[kind]}-${new Date().toISOString().slice(0, 10)}.${format}"`,
         'Cache-Control': 'private, no-store',
         'X-Content-Type-Options': 'nosniff',
       },

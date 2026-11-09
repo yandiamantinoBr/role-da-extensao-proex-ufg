@@ -26,6 +26,7 @@ function MaterialThumb({ url }: { url?: string | null }) {
   const [failed, setFailed] = useState<string | null>(null);
   const showPhoto = Boolean(url) && failed !== url;
   return <span className={`${styles.thumb} ${showPhoto ? '' : styles.thumbEmpty}`} aria-hidden="true">
+    {/* eslint-disable-next-line @next/next/no-img-element -- foto privada da API de anexos; o otimizador de imagens não recebe a sessão. */}
     {showPhoto ? <img src={url!} alt="" width={48} height={48} loading="lazy" decoding="async" onError={() => setFailed(url!)}/> : <Package size={20}/>}
   </span>;
 }

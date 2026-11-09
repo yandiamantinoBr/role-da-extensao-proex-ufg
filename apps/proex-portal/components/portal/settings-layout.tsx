@@ -8,11 +8,12 @@ export type SettingsIndexItem = { id: string; label: string };
 export function openSettingsGroup(id: string) {
   const element = document.getElementById(id);
   if (!element) return;
-  if (element instanceof HTMLDetailsElement) element.open = true;
-  element.querySelector('summary')?.focus({ preventScroll: true });
-  // Espera o grupo aberto desenhar o conteúdo: antes disso a página pode não ter altura para chegar até ele.
   const behavior: ScrollBehavior = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
-  window.requestAnimationFrame(() => window.requestAnimationFrame(() => element.scrollIntoView({ block: 'start', behavior })));
+  // Espera o grupo aberto desenhar o conteúdo: antes disso a página pode não ter altura para chegar até ele.
+  const reveal = () => window.setTimeout(() => element.scrollIntoView({ block: 'start', behavior }), 60);
+  if (element instanceof HTMLDetailsElement && !element.open) { element.addEventListener('toggle', reveal, { once: true }); element.open = true; }
+  else reveal();
+  element.querySelector('summary')?.focus({ preventScroll: true });
 }
 
 /** Índice curto no topo de Configurações, com os grupos que este perfil pode usar. */

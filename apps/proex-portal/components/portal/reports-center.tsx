@@ -548,7 +548,7 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
     ['Cobertura', truncated ? 'Consulta parcial por limite de linhas ou tamanho. Refine os filtros antes de considerar o relatório completo.' : 'Registros do recorte retornados pela consulta.']);
 
   async function exportDocument(format: DocumentFormat) {
-    if (exporting || loading || !chosen.length || !sorted.length) return;
+    if (exporting || loading || !chosen.length || !sorted.length) throw new ExportHandledError();
     setExporting(format); setExportError(null);
     try {
       const blob = await reportDocument(format, config.label, exportColumns, sorted, exportValue, info, reportProjectName ? { projectName: reportProjectName, projectBrand: reportBrand } : undefined);
@@ -675,7 +675,7 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
       </div>
     </>}
     <details className={styles.exportOptions}><summary>Exportar linhas deste recorte</summary>
-      <ExportFormats className={styles.exportBar} label="Exportar relatório" disabled={loading || !chosen.length || !sorted.length} onExport={format => format === 'xlsx' ? download(`${fileBase}.xlsx`, toXlsx(config.label, exportColumns, sorted, exportValue, info)) : exportDocument(format)}>
+      <ExportFormats key={queryKey} className={styles.exportBar} label="Exportar relatório" disabled={loading || !chosen.length || !sorted.length} onExport={format => format === 'xlsx' ? download(`${fileBase}.xlsx`, toXlsx(config.label, exportColumns, sorted, exportValue, info)) : exportDocument(format)}>
         <button type="button" className="p-button p-button-subtle" disabled={loading || !chosen.length || !sorted.length || !!exporting} onClick={() => download(`${fileBase}.json`, toJson({ relatorio: config.label, filtros: Object.fromEntries(info) }, exportColumns, sorted, exportValue))}><FileJson size={16} />JSON</button>
         <button type="button" className="p-button p-button-subtle" disabled={loading || !chosen.length || !sorted.length || !!exporting} onClick={print}><Printer size={16} />Imprimir</button>
       </ExportFormats>

@@ -88,7 +88,11 @@ test('the project and unit from the route scope the calendar query and ICS, and 
 test('opening and closing a day never scrolls the page or moves focus away from the day (relato de 09/11/2026)', async () => {
   const h = harness(), calls = [];
   try {
-    await ready(h);
+    // Um registro sintético no primeiro dia do mês, para o atalho ter o que mostrar.
+    const from = new URL(h.requests[0].url, 'https://example.test').searchParams.get('from');
+    const next = new Date(`${from}T12:00:00Z`); next.setUTCDate(next.getUTCDate() + 1);
+    h.respond(h.requests[0], { entries: [{ uid: 'entry-a', category: 'projects', title: 'Atividade sintética', startsAt: from, endsAt: next.toISOString().slice(0, 10), allDay: true, projectName: 'Projeto sintético A', status: 'CONFIRMED' }], feeds: [], availableCategories: ['projects'] });
+    await tick(); h.render();
     const dayButton = () => h.all().find(node => node.type === 'button' && node.props?.['aria-pressed'] !== undefined && node.props?.['aria-controls'] === 'calendar-day-entries');
     const heading = h.all().find(node => node.props?.id === 'calendar-day-heading');
     const target = label => ({ focus: () => calls.push(`${label}:focus`), scrollIntoView: () => calls.push(`${label}:scroll`) });
@@ -104,7 +108,7 @@ test('opening and closing a day never scrolls the page or moves focus away from 
     assert.deepEqual(calls, [], 'abrir ou fechar um dia não pode rolar a página nem tirar o foco do dia');
     // No celular, a lista fica abaixo do mês: o atalho explícito leva até ela só quando a pessoa pede.
     dayButton().props.onClick({ currentTarget: target('day') }); h.render();
-    const jump = h.all().find(node => node.type === 'button' && /^Ver \d+ compromissos? do dia \d+$/.test(text(node).trim()));
+    const jump = h.all().find(node => node.type === 'button' && /^Ver \d+ registros? do dia \d+$/.test(text(node).trim()));
     assert.ok(jump, 'atalho para a lista do dia');
     jump.props.onClick(); h.render();
     assert.deepEqual(calls, ['list:focus', 'list:scroll']);
