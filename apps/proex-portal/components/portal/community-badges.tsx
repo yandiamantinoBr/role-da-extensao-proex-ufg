@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { CalendarClock, LoaderCircle, PartyPopper, Pause, Play, Power, Sparkles } from 'lucide-react';
+import { CalendarClock, CheckCheck, Heart, Lightbulb, LoaderCircle, Package, PartyPopper, Pause, Play, Power, Sparkles, type LucideIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import DateField from './date-field';
 import { civilDay, communityGet, communityPost, errorText } from './community-api';
@@ -11,7 +11,7 @@ type State = { enabled: boolean; paused: boolean; pausedUntil: string | null; ve
 const API = '/api/community/badges';
 /** Provisional marks: plain shapes, clearly labelled, until the communication team delivers the art. */
 const SHAPE: Record<BadgeView['id'], string> = { closer: 'circle', helpful: 'hexagon', thanks: 'heart', field: 'square' };
-const INITIAL: Record<BadgeView['id'], string> = { closer: 'F', helpful: 'R', thanks: 'E', field: 'M' };
+const ICON: Record<BadgeView['id'], LucideIcon> = { closer: CheckCheck, helpful: Lightbulb, thanks: Heart, field: Package };
 
 export function CommunityBadges() {
   const [state, setState] = useState<State | null>(null), [error, setError] = useState(''), [revision, setRevision] = useState(0), [busy, setBusy] = useState(false), [pauseUntil, setPauseUntil] = useState('');
@@ -40,11 +40,11 @@ export function CommunityBadges() {
       <div className={styles.cardHead}><div><h2 id="badges-level">Seus selos</h2><p>Só você vê. Não há ranking nem comparação com outras pessoas.</p></div></div>
       {state.paused ? <p className={styles.callout}><Pause size={16} aria-hidden="true"/><span>Selos em pausa até {civilDay(state.pausedUntil)}. Nada é contado nesse período.</span></p>
         : <div className={styles.level}><span className={styles.levelNumber}>Nível {state.level}</span><div className={styles.progress} role="progressbar" aria-label="Progresso até o próximo nível" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress * 100)}><span style={{ width: `${Math.round(progress * 100)}%` }}/></div><small>{state.nextLevelAt ? `${state.total} de ${state.nextLevelAt} selos para o próximo nível` : 'Nível máximo'}</small></div>}
-      <ul className={styles.badgeGrid}>{(state.badges ?? []).map(badge => <li key={badge.id} data-earned={badge.thisWeek || undefined}>
-        <span className={styles.mark} data-shape={SHAPE[badge.id]} aria-hidden="true"><span>{INITIAL[badge.id]}</span></span>
-        <span className={styles.badgeText}><strong>{badge.label}</strong><small>{badge.hint}</small><small className={styles.badgeStatus}>{badge.thisWeek ? 'Conquistado nesta semana' : 'Ainda não nesta semana'} · {badge.times} {badge.times === 1 ? 'vez' : 'vezes'} no total</small></span>
-      </li>)}</ul>
-      <p className={styles.help}><Sparkles size={14} aria-hidden="true"/> Arte provisória: os selos definitivos virão da equipe de comunicação.</p>
+      <ul className={styles.badgeGrid}>{(state.badges ?? []).map(badge => { const Icon = ICON[badge.id]; return <li key={badge.id} data-earned={badge.thisWeek || undefined}>
+        <span className={styles.mark} data-shape={SHAPE[badge.id]} aria-hidden="true"><Icon size={22}/></span>
+        <span className={styles.badgeText}><strong>{badge.label}</strong><small>{badge.hint}</small><small className={styles.badgeStatus}>{badge.thisWeek ? 'Conquistado nesta semana' : 'Ainda não nesta semana'}</small><small>{badge.times} {badge.times === 1 ? 'vez' : 'vezes'} no total</small></span>
+      </li>; })}</ul>
+      <p className={`${styles.help} ${styles.badgeHelp}`}><Sparkles size={14} aria-hidden="true"/>Arte provisória: os selos definitivos virão da equipe de comunicação.</p>
     </section>
     <section className={styles.card} aria-labelledby="badges-rules">
       <div className={styles.cardHead}><h2 id="badges-rules">Como funciona</h2></div>

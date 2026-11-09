@@ -49,3 +49,26 @@ Riscos que o código não elimina (revisão independente de 09/11):
 ## Testes
 
 `tests/community.test.mjs` cobre: formato do código; nenhuma linha nova da ouvidoria contém identificador, e-mail ou nome de quem escreveu; ausência de auditoria, chave de repetição e contador por pessoa; colunas proibidas; acompanhamento, repetição idempotente e código reutilizado; admissão só de vínculo interno, inclusive revogação dentro do lote; caixa só do responsável geral; resposta auditada sem dados de quem relatou; relato encerrado; limites coletivos; rota com CSRF, cabeçalhos privados e sessão sem renovação; widgets privados, limites e validação; anonimização; retorno de evento roteado à gestão certa e resposta visível a quem enviou.
+
+# Comunidade · fase 2 (migração 0037)
+
+## Recados
+
+- Mensagem direta entre pessoas ativas que compartilham uma organização (`lib/community/messages.ts`, `/api/community/messages`). O responsável geral pode escrever a qualquer pessoa, mas **não lê** recados alheios: não existe rota de leitura para a gestão.
+- A lista de pessoas mostra só nomes, nunca e-mails. Até 1.000 caracteres, 60 recados por dia por pessoa.
+- Cada lado pode ocultar a própria cópia. Quem recebe pode bloquear quem envia; recados de bloqueados somem da caixa e não contam como não lidos.
+- O texto não entra na impressão de idempotência (`mutation_keys`). Sem linha de auditoria. A anonimização apaga recados enviados e recebidos, bloqueios, preferências e selos.
+- Não lidos aparecem na aba "Recados". Ainda não entram no sino nem geram e-mail: a fila do MailApp é presa às demandas (`followup_email_queue.task_id NOT NULL`, com consentimento e cotas próprias); estender exige revisão do fluxo de avisos. Fica como próximo passo.
+
+## Selos (arte provisória)
+
+- Calculados a partir do que já existe, sem contar volume (`lib/community/badges.ts`): "Fechou o que abriu" (demanda atribuída concluída), "Retorno que ajudou" (sugestão ou problema resolvido), "Reconheceu alguém" (elogio enviado) e "Mão na massa" (movimentação de material registrada).
+- No máximo um de cada por semana (semana de segunda a domingo, Brasília). Só contam ações em dias úteis, das 7h às 20h. O nível sobe a cada 3 selos (máximo 10). Uma leitura repetida não grava nada; só o selo recém-conquistado é registrado.
+- Só a própria pessoa vê. Pode desligar (nada é calculado) ou pausar até uma data nos próximos 120 dias.
+- Marcadores provisórios: formas simples com a inicial e o aviso "Arte provisória". Trocar pelas peças da comunicação quando chegarem.
+
+## Testes da fase 2
+
+`tests/community-phase2.test.mjs`: recados só entre quem compartilha a organização, só nomes, leitura só por quem recebeu, ocultar por pessoa, bloqueio, revogação dentro do lote, repetição idempotente, teto diário; selos só em horário útil de dias úteis, um por tipo por semana, nível, leitura repetida sem gravação, desligar e pausar sem cálculo, ninguém vê selos de outra pessoa, anonimização.
+
+O smoke do Worker reabre o D1 local depois de migração com `SELECT` solto (guarda da 0028), que travava `DROP TABLE` no Miniflare.

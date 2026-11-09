@@ -33,10 +33,10 @@ export function CommunityMessages({ onUnreadChange }: { onUnreadChange?(count: n
   if (!people || !list) return <p role="status" className={styles.help}>Abrindo recados…</p>;
   const messages = box === 'inbox' ? list.inbox : list.sent;
   const blocked = people.organizations.flatMap(org => org.people).filter((person, index, all) => people.blocked.includes(person.id) && all.findIndex(other => other.id === person.id) === index);
-  return <div className={styles.split}>
+  return <div className={`${styles.split} ${styles.messagesSplit}`}>
     <NewMessage key={replyTo?.nonce ?? 0} organizations={people.organizations} blocked={people.blocked} initial={replyTo} onSent={refresh}/>
     <section className={styles.card} aria-labelledby="community-messages-title">
-      <div className={styles.cardHead}><div><h2 id="community-messages-title">Seus recados</h2><p>Só você e a outra pessoa leem. A gestão não tem acesso.</p></div><button type="button" className="p-icon-button" aria-label="Atualizar recados" onClick={refresh}><RefreshCw size={18}/></button></div>
+      <div className={styles.cardHead}><div><h2 id="community-messages-title">Seus recados</h2><p>Só você e a outra pessoa leem. A gestão não vê seus recados pelo portal.</p></div><button type="button" className="p-icon-button" aria-label="Atualizar recados" onClick={refresh}><RefreshCw size={18}/></button></div>
       <div className={styles.segmented} role="group" aria-label="Caixa de recados">
         <button type="button" aria-pressed={box === 'inbox'} onClick={() => setBox('inbox')}><Mail size={16} aria-hidden="true"/>Recebidos{list.unread > 0 && <span className={styles.count}>{list.unread}</span>}</button>
         <button type="button" aria-pressed={box === 'sent'} onClick={() => setBox('sent')}><Send size={16} aria-hidden="true"/>Enviados</button>
@@ -50,8 +50,10 @@ export function CommunityMessages({ onUnreadChange }: { onUnreadChange?(count: n
             <div className={styles.manageRow}>
               {incoming && <button type="button" className="p-button p-button-subtle" onClick={() => { setReplyTo({ organizationId: message.organizationId, recipientId: message.senderId, nonce: Date.now() }); if (unread) void act({ action: 'read', id: message.id }); }}><Reply size={16}/>Responder</button>}
               {unread && <button type="button" className={styles.textButton} onClick={() => void act({ action: 'read', id: message.id })}><MailOpen size={15} aria-hidden="true"/>Marcar como lido</button>}
-              <button type="button" className={styles.textButton} onClick={() => void act({ action: 'hide', id: message.id }, 'Recado ocultado')}><EyeOff size={15} aria-hidden="true"/>Ocultar</button>
-              {incoming && <button type="button" className={styles.textButton} onClick={() => void act({ action: 'block', userId: message.senderId }, `${message.senderName} não pode mais mandar recados para você`)}><Ban size={15} aria-hidden="true"/>Bloquear</button>}
+              <span className={styles.quietActions}>
+                <button type="button" className={styles.iconAction} aria-label="Ocultar este recado" title="Ocultar" onClick={() => void act({ action: 'hide', id: message.id }, 'Recado ocultado')}><EyeOff size={17}/></button>
+                {incoming && <button type="button" className={styles.iconAction} aria-label={`Bloquear ${message.senderName}`} title="Bloquear quem enviou" onClick={() => void act({ action: 'block', userId: message.senderId }, `${message.senderName} não pode mais mandar recados para você`)}><Ban size={17}/></button>}
+              </span>
             </div>
           </li>;
         })}</ul>}

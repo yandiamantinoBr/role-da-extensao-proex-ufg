@@ -108,7 +108,7 @@
 @container community (max-width:560px){.tabs button[data-first-management]{margin-left:0}.tabs button[data-first-management]::before{display:none}.tabs button[data-management]:not([aria-selected=true]){border:1px solid var(--line)}.filters{display:grid;grid-template-columns:1fr 1fr;overflow:visible}.filters button{justify-content:center}.segmented{display:grid;grid-template-columns:1fr 1fr;justify-self:stretch}.segmented button{justify-content:center;padding:0 8px;font-size:13px}}
 .status[data-status=reviewing]{border-color:color-mix(in srgb,var(--warning-ink) 45%,var(--surface));color:var(--warning-ink)}
 .checkLine input{width:22px;height:22px;color-scheme:light dark}
-.count{display:inline-grid;place-items:center;min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:var(--danger);color:#fff;font-size:11px;font-weight:700;line-height:1}
+.count{display:inline-grid;place-items:center;min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:var(--danger);color:var(--surface);font-size:11px;font-weight:700;line-height:1}
 .tabs button[aria-selected=true] .count{background:var(--surface);color:var(--brand-ink)}
 .person{font-size:13px;color:var(--ink)}
 .entry[data-unread]{padding-left:12px;border-left:3px solid var(--info-ink)}
@@ -118,7 +118,7 @@
 .celebrate svg{color:var(--orange-ink,#8a4b00);flex-shrink:0}
 .celebrate>span{flex:1 1 240px}
 .level{display:grid;gap:6px}
-.levelNumber{font-family:var(--font-display);font-size:26px;font-weight:700;letter-spacing:-.02em;color:var(--brand-ink)}
+.levelNumber{font-family:var(--font-display);font-size:18px;font-weight:700;letter-spacing:-.02em;color:var(--brand-ink)}
 .progress{height:10px;border-radius:999px;background:var(--surface-soft);overflow:hidden}
 .progress>span{display:block;height:100%;border-radius:999px;background:var(--brand-ink)}
 .level small{color:var(--text-secondary);font-size:12px}
@@ -136,6 +136,15 @@
 .badgeText small{color:var(--text-secondary);font-size:12px;line-height:1.45}
 .badgeStatus{font-weight:650}
 .badgeGrid li[data-earned] .badgeStatus{color:var(--success-ink)}
-.rules{display:grid;gap:8px;margin:0;padding:0 0 0 18px;color:var(--text-secondary);font-size:13px;line-height:1.55}
+.rules{display:grid;gap:8px;margin:0;padding:0 0 0 20px;list-style:disc;color:var(--text-secondary);font-size:13px;line-height:1.55}
 @container community (max-width:760px){.badgesLayout{grid-template-columns:minmax(0,1fr)}}
 @container community (max-width:560px){.badgeGrid{grid-template-columns:minmax(0,1fr)}}
+.badgeHelp{display:flex;align-items:center;gap:6px}
+.entry .manageRow{gap:4px 10px}
+.quietActions{display:inline-flex;align-items:center;gap:2px;margin-left:auto}
+.iconAction{display:inline-grid;place-items:center;width:44px;height:44px;border:0;border-radius:10px;background:none;color:var(--text-secondary);cursor:pointer}
+.iconAction:hover{background:var(--surface-soft);color:var(--brand-ink)}
+.iconAction:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+.entry .manageRow{align-items:center}
+@container community (max-width:760px){.messagesSplit>section{order:-1}}
+@container community (max-width:560px){.tabs button{justify-content:center!important;text-align:center}}
