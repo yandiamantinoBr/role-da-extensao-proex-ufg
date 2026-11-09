@@ -18,7 +18,7 @@
 .calendar .grid { width: 100%; min-width: 0; border-collapse: collapse; table-layout: fixed; margin: 0; background: transparent; }
 .calendar .weekdays, .calendar .week { background: transparent; border: 0; }
 .calendar .weekday, .calendar .day { padding: 0; border: 0; text-align: center; white-space: normal; font-size: 13px; }
-.calendar .weekday { height: 30px; color: var(--text-secondary); font-size: 11px; font-weight: 600; text-transform: capitalize; background: transparent; }
+.calendar .weekday { height: 30px; color: var(--text-secondary); font-size: 12px; font-weight: 600; text-transform: capitalize; background: transparent; }
 .calendar .dayButton { display: flex; align-items: center; justify-content: center; width: 100%; min-width: 0; height: 44px; padding: 0; border: 1px solid transparent; border-radius: 9px; background: transparent; color: var(--ink); cursor: pointer; font: inherit; }
 .calendar .dayButton:hover { background: var(--surface-soft); }
 .calendar .today:not(.selected) .dayButton { border-color: var(--brand-ink); color: var(--brand-ink); font-weight: 700; }
@@ -29,5 +29,5 @@
 .actions { display: flex; justify-content: space-between; border-top: 1px solid var(--line); margin-top: 6px; }
 .actions button { min-height: 44px; min-width: 64px; border: 0; padding: 8px; background: transparent; color: var(--brand-ink); font-weight: 600; border-radius: 8px; cursor: pointer; }
 .actions button:hover { background: var(--surface-soft); }
-.hint { display: block; color: var(--text-secondary); text-align: center; font-size: 11px; }
+.hint { display: block; color: var(--text-secondary); text-align: center; font-size: 12px; }
 .error { display: block; margin-top: 5px; color: var(--danger); font-size: 12px; line-height: 1.5; }

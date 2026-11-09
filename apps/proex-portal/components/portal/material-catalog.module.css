@@ -128,4 +128,26 @@
     min-height: 44px;
     justify-content: space-between;
   }
+
+  /* Compacto (09/11): números numa linha só e "Detalhes" ao lado, sem caixas de fundo. */
+  .rows { gap: 10px; }
+  .row { grid-template-columns: repeat(3, minmax(0, 1fr)) auto; align-items: end; gap: 8px 10px; padding: 12px 14px; box-shadow: var(--shadow-card); }
+  .catalog .row .metric { padding: 0; background: transparent; }
+  .metric .number { display: inline; margin: 0 4px 0 0; font-size: 17px; font-family: var(--font-display); }
+  .metric .unit { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .actions { grid-column: auto; }
+  .actions > button { width: auto; min-width: 44px; padding-inline: 12px; }
+  .row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(88px, 1.2fr) auto; align-items: end; }
+  .identity { align-self: start; }
+  .metric .unit { display: none; }
+  .labelUnit { font-weight: 400; }
+  .catalog .row small { overflow-wrap: normal; word-break: keep-all; hyphens: none; }
+  .actions { align-self: center; }
+  .actions > button { width: 44px; min-width: 44px; padding: 0; font-size: 0; gap: 0; justify-content: center; }
+  .actions > button > svg { width: 18px; height: 18px; }
+  .metricLabel { overflow-wrap: normal; word-break: keep-all; hyphens: none; }
 }
+.labelUnit { display: none; }
+@container material-catalog (max-width: 38rem) { .labelUnit { display: inline; } }
+.catalog .mobileNote { display: none; }
+@container material-catalog (max-width: 38rem) { .catalog .row .mobileNote { display: inline-flex; width: fit-content; margin-top: 4px; } .catalog .row .desktopNote { display: none; } }

@@ -51,6 +51,7 @@ export function DesktopSidebar({ modules, active, onNavigate, pinned, collapsed,
     </div>
     </aside>;
 }
+const MOBILE_FIELD_MODULES: ModuleId[] = ['materials', 'events', 'demands', 'calendar'];
 export function MobileNavigation({ modules, active, onNavigate, pinned, role, onTogglePin }: Props & {
     onTogglePin: (id: ModuleId) => void;
 }) {
@@ -59,9 +60,11 @@ export function MobileNavigation({ modules, active, onNavigate, pinned, role, on
     const navigation = useRef<HTMLElement>(null);
     const allowed = modules.map(module => module.id);
     // The bottom bar moves only when the person changes pins or their access changes.
-    const candidates = [...pinned, ...recommendedModules(role, allowed)];
-    const primary = [...new Set(candidates)].filter(id => id !== 'overview' && id !== 'profile' && allowed.includes(id)).slice(0, 2);
-    const primaryIds: ModuleId[] = ['overview', ...primary, 'profile'].filter((id): id is ModuleId => allowed.includes(id as ModuleId));
+    // Premissa (09/11/2026, CONPEEX): depois dos fixados, os módulos de uso no evento; depois os da função.
+    const candidates = [...pinned, ...MOBILE_FIELD_MODULES, ...recommendedModules(role, allowed)];
+    // Conta fica no avatar do topo; a barra guarda só Início, três atalhos de trabalho e Mais.
+    const primary = [...new Set(candidates)].filter(id => id !== 'overview' && id !== 'profile' && allowed.includes(id)).slice(0, 3);
+    const primaryIds: ModuleId[] = ['overview', ...primary].filter((id): id is ModuleId => allowed.includes(id as ModuleId));
     const items = primaryIds.map(id => modules.find(module => module.id === id)).filter((module): module is PortalModule => Boolean(module));
     const close = useCallback(() => {
         setOpen(false);

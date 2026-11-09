@@ -17,8 +17,8 @@ export function TaskTriageMatrix({tasks}:{tasks:Task[]}) {
  const pending=tasks.filter(task=>task.status!=='completed'&&task.status!=='cancelled');
  if(!pending.length)return null;
  const without=pending.filter(task=>task.importance==null).length;
- return <details className="rounded-xl border border-[var(--line)] p-3">
-  <summary className="min-h-11 cursor-pointer font-semibold">Matriz de urgência e importância</summary>
+ return <details className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3 open:pb-3">
+  <summary className="min-h-11 cursor-pointer py-2.5 font-semibold text-[var(--brand-ink)]">Matriz de urgência e importância</summary>
   <p className="mb-2 text-sm text-[var(--text-secondary)]">{pending.length} demandas pendentes nesta página. Sem importância definida: {without}.</p>
   <table className="w-full table-fixed border-collapse text-center text-xs">
    <caption className="sr-only">Contagem por urgência e importância na página atual</caption>

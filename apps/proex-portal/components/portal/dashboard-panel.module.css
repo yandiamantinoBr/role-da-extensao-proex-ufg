@@ -96,19 +96,36 @@
   flex-shrink: 0;
 }
 
+/* Duas cores: a parte roxa é a primeira categoria do texto abaixo (internos, retirados, ativadas)
+   e a laranja, a segunda (externos, reservados, em preparação). */
 .distribution {
   display: block;
   inline-size: 100%;
-  block-size: 6px;
+  block-size: 8px;
   overflow: hidden;
   border-radius: 999px;
-  background: var(--line);
+  background: var(--orange);
 }
 
 .distribution > span {
   display: block;
   block-size: 100%;
   background: var(--brand-ink);
+  border-inline-end: 2px solid var(--surface);
+}
+
+.dashboard :global(.pd-summary) {
+  box-shadow: var(--shadow-card);
+}
+
+.dashboard :global(.pd-summary:hover) {
+  border-color: var(--brand-ink);
+  box-shadow: var(--shadow-raised);
+}
+
+.dashboard :global(.pd-summary) > strong {
+  font-family: var(--font-display);
+  color: var(--brand-ink);
 }
 
 .dashboard :global(.pd-shortcuts) {
@@ -212,4 +229,13 @@
     transition: none;
     transform: none;
   }
+}
+
+/* Celular (09/11): atalhos em grade 2×2, só ícone e nome; a descrição continua no nome acessível do módulo. */
+@container proex-home (max-width: 560px) {
+  .dashboard :global(.pd-shortcuts) { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .dashboard :global(.pd-shortcut) { position: relative; }
+  .dashboard :global(.pd-shortcut-link) { flex-direction: column; align-items: flex-start; gap: 8px; min-height: 0; padding: 12px; }
+  .dashboard :global(.pd-shortcut-link small), .dashboard :global(.pd-shortcut-link > svg:last-child) { display: none; }
+  .dashboard :global(.pd-pin) { position: absolute; top: 4px; right: 4px; margin: 0; }
 }

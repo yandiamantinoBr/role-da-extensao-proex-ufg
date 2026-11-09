@@ -58,6 +58,7 @@ import StockContextFields, {stockContextFields} from '@/components/portal/stock-
 import DirectoryPanel from '@/components/portal/directory-panel';
 import { ThemeSwitch } from '@/components/theme/theme-switch';
 import { BrandMark } from '@/components/theme/brand-mark';
+import ProjectOperationalChart from '@/components/portal/project-operational-chart';
 import DashboardPanel from '@/components/portal/dashboard-panel';
 import { DesktopSidebar, MobileNavigation } from '@/components/portal/portal-navigation';
 import { PORTAL_MODULES, type ModuleId } from '@/components/portal/navigation-model';
@@ -723,10 +724,10 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
     </header>
       <MobileNavigation modules={allowedTabs} active={tab} onNavigate={navigate} pinned={navigation.pinned} role={role} onTogglePin={navigation.togglePin} />
       <main className="p-main" id="main" tabIndex={-1}>
-    <header className={headingStyles.heading}>
+    <header className={`${headingStyles.heading} ${tab === 'overview' ? headingStyles.welcome : ''}`}>
       {ModuleIcon && <span className={headingStyles.mark} aria-hidden="true"><ModuleIcon size={22}/></span>}
       <div className={headingStyles.copy}>
-        <span className={headingStyles.label}>Gestão da extensão</span>
+        <span className={headingStyles.label}>{tab === 'overview' && data?.updatedAt && Number.isFinite(Date.parse(String(data.updatedAt))) ? new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'America/Sao_Paulo' }).format(new Date(String(data.updatedAt))) : 'Gestão da extensão'}</span>
         <h1>{tab === 'overview' ? `Olá, ${string(user.displayName).trim().split(/\s+/)[0] || 'equipe'}.` : title}</h1>
         <p>{tab === 'overview' ? 'Seu início, seus projetos e o que precisa da sua atenção.' : activeModule?.description}</p>
       </div>
@@ -801,11 +802,16 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
       {tab === 'overview' && <><PersonalWorkSummary userId={string(user.userId)} organizationId={personalOrganization||null} organizationName={organizations.find(organization=>organization.id===personalOrganization)?.name} projectId={filter||null} projectName={string(projects.find(project=>project.id===filter)?.name)} serverDay={workDayFromServerTimestamp(data?.updatedAt)}/><DashboardPanel modules={allowedTabs} pinned={navigation.pinned} frequent={navigation.frequent} onNavigate={navigate} onTogglePin={navigation.togglePin} displayName={string(user.displayName)} role={role} roleLabel={roleNames[role] || 'Equipe PROEX'} projects={scopedProjects} items={visibleItems} loans={visibleLoans} campaigns={visibleCampaigns} selectedProjectId={filter} unitName={unitFilter === '__unassigned__' ? 'Sem unidade vinculada' : string(visibleUnits.find(unit => unit.id === unitFilter)?.acronym || visibleUnits.find(unit => unit.id === unitFilter)?.name)} now={now} onOpenProject={openProject} known={{ projects: Array.isArray(data.projects), items: Array.isArray(data.items), loans: Array.isArray(data.loans), campaigns: Array.isArray(data.campaigns) }} /></>}
 
       {tab === 'projects' && <>
-        <AssistedImportPanel kind="project" organizations={organizations} projects={projects.map(project => ({ id: string(project.id), name: string(project.name), organization_id: string(get(project, 'organization_id', 'organizationId')), version: Number(project.version ?? 1) }))} projectTypes={list(data.projectTypes).map(type => ({ id: string(type.id), label: string(type.label) }))} organizationalUnits={organizationalUnits.map(unit => ({ id: string(unit.id), name: string(unit.name), acronym: string(unit.acronym) }))} canCreateProject={canCreateProjects} canWrite={id => canProject(id, 'campaigns.manage')} defaultProjectId={filter} onImported={refreshModules}/>
         <ProjectPanel refreshKey={updatedAt?.getTime() ?? 0} onMaterialOpen={(id,mode='view')=>{setMaterialMode(mode);setSelectedMaterialId(id);}} key={string(user.userId)} userId={string(user.userId)} shortcutModules={allowedTabs.map(module => module.id).filter(id => id === 'demands' || id === 'calendar')} initialProjectId={activeWorkRecord?.module === 'projects' ? activeWorkRecord.recordId : undefined} onDetailChange={id => { if (id) { if (id !== activeWorkRecord?.recordId) pushNavigation.current = true; selectProject(id); setWorkRecord({module:'projects',projectId:id,recordId:id}); } else setWorkRecord(null); }} renderWorkContext={projectId => workContext(projectId,'projects')} organizations={organizations} isPlatformOwner={isPlatformOwner} projects={projects} projectTypes={list(data.projectTypes)} organizationalUnits={organizationalUnits} canCreate={canCreateProjects} canEdit={id => canGlobal('projects.manage') || canProject(id, 'campaigns.manage')} mutate={mutate} onSelect={id => { selectProject(id); navigate('overview'); }}/>
+        {/* Importar fica depois da lista e se esconde (sem perder a prévia) na ficha aberta: o projeto vem primeiro. */}
+        <div hidden={Boolean(activeWorkRecord?.module === 'projects' && activeWorkRecord.recordId)}><AssistedImportPanel kind="project" organizations={organizations} projects={projects.map(project => ({ id: string(project.id), name: string(project.name), organization_id: string(get(project, 'organization_id', 'organizationId')), version: Number(project.version ?? 1) }))} projectTypes={list(data.projectTypes).map(type => ({ id: string(type.id), label: string(type.label) }))} organizationalUnits={organizationalUnits.map(unit => ({ id: string(unit.id), name: string(unit.name), acronym: string(unit.acronym) }))} canCreateProject={canCreateProjects} canWrite={id => canProject(id, 'campaigns.manage')} defaultProjectId={filter} onImported={refreshModules}/></div>
       </>}
 
       {tab === 'events' && <>
+        {/* No evento, o atendimento vem antes da lista de dinâmicas. */}
+        {can('participation.operate') && <Section title="Operação presencial" description="A equipe acompanha o resultado e utiliza as mesmas regras de participação da campanha.">
+            <PhysicalAttendance campaigns={visibleCampaigns.filter(c => canProject(get(c, 'projectId', 'project_id'), 'participation.operate'))} tickets={byProject(list(data.physicalTickets))} mutate={mutate}/>
+            </Section>}
         <Section title="Roleta e dado" description="Prepare as regras, os brindes e o atendimento das dinâmicas de cada ação.">{displayedCampaigns.length ? <div className={`p-event-grid ${campaignLayout.grid}`}>{displayedCampaigns.map(c => <article className={`p-card p-event-card ${workStyles.record}`} id={`work-record-${c.id}`} tabIndex={-1} key={c.id}>
                 <div className="p-row-between">
                 <span className="p-kicker">{projectName(get(c, 'projectId', 'project_id'))}</span>
@@ -819,7 +825,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
                 <small>até {when(get(c, 'endsAt', 'ends_at'))}</small>
                 </span>
                 </div>
-                <div className="p-rule-summary">{get(c, 'retryLimit', 'retry_limit') === undefined ? 'Política de repetição pendente' : `Uma participação · até ${get(c, 'retryLimit', 'retry_limit')} repetição(ões) quando sair Tente novamente`}</div>
+                <div className="p-rule-summary">{get(c, 'retryLimit', 'retry_limit') === undefined ? 'Política de repetição pendente' : `Uma participação · até ${get(c, 'retryLimit', 'retry_limit')} ${Number(get(c, 'retryLimit', 'retry_limit')) === 1 ? 'repetição' : 'repetições'} quando sair Tente novamente`}</div>
                 <div className="p-card-actions">
                 <a className="p-button p-button-subtle" href={c.status==='draft'?`/?module=events&project=${encodeURIComponent(get(c,'projectId','project_id'))}&campaignId=${encodeURIComponent(c.id)}`:`/events/${encodeURIComponent(c.id)}`} target="_blank" rel="noreferrer">{c.status==='draft'?'Abrir na equipe':'Página do evento'} <ExternalLink size={15}/>
                 </a>{canProject(get(c, 'projectId', 'project_id'), 'campaigns.manage') && <select aria-label={`Situação do evento ${c.name}`} value={c.status} disabled={busy || c.status === 'closed'} onChange={e => e.target.value === 'closed' ? setClosingCampaign(c.id) : void quick('campaign.status', { id: c.id, status: e.target.value })}>
@@ -837,9 +843,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
                     <summary>Editar rascunho <ChevronDown size={15}/>
                     </summary>
                     <CampaignForm projects={projects.filter(p => canProject(p.id, 'campaigns.manage'))} offers={offers} initial={c} mutate={mutate}/>
-                    </details>}<CampaignPlanningPanel userId={string(user.userId)} campaignId={string(c.id)} projectId={string(get(c, 'projectId', 'project_id'))} projects={projects.filter(project => project.id === get(c, 'projectId', 'project_id') || canProject(project.id, 'campaigns.manage')).map(project => ({id:string(project.id),name:string(project.name),organizationId:string(get(project, 'organizationId', 'organization_id'))}))}/><PrizeTiersPanel userId={string(user.userId)} campaignId={string(c.id)}/></article>)}</div> : <Empty title="Nenhuma dinâmica cadastrada" text="As campanhas de roleta e dado dos projetos selecionados aparecerão aqui." icon={CalendarDays}/>}</Section>{can('participation.operate') && <Section title="Operação presencial" description="A equipe acompanha o resultado e utiliza as mesmas regras de participação da campanha.">
-            <PhysicalAttendance campaigns={visibleCampaigns.filter(c => canProject(get(c, 'projectId', 'project_id'), 'participation.operate'))} tickets={byProject(list(data.physicalTickets))} mutate={mutate}/>
-            </Section>}{can('participation.operate', 'inventory.deliver') && (byProject(list(data.pendingPrizes)).length > 0 || data.pendingPrizesTruncated) && <Section title="Prêmios aguardando entrega" description="Reservas que continuam disponíveis após atualizar a página. Confirme a entrega somente depois de conferir o código.">{data.pendingPrizesTruncated && <div className="p-notice p-notice-warning">
+                    </details>}<CampaignPlanningPanel userId={string(user.userId)} campaignId={string(c.id)} projectId={string(get(c, 'projectId', 'project_id'))} projects={projects.filter(project => project.id === get(c, 'projectId', 'project_id') || canProject(project.id, 'campaigns.manage')).map(project => ({id:string(project.id),name:string(project.name),organizationId:string(get(project, 'organizationId', 'organization_id'))}))}/><PrizeTiersPanel userId={string(user.userId)} campaignId={string(c.id)}/></article>)}</div> : <Empty title="Nenhuma dinâmica cadastrada" text="As campanhas de roleta e dado dos projetos selecionados aparecerão aqui." icon={CalendarDays}/>}</Section>{can('participation.operate', 'inventory.deliver') && (byProject(list(data.pendingPrizes)).length > 0 || data.pendingPrizesTruncated) && <Section title="Prêmios aguardando entrega" description="Reservas que continuam disponíveis após atualizar a página. Confirme a entrega somente depois de conferir o código.">{data.pendingPrizesTruncated && <div className="p-notice p-notice-warning">
                 <Gift size={17}/>
                 <span>A fila mostra até {data.pendingPrizesLimit || 200} reservas recentes. Há {data.pendingPrizesTotal} no seu acesso completo. Use o código da pessoa em Retirada de brinde para localizar uma entrega que não esteja nesta lista.</span>
                 </div>}<PendingPrizes prizes={byProject(list(data.pendingPrizes))} mutate={mutate}/>
@@ -850,20 +854,14 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
             </Field>
             </OperationForm>
             </Section>}{can('campaigns.manage') && formProjects.length > 0 && <Section title="Preparar dinâmica" description="A campanha começa como rascunho. Confira as regras e os brindes antes de ativar.">
-            <CampaignForm key={`campaign-create-${unitFilter}-${filter}`} projects={formProjects} offers={offers} defaultProject={effectiveProject} mutate={mutate}/>
+            <details className={workStyles.tools}><summary><Plus size={17} aria-hidden="true"/>Nova dinâmica</summary><div className={workStyles.toolsBody}>
+            <CampaignForm key={`campaign-create-${unitFilter}-${filter}`} projects={formProjects} offers={offers} defaultProject={effectiveProject} mutate={mutate}/></div></details>
             </Section>}{can('campaigns.manage') && !prizeProjects.length && <div className="p-explainer"><Gift size={22} /><div><h3>Quais projetos usam roleta e dado?</h3><p>No cadastro do projeto, marque “Habilitar dinâmicas e brindes” para preparar campanhas e compor os kits desta área.</p><button type="button" className="p-text-link" onClick={() => navigate('projects')}>Abrir projetos <ArrowRight size={15} /></button></div></div>}</>}
 
       {tab === 'materials' && <div className="p-materials-panel">
         {prizeProjects.length > 0 && <nav className="p-material-tabs" aria-label="Áreas de materiais"><button type="button" aria-pressed={!showPrizeView} className={!showPrizeView ? 'is-active' : ''} onClick={() => setMaterialsView('catalog')}><Boxes size={18} />Catálogo e estoque</button><button type="button" aria-pressed={showPrizeView} className={showPrizeView ? 'is-active' : ''} onClick={() => setMaterialsView('prizes')}><Gift size={18} />Brindes e kits</button></nav>}
-        {(assistantProjects.length > 0 || canAny('inventory.manage')) && <details className={workStyles.tools}>
-          <summary>Assistente e importação de materiais</summary>
-          <div className={workStyles.toolsBody}>
-            <AssistantPanel key={string(user.userId)} projects={assistantProjects} defaultProjectId={filter} onApplied={refreshModules}/>
-            <AssistedImportPanel kind="asset" organizations={organizations} projects={projects.map(project => ({ id: string(project.id), name: string(project.name), organization_id: string(get(project, 'organization_id', 'organizationId')), version: Number(project.version ?? 1) }))} items={items.map(item => ({ id: string(item.id), name: string(item.name), project_id: string(get(item, 'projectId', 'project_id')), asset_code: string(item.asset_code) }))} canWrite={id => canProject(id, 'inventory.manage')} defaultProjectId={filter} onImported={refreshModules}/>
-          </div>
-        </details>}
         <div hidden={showPrizeView}>
-        {canAny('inventory.manage') && <details className={`p-card ${workStyles.catalogRegistration}`}><summary className="p-text-link">Cadastrar um patrimônio individual</summary>{filter && canProject(filter, 'inventory.manage') ? <AssetDetailsPanel key={filter} itemId={null} projectId={filter} onSaved={refreshModules}/> : <p className="p-form-help">Selecione um projeto no filtro acima para cadastrar seu patrimônio, com documentos e conferência antes de salvar.</p>}</details>}
+
 
         <Section title="Materiais e estoque" description="Saldo físico, reservas e unidades disponíveis ficam separados." aside={<div className="p-search">
             <Search size={17}/>
@@ -889,8 +887,11 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
                     lowStock: item.condition === 'active' && !availabilityNote && availableQuantity <= Number(get(item, 'lowStock', 'low_stock') ?? 0),
                     canOpen: canProject(projectId, 'inventory.read'),
                 };
-            })} /> : <Empty title={query ? 'Nenhum material encontrado' : 'Seu catálogo ainda está vazio'} text={query ? 'Tente outro nome ou selecione outro projeto.' : 'Cadastre os materiais e registre o recebimento após conferir a quantidade real.'}/>}</Section>{can('inventory.manage') && formProjects.length > 0 && <div className="p-two-columns">
+            })} /> : <Empty title={query ? 'Nenhum material encontrado' : 'Seu catálogo ainda está vazio'} text={query ? 'Tente outro nome ou selecione outro projeto.' : 'Cadastre os materiais e registre o recebimento após conferir a quantidade real.'}/>}</Section>
+        {visibleItems.length > 0 && <ProjectOperationalChart key={`materials-${filter || 'all'}`} variant="overview" title="Panorama dos materiais" projectId={filter || undefined} schedule={null} items={visibleItems.map(item => ({ ...item, available: available(item), low_stock: get(item, 'lowStock', 'low_stock') ?? 0, project_id: get(item, 'projectId', 'project_id') }))} now={now}/>}
+        {can('inventory.manage') && formProjects.length > 0 && <div className={workStyles.formStack}>
             <Section title="Cadastrar material" description="O cadastro começa sem saldo. Registre o recebimento depois da contagem.">
+            <details className={workStyles.tools}><summary><Plus size={17} aria-hidden="true"/>Novo material</summary><div className={workStyles.toolsBody}>
             <OperationForm onProjectFocus={setDraftProject} action="item.create" mutate={mutate} submit="Cadastrar material" make={f => ({ projectId: f.get('projectId'), name: f.get('name'), category: f.get('category'), categoryId: f.get('categoryId') || null, unit: f.get('unit'), lowStock: Number(f.get('lowStock')), description: f.get('description'), assetCode: f.get('assetCode') })}>
             <div className="p-form-grid">{projectField}<Field label="Nome">
             <input name="name" required maxLength={120} placeholder="Ex.: Button azul 2,5 cm"/>
@@ -903,14 +904,14 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
             <input name="lowStock" type="number" min="0" step="1" defaultValue="0" required/>
             </Field>
             <Field label="Identificação patrimonial ou código">
-            <input name="assetCode" maxLength={100} placeholder="Opcional; identifica cada equipamento"/>
+            <input name="assetCode" maxLength={100} placeholder="Opcional"/>
             </Field>
             <Field label="Descrição">
             <input name="description" maxLength={500} placeholder="Composição, identificação ou condição"/>
             </Field>
             </div>
             <p className="p-form-help">Para equipamentos, cadastre cada bem individualmente para controlar sua reserva e devolução.</p>
-            </OperationForm>
+            </OperationForm></div></details>
             </Section>
             <Section title="Movimentar estoque" description="Toda alteração registra finalidade, quantidade e responsável.">
             <OperationForm action="stock.move" mutate={mutate} submit="Registrar movimento" make={f => { const qty = Number(f.get('quantity')); const kind = String(f.get('kind')); return { itemId: f.get('itemId'), delta: kind === 'receive' ? qty : kind === 'adjust' ? qty : -Math.abs(qty), kind, note: f.get('note'), ...stockContextFields(f) }; }}>
@@ -938,8 +939,17 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
             </OperationForm>
             </Section>
             </div>}</div>
-        <section className="p-card"><button type="button" className="p-button p-button-subtle" aria-expanded={showConsumption} onClick={()=>setShowConsumption(value=>!value)}><Boxes size={18}/>Consumo por unidade e cobertura</button>{showConsumption&&<StockConsumptionPanel key={filter} projectId={filter} onOpenMaterial={id=>{setMaterialMode('view');setSelectedMaterialId(id);}}/>}</section>
+        <section className={`p-card ${workStyles.consumption}`}><button type="button" className="p-button p-button-subtle" aria-expanded={showConsumption} onClick={()=>setShowConsumption(value=>!value)}><Boxes size={18}/>Consumo por unidade e cobertura</button>{showConsumption&&<StockConsumptionPanel key={filter} projectId={filter} onOpenMaterial={id=>{setMaterialMode('view');setSelectedMaterialId(id);}}/>}</section>
+        {/* Ferramentas de cadastro e importação no fim: no evento, o saldo vem primeiro. */}
+        {canAny('inventory.manage') && <div hidden={showPrizeView}><details className={`p-card ${workStyles.catalogRegistration}`}><summary className="p-text-link">Cadastrar um patrimônio individual</summary>{filter && canProject(filter, 'inventory.manage') ? <AssetDetailsPanel key={filter} itemId={null} projectId={filter} onSaved={refreshModules}/> : <p className="p-form-help">Selecione um projeto no filtro acima para cadastrar seu patrimônio, com documentos e conferência antes de salvar.</p>}</details></div>}
         {prizeProjects.length > 0 && <div hidden={!showPrizeView}><PrizeKits projects={offerProjects} offers={visibleOffers} items={offerItems} projectId={effectiveOfferProject} onProjectChange={setOfferProject} projectName={projectName} mutate={mutate} /></div>}
+        {(assistantProjects.length > 0 || canAny('inventory.manage')) && <details className={workStyles.tools}>
+          <summary>Assistente e importação de materiais</summary>
+          <div className={workStyles.toolsBody}>
+            <AssistantPanel key={string(user.userId)} projects={assistantProjects} defaultProjectId={filter} onApplied={refreshModules}/>
+            <AssistedImportPanel kind="asset" organizations={organizations} projects={projects.map(project => ({ id: string(project.id), name: string(project.name), organization_id: string(get(project, 'organization_id', 'organizationId')), version: Number(project.version ?? 1) }))} items={items.map(item => ({ id: string(item.id), name: string(item.name), project_id: string(get(item, 'projectId', 'project_id')), asset_code: string(item.asset_code) }))} canWrite={id => canProject(id, 'inventory.manage')} defaultProjectId={filter} onImported={refreshModules}/>
+          </div>
+        </details>}
       </div>}
 
       {tab === 'loans' && <>
@@ -1195,7 +1205,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
       {assistantProjects.length > 0 && <RoleAssistant key={`role:${string(user.userId)}`} projects={assistantProjects} defaultProjectId={filter} onApplied={refreshModules} onOpenSettings={allowedTabs.some(item => item.id === 'settings') ? () => navigate('settings') : undefined}/>}
       <footer className="p-footer">
     <span>{online ? <Wifi size={14}/> : <WifiOff size={14}/>}{online ? 'Conectado' : 'Sem conexão'}{updatedAt && ` · atualizado às ${updatedAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`}</span>
-    <div style={{display:'flex',alignItems:'center',flexWrap:'wrap',gap:12}}><small>PROEX · {release}</small><FeedbackPanel release={release} module={tab} projects={projects.map(project=>({id:string(project.id),name:string(project.name)}))} projectId={filter}/></div>
+    <div className="p-footer-actions"><small className="p-version" title="Versão publicada do portal. Informe-a ao relatar um problema.">Versão {release}</small><FeedbackPanel release={release} module={tab} projects={projects.map(project=>({id:string(project.id),name:string(project.name)}))} projectId={filter}/></div>
     </footer>
       </main>
     </div>

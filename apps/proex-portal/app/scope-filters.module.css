@@ -1,32 +1,56 @@
+/* Escopo do módulo: Projeto + Limpar + "Refinar contexto" numa linha só.
+   O <details> nativo continua no fim da grade; só o resumo sobe para a primeira
+   linha, então o painel aberto ocupa a largura toda e fechado não deixa vazio. */
 .scope:global(.p-scope-filters) {
   display: block;
   container-type: inline-size;
-  padding: 14px;
+  padding: 12px;
+  margin: 0 0 18px;
+  border-radius: var(--radius-card, 16px);
+  box-shadow: var(--shadow-card);
 }
-.layout { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; align-items: end; }
-.layout > :global(.p-field) { grid-column: 1; min-width: 0; margin: 0; }
+.layout { --refine-size: 44px; --refine-top: 0px; position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0 8px; align-items: end; padding-right: calc(var(--refine-size) + 8px); }
+.layout > :global(.p-field) { grid-column: 1; grid-row: 1; min-width: 0; margin: 0; }
+.layout > :global(.p-field) > span:first-child { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .scope:global(.p-scope-filters) select { min-width: 0; min-height: 44px; }
-.refine { grid-column: 1 / -1; grid-row: 2; min-width: 0; }
-.refine > summary { display: flex; align-items: center; gap: 8px; width: fit-content; max-width: 100%; min-height: 44px; padding: 8px 12px; border: 1px solid var(--control-border); border-radius: 10px; cursor: pointer; color: var(--brand-ink); background: var(--surface-soft); list-style: none; font-size: 12px; line-height: 1.5; font-weight: 600; }
+.refine { grid-column: 1 / -1; grid-row: 2; min-width: 0; margin-right: calc(-1 * (var(--refine-size) + 8px)); }
+.refine > summary {
+  position: absolute; top: var(--refine-top); right: 0;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  width: var(--refine-size); min-height: 44px; padding: 0 12px;
+  border: 1px solid var(--control-border); border-radius: 10px; cursor: pointer;
+  color: var(--brand-ink); background: var(--surface-soft); list-style: none;
+  font-size: 13px; line-height: 1.3; font-weight: 600;
+}
 .refine > summary::-webkit-details-marker { display: none; }
 .refine > summary::marker { content: ''; }
 .refine > summary:hover { border-color: var(--brand-ink); }
-.summaryText { min-width: 0; }
-.chevron { margin-left: 4px; transition: transform .15s ease; }
+.refine[open] > summary { color: #fff; background: var(--purple); border-color: var(--purple); }
+:global(html[data-theme=dark]) .refine[open] > summary { color: var(--purple); background: #dfbaf4; border-color: #dfbaf4; }
+.summaryText { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.chevron { flex-shrink: 0; transition: transform .15s ease; }
 .refine[open] .chevron { transform: rotate(180deg); }
-.active { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); font-size: 11px; font-weight: 400; }
-.fields { display: grid; gap: 12px; padding-top: 12px; }
+/* Os valores ativos continuam no nome acessível; na tela, um ponto indica o filtro e o painel mostra os valores. */
+.active { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.refine:has(.active) > summary::after { content: ''; position: absolute; top: 7px; right: 7px; width: 8px; height: 8px; border-radius: 50%; background: var(--orange); box-shadow: 0 0 0 2px var(--surface-soft); }
+.fields { display: grid; gap: 12px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
 .fields > :global(.p-field) { margin: 0; }
-.clear:global(.p-filter-clear) { grid-column: 2; grid-row: 1; justify-self: end; align-self: end; }
-@container (min-width: 640px) {
+.clear:global(.p-filter-clear) { grid-column: 2; grid-row: 1; width: 44px; min-width: 44px; padding: 0; }
+.clearText { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+
+/* Celular: só ícones à direita do seletor. */
+@container (max-width: 559px) {
+  .summaryText, .chevron { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .refine > summary { padding: 0; }
+}
+/* Telas maiores: rótulo visível e botão com texto. */
+@container (min-width: 560px) {
+  .layout { --refine-size: 188px; --refine-top: 25px; }
+  .layout > :global(.p-field) > span:first-child { position: static; width: auto; height: auto; margin: 0; overflow: visible; clip-path: none; }
+  .refine > summary { justify-content: space-between; }
+  .clear:global(.p-filter-clear) { width: auto; padding: 0 14px; }
+  .clearText { position: static; width: auto; height: auto; margin: 0; overflow: visible; clip-path: none; }
   .fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
-@media (max-width: 420px) {
-  .layout > :global(.p-field) { grid-column: 1 / -1; }
-  .refine { grid-column: 1; }
-  .refine[open] { grid-column: 1 / -1; }
-  .layout:has(.clear) .refine[open] > summary { max-width: calc(100% - 56px); }
-  .clear:global(.p-filter-clear) { grid-column: 2; grid-row: 2; min-width: 44px; width: 44px; padding: 0; align-self: start; z-index: 1; }
-  .clearText { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
-}
+@media (min-width: 721px) { .scope:global(.p-scope-filters) { padding: 14px 16px; margin-bottom: 22px; } }
 @media (prefers-reduced-motion: reduce) { .chevron { transition: none; } }

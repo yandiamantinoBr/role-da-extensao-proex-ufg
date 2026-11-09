@@ -13,10 +13,12 @@ export default function WorkContextPanel({ userId, projectId, area, itemId, loan
  const [openedOwner, setOpenedOwner] = useState<string | null>(null);
  const actions = <div className={styles.actions}><button type="button" className="p-button p-button-subtle" onClick={onPersonal}>Meu trabalho<ArrowUpRight size={15} aria-hidden="true"/></button>{onDemands && <button type="button" className="p-button p-button-subtle" onClick={onDemands}>{projectId ? 'Demandas deste projeto' : 'Demandas'}</button>}</div>;
  const manager = projectId ? openedOwner === owner && <ResponsibilityManager key={owner} userId={userId} projectId={projectId} area={area} itemId={itemId} loanId={loanId} campaignId={campaignId}/> : <p>Selecione um projeto no filtro para consultar ou nomear responsáveis. A nomeação organiza o trabalho e não concede acesso.</p>;
- if (compact) return <details key={owner} className={styles.compact} onToggle={event => { if (event.currentTarget.open) setOpenedOwner(owner); }}><summary><Users size={16} aria-hidden="true"/>Responsáveis e demandas</summary><div className={styles.compactBody}>{actions}{manager}</div></details>;
- return <section className={styles.panel} aria-label="Acompanhamento deste contexto">
-  <div className={styles.heading}><span className={styles.icon}><ClipboardList size={19} aria-hidden="true"/></span><div><strong>Acompanhamento</strong><p>Responsáveis e demandas relacionados a este contexto.</p></div></div>
-  {actions}
+ const compactPanel = (extra = '') => <details key={owner + extra} className={`${styles.compact} ${extra}`} onToggle={event => { if (event.currentTarget.open) setOpenedOwner(owner); }}><summary><Users size={16} aria-hidden="true"/>Responsáveis e demandas</summary><div className={styles.compactBody}>{actions}{manager}</div></details>;
+ if (compact) return compactPanel();
+ // No celular a mesma informação fica numa linha recolhível; o CSS mostra só uma das duas formas.
+ return <>{compactPanel(styles.narrowOnly)}<section className={`${styles.panel} ${styles.wideOnly}`} aria-label="Acompanhamento deste contexto">
+  <div className={styles.row}><div className={styles.heading}><span className={styles.icon}><ClipboardList size={18} aria-hidden="true"/></span><div><strong>Acompanhamento</strong><p>Responsáveis e demandas relacionados a este contexto.</p></div></div>
+  {actions}</div>
   <details key={owner} className={styles.details} onToggle={event => { if (event.currentTarget.open) setOpenedOwner(owner); }}><summary><Users size={16} aria-hidden="true"/>Responsáveis deste contexto</summary>{manager}</details>
- </section>;
+ </section></>;
 }

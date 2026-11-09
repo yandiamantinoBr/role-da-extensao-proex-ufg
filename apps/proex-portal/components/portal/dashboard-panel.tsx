@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { ArrowRight, CalendarDays, CheckCircle2, ChevronRight, Clock3, FolderKanban, Info, PackageSearch, Pin, Settings2, TriangleAlert, type LucideIcon } from 'lucide-react';
 import { recommendedModules, type ModuleId, type PortalModule } from './navigation-model';
+import ProjectOperationalChart from './project-operational-chart';
 import styles from './dashboard-panel.module.css';
 // Only server-projected records are used for business counts.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -88,7 +89,7 @@ export default function DashboardPanel({ modules, pinned, frequent, onNavigate, 
             id: 'loans',
             title: 'Empréstimos',
             value: known.loans ? currentLoanCount : 'Consultar',
-            detail: known.loans ? `${checkedOut.length} retirados · ${reserved.length} reservados` : 'Consulte retiradas e devoluções',
+            detail: known.loans ? `${checkedOut.length} ${checkedOut.length === 1 ? 'retirado' : 'retirados'} · ${reserved.length} ${reserved.length === 1 ? 'reservado' : 'reservados'}` : 'Consulte retiradas e devoluções',
             note: known.loans && late.length ? `${late.length} em atraso` : undefined,
             share: known.loans && currentLoanCount ? checkedOut.length / currentLoanCount : undefined,
             icon: loanModule.icon,
@@ -100,7 +101,7 @@ export default function DashboardPanel({ modules, pinned, frequent, onNavigate, 
             id: 'events',
             title: 'Dinâmicas',
             value: known.campaigns ? activeCampaignCount : 'Consultar',
-            detail: known.campaigns ? `${activeCampaignCount} ativadas · ${drafts.length} em preparação` : 'Campanhas de roleta e dado',
+            detail: known.campaigns ? `${activeCampaignCount} ${activeCampaignCount === 1 ? 'ativada' : 'ativadas'} · ${drafts.length} em preparação` : 'Campanhas de roleta e dado',
             share: known.campaigns && campaignCount ? activeCampaignCount / campaignCount : undefined,
             icon: eventModule.icon,
         });
@@ -138,6 +139,9 @@ export default function DashboardPanel({ modules, pinned, frequent, onNavigate, 
         attention.push({ id: 'events', title: `${drafts.length} ${drafts.length === 1 ? 'dinâmica em preparação' : 'dinâmicas em preparação'}`, detail: 'Revise as regras e a disponibilidade antes de ativar.', kind: 'draft', icon: Clock3 });
     const partialAttention = (loanModule && !known.loans) || (materialModule && !known.items) || (eventModule && !known.campaigns);
     const firstName = displayName.trim().split(/\s+/)[0] || 'equipe';
+    // Panorama interativo: só conjuntos que a conta realmente recebeu (nunca um zero no lugar de "sem acesso").
+    const chartItems = find('materials') && known.items ? items.map(item => ({ ...item, available: typeof item.available === 'number' ? item.available : available(item), low_stock: item.low_stock ?? item.lowStock ?? 0, project_id: item.project_id ?? item.projectId })) : null;
+    const chartLoans = find('loans') && known.loans ? loans.map(loan => ({ ...loan, ends_at: loan.ends_at ?? loan.endsAt, project_id: loan.project_id ?? loan.projectId, title: [loan.item_name ?? items.find(item => item.id === (loan.item_id ?? loan.itemId))?.name, loan.action_name ?? loan.actionName].filter(Boolean).join(' · ') || 'Empréstimo' })) : null;
     const visibleProjects = [ ...(selected ? [selected] : []), ...projects.filter(project => project.id !== selectedProjectId) ].slice(0, 5);
     return <div className={`pd-dashboard ${styles.dashboard}`}>
     <section className="pd-section" aria-labelledby="pd-summary-title">
@@ -154,13 +158,14 @@ export default function DashboardPanel({ modules, pinned, frequent, onNavigate, 
         <ChevronRight size={16} aria-hidden="true"/>
         </span>
         <strong className={typeof value === 'string' ? 'pd-summary-text' : ''}>{value}</strong>
-        {share !== undefined && <span className={styles.distribution} aria-hidden="true">
+        {share !== undefined && share > 0 && share < 1 && <span className={styles.distribution} aria-hidden="true">
             <span style={{ inlineSize: `${share * 100}%` }}/>
         </span>}
         <span className="pd-summary-detail">{detail}</span>
         {note && <span className="pd-summary-note"><TriangleAlert size={14} aria-hidden="true"/>{note}</span>}
         </button>)}</div>
     </section>
+    {(chartItems || chartLoans) && <ProjectOperationalChart key={selectedProjectId || 'all'} variant="overview" projectId={selectedProjectId || undefined} schedule={null} items={chartItems} loans={chartLoans} now={now}/>}
     <section className="pd-section" aria-labelledby="pd-shortcut-title">
     <div className="pd-heading">
     <div>

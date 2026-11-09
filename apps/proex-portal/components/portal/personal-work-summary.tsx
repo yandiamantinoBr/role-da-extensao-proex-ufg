@@ -1,7 +1,7 @@
 'use client';
 
 import {useCallback,useEffect,useLayoutEffect,useRef,useState} from 'react';
-import {AlertTriangle,ArrowRight,CalendarClock,CircleDot,ClipboardList,RefreshCw,Users} from 'lucide-react';
+import {AlertTriangle,ArrowRight,CalendarClock,CircleDot,ClipboardList,RefreshCw,UserRoundCheck,Users} from 'lucide-react';
 import {isMyWorkSummary,type MyWorkSummary} from '@/lib/my-work/summary-contract';
 import type {MyWorkStatus} from '@/lib/my-work/contracts';
 import {workApi} from './my-work-api';
@@ -49,11 +49,18 @@ export default function PersonalWorkSummary({userId,organizationId=null,organiza
  ];
  const scope=projectId?`Projeto: ${projectName||'projeto selecionado'}`:organizationId?`Organização: ${organizationName||'organização selecionada'}`:'Todos os projetos e organizações autorizados';
  return <section className={styles.panel} aria-labelledby="personal-work-title" aria-busy={loading}>
-  <header className={styles.heading}><div><h2 id="personal-work-title"><ClipboardList size={21} aria-hidden="true"/>Meu trabalho</h2><p>Atribuições diretas e das suas equipes.</p><p className={styles.scope}>{scope}</p></div><button type="button" className="p-button p-button-subtle" onClick={refresh} aria-label="Atualizar resumo pessoal"><RefreshCw size={16} aria-hidden="true"/><span>Atualizar</span></button></header>
+  <header className={styles.heading}><div><h2 id="personal-work-title"><UserRoundCheck size={21} aria-hidden="true"/>Meu trabalho</h2><p>Atribuições diretas e das suas equipes.</p><p className={styles.scope}>{scope}</p></div><button type="button" className="p-button p-button-subtle" onClick={refresh} aria-label="Atualizar resumo pessoal"><RefreshCw size={16} aria-hidden="true"/><span>Atualizar</span></button></header>
   {/* Ready cards are links whose name replaces their content, so the visible help is linked as the description.
       While loading or after a failure there is nothing to open: the cards are plain, unfocusable and arrowless. */}
   <div className={styles.metrics} role="group" aria-label="Resumo de suas demandas">{metrics.map(({label,status,count,help,Icon,tone})=>data?<a key={status} className={styles.metric} data-tone={tone} href={personalWorkHref(status,organizationId,projectId)} aria-label={`Abrir ${label.toLocaleLowerCase('pt-BR')} de Meu trabalho: ${count}`} aria-describedby={`personal-work-${status}-help`}><span><Icon size={18} aria-hidden="true"/>{label}</span><strong>{count}</strong><small id={`personal-work-${status}-help`}>{help}</small><ArrowRight className={styles.arrow} size={16} aria-hidden="true"/></a>
    :<div key={status} className={styles.metric} data-tone={tone} aria-disabled="true"><span><Icon size={18} aria-hidden="true"/>{label}</span><strong aria-hidden="true">—</strong><span className={styles.srOnly}>{loading?'Total em consulta':'Total indisponível'}</span><small>{help}</small></div>)}</div>
+  {data&&data.tasks.total>0&&(()=>{
+   // Grupos que não se sobrepõem: concluídas, em andamento e as demais pendentes. Canceladas ficam fora.
+   const done=data.tasks.completed,doing=Math.min(data.tasks.inProgress,data.tasks.pending),waiting=Math.max(0,data.tasks.pending-doing),sum=done+doing+waiting;
+   if(!sum)return null;
+   const parts=[{key:'done',label:'Concluídas',value:done},{key:'doing',label:'Em andamento',value:doing},{key:'waiting',label:'A iniciar ou paradas',value:waiting}];
+   return <div className={styles.progress}><div className={styles.progressBar} role="img" aria-label={`Andamento das suas demandas: ${parts.map(part=>`${part.value} ${part.label.toLocaleLowerCase('pt-BR')}`).join(', ')}.`}>{parts.map(part=>part.value>0&&<span key={part.key} data-part={part.key} style={{flexGrow:part.value}} title={`${part.label}: ${part.value}`}/>)}</div><ul className={styles.legend} aria-hidden="true">{parts.map(part=><li key={part.key} data-part={part.key}>{part.label}<strong>{part.value}</strong></li>)}</ul></div>;
+  })()}
   {current?.error&&<p className={styles.error} role="alert">{current.error}</p>}
   <div className={styles.footer}><p role="status" aria-live="polite" aria-atomic="true">{loading?'Consultando suas atribuições…':data?<><Users size={16} aria-hidden="true"/>{data.responsibilities.active} responsabilidade{data.responsibilities.active===1?' ativa':'s ativas'}</>:'Os totais estão indisponíveis nesta consulta.'}</p></div>
   <p className={styles.help}>Cada demanda pode aparecer em mais de um grupo. Este resumo considera organização e projeto; outros filtros da página não mudam os totais.</p>

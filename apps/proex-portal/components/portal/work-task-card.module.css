@@ -20,3 +20,11 @@
 :global(html[data-theme=dark]) .card[data-priority=high] { border-inline-start-color: #fda4af; }
 :global(html[data-theme=dark]) .card[data-priority=medium] { border-inline-start-color: #f4d09a; }
 :global(html[data-theme=dark]) .card[data-state=completed] { border-inline-start-color: #86efac; }
+/* Cartão compacto (09/11): projeto e responsáveis dividem uma linha de texto, sem fundo de etiqueta. */
+.card { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 10px 14px 12px; box-shadow: var(--shadow-card); }
+.card > .title, .card > .assignment, .card > :not(.context):not(.assignees):not(.title):not(.assignment) { flex: 1 1 100%; }
+.title { min-height: 44px; padding: 4px 0; font-size: 15px; }
+.context { flex: 0 1 auto; align-items: center; font-size: 12.5px; }
+.context > svg { margin-top: 0; }
+.assignees { flex: 1 1 auto; gap: 4px 12px; margin-top: 0; }
+.person, .unassigned { padding: 0; background: transparent; font-size: 12.5px; }

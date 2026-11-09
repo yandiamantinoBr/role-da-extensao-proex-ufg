@@ -46,14 +46,15 @@ export default function MaterialCatalog({ materials, onOpen }: {
                 <strong className={`${styles.materialName} ${material.canOpen ? styles.mobileName : ''}`}>{material.name}</strong>
                 <small>{material.category} · {material.project}</small>
                 {material.assetCode && <small>Código: {material.assetCode}</small>}
+                {material.availabilityNote && <span className={`p-badge p-status-paused ${styles.mobileNote}`}>{material.availabilityNote}</span>}
                 {material.condition !== 'active' && <span className="p-badge p-status-paused">
                   {material.condition === 'maintenance' ? 'Em manutenção' : 'Inativo'}
                 </span>}
               </td>
               <td className={styles.metric} role="cell">
-                <span className={styles.metricLabel} aria-hidden="true">Físico</span>
+                <span className={styles.metricLabel} aria-hidden="true">Físico <span className={styles.labelUnit}>({material.unit})</span></span>
                 <span className={styles.number}>{material.physical}</span>
-                <small>{material.unit}</small>
+                <small className={styles.unit}>({material.unit})</small>
               </td>
               <td className={styles.metric} role="cell">
                 <span className={styles.metricLabel} aria-hidden="true">Reservado</span>
@@ -63,7 +64,7 @@ export default function MaterialCatalog({ materials, onOpen }: {
                 <span className={styles.metricLabel} aria-hidden="true">Disponível</span>
                 <span className={`${styles.number} ${availabilityColor}`}>{material.available}</span>
                 {material.lowStock && <small className={styles.warning}>Estoque baixo</small>}
-                {material.availabilityNote && <small>{material.availabilityNote}</small>}
+                {material.availabilityNote && <small className={styles.desktopNote}>{material.availabilityNote}</small>}
               </td>
               <td className={styles.actions} role="cell">
                 {material.canOpen ? <button type="button" className="p-button p-button-subtle" aria-label={detailsLabel} onClick={() => onOpen(material.id)}>

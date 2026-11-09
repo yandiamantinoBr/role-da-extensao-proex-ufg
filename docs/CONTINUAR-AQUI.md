@@ -1,5 +1,9 @@
 # Continuar Portal PROEX
 
+## Acabamento visual e coerência · PR42 · 2026-11-09
+
+Branch `claude/visual-coerencia-09nov` (Claude Code), PR [42](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/42), atualizada com a `main` da PR41 (níveis de brinde e foto) sem desfazer aquele trabalho. Só apresentação: tipografia própria do portal (DM Sans + Sora), filtros "Projeto + funil", Materiais/Dinâmicas/Demandas compactos no celular, Panorama clicável no Início e em Materiais, barra inferior com os módulos do evento. 1.339/1.339 testes, tipos, lint, `build` e `build:node`. Crítica independente final 9,0/10 sem P0/P1. [Entrega, pendências e perguntas](ENTREGA-09NOV-VISUAL-E-COERENCIA.md). Confirmar merge e deploy no recibo da entrega antes de tratar como produção.
+
 ## Rolê e central de chaves · 2026-11-09
 
 **Branch `claude/role-assistente-chaves-a34257`** (sessão Claude Code "Rolê e chaves"). Entrega: assistente **Rolê** com botão flutuante (Alt + R), texto, foto (DeepSeek Flash) e áudio transcrito (Groq/Deepgram); custo máximo mostrado antes de toda chamada paga; operações pelo fluxo assinado `prepare`/`apply` com prévia e confirmação. Central de chaves com Testar grátis, preços oficiais, recomendados, histórico com dica mascarada e textos simples. Detalhes, tabela de provedores e fontes em [ROLE-ASSISTENTE.md](../apps/proex-portal/docs/ROLE-ASSISTENTE.md); capturas sintéticas em [evidencias/2026-11-09-role-chaves](evidencias/2026-11-09-role-chaves/README.md).
