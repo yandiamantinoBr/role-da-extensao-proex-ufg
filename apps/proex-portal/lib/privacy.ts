@@ -86,6 +86,11 @@ export async function resolvePrivacy(db:D1Database,actor:PortalActor,input:Recor
   // Personal widgets are private notes: removed with the account (0036).
   cleanup(`DELETE FROM personal_notes WHERE user_id=? AND ${confirmed}`,target),
   cleanup(`DELETE FROM personal_widget_settings WHERE user_id=? AND ${confirmed}`,target),
+  // Community phase 2 (0037): direct messages in both directions, blocks, preferences and badges.
+  cleanup(`DELETE FROM community_messages WHERE (sender_id=? OR recipient_id=?) AND ${confirmed}`,target,target),
+  cleanup(`DELETE FROM community_blocks WHERE (user_id=? OR blocked_id=?) AND ${confirmed}`,target,target),
+  cleanup(`DELETE FROM community_preferences WHERE user_id=? AND ${confirmed}`,target),
+  cleanup(`DELETE FROM community_badges WHERE user_id=? AND ${confirmed}`,target),
   cleanup(`UPDATE privacy_requests SET status='cleanup_pending',reviewed_by=?,reviewed_at=? WHERE id=? AND status='pending' AND ${confirmed}`,actor.userId,now,request.id),
  ]);
  if(results[0].meta.changes!==1||results[1].meta.changes!==1)throw new HttpError(409,'A solicitação ou seu acesso mudou. Preserve ao menos um responsável ativo.','privacy_conflict');

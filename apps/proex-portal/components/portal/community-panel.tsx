@@ -1,20 +1,22 @@
 'use client';
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
-import { Inbox, MessageSquareHeart, ShieldCheck, ShieldQuestion } from 'lucide-react';
+import { Award, Inbox, Mail, MessageSquareHeart, ShieldCheck, ShieldQuestion } from 'lucide-react';
 import type { ModuleId } from './navigation-model';
 import { communityGet, errorText } from './community-api';
 import { FeedbackForm, FeedbackManagement, type CommunityEvent } from './community-feedback';
 import { OmbudsInbox, OmbudsReporter } from './community-ombuds';
+import { CommunityMessages } from './community-messages';
+import { CommunityBadges } from './community-badges';
 import styles from './community.module.css';
 
-type Access = { manageFeedback: boolean; ombuds: boolean; events: CommunityEvent[] };
-type Tab = 'feedback' | 'ombuds' | 'manage' | 'ombuds-inbox';
+type Access = { manageFeedback: boolean; ombuds: boolean; events: CommunityEvent[]; unreadMessages?: number };
+type Tab = 'feedback' | 'messages' | 'ombuds' | 'badges' | 'manage' | 'ombuds-inbox';
 const MANAGEMENT: Tab[] = ['manage', 'ombuds-inbox'];
 export type CommunityPrefill = { area: ModuleId; projectId: string; nonce: number };
 
 /** Community module, phase 1: feedback box, anonymous ombuds and the management boxes. */
 export default function CommunityPanel({ userId, projects, prefill }: { userId: string; projects: { id: string; name: string }[]; prefill: CommunityPrefill | null }) {
-  const id = useId(), [access, setAccess] = useState<Access | null>(null), [error, setError] = useState(''), [tab, setTab] = useState<Tab>('feedback');
+  const id = useId(), [access, setAccess] = useState<Access | null>(null), [error, setError] = useState(''), [tab, setTab] = useState<Tab>('feedback'), [unread, setUnread] = useState<number | null>(null);
   const tabs = useRef<Record<string, HTMLButtonElement | null>>({});
   useEffect(() => {
     const controller = new AbortController();
@@ -23,9 +25,12 @@ export default function CommunityPanel({ userId, projects, prefill }: { userId: 
   }, [userId]);
   const [seenPrefill, setSeenPrefill] = useState(prefill?.nonce ?? 0);
   if (prefill && prefill.nonce !== seenPrefill) { setSeenPrefill(prefill.nonce); setTab('feedback'); }
-  const available: { id: Tab; label: string; icon: typeof Inbox }[] = [
+  const unreadCount = unread ?? access?.unreadMessages ?? 0;
+  const available: { id: Tab; label: string; icon: typeof Inbox; count?: number }[] = [
     { id: 'feedback', label: 'Fale com a gestão', icon: MessageSquareHeart },
+    { id: 'messages', label: 'Recados', icon: Mail, count: unreadCount },
     { id: 'ombuds', label: 'Ouvidoria anônima', icon: ShieldQuestion },
+    { id: 'badges', label: 'Selos', icon: Award },
     ...(access?.manageFeedback ? [{ id: 'manage' as Tab, label: 'Caixa da gestão', icon: Inbox }] : []),
     ...(access?.ombuds ? [{ id: 'ombuds-inbox' as Tab, label: 'Relatos anônimos', icon: ShieldCheck }] : []),
   ];
@@ -40,11 +45,13 @@ export default function CommunityPanel({ userId, projects, prefill }: { userId: 
   if (error) return <p role="alert" className="p-inline-error">{error}</p>;
   return <div className={styles.community}>
     <div className={styles.tabs} role="tablist" aria-label="Seções da Comunidade" onKeyDown={keyboard}>
-      {available.map((item, index) => { const Icon = item.icon; return <button key={item.id} data-management={MANAGEMENT.includes(item.id) || undefined} data-first-management={(MANAGEMENT.includes(item.id) && !MANAGEMENT.includes(available[index - 1]?.id)) || undefined} ref={node => { tabs.current[item.id] = node; }} type="button" role="tab" id={`${id}-${item.id}`} aria-controls={`${id}-${item.id}-panel`} aria-selected={tab === item.id} tabIndex={tab === item.id ? 0 : -1} onClick={() => setTab(item.id)}><Icon size={17} aria-hidden="true"/>{item.label}</button>; })}
+      {available.map((item, index) => { const Icon = item.icon; return <button key={item.id} data-management={MANAGEMENT.includes(item.id) || undefined} data-first-management={(MANAGEMENT.includes(item.id) && !MANAGEMENT.includes(available[index - 1]?.id)) || undefined} ref={node => { tabs.current[item.id] = node; }} type="button" role="tab" id={`${id}-${item.id}`} aria-controls={`${id}-${item.id}-panel`} aria-selected={tab === item.id} tabIndex={tab === item.id ? 0 : -1} onClick={() => setTab(item.id)}><Icon size={17} aria-hidden="true"/>{item.label}{item.count ? <span className={styles.count} aria-label={`${item.count} não lidos`}>{item.count}</span> : null}</button>; })}
     </div>
     <div role="tabpanel" id={`${id}-${tab}-panel`} aria-labelledby={`${id}-${tab}`} className={styles.tabPanel}>
       {tab === 'feedback' && <FeedbackForm key={prefill?.nonce ?? 0} projects={projects} events={access?.events ?? []} prefill={prefill} onOmbuds={() => setTab('ombuds')}/>}
+      {tab === 'messages' && <CommunityMessages onUnreadChange={setUnread}/>}
       {tab === 'ombuds' && <OmbudsReporter/>}
+      {tab === 'badges' && <CommunityBadges/>}
       {tab === 'manage' && access?.manageFeedback && <FeedbackManagement/>}
       {tab === 'ombuds-inbox' && access?.ombuds && <OmbudsInbox/>}
     </div>
