@@ -51,7 +51,7 @@ export default function MaterialCatalog({ materials, onOpen }: {
                 </span>}
               </td>
               <td className={styles.metric} role="cell">
-                <span className={styles.metricLabel} aria-hidden="true">Físico</span>
+                <span className={styles.metricLabel} aria-hidden="true">Físico <span className={styles.labelUnit}>({material.unit})</span></span>
                 <span className={styles.number}>{material.physical}</span>
                 <small className={styles.unit}>({material.unit})</small>
               </td>

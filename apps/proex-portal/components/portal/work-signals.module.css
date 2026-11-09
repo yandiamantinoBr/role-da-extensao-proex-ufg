@@ -1,5 +1,5 @@
 .signals { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; min-width: 0; }
-.signal { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; min-height: 28px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-soft); color: var(--text-secondary); font-size: 12px; line-height: 1.4; font-weight: 600; overflow-wrap: anywhere; }
+.signal { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; min-height: 26px; padding: 3px 7px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-soft); color: var(--text-secondary); font-size: 12px; line-height: 1.4; font-weight: 600; overflow-wrap: anywhere; }
 .signal > svg { flex-shrink: 0; }
 .signal[data-tone=info] { background: #eff6ff; color: #1e40af; border-color: #bfdbfe; }
 .signal[data-tone=warning] { background: #fff8e6; color: #854d0e; border-color: #f0cf8c; }

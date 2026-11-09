@@ -7,8 +7,9 @@
 .focusNotice p { flex: 1 1 220px; color: var(--text-secondary); font-size: 13px; line-height: 1.6; }
 .record { scroll-margin-block: 90px 110px; }
 .record:focus { outline: 3px solid var(--focus); outline-offset: 4px; }
-.tools, .catalogRegistration:global(.p-card) { margin-block-end: 12px; padding: 0 16px; border: 1px solid var(--line); border-radius: var(--radius-card, 16px); background: var(--surface); box-shadow: var(--shadow-card); }
+.tools, .catalogRegistration:global(.p-card) { margin-block: 12px; padding: 0 16px; border: 1px solid var(--line); border-radius: var(--radius-card, 16px); background: var(--surface); box-shadow: var(--shadow-card); }
 .tools > summary, .catalogRegistration > summary { display: list-item; min-height: 52px; padding-block: 14px; color: var(--brand-ink); cursor: pointer; font-size: 14px; font-weight: 600; text-decoration: none; }
 .tools > summary svg, .catalogRegistration > summary svg { display: inline; vertical-align: -3px; margin-right: 6px; }
 .catalogRegistration[open] { padding-bottom: 16px; }
 .toolsBody { display: grid; min-width: 0; gap: 12px; padding-block: 4px 16px; }
+.formStack { display: grid; gap: 4px; min-width: 0; }

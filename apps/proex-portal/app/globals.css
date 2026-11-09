@@ -207,3 +207,7 @@ body:has(.p-shell),body:has(.p-no-access),.p-shell,.p-no-access{font-family:var(
 :where(.p-shell) :where(details[open])>summary::marker{content:'▾  ' / ''}
 :where(.p-shell) :where(details)>summary{cursor:pointer}
 .pn-mobile-nav>button{font-size:11.5px}
+/* Seções lado a lado alinham pelo topo, sem esticar o cartão menor nem abrir vão entre título e cartão. */
+.p-two-columns{align-items:start}
+.p-section>.p-section-heading{min-height:0}
+.p-section>.p-form{flex:0 1 auto}

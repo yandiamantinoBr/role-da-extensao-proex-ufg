@@ -888,10 +888,9 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
                 };
             })} /> : <Empty title={query ? 'Nenhum material encontrado' : 'Seu catálogo ainda está vazio'} text={query ? 'Tente outro nome ou selecione outro projeto.' : 'Cadastre os materiais e registre o recebimento após conferir a quantidade real.'}/>}</Section>
         {visibleItems.length > 0 && <ProjectOperationalChart key={`materials-${filter || 'all'}`} variant="overview" title="Panorama dos materiais" projectId={filter || undefined} schedule={null} items={visibleItems.map(item => ({ ...item, available: available(item), low_stock: get(item, 'lowStock', 'low_stock') ?? 0, project_id: get(item, 'projectId', 'project_id') }))} now={now}/>}
-        {/* Ferramentas de cadastro e importação depois da lista: no evento, o saldo vem primeiro. */}
-        {canAny('inventory.manage') && <details className={`p-card ${workStyles.catalogRegistration}`}><summary className="p-text-link">Cadastrar um patrimônio individual</summary>{filter && canProject(filter, 'inventory.manage') ? <AssetDetailsPanel key={filter} itemId={null} projectId={filter} onSaved={refreshModules}/> : <p className="p-form-help">Selecione um projeto no filtro acima para cadastrar seu patrimônio, com documentos e conferência antes de salvar.</p>}</details>}
-        {can('inventory.manage') && formProjects.length > 0 && <div className="p-two-columns">
+        {can('inventory.manage') && formProjects.length > 0 && <div className={workStyles.formStack}>
             <Section title="Cadastrar material" description="O cadastro começa sem saldo. Registre o recebimento depois da contagem.">
+            <details className={workStyles.tools}><summary><Plus size={17} aria-hidden="true"/>Novo material</summary><div className={workStyles.toolsBody}>
             <OperationForm onProjectFocus={setDraftProject} action="item.create" mutate={mutate} submit="Cadastrar material" make={f => ({ projectId: f.get('projectId'), name: f.get('name'), category: f.get('category'), categoryId: f.get('categoryId') || null, unit: f.get('unit'), lowStock: Number(f.get('lowStock')), description: f.get('description'), assetCode: f.get('assetCode') })}>
             <div className="p-form-grid">{projectField}<Field label="Nome">
             <input name="name" required maxLength={120} placeholder="Ex.: Button azul 2,5 cm"/>
@@ -904,14 +903,14 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
             <input name="lowStock" type="number" min="0" step="1" defaultValue="0" required/>
             </Field>
             <Field label="Identificação patrimonial ou código">
-            <input name="assetCode" maxLength={100} placeholder="Opcional; identifica cada equipamento"/>
+            <input name="assetCode" maxLength={100} placeholder="Opcional"/>
             </Field>
             <Field label="Descrição">
             <input name="description" maxLength={500} placeholder="Composição, identificação ou condição"/>
             </Field>
             </div>
             <p className="p-form-help">Para equipamentos, cadastre cada bem individualmente para controlar sua reserva e devolução.</p>
-            </OperationForm>
+            </OperationForm></div></details>
             </Section>
             <Section title="Movimentar estoque" description="Toda alteração registra finalidade, quantidade e responsável.">
             <OperationForm action="stock.move" mutate={mutate} submit="Registrar movimento" make={f => { const qty = Number(f.get('quantity')); const kind = String(f.get('kind')); return { itemId: f.get('itemId'), delta: kind === 'receive' ? qty : kind === 'adjust' ? qty : -Math.abs(qty), kind, note: f.get('note'), ...stockContextFields(f) }; }}>
@@ -940,6 +939,8 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
             </Section>
             </div>}</div>
         <section className="p-card"><button type="button" className="p-button p-button-subtle" aria-expanded={showConsumption} onClick={()=>setShowConsumption(value=>!value)}><Boxes size={18}/>Consumo por unidade e cobertura</button>{showConsumption&&<StockConsumptionPanel key={filter} projectId={filter} onOpenMaterial={id=>{setMaterialMode('view');setSelectedMaterialId(id);}}/>}</section>
+        {/* Ferramentas de cadastro e importação no fim: no evento, o saldo vem primeiro. */}
+        {canAny('inventory.manage') && <div hidden={showPrizeView}><details className={`p-card ${workStyles.catalogRegistration}`}><summary className="p-text-link">Cadastrar um patrimônio individual</summary>{filter && canProject(filter, 'inventory.manage') ? <AssetDetailsPanel key={filter} itemId={null} projectId={filter} onSaved={refreshModules}/> : <p className="p-form-help">Selecione um projeto no filtro acima para cadastrar seu patrimônio, com documentos e conferência antes de salvar.</p>}</details></div>}
         {prizeProjects.length > 0 && <div hidden={!showPrizeView}><PrizeKits projects={offerProjects} offers={visibleOffers} items={offerItems} projectId={effectiveOfferProject} onProjectChange={setOfferProject} projectName={projectName} mutate={mutate} /></div>}
         {(assistantProjects.length > 0 || canAny('inventory.manage')) && <details className={workStyles.tools}>
           <summary>Assistente e importação de materiais</summary>
