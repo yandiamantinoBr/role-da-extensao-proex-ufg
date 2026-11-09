@@ -21,12 +21,14 @@ test('V4 upgrade is additive and preserves production ledgers, references and gu
       // rebuild has populated preservation and rollback tests below; no domain
       // table or other destructive statement is allowed through this exception.
       const reviewedMetadataRebuilds = {
-        '0025_groq_organization_credentials.sql': 'ai_provider_credential_metadata_groq',
-        '0027_openai_organization_credentials.sql': 'ai_provider_credential_metadata_openai',
+        '0025_groq_organization_credentials.sql': ['ai_provider_credential_metadata', 'ai_provider_credential_metadata_groq'],
+        '0027_openai_organization_credentials.sql': ['ai_provider_credential_metadata', 'ai_provider_credential_metadata_openai'],
+        // 0036 widens the feedback kind CHECK and adds nullable columns; preservation/rollback test below.
+        '0036_community.sql': ['portal_feedback', 'portal_feedback_v36'],
       };
-      const temporary = reviewedMetadataRebuilds[name];
-      const guardedSql = temporary
-        ? sql.replace('DROP TABLE ai_provider_credential_metadata;','').replace(`ALTER TABLE ${temporary} RENAME TO ai_provider_credential_metadata;`,'')
+      const reviewed = reviewedMetadataRebuilds[name];
+      const guardedSql = reviewed
+        ? sql.replace(`DROP TABLE ${reviewed[0]};`,'').replace(`ALTER TABLE ${reviewed[1]} RENAME TO ${reviewed[0]};`,'')
         : sql;
       assert.doesNotMatch(guardedSql, /DROP\s+TABLE|RENAME\s+TO|foreign_keys\s*=\s*OFF/i);
       native.exec(sql);
@@ -75,6 +77,39 @@ for(const [file,provider,temporary,existing] of [
     put.run('org_proex',provider,'Synthetic','…test','active',at,'synthetic-owner',at,'synthetic-editor');
     assert.throws(()=>put.run('org_proex',provider,'Duplicate','…test','active',at,'synthetic-owner',at,'synthetic-editor'),/UNIQUE/);
     assert.throws(()=>put.run('foreign-org',provider,'Foreign','…test','active',at,'synthetic-owner',at,'synthetic-editor'),/FOREIGN KEY/);
+   }
+  }finally{db.close();}
+ }
+});
+
+test('reviewed 0036 feedback rebuild preserves populated rows and indexes, widens kinds and rolls back a failed rename',()=>{
+ const file='0036_community.sql',migration=readFileSync(new URL(file,root),'utf8');
+ for(const failAtRename of [false,true]){
+  const db=new DatabaseSync(':memory:');try{
+   db.exec('PRAGMA foreign_keys=ON');
+   for(const name of readdirSync(root).filter(name=>name.endsWith('.sql')&&name<file).sort())db.exec(readFileSync(new URL(name,root),'utf8'));
+   const at='2026-11-09T12:00:00.000Z';
+   db.exec(`INSERT INTO organizations(id,name,slug,created_at,updated_at) VALUES('synthetic-org','Org','synthetic-org','${at}','${at}');INSERT INTO projects(id,name,organization_id,created_at) VALUES('synthetic-project','Projeto','synthetic-org','${at}')`);
+   const put=db.prepare('INSERT INTO portal_feedback(id,author_id,project_id,kind,module,body,release,status,version,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)');
+   put.run('f-1','synthetic-a',null,'problem','projects','Problema sintético para a migração.','2026.11.09','new',1,at,at);
+   put.run('f-2','synthetic-b','synthetic-project','suggestion','materials','Sugestão sintética para a migração.','2026.11.08','resolved',3,at,at);
+   const before=db.prepare('SELECT id,author_id,project_id,kind,module,body,release,status,version,created_at,updated_at FROM portal_feedback ORDER BY id').all();
+   db.exec('BEGIN');
+   if(failAtRename){
+    const interrupted=migration.replace('ALTER TABLE portal_feedback_v36 RENAME',"SELECT json_extract('[]','synthetic_failure'); ALTER TABLE portal_feedback_v36 RENAME");
+    assert.throws(()=>db.exec(interrupted));db.exec('ROLLBACK');
+    assert.equal(db.prepare("SELECT name FROM sqlite_master WHERE name='portal_feedback_v36'").get(),undefined);
+    assert.equal(db.prepare("SELECT name FROM sqlite_master WHERE name='ombuds_reports'").get(),undefined,'the whole migration rolls back');
+    assert.throws(()=>put.run('f-3','synthetic-c',null,'praise','projects','Elogio antes da migração.','x','new',1,at,at),/CHECK/);
+   }else{db.exec(migration);db.exec('COMMIT');}
+   assert.deepEqual(db.prepare('SELECT id,author_id,project_id,kind,module,body,release,status,version,created_at,updated_at FROM portal_feedback ORDER BY id').all(),before);
+   assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(),[]);
+   if(!failAtRename){
+    assert.deepEqual(db.prepare("SELECT count(*) n FROM portal_feedback WHERE campaign_id IS NOT NULL OR response IS NOT NULL").get().n,0);
+    assert.deepEqual(db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='portal_feedback' AND name LIKE 'portal_feedback_%' ORDER BY name").all().map(row=>row.name),['portal_feedback_author_idx','portal_feedback_campaign_idx','portal_feedback_project_idx']);
+    put.run('f-3','synthetic-c',null,'praise','projects','Elogio depois da migração.','x','new',1,at,at);
+    assert.throws(()=>put.run('f-4','synthetic-c','missing-project','problem','projects','Projeto inexistente na migração.','x','new',1,at,at),/FOREIGN KEY/);
+    assert.throws(()=>db.prepare("UPDATE portal_feedback SET response='Só a resposta, sem autor' WHERE id='f-1'").run(),/CHECK/);
    }
   }finally{db.close();}
  }

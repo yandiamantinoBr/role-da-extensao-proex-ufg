@@ -83,6 +83,9 @@ export async function resolvePrivacy(db:D1Database,actor:PortalActor,input:Recor
   // The whole profile is removed, including unit_id, affiliation and private enrollment/contact fields.
   cleanup(`DELETE FROM profiles WHERE user_id=? AND ${confirmed}`,target),
   cleanup(`DELETE FROM portal_feedback WHERE author_id=? AND ${confirmed}`,target),
+  // Personal widgets are private notes: removed with the account (0036).
+  cleanup(`DELETE FROM personal_notes WHERE user_id=? AND ${confirmed}`,target),
+  cleanup(`DELETE FROM personal_widget_settings WHERE user_id=? AND ${confirmed}`,target),
   cleanup(`UPDATE privacy_requests SET status='cleanup_pending',reviewed_by=?,reviewed_at=? WHERE id=? AND status='pending' AND ${confirmed}`,actor.userId,now,request.id),
  ]);
  if(results[0].meta.changes!==1||results[1].meta.changes!==1)throw new HttpError(409,'A solicitação ou seu acesso mudou. Preserve ao menos um responsável ativo.','privacy_conflict');

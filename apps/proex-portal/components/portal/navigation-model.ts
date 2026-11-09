@@ -1,5 +1,5 @@
-import { BarChart3, Boxes, CalendarDays, Dices, FileText, FolderKanban, LayoutDashboard, ListChecks, Settings2, Truck, UserCog, UserRound, UserRoundCheck, Users, type LucideIcon } from 'lucide-react';
-export type ModuleId = 'overview' | 'projects' | 'events' | 'materials' | 'loans' | 'team' | 'work-teams' | 'reports' | 'settings' | 'calendar' | 'records' | 'profile' | 'demands' | 'my-work';
+import { BarChart3, Boxes, CalendarDays, Dices, FileText, FolderKanban, HeartHandshake, LayoutDashboard, ListChecks, Settings2, Truck, UserCog, UserRound, UserRoundCheck, Users, type LucideIcon } from 'lucide-react';
+export type ModuleId = 'overview' | 'projects' | 'events' | 'materials' | 'loans' | 'team' | 'work-teams' | 'reports' | 'settings' | 'calendar' | 'records' | 'profile' | 'demands' | 'my-work' | 'community';
 export type PortalModule = {
     id: ModuleId;
     label: string;
@@ -17,6 +17,7 @@ export const PORTAL_MODULES: PortalModule[] = [
     { id: 'loans', label: 'Empréstimos', description: 'Reservas, retiradas e devoluções de equipamentos.', icon: Truck },
     { id: 'events', label: 'Dinâmicas', description: 'Roleta, dado, brindes e atendimento nas ações.', icon: Dices },
     { id: 'records', label: 'Registros', description: 'Observações, documentos e ocorrências.', icon: FileText },
+    { id: 'community', label: 'Comunidade', description: 'Retorno à gestão e ouvidoria anônima da equipe.', icon: HeartHandshake },
     { id: 'team', label: 'Pessoas e acessos', description: 'Pessoas, convites e permissões de acesso.', icon: UserCog },
     { id: 'reports', label: 'Relatórios', description: 'Consulte resultados e exporte registros.', icon: BarChart3 },
     { id: 'settings', label: 'Configurações', description: 'Ajustes da organização, agrupados por tarefa.', icon: Settings2 },
