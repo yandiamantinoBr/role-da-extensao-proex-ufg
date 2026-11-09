@@ -78,7 +78,9 @@ test('restricted records replace the entire Markdown row and never expose suppli
  data.responsibilities.items[0]={...data.responsibilities.items[0],organization_name:'PRIVATE-ORG-SENTINEL',project_name:'PRIVATE-PROJECT-SENTINEL',target:{...target,name:'PRIVATE-TARGET-SENTINEL',canOpen:false}};
  const report=myWorkExportReport(data,query),markdown=myWorkMarkdownReport(report),rows=sixColumnRows(markdown).slice(1).map(row=>row.map(decodeLiteral));
  assert.deepEqual(rows,[['Demanda','Registro de acesso restrito','','','',''],['Designação','Registro de acesso restrito','','','','']]);
- assert.doesNotMatch(decodeLiteral(markdown),/PRIVATE-|private-.*?-id|private-contact|09\/11\/2026|Prioridade alta/);
+ assert.doesNotMatch(decodeLiteral(markdown),/PRIVATE-|private-.*?-id|private-contact|Prioridade alta/);
+ // The hidden due date must not reach the rows; the generation stamp may legitimately carry today's date.
+ assert.doesNotMatch(decodeLiteral(markdown.split('## Registros destas páginas')[1]??markdown),/09\/11\/2026/);
 });
 
 test('metadata is literal too and caller-injected extra DTO properties never become Markdown',()=>{

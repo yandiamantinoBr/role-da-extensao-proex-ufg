@@ -6,7 +6,7 @@ import { credentialKeyId, decryptProviderCredentials, encryptProviderCredentials
 import { speechProviderForOrganization, validProviderKey, type SpeechEnvironment } from './settings';
 
 const providers = { deepseek: 'DeepSeek', typesafe: 'TypeSafe JEV', deepgram: 'Deepgram', groq: 'Groq',openai:'OpenAI' } as const;
-const purposes = { deepseek: 'Texto e documentos', typesafe: 'Decisão e conferência', deepgram: 'Transcrição de voz', groq: 'Transcrição de voz em português',openai:'Propostas de operações e documentos textuais' } as const;
+const purposes = { deepseek: 'Conversa e imagens do Rolê, operações e documentos', typesafe: 'Decisão e triagem de demandas (JEV)', deepgram: 'Voz para texto (alternativa)', groq: 'Voz para texto (Whisper) e conversa econômica do Rolê', openai: 'Alternativa paga para operações e documentos' } as const;
 const dayInBrazil = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' });
 const conflict = () => new HttpError(409, 'As credenciais mudaram. Atualize a lista antes de salvar.', 'assistant_configuration_changed');
 const forbidden = () => new HttpError(403, 'Somente a administração geral pode gerenciar credenciais.', 'assistant_key_admin');
@@ -98,15 +98,41 @@ export async function assistantCredentialVault(db: D1Database, actor: PortalActo
       mask: safeMask(provider, saved?.mask), createdAt: saved?.created_at ?? null, createdBy: saved?.created_by ?? null,
       updatedAt: saved?.updated_at ?? null, updatedBy: saved?.updated_by ?? null };
   });
+  const history = id ? (await all(db, `SELECT a.action,a.details,a.created_at,COALESCE(NULLIF(p.display_name,''),'Administração geral') AS actor
+    FROM audit a LEFT JOIN profiles p ON p.user_id=a.actor_id
+    WHERE a.organization_id=? AND (a.action LIKE 'assistant.credentials.%' OR a.action='assistant.connection.result') AND ${authority.sql}
+    ORDER BY a.created_at DESC,a.id DESC LIMIT 15`, [id, ...authority.values])).map(row => historyEntry(row)).filter(entry => entry !== null) : [];
   if (!await one(db, `SELECT 1 WHERE ${authority.sql}`, authority.values)) throw forbidden();
-  return { organizations, organizationId: id ?? null, revision: Number(row?.revision ?? 0), storageReady,
+  return { history, organizations, organizationId: id ?? null, revision: Number(row?.revision ?? 0), storageReady,
     legacyAvailable: !keys.current && !keys.previous && (!row || String(row.credentials_ciphertext).startsWith('v1.')),
     recoverable: credentials === null, keys: entries,
     groqPilot: typeof id === 'string' && speechProviderForOrganization(id, speech) === 'groq' ? validProviderKey(speech?.groqKey) ? 'configured' : 'missing' : null,
     reserved: { today: Number(usage?.today ?? 0), month: Number(usage?.month ?? 0), dailyLimit: row ? validateConfig(JSON.parse(row.config_json)).dailyUsdMicros : DEFAULT_ASSISTANT_CONFIG.dailyUsdMicros } };
 }
 
+const historyActions = { save: 'save', disable: 'disable', enable: 'enable', remove: 'remove', recover: 'recover', reencrypted: 'reencrypted' } as const;
+const outcomes = ['authenticated', 'rejected', 'rate_limited', 'timeout', 'cancelled', 'unavailable', 'invalid_response', 'pending'] as const;
+export type VaultHistoryEntry = { action: keyof typeof historyActions | 'test'; provider: CredentialProvider | null; mask: string | null; outcome: (typeof outcomes)[number] | null; at: string; actor: string };
+/** Audit rows are rebuilt from an allowlist: no free-text detail ever reaches the browser. */
+function historyEntry(row: Record<string, unknown>): VaultHistoryEntry | null {
+  let details: Record<string, unknown> = {};
+  try { const parsed: unknown = JSON.parse(String(row.details ?? '{}')); if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) details = parsed as Record<string, unknown>; } catch { /* legacy detail */ }
+  const raw = String(row.action ?? ''), at = String(row.created_at ?? '');
+  const provider = credentialProviders.includes(details.provider as CredentialProvider) ? details.provider as CredentialProvider : null;
+  const actor = typeof row.actor === 'string' && row.actor.length <= 120 ? row.actor : 'Administração geral';
+  if (!Number.isFinite(Date.parse(at))) return null;
+  if (raw === 'assistant.connection.result') {
+    const outcome = outcomes.includes(details.outcome as (typeof outcomes)[number]) ? details.outcome as (typeof outcomes)[number] : null;
+    return provider ? { action: 'test', provider, mask: null, outcome, at, actor } : null;
+  }
+  const action = raw.replace('assistant.credentials.', '');
+  if (!Object.hasOwn(historyActions, action)) return null;
+  return { action: action as keyof typeof historyActions, provider, mask: provider ? safeMask(provider, details.mask) : null, outcome: null, at, actor };
+}
+
 function suspendDependentFeatures(config: AssistantConfig, provider: CredentialProvider, id: string, speech?: SpeechEnvironment) {
+  if (provider === config.roleProvider) { config.roleEnabled = false; config.roleVisionEnabled = false; }
+  if (provider === 'deepseek') config.roleVisionEnabled = false;
   if ((provider === 'deepseek'||provider==='openai')&&config.textProvider===provider) { config.enabled = false; config.documentEnabled = false; }
   if (provider === 'typesafe') config.jevEnabled = false;
   if ((provider === 'deepgram'||provider==='groq') && speechProviderForOrganization(id, speech, config.sttProvider) === provider) config.sttEnabled = false;
@@ -167,7 +193,7 @@ export async function manageAssistantCredential(db: D1Database, caller: PortalAc
     VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(organization_id,provider) DO UPDATE SET label=excluded.label,mask=excluded.mask,state=excluded.state,updated_at=excluded.updated_at,updated_by=excluded.updated_by`)
     .bind(id, provider, label, mask, state, at, actor.userId, at, actor.userId);
   const audit = db.prepare('INSERT INTO audit(id,actor_id,organization_id,action,entity_id,details,created_at) VALUES(?,?,?,?,?,?,?)')
-    .bind(crypto.randomUUID(), actor.userId, id, `assistant.credentials.${recover ? 'recover' : action}`, id, JSON.stringify({ provider, state, revision }), at);
+    .bind(crypto.randomUUID(), actor.userId, id, `assistant.credentials.${recover ? 'recover' : action}`, id, JSON.stringify({ provider, state, revision, mask: safeMask(provider, mask) }), at);
   try {
     await db.batch([guard, write, verify, metadata,
       ...(recover ? [db.prepare("UPDATE ai_provider_credential_metadata SET state='removed',updated_at=?,updated_by=? WHERE organization_id=? AND provider<>?").bind(at, actor.userId, id, provider)] : []),

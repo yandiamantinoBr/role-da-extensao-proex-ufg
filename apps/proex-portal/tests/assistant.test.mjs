@@ -344,7 +344,11 @@ test('vault rejects plausible keys in labels and sanitizes legacy labels and mas
   assert.deepEqual({ ...metadata.get() }, { label: 'DeepSeek', mask: '' });
   const audit = f.native.prepare("SELECT details FROM audit WHERE action LIKE 'assistant.credentials.%'").all();
   assert.equal(audit.length, 3);
-  for (const { details } of audit) assert.deepEqual(Object.keys(JSON.parse(details)).sort(), ['provider', 'revision', 'state']);
+  for (const { details } of audit) {
+   const parsed = JSON.parse(details);
+   assert.deepEqual(Object.keys(parsed).sort(), ['mask', 'provider', 'revision', 'state']);
+   assert.ok(parsed.mask === null || /^(?:sk-)?…(?:[A-Za-z0-9_-]{4}|••••)$/u.test(parsed.mask), 'audit keeps only the masked hint');
+  }
   const exposed = JSON.stringify({ read, disabled, audit });
   for (const protectedValue of [speech.groqKey, foreignKey, key, keys.current]) assert.ok(!exposed.includes(protectedValue));
  } finally { f.native.close(); }
