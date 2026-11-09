@@ -55,7 +55,9 @@ import NotificationBell from '@/components/portal/notification-bell';
 import {MATERIAL_ATTENTION_CHANGED} from '@/components/portal/material-attention-inbox';
 import OrganizationEmailSettings from '@/components/portal/organization-email-settings';
 import MaterialDetailDrawer from '@/components/portal/material-detail-drawer';
-import MaterialCatalog from '@/components/portal/material-catalog';
+import { FilterableMaterialCatalog as MaterialCatalog } from '@/components/portal/material-catalog';
+import DestinationDialog from '@/components/portal/destination-dialog';
+import DestinationField, { destinationFields } from '@/components/portal/destination-field';
 import DynamicsExplainer from '@/components/portal/dynamics-explainer';
 import StockConsumptionPanel from '@/components/portal/stock-consumption-panel';
 import StockUnitDialog from '@/components/portal/stock-unit-dialog';
@@ -318,7 +320,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
     const [materialsView, setMaterialsView] = useState<'catalog' | 'prizes'>('catalog');
     const [query, setQuery] = useState('');
     const [selectedMaterialId, setSelectedMaterialId] = useState<string | null>(null);
-    const [stockUnit,setStockUnit]=useState('');
+    const [stockUnit,setStockUnit]=useState(''),[destinationOpen,setDestinationOpen]=useState('');
     const [showConsumption,setShowConsumption]=useState(false);
     const [movementItemId,setMovementItemId]=useState(''),[movementKind,setMovementKind]=useState('');
     const [materialMode,setMaterialMode] = useState<'view'|'edit'|'move'>('view');
@@ -509,6 +511,9 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
     const restoreLocation = useEffectEvent((traversal: boolean) => {
         const url = new URL(window.location.href);
         const next = readLocation(url.searchParams);
+        // Destination pages (?module=materials&destinationId=) open over the materials module.
+        const destinationParam = url.searchParams.get('destinationId');
+        if (!traversal && destinationParam && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(destinationParam)) setDestinationOpen(destinationParam);
         pushNavigation.current = false;
         if (!traversal || portalLocationKey(next) !== portalLocationKey(route)) {
             applyLocation(next);
@@ -555,7 +560,8 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         if (destination.origin !== window.location.origin || destination.pathname !== window.location.pathname || destination.hash) return;
         if (!allowedTabs.some(module => module.id === destination.searchParams.get('module'))) return;
         event.preventDefault();
-        const next = readLocation(destination.searchParams);
+        const next = readLocation(destination.searchParams), destinationParam = destination.searchParams.get('destinationId');
+        if (destinationParam && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(destinationParam)) setDestinationOpen(destinationParam);
         if (portalLocationKey(next) === routeKey) return;
         pushNavigation.current = true;
         if (next.tab !== tab) navigation.recordVisit(next.tab);
@@ -921,8 +927,13 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
                     lowStock: item.condition === 'active' && !availabilityNote && availableQuantity <= Number(get(item, 'lowStock', 'low_stock') ?? 0),
                     canOpen: canProject(projectId, 'inventory.read'),
                     photoUrl: typeof item.primary_photo_id === 'string' && item.primary_photo_id ? `/api/records/files/${encodeURIComponent(item.primary_photo_id)}?v=list` : null,
+                    typeKey: string(item.category),
+                    categoryLabel: string(item.category_label ?? ''),
+                    ownerKey: item.owner_unit_id ? `unit:${string(item.owner_unit_id)}` : `project:${projectId}`,
+                    ownerLabel: item.owner_unit_id ? string(item.owner_unit_name || 'Unidade') : string(projectName(projectId)),
+                    destinationName: string(item.event_destination_name ?? ''),
                 };
-            })} /> : <Empty title={query ? 'Nenhum material encontrado' : 'Seu catálogo ainda está vazio'} text={query ? 'Tente outro nome ou selecione outro projeto.' : 'Cadastre os materiais e registre o recebimento após conferir a quantidade real.'}/>}</Section>
+            })} kits={!query ? byProject(offers).map(offer => ({ id: string(offer.id), name: string(offer.name), kind: string(offer.kind), project: string(projectName(get(offer, 'projectId', 'project_id'))), active: Number(offer.active) !== 0, components: list(offer.components).map(component => { const part = items.find(row => row.id === component.item_id); return { name: string(component.name), quantity: Number(component.quantity) || 1, unit: string(component.unit || 'unidade'), available: part ? available(part) : 0 }; }) })) : []} /> : <Empty title={query ? 'Nenhum material encontrado' : 'Seu catálogo ainda está vazio'} text={query ? 'Tente outro nome ou selecione outro projeto.' : 'Cadastre os materiais e registre o recebimento após conferir a quantidade real.'}/>}</Section>
         {visibleItems.length > 0 && <ProjectOperationalChart key={`materials-${filter || 'all'}`} variant="overview" title="Panorama dos materiais" projectId={filter || undefined} schedule={null} items={visibleItems.map(item => ({ ...item, available: available(item), low_stock: get(item, 'lowStock', 'low_stock') ?? 0, project_id: get(item, 'projectId', 'project_id') }))} now={now}/>}
         {can('inventory.manage') && formProjects.length > 0 && <div className={workStyles.formStack}>
             <Section title="Cadastrar material" description="O cadastro começa sem saldo. Registre o recebimento depois da contagem.">
@@ -950,7 +961,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
             </Section>
             <div id="movimentar-estoque" className={workStyles.anchor}/>
             <Section title="Movimentar estoque" description="Toda alteração registra finalidade, quantidade e responsável.">
-            <OperationForm action="stock.move" mutate={mutate} submit="Registrar movimento" make={f => { const qty = Number(f.get('quantity')); const kind = String(f.get('kind')); return { itemId: f.get('itemId'), delta: kind === 'receive' ? qty : kind === 'adjust' ? qty : -Math.abs(qty), kind, note: f.get('note'), ...stockContextFields(f) }; }}>
+            <OperationForm action="stock.move" mutate={mutate} submit="Registrar movimento" make={f => { const qty = Number(f.get('quantity')); const kind = String(f.get('kind')); return { itemId: f.get('itemId'), delta: kind === 'receive' ? qty : kind === 'adjust' ? qty : -Math.abs(qty), kind, note: f.get('note'), ...stockContextFields(f), ...destinationFields(f) }; }}>
             <Field label="Material">
             <select name="itemId" required value={movementItemId} onChange={event=>setMovementItemId(event.target.value)}>
             <option value="">Selecione o material</option>{visibleItems.filter(i => canProject(get(i, 'projectId', 'project_id'), 'inventory.manage')).map(i => <option value={i.id} key={i.id}>{i.name} · {projectName(get(i, 'projectId', 'project_id'))}</option>)}</select>
@@ -969,6 +980,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
             <input name="quantity" type="number" step="1" required defaultValue="1"/>
             </Field>
             </div>
+            {movementItemId && <DestinationField key={`destination:${movementItemId}:${movementKind}`} projectId={string(get(items.find(item=>item.id===movementItemId)??{},'projectId','project_id'))} kind={movementKind}/>}
             {movementKind && <StockContextFields key={movementItemId} projectId={string(get(items.find(item=>item.id===movementItemId)??{},'projectId','project_id'))} kind={movementKind}/>}
             <Field label="Finalidade ou justificativa">
             <textarea name="note" rows={3} required maxLength={1000} placeholder="Ex.: Recebimento conferido pela equipe"/>
@@ -1237,8 +1249,9 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         </SettingsSection>
       </div>}
 
-      <MaterialDetailDrawer onUnitOpen={setStockUnit} itemId={materialDrawerId} initialMode={materialMode} onClose={() => {setSelectedMaterialId(null);setMaterialMode('view');setMaterialMode('view');if(tab==='materials')setWorkRecord(null);}} onChanged={refreshModules} renderWorkContext={({itemId,projectId}) => workContext(projectId,'materials',{itemId})}/>
+      <MaterialDetailDrawer onUnitOpen={setStockUnit} onDestinationOpen={setDestinationOpen} itemId={materialDrawerId} initialMode={materialMode} onClose={() => {setSelectedMaterialId(null);setMaterialMode('view');setMaterialMode('view');if(tab==='materials')setWorkRecord(null);}} onChanged={refreshModules} renderWorkContext={({itemId,projectId}) => workContext(projectId,'materials',{itemId})}/>
       {stockUnit&&<StockUnitDialog key={stockUnit} unitId={stockUnit} onClose={()=>setStockUnit('')} onOpenMaterial={id=>{setMaterialMode('view');setSelectedMaterialId(id);}}/>}
+      {destinationOpen&&<DestinationDialog key={destinationOpen} destinationId={destinationOpen} onClose={()=>setDestinationOpen('')} onOpenMaterial={id=>{if(tab!=='materials')navigate('materials');setMaterialMode('view');setSelectedMaterialId(id);}}/>}
       {assistantProjects.length > 0 && <RoleAssistant key={`role:${string(user.userId)}`} projects={assistantProjects} defaultProjectId={filter} onApplied={refreshModules} onOpenSettings={allowedTabs.some(item => item.id === 'settings') ? () => navigate('settings') : undefined} onOpenLimits={allowedTabs.some(item => item.id === 'settings') ? () => { requestAiLimits(); navigate('settings'); } : undefined}/>}
       <footer className="p-footer">
     <span>{online ? <Wifi size={14}/> : <WifiOff size={14}/>}{online ? 'Conectado' : 'Sem conexão'}{updatedAt && ` · atualizado às ${updatedAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`}</span>

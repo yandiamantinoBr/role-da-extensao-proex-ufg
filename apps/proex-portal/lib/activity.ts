@@ -111,7 +111,7 @@ export async function activityFeed(db: D1Database, actor: PortalActor | null, in
     const scope = scoped(actor, ['inventory.read'], 'p.id', projectId);
     const rows = take(await all(db, `SELECT m.id,m.kind,m.delta,m.created_at,m.actor_id,m.ref_id,i.id item_id,i.name item_name,i.unit,p.id project_id,p.name project_name
       FROM stock_movements m JOIN items i ON i.id=m.item_id JOIN projects p ON p.id=i.project_id
-      WHERE ${scope.sql} AND m.created_at>=? AND m.created_at<? ORDER BY m.created_at DESC LIMIT ${MAX_PER_SOURCE + 1}`, [...scope.values, range.startsAt, range.endsAt]));
+      WHERE ${scope.sql} AND m.created_at>=? AND m.created_at<? AND NOT EXISTS(SELECT 1 FROM stock_movement_revisions mirror WHERE mirror.reversal_movement_id=m.id) ORDER BY m.created_at DESC LIMIT ${MAX_PER_SOURCE + 1}`, [...scope.values, range.startsAt, range.endsAt]));
     for (const row of rows) {
       const delta = Number(row.delta) || 0, unitName = String(row.unit || 'unidade'), unit = Math.abs(delta) === 1 || /s$/i.test(unitName) ? unitName : `${unitName}s`;
       events.push({ id: `materials:${row.id}`, type: 'materials', action: MOVEMENT_LABELS[String(row.kind)] ?? 'Movimentação', title: String(row.item_name), detail: `${delta > 0 ? '+' : ''}${delta} ${unit}`,

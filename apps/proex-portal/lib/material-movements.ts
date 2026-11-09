@@ -137,7 +137,9 @@ async function reviseMovement(db:D1Database,actor:PortalActor,input:Record<strin
   const delta=target.kind==='receive'?quantity:target.kind==='adjust'?(direction==='add'?quantity:-quantity):-quantity;
   const note=input.note===undefined?target.note:typeof input.note==='string'?input.note.normalize('NFC').trim():invalid('Informe a finalidade como texto.');
   if((target.kind!=='adjust'&&!note)||note.length>2000)invalid('A finalidade da movimentação deve ter entre 1 e 2000 caracteres.');
-  const contextInput=stockContextInput({...input,occurredAt:input.occurredAt||before.occurredAt},now);
+  // Fields left out keep the superseded version's value (the counterpart may be a project the editor cannot see).
+  const keep=(name:string,value:unknown)=>input[name]===undefined?value:input[name];
+  const contextInput=stockContextInput({...input,counterpartyType:keep('counterpartyType',before.counterpartyType),counterpartyId:keep('counterpartyId',before.counterpartyId),processReference:keep('processReference',before.processReference),beneficiaryReference:keep('beneficiaryReference',before.beneficiaryReference),occurredAt:input.occurredAt||before.occurredAt},now);
   const destination=await resolveDestination(db,actor,item.project_id,input,now);
   after={delta,note,counterpartyType:contextInput.counterpartyType,counterpartyId:contextInput.counterpartyId,counterpartyName:await counterpartyName(db,contextInput),processReference:contextInput.processReference,beneficiaryReference:contextInput.beneficiaryReference,occurredAt:contextInput.occurredAt,destinationId:destination?.id??null,destinationName:destination?.name??null,unit:item.unit};
   const changed=(['delta','note','counterpartyType','counterpartyId','processReference','beneficiaryReference','occurredAt','destinationId'] as const).some(key=>before[key]!==after![key])||(!destination&&Boolean(before.destinationId));
