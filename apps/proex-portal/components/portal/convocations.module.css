@@ -173,3 +173,10 @@
  .table,.prefTable{min-width:0!important}
  .tabs{-webkit-mask-image:linear-gradient(90deg,#000 86%,transparent);mask-image:linear-gradient(90deg,#000 86%,transparent);padding-right:24px}
 }
+
+/* Quarta crítica: última linha uniforme e cartões de aviso em 3 colunas no celular. */
+.prefTable tbody tr:last-child>*{border-bottom:0!important}
+@container (max-width:640px){
+ .prefTable tr{grid-template-columns:repeat(3,minmax(0,1fr))}
+ .prefTable td:last-child{grid-column:auto}
+}
