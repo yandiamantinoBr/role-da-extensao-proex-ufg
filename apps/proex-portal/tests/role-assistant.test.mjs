@@ -194,7 +194,7 @@ test('images need the vision switch, are validated by signature and always go to
 test('reflected keys, refused keys and the daily ceiling never reach the person or repeat a charge', async () => {
   const f = fixture();
   try {
-    await setup(f, { dailyCalls: 2 });
+    await setup(f, { dailyCalls: 2, dailyTokens: 1_000_000 });
     const echo = fakeProvider({ echoKey: true });
     await assert.rejects(roleChat(f.db, f.actors.viewer, chatInput(f), secret, { keys, fetcher: echo.fetch }), error => { assert.equal(error.code, 'role_provider_schema'); assert.equal(String(error.message).includes(CANARY), false); return true; });
     assert.equal(f.native.prepare("SELECT status FROM ai_calls").get().status, 'failed');
@@ -540,5 +540,59 @@ test('ESCOPO: "Procurar em" never widens access; unit, project and event narrow 
     assert.equal(provider.calls.length, 0, 'refused before any paid call');
     await roleChat(f.db, f.actors.viewer, chatInput(f, { scope: { kind: 'unit', id: 'unit-a' } }), secret, { keys, fetcher: provider.fetch });
     assert.match(provider.calls[0].messages.at(-1).content, /Procurar em: a unidade Unidade QA/);
+  } finally { f.native.close(); }
+});
+
+test('FONTES OFICIAIS: daily copy keeps title, short summary and same-site links, respects robots.txt and runs at most every 20 h', async () => {
+  const f = fixture();
+  try {
+    const { extractPage, maybeRefreshOfficialSources, readOfficialSnapshot, OFFICIAL_SOURCES } = await import(compile('assistant/official-sources'));
+    const html = `<html><head><title>PROEX UFG</title><meta name="description" content="Pró-Reitoria de Extensão &amp; Cultura da UFG."><script>alert(1)</script></head><body><h1>Editais PROEX</h1><p>Texto longo o bastante para virar resumo quando não houver descrição na página oficial.</p><a href="/n/123-edital-de-bolsas-2027">Edital de bolsas de extensão 2027 aberto</a><a href="https://outro.site/n/1">Link de outro site que não entra</a><a href="/admin">Painel administrativo interno</a></body></html>`;
+    const page = extractPage(html, 'https://proex.ufg.br/p/editais-proex');
+    assert.equal(page.title, 'Editais PROEX');
+    assert.equal(page.summary, 'Pró-Reitoria de Extensão & Cultura da UFG.');
+    assert.deepEqual(page.links, [{ text: 'Edital de bolsas de extensão 2027 aberto', url: 'https://proex.ufg.br/n/123-edital-de-bolsas-2027' }]);
+    const requested = [];
+    const fetcher = async url => {
+      requested.push(String(url));
+      if (String(url).endsWith('/robots.txt')) return new Response(String(url).includes('23conpeex') ? 'User-agent: *\nDisallow: /' : 'User-agent: *\nDisallow: /admin', { status: 200, headers: { 'content-type': 'text/plain' } });
+      return new Response(html, { status: 200, headers: { 'content-type': 'text/html; charset=utf-8' } });
+    };
+    const NOW = Date.parse('2026-11-10T11:00:00.000Z');
+    assert.equal(await maybeRefreshOfficialSources(f.db, NOW, fetcher), true);
+    const snapshot = await readOfficialSnapshot(f.db);
+    assert.equal(snapshot.pages.length, OFFICIAL_SOURCES.length);
+    assert.equal(snapshot.pages.find(entry => entry.id === 'conpeex-site').error, 'robots', 'a site that disallows everything is not copied');
+    assert.ok(!requested.includes('https://23conpeex.plateia.ufg.br/'));
+    assert.ok(requested.every(url => /^https:\/\/(proex\.ufg\.br|23conpeex\.plateia\.ufg\.br)\//.test(url)), 'only the closed list of official hosts');
+    const before = requested.length;
+    assert.equal(await maybeRefreshOfficialSources(f.db, NOW + 3600_000, fetcher), false, 'another call within 20 h fetches nothing');
+    assert.equal(requested.length, before);
+    assert.equal(await maybeRefreshOfficialSources(f.db, NOW + 21 * 3600_000, fetcher), true);
+  } finally { f.native.close(); }
+});
+
+test('INSTAGRAM: posts pasted by authorized staff, validated; the Rolê cites the official link and the copy date', async () => {
+  const f = fixture();
+  try {
+    await setup(f); seedLots(f);
+    const { instagramAction, refreshOfficialSources } = await import(compile('assistant/official-sources'));
+    const add = extra => instagramAction(f.db, f.actors.owner, { action: 'add', organizationId: 'org_proex', url: 'https://www.instagram.com/p/ABCdef123/', postedAt: '2026-11-09', caption: 'Rolê da Extensão no CONPEEX: venha girar a roleta e ganhar brindes.', ...extra });
+    await assert.rejects(instagramAction(f.db, f.actors.viewer, { action: 'add', organizationId: 'org_proex', url: 'https://www.instagram.com/p/ABCdef123/', postedAt: '2026-11-09', caption: 'tentativa de quem não pode' }), error => error.code === 'instagram_forbidden');
+    await assert.rejects(add({ url: 'https://evil.example/p/ABCdef123/' }), error => error.code === 'instagram_url');
+    await assert.rejects(add({ caption: 'curto' }), error => error.code === 'instagram_caption');
+    const saved = await add();
+    assert.equal(saved.posts.length, 1);
+    await assert.rejects(add(), error => error.code === 'instagram_duplicate');
+    assert.equal((await instagramAction(f.db, f.actors.viewer, { action: 'list', organizationId: 'org_proex' })).posts.length, 1, 'members can read the list');
+    await refreshOfficialSources(f.db, Date.now(), async url => String(url).endsWith('robots.txt') ? new Response('', { status: 404 }) : new Response('<h1>Editais PROEX</h1><a href="/n/9-edital-de-bolsas-de-extensao">Edital de bolsas de extensão 2027 aberto</a>', { status: 200, headers: { 'content-type': 'text/html' } }));
+    const { runRoleTool } = await import(compile('assistant/role-tools'));
+    const official = await runRoleTool(f.db, f.actors.viewer, 'org_proex', 'consultar_fontes_oficiais', { texto: 'edital de bolsas' });
+    assert.ok(official.rows > 0 && official.content.includes('copiadoEm'));
+    assert.ok(official.sources.every(source => /^https:\/\/(proex\.ufg\.br|23conpeex\.plateia\.ufg\.br)\//.test(source.href)));
+    const insta = await runRoleTool(f.db, f.actors.viewer, 'org_proex', 'consultar_fontes_oficiais', { texto: 'roleta brindes' });
+    assert.ok(insta.sources.some(source => source.href === 'https://www.instagram.com/p/ABCdef123/'));
+    await instagramAction(f.db, f.actors.owner, { action: 'remove', organizationId: 'org_proex', id: saved.posts[0].id });
+    assert.equal((await instagramAction(f.db, f.actors.owner, { action: 'list', organizationId: 'org_proex' })).posts.length, 0);
   } finally { f.native.close(); }
 });
