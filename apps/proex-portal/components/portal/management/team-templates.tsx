@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { LoaderCircle, Sparkles } from 'lucide-react';
+import { ChevronDown, LoaderCircle, Sparkles } from 'lucide-react';
 import { ACCESS_LABEL, type TeamTemplate } from '@/lib/management/team-templates';
 import { managementGet, managementPost } from './api';
 import styles from './management.module.css';
@@ -48,8 +48,8 @@ export default function TeamTemplates({ organizationId, selectedTeamId, onApplie
         <p className={styles.help}><strong>Rotinas:</strong> {template.routines.join(' · ')}.</p>
       </section>}
       {state.canApply && <details className={styles.card}>
-        <summary style={{ cursor: 'pointer', minHeight: 44, display: 'flex', alignItems: 'center', fontWeight: 700 }}>Começar de um modelo de equipe</summary>
-        <p className={styles.help}>Cria uma equipe vazia com o nome do modelo. Pessoas e acessos você define depois.</p>
+        <summary className={styles.summary}><span className={styles.summaryIcon} aria-hidden="true"><Sparkles size={18}/></span><span><strong>Começar de um modelo de equipe</strong><small>Comunicação, Administrativo, TI, Gestão, Eventos e Bolsistas</small></span><ChevronDown size={18} className={styles.summaryChevron} aria-hidden="true"/></summary>
+        <p className={styles.help}>Cria uma equipe vazia com o nome do modelo e mostra papéis, responsabilidades e acessos sugeridos. Pessoas e acessos você define depois.</p>
         {catalog}
       </details>}
     </>}

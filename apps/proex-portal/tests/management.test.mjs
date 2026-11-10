@@ -146,3 +146,14 @@ test('dashboard: aggregates only what each person can see, with links to the det
     assert.doesNotMatch(JSON.stringify(asViewer), /example\.invalid|Projeto B/);
   } finally { db.native.close(); }
 });
+
+test('dashboard counts a completion at 23:00 in Brasília on its civil day, not on the next UTC day', async () => {
+  const db = fixture();
+  try {
+    const owner = actor(db, 'owner');
+    db.native.prepare("INSERT INTO followup_history(id,task_id,version,snapshot_json,actor_id,created_at) VALUES('h-late','task-x',2,'{\"status\":\"completed\"}','synthetic','2026-11-10T02:00:21.000Z')").run();
+    const result = await managementDashboard(db, owner, { ...ORG, from: '2026-11-01', to: '2026-11-09' });
+    assert.equal(result.kpis.demandsCompleted, 1);
+    assert.deepEqual(result.demandsByMonth.map(row => row.completed), [1]);
+  } finally { db.native.close(); }
+});

@@ -21,7 +21,7 @@
 .empty { margin: 0; padding: 14px; border: 1px dashed var(--control-border, var(--line)); border-radius: 12px; background: var(--surface-soft); color: var(--text-secondary); font-size: 13px; }
 
 /* Painel */
-.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 10px; }
 .kpi { display: grid; gap: 4px; min-height: 104px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); color: inherit; text-decoration: none; box-shadow: var(--shadow-card); }
 a.kpi:hover { border-color: color-mix(in srgb, var(--brand-ink) 45%, var(--line)); }
 a.kpi:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
@@ -59,9 +59,11 @@ a.kpi:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 .table a { color: var(--brand-ink); font-weight: 600; }
 
 /* Matriz de riscos */
-.matrixWrap { display: grid; grid-template-columns: auto 1fr; gap: 6px 8px; align-items: center; }
+.matrixWrap { display: grid; grid-template-columns: auto auto 1fr; gap: 6px 8px; align-items: center; }
+.ticksY { display: grid; grid-template-rows: repeat(5, minmax(44px, 1fr)); gap: 4px; color: var(--text-secondary); font-size: 12px; text-align: right; align-items: center; }
+.ticksX { grid-column: 3; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; color: var(--text-secondary); font-size: 12px; text-align: center; }
 .axisY { writing-mode: vertical-rl; transform: rotate(180deg); color: var(--text-secondary); font-size: 12px; font-weight: 600; text-align: center; }
-.axisX { grid-column: 2; color: var(--text-secondary); font-size: 12px; font-weight: 600; text-align: center; }
+.axisX { grid-column: 3; color: var(--text-secondary); font-size: 12px; font-weight: 600; text-align: center; }
 .matrix { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; }
 .cell { display: grid; place-items: center; min-height: 44px; border: 0; border-radius: 8px; font-weight: 700; font-size: 15px; font-variant-numeric: tabular-nums; }
 button.cell { cursor: pointer; }
@@ -115,6 +117,8 @@ button.cell:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px
 .md h5 { margin: 16px 0 4px; font-size: 15px; color: var(--ink); }
 .md p { margin: 0 0 10px; }
 .md ul, .md ol { margin: 0 0 12px; padding-left: 22px; }
+.md ul { list-style: disc; } .md ol { list-style: decimal; }
+.md li::marker { color: var(--brand-ink); }
 .md li { margin: 3px 0; }
 .md a { color: var(--brand-ink); text-decoration: underline; text-underline-offset: 2px; }
 .md em { color: var(--text-secondary); }
@@ -135,8 +139,21 @@ button.cell:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px
 .template p { margin: 0; color: var(--text-secondary); font-size: 13px; }
 .template ul { margin: 0; padding-left: 18px; font-size: 13px; color: var(--ink); }
 .template :global(.p-button) { min-height: 44px; justify-self: start; }
+.levels { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0; }
+.levels div { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-radius: 10px; }
+.levels dt { font-size: 13px; font-weight: 600; } .levels dd { margin: 0; font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .roles { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
 .roles li { padding: 10px 12px; border-radius: 10px; background: var(--surface-soft); }
 .roles strong { display: block; color: var(--ink); font-size: 14px; }
 .roles small { color: var(--text-secondary); font-size: 12px; }
 .roles ul { margin: 6px 0 0; padding-left: 18px; font-size: 13px; }
+
+.summary { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; min-height: 52px; cursor: pointer; list-style: none; }
+.summary::-webkit-details-marker { display: none; }
+.summary strong { display: block; color: var(--ink); font-family: var(--font-display); font-size: 16px; }
+.summary small { color: var(--text-secondary); font-size: 13px; }
+.summaryIcon { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; background: var(--surface-soft); color: var(--brand-ink); }
+.summaryChevron { color: var(--brand-ink); transition: transform .15s; }
+details[open] > .summary .summaryChevron { transform: rotate(180deg); }
+.summary:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; border-radius: 10px; }
+@media (prefers-reduced-motion: reduce) { .summaryChevron { transition: none; } }

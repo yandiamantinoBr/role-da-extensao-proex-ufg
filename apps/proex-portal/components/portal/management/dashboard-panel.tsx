@@ -117,9 +117,11 @@ export default function DashboardPanel({ organizationId, onOpenRisks }: { organi
           <header><h3 id="dash-risks">Mapa de riscos abertos</h3><button type="button" className="p-button p-button-subtle" onClick={onOpenRisks}>Abrir riscos</button></header>
           <div className={styles.matrixWrap}>
             <span className={styles.axisY}>Impacto</span>
+            <span className={styles.ticksY} aria-hidden="true">{[5, 4, 3, 2, 1].map(value => <span key={value}>{value}</span>)}</span>
             <div className={styles.matrix} role="table" aria-label="Riscos abertos por impacto (linhas, de 5 a 1) e probabilidade (colunas, de 1 a 5)">
               {data.risks.matrix.map((row, rowIndex) => row.map((count, column) => <span key={`${rowIndex}-${column}`} role="cell" aria-label={`Impacto ${5 - rowIndex}, probabilidade ${column + 1}: ${count}`} className={`${styles.cell} ${styles[`lvl-${level(column + 1, 5 - rowIndex)}`]} ${count ? '' : styles.cellZero}`}>{count || '·'}</span>))}
             </div>
+            <span className={styles.ticksX} aria-hidden="true">{[1, 2, 3, 4, 5].map(value => <span key={value}>{value}</span>)}</span>
             <span className={styles.axisX}>Probabilidade</span>
           </div>
           {data.risks.overdue.length > 0 && <p className={styles.help}><strong>Revisão vencida:</strong> {data.risks.overdue.map(risk => risk.title).join('; ')}.</p>}

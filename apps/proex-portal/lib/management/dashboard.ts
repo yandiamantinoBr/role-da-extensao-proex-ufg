@@ -12,7 +12,8 @@ import { risksWorkspace } from './risks';
  * registros e riscos), filtradas pela organização; a resposta leva só agregados e links.
  */
 const today = () => new Date(Date.now() - 3 * 3600_000).toISOString().slice(0, 10);
-const civil = (value: unknown) => { const text = String(value ?? ''); if (/^\d{4}-\d{2}-\d{2}/.test(text)) return text.slice(0, 10); const time = typeof value === 'number' ? value : Date.parse(text); return Number.isFinite(time) ? new Date(time - 3 * 3600_000).toISOString().slice(0, 10) : ''; };
+// Data civil de Brasília: datas puras ficam como estão; instantes (UTC) são convertidos.
+const civil = (value: unknown) => { const text = String(value ?? ''); if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text; const time = typeof value === 'number' ? value : Date.parse(text); return Number.isFinite(time) ? new Date(time - 3 * 3600_000).toISOString().slice(0, 10) : ''; };
 function shift(day: string, days: number) { const date = new Date(`${day}T12:00:00Z`); date.setUTCDate(date.getUTCDate() + days); return date.toISOString().slice(0, 10); }
 function validDay(value: unknown): string | null {
   if (value === undefined || value === null || value === '') return null;
