@@ -1,7 +1,7 @@
 import {database} from '@/lib/platform';
 import {boundedJson} from '@/lib/http';
 import {HttpError} from '@/lib/errors';
-import {rateLimit} from '@/lib/rate-limit';
+import {memoryRateLimit} from '@/lib/rate-limit';
 import {actorFromSyncToken} from '@/lib/sync/tokens';
 import {callSyncTool} from '@/lib/sync/tools';
 import {syncDigest} from '@/lib/sync/contracts';
@@ -13,7 +13,7 @@ export async function POST(request:Request){try{
  const db=database(),authorization=request.headers.get('authorization');
  const actor=await actorFromSyncToken(db,authorization);
  // Chaves ausentes ou inválidas não podem criar baldes persistidos no banco.
- await rateLimit(db,`sync-connector:${(await syncDigest(authorization!)).slice(0,32)}`,2000,600000);
+ memoryRateLimit(`sync-connector:${(await syncDigest(authorization!)).slice(0,32)}`,2000,600000);
  const body=await boundedJson(request,144*1024);
  const args=body.args&&typeof body.args==='object'&&!Array.isArray(body.args)?body.args as Record<string,unknown>:{};
  const result=await callSyncTool(db,actor,body.tool,args,new URL(request.url).origin);

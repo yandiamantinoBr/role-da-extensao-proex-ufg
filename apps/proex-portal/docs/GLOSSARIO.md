@@ -49,6 +49,22 @@ Atualizado em 09/11/2026, sobre a `main` depois da PR52.
 | Meu trabalho | `my-work` e `meu-trabalho-panel` | `my-work` | Arquivos em inglês, textos em português. |
 | Rolê | projeto "Rolê da Extensão" e assistente "Rolê" | **assistente Rolê** sempre com "assistente" | Evita confusão em busca e relatório. |
 
+## Palavras com mais de um sentido (revisão geral de 09/11)
+
+| Palavra | Sentidos que convivem | Como escrever daqui em diante |
+|---|---|---|
+| **Unidade** | Unidade acadêmica (FACE, EA) e unidade de controle do material (unidade, kit, pacote) | "Unidade" só para a acadêmica; "unidade de medida" para o material |
+| **Reserva** | Reserva de equipamento (empréstimo) e quantidade reservada para prêmios ("Reservado em brindes") | "Reserva" no empréstimo; "reservado para prêmios" no estoque |
+| **Retirada** | Retirada de equipamento e retirada de brinde (por código) | "Retirada do equipamento" e "entrega do brinde" |
+| **Ação** | Tabela `activity_groups` sem tela; "ação" como dinâmica; "ação de extensão" no empréstimo | Evitar "ação" para a dinâmica; usar **Dinâmica** |
+| **Destino** | Para onde o material foi ou está reservado (`material_destinations`) | "Destino" |
+| **Pré-cadastro** | Pessoa ainda sem conta (`directory_people`) | "Pré-cadastro", dentro de um futuro "Diretório" |
+| **Turno / sessão** | Período de uma dinâmica (`campaign_sessions`); a tela diz "sessão" em alguns botões | **Turno** |
+| **Responsável** | Responsabilidade por uma área (`work_responsibility_*`) e responsável de uma demanda (`followup_assignees`) | "Responsável pela área" e "responsável pela demanda" |
+| **Conferência** | Checklist pós-evento da demanda, "Conferir dados" do pré-cadastro, conferência antes de salvar um bem | "Conferência" só para o checklist pós-evento |
+| **Linha do tempo** | Na ficha do projeto, mostra datas futuras | **Cronograma** |
+| **Equipe** | Equipe de trabalho, "Equipe e convites" (acessos) na ficha do projeto, "equipe publicada pela PROEX" | "Equipe" só para equipe de trabalho |
+
 ## Mapa curto das pastas (`apps/proex-portal`)
 
 | Pasta | O que tem |

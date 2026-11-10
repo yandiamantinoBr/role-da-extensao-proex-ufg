@@ -44,10 +44,13 @@ test('authenticated connector remains rate limited and revocation is checked on 
   try {
     const owner = f.owner(), key = await tokens.createSyncToken(f.db, owner, {}), authorization = `Bearer ${key.token}`;
     assert.equal((await connector.POST(post(authorization))).status, 200);
+    // The limit lives in process memory: spreadsheet calls never write rate rows
+    // (each row would rewrite the whole snapshot, ~1,900 times a day per sheet).
+    assert.equal(f.native.prepare('SELECT COUNT(*) n FROM portal_rate_limits').get().n, 0);
     const bucket = `sync-connector:${(await contracts.syncDigest(authorization)).slice(0, 32)}`;
-    const hash = await contracts.syncDigest(bucket);
-    f.native.prepare('UPDATE portal_rate_limits SET count=2000 WHERE bucket_key=?').run(hash);
+    for (let i = 1; i < 2000; i++) rate.memoryRateLimit(bucket, 2000, 600000);
     assert.equal((await connector.POST(post(authorization))).status, 429);
+    rate.resetMemoryRateLimits();
     assert.equal(f.context.toolCalls, 1);
     await tokens.revokeSyncToken(f.db, owner, { id: key.id });
     f.resetStats();

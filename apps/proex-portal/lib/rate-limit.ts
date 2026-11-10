@@ -38,6 +38,27 @@ export async function rateLimitAll(db:D1Database,rules:RateRule[]){
  try{await db.batch(statements);}catch(error){if(isRateLimitedError(error))limited();throw error;}
 }
 export async function rateLimit(db:D1Database,bucket:string,limit:number,windowMs:number){await rateLimitAll(db,[{bucket,limit,windowMs}]);}
+/**
+ * Limite em memória do processo, para chamadas já autenticadas por chave revogável
+ * (planilhas mestre, de projeto e de equipe). Elas chegam a cada 10–30 min em lotes
+ * de dezenas de chamadas; contar no banco regravava o instantâneo inteiro a cada
+ * chamada (cerca de 1.900 vezes por dia por planilha). Na Vercel cada instância
+ * conta separado, então o teto efetivo é mais frouxo — aceitável porque a chave é
+ * exigida antes e pode ser revogada. Chamadas sem chave válida nunca chegam aqui.
+ */
+const memoryBuckets=new Map<string,{count:number,resetAt:number}>();
+const MAX_MEMORY_BUCKETS=5000;
+export function memoryRateLimit(bucket:string,limit:number,windowMs:number){
+ const now=Date.now(),current=memoryBuckets.get(bucket);
+ if(!current||current.resetAt<=now){
+  if(memoryBuckets.size>=MAX_MEMORY_BUCKETS)for(const [key,entry] of memoryBuckets)if(entry.resetAt<=now||memoryBuckets.size>=MAX_MEMORY_BUCKETS)memoryBuckets.delete(key);
+  memoryBuckets.set(bucket,{count:1,resetAt:now+windowMs});return;
+ }
+ if(current.count>=limit)limited();
+ current.count++;
+}
+/** Somente para testes. */
+export function resetMemoryRateLimits(){memoryBuckets.clear();}
 /** IP do cliente informado pela plataforma: Cloudflare ou, no alvo Node da Vercel, x-real-ip (definido pela própria Vercel). */
 export function clientIp(request:Request):string|null{return request.headers.get('cf-connecting-ip')??((globalThis as {process?:{env?:Record<string,string|undefined>}}).process?.env?.VERCEL==='1'?request.headers.get('x-real-ip'):null);}
 export async function accountRate(db:D1Database,request:Request,subject:string){const ip=clientIp(request);await rateLimitAll(db,[{bucket:'account:global',limit:250,windowMs:60000},{bucket:`account:${subject.toLowerCase().slice(0,300)}`,limit:10,windowMs:600000},...(ip?[{bucket:`account:ip:${ip}`,limit:40,windowMs:600000}]:[])]);}
