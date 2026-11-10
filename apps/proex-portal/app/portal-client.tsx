@@ -569,6 +569,9 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         if (destination.origin !== window.location.origin || destination.pathname !== window.location.pathname || destination.hash) return;
         if (!allowedTabs.some(module => module.id === destination.searchParams.get('module'))) return;
         event.preventDefault();
+        // Link para uma equipe específica (ex.: recém-criada pelo modelo): abre Equipes com ela selecionada.
+        const teamParam = destination.searchParams.get('teamId'), teamOrg = destination.searchParams.get('organizationId');
+        if (destination.searchParams.get('module') === 'work-teams' && teamParam && /^[A-Za-z0-9_.:-]{1,80}$/.test(teamParam) && teamOrg && organizations.some(organization => organization.id === teamOrg)) { openTeams({ kind: 'open', teamId: teamParam, organizationId: teamOrg }); return; }
         const next = readLocation(destination.searchParams), destinationParam = destination.searchParams.get('destinationId');
         if (destinationParam && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(destinationParam)) setDestinationOpen(destinationParam);
         const convocationLink = destination.searchParams.get('convocation');

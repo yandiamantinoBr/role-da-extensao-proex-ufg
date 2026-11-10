@@ -6,7 +6,7 @@ import { managementGet, managementPost } from './api';
 import styles from './management.module.css';
 
 type State = { templates: TeamTemplate[]; applications: { teamId: string; templateId: string }[]; canApply: boolean };
-const TEAMS_LINK = ['/', '?module=work-teams'].join('');
+const teamLink = (organizationId: string, teamId: string) => `${['/', '?module=work-teams'].join('')}&organizationId=${encodeURIComponent(organizationId)}&teamId=${encodeURIComponent(teamId)}`;
 type Draft = { templateId: string; name: string; operationKey: string };
 
 /**
@@ -16,7 +16,7 @@ type Draft = { templateId: string; name: string; operationKey: string };
  */
 export default function TeamTemplates({ organizationId, selectedTeamId, onApplied, catalogOnly = false }: { organizationId: string; selectedTeamId?: string; onApplied?: (teamId: string) => void; catalogOnly?: boolean }) {
   const [state, setState] = useState<State | null>(null), [busy, setBusy] = useState(false), [message, setMessage] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
-  const [draft, setDraft] = useState<Draft | null>(null), [created, setCreated] = useState<{ templateId: string; name: string } | null>(null);
+  const [draft, setDraft] = useState<Draft | null>(null), [created, setCreated] = useState<{ templateId: string; name: string; teamId: string } | null>(null);
   useEffect(() => {
     if (!organizationId) return;
     const controller = new AbortController();
@@ -32,7 +32,7 @@ export default function TeamTemplates({ organizationId, selectedTeamId, onApplie
     try {
       // A mesma chave de operação vale para o formulário aberto: clicar duas vezes não cria duas equipes.
       const result = await managementPost<State & { teamId: string }>({ action: 'template.apply', organizationId, templateId: entry.id, name: current.name, operationKey: current.operationKey });
-      setState(result); setDraft(null); setCreated({ templateId: entry.id, name: current.name.trim() || entry.name });
+      setState(result); setDraft(null); setCreated({ templateId: entry.id, name: current.name.trim() || entry.name, teamId: result.teamId });
       window.setTimeout(() => document.getElementById(`template-created-${entry.id}`)?.focus(), 0);
       onApplied?.(result.teamId);
     } catch (cause) { setMessage({ tone: 'error', text: cause instanceof Error ? cause.message : 'Não foi possível criar a equipe.' }); }
@@ -45,7 +45,7 @@ export default function TeamTemplates({ organizationId, selectedTeamId, onApplie
       <ul className={styles.templateRoles}>{entry.roles.map(role => <li key={role.name} className={styles.roleLine}><span>{role.name}</span><small>Acesso sugerido: {ACCESS_LABEL[role.access]}</small>
         <details className={styles.roleMore}><summary>Responsabilidades<ChevronDown size={14} aria-hidden="true"/></summary><ul>{role.responsibilities.map(item => <li key={item}>{item}</li>)}</ul></details></li>)}</ul>
       <p className={styles.help}><strong>Rotinas:</strong> {entry.routines.join(' · ')}.</p>
-      {created?.templateId === entry.id && <p id={`template-created-${entry.id}`} tabIndex={-1} className={styles.createdNote} role="status">Equipe “{created.name}” criada, ainda sem pessoas. {catalogOnly ? <a href={TEAMS_LINK}>Abrir em Equipes</a> : 'Ela já está selecionada abaixo; adicione as pessoas em Editar equipe.'}</p>}
+      {created?.templateId === entry.id && <p id={`template-created-${entry.id}`} tabIndex={-1} className={styles.createdNote} role="status">Equipe “{created.name}” criada, ainda sem pessoas. {catalogOnly ? <a href={teamLink(organizationId, created.teamId)}>Abrir a equipe em Equipes</a> : 'Ela já está selecionada abaixo; adicione as pessoas em Editar equipe.'}</p>}
       {state.canApply && (open && draft ? <form className={styles.applyForm} onSubmit={event => { event.preventDefault(); void create(entry, draft); }}>
         <label className="p-field"><span>Nome da equipe</span><input value={draft.name} maxLength={100} required autoFocus onChange={event => setDraft({ ...draft, name: event.target.value })}/></label>
         {message && <p className="p-inline-error" role="alert">{message.text}</p>}

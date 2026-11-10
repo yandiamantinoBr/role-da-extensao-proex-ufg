@@ -135,7 +135,7 @@ button.cell:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px
 .srOnly { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 /* Equipes-modelo */
-.templates { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); align-items: start; }
+.templates { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); align-items: stretch; }
 .template { display: flex; flex-direction: column; gap: 8px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
 .template h4 { margin: 0; color: var(--ink); font-family: var(--font-display); font-size: 16px; font-weight: 700; }
 .template p { margin: 0; color: var(--text-secondary); font-size: 13px; }
@@ -234,3 +234,5 @@ details[open] > .summary .summaryChevron { transform: rotate(180deg); }
 .createdNote a { color: inherit; text-decoration: underline; }
 .createdNote:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 .cancelGap { margin-left: 8px; }
+
+:global(html[data-theme=dark]) .cellZero { opacity: .3; }

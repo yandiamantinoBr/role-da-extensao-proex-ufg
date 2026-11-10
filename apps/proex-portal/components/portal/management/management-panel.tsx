@@ -13,6 +13,7 @@ const TABS: { id: Tab; label: string; icon: typeof Gauge }[] = [
   { id: 'dashboard', label: 'Painel', icon: Gauge }, { id: 'guide', label: 'Guia da organização', icon: BookOpen },
   { id: 'risks', label: 'Riscos', icon: ShieldAlert }, { id: 'teams', label: 'Equipes-modelo', icon: Users },
 ];
+const TAB_PARAM = 'gestao';
 const isTab = (value: unknown): value is Tab => TABS.some(entry => entry.id === value);
 
 /** Gestão da organização: painel estratégico, guia vivo, riscos e equipes-modelo. */
@@ -23,9 +24,13 @@ export default function ManagementPanel({ organizations, defaultOrganizationId =
   const guideDirty = useRef(false);
   const tabRefs = useRef<Record<Tab, HTMLButtonElement | null>>({ dashboard: null, guide: null, risks: null, teams: null });
   useEffect(() => {
-    // A aba fica no endereço (&tab=riscos…), para recarregar ou mandar o link a um colega.
-    const timer = window.setTimeout(() => { const wanted = new URLSearchParams(window.location.search).get('tab'); if (isTab(wanted)) setTab(wanted); }, 0);
-    return () => window.clearTimeout(timer);
+    // A aba fica no endereço (&gestao=risks…), para recarregar ou mandar o link a um colega.
+    const timer = window.setTimeout(() => { const wanted = new URLSearchParams(window.location.search).get(TAB_PARAM); if (isTab(wanted)) setTab(wanted); }, 0);
+    return () => {
+      window.clearTimeout(timer);
+      // Ao sair da Gestão, o parâmetro não acompanha outras páginas.
+      window.setTimeout(() => { try { const url = new URL(window.location.href); if (url.searchParams.get('module') !== 'management' && url.searchParams.has(TAB_PARAM)) { url.searchParams.delete(TAB_PARAM); window.history.replaceState(window.history.state, '', url); } } catch { /* conveniência */ } }, 0);
+    };
   }, []);
   function leaveGuide(): boolean {
     if (!guideDirty.current) return true;
@@ -36,7 +41,7 @@ export default function ManagementPanel({ organizations, defaultOrganizationId =
     if (next === tab || !leaveGuide()) return;
     if (next !== 'risks') setRiskFilter('all');
     setTab(next);
-    try { const url = new URL(window.location.href); url.searchParams.set('tab', next); window.history.replaceState(window.history.state, '', url); } catch { /* endereço é conveniência */ }
+    try { const url = new URL(window.location.href); url.searchParams.set(TAB_PARAM, next); window.history.replaceState(window.history.state, '', url); } catch { /* endereço é conveniência */ }
     if (focus) tabRefs.current[next]?.focus();
   }
   function onTabKey(event: KeyboardEvent<HTMLButtonElement>) {
