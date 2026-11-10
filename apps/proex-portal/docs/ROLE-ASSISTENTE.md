@@ -197,3 +197,10 @@ Motivo: às 13h o Yan perguntou "quantos brindes, super brindes e super super br
 - O botão flutuante do Rolê entrou na doca comum (`useDockItem` em `floating-dock.tsx`, da sessão Comunidade).
 - A doca desenha o botão e guarda por pessoa se ele está escondido (X do lançador ou galeria "Meu espaço"). O painel e o Alt+R continuam no Rolê.
 - Quem não tem o módulo Comunidade não recebe a doca: para essas pessoas o Rolê continua com o próprio botão (`registered` falso).
+
+## Guia da PROEX como fonte do Rolê · 10/11/2026
+
+- Nova consulta `consultar_guia`. Ela usa `guideForAssistant` (`lib/management/guide.ts`), com as permissões de quem pergunta e só a organização da conversa.
+- O Rolê pode pedir até 4 páginas por nome (`estrutura`, `processos-conpeex`, `contatos`…) ou só o assunto. As páginas são cortadas por seção (`##`), as mais próximas vêm primeiro, até o limite de 8 KB da rodada.
+- Cada trecho leva a página, a data de atualização e a linha "Fontes: …"; sem essa linha, aparece "sem fonte registrada". O texto é dos editores do guia e entra como conteúdo, não como instrução.
+- O link da fonte abre Gestão → Guia.
