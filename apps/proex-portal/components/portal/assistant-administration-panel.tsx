@@ -3,7 +3,8 @@
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { AudioLines, Boxes, Check, CircleDollarSign, KeyRound, ScanText, Settings2, ShieldCheck, Stethoscope, Users } from 'lucide-react';
-import { DEFAULT_ASSISTANT_CONFIG, validateConfig, type AssistantConfig } from '@/lib/assistant/contracts';
+import { DEFAULT_ASSISTANT_CONFIG, TASK_MODEL_KEYS, validateConfig, type AssistantConfig, type TaskModelKey } from '@/lib/assistant/contracts';
+import { taskModelOptions, type RoutedTask } from '@/lib/assistant/model-catalog';
 import AssistantConnectionPanel from './assistant-connection-panel';
 import ModelCatalogPanel from './model-catalog-panel';
 import AiSpendingSlot from './ai-spending-slot';
@@ -14,6 +15,9 @@ import styles from './credential-vault-panel.module.css';
 
 type Organization = { id: string; name: string; canConfigure: boolean; legacySttProvider?: 'groq' | 'deepgram'; usageIsMine?: boolean };
 type Status = { organizationId: string; canConfigure: boolean; canDelegate?: boolean; revision?: number; config?: AssistantConfig; organizations: Organization[]; candidates?: {userId:string;name:string}[]; grants?: {id:string;userId:string}[]; usage?: AiUsage };
+type TaskOptions = Record<RoutedTask, ReturnType<typeof taskModelOptions>>;
+// Chave da configuração que guarda o modelo escolhido para cada tarefa ('' = padrão de hoje).
+const TASK_KEY: Record<RoutedTask, TaskModelKey> = { document: 'documentModel', decision: 'decisionModel', speech: 'speechModel' };
 type Props = { canManageKeys?: boolean; refreshKey?: number; onChanged?: () => void; renderCredentials?: (organizationId: string, configurationBusy: boolean) => ReactNode };
 class AdminError extends Error { constructor(readonly status: number, message: string) { super(message); } }
 async function responseValue(response: Response): Promise<Record<string, unknown>> {
@@ -60,6 +64,7 @@ export default function AssistantAdministrationPanel({ canManageKeys=false, refr
   }, [revealLimits,status,view]);
   // Catalog models for the Rolê selects, loaded only when a select is opened (administração geral only).
   const optionsFor = useRef('');
+  const [taskOptions,setTaskOptions] = useState<TaskOptions>({ document: [], decision: [], speech: [] });
   function loadRoleOptions() {
     if (!canManageKeys || !selection || optionsFor.current === selection) return;
     optionsFor.current = selection;
@@ -69,15 +74,20 @@ export default function AssistantAdministrationPanel({ canManageKeys=false, refr
         if (!active.current || !data?.catalog) return;
         const providers = new Map(data.catalog.providers.map(provider => [provider.id, provider]));
         setRoleOptions(data.catalog.models.filter(model => model.enabled && model.capabilities.includes('text') && ['openai_chat','anthropic_messages'].includes(providers.get(model.providerId)?.kind ?? '')).map(model => ({ id:model.id, label:model.label, vision:model.capabilities.includes('vision'), hasKey:!!providers.get(model.providerId)?.hasKey })));
+        // Mesma regra do servidor (fitsTask): só entra modelo ligado, com preço e que sirva para a tarefa.
+        const catalog = data.catalog as unknown as Parameters<typeof taskModelOptions>[0];
+        setTaskOptions({ document: taskModelOptions(catalog,'document'), decision: taskModelOptions(catalog,'decision'), speech: taskModelOptions(catalog,'speech') });
       }).catch(() => { optionsFor.current = ''; });
   }
   function selectOrganization(value: string) { mutation.current?.abort(); ++epoch.current; ++mutationEpoch.current; setSelection(value); setData(null); setFailure(''); setNotice(''); setDelegateId(''); setBusy(false); }
+  // Só a administração geral escolhe o modelo de cada tarefa. As outras pessoas não mandam essas chaves: o servidor mantém o que já estava salvo.
+  const sentConfig = (value: AssistantConfig) => canManageKeys ? value : Object.fromEntries(Object.entries(value).filter(([key]) => !(TASK_MODEL_KEYS as readonly string[]).includes(key)));
   async function save(action: 'configure'|'grant.create'|'grant.revoke', grantId?: string, override?: AssistantConfig) {
     if (busy || !status?.canConfigure || !status.organizationId || status.organizationId!==selection) return;
     const request=++mutationEpoch.current, controller=new AbortController(); mutation.current?.abort(); mutation.current=controller;
     setBusy(true); setFailure(''); setNotice('');
     try {
-      await post({action,organizationId:selection,...(action==='configure'?{config:override??config,expectedRevision:status.revision??0}:grantId?{grantId}:{userId:delegateId})},controller.signal);
+      await post({action,organizationId:selection,...(action==='configure'?{config:sentConfig(override??config),expectedRevision:status.revision??0}:grantId?{grantId}:{userId:delegateId})},controller.signal);
       if (!active.current||controller.signal.aborted||request!==mutationEpoch.current) return;
       setNotice(action==='configure'?(override?(override.testMode?'Modo de testes ligado. Os limites ficam altos até alguém desligar; a mudança está em Registros.':'Modo de testes desligado. Os limites de antes voltaram; a mudança está em Registros.'):'Funções, acesso e limites salvos. Nenhuma chamada de IA foi iniciada.'):action==='grant.create'?'Permissão de configuração concedida. Isso não libera cadastro de chaves.':'Permissão de configuração revogada.'); setDelegateId(''); setData(null); setRefresh(value=>value+1); onChanged?.();
     } catch(error) {
@@ -87,6 +97,8 @@ export default function AssistantAdministrationPanel({ canManageKeys=false, refr
     } finally { if (active.current&&!controller.signal.aborted&&request===mutationEpoch.current) setBusy(false); }
   }
   const organizations=status?.organizations.filter(org=>org.canConfigure)??[];
+  // Seletor de modelo por tarefa, no mesmo padrão do "Modelo do Rolê": lista carregada ao focar ou tocar, aviso de chave e o valor salvo sempre visível.
+  const taskSelect = (task: RoutedTask, label: string) => { const key = TASK_KEY[task], saved = config[key], options = taskOptions[task]; return <label className="p-field"><span>{label}</span><select onFocus={loadRoleOptions} onPointerDown={loadRoleOptions} disabled={busy} value={saved} onChange={event=>setConfig({...config,[key]:event.target.value})}><option value="">Padrão de hoje</option>{saved&&!options.some(option=>option.id===saved)&&<option value={saved}>{saved}</option>}{options.map(option=><option key={option.id} value={option.id}>{option.label}{option.hasKey?'':' (sem chave)'}</option>)}</select></label>; };
   const provider=config.sttProvider==='groq'||config.sttProvider==='deepgram'?config.sttProvider:status?.organizations.find(org=>org.id===selection)?.legacySttProvider??'deepgram';
   return <div className={styles.panel}>
     <p className={styles.lead}>{canManageKeys?'Três passos: cole e teste a chave, ligue só o que for usar e defina o limite por dia.':'Ajuste o uso, as funções e os limites autorizados. O cadastro de chaves fica com a administração geral.'}</p>
@@ -128,8 +140,10 @@ export default function AssistantAdministrationPanel({ canManageKeys=false, refr
         <label className={styles.confirm}><input type="checkbox" disabled={busy} checked={config.enabled} onChange={event=>setConfig({...config,enabled:event.target.checked})}/><span><strong>Pedidos de operações · {config.textProvider==='openai'?'OpenAI':'DeepSeek Flash'}</strong><small>Prepara consultas e propostas; uma pessoa confere antes de aplicar.</small></span></label>
         <label className={styles.confirm}><input type="checkbox" disabled={busy} checked={config.documentEnabled} onChange={event=>setConfig({...config,documentEnabled:event.target.checked})}/><span><strong>Interpretação de documentos</strong><small>{config.textProvider==='openai'?'OpenAI':'DeepSeek'} extrai campos autorizados; cada documento precisa de consentimento e revisão.</small></span></label>
         <label className={styles.confirm}><input type="checkbox" disabled={busy} checked={config.jevEnabled} onChange={event=>setConfig({...config,jevEnabled:event.target.checked})}/><span><strong>Conferência e triagem de demandas</strong><small>TypeSafe sugere decisões dentro do contrato. Em caso de dúvida, a decisão fica manual.</small></span></label>
+        {canManageKeys&&<>{taskSelect('document','Modelo para ler documentos')}{taskSelect('decision','Modelo para conferir e triar')}<p className="p-form-help">As opções vêm da aba Modelos. Quando o modelo escolhido não puder responder, o portal usa o padrão de hoje e registra o motivo no histórico.</p></>}
         <div className={styles.voice}><div className={styles.heading}><AudioLines size={20} aria-hidden="true"/><h4>Transcrição de áudio</h4></div><label className="p-field"><span>Provedor de transcrição</span><select disabled={busy} value={config.sttProvider??'legacy'} onChange={event=>setConfig({...config,sttProvider:event.target.value as AssistantConfig['sttProvider'],sttEnabled:false})}><option value="legacy">Manter configuração anterior</option><option value="groq">Groq · Whisper Large V3 Turbo</option><option value="deepgram">Deepgram · Nova-3</option></select></label>
           <label className={styles.confirm}><input type="checkbox" disabled={busy} checked={config.sttEnabled} onChange={event=>setConfig({...config,sttEnabled:event.target.checked})}/><span>Habilitar transcrição {provider==='groq'?'Groq':'Deepgram'} em português</span></label><p className="p-form-help">Trocar o provedor desmarca a função para nova confirmação. O texto transcrito só é usado depois de revisado. {provider==='groq'?'Reserva estimada de US$ 0,04 por hora, com mínimo de 10 segundos por envio. A faixa gratuita depende da conta Groq.':'O custo e a autorização de transcrição dependem da conta Deepgram.'}</p>
+          {canManageKeys&&<>{taskSelect('speech','Modelo para transcrever voz')}<p className="p-form-help">O áudio vai só para o serviço nomeado no aviso de gravação. Se o modelo escolhido não puder receber o áudio, o portal usa o padrão de hoje e registra o motivo no histórico.</p></>}
         </div>
       </section>
       {status.config&&<AiLimitsSection config={config} saved={status.config} usage={status.usage} busy={busy} open={limitsOpen} onOpenChange={setLimitsOpen} onChange={setConfig} onTestMode={on=>void save('configure',undefined,{...status.config!,testMode:on})}/>}<div className={styles.actions}><button type="button" disabled={busy} className="p-button p-button-primary" onClick={()=>void save('configure')}><Check size={18} aria-hidden="true"/>{busy?'Salvando…':'Salvar funções, acesso e limites'}</button></div>
