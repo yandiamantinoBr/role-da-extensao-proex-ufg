@@ -21,7 +21,7 @@ export const ASSET_IMPORT_FIELDS: ImportField[] = [
 ];
 export const importFields = (kind: ImportKind) => kind === 'project' ? PROJECT_IMPORT_FIELDS : ASSET_IMPORT_FIELDS;
 export type ImportFieldEvidence = {method:'rule'|'ai';status:'literal'|'missing'|'conflict'|'review';quote:string|null;sourceTextSha256:string;confidence:null;page?:number};
-export type ImportAiProvenance = {callId:string;configRevision:number;provider:'deepseek'|'openai';model:string;modelRevision:string;returnedModel:string;jevModel:string|null;sourceTextSha256:string;reviewedAt:string};
+export type ImportAiProvenance = {callId:string;configRevision:number;provider:'deepseek'|'openai'|`catalog:${string}`;model:string;modelRevision:string;returnedModel:string;jevModel:string|null;sourceTextSha256:string;reviewedAt:string};
 export type ImportCandidate = { key: string; fields: Record<string, string>; problems: Record<string, string>; warnings: string[]; evidence?:Record<string,ImportFieldEvidence>; suggestedUnitId?: string; suggestedTypeId?: string };
 export type ImportFileProvenance = { fileFormat: string; sha256: string; extraction: 'server-docx' | 'browser-pdf' | 'text-file'; pages?: number[] };
 export type ImportProvenance = { kind: 'sigaa' | 'document' | 'manual'; organizationId: string; label: string; url?: string; externalId?: string; sha256: string; textSha256?: string; fileFormat?: string; extraction?: ImportFileProvenance['extraction']; pages?: number[]; retrievedAt: string; ai?:ImportAiProvenance };

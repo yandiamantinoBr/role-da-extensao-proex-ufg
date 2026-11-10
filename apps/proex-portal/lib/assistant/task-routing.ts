@@ -6,8 +6,9 @@
  * não cobrou, isto é, antes do envio (sem chave, desligado, removido, não serve) ou quando o
  * provedor respondeu com status de erro (RefusedError). Prazo, rede e formato ruim sobem como erro.
  */
+import { HttpError } from '../errors';
 import { PROVIDERS, textModel, type AssistantConfig, type TaskModelKey } from './contracts';
-import { RefusedError } from './generic-provider';
+import { firstJsonObject, genericChat, RefusedError } from './generic-provider';
 import { fitsTask, safeBaseUrl, type CatalogModel, type CatalogProvider, type RoutedTask } from './model-catalog';
 import { loadCatalog } from './model-catalog-store';
 
@@ -56,6 +57,37 @@ export async function resolveTaskRoute(db: D1Database, organizationId: string, c
 
 /** Endereço do formato JEV no provedor escolhido (mesmo caminho do TypeSafe). */
 export function decisionEndpoint(route: TaskRoute) { return `${route.baseUrl}/systemone`; }
+/** Destino JEV no formato que checkDecision e classifyTaskTriage recebem. */
+export function decisionTarget(route: TaskRoute) { return { endpoint: decisionEndpoint(route), apiKey: route.apiKey, model: route.model.model }; }
+/**
+ * Preço para reservar a conferência quando há rota: o maior entre o escolhido e o padrão, porque o pedido
+ * pode terminar em qualquer um dos dois. Sem rota devolve undefined (valem os números do padrão).
+ */
+export function decisionCeiling(resolved: ResolvedTaskRoute) {
+  return resolved && !('skip' in resolved) ? { decisionInputMicrosPerToken: Math.max(PROVIDERS.typesafe.inputMicrosPerToken, resolved.model.price.inputPerM) } : undefined;
+}
+/** Preço para o acerto: o do modelo do catálogo que de fato respondeu. null = respondeu o padrão. */
+export function decisionSettled(route: TaskRoute | null) { return route ? { decisionInputMicrosPerToken: route.model.price.inputPerM } : undefined; }
+/** Preço para reservar a leitura de documento com rota: o maior, entrada e saída, entre o escolhido e o padrão. */
+export function documentCeiling(config: AssistantConfig, resolved: ResolvedTaskRoute) {
+  if (!resolved || 'skip' in resolved) return undefined;
+  const standard = textModel(config), price = resolved.model.price;
+  return { text: { inputMicrosPerToken: Math.max(standard.inputMicrosPerToken, price.inputPerM), outputMicrosPerToken: Math.max(standard.outputMicrosPerToken, price.outputPerM) } };
+}
+/**
+ * Leitura de documento no modelo escolhido: mesma instrução e mesmo texto do padrão, uma chamada só.
+ * Recusa do provedor sai como RefusedError (permite o padrão); prazo, rede e formato ruim sobem como erro.
+ */
+export async function routedDocumentProposal(route: TaskRoute, messages: { role: string; content: string }[], maxTokens: number, signal: AbortSignal, fetcher?: typeof fetch) {
+  const system = messages.find(message => message.role === 'system')?.content ?? '', user = messages.find(message => message.role === 'user')?.content ?? '';
+  const answer = await genericChat({ provider: route.provider, model: route.model, apiKey: route.apiKey, system, turns: [{ role: 'user', content: user }], maxTokens, json: true, signal, fetcher });
+  if (answer.outputTokens > maxTokens) throw new HttpError(502, 'O provedor não confirmou o uso de tokens.', 'assistant_usage');
+  let proposal: unknown;
+  try { proposal = firstJsonObject(answer.text); } catch { throw new HttpError(502, 'A IA não produziu uma proposta JSON válida.', 'assistant_provider_schema'); }
+  return { proposal, returnedModel: answer.returnedModel, inputTokens: answer.inputTokens, outputTokens: answer.outputTokens };
+}
+/** Destino de voz que o consentimento precisa nomear: `catalog:<id>` com rota ativa; senão o provedor padrão. */
+export function speechDestination(resolved: ResolvedTaskRoute, provider: DefaultSpeech): string { return resolved && !('skip' in resolved) ? `catalog:${resolved.model.id}` : provider; }
 export function refusalReason(error: RefusedError) { return `O provedor recusou o pedido (HTTP ${error.providerStatus}).`; }
 
 /**

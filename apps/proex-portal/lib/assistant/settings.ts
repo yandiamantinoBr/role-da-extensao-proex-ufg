@@ -6,7 +6,7 @@ import { configChanges } from './quota';
 import { decryptProviderCredentials, encryptProviderCredentials, type CredentialKeys } from './crypto';
 import { fitsFunction, fitsTask, type RoutedTask } from './model-catalog';
 import { loadCatalog } from './model-catalog-store';
-import { TASK_MODEL_KEY } from './task-routing';
+import { TASK_MODEL_KEY, resolveTaskRoute, speechDestination } from './task-routing';
 
 export type SpeechProvider = 'deepgram' | 'groq';
 export type SpeechEnvironment = { provider?: string; organizationId?: string; groqKey?: string };
@@ -162,12 +162,15 @@ export async function assistantStatus(db: D1Database, actor: PortalActor | null,
   try { await loadAssistantSettings(db, secret, organization.id, false, keys, current.userId); available = true; } catch { /* unavailable */ }
   try { await loadAssistantSettings(db, secret, organization.id, 'document', keys, current.userId); documentAvailable = true; } catch { /* unavailable */ }
   let sttProvider = speechProviderForOrganization(organization.id, speechEnvironment),sttCredentialSource='vault';
+  // Só existe com modelo do catálogo escolhido para voz e em condição de receber o áudio: é o destino que o consentimento precisa nomear.
+  let sttRoute: string | undefined;
   try {
    const speech=await loadSpeechSettings(db,secret,organization.id,speechEnvironment,keys,current.userId);
    sttProvider=speech.provider;sttCredentialSource=speech.credentialSource;
    sttAvailable = true;
+   if (speech.config.speechModel) { const destination = speechDestination(await resolveTaskRoute(db, organization.id, speech.config, speech.rawCredentials, 'speech', speech.provider), speech.provider); if (destination !== speech.provider) sttRoute = destination; }
   } catch { try{const stored=await loadAssistantSettings(db,secret,organization.id,'configuration',keys);sttProvider=speechProviderForOrganization(organization.id,speechEnvironment,stored.config.sttProvider);sttCredentialSource=sttProvider==='groq'&&stored.config.sttProvider==='legacy'?'environment':'vault';}catch{/* unavailable */} }
-  visible.push({ id: organization.id, name: organization.name, canConfigure, canDelegate, canUseAi, usageScope:policy.usageScope, usageIsMine:policy.usageScope==='private'&&policy.usageUserId===current.userId, available, sttAvailable, sttProvider, legacySttProvider:speechProviderForOrganization(organization.id,speechEnvironment), sttCredentialSource, documentAvailable });
+  visible.push({ id: organization.id, name: organization.name, canConfigure, canDelegate, canUseAi, usageScope:policy.usageScope, usageIsMine:policy.usageScope==='private'&&policy.usageUserId===current.userId, available, sttAvailable, sttProvider, legacySttProvider:speechProviderForOrganization(organization.id,speechEnvironment), sttCredentialSource, documentAvailable, ...(sttRoute ? { sttRoute } : {}) });
  }
  const selected = visible.find(organization => organization.id === selectedId) ?? (visible.length === 1 ? visible[0] : undefined);
  const result = { available: selected?.available ?? false, documentAvailable:selected?.documentAvailable??false, canConfigure: selected?.canConfigure ?? false, canDelegate: selected?.canDelegate ?? false, organizationId: selected?.id ?? '', organizations: visible, voice: { dictation: 'browser-optional', uploadStt: selected?.sttAvailable ?? false } };

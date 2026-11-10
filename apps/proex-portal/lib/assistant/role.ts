@@ -17,6 +17,7 @@ import { fitsFunction, type CatalogModel, type CatalogProvider, type ModelCatalo
 import { loadCatalog } from './model-catalog-store';
 import { catalogPricing, type RolePricing } from './role-contracts';
 import { assistantUsageSql, loadAssistantSettings, speechProviderForOrganization, validProviderKey, type SpeechEnvironment } from './settings';
+import { resolveTaskRoute, speechDestination } from './task-routing';
 
 type Options = { fetcher?: typeof fetch; now?: number; keys?: CredentialKeys; signal?: AbortSignal; speech?: SpeechEnvironment };
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
@@ -79,7 +80,8 @@ export type RoleAvailability = {
   contract: string; organizationId: string; projectId: string; available: boolean; reason: string | null;
   provider: string; model: string; visionAvailable: boolean; operationsAvailable: boolean;
   textPricing: RolePricing | null; visionPricing: RolePricing | null;
-  speech: { available: boolean; provider: 'groq' | 'deepgram' };
+  /** `route` só existe com modelo do catálogo escolhido para voz: é o destino (`catalog:<id>`) que o consentimento precisa nomear. */
+  speech: { available: boolean; provider: 'groq' | 'deepgram'; route?: string };
   dailyLimitMicros: number; reservedTodayMicros: number;
   /** Consultas ao portal (só leitura) disponíveis na conversa e na foto. */
   tools: { text: boolean; vision: boolean };
@@ -126,7 +128,12 @@ export async function roleStatus(db: D1Database, actor: PortalActor | null, inpu
     const { config, credentials, rawCredentials } = await loadAssistantSettings(db, secret, organizationId, 'configuration', options.keys, current.userId);
     const catalog = config.roleModel || config.roleVisionModel ? (await loadCatalog(db, organizationId)).catalog : null;
     const { text, vision, ...state } = availability(config, credentials, organizationId, options.speech, rawCredentials, catalog);
-    return { ...base, ...state, provider: text?.kind === 'catalog' ? text.provider.id : config.roleProvider, model: text?.pricing.label ?? ROLE_MODELS[config.roleProvider].label,
+    let speech: RoleAvailability['speech'] = state.speech;
+    if (config.speechModel && speech.available) {
+      const destination = speechDestination(await resolveTaskRoute(db, organizationId, config, rawCredentials, 'speech', speech.provider), speech.provider);
+      if (destination !== speech.provider) speech = { ...speech, route: destination };
+    }
+    return { ...base, ...state, speech, provider: text?.kind === 'catalog' ? text.provider.id : config.roleProvider, model: text?.pricing.label ?? ROLE_MODELS[config.roleProvider].label,
       textPricing: text?.pricing ?? null, visionPricing: vision?.pricing ?? null, dailyLimitMicros: config.dailyUsdMicros, tools: { text: text?.kind === 'legacy', vision: vision?.kind === 'legacy' },
       reason: state.available ? null : !config.roleEnabled ? 'O Rolê ainda não foi ligado nesta organização.' : 'Falta a chave do provedor escolhido para o Rolê.', scopes: state.available ? await roleScopes(db, current, organizationId) : undefined };
   } catch (error) {
