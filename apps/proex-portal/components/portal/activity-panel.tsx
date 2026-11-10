@@ -1,12 +1,12 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowRight, ArrowUpRight, Boxes, CalendarDays, Check, ClipboardCheck, FileText, ListChecks, SlidersHorizontal, Sparkles, TriangleAlert, Truck, type LucideIcon } from 'lucide-react';
+import { ArrowRight, ArrowUpRight, Boxes, CalendarDays, Check, ClipboardCheck, FileText, KeyRound, ListChecks, SlidersHorizontal, Sparkles, TriangleAlert, Truck, type LucideIcon } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import DateField from './date-field';
 import styles from './activity-panel.module.css';
 
-type ActivityType = 'materials' | 'loans' | 'demands' | 'agenda' | 'records' | 'convocations' | 'ai';
+type ActivityType = 'materials' | 'loans' | 'demands' | 'agenda' | 'records' | 'convocations' | 'access' | 'ai';
 type ActivityEvent = { id: string; type: ActivityType; action: string; title: string; detail: string; at: string; day: string; projectId: string | null; projectName: string; actorId: string | null; actorName: string; viaRole: boolean; href: string | null; quantity: number | null ; status?: 'corrected' | 'undone' | 'correction'; statusReason?: string; statusBy?: string };
 const STATUS_LABELS = { corrected: 'Corrigida', undone: 'Desfeita', correction: 'Correção' } as const;
 type SummaryDay = { day: string; materials: number; demandsOpened: number; demandsCompleted: number; agenda: number };
@@ -19,7 +19,7 @@ type Entry = { kind: 'event'; event: ActivityEvent } | { kind: 'group'; key: str
 const TYPES: { id: ActivityType; label: string; Icon: LucideIcon }[] = [
   { id: 'materials', label: 'Estoque', Icon: Boxes }, { id: 'loans', label: 'Empréstimos', Icon: Truck },
   { id: 'demands', label: 'Demandas', Icon: ListChecks }, { id: 'agenda', label: 'Agenda', Icon: CalendarDays },
-  { id: 'records', label: 'Registros', Icon: FileText }, { id: 'convocations', label: 'Convocações', Icon: ClipboardCheck }, { id: 'ai', label: 'Configuração de IA', Icon: SlidersHorizontal },
+  { id: 'records', label: 'Registros', Icon: FileText }, { id: 'convocations', label: 'Convocações', Icon: ClipboardCheck }, { id: 'access', label: 'Acessos', Icon: KeyRound }, { id: 'ai', label: 'Configuração de IA', Icon: SlidersHorizontal },
 ];
 const PERIODS: { id: Period; label: string }[] = [{ id: 'today', label: 'Hoje' }, { id: '7', label: '7 dias' }, { id: '30', label: '30 dias' }, { id: 'month', label: 'Este mês' }, { id: 'custom', label: 'Escolher datas' }];
 const DAY = new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });

@@ -14,7 +14,7 @@ import { listRecords } from './records';
  * dos colegas do mesmo projeto). Nada de contato, observação livre, nome de quem pegou
  * emprestado ou identificador interno sai daqui.
  */
-export const ACTIVITY_TYPES = ['materials', 'loans', 'demands', 'agenda', 'records', 'convocations', 'ai'] as const;
+export const ACTIVITY_TYPES = ['materials', 'loans', 'demands', 'agenda', 'records', 'convocations', 'access', 'ai'] as const;
 export type ActivityType = typeof ACTIVITY_TYPES[number];
 export type ActivityEvent = {
   id: string; type: ActivityType; action: string; title: string; detail: string;
@@ -249,6 +249,26 @@ export async function activityFeed(db: D1Database, actor: PortalActor | null, in
     }
   }
 
+  if (wanted.includes('access')) {
+    // Acessos de voluntário por ação: concessão, vencimento (o prazo encerra sozinho) e encerramento antecipado.
+    const scope = scoped(actor, ['access.manage', 'campaigns.manage'], 'p.id', projectId, organizationId);
+    const rows = take(await all(db, `SELECT v.id,v.created_at,v.granted_by,v.ends_at,v.revoked_at,v.revoked_by,v.revoke_reason,c.name campaign_name,p.id project_id,p.name project_name,
+        COALESCE(NULLIF(pr.display_name,''),'Voluntário(a)') person
+      FROM campaign_volunteers v JOIN campaigns c ON c.id=v.campaign_id JOIN projects p ON p.id=v.project_id LEFT JOIN profiles pr ON pr.user_id=v.user_id
+      WHERE ${scope.sql} AND ((v.created_at>=? AND v.created_at<?) OR (v.revoked_at>=? AND v.revoked_at<?))
+      ORDER BY COALESCE(v.revoked_at,v.created_at) DESC LIMIT ${MAX_PER_SOURCE + 1}`, [...scope.values, range.startsAt, range.endsAt, range.startsAt, range.endsAt]));
+    const until = (iso: string) => { const time = Date.parse(iso); return Number.isFinite(time) ? new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'America/Sao_Paulo' }).format(new Date(time)).replace(',', '') : ''; };
+    const inRange = (at: unknown) => typeof at === 'string' && at >= range.startsAt && at < range.endsAt;
+    for (const row of rows) {
+      const base = { type: 'access' as const, title: String(row.campaign_name), projectId: String(row.project_id), projectName: String(row.project_name), viaRole: false, href: link('team', String(row.project_id)), quantity: null };
+      if (inRange(row.created_at)) events.push({ ...base, id: `access:${row.id}:grant`, action: 'Voluntário recebeu acesso', detail: `${row.person} · até ${until(String(row.ends_at))}`,
+        at: String(row.created_at), day: brasiliaDay(String(row.created_at)), actorId: row.granted_by ? String(row.granted_by) : null, actorName: '' });
+      if (inRange(row.revoked_at)) events.push({ ...base, id: `access:${row.id}:end`, action: row.revoke_reason === 'expired' ? 'Acesso de voluntário venceu' : 'Acesso de voluntário encerrado',
+        detail: row.revoke_reason === 'expired' ? `${row.person} · o prazo terminou` : String(row.person), at: String(row.revoked_at), day: brasiliaDay(String(row.revoked_at)),
+        actorId: row.revoke_reason === 'expired' || !row.revoked_by ? null : String(row.revoked_by), actorName: row.revoke_reason === 'expired' ? 'Prazo do acesso' : '' });
+    }
+  }
+
   // Configuração de IA: limites, funções e permissões, com antes e depois. Visível só para quem
   // pode configurar a IA daquela organização (ou a administração geral); não pertence a projeto.
   const configurable: Row[] = [];
@@ -275,7 +295,7 @@ export async function activityFeed(db: D1Database, actor: PortalActor | null, in
   // Conta anonimizada: sem nome e sem identificador, para as ações dela não ficarem ligadas entre si.
   for (const event of events) {
     if (event.actorId && !nameOf.has(event.actorId)) { event.actorId = null; event.actorName = 'Pessoa removida'; }
-    else event.actorName = event.actorId ? nameOf.get(event.actorId)! : '';
+    else event.actorName = event.actorId ? nameOf.get(event.actorId)! : event.actorName;
     if (event.status) { if (event.statusById && !nameOf.has(event.statusById)) { event.statusById = null; event.statusBy = 'Pessoa removida'; } else event.statusBy = event.statusById ? nameOf.get(event.statusById)! : ''; }
   }
   const filtered = person ? (nameOf.has(person) ? events.filter(event => event.actorId === person) : []) : events;

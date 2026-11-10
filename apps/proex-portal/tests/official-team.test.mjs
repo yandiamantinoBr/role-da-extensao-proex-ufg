@@ -62,6 +62,7 @@ function component(name) {
     .replace(/from ['"]\.\.\/\.\.\/lib\/catalog\/proex-team['"]/g, `from ${JSON.stringify(url('catalog.js'))}`)
     .replace(/from ['"]\.\/[^'"]+\.css['"]/g, `from ${JSON.stringify(url('css.js'))}`)
     .replace(/import TeamPersonDetail from ['"]\.\/team-person-detail['"];?/, 'const TeamPersonDetail=()=>null;')
+    .replace(/import DateTimeField from ['"]\.\/date-time-field['"];?/, 'const DateTimeField=()=>null;')
     .replace(/import \{ useFormDraft, DraftNotice \} from ['"]\.\/use-form-draft['"];?/, 'const useFormDraft=(_ref,key)=>{globalThis.__officialDraftKeys.push(key);return{clear(){},savedAt:null}};const DraftNotice=()=>null;')
     .replace(/import \{([^}]+)\} from ['"]lucide-react['"];?/, (_all, names) => names.split(',').map(name => `const ${name.trim()}="icon";`).join(''));
   writeFileSync(join(temporary, `${name}.js`), code); return import(url(`${name}.js`));

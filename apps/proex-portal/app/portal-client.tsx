@@ -40,6 +40,8 @@ import CredentialVaultSettings from '@/components/portal/credential-vault-panel'
 import { requestAiLimits } from '@/components/portal/ai-limits-link';
 import PublicParticipantsSettingsPanel from '@/components/portal/public-participants-settings-panel';
 import ProfilePanel from '@/components/portal/profile-panel';
+import { VolunteerDesk, volunteerAccessFrom } from '@/components/portal/volunteer-home';
+import volunteerStyles from '@/components/portal/volunteer-home.module.css';
 import CalendarPanel from '@/components/portal/calendar-panel';
 import RecordsPanel from '@/components/portal/records-panel';
 import ReportsCenter, { projectBrandFor } from '@/components/portal/reports-center';
@@ -404,6 +406,8 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
     })), [data.users]);
     const user = data.user ?? {};
     const role = string(data.role);
+    // Voluntário por ação: acesso a uma única dinâmica, com data de fim (lib/access.ts).
+    const volunteerAccess = volunteerAccessFrom(data.volunteerAccess);
     const capabilities = Array.isArray(data.capabilities) ? data.capabilities : [];
     const globalCapabilities: string[] = Array.isArray(data.globalCapabilities) ? data.globalCapabilities : role === 'owner' ? capabilities : [];
     const projectCapabilities = data.capabilitiesByProject ?? null;
@@ -415,7 +419,8 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
     const canManageOrganization = organizations.some(organization => organization.canManage);
     const canCreateProjects = canGlobal('projects.manage') || organizations.some(organization => organization.canManage && organization.status === 'active');
     const canFollowUp = canManageOrganization || projects.length > 0;
-    const allowedTabs = tabs.filter(t => ['overview', 'projects', 'profile', 'calendar', 'records', 'my-work'].includes(t.id) || (t.id === 'events' && canAny('campaigns.manage', 'participation.operate', 'inventory.deliver')) || (t.id === 'materials' && canAny('inventory.read', 'inventory.manage', 'inventory.deliver')) || (t.id === 'loans' && canAny('loans.read', 'loans.manage', 'loans.checkout')) || ((t.id === 'demands' || t.id === 'work-teams') && canFollowUp) || (t.id === 'team' && (canManageOrganization || canAny('access.invite', 'access.manage'))) || (t.id === 'reports' && (canFollowUp || canAny('reports.read'))) || (t.id === 'settings' && (isPlatformOwner || data.canConfigureAi === true)) || (t.id === 'community' && (canFollowUp || isPlatformOwner)) || (t.id === 'convocations' && canAny('campaigns.manage', 'reports.read')) || (t.id === 'management' && (canFollowUp || isPlatformOwner)));
+    // A Agenda só aparece para quem lê alguma categoria dela (operador de evento não lê: a tela respondia "seu acesso não permite consultar").
+    const allowedTabs = tabs.filter(t => ['overview', 'projects', 'profile', 'records', 'my-work'].includes(t.id) || (t.id === 'calendar' && data.calendarAvailable !== false) || (t.id === 'events' && canAny('campaigns.manage', 'participation.operate', 'inventory.deliver')) || (t.id === 'materials' && canAny('inventory.read', 'inventory.manage', 'inventory.deliver')) || (t.id === 'loans' && canAny('loans.read', 'loans.manage', 'loans.checkout')) || ((t.id === 'demands' || t.id === 'work-teams') && canFollowUp) || (t.id === 'team' && (canManageOrganization || canAny('access.invite', 'access.manage'))) || (t.id === 'reports' && (canFollowUp || canAny('reports.read'))) || (t.id === 'settings' && (isPlatformOwner || data.canConfigureAi === true)) || (t.id === 'community' && (canFollowUp || isPlatformOwner)) || (t.id === 'convocations' && canAny('campaigns.manage', 'reports.read')) || (t.id === 'management' && (canFollowUp || isPlatformOwner)));
     const tab = allowedTabs.some(module => module.id === requestedTab) ? requestedTab : 'overview';
     const organizationalUnits = list(data.organizationalUnits);
     const unitOf = (project: Row) => string(get(project, 'unit_id', 'unitId'));
@@ -712,6 +717,27 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         </a>
         </div>
         </main>;
+    const redeemForm = <OperationForm action="prize.redeem" make={f => ({ code: f.get('code') })} mutate={mutate} submit="Confirmar entrega" compact>
+        <Field label="Código de retirada">
+        <input name="code" autoComplete="off" required placeholder="Cole ou digite o código apresentado"/>
+        </Field>
+        </OperationForm>;
+    const volunteerDesk = (compact: boolean) => <VolunteerDesk access={volunteerAccess} tickets={list(data.physicalTickets)} prizes={list(data.pendingPrizes)} mutate={mutate} redeemForm={redeemForm} compact={compact}/>;
+    // Só voluntário: uma página sem menu, com a ação, o atendimento, os brindes e a conta. Nada que o acesso não abra.
+    if (!role && volunteerAccess.length)
+        return <main className={`p-no-access ${volunteerStyles.page}`} id="main">
+        <header>
+        <BrandMark variant="auto"/>
+        <div className={volunteerStyles.headerActions}>
+        <ThemeSwitch />
+        <button className="p-button p-button-subtle" disabled={busy} onClick={() => void logout()}><LogOut size={16}/>Sair</button>
+        </div>
+        </header>
+        {failure && <div className="p-notice p-notice-error" role="alert"><FileText size={18}/><div><strong>Não foi possível concluir</strong><span>{failure}</span></div><button aria-label="Fechar mensagem" onClick={() => setFailure('')}><X size={16}/></button></div>}
+        {message && <div className={`p-notice p-notice-${messageKind}`} role={messageKind === 'warning' ? 'alert' : 'status'}><CheckCircle2 size={18}/><span>{message}</span><button aria-label="Fechar mensagem" onClick={() => setMessage('')}><X size={16}/></button></div>}
+        {volunteerDesk(false)}
+        <section className={volunteerStyles.account} aria-label="Sua conta"><ProfilePanel onUpdated={() => { void refresh(); }}/></section>
+        </main>;
     if (!role || !capabilities.length)
         return <main className="p-no-access">
         <header>
@@ -851,6 +877,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
       {(['materials','loans','events'] as string[]).includes(tab) && workContext(filter || null,tab === 'events' ? 'campaigns' : tab as WorkArea)}
       {activeWorkRecord && ['loans','events'].includes(activeWorkRecord.module) && <div className={workStyles.focusNotice} role="status"><p>{(activeWorkRecord.module === 'loans' ? displayedLoans : displayedCampaigns).length ? 'Registro vinculado ao seu trabalho. Use as ações abaixo para acompanhar.' : 'O registro não está na lista disponível para esta conta. Atualize ou consulte a lista completa.'}</p><button type="button" className="p-button p-button-subtle" onClick={() => setWorkRecord(null)}>Ver todos</button></div>}
       {tab === 'demands' && <><FollowUpPanel key={string(user.userId)} userId={string(user.userId)} onTaskTransferred={receipt=>{selectProject(receipt.projectId);setSelectedDemandId(receipt.taskId);}} defaultProjectId={filter} initialTaskId={selectedDemandId} serverDay={workDayFromServerTimestamp(data?.updatedAt)} onSelectTask={setSelectedDemandId} onChanged={refreshModules} onOpenReports={() => navigate('reports', 'demands')}/><OrganizationEmailSettings key={string(user.userId)} userId={string(user.userId)} organizations={organizations}/></>}
+      {tab === 'overview' && volunteerAccess.length > 0 && volunteerDesk(true)}
       {tab === 'overview' && <><PersonalWorkSummary userId={string(user.userId)} organizationId={personalOrganization||null} organizationName={organizations.find(organization=>organization.id===personalOrganization)?.name} projectId={filter||null} projectName={string(projects.find(project=>project.id===filter)?.name)} serverDay={workDayFromServerTimestamp(data?.updatedAt)}/><DashboardPanel modules={allowedTabs} pinned={navigation.pinned} frequent={navigation.frequent} onNavigate={navigate} onTogglePin={navigation.togglePin} displayName={string(user.displayName)} role={role} roleLabel={roleNames[role] || 'Equipe PROEX'} projects={scopedProjects} items={visibleItems} loans={visibleLoans} campaigns={visibleCampaigns} selectedProjectId={filter} unitName={unitFilter === '__unassigned__' ? 'Sem unidade vinculada' : string(visibleUnits.find(unit => unit.id === unitFilter)?.acronym || visibleUnits.find(unit => unit.id === unitFilter)?.name)} now={now} onOpenProject={openProject} known={{ projects: Array.isArray(data.projects), items: Array.isArray(data.items), loans: Array.isArray(data.loans), campaigns: Array.isArray(data.campaigns) }} /></>}
       {tab === 'convocations' && <ConvocationsPanel key={`convocations:${string(user.userId)}:${convocationFocus}`} initialId={convocationFocus} projects={projects.map(project => ({ id: string(project.id), name: string(project.name), canManage: canProject(string(project.id), 'campaigns.manage') }))}/>}
       {tab === 'management' && <ManagementPanel key={`management:${string(user.userId)}`} organizations={organizations.map(organization => ({ id: organization.id, name: organization.name }))} defaultOrganizationId={personalOrganization}/>}
@@ -1085,7 +1112,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
             </Section></div>}</>}
 
       {tab === 'work-teams' && <WorkTeamsPanel key={`${string(user.userId)}:${filter}:${teamIntent?.nonce ?? 0}`} userId={string(user.userId)} intent={teamIntent} pinnedTeamIds={pins.teamPins} onTogglePin={(id, pinned) => setPinned('team', id, pinned)} defaultProjectId={filter} organizations={organizations} projects={projects.map(project => ({id:string(project.id),name:string(project.name),organization_id:string(project.organization_id)}))} canOpenAccess={allowedTabs.some(module=>module.id==='team')} onChanged={refreshModules} onOpenDemand={(id,projectId)=>{selectProject(projectId??'');setSelectedDemandId(id);navigate('demands');}}/>}
-      {tab === 'team' && <><OrganizationsPanel organizations={organizations} currentActor={{ userId: string(user.userId), isPlatformOwner }} people={organizationPeople} onChanged={refreshModules}/>{organizations.filter(organization=>organization.canManage||isPlatformOwner).map(organization=><DirectoryPanel key={organization.id} userId={string(user.userId)} organizationId={organization.id}/>)}<OfficialTeamDirectory onSelect={canAny('access.invite') ? setOfficialSuggestion : undefined}/><TeamPanel key={officialSuggestion?.selectionKey ?? `manual:${filter}`} officialSuggestion={officialSuggestion} onClearOfficialSuggestion={() => setOfficialSuggestion(null)} users={list(data.users)} members={members} invites={invites} projects={projects} selectedProjectId={filter} globalAdmin={isPlatformOwner} canManageManagers={(projectId, organizationId) => isPlatformOwner || organizations.some(organization => organization.canManage && organization.id === (projectId ? projects.find(project => project.id === projectId)?.organization_id : organizationId))} canProject={canProject} mutate={mutate} now={now}/>{canGlobal('organization.manage') && <AdminPrivacyPanel />}</>}
+      {tab === 'team' && <><OrganizationsPanel organizations={organizations} currentActor={{ userId: string(user.userId), isPlatformOwner }} people={organizationPeople} onChanged={refreshModules}/>{organizations.filter(organization=>organization.canManage||isPlatformOwner).map(organization=><DirectoryPanel key={organization.id} userId={string(user.userId)} organizationId={organization.id}/>)}<OfficialTeamDirectory onSelect={canAny('access.invite') ? setOfficialSuggestion : undefined}/><TeamPanel key={officialSuggestion?.selectionKey ?? `manual:${filter}`} officialSuggestion={officialSuggestion} onClearOfficialSuggestion={() => setOfficialSuggestion(null)} users={list(data.users)} members={members} invites={invites} projects={projects} campaigns={campaigns} volunteers={list(data.volunteers)} selectedProjectId={filter} globalAdmin={isPlatformOwner} canManageManagers={(projectId, organizationId) => isPlatformOwner || organizations.some(organization => organization.canManage && organization.id === (projectId ? projects.find(project => project.id === projectId)?.organization_id : organizationId))} canProject={canProject} mutate={mutate} now={now}/>{canGlobal('organization.manage') && <AdminPrivacyPanel />}</>}
       {tab === 'profile' && <><McpConnectionsPanel key={`mcp-${string(user.userId)}`}/><GoogleDriveConnectionPanel key={`drive-${string(user.userId)}`}/><ProfilePanel onUpdated={() => { void refresh(); }}/></>}
       {tab === 'calendar' && <CalendarPanel projects={projects} organizationalUnits={visibleUnits} selectedProjectId={filter} selectedUnitId={unitFilter} onProjectChange={selectProject} onUnitChange={selectUnit}/>}
       {tab === 'records' && <>
