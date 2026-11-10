@@ -80,6 +80,9 @@ test('guide: members read starter pages with live blocks; only the administratio
     const forRole = await guideForAssistant(db, owner, 'org_proex');
     assert.equal(forRole.length, 11);
     assert.ok(forRole.every(page => typeof page.markdown === 'string' && !page.markdown.includes('{{')));
+    const some = await guideForAssistant(db, owner, 'org_proex', { slugs: ['glossario', 'processos-conpeex', 'inexistente'] });
+    assert.deepEqual(some.map(page => page.slug), ['processos-conpeex', 'glossario']);
+    assert.match(some[0].markdown.trim(), /\nFontes: .+$/, 'starter pages end with their sources');
     assert.equal(db.native.prepare("SELECT COUNT(*) n FROM audit WHERE action LIKE 'guide.%'").get().n, 4);
   } finally { db.native.close(); }
 });

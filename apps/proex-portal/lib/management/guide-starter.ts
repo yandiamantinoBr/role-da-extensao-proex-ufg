@@ -13,7 +13,7 @@ const CATALOG = 'catálogo institucional do portal, verificado em 23/10/2026';
 export const GUIDE_STARTER: readonly StarterPage[] = [
   { slug: 'estrutura', title: 'Estrutura organizacional', section: 'organizacao', position: 1, body: `# Estrutura organizacional
 
-A Pró-Reitoria de Extensão (PROEX) é o órgão da UFG que coordena as ações de extensão. Em 2026 a antiga PROEC passou a se chamar PROEX, e a cultura foi para a Secretaria de Artes e Cultura (SEACULT) (CONSUNI 355/2026).
+A Pró-Reitoria de Extensão (PROEX) é o órgão da UFG que coordena as ações de extensão. Em 2026 a antiga PROEC passou a se chamar PROEX, e a cultura foi para a Secretaria de Artes e Cultura (SEACULT), conforme a Resolução CONSUNI 355/2026.
 
 ## Organograma no portal
 
@@ -119,7 +119,7 @@ Equipamentos retornáveis (caixas de som, projetores, tendas) são emprestados p
 - Quem pode autorizar empréstimo para fora da UFG: _a confirmar_.
 - Prazo máximo de empréstimo: _a confirmar_.
 
-Fontes: manual de operação do portal (com a equipe de TI).
+Fontes: manual de operação do portal (consulte a equipe de TI).
 ` },
   { slug: 'processos-brindes', title: 'Brindes e materiais de divulgação', section: 'processos', position: 14, body: `# Brindes e materiais de divulgação
 
@@ -132,7 +132,7 @@ Brindes (bottons, squeezes, canetas, agendas) e folders são distribuídos nas a
 3. Toda saída passa por uma movimentação (distribuição, consumo ou ajuste); corrigir nunca apaga o lançamento original.
 4. Depois de cada evento, conferir a contagem e registrar avarias.
 
-Fontes: manual de operação e glossário do portal (com a equipe de TI).
+Fontes: manual de operação e glossário do portal (consulte a equipe de TI).
 ` },
   { slug: 'processos-comunicacao', title: 'Comunicação', section: 'processos', position: 15, body: `# Comunicação
 
@@ -158,6 +158,8 @@ Próximos marcos e eventos cadastrados nos projetos que você pode ver.
 {{calendario}}
 
 O calendário acadêmico oficial da UFG fica no site da universidade: _link a confirmar_.
+
+Fontes: agenda e dinâmicas dos projetos no portal, lidas na hora da consulta.
 ` },
   { slug: 'contatos', title: 'Contatos', section: 'referencias', position: 21, body: `# Contatos
 
@@ -165,7 +167,7 @@ Equipe publicada pela própria PROEX na página oficial. A lista é uma cópia c
 
 {{equipe-oficial}}
 
-Fonte: [Equipe PROEX](https://proex.ufg.br/p/equipe-proex) (atualizada em 05/10/2026, verificada em 31/10/2026).
+Fontes: [Equipe PROEX](https://proex.ufg.br/p/equipe-proex) (atualizada em 05/10/2026, verificada em 31/10/2026).
 ` },
   { slug: 'glossario', title: 'Glossário', section: 'referencias', position: 22, body: `# Glossário
 
@@ -182,7 +184,7 @@ Fonte: [Equipe PROEX](https://proex.ufg.br/p/equipe-proex) (atualizada em 05/10/
 - **Movimentação**: entrada ou saída de estoque; corrigir não apaga o original.
 - **Risco**: algo que pode dar errado, com probabilidade, impacto, dono e plano de mitigação.
 
-Fontes: guia de extensão e glossário do portal, com a equipe de TI (${CATALOG}).
+Fontes: guia de extensão e glossário do portal (consulte a equipe de TI); ${CATALOG}.
 ` },
 ];
 

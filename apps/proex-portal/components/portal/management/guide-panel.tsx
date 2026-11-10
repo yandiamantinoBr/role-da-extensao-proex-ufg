@@ -22,10 +22,11 @@ function InlineView({ parts }: { parts: Inline[] }) {
     return <Fragment key={index}>{node}</Fragment>;
   })}</>;
 }
-export function MarkdownView({ source }: { source: string }) {
+export function MarkdownView({ source, title }: { source: string; title?: string }) {
   const blocks = useMemo(() => parseMarkdown(source), [source]);
-  return <div className={styles.md}>{blocks.map((block, index) => {
-    if (block.type === 'h1') return <h3 key={index}><InlineView parts={block.inline}/></h3>;
+  // O título vem do campo Título (o mesmo da exportação); um "# título" no texto é ignorado.
+  return <div className={styles.md}>{title && <h3>{title}</h3>}{blocks.map((block, index) => {
+    if (block.type === 'h1') return title ? null : <h3 key={index}><InlineView parts={block.inline}/></h3>;
     if (block.type === 'h2') return <h4 key={index}><InlineView parts={block.inline}/></h4>;
     if (block.type === 'h3') return <h5 key={index}><InlineView parts={block.inline}/></h5>;
     if (block.type === 'p') return <p key={index}><InlineView parts={block.inline}/></p>;
@@ -46,12 +47,12 @@ const FORMATS: Format[] = [
 
 export default function GuidePanel({ organizationId, onDirtyChange }: { organizationId: string; onDirtyChange?: (dirty: boolean) => void }) {
   const [data, setData] = useState<Workspace | null>(null), [error, setError] = useState(''), [slug, setSlug] = useState('estrutura');
-  const [editing, setEditing] = useState<{ title: string; body: string; note: string; preview: boolean } | null>(null);
+  const [editing, setEditing] = useState<{ title: string; body: string; note: string; preview: boolean; originalTitle: string; originalBody: string } | null>(null);
   const [saving, setSaving] = useState(false), [message, setMessage] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
   const [history, setHistory] = useState<Version[] | null>(null), [editorPick, setEditorPick] = useState('');
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   // Edição aberta: avisa o painel (troca de aba) e o navegador (fechar ou recarregar).
-  const dirty = !!editing;
+  const dirty = !!editing && (editing.title !== editing.originalTitle || editing.body !== editing.originalBody);
   useEffect(() => {
     onDirtyChange?.(dirty);
     if (!dirty) return;
@@ -74,7 +75,7 @@ export default function GuidePanel({ organizationId, onDirtyChange }: { organiza
     setEditing({ ...editing, body: editing.body.slice(0, start) + text + editing.body.slice(end) });
     requestAnimationFrame(() => { area.focus(); area.setSelectionRange(start, start + text.length); });
   }
-  function open(next: string) { if (editing && !window.confirm('Sair da edição sem salvar?')) return; setSlug(next); setEditing(null); setHistory(null); setMessage(null); }
+  function open(next: string) { if (dirty && !window.confirm('Sair da edição sem salvar?')) return; setSlug(next); setEditing(null); setHistory(null); setMessage(null); }
   async function run(payload: Record<string, unknown>, success: string) {
     setSaving(true); setMessage(null);
     try { const next = await managementPost<Workspace>({ organizationId, ...payload }); setData(next); setEditing(null); setHistory(null); setMessage({ tone: 'ok', text: success }); return true; }
@@ -121,7 +122,7 @@ export default function GuidePanel({ organizationId, onDirtyChange }: { organiza
           <p id="guide-page-title">{page.sectionLabel} · {page.isStarter ? 'conteúdo inicial, ainda não revisado pela equipe' : `versão ${page.version}${page.updatedBy ? ` por ${page.updatedBy}` : ''}, ${when(page.updatedAt)}`}</p>
           <div className={styles.actions}>
             {!page.isStarter && <button type="button" className="p-button p-button-subtle" onClick={() => history ? setHistory(null) : void loadHistory()} aria-expanded={!!history}><History size={16} aria-hidden="true"/>{history ? 'Fechar histórico' : 'Histórico'}</button>}
-            {data.canEdit && !editing && <button type="button" className="p-button p-button-primary" onClick={() => { setEditing({ title: page.title, body: page.body, note: '', preview: false }); setMessage(null); }}><Pencil size={16} aria-hidden="true"/>Editar página</button>}
+            {data.canEdit && !editing && <button type="button" className="p-button p-button-primary" onClick={() => { setEditing({ title: page.title, body: page.body, note: '', preview: false, originalTitle: page.title, originalBody: page.body }); setMessage(null); }}><Pencil size={16} aria-hidden="true"/>Editar página</button>}
           </div>
         </div>
         {message && <p className={message.tone === 'ok' ? styles.ok : 'p-inline-error'} role={message.tone === 'ok' ? 'status' : 'alert'}>{message.text}</p>}
@@ -136,19 +137,19 @@ export default function GuidePanel({ organizationId, onDirtyChange }: { organiza
             </div>
             {!editing.preview && <div className={styles.formatBar} role="toolbar" aria-label="Formatação">{FORMATS.map(entry => <button key={entry.label} type="button" className="p-icon-button" aria-label={entry.label} title={entry.label} onClick={() => format(entry)}>{entry.icon}</button>)}</div>}
           </div>
-          {editing.preview ? <MarkdownView source={editing.body}/> : <label className="p-field"><span>Texto</span>
+          {editing.preview ? <MarkdownView source={editing.body} title={editing.title}/> : <label className="p-field"><span>Texto</span>
             <textarea ref={bodyRef} value={editing.body} maxLength={40000} onChange={event => setEditing({ ...editing, body: event.target.value })} aria-describedby="guide-help"/></label>}
           {!editing.preview && <details id="guide-help" className={styles.helpBox}><summary>Ajuda de formatação<ChevronDown size={16} aria-hidden="true"/></summary>
             <ul className={styles.help}><li><code>## Seção</code> cria um título; <code>- item</code> cria uma lista; <code>**texto**</code> deixa em negrito; <code>_texto_</code> em itálico.</li>
               <li>Links: <code>[texto](https://endereço)</code>. Só endereços com https.</li>
               <li>Listas automáticas do portal (atualizam sozinhas): {data.liveBlocks.map(name => <Fragment key={name}><code>{`{{${name}}}`}</code> ({LIVE_LABEL[name] ?? name}) </Fragment>)}</li>
-              <li>Marque dúvidas com <code>_a confirmar_</code>.</li></ul></details>}
+              <li>Marque dúvidas com <code>_a confirmar_</code>.</li>
+              <li>Termine a página com a linha <code>Fontes: …</code> (endereço e data da consulta). O Rolê usa essa linha para citar de onde veio a informação.</li></ul></details>}
           <label className="p-field"><span>O que mudou (opcional)</span><input value={editing.note} maxLength={300} placeholder="Ex.: atualizei os responsáveis do CONPEEX" onChange={event => setEditing({ ...editing, note: event.target.value })}/></label>
-          <div className={styles.actions}><button type="submit" className="p-button p-button-primary" disabled={saving}>{saving && <LoaderCircle size={15} className="p-spin" aria-hidden="true"/>}Salvar versão</button><button type="button" className="p-button p-button-subtle" onClick={() => setEditing(null)}>Cancelar</button></div>
+          <div className={styles.actions}><button type="submit" className="p-button p-button-primary" disabled={saving}>{saving && <LoaderCircle size={15} className="p-spin" aria-hidden="true"/>}Salvar versão</button><button type="button" className={`p-button p-button-subtle ${styles.cancelGap}`} onClick={() => { if (!dirty || window.confirm('Descartar as alterações?')) setEditing(null); }}>Cancelar</button></div>
         </form> : <>
           {page.isStarter && <p className={styles.starter}>Conteúdo inicial montado com fontes públicas e com o próprio portal. Itens marcados <em>a confirmar</em> precisam da revisão da equipe.</p>}
-          <MarkdownView source={page.markdown}/>
-          {page.updatedAt && <p className={styles.help}>Última revisão em {when(page.updatedAt).slice(0, 10)}.</p>}
+          <MarkdownView source={page.markdown} title={page.title}/>
         </>}
         {editorsBox}
       </article>

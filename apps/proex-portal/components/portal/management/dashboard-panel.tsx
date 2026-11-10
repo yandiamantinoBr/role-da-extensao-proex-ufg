@@ -33,7 +33,7 @@ function VizTooltip({ active, payload, label }: { active?: boolean; payload?: { 
   return <div className={styles.tooltip}><strong>{label}</strong>{payload.map(item => <span key={item.name}><i style={{ background: item.color }}/>{item.name}: {fmt(Number(item.value) || 0)}</span>)}</div>;
 }
 
-export default function DashboardPanel({ organizationId, onOpenRisks }: { organizationId: string; onOpenRisks: () => void }) {
+export default function DashboardPanel({ organizationId, onOpenRisks }: { organizationId: string; onOpenRisks: (filter?: string) => void }) {
   const [projectId, setProjectId] = useState(''), [period, setPeriod] = useState('90');
   const [data, setData] = useState<Dashboard | null>(null), [error, setError] = useState(''), [loading, setLoading] = useState(true), [reload, setReload] = useState(0);
   useEffect(() => {
@@ -59,8 +59,8 @@ export default function DashboardPanel({ organizationId, onOpenRisks }: { organi
   const soon = data ? data.upcoming.filter(item => item.date <= new Date(Date.parse(`${data.today}T12:00:00Z`) + 7 * 86400_000).toISOString().slice(0, 10)) : [];
   const attention = !data || !k ? [] : [
     k.demandsOverdue > 0 && { key: 'overdue', icon: <AlertTriangle size={18} aria-hidden="true"/>, text: `${fmt(k.demandsOverdue)} ${k.demandsOverdue === 1 ? 'demanda com prazo vencido' : 'demandas com prazo vencido'}`, href: link('demands', projectId) },
-    (k.risksCritical ?? 0) > 0 && { key: 'critical', icon: <ShieldAlert size={18} aria-hidden="true"/>, text: `${fmt(k.risksCritical ?? 0)} ${k.risksCritical === 1 ? 'risco crítico aberto' : 'riscos críticos abertos'}`, action: onOpenRisks },
-    (k.risksReviewOverdue ?? 0) > 0 && { key: 'review', icon: <ShieldAlert size={18} aria-hidden="true"/>, text: `${fmt(k.risksReviewOverdue ?? 0)} ${k.risksReviewOverdue === 1 ? 'risco com revisão vencida' : 'riscos com revisão vencida'}`, action: onOpenRisks },
+    (k.risksCritical ?? 0) > 0 && { key: 'critical', icon: <ShieldAlert size={18} aria-hidden="true"/>, text: `${fmt(k.risksCritical ?? 0)} ${k.risksCritical === 1 ? 'risco crítico aberto' : 'riscos críticos abertos'}`, action: () => onOpenRisks('level:critico') },
+    (k.risksReviewOverdue ?? 0) > 0 && { key: 'review', icon: <ShieldAlert size={18} aria-hidden="true"/>, text: `${fmt(k.risksReviewOverdue ?? 0)} ${k.risksReviewOverdue === 1 ? 'risco com revisão vencida' : 'riscos com revisão vencida'}`, action: () => onOpenRisks('overdue') },
     (k.lowStock ?? 0) > 0 && { key: 'stock', icon: <PackageMinus size={18} aria-hidden="true"/>, text: `${fmt(k.lowStock ?? 0)} ${k.lowStock === 1 ? 'material no limite do estoque' : 'materiais no limite do estoque'}`, href: link('materials', projectId) },
     soon.length > 0 && { key: 'soon', icon: <CalendarClock size={18} aria-hidden="true"/>, text: `${soon.length} ${soon.length === 1 ? 'atividade nos próximos 7 dias' : 'atividades nos próximos 7 dias'}: ${soon.slice(0, 2).map(item => item.title).join(', ')}${soon.length > 2 ? '…' : ''}`, href: link('calendar', projectId) },
   ].filter(Boolean) as { key: string; icon: React.ReactNode; text: string; href?: string; action?: () => void }[];
@@ -74,7 +74,7 @@ export default function DashboardPanel({ organizationId, onOpenRisks }: { organi
       <label className="p-field"><span>Projeto</span><select value={projectId} onChange={event => setProjectId(event.target.value)}><option value="">Todos os projetos que você vê</option>{data?.projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
       <label className="p-field"><span>Período</span><select value={period} onChange={event => setPeriod(event.target.value)}>{PERIODS.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
       <button type="button" className="p-button p-button-subtle" onClick={() => setReload(value => value + 1)} disabled={loading}><RefreshCw size={16} aria-hidden="true"/>Recarregar dados</button>
-      {data && <p className={`${styles.help} ${styles.toolbarNote}`}>De {brDate(data.period.from)} a {brDate(data.period.to)}, comparado com {brDate(data.previous.from)} a {brDate(data.previous.to)}. Cada número abre o detalhe.</p>}
+      {data && <p className={`${styles.help} ${styles.toolbarNote}`}>De {brDate(data.period.from)} a {brDate(data.period.to)}, comparado com {brDate(data.previous.from)} a {brDate(data.previous.to)}. Cada indicador abre o detalhe.</p>}
     </div>
     {error && <div className={styles.errorBox} role="alert"><p>{error}</p><button type="button" className="p-button p-button-subtle" onClick={() => setReload(value => value + 1)}>Tentar de novo</button></div>}
     {!data && loading && <p className={styles.loading}><LoaderCircle size={18} className="p-spin" aria-hidden="true"/>Carregando o painel…</p>}
@@ -92,13 +92,13 @@ export default function DashboardPanel({ organizationId, onOpenRisks }: { organi
         {data.deliveriesByMonth && card('Brindes distribuídos', k.itemsOut, versus(k.itemsOut, data.previous.itemsOut) || 'saídas de brindes no período', link('materials', projectId))}
         {card('Dinâmicas ativas', k.campaignsActive, `${fmt(k.participations ?? 0)} participações no período`, link('events', projectId))}
         {card('Estoque baixo', k.lowStock, 'materiais no limite', link('materials', projectId), true)}
-        {k.risksOpen !== null && <button type="button" className={`${styles.kpi} ${(k.risksReviewOverdue ?? 0) > 0 ? styles.kpiWarn : ''}`} style={{ textAlign: 'left', font: 'inherit', cursor: 'pointer' }} onClick={onOpenRisks}>
+        {k.risksOpen !== null && <button type="button" className={`${styles.kpi} ${(k.risksReviewOverdue ?? 0) > 0 ? styles.kpiWarn : ''}`} style={{ textAlign: 'left', font: 'inherit', cursor: 'pointer' }} onClick={() => onOpenRisks()}>
           <span>Riscos abertos</span><strong>{fmt(k.risksOpen)}</strong><small>{fmt(k.risksHigh ?? 0)} altos ou críticos · {fmt(k.risksReviewOverdue ?? 0)} com revisão vencida</small></button>}
       </div>
       <div className={styles.grid2}>
         <figure className={styles.card}>
           <header><h3>Demandas por mês</h3><a href={link('demands', projectId)}>Abrir demandas</a></header>
-          {demandsEmpty ? <p className={styles.empty}>Nenhuma demanda criada ou concluída neste período. <a href={link('demands', projectId)}>Abrir demandas</a></p> : <>
+          {demandsEmpty ? <p className={styles.empty}>Nenhuma demanda criada ou concluída neste período.</p> : <>
           <div className={styles.legend} aria-hidden="true"><span><i style={{ background: 'var(--viz-1)' }}/>Criadas</span><span><i style={{ background: 'var(--viz-3)' }}/>Concluídas</span></div>
           <div className={styles.plot} role="img" aria-label={`Demandas por mês: ${data.demandsByMonth.map(row => `${monthLabel(row.month)} ${row.created} criadas e ${row.completed} concluídas`).join('; ')}`}>
             <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 320, height: 200 }}><BarChart data={demands} barGap={2} margin={{ top: 6, right: 4, left: -12, bottom: 0 }}>
@@ -139,16 +139,17 @@ export default function DashboardPanel({ organizationId, onOpenRisks }: { organi
             : <p className={styles.empty}>Nenhum marco ou dinâmica planejado nos próximos 45 dias.</p>}
         </section>
         {data.risks ? <section className={styles.card} aria-labelledby="dash-risks">
-          <header><h3 id="dash-risks">Mapa de riscos abertos</h3><button type="button" className={styles.linkButton} onClick={onOpenRisks}>Abrir riscos</button></header>
+          <header><h3 id="dash-risks">Mapa de riscos abertos</h3><button type="button" className={styles.linkButton} onClick={() => onOpenRisks()}>Abrir riscos</button></header>
           <div className={styles.matrixWrap}>
             <span className={styles.axisY}>Impacto (tamanho do dano)</span>
             <span className={styles.ticksY} aria-hidden="true">{[5, 4, 3, 2, 1].map(value => <span key={value}>{value}</span>)}</span>
-            <div className={styles.matrix} role="table" aria-label="Riscos abertos por impacto (linhas, de 5 a 1) e chance (colunas, de 1 a 5)">
-              {data.risks.matrix.map((row, rowIndex) => row.map((count, column) => <span key={`${rowIndex}-${column}`} role="cell" aria-label={`Chance ${column + 1}, impacto ${5 - rowIndex}: ${count} ${count === 1 ? 'risco' : 'riscos'}`} className={`${styles.cell} ${styles[`lvl-${level(column + 1, 5 - rowIndex)}`]} ${count ? '' : styles.cellZero}`}>{count || ''}</span>))}
+            <div className={styles.matrix} role="img" aria-label={`Mapa de riscos abertos: ${data.risks.matrix.flatMap((row, rowIndex) => row.map((count, column) => count ? `${count} com chance ${column + 1} e impacto ${5 - rowIndex}` : '')).filter(Boolean).join('; ') || 'nenhum risco aberto'}.`}>
+              {data.risks.matrix.map((row, rowIndex) => row.map((count, column) => <span key={`${rowIndex}-${column}`} aria-hidden="true" className={`${styles.cell} ${styles[`lvl-${level(column + 1, 5 - rowIndex)}`]} ${count ? '' : styles.cellZero}`}>{count || ''}</span>))}
             </div>
             <span className={styles.ticksX} aria-hidden="true">{[1, 2, 3, 4, 5].map(value => <span key={value}>{value}</span>)}</span>
             <span className={styles.axisX}>Chance de acontecer (probabilidade)</span>
           </div>
+          <div className={styles.legend} aria-hidden="true">{(['baixo', 'moderado', 'alto', 'critico'] as const).map(key => <span key={key}><i className={styles[`lvl-${key}`]}/>{{ baixo: 'Baixo', moderado: 'Moderado', alto: 'Alto', critico: 'Crítico' }[key]}</span>)}</div>
           {data.risks.overdue.length > 0 && <p className={styles.help}><strong>Revisão vencida:</strong> {data.risks.overdue.map(risk => risk.title).join('; ')}.</p>}
           {data.risks.total === 0 && <p className={styles.empty}>Nenhum risco registrado ainda.</p>}
         </section> : <section className={styles.card}><header><h3>Riscos</h3></header><p className={styles.empty}>Os riscos da organização ficam com a administração; os de projeto aparecem para quem participa dele.</p></section>}

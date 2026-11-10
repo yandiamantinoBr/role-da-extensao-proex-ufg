@@ -24,7 +24,8 @@ test('every starter page cites sources and only uses known live blocks; no secre
   assert.equal(starter.GUIDE_STARTER.length, 11);
   for (const page of starter.GUIDE_STARTER) {
     for (const [, name] of page.body.matchAll(/\{\{([a-z-]+)\}\}/g)) assert.ok(starter.LIVE_BLOCKS.includes(name), `${page.slug}: ${name}`);
-    if (!['calendario'].includes(page.slug)) assert.match(page.body, /Fontes?:/, page.slug);
+    // A última linha é sempre "Fontes: …" (o Rolê cita na resposta).
+    assert.match(page.body.trim().split('\n').at(-1), /^Fontes: /, page.slug);
     assert.doesNotMatch(page.body, /bolsa de|R\$|CPF|senha|token|drive\.google\.com|@gmail/i, page.slug);
   }
   assert.ok(starter.GUIDE_STARTER.some(page => /_a confirmar_/.test(page.body)));

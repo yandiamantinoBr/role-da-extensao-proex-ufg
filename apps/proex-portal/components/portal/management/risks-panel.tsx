@@ -17,15 +17,15 @@ const SCALE = ['1 · muito baixa', '2 · baixa', '3 · média', '4 · alta', '5 
 const levelOf = (probability: number, impact: number) => { const score = probability * impact; return score >= 15 ? 'critico' : score >= 10 ? 'alto' : score >= 5 ? 'moderado' : 'baixo'; };
 const emptyDraft = (projectId = ''): Draft => ({ projectId, title: '', description: '', category: 'operacional', probability: 3, impact: 3, ownerLabel: '', mitigation: '', status: 'open', reviewOn: '' });
 
-export default function RisksPanel({ organizationId }: { organizationId: string }) {
-  const [data, setData] = useState<Workspace | null>(null), [error, setError] = useState(''), [filter, setFilter] = useState('all'), [cell, setCell] = useState<[number, number] | null>(null);
+export default function RisksPanel({ organizationId, initialFilter = 'all' }: { organizationId: string; initialFilter?: string }) {
+  const [data, setData] = useState<Workspace | null>(null), [error, setError] = useState(''), [filter, setFilter] = useState(initialFilter), [cell, setCell] = useState<[number, number] | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null), [saving, setSaving] = useState(false), [message, setMessage] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
   useEffect(() => {
     const controller = new AbortController();
     managementGet<Workspace>({ view: 'risks', organizationId }, controller.signal).then(setData).catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'Não foi possível abrir os riscos.'); });
     return () => controller.abort();
   }, [organizationId]);
-  const visible = useMemo(() => (data?.risks ?? []).filter(risk => (filter === 'all' || (filter === 'organization' ? risk.projectId === null : filter === 'overdue' ? risk.reviewOverdue : risk.projectId === filter))
+  const visible = useMemo(() => (data?.risks ?? []).filter(risk => (filter === 'all' || (filter === 'organization' ? risk.projectId === null : filter === 'overdue' ? risk.reviewOverdue : filter.startsWith('level:') ? risk.level === filter.slice(6) && (risk.status === 'open' || risk.status === 'monitoring') : risk.projectId === filter))
     && (!cell || (risk.probability === cell[0] && risk.impact === cell[1] && (risk.status === 'open' || risk.status === 'monitoring')))), [data, filter, cell]);
   const matrix = useMemo(() => { const grid = Array.from({ length: 5 }, () => Array(5).fill(0) as number[]); for (const risk of data?.risks ?? []) if (risk.status === 'open' || risk.status === 'monitoring') grid[5 - risk.impact][risk.probability - 1]++; return grid; }, [data]);
   const scopes = data ? [...(data.canEditOrganization ? [{ id: '', name: 'Organização (só a administração vê)' }] : []), ...data.projects.filter(project => project.canEdit)] : [];
@@ -76,7 +76,7 @@ export default function RisksPanel({ organizationId }: { organizationId: string 
       <label className="p-field"><span>Como evitar ou reduzir</span><textarea rows={2} value={draft.mitigation} maxLength={2000} placeholder="Ex.: reservar tenda e ter plano B em local coberto" onChange={event => setDraft({ ...draft, mitigation: event.target.value })}/></label>
       <div className={styles.actions}><button type="submit" className="p-button p-button-primary" disabled={saving}>{saving && <LoaderCircle size={15} className="p-spin" aria-hidden="true"/>}{draft.id ? 'Salvar alterações' : 'Registrar risco'}</button><button type="button" className="p-button p-button-subtle" onClick={() => setDraft(null)}>Cancelar</button></div>
     </form>}
-    <div className={styles.grid2}>
+    <div className={`${styles.grid2} ${styles.riskTop}`}>
       <section className={styles.card} aria-labelledby="risk-map">
         <header><h3 id="risk-map">Mapa dos riscos abertos</h3>{cell && <button type="button" className="p-button p-button-subtle" onClick={() => setCell(null)}>Mostrar todos</button>}</header>
         <div className={styles.matrixWrap}>
@@ -96,10 +96,12 @@ export default function RisksPanel({ organizationId }: { organizationId: string 
         <header><h3 id="risk-filter">Filtrar</h3></header>
         <label className="p-field" style={{ maxWidth: 'none' }}><span>Mostrar</span><select value={filter} onChange={event => setFilter(event.target.value)}>
           <option value="all">Todos os riscos que você vê</option><option value="overdue">Com revisão vencida</option>
+          {(Object.keys(LEVEL) as Risk['level'][]).map(key => <option key={key} value={`level:${key}`}>Abertos de nível {LEVEL[key].toLowerCase()}</option>)}
           {data.canEditOrganization && <option value="organization">Da organização</option>}
           {data.projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}
         </select></label>
-        <dl className={styles.levels} aria-label="Riscos abertos por nível">{(Object.keys(LEVEL) as Risk['level'][]).map(key => <div key={key} className={styles[`lvl-${key}`]}><dt>{LEVEL[key]}</dt><dd>{data.risks.filter(risk => risk.level === key && (risk.status === 'open' || risk.status === 'monitoring')).length}</dd></div>)}</dl>
+        <div className={styles.levels} role="group" aria-label="Filtrar riscos abertos por nível">{(Object.keys(LEVEL) as Risk['level'][]).map(key => { const value = `level:${key}`, active = filter === value;
+          return <button key={key} type="button" className={styles[`lvl-${key}`]} aria-pressed={active} onClick={() => { setCell(null); setFilter(active ? 'all' : value); }}><span>{LEVEL[key]}</span><strong>{data.risks.filter(risk => risk.level === key && (risk.status === 'open' || risk.status === 'monitoring')).length}</strong></button>; })}</div>
         <p className={styles.help}>{visible.length} de {data.risks.length} {data.risks.length === 1 ? 'risco' : 'riscos'}{cell ? ` na célula chance ${cell[0]} × impacto ${cell[1]}` : ''}.</p>
       </section>
     </div>

@@ -50,7 +50,7 @@ Cada gravação cria uma versão com autor e nota do que mudou. Restaurar cria u
 
 Exportação: o guia sai em PDF e DOCX pelo mesmo gerador do relatório do projeto (capa, sumário e numeração).
 
-Para o **Rolê**, `guideForAssistant(db, actor, organizationId)` devolve o mesmo Markdown resolvido. A rota é `GET /api/management?view=guide&organizationId=…`.
+Para o **Rolê**, `guideForAssistant(db, actor, organizationId, { slugs })` devolve o mesmo Markdown resolvido (só as páginas pedidas, se `slugs` vier). Toda página inicial termina com a linha "Fontes: …" (endereço e data), que o Rolê cita. A rota é `GET /api/management?view=guide&organizationId=…`.
 
 ## Riscos
 

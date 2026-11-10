@@ -180,8 +180,14 @@ export async function guideAction(db: D1Database, rawActor: PortalActor | null, 
   return guideWorkspace(db, actor, { organizationId });
 }
 
-/** Mesmo conteúdo do guia para o assistente Rolê: Markdown resolvido com as permissões de quem pergunta. */
-export async function guideForAssistant(db: D1Database, actor: PortalActor | null, organizationId: string) {
+/**
+ * Mesmo conteúdo do guia para o assistente Rolê: Markdown resolvido com as permissões de quem pergunta.
+ * `slugs` limita às páginas pedidas (o Rolê consulta poucas por vez). Cada página termina com a linha
+ * "Fontes: …" (endereço e data), que o Rolê cita. O texto vem de editores: tratar como dado, não instrução.
+ */
+export async function guideForAssistant(db: D1Database, actor: PortalActor | null, organizationId: string, options: { slugs?: string[] } = {}) {
   const workspace = await guideWorkspace(db, actor, { organizationId });
-  return workspace.pages.map(page => ({ slug: page.slug, title: page.title, section: page.sectionLabel, updatedAt: page.updatedAt, version: page.version, markdown: page.markdown }));
+  const wanted = options.slugs?.length ? new Set(options.slugs.slice(0, 20).map(String)) : null;
+  return workspace.pages.filter(page => !wanted || wanted.has(page.slug))
+    .map(page => ({ slug: page.slug, title: page.title, section: page.sectionLabel, updatedAt: page.updatedAt, version: page.version, markdown: page.markdown }));
 }

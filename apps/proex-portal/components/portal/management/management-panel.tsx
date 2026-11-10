@@ -18,7 +18,7 @@ const isTab = (value: unknown): value is Tab => TABS.some(entry => entry.id === 
 /** Gestão da organização: painel estratégico, guia vivo, riscos e equipes-modelo. */
 export default function ManagementPanel({ organizations, defaultOrganizationId = '' }: { organizations: { id: string; name: string }[]; defaultOrganizationId?: string }) {
   const [organizationId, setOrganizationId] = useState(organizations.some(organization => organization.id === defaultOrganizationId) ? defaultOrganizationId : organizations[0]?.id ?? '');
-  const [tab, setTab] = useState<Tab>('dashboard');
+  const [tab, setTab] = useState<Tab>('dashboard'), [riskFilter, setRiskFilter] = useState('all');
   // Edição do guia em aberto: trocar de aba ou de organização pede confirmação.
   const guideDirty = useRef(false);
   const tabRefs = useRef<Record<Tab, HTMLButtonElement | null>>({ dashboard: null, guide: null, risks: null, teams: null });
@@ -34,6 +34,7 @@ export default function ManagementPanel({ organizations, defaultOrganizationId =
   }
   function choose(next: Tab, focus = false) {
     if (next === tab || !leaveGuide()) return;
+    if (next !== 'risks') setRiskFilter('all');
     setTab(next);
     try { const url = new URL(window.location.href); url.searchParams.set('tab', next); window.history.replaceState(window.history.state, '', url); } catch { /* endereço é conveniência */ }
     if (focus) tabRefs.current[next]?.focus();
@@ -53,9 +54,9 @@ export default function ManagementPanel({ organizations, defaultOrganizationId =
       {organizations.length > 1 && <label className="p-field"><span>Organização</span><select value={organizationId} onChange={event => { if (leaveGuide()) setOrganizationId(event.target.value); }}>{organizations.map(organization => <option key={organization.id} value={organization.id}>{organization.name}</option>)}</select></label>}
     </div>
     <div role="tabpanel" id={`management-panel-${tab}`} aria-labelledby={`management-tab-${tab}`} key={`${tab}:${organizationId}`}>
-      {tab === 'dashboard' && <DashboardPanel organizationId={organizationId} onOpenRisks={() => choose('risks')}/>}
+      {tab === 'dashboard' && <DashboardPanel organizationId={organizationId} onOpenRisks={filter => { setRiskFilter(filter ?? 'all'); choose('risks'); }}/>}
       {tab === 'guide' && <GuidePanel organizationId={organizationId} onDirtyChange={dirty => { guideDirty.current = dirty; }}/>}
-      {tab === 'risks' && <RisksPanel organizationId={organizationId}/>}
+      {tab === 'risks' && <RisksPanel organizationId={organizationId} initialFilter={riskFilter}/>}
       {tab === 'teams' && <div className={styles.root}>
         <p className={styles.help}>Modelos de equipe com papéis, responsabilidades, acessos sugeridos e rotinas. Quem gerencia a organização cria a equipe a partir do modelo aqui ou na página Equipes; a equipe nasce sem pessoas.</p>
         <TeamTemplates organizationId={organizationId} catalogOnly/>

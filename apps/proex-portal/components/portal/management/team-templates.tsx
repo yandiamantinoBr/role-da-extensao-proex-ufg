@@ -6,6 +6,7 @@ import { managementGet, managementPost } from './api';
 import styles from './management.module.css';
 
 type State = { templates: TeamTemplate[]; applications: { teamId: string; templateId: string }[]; canApply: boolean };
+const TEAMS_LINK = ['/', '?module=work-teams'].join('');
 type Draft = { templateId: string; name: string; operationKey: string };
 
 /**
@@ -15,7 +16,7 @@ type Draft = { templateId: string; name: string; operationKey: string };
  */
 export default function TeamTemplates({ organizationId, selectedTeamId, onApplied, catalogOnly = false }: { organizationId: string; selectedTeamId?: string; onApplied?: (teamId: string) => void; catalogOnly?: boolean }) {
   const [state, setState] = useState<State | null>(null), [busy, setBusy] = useState(false), [message, setMessage] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
-  const [draft, setDraft] = useState<Draft | null>(null);
+  const [draft, setDraft] = useState<Draft | null>(null), [created, setCreated] = useState<{ templateId: string; name: string } | null>(null);
   useEffect(() => {
     if (!organizationId) return;
     const controller = new AbortController();
@@ -27,12 +28,12 @@ export default function TeamTemplates({ organizationId, selectedTeamId, onApplie
   const template = applied ? state.templates.find(entry => entry.id === applied.templateId) : undefined;
 
   async function create(entry: TeamTemplate, current: Draft) {
-    setBusy(true); setMessage(null);
+    setBusy(true); setMessage(null); setCreated(null);
     try {
       // A mesma chave de operação vale para o formulário aberto: clicar duas vezes não cria duas equipes.
       const result = await managementPost<State & { teamId: string }>({ action: 'template.apply', organizationId, templateId: entry.id, name: current.name, operationKey: current.operationKey });
-      setState(result); setDraft(null);
-      setMessage({ tone: 'ok', text: `Equipe “${current.name.trim() || entry.name}” criada com ${entry.roles.length} papéis a preencher. Adicione as pessoas em Editar equipe.` });
+      setState(result); setDraft(null); setCreated({ templateId: entry.id, name: current.name.trim() || entry.name });
+      window.setTimeout(() => document.getElementById(`template-created-${entry.id}`)?.focus(), 0);
       onApplied?.(result.teamId);
     } catch (cause) { setMessage({ tone: 'error', text: cause instanceof Error ? cause.message : 'Não foi possível criar a equipe.' }); }
     finally { setBusy(false); }
@@ -44,17 +45,18 @@ export default function TeamTemplates({ organizationId, selectedTeamId, onApplie
       <ul className={styles.templateRoles}>{entry.roles.map(role => <li key={role.name} className={styles.roleLine}><span>{role.name}</span><small>Acesso sugerido: {ACCESS_LABEL[role.access]}</small>
         <details className={styles.roleMore}><summary>Responsabilidades<ChevronDown size={14} aria-hidden="true"/></summary><ul>{role.responsibilities.map(item => <li key={item}>{item}</li>)}</ul></details></li>)}</ul>
       <p className={styles.help}><strong>Rotinas:</strong> {entry.routines.join(' · ')}.</p>
+      {created?.templateId === entry.id && <p id={`template-created-${entry.id}`} tabIndex={-1} className={styles.createdNote} role="status">Equipe “{created.name}” criada, ainda sem pessoas. {catalogOnly ? <a href={TEAMS_LINK}>Abrir em Equipes</a> : 'Ela já está selecionada abaixo; adicione as pessoas em Editar equipe.'}</p>}
       {state.canApply && (open && draft ? <form className={styles.applyForm} onSubmit={event => { event.preventDefault(); void create(entry, draft); }}>
         <label className="p-field"><span>Nome da equipe</span><input value={draft.name} maxLength={100} required autoFocus onChange={event => setDraft({ ...draft, name: event.target.value })}/></label>
+        {message && <p className="p-inline-error" role="alert">{message.text}</p>}
         <p className={styles.help}>A equipe nasce sem pessoas. Os {entry.roles.length} papéis e as rotinas acima aparecem na equipe como guia para preencher.</p>
         <div className={styles.actions}><button type="submit" className="p-button p-button-primary" disabled={busy || !draft.name.trim()}>{busy ? <LoaderCircle size={15} className="p-spin" aria-hidden="true"/> : <CopyPlus size={15} aria-hidden="true"/>}Criar equipe</button>
           <button type="button" className="p-button p-button-subtle" disabled={busy} onClick={() => setDraft(null)}>Cancelar</button></div>
-      </form> : <button type="button" className="p-button p-button-subtle" disabled={busy} onClick={() => { setMessage(null); setDraft({ templateId: entry.id, name: entry.name, operationKey: crypto.randomUUID() }); }}><CopyPlus size={15} aria-hidden="true"/>Usar este modelo</button>)}
+      </form> : <button type="button" className="p-button p-button-subtle" disabled={busy} onClick={() => { setMessage(null); setCreated(null); setDraft({ templateId: entry.id, name: entry.name, operationKey: crypto.randomUUID() }); }}><CopyPlus size={15} aria-hidden="true"/>Usar este modelo</button>)}
     </article>;
   })}</div>;
 
   return <div className={styles.root} style={{ gap: 12 }}>
-    {message && <p className={message.tone === 'ok' ? styles.ok : 'p-inline-error'} role={message.tone === 'ok' ? 'status' : 'alert'}>{message.text}</p>}
     {catalogOnly ? catalog : <>
       {template && <section className={styles.card} aria-labelledby="team-template-roles">
         <header><h3 id="team-template-roles">Modelo desta equipe: {template.name}</h3></header>

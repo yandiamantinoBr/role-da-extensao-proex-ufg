@@ -31,7 +31,7 @@ a.kpi:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 .kpi small { color: var(--text-secondary); font-size: 12px; }
 .kpiWarn { border-color: #e9b07a; background: color-mix(in srgb, var(--lvl-alto) 55%, var(--surface)); }
 .kpiWarn strong { color: var(--lvl-alto-ink); }
-.grid2 { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); }
+.grid2 { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); align-items: start; }
 @container management (min-width: 760px) { .grid2 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .card { display: flex; flex-direction: column; gap: 10px; min-width: 0; margin: 0; padding: 14px 16px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: var(--shadow-card); }
 .card > header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 12px; }
@@ -135,7 +135,7 @@ button.cell:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px
 .srOnly { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 /* Equipes-modelo */
-.templates { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); }
+.templates { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); align-items: start; }
 .template { display: flex; flex-direction: column; gap: 8px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
 .template h4 { margin: 0; color: var(--ink); font-family: var(--font-display); font-size: 16px; font-weight: 700; }
 .template p { margin: 0; color: var(--text-secondary); font-size: 13px; }
@@ -144,7 +144,10 @@ button.cell:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px
 .template .roleLine { display: grid; gap: 1px; }
 .template .roleLine small { color: var(--text-secondary); font-size: 12px; }
 .levels { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0; }
-.levels div { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 10px; border-radius: 0; background: transparent !important; border-left: 4px solid currentColor; }
+.levels button { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; padding: 6px 10px; border: 1px solid var(--line); border-left: 4px solid currentColor; border-radius: 8px; background: var(--surface) !important; font: inherit; cursor: pointer; }
+.levels button span { font-size: 13px; font-weight: 600; } .levels button strong { font-size: 20px; font-variant-numeric: tabular-nums; }
+.levels button[aria-pressed=true] { box-shadow: inset 0 0 0 2px currentColor; }
+.levels button:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 .levels dt { font-size: 13px; font-weight: 600; } .levels dd { margin: 0; font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .roles { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
 .roles li { padding: 10px 12px; border-radius: 10px; background: var(--surface-soft); }
@@ -220,8 +223,14 @@ details[open] > .summary .summaryChevron { transform: rotate(180deg); }
 .empty a { color: var(--brand-ink); font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
 .applyForm .actions :global(.p-button) { flex: 1 1 auto; justify-content: center; }
 .roleMore { margin-top: 2px; font-size: 12.5px; }
-.roleMore > summary { display: inline-flex; align-items: center; gap: 4px; min-height: 32px; cursor: pointer; color: var(--brand-ink); font-weight: 600; list-style: none; }
+.roleMore > summary { display: inline-flex; align-items: center; gap: 4px; min-height: 44px; cursor: pointer; color: var(--brand-ink); font-weight: 600; list-style: none; }
 .roleMore > summary::-webkit-details-marker { display: none; }
 .roleMore[open] > summary svg { transform: rotate(180deg); }
 .roleMore > summary:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; border-radius: 6px; }
 .roleMore ul { margin: 2px 0 4px; padding-left: 16px; color: var(--ink); }
+
+@container management (max-width: 759px) { .riskTop > :last-child { order: -1; } }
+.createdNote { margin: 0; padding: 8px 10px; border-radius: 10px; background: color-mix(in srgb, var(--lvl-baixo) 70%, var(--surface)); color: var(--lvl-baixo-ink); font-size: 13px; font-weight: 600; }
+.createdNote a { color: inherit; text-decoration: underline; }
+.createdNote:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.cancelGap { margin-left: 8px; }
