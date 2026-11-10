@@ -1,0 +1,19 @@
+{
+  "origin": "http://127.0.0.1:5174",
+  "base": "descartável, loopback; conversa, prévia, gravação e correção simuladas no navegador (nenhum provedor ou estoque real)",
+  "shots": [
+    "1366-light-previa-destino",
+    "1366-light-gravado-corrigir",
+    "1366-light-form-corrigir",
+    "1366-dark-previa-destino",
+    "1366-dark-gravado-corrigir",
+    "1366-dark-form-corrigir",
+    "390-light-previa-destino",
+    "390-light-gravado-corrigir",
+    "390-light-form-corrigir",
+    "390-dark-previa-destino",
+    "390-dark-gravado-corrigir",
+    "390-dark-form-corrigir"
+  ],
+  "pageErrors": []
+}

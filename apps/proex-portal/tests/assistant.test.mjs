@@ -792,3 +792,24 @@ test('query apply is fenced in its receipt transaction and applied replay is fen
 test('authorization loss after a committed physical movement keeps that movement and safe idempotent recovery',async()=>{
  const f=fixture(),provider=fakeProvider();try{await configureAssistant(f.db,f.actors.owner,configInput(),secret);const preview=await prepareAssistantPlan(f.db,f.actors.manager,request(),secret,{fetcher:provider.fetch});f.raceBatch(/UPDATE ai_plans SET status='applied'/,()=>revokeManager(f));await assert.rejects(applyAssistantPlan(f.db,f.actors.manager,confirm(preview),secret),code('assistant_forbidden'));assert.equal(f.native.prepare('SELECT stock FROM items WHERE id=?').get('item-a').stock,10);assert.equal(f.native.prepare('SELECT COUNT(*) n FROM stock_movements').get().n,1);assert.equal(f.native.prepare('SELECT status FROM ai_plans').get().status,'ready');f.native.prepare("UPDATE members SET revoked_at=NULL WHERE user_id='manager-qa'").run();await applyAssistantPlan(f.db,f.actors.manager,confirm(preview),secret);assert.equal(f.native.prepare('SELECT COUNT(*) n FROM stock_movements').get().n,1);assert.equal(f.native.prepare('SELECT status FROM ai_plans').get().status,'applied');}finally{f.native.close();}
 });
+
+test('DESTINO: a distribution asked to the Rolê needs a destination at confirmation and keeps it linked', async () => {
+ const f = fixture(), provider = fakeProvider({ proposal: { intent: 'stock.distribute', quantity: 3, title: 'Distribuição de canetas', body: 'Canetas no plantão', evidence: [{ source: 'request', quote: 'distribuição de 3 canetas' }] } });
+ try {
+  await configureAssistant(f.db, f.actors.owner, configInput(), secret);
+  f.native.prepare("UPDATE projects SET organization_id='org_proex' WHERE organization_id IS NULL").run();
+  f.native.prepare("UPDATE items SET stock=10 WHERE id='item-a'").run();
+  const preview = await prepareAssistantPlan(f.db, f.actors.inventory, request({ request: 'Registrar distribuição de 3 canetas no plantão do CONPEEX.', operationKey: 'test-only-destination-1' }), secret, { fetcher: provider.fetch });
+  await assert.rejects(applyAssistantPlan(f.db, f.actors.inventory, confirm(preview), secret), code('assistant_destination_required'));
+  assert.equal(f.native.prepare('SELECT stock FROM items WHERE id=?').get('item-a').stock, 10, 'nothing moves without a destination');
+  await assert.rejects(applyAssistantPlan(f.db, f.actors.inventory, { ...confirm(preview), destinationId: 'x', other: 'y' }, secret), code('assistant_schema'));
+  const saved = await applyAssistantPlan(f.db, f.actors.inventory, { ...confirm(preview), destinationName: 'Centro de Eventos QA', destinationKind: 'place' }, secret);
+  assert.equal(saved.destination.name, 'Centro de Eventos QA');
+  assert.equal(f.native.prepare('SELECT stock FROM items WHERE id=?').get('item-a').stock, 7);
+  const link = f.native.prepare('SELECT d.name FROM stock_movement_destinations l JOIN material_destinations d ON d.id=l.destination_id WHERE l.movement_id=?').get(saved.movementId);
+  assert.equal(link.name, 'Centro de Eventos QA', 'the movement is linked to the destination page');
+  const again = await applyAssistantPlan(f.db, f.actors.inventory, { ...confirm(preview), destinationName: 'Centro de Eventos QA', destinationKind: 'place' }, secret);
+  assert.equal(again.replayed, true, 'a repeated confirmation never moves twice');
+  assert.equal(f.native.prepare('SELECT stock FROM items WHERE id=?').get('item-a').stock, 7);
+ } finally { f.native.close(); }
+});

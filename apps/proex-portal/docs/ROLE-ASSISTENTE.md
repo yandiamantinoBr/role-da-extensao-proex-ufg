@@ -179,3 +179,15 @@ Motivo: às 13h o Yan perguntou "quantos brindes, super brindes e super super br
 - Os cartões de operação só informam para onde vai o pedido (DeepSeek ou OpenAI e, se houver, a conferência TypeSafe/JEV).
 - O rodapé diz "Respondido por <modelo> (<provedor>)". A auditoria de cada chamada já registra o modelo.
 - Ainda não feito: escolher no catálogo o modelo de documento, voz e decisão. Conversa e foto já usam o catálogo desde a PR #53.
+
+## Destino e correção no cartão do Rolê · 10/11/2026
+
+- **Destino na confirmação:**
+  - Na prévia, o cartão mostra "Para onde foi (evento, local ou parceiro)", o mesmo campo de Materiais (`destination-field.tsx`). Na distribuição ele é obrigatório; em entrada e consumo, opcional.
+  - Quando o pedido cita um destino já cadastrado (ex.: "no CONPEEX"), o campo já vem preenchido; a pessoa confere e pode trocar.
+  - O destino é escolhido pela pessoa, nunca pelo modelo, e vai junto com a confirmação (`apply`). O servidor valida com o mesmo código de Materiais (`resolveDestination`): destino desta organização e ativo, ou um novo criado no mesmo lote.
+  - Distribuição sem destino é recusada (`assistant_destination_required`) e nada muda no estoque.
+- **Corrigir ou desfazer:**
+  - Depois de gravar, o cartão mostra **Corrigir** (quantidade e destino, com motivo) e **Desfazer** (com motivo).
+  - Os dois usam `stock.revise`, com a mesma regra e permissão de Materiais (inventory.manage).
+  - O original continua no histórico. Uma correção depois da outra segue a versão atual (`currentMovementId`).

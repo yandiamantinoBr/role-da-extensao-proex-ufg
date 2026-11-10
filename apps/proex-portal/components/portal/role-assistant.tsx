@@ -10,6 +10,7 @@ import {
 } from '@/lib/assistant/role-contracts';
 import { prepareSpeechWav } from './speech-audio';
 import AiPeopleUsage from './ai-people-usage';
+import DestinationField, { destinationFields, loadDestinations } from './destination-field';
 import styles from './role-assistant.module.css';
 
 type Project = { id: string; name: string; organization_id?: string };
@@ -17,7 +18,7 @@ type Props = { projects: Project[]; defaultProjectId?: string; onApplied?: () =>
 type Pricing = { model: string; label: string; inputMicrosPerToken: number; outputMicrosPerToken: number };
 type Status = { available: boolean; reason: string | null; provider: string; model: string; textPricing?: Pricing | null; visionPricing?: Pricing | null; visionAvailable: boolean; operationsAvailable: boolean; speech: { available: boolean; provider: 'groq' | 'deepgram' }; dailyLimitMicros: number; reservedTodayMicros: number; canConfigure?: boolean; organizationId?: string; tools?: { text: boolean; vision: boolean } };
 type Match = { projectId: string; projectName: string; itemName: string; score: number };
-type Operation = { request: string; stage: 'idle' | 'estimated' | 'preview' | 'done'; costMicros?: number; provider?: string; jev?: boolean; stale?: boolean; projectId?: string; matches?: Match[]; ambiguous?: boolean; error?: string; limit?: boolean; preview?: { plan: Omit<AssistantPlan, 'actorId'>; planToken: string; undoReason: string }; confirmed?: boolean; receipt?: string; key: string };
+type Operation = { request: string; stage: 'idle' | 'estimated' | 'preview' | 'done'; costMicros?: number; provider?: string; jev?: boolean; stale?: boolean; projectId?: string; matches?: Match[]; ambiguous?: boolean; error?: string; limit?: boolean; preview?: { plan: Omit<AssistantPlan, 'actorId'>; planToken: string; undoReason: string }; confirmed?: boolean; receipt?: string; key: string; destinationDefault?: string; movementId?: string; destination?: string | null; revise?: 'correct' | 'undo' | null; reviseKey?: string };
 type Source = { label: string; href: string };
 type Message = { id: string; role: 'user' | 'assistant'; content: string; image?: string; meta?: string; operation?: Operation; sources?: Source[] };
 type Picked = { dataUrl: string; bytes: number };
@@ -203,7 +204,7 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
   async function prepareOperation(message: Message) {
     if (!message.operation?.projectId) return;
     setBusy(true); setError(''); updateOperation(message.id, { error: '', limit: false });
-    try { const preview = await post<Operation['preview']>('/api/assistant', { action: 'prepare', projectId: message.operation.projectId, request: message.operation.request, consent: true, operationKey: message.operation.key, acceptedCostMicros: message.operation.costMicros }); updateOperation(message.id, { stage: 'preview', preview, confirmed: false }); }
+    try { const preview = await post<Operation['preview']>('/api/assistant', { action: 'prepare', projectId: message.operation.projectId, request: message.operation.request, consent: true, operationKey: message.operation.key, acceptedCostMicros: message.operation.costMicros }); updateOperation(message.id, { stage: 'preview', preview, confirmed: false }); if (preview) void suggestDestination(message.id, preview.plan.projectId, message.operation.request); }
     catch (cause) {
       // O servidor respondeu: a próxima tentativa é outra chamada paga, com chave nova e custo mostrado de novo.
       // Tempo esgotado mantém a chave para recuperar o resultado sem pagar duas vezes.
@@ -212,15 +213,45 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
     }
     finally { setBusy(false); }
   }
-  async function applyOperation(message: Message) {
+  /** Pré-preenche o destino quando o pedido cita um destino já cadastrado (ex.: "no CONPEEX"). A pessoa confere e pode trocar. */
+  async function suggestDestination(id: string, project: string, request: string) {
+    try {
+      const options = (await loadDestinations(project)).filter(option => option.status === 'active');
+      const text = request.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
+      const hit = options.map(option => ({ option, key: option.name.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase() })).filter(entry => entry.key.length >= 3 && text.includes(entry.key)).sort((a, b) => b.key.length - a.key.length)[0];
+      if (hit && mounted.current) updateOperation(id, { destinationDefault: hit.option.name });
+    } catch { /* sem sugestões: a pessoa digita */ }
+  }
+  async function applyOperation(message: Message, form?: HTMLFormElement) {
     const operation = message.operation;
     if (!operation?.preview || !operation.confirmed) return;
-    setBusy(true); setError('');
+    const destination = form ? destinationFields(new FormData(form)) : {};
+    if (operation.preview.plan.proposal.intent === 'stock.distribute' && !destination.destinationName) { updateOperation(message.id, { error: 'Diga para onde foi a distribuição (evento, local ou parceiro).' }); return; }
+    setBusy(true); setError(''); updateOperation(message.id, { error: '' });
     try {
-      const saved = await post<{ queried?: boolean; replayed?: boolean }>('/api/assistant', { action: 'apply', planToken: operation.preview.planToken, confirmed: true });
-      updateOperation(message.id, { stage: 'done', receipt: saved.queried ? 'Consulta conferida com o saldo atual.' : saved.replayed ? 'Esta operação já tinha sido feita; nada foi repetido.' : 'Operação concluída e registrada no histórico.' });
+      const saved = await post<{ queried?: boolean; replayed?: boolean; movementId?: string; destination?: { name?: string } | null }>('/api/assistant', { action: 'apply', planToken: operation.preview.planToken, confirmed: true, ...destination });
+      updateOperation(message.id, { stage: 'done', movementId: typeof saved.movementId === 'string' ? saved.movementId : undefined, destination: saved.destination?.name ?? destination.destinationName ?? null,
+        receipt: saved.queried ? 'Consulta conferida com o saldo atual.' : saved.replayed ? 'Esta operação já tinha sido feita; nada foi repetido.' : `Operação concluída e registrada no histórico${saved.destination?.name ?? destination.destinationName ? ` (destino: ${saved.destination?.name ?? destination.destinationName})` : ''}.` });
       await onApplied?.();
     } catch (cause) { updateOperation(message.id, { error: cause instanceof Error ? cause.message : 'Não foi possível concluir a operação.' }); }
+    finally { setBusy(false); }
+  }
+  /** Corrigir (quantidade ou destino) ou desfazer pelo próprio cartão: mesma regra de Materiais (stock.revise). */
+  async function reviseOperation(message: Message, form: HTMLFormElement) {
+    const operation = message.operation, plan = operation?.preview?.plan;
+    if (!operation?.movementId || !operation.revise || !plan) return;
+    const fields = new FormData(form), reason = String(fields.get('reason') ?? '').trim();
+    if (reason.length < 3) { updateOperation(message.id, { error: 'Escreva o motivo (pelo menos 3 letras).' }); return; }
+    const payload: Record<string, unknown> = { action: 'stock.revise', movementId: operation.movementId, mode: operation.revise, reason, operationKey: operation.reviseKey ?? `role_${crypto.randomUUID().replaceAll('-', '')}` };
+    if (operation.revise === 'correct') Object.assign(payload, { quantity: Number(fields.get('quantity')), note: plan.proposal.body || plan.proposal.title, ...destinationFields(fields) });
+    setBusy(true); updateOperation(message.id, { error: '', reviseKey: String(payload.operationKey) });
+    try {
+      const result = await post<{ currentMovementId?: string | null; item?: { stock?: number; unit?: string } }>('/api/portal', payload);
+      const next = typeof result.currentMovementId === 'string' ? result.currentMovementId : undefined;
+      updateOperation(message.id, { revise: null, reviseKey: undefined, movementId: operation.revise === 'undo' ? undefined : next ?? operation.movementId,
+        receipt: operation.revise === 'undo' ? 'Movimentação desfeita. O saldo voltou e o registro original continua no histórico.' : `Correção salva${typeof result.item?.stock === 'number' ? `: saldo agora ${quantity(result.item.stock, result.item.unit ?? 'unidade')}` : ''}.` });
+      await onApplied?.();
+    } catch (cause) { updateOperation(message.id, { error: cause instanceof Error ? cause.message : 'Não foi possível salvar a correção.' }); }
     finally { setBusy(false); }
   }
 
@@ -352,12 +383,31 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
                       {message.operation.preview.plan.before && message.operation.preview.plan.after && <dl className={styles.beforeAfter}><div><dt>Antes</dt><dd>{quantity(message.operation.preview.plan.before.stock, message.operation.preview.plan.before.unit)}</dd></div><div><dt>Depois</dt><dd>{quantity(message.operation.preview.plan.after.stock, message.operation.preview.plan.before.unit)}</dd></div></dl>}
                       <p>Quantidade: {message.operation.preview.plan.proposal.quantity || 'sem movimentação'} · Projeto: {projects.find(item => item.id === message.operation?.preview?.plan.projectId)?.name ?? 'projeto escolhido'}</p>
                       {message.operation.preview.plan.proposal.body && <p className={styles.proposalBody}><span>Texto que será gravado:</span> {message.operation.preview.plan.proposal.body}</p>}
+                      <form className={styles.confirmForm} onSubmit={event => { event.preventDefault(); void applyOperation(message, event.currentTarget); }}>
+                      {['stock.distribute', 'stock.receive', 'stock.consume'].includes(message.operation.preview.plan.proposal.intent) && <DestinationField key={`${message.operation.preview.planToken}:${message.operation.destinationDefault ?? ''}`} projectId={message.operation.preview.plan.projectId} kind={message.operation.preview.plan.proposal.intent.slice(6)} defaultName={message.operation.destinationDefault ?? ''} required={message.operation.preview.plan.proposal.intent === 'stock.distribute'}/>}
                       <label className={styles.check}><input type="checkbox" checked={!!message.operation.confirmed} disabled={busy} onChange={event => updateOperation(message.id, { confirmed: event.target.checked })}/>Conferi os dados acima e autorizo gravar no estoque.</label>
-                      <button type="button" className="p-button p-button-primary" disabled={busy || !message.operation.confirmed} onClick={() => void applyOperation(message)}>{message.operation.preview.plan.proposal.intent === 'stock.query' ? 'Conferir saldo atual' : message.operation.preview.plan.proposal.intent === 'record.create' ? 'Gravar o registro' : 'Gravar no estoque'}</button>
+                      <button type="submit" className="p-button p-button-primary" disabled={busy || !message.operation.confirmed}>{message.operation.preview.plan.proposal.intent === 'stock.query' ? 'Conferir saldo atual' : message.operation.preview.plan.proposal.intent === 'record.create' ? 'Gravar o registro' : 'Gravar no estoque'}</button>
+                      </form>
                     </div>}
                     {message.operation.error && <p role="alert" className={styles.error}>{message.operation.error}</p>}
                     {message.operation.limit && limitsButton}
                     {message.operation.stage === 'done' && <p role="status" className={styles.done}>{message.operation.receipt}</p>}
+                    {message.operation.stage === 'done' && message.operation.movementId && message.operation.preview && !message.operation.revise && <div className={styles.reviseActions}>
+                      <button type="button" className="p-button p-button-subtle" disabled={busy} onClick={() => updateOperation(message.id, { revise: 'correct', error: '' })}>Corrigir</button>
+                      <button type="button" className="p-button p-button-subtle" disabled={busy} onClick={() => updateOperation(message.id, { revise: 'undo', error: '' })}>Desfazer</button>
+                    </div>}
+                    {message.operation.stage === 'done' && message.operation.revise && message.operation.preview && <form className={styles.confirmForm} aria-label={message.operation.revise === 'correct' ? 'Corrigir a movimentação' : 'Desfazer a movimentação'} onSubmit={event => { event.preventDefault(); void reviseOperation(message, event.currentTarget); }}>
+                      {message.operation.revise === 'correct' && <>
+                        <label className="p-field"><span>Quantidade certa</span><input name="quantity" type="number" inputMode="numeric" min={1} max={1000000} step={1} required defaultValue={message.operation.preview.plan.proposal.quantity}/></label>
+                        {message.operation.preview.plan.proposal.intent !== 'stock.consume' && <DestinationField projectId={message.operation.preview.plan.projectId} kind={message.operation.preview.plan.proposal.intent.slice(6)} defaultName={message.operation.destination ?? ''} required={message.operation.preview.plan.proposal.intent === 'stock.distribute'}/>}
+                      </>}
+                      {message.operation.revise === 'undo' && <p className={styles.sendsTo}>O saldo volta ao que era. A movimentação original continua no histórico, marcada como desfeita.</p>}
+                      <label className="p-field"><span>Motivo</span><input name="reason" required minLength={3} maxLength={2000} placeholder={message.operation.revise === 'correct' ? 'Ex.: contei de novo, foram 150' : 'Ex.: registrei no projeto errado'}/></label>
+                      <div className={styles.reviseActions}>
+                        <button type="submit" className="p-button p-button-primary" disabled={busy}>{message.operation.revise === 'correct' ? 'Salvar correção' : 'Desfazer movimentação'}</button>
+                        <button type="button" className="p-button p-button-subtle" disabled={busy} onClick={() => updateOperation(message.id, { revise: null, error: '' })}>Cancelar</button>
+                      </div>
+                    </form>}
                   </div>}
                 </div>
               </li>)}

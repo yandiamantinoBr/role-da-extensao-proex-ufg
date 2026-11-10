@@ -23,7 +23,7 @@ export function destinationFields(form: FormData): Record<string, string> {
   const name = String(form.get('destinationName') ?? '').trim();
   return name ? { destinationName: name, destinationKind: String(form.get('destinationKind') || 'place') } : {};
 }
-export default function DestinationField({ projectId, kind, defaultName = '' }: { projectId: string; kind: string; defaultName?: string }) {
+export default function DestinationField({ projectId, kind, defaultName = '', required = false }: { projectId: string; kind: string; defaultName?: string; required?: boolean }) {
   const listId = useId(), [options, setOptions] = useState<DestinationOption[]>([]), [value, setValue] = useState(defaultName), [error, setError] = useState('');
   useEffect(() => {
     let active = true;
@@ -35,9 +35,9 @@ export default function DestinationField({ projectId, kind, defaultName = '' }: 
   return <div className={styles.destinationField}>
     <div className={value.trim() && !match ? styles.grid2 : undefined}>
       <label className="p-field"><span>{label}</span>
-        <input name="destinationName" list={listId} value={value} maxLength={160} autoComplete="off" placeholder="Ex.: Centro de Eventos da UFG" onChange={event => setValue(event.target.value)}/>
+        <input name="destinationName" list={listId} value={value} maxLength={160} autoComplete="off" required={required} placeholder="Ex.: Centro de Eventos da UFG" onChange={event => setValue(event.target.value)}/>
         <datalist id={listId}>{options.map(option => <option key={option.id} value={option.name}>{DESTINATION_KIND_NAMES[option.kind] ?? ''}</option>)}</datalist>
-        <small>{match ? `Destino já cadastrado (${DESTINATION_KIND_NAMES[match.kind] ?? 'destino'}). A movimentação aparecerá na página dele.` : value.trim() ? 'Novo destino: ele ganha uma página própria ao salvar.' : 'Opcional. Escolha um destino existente ou digite um novo.'}{error && ` ${error}`}</small>
+        <small>{match ? `Destino já cadastrado (${DESTINATION_KIND_NAMES[match.kind] ?? 'destino'}). A movimentação aparecerá na página dele.` : value.trim() ? 'Novo destino: ele ganha uma página própria ao salvar.' : required ? 'Obrigatório: escolha um destino existente ou digite um novo.' : 'Opcional. Escolha um destino existente ou digite um novo.'}{error && ` ${error}`}</small>
       </label>
       {value.trim() && !match ? <label className="p-field"><span>Tipo do novo destino</span><select name="destinationKind" defaultValue="place">{Object.entries(DESTINATION_KIND_NAMES).map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></label> : <input type="hidden" name="destinationKind" value={match?.kind ?? 'place'}/>}
     </div>

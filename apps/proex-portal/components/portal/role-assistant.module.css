@@ -106,3 +106,7 @@
 .dataNotice strong{display:block;margin-bottom:.15rem}
 .dataNotice :global(.p-button){justify-self:start;min-height:44px}
 .sendsTo{margin:0;font-size:max(12px,.8rem);color:var(--text-secondary);line-height:1.45}
+.confirmForm{display:grid;gap:.6rem;min-width:0}
+.confirmForm :global(.p-field){margin:0}
+.reviseActions{display:flex;flex-wrap:wrap;gap:.5rem}
+.reviseActions :global(.p-button){min-height:44px}
