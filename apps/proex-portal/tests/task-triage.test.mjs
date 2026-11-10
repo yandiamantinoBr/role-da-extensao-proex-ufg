@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {resolve} from 'node:path';
 import {compile,nativeFixture,root} from './support/traffic-fixture.mjs';
 
-const {prepareTaskTriage,applyTaskTriage,taskTriageAvailable}=await import(compile('lib/follow-up/triage.ts'));
+const {prepareTaskTriage,applyTaskTriage,taskTriageAvailable,taskTriageState,triageReserveMicros}=await import(compile('lib/follow-up/triage.ts'));
+const {TRIAGE_CURRENCY}=await import(compile('lib/follow-up/triage-contract.ts'));
 const {followupAction}=await import(compile('lib/follow-up/service.ts'));
 const {configureAssistant}=await import(compile('lib/assistant/settings.ts'));
 const {prepareAssistantPlan}=await import(compile('lib/assistant/service.ts'));
@@ -199,7 +200,7 @@ test('HTTP pilot is off by default and keeps the manual path, CSRF and no-store'
 });
 
 // Triagem roteada: com decisionModel escolhido, a mesma regra da conferência (dados sintéticos, provedor falso).
-const {manageCatalog,catalogView}=await import(compile('lib/assistant/model-catalog-store.ts'));
+const {manageCatalog,catalogView,catalogSettingName}=await import(compile('lib/assistant/model-catalog-store.ts'));
 const routedKey='synthetic-only-perplexity-credential', ROUTED='https://api.perplexity.ai/v1/systemone', STANDARD='https://api.typesafe.ai/v1/systemone';
 async function routedFixture(t) {
  const f=await fixture(t),keys={current:'synthetic-only-dedicated-triage-routing-key'};
@@ -217,7 +218,7 @@ async function routedFixture(t) {
  const triage=chosen=>prepareTaskTriage(f.db,f.owner,prepareInput(f),secret,{now,fetcher:source(chosen),keys});
  const fallbacks=()=>f.native.prepare("SELECT details FROM audit WHERE action='assistant.route.fallback'").all().map(row=>JSON.parse(row.details));
  const call=()=>({...f.native.prepare('SELECT status,model,reserved_tokens,reserved_usd_micros,input_tokens FROM ai_task_triage_calls').get()});
- return {...f,calls,triage,fallbacks,call};
+ return {...f,keys,calls,triage,fallbacks,call};
 }
 
 test('routed triage: the chosen catalog model answers alone and the call row names it',async t=>{
@@ -242,4 +243,48 @@ test('routed triage: a refusal falls back once with an audit line; a timeout nev
  assert.deepEqual(doubtful.calls.map(call=>call.endpoint),[ROUTED]);
  assert.deepEqual(doubtful.fallbacks(),[]);
  assert.equal(doubtful.call().status,'failed');
+});
+
+// Teto mostrado na tela da triagem = reserva feita pelo servidor, com e sem modelo de decisão escolhido.
+async function triageStatus(t,f,keys) {
+ const fixtures=new Map([
+  [resolve(root,'lib/platform.ts'),"export function database(){return globalThis.__triageTest.db;} export function inviteSecret(){return globalThis.__triageTest.secret;} export function taskTriageEnabled(){return true;} export function assistantCredentialKeys(){return globalThis.__triageTest.keys;}"],
+  [resolve(root,'lib/session.ts'),"export async function getPortalUser(){return globalThis.__triageTest.owner;}"],
+ ]);
+ globalThis.__triageTest={...f,secret,keys};
+ t.after(()=>delete globalThis.__triageTest);
+ const route=await import(compile('app/api/follow-up/triage/route.ts',fixtures));
+ return async()=>(await route.GET(new Request('https://portal.example.invalid/api/follow-up/triage?id='+encodeURIComponent(f.task.id)))).json();
+}
+test('triage ceiling: without a chosen decision model the screen gets only the availability and the reservation stays the same',async t=>{
+ const f=await fixture(t),status=await triageStatus(t,f,undefined);
+ assert.equal(triageReserveMicros(),173);
+ assert.deepEqual(await taskTriageState(f.db,f.owner,f.task.id,secret),{enabled:true});
+ assert.deepEqual(await status(),{enabled:true},'same answer as before the routing existed');
+ await prepare(f,fake());
+ assert.equal(f.native.prepare('SELECT reserved_usd_micros n FROM ai_task_triage_calls').get().n,173);
+});
+test('triage ceiling: with a chosen decision model the screen gets exactly what the server reserves',async t=>{
+ const f=await routedFixture(t),status=await triageStatus(t,f,f.keys);
+ // Escolhido mais barato que o padrão: vale o maior, os mesmos 173.
+ assert.deepEqual(await taskTriageState(f.db,f.owner,f.task.id,secret,f.keys),{enabled:true,reserveUsdMicros:173});
+ assert.deepEqual(await status(),{enabled:true,reserveUsdMicros:173});
+ // Escolhido mais caro (preço sintético gravado direto no catálogo): a tela recebe o teto do escolhido.
+ const name=catalogSettingName(f.org),stored=JSON.parse(f.native.prepare('SELECT value FROM settings WHERE name=?').get(name).value);
+ f.native.prepare('UPDATE settings SET value=? WHERE name=?').run(JSON.stringify({...stored,models:stored.models.map(model=>model.id==='perplexity-decider-v1-2'?{...model,price:{...model.price,inputPerM:0.5}}:model)}),name);
+ const shown=await status();
+ assert.deepEqual(shown,{enabled:true,reserveUsdMicros:2048});
+ assert.deepEqual(await taskTriageState(f.db,f.owner,f.task.id,secret,f.keys),shown);
+ assert.match(TRIAGE_CURRENCY.format(shown.reserveUsdMicros/1_000_000),/^US\$\s0,002048$/,'the text the screen shows');
+ await f.triage(()=>null);
+ assert.equal(f.call().reserved_usd_micros,shown.reserveUsdMicros,'the server reserved the number the screen showed');
+ assert.equal(f.call().model,'pplx-decider-v1.2');
+});
+test('triage ceiling: a chosen model that cannot answer leaves the number of the default on screen',async t=>{
+ const f=await routedFixture(t),status=await triageStatus(t,f,f.keys);
+ const name=catalogSettingName(f.org),stored=JSON.parse(f.native.prepare('SELECT value FROM settings WHERE name=?').get(name).value);
+ f.native.prepare('UPDATE settings SET value=? WHERE name=?').run(JSON.stringify({...stored,models:stored.models.map(model=>model.id==='perplexity-decider-v1-2'?{...model,enabled:false,price:{...model.price,inputPerM:0.5}}:model)}),name);
+ assert.deepEqual(await status(),{enabled:true});
+ await f.triage(()=>null);
+ assert.equal(f.call().reserved_usd_micros,173);assert.equal(f.call().model,'jev-1.14.0');
 });

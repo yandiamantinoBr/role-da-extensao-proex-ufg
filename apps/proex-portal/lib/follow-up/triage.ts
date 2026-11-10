@@ -6,7 +6,7 @@ import { containsCredential } from '../assistant/sensitive';
 import { assistantUsageSql, loadAssistantSettings } from '../assistant/settings';
 import { reservationStatements } from '../assistant/admission';
 import { classifyTaskTriage, taskTriageBody } from '../assistant/provider';
-import { decisionCeiling, decisionTarget, recordRouteFallback, resolveTaskRoute, withTaskRoute } from '../assistant/task-routing';
+import { decisionCeiling, decisionTarget, recordRouteFallback, resolveTaskRoute, withTaskRoute, type ResolvedTaskRoute } from '../assistant/task-routing';
 import { TASK_PRIORITIES, choices, fail, id, onlyKeys, text, version } from './contracts';
 import { atomic, authority, type Scope } from './scope';
 import { serverWorkClock } from './time';
@@ -23,11 +23,34 @@ const sensitiveSummary = [
  /-----BEGIN |\b(?:pne_|pxs_)[A-Za-z0-9_-]{12,}|\[(?:e-mail|documento) omitido\]/iu,
 ];
 
+/**
+ * Reserva máxima de uma análise, em micros de dólar. A tela mostra este número e o servidor reserva este mesmo número.
+ * Com modelo escolhido vale o maior preço entre ele e o padrão (o pedido pode terminar em qualquer um); sem rota, o padrão de sempre.
+ */
+export function triageReserveMicros(decisionRoute:ResolvedTaskRoute=null) {
+ return Math.ceil(TRIAGE_INPUT_LIMIT*(decisionCeiling(decisionRoute)?.decisionInputMicrosPerToken ?? PROVIDERS.typesafe.inputMicrosPerToken));
+}
+
 export async function taskTriageAvailable(db:D1Database, actor:PortalActor, taskId:unknown):Promise<boolean> {
  const task = await getTask(db,actor,id(taskId)!);
  const usage = assistantUsageSql(actor.userId);
  return Boolean(!['completed','cancelled'].includes(task.status) &&
   await one(db, `SELECT 1 FROM ai_organization_settings s WHERE s.organization_id=? AND ${configEnabled} AND ${usage.sql}`, [task.organization_id,...usage.values]));
+}
+
+/**
+ * Estado que a tela consulta antes de abrir a triagem. Sem modelo de decisão escolhido devolve só `enabled`, como sempre,
+ * e não lê chave nem catálogo. Com modelo escolhido e apto a responder, devolve também a reserva máxima que o servidor fará.
+ */
+export async function taskTriageState(db:D1Database, actor:PortalActor, taskId:unknown, secret:string, keys?:CredentialKeys):Promise<{enabled:boolean;reserveUsdMicros?:number}> {
+ if (!await taskTriageAvailable(db,actor,taskId)) return {enabled:false};
+ try {
+  const task = await getTask(db,actor,id(taskId)!);
+  if (!await one(db, "SELECT 1 FROM ai_organization_settings WHERE organization_id=? AND COALESCE(json_extract(config_json,'$.decisionModel'),'')<>''", [task.organization_id])) return {enabled:true};
+  const {config, rawCredentials} = await loadAssistantSettings(db,secret,task.organization_id,'triage',keys,actor.userId);
+  const decisionRoute = config.decisionModel ? await resolveTaskRoute(db,task.organization_id,config,rawCredentials,'decision') : null;
+  return decisionRoute && !('skip' in decisionRoute) ? {enabled:true,reserveUsdMicros:triageReserveMicros(decisionRoute)} : {enabled:true};
+ } catch { return {enabled:true}; } // sem o teto, a tela mostra o número do padrão; o envio continua validando tudo de novo
 }
 
 async function getTask(db:D1Database, actor:PortalActor, taskId:string) {
@@ -78,7 +101,7 @@ export async function prepareTaskTriage(db:D1Database, actor:PortalActor, input:
  const routedBody = decisionRoute && !('skip' in decisionRoute) ? taskTriageBody(config,context,task.due_at,day,decisionRoute.model.model) : null;
  if (routedBody && new TextEncoder().encode(JSON.stringify(routedBody)).byteLength>TRIAGE_INPUT_LIMIT) fail('Resuma o contexto antes de enviar.', 'triage_context_limit');
  // Com rota, reserva o maior preço entre o escolhido e o padrão (o pedido pode terminar em qualquer um).
- const reservedUsdMicros = Math.ceil(TRIAGE_INPUT_LIMIT*(decisionCeiling(decisionRoute)?.decisionInputMicrosPerToken ?? PROVIDERS.typesafe.inputMicrosPerToken));
+ const reservedUsdMicros = triageReserveMicros(decisionRoute);
  async function replay():Promise<TriageResponse|null> {
   const call=await one(db,'SELECT status,proposal_json,fingerprint,expires_at FROM ai_task_triage_calls WHERE id=?',[proposalId]);
   if (!call) return null;

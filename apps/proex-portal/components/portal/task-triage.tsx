@@ -38,7 +38,7 @@ export function TaskTriageMatrix({tasks}:{tasks:Task[]}) {
 }
 
 export function TaskTriage({task,busy,save}:{task:Task;busy:boolean;save:(input:Record<string,unknown>)=>Promise<void>}) {
- const [opened,setOpened]=useState(false),[enabled,setEnabled]=useState<boolean|null>(null);
+ const [opened,setOpened]=useState(false),[enabled,setEnabled]=useState<boolean|null>(null),[reserve,setReserve]=useState<number|null>(null);
  const [context,setContext]=useState(''),[consent,setConsent]=useState(false),[reviewed,setReviewed]=useState(false);
  const [proposal,setProposal]=useState<Ready|null>(null),[feedback,setFeedback]=useState(''),[preparing,setPreparing]=useState(false);
  const request=useRef<AbortController|null>(null),operation=useRef<string|null>(null);
@@ -49,8 +49,12 @@ export function TaskTriage({task,busy,save}:{task:Task;busy:boolean;save:(input:
   const controller=new AbortController();request.current=controller;
   try {
    const response=await fetch(`${triageUrl}?id=${encodeURIComponent(task.id)}`,{cache:'no-store',signal:controller.signal});
-   const data=await response.json() as {enabled?:unknown}|null;
-   if(!controller.signal.aborted)setEnabled(response.ok&&data?.enabled===true);
+   const data=await response.json() as {enabled?:unknown;reserveUsdMicros?:unknown}|null;
+   if(controller.signal.aborted)return;
+   setEnabled(response.ok&&data?.enabled===true);
+   // Com modelo de decisão escolhido, o servidor informa a reserva que vai fazer; sem ele, vale o número de sempre.
+   const micros=response.ok?data?.reserveUsdMicros:null;
+   setReserve(typeof micros==='number'&&Number.isSafeInteger(micros)&&micros>0?micros:null);
   } catch {if(!controller.signal.aborted)setEnabled(false);}
  }
  async function prepare(event:FormEvent<HTMLFormElement>) {
@@ -82,7 +86,7 @@ export function TaskTriage({task,busy,save}:{task:Task;busy:boolean;save:(input:
   {opened&&enabled===null&&<p role="status">Consultando disponibilidade…</p>}
   {enabled===false&&<p className="text-sm text-[var(--text-secondary)]">A triagem com IA está indisponível. Use a edição manual da demanda.</p>}
   {enabled===true&&<form className="grid gap-3" onSubmit={event=>void prepare(event)}>
-   <p className="text-sm text-[var(--text-secondary)]">Escreva um resumo operacional sem nomes, contatos ou documentos. O JEV recebe esse resumo e o prazo desta demanda. Reserva estimada de até {maxReserve} por análise.</p>
+   <p className="text-sm text-[var(--text-secondary)]">Escreva um resumo operacional sem nomes, contatos ou documentos. O JEV recebe esse resumo e o prazo desta demanda. Reserva estimada de até {reserve===null?maxReserve:TRIAGE_CURRENCY.format(reserve/1_000_000)} por análise.</p>
    <label className="p-field"><span>Resumo a enviar</span><textarea required maxLength={TRIAGE_CONTEXT_LIMIT} rows={3} value={context} disabled={preparing||busy}
     onChange={event=>{operation.current=null;setContext(event.target.value);setProposal(null);setReviewed(false);setConsent(false);setFeedback('');}}/></label>
    <label className="flex min-h-11 items-start gap-2"><input type="checkbox" checked={consent} disabled={preparing||busy}
