@@ -193,6 +193,8 @@ test('volunteer home offers only what the access opens: no links, no agenda, onl
   assert.ok(volunteerBranch > 0 && volunteerBranch < shell, 'volunteer page returns before the navigation shell');
   assert.doesNotMatch(portal.slice(volunteerBranch, portal.indexOf('if (!role || !capabilities.length)')), /href=|navigate\(|DesktopSidebar|MobileNavigation/);
   assert.match(portal, /t\.id === 'calendar' && data\.calendarAvailable !== false/);
+  // The root page sends accounts without a team to the participant area; a volunteer must reach the portal instead.
+  assert.match(readFileSync(new URL('../app/page.tsx', import.meta.url), 'utf8'), /if\(!actor\.members\.length&&!actor\.volunteers\?\.length\)redirect\('\/participante'\)/);
 });
 
 test('event operators do not get an Agenda they cannot open', async t => {

@@ -1,6 +1,6 @@
 'use client';
 import { useId, useRef, useState, type FormEvent } from 'react';
-import { ArrowUpRight, Check, Clock3, Copy, KeyRound, LoaderCircle, Mail, Search, ShieldCheck, UserPlus, Users } from 'lucide-react';
+import { ArrowUpRight, Check, Copy, KeyRound, LoaderCircle, Mail, Search, ShieldCheck, UserPlus, Users } from 'lucide-react';
 import TeamPersonDetail from './team-person-detail';
 import DateTimeField from './date-time-field';
 import styles from './team-person.module.css';
@@ -170,7 +170,7 @@ function VolunteerList({ volunteers, projects, canRevoke, mutate }: { volunteers
         <div>
         <strong>{volunteer.display_name || volunteer.email || 'Voluntário(a)'}</strong>
         <small>{volunteer.campaign_name}{project ? ` · ${project}` : ''}</small>
-        <small><Clock3 size={13} aria-hidden="true"/> {ended ? volunteer.revoke_reason === 'expired' ? `Venceu em ${moment(volunteer.ends_at)}` : `Encerrado em ${moment(volunteer.revoked_at)}` : `Acesso até ${moment(volunteer.ends_at)}`}</small>
+        <small>{ended ? volunteer.revoke_reason === 'expired' ? `Venceu em ${moment(volunteer.ends_at)}` : `Encerrado em ${moment(volunteer.revoked_at)}` : `Acesso até ${moment(volunteer.ends_at)}`}</small>
         </div>
         <span className="p-badge">{ended ? volunteer.revoke_reason === 'expired' ? 'Venceu' : 'Encerrado' : 'Ativo'}</span>
         {!ended && canRevoke(String(projectIdOf(volunteer))) && (confirm === volunteer.id ? <div className="p-inline">

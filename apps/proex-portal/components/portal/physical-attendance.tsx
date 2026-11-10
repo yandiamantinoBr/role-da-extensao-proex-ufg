@@ -10,11 +10,13 @@ type Props = {
   campaigns: RecordData[];
   tickets: RecordData[];
   mutate: (action: string, payload: Record<string, unknown>) => Promise<RecordData>;
+  /** Preselected action, e.g. the single action of a volunteer. */
+  initialCampaignId?: string;
 };
 const resultNames: Record<string, string> = { brinde: 'Brinde', super: 'Super Brinde', miss: 'Não foi desta vez', retry: 'Tente novamente' };
 
-export default function PhysicalAttendance({ campaigns, tickets, mutate }: Props) {
-  const [campaignId, setCampaignId] = useState('');
+export default function PhysicalAttendance({ campaigns, tickets, mutate, initialCampaignId = '' }: Props) {
+  const [campaignId, setCampaignId] = useState(initialCampaignId);
   const [ticket, setTicket] = useState<RecordData | null>(null);
   const [result, setResult] = useState('');
   const [saving, setSaving] = useState(false);
