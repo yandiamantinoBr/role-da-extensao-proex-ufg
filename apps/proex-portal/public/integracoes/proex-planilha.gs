@@ -33,6 +33,8 @@ var OPERATIONS_HEADER = ['changeKey', 'action', 'input', 'status', 'entityId', '
 var CONFLICTS_HEADER = ['id', 'entity_type', 'entity_id', 'expected_version', 'actual_version', 'reason', 'status', 'created_at'];
 var BASELINE_NOTE = 'portable-v1: original confirmado; preserve até nova leitura de retorno.';
 var EDITABLE_COLOR = '#FFF4D6', SYSTEM_COLOR = '#ECECEC';
+var EDITABLE_CELL_COLOR = '#fff8e1';
+var PROTECTION_NOTE = 'PROEX · colunas calculadas pelo portal';
 var ATTACHMENTS_FOLDER = 'PROEX · Anexos privados';
 var CONNECTOR_VERSION = '2026-11-04.1';
 // O Apps Script encerra execuções após 6 minutos; paramos com folga.
@@ -705,6 +707,29 @@ function escreverTabela_(ss, schema, rows) {
   head.setNotes([schema.columns.map(function (c) { return c.label + (c.editable ? ' · editável na planilha' : ' · calculado pelo portal'); })]);
   if (sheet.getFrozenRows() !== 1) sheet.setFrozenRows(1);
   if (sheet.getFrozenColumns() !== 1) sheet.setFrozenColumns(1);
+  marcarEdicao_(sheet, schema, rows.length);
+}
+
+/**
+ * Pinta de creme as células editáveis (não só o cabeçalho) e protege o resto da aba com
+ * aviso: quem tentar digitar numa coluna calculada pelo portal vê um alerta do Google.
+ * Quem pode editar o arquivo continua definido no compartilhamento. É só ajuda visual:
+ * nunca interrompe a sincronização.
+ */
+function marcarEdicao_(sheet, schema, count) {
+  try {
+    var editable = [];
+    schema.columns.forEach(function (c, i) { if (c.editable) editable.push(i + 1); });
+    if (count > 0) {
+      var colors = [];
+      for (var r = 0; r < count; r++) colors.push(schema.columns.map(function (c) { return c.editable ? EDITABLE_CELL_COLOR : null; }));
+      sheet.getRange(2, 1, count, schema.columns.length).setBackgrounds(colors);
+    }
+    var existing = sheet.getProtections(SpreadsheetApp.ProtectionType.SHEET).filter(function (p) { return p.getDescription() === PROTECTION_NOTE; });
+    var protection = existing.length ? existing[0] : sheet.protect().setDescription(PROTECTION_NOTE);
+    protection.setWarningOnly(true);
+    protection.setUnprotectedRanges(editable.map(function (column) { return sheet.getRange(2, column, count + 200, 1); }));
+  } catch (_error) { /* proteção é ajuda visual; a sincronização segue */ }
 }
 
 function conferirTabela_(ss, schema, rows) {

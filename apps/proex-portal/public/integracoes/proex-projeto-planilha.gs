@@ -65,6 +65,10 @@ var BASELINE_NOTE = 'portable-v1: original confirmado; preserve até nova leitur
 
 var EDITABLE_COLOR = '#FFF4D6', SYSTEM_COLOR = '#ECECEC';
 
+var EDITABLE_CELL_COLOR = '#fff8e1';
+
+var PROTECTION_NOTE = 'PROEX · colunas calculadas pelo portal';
+
 var SYNC_BUDGET_MS = 5 * 60 * 1000, ATTACHMENTS_BUDGET_MS = 4 * 60 * 1000;
 
 var ISOLATE_CODES = ['sync_operation_changed', 'sync_invalid_change_key', 'sync_invalid_action', 'sync_system_field', 'sync_invalid_row', 'sync_invalid_version', 'sync_change_limit', 'sync_input_limit'];
@@ -623,6 +627,23 @@ function escreverTabela_(ss, schema, rows) {
   head.setNotes([schema.columns.map(function (c) { return c.label + (c.editable ? ' · editável na planilha' : ' · calculado pelo portal'); })]);
   if (sheet.getFrozenRows() !== 1) sheet.setFrozenRows(1);
   if (sheet.getFrozenColumns() !== 1) sheet.setFrozenColumns(1);
+  marcarEdicao_(sheet, schema, rows.length);
+}
+
+function marcarEdicao_(sheet, schema, count) {
+  try {
+    var editable = [];
+    schema.columns.forEach(function (c, i) { if (c.editable) editable.push(i + 1); });
+    if (count > 0) {
+      var colors = [];
+      for (var r = 0; r < count; r++) colors.push(schema.columns.map(function (c) { return c.editable ? EDITABLE_CELL_COLOR : null; }));
+      sheet.getRange(2, 1, count, schema.columns.length).setBackgrounds(colors);
+    }
+    var existing = sheet.getProtections(SpreadsheetApp.ProtectionType.SHEET).filter(function (p) { return p.getDescription() === PROTECTION_NOTE; });
+    var protection = existing.length ? existing[0] : sheet.protect().setDescription(PROTECTION_NOTE);
+    protection.setWarningOnly(true);
+    protection.setUnprotectedRanges(editable.map(function (column) { return sheet.getRange(2, column, count + 200, 1); }));
+  } catch (_error) { /* proteção é ajuda visual; a sincronização segue */ }
 }
 
 function conferirTabela_(ss, schema, rows) {
