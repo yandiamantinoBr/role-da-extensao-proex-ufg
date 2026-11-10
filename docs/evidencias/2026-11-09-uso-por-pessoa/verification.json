@@ -1,0 +1,15 @@
+{
+  "origin": "http://127.0.0.1:5174",
+  "base": "descartável, loopback; uso e gastos simulados só na tela",
+  "shots": [
+    "1366-light-uso-por-pessoa",
+    "1366-light-uso-por-pessoa-tabela",
+    "1366-dark-uso-por-pessoa",
+    "1366-dark-uso-por-pessoa-tabela",
+    "390-light-uso-por-pessoa",
+    "390-light-uso-por-pessoa-tabela",
+    "390-dark-uso-por-pessoa",
+    "390-dark-uso-por-pessoa-tabela"
+  ],
+  "pageErrors": []
+}

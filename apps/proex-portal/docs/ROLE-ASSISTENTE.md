@@ -157,3 +157,16 @@ Motivo: às 13h o Yan perguntou "quantos brindes, super brindes e super super br
   - O prazo da conversa dobra, até 30 s.
 - Auditoria `assistant.role.chat`: guarda o nome de cada consulta e o número de linhas; nunca o conteúdo.
 - Vale para DeepSeek e Groq (caminho revisado). Modelos do catálogo continuam sem consultas por enquanto.
+
+## Uso de IA por pessoa · 09/11/2026 (noite)
+
+- `lib/assistant/usage-people.ts` e `GET /api/assistant/usage`. A administração geral vê todas as pessoas da organização; qualquer outra pessoa vê só o próprio uso, e só em organização de que participa.
+- Para cada pessoa, o painel mostra:
+  - chamadas e gasto por tipo (texto, foto, áudio e outras funções);
+  - gasto por dia;
+  - média de tokens por conversa.
+- Dicas por regra, sem custo: muitas fotos, conversas longas, muitos áudios, ou quando uma pessoa responde por metade do gasto.
+- O painel lê só metadados da auditoria, por lista fechada; nome que parece e-mail vira "Pessoa da equipe".
+- Onde aparece:
+  - Gastos → "Uso por pessoa", com gráfico por tipo, tabela (cartões no celular) e exportação XLSX/DOCX/PDF por pessoa e dia;
+  - no Rolê, "Meu uso de IA nos últimos 30 dias", que só carrega quando é aberto.
