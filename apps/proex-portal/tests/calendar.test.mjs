@@ -392,9 +392,11 @@ test('deadlines respect the 10,000-entry limit like every other category', async
   await assert.rejects(calendar.calendarEntries(f.db, owner, { range }), error => error.status === 422, 'também com todas as categorias');
 });
 
-test('shifts of draft dynamics stay out like the draft event itself', async t => {
-  const f = workFixture(t), manager = await actor(f, 'manager');
+test('shifts of a dynamic still in draft appear, because the team plans before activating it', async t => {
+  const f = workFixture(t), manager = await actor(f, 'manager'), viewer = await actor(f, 'viewer', 'project-b');
   f.sqlite.prepare("UPDATE campaigns SET status='draft' WHERE id='campaign-a'").run();
   const result = await calendar.calendarEntries(f.db, manager, { range, category: 'projects' });
-  assert.ok(!result.entries.some(entry => entry.sourceKind === 'campaign-session'));
+  assert.equal(result.entries.filter(entry => entry.sourceKind === 'campaign-session').length, 3, 'turnos planejados da dinâmica em rascunho');
+  assert.ok(!result.entries.some(entry => entry.sourceKind === 'campaign' && entry.sourceId === 'campaign-a'), 'o evento em rascunho continua fora');
+  assert.ok(!(await calendar.calendarEntries(f.db, viewer, { range, category: 'projects' })).entries.some(entry => entry.sourceId.startsWith('shift-a')), 'quem é de outro projeto não vê');
 });

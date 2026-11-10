@@ -168,13 +168,14 @@ export async function calendarEntries(db: D1Database, actor: PortalActor | null,
         AND julianday(c.starts_at)<julianday(?) AND julianday(c.ends_at)>julianday(?) LIMIT ${MAX_ENTRIES + 1}`,
       [...filter.values, range.endsAt, range.startsAt]);
       result.push(...rows.map(row => entry(row, category, 'campaign')));
-      // Turnos das dinâmicas (R7): data civil com horário opcional (HH:MM, Brasília). Seguem a regra do evento na
-      // Agenda (rascunho não aparece) e do planejamento (organização ativa). A nota livre do turno não sai.
+      // Turnos das dinâmicas (R7): data civil com horário opcional (HH:MM, Brasília). Entram também os de dinâmica em
+      // rascunho, porque o planejamento da equipe acontece antes de ativar a dinâmica (caso real do Rolê no CONPEEX);
+      // quem vê a Agenda já vê esses turnos no planejamento. Organização inativa fica fora. A nota livre do turno não sai.
       rows = await all(db, `SELECT s.id,c.project_id,p.name project_name,
         'Turno · ' || CASE WHEN s.label!='' THEN s.label ELSE s.ordinal || 'º turno' END || ' · ' || c.name title,
         s.session_date,s.starts_at start_time,s.ends_at end_time,s.status state,s.version revision,c.location,s.created_at,s.updated_at last_modified
         FROM campaign_sessions s JOIN campaigns c ON c.id=s.campaign_id JOIN projects p ON p.id=c.project_id
-        WHERE ${filter.sql} AND c.status!='draft' AND EXISTS(SELECT 1 FROM organizations so WHERE so.id=p.organization_id AND so.status='active')
+        WHERE ${filter.sql} AND EXISTS(SELECT 1 FROM organizations so WHERE so.id=p.organization_id AND so.status='active')
         AND ${workAuthority('?', 'p.organization_id', 'c.project_id')} AND s.session_date>=? AND s.session_date<=? LIMIT ${MAX_ENTRIES + 1}`,
       [...filter.values, actor.userId, range.from, range.to]);
       for (const row of rows) result.push(shiftEntry(row, category));
