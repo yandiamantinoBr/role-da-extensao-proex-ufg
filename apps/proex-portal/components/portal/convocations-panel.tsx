@@ -167,7 +167,7 @@ function ConvocationDetail({ id, preferences, channels, onBack, onPreferences }:
         <p className={styles.cardMeta}><span><CalendarDays size={14} aria-hidden="true"/>{dateLabel(c.eventDate)}</span>{c.location && <span><MapPin size={14} aria-hidden="true"/>{c.location}</span>}{c.responseDeadline && <span>Respostas {deadlineLabel(c.responseDeadline)}</span>}</p></div>
       {data.scope === 'projects' && <p className={styles.scopeNote}>Você vê só as respostas dos projetos que acompanha.</p>}
     </header>
-    <dl className={styles.kpis}><div><dt>Vão</dt><dd className={styles.yes}>{counts.yes}</dd></div><div><dt>Talvez</dt><dd className={styles.maybe}>{counts.maybe}</dd></div><div><dt>Não vão</dt><dd className={styles.no}>{counts.no}</dd></div><div title="Projetos convidados que ainda não responderam"><dt>Sem resposta</dt><dd className={silent.length ? styles.silentNumber : ''}>{silent.length}</dd></div></dl>
+    <dl className={styles.kpis}><div><dt>Vão</dt><dd className={styles.yes}>{counts.yes}</dd></div><div><dt>Talvez</dt><dd className={styles.maybe}>{counts.maybe}</dd></div><div><dt>Não vão</dt><dd className={styles.no}>{counts.no}</dd></div><div title="Projetos convidados que ainda não responderam"><dt><span className={styles.long}>Sem resposta</span><span className={styles.short} aria-hidden="true">Sem resp.</span></dt><dd className={silent.length ? styles.silentNumber : ''}>{silent.length}</dd></div></dl>
     {c.retentionExpired && !c.purgedAt && <p className={styles.error} role="status">O prazo de guarda terminou em {c.retentionEndsOn?.split('-').reverse().join('/')}. Os links pessoais já não funcionam. {manage ? 'Apague os dados dos convidados em Configurar.' : 'Peça à coordenação para apagar os dados.'}</p>}
     {error && <p className={styles.error} role="alert">{error}</p>}{notice && <p className={styles.notice} role="status">{notice}</p>}
     <label className={styles.sectionSelect}><span>Ver</span><select name="convocationSection" value={tab} onChange={event => setTab(event.target.value as Tab)}>{tabs.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label>
@@ -192,7 +192,7 @@ function ConvocationDetail({ id, preferences, channels, onBack, onPreferences }:
     {tab === 'settings' && manage && <section aria-label="Configurar convocação">
       {!c.purgedAt && <form key={c.version} className={styles.form} onSubmit={saveSettings}><fieldset disabled={busy}>
         <div className={styles.grid2}>
-          <label className="p-field"><span>Nome da ação</span><input name="title" required minLength={3} maxLength={160} defaultValue={c.title}/></label>
+          <label className={`p-field ${styles.full}`}><span>Nome da ação</span><input name="title" required minLength={3} maxLength={160} defaultValue={c.title}/></label>
           <label className="p-field"><span>Edição ou local de referência</span><input name="edition" maxLength={120} defaultValue={c.edition}/></label>
           <label className="p-field"><span>Endereço ou ponto de encontro</span><input name="location" maxLength={200} defaultValue={c.location}/></label>
           <label className="p-field"><span>Data da ação</span><DateField aria-label="Data da ação" name="eventDate" required defaultValue={c.eventDate}/></label>

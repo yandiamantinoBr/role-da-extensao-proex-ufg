@@ -215,3 +215,16 @@
  .prefTable td,.prefTable td:last-child{grid-column:1/-1;display:flex!important;align-items:center;justify-content:space-between;min-height:44px;border-top:1px solid var(--line)!important}
  .prefTable td::before{font-size:14px;color:var(--ink)}
 }
+
+/* Sexta crítica (10/11). */
+.full{grid-column:1/-1}
+.shiftRows{padding-top:6px}
+.short{display:none}
+.kpis div{padding:10px 14px}
+.kpis dd{font-size:32px;line-height:1.1}
+@container (max-width:640px){
+ .long{display:none}
+ .short{display:inline}
+ .kpis dt{white-space:nowrap}
+ .kpis dd{font-size:22px}
+}
