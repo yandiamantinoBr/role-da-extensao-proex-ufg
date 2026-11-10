@@ -5,7 +5,7 @@ import type { MyWorkResponse } from '@/lib/my-work/contracts';
 import { communityGet, errorText } from './community-api';
 import styles from './floating-dock.module.css';
 
-type Entry = { uid: string; title: string; startsAt: string; endsAt: string; allDay: boolean; projectName: string; status: string };
+type Entry = { uid: string; title: string; startsAt: string; endsAt: string; allDay: boolean; projectName: string; status: string; category?: string };
 type Item = { key: string; day: string; time: string; title: string; detail: string; kind: 'agenda' | 'deadline'; href?: string };
 const addDays = (day: string, days: number) => { const date = new Date(`${day}T12:00:00Z`); date.setUTCDate(date.getUTCDate() + days); return date.toISOString().slice(0, 10); };
 const local = (iso: string) => new Date(new Date(iso).getTime() - 3 * 3600000).toISOString();
@@ -23,7 +23,7 @@ export default function CalendarWidget({ serverDay, onOpenCalendar }: { serverDa
       communityGet<MyWorkResponse>('/api/my-work?status=pending&limit=50'),
     ]).then(([calendar, work]) => {
       if (!live) return;
-      const agenda: Item[] = calendar.entries.filter(entry => entry.status !== 'CANCELLED').map(entry => {
+      const agenda: Item[] = calendar.entries.filter(entry => entry.status !== 'CANCELLED' && entry.category !== 'deadlines').map(entry => {
         const day = entry.allDay ? entry.startsAt.slice(0, 10) : local(entry.startsAt).slice(0, 10);
         return { key: entry.uid, day: day < today ? today : day, time: entry.allDay ? 'Dia todo' : local(entry.startsAt).slice(11, 16), title: entry.title, detail: entry.projectName, kind: 'agenda' as const };
       });

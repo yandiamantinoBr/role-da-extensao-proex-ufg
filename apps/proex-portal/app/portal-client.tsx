@@ -13,6 +13,7 @@ import FloatingDock from '@/components/portal/floating-dock';
 import ManagementPanel from '@/components/portal/management/management-panel';
 import { toast } from 'sonner';
 import settingsStyles from './settings-groups.module.css';
+import deniedStyles from './denied-module-notice.module.css';
 import { SettingsIndex, SettingsSection } from '@/components/portal/settings-layout';
 import headingStyles from './module-heading.module.css';
 import { useCallback, useEffect, useEffectEvent, useId, useMemo, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from 'react';
@@ -54,7 +55,7 @@ import PersonalWorkSummary from '@/components/portal/personal-work-summary';
 import { workDayFromServerTimestamp } from '@/lib/follow-up/time';
 import WorkContextPanel from '@/components/portal/work-context-panel';
 import type { MyWorkStatus, WorkArea } from '@/lib/my-work/contracts';
-import { commitPortalLocation, portalLocationKey, readPortalLocation, type PortalLocation } from '@/lib/portal-history';
+import { commitPortalLocation, deniedPortalModule, portalLocationKey, readPortalLocation, type PortalLocation } from '@/lib/portal-history';
 import type { WorkRecordSelection } from '@/lib/work-navigation';
 import workStyles from './work-integration.module.css';
 import NotificationBell from '@/components/portal/notification-bell';
@@ -516,6 +517,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         });
     }
     function applyLocation(next: PortalLocation) {
+        setDeniedModule(null);
         setTab(next.tab);
         setFilter(next.project); setDraftProject(next.project); setOfferProject('');
         setUnitFilter(next.unit); setAreaFilter(next.area);
@@ -537,6 +539,8 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
             applyLocation(next);
             if (traversal) focusModule(false);
         }
+        const denied = deniedPortalModule(url.searchParams, next, tabs.map(module => module.id));
+        if (denied) setDeniedModule(denied as ModuleId);
         if (!traversal) setHistoryReady(true);
         commitPortalLocation(window.history, url.href, next, false);
     });
@@ -818,7 +822,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         <p>{tab === 'overview' ? 'Seu início, seus projetos e o que precisa da sua atenção.' : activeModule?.description}</p>
       </div>
     </header>
-    {deniedModule && tab === 'overview' && <div className="p-notice" role="status"><ShieldCheck size={18} aria-hidden="true"/><div><strong>{tabs.find(module => module.id === deniedModule)?.label ?? 'Esta página'} {deniedModule === 'settings' ? 'é só da administração' : 'não faz parte do seu acesso'}.</strong> Você voltou ao Início. Se precisar dela, peça a quem gerencia o portal.</div><button type="button" className="p-button p-button-subtle" onClick={() => setDeniedModule(null)}>Entendi</button></div>}
+    {deniedModule && tab === 'overview' && <div className={deniedStyles.notice} role="status"><ShieldCheck size={18} aria-hidden="true"/><div className={deniedStyles.text}><strong>{tabs.find(module => module.id === deniedModule)?.label ?? 'Esta página'} {deniedModule === 'settings' ? 'é só da administração' : 'não faz parte do seu acesso'}.</strong> Você voltou ao Início. Se precisar dela, peça a quem gerencia o portal.</div><button type="button" className={deniedStyles.dismiss} onClick={() => setDeniedModule(null)}>Entendi</button></div>}
     {['overview', 'materials', 'loans', 'events', 'reports'].includes(tab) && <section className={`p-scope-filters ${scopeStyles.scope}`} aria-label="Filtrar registros por unidade, área temática e projeto">
         <div className={scopeStyles.layout}>
         <Field label="Projeto">

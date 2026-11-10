@@ -383,3 +383,18 @@ test('demand deadlines appear only for demands the person can already read, and 
   f.sqlite.prepare('UPDATE members SET revoked_at=? WHERE user_id=?').run(timestamp, viewer.userId);
   assert.deepEqual((await calendar.calendarEntries(f.db, viewer, { range, category: 'deadlines' })).entries, []);
 });
+
+test('deadlines respect the 10,000-entry limit like every other category', async t => {
+  const f = workFixture(t), owner = await actor(f, 'owner');
+  const insert = f.sqlite.prepare("INSERT INTO followup_tasks(id,organization_id,project_id,title,body,priority,status,due_at,created_by,created_at,updated_at) VALUES(?,'org_proex','project-a','Prazo sintético','','low','open','2026-10-24','ACTOR',?,?)");
+  f.sqlite.exec('BEGIN'); for (let index = 0; index < 10001; index++) insert.run(`bulk-${index}`, timestamp, timestamp); f.sqlite.exec('COMMIT');
+  await assert.rejects(calendar.calendarEntries(f.db, owner, { range, category: 'deadlines' }), error => error.status === 422);
+  await assert.rejects(calendar.calendarEntries(f.db, owner, { range }), error => error.status === 422, 'também com todas as categorias');
+});
+
+test('shifts of draft dynamics stay out like the draft event itself', async t => {
+  const f = workFixture(t), manager = await actor(f, 'manager');
+  f.sqlite.prepare("UPDATE campaigns SET status='draft' WHERE id='campaign-a'").run();
+  const result = await calendar.calendarEntries(f.db, manager, { range, category: 'projects' });
+  assert.ok(!result.entries.some(entry => entry.sourceKind === 'campaign-session'));
+});

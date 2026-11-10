@@ -20,6 +20,12 @@ export type CalendarEntry = {
 };
 export type CalendarRange = { from: string; to: string; startsAt: string; endsAt: string; timezone: string };
 const DAY = 86_400_000;
+/** Estados em português no .ics (demandas, turnos, empréstimos, projetos e eventos). */
+const STATE_LABELS: Record<string, string> = {
+  open: 'Aberta', in_progress: 'Em andamento', blocked: 'Bloqueada', done: 'Concluída', cancelled: 'Cancelado', tentative: 'A confirmar',
+  confirmed: 'Confirmado', active: 'Ativo', paused: 'Pausado', closed: 'Encerrado', archived: 'Arquivado', reserved: 'Reservado',
+  out: 'Retirado', returned: 'Devolvido', late: 'Atrasado', recorded: 'Registrado',
+};
 const MAX_ENTRIES = 10_000;
 const capabilities: Record<CalendarCategory, string[]> = {
   loans: ['loans.read'], materials: ['inventory.read'],
@@ -98,16 +104,11 @@ function entry(row: Row, category: CalendarCategory, sourceKind: string, allDay 
   };
 }
 
-/** Turno com horário vira compromisso marcado (fim antes do início passa da meia-noite); sem horário, dia inteiro. */
+/** Turno com horário vira compromisso marcado; sem horário, dia inteiro. O banco exige início e fim juntos e início antes do fim. */
 function shiftEntry(row: Row, category: CalendarCategory): CalendarEntry {
-  const day = String(row.session_date), start = typeof row.start_time === 'string' && /^\d{2}:\d{2}$/.test(row.start_time) ? row.start_time : null;
-  const end = typeof row.end_time === 'string' && /^\d{2}:\d{2}$/.test(row.end_time) ? row.end_time : null;
-  const state = row.state === 'cancelled' ? 'cancelled' : String(row.state || 'tentative');
-  if (!start) return entry({ ...row, state, starts_at: day, ends_at: offsetCivilDate(day, 1) }, category, 'campaign-session', true);
-  const startsAt = Date.parse(`${day}T${start}:00-03:00`);
-  let endsAt = end ? Date.parse(`${day}T${end}:00-03:00`) : startsAt + 60 * 60 * 1000;
-  if (endsAt <= startsAt) endsAt += DAY;
-  return entry({ ...row, state, starts_at: startsAt, ends_at: endsAt }, category, 'campaign-session');
+  const day = String(row.session_date), state = String(row.state || 'tentative');
+  if (!row.start_time || !row.end_time) return entry({ ...row, state, starts_at: day, ends_at: offsetCivilDate(day, 1) }, category, 'campaign-session', true);
+  return entry({ ...row, state, starts_at: Date.parse(`${day}T${row.start_time}:00-03:00`), ends_at: Date.parse(`${day}T${row.end_time}:00-03:00`) }, category, 'campaign-session');
 }
 
 /** A public projection: SQL never selects contacts, free notes, document keys or account identities. */
@@ -149,6 +150,8 @@ export async function calendarEntries(db: D1Database, actor: PortalActor | null,
         AND ((t.project_id IS NOT NULL AND ${filter.sql}) OR (t.project_id IS NULL AND ?=1)) LIMIT ${MAX_ENTRIES + 1}`,
       [range.from, range.to, actor.userId, ...filter.values, organizationWide]);
       for (const row of rows) result.push(entry({ ...row, ends_at: offsetCivilDate(String(row.starts_at), 1), state: row.state === 'completed' ? 'done' : row.state }, category, 'deadline', true));
+      // Mesmo limite das demais categorias; os prazos não têm registros vinculados, então a consulta de registros não roda.
+      if (result.length > MAX_ENTRIES) throw new HttpError(422, 'Há muitos registros. Reduza o período ou escolha um projeto.', 'calendar_range_too_large');
       continue;
     } else if (category === 'projects') {
       rows = await all(db, `SELECT p.id,p.id project_id,p.name project_name,'Projeto · ' || p.name title,
@@ -165,12 +168,14 @@ export async function calendarEntries(db: D1Database, actor: PortalActor | null,
         AND julianday(c.starts_at)<julianday(?) AND julianday(c.ends_at)>julianday(?) LIMIT ${MAX_ENTRIES + 1}`,
       [...filter.values, range.endsAt, range.startsAt]);
       result.push(...rows.map(row => entry(row, category, 'campaign')));
-      // Turnos das dinâmicas (R7): data civil com horário opcional (HH:MM, Brasília). A nota livre do turno não sai.
+      // Turnos das dinâmicas (R7): data civil com horário opcional (HH:MM, Brasília). Seguem a regra do evento na
+      // Agenda (rascunho não aparece) e do planejamento (organização ativa). A nota livre do turno não sai.
       rows = await all(db, `SELECT s.id,c.project_id,p.name project_name,
         'Turno · ' || CASE WHEN s.label!='' THEN s.label ELSE s.ordinal || 'º turno' END || ' · ' || c.name title,
         s.session_date,s.starts_at start_time,s.ends_at end_time,s.status state,s.version revision,c.location,s.created_at,s.updated_at last_modified
         FROM campaign_sessions s JOIN campaigns c ON c.id=s.campaign_id JOIN projects p ON p.id=c.project_id
-        WHERE ${filter.sql} AND ${workAuthority('?', 'p.organization_id', 'c.project_id')} AND s.session_date>=? AND s.session_date<=? LIMIT ${MAX_ENTRIES + 1}`,
+        WHERE ${filter.sql} AND c.status!='draft' AND EXISTS(SELECT 1 FROM organizations so WHERE so.id=p.organization_id AND so.status='active')
+        AND ${workAuthority('?', 'p.organization_id', 'c.project_id')} AND s.session_date>=? AND s.session_date<=? LIMIT ${MAX_ENTRIES + 1}`,
       [...filter.values, actor.userId, range.from, range.to]);
       for (const row of rows) result.push(shiftEntry(row, category));
       rows = await all(db, `SELECT s.id,s.project_id,p.name project_name,'Atividade · ' || s.title title,
@@ -334,7 +339,7 @@ export function serializeCalendar(entries: CalendarEntry[], label = 'Agenda PROE
     lines.push('BEGIN:VEVENT', `UID:${escapeICalText(event.uid)}`, `DTSTAMP:${icalTime(event.lastModified)}`, `LAST-MODIFIED:${icalTime(event.lastModified)}`, `SEQUENCE:${event.revision}`);
     if (event.allDay) lines.push(`DTSTART;VALUE=DATE:${event.startsAt.replaceAll('-', '')}`, `DTEND;VALUE=DATE:${event.endsAt.replaceAll('-', '')}`);
     else lines.push(`DTSTART:${icalTime(event.startsAt)}`, `DTEND:${icalTime(event.endsAt)}`);
-    lines.push(`SUMMARY:${escapeICalText(event.title)}`, `DESCRIPTION:${escapeICalText(`${event.projectName} · ${event.state}`)}`, `CATEGORIES:${escapeICalText(CALENDAR_LABELS[event.category])}`, `STATUS:${event.status}`, `TRANSP:${event.transparent ? 'TRANSPARENT' : 'OPAQUE'}`, 'CLASS:PRIVATE');
+    lines.push(`SUMMARY:${escapeICalText(event.title)}`, `DESCRIPTION:${escapeICalText(`${event.projectName} · ${STATE_LABELS[event.state] ?? event.state}`)}`, `CATEGORIES:${escapeICalText(CALENDAR_LABELS[event.category])}`, `STATUS:${event.status}`, `TRANSP:${event.transparent ? 'TRANSPARENT' : 'OPAQUE'}`, 'CLASS:PRIVATE');
     if (event.location) lines.push(`LOCATION:${escapeICalText(event.location)}`);
     lines.push('END:VEVENT');
   }

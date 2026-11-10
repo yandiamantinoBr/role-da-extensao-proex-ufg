@@ -8,12 +8,12 @@ import ts from 'typescript';
 const file = readFileSync(new URL('../app/portal-client.tsx', import.meta.url), 'utf8');
 const source = ts.createSourceFile('portal-client.tsx', file, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 function find(predicate) { let found; const visit = node => { if (!found && predicate(node)) found = node; else if (!found) ts.forEachChild(node, visit); }; visit(source); return found; }
-const notice = find(node => ts.isJsxElement(node) && node.getText(source).includes('é só da administração') && node.openingElement.getText(source).includes('p-notice'));
+const notice = find(node => ts.isJsxElement(node) && node.getText(source).includes('é só da administração') && node.openingElement.getText(source).includes('deniedStyles.notice'));
 const transpile = code => ts.transpileModule(code, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
 const text = node => typeof node === 'string' ? node : Array.isArray(node) ? node.map(text).join('') : node && typeof node === 'object' ? text(node.props?.children) : '';
 
 function renderNotice(deniedModule, tab = 'overview') {
-  const exportsObject = {}; const context = { module: { exports: exportsObject }, exports: exportsObject, require: () => ({ jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) }), deniedModule, tab, tabs: [{ id: 'settings', label: 'Configurações' }, { id: 'calendar', label: 'Agenda' }], ShieldCheck: 'ShieldCheck', setDeniedModule: value => { context.cleared = value; } };
+  const exportsObject = {}; const context = { module: { exports: exportsObject }, exports: exportsObject, require: () => ({ jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) }), deniedModule, tab, tabs: [{ id: 'settings', label: 'Configurações' }, { id: 'calendar', label: 'Agenda' }], ShieldCheck: 'ShieldCheck', deniedStyles: new Proxy({}, { get: (_t, key) => String(key) }), setDeniedModule: value => { context.cleared = value; } };
   vm.runInNewContext(transpile(`module.exports = () => (${notice.getText(source)});`), context);
   return { tree: context.module.exports(), context };
 }
@@ -27,8 +27,11 @@ test('a denied settings link explains it is for the administration, and the noti
   assert.match(text(renderNotice('calendar').tree), /Agenda não faz parte do seu acesso/);
 });
 
-test('the redirect records the denied module and any later navigation clears it', () => {
+test('opening a denied link, a later navigation or a new location all keep the notice honest', () => {
+  // Endereço negado ao abrir: restoreLocation usa deniedPortalModule depois de aplicar a localização.
+  const restore = find(node => ts.isVariableDeclaration(node) && node.name.getText(source) === 'restoreLocation').getText(source);
+  assert.match(restore, /applyLocation\(next\);[\s\S]*const denied = deniedPortalModule\(url\.searchParams, next, tabs\.map\(module => module\.id\)\);\s*if \(denied\) setDeniedModule\(denied as ModuleId\);/);
+  // Perda de acesso durante a sessão: o redirecionamento também registra o módulo.
   assert.match(file, /if \(requestedTab !== 'overview' && tabs\.some\(module => module\.id === requestedTab\)\) setDeniedModule\(requestedTab as ModuleId\); setTab\(tab\);/);
-  const navigate = find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'navigate').getText(source);
-  assert.match(navigate, /setDeniedModule\(null\)/);
+  for (const name of ['navigate', 'applyLocation']) assert.match(find(node => ts.isFunctionDeclaration(node) && node.name?.text === name).getText(source), /setDeniedModule\(null\)/, name);
 });
