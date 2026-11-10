@@ -3,7 +3,7 @@ import { assistantCredentialKeys, database, inviteSecret, speechEnvironment } fr
 import { getPortalUser } from '@/lib/session';
 import { HttpError, publicError } from '@/lib/errors';
 import { boundedJson } from '@/lib/http';
-import { matchOperationProjects, roleChat, roleStatus } from '@/lib/assistant/role';
+import { matchOperationProjects, roleChat, roleStatus, roleSuggestionList } from '@/lib/assistant/role';
 import { estimateAssistantPlan } from '@/lib/assistant/service';
 
 export const dynamic = 'force-dynamic';
@@ -15,7 +15,9 @@ export async function GET(request: Request): Promise<Response> {
     const db = database(), actor = await getActor(db, await getPortalUser()), secret = inviteSecret();
     if (!actor) throw new HttpError(401, 'Entre para conversar com o Rolê.', 'unauthenticated');
     if (!secret) throw new HttpError(503, 'O Rolê precisa da configuração de segurança do portal.', 'assistant_unavailable');
-    const status = await roleStatus(db, actor, { projectId: new URL(request.url).searchParams.get('projectId') }, secret, { keys: assistantCredentialKeys(), speech: speechEnvironment() });
+    const params = new URL(request.url).searchParams;
+    if (params.get('suggestions') === '1') return Response.json(await roleSuggestionList(db, actor, { projectId: params.get('projectId') }), { headers });
+    const status = await roleStatus(db, actor, { projectId: params.get('projectId') }, secret, { keys: assistantCredentialKeys(), speech: speechEnvironment() });
     return Response.json(status, { headers });
   } catch (error) { return failed(error); }
 }

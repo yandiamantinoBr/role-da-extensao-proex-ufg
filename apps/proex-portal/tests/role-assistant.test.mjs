@@ -596,3 +596,66 @@ test('INSTAGRAM: posts pasted by authorized staff, validated; the Rolê cites th
     assert.equal((await instagramAction(f.db, f.actors.owner, { action: 'list', organizationId: 'org_proex' })).posts.length, 0);
   } finally { f.native.close(); }
 });
+
+test('SUGESTÕES: rules only, per person; follow the moment, the own activity and what the team may see; never another project', async () => {
+  const f = fixture();
+  try {
+    await setup(f);
+    f.native.prepare("UPDATE projects SET organization_id='org_proex' WHERE organization_id IS NULL").run();
+    const { roleSuggestions, ROLE_SUGGESTION_LIMIT, ROLE_SUGGESTION_DAYS } = await import(compile('assistant/role-suggestions'));
+    const { roleSuggestionList } = await import(compile('assistant/role'));
+    const NOW = Date.parse('2026-11-10T15:00:00.000Z'), iso = offset => new Date(NOW + offset).toISOString();
+    const texts = list => list.map(entry => entry.text);
+
+    // Sem agenda, dinâmica, estoque nem atividade: só perguntas gerais, sempre as mesmas no período.
+    const plain = await roleSuggestions(f.db, f.actors.viewer, 'org_proex', NOW);
+    assert.equal(plain.length, ROLE_SUGGESTION_LIMIT);
+    assert.ok(plain.every(entry => entry.why === 'geral'));
+    assert.deepEqual(await roleSuggestions(f.db, f.actors.viewer, 'org_proex', NOW + 86400000), plain, 'same person, same 3-day period: same list');
+    const periods = new Set();
+    for (let step = 0; step < 10; step += 1) periods.add(texts(await roleSuggestions(f.db, f.actors.viewer, 'org_proex', NOW + step * ROLE_SUGGESTION_DAYS * 86400000)).join('|'));
+    assert.ok(periods.size > 1, 'the draw is renewed across periods');
+
+    // Momento e atividade no projeto A; um item com nome grande demais e outro só do projeto B.
+    f.native.prepare("INSERT INTO campaigns(id,project_id,name,starts_at,ends_at,status,created_at) VALUES('camp-a','project-a','Roleta \"QA\"','2026-11-10T12:00:00.000Z','2026-11-13T21:00:00.000Z','active',?),('camp-old','project-a','Dinâmica encerrada','2026-11-10T12:00:00.000Z','2026-11-13T21:00:00.000Z','closed',?),('camp-b','project-b','Roleta B SEGREDO','2026-11-10T12:00:00.000Z','2026-11-13T21:00:00.000Z','active',?)").run(iso(0), iso(0), iso(0));
+    f.native.prepare("UPDATE items SET stock=40 WHERE id='item-a'").run();
+    f.native.prepare("INSERT INTO items(id,project_id,name,category,unit,stock,created_at,updated_at) VALUES('item-long','project-a',?,'consumption','unidade',1,?,?),('item-b','project-b','Brinde B SEGREDO','consumption','unidade',2,?,?)").run('X'.repeat(90), iso(0), iso(0), iso(0), iso(0));
+    const move = (id, item, actor, when) => f.native.prepare("INSERT INTO stock_movements(id,item_id,delta,kind,note,actor_id,created_at) VALUES(?,?,3,'receive','',?,?)").run(id, item, actor, when);
+    move('mov-1', 'item-a', 'viewer-qa', iso(-86400000)); move('mov-old', 'item-long', 'viewer-qa', iso(-30 * 86400000)); move('mov-b', 'item-b', 'outsider-qa', iso(-3600000));
+
+    const mine = await roleSuggestions(f.db, f.actors.viewer, 'org_proex', NOW);
+    assert.ok(mine.length <= ROLE_SUGGESTION_LIMIT);
+    assert.deepEqual(mine[0], { text: 'Quais são os níveis de brinde da dinâmica Roleta QA?', why: 'momento' }, 'ongoing campaign first, quotes stripped');
+    assert.deepEqual(texts(mine.filter(entry => entry.why === 'atividade')).sort(), ['Quanto ainda temos de Caneta QA?', 'Quanto saiu de Caneta QA nos últimos 7 dias?']);
+    assert.ok(!texts(mine).join(' ').includes('XXXX'), 'names that do not fit a question are skipped');
+    assert.ok(!texts(mine).join(' ').includes('SEGREDO') && !texts(mine).join(' ').includes('encerrada'));
+    assert.equal(new Set(texts(mine)).size, mine.length, 'no repeated question');
+
+    // Outra pessoa, outro projeto: nada do projeto A; a atividade é a dela.
+    const other = await roleSuggestions(f.db, f.actors.outsider, 'org_proex', NOW);
+    assert.ok(!texts(other).join(' ').includes('Caneta QA') && !texts(other).join(' ').includes('Roleta QA'));
+    assert.ok(texts(other).includes('Quais são os níveis de brinde da dinâmica Roleta B SEGREDO?'));
+    assert.ok(texts(other).some(text => text.includes('Brinde B SEGREDO')));
+    // Organização diferente da conversa: nenhuma sugestão com dado do portal.
+    assert.ok((await roleSuggestions(f.db, f.actors.viewer, 'org_outra', NOW)).every(entry => entry.why === 'geral'));
+
+    // Demanda atribuída à pessoa vira pergunta; a de outra pessoa não.
+    const task = (id, project, title) => f.native.prepare("INSERT INTO followup_tasks(id,organization_id,project_id,title,body,priority,status,created_by,created_at,updated_at) VALUES(?, 'org_proex', ?, ?, '', 'high', 'open', 'owner-qa', ?, ?)").run(id, project, title, iso(0), iso(0));
+    task('task-mine', 'project-a', 'Conferir kits da terça'); task('task-other', 'project-a', 'Tarefa de outra pessoa');
+    f.native.prepare("INSERT INTO followup_assignees(id,task_id,user_id,created_at) VALUES('as-1','task-mine','viewer-qa',?),('as-2','task-other','owner-qa',?)").run(iso(0), iso(0));
+    // Vinte dias depois a movimentação já saiu da janela de 14 dias e a dinâmica acabou.
+    const LATER = NOW + 20 * 86400000;
+    const withTask = await roleSuggestions(f.db, f.actors.viewer, 'org_proex', LATER);
+    assert.ok(withTask.every(entry => entry.why !== 'momento'));
+    assert.deepEqual(texts(withTask.filter(entry => entry.why === 'atividade')).sort(), ['O que diz a demanda Conferir kits da terça?', 'Quais demandas estão abertas?']);
+    assert.ok(!texts(withTask).join(' ').includes('outra pessoa'));
+    assert.ok(texts(withTask).includes('Quanto ainda temos de Caneta QA?'), 'team view: stock the role may read');
+
+    // Rota: só quem pode conversar neste projeto; a resposta diz de quantos em quantos dias muda.
+    const listed = await roleSuggestionList(f.db, f.actors.viewer, { projectId: 'project-a' }, LATER);
+    assert.equal(listed.days, ROLE_SUGGESTION_DAYS);
+    assert.deepEqual(listed.suggestions, withTask);
+    await assert.rejects(roleSuggestionList(f.db, f.actors.outsider, { projectId: 'project-a' }, NOW), error => error.status === 403 || error.status === 404);
+    await assert.rejects(roleSuggestionList(f.db, null, { projectId: 'project-a' }, NOW), error => error.status === 403);
+  } finally { f.native.close(); }
+});
