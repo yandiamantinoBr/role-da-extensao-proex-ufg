@@ -1,12 +1,12 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowRight, ArrowUpRight, Boxes, CalendarDays, Check, ClipboardCheck, FileText, ListChecks, SlidersHorizontal, Sparkles, TriangleAlert, Truck, type LucideIcon } from 'lucide-react';
+import { ArrowRight, ArrowUpRight, Boxes, CalendarDays, Check, ClipboardCheck, FileText, KeyRound, ListChecks, SlidersHorizontal, Sparkles, TriangleAlert, Truck, type LucideIcon } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import DateField from './date-field';
 import styles from './activity-panel.module.css';
 
-type ActivityType = 'materials' | 'loans' | 'demands' | 'agenda' | 'records' | 'convocations' | 'ai';
+type ActivityType = 'materials' | 'loans' | 'demands' | 'agenda' | 'records' | 'convocations' | 'access' | 'ai';
 type ActivityEvent = { id: string; type: ActivityType; action: string; title: string; detail: string; at: string; day: string; projectId: string | null; projectName: string; actorId: string | null; actorName: string; viaRole: boolean; href: string | null; quantity: number | null ; status?: 'corrected' | 'undone' | 'correction'; statusReason?: string; statusBy?: string };
 const STATUS_LABELS = { corrected: 'Corrigida', undone: 'Desfeita', correction: 'Correção' } as const;
 type SummaryDay = { day: string; materials: number; demandsOpened: number; demandsCompleted: number; agenda: number };
@@ -19,7 +19,7 @@ type Entry = { kind: 'event'; event: ActivityEvent } | { kind: 'group'; key: str
 const TYPES: { id: ActivityType; label: string; Icon: LucideIcon }[] = [
   { id: 'materials', label: 'Estoque', Icon: Boxes }, { id: 'loans', label: 'Empréstimos', Icon: Truck },
   { id: 'demands', label: 'Demandas', Icon: ListChecks }, { id: 'agenda', label: 'Agenda', Icon: CalendarDays },
-  { id: 'records', label: 'Registros', Icon: FileText }, { id: 'convocations', label: 'Convocações', Icon: ClipboardCheck }, { id: 'ai', label: 'Configuração de IA', Icon: SlidersHorizontal },
+  { id: 'records', label: 'Registros', Icon: FileText }, { id: 'convocations', label: 'Convocações', Icon: ClipboardCheck }, { id: 'access', label: 'Acessos', Icon: KeyRound }, { id: 'ai', label: 'Configuração de IA', Icon: SlidersHorizontal },
 ];
 const PERIODS: { id: Period; label: string }[] = [{ id: 'today', label: 'Hoje' }, { id: '7', label: '7 dias' }, { id: '30', label: '30 dias' }, { id: 'month', label: 'Este mês' }, { id: 'custom', label: 'Escolher datas' }];
 const DAY = new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
@@ -219,7 +219,7 @@ function EventRow({ event, hideProject, hidePerson, compact = false }: { event: 
   const content = <>
     {!compact && <TypeIcon type={event.type}/>}
     <span className={styles.body}>
-      <span className={styles.line}><strong>{event.action}</strong>{event.title && <> · {event.title}</>}{event.detail && event.type !== 'ai' && <span className={styles.detail} data-struck={event.status === 'corrected' || event.status === 'undone' ? 'true' : undefined}>{event.detail}</span>}{event.status && <span className={styles.revision} data-status={event.status}>{STATUS_LABELS[event.status]}</span>}</span>
+      <span className={styles.line}><strong>{event.action}</strong>{event.title && <> · <span className={styles.titleUnit}>{event.title}</span></>}{event.detail && event.type !== 'ai' && <span className={styles.detail} data-struck={event.status === 'corrected' || event.status === 'undone' ? 'true' : undefined}>{event.detail}</span>}{event.status && <span className={styles.revision} data-status={event.status}>{STATUS_LABELS[event.status]}</span>}</span>
       {event.status && (event.statusReason || event.statusBy) && <span className={styles.revisionNote}>{event.status === 'correction' ? 'Corrige um lançamento anterior' : event.status === 'undone' ? 'Desfeita' : 'Substituída por uma correção'}{event.statusReason ? `: ${event.statusReason}` : ''}{event.statusBy ? ` · por ${event.statusBy}` : ''}</span>}
       {event.type === 'ai' && event.detail && <ul className={styles.changes}>{event.detail.split('\n').map(line => { const [label, values] = line.includes(': ') ? [line.slice(0, line.indexOf(': ')), line.slice(line.indexOf(': ') + 2)] : ['', line]; const [before, after] = values.split(' → '); return <li key={line}>{label && <span>{label}: </span>}{after !== undefined ? <><s aria-label={`antes ${before}`}>{before}</s> → <strong>{after}</strong></> : values}</li>; })}</ul>}
       <span className={styles.meta}>{event.type !== 'agenda' && !compact && <time dateTime={event.at}>{TIME.format(new Date(event.at))}</time>}{!hideProject && event.projectName && <span>{event.projectName}</span>}{!hidePerson && event.actorName && <span>{event.actorName}</span>}{event.viaRole && <span className={styles.role}><Sparkles size={13} aria-hidden="true"/>Feito pelo Rolê{event.actorName ? ` a pedido de ${event.actorName}` : ''}</span>}</span>

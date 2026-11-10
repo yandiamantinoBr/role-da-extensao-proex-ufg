@@ -1,4 +1,5 @@
-import { accessibleProjects, aiConfigurationAuthority, requireCapability, projectAuthoritySql, type PortalActor } from './access';
+import { accessibleProjects, aiConfigurationAuthority, requireCapability, projectAuthoritySql, volunteerCampaignSql, type PortalActor } from './access';
+import { calendarAvailable } from './calendar';
 import { all, one, type Row } from './database';
 import { HttpError } from './errors';
 import { listManagedUsers } from './users';
@@ -174,7 +175,7 @@ async function reportMetrics(db: D1Database, scope: Scope, actor:PortalActor): P
 /** Protected, explicitly projected snapshot. No token hashes or storage keys leave the server. */
 export async function portalSnapshot(db: D1Database, actor: PortalActor | null): Promise<Row> {
   if (!actor) throw new HttpError(401, 'Entre com sua conta para continuar.', 'unauthenticated');
-  if (!actor.members.length) throw new HttpError(403, 'A conta de participante não concede acesso ao painel da equipe.', 'portal_membership_required');
+  if (!actor.members.length && !(actor.volunteers ?? []).length) throw new HttpError(403, 'A conta de participante não concede acesso ao painel da equipe.', 'portal_membership_required');
   const ownAccount = await one(db, 'SELECT status,activation_pending FROM portal_users WHERE user_id=?', [actor.userId]);
   if (ownAccount && (ownAccount.status !== 'active' || ownAccount.activation_pending !== 0)) {
     throw new HttpError(403, 'Seu acesso ao portal não está ativo.', 'account_inactive');
@@ -208,8 +209,16 @@ export async function portalSnapshot(db: D1Database, actor: PortalActor | null):
   const membersFilter=accessRowsFilter('members',accessScope,['access.manage']),invitesFilter=accessRowsFilter('invites',accessScope,['access.manage']);
   const auditFilter=accessRowsFilter('audit',auditScope,['access.manage','reports.read']);
   const documentsFilter = authorizedFilter('d.project_id', loanPrivateScope,actor,['loans.read']);
-  const physicalFilter = authorizedFilter('c.project_id', accessibleProjects(actor, 'participation.operate'),actor,['participation.operate']);
-  const prizesFilter = authorizedFilter('c.project_id', accessibleProjects(actor, 'inventory.deliver'),actor,['inventory.deliver']);
+  // Voluntário: só a fila e os brindes da ação do próprio acesso, relidos no SQL (prazo e revogação valem na hora).
+  const volunteerFilter = (campaignColumn: string, base: { sql: string; params: unknown[] }) => {
+    if (!(actor.volunteers ?? []).length) return base;
+    const volunteer = volunteerCampaignSql(actor, campaignColumn);
+    return { sql: `((${base.sql}) OR ${volunteer.sql})`, params: [...base.params, ...volunteer.values] };
+  };
+  const physicalFilter = volunteerFilter('c.id', authorizedFilter('c.project_id', accessibleProjects(actor, 'participation.operate'),actor,['participation.operate']));
+  const prizesFilter = volunteerFilter('c.id', authorizedFilter('c.project_id', accessibleProjects(actor, 'inventory.deliver'),actor,['inventory.deliver']));
+  const ownVolunteer = volunteerCampaignSql(actor, 'c.id');
+  const volunteerManageFilter = authorizedFilter('v.project_id', accessScope, actor, ['access.manage']);
   const snapshotTime = Date.now();
 
   const [projects, campaigns, items, offers, components, loans, loanDetails, members, invites, audit, settingsRows, documents, metrics, physicalTickets, pendingPrizes, pendingPrizeCount, users, ownProfile] = await Promise.all([
@@ -245,8 +254,11 @@ export async function portalSnapshot(db: D1Database, actor: PortalActor | null):
       FROM loans WHERE ${privateLoansFilter.sql}`, privateLoansFilter.params),
     all(db, `SELECT id,email,role,project_id,organization_id,revoked_at,created_at FROM members
       WHERE ${membersFilter.sql} ORDER BY created_at,id`, membersFilter.params),
-    all(db, `SELECT id,email,role,project_id,organization_id,expires_at,accepted_at,revoked_at,created_at FROM invites
-      WHERE ${invitesFilter.sql} ORDER BY created_at DESC,id`, invitesFilter.params),
+    all(db, `SELECT id,email,role,project_id,organization_id,expires_at,accepted_at,revoked_at,created_at,
+      (SELECT s.campaign_id FROM invite_campaign_scopes s WHERE s.invite_id=invites.id) AS volunteer_campaign_id,
+      (SELECT c.name FROM invite_campaign_scopes s JOIN campaigns c ON c.id=s.campaign_id WHERE s.invite_id=invites.id) AS volunteer_campaign_name,
+      (SELECT s.ends_at FROM invite_campaign_scopes s WHERE s.invite_id=invites.id) AS volunteer_ends_at
+      FROM invites WHERE ${invitesFilter.sql} ORDER BY created_at DESC,id`, invitesFilter.params),
     // Activity summaries deliberately exclude actor ids, free-form details and entity values.
     all(db, `SELECT id,project_id,action,created_at FROM audit
       WHERE ${auditFilter.sql} ORDER BY created_at DESC,id DESC LIMIT 100`, auditFilter.params),
@@ -256,14 +268,14 @@ export async function portalSnapshot(db: D1Database, actor: PortalActor | null):
       WHERE ${documentsFilter.sql} ORDER BY d.created_at DESC,d.id`, documentsFilter.params),
     reportMetrics(db, accessibleProjects(actor, 'reports.read'),actor),
     all(db, `SELECT p.id AS participation_id,p.campaign_id,p.identity_method,p.state,p.attempt_count,
-      a.id AS attempt_id,a.number,a.result,a.state AS attempt_state,c.name AS campaign_name,c.project_id
+      a.id AS attempt_id,a.number,a.result,a.state AS attempt_state,c.name AS campaign_name,c.project_id,p.created_at AS opened_at
       FROM participations p JOIN campaigns c ON c.id=p.campaign_id
       JOIN attempts a ON a.participation_id=p.id
         AND a.number=(SELECT MAX(latest.number) FROM attempts latest WHERE latest.participation_id=p.id)
       WHERE p.modality='physical'
         AND p.state IN ('physical_pending','retry_ready') AND ${physicalFilter.sql}
       ORDER BY p.created_at DESC,p.id LIMIT 200`, physicalFilter.params),
-    all(db, `SELECT e.id,e.id AS entitlement_id,o.name AS offer_name,c.name AS campaign_name,
+    all(db, `SELECT e.id,e.id AS entitlement_id,o.name AS offer_name,c.name AS campaign_name,c.id AS campaign_id,
       c.project_id,e.created_at FROM entitlements e
       JOIN participations p ON p.id=e.participation_id JOIN campaigns c ON c.id=p.campaign_id
       JOIN offers o ON o.id=e.offer_id AND o.project_id=c.project_id
@@ -280,6 +292,16 @@ export async function portalSnapshot(db: D1Database, actor: PortalActor | null):
         WHERE aliases.provider='password' AND aliases.user_id=u.user_id) AS has_password
       FROM portal_users u LEFT JOIN profiles p ON p.user_id=u.user_id
       WHERE u.user_id=? AND u.status='active' AND u.activation_pending=0`, [actor.userId]),
+  ]);
+  const [volunteerAccess, volunteers] = await Promise.all([
+    (actor.volunteers ?? []).length ? all(db, `SELECT v.id,v.campaign_id,v.ends_at,c.name AS campaign_name,c.status,c.location,c.starts_at,c.ends_at AS campaign_ends_at,
+        c.project_id,p.name AS project_name FROM campaign_volunteers v JOIN campaigns c ON c.id=v.campaign_id AND c.project_id=v.project_id JOIN projects p ON p.id=c.project_id
+        WHERE v.user_id=? AND v.revoked_at IS NULL AND ${ownVolunteer.sql} ORDER BY v.ends_at,v.id`, [actor.userId, ...ownVolunteer.values]) : Promise.resolve([]),
+    accessScope === null || accessScope.length ? all(db, `SELECT v.id,v.user_id,v.email,v.campaign_id,v.project_id,v.ends_at,v.created_at,v.revoked_at,v.revoke_reason,
+        c.name AS campaign_name,COALESCE(NULLIF(pr.display_name,''),'') AS display_name FROM campaign_volunteers v JOIN campaigns c ON c.id=v.campaign_id
+        LEFT JOIN profiles pr ON pr.user_id=v.user_id
+        WHERE ${volunteerManageFilter.sql} AND (v.revoked_at IS NULL OR julianday(v.revoked_at)>julianday('now','-30 days'))
+        ORDER BY v.revoked_at IS NOT NULL,v.ends_at,v.id LIMIT 200`, volunteerManageFilter.params) : Promise.resolve([]),
   ]);
   const detailsByLoan = new Map(loanDetails.map(row => [row.id, row]));
   const componentsByOffer = new Map<string, Row[]>();
@@ -323,7 +345,8 @@ export async function portalSnapshot(db: D1Database, actor: PortalActor | null):
       && !/[^\s@]+@[^\s@]+\.[^\s@]+|[?&](token|code|key)=/i.test(entry.action)
       ? entry.action.slice(0, 100) : '[omitido]' })),
     settings: Object.fromEntries(settingsRows.map(row => [row.name, row.value])),
-    documents, physicalTickets, pendingPrizes,
+    documents, physicalTickets, pendingPrizes, volunteerAccess, volunteers,
+    calendarAvailable: calendarAvailable(actor),
     pendingPrizesTotal: count(pendingPrizeCount, 'total'),
     pendingPrizesTruncated: count(pendingPrizeCount, 'total') > pendingPrizes.length,
     pendingPrizesLimit: 200,

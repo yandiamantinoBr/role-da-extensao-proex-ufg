@@ -13,7 +13,7 @@ import { zipEntries } from './support/report-module.mjs';
 // at the transport boundary. These synthetic, in-memory fixtures never reach production.
 const temporary = mkdtempSync(join(tmpdir(), 'proex-portal-data-'));
 writeFileSync(join(temporary, 'package.json'), '{"type":"module"}');
-for (const name of ['access', 'database', 'errors', 'portal-data', 'users', 'mutations', 'organizations', 'material-photos']) {
+for (const name of ['access', 'database', 'errors', 'portal-data', 'users', 'mutations', 'organizations', 'material-photos', 'calendar', 'movement-ledger', 'civil-date']) {
   const source = readFileSync(new URL(`../lib/${name}.ts`, import.meta.url), 'utf8');
   const output = ts.transpileModule(source, {
     compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },

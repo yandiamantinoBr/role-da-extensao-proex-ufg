@@ -86,6 +86,8 @@ a.row:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 .icon { display: inline-grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; background: var(--surface-soft); color: var(--brand-ink); flex-shrink: 0; }
 .body { display: grid; gap: 2px; min-width: 0; }
 .line { color: var(--ink); font-size: 14px; line-height: 1.4; overflow-wrap: anywhere; }
+/* O nome do registro quebra como um bloco: não parte no meio quando cabe na linha seguinte. */
+.titleUnit { display: inline-block; max-width: 100%; }
 .detail { margin-left: 8px; color: var(--text-secondary); font-size: 13px; font-variant-numeric: tabular-nums; }
 .meta { display: flex; flex-wrap: wrap; gap: 2px 14px; color: var(--text-secondary); font-size: 12.5px; }
 .role { display: inline-flex; align-items: center; gap: 4px; color: var(--brand-ink); font-weight: 600; }

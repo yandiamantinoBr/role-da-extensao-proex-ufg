@@ -13,7 +13,10 @@ export type PortalActor = {
   members: PortalMember[]; capabilities: string[];
   organizationProjects?: Record<string, string[]>;
   organizations?: { id: string; name: string; slug: string; status: string; version: number; canManage: boolean }[];
+  /** Volunteer grants: one action (campaign) each, until endsAt. Never a project membership. */
+  volunteers?: VolunteerGrant[];
 };
+export type VolunteerGrant = { id: string; campaignId: string; projectId: string; endsAt: string };
 type NativeUser = { userId: string; email: string; displayName: string };
 type Invite = {
   id: string; token_hash: string; email: string; role: Exclude<Role, 'owner'>;
@@ -38,6 +41,10 @@ const ROLE_CAPABILITIES: Record<Role, readonly string[]> = {
 const SUBORDINATE_ROLES = ['operator', 'inventory', 'loans', 'viewer'];
 const INVITABLE_ROLES = ['manager', ...SUBORDINATE_ROLES];
 const KNOWN_CAPABILITIES = new Set(ROLE_CAPABILITIES.owner);
+/** What a volunteer may do, and only at the campaign of the grant: run the physical desk and hand out prizes. */
+export const VOLUNTEER_CAPABILITIES: readonly string[] = ['participation.operate', 'inventory.deliver'];
+/** Longest volunteer access allowed from the moment the invite is created. */
+const VOLUNTEER_MAX_MS = 120 * 24 * 60 * 60 * 1000;
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 function identifier(value: unknown): value is string {
@@ -142,6 +149,7 @@ export async function getActor(
 ): Promise<PortalActor | null> {
   if (!user || !identifier(user.userId) || !email(user.email)) return null;
   const normalizedEmail = email(user.email)!;
+  await expireVolunteerAccess(db);
   const account=await db.prepare('SELECT status,activation_pending,anonymized_at FROM portal_users WHERE user_id=?').bind(user.userId).first<{status:string;activation_pending:number;anonymized_at:string|null}>();
   if(account?.status==='blocked'||account?.anonymized_at)return null;
   if (!account?.activation_pending && email(configuredOwnerEmail) === normalizedEmail) {
@@ -175,10 +183,14 @@ export async function getActor(
     ? (await db.prepare('SELECT id,name,slug,status,version FROM organizations ORDER BY name,id').all<{id:string;name:string;slug:string;status:string;version:number}>()).results ?? []
     : (await db.prepare(`SELECT DISTINCT o.id,o.name,o.slug,o.status,o.version FROM organizations o JOIN members m ON m.organization_id=o.id
         WHERE m.id IN (${members.map(()=>'?').join(',')}) ORDER BY o.name,o.id`).bind(...members.map(member=>member.id)).all<{id:string;name:string;slug:string;status:string;version:number}>()).results ?? [];
+  const volunteers = account?.activation_pending ? [] : ((await db.prepare(`SELECT v.id,v.campaign_id AS campaignId,v.project_id AS projectId,v.ends_at AS endsAt
+    FROM campaign_volunteers v JOIN campaigns c ON c.id=v.campaign_id AND c.project_id=v.project_id
+    WHERE v.user_id=? AND v.revoked_at IS NULL AND julianday(v.ends_at)>julianday('now') ORDER BY v.ends_at,v.id`).bind(user.userId).all<VolunteerGrant>()).results ?? [])
+    .filter(grant => identifier(grant.id) && identifier(grant.campaignId) && identifier(grant.projectId) && isoValid(grant.endsAt));
   return {
     userId: user.userId, email: normalizedEmail,
     displayName: typeof user.displayName === 'string' ? user.displayName.slice(0, 200) : normalizedEmail,
-    members, organizationProjects, organizations:organizations.map(organization=>({...organization,canManage:platformOwner||members.some(member=>member.role==='owner'&&member.project_id===null&&member.organization_id===organization.id)})), capabilities: [...new Set(members.flatMap((member) => ROLE_CAPABILITIES[member.role]))],
+    members, volunteers, organizationProjects, organizations:organizations.map(organization=>({...organization,canManage:platformOwner||members.some(member=>member.role==='owner'&&member.project_id===null&&member.organization_id===organization.id)})), capabilities: [...new Set(members.flatMap((member) => ROLE_CAPABILITIES[member.role]))],
   };
 }
 
@@ -233,6 +245,62 @@ export async function capabilityBatch(db: D1Database, actor: PortalActor, capabi
     if (String(error).includes('portal_authority_changed')) throw new HttpError(403, 'Seu acesso mudou. Atualize a página.', 'access_changed');
     throw error;
   }
+}
+
+/**
+ * Live volunteer authority over one campaign, read with the resource: active grant, before its end,
+ * same project as the campaign and an active account. Revocation and expiry apply at once.
+ */
+export function volunteerCampaignSql(actor: PortalActor, campaignSql: string) {
+  return { sql: `EXISTS(SELECT 1 FROM campaign_volunteers vol JOIN campaigns vol_c ON vol_c.id=vol.campaign_id AND vol_c.project_id=vol.project_id
+    JOIN portal_users vol_u ON vol_u.user_id=vol.user_id
+    WHERE vol.user_id=? AND vol.campaign_id=${campaignSql} AND vol.revoked_at IS NULL AND julianday(vol.ends_at)>julianday('now')
+    AND vol_u.status='active' AND vol_u.activation_pending=0 AND vol_u.anonymized_at IS NULL)`, values: [actor.userId] };
+}
+function hasProjectCapability(actor: PortalActor, capability: string, projectId: string): boolean {
+  try { requireCapability(actor, capability, projectId); return true; } catch { return false; }
+}
+/** Team members keep their project authority; a volunteer adds authority only over the campaign of the grant. */
+function campaignCapability(actor: PortalActor, capability: string, projectId: string, campaignId: string) {
+  const member = hasProjectCapability(actor, capability, projectId) ? liveCapability(actor, capability, projectId) : null;
+  const volunteer = VOLUNTEER_CAPABILITIES.includes(capability) && identifier(campaignId)
+    && (actor.volunteers ?? []).some(grant => grant.campaignId === campaignId && grant.projectId === projectId)
+    ? volunteerCampaignSql(actor, '?') : null;
+  if (!member && !volunteer) throw new HttpError(403, 'Você não tem permissão nesta ação.', 'forbidden');
+  const parts = [member, volunteer && { sql: volunteer.sql, values: [...volunteer.values, campaignId] }].filter(Boolean) as { sql: string; values: unknown[] }[];
+  return { sql: parts.map(part => `(${part.sql})`).join(' OR '), values: parts.flatMap(part => part.values) };
+}
+export async function requireLiveCampaignCapability(db: D1Database, actor: PortalActor, capability: string, projectId: string, campaignId: string): Promise<void> {
+  const permission = campaignCapability(actor, capability, projectId, campaignId);
+  if (!await db.prepare(`SELECT 1 AS allowed WHERE ${permission.sql}`).bind(...permission.values).first()) {
+    throw new HttpError(403, 'Seu acesso mudou. Atualize a página.', 'access_changed');
+  }
+}
+export async function campaignCapabilityBatch(db: D1Database, actor: PortalActor, capability: string, projectId: string, campaignId: string, statements: D1PreparedStatement[]): Promise<D1Result[]> {
+  const permission = campaignCapability(actor, capability, projectId, campaignId);
+  const assertion = db.prepare(`SELECT CASE WHEN ${permission.sql} THEN 1 ELSE json_extract('[]','portal_authority_changed') END`).bind(...permission.values);
+  try { return (await db.batch([assertion, ...statements])).slice(1); }
+  catch (error) {
+    if (String(error).includes('portal_authority_changed')) throw new HttpError(403, 'Seu acesso mudou. Atualize a página.', 'access_changed');
+    throw error;
+  }
+}
+/**
+ * Ends every volunteer grant whose deadline passed and records it in the audit (Registros), once.
+ * Runs on each request; it only writes when something is due. Access already stops at endsAt in every
+ * SQL check, so this sweep only makes the end visible and permanent.
+ */
+export async function expireVolunteerAccess(db: D1Database): Promise<number> {
+  const due = (await db.prepare(`SELECT id FROM campaign_volunteers WHERE revoked_at IS NULL AND julianday(ends_at)<=julianday('now') ORDER BY ends_at,id LIMIT 50`).all<{ id: string }>()).results ?? [];
+  if (!due.length) return 0;
+  const now = new Date().toISOString();
+  await db.batch(due.flatMap(({ id }) => [
+    db.prepare(`UPDATE campaign_volunteers SET revoked_at=ends_at,revoke_reason='expired' WHERE id=? AND revoked_at IS NULL AND julianday(ends_at)<=julianday('now')`).bind(id),
+    db.prepare(`INSERT OR IGNORE INTO audit (id,actor_id,project_id,action,entity_id,details,created_at)
+      SELECT ?,v.user_id,v.project_id,'volunteer.expired',v.id,json_object('campaignId',v.campaign_id,'endsAt',v.ends_at,'recordedAt',?),v.ends_at
+      FROM campaign_volunteers v WHERE v.id=? AND v.revoke_reason='expired'`).bind(`volunteer-expired:${id}`, now, id),
+  ]));
+  return due.length;
 }
 
 const ACTIVE_ACCOUNT_SQL = `EXISTS (SELECT 1 FROM portal_users WHERE user_id=? AND status='active' AND activation_pending=0 AND anonymized_at IS NULL)`;
@@ -316,7 +384,7 @@ export async function accessAction(
   db: D1Database, actor: PortalActor | null, action: string, input: Record<string, unknown>, origin: string,
   inviteSecret?: string,
 ): Promise<Record<string, unknown> | null> {
-  if (!['invite.create', 'invite.revoke', 'invite.accept', 'member.revoke'].includes(action)) return null;
+  if (!['invite.create', 'invite.revoke', 'invite.accept', 'member.revoke', 'volunteer.revoke'].includes(action)) return null;
   if (!actor) throw new HttpError(401, 'Entre com sua conta para continuar.', 'unauthenticated');
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new HttpError(400, 'Dados inválidos.', 'invalid_input');
 
@@ -336,6 +404,19 @@ export async function accessAction(
     if (projectId && !project) {
       throw new HttpError(404, 'Projeto não encontrado.', 'project_not_found');
     }
+    // Voluntário: convite de operador recortado a uma ação (campanha) do mesmo projeto, com data de fim.
+    const volunteer = input.campaignId === undefined && input.endsAt === undefined ? null : await (async () => {
+      if (role !== 'operator' || !projectId) throw new HttpError(400, 'O acesso de voluntário vale para uma ação de um projeto, com a função de atendimento.', 'invalid_volunteer_scope');
+      if (!identifier(input.campaignId)) throw new HttpError(400, 'Escolha a ação do voluntário.', 'invalid_volunteer_scope');
+      if (typeof input.endsAt !== 'string' || !Number.isFinite(Date.parse(input.endsAt))) throw new HttpError(400, 'Informe até quando vai o acesso do voluntário.', 'invalid_volunteer_end');
+      const endsAt = new Date(Date.parse(input.endsAt)).toISOString();
+      if (Date.parse(endsAt) <= Date.now() + 10 * 60 * 1000) throw new HttpError(400, 'O fim do acesso precisa ser daqui a pelo menos 10 minutos.', 'invalid_volunteer_end');
+      if (Date.parse(endsAt) > Date.now() + VOLUNTEER_MAX_MS) throw new HttpError(400, 'O acesso de voluntário dura no máximo 120 dias.', 'invalid_volunteer_end');
+      const campaign = await db.prepare(`SELECT id,status FROM campaigns WHERE id=? AND project_id=?`).bind(input.campaignId, projectId).first<{ id: string; status: string }>();
+      if (!campaign) throw new HttpError(404, 'Ação não encontrada neste projeto.', 'campaign_not_found');
+      if (campaign.status === 'closed') throw new HttpError(409, 'Esta ação já foi encerrada. Escolha uma ação em andamento.', 'campaign_closed');
+      return { campaignId: campaign.id, endsAt };
+    })();
     if(!await db.prepare("SELECT id FROM organizations WHERE id=? AND status='active'").bind(organizationId).first() || (project && input.organizationId!==undefined && input.organizationId!==organizationId))throw new HttpError(400,'Escolha uma organização ativa e compatível com o projeto.','invalid_organization');
     let base: URL;
     try { base = new URL(origin); } catch { throw new HttpError(400, 'Endereço do portal inválido.', 'invalid_origin'); }
@@ -346,17 +427,19 @@ export async function accessAction(
       throw new HttpError(503, 'A emissão de convites precisa ser configurada pelo responsável.', 'invites_unavailable');
     }
     const mutation = await prepareMutation(db, actor.userId, action, {
-      email: recipient, role, projectId, ...(organizationId===LEGACY_ORGANIZATION_ID?{}:{organizationId}), operationKey: input.operationKey,
+      email: recipient, role, projectId, ...(organizationId===LEGACY_ORGANIZATION_ID?{}:{organizationId}), ...(volunteer ?? {}), operationKey: input.operationKey,
     });
     const token = await invitationToken(inviteSecret, actor.userId, input.operationKey as string);
     const tokenHash = await hashToken(token);
     const permission=delegationAuthority(actor,projectId,organizationId,role),authorization=permission.sql,authorizationParameters=permission.values;
     async function presentInvite(id: string, replayed: boolean): Promise<Record<string, unknown>> {
       // Recovering a link is a privileged operation too; a stale or blocked author gets no token.
-      const invitation = await db.prepare(`SELECT * FROM invites WHERE id=? AND created_by=? AND ${authorization}`)
-        .bind(id, actor!.userId, ...authorizationParameters).first<Invite>();
+      const invitation = await db.prepare(`SELECT invites.*,s.campaign_id AS scope_campaign_id,s.ends_at AS scope_ends_at FROM invites
+        LEFT JOIN invite_campaign_scopes s ON s.invite_id=invites.id WHERE invites.id=? AND invites.created_by=? AND ${authorization}`)
+        .bind(id, actor!.userId, ...authorizationParameters).first<Invite & { scope_campaign_id: string | null; scope_ends_at: string | null }>();
       if (!invitation) throw new HttpError(403, 'O convite ou seu acesso mudou. Atualize a página.', 'access_changed');
-      if (invitation.email !== recipient || invitation.role !== role || invitation.project_id !== projectId || invitation.organization_id!==organizationId || invitation.token_hash !== tokenHash) {
+      if (invitation.email !== recipient || invitation.role !== role || invitation.project_id !== projectId || invitation.organization_id!==organizationId || invitation.token_hash !== tokenHash
+        || invitation.scope_campaign_id !== (volunteer?.campaignId ?? null) || invitation.scope_ends_at !== (volunteer?.endsAt ?? null)) {
         throw new HttpError(409, 'Não foi possível recuperar este convite. Confira a configuração e gere um novo link.', 'invite_replay_unavailable');
       }
       if (invitation.accepted_at) throw new HttpError(409, 'Este convite já foi aceito.', 'invite_used');
@@ -364,23 +447,26 @@ export async function accessAction(
       if (!isoValid(invitation.expires_at) || Date.parse(invitation.expires_at) <= Date.now()) {
         throw new HttpError(409, 'Este convite expirou. Gere um novo convite.', 'invite_expired');
       }
-      return { id: invitation.id, expiresAt: invitation.expires_at,
+      return { id: invitation.id, expiresAt: invitation.expires_at, ...(volunteer ? { volunteer } : {}),
         inviteUrl: `${base.origin}/convite?token=${encodeURIComponent(token)}`, delivery: 'manual', ...(replayed ? { replayed: true } : {}) };
     }
     if (mutation.existingId) return presentInvite(mutation.existingId, true);
     const id = crypto.randomUUID(), now = new Date().toISOString();
-    const expiresAt = new Date(Date.now() + INVITE_TTL_MS).toISOString();
+    // The link of a volunteer invite never outlives the access it grants.
+    const expiresAt = new Date(Math.min(Date.now() + INVITE_TTL_MS, volunteer ? Date.parse(volunteer.endsAt) : Infinity)).toISOString();
     try {
       const result = await db.batch([
         db.prepare(`INSERT INTO invites (id,token_hash,email,role,project_id,organization_id,created_by,expires_at,created_at)
           SELECT ?,?,?,?,?,?,?,?,? WHERE ${authorization}`)
           .bind(id, tokenHash, recipient, role, projectId, organizationId, actor.userId, expiresAt, now, ...authorizationParameters),
+        ...(volunteer ? [db.prepare(`INSERT INTO invite_campaign_scopes(invite_id,campaign_id,ends_at,created_at)
+          SELECT ?,?,?,? WHERE EXISTS (SELECT 1 FROM invites WHERE id=?)`).bind(id, volunteer.campaignId, volunteer.endsAt, now, id)] : []),
         db.prepare(`INSERT INTO mutation_keys(scope,fingerprint,entity_id,created_at)
           SELECT ?,?,?,? WHERE EXISTS (SELECT 1 FROM invites WHERE id=?)`)
           .bind(mutation.scope, mutation.fingerprint, id, now, id),
         db.prepare(`INSERT INTO audit (id,actor_id,project_id,action,entity_id,details,created_at)
           SELECT ?,?,?,'invite.create',?,?,? WHERE EXISTS (SELECT 1 FROM invites WHERE id=?)`)
-          .bind(crypto.randomUUID(), actor.userId, projectId, id, JSON.stringify({ role }), now, id),
+          .bind(crypto.randomUUID(), actor.userId, projectId, id, JSON.stringify(volunteer ? { role, volunteer: true, ...volunteer } : { role }), now, id),
       ]);
       if (result.some(statement => statement.meta.changes !== 1)) {
         throw new HttpError(403, 'Seu acesso mudou. Atualize a página.', 'access_changed');
@@ -407,6 +493,34 @@ export async function accessAction(
     }
     const memberId = crypto.randomUUID();
     const now = new Date().toISOString();
+    const scope = await db.prepare('SELECT campaign_id,ends_at FROM invite_campaign_scopes WHERE invite_id=?').bind(invitation.id).first<{ campaign_id: string; ends_at: string }>();
+    if (scope) {
+      if (!Number.isFinite(Date.parse(scope.ends_at)) || Date.parse(scope.ends_at) <= Date.now()) {
+        throw new HttpError(409, 'O prazo deste acesso de voluntário já terminou. Peça um novo convite à equipe.', 'volunteer_access_ended');
+      }
+      // A volunteer is not a member: the grant lives in campaign_volunteers and reaches one campaign only.
+      const result = await db.batch([
+        db.prepare(`INSERT INTO campaign_volunteers (id,user_id,email,campaign_id,project_id,invite_id,ends_at,granted_by,created_at)
+          SELECT ?,?,?,s.campaign_id,i.project_id,i.id,s.ends_at,i.created_by,? FROM invites i
+          JOIN invite_campaign_scopes s ON s.invite_id=i.id JOIN campaigns c ON c.id=s.campaign_id AND c.project_id=i.project_id
+          WHERE i.id=? AND i.token_hash=? AND lower(i.email)=? AND i.accepted_at IS NULL AND i.revoked_at IS NULL
+            AND julianday(i.expires_at)>julianday('now') AND julianday(s.ends_at)>julianday('now')
+            AND i.role='operator' AND c.status!='closed' AND ${ISSUER_SQL}
+            AND NOT EXISTS (SELECT 1 FROM campaign_volunteers existing WHERE existing.user_id=? AND existing.campaign_id=s.campaign_id AND existing.revoked_at IS NULL)`)
+          .bind(memberId, actor.userId, actor.email, now, invitation.id, tokenHash, email(actor.email), actor.userId),
+        db.prepare(`UPDATE invites SET accepted_by=?,accepted_at=? WHERE id=? AND accepted_at IS NULL
+          AND revoked_at IS NULL AND EXISTS (SELECT 1 FROM campaign_volunteers WHERE id=? AND user_id=?)`)
+          .bind(actor.userId, now, invitation.id, memberId, actor.userId),
+        db.prepare(`INSERT INTO audit (id,actor_id,project_id,action,entity_id,details,created_at)
+          SELECT ?,?,v.project_id,'volunteer.grant',v.id,json_object('campaignId',v.campaign_id,'endsAt',v.ends_at,'inviteId',v.invite_id),? FROM campaign_volunteers v
+          WHERE v.id=? AND EXISTS (SELECT 1 FROM invites WHERE id=? AND accepted_by=?)`)
+          .bind(crypto.randomUUID(), actor.userId, now, memberId, invitation.id, actor.userId),
+      ]);
+      if (result[0].meta.changes !== 1 || result[1].meta.changes !== 1) {
+        throw new HttpError(409, 'O convite ou o acesso mudou, ou você já é voluntário nesta ação. Atualize a página.', 'invite_not_accepted');
+      }
+      return { accepted: true, volunteerId: memberId, campaignId: scope.campaign_id, endsAt: scope.ends_at, projectId: invitation.project_id };
+    }
     // The unique active (user_id, COALESCE(project_id,'')) index is required. Revoked memberships
     // remain historical rows; a later valid invite creates a new membership rather than rewriting them.
     const result = await db.batch([
@@ -415,6 +529,7 @@ export async function accessAction(
         WHERE i.id=? AND i.token_hash=? AND lower(i.email)=? AND i.accepted_at IS NULL AND i.revoked_at IS NULL
           AND julianday(i.expires_at)>julianday('now')
           AND i.role IN ('manager','operator','inventory','loans','viewer') AND ${ISSUER_SQL}
+          AND NOT EXISTS (SELECT 1 FROM invite_campaign_scopes s WHERE s.invite_id=i.id)
           AND NOT EXISTS (SELECT 1 FROM members existing WHERE existing.user_id=?
             AND existing.project_id IS i.project_id AND existing.organization_id IS i.organization_id AND existing.revoked_at IS NULL)`)
         .bind(memberId, actor.userId, actor.email, now, invitation.id, tokenHash, email(actor.email), actor.userId),
@@ -453,6 +568,23 @@ export async function accessAction(
     ]);
     if (results[0].meta.changes !== 1) throw new HttpError(409, 'O convite ou seu acesso mudou. Atualize a página.', 'access_changed');
     return { revoked: true, id: invitation.id };
+  }
+
+  if (action === 'volunteer.revoke') {
+    const grant = await db.prepare('SELECT v.id,v.project_id,v.revoked_at,p.organization_id FROM campaign_volunteers v JOIN projects p ON p.id=v.project_id WHERE v.id=?').bind(input.id).first<{ id: string; project_id: string; revoked_at: string | null; organization_id: string | null }>();
+    if (!grant) throw new HttpError(404, 'Acesso de voluntário não encontrado.', 'volunteer_not_found');
+    requireCapability(actor, 'access.manage', grant.project_id);
+    if (!canManageRole(actor, 'operator', grant.project_id, grant.organization_id)) throw new HttpError(403, 'Você não pode encerrar este acesso.', 'forbidden');
+    if (grant.revoked_at) return { revoked: true, id: grant.id };
+    const now = new Date().toISOString();
+    const results = await capabilityBatch(db, actor, 'access.manage', grant.project_id, [
+      db.prepare(`UPDATE campaign_volunteers SET revoked_at=?,revoked_by=?,revoke_reason='revoked' WHERE id=? AND revoked_at IS NULL`).bind(now, actor.userId, grant.id),
+      db.prepare(`INSERT INTO audit (id,actor_id,project_id,action,entity_id,details,created_at)
+        SELECT ?,?,v.project_id,'volunteer.revoke',v.id,json_object('campaignId',v.campaign_id,'endsAt',v.ends_at),? FROM campaign_volunteers v
+        WHERE v.id=? AND v.revoked_at=? AND v.revoke_reason='revoked'`).bind(crypto.randomUUID(), actor.userId, now, grant.id, now),
+    ]);
+    if (results[0].meta.changes !== 1) throw new HttpError(409, 'O acesso já terminou ou mudou. Atualize a página.', 'volunteer_changed');
+    return { revoked: true, id: grant.id };
   }
 
   const member = await db.prepare('SELECT * FROM members WHERE id=?').bind(input.id).first<PortalMember>();

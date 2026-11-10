@@ -2,6 +2,7 @@
 import { useId, useRef, useState, type FormEvent } from 'react';
 import { ArrowUpRight, Check, Copy, KeyRound, LoaderCircle, Mail, Search, ShieldCheck, UserPlus, Users } from 'lucide-react';
 import TeamPersonDetail from './team-person-detail';
+import DateTimeField from './date-time-field';
 import styles from './team-person.module.css';
 import { useFormDraft, DraftNotice } from './use-form-draft';
 import { officialTeamPrefill, type OfficialTeamSelection } from '../../lib/catalog/proex-team';
@@ -17,6 +18,10 @@ type Props = {
     members: Row[];
     invites: Row[];
     projects: Row[];
+    /** Actions (campaigns) visible to the inviter, for the volunteer scope. */
+    campaigns?: Row[];
+    /** Volunteer grants of the projects this person manages (active and ended in the last 30 days). */
+    volunteers?: Row[];
     selectedProjectId?: string;
     globalAdmin: boolean;
     canManageManagers?: (projectId: string | null, organizationId?: string | null) => boolean;
@@ -25,6 +30,12 @@ type Props = {
 };
 const roles: Record<string, string> = { owner: 'Responsável institucional', manager: 'Gestor de projeto', operator: 'Operador de evento', inventory: 'Responsável por materiais', loans: 'Responsável por empréstimos', viewer: 'Leitor de relatórios' };
 const projectIdOf = (row: Row) => row.project_id ?? row.projectId ?? null;
+// Brasília (UTC-3, sem horário de verão): o campo de data e hora trabalha em hora local.
+const BRASILIA_MS = 3 * 60 * 60 * 1000;
+const toLocal = (iso: unknown) => { const time = typeof iso === 'string' ? Date.parse(iso) : NaN; return Number.isFinite(time) ? new Date(time - BRASILIA_MS).toISOString().slice(0, 16) : ''; };
+const fromLocal = (local: string) => /^\d{4}-\d\d-\d\dT\d\d:\d\d$/.test(local) ? new Date(`${local}:00-03:00`).toISOString() : '';
+const WHEN = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'America/Sao_Paulo' });
+const moment = (iso: unknown) => { const time = typeof iso === 'string' ? Date.parse(iso) : NaN; return Number.isFinite(time) ? WHEN.format(new Date(time)).replace(',', ' às') : ''; };
 async function accountAction(payload: Row): Promise<Row> { const response = await fetch('/api/account', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Proex-Action': '1' }, body: JSON.stringify(payload) }); const data = await response.json().catch(() => null) as Row | null; if (!response.ok || !data)
     throw new Error(data?.error || 'Não foi possível concluir. Atualize e tente novamente.'); return data; }
 function CopyLink({ url, label }: {
@@ -143,6 +154,41 @@ function DirectoryUser({ user, props, onOpen }: {
             </div>
             </div> : <button className="p-text-link p-text-danger" disabled={busy} onClick={() => { setConfirmBlock(true); key.current = null; }}>{isBlocked ? 'Reativar conta' : 'Bloquear conta'}</button>)}</div>}{resetUrl && <CopyLink url={resetUrl} label="Link de recuperação desta conta"/>}{error && <p className="p-inline-error" role="alert">{error}</p>}</article>;
 }
+function VolunteerList({ volunteers, projects, canRevoke, mutate }: { volunteers: Row[]; projects: Row[]; canRevoke: (projectId: string) => boolean; mutate: Props['mutate'] }) {
+    const [confirm, setConfirm] = useState(''), [saving, setSaving] = useState(false), [error, setError] = useState('');
+    if (!volunteers.length) return null;
+    async function revoke(id: string) { if (saving) return; setSaving(true); setError('');
+        try { await mutate('volunteer.revoke', { id, operationKey: crypto.randomUUID() }); setConfirm(''); }
+        catch (e) { setError(e instanceof Error ? e.message : 'Não foi possível encerrar o acesso.'); }
+        finally { setSaving(false); } }
+    return <section className={`p-section ${styles.volunteers}`}>
+    <div className="p-section-heading"><div><h2>Voluntários por ação</h2><p>Cada voluntário vê só o atendimento de uma ação. No fim do prazo, o acesso termina sozinho.</p></div></div>
+    {error && <p className="p-inline-error" role="alert">{error}</p>}
+    <div className="p-card p-member-list">{volunteers.map(volunteer => {
+        const ended = Boolean(volunteer.revoked_at), project = projects.find(p => p.id === projectIdOf(volunteer))?.name;
+        const name = volunteer.display_name || volunteer.email || 'Voluntário(a)';
+        return <div className={`p-member ${styles.volunteerRow}`} key={volunteer.id}>
+        <div>
+        <strong>{name}</strong>
+        {volunteer.display_name && volunteer.email && <small>{volunteer.email}</small>}
+        <small>{volunteer.campaign_name}{project ? ` · ${project}` : ''}</small>
+        <small>{ended ? volunteer.revoke_reason === 'expired' ? `Venceu em ${moment(volunteer.ends_at)}` : `Encerrado em ${moment(volunteer.revoked_at)}` : `Acesso até ${moment(volunteer.ends_at)}`}</small>
+        </div>
+        <div className={styles.volunteerActions}>
+        <span className="p-badge">{ended ? volunteer.revoke_reason === 'expired' ? 'Venceu' : 'Encerrado' : 'Ativo'}</span>
+        {!ended && canRevoke(String(projectIdOf(volunteer))) && confirm !== volunteer.id && <button className={`p-button p-button-subtle ${styles.endButton}`} disabled={saving} onClick={() => setConfirm(String(volunteer.id))}>Encerrar agora</button>}
+        </div>
+        {!ended && confirm === volunteer.id && <div className={styles.volunteerConfirm} role="group" aria-label={`Encerrar o acesso de ${name}`}>
+        <p>Encerrar o acesso de {name} agora? Não dá para desfazer. Para voltar, gere um novo convite.</p>
+        <div className="p-inline">
+        <button className="p-button p-button-danger" disabled={saving} onClick={() => void revoke(String(volunteer.id))}>Encerrar acesso</button>
+        <button className="p-button p-button-subtle" disabled={saving} onClick={() => setConfirm('')}>Voltar</button>
+        </div>
+        </div>}
+        </div>;
+    })}</div>
+    </section>;
+}
 export default function TeamPanel(props: Props) {
     const [selectedUserId,setSelectedUserId]=useState<string|null>(null);
     const [query, setQuery] = useState(''), [inviteUrl, setInviteUrl] = useState(''), [saving, setSaving] = useState(false), [error, setError] = useState('');
@@ -156,21 +202,27 @@ export default function TeamPanel(props: Props) {
     const allowed = props.projects.filter(p => props.globalAdmin || props.canProject(p.id, 'access.invite'));
     const defaultInviteProject = official ? '' : allowed.some(project => project.id === props.selectedProjectId) ? props.selectedProjectId : allowed.length === 1 ? String(allowed[0].id) : '';
     const [inviteProject, setInviteProject] = useState(defaultInviteProject), [globalConfirmed, setGlobalConfirmed] = useState(false);
+    const [inviteRole, setInviteRole] = useState(''), [volunteerCampaign, setVolunteerCampaign] = useState('');
+    const volunteerCampaigns = (props.campaigns ?? []).filter(campaign => campaign.status !== 'closed' && allowed.some(project => project.id === projectIdOf(campaign)));
+    const volunteerGroups = allowed.map(project => ({ project, campaigns: volunteerCampaigns.filter(campaign => projectIdOf(campaign) === project.id) })).filter(group => group.campaigns.length);
+    const chosenCampaign = volunteerCampaigns.find(campaign => campaign.id === volunteerCampaign);
     const directory: Row[] = props.users.length ? props.users : props.members.map(m => ({ userId:m.user_id??m.userId,email: m.email, members: [m] }));
     const filtered = directory.filter(u => `${u.displayName ?? ''} ${u.email ?? ''}`.toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR')) && (!props.selectedProjectId || (u.members ?? []).some((m: Row) => !projectIdOf(m) || projectIdOf(m) === props.selectedProjectId)));
     async function invite(e: FormEvent<HTMLFormElement>) { e.preventDefault(); if (saving)
         return; const element = e.currentTarget, form = new FormData(element), selectedScope = form.get('projectId');
         if (!form.get('role') || !selectedScope || (official && selectedScope === '__global__')) { setError('Escolha explicitamente a função e o projeto antes de gerar o convite.'); return; }
+        const asVolunteer = form.get('role') === 'volunteer', endsAt = asVolunteer ? fromLocal(String(form.get('volunteerEndsAt') ?? '')) : '';
+        if (asVolunteer && (selectedScope === '__global__' || !form.get('campaignId') || !endsAt)) { setError('Para o voluntário, escolha o projeto, a ação e até quando vai o acesso.'); return; }
         setSaving(true); setError(''); if (!key.current || key.current.selection !== suggestionKey) key.current = { selection: suggestionKey, operationKey: crypto.randomUUID() }; try {
         const globalAccess = selectedScope === '__global__';
         if (globalAccess && (!props.globalAdmin || !globalConfirmed)) throw new Error('Confirme o alcance do convite ou escolha um projeto.');
-        const result = await props.mutate('invite.create', { email: form.get('email'), role: form.get('role'), projectId: globalAccess ? null : selectedScope, globalAccess: globalAccess && globalConfirmed, operationKey: key.current.operationKey });
+        const result = await props.mutate('invite.create', { email: form.get('email'), role: asVolunteer ? 'operator' : form.get('role'), projectId: globalAccess ? null : selectedScope, globalAccess: globalAccess && globalConfirmed, ...(asVolunteer ? { campaignId: form.get('campaignId'), endsAt } : {}), operationKey: key.current.operationKey });
         setIssuedSelection(suggestionKey);
         setInviteUrl(result.inviteUrl || '');
         key.current = null;
         draft.clear();
         element.reset();
-        setInviteProject(defaultInviteProject); setGlobalConfirmed(false);
+        setInviteProject(defaultInviteProject); setGlobalConfirmed(false); setInviteRole(''); setVolunteerCampaign('');
     }
     catch (e) {
         setError(e instanceof Error ? e.message : 'Não foi possível criar o convite.');
@@ -202,7 +254,7 @@ export default function TeamPanel(props: Props) {
         <div className="p-section-heading">
         <div>
         <h2>Convidar uma pessoa</h2>
-        <p>Use o e-mail institucional ou pessoal. O convite vale para a função e o projeto escolhidos. Para monitores, escolha Operador de evento; a gestão do projeto permanece com o gestor.</p>
+        <p>Use o e-mail institucional ou pessoal. O convite vale para a função e o projeto escolhidos. Para monitores, escolha Operador de evento; a gestão do projeto permanece com o gestor. Para quem ajuda só num evento, escolha Voluntário de uma ação: o acesso vale para aquela ação e termina sozinho.</p>
         </div>
         </div>
         {official && <p className="p-form-help" role="status">Sugestão da fonte oficial: {official.name}. Confira o e-mail e escolha projeto e função. O nome é apenas referência; a pessoa define seu próprio perfil na ativação. {props.onClearOfficialSuggestion && <button type="button" className="p-text-link" disabled={saving} onClick={props.onClearOfficialSuggestion}>Limpar sugestão</button>}</p>}
@@ -217,19 +269,29 @@ export default function TeamPanel(props: Props) {
         </label>
         <label className="p-field">
         <span>Função</span>
-        <select key={`role-${suggestionKey}`} name="role" defaultValue="" required><option value="" disabled>Selecione a função</option>{Object.entries(roles).filter(([id]) => id !== 'owner' && (props.globalAdmin || Boolean(props.canManageManagers?.(inviteProject || null)) || id !== 'manager')).map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select>
+        <select key={`role-${suggestionKey}`} name="role" defaultValue="" required onChange={event => { setInviteRole(event.target.value); setVolunteerCampaign(''); }}><option value="" disabled>Selecione a função</option>{Object.entries(roles).filter(([id]) => id !== 'owner' && (props.globalAdmin || Boolean(props.canManageManagers?.(inviteProject || null)) || id !== 'manager')).map(([id, name]) => <option key={id} value={id}>{name}</option>)}{!official && <option value="volunteer">Voluntário de uma ação (com prazo)</option>}</select>
         </label>
-        <label className="p-field">
+        {inviteRole === 'volunteer' ? <input type="hidden" name="projectId" value={inviteProject}/> : <label className="p-field">
         <span>Escopo do acesso</span>
         <select key={`project-${suggestionKey}`} name="projectId" value={inviteProject} onChange={event => { setInviteProject(event.target.value); setGlobalConfirmed(false); }} required><option value="" disabled>Selecione um projeto</option>{allowed.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}{props.globalAdmin && !official && <option value="__global__">Portal inteiro · todos os projetos</option>}</select>
         <small>O acesso a um projeto não concede permissão nos demais.</small>
-        </label>
+        </label>}
+        {inviteRole === 'volunteer' && <label className="p-field">
+        <span>Ação do voluntário *</span>
+        <select name="campaignId" value={volunteerCampaign} onChange={event => { const chosen = volunteerCampaigns.find(campaign => campaign.id === event.target.value); setVolunteerCampaign(event.target.value); setInviteProject(chosen ? String(projectIdOf(chosen)) : ''); }} required disabled={!volunteerCampaigns.length}><option value="" disabled>{volunteerCampaigns.length ? 'Selecione a ação' : 'Nenhuma ação aberta nos seus projetos'}</option>{volunteerGroups.map(group => <optgroup key={group.project.id} label={group.project.name}>{group.campaigns.map(campaign => <option key={campaign.id} value={campaign.id}>{campaign.name}{campaign.status === 'draft' ? ' (em preparação)' : campaign.status === 'paused' ? ' (pausada)' : ''}</option>)}</optgroup>)}</select>
+        <small>{volunteerCampaigns.length ? (chosenCampaign ? `Projeto: ${allowed.find(project => project.id === projectIdOf(chosenCampaign))?.name ?? ''}. A pessoa vê só o atendimento e os brindes desta ação.` : 'A pessoa vê só o atendimento e os brindes desta ação.') : 'Crie a dinâmica em Dinâmicas antes de convidar o voluntário.'}</small>
+        </label>}
+        {inviteRole === 'volunteer' && <label className="p-field">
+        <span>Acesso até *</span>
+        <DateTimeField key={`ends-${volunteerCampaign}`} name="volunteerEndsAt" defaultValue={toLocal(chosenCampaign?.ends_at ?? chosenCampaign?.endsAt)} required disabled={!chosenCampaign}/>
+        <small>Sugerimos o fim da ação. Depois desse horário, o acesso termina sozinho e isso fica em Registros.</small>
+        </label>}
         </div>
         {props.globalAdmin && inviteProject === '__global__' && <label className="p-field"><span><input id="team-invite-global-confirm" type="checkbox" checked={globalConfirmed} onChange={event => setGlobalConfirmed(event.target.checked)} required/> Confirmo que esta pessoa pode atuar em todos os projetos do portal, inclusive futuros.</span><small>Use este alcance somente para a equipe institucional autorizada. Esta confirmação não fica no rascunho.</small></label>}
         <div className="p-form-footer">{error && <p className="p-inline-error" role="alert">{error}</p>}<button className="p-button p-button-primary" type="submit">{saving ? <LoaderCircle size={17} className="p-spin"/> : <UserPlus size={17}/>}{saving ? 'Criando…' : 'Gerar convite'}</button>
         </div>
         </fieldset>
-        </form>{inviteUrl && issuedSelection === suggestionKey && <CopyLink url={inviteUrl} label="Convite criado para a equipe"/>}</section>}{visibleInvites.length > 0 && <section className="p-section">
+        </form>{inviteUrl && issuedSelection === suggestionKey && <CopyLink url={inviteUrl} label="Convite criado para a equipe"/>}</section>}<VolunteerList volunteers={(props.volunteers ?? []).filter(volunteer => !props.selectedProjectId || projectIdOf(volunteer) === props.selectedProjectId)} projects={props.projects} canRevoke={projectId => props.globalAdmin || props.canProject(projectId, 'access.manage')} mutate={props.mutate}/>{visibleInvites.length > 0 && <section className="p-section">
         <div className="p-section-heading">
         <div>
         <h2>Convites emitidos</h2>
@@ -241,8 +303,8 @@ export default function TeamPanel(props: Props) {
                 return <div className="p-member" key={invite.id}>
                 <div>
                 <strong>{invite.email}</strong>
-                <small>{roles[invite.role]} · {projectIdOf(invite) ? props.projects.find(p => p.id === projectIdOf(invite))?.name : 'Organização'}</small>
-                <small>Válido até {expires.toLocaleDateString('pt-BR')}</small>
+                <small>{invite.volunteer_campaign_id ? `Voluntário · ${invite.volunteer_campaign_name || 'ação'}` : roles[invite.role]} · {projectIdOf(invite) ? props.projects.find(p => p.id === projectIdOf(invite))?.name : 'Organização'}</small>
+                <small>{invite.volunteer_campaign_id ? `Link vale até ${moment(invite.expires_at ?? invite.expiresAt)} · acesso até ${moment(invite.volunteer_ends_at)}` : `Válido até ${expires.toLocaleDateString('pt-BR')}`}</small>
                 </div>
                 <span className="p-badge">{revoked ? 'Revogado' : accepted ? 'Aceito' : expired ? 'Expirado' : 'Pendente'}</span>{!revoked && !accepted && (props.globalAdmin || props.canProject(projectIdOf(invite), 'access.manage')) && <button className="p-button p-button-danger" onClick={() => void props.mutate('invite.revoke', { id: invite.id, operationKey: crypto.randomUUID() }).catch(e => setError(e instanceof Error ? e.message : 'Não foi possível revogar o convite.'))}>Revogar</button>}</div>;
             })}</div>

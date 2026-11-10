@@ -72,6 +72,8 @@ export async function resolvePrivacy(db:D1Database,actor:PortalActor,input:Recor
   cleanup(`INSERT INTO private_object_deletions(id,user_id,object_key,mime,created_at) SELECT ?,user_id,avatar_key,mime,? FROM profiles WHERE user_id=? AND avatar_key IS NOT NULL AND ${confirmed}`,uid(),now,target),
   cleanup(`DELETE FROM login_identifiers WHERE user_id=? AND ${confirmed}`,target),
   cleanup(`UPDATE members SET email='',revoked_at=COALESCE(revoked_at,?) WHERE user_id=? AND ${confirmed}`,now,target),
+  cleanup(`UPDATE campaign_volunteers SET revoked_at=?,revoked_by=?,revoke_reason='revoked',email='' WHERE user_id=? AND revoked_at IS NULL AND ${confirmed}`,now,actor.userId,target),
+  cleanup(`UPDATE campaign_volunteers SET email='' WHERE user_id=? AND email!='' AND ${confirmed}`,target),
   cleanup(`UPDATE invites SET revoked_at=COALESCE(revoked_at,?),email=CASE WHEN accepted_by=? THEN '' ELSE email END WHERE (created_by=? OR accepted_by=?) AND ${confirmed}`,now,target,target,target),
   cleanup(`UPDATE calendar_feeds SET revoked_at=COALESCE(revoked_at,?) WHERE owner_id=? AND ${confirmed}`,now,target),
   cleanup(`UPDATE sync_attachment_tickets SET used_at=COALESCE(used_at,?) WHERE (owner_id=? OR (attachment_kind='avatar' AND attachment_id=?)) AND ${confirmed}`,now,target,target),

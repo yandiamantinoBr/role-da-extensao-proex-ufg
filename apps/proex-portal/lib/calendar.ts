@@ -58,6 +58,10 @@ function categoryScope(actor: PortalActor | null, category: CalendarCategory): s
   const scopes = capabilities[category].map(capability => accessibleProjects(actor, capability));
   return scopes.some(scope => scope === null) ? null : [...new Set(scopes.flatMap(scope => scope ?? []))];
 }
+/** True when at least one agenda category is readable; the portal hides Agenda otherwise (e.g. event operators). */
+export function calendarAvailable(actor: PortalActor | null): boolean {
+  return CALENDAR_CATEGORIES.some(category => { const scope = categoryScope(actor, category); return scope === null || scope.length > 0; });
+}
 function requireScope(actor: PortalActor | null, category: CalendarCategory, projectId: string | null, global = false): string[] | null {
   if (!actor) throw new HttpError(401, 'Entre para acessar a agenda.', 'unauthenticated');
   const scope = categoryScope(actor, category);

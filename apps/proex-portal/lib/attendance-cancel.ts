@@ -1,4 +1,4 @@
-import { memberProjectScopeSql, requireLiveCapability, capabilityBatch, type PortalActor } from './access';
+import { memberProjectScopeSql, requireLiveCampaignCapability, campaignCapabilityBatch, volunteerCampaignSql, type PortalActor } from './access';
 import { iso, one } from './database';
 import { HttpError } from './errors';
 
@@ -13,12 +13,12 @@ export async function cancelAttendance(
     throw new HttpError(400, 'Selecione o atendimento e um motivo válido de cancelamento.', 'invalid_cancellation');
   }
   const attempt = await one(db, `SELECT a.id,a.state,a.result,a.participation_id,
-    p.modality,c.project_id,
+    p.modality,c.project_id,c.id AS campaign_id,
     EXISTS(SELECT 1 FROM entitlements e WHERE e.attempt_id=a.id) AS has_prize
     FROM attempts a JOIN participations p ON p.id=a.participation_id
     JOIN campaigns c ON c.id=p.campaign_id WHERE a.id=?`, [attemptId]);
   if (!attempt) throw new HttpError(404, 'Atendimento não encontrado.', 'attendance_not_found');
-  await requireLiveCapability(db, actor, 'participation.operate', attempt.project_id);
+  await requireLiveCampaignCapability(db, actor, 'participation.operate', attempt.project_id, attempt.campaign_id);
   if (attempt.state === 'cancelled' && attempt.result === 'cancelled' && !attempt.has_prize) {
     return { cancelled: true };
   }
@@ -27,16 +27,17 @@ export async function cancelAttendance(
   }
 
   const now = iso();
-  const results = await capabilityBatch(db, actor, 'participation.operate', attempt.project_id, [
+  const volunteer = volunteerCampaignSql(actor, '?');
+  const results = await campaignCapabilityBatch(db, actor, 'participation.operate', attempt.project_id, attempt.campaign_id, [
     db.prepare(`UPDATE attempts SET state='cancelled',result='cancelled'
       WHERE id=? AND state='pending'
         AND NOT EXISTS(SELECT 1 FROM entitlements WHERE attempt_id=attempts.id)
         AND EXISTS(SELECT 1 FROM participations p WHERE p.id=attempts.participation_id
           AND p.modality='physical' AND p.state='physical_pending')
-        AND EXISTS(SELECT 1 FROM members auth WHERE auth.user_id=? AND auth.revoked_at IS NULL
+        AND (EXISTS(SELECT 1 FROM members auth WHERE auth.user_id=? AND auth.revoked_at IS NULL
           AND auth.role IN ('owner','manager','operator')
-          AND ${memberProjectScopeSql("auth","?")})`)
-      .bind(attempt.id, actor.userId, attempt.project_id),
+          AND ${memberProjectScopeSql("auth","?")}) OR ${volunteer.sql})`)
+      .bind(attempt.id, actor.userId, attempt.project_id, ...volunteer.values, attempt.campaign_id),
     db.prepare(`UPDATE reservations SET state='released' WHERE attempt_id=? AND state='held'
       AND EXISTS(SELECT 1 FROM attempts WHERE id=? AND state='cancelled' AND result='cancelled')`)
       .bind(attempt.id, attempt.id),
@@ -50,7 +51,7 @@ export async function cancelAttendance(
   if (results[0].meta.changes !== 1) {
     const latest = await one(db, 'SELECT state,result FROM attempts WHERE id=?', [attempt.id]);
     if (latest?.state === 'cancelled' && latest.result === 'cancelled') {
-      await requireLiveCapability(db, actor, 'participation.operate', attempt.project_id);
+      await requireLiveCampaignCapability(db, actor, 'participation.operate', attempt.project_id, attempt.campaign_id);
       return { cancelled: true };
     }
     throw new HttpError(409, 'O atendimento ou seu acesso mudou. Atualize antes de continuar.', 'attendance_changed');
