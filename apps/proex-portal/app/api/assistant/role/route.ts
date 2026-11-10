@@ -16,7 +16,8 @@ export async function GET(request: Request): Promise<Response> {
     if (!actor) throw new HttpError(401, 'Entre para conversar com o Rolê.', 'unauthenticated');
     if (!secret) throw new HttpError(503, 'O Rolê precisa da configuração de segurança do portal.', 'assistant_unavailable');
     const params = new URL(request.url).searchParams;
-    if (params.get('suggestions') === '1') return Response.json(await roleSuggestionList(db, actor, { projectId: params.get('projectId') }), { headers });
+    // Sugestões seguem o "Procurar em" da conversa (scopeKind/scopeId); sem esses campos, vale a organização toda, como antes.
+    if (params.get('suggestions') === '1') return Response.json(await roleSuggestionList(db, actor, { projectId: params.get('projectId'), scope: params.has('scopeKind') ? { kind: params.get('scopeKind'), id: params.get('scopeId') ?? undefined } : undefined }), { headers });
     const status = await roleStatus(db, actor, { projectId: params.get('projectId') }, secret, { keys: assistantCredentialKeys(), speech: speechEnvironment() });
     return Response.json(status, { headers });
   } catch (error) { return failed(error); }

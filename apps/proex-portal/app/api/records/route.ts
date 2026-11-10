@@ -2,7 +2,7 @@ import { getActor } from '../../../lib/access';
 import { HttpError, publicError } from '../../../lib/errors';
 import { boundedJson } from '../../../lib/http';
 import { bucket, database } from '../../../lib/platform';
-import { createRecord, listRecords, readRecordForm, requireRecordMutation, uploadRecordAttachment } from '../../../lib/records';
+import { createRecord, listRecords, readRecordForm, requireRecordMutation, uploadRecordAttachment, withRecordOrigins } from '../../../lib/records';
 import { getPortalUser } from '../../../lib/session';
 
 export const dynamic = 'force-dynamic';
@@ -14,7 +14,9 @@ function privateResponse(response: Response): Response {
 export async function GET(request: Request): Promise<Response> {
   try {
     const db = database(), actor = await getActor(db, await getPortalUser()), url = new URL(request.url);
-    return privateResponse(Response.json(await listRecords(db, actor, { projectId: url.searchParams.get('projectId'), from: url.searchParams.get('from'), to: url.searchParams.get('to'), limit: url.searchParams.get('limit') })));
+    const listed = await listRecords(db, actor, { projectId: url.searchParams.get('projectId'), from: url.searchParams.get('from'), to: url.searchParams.get('to'), limit: url.searchParams.get('limit') });
+    // Só esta tela mostra "Feito pelo Rolê a pedido de…" e o pedido: a lista já saiu autorizada de listRecords.
+    return privateResponse(Response.json({ ...listed, records: await withRecordOrigins(db, listed.records) }));
   } catch (error) { return privateResponse(publicError(error)); }
 }
 export async function POST(request: Request): Promise<Response> {

@@ -148,13 +148,15 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
   const [tips, setTips] = useState<{ key: string; list: string[] } | null>(null), [tipsTick, setTipsTick] = useState(0);
   const tipsOff = useMemo(() => { try { return window.localStorage.getItem(TIPS_STORAGE) === 'off'; } catch { return false; } }, [tipsTick]); // eslint-disable-line react-hooks/exhaustive-deps
   const tipsWanted = open && !!status?.available && !tipsOff;
+  // As sugestões seguem o "Procurar em": ao trocar, as antigas somem na hora e as novas chegam do recorte escolhido.
+  const tipsKey = `${projectId}|${scopeValue}`;
   useEffect(() => {
     if (!tipsWanted || !projectId) return;
     let alive = true;
-    call<{ suggestions: { text: string }[] }>(`/api/assistant/role?projectId=${encodeURIComponent(projectId)}&suggestions=1`).then(result => { if (alive) setTips({ key: projectId, list: result.suggestions.map(entry => entry.text).slice(0, 4) }); }).catch(() => { if (alive) setTips({ key: projectId, list: [] }); });
+    call<{ suggestions: { text: string }[] }>(`/api/assistant/role?projectId=${encodeURIComponent(projectId)}&suggestions=1&scopeKind=${encodeURIComponent(scopeKind)}${scopeKind === 'org' ? '' : `&scopeId=${encodeURIComponent(scopeId)}`}`).then(result => { if (alive) setTips({ key: tipsKey, list: result.suggestions.map(entry => entry.text).slice(0, 4) }); }).catch(() => { if (alive) setTips({ key: tipsKey, list: [] }); });
     return () => { alive = false; };
-  }, [tipsWanted, projectId]);
-  const suggestions = tips?.key === projectId && tips.list.length ? tips.list : tips?.key === projectId ? fallbackSuggestions : [];
+  }, [tipsWanted, projectId, scopeKind, scopeId, tipsKey]);
+  const suggestions = tips?.key === tipsKey && tips.list.length ? tips.list : tips?.key === tipsKey ? fallbackSuggestions : [];
   function toggleTips() { try { if (tipsOff) window.localStorage.removeItem(TIPS_STORAGE); else window.localStorage.setItem(TIPS_STORAGE, 'off'); } catch { /* sem armazenamento: nada muda */ } setTipsTick(tick => tick + 1); }
   const sanitized = useMemo(() => { if (!draft.trim()) return { text: '', problem: '' }; try { return { text: safeRequest(draft), problem: '' }; } catch (cause) { return { text: '', problem: cause instanceof Error ? cause.message : 'Revise a mensagem.' }; } }, [draft]);
   const history = useMemo(() => trimmedHistory(messages), [messages]);
@@ -380,7 +382,7 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
               <div className={styles.tips}>
                 <div className={styles.tipsHead}><p id="role-tips-title">{tipsOff ? 'Sugestões escondidas neste aparelho.' : 'Sugestões para você'}</p><button type="button" className={styles.tipsToggle} onClick={toggleTips}>{tipsOff ? 'Mostrar sugestões' : 'Esconder'}</button></div>
                 {!tipsOff && <ul className={styles.suggestions} aria-labelledby="role-tips-title">{suggestions.map(text => <li key={text}><button type="button" onClick={() => { setDraft(text); input.current?.focus(); }}>{text}</button></li>)}</ul>}
-                {!tipsOff && suggestions.length > 0 && <p className={styles.tipsNote}>Feitas com regras do portal, sem custo de IA: olham a agenda, o que você registrou e o que a sua equipe vê. Mudam a cada 3 dias.</p>}
+                {!tipsOff && suggestions.length > 0 && <p className={styles.tipsNote}>Feitas com regras do portal, sem custo de IA: olham a agenda, o que você registrou e o que a sua equipe vê, dentro do que você escolheu em “Procurar em”. Mudam a cada 3 dias.</p>}
               </div>
             </div>}
             <ol ref={log} className={styles.log} aria-live="polite" aria-label="Conversa com o Rolê">
@@ -422,8 +424,8 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
                       {message.operation.preview.plan.proposal.body && <p className={styles.proposalBody}><span>Texto que será gravado:</span> {message.operation.preview.plan.proposal.body}</p>}
                       <form className={styles.confirmForm} onSubmit={event => { event.preventDefault(); void applyOperation(message, event.currentTarget); }}>
                       {['stock.distribute', 'stock.receive', 'stock.consume'].includes(message.operation.preview.plan.proposal.intent) && <DestinationField key={`${message.operation.preview.planToken}:${message.operation.destinationDefault ?? ''}`} projectId={message.operation.preview.plan.projectId} kind={message.operation.preview.plan.proposal.intent.slice(6)} defaultName={message.operation.destinationDefault ?? ''} required={message.operation.preview.plan.proposal.intent === 'stock.distribute'}/>}
-                      <label className={styles.check}><input type="checkbox" checked={!!message.operation.confirmed} disabled={busy} onChange={event => updateOperation(message.id, { confirmed: event.target.checked })}/>Conferi os dados acima e autorizo gravar no estoque.</label>
-                      {message.operation.preview.plan.proposal.intent !== 'stock.query' && <p className={styles.sendsTo}>O histórico vai mostrar que foi feito pelo Rolê a seu pedido, com o texto do pedido acima. A equipe do projeto pode ver.</p>}
+                      <label className={styles.check}><input type="checkbox" checked={!!message.operation.confirmed} disabled={busy} onChange={event => updateOperation(message.id, { confirmed: event.target.checked })}/>Conferi os dados acima e autorizo {message.operation.preview.plan.proposal.intent === 'record.create' ? 'gravar o registro' : 'gravar no estoque'}.</label>
+                      {message.operation.preview.plan.proposal.intent !== 'stock.query' && <p className={styles.sendsTo}>O histórico vai mostrar que foi feito pelo Rolê a seu pedido{message.operation.prepared ? <>, com este texto: <span className="break-words" style={{ overflowWrap: 'anywhere' }}>“{message.operation.prepared}”</span></> : null}. A equipe do projeto pode ver.</p>}
                       <button type="submit" className="p-button p-button-primary" disabled={busy || !message.operation.confirmed}>{message.operation.preview.plan.proposal.intent === 'stock.query' ? 'Conferir saldo atual' : message.operation.preview.plan.proposal.intent === 'record.create' ? 'Gravar o registro' : 'Gravar no estoque'}</button>
                       </form>
                     </div>}

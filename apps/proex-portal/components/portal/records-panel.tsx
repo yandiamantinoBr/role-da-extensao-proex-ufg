@@ -22,6 +22,7 @@ type Entry = {
   id: string; project_id: string; kind: Kind; title: string; body: string; occurred_at: string;
   starts_at: string | null; ends_at: string | null; item_id: string | null; loan_id: string | null;
   attachments: Attachment[];
+  origin?: { via: 'assistant'; label: string; summary?: string };
 };
 type Props = {
   initialProjectId?:string;
@@ -90,6 +91,9 @@ function asEntry(value: unknown): Entry {
   if (typeof entry.id !== 'string' || typeof entry.project_id !== 'string' || typeof entry.title !== 'string'
     || typeof entry.body !== 'string' || typeof entry.occurred_at !== 'string' || !kinds.some(kind => kind.value === entry.kind)
     || !Array.isArray(entry.attachments)) throw new Error('Atualize a consulta para recuperar os registros.');
+  // Origem é opcional (só registros gravados pelo Rolê); se vier fora do formato, a lista segue sem ela.
+  const origin = entry.origin as Entry['origin'] | null;
+  if (origin !== undefined && (!origin || typeof origin !== 'object' || origin.via !== 'assistant' || typeof origin.label !== 'string' || !origin.label || (origin.summary !== undefined && typeof origin.summary !== 'string'))) return { ...entry, origin: undefined };
   return entry;
 }
 function attachmentValue(value: unknown): Attachment {
@@ -333,10 +337,12 @@ export default function RecordsPanel({ projects: sourceProjects, items, loans, i
     return <>
       <p className="p-form-help" style={{ margin: '6px 0' }}>{projectName(record.project_id)} · {dateTime(record.occurred_at)} (Brasília)</p>
       {record.body && <p style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', lineHeight: 1.6 }}>{record.body}</p>}
-      {(record.starts_at || record.item_id || record.loan_id) && <dl style={{ margin: '12px 0', fontSize: 13, display: 'grid', gap: 8 }}>
+      {(record.starts_at || record.item_id || record.loan_id || record.origin) && <dl style={{ margin: '12px 0', fontSize: 13, display: 'grid', gap: 8 }}>
         {record.starts_at && record.ends_at && <div><dt style={{ fontWeight: 700 }}>Período da atividade</dt><dd style={{ margin: '3px 0 0' }}>{dateTime(record.starts_at)} → {dateTime(record.ends_at)} (Brasília)</dd></div>}
         {record.item_id && <div><dt style={{ fontWeight: 700 }}>Material vinculado</dt><dd style={{ margin: '3px 0 0' }}>{itemName(record.item_id) || 'Material do projeto'}</dd></div>}
         {record.loan_id && <div><dt style={{ fontWeight: 700 }}>Empréstimo vinculado</dt><dd style={{ margin: '3px 0 0', overflowWrap: 'anywhere' }}>#{record.loan_id}</dd></div>}
+        {record.origin && <div><dt style={{ fontWeight: 700 }}>Origem do registro</dt><dd style={{ margin: '3px 0 0', overflowWrap: 'anywhere' }}>{record.origin.label}</dd></div>}
+        {record.origin?.summary && <div><dt style={{ fontWeight: 700 }}>Pedido feito ao Rolê</dt><dd style={{ margin: '4px 0 0', overflowWrap: 'anywhere', borderLeft: '3px solid var(--line)', paddingLeft: 10 }}>“{record.origin.summary}”</dd></div>}
       </dl>}
       {!!record.attachments.length && <ul style={{ listStyle: 'none', margin: '14px 0 0', padding: 0, display: 'grid', gap: 8 }} aria-label={`Anexos de ${record.title}`}>
         {record.attachments.map(attachment => <li key={attachment.id}><a className="p-text-link" href={`/api/records/files/${encodeURIComponent(attachment.id)}`} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: 7, overflowWrap: 'anywhere', minHeight: 36 }}><Paperclip size={15} style={{ flexShrink: 0 }} aria-hidden="true" /><span>{attachment.name} <small>({sizeLabel(attachment.size)})</small></span><ExternalLink size={13} style={{ flexShrink: 0 }} aria-hidden="true" /><span className="sr-only"> — abre em nova aba ou baixa o arquivo</span></a> <DriveSaveButton source={{ kind: 'record_attachment', id: attachment.id }} label={attachment.name}/></li>)}

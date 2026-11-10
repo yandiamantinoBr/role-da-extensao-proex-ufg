@@ -243,6 +243,7 @@ Motivo: às 13h o Yan perguntou "quantos brindes, super brindes e super super br
 - **Renovação:** o sorteio é fixo por pessoa e muda a cada 3 dias (`ROLE_SUGGESTION_DAYS`). Os dados (agenda, estoque, demandas) entram na hora, então a lista acompanha o que mudou.
 - **Desligar:** o botão "Esconder" guarda a escolha no aparelho (`proex-role-sugestoes`). Com as sugestões escondidas o portal nem consulta a rota; "Mostrar sugestões" volta ao normal.
 - **Rota:** `GET /api/assistant/role?projectId=…&suggestions=1`, com a mesma checagem de quem pode conversar com o Rolê naquele projeto. Se a consulta falhar, aparecem três perguntas fixas.
+- **Seguem o "Procurar em" (10/11/2026):** a tela manda também `scopeKind` (`org`, `unit`, `project` ou `event`) e `scopeId`. Com um projeto, unidade ou evento escolhido, as sugestões saem só dos projetos desse recorte, para a pergunta sugerida ter resposta ali. O recorte passa pela mesma conferência da conversa: um que a pessoa não vê é recusado, nunca ampliado. Sem esses campos, vale a organização toda, como antes.
 - **Não faz:** não usa o conteúdo das conversas, não guarda histórico de sugestões e não mostra nomes de projetos que a pessoa não vê.
 
 ## Resumo da conversa no registro · 10/11/2026
@@ -250,7 +251,7 @@ Motivo: às 13h o Yan perguntou "quantos brindes, super brindes e super super br
 - **O que aparece:** todo movimento de estoque e todo registro gravado pelo cartão do Rolê passa a ler **"Feito pelo Rolê a pedido de (pessoa)"**, no lugar de "Pedido ao Rolê, confirmado por…". A pessoa continua sendo a autora: o Rolê só grava depois que ela confere a prévia e confirma.
 - **Resumo da conversa:** é o próprio pedido que gerou a prévia, do jeito que a pessoa viu no cartão. Nenhuma chamada extra de IA e nenhum custo.
   - Aparece no detalhe do movimento, em "Pedido feito ao Rolê".
-  - Nos registros (anotações) gravados pelo Rolê, o pedido fica guardado e na auditoria; a tela de registros ainda não mostra esse texto.
+  - Nos registros (anotações) gravados pelo Rolê, a tela Registros mostra, ao abrir o registro, "Origem do registro" e "Pedido feito ao Rolê". Quem vê é quem já pode ver aquele registro.
   - Não aparece no histórico geral (Registros): lá fica só a marca "Feito pelo Rolê a pedido de…", como já acontece com notas e textos de registros.
 - **Como é guardado:** na confirmação, a tela devolve o pedido da prévia. O servidor só aceita se a impressão digital do texto for igual à da prévia assinada (`provenance.requestSha256`).
   - Texto diferente, valor que não é texto, texto com mais de 4.000 caracteres ou com credencial: o resumo é ignorado e a gravação acontece do mesmo jeito.
