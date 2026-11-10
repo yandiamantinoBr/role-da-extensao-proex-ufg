@@ -52,3 +52,6 @@ function chamar_(tool,args) {
  if(!body.ok){var error=new Error((body.code||'erro')+': '+(body.error||'Falha na integração do projeto.'));error.code=body.code;throw error;}
  return body.result;
 }
+
+/** A planilha de projeto não usa o Drive (escopo só do arquivo atual): a lista de editores não é enviada. */
+function editoresPlanilha_() { return null; }

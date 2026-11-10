@@ -61,6 +61,21 @@ test('separate organizations: project credential never exports other projects, p
   await assert.rejects(projectSheetPrincipal(f.db,'Bearer pxs_'+ 'a'.repeat(43),'synthetic-project-workbook'),error=>error.status===401);
  }finally{f.close();}
 });
+test('every project-sheet row carries a read-only link that opens the record in the portal',async()=>{
+ const f=fixture();try{
+  const {principal}=await connected(f);
+  const status=await callProjectSheetTool(f.db,principal,'proex_sync_describe',{});
+  for(const schema of status.schemas.tables){const link=schema.columns.find(column=>column.name==='portal_url');assert.ok(link,schema.table);assert.equal(link.editable,false);assert.equal(link.label,'Abrir no portal');}
+  const tasks=await callProjectSheetTool(f.db,principal,'proex_sync_read',{table:'followup_tasks'},'https://proex.example.test');
+  const url=new URL(tasks.rows[0].portal_url);
+  assert.equal(url.origin,'https://proex.example.test');assert.equal(url.searchParams.get('module'),'demands');assert.equal(url.searchParams.get('project'),'project-a');assert.equal(url.searchParams.get('demandId'),tasks.rows[0].id);
+  const project=await callProjectSheetTool(f.db,principal,'proex_sync_read',{table:'projects'},'https://proex.example.test');
+  assert.equal(new URL(project.rows[0].portal_url).searchParams.get('detailProject'),'project-a');
+  assert.equal((await callProjectSheetTool(f.db,principal,'proex_sync_read',{table:'projects'},'javascript:alert(1)')).rows[0].portal_url,'');
+  assert.equal((await exportProjectSheetPage(f.db,principal,{table:'projects'})).rows[0].portal_url,'');
+ }finally{f.close();}
+});
+
 test('material create/edit/stock roundtrip uses existing services, CAS, receipts and a master-visible domain',async()=>{
  const f=fixture();try{
   const {principal}=await connected(f),change={changeKey:'create-calendars-01',action:'item.create',input:{projectId:'project-a',name:'Calendários CONPEEX',category:'gift',unit:'unidade',lowStock:5}};
