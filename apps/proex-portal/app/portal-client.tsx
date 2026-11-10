@@ -43,7 +43,7 @@ import ProfilePanel from '@/components/portal/profile-panel';
 import { VolunteerDesk, volunteerAccessFrom } from '@/components/portal/volunteer-home';
 import volunteerStyles from '@/components/portal/volunteer-home.module.css';
 import CalendarPanel from '@/components/portal/calendar-panel';
-import RecordsPanel from '@/components/portal/records-panel';
+import RecordsPanel, { RECORD_CAPABILITIES } from '@/components/portal/records-panel';
 import ReportsCenter, { projectBrandFor } from '@/components/portal/reports-center';
 import { download } from '@/components/portal/report-export';
 import ExportFormats, {downloadFromServer, type DocumentFormat} from '@/components/portal/export-formats';
@@ -82,7 +82,7 @@ import { useNavigationPreferences } from '@/components/portal/use-navigation-pre
 import { useFormDraft, DraftNotice, setDraftScope, clearCurrentDrafts, watchDraftLogout } from '@/components/portal/use-form-draft';
 import { THEMATIC_AREAS, groupUnits } from '@/lib/extension-catalog';
 import { MAX_UPLOAD_FILE_BYTES, UPLOAD_LIMIT_LABEL, uploadErrorMessage } from '@/lib/upload-limits';
-import { ArrowRight, Boxes, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronRight, ExternalLink, FileText, Filter, Gift, LoaderCircle, LogOut, MessageSquarePlus, Plus, RefreshCw, Search, ShieldCheck, Truck, Users, Wifi, WifiOff, X } from 'lucide-react';
+import { ArrowRight, Boxes, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronRight, ExternalLink, FileText, Filter, Gift, Info, LoaderCircle, LogOut, MessageSquarePlus, Plus, RefreshCw, Search, ShieldCheck, Truck, Users, Wifi, WifiOff, X } from 'lucide-react';
 // API projections vary by module; the server validates every mutation.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = Record<string, any>;
@@ -419,6 +419,8 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
     const canManageOrganization = organizations.some(organization => organization.canManage);
     const canCreateProjects = canGlobal('projects.manage') || organizations.some(organization => organization.canManage && organization.status === 'active');
     const canFollowUp = canManageOrganization || projects.length > 0;
+    // Bolsista de dinâmica (operador) e leitor não criam registros; em Registros eles veem como pedir (a regra de permissão não muda).
+    const canCreateRecord = canGlobal(...RECORD_CAPABILITIES) || projects.some(project => canProject(string(project.id), ...RECORD_CAPABILITIES));
     // A Agenda só aparece para quem lê alguma categoria dela (operador de evento não lê: a tela respondia "seu acesso não permite consultar").
     const allowedTabs = tabs.filter(t => ['overview', 'projects', 'profile', 'records', 'my-work'].includes(t.id) || (t.id === 'calendar' && data.calendarAvailable !== false) || (t.id === 'events' && canAny('campaigns.manage', 'participation.operate', 'inventory.deliver')) || (t.id === 'materials' && canAny('inventory.read', 'inventory.manage', 'inventory.deliver')) || (t.id === 'loans' && canAny('loans.read', 'loans.manage', 'loans.checkout')) || ((t.id === 'demands' || t.id === 'work-teams') && canFollowUp) || (t.id === 'team' && (canManageOrganization || canAny('access.invite', 'access.manage'))) || (t.id === 'reports' && (canFollowUp || canAny('reports.read'))) || (t.id === 'settings' && (isPlatformOwner || data.canConfigureAi === true)) || (t.id === 'community' && (canFollowUp || isPlatformOwner)) || (t.id === 'convocations' && canAny('campaigns.manage', 'reports.read')) || (t.id === 'management' && (canFollowUp || isPlatformOwner)));
     const tab = allowedTabs.some(module => module.id === requestedTab) ? requestedTab : 'overview';
@@ -1120,6 +1122,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
       {tab === 'calendar' && <CalendarPanel projects={projects} organizationalUnits={visibleUnits} selectedProjectId={filter} selectedUnitId={unitFilter} onProjectChange={selectProject} onUnitChange={selectUnit}/>}
       {tab === 'records' && <>
         <nav className="p-material-tabs" aria-label="Partes de Registros"><button type="button" aria-pressed={recordsView === 'history'} className={recordsView === 'history' ? 'is-active' : ''} onClick={() => setRecordsView('history')}><CalendarDays size={18}/>Histórico</button><button type="button" aria-pressed={recordsView === 'documents'} className={recordsView === 'documents' ? 'is-active' : ''} onClick={() => setRecordsView('documents')}><FileText size={18}/>Documentos</button></nav>
+        {!canCreateRecord && projects.length > 0 && <div className="p-notice p-records-ask" role="note"><Info size={18} aria-hidden="true"/><div><strong>Você consulta os registros, mas não cria registros novos.</strong><span>Precisa registrar um uso de material, uma manutenção ou uma atividade? Abra uma demanda para quem coordena o projeto: a coordenação faz o registro e ele aparece aqui.</span></div>{canFollowUp && <button type="button" className="p-button p-button-subtle" onClick={() => navigate('demands')}>Abrir demanda</button>}</div>}
         {recordsView === 'history' && <ActivityPanel key={filter} initialProjectId={filter} projects={projects.map(project => ({ id: string(project.id), name: string(project.name) }))}/>}
         <div hidden={recordsView !== 'documents'}><RecordsPanel key={filter} initialProjectId={filter} projects={projects} items={items} loans={loans} canWrite={(capability: string, projectId?: string | null) => projectId ? canProject(projectId, capability) : canGlobal(capability)}/></div>
       </>}
