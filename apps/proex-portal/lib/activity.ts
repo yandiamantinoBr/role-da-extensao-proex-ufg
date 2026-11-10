@@ -257,7 +257,7 @@ export async function activityFeed(db: D1Database, actor: PortalActor | null, in
       FROM campaign_volunteers v JOIN campaigns c ON c.id=v.campaign_id JOIN projects p ON p.id=v.project_id LEFT JOIN profiles pr ON pr.user_id=v.user_id
       WHERE ${scope.sql} AND ((v.created_at>=? AND v.created_at<?) OR (v.revoked_at>=? AND v.revoked_at<?))
       ORDER BY COALESCE(v.revoked_at,v.created_at) DESC LIMIT ${MAX_PER_SOURCE + 1}`, [...scope.values, range.startsAt, range.endsAt, range.startsAt, range.endsAt]));
-    const until = (iso: string) => { const time = Date.parse(iso); return Number.isFinite(time) ? new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'America/Sao_Paulo' }).format(new Date(time)).replace(',', '') : ''; };
+    const until = (iso: string) => { const time = Date.parse(iso); return Number.isFinite(time) ? new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'America/Sao_Paulo' }).format(new Date(time)).replace(',', ' às') : ''; };
     const inRange = (at: unknown) => typeof at === 'string' && at >= range.startsAt && at < range.endsAt;
     for (const row of rows) {
       const base = { type: 'access' as const, title: String(row.campaign_name), projectId: String(row.project_id), projectName: String(row.project_name), viaRole: false, href: link('team', String(row.project_id)), quantity: null };

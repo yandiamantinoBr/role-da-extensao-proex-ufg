@@ -17,3 +17,18 @@
 .note{margin:22px 0 0;color:var(--muted);font-size:.75rem;line-height:1.6}.footer{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:10px;padding:20px 32px;border-top:1px solid var(--line);background:var(--surface)}.loading{display:flex;justify-content:center;align-items:center;gap:10px;min-height:180px;font-size:.9rem;color:var(--muted)}
 @media(max-width:540px){.dialog{border-radius:19px;max-height:calc(100dvh - 20px);width:calc(100vw - 20px)}.topline{padding:12px 15px 0}.hero{align-items:flex-start;gap:15px;padding:17px 20px 23px}.detailAvatar{width:66px;height:66px;border-width:3px}.detailAvatar>svg{width:29px;height:29px}.name{font-size:1.35rem}.body{padding:24px 20px}.fields{grid-template-columns:1fr;gap:19px}.footer{padding:17px 20px}.footer>a,.footer>button{flex:1;justify-content:center}.personTrigger{gap:11px}.cardAvatar{width:42px;height:42px}.openIcon{width:17px}.memberships li{align-items:flex-start}.eyebrow{font-size:.6rem}}
 @media(prefers-reduced-motion:reduce){.personName{transition:none}}
+
+/* Voluntários por ação (10/11): no celular, ações embaixo do texto e confirmação em linha própria. */
+.volunteers{container-type:inline-size}
+.volunteerRow{flex-wrap:wrap}
+.volunteerRow>div:first-child{flex:1 1 260px;min-width:0}
+.volunteerRow>div:first-child small{display:block}
+.volunteerRow>.volunteerActions{flex-direction:row;align-items:center;gap:10px;flex-shrink:0;margin-right:0}
+.volunteerActions .endButton{color:#a3123f;border-color:color-mix(in srgb,#a3123f 45%,transparent)}
+:global(html[data-theme=dark]) .volunteerActions .endButton{color:#ffa3bb;border-color:color-mix(in srgb,#ffa3bb 55%,transparent)}
+.volunteerRow>.volunteerConfirm{flex:1 1 100%;display:grid;margin-right:0;gap:10px;padding:12px 14px;border-radius:12px;background:color-mix(in srgb,var(--danger,#b4234a) 8%,transparent)}
+.volunteerConfirm p{margin:0;font-size:14px;line-height:1.55;color:var(--ink)}
+@container (max-width:520px){
+ .volunteerRow>.volunteerActions{flex:1 1 100%;justify-content:space-between}
+ .volunteerActions .endButton{flex:1}
+}

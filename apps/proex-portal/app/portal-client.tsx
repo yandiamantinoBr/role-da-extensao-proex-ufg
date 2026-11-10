@@ -729,14 +729,17 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         <header>
         <BrandMark variant="auto"/>
         <div className={volunteerStyles.headerActions}>
-        <ThemeSwitch />
+        <ThemeSwitch className={volunteerStyles.themeWide}/>
         <button className="p-button p-button-subtle" disabled={busy} onClick={() => void logout()}><LogOut size={16}/>Sair</button>
         </div>
         </header>
         {failure && <div className="p-notice p-notice-error" role="alert"><FileText size={18}/><div><strong>Não foi possível concluir</strong><span>{failure}</span></div><button aria-label="Fechar mensagem" onClick={() => setFailure('')}><X size={16}/></button></div>}
         {message && <div className={`p-notice p-notice-${messageKind}`} role={messageKind === 'warning' ? 'alert' : 'status'}><CheckCircle2 size={18}/><span>{message}</span><button aria-label="Fechar mensagem" onClick={() => setMessage('')}><X size={16}/></button></div>}
         {volunteerDesk(false)}
-        <section className={volunteerStyles.account} aria-label="Sua conta"><ProfilePanel onUpdated={() => { void refresh(); }}/></section>
+        <details className={volunteerStyles.account}>
+        <summary><span><strong>Minha conta</strong><small>{string(user.displayName) || 'Seu perfil'}</small><small>{string(user.email)}</small></span><ChevronDown size={18} aria-hidden="true"/></summary>
+        <div><div className={volunteerStyles.accountTheme}><span>Aparência</span><ThemeSwitch /></div><ProfilePanel onUpdated={() => { void refresh(); }}/></div>
+        </details>
         </main>;
     if (!role || !capabilities.length)
         return <main className="p-no-access">

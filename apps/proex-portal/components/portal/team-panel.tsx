@@ -161,22 +161,30 @@ function VolunteerList({ volunteers, projects, canRevoke, mutate }: { volunteers
         try { await mutate('volunteer.revoke', { id, operationKey: crypto.randomUUID() }); setConfirm(''); }
         catch (e) { setError(e instanceof Error ? e.message : 'Não foi possível encerrar o acesso.'); }
         finally { setSaving(false); } }
-    return <section className="p-section">
+    return <section className={`p-section ${styles.volunteers}`}>
     <div className="p-section-heading"><div><h2>Voluntários por ação</h2><p>Cada voluntário vê só o atendimento de uma ação. No fim do prazo, o acesso termina sozinho.</p></div></div>
     {error && <p className="p-inline-error" role="alert">{error}</p>}
     <div className="p-card p-member-list">{volunteers.map(volunteer => {
         const ended = Boolean(volunteer.revoked_at), project = projects.find(p => p.id === projectIdOf(volunteer))?.name;
-        return <div className="p-member" key={volunteer.id}>
+        const name = volunteer.display_name || volunteer.email || 'Voluntário(a)';
+        return <div className={`p-member ${styles.volunteerRow}`} key={volunteer.id}>
         <div>
-        <strong>{volunteer.display_name || volunteer.email || 'Voluntário(a)'}</strong>
+        <strong>{name}</strong>
+        {volunteer.display_name && volunteer.email && <small>{volunteer.email}</small>}
         <small>{volunteer.campaign_name}{project ? ` · ${project}` : ''}</small>
         <small>{ended ? volunteer.revoke_reason === 'expired' ? `Venceu em ${moment(volunteer.ends_at)}` : `Encerrado em ${moment(volunteer.revoked_at)}` : `Acesso até ${moment(volunteer.ends_at)}`}</small>
         </div>
+        <div className={styles.volunteerActions}>
         <span className="p-badge">{ended ? volunteer.revoke_reason === 'expired' ? 'Venceu' : 'Encerrado' : 'Ativo'}</span>
-        {!ended && canRevoke(String(projectIdOf(volunteer))) && (confirm === volunteer.id ? <div className="p-inline">
-        <button className="p-button p-button-danger" disabled={saving} onClick={() => void revoke(String(volunteer.id))}>Confirmar</button>
+        {!ended && canRevoke(String(projectIdOf(volunteer))) && confirm !== volunteer.id && <button className={`p-button p-button-subtle ${styles.endButton}`} disabled={saving} onClick={() => setConfirm(String(volunteer.id))}>Encerrar agora</button>}
+        </div>
+        {!ended && confirm === volunteer.id && <div className={styles.volunteerConfirm} role="group" aria-label={`Encerrar o acesso de ${name}`}>
+        <p>Encerrar o acesso de {name} agora? Não dá para desfazer. Para voltar, gere um novo convite.</p>
+        <div className="p-inline">
+        <button className="p-button p-button-danger" disabled={saving} onClick={() => void revoke(String(volunteer.id))}>Encerrar acesso</button>
         <button className="p-button p-button-subtle" disabled={saving} onClick={() => setConfirm('')}>Voltar</button>
-        </div> : <button className="p-button p-button-subtle" disabled={saving} onClick={() => setConfirm(String(volunteer.id))}>Encerrar agora</button>)}
+        </div>
+        </div>}
         </div>;
     })}</div>
     </section>;
@@ -195,7 +203,8 @@ export default function TeamPanel(props: Props) {
     const defaultInviteProject = official ? '' : allowed.some(project => project.id === props.selectedProjectId) ? props.selectedProjectId : allowed.length === 1 ? String(allowed[0].id) : '';
     const [inviteProject, setInviteProject] = useState(defaultInviteProject), [globalConfirmed, setGlobalConfirmed] = useState(false);
     const [inviteRole, setInviteRole] = useState(''), [volunteerCampaign, setVolunteerCampaign] = useState('');
-    const volunteerCampaigns = (props.campaigns ?? []).filter(campaign => projectIdOf(campaign) === inviteProject && campaign.status !== 'closed');
+    const volunteerCampaigns = (props.campaigns ?? []).filter(campaign => campaign.status !== 'closed' && allowed.some(project => project.id === projectIdOf(campaign)));
+    const volunteerGroups = allowed.map(project => ({ project, campaigns: volunteerCampaigns.filter(campaign => projectIdOf(campaign) === project.id) })).filter(group => group.campaigns.length);
     const chosenCampaign = volunteerCampaigns.find(campaign => campaign.id === volunteerCampaign);
     const directory: Row[] = props.users.length ? props.users : props.members.map(m => ({ userId:m.user_id??m.userId,email: m.email, members: [m] }));
     const filtered = directory.filter(u => `${u.displayName ?? ''} ${u.email ?? ''}`.toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR')) && (!props.selectedProjectId || (u.members ?? []).some((m: Row) => !projectIdOf(m) || projectIdOf(m) === props.selectedProjectId)));
@@ -245,7 +254,7 @@ export default function TeamPanel(props: Props) {
         <div className="p-section-heading">
         <div>
         <h2>Convidar uma pessoa</h2>
-        <p>Use o e-mail institucional ou pessoal. O convite vale para a função e o projeto escolhidos. Para monitores, escolha Operador de evento; a gestão do projeto permanece com o gestor.</p>
+        <p>Use o e-mail institucional ou pessoal. O convite vale para a função e o projeto escolhidos. Para monitores, escolha Operador de evento; a gestão do projeto permanece com o gestor. Para quem ajuda só num evento, escolha Voluntário de uma ação: o acesso vale para aquela ação e termina sozinho.</p>
         </div>
         </div>
         {official && <p className="p-form-help" role="status">Sugestão da fonte oficial: {official.name}. Confira o e-mail e escolha projeto e função. O nome é apenas referência; a pessoa define seu próprio perfil na ativação. {props.onClearOfficialSuggestion && <button type="button" className="p-text-link" disabled={saving} onClick={props.onClearOfficialSuggestion}>Limpar sugestão</button>}</p>}
@@ -262,24 +271,22 @@ export default function TeamPanel(props: Props) {
         <span>Função</span>
         <select key={`role-${suggestionKey}`} name="role" defaultValue="" required onChange={event => { setInviteRole(event.target.value); setVolunteerCampaign(''); }}><option value="" disabled>Selecione a função</option>{Object.entries(roles).filter(([id]) => id !== 'owner' && (props.globalAdmin || Boolean(props.canManageManagers?.(inviteProject || null)) || id !== 'manager')).map(([id, name]) => <option key={id} value={id}>{name}</option>)}{!official && <option value="volunteer">Voluntário de uma ação (com prazo)</option>}</select>
         </label>
-        <label className="p-field">
+        {inviteRole === 'volunteer' ? <input type="hidden" name="projectId" value={inviteProject}/> : <label className="p-field">
         <span>Escopo do acesso</span>
         <select key={`project-${suggestionKey}`} name="projectId" value={inviteProject} onChange={event => { setInviteProject(event.target.value); setGlobalConfirmed(false); }} required><option value="" disabled>Selecione um projeto</option>{allowed.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}{props.globalAdmin && !official && <option value="__global__">Portal inteiro · todos os projetos</option>}</select>
         <small>O acesso a um projeto não concede permissão nos demais.</small>
-        </label>
-        </div>
-        {inviteRole === 'volunteer' && <div className="p-form-grid">
-        <label className="p-field">
+        </label>}
+        {inviteRole === 'volunteer' && <label className="p-field">
         <span>Ação do voluntário *</span>
-        <select name="campaignId" value={volunteerCampaign} onChange={event => setVolunteerCampaign(event.target.value)} required disabled={!inviteProject || inviteProject === '__global__' || !volunteerCampaigns.length}><option value="" disabled>{!inviteProject || inviteProject === '__global__' ? 'Escolha antes o projeto' : volunteerCampaigns.length ? 'Selecione a ação' : 'Nenhuma ação aberta neste projeto'}</option>{volunteerCampaigns.map(campaign => <option key={campaign.id} value={campaign.id}>{campaign.name}{campaign.status === 'draft' ? ' (em preparação)' : campaign.status === 'paused' ? ' (pausada)' : ''}</option>)}</select>
-        <small>{inviteProject && inviteProject !== '__global__' && !volunteerCampaigns.length ? 'Crie a dinâmica em Dinâmicas antes de convidar o voluntário.' : 'A pessoa vê só o atendimento e os brindes desta ação.'}</small>
-        </label>
-        <label className="p-field">
+        <select name="campaignId" value={volunteerCampaign} onChange={event => { const chosen = volunteerCampaigns.find(campaign => campaign.id === event.target.value); setVolunteerCampaign(event.target.value); setInviteProject(chosen ? String(projectIdOf(chosen)) : ''); }} required disabled={!volunteerCampaigns.length}><option value="" disabled>{volunteerCampaigns.length ? 'Selecione a ação' : 'Nenhuma ação aberta nos seus projetos'}</option>{volunteerGroups.map(group => <optgroup key={group.project.id} label={group.project.name}>{group.campaigns.map(campaign => <option key={campaign.id} value={campaign.id}>{campaign.name}{campaign.status === 'draft' ? ' (em preparação)' : campaign.status === 'paused' ? ' (pausada)' : ''}</option>)}</optgroup>)}</select>
+        <small>{volunteerCampaigns.length ? (chosenCampaign ? `Projeto: ${allowed.find(project => project.id === projectIdOf(chosenCampaign))?.name ?? ''}. A pessoa vê só o atendimento e os brindes desta ação.` : 'A pessoa vê só o atendimento e os brindes desta ação.') : 'Crie a dinâmica em Dinâmicas antes de convidar o voluntário.'}</small>
+        </label>}
+        {inviteRole === 'volunteer' && <label className="p-field">
         <span>Acesso até *</span>
         <DateTimeField key={`ends-${volunteerCampaign}`} name="volunteerEndsAt" defaultValue={toLocal(chosenCampaign?.ends_at ?? chosenCampaign?.endsAt)} required disabled={!chosenCampaign}/>
-        <small>Começa com o fim da ação. No prazo, o acesso termina sozinho e isso entra em Registros.</small>
-        </label>
-        </div>}
+        <small>Sugerimos o fim da ação. Depois desse horário, o acesso termina sozinho e isso fica em Registros.</small>
+        </label>}
+        </div>
         {props.globalAdmin && inviteProject === '__global__' && <label className="p-field"><span><input id="team-invite-global-confirm" type="checkbox" checked={globalConfirmed} onChange={event => setGlobalConfirmed(event.target.checked)} required/> Confirmo que esta pessoa pode atuar em todos os projetos do portal, inclusive futuros.</span><small>Use este alcance somente para a equipe institucional autorizada. Esta confirmação não fica no rascunho.</small></label>}
         <div className="p-form-footer">{error && <p className="p-inline-error" role="alert">{error}</p>}<button className="p-button p-button-primary" type="submit">{saving ? <LoaderCircle size={17} className="p-spin"/> : <UserPlus size={17}/>}{saving ? 'Criando…' : 'Gerar convite'}</button>
         </div>
@@ -297,7 +304,7 @@ export default function TeamPanel(props: Props) {
                 <div>
                 <strong>{invite.email}</strong>
                 <small>{invite.volunteer_campaign_id ? `Voluntário · ${invite.volunteer_campaign_name || 'ação'}` : roles[invite.role]} · {projectIdOf(invite) ? props.projects.find(p => p.id === projectIdOf(invite))?.name : 'Organização'}</small>
-                <small>{invite.volunteer_campaign_id ? `Link válido até ${expires.toLocaleDateString('pt-BR')} · acesso até ${moment(invite.volunteer_ends_at)}` : `Válido até ${expires.toLocaleDateString('pt-BR')}`}</small>
+                <small>{invite.volunteer_campaign_id ? `Link vale até ${moment(invite.expires_at ?? invite.expiresAt)} · acesso até ${moment(invite.volunteer_ends_at)}` : `Válido até ${expires.toLocaleDateString('pt-BR')}`}</small>
                 </div>
                 <span className="p-badge">{revoked ? 'Revogado' : accepted ? 'Aceito' : expired ? 'Expirado' : 'Pendente'}</span>{!revoked && !accepted && (props.globalAdmin || props.canProject(projectIdOf(invite), 'access.manage')) && <button className="p-button p-button-danger" onClick={() => void props.mutate('invite.revoke', { id: invite.id, operationKey: crypto.randomUUID() }).catch(e => setError(e instanceof Error ? e.message : 'Não foi possível revogar o convite.'))}>Revogar</button>}</div>;
             })}</div>

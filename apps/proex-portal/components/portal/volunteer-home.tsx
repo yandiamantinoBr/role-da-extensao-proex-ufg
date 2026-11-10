@@ -60,18 +60,22 @@ export function VolunteerDesk({ access, tickets, prizes, mutate, redeemForm, com
           {period(grant.startsAt, grant.campaignEndsAt) && <li><CalendarDays size={16} aria-hidden="true"/>{period(grant.startsAt, grant.campaignEndsAt)}</li>}
         </ul>
         <p className={styles.deadline}><Clock3 size={17} aria-hidden="true"/><span>Seu acesso vai até <strong>{moment(grant.endsAt)}</strong> e termina sozinho.</span></p>
+        {!compact && <p className={styles.note}>Aqui aparece só o atendimento desta ação. Para trabalhar em outra, peça um novo convite à coordenação.</p>}
       </article>)}
-      {!compact && <p className={styles.note}>Aqui aparece só o atendimento desta ação. Para trabalhar em outra, peça um novo convite à coordenação.</p>}
     </section>
     <section className={`p-section ${styles.block}`} aria-label="Atendimento presencial">
-      {open ? <PhysicalAttendance campaigns={campaigns} tickets={ownTickets} mutate={mutate} initialCampaignId={campaigns.filter(campaign => campaign.status === 'active').length === 1 ? campaigns.find(campaign => campaign.status === 'active')!.id : ''}/>
+      {open ? <PhysicalAttendance simple campaigns={campaigns} tickets={ownTickets} mutate={mutate} initialCampaignId={campaigns.filter(campaign => campaign.status === 'active').length === 1 ? campaigns.find(campaign => campaign.status === 'active')!.id : ''}/>
         : <><div className={styles.blockHead}><span className={styles.blockIcon} aria-hidden="true"><Ticket size={19}/></span><div><h2>Atendimento presencial</h2><p>Registre cada pessoa atendida e o resultado da dinâmica.</p></div></div>
         <p className={styles.waiting}>O atendimento abre quando a coordenação ativar a ação. Atualize esta página na hora do evento.</p></>}
     </section>
-    <section className={`p-section ${styles.block}`} aria-labelledby="volunteer-prizes-title">
-      <div className={styles.blockHead}><span className={styles.blockIcon} aria-hidden="true"><Gift size={19}/></span><div><h2 id="volunteer-prizes-title">Brindes</h2><p>Confirme no portal antes de entregar. Um código já entregue aparece sinalizado.</p></div></div>
+    <section className={`p-card ${styles.prizes}`} aria-labelledby="volunteer-prizes-title">
+      <div className="p-card-title"><span className="p-icon-tile"><Gift size={21}/></span><div><h3 id="volunteer-prizes-title">Brindes</h3><p>Confirme no portal antes de entregar. Um código já entregue aparece sinalizado.</p></div></div>
       {ownPrizes.length ? <PendingPrizes prizes={ownPrizes} mutate={mutate}/> : <p className={styles.waiting}>Nenhum brinde aguardando entrega.</p>}
-      <div className={styles.redeem}>{redeemForm}</div>
+      <div className={styles.redeem}>
+        <h4>Entregar por código</h4>
+        <p>Digite o código que a pessoa apresentar, se ele não estiver na lista acima.</p>
+        {redeemForm}
+      </div>
     </section>
   </div>;
 }

@@ -268,7 +268,7 @@ export async function portalSnapshot(db: D1Database, actor: PortalActor | null):
       WHERE ${documentsFilter.sql} ORDER BY d.created_at DESC,d.id`, documentsFilter.params),
     reportMetrics(db, accessibleProjects(actor, 'reports.read'),actor),
     all(db, `SELECT p.id AS participation_id,p.campaign_id,p.identity_method,p.state,p.attempt_count,
-      a.id AS attempt_id,a.number,a.result,a.state AS attempt_state,c.name AS campaign_name,c.project_id
+      a.id AS attempt_id,a.number,a.result,a.state AS attempt_state,c.name AS campaign_name,c.project_id,p.created_at AS opened_at
       FROM participations p JOIN campaigns c ON c.id=p.campaign_id
       JOIN attempts a ON a.participation_id=p.id
         AND a.number=(SELECT MAX(latest.number) FROM attempts latest WHERE latest.participation_id=p.id)
