@@ -244,3 +244,19 @@ Motivo: às 13h o Yan perguntou "quantos brindes, super brindes e super super br
 - **Desligar:** o botão "Esconder" guarda a escolha no aparelho (`proex-role-sugestoes`). Com as sugestões escondidas o portal nem consulta a rota; "Mostrar sugestões" volta ao normal.
 - **Rota:** `GET /api/assistant/role?projectId=…&suggestions=1`, com a mesma checagem de quem pode conversar com o Rolê naquele projeto. Se a consulta falhar, aparecem três perguntas fixas.
 - **Não faz:** não usa o conteúdo das conversas, não guarda histórico de sugestões e não mostra nomes de projetos que a pessoa não vê.
+
+## Resumo da conversa no registro · 10/11/2026
+
+- **O que aparece:** todo movimento de estoque e todo registro gravado pelo cartão do Rolê passa a ler **"Feito pelo Rolê a pedido de (pessoa)"**, no lugar de "Pedido ao Rolê, confirmado por…". A pessoa continua sendo a autora: o Rolê só grava depois que ela confere a prévia e confirma.
+- **Resumo da conversa:** é o próprio pedido que gerou a prévia, do jeito que a pessoa viu no cartão. Nenhuma chamada extra de IA e nenhum custo.
+  - Aparece no detalhe do movimento, em "Pedido feito ao Rolê".
+  - Nos registros (anotações) gravados pelo Rolê, o pedido fica guardado e na auditoria; a tela de registros ainda não mostra esse texto.
+  - Não aparece no histórico geral (Registros): lá fica só a marca "Feito pelo Rolê a pedido de…", como já acontece com notas e textos de registros.
+- **Como é guardado:** na confirmação, a tela devolve o pedido da prévia. O servidor só aceita se a impressão digital do texto for igual à da prévia assinada (`provenance.requestSha256`).
+  - Texto diferente, valor que não é texto, texto com mais de 4.000 caracteres ou com credencial: o resumo é ignorado e a gravação acontece do mesmo jeito.
+  - E-mails e números de documento já saem mascarados; quebras de linha viram espaço; o limite é de 600 caracteres (`PLAN_ORIGIN_MAX`).
+  - Fica em `ai_plans.result_json.origin` e nos detalhes da auditoria `assistant.apply`. Sem migração.
+- **Consulta não guarda nada:** `stock.query` não grava no estoque e não ganha resumo.
+- **Aviso na prévia:** antes de confirmar, o cartão diz que o histórico vai mostrar o pedido e que a equipe do projeto pode ver.
+- **Quem vê:** quem já pode abrir o detalhe daquele movimento. Nada novo é exposto a outro projeto.
+- **Não faz:** movimentos antigos não ganham resumo; o painel de administração do assistente não envia o pedido na confirmação, então os registros feitos por lá ficam só com a marca.

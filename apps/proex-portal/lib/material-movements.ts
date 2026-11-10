@@ -21,7 +21,8 @@ type MovementRow={id:string;item_id:string;delta:number;kind:string;note:string;
 type ItemRow={id:string;project_id:string;name:string;unit:string;stock:number;reserved:number;category:string;condition:string};
 export type MovementSnapshot={delta:number;note:string;counterpartyType:'unit'|'project'|null;counterpartyId:string|null;counterpartyName:string|null;processReference:string;beneficiaryReference:string;occurredAt:string;destinationId:string|null;destinationName:string|null;unit:string};
 export type RevisionView={id:string;kind:'correction'|'reversal';actorName:string;createdAt:string;reason:string;targetMovementId:string;reversalMovementId:string;replacementMovementId:string|null;before:MovementSnapshot|null;after:MovementSnapshot|null};
-export type MovementOrigin={via:'assistant'|'manual';label:string};
+/** `summary`: pedido feito ao Rolê que gerou o movimento (só quando a pessoa confirmou pelo cartão do Rolê). */
+export type MovementOrigin={via:'assistant'|'manual';label:string;summary?:string};
 
 function invalid(message:string,code='invalid_input',status=400):never{throw new HttpError(status,message,code);}
 function identifier(value:unknown,label:string):string{if(typeof value!=='string'||!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(value))invalid(`Selecione ${label}.`);return value;}
@@ -73,12 +74,12 @@ async function revisionsFor(db:D1Database,where:string,params:unknown[]):Promise
   return{id:String(row.id),kind:row.kind,actorName:String(row.actor_name),createdAt:String(row.created_at),reason:String(row.reason),targetMovementId:String(row.target_movement_id),reversalMovementId:String(row.reversal_movement_id),replacementMovementId:row.replacement_movement_id??null,before:changes.before??null,after:changes.after??null};});
 }
 /** Movement created by the assistant (Rolê) after the person confirmed the proposal. */
-async function assistantMovements(db:D1Database,movements:{id:string;ref_id?:string|null}[]):Promise<Set<string>>{
- const ids=movements.map(movement=>movement.id),found=new Set(movements.filter(movement=>/^manual:[^:]+:ai_/.test(String(movement.ref_id??''))).map(movement=>movement.id));
- if(ids.length){for(const row of await all(db,`SELECT json_extract(result_json,'$.movementId') movement_id FROM ai_plans WHERE status='applied' AND json_valid(result_json) AND json_extract(result_json,'$.movementId') IN(${ids.map(()=>'?').join(',')})`,ids))found.add(String(row.movement_id));}
+async function assistantMovements(db:D1Database,movements:{id:string;ref_id?:string|null}[]):Promise<Map<string,string>>{
+ const ids=movements.map(movement=>movement.id),found=new Map(movements.filter(movement=>/^manual:[^:]+:ai_/.test(String(movement.ref_id??''))).map(movement=>[movement.id,'']));
+ if(ids.length){for(const row of await all(db,`SELECT json_extract(result_json,'$.movementId') movement_id,CASE WHEN json_type(result_json,'$.origin')='text' THEN json_extract(result_json,'$.origin') END origin FROM ai_plans WHERE status='applied' AND json_valid(result_json) AND json_extract(result_json,'$.movementId') IN(${ids.map(()=>'?').join(',')})`,ids))found.set(String(row.movement_id),typeof row.origin==='string'?row.origin:'');}
  return found;
 }
-function originLabel(viaAssistant:boolean,actorName:string):MovementOrigin{return viaAssistant?{via:'assistant',label:`Pedido ao Rolê, confirmado por ${actorName}`}:{via:'manual',label:`Registrado por ${actorName}`};}
+function originLabel(viaAssistant:boolean,actorName:string,summary=''):MovementOrigin{return viaAssistant?{via:'assistant',label:`Feito pelo Rolê a pedido de ${actorName}`,...(summary?{summary}:{})}:{via:'manual',label:`Registrado por ${actorName}`};}
 
 /** History rows of a material, enriched with revision state, destination, origin and evidence count. */
 export async function annotateMovements(db:D1Database,rows:Row[]):Promise<Row[]>{
@@ -91,7 +92,7 @@ export async function annotateMovements(db:D1Database,rows:Row[]):Promise<Row[]>
  return rows.map(row=>{const id=String(row.id),superseded=byTarget.get(id),replaces=byReplacement.get(id);const{ref_id:_ref,...visible}=row;void _ref;
   return{...visible,status:superseded?superseded.kind==='reversal'?'undone':'corrected':'current',revision:superseded?{id:superseded.id,kind:superseded.kind,actorName:superseded.actorName,createdAt:superseded.createdAt,reason:superseded.reason,replacementMovementId:superseded.replacementMovementId}:null,
    correctionOf:replaces?{revisionId:replaces.id,targetMovementId:replaces.targetMovementId,actorName:replaces.actorName,createdAt:replaces.createdAt,reason:replaces.reason,before:replaces.before}:null,
-   destination:destinations.get(id)??null,origin:replaces?{via:'manual',label:`Corrigido por ${replaces.actorName}`}:originLabel(assistant.has(id),String(row.actor_name??'Equipe')),attachmentCount:counts.get(id)??0};});
+   destination:destinations.get(id)??null,origin:replaces?{via:'manual',label:`Corrigido por ${replaces.actorName}`}:originLabel(assistant.has(id),String(row.actor_name??'Equipe'),assistant.get(id)),attachmentCount:counts.get(id)??0};});
 }
 /** SQL fragment to hide mirror rows (bookkeeping of an undo or a correction) from a history list. */
 export const HIDE_MIRRORS_SQL=(alias:string)=>`NOT EXISTS(SELECT 1 FROM stock_movement_revisions mirror_${alias} WHERE mirror_${alias}.reversal_movement_id=${alias}.id)`;
@@ -278,7 +279,7 @@ export async function movementDetail(db:D1Database,actor:PortalActor|null,moveme
  const view=(id:string)=>{const row=byId.get(id);if(!row)return null;const revision=revisions.find(entry=>entry.replacementMovementId===id),superseded=revisions.find(entry=>entry.targetMovementId===id);
   return{id,delta:Number(row.delta),kind:String(row.kind),kindLabel:KIND_LABELS[String(row.kind)]??String(row.kind),note:String(row.note),createdAt:String(row.created_at),actorName:String(row.actor_name),groupTitle:row.group_title??null,
    context:contexts.get(id)??null,destination:destinations.get(id)??null as DestinationSummary|null,
-   origin:revision?{via:'manual',label:`Corrigido por ${revision.actorName}`}:originLabel(assistant.has(id),String(row.actor_name)),
+   origin:revision?{via:'manual',label:`Corrigido por ${revision.actorName}`}:originLabel(assistant.has(id),String(row.actor_name),assistant.get(id)),
    status:superseded?superseded.kind==='reversal'?'undone':'corrected':'current',isMirror:revisions.some(entry=>entry.reversalMovementId===id),
    attachments:attachments.filter(file=>file.movementId===id).map(file=>({...file,url:`/api/records/files/${file.id}`})),recordId:evidence.find(entry=>entry.movement_id===id)?.record_id??null};};
  const manage=canManage(actor,item.project_id),before=Number(balance?.before??0);

@@ -1,0 +1,53 @@
+{
+  "origin": "http://127.0.0.1:5174",
+  "base": "descartável, loopback; conversa, prévia e gravação simuladas no navegador (nenhum provedor real). O movimento do histórico é real da base local; a origem \"Feito pelo Rolê\" e o pedido foram trocados só na tela para mostrar o resultado, e a marca em Registros também. A gravação de ponta a ponta está nos testes automatizados.",
+  "item": "Button azul QA local",
+  "abriu": "atalho",
+  "digitou": true,
+  "preparou": true,
+  "aviso": "O histórico vai mostrar que foi feito pelo Rolê a seu pedido, com o texto do pedido acima. A equipe do projeto pode ver.",
+  "pedidoDaPrevia": "Registrar distribuição de 20 planners no CONPEEX",
+  "confirmacaoEnviada": {
+    "origin": "Registrar distribuição de 20 planners no CONPEEX",
+    "keys": [
+      "action",
+      "confirmed",
+      "destinationKind",
+      "destinationName",
+      "origin",
+      "planToken"
+    ]
+  },
+  "historico": [
+    "Feito pelo Rolê a pedido de Responsável QA local · 10/11/2026, 02:31"
+  ],
+  "detalhe": [
+    "Origem do registro: Feito pelo Rolê a pedido de Responsável QA local10/11/2026, 02:31 · a pessoa conferiu a prévia antes de gravar",
+    "Pedido feito ao Rolê: “Registrar distribuição de 20 planners no CONPEEX”"
+  ],
+  "registros": {
+    "marca": [
+      "Feito pelo Rolê a pedido de Responsável QA local"
+    ],
+    "mostraPedido": false
+  },
+  "shots": [
+    "1366-light-previa-aviso",
+    "1366-light-historico-item",
+    "1366-light-movimento-pedido",
+    "1366-light-registros-marca",
+    "1366-dark-previa-aviso",
+    "1366-dark-historico-item",
+    "1366-dark-movimento-pedido",
+    "1366-dark-registros-marca",
+    "390-light-previa-aviso",
+    "390-light-historico-item",
+    "390-light-movimento-pedido",
+    "390-light-registros-marca",
+    "390-dark-previa-aviso",
+    "390-dark-historico-item",
+    "390-dark-movimento-pedido",
+    "390-dark-registros-marca"
+  ],
+  "pageErrors": []
+}

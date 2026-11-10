@@ -97,6 +97,16 @@ function scoped(actor: PortalActor, capabilities: string[], projectSql: string, 
   return organizationId ? { sql: `${base.sql} AND EXISTS(SELECT 1 FROM projects scope_org WHERE scope_org.id=${projectSql} AND scope_org.organization_id=?)`, values: [...base.values, organizationId] } : base;
 }
 
+/** Registros manuais que o Rolê gravou depois da confirmação da pessoa. O texto do pedido não entra no histórico geral: fica no detalhe. */
+async function recordsByRole(db: D1Database, ids: string[]): Promise<Set<string>> {
+  const found = new Set<string>();
+  for (let index = 0; index < ids.length; index += 90) {
+    const chunk = ids.slice(index, index + 90);
+    for (const row of await all(db, `SELECT json_extract(result_json,'$.recordId') id FROM ai_plans WHERE status='applied' AND json_valid(result_json) AND json_extract(result_json,'$.recordId') IN (${chunk.map(() => '?').join(',')})`, chunk)) found.add(String(row.id));
+  }
+  return found;
+}
+
 export async function activityFeed(db: D1Database, actor: PortalActor | null, input: Record<string, unknown> = {}, now = Date.now()): Promise<ActivityFeed> {
   if (!actor) throw new HttpError(401, 'Entre para consultar os registros.', 'unauthenticated');
   const range = activityRange(input.from, input.to, now), wanted = types(input.types);
@@ -226,9 +236,10 @@ export async function activityFeed(db: D1Database, actor: PortalActor | null, in
     const names = await projectNames(db, records.map(record => String(record.project_id)));
     const authors = records.length ? await all(db, `SELECT id,created_by FROM records WHERE id IN (${records.map(() => '?').join(',')})`, records.map(record => record.id)) : [];
     const authorOf = new Map(authors.map(row => [String(row.id), row.created_by ? String(row.created_by) : null]));
+    const written = await recordsByRole(db, records.map(record => String(record.id)));
     for (const record of records) events.push({ id: `records:${record.id}`, type: 'records', action: RECORD_LABELS[String(record.kind)] ?? 'Registro', title: String(record.title), detail: record.attachments?.length ? plural(record.attachments.length, 'anexo', 'anexos') : '',
       at: String(record.occurred_at), day: brasiliaDay(String(record.occurred_at)), projectId: String(record.project_id), projectName: names.get(String(record.project_id)) ?? '',
-      actorId: authorOf.get(String(record.id)) ?? null, actorName: '', viaRole: false, href: link('records', String(record.project_id)), quantity: null });
+      actorId: authorOf.get(String(record.id)) ?? null, actorName: '', viaRole: written.has(String(record.id)), href: link('records', String(record.project_id)), quantity: null });
   }
 
   if (wanted.includes('convocations')) {

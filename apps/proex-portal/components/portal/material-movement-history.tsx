@@ -10,7 +10,7 @@ export type HistoryMovement = {
   revision?: { id: string; kind: 'correction' | 'reversal'; actorName: string; createdAt: string; reason: string; replacementMovementId: string | null } | null;
   correctionOf?: { revisionId: string; targetMovementId: string; actorName: string; createdAt: string; reason: string; before?: { delta: number } | null } | null;
   destination?: { id: string; name: string; kind: string; href: string } | null;
-  origin?: { via: 'assistant' | 'manual'; label: string } | null;
+  origin?: { via: 'assistant' | 'manual'; label: string; summary?: string } | null;
   attachmentCount?: number;
 };
 export const MOVEMENT_NAMES: Record<string, string> = { receive: 'Recebimento', distribute: 'Distribuição', consume: 'Consumo interno', adjust: 'Ajuste de contagem', redeem: 'Entrega de brinde', transfer: 'Transferência' };
