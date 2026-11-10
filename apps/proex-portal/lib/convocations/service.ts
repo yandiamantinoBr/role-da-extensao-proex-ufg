@@ -232,7 +232,7 @@ export async function convocationAction(db: D1Database, actor: PortalActor, acti
 export async function listConvocations(db: D1Database, actor: PortalActor | null) {
   if (!actor) fail('Entre para ver as convocações.', 'unauthenticated', 401);
   const own = projectAuthoritySql(actor!, ['campaigns.manage', 'reports.read'], 'c.project_id'), invited = projectAuthoritySql(actor!, ['campaigns.manage', 'reports.read'], 'cp.project_id');
-  const rows = await all(db, `SELECT c.id,c.title,c.edition,c.location,c.event_date,c.response_deadline,c.status,c.project_id,p.name project_name,c.purged_at,
+  const rows = await all(db, `SELECT c.id,c.title,c.edition,c.location,c.event_date,c.response_deadline,c.status,c.project_id,p.name project_name,c.purged_at,CASE WHEN c.purged_at IS NULL AND date('now','-3 hours')>date(c.event_date,'+'||c.retention_days||' days') THEN 1 ELSE 0 END retention_expired,
     CASE WHEN ${own.sql} OR EXISTS(SELECT 1 FROM convocation_responsibles r WHERE r.convocation_id=c.id AND r.user_id=?) THEN 1 ELSE 0 END full_access
     FROM convocations c JOIN projects p ON p.id=c.project_id JOIN organizations o ON o.id=c.organization_id AND o.status='active'
     WHERE ${own.sql} OR EXISTS(SELECT 1 FROM convocation_responsibles r JOIN members m ON m.user_id=r.user_id AND m.revoked_at IS NULL AND (m.organization_id=c.organization_id OR m.organization_id IS NULL) WHERE r.convocation_id=c.id AND r.user_id=?)
@@ -244,7 +244,7 @@ export async function listConvocations(db: D1Database, actor: PortalActor | null
     const filter = scope ? ` AND g.project_id IN(${scope.map(() => '?').join(',') || 'NULL'})` : '';
     const counts = await one(db, `SELECT SUM(g.response='yes') yes,SUM(g.response='maybe') maybe,SUM(g.response='no') no FROM convocation_guests g WHERE g.convocation_id=?${filter}`, [row.id, ...(scope ?? [])]);
     const silent = await one(db, `SELECT COUNT(*) n FROM convocation_projects cp WHERE cp.convocation_id=?${scope ? ` AND cp.project_id IN(${scope.map(() => '?').join(',') || 'NULL'})` : ''} AND NOT EXISTS(SELECT 1 FROM convocation_guests g WHERE g.convocation_id=cp.convocation_id AND g.project_id=cp.project_id)`, [row.id, ...(scope ?? [])]);
-    result.push({ id: row.id, title: row.title, edition: row.edition, location: row.location, eventDate: row.event_date, responseDeadline: row.response_deadline, status: row.status, projectId: row.project_id, projectName: row.project_name, purged: Boolean(row.purged_at), scope: scope ? 'projects' : 'full',
+    result.push({ id: row.id, title: row.title, edition: row.edition, location: row.location, eventDate: row.event_date, responseDeadline: row.response_deadline, status: row.status, projectId: row.project_id, projectName: row.project_name, purged: Boolean(row.purged_at), retentionExpired: Boolean(row.retention_expired), scope: scope ? 'projects' : 'full',
       counts: { yes: Number(counts?.yes ?? 0), maybe: Number(counts?.maybe ?? 0), no: Number(counts?.no ?? 0) }, silentProjects: Number(silent?.n ?? 0) });
   }
   const manageable = actor!.members.filter(member => member.role === 'owner' || member.role === 'manager').length > 0;
@@ -271,9 +271,10 @@ export async function convocationDetail(db: D1Database, actor: PortalActor | nul
     FROM convocation_events e LEFT JOIN profiles pr ON pr.user_id=e.actor_id WHERE e.convocation_id=?${readable ? ` AND (e.project_id IS NULL OR e.project_id IN(${readable.map(() => '?').join(',')}))` : ''} ORDER BY e.sequence DESC LIMIT 60`, [c.id, ...(readable ?? [])]);
   const candidates = scope.canManage ? await all(db, `SELECT DISTINCT u.user_id userId,COALESCE(NULLIF(pr.display_name,''),'Integrante') name FROM portal_users u JOIN members m ON m.user_id=u.user_id AND m.revoked_at IS NULL AND (m.organization_id=? OR m.organization_id IS NULL)
     LEFT JOIN profiles pr ON pr.user_id=u.user_id WHERE u.status='active' AND u.activation_pending=0 AND u.anonymized_at IS NULL ORDER BY name LIMIT 300`, [c.organization_id]) : [];
+  const retention = await one(db, "SELECT date(event_date,'+'||retention_days||' days') ends_on,CASE WHEN date('now','-3 hours')>date(event_date,'+'||retention_days||' days') THEN 1 ELSE 0 END expired FROM convocations WHERE id=?", [c.id]);
   const projectChoices = scope.canManage ? await all(db, "SELECT id,name FROM projects WHERE organization_id=? AND status='active' ORDER BY name,id", [c.organization_id]) : [];
   return {
-    convocation: { id: c.id, title: c.title, edition: c.edition, location: c.location, eventDate: c.event_date, responseDeadline: c.response_deadline, description: c.description, purposeNotice: c.purpose_notice, retentionDays: Number(c.retention_days), status: c.status, version: Number(c.version), projectId: c.project_id, purgedAt: c.purged_at, createdAt: c.created_at },
+    convocation: { id: c.id, title: c.title, edition: c.edition, location: c.location, eventDate: c.event_date, responseDeadline: c.response_deadline, description: c.description, purposeNotice: c.purpose_notice, retentionDays: Number(c.retention_days), retentionEndsOn: retention?.ends_on ?? null, retentionExpired: Boolean(retention?.expired), status: c.status, version: Number(c.version), projectId: c.project_id, purgedAt: c.purged_at, createdAt: c.created_at },
     scope: readable ? 'projects' : 'full', permissions: { canManage: scope.canManage },
     shifts, projects: projects.map(project => ({ ...project, yes: Number(project.yes), maybe: Number(project.maybe), no: Number(project.no), answered: Number(project.yes) + Number(project.maybe) + Number(project.no) > 0 })),
     guests: guests.map(guest => ({ id: guest.id, name: guest.name, enrollment: guest.enrollment, projectId: guest.projectId, projectName: guest.projectName, response: guest.response, createdAt: guest.createdAt, updatedAt: guest.updatedAt, shiftIds: JSON.parse(String(guest.shift_ids ?? '[]')) })),

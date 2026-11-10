@@ -192,3 +192,39 @@
  .table td[data-label="Pessoa"] strong{font-size:15px}
  .table td[data-label="Atualizado"]{font-size:12px;color:var(--text-secondary)}
 }
+
+/* Quinta crítica (10/11). */
+.sectionSelect{display:none}
+.personCards{display:none;list-style:none;margin:0;padding:0}
+.hintLine{font-size:13px;color:var(--text-secondary);margin:10px 0 0}
+.repeat{color:var(--danger,#b4234a)!important;font-weight:600}
+.kpis div{padding:12px 14px}
+.kpis dd{font-size:26px}
+.grid2{align-items:start}
+@container (max-width:640px){
+ .tabs{display:none}
+ .sectionSelect{display:flex;align-items:center;gap:10px;font-size:14px;font-weight:600}
+ .sectionSelect select{flex:1;min-height:46px;font-size:16px}
+ :global(.p-table-wrap):has(>.table){display:none}
+ .personCards{display:grid;gap:8px}
+ .personCards li{display:grid;gap:3px;border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:var(--surface)}
+ .personTop{display:flex;justify-content:space-between;align-items:center;gap:10px}
+ .personTop strong{font-size:15px;min-width:0;overflow-wrap:anywhere}
+ .personCards small{font-size:13px;color:var(--text-secondary)}
+ .prefTable tr{grid-template-columns:1fr!important;gap:0}
+ .prefTable td,.prefTable td:last-child{grid-column:1/-1;display:flex!important;align-items:center;justify-content:space-between;min-height:44px;border-top:1px solid var(--line)!important}
+ .prefTable td::before{font-size:14px;color:var(--ink)}
+}
+
+/* Sexta crítica (10/11). */
+.full{grid-column:1/-1}
+.shiftRows{padding-top:6px}
+.short{display:none}
+.kpis div{padding:10px 14px}
+.kpis dd{font-size:32px;line-height:1.1}
+@container (max-width:640px){
+ .long{display:none}
+ .short{display:inline}
+ .kpis dt{white-space:nowrap}
+ .kpis dd{font-size:22px}
+}

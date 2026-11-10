@@ -129,3 +129,17 @@ test('editing keeps answered shifts and projects; renaming and adding work',asyn
  const updated=(await f.run('owner-a','convocation.update',{id:c.id,expectedVersion:c.version,shifts:[{id:f.shifts[0].id,label:'Manhã cedo',startsAt:'07:30',endsAt:'12:00'},{label:'Noite',startsAt:'18:00',endsAt:'21:00'}]})).convocation;
  assert.equal(updated.version,c.version+1);const shifts=(await f.detail('owner-a')).shifts;assert.deepEqual(shifts.map(s=>s.label),['Manhã cedo','Noite']);
 });
+
+test('the personal link reaches one convocation only and expires with the retention period; the panel warns the team',async t=>{
+ const f=await fixture(t);const token=secret();await f.guest({editToken:token});
+ const own=await convocationGuestAction(f.db,{action:'inspect',editToken:token},'203.0.113.10');assert.equal(own.guest.linkExpiresOn,'2027-05-21','event date + 180 days');
+ // Retention already over: the link stops working (read, edit) and the team sees the warning.
+ f.native.prepare("UPDATE convocations SET event_date='2026-01-10',retention_days=30,version=version+1").run();
+ await assert.rejects(convocationGuestAction(f.db,{action:'inspect',editToken:token},'203.0.113.10'),e=>e.status===410&&e.code==='convocation_link_expired');
+ await assert.rejects(convocationGuestAction(f.db,{action:'update',editToken:token,name:'Pessoa Bolsista Exemplo',enrollment:'202600001',projectId:'project-a',shiftIds:[f.shifts[0].id],response:'no',expectedVersion:1},'203.0.113.10'),e=>e.code==='convocation_link_expired');
+ const detail=await f.detail('owner-a');assert.equal(detail.convocation.retentionExpired,true);assert.equal(detail.convocation.retentionEndsOn,'2026-02-09');
+ assert.equal((await listConvocations(f.db,await f.actor('owner-a'))).convocations[0].retentionExpired,true);
+ // After the purge the link no longer finds anything.
+ const c=detail.convocation;await f.run('owner-a','convocation.purge',{id:c.id,expectedVersion:c.version,confirmed:true});
+ await assert.rejects(convocationGuestAction(f.db,{action:'inspect',editToken:token},'203.0.113.10'),e=>e.code==='convocation_guest_not_found');
+});

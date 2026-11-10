@@ -15,6 +15,7 @@ Pedido do Yan (09/11), para ações como o UFG nos Parques: bolsistas e pessoas 
    - Vê só os dados públicos da ação.
    - Responde nome, matrícula, projeto (da lista de convidados), sim, não ou talvez, e os turnos. Precisa marcar que leu o aviso de uso dos dados.
    - Recebe um **link pessoal** (`/convocacao#g=…`), gerado no próprio navegador com 256 bits e guardado no servidor só como hash. Com ele altera ou apaga a resposta, até de outro aparelho.
+   - **Acesso restrito e com prazo:** o link pessoal alcança só uma resposta, numa única convocação. Ele vence no fim do prazo de guarda (data da ação mais os dias de guarda, no horário de Brasília) ou assim que a equipe apaga os dados. Depois disso, não abre nem altera nada (resposta 410). Ao fim da guarda, o painel avisa a equipe para apagar os dados.
    - Esse link não abre o portal: não há conta, sessão nem papel. O convite e o link pessoal ficam no fragmento da URL (depois do `#`), que o navegador não envia ao servidor.
    - Os testes cobrem: não ver outras pessoas, não usar o link de outra pessoa, convite vencido, encerrado ou no limite, e convocação encerrada.
 4. **Painel do responsável.**

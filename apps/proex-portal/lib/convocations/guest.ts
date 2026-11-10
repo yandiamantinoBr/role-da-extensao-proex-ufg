@@ -30,14 +30,22 @@ async function inviteByToken(db: D1Database, secret: string) {
   return invite!;
 }
 const inviteOpen = (invite: Row, now: number) => !invite.revoked_at && Date.parse(String(invite.expires_at)) > now && Number(invite.use_count) < Number(invite.max_uses);
+/**
+ * The personal link reaches one answer in one convocation and expires with the data: on the last day of the
+ * retention period (event date + retention days, Brasília) or as soon as the team purges the guests.
+ */
+export const LINK_EXPIRY_SQL = "date(c.event_date,'+'||c.retention_days||' days')";
 async function guestByToken(db: D1Database, secret: string) {
-  const guest = await one(db, 'SELECT * FROM convocation_guests WHERE edit_hash=?', [await sha256(secret)]);
+  const guest = await one(db, `SELECT g.*,${LINK_EXPIRY_SQL} link_expires_on,CASE WHEN date('now','-3 hours')>${LINK_EXPIRY_SQL} THEN 1 ELSE 0 END link_expired
+    FROM convocation_guests g JOIN convocations c ON c.id=g.convocation_id WHERE g.edit_hash=? AND c.purged_at IS NULL`, [await sha256(secret)]);
   if (!guest) fail('Não encontramos uma resposta para este link pessoal. Se ela foi apagada, responda de novo pelo convite.', 'convocation_guest_not_found', 404);
+  if (guest!.link_expired) fail(`Este link pessoal venceu em ${String(guest!.link_expires_on).split('-').reverse().join('/')}, junto com o prazo de guarda dos dados. Fale com a coordenação da ação.`, 'convocation_link_expired', 410);
   return guest!;
 }
 async function guestView(db: D1Database, guest: Row) {
   const shifts = await all(db, 'SELECT shift_id FROM convocation_guest_shifts WHERE guest_id=?', [guest.id]);
-  return { name: guest.name, enrollment: guest.enrollment, projectId: guest.project_id, response: guest.response, shiftIds: shifts.map(row => String(row.shift_id)), version: Number(guest.version), updatedAt: guest.updated_at };
+  const expires = guest.link_expires_on ?? (await one(db, `SELECT ${LINK_EXPIRY_SQL} d FROM convocations c WHERE c.id=?`, [guest.convocation_id]))?.d ?? null;
+  return { name: guest.name, enrollment: guest.enrollment, projectId: guest.project_id, response: guest.response, shiftIds: shifts.map(row => String(row.shift_id)), version: Number(guest.version), updatedAt: guest.updated_at, linkExpiresOn: expires };
 }
 function answer(input: Input) {
   const name = text(input.name, 'o seu nome', 3, 120), enrollment = text(input.enrollment, 'a matrícula', 4, 20).replace(/\s/g, '');
