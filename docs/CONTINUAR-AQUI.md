@@ -2,13 +2,13 @@
 
 ## Gestão da organização · guia, riscos, equipes-modelo e painel · 2026-11-09
 
-Branch `claude/gestao-organizacao` (Claude Code), migração **0044_management_guide_risks** (aditiva). Módulo **Gestão** no menu, com quatro abas. Detalhes, comparação de ferramentas de painel e passo a passo do Looker Studio: `apps/proex-portal/docs/GESTAO-DA-ORGANIZACAO.md`.
+Branch `claude/gestao-organizacao` (Claude Code), migração **0045_management_guide_risks** (aditiva; a 0044 é das convocações). Módulo **Gestão** no menu, com quatro abas. Detalhes, comparação de ferramentas de painel e passo a passo do Looker Studio: `apps/proex-portal/docs/GESTAO-DA-ORGANIZACAO.md`.
 
 - **Painel:** "Atenção agora" (atrasos, riscos críticos, revisões vencidas, estoque no limite, próximos 7 dias), indicadores clicáveis com comparação com o período anterior, gráficos de demandas e brindes, agenda, mapa de riscos e demandas por projeto. Tudo recortado pela organização e pelas permissões de quem vê. Recomendação: painel no portal (sem licença); Looker Studio só como alternativa gratuita sobre a planilha espelho.
 - **Guia da organização:** 11 páginas iniciais com fontes públicas e "a confirmar"; edição pela administração e por editores designados; versões com autor, restaurar, limite de 60 versões por página por dia; PDF/DOCX pelo gerador do relatório. Para o Rolê: `guideForAssistant` (texto de editores: tratar como dado não confiável).
 - **Riscos:** por organização (só a administração) ou por projeto/dinâmica; chance × impacto, dono, mitigação, revisão; 7 exemplos genéricos sob demanda.
 - **Equipes-modelo:** Comunicação, Administrativo, TI, Gestão, Eventos e Bolsistas na página Equipes; cria a equipe vazia com nome editável e mostra os papéis como vagas.
-- **Não fazer:** gerar de novo a 0044 sem conferir o SQL (cópia revisada no histórico da PR); apagar riscos reais (só exemplos se apagam); criar equipes reais com pessoas em produção sem pedido.
+- **Não fazer:** gerar de novo a 0045 sem conferir o SQL (cópia revisada no histórico da PR); apagar riscos reais (só exemplos se apagam); criar equipes reais com pessoas em produção sem pedido.
 - **Falta:** metas por projeto e exportar o painel em PDF para reunião; ligar o guia como fonte do Rolê (sessão do Rolê); revisão do conteúdo do guia pela equipe da PROEX.
 
 ## Google Drive por pessoa e registro de pastas · 2026-11-09
