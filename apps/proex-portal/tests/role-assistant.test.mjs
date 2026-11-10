@@ -508,3 +508,37 @@ test('GUIA: the PROEX guide answers by section, cites its sources line and is ma
     assert.ok(new TextEncoder().encode(small.content).byteLength <= 900);
   } finally { f.native.close(); }
 });
+
+test('ESCOPO: "Procurar em" never widens access; unit, project and event narrow the lookups; unseen scopes are refused before any paid call', async () => {
+  const f = fixture();
+  try {
+    await setup(f); seedLots(f);
+    const now = new Date().toISOString();
+    f.native.prepare("INSERT INTO organizational_units(id,name,acronym,kind,status,version,created_at,updated_at) VALUES('unit-a','Unidade QA','UQA','proex','active',1,?,?),('unit-b','Unidade Outra','UOB','proex','active',1,?,?)").run(now, now, now, now);
+    f.native.prepare("UPDATE projects SET unit_id='unit-a' WHERE id='project-a'").run();
+    f.native.prepare("UPDATE projects SET unit_id='unit-b' WHERE id='project-b'").run();
+    f.native.prepare("INSERT INTO campaigns(id,project_id,name,location,starts_at,ends_at,status,rules_text,created_at) VALUES('event-a','project-a','CONPEEX QA','',?,?,'active','Regras',?),('event-b','project-b','Evento B','',?,?,'active','Regras',?)").run(now, '2099-01-01T00:00:00.000Z', now, now, '2099-01-01T00:00:00.000Z', now);
+    const { runRoleTool, resolveRoleScope, roleScopes } = await import(compile('assistant/role-tools'));
+    const owner = await roleScopes(f.db, f.actors.owner, 'org_proex');
+    assert.deepEqual(owner.units.map(unit => unit.id).sort(), ['unit-a', 'unit-b']);
+    const viewer = await roleScopes(f.db, f.actors.viewer, 'org_proex');
+    assert.deepEqual(viewer.units.map(unit => unit.id), ['unit-a'], 'only units of projects the person sees');
+    assert.deepEqual(viewer.events.map(entry => entry.id), ['event-a']);
+    for (const scope of [{ kind: 'unit', id: 'unit-b' }, { kind: 'project', id: 'project-b' }, { kind: 'event', id: 'event-b' }]) await assert.rejects(resolveRoleScope(f.db, f.actors.viewer, 'org_proex', scope), error => error.code === 'role_scope_forbidden', JSON.stringify(scope));
+    await assert.rejects(resolveRoleScope(f.db, f.actors.viewer, 'org_proex', { kind: 'all-orgs' }), error => error.code === 'role_scope');
+    const unitB = await resolveRoleScope(f.db, f.actors.owner, 'org_proex', { kind: 'unit', id: 'unit-b' });
+    const narrowed = await runRoleTool(f.db, f.actors.owner, 'org_proex', 'consultar_demandas', { texto: 'Lote 10/11' }, undefined, unitB);
+    assert.ok(narrowed.content.includes('SEGREDO-B') && !narrowed.content.includes('24 conjuntos'), 'unit scope keeps only that unit projects');
+    const event = await resolveRoleScope(f.db, f.actors.owner, 'org_proex', { kind: 'event', id: 'event-a' });
+    assert.equal(event.label, 'o evento CONPEEX QA');
+    const eventResult = await runRoleTool(f.db, f.actors.owner, 'org_proex', 'consultar_demandas', { texto: 'Lote 10/11', projeto: 'Projeto B' }, undefined, event);
+    assert.ok(!eventResult.content.includes('SEGREDO-B'), 'naming another project inside an event scope does not escape it');
+    const wide = await runRoleTool(f.db, f.actors.owner, 'org_proex', 'consultar_demandas', { texto: 'Lote 10/11' }, undefined, await resolveRoleScope(f.db, f.actors.owner, 'org_proex', { kind: 'org' }));
+    assert.ok(wide.content.includes('SEGREDO-B') && wide.content.includes('24 conjuntos'));
+    const provider = scriptedProvider([{ reply: { reply: 'ok', operation: null } }]);
+    await assert.rejects(roleChat(f.db, f.actors.viewer, chatInput(f, { scope: { kind: 'project', id: 'project-b' } }), secret, { keys, fetcher: provider.fetch }), error => error.code === 'role_scope_forbidden');
+    assert.equal(provider.calls.length, 0, 'refused before any paid call');
+    await roleChat(f.db, f.actors.viewer, chatInput(f, { scope: { kind: 'unit', id: 'unit-a' } }), secret, { keys, fetcher: provider.fetch });
+    assert.match(provider.calls[0].messages.at(-1).content, /Procurar em: a unidade Unidade QA/);
+  } finally { f.native.close(); }
+});

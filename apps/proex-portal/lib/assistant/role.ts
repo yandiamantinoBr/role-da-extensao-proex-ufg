@@ -9,7 +9,7 @@ import {
   ROLE_CONTRACT, ROLE_MAX_HISTORY, ROLE_MAX_HISTORY_CHARS, ROLE_MAX_IMAGE_BYTES, ROLE_MAX_IMAGE_SIDE, ROLE_MAX_MESSAGE_CHARS, ROLE_MAX_OUTPUT_TOKENS, ROLE_MODELS,
   ROLE_SYSTEM_PROMPT, ROLE_SYSTEM_PROMPT_TOOLS, ROLE_TOOL_CALLS_PER_ROUND, ROLE_TOOL_RESULT_BYTES, ROLE_TOOL_ROUNDS, roleConversationBytes, roleEstimate, roleTimeoutMs, validateRoleReply, type RoleSource, type RoleTurn,
 } from './role-contracts';
-import { ROLE_TOOL_NAMES, ROLE_TOOLS, runRoleTool, type RoleToolResult } from './role-tools';
+import { ROLE_TOOL_NAMES, ROLE_TOOLS, resolveRoleScope, roleScopes, runRoleTool, type RoleToolResult } from './role-tools';
 import { containsCredential } from './sensitive';
 import { ChargedError, firstJsonObject, genericChat } from './generic-provider';
 import { fitsFunction, type CatalogModel, type CatalogProvider, type ModelCatalog } from './model-catalog';
@@ -82,6 +82,8 @@ export type RoleAvailability = {
   dailyLimitMicros: number; reservedTodayMicros: number;
   /** Consultas ao portal (só leitura) disponíveis na conversa e na foto. */
   tools: { text: boolean; vision: boolean };
+  /** Opções do seletor "Procurar em" (só o que a pessoa vê). */
+  scopes?: { units: { id: string; name: string }[]; events: { id: string; name: string; projectId: string }[] };
 };
 
 type Route = { kind: 'legacy'; provider: 'deepseek' | 'groq'; apiKey: string; pricing: RolePricing } | { kind: 'catalog'; provider: CatalogProvider; model: CatalogModel; apiKey: string; pricing: RolePricing };
@@ -125,7 +127,7 @@ export async function roleStatus(db: D1Database, actor: PortalActor | null, inpu
     const { text, vision, ...state } = availability(config, credentials, organizationId, options.speech, rawCredentials, catalog);
     return { ...base, ...state, provider: text?.kind === 'catalog' ? text.provider.id : config.roleProvider, model: text?.pricing.label ?? ROLE_MODELS[config.roleProvider].label,
       textPricing: text?.pricing ?? null, visionPricing: vision?.pricing ?? null, dailyLimitMicros: config.dailyUsdMicros, tools: { text: text?.kind === 'legacy', vision: vision?.kind === 'legacy' },
-      reason: state.available ? null : !config.roleEnabled ? 'O Rolê ainda não foi ligado nesta organização.' : 'Falta a chave do provedor escolhido para o Rolê.' };
+      reason: state.available ? null : !config.roleEnabled ? 'O Rolê ainda não foi ligado nesta organização.' : 'Falta a chave do provedor escolhido para o Rolê.', scopes: state.available ? await roleScopes(db, current, organizationId) : undefined };
   } catch (error) {
     const reason = error instanceof HttpError && error.status === 403 ? 'A IA desta organização está liberada só para outra pessoa.' : 'O Rolê ainda não foi configurado nesta organização.';
     return { ...base, available: false, reason, provider: 'deepseek', model: ROLE_MODELS.deepseek.label, visionAvailable: false, operationsAvailable: false, textPricing: null, visionPricing: null, speech: { available: false, provider: 'groq' }, dailyLimitMicros: 0, tools: { text: false, vision: false } };
@@ -172,8 +174,8 @@ export function brasiliaToday(now: number): string {
   const date = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(now));
   return `${date} (${new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'long' }).format(new Date(now))})`;
 }
-function transportBody(provider: 'deepseek' | 'groq', turns: RoleTurn[], message: string, projectName: string, image: string | null, today: string | null = null) {
-  const user = `${today ? `Hoje: ${today}, horário de Brasília\n` : ''}Projeto atual: ${projectName}\nMensagem: ${message}`;
+function transportBody(provider: 'deepseek' | 'groq', turns: RoleTurn[], message: string, projectName: string, image: string | null, today: string | null = null, scopeLabel: string | null = null) {
+  const user = `${today ? `Hoje: ${today}, horário de Brasília\n` : ''}${scopeLabel ? `Procurar em: ${scopeLabel} (as consultas já ficam limitadas a isso)\n` : ''}Projeto atual: ${projectName}\nMensagem: ${message}`;
   const messages = [
     { role: 'system', content: today ? ROLE_SYSTEM_PROMPT_TOOLS : ROLE_SYSTEM_PROMPT },
     ...turns.map(turn => ({ role: turn.role, content: turn.content })),
@@ -353,7 +355,7 @@ async function catalogDispatch(chosen: Extract<Route, { kind: 'catalog' }>, turn
 
 /** One paid call, only after the person accepted a cost ceiling at least as high as the server's. */
 export async function roleChat(db: D1Database, actor: PortalActor | null, input: Record<string, unknown>, secret: string, options: Options = {}) {
-  onlyKeys(input, ['action', 'projectId', 'operationKey', 'consent', 'history', 'message', 'image', 'acceptedCostMicros']);
+  onlyKeys(input, ['action', 'projectId', 'operationKey', 'consent', 'history', 'message', 'image', 'acceptedCostMicros', 'scope']);
   if (input.consent !== true) throw new HttpError(400, 'Confirme que o texto e a imagem podem ir para o provedor de IA.', 'assistant_consent');
   if (typeof input.operationKey !== 'string' || !/^[A-Za-z0-9_-]{8,100}$/.test(input.operationKey)) throw new HttpError(400, 'Reabra o Rolê antes de enviar.', 'assistant_operation');
   if (typeof input.message !== 'string' || input.message.length > ROLE_MAX_MESSAGE_CHARS) throw new HttpError(400, 'Escreva até 2.000 caracteres por mensagem.', 'assistant_request');
@@ -363,6 +365,7 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
   const catalog = config.roleModel || config.roleVisionModel ? (await loadCatalog(db, organizationId)).catalog : null;
   const state = availability(config, credentials, organizationId, options.speech, rawCredentials, catalog);
   if (!state.available) throw new HttpError(503, 'O Rolê está desligado ou sem chave nesta organização.', 'role_unavailable');
+  const scope = await resolveRoleScope(db, current, organizationId, input.scope);
   if (image && !state.visionAvailable) throw new HttpError(503, 'A leitura de imagens não está ligada nesta organização. Envie só o texto.', 'role_vision_unavailable');
   const chosen = (image ? state.vision : state.text)!;
   const provider = chosen.kind === 'catalog' ? chosen.provider.id : chosen.provider, modelName = chosen.kind === 'catalog' ? chosen.model.model : ROLE_MODELS[chosen.provider].model;
@@ -402,7 +405,7 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
     await authorization.first();
     const startedAt = Date.now();
     const result: { reply: string; operation: string | null; inputTokens: number; outputTokens: number; costMicros: number; tools?: { name: string; rows: number }[]; sources?: RoleSource[]; steps?: number } = chosen.kind === 'legacy'
-      ? await dispatchWithTools(chosen.provider, apiKey, transportBody(chosen.provider, turns, message, projectName, image?.dataUrl ?? null, brasiliaToday(now)), (name, args, budget) => runRoleTool(db, current, organizationId, name, args, budget), controller.signal, options.fetcher ?? fetch)
+      ? await dispatchWithTools(chosen.provider, apiKey, transportBody(chosen.provider, turns, message, projectName, image?.dataUrl ?? null, brasiliaToday(now), scope.label), (name, args, budget) => runRoleTool(db, current, organizationId, name, args, budget, scope), controller.signal, options.fetcher ?? fetch)
       : await catalogDispatch(chosen, turns, message, projectName, image?.dataUrl ?? null, controller.signal, options.fetcher ?? fetch);
     const dropped = !!result.operation && !operationNumbersAllowed(result.operation, [message, ...turns.filter(turn => turn.role === 'user').map(turn => turn.content)]);
     if (dropped) result.operation = null;
