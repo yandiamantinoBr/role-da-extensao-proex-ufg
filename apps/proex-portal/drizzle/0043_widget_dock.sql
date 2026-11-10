@@ -1,0 +1,1 @@
+ALTER TABLE `personal_widget_settings` ADD `dock` text DEFAULT '{}' NOT NULL;

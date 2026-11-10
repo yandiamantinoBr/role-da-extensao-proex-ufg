@@ -9,6 +9,8 @@ import { organizations, portalUsers, projects } from './base-schema';
 export const personalWidgetSettings = sqliteTable('personal_widget_settings', {
   userId:text('user_id').primaryKey().notNull().references(()=>portalUsers.userId),
   notes:integer('notes').notNull().default(0), reminders:integer('reminders').notNull().default(0), roleShortcut:integer('role_shortcut').notNull().default(0),
+  /** Floating dock state (0042): enabled widgets, open panel, minimized, hidden registered items. JSON validated by the server. */
+  dock:text('dock').notNull().default('{}'),
   version:integer('version').notNull().default(1), updatedAt:text('updated_at').notNull(),
 },t=>[check('personal_widget_flags',sql`${t.notes} IN (0,1) AND ${t.reminders} IN (0,1) AND ${t.roleShortcut} IN (0,1)`)]);
 export const personalNotes = sqliteTable('personal_notes', {

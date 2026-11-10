@@ -32,6 +32,51 @@ function failure(error: unknown): never {
   throw error;
 }
 
+/*
+ * Floating dock (0043): which widgets the person turned on, which panel is open (or minimized) and which registered
+ * launchers (e.g. the Rolê) are hidden. Personal UI state, last write wins. All widgets start off.
+ */
+export const DOCK_WIDGETS = ['notes', 'reminders', 'calendar', 'demands', 'shortcuts'] as const;
+export type DockWidget = typeof DOCK_WIDGETS[number];
+export type DockState = { enabled: DockWidget[]; open: DockWidget | 'gallery' | null; minimized: boolean; hidden: string[] };
+const DOCK_ITEM = /^[a-z][a-z0-9-]{0,30}$/;
+export function parseDock(raw: unknown, legacy?: { notes?: unknown; reminders?: unknown }): DockState {
+  let value: Record<string, unknown> = {};
+  try { const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw; if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) value = parsed as Record<string, unknown>; } catch { value = {}; }
+  const enabledRaw = Array.isArray(value.enabled) ? value.enabled : [...(legacy?.notes ? ['notes'] : []), ...(legacy?.reminders ? ['reminders'] : [])];
+  const enabled = DOCK_WIDGETS.filter(id => enabledRaw.includes(id));
+  const open = value.open === 'gallery' || (enabled as string[]).includes(String(value.open)) ? value.open as DockState['open'] : null;
+  const hidden = Array.isArray(value.hidden) ? [...new Set(value.hidden.filter((item): item is string => typeof item === 'string' && DOCK_ITEM.test(item)))].slice(0, 10) : [];
+  return { enabled, open, minimized: open !== null && value.minimized === true, hidden };
+}
+export async function dockState(db: D1Database, rawActor: PortalActor | null) {
+  const actor = requireActor(rawActor);
+  await requireInternalMember(db, actor);
+  const row = await one(db, 'SELECT notes,reminders,dock FROM personal_widget_settings WHERE user_id=?', [actor.userId]);
+  const dock = parseDock(row?.dock ?? '{}', row ?? undefined);
+  // One light count for the reminders badge; widget contents load only when a panel opens.
+  const today = new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10);
+  const due = dock.enabled.includes('reminders') ? await one(db, "SELECT COUNT(*) n FROM personal_notes WHERE user_id=? AND kind='reminder' AND done_at IS NULL AND due_on IS NOT NULL AND due_on<=?", [actor.userId, today]) : null;
+  return { dock, badges: { reminders: Number(due?.n ?? 0) } };
+}
+export async function saveDock(db: D1Database, rawActor: PortalActor | null, input: Record<string, unknown>) {
+  const actor = requireActor(rawActor);
+  const member = await requireInternalMember(db, actor);
+  only(input, ['action', 'enabled', 'open', 'minimized', 'hidden']);
+  if (!Array.isArray(input.enabled) || !Array.isArray(input.hidden) || typeof input.minimized !== 'boolean' || !(input.open === null || typeof input.open === 'string')) throw new HttpError(400, 'Estado da doca inválido.', 'invalid_dock');
+  if (input.enabled.some(id => !(DOCK_WIDGETS as readonly unknown[]).includes(id)) || input.hidden.some(id => typeof id !== 'string' || !DOCK_ITEM.test(id)) || input.hidden.length > 10) throw new HttpError(400, 'Estado da doca inválido.', 'invalid_dock');
+  const dock = parseDock(input), now = iso();
+  const notes = dock.enabled.includes('notes') ? 1 : 0, reminders = dock.enabled.includes('reminders') ? 1 : 0;
+  try {
+    await db.batch([
+      db.prepare(`SELECT CASE WHEN ${member.sql} THEN 1 ELSE json_extract('[]','community_access_changed') END`).bind(...member.values),
+      db.prepare(`INSERT INTO personal_widget_settings(user_id,notes,reminders,role_shortcut,dock,version,updated_at) VALUES(?,?,?,0,?,1,?)
+        ON CONFLICT(user_id) DO UPDATE SET notes=excluded.notes,reminders=excluded.reminders,dock=excluded.dock,version=version+1,updated_at=excluded.updated_at`).bind(actor.userId, notes, reminders, JSON.stringify(dock), now),
+    ]);
+  } catch (error) { failure(error); }
+  return { dock };
+}
+
 export async function widgetState(db: D1Database, rawActor: PortalActor | null) {
   const actor = requireActor(rawActor);
   await requireInternalMember(db, actor);
