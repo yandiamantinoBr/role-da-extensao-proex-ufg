@@ -11,6 +11,7 @@ import { PROVIDERS, textModel, type AssistantConfig, type TaskModelKey } from '.
 import { firstJsonObject, genericChat, RefusedError } from './generic-provider';
 import { fitsTask, safeBaseUrl, type CatalogModel, type CatalogProvider, type RoutedTask } from './model-catalog';
 import { loadCatalog } from './model-catalog-store';
+import type { SpeechRouteModel } from './role-contracts';
 
 export const TASK_MODEL_KEY: Record<RoutedTask, TaskModelKey> = { document: 'documentModel', decision: 'decisionModel', speech: 'speechModel' };
 export const TASK_LABEL: Record<RoutedTask, string> = { document: 'documentos', decision: 'conferência e triagem', speech: 'voz' };
@@ -88,6 +89,15 @@ export async function routedDocumentProposal(route: TaskRoute, messages: { role:
 }
 /** Destino de voz que o consentimento precisa nomear: `catalog:<id>` com rota ativa; senão o provedor padrão. */
 export function speechDestination(resolved: ResolvedTaskRoute, provider: DefaultSpeech): string { return resolved && !('skip' in resolved) ? `catalog:${resolved.model.id}` : provider; }
+/** Formato de envio do destino de voz: provedor de voz revisado (Deepgram) ou formulário de áudio compatível com OpenAI. */
+export function speechRouteStyle(route: TaskRoute): 'groq' | 'deepgram' { return route.provider.kind === 'speech' ? 'deepgram' : 'groq'; }
+/**
+ * O que a tela mostra do modelo de voz escolhido antes de a pessoa autorizar: nome do modelo e do serviço no
+ * catálogo, preço por hora e formato de envio. Só com rota válida; nunca chave nem endereço.
+ */
+export function speechRouteModel(resolved: ResolvedTaskRoute): SpeechRouteModel | null {
+  return resolved && !('skip' in resolved) ? { label: resolved.model.label, service: resolved.provider.label, perHour: resolved.model.price.perHour, style: speechRouteStyle(resolved) } : null;
+}
 export function refusalReason(error: RefusedError) { return `O provedor recusou o pedido (HTTP ${error.providerStatus}).`; }
 
 /**

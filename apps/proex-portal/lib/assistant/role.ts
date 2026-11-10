@@ -15,9 +15,9 @@ import { containsCredential } from './sensitive';
 import { ChargedError, firstJsonObject, genericChat } from './generic-provider';
 import { fitsFunction, type CatalogModel, type CatalogProvider, type ModelCatalog } from './model-catalog';
 import { loadCatalog } from './model-catalog-store';
-import { catalogPricing, type RolePricing } from './role-contracts';
+import { catalogPricing, type RolePricing, type SpeechRouteModel } from './role-contracts';
 import { assistantUsageSql, loadAssistantSettings, speechProviderForOrganization, validProviderKey, type SpeechEnvironment } from './settings';
-import { resolveTaskRoute, speechDestination } from './task-routing';
+import { resolveTaskRoute, speechDestination, speechRouteModel } from './task-routing';
 
 type Options = { fetcher?: typeof fetch; now?: number; keys?: CredentialKeys; signal?: AbortSignal; speech?: SpeechEnvironment };
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
@@ -81,7 +81,8 @@ export type RoleAvailability = {
   provider: string; model: string; visionAvailable: boolean; operationsAvailable: boolean;
   textPricing: RolePricing | null; visionPricing: RolePricing | null;
   /** `route` só existe com modelo do catálogo escolhido para voz: é o destino (`catalog:<id>`) que o consentimento precisa nomear. */
-  speech: { available: boolean; provider: 'groq' | 'deepgram'; route?: string };
+  /** `route` e `routeModel` só existem com modelo do catálogo escolhido para voz e em condição de receber o áudio. */
+  speech: { available: boolean; provider: 'groq' | 'deepgram'; route?: string; routeModel?: SpeechRouteModel };
   dailyLimitMicros: number; reservedTodayMicros: number;
   /** Consultas ao portal (só leitura) disponíveis na conversa e na foto. */
   tools: { text: boolean; vision: boolean };
@@ -130,8 +131,8 @@ export async function roleStatus(db: D1Database, actor: PortalActor | null, inpu
     const { text, vision, ...state } = availability(config, credentials, organizationId, options.speech, rawCredentials, catalog);
     let speech: RoleAvailability['speech'] = state.speech;
     if (config.speechModel && speech.available) {
-      const destination = speechDestination(await resolveTaskRoute(db, organizationId, config, rawCredentials, 'speech', speech.provider), speech.provider);
-      if (destination !== speech.provider) speech = { ...speech, route: destination };
+      const resolved = await resolveTaskRoute(db, organizationId, config, rawCredentials, 'speech', speech.provider), routeModel = speechRouteModel(resolved);
+      if (routeModel) speech = { ...speech, route: speechDestination(resolved, speech.provider), routeModel };
     }
     return { ...base, ...state, speech, provider: text?.kind === 'catalog' ? text.provider.id : config.roleProvider, model: text?.pricing.label ?? ROLE_MODELS[config.roleProvider].label,
       textPricing: text?.pricing ?? null, visionPricing: vision?.pricing ?? null, dailyLimitMicros: config.dailyUsdMicros, tools: { text: text?.kind === 'legacy', vision: vision?.kind === 'legacy' },

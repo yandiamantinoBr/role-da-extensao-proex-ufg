@@ -14,7 +14,8 @@ export const SPEECH_ENDPOINT = 'https://api.deepgram.com/v1/listen?model=nova-3&
 export function speechEndpoint(value: unknown = SPEECH_ENDPOINT): string { if (value !== SPEECH_ENDPOINT) throw new HttpError(400, 'Use apenas o endpoint oficial de transcrição autorizado.', 'speech_endpoint'); return SPEECH_ENDPOINT; }
 import { validateSpeechAudio } from './audio';
 import { quotaRefusal } from './quota';
-import { recordRouteFallback, resolveTaskRoute, speechDestination } from './task-routing';
+import { recordRouteFallback, resolveTaskRoute, speechDestination, speechRouteStyle } from './task-routing';
+import { speechRouteCeilingMicros } from './role-contracts';
 export { validateSpeechAudio } from './audio';
 export async function speechActor(db: D1Database, actor: PortalActor | null, projectId: string) {
  const current = actor && await getActor(db,actor); if (!current) throw new HttpError(403,'Entre novamente para transcrever.','speech_forbidden');
@@ -72,7 +73,7 @@ export async function transcribeSpeech(db:D1Database, actor:PortalActor|null, in
  if ((input.expectedProvider ?? 'deepgram') !== destination) throw new HttpError(409,'O provedor de transcrição mudou. Atualize o portal e confirme novamente.','speech_provider_changed');
  const audio=validateSpeechAudio(input.bytes,input.mime),now=options.now??Date.now(),apiKey=routed?routed.apiKey:settings.apiKey;
  // Formato de envio do destino: provedor de voz revisado (Deepgram) ou formulário de áudio compatível com OpenAI.
- const style:SpeechProvider=routed?(routed.provider.kind==='speech'?'deepgram':'groq'):provider;
+ const style:SpeechProvider=routed?speechRouteStyle(routed):provider;
  const target=routed&&style==='groq'?{endpoint:`${routed.baseUrl}/audio/transcriptions`,model:routed.model.model}:undefined;
  const model=routed?routed.model.model:provider==='groq'?GROQ_SPEECH_MODEL:'nova-3';
  await db.prepare("UPDATE ai_transcriptions SET result_ciphertext=NULL WHERE organization_id=? AND status='complete' AND created_at<? AND result_ciphertext IS NOT NULL").bind(organizationId,new Date(now-3600000).toISOString()).run();
@@ -81,7 +82,8 @@ export async function transcribeSpeech(db:D1Database, actor:PortalActor|null, in
  const fingerprint=await digest(routed?`${audioSha256}:${settings.revision}:${destination}`:`${audioSha256}:${settings.revision}${provider === 'groq' ? ':groq' : ''}`);
  const day=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(now));
  // Com rota, a reserva usa o preço por hora do modelo escolhido (mínimo de 10 s) e nunca fica abaixo da reserva revisada do mesmo formato.
- const cost=routed?Math.max(Math.ceil(Math.max(audio.duration,10)*routed.model.price.perHour*1e6/3600),style==='deepgram'?speechReservedUsdMicros('deepgram',audio.duration):0):speechReservedUsdMicros(provider,audio.duration);
+ // A conta é a mesma função que a tela usa para mostrar o teto antes do envio (role-contracts).
+ const cost=routed?speechRouteCeilingMicros(style,audio.duration,routed.model.price.perHour):speechReservedUsdMicros(provider,audio.duration);
  const auth=projectAuthoritySql(current,['inventory.read'],'?');
  const usage=assistantUsageSql(current.userId);
  const assertion=db.prepare(`SELECT CASE WHEN ${auth.sql} AND EXISTS(SELECT 1 FROM ai_organization_settings s JOIN organizations o ON o.id=s.organization_id WHERE s.organization_id=? AND s.revision=? AND json_extract(s.config_json,'$.sttEnabled')=1 AND o.status='active' AND ${usage.sql}) THEN 1 ELSE json_extract('[]','speech_authority_changed') END`).bind(...auth.values,input.projectId,organizationId,settings.revision,...usage.values);

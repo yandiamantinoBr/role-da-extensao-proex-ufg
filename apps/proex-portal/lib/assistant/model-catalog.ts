@@ -190,6 +190,16 @@ export function fitsTask(model: CatalogModel, provider: CatalogProvider | undefi
   if (provider.kind === 'speech' && base === REVIEWED_SPEECH_BASE && model.model === 'nova-3') return null;
   return 'Esse provedor de voz ainda não tem formato de envio revisado.';
 }
+/**
+ * Modelos que a administração pode escolher para a tarefa: ligados e aprovados pela mesma regra que o
+ * servidor aplica ao salvar e ao usar (fitsTask). `hasKey` diz se o provedor já tem chave salva.
+ */
+export function taskModelOptions(catalog: { providers: (CatalogProvider & { hasKey?: boolean })[]; models: CatalogModel[] }, task: RoutedTask): { id: string; label: string; hasKey: boolean }[] {
+  return catalog.models.flatMap(model => {
+    const provider = catalog.providers.find(entry => entry.id === model.providerId);
+    return model.enabled && provider && !fitsTask(model, provider, task) ? [{ id: model.id, label: model.label, hasKey: Boolean(provider.hasKey) }] : [];
+  });
+}
 
 export const COMPARE_SYSTEM = 'Você ajuda a equipe da Pró-Reitoria de Extensão da UFG. Responda em português do Brasil, de forma curta e direta. Se a pergunta pedir JSON, responda só com JSON válido.';
 export const COMPARE_MAX_OUTPUT = 600;

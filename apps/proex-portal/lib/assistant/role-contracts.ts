@@ -42,6 +42,22 @@ export const ROLE_MODELS = {
 export function roleSpeechCeilingMicros(provider: 'groq' | 'deepgram', seconds: number): number {
   return provider === 'groq' ? Math.ceil(Math.max(seconds, 10) * 40000 / 3600) : Math.ceil(seconds / 60 * 30000);
 }
+/**
+ * Modelo do catálogo escolhido para voz, do jeito que a tela precisa para pedir a autorização:
+ * nome do modelo, nome do serviço, preço por hora e formato de envio. Nunca chave nem endereço.
+ */
+export type SpeechRouteModel = { label: string; service: string; perHour: number; style: 'groq' | 'deepgram' };
+/**
+ * Teto da voz no modelo escolhido: preço por hora com mínimo de 10 s cobrados; no formato Deepgram
+ * nunca fica abaixo da reserva revisada. É a mesma conta que o servidor usa para reservar (speech.ts).
+ */
+export function speechRouteCeilingMicros(style: 'groq' | 'deepgram', seconds: number, perHour: number): number {
+  return Math.max(Math.ceil(Math.max(seconds, 10) * perHour * 1e6 / 3600), style === 'deepgram' ? roleSpeechCeilingMicros('deepgram', seconds) : 0);
+}
+/** Nome para mostrar no aviso de gravação: o modelo e, se o nome dele ainda não disser, o serviço. */
+export function speechRouteName(model: Pick<SpeechRouteModel, 'label' | 'service'>): string {
+  return !model.service || model.label.toLowerCase().includes(model.service.toLowerCase()) ? model.label : `${model.label} (${model.service})`;
+}
 
 export type RoleTurn = { role: 'user' | 'assistant'; content: string };
 export type RolePricing = { model: string; label: string; inputMicrosPerToken: number; outputMicrosPerToken: number };
