@@ -446,6 +446,44 @@ test('fake provider proposes only; signed plan and normal inventory service appl
   assert.equal(f.native.prepare("SELECT COUNT(*) n FROM audit WHERE action='assistant.apply'").get().n, 1);
  } finally { f.native.close(); }
 });
+
+test('apply keeps only the request that generated the plan as the origin summary; anything else is dropped and the write still happens', async () => {
+ const f = fixture(), provider = fakeProvider(); try {
+  await configureAssistant(f.db, f.actors.owner, configInput(), secret);
+  const stored = id => JSON.parse(f.native.prepare('SELECT result_json FROM ai_plans WHERE id=?').get(id).result_json);
+  const audited = id => JSON.parse(f.native.prepare("SELECT details FROM audit WHERE action='assistant.apply' AND entity_id=?").get(id).details);
+  const stock = () => f.native.prepare('SELECT stock FROM items WHERE id=?').get('item-a').stock;
+  // (a) texto que não gerou esta prévia e (b) valor que nem é texto: nada é guardado, e a gravação acontece do mesmo jeito.
+  const dropped = [['test-only-origin-a', 'Outro texto, que não gerou esta prévia: entrada de 10 canetas.'], ['test-only-origin-b', 42]];
+  for (const [index, [operationKey, origin]] of dropped.entries()) {
+   const preview = await prepareAssistantPlan(f.db, f.actors.inventory, request({ operationKey, request: `Registrar entrada de 10 canetas recebidas para a oficina ${index + 1}.` }), secret, { fetcher: provider.fetch });
+   const result = await applyAssistantPlan(f.db, f.actors.inventory, { ...confirm(preview), origin }, secret);
+   assert.ok(result.movementId); assert.equal('origin' in result, false); assert.equal('origin' in stored(preview.plan.id), false); assert.equal('origin' in audited(preview.plan.id), false);
+   assert.equal(stock(), 10 * (index + 1));
+  }
+  // (c) o pedido exato da prévia: fica guardado numa linha só e sem o e-mail.
+  const raw = 'Registrar entrada de 10 canetas\nrecebidas de pessoa.sintetica@exemplo.invalid para a oficina.', kept = 'Registrar entrada de 10 canetas recebidas de [e-mail omitido] para a oficina.';
+  const preview = await prepareAssistantPlan(f.db, f.actors.inventory, request({ operationKey: 'test-only-origin-c', request: raw }), secret, { fetcher: provider.fetch });
+  const result = await applyAssistantPlan(f.db, f.actors.inventory, { ...confirm(preview), origin: raw }, secret);
+  assert.equal(result.origin, kept); assert.equal(stored(preview.plan.id).origin, kept); assert.equal(audited(preview.plan.id).origin, kept);
+  assert.ok(!JSON.stringify([result, stored(preview.plan.id), audited(preview.plan.id)]).includes('exemplo.invalid'), 'e-mail do pedido não fica guardado');
+  const replay = await applyAssistantPlan(f.db, f.actors.inventory, { ...confirm(preview), origin: 'Texto trocado depois.' }, secret);
+  assert.equal(replay.replayed, true); assert.equal(replay.origin, kept, 'a repetição devolve o que foi guardado, não o texto novo');
+  assert.equal(stock(), 30); assert.equal(f.native.prepare('SELECT COUNT(*) n FROM stock_movements').get().n, 3);
+  // Chave desconhecida continua recusada: só `origin` entrou na lista.
+  await assert.rejects(applyAssistantPlan(f.db, f.actors.inventory, { ...confirm(preview), resumo: raw }, secret), code('assistant_schema'));
+ } finally { f.native.close(); }
+});
+
+test('a consultation keeps no origin summary, even with the exact request', async () => {
+ const f = fixture(), provider = fakeProvider({ proposal: { intent: 'stock.query', quantity: 0 } }); try {
+  await configureAssistant(f.db, f.actors.owner, configInput(), secret);
+  const preview = await prepareAssistantPlan(f.db, f.actors.inventory, request(), secret, { fetcher: provider.fetch });
+  const result = await applyAssistantPlan(f.db, f.actors.inventory, { ...confirm(preview), origin: request().request }, secret);
+  assert.equal(result.queried, true); assert.equal('origin' in result, false);
+  assert.equal('origin' in JSON.parse(f.native.prepare('SELECT result_json FROM ai_plans WHERE id=?').get(preview.plan.id).result_json), false);
+ } finally { f.native.close(); }
+});
 test('tampered token, different actor, expired plan and revoked membership cannot apply', async () => {
  const f = fixture(), provider = fakeProvider(); try {
   await configureAssistant(f.db, f.actors.owner, configInput(), secret);

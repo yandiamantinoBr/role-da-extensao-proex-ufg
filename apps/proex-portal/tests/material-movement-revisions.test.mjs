@@ -84,12 +84,21 @@ test('undoing an entry that later outflows depend on is refused without touching
  assert.equal(f.stock(),50);
 });
 
-test('origin of an assistant movement reads "Pedido ao Rolê, confirmado por …"',async t=>{
+test('origin of an assistant movement reads "Feito pelo Rolê a pedido de …" and shows the request when it was kept',async t=>{
  const f=await fixture(t);const movement=await f.deliver(100);
  f.insert('ai_plans',{id:'plan-sintetico',actor_id:'owner-a',project_id:'project-a',payload_json:'{}',payload_digest:'x',expires_at:0,status:'applied',result_json:JSON.stringify({ok:true,movementId:movement.id}),created_at:f.now});
  const row=(await materialDetail(f.db,f.owner,f.item.id)).movements.find(entry=>entry.id===movement.id);
- assert.deepEqual(row.origin,{via:'assistant',label:'Pedido ao Rolê, confirmado por Gestão Aurora'});
- assert.equal((await movementDetail(f.db,f.owner,movement.id)).movement.origin.label,'Pedido ao Rolê, confirmado por Gestão Aurora');
+ assert.deepEqual(row.origin,{via:'assistant',label:'Feito pelo Rolê a pedido de Gestão Aurora'});
+ assert.deepEqual((await movementDetail(f.db,f.owner,movement.id)).movement.origin,{via:'assistant',label:'Feito pelo Rolê a pedido de Gestão Aurora'},'sem pedido guardado, sem resumo');
+ const summary='Registrar saída de 100 canetas para a oficina.';
+ f.native.prepare("UPDATE ai_plans SET result_json=? WHERE id='plan-sintetico'").run(JSON.stringify({ok:true,movementId:movement.id,origin:summary}));
+ const expected={via:'assistant',label:'Feito pelo Rolê a pedido de Gestão Aurora',summary};
+ assert.deepEqual((await movementDetail(f.db,f.owner,movement.id)).movement.origin,expected);
+ assert.deepEqual((await materialDetail(f.db,f.owner,f.item.id)).movements.find(entry=>entry.id===movement.id).origin,expected);
+ const manual=await f.deliver(5);
+ assert.equal('summary' in (await movementDetail(f.db,f.owner,manual.id)).movement.origin,false,'movimento manual não ganha resumo');
+ f.native.prepare("UPDATE ai_plans SET result_json=? WHERE id='plan-sintetico'").run(JSON.stringify({ok:true,movementId:movement.id,origin:{texto:summary}}));
+ assert.equal('summary' in (await movementDetail(f.db,f.owner,movement.id)).movement.origin,false,'valor que não é texto é ignorado');
 });
 
 test('destinations: typed names are matched or created once, have a page with what went there, and corrections move the totals',async t=>{

@@ -198,6 +198,14 @@ test('each role keeps the read rule of its own module, across organizations and 
   assert.ok(!staff.events.some(event => event.title === 'Demanda geral'), 'demanda sem projeto: só a dona da organização, como em Demandas');
   assert.ok(staff.events.some(event => event.id === 'records:rec-obs') && staff.events.some(event => event.id === 'records:rec-maint'));
   assert.ok(!JSON.stringify(staff).includes('TEXTO-PRIVADO'), 'texto do registro não sai no histórico');
+  assert.equal(staff.events.find(event => event.id === 'records:rec-obs').viaRole, false, 'registro feito à mão');
+  const plan = (id, result) => db.native.prepare("INSERT INTO ai_plans(id,actor_id,project_id,payload_json,payload_digest,expires_at,status,result_json,created_at) VALUES(?,?,'project-a','{}',?,0,'applied',?,?)").run(id, actors.manager.userId, id, JSON.stringify(result), at('2026-11-10', 9));
+  plan('plan-rec', { ok: true, recordId: 'rec-obs', origin: 'PEDIDO-PRIVADO de registro' }); plan('plan-mov', { ok: true, movementId: 'mov-a2', origin: 'PEDIDO-PRIVADO de saída' });
+  const marked = await activityFeed(db, actors.manager, range, NOW);
+  assert.equal(marked.events.find(event => event.id === 'records:rec-obs').viaRole, true, 'registro gravado pelo Rolê depois da confirmação');
+  assert.equal(marked.events.find(event => event.id === 'records:rec-maint').viaRole, false);
+  assert.equal(marked.events.find(event => event.id === 'materials:mov-a2').viaRole, true);
+  assert.ok(!JSON.stringify(marked).includes('PEDIDO-PRIVADO'), 'o pedido feito ao Rolê fica só no detalhe do movimento, não no histórico geral');
   const other = await activityFeed(db, managerX, range, NOW);
   assert.deepEqual([...new Set(other.events.map(event => event.projectId))], ['project-x']);
   const platform = await activityFeed(db, owner, range, NOW);

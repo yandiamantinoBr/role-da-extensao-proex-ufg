@@ -19,7 +19,7 @@ type Props = { projects: Project[]; defaultProjectId?: string; onApplied?: () =>
 type Pricing = { model: string; label: string; inputMicrosPerToken: number; outputMicrosPerToken: number };
 type Status = { available: boolean; reason: string | null; provider: string; model: string; textPricing?: Pricing | null; visionPricing?: Pricing | null; visionAvailable: boolean; operationsAvailable: boolean; speech: { available: boolean; provider: 'groq' | 'deepgram' }; dailyLimitMicros: number; reservedTodayMicros: number; canConfigure?: boolean; organizationId?: string; tools?: { text: boolean; vision: boolean }; scopes?: { units: { id: string; name: string }[]; events: { id: string; name: string; projectId: string }[] } };
 type Match = { projectId: string; projectName: string; itemName: string; score: number };
-type Operation = { request: string; stage: 'idle' | 'estimated' | 'preview' | 'done'; costMicros?: number; provider?: string; jev?: boolean; stale?: boolean; projectId?: string; matches?: Match[]; ambiguous?: boolean; error?: string; limit?: boolean; preview?: { plan: Omit<AssistantPlan, 'actorId'>; planToken: string; undoReason: string }; confirmed?: boolean; receipt?: string; key: string; destinationDefault?: string; movementId?: string; destination?: string | null; revise?: 'correct' | 'undo' | null; reviseKey?: string };
+type Operation = { request: string; stage: 'idle' | 'estimated' | 'preview' | 'done'; costMicros?: number; provider?: string; jev?: boolean; stale?: boolean; projectId?: string; matches?: Match[]; ambiguous?: boolean; error?: string; limit?: boolean; preview?: { plan: Omit<AssistantPlan, 'actorId'>; planToken: string; undoReason: string }; confirmed?: boolean; receipt?: string; key: string; /** Pedido exatamente como foi enviado para preparar a prévia; vai junto na confirmação. */ prepared?: string; destinationDefault?: string; movementId?: string; destination?: string | null; revise?: 'correct' | 'undo' | null; reviseKey?: string };
 type Source = { label: string; href: string };
 type Message = { id: string; role: 'user' | 'assistant'; content: string; image?: string; meta?: string; operation?: Operation; sources?: Source[] };
 type Picked = { dataUrl: string; bytes: number };
@@ -227,7 +227,7 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
   async function prepareOperation(message: Message) {
     if (!message.operation?.projectId) return;
     setBusy(true); setError(''); updateOperation(message.id, { error: '', limit: false });
-    try { const preview = await post<Operation['preview']>('/api/assistant', { action: 'prepare', projectId: message.operation.projectId, request: message.operation.request, consent: true, operationKey: message.operation.key, acceptedCostMicros: message.operation.costMicros }); updateOperation(message.id, { stage: 'preview', preview, confirmed: false }); if (preview) void suggestDestination(message.id, preview.plan.projectId, message.operation.request); }
+    try { const preview = await post<Operation['preview']>('/api/assistant', { action: 'prepare', projectId: message.operation.projectId, request: message.operation.request, consent: true, operationKey: message.operation.key, acceptedCostMicros: message.operation.costMicros }); updateOperation(message.id, { stage: 'preview', preview, confirmed: false, prepared: message.operation.request }); if (preview) void suggestDestination(message.id, preview.plan.projectId, message.operation.request); }
     catch (cause) {
       // O servidor respondeu: a próxima tentativa é outra chamada paga, com chave nova e custo mostrado de novo.
       // Tempo esgotado mantém a chave para recuperar o resultado sem pagar duas vezes.
@@ -252,7 +252,7 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
     if (operation.preview.plan.proposal.intent === 'stock.distribute' && !destination.destinationName) { updateOperation(message.id, { error: 'Diga para onde foi a distribuição (evento, local ou parceiro).' }); return; }
     setBusy(true); setError(''); updateOperation(message.id, { error: '' });
     try {
-      const saved = await post<{ queried?: boolean; replayed?: boolean; movementId?: string; destination?: { name?: string } | null }>('/api/assistant', { action: 'apply', planToken: operation.preview.planToken, confirmed: true, ...destination });
+      const saved = await post<{ queried?: boolean; replayed?: boolean; movementId?: string; destination?: { name?: string } | null }>('/api/assistant', { action: 'apply', planToken: operation.preview.planToken, confirmed: true, ...destination, ...(operation.prepared ? { origin: operation.prepared } : {}) });
       updateOperation(message.id, { stage: 'done', movementId: typeof saved.movementId === 'string' ? saved.movementId : undefined, destination: saved.destination?.name ?? destination.destinationName ?? null,
         receipt: saved.queried ? 'Consulta conferida com o saldo atual.' : saved.replayed ? 'Esta operação já tinha sido feita; nada foi repetido.' : `Operação concluída e registrada no histórico${saved.destination?.name ?? destination.destinationName ? ` (destino: ${saved.destination?.name ?? destination.destinationName})` : ''}.` });
       await onApplied?.();
@@ -423,6 +423,7 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
                       <form className={styles.confirmForm} onSubmit={event => { event.preventDefault(); void applyOperation(message, event.currentTarget); }}>
                       {['stock.distribute', 'stock.receive', 'stock.consume'].includes(message.operation.preview.plan.proposal.intent) && <DestinationField key={`${message.operation.preview.planToken}:${message.operation.destinationDefault ?? ''}`} projectId={message.operation.preview.plan.projectId} kind={message.operation.preview.plan.proposal.intent.slice(6)} defaultName={message.operation.destinationDefault ?? ''} required={message.operation.preview.plan.proposal.intent === 'stock.distribute'}/>}
                       <label className={styles.check}><input type="checkbox" checked={!!message.operation.confirmed} disabled={busy} onChange={event => updateOperation(message.id, { confirmed: event.target.checked })}/>Conferi os dados acima e autorizo gravar no estoque.</label>
+                      {message.operation.preview.plan.proposal.intent !== 'stock.query' && <p className={styles.sendsTo}>O histórico vai mostrar que foi feito pelo Rolê a seu pedido, com o texto do pedido acima. A equipe do projeto pode ver.</p>}
                       <button type="submit" className="p-button p-button-primary" disabled={busy || !message.operation.confirmed}>{message.operation.preview.plan.proposal.intent === 'stock.query' ? 'Conferir saldo atual' : message.operation.preview.plan.proposal.intent === 'record.create' ? 'Gravar o registro' : 'Gravar no estoque'}</button>
                       </form>
                     </div>}
