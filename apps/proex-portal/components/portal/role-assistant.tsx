@@ -6,7 +6,7 @@ import { ImagePlus, LoaderCircle, MessageSquarePlus, Mic, Send, Square, Trash2, 
 import { safeRequest, type AssistantPlan } from '@/lib/assistant/contracts';
 import {
   ROLE_MAX_HISTORY, ROLE_MAX_HISTORY_CHARS, ROLE_MAX_IMAGE_BYTES, ROLE_MAX_IMAGE_SIDE, ROLE_MAX_MESSAGE_CHARS, ROLE_MODELS,
-  formatMicros, friendlyMicros, roleConversationBytes, roleEstimate, roleSpeechCeilingMicros, type RoleTurn,
+  formatMicros, friendlyMicros, roleConversationBytes, roleEstimate, roleSpeechCeilingMicros, speechRouteCeilingMicros, speechRouteName, type RoleTurn, type SpeechRouteModel,
 } from '@/lib/assistant/role-contracts';
 import { prepareSpeechWav } from './speech-audio';
 import AiPeopleUsage from './ai-people-usage';
@@ -17,7 +17,7 @@ import styles from './role-assistant.module.css';
 type Project = { id: string; name: string; organization_id?: string };
 type Props = { projects: Project[]; defaultProjectId?: string; onApplied?: () => void | Promise<void>; onOpenSettings?: () => void; onOpenLimits?: () => void };
 type Pricing = { model: string; label: string; inputMicrosPerToken: number; outputMicrosPerToken: number };
-type Status = { available: boolean; reason: string | null; provider: string; model: string; textPricing?: Pricing | null; visionPricing?: Pricing | null; visionAvailable: boolean; operationsAvailable: boolean; speech: { available: boolean; provider: 'groq' | 'deepgram' }; dailyLimitMicros: number; reservedTodayMicros: number; canConfigure?: boolean; organizationId?: string; tools?: { text: boolean; vision: boolean }; scopes?: { units: { id: string; name: string }[]; events: { id: string; name: string; projectId: string }[] } };
+type Status = { available: boolean; reason: string | null; provider: string; model: string; textPricing?: Pricing | null; visionPricing?: Pricing | null; visionAvailable: boolean; operationsAvailable: boolean; speech: { available: boolean; provider: 'groq' | 'deepgram'; route?: string; routeModel?: SpeechRouteModel }; dailyLimitMicros: number; reservedTodayMicros: number; canConfigure?: boolean; organizationId?: string; tools?: { text: boolean; vision: boolean }; scopes?: { units: { id: string; name: string }[]; events: { id: string; name: string; projectId: string }[] } };
 type Match = { projectId: string; projectName: string; itemName: string; score: number };
 type Operation = { request: string; stage: 'idle' | 'estimated' | 'preview' | 'done'; costMicros?: number; provider?: string; jev?: boolean; stale?: boolean; projectId?: string; matches?: Match[]; ambiguous?: boolean; error?: string; limit?: boolean; preview?: { plan: Omit<AssistantPlan, 'actorId'>; planToken: string; undoReason: string }; confirmed?: boolean; receipt?: string; key: string; /** Pedido exatamente como foi enviado para preparar a prévia; vai junto na confirmação. */ prepared?: string; destinationDefault?: string; movementId?: string; destination?: string | null; revise?: 'correct' | 'undo' | null; reviseKey?: string };
 type Source = { label: string; href: string };
@@ -45,10 +45,13 @@ const OFFICIAL_LINK = /^https:\/\/(proex\.ufg\.br|23conpeex\.plateia\.ufg\.br|ww
 const PROVIDER_NAMES: Record<string, string> = { deepseek: 'DeepSeek', groq: 'Groq', openai: 'OpenAI', anthropic: 'Anthropic', nvidia: 'NVIDIA', deepgram: 'Deepgram' };
 const providerName = (id: string) => PROVIDER_NAMES[id] ?? id.replace(/^./, letter => letter.toUpperCase());
 function modelLabelFor(status: Status, photo: boolean) { return photo ? status.visionPricing?.label ?? ROLE_MODELS.deepseek.label : status.textPricing?.label ?? status.model; }
+/** Modelo de voz escolhido no catálogo (destino real do áudio); null quando vale o padrão de hoje. */
+function speechRoute(status: Status): { id: string; model: SpeechRouteModel } | null { return status.speech.route && status.speech.routeModel ? { id: status.speech.route, model: status.speech.routeModel } : null; }
 /** "DeepSeek (conversa e fotos) e Groq (voz)": só os serviços ligados nesta organização. */
 function servicesList(status: Status): string {
   const parts = [`${providerName(status.provider)} (conversa${status.visionAvailable ? ' e fotos' : ''})`];
-  if (status.speech.available) parts.push(`${providerName(status.speech.provider)} (voz)`);
+  const route = speechRoute(status);
+  if (status.speech.available) parts.push(route ? `o modelo de voz ${speechRouteName(route.model)}` : `${providerName(status.speech.provider)} (voz)`);
   if (status.operationsAvailable) parts.push('o serviço de registros de estoque');
   return parts.length > 1 ? `${parts.slice(0, -1).join(', ')} e ${parts.at(-1)}` : parts[0];
 }
@@ -164,7 +167,7 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
   const tooLong = draft.length > ROLE_MAX_MESSAGE_CHARS;
   const modelLabel = status ? modelLabelFor(status, !!picked) : '';
   // Ciência única: guardada neste aparelho e refeita só quando os serviços de IA mudarem.
-  const servicesKey = status ? [status.organizationId ?? '', status.provider, modelLabelFor(status, false), status.visionAvailable ? modelLabelFor(status, true) : '', status.speech.available ? status.speech.provider : '', status.operationsAvailable ? 'ops' : ''].join('|') : '';
+  const servicesKey = status ? [status.organizationId ?? '', status.provider, modelLabelFor(status, false), status.visionAvailable ? modelLabelFor(status, true) : '', status.speech.available ? speechRoute(status)?.id ?? status.speech.provider : '', status.operationsAvailable ? 'ops' : ''].join('|') : '';
   const stored = useMemo(() => { if (!servicesKey) return null; try { return window.localStorage.getItem(CONSENT_STORAGE); } catch { return null; } }, [servicesKey, ackTick]); // eslint-disable-line react-hooks/exhaustive-deps
   const consent = !!servicesKey && (stored === servicesKey || sessionAck === servicesKey);
   function rememberConsent() {
@@ -311,17 +314,21 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
   }
   function discardRecording() { if (recorded) URL.revokeObjectURL(recorded.url); setRecorded(null); }
   async function transcribe() {
-    if (!recorded || !status?.speech.available || transcribing) return;
+    if (!recorded || !status?.speech.available || transcribing || !consent) return;
     setTranscribing(true); setError(''); setLimitHit(false);
     try {
       const body = new FormData();
-      body.set('audio', recorded.file); body.set('projectId', projectId); body.set('operationKey', crypto.randomUUID()); body.set('consent', 'true'); body.set('provider', status.speech.provider);
+      body.set('audio', recorded.file); body.set('projectId', projectId); body.set('operationKey', crypto.randomUUID()); body.set('consent', 'true'); body.set('provider', speechRoute(status)?.id ?? status.speech.provider);
       const result = await call<{ transcript?: string }>('/api/assistant/speech', { method: 'POST', headers: { 'X-Proex-Action': '1' }, body });
       if (typeof result.transcript !== 'string') throw new Error('A transcrição voltou vazia.');
       setDraft(current => (current ? current + ' ' : '') + result.transcript); discardRecording();
       setNotice('Áudio transcrito. Revise o texto antes de enviar.');
       window.requestAnimationFrame(() => input.current?.focus());
-    } catch (cause) { setError(cause instanceof Error ? limitText(cause) : 'Não foi possível transcrever.'); setLimitHit(isLimit(cause)); }
+    } catch (cause) {
+      setError(cause instanceof Error ? limitText(cause) : 'Não foi possível transcrever.'); setLimitHit(isLimit(cause));
+      // O destino do áudio mudou com a tela aberta: nada foi enviado. Recarrega para a pessoa ver o destino novo e confirmar de novo.
+      if (cause instanceof RequestError && (cause.code === 'speech_provider_changed' || cause.code === 'speech_configuration_changed')) void loadStatus(projectId);
+    }
     finally { setTranscribing(false); }
   }
 
@@ -336,7 +343,8 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
   }
 
   if (!projects.length) return null;
-  const speechCost = recorded && status ? formatMicros(roleSpeechCeilingMicros(status.speech.provider, recorded.seconds)) : '';
+  const voiceRoute = status ? speechRoute(status) : null;
+  const speechCost = recorded && status ? formatMicros(voiceRoute ? speechRouteCeilingMicros(voiceRoute.model.style, recorded.seconds, voiceRoute.model.perHour) : roleSpeechCeilingMicros(status.speech.provider, recorded.seconds)) : '';
   // Com o botão na tela, a mensagem aponta para ele em vez de repetir o caminho do menu.
   const limitText = (cause: Error) => isLimit(cause) && status?.canConfigure && onOpenLimits ? cause.message.replace(/Você pode aumentar [^.]*\.$/, 'Use o botão Ajustar limites abaixo.') : cause.message;
   // Quem pode configurar vai direto a Limites e cotas; os outros já recebem na mensagem o nome de quem ajusta.
@@ -464,7 +472,7 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
             <button type="button" className="p-button p-button-primary" onClick={rememberConsent}>Entendi</button>
           </div>}
           {picked && <div className={styles.attachment}><img src={picked.dataUrl} alt="Imagem anexada"/><span>Imagem pronta ({Math.round(picked.bytes / 1024)} KB, reduzida no aparelho)</span><button type="button" className={styles.iconButton} onClick={() => setPicked(null)} aria-label="Remover imagem"><Trash2 size={18} aria-hidden="true"/></button></div>}
-          {recorded && <div className={styles.attachment}><audio controls src={recorded.url} aria-label="Ouvir a gravação antes de transcrever"/><button type="button" className="p-button p-button-primary" disabled={transcribing || !status.speech.available} onClick={() => void transcribe()}>{transcribing ? 'Transcrevendo…' : `Transcrever · até ${speechCost}`}</button><button type="button" className={styles.iconButton} onClick={discardRecording} aria-label="Descartar gravação"><Trash2 size={18} aria-hidden="true"/></button></div>}
+          {recorded && <div className={styles.attachment}><audio controls src={recorded.url} aria-label="Ouvir a gravação antes de transcrever"/><button type="button" className="p-button p-button-primary" disabled={transcribing || !status.speech.available || !consent} onClick={() => void transcribe()}>{transcribing ? 'Transcrevendo…' : `Transcrever · até ${speechCost}`}</button><button type="button" className={styles.iconButton} onClick={discardRecording} aria-label="Descartar gravação"><Trash2 size={18} aria-hidden="true"/></button></div>}
           <label className="visually-hidden" htmlFor="role-message">Mensagem para o Rolê</label>
           <textarea id="role-message" ref={input} value={draft} maxLength={ROLE_MAX_MESSAGE_CHARS + 200} rows={2} placeholder="Escreva para o Rolê…" disabled={busy}
             onChange={event => { setDraft(event.target.value); setNotice(''); }}

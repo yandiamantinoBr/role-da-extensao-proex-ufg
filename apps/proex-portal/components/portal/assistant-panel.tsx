@@ -3,10 +3,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { type AssistantPlan } from '@/lib/assistant/contracts';
 import type { SpeechProvider } from '@/lib/assistant/settings';
+import type { SpeechRouteModel } from '@/lib/assistant/role-contracts';
 import SpeechInput from './speech-input';
 import { startReviewedDictation, type DictationConstructor } from '@/lib/assistant/dictation';
 
-type Status = { available:boolean; organizationId?:string; organizations?:{id:string;name:string;available:boolean;sttAvailable:boolean;sttProvider?:SpeechProvider}[] };
+type Status = { available:boolean; organizationId?:string; organizations?:{id:string;name:string;available:boolean;sttAvailable:boolean;sttProvider?:SpeechProvider;sttRoute?:string;sttRouteModel?:SpeechRouteModel}[] };
 type Preview = { plan: Omit<AssistantPlan, 'actorId'>; planToken: string; undoReason: string };
 type Props = { projects: { id: string; name: string; organization_id?: string }[]; defaultProjectId?: string; onApplied?: () => void | Promise<void> };
 type SpeechWindow = Window & { SpeechRecognition?: DictationConstructor; webkitSpeechRecognition?: DictationConstructor };
@@ -58,7 +59,7 @@ export default function AssistantPanel({ projects, defaultProjectId, onApplied }
    <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={consent} onChange={event => { setConsent(event.target.checked); reset(); }} />Autorizo enviar este pedido e os materiais deste projeto aos provedores configurados. Removi dados pessoais e segredos.</label>
    <button type="button" className={button} disabled={!assistantAvailable || !projectId || !request.trim() || !consent || listening} onClick={prepare}>{busy ? 'Preparando…' : 'Preparar proposta'}</button>
   </fieldset>
-  <SpeechInput key={`${projectId}:${activeSpeechProvider}`} projectId={projectId} provider={activeSpeechProvider} available={activeOrg?.sttAvailable ?? false} onReviewedText={value => { reset(); setRequest(value); }}/>
+  <SpeechInput key={`${projectId}:${activeSpeechProvider}`} projectId={projectId} provider={activeSpeechProvider} destination={activeOrg?.sttRoute} routeModel={activeOrg?.sttRouteModel} onDestinationChanged={() => { void loadStatus().catch(() => undefined); }} available={activeOrg?.sttAvailable ?? false} onReviewedText={value => { reset(); setRequest(value); }}/>
   {preview && <div className="mt-5 space-y-3 rounded-xl border border-[var(--purple)] bg-[var(--surface)] p-4"><h3 className="text-lg font-bold">Confira: {labels[preview.plan.proposal.intent]}</h3><p>Projeto: {projects.find(project=>project.id===preview.plan.projectId)?.name??preview.plan.projectId} · Organização: {status?.organizations?.find(organization=>organization.id===preview.plan.organizationId)?.name??preview.plan.organizationId}</p><p>{preview.plan.before?.name ?? preview.plan.proposal.title}</p>
    {preview.plan.before && preview.plan.after && <div className="grid grid-cols-2 gap-3"><div className="rounded-xl bg-[var(--surface-soft)] p-3"><p className="text-sm">Antes</p><p className="font-semibold">{preview.plan.before.stock} {preview.plan.before.unit}</p><p className="text-sm">Disponível: {preview.plan.before.stock - preview.plan.before.reserved}</p></div><div className="rounded-xl bg-[var(--surface-soft)] p-3"><p className="text-sm">Depois</p><p className="font-semibold">{preview.plan.after.stock} {preview.plan.before.unit}</p><p className="text-sm">Disponível: {preview.plan.after.available}</p></div></div>}
    <p className="whitespace-pre-wrap break-words">{preview.plan.proposal.body}</p><p className="text-sm">Quantidade: {preview.plan.proposal.quantity || 'Sem movimentação'}</p>
