@@ -5,6 +5,7 @@ import { Bell, CheckCheck, ChevronRight, Eye, EyeOff, Inbox as InboxIcon, Refres
 import Link from 'next/link';
 import styles from './notification-bell.module.css';
 import MaterialAttentionInbox, {MATERIAL_ATTENTION_CHANGED} from './material-attention-inbox';
+import ConvocationInbox, {CONVOCATIONS_CHANGED} from './convocation-inbox';
 import { FOLLOWUP_CHANGED, followupApi, dueLabel } from './follow-up-api';
 import { TaskSignals } from './work-signals';
 import { groupNotifications, type NoticeForGroup } from '../../lib/follow-up/notification-groups';
@@ -40,11 +41,12 @@ function lastUpdate(value:string|null) {
  return value?updateFormatter.format(new Date(value)):'Data não informada';
 }
 
-export default function NotificationBell({userId,onSelectTask,onSelectMaterial,basePath='/?module=demands'}:{userId:string;onSelectTask?:(id:string)=>void;onSelectMaterial?:(itemId:string,projectId:string)=>void;basePath?:string}) {
+export default function NotificationBell({userId,onSelectTask,onSelectMaterial,onSelectConvocation,basePath='/?module=demands'}:{userId:string;onSelectTask?:(id:string)=>void;onSelectMaterial?:(itemId:string,projectId:string)=>void;onSelectConvocation?:(id:string)=>void;basePath?:string}) {
  const [stored,setStored]=useState<{owner:string;data:Inbox;hiddenPage:number}|null>(null);
  const [open,setOpen]=useState(false);
  const [materialUnread,setMaterialUnread]=useState({owner:'',count:0});
- const [pane,setPane]=useState<'notices'|'pending'|'stock'>('notices');
+ const [pane,setPane]=useState<'notices'|'pending'|'stock'|'convocations'>('notices');
+ const [convocationUnread,setConvocationUnread]=useState({owner:'',count:0});
  const [message,setMessage]=useState<{owner:string;error:boolean;text:string}|null>(null);
  const [writing,setWriting]=useState<{owner:string;controller:AbortController}|null>(null);
  const [pagingOwner,setPagingOwner]=useState<string|null>(null);
@@ -61,7 +63,7 @@ export default function NotificationBell({userId,onSelectTask,onSelectMaterial,b
  const refresh=useRef<()=>void>(()=>{});
  const currentInbox=stored?.owner===userId?stored:null;
  const inbox=currentInbox?.data??null;
- const unread=(inbox?.unread??0)+(materialUnread.owner===userId?materialUnread.count:0);
+ const unread=(inbox?.unread??0)+(materialUnread.owner===userId?materialUnread.count:0)+(convocationUnread.owner===userId?convocationUnread.count:0);
  const feedback=message?.owner===userId?message:null;
  const busy=writing?.owner===userId&&!writing.controller.signal.aborted;
  const groups=inbox?(inbox.groups??groupNotifications(inbox.notifications)):[];
@@ -267,10 +269,12 @@ export default function NotificationBell({userId,onSelectTask,onSelectMaterial,b
       Pendentes{inbox&&<span aria-hidden="true">{inbox.pending.length}{inbox.pendingHasMore?'+':''}</span>}
      </button>
      <button type="button" aria-pressed={pane==='stock'} onClick={()=>{setPane('stock');setConfirmation(null);window.dispatchEvent(new Event(MATERIAL_ATTENTION_CHANGED));}}>Estoque{materialUnread.owner===userId&&materialUnread.count>0&&<span>{materialUnread.count}</span>}</button>
+     <button type="button" aria-pressed={pane==='convocations'} onClick={()=>{setPane('convocations');setConfirmation(null);window.dispatchEvent(new Event(CONVOCATIONS_CHANGED));}}>Convocações{convocationUnread.owner===userId&&convocationUnread.count>0&&<span>{convocationUnread.count}</span>}</button>
     </div>
    </header>
    <div className={styles.content} hidden={!open||pane!=='stock'} style={!open||pane!=='stock'?{display:'none'}:undefined}><MaterialAttentionInbox userId={userId} onUnreadChange={count=>setMaterialUnread({owner:userId,count})} onOpenMaterial={onSelectMaterial?(itemId,projectId)=>{close(true);onSelectMaterial(itemId,projectId);}:undefined}/></div>
-   {open&&pane!=='stock'&&<div className={styles.content} key={pane}>
+   <div className={styles.content} hidden={!open||pane!=='convocations'} style={!open||pane!=='convocations'?{display:'none'}:undefined}><ConvocationInbox userId={userId} onUnreadChange={count=>setConvocationUnread({owner:userId,count})} onOpen={onSelectConvocation?id=>{close(true);onSelectConvocation(id);}:undefined}/></div>
+   {open&&pane!=='stock'&&pane!=='convocations'&&<div className={styles.content} key={pane}>
     {feedback&&<p role={feedback.error?'alert':'status'} className={feedback.error?styles.error:styles.feedback}>{feedback.text}</p>}
     {pane==='notices'?<>
      <div className={styles.toolbar}>

@@ -14,7 +14,7 @@ import { listRecords } from './records';
  * dos colegas do mesmo projeto). Nada de contato, observação livre, nome de quem pegou
  * emprestado ou identificador interno sai daqui.
  */
-export const ACTIVITY_TYPES = ['materials', 'loans', 'demands', 'agenda', 'records', 'ai'] as const;
+export const ACTIVITY_TYPES = ['materials', 'loans', 'demands', 'agenda', 'records', 'convocations', 'ai'] as const;
 export type ActivityType = typeof ACTIVITY_TYPES[number];
 export type ActivityEvent = {
   id: string; type: ActivityType; action: string; title: string; detail: string;
@@ -81,6 +81,8 @@ function optionalId(input: unknown, label: string): string | null {
   if (typeof input !== 'string' || !ID.test(input)) throw new HttpError(400, `Identificador inválido para ${label}.`, 'invalid_identifier');
   return input;
 }
+const CONVOCATION_LABELS: Record<string, string> = { created: 'Convocação criada', updated: 'Convocação editada', closed: 'Convocação encerrada', reopened: 'Convocação reaberta', invite_created: 'Link de convite gerado', invite_revoked: 'Link de convite encerrado', response_created: 'Presença respondida', response_updated: 'Resposta alterada', response_deleted: 'Resposta apagada pela pessoa', purged: 'Dados dos convidados apagados' };
+const CONVOCATION_ANSWERS: Record<string, string> = { yes: 'Vai', maybe: 'Talvez', no: 'Não vai' };
 const link = (module: string, projectId: string | null, extra = '') => projectId ? `/?module=${module}&project=${encodeURIComponent(projectId)}${extra}` : `/?module=${module}`;
 const plural = (count: number, one: string, many: string) => `${count} ${Math.abs(count) === 1 ? one : many}`;
 const MOVEMENT_LABELS: Record<string, string> = { receive: 'Entrada', distribute: 'Distribuição', consume: 'Consumo', adjust: 'Ajuste', redeem: 'Brinde entregue', reserve: 'Reserva', release: 'Reserva liberada' };
@@ -225,6 +227,24 @@ export async function activityFeed(db: D1Database, actor: PortalActor | null, in
     for (const record of records) events.push({ id: `records:${record.id}`, type: 'records', action: RECORD_LABELS[String(record.kind)] ?? 'Registro', title: String(record.title), detail: record.attachments?.length ? plural(record.attachments.length, 'anexo', 'anexos') : '',
       at: String(record.occurred_at), day: brasiliaDay(String(record.occurred_at)), projectId: String(record.project_id), projectName: names.get(String(record.project_id)) ?? '',
       actorId: authorOf.get(String(record.id)) ?? null, actorName: '', viaRole: false, href: link('records', String(record.project_id)), quantity: null });
+  }
+
+  if (wanted.includes('convocations')) {
+    // Convocações: o registro de eventos não guarda nome nem matrícula de convidados; só a ação, o projeto e quem fez.
+    const scope = scoped(actor, ['reports.read', 'campaigns.manage'], 'p.id', projectId);
+    const rows = take(await all(db, `SELECT e.id,e.kind,e.created_at,e.actor_id,e.details,c.id convocation_id,c.title,p.id project_id,p.name project_name,gp.name guest_project
+      FROM convocation_events e JOIN convocations c ON c.id=e.convocation_id JOIN projects p ON p.id=c.project_id LEFT JOIN projects gp ON gp.id=e.project_id
+      WHERE ${scope.sql} AND e.created_at>=? AND e.created_at<? ORDER BY e.created_at DESC LIMIT ${MAX_PER_SOURCE + 1}`, [...scope.values, range.startsAt, range.endsAt]));
+    for (const row of rows) {
+      let details: Row = {}; try { details = JSON.parse(String(row.details ?? '{}')); } catch { /* registro antigo */ }
+      const answer = CONVOCATION_ANSWERS[String(details.response ?? '')] ?? '';
+      const detail = row.kind === 'response_created' || row.kind === 'response_updated' ? [answer, row.guest_project ? String(row.guest_project) : ''].filter(Boolean).join(' · ')
+        : row.kind === 'invite_created' ? plural(Number(details.maxUses ?? 0), 'resposta no máximo', 'respostas no máximo') : row.kind === 'purged' ? plural(Number(details.removed ?? 0), 'resposta apagada', 'respostas apagadas') : '';
+      events.push({ id: `convocations:${row.id}`, type: 'convocations', action: CONVOCATION_LABELS[String(row.kind)] ?? 'Convocação', title: String(row.title), detail,
+        at: String(row.created_at), day: brasiliaDay(String(row.created_at)), projectId: String(row.project_id), projectName: String(row.project_name),
+        actorId: row.actor_id ? String(row.actor_id) : null, actorName: row.actor_id ? '' : 'Convidado(a) pelo link', viaRole: false,
+        href: `/?module=convocations&convocation=${encodeURIComponent(String(row.convocation_id))}`, quantity: null });
+    }
   }
 
   // Configuração de IA: limites, funções e permissões, com antes e depois. Visível só para quem
