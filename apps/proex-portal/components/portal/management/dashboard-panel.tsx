@@ -64,6 +64,7 @@ export default function DashboardPanel({ organizationId, onOpenRisks }: { organi
     (k.lowStock ?? 0) > 0 && { key: 'stock', icon: <PackageMinus size={18} aria-hidden="true"/>, text: `${fmt(k.lowStock ?? 0)} ${k.lowStock === 1 ? 'material no limite do estoque' : 'materiais no limite do estoque'}`, href: link('materials', projectId) },
     soon.length > 0 && { key: 'soon', icon: <CalendarClock size={18} aria-hidden="true"/>, text: `${soon.length} ${soon.length === 1 ? 'atividade nos próximos 7 dias' : 'atividades nos próximos 7 dias'}: ${soon.slice(0, 2).map(item => item.title).join(', ')}${soon.length > 2 ? '…' : ''}`, href: link('calendar', projectId) },
   ].filter(Boolean) as { key: string; icon: React.ReactNode; text: string; href?: string; action?: () => void }[];
+  const demandsEmpty = !!data && data.demandsByMonth.every(row => !row.created && !row.completed);
   const deliveriesEmpty = !!data?.deliveriesByMonth && data.deliveriesByMonth.every(row => row.itemsOut === 0);
   const card = (label: string, value: number | null | undefined, detail: string, href: string, warn = false) => value === null || value === undefined ? null
     : <a key={label} className={`${styles.kpi} ${warn && value > 0 ? styles.kpiWarn : ''}`} href={href}><span>{label}</span><strong>{fmt(value)}</strong><small>{detail}</small></a>;
@@ -72,7 +73,7 @@ export default function DashboardPanel({ organizationId, onOpenRisks }: { organi
     <div className={styles.toolbar}>
       <label className="p-field"><span>Projeto</span><select value={projectId} onChange={event => setProjectId(event.target.value)}><option value="">Todos os projetos que você vê</option>{data?.projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
       <label className="p-field"><span>Período</span><select value={period} onChange={event => setPeriod(event.target.value)}>{PERIODS.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
-      <button type="button" className="p-button p-button-subtle" onClick={() => setReload(value => value + 1)} disabled={loading}><RefreshCw size={16} aria-hidden="true"/>Atualizar</button>
+      <button type="button" className="p-button p-button-subtle" onClick={() => setReload(value => value + 1)} disabled={loading}><RefreshCw size={16} aria-hidden="true"/>Recarregar dados</button>
       {data && <p className={`${styles.help} ${styles.toolbarNote}`}>De {brDate(data.period.from)} a {brDate(data.period.to)}, comparado com {brDate(data.previous.from)} a {brDate(data.previous.to)}. Cada número abre o detalhe.</p>}
     </div>
     {error && <div className={styles.errorBox} role="alert"><p>{error}</p><button type="button" className="p-button p-button-subtle" onClick={() => setReload(value => value + 1)}>Tentar de novo</button></div>}
@@ -87,8 +88,8 @@ export default function DashboardPanel({ organizationId, onOpenRisks }: { organi
         {card('Demandas abertas', k.demandsOpen, `${fmt(k.demandsHighOpen)} de prioridade alta`, link('demands', projectId))}
         {card('Demandas em atraso', k.demandsOverdue, 'prazo vencido', link('demands', projectId), true)}
         {card('Demandas criadas', k.demandsCreated, versus(k.demandsCreated, data.previous.demandsCreated), link('demands', projectId))}
-        {card('Entregas no período', k.demandsCompleted, `concluídas · ${versus(k.demandsCompleted, data.previous.demandsCompleted)}`, link('demands', projectId))}
-        {data.deliveriesByMonth && card('Itens distribuídos', k.itemsOut, versus(k.itemsOut, data.previous.itemsOut) || 'saídas de brindes no período', link('materials', projectId))}
+        {card('Demandas concluídas', k.demandsCompleted, versus(k.demandsCompleted, data.previous.demandsCompleted), link('demands', projectId))}
+        {data.deliveriesByMonth && card('Brindes distribuídos', k.itemsOut, versus(k.itemsOut, data.previous.itemsOut) || 'saídas de brindes no período', link('materials', projectId))}
         {card('Dinâmicas ativas', k.campaignsActive, `${fmt(k.participations ?? 0)} participações no período`, link('events', projectId))}
         {card('Estoque baixo', k.lowStock, 'materiais no limite', link('materials', projectId), true)}
         {k.risksOpen !== null && <button type="button" className={`${styles.kpi} ${(k.risksReviewOverdue ?? 0) > 0 ? styles.kpiWarn : ''}`} style={{ textAlign: 'left', font: 'inherit', cursor: 'pointer' }} onClick={onOpenRisks}>
@@ -97,6 +98,7 @@ export default function DashboardPanel({ organizationId, onOpenRisks }: { organi
       <div className={styles.grid2}>
         <figure className={styles.card}>
           <header><h3>Demandas por mês</h3><a href={link('demands', projectId)}>Abrir demandas</a></header>
+          {demandsEmpty ? <p className={styles.empty}>Nenhuma demanda criada ou concluída neste período. <a href={link('demands', projectId)}>Abrir demandas</a></p> : <>
           <div className={styles.legend} aria-hidden="true"><span><i style={{ background: 'var(--viz-1)' }}/>Criadas</span><span><i style={{ background: 'var(--viz-3)' }}/>Concluídas</span></div>
           <div className={styles.plot} role="img" aria-label={`Demandas por mês: ${data.demandsByMonth.map(row => `${monthLabel(row.month)} ${row.created} criadas e ${row.completed} concluídas`).join('; ')}`}>
             <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 320, height: 200 }}><BarChart data={demands} barGap={2} margin={{ top: 6, right: 4, left: -12, bottom: 0 }}>
@@ -106,7 +108,7 @@ export default function DashboardPanel({ organizationId, onOpenRisks }: { organi
               <Tooltip cursor={{ fill: 'var(--viz-hover)' }} content={<VizTooltip/>}/>
               <Bar dataKey="Criadas" fill="var(--viz-1)" radius={[4, 4, 0, 0]}/><Bar dataKey="Concluídas" fill="var(--viz-3)" radius={[4, 4, 0, 0]}/>
             </BarChart></ResponsiveContainer>
-          </div>
+          </div></>}
         </figure>
         {data.deliveriesByMonth ? <figure className={styles.card}>
           <header><h3>Brindes distribuídos por mês</h3><a href={link('materials', projectId)}>Abrir materiais</a></header>
@@ -139,10 +141,10 @@ export default function DashboardPanel({ organizationId, onOpenRisks }: { organi
         {data.risks ? <section className={styles.card} aria-labelledby="dash-risks">
           <header><h3 id="dash-risks">Mapa de riscos abertos</h3><button type="button" className={styles.linkButton} onClick={onOpenRisks}>Abrir riscos</button></header>
           <div className={styles.matrixWrap}>
-            <span className={styles.axisY}>Impacto (estrago)</span>
+            <span className={styles.axisY}>Impacto (tamanho do dano)</span>
             <span className={styles.ticksY} aria-hidden="true">{[5, 4, 3, 2, 1].map(value => <span key={value}>{value}</span>)}</span>
             <div className={styles.matrix} role="table" aria-label="Riscos abertos por impacto (linhas, de 5 a 1) e chance (colunas, de 1 a 5)">
-              {data.risks.matrix.map((row, rowIndex) => row.map((count, column) => <span key={`${rowIndex}-${column}`} role="cell" aria-label={`Chance ${column + 1}, impacto ${5 - rowIndex}: ${count} ${count === 1 ? 'risco' : 'riscos'}`} className={`${styles.cell} ${styles[`lvl-${level(column + 1, 5 - rowIndex)}`]} ${count ? '' : styles.cellZero}`}>{count || '·'}</span>))}
+              {data.risks.matrix.map((row, rowIndex) => row.map((count, column) => <span key={`${rowIndex}-${column}`} role="cell" aria-label={`Chance ${column + 1}, impacto ${5 - rowIndex}: ${count} ${count === 1 ? 'risco' : 'riscos'}`} className={`${styles.cell} ${styles[`lvl-${level(column + 1, 5 - rowIndex)}`]} ${count ? '' : styles.cellZero}`}>{count || ''}</span>))}
             </div>
             <span className={styles.ticksX} aria-hidden="true">{[1, 2, 3, 4, 5].map(value => <span key={value}>{value}</span>)}</span>
             <span className={styles.axisX}>Chance de acontecer (probabilidade)</span>

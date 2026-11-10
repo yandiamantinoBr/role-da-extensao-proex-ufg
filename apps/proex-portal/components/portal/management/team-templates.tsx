@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { ChevronDown, LoaderCircle, Sparkles } from 'lucide-react';
+import { ChevronDown, CopyPlus, LayoutTemplate, LoaderCircle } from 'lucide-react';
 import { ACCESS_LABEL, type TeamTemplate } from '@/lib/management/team-templates';
 import { managementGet, managementPost } from './api';
 import styles from './management.module.css';
@@ -41,13 +41,15 @@ export default function TeamTemplates({ organizationId, selectedTeamId, onApplie
     const open = draft?.templateId === entry.id;
     return <article key={entry.id} className={styles.template} aria-labelledby={`template-${entry.id}`}>
       <h4 id={`template-${entry.id}`}>{entry.name}</h4><p>{entry.purpose}</p>
-      <ul className={styles.templateRoles}>{entry.roles.map(role => <li key={role.name} className={styles.roleLine}><span>{role.name}</span><small>Acesso sugerido: {ACCESS_LABEL[role.access]}</small></li>)}</ul>
+      <ul className={styles.templateRoles}>{entry.roles.map(role => <li key={role.name} className={styles.roleLine}><span>{role.name}</span><small>Acesso sugerido: {ACCESS_LABEL[role.access]}</small>
+        <details className={styles.roleMore}><summary>Responsabilidades<ChevronDown size={14} aria-hidden="true"/></summary><ul>{role.responsibilities.map(item => <li key={item}>{item}</li>)}</ul></details></li>)}</ul>
+      <p className={styles.help}><strong>Rotinas:</strong> {entry.routines.join(' · ')}.</p>
       {state.canApply && (open && draft ? <form className={styles.applyForm} onSubmit={event => { event.preventDefault(); void create(entry, draft); }}>
         <label className="p-field"><span>Nome da equipe</span><input value={draft.name} maxLength={100} required autoFocus onChange={event => setDraft({ ...draft, name: event.target.value })}/></label>
-        <p className={styles.help}>A equipe nasce sem pessoas. Os {entry.roles.length} papéis acima ficam como vagas a preencher, e as rotinas aparecem na equipe.</p>
-        <div className={styles.actions}><button type="submit" className="p-button p-button-primary" disabled={busy || !draft.name.trim()}>{busy ? <LoaderCircle size={15} className="p-spin" aria-hidden="true"/> : <Sparkles size={15} aria-hidden="true"/>}Criar equipe</button>
+        <p className={styles.help}>A equipe nasce sem pessoas. Os {entry.roles.length} papéis e as rotinas acima aparecem na equipe como guia para preencher.</p>
+        <div className={styles.actions}><button type="submit" className="p-button p-button-primary" disabled={busy || !draft.name.trim()}>{busy ? <LoaderCircle size={15} className="p-spin" aria-hidden="true"/> : <CopyPlus size={15} aria-hidden="true"/>}Criar equipe</button>
           <button type="button" className="p-button p-button-subtle" disabled={busy} onClick={() => setDraft(null)}>Cancelar</button></div>
-      </form> : <button type="button" className="p-button p-button-subtle" disabled={busy} onClick={() => { setMessage(null); setDraft({ templateId: entry.id, name: entry.name, operationKey: crypto.randomUUID() }); }}><Sparkles size={15} aria-hidden="true"/>Usar este modelo</button>)}
+      </form> : <button type="button" className="p-button p-button-subtle" disabled={busy} onClick={() => { setMessage(null); setDraft({ templateId: entry.id, name: entry.name, operationKey: crypto.randomUUID() }); }}><CopyPlus size={15} aria-hidden="true"/>Usar este modelo</button>)}
     </article>;
   })}</div>;
 
@@ -61,7 +63,7 @@ export default function TeamTemplates({ organizationId, selectedTeamId, onApplie
         <p className={styles.help}><strong>Rotinas:</strong> {template.routines.join(' · ')}.</p>
       </section>}
       {state.canApply && <details className={`${styles.card} ${styles.templatesBox}`}>
-        <summary className={styles.summary}><span className={styles.summaryIcon} aria-hidden="true"><Sparkles size={18}/></span><span className={styles.summaryText}><strong>Começar de um modelo de equipe</strong><small>Comunicação, Administrativo, TI, Gestão, Eventos e Bolsistas</small></span><span className={styles.summaryMore}>Ver {state.templates.length} modelos<ChevronDown size={18} className={styles.summaryChevron} aria-hidden="true"/></span></summary>
+        <summary className={styles.summary}><span className={styles.summaryIcon} aria-hidden="true"><LayoutTemplate size={18}/></span><span className={styles.summaryText}><strong>Começar de um modelo de equipe</strong><small>Comunicação, Administrativo, TI, Gestão, Eventos e Bolsistas</small></span><span className={styles.summaryMore}>Ver {state.templates.length} modelos<ChevronDown size={18} className={styles.summaryChevron} aria-hidden="true"/></span></summary>
         <p className={styles.help}>Escolha um modelo, ajuste o nome e crie a equipe. Papéis, responsabilidades e acessos sugeridos aparecem nela; pessoas e acessos você define depois.</p>
         {catalog}
       </details>}

@@ -48,15 +48,15 @@ export default function RisksPanel({ organizationId }: { organizationId: string 
   const overdue = data.risks.filter(risk => risk.reviewOverdue).length;
   return <div className={styles.root}>
     <div className={styles.toolbar} style={{ justifyContent: 'space-between' }}>
-      <p className={styles.help}>Algo que pode dar errado, com chance (probabilidade), estrago (impacto), dono e o que fazer para evitar. Riscos da organização ficam só com a administração; os de projeto aparecem para quem participa dele.</p>
+      <p className={styles.help}>Algo que pode dar errado, com chance (probabilidade), tamanho do dano (impacto), dono e o que fazer para evitar. Riscos da organização ficam só com a administração; os de projeto aparecem para quem participa dele.</p>
       <div className={styles.actions}>
         {scopes.length > 0 && !draft && <button type="button" className="p-button p-button-primary" onClick={() => setDraft(emptyDraft(scopes[0].id))}><Plus size={16} aria-hidden="true"/>Registrar risco</button>}
         {data.canLoadExamples && <button type="button" className="p-button p-button-subtle" disabled={saving} onClick={() => void send({ action: 'risk.examples.load' }, 'Exemplos carregados. Revise, ajuste ou apague cada um.')}>Carregar exemplos</button>}
       </div>
     </div>
-    {overdue > 0 && <p className={styles.starter} role="status"><strong>{overdue} {overdue === 1 ? 'risco está' : 'riscos estão'} com a revisão vencida.</strong> Abra, confira a situação e marque a próxima revisão.</p>}
+    {overdue > 0 && <p className={styles.starter} role="status"><strong>{overdue} {overdue === 1 ? 'risco está' : 'riscos estão'} com a revisão vencida.</strong> Confira a situação e marque a próxima revisão. <button type="button" className={styles.linkButton} onClick={() => { setCell(null); setFilter('overdue'); }}>{overdue === 1 ? 'Ver qual é' : 'Ver quais são'}</button></p>}
     {message && <p className={message.tone === 'ok' ? styles.ok : 'p-inline-error'} role={message.tone === 'ok' ? 'status' : 'alert'}>{message.text}</p>}
-    {draft && <form className={styles.form} onSubmit={save} aria-label={draft.id ? 'Editar risco' : 'Registrar risco'}>
+    {draft && <form id="risk-form" className={styles.form} onSubmit={save} aria-label={draft.id ? 'Editar risco' : 'Registrar risco'}>
       <div className={styles.formGrid}>
         <label className="p-field"><span>Onde</span><select value={draft.projectId} disabled={!!draft.id} onChange={event => setDraft({ ...draft, projectId: event.target.value })}>{scopes.map(scope => <option key={scope.id} value={scope.id}>{scope.name}</option>)}</select></label>
         <label className="p-field"><span>Categoria</span><select value={draft.category} onChange={event => setDraft({ ...draft, category: event.target.value })}>{Object.entries(CATEGORY).map(([key, text]) => <option key={key} value={key}>{text}</option>)}</select></label>
@@ -80,12 +80,12 @@ export default function RisksPanel({ organizationId }: { organizationId: string 
       <section className={styles.card} aria-labelledby="risk-map">
         <header><h3 id="risk-map">Mapa dos riscos abertos</h3>{cell && <button type="button" className="p-button p-button-subtle" onClick={() => setCell(null)}>Mostrar todos</button>}</header>
         <div className={styles.matrixWrap}>
-          <span className={styles.axisY}>Impacto (estrago)</span>
+          <span className={styles.axisY}>Impacto (tamanho do dano)</span>
           <span className={styles.ticksY} aria-hidden="true">{[5, 4, 3, 2, 1].map(value => <span key={value}>{value}</span>)}</span>
           <div className={styles.matrix}>{matrix.map((row, rowIndex) => row.map((count, column) => {
             const probability = column + 1, impact = 5 - rowIndex, active = cell?.[0] === probability && cell?.[1] === impact;
             return <button key={`${rowIndex}-${column}`} type="button" className={`${styles.cell} ${styles[`lvl-${levelOf(probability, impact)}`]} ${count ? '' : styles.cellZero}`} data-active={active}
-              aria-pressed={active} aria-label={`Chance ${probability}, impacto ${impact}: ${count} ${count === 1 ? 'risco' : 'riscos'} de nível ${LEVEL[levelOf(probability, impact)].toLowerCase()}`} disabled={!count && !active} onClick={() => setCell(active ? null : [probability, impact])}>{count || '·'}</button>;
+              aria-pressed={active} aria-label={`Chance ${probability}, impacto ${impact}: ${count} ${count === 1 ? 'risco' : 'riscos'} de nível ${LEVEL[levelOf(probability, impact)].toLowerCase()}`} disabled={!count && !active} onClick={() => setCell(active ? null : [probability, impact])}>{count || ''}</button>;
           }))}</div>
           <span className={styles.ticksX} aria-hidden="true">{[1, 2, 3, 4, 5].map(value => <span key={value}>{value}</span>)}</span>
           <span className={styles.axisX}>Chance de acontecer (probabilidade)</span>
@@ -119,7 +119,7 @@ export default function RisksPanel({ organizationId }: { organizationId: string 
       </dl>
       {risk.mitigation && <p><strong>Como evitar:</strong> {risk.mitigation}</p>}
       {risk.canEdit && <div className={styles.actions}>
-        <button type="button" className="p-button p-button-subtle" onClick={() => { setDraft({ id: risk.id, version: risk.version, projectId: risk.projectId ?? '', title: risk.title, description: risk.description, category: risk.category, probability: risk.probability, impact: risk.impact, ownerLabel: risk.ownerLabel, mitigation: risk.mitigation, status: risk.status, reviewOn: risk.reviewOn ?? '' }); window.scrollTo({ top: 0, behavior: 'smooth' }); }}>Editar</button>
+        <button type="button" className="p-button p-button-subtle" onClick={() => { setDraft({ id: risk.id, version: risk.version, projectId: risk.projectId ?? '', title: risk.title, description: risk.description, category: risk.category, probability: risk.probability, impact: risk.impact, ownerLabel: risk.ownerLabel, mitigation: risk.mitigation, status: risk.status, reviewOn: risk.reviewOn ?? '' }); window.setTimeout(() => { const form = document.getElementById('risk-form'); form?.scrollIntoView({ block: 'start' }); form?.querySelector<HTMLInputElement>('input')?.focus(); }, 0); }}>Editar</button>
         {risk.isExample && <button type="button" className="p-button p-button-subtle" disabled={saving} onClick={() => { if (window.confirm('Apagar este exemplo?')) void send({ action: 'risk.delete', id: risk.id, expectedVersion: risk.version }, 'Exemplo apagado.'); }}>Apagar exemplo</button>}
       </div>}
     </li>)}</ul> : <p className={styles.empty}>{data.risks.length ? 'Nenhum risco neste filtro.' : 'Nenhum risco registrado ainda.'}</p>}

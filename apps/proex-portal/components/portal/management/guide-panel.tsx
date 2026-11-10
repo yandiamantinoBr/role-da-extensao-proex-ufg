@@ -44,12 +44,21 @@ const FORMATS: Format[] = [
   { label: 'Link', icon: <Link2 size={16} aria-hidden="true"/>, apply: selected => `[${selected || 'texto do link'}](https://)` },
 ];
 
-export default function GuidePanel({ organizationId }: { organizationId: string }) {
+export default function GuidePanel({ organizationId, onDirtyChange }: { organizationId: string; onDirtyChange?: (dirty: boolean) => void }) {
   const [data, setData] = useState<Workspace | null>(null), [error, setError] = useState(''), [slug, setSlug] = useState('estrutura');
   const [editing, setEditing] = useState<{ title: string; body: string; note: string; preview: boolean } | null>(null);
   const [saving, setSaving] = useState(false), [message, setMessage] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
   const [history, setHistory] = useState<Version[] | null>(null), [editorPick, setEditorPick] = useState('');
   const bodyRef = useRef<HTMLTextAreaElement>(null);
+  // Edição aberta: avisa o painel (troca de aba) e o navegador (fechar ou recarregar).
+  const dirty = !!editing;
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+    if (!dirty) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); };
+    window.addEventListener('beforeunload', warn);
+    return () => { window.removeEventListener('beforeunload', warn); onDirtyChange?.(false); };
+  }, [dirty, onDirtyChange]);
   useEffect(() => {
     const controller = new AbortController();
     managementGet<Workspace>({ view: 'guide', organizationId }, controller.signal).then(setData).catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'Não foi possível abrir o guia.'); });
