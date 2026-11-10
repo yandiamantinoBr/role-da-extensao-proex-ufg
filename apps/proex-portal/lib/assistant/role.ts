@@ -136,9 +136,11 @@ export async function roleStatus(db: D1Database, actor: PortalActor | null, inpu
 }
 
 /** Sugestões por pessoa (regras, sem IA nem custo): só para quem já pode conversar com o Rolê neste projeto. */
-export async function roleSuggestionList(db: D1Database, actor: PortalActor | null, input: { projectId?: string | null }, now = Date.now()) {
+export async function roleSuggestionList(db: D1Database, actor: PortalActor | null, input: { projectId?: string | null; scope?: unknown }, now = Date.now()) {
   const { current, organizationId } = await scopedActor(db, actor, projectId(input.projectId));
-  return { days: ROLE_SUGGESTION_DAYS, suggestions: await roleSuggestions(db, current, organizationId, now) };
+  // Mesmo "Procurar em" da conversa, conferido pela mesma função: recorte que a pessoa não vê é recusado, nunca ampliado.
+  const scope = await resolveRoleScope(db, current, organizationId, input.scope);
+  return { days: ROLE_SUGGESTION_DAYS, suggestions: await roleSuggestions(db, current, organizationId, now, scope.projectIds) };
 }
 
 function history(value: unknown): RoleTurn[] {

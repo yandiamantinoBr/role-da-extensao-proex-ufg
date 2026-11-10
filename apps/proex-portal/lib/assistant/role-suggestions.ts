@@ -2,7 +2,9 @@
  * Sugestões de pergunta do Rolê, por pessoa. São regras fixas, sem chamada de IA e sem custo:
  * olham o momento (dinâmica e agenda dos próximos dias), a atividade recente de quem abriu a conversa
  * e o que a equipe dela pode ver. Tudo sai das mesmas permissões das telas, só da organização da
- * conversa. O sorteio é fixo por pessoa e muda a cada ROLE_SUGGESTION_DAYS dias.
+ * conversa e, quando a conversa está em "Procurar em" um projeto, unidade ou evento, só dos projetos
+ * desse recorte (a pergunta sugerida precisa ter resposta ali). O sorteio é fixo por pessoa e muda a
+ * cada ROLE_SUGGESTION_DAYS dias.
  */
 import { projectAuthoritySql, type PortalActor } from '../access';
 import { all } from '../database';
@@ -33,10 +35,11 @@ function pick<T>(list: T[], count: number, seed: number): T[] {
   return out;
 }
 
-export async function roleSuggestions(db: D1Database, actor: PortalActor, organizationId: string, now = Date.now()): Promise<RoleSuggestion[]> {
+/** `scopeProjectIds`: projetos do recorte da conversa (já conferidos por resolveRoleScope); null = toda a organização. Só estreita, nunca amplia. */
+export async function roleSuggestions(db: D1Database, actor: PortalActor, organizationId: string, now = Date.now(), scopeProjectIds: string[] | null = null): Promise<RoleSuggestion[]> {
   const today = dayOf(now), seed = hash(`${actor.userId}:${Math.floor(Date.parse(`${today}T12:00:00Z`) / 86400000 / ROLE_SUGGESTION_DAYS)}`);
   const projects = await all(db, `SELECT p.id FROM projects p JOIN organizations o ON o.id=p.organization_id AND o.status='active' WHERE p.organization_id=? AND ${followupAuthority('?', 'p.organization_id', 'p.id')} LIMIT 400`, [organizationId, actor.userId]);
-  const ids = projects.map(row => String(row.id));
+  const allowed = scopeProjectIds ? new Set(scopeProjectIds) : null, ids = projects.map(row => String(row.id)).filter(id => !allowed || allowed.has(id));
   if (!ids.length) return pick(GENERAL, ROLE_SUGGESTION_LIMIT, seed).map(text => ({ text, why: 'geral' as const }));
   const marks = `(${ids.map(() => '?').join(',')})`;
   const inventory = projectAuthoritySql(actor, ['inventory.read'], 'p.id'), agenda = projectAuthoritySql(actor, ['reports.read', 'campaigns.manage'], 'p.id'), loans = projectAuthoritySql(actor, ['loans.read'], 'p.id');

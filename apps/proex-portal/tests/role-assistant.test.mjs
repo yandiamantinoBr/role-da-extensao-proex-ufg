@@ -659,3 +659,51 @@ test('SUGESTÕES: rules only, per person; follow the moment, the own activity an
     await assert.rejects(roleSuggestionList(f.db, null, { projectId: 'project-a' }, NOW), error => error.status === 403);
   } finally { f.native.close(); }
 });
+
+test('SUGESTÕES: follow "Procurar em"; a narrowed conversation never suggests an item of another project; unseen scopes give nothing', async () => {
+  const f = fixture();
+  try {
+    await setup(f);
+    f.native.prepare("UPDATE projects SET organization_id='org_proex' WHERE organization_id IS NULL").run();
+    const { roleSuggestions, ROLE_SUGGESTION_LIMIT } = await import(compile('assistant/role-suggestions'));
+    const { roleSuggestionList } = await import(compile('assistant/role'));
+    const NOW = Date.parse('2026-11-10T15:00:00.000Z'), iso = offset => new Date(NOW + offset).toISOString();
+    const texts = list => list.map(entry => entry.text), joined = list => texts(list).join(' ');
+    // Projeto A: dinâmica em andamento e a Caneta QA em estoque. Projeto B: o Brinde B, que a própria pessoa movimentou ontem.
+    f.native.prepare("INSERT INTO campaigns(id,project_id,name,starts_at,ends_at,status,created_at) VALUES('camp-a','project-a','Roleta QA','2026-11-10T12:00:00.000Z','2026-11-13T21:00:00.000Z','active',?)").run(iso(0));
+    f.native.prepare("UPDATE items SET stock=40 WHERE id='item-a'").run();
+    f.native.prepare("INSERT INTO items(id,project_id,name,category,unit,stock,created_at,updated_at) VALUES('item-b','project-b','Brinde B SEGREDO','consumption','unidade',2,?,?)").run(iso(0), iso(0));
+    f.native.prepare("INSERT INTO stock_movements(id,item_id,delta,kind,note,actor_id,created_at) VALUES('mov-b','item-b',3,'receive','','owner-qa',?)").run(iso(-86400000));
+    const ask = (actor, scope, projectId = 'project-a') => roleSuggestionList(f.db, actor, { projectId, ...(scope === undefined ? {} : { scope }) }, NOW).then(result => result.suggestions);
+
+    // Toda a organização (ou conversa antiga, sem recorte): o resultado de hoje, com itens dos dois projetos.
+    const everything = await roleSuggestions(f.db, f.actors.owner, 'org_proex', NOW);
+    assert.deepEqual(everything[0], { text: 'Quais são os níveis de brinde da dinâmica Roleta QA?', why: 'momento' });
+    assert.deepEqual(texts(everything.filter(entry => entry.why === 'atividade')).sort(), ['Quanto ainda temos de Brinde B SEGREDO?', 'Quanto saiu de Brinde B SEGREDO nos últimos 7 dias?']);
+    assert.deepEqual(await ask(f.actors.owner, undefined), everything, 'no scope sent: same list as before');
+    assert.deepEqual(await ask(f.actors.owner, { kind: 'org' }), everything, 'organization scope: same list as before');
+
+    // Conversa no projeto A: nada do Brinde B, mesmo sendo a atividade recente da pessoa.
+    const onlyA = await ask(f.actors.owner, { kind: 'project', id: 'project-a' });
+    assert.equal(onlyA.length, ROLE_SUGGESTION_LIMIT);
+    assert.ok(!joined(onlyA).includes('SEGREDO'), 'no item of the other project');
+    assert.deepEqual(onlyA[0], { text: 'Quais são os níveis de brinde da dinâmica Roleta QA?', why: 'momento' });
+    assert.deepEqual(onlyA.filter(entry => entry.why === 'atividade'), []);
+    assert.deepEqual(onlyA.filter(entry => entry.why === 'equipe'), [{ text: 'Quanto ainda temos de Caneta QA?', why: 'equipe' }]);
+    assert.deepEqual(await ask(f.actors.owner, { kind: 'event', id: 'camp-a' }), onlyA, 'event of project A: same narrowing');
+    // Conversa no projeto B: nada do projeto A.
+    const onlyB = await ask(f.actors.owner, { kind: 'project', id: 'project-b' });
+    assert.ok(!joined(onlyB).includes('Caneta QA') && !joined(onlyB).includes('Roleta QA'));
+    assert.ok(onlyB.every(entry => entry.why !== 'momento'));
+    assert.deepEqual(texts(onlyB.filter(entry => entry.why === 'atividade')).sort(), ['Quanto ainda temos de Brinde B SEGREDO?', 'Quanto saiu de Brinde B SEGREDO nos últimos 7 dias?']);
+
+    // Recorte que a pessoa não vê: recusado como na conversa, sem lista nenhuma; formato inválido também.
+    for (const scope of [{ kind: 'project', id: 'project-b' }, { kind: 'event', id: 'camp-inexistente' }]) await assert.rejects(ask(f.actors.viewer, scope), error => error.code === 'role_scope_forbidden', JSON.stringify(scope));
+    await assert.rejects(ask(f.actors.outsider, { kind: 'project', id: 'project-a' }, 'project-b'), error => error.code === 'role_scope_forbidden');
+    for (const scope of [{ kind: 'all-orgs' }, { kind: 'project' }, 'project-b']) await assert.rejects(ask(f.actors.viewer, scope), error => error.code === 'role_scope', JSON.stringify(scope));
+    // Mesmo que um recorte de outro projeto chegasse até as regras, ele só estreita: sobra a lista geral.
+    const forced = await roleSuggestions(f.db, f.actors.viewer, 'org_proex', NOW, ['project-b']);
+    assert.ok(forced.every(entry => entry.why === 'geral') && !joined(forced).includes('SEGREDO'));
+    assert.ok(!joined(await ask(f.actors.viewer, { kind: 'project', id: 'project-a' })).includes('SEGREDO'));
+  } finally { f.native.close(); }
+});

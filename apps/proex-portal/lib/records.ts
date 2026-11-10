@@ -127,6 +127,24 @@ export async function listRecords(db: D1Database, actor: PortalActor | null, fil
   return { records: await projectRecords(db, rows.slice(0, limit)), limit, truncated: rows.length > limit };
 }
 
+/** `summary`: pedido feito ao Rolê que gerou o registro (só quando a pessoa confirmou pelo cartão do Rolê). Mesmo formato de MovementOrigin. */
+export type RecordOrigin = { via: 'assistant'; label: string; summary?: string };
+/**
+ * Marca os registros que o Rolê gravou depois da confirmação da pessoa: quem pediu e, quando foi guardado, o pedido.
+ * Só para a tela Registros (GET /api/records): recebe a lista que listRecords já autorizou e consulta só esses registros.
+ * O histórico geral, a ficha do projeto e as consultas do Rolê não chamam esta função, então não levam o texto do pedido.
+ */
+export async function withRecordOrigins(db: D1Database, rows: Row[]): Promise<Row[]> {
+  const origins = new Map<string, RecordOrigin>(), projectOf = new Map(rows.map(row => [String(row.id), String(row.project_id)])), ids = [...projectOf.keys()];
+  for (let index = 0; index < ids.length; index += 90) {
+    const chunk = ids.slice(index, index + 90);
+    const plans = (await stmt(db, `SELECT json_extract(a.result_json,'$.recordId') record_id,a.project_id,CASE WHEN json_type(a.result_json,'$.origin')='text' THEN json_extract(a.result_json,'$.origin') END origin,COALESCE(NULLIF(p.display_name,''),'Equipe') actor_name
+      FROM ai_plans a LEFT JOIN profiles p ON p.user_id=a.actor_id WHERE a.status='applied' AND json_valid(a.result_json) AND json_extract(a.result_json,'$.recordId') IN (${chunk.map(() => '?').join(',')}) ORDER BY a.created_at,a.id`, chunk).all<Row>()).results ?? [];
+    for (const plan of plans) if (projectOf.get(String(plan.record_id)) === String(plan.project_id)) origins.set(String(plan.record_id), { via: 'assistant', label: `Feito pelo Rolê a pedido de ${plan.actor_name}`, ...(typeof plan.origin === 'string' && plan.origin ? { summary: plan.origin } : {}) });
+  }
+  return rows.map(row => origins.has(String(row.id)) ? { ...row, origin: origins.get(String(row.id)) } : row);
+}
+
 export async function createRecord(db: D1Database, actor: PortalActor | null, input: Record<string, unknown>): Promise<{ record: Row; id: string; duplicate?: boolean }> {
   actorRequired(actor);
   const projectId = idValue(input.projectId, 'o projeto')!, kind = kindValue(input.kind);
