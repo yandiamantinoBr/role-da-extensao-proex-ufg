@@ -124,3 +124,18 @@ test('ombuds per-person brake lives only in memory and the collective message ce
  const id=f.native.prepare('SELECT report_id FROM ombuds_messages WHERE seq=1 LIMIT 1').get().report_id,day=f.native.prepare('SELECT sent_on FROM ombuds_messages LIMIT 1').get().sent_on;
  const put=f.native.prepare("INSERT INTO ombuds_messages(id,report_id,side,body,sent_on,seq) VALUES(?,?,'reporter','x',?,?)");for(let i=0;i<ombuds.OMBUDS_DAILY_MESSAGES;i++)put.run(crypto.randomUUID(),id,day,100+i);
  ombuds.resetOmbudsMemoryBrake();await assert.rejects(()=>ombuds.ombudsReporterAction(f.db,a,{action:'reply',code,body:'Além do teto coletivo.'}),e=>e.status===429);});
+
+test('doca: tudo desligado por padrão, estado por pessoa, validação e compatibilidade com os widgets antigos',async t=>{const f=fixture(t),a=await f.user('a','viewer','p-a','o-a'),b=await f.user('b','viewer','p-a','o-a');
+ assert.deepEqual((await widgets.dockState(f.db,a)).dock,{enabled:[],open:null,minimized:false,hidden:[]});
+ await widgets.saveDock(f.db,a,{action:'dock',enabled:['notes','calendar'],open:'calendar',minimized:true,hidden:['role']});
+ assert.deepEqual((await widgets.dockState(f.db,a)).dock,{enabled:['notes','calendar'],open:'calendar',minimized:true,hidden:['role']});
+ assert.deepEqual((await widgets.dockState(f.db,b)).dock.enabled,[],'each person has their own dock');
+ assert.equal((await widgets.widgetState(f.db,a)).settings.notes,true,'enabling notes in the dock also enables their data');
+ for(const bad of [{enabled:['secret'],open:null,minimized:false,hidden:[]},{enabled:[],open:null,minimized:'no',hidden:[]},{enabled:[],open:null,minimized:false,hidden:['Bad Id']},{enabled:[],open:null,minimized:false,hidden:Array.from({length:11},(_,i)=>`x${i}`)},{enabled:[],open:null,minimized:false,hidden:[],extra:1}])
+  await assert.rejects(()=>widgets.saveDock(f.db,a,{action:'dock',...bad}),e=>e.status===400);
+ assert.deepEqual(widgets.parseDock({enabled:['notes'],open:'demands',minimized:true,hidden:[]}),{enabled:['notes'],open:null,minimized:false,hidden:[]},'an open panel must be an enabled widget');
+ assert.deepEqual(widgets.parseDock('{}',{notes:1,reminders:1}).enabled,['notes','reminders'],'old widget switches carry over');
+ assert.deepEqual(widgets.parseDock('not json').enabled,[]);
+ f.native.prepare("INSERT INTO personal_notes(id,user_id,kind,body,due_on,version,created_at,updated_at) VALUES('r1','a','reminder','Prazo',?,1,?,?)").run('2026-01-01',f.now,f.now);
+ await widgets.saveDock(f.db,a,{action:'dock',enabled:['reminders'],open:null,minimized:false,hidden:[]});assert.equal((await widgets.dockState(f.db,a)).badges.reminders,1,'late reminders feed the launcher badge');
+ await assert.rejects(()=>widgets.dockState(f.db,null),e=>e.status===401);});

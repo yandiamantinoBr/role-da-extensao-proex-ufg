@@ -1,73 +1,18 @@
 'use client';
-import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from 'react';
-import { Bell, CalendarPlus, Check, LoaderCircle, Pencil, Plus, Settings2, Sparkles, StickyNote, Trash2, X } from 'lucide-react';
+import { useCallback, useId, useRef, useState, type FormEvent } from 'react';
+import { Bell, CalendarPlus, Check, LoaderCircle, Pencil, Plus, StickyNote, Trash2, X } from 'lucide-react';
 import DateField from './date-field';
-import { civilDay, communityGet, communityPost, errorText } from './community-api';
+import { civilDay, communityPost, errorText } from './community-api';
 import styles from './personal-widgets.module.css';
 
-type Settings = { notes: boolean; reminders: boolean; roleShortcut: boolean; version: number };
-type Note = { id: string; body: string; version: number; updatedAt: string };
-type Reminder = { id: string; body: string; dueOn: string | null; dueTime: string | null; doneAt: string | null; version: number };
-type State = { settings: Settings; notes: Note[]; reminders: Reminder[] };
-const ROLE_LAUNCHER = 'button[aria-keyshortcuts="Alt+R"]';
+export type Note = { id: string; body: string; version: number; updatedAt: string };
+export type Reminder = { id: string; body: string; dueOn: string | null; dueTime: string | null; doneAt: string | null; version: number };
 
 /**
  * Optional personal widgets on the home page. Off by default; when off, only one quiet line is shown.
  * The Rolê widget is a shortcut to the existing assistant (it presses the same floating button), not a copy.
  */
-export default function PersonalWidgets({ userId, serverDay, roleAvailable }: { userId: string; serverDay: string; roleAvailable: boolean }) {
-  const [state, setState] = useState<State | null>(null), [error, setError] = useState(''), [customizing, setCustomizing] = useState(false);
-  const generation = useRef(0);
-  const load = useCallback(() => {
-    const epoch = ++generation.current, current = generation;
-    return communityGet<State>('/api/community/widgets')
-      .then(result => { if (epoch === current.current) { setState(result); setError(''); } })
-      .catch(cause => { if (epoch === current.current) setError(errorText(cause, 'Não foi possível abrir seus widgets.')); });
-  }, []);
-  useEffect(() => {
-    const epoch = ++generation.current, current = generation;
-    communityGet<State>('/api/community/widgets')
-      .then(result => { if (epoch === current.current) { setState(result); setError(''); } })
-      .catch(cause => { if (epoch === current.current) setError(errorText(cause, 'Não foi possível abrir seus widgets.')); });
-    return () => { current.current++; };
-  }, [userId]);
-  if (!state) return error ? <p className={styles.quiet} role="status">{error} <button type="button" className="p-text-link" onClick={() => void load()}>Tentar de novo</button></p> : null;
-  const { settings } = state, anyOn = settings.notes || settings.reminders || (settings.roleShortcut && roleAvailable);
-  if (!anyOn && !customizing) return <p className={styles.quiet}><StickyNote size={16} aria-hidden="true"/><span>Anotações e lembretes pessoais estão desligados.</span><button type="button" className={styles.linkButton} onClick={() => setCustomizing(true)}>Ativar widgets</button></p>;
-  return <section className={styles.panel} aria-labelledby={`widgets-${userId}`}>
-    <div className={styles.heading}>
-      <div><h2 id={`widgets-${userId}`}>Seus widgets</h2><p>Só você vê. Ligue apenas o que ajuda no seu dia.</p></div>
-      <button type="button" className="p-button p-button-subtle" aria-expanded={customizing} aria-label={customizing ? 'Fechar personalização dos widgets' : 'Personalizar widgets'} onClick={() => setCustomizing(value => !value)}>{customizing ? <X size={16}/> : <Settings2 size={16}/>}<span>{customizing ? 'Fechar' : 'Personalizar'}</span></button>
-    </div>
-    {customizing && <WidgetSettings settings={settings} roleAvailable={roleAvailable} onSaved={next => { setState(current => current && { ...current, settings: next }); setCustomizing(false); void load(); }}/>}
-    {anyOn && <div className={styles.grid}>
-      {settings.roleShortcut && roleAvailable && <RoleShortcut/>}
-      {settings.reminders && <Reminders items={state.reminders} serverDay={serverDay} onChange={load}/>}
-      {settings.notes && <Notes items={state.notes} onChange={load}/>}
-    </div>}
-  </section>;
-}
-
-function WidgetSettings({ settings, roleAvailable, onSaved }: { settings: Settings; roleAvailable: boolean; onSaved(next: Settings): void }) {
-  const [draft, setDraft] = useState(settings), [busy, setBusy] = useState(false), [error, setError] = useState('');
-  const options: [keyof Omit<Settings, 'version'>, string, string][] = [
-    ['reminders', 'Lembretes', 'Datas e horários que você não quer esquecer.'],
-    ['notes', 'Anotações', 'Recados curtos para você mesmo.'],
-    ...(roleAvailable ? [['roleShortcut', 'Atalho do Rolê', 'Abre o assistente que já existe no portal.'] as [keyof Omit<Settings, 'version'>, string, string]] : []),
-  ];
-  async function save(event: FormEvent) {
-    event.preventDefault(); setBusy(true); setError('');
-    try { const result = await communityPost<{ settings: Settings }>('/api/community/widgets', { action: 'settings', notes: draft.notes, reminders: draft.reminders, roleShortcut: roleAvailable ? draft.roleShortcut : settings.roleShortcut, expectedVersion: settings.version }); onSaved(result.settings); }
-    catch (cause) { setError(errorText(cause)); } finally { setBusy(false); }
-  }
-  return <form className={styles.settings} onSubmit={save}>
-    <fieldset disabled={busy}><legend>Escolha os widgets</legend>
-      {options.map(([key, label, help]) => <label key={key} className={styles.toggle}><input name="community-field-1" type="checkbox" checked={draft[key]} onChange={event => setDraft(current => ({ ...current, [key]: event.target.checked }))}/><span><strong>{label}</strong><small>{help}</small></span></label>)}
-    </fieldset>
-    {error && <p role="alert" className="p-inline-error">{error}</p>}
-    <div className={styles.actions}><button type="submit" className="p-button p-button-primary" disabled={busy}>{busy ? <LoaderCircle className="p-spin" size={16}/> : <Check size={16}/>}Salvar escolha</button></div>
-  </form>;
-}
+/* The old home-page block and its settings form were replaced by the floating dock (floating-dock.tsx, 0043). */
 
 function useOperation() {
   const [busy, setBusy] = useState(false), [error, setError] = useState('');
@@ -79,14 +24,14 @@ function useOperation() {
   return { busy, error, run };
 }
 
-function Notes({ items, onChange }: { items: Note[]; onChange(): Promise<void> }) {
+export function Notes({ items, onChange, bare = false }: { items: Note[]; onChange(): Promise<void>; bare?: boolean }) {
   const id = useId(), [body, setBody] = useState(''), key = useRef(''), { busy, error, run } = useOperation();
   async function add(event: FormEvent) {
     event.preventDefault(); if (!body.trim()) return; key.current ||= crypto.randomUUID();
     if (await run({ action: 'create', kind: 'note', body, operationKey: key.current }, onChange)) { setBody(''); key.current = ''; }
   }
-  return <article className={styles.card} aria-labelledby={`${id}-title`}>
-    <h3 id={`${id}-title`}><StickyNote size={17} aria-hidden="true"/>Anotações</h3>
+  return <article className={bare ? styles.bare : styles.card} aria-labelledby={bare ? undefined : `${id}-title`} aria-label={bare ? 'Anotações' : undefined}>
+    {!bare && <h3 id={`${id}-title`}><StickyNote size={17} aria-hidden="true"/>Anotações</h3>}
     <form className={styles.addRow} onSubmit={add}>
       <label className="visually-hidden" htmlFor={`${id}-new`}>Nova anotação</label>
       <input name="community-field-2" id={`${id}-new`} value={body} maxLength={500} placeholder="Escreva uma anotação" disabled={busy} onChange={event => { setBody(event.target.value); key.current = ''; }}/>
@@ -97,7 +42,7 @@ function Notes({ items, onChange }: { items: Note[]; onChange(): Promise<void> }
   </article>;
 }
 
-function Reminders({ items, serverDay, onChange }: { items: Reminder[]; serverDay: string; onChange(): Promise<void> }) {
+export function Reminders({ items, serverDay, onChange, bare = false }: { items: Reminder[]; serverDay: string; onChange(): Promise<void>; bare?: boolean }) {
   const id = useId(), [body, setBody] = useState(''), [dueOn, setDueOn] = useState(''), [dueTime, setDueTime] = useState(''), [withDate, setWithDate] = useState(false), key = useRef(''), { busy, error, run } = useOperation();
   const open = items.filter(item => !item.doneAt), done = items.filter(item => item.doneAt);
   async function add(event: FormEvent) {
@@ -105,8 +50,8 @@ function Reminders({ items, serverDay, onChange }: { items: Reminder[]; serverDa
     if (await run({ action: 'create', kind: 'reminder', body, dueOn: dueOn || null, dueTime: dueTime || null, operationKey: key.current }, onChange)) { setBody(''); setDueOn(''); setDueTime(''); setWithDate(false); key.current = ''; }
   }
   const late = open.filter(item => item.dueOn && serverDay && item.dueOn < serverDay).length;
-  return <article className={styles.card} aria-labelledby={`${id}-title`}>
-    <h3 id={`${id}-title`}><Bell size={17} aria-hidden="true"/>Lembretes{late > 0 && <span className={styles.badge} data-tone="late">{late} {late === 1 ? 'atrasado' : 'atrasados'}</span>}</h3>
+  return <article className={bare ? styles.bare : styles.card} aria-labelledby={bare ? undefined : `${id}-title`} aria-label={bare ? 'Lembretes' : undefined}>
+    <h3 id={`${id}-title`} className={bare ? 'visually-hidden' : undefined}><Bell size={17} aria-hidden="true"/>Lembretes{late > 0 && <span className={styles.badge} data-tone="late">{late} {late === 1 ? 'atrasado' : 'atrasados'}</span>}</h3>
     <form className={styles.reminderForm} onSubmit={add}>
       <div className={styles.addRow}>
         <label className="visually-hidden" htmlFor={`${id}-new`}>Novo lembrete</label>
@@ -151,18 +96,4 @@ function EditableItem({ item, onChange }: { item: Note; onChange(): Promise<void
       : <span className={styles.itemActions}><button type="button" className={styles.iconAction} aria-label={`Editar anotação: ${item.body}`} onClick={() => setEditing(true)}><Pencil size={16}/></button><button type="button" className={styles.iconAction} aria-label={`Apagar anotação: ${item.body}`} onClick={() => setConfirming(true)}><Trash2 size={16}/></button></span>}
     {error && <p role="alert" className="p-inline-error">{error}</p>}
   </li>;
-}
-
-function RoleShortcut() {
-  const [message, setMessage] = useState('');
-  function open() {
-    const launcher = document.querySelector<HTMLButtonElement>(ROLE_LAUNCHER);
-    if (launcher) { setMessage(''); launcher.click(); } else setMessage('O Rolê ainda está carregando ou está desligado para você. Tente em instantes; a gestão liga o Rolê em Configurações.');
-  }
-  return <article className={`${styles.card} ${styles.roleCard}`}>
-    <h3><Sparkles size={17} aria-hidden="true"/>Rolê</h3>
-    <p>Peça ajuda com materiais, saídas e demandas, por texto, foto ou áudio.</p>
-    <button type="button" className="p-button p-button-subtle" onClick={open} title="Atalho: Alt + R"><Sparkles size={16}/>Falar com o Rolê</button>
-    {message && <p role="status" className={styles.help}>{message}</p>}
-  </article>;
 }

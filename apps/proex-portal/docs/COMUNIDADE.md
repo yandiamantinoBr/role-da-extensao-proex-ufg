@@ -124,3 +124,15 @@ Resposta do Yan em 2026-11-09 (Decisões): "pode ser alguém designado pela Proe
 - Leitor de objetos local (`platform-node/env.ts`, `ObjectBucket.arrayBuffer`) pode devolver um buffer maior que o objeto no armazenamento em disco; o chat lê pelo `body`. Observação para quem mantém a plataforma.
 
 Limites conhecidos: a limpeza dos 180 dias depende de uso (envios de imagem ou mensagem), não de uma rotina agendada; a consulta a cada 8 s traz só mensagens novas (uma mensagem apagada some para os outros ao reabrir a conversa); a caixa de enviados da conta Google que manda os avisos registra quem recebeu aviso e quando.
+
+# Doca flutuante de widgets (migração 0043)
+
+Pedido do Yan (2026-11-09, repassado pela coordenação): "uma coisa suspensa... que nem o assistente pessoal... importante ter como fechar... algo que fica aberto em todas as páginas... a pessoa pudesse, se quiser, desabilitar ou deixar aberto... ou fecha".
+
+- `components/portal/floating-dock.tsx`, presente em todas as páginas para quem tem acesso interno (substitui o bloco de widgets do Início). No canto inferior direito, um botão "Widgets" abre uma pilha de lançadores com nome; cada widget abre um painel suspenso ao lado (desktop) ou uma folha inferior com fundo escurecido (celular). Painel com minimizar (vira um chip pequeno acima dos botões) e fechar (X). Esc fecha e devolve o foco ao lançador; painel é `role="dialog"` não modal.
+- **"Meu espaço"** (botão de ajustes na pilha): liga e desliga cada widget. Todos começam desligados. Lançadores registrados por outras funções (o Rolê) podem ser escondidos ali.
+- Estado por pessoa no servidor (`personal_widget_settings.dock`, JSON validado): widgets ligados, painel aberto, minimizado e itens escondidos. Abrir e fechar salva depois de 1,2 s parados, para que cliques seguidos virem uma gravação só.
+- **Widgets:** Lembretes, Anotações, Calendário (hoje e 7 dias: agenda e prazos das minhas demandas), Minhas demandas (abertas, vencendo hoje, atrasadas, com links) e Atalhos (módulos fixados).
+- **Cortado: "Resumo do contexto atual".** Na página de um projeto, o portal já mostra o painel de trabalho do projeto (`WorkContextPanel`, com pendências e prazos). Um widget flutuante repetiria a mesma informação por cima da mesma página, o que polui sem ganho. Ficou fora; se fizer falta, o caminho é ampliar o painel existente.
+- **Rolê:** `useDockItem({ id, label, icon, onOpen, shortcut, badge })` registra um lançador na doca; `registered` diz à função que pode deixar de desenhar o próprio botão e `hidden` que a pessoa escondeu o item. Enquanto o Rolê desenha o próprio botão, a doca fica acima dele (CSS `:has`).
+- **Desempenho** (QA local, Chrome headless, cache desligado, média de 3 cargas logado): JS por página 2.376 KB antes e 2.377 KB depois; 33 → 38 arquivos (divisão em pedaços: o código de cada widget fica em arquivos próprios, baixados só quando o painel abre — conferido pelo nome dos arquivos baixados); chamadas de API iguais (6 no Início, 7 em Demandas e Comunidade), porque a leitura leve da doca substituiu a do bloco antigo do Início.

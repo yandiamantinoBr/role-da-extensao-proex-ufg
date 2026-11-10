@@ -60,3 +60,4 @@
 @media(max-width:430px){.panel{padding:14px}}
 .when input:disabled{background:var(--surface-soft);color:var(--text-secondary);cursor:not-allowed;opacity:1}
 .check input,.toggle input{color-scheme:light dark}
+.bare{display:grid;gap:10px;min-width:0}
