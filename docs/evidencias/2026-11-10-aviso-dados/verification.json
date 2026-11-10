@@ -1,0 +1,19 @@
+{
+  "origin": "http://127.0.0.1:5174",
+  "base": "descartável, loopback; nenhuma mensagem enviada a provedor",
+  "shots": [
+    "1366-light-aviso-primeiro-uso",
+    "1366-light-depois-entendi",
+    "1366-light-aviso-servico-mudou",
+    "1366-dark-aviso-primeiro-uso",
+    "1366-dark-depois-entendi",
+    "1366-dark-aviso-servico-mudou",
+    "390-light-aviso-primeiro-uso",
+    "390-light-depois-entendi",
+    "390-light-aviso-servico-mudou",
+    "390-dark-aviso-primeiro-uso",
+    "390-dark-depois-entendi",
+    "390-dark-aviso-servico-mudou"
+  ],
+  "pageErrors": []
+}

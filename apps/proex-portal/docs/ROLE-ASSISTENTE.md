@@ -170,3 +170,12 @@ Motivo: às 13h o Yan perguntou "quantos brindes, super brindes e super super br
 - Onde aparece:
   - Gastos → "Uso por pessoa", com gráfico por tipo, tabela (cartões no celular) e exportação XLSX/DOCX/PDF por pessoa e dia;
   - no Rolê, "Meu uso de IA nos últimos 30 dias", que só carrega quando é aberto.
+
+## Aviso leve de dados · 10/11/2026
+
+- **Antes:** uma caixa de "Entendo que…" a cada conversa e um "Autorizo enviar…" em cada cartão de operação.
+- **Agora:** um aviso curto aparece no primeiro uso. Ele diz quais serviços estão ligados (conversa e fotos, voz, registros de estoque) e lembra de não enviar senha, CPF nem dados pessoais. Basta tocar em **Entendi**.
+- A ciência fica guardada no aparelho (`proex-role-ciencia`). O aviso volta, com o título "O serviço de IA mudou", só quando a administração troca o provedor ou o modelo, ou liga ou desliga voz e registros.
+- Os cartões de operação só informam para onde vai o pedido (DeepSeek ou OpenAI e, se houver, a conferência TypeSafe/JEV).
+- O rodapé diz "Respondido por <modelo> (<provedor>)". A auditoria de cada chamada já registra o modelo.
+- Ainda não feito: escolher no catálogo o modelo de documento, voz e decisão. Conversa e foto já usam o catálogo desde a PR #53.

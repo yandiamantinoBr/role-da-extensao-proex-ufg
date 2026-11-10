@@ -17,7 +17,7 @@ type Props = { projects: Project[]; defaultProjectId?: string; onApplied?: () =>
 type Pricing = { model: string; label: string; inputMicrosPerToken: number; outputMicrosPerToken: number };
 type Status = { available: boolean; reason: string | null; provider: string; model: string; textPricing?: Pricing | null; visionPricing?: Pricing | null; visionAvailable: boolean; operationsAvailable: boolean; speech: { available: boolean; provider: 'groq' | 'deepgram' }; dailyLimitMicros: number; reservedTodayMicros: number; canConfigure?: boolean; organizationId?: string; tools?: { text: boolean; vision: boolean } };
 type Match = { projectId: string; projectName: string; itemName: string; score: number };
-type Operation = { request: string; stage: 'idle' | 'estimated' | 'preview' | 'done'; costMicros?: number; provider?: string; jev?: boolean; shareConsent?: boolean; stale?: boolean; projectId?: string; matches?: Match[]; ambiguous?: boolean; error?: string; limit?: boolean; preview?: { plan: Omit<AssistantPlan, 'actorId'>; planToken: string; undoReason: string }; confirmed?: boolean; receipt?: string; key: string };
+type Operation = { request: string; stage: 'idle' | 'estimated' | 'preview' | 'done'; costMicros?: number; provider?: string; jev?: boolean; stale?: boolean; projectId?: string; matches?: Match[]; ambiguous?: boolean; error?: string; limit?: boolean; preview?: { plan: Omit<AssistantPlan, 'actorId'>; planToken: string; undoReason: string }; confirmed?: boolean; receipt?: string; key: string };
 type Source = { label: string; href: string };
 type Message = { id: string; role: 'user' | 'assistant'; content: string; image?: string; meta?: string; operation?: Operation; sources?: Source[] };
 type Picked = { dataUrl: string; bytes: number };
@@ -35,6 +35,17 @@ function quantity(value: number, unit: string): string {
 class RequestError extends Error { constructor(readonly status: number, message: string, readonly code?: string) { super(message); } }
 /** Recusa por limite diário (da organização ou a parte de cada pessoa). */
 const isLimit = (cause: unknown) => cause instanceof RequestError && (cause.code === 'assistant_quota' || cause.code === 'role_user_quota');
+const CONSENT_STORAGE = 'proex-role-ciencia';
+const PROVIDER_NAMES: Record<string, string> = { deepseek: 'DeepSeek', groq: 'Groq', openai: 'OpenAI', anthropic: 'Anthropic', nvidia: 'NVIDIA', deepgram: 'Deepgram' };
+const providerName = (id: string) => PROVIDER_NAMES[id] ?? id.replace(/^./, letter => letter.toUpperCase());
+function modelLabelFor(status: Status, photo: boolean) { return photo ? status.visionPricing?.label ?? ROLE_MODELS.deepseek.label : status.textPricing?.label ?? status.model; }
+/** "DeepSeek (conversa e fotos) e Groq (voz)": só os serviços ligados nesta organização. */
+function servicesList(status: Status): string {
+  const parts = [`${providerName(status.provider)} (conversa${status.visionAvailable ? ' e fotos' : ''})`];
+  if (status.speech.available) parts.push(`${providerName(status.speech.provider)} (voz)`);
+  if (status.operationsAvailable) parts.push('o serviço de registros de estoque');
+  return parts.length > 1 ? `${parts.slice(0, -1).join(', ')} e ${parts.at(-1)}` : parts[0];
+}
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const controller = new AbortController(), timer = window.setTimeout(() => controller.abort(), 45_000);
   try {
@@ -81,7 +92,7 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
   const projectId = projects.some(item => item.id === chosenProjectId) ? chosenProjectId : projects[0]?.id ?? '';
   const [status, setStatus] = useState<Status | null>(null), [statusError, setStatusError] = useState('');
   const [messages, setMessages] = useState<Message[]>([]), [draft, setDraft] = useState(''), [picked, setPicked] = useState<Picked | null>(null);
-  const [consent, setConsent] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState(''), [limitHit, setLimitHit] = useState(false), [usageOpen, setUsageOpen] = useState(false);
+  const [ackTick, setAckTick] = useState(0), [sessionAck, setSessionAck] = useState(''), [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState(''), [limitHit, setLimitHit] = useState(false), [usageOpen, setUsageOpen] = useState(false);
   const usageRange = useMemo(() => { const day = (offset: number) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(Date.now() - offset * 86400000)); return { from: day(29), to: day(0) }; }, [usageOpen]); // eslint-disable-line react-hooks/exhaustive-deps
   const [recording, setRecording] = useState(false), [recorded, setRecorded] = useState<Recorded | null>(null), [transcribing, setTranscribing] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null), dialog = useRef<HTMLDivElement>(null), input = useRef<HTMLTextAreaElement>(null), log = useRef<HTMLOListElement>(null);
@@ -125,11 +136,20 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
   const history = useMemo(() => trimmedHistory(messages), [messages]);
   const estimate = useMemo(() => status && sanitized.text ? roleEstimate({ textProvider: status.provider === 'groq' ? 'groq' : 'deepseek', textBytes: roleConversationBytes(history, sanitized.text, project?.name ?? ''), hasImage: !!picked, text: status.textPricing, vision: status.visionPricing, tools: picked ? !!status.tools?.vision : !!status.tools?.text }) : null, [status, sanitized.text, history, project?.name, picked]);
   const tooLong = draft.length > ROLE_MAX_MESSAGE_CHARS;
-  const modelLabel = status ? (picked ? status.visionPricing?.label ?? ROLE_MODELS.deepseek.label : status.textPricing?.label ?? status.model) : '';
+  const modelLabel = status ? modelLabelFor(status, !!picked) : '';
+  // Ciência única: guardada neste aparelho e refeita só quando os serviços de IA mudarem.
+  const servicesKey = status ? [status.organizationId ?? '', status.provider, modelLabelFor(status, false), status.visionAvailable ? modelLabelFor(status, true) : '', status.speech.available ? status.speech.provider : '', status.operationsAvailable ? 'ops' : ''].join('|') : '';
+  const stored = useMemo(() => { if (!servicesKey) return null; try { return window.localStorage.getItem(CONSENT_STORAGE); } catch { return null; } }, [servicesKey, ackTick]); // eslint-disable-line react-hooks/exhaustive-deps
+  const consent = !!servicesKey && (stored === servicesKey || sessionAck === servicesKey);
+  function rememberConsent() {
+    setSessionAck(servicesKey);
+    try { window.localStorage.setItem(CONSENT_STORAGE, servicesKey); } catch { /* sem armazenamento: vale só nesta visita */ }
+    setAckTick(value => value + 1);
+  }
+  const servicesChanged = !!stored && stored !== servicesKey;
   const canSend = !!status?.available && !!estimate && !busy && !tooLong && consent && (!picked || status.visionAvailable);
 
   // Só em memória: some ao recarregar ou trocar de conta.
-  function rememberConsent(value: boolean) { setConsent(value); }
 
   async function send(event?: FormEvent) {
     event?.preventDefault();
@@ -181,7 +201,7 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
   }
   function newConversation() { setMessages([]); setDraft(''); setPicked(null); discardRecording(); setError(''); setNotice(''); window.requestAnimationFrame(() => input.current?.focus()); }
   async function prepareOperation(message: Message) {
-    if (!message.operation?.shareConsent || !message.operation.projectId) return;
+    if (!message.operation?.projectId) return;
     setBusy(true); setError(''); updateOperation(message.id, { error: '', limit: false });
     try { const preview = await post<Operation['preview']>('/api/assistant', { action: 'prepare', projectId: message.operation.projectId, request: message.operation.request, consent: true, operationKey: message.operation.key, acceptedCostMicros: message.operation.costMicros }); updateOperation(message.id, { stage: 'preview', preview, confirmed: false }); }
     catch (cause) {
@@ -323,8 +343,8 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
                       {message.operation.stale
                         ? <button type="button" className="p-button p-button-subtle" disabled={busy || !message.operation.projectId} onClick={() => void estimateOperation(message)}>Calcular o custo</button>
                         : <p><strong>Custo máximo: {friendlyMicros(message.operation.costMicros ?? 0)}.</strong> Nada muda no estoque até você confirmar.</p>}
-                      <label className={styles.check}><input type="checkbox" checked={!!message.operation.shareConsent} disabled={busy} onChange={event => updateOperation(message.id, { shareConsent: event.target.checked })}/>Autorizo enviar este pedido e a lista de materiais do projeto para {message.operation.provider === 'openai' ? 'a OpenAI' : 'a DeepSeek'}{message.operation.jev ? ' e para a conferência JEV (TypeSafe)' : ''}.</label>
-                      <button type="button" className="p-button p-button-primary" disabled={busy || !message.operation.shareConsent || message.operation.stale || !message.operation.projectId} onClick={() => void prepareOperation(message)}>{message.operation.error ? 'Preparar de novo' : 'Preparar registro'}</button>
+                      <p className={styles.sendsTo}>O pedido e a lista de materiais do projeto vão para {message.operation.provider === 'openai' ? 'a OpenAI' : 'a DeepSeek'}{message.operation.jev ? ', com conferência da TypeSafe (JEV)' : ''}.</p>
+                      <button type="button" className="p-button p-button-primary" disabled={busy || message.operation.stale || !message.operation.projectId} onClick={() => void prepareOperation(message)}>{message.operation.error ? 'Preparar de novo' : 'Preparar registro'}</button>
                     </>}
                     {message.operation.stage === 'preview' && message.operation.preview && <div className={styles.preview}>
                       <p><strong>Confira: {intentLabels[message.operation.preview.plan.proposal.intent] ?? 'Operação'}</strong></p>
@@ -349,7 +369,10 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
           {error && <p role="alert" className={styles.error}>{error}</p>}
           {error && limitHit && limitsButton}
           {notice && !error && <p role="status" className={styles.notice}>{notice}</p>}
-          {!consent && <label className={styles.check}><input type="checkbox" checked={consent} onChange={event => rememberConsent(event.target.checked)}/>Entendo que minha mensagem, foto ou áudio vai para um serviço de IA escolhido pela PROEX. Não vou enviar senhas, CPF nem dados pessoais.</label>}
+          {!consent && status && <div className={styles.dataNotice} role="note">
+            <p><strong>{servicesChanged ? 'O serviço de IA mudou' : 'Antes de começar'}</strong> O que você escrever, fotografar ou gravar vai para {servicesList(status)}, escolhidos pela PROEX, junto com dados do portal que você já pode ver. Não envie senhas, CPF nem dados pessoais.</p>
+            <button type="button" className="p-button p-button-primary" onClick={rememberConsent}>Entendi</button>
+          </div>}
           {picked && <div className={styles.attachment}><img src={picked.dataUrl} alt="Imagem anexada"/><span>Imagem pronta ({Math.round(picked.bytes / 1024)} KB, reduzida no aparelho)</span><button type="button" className={styles.iconButton} onClick={() => setPicked(null)} aria-label="Remover imagem"><Trash2 size={18} aria-hidden="true"/></button></div>}
           {recorded && <div className={styles.attachment}><audio controls src={recorded.url} aria-label="Ouvir a gravação antes de transcrever"/><button type="button" className="p-button p-button-primary" disabled={transcribing || !status.speech.available} onClick={() => void transcribe()}>{transcribing ? 'Transcrevendo…' : `Transcrever · até ${speechCost}`}</button><button type="button" className={styles.iconButton} onClick={discardRecording} aria-label="Descartar gravação"><Trash2 size={18} aria-hidden="true"/></button></div>}
           <label className="visually-hidden" htmlFor="role-message">Mensagem para o Rolê</label>
@@ -366,10 +389,10 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
             <button type="button" className={`${styles.iconButton} ${recording ? styles.recording : ''}`} disabled={!status.speech.available || !consent || busy || transcribing} onClick={() => recording ? recorder.current?.stop() : void startRecording()} aria-label={recording ? 'Parar gravação' : 'Gravar áudio'} title={status.speech.available ? (recording ? 'Parar gravação' : 'Gravar áudio (até 60 s)') : 'Transcrição desligada'}>
               {recording ? <Square size={18} aria-hidden="true"/> : <Mic size={20} aria-hidden="true"/>}
             </button>
-            <p className={styles.cost} aria-live="polite">{!consent ? 'Marque o aviso acima para conversar.' : estimate ? <>Custo máximo: <strong>{(() => { const [words, exact] = friendlyMicros(estimate.costMicros).split(' ('); return exact ? <><span className={styles.nowrap}>{words}</span> <span className={styles.nowrap}>({exact}</span></> : <span className={styles.nowrap}>{words}</span>; })()}</strong></> : 'O custo aparece aqui antes de enviar.'}</p>
+            <p className={styles.cost} aria-live="polite">{!consent ? 'Toque em Entendi para conversar.' : estimate ? <>Custo máximo: <strong>{(() => { const [words, exact] = friendlyMicros(estimate.costMicros).split(' ('); return exact ? <><span className={styles.nowrap}>{words}</span> <span className={styles.nowrap}>({exact}</span></> : <span className={styles.nowrap}>{words}</span>; })()}</strong></> : 'O custo aparece aqui antes de enviar.'}</p>
             <button type="submit" className={styles.send} disabled={!canSend} aria-label={estimate ? `Enviar, custo máximo ${formatMicros(estimate.costMicros)}` : 'Enviar'}><Send size={18} aria-hidden="true"/><span>Enviar</span></button>
           </div>
-          <p className={styles.disclaimer}>O Rolê pode errar. Confira antes de usar. Modelo: {modelLabel}.</p>
+          <p className={styles.disclaimer}>O Rolê pode errar. Confira antes de usar. Respondido por {modelLabel} ({providerName(status.provider)}).</p>
           {status.organizationId && <details className={styles.myUsage} onToggle={event => setUsageOpen(event.currentTarget.open)}><summary>Meu uso de IA nos últimos 30 dias</summary>{usageOpen && <AiPeopleUsage organizationId={status.organizationId} from={usageRange.from} to={usageRange.to}/>}</details>}
         </form>}
       </div>
