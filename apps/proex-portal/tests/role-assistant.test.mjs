@@ -194,7 +194,7 @@ test('images need the vision switch, are validated by signature and always go to
 test('reflected keys, refused keys and the daily ceiling never reach the person or repeat a charge', async () => {
   const f = fixture();
   try {
-    await setup(f, { dailyCalls: 2 });
+    await setup(f, { dailyCalls: 2, dailyTokens: 1_000_000 });
     const echo = fakeProvider({ echoKey: true });
     await assert.rejects(roleChat(f.db, f.actors.viewer, chatInput(f), secret, { keys, fetcher: echo.fetch }), error => { assert.equal(error.code, 'role_provider_schema'); assert.equal(String(error.message).includes(CANARY), false); return true; });
     assert.equal(f.native.prepare("SELECT status FROM ai_calls").get().status, 'failed');
@@ -540,5 +540,122 @@ test('ESCOPO: "Procurar em" never widens access; unit, project and event narrow 
     assert.equal(provider.calls.length, 0, 'refused before any paid call');
     await roleChat(f.db, f.actors.viewer, chatInput(f, { scope: { kind: 'unit', id: 'unit-a' } }), secret, { keys, fetcher: provider.fetch });
     assert.match(provider.calls[0].messages.at(-1).content, /Procurar em: a unidade Unidade QA/);
+  } finally { f.native.close(); }
+});
+
+test('FONTES OFICIAIS: daily copy keeps title, short summary and same-site links, respects robots.txt and runs at most every 20 h', async () => {
+  const f = fixture();
+  try {
+    const { extractPage, maybeRefreshOfficialSources, readOfficialSnapshot, OFFICIAL_SOURCES } = await import(compile('assistant/official-sources'));
+    const html = `<html><head><title>PROEX UFG</title><meta name="description" content="Pró-Reitoria de Extensão &amp; Cultura da UFG."><script>alert(1)</script></head><body><h1>Editais PROEX</h1><p>Texto longo o bastante para virar resumo quando não houver descrição na página oficial.</p><a href="/n/123-edital-de-bolsas-2027">Edital de bolsas de extensão 2027 aberto</a><a href="https://outro.site/n/1">Link de outro site que não entra</a><a href="/admin">Painel administrativo interno</a></body></html>`;
+    const page = extractPage(html, 'https://proex.ufg.br/p/editais-proex');
+    assert.equal(page.title, 'Editais PROEX');
+    assert.equal(page.summary, 'Pró-Reitoria de Extensão & Cultura da UFG.');
+    assert.deepEqual(page.links, [{ text: 'Edital de bolsas de extensão 2027 aberto', url: 'https://proex.ufg.br/n/123-edital-de-bolsas-2027' }]);
+    const requested = [];
+    const fetcher = async url => {
+      requested.push(String(url));
+      if (String(url).endsWith('/robots.txt')) return new Response(String(url).includes('23conpeex') ? 'User-agent: *\nDisallow: /' : 'User-agent: *\nDisallow: /admin', { status: 200, headers: { 'content-type': 'text/plain' } });
+      return new Response(html, { status: 200, headers: { 'content-type': 'text/html; charset=utf-8' } });
+    };
+    const NOW = Date.parse('2026-11-10T11:00:00.000Z');
+    assert.equal(await maybeRefreshOfficialSources(f.db, NOW, fetcher), true);
+    const snapshot = await readOfficialSnapshot(f.db);
+    assert.equal(snapshot.pages.length, OFFICIAL_SOURCES.length);
+    assert.equal(snapshot.pages.find(entry => entry.id === 'conpeex-site').error, 'robots', 'a site that disallows everything is not copied');
+    assert.ok(!requested.includes('https://23conpeex.plateia.ufg.br/'));
+    assert.ok(requested.every(url => /^https:\/\/(proex\.ufg\.br|23conpeex\.plateia\.ufg\.br)\//.test(url)), 'only the closed list of official hosts');
+    const before = requested.length;
+    assert.equal(await maybeRefreshOfficialSources(f.db, NOW + 3600_000, fetcher), false, 'another call within 20 h fetches nothing');
+    assert.equal(requested.length, before);
+    assert.equal(await maybeRefreshOfficialSources(f.db, NOW + 21 * 3600_000, fetcher), true);
+  } finally { f.native.close(); }
+});
+
+test('INSTAGRAM: posts pasted by authorized staff, validated; the Rolê cites the official link and the copy date', async () => {
+  const f = fixture();
+  try {
+    await setup(f); seedLots(f);
+    const { instagramAction, refreshOfficialSources } = await import(compile('assistant/official-sources'));
+    const add = extra => instagramAction(f.db, f.actors.owner, { action: 'add', organizationId: 'org_proex', url: 'https://www.instagram.com/p/ABCdef123/', postedAt: '2026-11-09', caption: 'Rolê da Extensão no CONPEEX: venha girar a roleta e ganhar brindes.', ...extra });
+    await assert.rejects(instagramAction(f.db, f.actors.viewer, { action: 'add', organizationId: 'org_proex', url: 'https://www.instagram.com/p/ABCdef123/', postedAt: '2026-11-09', caption: 'tentativa de quem não pode' }), error => error.code === 'instagram_forbidden');
+    await assert.rejects(add({ url: 'https://evil.example/p/ABCdef123/' }), error => error.code === 'instagram_url');
+    await assert.rejects(add({ caption: 'curto' }), error => error.code === 'instagram_caption');
+    const saved = await add();
+    assert.equal(saved.posts.length, 1);
+    await assert.rejects(add(), error => error.code === 'instagram_duplicate');
+    assert.equal((await instagramAction(f.db, f.actors.viewer, { action: 'list', organizationId: 'org_proex' })).posts.length, 1, 'members can read the list');
+    await refreshOfficialSources(f.db, Date.now(), async url => String(url).endsWith('robots.txt') ? new Response('', { status: 404 }) : new Response('<h1>Editais PROEX</h1><a href="/n/9-edital-de-bolsas-de-extensao">Edital de bolsas de extensão 2027 aberto</a>', { status: 200, headers: { 'content-type': 'text/html' } }));
+    const { runRoleTool } = await import(compile('assistant/role-tools'));
+    const official = await runRoleTool(f.db, f.actors.viewer, 'org_proex', 'consultar_fontes_oficiais', { texto: 'edital de bolsas' });
+    assert.ok(official.rows > 0 && official.content.includes('copiadoEm'));
+    assert.ok(official.sources.every(source => /^https:\/\/(proex\.ufg\.br|23conpeex\.plateia\.ufg\.br)\//.test(source.href)));
+    const insta = await runRoleTool(f.db, f.actors.viewer, 'org_proex', 'consultar_fontes_oficiais', { texto: 'roleta brindes' });
+    assert.ok(insta.sources.some(source => source.href === 'https://www.instagram.com/p/ABCdef123/'));
+    await instagramAction(f.db, f.actors.owner, { action: 'remove', organizationId: 'org_proex', id: saved.posts[0].id });
+    assert.equal((await instagramAction(f.db, f.actors.owner, { action: 'list', organizationId: 'org_proex' })).posts.length, 0);
+  } finally { f.native.close(); }
+});
+
+test('SUGESTÕES: rules only, per person; follow the moment, the own activity and what the team may see; never another project', async () => {
+  const f = fixture();
+  try {
+    await setup(f);
+    f.native.prepare("UPDATE projects SET organization_id='org_proex' WHERE organization_id IS NULL").run();
+    const { roleSuggestions, ROLE_SUGGESTION_LIMIT, ROLE_SUGGESTION_DAYS } = await import(compile('assistant/role-suggestions'));
+    const { roleSuggestionList } = await import(compile('assistant/role'));
+    const NOW = Date.parse('2026-11-10T15:00:00.000Z'), iso = offset => new Date(NOW + offset).toISOString();
+    const texts = list => list.map(entry => entry.text);
+
+    // Sem agenda, dinâmica, estoque nem atividade: só perguntas gerais, sempre as mesmas no período.
+    const plain = await roleSuggestions(f.db, f.actors.viewer, 'org_proex', NOW);
+    assert.equal(plain.length, ROLE_SUGGESTION_LIMIT);
+    assert.ok(plain.every(entry => entry.why === 'geral'));
+    assert.deepEqual(await roleSuggestions(f.db, f.actors.viewer, 'org_proex', NOW + 86400000), plain, 'same person, same 3-day period: same list');
+    const periods = new Set();
+    for (let step = 0; step < 10; step += 1) periods.add(texts(await roleSuggestions(f.db, f.actors.viewer, 'org_proex', NOW + step * ROLE_SUGGESTION_DAYS * 86400000)).join('|'));
+    assert.ok(periods.size > 1, 'the draw is renewed across periods');
+
+    // Momento e atividade no projeto A; um item com nome grande demais e outro só do projeto B.
+    f.native.prepare("INSERT INTO campaigns(id,project_id,name,starts_at,ends_at,status,created_at) VALUES('camp-a','project-a','Roleta \"QA\"','2026-11-10T12:00:00.000Z','2026-11-13T21:00:00.000Z','active',?),('camp-old','project-a','Dinâmica encerrada','2026-11-10T12:00:00.000Z','2026-11-13T21:00:00.000Z','closed',?),('camp-b','project-b','Roleta B SEGREDO','2026-11-10T12:00:00.000Z','2026-11-13T21:00:00.000Z','active',?)").run(iso(0), iso(0), iso(0));
+    f.native.prepare("UPDATE items SET stock=40 WHERE id='item-a'").run();
+    f.native.prepare("INSERT INTO items(id,project_id,name,category,unit,stock,created_at,updated_at) VALUES('item-long','project-a',?,'consumption','unidade',1,?,?),('item-b','project-b','Brinde B SEGREDO','consumption','unidade',2,?,?)").run('X'.repeat(90), iso(0), iso(0), iso(0), iso(0));
+    const move = (id, item, actor, when) => f.native.prepare("INSERT INTO stock_movements(id,item_id,delta,kind,note,actor_id,created_at) VALUES(?,?,3,'receive','',?,?)").run(id, item, actor, when);
+    move('mov-1', 'item-a', 'viewer-qa', iso(-86400000)); move('mov-old', 'item-long', 'viewer-qa', iso(-30 * 86400000)); move('mov-b', 'item-b', 'outsider-qa', iso(-3600000));
+
+    const mine = await roleSuggestions(f.db, f.actors.viewer, 'org_proex', NOW);
+    assert.ok(mine.length <= ROLE_SUGGESTION_LIMIT);
+    assert.deepEqual(mine[0], { text: 'Quais são os níveis de brinde da dinâmica Roleta QA?', why: 'momento' }, 'ongoing campaign first, quotes stripped');
+    assert.deepEqual(texts(mine.filter(entry => entry.why === 'atividade')).sort(), ['Quanto ainda temos de Caneta QA?', 'Quanto saiu de Caneta QA nos últimos 7 dias?']);
+    assert.ok(!texts(mine).join(' ').includes('XXXX'), 'names that do not fit a question are skipped');
+    assert.ok(!texts(mine).join(' ').includes('SEGREDO') && !texts(mine).join(' ').includes('encerrada'));
+    assert.equal(new Set(texts(mine)).size, mine.length, 'no repeated question');
+
+    // Outra pessoa, outro projeto: nada do projeto A; a atividade é a dela.
+    const other = await roleSuggestions(f.db, f.actors.outsider, 'org_proex', NOW);
+    assert.ok(!texts(other).join(' ').includes('Caneta QA') && !texts(other).join(' ').includes('Roleta QA'));
+    assert.ok(texts(other).includes('Quais são os níveis de brinde da dinâmica Roleta B SEGREDO?'));
+    assert.ok(texts(other).some(text => text.includes('Brinde B SEGREDO')));
+    // Organização diferente da conversa: nenhuma sugestão com dado do portal.
+    assert.ok((await roleSuggestions(f.db, f.actors.viewer, 'org_outra', NOW)).every(entry => entry.why === 'geral'));
+
+    // Demanda atribuída à pessoa vira pergunta; a de outra pessoa não.
+    const task = (id, project, title) => f.native.prepare("INSERT INTO followup_tasks(id,organization_id,project_id,title,body,priority,status,created_by,created_at,updated_at) VALUES(?, 'org_proex', ?, ?, '', 'high', 'open', 'owner-qa', ?, ?)").run(id, project, title, iso(0), iso(0));
+    task('task-mine', 'project-a', 'Conferir kits da terça'); task('task-other', 'project-a', 'Tarefa de outra pessoa');
+    f.native.prepare("INSERT INTO followup_assignees(id,task_id,user_id,created_at) VALUES('as-1','task-mine','viewer-qa',?),('as-2','task-other','owner-qa',?)").run(iso(0), iso(0));
+    // Vinte dias depois a movimentação já saiu da janela de 14 dias e a dinâmica acabou.
+    const LATER = NOW + 20 * 86400000;
+    const withTask = await roleSuggestions(f.db, f.actors.viewer, 'org_proex', LATER);
+    assert.ok(withTask.every(entry => entry.why !== 'momento'));
+    assert.deepEqual(texts(withTask.filter(entry => entry.why === 'atividade')).sort(), ['O que diz a demanda Conferir kits da terça?', 'Quais demandas estão abertas?']);
+    assert.ok(!texts(withTask).join(' ').includes('outra pessoa'));
+    assert.ok(texts(withTask).includes('Quanto ainda temos de Caneta QA?'), 'team view: stock the role may read');
+
+    // Rota: só quem pode conversar neste projeto; a resposta diz de quantos em quantos dias muda.
+    const listed = await roleSuggestionList(f.db, f.actors.viewer, { projectId: 'project-a' }, LATER);
+    assert.equal(listed.days, ROLE_SUGGESTION_DAYS);
+    assert.deepEqual(listed.suggestions, withTask);
+    await assert.rejects(roleSuggestionList(f.db, f.actors.outsider, { projectId: 'project-a' }, NOW), error => error.status === 403 || error.status === 404);
+    await assert.rejects(roleSuggestionList(f.db, null, { projectId: 'project-a' }, NOW), error => error.status === 403);
   } finally { f.native.close(); }
 });

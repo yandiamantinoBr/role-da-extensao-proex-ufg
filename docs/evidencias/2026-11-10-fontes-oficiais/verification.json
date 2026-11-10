@@ -1,0 +1,15 @@
+{
+  "origin": "http://127.0.0.1:5174",
+  "base": "descartável, loopback; estado das fontes simulado na tela",
+  "shots": [
+    "1366-light-fontes-oficiais",
+    "1366-light-fontes-instagram",
+    "1366-dark-fontes-oficiais",
+    "1366-dark-fontes-instagram",
+    "390-light-fontes-oficiais",
+    "390-light-fontes-instagram",
+    "390-dark-fontes-oficiais",
+    "390-dark-fontes-instagram"
+  ],
+  "pageErrors": []
+}

@@ -54,6 +54,24 @@ export async function requestSync(db:D1Database,actor:PortalActor|null){
  const now=iso();try{await db.batch([db.prepare(`SELECT CASE WHEN ${SYNC_OWNER_SQL} THEN 1 ELSE json_extract('sync_forbidden','$') END`).bind(actor.userId),db.prepare("INSERT INTO settings(name,value,updated_at) VALUES('sync.requested_at',?,?) ON CONFLICT(name) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at").bind(now,now)]);}catch(error){return translateControlError(db,actor,error);}
  return {requestedAt:now,message:'Solicitação registrada. Ela será atendida pela rotina conectada; consulte o histórico para confirmar a conclusão.'};
 }
+/**
+ * Marca um conflito da planilha mestre como resolvido, depois que a pessoa conferiu o
+ * valor oficial e, se quisesse, refez a edição. Não altera dado de negócio: o conflito
+ * só deixa de bloquear a conclusão das próximas rodadas. Decisão do Yan em 2026-11-10.
+ */
+export async function resolveSyncConflict(db:D1Database,actor:PortalActor|null,input:Record<string,unknown>){
+ await requireSyncOwner(db,actor);if(!actor)throw new HttpError(401,'Entre para continuar.');
+ const id=input.id,note=typeof input.note==='string'?input.note.trim().slice(0,500):'';
+ if(typeof id!=='string'||!/^[A-Za-z0-9._:-]{1,200}$/.test(id))throw new HttpError(400,'Escolha um conflito válido.','sync_invalid_conflict');
+ const now=iso();
+ const results=await db.batch([
+  db.prepare(`SELECT CASE WHEN ${SYNC_OWNER_SQL} THEN 1 ELSE json_extract('sync_forbidden','$') END`).bind(actor.userId),
+  db.prepare("UPDATE sync_conflicts SET status='resolved',resolved_at=? WHERE id=? AND status='open'").bind(now,id),
+  db.prepare("INSERT INTO audit(id,actor_id,action,entity_id,details,created_at) SELECT ?,?,'sync.conflict.resolve',?,?,? WHERE changes()=1").bind(uid(),actor.userId,id,JSON.stringify({note}),now),
+ ]);
+ if(!Number(results[1]?.meta?.changes))throw new HttpError(409,'Este conflito já foi resolvido ou não existe mais. Atualize a lista.','sync_conflict_not_open');
+ return {resolved:id,resolvedAt:now};
+}
 export async function startSyncRun(db:D1Database,actor:PortalActor|null,input:Record<string,unknown>){
  await requireSyncOwner(db,actor);if(!actor)throw new HttpError(401,'Entre para continuar.');
  const workbook=input.spreadsheetId===undefined?null:externalId(input.spreadsheetId,'planilha');

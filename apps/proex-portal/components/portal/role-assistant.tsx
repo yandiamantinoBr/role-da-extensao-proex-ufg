@@ -26,7 +26,7 @@ type Picked = { dataUrl: string; bytes: number };
 type Recorded = { file: File; seconds: number; url: string };
 
 const intentLabels: Record<string, string> = { 'stock.query': 'Consultar estoque', 'stock.receive': 'Registrar entrada', 'stock.distribute': 'Registrar distribuição', 'stock.consume': 'Registrar consumo', 'record.create': 'Criar registro' };
-const suggestions = ['Como registro a entrega de brindes no CONPEEX?', 'Escreva um aviso curto para a equipe sobre o plantão de amanhã.', 'Quais materiais devo conferir antes de uma dinâmica?'];
+const fallbackSuggestions = ['Como registro a entrega de brindes no CONPEEX?', 'Escreva um aviso curto para a equipe sobre o plantão de amanhã.', 'Quais materiais devo conferir antes de uma dinâmica?'];
 
 /** "320 unidades": plural simples para as unidades mais comuns. */
 function quantity(value: number, unit: string): string {
@@ -38,6 +38,10 @@ class RequestError extends Error { constructor(readonly status: number, message:
 /** Recusa por limite diário (da organização ou a parte de cada pessoa). */
 const isLimit = (cause: unknown) => cause instanceof RequestError && (cause.code === 'assistant_quota' || cause.code === 'role_user_quota');
 const CONSENT_STORAGE = 'proex-role-ciencia';
+/** Preferência da pessoa neste aparelho: 'off' esconde as sugestões e nem consulta o portal. */
+const TIPS_STORAGE = 'proex-role-sugestoes';
+/** Links externos aceitos nas fontes: só os sites oficiais copiados e publicações do Instagram. */
+const OFFICIAL_LINK = /^https:\/\/(proex\.ufg\.br|23conpeex\.plateia\.ufg\.br|www\.instagram\.com|instagram\.com)\//;
 const PROVIDER_NAMES: Record<string, string> = { deepseek: 'DeepSeek', groq: 'Groq', openai: 'OpenAI', anthropic: 'Anthropic', nvidia: 'NVIDIA', deepgram: 'Deepgram' };
 const providerName = (id: string) => PROVIDER_NAMES[id] ?? id.replace(/^./, letter => letter.toUpperCase());
 function modelLabelFor(status: Status, photo: boolean) { return photo ? status.visionPricing?.label ?? ROLE_MODELS.deepseek.label : status.textPricing?.label ?? status.model; }
@@ -141,6 +145,17 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
   useEffect(() => { if (open) window.requestAnimationFrame(() => input.current?.focus()); }, [open]);
   useEffect(() => { log.current?.lastElementChild?.scrollIntoView({ block: 'nearest' }); }, [messages, busy]);
 
+  const [tips, setTips] = useState<{ key: string; list: string[] } | null>(null), [tipsTick, setTipsTick] = useState(0);
+  const tipsOff = useMemo(() => { try { return window.localStorage.getItem(TIPS_STORAGE) === 'off'; } catch { return false; } }, [tipsTick]); // eslint-disable-line react-hooks/exhaustive-deps
+  const tipsWanted = open && !!status?.available && !tipsOff;
+  useEffect(() => {
+    if (!tipsWanted || !projectId) return;
+    let alive = true;
+    call<{ suggestions: { text: string }[] }>(`/api/assistant/role?projectId=${encodeURIComponent(projectId)}&suggestions=1`).then(result => { if (alive) setTips({ key: projectId, list: result.suggestions.map(entry => entry.text).slice(0, 4) }); }).catch(() => { if (alive) setTips({ key: projectId, list: [] }); });
+    return () => { alive = false; };
+  }, [tipsWanted, projectId]);
+  const suggestions = tips?.key === projectId && tips.list.length ? tips.list : tips?.key === projectId ? fallbackSuggestions : [];
+  function toggleTips() { try { if (tipsOff) window.localStorage.removeItem(TIPS_STORAGE); else window.localStorage.setItem(TIPS_STORAGE, 'off'); } catch { /* sem armazenamento: nada muda */ } setTipsTick(tick => tick + 1); }
   const sanitized = useMemo(() => { if (!draft.trim()) return { text: '', problem: '' }; try { return { text: safeRequest(draft), problem: '' }; } catch (cause) { return { text: '', problem: cause instanceof Error ? cause.message : 'Revise a mensagem.' }; } }, [draft]);
   const history = useMemo(() => trimmedHistory(messages), [messages]);
   const estimate = useMemo(() => status && sanitized.text ? roleEstimate({ textProvider: status.provider === 'groq' ? 'groq' : 'deepseek', textBytes: roleConversationBytes(history, sanitized.text, project?.name ?? ''), hasImage: !!picked, text: status.textPricing, vision: status.visionPricing, tools: picked ? !!status.tools?.vision : !!status.tools?.text }) : null, [status, sanitized.text, history, project?.name, picked]);
@@ -171,7 +186,7 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
         action: 'chat', projectId, scope: scopeKind === 'org' ? { kind: 'org' } : { kind: scopeKind, id: scopeId }, operationKey: crypto.randomUUID(), consent: true, history, message: text, ...(image ? { image } : {}), acceptedCostMicros: estimate.costMicros,
       });
       if (!mounted.current) return;
-      const reply: Message = { id: crypto.randomUUID(), role: 'assistant', content: result.reply, sources: (result.sources ?? []).filter(source => source.href.startsWith('/?module=')).slice(0, 6), meta: `Custou ${friendlyMicros(result.costMicros)}${result.lookups ? ` · consultou o portal ${result.lookups === 1 ? '1 vez' : `${result.lookups} vezes`}` : ''}${result.operationDropped ? ' · Não preparei operação: a quantidade não estava na sua mensagem.' : ''}`,
+      const reply: Message = { id: crypto.randomUUID(), role: 'assistant', content: result.reply, sources: (result.sources ?? []).filter(source => source.href.startsWith('/?module=') || OFFICIAL_LINK.test(source.href)).slice(0, 6), meta: `Custou ${friendlyMicros(result.costMicros)}${result.lookups ? ` · consultou o portal ${result.lookups === 1 ? '1 vez' : `${result.lookups} vezes`}` : ''}${result.operationDropped ? ' · Não preparei operação: a quantidade não estava na sua mensagem.' : ''}`,
         operation: result.operation ? { request: result.operation, stage: 'idle', key: crypto.randomUUID() } : undefined };
       setMessages(current => [...current, reply]);
       if (reply.operation && status.operationsAvailable) void locateOperation(reply);
@@ -362,7 +377,11 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
             {!messages.length && <div className={styles.welcome}>
               <img src="/brand/role-mascote/role-frontal.svg" alt="" width={96} height={176} className={styles.fullBody}/>
               <div><p className={styles.hello}>Oi! Eu sou o Rolê.</p><p>Posso tirar dúvidas sobre o portal, escrever textos, olhar uma foto{status.speech.available ? ' e ouvir um áudio' : ''}. Se você pedir uma operação no estoque, eu preparo e você confere antes de valer.</p></div>
-              <ul className={styles.suggestions} aria-label="Sugestões">{suggestions.map(text => <li key={text}><button type="button" onClick={() => { setDraft(text); input.current?.focus(); }}>{text}</button></li>)}</ul>
+              <div className={styles.tips}>
+                <div className={styles.tipsHead}><p id="role-tips-title">{tipsOff ? 'Sugestões escondidas neste aparelho.' : 'Sugestões para você'}</p><button type="button" className={styles.tipsToggle} onClick={toggleTips}>{tipsOff ? 'Mostrar sugestões' : 'Esconder'}</button></div>
+                {!tipsOff && <ul className={styles.suggestions} aria-labelledby="role-tips-title">{suggestions.map(text => <li key={text}><button type="button" onClick={() => { setDraft(text); input.current?.focus(); }}>{text}</button></li>)}</ul>}
+                {!tipsOff && suggestions.length > 0 && <p className={styles.tipsNote}>Feitas com regras do portal, sem custo de IA: olham a agenda, o que você registrou e o que a sua equipe vê. Mudam a cada 3 dias.</p>}
+              </div>
             </div>}
             <ol ref={log} className={styles.log} aria-live="polite" aria-label="Conversa com o Rolê">
               {messages.map(message => <li key={message.id} className={message.role === 'user' ? styles.mine : styles.theirs}>
@@ -371,7 +390,7 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
                   <span className="visually-hidden">{message.role === 'user' ? 'Você disse:' : 'Rolê respondeu:'}</span>
                   {message.image && <img className={styles.sentImage} src={message.image} alt="Imagem enviada ao Rolê"/>}
                   <p>{message.content}</p>
-                  {!!message.sources?.length && <div className={styles.sources}><span>Fontes no portal</span><ul>{message.sources.map(source => <li key={source.href}><a href={source.href} onClick={() => close()}>{source.label}</a></li>)}</ul></div>}
+                  {!!message.sources?.length && <div className={styles.sources}><span>Fontes no portal</span><ul>{message.sources.map(source => <li key={source.href}>{source.href.startsWith('/') ? <a href={source.href} onClick={() => close()}>{source.label}</a> : <a href={source.href} target="_blank" rel="noopener noreferrer">{source.label} ↗</a>}</li>)}</ul></div>}
                   {message.meta && <small>{message.meta}</small>}
                   {message.operation && <div className={styles.operation}>
                     <p className={styles.operationTitle}>Posso preparar isto para você</p>

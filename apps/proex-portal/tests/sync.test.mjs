@@ -19,7 +19,7 @@ const {exportPortablePage,describePortableSchemas,portablePageCsv}=await import(
 const {applyPortableChanges}=await import(compile('sync/apply'));
 const {materialsAction: syncMaterialsAction}=await import(compile('materials'));
 const {seedCatalog,catalogPreview}=await import(compile('sync/catalog'));
-const {configureSync,startSyncRun,finishSyncRun,syncStatus,requestSync}=await import(compile('sync/control'));
+const {configureSync,startSyncRun,finishSyncRun,syncStatus,requestSync,resolveSyncConflict}=await import(compile('sync/control'));
 const {projectSpreadsheetLinks,configureMaterialLinks}=await import(compile('sync/project-links'));
 const {configureSheetTabs,sheetTabsStatus,SHEET_TABS_KEY}=await import(compile('sync/sheet-tabs'));
 function fixture(){
@@ -67,6 +67,40 @@ test('spreadsheet capability arrays and stale or blocked owners never authorize 
   f.db.native.prepare("UPDATE portal_users SET status='blocked' WHERE user_id=?").run(f.actor.userId);
   await assert.rejects(applyPortableChanges(f.db,f.actor,{changes:[{changeKey:'blocked-operation',table:'items',id:'item-a',expectedVersion:1,fields:{name:'Denied'}}]}),error=>error.status===403);
   assert.equal(f.db.native.prepare('SELECT COUNT(*) n FROM sync_receipts').get().n,0);
+ }finally{f.close();}
+});
+
+test('master sheet edits apply only when every file editor is an active global administrator', async()=>{
+ const f=fixture();try{
+  item(f);const change={changeKey:'editors-check-0001',table:'items',id:'item-a',expectedVersion:1,fields:{name:'Button novo'}};
+  await assert.rejects(applyPortableChanges(f.db,f.actor,{changes:[change],editors:['owner@example.invalid','bolsista@example.invalid']}),error=>error.status===409&&error.code==='sync_editors_not_admin'&&/1 pessoa/.test(error.message));
+  assert.equal(f.db.native.prepare("SELECT name FROM items WHERE id='item-a'").get().name,'Button');
+  assert.equal(f.db.native.prepare('SELECT COUNT(*) n FROM sync_receipts').get().n,0);
+  await assert.rejects(applyPortableChanges(f.db,f.actor,{changes:[change],editors:'owner@example.invalid'}),error=>error.code==='sync_invalid_editors');
+  const verified=await applyPortableChanges(f.db,f.actor,{changes:[change],editors:['OWNER@example.invalid']});
+  assert.equal(verified.results[0].status,'applied');assert.equal(verified.editorsVerified,true);
+  const legacy=await applyPortableChanges(f.db,f.actor,{changes:[{...change,changeKey:'editors-legacy-0002',expectedVersion:2,fields:{name:'Button legado'}}]});
+  assert.equal(legacy.results[0].status,'applied');assert.equal(legacy.editorsVerified,false);
+  f.db.native.prepare("UPDATE members SET revoked_at=? WHERE id='member-owner'").run(f.now);
+  await assert.rejects(applyPortableChanges(f.db,f.actor,{changes:[change],editors:['owner@example.invalid']}),error=>error.status===403);
+ }finally{f.close();}
+});
+
+test('an open spreadsheet conflict can be marked resolved once, with audit, by the administration only', async()=>{
+ const f=fixture();try{
+  item(f);const change={changeKey:'conflict-base-0001',table:'items',id:'item-a',expectedVersion:1,fields:{name:'Primeiro'}};
+  await applyPortableChanges(f.db,f.actor,{changes:[change]});
+  await applyPortableChanges(f.db,f.actor,{changes:[{...change,changeKey:'conflict-stale-0002',fields:{name:'Atrasado'}}]});
+  const conflict=f.db.native.prepare("SELECT id FROM sync_conflicts WHERE status='open'").get();assert.ok(conflict);
+  await assert.rejects(resolveSyncConflict(f.db,{...f.actor,userId:'untrusted'},{id:conflict.id}),error=>error.status===403);
+  const done=await resolveSyncConflict(f.db,f.actor,{id:conflict.id,note:'Conferido com a equipe'});
+  assert.equal(done.resolved,conflict.id);
+  assert.deepEqual({...f.db.native.prepare('SELECT status FROM sync_conflicts WHERE id=?').get(conflict.id)},{status:'resolved'});
+  assert.equal(f.db.native.prepare("SELECT COUNT(*) n FROM audit WHERE action='sync.conflict.resolve'").get().n,1);
+  assert.equal(f.db.native.prepare("SELECT name FROM items WHERE id='item-a'").get().name,'Primeiro');
+  await assert.rejects(resolveSyncConflict(f.db,f.actor,{id:conflict.id}),error=>error.code==='sync_conflict_not_open');
+  assert.equal(f.db.native.prepare("SELECT COUNT(*) n FROM audit WHERE action='sync.conflict.resolve'").get().n,1);
+  await assert.rejects(resolveSyncConflict(f.db,f.actor,{id:"x' OR 1=1"}),error=>error.code==='sync_invalid_conflict');
  }finally{f.close();}
 });
 

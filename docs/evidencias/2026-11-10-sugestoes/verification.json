@@ -1,0 +1,25 @@
+{
+  "origin": "http://127.0.0.1:5174",
+  "base": "descartável, loopback; nenhuma mensagem enviada a provedor; telas \"sugestoes-pessoa\" e \"sugestao-na-caixa\" têm a resposta da rota simulada na tela",
+  "respostaRealDaRota": "200 {\"days\":3,\"suggestions\":[{\"text\":\"Quais são os níveis de brinde da dinâmica Evento QA local?\",\"why\":\"momento\"},{\"text\":\"Quanto ainda temos de Projetor QA local?\",\"why\":\"atividade\"},{\"text\":\"Quanto saiu de Button azul QA local nos últimos 7 dias?\",\"why\":\"atividade\"},{\"text\":\"Quais empréstimos estão em aberto?\",\"why\":\"equipe\"}]}",
+  "pedidosComSugestoesEscondidas": 0,
+  "shots": [
+    "1366-light-sugestoes-base-local",
+    "1366-light-sugestoes-escondidas",
+    "1366-light-sugestoes-pessoa",
+    "1366-light-sugestao-na-caixa",
+    "1366-dark-sugestoes-base-local",
+    "1366-dark-sugestoes-escondidas",
+    "1366-dark-sugestoes-pessoa",
+    "1366-dark-sugestao-na-caixa",
+    "390-light-sugestoes-base-local",
+    "390-light-sugestoes-escondidas",
+    "390-light-sugestoes-pessoa",
+    "390-light-sugestao-na-caixa",
+    "390-dark-sugestoes-base-local",
+    "390-dark-sugestoes-escondidas",
+    "390-dark-sugestoes-pessoa",
+    "390-dark-sugestao-na-caixa"
+  ],
+  "pageErrors": []
+}

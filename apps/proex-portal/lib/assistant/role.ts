@@ -10,6 +10,7 @@ import {
   ROLE_SYSTEM_PROMPT, ROLE_SYSTEM_PROMPT_TOOLS, ROLE_TOOL_CALLS_PER_ROUND, ROLE_TOOL_RESULT_BYTES, ROLE_TOOL_ROUNDS, roleConversationBytes, roleEstimate, roleTimeoutMs, validateRoleReply, type RoleSource, type RoleTurn,
 } from './role-contracts';
 import { ROLE_TOOL_NAMES, ROLE_TOOLS, resolveRoleScope, roleScopes, runRoleTool, type RoleToolResult } from './role-tools';
+import { ROLE_SUGGESTION_DAYS, roleSuggestions } from './role-suggestions';
 import { containsCredential } from './sensitive';
 import { ChargedError, firstJsonObject, genericChat } from './generic-provider';
 import { fitsFunction, type CatalogModel, type CatalogProvider, type ModelCatalog } from './model-catalog';
@@ -132,6 +133,12 @@ export async function roleStatus(db: D1Database, actor: PortalActor | null, inpu
     const reason = error instanceof HttpError && error.status === 403 ? 'A IA desta organização está liberada só para outra pessoa.' : 'O Rolê ainda não foi configurado nesta organização.';
     return { ...base, available: false, reason, provider: 'deepseek', model: ROLE_MODELS.deepseek.label, visionAvailable: false, operationsAvailable: false, textPricing: null, visionPricing: null, speech: { available: false, provider: 'groq' }, dailyLimitMicros: 0, tools: { text: false, vision: false } };
   }
+}
+
+/** Sugestões por pessoa (regras, sem IA nem custo): só para quem já pode conversar com o Rolê neste projeto. */
+export async function roleSuggestionList(db: D1Database, actor: PortalActor | null, input: { projectId?: string | null }, now = Date.now()) {
+  const { current, organizationId } = await scopedActor(db, actor, projectId(input.projectId));
+  return { days: ROLE_SUGGESTION_DAYS, suggestions: await roleSuggestions(db, current, organizationId, now) };
 }
 
 function history(value: unknown): RoleTurn[] {

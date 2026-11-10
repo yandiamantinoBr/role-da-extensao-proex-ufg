@@ -1,4 +1,4 @@
-import { one, iso, uid, type Row } from '../database';
+import { one, all, iso, uid, type Row } from '../database';
 import { type PortalActor } from '../access';
 import { HttpError } from '../errors';
 import { materialsAction } from '../materials';
@@ -59,10 +59,32 @@ async function invoke(db:D1Database,actor:PortalActor,action:string,input:Record
 // Os serviços legados retornam projeções Row diferentes conforme a operação.
 function resultId(result:Row|null,fallback:string|null):string|null{return result?.id||result?.project?.id||result?.item?.id||result?.loan?.id||result?.movement?.id||result?.offer?.id||result?.category?.id||result?.call?.id||result?.link?.id||result?.schedule?.id||result?.record?.id||result?.unit?.id||fallback;}
 
+/**
+ * Quem pode editar a planilha mestre também pode editar o script dela, que roda com a
+ * chave da administração. Por decisão do Yan (2026-11-10), edições vindas da planilha só
+ * entram quando todas as pessoas com permissão de edição no arquivo (lista enviada pelo
+ * script) são da administração geral ativa. Isso evita aplicar edições de um arquivo
+ * compartilhado por engano. A proteção de verdade é a permissão no Google
+ * (docs/PLANILHA-MESTRE-PROTECAO.md). Scripts antigos, que não enviam a lista, seguem
+ * aceitos e recebem `editorsVerified: false` até serem atualizados.
+ */
+async function verifyAdminEditors(db:D1Database,editors:unknown):Promise<boolean>{
+ if(editors===undefined||editors===null)return false;
+ if(!Array.isArray(editors)||editors.length<1||editors.length>200||editors.some(email=>typeof email!=='string'||email.length>254||!/^[^\s@]+@[^\s@]+$/.test(email.trim())))throw new HttpError(400,'Lista de editores da planilha inválida.','sync_invalid_editors');
+ const unique=[...new Set((editors as string[]).map(email=>email.trim().toLowerCase()))];
+ const admins=await all(db,`SELECT DISTINCT lower(u.email) email FROM portal_users u JOIN members m ON m.user_id=u.user_id
+  WHERE lower(u.email) IN (${unique.map(()=>'?').join(',')}) AND m.role='owner' AND m.project_id IS NULL AND m.organization_id IS NULL AND m.revoked_at IS NULL
+  AND u.status='active' AND COALESCE(u.activation_pending,0)=0 AND u.anonymized_at IS NULL`,unique);
+ const outside=unique.length-admins.length;
+ if(outside>0)throw new HttpError(409,`A planilha mestre tem ${outside===1?'1 pessoa':`${outside} pessoas`} com permissão de edição fora da administração geral. As edições feitas na planilha não foram aplicadas; a cópia do portal para a planilha continua. Deixe como editora só a administração geral (passo a passo em docs/PLANILHA-MESTRE-PROTECAO.md).`,'sync_editors_not_admin');
+ return true;
+}
+
 /** Import is deliberately per-row atomic, not a workbook-wide transaction.
  * Service rules and ledger triggers remain the sole domain writers. */
-export async function applyPortableChanges(db:D1Database,actor:PortalActor|null,input:{connectionId?:unknown;runId?:unknown;changes:unknown}):Promise<{results:PortableChangeResult[];applied:number;conflicts:number}>{
+export async function applyPortableChanges(db:D1Database,actor:PortalActor|null,input:{connectionId?:unknown;runId?:unknown;changes:unknown;editors?:unknown}):Promise<{results:PortableChangeResult[];applied:number;conflicts:number;editorsVerified:boolean}>{
  await requireSyncOwner(db,actor);
+ const editorsVerified=await verifyAdminEditors(db,input.editors);
  if(!actor)throw new HttpError(401,'Entre para sincronizar.','unauthenticated');
  if(!Array.isArray(input.changes)||input.changes.length<1||input.changes.length>MAX_SYNC_CHANGES)throw new HttpError(400,'Envie de 1 a 25 operações por vez.','sync_change_limit');
  if(new TextEncoder().encode(canonicalSyncJson(input.changes)).length>128*1024)throw new HttpError(413,'O lote de operações é muito grande.','sync_input_limit');
@@ -128,5 +150,5 @@ export async function applyPortableChanges(db:D1Database,actor:PortalActor|null,
    try{await db.batch(statements);results.push(result);}catch(race){await requireSyncOwner(db,actor);if(String(race).includes('sync_run_not_running'))throw new HttpError(409,'A execução foi encerrada durante a importação. Abra uma nova execução.','sync_run_not_running');const winner=await receipt(db,key,fingerprint);if(!winner)throw race;results.push(winner);}
   }
  }
- return {results,applied:results.filter(row=>row.status==='applied').length,conflicts:results.filter(row=>row.status==='conflict').length};
+ return {results,applied:results.filter(row=>row.status==='applied').length,conflicts:results.filter(row=>row.status==='conflict').length,editorsVerified};
 }

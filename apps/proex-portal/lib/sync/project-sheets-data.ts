@@ -18,13 +18,33 @@ const PROJECTIONS: Record<string,{fields:string;where:string;editable?:string}> 
  project_schedule_items:{fields:'id,project_id,title,starts_at,ends_at,status,url,version,created_at,updated_at',where:'project_id=?'},
  followup_tasks:{fields:'id,project_id,title,priority,status,due_at,version,created_at,updated_at',where:'project_id=?'},
 };
+/**
+ * Planilha de projeto: espelho só de leitura por padrão (decisão do Yan, 2026-11-10).
+ * Cada linha leva o link que abre o registro no portal, onde a edição acontece.
+ */
+const PORTAL_URL_COLUMN={name:'portal_url',label:'Abrir no portal',type:'text',editable:false,required:false,system:true,private:false};
+const PORTAL_LINKS:Record<string,(row:Record<string,unknown>,projectId:string)=>Record<string,string>>={
+ projects:(_row,project)=>({module:'projects',project,detailProject:project}),
+ material_categories:(_row,project)=>({module:'materials',project}),
+ items:(row,project)=>({module:'materials',project,itemId:String(row.id)}),
+ stock_movements:(row,project)=>({module:'materials',project,itemId:String(row.item_id)}),
+ activity_groups:(_row,project)=>({module:'projects',project,detailProject:project}),
+ loans:(row,project)=>({module:'loans',project,loanId:String(row.id)}),
+ campaigns:(row,project)=>({module:'events',project,campaignId:String(row.id)}),
+ project_schedule_items:(_row,project)=>({module:'calendar',project}),
+ followup_tasks:(row,project)=>({module:'demands',project,demandId:String(row.id)}),
+};
+function portalOrigin(value:string|undefined):string|null{
+ if(!value)return null;
+ try{const url=new URL(value);return ['https:','http:'].includes(url.protocol)&&!url.username&&!url.password?url.origin:null;}catch{return null;}
+}
 function schemas(principal: ProjectSheetPrincipal): PortableSchema[] {
  return PROJECT_SHEET_TABLES.filter(table=>table!=='followup_tasks'||principal.includeTasks).map(table=>{
   const original=portableDefinition(table)!,p=PROJECTIONS[table],fields=new Set(['_rowKey','_rowHash',...p.fields.split(',')]),editable=new Set(principal.scope==='materials'?(p.editable??'').split(','):[]);
-  return {...original,sheetName:'PROEX · '+table,mode:p.editable&&principal.scope==='materials'?'metadata':'read_only',updateAction:p.editable&&principal.scope==='materials'?original.updateAction:undefined,columns:original.columns.filter(column=>fields.has(column.name)).map(column=>({...column,editable:editable.has(column.name),system:!editable.has(column.name),private:false})),omitted:original.columns.filter(column=>!fields.has(column.name)).map(column=>column.name)};
+  return {...original,sheetName:'PROEX · '+table,mode:p.editable&&principal.scope==='materials'?'metadata':'read_only',updateAction:p.editable&&principal.scope==='materials'?original.updateAction:undefined,columns:[...original.columns.filter(column=>fields.has(column.name)).map(column=>({...column,editable:editable.has(column.name),system:!editable.has(column.name),private:false})),PORTAL_URL_COLUMN as typeof original.columns[number]],omitted:original.columns.filter(column=>!fields.has(column.name)).map(column=>column.name)};
  });
 }
-export async function exportProjectSheetPage(db:D1Database,principal:ProjectSheetPrincipal,input:Record<string,unknown>) {
+export async function exportProjectSheetPage(db:D1Database,principal:ProjectSheetPrincipal,input:Record<string,unknown>,origin?:string) {
  await requireProjectSheetPrincipal(db,principal);
  const table=typeof input.table==='string'?input.table:'',definition=PROJECTIONS[table];
  if(!Object.hasOwn(PROJECTIONS,table)||(table==='followup_tasks'&&!principal.includeTasks))throw new HttpError(400,'Tabela indisponível neste projeto.','sync_invalid_table');
@@ -35,6 +55,8 @@ export async function exportProjectSheetPage(db:D1Database,principal:ProjectShee
  if(input.after&&!input.expectedDigest)throw new HttpError(400,'Continue com o resumo original.','sync_digest_required');
  const rows=await all(db,`SELECT id AS _rowKey,${definition.fields} FROM ${table} WHERE ${definition.where} ORDER BY id COLLATE BINARY LIMIT ?`,[principal.projectId,MAX_PORTABLE_TABLE_ROWS+1]);
  if(rows.length>MAX_PORTABLE_TABLE_ROWS)throw new HttpError(413,'A tabela excede o limite da projeção.','sync_table_limit');
+ const portal=portalOrigin(origin);
+ for(const row of rows)row.portal_url=portal?`${portal}/?${new URLSearchParams(PORTAL_LINKS[table](row,principal.projectId))}`:'';
  const serialized=canonicalSyncJson(rows);
  if(new TextEncoder().encode(serialized).length>MAX_PORTABLE_TABLE_BYTES)throw new HttpError(413,'A tabela excede o tamanho permitido.','sync_table_bytes');
  const digest=await syncDigest(serialized);
@@ -144,10 +166,10 @@ async function describe(db:D1Database,principal:ProjectSheetPrincipal){
  await requireProjectSheetPrincipal(db,principal);
  return {configuration:{spreadsheetId:principal.spreadsheetId,projectId:principal.projectId,scope:principal.scope,includeTasks:principal.includeTasks},schemas:{formatVersion:1,tables:schemas(principal),limits:{page:100,tableRows:MAX_PORTABLE_TABLE_ROWS,tableBytes:MAX_PORTABLE_TABLE_BYTES}},runs,conflicts};
 }
-export async function callProjectSheetTool(db:D1Database,principal:ProjectSheetPrincipal,tool:unknown,args:Record<string,unknown>){
+export async function callProjectSheetTool(db:D1Database,principal:ProjectSheetPrincipal,tool:unknown,args:Record<string,unknown>,origin?:string){
  await requireProjectSheetPrincipal(db,principal);
  if(tool==='proex_sync_describe')return describe(db,principal);
- if(tool==='proex_sync_read')return exportProjectSheetPage(db,principal,args);
+ if(tool==='proex_sync_read')return exportProjectSheetPage(db,principal,args,origin);
  if(tool==='proex_sync_apply')return applyProjectSheetChanges(db,principal,args);
  if(tool==='proex_sync_run_start'){
   if(typeof args.requestId!=='string'||!/^[A-Za-z0-9_-]{8,120}$/.test(args.requestId))throw new HttpError(400,'Identificador de execução inválido.','invalid_input');

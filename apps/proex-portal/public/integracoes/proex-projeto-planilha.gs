@@ -53,6 +53,9 @@ function chamar_(tool,args) {
  return body.result;
 }
 
+/** A planilha de projeto não usa o Drive (escopo só do arquivo atual): a lista de editores não é enviada. */
+function editoresPlanilha_() { return null; }
+
 
 var OPERATIONS_HEADER = ['changeKey', 'action', 'input', 'status', 'entityId', 'code'];
 
@@ -61,6 +64,10 @@ var CONFLICTS_HEADER = ['id', 'entity_type', 'entity_id', 'expected_version', 'a
 var BASELINE_NOTE = 'portable-v1: original confirmado; preserve até nova leitura de retorno.';
 
 var EDITABLE_COLOR = '#FFF4D6', SYSTEM_COLOR = '#ECECEC';
+
+var EDITABLE_CELL_COLOR = '#fff8e1';
+
+var PROTECTION_NOTE = 'PROEX · colunas calculadas pelo portal';
 
 var SYNC_BUDGET_MS = 5 * 60 * 1000, ATTACHMENTS_BUDGET_MS = 4 * 60 * 1000;
 
@@ -176,12 +183,13 @@ function salvarCadastroMaterial(form) {
     }
     var response;
     try {
-      response = chamar_('proex_sync_apply', {
+      var editors = editoresPlanilha_();
+      response = chamar_('proex_sync_apply', Object.assign({
         connectionId: 'google-sheets',
         changes: [{ changeKey: draft.changeKey, action: 'item.create', input: draft.input }],
-      });
+      }, editors ? { editors: editors } : {}));
     } catch (error) {
-      if (['sync_token_required', 'sync_token_invalid', 'sync_forbidden', 'unauthenticated'].indexOf(error.code) >= 0) throw error;
+      if (['sync_token_required', 'sync_token_invalid', 'sync_forbidden', 'unauthenticated', 'sync_editors_not_admin'].indexOf(error.code) >= 0) throw error;
       throw new Error('Não foi possível confirmar o envio. Reabra o formulário e retome o mesmo cadastro.');
     }
     var result = response && Array.isArray(response.results) && response.results[0];
@@ -445,12 +453,19 @@ function sincronizar_() {
 
 function aplicar_(changes, runId) {
   var results = Object.create(null);
+  if (!changes.length) return results;
+  var editors = editoresPlanilha_(), extra = editors ? { editors: editors } : {};
   for (var i = 0; i < changes.length; i += 25) {
     var batch = changes.slice(i, i + 25), response;
     try {
-      response = chamar_('proex_sync_apply', { connectionId: 'google-sheets', runId: runId, changes: batch });
+      response = chamar_('proex_sync_apply', Object.assign({ connectionId: 'google-sheets', runId: runId, changes: batch }, extra));
       response.results.forEach(function (r) { results[r.changeKey] = r; });
     } catch (error) {
+      if (error && error.code === 'sync_editors_not_admin') {
+        // Nada desta rodada é aplicado; a exportação do portal para a planilha continua.
+        changes.forEach(function (change) { results[change.changeKey] = { changeKey: change.changeKey, status: 'rejected', code: 'sync_editors_not_admin' }; });
+        return results;
+      }
       if (!isolavel_(error)) throw error;
       if (batch.length === 1) {
         results[batch[0].changeKey] = { changeKey: batch[0].changeKey, status: 'rejected', code: error.code };
@@ -458,7 +473,7 @@ function aplicar_(changes, runId) {
       }
       batch.forEach(function (change) {
         try {
-          chamar_('proex_sync_apply', { connectionId: 'google-sheets', runId: runId, changes: [change] }).results.forEach(function (r) { results[r.changeKey] = r; });
+          chamar_('proex_sync_apply', Object.assign({ connectionId: 'google-sheets', runId: runId, changes: [change] }, extra)).results.forEach(function (r) { results[r.changeKey] = r; });
         } catch (single) {
           if (!isolavel_(single)) throw single;
           results[change.changeKey] = { changeKey: change.changeKey, status: 'rejected', code: single.code };
@@ -612,6 +627,23 @@ function escreverTabela_(ss, schema, rows) {
   head.setNotes([schema.columns.map(function (c) { return c.label + (c.editable ? ' · editável na planilha' : ' · calculado pelo portal'); })]);
   if (sheet.getFrozenRows() !== 1) sheet.setFrozenRows(1);
   if (sheet.getFrozenColumns() !== 1) sheet.setFrozenColumns(1);
+  marcarEdicao_(sheet, schema, rows.length);
+}
+
+function marcarEdicao_(sheet, schema, count) {
+  try {
+    var editable = [];
+    schema.columns.forEach(function (c, i) { if (c.editable) editable.push(i + 1); });
+    if (count > 0) {
+      var colors = [];
+      for (var r = 0; r < count; r++) colors.push(schema.columns.map(function (c) { return c.editable ? EDITABLE_CELL_COLOR : null; }));
+      sheet.getRange(2, 1, count, schema.columns.length).setBackgrounds(colors);
+    }
+    var existing = sheet.getProtections(SpreadsheetApp.ProtectionType.SHEET).filter(function (p) { return p.getDescription() === PROTECTION_NOTE; });
+    var protection = existing.length ? existing[0] : sheet.protect().setDescription(PROTECTION_NOTE);
+    protection.setWarningOnly(true);
+    protection.setUnprotectedRanges(editable.map(function (column) { return sheet.getRange(2, column, count + 200, 1); }));
+  } catch (_error) { /* proteção é ajuda visual; a sincronização segue */ }
 }
 
 function conferirTabela_(ss, schema, rows) {

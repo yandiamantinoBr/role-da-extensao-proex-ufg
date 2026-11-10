@@ -28,6 +28,12 @@
 .help a{color:var(--brand-ink);font-weight:700}
 .fullBody{width:96px;height:auto}
 .hello{font-size:1.15rem;font-weight:800;color:var(--brand-ink)}
+.tips{display:grid;gap:.6rem;width:100%}
+.tipsHead{display:flex;align-items:center;justify-content:space-between;gap:.75rem}
+.tipsHead p{margin:0;font-size:max(13px,.85rem);font-weight:700;color:var(--text-secondary);text-align:left}
+.tipsToggle{flex:none;white-space:nowrap;min-height:44px;padding:.35rem .6rem;border:0;border-radius:10px;background:none;color:var(--brand-ink);font:inherit;font-size:max(13px,.85rem);font-weight:700;text-decoration:underline;cursor:pointer}
+.tipsToggle:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+.tipsNote{margin:0;font-size:max(13px,.8rem);color:var(--text-secondary);text-align:left}
 .suggestions{display:grid;gap:.5rem;width:100%;margin:0;padding:0;list-style:none}
 .suggestions button{width:100%;min-height:44px;padding:.6rem .85rem;border:1px solid var(--line);border-radius:12px;background:var(--surface-soft);color:var(--text-strong);font:inherit;font-size:.9rem;text-align:left;cursor:pointer}
 .suggestions button:hover{border-color:var(--purple)}

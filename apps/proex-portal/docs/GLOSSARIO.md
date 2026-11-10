@@ -49,6 +49,24 @@ Atualizado em 09/11/2026, sobre a `main` depois da PR52.
 | Meu trabalho | `my-work` e `meu-trabalho-panel` | `my-work` | Arquivos em inglês, textos em português. |
 | Rolê | projeto "Rolê da Extensão" e assistente "Rolê" | **assistente Rolê** sempre com "assistente" | Evita confusão em busca e relatório. |
 
+## Nomes finais aprovados (Yan, 10/11/2026: "Sim, seguir todas")
+
+Nomes de tela a usar em código novo e nas próximas PRs de consolidação. A troca nas telas antigas segue as fases do fim deste arquivo, a partir de 14/11.
+
+| Hoje | Nome final | Observação |
+|---|---|---|
+| Histórico em vários lugares | **Histórico**, num componente único com filtro por assunto | As fichas ganham um atalho "Ver histórico" filtrado |
+| "Linha do tempo" na ficha do projeto | **Cronograma** | Mostra datas futuras, não histórico |
+| Pessoas e acessos | **Acessos** | Quem entra no portal e com qual papel |
+| Equipes | **Equipes** | Só equipe de trabalho, sem dar acesso |
+| Pré-cadastro + equipe publicada pela PROEX | **Diretório** | Pessoas conhecidas, com ou sem conta |
+| Botões de baixar dados espalhados | **Exportar**, concentrado em Relatórios | Nas outras telas, um botão "Exportar" que abre Relatórios já filtrado |
+| "Indicadores das dinâmicas" em Relatórios | sai | Repete o conjunto Dinâmicas da central |
+| Painel "Responsáveis e demandas" no topo dos módulos | **Responsáveis** na ficha (do material, empréstimo, dinâmica ou projeto) | O responsável pela área inteira vai para a ficha do projeto, para não perder a função |
+| Quatro formas de movimentar estoque | **Registrar movimento**: escolher o material e abrir a ficha | Uma tela só, com corrigir, desfazer e anexos. Depois de 13/11 |
+| "Assistente com revisão" + Rolê | **assistente Rolê** | O outro sai. Depois de 13/11 |
+| Importação assistida | **Importar de arquivo** | Planilha, PDF ou SIGAA |
+
 ## Palavras com mais de um sentido (revisão geral de 09/11)
 
 | Palavra | Sentidos que convivem | Como escrever daqui em diante |

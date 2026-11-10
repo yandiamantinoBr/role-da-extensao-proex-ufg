@@ -213,3 +213,34 @@ Motivo: às 13h o Yan perguntou "quantos brindes, super brindes e super super br
   - as consultas ficam limitadas aos projetos do escopo, e citar outro projeto não sai do escopo;
   - o modelo recebe a linha "Procurar em: …".
 - Cobrança e escrita continuam num projeto que a pessoa pode ver: o do escopo, quando há um, ou o projeto padrão. Para gravar no estoque, o cartão segue pedindo o projeto dono.
+
+## Fontes oficiais: páginas públicas e Instagram · 10/11/2026
+
+- **Páginas públicas** (`lib/assistant/official-sources.ts`):
+  - Lista fechada de 9 páginas: PROEX (início, notícias, editais, editais externos, equipe e contatos, o que é, Rolê da Extensão), programação do CONPEEX e o site do 23º CONPEEX.
+  - A cópia roda uma vez por dia, na rotina que já chama `/api/health`, com trava de 20 h e só na Vercel.
+  - O `robots.txt` de cada site é respeitado (o site do CONPEEX hoje bloqueia `/`; ele fica de fora até liberar). Cada página tem 8 s para responder e um teto de 600 KB.
+  - Guarda só título, um resumo curto (meta description ou primeiros parágrafos, até 600 caracteres) e até 15 links de notícias/páginas do mesmo site. Fica na tabela `settings`, sem migração.
+- **Instagram:** sem raspagem.
+  - A comunicação cola o link (`instagram.com/p/…` ou `/reel/…`), a data e um resumo da legenda em Configurações → Chaves e modelos → Funções e acesso → "Fontes oficiais do Rolê".
+  - Só a administração geral ou quem configura a IA da organização cadastra ou remove; qualquer membro lê.
+  - **oEmbed:** a Meta exige token de aplicativo desde 2020, então não é usado.
+  - **Integração oficial (desligada):** para ler posts recentes e métricas, a comunicação precisaria de uma conta profissional ligada a uma Página do Facebook, um app na Meta com Instagram Graph API (permissões `instagram_basic` e `pages_read_engagement`, com revisão da Meta) e um token de longa duração guardado no cofre de chaves.
+- **Rolê:** a nova consulta `consultar_fontes_oficiais` busca nas páginas copiadas e nos posts cadastrados e devolve título, resumo, data da cópia e link.
+  - Na resposta, os links externos aparecem só se forem de `proex.ufg.br`, `23conpeex.plateia.ufg.br` ou `instagram.com` e abrem em nova aba.
+  - O conteúdo é público e entra como dado, não instrução.
+
+## Sugestões por pessoa · 10/11/2026
+
+- **O que são:** até 4 perguntas prontas na abertura do Rolê, com o título "Sugestões para você". Tocar numa sugestão só preenche a caixa de texto; a pessoa ainda decide enviar.
+- **Sem IA e sem custo:** são regras fixas do portal (`lib/assistant/role-suggestions.ts`). Nenhuma chamada a provedor, nada conta no limite diário.
+- **De onde saem** (sempre com as permissões da própria pessoa e só da organização da conversa):
+  - **Momento:** dinâmica que está acontecendo ou começa em até 3 dias; agenda de hoje ou dos próximos 7 dias.
+  - **Atividade:** itens que a própria pessoa movimentou nos últimos 14 dias; demandas atribuídas a ela e ainda abertas.
+  - **Equipe:** itens com menos estoque disponível que a função dela pode ver; empréstimos em aberto ou atrasados.
+  - **Geral:** perguntas fixas (entrega de brindes, empréstimo, editais, contatos) completam a lista.
+- **Montagem:** 1 de momento, até 2 de atividade, 1 de equipe e o resto geral, sem repetir. Nomes com mais de 60 caracteres ficam de fora; aspas e quebras de linha são retiradas.
+- **Renovação:** o sorteio é fixo por pessoa e muda a cada 3 dias (`ROLE_SUGGESTION_DAYS`). Os dados (agenda, estoque, demandas) entram na hora, então a lista acompanha o que mudou.
+- **Desligar:** o botão "Esconder" guarda a escolha no aparelho (`proex-role-sugestoes`). Com as sugestões escondidas o portal nem consulta a rota; "Mostrar sugestões" volta ao normal.
+- **Rota:** `GET /api/assistant/role?projectId=…&suggestions=1`, com a mesma checagem de quem pode conversar com o Rolê naquele projeto. Se a consulta falhar, aparecem três perguntas fixas.
+- **Não faz:** não usa o conteúdo das conversas, não guarda histórico de sugestões e não mostra nomes de projetos que a pessoa não vê.
