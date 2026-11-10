@@ -75,9 +75,11 @@
   .dock[data-open] .launchers{visibility:hidden}
 }
 @media (prefers-reduced-motion:no-preference){.panel{animation:dock-in .16s ease-out}@keyframes dock-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}}
-/* Leave room at the end of each page so the corner buttons never sit on top of the last content. */
-:global(.p-main):has(.dock){padding-bottom:96px}
-@media (max-width:720px){:global(.pn-shell .p-main):has(.dock){padding-bottom:calc(150px + env(safe-area-inset-bottom,0px))}}
+/* Leave room at the end of each page so the dock never sits on top of the last content. The dock measures
+   its resting parts and sets --dock-reserve on <html> (see dock-reserve.ts); the numbers below are only the
+   first-paint fallback. Without the dock (volunteer and public pages) nothing here applies. */
+:global(.p-main):has(.dock){padding-bottom:var(--dock-reserve,96px)}
+@media (max-width:720px){:global(.pn-shell .p-main):has(.dock){padding-bottom:var(--dock-reserve,calc(150px + env(safe-area-inset-bottom,0px)))}}
 .stackItem{display:flex;align-items:center;gap:8px}
 .stackLabel{padding:4px 10px;border-radius:999px;background:var(--ink);color:var(--surface);font-size:12px;font-weight:650;white-space:nowrap;box-shadow:0 6px 16px -10px rgb(25 11 41/.6)}
 .rowTime{min-width:76px}
@@ -100,6 +102,3 @@
 .stack .launcher{border:1px solid var(--line);background:var(--surface);box-shadow:0 8px 20px -12px rgb(25 11 41/.5)}
 .stack .launcher[data-active]{background:var(--brand-ink);color:var(--surface);border-color:var(--brand-ink)}
 .stack{margin-bottom:8px}
-/* A minimized chip sits above the buttons: give the page end extra room so it never touches the footer. */
-:global(.p-main):has(.panel[data-minimized]){padding-bottom:150px}
-@media (max-width:720px){:global(.pn-shell .p-main):has(.panel[data-minimized]){padding-bottom:calc(210px + env(safe-area-inset-bottom,0px))}}
