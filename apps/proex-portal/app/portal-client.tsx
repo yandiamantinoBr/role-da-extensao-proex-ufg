@@ -306,6 +306,8 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
     const [data, setData] = useState<Snapshot>(initial ?? {});
     const sessionIdentity = useRef(string(initial?.user?.userId));
     const [requestedTab, setTab] = useState<Tab>('overview');
+    // P6 (revisão de 09/11): um endereço para módulo sem permissão volta ao Início com um aviso, não em silêncio.
+    const [deniedModule, setDeniedModule] = useState<ModuleId | null>(null);
     const [historyReady, setHistoryReady] = useState(false);
     const pushNavigation = useRef(false);
     const [selectedDemandId, setSelectedDemandId] = useState('');
@@ -484,7 +486,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
     const searchItems = visibleItems.filter(i => !query || `${i.name} ${i.description ?? ''}`.toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR')));
     const accessibleProjectKey = scopedProjects.map(project => project.id).join('|');
     const accessibleUnitKey = [...visibleUnits.map(unit => string(unit.id)), ...(hasUnassignedProjects ? ['__unassigned__'] : [])].join('|');
-    useEffect(() => { if (tab === requestedTab) return; const timer = window.setTimeout(() => { setTab(tab); setWorkRecord(null); setSelectedMaterialId(null);setMaterialMode('view'); setSelectedDemandId(''); }, 0); return () => window.clearTimeout(timer); }, [tab, requestedTab]);
+    useEffect(() => { if (tab === requestedTab) return; const timer = window.setTimeout(() => { if (requestedTab !== 'overview' && tabs.some(module => module.id === requestedTab)) setDeniedModule(requestedTab as ModuleId); setTab(tab); setWorkRecord(null); setSelectedMaterialId(null);setMaterialMode('view'); setSelectedDemandId(''); }, 0); return () => window.clearTimeout(timer); }, [tab, requestedTab]);
     useEffect(() => { if (!filter || accessibleProjectKey.split('|').includes(filter)) return; const timer = window.setTimeout(() => { setFilter(''); setDraftProject(''); setWorkRecord(null); setSelectedMaterialId(null);setMaterialMode('view'); }, 0); return () => window.clearTimeout(timer); }, [accessibleProjectKey, filter]);
     useEffect(() => { if (!unitFilter || accessibleUnitKey.split('|').includes(unitFilter)) return; const timer = window.setTimeout(() => { setUnitFilter(''); setFilter(''); setDraftProject(''); }, 0); return () => window.clearTimeout(timer); }, [accessibleUnitKey, unitFilter]);
     const navigation = useNavigationPreferences(string(user.userId), allowedTabs.map(module => module.id));
@@ -559,6 +561,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
             navigation.recordVisit(id);
         }
         setTab(id); setQuery(''); setAccountOpen(false); setSelectedMaterialId(null);setMaterialMode('view'); setWorkRecord(null);
+        setDeniedModule(null);
         // Um pedido de Equipes (abrir fixada, criar) vale só para esta ida; voltar pelo menu abre a página normal.
         if (!teamIntentPending.current) setTeamIntent(null);
         teamIntentPending.current = false;
@@ -815,6 +818,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         <p>{tab === 'overview' ? 'Seu início, seus projetos e o que precisa da sua atenção.' : activeModule?.description}</p>
       </div>
     </header>
+    {deniedModule && tab === 'overview' && <div className="p-notice" role="status"><ShieldCheck size={18} aria-hidden="true"/><div><strong>{tabs.find(module => module.id === deniedModule)?.label ?? 'Esta página'} {deniedModule === 'settings' ? 'é só da administração' : 'não faz parte do seu acesso'}.</strong> Você voltou ao Início. Se precisar dela, peça a quem gerencia o portal.</div><button type="button" className="p-button p-button-subtle" onClick={() => setDeniedModule(null)}>Entendi</button></div>}
     {['overview', 'materials', 'loans', 'events', 'reports'].includes(tab) && <section className={`p-scope-filters ${scopeStyles.scope}`} aria-label="Filtrar registros por unidade, área temática e projeto">
         <div className={scopeStyles.layout}>
         <Field label="Projeto">

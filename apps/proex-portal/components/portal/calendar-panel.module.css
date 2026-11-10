@@ -36,8 +36,8 @@
 .entry p,.feedRow small,.createdFeed>p{overflow-wrap:anywhere}
 .monthHeading>button{flex-shrink:0}
 .monthGrid{min-width:0}
-.panel{--agenda-materials:#ce5f18;--agenda-projects:#19669c}
-:global(html[data-theme=dark]) .panel{--agenda-materials:var(--orange);--agenda-projects:var(--aqua)}
+.panel{--agenda-materials:#ce5f18;--agenda-projects:#19669c;--agenda-deadlines:#a3264f}
+:global(html[data-theme=dark]) .panel{--agenda-materials:var(--orange);--agenda-projects:var(--aqua);--agenda-deadlines:#ff9db8}
 .dayCount{display:none}
 .listHeading,.day{scroll-margin-block:82px 80px}
 .listHeading:focus-visible{outline:2px solid var(--focus);outline-offset:4px;border-radius:3px}
@@ -59,3 +59,8 @@
 /* Atalho explícito para a lista do dia quando ela fica abaixo do mês; some quando a lista está ao lado. */
 .jump{display:inline-flex;margin-top:6px}
 @container agenda (min-width:860px){.jump{display:none}}
+
+/* Estado vazio que explica o que a Agenda mostra (P7, 10/11/2026). */
+.emptyAgenda{display:grid;gap:6px;padding:14px;border:1px dashed var(--control-border);border-radius:12px;background:var(--surface-soft);color:var(--text-secondary);font-size:13px;line-height:1.6}
+.emptyAgenda strong{color:var(--text-strong);font-size:14px}
+.emptyAgenda p{margin:0}

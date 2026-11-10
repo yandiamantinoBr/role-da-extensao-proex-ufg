@@ -10,8 +10,8 @@ import { offsetCivilDate } from '@/lib/civil-date';
 
 type Feed = { id: string; category: CalendarCategory; project_id: string | null; project_name: string | null; created_at: string; expires_at: string; revoked_at: string | null };
 type CalendarData = { entries: CalendarEntry[]; feeds: Feed[]; availableCategories: CalendarCategory[] };
-const labels: Record<CalendarCategory, string> = { loans: 'Empréstimos', materials: 'Materiais', projects: 'Projetos e eventos', consumption: 'Consumo' };
-const colors: Record<CalendarCategory, string> = { loans: 'var(--brand-ink)', materials: 'var(--agenda-materials)', projects: 'var(--agenda-projects)', consumption: 'var(--success-ink)' };
+const labels: Record<CalendarCategory, string> = { loans: 'Empréstimos', materials: 'Materiais', projects: 'Projetos e eventos', consumption: 'Consumo', deadlines: 'Prazos de demandas' };
+const colors: Record<CalendarCategory, string> = { loans: 'var(--brand-ink)', materials: 'var(--agenda-materials)', projects: 'var(--agenda-projects)', consumption: 'var(--success-ink)', deadlines: 'var(--agenda-deadlines)' };
 const weekday = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 const timeZone = 'America/Sao_Paulo';
 const googleCalendarAddByUrl = 'https://calendar.google.com/calendar/u/0/r/settings/addbyurl';
@@ -21,6 +21,8 @@ function inDay(event: CalendarEntry, day: string): boolean {
   const start = Date.parse(`${day}T00:00:00-03:00`), end = start + 86400000;
   return event.allDay ? event.startsAt <= day && event.endsAt > day : Date.parse(event.startsAt) < end && Date.parse(event.endsAt) > start;
 }
+/** "a, b e c" em português. */
+function readableList(items: string[]): string { return items.length <= 1 ? items.join('') : `${items.slice(0, -1).join(', ')} e ${items.at(-1)}`; }
 function prettyDay(day: string): string { return new Intl.DateTimeFormat('pt-BR', { timeZone, day: 'numeric', month: 'long', year: 'numeric' }).format(new Date(`${day}T12:00:00Z`)); }
 function when(event: CalendarEntry): string {
   if (event.allDay) {
@@ -146,7 +148,7 @@ export default function CalendarPanel({ projects: sourceProjects, organizational
     </section>
     <section className={`p-card ${styles.listCard}`} id="calendar-day-entries" aria-labelledby="calendar-day-heading">
       <div className="p-card-title"><div><h3 ref={listHeading} id="calendar-day-heading" className={styles.listHeading} tabIndex={-1}>{selectedDay?`Compromissos de ${prettyDay(selectedDay)}`:'Registros do período'}</h3><p role="status">{loading?'Consultando registros…':selectedDay?`${shown.length} ${shown.length===1?'compromisso':'compromissos'} em ${prettyDay(selectedDay)}`:`${shown.length} ${shown.length===1?'registro':'registros'}`}</p></div>{selectedDay&&<button type="button" className="p-button p-button-subtle" onClick={()=>{setSelectedDay('');dayTrigger.current?.focus({preventScroll:true});dayTrigger.current?.scrollIntoView({block:'nearest'});}}><X size={15} aria-hidden="true"/>Ver todo o período</button>}</div>
-      {loading?<p className="p-form-help"><LoaderCircle size={17} className="p-spin"/> Carregando agenda…</p>:!shown.length?<p className="p-form-help">{validRange?'Nenhum registro corresponde às datas e aos filtros escolhidos.':'Informe um período válido para consultar a agenda.'}</p>:<div className={styles.entries}>{shown.map(event=><article key={event.uid} className={styles.entry} style={{borderLeftColor:colors[event.category]}}><small>{labels[event.category]}</small><h4 className={event.status==='CANCELLED'?styles.cancelled:undefined}>{event.title}</h4><p>{when(event)}</p><p className={styles.entryContext}>{event.projectName}{event.location?` · ${event.location}`:''}{event.status==='CANCELLED'?' · Cancelado / arquivado':''}</p></article>)}</div>}
+      {loading?<p className="p-form-help"><LoaderCircle size={17} className="p-spin"/> Carregando agenda…</p>:!shown.length?(validRange&&!selectedDay&&category==='all'&&data?<div className={styles.emptyAgenda}><strong>Nada na Agenda neste período</strong><p>Aqui aparecem {readableList((data.availableCategories??[]).map(kind=>labels[kind].toLocaleLowerCase('pt-BR')))} dos projetos que você acompanha, conforme o seu acesso.</p><p>Escolha outro mês nas setas do calendário ou confira os filtros.</p></div>:<p className="p-form-help">{validRange?selectedDay?'Nenhum compromisso neste dia.':'Nenhum registro corresponde às datas e aos filtros escolhidos.':'Informe um período válido para consultar a agenda.'}</p>):<div className={styles.entries}>{shown.map(event=><article key={event.uid} className={styles.entry} style={{borderLeftColor:colors[event.category]}}><small>{labels[event.category]}</small><h4 className={event.status==='CANCELLED'?styles.cancelled:undefined}>{event.title}</h4><p>{when(event)}</p><p className={styles.entryContext}>{event.projectName}{event.location?` · ${event.location}`:''}{event.status==='CANCELLED'?' · Cancelado / arquivado':''}</p></article>)}</div>}
     </section>
     </div>
     <section className="p-card">
