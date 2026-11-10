@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { communityGet, communityPost, errorText } from './community-api';
 import type { ModuleId, PortalModule } from './navigation-model';
 import styles from './floating-dock.module.css';
+import { DOCK_RESERVE_PROPERTY, dockReserve } from './dock-reserve';
 
 /* ── Registry: other features (the Rolê) put a launcher in the dock without the dock knowing them. ── */
 export type DockItem = { id: string; label: string; icon: ReactNode; onOpen(): void; shortcut?: string; badge?: number };
@@ -90,6 +91,24 @@ export default function FloatingDock({ userId, serverDay, modules, pinned, onNav
     return () => window.removeEventListener('keydown', onKey);
   }, [dock?.open, expanded, close]);
   useEffect(() => { if (dock?.open && !dock.minimized) window.requestAnimationFrame(() => panel.current?.querySelector<HTMLElement>('[data-autofocus], button, input, textarea, select, a[href]')?.focus()); }, [dock?.open, dock?.minimized]);
+  // The page keeps room at its end for the dock's resting parts, measured from the screen, so buttons at the
+  // end of any page stay clear of it (Rolê, Widgets, a minimized chip, phone bar and safe area included).
+  const root = useRef<HTMLDivElement>(null);
+  const measure = useCallback(() => {
+    const node = root.current;
+    if (!node) return;
+    const reserve = dockReserve(window.innerHeight, [...node.querySelectorAll<HTMLElement>('[data-dock-anchor]')].map(part => part.getBoundingClientRect()).filter(rect => rect.height > 0).map(rect => rect.top));
+    if (reserve !== null) document.documentElement.style.setProperty(DOCK_RESERVE_PROPERTY, `${reserve}px`);
+  }, []);
+  const shown = dock !== null;
+  useEffect(() => {
+    if (!shown) return;
+    const html = document.documentElement, observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
+    if (root.current) observer?.observe(root.current);
+    window.addEventListener('resize', measure);
+    return () => { observer?.disconnect(); window.removeEventListener('resize', measure); html.style.removeProperty(DOCK_RESERVE_PROPERTY); };
+  }, [shown, measure]);
+  useEffect(() => { measure(); });
   if (!dock) return null;
   const toggle = (target: Dock['open']) => update(current => current.open === target && !current.minimized ? { ...current, open: null, minimized: false } : { ...current, open: target, minimized: false });
   const items = state.items.filter(item => !dock.hidden.includes(item.id));
@@ -97,9 +116,9 @@ export default function FloatingDock({ userId, serverDay, modules, pinned, onNav
   const openWidget = dock.open && dock.open !== 'gallery' ? WIDGETS.find(widget => widget.id === dock.open) : null;
   const panelTitle = dock.open === 'gallery' ? 'Meu espaço' : openWidget?.label ?? '';
   const pinnedModules = pinned.map(moduleId => modules.find(module => module.id === moduleId)).filter((module): module is PortalModule => !!module);
-  return <div className={styles.dock} data-open={dock.open && !dock.minimized ? 'true' : undefined} data-has-role={items.length > 0 || undefined}>
+  return <div ref={root} className={styles.dock} data-open={dock.open && !dock.minimized ? 'true' : undefined} data-has-role={items.length > 0 || undefined}>
     {dock.open && !dock.minimized && <div className={styles.scrim} aria-hidden="true" onClick={() => close(dock.open ?? undefined)}/>}
-    {dock.open && <section ref={panel} id={`${id}-panel`} className={styles.panel} data-minimized={dock.minimized || undefined} role="dialog" aria-modal="false" aria-labelledby={`${id}-title`}>
+    {dock.open && <section ref={panel} id={`${id}-panel`} className={styles.panel} data-minimized={dock.minimized || undefined} data-dock-anchor={dock.minimized || undefined} role="dialog" aria-modal="false" aria-labelledby={`${id}-title`}>
       <header className={styles.panelHead}>
         <h2 id={`${id}-title`}>{panelTitle}</h2>
         <button type="button" className={styles.headButton} aria-label={dock.minimized ? `Expandir ${panelTitle}` : `Minimizar ${panelTitle}`} aria-expanded={!dock.minimized} onClick={() => { if (!dock.minimized) setExpanded(false); update(current => ({ ...current, minimized: !current.minimized })); }}>{dock.minimized ? <ChevronUp size={18}/> : <Minus size={18}/>}</button>
@@ -123,10 +142,10 @@ export default function FloatingDock({ userId, serverDay, modules, pinned, onNav
         </button></div>; })}
         <div className={styles.stackItem}><span className={styles.stackLabel} aria-hidden="true">Meu espaço</span><button ref={node => { launchers.current.gallery = node; }} type="button" className={`${styles.launcher} ${styles.galleryLauncher}`} aria-label="Meu espaço: escolher widgets" aria-expanded={dock.open === 'gallery'} aria-controls={dock.open === 'gallery' ? `${id}-panel` : undefined} data-active={dock.open === 'gallery' || undefined} onClick={() => toggle('gallery')}><Settings2 size={18}/></button></div>
       </div>}
-      {items.map(item => <button key={item.id} type="button" className={`${styles.launcher} ${styles.itemLauncher}`} aria-label={`${item.label}${item.shortcut ? ` (${item.shortcut})` : ''}`} title={item.label} onClick={() => item.onOpen()}>
+      {items.map(item => <button key={item.id} type="button" className={`${styles.launcher} ${styles.itemLauncher}`} data-dock-anchor aria-label={`${item.label}${item.shortcut ? ` (${item.shortcut})` : ''}`} title={item.label} onClick={() => item.onOpen()}>
         {item.icon}{item.badge ? <span className={styles.badge} aria-hidden="true">{item.badge > 9 ? '9+' : item.badge}</span> : null}
       </button>)}
-      <button ref={node => { launchers.current.toggle = node; }} type="button" className={`${styles.launcher} ${styles.toggleLauncher}`} aria-label={expanded ? 'Recolher widgets' : `Widgets${badges.reminders && active.some(widget => widget.id === 'reminders') ? `, ${badges.reminders} lembretes para hoje` : ''}`} title="Widgets" aria-expanded={expanded} aria-controls={expanded ? `${id}-stack` : undefined} data-active={expanded || undefined} onClick={() => setExpanded(value => !value)}>
+      <button ref={node => { launchers.current.toggle = node; }} type="button" className={`${styles.launcher} ${styles.toggleLauncher}`} data-dock-anchor aria-label={expanded ? 'Recolher widgets' : `Widgets${badges.reminders && active.some(widget => widget.id === 'reminders') ? `, ${badges.reminders} lembretes para hoje` : ''}`} title="Widgets" aria-expanded={expanded} aria-controls={expanded ? `${id}-stack` : undefined} data-active={expanded || undefined} onClick={() => setExpanded(value => !value)}>
         {expanded ? <X size={20}/> : <LayoutGrid size={20}/>}{!expanded && badges.reminders > 0 && active.some(widget => widget.id === 'reminders') && <span className={styles.badge} aria-hidden="true">{badges.reminders > 9 ? '9+' : badges.reminders}</span>}
       </button>
     </nav>
