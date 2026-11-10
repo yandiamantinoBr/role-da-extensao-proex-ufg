@@ -301,3 +301,21 @@ test('corrected and undone stock movements carry their status, mirrors stay hidd
   const inventory = await activityFeed(db, actors.inventoryA, range, NOW);
   assert.ok(!inventory.events.some(event => event.id === 'materials:mov-b1'), 'revisão de outro projeto não aparece');
 });
+
+test('per-task model choices and unused chosen models reach the AI history only for whoever configures the organization', async () => {
+  const { db, actors } = setup();
+  const owner = person(db, 'owner', { organization: 'org_proex', name: 'Coordenação' });
+  const audit = (id, action, details, day) => db.native.prepare("INSERT INTO audit(id,actor_id,project_id,organization_id,action,entity_id,details,created_at) VALUES(?,?,NULL,'org_proex',?,'org_proex',?,?)").run(id, owner.userId, action, JSON.stringify(details), at(day));
+  audit('cfg-route', 'assistant.configure', { revision: 7, changes: [{ field: 'documentModel', before: '', after: 'openai-gpt-6-luna' }, { field: 'decisionModel', before: 'perplexity-decider-v1-2', after: '' }, { field: 'speechModel', before: 'deepgram-nova-3', after: 'groq-whisper-turbo' }] }, '2026-11-09');
+  audit('route-skip', 'assistant.route.fallback', { task: 'speech', model: 'groq-whisper-turbo', reason: 'Motivo sintético de teste.' }, '2026-11-10');
+  const ai = (await activityFeed(db, owner, range, NOW)).events.filter(event => event.type === 'ai');
+  assert.deepEqual(ai.map(event => event.id), ['ai:route-skip', 'ai:cfg-route']);
+  assert.equal(ai[1].title, 'Funções alteradas');
+  assert.equal(ai[1].detail, 'Modelo do catálogo para documentos: — → openai-gpt-6-luna\nModelo do catálogo para conferência e triagem: perplexity-decider-v1-2 → —\nModelo do catálogo para voz: deepgram-nova-3 → groq-whisper-turbo');
+  assert.equal(ai[0].title, 'Modelo escolhido para voz não foi usado');
+  assert.equal(ai[0].detail, 'Modelo escolhido: groq-whisper-turbo\nMotivo: Motivo sintético de teste.\nA tarefa seguiu pelo padrão.');
+  for (const reader of [actors.manager, actors.inventoryA, actors.viewerB]) {
+    const other = JSON.stringify(await activityFeed(db, reader, range, NOW));
+    assert.ok(!other.includes('openai-gpt-6-luna') && !other.includes('groq-whisper-turbo') && !other.includes('não foi usado'), 'quem não configura a IA não vê a troca nem o aviso');
+  }
+});
