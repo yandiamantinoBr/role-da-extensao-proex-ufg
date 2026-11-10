@@ -17,7 +17,7 @@ import styles from './role-assistant.module.css';
 type Project = { id: string; name: string; organization_id?: string };
 type Props = { projects: Project[]; defaultProjectId?: string; onApplied?: () => void | Promise<void>; onOpenSettings?: () => void; onOpenLimits?: () => void };
 type Pricing = { model: string; label: string; inputMicrosPerToken: number; outputMicrosPerToken: number };
-type Status = { available: boolean; reason: string | null; provider: string; model: string; textPricing?: Pricing | null; visionPricing?: Pricing | null; visionAvailable: boolean; operationsAvailable: boolean; speech: { available: boolean; provider: 'groq' | 'deepgram' }; dailyLimitMicros: number; reservedTodayMicros: number; canConfigure?: boolean; organizationId?: string; tools?: { text: boolean; vision: boolean } };
+type Status = { available: boolean; reason: string | null; provider: string; model: string; textPricing?: Pricing | null; visionPricing?: Pricing | null; visionAvailable: boolean; operationsAvailable: boolean; speech: { available: boolean; provider: 'groq' | 'deepgram' }; dailyLimitMicros: number; reservedTodayMicros: number; canConfigure?: boolean; organizationId?: string; tools?: { text: boolean; vision: boolean }; scopes?: { units: { id: string; name: string }[]; events: { id: string; name: string; projectId: string }[] } };
 type Match = { projectId: string; projectName: string; itemName: string; score: number };
 type Operation = { request: string; stage: 'idle' | 'estimated' | 'preview' | 'done'; costMicros?: number; provider?: string; jev?: boolean; stale?: boolean; projectId?: string; matches?: Match[]; ambiguous?: boolean; error?: string; limit?: boolean; preview?: { plan: Omit<AssistantPlan, 'actorId'>; planToken: string; undoReason: string }; confirmed?: boolean; receipt?: string; key: string; destinationDefault?: string; movementId?: string; destination?: string | null; revise?: 'correct' | 'undo' | null; reviseKey?: string };
 type Source = { label: string; href: string };
@@ -91,7 +91,12 @@ function trimmedHistory(messages: Message[]): RoleTurn[] {
 
 export default function RoleAssistant({ projects, defaultProjectId, onApplied, onOpenSettings, onOpenLimits }: Props) {
   const [open, setOpen] = useState(false), [chosenProjectId, setProjectId] = useState(defaultProjectId ?? '');
-  const projectId = projects.some(item => item.id === chosenProjectId) ? chosenProjectId : projects[0]?.id ?? '';
+  // "Procurar em": toda a PROEX (padrão), uma unidade, um projeto ou um evento. O projeto de cobrança e de escrita
+  // é o do escopo quando há um; senão, o projeto padrão da pessoa.
+  const [scopeValue, setScopeValue] = useState(defaultProjectId ? `project:${defaultProjectId}` : 'org');
+  const baseProjectId = projects.some(item => item.id === chosenProjectId) ? chosenProjectId : projects[0]?.id ?? '';
+  const [scopeKind, scopeId] = scopeValue === 'org' ? ['org', ''] : [scopeValue.slice(0, scopeValue.indexOf(':')), scopeValue.slice(scopeValue.indexOf(':') + 1)];
+  const projectId = scopeKind === 'project' && projects.some(item => item.id === scopeId) ? scopeId : baseProjectId;
   const [status, setStatus] = useState<Status | null>(null), [statusError, setStatusError] = useState('');
   const [messages, setMessages] = useState<Message[]>([]), [draft, setDraft] = useState(''), [picked, setPicked] = useState<Picked | null>(null);
   const [ackTick, setAckTick] = useState(0), [sessionAck, setSessionAck] = useState(''), [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState(''), [limitHit, setLimitHit] = useState(false), [usageOpen, setUsageOpen] = useState(false);
@@ -163,7 +168,7 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
     setMessages(current => [...current, user]); setDraft(''); setPicked(null); setBusy(true); setError(''); setNotice(''); setLimitHit(false);
     try {
       const result = await post<{ reply: string; operation: string | null; operationDropped?: boolean; model: string; costMicros: number; reservedMicros: number; sources?: Source[]; lookups?: number }>('/api/assistant/role', {
-        action: 'chat', projectId, operationKey: crypto.randomUUID(), consent: true, history, message: text, ...(image ? { image } : {}), acceptedCostMicros: estimate.costMicros,
+        action: 'chat', projectId, scope: scopeKind === 'org' ? { kind: 'org' } : { kind: scopeKind, id: scopeId }, operationKey: crypto.randomUUID(), consent: true, history, message: text, ...(image ? { image } : {}), acceptedCostMicros: estimate.costMicros,
       });
       if (!mounted.current) return;
       const reply: Message = { id: crypto.randomUUID(), role: 'assistant', content: result.reply, sources: (result.sources ?? []).filter(source => source.href.startsWith('/?module=')).slice(0, 6), meta: `Custou ${friendlyMicros(result.costMicros)}${result.lookups ? ` · consultou o portal ${result.lookups === 1 ? '1 vez' : `${result.lookups} vezes`}` : ''}${result.operationDropped ? ' · Não preparei operação: a quantidade não estava na sua mensagem.' : ''}`,
@@ -333,7 +338,17 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
           {messages.length > 0 && <button type="button" className={styles.textButton} onClick={newConversation} disabled={busy} aria-label="Nova conversa"><MessageSquarePlus size={16} aria-hidden="true"/>Nova<span> conversa</span></button>}
           <button type="button" className={styles.iconButton} onClick={close} aria-label="Fechar o Rolê"><X size={20} aria-hidden="true"/></button>
         </header>
-        {projects.length > 1 && <label className={styles.project}><span>Projeto</span><select value={projectId} disabled={busy} onChange={event => { setProjectId(event.target.value); setMessages([]); void loadStatus(event.target.value); }}>{projects.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}
+        <label className={styles.project}><span>Procurar em</span><select value={scopeValue} disabled={busy} onChange={event => {
+          const value = event.target.value; setScopeValue(value);
+          const event_ = value.startsWith('event:') ? status?.scopes?.events.find(entry => entry.id === value.slice(6)) : null;
+          const next = value.startsWith('project:') ? value.slice(8) : event_?.projectId && projects.some(item => item.id === event_.projectId) ? event_.projectId : '';
+          if (next && next !== projectId) { setProjectId(next); void loadStatus(next); }
+        }}>
+          <option value="org">Toda a PROEX</option>
+          {!!status?.scopes?.units.length && <optgroup label="Unidades">{status.scopes.units.map(unit => <option key={unit.id} value={`unit:${unit.id}`}>{unit.name}</option>)}</optgroup>}
+          <optgroup label="Projetos">{projects.map(item => <option key={item.id} value={`project:${item.id}`}>{item.name}</option>)}</optgroup>
+          {!!status?.scopes?.events.length && <optgroup label="Eventos e dinâmicas">{status.scopes.events.map(entry => <option key={entry.id} value={`event:${entry.id}`}>{entry.name}</option>)}</optgroup>}
+        </select></label>
         <div className={styles.body}>
           {!status && !statusError && <p className={styles.state} role="status"><LoaderCircle size={16} className="p-spin" aria-hidden="true"/>Acordando o Rolê…</p>}
           {statusError && <div className={styles.unavailable} role="alert"><p>{statusError}</p><button type="button" className="p-button p-button-subtle" onClick={() => void loadStatus(projectId)}>Tentar de novo</button></div>}

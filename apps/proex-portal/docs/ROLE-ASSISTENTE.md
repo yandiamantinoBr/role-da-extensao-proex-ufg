@@ -204,3 +204,12 @@ Motivo: às 13h o Yan perguntou "quantos brindes, super brindes e super super br
 - O Rolê pode pedir até 4 páginas por nome (`estrutura`, `processos-conpeex`, `contatos`…) ou só o assunto. As páginas são cortadas por seção (`##`), as mais próximas vêm primeiro, até o limite de 8 KB da rodada.
 - Cada trecho leva a página, a data de atualização e a linha "Fontes: …"; sem essa linha, aparece "sem fonte registrada". O texto é dos editores do guia e entra como conteúdo, não como instrução.
 - O link da fonte abre Gestão → Guia.
+
+## "Procurar em": escopo além do projeto · 10/11/2026
+
+- O seletor "Projeto" do Rolê virou **Procurar em**, com as opções Toda a PROEX, Unidades, Projetos e Eventos e dinâmicas. Só aparece o que a pessoa vê (`roleScopes`).
+- O servidor confere o escopo a cada pergunta (`resolveRoleScope`):
+  - unidade ou evento fora do alcance da pessoa é recusado (`role_scope_forbidden`) antes de qualquer chamada paga;
+  - as consultas ficam limitadas aos projetos do escopo, e citar outro projeto não sai do escopo;
+  - o modelo recebe a linha "Procurar em: …".
+- Cobrança e escrita continuam num projeto que a pessoa pode ver: o do escopo, quando há um, ou o projeto padrão. Para gravar no estoque, o cartão segue pedindo o projeto dono.
