@@ -15,10 +15,13 @@ export type Block =
   | { kind: 'chart'; title: string; categories: string[]; series: { label: string; values: number[] }[]; note?: string }
   | { kind: 'timeline'; items: { date: string; month: string; tag: string; title: string; detail?: string }[]; note?: string }
   | { kind: 'callout'; title: string; text: string }
+  | { kind: 'subheading'; text: string }
   | { kind: 'references'; items: ReportReference[] }
   | { kind: 'note'; text: string };
 export type ReportSection = { id: ReportSectionId; number: number; title: string; blocks: Block[] };
 export type ReportDocument = {
+  /** Rótulo acima do título na capa (padrão: Relatório do projeto). */
+  kicker?: string;
   title: string; projectName: string; subtitle: string; period: string; generatedAt: string; generatedIso: string;
   sections: ReportSection[];
   /** Seções marcadas que a pessoa não pode ver: não entram no documento e aparecem só na tela. */
@@ -373,5 +376,6 @@ export function blockText(block: Block): string {
     case 'timeline': return block.items.map(item => `${item.date} ${item.tag} ${item.title}`).join('\n');
     case 'references': return block.items.map(item => `[${item.number}] ${item.title} ${item.url}`).join('\n');
     case 'callout': return `${block.title}: ${block.text}`;
+    case 'subheading': return block.text;
   }
 }

@@ -12,6 +12,7 @@ import { DraftNotice, useFormDraft } from './use-form-draft';
 import styles from './work-teams-panel.module.css';
 import ExportFormats, { type DocumentFormat } from './export-formats';
 import TeamSheetsPanel from './team-sheets-panel';
+import TeamTemplates from './management/team-templates';
 import InstitutionalStructurePanel from './institutional-structure-panel';
 
 type Props = {
@@ -178,6 +179,7 @@ export default function WorkTeamsPanel({ userId, defaultProjectId = '', organiza
    <label>Projeto<select name="teamsProject" aria-label="Projeto" value={projectId} disabled={busy || exporting} onChange={event => changeContext(organizationId, event.target.value)}>{selectedOrganization?.canManage && <option value="">Todos os projetos da organização</option>}{!canQuery && <option value={projectId} disabled>Escolha um projeto permitido</option>}{ownProjects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
    <label className={styles.search}>Buscar equipe<div><Search size={17} aria-hidden="true"/><input name="teamSearch" type="search" value={search} maxLength={100} placeholder="Nome da equipe" onChange={event => setSearch(event.target.value)}/></div></label>
   </div>
+  {canQuery&&<TeamTemplates key={organizationId} organizationId={organizationId} selectedTeamId={data?.selectedTeamId} onApplied={created => { setTeamId(created); setAttempt(value => value + 1); }}/>}
   {canQuery&&<InstitutionalStructurePanel userId={userId} organizationId={organizationId} projectId={projectId||null} onSelectTeam={chooseTeam}/>}
   <p className={styles.help}><ShieldCheck size={16} aria-hidden="true"/><span>Aqui você cria e edita as equipes de trabalho da organização. Elas recebem demandas e podem ser responsáveis por empréstimos, materiais e dinâmicas. Quem entra no portal e com qual permissão fica {canOpenAccess ? <>em <a href="?module=team">Pessoas e acessos</a></> : 'com os responsáveis do projeto'}.</span></p>
   <p role="status" className={styles.help} hidden={!pinMessage}>{pinMessage}</p>

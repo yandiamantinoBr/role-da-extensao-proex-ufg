@@ -10,7 +10,7 @@ import { portalRelease } from './release';
  * An event's project always comes from the stored campaign, never from the client.
  * Not anonymous: management sees the author's name. The anonymous channel is lib/community/ombuds.ts.
  */
-const modules = ['overview','my-work','projects','demands','calendar','materials','loans','events','records','team','reports','settings','profile','community','work-teams'];
+const modules = ['overview','my-work','projects','demands','calendar','materials','loans','events','records','team','reports','settings','profile','community','work-teams','management'];
 export const FEEDBACK_KINDS = ['problem','suggestion','praise'] as const;
 const STATUSES = ['new','reviewing','resolved'] as const;
 function admitted(actor: PortalActor) {

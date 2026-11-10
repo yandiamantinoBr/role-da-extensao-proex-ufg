@@ -72,7 +72,7 @@ export async function toReportPdf(doc: ReportDocument, options: ReportPdfOptions
   if (ufg) logo(ufg, W - M - 96, H - 50, 96, 60); else paint('UFG', W - M - 60, H - 70, 24, white, bold);
   paint('PRÓ-REITORIA DE EXTENSÃO', M, H - 150, 10, orange, bold);
   paint('Universidade Federal de Goiás', M, H - 166, 10, white);
-  paint('RELATÓRIO DO PROJETO', M, H - 300, 10, deepOrange, bold);
+  paint(clean(doc.kicker ?? 'Relatório do projeto').toUpperCase(), M, H - 300, 10, deepOrange, bold);
   y = H - 322;
   const title = clean(doc.title), titleFace = strong(title);
   for (const text of wrap(title, titleFace, 30, U).slice(0, 3)) { paint(text, M, y, 30, purple, titleFace); y -= 38; }
@@ -277,6 +277,7 @@ export async function toReportPdf(doc: ReportDocument, options: ReportPdfOptions
       else if (block.kind === 'timeline') { timeline(block.items); if (block.note) paragraph(block.note, 8.5, muted, 12); }
       else if (block.kind === 'references') references(block.items);
       else if (block.kind === 'callout') callout(block.title, block.text);
+      else if (block.kind === 'subheading') subheading(block.text);
     }
     y -= 10;
   }
