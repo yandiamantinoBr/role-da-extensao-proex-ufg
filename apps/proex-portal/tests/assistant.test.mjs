@@ -494,7 +494,7 @@ test('a refused request says which daily limit was hit, how much is used and who
   const f = fixture(), provider = fakeProvider(); try {
    await configureAssistant(f.db, f.actors.owner, configInput(ceiling), secret);
    const worker = await prepareAssistantPlan(f.db, f.actors.inventory, request(), secret, { fetcher: provider.fetch }).catch(error => error);
-   assert.equal(worker.code, 'assistant_quota'); assert.match(worker.message, label); assert.match(worker.message, /Peça a .+ para aumentar o limite\.$/);
+   assert.equal(worker.code, 'assistant_quota'); assert.match(worker.message, label); assert.match(worker.message, /Peça (a .+|à administração) para aumentar o limite\.$/);
    assert.ok(!worker.message.includes('@'), 'nunca mostra e-mail de quem ajusta');
    const owner = await prepareAssistantPlan(f.db, f.actors.owner, request({ operationKey: 'owner-quota-check' }), secret, { fetcher: provider.fetch }).catch(error => error);
    assert.equal(owner.code, 'assistant_quota'); assert.match(owner.message, /Você pode aumentar o limite em Configurações → Chaves e modelos → Funções e acesso → Limites e cotas\.$/);

@@ -8,6 +8,7 @@ import AssistantConnectionPanel from './assistant-connection-panel';
 import ModelCatalogPanel from './model-catalog-panel';
 import AiSpendingSlot from './ai-spending-slot';
 import AiLimitsSection, { type AiUsage } from './ai-limits-section';
+import RoleSourcesPanel from './role-sources-panel';
 import { AI_LIMITS_EVENT, takeAiLimitsRequest } from './ai-limits-link';
 import styles from './credential-vault-panel.module.css';
 
@@ -120,6 +121,7 @@ export default function AssistantAdministrationPanel({ canManageKeys=false, refr
         {canManageKeys&&<p className="p-form-help">Outros modelos (OpenAI, Anthropic, NVIDIA, qualquer serviço compatível com OpenAI) entram pela aba Modelos e aparecem nestas listas.</p>}
         <p className="p-form-help">Para ouvir áudio, ligue também “Voz para texto” abaixo. O áudio vira texto primeiro, e a pessoa revisa antes de enviar.</p>
       </section>
+      <RoleSourcesPanel organizationId={selection}/>
       <section className={styles.configuration} aria-labelledby="ai-functions-title"><div className={styles.heading}><ScanText size={21} aria-hidden="true"/><div><h4 id="ai-functions-title">Outras funções com IA</h4><p>Ter a chave cadastrada não liga nada sozinho: marque o que quer usar.</p></div></div>
         <label className="p-field"><span>Serviço de IA para operações e documentos</span><select disabled={busy} value={config.textProvider} onChange={event=>setConfig({...config,textProvider:event.target.value as AssistantConfig['textProvider'],enabled:false,documentEnabled:false})}><option value="deepseek">DeepSeek Flash</option><option value="openai">OpenAI · GPT-5.6 Luna</option></select></label>
         <p className="p-form-help">Se trocar o serviço, as funções abaixo ficam desligadas até você confirmar de novo. {config.textProvider==='openai'?'OpenAI: preço de referência de US$ 0,20 por milhão de tokens de entrada e US$ 1,20 de saída; a reserva preventiva considera US$ 0,25 na entrada. O modelo é um alias e pode mudar no provedor.':''}</p>

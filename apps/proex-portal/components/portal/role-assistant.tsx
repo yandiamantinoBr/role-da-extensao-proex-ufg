@@ -38,6 +38,8 @@ class RequestError extends Error { constructor(readonly status: number, message:
 /** Recusa por limite diário (da organização ou a parte de cada pessoa). */
 const isLimit = (cause: unknown) => cause instanceof RequestError && (cause.code === 'assistant_quota' || cause.code === 'role_user_quota');
 const CONSENT_STORAGE = 'proex-role-ciencia';
+/** Links externos aceitos nas fontes: só os sites oficiais copiados e publicações do Instagram. */
+const OFFICIAL_LINK = /^https:\/\/(proex\.ufg\.br|23conpeex\.plateia\.ufg\.br|www\.instagram\.com|instagram\.com)\//;
 const PROVIDER_NAMES: Record<string, string> = { deepseek: 'DeepSeek', groq: 'Groq', openai: 'OpenAI', anthropic: 'Anthropic', nvidia: 'NVIDIA', deepgram: 'Deepgram' };
 const providerName = (id: string) => PROVIDER_NAMES[id] ?? id.replace(/^./, letter => letter.toUpperCase());
 function modelLabelFor(status: Status, photo: boolean) { return photo ? status.visionPricing?.label ?? ROLE_MODELS.deepseek.label : status.textPricing?.label ?? status.model; }
@@ -171,7 +173,7 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
         action: 'chat', projectId, scope: scopeKind === 'org' ? { kind: 'org' } : { kind: scopeKind, id: scopeId }, operationKey: crypto.randomUUID(), consent: true, history, message: text, ...(image ? { image } : {}), acceptedCostMicros: estimate.costMicros,
       });
       if (!mounted.current) return;
-      const reply: Message = { id: crypto.randomUUID(), role: 'assistant', content: result.reply, sources: (result.sources ?? []).filter(source => source.href.startsWith('/?module=')).slice(0, 6), meta: `Custou ${friendlyMicros(result.costMicros)}${result.lookups ? ` · consultou o portal ${result.lookups === 1 ? '1 vez' : `${result.lookups} vezes`}` : ''}${result.operationDropped ? ' · Não preparei operação: a quantidade não estava na sua mensagem.' : ''}`,
+      const reply: Message = { id: crypto.randomUUID(), role: 'assistant', content: result.reply, sources: (result.sources ?? []).filter(source => source.href.startsWith('/?module=') || OFFICIAL_LINK.test(source.href)).slice(0, 6), meta: `Custou ${friendlyMicros(result.costMicros)}${result.lookups ? ` · consultou o portal ${result.lookups === 1 ? '1 vez' : `${result.lookups} vezes`}` : ''}${result.operationDropped ? ' · Não preparei operação: a quantidade não estava na sua mensagem.' : ''}`,
         operation: result.operation ? { request: result.operation, stage: 'idle', key: crypto.randomUUID() } : undefined };
       setMessages(current => [...current, reply]);
       if (reply.operation && status.operationsAvailable) void locateOperation(reply);
@@ -371,7 +373,7 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
                   <span className="visually-hidden">{message.role === 'user' ? 'Você disse:' : 'Rolê respondeu:'}</span>
                   {message.image && <img className={styles.sentImage} src={message.image} alt="Imagem enviada ao Rolê"/>}
                   <p>{message.content}</p>
-                  {!!message.sources?.length && <div className={styles.sources}><span>Fontes no portal</span><ul>{message.sources.map(source => <li key={source.href}><a href={source.href} onClick={() => close()}>{source.label}</a></li>)}</ul></div>}
+                  {!!message.sources?.length && <div className={styles.sources}><span>Fontes no portal</span><ul>{message.sources.map(source => <li key={source.href}>{source.href.startsWith('/') ? <a href={source.href} onClick={() => close()}>{source.label}</a> : <a href={source.href} target="_blank" rel="noopener noreferrer">{source.label} ↗</a>}</li>)}</ul></div>}
                   {message.meta && <small>{message.meta}</small>}
                   {message.operation && <div className={styles.operation}>
                     <p className={styles.operationTitle}>Posso preparar isto para você</p>

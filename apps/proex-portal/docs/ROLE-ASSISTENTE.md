@@ -213,3 +213,19 @@ Motivo: às 13h o Yan perguntou "quantos brindes, super brindes e super super br
   - as consultas ficam limitadas aos projetos do escopo, e citar outro projeto não sai do escopo;
   - o modelo recebe a linha "Procurar em: …".
 - Cobrança e escrita continuam num projeto que a pessoa pode ver: o do escopo, quando há um, ou o projeto padrão. Para gravar no estoque, o cartão segue pedindo o projeto dono.
+
+## Fontes oficiais: páginas públicas e Instagram · 10/11/2026
+
+- **Páginas públicas** (`lib/assistant/official-sources.ts`):
+  - Lista fechada de 9 páginas: PROEX (início, notícias, editais, editais externos, equipe e contatos, o que é, Rolê da Extensão), programação do CONPEEX e o site do 23º CONPEEX.
+  - A cópia roda uma vez por dia, na rotina que já chama `/api/health`, com trava de 20 h e só na Vercel.
+  - O `robots.txt` de cada site é respeitado (o site do CONPEEX hoje bloqueia `/`; ele fica de fora até liberar). Cada página tem 8 s para responder e um teto de 600 KB.
+  - Guarda só título, um resumo curto (meta description ou primeiros parágrafos, até 600 caracteres) e até 15 links de notícias/páginas do mesmo site. Fica na tabela `settings`, sem migração.
+- **Instagram:** sem raspagem.
+  - A comunicação cola o link (`instagram.com/p/…` ou `/reel/…`), a data e um resumo da legenda em Configurações → Chaves e modelos → Funções e acesso → "Fontes oficiais do Rolê".
+  - Só a administração geral ou quem configura a IA da organização cadastra ou remove; qualquer membro lê.
+  - **oEmbed:** a Meta exige token de aplicativo desde 2020, então não é usado.
+  - **Integração oficial (desligada):** para ler posts recentes e métricas, a comunicação precisaria de uma conta profissional ligada a uma Página do Facebook, um app na Meta com Instagram Graph API (permissões `instagram_basic` e `pages_read_engagement`, com revisão da Meta) e um token de longa duração guardado no cofre de chaves.
+- **Rolê:** a nova consulta `consultar_fontes_oficiais` busca nas páginas copiadas e nos posts cadastrados e devolve título, resumo, data da cópia e link.
+  - Na resposta, os links externos aparecem só se forem de `proex.ufg.br`, `23conpeex.plateia.ufg.br` ou `instagram.com` e abrem em nova aba.
+  - O conteúdo é público e entra como dado, não instrução.
