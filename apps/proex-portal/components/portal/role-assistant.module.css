@@ -97,3 +97,7 @@
 .sources ul{display:grid;gap:.15rem;margin:0;padding:0;list-style:none}
 .sources a{display:inline-flex;align-items:center;min-height:32px;color:var(--brand-ink);font-weight:650;font-size:max(13px,.85rem);text-decoration:underline;text-underline-offset:2px;overflow-wrap:anywhere}
 .sources a:focus-visible{outline:3px solid var(--focus);outline-offset:2px;border-radius:4px}
+.myUsage{margin:0}
+.myUsage>summary{min-height:36px;display:flex;align-items:center;cursor:pointer;font-size:max(12px,.8rem);font-weight:650;color:var(--brand-ink)}
+.myUsage>summary:focus-visible{outline:3px solid var(--focus);outline-offset:2px;border-radius:6px}
+.myUsage[open]{display:grid;gap:.5rem;max-height:60vh;overflow:auto}

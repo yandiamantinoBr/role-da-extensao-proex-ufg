@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { LoaderCircle, RefreshCw } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import ExportFormats, { type DocumentFormat } from './export-formats';
+import AiPeopleUsage from './ai-people-usage';
 import type { ExportColumn, ExportRow } from './report-export';
 import type { AiSpending, AiSpendingDay, SpendingBucket, SpendingDay, SpendingFunction, SpendingProvider } from '@/lib/assistant/spending';
 import styles from './ai-spending-panel.module.css';
@@ -250,5 +251,6 @@ export default function AiSpendingPanel({ organizationId }: { organizationId: st
         </>}
       </div>
     </>}
+    {data && <AiPeopleUsage organizationId={organizationId} from={data.from} to={data.to}/>}
   </section>;
 }

@@ -180,3 +180,42 @@ test('lista do dia: hora e nome em Brasília, mais recentes primeiro, no máximo
     assert.equal(period.days[0].calls, 205, 'o resumo conta todas, mesmo com a lista limitada');
   } finally { f.native.close(); }
 });
+
+const { aiPeopleUsage, usageTips } = await import(compile('assistant/usage-people'));
+
+test('USO POR PESSOA: the administration sees everyone with types, days and tips; nothing private leaves', async () => {
+  const f = fixture();
+  try {
+    seed(f);
+    for (let index = 0; index < 6; index++) f.audit('assistant.role.chat', { provider: 'deepseek', model: 'deepseek-flash', hasImage: true, reservedUsdMicros: 6000, usdMicros: 2500, prompt: PROMPT_CANARY }, `2026-11-08T1${index}:00:00.000Z`, { actor: 'viewer-qa' });
+    const usage = await aiPeopleUsage(f.db, f.actors.owner, { organizationId: 'org_proex', from: '2026-11-01', to: '2026-11-09' }, NOW);
+    assert.equal(usage.scope, 'all');
+    const viewer = usage.people.find(person => person.name === 'Pessoa da equipe');
+    assert.ok(viewer, 'a display name that looks like an e-mail is replaced');
+    assert.equal(viewer.byType.photo.calls, 7);
+    assert.ok(viewer.tips.some(tip => tip.startsWith('Muitas fotos (7)')));
+    const owner = usage.people.find(person => person.isMe);
+    assert.equal(owner.name, 'Dona Sintética');
+    assert.ok(owner.byType.text.calls >= 1 && owner.byType.audio.calls === 1);
+    assert.ok(owner.days.every(day => /^\d{4}-\d{2}-\d{2}$/.test(day.day)));
+    assert.equal(usage.totalSpentUsdMicros, usage.people.reduce((sum, person) => sum + person.spentUsdMicros, 0));
+    const json = JSON.stringify(usage);
+    for (const secret of [PROMPT_CANARY, KEY_CANARY, '@example.test', 'viewer-qa', 'owner-qa']) assert.ok(!json.includes(secret), secret);
+  } finally { f.native.close(); }
+});
+
+test('USO POR PESSOA: anyone else sees only their own use; outsiders of the organization see nothing', async () => {
+  const f = fixture();
+  try {
+    seed(f);
+    const mine = await aiPeopleUsage(f.db, f.actors.viewer, { organizationId: 'org_proex', from: '2026-11-01', to: '2026-11-09' }, NOW);
+    assert.equal(mine.scope, 'mine');
+    assert.equal(mine.people.length, 1);
+    assert.ok(mine.people[0].isMe && mine.people[0].byType.photo.calls === 1);
+    await assert.rejects(aiPeopleUsage(f.db, f.actors.viewer, { organizationId: 'org_outra' }, NOW), error => error.code === 'assistant_usage_forbidden');
+    await assert.rejects(aiPeopleUsage(f.db, null, { organizationId: 'org_proex' }, NOW), error => error.status === 401);
+    await assert.rejects(aiPeopleUsage(f.db, f.actors.owner, { organizationId: 'org_proex', from: '2026-01-01', to: '2026-11-09' }, NOW), error => error.code === 'assistant_usage_range');
+    const tips = usageTips({ key: 'p1', name: 'X', isMe: false, calls: 10, spentUsdMicros: 900, byType: { text: { calls: 5, spentUsdMicros: 300 }, photo: { calls: 0, spentUsdMicros: 0 }, audio: { calls: 12, spentUsdMicros: 500 }, other: { calls: 0, spentUsdMicros: 0 } }, days: [], avgChatTokens: 6000 }, 1000, 4);
+    assert.equal(tips.length, 3, 'long chats, many audios and most of the spending');
+  } finally { f.native.close(); }
+});
