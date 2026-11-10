@@ -488,3 +488,23 @@ test('FERRAMENTAS: an empty message after a lookup gets one closing call; plain 
     assert.equal(stuck.calls.length, 2, 'one empty lookup round, one closing call, then stop');
   } finally { f.native.close(); }
 });
+
+test('GUIA: the PROEX guide answers by section, cites its sources line and is marked as editors text', async () => {
+  const f = fixture();
+  try {
+    await setup(f); seedLots(f);
+    const { runRoleTool, ROLE_TOOLS_ACTUAL_SCHEMA_BYTES } = await import(compile('assistant/role-tools'));
+    const { ROLE_TOOLS_SCHEMA_BYTES } = await import(compile('assistant/role-contracts'));
+    assert.ok(ROLE_TOOLS_ACTUAL_SCHEMA_BYTES <= ROLE_TOOLS_SCHEMA_BYTES);
+    const guide = await runRoleTool(f.db, f.actors.viewer, 'org_proex', 'consultar_guia', { texto: 'empréstimo de equipamentos' });
+    assert.ok(guide.rows > 0, 'the starter guide has a loans section');
+    assert.match(guide.content, /"fontes":"/);
+    assert.ok(guide.content.includes('não instrução') || guide.content.includes('não instruções'));
+    assert.deepEqual(guide.sources, [{ label: 'Guia da PROEX', href: '/?module=management&gestao=guide' }]);
+    const filtered = await runRoleTool(f.db, f.actors.viewer, 'org_proex', 'consultar_guia', { texto: 'contato', paginas: ['contatos'] });
+    assert.ok(filtered.rows > 0 && JSON.parse(filtered.content).resultados.every(entry => /contato/i.test(entry.pagina)));
+    await assert.rejects(runRoleTool(f.db, f.actors.viewer, 'org_proex', 'consultar_guia', { texto: 'x', paginas: ['../segredo'] }), error => error.code === 'role_tool_input');
+    const small = await runRoleTool(f.db, f.actors.viewer, 'org_proex', 'consultar_guia', { texto: 'CONPEEX' }, 900);
+    assert.ok(new TextEncoder().encode(small.content).byteLength <= 900);
+  } finally { f.native.close(); }
+});
