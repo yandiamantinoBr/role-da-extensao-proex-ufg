@@ -10,6 +10,7 @@ import {
 } from '@/lib/assistant/role-contracts';
 import { prepareSpeechWav } from './speech-audio';
 import AiPeopleUsage from './ai-people-usage';
+import { useDockItem } from './floating-dock';
 import DestinationField, { destinationFields, loadDestinations } from './destination-field';
 import styles from './role-assistant.module.css';
 
@@ -111,6 +112,8 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
   const openRole = useCallback(() => { setOpen(true); void loadStatus(projectId); }, [loadStatus, projectId]);
   // Sonda grátis (sem provedor): o botão só aparece quando o Rolê está ligado para esta pessoa.
   const [ready, setReady] = useState(false);
+  // Doca comum de widgets: quando existe, ela desenha o botão (com o X para esconder); o painel e o Alt+R continuam aqui.
+  const dock = useDockItem(ready ? { id: 'role', label: 'Rolê', icon: <img src="/brand/role-mascote/role-rosto.svg" alt="" width={28} height={28}/>, onOpen: openRole, shortcut: 'Alt+R' } : null);
   useEffect(() => {
     if (!projectId) return;
     let alive = true;
@@ -318,7 +321,7 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
   const limitsButton = status?.canConfigure && onOpenLimits ? <button type="button" className={`p-button p-button-primary ${styles.limitsButton}`} onClick={() => { close(); onOpenLimits(); }}>Ajustar limites</button> : null;
 
   return <>
-    {!open && ready && <button ref={trigger} type="button" className={styles.launcher} aria-haspopup="dialog" aria-keyshortcuts="Alt+R" onClick={openRole} title="Falar com o Rolê (Alt + R)">
+    {!open && ready && !dock.registered && <button ref={trigger} type="button" className={styles.launcher} aria-haspopup="dialog" aria-keyshortcuts="Alt+R" onClick={openRole} title="Falar com o Rolê (Alt + R)">
       <img src="/brand/role-mascote/role-rosto.svg" alt="" width={44} height={44}/>
       <span className={styles.launcherLabel}>Falar com o Rolê</span>
     </button>}

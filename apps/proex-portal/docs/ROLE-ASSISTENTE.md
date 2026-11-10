@@ -191,3 +191,9 @@ Motivo: às 13h o Yan perguntou "quantos brindes, super brindes e super super br
   - Depois de gravar, o cartão mostra **Corrigir** (quantidade e destino, com motivo) e **Desfazer** (com motivo).
   - Os dois usam `stock.revise`, com a mesma regra e permissão de Materiais (inventory.manage).
   - O original continua no histórico. Uma correção depois da outra segue a versão atual (`currentMovementId`).
+
+## Rolê na doca de widgets · 10/11/2026
+
+- O botão flutuante do Rolê entrou na doca comum (`useDockItem` em `floating-dock.tsx`, da sessão Comunidade).
+- A doca desenha o botão e guarda por pessoa se ele está escondido (X do lançador ou galeria "Meu espaço"). O painel e o Alt+R continuam no Rolê.
+- Quem não tem o módulo Comunidade não recebe a doca: para essas pessoas o Rolê continua com o próprio botão (`registered` falso).
