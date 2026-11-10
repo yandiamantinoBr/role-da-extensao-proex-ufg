@@ -20,3 +20,4 @@ export * from './preferences-schema';
 export * from './material-movement-schema';
 export * from './project-report-schema';
 export * from './google-drive-schema';
+export * from './convocation-schema';

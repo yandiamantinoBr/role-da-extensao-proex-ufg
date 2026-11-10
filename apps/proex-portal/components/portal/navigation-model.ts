@@ -1,5 +1,5 @@
-import { BarChart3, Boxes, CalendarDays, Dices, FileText, FolderKanban, HeartHandshake, LayoutDashboard, ListChecks, Settings2, Truck, UserCog, UserRound, UserRoundCheck, Users, type LucideIcon } from 'lucide-react';
-export type ModuleId = 'overview' | 'projects' | 'events' | 'materials' | 'loans' | 'team' | 'work-teams' | 'reports' | 'settings' | 'calendar' | 'records' | 'profile' | 'demands' | 'my-work' | 'community';
+import { BarChart3, Boxes, CalendarDays, ClipboardCheck, Dices, FileText, FolderKanban, HeartHandshake, LayoutDashboard, ListChecks, Settings2, Truck, UserCog, UserRound, UserRoundCheck, Users, type LucideIcon } from 'lucide-react';
+export type ModuleId = 'overview' | 'projects' | 'events' | 'materials' | 'loans' | 'team' | 'work-teams' | 'reports' | 'settings' | 'calendar' | 'records' | 'profile' | 'demands' | 'my-work' | 'community' | 'convocations';
 export type PortalModule = {
     id: ModuleId;
     label: string;
@@ -16,6 +16,7 @@ export const PORTAL_MODULES: PortalModule[] = [
     { id: 'materials', label: 'Materiais', description: 'Catálogo, disponibilidade e movimentações.', icon: Boxes },
     { id: 'loans', label: 'Empréstimos', description: 'Reservas, retiradas e devoluções de equipamentos.', icon: Truck },
     { id: 'events', label: 'Dinâmicas', description: 'Roleta, dado, brindes e atendimento nas ações.', icon: Dices },
+    { id: 'convocations', label: 'Convocações', description: 'Confirmação de presença de bolsistas e equipes nas ações.', icon: ClipboardCheck },
     { id: 'records', label: 'Registros', description: 'Observações, documentos e ocorrências.', icon: FileText },
     { id: 'community', label: 'Comunidade', description: 'Retorno à gestão e ouvidoria anônima da equipe.', icon: HeartHandshake },
     { id: 'team', label: 'Pessoas e acessos', description: 'Pessoas, convites e permissões de acesso.', icon: UserCog },

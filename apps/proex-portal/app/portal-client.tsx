@@ -66,6 +66,7 @@ import StockConsumptionPanel from '@/components/portal/stock-consumption-panel';
 import StockUnitDialog from '@/components/portal/stock-unit-dialog';
 import StockContextFields, {stockContextFields} from '@/components/portal/stock-context-fields';
 import DirectoryPanel from '@/components/portal/directory-panel';
+import ConvocationsPanel from '@/components/portal/convocations-panel';
 import { ThemeSwitch } from '@/components/theme/theme-switch';
 import { BrandMark } from '@/components/theme/brand-mark';
 import ActivityPanel from '@/components/portal/activity-panel';
@@ -324,6 +325,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
     const [materialsView, setMaterialsView] = useState<'catalog' | 'prizes'>('catalog');
     const [query, setQuery] = useState('');
     const [selectedMaterialId, setSelectedMaterialId] = useState<string | null>(null);
+    const [convocationFocus,setConvocationFocus]=useState('');
     const [stockUnit,setStockUnit]=useState(''),[destinationOpen,setDestinationOpen]=useState('');
     const [showConsumption,setShowConsumption]=useState(false);
     const [movementItemId,setMovementItemId]=useState(''),[movementKind,setMovementKind]=useState('');
@@ -412,7 +414,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
     const canManageOrganization = organizations.some(organization => organization.canManage);
     const canCreateProjects = canGlobal('projects.manage') || organizations.some(organization => organization.canManage && organization.status === 'active');
     const canFollowUp = canManageOrganization || projects.length > 0;
-    const allowedTabs = tabs.filter(t => ['overview', 'projects', 'profile', 'calendar', 'records', 'my-work'].includes(t.id) || (t.id === 'events' && canAny('campaigns.manage', 'participation.operate', 'inventory.deliver')) || (t.id === 'materials' && canAny('inventory.read', 'inventory.manage', 'inventory.deliver')) || (t.id === 'loans' && canAny('loans.read', 'loans.manage', 'loans.checkout')) || ((t.id === 'demands' || t.id === 'work-teams') && canFollowUp) || (t.id === 'team' && (canManageOrganization || canAny('access.invite', 'access.manage'))) || (t.id === 'reports' && (canFollowUp || canAny('reports.read'))) || (t.id === 'settings' && (isPlatformOwner || data.canConfigureAi === true)) || (t.id === 'community' && (canFollowUp || isPlatformOwner)));
+    const allowedTabs = tabs.filter(t => ['overview', 'projects', 'profile', 'calendar', 'records', 'my-work'].includes(t.id) || (t.id === 'events' && canAny('campaigns.manage', 'participation.operate', 'inventory.deliver')) || (t.id === 'materials' && canAny('inventory.read', 'inventory.manage', 'inventory.deliver')) || (t.id === 'loans' && canAny('loans.read', 'loans.manage', 'loans.checkout')) || ((t.id === 'demands' || t.id === 'work-teams') && canFollowUp) || (t.id === 'team' && (canManageOrganization || canAny('access.invite', 'access.manage'))) || (t.id === 'reports' && (canFollowUp || canAny('reports.read'))) || (t.id === 'settings' && (isPlatformOwner || data.canConfigureAi === true)) || (t.id === 'community' && (canFollowUp || isPlatformOwner)) || (t.id === 'convocations' && canAny('campaigns.manage', 'reports.read')));
     const tab = allowedTabs.some(module => module.id === requestedTab) ? requestedTab : 'overview';
     const organizationalUnits = list(data.organizationalUnits);
     const unitOf = (project: Row) => string(get(project, 'unit_id', 'unitId'));
@@ -516,6 +518,8 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         const url = new URL(window.location.href);
         const next = readLocation(url.searchParams);
         // Destination pages (?module=materials&destinationId=) open over the materials module.
+        const convocationParam = url.searchParams.get('convocation');
+        if (!traversal && convocationParam && /^[A-Za-z0-9-]{8,80}$/.test(convocationParam)) setConvocationFocus(convocationParam);
         const destinationParam = url.searchParams.get('destinationId');
         if (!traversal && destinationParam && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(destinationParam)) setDestinationOpen(destinationParam);
         pushNavigation.current = false;
@@ -566,6 +570,8 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         event.preventDefault();
         const next = readLocation(destination.searchParams), destinationParam = destination.searchParams.get('destinationId');
         if (destinationParam && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(destinationParam)) setDestinationOpen(destinationParam);
+        const convocationLink = destination.searchParams.get('convocation');
+        if (convocationLink && /^[A-Za-z0-9-]{8,80}$/.test(convocationLink)) setConvocationFocus(convocationLink);
         if (portalLocationKey(next) === routeKey) return;
         pushNavigation.current = true;
         if (next.tab !== tab) navigation.recordVisit(next.tab);
@@ -736,7 +742,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
     <button className="p-icon-button p-refresh-button" title="Atualizar dados" aria-label="Atualizar dados" disabled={refreshing} onClick={() => void refresh()}>
     <RefreshCw size={18} className={refreshing ? 'p-spin' : ''}/>
     </button>
-    {canFollowUp && <NotificationBell onSelectMaterial={(itemId,projectId)=>{navigate('materials');selectProject(projectId);setMaterialMode('view');setSelectedMaterialId(itemId);setWorkRecord({module:'materials',projectId,recordId:itemId});}} key={string(user.userId)} userId={string(user.userId)} onSelectTask={id => { if (id !== selectedDemandId) pushNavigation.current = true; setSelectedDemandId(id); setFilter(''); setUnitFilter(''); setAreaFilter(''); navigate('demands'); }}/>}
+    {canFollowUp && <NotificationBell onSelectConvocation={id=>{setConvocationFocus(id);navigate('convocations');}} onSelectMaterial={(itemId,projectId)=>{navigate('materials');selectProject(projectId);setMaterialMode('view');setSelectedMaterialId(itemId);setWorkRecord({module:'materials',projectId,recordId:itemId});}} key={string(user.userId)} userId={string(user.userId)} onSelectTask={id => { if (id !== selectedDemandId) pushNavigation.current = true; setSelectedDemandId(id); setFilter(''); setUnitFilter(''); setAreaFilter(''); navigate('demands'); }}/>}
     <ThemeSwitch />
     <div className="p-account" ref={accountRef}>
     <button className="p-account-trigger" aria-label="Abrir menu da minha conta" aria-expanded={accountOpen} aria-controls="account-menu" onClick={() => setAccountOpen(v => !v)} onKeyDown={e => { if (e.key === 'ArrowDown') {
@@ -842,6 +848,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
       {activeWorkRecord && ['loans','events'].includes(activeWorkRecord.module) && <div className={workStyles.focusNotice} role="status"><p>{(activeWorkRecord.module === 'loans' ? displayedLoans : displayedCampaigns).length ? 'Registro vinculado ao seu trabalho. Use as ações abaixo para acompanhar.' : 'O registro não está na lista disponível para esta conta. Atualize ou consulte a lista completa.'}</p><button type="button" className="p-button p-button-subtle" onClick={() => setWorkRecord(null)}>Ver todos</button></div>}
       {tab === 'demands' && <><FollowUpPanel key={string(user.userId)} userId={string(user.userId)} onTaskTransferred={receipt=>{selectProject(receipt.projectId);setSelectedDemandId(receipt.taskId);}} defaultProjectId={filter} initialTaskId={selectedDemandId} serverDay={workDayFromServerTimestamp(data?.updatedAt)} onSelectTask={setSelectedDemandId} onChanged={refreshModules} onOpenReports={() => navigate('reports', 'demands')}/><OrganizationEmailSettings key={string(user.userId)} userId={string(user.userId)} organizations={organizations}/></>}
       {tab === 'overview' && <><PersonalWorkSummary userId={string(user.userId)} organizationId={personalOrganization||null} organizationName={organizations.find(organization=>organization.id===personalOrganization)?.name} projectId={filter||null} projectName={string(projects.find(project=>project.id===filter)?.name)} serverDay={workDayFromServerTimestamp(data?.updatedAt)}/><DashboardPanel modules={allowedTabs} pinned={navigation.pinned} frequent={navigation.frequent} onNavigate={navigate} onTogglePin={navigation.togglePin} displayName={string(user.displayName)} role={role} roleLabel={roleNames[role] || 'Equipe PROEX'} projects={scopedProjects} items={visibleItems} loans={visibleLoans} campaigns={visibleCampaigns} selectedProjectId={filter} unitName={unitFilter === '__unassigned__' ? 'Sem unidade vinculada' : string(visibleUnits.find(unit => unit.id === unitFilter)?.acronym || visibleUnits.find(unit => unit.id === unitFilter)?.name)} now={now} onOpenProject={openProject} known={{ projects: Array.isArray(data.projects), items: Array.isArray(data.items), loans: Array.isArray(data.loans), campaigns: Array.isArray(data.campaigns) }} /></>}
+      {tab === 'convocations' && <ConvocationsPanel key={`convocations:${string(user.userId)}:${convocationFocus}`} initialId={convocationFocus} projects={projects.map(project => ({ id: string(project.id), name: string(project.name), canManage: canProject(string(project.id), 'campaigns.manage') }))}/>}
       {tab === 'community' && <CommunityPanel key={`community:${string(user.userId)}`} userId={string(user.userId)} projects={projects.map(project => ({ id: string(project.id), name: string(project.name) }))} prefill={communityPrefill}/>}
 
       {tab === 'projects' && <>
