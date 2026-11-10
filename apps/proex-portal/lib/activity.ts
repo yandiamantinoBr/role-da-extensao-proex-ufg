@@ -90,15 +90,17 @@ const RECORD_LABELS: Record<string, string> = { observation: 'Observação', mai
 
 type Source = { sql: string; values: unknown[] };
 const dayOf = (column: string) => `date(datetime(${column},'-${ZONE_OFFSET_HOURS} hours'))`;
-function scoped(actor: PortalActor, capabilities: string[], projectSql: string, projectId: string | null): Source {
+function scoped(actor: PortalActor, capabilities: string[], projectSql: string, projectId: string | null, organizationId: string | null = null): Source {
   const auth = projectAuthoritySql(actor, capabilities, projectSql);
-  return projectId ? { sql: `(${auth.sql}) AND ${projectSql}=?`, values: [...auth.values, projectId] } : { sql: auth.sql, values: auth.values };
+  const base = projectId ? { sql: `(${auth.sql}) AND ${projectSql}=?`, values: [...auth.values, projectId] } : { sql: `(${auth.sql})`, values: auth.values };
+  // Recorte opcional por organização (painel da gestão): só projetos dela.
+  return organizationId ? { sql: `${base.sql} AND EXISTS(SELECT 1 FROM projects scope_org WHERE scope_org.id=${projectSql} AND scope_org.organization_id=?)`, values: [...base.values, organizationId] } : base;
 }
 
 export async function activityFeed(db: D1Database, actor: PortalActor | null, input: Record<string, unknown> = {}, now = Date.now()): Promise<ActivityFeed> {
   if (!actor) throw new HttpError(401, 'Entre para consultar os registros.', 'unauthenticated');
   const range = activityRange(input.from, input.to, now), wanted = types(input.types);
-  const projectId = optionalId(input.projectId, 'o projeto');
+  const projectId = optionalId(input.projectId, 'o projeto'), organizationId = optionalId(input.organizationId, 'a organização');
   let person = optionalId(input.person, 'a pessoa');
   // Filtro por pessoa só para contas ativas e não anonimizadas; senão, nada corresponde.
   if (person && !(await all(db, 'SELECT 1 FROM portal_users WHERE user_id=? AND anonymized_at IS NULL LIMIT 1', [person])).length) person = 'conta-indisponivel';
@@ -112,7 +114,7 @@ export async function activityFeed(db: D1Database, actor: PortalActor | null, in
   const take = (rows: Row[]) => { if (rows.length > MAX_PER_SOURCE) { truncated = true; return rows.slice(0, MAX_PER_SOURCE); } return rows; };
 
   if (wanted.includes('materials')) {
-    const scope = scoped(actor, ['inventory.read'], 'p.id', projectId);
+    const scope = scoped(actor, ['inventory.read'], 'p.id', projectId, organizationId);
     const rows = take(await all(db, `SELECT m.id,m.kind,m.delta,m.created_at,m.actor_id,m.ref_id,i.id item_id,i.name item_name,i.unit,p.id project_id,p.name project_name,
         sup.kind sup_kind,sup.reason sup_reason,sup.actor_id sup_actor,rep.reason rep_reason,rep.actor_id rep_actor
       FROM stock_movements m JOIN items i ON i.id=m.item_id JOIN projects p ON p.id=i.project_id
@@ -138,7 +140,7 @@ export async function activityFeed(db: D1Database, actor: PortalActor | null, in
   }
 
   if (wanted.includes('loans')) {
-    const scope = scoped(actor, ['loans.read'], 'p.id', projectId);
+    const scope = scoped(actor, ['loans.read'], 'p.id', projectId, organizationId);
     const rows = take(await all(db, `SELECT l.id,l.status,l.action_name,l.created_at,l.checked_out_at,l.returned_at,l.ends_at,l.created_by,i.name item_name,p.id project_id,p.name project_name
       FROM loans l JOIN items i ON i.id=l.item_id AND i.project_id=l.project_id JOIN projects p ON p.id=l.project_id
       WHERE ${scope.sql} AND ((l.created_at>=? AND l.created_at<?) OR (l.checked_out_at>=? AND l.checked_out_at<?) OR (l.returned_at>=? AND l.returned_at<?))
@@ -152,10 +154,10 @@ export async function activityFeed(db: D1Database, actor: PortalActor | null, in
       if (within(row.checked_out_at)) events.push({ ...base, id: `loans:${row.id}:out`, action: 'Retirada', at: String(row.checked_out_at), day: brasiliaDay(String(row.checked_out_at)), actorId: null });
       if (within(row.returned_at)) events.push({ ...base, id: `loans:${row.id}:returned`, action: 'Devolução', at: String(row.returned_at), day: brasiliaDay(String(row.returned_at)), actorId: null });
     }
-    const reachable = scoped(actor, ['loans.read'], 'p.id', projectId);
+    const reachable = scoped(actor, ['loans.read'], 'p.id', projectId, organizationId);
     if ((await all(db, `SELECT 1 FROM projects p WHERE ${reachable.sql} LIMIT 1`, reachable.values)).length) {
     // loans.ends_at é inteiro (milissegundos): comparar com número, nunca com texto ISO.
-    const current = scoped(actor, ['loans.read'], 'l.project_id', projectId);
+    const current = scoped(actor, ['loans.read'], 'l.project_id', projectId, organizationId);
     const [counts] = await all(db, `SELECT SUM(CASE WHEN l.status IN ('reserved','out') THEN 1 ELSE 0 END) active,
       SUM(CASE WHEN l.status='out' AND CAST(l.ends_at AS INTEGER)<? THEN 1 ELSE 0 END) late FROM loans l WHERE ${current.sql}`, [now, ...current.values]);
     loansNow = { active: Number(counts?.active) || 0, late: Number(counts?.late) || 0 };
@@ -163,8 +165,8 @@ export async function activityFeed(db: D1Database, actor: PortalActor | null, in
   }
 
   if (wanted.includes('demands')) {
-    const visible = followupAuthority('?', 'f.organization_id', 'f.project_id'), projectFilter = projectId ? ' AND f.project_id=?' : '';
-    const values = [actor.userId, ...(projectId ? [projectId] : [])];
+    const visible = followupAuthority('?', 'f.organization_id', 'f.project_id'), projectFilter = `${projectId ? ' AND f.project_id=?' : ''}${organizationId ? ' AND f.organization_id=?' : ''}`;
+    const values = [actor.userId, ...(projectId ? [projectId] : []), ...(organizationId ? [organizationId] : [])];
     const opened = take(await all(db, `SELECT f.id,f.title,f.priority,f.created_at,f.created_by,f.project_id,COALESCE(p.name,o.name) project_name
       FROM followup_tasks f JOIN organizations o ON o.id=f.organization_id LEFT JOIN projects p ON p.id=f.project_id
       WHERE ${visible}${projectFilter} AND f.created_at>=? AND f.created_at<? ORDER BY f.created_at DESC LIMIT ${MAX_PER_SOURCE + 1}`, [...values, range.startsAt, range.endsAt]));
@@ -199,7 +201,7 @@ export async function activityFeed(db: D1Database, actor: PortalActor | null, in
   }
 
   if (wanted.includes('agenda')) {
-    const scope = scoped(actor, ['reports.read', 'campaigns.manage'], 'p.id', projectId);
+    const scope = scoped(actor, ['reports.read', 'campaigns.manage'], 'p.id', projectId, organizationId);
     const rows = take(await all(db, `SELECT s.id,s.title,s.starts_at,s.status,p.id project_id,p.name project_name
       FROM project_schedule_items s JOIN projects p ON p.id=s.project_id
       WHERE ${scope.sql} AND s.status!='cancelled' AND substr(s.starts_at,1,10)>=? AND substr(s.starts_at,1,10)<=? ORDER BY s.starts_at DESC LIMIT ${MAX_PER_SOURCE + 1}`, [...scope.values, offsetCivilDate(range.from, -1), range.to]));
@@ -279,7 +281,7 @@ export async function activityFeed(db: D1Database, actor: PortalActor | null, in
   const filtered = person ? (nameOf.has(person) ? events.filter(event => event.actorId === person) : []) : events;
   filtered.sort((a, b) => b.at.localeCompare(a.at) || a.id.localeCompare(b.id));
   let team: ActivityFeed['team'] = null;
-  const managing = scoped(actor, ['access.manage'], 'p.id', projectId);
+  const managing = scoped(actor, ['access.manage'], 'p.id', projectId, organizationId);
   const managed = new Set((await all(db, `SELECT p.id FROM projects p WHERE ${managing.sql}`, managing.values)).map(row => String(row.id)));
   if (managed.size) {
     const perPerson = new Map<string, { days: Set<string>; actions: number; last: string }>(), activeByDay = new Map<string, Set<string>>();

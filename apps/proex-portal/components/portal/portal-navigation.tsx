@@ -25,8 +25,8 @@ export function DesktopSidebar({ modules, active, onNavigate, pinned, collapsed,
     onToggle: () => void;
 }) {
     const favorites = modules.filter(module => pinned.includes(module.id));
-    const work = modules.filter(module => !['team', 'reports', 'settings', 'profile', 'overview'].includes(module.id) && !pinned.includes(module.id));
-    const management = modules.filter(module => ['team', 'reports', 'settings'].includes(module.id) && !pinned.includes(module.id));
+    const work = modules.filter(module => !['management', 'team', 'reports', 'settings', 'profile', 'overview'].includes(module.id) && !pinned.includes(module.id));
+    const management = modules.filter(module => ['management', 'team', 'reports', 'settings'].includes(module.id) && !pinned.includes(module.id));
     const [expanded, setExpanded] = useState<Partial<Record<ModuleId, boolean>>>({}), [showAll, setShowAll] = useState<Partial<Record<ModuleId, boolean>>>({});
     function link(module: PortalModule) {
         const children = collapsed ? [] : subitems[module.id] ?? [];

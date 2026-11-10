@@ -55,6 +55,7 @@ function BlockView({ block }: { block: Block }) {
         {block.note && <p className={styles.paperNote}>{block.note}</p>}
       </div>;
     }
+    case 'subheading': return <h5 className={styles.paperSubheading}>{block.text}</h5>;
     case 'callout': return <aside className={styles.callout}>{block.title && <strong>{block.title}</strong>}{block.text.split(/\n{2,}/).map((part, index) => <p key={index}>{part}</p>)}</aside>;
     case 'references': return <ol className={styles.references}>{block.items.map(item => <li key={item.number}>
       <strong>[{item.number}] {item.title}</strong><span>{item.type} · {item.source}</span>
@@ -70,7 +71,7 @@ export default function ReportPreview({ doc, brand }: { doc: ReportDocument; bra
         <div className={styles.coverMarks}><BrandMark variant="light" emphasis="university" className={styles.coverBrand}/><div className={styles.coverText}><span>PRÓ-REITORIA DE EXTENSÃO</span><small>Universidade Federal de Goiás</small></div></div>
         {brand && <Image src={brand === 'role-da-extensao' ? '/brand/role-da-extensao.png' : '/brand/conpeex-2026.png'} alt={brand === 'role-da-extensao' ? 'Rolê da Extensão' : '23º CONPEEX'} width={96} height={56} unoptimized className={brand === 'conpeex-2026' ? styles.coverMarkLight : styles.coverMark}/>}
       </div>
-      <p className={styles.coverKicker}>Relatório do projeto</p>
+      <p className={styles.coverKicker}>{doc.kicker ?? 'Relatório do projeto'}</p>
       <h4 className={styles.coverTitle}>{doc.title}</h4>
       <p className={styles.coverProject}>{doc.projectName}</p>
       {doc.subtitle && <p className={styles.coverSubtitle}>{doc.subtitle}</p>}

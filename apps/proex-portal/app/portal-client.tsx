@@ -10,6 +10,7 @@ import scopeStyles from './scope-filters.module.css';
 import FeedbackPanel from '@/components/portal/feedback-panel';
 import CommunityPanel, { type CommunityPrefill } from '@/components/portal/community-panel';
 import FloatingDock from '@/components/portal/floating-dock';
+import ManagementPanel from '@/components/portal/management/management-panel';
 import { toast } from 'sonner';
 import settingsStyles from './settings-groups.module.css';
 import { SettingsIndex, SettingsSection } from '@/components/portal/settings-layout';
@@ -414,7 +415,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
     const canManageOrganization = organizations.some(organization => organization.canManage);
     const canCreateProjects = canGlobal('projects.manage') || organizations.some(organization => organization.canManage && organization.status === 'active');
     const canFollowUp = canManageOrganization || projects.length > 0;
-    const allowedTabs = tabs.filter(t => ['overview', 'projects', 'profile', 'calendar', 'records', 'my-work'].includes(t.id) || (t.id === 'events' && canAny('campaigns.manage', 'participation.operate', 'inventory.deliver')) || (t.id === 'materials' && canAny('inventory.read', 'inventory.manage', 'inventory.deliver')) || (t.id === 'loans' && canAny('loans.read', 'loans.manage', 'loans.checkout')) || ((t.id === 'demands' || t.id === 'work-teams') && canFollowUp) || (t.id === 'team' && (canManageOrganization || canAny('access.invite', 'access.manage'))) || (t.id === 'reports' && (canFollowUp || canAny('reports.read'))) || (t.id === 'settings' && (isPlatformOwner || data.canConfigureAi === true)) || (t.id === 'community' && (canFollowUp || isPlatformOwner)) || (t.id === 'convocations' && canAny('campaigns.manage', 'reports.read')));
+    const allowedTabs = tabs.filter(t => ['overview', 'projects', 'profile', 'calendar', 'records', 'my-work'].includes(t.id) || (t.id === 'events' && canAny('campaigns.manage', 'participation.operate', 'inventory.deliver')) || (t.id === 'materials' && canAny('inventory.read', 'inventory.manage', 'inventory.deliver')) || (t.id === 'loans' && canAny('loans.read', 'loans.manage', 'loans.checkout')) || ((t.id === 'demands' || t.id === 'work-teams') && canFollowUp) || (t.id === 'team' && (canManageOrganization || canAny('access.invite', 'access.manage'))) || (t.id === 'reports' && (canFollowUp || canAny('reports.read'))) || (t.id === 'settings' && (isPlatformOwner || data.canConfigureAi === true)) || (t.id === 'community' && (canFollowUp || isPlatformOwner)) || (t.id === 'convocations' && canAny('campaigns.manage', 'reports.read')) || (t.id === 'management' && (canFollowUp || isPlatformOwner)));
     const tab = allowedTabs.some(module => module.id === requestedTab) ? requestedTab : 'overview';
     const organizationalUnits = list(data.organizationalUnits);
     const unitOf = (project: Row) => string(get(project, 'unit_id', 'unitId'));
@@ -568,6 +569,9 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         if (destination.origin !== window.location.origin || destination.pathname !== window.location.pathname || destination.hash) return;
         if (!allowedTabs.some(module => module.id === destination.searchParams.get('module'))) return;
         event.preventDefault();
+        // Link para uma equipe específica (ex.: recém-criada pelo modelo): abre Equipes com ela selecionada.
+        const teamParam = destination.searchParams.get('teamId'), teamOrg = destination.searchParams.get('organizationId');
+        if (destination.searchParams.get('module') === 'work-teams' && teamParam && /^[A-Za-z0-9_.:-]{1,80}$/.test(teamParam) && teamOrg && organizations.some(organization => organization.id === teamOrg)) { openTeams({ kind: 'open', teamId: teamParam, organizationId: teamOrg }); return; }
         const next = readLocation(destination.searchParams), destinationParam = destination.searchParams.get('destinationId');
         if (destinationParam && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(destinationParam)) setDestinationOpen(destinationParam);
         const convocationLink = destination.searchParams.get('convocation');
@@ -849,6 +853,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
       {tab === 'demands' && <><FollowUpPanel key={string(user.userId)} userId={string(user.userId)} onTaskTransferred={receipt=>{selectProject(receipt.projectId);setSelectedDemandId(receipt.taskId);}} defaultProjectId={filter} initialTaskId={selectedDemandId} serverDay={workDayFromServerTimestamp(data?.updatedAt)} onSelectTask={setSelectedDemandId} onChanged={refreshModules} onOpenReports={() => navigate('reports', 'demands')}/><OrganizationEmailSettings key={string(user.userId)} userId={string(user.userId)} organizations={organizations}/></>}
       {tab === 'overview' && <><PersonalWorkSummary userId={string(user.userId)} organizationId={personalOrganization||null} organizationName={organizations.find(organization=>organization.id===personalOrganization)?.name} projectId={filter||null} projectName={string(projects.find(project=>project.id===filter)?.name)} serverDay={workDayFromServerTimestamp(data?.updatedAt)}/><DashboardPanel modules={allowedTabs} pinned={navigation.pinned} frequent={navigation.frequent} onNavigate={navigate} onTogglePin={navigation.togglePin} displayName={string(user.displayName)} role={role} roleLabel={roleNames[role] || 'Equipe PROEX'} projects={scopedProjects} items={visibleItems} loans={visibleLoans} campaigns={visibleCampaigns} selectedProjectId={filter} unitName={unitFilter === '__unassigned__' ? 'Sem unidade vinculada' : string(visibleUnits.find(unit => unit.id === unitFilter)?.acronym || visibleUnits.find(unit => unit.id === unitFilter)?.name)} now={now} onOpenProject={openProject} known={{ projects: Array.isArray(data.projects), items: Array.isArray(data.items), loans: Array.isArray(data.loans), campaigns: Array.isArray(data.campaigns) }} /></>}
       {tab === 'convocations' && <ConvocationsPanel key={`convocations:${string(user.userId)}:${convocationFocus}`} initialId={convocationFocus} projects={projects.map(project => ({ id: string(project.id), name: string(project.name), canManage: canProject(string(project.id), 'campaigns.manage') }))}/>}
+      {tab === 'management' && <ManagementPanel key={`management:${string(user.userId)}`} organizations={organizations.map(organization => ({ id: organization.id, name: organization.name }))} defaultOrganizationId={personalOrganization}/>}
       {tab === 'community' && <CommunityPanel key={`community:${string(user.userId)}`} userId={string(user.userId)} projects={projects.map(project => ({ id: string(project.id), name: string(project.name) }))} prefill={communityPrefill}/>}
 
       {tab === 'projects' && <>

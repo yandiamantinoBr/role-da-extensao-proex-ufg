@@ -81,6 +81,8 @@ export async function resolvePrivacy(db:D1Database,actor:PortalActor,input:Recor
   cleanup(`DELETE FROM auth_user WHERE id IN(SELECT subject FROM identity_aliases WHERE user_id=? AND provider='password') AND ${confirmed}`,target),
   cleanup(`DELETE FROM identity_aliases WHERE user_id=? AND ${confirmed}`,target),
   // The whole profile is removed, including unit_id, affiliation and private enrollment/contact fields.
+  cleanup(`UPDATE org_guide_page_versions SET author_name='Integrante' WHERE author_id=? AND ${confirmed}`,target),
+  cleanup(`DELETE FROM org_guide_editors WHERE user_id=? AND ${confirmed}`,target),
   cleanup(`DELETE FROM profiles WHERE user_id=? AND ${confirmed}`,target),
   cleanup(`DELETE FROM portal_feedback WHERE author_id=? AND ${confirmed}`,target),
   // Personal widgets are private notes: removed with the account (0036).

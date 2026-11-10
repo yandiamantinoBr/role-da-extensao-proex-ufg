@@ -97,6 +97,7 @@ export function toReportDocx(doc: ReportDocument): Blob {
         const monthRow = (month: string) => `<w:tr><w:trPr><w:cantSplit/></w:trPr><w:tc><w:tcPr><w:tcW w:w="${USABLE}" w:type="dxa"/><w:gridSpan w:val="3"/>${cellMargins}</w:tcPr>${para(run(month, '<w:b/><w:color w:val="3B1753"/>'), '<w:keepNext/><w:spacing w:before="120" w:after="20"/>')}</w:tc></w:tr>`;
         return table(widths, entry.items.flatMap((item, index) => [...(index === 0 || entry.items[index - 1].month !== item.month ? [monthRow(item.month)] : []), item]).map(item => typeof item === 'string' ? item : `<w:tr><w:trPr><w:cantSplit/></w:trPr>${cell(run(item.date, '<w:b/><w:sz w:val="19"/>'), widths[0])}${cell(run(item.tag, `${muted}<w:sz w:val="18"/>`), widths[1])}${cell(para(run(item.title, '<w:sz w:val="19"/>'), '<w:spacing w:after="0"/>') + (item.detail ? para(run(item.detail, `${muted}<w:sz w:val="17"/>`), '<w:spacing w:after="0"/>') : ''), widths[2])}</w:tr>`)) + (entry.note ? block({ kind: 'note', text: entry.note }) : '');
       }
+      case 'subheading': return styled(entry.text, 'Heading2');
       case 'references': return entry.items.map(item => {
         const id = rel('hyperlink', item.url, true);
         return para(run(`[${item.number}] `, '<w:b/><w:color w:val="3B1753"/>') + run(item.title, '<w:b/>') + run(` — ${item.type} · ${item.source}`, muted), '<w:keepNext/><w:spacing w:after="0"/>')
@@ -107,7 +108,7 @@ export function toReportDocx(doc: ReportDocument): Blob {
 
   const cover = [
     para(run('PRÓ-REITORIA DE EXTENSÃO · UNIVERSIDADE FEDERAL DE GOIÁS', '<w:b/><w:color w:val="54216C"/><w:sz w:val="18"/><w:spacing w:val="20"/>'), '<w:spacing w:before="1800" w:after="600"/><w:pBdr><w:bottom w:val="single" w:sz="18" w:color="FFAA3D" w:space="8"/></w:pBdr>'),
-    styled('RELATÓRIO DO PROJETO', 'Kicker'),
+    styled((doc.kicker ?? 'Relatório do projeto').toUpperCase(), 'Kicker'),
     styled(doc.title, 'Title'),
     styled(doc.projectName, 'Subtitle'),
     ...(doc.subtitle ? [para(run(doc.subtitle, muted), '<w:spacing w:after="600"/>')] : []),
@@ -184,6 +185,7 @@ export function toReportXlsx(doc: ReportDocument): Blob {
     for (const entry of section.blocks) {
       if (entry.kind === 'paragraph') rows.push([{ value: entry.text, style: 6 }]);
       else if (entry.kind === 'note') rows.push([{ value: entry.text, style: 4 }]);
+      else if (entry.kind === 'subheading') rows.push([{ value: entry.text, style: 8 }]);
       else if (entry.kind === 'callout') { if (entry.title) rows.push([{ value: entry.title, style: 8 }]); for (const part of entry.text.split(/\n{2,}/)) rows.push([{ value: safeText(part), style: 6 }]); }
       else if (entry.kind === 'facts') for (const [key, value] of entry.items) rows.push([{ value: key, style: 3 }, { value }]);
       else if (entry.kind === 'metrics') for (const item of entry.items) rows.push([{ value: item.label, style: 3 }, { value: numericValue(item.value) ?? item.value, style: numericValue(item.value) === null ? 0 : 5 }, ...(item.detail ? [{ value: item.detail, style: 4 }] : [])]);
