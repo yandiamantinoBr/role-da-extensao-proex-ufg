@@ -243,12 +243,13 @@ function salvarCadastroMaterial(form) {
     }
     var response;
     try {
-      response = chamar_('proex_sync_apply', {
+      var editors = editoresPlanilha_();
+      response = chamar_('proex_sync_apply', Object.assign({
         connectionId: 'google-sheets',
         changes: [{ changeKey: draft.changeKey, action: 'item.create', input: draft.input }],
-      });
+      }, editors ? { editors: editors } : {}));
     } catch (error) {
-      if (['sync_token_required', 'sync_token_invalid', 'sync_forbidden', 'unauthenticated'].indexOf(error.code) >= 0) throw error;
+      if (['sync_token_required', 'sync_token_invalid', 'sync_forbidden', 'unauthenticated', 'sync_editors_not_admin'].indexOf(error.code) >= 0) throw error;
       throw new Error('Não foi possível confirmar o envio. Reabra o formulário e retome o mesmo cadastro.');
     }
     var result = response && Array.isArray(response.results) && response.results[0];
@@ -511,15 +512,38 @@ function sincronizar_() {
   }
 }
 
+/**
+ * Pessoas com permissão de edição nesta planilha (dona e editoras). O portal só aplica
+ * edições vindas da planilha se todas forem da administração geral. Quem edita a
+ * planilha também edita este script, que usa a chave da administração.
+ */
+function editoresPlanilha_() {
+  try {
+    var file = DriveApp.getFileById(SpreadsheetApp.getActive().getId());
+    var people = [file.getOwner()].concat(file.getEditors());
+    var emails = people.filter(function (user) { return user && user.getEmail(); }).map(function (user) { return user.getEmail().toLowerCase(); });
+    return emails.filter(function (email, index) { return emails.indexOf(email) === index; });
+  } catch (_error) {
+    return null; // sem lista, o portal marca as edições como não verificadas
+  }
+}
+
 /** Envia em lotes de 25; se um lote for recusado por uma linha, reenvia linha a linha. */
 function aplicar_(changes, runId) {
   var results = Object.create(null);
+  if (!changes.length) return results;
+  var editors = editoresPlanilha_(), extra = editors ? { editors: editors } : {};
   for (var i = 0; i < changes.length; i += 25) {
     var batch = changes.slice(i, i + 25), response;
     try {
-      response = chamar_('proex_sync_apply', { connectionId: 'google-sheets', runId: runId, changes: batch });
+      response = chamar_('proex_sync_apply', Object.assign({ connectionId: 'google-sheets', runId: runId, changes: batch }, extra));
       response.results.forEach(function (r) { results[r.changeKey] = r; });
     } catch (error) {
+      if (error && error.code === 'sync_editors_not_admin') {
+        // Nada desta rodada é aplicado; a exportação do portal para a planilha continua.
+        changes.forEach(function (change) { results[change.changeKey] = { changeKey: change.changeKey, status: 'rejected', code: 'sync_editors_not_admin' }; });
+        return results;
+      }
       if (!isolavel_(error)) throw error;
       if (batch.length === 1) {
         results[batch[0].changeKey] = { changeKey: batch[0].changeKey, status: 'rejected', code: error.code };
@@ -527,7 +551,7 @@ function aplicar_(changes, runId) {
       }
       batch.forEach(function (change) {
         try {
-          chamar_('proex_sync_apply', { connectionId: 'google-sheets', runId: runId, changes: [change] }).results.forEach(function (r) { results[r.changeKey] = r; });
+          chamar_('proex_sync_apply', Object.assign({ connectionId: 'google-sheets', runId: runId, changes: [change] }, extra)).results.forEach(function (r) { results[r.changeKey] = r; });
         } catch (single) {
           if (!isolavel_(single)) throw single;
           results[change.changeKey] = { changeKey: change.changeKey, status: 'rejected', code: single.code };

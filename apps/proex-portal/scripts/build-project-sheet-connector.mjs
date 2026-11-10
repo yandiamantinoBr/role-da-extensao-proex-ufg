@@ -22,4 +22,8 @@ for(const statement of source.statements){
 for(const name of selected)if(!found.has(name))throw new Error('Missing connector core: '+name);
 const generated=readFileSync(overrides,'utf8').replaceAll('vale30','vale 30').replaceAll('em30','em 30').replaceAll('cada10','cada 10').replaceAll('cada30','cada 30')+'\n\n'+statements.join('\n\n')+'\n';
 if(/\bDriveApp\b|\/api\/sync\/connector|proex_sync_configure|copiarAnexos|backupCompleto/.test(generated))throw new Error('Unsafe global capability in project connector');
+// Every helper called as name_(...) must be defined in the generated file; a missing one would only fail inside Google.
+const defined=new Set([...generated.matchAll(/function\s+([A-Za-z0-9]+_)\s*\(/g)].map(match=>match[1]));
+const missing=[...new Set([...generated.matchAll(/(?<![.\w])([A-Za-z0-9]+_)\s*\(/g)].map(match=>match[1]))].filter(name=>!defined.has(name));
+if(missing.length)throw new Error('Project connector calls undefined helpers: '+missing.join(', '));
 if(process.argv.includes('--check')){if(readFileSync(target,'utf8')!==generated)throw new Error('Project connector is stale; regenerate: node '+fileURLToPath(import.meta.url));}else writeFileSync(target,generated);
