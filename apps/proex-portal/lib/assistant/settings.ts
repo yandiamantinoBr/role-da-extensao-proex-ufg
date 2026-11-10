@@ -1,11 +1,12 @@
 import { aiConfigurationAuthority, getActor, organizationAuthoritySql, platformOwnerAuthoritySql, type PortalActor } from '../access';
 import { all, one } from '../database';
 import { HttpError } from '../errors';
-import { availableProviderCredentials, dailyLimits, newAssistantConfig, object, onlyKeys, TEST_MODE_LIMITS, validateConfig, type AssistantConfig, type DailyLimits } from './contracts';
+import { availableProviderCredentials, dailyLimits, newAssistantConfig, object, onlyKeys, TASK_MODEL_KEYS, TEST_MODE_LIMITS, validateConfig, type AssistantConfig, type DailyLimits } from './contracts';
 import { configChanges } from './quota';
 import { decryptProviderCredentials, encryptProviderCredentials, type CredentialKeys } from './crypto';
-import { fitsFunction } from './model-catalog';
+import { fitsFunction, fitsTask, type RoutedTask } from './model-catalog';
 import { loadCatalog } from './model-catalog-store';
+import { TASK_MODEL_KEY } from './task-routing';
 
 export type SpeechProvider = 'deepgram' | 'groq';
 export type SpeechEnvironment = { provider?: string; organizationId?: string; groqKey?: string };
@@ -93,7 +94,9 @@ export async function configureAssistant(db: D1Database, actor: PortalActor | nu
  if (!Number.isSafeInteger(input.expectedRevision) || input.expectedRevision !== (old?.revision ?? 0)) throw new HttpError(409, 'A configuração mudou. Atualize antes de salvar.', 'assistant_configuration_changed');
  const proposed = object(input.config), previousConfig = old ? validateConfig(JSON.parse(old.config_json)) : newAssistantConfig(current.userId);
  const usageScope = Object.hasOwn(proposed,'usageScope') ? proposed.usageScope : previousConfig.usageScope;
- const config = withTestMode(previousConfig, validateConfig({ ...proposed, usageScope, usageUserId: usageScope === 'private' ? current.userId : null }));
+ // Modelo por tarefa que não veio no pedido fica como estava: uma tela que ainda não conhece essas chaves não desfaz a escolha.
+ const keptTaskModels = Object.fromEntries(TASK_MODEL_KEYS.filter(taskKey => !Object.hasOwn(proposed, taskKey)).map(taskKey => [taskKey, previousConfig[taskKey]]));
+ const config = withTestMode(previousConfig, validateConfig({ ...proposed, ...keptTaskModels, usageScope, usageUserId: usageScope === 'private' ? current.userId : null }));
  const previous = old && input.replaceCredentials !== true ? object(await decryptProviderCredentials(secret, old.credentials_ciphertext, organizationId, keys)) : {};
  const credentials = availableProviderCredentials(previous);
  const catalogKeys = Object.fromEntries(Object.entries(previous).filter(([name]) => /^p:[a-z0-9-]+$/.test(name)));
@@ -116,6 +119,22 @@ export async function configureAssistant(db: D1Database, actor: PortalActor | nu
  if (config.roleModel !== previousConfig.roleModel || config.roleVisionModel !== previousConfig.roleVisionModel) {
   const owner = platformOwnerAuthoritySql(current);
   if (!await one(db, `SELECT 1 WHERE ${owner.sql}`, owner.values)) throw new HttpError(403, 'Só a administração geral escolhe modelos do catálogo para o Rolê.', 'catalog_admin');
+ }
+ // Modelo por tarefa (documentos, conferência/triagem, voz): só a administração geral troca. O escolhido precisa
+ // existir, estar ligado, servir para a tarefa e ter chave salva. A chave do padrão segue obrigatória (abaixo): é a queda.
+ const changedTasks = (Object.keys(TASK_MODEL_KEY) as RoutedTask[]).filter(task => config[TASK_MODEL_KEY[task]] !== previousConfig[TASK_MODEL_KEY[task]]);
+ if (changedTasks.length) {
+  const owner = platformOwnerAuthoritySql(current);
+  if (!await one(db, `SELECT 1 WHERE ${owner.sql}`, owner.values)) throw new HttpError(403, 'Só a administração geral escolhe modelos do catálogo para documentos, conferência e voz.', 'catalog_admin');
+  const chosenTasks = changedTasks.filter(task => config[TASK_MODEL_KEY[task]]);
+  const taskCatalog = chosenTasks.length ? catalog ?? (await loadCatalog(db, organizationId)).catalog : null;
+  for (const task of chosenTasks) {
+   const model = taskCatalog!.models.find(entry => entry.id === config[TASK_MODEL_KEY[task]] && entry.enabled), provider = taskCatalog!.providers.find(entry => entry.id === model?.providerId);
+   if (!model) throw new HttpError(400, 'Escolha um modelo que exista e esteja ligado no catálogo.', 'assistant_model');
+   const unfit = fitsTask(model, provider, task);
+   if (unfit || !provider) throw new HttpError(400, unfit ?? 'Provedor removido.', 'assistant_model');
+   if (!validProviderKey((credentials as Record<string, unknown>)[provider.keyRef] || previous[provider.keyRef])) throw new HttpError(400, 'Salve a chave do provedor deste modelo em Chaves e modelos antes de escolher.', 'assistant_credentials');
+  }
  }
  const roleTextKey = config.roleModel ? catalogKey(config.roleModel, 'chat') : !!credentials[config.roleProvider];
  const roleVisionKey = config.roleVisionModel ? catalogKey(config.roleVisionModel, 'vision') : !!credentials.deepseek;
