@@ -43,3 +43,10 @@ Crítica visual independente da fase 3: 8,6 → 9,0, sem P0/P1. Revisão de segu
 - `doca-*-meu-espaco.png`: galeria para ligar e desligar widgets (tudo desligado por padrão).
 
 No celular o painel vira folha inferior com fundo escurecido. Crítica visual independente: 7,6 → 8,8 → 9,1, sem P0/P1/P2. Os dois P3 restantes (chip minimizado perto do rodapé; fundo da folha no tema claro) ficaram anotados; o primeiro foi tratado com mais folga no fim da página.
+
+## Espaço no fim das páginas para a doca (2026-11-10)
+
+- `doca-espaco-*-fim-pessoas.png`: fim de Pessoas e acessos com a doca fechada. O último conteúdo termina 16 px acima da doca.
+- `doca-espaco-*-fim-minimizada.png`: o mesmo com um widget minimizado. O espaço cresce para caber o chip e volta ao normal quando o widget é fechado (X).
+
+A reserva é medida da própria doca (Rolê, botão Widgets, chip minimizado; inclui a barra inferior e a área segura do celular) e só existe enquanto a doca está na tela. Página do voluntário, convite, convocação pública e login não têm doca nem espaço extra.
