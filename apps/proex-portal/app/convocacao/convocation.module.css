@@ -73,3 +73,11 @@
 .summary div:first-child{grid-column:1/-1}
 .summary div:first-child dd{font-size:17px}
 @media(max-width:560px){.keep>button{justify-self:stretch}}
+
+/* Quinta crítica (10/11). */
+.privacyLine{display:flex;gap:8px;align-items:flex-start;font-size:14px;line-height:1.55;margin:-4px 0 0;color:var(--ink)}
+.privacyLine svg{flex-shrink:0;margin-top:2px;color:var(--success-ink,#256455)}
+.linkLabel{display:grid;gap:4px;font-size:12px;font-weight:600;color:var(--ink)}
+.linkText{color:var(--ink)!important;border-style:solid!important}
+.segmentOn{gap:6px}
+.form :global(.p-field)>span,.groupLabel{color:var(--ink)}
