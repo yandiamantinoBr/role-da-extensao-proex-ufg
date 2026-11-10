@@ -229,3 +229,18 @@ Motivo: às 13h o Yan perguntou "quantos brindes, super brindes e super super br
 - **Rolê:** a nova consulta `consultar_fontes_oficiais` busca nas páginas copiadas e nos posts cadastrados e devolve título, resumo, data da cópia e link.
   - Na resposta, os links externos aparecem só se forem de `proex.ufg.br`, `23conpeex.plateia.ufg.br` ou `instagram.com` e abrem em nova aba.
   - O conteúdo é público e entra como dado, não instrução.
+
+## Sugestões por pessoa · 10/11/2026
+
+- **O que são:** até 4 perguntas prontas na abertura do Rolê, com o título "Sugestões para você". Tocar numa sugestão só preenche a caixa de texto; a pessoa ainda decide enviar.
+- **Sem IA e sem custo:** são regras fixas do portal (`lib/assistant/role-suggestions.ts`). Nenhuma chamada a provedor, nada conta no limite diário.
+- **De onde saem** (sempre com as permissões da própria pessoa e só da organização da conversa):
+  - **Momento:** dinâmica que está acontecendo ou começa em até 3 dias; agenda de hoje ou dos próximos 7 dias.
+  - **Atividade:** itens que a própria pessoa movimentou nos últimos 14 dias; demandas atribuídas a ela e ainda abertas.
+  - **Equipe:** itens com menos estoque disponível que a função dela pode ver; empréstimos em aberto ou atrasados.
+  - **Geral:** perguntas fixas (entrega de brindes, empréstimo, editais, contatos) completam a lista.
+- **Montagem:** 1 de momento, até 2 de atividade, 1 de equipe e o resto geral, sem repetir. Nomes com mais de 60 caracteres ficam de fora; aspas e quebras de linha são retiradas.
+- **Renovação:** o sorteio é fixo por pessoa e muda a cada 3 dias (`ROLE_SUGGESTION_DAYS`). Os dados (agenda, estoque, demandas) entram na hora, então a lista acompanha o que mudou.
+- **Desligar:** o botão "Esconder" guarda a escolha no aparelho (`proex-role-sugestoes`). Com as sugestões escondidas o portal nem consulta a rota; "Mostrar sugestões" volta ao normal.
+- **Rota:** `GET /api/assistant/role?projectId=…&suggestions=1`, com a mesma checagem de quem pode conversar com o Rolê naquele projeto. Se a consulta falhar, aparecem três perguntas fixas.
+- **Não faz:** não usa o conteúdo das conversas, não guarda histórico de sugestões e não mostra nomes de projetos que a pessoa não vê.
