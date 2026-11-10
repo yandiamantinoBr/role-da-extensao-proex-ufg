@@ -1,7 +1,7 @@
 import {index,integer,primaryKey,sqliteTable,text,uniqueIndex} from 'drizzle-orm/sqlite-core';
 import {organizations,portalUsers,projects} from './base-schema';
 /**
- * Mirrors drizzle/0043_convocations.sql (CHECKs and triggers live only in the SQL migration).
+ * Mirrors drizzle/0044_convocations.sql (CHECKs and triggers live only in the SQL migration).
  * A convocation invites people without a portal account (e.g. scholarship students) to confirm attendance
  * through a link; each guest only ever reaches their own answer through a personal edit token.
  */

@@ -163,3 +163,13 @@
  .kpis dd{font-size:22px;margin-top:2px}
  .detailHead h2{margin:4px 0 2px}
 }
+
+/* Terceira crítica: o painel nunca passa da largura da tela (tabelas globais têm largura mínima). */
+.panel{grid-template-columns:minmax(0,1fr)}
+.panel>*,.panel section{min-width:0}
+.panel :global(.p-table-wrap){max-width:100%;overflow-x:auto}
+.prefTable tr>*{border-bottom:1px solid var(--line)}
+@container (max-width:640px){
+ .table,.prefTable{min-width:0!important}
+ .tabs{-webkit-mask-image:linear-gradient(90deg,#000 86%,transparent);mask-image:linear-gradient(90deg,#000 86%,transparent);padding-right:24px}
+}

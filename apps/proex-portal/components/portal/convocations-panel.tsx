@@ -72,8 +72,8 @@ function ShiftRows({ initial }: { initial: { id?: string; label: string; startsA
   return <div className={styles.shiftRows}>{rows.map((row, index) => <div key={row.key} className={styles.shiftRow}>
     {row.id && <input type="hidden" name={`shiftId${index}`} value={row.id}/>}
     <label className="p-field"><span>Turno</span><input name={`shiftLabel${index}`} required maxLength={80} defaultValue={row.label}/></label>
-    <label className="p-field"><span>Início</span><input name={`shiftStart${index}`} type="time" required defaultValue={row.startsAt}/></label>
-    <label className="p-field"><span>Fim</span><input name={`shiftEnd${index}`} type="time" required defaultValue={row.endsAt}/></label>
+    <label className="p-field"><span>Início (24 h)</span><input name={`shiftStart${index}`} type="text" inputMode="numeric" placeholder="hh:mm" maxLength={5} pattern="([01][0-9]|2[0-3]):[0-5][0-9]" required defaultValue={row.startsAt}/></label>
+    <label className="p-field"><span>Fim (24 h)</span><input name={`shiftEnd${index}`} type="text" inputMode="numeric" placeholder="hh:mm" maxLength={5} pattern="([01][0-9]|2[0-3]):[0-5][0-9]" required defaultValue={row.endsAt}/></label>
     <button type="button" className="p-icon-button" aria-label={`Remover turno ${index + 1}`} disabled={rows.length === 1} onClick={() => setRows(current => current.filter(entry => entry.key !== row.key))}><X size={16}/></button>
   </div>)}<input type="hidden" name="shiftCount" value={rows.length}/>
     {rows.length < 12 && <button type="button" className="p-button p-button-subtle" onClick={() => setRows(current => [...current, { key: `n${Date.now()}`, label: '', startsAt: '13:00', endsAt: '17:00' }])}><Plus size={15} aria-hidden="true"/>Adicionar turno</button>}</div>;
@@ -106,7 +106,7 @@ function CreateForm({ projects, allProjects, onCancel, onCreated }: { projects: 
       <label className="p-field"><span>Edição ou local de referência</span><input name="edition" maxLength={120} placeholder="Ex.: Parque Vaca Brava"/></label>
       <label className="p-field"><span>Endereço ou ponto de encontro</span><input name="location" maxLength={200}/></label>
       <label className="p-field"><span>Data da ação</span><DateField aria-label="Data da ação" name="eventDate" required/></label>
-      <label className="p-field"><span>Prazo para responder</span><DateTimeField aria-label="Prazo para responder" name="responseDeadline"/><small>Opcional. Usado no lembrete.</small></label>
+      <label className="p-field"><span>Prazo para responder (opcional, usado no lembrete)</span><DateTimeField aria-label="Prazo para responder" name="responseDeadline"/></label>
     </div>
     <ShiftRows initial={[]}/>
     <ProjectPicker options={allProjects} selected={projects[0] ? [projects[0].id] : []}/>

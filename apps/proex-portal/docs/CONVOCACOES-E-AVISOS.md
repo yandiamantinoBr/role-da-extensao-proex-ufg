@@ -56,7 +56,7 @@ Pedido do Yan (09/11), para ações como o UFG nos Parques: bolsistas e pessoas 
 
 ## Dados e migração
 
-- **Migração `0043_convocations`**, só acréscimos. Tabelas:
+- **Migração `0044_convocations`**, só acréscimos. Tabelas:
   - `convocations`, `convocation_shifts`, `convocation_projects`, `convocation_responsibles`;
   - `convocation_invites` (hash, validade, limite e contagem pelo gatilho);
   - `convocation_guests` e `convocation_guest_shifts`;
