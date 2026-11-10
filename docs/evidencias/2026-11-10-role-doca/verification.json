@@ -1,0 +1,15 @@
+{
+  "origin": "http://127.0.0.1:5174",
+  "base": "descartável, loopback",
+  "shots": [
+    "1366-light-doca",
+    "1366-light-alt-r",
+    "1366-dark-doca",
+    "1366-dark-alt-r",
+    "390-light-doca",
+    "390-light-alt-r",
+    "390-dark-doca",
+    "390-dark-alt-r"
+  ],
+  "pageErrors": []
+}
