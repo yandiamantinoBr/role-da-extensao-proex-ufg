@@ -39,6 +39,8 @@ const kinds: { value: Kind; label: string; capability: string }[] = [
   { value: 'material', label: 'Registro de material', capability: 'inventory.manage' },
   { value: 'loan', label: 'Registro de empréstimo', capability: 'loans.manage' },
 ];
+/** Permissões que deixam criar algum tipo de registro (quem não tem nenhuma vê a explicação de como pedir). */
+export const RECORD_CAPABILITIES = [...new Set(kinds.map(kind => kind.capability))];
 const kindLabel = (kind: Kind) => kinds.find(value => value.value === kind)?.label ?? kind;
 const text = (row: Row, key: string) => typeof row[key] === 'string' ? row[key] as string : '';
 const noWrite = () => false;

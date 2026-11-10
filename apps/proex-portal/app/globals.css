@@ -223,3 +223,13 @@ html[data-theme=dark] .p-material-tabs button.is-active{background:#3a2a48;color
 .p-loan-card details.p-loan-next>summary>svg{margin-left:auto}
 .p-loan-card details.p-loan-next>summary{background:#efe4f7}
 html[data-theme=dark] .p-loan-card details.p-loan-next>summary{background:#3a2a48}
+/* Contraste no tema escuro (revisão de 10/11): contorno de botões lilás, campos e chips a pelo menos 3:1
+   contra o cartão (#241b2e) e a página (#17111f). Corrigido no token, não tela a tela. */
+html[data-theme=dark]{--control-border:#8a6ba0;--button-subtle-bg:#3a2a48;--button-subtle-border:#8a6ba0}
+html[data-theme=dark] .p-button-subtle,html[data-theme=dark] .p-icon-button{background:var(--button-subtle-bg);border-color:var(--button-subtle-border)}
+:root{--button-subtle-bg:#f3eef7;--button-subtle-border:#e8deee}
+/* Registros para quem não cria registro (P8): explica como pedir, com o botão no padrão sutil. */
+.p-records-ask{flex-wrap:wrap;align-items:flex-start;margin:14px 0 18px;font-size:13px;background:var(--surface)}
+.p-records-ask>svg{margin-top:2px;flex-shrink:0}
+.p-records-ask>div{flex:1 1 240px}
+.p-notice.p-records-ask>.p-button{margin:0 0 0 auto;background:var(--button-subtle-bg);border:1px solid var(--button-subtle-border);min-height:44px}
