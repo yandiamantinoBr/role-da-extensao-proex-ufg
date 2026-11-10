@@ -80,15 +80,15 @@ export default function RisksPanel({ organizationId }: { organizationId: string 
       <section className={styles.card} aria-labelledby="risk-map">
         <header><h3 id="risk-map">Mapa dos riscos abertos</h3>{cell && <button type="button" className="p-button p-button-subtle" onClick={() => setCell(null)}>Mostrar todos</button>}</header>
         <div className={styles.matrixWrap}>
-          <span className={styles.axisY}>Impacto</span>
+          <span className={styles.axisY}>Impacto (estrago)</span>
           <span className={styles.ticksY} aria-hidden="true">{[5, 4, 3, 2, 1].map(value => <span key={value}>{value}</span>)}</span>
           <div className={styles.matrix}>{matrix.map((row, rowIndex) => row.map((count, column) => {
             const probability = column + 1, impact = 5 - rowIndex, active = cell?.[0] === probability && cell?.[1] === impact;
             return <button key={`${rowIndex}-${column}`} type="button" className={`${styles.cell} ${styles[`lvl-${levelOf(probability, impact)}`]} ${count ? '' : styles.cellZero}`} data-active={active}
-              aria-pressed={active} aria-label={`Impacto ${impact}, probabilidade ${probability}: ${count} ${count === 1 ? 'risco' : 'riscos'}`} disabled={!count && !active} onClick={() => setCell(active ? null : [probability, impact])}>{count || '·'}</button>;
+              aria-pressed={active} aria-label={`Chance ${probability}, impacto ${impact}: ${count} ${count === 1 ? 'risco' : 'riscos'} de nível ${LEVEL[levelOf(probability, impact)].toLowerCase()}`} disabled={!count && !active} onClick={() => setCell(active ? null : [probability, impact])}>{count || '·'}</button>;
           }))}</div>
           <span className={styles.ticksX} aria-hidden="true">{[1, 2, 3, 4, 5].map(value => <span key={value}>{value}</span>)}</span>
-          <span className={styles.axisX}>Probabilidade</span>
+          <span className={styles.axisX}>Chance de acontecer (probabilidade)</span>
         </div>
         <div className={styles.legend}>{(Object.keys(LEVEL) as Risk['level'][]).map(key => <span key={key}><i className={styles[`lvl-${key}`]}/>{LEVEL[key]}</span>)}</div>
       </section>
@@ -100,12 +100,12 @@ export default function RisksPanel({ organizationId }: { organizationId: string 
           {data.projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}
         </select></label>
         <dl className={styles.levels} aria-label="Riscos abertos por nível">{(Object.keys(LEVEL) as Risk['level'][]).map(key => <div key={key} className={styles[`lvl-${key}`]}><dt>{LEVEL[key]}</dt><dd>{data.risks.filter(risk => risk.level === key && (risk.status === 'open' || risk.status === 'monitoring')).length}</dd></div>)}</dl>
-        <p className={styles.help}>{visible.length} de {data.risks.length} {data.risks.length === 1 ? 'risco' : 'riscos'}{cell ? ` na célula probabilidade ${cell[0]} × impacto ${cell[1]}` : ''}.</p>
+        <p className={styles.help}>{visible.length} de {data.risks.length} {data.risks.length === 1 ? 'risco' : 'riscos'}{cell ? ` na célula chance ${cell[0]} × impacto ${cell[1]}` : ''}.</p>
       </section>
     </div>
     {visible.length ? <ul className={styles.riskList}>{visible.map(risk => <li key={risk.id} className={styles.risk} data-level={risk.level}>
       <header><h4>{risk.title}</h4><div className={styles.badges}>
-        <span className={`${styles.badgeLevel} ${styles[`lvl-${risk.level}`]}`}>{LEVEL[risk.level]} · {risk.probability}×{risk.impact}</span>
+        <span className={`${styles.badgeLevel} ${styles[`lvl-${risk.level}`]}`}>{LEVEL[risk.level]} · chance {risk.probability} × impacto {risk.impact} = {risk.score}</span>
         {risk.reviewOverdue && <span className={styles.badgeOverdue}>Revisão vencida</span>}
         {risk.isExample && <span className={styles.badgeExample}>Exemplo</span>}
         <span className={styles.pill}>{STATUS[risk.status] ?? risk.status}</span>

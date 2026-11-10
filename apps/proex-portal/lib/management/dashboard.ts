@@ -1,5 +1,5 @@
 import { accessibleProjects, type PortalActor } from '../access';
-import { all, type Row } from '../database';
+import { all, one, type Row } from '../database';
 import { HttpError } from '../errors';
 import { reportRows } from '../reports';
 import { activityFeed } from '../activity';
@@ -31,19 +31,25 @@ export async function managementDashboard(db: D1Database, rawActor: PortalActor 
   const actor = requireActor(rawActor), organizationId = identifier(input.organizationId, 'a organização');
   await requireOrganizationMember(db, actor, organizationId);
   const projectId = typeof input.projectId === 'string' && input.projectId ? identifier(input.projectId, 'o projeto') : null;
+  if (projectId && !await one(db, 'SELECT 1 ok FROM projects WHERE id=? AND organization_id=?', [projectId, organizationId])) throw new HttpError(404, 'Projeto não encontrado nesta organização.', 'project_not_found');
   const to = validDay(input.to) ?? today(), from = validDay(input.from) ?? shift(to, -89);
   if (from > to) throw new HttpError(400, 'A data inicial deve vir antes da final.', 'invalid_dashboard_date');
   const scope = { organizationId, ...(projectId ? { projectId } : {}) };
+  // Período anterior de mesmo tamanho, para comparar ("↑ 2 em relação ao período anterior").
+  const span = Math.round((Date.parse(`${to}T12:00:00Z`) - Date.parse(`${from}T12:00:00Z`)) / 86400_000) + 1;
+  const prevTo = shift(from, -1), prevFrom = shift(from, -span);
   const visible = projectAuthoritySql(actor, [], 'p.id');
   const safe = <T,>(promise: Promise<T>) => promise.catch(error => { if (error instanceof HttpError && [401, 403, 404].includes(error.status)) return null; throw error; });
   const activityFrom = from < shift(to, -91) ? shift(to, -91) : from;
   // Seção sem permissão em nenhum projeto fica de fora (null), em vez de aparecer zerada.
-  const can = (...capabilities: string[]) => capabilities.some(capability => { const scope = accessibleProjects(actor, capability); return scope === null || scope.length > 0; });
+  // A permissão conta só nos projetos desta organização (ou no projeto filtrado).
+  const orgProjects = new Set((await all(db, 'SELECT id FROM projects WHERE organization_id=?', [organizationId])).map(row => String(row.id)));
+  const can = (...capabilities: string[]) => capabilities.some(capability => { const scope = accessibleProjects(actor, capability); return scope === null || scope.some(id => projectId ? id === projectId : orgProjects.has(id)); });
   const seesMaterials = can('inventory.read', 'reports.read'), seesCampaigns = can('reports.read', 'campaigns.manage');
   const [projects, demands, movements, campaigns, materials, risks, completions, schedule, activity] = await Promise.all([
     all(db, `SELECT p.id,p.name FROM projects p WHERE p.organization_id=? AND p.status='active' AND ${visible.sql} ORDER BY p.name LIMIT 200`, [organizationId, ...visible.values]),
     safe(reportRows(db, actor, { dataset: 'demands', ...scope })),
-    seesMaterials ? safe(reportRows(db, actor, { dataset: 'movements', ...scope, from, to })) : Promise.resolve(null),
+    seesMaterials ? safe(reportRows(db, actor, { dataset: 'movements', ...scope, from: prevFrom, to })) : Promise.resolve(null),
     seesCampaigns ? safe(reportRows(db, actor, { dataset: 'campaigns', ...scope })) : Promise.resolve(null),
     seesMaterials ? safe(reportRows(db, actor, { dataset: 'materials', ...scope })) : Promise.resolve(null),
     safe(risksWorkspace(db, actor, { organizationId, ...(projectId ? { projectId } : {}) })),
@@ -53,7 +59,7 @@ export async function managementDashboard(db: D1Database, rawActor: PortalActor 
     all(db, `SELECT s.title,s.starts_at,p.id project_id,p.name project FROM project_schedule_items s JOIN projects p ON p.id=s.project_id
       WHERE p.organization_id=? AND (? IS NULL OR p.id=?) AND s.status='planned' AND date(s.starts_at,'-3 hours') BETWEEN ? AND ? AND ${visible.sql} ORDER BY s.starts_at LIMIT 12`,
       [organizationId, projectId, projectId, today(), shift(today(), 45), ...visible.values]),
-    safe(activityFeed(db, actor, { from: activityFrom, to, ...(projectId ? { projectId } : {}) })),
+    safe(activityFeed(db, actor, { from: activityFrom, to, organizationId, types: 'materials,demands,agenda', ...(projectId ? { projectId } : {}) })),
   ]);
   const projectIds = new Set(projects.map(row => String(row.id)));
   const axis = months(from, to);
@@ -61,8 +67,17 @@ export async function managementDashboard(db: D1Database, rawActor: PortalActor 
   const completedAt = new Map(completions.map(row => [String(row.id), civil(row.at)]));
   const openDemands = demandRows.filter(row => ['open', 'in_progress', 'blocked'].includes(String(row.situacao)));
   const createdIn = demandRows.filter(row => String(row.data) >= from && String(row.data) <= to);
-  const completedIn = demandRows.filter(row => row.situacao === 'completed').map(row => completedAt.get(String(row.id)) || civil(row.atualizada_em)).filter(day => day >= from && day <= to);
-  const outflows = (movements?.rows ?? []).filter(row => Number(row.quantidade) < 0 && ['distribute', 'redeem'].includes(String(row.tipo)));
+  const completedDays = demandRows.filter(row => row.situacao === 'completed').map(row => completedAt.get(String(row.id)) || civil(row.atualizada_em));
+  const completedIn = completedDays.filter(day => day >= from && day <= to);
+  const allOutflows = (movements?.rows ?? []).filter(row => Number(row.quantidade) < 0 && ['distribute', 'redeem'].includes(String(row.tipo)));
+  const outflows = allOutflows.filter(row => civil(row.data) >= from && civil(row.data) <= to);
+  const units = (rows: Row[]) => rows.reduce((total, row) => total + Math.abs(Number(row.quantidade) || 0), 0);
+  const previous = {
+    from: prevFrom, to: prevTo,
+    demandsCreated: demandRows.filter(row => String(row.data) >= prevFrom && String(row.data) <= prevTo).length,
+    demandsCompleted: completedDays.filter(day => day >= prevFrom && day <= prevTo).length,
+    itemsOut: movements ? units(allOutflows.filter(row => civil(row.data) >= prevFrom && civil(row.data) <= prevTo)) : null,
+  };
   const campaignRows: Row[] = campaigns?.rows ?? [];
   const materialRows: Row[] = materials?.rows ?? [];
   const riskRows = risks?.risks ?? [];
@@ -91,17 +106,20 @@ export async function managementDashboard(db: D1Database, rawActor: PortalActor 
       demandsOpen: openDemands.length,
       demandsOverdue: demandRows.filter(row => row.em_atraso === 'sim').length,
       demandsHighOpen: openDemands.filter(row => row.prioridade === 'high').length,
+      demandsCreated: createdIn.length,
       demandsCompleted: completedIn.length,
-      itemsOut: outflows.reduce((total, row) => total + Math.abs(Number(row.quantidade) || 0), 0),
+      itemsOut: units(outflows),
       campaignsActive: campaigns ? campaignRows.filter(row => row.situacao === 'active').length : null,
       participations: campaigns ? campaignRows.filter(row => civil(row.inicio) >= from && civil(row.inicio) <= to).reduce((total, row) => total + (Number(row.participacoes) || 0), 0) : null,
       lowStock: materials ? materialRows.filter(row => row.situacao_estoque === 'baixo').length : null,
       risksOpen: risks ? openRisks.length : null,
       risksHigh: risks ? openRisks.filter(risk => risk.level === 'alto' || risk.level === 'critico').length : null,
+      risksCritical: risks ? openRisks.filter(risk => risk.level === 'critico').length : null,
       risksReviewOverdue: risks ? riskRows.filter(risk => risk.reviewOverdue).length : null,
     },
+    previous,
     demandsByMonth: axis.map(month => ({ month, created: createdIn.filter(row => String(row.data).startsWith(month)).length, completed: completedIn.filter(day => day.startsWith(month)).length })),
-    deliveriesByMonth: movements ? axis.map(month => ({ month, itemsOut: outflows.filter(row => String(row.data).startsWith(month)).reduce((total, row) => total + Math.abs(Number(row.quantidade) || 0), 0) })) : null,
+    deliveriesByMonth: movements ? axis.map(month => ({ month, itemsOut: units(outflows.filter(row => civil(row.data).startsWith(month))) })) : null,
     byProject: [...byProject.values()].map(entry => ({ ...entry, projectId: nameToId.get(entry.project) ?? '' })).filter(entry => !entry.projectId || projectIds.has(entry.projectId))
       .sort((a, b) => b.open - a.open || b.overdue - a.overdue).slice(0, 8),
     upcoming,

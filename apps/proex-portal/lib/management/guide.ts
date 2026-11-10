@@ -12,16 +12,19 @@ import { identifier, organizationAuthoritySql, organizationMemberSql, projectAut
  * Enquanto ninguém editou uma página, ela mostra o conteúdo inicial (guide-starter.ts).
  */
 
-export const GUIDE_BODY_LIMIT = 40000;
+export const GUIDE_BODY_LIMIT = 40000, GUIDE_DAILY_VERSIONS = 60;
 export type GuidePage = {
   slug: string; title: string; section: GuideSection; sectionLabel: string; position: number;
   version: number; updatedAt: string | null; updatedBy: string; isStarter: boolean; body: string; markdown: string;
 };
 
-/** Editor designado e ainda membro ativo da organização. */
+/**
+ * Editor designado com o mesmo vínculo ativo que tinha na designação. Quem sai da organização
+ * deixa de editar e não volta a editar só por ser convidado de novo: precisa de nova designação.
+ */
 function editorGuard(userId: string, organizationId: string) {
-  return { sql: `(EXISTS(SELECT 1 FROM org_guide_editors ge WHERE ge.organization_id=? AND ge.user_id=?) AND ${organizationMemberSql('?', '?')})`,
-    values: [organizationId, userId, userId, organizationId, organizationId] };
+  return { sql: `EXISTS(SELECT 1 FROM org_guide_editors ge WHERE ge.organization_id=? AND ge.user_id=? AND ${organizationMemberSql('ge.user_id', 'ge.organization_id', 'ge.created_at')})`,
+    values: [organizationId, userId] };
 }
 async function canEditGuide(db: D1Database, actor: PortalActor, organizationId: string, owner: boolean): Promise<boolean> {
   if (owner) return true;
@@ -35,14 +38,16 @@ const md = (text: unknown) => String(text ?? '').replace(/[\\*_`#[\]|<>]/g, char
 /** Blocos vivos: sempre lidos com as permissões de quem está vendo. */
 async function liveBlocks(db: D1Database, actor: PortalActor, organizationId: string): Promise<Record<string, string>> {
   const visible = projectAuthoritySql(actor, [], 'p.id');
+  // Dinâmicas: só quem já as vê no portal (gestão, operação ou relatórios), e só as ativas.
+  const campaignsVisible = projectAuthoritySql(actor, ['reports.read', 'campaigns.manage', 'participation.operate'], 'p.id');
   const [projects, upcoming, structure] = await Promise.all([
     all(db, `SELECT p.name,COALESCE(t.label,'') tipo,p.lifecycle,p.status FROM projects p LEFT JOIN project_types t ON t.id=p.type_id
       WHERE p.organization_id=? AND ${visible.sql} ORDER BY CASE p.lifecycle WHEN 'active' THEN 0 WHEN 'catalog' THEN 1 ELSE 2 END,p.name LIMIT 80`, [organizationId, ...visible.values]),
     all(db, `SELECT s.title titulo,s.starts_at inicio,p.name projeto FROM project_schedule_items s JOIN projects p ON p.id=s.project_id
       WHERE p.organization_id=? AND s.status<>'cancelled' AND date(s.starts_at,'-3 hours')>=date('now','-3 hours') AND date(s.starts_at,'-3 hours')<=date('now','-3 hours','+180 days') AND ${visible.sql}
       UNION ALL SELECT c.name,c.starts_at,p.name FROM campaigns c JOIN projects p ON p.id=c.project_id
-      WHERE p.organization_id=? AND c.status IN ('draft','active') AND date(c.starts_at,'-3 hours')>=date('now','-3 hours') AND date(c.starts_at,'-3 hours')<=date('now','-3 hours','+180 days') AND ${visible.sql}
-      ORDER BY 2 LIMIT 40`, [organizationId, ...visible.values, organizationId, ...visible.values]),
+      WHERE p.organization_id=? AND c.status='active' AND date(c.starts_at,'-3 hours')>=date('now','-3 hours') AND date(c.starts_at,'-3 hours')<=date('now','-3 hours','+180 days') AND ${campaignsVisible.sql}
+      ORDER BY 2 LIMIT 40`, [organizationId, ...visible.values, organizationId, ...campaignsVisible.values]),
     structureWorkspace(db, actor, { organizationId }).catch(() => null),
   ]);
   const lifecycle: Record<string, string> = { active: 'em andamento', past: 'encerrado', catalog: 'catálogo' };
@@ -86,7 +91,7 @@ export async function guideWorkspace(db: D1Database, rawActor: PortalActor | nul
   const editors = organization.owner ? await all(db, `SELECT ge.user_id userId,COALESCE(NULLIF(pr.display_name,''),'Integrante') name FROM org_guide_editors ge LEFT JOIN profiles pr ON pr.user_id=ge.user_id
     WHERE ge.organization_id=? ORDER BY name LIMIT 100`, [organizationId]) : [];
   const candidates = organization.owner ? await all(db, `SELECT DISTINCT m.user_id userId,COALESCE(NULLIF(pr.display_name,''),'Integrante') name FROM members m LEFT JOIN profiles pr ON pr.user_id=m.user_id LEFT JOIN portal_users u ON u.user_id=m.user_id
-    WHERE m.revoked_at IS NULL AND COALESCE(u.status,'active')='active' AND u.anonymized_at IS NULL AND (m.organization_id=? OR EXISTS(SELECT 1 FROM projects p WHERE p.id=m.project_id AND p.organization_id=?)) ORDER BY name LIMIT 300`, [organizationId, organizationId]) : [];
+    WHERE m.revoked_at IS NULL AND COALESCE(u.status,'active')='active' AND COALESCE(u.activation_pending,0)=0 AND u.anonymized_at IS NULL AND (m.organization_id=? OR EXISTS(SELECT 1 FROM projects p WHERE p.id=m.project_id AND p.organization_id=?)) ORDER BY name LIMIT 300`, [organizationId, organizationId]) : [];
   return { organization: { id: organizationId, name: organization.name }, canEdit, canManageEditors: organization.owner, pages, editors, candidates, liveBlocks: [...LIVE_BLOCKS] };
 }
 
@@ -120,7 +125,9 @@ export async function guideAction(db: D1Database, rawActor: PortalActor | null, 
     const write = input.action === 'editors.add'
       ? db.prepare(`INSERT OR IGNORE INTO org_guide_editors(organization_id,user_id,granted_by,created_at) SELECT ?,?,?,? WHERE (${owner.sql}) AND ${organizationMemberSql('?', '?')}`).bind(organizationId, userId, actor.userId, now, ...owner.values, userId, organizationId, organizationId)
       : db.prepare(`DELETE FROM org_guide_editors WHERE organization_id=? AND user_id=? AND (${owner.sql})`).bind(organizationId, userId, ...owner.values);
-    await db.batch([write, db.prepare(`INSERT INTO audit(id,actor_id,project_id,action,entity_id,details,created_at) SELECT ?,?,NULL,?,?,?,? WHERE changes()=1`).bind(uid(), actor.userId, `guide.${input.action}`, userId, JSON.stringify({ organizationId }), now)]);
+    const [result] = await db.batch([write, db.prepare(`INSERT INTO audit(id,actor_id,project_id,action,entity_id,details,created_at) SELECT ?,?,NULL,?,?,?,? WHERE changes()=1`).bind(uid(), actor.userId, `guide.${input.action}`, userId, JSON.stringify({ organizationId }), now)]);
+    if (input.action === 'editors.add' && result.meta.changes !== 1 && !await one(db, 'SELECT 1 ok FROM org_guide_editors WHERE organization_id=? AND user_id=?', [organizationId, userId]))
+      throw new HttpError(409, 'Essa pessoa não tem vínculo ativo com a organização.', 'guide_editor_not_member');
     return guideWorkspace(db, actor, { organizationId });
   }
 
@@ -129,7 +136,7 @@ export async function guideAction(db: D1Database, rawActor: PortalActor | null, 
   const slug = identifier(input.slug, 'a página');
   if (!/^[a-z0-9-]{1,80}$/.test(slug)) throw new HttpError(400, 'Endereço de página inválido.', 'invalid_guide_slug');
   const starter = starterBySlug(slug);
-  const current = await one(db, 'SELECT id,version,section,position FROM org_guide_pages WHERE organization_id=? AND slug=?', [organizationId, slug]);
+  const current = await one(db, 'SELECT id,version,section,position,title,body FROM org_guide_pages WHERE organization_id=? AND slug=?', [organizationId, slug]);
   let title: string, body: string, note: string;
   if (input.action === 'restore') {
     if (!current) throw new HttpError(404, 'Página sem histórico.', 'guide_not_found');
@@ -145,6 +152,10 @@ export async function guideAction(db: D1Database, rawActor: PortalActor | null, 
   const expected = Number(input.expectedVersion ?? 0);
   if (!Number.isSafeInteger(expected) || expected < 0) throw new HttpError(400, 'Atualize a página e tente de novo.', 'invalid_version');
   if ((current ? Number(current.version) : 0) !== expected) throw new HttpError(409, 'Outra pessoa salvou esta página antes. Atualize para ver a versão nova; seu texto continua no editor.', 'guide_conflict');
+  // Nada mudou: não cria versão nova. Limite diário de versões por página, contra gravações em massa.
+  if (current && String(current.title) === title && String(current.body) === body) return guideWorkspace(db, actor, { organizationId });
+  if (current && Number((await one(db, 'SELECT COUNT(*) n FROM org_guide_page_versions WHERE page_id=? AND created_at>=?', [current.id, new Date(Date.now() - 86400_000).toISOString()]))?.n) >= GUIDE_DAILY_VERSIONS)
+    throw new HttpError(429, 'Esta página já recebeu muitas versões hoje. Tente de novo amanhã.', 'guide_rate_limited');
   const section = (current?.section ?? starter?.section ?? 'referencias') as GuideSection;
   if (!current && !starter) throw new HttpError(404, 'Página não encontrada.', 'guide_not_found');
   const pageId = current ? String(current.id) : uid(), next = expected + 1;

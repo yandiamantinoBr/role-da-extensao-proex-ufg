@@ -9,6 +9,7 @@ import { identifier, organizationAuthoritySql, projectAuthoritySql, requireActor
  * dinâmica: quem vê o projeto lê; responsável ou gestor do projeto edita. Exemplos só entram quando a
  * administração pede ("Carregar exemplos") e ficam marcados como exemplo.
  */
+export const RISK_LIMIT = 500;
 export const RISK_CATEGORIES = ['operacional', 'tecnologia', 'pessoas', 'financeiro', 'reputacao', 'legal', 'outro'] as const;
 export const RISK_STATUSES = ['open', 'monitoring', 'mitigated', 'closed'] as const;
 export type RiskLevel = 'baixo' | 'moderado' | 'alto' | 'critico';
@@ -18,19 +19,29 @@ export function riskLevel(probability: number, impact: number): RiskLevel {
 }
 const todayBrasilia = () => new Date(Date.now() - 3 * 3600_000).toISOString().slice(0, 10);
 
+// Exemplos genéricos (sem nome de pessoa, conta ou arquivo): a organização ajusta datas e donos na tela.
 export const EXAMPLE_RISKS = [
-  { title: 'Portal e integrações dependem da conta pessoal do Yan', category: 'tecnologia', probability: 4, impact: 5, ownerLabel: 'Coordenação de TI (a definir)',
-    description: 'Hospedagem, banco e planilhas estão em contas pessoais. Se a conta for perdida ou o vínculo acabar, o portal pode parar.',
-    mitigation: 'Seguir o guia de migração para contas institucionais (docs/MIGRACAO-PARA-PROEX.md) e manter a cópia de segurança semanal.', reviewInDays: 14 },
-  { title: 'Credencial provisória vence em 30/11/2026', category: 'tecnologia', probability: 4, impact: 4, ownerLabel: 'Responsável pelo portal',
-    description: 'Uma credencial de integração foi criada com validade até 30/11/2026. Depois disso a integração para.',
+  { title: 'Portal hospedado em conta pessoal, não institucional', category: 'tecnologia', probability: 4, impact: 5, ownerLabel: 'Equipe de TI (a definir)',
+    description: 'Hospedagem, banco e planilhas do portal estão em contas pessoais. Se a conta for perdida ou o vínculo acabar, o portal pode parar.',
+    mitigation: 'Migrar para contas institucionais da PROEX, com mais de um responsável, e manter a cópia de segurança semanal.', reviewInDays: 14 },
+  { title: 'Credencial provisória de integração com vencimento próximo', category: 'tecnologia', probability: 4, impact: 4, ownerLabel: 'Responsável pelo portal',
+    description: 'Uma credencial de integração foi criada com validade curta. Quando vencer, a integração para.',
     mitigation: 'Trocar por credencial institucional antes do vencimento e registrar a troca.', reviewOn: '2026-11-23' },
-  { title: 'Cota de publicações da Vercel compartilhada', category: 'tecnologia', probability: 3, impact: 3, ownerLabel: 'Responsável pelo portal',
-    description: 'A cota diária de publicações é dividida com outro projeto. Muitas publicações num dia podem atrasar correções urgentes.',
-    mitigation: 'Juntar mudanças por PR, evitar publicar em horários de evento e planejar conta própria da PROEX.', reviewInDays: 30 },
-  { title: 'Planilha institucional fica inacessível', category: 'operacional', probability: 2, impact: 4, ownerLabel: 'Coordenação Administrativa',
-    description: 'Se a planilha mestre perder o compartilhamento ou a conta dona, a sincronização e os relatórios na planilha param.',
-    mitigation: 'Manter a planilha num drive institucional com mais de um dono e conferir a sincronização no painel.', reviewInDays: 30 },
+  { title: 'Limite diário de publicações do portal dividido com outro projeto', category: 'tecnologia', probability: 3, impact: 3, ownerLabel: 'Responsável pelo portal',
+    description: 'O serviço de hospedagem tem um limite diário de publicações, dividido com outro projeto. Muitas publicações num dia podem atrasar uma correção urgente.',
+    mitigation: 'Agrupar mudanças, evitar publicar durante eventos e planejar uma conta própria da PROEX.', reviewInDays: 30 },
+  { title: 'Planilha institucional fica inacessível', category: 'operacional', probability: 2, impact: 4, ownerLabel: 'Coordenação administrativa',
+    description: 'Se a planilha mestre perder o compartilhamento ou a conta dona, os relatórios feitos na planilha param.',
+    mitigation: 'Manter a planilha num drive institucional com mais de um dono e conferir a atualização no portal.', reviewInDays: 30 },
+  { title: 'Brindes acabam antes do fim de um evento', category: 'operacional', probability: 3, impact: 3, ownerLabel: 'Equipe de eventos',
+    description: 'Sem lote reservado por dia, o estoque de brindes pode acabar no primeiro dia de um evento longo.',
+    mitigation: 'Separar lotes por dia na dinâmica, acompanhar o estoque baixo no painel e definir um mínimo antes do evento.', reviewInDays: 30 },
+  { title: 'Ação ao ar livre prejudicada por chuva', category: 'operacional', probability: 3, impact: 2, ownerLabel: 'Coordenação do evento',
+    description: 'Estandes e atividades externas podem ser cancelados ou esvaziados em dia de chuva.',
+    mitigation: 'Ter local coberto alternativo, lonas e um plano de comunicação para avisar mudanças.', reviewInDays: 45 },
+  { title: 'Saída de bolsistas no meio do projeto', category: 'pessoas', probability: 3, impact: 3, ownerLabel: 'Orientação do projeto',
+    description: 'Quando um bolsista sai antes do fim, demandas ficam sem dono e o conhecimento se perde.',
+    mitigation: 'Registrar rotinas no guia e nas demandas, ter um substituto indicado e revisar as atribuições a cada mês.', reviewInDays: 60 },
 ] as const;
 
 function addDays(day: string, days: number): string { const date = new Date(`${day}T12:00:00Z`); date.setUTCDate(date.getUTCDate() + days); return date.toISOString().slice(0, 10); }
@@ -68,13 +79,15 @@ export async function risksWorkspace(db: D1Database, rawActor: PortalActor | nul
   const organization = await requireOrganizationMember(db, actor, organizationId);
   const owner = organizationAuthoritySql(actor, organizationId), read = projectAuthoritySql(actor, [], 'r.project_id'), manage = projectAuthoritySql(actor, ['campaigns.manage'], 'r.project_id');
   const filter = typeof input.projectId === 'string' && input.projectId ? identifier(input.projectId, 'o projeto') : null;
-  const rows = await all(db, `SELECT r.*,p.name project_name,c.name campaign_name,
+  // Nome da dinâmica só para quem já vê dinâmicas no projeto; os outros veem "Dinâmica".
+  const campaigns = projectAuthoritySql(actor, ['reports.read', 'campaigns.manage', 'participation.operate'], 'r.project_id');
+  const rows = await all(db, `SELECT r.*,p.name project_name,CASE WHEN c.id IS NULL THEN NULL WHEN ${campaigns.sql} THEN c.name ELSE 'Dinâmica' END campaign_name,
       CASE WHEN r.project_id IS NULL THEN (${owner.sql}) ELSE (${manage.sql}) OR (${owner.sql}) END can_edit
     FROM org_risks r LEFT JOIN projects p ON p.id=r.project_id LEFT JOIN campaigns c ON c.id=r.campaign_id
     WHERE r.organization_id=? AND ((r.project_id IS NULL AND (${owner.sql})) OR (r.project_id IS NOT NULL AND ${read.sql}))
       AND (? IS NULL OR r.project_id=?)
     ORDER BY CASE r.status WHEN 'closed' THEN 2 WHEN 'mitigated' THEN 1 ELSE 0 END,(r.probability*r.impact) DESC,r.review_on IS NULL,r.review_on,r.title LIMIT 500`,
-    [...owner.values, ...manage.values, ...owner.values, organizationId, ...owner.values, ...read.values, filter, filter]);
+    [...campaigns.values, ...owner.values, ...manage.values, ...owner.values, organizationId, ...owner.values, ...read.values, filter, filter]);
   const editableProjects = projectAuthoritySql(actor, ['campaigns.manage'], 'p.id'), visibleProjects = projectAuthoritySql(actor, [], 'p.id');
   const projects = await all(db, `SELECT p.id,p.name,(${editableProjects.sql}) can_edit FROM projects p WHERE p.organization_id=? AND p.status='active' AND ${visibleProjects.sql} ORDER BY p.name LIMIT 200`,
     [...editableProjects.values, organizationId, ...visibleProjects.values]);
@@ -99,9 +112,9 @@ export async function riskAction(db: D1Database, rawActor: PortalActor | null, i
     if (!organization.owner) throw new HttpError(403, 'Só a administração carrega exemplos.', 'risk_forbidden');
     if (await one(db, 'SELECT 1 FROM org_risks WHERE organization_id=? AND is_example=1', [organizationId])) throw new HttpError(409, 'Os exemplos já foram carregados.', 'risk_examples_loaded');
     const statements = EXAMPLE_RISKS.map(example => db.prepare(`INSERT INTO org_risks(id,organization_id,project_id,campaign_id,title,description,category,probability,impact,owner_label,mitigation,status,review_on,is_example,version,created_by,updated_by,created_at,updated_at)
-      SELECT ?,?,NULL,NULL,?,?,?,?,?,?,?,'open',?,1,1,?,?,?,? WHERE ${owner.sql}`)
+      SELECT ?,?,NULL,NULL,?,?,?,?,?,?,?,'open',?,1,1,?,?,?,? WHERE ${owner.sql} AND NOT EXISTS(SELECT 1 FROM org_risks WHERE organization_id=? AND is_example=1 AND created_at<>?)`)
       .bind(uid(), organizationId, example.title, example.description, example.category, example.probability, example.impact, example.ownerLabel, example.mitigation,
-        'reviewOn' in example ? example.reviewOn : addDays(today, example.reviewInDays), actor.userId, actor.userId, now, now, ...owner.values));
+        'reviewOn' in example ? example.reviewOn : addDays(today, example.reviewInDays), actor.userId, actor.userId, now, now, ...owner.values, organizationId, now));
     await db.batch(statements);
     return risksWorkspace(db, actor, { organizationId });
   }
@@ -139,6 +152,7 @@ export async function riskAction(db: D1Database, rawActor: PortalActor | null, i
     status: choice(input.status, RISK_STATUSES, 'uma situação', 'open'), reviewOn: reviewOn as string | null,
   };
   if (input.action === 'create') {
+    if (Number((await one(db, 'SELECT COUNT(*) n FROM org_risks WHERE organization_id=?', [organizationId]))?.n) >= RISK_LIMIT) throw new HttpError(409, `A organização já tem ${RISK_LIMIT} riscos. Encerre ou revise os antigos antes de criar outros.`, 'risk_limit');
     const guard = valueGuard(projectId);
     const id = uid();
     const results = await db.batch([

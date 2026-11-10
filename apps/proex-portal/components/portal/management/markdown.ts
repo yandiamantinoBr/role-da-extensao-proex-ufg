@@ -7,20 +7,29 @@ export type MdBlock =
   | { type: 'h1' | 'h2' | 'h3' | 'p'; inline: Inline[] }
   | { type: 'list'; ordered: boolean; items: { depth: number; inline: Inline[] }[] };
 
+// Só https: (endereços sem cadeado viram texto).
 function safeHref(value: string): string | undefined {
-  try { const url = new URL(value); return url.protocol === 'https:' || url.protocol === 'http:' ? url.toString() : undefined; } catch { return undefined; }
+  try { const url = new URL(value); return url.protocol === 'https:' ? url.toString() : undefined; } catch { return undefined; }
+}
+/** Domínio do link, para mostrar quando o texto não é o próprio endereço (evita rótulo enganoso). */
+export function linkHost(part: Inline): string | null {
+  if (!part.href) return null;
+  try { const host = new URL(part.href).hostname; return part.text.includes(host) ? null : host; } catch { return null; }
 }
 export function parseInline(source: string): Inline[] {
   const out: Inline[] = [];
-  let text = '', bold = false, italic = false;
+  let text = '', bold = false, italic = false, noLinkFrom = Infinity;
   const flush = () => { if (text) out.push({ text, ...(bold ? { bold } : {}), ...(italic ? { italic } : {}) }); text = ''; };
   for (let i = 0; i < source.length; i++) {
     const char = source[i];
     if (char === '\\' && i + 1 < source.length) { text += source[++i]; continue; }
     if (char === '*' && source[i + 1] === '*') { flush(); bold = !bold; i++; continue; }
     if (char === '_' && (i === 0 || /[\s(]/.test(source[i - 1]) || italic)) { flush(); italic = !italic; continue; }
-    if (char === '[') {
-      const close = source.indexOf('](', i), end = close >= 0 ? source.indexOf(')', close + 2) : -1;
+    if (char === '[' && i < noLinkFrom) {
+      // Busca limitada: texto com muitos "[" sem link não trava a leitura.
+      const window = source.slice(i, i + 2000), closeAt = window.indexOf(']('), endAt = closeAt >= 0 ? window.indexOf(')', closeAt + 2) : -1;
+      const close = closeAt >= 0 ? i + closeAt : -1, end = endAt >= 0 ? i + endAt : -1;
+      if (closeAt < 0 && i + 2000 >= source.length) noLinkFrom = i;
       if (close > i && end > close) {
         const label = source.slice(i + 1, close), href = safeHref(source.slice(close + 2, end));
         flush();
@@ -38,7 +47,7 @@ export function parseMarkdown(source: string): MdBlock[] {
   let paragraph: string[] = [];
   const flush = () => { if (paragraph.length) blocks.push({ type: 'p', inline: parseInline(paragraph.join(' ')) }); paragraph = []; };
   for (const raw of source.replace(/\r\n?/g, '\n').split('\n')) {
-    const line = raw.replace(/\s+$/, '');
+    const line = raw.trimEnd();
     const heading = /^(#{1,3})\s+(.*)$/.exec(line);
     const item = /^(\s*)([-*]|\d+\.)\s+(.*)$/.exec(line);
     if (!line.trim()) { flush(); continue; }

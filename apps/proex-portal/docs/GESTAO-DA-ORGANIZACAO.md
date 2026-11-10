@@ -6,7 +6,9 @@ Módulo **Gestão** no menu, com quatro abas. Aparece para quem tem projeto na o
 
 ## Painel
 
-Indicadores clicáveis, cada um levando ao detalhe:
+No topo, **Atenção agora** junta o que pede decisão: demandas em atraso, riscos críticos, revisões vencidas, estoque no limite e atividades dos próximos 7 dias. Se nada pede decisão, o painel diz isso.
+
+Indicadores clicáveis, cada um levando ao detalhe, com comparação com o período anterior de mesmo tamanho (demandas criadas, entregas e itens distribuídos):
 - demandas abertas, em atraso e entregues no período;
 - itens distribuídos;
 - dinâmicas ativas e participações;
@@ -39,7 +41,10 @@ Os **blocos vivos** são lidos na hora com as permissões de quem lê:
 Quem lê e quem edita:
 - quem tem vínculo com a organização lê;
 - a administração da organização edita;
-- a administração pode designar outros editores, e quem perde o vínculo deixa de editar.
+- a administração pode designar outros editores; quem perde o vínculo deixa de editar e, se voltar depois, precisa de nova designação;
+- links do guia só abrem endereços https, e o domínio aparece ao lado quando o texto do link é outro.
+
+Privacidade: na anonimização de uma conta, o nome dela some do histórico do guia e a designação de editor é apagada.
 
 Cada gravação cria uma versão com autor e nota do que mudou. Restaurar cria uma versão nova.
 
@@ -66,11 +71,16 @@ O nível sai da conta probabilidade × impacto:
 
 Uma revisão está vencida quando a data passou e o risco segue aberto ou em monitoramento.
 
-O botão "Carregar exemplos", da administração, cria 4 exemplos marcados como **Exemplo**:
-- conta pessoal do Yan;
-- credencial que vence em 30/11/2026;
-- cota da Vercel;
-- planilha inacessível.
+O botão "Carregar exemplos", da administração, cria 7 exemplos marcados como **Exemplo**, com texto genérico (sem nome de pessoa, de fornecedor ou de arquivo):
+- portal hospedado em conta pessoal;
+- credencial provisória com vencimento próximo (revisão marcada antes do vencimento);
+- limite diário de publicações dividido com outro projeto;
+- planilha institucional inacessível;
+- brindes que acabam antes do fim de um evento;
+- ação ao ar livre prejudicada por chuva;
+- saída de bolsistas no meio do projeto.
+
+Limites: até 500 riscos por organização; o guia aceita até 60 versões por página por dia e não grava versão quando nada mudou.
 
 Os exemplos podem ser apagados. Riscos reais não se apagam: são encerrados.
 
@@ -79,6 +89,7 @@ Os exemplos podem ser apagados. Riscos reais não se apagam: são encerrados.
 Seis modelos: Comunicação, Administrativo, Tecnologia/TI, Gestão, Eventos e Bolsistas de projeto. Cada um traz papéis, responsabilidades, acessos sugeridos e rotinas (`lib/management/team-templates.ts`).
 
 Na página **Equipes**, quem administra a organização usa "Começar de um modelo de equipe":
+- a pessoa escolhe o modelo, ajusta o nome e confirma; não se criam duas equipes ativas com o mesmo nome;
 - a equipe é criada vazia pelo mesmo `team.create`;
 - a equipe passa a mostrar os papéis do modelo;
 - pessoas e acessos continuam sendo decisões à parte.

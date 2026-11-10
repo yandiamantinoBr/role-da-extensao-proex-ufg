@@ -67,9 +67,16 @@ test('guide: members read starter pages with live blocks; only the administratio
     assert.deepEqual(history.versions.map(version => [version.version, version.author]), [[2, 'Pessoa Leitora'], [1, 'Pessoa Responsável']]);
     const restored = await guideAction(db, owner, { ...ORG, action: 'restore', slug: 'glossario', version: 1, expectedVersion: 2 });
     assert.match(restored.pages.find(entry => entry.slug === 'glossario').body, /explicação\.$/);
+    // Salvar sem mudança não cria versão nova.
+    const same = await guideAction(db, owner, { ...ORG, action: 'save', slug: 'glossario', title: 'Glossário da PROEX', body: '# Glossário\n\n- **Termo**: explicação.', expectedVersion: 3 });
+    assert.equal(same.pages.find(entry => entry.slug === 'glossario').version, 3);
     // Editor que perde o vínculo deixa de editar, mesmo continuando na lista.
     db.native.prepare('UPDATE members SET revoked_at=? WHERE user_id=?').run('2026-11-01T00:00:00Z', viewer.userId);
     await assert.rejects(guideAction(db, viewer, { ...ORG, action: 'save', slug: 'glossario', title: 'X', body: 'Y', expectedVersion: 3 }), error => error.status === 404);
+    // Convidado de novo depois: lê, mas só volta a editar com nova designação.
+    db.native.prepare("INSERT INTO members(id,user_id,email,role,project_id,organization_id,revoked_at,created_at) VALUES(?,?,'',?,?,NULL,NULL,?)").run(crypto.randomUUID(), viewer.userId, 'viewer', 'project-a', new Date(Date.now() + 1000).toISOString());
+    assert.equal((await guideWorkspace(db, viewer, ORG)).canEdit, false);
+    await assert.rejects(guideAction(db, viewer, { ...ORG, action: 'save', slug: 'glossario', title: 'X', body: 'Y', expectedVersion: 3 }), error => error.status === 403);
     const forRole = await guideForAssistant(db, owner, 'org_proex');
     assert.equal(forRole.length, 11);
     assert.ok(forRole.every(page => typeof page.markdown === 'string' && !page.markdown.includes('{{')));
@@ -82,7 +89,8 @@ test('risks: organization risks only for the administration, project risks for p
   try {
     const owner = actor(db, 'owner'), manager = actor(db, 'manager', 'project-a'), viewer = actor(db, 'viewer', 'project-a'), other = actor(db, 'viewer', 'project-b');
     const loaded = await riskAction(db, owner, { ...ORG, action: 'examples.load' });
-    assert.equal(loaded.risks.length, 4);
+    assert.equal(loaded.risks.length, 7);
+    assert.ok(loaded.risks.every(risk => !/Yan|Vercel|docs\//.test(`${risk.title} ${risk.description} ${risk.mitigation}`)), 'examples carry no personal names, providers or file paths');
     assert.ok(loaded.risks.every(risk => risk.isExample && risk.projectId === null && risk.canEdit));
     assert.equal(loaded.canLoadExamples, false);
     await assert.rejects(riskAction(db, owner, { ...ORG, action: 'examples.load' }), error => error.status === 409);
@@ -100,7 +108,7 @@ test('risks: organization risks only for the administration, project risks for p
     await assert.rejects(riskAction(db, manager, { ...ORG, action: 'delete', id: risk.id, expectedVersion: 2 }), error => error.status === 409);
     const example = loaded.risks[0];
     const afterDelete = await riskAction(db, owner, { ...ORG, action: 'delete', id: example.id, expectedVersion: 1 });
-    assert.equal(afterDelete.risks.filter(entry => entry.isExample).length, 3);
+    assert.equal(afterDelete.risks.filter(entry => entry.isExample).length, 6);
     assert.equal(riskLevel(5, 5), 'critico');
     assert.equal(riskLevel(1, 4), 'baixo');
     await assert.rejects(riskAction(db, manager, { ...ORG, action: 'create', projectId: 'project-x', title: 'Outro', probability: 1, impact: 1 }), error => error.status === 400);
@@ -120,6 +128,9 @@ test('team templates: the administration applies a model as an empty team; other
     assert.equal(db.native.prepare('SELECT COUNT(*) n FROM followup_team_members WHERE team_id=?').get(applied.teamId).n, 0);
     assert.deepEqual(applied.applications.map(row => ({ ...row })), [{ teamId: applied.teamId, templateId: 'eventos' }]);
     await assert.rejects(applyTeamTemplate(db, owner, { ...ORG, templateId: 'inexistente', operationKey: crypto.randomUUID() }), error => error.status === 400);
+    await assert.rejects(applyTeamTemplate(db, owner, { ...ORG, templateId: 'eventos', operationKey: crypto.randomUUID() }), error => error.status === 409, 'a second team with the same name is refused');
+    const named = await applyTeamTemplate(db, owner, { ...ORG, templateId: 'eventos', name: 'Eventos do CONPEEX', operationKey: crypto.randomUUID() });
+    assert.equal(db.native.prepare('SELECT name FROM followup_teams WHERE id=?').get(named.teamId).name, 'Eventos do CONPEEX');
   } finally { db.native.close(); }
 });
 
@@ -130,11 +141,12 @@ test('dashboard: aggregates only what each person can see, with links to the det
     await riskAction(db, owner, { ...ORG, action: 'examples.load' });
     const full = await managementDashboard(db, owner, ORG);
     assert.equal(full.kpis.demandsOpen, 2);
-    assert.equal(full.kpis.risksOpen, 4);
+    assert.equal(full.kpis.risksOpen, 7);
     assert.equal(full.kpis.lowStock, 1);
     assert.equal(full.lowStock[0].href, '/?module=materials&project=project-a');
     assert.equal(full.upcoming[0].title, 'Oficina futura');
-    assert.equal(full.risks.matrix.flat().reduce((sum, value) => sum + value, 0), 4);
+    assert.equal(full.risks.matrix.flat().reduce((sum, value) => sum + value, 0), 7);
+    await assert.rejects(managementDashboard(db, owner, { ...ORG, projectId: 'project-x' }), error => error.status === 404, 'projects from another organization are refused');
     const asViewer = await managementDashboard(db, viewer, ORG);
     assert.equal(asViewer.kpis.demandsOpen, 1);
     assert.equal(asViewer.kpis.risksOpen, 0, 'organization risks stay with the administration');

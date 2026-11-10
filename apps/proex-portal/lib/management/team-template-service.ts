@@ -1,5 +1,5 @@
 import type { PortalActor } from '../access';
-import { all, iso } from '../database';
+import { all, iso, one } from '../database';
 import { HttpError } from '../errors';
 import { followupAction } from '../follow-up/service';
 import { identifier, organizationAuthoritySql, requireActor, requireOrganizationMember } from './scope';
@@ -23,6 +23,8 @@ export async function applyTeamTemplate(db: D1Database, rawActor: PortalActor | 
   if (!template) throw new HttpError(400, 'Escolha um modelo de equipe.', 'invalid_team_template');
   const name = typeof input.name === 'string' && input.name.trim() ? input.name.replace(/\s+/g, ' ').trim().slice(0, 100) : template.name;
   if (typeof input.operationKey !== 'string') throw new HttpError(400, 'Atualize a página e tente de novo.', 'invalid_operation');
+  if (await one(db, "SELECT 1 ok FROM followup_teams WHERE organization_id=? AND status='active' AND lower(trim(name))=lower(?)", [organizationId, name]))
+    throw new HttpError(409, `Já existe uma equipe chamada “${name}”. Escolha outro nome.`, 'team_name_taken');
   const created = await followupAction(db, actor, 'team.create', { action: 'team.create', organizationId, name, userIds: [], operationKey: input.operationKey });
   const teamId = String(created.teamId ?? '');
   if (!teamId) throw new HttpError(500, 'A equipe não foi criada.', 'team_template_failed');

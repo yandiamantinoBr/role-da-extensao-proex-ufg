@@ -3,9 +3,10 @@ import { one } from '../database';
 import { HttpError } from '../errors';
 
 /** Pessoa ativa com qualquer vínculo na organização (projeto dela, a própria organização ou responsável global). */
-export function organizationMemberSql(userSql: string, organizationSql: string): string {
+export function organizationMemberSql(userSql: string, organizationSql: string, memberSinceSql?: string): string {
+  // memberSinceSql: o vínculo ativo precisa existir desde essa data (ex.: designação de editor).
   return `EXISTS(SELECT 1 FROM members om LEFT JOIN portal_users ou ON ou.user_id=om.user_id
-    WHERE om.user_id=${userSql} AND om.revoked_at IS NULL
+    WHERE om.user_id=${userSql} AND om.revoked_at IS NULL${memberSinceSql ? ` AND om.created_at<=${memberSinceSql}` : ''}
     AND COALESCE(ou.status,'active')='active' AND COALESCE(ou.activation_pending,0)=0 AND ou.anonymized_at IS NULL
     AND ((om.role='owner' AND om.project_id IS NULL AND om.organization_id IS NULL) OR om.organization_id=${organizationSql}
       OR EXISTS(SELECT 1 FROM projects op WHERE op.id=om.project_id AND op.organization_id=${organizationSql})))`;
