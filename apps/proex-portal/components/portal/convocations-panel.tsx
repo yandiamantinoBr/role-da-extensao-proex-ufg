@@ -7,11 +7,11 @@ import DateField from './date-field';
 import styles from './convocations.module.css';
 
 type Counts = { yes: number; maybe: number; no: number };
-type Summary = { id: string; title: string; edition: string; location: string; eventDate: string; responseDeadline: string | null; status: string; projectName: string; purged: boolean; scope: 'full' | 'projects'; counts: Counts; silentProjects: number };
+type Summary = { id: string; title: string; edition: string; location: string; eventDate: string; responseDeadline: string | null; status: string; projectName: string; purged: boolean; retentionExpired?: boolean; scope: 'full' | 'projects'; counts: Counts; silentProjects: number };
 type Prefs = Record<'digest' | 'reminder' | 'response', Record<'bell' | 'email' | 'whatsapp', boolean>>;
 type Channels = Record<'bell' | 'email' | 'whatsapp', { enabled: boolean; label: string; requires?: string }>;
 type Detail = {
-  convocation: { id: string; title: string; edition: string; location: string; eventDate: string; responseDeadline: string | null; description: string; purposeNotice: string; retentionDays: number; status: string; version: number; projectId: string; purgedAt: string | null };
+  convocation: { id: string; title: string; edition: string; location: string; eventDate: string; responseDeadline: string | null; description: string; purposeNotice: string; retentionDays: number; retentionEndsOn: string | null; retentionExpired: boolean; status: string; version: number; projectId: string; purgedAt: string | null };
   scope: 'full' | 'projects'; permissions: { canManage: boolean };
   shifts: { id: string; label: string; startsAt: string; endsAt: string }[];
   projects: { id: string; name: string; yes: number; maybe: number; no: number; answered: boolean }[];
@@ -62,6 +62,7 @@ export default function ConvocationsPanel({ projects, initialId = '' }: { projec
         {item.edition && <span className={styles.cardEdition}>{item.edition}</span>}
         <span className={styles.cardMeta}><span><CalendarDays size={14} aria-hidden="true"/>{dateLabel(item.eventDate)}</span>{item.location && <span><MapPin size={14} aria-hidden="true"/>{item.location}</span>}<span><Users size={14} aria-hidden="true"/>{item.scope === 'projects' ? 'Seus projetos' : item.projectName}</span></span>
         <Tally counts={item.counts} silent={item.silentProjects}/>
+        {item.retentionExpired && <span className={styles.silent}>Prazo de guarda vencido: apague os dados</span>}
       </button></li>)}</ul>
       : <div className={styles.empty}><ClipboardCheck size={30} aria-hidden="true"/><strong>Nenhuma convocação ainda</strong><span>{manageable.length ? 'Crie a primeira para gerar o link de confirmação de presença.' : 'Quando você for convidado(a) a acompanhar uma convocação, ela aparece aqui.'}</span></div>}
   </div>;
@@ -166,6 +167,7 @@ function ConvocationDetail({ id, preferences, channels, onBack, onPreferences }:
       {data.scope === 'projects' && <p className={styles.scopeNote}>Você vê só as respostas dos projetos que acompanha.</p>}
     </header>
     <dl className={styles.kpis}><div><dt>Vão</dt><dd className={styles.yes}>{counts.yes}</dd></div><div><dt>Talvez</dt><dd className={styles.maybe}>{counts.maybe}</dd></div><div><dt>Não vão</dt><dd className={styles.no}>{counts.no}</dd></div><div title="Projetos convidados que ainda não responderam"><dt>Sem resposta</dt><dd className={silent.length ? styles.silentNumber : ''}>{silent.length}</dd></div></dl>
+    {c.retentionExpired && !c.purgedAt && <p className={styles.error} role="status">O prazo de guarda terminou em {c.retentionEndsOn?.split('-').reverse().join('/')}. Os links pessoais já não funcionam. {manage ? 'Apague os dados dos convidados em Configurar.' : 'Peça à coordenação para apagar os dados.'}</p>}
     {error && <p className={styles.error} role="alert">{error}</p>}{notice && <p className={styles.notice} role="status">{notice}</p>}
     <nav className={styles.tabs} aria-label="Partes da convocação">{tabs.map(([key, label]) => <button key={key} type="button" aria-pressed={tab === key} onClick={event => { setTab(key); event.currentTarget.scrollIntoView({ block: 'nearest', inline: 'center' }); }}>{label}</button>)}</nav>
     {tab === 'projects' && <section aria-label="Respostas por projeto"><ul className={styles.rows}>{data.projects.map(project => <li key={project.id}><span className={styles.rowMain}><strong>{project.name}</strong>{project.answered ? <Tally counts={project}/> : <span className={styles.silent}>Não respondeu</span>}</span></li>)}</ul></section>}
@@ -201,7 +203,7 @@ function ConvocationDetail({ id, preferences, channels, onBack, onPreferences }:
       </fieldset></form>}
       <div className={styles.danger}>
         {!c.purgedAt && <p><strong>{c.status === 'open' ? 'Encerrar respostas' : 'Reabrir respostas'}</strong><span>{c.status === 'open' ? 'Ninguém mais responde nem altera. Os links param de funcionar.' : 'Os links ainda válidos voltam a aceitar respostas.'}</span><button type="button" className="p-button p-button-subtle" disabled={busy} onClick={() => void act({ action: 'convocation.update', id: c.id, expectedVersion: c.version, status: c.status === 'open' ? 'closed' : 'open' }, c.status === 'open' ? 'Respostas encerradas.' : 'Respostas reabertas.')}>{c.status === 'open' ? 'Encerrar' : 'Reabrir'}</button></p>}
-        {!c.purgedAt && <p><strong>Apagar os dados dos convidados</strong><span>Remove nome, matrícula e respostas de todos. Fica só o histórico com números. Faça isso após o prazo de guarda ({c.retentionDays} dias).</span>{confirmPurge ? <span className={styles.actions}><button type="button" className="p-button p-button-danger" disabled={busy} onClick={() => void act({ action: 'convocation.purge', id: c.id, expectedVersion: c.version, confirmed: true }, 'Dados dos convidados apagados.').then(() => setConfirmPurge(false))}><Trash2 size={16} aria-hidden="true"/>Apagar definitivamente</button><button type="button" className="p-button p-button-subtle" onClick={() => setConfirmPurge(false)}>Cancelar</button></span> : <button type="button" className="p-button p-button-subtle" onClick={() => setConfirmPurge(true)}><Trash2 size={16} aria-hidden="true"/>Apagar dados</button>}</p>}
+        {!c.purgedAt && <p><strong>Apagar os dados dos convidados</strong><span>Remove nome, matrícula e respostas de todos. Fica só o histórico com números. Faça isso ao fim do prazo de guarda, em {c.retentionEndsOn?.split('-').reverse().join('/')} ({c.retentionDays} dias após a ação); nessa data os links pessoais deixam de funcionar.</span>{confirmPurge ? <span className={styles.actions}><button type="button" className="p-button p-button-danger" disabled={busy} onClick={() => void act({ action: 'convocation.purge', id: c.id, expectedVersion: c.version, confirmed: true }, 'Dados dos convidados apagados.').then(() => setConfirmPurge(false))}><Trash2 size={16} aria-hidden="true"/>Apagar definitivamente</button><button type="button" className="p-button p-button-subtle" onClick={() => setConfirmPurge(false)}>Cancelar</button></span> : <button type="button" className="p-button p-button-subtle" onClick={() => setConfirmPurge(true)}><Trash2 size={16} aria-hidden="true"/>Apagar dados</button>}</p>}
         {c.purgedAt && <p><strong>Dados apagados</strong><span>Em {when(c.purgedAt)}. A convocação fica só com o histórico.</span></p>}
       </div>
     </section>}
