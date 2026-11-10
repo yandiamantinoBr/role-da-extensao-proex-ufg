@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test, { after } from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -20,6 +20,9 @@ for (const name of ['access', 'database', 'errors', 'portal-data', 'users', 'mut
   }).outputText.replace(/from '(\.\/[^']+)'/g, (_, path) => `from '${path}.js'`);
   writeFileSync(join(temporary, `${name}.js`), output);
 }
+// A Agenda (calendar.ts) confere turnos e prazos com a regra de Demandas (follow-up/scope.ts).
+mkdirSync(join(temporary, 'follow-up'));
+writeFileSync(join(temporary, 'follow-up', 'scope.js'), ts.transpileModule(readFileSync(new URL('../lib/follow-up/scope.ts', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText.replace(/from '(\.\.\/[^']+)'/g, (_, path) => `from '${path}.js'`));
 writeFileSync(join(temporary, 'native-auth.js'), 'export async function getChatGPTUser(){return globalThis.__proexReportTestUser ?? null;}');
 writeFileSync(join(temporary, 'session.js'), 'export async function getPortalUser(){return globalThis.__proexReportTestUser ?? null;}');
 writeFileSync(join(temporary, 'platform.js'), 'export function database(){return globalThis.__proexReportTestDatabase;} export function ownerEmail(){return undefined;} export function portalOrigin(){return globalThis.__proexReportTestOrigin;}');

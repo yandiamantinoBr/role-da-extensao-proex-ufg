@@ -206,3 +206,13 @@ test('month days announce all visible categories and update the label together w
     assert.equal(nodes(button(10)).filter(node => node.type === 'em').length, 1);
   } finally { h.dispose(); }
 });
+
+test('an empty agenda explains what appears there for this access (P7, 10/11/2026)', async () => {
+  const h = harness();
+  try {
+    h.respond(h.requests[0], { entries: [], feeds: [], availableCategories: ['materials', 'deadlines'] });
+    await tick(); h.render();
+    assert.match(h.body(), /Nada na Agenda neste período/);
+    assert.match(h.body(), /Aqui aparecem materiais e prazos de demandas dos projetos que você acompanha/);
+  } finally { h.dispose(); }
+});

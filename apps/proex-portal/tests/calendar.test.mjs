@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test, { after } from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -18,6 +18,9 @@ function compile(source) {
 for (const name of ['access', 'database', 'errors', 'http', 'calendar', 'mutations', 'civil-date', 'movement-ledger']) {
   writeFileSync(join(directory, `${name}.js`), compile(readFileSync(new URL(`../lib/${name}.ts`, import.meta.url), 'utf8')));
 }
+// A Agenda confere a leitura de turnos e prazos com a mesma regra de Demandas (lib/follow-up/scope.ts).
+mkdirSync(join(directory, 'follow-up'));
+writeFileSync(join(directory, 'follow-up', 'scope.js'), compile(readFileSync(new URL('../lib/follow-up/scope.ts', import.meta.url), 'utf8')).replace(/from '(\.\.\/[^']+)'/g, (_, path) => `from '${path}.js'`));
 writeFileSync(join(directory, 'session.js'), 'export async function getPortalUser(){return globalThis.__calendarUser ?? null;}');
 writeFileSync(join(directory, 'platform.js'), 'export function database(){return globalThis.__calendarDb;}');
 for (const [file, name] of [['../app/api/calendar/route.ts', 'route'], ['../app/api/calendar/feed/[token]/route.ts', 'feed-route']]) {
@@ -72,7 +75,7 @@ function post(action, values = {}, origin = 'https://portal.example.test') { ret
 test('calendar uses real dates, scopes all categories and projects, and omits personal/freeform fields', async t => {
   const f = fixture(t), manager = await actor(f, 'manager');
   const result = await calendar.calendarEntries(f.db, manager, { range });
-  assert.equal(result.availableCategories.length, 4);
+  assert.equal(result.availableCategories.length, 5, 'inclui Prazos de demandas (R7)');
   assert.ok(result.entries.length >= 6);
   assert.ok(result.entries.every(entry => entry.projectId === 'project-a'));
   assert.ok(!/PRIVATE|SECRET|@example\.test|borrower|contact|object_key|body|note/.test(JSON.stringify(result)));
@@ -100,8 +103,9 @@ test('organizational unit filter narrows every category and the ICS download wit
 
 test('category access follows domain capability and revoked memberships stop reads', async t => {
   const f = fixture(t), inventory = await actor(f, 'inventory'), viewer = await actor(f, 'viewer'), operator = await actor(f, 'operator');
-  assert.deepEqual((await calendar.calendarEntries(f.db, inventory, { range })).availableCategories, ['materials', 'consumption']);
-  assert.deepEqual((await calendar.calendarEntries(f.db, viewer, { range })).availableCategories, ['projects']);
+  assert.deepEqual((await calendar.calendarEntries(f.db, inventory, { range })).availableCategories, ['materials', 'consumption', 'deadlines']);
+  assert.deepEqual((await calendar.calendarEntries(f.db, viewer, { range })).availableCategories, ['projects', 'deadlines']);
+  assert.equal(calendar.calendarAvailable(operator), false, 'o operador de evento continua sem Agenda (PR89)');
   await assert.rejects(calendar.calendarEntries(f.db, inventory, { range, category: 'loans' }), error => error.status === 403);
   await assert.rejects(calendar.calendarEntries(f.db, operator, { range }), error => error.status === 403);
   f.sqlite.prepare('UPDATE members SET revoked_at=? WHERE user_id=?').run(timestamp, inventory.userId);
@@ -327,4 +331,70 @@ test('material calendar uses the declared occurrence and preserves separate reco
  for(const row of result.entries){assert.equal(row.startsAt,'2026-10-11');assert.equal(row.endsAt,'2026-10-12');}
  assert.doesNotMatch(JSON.stringify(result),/PRIVATE SEI|PRIVATE BENEFICIARY|PRIVATE NOTE|PRIVATE ACTOR/);
  const registered=await calendar.calendarEntries(f.db,inventory,{category:'consumption',projectId:'project-a',range:calendar.calendarRange('2026-10-19','2026-10-19')});assert.equal(registered.entries.length,1);
+});
+
+// R7 (revisão geral de 09/11, aprovada em 10/11/2026): turnos das dinâmicas e prazos de demanda na Agenda.
+function workFixture(t) {
+  const f = fixture(t);
+  // Os projetos sintéticos já nascem na organização padrão das migrações (org_proex).
+  for (const suffix of ['a', 'b']) f.insert('campaign_planning', { campaign_id: `campaign-${suffix}`, version: 1, created_at: timestamp, updated_at: timestamp });
+  const shift = (id, suffix, extra) => f.insert('campaign_sessions', { id, campaign_id: `campaign-${suffix}`, session_date: '2026-10-21', ordinal: 1, label: '', status: 'tentative', note: 'PRIVATE SHIFT NOTE', created_at: timestamp, updated_at: timestamp, ...extra });
+  shift('shift-a-1', 'a', { starts_at: '13:30', ends_at: '15:00', label: 'Tarde', status: 'confirmed' });
+  shift('shift-a-2', 'a', { ordinal: 2, session_date: '2026-10-22' });
+  shift('shift-a-3', 'a', { ordinal: 3, starts_at: '20:00', ends_at: '22:30', status: 'cancelled' });
+  shift('shift-b-1', 'b', { label: 'SECRET SHIFT' });
+  const task = (id, extra) => f.insert('followup_tasks', { id, title: 'Conferir brindes', body: 'PRIVATE TASK BODY', priority: 'high', status: 'open', due_at: '2026-10-23', created_by: 'PRIVATE ACTOR', created_at: timestamp, updated_at: timestamp, ...extra });
+  task('task-a', { organization_id: 'org_proex', project_id: 'project-a' });
+  task('task-org', { organization_id: 'org_proex', project_id: null, title: 'Planejamento da organização' });
+  task('task-b', { organization_id: 'org_proex', project_id: 'project-b', title: 'SECRET TASK' });
+  task('task-late', { organization_id: 'org_proex', project_id: 'project-a', due_at: '2026-12-01' });
+  task('task-done', { organization_id: 'org_proex', project_id: 'project-a', status: 'completed', title: 'Entregue' });
+  return f;
+}
+
+test('dynamic shifts appear in the agenda with Brasília times, all-day without time and cancellation, without free notes', async t => {
+  const f = workFixture(t), manager = await actor(f, 'manager');
+  const result = await calendar.calendarEntries(f.db, manager, { range, category: 'projects' });
+  const shifts = result.entries.filter(entry => entry.sourceKind === 'campaign-session');
+  assert.deepEqual(shifts.map(entry => entry.title).sort(), ['Turno · 2º turno · Evento a', 'Turno · 3º turno · Evento a', 'Turno · Tarde · Evento a']);
+  const afternoon = shifts.find(entry => entry.title.includes('Tarde'));
+  assert.equal(afternoon.startsAt, '2026-10-21T16:30:00.000Z'); assert.equal(afternoon.endsAt, '2026-10-21T18:00:00.000Z'); assert.equal(afternoon.allDay, false);
+  const allDay = shifts.find(entry => entry.title.includes('2º'));
+  assert.equal(allDay.allDay, true); assert.equal(allDay.startsAt, '2026-10-22'); assert.equal(allDay.endsAt, '2026-10-23');
+  const night = shifts.find(entry => entry.title.includes('3º'));
+  assert.equal(night.status, 'CANCELLED'); assert.equal(night.endsAt, '2026-10-22T01:30:00.000Z', '22:30 em Brasília');
+  assert.ok(!/PRIVATE|SECRET/.test(JSON.stringify(result)), 'nem nota do turno nem turno de outro projeto');
+});
+
+test('demand deadlines appear only for demands the person can already read, and org-wide ones only without a project filter', async t => {
+  const f = workFixture(t), viewer = await actor(f, 'viewer'), owner = await actor(f, 'owner');
+  const mine = await calendar.calendarEntries(f.db, viewer, { range, category: 'deadlines' });
+  assert.deepEqual(mine.entries.map(entry => entry.title).sort(), ['Prazo · Conferir brindes', 'Prazo · Entregue']);
+  const deadline = mine.entries.find(entry => entry.sourceId === 'task-a');
+  assert.equal(deadline.allDay, true); assert.equal(deadline.startsAt, '2026-10-23'); assert.equal(deadline.endsAt, '2026-10-24');
+  assert.equal(mine.entries.find(entry => entry.sourceId === 'task-done').state, 'done');
+  assert.ok(!/PRIVATE|SECRET/.test(JSON.stringify(mine)), 'sem corpo da demanda nem demanda de outro projeto');
+  // A demanda da organização inteira exige autoridade na organização: a dona da plataforma vê, quem é só do projeto não.
+  const all = await calendar.calendarEntries(f.db, owner, { range, category: 'deadlines' });
+  assert.ok(all.entries.some(entry => entry.sourceId === 'task-org' && entry.projectId === ''));
+  assert.ok(!(await calendar.calendarEntries(f.db, owner, { range, category: 'deadlines', projectId: 'project-a' })).entries.some(entry => entry.sourceId === 'task-org'));
+  assert.ok(!all.entries.some(entry => entry.sourceId === 'task-late'), 'fora do período');
+  // Perdeu o vínculo: o prazo some, mesmo com a sessão antiga.
+  f.sqlite.prepare('UPDATE members SET revoked_at=? WHERE user_id=?').run(timestamp, viewer.userId);
+  assert.deepEqual((await calendar.calendarEntries(f.db, viewer, { range, category: 'deadlines' })).entries, []);
+});
+
+test('deadlines respect the 10,000-entry limit like every other category', async t => {
+  const f = workFixture(t), owner = await actor(f, 'owner');
+  const insert = f.sqlite.prepare("INSERT INTO followup_tasks(id,organization_id,project_id,title,body,priority,status,due_at,created_by,created_at,updated_at) VALUES(?,'org_proex','project-a','Prazo sintético','','low','open','2026-10-24','ACTOR',?,?)");
+  f.sqlite.exec('BEGIN'); for (let index = 0; index < 10001; index++) insert.run(`bulk-${index}`, timestamp, timestamp); f.sqlite.exec('COMMIT');
+  await assert.rejects(calendar.calendarEntries(f.db, owner, { range, category: 'deadlines' }), error => error.status === 422);
+  await assert.rejects(calendar.calendarEntries(f.db, owner, { range }), error => error.status === 422, 'também com todas as categorias');
+});
+
+test('shifts of draft dynamics stay out like the draft event itself', async t => {
+  const f = workFixture(t), manager = await actor(f, 'manager');
+  f.sqlite.prepare("UPDATE campaigns SET status='draft' WHERE id='campaign-a'").run();
+  const result = await calendar.calendarEntries(f.db, manager, { range, category: 'projects' });
+  assert.ok(!result.entries.some(entry => entry.sourceKind === 'campaign-session'));
 });

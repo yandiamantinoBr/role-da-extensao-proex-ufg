@@ -3,11 +3,12 @@ import { accessibleProjects, getActor, writeAudit, projectAuthoritySql, type Por
 import { all, one, type Row } from './database';
 import { HttpError } from './errors';
 import { isCivilDate, offsetCivilDate } from './civil-date';
+import { authority as workAuthority } from './follow-up/scope';
 
-export const CALENDAR_CATEGORIES = ['loans', 'materials', 'projects', 'consumption'] as const;
+export const CALENDAR_CATEGORIES = ['loans', 'materials', 'projects', 'consumption', 'deadlines'] as const;
 export type CalendarCategory = typeof CALENDAR_CATEGORIES[number];
 export const CALENDAR_LABELS: Record<CalendarCategory, string> = {
-  loans: 'Empréstimos', materials: 'Materiais', projects: 'Projetos e eventos', consumption: 'Consumo',
+  loans: 'Empréstimos', materials: 'Materiais', projects: 'Projetos e eventos', consumption: 'Consumo', deadlines: 'Prazos de demandas',
 };
 export type CalendarEntry = {
   uid: string; sourceId: string; sourceKind: string; projectId: string; projectName: string;
@@ -19,10 +20,19 @@ export type CalendarEntry = {
 };
 export type CalendarRange = { from: string; to: string; startsAt: string; endsAt: string; timezone: string };
 const DAY = 86_400_000;
+/** Estados em português no .ics (demandas, turnos, empréstimos, projetos e eventos). */
+const STATE_LABELS: Record<string, string> = {
+  open: 'Aberta', in_progress: 'Em andamento', blocked: 'Bloqueada', done: 'Concluída', cancelled: 'Cancelado', tentative: 'A confirmar',
+  confirmed: 'Confirmado', active: 'Ativo', paused: 'Pausado', closed: 'Encerrado', archived: 'Arquivado', reserved: 'Reservado',
+  out: 'Retirado', returned: 'Devolvido', late: 'Atrasado', recorded: 'Registrado',
+};
 const MAX_ENTRIES = 10_000;
 const capabilities: Record<CalendarCategory, string[]> = {
   loans: ['loans.read'], materials: ['inventory.read'],
   projects: ['reports.read', 'campaigns.manage'], consumption: ['inventory.read'],
+  // Prazos de demandas (R7, 10/11/2026): papéis que já usam a Agenda. Cada linha confere ainda a leitura da
+  // demanda (mesma regra de Demandas). O operador de evento continua sem Agenda (PR89).
+  deadlines: ['reports.read', 'campaigns.manage', 'inventory.read', 'loans.read'],
 };
 
 function categoryValue(value: unknown): CalendarCategory {
@@ -94,6 +104,13 @@ function entry(row: Row, category: CalendarCategory, sourceKind: string, allDay 
   };
 }
 
+/** Turno com horário vira compromisso marcado; sem horário, dia inteiro. O banco exige início e fim juntos e início antes do fim. */
+function shiftEntry(row: Row, category: CalendarCategory): CalendarEntry {
+  const day = String(row.session_date), state = String(row.state || 'tentative');
+  if (!row.start_time || !row.end_time) return entry({ ...row, state, starts_at: day, ends_at: offsetCivilDate(day, 1) }, category, 'campaign-session', true);
+  return entry({ ...row, state, starts_at: Date.parse(`${day}T${row.start_time}:00-03:00`), ends_at: Date.parse(`${day}T${row.end_time}:00-03:00`) }, category, 'campaign-session');
+}
+
 /** A public projection: SQL never selects contacts, free notes, document keys or account identities. */
 export async function calendarEntries(db: D1Database, actor: PortalActor | null, options: {
   category?: string | null; projectId?: string | null; unitId?: string | null; range: CalendarRange;
@@ -122,6 +139,20 @@ export async function calendarEntries(db: D1Database, actor: PortalActor | null,
         WHERE ${filter.sql} AND l.starts_at<? AND l.ends_at>? LIMIT ${MAX_ENTRIES + 1}`,
       [...filter.values, Date.parse(range.endsAt), Date.parse(range.startsAt)]);
       result.push(...rows.map(row => entry(row, category, 'loan')));
+    } else if (category === 'deadlines') {
+      // Prazos de demandas (R7): só demandas que a pessoa já pode ler em Demandas. As da organização
+      // inteira (sem projeto) entram quando a Agenda não está filtrada por projeto ou unidade.
+      const organizationWide = projectId || unitId ? 0 : 1;
+      rows = await all(db, `SELECT t.id,COALESCE(t.project_id,'') project_id,COALESCE(p.name,o.name) project_name,'Prazo · ' || t.title title,
+        t.due_at starts_at,t.status state,t.version revision,t.created_at,t.updated_at last_modified
+        FROM followup_tasks t JOIN organizations o ON o.id=t.organization_id LEFT JOIN projects p ON p.id=t.project_id
+        WHERE t.due_at IS NOT NULL AND t.due_at>=? AND t.due_at<=? AND ${workAuthority('?', 't.organization_id', 't.project_id')}
+        AND ((t.project_id IS NOT NULL AND ${filter.sql}) OR (t.project_id IS NULL AND ?=1)) LIMIT ${MAX_ENTRIES + 1}`,
+      [range.from, range.to, actor.userId, ...filter.values, organizationWide]);
+      for (const row of rows) result.push(entry({ ...row, ends_at: offsetCivilDate(String(row.starts_at), 1), state: row.state === 'completed' ? 'done' : row.state }, category, 'deadline', true));
+      // Mesmo limite das demais categorias; os prazos não têm registros vinculados, então a consulta de registros não roda.
+      if (result.length > MAX_ENTRIES) throw new HttpError(422, 'Há muitos registros. Reduza o período ou escolha um projeto.', 'calendar_range_too_large');
+      continue;
     } else if (category === 'projects') {
       rows = await all(db, `SELECT p.id,p.id project_id,p.name project_name,'Projeto · ' || p.name title,
         p.starts_at,p.ends_at,p.status state,p.version revision,p.location,p.created_at,
@@ -137,6 +168,16 @@ export async function calendarEntries(db: D1Database, actor: PortalActor | null,
         AND julianday(c.starts_at)<julianday(?) AND julianday(c.ends_at)>julianday(?) LIMIT ${MAX_ENTRIES + 1}`,
       [...filter.values, range.endsAt, range.startsAt]);
       result.push(...rows.map(row => entry(row, category, 'campaign')));
+      // Turnos das dinâmicas (R7): data civil com horário opcional (HH:MM, Brasília). Seguem a regra do evento na
+      // Agenda (rascunho não aparece) e do planejamento (organização ativa). A nota livre do turno não sai.
+      rows = await all(db, `SELECT s.id,c.project_id,p.name project_name,
+        'Turno · ' || CASE WHEN s.label!='' THEN s.label ELSE s.ordinal || 'º turno' END || ' · ' || c.name title,
+        s.session_date,s.starts_at start_time,s.ends_at end_time,s.status state,s.version revision,c.location,s.created_at,s.updated_at last_modified
+        FROM campaign_sessions s JOIN campaigns c ON c.id=s.campaign_id JOIN projects p ON p.id=c.project_id
+        WHERE ${filter.sql} AND c.status!='draft' AND EXISTS(SELECT 1 FROM organizations so WHERE so.id=p.organization_id AND so.status='active')
+        AND ${workAuthority('?', 'p.organization_id', 'c.project_id')} AND s.session_date>=? AND s.session_date<=? LIMIT ${MAX_ENTRIES + 1}`,
+      [...filter.values, actor.userId, range.from, range.to]);
+      for (const row of rows) result.push(shiftEntry(row, category));
       rows = await all(db, `SELECT s.id,s.project_id,p.name project_name,'Atividade · ' || s.title title,
         s.starts_at,s.ends_at,s.status state,s.version revision,s.created_at,s.updated_at last_modified
         FROM project_schedule_items s JOIN projects p ON p.id=s.project_id WHERE ${filter.sql}
@@ -176,7 +217,7 @@ export async function calendarEntries(db: D1Database, actor: PortalActor | null,
     }
     const kinds: Record<CalendarCategory, string[]> = {
       loans: ['loan'], materials: ['material', 'maintenance', 'distribution'],
-      projects: ['project'], consumption: ['consumption'],
+      projects: ['project'], consumption: ['consumption'], deadlines: [],
     };
     const linkedLoanScope = sqlScope('r.project_id', accessibleProjects(actor, 'loans.read'));
     const linkedLoanAuthority = projectAuthoritySql(actor, ['loans.read'], 'r.project_id');
@@ -298,7 +339,7 @@ export function serializeCalendar(entries: CalendarEntry[], label = 'Agenda PROE
     lines.push('BEGIN:VEVENT', `UID:${escapeICalText(event.uid)}`, `DTSTAMP:${icalTime(event.lastModified)}`, `LAST-MODIFIED:${icalTime(event.lastModified)}`, `SEQUENCE:${event.revision}`);
     if (event.allDay) lines.push(`DTSTART;VALUE=DATE:${event.startsAt.replaceAll('-', '')}`, `DTEND;VALUE=DATE:${event.endsAt.replaceAll('-', '')}`);
     else lines.push(`DTSTART:${icalTime(event.startsAt)}`, `DTEND:${icalTime(event.endsAt)}`);
-    lines.push(`SUMMARY:${escapeICalText(event.title)}`, `DESCRIPTION:${escapeICalText(`${event.projectName} · ${event.state}`)}`, `CATEGORIES:${escapeICalText(CALENDAR_LABELS[event.category])}`, `STATUS:${event.status}`, `TRANSP:${event.transparent ? 'TRANSPARENT' : 'OPAQUE'}`, 'CLASS:PRIVATE');
+    lines.push(`SUMMARY:${escapeICalText(event.title)}`, `DESCRIPTION:${escapeICalText(`${event.projectName} · ${STATE_LABELS[event.state] ?? event.state}`)}`, `CATEGORIES:${escapeICalText(CALENDAR_LABELS[event.category])}`, `STATUS:${event.status}`, `TRANSP:${event.transparent ? 'TRANSPARENT' : 'OPAQUE'}`, 'CLASS:PRIVATE');
     if (event.location) lines.push(`LOCATION:${escapeICalText(event.location)}`);
     lines.push('END:VEVENT');
   }

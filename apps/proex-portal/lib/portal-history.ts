@@ -23,6 +23,15 @@ type Scope = {
     canSelectOrganization?: (organization: string, project: string) => boolean;
 };
 
+/**
+ * P6 (revisão de 09/11): o módulo pedido no endereço que a pessoa não pode abrir. readPortalLocation troca esse
+ * pedido por Início; esta função diz qual foi, para a tela explicar em vez de voltar em silêncio.
+ */
+export function deniedPortalModule(params: URLSearchParams, resolved: PortalLocation, known: readonly string[]): string | null {
+    const asked = params.get('module');
+    return asked && asked !== 'overview' && resolved.tab === 'overview' && known.includes(asked) ? asked : null;
+}
+
 export function readPortalLocation(params: URLSearchParams, scope: Scope): PortalLocation {
     const candidate = params.get('demandId') || '';
     const demand = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(candidate) ? candidate : '';

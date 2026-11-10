@@ -14,7 +14,7 @@ function load(file, dependencies = {}) {
     return compiledModule.exports;
 }
 
-const { readPortalLocation, commitPortalLocation } = load('portal-history', { './work-navigation': load('work-navigation'), './my-work/contracts': load('my-work/contracts') });
+const { readPortalLocation, commitPortalLocation, deniedPortalModule } = load('portal-history', { './work-navigation': load('work-navigation'), './my-work/contracts': load('my-work/contracts') });
 const origin = 'https://example.test';
 const scope = {
     modules: ['overview', 'projects', 'materials', 'calendar', 'reports', 'demands', 'my-work'],
@@ -101,4 +101,16 @@ test('direct demand, report and calendar routes accept only fields meaningful in
     assert.equal(calendar.project, 'project-a');
     assert.equal(calendar.area, '');
     assert.equal(calendar.unit, '');
+});
+
+test('a link to a module outside the access is read as Início but still reports which module was denied (P6)', () => {
+    const known = ['overview', 'projects', 'materials', 'calendar', 'reports', 'demands', 'my-work', 'settings', 'team'];
+    const params = new URLSearchParams('module=settings');
+    const resolved = read('module=settings');
+    assert.equal(resolved.tab, 'overview', 'sem permissão, o endereço leva ao Início');
+    assert.equal(deniedPortalModule(params, resolved, known), 'settings', 'e a tela sabe qual módulo explicar');
+    assert.equal(deniedPortalModule(new URLSearchParams('module=materials'), read('module=materials'), known), null, 'módulo permitido não gera aviso');
+    assert.equal(deniedPortalModule(new URLSearchParams(''), read(''), known), null);
+    assert.equal(deniedPortalModule(new URLSearchParams('module=overview'), read('module=overview'), known), null);
+    assert.equal(deniedPortalModule(new URLSearchParams('module=inexistente'), read('module=inexistente'), known), null, 'nome desconhecido não vira aviso');
 });

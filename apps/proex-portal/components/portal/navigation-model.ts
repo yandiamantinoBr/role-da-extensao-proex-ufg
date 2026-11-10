@@ -12,7 +12,7 @@ export const PORTAL_MODULES: PortalModule[] = [
     { id: 'projects', label: 'Projetos', description: 'Áreas de trabalho, identidade e equipe.', icon: FolderKanban },
     { id: 'demands', label: 'Demandas', description: 'Prioridades, responsáveis e conferências da equipe.', icon: ListChecks },
     { id: 'work-teams', label: 'Equipes', description: 'Integrantes, entregas e andamento das equipes de trabalho.', icon: Users },
-    { id: 'calendar', label: 'Agenda', description: 'Consulte ações, reservas e datas da equipe.', icon: CalendarDays },
+    { id: 'calendar', label: 'Agenda', description: 'Empréstimos, materiais, eventos, turnos e prazos, conforme o seu acesso.', icon: CalendarDays },
     { id: 'materials', label: 'Materiais', description: 'Catálogo, disponibilidade e movimentações.', icon: Boxes },
     { id: 'loans', label: 'Empréstimos', description: 'Reservas, retiradas e devoluções de equipamentos.', icon: Truck },
     { id: 'events', label: 'Dinâmicas', description: 'Roleta, dado, brindes e atendimento nas ações.', icon: Dices },
