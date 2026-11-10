@@ -1,0 +1,490 @@
+{
+  "data": "2026-11-10",
+  "branch": "claude/role-registros-pedido",
+  "commit": "831cecc",
+  "origin": "http://127.0.0.1:5174",
+  "base": "Descartável, loopback (scripts/qa-local-5174.local.mjs --credential-vault), conta e dados sintéticos. Os três registros são reais nessa base local; o campo origin (rótulo e pedido) foi acrescentado no navegador à resposta de GET /api/records, porque gravar pelo Rolê de ponta a ponta exige um provedor de IA. O caminho servidor → origin está nos testes automatizados (tests/records-origin.test.mjs), não nesta captura. Nenhuma conversa foi enviada ao Rolê; as sugestões vieram das regras do servidor local.",
+  "tela": "Registros › Documentos (RecordsPanel, função entryDetails)",
+  "casos": {
+    "curto": "Registrar distribuição de 20 planners no CONPEEX",
+    "semPedido": "registro com origin sem summary",
+    "longo": {
+      "caracteres": 551,
+      "palavraSemEspaco": 89
+    }
+  },
+  "login": 200,
+  "setup": "200 ",
+  "seeded": {
+    "project": "33306592-f61f-498c-80fe-a9b8f0826b00",
+    "projectName": "Projeto QA descartável",
+    "made": [
+      201,
+      201,
+      201
+    ]
+  },
+  "registros": {
+    "390-claro": {
+      "abriuDocumentos": true,
+      "tema": "light",
+      "innerWidth": 390,
+      "scrollWidth": 390,
+      "semRolagemHorizontal": true,
+      "curto": {
+        "titulo": "Distribuição de planners no CONPEEX (fictícia)",
+        "origem": "Feito pelo Rolê a pedido de Responsável QA local",
+        "pedido": "“Registrar distribuição de 20 planners no CONPEEX”",
+        "pedidoCaracteres": 50,
+        "medidaOrigem": {
+          "dentroDoCartao": true,
+          "semTransbordo": true,
+          "linhas": 2,
+          "alturaPx": 40,
+          "fonte": "13px",
+          "cor": "rgb(41, 35, 51)",
+          "contrasteDd": 15.19,
+          "contrasteDt": 15.19
+        },
+        "medidaPedido": {
+          "dentroDoCartao": true,
+          "semTransbordo": true,
+          "linhas": 2,
+          "alturaPx": 40,
+          "fonte": "13px",
+          "cor": "rgb(41, 35, 51)",
+          "contrasteDd": 15.19,
+          "contrasteDt": 15.19
+        },
+        "larguraCartao": 328
+      },
+      "semPedido": {
+        "titulo": "Reunião de alinhamento da equipe (fictícia)",
+        "origem": "Feito pelo Rolê a pedido de Responsável QA local",
+        "pedido": null,
+        "pedidoCaracteres": 0,
+        "medidaOrigem": {
+          "dentroDoCartao": true,
+          "semTransbordo": true,
+          "linhas": 2,
+          "alturaPx": 40,
+          "fonte": "13px",
+          "cor": "rgb(41, 35, 51)",
+          "contrasteDd": 15.19,
+          "contrasteDt": 15.19
+        },
+        "medidaPedido": null,
+        "larguraCartao": 328
+      },
+      "longo": {
+        "titulo": "Entrega de brindes na feira de extensão (fictícia)",
+        "origem": "Feito pelo Rolê a pedido de Maria Aparecida Fictícia dos Santos Oliveira",
+        "pedido": "“Oi, Rolê! Ontem à tarde a equipe do Projeto QA descartável entregou 20 planners e 15 buttons azuis para a turma de visitantes fictícios no saguão do Centro de Eventos, durante a feira de extensão. Registra essa distribuição para mim, por favor, com a observação de que sobraram duas caixas fechadas no almoxarifado e que o código do lote é LOTE-QA-2026-ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-FIM. Se precisar, pode anotar também que a conferência foi feita por duas pessoas da equipe e que as fotos ficam para depois.”",
+        "pedidoCaracteres": 553,
+        "medidaOrigem": {
+          "dentroDoCartao": true,
+          "semTransbordo": true,
+          "linhas": 2,
+          "alturaPx": 40,
+          "fonte": "13px",
+          "cor": "rgb(41, 35, 51)",
+          "contrasteDd": 15.19,
+          "contrasteDt": 15.19
+        },
+        "medidaPedido": {
+          "dentroDoCartao": true,
+          "semTransbordo": true,
+          "linhas": 14,
+          "alturaPx": 282,
+          "fonte": "13px",
+          "cor": "rgb(41, 35, 51)",
+          "contrasteDd": 15.19,
+          "contrasteDt": 15.19
+        },
+        "larguraCartao": 328
+      },
+      "registroComumSemOrigem": {
+        "titulo": "Conferência QA local",
+        "origem": null,
+        "pedido": null
+      }
+    },
+    "390-escuro": {
+      "abriuDocumentos": true,
+      "tema": "dark",
+      "innerWidth": 390,
+      "scrollWidth": 390,
+      "semRolagemHorizontal": true,
+      "curto": {
+        "titulo": "Distribuição de planners no CONPEEX (fictícia)",
+        "origem": "Feito pelo Rolê a pedido de Responsável QA local",
+        "pedido": "“Registrar distribuição de 20 planners no CONPEEX”",
+        "pedidoCaracteres": 50,
+        "medidaOrigem": {
+          "dentroDoCartao": true,
+          "semTransbordo": true,
+          "linhas": 2,
+          "alturaPx": 40,
+          "fonte": "13px",
+          "cor": "rgb(242, 235, 248)",
+          "contrasteDd": 14.17,
+          "contrasteDt": 14.17
+        },
+        "medidaPedido": {
+          "dentroDoCartao": true,
+          "semTransbordo": true,
+          "linhas": 2,
+          "alturaPx": 40,
+          "fonte": "13px",
+          "cor": "rgb(242, 235, 248)",
+          "contrasteDd": 14.17,
+          "contrasteDt": 14.17
+        },
+        "larguraCartao": 328
+      },
+      "semPedido": {
+        "titulo": "Reunião de alinhamento da equipe (fictícia)",
+        "origem": "Feito pelo Rolê a pedido de Responsável QA local",
+        "pedido": null,
+        "pedidoCaracteres": 0,
+        "medidaOrigem": {
+          "dentroDoCartao": true,
+          "semTransbordo": true,
+          "linhas": 2,
+          "alturaPx": 40,
+          "fonte": "13px",
+          "cor": "rgb(242, 235, 248)",
+          "contrasteDd": 14.17,
+          "contrasteDt": 14.17
+        },
+        "medidaPedido": null,
+        "larguraCartao": 328
+      },
+      "longo": {
+        "titulo": "Entrega de brindes na feira de extensão (fictícia)",
+        "origem": "Feito pelo Rolê a pedido de Maria Aparecida Fictícia dos Santos Oliveira",
+        "pedido": "“Oi, Rolê! Ontem à tarde a equipe do Projeto QA descartável entregou 20 planners e 15 buttons azuis para a turma de visitantes fictícios no saguão do Centro de Eventos, durante a feira de extensão. Registra essa distribuição para mim, por favor, com a observação de que sobraram duas caixas fechadas no almoxarifado e que o código do lote é LOTE-QA-2026-ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-FIM. Se precisar, pode anotar também que a conferência foi feita por duas pessoas da equipe e que as fotos ficam para depois.”",
+        "pedidoCaracteres": 553,
+        "medidaOrigem": {
+          "dentroDoCartao": true,
+          "semTransbordo": true,
+          "linhas": 2,
+          "alturaPx": 40,
+          "fonte": "13px",
+          "cor": "rgb(242, 235, 248)",
+          "contrasteDd": 14.17,
+          "contrasteDt": 14.17
+        },
+        "medidaPedido": {
+          "dentroDoCartao": true,
+          "semTransbordo": true,
+          "linhas": 14,
+          "alturaPx": 282,
+          "fonte": "13px",
+          "cor": "rgb(242, 235, 248)",
+          "contrasteDd": 14.17,
+          "contrasteDt": 14.17
+        },
+        "larguraCartao": 328
+      },
+      "registroComumSemOrigem": {
+        "titulo": "Conferência QA local",
+        "origem": null,
+        "pedido": null
+      }
+    },
+    "1366-claro": {
+      "abriuDocumentos": true,
+      "tema": "light",
+      "innerWidth": 1366,
+      "scrollWidth": 1366,
+      "semRolagemHorizontal": true,
+      "curto": {
+        "titulo": "Distribuição de planners no CONPEEX (fictícia)",
+        "origem": "Feito pelo Rolê a pedido de Responsável QA local",
+        "pedido": "“Registrar distribuição de 20 planners no CONPEEX”",
+        "pedidoCaracteres": 50,
+        "medidaOrigem": {
+          "dentroDoCartao": true,
+          "semTransbordo": true,
+          "linhas": 1,
+          "alturaPx": 20,
+          "fonte": "13px",
+          "cor": "rgb(41, 35, 51)",
+          "contrasteDd": 15.19,
+          "contrasteDt": 15.19
+        },
+        "medidaPedido": {
+          "dentroDoCartao": true,
+          "semTransbordo": true,
+          "linhas": 1,
+          "alturaPx": 20,
+          "fonte": "13px",
+          "cor": "rgb(41, 35, 51)",
+          "contrasteDd": 15.19,
+          "contrasteDt": 15.19
+        },
+        "larguraCartao": 486
+      },
+      "semPedido": {
+        "titulo": "Reunião de alinhamento da equipe (fictícia)",
+        "origem": "Feito pelo Rolê a pedido de Responsável QA local",
+        "pedido": null,
+        "pedidoCaracteres": 0,
+        "medidaOrigem": {
+          "dentroDoCartao": true,
+          "semTransbordo": true,
+          "linhas": 1,
+          "alturaPx": 20,
+          "fonte": "13px",
+          "cor": "rgb(41, 35, 51)",
+          "contrasteDd": 15.19,
+          "contrasteDt": 15.19
+        },
+        "medidaPedido": null,
+        "larguraCartao": 486
+      },
+      "longo": {
+        "titulo": "Entrega de brindes na feira de extensão (fictícia)",
+        "origem": "Feito pelo Rolê a pedido de Maria Aparecida Fictícia dos Santos Oliveira",
+        "pedido": "“Oi, Rolê! Ontem à tarde a equipe do Projeto QA descartável entregou 20 planners e 15 buttons azuis para a turma de visitantes fictícios no saguão do Centro de Eventos, durante a feira de extensão. Registra essa distribuição para mim, por favor, com a observação de que sobraram duas caixas fechadas no almoxarifado e que o código do lote é LOTE-QA-2026-ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-FIM. Se precisar, pode anotar também que a conferência foi feita por duas pessoas da equipe e que as fotos ficam para depois.”",
+        "pedidoCaracteres": 553,
+        "medidaOrigem": {
+          "dentroDoCartao": true,
+          "semTransbordo": true,
+          "linhas": 1,
+          "alturaPx": 20,
+          "fonte": "13px",
+          "cor": "rgb(41, 35, 51)",
+          "contrasteDd": 15.19,
+          "contrasteDt": 15.19
+        },
+        "medidaPedido": {
+          "dentroDoCartao": true,
+          "semTransbordo": true,
+          "linhas": 10,
+          "alturaPx": 201,
+          "fonte": "13px",
+          "cor": "rgb(41, 35, 51)",
+          "contrasteDd": 15.19,
+          "contrasteDt": 15.19
+        },
+        "larguraCartao": 486
+      },
+      "registroComumSemOrigem": {
+        "titulo": "Conferência QA local",
+        "origem": null,
+        "pedido": null
+      }
+    },
+    "1366-escuro": {
+      "abriuDocumentos": true,
+      "tema": "dark",
+      "innerWidth": 1366,
+      "scrollWidth": 1366,
+      "semRolagemHorizontal": true,
+      "curto": {
+        "titulo": "Distribuição de planners no CONPEEX (fictícia)",
+        "origem": "Feito pelo Rolê a pedido de Responsável QA local",
+        "pedido": "“Registrar distribuição de 20 planners no CONPEEX”",
+        "pedidoCaracteres": 50,
+        "medidaOrigem": {
+          "dentroDoCartao": true,
+          "semTransbordo": true,
+          "linhas": 1,
+          "alturaPx": 20,
+          "fonte": "13px",
+          "cor": "rgb(242, 235, 248)",
+          "contrasteDd": 14.17,
+          "contrasteDt": 14.17
+        },
+        "medidaPedido": {
+          "dentroDoCartao": true,
+          "semTransbordo": true,
+          "linhas": 1,
+          "alturaPx": 20,
+          "fonte": "13px",
+          "cor": "rgb(242, 235, 248)",
+          "contrasteDd": 14.17,
+          "contrasteDt": 14.17
+        },
+        "larguraCartao": 486
+      },
+      "semPedido": {
+        "titulo": "Reunião de alinhamento da equipe (fictícia)",
+        "origem": "Feito pelo Rolê a pedido de Responsável QA local",
+        "pedido": null,
+        "pedidoCaracteres": 0,
+        "medidaOrigem": {
+          "dentroDoCartao": true,
+          "semTransbordo": true,
+          "linhas": 1,
+          "alturaPx": 20,
+          "fonte": "13px",
+          "cor": "rgb(242, 235, 248)",
+          "contrasteDd": 14.17,
+          "contrasteDt": 14.17
+        },
+        "medidaPedido": null,
+        "larguraCartao": 486
+      },
+      "longo": {
+        "titulo": "Entrega de brindes na feira de extensão (fictícia)",
+        "origem": "Feito pelo Rolê a pedido de Maria Aparecida Fictícia dos Santos Oliveira",
+        "pedido": "“Oi, Rolê! Ontem à tarde a equipe do Projeto QA descartável entregou 20 planners e 15 buttons azuis para a turma de visitantes fictícios no saguão do Centro de Eventos, durante a feira de extensão. Registra essa distribuição para mim, por favor, com a observação de que sobraram duas caixas fechadas no almoxarifado e que o código do lote é LOTE-QA-2026-ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-FIM. Se precisar, pode anotar também que a conferência foi feita por duas pessoas da equipe e que as fotos ficam para depois.”",
+        "pedidoCaracteres": 553,
+        "medidaOrigem": {
+          "dentroDoCartao": true,
+          "semTransbordo": true,
+          "linhas": 1,
+          "alturaPx": 20,
+          "fonte": "13px",
+          "cor": "rgb(242, 235, 248)",
+          "contrasteDd": 14.17,
+          "contrasteDt": 14.17
+        },
+        "medidaPedido": {
+          "dentroDoCartao": true,
+          "semTransbordo": true,
+          "linhas": 10,
+          "alturaPx": 201,
+          "fonte": "13px",
+          "cor": "rgb(242, 235, 248)",
+          "contrasteDd": 14.17,
+          "contrasteDt": 14.17
+        },
+        "larguraCartao": 486
+      },
+      "registroComumSemOrigem": {
+        "titulo": "Conferência QA local",
+        "origem": null,
+        "pedido": null
+      }
+    }
+  },
+  "role": {
+    "abriu": "atalho",
+    "claro": {
+      "inicial": {
+        "procurarEm": {
+          "valor": "org",
+          "rotulo": "Toda a PROEX",
+          "opcoes": [
+            "org",
+            "project",
+            "project",
+            "event"
+          ]
+        },
+        "sugestoes": [
+          "Quais são os níveis de brinde da dinâmica Evento QA local?",
+          "Quanto saiu de Button azul QA local nos últimos 7 dias?",
+          "Quanto ainda temos de Projetor QA local?",
+          "Quanto ainda temos de Button azul QA local?"
+        ],
+        "chamadas": [
+          "/api/assistant/role?projectId=…&suggestions=1&scopeKind=org"
+        ],
+        "semRolagemHorizontal": true,
+        "tema": "light"
+      },
+      "depoisDeTrocar": {
+        "procurarEm": {
+          "valor": "project:33306592-f61f-498c-80fe-a9b8f0826b00",
+          "rotulo": "Projeto QA descartável",
+          "opcoes": [
+            "org",
+            "project",
+            "project",
+            "event"
+          ]
+        },
+        "sugestoes": [
+          "Quais são os níveis de brinde da dinâmica Evento QA local?",
+          "Quanto saiu de Button azul QA local nos últimos 7 dias?",
+          "Quanto ainda temos de Projetor QA local?",
+          "Quanto ainda temos de Button azul QA local?"
+        ],
+        "chamadas": [
+          "/api/assistant/role?projectId=…&suggestions=1&scopeKind=org",
+          "/api/assistant/role?projectId=…&suggestions=1&scopeKind=project&scopeId=…"
+        ],
+        "semRolagemHorizontal": true,
+        "tema": "light"
+      }
+    },
+    "trocou": "Projeto QA descartável",
+    "escuro": {
+      "inicial": {
+        "procurarEm": {
+          "valor": "org",
+          "rotulo": "Toda a PROEX",
+          "opcoes": [
+            "org",
+            "project",
+            "project",
+            "event"
+          ]
+        },
+        "sugestoes": [
+          "Quais são os níveis de brinde da dinâmica Evento QA local?",
+          "Quanto saiu de Button azul QA local nos últimos 7 dias?",
+          "Quanto ainda temos de Projetor QA local?",
+          "Quanto ainda temos de Button azul QA local?"
+        ],
+        "chamadas": [
+          "/api/assistant/role?projectId=…&suggestions=1&scopeKind=org"
+        ],
+        "semRolagemHorizontal": true,
+        "tema": "dark"
+      }
+    }
+  },
+  "shots": [
+    {
+      "file": "registros-390-claro.png",
+      "bytes": 183957
+    },
+    {
+      "file": "registros-390-claro-pedido-longo.png",
+      "bytes": 245395
+    },
+    {
+      "file": "registros-390-escuro.png",
+      "bytes": 185689
+    },
+    {
+      "file": "registros-390-escuro-pedido-longo.png",
+      "bytes": 248092
+    },
+    {
+      "file": "registros-1366-claro.png",
+      "bytes": 180210
+    },
+    {
+      "file": "registros-1366-claro-pedido-longo.png",
+      "bytes": 179517
+    },
+    {
+      "file": "registros-1366-escuro.png",
+      "bytes": 178859
+    },
+    {
+      "file": "registros-1366-escuro-pedido-longo.png",
+      "bytes": 177357
+    },
+    {
+      "file": "role-390-claro-sugestoes.png",
+      "bytes": 172724
+    },
+    {
+      "file": "role-390-claro-sugestoes-outro-recorte.png",
+      "bytes": 175964
+    },
+    {
+      "file": "role-390-escuro-sugestoes.png",
+      "bytes": 175162
+    }
+  ],
+  "pageErrors": []
+}
