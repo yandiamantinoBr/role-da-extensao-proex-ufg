@@ -197,3 +197,49 @@ test('HTTP pilot is off by default and keeps the manual path, CSRF and no-store'
  assert.equal((await route.POST(request('https://portal.example.invalid'))).status,503);
  assert.equal(f.native.prepare('SELECT COUNT(*) n FROM ai_task_triage_calls').get().n,0);
 });
+
+// Triagem roteada: com decisionModel escolhido, a mesma regra da conferência (dados sintéticos, provedor falso).
+const {manageCatalog,catalogView}=await import(compile('lib/assistant/model-catalog-store.ts'));
+const routedKey='synthetic-only-perplexity-credential', ROUTED='https://api.perplexity.ai/v1/systemone', STANDARD='https://api.typesafe.ai/v1/systemone';
+async function routedFixture(t) {
+ const f=await fixture(t),keys={current:'synthetic-only-dedicated-triage-routing-key'};
+ await migrateAssistantCredentials(f.db,f.owner,{},secret,keys);
+ const stamp=(await catalogView(f.db,f.owner,f.org,secret,keys)).stamp;
+ await manageCatalog(f.db,f.owner,{organizationId:f.org,expected:stamp,action:'key.save',providerId:'perplexity',label:'Chave sintética',secret:routedKey},secret,keys);
+ const revision=f.native.prepare('SELECT revision FROM ai_organization_settings WHERE organization_id=?').get(f.org).revision;
+ await configureAssistant(f.db,f.owner,{organizationId:f.org,expectedRevision:revision,config:{...DEFAULT_ASSISTANT_CONFIG,enabled:true,jevEnabled:true,decisionModel:'perplexity-decider-v1-2'}},secret,undefined,keys);
+ const calls=[],answer=(choice)=>({type:'choice',choice,confidence:0.97,probabilities:{[choice]:0.97}});
+ const source=chosen=>async (endpoint,init)=>{
+  const body=JSON.parse(init.body); calls.push({endpoint,model:body.model,auth:init.headers.Authorization});
+  if(endpoint===ROUTED){const early=await chosen(); if(early)return early;}
+  return Response.json({model:body.model,usage:{input_tokens:420},answers:{urgency:answer('high'),importance:answer('medium')}});
+ };
+ const triage=chosen=>prepareTaskTriage(f.db,f.owner,prepareInput(f),secret,{now,fetcher:source(chosen),keys});
+ const fallbacks=()=>f.native.prepare("SELECT details FROM audit WHERE action='assistant.route.fallback'").all().map(row=>JSON.parse(row.details));
+ const call=()=>({...f.native.prepare('SELECT status,model,reserved_tokens,reserved_usd_micros,input_tokens FROM ai_task_triage_calls').get()});
+ return {...f,calls,triage,fallbacks,call};
+}
+
+test('routed triage: the chosen catalog model answers alone and the call row names it',async t=>{
+ const f=await routedFixture(t),proposal=await f.triage(()=>null);
+ assert.deepEqual(proposal.proposal,{urgency:'high',importance:'medium'});
+ assert.deepEqual(f.calls,[{endpoint:ROUTED,model:'pplx-decider-v1.2',auth:'Bearer '+routedKey}]);
+ // Reserva pelo maior preço (o do padrão, 0,042): os mesmos 173 de sempre.
+ assert.deepEqual(f.call(),{status:'ready',model:'pplx-decider-v1.2',reserved_tokens:4096,reserved_usd_micros:173,input_tokens:420});
+ assert.deepEqual(f.fallbacks(),[]);
+});
+
+test('routed triage: a refusal falls back once with an audit line; a timeout never reaches a second provider',async t=>{
+ const refused=await routedFixture(t);
+ const proposal=await refused.triage(()=>new Response('{}',{status:429,headers:{'content-type':'application/json'}}));
+ assert.equal(proposal.status,'ready');
+ assert.deepEqual(refused.calls,[{endpoint:ROUTED,model:'pplx-decider-v1.2',auth:'Bearer '+routedKey},{endpoint:STANDARD,model:'jev-1.14.0',auth:'Bearer '+key}]);
+ assert.deepEqual(refused.fallbacks(),[{task:'decision',model:'perplexity-decider-v1-2',reason:'O provedor recusou o pedido (HTTP 429).'}]);
+ assert.deepEqual(refused.call(),{status:'ready',model:'jev-1.14.0',reserved_tokens:4096,reserved_usd_micros:173,input_tokens:420});
+
+ const doubtful=await routedFixture(t);
+ await assert.rejects(doubtful.triage(()=>{throw new DOMException('synthetic timeout','TimeoutError');}));
+ assert.deepEqual(doubtful.calls.map(call=>call.endpoint),[ROUTED]);
+ assert.deepEqual(doubtful.fallbacks(),[]);
+ assert.equal(doubtful.call().status,'failed');
+});
