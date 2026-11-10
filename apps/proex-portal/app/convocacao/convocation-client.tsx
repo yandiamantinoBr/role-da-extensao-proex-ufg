@@ -87,7 +87,7 @@ export default function ConvocationGuest() {
       <ul className={styles.facts}>
         <li><CalendarDays size={17} aria-hidden="true"/><span>{dateLabel(convocation.eventDate)}</span></li>
         {convocation.location && <li><MapPin size={17} aria-hidden="true"/><span>{convocation.location}</span></li>}
-        {convocation.responseDeadline && <li><Clock size={17} aria-hidden="true"/><span>Responda até {when(convocation.responseDeadline)}</span></li>}
+        {convocation.responseDeadline && <li><Clock size={17} aria-hidden="true"/><span>Responda até {new Date(convocation.responseDeadline).toLocaleString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'America/Sao_Paulo' })}</span></li>}
       </ul>
       {convocation.description && <p className={styles.description}>{convocation.description}</p>}
     </div>
@@ -95,8 +95,8 @@ export default function ConvocationGuest() {
     {deleted && <div className={styles.success} role="status"><strong>Sua resposta foi apagada.</strong><span>Se quiser responder de novo, abra o link de convite.</span></div>}
     {guest && !editing && <section className={styles.success} aria-labelledby="guest-answer"><h2 id="guest-answer"><Check size={20} aria-hidden="true"/>{guest.response === 'yes' ? 'Presença confirmada' : guest.response === 'maybe' ? 'Resposta registrada: talvez' : 'Resposta registrada: não vai'}</h2>
       <dl className={styles.summary}><div><dt>Nome</dt><dd>{guest.name}</dd></div><div><dt>Matrícula</dt><dd>{guest.enrollment}</dd></div><div><dt>Projeto</dt><dd>{project(guest.projectId)}</dd></div>{guest.response !== 'no' && <div><dt>Turnos</dt><dd>{shiftLabel(guest.shiftIds) || '—'}</dd></div>}<div><dt>Atualizado</dt><dd>{when(guest.updatedAt)}</dd></div></dl>
-      <div className={styles.keep}><strong>Guarde o seu link pessoal</strong><span>Com ele você altera ou apaga a resposta, até de outro aparelho. Não compartilhe.</span><div className={styles.linkRow}><input readOnly value={personalLink} aria-label="Seu link pessoal" onFocus={event => event.currentTarget.select()}/><button type="button" className="p-button p-button-subtle" onClick={() => void copy()}><Copy size={16} aria-hidden="true"/>{copied ? 'Copiado' : 'Copiar'}</button></div></div>
-      {convocation.accepting ? <div className={styles.actions}><button type="button" className="p-button p-button-primary" onClick={() => { setEditing(true); setResponse(guest.response); }}>Alterar resposta</button>
+      <div className={styles.keep}><strong>Guarde o seu link pessoal</strong><span>Sem ele você não consegue alterar nem apagar a resposta depois, inclusive de outro aparelho. Não compartilhe com ninguém.</span><button type="button" className="p-button p-button-primary" onClick={() => void copy()}><Copy size={16} aria-hidden="true"/>{copied ? 'Link copiado' : 'Copiar meu link pessoal'}</button><input className={styles.linkText} readOnly name="personalLink" value={personalLink} aria-label="Seu link pessoal" onFocus={event => event.currentTarget.select()}/></div>
+      {convocation.accepting ? <div className={styles.actions}><button type="button" className="p-button p-button-subtle" onClick={() => { setEditing(true); setResponse(guest.response); }}>Alterar resposta</button>
         {forgetting ? <span className={styles.confirm}>Apagar sua resposta? <button type="button" className="p-button p-button-danger" disabled={busy} onClick={() => void forget()}>Apagar</button><button type="button" className="p-button p-button-subtle" onClick={() => setForgetting(false)}>Cancelar</button></span>
           : <button type="button" className="p-button p-button-subtle" onClick={() => setForgetting(true)}><Trash2 size={16} aria-hidden="true"/>Apagar minha resposta</button>}</div>
         : <p className={styles.muted}>A coordenação encerrou as respostas. Para mudar algo, fale com ela.</p>}

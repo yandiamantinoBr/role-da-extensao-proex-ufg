@@ -150,3 +150,16 @@
 .prefTable thead th{text-transform:none;letter-spacing:normal}
 .prefTable tbody th,.prefTable td{background:transparent!important}
 .soon{width:fit-content}
+
+/* Segunda crítica (09/11): contraste dos selos no escuro, estado "em breve" e números compactos no celular. */
+.tally .maybe,.tally .no,.answer_maybe,.answer_no{color:var(--ink)}
+.soon{background:none;padding:0;font-weight:500;color:var(--text-secondary)}
+.shiftRow :global(.p-icon-button){min-width:44px;min-height:44px}
+.cardMeta span:last-child{font-weight:600;color:var(--ink)}
+@container (max-width:640px){
+ .kpis{grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+ .kpis div{padding:8px 8px 10px;border-radius:12px}
+ .kpis dt{font-size:11px;line-height:1.2}
+ .kpis dd{font-size:22px;margin-top:2px}
+ .detailHead h2{margin:4px 0 2px}
+}
