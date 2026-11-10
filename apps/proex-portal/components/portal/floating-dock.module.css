@@ -100,3 +100,6 @@
 .stack .launcher{border:1px solid var(--line);background:var(--surface);box-shadow:0 8px 20px -12px rgb(25 11 41/.5)}
 .stack .launcher[data-active]{background:var(--brand-ink);color:var(--surface);border-color:var(--brand-ink)}
 .stack{margin-bottom:8px}
+/* A minimized chip sits above the buttons: give the page end extra room so it never touches the footer. */
+:global(.p-main):has(.panel[data-minimized]){padding-bottom:150px}
+@media (max-width:720px){:global(.pn-shell .p-main):has(.panel[data-minimized]){padding-bottom:calc(210px + env(safe-area-inset-bottom,0px))}}

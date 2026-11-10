@@ -33,3 +33,13 @@ Crítica visual independente da fase 2: 8,7 → 9,2, sem P0/P1/P2. Depois das ca
 - `fase3-1366-*-designacoes.png`: designação de leitores da ouvidoria com prazo e motivo, e histórico.
 
 Crítica visual independente da fase 3: 8,6 → 9,0, sem P0/P1. Revisão de segurança independente: sem P0/P1; os P2 foram corrigidos.
+
+## Doca flutuante de widgets (migração 0043)
+
+- `doca-*-fechada.png`: botão "Widgets" no canto, em qualquer página, acima do botão do Rolê.
+- `doca-*-aberta.png`: pilha com o nome de cada widget ligado e "Meu espaço".
+- `doca-*-calendario.png`: hoje e os próximos 7 dias (agenda sintética e prazos das demandas).
+- `doca-*-demandas.png`: abertas, que vencem hoje e atrasadas, com links para Meu trabalho.
+- `doca-*-meu-espaco.png`: galeria para ligar e desligar widgets (tudo desligado por padrão).
+
+No celular o painel vira folha inferior com fundo escurecido. Crítica visual independente: 7,6 → 8,8 → 9,1, sem P0/P1/P2. Os dois P3 restantes (chip minimizado perto do rodapé; fundo da folha no tema claro) ficaram anotados; o primeiro foi tratado com mais folga no fim da página.
