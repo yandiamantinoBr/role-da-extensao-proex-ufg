@@ -69,6 +69,9 @@ export const CONFIG_FIELDS: { key: keyof AssistantConfig; label: string; kind: '
   { key: 'sttEnabled', label: 'Voz para texto', kind: 'bool' },
   { key: 'sttProvider', label: 'Provedor de voz', kind: 'text' },
   { key: 'textProvider', label: 'Serviço de operações e documentos', kind: 'text' },
+  { key: 'documentModel', label: 'Modelo do catálogo para documentos', kind: 'text' },
+  { key: 'decisionModel', label: 'Modelo do catálogo para conferência e triagem', kind: 'text' },
+  { key: 'speechModel', label: 'Modelo do catálogo para voz', kind: 'text' },
 ];
 export type ConfigChange = { field: string; before: string | number | boolean | null; after: string | number | boolean | null };
 export function configChanges(before: AssistantConfig, after: AssistantConfig): ConfigChange[] {

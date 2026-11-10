@@ -7,11 +7,19 @@ const withheld = () => new HttpError(502, 'A resposta do provedor não pôde ser
 /** Erro depois de o provedor já ter cobrado: leva o custo conhecido para entrar no limite diário. */
 export class ChargedError extends HttpError { constructor(message: string, readonly chargedMicros: number, readonly chargedTokens: number) { super(502, message, 'generic_provider_schema'); } }
 
+/**
+ * O provedor respondeu com status de erro (4xx ou 5xx): recusou o pedido e, com certeza, não cobrou.
+ * É o único erro pós-envio que permite cair no padrão sem risco de cobrança dupla.
+ */
+export class RefusedError extends HttpError { constructor(message: string, readonly providerStatus: number, code = 'generic_provider_unavailable') { super(503, message, code); } }
+
 export async function boundedJson(response: Response, limit = 256 * 1024): Promise<Record<string, unknown>> {
   if (!response.ok || !/^application\/json(?:\s*;|$)/i.test(response.headers.get('content-type') ?? '')) {
     await response.body?.cancel().catch(() => {});
     const status = response.status;
-    throw new HttpError(503, status === 401 || status === 403 ? 'O provedor recusou a chave. Confira a chave em Chaves e modelos.' : status === 404 ? 'O provedor não reconheceu o modelo. Confira o nome do modelo na API.' : status === 429 ? 'O provedor atingiu o limite de uso agora. Tente de novo em alguns minutos.' : 'O provedor não respondeu.', 'generic_provider_unavailable');
+    const message = status === 401 || status === 403 ? 'O provedor recusou a chave. Confira a chave em Chaves e modelos.' : status === 404 ? 'O provedor não reconheceu o modelo. Confira o nome do modelo na API.' : status === 429 ? 'O provedor atingiu o limite de uso agora. Tente de novo em alguns minutos.' : 'O provedor não respondeu.';
+    if (!response.ok) throw new RefusedError(message, status);
+    throw new HttpError(503, message, 'generic_provider_unavailable');
   }
   const reader = response.body?.getReader();
   if (!reader) throw withheld();

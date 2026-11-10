@@ -103,7 +103,7 @@ export async function manageCatalog(db: D1Database, actor: PortalActor | null, i
   if (!await one(db, "SELECT 1 FROM organizations WHERE id=? AND status='active'", [organizationId])) throw new HttpError(404, 'Organização indisponível.', 'catalog_organization');
   const { catalog, stamp, raw } = await loadCatalog(db, organizationId);
   if (typeof input.expected !== 'string' || input.expected !== stamp) throw changed();
-  const inUse = async () => { const row = await one(db, 'SELECT config_json FROM ai_organization_settings WHERE organization_id=?', [organizationId]); const parsed = row ? JSON.parse(String(row.config_json)) as Record<string, unknown> : {}; return new Set([parsed.roleModel, parsed.roleVisionModel].filter((value): value is string => typeof value === 'string' && !!value)); };
+  const inUse = async () => { const row = await one(db, 'SELECT config_json FROM ai_organization_settings WHERE organization_id=?', [organizationId]); const parsed = row ? JSON.parse(String(row.config_json)) as Record<string, unknown> : {}; return new Set([parsed.roleModel, parsed.roleVisionModel, parsed.documentModel, parsed.decisionModel, parsed.speechModel].filter((value): value is string => typeof value === 'string' && !!value)); };
   const action = input.action;
   if (action === 'model.save') {
     onlyKeys(input, ['action', 'organizationId', 'expected', 'model', 'replaceId']);
@@ -113,11 +113,11 @@ export async function manageCatalog(db: D1Database, actor: PortalActor | null, i
     const models = replaceId ? catalog.models.map(entry => entry.id === replaceId ? model : entry) : [...catalog.models, model];
     if (replaceId && !catalog.models.some(entry => entry.id === replaceId)) throw changed();
     const before = replaceId ? catalog.models.find(entry => entry.id === replaceId) : null;
-    if (before && (await inUse()).has(before.id) && (model.id !== before.id || model.providerId !== before.providerId || model.model !== before.model || model.enabled !== before.enabled || model.testOnly !== before.testOnly || before.capabilities.some(capability => !model.capabilities.includes(capability)))) throw new HttpError(409, 'Este modelo está em uso pelo Rolê. Só preço, fonte e observação podem mudar; para o resto, escolha outro modelo em Funções e acesso.', 'catalog_in_use');
+    if (before && (await inUse()).has(before.id) && (model.id !== before.id || model.providerId !== before.providerId || model.model !== before.model || model.enabled !== before.enabled || model.testOnly !== before.testOnly || before.capabilities.some(capability => !model.capabilities.includes(capability)))) throw new HttpError(409, 'Este modelo está em uso (Rolê, documentos, conferência ou voz). Só preço, fonte e observação podem mudar; para o resto, escolha outro modelo em Funções e acesso.', 'catalog_in_use');
     await saveCatalog(db, current, organizationId, { ...catalog, models }, stamp, { action: 'assistant.catalog.model.save', details: { model: model.id, provider: model.providerId, capabilities: model.capabilities } }, raw);
   } else if (action === 'model.delete') {
     onlyKeys(input, ['action', 'organizationId', 'expected', 'modelId']);
-    if ((await inUse()).has(String(input.modelId))) throw new HttpError(409, 'Este modelo está em uso pelo Rolê. Escolha outro em Funções e acesso antes de apagar.', 'catalog_in_use');
+    if ((await inUse()).has(String(input.modelId))) throw new HttpError(409, 'Este modelo está em uso (Rolê, documentos, conferência ou voz). Escolha outro em Funções e acesso antes de apagar.', 'catalog_in_use');
     if (!catalog.models.some(entry => entry.id === input.modelId)) throw changed();
     await saveCatalog(db, current, organizationId, { ...catalog, models: catalog.models.filter(entry => entry.id !== input.modelId) }, stamp, { action: 'assistant.catalog.model.delete', details: { model: String(input.modelId) } }, raw);
   } else if (action === 'provider.save') {

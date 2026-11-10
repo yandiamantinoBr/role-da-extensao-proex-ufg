@@ -158,6 +158,39 @@ export function fitsFunction(model: CatalogModel, provider: CatalogProvider | un
   return null;
 }
 
+/** Tarefas que podem trocar o padrão fixo por um modelo do catálogo. */
+export type RoutedTask = 'document' | 'decision' | 'speech';
+/** Endereço revisado do Deepgram; outro provedor do tipo "voz" ainda não tem formato de envio conferido. */
+const REVIEWED_SPEECH_BASE = 'https://api.deepgram.com/v1';
+/**
+ * Diz se o modelo serve para a tarefa: devolve null ou o motivo, em português simples.
+ * Documento: conversa por texto (OpenAI ou Anthropic). Decisão: só o formato JEV. Voz: Deepgram nova-3
+ * revisado ou serviço compatível com OpenAI (<endereço>/audio/transcriptions).
+ */
+export function fitsTask(model: CatalogModel, provider: CatalogProvider | undefined, task: RoutedTask): string | null {
+  if (!provider) return 'Provedor removido.';
+  if (model.testOnly) return 'Modelo só para teste: não pode receber dados reais.';
+  if (task === 'document') {
+    if (provider.kind !== 'openai_chat' && provider.kind !== 'anthropic_messages') return 'Esse provedor não lê documentos por texto.';
+    if (!model.capabilities.includes('document')) return 'Este modelo não está marcado para documento.';
+    if (!(model.price.inputPerM > 0) || !(model.price.outputPerM > 0)) return 'Falta o preço de entrada e de saída deste modelo.';
+    return null;
+  }
+  if (task === 'decision') {
+    if (provider.kind !== 'typesafe') return 'Esse provedor não usa o formato de decisão (JEV).';
+    if (!model.capabilities.includes('decision')) return 'Este modelo não está marcado para decisão.';
+    if (!(model.price.inputPerM > 0)) return 'Falta o preço de entrada deste modelo.';
+    return null;
+  }
+  if (!model.capabilities.includes('speech')) return 'Este modelo não está marcado para voz.';
+  if (!(model.price.perHour > 0)) return 'Falta o preço por hora deste modelo.';
+  if (provider.kind === 'openai_chat') return null;
+  let base = '';
+  try { base = safeBaseUrl(provider.baseUrl); } catch { /* endereço inválido não serve */ }
+  if (provider.kind === 'speech' && base === REVIEWED_SPEECH_BASE && model.model === 'nova-3') return null;
+  return 'Esse provedor de voz ainda não tem formato de envio revisado.';
+}
+
 export const COMPARE_SYSTEM = 'Você ajuda a equipe da Pró-Reitoria de Extensão da UFG. Responda em português do Brasil, de forma curta e direta. Se a pergunta pedir JSON, responda só com JSON válido.';
 export const COMPARE_MAX_OUTPUT = 600;
 
