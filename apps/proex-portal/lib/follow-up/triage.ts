@@ -100,10 +100,11 @@ export async function prepareTaskTriage(db:D1Database, actor:PortalActor, input:
  if (new TextEncoder().encode(JSON.stringify(body)).byteLength>TRIAGE_INPUT_LIMIT) fail('Resuma o contexto antes de enviar.', 'triage_context_limit');
  // Triagem roteada: só existe com decisionModel escolhido. Vazio = null = exatamente o caminho de sempre.
  const decisionRoute = config.decisionModel ? await resolveTaskRoute(db,task.organization_id,config,rawCredentials,'decision') : null;
- // A tela informa o modelo que mostrou na autorização ('' = só o padrão). Se quem receberia o resumo agora é outro modelo,
- // nada é enviado até a pessoa ver o destino novo e autorizar de novo. Sem modelo escolhido, ou sem esse campo, nada muda.
- const destinationName = taskRouteName(decisionRoute);
- if (typeof input.destinationName==='string' && destinationName && input.destinationName!==destinationName) fail('O modelo que recebe este resumo mudou. Confira o aviso e autorize de novo.', 'triage_destination', 409);
+ // A tela informa o modelo que mostrou na autorização (ausente ou '' = só o padrão). Com modelo escolhido e apto, o nome
+ // precisa ser o de quem recebe o resumo agora: se for outro, nada é enviado nem reservado até a pessoa ver o destino
+ // e autorizar de novo. Sem modelo escolhido, o campo é ignorado e nada muda.
+ const destinationName = taskRouteName(decisionRoute), shownDestination = typeof input.destinationName==='string' ? input.destinationName : '';
+ if (destinationName && shownDestination!==destinationName) fail('O modelo que recebe este resumo mudou. Confira o aviso e autorize de novo.', 'triage_destination', 409);
  const routedBody = decisionRoute && !('skip' in decisionRoute) ? taskTriageBody(config,context,task.due_at,day,decisionRoute.model.model) : null;
  if (routedBody && new TextEncoder().encode(JSON.stringify(routedBody)).byteLength>TRIAGE_INPUT_LIMIT) fail('Resuma o contexto antes de enviar.', 'triage_context_limit');
  // Com rota, reserva o maior preço entre o escolhido e o padrão (o pedido pode terminar em qualquer um).

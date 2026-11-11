@@ -202,6 +202,8 @@ test('HTTP pilot is off by default and keeps the manual path, CSRF and no-store'
 // Triagem roteada: com decisionModel escolhido, a mesma regra da conferência (dados sintéticos, provedor falso).
 const {manageCatalog,catalogView,catalogSettingName}=await import(compile('lib/assistant/model-catalog-store.ts'));
 const routedKey='synthetic-only-perplexity-credential', ROUTED='https://api.perplexity.ai/v1/systemone', STANDARD='https://api.typesafe.ai/v1/systemone';
+// Nome que o aviso e a autorização mostram para o modelo escolhido; a tela devolve esse nome ao pedir a triagem.
+const ROUTED_NAME='Decider v1.2 (Perplexity)';
 async function routedFixture(t) {
  const f=await fixture(t),keys={current:'synthetic-only-dedicated-triage-routing-key'};
  await migrateAssistantCredentials(f.db,f.owner,{},secret,keys);
@@ -215,7 +217,7 @@ async function routedFixture(t) {
   if(endpoint===ROUTED){const early=await chosen(); if(early)return early;}
   return Response.json({model:body.model,usage:{input_tokens:420},answers:{urgency:answer('high'),importance:answer('medium')}});
  };
- const triage=chosen=>prepareTaskTriage(f.db,f.owner,prepareInput(f),secret,{now,fetcher:source(chosen),keys});
+ const triage=(chosen,shown={destinationName:ROUTED_NAME})=>prepareTaskTriage(f.db,f.owner,prepareInput(f,shown),secret,{now,fetcher:source(chosen),keys});
  const fallbacks=()=>f.native.prepare("SELECT details FROM audit WHERE action='assistant.route.fallback'").all().map(row=>JSON.parse(row.details));
  const call=()=>({...f.native.prepare('SELECT status,model,reserved_tokens,reserved_usd_micros,input_tokens FROM ai_task_triage_calls').get()});
  return {...f,keys,calls,triage,fallbacks,call};
@@ -267,13 +269,13 @@ test('triage ceiling: without a chosen decision model the screen gets only the a
 test('triage ceiling: with a chosen decision model the screen gets exactly what the server reserves',async t=>{
  const f=await routedFixture(t),status=await triageStatus(t,f,f.keys);
  // Escolhido mais barato que o padrão: vale o maior, os mesmos 173.
- assert.deepEqual(await taskTriageState(f.db,f.owner,f.task.id,secret,f.keys),{enabled:true,reserveUsdMicros:173});
- assert.deepEqual(await status(),{enabled:true,reserveUsdMicros:173});
+ assert.deepEqual(await taskTriageState(f.db,f.owner,f.task.id,secret,f.keys),{enabled:true,reserveUsdMicros:173,destinationName:ROUTED_NAME});
+ assert.deepEqual(await status(),{enabled:true,reserveUsdMicros:173,destinationName:ROUTED_NAME});
  // Escolhido mais caro (preço sintético gravado direto no catálogo): a tela recebe o teto do escolhido.
  const name=catalogSettingName(f.org),stored=JSON.parse(f.native.prepare('SELECT value FROM settings WHERE name=?').get(name).value);
  f.native.prepare('UPDATE settings SET value=? WHERE name=?').run(JSON.stringify({...stored,models:stored.models.map(model=>model.id==='perplexity-decider-v1-2'?{...model,price:{...model.price,inputPerM:0.5}}:model)}),name);
  const shown=await status();
- assert.deepEqual(shown,{enabled:true,reserveUsdMicros:2048});
+ assert.deepEqual(shown,{enabled:true,reserveUsdMicros:2048,destinationName:ROUTED_NAME});
  assert.deepEqual(await taskTriageState(f.db,f.owner,f.task.id,secret,f.keys),shown);
  assert.match(TRIAGE_CURRENCY.format(shown.reserveUsdMicros/1_000_000),/^US\$\s0,002048$/,'the text the screen shows');
  await f.triage(()=>null);
@@ -287,4 +289,41 @@ test('triage ceiling: a chosen model that cannot answer leaves the number of the
  assert.deepEqual(await status(),{enabled:true});
  await f.triage(()=>null);
  assert.equal(f.call().reserved_usd_micros,173);assert.equal(f.call().model,'jev-1.14.0');
+});
+
+// Destino da triagem: a autorização vale só para o modelo que a tela mostrou.
+test('triage destination: with a chosen model the request must name the model the screen showed, or nothing is sent or reserved',async t=>{
+ const f=await routedFixture(t),untouched=()=>({calls:f.calls.length,rows:f.native.prepare('SELECT COUNT(*) n FROM ai_task_triage_calls').get().n,
+  usage:f.native.prepare('SELECT COALESCE(SUM(calls),0) calls,COALESCE(SUM(reserved_usd_micros),0) micros,COALESCE(SUM(reserved_tokens),0) tokens FROM ai_organization_usage').get()});
+ const before=untouched();
+ assert.deepEqual({...before,usage:{...before.usage}},{calls:0,rows:0,usage:{calls:0,micros:0,tokens:0}});
+ // Ausente, vazio (a tela mostrou só o padrão), outro modelo, quase igual e valor que não é texto: tudo recusado antes de qualquer envio.
+ for(const shown of [{},{destinationName:''},{destinationName:'JEV 1.14 (TypeSafe)'},{destinationName:ROUTED_NAME+' '},{destinationName:ROUTED_NAME.toLowerCase()},{destinationName:7},{destinationName:null}]){
+  await assert.rejects(f.triage(()=>null,shown),error=>error.code==='triage_destination'&&error.status===409&&error.message==='O modelo que recebe este resumo mudou. Confira o aviso e autorize de novo.',JSON.stringify(shown));
+  assert.deepEqual(untouched(),before,'no provider call, no call row and no reservation: '+JSON.stringify(shown));
+ }
+ assert.deepEqual(f.fallbacks(),[]);
+ // Com o nome que o servidor informou, segue: uma chamada, ao modelo escolhido.
+ const proposal=await f.triage(()=>null,{destinationName:(await taskTriageState(f.db,f.owner,f.task.id,secret,f.keys)).destinationName});
+ assert.equal(proposal.status,'ready');
+ assert.deepEqual(f.calls,[{endpoint:ROUTED,model:'pplx-decider-v1.2',auth:'Bearer '+routedKey}]);
+ assert.equal(f.call().reserved_usd_micros,173);
+});
+test('triage destination: without a chosen model, or with one that cannot answer, the field is ignored and the default path is unchanged',async t=>{
+ // Sem modelo escolhido: qualquer valor (ou nenhum) dá a mesma chamada ao padrão.
+ const plain=await fixture(t);
+ assert.deepEqual(await taskTriageState(plain.db,plain.owner,plain.task.id,secret),{enabled:true});
+ const bodies=[];
+ for(const shown of [{},{destinationName:''},{destinationName:ROUTED_NAME},{destinationName:7}]){
+  const source=fake(),proposal=await prepare(plain,source,prepareInput(plain,shown));
+  assert.equal(proposal.status,'ready',JSON.stringify(shown));assert.equal(source.calls.length,1);bodies.push(JSON.stringify(source.calls[0].body));
+ }
+ assert.equal(new Set(bodies).size,1,'the provider receives the same body whatever the field says');
+ assert.deepEqual(plain.native.prepare('SELECT DISTINCT reserved_usd_micros n,model FROM ai_task_triage_calls').all().map(row=>({...row})),[{n:173,model:'jev-1.14.0'}]);
+ // Modelo escolhido que não pode responder (desligado no catálogo): não há destino novo para nomear.
+ const off=await routedFixture(t),name=catalogSettingName(off.org),stored=JSON.parse(off.native.prepare('SELECT value FROM settings WHERE name=?').get(name).value);
+ off.native.prepare('UPDATE settings SET value=? WHERE name=?').run(JSON.stringify({...stored,models:stored.models.map(model=>model.id==='perplexity-decider-v1-2'?{...model,enabled:false}:model)}),name);
+ assert.deepEqual(await taskTriageState(off.db,off.owner,off.task.id,secret,off.keys),{enabled:true});
+ assert.equal((await off.triage(()=>null,{})).status,'ready');
+ assert.deepEqual(off.calls.map(call=>call.endpoint),[STANDARD]);
 });
