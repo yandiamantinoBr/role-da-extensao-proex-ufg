@@ -25,7 +25,7 @@ async function post(input: Record<string, unknown> | FormData, url = '/api/impor
     const multipart = input instanceof FormData;
     const response = await fetch(url, { method: 'POST', credentials: 'same-origin', cache: 'no-store', signal: controller.signal, headers: { ...(!multipart ? { 'Content-Type': 'application/json' } : {}), 'X-Proex-Action': '1' }, body: multipart ? input : JSON.stringify(input) });
     const data = await response.json().catch(() => null) as Record<string, unknown> | null;
-    if (!response.ok || !data) throw new Error(typeof data?.error === 'string' ? data.error : 'Não foi possível confirmar a resposta. Repita a mesma operação.');
+    if (!response.ok || !data) throw Object.assign(new Error(typeof data?.error === 'string' ? data.error : 'Não foi possível confirmar a resposta. Repita a mesma operação.'), { code: data?.code });
     return data;
   } catch (error) { if (error instanceof Error && error.name === 'AbortError') throw new Error('A resposta demorou. Repita a mesma operação para conferir o resultado.'); throw error; }
   finally { window.clearTimeout(timer);signal?.removeEventListener('abort',cancel); }
@@ -56,6 +56,8 @@ export default function AssistedImportPanel({ kind, projects, projectTypes = [],
   const destinationOrganizationId=projectId?projects.find(project=>project.id===projectId)?.organization_id??'':organizationId, destinationOrganization=organizations.find(organization=>organization.id===destinationOrganizationId&&organization.status==='active');
   // Modelos escolhidos (e aptos) que recebem o texto nesta organização. Vazio = padrão de hoje, com o texto de sempre.
   const [aiRoutes,setAiRoutes]=useState<{organizationId:string;document:string;decision:string}|null>(null);
+  // Sobe quando o servidor avisa que o destino mostrado não é o de agora: a tela busca os nomes de novo.
+  const [aiRoutesCheck,setAiRoutesCheck]=useState(0);
   useEffect(()=>{
     if(!useAi||!destinationOrganizationId)return;
     const controller=new AbortController();
@@ -68,8 +70,10 @@ export default function AssistedImportPanel({ kind, projects, projectTypes = [],
       setAiRoutes(next);
     }).catch(()=>{/* sem o nome, fica o texto de sempre */});
     return()=>controller.abort();
-  },[useAi,destinationOrganizationId]);
+  },[useAi,destinationOrganizationId,aiRoutesCheck]);
   const aiNames=aiRoutes?.organizationId===destinationOrganizationId?aiRoutes:null;
+  // O que a autorização mostrou, para o servidor conferir antes de enviar: '' = o texto de sempre (só o padrão).
+  const aiDestination=aiNames&&(aiNames.document||aiNames.decision)?`${aiNames.document}|${aiNames.decision}`:'';
   const available = kind === 'project' ? createAllowed || permitted.length > 0 : permitted.length > 0;
   const contextDiffers = defaultProjectId !== undefined && defaultProjectId !== projectId;
   if (!available) return null;
@@ -102,14 +106,20 @@ export default function AssistedImportPanel({ kind, projects, projectTypes = [],
     try {
       let value: Record<string, unknown>;
       if (sourceMode === 'document' && sourceFile) {
-        const body = new FormData(); body.set('file', sourceFile); body.set('kind', kind); body.set('projectId', projectId); body.set('organizationId', projectId ? '' : organizationId); body.set('itemId', kind === 'asset' ? itemId : ''); body.set('sourceUrl', sourceUrl);body.set('useAi',String(useAi));body.set('aiConsent',String(aiConsent));body.set('aiOperationKey',aiOperation.current??'');
+        const body = new FormData(); body.set('file', sourceFile); body.set('kind', kind); body.set('projectId', projectId); body.set('organizationId', projectId ? '' : organizationId); body.set('itemId', kind === 'asset' ? itemId : ''); body.set('sourceUrl', sourceUrl);body.set('useAi',String(useAi));body.set('aiConsent',String(aiConsent));body.set('aiOperationKey',aiOperation.current??'');body.set('aiDestination',aiDestination);
         if (sourceFile.name.toLowerCase().endsWith('.pdf')) { const { extractPdfText } = await import('./import-pdf-text'); const extracted = await extractPdfText(sourceFile); body.set('extractedText', extracted.text); body.set('pageCount', String(extracted.pageCount)); }
         value = await post(body, '/api/imports/document',controller.signal);
-      } else value = await post({ action: 'preview', kind, projectId, organizationId: projectId ? '' : organizationId, itemId: kind === 'asset' ? itemId : '', sourceMode, sourceUrl, format,useAi,aiConsent,aiOperationKey:aiOperation.current, content: sourceMode === 'manual' ? JSON.stringify(manual) : content },'/api/imports',controller.signal);
+      } else value = await post({ action: 'preview', kind, projectId, organizationId: projectId ? '' : organizationId, itemId: kind === 'asset' ? itemId : '', sourceMode, sourceUrl, format,useAi,aiConsent,aiOperationKey:aiOperation.current,aiDestination, content: sourceMode === 'manual' ? JSON.stringify(manual) : content },'/api/imports',controller.signal);
       if(controller.signal.aborted||epoch!==previewEpoch.current)return;
       if (typeof value.reviewToken !== 'string' || !Array.isArray(value.candidates) || !value.candidates.length) throw new Error('A prévia não pôde ser confirmada.');
       const next = value as ImportPreview; setPreview(next); chooseCandidate(next, 0); setSaveOfficialUrl(!projectId && !!next.provenance.url);
-    } catch (error) {if(!controller.signal.aborted&&epoch===previewEpoch.current)setError(message(error)); } finally {if(epoch===previewEpoch.current){prepareRequest.current=null;setBusy(false);}}
+    } catch (error) {
+      if(!controller.signal.aborted&&epoch===previewEpoch.current){
+        setError(message(error));
+        // O modelo que recebe o texto mudou depois do aviso: mostra o destino de agora e pede a autorização de novo.
+        if((error as {code?:unknown}|null)?.code==='document_ai_destination'){setAiConsent(false);setAiRoutesCheck(count=>count+1);}
+      }
+    } finally {if(epoch===previewEpoch.current){prepareRequest.current=null;setBusy(false);}}
   }
   async function apply() {
     if (!preview || !candidate || !confirmed || busy) return;

@@ -6,7 +6,7 @@ import {aiReservation,reservationStatements} from '../assistant/admission';
 import {assistantUsageSql,loadAssistantSettings} from '../assistant/settings';
 import {textModel,object,onlyKeys} from '../assistant/contracts';
 import {generateProposal,checkDecision,generationBody,decisionBody,providerGenerationBody} from '../assistant/provider';
-import {decisionCeiling,decisionTarget,documentCeiling,recordRouteFallback,resolveTaskRoute,routedDocumentProposal,withTaskRoute} from '../assistant/task-routing';
+import {decisionCeiling,decisionTarget,documentCeiling,recordRouteFallback,resolveTaskRoute,routedDocumentProposal,taskRouteName,withTaskRoute,type ResolvedTaskRoute} from '../assistant/task-routing';
 import {encryptCredentials,decryptCredentials,type CredentialKeys} from '../assistant/crypto';
 import {importFields,type ImportCandidate,type ImportKind,type ImportAiProvenance,type ImportFieldEvidence} from './contracts';
 import {validateImportedFields,importEvidenceText} from './parse';
@@ -45,7 +45,15 @@ export function documentAuthorization(db:D1Database,actor:PortalActor,context:Do
 }
 function authorityError(error:unknown):never{if(String(error).includes('document_ai_authority_changed'))fail('Seu acesso ou a configuração documental mudou. Prepare outra prévia.','document_ai_forbidden',403);throw error;}
 export async function assertDocumentAuthorization(db:D1Database,actor:PortalActor,context:DocumentContext,revision:number){try{await documentAuthorization(db,actor,context,revision).first();}catch(error){authorityError(error);}}
-export async function interpretDocument(db:D1Database,actor:PortalActor,context:DocumentContext,input:{content:string;format:string;base:ImportCandidate;consent:unknown;operationKey:unknown},secret:string,options:{fetcher?:typeof fetch;now?:number;keys?:CredentialKeys}={}):Promise<DocumentInterpretation>{
+/**
+ * Destino que a autorização da leitura com IA mostrou: "<modelo do documento>|<modelo da conferência>", cada lado vazio
+ * quando ali vale o padrão. Sem nenhum modelo escolhido e apto devolve '' (a tela mostrou o texto de sempre).
+ */
+export function documentDestination(documentRoute:ResolvedTaskRoute,decisionRoute:ResolvedTaskRoute):string{
+ const document=taskRouteName(documentRoute)??'',decision=taskRouteName(decisionRoute)??'';
+ return document||decision?`${document}|${decision}`:'';
+}
+export async function interpretDocument(db:D1Database,actor:PortalActor,context:DocumentContext,input:{content:string;format:string;base:ImportCandidate;consent:unknown;operationKey:unknown;destination?:unknown},secret:string,options:{fetcher?:typeof fetch;now?:number;keys?:CredentialKeys}={}):Promise<DocumentInterpretation>{
  if(context.kind==='asset'&&!context.projectId)fail('Escolha o projeto responsável pelo patrimônio.','document_ai_target');
  if(input.consent!==true)fail('Confirme o envio do texto extraído ao provedor configurado para esta organização.','document_ai_consent');
  if(typeof input.operationKey!=='string'||!/^[A-Za-z0-9_-]{8,100}$/.test(input.operationKey))fail('Reabra a prévia para gerar uma solicitação válida.','document_ai_operation');
@@ -61,6 +69,11 @@ export async function interpretDocument(db:D1Database,actor:PortalActor,context:
  // Roteamento: só existe com documentModel ou decisionModel escolhido. Vazio = null = exatamente o caminho de sempre.
  const documentRoute=config.documentModel?await resolveTaskRoute(db,context.organizationId,config,rawCredentials,'document'):null;
  const decisionRoute=config.decisionModel&&config.jevEnabled?await resolveTaskRoute(db,context.organizationId,config,rawCredentials,'decision'):null;
+ // A tela informa o destino que mostrou na autorização (ausente ou '' = o texto de sempre). Com modelo escolhido e apto,
+ // ele precisa ser o de agora: se for outro, nada é reservado nem enviado até a pessoa ver o aviso e autorizar de novo.
+ // Sem modelo escolhido e apto, o campo é ignorado e nada muda.
+ const destination=documentDestination(documentRoute,decisionRoute);
+ if(destination&&(typeof input.destination==='string'?input.destination:'')!==destination)fail('O modelo que recebe este texto mudou. Confira o aviso e autorize de novo.','document_ai_destination',409);
  // Com rota, a reserva usa o maior preço entre o escolhido e o padrão (o pedido pode terminar em qualquer um).
  const routedPrices=documentRoute||decisionRoute?{...documentCeiling(config,documentRoute),...decisionCeiling(decisionRoute)}:undefined;
  const reservation=aiReservation(config,bodyBytes,routedPrices),nonce=crypto.randomUUID(),day=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(now));

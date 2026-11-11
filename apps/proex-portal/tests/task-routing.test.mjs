@@ -369,7 +369,9 @@ const DOCUMENT_BEFORE = { call: { url: DEEPSEEK, length: 1746, sha256: 'ebda541e
 // ---------------------------------------------------------------------------------------------
 const content = 'O cadastro se chama Jardim universitário. Sua área informada é Comunicação. A execução começa em 31/10/2026. Não há data final informada.';
 const fields = () => ({ fields: [{ key: 'name', value: 'Jardim universitário', quote: 'O cadastro se chama Jardim universitário.' }, { key: 'thematicArea', value: 'Comunicação', quote: 'Sua área informada é Comunicação.' }, { key: 'startsAt', value: '31/10/2026', quote: 'A execução começa em 31/10/2026.' }] });
-const documentInput = () => ({ kind: 'project', organizationId: 'org_proex', sourceMode: 'document', format: 'text', content, useAi: true, aiConsent: true, aiOperationKey: crypto.randomUUID() });
+// Com modelo escolhido, o pedido leva o destino que a autorização mostrou: "<modelo do documento>|<modelo da conferência>".
+const LUNA = 'GPT-5.6 Luna (OpenAI)', DECIDER = 'Decider v1.2 (Perplexity)';
+const documentInput = (aiDestination) => ({ kind: 'project', organizationId: 'org_proex', sourceMode: 'document', format: 'text', content, useAi: true, aiConsent: true, aiOperationKey: crypto.randomUUID(), ...(aiDestination === undefined ? {} : { aiDestination }) });
 const openAiAnswer = body => Response.json({ model: body.model, choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(fields()) } }], usage: { prompt_tokens: 500, completion_tokens: 200 } });
 async function documentSetup(f, config = { documentModel: 'openai-gpt-5-6-luna' }) {
  await saveVault(f, 'deepseek'); await saveVault(f, 'openai');
@@ -388,7 +390,7 @@ test('documento: chave vazia faz a chamada e a reserva de antes; modelo escolhid
 
  const routed = fixture(t), second = providers(routed, openAiAnswer, fields());
  await documentSetup(routed);
- const preview = await previewImport(routed.db, routed.actors.owner, documentInput(), secret, second.fetch, undefined, keys);
+ const preview = await previewImport(routed.db, routed.actors.owner, documentInput(`${LUNA}|`), secret, second.fetch, undefined, keys);
  assert.deepEqual(second.urls(), [OPENAI]);
  assert.equal(second.calls[0].auth, `Bearer ${FAKE.openai}`); assert.equal(second.calls[0].body.model, 'gpt-5.6-luna');
  assert.deepEqual(second.calls[0].body.messages.map(message => message.role), ['system', 'user']);
@@ -404,7 +406,7 @@ test('documento: a reserva usa o preço do modelo escolhido quando ele é mais c
  await saveVault(f, 'deepseek'); await saveVault(f, 'openai');
  await catalog(f, { action: 'model.save', model: { id: 'leitor-caro', providerId: 'openai', model: 'leitor-caro-1', label: 'Leitor caro (sintético)', capabilities: ['text', 'document'], price: { inputPerM: 1, outputPerM: 2 }, source: { url: 'https://exemplo-ia.com.br/precos', readAt: '2026-11-10' } } });
  await configure(f, { documentEnabled: true, documentModel: 'leitor-caro' });
- const preview = await previewImport(f.db, f.actors.owner, documentInput(), secret, provider.fetch, undefined, keys);
+ const preview = await previewImport(f.db, f.actors.owner, documentInput('Leitor caro (sintético) (OpenAI)|'), secret, provider.fetch, undefined, keys);
  assert.deepEqual(provider.urls(), [OPENAI]); assert.equal(provider.calls[0].body.model, 'leitor-caro-1'); assert.equal(preview.provenance.ai.provider, 'catalog:leitor-caro');
  // Mesmo tamanho de pedido do padrão (3.829 de entrada reservados, 1.200 de saída), a 1 e 2 em vez de 0,3 e 1,2.
  assert.deepEqual(provider.calls[0].inflight, { calls: 1, reserved_usd_micros: 3829 + 2400, reserved_tokens: 5029, reserved_ms: 12000 });
@@ -413,7 +415,7 @@ test('documento: a reserva usa o preço do modelo escolhido quando ele é mais c
 test('documento: recusa do escolhido cai no padrão com auditoria; tempo esgotado não gera segunda chamada', async t => {
  const refused = fixture(t), first = providers(refused, () => refusal(429), fields());
  await documentSetup(refused);
- const preview = await previewImport(refused.db, refused.actors.owner, documentInput(), secret, first.fetch, undefined, keys);
+ const preview = await previewImport(refused.db, refused.actors.owner, documentInput(`${LUNA}|`), secret, first.fetch, undefined, keys);
  assert.deepEqual(first.urls(), [OPENAI, DEEPSEEK]);
  assert.equal(preview.provenance.ai.provider, 'deepseek'); assert.deepEqual(settled(refused), DOCUMENT_BEFORE.usage, 'uma reserva só: a recusa não conta outra chamada nem outro custo');
  assert.equal(first.calls[1].sha256, DOCUMENT_BEFORE.call.sha256, 'o padrão recebe o corpo de sempre');
@@ -421,7 +423,77 @@ test('documento: recusa do escolhido cai no padrão com auditoria; tempo esgotad
 
  const doubtful = fixture(t), second = providers(doubtful, () => { throw new DOMException('synthetic timeout', 'TimeoutError'); }, fields());
  await documentSetup(doubtful);
- await assert.rejects(previewImport(doubtful.db, doubtful.actors.owner, documentInput(), secret, second.fetch, undefined, keys));
+ await assert.rejects(previewImport(doubtful.db, doubtful.actors.owner, documentInput(`${LUNA}|`), secret, second.fetch, undefined, keys), error => error?.code !== 'document_ai_destination');
  assert.deepEqual(second.urls(), [OPENAI], 'o padrão não recebe o documento'); assert.deepEqual(fallbacks(doubtful), []);
  assert.equal(doubtful.native.prepare('SELECT status FROM ai_document_calls').get().status, 'failed');
+});
+
+// ---------------------------------------------------------------------------------------------
+// Destino do documento: a autorização vale só para os modelos que a tela mostrou. Com modelo escolhido
+// e apto, destino errado ou ausente não reserva nem envia nada; sem modelo escolhido o campo é ignorado.
+// ---------------------------------------------------------------------------------------------
+const destinationChanged = error => error?.code === 'document_ai_destination' && error.status === 409 && error.message === 'O modelo que recebe este texto mudou. Confira o aviso e autorize de novo.';
+const documentRows = f => f.native.prepare('SELECT COUNT(*) n FROM ai_document_calls').get().n;
+/** O que a tela monta com o estado do assistente: é o mesmo texto que o servidor confere. */
+const shownDestination = async (f, actor = f.actors.owner) => { const shown = (await assistantStatus(f.db, actor, secret, 'org_proex', undefined, keys)).organizations.find(entry => entry.id === 'org_proex'); return shown.documentRouteName || shown.decisionRouteName ? `${shown.documentRouteName ?? ''}|${shown.decisionRouteName ?? ''}` : ''; };
+
+test('destino do documento: com modelo escolhido, destino errado ou ausente responde 409 sem reservar nem enviar; o destino certo segue', async t => {
+ const f = fixture(t), provider = providers(f, openAiAnswer, fields());
+ await documentSetup(f);
+ assert.equal(await shownDestination(f), `${LUNA}|`);
+ // Ausente, vazio (a tela mostrou o texto de sempre), só o nome, outro modelo, conferência que não existe, quase igual e valor que não é texto.
+ for (const shown of [undefined, '', LUNA, '|', `|${LUNA}`, 'GPT-6 Luna (OpenAI)|', `${LUNA}|${DECIDER}`, `${LUNA}| `, `${LUNA.toLowerCase()}|`, 7, null, [`${LUNA}|`]]) {
+  await assert.rejects(previewImport(f.db, f.actors.owner, documentInput(shown), secret, provider.fetch, undefined, keys), destinationChanged, JSON.stringify(shown));
+  assert.equal(provider.calls.length, 0, 'nenhuma chamada a provedor'); assert.equal(documentRows(f), 0, 'nenhuma reserva aberta'); assert.deepEqual(usage(f), {}, 'nada reservado no dia');
+ }
+ assert.deepEqual(fallbacks(f), []); assert.deepEqual(auditActions(f).filter(action => action.startsWith('import.')), []);
+ const preview = await previewImport(f.db, f.actors.owner, documentInput(await shownDestination(f)), secret, provider.fetch, undefined, keys);
+ assert.deepEqual(provider.urls(), [OPENAI]); assert.equal(preview.provenance.ai.provider, 'catalog:openai-gpt-5-6-luna');
+ assert.deepEqual(settled(f), DOCUMENT_BEFORE.usage);
+});
+
+test('destino do documento: a conferência escolhida também faz parte do destino, com ou sem modelo de documento escolhido', async t => {
+ const answer = (body, url) => url === PERPLEXITY ? jevAnswer(body.model) : openAiAnswer(body);
+ // Documento e conferência escolhidos.
+ const both = fixture(t), first = providers(both, answer, fields());
+ await saveVault(both, 'typesafe'); await saveCatalogKey(both, 'perplexity');
+ await documentSetup(both, { documentModel: 'openai-gpt-5-6-luna', jevEnabled: true, decisionModel: 'perplexity-decider-v1-2' });
+ assert.equal(await shownDestination(both), `${LUNA}|${DECIDER}`);
+ for (const shown of [undefined, '', `${LUNA}|`, `|${DECIDER}`, `${DECIDER}|${LUNA}`]) await assert.rejects(previewImport(both.db, both.actors.owner, documentInput(shown), secret, first.fetch, undefined, keys), destinationChanged, JSON.stringify(shown));
+ assert.equal(first.calls.length, 0); assert.equal(documentRows(both), 0); assert.deepEqual(usage(both), {});
+ const preview = await previewImport(both.db, both.actors.owner, documentInput(`${LUNA}|${DECIDER}`), secret, first.fetch, undefined, keys);
+ assert.deepEqual(first.urls(), [OPENAI, PERPLEXITY]); assert.equal(preview.provenance.ai.jevModel, 'pplx-decider-v1.2');
+ // Só a conferência escolhida: o documento segue no padrão, mas o destino mostrado ainda nomeia quem confere.
+ const decision = fixture(t), second = providers(decision, answer, fields());
+ await saveVault(decision, 'typesafe'); await saveCatalogKey(decision, 'perplexity');
+ await documentSetup(decision, { jevEnabled: true, decisionModel: 'perplexity-decider-v1-2' });
+ assert.equal(await shownDestination(decision), `|${DECIDER}`);
+ for (const shown of [undefined, '', DECIDER, `${LUNA}|${DECIDER}`]) await assert.rejects(previewImport(decision.db, decision.actors.owner, documentInput(shown), secret, second.fetch, undefined, keys), destinationChanged, JSON.stringify(shown));
+ assert.equal(second.calls.length, 0); assert.equal(documentRows(decision), 0);
+ await previewImport(decision.db, decision.actors.owner, documentInput(`|${DECIDER}`), secret, second.fetch, undefined, keys);
+ assert.deepEqual(second.urls(), [DEEPSEEK, PERPLEXITY]);
+ assert.equal(second.calls[0].sha256, DOCUMENT_BEFORE.call.sha256, 'o padrão lê o documento com o corpo de sempre');
+});
+
+test('destino do documento: sem modelo escolhido, ou com um que não pode receber, o campo é ignorado e o caminho padrão não muda', async t => {
+ // Chaves vazias: qualquer valor (ou nenhum) dá a mesma chamada e a mesma reserva de antes do roteamento.
+ for (const shown of [undefined, '', `${LUNA}|`, 'qualquer coisa', 7]) {
+  const f = fixture(t), provider = providers(f, undefined, fields());
+  await documentSetup(f, {});
+  assert.equal(await shownDestination(f), '');
+  f.sql.length = 0;
+  const preview = await previewImport(f.db, f.actors.owner, documentInput(shown), secret, provider.fetch, undefined, keys);
+  assert.deepEqual(provider.calls.map(({ url, length, sha256 }) => ({ url, length, sha256 })), [DOCUMENT_BEFORE.call], JSON.stringify(shown));
+  assert.deepEqual(settled(f), DOCUMENT_BEFORE.usage); assert.equal(preview.provenance.ai.provider, 'deepseek');
+  assert.equal(f.sql.some(text => /FROM settings WHERE name/.test(text)), false, 'com a chave vazia o catálogo nem é lido');
+ }
+ // Modelo escolhido sem chave: não há destino novo para nomear; o texto vai só ao padrão, com a queda na auditoria.
+ const f = fixture(t), provider = providers(f, undefined, fields());
+ await documentSetup(f);
+ await manageAssistantCredential(f.db, f.actors.owner, { action: 'remove', organizationId: 'org_proex', provider: 'openai', expectedRevision: revision(f) }, secret, keys);
+ assert.equal(storedConfig(f).documentModel, 'openai-gpt-5-6-luna'); assert.equal(await shownDestination(f), '');
+ await previewImport(f.db, f.actors.owner, documentInput(), secret, provider.fetch, undefined, keys);
+ await previewImport(f.db, f.actors.owner, documentInput(`${LUNA}|`), secret, provider.fetch, undefined, keys);
+ assert.deepEqual(provider.urls(), [DEEPSEEK, DEEPSEEK]);
+ assert.deepEqual(fallbacks(f).map(entry => entry.reason), ['Falta a chave do provedor deste modelo.', 'Falta a chave do provedor deste modelo.']);
 });

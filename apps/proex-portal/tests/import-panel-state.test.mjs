@@ -9,11 +9,12 @@ const root = new URL('../', import.meta.url), tick = () => new Promise(resolve =
 const text = node => typeof node === 'string' ? node : Array.isArray(node) ? node.map(text).join('') : node && typeof node === 'object' ? text(node.props?.children) : '';
 const props = { kind: 'asset', defaultProjectId: 'project-a', projects: [{ id: 'project-a', name: 'Projeto A' }, { id: 'project-b', name: 'Projeto B' }], items: [], canWrite: () => true };
 const preview = { projectId: 'project-a', itemId: null, reviewToken: 'synthetic-reviewed-document', provenance: { label: 'Documento sintético', retrievedAt: '2026-10-31T12:00:00Z', extraction: 'text-file' }, candidates: [{ key: 'row-1', fields: { name: 'Equipamento A', assetCode: '000123' }, problems: {}, warnings: [] }] };
-function harness(initialProps = props) {
+// `effects`: refaz o efeito quando uma dependência muda (como o React faz). Sem isso, cada efeito roda uma vez só, como sempre foi aqui.
+function harness(initialProps = props, { effects = false } = {}) {
  const slots = [], requests = [], cache = new Map(); let index = 0, tree, currentProps = initialProps;
  const hooks = {
   useState(initial) { const key = index++; if (!(key in slots)) slots[key] = typeof initial === 'function' ? initial() : initial; return [slots[key], value => { slots[key] = typeof value === 'function' ? value(slots[key]) : value; }]; },
-  useEffect(callback){const key=index++;if(!(key in slots))slots[key]={cleanup:callback()};},
+  useEffect(callback,deps){const key=index++,previous=slots[key];if(!previous||effects&&deps?.some((value,position)=>value!==previous.deps?.[position])){previous?.cleanup?.();slots[key]={cleanup:callback(),deps};}},
   useRef(initial) { const key = index++; slots[key] ??= { current: initial }; return slots[key]; },
  };
  const jsx = { jsx: (type, attrs) => ({ type, props: attrs }), jsxs: (type, attrs) => ({ type, props: attrs }) };
@@ -114,4 +115,64 @@ test('a preview response from an older source, file or destination cannot restor
 
 test('editing a formerly missing field preserves the completed value and the original missing evidence',async()=>{
  const h=harness();h.chooseFile(file('missing.txt'));await tick();h.render();h.button('Preparar prévia').props.onClick();await tick();h.requests[0].resolve({ok:true,json:async()=>({...preview,candidates:[{...preview.candidates[0],evidence:{brand:{status:'missing',method:'ai',quote:null,confidence:null}}}]})});await tick();h.render();h.button('Completar campos não encontrados').props.onClick();h.render();const input=()=>h.find('input',node=>node.props.placeholder&&node.props.maxLength===120&&node.props.value==='');const candidate=input();candidate.props.onChange({target:{value:'M'}});h.render();const field=h.find('input',node=>node.props.value==='M');field.props.onChange({target:{value:'Marca documentada'}});h.render();assert.ok(h.find('input',node=>node.props.value==='Marca documentada'));assert.match(h.text(),/editado manualmente|não encontrado na fonte/);
+});
+
+// Destino da leitura com IA: a tela manda ao servidor o que a autorização mostrou e, se o servidor disser que o destino mudou, pede a autorização de novo.
+const LUNA='GPT-5.6 Luna (OpenAI)',DECIDER='Decider v1.2 (Perplexity)',STANDARD_CONSENT='Autorizo enviar o texto extraído desta fonte ao provedor de texto escolhido para esta organização (DeepSeek ou OpenAI) e ao Jev se habilitado.',REVIEW=' Conferirei os trechos, ausências e campos antes de salvar.';
+const aiSetup={...props,projects:[{id:'project-a',name:'Projeto A',organization_id:'org-a'}],organizations:[{id:'org-a',name:'Organização A',status:'active',canManage:true}]};
+const names=(extra={})=>({ok:true,json:async()=>({organizations:[{id:'org-b',documentRouteName:'Outro modelo sintético'},{id:'org-a',...extra}]})});
+function aiHarness(){
+ const h=harness(aiSetup,{effects:true});
+ h.useAi=()=>{h.find('label',label=>text(label).includes('Usar IA para estruturar')).props.children[0].props.onChange({target:{checked:true}});h.render();};
+ h.consent=()=>h.find('label',label=>text(label).includes('Autorizo enviar o texto extraído'));
+ h.authorize=()=>{h.consent().props.children[0].props.onChange({target:{checked:true}});h.render();};
+ h.prepare=async()=>{h.button('Preparar prévia').props.onClick();await tick();};
+ h.answer=async(index,response)=>{h.requests[index].resolve(response);await tick();h.render();};
+ return h;
+}
+const destinationChanged={ok:false,json:async()=>({error:'O modelo que recebe este texto mudou. Confira o aviso e autorize de novo.',code:'document_ai_destination'})};
+
+test('document AI sends the destination the authorization showed: empty for the usual text, the model names when they are shown',async()=>{
+ // Arquivo (formulário), sem modelo escolhido: texto de sempre e destino vazio.
+ const plain=aiHarness();plain.chooseFile(file('ai-source.txt','Cadastro: Equipamento A'));await tick();plain.render();plain.useAi();
+ assert.equal(plain.requests.length,1);assert.equal(plain.requests[0].url,'/api/assistant?organizationId=org-a');
+ await plain.answer(0,names());
+ assert.equal(text(plain.consent()),STANDARD_CONSENT+REVIEW);
+ plain.authorize();await plain.prepare();
+ assert.equal(plain.requests[1].url,'/api/imports/document');assert.equal(plain.requests[1].init.body.get('aiDestination'),'');assert.equal(plain.requests[1].init.body.get('aiConsent'),'true');
+ // Arquivo (formulário), com os dois modelos escolhidos: a autorização nomeia os dois e o pedido leva os dois nomes.
+ const routed=aiHarness();routed.chooseFile(file('ai-source.txt','Cadastro: Equipamento A'));await tick();routed.render();routed.useAi();routed.authorize();
+ assert.equal(routed.consent().props.children[0].props.checked,true);
+ await routed.answer(0,names({documentRouteName:LUNA,decisionRouteName:DECIDER}));
+ assert.equal(routed.consent().props.children[0].props.checked,false,'the text now names another destination: the person authorizes again');
+ assert.equal(text(routed.consent()),'Autorizo enviar o texto extraído desta fonte ao modelo GPT-5.6 Luna (OpenAI). Se ele não puder responder, o texto vai para o provedor de texto padrão desta organização (DeepSeek ou OpenAI). Para a conferência, o texto vai também ao modelo Decider v1.2 (Perplexity); se ele não puder responder, ao JEV padrão, da TypeSafe.'+REVIEW);
+ routed.authorize();await routed.prepare();
+ assert.equal(routed.requests[1].init.body.get('aiDestination'),LUNA+'|'+DECIDER);
+ // Texto colado (JSON), só a conferência escolhida: o lado do documento fica vazio.
+ const pasted=aiHarness();pasted.find('textarea',()=>true).props.onChange({target:{value:'Cadastro: Equipamento A'}});pasted.render();pasted.useAi();
+ await pasted.answer(0,names({decisionRouteName:DECIDER}));
+ pasted.authorize();await pasted.prepare();
+ const body=JSON.parse(pasted.requests[1].init.body);
+ assert.equal(pasted.requests[1].url,'/api/imports');assert.equal(body.aiDestination,'|'+DECIDER);assert.equal(body.useAi,true);assert.equal(body.aiConsent,true);
+});
+
+test('document AI: when the names could not be read and the server says the destination changed, the authorization is cleared and the names are asked again',async()=>{
+ const h=aiHarness();h.chooseFile(file('ai-source.txt','Cadastro: Equipamento A'));await tick();h.render();h.useAi();
+ h.requests[0].reject(new Error('synthetic network failure'));await tick();h.render();
+ assert.equal(text(h.consent()),STANDARD_CONSENT+REVIEW,'without the names the usual text stays');
+ h.authorize();await h.prepare();
+ const first=h.requests[1].init.body;assert.equal(first.get('aiDestination'),'');
+ await h.answer(1,destinationChanged);
+ assert.deepEqual(h.alerts(),['O modelo que recebe este texto mudou. Confira o aviso e autorize de novo.']);
+ assert.equal(h.consent().props.children[0].props.checked,false);assert.equal(h.button('Preparar prévia').props.disabled,true);
+ assert.equal(h.requests.length,3);assert.equal(h.requests[2].url,'/api/assistant?organizationId=org-a','asks who receives the text now');
+ await h.answer(2,names({documentRouteName:LUNA}));
+ assert.equal(text(h.consent()),'Autorizo enviar o texto extraído desta fonte ao modelo GPT-5.6 Luna (OpenAI). Se ele não puder responder, o texto vai para o provedor de texto padrão desta organização (DeepSeek ou OpenAI). O texto também vai ao Jev se habilitado.'+REVIEW);
+ await h.prepare();assert.equal(h.requests.length,3,'nothing is sent before the new authorization');
+ h.authorize();await h.prepare();
+ const second=h.requests[3].init.body;assert.equal(second.get('aiDestination'),LUNA+'|');
+ assert.equal(second.get('aiOperationKey'),first.get('aiOperationKey'),'the refused request reserved nothing, so the same operation continues');
+ // Outro erro qualquer não mexe na autorização nem busca os nomes de novo.
+ await h.answer(3,{ok:false,json:async()=>({error:'Erro sintético.',code:'document_ai_quota'})});
+ assert.equal(h.consent().props.children[0].props.checked,true);assert.equal(h.requests.length,4);
 });
