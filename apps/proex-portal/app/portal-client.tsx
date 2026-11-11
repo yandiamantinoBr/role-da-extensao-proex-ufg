@@ -636,6 +636,8 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
             throw new Error(r.status === 401 ? 'Sua sessão terminou. Entre novamente para continuar.' : readableError(body?.error, 'Não foi possível concluir. Verifique sua conexão e tente novamente.'));
         const updated = await refresh();
         if(action.startsWith('stock.move')||action.startsWith('item.'))window.dispatchEvent(new Event(MATERIAL_ATTENTION_CHANGED));
+        // A saída conjunta mostra o próprio resultado no diálogo; um aviso a mais só repetiria.
+        if(action==='stock.move.many')return body;
         setMessageKind(body.alreadyDelivered ? 'warning' : 'success');
         const receipt = body.alreadyDelivered ? `Este prêmio${body.offerName ? ` (${body.offerName})` : ''} já foi entregue. Não entregue novamente.` : action === 'prize.redeem' ? 'Entrega registrada. Entregue os materiais indicados à pessoa.' : updated ? 'Registro salvo. Os dados foram atualizados.' : 'Registro salvo. A atualização da tela está pendente; use Atualizar dados.';
         setMessage(receipt);
@@ -1021,8 +1023,8 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
             <div id="movimentar-estoque" className={workStyles.anchor}/>
             <Section title="Registrar movimento" description="Toda alteração registra motivo, quantidade e responsável. O registro é feito na ficha do material, onde também ficam o histórico, corrigir, desfazer e os anexos.">
             <div className={workStyles.movementEntry}>
-            <button type="button" className="p-button p-button-primary" onClick={()=>setMovementLauncher('one')}><Boxes size={17} aria-hidden="true"/>Escolher o material</button>
-            <button type="button" className="p-button p-button-subtle" onClick={()=>setMovementLauncher('many')}><Truck size={17} aria-hidden="true"/>Saída de vários materiais</button>
+            <button type="button" className="p-button p-button-subtle" onClick={()=>setMovementLauncher('one')}><Boxes size={17} aria-hidden="true"/>Um material</button>
+            <button type="button" className="p-button p-button-subtle" onClick={()=>setMovementLauncher('many')}><Truck size={17} aria-hidden="true"/>Vários de uma vez</button>
             </div>
             </Section>
             </div>}</div>

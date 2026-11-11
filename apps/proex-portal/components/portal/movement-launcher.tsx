@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { ArrowRight, Check, LoaderCircle, Package, Plus, RefreshCw, Search, Trash2, X } from 'lucide-react';
+import { ArrowRight, Check, LoaderCircle, Package, Plus, RefreshCw, Search, Trash2, TriangleAlert, X } from 'lucide-react';
 import DestinationField, { destinationFields, loadDestinations } from './destination-field';
 import StockContextFields, { stockContextFields } from './stock-context-fields';
 import styles from './movement-launcher.module.css';
@@ -38,7 +38,7 @@ export default function MovementLauncher({ materials, defaultProjectId = '', ini
   const dialog = useRef<HTMLDialogElement>(null), opener = useRef<HTMLElement | null>(null), alive = useRef(false), nextKey = useRef(2);
   // The key and the exact payload of a delivery whose reply was lost: resent untouched, so the server recognizes it.
   const key = useRef<string | null>(null), pending = useRef<Record<string, unknown> | null>(null);
-  const message = useRef<HTMLParagraphElement>(null), done = useRef<HTMLParagraphElement>(null);
+  const message = useRef<HTMLParagraphElement & HTMLDivElement>(null), done = useRef<HTMLParagraphElement>(null);
   const [mode, setMode] = useState<LauncherMode>(initialMode), [query, setQuery] = useState('');
   const outgoing = useMemo(() => materials.filter(material => material.category !== 'equipment' && material.active), [materials]);
   // A joint delivery needs at least two materials of the same project.
@@ -65,6 +65,7 @@ export default function MovementLauncher({ materials, defaultProjectId = '', ini
   const byId = new Map(available.map(material => [material.id, material]));
   const filled = lines.filter(line => line.itemId && byId.has(line.itemId));
   const units = filled.reduce((total, line) => total + (Number.isSafeInteger(Number(line.quantity)) && Number(line.quantity) > 0 ? Number(line.quantity) : 0), 0);
+  const above = filled.filter(line => Number(line.quantity) > (byId.get(line.itemId)?.available ?? 0)).length;
   const edited = () => { key.current = null; pending.current = null; };
   const change = (lineKey: number, patch: Partial<Line>) => { edited(); setLines(current => current.map(line => line.key === lineKey ? { ...line, ...patch } : line)); };
   function chooseProject(id: string) { edited(); setProjectId(id); setLines(blankLines(nextKey)); setError(''); }
@@ -96,7 +97,7 @@ export default function MovementLauncher({ materials, defaultProjectId = '', ini
       // A lost reply may hide a delivery that was recorded: keep the request and offer to check. A refusal recorded nothing.
       const lost = Boolean((failure as { uncertain?: boolean } | null)?.uncertain);
       if (!lost) pending.current = null;
-      if (alive.current) { setUncertain(lost); setError(lost ? 'Não tivemos resposta do servidor, e a saída pode ter sido gravada. Toque em “Conferir se foi registrada”: se já foi, ela não se repete; se não foi, é registrada agora.' : failure instanceof Error ? failure.message : 'Não foi possível registrar. Nada foi gravado; tente novamente.'); }
+      if (alive.current) { setUncertain(lost); setError(lost ? 'Não registre de novo antes de conferir. Toque em “Conferir se foi registrada”: se a saída já foi gravada, ela não se repete; se não foi, é registrada agora. Se fechar, veja o histórico do material antes de tentar outra vez.' : failure instanceof Error ? failure.message : 'Não foi possível registrar. Nada foi gravado; tente novamente.'); }
     } finally { if (alive.current) setSaving(false); }
   }
   function again() { edited(); setOutcome(null); setError(''); setUncertain(false); setLines(blankLines(nextKey)); }
@@ -107,7 +108,7 @@ export default function MovementLauncher({ materials, defaultProjectId = '', ini
       <p ref={done} tabIndex={-1} role="status" className={styles.done}><Check size={18} aria-hidden="true"/><span><strong>{outcome.movements.length} materiais</strong> saíram do estoque{outcome.destination ? <> para <strong>{outcome.destination.name}</strong></> : null}.</span></p>
       <ul className={styles.results}>{outcome.movements.map(movement => <li key={movement.id}><span><strong>{movement.itemName}</strong><small>{amount(Math.abs(movement.delta), movement.unit)}</small></span><button type="button" className="p-button p-button-subtle" aria-label={`Abrir a ficha de ${movement.itemName}`} onClick={() => onOpenMaterial(movement.itemId, 'history')}>Abrir ficha<ArrowRight size={15} aria-hidden="true"/></button></li>)}</ul>
       <p className={styles.hint}>Para corrigir ou desfazer uma linha, ou anexar um comprovante, abra a ficha do material.</p>
-      <footer className={styles.footer}><button type="button" className="p-button p-button-subtle" onClick={again}>Registrar outra saída</button><button type="button" className="p-button p-button-primary" onClick={close}>Concluir</button></footer>
+      <div className={styles.actions}><footer className={styles.footer}><button type="button" className="p-button p-button-subtle" onClick={again}>Registrar outra saída</button><button type="button" className="p-button p-button-primary" onClick={close}>Concluir</button></footer></div>
     </section> : <>
       <div className={styles.modes} role="group" aria-label="Quantos materiais">
         <button type="button" aria-pressed={mode === 'one'} disabled={saving || uncertain} onClick={() => { setMode('one'); setError(''); }}>Um material</button>
@@ -115,7 +116,7 @@ export default function MovementLauncher({ materials, defaultProjectId = '', ini
       </div>
       {mode === 'one' ? <section className={styles.one}>
         <label className={styles.search}><span className="visually-hidden">Buscar material</span><Search size={17} aria-hidden="true"/><input data-launcher-focus name="launcherSearch" value={query} onChange={event => setQuery(event.target.value)} placeholder="Buscar material" autoComplete="off"/></label>
-        <p className={styles.hint}>A ficha abre em Movimentar. Recebimento, entrega, uso e correção de contagem são feitos lá, com histórico, corrigir, desfazer e anexos.</p>
+        <p className={styles.hint}>Toque no material para abrir a ficha em Movimentar. Histórico, corrigir, desfazer e anexos ficam lá.</p>
         {found.length ? <ul className={styles.list}>{found.map(material => <li key={material.id}><button type="button" onClick={() => onOpenMaterial(material.id, 'move')}><span><strong>{material.name}</strong><small>{material.projectName}</small></span><span className={styles.stock}>{material.active ? `${amount(material.available, material.unit)} ${material.available === 1 ? 'disponível' : 'disponíveis'}` : 'Indisponível'}<ArrowRight size={15} aria-hidden="true"/></span></button></li>)}</ul>
           : <p className={styles.empty}>{materials.length ? 'Nenhum material com esse nome.' : 'Você ainda não tem materiais para movimentar. Cadastre um material primeiro.'}</p>}
         {matches.length > found.length && <p className={styles.hint} role="status">Mostrando {found.length} de {matches.length} materiais. Digite parte do nome para achar os demais.</p>}
@@ -134,9 +135,9 @@ export default function MovementLauncher({ materials, defaultProjectId = '', ini
               <label className="p-field"><span>Material {index + 1}</span><select name={`launcherItem${line.key}`} value={line.itemId} onChange={event => change(line.key, { itemId: event.target.value })}><option value="">Selecione o material</option>{available.filter(option => option.id === line.itemId || !lines.some(other => other.itemId === option.id)).map(option => <option key={option.id} value={option.id} disabled={option.available < 1}>{option.name} · {amount(option.available, option.unit)}</option>)}</select></label>
               <label className={`p-field ${styles.quantity}`}><span>Quantidade</span><input name={`launcherQuantity${line.key}`} type="number" inputMode="numeric" min="1" step="1" value={line.quantity} aria-invalid={over || undefined} onChange={event => change(line.key, { quantity: event.target.value })}/></label>
               <button type="button" className={`p-icon-button ${styles.remove}`} aria-label={`Remover ${material?.name ?? `material ${index + 1}`}`} disabled={lines.length <= 2} onClick={() => { edited(); setLines(current => current.filter(other => other.key !== line.key)); }}><Trash2 size={17}/></button>
-              {over && <small className={styles.over} role="alert">Só há {amount(material.available, material.unit)} no estoque disponível.</small>}
+              {material && (over ? <small className={styles.over} role="alert">Só há {amount(material.available, material.unit)}.</small> : <small className={styles.avail}>Disponível: {amount(material.available, material.unit)}</small>)}
             </div>; })}
-          <div className={styles.linesFoot}><button type="button" className="p-button p-button-subtle" disabled={lines.length >= MAX_LINES || lines.length >= available.length} onClick={() => setLines(current => [...current, { key: nextKey.current++, itemId: '', quantity: '1' }])}><Plus size={16}/>Adicionar material</button><span className={styles.total} aria-live="polite">{filled.length ? `${filled.length} ${filled.length === 1 ? 'material' : 'materiais'} · ${units.toLocaleString('pt-BR')} no total` : 'Nenhum material escolhido'}</span></div>
+          <div className={styles.linesFoot}><button type="button" className="p-button p-button-subtle" disabled={lines.length >= MAX_LINES || lines.length >= available.length} onClick={() => setLines(current => [...current, { key: nextKey.current++, itemId: '', quantity: '1' }])}><Plus size={16}/>Adicionar material</button><span className={above ? styles.totalOver : styles.total} aria-live="polite">{above ? `${above} ${above === 1 ? 'linha acima' : 'linhas acima'} do saldo` : filled.length ? `${filled.length} ${filled.length === 1 ? 'material' : 'materiais'} · ${units.toLocaleString('pt-BR')} no total` : 'Nenhum material escolhido'}</span></div>
         </div>
         <DestinationField key={projectId} projectId={projectId} kind={kind}/>
         <StockContextFields key={projectId} projectId={projectId} kind={kind}/>
@@ -144,8 +145,10 @@ export default function MovementLauncher({ materials, defaultProjectId = '', ini
         </>}
         </>}
         </fieldset>
-        {error && <p ref={message} tabIndex={-1} role="alert" className={`p-inline-error ${styles.message}`}>{error}</p>}
-        {projects.length > 0 && <footer className={styles.footer}><button type="button" className="p-button p-button-subtle" disabled={saving} onClick={close}>{uncertain ? 'Fechar' : 'Cancelar'}</button><button className="p-button p-button-primary" type="submit" disabled={saving || (!uncertain && (!projectId || filled.length < 2))}>{saving ? <LoaderCircle size={17} className="p-spin"/> : uncertain ? <RefreshCw size={17}/> : <Check size={17}/>}{uncertain ? 'Conferir se foi registrada' : filled.length >= 2 ? `Registrar saída de ${filled.length} materiais` : 'Registrar saída'}</button></footer>}
+        <div className={styles.actions}>
+        {error && (uncertain ? <div ref={message} tabIndex={-1} role="alert" className={styles.unsure}><TriangleAlert size={19} aria-hidden="true"/><p><strong>Não sabemos se a saída foi gravada.</strong>{error}</p></div> : <p ref={message} tabIndex={-1} role="alert" className={`p-inline-error ${styles.message}`}>{error}</p>)}
+        {projects.length > 0 && <footer className={styles.footer}><button type="button" className="p-button p-button-subtle" disabled={saving} onClick={close}>{uncertain ? 'Fechar sem conferir' : 'Cancelar'}</button><button className="p-button p-button-primary" type="submit" disabled={saving || (!uncertain && (!projectId || filled.length < 2))}>{saving ? <LoaderCircle size={17} className="p-spin"/> : uncertain ? <RefreshCw size={17}/> : <Check size={17}/>}{uncertain ? 'Conferir se foi registrada' : filled.length >= 2 ? `Registrar saída de ${filled.length} materiais` : 'Registrar saída'}</button></footer>}
+        </div>
       </form>}
     </>}
   </dialog>;
