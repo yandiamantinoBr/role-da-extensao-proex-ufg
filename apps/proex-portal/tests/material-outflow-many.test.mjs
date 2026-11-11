@@ -112,6 +112,28 @@ test('only who manages the stock of that project can do it, checked again inside
  assert.equal(f.movements(),0);assert.equal(f.stock(f.botton.id),300);
 });
 
+test('the destination is part of the confirmed operation; assistant keys are refused; outsiders learn nothing about projects; twin requests record once',async t=>{
+ const f=await fixture(t),operationKey=key(),input={kind:'distribute',lines:lines(f,1,1,1),reason:'Entrega sintética',operationKey,destinationName:'Destino X sintético'};
+ const first=await f.run('owner-a','stock.move.many',input),again=await f.run('owner-a','stock.move.many',input);
+ assert.equal(again.duplicate,true);assert.equal(again.destination.id,first.destination.id,'the repeat also says where it went');
+ await assert.rejects(f.run('owner-a','stock.move.many',{...input,destinationName:'Destino Y sintético'}),e=>e.status===409&&e.code==='operation_conflict');
+ await assert.rejects(f.run('owner-a','stock.move.many',{...input,destinationName:undefined}),e=>e.status===409&&e.code==='operation_conflict');
+ assert.equal(f.native.prepare('SELECT COUNT(*) n FROM material_destinations').get().n,1,'the refused repeat creates no destination');
+ // The history labels movements whose key starts with ai_ as made by the assistant; this action never is.
+ await assert.rejects(f.run('owner-a','stock.move.many',{...input,operationKey:'ai_0000000000'}),e=>e.status===400&&e.code==='invalid_operation');
+ // Permission comes before any answer about which materials share a project.
+ const other=await f.make('Material de outro projeto',20,'project-a2'),mixed={kind:'distribute',reason:'Entrega sintética',lines:[{itemId:f.botton.id,quantity:1},{itemId:other.id,quantity:1}]};
+ await assert.rejects(f.run('owner-b','stock.move.many',mixed),e=>e.status===403,'another organization');
+ await assert.rejects(f.run('other-a2','stock.move.many',mixed),e=>e.status===403,'stock keeper of only one of the projects');
+ await assert.rejects(f.run('owner-a','stock.move.many',mixed),e=>e.code==='mixed_projects','who manages both is told to split');
+ // Two identical requests at the same time: one delivery.
+ const twin={kind:'consume',lines:lines(f,2,2,2),reason:'Uso sintético',operationKey:key()},before=f.stock(f.botton.id);
+ const [a,b]=await Promise.all([f.run('owner-a','stock.move.many',twin),f.run('owner-a','stock.move.many',twin)]);
+ assert.deepEqual(a.movements.map(row=>row.id),b.movements.map(row=>row.id));
+ assert.equal(f.stock(f.botton.id),before-2,'the balance moved once');
+ assert.equal(f.native.prepare("SELECT COUNT(*) n FROM stock_movements WHERE kind='consume'").get().n,3);
+});
+
 test('Registrar movimento has one path: the page opens the material sheet instead of keeping a second form',()=>{
  const portal=readFileSync(new URL('../app/portal-client.tsx',import.meta.url),'utf8');
  assert.doesNotMatch(portal,/OperationForm action="stock\.move"/,'the page no longer posts a movement by itself');
@@ -120,6 +142,10 @@ test('Registrar movimento has one path: the page opens the material sheet instea
  assert.match(launcher,/onOpenMaterial\(/,'choosing a material opens its sheet');
  assert.match(launcher,/'stock\.move\.many'/);
  assert.doesNotMatch(launcher,/'stock\.move'[,)]/,'a single movement is recorded only in the sheet');
+ // After a lost reply the same payload is resent as it was: no balance check on the screen, so the repeat reaches the server.
+ assert.match(launcher,/pending\.current \?\? /);
+ assert.match(launcher,/Conferir se foi registrada/);
+ assert.match(portal,/uncertain: true/);
  // The sheet is the one place that records a single movement, with the field name the server documents.
  const sheet=readFileSync(new URL('../components/portal/material-detail-drawer.tsx',import.meta.url),'utf8');
  assert.match(sheet,/action\('stock\.move', \{ itemId, kind: moveKind, delta, reason:/);

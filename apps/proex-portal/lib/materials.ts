@@ -5,7 +5,7 @@ import { assetMetadata, assetMetadataValues, ASSET_METADATA_COLUMNS, ASSET_METAD
 import { stockContextInput, prepareStockContext, matchingStockContext, fencedMovementContexts } from './stock-context';
 import { setPrimaryPhoto, currentPrimaryPhoto, primaryPhotoHistory } from './material-photos';
 import { movementAction, annotateMovements, attachmentDeletions, HIDE_MIRRORS_SQL } from './material-movements';
-import { destinationAction, resolveDestination } from './material-destinations';
+import { destinationAction, resolveDestination, movementDestinations } from './material-destinations';
 
 type Item = { id: string; project_id: string; name: string; category: string; unit: string; stock: number; reserved: number; condition: string; description: string; low_stock: number; asset_code: string; version: number; updated_at: string; category_id: string | null; owner_unit_id: string | null; event_destination_id: string | null };
 type Loan = { id: string; project_id: string; item_id: string; status: string; note: string; starts_at: number; ends_at: number; condition_out: string; condition_in: string; checked_out_at: string | null; returned_at: string | null; updated_at: string };
@@ -48,6 +48,11 @@ function timestampValue(value: unknown, label: string): number {
     throw new HttpError(400, `${label} não é uma data válida.`, 'invalid_date');
   }
   return time;
+}
+/** "28 unidades", "1 unidade"; units already in the plural stay as they are. */
+function quantityLabel(count: number, unit: string): string {
+  const name = unit || 'unidade';
+  return `${count} ${Math.abs(count) === 1 || /s$/i.test(name) ? name : `${name}s`}`;
 }
 function statement(db: D1Database, sql: string, values: (string | number | null)[] = []): D1PreparedStatement {
   return db.prepare(sql).bind(...values);
@@ -343,7 +348,8 @@ export async function materialsAction(db: D1Database, actor: PortalActor, action
       if (!Array.isArray(input.lines) || input.lines.length < 2 || input.lines.length > MAX_OUTFLOW_LINES) throw new HttpError(400, `Inclua de 2 a ${MAX_OUTFLOW_LINES} materiais. Para um material só, use a ficha dele.`, 'invalid_lines');
       const note = textValue(input.reason ?? input.note, 'o motivo da saída', 2000);
       const operationKey = textValue(input.operationKey, 'o identificador da operação', 110);
-      if (!/^[a-zA-Z0-9_-]{8,110}$/.test(operationKey)) throw new HttpError(400, 'Identificador da operação inválido. Atualize a página.', 'invalid_operation');
+      // The prefix ai_ is how the history recognizes a movement made by the assistant; this action is never its.
+      if (!/^[a-zA-Z0-9_-]{8,110}$/.test(operationKey) || /^ai_/i.test(operationKey)) throw new HttpError(400, 'Identificador da operação inválido. Atualize a página.', 'invalid_operation');
       const seen = new Set<string>();
       const lines = (input.lines as unknown[]).map((line, index) => {
         if (!line || typeof line !== 'object' || Array.isArray(line)) throw new HttpError(400, `Confira o material da linha ${index + 1}.`, 'invalid_lines');
@@ -352,11 +358,13 @@ export async function materialsAction(db: D1Database, actor: PortalActor, action
         seen.add(itemId);
         return { itemId, quantity: integerValue((line as Record<string, unknown>).quantity, `A quantidade da linha ${index + 1}`, 1) };
       });
-      const rows: { item: Item; delta: number; refId: string }[] = [];
-      for (const [index, line] of lines.entries()) rows.push({ item: await itemById(db, line.itemId), delta: -line.quantity, refId: `manual:${actor.userId}:${operationKey}:${index + 1}` });
+      const found = new Map(((await db.prepare(`SELECT * FROM items WHERE id IN (${lines.map(() => '?').join(',')})`).bind(...lines.map(line => line.itemId)).all<Item>()).results ?? []).map(item => [item.id, item]));
+      if (found.size !== lines.length) throw new HttpError(404, 'Material não encontrado.', 'item_not_found');
+      const rows = lines.map((line, index) => ({ item: found.get(line.itemId)!, delta: -line.quantity, refId: `manual:${actor.userId}:${operationKey}:${index + 1}` }));
       const projectId = rows[0].item.project_id;
+      // Permission first, on every project named: the answer never tells an outsider which materials share a project.
+      for (const named of new Set(rows.map(row => row.item.project_id))) await requireLiveCapability(db, actor, 'inventory.manage', named);
       if (rows.some(row => row.item.project_id !== projectId)) throw new HttpError(400, 'Escolha materiais de um mesmo projeto. Para outro projeto, faça outra saída.', 'mixed_projects');
-      await requireLiveCapability(db, actor, 'inventory.manage', projectId);
       const groupId = await assignedGroup(db, input.groupId, projectId);
       const contextInput = stockContextInput(input, now);
       const previous = (await db.prepare(`SELECT * FROM stock_movements WHERE ref_id IN (${rows.map(() => '?').join(',')})`).bind(...rows.map(row => row.refId)).all<Movement>()).results ?? [];
@@ -367,25 +375,27 @@ export async function materialsAction(db: D1Database, actor: PortalActor, action
         if (stored.length !== rows.length || longer) throw new HttpError(409, 'Esta operação já foi usada para outra saída. Atualize a página e tente novamente.', 'operation_conflict');
         const byRef = new Map(stored.map(movement => [movement.ref_id, movement]));
         for (const row of rows) { const movement = byRef.get(row.refId)!; matchingMovement(movement, row.item, row.delta, kind, note, groupId); await matchingStockContext(db, movement.id, contextInput); }
-        return { movements: rows.map(row => { const movement = byRef.get(row.refId)!; return { id: movement.id, itemId: row.item.id, itemName: row.item.name, unit: row.item.unit, delta: row.delta }; }), projectId, duplicate: true };
+        // The destination is part of what was confirmed: the same key with another destination is another delivery.
+        const wanted = await resolveDestination(db, actor, projectId, input, now), linked = await movementDestinations(db, stored.map(movement => movement.id));
+        if (stored.some(movement => (linked.get(movement.id)?.id ?? null) !== (wanted?.id ?? null))) throw new HttpError(409, 'Esta operação já foi confirmada com outro destino. Atualize a página e tente novamente.', 'operation_conflict');
+        return { movements: rows.map(row => { const movement = byRef.get(row.refId)!; return { id: movement.id, itemId: row.item.id, itemName: row.item.name, unit: row.item.unit, delta: row.delta }; }), projectId, duplicate: true, ...(wanted ? { destination: { id: wanted.id, name: wanted.name } } : {}) };
       };
       if (previous.length) return replay();
       for (const { item, delta } of rows) {
         if (item.category === 'equipment') throw new HttpError(400, `“${item.name}” é um equipamento. Registre a saída dele na área de empréstimos.`, 'equipment_movement');
         if (item.condition !== 'active') throw new HttpError(409, `“${item.name}” está indisponível para movimentação.`, 'item_inactive');
-        if (item.stock + delta < item.reserved) throw new HttpError(409, `A saída de “${item.name}” supera o saldo disponível (${Math.max(0, item.stock - item.reserved)} ${item.unit}). Nenhuma linha foi registrada.`, 'insufficient_stock');
+        if (item.stock + delta < item.reserved) throw new HttpError(409, `A saída de “${item.name}” supera o saldo disponível (${quantityLabel(Math.max(0, item.stock - item.reserved), item.unit)}). Nenhuma linha foi registrada.`, 'insufficient_stock');
       }
-      const contexts = [] as Awaited<ReturnType<typeof prepareStockContext>>[];
-      for (const row of rows) contexts.push(await prepareStockContext(db, actor, row.item, contextInput));
+      const context = await prepareStockContext(db, actor, rows[0].item, contextInput);
       const destination = await resolveDestination(db, actor, projectId, input, now);
       const batchId = crypto.randomUUID(), movementIds = rows.map(() => crypto.randomUUID());
       try {
         await capabilityBatch(db, actor, 'inventory.manage', projectId, [
-          ...contexts[0].assertions,
+          ...context.assertions,
           ...(destination?.statements ?? []),
           ...rows.flatMap((row, index) => [
             statement(db, 'INSERT INTO stock_movements (id,item_id,delta,kind,note,ref_id,actor_id,created_at,group_id) VALUES (?,?,?,?,?,?,?,?,?)', [movementIds[index], row.item.id, row.delta, kind, note, row.refId, actor.userId, now, groupId]),
-            contexts[index].insert(movementIds[index], now),
+            context.insertFor(row.item)(movementIds[index], now),
             ...(destination ? [destination.link(movementIds[index], now)] : []),
             auditStatement(db, actor, 'stock.move', movementIds[index], projectId, { itemId: row.item.id, delta: row.delta, kind, note, batchId, context: contextInput, ...(destination ? { destinationId: destination.id, destinationName: destination.name } : {}) }, now),
           ]),

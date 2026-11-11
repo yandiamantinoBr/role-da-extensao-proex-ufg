@@ -335,7 +335,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
     const [showConsumption,setShowConsumption]=useState(false);
     // Registrar movimento tem um caminho só: escolher o material (abre a ficha) ou dar saída de vários de uma vez.
     const [movementLauncher,setMovementLauncher]=useState<LauncherMode|null>(null);
-    const [materialMode,setMaterialMode] = useState<'view'|'edit'|'move'>('view');
+    const [materialMode,setMaterialMode] = useState<'view'|'edit'|'move'|'history'>('view');
     const [workRecord, setWorkRecord] = useState<WorkRecordSelection | null>(null);
     const [refreshing, setRefreshing] = useState(false);
     const [busy, setBusy] = useState(false);
@@ -625,8 +625,11 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
     async function mutate(action: string, payload: Payload): Promise<Row> {
         if (!navigator.onLine)
             throw new Error('Você está sem conexão. Reconecte antes de confirmar uma operação.');
-        const r = await fetch('/api/portal', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Proex-Action': '1' }, body: JSON.stringify({ action, ...payload }) }).catch(() => { throw new Error('A conexão foi interrompida. Reconecte e tente novamente; seu formulário foi preservado.'); });
+        const r = await fetch('/api/portal', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Proex-Action': '1' }, body: JSON.stringify({ action, ...payload }) }).catch(() => { throw Object.assign(new Error('A conexão foi interrompida. Reconecte e tente novamente; seu formulário foi preservado.'), { uncertain: true }); });
         const body = await r.json().catch(() => null) as Row | null;
+        // Sem resposta legível ou erro do servidor: a gravação pode ter acontecido. Quem chama decide se reenvia a mesma operação.
+        if (r.status >= 500 || (!body && r.status !== 401))
+            throw Object.assign(new Error(readableError(body?.error, 'Não foi possível concluir. Verifique sua conexão e tente novamente.')), { uncertain: true });
         if (r.status === 401)
             setSessionExpired(true);
         if (!r.ok || !body || body.error)
