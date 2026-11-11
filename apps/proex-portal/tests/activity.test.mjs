@@ -306,16 +306,31 @@ test('per-task model choices and unused chosen models reach the AI history only 
   const { db, actors } = setup();
   const owner = person(db, 'owner', { organization: 'org_proex', name: 'Coordenação' });
   const audit = (id, action, details, day) => db.native.prepare("INSERT INTO audit(id,actor_id,project_id,organization_id,action,entity_id,details,created_at) VALUES(?,?,NULL,'org_proex',?,'org_proex',?,?)").run(id, owner.userId, action, JSON.stringify(details), at(day));
-  audit('cfg-route', 'assistant.configure', { revision: 7, changes: [{ field: 'documentModel', before: '', after: 'openai-gpt-6-luna' }, { field: 'decisionModel', before: 'perplexity-decider-v1-2', after: '' }, { field: 'speechModel', before: 'deepgram-nova-3', after: 'groq-whisper-turbo' }] }, '2026-11-09');
-  audit('route-skip', 'assistant.route.fallback', { task: 'speech', model: 'groq-whisper-turbo', reason: 'Motivo sintético de teste.' }, '2026-11-10');
-  const ai = (await activityFeed(db, owner, range, NOW)).events.filter(event => event.type === 'ai');
-  assert.deepEqual(ai.map(event => event.id), ['ai:route-skip', 'ai:cfg-route']);
-  assert.equal(ai[1].title, 'Funções alteradas');
-  assert.equal(ai[1].detail, 'Modelo do catálogo para documentos: — → openai-gpt-6-luna\nModelo do catálogo para conferência e triagem: perplexity-decider-v1-2 → —\nModelo do catálogo para voz: deepgram-nova-3 → groq-whisper-turbo');
-  assert.equal(ai[0].title, 'Modelo escolhido para voz não foi usado');
-  assert.equal(ai[0].detail, 'Modelo escolhido: groq-whisper-turbo\nMotivo: Motivo sintético de teste.\nA tarefa seguiu pelo padrão.');
+  audit('cfg-route', 'assistant.configure', { revision: 7, changes: [{ field: 'documentModel', before: '', after: 'openai-gpt-6-luna' }, { field: 'decisionModel', before: 'perplexity-decider-v1-2', after: '' }, { field: 'speechModel', before: 'deepgram-nova-3', after: 'groq-whisper-turbo' }] }, '2026-11-06');
+  // Registro antigo: só o código do modelo. O nome sai das linhas iniciais do catálogo.
+  audit('route-skip', 'assistant.route.fallback', { task: 'speech', model: 'groq-whisper-turbo', reason: 'Motivo sintético de teste.' }, '2026-11-07');
+  // Registros novos guardam o nome; modelo cadastrado depois (fora das linhas iniciais) aparece pelo nome guardado.
+  audit('cfg-named', 'assistant.configure', { revision: 8, changes: [{ field: 'speechModel', before: '', after: 'voz-sintetica' }, { field: 'documentModel', before: 'modelo-sem-nome', after: '' }, { field: 'roleModel', before: '', after: 'deepseek-flash' }], modelNames: { 'voz-sintetica': 'Voz sintética (Serviço de teste)', outro: 7 } }, '2026-11-08');
+  audit('route-refused', 'assistant.route.fallback', { task: 'decision', model: 'decisor-sintetico', name: 'Decisor sintético (Serviço de teste)', reason: 'O serviço recusou o pedido (código 401). Confira a chave na aba Chaves.' }, '2026-11-09');
+  audit('route-document', 'assistant.route.fallback', { task: 'document', model: 'modelo-sem-nome', reason: 'O serviço recusou o pedido (código 429).' }, '2026-11-10');
+  const feed = await activityFeed(db, owner, range, NOW), ai = feed.events.filter(event => event.type === 'ai');
+  assert.deepEqual(ai.map(event => event.id), ['ai:route-document', 'ai:route-refused', 'ai:cfg-named', 'ai:route-skip', 'ai:cfg-route']);
+  const [documentSkip, refused, named, skip, change] = ai;
+  assert.equal(change.action, 'Configuração de IA'); assert.equal(change.title, 'Funções alteradas');
+  assert.equal(change.detail, 'Modelo para ler documentos: padrão do portal → GPT-6 Luna (OpenAI)\nModelo para conferir e triar: Decider v1.2 (Perplexity) → padrão do portal\nModelo para transcrever voz: Nova-3 (Deepgram) → Whisper turbo (Groq)');
+  assert.equal(named.detail, 'Modelo para transcrever voz: padrão do portal → Voz sintética (Serviço de teste)\nModelo para ler documentos: modelo-sem-nome → padrão do portal\nModelo do catálogo para o Rolê: — → deepseek-flash', 'nome guardado; sem nome, o código; os outros campos seguem como eram');
+  assert.equal(skip.action, 'Aviso de IA'); assert.equal(skip.title, 'O modelo escolhido para voz não respondeu');
+  assert.equal(skip.detail, 'Modelo: Whisper turbo (Groq)\nMotivo: Motivo sintético de teste.\nO portal usou o padrão.');
+  assert.equal(refused.title, 'O modelo escolhido para conferência e triagem não respondeu');
+  assert.equal(refused.detail, 'Modelo: Decisor sintético (Serviço de teste)\nMotivo: O serviço recusou o pedido (código 401). Confira a chave na aba Chaves.\nO portal usou o padrão.');
+  assert.equal(documentSkip.title, 'O modelo escolhido para documentos não respondeu');
+  assert.equal(documentSkip.detail, 'Modelo: modelo-sem-nome\nMotivo: O serviço recusou o pedido (código 429).\nO portal usou o padrão.');
+  // Quem só usou a IA quando o modelo não respondeu não aparece como autora; a troca de configuração continua com autoria.
+  for (const event of [skip, refused, documentSkip]) assert.deepEqual({ actorId: event.actorId, actorName: event.actorName }, { actorId: null, actorName: '' });
+  assert.equal(change.actorId, owner.userId); assert.equal(change.actorName, 'Coordenação');
+  assert.deepEqual((await activityFeed(db, owner, { ...range, person: owner.userId }, NOW)).events.filter(event => event.type === 'ai').map(event => event.id), ['ai:cfg-named', 'ai:cfg-route'], 'o filtro por pessoa não traz os avisos');
   for (const reader of [actors.manager, actors.inventoryA, actors.viewerB]) {
     const other = JSON.stringify(await activityFeed(db, reader, range, NOW));
-    assert.ok(!other.includes('openai-gpt-6-luna') && !other.includes('groq-whisper-turbo') && !other.includes('não foi usado'), 'quem não configura a IA não vê a troca nem o aviso');
+    assert.ok(!other.includes('GPT-6 Luna') && !other.includes('Whisper turbo') && !other.includes('openai-gpt-6-luna') && !other.includes('groq-whisper-turbo') && !other.includes('não respondeu'), 'quem não configura a IA não vê a troca nem o aviso');
   }
 });

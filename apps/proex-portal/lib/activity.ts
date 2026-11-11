@@ -1,6 +1,7 @@
 import { effectiveMovementSql } from './movement-ledger';
 import { aiConfigurationAuthority, projectAuthoritySql, type PortalActor } from './access';
 import { describeChange, CONFIG_FIELDS, type ConfigChange } from './assistant/quota';
+import { builtinModelName } from './assistant/model-catalog';
 import { isCivilDate, offsetCivilDate } from './civil-date';
 import { all, type Row } from './database';
 import { HttpError } from './errors';
@@ -295,7 +296,8 @@ export async function activityFeed(db: D1Database, actor: PortalActor | null, in
       AND created_at>=? AND created_at<? ORDER BY created_at DESC LIMIT ${MAX_PER_SOURCE + 1}`, [...configurable.map(row => row.id), range.startsAt, range.endsAt]));
     for (const row of rows) events.push({ id: `ai:${row.id}`, type: 'ai', ...aiConfigurationEvent(String(row.action), String(row.details ?? '{}')),
       at: String(row.created_at), day: brasiliaDay(String(row.created_at)), projectId: null, projectName: names.get(String(row.organization_id)) ?? '',
-      actorId: row.actor_id ? String(row.actor_id) : null, actorName: '', viaRole: false, href: '/?module=settings', quantity: null });
+      // O aviso de queda não tem autoria: quem só usou a IA naquele momento não mudou configuração nenhuma.
+      actorId: row.actor_id && row.action !== 'assistant.route.fallback' ? String(row.actor_id) : null, actorName: '', viaRole: false, href: '/?module=settings', quantity: null });
   }
 
   // Nomes só das pessoas que aparecem em eventos já autorizados; conta removida não tem nome.
@@ -343,9 +345,12 @@ export function aiConfigurationEvent(action: string, raw: string): { action: str
   try { const parsed: unknown = JSON.parse(raw); if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) details = parsed as Record<string, unknown>; } catch { /* registro antigo sem detalhes */ }
   if (action === 'assistant.route.fallback') {
     // O modelo escolhido para a tarefa não recebeu o pedido (ou recusou) e a tarefa seguiu pelo padrão.
-    const task = ROUTED_TASK_LABELS[String(details.task)] ?? 'tarefa com IA';
-    const lines = [typeof details.model === 'string' && details.model ? `Modelo escolhido: ${details.model.slice(0, 60)}` : '', typeof details.reason === 'string' && details.reason ? `Motivo: ${details.reason.slice(0, 200)}` : '', 'A tarefa seguiu pelo padrão.'];
-    return { action: 'Configuração de IA', title: `Modelo escolhido para ${task} não foi usado`, detail: lines.filter(Boolean).join('\n') };
+    // É um aviso, não uma mudança de configuração. O nome vem do registro; registro antigo só tem o código.
+    const task = ROUTED_TASK_LABELS[String(details.task)] ?? 'uma tarefa com IA';
+    const code = typeof details.model === 'string' ? details.model.slice(0, 60) : '';
+    const name = typeof details.name === 'string' && details.name ? details.name.slice(0, 120) : code ? builtinModelName(code) ?? code : '';
+    const lines = [name ? `Modelo: ${name}` : '', typeof details.reason === 'string' && details.reason ? `Motivo: ${details.reason.slice(0, 200)}` : '', 'O portal usou o padrão.'];
+    return { action: 'Aviso de IA', title: `O modelo escolhido para ${task} não respondeu`, detail: lines.filter(Boolean).join('\n') };
   }
   const known = new Set(CONFIG_FIELDS.map(field => String(field.key)));
   const changes = Array.isArray(details.changes) ? (details.changes as ConfigChange[]).filter(change => change && known.has(String(change.field))) : null;
@@ -354,7 +359,8 @@ export function aiConfigurationEvent(action: string, raw: string): { action: str
   const test = changes.find(change => change.field === 'testMode');
   const title = test ? (test.after ? 'Modo de testes ligado' : 'Modo de testes desligado') : changes.every(change => LIMIT_FIELDS.has(change.field)) ? 'Limites alterados' : changes.some(change => LIMIT_FIELDS.has(change.field)) ? 'Funções e limites alterados' : 'Funções alteradas';
   // Uma mudança por linha (a tela mostra cada uma em sua linha).
-  const lines = changes.filter(change => change.field !== 'testMode').map(describeChange).filter(Boolean);
+  const modelNames = details.modelNames && typeof details.modelNames === 'object' && !Array.isArray(details.modelNames) ? Object.fromEntries(Object.entries(details.modelNames as Record<string, unknown>).filter((entry): entry is [string, string] => typeof entry[1] === 'string' && !!entry[1])) : {};
+  const lines = changes.filter(change => change.field !== 'testMode').map(change => describeChange(change, modelNames)).filter(Boolean);
   return { action: 'Configuração de IA', title, detail: lines.length > 6 ? [...lines.slice(0, 6), `e mais ${lines.length - 6}`].join('\n') : lines.join('\n') };
 }
 

@@ -1,7 +1,8 @@
 import { aiConfigurationAuthority, type PortalActor } from '../access';
 import { one } from '../database';
 import { HttpError } from '../errors';
-import type { AssistantConfig } from './contracts';
+import { TASK_MODEL_KEYS, type AssistantConfig } from './contracts';
+import { builtinModelName } from './model-catalog';
 import { formatDuration, formatThousands, formatUsd } from './limits-format';
 
 export type QuotaNeed = { cost: number; tokens: number; ms: number; calls: number };
@@ -69,17 +70,28 @@ export const CONFIG_FIELDS: { key: keyof AssistantConfig; label: string; kind: '
   { key: 'sttEnabled', label: 'Voz para texto', kind: 'bool' },
   { key: 'sttProvider', label: 'Provedor de voz', kind: 'text' },
   { key: 'textProvider', label: 'Serviço de operações e documentos', kind: 'text' },
-  { key: 'documentModel', label: 'Modelo do catálogo para documentos', kind: 'text' },
-  { key: 'decisionModel', label: 'Modelo do catálogo para conferência e triagem', kind: 'text' },
-  { key: 'speechModel', label: 'Modelo do catálogo para voz', kind: 'text' },
+  // Mesmos rótulos dos seletores em Funções e acesso.
+  { key: 'documentModel', label: 'Modelo para ler documentos', kind: 'text' },
+  { key: 'decisionModel', label: 'Modelo para conferir e triar', kind: 'text' },
+  { key: 'speechModel', label: 'Modelo para transcrever voz', kind: 'text' },
 ];
 export type ConfigChange = { field: string; before: string | number | boolean | null; after: string | number | boolean | null };
 export function configChanges(before: AssistantConfig, after: AssistantConfig): ConfigChange[] {
   return CONFIG_FIELDS.filter(field => before[field.key] !== after[field.key]).map(field => ({ field: String(field.key), before: before[field.key] as ConfigChange['before'], after: after[field.key] as ConfigChange['after'] }));
 }
-export function describeChange(change: ConfigChange): string {
+const TASK_MODEL_FIELDS: ReadonlySet<string> = new Set(TASK_MODEL_KEYS);
+/**
+ * `modelNames` são os nomes guardados no registro da troca (id do modelo → nome). Sem eles, valem as linhas
+ * iniciais do catálogo; se o modelo não estiver nelas, aparece o código.
+ */
+export function describeChange(change: ConfigChange, modelNames: Record<string, string> = {}): string {
   const field = CONFIG_FIELDS.find(entry => entry.key === change.field);
   if (!field) return '';
+  if (TASK_MODEL_FIELDS.has(change.field)) {
+    // Modelo por tarefa: vazio é o padrão do portal; o código vira o nome do modelo.
+    const name = (value: ConfigChange['before']) => typeof value !== 'string' || !value ? 'padrão do portal' : (Object.hasOwn(modelNames, value) ? modelNames[value] : builtinModelName(value) ?? value).slice(0, 120);
+    return `${field.label}: ${name(change.before)} → ${name(change.after)}`;
+  }
   const show = (value: ConfigChange['before']) => value === null || value === '' ? '—' : field.kind === 'bool' ? (value ? 'ligado' : 'desligado') : field.kind === 'usd' ? usd(Number(value)) : field.kind === 'ms' ? seconds(Number(value)) : field.kind === 'tokens' ? thousand(Number(value)) : field.kind === 'int' ? Number(value).toLocaleString('pt-BR') : value === 'private' ? 'só quem configurou' : value === 'organization' ? 'organização' : String(value).slice(0, 60);
   return `${field.label}: ${show(change.before)} → ${show(change.after)}`;
 }
