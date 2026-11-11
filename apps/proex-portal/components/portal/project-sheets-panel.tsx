@@ -11,11 +11,11 @@ type Conflict = { id: string; entity_type: string; entity_id: string | null; rea
 type Snapshot = { projectId: string; canManage: boolean; connection: Connection | null; tokens: Credential[]; conflicts?: Conflict[]; scriptUrl: string; notice?: string };
 type Props = { projectId: string; projectName?: string };
 const tabLabels: Record<string, string> = { projects: 'Projeto', material_categories: 'Categorias', items: 'Materiais', stock_movements: 'Movimentações', activity_groups: 'Grupos de atividades', loans: 'Empréstimos', campaigns: 'Dinâmicas', project_schedule_items: 'Cronograma', followup_tasks: 'Demandas' };
-const conflictReasons: Record<string, string> = { sync_row_changed: 'a linha mudou no portal depois da última atualização da planilha', sync_version_conflict: 'a linha mudou no portal depois da última atualização da planilha', stock_unavailable: 'não havia saldo para o movimento' };
 /** Nome legível do que entrou em conflito; o motivo é um código curto, sem conteúdo da linha. */
 export function conflictLabel(conflict: Pick<Conflict, 'entity_type' | 'reason'>) {
  const subject = tabLabels[conflict.entity_type] ?? (conflict.entity_type === 'stock.move' ? 'Movimento de estoque' : conflict.entity_type === 'item.create' ? 'Cadastro de material' : 'Edição da planilha');
- return `${subject}: ${conflictReasons[conflict.reason] ?? 'a edição não pôde ser aplicada'}`;
+ const why = /stock_(unavailable|negative)/.test(conflict.reason) ? 'não havia saldo para o movimento' : /_changed$|conflict/.test(conflict.reason) ? 'a linha mudou no portal depois da última atualização da planilha' : 'a edição não pôde ser aplicada';
+ return `${subject}: ${why}`;
 }
 const sheetIdShape = /^[A-Za-z0-9_-]{20,200}$/;
 export function projectSheetId(value: string) {
