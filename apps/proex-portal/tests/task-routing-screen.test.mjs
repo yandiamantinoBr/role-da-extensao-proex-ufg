@@ -20,11 +20,11 @@ function compile(name) {
 const { DEFAULT_ASSISTANT_CONFIG } = await import(compile('assistant/contracts'));
 const { configureAssistant, assistantStatus } = await import(compile('assistant/settings'));
 const { manageAssistantCredential } = await import(compile('assistant/credential-vault'));
-const { catalogView, catalogSettingName } = await import(compile('assistant/model-catalog-store'));
+const { catalogView, catalogSettingName, manageCatalog } = await import(compile('assistant/model-catalog-store'));
 const { defaultCatalog, fitsTask, taskModelOptions } = await import(compile('assistant/model-catalog'));
 const { transcribeSpeech, validateSpeechAudio, speechReservedUsdMicros, SPEECH_ENDPOINT } = await import(compile('assistant/speech'));
 const { roleStatus } = await import(compile('assistant/role'));
-const { roleSpeechCeilingMicros, speechRouteCeilingMicros, speechRouteName } = await import(compile('assistant/role-contracts'));
+const { roleSpeechCeilingMicros, speechRouteCeilingMicros, speechRouteName, taskRouteLabel, shownRouteName, triageNoticeText, triageConsentText, documentConsentText, operationConferenceText, operationsServiceText } = await import(compile('assistant/role-contracts'));
 const { encodeSpeechWav } = await import(compile('../components/portal/speech-audio'));
 
 const secret = 'test-only-assistant-auth-secret-no-production-access';
@@ -204,4 +204,138 @@ test('listas dos seletores: modelo desligado, de teste, sem preço ou de provedo
  assert.equal(ids(change('nvidia-deepseek-v4-1-flash', { capabilities: ['text', 'document'], price: { inputPerM: 1, outputPerM: 1, perHour: 0 } }), 'document').includes('nvidia-deepseek-v4-1-flash'), false, 'modelo de teste nunca entra');
  assert.deepEqual(taskModelOptions({ providers: [], models: base.models }, 'speech'), [], 'provedor removido');
  assert.equal(taskModelOptions(base, 'speech').every(option => option.hasKey === false), true, 'sem informação de chave, avisa que falta');
+});
+
+// ---------------------------------------------------------------------------------------------
+// Avisos e autorizações de documento, conferência e triagem: sem modelo escolhido, o texto de sempre;
+// com modelo escolhido, o texto nomeia o modelo e diz que o padrão de hoje é a reserva.
+// ---------------------------------------------------------------------------------------------
+const LUNA = 'GPT-5.6 Luna (OpenAI)', DECIDER = 'Decider v1.2 (Perplexity)';
+
+test('textos sem modelo escolhido: exatamente os de antes, com nome ausente, nulo ou vazio', () => {
+ for (const none of [undefined, null, '']) {
+  assert.equal(triageNoticeText(none), 'O JEV recebe esse resumo e o prazo desta demanda.');
+  assert.equal(triageConsentText(none), 'Autorizo enviar este resumo e prazo à TypeSafe.');
+  assert.equal(documentConsentText(none, none), 'Autorizo enviar o texto extraído desta fonte ao provedor de texto escolhido para esta organização (DeepSeek ou OpenAI) e ao Jev se habilitado.');
+  assert.equal(operationConferenceText(none), ', com conferência da TypeSafe (JEV)');
+  assert.equal(operationsServiceText(none), 'o serviço de registros de estoque');
+ }
+ assert.equal(triageNoticeText(), 'O JEV recebe esse resumo e o prazo desta demanda.');
+ assert.equal(documentConsentText(), 'Autorizo enviar o texto extraído desta fonte ao provedor de texto escolhido para esta organização (DeepSeek ou OpenAI) e ao Jev se habilitado.');
+});
+
+test('textos com modelo escolhido: nomeiam o modelo e dizem que o padrão de hoje recebe se ele não puder responder', () => {
+ const texts = {
+  aviso: triageNoticeText(DECIDER), triagem: triageConsentText(DECIDER), documento: documentConsentText(LUNA), documentoEConferencia: documentConsentText(LUNA, DECIDER),
+  conferencia: documentConsentText(null, DECIDER), registro: operationConferenceText(DECIDER), servico: operationsServiceText(DECIDER),
+ };
+ assert.deepEqual(texts, {
+  aviso: 'O modelo Decider v1.2 (Perplexity) recebe esse resumo e o prazo desta demanda. Se ele não puder responder, quem recebe é o JEV padrão, da TypeSafe.',
+  triagem: 'Autorizo enviar este resumo e prazo ao modelo Decider v1.2 (Perplexity) e, se ele não puder responder, ao JEV padrão, da TypeSafe.',
+  documento: 'Autorizo enviar o texto extraído desta fonte ao modelo GPT-5.6 Luna (OpenAI). Se ele não puder responder, o texto vai para o provedor de texto padrão desta organização (DeepSeek ou OpenAI). O texto também vai ao Jev se habilitado.',
+  documentoEConferencia: 'Autorizo enviar o texto extraído desta fonte ao modelo GPT-5.6 Luna (OpenAI). Se ele não puder responder, o texto vai para o provedor de texto padrão desta organização (DeepSeek ou OpenAI). Para a conferência, o texto vai também ao modelo Decider v1.2 (Perplexity); se ele não puder responder, ao JEV padrão, da TypeSafe.',
+  conferencia: 'Autorizo enviar o texto extraído desta fonte ao provedor de texto escolhido para esta organização (DeepSeek ou OpenAI). Para a conferência, o texto vai também ao modelo Decider v1.2 (Perplexity); se ele não puder responder, ao JEV padrão, da TypeSafe.',
+  registro: ', com conferência do modelo Decider v1.2 (Perplexity); se ele não puder responder, a conferência fica com o JEV padrão, da TypeSafe',
+  servico: 'o serviço de registros de estoque, com conferência do modelo Decider v1.2 (Perplexity) (ou do JEV padrão, da TypeSafe, se ele não puder responder)',
+ });
+ for (const [name, text] of Object.entries(texts)) {
+  assert.match(text, /se ele não puder responder/i, `${name}: diz quem recebe quando o escolhido não responde`);
+  assert.doesNotMatch(text, /\b(tokens?|fallback|rotas?|endpoints?)\b/i, `${name}: sem termo técnico`);
+ }
+ // Todo texto que nomeia um modelo continua nomeando o padrão: a autorização cobre os dois destinos.
+ for (const name of ['aviso', 'triagem', 'documentoEConferencia', 'conferencia', 'registro', 'servico']) assert.match(texts[name], /JEV padrão, da TypeSafe/, name);
+ assert.match(texts.documento, /provedor de texto padrão desta organização \(DeepSeek ou OpenAI\)/);
+});
+
+test('nome do modelo escolhido: tira a observação entre parênteses do serviço e não repete o serviço que o nome já diz', () => {
+ assert.equal(taskRouteLabel({ label: 'Decider v1.2 (Perplexity)', service: 'Perplexity (decisão)' }), DECIDER, 'o nome já diz o serviço');
+ assert.equal(taskRouteLabel({ label: 'Leitor sintético', service: 'Perplexity (decisão)' }), 'Leitor sintético (Perplexity)', 'o parêntese do serviço sai');
+ assert.equal(taskRouteLabel({ label: 'GPT-5.6 Luna (OpenAI)', service: 'OpenAI' }), LUNA);
+ assert.equal(taskRouteLabel({ label: 'leitor OPENAI rápido', service: 'OpenAI' }), 'leitor OPENAI rápido', 'maiúsculas e minúsculas não fazem repetir');
+ assert.equal(taskRouteLabel({ label: 'Voz sintética', service: 'Serviço de teste' }), 'Voz sintética (Serviço de teste)');
+ assert.equal(taskRouteLabel({ label: 'Modelo sintético', service: '' }), 'Modelo sintético');
+ assert.equal(taskRouteLabel({ label: 'Modelo sintético', service: ' (decisão) ' }), 'Modelo sintético', 'serviço que é só observação não vira parêntese vazio');
+ // Nome recebido do servidor: só texto curto chega à tela.
+ for (const value of [undefined, null, 7, true, {}, [LUNA]]) assert.equal(shownRouteName(value), '');
+ assert.equal(shownRouteName(`  ${LUNA} `), LUNA); assert.equal(shownRouteName('x'.repeat(500)).length, 160);
+});
+
+// ---------------------------------------------------------------------------------------------
+// Estado: os nomes de documento e conferência só existem com modelo escolhido e apto a responder.
+// ---------------------------------------------------------------------------------------------
+const catalogChange = async (f, body) => manageCatalog(f.db, f.actors.owner, { organizationId: 'org_proex', expected: (await view(f)).stamp, ...body }, secret, keys);
+const role = f => roleStatus(f.db, f.actors.inventory, { projectId: 'project-a' }, secret, { keys });
+async function namesSetup(f, config = {}) {
+ for (const provider of ['deepseek', 'typesafe', 'openai']) await saveVault(f, provider);
+ await catalogChange(f, { action: 'key.save', providerId: 'perplexity', label: 'Chave sintética', secret: FAKE.perplexity });
+ await configure(f, { documentEnabled: true, jevEnabled: true, ...config });
+}
+
+test('estado sem modelo de documento ou conferência escolhido: as chaves novas não existem e o catálogo nem é lido', async t => {
+ const f = fixture(t);
+ await namesSetup(f);
+ f.sql.length = 0;
+ const organization = await organizationOf(f), status = await role(f);
+ assert.deepEqual(Object.keys(organization), TODAY_ORGANIZATION);
+ assert.equal(organization.available, true); assert.equal(organization.documentAvailable, true);
+ assert.equal(status.operationsAvailable, true); assert.equal('decisionRouteName' in status, false);
+ assert.equal(f.sql.some(text => /FROM settings WHERE name/.test(text)), false, 'com as chaves vazias o catálogo nem é lido');
+});
+
+test('estado com modelo escolhido e apto: o assistente informa o nome do documento e da conferência, e o Rolê o da conferência', async t => {
+ // Só o documento.
+ const document = fixture(t);
+ await namesSetup(document, { documentModel: 'openai-gpt-5-6-luna' });
+ const first = await organizationOf(document);
+ assert.deepEqual(Object.keys(first), [...TODAY_ORGANIZATION, 'documentRouteName']); assert.equal(first.documentRouteName, LUNA);
+ assert.equal('decisionRouteName' in await role(document), false, 'o Rolê não lê documento');
+ // Só a conferência.
+ const decision = fixture(t);
+ await namesSetup(decision, { decisionModel: 'perplexity-decider-v1-2' });
+ const second = await organizationOf(decision), keysBefore = Object.keys(await role(fixtureWithout(t, decision)));
+ assert.deepEqual(Object.keys(second), [...TODAY_ORGANIZATION, 'decisionRouteName']); assert.equal(second.decisionRouteName, DECIDER);
+ const status = await role(decision);
+ assert.equal(status.decisionRouteName, DECIDER);
+ assert.deepEqual(Object.keys(status).filter(key => key !== 'decisionRouteName').sort(), keysBefore.sort(), 'nada além do nome entra na resposta do Rolê');
+ // Os dois, e quem só usa (sem poder configurar) recebe os mesmos nomes e nada além deles.
+ const both = fixture(t);
+ await namesSetup(both, { documentModel: 'openai-gpt-5-6-luna', decisionModel: 'perplexity-decider-v1-2' });
+ const third = await organizationOf(both);
+ assert.deepEqual(Object.keys(third), [...TODAY_ORGANIZATION, 'documentRouteName', 'decisionRouteName']);
+ const member = (await assistantStatus(both.db, both.actors.inventory, secret, 'org_proex', undefined, keys)).organizations.find(entry => entry.id === 'org_proex');
+ assert.equal(member.documentRouteName, LUNA); assert.equal(member.decisionRouteName, DECIDER); assert.equal(member.canConfigure, false);
+ const everything = JSON.stringify([await role(both), await assistantStatus(both.db, both.actors.inventory, secret, 'org_proex', undefined, keys)]);
+ assert.equal(everything.includes('test-only-fake'), false, 'nenhuma chave no estado');
+ for (const address of ['api.openai.com', 'api.perplexity.ai']) assert.equal(everything.includes(address), false, 'nenhum endereço de provedor no estado');
+});
+/** O mesmo banco, lido como estava: serve só para comparar as chaves da resposta do Rolê sem o modelo de conferência. */
+function fixtureWithout(t, f) {
+ const other = fixture(t), stored = f.native.prepare("SELECT revision,config_json,credentials_ciphertext,updated_by,updated_at FROM ai_organization_settings WHERE organization_id='org_proex'").get();
+ other.native.prepare("INSERT INTO ai_organization_settings(organization_id,revision,config_json,credentials_ciphertext,updated_by,updated_at) VALUES('org_proex',?,?,?,?,?)").run(stored.revision, JSON.stringify({ ...JSON.parse(stored.config_json), decisionModel: '' }), stored.credentials_ciphertext, stored.updated_by, stored.updated_at);
+ return other;
+}
+
+test('estado com modelo escolhido que não pode responder: volta a ser a resposta de hoje, sem nome', async t => {
+ const chosen = { documentModel: 'openai-gpt-5-6-luna', decisionModel: 'perplexity-decider-v1-2' };
+ // Sem a chave dos provedores dos modelos escolhidos.
+ const keyless = fixture(t);
+ await namesSetup(keyless, chosen);
+ await manageAssistantCredential(keyless.db, keyless.actors.owner, { action: 'remove', organizationId: 'org_proex', provider: 'openai', expectedRevision: revision(keyless) }, secret, keys);
+ await catalogChange(keyless, { action: 'key.remove', providerId: 'perplexity' });
+ assert.deepEqual(Object.keys(await organizationOf(keyless)), TODAY_ORGANIZATION); assert.equal('decisionRouteName' in await role(keyless), false);
+ // Modelos que aparecem desligados no catálogo depois de escolhidos.
+ const off = fixture(t);
+ await namesSetup(off, chosen);
+ const stored = (await view(off)).catalog, base = defaultCatalog('2026-11-10T00:00:00.000Z');
+ storeCatalog(off, { ...base, models: base.models.map(model => Object.values(chosen).includes(model.id) ? { ...model, enabled: false } : model) });
+ assert.equal(stored.models.filter(model => Object.values(chosen).includes(model.id)).every(model => model.enabled), true);
+ assert.deepEqual(Object.keys(await organizationOf(off)), TODAY_ORGANIZATION); assert.equal('decisionRouteName' in await role(off), false);
+ // Escolhido igual ao padrão: não há outro destino para nomear.
+ const same = fixture(t);
+ await namesSetup(same, { documentModel: 'deepseek-flash', decisionModel: 'typesafe-jev-1-14' });
+ assert.deepEqual(Object.keys(await organizationOf(same)), TODAY_ORGANIZATION); assert.equal('decisionRouteName' in await role(same), false);
+ // Conferência desligada: o modelo de conferência escolhido não recebe nada, então não há nome.
+ const unchecked = fixture(t);
+ await namesSetup(unchecked, { jevEnabled: false, decisionModel: 'perplexity-decider-v1-2' });
+ assert.deepEqual(Object.keys(await organizationOf(unchecked)), TODAY_ORGANIZATION); assert.equal('decisionRouteName' in await role(unchecked), false);
 });
