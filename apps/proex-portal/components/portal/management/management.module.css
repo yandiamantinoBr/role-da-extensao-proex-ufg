@@ -57,7 +57,8 @@ a.kpi:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 .table th { padding: 8px 6px; text-align: left; color: var(--text-secondary); font-size: 12px; font-weight: 700; border-bottom: 1px solid var(--line); }
 .table td { padding: 8px 6px; border-bottom: 1px solid var(--line); }
 .table td:not(:first-child), .table th:not(:first-child) { text-align: right; font-variant-numeric: tabular-nums; }
-.table a { color: var(--brand-ink); font-weight: 600; }
+.table a { display: inline-flex; align-items: center; min-height: 44px; color: var(--brand-ink); font-weight: 600; }
+.table a:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; border-radius: 6px; }
 
 /* Matriz de riscos */
 .matrixWrap { display: grid; grid-template-columns: auto auto 1fr; gap: 6px 8px; align-items: center; }
