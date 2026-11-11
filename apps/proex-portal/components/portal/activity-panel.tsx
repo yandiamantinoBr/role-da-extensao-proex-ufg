@@ -1,33 +1,23 @@
 'use client';
 
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowRight, ArrowUpRight, Boxes, CalendarDays, Check, ClipboardCheck, FileText, KeyRound, ListChecks, SlidersHorizontal, Sparkles, TriangleAlert, Truck, type LucideIcon } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowRight, ArrowUpRight, Boxes, CalendarDays, Check, ListChecks, TriangleAlert, Truck, X } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import DateField from './date-field';
+import HistoryTimeline, { HISTORY_SUBJECTS, HISTORY_TYPES as TYPES, type ActivityEvent, type ActivityType, type HistorySubject } from './history-timeline';
 import styles from './activity-panel.module.css';
 
-type ActivityType = 'materials' | 'loans' | 'demands' | 'agenda' | 'records' | 'convocations' | 'access' | 'ai';
-type ActivityEvent = { id: string; type: ActivityType; action: string; title: string; detail: string; at: string; day: string; projectId: string | null; projectName: string; actorId: string | null; actorName: string; viaRole: boolean; href: string | null; quantity: number | null ; status?: 'corrected' | 'undone' | 'correction'; statusReason?: string; statusBy?: string };
-const STATUS_LABELS = { corrected: 'Corrigida', undone: 'Desfeita', correction: 'Correção' } as const;
 type SummaryDay = { day: string; materials: number; demandsOpened: number; demandsCompleted: number; agenda: number };
 type StockRow = { name: string; projectId: string; href: string; entradas: number; saidas: number };
-type Feed = { range: { from: string; to: string; days: string[] }; types: ActivityType[]; events: ActivityEvent[]; truncated: boolean; people: { id: string; name: string }[]; loansNow: { active: number; late: number } | null; aiVisible?: boolean; summary: { days: SummaryDay[]; stock: StockRow[] }; deadlines: { onTime: number; late: number; noDue: number; overdueNow: number } | null; team: { activePeople: number; perDay: { day: string; people: number }[]; people: { id: string; name: string; days: number; actions: number; last: string }[] } | null };
-type Props = { projects: { id: string; name: string }[]; initialProjectId?: string };
-type Period = 'today' | '7' | '30' | 'month' | 'custom';
-type Entry = { kind: 'event'; event: ActivityEvent } | { kind: 'group'; key: string; events: ActivityEvent[] };
+type Feed = { range: { from: string; to: string; days: string[] }; types: ActivityType[]; events: ActivityEvent[]; truncated: boolean; subject?: { kind: HistorySubject['kind']; id: string; name: string } | null; people: { id: string; name: string }[]; loansNow: { active: number; late: number } | null; aiVisible?: boolean; summary: { days: SummaryDay[]; stock: StockRow[] }; deadlines: { onTime: number; late: number; noDue: number; overdueNow: number } | null; team: { activePeople: number; perDay: { day: string; people: number }[]; people: { id: string; name: string; days: number; actions: number; last: string }[] } | null };
+type Props = { projects: { id: string; name: string }[]; initialProjectId?: string; /** Histórico de um assunto só, vindo do atalho "Ver histórico" de uma ficha. */ subject?: HistorySubject | null; onClearSubject?: () => void };
+type Period = 'today' | '7' | '30' | '90' | 'month' | 'custom';
 
-const TYPES: { id: ActivityType; label: string; Icon: LucideIcon }[] = [
-  { id: 'materials', label: 'Estoque', Icon: Boxes }, { id: 'loans', label: 'Empréstimos', Icon: Truck },
-  { id: 'demands', label: 'Demandas', Icon: ListChecks }, { id: 'agenda', label: 'Agenda', Icon: CalendarDays },
-  { id: 'records', label: 'Registros', Icon: FileText }, { id: 'convocations', label: 'Convocações', Icon: ClipboardCheck }, { id: 'access', label: 'Acessos', Icon: KeyRound }, { id: 'ai', label: 'Configuração de IA', Icon: SlidersHorizontal },
-];
-const PERIODS: { id: Period; label: string }[] = [{ id: 'today', label: 'Hoje' }, { id: '7', label: '7 dias' }, { id: '30', label: '30 dias' }, { id: 'month', label: 'Este mês' }, { id: 'custom', label: 'Escolher datas' }];
+const PERIODS: { id: Period; label: string }[] = [{ id: 'today', label: 'Hoje' }, { id: '7', label: '7 dias' }, { id: '30', label: '30 dias' }, { id: '90', label: '90 dias' }, { id: 'month', label: 'Este mês' }, { id: 'custom', label: 'Escolher datas' }];
+const SUBJECT_PARAM = { item: 'itemId', loan: 'loanId', task: 'taskId', campaign: 'campaignId' } as const;
 const DAY = new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
 const SHORT = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', timeZone: 'UTC' });
 const COMPACT = new Intl.DateTimeFormat('pt-BR', { day: 'numeric', month: 'short', timeZone: 'UTC' });
-const MONTH = new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric', timeZone: 'UTC' });
-const TIME = new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'America/Sao_Paulo' });
-const PER_DAY = 8;
 const civilDate = (day: string) => new Date(`${day}T12:00:00Z`);
 const capital = (text: string) => text.charAt(0).toLocaleUpperCase('pt-BR') + text.slice(1);
 const short = (day: string) => COMPACT.format(civilDate(day)).replace('.', '');
@@ -37,6 +27,7 @@ export function periodRange(period: Period, now = today()): { from: string; to: 
   if (period === 'today') return { from: now, to: now };
   if (period === '7') return { from: shift(now, -6), to: now };
   if (period === 'month') return { from: `${now.slice(0, 8)}01`, to: now };
+  if (period === '90') return { from: shift(now, -89), to: now };
   return { from: shift(now, -29), to: now };
 }
 /** Períodos longos viram semanas (segunda a domingo) para as barras terem largura de toque. */
@@ -51,22 +42,6 @@ export function bucketDays(days: SummaryDay[]): { label: string; title: string; 
   }
   return [...weeks].map(([monday, week]) => ({ label: SHORT.format(civilDate(monday)), title: week.start === week.end ? capital(DAY.format(civilDate(week.start))) : `Semana de ${short(week.start)} a ${short(week.end)}`, criadas: week.criadas, concluidas: week.concluidas, atividades: week.atividades }));
 }
-/** Acontecimentos seguidos do mesmo tipo, no mesmo minuto, viram um grupo que abre. */
-export function groupEntries(events: ActivityEvent[]): Entry[] {
-  const entries: Entry[] = [];
-  for (let index = 0; index < events.length;) {
-    const first = events[index], minute = first.at.slice(0, 16);
-    let end = index + 1;
-    // Configuração de IA nunca agrupa: cada mudança de limite precisa ficar visível no histórico.
-    while (first.type !== 'ai' && !first.status && end < events.length && !events[end].status && events[end].type === first.type && events[end].action === first.action && events[end].at.slice(0, 16) === minute) end++;
-    if (end - index >= 3) entries.push({ kind: 'group', key: `${first.id}-group`, events: events.slice(index, end) });
-    else for (let item = index; item < end; item++) entries.push({ kind: 'event', event: events[item] });
-    index = end;
-  }
-  return entries;
-}
-const GROUP_LABELS: Record<string, [string, string]> = { 'Demanda criada': ['demanda criada', 'demandas criadas'], 'Demanda concluída': ['demanda concluída', 'demandas concluídas'], Entrada: ['entrada de estoque', 'entradas de estoque'], Distribuição: ['distribuição', 'distribuições'], Consumo: ['consumo', 'consumos'] };
-const groupLabel = (action: string, count: number) => { const label = GROUP_LABELS[action]; return label ? `${count} ${count === 1 ? label[0] : label[1]}` : `${count} × ${action.toLocaleLowerCase('pt-BR')}`; };
 
 /** Clicar num gráfico navega como um link do portal (sem recarregar a página). */
 function follow(container: HTMLElement | null, href: string | null) {
@@ -77,27 +52,29 @@ function follow(container: HTMLElement | null, href: string | null) {
 }
 function projectLink(module: string, projectId: string) { return projectId ? `/?module=${module}&project=${encodeURIComponent(projectId)}` : `/?module=${module}`; }
 
-export default function ActivityPanel({ projects, initialProjectId = '' }: Props) {
+export default function ActivityPanel({ projects, initialProjectId = '', subject = null, onClearSubject }: Props) {
   const root = useRef<HTMLDivElement>(null);
-  const [period, setPeriod] = useState<Period>('30');
-  const [custom, setCustom] = useState(() => periodRange('30'));
+  // O histórico de um assunto começa no período mais largo; o geral continua em 30 dias.
+  const [period, setPeriod] = useState<Period>(subject ? '90' : '30');
+  const [custom, setCustom] = useState(() => periodRange(subject ? '90' : '30'));
   const [projectId, setProjectId] = useState(initialProjectId);
   const [person, setPerson] = useState('');
   const [types, setTypes] = useState<ActivityType[]>(TYPES.map(type => type.id));
   const [revision, setRevision] = useState(0);
-  const [expanded, setExpanded] = useState<string[]>([]);
   const [state, setState] = useState<{ key: string; feed?: Feed; error?: string } | null>(null);
   const range = period === 'custom' ? custom : periodRange(period);
-  const key = JSON.stringify([range.from, range.to, projectId, person, types, revision]);
+  const key = JSON.stringify([range.from, range.to, projectId, person, types, revision, subject?.kind ?? '', subject?.id ?? '']);
 
   useEffect(() => {
     const controller = new AbortController();
     const params = new URLSearchParams({ from: range.from, to: range.to, types: types.join(',') });
-    if (projectId) params.set('projectId', projectId);
+    // No histórico de um assunto o seletor de projeto some; o assunto já diz de que projeto é.
+    if (projectId && !subject) params.set('projectId', projectId);
     if (person) params.set('person', person);
+    if (subject) params.set(SUBJECT_PARAM[subject.kind], subject.id);
     fetch(`/api/activity?${params}`, { credentials: 'same-origin', cache: 'no-store', signal: controller.signal })
       .then(async response => { const body = await response.json().catch(() => ({})) as { error?: unknown }; if (!response.ok) throw new Error(typeof body.error === 'string' ? body.error : 'Não foi possível carregar o histórico.'); return body as Feed; })
-      .then(feed => { if (!controller.signal.aborted) { setState({ key, feed }); setExpanded([]); } })
+      .then(feed => { if (!controller.signal.aborted) setState({ key, feed }); })
       .catch(error => { if (!controller.signal.aborted) setState({ key, error: error instanceof Error ? error.message : 'Não foi possível carregar o histórico.' }); });
     return () => controller.abort();
   }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -106,7 +83,6 @@ export default function ActivityPanel({ projects, initialProjectId = '' }: Props
   // Enquanto atualiza, mantém o resultado anterior na tela, marcado como "atualizando".
   const shown = current?.feed ?? state?.feed;
   const events = useMemo(() => shown?.events ?? [], [shown]);
-  const byDay = useMemo(() => { const map = new Map<string, ActivityEvent[]>(); for (const event of events) map.set(event.day, [...(map.get(event.day) ?? []), event]); return map; }, [events]);
   const summaryDays = useMemo(() => shown?.summary.days ?? [], [shown]);
   const buckets = useMemo(() => bucketDays(summaryDays), [summaryDays]);
   const weekly = summaryDays.length > 14;
@@ -114,8 +90,6 @@ export default function ActivityPanel({ projects, initialProjectId = '' }: Props
   const stockMax = Math.max(1, ...stock.map(row => Math.max(row.entradas, row.saidas)));
   const sum = (key: keyof Omit<SummaryDay, 'day'>) => summaryDays.reduce((total, row) => total + row[key], 0);
   const totals = { movements: sum('materials'), demandsOpened: sum('demandsOpened'), demandsDone: sum('demandsCompleted'), agenda: sum('agenda') };
-  const months = useMemo(() => { const seen = new Map<string, number>(); for (const event of events) seen.set(event.day.slice(0, 7), (seen.get(event.day.slice(0, 7)) ?? 0) + 1); return [...seen]; }, [events]);
-  const lastDayOf = (month: string) => [...byDay.keys()].filter(day => day.startsWith(month)).sort().at(-1);
   const toggle = (type: ActivityType) => setTypes(list => list.includes(type) ? (list.length > 1 ? list.filter(item => item !== type) : list) : [...list, type]);
   const demandBuckets = buckets.filter(row => row.criadas || row.concluidas), agendaBuckets = buckets.filter(row => row.atividades);
   const concentrated = (rows: unknown[]) => rows.length > 0 && rows.length <= 2 && buckets.length > 4;
@@ -123,11 +97,12 @@ export default function ActivityPanel({ projects, initialProjectId = '' }: Props
 
   return <div className={styles.panel} ref={root}>
     <section className={styles.filters} aria-label="Filtros do histórico">
-      <div className={styles.filterRow}><span className={styles.filterLabel} id="activity-period">Período</span><div className={styles.chips} role="group" aria-labelledby="activity-period">{PERIODS.map(item => <button key={item.id} type="button" aria-pressed={period === item.id} onClick={() => { if (item.id === 'custom') setCustom(range); setPeriod(item.id); }}>{period === item.id && <Check size={14} aria-hidden="true"/>}{item.label}</button>)}</div></div>
+      {subject && <div className={styles.subject} role="status"><span><small>Só o histórico {HISTORY_SUBJECTS[subject.kind].article}</small><strong>{shown?.subject?.id === subject.id && shown.subject.name ? shown.subject.name : HISTORY_SUBJECTS[subject.kind].label}</strong></span>{onClearSubject && <button type="button" className="p-button p-button-subtle" onClick={onClearSubject}><X size={15} aria-hidden="true"/>Ver histórico de tudo</button>}</div>}
+      <div className={styles.filterRow}><span className={styles.filterLabel} id="activity-period">Período</span><div className={styles.chips} role="group" aria-labelledby="activity-period">{PERIODS.filter(item => item.id !== '90' || subject).map(item => <button key={item.id} type="button" aria-pressed={period === item.id} onClick={() => { if (item.id === 'custom') setCustom(range); setPeriod(item.id); }}>{period === item.id && <Check size={14} aria-hidden="true"/>}{item.label}</button>)}</div></div>
       {period === 'custom' && <div className={styles.dates}><label className="p-field"><span>De</span><DateField value={custom.from} max={custom.to} onValueChange={from => setCustom(value => ({ ...value, from: from || value.from }))}/></label><label className="p-field"><span>Até</span><DateField value={custom.to} min={custom.from} onValueChange={to => setCustom(value => ({ ...value, to: to || value.to }))}/></label></div>}
-      <div className={styles.filterRow}><span className={styles.filterLabel} id="activity-types">Tipo</span><div className={styles.chips} role="group" aria-labelledby="activity-types">{TYPES.filter(type => type.id !== 'ai' || shown?.aiVisible).map(({ id, label, Icon }) => <button key={id} type="button" aria-pressed={types.includes(id)} onClick={() => toggle(id)}>{types.includes(id) ? <Check size={14} aria-hidden="true"/> : <Icon size={14} aria-hidden="true"/>}{label}</button>)}</div></div>
+      {!subject && <div className={styles.filterRow}><span className={styles.filterLabel} id="activity-types">Tipo</span><div className={styles.chips} role="group" aria-labelledby="activity-types">{TYPES.filter(type => type.id !== 'ai' || shown?.aiVisible).map(({ id, label, Icon }) => <button key={id} type="button" aria-pressed={types.includes(id)} onClick={() => toggle(id)}>{types.includes(id) ? <Check size={14} aria-hidden="true"/> : <Icon size={14} aria-hidden="true"/>}{label}</button>)}</div></div>}
       <div className={styles.selects}>
-        <label className="p-field"><span>Projeto</span><select id="activity-project" value={projectId} onChange={event => setProjectId(event.target.value)}><option value="">Todos os projetos</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
+        {!subject && <label className="p-field"><span>Projeto</span><select id="activity-project" value={projectId} onChange={event => setProjectId(event.target.value)}><option value="">Todos os projetos</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>}
         <label className="p-field"><span>Pessoa</span><select id="activity-person" value={person} onChange={event => setPerson(event.target.value)}><option value="">Todas as pessoas</option>{(shown?.people ?? []).map(entry => <option key={entry.id} value={entry.id}>{entry.name}</option>)}</select></label>
       </div>
     </section>
@@ -135,14 +110,14 @@ export default function ActivityPanel({ projects, initialProjectId = '' }: Props
     {current?.error && <p className="p-notice p-notice-error" role="alert">{current.error} <button type="button" className="p-text-link" onClick={() => setRevision(value => value + 1)}>Tentar de novo</button></p>}
     <p className={styles.status} role="status" aria-live="polite">{loading ? (shown ? 'Atualizando o histórico…' : 'Carregando o histórico…') : shown ? <><strong>{rangeLabel}</strong> · {events.length} {events.length === 1 ? 'acontecimento' : 'acontecimentos'}{shown.truncated ? ' (os mais recentes)' : ''}</> : ''}</p>
 
-    {shown && <div className={styles.kpis} aria-busy={loading}>
+    {shown && !subject && <div className={styles.kpis} aria-busy={loading}>
       {types.includes('materials') && <a className={styles.kpi} href={projectLink('materials', projectId)}><span><Boxes size={17} aria-hidden="true"/>Estoque</span><strong>{totals.movements}</strong><small>{totals.movements === 1 ? 'movimentação' : 'movimentações'} no período</small><i className={styles.kpiGo}>Ver materiais<ArrowRight size={14} aria-hidden="true"/></i></a>}
       {types.includes('loans') && shown.loansNow && <a className={styles.kpi} href={projectLink('loans', projectId)}><span><Truck size={17} aria-hidden="true"/>Empréstimos</span><strong>{shown.loansNow.active}</strong><small>{shown.loansNow.active === 1 ? 'ativo agora' : 'ativos agora'}{shown.loansNow.late > 0 && <em><TriangleAlert size={13} aria-hidden="true"/>{shown.loansNow.late} em atraso</em>}</small><i className={styles.kpiGo}>Ver empréstimos<ArrowRight size={14} aria-hidden="true"/></i></a>}
       {types.includes('demands') && <a className={styles.kpi} href={projectLink('demands', projectId)}><span><ListChecks size={17} aria-hidden="true"/>Demandas</span><strong>{totals.demandsOpened}</strong><small>{totals.demandsOpened === 1 ? 'criada' : 'criadas'} · {totals.demandsDone} {totals.demandsDone === 1 ? 'concluída' : 'concluídas'}</small><i className={styles.kpiGo}>Ver demandas<ArrowRight size={14} aria-hidden="true"/></i></a>}
       {types.includes('agenda') && <a className={styles.kpi} href={projectLink('calendar', projectId)}><span><CalendarDays size={17} aria-hidden="true"/>Agenda</span><strong>{totals.agenda}</strong><small>{totals.agenda === 1 ? 'atividade' : 'atividades'} no período</small><i className={styles.kpiGo}>Ver agenda<ArrowRight size={14} aria-hidden="true"/></i></a>}
     </div>}
 
-    {shown && <div className={styles.charts}>
+    {shown && !subject && <div className={styles.charts}>
       {types.includes('demands') && <figure className={styles.chart} data-empty={demandBuckets.length ? 'false' : 'true'}>
         <figcaption><strong>Demandas ao longo do tempo</strong><span>{weekly ? 'Por semana. ' : 'Por dia. '}Toque numa coluna para abrir as demandas.</span></figcaption>
         {demandBuckets.length ? <>
@@ -186,7 +161,7 @@ export default function ActivityPanel({ projects, initialProjectId = '' }: Props
       </figure>}
     </div>}
 
-    {shown && (shown.deadlines || shown.team) && <section className={styles.management} aria-labelledby="activity-management">
+    {shown && !subject && (shown.deadlines || shown.team) && <section className={styles.management} aria-labelledby="activity-management">
       <h2 id="activity-management">Prazos e equipe</h2>
       <div className={styles.charts}>
         {shown.deadlines && types.includes('demands') && <Deadlines data={shown.deadlines} href={projectLink('demands', projectId)}/>}
@@ -202,32 +177,10 @@ export default function ActivityPanel({ projects, initialProjectId = '' }: Props
       </div>
     </section>}
 
-    {shown && <section className={styles.timeline} aria-label="Linha do tempo">
-      <div className={styles.timelineHeading}><h2>Linha do tempo</h2>{months.length > 1 && <nav className={styles.months} aria-label="Ir para o mês">{months.map(([month, count]) => <a key={month} href={`#activity-day-${lastDayOf(month)}`}>{capital(MONTH.format(civilDate(`${month}-15`)))} <span>{count}</span></a>)}</nav>}</div>
-      {events.length === 0 ? <div className="p-empty"><span><FileText size={22} aria-hidden="true"/></span><h3>Nada registrado neste período</h3><p>Aqui aparece, por data, o que aconteceu nos seus projetos: demandas, materiais, empréstimos, agenda e registros. Nada foi registrado neste período.</p><p>Escolha outro período, projeto ou tipo.</p></div>
-      : [...byDay.keys()].sort().reverse().map(day => { const entries = groupEntries(byDay.get(day)!), open = expanded.includes(day), visible = open ? entries : entries.slice(0, PER_DAY); return <div key={day} className={styles.day} id={`activity-day-${day}`}>
-        <h3 className={styles.dayHeading}>{capital(DAY.format(civilDate(day)))}<span>{byDay.get(day)!.length}</span></h3>
-        <ol className={styles.events}>{visible.map(entry => entry.kind === 'event' ? <EventRow key={entry.event.id} event={entry.event} hideProject={Boolean(projectId)} hidePerson={Boolean(person)}/> : <li key={entry.key} className={styles.group}><details><summary><TypeIcon type={entry.events[0].type}/><span><strong>{groupLabel(entry.events[0].action, entry.events.length)}</strong><small>{entry.events.slice(0, 2).map((event, index, shown) => <Fragment key={event.id}>{index > 0 && ' '}<span className={styles.titleUnit}>{event.title}{index < shown.length - 1 ? ',' : ''}</span></Fragment>)}{entry.events.length > 2 && <> <span className={styles.titleUnit}>e mais {entry.events.length - 2}</span></>}</small><small className={styles.groupMeta}><span>{TIME.format(new Date(entry.events[0].at))}</span>{!projectId && entry.events[0].projectName && <span>{entry.events[0].projectName}</span>}</small></span></summary><ol>{entry.events.map(event => <EventRow key={event.id} event={event} hideProject hidePerson={Boolean(person)} compact/>)}</ol></details></li>)}</ol>
-        {entries.length > PER_DAY && !open && <button type="button" className={styles.more} onClick={() => setExpanded(list => [...list, day])}>Ver mais {entries.length - PER_DAY} {entries.length - PER_DAY === 1 ? 'item' : 'itens'}</button>}
-      </div>; })}
-    </section>}
+    {shown && <HistoryTimeline events={events} hideProject={Boolean(projectId)} hidePerson={Boolean(person)} heading={subject ? `Histórico ${HISTORY_SUBJECTS[subject.kind].article}` : 'Linha do tempo'} {...(subject ? { emptyTitle: 'Nada registrado neste período', emptyText: `Nenhum acontecimento ${HISTORY_SUBJECTS[subject.kind].article} neste período, ou você não tem acesso a ele.`, emptyHint: 'Escolha outro período ou volte ao histórico de tudo.' } : {})}/>}
   </div>;
 }
 
-function TypeIcon({ type }: { type: ActivityType }) { const meta = TYPES.find(item => item.id === type)!; return <span className={styles.icon} data-type={type} aria-hidden="true"><meta.Icon size={16}/></span>; }
-function EventRow({ event, hideProject, hidePerson, compact = false }: { event: ActivityEvent; hideProject: boolean; hidePerson: boolean; compact?: boolean }) {
-  const content = <>
-    {!compact && <TypeIcon type={event.type}/>}
-    <span className={styles.body}>
-      <span className={styles.line}><strong className={styles.titleUnit}>{event.action}</strong>{event.title && <> · <span className={styles.titleUnit}>{event.title}</span></>}{event.detail && event.type !== 'ai' && <span className={styles.detail} data-struck={event.status === 'corrected' || event.status === 'undone' ? 'true' : undefined}>{event.detail}</span>}{event.status && <span className={styles.revision} data-status={event.status}>{STATUS_LABELS[event.status]}</span>}</span>
-      {event.status && (event.statusReason || event.statusBy) && <span className={styles.revisionNote}>{event.status === 'correction' ? 'Corrige um lançamento anterior' : event.status === 'undone' ? 'Desfeita' : 'Substituída por uma correção'}{event.statusReason ? `: ${event.statusReason}` : ''}{event.statusBy ? ` · por ${event.statusBy}` : ''}</span>}
-      {event.type === 'ai' && event.detail && <ul className={styles.changes}>{event.detail.split('\n').map(line => { const [label, values] = line.includes(': ') ? [line.slice(0, line.indexOf(': ')), line.slice(line.indexOf(': ') + 2)] : ['', line]; const [before, after] = values.split(' → '); return <li key={line}>{label && <span>{label}: </span>}{after !== undefined ? <><s aria-label={`antes ${before}`}>{before}</s> → <strong>{after}</strong></> : values}</li>; })}</ul>}
-      <span className={styles.meta}>{event.type !== 'agenda' && !compact && <time dateTime={event.at}>{TIME.format(new Date(event.at))}</time>}{!hideProject && event.projectName && <span>{event.projectName}</span>}{!hidePerson && event.actorName && <span>{event.actorName}</span>}{event.viaRole && <span className={styles.role}><Sparkles size={13} aria-hidden="true"/>Feito pelo Rolê{event.actorName ? ` a pedido de ${event.actorName}` : ''}</span>}</span>
-    </span>
-    {event.href && <ArrowUpRight className={styles.go} size={16} aria-hidden="true"/>}
-  </>;
-  return <li className={compact ? styles.compactRow : undefined}>{event.href ? <a className={styles.row} href={event.href}>{content}</a> : <div className={styles.row}>{content}</div>}</li>;
-}
 function ChartEmpty({ text, href, label }: { text: string; href: string; label: string }) {
   return <p className={styles.chartEmpty}>{text} <a className="p-text-link" href={href}>{label}<ArrowUpRight size={14} aria-hidden="true"/></a></p>;
 }

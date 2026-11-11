@@ -54,6 +54,7 @@ import MeuTrabalhoPanel from '@/components/portal/meu-trabalho-panel';
 import PersonalWorkSummary from '@/components/portal/personal-work-summary';
 import { workDayFromServerTimestamp } from '@/lib/follow-up/time';
 import WorkContextPanel from '@/components/portal/work-context-panel';
+import ProjectAreaOwners, { type OwnedArea } from '@/components/portal/project-area-owners';
 import type { MyWorkStatus, WorkArea } from '@/lib/my-work/contracts';
 import { commitPortalLocation, deniedPortalModule, portalLocationKey, readPortalLocation, type PortalLocation } from '@/lib/portal-history';
 import type { WorkRecordSelection } from '@/lib/work-navigation';
@@ -74,6 +75,7 @@ import ConvocationsPanel from '@/components/portal/convocations-panel';
 import { ThemeSwitch } from '@/components/theme/theme-switch';
 import { BrandMark } from '@/components/theme/brand-mark';
 import ActivityPanel from '@/components/portal/activity-panel';
+import { historyHref, parseHistorySubject } from '@/components/portal/history-timeline';
 import ProjectOperationalChart from '@/components/portal/project-operational-chart';
 import DashboardPanel from '@/components/portal/dashboard-panel';
 import { DesktopSidebar, MobileNavigation, type NavSubitems } from '@/components/portal/portal-navigation';
@@ -83,7 +85,7 @@ import { useNavigationPreferences } from '@/components/portal/use-navigation-pre
 import { useFormDraft, DraftNotice, setDraftScope, clearCurrentDrafts, watchDraftLogout } from '@/components/portal/use-form-draft';
 import { THEMATIC_AREAS, groupUnits } from '@/lib/extension-catalog';
 import { MAX_UPLOAD_FILE_BYTES, UPLOAD_LIMIT_LABEL, uploadErrorMessage } from '@/lib/upload-limits';
-import { ArrowRight, Boxes, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronRight, ExternalLink, FileText, Filter, Gift, Info, LoaderCircle, LogOut, MessageSquarePlus, Plus, RefreshCw, Search, ShieldCheck, Truck, Users, Wifi, WifiOff, X } from 'lucide-react';
+import { ArrowRight, ArrowUpRight, Boxes, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronRight, ExternalLink, FileText, Filter, Gift, Info, LoaderCircle, LogOut, MessageSquarePlus, Plus, RefreshCw, Search, ShieldCheck, Truck, Users, Wifi, WifiOff, X } from 'lucide-react';
 // API projections vary by module; the server validates every mutation.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = Record<string, any>;
@@ -313,6 +315,8 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
     const pushNavigation = useRef(false);
     const [selectedDemandId, setSelectedDemandId] = useState('');
     const [recordsView, setRecordsView] = useState<'history' | 'documents'>('history');
+    // Registros aberto pelo atalho "Ver histórico" de uma ficha: assunto no formato item:<id>.
+    const [historyParam, setHistoryParam] = useState('');
     const [reportInitialDataset, setReportInitialDataset] = useState<'projects' | 'demands'>('projects');
     const [personalStatus, setPersonalStatus] = useState<MyWorkStatus>('pending');
     const [personalOrganization, setPersonalOrganization] = useState('');
@@ -499,7 +503,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
     const draftUserId = string(user.userId);
     useEffect(() => watchDraftLogout(draftUserId), [draftUserId]);
 
-    const route: PortalLocation = { tab, project: filter, unit: unitFilter, area: areaFilter, demand: selectedDemandId, record: activeWorkRecord, report: reportInitialDataset, workStatus: personalStatus, organization: personalOrganization };
+    const route: PortalLocation = { tab, project: filter, unit: unitFilter, area: areaFilter, demand: selectedDemandId, record: activeWorkRecord, report: reportInitialDataset, workStatus: personalStatus, organization: personalOrganization, history: historyParam };
     function readLocation(params: URLSearchParams) {
         return readPortalLocation(params, {
             modules: allowedTabs.map(module => module.id),
@@ -524,6 +528,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         setWorkRecord(next.record); setSelectedMaterialId(next.record?.module === 'materials' ? next.record.recordId : null);setMaterialMode('view');
         setSelectedDemandId(next.demand); setReportInitialDataset(next.report);
         setPersonalStatus(next.workStatus ?? 'pending'); setPersonalOrganization(next.organization ?? '');
+        setHistoryParam(next.history ?? ''); if (next.history) setRecordsView('history');
         setQuery(''); setAccountOpen(false);
     }
     const restoreLocation = useEffectEvent((traversal: boolean) => {
@@ -565,7 +570,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
             navigation.recordVisit(id);
         }
         setTab(id); setQuery(''); setAccountOpen(false); setSelectedMaterialId(null);setMaterialMode('view'); setWorkRecord(null);
-        setDeniedModule(null);
+        setDeniedModule(null); setHistoryParam('');
         // Um pedido de Equipes (abrir fixada, criar) vale só para esta ida; voltar pelo menu abre a página normal.
         if (!teamIntentPending.current) setTeamIntent(null);
         teamIntentPending.current = false;
@@ -618,6 +623,13 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
     }
     function workContext(projectId: string | null, area: WorkArea, target: {itemId?:string;loanId?:string;campaignId?:string} = {}) {
         return <WorkContextPanel key={JSON.stringify([user.userId,projectId,area,target])} userId={string(user.userId)} projectId={projectId} area={area} {...target} compact={area === 'projects' || Object.keys(target).length > 0} onPersonal={() => { if (projectId) selectProject(projectId); navigate('my-work'); }} onDemands={allowedTabs.some(module => module.id === 'demands') ? () => { if (projectId) selectProject(projectId); setSelectedDemandId(''); navigate('demands'); } : undefined} onCreateTeam={allowedTabs.some(module => module.id === 'work-teams') ? () => openTeams({ kind: 'new', organizationId: string(projects.find(project => project.id === projectId)?.organization_id) || undefined }) : undefined}/>;
+    }
+    // R4: "Quem cuida de cada área" na ficha do projeto. Cada área aparece para quem já abre o módulo dela neste projeto,
+    // ou seja, para quem via o painel do topo de Materiais, Empréstimos ou Dinâmicas. Quem pode editar é decidido pela rota.
+    function areaOwners(projectId: string) {
+        const areas = ([['materials', ['inventory.read', 'inventory.manage', 'inventory.deliver']], ['loans', ['loans.read', 'loans.manage', 'loans.checkout']], ['campaigns', ['campaigns.manage', 'participation.operate', 'inventory.deliver']]] as [OwnedArea, string[]][])
+            .filter(([, needed]) => canProject(projectId, ...needed)).map(([area]) => area);
+        return <ProjectAreaOwners key={JSON.stringify([user.userId, projectId])} userId={string(user.userId)} projectId={projectId} areas={areas} onCreateTeam={allowedTabs.some(module => module.id === 'work-teams') ? () => openTeams({ kind: 'new', organizationId: string(projects.find(project => project.id === projectId)?.organization_id) || undefined }) : undefined}/>;
     }
     function selectUnit(id: string) { setWorkRecord(null); setSelectedMaterialId(null);setMaterialMode('view'); setUnitFilter(id); setFilter(''); setDraftProject(''); setOfferProject(''); setQuery(''); }
     function selectArea(key: string) { setWorkRecord(null); setSelectedMaterialId(null);setMaterialMode('view'); setAreaFilter(key); setFilter(''); setDraftProject(''); setOfferProject(''); }
@@ -897,7 +909,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
       {tab === 'community' && <CommunityPanel key={`community:${string(user.userId)}`} userId={string(user.userId)} projects={projects.map(project => ({ id: string(project.id), name: string(project.name) }))} prefill={communityPrefill}/>}
 
       {tab === 'projects' && <>
-        <ProjectPanel refreshKey={updatedAt?.getTime() ?? 0} onMaterialOpen={(id,mode='view')=>{setMaterialMode(mode);setSelectedMaterialId(id);}} key={string(user.userId)} userId={string(user.userId)} pinnedProjectIds={pins.projectPins} onTogglePin={(id, pinned) => setPinned('project', id, pinned)} shortcutModules={allowedTabs.map(module => module.id).filter(id => id === 'demands' || id === 'calendar')} initialProjectId={activeWorkRecord?.module === 'projects' ? activeWorkRecord.recordId : undefined} onDetailChange={id => { if (id) { if (id !== activeWorkRecord?.recordId) pushNavigation.current = true; selectProject(id); setWorkRecord({module:'projects',projectId:id,recordId:id}); } else setWorkRecord(null); }} renderWorkContext={projectId => workContext(projectId,'projects')} organizations={organizations} isPlatformOwner={isPlatformOwner} projects={projects} projectTypes={list(data.projectTypes)} organizationalUnits={organizationalUnits} canCreate={canCreateProjects} canEdit={id => canGlobal('projects.manage') || canProject(id, 'campaigns.manage')} mutate={mutate} onSelect={id => { selectProject(id); navigate('overview'); }}/>
+        <ProjectPanel refreshKey={updatedAt?.getTime() ?? 0} onMaterialOpen={(id,mode='view')=>{setMaterialMode(mode);setSelectedMaterialId(id);}} key={string(user.userId)} userId={string(user.userId)} pinnedProjectIds={pins.projectPins} onTogglePin={(id, pinned) => setPinned('project', id, pinned)} shortcutModules={allowedTabs.map(module => module.id).filter(id => id === 'demands' || id === 'calendar')} initialProjectId={activeWorkRecord?.module === 'projects' ? activeWorkRecord.recordId : undefined} onDetailChange={id => { if (id) { if (id !== activeWorkRecord?.recordId) pushNavigation.current = true; selectProject(id); setWorkRecord({module:'projects',projectId:id,recordId:id}); } else setWorkRecord(null); }} renderWorkContext={projectId => workContext(projectId,'projects')} renderAreaOwners={areaOwners} organizations={organizations} isPlatformOwner={isPlatformOwner} projects={projects} projectTypes={list(data.projectTypes)} organizationalUnits={organizationalUnits} canCreate={canCreateProjects} canEdit={id => canGlobal('projects.manage') || canProject(id, 'campaigns.manage')} mutate={mutate} onSelect={id => { selectProject(id); navigate('overview'); }}/>
         {/* Importar fica depois da lista e se esconde (sem perder a prévia) na ficha aberta: o projeto vem primeiro. */}
         <div hidden={Boolean(activeWorkRecord?.module === 'projects' && activeWorkRecord.recordId)}><AssistedImportPanel kind="project" organizations={organizations} projects={projects.map(project => ({ id: string(project.id), name: string(project.name), organization_id: string(get(project, 'organization_id', 'organizationId')), version: Number(project.version ?? 1) }))} projectTypes={list(data.projectTypes).map(type => ({ id: string(type.id), label: string(type.label) }))} organizationalUnits={organizationalUnits.map(unit => ({ id: string(unit.id), name: string(unit.name), acronym: string(unit.acronym) }))} canCreateProject={canCreateProjects} canWrite={id => canProject(id, 'campaigns.manage')} defaultProjectId={filter} onImported={refreshModules}/></div>
       </>}
@@ -913,7 +925,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
                 <span className="p-kicker">{projectName(get(c, 'projectId', 'project_id'))}</span>
                 <Badge status={c.status}/>
                 </div>
-                <h3>{c.name}</h3>{Array.isArray(c.host_project_ids) && (c.host_project_ids as string[]).some(id => projects.some(project => project.id === id)) && <p className="p-form-help">No evento {(c.host_project_ids as string[]).flatMap(id => projects.filter(project => project.id === id)).map(project => string(project.name)).join(', ')}</p>}{workContext(string(get(c,'projectId','project_id')),'campaigns',{campaignId:string(c.id)})}
+                <h3>{c.name}</h3>{Array.isArray(c.host_project_ids) && (c.host_project_ids as string[]).some(id => projects.some(project => project.id === id)) && <p className="p-form-help">No evento {(c.host_project_ids as string[]).flatMap(id => projects.filter(project => project.id === id)).map(project => string(project.name)).join(', ')}</p>}{workContext(string(get(c,'projectId','project_id')),'campaigns',{campaignId:string(c.id)})}<a className="p-text-link p-history-link" href={historyHref({ kind: 'campaign', id: string(c.id) }, string(get(c,'projectId','project_id')))} aria-label="Ver histórico desta dinâmica em Registros">Ver histórico<ArrowUpRight size={14} aria-hidden="true"/></a>
                 <p>{c.location || 'Local não informado'}</p>
                 <div className="p-event-date">
                 <CalendarDays size={17}/>
@@ -1076,6 +1088,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
                     <span>até {when(get(l, 'endsAt', 'ends_at'))}</span>
                     </div>
                     </div>
+                    <a className="p-text-link p-history-link" href={historyHref({ kind: 'loan', id: string(l.id) }, string(get(l,'projectId','project_id')))} aria-label="Ver histórico deste empréstimo em Registros">Ver histórico<ArrowUpRight size={14} aria-hidden="true"/></a>
                     <details className={l.status === 'out' || l.status === 'reserved' ? 'p-loan-next' : undefined}>
                     <summary>{l.status === 'out' ? 'Registrar devolução' : l.status === 'reserved' ? 'Registrar retirada' : 'Detalhes, termos e ocorrências'}{(l.status === 'out' || l.status === 'reserved') && <small>termos e ocorrências</small>} <ChevronDown size={16}/>
                     </summary>
@@ -1131,7 +1144,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
       {tab === 'records' && <>
         <nav className="p-material-tabs" aria-label="Partes de Registros"><button type="button" aria-pressed={recordsView === 'history'} className={recordsView === 'history' ? 'is-active' : ''} onClick={() => setRecordsView('history')}><CalendarDays size={18}/>Histórico</button><button type="button" aria-pressed={recordsView === 'documents'} className={recordsView === 'documents' ? 'is-active' : ''} onClick={() => setRecordsView('documents')}><FileText size={18}/>Documentos</button></nav>
         {!canCreateRecord && projects.length > 0 && <div className="p-notice p-records-ask" role="note"><Info size={18} aria-hidden="true"/><div><strong>Você consulta os registros, mas não cria registros novos.</strong><span>Precisa registrar um uso de material, uma manutenção ou uma atividade? Abra uma demanda para quem coordena o projeto: a coordenação faz o registro e ele aparece aqui.</span></div>{canFollowUp && <button type="button" className="p-button p-button-subtle" onClick={() => navigate('demands')}>Abrir demanda</button>}</div>}
-        {recordsView === 'history' && <ActivityPanel key={filter} initialProjectId={filter} projects={projects.map(project => ({ id: string(project.id), name: string(project.name) }))}/>}
+        {recordsView === 'history' && <ActivityPanel key={`${filter}:${historyParam}`} initialProjectId={filter} subject={parseHistorySubject(historyParam)} onClearSubject={() => setHistoryParam('')} projects={projects.map(project => ({ id: string(project.id), name: string(project.name) }))}/>}
         <div hidden={recordsView !== 'documents'}><RecordsPanel key={filter} initialProjectId={filter} projects={projects} items={items} loans={loans} canWrite={(capability: string, projectId?: string | null) => projectId ? canProject(projectId, capability) : canGlobal(capability)}/></div>
       </>}
 

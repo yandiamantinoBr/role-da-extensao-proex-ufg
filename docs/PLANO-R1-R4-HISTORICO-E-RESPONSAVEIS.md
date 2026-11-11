@@ -4,6 +4,18 @@ Escrito em 10/11/2026 pela sessão de aparência e Registros. O Yan aprovou as p
 
 **Nada daqui vai ao ar antes de 14/11.** Origem: `apps/proex-portal/docs/REVISAO-GERAL-09NOV.md` (R1 e R4) e a nota da vault "Portal PROEX - Consolidação 10nov". Os nomes seguem `apps/proex-portal/docs/GLOSSARIO.md`, seção "Nomes finais aprovados".
 
+## Situação em 11/11
+
+Pronto em ramo (`claude/historico-unico-responsaveis`), com PR em rascunho e **sem merge antes de 14/11**. O detalhe está em `docs/ENTREGA-11NOV-R1-R4-HISTORICO-E-RESPONSAVEIS.md`.
+
+| Parte | Situação |
+|---|---|
+| R1, passos 1 a 4 (Cronograma, componente único, filtro por assunto, "Ver histórico") | feito no ramo |
+| R1, passo 5 (tirar os históricos duplicados das fichas) | falta; uma PR por ficha, depois do merge |
+| R4, passo 1 ("Quem cuida de cada área" na ficha do projeto) | feito no ramo |
+| R4, passo 2 (conferência da auditoria) | aguardando a auditoria |
+| R4, passos 3 e 4 (tirar o painel do topo e medir o ganho) | falta; PR separada, depois da conferência |
+
 ## R1 · Um componente Histórico
 
 **Hoje** o histórico aparece em sete lugares, cada um com o seu desenho:
