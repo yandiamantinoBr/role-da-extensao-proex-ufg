@@ -63,7 +63,7 @@ Valem as premissas do plano, porque o Yan ainda não respondeu às duas pergunta
 
 ## Verificação
 
-- Portal: 1.555 testes passaram. Tipos, lint (0 erros), `build` e `build:node` também.
+- Portal: 1.562 testes passaram, já com a main de 11/11 (PR95). Tipos e lint (0 erros) também. `build` e `build:node` passaram antes de juntar a main; depois dela, quem confere é a verificação automática da PR.
 - **Revisão de segurança independente** (só leitura): nenhum P0 ou P1 e nenhum vazamento entre projetos ou organizações. Os quatro P3 foram tratados: nome de material pela regra de Materiais, nenhuma consulta quando não há área a mostrar, `projectId` fora do pedido no modo assunto e arquivo temporário de QA apagado antes do commit.
 - **Crítica de design independente** (capturas 390/1366, claro e escuro): primeira nota **8,0**, com um P1 (quem só lê via um botão que terminava em "seu acesso não permite"). O P1 e os ajustes de texto foram corrigidos e a segunda nota foi **9,0**, sem P0 nem P1.
 - Testes novos:
