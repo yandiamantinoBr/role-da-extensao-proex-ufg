@@ -1,13 +1,15 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { type AssistantPlan } from '@/lib/assistant/contracts';
+import { PROVIDERS, type AssistantPlan } from '@/lib/assistant/contracts';
 import type { SpeechProvider } from '@/lib/assistant/settings';
 import type { SpeechRouteModel } from '@/lib/assistant/role-contracts';
 import SpeechInput from './speech-input';
 import { startReviewedDictation, type DictationConstructor } from '@/lib/assistant/dictation';
 
-type Status = { available:boolean; organizationId?:string; organizations?:{id:string;name:string;available:boolean;sttAvailable:boolean;sttProvider?:SpeechProvider;sttRoute?:string;sttRouteModel?:SpeechRouteModel}[] };
+type Status = { available:boolean; organizationId?:string; organizations?:{id:string;name:string;available:boolean;sttAvailable:boolean;sttProvider?:SpeechProvider;sttRoute?:string;sttRouteModel?:SpeechRouteModel;decisionRouteName?:string}[] };
+/** Só chama de TypeSafe a conferência que foi o padrão: com modelo escolhido para conferência, ou com resposta de outro modelo, o rótulo fica neutro. */
+const conferenceLabel = (model: string, routed: boolean) => !routed && model.startsWith(PROVIDERS.typesafe.model) ? 'Conferência TypeSafe' : 'Conferência';
 type Preview = { plan: Omit<AssistantPlan, 'actorId'>; planToken: string; undoReason: string };
 type Props = { projects: { id: string; name: string; organization_id?: string }[]; defaultProjectId?: string; onApplied?: () => void | Promise<void> };
 type SpeechWindow = Window & { SpeechRecognition?: DictationConstructor; webkitSpeechRecognition?: DictationConstructor };
@@ -64,7 +66,7 @@ export default function AssistantPanel({ projects, defaultProjectId, onApplied }
    {preview.plan.before && preview.plan.after && <div className="grid grid-cols-2 gap-3"><div className="rounded-xl bg-[var(--surface-soft)] p-3"><p className="text-sm">Antes</p><p className="font-semibold">{preview.plan.before.stock} {preview.plan.before.unit}</p><p className="text-sm">Disponível: {preview.plan.before.stock - preview.plan.before.reserved}</p></div><div className="rounded-xl bg-[var(--surface-soft)] p-3"><p className="text-sm">Depois</p><p className="font-semibold">{preview.plan.after.stock} {preview.plan.before.unit}</p><p className="text-sm">Disponível: {preview.plan.after.available}</p></div></div>}
    <p className="whitespace-pre-wrap break-words">{preview.plan.proposal.body}</p><p className="text-sm">Quantidade: {preview.plan.proposal.quantity || 'Sem movimentação'}</p>
    <div className="text-sm"><p className="font-semibold">Trechos do pedido usados na proposta</p>{preview.plan.proposal.evidence.map((evidence, index) => <blockquote className="mt-1 border-l-2 border-blue-300 pl-3" key={index}>{evidence.quote}</blockquote>)}</div>
-   <p className="text-xs text-[var(--text-secondary)]">{preview.plan.provenance.provider==='openai'?'OpenAI':'DeepSeek'}: {preview.plan.provenance.returnedModel}{preview.plan.provenance.jevModel ? ` · Conferência TypeSafe: ${preview.plan.provenance.jevModel}` : ''}. Válida até {new Date(preview.plan.expiresAt).toLocaleTimeString('pt-BR')}.</p><p className="text-sm text-[var(--text-secondary)]">{preview.undoReason}</p>
+   <p className="text-xs text-[var(--text-secondary)]">{preview.plan.provenance.provider==='openai'?'OpenAI':'DeepSeek'}: {preview.plan.provenance.returnedModel}{preview.plan.provenance.jevModel ? ` · ${conferenceLabel(preview.plan.provenance.jevModel, !!status?.organizations?.find(organization => organization.id === status.organizationId)?.decisionRouteName)}: ${preview.plan.provenance.jevModel}` : ''}. Válida até {new Date(preview.plan.expiresAt).toLocaleTimeString('pt-BR')}.</p><p className="text-sm text-[var(--text-secondary)]">{preview.undoReason}</p>
    <label className="flex items-start gap-2"><input type="checkbox" checked={confirmed} disabled={busy} onChange={event => setConfirmed(event.target.checked)} />Conferi projeto, material, quantidade e efeito. Autorizo esta operação.</label><div className="flex flex-wrap gap-3"><button type="button" className={button} disabled={busy || !confirmed} onClick={apply}>{preview.plan.proposal.intent === 'stock.query' ? 'Conferir saldo atual' : 'Confirmar operação'}</button><button type="button" className={secondary} disabled={busy} onClick={reset}>Revisar pedido</button></div>
   </div>}
  </section>;

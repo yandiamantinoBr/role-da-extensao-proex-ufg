@@ -6,7 +6,7 @@ import { ImagePlus, LoaderCircle, MessageSquarePlus, Mic, Send, Square, Trash2, 
 import { safeRequest, type AssistantPlan } from '@/lib/assistant/contracts';
 import {
   ROLE_MAX_HISTORY, ROLE_MAX_HISTORY_CHARS, ROLE_MAX_IMAGE_BYTES, ROLE_MAX_IMAGE_SIDE, ROLE_MAX_MESSAGE_CHARS, ROLE_MODELS,
-  formatMicros, friendlyMicros, roleConversationBytes, roleEstimate, roleSpeechCeilingMicros, speechRouteCeilingMicros, speechRouteName, type RoleTurn, type SpeechRouteModel,
+  formatMicros, friendlyMicros, operationConferenceText, operationsServiceText, roleConversationBytes, roleEstimate, roleSpeechCeilingMicros, speechRouteCeilingMicros, speechRouteName, type RoleTurn, type SpeechRouteModel,
 } from '@/lib/assistant/role-contracts';
 import { prepareSpeechWav } from './speech-audio';
 import AiPeopleUsage from './ai-people-usage';
@@ -17,7 +17,7 @@ import styles from './role-assistant.module.css';
 type Project = { id: string; name: string; organization_id?: string };
 type Props = { projects: Project[]; defaultProjectId?: string; onApplied?: () => void | Promise<void>; onOpenSettings?: () => void; onOpenLimits?: () => void };
 type Pricing = { model: string; label: string; inputMicrosPerToken: number; outputMicrosPerToken: number };
-type Status = { available: boolean; reason: string | null; provider: string; model: string; textPricing?: Pricing | null; visionPricing?: Pricing | null; visionAvailable: boolean; operationsAvailable: boolean; speech: { available: boolean; provider: 'groq' | 'deepgram'; route?: string; routeModel?: SpeechRouteModel }; dailyLimitMicros: number; reservedTodayMicros: number; canConfigure?: boolean; organizationId?: string; tools?: { text: boolean; vision: boolean }; scopes?: { units: { id: string; name: string }[]; events: { id: string; name: string; projectId: string }[] } };
+type Status = { available: boolean; reason: string | null; provider: string; model: string; textPricing?: Pricing | null; visionPricing?: Pricing | null; visionAvailable: boolean; operationsAvailable: boolean; speech: { available: boolean; provider: 'groq' | 'deepgram'; route?: string; routeModel?: SpeechRouteModel }; decisionRouteName?: string; dailyLimitMicros: number; reservedTodayMicros: number; canConfigure?: boolean; organizationId?: string; tools?: { text: boolean; vision: boolean }; scopes?: { units: { id: string; name: string }[]; events: { id: string; name: string; projectId: string }[] } };
 type Match = { projectId: string; projectName: string; itemName: string; score: number };
 type Operation = { request: string; stage: 'idle' | 'estimated' | 'preview' | 'done'; costMicros?: number; provider?: string; jev?: boolean; stale?: boolean; projectId?: string; matches?: Match[]; ambiguous?: boolean; error?: string; limit?: boolean; preview?: { plan: Omit<AssistantPlan, 'actorId'>; planToken: string; undoReason: string }; confirmed?: boolean; receipt?: string; key: string; /** Pedido exatamente como foi enviado para preparar a prévia; vai junto na confirmação. */ prepared?: string; destinationDefault?: string; movementId?: string; destination?: string | null; revise?: 'correct' | 'undo' | null; reviseKey?: string };
 type Source = { label: string; href: string };
@@ -52,7 +52,7 @@ function servicesList(status: Status): string {
   const parts = [`${providerName(status.provider)} (conversa${status.visionAvailable ? ' e fotos' : ''})`];
   const route = speechRoute(status);
   if (status.speech.available) parts.push(route ? `o modelo de voz ${speechRouteName(route.model)}` : `${providerName(status.speech.provider)} (voz)`);
-  if (status.operationsAvailable) parts.push('o serviço de registros de estoque');
+  if (status.operationsAvailable) parts.push(operationsServiceText(status.decisionRouteName));
   return parts.length > 1 ? `${parts.slice(0, -1).join(', ')} e ${parts.at(-1)}` : parts[0];
 }
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
@@ -167,7 +167,7 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
   const tooLong = draft.length > ROLE_MAX_MESSAGE_CHARS;
   const modelLabel = status ? modelLabelFor(status, !!picked) : '';
   // Ciência única: guardada neste aparelho e refeita só quando os serviços de IA mudarem.
-  const servicesKey = status ? [status.organizationId ?? '', status.provider, modelLabelFor(status, false), status.visionAvailable ? modelLabelFor(status, true) : '', status.speech.available ? speechRoute(status)?.id ?? status.speech.provider : '', status.operationsAvailable ? 'ops' : ''].join('|') : '';
+  const servicesKey = status ? [status.organizationId ?? '', status.provider, modelLabelFor(status, false), status.visionAvailable ? modelLabelFor(status, true) : '', status.speech.available ? speechRoute(status)?.id ?? status.speech.provider : '', status.operationsAvailable ? `ops${status.decisionRouteName ? `:${status.decisionRouteName}` : ''}` : ''].join('|') : '';
   const stored = useMemo(() => { if (!servicesKey) return null; try { return window.localStorage.getItem(CONSENT_STORAGE); } catch { return null; } }, [servicesKey, ackTick]); // eslint-disable-line react-hooks/exhaustive-deps
   const consent = !!servicesKey && (stored === servicesKey || sessionAck === servicesKey);
   function rememberConsent() {
@@ -421,7 +421,7 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
                       {message.operation.stale
                         ? <button type="button" className="p-button p-button-subtle" disabled={busy || !message.operation.projectId} onClick={() => void estimateOperation(message)}>Calcular o custo</button>
                         : <p><strong>Custo máximo: {friendlyMicros(message.operation.costMicros ?? 0)}.</strong> Nada muda no estoque até você confirmar.</p>}
-                      <p className={styles.sendsTo}>O pedido e a lista de materiais do projeto vão para {message.operation.provider === 'openai' ? 'a OpenAI' : 'a DeepSeek'}{message.operation.jev ? ', com conferência da TypeSafe (JEV)' : ''}.</p>
+                      <p className={styles.sendsTo}>O pedido e a lista de materiais do projeto vão para {message.operation.provider === 'openai' ? 'a OpenAI' : 'a DeepSeek'}{message.operation.jev ? operationConferenceText(status?.decisionRouteName) : ''}.</p>
                       <button type="button" className="p-button p-button-primary" disabled={busy || message.operation.stale || !message.operation.projectId} onClick={() => void prepareOperation(message)}>{message.operation.error ? 'Preparar de novo' : 'Preparar registro'}</button>
                     </>}
                     {message.operation.stage === 'preview' && message.operation.preview && <div className={styles.preview}>

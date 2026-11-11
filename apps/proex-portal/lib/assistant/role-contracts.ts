@@ -59,6 +59,42 @@ export function speechRouteName(model: Pick<SpeechRouteModel, 'label' | 'service
   return !model.service || model.label.toLowerCase().includes(model.service.toLowerCase()) ? model.label : `${model.label} (${model.service})`;
 }
 
+/**
+ * Avisos e autorizações de documento, conferência e triagem. Sem modelo escolhido, o texto é o de sempre.
+ * Com modelo escolhido e apto a responder, o texto nomeia esse modelo e avisa que, se ele não puder responder,
+ * o pedido segue pelo padrão de hoje. "JEV padrão" evita confusão quando o modelo escolhido também é da TypeSafe.
+ */
+const DEFAULT_DECISION = 'JEV padrão, da TypeSafe';
+/**
+ * Nome de um modelo escolhido para documento ou conferência: o nome do modelo e, se ele ainda não disser, o serviço.
+ * O serviço entra sem a observação entre parênteses do catálogo ("Perplexity (decisão)" vira "Perplexity").
+ */
+export function taskRouteLabel(model: { label: string; service: string }): string {
+  const service = model.service.replace(/\s*\(.*\)\s*$/, '').trim();
+  return !service || model.label.toLowerCase().includes(service.toLowerCase()) ? model.label : `${model.label} (${service})`;
+}
+/** Nome de modelo recebido do servidor, pronto para a tela: só texto curto; qualquer outra coisa vira vazio (= padrão de hoje). */
+export function shownRouteName(value: unknown): string { return typeof value === 'string' ? value.trim().slice(0, 160) : ''; }
+export function triageNoticeText(name?: string | null): string {
+  return name ? `O modelo ${name} recebe esse resumo e o prazo desta demanda. Se ele não puder responder, quem recebe é o ${DEFAULT_DECISION}.` : 'O JEV recebe esse resumo e o prazo desta demanda.';
+}
+export function triageConsentText(name?: string | null): string {
+  return name ? `Autorizo enviar este resumo e prazo ao modelo ${name} e, se ele não puder responder, ao ${DEFAULT_DECISION}.` : 'Autorizo enviar este resumo e prazo à TypeSafe.';
+}
+export function documentConsentText(documentName?: string | null, decisionName?: string | null): string {
+  const decision = decisionName ? ` Para a conferência, o texto vai também ao modelo ${decisionName}; se ele não puder responder, ao ${DEFAULT_DECISION}.` : '';
+  if (documentName) return `Autorizo enviar o texto extraído desta fonte ao modelo ${documentName}. Se ele não puder responder, o texto vai para o provedor de texto padrão desta organização (DeepSeek ou OpenAI).${decision || ' O texto também vai ao Jev se habilitado.'}`;
+  return decisionName ? `Autorizo enviar o texto extraído desta fonte ao provedor de texto escolhido para esta organização (DeepSeek ou OpenAI).${decision}` : 'Autorizo enviar o texto extraído desta fonte ao provedor de texto escolhido para esta organização (DeepSeek ou OpenAI) e ao Jev se habilitado.';
+}
+/** Complemento do aviso de um registro do Rolê quando há conferência. */
+export function operationConferenceText(name?: string | null): string {
+  return name ? `, com conferência do modelo ${name}; se ele não puder responder, a conferência fica com o ${DEFAULT_DECISION}` : ', com conferência da TypeSafe (JEV)';
+}
+/** Item "registros de estoque" da lista de serviços do Rolê. */
+export function operationsServiceText(name?: string | null): string {
+  return name ? `o serviço de registros de estoque, com conferência do modelo ${name} (ou do ${DEFAULT_DECISION}, se ele não puder responder)` : 'o serviço de registros de estoque';
+}
+
 export type RoleTurn = { role: 'user' | 'assistant'; content: string };
 export type RolePricing = { model: string; label: string; inputMicrosPerToken: number; outputMicrosPerToken: number };
 export type RoleEstimateInput = { textProvider: RoleProvider; textBytes: number; hasImage: boolean; text?: RolePricing | null; vision?: RolePricing | null; tools?: boolean };

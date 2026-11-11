@@ -11,7 +11,7 @@ import { PROVIDERS, textModel, type AssistantConfig, type TaskModelKey } from '.
 import { firstJsonObject, genericChat, RefusedError } from './generic-provider';
 import { fitsTask, safeBaseUrl, type CatalogModel, type CatalogProvider, type RoutedTask } from './model-catalog';
 import { loadCatalog } from './model-catalog-store';
-import type { SpeechRouteModel } from './role-contracts';
+import { taskRouteLabel, type SpeechRouteModel } from './role-contracts';
 
 export const TASK_MODEL_KEY: Record<RoutedTask, TaskModelKey> = { document: 'documentModel', decision: 'decisionModel', speech: 'speechModel' };
 export const TASK_LABEL: Record<RoutedTask, string> = { document: 'documentos', decision: 'conferência e triagem', speech: 'voz' };
@@ -97,6 +97,13 @@ export function speechRouteStyle(route: TaskRoute): 'groq' | 'deepgram' { return
  */
 export function speechRouteModel(resolved: ResolvedTaskRoute): SpeechRouteModel | null {
   return resolved && !('skip' in resolved) ? { label: resolved.model.label, service: resolved.provider.label, perHour: resolved.model.price.perHour, style: speechRouteStyle(resolved) } : null;
+}
+/**
+ * Nome que avisos e autorizações mostram para o modelo escolhido de uma tarefa: o modelo e, se o nome dele
+ * ainda não disser, o serviço. Só com rota válida; nunca chave nem endereço.
+ */
+export function taskRouteName(resolved: ResolvedTaskRoute): string | null {
+  return resolved && !('skip' in resolved) ? taskRouteLabel({ label: resolved.model.label, service: resolved.provider.label }) : null;
 }
 export function refusalReason(error: RefusedError) { return `O provedor recusou o pedido (HTTP ${error.providerStatus}).`; }
 

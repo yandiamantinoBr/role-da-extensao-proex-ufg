@@ -6,7 +6,7 @@ import { containsCredential } from '../assistant/sensitive';
 import { assistantUsageSql, loadAssistantSettings } from '../assistant/settings';
 import { reservationStatements } from '../assistant/admission';
 import { classifyTaskTriage, taskTriageBody } from '../assistant/provider';
-import { decisionCeiling, decisionTarget, recordRouteFallback, resolveTaskRoute, withTaskRoute, type ResolvedTaskRoute } from '../assistant/task-routing';
+import { decisionCeiling, decisionTarget, recordRouteFallback, resolveTaskRoute, taskRouteName, withTaskRoute, type ResolvedTaskRoute } from '../assistant/task-routing';
 import { TASK_PRIORITIES, choices, fail, id, onlyKeys, text, version } from './contracts';
 import { atomic, authority, type Scope } from './scope';
 import { serverWorkClock } from './time';
@@ -40,16 +40,18 @@ export async function taskTriageAvailable(db:D1Database, actor:PortalActor, task
 
 /**
  * Estado que a tela consulta antes de abrir a triagem. Sem modelo de decisão escolhido devolve só `enabled`, como sempre,
- * e não lê chave nem catálogo. Com modelo escolhido e apto a responder, devolve também a reserva máxima que o servidor fará.
+ * e não lê chave nem catálogo. Com modelo escolhido e apto a responder, devolve também a reserva máxima que o servidor fará
+ * e o nome do modelo que recebe o resumo, para o aviso e a autorização nomearem o destino real.
  */
-export async function taskTriageState(db:D1Database, actor:PortalActor, taskId:unknown, secret:string, keys?:CredentialKeys):Promise<{enabled:boolean;reserveUsdMicros?:number}> {
+export async function taskTriageState(db:D1Database, actor:PortalActor, taskId:unknown, secret:string, keys?:CredentialKeys):Promise<{enabled:boolean;reserveUsdMicros?:number;destinationName?:string}> {
  if (!await taskTriageAvailable(db,actor,taskId)) return {enabled:false};
  try {
   const task = await getTask(db,actor,id(taskId)!);
   if (!await one(db, "SELECT 1 FROM ai_organization_settings WHERE organization_id=? AND COALESCE(json_extract(config_json,'$.decisionModel'),'')<>''", [task.organization_id])) return {enabled:true};
   const {config, rawCredentials} = await loadAssistantSettings(db,secret,task.organization_id,'triage',keys,actor.userId);
   const decisionRoute = config.decisionModel ? await resolveTaskRoute(db,task.organization_id,config,rawCredentials,'decision') : null;
-  return decisionRoute && !('skip' in decisionRoute) ? {enabled:true,reserveUsdMicros:triageReserveMicros(decisionRoute)} : {enabled:true};
+  const destinationName = taskRouteName(decisionRoute);
+  return destinationName ? {enabled:true,reserveUsdMicros:triageReserveMicros(decisionRoute),destinationName} : {enabled:true};
  } catch { return {enabled:true}; } // sem o teto, a tela mostra o número do padrão; o envio continua validando tudo de novo
 }
 
@@ -76,7 +78,7 @@ function guardError(error:unknown):never {
 
 export async function prepareTaskTriage(db:D1Database, actor:PortalActor, input:Record<string,unknown>, secret:string,
   options:{now?:number;fetcher?:typeof fetch;keys?:CredentialKeys}={}):Promise<TriageResponse> {
- onlyKeys(input,['id','expectedVersion','operationKey','context','consent']);
+ onlyKeys(input,['id','expectedVersion','operationKey','context','consent','destinationName']);
  if (input.consent!==true) fail('Confirme o envio do resumo operacional ao provedor.', 'triage_consent');
  if (typeof input.operationKey!=='string' || !/^[A-Za-z0-9_-]{8,100}$/.test(input.operationKey)) fail('Abra a triagem novamente.', 'triage_operation');
  const rawContext = text(input.context,TRIAGE_CONTEXT_LIMIT);
@@ -98,6 +100,10 @@ export async function prepareTaskTriage(db:D1Database, actor:PortalActor, input:
  if (new TextEncoder().encode(JSON.stringify(body)).byteLength>TRIAGE_INPUT_LIMIT) fail('Resuma o contexto antes de enviar.', 'triage_context_limit');
  // Triagem roteada: só existe com decisionModel escolhido. Vazio = null = exatamente o caminho de sempre.
  const decisionRoute = config.decisionModel ? await resolveTaskRoute(db,task.organization_id,config,rawCredentials,'decision') : null;
+ // A tela informa o modelo que mostrou na autorização ('' = só o padrão). Se quem receberia o resumo agora é outro modelo,
+ // nada é enviado até a pessoa ver o destino novo e autorizar de novo. Sem modelo escolhido, ou sem esse campo, nada muda.
+ const destinationName = taskRouteName(decisionRoute);
+ if (typeof input.destinationName==='string' && destinationName && input.destinationName!==destinationName) fail('O modelo que recebe este resumo mudou. Confira o aviso e autorize de novo.', 'triage_destination', 409);
  const routedBody = decisionRoute && !('skip' in decisionRoute) ? taskTriageBody(config,context,task.due_at,day,decisionRoute.model.model) : null;
  if (routedBody && new TextEncoder().encode(JSON.stringify(routedBody)).byteLength>TRIAGE_INPUT_LIMIT) fail('Resuma o contexto antes de enviar.', 'triage_context_limit');
  // Com rota, reserva o maior preço entre o escolhido e o padrão (o pedido pode terminar em qualquer um).
