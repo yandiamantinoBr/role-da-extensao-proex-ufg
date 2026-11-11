@@ -2,14 +2,14 @@
 import DateTimeField from './date-time-field';
 import DateField from './date-field';
 
-import Link from 'next/link';
 
 import { useEffect, useId, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
-import { BarChart3, Camera, Check, ClipboardList, ExternalLink, FilePlus2, ImagePlus, LoaderCircle, Paperclip, Plus, RefreshCw, Search, Trash2, Upload } from 'lucide-react';
+import { Camera, Check, ClipboardList, ExternalLink, FilePlus2, ImagePlus, LoaderCircle, Paperclip, Plus, RefreshCw, Search, Trash2, Upload } from 'lucide-react';
 import { useFormDraft, DraftNotice } from './use-form-draft';
 import styles from './records-panel.module.css';
 import { download } from './report-export';
 import ExportFormats, {type DocumentFormat} from './export-formats';
+import ExportLink from './export-link';
 import { documentExport } from './document-export';
 import { toast } from 'sonner';
 import { MAX_UPLOAD_FILE_BYTES as MAX_FILE_BYTES, UPLOAD_LIMIT_LABEL, uploadErrorMessage } from '../../lib/upload-limits';
@@ -25,6 +25,8 @@ type Entry = {
   origin?: { via: 'assistant'; label: string; summary?: string };
 };
 type Props = {
+  /** A pessoa tem o conjunto Registros em Relatórios: o botão Exportar abre a central já filtrada. */
+  exportInReports?: boolean;
   initialProjectId?:string;
   projects: Row[]; items: Row[]; loans: Row[];
   canWrite?(capability: string, projectId: string): boolean;
@@ -186,7 +188,7 @@ function AttachmentQueue({ recordId, onAttachment, onPendingChange }: {
   </div>;
 }
 
-export default function RecordsPanel({ projects: sourceProjects, items, loans, initialProjectId='', canWrite = noWrite }: Props) {
+export default function RecordsPanel({ projects: sourceProjects, items, loans, initialProjectId='', canWrite = noWrite, exportInReports = false }: Props) {
   const projects = useMemo(() => sourceProjects.filter(project => text(project, 'id') && text(project, 'name')).map(project => ({ id: text(project, 'id'), name: text(project, 'name') })), [sourceProjects]);
   const writableProjects = projects.filter(project => kinds.some(kind => canWrite(kind.capability, project.id)));
   const [records, setRecords] = useState<Entry[]>([]), [truncated, setTruncated] = useState(false);
@@ -391,7 +393,9 @@ export default function RecordsPanel({ projects: sourceProjects, items, loans, i
 
     <section className="p-card" aria-labelledby="records-list-title" aria-busy={loading}>
       <div className={styles.historyHead}><div><h3 id="records-list-title">Histórico</h3><p className="p-form-help" style={{ margin: 0 }}>{loading ? 'Consultando registros…' : `${shown.length} de ${records.length} registros carregados${filters.from || filters.to ? ' no período escolhido' : ''}`}</p></div>
-        <div className={styles.historyActions}><Link className="p-button p-button-subtle" href="/?module=reports" prefetch={false}><BarChart3 size={16} />Central de relatórios</Link><ExportFormats label="Baixar registros" disabled={loading || !shown.length || !!readError} onExport={exportHistory}/></div></div>
+        <div className={styles.historyActions}>{exportInReports
+          ? <ExportLink dataset="records" projectId={filters.projectId} from={filters.from} to={filters.to} search={search || (category ? kindLabel(category as Kind) : '')}/>
+          : <ExportFormats label="Baixar registros" disabled={loading || !shown.length || !!readError} onExport={exportHistory}/>}</div></div>
       <div className={styles.historyFilters}>
         <div className={styles.kindChips} role="group" aria-label="Filtrar por categoria">
           <button type="button" aria-pressed={!category} className={!category ? styles.chipActive : ''} disabled={existingPending} onClick={() => setCategory('')}>Todas <span>{records.length}</span></button>

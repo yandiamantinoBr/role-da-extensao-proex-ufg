@@ -5,6 +5,7 @@ import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAx
 import { ArrowDown, ArrowUp, BarChart3, Boxes, CalendarRange, ClipboardList, Columns3, FileJson, FileText, FolderKanban, LoaderCircle, Printer, RefreshCw, Repeat2, Save, Search, Trash2, Truck, X } from 'lucide-react';
 import { areaLabel } from '@/lib/extension-catalog';
 import { quantityTotal } from '@/lib/report-quantities';
+import { REPORT_DATASET_IDS } from '@/lib/report-links';
 import Image from 'next/image';
 import BrandMark from '@/components/theme/brand-mark';
 import type { ReportPdfPresentation } from './report-pdf';
@@ -14,7 +15,7 @@ import { SheetShortcuts } from './sheet-shortcuts';
 import type { SheetTabKey } from '@/lib/sync/sheet-tab-catalog';
 import styles from './reports-center.module.css';
 
-type DatasetId = 'projects' | 'materials' | 'movements' | 'outflows' | 'outflow_details' | 'loans' | 'records' | 'campaigns' | 'demands' | 'reviews';
+import type { ReportDatasetId as DatasetId } from '@/lib/report-links';
 const SHEET_TAB_BY_DATASET: Partial<Record<DatasetId, SheetTabKey>> = {
   projects: 'projects', materials: 'items', movements: 'stock_movements', loans: 'loans',
   records: 'records', campaigns: 'campaigns', demands: 'followup_tasks', reviews: 'followup_checklists',
@@ -114,10 +115,17 @@ const DATASETS: Record<DatasetId, Dataset> = {
     groups: ['projeto', 'situacao', 'unidade_sigla', 'area_tematica', 'mes'], dateKey: 'inicio',
     kpis: rows => [{ label: 'Eventos', value: rows.length }, { label: 'Participações', value: sum(rows, 'participacoes') }, { label: 'Tentativas', value: sum(rows, 'tentativas') }, { label: 'Prêmios entregues', value: sum(rows, 'premios_entregues') }],
   },
+  campaign_days: {
+    label: 'Dinâmicas por dia', description: 'Uma linha por dinâmica, dia e tipo (roleta, dado ou presencial). Participação, tentativa e entrega contam no dia em que cada uma aconteceu, no horário de Brasília. Uma premiação com três brindes é uma entrega.', icon: CalendarRange,
+    columns: [...shared, { key: 'evento', label: 'Dinâmica' }, { key: 'data', label: 'Dia', date: true }, { key: 'tipo_dinamica', label: 'Tipo' }, { key: 'participacoes', label: 'Participações', numeric: true }, { key: 'tentativas', label: 'Tentativas', numeric: true }, { key: 'premios_entregues', label: 'Prêmios entregues', numeric: true }, { key: 'atendimentos_assistidos', label: 'Atendimentos assistidos', numeric: true }],
+    defaults: ['data', 'evento', 'projeto', 'tipo_dinamica', 'participacoes', 'tentativas', 'premios_entregues'],
+    groups: ['evento', 'tipo_dinamica', 'projeto', 'mes'], dateKey: 'data',
+    kpis: rows => [{ label: 'Dias com registro', value: distinct(rows, 'data') }, { label: 'Participações', value: sum(rows, 'participacoes') }, { label: 'Tentativas', value: sum(rows, 'tentativas') }, { label: 'Prêmios entregues', value: sum(rows, 'premios_entregues') }],
+  },
   demands: {
     label: 'Demandas e prioridades', description: 'Pendências, responsáveis ativos e prazos. O período filtra a criação; atraso considera o prazo em Brasília. Não inclui contatos ou corpo privado.', icon: ClipboardList,
-    columns: [{ key: 'organizacao', label: 'Organização' }, ...shared, { key: 'demanda', label: 'Demanda' }, { key: 'prioridade', label: 'Prioridade' }, { key: 'situacao', label: 'Situação' }, { key: 'prazo', label: 'Prazo', date: true }, { key: 'em_atraso', label: 'Em atraso' }, { key: 'data', label: 'Criada em', date: true }, { key: 'atualizada_em', label: 'Atualizada em', date: true }, { key: 'evento', label: 'Evento vinculado' }, { key: 'material', label: 'Material vinculado' }, { key: 'responsaveis_ativos', label: 'Responsáveis individuais ativos', numeric: true }, { key: 'equipes_ativas', label: 'Equipes ativas', numeric: true }, { key: 'itens_conferencia', label: 'Itens da conferência', numeric: true }, { key: 'contagens_pendentes', label: 'Contagens pendentes', numeric: true }],
-    defaults: ['organizacao', 'projeto', 'demanda', 'prioridade', 'situacao', 'prazo', 'em_atraso', 'equipes_ativas'],
+    columns: [{ key: 'organizacao', label: 'Organização' }, ...shared, { key: 'demanda', label: 'Demanda' }, { key: 'prioridade', label: 'Prioridade' }, { key: 'situacao', label: 'Situação' }, { key: 'prazo', label: 'Prazo', date: true }, { key: 'em_atraso', label: 'Em atraso' }, { key: 'data', label: 'Criada em', date: true }, { key: 'atualizada_em', label: 'Atualizada em', date: true }, { key: 'evento', label: 'Evento vinculado' }, { key: 'material', label: 'Material vinculado' }, { key: 'responsaveis_ativos', label: 'Responsáveis individuais ativos', numeric: true }, { key: 'equipes', label: 'Equipes' }, { key: 'equipes_ativas', label: 'Equipes ativas', numeric: true }, { key: 'itens_conferencia', label: 'Itens da conferência', numeric: true }, { key: 'contagens_pendentes', label: 'Contagens pendentes', numeric: true }],
+    defaults: ['organizacao', 'projeto', 'demanda', 'prioridade', 'situacao', 'prazo', 'em_atraso', 'equipes'],
     groups: ['prioridade', 'situacao', 'organizacao', 'projeto', 'em_atraso', 'mes'], dateKey: 'data',
     kpis: rows => [{ label: 'Demandas', value: rows.length }, { label: 'Pendentes', value: count(rows, row => !['completed', 'cancelled'].includes(String(row.situacao))) }, { label: 'Em atraso', value: count(rows, row => row.em_atraso === 'sim'), tone: 'warn' }, { label: 'Contagens pendentes', value: sum(rows, 'contagens_pendentes') }],
   },
@@ -129,7 +137,7 @@ const DATASETS: Record<DatasetId, Dataset> = {
     kpis: rows => [{ label: 'Conferências', value: distinct(rows, 'conferencia_id') }, { label: 'Contagens pendentes', value: count(rows, row => row.contagem_pendente === 'sim'), tone: 'warn' }, { label: 'Avarias registradas', value: quantityTotal(rows, 'avariado') }, { label: 'Linhas com divergência ou avaria', value: count(rows, row => num(row.avariado) > 0 || (row.divergencia !== null && num(row.divergencia) !== 0)) }],
   },
 };
-const ORDER: DatasetId[] = ['projects', 'materials', 'movements', 'outflows', 'outflow_details', 'loans', 'records', 'campaigns', 'demands', 'reviews'];
+const ORDER: DatasetId[] = [...REPORT_DATASET_IDS];
 const PHYSICAL_MEASURES = ['saldo', 'reservado', 'disponivel', 'alerta_minimo', 'quantidade', 'esperado', 'contado', 'avariado', 'divergencia', 'sem_avarias'];
 const LABELS: Record<string, Record<string, string>> = {
   abrangencia: { internal: 'Interno PROEX', external: 'Externo' },
@@ -137,6 +145,7 @@ const LABELS: Record<string, Record<string, string>> = {
   classe: { gift: 'Brinde', equipment: 'Equipamento', distribution: 'Distribuição', consumption: 'Consumo' },
   condicao: { active: 'Em uso', maintenance: 'Em manutenção', inactive: 'Inativo' },
   situacao_estoque: { baixo: 'Estoque baixo', ok: 'Adequado' },
+  tipo_dinamica: { physical: 'Presencial', dice: 'Dado', wheel: 'Roleta' },
   tipo: { receive: 'Entrada', distribute: 'Distribuição', consume: 'Consumo', adjust: 'Ajuste', redeem: 'Resgate de prêmio', transfer: 'Transferência', loan: 'Retirada de equipamento' },
   situacao_retorno: { not_applicable: 'Não se aplica (distribuição/prêmio)', out: 'Retorno pendente', returned: 'Devolvido' },
   sentido: { entrada: 'Entrada', saida: 'Saída' },
@@ -380,8 +389,8 @@ export function ProjectReportExports({ projectId, projectName, officialUrl, hasL
   </section>;
 }
 
-export default function ReportsCenter({ userId, projectId, unitId, area, from, to, scopeLabel, available, initialDataset, projectIdentity, canSync = false }: {
-  userId: string; projectId: string; unitId: string; area: string; from: string; to: string; scopeLabel: string; available: DatasetId[]; initialDataset?: DatasetId; projectIdentity?: ExportRow; canSync?: boolean;
+export default function ReportsCenter({ userId, projectId, unitId, area, from, to, scopeLabel, available, initialDataset, initialSearch = '', projectIdentity, canSync = false }: {
+  userId: string; projectId: string; unitId: string; area: string; from: string; to: string; scopeLabel: string; available: DatasetId[]; initialDataset?: DatasetId; initialSearch?: string; projectIdentity?: ExportRow; canSync?: boolean;
 }) {
   // Ids estáveis para os campos (painel Issues do DevTools); não mudam o FormData.
   const fieldId = useId();
@@ -394,7 +403,8 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
   const [columns, setColumns] = useState<string[]>(config.defaults);
   const [groupBy, setGroupBy] = useState(config.groups[0]);
   const [measure, setMeasure] = useState('__count__');
-  const [searchState, setSearchState] = useState({ userId, value: '' });
+  // A busca pode vir pronta de um botão "Exportar" de outra tela (ex.: o nome da equipe).
+  const [searchState, setSearchState] = useState({ userId, value: initialSearch });
   const search = searchState.userId === userId ? searchState.value : '';
   const setSearch = (value: string) => setSearchState({ userId, value });
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null);

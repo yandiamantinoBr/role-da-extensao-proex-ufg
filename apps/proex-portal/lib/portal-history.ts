@@ -1,6 +1,7 @@
 import type { ModuleId } from '../components/portal/navigation-model';
 import { MY_WORK_STATUSES, type MyWorkStatus } from './my-work/contracts';
 import { workRecordFromParams, writeWorkRecordParams, type WorkRecordSelection } from './work-navigation';
+import { isReportDataset, type ReportDatasetId } from './report-links';
 
 export type PortalLocation = {
     tab: ModuleId;
@@ -9,7 +10,8 @@ export type PortalLocation = {
     area: string;
     demand: string;
     record: WorkRecordSelection | null;
-    report: 'projects' | 'demands';
+    /** Conjunto aberto em Relatórios (o botão "Exportar" das outras telas escolhe um). */
+    report: ReportDatasetId;
     workStatus?: MyWorkStatus;
     organization?: string;
 };
@@ -53,7 +55,7 @@ export function readPortalLocation(params: URLSearchParams, scope: Scope): Porta
         tab, project, unit, area,
         demand: tab === 'demands' ? demand : '',
         record: record?.module === tab && record.projectId === project && scope.canOpenRecord(record) ? record : null,
-        report: tab === 'reports' && params.get('report') === 'demands' ? 'demands' : 'projects',
+        report: tab === 'reports' && isReportDataset(params.get('report')) ? params.get('report') as ReportDatasetId : 'projects',
         workStatus: tab === 'my-work' ? MY_WORK_STATUSES.find(value => value === params.get('workStatus')) ?? 'pending' : 'pending',
         organization,
     };
@@ -66,7 +68,7 @@ export function writePortalLocation(params: URLSearchParams, route: PortalLocati
         unit: route.unit,
         area: route.area,
         demandId: route.tab === 'demands' ? route.demand : '',
-        report: route.tab === 'reports' && route.report === 'demands' ? 'demands' : '',
+        report: route.tab === 'reports' && route.report !== 'projects' && isReportDataset(route.report) ? route.report : '',
         workStatus: route.tab === 'my-work' && route.workStatus && MY_WORK_STATUSES.includes(route.workStatus) && route.workStatus !== 'pending' ? route.workStatus : '',
         organizationId: route.tab === 'my-work' || route.tab === 'overview' ? route.organization || '' : '',
     })) {

@@ -45,10 +45,8 @@ import { VolunteerDesk, volunteerAccessFrom } from '@/components/portal/voluntee
 import volunteerStyles from '@/components/portal/volunteer-home.module.css';
 import CalendarPanel from '@/components/portal/calendar-panel';
 import RecordsPanel, { RECORD_CAPABILITIES } from '@/components/portal/records-panel';
-import ReportsCenter, { projectBrandFor } from '@/components/portal/reports-center';
-import { download } from '@/components/portal/report-export';
-import ExportFormats, {downloadFromServer, type DocumentFormat} from '@/components/portal/export-formats';
-import { documentExport } from '@/components/portal/document-export';
+import ReportsCenter from '@/components/portal/reports-center';
+import { readReportArrival, REPORT_ARRIVAL_PARAMS, type ReportDatasetId } from '@/lib/report-links';
 import FollowUpPanel from '@/components/portal/follow-up-panel';
 import MeuTrabalhoPanel from '@/components/portal/meu-trabalho-panel';
 import PersonalWorkSummary from '@/components/portal/personal-work-summary';
@@ -313,7 +311,9 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
     const pushNavigation = useRef(false);
     const [selectedDemandId, setSelectedDemandId] = useState('');
     const [recordsView, setRecordsView] = useState<'history' | 'documents'>('history');
-    const [reportInitialDataset, setReportInitialDataset] = useState<'projects' | 'demands'>('projects');
+    const [reportInitialDataset, setReportInitialDataset] = useState<ReportDatasetId>('projects');
+    // Busca que chega pelo botão "Exportar" de outra tela (ex.: nome da equipe); vale só naquela chegada.
+    const [reportSearch, setReportSearch] = useState('');
     const [personalStatus, setPersonalStatus] = useState<MyWorkStatus>('pending');
     const [personalOrganization, setPersonalOrganization] = useState('');
     const [accountOpen, setAccountOpen] = useState(false);
@@ -517,6 +517,14 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
             if (scrollToTop) window.scrollTo({ top: 0, behavior: 'auto' });
         });
     }
+    /** Período e busca pedidos no endereço de Relatórios; devolve true se havia algum. */
+    function applyReportArrival(params: URLSearchParams) {
+        const arrival = readReportArrival(params);
+        if (params.get('module') === 'reports') setReportSearch(arrival?.search ?? '');
+        if (!arrival) return false;
+        setReportFrom(arrival.from); setReportTo(arrival.to);
+        return true;
+    }
     function applyLocation(next: PortalLocation) {
         setDeniedModule(null);
         // Voltar ou avançar pelo navegador abre Equipes do jeito normal, sem repetir um pedido antigo (abrir fixada, criar).
@@ -545,6 +553,8 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         const denied = deniedPortalModule(url.searchParams, next, tabs.map(module => module.id));
         if (denied) setDeniedModule(denied as ModuleId);
         if (!traversal) setHistoryReady(true);
+        // from, to e q valem só na chegada: aplicados à tela e tirados do endereço.
+        if (!traversal && next.tab === 'reports' && applyReportArrival(url.searchParams)) { for (const key of REPORT_ARRIVAL_PARAMS) url.searchParams.delete(key); window.history.replaceState(window.history.state, '', url); }
         commitPortalLocation(window.history, url.href, next, false);
     });
     useEffect(() => {
@@ -573,7 +583,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         if (!teamIntentPending.current) setTeamIntent(null);
         teamIntentPending.current = false;
         if (id !== 'my-work' && id !== 'overview') setPersonalOrganization('');
-        if (id === 'reports') setReportInitialDataset(report);
+        if (id === 'reports') { setReportInitialDataset(report); setReportSearch(''); }
         if (id === 'my-work' || (id === 'calendar' && unitFilter === '__unassigned__')) setUnitFilter('');
         if (id === 'my-work' || id === 'calendar') setAreaFilter('');
         focusModule(true);
@@ -590,6 +600,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         const teamParam = destination.searchParams.get('teamId'), teamOrg = destination.searchParams.get('organizationId');
         if (destination.searchParams.get('module') === 'work-teams' && teamParam && /^[A-Za-z0-9_.:-]{1,80}$/.test(teamParam) && teamOrg && organizations.some(organization => organization.id === teamOrg)) { openTeams({ kind: 'open', teamId: teamParam, organizationId: teamOrg }); return; }
         const next = readLocation(destination.searchParams), destinationParam = destination.searchParams.get('destinationId');
+        if (next.tab === 'reports') applyReportArrival(destination.searchParams);
         if (destinationParam && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(destinationParam)) setDestinationOpen(destinationParam);
         const convocationLink = destination.searchParams.get('convocation');
         if (convocationLink && /^[A-Za-z0-9-]{8,80}$/.test(convocationLink)) setConvocationFocus(convocationLink);
@@ -676,40 +687,6 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
     <select name="projectId" value={effectiveProject} onChange={e => setDraftProject(e.target.value)} required>
     <option value="">Selecione um projeto</option>{formProjects.map(p => <option value={p.id} key={p.id}>{p.name}</option>)}</select>
     </Field>;
-    const dailyRows = byProject(list(data.metrics?.daily)).filter(row => (!reportFrom || row.day >= reportFrom) && (!reportTo || row.day <= reportTo));
-    const exportNeedsProject = Boolean(unitFilter || areaFilter) && !filter;
-    const campaignTotals = new Map<string, Row>();
-    for (const row of dailyRows) {
-        const key = String(row.campaign_id);
-        const previous = campaignTotals.get(key) ?? { id: row.campaign_id, name: row.campaign_name, project_id: row.project_id, participations: 0, attempts: 0, deliveries: 0 };
-        for (const kind of ['participations', 'attempts', 'deliveries'])
-            previous[kind] += Number(row[kind] ?? 0);
-        campaignTotals.set(key, previous);
-    }
-    const reportCampaignRows = reportFrom || reportTo ? Array.from(campaignTotals.values()) : byProject(list(data.metrics?.campaigns));
-    const metric = (...keys: string[]) => { const metrics = data.metrics ?? {}; if (metrics.available === false)
-        return '—'; const normalized = keys.includes('deliveries') ? 'deliveries' : keys.includes('unitsDelivered') ? 'unitsDelivered' : keys[0]; let value = get(metrics, ...keys); if (tab === 'reports' && (reportFrom || reportTo))
-        value = ['participations', 'attempts', 'deliveries', 'tickets'].includes(normalized) ? dailyRows.reduce((total, row) => total + Number(row[normalized] ?? 0), 0) : undefined;
-    else if (filter) {
-        const row = list(metrics.byProject).find(p => get(p, 'projectId', 'project_id') === filter);
-        value = row ? get(row, normalized, ...keys) : ['participations', 'attempts', 'deliveries', 'visits', 'tickets'].includes(normalized) ? list(metrics.campaigns).filter(c => get(c, 'projectId', 'project_id') === filter).reduce((total, row) => total + Number(row[normalized] ?? 0), 0) : undefined;
-    } else if (unitFilter || areaFilter) {
-        const rows = byProject(list(metrics.byProject));
-        value = rows.length && rows.every(row => get(row, normalized, ...keys) !== undefined) ? rows.reduce((total, row) => total + Number(get(row, normalized, ...keys) ?? 0), 0) : undefined;
-    } return value === undefined || value === null ? '—' : Number(value).toLocaleString('pt-BR'); };
-    async function downloadDaily(format: DocumentFormat) {
-        const columns = [
-            { key: 'day', label: 'Data' }, { key: 'project_name', label: 'Projeto' }, { key: 'campaign_name', label: 'Evento' }, { key: 'modality', label: 'Modalidade' },
-            { key: 'participations', label: 'Participações', numeric: true }, { key: 'attempts', label: 'Tentativas', numeric: true },
-            { key: 'deliveries', label: 'Entregas', numeric: true }, { key: 'tickets', label: 'Atendimentos assistidos', numeric: true },
-        ];
-        const modalities: Record<string, string> = { physical: 'Presencial', dice: 'Dado', wheel: 'Roleta' };
-        const rows = dailyRows.map(row => ({ ...row, project_name:projectName(string(row.project_id)), day: /^\d{4}-\d{2}-\d{2}$/.test(string(row.day)) ? string(row.day).split('-').reverse().join('/') : row.day, modality: modalities[string(row.modality)] ?? row.modality }));
-        const info: [string,string][] = [['Projeto',filter?projectName(filter):'Todos os projetos do recorte'],['Período',`${reportFrom||'Início disponível'} a ${reportTo||'Última data disponível'}`],['Linhas',String(rows.length)],['Gerado em',when(new Date().toISOString())+' (Brasília)']];
-        const selectedProject=projects.find(project=>project.id===filter);
-        const presentation={...(selectedProject?{projectName:string(selectedProject.name),projectBrand:projectBrandFor(selectedProject.id,selectedProject.name,selectedProject.official_url)}:{}),metrics:[{label:'Participações',value:dailyRows.reduce((sum,row)=>sum+Number(row.participations??0),0)},{label:'Entregas',value:dailyRows.reduce((sum,row)=>sum+Number(row.deliveries??0),0)}]};
-        download(`proex-resumo-diario.${format}`, await documentExport(format,'Resumo diário',columns,rows,(row,key)=>row[key],info,presentation));
-    }
     const activeModule = tabs.find(module => module.id === tab);
     const title = activeModule?.label ?? 'Visão geral';
     const ModuleIcon = activeModule?.icon;
@@ -1135,7 +1112,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         <nav className="p-material-tabs" aria-label="Partes de Registros"><button type="button" aria-pressed={recordsView === 'history'} className={recordsView === 'history' ? 'is-active' : ''} onClick={() => setRecordsView('history')}><CalendarDays size={18}/>Histórico</button><button type="button" aria-pressed={recordsView === 'documents'} className={recordsView === 'documents' ? 'is-active' : ''} onClick={() => setRecordsView('documents')}><FileText size={18}/>Documentos</button></nav>
         {!canCreateRecord && projects.length > 0 && <div className="p-notice p-records-ask" role="note"><Info size={18} aria-hidden="true"/><div><strong>Você consulta os registros, mas não cria registros novos.</strong><span>Precisa registrar um uso de material, uma manutenção ou uma atividade? Abra uma demanda para quem coordena o projeto: a coordenação faz o registro e ele aparece aqui.</span></div>{canFollowUp && <button type="button" className="p-button p-button-subtle" onClick={() => navigate('demands')}>Abrir demanda</button>}</div>}
         {recordsView === 'history' && <ActivityPanel key={filter} initialProjectId={filter} projects={projects.map(project => ({ id: string(project.id), name: string(project.name) }))}/>}
-        <div hidden={recordsView !== 'documents'}><RecordsPanel key={filter} initialProjectId={filter} projects={projects} items={items} loans={loans} canWrite={(capability: string, projectId?: string | null) => projectId ? canProject(projectId, capability) : canGlobal(capability)}/></div>
+        <div hidden={recordsView !== 'documents'}><RecordsPanel key={filter} exportInReports={canAny('reports.read', 'inventory.read', 'loans.read')} initialProjectId={filter} projects={projects} items={items} loans={loans} canWrite={(capability: string, projectId?: string | null) => projectId ? canProject(projectId, capability) : canGlobal(capability)}/></div>
       </>}
 
       {tab === 'reports' && <>
@@ -1151,116 +1128,18 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
             setReportFrom(next); }}/>
         </label>
         <button className="p-button p-button-subtle" onClick={() => { setReportFrom(''); setReportTo(''); }}>Todo o período</button>
-        <p>Datas de Brasília para os relatórios com período. Projetos e materiais mostram a posição atual. Nos indicadores de dinâmicas, participações, tentativas e entregas usam a data de cada registro.</p>
+        <p>Datas de Brasília para os relatórios com período. Projetos e materiais mostram a posição atual. Em “Dinâmicas por dia”, participações, tentativas e entregas usam a data de cada registro.</p>
         </div>
-        <ReportsCenter key={string(user.userId)} userId={string(user.userId)} canSync={isPlatformOwner} projectIdentity={projects.find(project => project.id === filter)} initialDataset={canAny('reports.read') ? reportInitialDataset : 'demands'} projectId={filter} unitId={unitFilter} area={areaFilter} from={reportFrom} to={reportTo} available={[
+        <ReportsCenter key={`${string(user.userId)}:${reportInitialDataset}:${reportSearch}`} userId={string(user.userId)} canSync={isPlatformOwner} projectIdentity={projects.find(project => project.id === filter)} initialDataset={reportInitialDataset === 'projects' && !canAny('reports.read') ? 'demands' : reportInitialDataset} initialSearch={reportSearch} projectId={filter} unitId={unitFilter} area={areaFilter} from={reportFrom} to={reportTo} available={[
           ...(projects.length ? ['projects' as const] : []),
           ...(canAny('inventory.read', 'reports.read') ? ['materials', 'movements', 'outflows'] as const : []),
           ...(canAny('inventory.read', 'loans.read', 'reports.read') ? ['outflow_details' as const] : []),
           ...(canAny('loans.read', 'reports.read') ? ['loans' as const] : []),
           ...(canAny('reports.read', 'inventory.read', 'loans.read') ? ['records' as const] : []),
-          ...(canAny('reports.read', 'campaigns.manage') ? ['campaigns' as const] : []),
+          ...(canAny('reports.read', 'campaigns.manage') ? ['campaigns', 'campaign_days'] as const : []),
           ...(canFollowUp ? ['demands', 'reviews'] as const : []),
         ]}
           scopeLabel={[filter ? projectName(filter) : '', unitFilter ? (unitFilter === '__unassigned__' ? 'Sem unidade vinculada' : string(visibleUnits.find(unit => unit.id === unitFilter)?.acronym || visibleUnits.find(unit => unit.id === unitFilter)?.name)) : '', areaFilter ? (areaFilter === '__none__' ? 'Sem área temática' : THEMATIC_AREAS.find(item => item.key === areaFilter)?.label ?? '') : ''].filter(Boolean).join(' · ')} />
-        <h2 className="p-reports-legacy-title">Indicadores das dinâmicas</h2>
-        <div className="p-stats">
-        <div className="p-stat">
-        <span>Participações</span>
-        <strong>{metric('participations', 'participationCount')}</strong>
-        <small>Contas e atendimentos assistidos</small>
-        </div>
-        <div className="p-stat">
-        <span>Tentativas</span>
-        <strong>{metric('attempts', 'attemptCount')}</strong>
-        <small>Inclui repetições autorizadas</small>
-        </div>
-        <div className="p-stat">
-        <span>Premiações entregues</span>
-        <strong>{metric('deliveries', 'delivered', 'redemptions')}</strong>
-        <small>Direitos resgatados</small>
-        </div>
-        <div className="p-stat">
-        <span>Unidades entregues</span>
-        <strong>{metric('units', 'unitsDelivered', 'units_delivered', 'deliveredUnits')}</strong>
-        <small>{reportFrom || reportTo ? 'Sem medição diária de unidades' : 'Quantidade física de itens'}</small>
-        </div>
-        </div>
-        <div className="p-measures">
-        <div className="p-card">
-        <span>Visitas históricas</span>
-        <strong>{metric('visits')}</strong>
-        <small>{data.metrics?.visitsCollection === 'paused' ? 'Coleta suspensa para preservar a disponibilidade; não representa o público atual.' : reportFrom || reportTo ? 'Sem medição diária neste recorte' : 'Não são visitantes únicos'}</small>
-        </div>
-        <div className="p-card">
-        <span>Atendimentos assistidos</span>
-        <strong>{metric('tickets')}</strong>
-        <small>Participações por tíquete</small>
-        </div>
-        <div className="p-card">
-        <span>Novos seguidores no Instagram</span>
-        <strong>Não medido</strong>
-        <small>Não há confirmação automática de seguimento</small>
-        </div>
-        </div>{reportCampaignRows.length > 0 && <Section title="Resultados por evento" description="Contagens reais no projeto e no período selecionados.">
-            <div className="p-card p-table-wrap">
-            <table>
-            <thead>
-            <tr>
-            <th>Evento</th>
-            <th>Participações</th>
-            <th>Tentativas</th>
-            <th>Entregas</th>
-            </tr>
-            </thead>
-            <tbody>{reportCampaignRows.map(c => <tr key={c.id}>
-                <td>
-                <strong>{c.name}</strong>
-                <small>{projectName(get(c, 'projectId', 'project_id'))}</small>
-                </td>
-                <td>{c.participations}</td>
-                <td>{c.attempts}</td>
-                <td>{c.deliveries}</td>
-                </tr>)}</tbody>
-            </table>
-            </div>
-            </Section>}<Section title="Resumo diário" description="Participações e entregas podem acontecer em dias diferentes." aside={<ExportFormats onExport={downloadDaily} disabled={!dailyRows.length} label="Baixar resumo diário"/>}>{dailyRows.length ? <div className="p-card p-table-wrap">
-            <table>
-            <thead>
-            <tr>
-            <th>Data e evento</th>
-            <th>Modalidade</th>
-            <th>Participações</th>
-            <th>Tentativas</th>
-            <th>Entregas</th>
-            </tr>
-            </thead>
-            <tbody>{dailyRows.map((r, i) => <tr key={`${r.campaign_id}-${r.day}-${r.modality}-${i}`}>
-                <td>
-                <strong>{String(r.day).split('-').reverse().join('/')}</strong>
-                <small>{r.campaign_name}</small>
-                </td>
-                <td>{r.modality === 'physical' ? 'Presencial' : r.modality === 'dice' ? 'Dado' : r.modality === 'wheel' ? 'Roleta' : r.modality}</td>
-                <td>{r.participations}</td>
-                <td>{r.attempts}</td>
-                <td>{r.deliveries}</td>
-                </tr>)}</tbody>
-            </table>
-            </div> : <Empty title="Sem registros neste período" text="Altere as datas ou o projeto para consultar outro recorte." icon={CalendarDays}/>}</Section>
-        {(filter ? canProject(filter, 'reports.read') : canAny('reports.read')) && <Section title="Exportar registros completos" description="Planilha, documento ou PDF do recorte autorizado, sem corte por data. O resumo diário acima usa as datas escolhidas.">
-        {exportNeedsProject && <p className="p-form-help">Com filtro de unidade ou área, escolha um projeto para baixar os registros completos. O resumo diário já usa o recorte selecionado.</p>}
-        <div className="p-export-grid">{[{ kind: 'participations', title: 'Participação nas dinâmicas', text: 'Modalidades, resultados e contagens por campanha.', icon: Users }, { kind: 'stock', title: 'Materiais e movimentos', text: 'Saldo, reservas e quantidade disponível por item.', icon: Boxes }, { kind: 'loans', title: 'Empréstimos', text: 'Agenda, etapas e devoluções pendentes.', icon: Truck }].map(({ kind, title: exportTitle, text, icon: Icon }) => {
-            const content = <>
-            <span className="p-icon-tile">
-            <Icon size={22}/>
-            </span>
-            <h3>{exportTitle}</h3>
-            <p>{text}</p>
-            {exportNeedsProject ? <span className="p-text-link">Escolha um projeto</span> : <ExportFormats tiles label={`Baixar ${exportTitle.toLowerCase()}`} onExport={format => downloadFromServer(`/api/export?kind=${kind}&format=${format}${filter ? `&projectId=${encodeURIComponent(filter)}` : ''}`, `proex-${kind}.${format}`)}/>}
-            </>;
-            return <article className={`p-card p-export-card${exportNeedsProject ? ' p-export-unavailable' : ''}`} key={kind}>{content}</article>;
-        })}</div>
-        </Section>}
         <div className="p-explainer">
         <ShieldCheck size={21}/>
         <div>

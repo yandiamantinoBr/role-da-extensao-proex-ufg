@@ -1,5 +1,13 @@
 # Continuar Portal PROEX
 
+## R3 · Exportar concentrado em Relatórios · em ramo, sem merge antes de 14/11 · 2026-11-11
+
+Branch `claude/r3-exportar-em-relatorios` (Claude Code), PR em **rascunho**. Decisão do Yan de 10/11 ("Sim, seguir todas"), item R3 da consolidação. Detalhes e a lista do que fica onde: `apps/proex-portal/docs/EXPORTACOES.md`.
+
+- **O que muda:** sai de Relatórios o bloco "Indicadores das dinâmicas" e os três cartões "Exportar registros completos"; entra o assunto **Dinâmicas por dia**; Demandas ganha a coluna **Equipes**; em Registros e em Equipes o botão vira **Exportar**, que abre Relatórios já filtrado (`ExportLink`, `lib/report-links.ts`). Sem migração.
+- **Não fazer:** mesclar antes de 14/11 (regra da consolidação: nada muda nas telas de saída e estoque durante a distribuição do CONPEEX); criar exportador novo para dado em tabela fora de Relatórios.
+- **Falta:** decisão do Yan sobre a lista de presença das convocações e os gastos de IA (seguem com botão próprio); o histórico de "Consumo por unidade" entra com a frente "Registrar movimento"; rebase e nova conferência antes do merge.
+
 ## Gestão da organização · guia, riscos, equipes-modelo e painel · 2026-11-09
 
 Branch `claude/gestao-organizacao` (Claude Code), migração **0045_management_guide_risks** (aditiva; a 0044 é das convocações). Módulo **Gestão** no menu, com quatro abas. Detalhes, comparação de ferramentas de painel e passo a passo do Looker Studio: `apps/proex-portal/docs/GESTAO-DA-ORGANIZACAO.md`.

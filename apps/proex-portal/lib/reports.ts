@@ -18,6 +18,7 @@ export const REPORT_DATASETS = {
   loans: { label: 'Empréstimos', capabilities: ['loans.read', 'reports.read'] },
   records: { label: 'Registros', capabilities: ['reports.read', 'inventory.read', 'loans.read'] },
   campaigns: { label: 'Eventos e dinâmicas', capabilities: ['reports.read', 'campaigns.manage'] },
+  campaign_days: { label: 'Dinâmicas por dia', capabilities: ['reports.read', 'campaigns.manage'] },
   demands: { label: 'Demandas e prioridades', capabilities: [] as string[] },
   reviews: { label: 'Conferências e avarias', capabilities: [] as string[] },
 } as const;
@@ -132,6 +133,22 @@ export async function reportRows(db: D1Database, actor: PortalActor | null, inpu
     rows = await run(`SELECT r.id,date(r.occurred_at,'-3 hours') AS data,${projectColumns},r.kind AS categoria,r.title AS titulo,substr(r.body,1,500) AS descricao,
       (SELECT COUNT(*) FROM record_attachments a WHERE a.record_id=r.id AND a.deleted_at IS NULL) AS anexos
       FROM records r JOIN ${base.replace('projects p', 'projects p ON p.id=r.project_id')} /*WHERE*/ ORDER BY r.occurred_at DESC`, recordVisibility(actor, period('r.occurred_at')));
+  } else if (dataset === 'campaign_days') {
+    // Uma linha por dinâmica, dia (Brasília) e tipo. Participação, tentativa e entrega contam no dia em que cada uma aconteceu.
+    const days = [...(from ? ['ev.dia>=?'] : []), ...(to ? ['ev.dia<=?'] : [])];
+    rows = await all(db, `WITH alcance AS (
+        SELECT c.id,c.name AS evento,${projectColumns} FROM campaigns c JOIN ${base.replace('projects p', 'projects p ON p.id=c.project_id')} WHERE ${where.join(' AND ')}
+      ), ev AS (
+        SELECT x.campaign_id,date(x.created_at,'-3 hours') AS dia,x.modality AS tipo,1 AS participacoes,0 AS tentativas,0 AS premios,CASE WHEN x.identity_method='ticket' THEN 1 ELSE 0 END AS tiquetes
+          FROM participations x WHERE x.campaign_id IN (SELECT id FROM alcance)
+        UNION ALL SELECT x.campaign_id,date(a.created_at,'-3 hours'),x.modality,0,1,0,0
+          FROM attempts a JOIN participations x ON x.id=a.participation_id WHERE x.campaign_id IN (SELECT id FROM alcance)
+        UNION ALL SELECT x.campaign_id,date(e.delivered_at,'-3 hours'),x.modality,0,0,1,0
+          FROM entitlements e JOIN participations x ON x.id=e.participation_id WHERE e.state='delivered' AND x.campaign_id IN (SELECT id FROM alcance)
+      ) SELECT s.id||':'||ev.dia||':'||ev.tipo AS id,s.projeto,s.unidade_sigla,s.unidade,s.unidade_grupo,s.area_tematica,s.modalidade,s.evento,ev.dia AS data,ev.tipo AS tipo_dinamica,
+        SUM(ev.participacoes) AS participacoes,SUM(ev.tentativas) AS tentativas,SUM(ev.premios) AS premios_entregues,SUM(ev.tiquetes) AS atendimentos_assistidos
+      FROM ev JOIN alcance s ON s.id=ev.campaign_id ${days.length ? `WHERE ${days.join(' AND ')}` : ''}
+      GROUP BY s.id,ev.dia,ev.tipo ORDER BY ev.dia DESC,s.evento,ev.tipo LIMIT ${MAX_ROWS + 1}`, [...params, ...(from ? [from] : []), ...(to ? [to] : [])]);
   } else {
     rows = await run(`SELECT c.id,${projectColumns},c.name AS evento,c.location AS local,date(c.starts_at,'-3 hours') AS inicio,date(c.ends_at,'-3 hours') AS fim,c.status AS situacao,
       (SELECT COUNT(*) FROM participations x WHERE x.campaign_id=c.id) AS participacoes,
