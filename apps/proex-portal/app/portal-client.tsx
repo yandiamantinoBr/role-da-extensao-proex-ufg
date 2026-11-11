@@ -64,11 +64,10 @@ import OrganizationEmailSettings from '@/components/portal/organization-email-se
 import MaterialDetailDrawer from '@/components/portal/material-detail-drawer';
 import { FilterableMaterialCatalog as MaterialCatalog } from '@/components/portal/material-catalog';
 import DestinationDialog from '@/components/portal/destination-dialog';
-import DestinationField, { destinationFields } from '@/components/portal/destination-field';
+import MovementLauncher, { type LauncherMode } from '@/components/portal/movement-launcher';
 import DynamicsExplainer from '@/components/portal/dynamics-explainer';
 import StockConsumptionPanel from '@/components/portal/stock-consumption-panel';
 import StockUnitDialog from '@/components/portal/stock-unit-dialog';
-import StockContextFields, {stockContextFields} from '@/components/portal/stock-context-fields';
 import DirectoryPanel from '@/components/portal/directory-panel';
 import ConvocationsPanel from '@/components/portal/convocations-panel';
 import { ThemeSwitch } from '@/components/theme/theme-switch';
@@ -334,7 +333,8 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
     const [convocationFocus,setConvocationFocus]=useState('');
     const [stockUnit,setStockUnit]=useState(''),[destinationOpen,setDestinationOpen]=useState('');
     const [showConsumption,setShowConsumption]=useState(false);
-    const [movementItemId,setMovementItemId]=useState(''),[movementKind,setMovementKind]=useState('');
+    // Registrar movimento tem um caminho só: escolher o material (abre a ficha) ou dar saída de vários de uma vez.
+    const [movementLauncher,setMovementLauncher]=useState<LauncherMode|null>(null);
     const [materialMode,setMaterialMode] = useState<'view'|'edit'|'move'>('view');
     const [workRecord, setWorkRecord] = useState<WorkRecordSelection | null>(null);
     const [refreshing, setRefreshing] = useState(false);
@@ -632,7 +632,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         if (!r.ok || !body || body.error)
             throw new Error(r.status === 401 ? 'Sua sessão terminou. Entre novamente para continuar.' : readableError(body?.error, 'Não foi possível concluir. Verifique sua conexão e tente novamente.'));
         const updated = await refresh();
-        if(action==='stock.move'||action.startsWith('item.'))window.dispatchEvent(new Event(MATERIAL_ATTENTION_CHANGED));
+        if(action.startsWith('stock.move')||action.startsWith('item.'))window.dispatchEvent(new Event(MATERIAL_ATTENTION_CHANGED));
         setMessageKind(body.alreadyDelivered ? 'warning' : 'success');
         const receipt = body.alreadyDelivered ? `Este prêmio${body.offerName ? ` (${body.offerName})` : ''} já foi entregue. Não entregue novamente.` : action === 'prize.redeem' ? 'Entrega registrada. Entregue os materiais indicados à pessoa.' : updated ? 'Registro salvo. Os dados foram atualizados.' : 'Registro salvo. A atualização da tela está pendente; use Atualizar dados.';
         setMessage(receipt);
@@ -959,7 +959,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         <div hidden={showPrizeView}>
 
 
-        <Section title="Materiais e estoque" description="Saldo físico, reservas e unidades disponíveis ficam separados." aside={<div className={workStyles.catalogAside}>{can('inventory.manage') && formProjects.length > 0 && <a className="p-button p-button-subtle" href="#movimentar-estoque">Registrar movimento<ArrowRight size={15} aria-hidden="true"/></a>}<div className="p-search">
+        <Section title="Materiais e estoque" description="Saldo físico, reservas e unidades disponíveis ficam separados." aside={<div className={workStyles.catalogAside}>{can('inventory.manage') && formProjects.length > 0 && <button type="button" className="p-button p-button-subtle" onClick={()=>setMovementLauncher('one')}>Registrar movimento<ArrowRight size={15} aria-hidden="true"/></button>}<div className="p-search">
             <Search size={17}/>
             <input name="materialSearch" aria-label="Buscar materiais" placeholder="Buscar material" value={query} onChange={e => setQuery(e.target.value)}/>
             </div></div>}>{searchItems.length ? <MaterialCatalog onOpen={id=>{setMaterialMode('view');setSelectedMaterialId(id);}} materials={searchItems.map(item => {
@@ -1016,32 +1016,11 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
             </OperationForm></div></details>
             </Section>
             <div id="movimentar-estoque" className={workStyles.anchor}/>
-            <Section title="Movimentar estoque" description="Toda alteração registra finalidade, quantidade e responsável.">
-            <OperationForm action="stock.move" mutate={mutate} submit="Registrar movimento" make={f => { const qty = Number(f.get('quantity')); const kind = String(f.get('kind')); return { itemId: f.get('itemId'), delta: kind === 'receive' ? qty : kind === 'adjust' ? qty : -Math.abs(qty), kind, note: f.get('note'), ...stockContextFields(f), ...destinationFields(f) }; }}>
-            <Field label="Material">
-            <select name="itemId" required value={movementItemId} onChange={event=>setMovementItemId(event.target.value)}>
-            <option value="">Selecione o material</option>{visibleItems.filter(i => canProject(get(i, 'projectId', 'project_id'), 'inventory.manage')).map(i => <option value={i.id} key={i.id}>{i.name} · {projectName(get(i, 'projectId', 'project_id'))}</option>)}</select>
-            </Field>
-            <div className="p-form-grid">
-            <Field label="Operação">
-            <select name="kind" required value={movementKind} onChange={event=>setMovementKind(event.target.value)}>
-            <option value="" disabled>Escolha a operação</option>
-            <option value="receive">Recebimento</option>
-            <option value="distribute">Distribuição</option>
-            <option value="consume">Consumo interno</option>
-            <option value="adjust">Ajuste de contagem</option>
-            </select>
-            </Field>
-            <Field label="Quantidade" help="No ajuste, use valor positivo para acrescentar ou negativo para retirar.">
-            <input name="quantity" type="number" step="1" required defaultValue="1"/>
-            </Field>
+            <Section title="Registrar movimento" description="Toda alteração registra motivo, quantidade e responsável. O registro é feito na ficha do material, onde também ficam o histórico, corrigir, desfazer e os anexos.">
+            <div className={workStyles.movementEntry}>
+            <button type="button" className="p-button p-button-primary" onClick={()=>setMovementLauncher('one')}><Boxes size={17} aria-hidden="true"/>Escolher o material</button>
+            <button type="button" className="p-button p-button-subtle" onClick={()=>setMovementLauncher('many')}><Truck size={17} aria-hidden="true"/>Saída de vários materiais</button>
             </div>
-            {movementItemId && <DestinationField key={`destination:${movementItemId}:${movementKind}`} projectId={string(get(items.find(item=>item.id===movementItemId)??{},'projectId','project_id'))} kind={movementKind}/>}
-            {movementKind && <StockContextFields key={movementItemId} projectId={string(get(items.find(item=>item.id===movementItemId)??{},'projectId','project_id'))} kind={movementKind}/>}
-            <Field label="Finalidade ou justificativa">
-            <textarea name="note" rows={3} required maxLength={1000} placeholder="Ex.: Recebimento conferido pela equipe"/>
-            </Field>
-            </OperationForm>
             </Section>
             </div>}</div>
         <section className={`p-card ${workStyles.consumption}`}><button type="button" className="p-button p-button-subtle" aria-expanded={showConsumption} onClick={()=>setShowConsumption(value=>!value)}><Boxes size={18}/>Consumo por unidade e cobertura</button>{showConsumption&&<StockConsumptionPanel key={filter} projectId={filter} onOpenMaterial={id=>{setMaterialMode('view');setSelectedMaterialId(id);}}/>}</section>
@@ -1310,6 +1289,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         </SettingsSection>
       </div>}
 
+      {movementLauncher&&<MovementLauncher key={movementLauncher} initialMode={movementLauncher} defaultProjectId={filter} materials={items.filter(item=>canProject(get(item,'projectId','project_id'),'inventory.manage')).map(item=>({id:string(item.id),name:string(item.name),projectId:string(get(item,'projectId','project_id')),projectName:projectName(get(item,'projectId','project_id')),unit:string(item.unit)||'unidade',category:string(item.category),available:Number(item.available)||0,active:item.condition==='active'}))} mutate={mutate} onClose={()=>setMovementLauncher(null)} onOpenMaterial={(id,mode)=>{setMovementLauncher(null);if(tab!=='materials')navigate('materials');setMaterialMode(mode);setSelectedMaterialId(id);}}/>}
       <MaterialDetailDrawer onUnitOpen={setStockUnit} onDestinationOpen={setDestinationOpen} itemId={materialDrawerId} initialMode={materialMode} onClose={() => {setSelectedMaterialId(null);setMaterialMode('view');setMaterialMode('view');if(tab==='materials')setWorkRecord(null);}} onChanged={refreshModules} renderWorkContext={({itemId,projectId}) => workContext(projectId,'materials',{itemId})}/>
       {stockUnit&&<StockUnitDialog key={stockUnit} unitId={stockUnit} onClose={()=>setStockUnit('')} onOpenMaterial={id=>{setMaterialMode('view');setSelectedMaterialId(id);}}/>}
       {destinationOpen&&<DestinationDialog key={destinationOpen} destinationId={destinationOpen} onClose={()=>setDestinationOpen('')} onOpenMaterial={id=>{if(tab!=='materials')navigate('materials');setMaterialMode('view');setSelectedMaterialId(id);}}/>}

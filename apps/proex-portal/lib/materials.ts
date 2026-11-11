@@ -13,6 +13,8 @@ type Movement = { id: string; item_id: string; delta: number; kind: string; note
 type MaterialCategory = { id: string; project_id: string; label: string; label_key: string; core_kind: string; description: string; status: string; version: number; created_at: string; updated_at: string };
 const CORE_KINDS = ['gift', 'equipment', 'distribution', 'consumption'];
 const MAX_QUANTITY = 1_000_000;
+/** Saída de vários materiais numa operação: de 2 a 30 linhas, todas do mesmo projeto. */
+export const MAX_OUTFLOW_LINES = 30;
 
 function textValue(value: unknown, label: string, maximum = 200, optional = false): string {
   if (value === undefined || value === null) {
@@ -93,7 +95,7 @@ function translateDatabaseError(error: unknown): never {
   if (message.includes('loan_overlap') || message.includes('loan_conflict') || message.includes('loan_unavailable') || message.includes('loan_overdue') || message.includes('equipment_unavailable')) {
     throw new HttpError(409, 'O equipamento já está reservado, emprestado ou com devolução pendente. Confira a agenda.', 'loan_conflict');
   }
-  if (message.includes('insufficient_stock') || message.includes('items_quantities_check') || message.includes('stock_underflow') || message.includes('stock_reserved')) {
+  if (message.includes('insufficient_stock') || message.includes('items_quantities_check') || message.includes('stock_underflow') || message.includes('stock_reserved') || message.includes('stock_unavailable')) {
     throw new HttpError(409, 'O saldo disponível mudou. Atualize o estoque antes de continuar.', 'insufficient_stock');
   }
   if (message.includes('items_equipment_single_check')) {
@@ -165,7 +167,7 @@ export async function materialsAction(db: D1Database, actor: PortalActor, action
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw new HttpError(400, 'Envie os dados da operação.', 'invalid_input');
     return (await movementAction(db, actor, action, input)) ?? destinationAction(db, actor, action, input);
   }
-  if (!['item.create', 'item.update', 'stock.move', 'offer.create', 'loan.create', 'loan.status', 'material.category.create', 'material.category.update', 'material.category.restore', 'item.restore', 'activity.group.create', 'item.photo.primary'].includes(action)) return null;
+  if (!['item.create', 'item.update', 'stock.move', 'stock.move.many', 'offer.create', 'loan.create', 'loan.status', 'material.category.create', 'material.category.update', 'material.category.restore', 'item.restore', 'activity.group.create', 'item.photo.primary'].includes(action)) return null;
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new HttpError(400, 'Envie os dados da operação.', 'invalid_input');
   if (action === 'item.photo.primary') return setPrimaryPhoto(db, actor, input);
   const now = new Date().toISOString();
@@ -331,6 +333,72 @@ export async function materialsAction(db: D1Database, actor: PortalActor, action
         return { movement: retry, item: await itemById(db, item.id), duplicate: true };
       }
       return { movement: { id, item_id: item.id, delta, kind, note, ref_id: refId, group_id: groupId, created_at: now, ...(destination ? { destination: { id: destination.id, name: destination.name } } : {}) }, item: await itemById(db, item.id) };
+    }
+
+    if (action === 'stock.move.many') {
+      // Saída de vários materiais de uma vez (entrega ou consumo). Tudo ou nada: se uma linha falha, nenhuma é gravada.
+      // Cada linha vira uma movimentação comum, com o mesmo motivo, destino e contexto; corrigir e desfazer continuam na ficha de cada material.
+      const kind = textValue(input.kind, 'o tipo de saída', 20);
+      if (!['distribute', 'consume'].includes(kind)) throw new HttpError(400, 'A saída de vários materiais vale para entrega ou consumo. Recebimento e ajuste são feitos na ficha de cada material.', 'invalid_movement');
+      if (!Array.isArray(input.lines) || input.lines.length < 2 || input.lines.length > MAX_OUTFLOW_LINES) throw new HttpError(400, `Inclua de 2 a ${MAX_OUTFLOW_LINES} materiais. Para um material só, use a ficha dele.`, 'invalid_lines');
+      const note = textValue(input.reason ?? input.note, 'o motivo da saída', 2000);
+      const operationKey = textValue(input.operationKey, 'o identificador da operação', 110);
+      if (!/^[a-zA-Z0-9_-]{8,110}$/.test(operationKey)) throw new HttpError(400, 'Identificador da operação inválido. Atualize a página.', 'invalid_operation');
+      const seen = new Set<string>();
+      const lines = (input.lines as unknown[]).map((line, index) => {
+        if (!line || typeof line !== 'object' || Array.isArray(line)) throw new HttpError(400, `Confira o material da linha ${index + 1}.`, 'invalid_lines');
+        const itemId = textValue((line as Record<string, unknown>).itemId, `o material da linha ${index + 1}`, 100);
+        if (seen.has(itemId)) throw new HttpError(400, 'O mesmo material aparece em duas linhas. Junte as quantidades em uma linha só.', 'duplicate_line');
+        seen.add(itemId);
+        return { itemId, quantity: integerValue((line as Record<string, unknown>).quantity, `A quantidade da linha ${index + 1}`, 1) };
+      });
+      const rows: { item: Item; delta: number; refId: string }[] = [];
+      for (const [index, line] of lines.entries()) rows.push({ item: await itemById(db, line.itemId), delta: -line.quantity, refId: `manual:${actor.userId}:${operationKey}:${index + 1}` });
+      const projectId = rows[0].item.project_id;
+      if (rows.some(row => row.item.project_id !== projectId)) throw new HttpError(400, 'Escolha materiais de um mesmo projeto. Para outro projeto, faça outra saída.', 'mixed_projects');
+      await requireLiveCapability(db, actor, 'inventory.manage', projectId);
+      const groupId = await assignedGroup(db, input.groupId, projectId);
+      const contextInput = stockContextInput(input, now);
+      const previous = (await db.prepare(`SELECT * FROM stock_movements WHERE ref_id IN (${rows.map(() => '?').join(',')})`).bind(...rows.map(row => row.refId)).all<Movement>()).results ?? [];
+      const replay = async () => {
+        const stored = (await db.prepare(`SELECT * FROM stock_movements WHERE ref_id IN (${rows.map(() => '?').join(',')})`).bind(...rows.map(row => row.refId)).all<Movement>()).results ?? [];
+        // Lines are numbered 1..N: a stored line N+1 means the first request had more materials than this one.
+        const longer = await db.prepare('SELECT id FROM stock_movements WHERE ref_id=?').bind(`manual:${actor.userId}:${operationKey}:${rows.length + 1}`).first();
+        if (stored.length !== rows.length || longer) throw new HttpError(409, 'Esta operação já foi usada para outra saída. Atualize a página e tente novamente.', 'operation_conflict');
+        const byRef = new Map(stored.map(movement => [movement.ref_id, movement]));
+        for (const row of rows) { const movement = byRef.get(row.refId)!; matchingMovement(movement, row.item, row.delta, kind, note, groupId); await matchingStockContext(db, movement.id, contextInput); }
+        return { movements: rows.map(row => { const movement = byRef.get(row.refId)!; return { id: movement.id, itemId: row.item.id, itemName: row.item.name, unit: row.item.unit, delta: row.delta }; }), projectId, duplicate: true };
+      };
+      if (previous.length) return replay();
+      for (const { item, delta } of rows) {
+        if (item.category === 'equipment') throw new HttpError(400, `“${item.name}” é um equipamento. Registre a saída dele na área de empréstimos.`, 'equipment_movement');
+        if (item.condition !== 'active') throw new HttpError(409, `“${item.name}” está indisponível para movimentação.`, 'item_inactive');
+        if (item.stock + delta < item.reserved) throw new HttpError(409, `A saída de “${item.name}” supera o saldo disponível (${Math.max(0, item.stock - item.reserved)} ${item.unit}). Nenhuma linha foi registrada.`, 'insufficient_stock');
+      }
+      const contexts = [] as Awaited<ReturnType<typeof prepareStockContext>>[];
+      for (const row of rows) contexts.push(await prepareStockContext(db, actor, row.item, contextInput));
+      const destination = await resolveDestination(db, actor, projectId, input, now);
+      const batchId = crypto.randomUUID(), movementIds = rows.map(() => crypto.randomUUID());
+      try {
+        await capabilityBatch(db, actor, 'inventory.manage', projectId, [
+          ...contexts[0].assertions,
+          ...(destination?.statements ?? []),
+          ...rows.flatMap((row, index) => [
+            statement(db, 'INSERT INTO stock_movements (id,item_id,delta,kind,note,ref_id,actor_id,created_at,group_id) VALUES (?,?,?,?,?,?,?,?,?)', [movementIds[index], row.item.id, row.delta, kind, note, row.refId, actor.userId, now, groupId]),
+            contexts[index].insert(movementIds[index], now),
+            ...(destination ? [destination.link(movementIds[index], now)] : []),
+            auditStatement(db, actor, 'stock.move', movementIds[index], projectId, { itemId: row.item.id, delta: row.delta, kind, note, batchId, context: contextInput, ...(destination ? { destinationId: destination.id, destinationName: destination.name } : {}) }, now),
+          ]),
+          auditStatement(db, actor, action, batchId, projectId, { kind, lines: rows.length, units: rows.reduce((total, row) => total - row.delta, 0), movementIds, ...(destination ? { destinationId: destination.id, destinationName: destination.name } : {}) }, now),
+        ]);
+      } catch (error) {
+        if (error instanceof HttpError && error.status === 403) throw error;
+        // A retried request can race the first one; the unique reference makes the repeat safe.
+        const raced = await db.prepare('SELECT id FROM stock_movements WHERE ref_id=?').bind(rows[0].refId).first();
+        if (!raced) throw error;
+        return replay();
+      }
+      return { movements: rows.map((row, index) => ({ id: movementIds[index], itemId: row.item.id, itemName: row.item.name, unit: row.item.unit, delta: row.delta })), projectId, batchId, ...(destination ? { destination: { id: destination.id, name: destination.name } } : {}) };
     }
 
     if (action === 'offer.create') {
