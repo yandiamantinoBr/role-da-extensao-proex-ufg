@@ -14,7 +14,7 @@ function compile(name){
  code=code.replace(/from (['"])(\.{1,2}\/[^'"]+)\1/g,(_match,_quote,dependency)=>`from ${JSON.stringify(compile(path.posix.normalize(path.posix.join(path.posix.dirname(name),dependency)).replace(/\.ts$/,'')))}`);
  const url=`data:text/javascript;base64,${Buffer.from(`${code}\n//# sourceURL=${name}-project-sheets-test.mjs`).toString('base64')}`;modules.set(name,url);return url;
 }
-const {configureProjectSheet,createProjectSheetToken,revokeProjectSheetToken,projectSheetPrincipal,projectSheetStatus}=await import(compile('sync/project-sheets'));
+const {configureProjectSheet,createProjectSheetToken,revokeProjectSheetToken,projectSheetPrincipal,projectSheetStatus,resolveProjectSheetConflict}=await import(compile('sync/project-sheets'));
 const {applyProjectSheetChanges,exportProjectSheetPage,callProjectSheetTool}=await import(compile('sync/project-sheets-data'));
 const {materialsAction}=await import(compile('materials'));
 const {exportPortablePage,describePortableSchemas}=await import(compile('sync/portable'));
@@ -61,6 +61,43 @@ test('separate organizations: project credential never exports other projects, p
   await assert.rejects(projectSheetPrincipal(f.db,'Bearer pxs_'+ 'a'.repeat(43),'synthetic-project-workbook'),error=>error.status===401);
  }finally{f.close();}
 });
+test('an open project-sheet conflict is listed to the sheet manager and resolved once, with audit and no business change',async()=>{
+ const f=fixture();try{
+  const {principal}=await connected(f);
+  assert.equal((await applyProjectSheetChanges(f.db,principal,{changes:[rename()]})).results[0].status,'applied');
+  const stale=await applyProjectSheetChanges(f.db,principal,{changes:[{...rename('rename-item-a-02',1),fields:{name:'Atrasado'}}]});
+  assert.equal(stale.results[0].status,'conflict');
+  const status=await projectSheetStatus(f.db,f.actor,'project-a');
+  assert.equal(status.conflicts.length,1);assert.equal(status.conflicts[0].entity_type,'items');
+  assert.equal(JSON.stringify(status.conflicts).includes('Atrasado'),false);
+  const id=status.conflicts[0].id,now=new Date().toISOString();
+  // Outra pessoa do mesmo projeto, sem administrar a planilha, não vê nem resolve.
+  f.db.native.prepare('INSERT INTO members(id,user_id,email,role,project_id,organization_id,created_at) VALUES(?,?,?,?,?,?,?)').run('member-stock','stock-a','stock@example.invalid','inventory','project-a','org-a',now);
+  f.db.native.prepare('INSERT INTO portal_users(user_id,email,status,created_at,updated_at) VALUES(?,?,?,?,?)').run('stock-a','stock@example.invalid','active',now,now);
+  const stock={userId:'stock-a',email:'stock@example.invalid',displayName:'Stock',members:[{id:'member-stock',user_id:'stock-a',email:'stock@example.invalid',role:'inventory',project_id:'project-a',organization_id:'org-a',revoked_at:null,created_at:now}],capabilities:['inventory.manage','inventory.read']};
+  await assert.rejects(resolveProjectSheetConflict(f.db,stock,'project-a',{id}),error=>error.status===403);
+  await assert.rejects(resolveProjectSheetConflict(f.db,null,'project-a',{id}),error=>error.status===401);
+  // O conflito é do projeto A: pelo projeto B ele não existe, mesmo para quem administra B.
+  f.db.native.prepare('INSERT INTO members(id,user_id,email,role,project_id,organization_id,created_at) VALUES(?,?,?,?,?,?,?)').run('member-b','manager-b','b@example.invalid','manager','project-b','org-b',now);
+  f.db.native.prepare('INSERT INTO portal_users(user_id,email,status,created_at,updated_at) VALUES(?,?,?,?,?)').run('manager-b','b@example.invalid','active',now,now);
+  const other={userId:'manager-b',email:'b@example.invalid',displayName:'B',members:[{id:'member-b',user_id:'manager-b',email:'b@example.invalid',role:'manager',project_id:'project-b',organization_id:'org-b',revoked_at:null,created_at:now}],capabilities:['access.manage']};
+  await assert.rejects(resolveProjectSheetConflict(f.db,other,'project-a',{id}),error=>error.status===403);
+  await assert.rejects(resolveProjectSheetConflict(f.db,other,'project-b',{id}),error=>error.code==='project_sheet_conflict_not_open');
+  await assert.rejects(resolveProjectSheetConflict(f.db,f.actor,'project-a',{id:"x' OR 1=1"}),error=>error.code==='project_sheet_invalid_conflict');
+  assert.equal(f.db.native.prepare("SELECT status FROM project_sheet_conflicts WHERE id=?").get(id).status,'open');
+  const done=await resolveProjectSheetConflict(f.db,f.actor,'project-a',{id});assert.equal(done.resolved,id);
+  assert.equal(f.db.native.prepare("SELECT status FROM project_sheet_conflicts WHERE id=?").get(id).status,'resolved');
+  assert.equal(f.db.native.prepare("SELECT COUNT(*) n FROM audit WHERE action='project_sheet.conflict.resolve' AND entity_id=? AND project_id='project-a' AND actor_id='manager-a'").get(id).n,1);
+  assert.equal(f.db.native.prepare("SELECT name FROM items WHERE id='item-a'").get().name,'Material revisado');
+  await assert.rejects(resolveProjectSheetConflict(f.db,f.actor,'project-a',{id}),error=>error.code==='project_sheet_conflict_not_open');
+  assert.equal(f.db.native.prepare("SELECT COUNT(*) n FROM audit WHERE action='project_sheet.conflict.resolve'").get().n,1);
+  assert.equal((await projectSheetStatus(f.db,f.actor,'project-a')).conflicts.length,0);
+  // Quem perdeu a administração não resolve mais nada.
+  f.db.native.prepare("UPDATE members SET revoked_at=? WHERE id='member-manager'").run(now);
+  await assert.rejects(resolveProjectSheetConflict(f.db,f.actor,'project-a',{id}),error=>error.status===403);
+ }finally{f.close();}
+});
+
 test('every project-sheet row carries a read-only link that opens the record in the portal',async()=>{
  const f=fixture();try{
   const {principal}=await connected(f);
