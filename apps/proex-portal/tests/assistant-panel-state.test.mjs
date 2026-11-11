@@ -22,3 +22,46 @@ test('operational assistant has no credential, configuration, grant or diagnosti
 test('account renders only profile while authorized configuration remains in Settings',()=>{
  const source=readFileSync(new URL('../app/portal-client.tsx',import.meta.url),'utf8');const profile=source.slice(source.indexOf("{tab === 'profile'"),source.indexOf("{tab === 'records'"));assert.match(profile,/ProfilePanel/);assert.doesNotMatch(profile,/AssistantPanel/);assert.ok(source.includes('data.canConfigureAi === true'));assert.ok(source.includes('canManageKeys={isPlatformOwner}'));
 });
+
+// Trava de destino: com modelo de conferência escolhido, a tela mostra quem confere, manda esse nome no preparo
+// e, se o servidor disser que mudou, busca o nome de agora e pede a autorização de novo.
+const DECIDER='Decider v1.2 (Perplexity)',OTHER='Drex Max v1.1 (Nace)';
+const sentence=name=>`Os registros de estoque são conferidos pelo modelo ${name}; se ele não puder responder, pelo JEV, da TypeSafe.`;
+const routedStatus=(h,name)=>({...h.status('org-a'),organizations:h.status('org-a').organizations.map(organization=>organization.id==='org-a'&&name?{...organization,decisionRouteName:name}:organization)});
+async function fill(h){
+ h.find('textarea',node=>node.props.placeholder?.startsWith('Ex.:')).props.onChange({target:{value:'Registrar entrada de 10 canetas.'}});
+ h.find('input',node=>node.props.type==='checkbox'&&node.props.checked===false&&!node.props.disabled&&node.props.onChange.toString().includes('setConsent')).props.onChange({target:{checked:true}});
+ h.render();
+}
+const consentBox=h=>h.find('label',node=>text(node).startsWith('Autorizo enviar este pedido')).props.children[0];
+test('sem modelo de conferência escolhido: a tela não ganha frase nova e o preparo vai sem o campo de destino',async()=>{
+ const h=harness();try{
+  await open(h);await fill(h);
+  assert.equal(text(h.find('section',()=>true)).includes('são conferidos pelo modelo'),false);
+  void h.button('Preparar proposta').props.onClick();await tick();
+  assert.equal('decisionDestination' in JSON.parse(h.requests[1].init.body),false);
+  assert.deepEqual(Object.keys(JSON.parse(h.requests[1].init.body)),['action','projectId','request','consent','operationKey'],'o pedido de sempre');
+ }finally{h.dispose();}
+});
+test('com modelo de conferência escolhido: a tela nomeia quem confere, manda o nome no preparo e volta ao aviso quando o servidor diz que mudou',async()=>{
+ const h=harness();try{
+  h.button('Assistente com revisão').props.onClick();await tick();h.requests[0].resolve({ok:true,json:async()=>routedStatus(h,DECIDER)});await tick();h.render();
+  assert.ok(text(h.find('section',()=>true)).includes(sentence(DECIDER)));
+  await fill(h);assert.equal(consentBox(h).props.checked,true);
+  void h.button('Preparar proposta').props.onClick();await tick();
+  assert.equal(JSON.parse(h.requests[1].init.body).decisionDestination,DECIDER);
+  // O servidor recusa (o modelo mudou): a tela busca o estado de novo, mostra o nome de agora e desmarca a autorização.
+  h.requests[1].resolve({ok:false,status:409,json:async()=>({error:'O modelo que confere este registro mudou. Confira o aviso e confirme de novo.',code:'assistant_destination'})});await tick();await tick();
+  assert.equal(h.requests.length,3,'nova leitura do estado');assert.equal(h.requests[2].init.method,undefined);
+  h.requests[2].resolve({ok:true,json:async()=>routedStatus(h,OTHER)});await tick();await tick();h.render();
+  const shown=text(h.find('section',()=>true));
+  assert.ok(shown.includes('O modelo que confere este registro mudou. Confira o aviso e confirme de novo.'));
+  assert.ok(shown.includes(sentence(OTHER)));assert.equal(shown.includes(DECIDER),false,'o nome antigo saiu da tela');
+  assert.equal(consentBox(h).props.checked,false,'a autorização é pedida de novo');
+  assert.equal(h.button('Preparar proposta').props.disabled,true);
+  // Autorizando de novo, o preparo leva o nome novo.
+  consentBox(h).props.onChange({target:{checked:true}});h.render();
+  void h.button('Preparar proposta').props.onClick();await tick();
+  assert.equal(JSON.parse(h.requests[3].init.body).decisionDestination,OTHER);
+ }finally{h.dispose();}
+});

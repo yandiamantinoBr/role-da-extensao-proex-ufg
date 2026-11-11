@@ -79,11 +79,15 @@ function speechProviders() {
 // ---------------------------------------------------------------------------------------------
 // Teto da voz: a função que a tela usa dá o mesmo número que o servidor reserva.
 // ---------------------------------------------------------------------------------------------
-test('teto da voz no modelo escolhido: contas fixas (1 s a US$ 0,04/h = 112) e piso da reserva revisada no formato Deepgram', () => {
+test('teto da voz no modelo escolhido: contas fixas (1 s a US$ 0,04/h = 112) e piso da reserva revisada do mesmo formato (Groq ou Deepgram)', () => {
  assert.equal(speechRouteCeilingMicros('groq', 1, 0.04), 112);
  assert.equal(speechRouteCeilingMicros('groq', 0.5, 0.04), 112, 'mínimo de 10 s cobrados');
  assert.equal(speechRouteCeilingMicros('groq', 90, 0.04), 1000);
  assert.equal(speechRouteCeilingMicros('groq', 90, 0.36), 9000);
+ // Formato Groq: preço cadastrado abaixo do revisado (US$ 0,04/h) não baixa a reserva.
+ assert.equal(speechRouteCeilingMicros('groq', 1, 0.01), 112);
+ assert.equal(speechRouteCeilingMicros('groq', 90, 0.01), 1000);
+ assert.equal(speechRouteCeilingMicros('groq', 90, 0.0001), roleSpeechCeilingMicros('groq', 90));
  // Formato Deepgram: nunca abaixo da reserva revisada (US$ 0,03/min).
  assert.equal(speechRouteCeilingMicros('deepgram', 1, 0.258), 717);
  assert.equal(speechRouteCeilingMicros('deepgram', 60, 0.258), 30000);

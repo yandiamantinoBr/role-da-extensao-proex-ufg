@@ -1,10 +1,10 @@
 import { aiConfigurationAuthority, getActor, organizationAuthoritySql, platformOwnerAuthoritySql, type PortalActor } from '../access';
 import { all, one } from '../database';
 import { HttpError } from '../errors';
-import { availableProviderCredentials, dailyLimits, newAssistantConfig, object, onlyKeys, TASK_MODEL_KEYS, TEST_MODE_LIMITS, validateConfig, type AssistantConfig, type DailyLimits } from './contracts';
+import { availableProviderCredentials, dailyLimits, newAssistantConfig, object, onlyKeys, storedConfigJson, TASK_MODEL_KEYS, TEST_MODE_LIMITS, validateConfig, type AssistantConfig, type DailyLimits } from './contracts';
 import { configChanges } from './quota';
 import { decryptProviderCredentials, encryptProviderCredentials, type CredentialKeys } from './crypto';
-import { fitsFunction, fitsTask, type RoutedTask } from './model-catalog';
+import { catalogModelName, fitsFunction, fitsTask, type RoutedTask } from './model-catalog';
 import { loadCatalog } from './model-catalog-store';
 import { TASK_MODEL_KEY, resolveTaskRoute, speechDestination, speechRouteModel, taskRouteName } from './task-routing';
 import type { SpeechRouteModel } from './role-contracts';
@@ -124,13 +124,18 @@ export async function configureAssistant(db: D1Database, actor: PortalActor | nu
  // Modelo por tarefa (documentos, conferência/triagem, voz): só a administração geral troca. O escolhido precisa
  // existir, estar ligado, servir para a tarefa e ter chave salva. A chave do padrão segue obrigatória (abaixo): é a queda.
  const changedTasks = (Object.keys(TASK_MODEL_KEY) as RoutedTask[]).filter(task => config[TASK_MODEL_KEY[task]] !== previousConfig[TASK_MODEL_KEY[task]]);
- if (changedTasks.length) {
-  const owner = platformOwnerAuthoritySql(current);
+ const changedModelNames: Record<string, string> = {};
+ // Com troca de modelo por tarefa, a conferência de administração geral também entra na asserção atômica do salvamento (abaixo).
+ const taskOwner = changedTasks.length ? platformOwnerAuthoritySql(current) : null;
+ if (taskOwner) {
+  const owner = taskOwner;
   if (!await one(db, `SELECT 1 WHERE ${owner.sql}`, owner.values)) throw new HttpError(403, 'Só a administração geral escolhe modelos do catálogo para documentos, conferência e voz.', 'catalog_admin');
   const chosenTasks = changedTasks.filter(task => config[TASK_MODEL_KEY[task]]);
-  const taskCatalog = chosenTasks.length ? catalog ?? (await loadCatalog(db, organizationId)).catalog : null;
+  // O catálogo também dá os nomes que o histórico mostra (o modelo que saiu e o que entrou).
+  const taskCatalog = catalog ?? (await loadCatalog(db, organizationId)).catalog;
+  for (const task of changedTasks) for (const modelId of [previousConfig[TASK_MODEL_KEY[task]], config[TASK_MODEL_KEY[task]]]) { const name = modelId ? catalogModelName(taskCatalog, modelId) : null; if (name) changedModelNames[modelId] = name.slice(0, 120); }
   for (const task of chosenTasks) {
-   const model = taskCatalog!.models.find(entry => entry.id === config[TASK_MODEL_KEY[task]] && entry.enabled), provider = taskCatalog!.providers.find(entry => entry.id === model?.providerId);
+   const model = taskCatalog.models.find(entry => entry.id === config[TASK_MODEL_KEY[task]] && entry.enabled), provider = taskCatalog.providers.find(entry => entry.id === model?.providerId);
    if (!model) throw new HttpError(400, 'Escolha um modelo que exista e esteja ligado no catálogo.', 'assistant_model');
    const unfit = fitsTask(model, provider, task);
    if (unfit || !provider) throw new HttpError(400, unfit ?? 'Provedor removido.', 'assistant_model');
@@ -143,9 +148,9 @@ export async function configureAssistant(db: D1Database, actor: PortalActor | nu
  const credentialsChanged = !old || writesKeys;
  const ciphertext = old && !credentialsChanged ? old.credentials_ciphertext : await encryptProviderCredentials(secret, { ...catalogKeys, ...credentials }, organizationId, keys, old?.credentials_ciphertext);
  const revision = Number(input.expectedRevision) + 1, at = new Date().toISOString();
- const assertion = db.prepare(`SELECT CASE WHEN ${auth.sql} THEN 1 ELSE json_extract('[]','ai_configuration_revoked') END`).bind(...auth.values);
- const statement = old ? db.prepare('UPDATE ai_organization_settings SET revision=?,config_json=?,credentials_ciphertext=?,updated_by=?,updated_at=? WHERE organization_id=? AND revision=? AND credentials_ciphertext=?').bind(revision, JSON.stringify(config), ciphertext, current.userId, at, organizationId, input.expectedRevision, old.credentials_ciphertext) : db.prepare('INSERT INTO ai_organization_settings(organization_id,revision,config_json,credentials_ciphertext,updated_by,updated_at) VALUES(?,?,?,?,?,?)').bind(organizationId, revision, JSON.stringify(config), ciphertext, current.userId, at);
- try { const result = await db.batch([assertion, statement, db.prepare("INSERT INTO audit(id,actor_id,project_id,organization_id,action,entity_id,details,created_at) SELECT ?,?,NULL,?,'assistant.configure',?,?,? WHERE changes()=1").bind(crypto.randomUUID(), current.userId, organizationId, organizationId, JSON.stringify({ revision, enabled: config.enabled, sttEnabled: config.sttEnabled, jevEnabled: config.jevEnabled, roleEnabled: config.roleEnabled, roleProvider: config.roleProvider, roleVisionEnabled: config.roleVisionEnabled, testMode: config.testMode, changes: configChanges(previousConfig, config) }), at)]); if (result[1].meta.changes !== 1) throw new HttpError(409, 'A configuração mudou. Atualize a página.', 'assistant_configuration_changed'); }
+ const assertion = db.prepare(`SELECT CASE WHEN ${auth.sql}${taskOwner ? ` AND ${taskOwner.sql}` : ''} THEN 1 ELSE json_extract('[]','ai_configuration_revoked') END`).bind(...auth.values, ...(taskOwner?.values ?? []));
+ const statement = old ? db.prepare('UPDATE ai_organization_settings SET revision=?,config_json=?,credentials_ciphertext=?,updated_by=?,updated_at=? WHERE organization_id=? AND revision=? AND credentials_ciphertext=?').bind(revision, storedConfigJson(config), ciphertext, current.userId, at, organizationId, input.expectedRevision, old.credentials_ciphertext) : db.prepare('INSERT INTO ai_organization_settings(organization_id,revision,config_json,credentials_ciphertext,updated_by,updated_at) VALUES(?,?,?,?,?,?)').bind(organizationId, revision, storedConfigJson(config), ciphertext, current.userId, at);
+ try { const result = await db.batch([assertion, statement, db.prepare("INSERT INTO audit(id,actor_id,project_id,organization_id,action,entity_id,details,created_at) SELECT ?,?,NULL,?,'assistant.configure',?,?,? WHERE changes()=1").bind(crypto.randomUUID(), current.userId, organizationId, organizationId, JSON.stringify({ revision, enabled: config.enabled, sttEnabled: config.sttEnabled, jevEnabled: config.jevEnabled, roleEnabled: config.roleEnabled, roleProvider: config.roleProvider, roleVisionEnabled: config.roleVisionEnabled, testMode: config.testMode, changes: configChanges(previousConfig, config), ...(Object.keys(changedModelNames).length ? { modelNames: changedModelNames } : {}) }), at)]); if (result[1].meta.changes !== 1) throw new HttpError(409, 'A configuração mudou. Atualize a página.', 'assistant_configuration_changed'); }
  catch (error) { if (String(error).includes('ai_configuration_revoked')) throw new HttpError(403, 'A autorização de configuração foi revogada.', 'assistant_configuration_forbidden'); throw error; }
  return { ok: true, revision };
 }

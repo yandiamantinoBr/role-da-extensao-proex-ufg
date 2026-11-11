@@ -8,17 +8,23 @@ const withheld = () => new HttpError(502, 'A resposta do provedor não pôde ser
 export class ChargedError extends HttpError { constructor(message: string, readonly chargedMicros: number, readonly chargedTokens: number) { super(502, message, 'generic_provider_schema'); } }
 
 /**
- * O provedor respondeu com status de erro (4xx ou 5xx): recusou o pedido e, com certeza, não cobrou.
+ * O serviço respondeu com um status de recusa certa: não aceitou o pedido e, com certeza, não cobrou.
  * É o único erro pós-envio que permite cair no padrão sem risco de cobrança dupla.
  */
 export class RefusedError extends HttpError { constructor(message: string, readonly providerStatus: number, code = 'generic_provider_unavailable') { super(503, message, code); } }
+/**
+ * Status em que a recusa é certa (pedido inválido, chave, saldo, modelo, tamanho, formato ou limite de uso).
+ * Qualquer outro status de erro (408, 5xx…) pode ter sido processado: sobe como erro comum, sem segunda chamada.
+ */
+const REFUSAL_STATUSES: ReadonlySet<number> = new Set([400, 401, 402, 403, 404, 413, 415, 422, 429]);
+export function certainRefusal(status: number): boolean { return REFUSAL_STATUSES.has(status); }
 
 export async function boundedJson(response: Response, limit = 256 * 1024): Promise<Record<string, unknown>> {
   if (!response.ok || !/^application\/json(?:\s*;|$)/i.test(response.headers.get('content-type') ?? '')) {
     await response.body?.cancel().catch(() => {});
     const status = response.status;
     const message = status === 401 || status === 403 ? 'O provedor recusou a chave. Confira a chave em Chaves e modelos.' : status === 404 ? 'O provedor não reconheceu o modelo. Confira o nome do modelo na API.' : status === 429 ? 'O provedor atingiu o limite de uso agora. Tente de novo em alguns minutos.' : 'O provedor não respondeu.';
-    if (!response.ok) throw new RefusedError(message, status);
+    if (!response.ok && certainRefusal(status)) throw new RefusedError(message, status);
     throw new HttpError(503, message, 'generic_provider_unavailable');
   }
   const reader = response.body?.getReader();
@@ -42,7 +48,7 @@ function dataUrlParts(dataUrl: string) {
 const tokens = (value: unknown) => Number.isSafeInteger(value) && Number(value) >= 0 ? Number(value) : null;
 
 /** Uma chamada de conversa a um modelo do catálogo. Sem nova tentativa automática. */
-export async function genericChat(options: { provider: CatalogProvider; model: CatalogModel; apiKey: string; system: string; turns: ChatTurn[]; maxTokens: number; json: boolean; signal: AbortSignal; fetcher?: typeof fetch }): Promise<GenericResult> {
+export async function genericChat(options: { provider: CatalogProvider; model: CatalogModel; apiKey: string; system: string; turns: ChatTurn[]; maxTokens: number; json: boolean; signal: AbortSignal; fetcher?: typeof fetch; /** Só vale onde o portal já envia temperatura (serviço compatível com OpenAI, fora o endereço oficial). Sem valor: 0,3, como sempre. */ temperature?: number }): Promise<GenericResult> {
   const { provider, model, apiKey, system, turns, maxTokens, json, signal } = options;
   const fetcher = options.fetcher ?? fetch;
   if (!apiKey || apiKey.length < 12) throw new HttpError(503, 'Falta a chave deste provedor.', 'generic_provider_key');
@@ -59,7 +65,7 @@ export async function genericChat(options: { provider: CatalogProvider; model: C
       const messages = [{ role: 'system', content: system }, ...turns.map(turn => ({ role: turn.role, content: turn.image ? [{ type: 'text', text: turn.content }, { type: 'image_url', image_url: { url: turn.image } }] : turn.content }))];
       data = await boundedJson(await fetcher(`${base}/chat/completions`, { method: 'POST', redirect: 'error', cache: 'no-store', signal,
         headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ model: model.model, messages, stream: false, ...(official ? { max_completion_tokens: maxTokens } : { max_tokens: maxTokens, temperature: 0.3 }), ...(json ? { response_format: { type: 'json_object' } } : {}) }) }));
+        body: JSON.stringify({ model: model.model, messages, stream: false, ...(official ? { max_completion_tokens: maxTokens } : { max_tokens: maxTokens, temperature: options.temperature ?? 0.3 }), ...(json ? { response_format: { type: 'json_object' } } : {}) }) }));
     } else throw new HttpError(400, 'Este provedor não conversa por texto.', 'generic_provider_kind');
   } catch (error) {
     if (error instanceof HttpError) throw error;

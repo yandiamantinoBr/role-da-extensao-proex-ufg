@@ -9,7 +9,7 @@ import { assistantUsageSql, loadAssistantSettings as loadSettings } from './sett
 import { aiReservation, aiSettlement, reservationStatements, settlementStatement } from './admission';
 import { quotaRefusal } from './quota';
 import { checkDecision, decisionBody, generateProposal, generationBody,providerGenerationBody } from './provider';
-import { decisionCeiling, decisionSettled, decisionTarget, recordRouteFallback, resolveTaskRoute, withTaskRoute, type TaskRoute } from './task-routing';
+import { decisionCeiling, decisionSettled, decisionTarget, recordRouteFallback, resolveTaskRoute, taskRouteName, withTaskRoute, type TaskRoute } from './task-routing';
 
 const nowIso = () => new Date().toISOString();
 async function currentActor(db: D1Database, actor: PortalActor | null): Promise<PortalActor> { const current = actor && await getActor(db, actor); if (!current) throw new HttpError(403, 'Seu acesso mudou. Entre novamente.', 'assistant_forbidden'); return current; }
@@ -39,10 +39,12 @@ export async function estimateAssistantPlan(db: D1Database, actor: PortalActor |
  // Conferência roteada (só com decisionModel escolhido): o previsto usa o maior preço entre o escolhido e o padrão.
  const decisionRoute = config.decisionModel && config.jevEnabled ? await resolveTaskRoute(db, organizationId, config, rawCredentials, 'decision') : null;
  const reservation = aiReservation(config, bodyBytes, decisionCeiling(decisionRoute)), selected = textModel(config);
- return { costMicros: reservation.cost, calls: reservation.calls, provider: selected.provider, model: selected.model, jev: config.jevEnabled };
+ // Só com modelo de conferência escolhido e apto: o nome que o aviso mostra e que o preparo confere antes de enviar.
+ const decisionDestination = taskRouteName(decisionRoute);
+ return { costMicros: reservation.cost, calls: reservation.calls, provider: selected.provider, model: selected.model, jev: config.jevEnabled, ...(decisionDestination ? { decisionDestination } : {}) };
 }
 export async function prepareAssistantPlan(db: D1Database, actor: PortalActor | null, input: Record<string, unknown>, secret: string, options: { fetcher?: typeof fetch; now?: number; keys?: CredentialKeys } = {}) {
- onlyKeys(input, ['action', 'projectId', 'request', 'operationKey', 'consent', 'acceptedCostMicros']);
+ onlyKeys(input, ['action', 'projectId', 'request', 'operationKey', 'consent', 'acceptedCostMicros', 'decisionDestination']);
  if (input.consent !== true) throw new HttpError(400, 'Confirme o envio do pedido e do estoque deste projeto aos provedores configurados.', 'assistant_consent');
  if (input.acceptedCostMicros !== undefined && (!Number.isSafeInteger(input.acceptedCostMicros) || Number(input.acceptedCostMicros) < 0)) throw new HttpError(400, 'Confira o custo previsto antes de preparar.', 'assistant_cost');
  if (typeof input.operationKey !== 'string' || !/^[A-Za-z0-9_-]{8,100}$/.test(input.operationKey)) throw new HttpError(400, 'Reabra o assistente antes de enviar.', 'assistant_operation');
@@ -57,6 +59,10 @@ export async function prepareAssistantPlan(db: D1Database, actor: PortalActor | 
  if (bodyBytes > 24000) throw new HttpError(400, 'Reduza o pedido ou a quantidade de materiais do contexto.', 'assistant_context_limit');
  // Conferência roteada: só existe com decisionModel escolhido. Vazio = null = exatamente o caminho de sempre.
  const decisionRoute = config.decisionModel && config.jevEnabled ? await resolveTaskRoute(db, organizationId, config, rawCredentials, 'decision') : null;
+ // Trava de destino: com modelo escolhido e apto, o pedido só segue se a tela mostrou esse mesmo nome (ausente = '').
+ // Vem antes de qualquer reserva ou envio. Sem rota o campo é ignorado e nada muda.
+ const decisionDestination = taskRouteName(decisionRoute);
+ if (decisionDestination && (typeof input.decisionDestination === 'string' ? input.decisionDestination : '') !== decisionDestination) throw new HttpError(409, 'O modelo que confere este registro mudou. Confira o aviso e confirme de novo.', 'assistant_destination');
  let decisionAnswered: TaskRoute | null = null;
  const reservation=aiReservation(config,bodyBytes,decisionCeiling(decisionRoute)),reservedCost=reservation.cost;
  if (input.acceptedCostMicros !== undefined && reservedCost > Number(input.acceptedCostMicros)) throw new HttpError(409, 'O custo previsto mudou. Confira o novo valor e prepare de novo.', 'assistant_cost_changed');

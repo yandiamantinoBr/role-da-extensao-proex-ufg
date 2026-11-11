@@ -237,7 +237,7 @@ test('routed triage: a refusal falls back once with an audit line; a timeout nev
  const proposal=await refused.triage(()=>new Response('{}',{status:429,headers:{'content-type':'application/json'}}));
  assert.equal(proposal.status,'ready');
  assert.deepEqual(refused.calls,[{endpoint:ROUTED,model:'pplx-decider-v1.2',auth:'Bearer '+routedKey},{endpoint:STANDARD,model:'jev-1.14.0',auth:'Bearer '+key}]);
- assert.deepEqual(refused.fallbacks(),[{task:'decision',model:'perplexity-decider-v1-2',reason:'O provedor recusou o pedido (HTTP 429).'}]);
+ assert.deepEqual(refused.fallbacks(),[{task:'decision',model:'perplexity-decider-v1-2',name:ROUTED_NAME,reason:'O serviço recusou o pedido (código 429).'}]);
  assert.deepEqual(refused.call(),{status:'ready',model:'jev-1.14.0',reserved_tokens:4096,reserved_usd_micros:173,input_tokens:420});
 
  const doubtful=await routedFixture(t);
@@ -245,6 +245,34 @@ test('routed triage: a refusal falls back once with an audit line; a timeout nev
  assert.deepEqual(doubtful.calls.map(call=>call.endpoint),[ROUTED]);
  assert.deepEqual(doubtful.fallbacks(),[]);
  assert.equal(doubtful.call().status,'failed');
+
+ // Status 500 ou 503 não é recusa certa (o serviço pode ter processado): sem segunda chamada.
+ for(const status of [408,500,503]){
+  const unsure=await routedFixture(t);
+  await assert.rejects(unsure.triage(()=>new Response('{}',{status,headers:{'content-type':'application/json'}})));
+  assert.deepEqual(unsure.calls.map(call=>call.endpoint),[ROUTED],String(status));
+  assert.deepEqual(unsure.fallbacks(),[]);
+  assert.equal(unsure.call().status,'failed');
+ }
+});
+
+test('routed triage: the chosen model may answer with a version suffix; the default path still requires the exact name',async t=>{
+ const reply=model=>Response.json({model,usage:{input_tokens:420},answers:{urgency:{type:'choice',choice:'high',confidence:0.97,probabilities:{high:0.97}},importance:{type:'choice',choice:'medium',confidence:0.97,probabilities:{medium:0.97}}}});
+ for(const suffix of ['-20261101','+build7']){
+  const f=await routedFixture(t),proposal=await f.triage(()=>reply('pplx-decider-v1.2'+suffix));
+  assert.deepEqual(proposal.proposal,{urgency:'high',importance:'medium'},suffix);
+  assert.deepEqual(f.calls.map(call=>call.endpoint),[ROUTED]);
+  assert.equal(f.call().model,'pplx-decider-v1.2','the call row keeps the catalog model name');
+ }
+ // Outro modelo (ou prefixo sem separador) continua recusado, sem segunda chamada.
+ for(const other of ['pplx-decider-v1.20','synthetic-other-model']){
+  const f=await routedFixture(t);
+  await assert.rejects(f.triage(()=>reply(other)),error=>error?.code==='triage_provider_schema');
+  assert.deepEqual(f.calls.map(call=>call.endpoint),[ROUTED]);
+ }
+ // Padrão (sem modelo escolhido): só o nome exato, como sempre.
+ const plain=await fixture(t);
+ await assert.rejects(prepareTaskTriage(plain.db,plain.owner,prepareInput(plain),secret,{now,fetcher:async()=>reply('jev-1.14.0-20261101')}),error=>error?.code==='triage_provider_schema');
 });
 
 // Teto mostrado na tela da triagem = reserva feita pelo servidor, com e sem modelo de decisão escolhido.

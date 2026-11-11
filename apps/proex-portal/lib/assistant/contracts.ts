@@ -21,6 +21,14 @@ export function dailyLimits(config: DailyLimits): DailyLimits { return { dailyUs
 // JSON saved before usage policies remains organization-scoped. New registrations
 // must use newAssistantConfig so that an old document never changes meaning.
 export const DEFAULT_ASSISTANT_CONFIG: AssistantConfig = { roleEnabled: false, roleProvider: 'deepseek', roleVisionEnabled: false, roleModel: '', roleVisionModel: '', documentModel: '', decisionModel: '', speechModel: '', enabled: false, documentEnabled: false, jevEnabled: false, sttEnabled: false, sttProvider: 'legacy',textProvider:'deepseek',openaiModel:'gpt-5.6-luna', usageScope: 'organization', usageUserId: null, model: 'deepseek-flash', jevModel: 'jev-1.14.0', dailyUsdMicros: 1_000_000, dailyTokens: 100_000, dailyCalls: 20, dailyMs: 300_000, timeoutMs: 12_000, maxOutputTokens: 1200, testMode: false, testModeRestore: null };
+/**
+ * JSON da configuração para gravar: modelo por tarefa vazio não é gravado. Assim uma versão anterior do portal
+ * (que recusa chaves que não conhece) continua lendo a configuração de quem nunca escolheu modelo.
+ * A leitura (validateConfig) preenche o padrão ('') antes de validar.
+ */
+export function storedConfigJson(config: AssistantConfig): string {
+ return JSON.stringify(Object.fromEntries(Object.entries(config).filter(([key, value]) => !((TASK_MODEL_KEYS as readonly string[]).includes(key) && value === ''))));
+}
 export function textModel(config:AssistantConfig){return{provider:config.textProvider,...PROVIDERS[config.textProvider],model:config.textProvider==='openai'?config.openaiModel:config.model};}
 export function newAssistantConfig(actorId: string): AssistantConfig { return { ...DEFAULT_ASSISTANT_CONFIG, usageScope: 'private', usageUserId: actorId }; }
 export type AssistantCredentials = { deepseek: string; typesafe: string; deepgram?: string; groq?: string; openai?:string };

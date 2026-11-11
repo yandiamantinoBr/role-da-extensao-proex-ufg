@@ -1,7 +1,7 @@
 import { platformOwnerAuthoritySql, type PortalActor } from '../access';
 import { one } from '../database';
 import { HttpError } from '../errors';
-import { newAssistantConfig, object, onlyKeys } from './contracts';
+import { newAssistantConfig, object, onlyKeys, storedConfigJson } from './contracts';
 import { credentialKeyId, decryptProviderCredentials, encryptProviderCredentials, type CredentialKeys } from './crypto';
 import { looksLikeSecret, parseCatalog, safeBaseUrl, validateModel, validateProvider, VAULT_KEYS, type CatalogProvider, type ModelCatalog } from './model-catalog';
 import { boundedJson } from './generic-provider';
@@ -154,7 +154,7 @@ export async function manageCatalog(db: D1Database, actor: PortalActor | null, i
     const authority = platformOwnerAuthoritySql(current);
     const write = row
       ? db.prepare('UPDATE ai_organization_settings SET revision=?,credentials_ciphertext=?,updated_by=?,updated_at=? WHERE organization_id=? AND revision=? AND credentials_ciphertext=?').bind(revision, ciphertext, current.userId, at, organizationId, row.revision, row.credentials_ciphertext)
-      : db.prepare('INSERT INTO ai_organization_settings(organization_id,revision,config_json,credentials_ciphertext,updated_by,updated_at) VALUES(?,?,?,?,?,?)').bind(organizationId, revision, JSON.stringify(newAssistantConfig(current.userId)), ciphertext, current.userId, at);
+      : db.prepare('INSERT INTO ai_organization_settings(organization_id,revision,config_json,credentials_ciphertext,updated_by,updated_at) VALUES(?,?,?,?,?,?)').bind(organizationId, revision, storedConfigJson(newAssistantConfig(current.userId)), ciphertext, current.userId, at);
     const nextCatalog = { ...catalog, providers, updatedAt: at, updatedBy: current.displayName || 'Administração geral' };
     try {
       await db.batch([

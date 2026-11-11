@@ -4,12 +4,14 @@
  *
  * Regra para nunca cobrar duas vezes: só se cai no padrão quando é certo que o modelo escolhido
  * não cobrou, isto é, antes do envio (sem chave, desligado, removido, não serve) ou quando o
- * provedor respondeu com status de erro (RefusedError). Prazo, rede e formato ruim sobem como erro.
+ * serviço respondeu com um status de recusa certa (RefusedError: 400, 401, 402, 403, 404, 413, 415, 422, 429).
+ * Outro status de erro (408, 5xx…), prazo, rede e formato ruim sobem como erro, sem segunda chamada.
  */
+import { all } from '../database';
 import { HttpError } from '../errors';
 import { PROVIDERS, textModel, type AssistantConfig, type TaskModelKey } from './contracts';
 import { firstJsonObject, genericChat, RefusedError } from './generic-provider';
-import { fitsTask, safeBaseUrl, type CatalogModel, type CatalogProvider, type RoutedTask } from './model-catalog';
+import { catalogModelName, fitsTask, safeBaseUrl, type CatalogModel, type CatalogProvider, type RoutedTask } from './model-catalog';
 import { loadCatalog } from './model-catalog-store';
 import { taskRouteLabel, type SpeechRouteModel } from './role-contracts';
 
@@ -76,12 +78,13 @@ export function documentCeiling(config: AssistantConfig, resolved: ResolvedTaskR
   return { text: { inputMicrosPerToken: Math.max(standard.inputMicrosPerToken, price.inputPerM), outputMicrosPerToken: Math.max(standard.outputMicrosPerToken, price.outputPerM) } };
 }
 /**
- * Leitura de documento no modelo escolhido: mesma instrução e mesmo texto do padrão, uma chamada só.
+ * Leitura de documento no modelo escolhido: mesma instrução e mesmo texto do padrão, uma chamada só,
+ * com temperatura 0 onde o portal envia temperatura (extração de campos não deve variar entre pedidos).
  * Recusa do provedor sai como RefusedError (permite o padrão); prazo, rede e formato ruim sobem como erro.
  */
 export async function routedDocumentProposal(route: TaskRoute, messages: { role: string; content: string }[], maxTokens: number, signal: AbortSignal, fetcher?: typeof fetch) {
   const system = messages.find(message => message.role === 'system')?.content ?? '', user = messages.find(message => message.role === 'user')?.content ?? '';
-  const answer = await genericChat({ provider: route.provider, model: route.model, apiKey: route.apiKey, system, turns: [{ role: 'user', content: user }], maxTokens, json: true, signal, fetcher });
+  const answer = await genericChat({ provider: route.provider, model: route.model, apiKey: route.apiKey, system, turns: [{ role: 'user', content: user }], maxTokens, json: true, signal, fetcher, temperature: 0 });
   if (answer.outputTokens > maxTokens) throw new HttpError(502, 'O provedor não confirmou o uso de tokens.', 'assistant_usage');
   let proposal: unknown;
   try { proposal = firstJsonObject(answer.text); } catch { throw new HttpError(502, 'A IA não produziu uma proposta JSON válida.', 'assistant_provider_schema'); }
@@ -105,20 +108,33 @@ export function speechRouteModel(resolved: ResolvedTaskRoute): SpeechRouteModel 
 export function taskRouteName(resolved: ResolvedTaskRoute): string | null {
   return resolved && !('skip' in resolved) ? taskRouteLabel({ label: resolved.model.label, service: resolved.provider.label }) : null;
 }
-export function refusalReason(error: RefusedError) { return `O provedor recusou o pedido (HTTP ${error.providerStatus}).`; }
+/** Motivo da queda por recusa, do jeito que o histórico mostra. Chave recusada (401/403) diz onde conferir. */
+export function refusalReason(error: RefusedError) {
+  return `O serviço recusou o pedido (código ${error.providerStatus}).${error.providerStatus === 401 || error.providerStatus === 403 ? ' Confira a chave na aba Chaves.' : ''}`;
+}
+const brasiliaDay = (value: Date) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(value);
 
 /**
- * Registra que a tarefa seguiu pelo padrão em vez do modelo escolhido. Só tarefa, id do modelo no
+ * Registra que a tarefa seguiu pelo padrão em vez do modelo escolhido. Só tarefa, id e nome do modelo no
  * catálogo e motivo: nunca chave, endereço com segredo ou conteúdo do pedido.
+ * No máximo um registro por organização, tarefa, modelo e motivo por dia (dia de Brasília): um modelo sem
+ * chave não enche o histórico a cada pedido.
  */
 export async function recordRouteFallback(db: D1Database, organizationId: string, actorId: string, task: RoutedTask, modelId: string, reason: string) {
+  const model = modelId.slice(0, 60), why = reason.slice(0, 200), now = new Date(), today = brasiliaDay(now);
+  const recent = await all(db, "SELECT created_at FROM audit WHERE action='assistant.route.fallback' AND organization_id=? AND created_at>=? AND json_extract(details,'$.task')=? AND json_extract(details,'$.model')=? AND json_extract(details,'$.reason')=?",
+    [organizationId, new Date(now.getTime() - 26 * 3600000).toISOString(), task, model, why]);
+  if (recent.some(row => brasiliaDay(new Date(String(row.created_at))) === today)) return;
+  // O nome é só para o histórico; se o catálogo não puder ser lido, o registro sai com o id.
+  let name: string | null = null;
+  try { name = catalogModelName((await loadCatalog(db, organizationId)).catalog, modelId); } catch { /* segue sem nome */ }
   await db.prepare("INSERT INTO audit(id,actor_id,project_id,organization_id,action,entity_id,details,created_at) VALUES(?,?,NULL,?,'assistant.route.fallback',?,?,?)")
-    .bind(crypto.randomUUID(), actorId, organizationId, organizationId, JSON.stringify({ task, model: modelId.slice(0, 60), reason: reason.slice(0, 200) }), new Date().toISOString()).run();
+    .bind(crypto.randomUUID(), actorId, organizationId, organizationId, JSON.stringify({ task, model, ...(name ? { name: name.slice(0, 120) } : {}), reason: why }), now.toISOString()).run();
 }
 
 /**
  * Executa a tarefa no modelo escolhido e cai no padrão só nos dois casos seguros: rota pulada antes do
- * envio ou recusa do provedor (RefusedError). `onFallback` grava a auditoria e refaz as cercas antes do
+ * envio ou recusa certa do serviço (RefusedError). `onFallback` grava a auditoria e refaz as cercas antes do
  * padrão. Qualquer outro erro sobe sem segunda chamada. `route` diz quem respondeu (null = padrão).
  */
 export async function withTaskRoute<T>(resolved: ResolvedTaskRoute, options: { chosen: (route: TaskRoute) => Promise<T>; fallback: () => Promise<T>; onFallback: (reason: string) => Promise<void> }): Promise<{ result: T; route: TaskRoute | null }> {

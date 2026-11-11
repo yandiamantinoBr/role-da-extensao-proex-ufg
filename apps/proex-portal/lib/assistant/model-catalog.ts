@@ -4,6 +4,7 @@
  * Os valores padrão são só linhas iniciais; tudo pode ser editado ou apagado na tela.
  */
 import { HttpError } from '../errors';
+import { taskRouteLabel } from './role-contracts';
 
 export const CAPABILITIES = ['text', 'vision', 'document', 'speech', 'decision'] as const;
 export type Capability = (typeof CAPABILITIES)[number];
@@ -147,6 +148,17 @@ export function parseCatalog(raw: string | null | undefined): ModelCatalog {
     return { version: 1, providers, models, updatedAt: String(value.updatedAt ?? ''), updatedBy: String(value.updatedBy ?? '') };
   } catch { return defaultCatalog(); }
 }
+
+/**
+ * Nome de um modelo do catálogo para avisos e histórico: o nome e, se ele ainda não disser, o serviço
+ * (a mesma regra dos avisos). null quando o modelo não está neste catálogo.
+ */
+export function catalogModelName(catalog: Pick<ModelCatalog, 'providers' | 'models'>, id: string): string | null {
+  const model = catalog.models.find(entry => entry.id === id);
+  return model ? taskRouteLabel({ label: model.label, service: catalog.providers.find(entry => entry.id === model.providerId)?.label ?? '' }) : null;
+}
+/** O mesmo nome, pelas linhas iniciais do catálogo: serve a registros antigos, que só guardaram o id. */
+export function builtinModelName(id: string): string | null { return catalogModelName(defaultCatalog(''), id); }
 
 export function modelMicrosPerToken(model: CatalogModel) { return { input: model.price.inputPerM, output: model.price.outputPerM }; }
 export function fitsFunction(model: CatalogModel, provider: CatalogProvider | undefined, need: 'chat' | 'vision'): string | null {

@@ -2,7 +2,7 @@ import { HttpError } from '../errors';
 import { TRIAGE_CRITERIA, type TriageLevel, type TriageProposal } from '../follow-up/triage-contract';
 import { PROVIDERS, object, type AssistantConfig, type AssistantCredentials, type AssistantItem } from './contracts';
 import {generateOpenAiJson,openAiGenerationBody,type TextPurpose} from './openai-provider';
-import { RefusedError } from './generic-provider';
+import { certainRefusal, RefusedError } from './generic-provider';
 
 export function providerEndpoint(provider: keyof typeof PROVIDERS, requested: unknown = PROVIDERS[provider]?.endpoint): string {
  const fixed = PROVIDERS[provider]?.endpoint;
@@ -34,13 +34,18 @@ async function post(provider: keyof typeof PROVIDERS, apiKey: string, body: unkn
 /** Destino escolhido no catálogo para o formato JEV: endereço, chave e nome do modelo na API. */
 export type DecisionRoute = { endpoint: string; apiKey: string; model: string };
 /**
- * Envio ao modelo escolhido no catálogo. Status de erro vira RefusedError (o provedor recusou e não cobrou);
- * rede, prazo e formato ruim sobem como erro comum, sem permitir segunda chamada.
+ * Envio ao modelo escolhido no catálogo. Só status de recusa certa (certainRefusal) vira RefusedError: o serviço
+ * recusou e não cobrou. Outro status de erro (408, 5xx…), rede, prazo e formato ruim sobem como erro comum,
+ * sem permitir segunda chamada.
  */
 async function postRoute(route: DecisionRoute, body: unknown, signal: AbortSignal, fetcher: typeof fetch): Promise<Record<string, unknown>> {
  try {
   const response = await fetcher(route.endpoint, { method: 'POST', redirect: 'error', cache: 'no-store', signal, headers: { Authorization: `Bearer ${route.apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-  if (!response.ok) { await response.body?.cancel().catch(() => {}); throw new RefusedError('O modelo escolhido recusou o pedido.', response.status, 'assistant_provider_unavailable'); }
+  if (!response.ok) {
+   await response.body?.cancel().catch(() => {});
+   if (certainRefusal(response.status)) throw new RefusedError('O modelo escolhido recusou o pedido.', response.status, 'assistant_provider_unavailable');
+   throw new HttpError(503, 'O modelo escolhido não respondeu. A reserva preventiva continua contando no limite diário.', 'assistant_provider_unavailable');
+  }
   const result = await boundedResponse(response); if (JSON.stringify(result).includes(route.apiKey)) throw new HttpError(502, 'O provedor retornou dados que não podem ser apresentados.', 'assistant_provider_schema'); return result;
  }
  catch (error) { if (error instanceof HttpError) throw error; throw new HttpError(503, 'A chamada de IA falhou ou demorou demais. Não houve nova tentativa automática.', 'assistant_provider_unavailable'); }
@@ -87,7 +92,10 @@ export async function classifyTaskTriage(config:AssistantConfig, credentials:Ass
   return value as Record<string,unknown>;
  };
  const answers=record(data.answers),inputTokens=record(data.usage).input_tokens;
- if(data.model!==(route?.model??config.jevModel)||!Number.isSafeInteger(inputTokens)||Number(inputTokens)<0)throw invalid();
+ // Com modelo escolhido, o nome devolvido pode trazer sufixo de versão (mesma regra de checkDecision). No padrão, só o nome exato, como sempre.
+ const expected=route?.model??config.jevModel,returned=data.model;
+ const sameModel=returned===expected||(route!==undefined&&typeof returned==='string'&&(returned.startsWith(`${expected}-`)||returned.startsWith(`${expected}+`)));
+ if(!sameModel||!Number.isSafeInteger(inputTokens)||Number(inputTokens)<0)throw invalid();
  function level(value:unknown):TriageLevel|null {
   const answer=record(value),choice=answer.choice;
   if(answer.type!=='choice'||typeof choice!=='string'||!(choice==='review'||Object.hasOwn(TRIAGE_CRITERIA.urgency,choice)))throw invalid();

@@ -6,7 +6,7 @@ import { ImagePlus, LoaderCircle, MessageSquarePlus, Mic, Send, Square, Trash2, 
 import { safeRequest, type AssistantPlan } from '@/lib/assistant/contracts';
 import {
   ROLE_MAX_HISTORY, ROLE_MAX_HISTORY_CHARS, ROLE_MAX_IMAGE_BYTES, ROLE_MAX_IMAGE_SIDE, ROLE_MAX_MESSAGE_CHARS, ROLE_MODELS,
-  formatMicros, friendlyMicros, operationConferenceText, operationsServiceText, roleConversationBytes, roleEstimate, roleSpeechCeilingMicros, speechRouteCeilingMicros, speechRouteName, type RoleTurn, type SpeechRouteModel,
+  formatMicros, friendlyMicros, operationConferenceText, operationsServiceText, roleConversationBytes, roleEstimate, roleSpeechCeilingMicros, shownRouteName, speechRouteCeilingMicros, speechRouteName, type RoleTurn, type SpeechRouteModel,
 } from '@/lib/assistant/role-contracts';
 import { prepareSpeechWav } from './speech-audio';
 import AiPeopleUsage from './ai-people-usage';
@@ -19,7 +19,7 @@ type Props = { projects: Project[]; defaultProjectId?: string; onApplied?: () =>
 type Pricing = { model: string; label: string; inputMicrosPerToken: number; outputMicrosPerToken: number };
 type Status = { available: boolean; reason: string | null; provider: string; model: string; textPricing?: Pricing | null; visionPricing?: Pricing | null; visionAvailable: boolean; operationsAvailable: boolean; speech: { available: boolean; provider: 'groq' | 'deepgram'; route?: string; routeModel?: SpeechRouteModel }; decisionRouteName?: string; dailyLimitMicros: number; reservedTodayMicros: number; canConfigure?: boolean; organizationId?: string; tools?: { text: boolean; vision: boolean }; scopes?: { units: { id: string; name: string }[]; events: { id: string; name: string; projectId: string }[] } };
 type Match = { projectId: string; projectName: string; itemName: string; score: number };
-type Operation = { request: string; stage: 'idle' | 'estimated' | 'preview' | 'done'; costMicros?: number; provider?: string; jev?: boolean; stale?: boolean; projectId?: string; matches?: Match[]; ambiguous?: boolean; error?: string; limit?: boolean; preview?: { plan: Omit<AssistantPlan, 'actorId'>; planToken: string; undoReason: string }; confirmed?: boolean; receipt?: string; key: string; /** Pedido exatamente como foi enviado para preparar a prévia; vai junto na confirmação. */ prepared?: string; destinationDefault?: string; movementId?: string; destination?: string | null; revise?: 'correct' | 'undo' | null; reviseKey?: string };
+type Operation = { request: string; stage: 'idle' | 'estimated' | 'preview' | 'done'; costMicros?: number; provider?: string; jev?: boolean; /** Modelo que confere, como veio da estimativa (vazio = padrão do portal). É o nome que o aviso mostra e que vai no preparo. */ decisionDestination?: string; stale?: boolean; projectId?: string; matches?: Match[]; ambiguous?: boolean; error?: string; limit?: boolean; preview?: { plan: Omit<AssistantPlan, 'actorId'>; planToken: string; undoReason: string }; confirmed?: boolean; receipt?: string; key: string; /** Pedido exatamente como foi enviado para preparar a prévia; vai junto na confirmação. */ prepared?: string; destinationDefault?: string; movementId?: string; destination?: string | null; revise?: 'correct' | 'undo' | null; reviseKey?: string };
 type Source = { label: string; href: string };
 type Message = { id: string; role: 'user' | 'assistant'; content: string; image?: string; meta?: string; operation?: Operation; sources?: Source[] };
 type Picked = { dataUrl: string; bytes: number };
@@ -222,22 +222,25 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
     if (chosen) void estimateOperation({ ...message, operation: located });
     else updateOperation(message.id, { stage: 'estimated', stale: true });
   }
-  async function estimateOperation(message: Message) {
+  /** `keep` mantém um aviso na tela enquanto o custo e o destino são conferidos de novo (ex.: o modelo que confere mudou). */
+  async function estimateOperation(message: Message, keep = '') {
     if (!message.operation?.projectId) return;
-    updateOperation(message.id, { error: '' });
-    try { const result = await post<{ costMicros: number; provider: string; jev: boolean }>('/api/assistant/role', { action: 'estimate.operation', projectId: message.operation.projectId, request: message.operation.request }); updateOperation(message.id, { stage: 'estimated', costMicros: result.costMicros, provider: result.provider, jev: result.jev, stale: false }); }
+    updateOperation(message.id, { error: keep });
+    try { const result = await post<{ costMicros: number; provider: string; jev: boolean; decisionDestination?: unknown }>('/api/assistant/role', { action: 'estimate.operation', projectId: message.operation.projectId, request: message.operation.request }); updateOperation(message.id, { stage: 'estimated', costMicros: result.costMicros, provider: result.provider, jev: result.jev, decisionDestination: shownRouteName(result.decisionDestination), stale: false }); }
     catch (cause) { updateOperation(message.id, { stage: 'estimated', stale: true, error: cause instanceof Error ? cause.message : 'Não foi possível calcular o custo da operação.' }); }
   }
   function newConversation() { setMessages([]); setDraft(''); setPicked(null); discardRecording(); setError(''); setNotice(''); window.requestAnimationFrame(() => input.current?.focus()); }
   async function prepareOperation(message: Message) {
     if (!message.operation?.projectId) return;
     setBusy(true); setError(''); updateOperation(message.id, { error: '', limit: false });
-    try { const preview = await post<Operation['preview']>('/api/assistant', { action: 'prepare', projectId: message.operation.projectId, request: message.operation.request, consent: true, operationKey: message.operation.key, acceptedCostMicros: message.operation.costMicros }); updateOperation(message.id, { stage: 'preview', preview, confirmed: false, prepared: message.operation.request }); if (preview) void suggestDestination(message.id, preview.plan.projectId, message.operation.request); }
+    try { const preview = await post<Operation['preview']>('/api/assistant', { action: 'prepare', projectId: message.operation.projectId, request: message.operation.request, consent: true, operationKey: message.operation.key, acceptedCostMicros: message.operation.costMicros, ...(message.operation.decisionDestination ? { decisionDestination: message.operation.decisionDestination } : {}) }); updateOperation(message.id, { stage: 'preview', preview, confirmed: false, prepared: message.operation.request }); if (preview) void suggestDestination(message.id, preview.plan.projectId, message.operation.request); }
     catch (cause) {
       // O servidor respondeu: a próxima tentativa é outra chamada paga, com chave nova e custo mostrado de novo.
       // Tempo esgotado mantém a chave para recuperar o resultado sem pagar duas vezes.
       const answered = cause instanceof RequestError && cause.code !== 'assistant_call_replay';
       updateOperation(message.id, { error: cause instanceof Error ? limitText(cause) : 'Não foi possível preparar a operação.', limit: isLimit(cause), ...(answered ? { key: crypto.randomUUID() } : {}) });
+      // O modelo que confere mudou: nada foi enviado. Volta ao aviso com o custo e o nome de agora, para a pessoa conferir antes de preparar de novo.
+      if (cause instanceof RequestError && cause.code === 'assistant_destination') await estimateOperation(message, cause.message);
     }
     finally { setBusy(false); }
   }
@@ -421,7 +424,7 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
                       {message.operation.stale
                         ? <button type="button" className="p-button p-button-subtle" disabled={busy || !message.operation.projectId} onClick={() => void estimateOperation(message)}>Calcular o custo</button>
                         : <p><strong>Custo máximo: {friendlyMicros(message.operation.costMicros ?? 0)}.</strong> Nada muda no estoque até você confirmar.</p>}
-                      <p className={styles.sendsTo}>O pedido e a lista de materiais do projeto vão para {message.operation.provider === 'openai' ? 'a OpenAI' : 'a DeepSeek'}{message.operation.jev ? operationConferenceText(status?.decisionRouteName) : ''}.</p>
+                      <p className={styles.sendsTo}>O pedido e a lista de materiais do projeto vão para {message.operation.provider === 'openai' ? 'a OpenAI' : 'a DeepSeek'}{message.operation.jev ? operationConferenceText(message.operation.decisionDestination) : ''}.</p>
                       <button type="button" className="p-button p-button-primary" disabled={busy || message.operation.stale || !message.operation.projectId} onClick={() => void prepareOperation(message)}>{message.operation.error ? 'Preparar de novo' : 'Preparar registro'}</button>
                     </>}
                     {message.operation.stage === 'preview' && message.operation.preview && <div className={styles.preview}>

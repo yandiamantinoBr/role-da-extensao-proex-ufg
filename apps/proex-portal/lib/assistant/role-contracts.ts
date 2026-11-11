@@ -48,11 +48,12 @@ export function roleSpeechCeilingMicros(provider: 'groq' | 'deepgram', seconds: 
  */
 export type SpeechRouteModel = { label: string; service: string; perHour: number; style: 'groq' | 'deepgram' };
 /**
- * Teto da voz no modelo escolhido: preço por hora com mínimo de 10 s cobrados; no formato Deepgram
- * nunca fica abaixo da reserva revisada. É a mesma conta que o servidor usa para reservar (speech.ts).
+ * Teto da voz no modelo escolhido: preço por hora com mínimo de 10 s cobrados; nunca fica abaixo da reserva
+ * revisada do mesmo formato de envio (Groq ou Deepgram), mesmo que o preço cadastrado seja menor.
+ * É a mesma conta que o servidor usa para reservar (speech.ts).
  */
 export function speechRouteCeilingMicros(style: 'groq' | 'deepgram', seconds: number, perHour: number): number {
-  return Math.max(Math.ceil(Math.max(seconds, 10) * perHour * 1e6 / 3600), style === 'deepgram' ? roleSpeechCeilingMicros('deepgram', seconds) : 0);
+  return Math.max(Math.ceil(Math.max(seconds, 10) * perHour * 1e6 / 3600), roleSpeechCeilingMicros(style, seconds));
 }
 /** Nome para mostrar no aviso de gravação: o modelo e, se o nome dele ainda não disser, o serviço. */
 export function speechRouteName(model: Pick<SpeechRouteModel, 'label' | 'service'>): string {
@@ -93,6 +94,14 @@ export function operationConferenceText(name?: string | null): string {
 /** Item "registros de estoque" da lista de serviços do Rolê. */
 export function operationsServiceText(name?: string | null): string {
   return name ? `o serviço de registros de estoque, com conferência do modelo ${name} (ou do ${DEFAULT_DECISION}, se ele não puder responder)` : 'o serviço de registros de estoque';
+}
+
+/**
+ * Frase à parte sobre quem confere os registros de estoque. Só existe com modelo de conferência escolhido;
+ * sem ele devolve vazio e o aviso fica como sempre.
+ */
+export function operationsConferenceSentence(name?: string | null): string {
+  return name ? `Os registros de estoque são conferidos pelo modelo ${name}; se ele não puder responder, pelo JEV, da TypeSafe.` : '';
 }
 
 export type RoleTurn = { role: 'user' | 'assistant'; content: string };
