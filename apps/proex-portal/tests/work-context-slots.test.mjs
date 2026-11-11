@@ -155,3 +155,12 @@ test('a refused pin keeps the screen honest with the server message', async () =
  const anonymous = panel({}); try { assert.equal(anonymous.node('section', node => node.props['aria-label'] === 'Projetos fixados'), undefined, 'sem conta e sem ação, não há fixados'); } finally {anonymous.dispose();}
 });
 
+test('a failed load of the pins is announced instead of looking like an empty list', () => {
+ const failed = panel({userId:'person-a', pinnedProjectIds:[], pinError:'falha de rede', onTogglePin: async () => {}}); try {
+  const alert = failed.node('p', node => node.props.role === 'alert');
+  assert.match(text(alert), /Não foi possível carregar seus fixados agora/);
+  assert.doesNotMatch(failed.body(), /Use o alfinete de um projeto/);
+ } finally {failed.dispose();}
+ const empty = panel({userId:'person-a', pinnedProjectIds:[], onTogglePin: async () => {}}); try { assert.match(empty.body(), /Use o alfinete de um projeto/); } finally {empty.dispose();}
+});
+

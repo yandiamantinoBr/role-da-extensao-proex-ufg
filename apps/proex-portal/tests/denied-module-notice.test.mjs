@@ -35,3 +35,11 @@ test('opening a denied link, a later navigation or a new location all keep the n
   assert.match(file, /if \(requestedTab !== 'overview' && tabs\.some\(module => module\.id === requestedTab\)\) setDeniedModule\(requestedTab as ModuleId\); setTab\(tab\);/);
   for (const name of ['navigate', 'applyLocation']) assert.match(find(node => ts.isFunctionDeclaration(node) && node.name?.text === name).getText(source), /setDeniedModule\(null\)/, name);
 });
+
+test('browser back or forward opens Equipes the normal way and the menu follows the team shown', () => {
+  const apply = find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'applyLocation').getText(source);
+  assert.match(apply, /setTeamIntent\(null\)/, 'um pedido antigo de Equipes não volta com o Voltar do navegador');
+  assert.match(file, /current: tab === 'work-teams' && shownTeamId === team\.id/);
+  assert.match(file, /onTeamShown=\{setShownTeamId\}/);
+  assert.match(file, /pinError=\{pins\.error\}/);
+});
