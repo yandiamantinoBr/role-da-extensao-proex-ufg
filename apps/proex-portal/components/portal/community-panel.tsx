@@ -2,7 +2,7 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 import { Award, Database, Inbox, Mail, MessageCircle, MessageSquareHeart, ShieldCheck, ShieldQuestion } from 'lucide-react';
 import type { ModuleId } from './navigation-model';
-import { communityGet, errorText } from './community-api';
+import { COMMUNITY_CHANGED, communityGet, errorText } from './community-api';
 import { FeedbackForm, FeedbackManagement, type CommunityEvent } from './community-feedback';
 import { OmbudsInbox, OmbudsReporter } from './community-ombuds';
 import { CommunityMessages } from './community-messages';
@@ -18,9 +18,11 @@ const TABS: Tab[] = ['feedback', 'chat', 'messages', 'ombuds', 'badges', 'manage
 /** Deep link from e-mail notices: /?module=community&tab=messages. */
 function initialTab(): Tab { if (typeof window === 'undefined') return 'feedback'; const value = new URLSearchParams(window.location.search).get('tab'); return TABS.includes(value as Tab) ? value as Tab : 'feedback'; }
 export type CommunityPrefill = { area: ModuleId; projectId: string; nonce: number };
+/** Opened from the bell: which section to show and, for conversations, which one ("p:<project>" or "c:<conversation>"). */
+export type CommunityFocus = { tab: 'messages' | 'chat'; key?: string; nonce: number };
 
 /** Community module, phase 1: feedback box, anonymous ombuds and the management boxes. */
-export default function CommunityPanel({ userId, projects, prefill }: { userId: string; projects: { id: string; name: string }[]; prefill: CommunityPrefill | null }) {
+export default function CommunityPanel({ userId, projects, prefill, focus = null, onFocusHandled }: { userId: string; projects: { id: string; name: string }[]; prefill: CommunityPrefill | null; focus?: CommunityFocus | null; onFocusHandled?(): void }) {
   const id = useId(), [access, setAccess] = useState<Access | null>(null), [error, setError] = useState(''), [tab, setTab] = useState<Tab>(initialTab), [unread, setUnread] = useState<number | null>(null), [chatUnread, setChatUnread] = useState(0);
   const tabs = useRef<Record<string, HTMLButtonElement | null>>({});
   useEffect(() => {
@@ -30,6 +32,14 @@ export default function CommunityPanel({ userId, projects, prefill }: { userId: 
   }, [userId]);
   const [seenPrefill, setSeenPrefill] = useState(prefill?.nonce ?? 0);
   if (prefill && prefill.nonce !== seenPrefill) { setSeenPrefill(prefill.nonce); setTab('feedback'); }
+  // A request from the bell picks the section (and the conversation); once taken, the parent forgets it, so coming
+  // back to the Community later does not jump again.
+  const [seenFocus, setSeenFocus] = useState(0), [chatFocus, setChatFocus] = useState<{ key: string; nonce: number } | null>(null);
+  if (focus && focus.nonce !== seenFocus) { setSeenFocus(focus.nonce); setTab(focus.tab); setChatFocus(focus.tab === 'chat' && focus.key ? { key: focus.key, nonce: focus.nonce } : null); }
+  useEffect(() => { if (focus) onFocusHandled?.(); }, [focus, onFocusHandled]);
+  // Reading here changes the counts: let the bell re-read its Community pane (not on the first render).
+  const countsSeen = useRef(false);
+  useEffect(() => { if (!countsSeen.current) { countsSeen.current = true; return; } window.dispatchEvent(new Event(COMMUNITY_CHANGED)); }, [unread, chatUnread]);
   const unreadCount = unread ?? access?.unreadMessages ?? 0;
   const available: { id: Tab; label: string; icon: typeof Inbox; count?: number }[] = [
     { id: 'feedback', label: 'Fale com a gestão', icon: MessageSquareHeart },
@@ -57,7 +67,7 @@ export default function CommunityPanel({ userId, projects, prefill }: { userId: 
     </div>
     <div role="tabpanel" id={`${id}-${tab}-panel`} aria-labelledby={`${id}-${tab}`} className={styles.tabPanel}>
       {tab === 'feedback' && <FeedbackForm key={prefill?.nonce ?? 0} projects={projects} events={access?.events ?? []} prefill={prefill} onOmbuds={() => setTab('ombuds')}/>}
-      {tab === 'chat' && <CommunityChat onUnreadChange={setChatUnread}/>}
+      {tab === 'chat' && <CommunityChat onUnreadChange={setChatUnread} focus={chatFocus}/>}
       {tab === 'messages' && <CommunityMessages onUnreadChange={setUnread}/>}
       {tab === 'storage' && access?.administration && <CommunityStorage/>}
       {tab === 'ombuds' && <OmbudsReporter/>}

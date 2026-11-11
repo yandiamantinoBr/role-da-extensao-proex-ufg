@@ -5,13 +5,16 @@ import { publicError } from '@/lib/errors';
 import { canManageFeedback } from '@/lib/feedback';
 import { canManageOmbudsDesignations, canReadOmbuds } from '@/lib/community/ombuds';
 import { unreadMessages } from '@/lib/community/messages';
+import { communityInbox } from '@/lib/community/inbox';
 import { requireActor, requireInternalMember } from '@/lib/community/shared';
 export const dynamic = 'force-dynamic';
 /** What the Community module may show to this person: management boxes and the events they can give feedback on. */
-export async function GET() {
+export async function GET(request: Request) {
   try {
     // No session refresh: opening the Community tab must not write anything about the account (ombuds lives here).
     const db = database(), actor = requireActor(await getActor(db, await getPortalUser({ refresh: false })));
+    // Bell pane: counts and conversation titles only (see lib/community/inbox.ts). Same read-only session rule.
+    if (new URL(request.url).searchParams.get('view') === 'inbox') { const inbox = Response.json(await communityInbox(db, actor)); inbox.headers.set('Cache-Control', 'private, no-store'); return inbox; }
     await requireInternalMember(db, actor);
     const read = projectAuthoritySql(actor, [], 'c.project_id');
     const events = await all(db, `SELECT c.id,c.name,c.project_id projectId,p.name projectName,c.starts_at startsAt FROM campaigns c JOIN projects p ON p.id=c.project_id

@@ -59,7 +59,7 @@ Riscos que o código não elimina (revisão independente de 09/11):
 - Cada lado pode ocultar a própria cópia. O bloqueio vale nos dois sentidos; recados de bloqueados somem da caixa e não contam como não lidos. Bloquear responde igual para contas inexistentes (até 500 bloqueios por pessoa).
 - Texto recusa controles de direção (bidi) que disfarçam o conteúdo. O limite diário é de 60 recados em 24 horas corridas.
 - Nem o texto nem o destinatário entram na impressão de idempotência (`mutation_keys`). Sem linha de auditoria. A anonimização apaga recados enviados e recebidos, bloqueios, preferências e selos.
-- Não lidos aparecem na aba "Recados". Ainda não entram no sino nem geram e-mail: a fila do MailApp é presa às demandas (`followup_email_queue.task_id NOT NULL`, com consentimento e cotas próprias); estender exige revisão do fluxo de avisos. Fica como próximo passo.
+- Não lidos aparecem na aba "Recados" e, desde 2026-11-11, no sino (ver "Comunidade no sino"). O aviso por e-mail veio na fase 3.
 
 ## Selos (arte provisória)
 
@@ -124,6 +124,17 @@ Resposta do Yan em 2026-11-09 (Decisões): "pode ser alguém designado pela Proe
 - Leitor de objetos local (`platform-node/env.ts`, `ObjectBucket.arrayBuffer`) pode devolver um buffer maior que o objeto no armazenamento em disco; o chat lê pelo `body`. Observação para quem mantém a plataforma.
 
 Limites conhecidos: a consulta a cada 8 s traz só mensagens novas (uma mensagem apagada some para os outros ao reabrir a conversa); a caixa de enviados da conta Google que manda os avisos registra quem recebeu aviso e quando.
+
+# Comunidade no sino (2026-11-11, sem migração)
+
+A central de notificações ganhou a aba **Comunidade**, só para quem tem o módulo. Sem ela, um recado só era visto por quem abrisse a Comunidade (o aviso por e-mail depende do script do Apps Script ainda não atualizado).
+
+- `GET /api/community?view=inbox` (`lib/community/inbox.ts`): quantos recados não lidos e quais conversas têm mensagens novas, com título e contagem. **Nunca o texto**, nem quem enviou o recado. Mesma regra de sessão da Comunidade (`refresh:false`) e mesmo acesso das conversas (`chatOverview`).
+- **Só leitura:** abrir o sino não marca nada como lido. Isso continua acontecendo ao abrir o recado ou a conversa.
+- Uma unidade só, a mensagem: o número no sino é a soma dos recados não lidos com as mensagens novas das conversas, igual à soma dos números mostrados em cada linha.
+- Clique: recados abrem Comunidade → Recados; uma conversa abre Comunidade → Conversas já com ela selecionada (`CommunityFocus`). Ler lá atualiza o sino (`COMMUNITY_CHANGED`).
+- Custo: uma consulta a mais ao carregar a página, ao voltar à janela (no máximo a cada 15 s) e ao abrir a aba.
+- Limite: o sino só existe para quem acompanha demandas (tem projeto ou administra). Quem tem a Comunidade sem isso continua vendo os contadores dentro da Comunidade.
 
 # Doca flutuante de widgets (migração 0043)
 
