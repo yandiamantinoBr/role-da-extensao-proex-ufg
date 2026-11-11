@@ -400,3 +400,14 @@ test('shifts of a dynamic still in draft appear, because the team plans before a
   assert.ok(!result.entries.some(entry => entry.sourceKind === 'campaign' && entry.sourceId === 'campaign-a'), 'o evento em rascunho continua fora');
   assert.ok(!(await calendar.calendarEntries(f.db, viewer, { range, category: 'projects' })).entries.some(entry => entry.sourceId.startsWith('shift-a')), 'quem é de outro projeto não vê');
 });
+
+test('the .ics describes a cancelled demand as "Cancelada" and a cancelled shift as "Cancelado"', async t => {
+  const f = workFixture(t), manager = await actor(f, 'manager');
+  f.sqlite.prepare("UPDATE followup_tasks SET status='cancelled' WHERE id='task-a'").run();
+  const { entries } = await calendar.calendarEntries(f.db, manager, { range });
+  const ics = calendar.serializeCalendar(entries).replace(/\r\n /g, '');
+  const block = uid => ics.split('BEGIN:VEVENT').find(part => part.includes(uid));
+  assert.match(block('deadline.task-a@'), /DESCRIPTION:Projeto A · Cancelada/);
+  assert.match(block('campaign-session.shift-a-3@'), /DESCRIPTION:Projeto A · Cancelado/);
+  assert.match(block('campaign-session.shift-a-2@'), /DESCRIPTION:Projeto A · A confirmar/);
+});

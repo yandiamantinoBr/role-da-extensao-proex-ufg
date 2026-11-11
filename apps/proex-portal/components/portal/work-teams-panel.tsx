@@ -27,6 +27,8 @@ type Props = {
  onTogglePin?: (teamId: string, pinned: boolean) => Promise<void>;
  /** Vindo do menu lateral (abrir equipe fixada) ou do empréstimo (criar equipe). O painel é remontado a cada pedido. */
  intent?: { kind: 'open' | 'new'; teamId?: string; organizationId?: string } | null;
+ /** Avisa qual equipe está aberta, para o menu lateral marcar a certa. */
+ onTeamShown?: (teamId: string) => void;
 };
 const stateIcons = { open: Circle, in_progress: CircleDot, blocked: PauseCircle, completed: CheckCircle2, cancelled: CircleX };
 const message = (cause: unknown) => cause instanceof Error ? cause.message : 'Não foi possível concluir. Tente novamente.';
@@ -62,7 +64,7 @@ function TeamForm({ team, people, organizationId, busy, onSave }: { team?: WorkT
  </form>;
 }
 
-export default function WorkTeamsPanel({ userId, defaultProjectId = '', organizations, projects, onChanged, onOpenDemand, canOpenAccess = false, pinnedTeamIds = [], onTogglePin, intent = null }: Props) {
+export default function WorkTeamsPanel({ userId, defaultProjectId = '', organizations, projects, onChanged, onOpenDemand, canOpenAccess = false, pinnedTeamIds = [], onTogglePin, intent = null, onTeamShown }: Props) {
  const initialProject = projects.find(project => project.id === defaultProjectId) ?? projects[0];
  // Um pedido vindo de fora escolhe a organização: abrir uma equipe fixada ou criar uma nova.
  const intentOrg = organizations.find(organization => organization.id === intent?.organizationId)
@@ -108,6 +110,9 @@ export default function WorkTeamsPanel({ userId, defaultProjectId = '', organiza
   const frame = requestAnimationFrame(() => { focusNextTeam.current = false; detailHeading.current?.focus({ preventScroll: true }); detailHeading.current?.scrollIntoView({ block: 'start', behavior: 'auto' }); });
   return () => cancelAnimationFrame(frame);
  }, [data]);
+
+ const shownTeamId = data?.selectedTeamId ?? '';
+ useEffect(() => { onTeamShown?.(shownTeamId); }, [shownTeamId, onTeamShown]);
 
  function invalidate() { generation.current++; exportRequest.current?.abort(); setExporting(false); setError(''); }
  function changeContext(org: string, project: string) { invalidate(); setOrganizationId(org); setProjectId(project); setTeamId(''); setStatus(''); setOffset(0); setEditor(null); }

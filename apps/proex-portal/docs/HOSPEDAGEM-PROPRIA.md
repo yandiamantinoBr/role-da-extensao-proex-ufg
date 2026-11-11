@@ -93,7 +93,7 @@ Na revisão local V9, novos envios de PDF, JPEG, PNG e WebP têm limite de **4 M
 ## Backup e recuperação
 
 - **Hospedagem atual, Vercel + Supabase**: durante uma gravação de instantâneo, o adaptador inclui uma versão em `proex.sqlite_history` se não houver outra nas últimas seis horas, mantendo até 60 dias. A cópia depende de uma gravação; não é um agendamento independente. Ela está no mesmo Supabase e não inclui uma cópia externa dos objetos privados. Exige estratégia de backup externo e restauração verificada.
-- **Saúde do serviço**: `/api/health` faz uma consulta ao banco; o cron configurado para essa rota verifica disponibilidade. Resposta bem-sucedida não cria backup, não exporta arquivos e não testa restauração.
+- **Saúde do serviço**: `/api/health` faz uma consulta ao banco; o cron configurado para essa rota verifica disponibilidade. Resposta bem-sucedida não cria backup, não exporta arquivos e não testa restauração. A mesma chamada remove as fotos de conversa com mais de 180 dias; em hospedagem própria, mantenha uma chamada diária a essa rota.
 - **Alternativa Cloudflare**: o workflow **Backup do banco do portal** agenda exportação do D1 e criptografa o SQL como `.sql.enc`, com retenção de 30 dias no GitHub. Ele depende de configuração própria; sem ela, pula exportação e geração de artefato. Resultado verde sem artefato não comprova backup e esse workflow não copia o Supabase nem o R2.
 - **Pelo portal e pela planilha**: a exportação portátil e a projeção Google ajudam na portabilidade dos dados permitidos, mas não são backup integral de credenciais e anexos. Uma sincronização verificada comprova aquela execução, não a existência de um gatilho ativo.
 

@@ -65,3 +65,11 @@ test('a request from a loan opens the new-team form directly, and a pinned team 
   assert.deepEqual(pins, [['team-x', true]]);
   assert.match(fromMenu.body(), /Comunicação fixada/);
 });
+
+test('the panel reports which team is shown, so the side menu marks the right pinned team', async () => {
+  const teams = [{ id: 'team-x', name: 'Comunicação', status: 'active', version: 1, isMine: true, members: [], counts }, { id: 'team-y', name: 'Logística', status: 'active', version: 1, isMine: true, members: [], counts }];
+  const shown = [];
+  const h = harness({ intent: { kind: 'open', teamId: 'team-x', organizationId: 'org-a' }, onTeamShown: id => shown.push(id) }, teams);
+  await h.settle();
+  assert.equal(shown.at(-1), 'team-x');
+});

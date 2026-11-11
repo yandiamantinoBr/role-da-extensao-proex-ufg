@@ -56,3 +56,20 @@ test('wrong project response and malformed issuance produce useful errors withou
 test('a permission failure on refresh hides the previous links and credentials',async()=>{
  const h=harness();try{await h.ready();h.toggle(true);assert.ok(h.node('a'));h.click('Atualizar lista');h.timers();await h.ready({error:'Acesso revogado.'},403);assert.match(h.body(),/Acesso revogado/);assert.equal(h.node('a'),undefined);assert.equal(h.node('details'),undefined);}finally{h.dispose();}
 });
+
+test('open conflicts are shown only to the sheet manager and one click marks each as resolved',async()=>{
+ const conflict={id:'conflict-a',entity_type:'items',entity_id:'item-a',reason:'item_changed',created_at:'2026-11-10T12:00:00Z'};
+ const viewer=harness();try{await viewer.ready({...response('project-a',false),conflicts:[conflict]});assert.ok(!viewer.body().includes('Marcar como resolvido'));}finally{viewer.dispose();}
+ const h=harness();try{
+  await h.ready({...response(),conflicts:[conflict,{...conflict,id:'conflict-b',entity_type:'stock.move',reason:'stock_unavailable'}]});
+  assert.match(h.body(),/2 edições da planilha não entraram no portal/);assert.match(h.body(),/Materiais: a linha mudou no portal/);assert.match(h.body(),/Movimento de estoque: não havia saldo/);
+  const pending=h.node('button',node=>text(node)==='Marcar como resolvido').props.onClick();
+  const sent=JSON.parse(h.requests.at(-1).init.body);assert.deepEqual(sent,{action:'conflict.resolve',id:'conflict-a'});assert.equal(h.requests.at(-1).init.headers['X-Proex-Action'],'1');
+  await h.ready({resolved:'conflict-a',resolvedAt:'2026-11-11T12:00:00Z'});await pending;h.render();
+  assert.match(h.body(),/1 edição da planilha não entrou no portal/);assert.ok(!h.body().includes('Materiais: a linha mudou'));assert.match(h.body(),/Conflito marcado como resolvido/);
+  const failing=h.node('button',node=>text(node)==='Marcar como resolvido').props.onClick();
+  await h.ready({error:'Este conflito já foi resolvido ou não é desta planilha. Atualize a lista.'},409);await failing;h.render();
+  assert.match(h.body(),/já foi resolvido/);assert.match(h.body(),/Movimento de estoque/);
+ }finally{h.dispose();}
+ assert.equal(h.exports.conflictLabel({entity_type:'desconhecido',reason:'x'}),'Edição da planilha: a edição não pôde ser aplicada');
+});

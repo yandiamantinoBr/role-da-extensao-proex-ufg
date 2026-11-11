@@ -44,8 +44,10 @@ export async function projectSheetStatus(db: D1Database, actor: PortalActor | nu
  const row = await connection(db, projectId);
  if(row&&await one(db,"SELECT 1 FROM settings WHERE name=? AND CASE WHEN json_valid(value) THEN json_extract(value,'$.spreadsheetId') END=?",[SYNC_CONFIGURATION_KEY,row.spreadsheet_id]))throw new HttpError(409,'O arquivo deste projeto coincide com a mestre. A administração deve corrigir os vínculos antes de continuar.','project_sheet_master_forbidden');
  const tokens = canManage && row ? await all(db, 'SELECT id,label,scope,connection_version,created_at,expires_at,revoked_at,last_used_at FROM project_sheet_tokens WHERE connection_id=? ORDER BY created_at DESC LIMIT 50', [row.id]) : [];
+ // Conflitos abertos só para quem administra a planilha: o motivo é um código curto, sem conteúdo da linha.
+ const conflicts = canManage && row ? await all(db, "SELECT id,entity_type,entity_id,expected_version,reason,created_at FROM project_sheet_conflicts WHERE connection_id=? AND status='open' ORDER BY created_at DESC LIMIT 100", [row.id]) : [];
  await requireProjectSheetAccess(db, current, projectId, canManage);
- return { projectId, canManage, connection: present(row), tokens, scriptUrl: PROJECT_SHEET_SCRIPT, notice: NOTICE };
+ return { projectId, canManage, connection: present(row), tokens, conflicts, scriptUrl: PROJECT_SHEET_SCRIPT, notice: NOTICE };
 }
 export async function configureProjectSheet(db: D1Database, actor: PortalActor | null, projectId: string, input: Record<string, unknown>) {
  const current = await requireProjectSheetAccess(db, actor, projectId, true);
@@ -83,6 +85,25 @@ export async function revokeProjectSheetToken(db: D1Database, actor: PortalActor
  const current=await requireProjectSheetAccess(db,actor,projectId,true),now=iso(),id=text(input.id,100);
  await db.batch([managerGuard(db,current,projectId), db.prepare('UPDATE project_sheet_tokens SET revoked_at=COALESCE(revoked_at,?) WHERE id=? AND connection_id IN(SELECT id FROM project_sheet_connections WHERE project_id=?)').bind(now,id,projectId), db.prepare("INSERT INTO audit(id,actor_id,project_id,action,entity_id,details,created_at) SELECT ?,?,?,'project_sheet.token.revoke',?,'{}',? WHERE changes()>0").bind(uid(),current.userId,projectId,id,now)]);
  return {id,revokedAt:now};
+}
+/**
+ * Marca um conflito da planilha deste projeto como resolvido, depois que a pessoa conferiu o
+ * valor oficial no portal. Não altera dado de negócio: só tira o aviso. Mesma regra da mestre
+ * (PR86), aplicada ao projeto: só quem administra a planilha (a guarda que cria e revoga as
+ * chaves), conferida de novo dentro do lote; uma vez só; com auditoria. A tabela não tem coluna
+ * de data de resolução: quem e quando ficam na auditoria.
+ */
+export async function resolveProjectSheetConflict(db: D1Database, actor: PortalActor | null, projectId: string, input: Record<string, unknown>) {
+ const current=await requireProjectSheetAccess(db,actor,projectId,true),id=input.id,now=iso();
+ if(typeof id!=='string'||!/^[A-Za-z0-9._:-]{1,200}$/.test(id))throw new HttpError(400,'Escolha um conflito válido.','project_sheet_invalid_conflict');
+ let results;
+ try { results=await db.batch([
+  managerGuard(db,current,projectId),
+  db.prepare("UPDATE project_sheet_conflicts SET status='resolved' WHERE id=? AND status='open' AND connection_id IN(SELECT id FROM project_sheet_connections WHERE project_id=?)").bind(id,projectId),
+  db.prepare("INSERT INTO audit(id,actor_id,project_id,action,entity_id,details,created_at) SELECT ?,?,?,'project_sheet.conflict.resolve',?,'{}',? WHERE changes()=1").bind(uid(),current.userId,projectId,id,now),
+ ]); } catch(error) { await requireProjectSheetAccess(db,current,projectId,true); throw error; }
+ if(!Number(results[1]?.meta?.changes))throw new HttpError(409,'Este conflito já foi resolvido ou não é desta planilha. Atualize a lista.','project_sheet_conflict_not_open');
+ return {resolved:id,resolvedAt:now};
 }
 /** Credential identity, workbook binding and live role are reevaluated inside domain transactions too. */
 export function projectSheetGuard(db: D1Database, principal: ProjectSheetPrincipal): D1PreparedStatement {
