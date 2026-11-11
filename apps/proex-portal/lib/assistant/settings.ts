@@ -129,17 +129,17 @@ export async function configureAssistant(db: D1Database, actor: PortalActor | nu
  const taskOwner = changedTasks.length ? platformOwnerAuthoritySql(current) : null;
  if (taskOwner) {
   const owner = taskOwner;
-  if (!await one(db, `SELECT 1 WHERE ${owner.sql}`, owner.values)) throw new HttpError(403, 'Só a administração geral escolhe modelos do catálogo para documentos, conferência e voz.', 'catalog_admin');
+  if (!await one(db, `SELECT 1 WHERE ${owner.sql}`, owner.values)) throw new HttpError(403, 'Só a administração geral escolhe os modelos de documentos, conferência e voz.', 'catalog_admin');
   const chosenTasks = changedTasks.filter(task => config[TASK_MODEL_KEY[task]]);
   // O catálogo também dá os nomes que o histórico mostra (o modelo que saiu e o que entrou).
   const taskCatalog = catalog ?? (await loadCatalog(db, organizationId)).catalog;
   for (const task of changedTasks) for (const modelId of [previousConfig[TASK_MODEL_KEY[task]], config[TASK_MODEL_KEY[task]]]) { const name = modelId ? catalogModelName(taskCatalog, modelId) : null; if (name) changedModelNames[modelId] = name.slice(0, 120); }
   for (const task of chosenTasks) {
    const model = taskCatalog.models.find(entry => entry.id === config[TASK_MODEL_KEY[task]] && entry.enabled), provider = taskCatalog.providers.find(entry => entry.id === model?.providerId);
-   if (!model) throw new HttpError(400, 'Escolha um modelo que exista e esteja ligado no catálogo.', 'assistant_model');
+   if (!model) throw new HttpError(400, 'Escolha um modelo que exista e esteja ligado na aba Modelos.', 'assistant_model');
    const unfit = fitsTask(model, provider, task);
    if (unfit || !provider) throw new HttpError(400, unfit ?? 'Provedor removido.', 'assistant_model');
-   if (!validProviderKey((credentials as Record<string, unknown>)[provider.keyRef] || previous[provider.keyRef])) throw new HttpError(400, 'Salve a chave do provedor deste modelo em Chaves e modelos antes de escolher.', 'assistant_credentials');
+   if (!validProviderKey((credentials as Record<string, unknown>)[provider.keyRef] || previous[provider.keyRef])) throw new HttpError(400, 'Falta a chave do serviço deste modelo. Cole a chave na aba Chaves e escolha o modelo de novo.', 'assistant_credentials');
   }
  }
  const roleTextKey = config.roleModel ? catalogKey(config.roleModel, 'chat') : !!credentials[config.roleProvider];

@@ -672,3 +672,19 @@ test('voz: sem modelo escolhido o aviso de troca de serviço é o de sempre; que
  await assert.rejects(transcribeSpeech(f.db, f.actors.inventory, speechInput({ expectedProvider: ROUTED_SPEECH }), secret, { fetcher: provider.fetch, keys }), said(fresh));
  assert.equal(provider.calls.length, 0, 'nada foi enviado');
 });
+
+// ---------------------------------------------------------------------------------------------
+// Recusas ao salvar o modelo por tarefa: o texto diz o que fazer, com os nomes das abas da tela.
+// ---------------------------------------------------------------------------------------------
+test('salvamento do modelo por tarefa: cada recusa diz o que fazer, sem citar catálogo nem provedor', async t => {
+ const f = fixture(t), local = organizationOwner(f), base = { jevEnabled: true, sttEnabled: true, documentEnabled: true };
+ for (const provider of ['deepseek', 'typesafe', 'deepgram', 'groq', 'openai']) await saveVault(f, provider);
+ await configure(f, base);
+ const refused = (status, errorCode, message) => error => error?.status === status && error.code === errorCode && error.message === message;
+ await assert.rejects(configure(f, { ...base, decisionModel: 'perplexity-decider-v1-2' }, local), refused(403, 'catalog_admin', 'Só a administração geral escolhe os modelos de documentos, conferência e voz.'));
+ await assert.rejects(configure(f, { ...base, decisionModel: 'Modelo Inválido!' }), refused(400, 'assistant_model', 'Escolha um modelo da aba Modelos para esta tarefa.'));
+ await assert.rejects(configure(f, { ...base, decisionModel: 'modelo-que-nao-existe' }), refused(400, 'assistant_model', 'Escolha um modelo que exista e esteja ligado na aba Modelos.'));
+ await assert.rejects(configure(f, { ...base, decisionModel: 'deepseek-flash' }), refused(400, 'assistant_model', 'Esse serviço não responde no formato de conferência (JEV).'));
+ await assert.rejects(configure(f, { ...base, decisionModel: 'perplexity-decider-v1-2' }), refused(400, 'assistant_credentials', 'Falta a chave do serviço deste modelo. Cole a chave na aba Chaves e escolha o modelo de novo.'));
+ assert.deepEqual(TASK_MODEL_KEYS.filter(taskKey => Object.hasOwn(storedConfig(f), taskKey)), [], 'nenhuma recusa gravou escolha');
+});

@@ -3,8 +3,9 @@
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { AudioLines, Boxes, Check, CircleDollarSign, KeyRound, ScanText, Settings2, ShieldCheck, Stethoscope, Users } from 'lucide-react';
-import { DEFAULT_ASSISTANT_CONFIG, TASK_MODEL_KEYS, validateConfig, type AssistantConfig, type TaskModelKey } from '@/lib/assistant/contracts';
-import { taskModelOptions, type RoutedTask } from '@/lib/assistant/model-catalog';
+import { DEFAULT_ASSISTANT_CONFIG, PROVIDERS, TASK_MODEL_KEYS, textModel, validateConfig, type AssistantConfig, type TaskModelKey } from '@/lib/assistant/contracts';
+import { taskDefaultIds, taskModelOptions, type RoutedTask, type TaskDefaults } from '@/lib/assistant/model-catalog';
+import { shownRouteName, speechRouteName } from '@/lib/assistant/role-contracts';
 import AssistantConnectionPanel from './assistant-connection-panel';
 import ModelCatalogPanel from './model-catalog-panel';
 import AiSpendingSlot from './ai-spending-slot';
@@ -13,10 +14,14 @@ import RoleSourcesPanel from './role-sources-panel';
 import { AI_LIMITS_EVENT, takeAiLimitsRequest } from './ai-limits-link';
 import styles from './credential-vault-panel.module.css';
 
-type Organization = { id: string; name: string; canConfigure: boolean; legacySttProvider?: 'groq' | 'deepgram'; usageIsMine?: boolean };
+/** `documentRouteName`, `decisionRouteName` e `sttRouteModel` só vêm com modelo escolhido e em condição de responder. */
+type Organization = { id: string; name: string; canConfigure: boolean; legacySttProvider?: 'groq' | 'deepgram'; usageIsMine?: boolean; documentRouteName?: unknown; decisionRouteName?: unknown; sttRouteModel?: { label: string; service: string } };
 type Status = { organizationId: string; canConfigure: boolean; canDelegate?: boolean; revision?: number; config?: AssistantConfig; organizations: Organization[]; candidates?: {userId:string;name:string}[]; grants?: {id:string;userId:string}[]; usage?: AiUsage };
 type TaskOptions = Record<RoutedTask, ReturnType<typeof taskModelOptions>>;
-// Chave da configuração que guarda o modelo escolhido para cada tarefa ('' = padrão de hoje).
+type TaskCatalog = Parameters<typeof taskModelOptions>[0];
+// Nome, na aba Modelos, do campo que faz o modelo servir para cada tarefa (Documento, Decisão, Voz para texto).
+const TASK_FIELD: Record<RoutedTask, string> = { document: 'documento', decision: 'decisão', speech: 'voz para texto' };
+// Chave da configuração que guarda o modelo escolhido para cada tarefa ('' = padrão do portal).
 const TASK_KEY: Record<RoutedTask, TaskModelKey> = { document: 'documentModel', decision: 'decisionModel', speech: 'speechModel' };
 type Props = { canManageKeys?: boolean; refreshKey?: number; onChanged?: () => void; renderCredentials?: (organizationId: string, configurationBusy: boolean) => ReactNode };
 class AdminError extends Error { constructor(readonly status: number, message: string) { super(message); } }
@@ -62,23 +67,32 @@ export default function AssistantAdministrationPanel({ canManageKeys=false, refr
     const frame = window.requestAnimationFrame(() => { const target = document.getElementById('ai-limits'); if (!target) return; setRevealLimits(false); target.scrollIntoView({ block:'start', behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); target.querySelector('summary')?.focus({ preventScroll:true }); });
     return () => window.cancelAnimationFrame(frame);
   }, [revealLimits,status,view]);
-  // Catalog models for the Rolê selects, loaded only when a select is opened (administração geral only).
+  // Modelos do catálogo para os seletores (só administração geral). A lista é lida ao abrir Funções e acesso;
+  // focar ou tocar num seletor também lê, se ainda não leu.
   const optionsFor = useRef('');
   const [taskOptions,setTaskOptions] = useState<TaskOptions>({ document: [], decision: [], speech: [] });
+  const [taskCatalog,setTaskCatalog] = useState<TaskCatalog|null>(null);
+  // Situação da leitura da lista para a organização em tela: lendo, pronta ou com falha (aí aparece "Tentar de novo").
+  const [optionsState,setOptionsState] = useState<{scope:string;state:'loading'|'ready'|'failed'}|null>(null);
   function loadRoleOptions() {
     if (!canManageKeys || !selection || optionsFor.current === selection) return;
-    optionsFor.current = selection;
-    fetch(`/api/assistant/catalog?organizationId=${encodeURIComponent(selection)}`, { cache:'no-store', credentials:'same-origin', redirect:'error' })
-      .then(response => response.ok ? response.json() as Promise<unknown> : null)
+    const scope = selection; optionsFor.current = scope; setOptionsState({ scope, state:'loading' });
+    fetch(`/api/assistant/catalog?organizationId=${encodeURIComponent(scope)}`, { cache:'no-store', credentials:'same-origin', redirect:'error' })
+      .then(response => { if (!response.ok) throw new Error('catalog'); return response.json() as Promise<unknown>; })
       .then((raw: unknown) => { const data = raw as { catalog?: { providers: { id:string; kind:string; hasKey:boolean }[]; models: { id:string; label:string; providerId:string; capabilities:string[]; enabled:boolean }[] } } | null;
-        if (!active.current || !data?.catalog) return;
+        if (!data?.catalog) throw new Error('catalog');
+        if (!active.current || optionsFor.current !== scope) return;
         const providers = new Map(data.catalog.providers.map(provider => [provider.id, provider]));
         setRoleOptions(data.catalog.models.filter(model => model.enabled && model.capabilities.includes('text') && ['openai_chat','anthropic_messages'].includes(providers.get(model.providerId)?.kind ?? '')).map(model => ({ id:model.id, label:model.label, vision:model.capabilities.includes('vision'), hasKey:!!providers.get(model.providerId)?.hasKey })));
         // Mesma regra do servidor (fitsTask): só entra modelo ligado, com preço e que sirva para a tarefa.
-        const catalog = data.catalog as unknown as Parameters<typeof taskModelOptions>[0];
+        const catalog = data.catalog as unknown as TaskCatalog;
         setTaskOptions({ document: taskModelOptions(catalog,'document'), decision: taskModelOptions(catalog,'decision'), speech: taskModelOptions(catalog,'speech') });
-      }).catch(() => { optionsFor.current = ''; });
+        setTaskCatalog(catalog); setOptionsState({ scope, state:'ready' });
+      }).catch(() => { if (optionsFor.current !== scope) return; optionsFor.current = ''; if (active.current) setOptionsState({ scope, state:'failed' }); });
   }
+  function retryRoleOptions() { optionsFor.current = ''; loadRoleOptions(); }
+  // A lista é lida ao abrir a parte de funções (não só ao tocar no seletor), para a tela já mostrar o nome do modelo salvo.
+  useEffect(() => { if (view==='functions') loadRoleOptions(); }, [view,selection,canManageKeys]); // eslint-disable-line react-hooks/exhaustive-deps
   function selectOrganization(value: string) { mutation.current?.abort(); ++epoch.current; ++mutationEpoch.current; setSelection(value); setData(null); setFailure(''); setNotice(''); setDelegateId(''); setBusy(false); }
   // Só a administração geral escolhe o modelo de cada tarefa. As outras pessoas não mandam essas chaves: o servidor mantém o que já estava salvo.
   const sentConfig = (value: AssistantConfig) => canManageKeys ? value : Object.fromEntries(Object.entries(value).filter(([key]) => !(TASK_MODEL_KEYS as readonly string[]).includes(key)));
@@ -97,9 +111,36 @@ export default function AssistantAdministrationPanel({ canManageKeys=false, refr
     } finally { if (active.current&&!controller.signal.aborted&&request===mutationEpoch.current) setBusy(false); }
   }
   const organizations=status?.organizations.filter(org=>org.canConfigure)??[];
-  // Seletor de modelo por tarefa, no mesmo padrão do "Modelo do Rolê": lista carregada ao focar ou tocar, aviso de chave e o valor salvo sempre visível.
-  const taskSelect = (task: RoutedTask, label: string) => { const key = TASK_KEY[task], saved = config[key], options = taskOptions[task]; return <label className="p-field"><span>{label}</span><select onFocus={loadRoleOptions} onPointerDown={loadRoleOptions} disabled={busy} value={saved} onChange={event=>setConfig({...config,[key]:event.target.value})}><option value="">Padrão de hoje</option>{saved&&!options.some(option=>option.id===saved)&&<option value={saved}>{saved}</option>}{options.map(option=><option key={option.id} value={option.id}>{option.label}{option.hasKey?'':' (sem chave)'}</option>)}</select></label>; };
   const provider=config.sttProvider==='groq'||config.sttProvider==='deepgram'?config.sttProvider:status?.organizations.find(org=>org.id===selection)?.legacySttProvider??'deepgram';
+  const organization=status?.organizations.find(org=>org.id===selection), textService=config.textProvider==='openai'?'OpenAI':'DeepSeek';
+  // Seletor de modelo por tarefa: a primeira opção diz qual é o padrão do portal; modelo sem chave não pode ser escolhido; o código do modelo nunca aparece cru.
+  const listState = canManageKeys && optionsState?.scope===selection ? optionsState.state : 'loading';
+  const taskDefaults: TaskDefaults = { textKeyRef: config.textProvider, textModel: textModel(config).model, decisionEndpoint: PROVIDERS.typesafe.endpoint, decisionModel: config.jevModel, speech: provider };
+  const TASK_STANDARD: Record<RoutedTask, string> = { document: textService, decision: 'JEV, da TypeSafe', speech: provider==='groq'?'Groq':'Deepgram' };
+  // O modelo da lista que é o próprio padrão não aparece duas vezes (a não ser que seja o que está salvo).
+  const taskChoices = (task: RoutedTask) => { const saved = config[TASK_KEY[task]], standard = taskCatalog ? taskDefaultIds(taskCatalog, task, taskDefaults) : []; return listState==='ready' ? taskOptions[task].filter(option => option.id===saved || !standard.includes(option.id)) : []; };
+  // Nome do modelo escolhido para a tarefa, quando a tela sabe: pela lista lida ou, para o que está salvo e em condição de responder, pelo estado.
+  const taskModelName = (task: RoutedTask): string => {
+    const key = TASK_KEY[task], id = config[key];
+    if (!id) return '';
+    const listed = listState==='ready' && canManageKeys ? taskOptions[task].find(option => option.id===id)?.label : undefined;
+    if (listed) return listed;
+    if (status?.config?.[key] !== id) return '';
+    return task==='document' ? shownRouteName(organization?.documentRouteName) : task==='decision' ? shownRouteName(organization?.decisionRouteName) : organization?.sttRouteModel ? speechRouteName(organization.sttRouteModel) : '';
+  };
+  const taskSelect = (task: RoutedTask, label: string) => {
+    const key = TASK_KEY[task], saved = config[key], loading = listState==='loading', options = taskChoices(task);
+    return <label className="p-field"><span>{label}</span><select onFocus={loadRoleOptions} onPointerDown={loadRoleOptions} disabled={busy||loading} value={saved} onChange={event=>setConfig({...config,[key]:event.target.value})}>
+      {loading&&<option value={saved}>Carregando modelos…</option>}
+      {!loading&&<option value="">Padrão do portal ({TASK_STANDARD[task]})</option>}
+      {!loading&&saved&&!options.some(option=>option.id===saved)&&<option value={saved}>{listState==='ready'?'Modelo fora da lista (escolha outro)':taskModelName(task)||'Modelo escolhido'}</option>}
+      {!loading&&options.map(option=><option key={option.id} value={option.id} disabled={!option.hasKey}>{option.label}{option.hasKey?'':' (falta a chave)'}</option>)}
+    </select></label>;
+  };
+  const taskEmpty = (task: RoutedTask) => listState==='ready'&&!taskChoices(task).length&&<p className="p-form-help">Nenhum modelo da aba Modelos serve para esta tarefa ainda. Para aparecer aqui, o modelo precisa estar ligado, ter preço e servir para {TASK_FIELD[task]}.</p>;
+  const taskListFailed = listState==='failed'&&<p className="p-form-help" role="status">Não foi possível carregar a lista de modelos. <button type="button" className="p-button p-button-subtle" disabled={busy} onClick={retryRoleOptions}>Tentar de novo</button></p>;
+  // Quem configura sem ser a administração geral não escolhe o modelo: vê só o nome, quando a tela sabe.
+  const taskReadOnly = (task: RoutedTask) => { const name = canManageKeys ? '' : taskModelName(task); return name ? <p className="p-form-help">Modelo definido pela administração geral: {name}.</p> : null; };
   return <div className={styles.panel}>
     <p className={styles.lead}>{canManageKeys?'Três passos: cole e teste a chave, ligue só o que for usar e defina o limite por dia.':'Ajuste o uso, as funções e os limites autorizados. O cadastro de chaves fica com a administração geral.'}</p>
     {status?.canConfigure&&status.config?.testMode&&<p className={styles.note} role="status"><strong>Modo de testes ligado:</strong> os limites de IA estão altos até alguém desligar em Funções e acesso → Limites e cotas.</p>}
@@ -138,12 +179,12 @@ export default function AssistantAdministrationPanel({ canManageKeys=false, refr
         <label className="p-field"><span>Serviço de IA para operações e documentos</span><select disabled={busy} value={config.textProvider} onChange={event=>setConfig({...config,textProvider:event.target.value as AssistantConfig['textProvider'],enabled:false,documentEnabled:false})}><option value="deepseek">DeepSeek Flash</option><option value="openai">OpenAI · GPT-5.6 Luna</option></select></label>
         <p className="p-form-help">Se trocar o serviço, as funções abaixo ficam desligadas até você confirmar de novo. {config.textProvider==='openai'?'OpenAI: preço de referência de US$ 0,20 por milhão de tokens de entrada e US$ 1,20 de saída; a reserva preventiva considera US$ 0,25 na entrada. O modelo é um alias e pode mudar no provedor.':''}</p>
         <label className={styles.confirm}><input type="checkbox" disabled={busy} checked={config.enabled} onChange={event=>setConfig({...config,enabled:event.target.checked})}/><span><strong>Pedidos de operações · {config.textProvider==='openai'?'OpenAI':'DeepSeek Flash'}</strong><small>Prepara consultas e propostas; uma pessoa confere antes de aplicar.</small></span></label>
-        <label className={styles.confirm}><input type="checkbox" disabled={busy} checked={config.documentEnabled} onChange={event=>setConfig({...config,documentEnabled:event.target.checked})}/><span><strong>Interpretação de documentos</strong><small>{config.documentModel?`O modelo escolhido extrai campos autorizados (ou ${config.textProvider==='openai'?'OpenAI':'DeepSeek'}, se ele não puder responder)`:`${config.textProvider==='openai'?'OpenAI':'DeepSeek'} extrai campos autorizados`}; cada documento precisa de consentimento e revisão.</small></span></label>
-        <label className={styles.confirm}><input type="checkbox" disabled={busy} checked={config.jevEnabled} onChange={event=>setConfig({...config,jevEnabled:event.target.checked})}/><span><strong>Conferência e triagem de demandas</strong><small>{config.decisionModel?'O modelo escolhido sugere decisões dentro do contrato (ou a TypeSafe, se ele não puder responder).':'TypeSafe sugere decisões dentro do contrato.'} Em caso de dúvida, a decisão fica manual.</small></span></label>
-        {canManageKeys&&<>{taskSelect('document','Modelo para ler documentos')}{taskSelect('decision','Modelo para conferir e triar')}<p className="p-form-help">As opções vêm da aba Modelos. Quando o modelo escolhido não puder responder, o portal usa o padrão de hoje e registra o motivo no histórico.</p></>}
+        <label className={styles.confirm}><input type="checkbox" disabled={busy} checked={config.documentEnabled} onChange={event=>setConfig({...config,documentEnabled:event.target.checked})}/><span><strong>Interpretação de documentos</strong><small>{config.documentModel?`${taskModelName('document')||'O modelo escolhido'} extrai campos autorizados (ou ${textService}, se ele não puder responder)`:`${config.textProvider==='openai'?'OpenAI':'DeepSeek'} extrai campos autorizados`}; cada documento precisa de consentimento e revisão.</small></span></label>{taskReadOnly('document')}
+        <label className={styles.confirm}><input type="checkbox" disabled={busy} checked={config.jevEnabled} onChange={event=>setConfig({...config,jevEnabled:event.target.checked})}/><span><strong>Conferência e triagem de demandas</strong><small>{config.decisionModel?`${taskModelName('decision')||'O modelo escolhido'} sugere decisões dentro do contrato (ou a TypeSafe, se ele não puder responder).`:'TypeSafe sugere decisões dentro do contrato.'} Em caso de dúvida, a decisão fica manual.</small></span></label>{taskReadOnly('decision')}
+        {canManageKeys&&<>{taskSelect('document','Modelo para ler documentos')}{taskEmpty('document')}{taskSelect('decision','Modelo para conferir e triar')}{taskEmpty('decision')}<p className="p-form-help">As opções vêm da aba Modelos. Se o modelo escolhido não puder responder, o portal usa o padrão e registra o motivo no histórico.</p>{taskListFailed}</>}
         <div className={styles.voice}><div className={styles.heading}><AudioLines size={20} aria-hidden="true"/><h4>Transcrição de áudio</h4></div><label className="p-field"><span>Provedor de transcrição</span><select disabled={busy} value={config.sttProvider??'legacy'} onChange={event=>setConfig({...config,sttProvider:event.target.value as AssistantConfig['sttProvider'],sttEnabled:false})}><option value="legacy">Manter configuração anterior</option><option value="groq">Groq · Whisper Large V3 Turbo</option><option value="deepgram">Deepgram · Nova-3</option></select></label>
-          <label className={styles.confirm}><input type="checkbox" disabled={busy} checked={config.sttEnabled} onChange={event=>setConfig({...config,sttEnabled:event.target.checked})}/><span>Habilitar transcrição {provider==='groq'?'Groq':'Deepgram'} em português</span></label><p className="p-form-help">Trocar o provedor desmarca a função para nova confirmação. O texto transcrito só é usado depois de revisado. {provider==='groq'?'Reserva estimada de US$ 0,04 por hora, com mínimo de 10 segundos por envio. A faixa gratuita depende da conta Groq.':'O custo e a autorização de transcrição dependem da conta Deepgram.'}</p>
-          {canManageKeys&&<>{taskSelect('speech','Modelo para transcrever voz')}<p className="p-form-help">O áudio vai só para o serviço nomeado no aviso de gravação. Se o modelo escolhido não puder receber o áudio, o portal usa o padrão de hoje e registra o motivo no histórico.</p></>}
+          <label className={styles.confirm}><input type="checkbox" disabled={busy} checked={config.sttEnabled} onChange={event=>setConfig({...config,sttEnabled:event.target.checked})}/><span>{config.speechModel?'Habilitar transcrição de voz em português':`Habilitar transcrição ${provider==='groq'?'Groq':'Deepgram'} em português`}</span></label><p className="p-form-help">Trocar o provedor desmarca a função para nova confirmação. O texto transcrito só é usado depois de revisado. {config.speechModel?'O custo segue o preço por hora do modelo escolhido abaixo. Quem grava vê o custo máximo antes de enviar.':provider==='groq'?'Reserva estimada de US$ 0,04 por hora, com mínimo de 10 segundos por envio. A faixa gratuita depende da conta Groq.':'O custo e a autorização de transcrição dependem da conta Deepgram.'}</p>{taskReadOnly('speech')}
+          {canManageKeys&&<>{taskSelect('speech','Modelo para transcrever voz')}{taskEmpty('speech')}<p className="p-form-help">O áudio vai só para o serviço nomeado no aviso de gravação.</p>{taskListFailed}</>}
         </div>
       </section>
       {status.config&&<AiLimitsSection config={config} saved={status.config} usage={status.usage} busy={busy} open={limitsOpen} onOpenChange={setLimitsOpen} onChange={setConfig} onTestMode={on=>void save('configure',undefined,{...status.config!,testMode:on})}/>}<div className={styles.actions}><button type="button" disabled={busy} className="p-button p-button-primary" onClick={()=>void save('configure')}><Check size={18} aria-hidden="true"/>{busy?'Salvando…':'Salvar funções, acesso e limites'}</button></div>

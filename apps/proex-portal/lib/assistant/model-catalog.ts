@@ -189,7 +189,7 @@ export function fitsTask(model: CatalogModel, provider: CatalogProvider | undefi
     return null;
   }
   if (task === 'decision') {
-    if (provider.kind !== 'typesafe') return 'Esse provedor não usa o formato de decisão (JEV).';
+    if (provider.kind !== 'typesafe') return 'Esse serviço não responde no formato de conferência (JEV).';
     if (!model.capabilities.includes('decision')) return 'Este modelo não está marcado para decisão.';
     if (!(model.price.inputPerM > 0)) return 'Falta o preço de entrada deste modelo.';
     return null;
@@ -210,6 +210,30 @@ export function taskModelOptions(catalog: { providers: (CatalogProvider & { hasK
   return catalog.models.flatMap(model => {
     const provider = catalog.providers.find(entry => entry.id === model.providerId);
     return model.enabled && provider && !fitsTask(model, provider, task) ? [{ id: model.id, label: model.label, hasKey: Boolean(provider.hasKey) }] : [];
+  });
+}
+
+/** O que define o padrão do portal em cada tarefa, para reconhecer no catálogo o modelo que é o próprio padrão. */
+export type TaskDefaults = { textKeyRef: string; textModel: string; decisionEndpoint: string; decisionModel: string; speech?: 'deepgram' | 'groq' };
+const GROQ_BASE = 'https://api.groq.com/openai/v1', GROQ_SPEECH_MODEL = 'whisper-large-v3-turbo';
+/**
+ * O modelo aponta para o mesmo destino do padrão da tarefa? É a mesma regra no servidor (que então segue o
+ * caminho de sempre, sem rota) e nos seletores (que não repetem o padrão na lista). `baseUrl` já validado.
+ */
+export function isTaskDefault(provider: Pick<CatalogProvider, 'kind' | 'keyRef'>, model: Pick<CatalogModel, 'model'>, baseUrl: string, task: RoutedTask, defaults: TaskDefaults): boolean {
+  if (task === 'document') return provider.keyRef === defaults.textKeyRef && model.model === defaults.textModel;
+  if (task === 'decision') return provider.keyRef === 'typesafe' && `${baseUrl}/systemone` === defaults.decisionEndpoint && model.model === defaults.decisionModel;
+  if (defaults.speech === 'groq') return provider.keyRef === 'groq' && baseUrl === GROQ_BASE && model.model === GROQ_SPEECH_MODEL;
+  return defaults.speech === 'deepgram' && provider.kind === 'speech' && provider.keyRef === 'deepgram';
+}
+/** Ids dos modelos do catálogo que são o próprio padrão da tarefa (para o seletor não oferecer o padrão duas vezes). */
+export function taskDefaultIds(catalog: { providers: CatalogProvider[]; models: CatalogModel[] }, task: RoutedTask, defaults: TaskDefaults): string[] {
+  return catalog.models.flatMap(model => {
+    const provider = catalog.providers.find(entry => entry.id === model.providerId);
+    if (!provider) return [];
+    let baseUrl: string;
+    try { baseUrl = safeBaseUrl(provider.baseUrl); } catch { return []; }
+    return isTaskDefault(provider, model, baseUrl, task, defaults) ? [model.id] : [];
   });
 }
 

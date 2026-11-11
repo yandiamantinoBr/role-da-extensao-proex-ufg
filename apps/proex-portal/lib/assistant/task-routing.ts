@@ -11,7 +11,7 @@ import { all } from '../database';
 import { HttpError } from '../errors';
 import { PROVIDERS, textModel, type AssistantConfig, type TaskModelKey } from './contracts';
 import { firstJsonObject, genericChat, RefusedError } from './generic-provider';
-import { catalogModelName, fitsTask, safeBaseUrl, type CatalogModel, type CatalogProvider, type RoutedTask } from './model-catalog';
+import { catalogModelName, fitsTask, isTaskDefault, safeBaseUrl, type CatalogModel, type CatalogProvider, type RoutedTask } from './model-catalog';
 import { loadCatalog } from './model-catalog-store';
 import { taskRouteLabel, type SpeechRouteModel } from './role-contracts';
 
@@ -26,14 +26,10 @@ export type DefaultSpeech = 'deepgram' | 'groq';
 
 /** Same rule as settings.validProviderKey (kept local to avoid an import cycle). */
 const validProviderKey = (value: unknown): value is string => typeof value === 'string' && value.length >= 12 && value.length <= 512 && !/\s|[\u0000-\u001f]/u.test(value);
-const GROQ_BASE = 'https://api.groq.com/openai/v1', GROQ_SPEECH_MODEL = 'whisper-large-v3-turbo';
 
-/** O modelo escolhido aponta para o mesmo destino do padrão? Então vale o caminho de hoje, sem rota. */
+/** O modelo escolhido aponta para o mesmo destino do padrão? Então vale o caminho de hoje, sem rota. (Regra em model-catalog.isTaskDefault, a mesma dos seletores.) */
 function sameAsDefault(config: AssistantConfig, provider: CatalogProvider, model: CatalogModel, baseUrl: string, task: RoutedTask, defaultSpeech?: DefaultSpeech) {
-  if (task === 'document') return provider.keyRef === config.textProvider && model.model === textModel(config).model;
-  if (task === 'decision') return provider.keyRef === 'typesafe' && `${baseUrl}/systemone` === PROVIDERS.typesafe.endpoint && model.model === config.jevModel;
-  if (defaultSpeech === 'groq') return provider.keyRef === 'groq' && baseUrl === GROQ_BASE && model.model === GROQ_SPEECH_MODEL;
-  return defaultSpeech === 'deepgram' && provider.kind === 'speech' && provider.keyRef === 'deepgram';
+  return isTaskDefault(provider, model, baseUrl, task, { textKeyRef: config.textProvider, textModel: textModel(config).model, decisionEndpoint: PROVIDERS.typesafe.endpoint, decisionModel: config.jevModel, speech: defaultSpeech });
 }
 
 /**
