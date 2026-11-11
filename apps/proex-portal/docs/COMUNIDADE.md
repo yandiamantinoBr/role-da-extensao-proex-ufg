@@ -89,7 +89,7 @@ Premissas combinadas com a sessão coordenadora em 2026-11-09, para avançar sem
 - **Ler nunca grava.** A tela consulta novas mensagens a cada 8 segundos só com a página visível; marcar como lido é um pedido explícito, feito só quando há mensagem nova de outra pessoa. Isso evita regravar o instantâneo do banco a cada consulta.
 - Texto até 2.000 caracteres, com emoji; 300 mensagens por pessoa em 24 h. Cada pessoa apaga as próprias mensagens (a imagem é removida do armazenamento na hora).
 - **Imagens:** o navegador reduz para até 1.600 px e recodifica (WebP ou JPEG), o que remove EXIF/GPS e mantém a orientação. O servidor confere o tipo real pelos primeiros bytes (JPEG, PNG, WebP; recusa GIF e HEIC) e **recusa** imagem com EXIF/XMP. Até 1,5 MB por arquivo, 20 por pessoa em 24 h e 150 MB ativos por organização. Servidas só a quem lê a conversa, com `nosniff`, `sandbox` e cache privado de 1 hora.
-- **Prazo de 180 dias:** depois disso a imagem deixa de ser servida e é removida em lotes de 10, a cada envio de imagem. A mensagem mostra "Foto removida após 180 dias".
+- **Prazo de 180 dias:** depois disso a imagem deixa de ser servida e é removida. A rotina diária (`/api/health`, 11:00 UTC) limpa todas as vencidas em lotes (`scheduledChatMediaPurge`, até 200 por execução, no máximo uma vez por hora por instância); cada envio de imagem ou mensagem também limpa um lote pequeno. A mensagem mostra "Foto removida após 180 dias".
 - A anonimização apaga o texto das mensagens da pessoa, agenda a remoção das imagens dela (`private_object_deletions`) e limpa leituras e fila de e-mail.
 
 ## Espaço do banco
@@ -123,7 +123,7 @@ Resposta do Yan em 2026-11-09 (Decisões): "pode ser alguém designado pela Proe
 - Imagens: largura e altura lidas do cabeçalho; mais de 1.600 px de um lado é recusado. A linha é gravada antes do objeto; se o armazenamento falhar, a linha fica apagada (sem arquivo órfão). A limpeza só marca como apagada depois de remover o arquivo e roda também a cada mensagem enviada. Cache da imagem: 60 s. O corpo do envio é lido com teto, mesmo se o cabeçalho de tamanho mentir.
 - Leitor de objetos local (`platform-node/env.ts`, `ObjectBucket.arrayBuffer`) pode devolver um buffer maior que o objeto no armazenamento em disco; o chat lê pelo `body`. Observação para quem mantém a plataforma.
 
-Limites conhecidos: a limpeza dos 180 dias depende de uso (envios de imagem ou mensagem), não de uma rotina agendada; a consulta a cada 8 s traz só mensagens novas (uma mensagem apagada some para os outros ao reabrir a conversa); a caixa de enviados da conta Google que manda os avisos registra quem recebeu aviso e quando.
+Limites conhecidos: a consulta a cada 8 s traz só mensagens novas (uma mensagem apagada some para os outros ao reabrir a conversa); a caixa de enviados da conta Google que manda os avisos registra quem recebeu aviso e quando.
 
 # Doca flutuante de widgets (migração 0043)
 

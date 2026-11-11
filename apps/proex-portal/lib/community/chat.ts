@@ -262,6 +262,25 @@ export async function purgeExpiredChatMedia(db: D1Database, store: MediaStore, l
   return removed;
 }
 
+/*
+ * Daily routine (called from the health cron): clears every expired image in bounded batches, so the 180 days
+ * hold even when nobody is using the chat. The health route is public, so a per-instance brake keeps repeated
+ * calls cheap; with nothing expired it is two small reads and no write.
+ */
+export const SCHEDULED_PURGE_BATCH = 25, SCHEDULED_PURGE_MAX_BATCHES = 8, SCHEDULED_PURGE_MIN_INTERVAL_MS = 60 * 60 * 1000;
+let lastScheduledPurge = 0;
+export async function scheduledChatMediaPurge(db: D1Database, store: MediaStore, clock = Date.now()) {
+  if (lastScheduledPurge && clock - lastScheduledPurge < SCHEDULED_PURGE_MIN_INTERVAL_MS) return { ran: false, removed: 0 };
+  lastScheduledPurge = clock;
+  let removed = 0;
+  for (let batch = 0; batch < SCHEDULED_PURGE_MAX_BATCHES; batch++) {
+    const count = await purgeExpiredChatMedia(db, store, SCHEDULED_PURGE_BATCH, new Date(clock).toISOString());
+    removed += count;
+    if (count < SCHEDULED_PURGE_BATCH) break; // nothing left, or a removal failed: the rest waits for the next run
+  }
+  return { ran: true, removed };
+}
+
 /** Space report for the administration: hosting database size (when measurable) and chat image totals. */
 export async function communityStorageReport(db: D1Database, rawActor: PortalActor | null) {
   const actor = requireActor(rawActor);
