@@ -131,9 +131,31 @@ test('project sheet and old top panel mount the same responsibility form for the
   assert.equal(await none.load({...props, areas: []}), null);
   assert.equal(requests.length, before);
 
-  // A ficha mostra cada área a quem já abre o módulo dela; o painel do topo continua no lugar até a conferência da auditoria.
+  // A ficha mostra cada área a quem já abre o módulo dela.
   const client = source('../app/portal-client.tsx');
   assert.match(client, /\['materials', \['inventory\.read', 'inventory\.manage', 'inventory\.deliver'\]\], \['loans', \['loans\.read', 'loans\.manage', 'loans\.checkout'\]\], \['campaigns', \['campaigns\.manage', 'participation\.operate', 'inventory\.deliver'\]\]/);
   assert.match(client, /renderAreaOwners=\{areaOwners\}/);
-  assert.match(client, /\(\['materials','loans','events'\] as string\[\]\)\.includes\(tab\) && workContext\(/, 'retirada do painel do topo fica para depois da conferência');
+});
+
+test('the top panel left Materiais, Empréstimos and Dinâmicas; the way to owners and shortcuts stays one tap away (R4, etapa 2)', () => {
+  const client = source('../app/portal-client.tsx');
+  // O painel não é mais montado no topo dos módulos (nem a cópia escondida do celular); fichas e cartões continuam com ele.
+  assert.ok(!/includes\(tab\) && workContext\(/.test(client), 'sem painel no topo dos módulos');
+  for (const call of ["workContext(projectId,'projects')", "'loans',{loanId:string(l.id)}", "'campaigns',{campaignId:string(c.id)}"]) assert.ok(client.includes(call), call);
+  // No lugar, uma linha só quando há projeto escolhido, levando à ficha onde está "Quem cuida de cada área".
+  const line = client.match(/\{\(\['materials','loans','events'\] as string\[\]\)\.includes\(tab\) && filter && <p className="p-area-owners-link">(.*?)<\/p>\}/s)?.[1];
+  assert.ok(line, 'linha de caminho para a ficha');
+  assert.match(line, /<span>Quem cuida \{tab === 'materials' \? 'do estoque' : tab === 'loans' \? 'dos empréstimos' : 'das dinâmicas'\}:<\/span>/);
+  assert.match(line, /href=\{`\/\?module=projects&project=\$\{encodeURIComponent\(filter\)\}&detailProject=\$\{encodeURIComponent\(filter\)\}`\} aria-label=\{`Ver quem cuida .*? na ficha do projeto`\}>ficha do projeto</);
+  // A linha é baixa para não empurrar a lista no celular, mas o link mantém 44 px de área de toque.
+  assert.match(source('../app/globals.css'), /\.p-area-owners-link>a::after\{content:"";position:absolute;inset:-14px -10px\}/);
+  // Os atalhos que estavam no painel: "Demandas" e "Meu trabalho" na ficha do projeto, já com o projeto escolhido.
+  assert.match(client, /shortcutModules=\{allowedTabs\.map\(module => module\.id\)\.filter\(id => id === 'my-work' \|\| id === 'demands' \|\| id === 'calendar'\)\}/);
+  const detail = source('../components/portal/project-detail.tsx');
+  assert.match(detail, /shortcuts\.includes\('my-work'\) && <a className="p-button p-button-subtle" href=\{`\/\?module=my-work&project=\$\{encodeURIComponent\(project\.id\)\}`\}>.*?Meu trabalho<\/a>/);
+  assert.match(detail, /shortcuts\.includes\('demands'\) && <a className="p-button p-button-subtle" href=\{`\/\?module=demands&project=/);
+  // O painel de contexto ficou só com a forma compacta: uma montagem, uma consulta.
+  const panel = source('../components/portal/work-context-panel.tsx');
+  assert.ok(!/wideOnly|narrowOnly|Acompanhamento deste contexto/.test(panel + source('../components/portal/work-context-panel.module.css')));
+  assert.equal(panel.match(/<ResponsibilityManager /g).length, 1);
 });

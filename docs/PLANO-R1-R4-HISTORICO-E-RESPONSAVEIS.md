@@ -13,8 +13,8 @@ Pronto em ramo (`claude/historico-unico-responsaveis`), com PR em rascunho e **s
 | R1, passos 1 a 4 (Cronograma, componente único, filtro por assunto, "Ver histórico") | feito no ramo |
 | R1, passo 5 (tirar os históricos duplicados das fichas) | falta; uma PR por ficha, depois do merge |
 | R4, passo 1 ("Quem cuida de cada área" na ficha do projeto) | feito no ramo |
-| R4, passo 2 (conferência da auditoria) | aguardando a auditoria |
-| R4, passos 3 e 4 (tirar o painel do topo e medir o ganho) | falta; PR separada, depois da conferência |
+| R4, passo 2 (conferência da auditoria) | feita em 11/11: critérios 1, 2 e 3 passaram (`r4-conferencia-resultado-11nov.md`, na pasta de notas das sessões) |
+| R4, passos 3 e 4 (tirar o painel do topo e medir o ganho) | feito em ramo próprio (`claude/responsaveis-fora-do-topo`), PR em rascunho empilhada sobre a primeira; detalhe em `docs/ENTREGA-11NOV-R4-ETAPA2-PAINEL-FORA-DO-TOPO.md` |
 
 ## R1 · Um componente Histórico
 
