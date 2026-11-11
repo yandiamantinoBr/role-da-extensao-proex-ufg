@@ -324,8 +324,9 @@ test('g) voz no modelo escolhido: o consentimento precisa nomear o destino e o �
  assert.equal(organization.sttProvider, 'deepgram'); assert.equal(organization.sttRoute, ROUTED_SPEECH);
  assert.equal((await roleStatus(f.db, f.actors.inventory, { projectId: 'project-a' }, secret, { keys })).speech.route, ROUTED_SPEECH);
  // Consentimento dado para o provedor padrão não vale para o modelo escolhido: nada é enviado.
- await assert.rejects(transcribeSpeech(f.db, f.actors.inventory, speechInput(), secret, { fetcher: provider.fetch, keys }), code('speech_provider_changed'));
- await assert.rejects(transcribeSpeech(f.db, f.actors.inventory, speechInput({ expectedProvider: 'groq' }), secret, { fetcher: provider.fetch, keys }), code('speech_provider_changed'));
+ const speechChanged = error => error?.code === 'speech_provider_changed' && error.status === 409 && error.message === 'O serviço que transcreve o áudio mudou. Nada foi enviado. Confira o aviso, autorize e envie de novo.';
+ await assert.rejects(transcribeSpeech(f.db, f.actors.inventory, speechInput(), secret, { fetcher: provider.fetch, keys }), speechChanged);
+ await assert.rejects(transcribeSpeech(f.db, f.actors.inventory, speechInput({ expectedProvider: 'groq' }), secret, { fetcher: provider.fetch, keys }), speechChanged);
  assert.equal(provider.calls.length, 0);
  const result = await transcribeSpeech(f.db, f.actors.inventory, speechInput({ expectedProvider: ROUTED_SPEECH }), secret, { fetcher: provider.fetch, keys });
  assert.deepEqual(provider.calls, [{ url: GROQ_AUDIO, auth: `Bearer ${FAKE.groq}`, model: 'whisper-large-v3-turbo', fields: ['file', 'model', 'language', 'response_format'] }]);
@@ -653,4 +654,21 @@ test('salvamento: quem deixa de ser administração geral durante o salvamento n
  // Sem troca de modelo, quem configura a organização continua salvando limites (regra de sempre).
  await save({ dailyCalls: DEFAULT_ASSISTANT_CONFIG.dailyCalls + 1 });
  assert.equal(storedConfig(f).dailyCalls, DEFAULT_ASSISTANT_CONFIG.dailyCalls + 1);
+});
+
+// ---------------------------------------------------------------------------------------------
+// Avisos 409 da voz: sem modelo escolhido, o texto de sempre; com modelo em jogo, o texto diz o que fazer.
+// ---------------------------------------------------------------------------------------------
+test('voz: sem modelo escolhido o aviso de troca de serviço é o de sempre; quem viu um modelo que deixou de valer recebe o aviso novo', async t => {
+ const usual = 'O provedor de transcrição mudou. Atualize o portal e confirme novamente.', fresh = 'O serviço que transcreve o áudio mudou. Nada foi enviado. Confira o aviso, autorize e envie de novo.';
+ const said = message => error => error?.code === 'speech_provider_changed' && error.status === 409 && error.message === message;
+ const f = fixture(t), provider = speechProviders();
+ await saveVault(f, 'groq');
+ await configureAssistant(f.db, f.actors.owner, { action: 'configure', organizationId: 'org_proex', expectedRevision: revision(f), config: { ...DEFAULT_ASSISTANT_CONFIG, sttProvider: 'groq', sttEnabled: true } }, secret, undefined, keys);
+ // A tela ainda mostrava o Deepgram: texto de sempre, letra por letra.
+ await assert.rejects(transcribeSpeech(f.db, f.actors.inventory, speechInput(), secret, { fetcher: provider.fetch, keys }), said(usual));
+ await assert.rejects(transcribeSpeech(f.db, f.actors.inventory, speechInput({ expectedProvider: 'deepgram' }), secret, { fetcher: provider.fetch, keys }), said(usual));
+ // A tela mostrava um modelo escolhido que a administração desfez: o aviso novo.
+ await assert.rejects(transcribeSpeech(f.db, f.actors.inventory, speechInput({ expectedProvider: ROUTED_SPEECH }), secret, { fetcher: provider.fetch, keys }), said(fresh));
+ assert.equal(provider.calls.length, 0, 'nada foi enviado');
 });

@@ -6,7 +6,7 @@ import { ImagePlus, LoaderCircle, MessageSquarePlus, Mic, Send, Square, Trash2, 
 import { safeRequest, type AssistantPlan } from '@/lib/assistant/contracts';
 import {
   ROLE_MAX_HISTORY, ROLE_MAX_HISTORY_CHARS, ROLE_MAX_IMAGE_BYTES, ROLE_MAX_IMAGE_SIDE, ROLE_MAX_MESSAGE_CHARS, ROLE_MODELS,
-  formatMicros, friendlyMicros, operationConferenceText, operationsServiceText, roleConversationBytes, roleEstimate, roleSpeechCeilingMicros, shownRouteName, speechRouteCeilingMicros, speechRouteName, type RoleTurn, type SpeechRouteModel,
+  formatMicros, friendlyMicros, operationConferenceText, operationsConferenceSentence, operationsServiceText, roleConversationBytes, roleEstimate, roleSpeechCeilingMicros, shownRouteName, speechRouteCeilingMicros, speechRouteName, type RoleTurn, type SpeechRouteModel,
 } from '@/lib/assistant/role-contracts';
 import { prepareSpeechWav } from './speech-audio';
 import AiPeopleUsage from './ai-people-usage';
@@ -52,7 +52,7 @@ function servicesList(status: Status): string {
   const parts = [`${providerName(status.provider)} (conversa${status.visionAvailable ? ' e fotos' : ''})`];
   const route = speechRoute(status);
   if (status.speech.available) parts.push(route ? `o modelo de voz ${speechRouteName(route.model)}` : `${providerName(status.speech.provider)} (voz)`);
-  if (status.operationsAvailable) parts.push(operationsServiceText(status.decisionRouteName));
+  if (status.operationsAvailable) parts.push(operationsServiceText());
   return parts.length > 1 ? `${parts.slice(0, -1).join(', ')} e ${parts.at(-1)}` : parts[0];
 }
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
@@ -471,7 +471,7 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
           {error && limitHit && limitsButton}
           {notice && !error && <p role="status" className={styles.notice}>{notice}</p>}
           {!consent && status && <div className={styles.dataNotice} role="note">
-            <p><strong>{servicesChanged ? 'O serviço de IA mudou' : 'Antes de começar'}</strong> O que você escrever, fotografar ou gravar vai para {servicesList(status)}, escolhidos pela PROEX, junto com dados do portal que você já pode ver. Não envie senhas, CPF nem dados pessoais.</p>
+            <p><strong>{servicesChanged ? 'O serviço de IA mudou' : 'Antes de começar'}</strong> O que você escrever, fotografar ou gravar vai para {servicesList(status)}, escolhidos pela PROEX, junto com dados do portal que você já pode ver.{status.operationsAvailable && status.decisionRouteName ? ` ${operationsConferenceSentence(status.decisionRouteName)}` : ''} Não envie senhas, CPF nem dados pessoais.</p>
             <button type="button" className="p-button p-button-primary" onClick={rememberConsent}>Entendi</button>
           </div>}
           {picked && <div className={styles.attachment}><img src={picked.dataUrl} alt="Imagem anexada"/><span>Imagem pronta ({Math.round(picked.bytes / 1024)} KB, reduzida no aparelho)</span><button type="button" className={styles.iconButton} onClick={() => setPicked(null)} aria-label="Remover imagem"><Trash2 size={18} aria-hidden="true"/></button></div>}

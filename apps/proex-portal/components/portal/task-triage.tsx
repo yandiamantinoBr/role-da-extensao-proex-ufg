@@ -94,7 +94,7 @@ export function TaskTriage({task,busy,save}:{task:Task;busy:boolean;save:(input:
   } finally {if(!controller.signal.aborted)setPreparing(false);}
  }
  return <details className="rounded-xl border border-[var(--line)] p-3" onToggle={event=>{if(event.currentTarget.open)void check();}}>
-  <summary className="min-h-11 cursor-pointer font-semibold">Triagem com JEV</summary>
+  <summary className="min-h-11 cursor-pointer font-semibold">{destination?'Triagem com IA':'Triagem com JEV'}</summary>
   {opened&&enabled===null&&<p role="status">Consultando disponibilidade…</p>}
   {enabled===false&&<p className="text-sm text-[var(--text-secondary)]">A triagem com IA está indisponível. Use a edição manual da demanda.</p>}
   {enabled===true&&<form className="grid gap-3" onSubmit={event=>void prepare(event)}>

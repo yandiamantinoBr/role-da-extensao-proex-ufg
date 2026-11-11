@@ -87,17 +87,17 @@ test('when the destination changed before sending, the server text stays on scre
  try{
   h.consent();h.choose();h.button('Solicitar transcrição').props.onClick();await tick();
   assert.equal(h.requests[0].init.body.get('provider'),'deepgram');
-  h.requests[0].resolve({ok:false,json:async()=>({error:'O provedor de transcrição mudou. Atualize o portal e confirme novamente.',code:'speech_provider_changed'})});await tick();h.render();
-  assert.equal(reloads,1);assert.match(h.text(),/O provedor de transcrição mudou\. Atualize o portal e confirme novamente\./);
+  h.requests[0].resolve({ok:false,json:async()=>({error:'O serviço que transcreve o áudio mudou. Nada foi enviado. Confira o aviso, autorize e envie de novo.',code:'speech_provider_changed'})});await tick();h.render();
+  assert.equal(reloads,1);assert.match(h.text(),/O serviço que transcreve o áudio mudou\. Nada foi enviado\. Confira o aviso, autorize e envie de novo\./);
   // O estado recarregado traz o destino novo: a autorização dada para o destino antigo deixa de valer.
   Object.assign(h.props,ROUTE);h.render();
-  assert.match(h.text(),/O provedor de transcrição mudou/,'the server text is still visible');assert.ok(h.find('audio',()=>true),'the audio is preserved');
+  assert.match(h.text(),/O serviço que transcreve o áudio mudou/,'the server text is still visible');assert.ok(h.find('audio',()=>true),'the audio is preserved');
   assert.equal(h.find('input',node=>node.props.type==='checkbox').props.checked,false);assert.equal(h.button('Solicitar transcrição').props.disabled,true);
   assert.match(h.text(),/Autorizo gravar e enviar este áudio ao modelo de voz Whisper turbo \(Groq\)/);
   h.consent();h.button('Solicitar transcrição').props.onClick();await tick();
   assert.equal(h.requests.length,2);assert.equal(h.requests[1].init.body.get('provider'),'catalog:groq-whisper-turbo');
-  h.requests[1].resolve({ok:false,json:async()=>({error:'O modelo de voz escolhido mudou antes do envio. Nada foi enviado; confirme novamente.',code:'speech_configuration_changed'})});await tick();h.render();
-  assert.equal(reloads,2);assert.match(h.text(),/O modelo de voz escolhido mudou antes do envio/);
+  h.requests[1].resolve({ok:false,json:async()=>({error:'A configuração de voz mudou durante o envio. Nada foi enviado. Envie de novo.',code:'speech_configuration_changed'})});await tick();h.render();
+  assert.equal(reloads,2);assert.match(h.text(),/A configuração de voz mudou durante o envio\. Nada foi enviado\. Envie de novo\./);
  }finally{h.dispose();}
 });
 test('any other failure does not reload the state',async()=>{

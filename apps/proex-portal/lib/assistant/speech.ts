@@ -70,7 +70,8 @@ export async function transcribeSpeech(db:D1Database, actor:PortalActor|null, in
  // o cliente precisa confirmar `catalog:<id>`; rota pulada antes do envio segue no padrão já consentido.
  const speechRoute=settings.config.speechModel?await resolveTaskRoute(db,organizationId,settings.config,settings.rawCredentials,'speech',provider):null;
  const routed=speechRoute&&!('skip' in speechRoute)?speechRoute:null,destination=speechDestination(speechRoute,provider);
- if ((input.expectedProvider ?? 'deepgram') !== destination) throw new HttpError(409,'O provedor de transcrição mudou. Atualize o portal e confirme novamente.','speech_provider_changed');
+ // Com modelo de voz em jogo (escolhido agora, ou mostrado à pessoa antes), o aviso diz o que fazer; sem ele, o texto de sempre.
+ if ((input.expectedProvider ?? 'deepgram') !== destination) throw new HttpError(409,settings.config.speechModel||String(input.expectedProvider??'').startsWith('catalog:')?'O serviço que transcreve o áudio mudou. Nada foi enviado. Confira o aviso, autorize e envie de novo.':'O provedor de transcrição mudou. Atualize o portal e confirme novamente.','speech_provider_changed');
  const audio=validateSpeechAudio(input.bytes,input.mime),now=options.now??Date.now(),apiKey=routed?routed.apiKey:settings.apiKey;
  // Formato de envio do destino: provedor de voz revisado (Deepgram) ou formulário de áudio compatível com OpenAI.
  const style:SpeechProvider=routed?speechRouteStyle(routed):provider;
@@ -98,10 +99,10 @@ export async function transcribeSpeech(db:D1Database, actor:PortalActor|null, in
  if(!admitted)throw await quotaRefusal(db,current,organizationId,day,settings.config,{cost,tokens:0,ms:settings.config.timeoutMs,calls:1});
  const controller=new AbortController(),abort=()=>controller.abort(),timer=setTimeout(abort,settings.config.timeoutMs);options.signal?.addEventListener('abort',abort,{once:true});
  try{
-  await speechActor(db,current,input.projectId);const fresh=await loadSpeechSettings(db,secret,organizationId,options.environment,options.keys,current.userId);if(fresh.revision!==settings.revision)throw new HttpError(409,'A configuração mudou antes da transcrição.','speech_configuration_changed');
+  await speechActor(db,current,input.projectId);const fresh=await loadSpeechSettings(db,secret,organizationId,options.environment,options.keys,current.userId);if(fresh.revision!==settings.revision)throw new HttpError(409,settings.config.speechModel?'A configuração de voz mudou durante o envio. Nada foi enviado. Envie de novo.':'A configuração mudou antes da transcrição.','speech_configuration_changed');
   if(settings.config.speechModel){
    // Última conferência antes do envio. Se o destino consentido deixou de valer, nada é enviado: o áudio nunca troca de provedor sem nova confirmação.
-   if(routed){const again=await resolveTaskRoute(db,organizationId,fresh.config,fresh.rawCredentials,'speech',fresh.provider);if(!again||'skip' in again||again.model.id!==routed.model.id||again.model.model!==routed.model.model||again.provider.kind!==routed.provider.kind||again.baseUrl!==routed.baseUrl||again.apiKey!==routed.apiKey)throw new HttpError(409,'O modelo de voz escolhido mudou antes do envio. Nada foi enviado; confirme novamente.','speech_configuration_changed');}
+   if(routed){const again=await resolveTaskRoute(db,organizationId,fresh.config,fresh.rawCredentials,'speech',fresh.provider);if(!again||'skip' in again||again.model.id!==routed.model.id||again.model.model!==routed.model.model||again.provider.kind!==routed.provider.kind||again.baseUrl!==routed.baseUrl||again.apiKey!==routed.apiKey)throw new HttpError(409,'A configuração de voz mudou durante o envio. Nada foi enviado. Envie de novo.','speech_configuration_changed');}
    else if(speechRoute&&'skip' in speechRoute)await recordRouteFallback(db,organizationId,current.userId,'speech',settings.config.speechModel,speechRoute.skip);
   }
   await authorized();if(controller.signal.aborted)throw new HttpError(503,'A transcrição excedeu o tempo reservado.','speech_provider');

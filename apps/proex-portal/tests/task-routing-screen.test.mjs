@@ -24,7 +24,7 @@ const { catalogView, catalogSettingName, manageCatalog } = await import(compile(
 const { defaultCatalog, fitsTask, taskModelOptions } = await import(compile('assistant/model-catalog'));
 const { transcribeSpeech, validateSpeechAudio, speechReservedUsdMicros, SPEECH_ENDPOINT } = await import(compile('assistant/speech'));
 const { roleStatus } = await import(compile('assistant/role'));
-const { roleSpeechCeilingMicros, speechRouteCeilingMicros, speechRouteName, taskRouteLabel, shownRouteName, triageNoticeText, triageConsentText, documentConsentText, operationConferenceText, operationsServiceText } = await import(compile('assistant/role-contracts'));
+const { roleSpeechCeilingMicros, speechRouteCeilingMicros, speechRouteName, taskRouteLabel, shownRouteName, triageNoticeText, triageConsentText, documentConsentText, operationConferenceText, operationsServiceText, operationsConferenceSentence } = await import(compile('assistant/role-contracts'));
 const { encodeSpeechWav } = await import(compile('../components/portal/speech-audio'));
 
 const secret = 'test-only-assistant-auth-secret-no-production-access';
@@ -223,32 +223,38 @@ test('textos sem modelo escolhido: exatamente os de antes, com nome ausente, nul
   assert.equal(documentConsentText(none, none), 'Autorizo enviar o texto extraído desta fonte ao provedor de texto escolhido para esta organização (DeepSeek ou OpenAI) e ao Jev se habilitado.');
   assert.equal(operationConferenceText(none), ', com conferência da TypeSafe (JEV)');
   assert.equal(operationsServiceText(none), 'o serviço de registros de estoque');
+  assert.equal(operationsConferenceSentence(none), '', 'sem modelo escolhido não há frase nova no aviso');
  }
+ assert.equal(operationsServiceText(), 'o serviço de registros de estoque');
  assert.equal(triageNoticeText(), 'O JEV recebe esse resumo e o prazo desta demanda.');
  assert.equal(documentConsentText(), 'Autorizo enviar o texto extraído desta fonte ao provedor de texto escolhido para esta organização (DeepSeek ou OpenAI) e ao Jev se habilitado.');
 });
 
-test('textos com modelo escolhido: nomeiam o modelo e dizem que o padrão de hoje recebe se ele não puder responder', () => {
+test('textos com modelo escolhido: nomeiam o modelo e dizem que o padrão do portal recebe se ele não puder responder', () => {
  const texts = {
   aviso: triageNoticeText(DECIDER), triagem: triageConsentText(DECIDER), documento: documentConsentText(LUNA), documentoEConferencia: documentConsentText(LUNA, DECIDER),
-  conferencia: documentConsentText(null, DECIDER), registro: operationConferenceText(DECIDER), servico: operationsServiceText(DECIDER),
+  conferencia: documentConsentText(null, DECIDER), registro: operationConferenceText(DECIDER), servico: operationsConferenceSentence(DECIDER),
  };
  assert.deepEqual(texts, {
-  aviso: 'O modelo Decider v1.2 (Perplexity) recebe esse resumo e o prazo desta demanda. Se ele não puder responder, quem recebe é o JEV padrão, da TypeSafe.',
-  triagem: 'Autorizo enviar este resumo e prazo ao modelo Decider v1.2 (Perplexity) e, se ele não puder responder, ao JEV padrão, da TypeSafe.',
-  documento: 'Autorizo enviar o texto extraído desta fonte ao modelo GPT-5.6 Luna (OpenAI). Se ele não puder responder, o texto vai para o provedor de texto padrão desta organização (DeepSeek ou OpenAI). O texto também vai ao Jev se habilitado.',
-  documentoEConferencia: 'Autorizo enviar o texto extraído desta fonte ao modelo GPT-5.6 Luna (OpenAI). Se ele não puder responder, o texto vai para o provedor de texto padrão desta organização (DeepSeek ou OpenAI). Para a conferência, o texto vai também ao modelo Decider v1.2 (Perplexity); se ele não puder responder, ao JEV padrão, da TypeSafe.',
-  conferencia: 'Autorizo enviar o texto extraído desta fonte ao provedor de texto escolhido para esta organização (DeepSeek ou OpenAI). Para a conferência, o texto vai também ao modelo Decider v1.2 (Perplexity); se ele não puder responder, ao JEV padrão, da TypeSafe.',
-  registro: ', com conferência do modelo Decider v1.2 (Perplexity); se ele não puder responder, a conferência fica com o JEV padrão, da TypeSafe',
-  servico: 'o serviço de registros de estoque, com conferência do modelo Decider v1.2 (Perplexity) (ou do JEV padrão, da TypeSafe, se ele não puder responder)',
+  aviso: 'O modelo Decider v1.2 (Perplexity) recebe esse resumo e o prazo desta demanda. Se ele não puder responder, quem recebe é o JEV, da TypeSafe (padrão do portal).',
+  triagem: 'Autorizo enviar este resumo e prazo ao modelo Decider v1.2 (Perplexity) e, se ele não puder responder, ao JEV, da TypeSafe (padrão do portal).',
+  documento: 'Autorizo enviar o texto desta fonte ao modelo GPT-5.6 Luna (OpenAI). Se ele não puder responder, o texto vai para o padrão do portal (DeepSeek ou OpenAI). O texto também vai ao JEV se a conferência estiver ligada.',
+  documentoEConferencia: 'Autorizo enviar o texto desta fonte ao modelo GPT-5.6 Luna (OpenAI) (leitura) e ao modelo Decider v1.2 (Perplexity) (conferência). Se um deles não puder responder, o texto vai para o padrão do portal (DeepSeek ou OpenAI; conferência pelo JEV, da TypeSafe).',
+  conferencia: 'Autorizo enviar o texto desta fonte ao padrão do portal (DeepSeek ou OpenAI) e, para a conferência, ao modelo Decider v1.2 (Perplexity). Se ele não puder responder, a conferência fica com o JEV, da TypeSafe.',
+  registro: ', com conferência do modelo Decider v1.2 (Perplexity); se ele não puder responder, a conferência fica com o JEV, da TypeSafe (padrão do portal)',
+  servico: 'Os registros de estoque são conferidos pelo modelo Decider v1.2 (Perplexity); se ele não puder responder, pelo JEV, da TypeSafe.',
  });
+ assert.equal(operationsServiceText(DECIDER), 'o serviço de registros de estoque', 'o item da lista não muda: quem confere vai na frase à parte');
  for (const [name, text] of Object.entries(texts)) {
-  assert.match(text, /se ele não puder responder/i, `${name}: diz quem recebe quando o escolhido não responde`);
-  assert.doesNotMatch(text, /\b(tokens?|fallback|rotas?|endpoints?)\b/i, `${name}: sem termo técnico`);
+  assert.match(text, /se (ele|um deles) não puder responder/i, `${name}: diz quem recebe quando o escolhido não responde`);
+  assert.doesNotMatch(text, /\b(tokens?|fallback|rotas?|endpoints?|catálogo|provedor(es)?|aptos?)\b/i, `${name}: sem termo técnico`);
+  assert.doesNotMatch(text, /JEV padrão|padrão de hoje/i, `${name}: o padrão é "padrão do portal"`);
+  assert.doesNotMatch(text.replaceAll(DECIDER, 'X').replaceAll(LUNA, 'Y'), /\([^)]*\(/, `${name}: sem parênteses dentro de parênteses`);
  }
  // Todo texto que nomeia um modelo continua nomeando o padrão: a autorização cobre os dois destinos.
- for (const name of ['aviso', 'triagem', 'documentoEConferencia', 'conferencia', 'registro', 'servico']) assert.match(texts[name], /JEV padrão, da TypeSafe/, name);
- assert.match(texts.documento, /provedor de texto padrão desta organização \(DeepSeek ou OpenAI\)/);
+ for (const name of ['aviso', 'triagem', 'documentoEConferencia', 'conferencia', 'registro', 'servico']) assert.match(texts[name], /JEV, da TypeSafe/, name);
+ for (const name of ['aviso', 'triagem', 'registro']) assert.match(texts[name], /JEV, da TypeSafe \(padrão do portal\)/, name);
+ for (const name of ['documento', 'documentoEConferencia', 'conferencia']) assert.match(texts[name], /padrão do portal \(DeepSeek ou OpenAI/, name);
 });
 
 test('nome do modelo escolhido: tira a observação entre parênteses do serviço e não repete o serviço que o nome já diz', () => {
