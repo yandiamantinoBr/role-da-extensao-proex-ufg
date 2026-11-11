@@ -102,3 +102,5 @@
 .stack .launcher{border:1px solid var(--line);background:var(--surface);box-shadow:0 8px 20px -12px rgb(25 11 41/.5)}
 .stack .launcher[data-active]{background:var(--brand-ink);color:var(--surface);border-color:var(--brand-ink)}
 .stack{margin-bottom:8px}
+/* Phones: the notification center covers the screen like a sheet; the dock steps aside while it is open. */
+@media (max-width:720px){:global(body:has(button[aria-controls="followup-notification-center"][aria-expanded="true"])) .dock{visibility:hidden}}

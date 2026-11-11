@@ -35,7 +35,10 @@ export async function prepareChatImage(file: File, maxBytes = 1024 * 1024): Prom
   throw new Error('A imagem continua grande demais depois de reduzida. Tente outra.');
 }
 
-export function CommunityChat({ onUnreadChange }: { onUnreadChange?(count: number): void }) {
+const projectSelection = (row: Overview['projects'][number]): Selected => ({ key: `p:${row.projectId}`, title: row.name, subtitle: `Conversa do projeto · ${row.organizationName}`, open: { action: 'open', kind: 'project', projectId: row.projectId } });
+const directSelection = (row: Overview['directs'][number]): Selected => ({ key: `c:${row.conversationId}`, title: row.otherName, subtitle: `Conversa direta · ${row.organizationName}`, open: { action: 'open', kind: 'direct', organizationId: row.organizationId, userId: row.otherId } });
+
+export function CommunityChat({ onUnreadChange, focus = null }: { onUnreadChange?(count: number): void; focus?: { key: string; nonce: number } | null }) {
   const [overview, setOverview] = useState<Overview | null>(null), [error, setError] = useState(''), [revision, setRevision] = useState(0), [selected, setSelected] = useState<Selected | null>(null), [starting, setStarting] = useState(false);
   const unreadCallback = useRef(onUnreadChange);
   useEffect(() => { unreadCallback.current = onUnreadChange; }, [onUnreadChange]);
@@ -45,6 +48,13 @@ export function CommunityChat({ onUnreadChange }: { onUnreadChange?(count: numbe
     return () => { live = false; };
   }, [revision]);
   const refresh = useCallback(() => setRevision(value => value + 1), []);
+  // Opened from the bell: select that conversation once the list is here. A conversation that is gone just leaves the list.
+  const [appliedFocus, setAppliedFocus] = useState(0);
+  if (overview && focus && focus.nonce !== appliedFocus) {
+    setAppliedFocus(focus.nonce);
+    const project = overview.projects.find(row => `p:${row.projectId}` === focus.key), direct = overview.directs.find(row => `c:${row.conversationId}` === focus.key);
+    if (project) setSelected(projectSelection(project)); else if (direct) setSelected(directSelection(direct));
+  }
   if (error) return <p role="alert" className="p-inline-error">{error}</p>;
   if (!overview) return <p role="status" className={styles.help}>Abrindo conversas…</p>;
   return <div className={styles.chat} data-open={selected ? 'thread' : 'list'}>
@@ -53,11 +63,11 @@ export function CommunityChat({ onUnreadChange }: { onUnreadChange?(count: numbe
       <button type="button" className={`p-button p-button-subtle ${styles.newChat}`} aria-expanded={starting} onClick={() => setStarting(value => !value)}><MessageCirclePlus size={16}/>Nova conversa direta</button>
       {starting && <StartDirect onStart={(row) => { setStarting(false); setSelected(row); }}/>}
       <h3 className={styles.group}>Projetos</h3>
-      {!overview.projects.length ? <p className={styles.help}>Você ainda não tem projetos.</p> : <ul>{overview.projects.map(row => { const key = `p:${row.projectId}`; return <li key={key}><button type="button" aria-current={selected?.key === key || undefined} onClick={() => setSelected({ key, title: row.name, subtitle: `Conversa do projeto · ${row.organizationName}`, open: { action: 'open', kind: 'project', projectId: row.projectId } })}>
+      {!overview.projects.length ? <p className={styles.help}>Você ainda não tem projetos.</p> : <ul>{overview.projects.map(row => { const key = `p:${row.projectId}`; return <li key={key}><button type="button" aria-current={selected?.key === key || undefined} onClick={() => setSelected(projectSelection(row))}>
         <span className={styles.avatar} data-kind="project" aria-hidden="true"><FolderKanban size={16}/></span><span className={styles.rowText}><strong>{row.name}</strong><small>{row.lastMessageAt ? `Última mensagem ${time(row.lastMessageAt)}` : 'Sem mensagens ainda'}</small></span>{row.unread > 0 && <span className={styles.unread} aria-label={`${row.unread} novas`}>{row.unread}</span>}
       </button></li>; })}</ul>}
       <h3 className={styles.group}>Diretas</h3>
-      {!overview.directs.length ? <p className={styles.help}>Nenhuma conversa direta.</p> : <ul>{overview.directs.map(row => { const key = `c:${row.conversationId}`; return <li key={key}><button type="button" aria-current={selected?.key === key || undefined} onClick={() => setSelected({ key, title: row.otherName, subtitle: `Conversa direta · ${row.organizationName}`, open: { action: 'open', kind: 'direct', organizationId: row.organizationId, userId: row.otherId } })}>
+      {!overview.directs.length ? <p className={styles.help}>Nenhuma conversa direta.</p> : <ul>{overview.directs.map(row => { const key = `c:${row.conversationId}`; return <li key={key}><button type="button" aria-current={selected?.key === key || undefined} onClick={() => setSelected(directSelection(row))}>
         <span className={styles.avatar} aria-hidden="true"><User size={16}/></span><span className={styles.rowText}><strong>{row.otherName}</strong><small>{row.lastMessageAt ? `Última mensagem ${time(row.lastMessageAt)}` : 'Sem mensagens ainda'}</small></span>{row.unread > 0 && <span className={styles.unread} aria-label={`${row.unread} novas`}>{row.unread}</span>}
       </button></li>; })}</ul>}
       <p className={styles.help}>Fotos ficam disponíveis por {overview.limits.retentionDays} dias e saem sem dados de localização.</p>

@@ -131,3 +131,6 @@
   .toolbar { gap: 6px; }
   .toolbar button { padding-inline: 10px; }
 }
+
+/* An odd number of panes (with Comunidade): the last one takes the full row instead of leaving a hole. */
+.panes button:last-child:nth-child(odd) { grid-column: 1 / -1; }

@@ -65,6 +65,22 @@ test('imagens: tipo real, sem metadados, limites, acesso só pela conversa, apag
  for(let i=count(f,'chat_attachments',"uploader_id='a'");i<chat.CHAT_DAILY_IMAGES;i++)f.insert('chat_attachments',{id:crypto.randomUUID(),conversation_id:conversationId,uploader_id:'a',object_key:`k-${i}`,mime:'image/png',size:1,created_at:f.now,expires_at:'2099-01-01T00:00:00.000Z'});
  await assert.rejects(()=>chat.chatUpload(f.db,a,conversationId,png(),f.store),e=>e.status===429);});
 
+test('sino: recados não lidos e conversas com novidade, só títulos e contagens, sem marcar nada como lido e sem vazar',async t=>{const f=fixture(t),inboxApi=await import(compile('lib/community/inbox.ts'));
+ const a=await f.user('a','viewer','p-a','o-a'),b=await f.user('b','operator','p-a','o-a'),c=await f.user('c','viewer','p-b','o-b'),outsider=await f.user('v',null);
+ assert.deepEqual(await inboxApi.communityInbox(f.db,a),{messages:0,conversations:[],moreConversations:0,unread:0});
+ const {conversationId}=await chat.chatAction(f.db,b,{action:'open',kind:'project',projectId:'p-a'},f.store);await send(f,b,conversationId,'Texto reservado da conversa');await send(f,b,conversationId,'Segunda mensagem');
+ const direct=await chat.chatAction(f.db,b,{action:'open',kind:'direct',organizationId:'o-a',userId:'a'},f.store);await send(f,b,direct.conversationId,'Conversa direta reservada');
+ await messages.messageAction(f.db,b,{action:'send',organizationId:'o-a',recipientId:'a',body:'Recado reservado',operationKey:crypto.randomUUID()});
+ const before=dump(f.native),inbox=await inboxApi.communityInbox(f.db,a);
+ assert.equal(inbox.messages,1);assert.equal(inbox.unread,4,'unread recados plus every new chat message: the same unit as the rows');assert.equal(inbox.unread,inbox.messages+inbox.conversations.reduce((sum,row)=>sum+row.unread,0));assert.deepEqual(inbox.conversations.map(row=>[row.key,row.kind,row.unread]).sort(),[[`c:${direct.conversationId}`,'direct',1],['p:p-a','project',2]]);
+ assert.equal(inbox.conversations.find(row=>row.kind==='direct').title,'Pessoa b');assert.equal(inbox.conversations.find(row=>row.kind==='project').title,'Projeto a');
+ assert.doesNotMatch(JSON.stringify(inbox),/reservad|Segunda mensagem/,'no message text ever leaves through the bell');assert.deepEqual(dump(f.native),before,'reading the bell writes nothing and marks nothing as read');
+ assert.equal((await inboxApi.communityInbox(f.db,b)).unread,0,'the sender has nothing new');assert.equal((await inboxApi.communityInbox(f.db,c)).unread,0,'another organization sees nothing');
+ await assert.rejects(()=>inboxApi.communityInbox(f.db,outsider),e=>e.status===403);await assert.rejects(()=>inboxApi.communityInbox(f.db,null),e=>e.status===401);
+ await chat.chatAction(f.db,a,{action:'read',conversationId},f.store);const after=await inboxApi.communityInbox(f.db,a);assert.equal(after.unread,2,'reading the project conversation takes its two messages off the bell');assert.deepEqual(after.conversations.map(row=>row.kind),['direct']);
+ f.native.prepare("DELETE FROM members WHERE user_id='a'").run();await assert.rejects(async()=>inboxApi.communityInbox(f.db,await access.getActor(f.db,{userId:'a',email:'a@example.invalid',displayName:'Pessoa a'})),e=>e.status===403,'losing access empties the bell');
+ const route=readFileSync(`${root}app/api/community/route.ts`,'utf8');assert.match(route,/getPortalUser\(\{ refresh: false \}\)/);assert.match(route,/searchParams\.get\('view'\) === 'inbox'/);
+ const bell=readFileSync(`${root}components/portal/notification-bell.tsx`,'utf8');assert.match(bell,/\{community&&<button type="button" aria-pressed=\{pane==='community'\}/,'the pane only exists for who has the Community module');assert.match(bell,/community&&communityUnread\.owner===userId\?communityUnread\.count:0/);});
 test('limpeza agendada: remove todas as fotos vencidas em lotes, preserva as válidas, tem trava e sobrevive a falha de remoção',async t=>{const f=fixture(t),a=await f.user('a','viewer','p-a','o-a');
  const {conversationId}=await chat.chatAction(f.db,a,{action:'open',kind:'project',projectId:'p-a'},f.store);const total=chat.SCHEDULED_PURGE_BATCH*2+3,put=(id,expires)=>{f.objects.set(`chat/${id}`,{data:new Uint8Array([1]),contentType:'image/png'});f.insert('chat_attachments',{id,conversation_id:conversationId,uploader_id:'a',object_key:`chat/${id}`,mime:'image/png',size:1,created_at:f.now,expires_at:expires});};
  for(let i=0;i<total;i++)put(`old-${i}`,'2000-01-01T00:00:00.000Z');put('fresh','2099-01-01T00:00:00.000Z');

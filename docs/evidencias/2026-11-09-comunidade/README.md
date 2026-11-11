@@ -50,3 +50,12 @@ No celular o painel vira folha inferior com fundo escurecido. Crítica visual in
 - `doca-espaco-*-fim-minimizada.png`: o mesmo com um widget minimizado. O espaço cresce para caber o chip e volta ao normal quando o widget é fechado (X).
 
 A reserva é medida da própria doca (Rolê, botão Widgets, chip minimizado; inclui a barra inferior e a área segura do celular) e só existe enquanto a doca está na tela. Página do voluntário, convite, convocação pública e login não têm doca nem espaço extra.
+
+## Comunidade no sino (2026-11-11)
+
+- `sino-*-comunidade.png`: aba Comunidade da central de notificações, com recados não lidos e conversas com mensagens novas (contas de teste do QA local; só títulos e contagens).
+- `sino-390-light-selo.png`: o número no sino é a soma das linhas (2 + 1 + 3 = 6).
+- `sino-1366-light-abriu-conversa.png`: o clique numa conversa abre Comunidade → Conversas com ela selecionada.
+- `sino-1366-light-depois-de-ler.png`: depois de ler, o sino cai de 6 para 3 e a conversa sai da lista.
+
+Crítica visual independente: 7 → 9, sem P0/P1/P2. Ficaram três detalhes anotados: o subtítulo da conversa quebra em duas linhas em 390 px; as abas da Comunidade passam para a segunda linha quando há contadores; o painel curto do sino no celular não tem véu (igual às outras abas).

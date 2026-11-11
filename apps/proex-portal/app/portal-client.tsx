@@ -8,7 +8,7 @@ import DriveSaveButton from '@/components/portal/drive-save-button';
 import Image from 'next/image';
 import scopeStyles from './scope-filters.module.css';
 import FeedbackPanel from '@/components/portal/feedback-panel';
-import CommunityPanel, { type CommunityPrefill } from '@/components/portal/community-panel';
+import CommunityPanel, { type CommunityFocus, type CommunityPrefill } from '@/components/portal/community-panel';
 import FloatingDock from '@/components/portal/floating-dock';
 import ManagementPanel from '@/components/portal/management/management-panel';
 import { toast } from 'sonner';
@@ -318,6 +318,8 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
     const [personalOrganization, setPersonalOrganization] = useState('');
     const [accountOpen, setAccountOpen] = useState(false);
     const [communityPrefill, setCommunityPrefill] = useState<CommunityPrefill | null>(null);
+    const [communityFocus, setCommunityFocus] = useState<CommunityFocus | null>(null);
+    const clearCommunityFocus = useCallback(() => setCommunityFocus(null), []);
     const [officialSuggestion, setOfficialSuggestion] = useState<OfficialTeamSelection | null>(null);
     const [closingCampaign, setClosingCampaign] = useState<string | null>(null);
     const [reportFrom, setReportFrom] = useState(''), [reportTo, setReportTo] = useState('');
@@ -787,7 +789,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
     <button className="p-icon-button p-refresh-button" title="Atualizar dados" aria-label="Atualizar dados" disabled={refreshing} onClick={() => void refresh()}>
     <RefreshCw size={18} className={refreshing ? 'p-spin' : ''}/>
     </button>
-    {canFollowUp && <NotificationBell onSelectConvocation={id=>{setConvocationFocus(id);navigate('convocations');}} onSelectMaterial={(itemId,projectId)=>{navigate('materials');selectProject(projectId);setMaterialMode('view');setSelectedMaterialId(itemId);setWorkRecord({module:'materials',projectId,recordId:itemId});}} key={string(user.userId)} userId={string(user.userId)} onSelectTask={id => { if (id !== selectedDemandId) pushNavigation.current = true; setSelectedDemandId(id); setFilter(''); setUnitFilter(''); setAreaFilter(''); navigate('demands'); }}/>}
+    {canFollowUp && <NotificationBell community={allowedTabs.some(module => module.id === 'community')} onSelectCommunity={target => { setCommunityFocus({ ...target, nonce: Date.now() }); navigate('community'); }} onSelectConvocation={id=>{setConvocationFocus(id);navigate('convocations');}} onSelectMaterial={(itemId,projectId)=>{navigate('materials');selectProject(projectId);setMaterialMode('view');setSelectedMaterialId(itemId);setWorkRecord({module:'materials',projectId,recordId:itemId});}} key={string(user.userId)} userId={string(user.userId)} onSelectTask={id => { if (id !== selectedDemandId) pushNavigation.current = true; setSelectedDemandId(id); setFilter(''); setUnitFilter(''); setAreaFilter(''); navigate('demands'); }}/>}
     <ThemeSwitch />
     <div className="p-account" ref={accountRef}>
     <button className="p-account-trigger" aria-label="Abrir menu da minha conta" aria-expanded={accountOpen} aria-controls="account-menu" onClick={() => setAccountOpen(v => !v)} onKeyDown={e => { if (e.key === 'ArrowDown') {
@@ -897,7 +899,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
       {tab === 'overview' && <><PersonalWorkSummary userId={string(user.userId)} organizationId={personalOrganization||null} organizationName={organizations.find(organization=>organization.id===personalOrganization)?.name} projectId={filter||null} projectName={string(projects.find(project=>project.id===filter)?.name)} serverDay={workDayFromServerTimestamp(data?.updatedAt)}/><DashboardPanel modules={allowedTabs} pinned={navigation.pinned} frequent={navigation.frequent} onNavigate={navigate} onTogglePin={navigation.togglePin} displayName={string(user.displayName)} role={role} roleLabel={roleNames[role] || 'Equipe PROEX'} projects={scopedProjects} items={visibleItems} loans={visibleLoans} campaigns={visibleCampaigns} selectedProjectId={filter} unitName={unitFilter === '__unassigned__' ? 'Sem unidade vinculada' : string(visibleUnits.find(unit => unit.id === unitFilter)?.acronym || visibleUnits.find(unit => unit.id === unitFilter)?.name)} now={now} onOpenProject={openProject} known={{ projects: Array.isArray(data.projects), items: Array.isArray(data.items), loans: Array.isArray(data.loans), campaigns: Array.isArray(data.campaigns) }} /></>}
       {tab === 'convocations' && <ConvocationsPanel key={`convocations:${string(user.userId)}:${convocationFocus}`} initialId={convocationFocus} projects={projects.map(project => ({ id: string(project.id), name: string(project.name), canManage: canProject(string(project.id), 'campaigns.manage') }))}/>}
       {tab === 'management' && <ManagementPanel key={`management:${string(user.userId)}`} organizations={organizations.map(organization => ({ id: organization.id, name: organization.name }))} defaultOrganizationId={personalOrganization}/>}
-      {tab === 'community' && <CommunityPanel key={`community:${string(user.userId)}`} userId={string(user.userId)} projects={projects.map(project => ({ id: string(project.id), name: string(project.name) }))} prefill={communityPrefill}/>}
+      {tab === 'community' && <CommunityPanel key={`community:${string(user.userId)}`} userId={string(user.userId)} projects={projects.map(project => ({ id: string(project.id), name: string(project.name) }))} prefill={communityPrefill} focus={communityFocus} onFocusHandled={clearCommunityFocus}/>}
 
       {tab === 'projects' && <>
         <ProjectPanel refreshKey={updatedAt?.getTime() ?? 0} onMaterialOpen={(id,mode='view')=>{setMaterialMode(mode);setSelectedMaterialId(id);}} key={string(user.userId)} userId={string(user.userId)} pinnedProjectIds={pins.projectPins} pinError={pins.error} onTogglePin={(id, pinned) => setPinned('project', id, pinned)} shortcutModules={allowedTabs.map(module => module.id).filter(id => id === 'demands' || id === 'calendar')} initialProjectId={activeWorkRecord?.module === 'projects' ? activeWorkRecord.recordId : undefined} onDetailChange={id => { if (id) { if (id !== activeWorkRecord?.recordId) pushNavigation.current = true; selectProject(id); setWorkRecord({module:'projects',projectId:id,recordId:id}); } else setWorkRecord(null); }} renderWorkContext={projectId => workContext(projectId,'projects')} organizations={organizations} isPlatformOwner={isPlatformOwner} projects={projects} projectTypes={list(data.projectTypes)} organizationalUnits={organizationalUnits} canCreate={canCreateProjects} canEdit={id => canGlobal('projects.manage') || canProject(id, 'campaigns.manage')} mutate={mutate} onSelect={id => { selectProject(id); navigate('overview'); }}/>

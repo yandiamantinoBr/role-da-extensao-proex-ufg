@@ -13,6 +13,8 @@ export async function communityPost<T>(path: string, body: Record<string, unknow
   if (!response.ok) throw new CommunityError(result.error || 'Falha de conexão. Seu texto foi preservado.', response.status, result.code);
   return result;
 }
+/** Fired when unread recados or conversations may have changed, so the bell re-reads its Community pane. */
+export const COMMUNITY_CHANGED = 'proex:community-changed';
 export const errorText = (error: unknown, fallback = 'Falha de conexão. Tente novamente.') => error instanceof Error && error.message ? error.message : fallback;
 /** Brazilian short date from a civil day (AAAA-MM-DD), without timezone drift. */
 export const civilDay = (value: string | null | undefined) => value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value.slice(8, 10)}/${value.slice(5, 7)}/${value.slice(0, 4)}` : '';
