@@ -26,6 +26,10 @@ const STATE_LABELS: Record<string, string> = {
   confirmed: 'Confirmado', active: 'Ativo', paused: 'Pausado', closed: 'Encerrado', archived: 'Arquivado', reserved: 'Reservado',
   out: 'Retirado', returned: 'Devolvido', late: 'Atrasado', recorded: 'Registrado',
 };
+/** "Cancelada" para demanda; "Cancelado" para turno, evento e empréstimo. */
+function stateLabel(event: Pick<CalendarEntry, 'state' | 'sourceKind'>): string {
+  return event.sourceKind === 'deadline' && event.state === 'cancelled' ? 'Cancelada' : STATE_LABELS[event.state] ?? event.state;
+}
 const MAX_ENTRIES = 10_000;
 const capabilities: Record<CalendarCategory, string[]> = {
   loans: ['loans.read'], materials: ['inventory.read'],
@@ -340,7 +344,7 @@ export function serializeCalendar(entries: CalendarEntry[], label = 'Agenda PROE
     lines.push('BEGIN:VEVENT', `UID:${escapeICalText(event.uid)}`, `DTSTAMP:${icalTime(event.lastModified)}`, `LAST-MODIFIED:${icalTime(event.lastModified)}`, `SEQUENCE:${event.revision}`);
     if (event.allDay) lines.push(`DTSTART;VALUE=DATE:${event.startsAt.replaceAll('-', '')}`, `DTEND;VALUE=DATE:${event.endsAt.replaceAll('-', '')}`);
     else lines.push(`DTSTART:${icalTime(event.startsAt)}`, `DTEND:${icalTime(event.endsAt)}`);
-    lines.push(`SUMMARY:${escapeICalText(event.title)}`, `DESCRIPTION:${escapeICalText(`${event.projectName} · ${STATE_LABELS[event.state] ?? event.state}`)}`, `CATEGORIES:${escapeICalText(CALENDAR_LABELS[event.category])}`, `STATUS:${event.status}`, `TRANSP:${event.transparent ? 'TRANSPARENT' : 'OPAQUE'}`, 'CLASS:PRIVATE');
+    lines.push(`SUMMARY:${escapeICalText(event.title)}`, `DESCRIPTION:${escapeICalText(`${event.projectName} · ${stateLabel(event)}`)}`, `CATEGORIES:${escapeICalText(CALENDAR_LABELS[event.category])}`, `STATUS:${event.status}`, `TRANSP:${event.transparent ? 'TRANSPARENT' : 'OPAQUE'}`, 'CLASS:PRIVATE');
     if (event.location) lines.push(`LOCATION:${escapeICalText(event.location)}`);
     lines.push('END:VEVENT');
   }
