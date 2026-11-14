@@ -39,6 +39,7 @@ test('doca: a reserva medida vale no computador e some com a doca', () => {
   assert.match(tsx, /removeProperty\(DOCK_RESERVE_PROPERTY\)/);
   assert.match(tsx, /new ResizeObserver\(measure\)/);
   assert.match(tsx, /addEventListener\('resize', measure\)/);
+  assert.match(tsx, /launchers\.current\[returnTo\] \?\? launchers\.current\.toggle/, 'fechar um painel minimizado volta ao botão Widgets se a pilha estiver recolhida');
 });
 
 test('celular: Widgets e o Rolê independente ficam no cabeçalho, e a folha só existe depois de abrir', () => {

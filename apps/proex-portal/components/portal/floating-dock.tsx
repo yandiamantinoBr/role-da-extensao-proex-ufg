@@ -97,7 +97,10 @@ export default function FloatingDock({ userId, serverDay, modules, pinned, onNav
     pendingSave.current = next; window.clearTimeout(saveTimer.current);
     saveTimer.current = window.setTimeout(flush, immediate ? 0 : 1200);
   }, [flush]);
-  const close = useCallback((returnTo?: string) => { update(current => ({ ...current, open: null, minimized: false })); if (returnTo) window.requestAnimationFrame(() => launchers.current[returnTo]?.focus()); }, [update]);
+  const close = useCallback((returnTo?: string) => {
+    update(current => ({ ...current, open: null, minimized: false }));
+    if (returnTo) window.requestAnimationFrame(() => (launchers.current[returnTo] ?? launchers.current.toggle)?.focus({ preventScroll: true }));
+  }, [update]);
   const closeMobile = useCallback(() => {
     mobileDialog.current?.close();
     setMobileView(null);
@@ -146,7 +149,7 @@ export default function FloatingDock({ userId, serverDay, modules, pinned, onNav
     return () => media.removeEventListener('change', reset);
   }, []);
   // The page keeps room at its end for the dock's resting parts, measured from the screen, so buttons at the
-  // end of any page stay clear of it (Rolê, Widgets, a minimized chip, phone bar and safe area included).
+  // end of each desktop page stay clear of Rolê, Widgets and any minimized chip.
   const root = useRef<HTMLDivElement>(null);
   const measure = useCallback(() => {
     const node = root.current;
