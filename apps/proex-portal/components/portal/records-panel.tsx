@@ -14,6 +14,7 @@ import { documentExport } from './document-export';
 import { toast } from 'sonner';
 import { MAX_UPLOAD_FILE_BYTES as MAX_FILE_BYTES, UPLOAD_LIMIT_LABEL, uploadErrorMessage } from '../../lib/upload-limits';
 import DriveSaveButton from './drive-save-button';
+import ActivityMediaFolder from './activity-media-folder';
 
 type Row = Record<string, unknown>;
 type Kind = 'observation' | 'maintenance' | 'distribution' | 'consumption' | 'project' | 'material' | 'loan';
@@ -25,6 +26,7 @@ type Entry = {
   origin?: { via: 'assistant'; label: string; summary?: string };
 };
 type Props = {
+  userId: string;
   initialProjectId?:string;
   scheduleItemId?:string;
   onClearScheduleItem?():void;
@@ -188,7 +190,7 @@ function AttachmentQueue({ recordId, onAttachment, onPendingChange }: {
   </div>;
 }
 
-export default function RecordsPanel({ projects: sourceProjects, items, loans, initialProjectId='', scheduleItemId='', onClearScheduleItem, canRead = readListed, canWrite = noWrite }: Props) {
+export default function RecordsPanel({ userId, projects: sourceProjects, items, loans, initialProjectId='', scheduleItemId='', onClearScheduleItem, canRead = readListed, canWrite = noWrite }: Props) {
   const projects = sourceProjects.filter(project => text(project, 'name') && text(project, 'id') && canRead(text(project, 'id'))).map(project => ({ id: text(project, 'id'), name: text(project, 'name') }));
   const writableProjects = projects.filter(project => kinds.some(kind => canWrite(kind.capability, project.id)));
   const [records, setRecords] = useState<Entry[]>([]), [truncated, setTruncated] = useState(false);
@@ -388,6 +390,9 @@ export default function RecordsPanel({ projects: sourceProjects, items, loans, i
       {readError && <p className="p-inline-error" role="alert">{readError}</p>}
     </section>
 
+    {scheduleItemId && scheduleTitle && canWrite('campaigns.manage', filters.projectId) &&
+      <ActivityMediaFolder key={JSON.stringify([userId, filters.projectId, scheduleItemId])} userId={userId} projectId={filters.projectId} scheduleItemId={scheduleItemId}/>}
+
     {open && <section className="p-card" aria-labelledby="record-create-title">
       <div className="p-row-between" style={{ flexWrap: 'wrap', gap: 12, marginBottom: 16 }}><h3 id="record-create-title" ref={createHeading} tabIndex={-1} className={styles.createHeading}>{saved ? 'Registro salvo · adicionar anexos' : 'Criar registro'}</h3>{!unconfirmed && !saving && !savedPending && <button type="button" className="p-button p-button-subtle" onClick={() => { restoreCreateFocus.current = true; setOpen(false); setSaved(null); setSaveError(''); }}>{saved ? 'Concluir' : 'Fechar formulário'}</button>}</div>
       {saved ? <div>
@@ -396,7 +401,7 @@ export default function RecordsPanel({ projects: sourceProjects, items, loans, i
         {canAttach(saved) && <AttachmentQueue key={saved.id} recordId={saved.id} onAttachment={attachment => attach(saved.id, attachment)} onPendingChange={setSavedPending} />}
         <div style={{ marginTop: 20 }}><button type="button" className="p-button p-button-subtle" disabled={savedPending || existingPending || pendingProject || !canCreateHere} onClick={begin}><FilePlus2 size={17} />Criar outro registro</button>{savedPending && <p className="p-form-help">Confirme os anexos pendentes ou remova da seleção os arquivos que ainda não foram enviados.</p>}</div>
       </div> : <form ref={createRef} className="p-form" onSubmit={create}><DraftNotice draft={draft}/>
-        <p className="p-form-help">Salve para anexar fotos e PDFs. Para vídeos, adicione a pasta compartilhada com a equipe em Links e documentos, na ficha do projeto.</p>
+        <p className="p-form-help">Salve para anexar fotos e PDFs. {scheduleItemId ? 'Para vídeos, vincule a pasta do Drive em Vídeos da atividade.' : 'Para vídeos, abra os registros da atividade no Cronograma do projeto.'}</p>
         <fieldset disabled={saving || unconfirmed}>
           <div className="p-form-grid"><label className="p-field"><span>Projeto</span><select name="projectId" required value={projectId} onChange={event => changeProject(event.target.value)}>{writableProjects.filter(project => !createScope || project.id === createScope).map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label><label className="p-field"><span>Categoria</span><select name="kind" required value={kind} onChange={event => changeKind(event.target.value as Kind)}>{allowedKinds.map(value => <option key={value.value} value={value.value}>{value.label}</option>)}</select></label></div>
           <label className="p-field"><span>Título</span><input name="title" required maxLength={160} value={title} onChange={event => setTitle(event.target.value)} placeholder="Ex.: devolução e conferência da caixa de som" /></label>
