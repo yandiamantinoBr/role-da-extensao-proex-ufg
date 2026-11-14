@@ -298,6 +298,16 @@ async function rolesSmoke(owner, fixture) {
   const day = dayBrasilia(Date.now());
   const schedule = async title => ok(await manager('/api/portal', { action: 'project.schedule.create', projectId, title, startsAt: day, endsAt: day, operationKey: randomUUID() }), 'Atividade de cronograma QA');
   const action = await schedule('Ação no Sparks QA'), otherAction = await schedule('Outro compromisso QA');
+  const mediaQuery = '/api/records/activity-media?' + new URLSearchParams({ projectId, scheduleItemId: action.id });
+  const mediaView = ok(await manager(mediaQuery), 'Vídeos da atividade QA');
+  assert.equal(mediaView.viewerId, people.manager.userId);
+  assert.equal(mediaView.scheduleItemId, action.id);
+  assert.equal(mediaView.selected, null);
+  assert.deepEqual(mediaView.folders, []);
+  for (const client of [viewer, inventory, loans, operator]) assert.equal((await client(mediaQuery)).status, 404);
+  const badFolder = { projectId, scheduleItemId: action.id, folderId: 'pasta-forjada-qa', expectedVersion: 0, operationKey: randomUUID() };
+  assert.equal((await manager('/api/records/activity-media', badFolder)).status, 404);
+  assert.equal((await manager(mediaQuery + '&view=open')).headers.location, undefined);
   const observation = { action: 'create', projectId, scheduleItemId: action.id, kind: 'project', title: 'Sparks QA · Registro e fotos', occurredAt: new Date().toISOString(), operationKey: randomUUID() };
   assert.equal((await viewer('/api/records', observation)).status, 403);
   assert.equal((await inventory('/api/records', observation)).status, 403);

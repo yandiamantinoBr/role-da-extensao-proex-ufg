@@ -93,3 +93,22 @@
 @container portal (max-width:440px) {
   .filterBar[data-activity="true"] { grid-template-columns: minmax(0, 1fr); }
 }
+.mediaFolder {
+  display: grid;
+  justify-items: start;
+  gap: .65rem;
+  min-width: 0;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: var(--surface);
+  overflow-wrap: anywhere;
+}
+.mediaFolderHeader { display: flex; align-items: center; gap: .6rem; color: var(--brand-ink); }
+.mediaFolderHeader h3 { margin: 0; font-size: 1rem; }
+.mediaFolder p { margin: 0; color: var(--muted); }
+.mediaFolderForm { display: flex; flex-wrap: wrap; align-items: end; gap: .65rem; width: 100%; }
+.mediaFolderForm label { min-width: min(100%, 15rem); max-width: 100%; margin: 0; }
+.mediaFolderForm select { width: 100%; }
+.mediaFolder :global(.p-button), .mediaFolderForm select { min-height: 44px; }
+.mediaFolder .mediaFolderError { color: var(--danger); }
