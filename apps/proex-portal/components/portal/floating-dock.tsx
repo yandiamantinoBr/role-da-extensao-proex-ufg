@@ -50,8 +50,12 @@ function mobileToolbar() {
   return window.matchMedia(mobileWidth).matches ? document.querySelector('.pn-shell .p-topbar-actions') : null;
 }
 const desktopToolbar = () => null;
-export function useMobileDockToolbar() {
-  return useSyncExternalStore(subscribeToToolbar, mobileToolbar, desktopToolbar);
+export function useMobileDockToolbar(beforeChange?: () => void) {
+  const subscribeToWidth = useCallback((listener: () => void) => subscribeToToolbar(() => {
+    beforeChange?.();
+    listener();
+  }), [beforeChange]);
+  return useSyncExternalStore(subscribeToWidth, mobileToolbar, desktopToolbar);
 }
 const NotesWidget = lazy(() => import('./dock-personal').then(module => ({ default: module.NotesWidget })));
 const RemindersWidget = lazy(() => import('./dock-personal').then(module => ({ default: module.RemindersWidget })));
@@ -70,11 +74,22 @@ type Props = { userId: string; serverDay: string; modules: PortalModule[]; pinne
 /** Floating dock on every page: small launchers in the corner, one suspended panel at a time, state kept per person. */
 export default function FloatingDock({ userId, serverDay, modules, pinned, onNavigate }: Props) {
   const id = useId(), state = useSyncExternalStore(subscribe, read, read);
-  const toolbar = useMobileDockToolbar();
   const [dock, setDock] = useState<Dock | null>(null), [badges, setBadges] = useState({ reminders: 0 }), [expanded, setExpanded] = useState(false);
   const [mobileView, setMobileView] = useState<MobileView>(null);
   const launchers = useRef<Record<string, HTMLButtonElement | null>>({}), panel = useRef<HTMLElement>(null), saveTimer = useRef(0), pendingSave = useRef<Dock | null>(null);
   const mobileDialog = useRef<HTMLDialogElement>(null), mobileHeading = useRef<HTMLHeadingElement>(null), mobileTrigger = useRef<HTMLButtonElement>(null);
+  const root = useRef<HTMLDivElement>(null);
+  const resetToolbar = useCallback(() => {
+    const active = document.activeElement;
+    const sheet = mobileDialog.current;
+    if (sheet?.open || active === mobileTrigger.current || root.current?.contains(active)) {
+      sheet?.close();
+      document.getElementById('main')?.focus({ preventScroll: true });
+    }
+    setMobileView(null);
+    setExpanded(false);
+  }, []);
+  const toolbar = useMobileDockToolbar(resetToolbar);
   useEffect(() => { registry.mounted = true; publish(); return () => { registry.mounted = false; publish(); }; }, []);
   useEffect(() => {
     let live = true;
@@ -134,23 +149,8 @@ export default function FloatingDock({ userId, serverDay, modules, pinned, onNav
     return () => { if (sheet.open) sheet.close(); };
   }, [mobileOpen]);
   useEffect(() => { if (mobileOpen) mobileHeading.current?.focus({ preventScroll: true }); }, [mobileView, mobileOpen]);
-  useEffect(() => {
-    const media = window.matchMedia(mobileWidth);
-    const reset = () => {
-      const focus = document.activeElement;
-      if (mobileDialog.current?.contains(focus) || focus === mobileTrigger.current || root.current?.contains(focus)) {
-        mobileDialog.current?.close();
-        document.getElementById('main')?.focus({ preventScroll: true });
-      }
-      setMobileView(null);
-      setExpanded(false);
-    };
-    media.addEventListener('change', reset);
-    return () => media.removeEventListener('change', reset);
-  }, []);
   // The page keeps room at its end for the dock's resting parts, measured from the screen, so buttons at the
   // end of each desktop page stay clear of Rolê, Widgets and any minimized chip.
-  const root = useRef<HTMLDivElement>(null);
   const measure = useCallback(() => {
     const node = root.current;
     if (!node) return;
