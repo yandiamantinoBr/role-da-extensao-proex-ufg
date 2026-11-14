@@ -11,7 +11,9 @@ import { createServer as createProbe } from 'node:net';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
+import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { gunzipSync } from 'node:zlib';
 import { restoreEncryptedBackup, RESTORE_PREFIX } from '../platform-node/backup-restore.mjs';
 import { localMigrations } from './backup-cli-input.mjs';
 
@@ -329,6 +331,7 @@ async function rolesSmoke(owner, fixture) {
   assert.equal((await viewer(actionRecords)).status, 403);
   assert.equal((await viewer(`/api/follow-up?view=detail&id=${task.task.id}`)).status, 404);
   console.log('Perfis QA: responsável, gestor, bolsista leitor, materiais, empréstimos e operação. Vínculos, checklist, foto privada e revogação aprovados.');
+  return { projectId, scheduleItemId: action.id, recordId: receipt.id, attachmentId: uploaded.attachment.id, picture };
 }
 
 async function benchmark(api, fixture) {
@@ -372,7 +375,7 @@ async function syncSmoke(api, directory, redact) {
   if (exitCode !== 0) throw new Error('O harness da planilha simulada falhou no portal local.');
 }
 
-async function backupSmoke(api, directory, server) {
+async function backupSmoke(api, directory, server, activity) {
   const capability = ok(await api('/api/backup'), 'Disponibilidade do backup local');
   assert.equal(capability.supported, true);
   assert.equal((await api('/api/backup', undefined, false)).status, 401, 'metadados do backup exigem autenticação');
@@ -389,10 +392,26 @@ async function backupSmoke(api, directory, server) {
     assert.equal(response.headers['content-length'], undefined, 'backup deve usar streaming sem Content-Length');
     assert.equal(response.headers['transfer-encoding'], 'chunked');
     const dry = await restoreEncryptedBackup(response.value, protection, { dryRun: true, migrations: localMigrations() });
-    assert.equal(dry.verified, true); assert.equal(dry.objects, 1);
+    assert.equal(dry.verified, true); assert.equal(dry.objects, activity ? 2 : 1);
     restored = await restoreEncryptedBackup(response.value, protection, { migrations: localMigrations() });
     const copied = readFileSync(join(restored.directory, 'data', 'objects', key));
     assert.equal(createHash('sha256').update(copied).digest('hex'), createHash('sha256').update(bytes).digest('hex'));
+    if (activity) {
+      const data = join(restored.directory, 'data');
+      const database = new DatabaseSync(':memory:', { allowExtension: false });
+      try {
+        database.deserialize(gunzipSync(readFileSync(join(data, 'portal.sqlite.gz'))));
+        const found = database.prepare(`SELECT a.object_key FROM records r
+          JOIN record_attachments a ON a.record_id = r.id AND a.project_id = r.project_id
+          WHERE r.id = ? AND r.schedule_item_id = ? AND r.project_id = ? AND a.id = ? AND a.deleted_at IS NULL`)
+          .get(activity.recordId, activity.scheduleItemId, activity.projectId, activity.attachmentId);
+        assert.ok(found, 'restauração mantém relação entre projeto, atividade, registro e foto');
+        const storageId = createHash('sha256').update(found.object_key).digest('hex');
+        assert.deepEqual(readFileSync(join(data, 'objects', storageId)), activity.picture);
+      } finally {
+        database.close();
+      }
+    }
     assert.equal(JSON.parse(readFileSync(join(restored.directory, 'ISOLATED-RESTORE.json'))).ready, true);
     const memory = await new Promise((done, reject) => {
       const timeout = setTimeout(() => { server.removeListener('message', receive); reject(new Error('Métrica local do processo QA indisponível.')); }, 5000);
@@ -400,7 +419,8 @@ async function backupSmoke(api, directory, server) {
       server.on('message', receive); server.send({ event: 'memory' });
     });
     console.log(JSON.stringify({ backupSmoke: 'passed', environment: 'loopback, dados sintéticos; não confirma edge Vercel ou backup de produção', encryptedBytes: response.bytes, httpChunks: response.chunks, verifiedObjects: restored.objects, sqliteBytes: restored.sqliteBytes, isolatedRestore: true,
-      serverCurrentRssBytes: memory.rssBytes, serverProcessMaxRssKiB: memory.maxRssKiB, memoryScope: 'máximo do processo servidor desde o início deste QA, incluindo preparação e criptografia' }));
+      verifiedActivityPhoto: Boolean(activity), serverCurrentRssBytes: memory.rssBytes, serverProcessMaxRssKiB: memory.maxRssKiB,
+      memoryScope: 'máximo do processo servidor desde o início deste QA, incluindo preparação e criptografia' }));
   } finally {
     protection = ''; bytes.fill(0);
     if (restored?.directory) {
@@ -461,9 +481,9 @@ async function run(options) {
     console.log(JSON.stringify({ fixture, environment: 'descartável, loopback, sem produção', dataDirectory: directory }));
     if (options.benchmark) await benchmark(api, fixture);
     if (options.syncSmoke) await syncSmoke(api, directory, redact);
-    if (options.backupSmoke) await backupSmoke(api, directory, child);
     if (options.inviteSmoke) await invitationSmoke(api, fixture);
-    if (options.rolesSmoke) await rolesSmoke(api, fixture);
+    const activity = options.rolesSmoke ? await rolesSmoke(api, fixture) : undefined;
+    if (options.backupSmoke) await backupSmoke(api, directory, child, activity);
     console.log('Smoke autenticado concluído: servidor → API → dados → relatório.');
     if (!options.smoke) {
       console.log('Servidor mantido para revisão no navegador. Digite parar ou Ctrl+C para encerrar somente este QA e limpar sua pasta temporária.');
