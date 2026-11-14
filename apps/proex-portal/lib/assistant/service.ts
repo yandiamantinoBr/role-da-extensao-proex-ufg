@@ -97,7 +97,12 @@ export async function prepareAssistantPlan(db: D1Database, actor: PortalActor | 
       onFallback: async reason => { await recordRouteFallback(db, organizationId, current.userId, 'decision', config.decisionModel, reason); await dispatchFence(); },
     }) : null;
     if (routed) decisionAnswered = routed.route;
-    const decision = routed ? routed.result : await checkDecision(config, credentials, decisionBody(config, request, proposal), controller.signal, options.fetcher); if (!decision.approved || decision.inputTokens > bodyBytes + 18000) throw new HttpError(409, 'O classificador indicou dúvida. Esclareça ação, material e quantidade no pedido.', 'assistant_needs_review'); jevModel = decision.model; jevTokens = decision.inputTokens; }
+    const decision = routed ? routed.result : await checkDecision(config, credentials, decisionBody(config, request, proposal), controller.signal, options.fetcher);
+    if (!decision.approved || decision.inputTokens > bodyBytes + 18000) {
+      const guidance = proposal.intent === 'record.create' ? 'Esclareça o título e os fatos que devem constar no registro.' : 'Esclareça ação, material e quantidade no pedido.';
+      throw new HttpError(409, `O classificador indicou dúvida. ${guidance}`, 'assistant_needs_review');
+    }
+    jevModel = decision.model; jevTokens = decision.inputTokens; }
   if ((await loadSettings(db, secret, organizationId, false, options.keys,current.userId)).revision !== revision) throw new HttpError(409, 'A configuração de IA mudou. Prepare a proposta novamente.', 'assistant_configuration_changed');
   const before = proposal.itemId ? items.find(item => item.id === proposal.itemId)! : null, delta = proposal.intent === 'stock.receive' ? proposal.quantity : ['stock.distribute', 'stock.consume'].includes(proposal.intent) ? -proposal.quantity : 0;
   if (before && delta && (before.condition !== 'active' || before.stock + delta < before.reserved || before.category === 'equipment' && (delta < 0 || before.stock + delta > 1))) throw new HttpError(409, 'O material não permite essa movimentação. Confira disponibilidade e categoria em Materiais.', 'assistant_stock');
