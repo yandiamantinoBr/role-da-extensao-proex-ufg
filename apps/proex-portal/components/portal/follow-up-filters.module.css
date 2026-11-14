@@ -14,6 +14,30 @@
 .active { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .refine:has(.active) > .summary::after { content: ''; position: absolute; top: 7px; right: 7px; width: 8px; height: 8px; border-radius: 50%; background: var(--orange); box-shadow: 0 0 0 2px var(--surface-soft); }
 .fields { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+
+.fieldset[data-activity=true] {
+  display:block;
+  padding:8px 12px;
+}
+
+.fieldset[data-activity=true] .refine {
+  margin:0;
+}
+
+.fieldset[data-activity=true] .summary {
+  position:relative;
+  inset:auto;
+  width:fit-content;
+  padding:0 12px;
+}
+
+.fieldset[data-activity=true] .summaryText {
+  position:static;
+  width:auto;
+  height:auto;
+  margin:0;
+  clip-path:none;
+}
 /* Rótulo "Projeto" visível só em telas maiores; no celular o seletor fala por si (o nome acessível continua). */
 @container (max-width: 559px) {
   .project { font-size: 0; gap: 0; }
@@ -33,6 +57,8 @@
   .section { grid-template-columns: minmax(0, 1fr) auto; column-gap: 8px; }
   .section > * { grid-column: 1 / -1; }
   .section > .header { grid-column: 2; grid-row: 1; gap: 0; margin-top: 12px; }
+  .section[data-activity=true] > .filterRow { grid-row: 2; }
+  .section[data-activity=true] > .header { grid-row: 2; margin-top: 8px; }
   .section > .filterRow { grid-column: 1; grid-row: 1; }
   .reports { display: none !important; }
   .refresh { width: 44px; min-width: 44px; padding: 0 !important; justify-content: center; }

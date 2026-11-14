@@ -93,7 +93,7 @@ test('project sheet and old top panel mount the same responsibility form for the
   assert.deepEqual(requests.map(url => new URLSearchParams(url.split('?')[1]).get('view')).sort(), ['catalog', 'list']);
   assert.deepEqual(Object.fromEntries(new URLSearchParams(requests.find(url => url.includes('view=list')).split('?')[1])), {view: 'list', projectId: 'project-a', target: 'area', status: 'active', limit: '50'});
   assert.match(text(tree), /Quem cuida de cada área/);
-  assert.match(text(tree), /não dá acesso a nada/);
+  assert.match(text(tree), /com os acessos que já têm/);
   assert.match(text(tree), /Pessoa sintética/);
   assert.equal(text(tree).match(/Ninguém indicado/g).length, 2, 'empréstimos e dinâmicas sem ninguém');
   const buttons = current => nodes(current).filter(node => node.type === 'button' && node.props['aria-controls']);
@@ -167,7 +167,7 @@ test('project sheet and old top panel mount the same responsibility form for the
 test('the owners shortcut follows the chosen project and the requested area', () => {
   const parsed = ts.createSourceFile('portal-client.tsx', source('../app/portal-client.tsx'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   // Execute the real capability checks, sheet props and shortcut render without mounting unrelated modules.
-  const variables = new Set(['areaOwnerScopes', 'capabilities', 'globalCapabilities', 'projectCapabilities', 'canGlobal', 'canProject', 'areaOwnerShortcut']);
+  const variables = new Set(['areaOwnerScopes', 'capabilities', 'globalCapabilities', 'projectCapabilities', 'canGlobal', 'canProject', 'canManagePeople', 'areaOwnerShortcut']);
   const functions = new Set(['visibleOwnerAreas', 'areaOwners']);
   const fragments = [];
   let shortcut;
@@ -184,7 +184,7 @@ test('the owners shortcut follows the chosen project and the requested area', ()
   const code = `module.exports = (data, filter, tab) => {
     const role = data.role, user = {userId: 'synthetic-user'}, allowedTabs = [];
     ${fragments.join('\n')}
-    return { shortcut: (${shortcut}), areas: areaOwners(filter).props.areas };
+    return { shortcut: (${shortcut}), areas: areaOwners(filter).props.areas, canManageAccess: areaOwners(filter).props.canManageAccess };
   };`;
   vm.runInNewContext(ts.transpileModule(code, {compilerOptions: {module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX}}).outputText, {
     module: compiled, exports: compiled.exports, require: () => ({jsx, jsxs: jsx}), ProjectAreaOwners: 'ProjectAreaOwners',
@@ -205,6 +205,7 @@ test('the owners shortcut follows the chosen project and the requested area', ()
   ]) {
     const state = compiled.exports(data, project, tab);
     const link = nodes(state.shortcut).find(node => node.type === 'a');
+    assert.equal(state.canManageAccess, false, `pessoas e acessos: ${project}`);
     assert.equal(state.areas.includes(area), visible, `ficha: ${project}/${area}`);
     assert.equal(Boolean(link), visible, `atalho: ${project}/${area}`);
     if (visible) {
@@ -215,6 +216,7 @@ test('the owners shortcut follows the chosen project and the requested area', ()
   assert.equal(nodes(compiled.exports({...data, globalCapabilities: ['*']}, '', 'materials').shortcut).length, 0, 'todos os projetos');
   assert.equal(nodes(compiled.exports({...data, globalCapabilities: ['*']}, 'project-b', 'materials').shortcut).some(node => node.type === 'a'), true, 'estoque global');
   assert.equal(nodes(compiled.exports(data, 'project-a', 'projects').shortcut).length, 0, 'outra aba');
+  assert.equal(compiled.exports({...data, capabilitiesByProject: {'project-a': ['access.manage']}}, 'project-a', 'projects').canManageAccess, true);
 });
 
 test('the top panel left Materiais, Empréstimos and Dinâmicas; the way to owners and shortcuts stays one tap away (R4, etapa 2)', () => {

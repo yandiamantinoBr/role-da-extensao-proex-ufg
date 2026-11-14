@@ -38,7 +38,7 @@ test('0031 applies over 0000..0030, keeps foreign keys and every original scope 
  const native=new DatabaseSync(':memory:');t.after(()=>native.close());native.exec('PRAGMA foreign_keys=ON');for(const name of files)native.exec(readFileSync(drizzle+name,'utf8'));
  assert.equal(native.prepare('PRAGMA foreign_keys').get().foreign_keys,1);assert.equal(native.prepare('PRAGMA foreign_key_check').all().length,0);
  const triggers=native.prepare("SELECT name FROM sqlite_master WHERE type='trigger' AND (tbl_name='followup_tasks' OR tbl_name='followup_task_transfers') ORDER BY name").all().map(r=>r.name);
- assert.deepEqual(triggers,['followup_task_scope_insert','followup_task_scope_update','followup_task_transfer_delete','followup_task_transfer_insert','followup_task_transfer_settle','followup_task_transfer_update']);
+ assert.deepEqual(triggers,['followup_task_scope_insert','followup_task_scope_update','followup_task_transfer_delete','followup_task_transfer_insert','followup_task_transfer_settle','followup_task_transfer_update','followup_tasks_schedule_keep']);
  const f=await scenario(t);
  assert.throws(()=>f.native.prepare("UPDATE followup_tasks SET project_id='project-a2' WHERE id=?").run(f.taskId),/followup_scope_immutable/);
  assert.throws(()=>f.native.prepare("UPDATE followup_tasks SET project_id='project-a2',version=version+1 WHERE id=?").run(f.taskId),/followup_scope_immutable/);

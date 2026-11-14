@@ -373,6 +373,45 @@ const activityInput=(extra={})=>({organizationId:'org-a',projectId:'project-a',t
 async function activityGrant(f,manager,taskId,userId='viewer-a'){return act(f,manager,'task.worker.grant',{id:taskId,userId,confirmed:true,operationKey:crypto.randomUUID()});}
 const answerStep=(f,actor,detail,index,answer='yes',note='')=>act(f,actor,'checklist.activity.answer',{id:detail.checklist.id,rowId:detail.checklist.rows[index].id,expectedVersion:detail.checklist.rows[index].version,answer,note,operationKey:crypto.randomUUID()});
 
+test('schedule checklists expose only fronts of the chosen activity and preserve existing checklists',async t=>{
+ const f=fixture(t),manager=await f.actor('manager-a'),reader=await f.actor('viewer-a'),inventory=await f.actor('worker-a');
+ const day='2026-11-14';
+ for(const [id,project,title] of [['sparks','project-a','Ação no Sparks'],['other','project-a','Outro compromisso'],['private','project-b','Outro projeto']]){
+  f.insert('project_schedule_items',{id,project_id:project,title,starts_at:day,ends_at:day,created_at:f.now,updated_at:f.now});
+ }
+ const body=activityInput({scheduleItemId:'sparks',title:'Água e lanches QA'});
+ const saved=await act(f,manager,'checklist.activity.create',body);
+ assert.equal((await act(f,manager,'checklist.activity.create',body)).task.id,saved.task.id);
+ assert.equal(saved.checklist.scheduleItem.title,'Ação no Sparks');
+ const legacy=await act(f,manager,'checklist.activity.create',activityInput());
+ assert.equal(legacy.checklist.scheduleItem,undefined);
+ const scope={projectId:'project-a',scheduleItemId:'sparks'};
+ assert.deepEqual((await followupList(f.db,reader,scope)).tasks.map(task=>task.id),[saved.task.id]);
+ assert.deepEqual((await followupList(f.db,reader,{...scope,scheduleItemId:'other'})).tasks,[]);
+ await assert.rejects(followupList(f.db,reader,{...scope,organizationId:'org-b'}),{status:404});
+ await assert.rejects(followupDetail(f.db,reader,saved.task.id,{...scope,organizationId:'org-b'}),{status:404});
+ await assert.rejects(followupDetail(f.db,reader,legacy.task.id,scope),{status:404});
+ await assert.rejects(followupList(f.db,inventory,scope),{status:404});
+ assert.equal((await followupDetail(f.db,inventory,saved.task.id)).checklist.scheduleItem,undefined);
+ for(const scheduleItemId of ['private','absent']){
+  await assert.rejects(followupList(f.db,reader,{...scope,scheduleItemId}),{status:404});
+  await assert.rejects(act(f,manager,'checklist.activity.create',activityInput({scheduleItemId})),{status:404});
+ }
+ await assert.rejects(act(f,inventory,'checklist.activity.create',activityInput({scheduleItemId:'sparks'})),{status:404});
+ assert.throws(()=>f.native.prepare("UPDATE followup_tasks SET project_id='project-b' WHERE id=?").run(saved.task.id),/checklist_schedule_mismatch/);
+ assert.throws(()=>f.native.prepare("UPDATE project_schedule_items SET project_id='project-b' WHERE id='sparks'").run(),/checklist_schedule_mismatch/);
+ const before=f.native.prepare('SELECT COUNT(*) n FROM followup_tasks').get().n;
+ f.db.before=()=>f.native.prepare("UPDATE project_schedule_items SET status='cancelled' WHERE id='sparks'").run();
+ await assert.rejects(act(f,manager,'checklist.activity.create',activityInput({scheduleItemId:'sparks'})),{status:404});
+ assert.equal(f.native.prepare('SELECT COUNT(*) n FROM followup_tasks').get().n,before);
+ f.native.prepare("UPDATE project_schedule_items SET status='cancelled' WHERE id='sparks'").run();
+ assert.equal((await followupList(f.db,reader,scope)).scheduleItem.status,'cancelled');
+ await assert.rejects(act(f,manager,'checklist.activity.create',activityInput({scheduleItemId:'sparks'})),{status:404});
+ f.native.prepare("UPDATE members SET revoked_at=? WHERE user_id='viewer-a'").run(f.now);
+ await assert.rejects(followupList(f.db,reader,scope),{status:404});
+ await assert.rejects(followupDetail(f.db,reader,saved.task.id,scope),{status:404});
+});
+
 test('activity checklists preserve material contracts and never complete through the material branch or alter stock',async t=>{
  const f=fixture(t),manager=await f.actor('manager-a'),viewer=await f.actor('viewer-a'),before=f.native.prepare('SELECT stock,reserved FROM items WHERE id=?').get('item-a');
  let detail=await act(f,manager,'checklist.activity.create',activityInput());assert.equal(detail.checklist.kind,'activity');assert.equal(detail.checklist.rows.length,2);assert.ok(detail.checklist.rows.every(row=>row.answer===null));

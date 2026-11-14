@@ -2,19 +2,19 @@
 import {useEffect,useState,type ReactNode} from 'react';
 import {ArrowUpRight,Building2,Check,ContactRound,LoaderCircle,Mail,Phone,ShieldCheck,UserRound,X} from 'lucide-react';
 import {Dialog,DialogContent,DialogDescription,DialogTitle} from '@/components/ui/dialog';
+import {accessRoleLabel,accessScopeLabel} from '@/lib/team-access-labels';
 import styles from './team-person.module.css';
 
-type Member={id:string;role:string;project_id:string|null;revoked_at:string|null};
+type Member={id:string;role:string;project_id:string|null;organization_id:string|null;revoked_at:string|null};
 type Person={userId:string;displayName:string;email:string|null;status:string;isAnonymized:boolean;isSelf:boolean;
  unitId:string|null;unit:string;organizationalUnit:{name:string;acronym:string}|null;affiliation:string;jobTitle:string;phone:string;
  registrationType:string;registrationNumber:string;avatarUrl:string|null;members:Member[]};
-type Props={userId:string;projectId?:string;projects:{id:string;name:string}[];onClose():void;onOpenOwnProfile?():void};
+type Props={userId:string;projectId?:string;projects:{id:string;name:string}[];organizations:{id:string;name:string}[];onClose():void;onOpenOwnProfile?():void};
 const AFFILIATIONS:Record<string,string>={student:'Estudante',technical:'Técnico-administrativo',faculty:'Docente',scholar:'Bolsista',intern:'Estagiário',collaborator:'Colaborador',other:'Outro vínculo'};
-const ROLES:Record<string,string>={owner:'Responsável institucional',manager:'Gestor de projeto',operator:'Operador de evento',inventory:'Responsável por materiais',loans:'Responsável por empréstimos',viewer:'Leitor de relatórios'};
 function DetailField({label,value,icon}:{label:string;value:string|null;icon?:ReactNode}){
  return <div className={styles.field}><dt>{icon}{label}</dt><dd className={!value?styles.unfilled:undefined}>{value||'Não informado'}</dd></div>;
 }
-export default function TeamPersonDetail({userId,projectId,projects,onClose,onOpenOwnProfile}:Props){
+export default function TeamPersonDetail({userId,projectId,projects,organizations,onClose,onOpenOwnProfile}:Props){
  const [person,setPerson]=useState<Person|null>(null),[error,setError]=useState(''),[loading,setLoading]=useState(true),[brokenAvatar,setBrokenAvatar]=useState('');
  useEffect(()=>{
   const controller=new AbortController(),query=new URLSearchParams();if(projectId)query.set('projectId',projectId);
@@ -45,8 +45,8 @@ export default function TeamPersonDetail({userId,projectId,projects,onClose,onOp
     <DetailField label="Função ou atividade" value={person.jobTitle}/>
     <DetailField label={registrationLabel} value={person.registrationNumber}/>
    </dl></section>
-   <section className={styles.memberships} aria-label="Acessos neste contexto"><h3 className={styles.sectionTitle}><ShieldCheck size={18}/>Acessos neste contexto</h3>{person.members.length?<ul>{person.members.map(member=><li key={member.id}><span><strong>{member.project_id?projects.find(project=>project.id===member.project_id)?.name||'Projeto':'Toda a organização'}</strong><small>{ROLES[member.role]||'Integrante'}</small></span><span className={`p-badge ${member.revoked_at?'p-status-revoked':'p-status-active'}`}>{member.revoked_at?'Revogado':'Ativo'}</span></li>)}</ul>:<p className="p-form-help">Sem vínculo neste contexto.</p>}</section>
-   <p className={styles.note}>Os dados institucionais são preenchidos pela própria pessoa. As permissões de acesso são definidas pela gestão em cada projeto.</p>
+   <section className={styles.memberships} aria-label="Acessos neste contexto"><h3 className={styles.sectionTitle}><ShieldCheck size={18}/>Acessos neste contexto</h3>{person.members.length?<ul>{person.members.map(member=><li key={member.id}><span><strong>{accessScopeLabel(member.role, member.project_id, member.organization_id, projects, organizations)}</strong><small>{accessRoleLabel(member.role, member.organization_id)}</small></span><span className={`p-badge ${member.revoked_at?'p-status-revoked':'p-status-active'}`}>{member.revoked_at?'Revogado':'Ativo'}</span></li>)}</ul>:<p className="p-form-help">Sem vínculo neste contexto.</p>}</section>
+   <p className={styles.note}>A pessoa preenche os próprios dados institucionais. A gestão define as permissões conforme os acessos listados acima.</p>
   </div>}
   {/* O fallback precisa recarregar o painel: module é lido apenas na inicialização. */}
   {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
