@@ -36,7 +36,9 @@ test('signing in preserves the shared activity, demand or project; access is res
     const activity = afterLogin({module:'records', project:'project-a', view:'documents', scheduleItemId:'activity-sparks', token:'private', unknown:'no'});
     assert.equal(activity, '/?module=records&project=project-a&view=documents&scheduleItemId=activity-sparks');
     assert.equal(read(new URL(activity, origin).search).recordsScheduleItemId, 'activity-sparks');
-    assert.equal(read(new URL(activity, origin).search, {...scope, canSelectProject: () => false}).project, '');
+    const restricted = read(new URL(activity, origin).search, {...scope, canSelectProject: () => false});
+    assert.equal(restricted.project, '');
+    assert.equal(restricted.recordsScheduleItemId, undefined);
     const demand = afterLogin({module:['demands', 'settings'], project:'project-a', demandId:'front-a', scheduleItemId:'activity-sparks'});
     assert.equal(read(new URL(demand, origin).search).demand, 'front-a');
     const project = afterLogin({module:'projects', project:'project-a', detailProject:'project-a'});

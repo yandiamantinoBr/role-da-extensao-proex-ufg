@@ -68,7 +68,7 @@ export function readPortalLocation(params: URLSearchParams, scope: Scope): Porta
         report: tab === 'reports' && isReportDataset(params.get('report')) ? params.get('report') as ReportDatasetId : 'projects',
         ...(tab === 'records' && params.get('view') === 'documents' ? {
             recordsView: 'documents' as const,
-            ...(scheduleItemId ? { recordsScheduleItemId: scheduleItemId } : {}),
+            ...(project && scheduleItemId ? { recordsScheduleItemId: scheduleItemId } : {}),
         } : {}),
         workStatus: tab === 'my-work' ? MY_WORK_STATUSES.find(value => value === params.get('workStatus')) ?? 'pending' : 'pending',
         organization,
