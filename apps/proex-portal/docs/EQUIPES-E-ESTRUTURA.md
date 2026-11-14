@@ -14,7 +14,7 @@ Um usuário com acesso apenas ao projeto vê as suas equipes e as equipes com tr
 
 Os gráficos e contadores incluem todas as demandas autorizadas do recorte, sem depender da paginação de seis registros. Clicar em um estado filtra a lista no servidor; abrir uma demanda leva ao contexto de origem. Selecionar uma equipe leva o foco ao painel correspondente. As equipes mostram somente atribuições explícitas à equipe, não toda demanda de qualquer integrante. Uma demanda pode ser contada em várias equipes, sem representar várias demandas distintas.
 
-PDF, DOCX e XLSX fazem uma nova leitura autorizada e incluem metadados do recorte, inclusive o nome atual da equipe. Acima de 5.000 demandas, escolha um projeto ou estado para baixar o conjunto completo. A [Planilha da equipe](SHEETS-POR-EQUIPE.md) usa um arquivo de consulta próprio para equipe e projeto.
+Ao baixar PDF, DOCX ou XLSX, o Portal consulta a equipe e as demandas do recorte antes e depois de preparar o arquivo. O download para se os dados ou os acessos mudarem durante a preparação. Se uma versão antiga da página pedir para atualizar, recarregue antes de tentar novamente. Acima de 5.000 demandas, escolha um projeto ou estado para baixar o conjunto completo. A [Planilha da equipe](SHEETS-POR-EQUIPE.md) usa um arquivo de consulta próprio para equipe e projeto.
 
 Durante uma atualização no mesmo contexto, o resultado anterior permanece identificado e as ações sobre demandas/exportações aguardam a confirmação. Isso preserva foco e rolagem ao filtrar o gráfico. Trocar organização/projeto, perder um recorte nos dados de sessão ou receber 401/403 oculta os dados anteriores. Respostas tardias de consultas canceladas são descartadas.
 
@@ -52,6 +52,6 @@ Comunicação/Design, TI, apoio administrativo, logística e equipes temporária
 
 ## Verificação
 
-Testes de domínio cobrem duas organizações, dois projetos da mesma organização, multiequipe, agregados, escopo de integrantes, arquivamento, perda de vínculo, conta bloqueada, revogação durante leitura, paginação e exportação. A validação de resposta recusa contexto/conta diferente, estados desconhecidos e contagens inválidas.
+Testes de domínio cobrem duas organizações, dois projetos da mesma organização, multiequipe, agregados, escopo de integrantes, arquivamento, perda de vínculo, conta bloqueada, revogação durante leitura, paginação e exportação. `work-teams-export.test.mjs` confere a revogação e a mudança de dados depois da preparação do arquivo. A validação de resposta recusa contexto/conta diferente, estados desconhecidos e contagens inválidas.
 
 A interface foi ensaiada em React StrictMode com o componente, a rota e o serviço reais sobre SQLite em memória com dados sintéticos. Validar 375/390/1366 px nos dois temas, campos e botões por teclado, alvos de pelo menos 44 px, filtros do gráfico, criar/editar equipe, limpar dados após 403 e reabrir os três formatos. Evidências locais ficam em `.sites-runtime/teams-qa/`; nenhum desses ensaios declara publicação ou sincronização com dados reais.
