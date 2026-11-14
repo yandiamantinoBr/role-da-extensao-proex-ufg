@@ -42,3 +42,16 @@ test('real HTTP wrapper sends the observed workbook ID and uses only the project
  f.context.UrlFetchApp.fetch=(url,options)=>{request={url,options};return{getContentText:()=>JSON.stringify({ok:true,result:{projectId:'project-a'}})};};
  const result=f.context.chamar_('proex_sync_describe',{});assert.equal(result.projectId,'project-a');assert.equal(request.url,'https://synthetic.invalid/api/sync/project-connector');assert.equal(request.options.followRedirects,false);assert.equal(JSON.parse(request.options.payload).spreadsheetId,'synthetic-workbook');assert.equal(f.alerts.length,0);
 });
+test('the project menu can create a zero-balance material through native Google prompts',()=>{
+ const f=fixture(), replies=['Amostra de teste','consumo interno','','Sem uso operacional.'];
+ const ui={Button:{OK:'OK'},ButtonSet:{OK_CANCEL:'OK_CANCEL'},prompt:()=>({getSelectedButton:()=>ui.Button.OK,getResponseText:()=>replies.shift()}),alert:(title)=>{f.alerts.push(title);return ui.Button.OK;}};
+ f.context.SpreadsheetApp.getUi=()=>ui;
+ const scoped='project-a';
+ f.context.carregarCadastroMaterial=()=>({projects:[{id:scoped,name:'Projeto de teste'}],kinds:{consumption:'Consumo interno'},draft:{changeKey:'material-00000000-0000-4000-8000-000000000000'}});
+ let submitted, cleared;
+ f.context.salvarCadastroMaterial=value=>{submitted=value;return{status:'applied',message:'Material cadastrado.'};};
+ f.context.novoCadastroMaterial=key=>{cleared=key;};
+ f.context.cadastrarMaterialProjeto();
+ assert.deepEqual({...submitted},{projectId:scoped,category:'consumption',name:'Amostra de teste',unit:'unidade',description:'Sem uso operacional.',changeKey:cleared});
+ assert.deepEqual(f.alerts,['Confirmar cadastro','Material cadastrado.']);
+});
