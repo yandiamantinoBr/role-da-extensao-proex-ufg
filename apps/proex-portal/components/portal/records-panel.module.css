@@ -3,6 +3,8 @@
 .filterActions { display: flex; gap: 8px; }
 .filterActions :global(.p-button) { min-height: 44px; }
 .filterHelp { grid-column: 1 / -1; font-size: 12px; color: var(--text-secondary); margin: 0; }
+.recordsIntro { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+.recordsIntro p { margin: 0; }
 .historyHead { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
 .historyHead h3 { margin: 0 0 4px; font-size: 18px; }
 .historyActions { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -50,6 +52,7 @@
   .filterBar > label:first-child, .filterActions { grid-column: 1 / -1; }
 }
 @container portal (max-width:620px) {
+  .recordsIntro > button { width: 100%; min-height: 44px; }
   .filterBar { grid-template-columns: minmax(0, 1fr); }
   .filterActions :global(.p-button-primary) { flex: 1; }
   .historyActions { width: 100%; }

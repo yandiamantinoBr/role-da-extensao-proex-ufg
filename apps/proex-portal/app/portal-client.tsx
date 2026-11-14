@@ -324,7 +324,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
     const [historyReady, setHistoryReady] = useState(false);
     const pushNavigation = useRef(false);
     const [selectedDemandId, setSelectedDemandId] = useState('');
-    const [recordsView, setRecordsView] = useState<'history' | 'documents'>('history');
+    const [recordsView, setRecordsView] = useState<'history' | 'documents'>('documents');
     const [recordsScheduleItemId, setRecordsScheduleItemId] = useState('');
     const [demandsScheduleItemId, setDemandsScheduleItemId] = useState('');
     // Registros aberto pelo atalho "Ver histórico" de uma ficha: assunto no formato item:<id>.
@@ -597,7 +597,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         setDemandReportFilters(next.demandReport ? { organizationId:next.demandReport.organizationId, generalOnly:next.demandReport.generalOnly, status:next.demandReport.status, priority:next.demandReport.priority, search:'' } : null);
         setNeedsDemandSearch(Boolean(next.demandReport?.needsSearch));
         setDemandReportUnavailable(Boolean(next.demandReport?.unavailable));
-        if (next.tab === 'records') setRecordsView(next.history ? 'history' : next.recordsView ?? 'history');
+        if (next.tab === 'records') setRecordsView(next.history ? 'history' : next.recordsView ?? 'documents');
         setRecordsScheduleItemId(next.recordsScheduleItemId ?? '');
         setDemandsScheduleItemId(next.demandsScheduleItemId ?? '');
         setPersonalStatus(next.workStatus ?? 'pending'); setPersonalOrganization(next.organization ?? '');
@@ -648,6 +648,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         setTab(id); setAccountOpen(false); setSelectedMaterialId(null);setMaterialMode('view'); setWorkRecord(null);
         setLoanFilters(emptyLoanFilters);
         setRecordsScheduleItemId('');
+        if (id === 'records') setRecordsView('documents');
         setDemandsScheduleItemId('');
         setDeniedModule(null); setHistoryParam('');
         // Um pedido de Equipes (abrir fixada, criar) vale só para esta ida; voltar pelo menu abre a página normal.
@@ -1209,7 +1210,10 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
           return true;
         }}/>}
       {tab === 'records' && <>
-        <nav className="p-material-tabs" aria-label="Partes de Registros"><button type="button" aria-pressed={recordsView === 'history'} className={recordsView === 'history' ? 'is-active' : ''} onClick={() => setRecordsView('history')}><CalendarDays size={18}/>Histórico</button><button type="button" aria-pressed={recordsView === 'documents'} className={recordsView === 'documents' ? 'is-active' : ''} onClick={() => setRecordsView('documents')}><FileText size={18}/>Documentos</button></nav>
+        <nav className="p-material-tabs" aria-label="Partes de Registros">
+          <button type="button" aria-pressed={recordsView === 'documents'} className={recordsView === 'documents' ? 'is-active' : ''} onClick={() => { if (recordsView !== 'documents') pushNavigation.current = true; setHistoryParam(''); setRecordsView('documents'); }}><FileText size={18} aria-hidden="true"/>Registros e fotos</button>
+          <button type="button" aria-pressed={recordsView === 'history'} className={recordsView === 'history' ? 'is-active' : ''} onClick={() => { if (recordsView !== 'history') pushNavigation.current = true; setRecordsView('history'); }}><CalendarDays size={18} aria-hidden="true"/>Alterações</button>
+        </nav>
         {recordsView === 'history' && <ActivityPanel key={`${filter}:${historyParam}`} initialProjectId={filter} subject={parseHistorySubject(historyParam)} onClearSubject={() => setHistoryParam('')} projects={projects.map(project => ({ id: string(project.id), name: string(project.name) }))}/>}
         <div hidden={recordsView !== 'documents'}><RecordsPanel userId={string(user.userId)} key={JSON.stringify([user.userId,filter,recordsScheduleItemId])} initialProjectId={filter} scheduleItemId={recordsScheduleItemId} onClearScheduleItem={() => { pushNavigation.current = true; setRecordsScheduleItemId(''); focusModule(false); }} projects={projects} items={items} loans={loans} canRead={projectId => canProject(projectId, 'reports.read', 'campaigns.manage', 'inventory.read', 'loans.read')} canWrite={(capability: string, projectId?: string | null) => projectId ? canProject(projectId, capability) : canGlobal(capability)}/></div>
       </>}

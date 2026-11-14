@@ -84,6 +84,19 @@ test('a project documents link survives reload and selecting another module clea
     assert.equal(read('module=records&view=unknown').recordsView,undefined);
 });
 
+test('an explicit changes view survives reload without leaking into another module',()=>{
+    const href=origin+'/?module=records&project=project-a';
+    const destination=read(new URL(href).search);
+    const history={state:null,pushState(_state,_title,url){location=url.href;},replaceState(_state,_title,url){location=url.href;}};
+    let location;
+    commitPortalLocation(history,href,{...destination,recordsView:'history'},true);
+    const changes=read(new URL(location).search);
+    assert.equal(changes.recordsView,'history');
+    assert.equal(changes.project,'project-a');
+    commitPortalLocation(history,location,{...changes,tab:'projects'},true);
+    assert.equal(new URL(location).searchParams.get('view'),null);
+});
+
 test('activity fronts preserve the selected commitment without carrying it into general modules',()=>{
     const fronts=read('module=demands&project=project-a&scheduleItemId=sparks&demandId=front-a');
     assert.equal(fronts.demandsScheduleItemId,'sparks');
