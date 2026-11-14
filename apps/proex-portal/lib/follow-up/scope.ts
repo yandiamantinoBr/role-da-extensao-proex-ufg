@@ -14,6 +14,17 @@ export function authority(userSql:string,orgSql:string,projectSql:string,write=f
 export function actorRequired(actor:PortalActor|null):asserts actor is PortalActor {if(!actor)throw new HttpError(401,'Entre para acompanhar as demandas.','unauthenticated');}
 export function scopeStatement(db:D1Database,actor:PortalActor,scope:Scope,write=false) {return db.prepare(`SELECT CASE WHEN ${authority('?','scope.organization_id','scope.project_id',write)} THEN 1 ELSE json_extract('[]','followup_authority_changed') END FROM(SELECT ? AS organization_id,? AS project_id) scope`).bind(actor.userId,scope.organizationId,scope.projectId);}
 export async function requireScope(db:D1Database,actor:PortalActor|null,scope:Scope,write=false) {actorRequired(actor);if(!await one(db,`SELECT 1 allowed FROM(SELECT ? AS organization_id,? AS project_id) scope WHERE ${authority('?','scope.organization_id','scope.project_id',write)}`,[scope.organizationId,scope.projectId,actor.userId]))throw new HttpError(403,'Seu acesso a este projeto ou organização mudou.','followup_forbidden');}
+/** Visibility within a scope already authorized for the caller. Does not grant project or roster access. */
+export function visibleTeamInScope(managementSql: string): string {
+ return `(${managementSql}=1 OR
+  EXISTS(SELECT 1 FROM followup_team_members mine WHERE mine.team_id=team.id AND mine.user_id=caller.user_id AND mine.removed_at IS NULL)
+  OR EXISTS(SELECT 1 FROM followup_assignees a JOIN followup_tasks t ON t.id=a.task_id
+   WHERE a.team_id=team.id AND a.removed_at IS NULL AND t.organization_id=team.organization_id
+   AND (caller.project_id IS NULL OR t.project_id=caller.project_id) AND ${authority('caller.user_id','t.organization_id','t.project_id')})
+  OR EXISTS(SELECT 1 FROM work_responsibility_assignees a JOIN work_responsibility_scopes s ON s.id=a.scope_id
+   WHERE a.team_id=team.id AND a.revoked_at IS NULL AND s.status='active' AND s.organization_id=team.organization_id
+   AND (caller.project_id IS NULL OR s.project_id=caller.project_id) AND ${authority('caller.user_id','s.organization_id','s.project_id')}))`;
+}
 export async function atomic(db:D1Database,actor:PortalActor,scope:Scope,statements:D1PreparedStatement[],write=true) {try{return(await db.batch([scopeStatement(db,actor,scope,write),...statements])).slice(1);}catch(error){if(String(error).includes('followup_authority_changed'))throw new HttpError(403,'Seu acesso mudou. Atualize a página.','followup_forbidden');if(String(error).includes('followup_version_changed'))throw new HttpError(409,'O registro mudou. Reabra a edição.','followup_conflict');throw error;}}
 export function cas(db:D1Database,table:'followup_tasks'|'followup_teams'|'followup_checklists'|'followup_checklist_steps',id:string,expected:number){return db.prepare(`SELECT CASE WHEN EXISTS(SELECT 1 FROM ${table} WHERE id=? AND version=?) THEN 1 ELSE json_extract('[]','followup_version_changed') END`).bind(id,expected);}
 export function assignedRecipient(userSql:string,taskSql='t'):string {return `EXISTS(SELECT 1 FROM followup_assignees assigned WHERE assigned.task_id=${taskSql}.id AND assigned.removed_at IS NULL AND (assigned.user_id=${userSql} OR EXISTS(SELECT 1 FROM followup_teams team JOIN followup_team_members tm ON tm.team_id=team.id WHERE team.id=assigned.team_id AND team.organization_id=${taskSql}.organization_id AND team.status='active' AND tm.user_id=${userSql} AND tm.removed_at IS NULL)))`;}
