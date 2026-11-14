@@ -50,6 +50,7 @@ test('celular: Widgets e o Rolê independente ficam no cabeçalho, e a folha só
   assert.match(dock, /if \(toolbar\) \{[\s\S]*createPortal\(<button[\s\S]*setMobileView\('launchers'\)/);
   assert.match(dock, /mobileOpen && <dialog[^>]*className=\{styles\.mobileDialog\}/);
   assert.match(dock, /sheet\.showModal\(\)/);
+  assert.match(dock, /event\.shiftKey && \(current === first \|\| current === mobileHeading\.current\)/);
   assert.match(dock, /const shown = dock !== null && !toolbar/);
   assert.match(css, /@media \(max-width:720px\)\{\s*\.dock\{display:none\}/);
   assert.match(role, /!open && ready && !dock\.registered/);

@@ -193,7 +193,14 @@ export default function FloatingDock({ userId, serverDay, modules, pinned, onNav
       {createPortal(<button ref={mobileTrigger} type="button" className={styles.mobileTrigger} data-dock-toggle aria-label={widgetLabel} title="Widgets" aria-haspopup="dialog" aria-expanded={mobileOpen} onClick={event => { event.currentTarget.focus({ preventScroll: true }); setMobileView('launchers'); }}>
         <LayoutGrid size={19} aria-hidden="true"/>{reminderBadge > 0 && <span className={styles.badge} aria-hidden="true">{reminderBadge > 9 ? '9+' : reminderBadge}</span>}
       </button>, toolbar)}
-      {mobileOpen && <dialog ref={mobileDialog} className={styles.mobileDialog} aria-labelledby={`${id}-mobile-title`} onCancel={event => { event.preventDefault(); closeMobile(); }} onClick={event => { if (event.target === event.currentTarget) closeMobile(); }}>
+      {mobileOpen && <dialog ref={mobileDialog} className={styles.mobileDialog} aria-labelledby={`${id}-mobile-title`} onCancel={event => { event.preventDefault(); closeMobile(); }} onClick={event => { if (event.target === event.currentTarget) closeMobile(); }} onKeyDown={event => {
+        if (event.key !== 'Tab') return;
+        const controls = [...event.currentTarget.querySelectorAll<HTMLElement>('button, input, textarea, select, a[href], [tabindex="0"]')]
+          .filter(control => control.tabIndex >= 0 && !control.matches(':disabled') && control.getClientRects().length > 0);
+        const first = controls[0], last = controls.at(-1), current = document.activeElement;
+        if (event.shiftKey && (current === first || current === mobileHeading.current)) { event.preventDefault(); last?.focus(); }
+        else if (!event.shiftKey && current === last) { event.preventDefault(); first?.focus(); }
+      }}>
         <div className={styles.mobileSheet}>
           <header className={styles.panelHead}>
             <h2 id={`${id}-mobile-title`} ref={mobileHeading} tabIndex={-1}>{title}</h2>
