@@ -12,10 +12,11 @@
  * arquivo público diretamente. Núcleo de CAS/readback compartilhado com a mestre.
  */
 var CONTROL = 'PROEX · Controle', OPERATIONS = 'PROEX · Operações', CONFLICTS = 'PROEX · Conflitos';
-var CONNECTOR_VERSION = 'projeto-2026-11-05.1';
+var CONNECTOR_VERSION = 'projeto-2026-11-14.1';
 function onOpen() {
  SpreadsheetApp.getUi().createMenu('PROEX · Projeto')
-  .addItem('Cadastrar material', 'cadastrarMaterial')
+  .addItem('Cadastrar material', 'cadastrarMaterialProjeto')
+  .addItem('Abrir formulário lateral de material', 'cadastrarMaterial')
   .addItem('Sincronizar agora', 'sincronizarAgora')
   .addSeparator().addItem('Conectar a este projeto…', 'conectar')
   .addItem('Ver estado da conexão', 'verEstado')
@@ -43,6 +44,38 @@ function verEstado() {
 function ativarAutomatico(){chamar_('proex_sync_describe',{});desativarAutomatico();ScriptApp.newTrigger('sincronizarAutomatico').timeBased().everyMinutes(10).create();SpreadsheetApp.getUi().alert('Rotina criada nesta conta para cada 10minutos. Confira o histórico de execuções e renove a chave a cada 30dias.');}
 function desativarAutomatico(){ScriptApp.getProjectTriggers().filter(function(t){return t.getHandlerFunction()==='sincronizarAutomatico';}).forEach(function(t){ScriptApp.deleteTrigger(t);});}
 function conferirPlanilhaCadastroMaterial_(){var status=chamar_('proex_sync_describe',{});if(status.configuration.scope!=='materials')throw new Error('A chave é de leitura. Para cadastrar materiais, solicite uma chave de materiais ao gestor do projeto.');}
+function cadastrarMaterialProjeto() {
+ var ui = SpreadsheetApp.getUi(), form = carregarCadastroMaterial(), draft = form.draft;
+ function ask(title, description) {
+  var answer = ui.prompt(title, description, ui.ButtonSet.OK_CANCEL);
+  return answer.getSelectedButton() === ui.Button.OK ? answer.getResponseText().trim() : null;
+ }
+ if (draft.result) {
+  ui.alert(draft.result.message);
+  novoCadastroMaterial(draft.changeKey);
+  return;
+ }
+ var values = draft.input;
+ if (!values) {
+  if (form.projects.length !== 1) throw new Error('O projeto vinculado precisa estar ativo para cadastrar materiais.');
+  var name = ask('Nome do material', 'Projeto: ' + form.projects[0].name + '. O material começa com saldo zero.');
+  if (name === null) return;
+  var labels = Object.keys(form.kinds), examples = labels.map(function (key) { return form.kinds[key]; });
+  var chosen = ask('Tipo do material', 'Escreva um destes nomes: ' + examples.join(' · '));
+  if (chosen === null) return;
+  var kind = labels.find(function (key) { return form.kinds[key].toLocaleLowerCase('pt-BR') === chosen.toLocaleLowerCase('pt-BR'); });
+  if (!kind) { ui.alert('Tipo inválido. Use um dos nomes informados e inicie novamente.'); return; }
+  var unit = ask('Unidade de medida', 'Exemplos: unidade, caixa ou pacote. Se ficar em branco, será usada unidade.');
+  if (unit === null) return;
+  var description = ask('Descrição do material', 'Opcional. Escreva o que ajuda a identificar o material.');
+  if (description === null) return;
+  values = { projectId: form.projects[0].id, category: kind, name: name, unit: unit || 'unidade', description: description };
+ }
+ if (ui.alert('Confirmar cadastro', values.name + ' · ' + form.kinds[values.category] + ' · ' + values.unit + '\nSaldo inicial: 0.\n' + values.description, ui.ButtonSet.OK_CANCEL) !== ui.Button.OK) return;
+ var receipt = salvarCadastroMaterial(Object.assign({}, values, { changeKey: draft.changeKey }));
+ ui.alert(receipt.message);
+ if (receipt.status === 'applied' || receipt.status === 'duplicate') novoCadastroMaterial(draft.changeKey);
+}
 function registrarAbasProjeto_(ss,schemas){var tabs={};schemas.forEach(function(schema){var sheet=ss.getSheetByName(schema.sheetName);if(sheet)tabs[schema.table]=sheet.getSheetId();});chamar_('proex_project_sheet_tabs',{tabs:tabs});}
 function chamar_(tool,args) {
  var props=propriedades_(),portal=props.getProperty('PORTAL_URL'),token=props.getProperty('SYNC_TOKEN'),ss=SpreadsheetApp.getActive();
