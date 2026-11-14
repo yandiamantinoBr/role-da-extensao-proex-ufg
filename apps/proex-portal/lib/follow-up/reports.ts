@@ -1,7 +1,7 @@
 import { type PortalActor } from '../access';
 import { all } from '../database';
 import { HttpError } from '../errors';
-import { date } from './contracts';
+import { choices, date, TASK_PRIORITIES, TASK_STATES, taskSearchPattern } from './contracts';
 import { authority, activeAccount } from './scope';
 
 export async function followupReportRows(db: D1Database, actor: PortalActor, dataset: 'demands' | 'reviews', input: Record<string, unknown>, limit: number) {
@@ -12,6 +12,20 @@ export async function followupReportRows(db: D1Database, actor: PortalActor, dat
     if (typeof value !== 'string' || value.length > 200) throw new HttpError(400, 'Confira os filtros do relatório.', 'invalid_report_filter');
     if (value === '__none__') conditions.push(`(${column} IS NULL OR ${column}='')`);
     else { conditions.push(`${column}=?`); values.push(value); }
+  }
+  if (dataset === 'demands') {
+    if (input.demandProjectScope !== undefined) {
+      choices(input.demandProjectScope, ['organization']);
+      if (!input.organizationId || input.projectId) throw new HttpError(400, 'Confira a organização e o projeto deste relatório.', 'invalid_report_filter');
+      conditions.push('f.project_id IS NULL');
+    }
+    if (input.demandStatus && input.demandStatus !== 'all') { conditions.push('f.status=?'); values.push(choices(input.demandStatus, TASK_STATES)); }
+    if (input.demandPriority && input.demandPriority !== 'all') { conditions.push('f.priority=?'); values.push(choices(input.demandPriority, TASK_PRIORITIES)); }
+    const search = taskSearchPattern(input.demandSearch);
+    if (search) {
+      conditions.push("(f.title LIKE ? ESCAPE '\\' OR f.body LIKE ? ESCAPE '\\')");
+      values.push(search, search);
+    }
   }
   const from = date(input.from), to = date(input.to);
   if (from && to && from > to) throw new HttpError(400, 'A data inicial precisa anteceder a final.', 'invalid_report_date');

@@ -4,7 +4,7 @@ import { HttpError } from '../errors';
 import { prepareMutation } from '../mutations';
 import { campaignAction } from '../campaigns';
 import { listOrganizations } from '../organizations';
-import { TASK_STATES, TASK_PRIORITIES, type TaskPriority, id, text, integer, version, date, choices, ids, onlyKeys, fail } from './contracts';
+import { TASK_STATES, TASK_PRIORITIES, type TaskPriority, id, text, integer, version, date, choices, ids, onlyKeys, fail, taskSearchPattern } from './contracts';
 import { authority, workAuthority, assignedRecipient, activeAccount, activityCoverageReader, activityCoverageScope, actorRequired, requireScope, scopeStatement, atomic, cas, fanout, recipientLimit, effectiveRecipient, type Scope } from './scope';
 import { serverWorkClock } from './time';
 import { groupNotifications, type NoticeForGroup } from './notification-groups';
@@ -73,6 +73,11 @@ export async function followupList(db:D1Database,actor:PortalActor|null,input:Re
  const projectId=id(input.projectId,true),organizationId=id(input.organizationId,true);
  if(projectId){conditions.push('t.project_id=?');values.push(projectId);}if(organizationId){conditions.push('t.organization_id=?');values.push(organizationId);}
  const scheduleItemId=id(input.scheduleItemId,true);
+ if(input.projectScope!==undefined){
+  choices(input.projectScope,['organization']);
+  if(!organizationId||projectId||scheduleItemId)fail('Escolha uma organização para consultar as demandas gerais.');
+  conditions.push('t.project_id IS NULL');
+ }
  if(scheduleItemId&&!projectId)fail('Atividade indisponível neste projeto.','followup_schedule_not_found',404);
  if(scheduleItemId){
   const guard=projectAuthoritySql(actor,checklistScheduleCapabilities,'s.project_id');
@@ -81,7 +86,7 @@ export async function followupList(db:D1Database,actor:PortalActor|null,input:Re
   values.push(scheduleItemId,...guard.values);
  }
  if(input.status&&input.status!=='all'){conditions.push('t.status=?');values.push(choices(input.status,TASK_STATES));}if(input.priority&&input.priority!=='all'){conditions.push('t.priority=?');values.push(choices(input.priority,TASK_PRIORITIES));}
- const search=text(input.search,120,true);if(search){conditions.push("(t.title LIKE ? ESCAPE '\\' OR t.body LIKE ? ESCAPE '\\')");const needle='%'+search.replace(/[\\%_]/g,'\\$&')+'%';values.push(needle,needle);}
+ const search=taskSearchPattern(input.search);if(search){conditions.push("(t.title LIKE ? ESCAPE '\\' OR t.body LIKE ? ESCAPE '\\')");values.push(search,search);}
  const offset=input.offset===undefined?0:integer(input.offset,50000);const rows=await all(db,`${taskProjectionSql} WHERE ${conditions.join(' AND ')} ORDER BY CASE t.status WHEN 'completed' THEN 1 WHEN 'cancelled' THEN 1 ELSE 0 END,CASE t.priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,COALESCE(t.due_at,'9999'),t.updated_at DESC,t.id LIMIT 51 OFFSET ?`,[...values,offset]);
  const confirmed=scheduleItemId?await checklistSchedule(db,actor,projectId!,scheduleItemId,organizationId):null;
  if(scheduleItemId&&!confirmed)fail('Atividade indisponível neste projeto.','followup_schedule_not_found',404);
@@ -90,7 +95,9 @@ export async function followupList(db:D1Database,actor:PortalActor|null,input:Re
 async function people(db:D1Database,scope:Scope){return all(db,`SELECT DISTINCT u.user_id userId,COALESCE(NULLIF(p.display_name,''),'Integrante') name FROM portal_users u LEFT JOIN profiles p ON p.user_id=u.user_id WHERE ${activeAccount('u')} AND ${authority('u.user_id','scope.organization_id','scope.project_id')} ORDER BY name,u.user_id`.replace('FROM portal_users u','FROM(SELECT ? organization_id,? project_id) scope JOIN portal_users u'),[scope.organizationId,scope.projectId]);}
 async function orgPeople(db:D1Database,orgId:string){return all(db,`SELECT DISTINCT u.user_id userId,COALESCE(NULLIF(p.display_name,''),'Integrante') name FROM portal_users u LEFT JOIN profiles p ON p.user_id=u.user_id WHERE ${activeAccount('u')} AND EXISTS(SELECT 1 FROM members m WHERE m.user_id=u.user_id AND m.revoked_at IS NULL AND (m.organization_id=? OR(m.role='owner' AND m.project_id IS NULL AND m.organization_id IS NULL))) ORDER BY name,u.user_id`,[orgId]);}
 export async function followupCatalog(db:D1Database,actor:PortalActor|null,input:Record<string,unknown>={}){actorRequired(actor);const organizations=await listOrganizations(db,actor),projects=await all(db,`SELECT p.id,p.name,p.organization_id,${authority('?','p.organization_id','p.id',true)} can_edit FROM projects p WHERE ${authority('?','p.organization_id','p.id')} ORDER BY p.name,p.id`,[actor.userId,actor.userId]);
- if(!input.organizationId&&!input.projectId)return{organizations,projects:projects.map(p=>({...p,canEdit:Boolean(p.can_edit)})),people:[],teamPeople:[],teams:[],items:[],campaigns:[],loans:[],canEdit:false,canManageTeams:false};
+ const visibleProjects=projects.map(p=>({id:p.id,name:p.name,organization_id:p.organization_id,canEdit:Boolean(p.can_edit)}));
+ const empty={organizations,projects:visibleProjects,people:[],teamPeople:[],teams:[],items:[],campaigns:[],loans:[],canEdit:false,canManageTeams:false};
+ if(!input.projectId&&(!input.organizationId||organizations.some(org=>org.id===input.organizationId&&!org.canManage)))return empty;
  const scope=await resolveScope(db,input);await requireScope(db,actor,scope);let canEdit=true,canManageTeams=true;try{await requireScope(db,actor,scope,true);}catch{canEdit=false;}try{await requireScope(db,actor,{...scope,projectId:null},true);}catch{canManageTeams=false;}
  if(!canEdit)return{organizations,projects:projects.map(p=>({id:p.id,name:p.name,organization_id:p.organization_id,canEdit:Boolean(p.can_edit)})),people:[],teamPeople:[],teams:[],items:[],campaigns:[],loans:[],canEdit,canManageTeams};
  const availablePeople=await people(db,scope),teamPeople=canManageTeams&&!scope.projectId?await orgPeople(db,scope.organizationId):[],eligible=new Set((teamPeople.length?teamPeople:availablePeople).map(p=>p.userId));

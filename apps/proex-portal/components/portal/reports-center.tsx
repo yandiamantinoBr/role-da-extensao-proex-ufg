@@ -6,6 +6,7 @@ import { ArrowDown, ArrowUp, BarChart3, Boxes, CalendarRange, ClipboardList, Col
 import { areaLabel } from '@/lib/extension-catalog';
 import { quantityTotal } from '@/lib/report-quantities';
 import { REPORT_DATASET_IDS } from '@/lib/report-links';
+import { priorityLabels, stateLabels, type DemandReportFilter } from '@/lib/follow-up/contracts';
 import Image from 'next/image';
 import BrandMark from '@/components/theme/brand-mark';
 import type { ReportPdfPresentation } from './report-pdf';
@@ -389,8 +390,8 @@ export function ProjectReportExports({ projectId, projectName, officialUrl, hasL
   </section>;
 }
 
-export default function ReportsCenter({ userId, projectId, unitId, area, from, to, scopeLabel, available, initialDataset, initialSearch = '', projectIdentity, canSync = false }: {
-  userId: string; projectId: string; unitId: string; area: string; from: string; to: string; scopeLabel: string; available: DatasetId[]; initialDataset?: DatasetId; initialSearch?: string; projectIdentity?: ExportRow; canSync?: boolean;
+export default function ReportsCenter({ userId, projectId, unitId, area, from, to, scopeLabel, available, initialDataset, initialSearch = '', projectIdentity, canSync = false, demandFilters, demandOrganizationName, onClearDemandFilters }: {
+  userId: string; projectId: string; unitId: string; area: string; from: string; to: string; scopeLabel: string; available: DatasetId[]; initialDataset?: DatasetId; initialSearch?: string; projectIdentity?: ExportRow; canSync?: boolean; demandFilters?: DemandReportFilter|null; demandOrganizationName?: string; onClearDemandFilters?: ()=>void;
 }) {
   // Ids estáveis para os campos (painel Issues do DevTools); não mudam o FormData.
   const fieldId = useId();
@@ -409,7 +410,14 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
   const setSearch = (value: string) => setSearchState({ userId, value });
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null);
   const [pageSize, setPageSize] = useState(25);
-  const queryKey = JSON.stringify([userId, dataset, projectId, unitId, area, from, to, assetDetails, includeNotes, outflowType, returnState]);
+  const demandScope = dataset === 'demands' ? demandFilters : null;
+  const demandFilterLabel = demandScope ? [
+    demandOrganizationName, demandScope.generalOnly && 'Somente demandas gerais',
+    demandScope.status !== 'all' && stateLabels[demandScope.status],
+    demandScope.priority !== 'all' && `Prioridade ${priorityLabels[demandScope.priority].toLocaleLowerCase('pt-BR')}`,
+    demandScope.search && `Busca “${demandScope.search}”`,
+  ].filter(Boolean).join(' · ') : '';
+  const queryKey = JSON.stringify([userId, dataset, projectId, unitId, area, from, to, assetDetails, includeNotes, outflowType, returnState, demandScope]);
   const initialView = { queryKey, focus: '', measurementUnit: '', page: 0 };
   const [view, setView] = useState(initialView);
   if (view.queryKey !== queryKey) setView(initialView);
@@ -445,6 +453,13 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
     const query = new URLSearchParams({ dataset });
     if (dataset === 'materials' && assetDetails) query.set('assetDetails', '1');
     if (dataset === 'outflow_details') { query.set('outflowType', outflowType); query.set('returnState', returnState); if (includeNotes) query.set('includeNotes', '1'); }
+    if (demandScope) {
+      if (demandScope.organizationId) query.set('organizationId', demandScope.organizationId);
+      if (demandScope.generalOnly) query.set('demandProjectScope', 'organization');
+      if (demandScope.status !== 'all') query.set('demandStatus', demandScope.status);
+      if (demandScope.priority !== 'all') query.set('demandPriority', demandScope.priority);
+      if (demandScope.search) query.set('demandSearch', demandScope.search);
+    }
     if (projectId) query.set('projectId', projectId);
     if (unitId) query.set('unitId', unitId === '__unassigned__' ? '__none__' : unitId);
     if (area) query.set('thematicArea', area);
@@ -471,7 +486,7 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
         setLoading(false);
       });
     return () => { window.clearTimeout(start); controller.abort(); };
-  }, [dataset, projectId, unitId, area, from, to, queryKey, assetDetails, includeNotes, outflowType, returnState, attempt]);
+  }, [dataset, projectId, unitId, area, from, to, queryKey, assetDetails, includeNotes, outflowType, returnState, demandScope, attempt]);
 
   function retryReport() {
     reportResultRef.current?.focus();
@@ -483,6 +498,7 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
   function chooseDataset(id: DatasetId, preset?: Preset) {
     if (!datasets.includes(id)) return;
     const next = DATASETS[id];
+    if (id !== dataset || preset) onClearDemandFilters?.();
     setDataset(id); setAssetDetails(false); setIncludeNotes(false); setOutflowType('all'); setReturnState('all'); setColumns(preset?.columns.filter(key => next.columns.some(column => column.key === key)) ?? next.defaults);
     setGroupBy(preset && next.groups.includes(preset.groupBy) ? preset.groupBy : next.groups[0]);
     setMeasure(preset && (preset.measure === '__count__' || next.columns.some(column => column.key === preset.measure && column.numeric && !column.nonAdditive)) ? preset.measure : '__count__');
@@ -553,7 +569,7 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
   else if (from && to) periodLabel = `${dateLabel(from)} a ${dateLabel(to)}`;
   else if (from) periodLabel = `A partir de ${dateLabel(from)}`;
   else if (to) periodLabel = `Até ${dateLabel(to)}`;
-  const info: [string, string][] = [['Relatório', config.label], ['Recorte', scopeLabel || 'Todos os projetos que você pode consultar'], ['Período', periodLabel], ['Unidade de medida', measurementUnit || 'Todas, separadas em cada registro'], ['Busca', search || '—'], ['Destaque', focus ? `${config.columns.find(column => column.key === groupBy)?.label ?? 'Mês'}: ${focus}` : '—'], ['Linhas', String(sorted.length)], ['Gerado em', new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) + ' (Brasília)'], ['Compartilhamento', 'Recorte das suas permissões. Revise os textos livres antes de compartilhar.']];
+  const info: [string, string][] = [['Relatório', config.label], ['Recorte', [scopeLabel, demandFilterLabel].filter(Boolean).join(' · ') || 'Todos os projetos que você pode consultar'], ['Período', periodLabel], ['Unidade de medida', measurementUnit || 'Todas, separadas em cada registro'], ['Busca', search || '—'], ['Destaque', focus ? `${config.columns.find(column => column.key === groupBy)?.label ?? 'Mês'}: ${focus}` : '—'], ['Linhas', String(sorted.length)], ['Gerado em', new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) + ' (Brasília)'], ['Compartilhamento', 'Recorte das suas permissões. Revise os textos livres antes de compartilhar.']];
   if (dataset === 'outflow_details') info.push(['Tipo de saída', outflowType === 'all' ? 'Todos' : LABELS.tipo[outflowType]], ['Devolução', returnState === 'all' ? 'Todas' : LABELS.situacao_retorno[returnState]],
     ['Referências', 'Unidade e saldo atuais do cadastro. Saldos repetidos por registro não devem ser somados. Uma unidade individual por retirada de equipamento; retornos não criam nova saída.'], ['Datas ausentes', 'Sem filtro de período é possível consultar retiradas sem data efetiva; previsões não substituem o histórico.'],
     ['Operador', 'Nome atual do perfil, somente para quem tem permissão operacional vigente; não identifica o beneficiário.'], ['Textos livres', includeNotes ? 'Consulta opcional sujeita à permissão operacional atual; confira as colunas antes de compartilhar.' : 'Não consultados nem exportados.'],
@@ -651,6 +667,7 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
     {mixedUnits && <p className="p-form-help" role="status">Há medidas físicas diferentes neste recorte. Selecione uma unidade de medida para somar quantidades; os gráficos mostram contagens de registros.</p>}
 
     {includeNotes && <p className="p-form-help" role="status">Textos livres ativos: podem conter dados pessoais. Revise as colunas escolhidas antes de exportar.</p>}
+    {demandFilterLabel && <div className="p-notice"><span>{demandFilterLabel}</span><button className="p-text-link" type="button" onClick={()=>{reportResultRef.current?.focus();onClearDemandFilters?.();}}>Limpar filtros de Demandas</button></div>}
     <div className={styles.summary} ref={reportResultRef} tabIndex={-1} role="group" aria-label="Resultado da consulta">
       <span className={styles.summaryIcon}><Icon size={20} /></span>
       <p role="status"><strong>{config.label}</strong> · {loading ? 'carregando…' : queryFailure ? 'consulta indisponível' : `${formatNumber(filtered.length)} ${filtered.length === 1 ? 'linha' : 'linhas'}`}{scopeLabel ? ` · ${scopeLabel}` : ''}{positionOnly || from || to ? ` · ${periodLabel}` : ''}</p>

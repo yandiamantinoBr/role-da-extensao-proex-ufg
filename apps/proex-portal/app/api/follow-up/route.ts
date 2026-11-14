@@ -8,7 +8,7 @@ export const dynamic='force-dynamic';
 const privateResponse=(response:Response)=>{response.headers.set('Cache-Control','private, no-store');response.headers.set('X-Content-Type-Options','nosniff');return response;};
 export async function GET(request:Request){try{
  const db=database(),actor=await getActor(db,await getPortalUser()),query=new URL(request.url).searchParams,view=query.get('view')??'tasks';
- const input={projectId:query.get('projectId')??undefined,organizationId:query.get('organizationId')??undefined,scheduleItemId:query.get('scheduleItemId')??undefined,status:query.get('status')??undefined,priority:query.get('priority')??undefined,search:query.get('search')??undefined,offset:query.has('offset')?Number(query.get('offset')):undefined};
+ const input={projectId:query.get('projectId')??undefined,organizationId:query.get('organizationId')??undefined,projectScope:query.get('projectScope')??undefined,scheduleItemId:query.get('scheduleItemId')??undefined,status:query.get('status')??undefined,priority:query.get('priority')??undefined,search:query.get('search')??undefined,offset:query.has('offset')?Number(query.get('offset')):undefined};
  const result=view==='tasks'?await followupList(db,actor,input):view==='catalog'?await followupCatalog(db,actor,input):view==='detail'?await followupDetail(db,actor,query.get('id'),input):view==='inbox'?await notificationInbox(db,actor,query.get('hiddenAfter')):null;
  if(!result)throw new HttpError(400,'Escolha uma consulta válida.','followup_view');return privateResponse(Response.json(result));
  }catch(error){return privateResponse(publicError(error));}}

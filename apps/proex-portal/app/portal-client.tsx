@@ -48,6 +48,7 @@ import CalendarPanel from '@/components/portal/calendar-panel';
 import RecordsPanel from '@/components/portal/records-panel';
 import ReportsCenter from '@/components/portal/reports-center';
 import { readReportArrival, REPORT_ARRIVAL_PARAMS, type ReportDatasetId } from '@/lib/report-links';
+import type { DemandReportFilter } from '@/lib/follow-up/contracts';
 import FollowUpPanel from '@/components/portal/follow-up-panel';
 import MeuTrabalhoPanel from '@/components/portal/meu-trabalho-panel';
 import PersonalWorkSummary from '@/components/portal/personal-work-summary';
@@ -330,6 +331,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
     const [reportInitialDataset, setReportInitialDataset] = useState<ReportDatasetId>('projects');
     // Busca que chega pelo botão "Exportar" de outra tela (ex.: nome da equipe); vale só naquela chegada.
     const [reportSearch, setReportSearch] = useState('');
+    const [demandReportFilters, setDemandReportFilters] = useState<DemandReportFilter | null>(null);
     const [personalStatus, setPersonalStatus] = useState<MyWorkStatus>('pending');
     const [personalOrganization, setPersonalOrganization] = useState('');
     const [accountOpen, setAccountOpen] = useState(false);
@@ -539,7 +541,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
     /** Período e busca pedidos no endereço de Relatórios; devolve true se havia algum. */
     function applyReportArrival(params: URLSearchParams) {
         const arrival = readReportArrival(params);
-        if (params.get('module') === 'reports') setReportSearch(arrival?.search ?? '');
+        if (params.get('module') === 'reports') { setReportSearch(arrival?.search ?? ''); setDemandReportFilters(null); }
         if (!arrival) return false;
         setReportFrom(arrival.from); setReportTo(arrival.to);
         return true;
@@ -608,7 +610,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         if (!teamIntentPending.current) setTeamIntent(null);
         teamIntentPending.current = false;
         if (id !== 'my-work' && id !== 'overview') setPersonalOrganization('');
-        if (id === 'reports') { setReportInitialDataset(report); setReportSearch(''); }
+        if (id === 'reports') { setReportInitialDataset(report); setReportSearch(''); setDemandReportFilters(null); }
         if (id === 'my-work' || (id === 'calendar' && unitFilter === '__unassigned__')) setUnitFilter('');
         if (id === 'my-work' || id === 'calendar') setAreaFilter('');
         focusModule(true);
@@ -647,7 +649,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         projects: pins.projectPins.flatMap(id => projects.filter(project => project.id === id)).map(project => ({ id: string(project.id), label: string(project.short_name) || string(project.name), current: tab === 'projects' && activeWorkRecord?.module === 'projects' && activeWorkRecord.recordId === project.id, onOpen: () => openPinnedProject(string(project.id)) })),
         'work-teams': pins.teams.filter(team => pins.teamPins.includes(team.id)).map(team => ({ id: team.id, label: team.name, current: tab === 'work-teams' && shownTeamId === team.id, onOpen: () => openTeams({ kind: 'open', teamId: team.id, organizationId: team.organizationId }) })),
     };
-    function selectProject(id: string) { const project = projects.find(row => row.id === id); if (id && !project) return; setRecordsScheduleItemId(''); setDemandsScheduleItemId(''); if (project && personalOrganization && project.organization_id !== personalOrganization) setPersonalOrganization(''); setWorkRecord(null); setSelectedMaterialId(null);setMaterialMode('view'); if (project && unitFilter && unitOf(project) !== unitFilter) setUnitFilter(unitOf(project) || '__unassigned__'); if (project && areaFilter && !inArea(project)) setAreaFilter(''); setFilter(id); setDraftProject(id); setOfferProject(''); }
+    function selectProject(id: string) { const project = projects.find(row => row.id === id); if (id && !project) return; if (tab === 'reports') setDemandReportFilters(null); setRecordsScheduleItemId(''); setDemandsScheduleItemId(''); if (project && personalOrganization && project.organization_id !== personalOrganization) setPersonalOrganization(''); setWorkRecord(null); setSelectedMaterialId(null);setMaterialMode('view'); if (project && unitFilter && unitOf(project) !== unitFilter) setUnitFilter(unitOf(project) || '__unassigned__'); if (project && areaFilter && !inArea(project)) setAreaFilter(''); setFilter(id); setDraftProject(id); setOfferProject(''); }
     function openProject(id: string) {
         if (!projects.some(project => project.id === id)) return;
         if (tab !== 'projects' || activeWorkRecord?.recordId !== id) pushNavigation.current = true;
@@ -668,8 +670,8 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         return <ProjectAreaOwners key={JSON.stringify([user.userId, projectId])} userId={string(user.userId)} projectId={projectId} areas={areas} canManageAccess={canManagePeople(projectId)} onCreateTeam={allowedTabs.some(module => module.id === 'work-teams') ? () => openTeams({ kind: 'new', organizationId: string(projects.find(project => project.id === projectId)?.organization_id) || undefined }) : undefined}/>;
     }
     const areaOwnerShortcut = filter ? visibleOwnerAreas(filter).find(scope => scope.tab === tab) : undefined;
-    function selectUnit(id: string) { setRecordsScheduleItemId(''); setDemandsScheduleItemId(''); setWorkRecord(null); setSelectedMaterialId(null);setMaterialMode('view'); setUnitFilter(id); setFilter(''); setDraftProject(''); setOfferProject(''); setQuery(''); }
-    function selectArea(key: string) { setRecordsScheduleItemId(''); setDemandsScheduleItemId(''); setWorkRecord(null); setSelectedMaterialId(null);setMaterialMode('view'); setAreaFilter(key); setFilter(''); setDraftProject(''); setOfferProject(''); }
+    function selectUnit(id: string) { setRecordsScheduleItemId(''); if (tab === 'reports') setDemandReportFilters(null); setDemandsScheduleItemId(''); setWorkRecord(null); setSelectedMaterialId(null);setMaterialMode('view'); setUnitFilter(id); setFilter(''); setDraftProject(''); setOfferProject(''); setQuery(''); }
+    function selectArea(key: string) { setRecordsScheduleItemId(''); if (tab === 'reports') setDemandReportFilters(null); setDemandsScheduleItemId(''); setWorkRecord(null); setSelectedMaterialId(null);setMaterialMode('view'); setAreaFilter(key); setFilter(''); setDraftProject(''); setOfferProject(''); }
     function clearScope() { setAreaFilter(''); selectUnit(''); }
     async function mutate(action: string, payload: Payload): Promise<Row> {
         if (!navigator.onLine)
@@ -917,7 +919,12 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
           defaultProjectId={filter} initialTaskId={selectedDemandId} scheduleItemId={demandsScheduleItemId}
           canManageSchedule={Boolean(filter && canProject(filter,'campaigns.manage'))}
           serverDay={workDayFromServerTimestamp(data?.updatedAt)} onSelectTask={setSelectedDemandId} onChanged={refreshModules}
-          onOpenReports={demandsScheduleItemId ? undefined : () => navigate('reports', 'demands')}/>
+          onOpenReports={demandsScheduleItemId ? undefined : ({projectId, ...filters}) => {
+              navigate('reports', 'demands');
+              setUnitFilter(''); setAreaFilter(''); selectProject(projectId);
+              setReportFrom(''); setReportTo('');
+              setDemandReportFilters(filters);
+          }}/>
         {!demandsScheduleItemId&&<OrganizationEmailSettings key={string(user.userId)} userId={string(user.userId)} organizations={organizations}/>}
       </>}
       {tab === 'overview' && volunteerAccess.length > 0 && volunteerDesk(true)}
@@ -1159,7 +1166,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         <button className="p-button p-button-subtle" onClick={() => { setReportFrom(''); setReportTo(''); }}>Todo o período</button>
         <p>Datas de Brasília para os relatórios com período. Projetos e materiais mostram a posição atual. Em “Dinâmicas por dia”, participações, tentativas e entregas usam a data de cada registro.</p>
         </div>
-        <ReportsCenter key={`${string(user.userId)}:${reportInitialDataset}:${reportSearch}`} userId={string(user.userId)} canSync={isPlatformOwner} projectIdentity={projects.find(project => project.id === filter)} initialDataset={reportInitialDataset === 'projects' && !canAny('reports.read') ? 'demands' : reportInitialDataset} initialSearch={reportSearch} projectId={filter} unitId={unitFilter} area={areaFilter} from={reportFrom} to={reportTo} available={[
+        <ReportsCenter key={`${string(user.userId)}:${reportInitialDataset}:${reportSearch}`} userId={string(user.userId)} canSync={isPlatformOwner} projectIdentity={projects.find(project => project.id === filter)} initialDataset={reportInitialDataset === 'projects' && !canAny('reports.read') ? 'demands' : reportInitialDataset} initialSearch={reportSearch} demandFilters={demandReportFilters} onClearDemandFilters={()=>setDemandReportFilters(null)} demandOrganizationName={organizations.find(org=>org.id===demandReportFilters?.organizationId)?.name} projectId={filter} unitId={unitFilter} area={areaFilter} from={reportFrom} to={reportTo} available={[
           ...(projects.length ? ['projects' as const] : []),
           ...(canAny('inventory.read', 'reports.read') ? ['materials', 'movements', 'outflows'] as const : []),
           ...(canAny('inventory.read', 'loans.read', 'reports.read') ? ['outflow_details' as const] : []),

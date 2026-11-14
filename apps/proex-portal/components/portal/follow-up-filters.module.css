@@ -1,66 +1,86 @@
-/* Demandas: mesmo padrão visual de "Refinar contexto" (Projeto + funil numa linha; demais filtros no painel).
-   Só apresentação: os campos, valores e eventos são os mesmos. */
-.fieldset { --refine-size: 44px; --refine-top: 0px; position: relative; container-type: inline-size; display: grid; grid-template-columns: minmax(0, 1fr); padding: 12px calc(var(--refine-size) + 20px) 12px 12px; font-size: 13px; font-weight: 600; }
-.project { display: grid; gap: 6px; min-width: 0; }
-.project > select { margin-top: 0; }
-.refine { min-width: 0; margin-right: calc(-1 * (var(--refine-size) + 8px)); }
-.summary { position: absolute; top: calc(12px + var(--refine-top)); right: 12px; display: flex; align-items: center; justify-content: center; gap: 8px; width: var(--refine-size); min-height: 44px; padding: 0 12px; border: 1px solid var(--control-border); border-radius: 10px; background: var(--surface-soft); color: var(--brand-ink); font-size: 13px; font-weight: 600; cursor: pointer; list-style: none; }
+.fieldset {
+  display: grid;
+  min-width: 0;
+  gap: 10px;
+  padding: 14px;
+  container-type: inline-size;
+}
+
+.fields,
+.advanced {
+  display: grid;
+  min-width: 0;
+  gap: 10px;
+}
+
+.fields label,
+.advanced label {
+  min-width: 0;
+  color: var(--ink);
+  font-size: .875rem;
+  font-weight: 600;
+}
+
+.searchInput {
+  position: relative;
+  display: block;
+}
+
+.searchInput > svg {
+  position: absolute;
+  inset-inline-start: 12px;
+  top: calc(50% + 2px);
+  transform: translateY(-50%);
+  color: var(--text-secondary);
+  pointer-events: none;
+}
+
+.searchInput > input { padding-inline-start: 36px; }
+
+.refine { min-width: 0; }
+
+.summary,
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--control-border);
+  border-radius: 10px;
+  background: var(--surface-soft);
+  color: var(--brand-ink);
+  font-size: .875rem;
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+
 .summary::-webkit-details-marker { display: none; }
 .summary::marker { content: ''; }
-.summary:hover { border-color: var(--brand-ink); }
-.refine[open] > .summary { color: #fff; background: var(--purple); border-color: var(--purple); }
-:global(html[data-theme=dark]) .refine[open] > .summary { color: var(--purple); background: #dfbaf4; border-color: #dfbaf4; }
-.summaryText { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.active { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-.refine:has(.active) > .summary::after { content: ''; position: absolute; top: 7px; right: 7px; width: 8px; height: 8px; border-radius: 50%; background: var(--orange); box-shadow: 0 0 0 2px var(--surface-soft); }
-.fields { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.summary:hover, .chip:hover { border-color: var(--brand-ink); }
+.refine[open] > .summary { border-color: var(--brand-ink); }
+.refine[open] > .advanced { margin-block-start: 10px; }
 
-.fieldset[data-activity=true] {
-  display:block;
-  padding:8px 12px;
+.applied {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
 }
 
-.fieldset[data-activity=true] .refine {
-  margin:0;
-}
+.applied > button { min-height: 44px; }
+.results { color: var(--text-secondary); font-size: .875rem; }
+.results:empty { margin: 0; }
 
-.fieldset[data-activity=true] .summary {
-  position:relative;
-  inset:auto;
-  width:fit-content;
-  padding:0 12px;
-}
-
-.fieldset[data-activity=true] .summaryText {
-  position:static;
-  width:auto;
-  height:auto;
-  margin:0;
-  clip-path:none;
-}
-/* Rótulo "Projeto" visível só em telas maiores; no celular o seletor fala por si (o nome acessível continua). */
-@container (max-width: 559px) {
-  .project { font-size: 0; gap: 0; }
-  .project > select { font-size: 16px; }
-  .summaryText { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-  .summary { padding: 0; }
-}
 @container (min-width: 560px) {
-  .fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .fields { grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .search:only-child { grid-column: 1 / -1; }
+  .advanced { grid-template-columns: repeat(auto-fit, minmax(150px,1fr)); }
 }
-@media (min-width: 721px) {
-  .fieldset { --refine-size: 176px; --refine-top: 25px; padding: 14px calc(var(--refine-size) + 24px) 14px 16px; }
-  .summary { top: calc(14px + var(--refine-top)); right: 16px; justify-content: flex-start; }
-}
-/* Celular: "Atualizar" vira ícone ao lado do filtro; o atalho de Relatórios fica no menu Mais. */
+
 @media (max-width: 720px) {
-  .section { grid-template-columns: minmax(0, 1fr) auto; column-gap: 8px; }
-  .section > * { grid-column: 1 / -1; }
-  .section > .header { grid-column: 2; grid-row: 1; gap: 0; margin-top: 12px; }
-  .section[data-activity=true] > .filterRow { grid-row: 2; }
-  .section[data-activity=true] > .header { grid-row: 2; margin-top: 8px; }
-  .section > .filterRow { grid-column: 1; grid-row: 1; }
-  .reports { display: none !important; }
-  .refresh { width: 44px; min-width: 44px; padding: 0 !important; justify-content: center; }
-  .btnText { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .section { row-gap: 14px; }
+  .header { order: -1; }
+  .header > div:first-child { display: none; }
 }

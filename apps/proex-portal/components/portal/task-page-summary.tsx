@@ -58,7 +58,7 @@ export function TaskPageSummary({ tasks, today, page = 1, hasMore = false, selec
   {!deadlineKnown && <p className={styles.caption}>Atualize para conferir os prazos.</p>}
   {tasks.length > 0 && <>
    <p className={styles.caption}>Página {page} · Com os filtros acima{hasMore && ' · Há mais na próxima página'}</p>
-   <details className={styles.visual} open>
+   <details className={styles.visual}>
     <summary>Distribuição por estado e prioridade</summary>
     <div className={styles.breakdown}>
      <div>
