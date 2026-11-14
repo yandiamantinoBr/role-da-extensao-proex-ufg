@@ -7,18 +7,16 @@ const links = await load('lib/report-links.ts');
 const history = await load('lib/portal-history.ts');
 const scope = { modules: ['overview', 'reports', 'records'], units: [], areas: [], canSelectProject: id => id === 'project-a', canOpenRecord: () => false };
 
-test('R3: the Exportar link opens Relatórios with subject, project, period and search', () => {
-  const href = links.reportHref({ dataset: 'records', projectId: 'project-a', from: '2026-11-01', to: '2026-11-10', search: '  Manutenção\n ' });
-  const params = new URL(href, 'https://portal.example.invalid').searchParams;
-  assert.deepEqual(Object.fromEntries(params), { module: 'reports', project: 'project-a', report: 'records', recorte: '1', from: '2026-11-01', to: '2026-11-10', q: 'Manutenção' });
+test('a shared Relatórios link retains its subject, project, period and search', () => {
+  const params = new URLSearchParams({ module: 'reports', project: 'project-a', report: 'records', recorte: '1', from: '2026-11-01', to: '2026-11-10', q: '  Manutenção\n ' });
   assert.deepEqual({ ...links.readReportArrival(params) }, { from: '2026-11-01', to: '2026-11-10', search: 'Manutenção' });
   const route = history.readPortalLocation(params, scope);
   assert.deepEqual([route.tab, route.project, route.report], ['reports', 'project-a', 'records']);
 });
 
-test('R3: a link without period means the whole period; without the arrival mark the screen keeps its own period', () => {
-  const team = new URL(links.reportHref({ dataset: 'demands', search: 'Equipe Sintética' }), 'https://portal.example.invalid').searchParams;
-  assert.deepEqual({ ...links.readReportArrival(team) }, { from: '', to: '', search: 'Equipe Sintética' });
+test('a link without dates means the whole period, while a link without the arrival mark keeps the current dates', () => {
+  const params = new URLSearchParams({ module: 'reports', report: 'demands', recorte: '1', q: 'Equipamentos' });
+  assert.deepEqual({ ...links.readReportArrival(params) }, { from: '', to: '', search: 'Equipamentos' });
   assert.equal(links.readReportArrival(new URLSearchParams('module=reports&report=demands')), null);
   assert.equal(links.readReportArrival(new URLSearchParams('module=records&recorte=1&q=x')), null);
 });
@@ -34,6 +32,16 @@ test('R3: address values are validated: unknown subjects, bad dates and long or 
   assert.deepEqual({ ...links.readReportArrival(new URLSearchParams('module=reports&recorte=1&from=2026-11-10&to=2026-11-01')) }, { from: '2026-11-01', to: '2026-11-10', search: '' }, 'inverted periods are put in order');
 });
 
+test('impossible dates with a valid-looking shape do not break opening a shared report', () => {
+  for (const invalid of ['2026-00-01', '2026-13-01', '2026-01-00', '2026-01-32', '2026-02-29', '2026-11-31', '2026-01-01T00:00:00Z', ' 2026-01-01']) {
+    const params = new URLSearchParams({ module: 'reports', recorte: '1', from: invalid, to: '2024-02-29' });
+    assert.deepEqual({ ...links.readReportArrival(params) }, { from: '', to: '2024-02-29', search: '' }, invalid);
+    params.set('from', '2024-02-29');
+    params.set('to', invalid);
+    assert.deepEqual({ ...links.readReportArrival(params) }, { from: '2024-02-29', to: '', search: '' }, invalid);
+  }
+});
+
 test('R3: the subject round-trips through the address and the default stays out of it', () => {
   const params = new URLSearchParams();
   history.writePortalLocation(params, { tab: 'reports', project: '', unit: '', area: '', demand: '', record: null, report: 'campaign_days' });
@@ -42,13 +50,8 @@ test('R3: the subject round-trips through the address and the default stays out 
   assert.equal(params.has('report'), false);
 });
 
-test('R3: the legacy indicators block and its scattered downloads are gone from Relatórios; screens point to the central', () => {
+test('R3 removes the duplicate indicators and downloads from Relatórios', () => {
   const client = readFileSync(new URL('../app/portal-client.tsx', import.meta.url), 'utf8');
   for (const gone of ['Indicadores das dinâmicas', 'p-reports-legacy-title', 'Exportar registros completos', '/api/export?kind=', 'Baixar resumo diário']) assert.equal(client.includes(gone), false, gone);
   assert.match(client, /'campaigns', 'campaign_days'/);
-  const teams = readFileSync(new URL('../components/portal/work-teams-panel.tsx', import.meta.url), 'utf8');
-  assert.match(teams, /<ExportLink dataset="demands"/);
-  assert.equal(/ExportFormats|toXlsx|toDocx/.test(teams), false, 'teams no longer build files on their own');
-  const records = readFileSync(new URL('../components/portal/records-panel.tsx', import.meta.url), 'utf8');
-  assert.match(records, /<ExportLink dataset="records"/);
 });

@@ -115,6 +115,29 @@ test('records initial project actually scopes the first request and its filter v
   }finally{h.dispose();}
 });
 
+test('records export keeps the exact intersection of category and title or description search',async()=>{
+  const h=harness('records-panel',{initialProjectId:'project-a',projects:[{id:'project-a',name:'Projeto A'}],items:[],loans:[]});
+  const base={project_id:'project-a',occurred_at:'2026-11-06T12:00:00Z',starts_at:null,ends_at:null,item_id:null,loan_id:null,body:'',attachments:[]};
+  try {
+    await h.reply({records:[
+      {...base,id:'included',kind:'project',title:'Reunião de equipe',body:'Termo aprovado'},
+      {...base,id:'only-category',kind:'project',title:'Abertura do evento'},
+      {...base,id:'only-search',kind:'observation',title:'Termo para revisão'},
+    ]},'/api/records?');
+    h.click('Atividade do projeto 2');
+    h.node('input',node=>node.props.id==='records-search').props.onChange({target:{value:'Termo'}});
+    h.render();
+    const exportView=h.node('ExportFormats');
+    assert.ok(exportView && !exportView.props.disabled);
+    const download=exportView.props.onExport('xlsx');
+    const [{args,resolve}]=h.exports;
+    assert.deepEqual(Array.from(args[3],row=>row.titulo),['Reunião de equipe']);
+    const content=new Blob(['synthetic']);
+    resolve(content);await download;
+    assert.equal(h.downloads[0][1],content);
+  } finally { h.dispose(); }
+});
+
 test('actual navigation handlers clear an earlier edit/move mode before opening another context',()=>{
   const file=source('app/portal-client.tsx'),ast=ts.createSourceFile('portal-client.tsx',file,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
   const declarations=new Map();const visit=node=>{if(ts.isFunctionDeclaration(node)&&node.name)declarations.set(node.name.text,node);ts.forEachChild(node,visit);};visit(ast);

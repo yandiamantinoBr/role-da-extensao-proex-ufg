@@ -4,8 +4,10 @@ import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
 import { zipEntries } from './support/report-module.mjs';
+import { load as loadModule } from './support/project-report-module.mjs';
 
 const root = new URL('../', import.meta.url);
+const reportLinks = await loadModule('lib/report-links.ts');
 const transpile = file => ts.transpileModule(readFileSync(new URL(file, root), 'utf8'), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
 function pure(file) { const compiledModule = { exports: {} }; vm.runInNewContext(transpile(file), { module: compiledModule, exports: compiledModule.exports, Blob, TextEncoder, Uint8Array, DataView, ArrayBuffer }); return compiledModule.exports; }
 const tick = () => new Promise(resolve => setImmediate(resolve));
@@ -32,7 +34,7 @@ function harness(storage = new Map()) {
  };
  const jsx = { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) };
  const exporters = pure('components/portal/report-export.ts'); exporters.download = (name, blob) => downloads.push({ name, blob });
- const require = name => name === 'react' ? hooks : name === 'react/jsx-runtime' ? jsx : name === './report-export' ? exporters : name === './report-pdf' ? { toPdf(...args) { pdfInputs.push(args); return new Blob(['synthetic pdf'], { type: 'application/pdf' }); } } : name === '@/lib/report-quantities' ? pure('lib/report-quantities.ts') : name === '@/lib/report-links' ? pure('lib/report-links.ts') : name === '@/lib/extension-catalog' ? { areaLabel: value => value } : name.endsWith('.css') ? { default: new Proxy({}, { get: (_object, key) => key }) } : new Proxy({}, { get: (_object, key) => String(key) });
+ const require = name => name === 'react' ? hooks : name === 'react/jsx-runtime' ? jsx : name === './report-export' ? exporters : name === './report-pdf' ? { toPdf(...args) { pdfInputs.push(args); return new Blob(['synthetic pdf'], { type: 'application/pdf' }); } } : name === '@/lib/report-quantities' ? pure('lib/report-quantities.ts') : name === '@/lib/report-links' ? reportLinks : name === '@/lib/extension-catalog' ? { areaLabel: value => value } : name.endsWith('.css') ? { default: new Proxy({}, { get: (_object, key) => key }) } : new Proxy({}, { get: (_object, key) => String(key) });
  const compiledModule = { exports: {} };
  const window = { setTimeout(callback) { callback(); return 1; }, clearTimeout() {}, open() { opened++; return null; } };
  vm.runInNewContext(transpile('components/portal/reports-center.tsx'), { module: compiledModule, exports: compiledModule.exports, require, Blob, Intl, Date, Map, Set, URL, URLSearchParams, AbortController, window, localStorage: { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value), removeItem: key => storage.delete(key) }, fetch: (url, init) => new Promise((resolve, reject) => requests.push({ url, init, resolve, reject })) });
