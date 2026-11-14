@@ -108,11 +108,13 @@ export async function scheduleItemForRecordRead(db: D1Database, actor: PortalAct
   if (!scheduleItem) throw new HttpError(404, 'Atividade indisponível neste projeto.', 'schedule_record_not_found');
   return scheduleItem;
 }
-export async function listRecords(db: D1Database, actor: PortalActor | null, filters: { projectId?: unknown; scheduleItemId?: unknown; from?: unknown; to?: unknown; limit?: unknown } = {}): Promise<{ records: Row[]; limit: number; truncated: boolean; scheduleItem?: RecordScheduleItem }> {
+export async function listRecords(db: D1Database, actor: PortalActor | null, filters: { projectId?: unknown; scheduleItemId?: unknown; itemId?: unknown; loanId?: unknown; from?: unknown; to?: unknown; limit?: unknown } = {}): Promise<{ records: Row[]; limit: number; truncated: boolean; scheduleItem?: RecordScheduleItem }> {
   actorRequired(actor);
   const projectId = idValue(filters.projectId, 'o projeto', true);
   const scheduleItemId = idValue(filters.scheduleItemId, 'a atividade', true);
   if (scheduleItemId && !projectId) throw new HttpError(400, 'Escolha o projeto desta atividade.', 'schedule_project_required');
+  // Recorte por assunto (Histórico): só estreita o que a regra de leitura abaixo já permite.
+  const itemId = idValue(filters.itemId, 'o material', true), loanId = idValue(filters.loanId, 'o empréstimo', true);
   const from = isoValue(filters.from, 'O início do período', true), to = isoValue(filters.to, 'O fim do período', true);
   if (from && to && to <= from) throw new HttpError(400, 'O fim do período deve ocorrer depois do início.', 'invalid_interval');
   const rawLimit = filters.limit === undefined || filters.limit === null || filters.limit === '' ? 100 : Number(filters.limit);
@@ -134,6 +136,8 @@ export async function listRecords(db: D1Database, actor: PortalActor | null, fil
     conditions += ' AND r.schedule_item_id=?';
     params.push(scheduleItemId);
   }
+  if (itemId) { conditions += ' AND r.item_id=?'; params.push(itemId); }
+  if (loanId) { conditions += ' AND r.loan_id=?'; params.push(loanId); }
   if (from) { conditions += ' AND r.occurred_at>=?'; params.push(from); }
   if (to) { conditions += ' AND r.occurred_at<?'; params.push(to); }
   params.push(limit + 1);

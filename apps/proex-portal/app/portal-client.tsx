@@ -45,15 +45,14 @@ import { VolunteerDesk, volunteerAccessFrom } from '@/components/portal/voluntee
 import volunteerStyles from '@/components/portal/volunteer-home.module.css';
 import CalendarPanel from '@/components/portal/calendar-panel';
 import RecordsPanel from '@/components/portal/records-panel';
-import ReportsCenter, { projectBrandFor } from '@/components/portal/reports-center';
-import { download } from '@/components/portal/report-export';
-import ExportFormats, {downloadFromServer, type DocumentFormat} from '@/components/portal/export-formats';
-import { documentExport } from '@/components/portal/document-export';
+import ReportsCenter from '@/components/portal/reports-center';
+import { readReportArrival, REPORT_ARRIVAL_PARAMS, type ReportDatasetId } from '@/lib/report-links';
 import FollowUpPanel from '@/components/portal/follow-up-panel';
 import MeuTrabalhoPanel from '@/components/portal/meu-trabalho-panel';
 import PersonalWorkSummary from '@/components/portal/personal-work-summary';
 import { workDayFromServerTimestamp } from '@/lib/follow-up/time';
 import WorkContextPanel from '@/components/portal/work-context-panel';
+import ProjectAreaOwners, { type OwnedArea } from '@/components/portal/project-area-owners';
 import type { MyWorkStatus, WorkArea } from '@/lib/my-work/contracts';
 import { commitPortalLocation, deniedPortalModule, portalLocationKey, readPortalLocation, type PortalLocation } from '@/lib/portal-history';
 import type { WorkRecordSelection } from '@/lib/work-navigation';
@@ -64,16 +63,16 @@ import OrganizationEmailSettings from '@/components/portal/organization-email-se
 import MaterialDetailDrawer from '@/components/portal/material-detail-drawer';
 import { FilterableMaterialCatalog as MaterialCatalog } from '@/components/portal/material-catalog';
 import DestinationDialog from '@/components/portal/destination-dialog';
-import DestinationField, { destinationFields } from '@/components/portal/destination-field';
+import MovementLauncher, { type LauncherMode } from '@/components/portal/movement-launcher';
 import DynamicsExplainer from '@/components/portal/dynamics-explainer';
 import StockConsumptionPanel from '@/components/portal/stock-consumption-panel';
 import StockUnitDialog from '@/components/portal/stock-unit-dialog';
-import StockContextFields, {stockContextFields} from '@/components/portal/stock-context-fields';
 import DirectoryPanel from '@/components/portal/directory-panel';
 import ConvocationsPanel from '@/components/portal/convocations-panel';
 import { ThemeSwitch } from '@/components/theme/theme-switch';
 import { BrandMark } from '@/components/theme/brand-mark';
 import ActivityPanel from '@/components/portal/activity-panel';
+import { historyHref, parseHistorySubject } from '@/components/portal/history-timeline';
 import ProjectOperationalChart from '@/components/portal/project-operational-chart';
 import DashboardPanel from '@/components/portal/dashboard-panel';
 import { DesktopSidebar, MobileNavigation, type NavSubitems } from '@/components/portal/portal-navigation';
@@ -83,7 +82,7 @@ import { useNavigationPreferences } from '@/components/portal/use-navigation-pre
 import { useFormDraft, DraftNotice, setDraftScope, clearCurrentDrafts, watchDraftLogout } from '@/components/portal/use-form-draft';
 import { THEMATIC_AREAS, groupUnits } from '@/lib/extension-catalog';
 import { MAX_UPLOAD_FILE_BYTES, UPLOAD_LIMIT_LABEL, uploadErrorMessage } from '@/lib/upload-limits';
-import { ArrowRight, Boxes, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronRight, ExternalLink, FileText, Filter, Gift, LoaderCircle, LogOut, MessageSquarePlus, Plus, RefreshCw, Search, ShieldCheck, Truck, Users, Wifi, WifiOff, X } from 'lucide-react';
+import { ArrowRight, ArrowUpRight, Boxes, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronRight, ExternalLink, FileText, Filter, Gift, LoaderCircle, LogOut, MessageSquarePlus, Plus, RefreshCw, Search, ShieldCheck, Truck, Users, Wifi, WifiOff, X } from 'lucide-react';
 // API projections vary by module; the server validates every mutation.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = Record<string, any>;
@@ -91,6 +90,16 @@ type Snapshot = Row;
 type Tab = ModuleId;
 type Payload = Record<string, unknown>;
 const tabs = PORTAL_MODULES;
+const areaOwnerScopes: readonly {
+    area: OwnedArea;
+    tab: Tab;
+    capabilities: readonly string[];
+    subject: string;
+}[] = [
+    { area: 'materials', tab: 'materials', capabilities: ['inventory.read', 'inventory.manage', 'inventory.deliver'], subject: 'do estoque' },
+    { area: 'loans', tab: 'loans', capabilities: ['loans.read', 'loans.manage', 'loans.checkout'], subject: 'dos empréstimos' },
+    { area: 'campaigns', tab: 'events', capabilities: ['campaigns.manage', 'participation.operate', 'inventory.deliver'], subject: 'das dinâmicas' },
+];
 const statusNames: Row = { draft: 'Rascunho', active: 'Ativo', paused: 'Pausado', closed: 'Encerrado', reserved: 'Reservado', out: 'Retirado', returned: 'Devolvido', cancelled: 'Cancelado', pending: 'Pendente', accepted: 'Aceito', revoked: 'Revogado' };
 const roleNames: Row = { owner: 'Responsável institucional', manager: 'Gestor de projeto', operator: 'Operador de evento', inventory: 'Responsável por estoque', loans: 'Responsável por empréstimos', viewer: 'Leitor de relatórios' };
 const categoryNames: Row = { gift: 'Brinde', equipment: 'Equipamento', distribution: 'Distribuição institucional', consumption: 'Consumo interno' };
@@ -314,7 +323,11 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
     const [selectedDemandId, setSelectedDemandId] = useState('');
     const [recordsView, setRecordsView] = useState<'history' | 'documents'>('history');
     const [recordsScheduleItemId, setRecordsScheduleItemId] = useState('');
-    const [reportInitialDataset, setReportInitialDataset] = useState<'projects' | 'demands'>('projects');
+    // Registros aberto pelo atalho "Ver histórico" de uma ficha: assunto no formato item:<id>.
+    const [historyParam, setHistoryParam] = useState('');
+    const [reportInitialDataset, setReportInitialDataset] = useState<ReportDatasetId>('projects');
+    // Busca que chega pelo botão "Exportar" de outra tela (ex.: nome da equipe); vale só naquela chegada.
+    const [reportSearch, setReportSearch] = useState('');
     const [personalStatus, setPersonalStatus] = useState<MyWorkStatus>('pending');
     const [personalOrganization, setPersonalOrganization] = useState('');
     const [accountOpen, setAccountOpen] = useState(false);
@@ -337,8 +350,9 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
     const [convocationFocus,setConvocationFocus]=useState('');
     const [stockUnit,setStockUnit]=useState(''),[destinationOpen,setDestinationOpen]=useState('');
     const [showConsumption,setShowConsumption]=useState(false);
-    const [movementItemId,setMovementItemId]=useState(''),[movementKind,setMovementKind]=useState('');
-    const [materialMode,setMaterialMode] = useState<'view'|'edit'|'move'>('view');
+    // Registrar movimento tem um caminho só: escolher o material (abre a ficha) ou dar saída de vários de uma vez.
+    const [movementLauncher,setMovementLauncher]=useState<LauncherMode|null>(null);
+    const [materialMode,setMaterialMode] = useState<'view'|'edit'|'move'|'history'>('view');
     const [workRecord, setWorkRecord] = useState<WorkRecordSelection | null>(null);
     const [refreshing, setRefreshing] = useState(false);
     const [busy, setBusy] = useState(false);
@@ -501,7 +515,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
     const draftUserId = string(user.userId);
     useEffect(() => watchDraftLogout(draftUserId), [draftUserId]);
 
-    const route: PortalLocation = { tab, project: filter, unit: unitFilter, area: areaFilter, demand: selectedDemandId, record: activeWorkRecord, report: reportInitialDataset, recordsView, recordsScheduleItemId, workStatus: personalStatus, organization: personalOrganization };
+    const route: PortalLocation = { tab, project: filter, unit: unitFilter, area: areaFilter, demand: selectedDemandId, record: activeWorkRecord, report: reportInitialDataset, recordsView, recordsScheduleItemId, workStatus: personalStatus, organization: personalOrganization, history: recordsView === 'history' ? historyParam : '' };
     function readLocation(params: URLSearchParams) {
         return readPortalLocation(params, {
             modules: allowedTabs.map(module => module.id),
@@ -518,6 +532,14 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
             if (scrollToTop) window.scrollTo({ top: 0, behavior: 'auto' });
         });
     }
+    /** Período e busca pedidos no endereço de Relatórios; devolve true se havia algum. */
+    function applyReportArrival(params: URLSearchParams) {
+        const arrival = readReportArrival(params);
+        if (params.get('module') === 'reports') setReportSearch(arrival?.search ?? '');
+        if (!arrival) return false;
+        setReportFrom(arrival.from); setReportTo(arrival.to);
+        return true;
+    }
     function applyLocation(next: PortalLocation) {
         setDeniedModule(null);
         // Voltar ou avançar pelo navegador abre Equipes do jeito normal, sem repetir um pedido antigo (abrir fixada, criar).
@@ -527,9 +549,10 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         setUnitFilter(next.unit); setAreaFilter(next.area);
         setWorkRecord(next.record); setSelectedMaterialId(next.record?.module === 'materials' ? next.record.recordId : null);setMaterialMode('view');
         setSelectedDemandId(next.demand); setReportInitialDataset(next.report);
-        if (next.tab === 'records') setRecordsView(next.recordsView ?? 'history');
+        if (next.tab === 'records') setRecordsView(next.history ? 'history' : next.recordsView ?? 'history');
         setRecordsScheduleItemId(next.recordsScheduleItemId ?? '');
         setPersonalStatus(next.workStatus ?? 'pending'); setPersonalOrganization(next.organization ?? '');
+        setHistoryParam(next.history ?? '');
         setQuery(''); setAccountOpen(false);
     }
     const restoreLocation = useEffectEvent((traversal: boolean) => {
@@ -548,6 +571,8 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         const denied = deniedPortalModule(url.searchParams, next, tabs.map(module => module.id));
         if (denied) setDeniedModule(denied as ModuleId);
         if (!traversal) setHistoryReady(true);
+        // from, to e q valem só na chegada: aplicados à tela e tirados do endereço.
+        if (!traversal && next.tab === 'reports' && applyReportArrival(url.searchParams)) { for (const key of REPORT_ARRIVAL_PARAMS) url.searchParams.delete(key); window.history.replaceState(window.history.state, '', url); }
         commitPortalLocation(window.history, url.href, next, false);
     });
     useEffect(() => {
@@ -572,12 +597,12 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         }
         setTab(id); setQuery(''); setAccountOpen(false); setSelectedMaterialId(null);setMaterialMode('view'); setWorkRecord(null);
         setRecordsScheduleItemId('');
-        setDeniedModule(null);
+        setDeniedModule(null); setHistoryParam('');
         // Um pedido de Equipes (abrir fixada, criar) vale só para esta ida; voltar pelo menu abre a página normal.
         if (!teamIntentPending.current) setTeamIntent(null);
         teamIntentPending.current = false;
         if (id !== 'my-work' && id !== 'overview') setPersonalOrganization('');
-        if (id === 'reports') setReportInitialDataset(report);
+        if (id === 'reports') { setReportInitialDataset(report); setReportSearch(''); }
         if (id === 'my-work' || (id === 'calendar' && unitFilter === '__unassigned__')) setUnitFilter('');
         if (id === 'my-work' || id === 'calendar') setAreaFilter('');
         focusModule(true);
@@ -594,6 +619,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         const teamParam = destination.searchParams.get('teamId'), teamOrg = destination.searchParams.get('organizationId');
         if (destination.searchParams.get('module') === 'work-teams' && teamParam && /^[A-Za-z0-9_.:-]{1,80}$/.test(teamParam) && teamOrg && organizations.some(organization => organization.id === teamOrg)) { openTeams({ kind: 'open', teamId: teamParam, organizationId: teamOrg }); return; }
         const next = readLocation(destination.searchParams), destinationParam = destination.searchParams.get('destinationId');
+        if (next.tab === 'reports') applyReportArrival(destination.searchParams);
         if (destinationParam && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(destinationParam)) setDestinationOpen(destinationParam);
         const convocationLink = destination.searchParams.get('convocation');
         if (convocationLink && /^[A-Za-z0-9-]{8,80}$/.test(convocationLink)) setConvocationFocus(convocationLink);
@@ -624,22 +650,37 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         setWorkRecord({ module: 'projects', projectId: id, recordId: id });
     }
     function workContext(projectId: string | null, area: WorkArea, target: {itemId?:string;loanId?:string;campaignId?:string} = {}) {
-        return <WorkContextPanel key={JSON.stringify([user.userId,projectId,area,target])} userId={string(user.userId)} projectId={projectId} area={area} {...target} compact={area === 'projects' || Object.keys(target).length > 0} onPersonal={() => { if (projectId) selectProject(projectId); navigate('my-work'); }} onDemands={allowedTabs.some(module => module.id === 'demands') ? () => { if (projectId) selectProject(projectId); setSelectedDemandId(''); navigate('demands'); } : undefined} onCreateTeam={allowedTabs.some(module => module.id === 'work-teams') ? () => openTeams({ kind: 'new', organizationId: string(projects.find(project => project.id === projectId)?.organization_id) || undefined }) : undefined}/>;
+        return <WorkContextPanel key={JSON.stringify([user.userId,projectId,area,target])} userId={string(user.userId)} projectId={projectId} area={area} {...target} onPersonal={() => { if (projectId) selectProject(projectId); navigate('my-work'); }} onDemands={allowedTabs.some(module => module.id === 'demands') ? () => { if (projectId) selectProject(projectId); setSelectedDemandId(''); navigate('demands'); } : undefined} onCreateTeam={allowedTabs.some(module => module.id === 'work-teams') ? () => openTeams({ kind: 'new', organizationId: string(projects.find(project => project.id === projectId)?.organization_id) || undefined }) : undefined}/>;
     }
+    // R4: "Quem cuida de cada área" na ficha do projeto. Cada área aparece para quem já abre o módulo dela neste projeto,
+    // ou seja, para quem via o painel do topo de Materiais, Empréstimos ou Dinâmicas. Quem pode editar é decidido pela rota.
+    function visibleOwnerAreas(projectId: string) {
+        return areaOwnerScopes.filter(scope => canProject(projectId, ...scope.capabilities));
+    }
+    function areaOwners(projectId: string) {
+        const areas = visibleOwnerAreas(projectId).map(scope => scope.area);
+        return <ProjectAreaOwners key={JSON.stringify([user.userId, projectId])} userId={string(user.userId)} projectId={projectId} areas={areas} onCreateTeam={allowedTabs.some(module => module.id === 'work-teams') ? () => openTeams({ kind: 'new', organizationId: string(projects.find(project => project.id === projectId)?.organization_id) || undefined }) : undefined}/>;
+    }
+    const areaOwnerShortcut = filter ? visibleOwnerAreas(filter).find(scope => scope.tab === tab) : undefined;
     function selectUnit(id: string) { setWorkRecord(null); setSelectedMaterialId(null);setMaterialMode('view'); setUnitFilter(id); setFilter(''); setDraftProject(''); setOfferProject(''); setQuery(''); }
     function selectArea(key: string) { setWorkRecord(null); setSelectedMaterialId(null);setMaterialMode('view'); setAreaFilter(key); setFilter(''); setDraftProject(''); setOfferProject(''); }
     function clearScope() { setAreaFilter(''); selectUnit(''); }
     async function mutate(action: string, payload: Payload): Promise<Row> {
         if (!navigator.onLine)
             throw new Error('Você está sem conexão. Reconecte antes de confirmar uma operação.');
-        const r = await fetch('/api/portal', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Proex-Action': '1' }, body: JSON.stringify({ action, ...payload }) }).catch(() => { throw new Error('A conexão foi interrompida. Reconecte e tente novamente; seu formulário foi preservado.'); });
+        const r = await fetch('/api/portal', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Proex-Action': '1' }, body: JSON.stringify({ action, ...payload }) }).catch(() => { throw Object.assign(new Error('A conexão foi interrompida. Reconecte e tente novamente; seu formulário foi preservado.'), { uncertain: true }); });
         const body = await r.json().catch(() => null) as Row | null;
+        // Sem resposta legível ou erro do servidor: a gravação pode ter acontecido. Quem chama decide se reenvia a mesma operação.
+        if (r.status >= 500 || (!body && r.status !== 401))
+            throw Object.assign(new Error(readableError(body?.error, 'Não foi possível concluir. Verifique sua conexão e tente novamente.')), { uncertain: true });
         if (r.status === 401)
             setSessionExpired(true);
         if (!r.ok || !body || body.error)
             throw new Error(r.status === 401 ? 'Sua sessão terminou. Entre novamente para continuar.' : readableError(body?.error, 'Não foi possível concluir. Verifique sua conexão e tente novamente.'));
         const updated = await refresh();
-        if(action==='stock.move'||action.startsWith('item.'))window.dispatchEvent(new Event(MATERIAL_ATTENTION_CHANGED));
+        if(action.startsWith('stock.move')||action.startsWith('item.'))window.dispatchEvent(new Event(MATERIAL_ATTENTION_CHANGED));
+        // A saída conjunta mostra o próprio resultado no diálogo; um aviso a mais só repetiria.
+        if(action==='stock.move.many')return body;
         setMessageKind(body.alreadyDelivered ? 'warning' : 'success');
         const receipt = body.alreadyDelivered ? `Este prêmio${body.offerName ? ` (${body.offerName})` : ''} já foi entregue. Não entregue novamente.` : action === 'prize.redeem' ? 'Entrega registrada. Entregue os materiais indicados à pessoa.' : updated ? 'Registro salvo. Os dados foram atualizados.' : 'Registro salvo. A atualização da tela está pendente; use Atualizar dados.';
         setMessage(receipt);
@@ -680,40 +721,6 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
     <select name="projectId" value={effectiveProject} onChange={e => setDraftProject(e.target.value)} required>
     <option value="">Selecione um projeto</option>{formProjects.map(p => <option value={p.id} key={p.id}>{p.name}</option>)}</select>
     </Field>;
-    const dailyRows = byProject(list(data.metrics?.daily)).filter(row => (!reportFrom || row.day >= reportFrom) && (!reportTo || row.day <= reportTo));
-    const exportNeedsProject = Boolean(unitFilter || areaFilter) && !filter;
-    const campaignTotals = new Map<string, Row>();
-    for (const row of dailyRows) {
-        const key = String(row.campaign_id);
-        const previous = campaignTotals.get(key) ?? { id: row.campaign_id, name: row.campaign_name, project_id: row.project_id, participations: 0, attempts: 0, deliveries: 0 };
-        for (const kind of ['participations', 'attempts', 'deliveries'])
-            previous[kind] += Number(row[kind] ?? 0);
-        campaignTotals.set(key, previous);
-    }
-    const reportCampaignRows = reportFrom || reportTo ? Array.from(campaignTotals.values()) : byProject(list(data.metrics?.campaigns));
-    const metric = (...keys: string[]) => { const metrics = data.metrics ?? {}; if (metrics.available === false)
-        return '—'; const normalized = keys.includes('deliveries') ? 'deliveries' : keys.includes('unitsDelivered') ? 'unitsDelivered' : keys[0]; let value = get(metrics, ...keys); if (tab === 'reports' && (reportFrom || reportTo))
-        value = ['participations', 'attempts', 'deliveries', 'tickets'].includes(normalized) ? dailyRows.reduce((total, row) => total + Number(row[normalized] ?? 0), 0) : undefined;
-    else if (filter) {
-        const row = list(metrics.byProject).find(p => get(p, 'projectId', 'project_id') === filter);
-        value = row ? get(row, normalized, ...keys) : ['participations', 'attempts', 'deliveries', 'visits', 'tickets'].includes(normalized) ? list(metrics.campaigns).filter(c => get(c, 'projectId', 'project_id') === filter).reduce((total, row) => total + Number(row[normalized] ?? 0), 0) : undefined;
-    } else if (unitFilter || areaFilter) {
-        const rows = byProject(list(metrics.byProject));
-        value = rows.length && rows.every(row => get(row, normalized, ...keys) !== undefined) ? rows.reduce((total, row) => total + Number(get(row, normalized, ...keys) ?? 0), 0) : undefined;
-    } return value === undefined || value === null ? '—' : Number(value).toLocaleString('pt-BR'); };
-    async function downloadDaily(format: DocumentFormat) {
-        const columns = [
-            { key: 'day', label: 'Data' }, { key: 'project_name', label: 'Projeto' }, { key: 'campaign_name', label: 'Evento' }, { key: 'modality', label: 'Modalidade' },
-            { key: 'participations', label: 'Participações', numeric: true }, { key: 'attempts', label: 'Tentativas', numeric: true },
-            { key: 'deliveries', label: 'Entregas', numeric: true }, { key: 'tickets', label: 'Atendimentos assistidos', numeric: true },
-        ];
-        const modalities: Record<string, string> = { physical: 'Presencial', dice: 'Dado', wheel: 'Roleta' };
-        const rows = dailyRows.map(row => ({ ...row, project_name:projectName(string(row.project_id)), day: /^\d{4}-\d{2}-\d{2}$/.test(string(row.day)) ? string(row.day).split('-').reverse().join('/') : row.day, modality: modalities[string(row.modality)] ?? row.modality }));
-        const info: [string,string][] = [['Projeto',filter?projectName(filter):'Todos os projetos do recorte'],['Período',`${reportFrom||'Início disponível'} a ${reportTo||'Última data disponível'}`],['Linhas',String(rows.length)],['Gerado em',when(new Date().toISOString())+' (Brasília)']];
-        const selectedProject=projects.find(project=>project.id===filter);
-        const presentation={...(selectedProject?{projectName:string(selectedProject.name),projectBrand:projectBrandFor(selectedProject.id,selectedProject.name,selectedProject.official_url)}:{}),metrics:[{label:'Participações',value:dailyRows.reduce((sum,row)=>sum+Number(row.participations??0),0)},{label:'Entregas',value:dailyRows.reduce((sum,row)=>sum+Number(row.deliveries??0),0)}]};
-        download(`proex-resumo-diario.${format}`, await documentExport(format,'Resumo diário',columns,rows,(row,key)=>row[key],info,presentation));
-    }
     const activeModule = tabs.find(module => module.id === tab);
     const title = activeModule?.label ?? 'Visão geral';
     const ModuleIcon = activeModule?.icon;
@@ -894,7 +901,9 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         </div>}
 
       {tab === 'my-work' && <><div className={workStyles.projectFilter}>{personalOrganization&&<p className="p-form-help">Organização: {organizations.find(organization=>organization.id===personalOrganization)?.name||'organização selecionada'} <button type="button" className="p-text-link" onClick={()=>setPersonalOrganization('')}>Ver todas as organizações autorizadas</button></p>}<label className="p-field"><span>Projeto</span><select id="meu-trabalho-projeto" aria-label="Projeto" value={filter} onChange={event => selectProject(event.target.value)}><option value="">{personalOrganization?'Todos os projetos desta organização':'Todos os projetos autorizados'}</option>{projects.filter(project=>!personalOrganization||project.organization_id===personalOrganization).map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label></div><MeuTrabalhoPanel key={string(user.userId)} userId={string(user.userId)} organizationId={personalOrganization||null} projectId={filter || null} serverDay={workDayFromServerTimestamp(data?.updatedAt)} workStatus={personalStatus} onWorkStatusChange={setPersonalStatus}/></>}
-      {(['materials','loans','events'] as string[]).includes(tab) && workContext(filter || null,tab === 'events' ? 'campaigns' : tab as WorkArea)}
+      {/* R4, etapa 2: o painel "Responsáveis e demandas" saiu do topo destes módulos. Quem cuida da área inteira fica na ficha do projeto;
+          o painel compacto continua nas fichas e nos cartões. Com "Todos os projetos" não há o que mostrar aqui. */}
+      {areaOwnerShortcut && <p className="p-area-owners-link"><Users size={15} aria-hidden="true"/><span>Quem cuida {areaOwnerShortcut.subject}:</span> <a className="p-text-link" href={`/?module=projects&project=${encodeURIComponent(filter)}&detailProject=${encodeURIComponent(filter)}`} aria-label={`Ver quem cuida ${areaOwnerShortcut.subject} na ficha do projeto`}>ficha do projeto<ArrowUpRight size={14} aria-hidden="true"/></a></p>}
       {activeWorkRecord && ['loans','events'].includes(activeWorkRecord.module) && <div className={workStyles.focusNotice} role="status"><p>{(activeWorkRecord.module === 'loans' ? displayedLoans : displayedCampaigns).length ? 'Registro vinculado ao seu trabalho. Use as ações abaixo para acompanhar.' : 'O registro não está na lista disponível para esta conta. Atualize ou consulte a lista completa.'}</p><button type="button" className="p-button p-button-subtle" onClick={() => setWorkRecord(null)}>Ver todos</button></div>}
       {tab === 'demands' && <><FollowUpPanel key={string(user.userId)} userId={string(user.userId)} onTaskTransferred={receipt=>{selectProject(receipt.projectId);setSelectedDemandId(receipt.taskId);}} defaultProjectId={filter} initialTaskId={selectedDemandId} serverDay={workDayFromServerTimestamp(data?.updatedAt)} onSelectTask={setSelectedDemandId} onChanged={refreshModules} onOpenReports={() => navigate('reports', 'demands')}/><OrganizationEmailSettings key={string(user.userId)} userId={string(user.userId)} organizations={organizations}/></>}
       {tab === 'overview' && volunteerAccess.length > 0 && volunteerDesk(true)}
@@ -904,7 +913,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
       {tab === 'community' && <CommunityPanel key={`community:${string(user.userId)}`} userId={string(user.userId)} projects={projects.map(project => ({ id: string(project.id), name: string(project.name) }))} prefill={communityPrefill} focus={communityFocus} onFocusHandled={clearCommunityFocus}/>}
 
       {tab === 'projects' && <>
-        <ProjectPanel refreshKey={updatedAt?.getTime() ?? 0} onMaterialOpen={(id,mode='view')=>{setMaterialMode(mode);setSelectedMaterialId(id);}} key={string(user.userId)} userId={string(user.userId)} pinnedProjectIds={pins.projectPins} pinError={pins.error} onTogglePin={(id, pinned) => setPinned('project', id, pinned)} shortcutModules={allowedTabs.map(module => module.id).filter(id => id === 'demands' || id === 'calendar')} initialProjectId={activeWorkRecord?.module === 'projects' ? activeWorkRecord.recordId : undefined} onDetailChange={id => { if (id) { if (id !== activeWorkRecord?.recordId) pushNavigation.current = true; selectProject(id); setWorkRecord({module:'projects',projectId:id,recordId:id}); } else setWorkRecord(null); }} renderWorkContext={projectId => workContext(projectId,'projects')} organizations={organizations} isPlatformOwner={isPlatformOwner} projects={projects} projectTypes={list(data.projectTypes)} organizationalUnits={organizationalUnits} canCreate={canCreateProjects} canEdit={id => canGlobal('projects.manage') || canProject(id, 'campaigns.manage')} mutate={mutate} onSelect={id => { selectProject(id); navigate('overview'); }}/>
+        <ProjectPanel refreshKey={updatedAt?.getTime() ?? 0} onMaterialOpen={(id,mode='view')=>{setMaterialMode(mode);setSelectedMaterialId(id);}} key={string(user.userId)} userId={string(user.userId)} pinnedProjectIds={pins.projectPins} pinError={pins.error} onTogglePin={(id, pinned) => setPinned('project', id, pinned)} shortcutModules={allowedTabs.map(module => module.id).filter(id => id === 'my-work' || id === 'demands' || id === 'calendar')} initialProjectId={activeWorkRecord?.module === 'projects' ? activeWorkRecord.recordId : undefined} onDetailChange={id => { if (id) { if (id !== activeWorkRecord?.recordId) pushNavigation.current = true; selectProject(id); setWorkRecord({module:'projects',projectId:id,recordId:id}); } else setWorkRecord(null); }} renderWorkContext={projectId => workContext(projectId,'projects')} renderAreaOwners={areaOwners} organizations={organizations} isPlatformOwner={isPlatformOwner} projects={projects} projectTypes={list(data.projectTypes)} organizationalUnits={organizationalUnits} canCreate={canCreateProjects} canEdit={id => canGlobal('projects.manage') || canProject(id, 'campaigns.manage')} mutate={mutate} onSelect={id => { selectProject(id); navigate('overview'); }}/>
         {/* Importar fica depois da lista e se esconde (sem perder a prévia) na ficha aberta: o projeto vem primeiro. */}
         <div hidden={Boolean(activeWorkRecord?.module === 'projects' && activeWorkRecord.recordId)}><AssistedImportPanel kind="project" organizations={organizations} projects={projects.map(project => ({ id: string(project.id), name: string(project.name), organization_id: string(get(project, 'organization_id', 'organizationId')), version: Number(project.version ?? 1) }))} projectTypes={list(data.projectTypes).map(type => ({ id: string(type.id), label: string(type.label) }))} organizationalUnits={organizationalUnits.map(unit => ({ id: string(unit.id), name: string(unit.name), acronym: string(unit.acronym) }))} canCreateProject={canCreateProjects} canWrite={id => canProject(id, 'campaigns.manage')} defaultProjectId={filter} onImported={refreshModules}/></div>
       </>}
@@ -920,7 +929,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
                 <span className="p-kicker">{projectName(get(c, 'projectId', 'project_id'))}</span>
                 <Badge status={c.status}/>
                 </div>
-                <h3>{c.name}</h3>{Array.isArray(c.host_project_ids) && (c.host_project_ids as string[]).some(id => projects.some(project => project.id === id)) && <p className="p-form-help">No evento {(c.host_project_ids as string[]).flatMap(id => projects.filter(project => project.id === id)).map(project => string(project.name)).join(', ')}</p>}{workContext(string(get(c,'projectId','project_id')),'campaigns',{campaignId:string(c.id)})}
+                <h3>{c.name}</h3>{Array.isArray(c.host_project_ids) && (c.host_project_ids as string[]).some(id => projects.some(project => project.id === id)) && <p className="p-form-help">No evento {(c.host_project_ids as string[]).flatMap(id => projects.filter(project => project.id === id)).map(project => string(project.name)).join(', ')}</p>}{workContext(string(get(c,'projectId','project_id')),'campaigns',{campaignId:string(c.id)})}<a className="p-text-link p-history-link" href={historyHref({ kind: 'campaign', id: string(c.id) }, string(get(c,'projectId','project_id')))} aria-label="Ver histórico desta dinâmica em Registros">Ver histórico<ArrowUpRight size={14} aria-hidden="true"/></a>
                 <p>{c.location || 'Local não informado'}</p>
                 <div className="p-event-date">
                 <CalendarDays size={17}/>
@@ -966,7 +975,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         <div hidden={showPrizeView}>
 
 
-        <Section title="Materiais e estoque" description="Saldo físico, reservas e unidades disponíveis ficam separados." aside={<div className={workStyles.catalogAside}>{can('inventory.manage') && formProjects.length > 0 && <a className="p-button p-button-subtle" href="#movimentar-estoque">Registrar movimento<ArrowRight size={15} aria-hidden="true"/></a>}<div className="p-search">
+        <Section title="Materiais e estoque" description="Saldo físico, reservas e unidades disponíveis ficam separados." aside={<div className={workStyles.catalogAside}>{can('inventory.manage') && formProjects.length > 0 && <button type="button" className="p-button p-button-subtle" onClick={()=>setMovementLauncher('one')}>Registrar movimento<ArrowRight size={15} aria-hidden="true"/></button>}<div className="p-search">
             <Search size={17}/>
             <input name="materialSearch" aria-label="Buscar materiais" placeholder="Buscar material" value={query} onChange={e => setQuery(e.target.value)}/>
             </div></div>}>{searchItems.length ? <MaterialCatalog onOpen={id=>{setMaterialMode('view');setSelectedMaterialId(id);}} materials={searchItems.map(item => {
@@ -1023,32 +1032,11 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
             </OperationForm></div></details>
             </Section>
             <div id="movimentar-estoque" className={workStyles.anchor}/>
-            <Section title="Movimentar estoque" description="Toda alteração registra finalidade, quantidade e responsável.">
-            <OperationForm action="stock.move" mutate={mutate} submit="Registrar movimento" make={f => { const qty = Number(f.get('quantity')); const kind = String(f.get('kind')); return { itemId: f.get('itemId'), delta: kind === 'receive' ? qty : kind === 'adjust' ? qty : -Math.abs(qty), kind, note: f.get('note'), ...stockContextFields(f), ...destinationFields(f) }; }}>
-            <Field label="Material">
-            <select name="itemId" required value={movementItemId} onChange={event=>setMovementItemId(event.target.value)}>
-            <option value="">Selecione o material</option>{visibleItems.filter(i => canProject(get(i, 'projectId', 'project_id'), 'inventory.manage')).map(i => <option value={i.id} key={i.id}>{i.name} · {projectName(get(i, 'projectId', 'project_id'))}</option>)}</select>
-            </Field>
-            <div className="p-form-grid">
-            <Field label="Operação">
-            <select name="kind" required value={movementKind} onChange={event=>setMovementKind(event.target.value)}>
-            <option value="" disabled>Escolha a operação</option>
-            <option value="receive">Recebimento</option>
-            <option value="distribute">Distribuição</option>
-            <option value="consume">Consumo interno</option>
-            <option value="adjust">Ajuste de contagem</option>
-            </select>
-            </Field>
-            <Field label="Quantidade" help="No ajuste, use valor positivo para acrescentar ou negativo para retirar.">
-            <input name="quantity" type="number" step="1" required defaultValue="1"/>
-            </Field>
+            <Section title="Registrar movimento" description="Toda alteração registra motivo, quantidade e responsável. O registro é feito na ficha do material, onde também ficam o histórico, corrigir, desfazer e os anexos.">
+            <div className={workStyles.movementEntry}>
+            <button type="button" className="p-button p-button-subtle" onClick={()=>setMovementLauncher('one')}><Boxes size={17} aria-hidden="true"/>Um material</button>
+            <button type="button" className="p-button p-button-subtle" onClick={()=>setMovementLauncher('many')}><Truck size={17} aria-hidden="true"/>Vários de uma vez</button>
             </div>
-            {movementItemId && <DestinationField key={`destination:${movementItemId}:${movementKind}`} projectId={string(get(items.find(item=>item.id===movementItemId)??{},'projectId','project_id'))} kind={movementKind}/>}
-            {movementKind && <StockContextFields key={movementItemId} projectId={string(get(items.find(item=>item.id===movementItemId)??{},'projectId','project_id'))} kind={movementKind}/>}
-            <Field label="Finalidade ou justificativa">
-            <textarea name="note" rows={3} required maxLength={1000} placeholder="Ex.: Recebimento conferido pela equipe"/>
-            </Field>
-            </OperationForm>
             </Section>
             </div>}</div>
         <section className={`p-card ${workStyles.consumption}`}><button type="button" className="p-button p-button-subtle" aria-expanded={showConsumption} onClick={()=>setShowConsumption(value=>!value)}><Boxes size={18}/>Consumo por unidade e cobertura</button>{showConsumption&&<StockConsumptionPanel key={filter} projectId={filter} onOpenMaterial={id=>{setMaterialMode('view');setSelectedMaterialId(id);}}/>}</section>
@@ -1083,6 +1071,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
                     <span>até {when(get(l, 'endsAt', 'ends_at'))}</span>
                     </div>
                     </div>
+                    <a className="p-text-link p-history-link" href={historyHref({ kind: 'loan', id: string(l.id) }, string(get(l,'projectId','project_id')))} aria-label="Ver histórico deste empréstimo em Registros">Ver histórico<ArrowUpRight size={14} aria-hidden="true"/></a>
                     <details className={l.status === 'out' || l.status === 'reserved' ? 'p-loan-next' : undefined}>
                     <summary>{l.status === 'out' ? 'Registrar devolução' : l.status === 'reserved' ? 'Registrar retirada' : 'Detalhes, termos e ocorrências'}{(l.status === 'out' || l.status === 'reserved') && <small>termos e ocorrências</small>} <ChevronDown size={16}/>
                     </summary>
@@ -1137,7 +1126,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
       {tab === 'calendar' && <CalendarPanel projects={projects} organizationalUnits={visibleUnits} selectedProjectId={filter} selectedUnitId={unitFilter} onProjectChange={selectProject} onUnitChange={selectUnit}/>}
       {tab === 'records' && <>
         <nav className="p-material-tabs" aria-label="Partes de Registros"><button type="button" aria-pressed={recordsView === 'history'} className={recordsView === 'history' ? 'is-active' : ''} onClick={() => setRecordsView('history')}><CalendarDays size={18}/>Histórico</button><button type="button" aria-pressed={recordsView === 'documents'} className={recordsView === 'documents' ? 'is-active' : ''} onClick={() => setRecordsView('documents')}><FileText size={18}/>Documentos</button></nav>
-        {recordsView === 'history' && <ActivityPanel key={filter} initialProjectId={filter} projects={projects.map(project => ({ id: string(project.id), name: string(project.name) }))}/>}
+        {recordsView === 'history' && <ActivityPanel key={`${filter}:${historyParam}`} initialProjectId={filter} subject={parseHistorySubject(historyParam)} onClearSubject={() => setHistoryParam('')} projects={projects.map(project => ({ id: string(project.id), name: string(project.name) }))}/>}
         <div hidden={recordsView !== 'documents'}><RecordsPanel key={JSON.stringify([filter,recordsScheduleItemId])} initialProjectId={filter} scheduleItemId={recordsScheduleItemId} onClearScheduleItem={() => { pushNavigation.current = true; setRecordsScheduleItemId(''); focusModule(false); }} projects={projects} items={items} loans={loans} canRead={projectId => canProject(projectId, 'reports.read', 'campaigns.manage', 'inventory.read', 'loans.read')} canWrite={(capability: string, projectId?: string | null) => projectId ? canProject(projectId, capability) : canGlobal(capability)}/></div>
       </>}
 
@@ -1154,116 +1143,18 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
             setReportFrom(next); }}/>
         </label>
         <button className="p-button p-button-subtle" onClick={() => { setReportFrom(''); setReportTo(''); }}>Todo o período</button>
-        <p>Datas de Brasília para os relatórios com período. Projetos e materiais mostram a posição atual. Nos indicadores de dinâmicas, participações, tentativas e entregas usam a data de cada registro.</p>
+        <p>Datas de Brasília para os relatórios com período. Projetos e materiais mostram a posição atual. Em “Dinâmicas por dia”, participações, tentativas e entregas usam a data de cada registro.</p>
         </div>
-        <ReportsCenter key={string(user.userId)} userId={string(user.userId)} canSync={isPlatformOwner} projectIdentity={projects.find(project => project.id === filter)} initialDataset={canAny('reports.read') ? reportInitialDataset : 'demands'} projectId={filter} unitId={unitFilter} area={areaFilter} from={reportFrom} to={reportTo} available={[
+        <ReportsCenter key={`${string(user.userId)}:${reportInitialDataset}:${reportSearch}`} userId={string(user.userId)} canSync={isPlatformOwner} projectIdentity={projects.find(project => project.id === filter)} initialDataset={reportInitialDataset === 'projects' && !canAny('reports.read') ? 'demands' : reportInitialDataset} initialSearch={reportSearch} projectId={filter} unitId={unitFilter} area={areaFilter} from={reportFrom} to={reportTo} available={[
           ...(projects.length ? ['projects' as const] : []),
           ...(canAny('inventory.read', 'reports.read') ? ['materials', 'movements', 'outflows'] as const : []),
           ...(canAny('inventory.read', 'loans.read', 'reports.read') ? ['outflow_details' as const] : []),
           ...(canAny('loans.read', 'reports.read') ? ['loans' as const] : []),
           ...(canAny('reports.read', 'inventory.read', 'loans.read') ? ['records' as const] : []),
-          ...(canAny('reports.read', 'campaigns.manage') ? ['campaigns' as const] : []),
+          ...(canAny('reports.read', 'campaigns.manage') ? ['campaigns', 'campaign_days'] as const : []),
           ...(canFollowUp ? ['demands', 'reviews'] as const : []),
         ]}
           scopeLabel={[filter ? projectName(filter) : '', unitFilter ? (unitFilter === '__unassigned__' ? 'Sem unidade vinculada' : string(visibleUnits.find(unit => unit.id === unitFilter)?.acronym || visibleUnits.find(unit => unit.id === unitFilter)?.name)) : '', areaFilter ? (areaFilter === '__none__' ? 'Sem área temática' : THEMATIC_AREAS.find(item => item.key === areaFilter)?.label ?? '') : ''].filter(Boolean).join(' · ')} />
-        <h2 className="p-reports-legacy-title">Indicadores das dinâmicas</h2>
-        <div className="p-stats">
-        <div className="p-stat">
-        <span>Participações</span>
-        <strong>{metric('participations', 'participationCount')}</strong>
-        <small>Contas e atendimentos assistidos</small>
-        </div>
-        <div className="p-stat">
-        <span>Tentativas</span>
-        <strong>{metric('attempts', 'attemptCount')}</strong>
-        <small>Inclui repetições autorizadas</small>
-        </div>
-        <div className="p-stat">
-        <span>Premiações entregues</span>
-        <strong>{metric('deliveries', 'delivered', 'redemptions')}</strong>
-        <small>Direitos resgatados</small>
-        </div>
-        <div className="p-stat">
-        <span>Unidades entregues</span>
-        <strong>{metric('units', 'unitsDelivered', 'units_delivered', 'deliveredUnits')}</strong>
-        <small>{reportFrom || reportTo ? 'Sem medição diária de unidades' : 'Quantidade física de itens'}</small>
-        </div>
-        </div>
-        <div className="p-measures">
-        <div className="p-card">
-        <span>Visitas históricas</span>
-        <strong>{metric('visits')}</strong>
-        <small>{data.metrics?.visitsCollection === 'paused' ? 'Coleta suspensa para preservar a disponibilidade; não representa o público atual.' : reportFrom || reportTo ? 'Sem medição diária neste recorte' : 'Não são visitantes únicos'}</small>
-        </div>
-        <div className="p-card">
-        <span>Atendimentos assistidos</span>
-        <strong>{metric('tickets')}</strong>
-        <small>Participações por tíquete</small>
-        </div>
-        <div className="p-card">
-        <span>Novos seguidores no Instagram</span>
-        <strong>Não medido</strong>
-        <small>Não há confirmação automática de seguimento</small>
-        </div>
-        </div>{reportCampaignRows.length > 0 && <Section title="Resultados por evento" description="Contagens reais no projeto e no período selecionados.">
-            <div className="p-card p-table-wrap">
-            <table>
-            <thead>
-            <tr>
-            <th>Evento</th>
-            <th>Participações</th>
-            <th>Tentativas</th>
-            <th>Entregas</th>
-            </tr>
-            </thead>
-            <tbody>{reportCampaignRows.map(c => <tr key={c.id}>
-                <td>
-                <strong>{c.name}</strong>
-                <small>{projectName(get(c, 'projectId', 'project_id'))}</small>
-                </td>
-                <td>{c.participations}</td>
-                <td>{c.attempts}</td>
-                <td>{c.deliveries}</td>
-                </tr>)}</tbody>
-            </table>
-            </div>
-            </Section>}<Section title="Resumo diário" description="Participações e entregas podem acontecer em dias diferentes." aside={<ExportFormats onExport={downloadDaily} disabled={!dailyRows.length} label="Baixar resumo diário"/>}>{dailyRows.length ? <div className="p-card p-table-wrap">
-            <table>
-            <thead>
-            <tr>
-            <th>Data e evento</th>
-            <th>Modalidade</th>
-            <th>Participações</th>
-            <th>Tentativas</th>
-            <th>Entregas</th>
-            </tr>
-            </thead>
-            <tbody>{dailyRows.map((r, i) => <tr key={`${r.campaign_id}-${r.day}-${r.modality}-${i}`}>
-                <td>
-                <strong>{String(r.day).split('-').reverse().join('/')}</strong>
-                <small>{r.campaign_name}</small>
-                </td>
-                <td>{r.modality === 'physical' ? 'Presencial' : r.modality === 'dice' ? 'Dado' : r.modality === 'wheel' ? 'Roleta' : r.modality}</td>
-                <td>{r.participations}</td>
-                <td>{r.attempts}</td>
-                <td>{r.deliveries}</td>
-                </tr>)}</tbody>
-            </table>
-            </div> : <Empty title="Sem registros neste período" text="Altere as datas ou o projeto para consultar outro recorte." icon={CalendarDays}/>}</Section>
-        {(filter ? canProject(filter, 'reports.read') : canAny('reports.read')) && <Section title="Exportar registros completos" description="Planilha, documento ou PDF do recorte autorizado, sem corte por data. O resumo diário acima usa as datas escolhidas.">
-        {exportNeedsProject && <p className="p-form-help">Com filtro de unidade ou área, escolha um projeto para baixar os registros completos. O resumo diário já usa o recorte selecionado.</p>}
-        <div className="p-export-grid">{[{ kind: 'participations', title: 'Participação nas dinâmicas', text: 'Modalidades, resultados e contagens por campanha.', icon: Users }, { kind: 'stock', title: 'Materiais e movimentos', text: 'Saldo, reservas e quantidade disponível por item.', icon: Boxes }, { kind: 'loans', title: 'Empréstimos', text: 'Agenda, etapas e devoluções pendentes.', icon: Truck }].map(({ kind, title: exportTitle, text, icon: Icon }) => {
-            const content = <>
-            <span className="p-icon-tile">
-            <Icon size={22}/>
-            </span>
-            <h3>{exportTitle}</h3>
-            <p>{text}</p>
-            {exportNeedsProject ? <span className="p-text-link">Escolha um projeto</span> : <ExportFormats tiles label={`Baixar ${exportTitle.toLowerCase()}`} onExport={format => downloadFromServer(`/api/export?kind=${kind}&format=${format}${filter ? `&projectId=${encodeURIComponent(filter)}` : ''}`, `proex-${kind}.${format}`)}/>}
-            </>;
-            return <article className={`p-card p-export-card${exportNeedsProject ? ' p-export-unavailable' : ''}`} key={kind}>{content}</article>;
-        })}</div>
-        </Section>}
         <div className="p-explainer">
         <ShieldCheck size={21}/>
         <div>
@@ -1316,6 +1207,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         </SettingsSection>
       </div>}
 
+      {movementLauncher&&<MovementLauncher key={movementLauncher} initialMode={movementLauncher} defaultProjectId={filter} materials={items.filter(item=>canProject(get(item,'projectId','project_id'),'inventory.manage')).map(item=>({id:string(item.id),name:string(item.name),projectId:string(get(item,'projectId','project_id')),projectName:projectName(get(item,'projectId','project_id')),unit:string(item.unit)||'unidade',category:string(item.category),available:Number(item.available)||0,active:item.condition==='active'}))} mutate={mutate} onClose={()=>setMovementLauncher(null)} onOpenMaterial={(id,mode)=>{setMovementLauncher(null);if(tab!=='materials')navigate('materials');setMaterialMode(mode);setSelectedMaterialId(id);}}/>}
       <MaterialDetailDrawer onUnitOpen={setStockUnit} onDestinationOpen={setDestinationOpen} itemId={materialDrawerId} initialMode={materialMode} onClose={() => {setSelectedMaterialId(null);setMaterialMode('view');setMaterialMode('view');if(tab==='materials')setWorkRecord(null);}} onChanged={refreshModules} renderWorkContext={({itemId,projectId}) => workContext(projectId,'materials',{itemId})}/>
       {stockUnit&&<StockUnitDialog key={stockUnit} unitId={stockUnit} onClose={()=>setStockUnit('')} onOpenMaterial={id=>{setMaterialMode('view');setSelectedMaterialId(id);}}/>}
       {destinationOpen&&<DestinationDialog key={destinationOpen} destinationId={destinationOpen} onClose={()=>setDestinationOpen('')} onOpenMaterial={id=>{if(tab!=='materials')navigate('materials');setMaterialMode('view');setSelectedMaterialId(id);}}/>}

@@ -81,7 +81,6 @@ input:is([type=checkbox],[type=radio]){appearance:auto;display:inline-block;widt
 /* Início: atalhos personalizáveis primeiro; destaque compacto com indicadores. */
 .pd-welcome{padding:26px 32px;min-height:0}.pd-welcome h2{font-size:clamp(22px,2.2vw,30px);margin:10px 0 8px}.pd-welcome-aside{display:none}
 @media(min-width:1500px){.pd-shortcuts{grid-template-columns:repeat(3,minmax(0,1fr))}}
-.p-reports-legacy-title{font-size:19px;color:var(--ink);margin:6px 0 14px;letter-spacing:-.02em}
 /* Cartões genéricos ganham respiro interno; classes específicas (com padding próprio) continuam valendo. */
 :where(.p-card:not(.p-table-wrap)){padding:22px 24px}
 :where(.p-card)>h3:first-child{margin-top:0}
@@ -233,3 +232,11 @@ html[data-theme=dark] .p-button-subtle,html[data-theme=dark] .p-icon-button{back
 .p-records-ask>svg{margin-top:2px;flex-shrink:0}
 .p-records-ask>div{flex:1 1 240px}
 .p-notice.p-records-ask>.p-button{margin:0 0 0 auto;background:var(--button-subtle-bg);border:1px solid var(--button-subtle-border);min-height:44px}
+/* Atalho "Ver histórico" nos cartões de empréstimo e de dinâmica (R1): abre Registros já filtrado. */
+.p-history-link{display:inline-flex;align-items:center;gap:4px;min-height:44px;font-size:13px;font-weight:600}
+/* R4, etapa 2: no lugar do painel do topo de Materiais, Empréstimos e Dinâmicas, uma linha baixa com o caminho para a ficha do projeto.
+   A linha ocupa 20 px; a área de toque do link passa de 44 px sem empurrar a lista para baixo. */
+.p-area-owners-link{display:flex;flex-wrap:wrap;align-items:center;gap:2px 6px;margin:-6px 0 14px;color:var(--text-secondary);font-size:13px;line-height:20px}
+.p-area-owners-link>svg{flex-shrink:0;color:var(--brand-ink)}
+.p-area-owners-link>a.p-text-link{position:relative;display:inline-flex;align-items:center;gap:4px;min-height:0;font-weight:600}
+.p-area-owners-link>a::after{content:"";position:absolute;inset:-14px -10px}

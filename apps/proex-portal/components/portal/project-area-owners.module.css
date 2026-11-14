@@ -1,0 +1,23 @@
+.card { container-type: inline-size; min-width: 0; }
+.head { display: flex; align-items: flex-start; gap: 10px; min-width: 0; margin-bottom: 6px; }
+.head h3 { font-size: 15px; line-height: 1.35; }
+.head p { color: var(--text-secondary); font-size: 12.5px; line-height: 1.5; }
+.icon { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; flex-shrink: 0; border-radius: 10px; background: var(--surface-soft); color: var(--brand-ink); }
+.list { display: grid; margin: 0; padding: 0; list-style: none; }
+.row { min-width: 0; padding-block: 10px; border-top: 1px solid var(--line); }
+.line { display: grid; grid-template-columns: minmax(120px, 150px) minmax(0, 1fr); align-items: center; gap: 8px 14px; min-width: 0; min-height: 44px; }
+.line[data-action=true] { grid-template-columns: minmax(120px, 150px) minmax(0, 1fr) auto; }
+.area { display: inline-flex; align-items: center; gap: 8px; color: var(--ink); font-size: 14px; font-weight: 600; }
+.area svg { color: var(--brand-ink); flex-shrink: 0; }
+.people { min-width: 0; color: var(--ink); font-size: 14px; line-height: 1.4; overflow-wrap: break-word; }
+.people[data-empty=true] { color: var(--text-secondary); }
+.line > button { min-height: 44px; white-space: nowrap; }
+.manager { min-width: 0; margin-top: 10px; }
+/* O título do formulário fica abaixo do título da seção na hierarquia. */
+.card .manager h3 { font-size: 14px; }
+.foot { margin-top: 4px; padding-top: 10px; border-top: 1px solid var(--line); color: var(--text-secondary); font-size: 12.5px; line-height: 1.5; }
+/* Celular: nome da área e botão na primeira linha, pessoas embaixo. */
+@container (max-width: 520px) {
+  .line, .line[data-action=true] { grid-template-columns: minmax(0, 1fr) auto; }
+  .people { grid-column: 1 / -1; grid-row: 2; }
+}

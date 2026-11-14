@@ -28,7 +28,7 @@ Atualizado em 09/11/2026, sobre a `main` depois da PR52.
 | **Responsabilidade** | Quem responde por uma área, material, empréstimo ou dinâmica. Não dá acesso. | `responsibility` | `work_responsibility_*` | `lib/responsibilities/`, `responsibility-manager` |
 | **Meu trabalho** | Visão pessoal das demandas e responsabilidades de quem está logado. | `my-work` | (consulta) | módulo `my-work`, `lib/my-work/`, `meu-trabalho-panel` |
 | **Registro** | Observação, ocorrência ou documento de um projeto, material ou empréstimo, com anexos. | `record`, `record_attachment` | `records`, `record_attachments` | módulo `records`, `lib/records.ts`, `records-panel` |
-| **Histórico** | Linha do tempo. Existe em três lugares: ficha do material, Registros e a versão de cada demanda. | `history`, `audit` | `audit`, `entity_versions`, `followup_history` | `lib/portal-history.ts`, `activity-panel` |
+| **Histórico** | Linha do tempo. Existe em três lugares: ficha do material, Registros e a versão de cada demanda. | `history`, `audit` | `audit`, `entity_versions`, `followup_history` | `components/portal/history-timeline.tsx` (linha do tempo única), `activity-panel`, `lib/activity.ts` |
 | **Agenda** | Datas de projetos, eventos e empréstimos, com feed para o Google Agenda. | `calendar` | `calendar_feeds`, `project_schedule_items` | módulo `calendar`, `lib/calendar.ts` |
 | **Aviso / atenção** | Notificações e alertas de estoque baixo. | `notification`, `materialAttention` | `followup_notifications`, `followup_inbox_entries`, `material_attention_*` | sino, `material-attention-inbox` |
 | **Planilha mestre / do projeto** | Cópia do portal no Google Sheets, sincronizada. | `sync`, `projectSheet`, `teamSheet` | `sync_*`, `project_sheet_*`, `team_sheet_*` | `lib/sync/`, `public/integracoes/*.gs` |
@@ -60,10 +60,10 @@ Nomes de tela a usar em código novo e nas próximas PRs de consolidação. A tr
 | Pessoas e acessos | **Acessos** | Quem entra no portal e com qual papel |
 | Equipes | **Equipes** | Só equipe de trabalho, sem dar acesso |
 | Pré-cadastro + equipe publicada pela PROEX | **Diretório** | Pessoas conhecidas, com ou sem conta |
-| Botões de baixar dados espalhados | **Exportar**, concentrado em Relatórios | Nas outras telas, um botão "Exportar" que abre Relatórios já filtrado |
-| "Indicadores das dinâmicas" em Relatórios | sai | Repete o conjunto Dinâmicas da central |
+| Botões de baixar dados espalhados | **Exportar**, concentrado em Relatórios | Nas outras telas, um botão "Exportar" que abre Relatórios já filtrado. Implementado em ramo (R3); o que fica onde está em `docs/EXPORTACOES.md` |
+| "Indicadores das dinâmicas" em Relatórios | sai | Repete o conjunto Dinâmicas da central. O resumo por dia virou o assunto **Dinâmicas por dia** |
 | Painel "Responsáveis e demandas" no topo dos módulos | **Responsáveis** na ficha (do material, empréstimo, dinâmica ou projeto) | O responsável pela área inteira vai para a ficha do projeto, para não perder a função |
-| Quatro formas de movimentar estoque | **Registrar movimento**: escolher o material e abrir a ficha | Uma tela só, com corrigir, desfazer e anexos. Depois de 13/11 |
+| Quatro formas de movimentar estoque | **Registrar movimento**: escolher o material e abrir a ficha, ou **Vários de uma vez** (saída conjunta) | Uma tela só, com corrigir, desfazer e anexos. Pronto em ramo; merge a partir de 14/11. Ver `REGISTRAR-MOVIMENTO-E-SAIDA-MULTIPLA.md` |
 | "Assistente com revisão" + Rolê | **assistente Rolê** | O outro sai. Depois de 13/11 |
 | Importação assistida | **Importar de arquivo** | Planilha, PDF ou SIGAA |
 

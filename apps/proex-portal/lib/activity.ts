@@ -23,11 +23,17 @@ export type ActivityEvent = {
   /** Situação de movimentos de estoque revistos: versão substituída (corrigida), desfeita, ou a versão nova (correção). */
   status?: 'corrected' | 'undone' | 'correction'; statusReason?: string; statusById?: string | null; statusBy?: string;
 };
+export const ACTIVITY_SUBJECTS = ['item', 'loan', 'task', 'campaign'] as const;
+export type ActivitySubjectKind = typeof ACTIVITY_SUBJECTS[number];
+/** Fontes que têm acontecimentos de cada assunto. As demais ficam de fora quando o histórico é de um assunto só. */
+const SUBJECT_SOURCES: Record<ActivitySubjectKind, ActivityType[]> = { item: ['materials', 'loans', 'demands', 'records'], loan: ['loans', 'demands', 'records'], task: ['demands'], campaign: ['demands', 'access'] };
 export type ActivityFeed = {
   range: { from: string; to: string; days: string[] };
   types: ActivityType[];
   events: ActivityEvent[];
   truncated: boolean;
+  /** Histórico de um assunto só (ficha de material, empréstimo, demanda ou dinâmica). O nome só vem se a pessoa pode ler o assunto. */
+  subject: { kind: ActivitySubjectKind; id: string; name: string } | null;
   people: { id: string; name: string }[];
   loansNow: { active: number; late: number } | null;
   /** Só quem configura a IA de alguma organização vê o tipo "Configuração de IA". */
@@ -107,9 +113,21 @@ async function recordsByRole(db: D1Database, ids: string[]): Promise<Set<string>
   return found;
 }
 
+function subjectOf(input: Record<string, unknown>): { kind: ActivitySubjectKind; id: string } | null {
+  const given = ([['item', input.itemId, 'o material'], ['loan', input.loanId, 'o empréstimo'], ['task', input.taskId, 'a demanda'], ['campaign', input.campaignId, 'a dinâmica']] as const)
+    .flatMap(([kind, value, label]) => { const id = optionalId(value, label); return id ? [{ kind, id }] : []; });
+  if (given.length > 1) throw new HttpError(400, 'Escolha um assunto só para o histórico.', 'invalid_activity_subject');
+  return given[0] ?? null;
+}
+
 export async function activityFeed(db: D1Database, actor: PortalActor | null, input: Record<string, unknown> = {}, now = Date.now()): Promise<ActivityFeed> {
   if (!actor) throw new HttpError(401, 'Entre para consultar os registros.', 'unauthenticated');
-  const range = activityRange(input.from, input.to, now), wanted = types(input.types);
+  const subject = subjectOf(input);
+  // Sem período informado, o histórico de um assunto cobre o máximo permitido (92 dias).
+  const range = activityRange(subject && !input.from ? offsetCivilDate(civil(input.to, 'o fim do período') ?? todayInBrasilia(now), 1 - MAX_RANGE_DAYS) : input.from, input.to, now);
+  // Um assunto só usa as fontes em que ele aparece; cada fonte continua com a regra de leitura do próprio módulo.
+  const wanted = subject ? types(input.types).filter(type => SUBJECT_SOURCES[subject.kind].includes(type)) : types(input.types);
+  const about = (kind: ActivitySubjectKind, column: string): Source => subject?.kind === kind ? { sql: ` AND ${column}=?`, values: [subject.id] } : { sql: '', values: [] };
   const projectId = optionalId(input.projectId, 'o projeto'), organizationId = optionalId(input.organizationId, 'a organização');
   let person = optionalId(input.person, 'a pessoa');
   // Filtro por pessoa só para contas ativas e não anonimizadas; senão, nada corresponde.
@@ -124,12 +142,12 @@ export async function activityFeed(db: D1Database, actor: PortalActor | null, in
   const take = (rows: Row[]) => { if (rows.length > MAX_PER_SOURCE) { truncated = true; return rows.slice(0, MAX_PER_SOURCE); } return rows; };
 
   if (wanted.includes('materials')) {
-    const scope = scoped(actor, ['inventory.read'], 'p.id', projectId, organizationId);
+    const scope = scoped(actor, ['inventory.read'], 'p.id', projectId, organizationId), item = about('item', 'i.id');
     const rows = take(await all(db, `SELECT m.id,m.kind,m.delta,m.created_at,m.actor_id,m.ref_id,i.id item_id,i.name item_name,i.unit,p.id project_id,p.name project_name,
         sup.kind sup_kind,sup.reason sup_reason,sup.actor_id sup_actor,rep.reason rep_reason,rep.actor_id rep_actor
       FROM stock_movements m JOIN items i ON i.id=m.item_id JOIN projects p ON p.id=i.project_id
       LEFT JOIN stock_movement_revisions sup ON sup.target_movement_id=m.id LEFT JOIN stock_movement_revisions rep ON rep.replacement_movement_id=m.id
-      WHERE ${scope.sql} AND m.created_at>=? AND m.created_at<? AND NOT EXISTS(SELECT 1 FROM stock_movement_revisions mirror WHERE mirror.reversal_movement_id=m.id) ORDER BY m.created_at DESC LIMIT ${MAX_PER_SOURCE + 1}`, [...scope.values, range.startsAt, range.endsAt]));
+      WHERE ${scope.sql}${item.sql} AND m.created_at>=? AND m.created_at<? AND NOT EXISTS(SELECT 1 FROM stock_movement_revisions mirror WHERE mirror.reversal_movement_id=m.id) ORDER BY m.created_at DESC LIMIT ${MAX_PER_SOURCE + 1}`, [...scope.values, ...item.values, range.startsAt, range.endsAt]));
     for (const row of rows) {
       const delta = Number(row.delta) || 0, unitName = String(row.unit || 'unidade'), unit = Math.abs(delta) === 1 || /s$/i.test(unitName) ? unitName : `${unitName}s`;
       events.push({ id: `materials:${row.id}`, type: 'materials', action: MOVEMENT_LABELS[String(row.kind)] ?? 'Movimentação', title: String(row.item_name), detail: `${delta > 0 ? '+' : ''}${delta} ${unit}`,
@@ -140,6 +158,7 @@ export async function activityFeed(db: D1Database, actor: PortalActor | null, in
           : row.rep_reason !== null && row.rep_reason !== undefined ? { status: 'correction' as const, statusReason: String(row.rep_reason), statusById: row.rep_actor ? String(row.rep_actor) : null } : {}) });
     }
 
+    if (!subject) {
     const who = actorFilter('m.actor_id');
     bump(await all(db, `SELECT ${dayOf('m.created_at')} day,COUNT(*) n FROM stock_movements m JOIN items i ON i.id=m.item_id JOIN projects p ON p.id=i.project_id
       WHERE ${scope.sql} AND m.created_at>=? AND m.created_at<?${who.sql} AND NOT EXISTS(SELECT 1 FROM stock_movement_revisions mirror WHERE mirror.reversal_movement_id=m.id) GROUP BY day`, [...scope.values, range.startsAt, range.endsAt, ...who.values]), 'materials');
@@ -147,15 +166,16 @@ export async function activityFeed(db: D1Database, actor: PortalActor | null, in
       FROM stock_movements m JOIN items i ON i.id=m.item_id JOIN projects p ON p.id=i.project_id
       WHERE ${scope.sql} AND m.created_at>=? AND m.created_at<?${who.sql} AND ${effectiveMovementSql('m')} GROUP BY i.id ORDER BY entradas+saidas DESC,i.name LIMIT 8`, [...scope.values, range.startsAt, range.endsAt, ...who.values]))
       .map(row => ({ name: String(row.name), projectId: String(row.project_id), href: link('materials', String(row.project_id), `&itemId=${encodeURIComponent(String(row.item_id))}`), entradas: Number(row.entradas) || 0, saidas: Number(row.saidas) || 0 }));
+    }
   }
 
   if (wanted.includes('loans')) {
-    const scope = scoped(actor, ['loans.read'], 'p.id', projectId, organizationId);
+    const scope = scoped(actor, ['loans.read'], 'p.id', projectId, organizationId), only = subject?.kind === 'item' ? about('item', 'l.item_id') : about('loan', 'l.id');
     const rows = take(await all(db, `SELECT l.id,l.status,l.action_name,l.created_at,l.checked_out_at,l.returned_at,l.ends_at,l.created_by,i.name item_name,p.id project_id,p.name project_name
       FROM loans l JOIN items i ON i.id=l.item_id AND i.project_id=l.project_id JOIN projects p ON p.id=l.project_id
-      WHERE ${scope.sql} AND ((l.created_at>=? AND l.created_at<?) OR (l.checked_out_at>=? AND l.checked_out_at<?) OR (l.returned_at>=? AND l.returned_at<?))
+      WHERE ${scope.sql}${only.sql} AND ((l.created_at>=? AND l.created_at<?) OR (l.checked_out_at>=? AND l.checked_out_at<?) OR (l.returned_at>=? AND l.returned_at<?))
       ORDER BY COALESCE(l.returned_at,l.checked_out_at,l.created_at) DESC LIMIT ${MAX_PER_SOURCE + 1}`,
-    [...scope.values, range.startsAt, range.endsAt, range.startsAt, range.endsAt, range.startsAt, range.endsAt]));
+    [...scope.values, ...only.values, range.startsAt, range.endsAt, range.startsAt, range.endsAt, range.startsAt, range.endsAt]));
     for (const row of rows) {
       const base = { type: 'loans' as const, title: String(row.item_name), detail: String(row.action_name || ''), projectId: String(row.project_id), projectName: String(row.project_name),
         actorName: '', viaRole: false, href: link('loans', String(row.project_id), `&loanId=${encodeURIComponent(String(row.id))}`), quantity: null };
@@ -165,7 +185,7 @@ export async function activityFeed(db: D1Database, actor: PortalActor | null, in
       if (within(row.returned_at)) events.push({ ...base, id: `loans:${row.id}:returned`, action: 'Devolução', at: String(row.returned_at), day: brasiliaDay(String(row.returned_at)), actorId: null });
     }
     const reachable = scoped(actor, ['loans.read'], 'p.id', projectId, organizationId);
-    if ((await all(db, `SELECT 1 FROM projects p WHERE ${reachable.sql} LIMIT 1`, reachable.values)).length) {
+    if (!subject && (await all(db, `SELECT 1 FROM projects p WHERE ${reachable.sql} LIMIT 1`, reachable.values)).length) {
     // loans.ends_at é inteiro (milissegundos): comparar com número, nunca com texto ISO.
     const current = scoped(actor, ['loans.read'], 'l.project_id', projectId, organizationId);
     const [counts] = await all(db, `SELECT SUM(CASE WHEN l.status IN ('reserved','out') THEN 1 ELSE 0 END) active,
@@ -175,8 +195,9 @@ export async function activityFeed(db: D1Database, actor: PortalActor | null, in
   }
 
   if (wanted.includes('demands')) {
-    const visible = followupAuthority('?', 'f.organization_id', 'f.project_id'), projectFilter = `${projectId ? ' AND f.project_id=?' : ''}${organizationId ? ' AND f.organization_id=?' : ''}`;
-    const values = [actor.userId, ...(projectId ? [projectId] : []), ...(organizationId ? [organizationId] : [])];
+    const visible = followupAuthority('?', 'f.organization_id', 'f.project_id'), demandColumn = { item: 'f.item_id', loan: 'f.loan_id', task: 'f.id', campaign: 'f.campaign_id' } as const;
+    const projectFilter = `${projectId ? ' AND f.project_id=?' : ''}${organizationId ? ' AND f.organization_id=?' : ''}${subject ? ` AND ${demandColumn[subject.kind]}=?` : ''}`;
+    const values = [actor.userId, ...(projectId ? [projectId] : []), ...(organizationId ? [organizationId] : []), ...(subject ? [subject.id] : [])];
     const opened = take(await all(db, `SELECT f.id,f.title,f.priority,f.created_at,f.created_by,f.project_id,COALESCE(p.name,o.name) project_name
       FROM followup_tasks f JOIN organizations o ON o.id=f.organization_id LEFT JOIN projects p ON p.id=f.project_id
       WHERE ${visible}${projectFilter} AND f.created_at>=? AND f.created_at<? ORDER BY f.created_at DESC LIMIT ${MAX_PER_SOURCE + 1}`, [...values, range.startsAt, range.endsAt]));
@@ -193,6 +214,7 @@ export async function activityFeed(db: D1Database, actor: PortalActor | null, in
       at: String(row.created_at), day: brasiliaDay(String(row.created_at)), projectId: row.project_id ? String(row.project_id) : null, projectName: String(row.project_name),
       actorId: row.actor_id ? String(row.actor_id) : null, actorName: '', viaRole: false, href: link('demands', row.project_id ? String(row.project_id) : null, `&demandId=${encodeURIComponent(String(row.id))}`), quantity: null });
 
+    if (!subject) {
     const opener = actorFilter('f.created_by'), closer = actorFilter('h.actor_id');
     bump(await all(db, `SELECT ${dayOf('f.created_at')} day,COUNT(*) n FROM followup_tasks f WHERE ${visible}${projectFilter} AND f.created_at>=? AND f.created_at<?${opener.sql} GROUP BY day`, [...values, range.startsAt, range.endsAt, ...opener.values]), 'demandsOpened');
     bump(await all(db, `SELECT ${dayOf('h.created_at')} day,COUNT(*) n FROM followup_history h JOIN followup_tasks f ON f.id=h.task_id
@@ -208,6 +230,7 @@ export async function activityFeed(db: D1Database, actor: PortalActor | null, in
         AND NOT EXISTS(SELECT 1 FROM followup_history prev WHERE prev.task_id=h.task_id AND prev.version=h.version-1 AND json_extract(prev.snapshot_json,'$.status')='completed')`, [...values, range.startsAt, range.endsAt, ...closer.values]);
     const [open] = await all(db, `SELECT COUNT(*) n FROM followup_tasks f WHERE ${visible}${projectFilter} AND f.status IN ('open','in_progress','blocked') AND f.due_at IS NOT NULL AND f.due_at<>'' AND substr(f.due_at,1,10)<?${opener.sql}`, [...values, todayInBrasilia(now), ...opener.values]);
     deadlines = { onTime: Number(due?.on_time) || 0, late: Number(due?.late) || 0, noDue: Number(due?.no_due) || 0, overdueNow: Number(open?.n) || 0 };
+    }
   }
 
   if (wanted.includes('agenda')) {
@@ -229,7 +252,7 @@ export async function activityFeed(db: D1Database, actor: PortalActor | null, in
   if (wanted.includes('records')) {
     // Reaproveita a regra de leitura dos registros manuais (inclui papel por tipo de registro).
     let listed: Awaited<ReturnType<typeof listRecords>> = { records: [], limit: 100, truncated: false };
-    try { listed = await listRecords(db, actor, { projectId, from: range.startsAt, to: range.endsAt, limit: 100 }); }
+    try { listed = await listRecords(db, actor, { projectId, from: range.startsAt, to: range.endsAt, limit: 100, itemId: subject?.kind === 'item' ? subject.id : null, loanId: subject?.kind === 'loan' ? subject.id : null }); }
     catch (error) { if (!(error instanceof HttpError && error.status === 403)) throw error; } // Projeto fora do alcance: sem registros, como nas outras fontes.
     const { records, truncated: more } = listed;
     if (more) truncated = true;
@@ -262,12 +285,12 @@ export async function activityFeed(db: D1Database, actor: PortalActor | null, in
 
   if (wanted.includes('access')) {
     // Acessos de voluntário por ação: concessão, vencimento (o prazo encerra sozinho) e encerramento antecipado.
-    const scope = scoped(actor, ['access.manage', 'campaigns.manage'], 'p.id', projectId, organizationId);
+    const scope = scoped(actor, ['access.manage', 'campaigns.manage'], 'p.id', projectId, organizationId), campaign = about('campaign', 'v.campaign_id');
     const rows = take(await all(db, `SELECT v.id,v.created_at,v.granted_by,v.ends_at,v.revoked_at,v.revoked_by,v.revoke_reason,c.name campaign_name,p.id project_id,p.name project_name,
         COALESCE(NULLIF(pr.display_name,''),'Voluntário(a)') person
       FROM campaign_volunteers v JOIN campaigns c ON c.id=v.campaign_id JOIN projects p ON p.id=v.project_id LEFT JOIN profiles pr ON pr.user_id=v.user_id
-      WHERE ${scope.sql} AND ((v.created_at>=? AND v.created_at<?) OR (v.revoked_at>=? AND v.revoked_at<?))
-      ORDER BY COALESCE(v.revoked_at,v.created_at) DESC LIMIT ${MAX_PER_SOURCE + 1}`, [...scope.values, range.startsAt, range.endsAt, range.startsAt, range.endsAt]));
+      WHERE ${scope.sql}${campaign.sql} AND ((v.created_at>=? AND v.created_at<?) OR (v.revoked_at>=? AND v.revoked_at<?))
+      ORDER BY COALESCE(v.revoked_at,v.created_at) DESC LIMIT ${MAX_PER_SOURCE + 1}`, [...scope.values, ...campaign.values, range.startsAt, range.endsAt, range.startsAt, range.endsAt]));
     const until = (iso: string) => { const time = Date.parse(iso); return Number.isFinite(time) ? new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'America/Sao_Paulo' }).format(new Date(time)).replace(',', ' às') : ''; };
     const inRange = (at: unknown) => typeof at === 'string' && at >= range.startsAt && at < range.endsAt;
     for (const row of rows) {
@@ -314,7 +337,7 @@ export async function activityFeed(db: D1Database, actor: PortalActor | null, in
   let team: ActivityFeed['team'] = null;
   const managing = scoped(actor, ['access.manage'], 'p.id', projectId, organizationId);
   const managed = new Set((await all(db, `SELECT p.id FROM projects p WHERE ${managing.sql}`, managing.values)).map(row => String(row.id)));
-  if (managed.size) {
+  if (managed.size && !subject) {
     const perPerson = new Map<string, { days: Set<string>; actions: number; last: string }>(), activeByDay = new Map<string, Set<string>>();
     for (const event of filtered) {
       if (!event.actorId || !event.projectId || !managed.has(event.projectId) || event.type === 'agenda') continue;
@@ -328,9 +351,33 @@ export async function activityFeed(db: D1Database, actor: PortalActor | null, in
         .sort((a, b) => b.days - a.days || b.actions - a.actions || a.name.localeCompare(b.name, 'pt-BR')).slice(0, 20) };
   }
   if (filtered.length > MAX_EVENTS) truncated = true;
-  return { range: { from: range.from, to: range.to, days: range.days }, types: wanted, events: filtered.slice(0, MAX_EVENTS), truncated,
+  return { range: { from: range.from, to: range.to, days: range.days }, types: wanted, events: filtered.slice(0, MAX_EVENTS), truncated, subject: subject ? { ...subject, name: await subjectName(db, actor, subject, projectId, organizationId) } : null,
     people: [...nameOf].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')), loansNow, aiVisible: configurable.length > 0,
     summary: { days: [...perDay.values()], stock }, deadlines, team };
+}
+
+/** Nome do assunto, só para quem pode lê-lo no módulo de origem. Fora do alcance e inexistente respondem igual: sem nome. */
+async function subjectName(
+  db: D1Database, actor: PortalActor, subject: { kind: ActivitySubjectKind; id: string },
+  projectId: string | null, organizationId: string | null,
+): Promise<string> {
+  if (subject.kind === 'task') {
+    const projectFilter = projectId ? ' AND f.project_id=?' : '';
+    const organizationFilter = organizationId ? ' AND f.organization_id=?' : '';
+    const [row] = await all(db, `SELECT f.title name FROM followup_tasks f WHERE ${followupAuthority('?', 'f.organization_id', 'f.project_id')} AND f.id=?${projectFilter}${organizationFilter} LIMIT 1`,
+      [actor.userId, subject.id, ...(projectId ? [projectId] : []), ...(organizationId ? [organizationId] : [])]);
+    return row ? String(row.name) : '';
+  }
+  // Material: quem lê o estoque vê qualquer material do projeto; quem só lê empréstimos vê equipamentos, como no módulo.
+  const sources = { item: [{ capabilities: ['inventory.read'], from: 'items s JOIN projects p ON p.id=s.project_id', name: 's.name', extra: '' }, { capabilities: ['loans.read'], from: 'items s JOIN projects p ON p.id=s.project_id', name: 's.name', extra: " AND s.category='equipment'" }],
+    loan: [{ capabilities: ['loans.read'], from: 'loans s JOIN items i ON i.id=s.item_id AND i.project_id=s.project_id JOIN projects p ON p.id=s.project_id', name: 'i.name', extra: '' }],
+    campaign: [{ capabilities: ['campaigns.manage', 'access.manage', 'reports.read'], from: 'campaigns s JOIN projects p ON p.id=s.project_id', name: 's.name', extra: '' }] }[subject.kind];
+  for (const source of sources) {
+    const scope = scoped(actor, source.capabilities, 'p.id', projectId, organizationId);
+    const [row] = await all(db, `SELECT ${source.name} name FROM ${source.from} WHERE ${scope.sql}${source.extra} AND s.id=? LIMIT 1`, [...scope.values, subject.id]);
+    if (row) return String(row.name);
+  }
+  return '';
 }
 
 const LIMIT_FIELDS = new Set(['dailyUsdMicros', 'dailyTokens', 'dailyCalls', 'dailyMs', 'timeoutMs', 'maxOutputTokens']);

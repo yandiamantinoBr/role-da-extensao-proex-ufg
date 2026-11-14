@@ -1,6 +1,7 @@
 import type { ModuleId } from '../components/portal/navigation-model';
 import { MY_WORK_STATUSES, type MyWorkStatus } from './my-work/contracts';
 import { workRecordFromParams, writeWorkRecordParams, type WorkRecordSelection } from './work-navigation';
+import { isReportDataset, type ReportDatasetId } from './report-links';
 
 export type PortalLocation = {
     tab: ModuleId;
@@ -9,11 +10,14 @@ export type PortalLocation = {
     area: string;
     demand: string;
     record: WorkRecordSelection | null;
-    report: 'projects' | 'demands';
+    /** Conjunto aberto em Relatórios (o botão "Exportar" das outras telas escolhe um). */
+    report: ReportDatasetId;
     recordsView?: 'history' | 'documents';
     recordsScheduleItemId?: string;
     workStatus?: MyWorkStatus;
     organization?: string;
+    /** Registros: histórico de um assunto só (`history=item:<id>`), vindo do atalho "Ver histórico" das fichas. */
+    history?: string;
 };
 
 type Scope = {
@@ -33,6 +37,8 @@ export function deniedPortalModule(params: URLSearchParams, resolved: PortalLoca
     const asked = params.get('module');
     return asked && asked !== 'overview' && resolved.tab === 'overview' && known.includes(asked) ? asked : null;
 }
+
+const HISTORY_SUBJECT = /^(item|loan|task|campaign):[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
 
 export function readPortalLocation(params: URLSearchParams, scope: Scope): PortalLocation {
     const candidate = params.get('demandId') || '';
@@ -56,13 +62,14 @@ export function readPortalLocation(params: URLSearchParams, scope: Scope): Porta
         tab, project, unit, area,
         demand: tab === 'demands' ? demand : '',
         record: record?.module === tab && record.projectId === project && scope.canOpenRecord(record) ? record : null,
-        report: tab === 'reports' && params.get('report') === 'demands' ? 'demands' : 'projects',
+        report: tab === 'reports' && isReportDataset(params.get('report')) ? params.get('report') as ReportDatasetId : 'projects',
         ...(tab === 'records' && params.get('view') === 'documents' ? {
             recordsView: 'documents' as const,
             ...(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(scheduleItemId) ? { recordsScheduleItemId: scheduleItemId } : {}),
         } : {}),
         workStatus: tab === 'my-work' ? MY_WORK_STATUSES.find(value => value === params.get('workStatus')) ?? 'pending' : 'pending',
         organization,
+        history: tab === 'records' && HISTORY_SUBJECT.test(params.get('history') || '') ? params.get('history')! : '',
     };
 }
 
@@ -73,12 +80,13 @@ export function writePortalLocation(params: URLSearchParams, route: PortalLocati
         unit: route.unit,
         area: route.area,
         demandId: route.tab === 'demands' ? route.demand : '',
-        report: route.tab === 'reports' && route.report === 'demands' ? 'demands' : '',
+        report: route.tab === 'reports' && route.report !== 'projects' && isReportDataset(route.report) ? route.report : '',
         ...(route.tab === 'records' || params.get('view') === 'documents'
             ? { view: route.tab === 'records' && route.recordsView === 'documents' ? 'documents' : '' } : {}),
         scheduleItemId: route.tab === 'records' && route.recordsView === 'documents' ? route.recordsScheduleItemId || '' : '',
         workStatus: route.tab === 'my-work' && route.workStatus && MY_WORK_STATUSES.includes(route.workStatus) && route.workStatus !== 'pending' ? route.workStatus : '',
         organizationId: route.tab === 'my-work' || route.tab === 'overview' ? route.organization || '' : '',
+        history: route.tab === 'records' ? route.history || '' : '',
     })) {
         if (value) params.set(key, value);
         else params.delete(key);

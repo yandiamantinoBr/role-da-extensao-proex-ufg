@@ -1,28 +1,12 @@
-.panel { container-type: inline-size; min-width: 0; margin-block: 0 18px; padding: 12px 14px 4px; border: 1px solid var(--line); border-radius: var(--radius-card, 16px); background: var(--surface); box-shadow: var(--shadow-card); }
-.row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; min-width: 0; }
-.heading { display: flex; flex: 1 1 240px; align-items: center; gap: 10px; min-width: 0; }
-.icon { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; flex-shrink: 0; border-radius: 10px; background: var(--surface-soft); color: var(--brand-ink); }
-.heading strong { display: block; font-size: 14px; line-height: 1.35; }
-.heading p, .details > p { color: var(--text-secondary); font-size: 12.5px; line-height: 1.5; }
 .actions { display: flex; flex: 0 1 auto; flex-wrap: wrap; justify-content: end; gap: 8px; align-items: center; min-width: 0; }
 .actions > button { min-width: 0; white-space: normal; }
-.details { min-width: 0; margin-top: 8px; border-top: 1px solid var(--line); }
-.details > summary { display: list-item; min-height: 44px; padding-block: 12px; cursor: pointer; color: var(--brand-ink); font-size: 13px; font-weight: 600; }
-.details[open] { padding-bottom: 10px; }
-.compact { min-width: 0; margin-block: 8px; padding: 0 12px; border: 1px solid var(--line); border-radius: 12px; background: transparent; }
+.compact { container-type: inline-size; min-width: 0; margin-block: 8px; padding: 0 12px; border: 1px solid var(--line); border-radius: 12px; background: transparent; }
 .compact > summary { display: list-item; min-height: 44px; padding-block: 12px; cursor: pointer; color: var(--brand-ink); font-size: 13px; font-weight: 600; }
+.compact > summary svg { display: inline; vertical-align: -3px; margin-right: 6px; }
 .compactBody { display: grid; gap: 12px; min-width: 0; padding-block: 4px 12px; }
-/* Celular: descrição some, botões ficam lado a lado em uma linha só. */
+.compactBody > p { color: var(--text-secondary); font-size: 12.5px; line-height: 1.5; }
+/* Celular: os dois botões ficam lado a lado em uma linha só. */
 @container (max-width: 520px) {
-  .heading p { display: none; }
-  .heading { flex: 1 1 100%; }
-  .actions { flex: 1 1 100%; justify-content: stretch; flex-wrap: nowrap; }
+  .actions { justify-content: stretch; flex-wrap: nowrap; }
   .actions > button { flex: 1; padding-inline: 10px; }
 }
-.narrowOnly { display: none; }
-.narrowOnly.compact { margin-block: 0 14px; background: var(--surface); box-shadow: var(--shadow-card); border-radius: var(--radius-card, 16px); }
-@media (max-width: 720px) {
-  .narrowOnly { display: block; }
-  .wideOnly { display: none; }
-}
-.details > summary svg, .compact > summary svg { display: inline; vertical-align: -3px; margin-right: 6px; }

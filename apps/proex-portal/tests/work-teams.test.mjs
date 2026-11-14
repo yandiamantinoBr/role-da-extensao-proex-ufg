@@ -31,6 +31,17 @@ test('organization owner sees its aggregate including organization tasks; filter
  assert.doesNotMatch(JSON.stringify(result),/reservada B|worker-b/);
 });
 
+test('the export recut uses team identity, organization, project and status even when titles or other team names match', async t => {
+ const f = await teamScenario(t), owner = await f.actor('owner-a');
+ const misleading = await f.act('owner-a','task.create',{projectId:'project-a',title:'Comunicação e Design',status:'open',teamIds:[f.a2]});
+ f.native.prepare('UPDATE followup_teams SET name=? WHERE id=?').run('Comunicação e Design',f.b);
+ const exported=await teamsWorkspace(f.db,owner,{organizationId:'org-a',projectId:'project-a',teamId:f.a,status:'open'},true);
+ assert.deepEqual(exported.tasks.map(task=>task.id),[f.shared]);
+ assert.ok(!exported.tasks.some(task=>task.id===misleading.task.id));
+ assert.equal(exported.selectedTeamId,f.a);
+ await assert.rejects(teamsWorkspace(f.db,owner,{organizationId:'org-a',projectId:'project-a',teamId:f.b,status:'open'},true),{status:404});
+});
+
 test('team affiliation never grants project, organization or export access', async t => {
  const f = await teamScenario(t), outsider = await f.actor('worker-b'), viewer = await f.actor('viewer-a');
  f.insert('followup_team_members',{ id:'legacy-cross-org-affiliation',team_id:f.a,user_id:'worker-b',added_by:'owner-a',created_at:f.now });

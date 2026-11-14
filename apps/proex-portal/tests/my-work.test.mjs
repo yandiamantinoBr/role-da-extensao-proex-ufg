@@ -153,3 +153,42 @@ test('portal refresh dates use the server instant in Brasília, including midnig
  assert.equal(workDayFromServerTimestamp('2026-11-01T03:00:00.000Z'),'2026-11-01');
  for(const value of [undefined,null,0,'','invalid'])assert.equal(workDayFromServerTimestamp(value),'');
 });
+
+// R4 (revisão de 09/11): a escolha de quem cuida da área inteira passa a existir na ficha do projeto.
+// O painel do topo e a ficha mandam o mesmo pedido; estes testes fixam o que a auditoria pediu (critérios 1 a 3).
+test('area-wide owners: one row whatever the entry point, same trail, same permission both ways (R4)',async t=>{
+ const f=fixture(t),manager=await f.actor('manager-a'),worker=await f.actor('worker-a'),viewer=await f.actor('viewer-a'),outsider=await f.actor('worker-b');
+ const scopes=()=>f.native.prepare("SELECT id,project_id,area,item_id,loan_id,campaign_id,target_key,status,version FROM work_responsibility_scopes WHERE project_id='project-a' AND area='materials' AND target_key=''").all();
+ const fromTop=save({itemId:null}),fromSheet={action:'responsibility.save',projectId:'project-a',area:'materials',expectedVersion:1,userIds:['manager-a','worker-a'],teamIds:[],operationKey:crypto.randomUUID()};
+ // Painel antigo grava; a ficha lê a mesma linha (lista de áreas do projeto) e regrava sem duplicar.
+ const first=await responsibility(f,manager,fromTop);
+ const sheetList=await responsibilityList(f.db,manager,{projectId:'project-a',target:'area',status:'active',limit:50});
+ assert.deepEqual(sheetList.items.map(row=>[row.id,row.area,row.item_id,row.loan_id,row.campaign_id]),[[first.responsibility.id,'materials',null,null,null]]);
+ const second=await responsibility(f,manager,fromSheet);
+ assert.equal(second.responsibility.id,first.responsibility.id);
+ assert.deepEqual(scopes().map(row=>({...row})),[{id:first.responsibility.id,project_id:'project-a',area:'materials',item_id:null,loan_id:null,campaign_id:null,target_key:'',status:'active',version:2}]);
+ // Ficha grava; o painel antigo (consulta do formulário: área + alvo "area") lê a mesma linha.
+ const topList=await responsibilityList(f.db,manager,{projectId:'project-a',area:'materials',target:'area',status:'all',limit:2});
+ assert.deepEqual(topList.items.map(row=>[row.id,row.version,row.assignees.map(person=>person.user_id).sort()]),[[first.responsibility.id,2,['manager-a','worker-a']]]);
+ // Repetir o mesmo envio (mesma chave) não cria linha nem versão.
+ const replay=await responsibility(f,manager,fromSheet);assert.equal(replay.duplicate,true);assert.equal(scopes().length,1);assert.equal(scopes()[0].version,2);
+ // Mesma trilha nos dois caminhos: uma versão no histórico e uma linha de auditoria por gravação, com o mesmo formato.
+ const history=f.native.prepare('SELECT version,actor_id,snapshot_json FROM work_responsibility_history WHERE scope_id=? ORDER BY version').all(first.responsibility.id).map(row=>({version:row.version,actor:row.actor_id,...JSON.parse(row.snapshot_json)}));
+ assert.deepEqual(history.map(row=>[row.version,row.actor,row.area,row.projectId,row.itemId,row.loanId,row.campaignId]),[[1,'manager-a','materials','project-a',null,null,null],[2,'manager-a','materials','project-a',null,null,null]]);
+ const audit=f.native.prepare('SELECT action,actor_id,project_id,organization_id,entity_id FROM audit WHERE entity_id=? ORDER BY created_at,rowid').all(first.responsibility.id);
+ assert.equal(audit.length,2);assert.equal(new Set(audit.map(row=>JSON.stringify(row))).size,1,'mesma ação, mesmo ator e mesmo projeto');
+ assert.deepEqual({...audit[0]},{action:audit[0].action,actor_id:'manager-a',project_id:'project-a',organization_id:'org-a',entity_id:first.responsibility.id});
+ // Permissão: bolsista de estoque e leitor continuam vendo quem cuida do estoque; nenhum dos dois edita. Outra organização não vê.
+ for(const reader of [worker,viewer]){
+  const list=await responsibilityList(f.db,reader,{projectId:'project-a',target:'area',status:'active',limit:50});
+  assert.deepEqual(list.items.map(row=>[row.area,row.canEdit,row.assignees.map(person=>person.name).sort()]),[['materials',false,['manager-a','worker-a']]]);
+  assert.equal((await responsibilityCatalog(f.db,reader,{projectId:'project-a'})).canManage,false);
+  await assert.rejects(responsibility(f,reader,{...fromSheet,expectedVersion:2,userIds:[reader.userId],operationKey:crypto.randomUUID()}),error=>error.status===403||error.status===404);
+ }
+ assert.equal((await responsibilityList(f.db,outsider,{projectId:'project-a',target:'area',status:'active',limit:50})).total,0);
+ await assert.rejects(responsibility(f,outsider,{...fromSheet,expectedVersion:2,operationKey:crypto.randomUUID()}));
+ assert.equal(scopes()[0].version,2,'nenhuma tentativa negada mudou a designação');
+ // As três áreas da ficha (estoque, empréstimos e dinâmicas) aceitam a designação da área inteira.
+ for(const area of ['loans','campaigns'])await responsibility(f,manager,{...fromSheet,area,expectedVersion:0,operationKey:crypto.randomUUID()});
+ assert.deepEqual((await responsibilityList(f.db,manager,{projectId:'project-a',target:'area',status:'active',limit:50})).items.map(row=>row.area).sort(),['campaigns','loans','materials']);
+});

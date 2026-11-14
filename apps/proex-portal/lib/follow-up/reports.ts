@@ -34,6 +34,8 @@ export async function followupReportRows(db: D1Database, actor: PortalActor, dat
        WHERE a.task_id=f.id AND a.removed_at IS NULL AND ${activeAccount('recipient')} AND ${authority('recipient.user_id', 'f.organization_id', 'f.project_id')}) AS responsaveis_ativos,
       (SELECT COUNT(*) FROM followup_assignees a JOIN followup_teams team ON team.id=a.team_id
        WHERE a.task_id=f.id AND a.removed_at IS NULL AND team.status='active' AND team.organization_id=f.organization_id) AS equipes_ativas,
+      COALESCE((SELECT GROUP_CONCAT(nome,' · ') FROM (SELECT team.name AS nome FROM followup_assignees a JOIN followup_teams team ON team.id=a.team_id
+       WHERE a.task_id=f.id AND a.removed_at IS NULL AND team.status='active' AND team.organization_id=f.organization_id ORDER BY team.name)),'') AS equipes,
       (SELECT COUNT(*) FROM followup_checklist_items r JOIN followup_checklists c ON c.id=r.checklist_id WHERE c.task_id=f.id) AS itens_conferencia,
       (SELECT COUNT(*) FROM followup_checklist_items r JOIN followup_checklists c ON c.id=r.checklist_id WHERE c.task_id=f.id AND r.counted IS NULL) AS contagens_pendentes
       FROM ${base} LEFT JOIN campaigns ev ON ev.id=f.campaign_id LEFT JOIN items i ON i.id=f.item_id
