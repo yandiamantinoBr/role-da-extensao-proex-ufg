@@ -1,5 +1,6 @@
 import type { ReportConfig } from '@/lib/project-report-config';
-import type { ReportData } from './document';
+import type { ReportData, ReportDocument } from './document';
+import { reportDocumentDigest } from './fingerprint';
 
 export type ReportTemplate = { id: string; name: string; version: number; config: ReportConfig };
 export type ProjectReportPayload = ReportData & {
@@ -16,6 +17,35 @@ export function reportErrorMessage(body: unknown, fallback: string): string {
 
 export class ProjectReportError extends Error {
   constructor(message: string, readonly status: number) { super(message); }
+}
+
+export async function downloadProjectPdf(viewerId: string, projectId: string, config: ReportConfig, preview: ReportDocument, signal: AbortSignal): Promise<Blob> {
+  const digest = await reportDocumentDigest(preview);
+  signal.throwIfAborted();
+  let response: Response;
+  try {
+    response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/report`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Proex-Action': '1', 'X-Proex-Viewer': viewerId },
+      credentials: 'same-origin', cache: 'no-store', redirect: 'error', signal,
+      body: JSON.stringify({ action: 'export.pdf', config, digest, generatedAt: preview.generatedIso }),
+    });
+  } catch {
+    signal.throwIfAborted();
+    throw new ProjectReportError('Não foi possível conectar ao Portal. Confira a conexão e tente novamente.', 0);
+  }
+  if (!response.ok) {
+    const error = await response.json().catch(() => null);
+    throw new ProjectReportError(reportErrorMessage(error, 'Não foi possível preparar o PDF. Tente novamente.'), response.status);
+  }
+  if (response.headers.get('X-Proex-Viewer') !== viewerId || response.headers.get('X-Proex-Report') !== digest) {
+    throw new ProjectReportError('Atualize a página para baixar com a conta e o recorte atuais.', 403);
+  }
+  const blob = await response.blob();
+  signal.throwIfAborted();
+  if (blob.type !== 'application/pdf' || await blob.slice(0, 5).text() !== '%PDF-') {
+    throw new ProjectReportError('O Portal não recebeu um PDF válido. Tente novamente.', 502);
+  }
+  return blob;
 }
 
 export async function readProjectReport(query: ProjectReportQuery, signal: AbortSignal): Promise<ProjectReportPayload> {

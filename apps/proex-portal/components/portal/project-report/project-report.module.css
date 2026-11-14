@@ -1,5 +1,5 @@
 /* Montador do relatório do projeto. Tokens do portal; o "papel" da prévia é sempre claro, como o arquivo. */
-.root:global(.p-card) { padding: 0; min-width: 0; container-name: project-report; container-type: inline-size; }
+.root:global(.p-card) { padding: 0; min-width: 0; scroll-margin-top: 76px; container-name: project-report; container-type: inline-size; }
 .srOnly { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 
 .masthead { padding: clamp(18px, 3vw, 28px); border-radius: 14px 14px 0 0; border-bottom: 4px solid var(--orange); background: var(--purple); color: #fff; }

@@ -1,5 +1,6 @@
 import { HttpError } from './errors';
 import { portalOrigin } from './platform';
+import type { ProjectBrand } from './project-brand';
 
 /** Only the configured public site or local QA may provide assets to the PDF renderer. */
 function assetOrigin(request: Request): string | null {
@@ -26,14 +27,15 @@ function publicAsset(origin: string, path: string, limit: number): Promise<Uint8
   return pending;
 }
 
-export async function pdfAssets(request: Request): Promise<{ fontBytes: Uint8Array; brandBytes: { proex?: Uint8Array; ufg?: Uint8Array } }> {
+export async function pdfAssets(request: Request, projectBrand?: ProjectBrand): Promise<{ fontBytes: Uint8Array; brandBytes: { proex?: Uint8Array; ufg?: Uint8Array; project?: Uint8Array } }> {
   const unavailable = new HttpError(503, 'Não foi possível preparar o PDF agora. Tente novamente ou baixe a planilha.', 'pdf_font_unavailable');
   const origin = assetOrigin(request);
   if (!origin) throw unavailable;
-  const [fontBytes, proex, ufg] = await Promise.all([
+  const [fontBytes, proex, ufg, project] = await Promise.all([
     publicAsset(origin, '/fonts/NotoSans-Regular.ttf', 2 * 1024 * 1024).catch(() => { throw unavailable; }),
     publicAsset(origin, '/brand/proex.png', 256 * 1024).catch(() => undefined),
     publicAsset(origin, '/brand/ufg-white.png', 256 * 1024).catch(() => undefined),
+    projectBrand ? publicAsset(origin, `/brand/${projectBrand}.png`, 256 * 1024).catch(() => undefined) : undefined,
   ]);
-  return { fontBytes, brandBytes: { proex, ufg } };
+  return { fontBytes, brandBytes: { proex, ufg, ...(project ? { project } : {}) } };
 }

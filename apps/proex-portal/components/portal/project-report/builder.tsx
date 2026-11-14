@@ -6,11 +6,11 @@ import {
   starterTemplates, type ReportConfig, type ReportPeriod, type ReportSectionId,
 } from '@/lib/project-report-config';
 import DateField from '../date-field';
+import { projectBrandFor } from '@/lib/project-brand';
 import ExportFormats, { ExportHandledError, type DocumentFormat } from '../export-formats';
 import { download } from '../report-export';
-import { projectBrandFor } from '../reports-center';
 import { personalDraftKey } from '../use-form-draft';
-import { prepareProjectReport, ProjectReportError, readProjectReport, reportErrorMessage, type ProjectReportPayload } from './api';
+import { downloadProjectPdf, prepareProjectReport, ProjectReportError, readProjectReport, reportErrorMessage, type ProjectReportPayload } from './api';
 import { buildReportDocument, sectionAvailable } from './document';
 import { toReportDocx, toReportXlsx } from './ooxml';
 import ReportPreview from './preview';
@@ -139,15 +139,16 @@ export default function ProjectReportBuilder({ projectId, viewerId, projectName,
     setError('');
     const read = () => readProjectReport({ viewerId, projectId, from, to }, controller.signal);
     try {
-      const blob = await prepareProjectReport(payload, read, async () => {
-        if (format === 'docx') return toReportDocx(doc);
-        if (format === 'xlsx') return toReportXlsx(doc);
-        const { toReportPdf } = await import('./pdf').catch(() => {
-          throw new ProjectReportError('Atualize a página e tente baixar o PDF novamente.', 503);
-        });
-        controller.signal.throwIfAborted();
-        return toReportPdf(doc, { projectBrand: brand });
-      }, setPayload, controller.signal);
+      const blob = format === 'pdf'
+        ? await downloadProjectPdf(viewerId, projectId, config, doc, controller.signal).catch(async cause => {
+          if (cause instanceof ProjectReportError && cause.status === 409) {
+            const fresh = await read();
+            controller.signal.throwIfAborted();
+            setPayload(fresh);
+          }
+          throw cause;
+        })
+        : await prepareProjectReport(payload, read, async () => format === 'docx' ? toReportDocx(doc) : toReportXlsx(doc), setPayload, controller.signal);
       controller.signal.throwIfAborted();
       download(`relatorio-${slug(doc.projectName)}-${doc.generatedIso.slice(0, 10)}.${format}`, blob);
     } catch (cause) {

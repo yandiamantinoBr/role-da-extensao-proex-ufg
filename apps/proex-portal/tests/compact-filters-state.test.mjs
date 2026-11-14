@@ -19,6 +19,7 @@ function harness(file, props, exportName = 'default') {
   useMemo(fn) { index++; return fn(); },
   useEffect(fn, deps) { const key = index++; if (!slots[key] || deps.some((value, i) => !Object.is(value, slots[key].deps[i]))) { const previous = slots[key]; slots[key] = { deps }; effects.push(() => { previous?.cleanup?.(); slots[key].cleanup = fn(); }); } },
  };
+ hooks.useLayoutEffect = hooks.useEffect;
  const jsx = (type, props) => ({ type, props }), compiled = { exports: {} };
  const catalogue = { THEMATIC_AREAS: [{ key: 'education', label: 'Educação' }], areaLabel: value => value, unitText: unit => unit.name, groupUnits: units => [{ group: 'Unidades', units }] };
  const accessLabels = { projectAccessRoleLabels: { viewer: 'Leitor de relatórios' } };

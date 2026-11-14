@@ -133,6 +133,18 @@ test('a reference URL with parentheses or a non-web scheme cannot break the PDF 
   assert.doesNotMatch(JSON.stringify(doc), /javascript:/);
 });
 
+test('a reference title with a character outside Helvetica is exported in the embedded font', async () => {
+  const data = syntheticReportData();
+  data.sections.references.rows = [{ titulo: 'Relatório de extensão — Ω', url: 'https://example.org/omega', origem: 'Ficha', tipo: 'link' }];
+  const doc = documents.buildReportDocument(data, config.normalizeReportConfig(full), now);
+  const blob = await pdfModule.toReportPdf(doc, { fontBytes, marks });
+  const pdf = await getDocument({ data: new Uint8Array(await blob.arrayBuffer()), useSystemFonts: false, disableFontFace: true }).promise;
+  const page = await pdf.getPage(pdf.numPages);
+  const text = (await page.getTextContent()).items.map(item => item.str).join(' ');
+  assert.match(text, /extensão — Ω/);
+  assert.ok((await page.getAnnotations()).some(annotation => annotation.url === 'https://example.org/omega'));
+});
+
 test('team remarks close their section, chosen references stay out, history reads in plain words and busy days are grouped', () => {
   const data = syntheticReportData();
   data.sections.demands.rows.forEach(row => { row.data = '2026-10-20'; row.concluida_em = null; });

@@ -9,13 +9,16 @@ export const dynamic = 'force-dynamic';
 const headers = { 'Cache-Control': 'private, no-store', 'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff' };
 export async function GET(request: Request): Promise<Response> {
   try {
-    const db = database(), actor = await getActor(db, await getPortalUser()), url = new URL(request.url);
+    const viewer = request.headers.get('X-Proex-Viewer');
+    const user = await getPortalUser(viewer ? { refresh: false } : undefined);
+    if (viewer && user?.userId !== viewer) throw new HttpError(user ? 403 : 401, 'Atualize o Portal para consultar a agenda com a conta ativa.', 'calendar_viewer_changed');
+    const db = database(), actor = await getActor(db, user), url = new URL(request.url);
     const range = calendarRange(url.searchParams.get('from'), url.searchParams.get('to'));
     const data = await calendarEntries(db, actor, { category: url.searchParams.get('category'), projectId: url.searchParams.get('projectId'), unitId: url.searchParams.get('unitId'), range });
     if (url.searchParams.get('format') === 'ics') {
       return new Response(serializeCalendar(data.entries), { headers: { ...headers, 'Content-Type': 'text/calendar; charset=utf-8', 'Content-Disposition': 'attachment; filename="agenda-proex.ics"' } });
     }
-    return Response.json({ ...data, feeds: await calendarFeeds(db, actor), range }, { headers });
+    return Response.json({ ...data, feeds: await calendarFeeds(db, actor), range }, { headers: viewer ? { ...headers, 'X-Proex-Viewer': viewer } : headers });
   } catch (error) { const response = publicError(error); Object.entries(headers).forEach(([key, value]) => response.headers.set(key, value)); return response; }
 }
 export async function POST(request: Request): Promise<Response> {

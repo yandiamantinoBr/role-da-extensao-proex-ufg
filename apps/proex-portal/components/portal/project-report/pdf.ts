@@ -1,12 +1,12 @@
 // PDF do relatório do projeto: capa, sumário com páginas, seções numeradas, gráficos vetoriais,
-// numeração "Página X de Y" e referências clicáveis no fim. Gerado no navegador com pdf-lib.
+// numeração "Página X de Y" e referências clicáveis no fim.
 import type { Color, PDFFont, PDFImage, PDFPage } from 'pdf-lib';
 import { fit, localAsset, wrap } from '../report-pdf';
 import type { Block, ReportDocument } from './document';
+import type { ProjectBrand } from '../../../lib/project-brand';
 
-type ProjectMark = 'role-da-extensao' | 'conpeex-2026';
-const MARK_PATHS: Record<ProjectMark, string> = { 'role-da-extensao': '/brand/role-da-extensao.png', 'conpeex-2026': '/brand/conpeex-2026.png' };
-export type ReportPdfOptions = { fontBytes?: Uint8Array; marks?: { proex?: Uint8Array; ufg?: Uint8Array; project?: Uint8Array }; projectBrand?: ProjectMark };
+const MARK_PATHS: Record<ProjectBrand, string> = { 'role-da-extensao': '/brand/role-da-extensao.png', 'conpeex-2026': '/brand/conpeex-2026.png' };
+export type ReportPdfOptions = { fontBytes?: Uint8Array; marks?: { proex?: Uint8Array; ufg?: Uint8Array; project?: Uint8Array }; projectBrand?: ProjectBrand };
 
 export async function toReportPdf(doc: ReportDocument, options: ReportPdfOptions = {}): Promise<Blob> {
   const browser = typeof window !== 'undefined';
@@ -114,13 +114,17 @@ export async function toReportPdf(doc: ReportDocument, options: ReportPdfOptions
   function table(columns: { label: string; numeric?: boolean; width?: number }[], rows: string[][], header = true, firstBold = false) {
     const weights = columns.map(column => column.width ?? 1), total = weights.reduce((sum, weight) => sum + weight, 0);
     const widths = weights.map(weight => U * weight / total), pad = 5, size = 9, leading = 12;
+    const headers = columns.map(column => {
+      const label = clean(column.label);
+      return { label, face: strong(label) };
+    });
     const drawHeader = () => {
       if (!header) return;
-      const cells = columns.map((column, index) => wrap(clean(column.label), strong(column.label), 8.5, widths[index] - 2 * pad));
+      const cells = headers.map(({ label, face }, index) => wrap(label, face, 8.5, widths[index] - 2 * pad));
       const height = Math.max(...cells.map(cell => cell.length)) * 11 + 2 * pad;
       page.drawRectangle({ x: M, y: y - height, width: U, height, color: brand });
       let x = M;
-      cells.forEach((cell, index) => { cell.forEach((text, row) => { const face = strong(columns[index].label); paint(text, columns[index].numeric ? x + widths[index] - pad - face.widthOfTextAtSize(text, 8.5) : x + pad, y - pad - row * 11, 8.5, white, face); }); x += widths[index]; });
+      cells.forEach((cell, index) => { cell.forEach((text, row) => { const face = headers[index].face; paint(text, columns[index].numeric ? x + widths[index] - pad - face.widthOfTextAtSize(text, 8.5) : x + pad, y - pad - row * 11, 8.5, white, face); }); x += widths[index]; });
       y -= height;
     };
     const rowHeight = (row: string[]) => Math.max(...row.map((value, index) => wrap(clean(value || '—'), font, size, widths[index] - 2 * pad).length)) * leading + 2 * pad;
@@ -250,9 +254,10 @@ export async function toReportPdf(doc: ReportDocument, options: ReportPdfOptions
 
   function references(items: Extract<Block, { kind: 'references' }>['items']) {
     for (const item of items) {
-      const heading = wrap(clean(`[${item.number}] ${item.title}`), bold, 10, U), meta = `${item.type} · ${item.source}`, address = wrap(item.url, font, 8.5, U - 18);
+      const label = clean(`[${item.number}] ${item.title}`), face = strong(label);
+      const heading = wrap(label, face, 10, U), meta = `${item.type} · ${item.source}`, address = wrap(clean(item.url), font, 8.5, U - 18);
       ensure(heading.length * 14 + 12 + address.length * 11 + 10);
-      heading.forEach((text, index) => paint(text, M, y - index * 14, 10, purple, strong(text)));
+      heading.forEach((text, index) => paint(text, M, y - index * 14, 10, purple, face));
       y -= heading.length * 14;
       paint(fit(clean(meta), font, 8.5, U - 18), M + 18, y, 8.5, muted);
       y -= 13;

@@ -1,10 +1,16 @@
 import { getActor } from '@/lib/access';
 import { HttpError, publicError } from '@/lib/errors';
 import { boundedJson } from '@/lib/http';
+import { pdfAssets } from '@/lib/pdf-assets';
 import { database } from '@/lib/platform';
+import { projectBrandFor } from '@/lib/project-brand';
 import { listReportTemplates, projectReportData, reportTemplateAction } from '@/lib/project-report';
+import { normalizeReportConfig, periodRange, ReportConfigError } from '@/lib/project-report-config';
 import { requireAction } from '@/lib/community/route-support';
 import { getPortalUser } from '@/lib/session';
+import { buildReportDocument } from '@/components/portal/project-report/document';
+import { reportDocumentDigest } from '@/components/portal/project-report/fingerprint';
+import { toReportPdf } from '@/components/portal/project-report/pdf';
 
 export const dynamic = 'force-dynamic';
 function privateResponse(response: Response) {
@@ -45,11 +51,60 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
   } catch (error) { return privateResponse(publicError(error)); }
 }
 
-/** Salvar ou apagar um modelo de relatório deste projeto. */
+async function exportPdf(request: Request, input: Record<string, unknown>, id: string) {
+  if (!request.headers.get('X-Proex-Viewer')) throw new HttpError(400, 'Atualize a página antes de baixar o relatório.', 'report_viewer_required');
+  const { digest, generatedAt } = input;
+  if (typeof digest !== 'string' || !/^[a-f0-9]{64}$/.test(digest) || typeof generatedAt !== 'string'
+    || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(generatedAt) || !Number.isFinite(Date.parse(generatedAt))) {
+    throw new HttpError(400, 'Atualize a prévia antes de baixar o relatório.', 'report_preview_required');
+  }
+  const previewDate = new Date(generatedAt);
+  const config = normalizeReportConfig(input.config);
+  const period = periodRange(config.period);
+  const db = database();
+  async function read() {
+    request.signal.throwIfAborted();
+    const user = await reportViewer(request);
+    if (!user) throw new HttpError(401, 'Entre com sua conta para baixar o relatório.', 'unauthenticated');
+    const project = await projectReportData(db, await getActor(db, user), id, period ?? {});
+    const doc = buildReportDocument(project, config, previewDate);
+    if (await reportDocumentDigest(doc) !== digest) {
+      throw new HttpError(409, 'Os dados ou seus acessos mudaram. Confira a prévia atualizada e baixe novamente.', 'report_preview_changed');
+    }
+    return { project: project.project, doc };
+  }
+  const { project, doc } = await read();
+  if (!doc.sections.length) throw new HttpError(400, 'Marque ao menos uma seção antes de baixar.', 'report_empty');
+  const brand = projectBrandFor(project.id, project.name, project.officialUrl);
+  const { fontBytes, brandBytes } = await pdfAssets(request, brand);
+  let pdf: Blob;
+  try { pdf = await toReportPdf(doc, { fontBytes, marks: brandBytes }); }
+  catch (cause) {
+    if (cause instanceof Error && cause.message.startsWith('O relatório passou de 400 páginas.')) {
+      throw new HttpError(413, cause.message, 'report_pdf_too_large');
+    }
+    throw cause;
+  }
+  await read();
+  request.signal.throwIfAborted();
+  const user = await reportViewer(request);
+  if (!user) throw new HttpError(401, 'Entre com sua conta para baixar o relatório.', 'unauthenticated');
+  return privateResponse(new Response(pdf, { headers: {
+    'Content-Type': 'application/pdf', 'Content-Disposition': 'attachment; filename="relatorio-projeto.pdf"',
+    'X-Proex-Viewer': user.userId, 'X-Proex-Report': digest,
+  } }));
+}
+
+/** Baixar PDF ou salvar/apagar um modelo de relatório deste projeto. */
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }): Promise<Response> {
   try {
     requireAction(request);
-    const input = await boundedJson(request, 96000), db = database(), actor = await getActor(db, await reportViewer(request)), { id } = await context.params;
+    const input = await boundedJson(request, 96000), { id } = await context.params;
+    if (input.action === 'export.pdf') return await exportPdf(request, input, id);
+    const db = database(), actor = await getActor(db, await reportViewer(request));
     return privateResponse(Response.json(await reportTemplateAction(db, actor, id, input)));
-  } catch (error) { return privateResponse(publicError(error)); }
+  } catch (error) {
+    if (error instanceof ReportConfigError) return privateResponse(publicError(new HttpError(400, error.message, 'invalid_report_config')));
+    return privateResponse(publicError(error));
+  }
 }
