@@ -2,12 +2,13 @@
 import DateField from './date-field';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Copy, Download, ExternalLink, FileText, Link2, ListChecks, LoaderCircle, RefreshCw, Search, ShieldCheck, X } from 'lucide-react';
+import { ArrowRight, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Copy, Download, ExternalLink, FileText, Link2, ListChecks, LoaderCircle, RefreshCw, Search, ShieldCheck, X } from 'lucide-react';
 import type { CalendarCategory, CalendarEntry } from '@/lib/calendar';
 import styles from './calendar-panel.module.css';
 import { groupUnits } from '@/lib/extension-catalog';
 import { isCivilDate, offsetCivilDate } from '@/lib/civil-date';
 import { listSearch } from '@/lib/list-search';
+import { calendarDestination } from '@/lib/calendar-links';
 
 type Feed = { id: string; category: CalendarCategory; project_id: string | null; project_name: string | null; created_at: string; expires_at: string; revoked_at: string | null };
 type CalendarData = { entries: CalendarEntry[]; feeds: Feed[]; availableCategories: CalendarCategory[] };
@@ -35,13 +36,14 @@ function when(event: CalendarEntry): string {
   return `${format.format(new Date(event.startsAt))} → ${format.format(new Date(event.endsAt))}`;
 }
 
-export default function CalendarPanel({ projects: sourceProjects, organizationalUnits, selectedProjectId, selectedUnitId, onProjectChange, onUnitChange }: {
+export default function CalendarPanel({ projects: sourceProjects, organizationalUnits, selectedProjectId, selectedUnitId, onProjectChange, onUnitChange, canOpenModule }: {
   projects: Record<string, unknown>[];
   organizationalUnits: Record<string, unknown>[];
   selectedProjectId: string;
   selectedUnitId: string;
   onProjectChange: (projectId: string) => void;
   onUnitChange: (unitId: string) => void;
+  canOpenModule?: (module: string, entry: CalendarEntry) => boolean;
 }) {
   const projects = useMemo(() => sourceProjects.filter(project => typeof project.id === 'string' && typeof project.name === 'string')
     .map(project => ({ id: project.id as string, name: project.name as string, unitId: typeof project.unit_id==='string'?project.unit_id:'' })), [sourceProjects]);
@@ -114,6 +116,13 @@ export default function CalendarPanel({ projects: sourceProjects, organizational
     onUnitChange('');
     setCategory('all'); setFrom(initial.from); setTo(initial.to); setSearch(''); setSelectedDay('');
   }
+  function entryLink(event: CalendarEntry) {
+    const destination = calendarDestination(event);
+    if (!destination || !canOpenModule?.(destination.module, event)) return null;
+    return <a className={styles.entryLink} href={destination.href} aria-label={`${destination.label} · ${event.title}`}>
+      <ArrowRight size={15} aria-hidden="true"/>{destination.label}
+    </a>;
+  }
   return <div className={styles.panel}>
     <section className="p-card" aria-label="Filtros da agenda">
       <div className="p-card-title"><span className="p-icon-tile"><CalendarDays size={21}/></span><div><h3>Agenda integrada</h3><p>Reservas, atividades e movimentações reais, no horário de Brasília.</p></div></div>
@@ -162,7 +171,7 @@ export default function CalendarPanel({ projects: sourceProjects, organizational
     </section>
     <section className={`p-card ${styles.listCard}`} id="calendar-day-entries" aria-labelledby="calendar-day-heading">
       <div className="p-card-title"><div><h3 ref={listHeading} id="calendar-day-heading" className={styles.listHeading} tabIndex={-1}>{selectedDay?`Compromissos de ${prettyDay(selectedDay)}`:'Registros do período'}</h3><p role="status">{loading?'Consultando registros…':displayError||!validRange?'':selectedDay?`${shown.length} ${shown.length===1?'compromisso':'compromissos'} em ${prettyDay(selectedDay)}`:`${shown.length} ${shown.length===1?'registro':'registros'}`}</p></div>{selectedDay&&<button type="button" className="p-button p-button-subtle" onClick={()=>{setSelectedDay('');dayTrigger.current?.focus({preventScroll:true});dayTrigger.current?.scrollIntoView({block:'nearest'});}}><X size={15} aria-hidden="true"/>Ver todo o período</button>}</div>
-      {loading?<p className="p-form-help"><LoaderCircle size={17} className="p-spin"/> Carregando agenda…</p>:!shown.length?(displayError?null:search.trim()&&data?<p className="p-form-help">Nenhum resultado para esta busca. Tente outro termo ou remova os filtros.</p>:validRange&&!selectedDay&&category==='all'&&data?<div className={styles.emptyAgenda}><strong>Nada na Agenda neste período</strong><p>Aqui aparecem {readableList((data.availableCategories??[]).map(kind=>labels[kind].toLocaleLowerCase('pt-BR')))} dos projetos que você acompanha, conforme o seu acesso.</p><p>Escolha outro mês nas setas do calendário ou confira os filtros.</p></div>:<p className="p-form-help">{validRange?selectedDay?'Nenhum compromisso neste dia.':'Nenhum registro corresponde às datas e aos filtros escolhidos.':'Informe um período válido para consultar a agenda.'}</p>):<div className={styles.entries}>{shown.map(event=><article key={event.uid} className={styles.entry} style={{borderLeftColor:colors[event.category]}}><small>{labels[event.category]}</small><h4 className={event.status==='CANCELLED'?styles.cancelled:undefined}>{event.title}</h4><p>{when(event)}</p><p className={styles.entryContext}>{event.projectName}{event.location?` · ${event.location}`:''}{event.status==='CANCELLED'?' · Cancelado / arquivado':event.state==='done'?' · Concluída':event.state==='tentative'?' · A confirmar':''}</p>{event.sourceKind==='project-schedule'&&<div className="flex flex-wrap gap-x-3"><a className={styles.entryLink} href={`/?module=records&view=documents&project=${encodeURIComponent(event.projectId)}&scheduleItemId=${encodeURIComponent(event.sourceId)}`} aria-label={`Registros e fotos de ${event.title.replace(/^Atividade · /, "")}`}><FileText size={15} aria-hidden="true"/>Registros e fotos</a><a className={styles.entryLink} href={`/?module=demands&project=${encodeURIComponent(event.projectId)}&scheduleItemId=${encodeURIComponent(event.sourceId)}`} aria-label={`Frentes de ${event.title.replace(/^Atividade · /, "")}`}><ListChecks size={15} aria-hidden="true"/>Frentes</a></div>}</article>)}</div>}
+      {loading?<p className="p-form-help"><LoaderCircle size={17} className="p-spin"/> Carregando agenda…</p>:!shown.length?(displayError?null:search.trim()&&data?<p className="p-form-help">Nenhum resultado para esta busca. Tente outro termo ou remova os filtros.</p>:validRange&&!selectedDay&&category==='all'&&data?<div className={styles.emptyAgenda}><strong>Nada na Agenda neste período</strong><p>Aqui aparecem {readableList((data.availableCategories??[]).map(kind=>labels[kind].toLocaleLowerCase('pt-BR')))} dos projetos que você acompanha, conforme o seu acesso.</p><p>Escolha outro mês nas setas do calendário ou confira os filtros.</p></div>:<p className="p-form-help">{validRange?selectedDay?'Nenhum compromisso neste dia.':'Nenhum registro corresponde às datas e aos filtros escolhidos.':'Informe um período válido para consultar a agenda.'}</p>):<div className={styles.entries}>{shown.map(event=><article key={event.uid} className={styles.entry} style={{borderLeftColor:colors[event.category]}}><small>{labels[event.category]}</small><h4 className={event.status==='CANCELLED'?styles.cancelled:undefined}>{event.title}</h4><p>{when(event)}</p><p className={styles.entryContext}>{event.projectName}{event.location?` · ${event.location}`:''}{event.status==='CANCELLED'?' · Cancelado / arquivado':event.state==='done'?' · Concluída':event.state==='tentative'?' · A confirmar':''}</p>{entryLink(event)}{event.sourceKind==='project-schedule'&&<div className="flex flex-wrap gap-x-3"><a className={styles.entryLink} href={`/?module=records&view=documents&project=${encodeURIComponent(event.projectId)}&scheduleItemId=${encodeURIComponent(event.sourceId)}`} aria-label={`Registros e fotos de ${event.title.replace(/^Atividade · /, "")}`}><FileText size={15} aria-hidden="true"/>Registros e fotos</a><a className={styles.entryLink} href={`/?module=demands&project=${encodeURIComponent(event.projectId)}&scheduleItemId=${encodeURIComponent(event.sourceId)}`} aria-label={`Frentes de ${event.title.replace(/^Atividade · /, "")}`}><ListChecks size={15} aria-hidden="true"/>Frentes</a></div>}</article>)}</div>}
     </section>
     </div>
     <section className="p-card">

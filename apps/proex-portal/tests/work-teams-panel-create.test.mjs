@@ -22,6 +22,7 @@ function harness(props = {}, teams = []) {
     useRef(initial) { const i = index++; return slots[i] ??= { current: initial }; },
     useEffect(fn, deps) { const i = index++, old = slots[i]; if (!old || !same(old.deps, deps)) effects.push(() => { old?.cleanup?.(); slots[i] = { deps, cleanup: fn() }; }); },
   };
+  hooks.useLayoutEffect = hooks.useEffect;
   const jsx = (type, p) => ({ type, props: p }), compiledModule = { exports: {} };
   const api = { workTeamsApi: async query => { requests.push(new URLSearchParams(query)); return workspace(new URLSearchParams(query), teams, props.organizations?.[0]?.canManage ?? true); }, saveWorkTeam: async () => ({ teamId: 'new' }), TeamsApiError: class extends Error {} };
   vm.runInNewContext(compiled, { module: compiledModule, exports: compiledModule.exports, JSON, Date, URLSearchParams, AbortController, Promise, Error,
