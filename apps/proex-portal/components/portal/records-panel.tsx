@@ -5,7 +5,7 @@ import DateField from './date-field';
 import Link from 'next/link';
 
 import { useEffect, useId, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
-import { BarChart3, Camera, Check, ClipboardList, ExternalLink, FilePlus2, ImagePlus, Info, LoaderCircle, Paperclip, Plus, RefreshCw, Search, Trash2, Upload } from 'lucide-react';
+import { BarChart3, CalendarDays, Camera, Check, ClipboardList, ExternalLink, FilePlus2, ImagePlus, Info, LoaderCircle, Paperclip, Plus, RefreshCw, Search, Trash2, Upload } from 'lucide-react';
 import { useFormDraft, DraftNotice } from './use-form-draft';
 import styles from './records-panel.module.css';
 import { download } from './report-export';
@@ -26,6 +26,8 @@ type Entry = {
 };
 type Props = {
   initialProjectId?:string;
+  scheduleItemId?:string;
+  onClearScheduleItem?():void;
   projects: Row[]; items: Row[]; loans: Row[];
   canRead?(projectId: string): boolean;
   canWrite?(capability: string, projectId: string): boolean;
@@ -186,16 +188,18 @@ function AttachmentQueue({ recordId, onAttachment, onPendingChange }: {
   </div>;
 }
 
-export default function RecordsPanel({ projects: sourceProjects, items, loans, initialProjectId='', canRead = readListed, canWrite = noWrite }: Props) {
+export default function RecordsPanel({ projects: sourceProjects, items, loans, initialProjectId='', scheduleItemId='', onClearScheduleItem, canRead = readListed, canWrite = noWrite }: Props) {
   const projects = sourceProjects.filter(project => text(project, 'name') && text(project, 'id') && canRead(text(project, 'id'))).map(project => ({ id: text(project, 'id'), name: text(project, 'name') }));
   const writableProjects = projects.filter(project => kinds.some(kind => canWrite(kind.capability, project.id)));
   const [records, setRecords] = useState<Entry[]>([]), [truncated, setTruncated] = useState(false);
+  const [scheduleTitle, setScheduleTitle] = useState('');
   const [loading, setLoading] = useState(true), [readError, setReadError] = useState(''), [reload, setReload] = useState(0);
   const [filterProject, setFilterProject] = useState(initialProjectId), [from, setFrom] = useState(''), [to, setTo] = useState('');
   const [filters, setFilters] = useState<Filters>({ projectId: initialProjectId, from: '', to: '' });
-  const canCreateHere = filters.projectId ? writableProjects.some(project => project.id === filters.projectId) : writableProjects.length > 0;
+  const canCreateHere = scheduleItemId ? Boolean(scheduleTitle && !readError && canWrite('campaigns.manage',filters.projectId))
+    : filters.projectId ? writableProjects.some(project => project.id === filters.projectId) : writableProjects.length > 0;
   const pendingProject = filterProject !== filters.projectId;
-  const readDenied = Boolean(filters.projectId ? !canRead(filters.projectId) : !projects.length);
+  const readDenied = Boolean(scheduleItemId && !filters.projectId) || Boolean(filters.projectId ? !canRead(filters.projectId) : !projects.length);
   const [category, setCategory] = useState(''), [search, setSearch] = useState('');
   const [open, setOpen] = useState(false), [projectId, setProjectId] = useState(''), [kind, setKind] = useState<Kind>('observation');
   const [createScope, setCreateScope] = useState('');
@@ -207,24 +211,25 @@ export default function RecordsPanel({ projects: sourceProjects, items, loans, i
   const [attachmentPending, setAttachmentPending] = useState<Record<string, boolean>>({});
   const existingPending = Object.values(attachmentPending).some(Boolean);
   const savingRef = useRef(false), attempt = useRef<{ payload: Record<string, unknown>; uncertain: boolean } | null>(null);
-  const query = useMemo(() => new URLSearchParams({ limit: '100', ...(filters.projectId ? { projectId: filters.projectId } : {}), ...(filters.from ? { from: filters.from } : {}), ...(filters.to ? { to: filters.to } : {}) }).toString(), [filters]);
+  const query = useMemo(() => new URLSearchParams({ limit: '100', ...(filters.projectId ? { projectId: filters.projectId } : {}), ...(scheduleItemId ? { scheduleItemId } : {}), ...(filters.from ? { from: filters.from } : {}), ...(filters.to ? { to: filters.to } : {}) }).toString(), [filters,scheduleItemId]);
   useEffect(() => {
     if (readDenied) return;
     const controller = new AbortController();
     void fetch(`/api/records?${query}`, { credentials: 'same-origin', cache: 'no-store', signal: controller.signal }).then(async response => {
-      const result = await response.json() as { records?: unknown[]; truncated?: boolean; error?: string };
+      const result = await response.json() as { records?: unknown[]; truncated?: boolean; error?: string; scheduleItem?: { id: string; title: string } };
       if (!response.ok) throw new Error(result.error || 'Não foi possível consultar os registros.');
       if (!Array.isArray(result.records)) throw new Error('Não foi possível ler a lista de registros.');
-      return { records: result.records.map(asEntry), truncated: result.truncated === true };
+      if (scheduleItemId && result.scheduleItem?.id !== scheduleItemId) throw new Error('Não foi possível confirmar a atividade deste registro.');
+      return { records: result.records.map(asEntry), truncated: result.truncated === true, scheduleTitle: result.scheduleItem?.title ?? '' };
     }).then(result => {
       if (controller.signal.aborted) return;
-      setRecords(result.records); setTruncated(result.truncated); setReadError(''); setLoading(false);
+      setRecords(result.records); setTruncated(result.truncated); setScheduleTitle(result.scheduleTitle); setReadError(''); setLoading(false);
     }, (cause: unknown) => {
       if (controller.signal.aborted) return;
-      setRecords([]); setTruncated(false); setReadError(cause instanceof Error ? cause.message : 'Não foi possível consultar os registros.'); setLoading(false);
+      setRecords([]); setTruncated(false); setScheduleTitle(''); setReadError(cause instanceof Error ? cause.message : 'Não foi possível consultar os registros.'); setLoading(false);
     });
     return () => controller.abort();
-  }, [query, reload, readDenied]);
+  }, [query, reload, readDenied, scheduleItemId]);
   useEffect(() => {
     if (!unconfirmed && !savedPending) return;
     const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
@@ -250,11 +255,11 @@ export default function RecordsPanel({ projects: sourceProjects, items, loans, i
     if (savingRef.current || unconfirmed || savedPending || existingPending || pendingProject || !canCreateHere) return;
     const nextProject = filters.projectId || writableProjects[0].id;
     setCreateScope(filters.projectId);
-    setProjectId(nextProject); setKind(kinds.find(value => canWrite(value.capability, nextProject))!.value);
+    setProjectId(nextProject); setKind(scheduleItemId ? 'project' : kinds.find(value => canWrite(value.capability, nextProject))!.value);
     setTitle(''); setBody(''); setOccurredAt(localNow()); setHasInterval(false); setStartsAt(''); setEndsAt(''); setItemId(''); setLoanId('');
     setSaved(null); setSavedPending(false); setSaveError(''); setUnconfirmed(false); attempt.current = null; setOpen(true);
   }
-  const allowedKinds = kinds.filter(value => canWrite(value.capability, projectId));
+  const allowedKinds = kinds.filter(value => canWrite(value.capability, projectId) && (!scheduleItemId || value.value === 'project' || value.value === 'observation'));
   const projectItems = items.filter(item => text(item, 'project_id') === projectId);
   const projectLoans = loans.filter(loan => text(loan, 'project_id') === projectId);
   const allowLoanLink = canWrite('loans.manage', projectId) && (kind === 'loan' || canWrite('campaigns.manage', projectId));
@@ -289,7 +294,7 @@ export default function RecordsPanel({ projects: sourceProjects, items, loans, i
       newRecordButton.current?.focus();
     }
   }, [open, savedId]);
-  const draft = useFormDraft(createRef, open && !saved ? `record:new:${createScope || 'all'}` : null);
+  const draft = useFormDraft(createRef, open && !saved ? `record:new:${createScope || 'all'}${scheduleItemId ? `:${scheduleItemId}` : ''}` : null);
   async function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (savingRef.current || saved) return;
@@ -301,7 +306,7 @@ export default function RecordsPanel({ projects: sourceProjects, items, loans, i
         const occurrence = toIso(occurredAt, 'a ocorrência');
         const start = hasInterval ? toIso(startsAt, 'o início da atividade') : null, end = hasInterval ? toIso(endsAt, 'o fim da atividade') : null;
         if (start && end && end < start) throw new Error('O fim da atividade deve ocorrer no mesmo horário ou depois do início.');
-        attempt.current = { uncertain: false, payload: { action: 'create', operationKey: crypto.randomUUID(), projectId, kind, title, body, occurredAt: occurrence, startsAt: start, endsAt: end, itemId: itemId || null, loanId: allowLoanLink ? loanId || null : null } };
+        attempt.current = { uncertain: false, payload: { action: 'create', operationKey: crypto.randomUUID(), projectId, kind, title, body, occurredAt: occurrence, startsAt: start, endsAt: end, itemId: itemId || null, loanId: allowLoanLink ? loanId || null : null, ...(scheduleItemId ? { scheduleItemId } : {}) } };
       } catch (cause) { setSaveError(cause instanceof Error ? cause.message : 'Confira o formulário.'); return; }
     }
     savingRef.current = true; setSaving(true); setUnconfirmed(true);
@@ -309,7 +314,7 @@ export default function RecordsPanel({ projects: sourceProjects, items, loans, i
     try {
       const result = await requestJson('/api/records', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Proex-Action': '1' }, body: JSON.stringify(currentAttempt.payload) });
       const record = asEntry(result.record);
-      if (record.id !== result.id) throw new RequestFailure('A confirmação do registro não pôde ser lida. Tente novamente.');
+      if (record.id !== result.id || (scheduleItemId && text(result.record as Row,'schedule_item_id') !== scheduleItemId)) throw new RequestFailure('A confirmação do registro não pôde ser lida. Tente novamente.');
       setSaved(record); setUnconfirmed(false); attempt.current = null; draft.clear(); refresh(); toast.success('Registro salvo. Você pode adicionar os anexos.');
     } catch (cause) {
       const uncertain = currentAttempt.uncertain || !confirmedRejection(cause);
@@ -331,6 +336,7 @@ export default function RecordsPanel({ projects: sourceProjects, items, loans, i
       titulo: record.title, descricao: record.body, anexos: record.attachments.length,
     }));
     const info: [string, string][] = [['Cobertura', 'Registros carregados que correspondem aos filtros visíveis.'], ['Projeto',filters.projectId?projectName(filters.projectId):'Todos os projetos permitidos'],['Período',`${filters.from||'Início disponível'} a ${filters.to||'Última data disponível'}`],['Categoria',category?kindLabel(category as Kind):'Todas'],['Busca',search||'Sem busca'],['Linhas', String(rows.length)],['Gerado em',dateTime(new Date().toISOString())+' (Brasília)']];
+    if (scheduleTitle) info.splice(2,0,['Atividade',scheduleTitle]);
     download(`proex-registros-${new Date().toISOString().slice(0, 10)}.${format}`, await documentExport(format,'Registros',columns,rows,(row,key)=>row[key],info,filters.projectId?{projectName:projectName(filters.projectId)}:undefined));
   }
   const projectName = (id: string) => String(projects.find(project => project.id === id)?.name ?? 'Projeto');
@@ -358,19 +364,24 @@ export default function RecordsPanel({ projects: sourceProjects, items, loans, i
 
   if (readDenied) return <div className="p-notice" role="status">
     <Info size={18} aria-hidden="true"/>
-    <span>{filters.projectId ? 'Seu acesso a este projeto não inclui documentos e fotos.' : 'Nenhum projeto com acesso a documentos e fotos.'}</span>
-    {filters.projectId && projects.length > 0 && <button type="button" className="p-button p-button-subtle" onClick={() => { setFilterProject(''); setLoading(true); setFilters({ projectId: '', from: '', to: '' }); }}>Consultar meus projetos</button>}
+    <span>{scheduleItemId ? 'Atividade indisponível para sua conta neste projeto.' : filters.projectId ? 'Seu acesso a este projeto não inclui documentos e fotos.' : 'Nenhum projeto com acesso a documentos e fotos.'}</span>
+    {scheduleItemId && onClearScheduleItem ? <button type="button" className="p-button p-button-subtle" onClick={onClearScheduleItem}>Sair da atividade</button>
+      : filters.projectId && projects.length > 0 && <button type="button" className="p-button p-button-subtle" onClick={() => { setFilterProject(''); setLoading(true); setFilters({ projectId: '', from: '', to: '' }); }}>Consultar meus projetos</button>}
   </div>;
   return <div style={{ display: 'grid', gap: 20 }}>
     <section className="p-card" aria-labelledby="records-title">
-      <div className="p-row-between" style={{ gap: 16, flexWrap: 'wrap', marginBottom: 20 }}><div style={{ display: 'flex', gap: 12, alignItems: 'center' }}><div><h2 id="records-title" className="sr-only">Registros e documentos</h2><p className="p-form-help" style={{ margin: 0, fontSize: 13 }}>Histórico dos projetos, materiais e empréstimos, com anexos privados.</p></div></div>{canCreateHere && !open && <button ref={newRecordButton} type="button" className="p-button p-button-primary" onClick={begin} disabled={existingPending || pendingProject}><Plus size={17} aria-hidden="true" />Novo registro</button>}</div>
+      {scheduleItemId && <div className={styles.activityContext}>
+        <div><CalendarDays size={19} aria-hidden="true"/><div><small>Atividade do cronograma · {projectName(filters.projectId)}</small><strong>{scheduleTitle || (loading ? 'Carregando atividade…' : 'Atividade indisponível')}</strong></div></div>
+        {onClearScheduleItem && <button type="button" className="p-button p-button-subtle" disabled={open || existingPending} onClick={onClearScheduleItem}>Ver registros do projeto</button>}
+      </div>}
+      <div className="p-row-between" style={{ gap: 16, flexWrap: 'wrap', marginBottom: 20 }}><div style={{ display: 'flex', gap: 12, alignItems: 'center' }}><div><h2 id="records-title" className="sr-only">{scheduleTitle ? 'Registros e fotos de '+scheduleTitle : 'Registros e documentos'}</h2><p className="p-form-help" style={{ margin: 0, fontSize: 13 }}>{scheduleItemId ? 'Ocorrências, fotos e documentos desta atividade.' : 'Histórico dos projetos, materiais e empréstimos, com anexos privados.'}</p></div></div>{canCreateHere && !loading && !open && <button ref={newRecordButton} type="button" className="p-button p-button-primary" onClick={begin} disabled={existingPending || pendingProject}><Plus size={17} aria-hidden="true" />{scheduleItemId ? 'Novo registro da atividade' : 'Novo registro'}</button>}</div>
       {pendingProject && <p className="p-form-help" role="status">Use Consultar para aplicar o projeto selecionado.</p>}
-      {!canCreateHere && projects.length > 0 && <div className="p-notice p-records-ask" role="note"><Info size={18} aria-hidden="true"/><div><strong>{filters.projectId ? 'Cadastro de registros restrito neste projeto' : 'Cadastro de registros restrito'}</strong><span>Para guardar uma ocorrência, foto ou documento, peça a quem coordena o projeto que crie o registro.</span></div></div>}
-      <form onSubmit={applyFilters} className={styles.filterBar}>
-        <label className="p-field"><span>Projeto</span><select id="records-filter-project" value={filterProject} onChange={event => setFilterProject(event.target.value)}><option value="">Todos os projetos permitidos</option>{projects.map(project => <option key={project.id as string} value={project.id as string}>{project.name as string}</option>)}</select></label>
+      {!canCreateHere && !readError && projects.length > 0 && (!scheduleItemId || scheduleTitle) && <div className="p-notice p-records-ask" role="note"><Info size={18} aria-hidden="true"/><div><strong>{filters.projectId ? 'Cadastro de registros restrito neste projeto' : 'Cadastro de registros restrito'}</strong><span>Para guardar uma ocorrência, foto ou documento, peça a quem coordena o projeto que crie o registro.</span></div></div>}
+      <form onSubmit={applyFilters} className={styles.filterBar} data-activity={Boolean(scheduleItemId)}>
+        {!scheduleItemId && <label className="p-field"><span>Projeto</span><select id="records-filter-project" value={filterProject} onChange={event => setFilterProject(event.target.value)}><option value="">Todos os projetos permitidos</option>{projects.map(project => <option key={project.id as string} value={project.id as string}>{project.name as string}</option>)}</select></label>}
         <label className="p-field"><span>De</span><DateField aria-label="De" min="2000-01-01" max="2200-12-31" value={from} onValueChange={next => setFrom(next)} /></label>
         <label className="p-field"><span>Até (inclusive)</span><DateField aria-label="Até (inclusive)" min={from || '2000-01-01'} max="2200-12-31" value={to} onValueChange={next => setTo(next)} /></label>
-        <div className={styles.filterActions}><button type="submit" className="p-button p-button-primary" disabled={loading || existingPending}><Search size={16} />Consultar</button><button type="button" className="p-button p-button-subtle" aria-label="Atualizar consulta" title="Atualizar consulta" disabled={loading || existingPending} onClick={refresh}><RefreshCw size={16} /></button>{(from || to || filterProject) && <button type="button" className="p-button p-button-subtle" disabled={loading || existingPending} onClick={() => { setFrom(''); setTo(''); setFilterProject(''); setLoading(true); setFilters({ projectId: '', from: '', to: '' }); setReload(value => value + 1); }}>Limpar</button>}</div>
+        <div className={styles.filterActions}><button type="submit" className="p-button p-button-primary" disabled={loading || existingPending}><Search size={16} />Consultar</button><button type="button" className="p-button p-button-subtle" aria-label="Atualizar consulta" title="Atualizar consulta" disabled={loading || existingPending} onClick={refresh}><RefreshCw size={16} /></button>{(from || to || (!scheduleItemId && filterProject)) && <button type="button" className="p-button p-button-subtle" disabled={loading || existingPending} onClick={() => { setFrom(''); setTo(''); setFilterProject(scheduleItemId ? initialProjectId : ''); setLoading(true); setFilters({ projectId: scheduleItemId ? initialProjectId : '', from: '', to: '' }); setReload(value => value + 1); }}>Limpar</button>}</div>
         <p className={styles.filterHelp}>O filtro por dias usa o fuso deste aparelho; a lista mostra o horário de Brasília.</p>
         {existingPending && <p role="status" className="p-form-help">Confirme os anexos na lista antes de consultar outro período ou criar um novo registro.</p>}
       </form>
@@ -394,7 +405,7 @@ export default function RecordsPanel({ projects: sourceProjects, items, loans, i
           <label style={{ display: 'flex', gap: 10, alignItems: 'center', minHeight: 44 }}><input name="hasInterval" type="checkbox" checked={hasInterval} onChange={event => setHasInterval(event.target.checked)} />Informar período de uma atividade</label>
           {/* Mantém os campos no formulário para restaurar período e checkbox juntos. */}
           <div className="p-form-grid" hidden={!hasInterval} style={hasInterval ? undefined : { display: 'none' }}><label className="p-field"><span>Início da atividade</span><DateTimeField aria-label="Início da atividade" name="startsAt"  required={hasInterval} disabled={!hasInterval} min="2000-01-01T00:00" max="2200-12-31T23:59" value={startsAt} onChange={event => setStartsAt(event.target.value)} /></label><label className="p-field"><span>Fim da atividade</span><DateTimeField aria-label="Fim da atividade" name="endsAt"  required={hasInterval} disabled={!hasInterval} min={startsAt || '2000-01-01T00:00'} max="2200-12-31T23:59" value={endsAt} onChange={event => setEndsAt(event.target.value)} /></label></div>
-          <div className="p-form-grid"><label className="p-field"><span>Material vinculado (opcional)</span><select name="itemId" value={itemId} disabled={!!loanId} onChange={event => setItemId(event.target.value)}><option value="">Sem vínculo com material</option>{projectItems.map(item => <option key={text(item, 'id')} value={text(item, 'id')}>{text(item, 'name') || 'Material'}</option>)}</select></label>{allowLoanLink && <label className="p-field"><span>Empréstimo vinculado (opcional)</span><select name="loanId" value={loanId} onChange={event => { const selected = projectLoans.find(loan => text(loan, 'id') === event.target.value); setLoanId(event.target.value); if (selected) setItemId(text(selected, 'item_id')); }}><option value="">Sem vínculo com empréstimo</option>{projectLoans.map(loan => <option key={text(loan, 'id')} value={text(loan, 'id')}>{itemName(text(loan, 'item_id')) || 'Equipamento'} · {text(loan, 'starts_at') ? dateTime(text(loan, 'starts_at')) : `#${text(loan, 'id').slice(0, 12)}`}</option>)}</select></label>}</div>
+          {!scheduleItemId && <div className="p-form-grid"><label className="p-field"><span>Material vinculado (opcional)</span><select name="itemId" value={itemId} disabled={!!loanId} onChange={event => setItemId(event.target.value)}><option value="">Sem vínculo com material</option>{projectItems.map(item => <option key={text(item, 'id')} value={text(item, 'id')}>{text(item, 'name') || 'Material'}</option>)}</select></label>{allowLoanLink && <label className="p-field"><span>Empréstimo vinculado (opcional)</span><select name="loanId" value={loanId} onChange={event => { const selected = projectLoans.find(loan => text(loan, 'id') === event.target.value); setLoanId(event.target.value); if (selected) setItemId(text(selected, 'item_id')); }}><option value="">Sem vínculo com empréstimo</option>{projectLoans.map(loan => <option key={text(loan, 'id')} value={text(loan, 'id')}>{itemName(text(loan, 'item_id')) || 'Equipamento'} · {text(loan, 'starts_at') ? dateTime(text(loan, 'starts_at')) : `#${text(loan, 'id').slice(0, 12)}`}</option>)}</select></label>}</div>}
         </fieldset>
         {unconfirmed && <p role="status" className="p-form-help">{saving ? 'Enviando o registro…' : 'A confirmação está pendente. O próximo envio repete os mesmos dados e a mesma operação.'} Mantenha esta tela aberta para recuperar a confirmação.</p>}
         {saveError && <p className="p-inline-error" role="alert">{saveError}</p>}
@@ -404,7 +415,7 @@ export default function RecordsPanel({ projects: sourceProjects, items, loans, i
 
     <section className="p-card" aria-labelledby="records-list-title" aria-busy={loading}>
       <div className={styles.historyHead}><div><h3 id="records-list-title">Histórico</h3><p className="p-form-help" style={{ margin: 0 }}>{loading ? 'Consultando registros…' : `${shown.length} de ${records.length} registros carregados${filters.from || filters.to ? ' no período escolhido' : ''}`}</p></div>
-        <div className={styles.historyActions}><Link className="p-button p-button-subtle" href="/?module=reports" prefetch={false}><BarChart3 size={16} />Central de relatórios</Link><ExportFormats label="Baixar registros" disabled={loading || !shown.length || !!readError} onExport={exportHistory}/></div></div>
+        <div className={styles.historyActions}>{!scheduleItemId && <Link className="p-button p-button-subtle" href="/?module=reports" prefetch={false}><BarChart3 size={16} />Central de relatórios</Link>}<ExportFormats label="Baixar registros" disabled={loading || !shown.length || !!readError} onExport={exportHistory}/></div></div>
       <div className={styles.historyFilters}>
         <div className={styles.kindChips} role="group" aria-label="Filtrar por categoria">
           <button type="button" aria-pressed={!category} className={!category ? styles.chipActive : ''} disabled={existingPending} onClick={() => setCategory('')}>Todas <span>{records.length}</span></button>
@@ -414,7 +425,7 @@ export default function RecordsPanel({ projects: sourceProjects, items, loans, i
       </div>
       {!loading && records.length > 0 && <div className={styles.monthBars} aria-label="Registros por mês">{monthTotals.map(([month, total]) => <div key={month} title={`${total} registros`}><span style={{ height: `${Math.max(8, Math.round(total / monthMax * 100))}%` }} /><small>{SHORT_MONTHS[Number(month.slice(5)) - 1]}/{month.slice(2, 4)}</small><b>{total}</b></div>)}</div>}
       {truncated && <p role="status" className="p-form-help" style={{ borderLeft: '3px solid var(--brand-ink)', paddingLeft: 12 }}>Há mais registros neste período. A consulta mostra até 100; restrinja o projeto ou as datas para encontrar os demais. A busca e a categoria filtram somente os resultados carregados.</p>}
-      {loading ? <p role="status" className="p-form-help"><LoaderCircle size={18} className="p-spin" style={{ verticalAlign: 'middle', marginRight: 8 }} />Carregando histórico…</p> : readError ? <p className="p-form-help">Corrija a consulta ou tente atualizar para recuperar o histórico.</p> : !shown.length ? <div className="p-empty"><ClipboardList size={28} aria-hidden="true" /><p>Nenhum registro encontrado nos filtros e acessos atuais.</p></div> : <div className={styles.timeline}>{groups.map(([month, entries]) => <section key={month} aria-label={month ? monthTitle(month) : 'Sem data'}><h4 className={styles.monthTitle}>{month ? monthTitle(month) : 'Sem data'}<span>{entries.length}</span></h4><div className={styles.entries}>{entries.map(record => <article key={record.id} className={styles.entry} data-tone={KIND_TONES[record.kind]}><div className={styles.entryHead}><span className={styles.kindTag}><i aria-hidden="true" />{kindLabel(record.kind)}</span>{!!record.attachments.length && <span className={styles.attachCount}><Paperclip size={12} aria-hidden="true" />{record.attachments.length}</span>}</div><h4>{record.title}</h4>{entryDetails(record)}{canAttach(record) && record.id !== saved?.id && <details className={styles.attachDetails}><summary><Paperclip size={16} aria-hidden="true" />Adicionar documentos ou fotos</summary><AttachmentQueue recordId={record.id} onAttachment={attachment => attach(record.id, attachment)} onPendingChange={pending => setAttachmentPending(current => ({ ...current, [record.id]: pending }))} /></details>}</article>)}</div></section>)}</div>}
+      {loading ? <p role="status" className="p-form-help"><LoaderCircle size={18} className="p-spin" style={{ verticalAlign: 'middle', marginRight: 8 }} />Carregando histórico…</p> : readError ? <p className="p-form-help">Corrija a consulta ou tente atualizar para recuperar o histórico.</p> : !shown.length ? <div className="p-empty"><ClipboardList size={28} aria-hidden="true" /><p>{scheduleItemId && !filters.from && !filters.to && !search && !category ? 'Ainda não há registros para esta atividade.' : 'Nenhum registro encontrado nos filtros e acessos atuais.'}</p></div> : <div className={styles.timeline}>{groups.map(([month, entries]) => <section key={month} aria-label={month ? monthTitle(month) : 'Sem data'}><h4 className={styles.monthTitle}>{month ? monthTitle(month) : 'Sem data'}<span>{entries.length}</span></h4><div className={styles.entries}>{entries.map(record => <article key={record.id} className={styles.entry} data-tone={KIND_TONES[record.kind]}><div className={styles.entryHead}><span className={styles.kindTag}><i aria-hidden="true" />{kindLabel(record.kind)}</span>{!!record.attachments.length && <span className={styles.attachCount}><Paperclip size={12} aria-hidden="true" />{record.attachments.length}</span>}</div><h4>{record.title}</h4>{entryDetails(record)}{canAttach(record) && record.id !== saved?.id && <details className={styles.attachDetails}><summary><Paperclip size={16} aria-hidden="true" />Adicionar documentos ou fotos</summary><AttachmentQueue recordId={record.id} onAttachment={attachment => attach(record.id, attachment)} onPendingChange={pending => setAttachmentPending(current => ({ ...current, [record.id]: pending }))} /></details>}</article>)}</div></section>)}</div>}
       <p className="p-form-help" style={{ marginBottom: 0, marginTop: 20 }}>Os documentos abrem com sua sessão e permissões atuais. Evite dados pessoais desnecessários nas descrições e nos anexos.</p>
     </section>
   </div>;

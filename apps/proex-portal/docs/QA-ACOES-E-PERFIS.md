@@ -5,7 +5,7 @@ Coordenação, técnicos, bolsistas e voluntários precisam encontrar o próximo
 ## Fluxo de uma ação
 
 - **Articulação, apoio no dia, água e lanches.** Na ficha, abra Demandas e selecione Checklist de atividade. Escolha um modelo, acrescente as verificações, revise o texto, vincule a dinâmica se houver e atribua a frente a uma pessoa ou equipe. Use totais no planejamento de alimentação.
-- **Registro da ação.** O modelo orienta a conferência das informações. Na ficha, abra Registros e fotos, crie o registro e anexe as fotos ou PDFs. O projeto selecionado também delimita o rascunho.
+- **Registro da ação.** O modelo orienta a conferência das informações. Na ficha, abra Registros e fotos dentro da atividade do cronograma, crie o registro e anexe as fotos ou PDFs. A atividade selecionada delimita a consulta, o formulário e o rascunho.
 - **Foto e vídeo.** Use um checklist próprio para a cobertura. Os anexos privados ficam no registro do projeto. Cadastre a pasta de vídeos em Links e documentos da ficha, com permissões da equipe no Drive. Os anexos aceitos são PDF, JPEG, PNG e WebP, com até 4 MB por arquivo. O sistema ainda não oferece pasta por ação ou upload de vídeo.
 - **Bolsistas.** Um leitor pode acompanhar a demanda. Para atualizar andamento ou responder ao checklist, a gestão deve atribuir a pessoa e usar Autorizar atualizações nesta demanda. Remover o vínculo ou revogar a autorização interrompe o acesso correspondente.
 - **Operação de dinâmica.** Quando o trabalho é atender e entregar brindes em uma única ação, o convite de voluntário delimita esse acesso e estabelece seu término. A descrição do convite distingue esse perfil das funções de projeto.
@@ -25,6 +25,8 @@ No navegador, verificar 390 e 1366 px, temas claro e escuro, com a ficha, Docume
 
 ## Continuidade
 
-O próximo recorte funcional é vincular registro e referências privadas à ação, para localizar mídias e relato quando o projeto tem várias atividades. O armazenamento de arquivos e as permissões devem continuar compartilhando o fluxo atual de anexos e pastas, com teste de revogação no projeto e na ação. O suporte da TI é uma função organizacional. Alterações de credenciais, configurações de modelos e backup exigem suas autorizações próprias.
+O vínculo à atividade do cronograma preserva os mesmos acessos ao registro do projeto. A migração SQLite 0047 acrescenta uma referência opcional e valida o projeto e a categoria no banco. Registros antigos seguem válidos. A atividade pode ser renomeada ou cancelada, com o vínculo preservado. A sincronização da administração expõe somente o identificador da atividade, além da projeção que já existia para Registros. Anexos continuam privados.
+
+O próximo recorte funcional é disponibilizar a referência a uma pasta de vídeos por atividade. O armazenamento de arquivos e as permissões devem compartilhar o fluxo atual de anexos e pastas, com teste de revogação no projeto e na ação. O suporte da TI é uma função organizacional. Alterações de credenciais, configurações de modelos e backup exigem suas autorizações próprias.
 
 Ao retomar, defina o resultado por perfil, a ação que prova o caso normal e a tentativa que deve ser recusada. Abra uma alteração por frente. Execute a jornada real em dados sintéticos e repita depois de corrigir os achados de revisão. Registre o SHA, a evidência e as lacunas na Vault. [Boas práticas do Codex](https://learn.chatgpt.com/docs/learn/best-practices) · [Boas práticas do Claude Code](https://code.claude.com/docs/en/best-practices)

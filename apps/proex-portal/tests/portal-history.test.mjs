@@ -27,14 +27,16 @@ const scope = {
 const read = (query, current = scope) => readPortalLocation(new URLSearchParams(query), current);
 
 test('a project documents link survives reload and selecting another module clears its view',()=>{
-    const href=origin+'/?module=records&view=documents&project=project-a';
+    const href=origin+'/?module=records&view=documents&project=project-a&scheduleItemId=activity-sparks';
     const documents=read(new URL(href).search);
     assert.equal(documents.recordsView,'documents');
     assert.equal(documents.project,'project-a');
+    assert.equal(documents.recordsScheduleItemId,'activity-sparks');
     let location;
     const history={state:null,pushState(_state,_title,url){location=url.href;},replaceState(_state,_title,url){location=url.href;}};
     commitPortalLocation(history,href,{...documents,tab:'projects'},true);
     assert.equal(new URL(location).searchParams.get('view'),null);
+    assert.equal(new URL(location).searchParams.get('scheduleItemId'),null);
     assert.equal(read('module=records&view=unknown').recordsView,undefined);
 });
 

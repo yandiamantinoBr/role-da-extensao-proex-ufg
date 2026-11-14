@@ -1,4 +1,4 @@
-import { memberProjectScopeSql, accessibleProjects, requireCapability, type PortalActor } from './access';
+import { memberProjectScopeSql, accessibleProjects, projectAuthoritySql, requireCapability, type PortalActor } from './access';
 import { HttpError } from './errors';
 import { prepareMutation } from './mutations';
 import { MAX_UPLOAD_FILE_BYTES, MAX_UPLOAD_BODY_BYTES, UPLOAD_LIMIT_MESSAGE } from './upload-limits';
@@ -11,7 +11,7 @@ type Scope = string[] | null;
 // SQL projections vary by record kind; each read/write is scoped and validated below.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = Record<string, any>;
-type StoredRecord = { id: string; project_id: string; kind: Kind; loan_id: string | null; item_id: string | null };
+type StoredRecord = { id: string; project_id: string; kind: Kind; loan_id: string | null; item_id: string | null; schedule_item_id: string | null };
 type Attachment = { id: string; record_id: string; project_id: string; object_key: string; name: string; mime: string; size: number };
 export type RecordFileInput = { recordId: string; bytes: Uint8Array; name: string; declaredMime: string; operationKey: string };
 const MIME_EXTENSIONS: Record<string, string[]> = {
@@ -70,7 +70,7 @@ async function liveMembership(db: D1Database, actor: PortalActor, projectId: str
   if (!row) throw new HttpError(403, 'Seu acesso a estes registros mudou. Atualize o portal.', 'access_changed');
 }
 async function recordById(db: D1Database, id: string): Promise<StoredRecord> {
-  const record = await stmt(db, `SELECT r.id,r.project_id,r.kind,r.loan_id,r.item_id FROM records r
+  const record = await stmt(db, `SELECT r.id,r.project_id,r.kind,r.loan_id,r.item_id,r.schedule_item_id FROM records r
     LEFT JOIN items i ON i.id=r.item_id LEFT JOIN loans l ON l.id=r.loan_id
     WHERE r.id=? AND (r.item_id IS NULL OR i.project_id=r.project_id) AND (r.loan_id IS NULL OR l.project_id=r.project_id)`, [id]).first<StoredRecord>();
   if (!record || !(KINDS as readonly string[]).includes(record.kind)) throw new HttpError(404, 'Registro não encontrado.', 'record_not_found');
@@ -80,7 +80,7 @@ async function requireRead(db: D1Database, actor: PortalActor, record: StoredRec
   if (record.loan_id || record.kind === 'loan') requireCapability(actor, 'loans.read', record.project_id);
   else if (INVENTORY_KINDS.includes(record.kind)) requireCapability(actor, 'inventory.read', record.project_id);
   else {
-    const scopes = scopeUnion(accessibleProjects(actor, 'reports.read'), accessibleProjects(actor, 'campaigns.manage'));
+    const scopes = scopeUnion(...RECORD_ACTIVITY_READ.map(capability => accessibleProjects(actor, capability)));
     if (scopes !== null && !scopes.includes(record.project_id)) throw new HttpError(403, 'Você não tem acesso a estes registros.', 'forbidden');
   }
   await liveMembership(db, actor, record.project_id, readRoles(record));
@@ -93,20 +93,32 @@ async function projectRecords(db: D1Database, rows: Row[]): Promise<Row[]> {
   return rows.map(row => ({ ...row, attachments: attachments.filter(attachment => attachment.record_id === row.id).map(attachmentProjection) }));
 }
 async function projectedRecord(db: D1Database, id: string): Promise<Row> {
-  const record = await stmt(db, 'SELECT id,project_id,kind,title,body,occurred_at,starts_at,ends_at,item_id,loan_id,created_at FROM records WHERE id=?', [id]).first<Row>();
+  const record = await stmt(db, 'SELECT id,project_id,kind,title,body,occurred_at,starts_at,ends_at,item_id,loan_id,schedule_item_id,created_at FROM records WHERE id=?', [id]).first<Row>();
   if (!record) throw new HttpError(404, 'Registro não encontrado.', 'record_not_found');
   return (await projectRecords(db, [record]))[0];
 }
 
-export async function listRecords(db: D1Database, actor: PortalActor | null, filters: { projectId?: unknown; from?: unknown; to?: unknown; limit?: unknown } = {}): Promise<{ records: Row[]; limit: number; truncated: boolean }> {
+type RecordScheduleItem = { id: string; title: string };
+const RECORD_ACTIVITY_READ = ['reports.read', 'campaigns.manage'];
+export async function scheduleItemForRecordRead(db: D1Database, actor: PortalActor | null, projectId: unknown, scheduleItemId: string): Promise<RecordScheduleItem> {
+  actorRequired(actor);
+  const guard = projectAuthoritySql(actor, RECORD_ACTIVITY_READ, 's.project_id');
+  const scheduleItem = await stmt(db, `SELECT s.id,s.title FROM project_schedule_items s WHERE s.id=? AND s.project_id=? AND ${guard.sql}`,
+    [scheduleItemId, idValue(projectId, 'o projeto')!, ...guard.values]).first<RecordScheduleItem>();
+  if (!scheduleItem) throw new HttpError(404, 'Atividade indisponível neste projeto.', 'schedule_record_not_found');
+  return scheduleItem;
+}
+export async function listRecords(db: D1Database, actor: PortalActor | null, filters: { projectId?: unknown; scheduleItemId?: unknown; from?: unknown; to?: unknown; limit?: unknown } = {}): Promise<{ records: Row[]; limit: number; truncated: boolean; scheduleItem?: RecordScheduleItem }> {
   actorRequired(actor);
   const projectId = idValue(filters.projectId, 'o projeto', true);
+  const scheduleItemId = idValue(filters.scheduleItemId, 'a atividade', true);
+  if (scheduleItemId && !projectId) throw new HttpError(400, 'Escolha o projeto desta atividade.', 'schedule_project_required');
   const from = isoValue(filters.from, 'O início do período', true), to = isoValue(filters.to, 'O fim do período', true);
   if (from && to && to <= from) throw new HttpError(400, 'O fim do período deve ocorrer depois do início.', 'invalid_interval');
   const rawLimit = filters.limit === undefined || filters.limit === null || filters.limit === '' ? 100 : Number(filters.limit);
   if (!Number.isSafeInteger(rawLimit) || rawLimit < 1) throw new HttpError(400, 'Limite de registros inválido.', 'invalid_limit');
   const limit = Math.min(rawLimit, 100);
-  const projectScope = scopeUnion(accessibleProjects(actor, 'reports.read'), accessibleProjects(actor, 'campaigns.manage'));
+  const projectScope = scopeUnion(...RECORD_ACTIVITY_READ.map(capability => accessibleProjects(actor, capability)));
   const inventoryScope = accessibleProjects(actor, 'inventory.read'), loanScope = accessibleProjects(actor, 'loans.read');
   if (projectId && ![projectScope, inventoryScope, loanScope].some(scope => scope === null || scope.includes(projectId))) throw new HttpError(403, 'Você não tem acesso aos registros deste projeto.', 'forbidden');
   const project = scopeFilter(projectScope, 'r.project_id'), inventory = scopeFilter(inventoryScope, 'r.project_id'), loan = scopeFilter(loanScope, 'r.project_id');
@@ -118,13 +130,19 @@ export async function listRecords(db: D1Database, actor: PortalActor | null, fil
   params.push(actor.userId);
   conditions += ' AND (r.item_id IS NULL OR i.project_id=r.project_id) AND (r.loan_id IS NULL OR l.project_id=r.project_id)';
   if (projectId) { conditions += ' AND r.project_id=?'; params.push(projectId); }
+  if (scheduleItemId) {
+    conditions += ' AND r.schedule_item_id=?';
+    params.push(scheduleItemId);
+  }
   if (from) { conditions += ' AND r.occurred_at>=?'; params.push(from); }
   if (to) { conditions += ' AND r.occurred_at<?'; params.push(to); }
   params.push(limit + 1);
-  const rows = (await stmt(db, `SELECT r.id,r.project_id,r.kind,r.title,r.body,r.occurred_at,r.starts_at,r.ends_at,r.item_id,r.loan_id,r.created_at
+  const rows = (await stmt(db, `SELECT r.id,r.project_id,r.kind,r.title,r.body,r.occurred_at,r.starts_at,r.ends_at,r.item_id,r.loan_id,r.schedule_item_id,r.created_at
     FROM records r LEFT JOIN items i ON i.id=r.item_id LEFT JOIN loans l ON l.id=r.loan_id WHERE ${conditions}
     ORDER BY r.occurred_at DESC,r.created_at DESC,r.id LIMIT ?`, params).all<Row>()).results ?? [];
-  return { records: await projectRecords(db, rows.slice(0, limit)), limit, truncated: rows.length > limit };
+  const projected = await projectRecords(db, rows.slice(0, limit));
+  const scheduleItem = scheduleItemId ? await scheduleItemForRecordRead(db, actor, projectId, scheduleItemId) : null;
+  return { records: projected, limit, truncated: rows.length > limit, ...(scheduleItem ? { scheduleItem } : {}) };
 }
 
 /** `summary`: pedido feito ao Rolê que gerou o registro (só quando a pessoa confirmou pelo cartão do Rolê). Mesmo formato de MovementOrigin. */
@@ -149,6 +167,8 @@ export async function createRecord(db: D1Database, actor: PortalActor | null, in
   actorRequired(actor);
   const projectId = idValue(input.projectId, 'o projeto')!, kind = kindValue(input.kind);
   const itemId = idValue(input.itemId, 'o material', true), loanId = idValue(input.loanId, 'o empréstimo', true);
+  const scheduleItemId = idValue(input.scheduleItemId, 'a atividade', true);
+  if (scheduleItemId && (itemId || loanId || !['project', 'observation'].includes(kind))) throw new HttpError(400, 'Escolha uma categoria de atividade para vincular ao cronograma.', 'invalid_schedule_record');
   const target = { project_id: projectId, kind, item_id: itemId, loan_id: loanId };
   requireWrite(actor, target);
   await liveMembership(db, actor, projectId, writeRoles(target));
@@ -171,13 +191,16 @@ export async function createRecord(db: D1Database, actor: PortalActor | null, in
   try {
     await db.batch([
       mutation.claimStatement(id),
-      stmt(db, `INSERT INTO records(id,project_id,kind,title,body,occurred_at,starts_at,ends_at,item_id,loan_id,created_by,created_at)
-        VALUES(?,CASE WHEN ${authorization} THEN ? ELSE NULL END,?,?,?,?,?,?,?,?,?,?)`,
-        [id, actor.userId, ...roles, projectId, actor.userId, projectId, kind, title, body, occurredAt, startsAt, endsAt, itemId, loanId, actor.userId, now]),
+      stmt(db, `INSERT INTO records(id,project_id,kind,title,body,occurred_at,starts_at,ends_at,item_id,loan_id,schedule_item_id,created_by,created_at)
+        VALUES(?,CASE WHEN ${authorization} THEN ? ELSE NULL END,?,?,?,?,?,?,?,?,?,?,?)`,
+        [id, actor.userId, ...roles, projectId, actor.userId, projectId, kind, title, body, occurredAt, startsAt, endsAt, itemId, loanId, scheduleItemId, actor.userId, now]),
       stmt(db, 'INSERT INTO audit(id,actor_id,project_id,action,entity_id,details,created_at) VALUES(?,?,?,\'record.create\',?,?,?)',
-        [crypto.randomUUID(), actor.userId, projectId, id, JSON.stringify({ kind, linkedToItem: !!itemId, linkedToLoan: !!loanId }), now]),
+        [crypto.randomUUID(), actor.userId, projectId, id, JSON.stringify({ kind, linkedToItem: !!itemId, linkedToLoan: !!loanId, ...(scheduleItemId ? { scheduleItemId } : {}) }), now]),
     ]);
-  } catch (error) { createdId = await mutation.recover(error); }
+  } catch (error) {
+    if (String(error).includes('record_schedule_mismatch')) throw new HttpError(404, 'Atividade indisponível neste projeto.', 'schedule_record_not_found');
+    createdId = await mutation.recover(error);
+  }
   return { id: createdId, record: await projectedRecord(db, createdId), ...(createdId !== id ? { duplicate: true } : {}) };
 }
 
@@ -314,11 +337,11 @@ export async function uploadRecordAttachment(db: D1Database, storage: R2Bucket, 
   return { attachment: attachmentProjection(await attachmentById(db, resultId)), recordId: record.id };
 }
 
-export async function recordAttachment(db: D1Database, actor: PortalActor | null, attachmentId: unknown): Promise<Attachment> {
+export async function recordAttachment(db: D1Database, actor: PortalActor | null, attachmentId: unknown): Promise<Attachment & { scheduleItemId: string | null }> {
   actorRequired(actor);
   const attachment = await attachmentById(db, idValue(attachmentId, 'o anexo')!);
   const record = await recordById(db, attachment.record_id);
   await requireRead(db, actor, record);
   if (!Object.hasOwn(MIME_EXTENSIONS, attachment.mime)) throw new HttpError(415, 'Este tipo de anexo não está disponível.', 'unsupported_file');
-  return attachment;
+  return { ...attachment, scheduleItemId: record.schedule_item_id };
 }

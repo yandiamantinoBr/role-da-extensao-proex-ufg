@@ -293,10 +293,15 @@ async function rolesSmoke(owner, fixture) {
   assert.equal(ok(await viewer('/api/follow-up', answer), 'Verificação pelo bolsista QA').checklist.rows[0].answer, 'yes');
   assert.equal((await viewer('/api/follow-up', { action: 'task.create', title: 'Demanda recusada QA', projectId, operationKey: randomUUID() })).status, 403);
   assert.equal((await operator(`/api/follow-up?view=detail&id=${task.task.id}`)).status, 404);
-  const observation = { action: 'create', projectId, kind: 'project', title: 'Sparks QA · Registro e fotos', occurredAt: new Date().toISOString(), operationKey: randomUUID() };
+  const day = dayBrasilia(Date.now());
+  const schedule = async title => ok(await manager('/api/portal', { action: 'project.schedule.create', projectId, title, startsAt: day, endsAt: day, operationKey: randomUUID() }), 'Atividade de cronograma QA');
+  const action = await schedule('Ação no Sparks QA'), otherAction = await schedule('Outro compromisso QA');
+  const observation = { action: 'create', projectId, scheduleItemId: action.id, kind: 'project', title: 'Sparks QA · Registro e fotos', occurredAt: new Date().toISOString(), operationKey: randomUUID() };
   assert.equal((await viewer('/api/records', observation)).status, 403);
   assert.equal((await inventory('/api/records', observation)).status, 403);
   const receipt = ok(await manager('/api/records', observation), 'Registro da ação QA');
+  assert.equal(receipt.record.schedule_item_id, action.id);
+  assert.equal(ok(await manager('/api/records', observation), 'Reenvio do registro QA').id, receipt.id);
   const picture = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6qdsAAAAASUVORK5CYII=', 'base64');
   const form = new FormData();
   form.set('recordId', receipt.id);
@@ -309,11 +314,19 @@ async function rolesSmoke(owner, fixture) {
   assert.equal(downloaded.status, 200);
   assert.deepEqual(downloaded.value, picture);
   assert.match(String(downloaded.headers['cache-control']), /private.*no-store/i);
+  assert.match(String((await viewer(filePath + '?v=list',undefined,true,true)).headers['cache-control']), /private.*no-store/i, 'foto de atividade nunca recebe cache de miniatura');
+  const actionRecords = `/api/records?projectId=${projectId}&scheduleItemId=${action.id}`;
+  const authorized = ok(await viewer(actionRecords), 'Leitura dos registros da atividade QA');
+  assert.equal(authorized.scheduleItem.title, 'Ação no Sparks QA');
+  assert.deepEqual(authorized.records.map(row => row.id), [receipt.id]);
+  assert.deepEqual(ok(await viewer(`/api/records?projectId=${projectId}&scheduleItemId=${otherAction.id}`), 'Outra atividade QA').records, []);
+  assert.equal((await inventory(actionRecords)).status, 404);
   assert.equal((await operator(filePath)).status, 403);
   const member = ok(await owner('/api/portal'), 'Vínculos QA').members.find(member => member.email === 'viewer@proex.example.test' && member.project_id === projectId && !member.revoked_at);
   assert.ok(member, 'vínculo sintético encontrado');
   ok(await owner('/api/portal', { action: 'member.revoke', id: member.id }), 'Revogação QA');
   assert.equal((await viewer(filePath)).status, 403);
+  assert.equal((await viewer(actionRecords)).status, 403);
   assert.equal((await viewer(`/api/follow-up?view=detail&id=${task.task.id}`)).status, 404);
   console.log('Perfis QA: responsável, gestor, bolsista leitor, materiais, empréstimos e operação. Vínculos, checklist, foto privada e revogação aprovados.');
 }

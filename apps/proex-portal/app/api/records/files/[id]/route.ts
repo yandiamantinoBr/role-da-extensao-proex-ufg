@@ -29,7 +29,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     // própria pessoa pode reaproveitar a imagem por 10 minutos (nunca em cache compartilhado nem
     // entre sessões diferentes no mesmo navegador; o logout limpa o cache). Decisão aceita: quem perder o
     // acesso sem sair da conta ainda pode ver essa miniatura, só nesse navegador, por até 10 minutos.
-    if (attachment.mime.startsWith('image/') && new URL(request.url).searchParams.get('v') === 'list') { response.headers.set('Cache-Control', 'private, max-age=600'); response.headers.set('Vary', 'Cookie'); }
+    if (!attachment.scheduleItemId && attachment.mime.startsWith('image/') && new URL(request.url).searchParams.get('v') === 'list') { response.headers.set('Cache-Control', 'private, max-age=600'); response.headers.set('Vary', 'Cookie'); }
     return response;
   } catch (error) { return privateResponse(publicError(error)); }
 }
