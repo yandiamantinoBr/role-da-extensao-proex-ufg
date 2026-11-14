@@ -76,7 +76,7 @@ export default function ExportFormats({ onExport, disabled, label = 'Baixar reco
       await onExport(format);
       if (announce) toast.success(`Arquivo ${FORMAT_META[format].extension} pronto para baixar.`);
     } catch (cause) {
-      if (cause instanceof ExportHandledError) return;
+      if (cause instanceof ExportHandledError || (cause instanceof Error && cause.name === 'AbortError')) return;
       setError(cause instanceof Error ? cause.message : 'Não foi possível preparar o arquivo. Tente novamente.');
       if (announce) toast.error('O arquivo não foi preparado. Confira o aviso junto às exportações.');
     } finally { setBusy(null); }

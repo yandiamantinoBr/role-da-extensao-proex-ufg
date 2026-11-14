@@ -9,13 +9,14 @@ const root=path.resolve(import.meta.dirname,'..'),tick=()=>new Promise(resolve=>
 const text=node=>typeof node==='string'||typeof node==='number'?String(node):Array.isArray(node)?node.map(text).join(''):node&&typeof node==='object'?text(node.props?.children):'';
 const node=(patch={})=>({id:'unit-a',parentId:null,name:'Câmara de Extensão e Cultura',acronym:'CEC',kind:'council',relation:'root',position:0,status:'active',...patch});
 const response=(patch={})=>({viewerId:'user-a',scope:{organizationId:'org-a',organizationName:'Organização A',projectId:'project-a',projectName:'Projeto A',canManage:true},version:2,canApplyTemplate:false,source:{label:'Organograma público',revision:'5.0.3',issuedOn:'2026-07-28',referenceUrl:'https://official.example/organograma.pdf',adapted:false},nodes:[node(),node({id:'unit-b',parentId:'unit-a',name:'Pró-reitoria de Extensão',acronym:'PROEX',kind:'office',relation:'governance'})],teams:[{id:'team-a',name:'Comunicação',status:'active'}],links:[{nodeId:'unit-b',teamId:'team-a'}],asOf:'2026-11-05T12:00:00Z',...patch});
+const artifactMime={pdf:'application/pdf',docx:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',xlsx:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'};
 
 /** Actual component + validators, keyed React lifetimes, effects and HTTP handlers.
- * Only framework widgets and serializers are substituted; delayed requests ignore
+ * Only framework widgets and transport are substituted; delayed requests ignore
  * abort on purpose so that epoch/identity guards must also work. */
 function harness(initial={}){
  let props={userId:'user-a',organizationId:'org-a',projectId:'project-a',...initial},tree,frame,gate=null;
- const instances=new Map(),effects=[],layouts=[],modules=new Map(),requests=[],downloads=[],artifacts=[],toasts=[],selected=[],focus=[];
+ const instances=new Map(),effects=[],layouts=[],modules=new Map(),requests=[],downloads=[],toasts=[],selected=[],focus=[];
  const same=(a,b)=>a&&b&&a.length===b.length&&a.every((value,i)=>Object.is(value,b[i]));
  const hooks={
   useState(initial){const slot=frame.index++,owner=frame;if(!(slot in owner.slots))owner.slots[slot]=typeof initial==='function'?initial():initial;return[owner.slots[slot],next=>{owner.slots[slot]=typeof next==='function'?next(owner.slots[slot]):next;}];},
@@ -34,15 +35,15 @@ function harness(initial={}){
    if(name.endsWith('.module.css'))return{default:new Proxy({},{get:(_target,key)=>String(key)})};
    if(name==='./date-field')return{default:values=>jsx('input',{...values,type:'text','data-pt-br-date':true})};
    if(name==='./export-formats')return{default:values=>jsx('div',{children:['pdf','xlsx','docx'].map(format=>jsx('button',{type:'button',disabled:values.disabled,'aria-label':`${values.label} em ${format.toUpperCase()}`,onClick:()=>values.onExport(format),children:format.toUpperCase()}))})};
-   if(name==='./document-export')return{documentExport:async(format,title,columns,rows,display,info,presentation)=>{artifacts.push({format,title,columns,rows,info,presentation});if(gate)await gate;return new Blob([JSON.stringify({columns,rows,info})]);}};
    if(name==='./report-export')return{download:(name,blob)=>downloads.push({name,blob})};
    let target=name.startsWith('@/')?path.join(root,name.slice(2)):path.resolve(path.dirname(file),name);target=[target,target+'.ts',target+'.tsx'].find(existsSync);assert.ok(target,name);return load(target);
   }
   class FormData{constructor(form){this.values=new Map(Object.entries(form.values));}get(key){return this.values.get(key)??null;}}
   const code=ts.transpileModule(readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText;
-  vm.runInNewContext(code,{module:mod,exports:mod.exports,require,Date,Intl,JSON,URL,URLSearchParams,Error,DOMException,AbortController,Blob,crypto,FormData,fetch:(url,init)=>new Promise(resolve=>requests.push({url,init,resolve}))});return mod.exports;
+  vm.runInNewContext(code,{module:mod,exports:mod.exports,require,Date,Intl,JSON,URL,URLSearchParams,Error,DOMException,AbortController,Blob,TextEncoder,crypto,FormData,fetch:(url,init)=>new Promise(resolve=>requests.push({url,init,resolve}))});return mod.exports;
  }
  const Component=load(path.join(root,'components/portal/institutional-structure-panel.tsx')).default;
+ const {structureDigest,structureFingerprint}=load(path.join(root,'lib/institutional-structure/snapshot.ts'));
  function expand(value,address,used){
   if(!value||typeof value!=='object')return value;
   if(Array.isArray(value))return value.map((entry,index)=>expand(entry,address+'/'+index,used));
@@ -54,7 +55,7 @@ function harness(initial={}){
   return{...value,props:{...value.props,children:expand(value.props?.children,address+'/children',used)}};
  }
  function nodes(){const result=[];function walk(value){if(!value||typeof value!=='object')return;if(Array.isArray(value))return value.forEach(walk);result.push(value);walk(value.props?.children);}walk(tree);return result;}
- const h={requests,downloads,artifacts,toasts,selected,focus,
+ const h={requests,downloads,toasts,selected,focus,
   render(patch={}){props={...props,...patch,onSelectTeam:id=>selected.push(id)};const used=new Set();tree=expand(jsx(Component,props),'root',used);for(const[key,owner]of instances)if(!used.has(key)){owner.slots.forEach(slot=>slot?.cleanup?.());instances.delete(key);}for(const entry of nodes())if(entry.props.ref&&!entry.props.ref.current)entry.props.ref.current={focus:()=>focus.push('focus'),scrollIntoView:()=>focus.push('scroll')};layouts.splice(0).forEach(fn=>fn());effects.splice(0).forEach(fn=>fn());},
   find(type,predicate=()=>true){return nodes().find(entry=>entry.type===type&&predicate(entry));},all(type){return nodes().filter(entry=>entry.type===type);},body(){return text(tree);},
   button(label){const result=h.find('button',entry=>entry.props['aria-label']===label||text(entry)===label);assert.ok(result,label);return result;},
@@ -63,6 +64,12 @@ function harness(initial={}){
   submit(title,values){const form=h.find('form',entry=>text(entry).includes(title));assert.ok(form,title);form.props.onSubmit({preventDefault(){},currentTarget:{values}});h.render();},
   last(){return requests.at(-1);},reply(request,value,status=200){request.resolve({ok:status>=200&&status<300,status,json:typeof value==='function'?value:async()=>value});},
   async ready(value=response(),status=200){h.reply(h.last(),value,status);await tick();h.render();},
+  async exportReady(value=response(),format='pdf',overrides={}){
+   const request=h.last(),snapshot=await structureDigest(structureFingerprint(value));
+   request.resolve({ok:true,status:200,headers:new Headers({'Content-Type':artifactMime[format],'X-Proex-Structure-Snapshot':snapshot,...overrides}),
+    blob:async()=>{if(gate)await gate;return new Blob(['arquivo sintético'],{type:artifactMime[format]});}});
+   await tick();h.render();
+  },
   async open(value=response()){h.toggle(true);await h.ready(value);},
   blockArtifact(){let release;gate=new Promise(resolve=>release=()=>{gate=null;resolve();});return release;},
   dispose(){for(const owner of instances.values())owner.slots.forEach(slot=>slot?.cleanup?.());instances.clear();},
@@ -135,6 +142,25 @@ test('icon actions carry full titles, archive is the quiet action, and new units
  }finally{h.dispose();}
 });
 
+test('creating a unit from its parent opens the shared editor in context and prefills the subordinate relationship',async()=>{
+ const h=harness();
+ try{
+  await h.open();h.click('Adicionar unidade vinculada a Pró-reitoria de Extensão');
+  const selected=h.find('select',entry=>entry.props['aria-label']==='Unidade superior');
+  assert.equal(selected.props.value,'unit-b');
+  assert.equal(h.find('select',entry=>entry.props['aria-label']==='Relação institucional').props.value,'subordination');
+  const parent=h.all('li').find(entry=>entry.props.className==='node'&&text(entry.props.children[0]).includes('Pró-reitoria de Extensão'));
+  assert.equal(parent.props.children[1]?.type,'section');
+  h.submit('Salvar unidade',{name:'Nova coordenação de teste',kind:'coordination',acronym:'',position:'0'});
+  const saved=JSON.parse(h.last().init.body);
+  assert.equal(saved.parentId,'unit-b');assert.equal(saved.relation,'subordination');assert.equal(saved.expectedVersion,2);
+  await h.ready({viewerId:'user-a',organizationId:'org-a',entityId:'unit-new',version:3,duplicate:false});
+  await h.ready(response({version:3,nodes:[...response().nodes,node({id:'unit-new',parentId:'unit-b',relation:'subordination',name:'Nova coordenação de teste',kind:'coordination'})]}));
+  const created=h.all('details').find(entry=>entry.props.className==='children'&&text(entry.props.children[0]).includes('de Pró-reitoria de Extensão'));
+  assert.equal(created.props.open,true);assert.match(text(created),/Nova coordenação de teste/);
+ }finally{h.dispose();}
+});
+
 test('an existing unit is edited inside its own tree item; Escape cancels like Cancelar, but never during a save',async()=>{
  const name='Pró-reitoria de Extensão';
  const h=harness();try{await h.open();
@@ -181,14 +207,34 @@ test('a hung old POST cannot block a new scope or unlock its pending mutation wh
  const h=harness();try{await h.open();h.click('Nova unidade');h.submit('Salvar unidade',{name:'Unidade A',acronym:'',kind:'unit',position:'0'});const old=h.last();h.render({userId:'user-b',organizationId:'org-b',projectId:'project-b'});assert.equal(old.init.signal.aborted,true);const dataB=response({viewerId:'user-b',scope:{organizationId:'org-b',organizationName:'Organização B',projectId:'project-b',projectName:'Projeto B',canManage:true},nodes:[node({name:'Unidade B'})],links:[]});await h.open(dataB);h.click('Nova unidade');h.submit('Salvar unidade',{name:'Unidade B nova',acronym:'',kind:'unit',position:'0'});const newer=h.last();assert.notEqual(newer,old);h.reply(old,{viewerId:'user-a',organizationId:'org-a',entityId:'unit-new-a',version:3,duplicate:false});await tick();h.render();assert.equal(h.find('fieldset',entry=>text(entry).includes('Nome da unidade')).props.disabled,true);assert.equal(h.requests.at(-1),newer);h.reply(newer,{error:'Conflito',code:'structure_version'},409);await tick();h.render();assert.equal(h.find('fieldset',entry=>text(entry).includes('Nome da unidade')).props.disabled,false);assert.doesNotMatch(h.body(),/Unidade A/);}finally{h.dispose();}
 });
 
-test('PDF DOCX XLSX use two fresh identical queries, allowlisted rows and no download before the last read',async()=>{
- for(const format of ['PDF','DOCX','XLSX']){const h=harness();try{await h.open();const query=h.last().url,pending=h.click('Baixar estrutura institucional em '+format);assert.equal(h.last().url,query);assert.equal(h.downloads.length,0);await h.ready();assert.equal(h.artifacts.length,1);assert.equal(h.requests.length,3);assert.equal(h.last().url,query);assert.equal(h.downloads.length,0);await h.ready(response({asOf:'2026-11-05T12:00:01Z'}));await pending;assert.equal(h.downloads.length,1);assert.equal(h.downloads[0].name,'proex-estrutura-institucional.'+format.toLowerCase());const body=await h.downloads[0].blob.text();assert.match(body,/Versão do cadastro/);assert.match(body,/Referência oficial aplicada sem alterações/);assert.doesNotMatch(body,/user-a|org-a|project-a|unit-a|unit-b|team-a|https:|referenceUrl/);}finally{h.dispose();}}
+test('all three formats use the server and wait for the last read of the same scope before breaking out the file',async()=>{
+ for(const format of ['pdf','docx','xlsx']){const h=harness();try{
+  await h.open();const query=h.last().url,pending=h.click('Baixar estrutura institucional em '+format.toUpperCase());
+  assert.equal(h.last().url,query.replace('/institutional-structure?','/institutional-structure/export?')+'&format='+format);
+  assert.equal(h.last().init.headers['X-Proex-Viewer'],'user-a');assert.equal(h.last().init.cache,'no-store');assert.equal(h.last().init.redirect,'error');
+  assert.equal(h.downloads.length,0);await h.exportReady(response(),format);
+  assert.equal(h.requests.length,3);assert.equal(h.last().url,query);assert.equal(h.downloads.length,0);
+  await h.ready(response({asOf:'2026-11-05T12:00:01Z'}));await pending;
+  assert.equal(h.downloads.length,1);assert.equal(h.downloads[0].name,'proex-estrutura-institucional.'+format);assert.equal(h.downloads[0].blob.type,artifactMime[format]);
+ }finally{h.dispose();}}
 });
 
 test('final revocation, modified structure, unexpected viewer and a failed last read all withhold the artifact',async()=>{
- for(const mode of ['revoked','changed','viewer','network']){const h=harness();try{await h.open();const pending=h.click('Baixar estrutura institucional em PDF'),caught=pending.catch(error=>error);await h.ready();const last=mode==='revoked'?{error:'Acesso revogado'}:mode==='changed'?response({version:3}):mode==='viewer'?response({viewerId:'user-b'}):async()=>{throw new SyntaxError('Incomplete');};await h.ready(last,mode==='revoked'?403:200);const error=await caught;assert.ok(error instanceof Error);assert.equal(h.downloads.length,0);if(mode==='revoked'||mode==='viewer')assert.doesNotMatch(h.body(),/Câmara de Extensão e Cultura/);}finally{h.dispose();}}
+ for(const mode of ['revoked','changed','viewer','network']){const h=harness();try{await h.open();const pending=h.click('Baixar estrutura institucional em PDF'),caught=pending.catch(error=>error);await h.exportReady();const last=mode==='revoked'?{error:'Acesso revogado'}:mode==='changed'?response({version:3}):mode==='viewer'?response({viewerId:'user-b'}):async()=>{throw new SyntaxError('Incomplete');};await h.ready(last,mode==='revoked'?403:200);const error=await caught;assert.ok(error instanceof Error);assert.equal(h.downloads.length,0);if(mode==='revoked'||mode==='viewer')assert.doesNotMatch(h.body(),/Câmara de Extensão e Cultura/);}finally{h.dispose();}}
 });
 
-test('context change, close and unmount during artifact creation abort export even when the renderer finishes later',async()=>{
- for(const mode of ['context','close','unmount']){const h=harness();try{await h.open();const release=h.blockArtifact(),pending=h.click('Baixar estrutura institucional em PDF'),caught=pending.catch(error=>error);await h.ready();assert.equal(h.artifacts.length,1);const count=h.requests.length;if(mode==='context')h.render({projectId:'project-b'});else if(mode==='close')h.toggle(false);else h.dispose();release();assert.equal((await caught).name,'AbortError');assert.equal(h.requests.length,count);assert.equal(h.downloads.length,0);}finally{h.dispose();}}
+test('context change, close and unmount during file transfer abort export even when the server responds later',async()=>{
+ for(const mode of ['context','close','unmount']){const h=harness();try{await h.open();const release=h.blockArtifact(),pending=h.click('Baixar estrutura institucional em PDF'),caught=pending.catch(error=>error);await h.exportReady();const count=h.requests.length;if(mode==='context')h.render({projectId:'project-b'});else if(mode==='close')h.toggle(false);else h.dispose();release();assert.equal((await caught).name,'AbortError');assert.equal(h.requests.length,count);assert.equal(h.downloads.length,0);}finally{h.dispose();}}
+});
+
+test('an old route or malformed file gives an actionable message without downloading HTML or exposing a browser error', async () => {
+ for (const mode of ['missing','html','snapshot']) {
+  const h=harness();
+  try {
+   await h.open();const pending=h.click('Baixar estrutura institucional em PDF').catch(error=>error);
+   if(mode==='missing')await h.ready({},404);
+   else await h.exportReady(response(),'pdf',mode==='html'?{'Content-Type':'text/html'}:{'X-Proex-Structure-Snapshot':''});
+   assert.match((await pending).message,/Atualize/);assert.equal(h.requests.length,2);assert.equal(h.downloads.length,0);
+  } finally {h.dispose();}
+ }
 });
