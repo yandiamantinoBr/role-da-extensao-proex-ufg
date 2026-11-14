@@ -13,7 +13,7 @@
 .filterRow { display: grid; grid-template-columns: 64px minmax(0, 1fr); align-items: start; gap: 8px; }
 .filterLabel { padding-top: 10px; color: var(--text-secondary); font-size: 12.5px; font-weight: 600; }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
-.chips button { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 6px 14px; border: 1px solid var(--control-border); border-radius: 999px; background: var(--surface); color: var(--text-secondary); font-size: 13px; font-weight: 600; cursor: pointer; }
+.chips button { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 6px 14px; border: 1px solid var(--control-border); border-radius: 999px; background: var(--surface); color: var(--text-secondary); font-size: 13px; font-weight: 600; cursor: pointer; }
 .chips button[aria-pressed=true] { color: #fff; background: var(--purple); border-color: var(--purple); }
 :global(html[data-theme=dark]) .chips button[aria-pressed=true] { color: var(--purple); background: #dfbaf4; border-color: #dfbaf4; }
 .chips button:hover { border-color: var(--brand-ink); }
@@ -111,7 +111,7 @@ a.row:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
   .filters { padding: 12px; }
   .filterRow { grid-template-columns: minmax(0, 1fr); gap: 4px; }
   .filterLabel { padding-top: 0; }
-  .chips button { min-height: 38px; padding: 5px 12px; }
+  .chips button { min-height: 44px; padding: 5px 12px; }
   .selects, .dates { grid-template-columns: minmax(0, 1fr); }
   .row { grid-template-columns: minmax(0, 1fr) auto; padding: 10px; }
   .row > .icon { display: none; }
@@ -165,3 +165,9 @@ a.row:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 :global(html[data-theme=dark]) .revision[data-status=corrected], :global(html[data-theme=dark]) .revision[data-status=undone] { color: #ffc983; background: #3b2a16; border-color: #7a5424; }
 :global(html[data-theme=dark]) .revision[data-status=correction] { color: #e3cdf3; background: #33243f; border-color: #6a4c80; }
 .revisionNote { color: var(--text-secondary); font-size: 12.5px; line-height: 1.4; overflow-wrap: anywhere; }
+/* Histórico de um assunto só (atalho "Ver histórico" das fichas): o assunto fica no topo dos filtros, com a saída ao lado. */
+.subject { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; min-width: 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-soft); }
+.subject > span { display: grid; gap: 2px; min-width: 0; }
+.subject small { color: var(--text-secondary); font-size: 12.5px; font-weight: 600; }
+.subject strong { color: var(--ink); font-size: 15px; line-height: 1.35; overflow-wrap: break-word; }
+.subject > button { min-height: 44px; }
