@@ -55,7 +55,12 @@ export async function prepareStockContext(db:D1Database,actor:PortalActor,item:S
   if(!await one(db,`SELECT 1 allowed WHERE ${sql}`,values))invalid('Escolha outro projeto ativo da mesma organização ao qual você tenha acesso.','stock_context_counterparty',403);
   assertions.push(db.prepare(`SELECT CASE WHEN ${sql} THEN 1 ELSE json_extract('[]','stock_context_counterparty') END`).bind(...values));
  }
- return {assertions,insert:(movementId:string,now:string)=>db.prepare('INSERT INTO stock_movement_contexts(movement_id,project_id,counterparty_unit_id,counterparty_project_id,process_reference,beneficiary_reference,occurred_at,date_source,material_name,measurement_unit,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)').bind(movementId,item.project_id,input.counterpartyType==='unit'?input.counterpartyId:null,input.counterpartyType==='project'?input.counterpartyId:null,input.processReference,input.beneficiaryReference,input.occurredAt,input.dateSource,item.name,item.unit,now)};
+ // The validation is about the project and the counterpart; several materials of the same project share it.
+ const insertFor=(material:StockItem)=>(movementId:string,now:string)=>{
+  if(material.project_id!==item.project_id)invalid('O material é de outro projeto.','stock_context_scope',409);
+  return db.prepare('INSERT INTO stock_movement_contexts(movement_id,project_id,counterparty_unit_id,counterparty_project_id,process_reference,beneficiary_reference,occurred_at,date_source,material_name,measurement_unit,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)').bind(movementId,material.project_id,input.counterpartyType==='unit'?input.counterpartyId:null,input.counterpartyType==='project'?input.counterpartyId:null,input.processReference,input.beneficiaryReference,input.occurredAt,input.dateSource,material.name,material.unit,now);
+ };
+ return {assertions,insert:insertFor(item),insertFor};
 }
 function contextStatement(db:D1Database,actor:PortalActor,movementIds:string[]) {
  const permission=projectAuthoritySql(actor,['inventory.read','reports.read'],'other.id');

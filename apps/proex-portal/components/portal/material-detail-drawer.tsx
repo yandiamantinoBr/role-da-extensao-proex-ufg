@@ -21,7 +21,7 @@ type DeletedPhoto = { attachmentId: string; name: string; reason: string; create
 type Photo = { id: string; name: string; url: string; caption?: string; title: string };
 type PhotoChange = { id: string; attachmentId: string; previousAttachmentId: string | null; url: string | null; previousUrl: string | null; deleted?: boolean; previousDeleted?: boolean; actorName: string; createdAt: string };
 type Detail = { item: Material; category: Category | null; categories: Category[]; movements: Movement[]; photos: Photo[]; primaryPhotoId?: string | null; primaryPhotoPinned?: boolean; photoHistory?: PhotoChange[]; deletedPhotos?: DeletedPhoto[]; ownership?: Ownership; availability: { available: number; equipmentState: string | null }; permissions: { canManage: boolean; canUploadPhotos: boolean }; versions: {id:string;version:number;created_at:string}[]; historyTruncated: boolean; nextCursor: string | null };
-export type MaterialDrawerMode = 'view' | 'edit' | 'move';
+export type MaterialDrawerMode = 'view' | 'edit' | 'move' | 'history';
 type Props = { onUnitOpen?:(unitId:string)=>void; onDestinationOpen?:(destinationId:string)=>void; itemId: string | null; initialMode?: MaterialDrawerMode; onClose: () => void; onChanged?: () => void | Promise<void>; renderWorkContext?: (context: {itemId: string; projectId: string}) => ReactNode };
 type Upload = { file: File; previewUrl: string; warnings: string[]; recordId: string | null; recordKey: string; uploadKey: string; primaryKey: string; attachmentId: string | null; occurredAt: string; title: string };
 const kindNames: Record<string, string> = { gift: 'Brindes', equipment: 'Equipamentos', distribution: 'Distribuição institucional', consumption: 'Consumo interno' };
@@ -71,11 +71,11 @@ function MaterialDialog({ itemId, initialMode = 'view', onClose, onChanged, rend
   const opener = useRef<HTMLElement | null>(null), mounted = useRef(false);
   const cameraInput = useRef<HTMLInputElement>(null), galleryInput = useRef<HTMLInputElement>(null);
   const requestNumber = useRef(0), movementKey = useRef<string | null>(null), categoryKey = useRef<string | null>(null), photoSelection = useRef(0);
-  const [loaded, setData] = useState<Detail | null>(null), [tab, setTab] = useState<'summary' | 'move' | 'asset' | 'history' | 'photos' | 'work'>(initialMode === 'move' ? 'move' : 'summary');
+  const [loaded, setData] = useState<Detail | null>(null), [tab, setTab] = useState<'summary' | 'move' | 'asset' | 'history' | 'photos' | 'work'>(initialMode === 'move' ? 'move' : initialMode === 'history' ? 'history' : 'summary');
   const data = loaded?.item.id === itemId ? loaded : null;
   const [editing, setEditing] = useState(initialMode === 'edit');
   const editTrigger = useRef<HTMLButtonElement>(null), editHeading = useRef<HTMLHeadingElement>(null), moveHeading = useRef<HTMLHeadingElement>(null);
-  const pendingFocus = useRef<MaterialDrawerMode | null>(initialMode === 'view' ? null : initialMode);
+  const pendingFocus = useRef<MaterialDrawerMode | null>(initialMode === 'view' || initialMode === 'history' ? null : initialMode);
   const visibleTab = data && !data.permissions.canManage && (tab === 'move' || tab === 'asset') ? 'summary' : tab;
   const editOpen = Boolean(data?.permissions.canManage && editing && visibleTab === 'summary');
   const [error, setError] = useState(''), [notice, setNotice] = useState(''), [busy, setBusy] = useState(false), [loadingMore, setLoadingMore] = useState(false);
