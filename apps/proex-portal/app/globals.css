@@ -233,3 +233,5 @@ html[data-theme=dark] .p-button-subtle,html[data-theme=dark] .p-icon-button{back
 .p-records-ask>svg{margin-top:2px;flex-shrink:0}
 .p-records-ask>div{flex:1 1 240px}
 .p-notice.p-records-ask>.p-button{margin:0 0 0 auto;background:var(--button-subtle-bg);border:1px solid var(--button-subtle-border);min-height:44px}
+/* Atalho "Ver histórico" nos cartões de empréstimo e de dinâmica (R1): abre Registros já filtrado. */
+.p-history-link{display:inline-flex;align-items:center;gap:4px;min-height:44px;font-size:13px;font-weight:600}

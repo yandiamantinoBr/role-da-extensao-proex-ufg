@@ -13,7 +13,7 @@ function privateResponse(response: Response): Response {
 export async function GET(request: Request): Promise<Response> {
   try {
     const db = database(), actor = await getActor(db, await getPortalUser()), url = new URL(request.url);
-    const input = Object.fromEntries(['from', 'to', 'projectId', 'types', 'person'].map(key => [key, url.searchParams.get(key)]));
+    const input = Object.fromEntries(['from', 'to', 'projectId', 'types', 'person', 'itemId', 'loanId', 'taskId', 'campaignId'].map(key => [key, url.searchParams.get(key)]));
     return privateResponse(Response.json(await activityFeed(db, actor, input)));
   } catch (error) { return privateResponse(publicError(error)); }
 }

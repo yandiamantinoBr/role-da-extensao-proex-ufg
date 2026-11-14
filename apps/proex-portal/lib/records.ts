@@ -98,9 +98,11 @@ async function projectedRecord(db: D1Database, id: string): Promise<Row> {
   return (await projectRecords(db, [record]))[0];
 }
 
-export async function listRecords(db: D1Database, actor: PortalActor | null, filters: { projectId?: unknown; from?: unknown; to?: unknown; limit?: unknown } = {}): Promise<{ records: Row[]; limit: number; truncated: boolean }> {
+export async function listRecords(db: D1Database, actor: PortalActor | null, filters: { projectId?: unknown; from?: unknown; to?: unknown; limit?: unknown; itemId?: unknown; loanId?: unknown } = {}): Promise<{ records: Row[]; limit: number; truncated: boolean }> {
   actorRequired(actor);
   const projectId = idValue(filters.projectId, 'o projeto', true);
+  // Recorte por assunto (Histórico): só estreita o que a regra de leitura abaixo já permite.
+  const itemId = idValue(filters.itemId, 'o material', true), loanId = idValue(filters.loanId, 'o empréstimo', true);
   const from = isoValue(filters.from, 'O início do período', true), to = isoValue(filters.to, 'O fim do período', true);
   if (from && to && to <= from) throw new HttpError(400, 'O fim do período deve ocorrer depois do início.', 'invalid_interval');
   const rawLimit = filters.limit === undefined || filters.limit === null || filters.limit === '' ? 100 : Number(filters.limit);
@@ -118,6 +120,8 @@ export async function listRecords(db: D1Database, actor: PortalActor | null, fil
   params.push(actor.userId);
   conditions += ' AND (r.item_id IS NULL OR i.project_id=r.project_id) AND (r.loan_id IS NULL OR l.project_id=r.project_id)';
   if (projectId) { conditions += ' AND r.project_id=?'; params.push(projectId); }
+  if (itemId) { conditions += ' AND r.item_id=?'; params.push(itemId); }
+  if (loanId) { conditions += ' AND r.loan_id=?'; params.push(loanId); }
   if (from) { conditions += ' AND r.occurred_at>=?'; params.push(from); }
   if (to) { conditions += ' AND r.occurred_at<?'; params.push(to); }
   params.push(limit + 1);

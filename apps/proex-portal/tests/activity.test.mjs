@@ -301,3 +301,81 @@ test('corrected and undone stock movements carry their status, mirrors stay hidd
   const inventory = await activityFeed(db, actors.inventoryA, range, NOW);
   assert.ok(!inventory.events.some(event => event.id === 'materials:mov-b1'), 'revisão de outro projeto não aparece');
 });
+
+test('history of one subject narrows each source and never widens what the person may read (R1)', async () => {
+  const { db, actors } = setup();
+  db.native.prepare("UPDATE followup_tasks SET item_id='item-a' WHERE id='task-a'").run();
+  db.native.prepare("INSERT INTO campaigns(id,project_id,name,location,starts_at,ends_at,status,rules_text,created_at) VALUES('camp-a','project-a','Roleta sintética','',?,?,'active','Regras',?)").run(at('2026-11-09'), at('2026-11-12'), at('2026-11-01'));
+  db.native.prepare("INSERT INTO followup_tasks(id,organization_id,project_id,campaign_id,title,body,priority,status,created_by,created_at,updated_at) VALUES('task-camp','org_proex','project-a','camp-a','Montar a roleta','CORPO-PRIVADO','medium','open',?,?,?)").run(actors.manager.userId, at('2026-11-09'), at('2026-11-09'));
+  const ids = feed => feed.events.map(event => event.id).sort();
+
+  // Material: movimentos e demanda ligada a ele; nada de outro material, agenda ou indicadores gerais.
+  const item = await activityFeed(db, actors.manager, { ...range, itemId: 'item-a' }, NOW);
+  assert.deepEqual(item.subject, { kind: 'item', id: 'item-a', name: 'Planner' });
+  assert.deepEqual(ids(item).filter(id => !id.startsWith('demands:task-a:completed')), ['demands:task-a:opened', 'materials:mov-a1', 'materials:mov-a2']);
+  assert.equal(item.events.filter(event => event.action === 'Demanda concluída').length, 1);
+  assert.deepEqual([item.loansNow, item.team, item.deadlines, item.summary.stock], [null, null, null, []]);
+  assert.ok(item.summary.days.every(day => day.materials + day.demandsOpened + day.demandsCompleted + day.agenda === 0), 'sem totais de gráfico no histórico de um assunto');
+  // Sem período informado, cobre os 92 dias permitidos.
+  const wide = await activityFeed(db, actors.manager, { itemId: 'item-a' }, NOW);
+  assert.deepEqual([wide.range.from, wide.range.to, wide.range.days.length], ['2026-08-11', '2026-11-10', 92]);
+  assert.ok(!wide.events.some(event => event.id === 'materials:mov-old'), 'junho fica fora dos 92 dias');
+
+  // Equipamento: os empréstimos dele. Empréstimo: só ele. Demanda: só ela. Dinâmica: só as demandas dela.
+  const asset = await activityFeed(db, actors.manager, { ...range, itemId: 'asset-a' }, NOW);
+  assert.deepEqual(ids(asset), ['loans:loan-a:created', 'loans:loan-a:out']);
+  const loan = await activityFeed(db, actors.manager, { ...range, loanId: 'loan-future' }, NOW);
+  assert.deepEqual([loan.subject.name, ids(loan)], ['Caixa de som', ['loans:loan-future:created', 'loans:loan-future:out']]);
+  const task = await activityFeed(db, actors.manager, { ...range, taskId: 'task-b' }, NOW);
+  assert.deepEqual([task.subject.name, ids(task)], ['Revisar canecas', ['demands:task-b:opened']]);
+  const campaign = await activityFeed(db, actors.manager, { ...range, campaignId: 'camp-a' }, NOW);
+  assert.deepEqual([campaign.subject.name, ids(campaign)], ['Roleta sintética', ['demands:task-camp:opened']]);
+  for (const feed of [item, asset, loan, task, campaign]) for (const secret of ['Pessoa Privada', 'contato@privado.invalid', 'NOTA-PRIVADA', 'CORPO-PRIVADO']) assert.ok(!JSON.stringify(feed).includes(secret), secret);
+
+  // Leitor de outro projeto, com o identificador forçado: nada, nem o nome. Igual a um identificador que não existe.
+  for (const subject of [{ itemId: 'item-a' }, { loanId: 'loan-a' }, { taskId: 'task-a' }, { campaignId: 'camp-a' }, { itemId: 'nao-existe' }]) {
+    const forced = await activityFeed(db, actors.viewerB, { ...range, ...subject }, NOW);
+    assert.deepEqual([forced.events.length, forced.subject.name, forced.people], [0, '', []], JSON.stringify(subject));
+  }
+  // Bolsista de estoque: vê o material do projeto dele, mas não o empréstimo (regra de Empréstimos).
+  const own = await activityFeed(db, actors.inventoryA, { ...range, itemId: 'item-a' }, NOW);
+  assert.ok(own.events.length >= 3 && own.events.every(event => event.projectId === 'project-a'));
+  const denied = await activityFeed(db, actors.inventoryA, { ...range, loanId: 'loan-a' }, NOW);
+  assert.deepEqual([denied.events.length, denied.subject.name], [0, '']);
+  // Bolsista de empréstimos: o nome do material segue a regra de Materiais (só equipamento), como no módulo.
+  const loansA = person(db, 'loans', { project: 'project-a', name: 'Bolsista de empréstimos' });
+  assert.equal((await activityFeed(db, loansA, { ...range, itemId: 'item-a' }, NOW)).subject.name, '', 'brinde não é equipamento');
+  const equipment = await activityFeed(db, loansA, { ...range, itemId: 'asset-a' }, NOW);
+  assert.deepEqual([equipment.subject.name, ids(equipment)], ['Projetor', ['loans:loan-a:created', 'loans:loan-a:out']]);
+  // Outra organização e acesso revogado.
+  db.native.prepare("INSERT INTO organizations(id,name,slug,status,version,created_at,updated_at) VALUES('org-other','Outra organização','outra','active',1,?,?)").run(at('2026-10-01'), at('2026-10-01'));
+  for (const outsider of [person(db, 'manager', { organization: 'org-other', name: 'Gestora de fora' }), person(db, 'manager', { organization: 'org_proex', name: 'Ex-gestora', revoked: true })]) {
+    const feed = await activityFeed(db, outsider, { ...range, itemId: 'item-a' }, NOW);
+    assert.deepEqual([feed.events.length, feed.subject.name], [0, '']);
+  }
+  // A gestora pode ler os dois projetos, mas o título segue o recorte explícito dos eventos.
+  for (const [subjectFilter, expected] of [
+    [{ itemId: 'item-a' }, 'Planner'],
+    [{ loanId: 'loan-a' }, 'Projetor'],
+    [{ taskId: 'task-a' }, 'Contar planners'],
+    [{ campaignId: 'camp-a' }, 'Roleta sintética'],
+  ]) {
+    for (const scope of [{ projectId: 'project-b' }, { organizationId: 'org-other' }]) {
+      const filtered = await activityFeed(db, actors.manager, { ...range, ...subjectFilter, ...scope }, NOW);
+      assert.deepEqual([filtered.events.length, filtered.subject.name], [0, ''], JSON.stringify({ ...subjectFilter, ...scope }));
+    }
+    const permitted = await activityFeed(db, actors.manager, { ...range, ...subjectFilter, projectId: 'project-a', organizationId: 'org_proex' }, NOW);
+    assert.equal(permitted.subject.name, expected);
+  }
+  globalThis.__activityDb = db;
+  globalThis.__activityUser = { userId: actors.manager.userId, email: actors.manager.email, displayName: actors.manager.displayName };
+  const wrongProject = await route.GET(new Request('https://portal.test/api/activity?projectId=project-b&itemId=item-a'));
+  assert.equal(wrongProject.status, 200);
+  assert.equal((await wrongProject.json()).subject.name, '');
+
+  // Entradas inválidas e a rota.
+  await assert.rejects(activityFeed(db, actors.manager, { ...range, itemId: 'item-a', loanId: 'loan-a' }, NOW), error => error.status === 400 && error.code === 'invalid_activity_subject');
+  await assert.rejects(activityFeed(db, actors.manager, { ...range, taskId: "x' OR 1=1" }, NOW), error => error.status === 400);
+  globalThis.__activityDb = db; globalThis.__activityUser = null;
+  assert.equal((await route.GET(new Request('https://portal.test/api/activity?itemId=item-a'))).status, 401);
+});

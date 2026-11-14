@@ -18,6 +18,8 @@ export type ResponsibilityManagerProps = {
   onChanged?: () => void;
   /** Leva à página Equipes com o formulário de nova equipe aberto. */
   onCreateTeam?: () => void;
+  /** Título próprio (ficha do projeto: "Quem cuida do estoque deste projeto"). Sem ele, vale o título pelo tipo de registro. */
+  heading?: string;
 };
 type Draft = {owner: string; userIds: string[]; teamIds: string[]};
 type Load = {key: string; catalog?: ResponsibilityCatalog; record?: Responsibility; error?: string};
@@ -29,7 +31,7 @@ function sameTarget(row: Responsibility, projectId: string, area: WorkArea, item
   return row.project_id === projectId && row.area === area && row.item_id === itemId && row.loan_id === loanId && row.campaign_id === campaignId;
 }
 
-export default function ResponsibilityManager({userId, projectId, area, itemId = null, loanId = null, campaignId = null, onChanged, onCreateTeam}: ResponsibilityManagerProps) {
+export default function ResponsibilityManager({userId, projectId, area, itemId = null, loanId = null, campaignId = null, onChanged, onCreateTeam, heading}: ResponsibilityManagerProps) {
   const owner = JSON.stringify([userId, projectId, area, itemId, loanId, campaignId]);
   const [revision, setRevision] = useState(0), [stored, setStored] = useState<Load | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null), [feedback, setFeedback] = useState<Feedback | null>(null);
@@ -105,7 +107,7 @@ export default function ResponsibilityManager({userId, projectId, area, itemId =
   function save(event: FormEvent<HTMLFormElement>) {event.preventDefault(); void submit();}
   const confirming = confirmOwner === owner && record?.status === 'active';
   return <section className={styles.panel} aria-label="Responsáveis pelo registro" aria-busy={!loaded || busy}>
-    <header className={styles.heading}><div><h3><UserRoundCheck size={18} aria-hidden="true"/> Responsáveis pelo {names[area]}</h3><p>Selecione pessoas ou equipes explicitamente. Criar o registro ou ter um cargo não atribui responsabilidade.</p></div><button type="button" className="p-button" disabled={busy} onClick={refresh}><RefreshCw size={16} aria-hidden="true"/>Recarregar designação</button></header>
+    <header className={styles.heading}><div><h3><UserRoundCheck size={18} aria-hidden="true"/> {heading ?? `Responsáveis pelo ${names[area]}`}</h3><p>Selecione pessoas ou equipes explicitamente. Criar o registro ou ter um cargo não atribui responsabilidade.</p></div><button type="button" className="p-button" disabled={busy} onClick={refresh}><RefreshCw size={16} aria-hidden="true"/>Recarregar designação</button></header>
     {!loaded && <p role="status" className={styles.notice}>Consultando designação e pessoas elegíveis…</p>}
     {loaded?.error && <p role="alert" className={`${styles.notice} ${styles.error}`}>{loaded.error}</p>}
     {notice && <p role={notice.error ? 'alert' : 'status'} className={`${styles.notice} ${notice.error ? styles.error : ''}`}>{notice.message}</p>}
