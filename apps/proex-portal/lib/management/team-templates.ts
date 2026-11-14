@@ -61,7 +61,7 @@ export const TEAM_TEMPLATES: readonly TeamTemplate[] = [
     id: 'bolsistas', name: 'Bolsistas de projeto', purpose: 'Estudantes que executam as ações de um projeto de extensão.',
     roles: [
       { name: 'Orientação do projeto', responsibilities: ['Distribuir demandas e acompanhar prazos', 'Validar relatórios dos bolsistas'], access: 'manager' },
-      { name: 'Bolsista', responsibilities: ['Executar as demandas atribuídas', 'Registrar atividades e evidências'], access: 'operator' },
+      { name: 'Bolsista', responsibilities: ['Atualizar demandas atribuídas com autorização da gestão', 'Reunir fotos e evidências para o registro da coordenação'], access: 'viewer' },
     ],
     routines: ['Plano de atividades no início do edital', 'Registro semanal das atividades', 'Relatório parcial e final'],
   },

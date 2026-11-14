@@ -19,6 +19,42 @@ function fixture(t){const native=new DatabaseSync(':memory:');native.exec('PRAGM
 const create=(extra={})=>({organizationId:'org-a',projectId:'project-a',title:'Recontagem de bottons',body:'Conferir a quantidade física antes de movimentar estoque.',priority:'high',dueAt:'2026-11-05',userIds:['worker-a'],operationKey:crypto.randomUUID(),...extra});
 const act=(f,actor,action,input)=>followupAction(f.db,actor,action,{action,...input});
 
+test('reference options match live module access and hidden links persist on an unrelated edit',async t=>{
+ const f=fixture(t),manager=await f.actor('manager-a'),inventory=await f.actor('worker-a'),viewer=await f.actor('viewer-a');
+ f.insert('items',{id:'asset-a',project_id:'project-a',name:'Projetor de teste',category:'equipment',unit:'un',stock:1,created_at:f.now});
+ f.insert('loans',{id:'private-loan',project_id:'project-a',item_id:'asset-a',action_name:'Reserva de teste',borrower_name:'Pessoa fictícia',starts_at:Date.now()+3600000,ends_at:Date.now()+7200000,created_by:'manager-a',created_at:f.now});
+ const [managerCatalog,inventoryCatalog,viewerCatalog]=await Promise.all([manager,inventory,viewer].map(actor=>followupCatalog(f.db,actor,{projectId:'project-a'})));
+ assert.equal(managerCatalog.loans[0].id,'private-loan');
+ assert.equal(managerCatalog.canCloseCampaign,true);
+ assert.deepEqual(inventoryCatalog.items.map(item=>Object.keys(item).sort()),[['id','name','unit'],['id','name','unit']]);
+ assert.deepEqual(inventoryCatalog.loans,[]);
+ assert.deepEqual(inventoryCatalog.campaigns,[]);
+ assert.deepEqual(viewerCatalog.people,[]);
+ assert.deepEqual(viewerCatalog.teams,[]);
+ assert.deepEqual(viewerCatalog.items,[]);
+ for(const loanId of ['private-loan','invented-loan']) {
+  await assert.rejects(act(f,inventory,'task.create',create({loanId})),{status:403,code:'followup_reference'});
+ }
+ assert.equal(f.native.prepare('SELECT COUNT(*) n FROM followup_tasks').get().n,0);
+ const allowed=await act(f,manager,'task.create',create({loanId:'private-loan',campaignId:'campaign-a'}));
+ const edit=await act(f,inventory,'task.update',{id:allowed.task.id,title:'Nova descrição da tarefa',expectedVersion:1,operationKey:crypto.randomUUID()});
+ assert.equal(edit.task.title,'Nova descrição da tarefa');
+ assert.equal(f.native.prepare('SELECT loan_id FROM followup_tasks WHERE id=?').get(edit.task.id).loan_id,'private-loan');
+ await assert.rejects(act(f,inventory,'task.update',{id:allowed.task.id,loanId:null,expectedVersion:2,operationKey:crypto.randomUUID()}),{status:403,code:'followup_reference'});
+ await assert.rejects(act(f,inventory,'checklist.activity.create',{projectId:'project-a',title:'Vínculo proibido',campaignId:'campaign-a',rows:[{label:'Confirmação?'}],operationKey:crypto.randomUUID()}),{status:403,code:'followup_reference'});
+ f.db.before=()=>f.native.prepare("UPDATE members SET role='inventory' WHERE user_id='manager-a'").run();
+ await assert.rejects(act(f,manager,'task.create',create({loanId:'private-loan'})),{status:403,code:'followup_reference'});
+ assert.equal(f.native.prepare('SELECT COUNT(*) n FROM followup_tasks').get().n,1);
+ f.insert('members',{id:'organization-loans',user_id:'worker-a',email:'worker-a@example.invalid',role:'loans',project_id:null,organization_id:'org-a',created_at:f.now});
+ const mixed=await f.actor('worker-a');
+ assert.equal((await followupCatalog(f.db,mixed,{projectId:'project-a'})).loans[0].id,'private-loan');
+ f.db.before=()=>f.native.prepare("UPDATE members SET revoked_at=? WHERE id='organization-loans'").run(f.now);
+ const after=await followupCatalog(f.db,mixed,{projectId:'project-a'});
+ assert.equal(after.canEdit,true);
+ assert.deepEqual(after.loans,[]);
+ assert.ok(after.items.length);
+});
+
 test('tasks, rosters and org-wide scope follow live memberships; forged arrays and teams never grant access',async t=>{
  const f=fixture(t),admin=await f.actor('admin-a'),worker=await f.actor('worker-a'),viewer=await f.actor('viewer-a'),other=await f.actor('worker-b');
  const created=await act(f,admin,'task.create',create());assert.equal(created.task.priority,'high');assert.equal(created.task.canEdit,true);

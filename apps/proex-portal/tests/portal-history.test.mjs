@@ -17,7 +17,7 @@ function load(file, dependencies = {}) {
 const { readPortalLocation, commitPortalLocation, deniedPortalModule } = load('portal-history', { './work-navigation': load('work-navigation'), './my-work/contracts': load('my-work/contracts') });
 const origin = 'https://example.test';
 const scope = {
-    modules: ['overview', 'projects', 'materials', 'calendar', 'reports', 'demands', 'my-work'],
+    modules: ['overview', 'projects', 'materials', 'calendar', 'reports', 'demands', 'my-work', 'records'],
     units: ['unit-a', 'unit-b', '__unassigned__'],
     areas: ['culture', '__none__'],
     canSelectProject: (id, unit, area) => id === 'project-a' && (!unit || unit === 'unit-a') && (!area || area === 'culture'),
@@ -25,6 +25,18 @@ const scope = {
     canSelectOrganization: (organization, project) => organization === 'org-a' && (!project || project === 'project-a'),
 };
 const read = (query, current = scope) => readPortalLocation(new URLSearchParams(query), current);
+
+test('a project documents link survives reload and selecting another module clears its view',()=>{
+    const href=origin+'/?module=records&view=documents&project=project-a';
+    const documents=read(new URL(href).search);
+    assert.equal(documents.recordsView,'documents');
+    assert.equal(documents.project,'project-a');
+    let location;
+    const history={state:null,pushState(_state,_title,url){location=url.href;},replaceState(_state,_title,url){location=url.href;}};
+    commitPortalLocation(history,href,{...documents,tab:'projects'},true);
+    assert.equal(new URL(location).searchParams.get('view'),null);
+    assert.equal(read('module=records&view=unknown').recordsView,undefined);
+});
 
 test('module navigation retains each view, replaces filter edits, and restores both directions', () => {
     const entries = [origin + '/'];

@@ -9,3 +9,8 @@
 .stepActions{grid-column:1/-1}
 .saved,.stepActions>span{font-size:12px}
 @media(max-width:360px){.step>fieldset{grid-template-columns:minmax(0,1fr)}.noteDisclosure:not([open])+.stepActions{grid-column:1;grid-row:auto}}
+.model{align-items:end;justify-content:start}
+.model>label{flex:1;min-width:min(100%,14rem)}
+.model :global(.p-button){justify-content:center}
+.creator label:has(>input[type=checkbox]){display:flex;align-items:center}
+.creator input[type=checkbox]{width:auto;min-height:0;padding:0;flex:none;accent-color:var(--brand-ink)}

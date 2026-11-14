@@ -232,6 +232,7 @@ export async function projectDetail(db:D1Database,actor:PortalActor|null,id:stri
   const authority=projectAuthoritySql(actor,[],'p.id');
   const project=await one(db,`SELECT p.*,t.key type_key,t.label type_label,u.name unit_name,u.acronym unit_acronym FROM projects p LEFT JOIN project_types t ON t.id=p.type_id LEFT JOIN organizational_units u ON u.id=p.unit_id WHERE p.id=? AND ${authority.sql}`,[id,...authority.values]);if(!project)throw new HttpError(404,'Projeto não encontrado.');
   const canEdit=permitted(actor,'campaigns.manage',id)||permitted(actor,'projects.manage',null),inventory=permitted(actor,'inventory.read',id),loans=permitted(actor,'loans.read',id),reports=permitted(actor,'reports.read',id),campaigns=canEdit||permitted(actor,'participation.operate',id);
+  const recordsRead=inventory||loans||reports||canEdit;
   const visible=accessibleProjects(actor),visibility=visible===null?'1=1':visible.length?`p.id IN (${visible.map(()=>'?').join(',')})`:'1=0';
   const availabilityNow=Date.now(),inventoryAuthority=projectAuthoritySql(actor,['inventory.read'],'i.project_id');
   const linksAuthority = projectAuthoritySql(actor, [], 'pl.project_id');
@@ -251,7 +252,7 @@ export async function projectDetail(db:D1Database,actor:PortalActor|null,id:stri
       [availabilityNow,availabilityNow,id,...inventoryAuthority.values]):Promise.resolve(null),
     campaigns?all(db,'SELECT id,name,location,starts_at,ends_at,status FROM campaigns WHERE project_id=? ORDER BY starts_at DESC',[id]):Promise.resolve(null),
     loans?all(db,`SELECT l.id,l.item_id,i.name item_name,l.action_name,l.starts_at,l.ends_at,l.status FROM loans l JOIN items i ON i.id=l.item_id AND i.project_id=l.project_id WHERE l.project_id=? ORDER BY l.starts_at DESC LIMIT 100`,[id]):Promise.resolve(null),
-    inventory||loans||reports||canEdit?listRecords(db,actor,{projectId:id,limit:100}):Promise.resolve({records:[]}),
+    recordsRead?listRecords(db,actor,{projectId:id,limit:100}):Promise.resolve({records:null}),
     permitted(actor,'loans.manage',id)?all(db,`SELECT i.id,i.name,i.category FROM items i WHERE i.project_id=? AND i.category='equipment' AND i.condition='active' AND ${projectAuthoritySql(actor,['loans.manage'],'i.project_id').sql} ORDER BY i.name,i.id`,[id,...projectAuthoritySql(actor,['loans.manage'],'i.project_id').values]):Promise.resolve(null),
   ]);
   const projectedCalls=calls.map((call):Row=>{let linked:string[]=[];try{linked=JSON.parse(call.linked_ids_json||'[]');}catch{}const safe={...call};delete safe.linked_ids_json;return{...safe,linkedProjectIds:linked.filter(project=>canSee(actor,project)),canEdit:[call.project_id,...linked].every(project=>permitted(actor,'campaigns.manage',project)||permitted(actor,'projects.manage',null))};});

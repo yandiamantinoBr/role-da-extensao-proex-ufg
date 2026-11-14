@@ -1,6 +1,6 @@
 # Continuar Portal PROEX
 
-Comece pela [Retomada de 13/11](RETOMADA-13NOV-PORTAL-PROEX.md) para conferir a base publicada, a ordem das PRs pendentes, o padrão visual e o roteiro de convite. As seções abaixo registram entregas anteriores.
+Comece pela [Retomada de 13/11](RETOMADA-13NOV-PORTAL-PROEX.md) para conferir a base publicada, a ordem das PRs pendentes, o padrão visual e o roteiro de convite. Para a rodada de 14/11, consulte [Ações de projeto e acessos](../apps/proex-portal/docs/QA-ACOES-E-PERFIS.md).
 
 ## Gestão da organização · guia, riscos, equipes-modelo e painel · 2026-11-09
 

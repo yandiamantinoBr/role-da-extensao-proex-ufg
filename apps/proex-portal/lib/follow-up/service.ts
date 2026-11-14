@@ -1,4 +1,4 @@
-import { type PortalActor } from '../access';
+import { projectAuthoritySql, type PortalActor } from '../access';
 import { all, one, uid, iso, type Row } from '../database';
 import { HttpError } from '../errors';
 import { prepareMutation } from '../mutations';
@@ -67,29 +67,58 @@ async function orgPeople(db:D1Database,orgId:string){return all(db,`SELECT DISTI
 export async function followupCatalog(db:D1Database,actor:PortalActor|null,input:Record<string,unknown>={}){actorRequired(actor);const organizations=await listOrganizations(db,actor),projects=await all(db,`SELECT p.id,p.name,p.organization_id,${authority('?','p.organization_id','p.id',true)} can_edit FROM projects p WHERE ${authority('?','p.organization_id','p.id')} ORDER BY p.name,p.id`,[actor.userId,actor.userId]);
  if(!input.organizationId&&!input.projectId)return{organizations,projects:projects.map(p=>({...p,canEdit:Boolean(p.can_edit)})),people:[],teamPeople:[],teams:[],items:[],campaigns:[],loans:[],canEdit:false,canManageTeams:false};
  const scope=await resolveScope(db,input);await requireScope(db,actor,scope);let canEdit=true,canManageTeams=true;try{await requireScope(db,actor,scope,true);}catch{canEdit=false;}try{await requireScope(db,actor,{...scope,projectId:null},true);}catch{canManageTeams=false;}
+ if(!canEdit)return{organizations,projects:projects.map(p=>({id:p.id,name:p.name,organization_id:p.organization_id,canEdit:Boolean(p.can_edit)})),people:[],teamPeople:[],teams:[],items:[],campaigns:[],loans:[],canEdit,canManageTeams};
  const availablePeople=await people(db,scope),teamPeople=canManageTeams&&!scope.projectId?await orgPeople(db,scope.organizationId):[],eligible=new Set((teamPeople.length?teamPeople:availablePeople).map(p=>p.userId));
  const teams=await all(db,`SELECT team.id,team.name,team.status,team.version FROM followup_teams team WHERE team.organization_id=? AND(team.status='active' OR ?) AND ${authority('?','team.organization_id',scope.projectId?'scope.project_id':'NULL')}`.replace('FROM followup_teams team',scope.projectId?'FROM(SELECT ? project_id) scope JOIN followup_teams team':'FROM followup_teams team'),[...(scope.projectId?[scope.projectId]:[]),scope.organizationId,canManageTeams?1:0,actor.userId]);
  const projected=[];for(const team of teams){const roster=await all(db,`SELECT m.user_id userId,COALESCE(NULLIF(p.display_name,''),'Integrante') name FROM followup_team_members m JOIN followup_teams team ON team.id=m.team_id JOIN(SELECT ? project_id) scope LEFT JOIN profiles p ON p.user_id=m.user_id WHERE m.team_id=? AND m.removed_at IS NULL AND ${authority('?','team.organization_id','scope.project_id')} ORDER BY name,m.user_id`,[scope.projectId,team.id,actor.userId]);projected.push({...team,members:roster.filter(r=>eligible.has(r.userId))});}
- const items=scope.projectId?await all(db,`SELECT i.id,i.name,i.unit,i.stock FROM items i JOIN projects p ON p.id=i.project_id WHERE i.project_id=? AND ${authority('?','p.organization_id','p.id')} ORDER BY i.name,i.id`,[scope.projectId,actor.userId]):[];
- const campaigns=scope.projectId?await all(db,`SELECT c.id,c.name,c.status,c.version FROM campaigns c JOIN projects p ON p.id=c.project_id WHERE c.project_id=? AND ${authority('?','p.organization_id','p.id')} ORDER BY c.starts_at DESC,c.id`,[scope.projectId,actor.userId]):[];
- const loans=scope.projectId?await all(db,`SELECT l.id,l.action_name FROM loans l JOIN projects p ON p.id=l.project_id WHERE l.project_id=? AND ${authority('?','p.organization_id','p.id')} ORDER BY l.starts_at DESC,l.id LIMIT 100`,[scope.projectId,actor.userId]):[];
- // No catalog is returned after a revoked read, including its earlier roster queries.
- await requireScope(db,actor,scope);
- return{organizations,projects:projects.map(p=>({id:p.id,name:p.name,organization_id:p.organization_id,canEdit:Boolean(p.can_edit)})),people:availablePeople,teamPeople,teams:projected,canEdit,canManageTeams,items,campaigns,loans};
+ const references=await catalogReferences(db,actor,scope);
+ return{organizations,projects:projects.map(p=>({id:p.id,name:p.name,organization_id:p.organization_id,canEdit:Boolean(p.can_edit)})),people:availablePeople,teamPeople,teams:projected,canEdit,canManageTeams,...references};
+}
+async function catalogReferences(db:D1Database,actor:PortalActor,scope:Scope){
+ if(!scope.projectId){await requireScope(db,actor,scope,true);return{items:[],campaigns:[],loans:[],canCloseCampaign:false};}
+ const inventory=projectAuthoritySql(actor,taskReferenceRules.itemId.capabilities,'i.project_id');
+ const dynamics=projectAuthoritySql(actor,taskReferenceRules.campaignId.capabilities,'c.project_id');
+ const lending=projectAuthoritySql(actor,taskReferenceRules.loanId.capabilities,'l.project_id');
+ const campaignManagement=projectAuthoritySql(actor,['campaigns.manage'],'p.id');
+ // Return options and capabilities from the same authoritative snapshot.
+ const [items,campaigns,loans,management]=await atomic(db,actor,scope,[
+  db.prepare(`SELECT i.id,i.name,i.unit FROM items i WHERE i.project_id=? AND ${inventory.sql} ORDER BY i.name,i.id`).bind(scope.projectId,...inventory.values),
+  db.prepare(`SELECT c.id,c.name,c.status,c.version FROM campaigns c WHERE c.project_id=? AND ${dynamics.sql} ORDER BY c.starts_at DESC,c.id`).bind(scope.projectId,...dynamics.values),
+  db.prepare(`SELECT l.id,l.action_name FROM loans l WHERE l.project_id=? AND ${lending.sql} ORDER BY l.starts_at DESC,l.id LIMIT 100`).bind(scope.projectId,...lending.values),
+  db.prepare(`SELECT 1 FROM projects p WHERE p.id=? AND ${campaignManagement.sql}`).bind(scope.projectId,...campaignManagement.values),
+ ]);
+ return{items:items.results??[],campaigns:campaigns.results??[],loans:loans.results??[],canCloseCampaign:Boolean(campaigns.results?.length&&management.results?.length)};
 }
 function assignmentStatements(db:D1Database,taskId:string,users:string[],teams:string[],at:string){return[db.prepare('UPDATE followup_assignees SET removed_at=? WHERE task_id=? AND removed_at IS NULL').bind(at,taskId),...users.map(user=>db.prepare('INSERT INTO followup_assignees(id,task_id,user_id,created_at) VALUES(?,?,?,?)').bind(uid(),taskId,user,at)),...teams.map(team=>db.prepare('INSERT INTO followup_assignees(id,task_id,team_id,created_at) VALUES(?,?,?,?)').bind(uid(),taskId,team,at))];}
 async function assignmentValidation(db:D1Database,scope:Scope,users:string[],teams:string[]){const eligible=new Set((await people(db,scope)).map(p=>p.userId));if(users.some(user=>!eligible.has(user)))fail('Os responsáveis precisam ter acesso ativo a este contexto.','followup_assignee');for(const team of teams)if(!await one(db,"SELECT id FROM followup_teams WHERE id=? AND organization_id=? AND status='active'",[team,scope.organizationId]))fail('Escolha equipes ativas da mesma organização.','followup_assignee');}
 function assignmentAssertions(db:D1Database,scope:Scope,users:string[],teams:string[]){return[...users.map(user=>db.prepare(`SELECT CASE WHEN EXISTS(SELECT 1 FROM portal_users u WHERE u.user_id=? AND ${activeAccount('u')} AND ${authority('u.user_id','scope.organization_id','scope.project_id')}) THEN 1 ELSE json_extract('[]','followup_assignee_changed') END FROM(SELECT ? organization_id,? project_id) scope`).bind(user,scope.organizationId,scope.projectId)),...teams.map(team=>db.prepare("SELECT CASE WHEN EXISTS(SELECT 1 FROM followup_teams WHERE id=? AND organization_id=? AND status='active') THEN 1 ELSE json_extract('[]','followup_assignee_changed') END").bind(team,scope.organizationId))];}
 function insertTask(db:D1Database,actor:PortalActor,scope:Scope,taskId:string,input:Row,at:string){return db.prepare('INSERT INTO followup_tasks(id,organization_id,project_id,title,body,priority,importance,status,due_at,campaign_id,item_id,loan_id,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(taskId,scope.organizationId,scope.projectId,input.title,input.body,input.priority,input.importance??null,input.status,input.dueAt,input.campaignId,input.itemId,input.loanId,actor.userId,at,at);}
 function fields(input:Record<string,unknown>,old?:Row){return{title:text(input.title??old?.title,160),body:text(input.body??old?.body,4000,true),priority:choices(input.priority??old?.priority??'medium',TASK_PRIORITIES),importance:input.importance===undefined?old?.importance??null:input.importance===null||input.importance===''?null:choices(input.importance,TASK_PRIORITIES),status:choices(input.status??old?.status??'open',TASK_STATES),dueAt:date(input.dueAt===undefined?old?.due_at:input.dueAt),campaignId:id(input.campaignId===undefined?old?.campaign_id:input.campaignId,true),itemId:id(input.itemId===undefined?old?.item_id:input.itemId,true),loanId:id(input.loanId===undefined?old?.loan_id:input.loanId,true)};}
+const taskReferenceRules = {
+ campaignId:{table:'campaigns',column:'campaign_id',capabilities:['campaigns.manage','participation.operate']},
+ itemId:{table:'items',column:'item_id',capabilities:['inventory.read']},
+ loanId:{table:'loans',column:'loan_id',capabilities:['loans.read']},
+} as const;
+function referenceAssertion(db:D1Database,actor:PortalActor,scope:Scope,key:keyof typeof taskReferenceRules,target:string|null,previous:string|null=null){
+ const rule=taskReferenceRules[key],guard=projectAuthoritySql(actor,rule.capabilities,'resource.project_id');
+ return db.prepare(`SELECT CASE WHEN EXISTS(SELECT 1 FROM ${rule.table} resource WHERE resource.id=? AND resource.project_id=? AND ${guard.sql}) THEN 1 ELSE json_extract('[]','followup_reference_unavailable') END`)
+  .bind(target??previous,scope.projectId,...guard.values);
+}
+function referenceError(error:unknown){
+ if(String(error).includes('followup_reference_unavailable'))fail('Não foi possível vincular o item neste projeto com seu acesso atual.','followup_reference',403);
+}
 async function taskAction(db:D1Database,actor:PortalActor,action:string,input:Record<string,unknown>){onlyKeys(input,['action','id','organizationId','projectId','title','body','priority','importance','status','dueAt','campaignId','itemId','loanId','userIds','teamIds','expectedVersion','operationKey']);const old=action==='task.update'?await taskRow(db,actor,id(input.id)!,true):null,scope=old?scopeOf(old):await resolveScope(db,input);await requireScope(db,actor,scope,true);
  if(old&&(input.projectId!==undefined&&input.projectId!==old.project_id||input.organizationId!==undefined&&input.organizationId!==old.organization_id))fail('O contexto de uma demanda é permanente. Crie outra demanda.');
  const mutation=await prepareMutation(db,actor.userId,action,input);if(mutation.existingId)return{...await followupDetail(db,actor,mutation.existingId),duplicate:true};
  const value=fields(input,old??undefined),users=input.userIds===undefined&&old?(await all(db,'SELECT user_id FROM followup_assignees WHERE task_id=? AND user_id IS NOT NULL AND removed_at IS NULL',[old.id])).map(r=>r.user_id):ids(input.userIds),teams=input.teamIds===undefined&&old?(await all(db,'SELECT team_id FROM followup_assignees WHERE task_id=? AND team_id IS NOT NULL AND removed_at IS NULL',[old.id])).map(r=>r.team_id):ids(input.teamIds,8);
  await assignmentValidation(db,scope,users,teams);const taskId=old?.id??uid(),at=iso(),expected=old?version(input.expectedVersion):0;
  if(old&&value.status==='completed'&&await one(db,"SELECT id FROM followup_checklists WHERE task_id=? AND status='open'",[taskId]))fail('Conclua a conferência dos itens antes de encerrar esta demanda.','followup_checklist_pending');
- const statements=[...(old?[cas(db,'followup_tasks',taskId,expected)]:[]),...assignmentAssertions(db,scope,users,teams),mutation.claimStatement(taskId),old?db.prepare('UPDATE followup_tasks SET title=?,body=?,priority=?,importance=?,status=?,due_at=?,campaign_id=?,item_id=?,loan_id=?,version=version+1,updated_at=? WHERE id=?').bind(value.title,value.body,value.priority,value.importance,value.status,value.dueAt,value.campaignId,value.itemId,value.loanId,at,taskId):insertTask(db,actor,scope,taskId,value,at),...assignmentStatements(db,taskId,users,teams,at),recipientLimit(db,taskId),history(db,actor,taskId,at),audit(db,actor,scope,action,taskId,{version:old?expected+1:1},at),fanout(db,taskId,`task:${old?expected+1:1}`,at)];
- try{await atomic(db,actor,scope,statements);}catch(error){if(error instanceof HttpError)throw error;const recovered=await mutation.recover(error);return{...await followupDetail(db,actor,recovered),duplicate:true};}return followupDetail(db,actor,taskId);
+ const references=(Object.keys(taskReferenceRules) as (keyof typeof taskReferenceRules)[]).flatMap(key=>{
+  const previous=old?.[taskReferenceRules[key].column]??null;
+  return value[key]===previous?[]:[referenceAssertion(db,actor,scope,key,value[key],previous)];
+ });
+ const statements=[...(old?[cas(db,'followup_tasks',taskId,expected)]:[]),...references,...assignmentAssertions(db,scope,users,teams),mutation.claimStatement(taskId),old?db.prepare('UPDATE followup_tasks SET title=?,body=?,priority=?,importance=?,status=?,due_at=?,campaign_id=?,item_id=?,loan_id=?,version=version+1,updated_at=? WHERE id=?').bind(value.title,value.body,value.priority,value.importance,value.status,value.dueAt,value.campaignId,value.itemId,value.loanId,at,taskId):insertTask(db,actor,scope,taskId,value,at),...assignmentStatements(db,taskId,users,teams,at),recipientLimit(db,taskId),history(db,actor,taskId,at),audit(db,actor,scope,action,taskId,{version:old?expected+1:1},at),fanout(db,taskId,`task:${old?expected+1:1}`,at)];
+ try{await atomic(db,actor,scope,statements);}catch(error){if(error instanceof HttpError)throw error;referenceError(error);const recovered=await mutation.recover(error);return{...await followupDetail(db,actor,recovered),duplicate:true};}return followupDetail(db,actor,taskId);
 }
 
 export function saveTaskTriage(db:D1Database,actor:PortalActor,scope:Scope,taskId:string,
@@ -147,18 +176,20 @@ async function checklistAction(db:D1Database,actor:PortalActor,action:string,inp
   const scope=await resolveScope(db,input);if(!scope.projectId)fail('A conferência deve pertencer a um projeto.');await requireScope(db,actor,scope,true);
   const mutation=await prepareMutation(db,actor.userId,action,input);if(mutation.existingId)return{...await followupDetail(db,actor,mutation.existingId),duplicate:true};
   const rows=checklistInputs(input.rows),campaignId=id(input.campaignId,true),title=text(input.title??'Conferência pós-evento',160),users=ids(input.userIds),teams=ids(input.teamIds,8);await assignmentValidation(db,scope,users,teams);
-  for(const row of rows)if(!await one(db,'SELECT id FROM items WHERE id=? AND project_id=?',[row.itemId,scope.projectId]))fail('Cada material deve pertencer ao projeto da conferência.','followup_reference');
-  const campaign=campaignId?await one(db,'SELECT id,status,version FROM campaigns WHERE id=? AND project_id=?',[campaignId,scope.projectId]):null;if(campaignId&&!campaign)fail('Escolha um evento do mesmo projeto.','followup_reference');
+  const dynamics=projectAuthoritySql(actor,taskReferenceRules.campaignId.capabilities,'c.project_id');
+  const campaign=campaignId?await one(db,`SELECT c.id,c.status,c.version FROM campaigns c WHERE c.id=? AND c.project_id=? AND ${dynamics.sql}`,[campaignId,scope.projectId,...dynamics.values]):null;if(campaignId&&!campaign)fail('Não foi possível vincular o evento neste projeto com seu acesso atual.','followup_reference',403);
   if(input.closeCampaign!==undefined&&typeof input.closeCampaign!=='boolean')fail('Confirme o encerramento do evento.');if(input.closeCampaign&&!campaign)fail('Escolha o evento que será encerrado.');
   const taskId=uid(),checklistId=uid(),at=iso(),task=fields({title,body:'Conferir materiais após a atividade. Contagens e avarias não alteram o estoque. Divergências precisam de revisão e movimentação normal autorizada.',priority:'medium',campaignId});
   const statements=[...assignmentAssertions(db,scope,users,teams),mutation.claimStatement(taskId),insertTask(db,actor,scope,taskId,task,at),...assignmentStatements(db,taskId,users,teams,at),db.prepare('INSERT INTO followup_checklists(id,organization_id,project_id,campaign_id,task_id,title,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)').bind(checklistId,scope.organizationId,scope.projectId,campaignId,taskId,title,actor.userId,at,at),...rows.map(row=>db.prepare('INSERT INTO followup_checklist_items(id,checklist_id,item_id,size,expected) VALUES(?,?,?,?,?)').bind(uid(),checklistId,row.itemId,row.size,row.expected)),recipientLimit(db,taskId),history(db,actor,taskId,at),audit(db,actor,scope,action,checklistId,{rows:rows.length,campaignId,stockChanged:false},at),fanout(db,taskId,'task:1',at)];
+  statements.unshift(...[...new Set(rows.map(row=>row.itemId))].map(itemId=>referenceAssertion(db,actor,scope,'itemId',itemId)));
+  if(campaignId)statements.unshift(referenceAssertion(db,actor,scope,'campaignId',campaignId));
   try{
    if(input.closeCampaign&&campaign!.status!=='closed'){
     const expected=version(input.expectedCampaignVersion);if(campaign!.version!==expected)fail('O evento mudou. Atualize antes de encerrar.','followup_conflict',409);
     const combined=new Proxy(db,{get(target,key){if(key==='batch')return async(domain:D1PreparedStatement[])=>{const result=await target.batch([scopeStatement(db,actor,scope,true),db.prepare("SELECT CASE WHEN EXISTS(SELECT 1 FROM campaigns WHERE id=? AND project_id=? AND version=? AND status<>'closed') THEN 1 ELSE json_extract('[]','followup_version_changed') END").bind(campaignId,scope.projectId,expected),...domain,...statements]);return result.slice(2,2+domain.length);};const value=Reflect.get(target,key);return typeof value==='function'?value.bind(target):value;}});
     await campaignAction(combined,actor,'campaign.status',{id:campaignId,status:'closed'});
    }else await atomic(db,actor,scope,statements);
-  }catch(error){if(error instanceof HttpError)throw error;if(String(error).includes('followup_version_changed'))fail('O evento mudou. Atualize a página.','followup_conflict',409);const recovered=await mutation.recover(error);return{...await followupDetail(db,actor,recovered),duplicate:true};}
+  }catch(error){if(error instanceof HttpError)throw error;referenceError(error);if(String(error).includes('followup_version_changed'))fail('O evento mudou. Atualize a página.','followup_conflict',409);const recovered=await mutation.recover(error);return{...await followupDetail(db,actor,recovered),duplicate:true};}
   return followupDetail(db,actor,taskId);
  }
  if(!['checklist.count','checklist.complete'].includes(action))fail('Operação de conferência inválida.');
@@ -199,10 +230,10 @@ async function activityChecklistAction(db:D1Database,actor:PortalActor,action:st
   if(!Array.isArray(input.rows)||!input.rows.length||input.rows.length>100)fail('Inclua de 1 a 100 verificações.');
   const rows=input.rows.map(row=>{if(!row||typeof row!=='object'||Array.isArray(row))fail('Confira as verificações da atividade.');onlyKeys(row,['label']);return{label:text(row.label,160)};});
   const title=text(input.title??'Checklist de atividade',160),campaignId=id(input.campaignId,true),users=ids(input.userIds),teams=ids(input.teamIds,8);await assignmentValidation(db,scope,users,teams);
-  if(campaignId&&!await one(db,'SELECT id FROM campaigns WHERE id=? AND project_id=?',[campaignId,scope.projectId]))fail('Escolha uma atividade do mesmo projeto.','followup_reference');
   const taskId=uid(),checklistId=uid(),at=iso(),task=fields({title,body:input.body??'Registre as verificações da atividade. Este checklist não movimenta materiais ou estoque.',priority:input.priority??'medium',dueAt:input.dueAt??null,campaignId});
   const statements=[...assignmentAssertions(db,scope,users,teams),mutation.claimStatement(taskId),insertTask(db,actor,scope,taskId,task,at),...assignmentStatements(db,taskId,users,teams,at),db.prepare("INSERT INTO followup_checklists(id,organization_id,project_id,campaign_id,task_id,title,kind,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,'activity',?,?,?)").bind(checklistId,scope.organizationId,scope.projectId,campaignId,taskId,title,actor.userId,at,at),...rows.map((row,position)=>db.prepare('INSERT INTO followup_checklist_steps(id,checklist_id,position,label,updated_at) VALUES(?,?,?,?,?)').bind(uid(),checklistId,position,row.label,at)),recipientLimit(db,taskId),activityHistory(db,actor,taskId,at,{kind:'created',checklistId,steps:rows.length}),audit(db,actor,scope,action,checklistId,{steps:rows.length,campaignId,stockChanged:false},at),fanout(db,taskId,'task:1',at)];
-  try{await atomic(db,actor,scope,statements);}catch(error){if(error instanceof HttpError)throw error;const recovered=await mutation.recover(error);return{...await followupDetail(db,actor,recovered),duplicate:true};}
+  if(campaignId)statements.unshift(referenceAssertion(db,actor,scope,'campaignId',campaignId));
+  try{await atomic(db,actor,scope,statements);}catch(error){if(error instanceof HttpError)throw error;referenceError(error);const recovered=await mutation.recover(error);return{...await followupDetail(db,actor,recovered),duplicate:true};}
   return followupDetail(db,actor,taskId);
  }
  if(!['checklist.activity.answer','checklist.activity.complete'].includes(action))fail('Escolha uma operação válida de checklist de atividade.');

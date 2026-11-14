@@ -31,6 +31,14 @@ type Props = {
     mutate: (action: string, payload: Record<string, unknown>) => Promise<Row>;
 };
 const roles: Record<string, string> = { owner: 'Responsável institucional', manager: 'Gestor de projeto', operator: 'Operador de evento', inventory: 'Responsável por materiais', loans: 'Responsável por empréstimos', viewer: 'Leitor de relatórios' };
+const roleHelp: Record<string, string> = {
+    manager: 'Edita a ficha do projeto, organiza demandas, gerencia dinâmicas, materiais e empréstimos e convida pessoas para o projeto.',
+    operator: 'Atende e entrega brindes nas dinâmicas do projeto. Também pode criar e editar demandas do projeto.',
+    inventory: 'Consulta e movimenta materiais do projeto. Também pode criar demandas e registrar consumo.',
+    loans: 'Consulta, reserva e registra retiradas e devoluções dos empréstimos do projeto. Também pode criar demandas.',
+    viewer: 'Consulta relatórios, registros de atividades e demandas. Para atualizar uma demanda atribuída, precisa de autorização da gestão na própria demanda.',
+    volunteer: 'Atende e entrega brindes em uma ação específica, até a data e hora definidas no convite.',
+};
 const projectIdOf = (row: Row) => row.project_id ?? row.projectId ?? null;
 // Brasília (UTC-3, sem horário de verão): o campo de data e hora trabalha em hora local.
 const BRASILIA_MS = 3 * 60 * 60 * 1000;
@@ -208,9 +216,12 @@ export default function TeamPanel(props: Props) {
     // older person's project/role draft into the official prefill flow.
     const draft = useFormDraft(inviteRef, official ? null : `team:invite:${props.selectedProjectId || 'unscoped'}`);
     const allowed = props.projects.filter(p => props.globalAdmin || props.canProject(p.id, 'access.invite'));
-    const defaultInviteProject = official ? '' : allowed.some(project => project.id === props.selectedProjectId) ? props.selectedProjectId : allowed.length === 1 ? String(allowed[0].id) : '';
+    const requestedProject = props.selectedProjectId ?? '';
+    const defaultInviteProject = official ? '' : allowed.some(project => project.id === requestedProject) ? requestedProject : allowed.length === 1 ? String(allowed[0].id) : '';
     const [inviteProject, setInviteProject] = useState(defaultInviteProject), [globalConfirmed, setGlobalConfirmed] = useState(false);
     const [inviteRole, setInviteRole] = useState(''), [volunteerCampaign, setVolunteerCampaign] = useState('');
+    const canInviteManager = (projectId: string) => props.globalAdmin || Boolean(props.canManageManagers?.(projectId || null));
+    const activeInviteRole = inviteRole === 'manager' && !canInviteManager(inviteProject) ? '' : inviteRole;
     const volunteerCampaigns = (props.campaigns ?? []).filter(campaign => campaign.status !== 'closed' && allowed.some(project => project.id === projectIdOf(campaign)));
     const volunteerGroups = allowed.map(project => ({ project, campaigns: volunteerCampaigns.filter(campaign => projectIdOf(campaign) === project.id) })).filter(group => group.campaigns.length);
     const chosenCampaign = volunteerCampaigns.find(campaign => campaign.id === volunteerCampaign);
@@ -218,7 +229,8 @@ export default function TeamPanel(props: Props) {
     const filtered = directory.filter(u => `${u.displayName ?? ''} ${u.email ?? ''}`.toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR')) && (!props.selectedProjectId || (u.members ?? []).some((m: Row) => !projectIdOf(m) || projectIdOf(m) === props.selectedProjectId)));
     async function invite(e: FormEvent<HTMLFormElement>) { e.preventDefault(); if (saving)
         return; const element = e.currentTarget, form = new FormData(element), selectedScope = form.get('projectId');
-        if (!form.get('role') || !selectedScope || (official && selectedScope === '__global__')) { setError('Escolha explicitamente a função e o projeto antes de gerar o convite.'); return; }
+        const chosenRole = form.get('role');
+        if (typeof chosenRole !== 'string' || !chosenRole || !selectedScope || (official && selectedScope === '__global__') || (chosenRole === 'manager' && !canInviteManager(String(selectedScope)))) { setError('Escolha explicitamente uma função autorizada para o projeto antes de gerar o convite.'); return; }
         const asVolunteer = form.get('role') === 'volunteer', endsAt = asVolunteer ? fromLocal(String(form.get('volunteerEndsAt') ?? '')) : '';
         if (asVolunteer && (selectedScope === '__global__' || !form.get('campaignId') || !endsAt)) { setError('Para o voluntário, escolha o projeto, a ação e até quando vai o acesso.'); return; }
         setSaving(true); setError(''); if (!key.current || key.current.selection !== suggestionKey) key.current = { selection: suggestionKey, operationKey: crypto.randomUUID() }; try {
@@ -273,7 +285,7 @@ export default function TeamPanel(props: Props) {
         <div className="p-section-heading">
         <div>
         <h2>Convidar uma pessoa</h2>
-        <p>Use o e-mail institucional ou pessoal. O convite vale para a função e o projeto escolhidos. Para monitores, escolha Operador de evento; a gestão do projeto permanece com o gestor. Para quem ajuda só num evento, escolha Voluntário de uma ação: o acesso vale para aquela ação e termina sozinho.</p>
+        <p>Use o e-mail institucional ou pessoal. Escolha o projeto e a função conforme o trabalho da pessoa.</p>
         </div>
         </div>
         {official && <p className="p-form-help" role="status">Sugestão da fonte oficial: {official.name}. Confira o e-mail e escolha projeto e função. O nome é apenas referência; a pessoa define seu próprio perfil na ativação. {props.onClearOfficialSuggestion && <button type="button" className="p-text-link" disabled={saving} onClick={props.onClearOfficialSuggestion}>Limpar sugestão</button>}</p>}
@@ -287,13 +299,14 @@ export default function TeamPanel(props: Props) {
         <input key={`email-${suggestionKey}`} name="email" type="email" required maxLength={254} autoComplete="off" placeholder="nome@exemplo.com" defaultValue={official?.email ?? ''}/>
         </label>
         <label className="p-field">
-        <span>Função</span>
-        <select key={`role-${suggestionKey}`} name="role" defaultValue="" required onChange={event => { setInviteRole(event.target.value); setVolunteerCampaign(''); }}><option value="" disabled>Selecione a função</option>{Object.entries(roles).filter(([id]) => id !== 'owner' && (props.globalAdmin || Boolean(props.canManageManagers?.(inviteProject || null)) || id !== 'manager')).map(([id, name]) => <option key={id} value={id}>{name}</option>)}{!official && <option value="volunteer">Voluntário de uma ação (com prazo)</option>}</select>
+        <span id="invite-role-label">Função</span>
+        <select key={`role-${suggestionKey}`} name="role" value={activeInviteRole} required aria-labelledby="invite-role-label" aria-describedby="invite-role-help" onChange={event => { setInviteRole(event.target.value); setVolunteerCampaign(''); }}><option value="" disabled>Selecione a função</option>{Object.entries(roles).filter(([id]) => id !== 'owner' && (canInviteManager(inviteProject) || id !== 'manager')).map(([id, name]) => <option key={id} value={id}>{name}</option>)}{!official && <option value="volunteer">Voluntário de uma ação (com prazo)</option>}</select>
+        <small id="invite-role-help">{roleHelp[activeInviteRole] || 'Selecione uma função para ver o que ela permite.'}</small>
         </label>
         {inviteRole === 'volunteer' ? <input type="hidden" name="projectId" value={inviteProject}/> : <label className="p-field">
         <span>Escopo do acesso</span>
-        <select key={`project-${suggestionKey}`} name="projectId" value={inviteProject} onChange={event => { setInviteProject(event.target.value); setGlobalConfirmed(false); }} required><option value="" disabled>Selecione um projeto</option>{allowed.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}{props.globalAdmin && !official && <option value="__global__">Portal inteiro · todos os projetos</option>}</select>
-        <small>O acesso a um projeto não concede permissão nos demais.</small>
+        <select key={`project-${suggestionKey}`} name="projectId" value={inviteProject} onChange={event => { const next=event.target.value; setInviteProject(next); setGlobalConfirmed(false); if (inviteRole === 'manager' && !canInviteManager(next)) setInviteRole(''); }} required><option value="" disabled>Selecione um projeto</option>{allowed.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}{props.globalAdmin && !official && <option value="__global__">Todos os projetos da PROEX UFG</option>}</select>
+        <small>{inviteProject === '__global__' ? 'A função vale para todos os projetos da PROEX UFG.' : 'A função vale para o projeto selecionado.'}</small>
         </label>}
         {inviteRole === 'volunteer' && <label className="p-field">
         <span>Ação do voluntário *</span>
@@ -306,7 +319,7 @@ export default function TeamPanel(props: Props) {
         <small>Sugerimos o fim da ação. Depois desse horário, o acesso termina sozinho e isso fica em Registros.</small>
         </label>}
         </div>
-        {props.globalAdmin && inviteProject === '__global__' && <label className="p-field"><span><input id="team-invite-global-confirm" type="checkbox" checked={globalConfirmed} onChange={event => setGlobalConfirmed(event.target.checked)} required/> Confirmo que esta pessoa pode atuar em todos os projetos do portal, inclusive futuros.</span><small>Use este alcance somente para a equipe institucional autorizada. Esta confirmação não fica no rascunho.</small></label>}
+        {props.globalAdmin && inviteProject === '__global__' && <label className="p-field"><span><input id="team-invite-global-confirm" type="checkbox" checked={globalConfirmed} onChange={event => setGlobalConfirmed(event.target.checked)} required/> Confirmo que esta pessoa pode atuar em todos os projetos da PROEX UFG, inclusive futuros.</span><small>Use este alcance somente para a equipe institucional autorizada. Esta confirmação não fica no rascunho.</small></label>}
         <div className="p-form-footer">{error && <p className="p-inline-error" role="alert">{error}</p>}<button className="p-button p-button-primary" type="submit">{saving ? <LoaderCircle size={17} className="p-spin"/> : <UserPlus size={17}/>}{saving ? 'Criando…' : 'Gerar convite'}</button>
         </div>
         </fieldset>
