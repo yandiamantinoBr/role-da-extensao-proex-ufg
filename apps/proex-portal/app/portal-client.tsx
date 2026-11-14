@@ -323,6 +323,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
     const [selectedDemandId, setSelectedDemandId] = useState('');
     const [recordsView, setRecordsView] = useState<'history' | 'documents'>('history');
     const [recordsScheduleItemId, setRecordsScheduleItemId] = useState('');
+    const [demandsScheduleItemId, setDemandsScheduleItemId] = useState('');
     // Registros aberto pelo atalho "Ver histórico" de uma ficha: assunto no formato item:<id>.
     const [historyParam, setHistoryParam] = useState('');
     const [reportInitialDataset, setReportInitialDataset] = useState<ReportDatasetId>('projects');
@@ -515,7 +516,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
     const draftUserId = string(user.userId);
     useEffect(() => watchDraftLogout(draftUserId), [draftUserId]);
 
-    const route: PortalLocation = { tab, project: filter, unit: unitFilter, area: areaFilter, demand: selectedDemandId, record: activeWorkRecord, report: reportInitialDataset, recordsView, recordsScheduleItemId, workStatus: personalStatus, organization: personalOrganization, history: recordsView === 'history' ? historyParam : '' };
+    const route: PortalLocation = { tab, project: filter, unit: unitFilter, area: areaFilter, demand: selectedDemandId, record: activeWorkRecord, report: reportInitialDataset, recordsView, recordsScheduleItemId, demandsScheduleItemId, workStatus: personalStatus, organization: personalOrganization, history: recordsView === 'history' ? historyParam : '' };
     function readLocation(params: URLSearchParams) {
         return readPortalLocation(params, {
             modules: allowedTabs.map(module => module.id),
@@ -551,6 +552,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         setSelectedDemandId(next.demand); setReportInitialDataset(next.report);
         if (next.tab === 'records') setRecordsView(next.history ? 'history' : next.recordsView ?? 'history');
         setRecordsScheduleItemId(next.recordsScheduleItemId ?? '');
+        setDemandsScheduleItemId(next.demandsScheduleItemId ?? '');
         setPersonalStatus(next.workStatus ?? 'pending'); setPersonalOrganization(next.organization ?? '');
         setHistoryParam(next.history ?? '');
         setQuery(''); setAccountOpen(false);
@@ -597,6 +599,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         }
         setTab(id); setQuery(''); setAccountOpen(false); setSelectedMaterialId(null);setMaterialMode('view'); setWorkRecord(null);
         setRecordsScheduleItemId('');
+        setDemandsScheduleItemId('');
         setDeniedModule(null); setHistoryParam('');
         // Um pedido de Equipes (abrir fixada, criar) vale só para esta ida; voltar pelo menu abre a página normal.
         if (!teamIntentPending.current) setTeamIntent(null);
@@ -905,7 +908,15 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
           o painel compacto continua nas fichas e nos cartões. Com "Todos os projetos" não há o que mostrar aqui. */}
       {areaOwnerShortcut && <p className="p-area-owners-link"><Users size={15} aria-hidden="true"/><span>Quem cuida {areaOwnerShortcut.subject}:</span> <a className="p-text-link" href={`/?module=projects&project=${encodeURIComponent(filter)}&detailProject=${encodeURIComponent(filter)}`} aria-label={`Ver quem cuida ${areaOwnerShortcut.subject} na ficha do projeto`}>ficha do projeto<ArrowUpRight size={14} aria-hidden="true"/></a></p>}
       {activeWorkRecord && ['loans','events'].includes(activeWorkRecord.module) && <div className={workStyles.focusNotice} role="status"><p>{(activeWorkRecord.module === 'loans' ? displayedLoans : displayedCampaigns).length ? 'Registro vinculado ao seu trabalho. Use as ações abaixo para acompanhar.' : 'O registro não está na lista disponível para esta conta. Atualize ou consulte a lista completa.'}</p><button type="button" className="p-button p-button-subtle" onClick={() => setWorkRecord(null)}>Ver todos</button></div>}
-      {tab === 'demands' && <><FollowUpPanel key={string(user.userId)} userId={string(user.userId)} onTaskTransferred={receipt=>{selectProject(receipt.projectId);setSelectedDemandId(receipt.taskId);}} defaultProjectId={filter} initialTaskId={selectedDemandId} serverDay={workDayFromServerTimestamp(data?.updatedAt)} onSelectTask={setSelectedDemandId} onChanged={refreshModules} onOpenReports={() => navigate('reports', 'demands')}/><OrganizationEmailSettings key={string(user.userId)} userId={string(user.userId)} organizations={organizations}/></>}
+      {tab === 'demands' && <>
+        <FollowUpPanel key={JSON.stringify([string(user.userId),demandsScheduleItemId ? filter : '',demandsScheduleItemId])} userId={string(user.userId)}
+          onTaskTransferred={receipt=>{selectProject(receipt.projectId);setSelectedDemandId(receipt.taskId);}}
+          defaultProjectId={filter} initialTaskId={selectedDemandId} scheduleItemId={demandsScheduleItemId}
+          canManageSchedule={Boolean(filter && canProject(filter,'campaigns.manage'))}
+          serverDay={workDayFromServerTimestamp(data?.updatedAt)} onSelectTask={setSelectedDemandId} onChanged={refreshModules}
+          onOpenReports={demandsScheduleItemId ? undefined : () => navigate('reports', 'demands')}/>
+        {!demandsScheduleItemId&&<OrganizationEmailSettings key={string(user.userId)} userId={string(user.userId)} organizations={organizations}/>}
+      </>}
       {tab === 'overview' && volunteerAccess.length > 0 && volunteerDesk(true)}
       {tab === 'overview' && <><PersonalWorkSummary userId={string(user.userId)} organizationId={personalOrganization||null} organizationName={organizations.find(organization=>organization.id===personalOrganization)?.name} projectId={filter||null} projectName={string(projects.find(project=>project.id===filter)?.name)} serverDay={workDayFromServerTimestamp(data?.updatedAt)}/><DashboardPanel modules={allowedTabs} pinned={navigation.pinned} frequent={navigation.frequent} onNavigate={navigate} onTogglePin={navigation.togglePin} displayName={string(user.displayName)} role={role} roleLabel={roleNames[role] || 'Equipe PROEX'} projects={scopedProjects} items={visibleItems} loans={visibleLoans} campaigns={visibleCampaigns} selectedProjectId={filter} unitName={unitFilter === '__unassigned__' ? 'Sem unidade vinculada' : string(visibleUnits.find(unit => unit.id === unitFilter)?.acronym || visibleUnits.find(unit => unit.id === unitFilter)?.name)} now={now} onOpenProject={openProject} known={{ projects: Array.isArray(data.projects), items: Array.isArray(data.items), loans: Array.isArray(data.loans), campaigns: Array.isArray(data.campaigns) }} /></>}
       {tab === 'convocations' && <ConvocationsPanel key={`convocations:${string(user.userId)}:${convocationFocus}`} initialId={convocationFocus} projects={projects.map(project => ({ id: string(project.id), name: string(project.name), canManage: canProject(string(project.id), 'campaigns.manage') }))}/>}
