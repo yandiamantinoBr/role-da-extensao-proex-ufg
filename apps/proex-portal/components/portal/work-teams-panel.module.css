@@ -17,7 +17,9 @@
 .help { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 4px 6px; color: var(--muted); font-size: 12px; line-height: 1.6; }
 .help svg { flex-shrink: 0; margin-top: 2px; }
 .help > span { flex: 1; min-width: 0; }
-.help a { color: var(--brand-ink); text-decoration: underline; text-underline-offset: 3px; }
+.accessHelp { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px 18px; }
+.accessHelp > p { flex:1 1 260px; margin:0; }
+.accessHelp > a { min-height:44px; }
 .viewBar { font-size: 13px; color: var(--muted); }
 .viewBar button[aria-pressed=true] { border-color: var(--brand-ink); background: var(--surface-soft); color: var(--brand-ink); }
 .teamGrid { display: grid; gap: 12px; }

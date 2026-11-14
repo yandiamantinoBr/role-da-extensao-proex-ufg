@@ -6,6 +6,8 @@ import ts from 'typescript';
 // Equipes: onde se cria e edita (relato do Yan, 09/11/2026: "não consegui registrar uma equipe").
 const source = readFileSync(new URL('../components/portal/work-teams-panel.tsx', import.meta.url), 'utf8');
 const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
+const accessLabels = { exports: {} };
+vm.runInNewContext(ts.transpileModule(readFileSync(new URL('../lib/team-access-labels.ts', import.meta.url), 'utf8'), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS } }).outputText, { exports: accessLabels.exports, encodeURIComponent });
 const text = node => typeof node === 'string' || typeof node === 'number' ? String(node) : Array.isArray(node) ? node.map(text).join('') : node && typeof node === 'object' ? text(node.props?.children) : '';
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const counts = { open: 0, in_progress: 0, blocked: 0, completed: 0, cancelled: 0, total: 0, high: 0, overdue: 0 };
@@ -23,7 +25,7 @@ function harness(props = {}, teams = []) {
   const api = { workTeamsApi: async query => { requests.push(new URLSearchParams(query)); return workspace(new URLSearchParams(query), teams); }, saveWorkTeam: async () => ({ teamId: 'new' }), TeamsApiError: class extends Error {} };
   vm.runInNewContext(compiled, { module: compiledModule, exports: compiledModule.exports, JSON, Date, URLSearchParams, AbortController, Promise, Error,
     window: { addEventListener() {}, removeEventListener() {} }, requestAnimationFrame: () => 0, cancelAnimationFrame() {},
-    require: name => name === 'react' ? hooks : name === 'react/jsx-runtime' ? { jsx, jsxs: jsx } : name === './work-teams-api' ? api : name === './follow-up-api' ? { followupChanged() {}, FOLLOWUP_CHANGED: 'followup' } : name === './use-form-draft' ? { useFormDraft: () => ({}), DraftNotice: 'DraftNotice' } : name === 'sonner' ? { toast: { success() {}, error() {} } } : name === '@/lib/follow-up/contracts' ? { priorityLabels: {}, stateLabels: {}, TASK_STATES: [] } : name === '@/lib/follow-up/teams-contract' ? { TEAM_TASK_PAGE_SIZE: 6 } : name.endsWith('.css') ? { default: new Proxy({}, { get: (_t, key) => String(key) }) } : new Proxy({}, { get: (_t, key) => key === 'default' ? 'Component' : String(key) }) });
+    require: name => name === 'react' ? hooks : name === 'react/jsx-runtime' ? { jsx, jsxs: jsx } : name === './work-teams-api' ? api : name === './follow-up-api' ? { followupChanged() {}, FOLLOWUP_CHANGED: 'followup' } : name === './use-form-draft' ? { useFormDraft: () => ({}), DraftNotice: 'DraftNotice' } : name === 'sonner' ? { toast: { success() {}, error() {} } } : name === '@/lib/follow-up/contracts' ? { priorityLabels: {}, stateLabels: {}, TASK_STATES: [] } : name === '@/lib/follow-up/teams-contract' ? { TEAM_TASK_PAGE_SIZE: 6 } : name === '@/lib/team-access-labels' ? accessLabels.exports : name.endsWith('.css') ? { default: new Proxy({}, { get: (_t, key) => String(key) }) } : new Proxy({}, { get: (_t, key) => key === 'default' ? 'Component' : String(key) }) });
   const base = { userId: 'owner', defaultProjectId: 'project-a', organizations: [{ id: 'org-a', name: 'Organização A', canManage: true }], projects: [{ id: 'project-a', name: 'Projeto A', organization_id: 'org-a' }], onOpenDemand() {} };
   const h = {
     requests,
@@ -43,10 +45,20 @@ test('a manager sees "Nova equipe" even with a project selected, and it switches
   const create = h.button('Nova equipe');
   assert.ok(create, 'antes, o botão sumia quando um projeto estava selecionado');
   assert.ok(h.button('Criar equipe'), 'sem equipes, o vazio oferece criar a primeira');
-  assert.match(h.body(), /Aqui você cria e edita as equipes de trabalho/);
+  assert.match(h.body(), /Equipes como TI, Comunicação ou Eventos organizam quem faz o trabalho/);
   create.props.onClick(); await h.settle();
   assert.equal(h.requests.at(-1).get('projectId'), null, 'equipes são da organização inteira');
   assert.ok(h.nodes().some(node => node.type === 'section' && node.props['aria-label'] === 'Nova equipe'), 'o formulário de nova equipe abre');
+});
+
+test('the shortcut to manage people keeps the team project and requires access in that context', async () => {
+  const link = h => h.nodes().find(node => node.type === 'a' && text(node) === 'Pessoas e acessos');
+  const allowed = harness({ canOpenAccess: project => project === 'project-a' });
+  await allowed.settle();
+  assert.equal(link(allowed)?.props.href, '?module=team&project=project-a');
+  const denied = harness({ canOpenAccess: project => project === 'project-b' });
+  await denied.settle();
+  assert.equal(link(denied), undefined);
 });
 
 test('a request from a loan opens the new-team form directly, and a pinned team opens selected', async () => {

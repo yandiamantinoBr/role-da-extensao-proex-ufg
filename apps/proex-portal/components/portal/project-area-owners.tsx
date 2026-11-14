@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Boxes, Dices, Truck, UsersRound, type LucideIcon } from 'lucide-react';
+import { ArrowUpRight, Boxes, Dices, Truck, UsersRound, type LucideIcon } from 'lucide-react';
 import { isResponsibilityCatalog, isResponsibilityList, type Responsibility, type WorkArea } from '@/lib/my-work/contracts';
+import { projectAccessHref } from '@/lib/team-access-labels';
 import { workApi } from './my-work-api';
 import ResponsibilityManager from './responsibility-manager';
 import styles from './project-area-owners.module.css';
@@ -19,7 +20,7 @@ export const OWNED_AREAS: { area: OwnedArea; label: string; heading: string; Ico
   { area: 'loans', label: 'Empréstimos', heading: 'Quem cuida dos empréstimos deste projeto', Icon: Truck },
   { area: 'campaigns', label: 'Dinâmicas', heading: 'Quem cuida das dinâmicas deste projeto', Icon: Dices },
 ];
-type Props = { userId: string; projectId: string; areas: readonly OwnedArea[]; onCreateTeam?: () => void };
+type Props = { userId: string; projectId: string; areas: readonly OwnedArea[]; canManageAccess?: boolean; onCreateTeam?: () => void };
 type Loaded = { key: string; owner: string; rows?: Responsibility[]; canManage?: boolean; error?: string };
 
 /** Designação da área inteira: sem material, empréstimo nem dinâmica específica. */
@@ -28,7 +29,7 @@ export function areaOwners(rows: readonly Responsibility[], projectId: string, a
   return row ? row.assignees.map(person => person.name).filter(Boolean) : [];
 }
 
-export default function ProjectAreaOwners({ userId, projectId, areas, onCreateTeam }: Props) {
+export default function ProjectAreaOwners({ userId, projectId, areas, canManageAccess, onCreateTeam }: Props) {
   const [revision, setRevision] = useState(0), [state, setState] = useState<Loaded | null>(null), [open, setOpen] = useState<{ owner: string; area: OwnedArea } | null>(null);
   const owner = JSON.stringify([userId, projectId]), key = JSON.stringify([owner, revision]), any = areas.length > 0;
   useEffect(() => {
@@ -57,7 +58,7 @@ export default function ProjectAreaOwners({ userId, projectId, areas, onCreateTe
   const current = state?.key === key ? state : null, last = state?.owner === owner ? state : null, rows = last?.rows, canManage = Boolean(last?.canManage);
   const opened = canManage && open?.owner === owner ? open.area : null;
   return <section className={`p-card ${styles.card}`} aria-labelledby="project-area-owners-title">
-    <div className={styles.head}><span className={styles.icon}><UsersRound size={17} aria-hidden="true"/></span><div><h3 id="project-area-owners-title">Quem cuida de cada área</h3><p>A pessoa ou equipe de referência para o estoque, os empréstimos e as dinâmicas deste projeto. Indicar alguém organiza o trabalho, mas não dá acesso a nada.</p></div></div>
+    <div className={styles.head}><span className={styles.icon}><UsersRound size={17} aria-hidden="true"/></span><div><h3 id="project-area-owners-title">Quem cuida de cada área</h3><p>Pessoas e equipes de referência para o estoque, os empréstimos e as dinâmicas, com os acessos que já têm.</p></div></div>
     {current?.error && <p className="p-notice p-notice-error" role="alert">{current.error} <button type="button" className="p-text-link" onClick={() => setRevision(value => value + 1)}>Tentar de novo</button></p>}
     <ul className={styles.list}>{shown.map(({ area, label, heading, Icon }) => { const people = rows ? areaOwners(rows, projectId, area) : null, isOpen = opened === area, lower = label.toLocaleLowerCase('pt-BR'); return <li key={area} className={styles.row}>
       <div className={styles.line} data-action={canManage ? 'true' : undefined}>
@@ -67,6 +68,7 @@ export default function ProjectAreaOwners({ userId, projectId, areas, onCreateTe
       </div>
       {isOpen && <div id={`project-area-owners-${area}`} className={styles.manager}><ResponsibilityManager key={`${owner}:${area}`} userId={userId} projectId={projectId} area={area} heading={heading} onCreateTeam={onCreateTeam} onChanged={() => setRevision(value => value + 1)}/></div>}
     </li>; })}</ul>
+    {canManageAccess && <a className={`p-button p-button-subtle ${styles.access}`} href={projectAccessHref(projectId)}>Acessos do projeto<ArrowUpRight size={15} aria-hidden="true"/></a>}
     {rows && !canManage && <p className={styles.foot}>Só quem gerencia este projeto pode indicar ou trocar quem cuida de cada área.</p>}
   </section>;
 }
