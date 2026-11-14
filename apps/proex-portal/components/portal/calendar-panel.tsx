@@ -146,7 +146,7 @@ export default function CalendarPanel({ projects: sourceProjects, organizational
       </div></details>
       {entries.length>0&&<div className={styles.totals} role="group" aria-label="Registros por categoria no período">{totals.map(([kind,total])=><button key={kind} type="button" aria-pressed={category===kind} className={category===kind?styles.totalActive:''} onClick={()=>{setCategory(current=>current===kind?'all':kind);setSelectedDay('');}}><span style={{background:colors[kind]}}/><b>{total}</b>{labels[kind]}</button>)}</div>}
       {(cancelledCount > 0 || showCancelled) && <label className={styles.cancelledFilter}>
-        <input type="checkbox" checked={showCancelled} onChange={event => setShowCancelled(event.target.checked)} />
+        <input type="checkbox" name="agendaShowCancelled" checked={showCancelled} onChange={event => setShowCancelled(event.target.checked)} />
         Mostrar cancelados{cancelledCount > 0 && ` (${cancelledCount})`}
       </label>}
       {!validRange&&<p className="p-inline-error" role="alert">Escolha um período válido de até dois anos, com a data final igual ou posterior à inicial.</p>}{displayError&&<p className="p-inline-error" role="alert">{displayError}</p>}
