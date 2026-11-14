@@ -130,6 +130,20 @@ async function prepareRecordAttachment(file: File, signal: AbortSignal): Promise
   return prepareUploadPhoto(file, 'foto-do-registro', signal);
 }
 
+function RecordPhotoPreview({ file }: { file: File }) {
+  const image = useRef<HTMLImageElement>(null);
+  useEffect(() => {
+    const preview = image.current;
+    if (!preview) return;
+    const previewUrl = URL.createObjectURL(file);
+    preview.src = previewUrl;
+    return () => URL.revokeObjectURL(previewUrl);
+  }, [file]);
+  // O arquivo existe apenas no aparelho, antes do envio ao Portal.
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img ref={image} className={styles.attachmentPreview} alt={`Prévia de ${file.name}`} />;
+}
+
 function AttachmentQueue({ recordId, onAttachment, onPendingChange }: {
   recordId: string; onAttachment(attachment: Attachment): void; onPendingChange?(pending: boolean): void;
 }) {
@@ -233,7 +247,7 @@ function AttachmentQueue({ recordId, onAttachment, onPendingChange }: {
     <input ref={galleryRef} id={`${inputId}-file`} aria-label="Escolher arquivo do anexo" type="file" accept="application/pdf,image/jpeg,image/png,image/webp,.pdf,.jpg,.jpeg,.png,.webp" multiple hidden onChange={choose} />
     {!!entries.length && <ul style={{ padding: 0, margin: '14px 0', listStyle: 'none', display: 'grid', gap: 8 }} aria-label="Fila de anexos">
       {entries.map(entry => <li key={entry.key} style={{ border: '1px solid var(--line)', borderRadius: 12, padding: 12, display: 'flex', gap: 10, alignItems: 'flex-start', justifyContent: 'space-between' }}>
-        <div style={{ minWidth: 0, overflowWrap: 'anywhere' }}><strong style={{ fontSize: 14 }}>{entry.file.name}</strong><small style={{ display: 'block', color: 'var(--text-secondary)', marginTop: 4 }}>{sizeLabel(entry.file.size)} · {entry.status === 'done' ? 'Envio confirmado' : entry.status === 'sending' ? 'Enviando…' : entry.status === 'uncertain' ? 'Aguardando confirmação' : entry.status === 'error' ? 'Envio recusado' : 'Aguardando envio'}</small>{entry.error && <small style={{ display: 'block', color: 'var(--danger)', marginTop: 5 }}>{entry.error}</small>}{entry.uncertain && <small className="p-form-help" style={{ display: 'block' }}>Repita o envio nesta tela para confirmar se o arquivo foi salvo.</small>}</div>
+        <div style={{ minWidth: 0, overflowWrap: 'anywhere' }}><strong style={{ fontSize: 14 }}>{entry.file.name}</strong><small style={{ display: 'block', color: 'var(--text-secondary)', marginTop: 4 }}>{sizeLabel(entry.file.size)} · {entry.status === 'done' ? 'Envio confirmado' : entry.status === 'sending' ? 'Enviando…' : entry.status === 'uncertain' ? 'Aguardando confirmação' : entry.status === 'error' ? 'Envio recusado' : 'Aguardando envio'}</small>{entry.error && <small style={{ display: 'block', color: 'var(--danger)', marginTop: 5 }}>{entry.error}</small>}{entry.uncertain && <small className="p-form-help" style={{ display: 'block' }}>Repita o envio nesta tela para confirmar se o arquivo foi salvo.</small>}{entry.status !== 'done' && entry.file.type.startsWith('image/') && <RecordPhotoPreview file={entry.file} />}</div>
         {entry.status === 'done' ? <Check size={19} aria-label="Confirmado" style={{ flexShrink: 0, color: 'var(--success-ink)' }} /> : entry.status === 'sending' ? <LoaderCircle size={19} className="p-spin" aria-label="Enviando" style={{ flexShrink: 0 }} /> : !entry.uncertain && <button type="button" className="p-button p-button-subtle" aria-label={`Remover ${entry.file.name} da seleção`} disabled={working} onClick={() => { if (preparation.current || busyRef.current) return; update(entriesRef.current.filter(value => value.key !== entry.key)); setError(''); }}><Trash2 size={16} /></button>}
       </li>)}
     </ul>}
