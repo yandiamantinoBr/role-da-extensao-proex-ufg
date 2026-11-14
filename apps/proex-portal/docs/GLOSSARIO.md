@@ -63,7 +63,7 @@ Nomes de tela a usar em código novo e nas próximas PRs de consolidação. A tr
 | Botões de baixar dados espalhados | **Exportar**, concentrado em Relatórios | Nas outras telas, um botão "Exportar" que abre Relatórios já filtrado |
 | "Indicadores das dinâmicas" em Relatórios | sai | Repete o conjunto Dinâmicas da central |
 | Painel "Responsáveis e demandas" no topo dos módulos | **Responsáveis** na ficha (do material, empréstimo, dinâmica ou projeto) | O responsável pela área inteira vai para a ficha do projeto, para não perder a função |
-| Quatro formas de movimentar estoque | **Registrar movimento**: escolher o material e abrir a ficha | Uma tela só, com corrigir, desfazer e anexos. Depois de 13/11 |
+| Quatro formas de movimentar estoque | **Registrar movimento**: escolher o material e abrir a ficha, ou **Vários de uma vez** (saída conjunta) | Uma tela só, com corrigir, desfazer e anexos. Pronto em ramo; merge a partir de 14/11. Ver `REGISTRAR-MOVIMENTO-E-SAIDA-MULTIPLA.md` |
 | "Assistente com revisão" + Rolê | **assistente Rolê** | O outro sai. Depois de 13/11 |
 | Importação assistida | **Importar de arquivo** | Planilha, PDF ou SIGAA |
 
