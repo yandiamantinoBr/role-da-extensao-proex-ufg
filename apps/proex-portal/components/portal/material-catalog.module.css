@@ -165,13 +165,22 @@
 
 /* Filtros do catálogo (09/11): dono, tipo, categoria, situação e foto. */
 .filterBar { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
-.filterToggle { display: none; align-self: flex-start; min-height: 44px; }
+.filterHeading { display: flex; flex-wrap: wrap; align-items: end; gap: 8px 12px; }
+.search { display: grid; gap: 5px; flex: 1 1 180px; min-width: 0; max-width: 34rem; font-size: 13px; font-weight: 600; }
+.searchField:global(.p-search) { width: 100%; min-width: 0; min-height: 44px; box-sizing: border-box; }
+.searchField input { width: 100%; min-width: 0; }
+.filterToggle { min-height: 44px; }
 .filterBody { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.filterBody[hidden] { display: none; }
 .filter { display: flex; flex-direction: column; gap: 5px; font-size: 12px; font-weight: 600; color: var(--text-secondary); min-width: 0; }
-.filter select { min-height: 42px; width: 100%; min-width: 0; color: var(--ink); background: var(--surface); }
+.filter select { min-height: 44px; width: 100%; min-width: 0; color: var(--ink); background: var(--surface); }
 .filterCount { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; margin: 0; font-size: 12px; color: var(--text-secondary); }
-.filterCount button { display: inline-flex; align-items: center; gap: 4px; min-height: 36px; }
-.noResults { padding: 22px; text-align: center; font-size: 13px; color: var(--text-secondary); border: 1px dashed var(--line); border-radius: 14px; }
+.filterCount p { margin: 0; }
+.filterCount button { display: inline-flex; align-items: center; gap: 4px; min-height: 44px; }
+.noResults { display: flex; align-items: flex-start; gap: 12px; padding: 16px; font-size: 13px; color: var(--text-secondary); border: 1px dashed var(--line); border-radius: 14px; }
+.noResults svg { flex: 0 0 auto; color: var(--brand-ink); }
+.noResults strong { color: var(--text-strong); }
+.noResults p { margin: 3px 0 0; }
 .destination { display: inline-flex; align-items: center; gap: 4px; color: var(--brand-ink) !important; }
 .kits { margin-top: 18px; border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; background: var(--surface); }
 .kits h3 { display: flex; align-items: center; gap: 8px; font-size: 14px; margin: 0 0 6px; }
@@ -182,9 +191,7 @@
 .kits li > span { font-size: 17px; font-weight: 700; white-space: nowrap; text-align: right; }
 .kits li > span small { font-size: 11px; font-weight: 500; }
 @container material-catalog (max-width: 38rem) {
-  .filterToggle { display: inline-flex; }
-  .filterBody { display: none; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .filterBody.filterOpen { display: grid; }
+  .filterBody { grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr)); }
   .filter select { font-size: 16px; }
 }
 .catalog small.destination { display: flex; align-items: center; gap: 4px; }
