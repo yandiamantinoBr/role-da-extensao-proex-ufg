@@ -121,3 +121,11 @@ Hoje o cliente OAuth fica na conta do Yan; a seção 3.4 de `MIGRACAO-PARA-PROEX
 ## 8. Testes
 
 `tests/google-drive.test.mjs` (Google simulado): cofre e rotação; OAuth com PKCE, estado, outra pessoa, recusa e caixa do Drive desmarcada; servidor sem configuração; **token revogado** (no meio e na hora do envio); desconectar e revogar, inclusive Google fora do ar; cadastro recusando não-admin, pasta pública, sem permissão, lixeira, não-pasta e pasta não liberada; quem pode usar; confirmação com outra pasta e com outra conta; sugestão e pergunta; envio completo com histórico e sem duplicar; **permissão negada** (anexo, Drive 403, acesso revogado entre prévia e confirmação); foto do chat do Rolê com hash; rotas sem segredo e volta do Google sem código na URL.
+
+## 9. Pasta de vídeos da atividade
+
+Em **Configurações › Pastas do Drive**, a administração cadastra a pasta com o projeto correto e o público **Só gestão**. Na ficha do projeto, a gestão abre **Cronograma › Registros e fotos › Vídeos da atividade**, escolhe a pasta e salva. O nome da pasta passa a abrir o Google Drive em nova aba. A conta Google aberta no navegador precisa ter acesso concedido no Drive. A abertura usa a própria sessão do Google e dispensa conceder ao Portal uma autorização adicional para arquivos.
+
+O Portal conserva uma referência por atividade. A auditoria da atividade registra vínculo e remoção com autoria e data. A pasta e seus arquivos são administrados no Drive. O vínculo do Portal fica na base operacional, fora da planilha, de relatórios, dos links comuns do projeto e da agenda pública. Para mudar de instalação com a planilha, recadastre as pastas e vincule-as de novo às atividades.
+
+Testes em `tests/google-drive.test.mjs` cobrem escopo de projeto e organização, perfis, falsificação de IDs, mudança de pasta ou de acesso durante uma operação, concorrência de edição, repetição sem duplicar, retirada do vínculo e redirecionamento privado sem revelar o ID do Drive na lista.

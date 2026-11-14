@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { check, index, integer, primaryKey, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
-import { organizationalUnits, organizations, portalUsers, projects } from './base-schema';
+import { organizationalUnits, organizations, portalUsers, projects, projectScheduleItems } from './base-schema';
 /*
  * Google Drive por pessoa (0042). Cada pessoa conecta a própria conta Google com o escopo drive.file;
  * o token de atualização fica cifrado (PROEX_KEYS_SECRET) e nunca sai do servidor. O registro de pastas
@@ -38,6 +38,12 @@ export const googleDriveFolders = sqliteTable('google_drive_folders', {
   check('google_drive_folders_status', sql`${t.status} IN ('active','archived')`),
   check('google_drive_folders_text', sql`length(${t.name}) BETWEEN 1 AND 120 AND length(${t.purpose}) BETWEEN 1 AND 300 AND length(${t.driveName}) BETWEEN 1 AND 300`),
 ]);
+export const scheduleItemMediaFolders = sqliteTable('schedule_item_media_folders', {
+  scheduleItemId: text('schedule_item_id').primaryKey().notNull().references(() => projectScheduleItems.id),
+  folderId: text('folder_id').references(() => googleDriveFolders.id),
+  version: integer('version').notNull(),
+  updatedAt: text('updated_at').notNull(),
+}, t => [check('schedule_item_media_folder_version', sql`${t.version} > 0`)]);
 /** Confirmação da pasta pela própria pessoa no Picker: o drive.file concede acesso por pessoa e por app. */
 export const googleDriveFolderGrants = sqliteTable('google_drive_folder_grants', {
   userId: text('user_id').notNull().references(() => portalUsers.userId),

@@ -38,6 +38,8 @@ const save = await import(compile('lib/google-drive/save.ts'));
 const callbackRoute = await import(compile('app/api/drive/oauth/callback/route.ts'));
 const startRoute = await import(compile('app/api/drive/oauth/start/route.ts'));
 const statusRoute = await import(compile('app/api/drive/route.ts'));
+const activityMedia = await import(compile('lib/google-drive/activity-media.ts'));
+const activityMediaRoute = await import(compile('app/api/records/activity-media/route.ts'));
 
 const REFRESH = 'rt-sintetico-0123456789-refresh-token-abcdef';
 const ACCESS = 'at-sintetico-9876543210-access-token-zyxwvu';
@@ -492,4 +494,142 @@ test('anonimizar a conta apaga a conexão com o Google e as confirmações de pa
   const source = readFileSync(resolve(root, 'lib/privacy.ts'), 'utf8');
   assert.match(source, /DELETE FROM google_drive_folder_grants WHERE user_id=\?/);
   assert.match(source, /DELETE FROM google_drive_connections WHERE user_id=\?/);
+});
+
+async function mediaFixture(t) {
+  const f = fixture(t);
+  const manager = await f.user('gestao-a', 'manager', 'p-a', 'o-a');
+  const otherManager = await f.user('gestao-a2', 'manager', 'p-a2', 'o-a');
+  const externalManager = await f.user('gestao-b', 'manager', 'p-b', 'o-b');
+  const owner = await f.user('dono-a', 'owner', null, 'o-a');
+  const viewer = await f.user('leitura-a', 'viewer', 'p-a', 'o-a');
+  const operator = await f.user('operacao-a', 'operator', 'p-a', 'o-a');
+  const participant = await f.user('participante', null);
+  for (const [id, project] of [['atividade-a', 'p-a'], ['sem-vinculo', 'p-a'], ['atividade-a2', 'p-a2'], ['atividade-b', 'p-b']]) {
+    f.insert('project_schedule_items', { id, project_id: project, title: id, starts_at: f.now, ends_at: f.now, created_at: f.now, updated_at: f.now });
+  }
+  for (const [id, project, org, audience, status] of [
+    ['privada-a', 'p-a', 'o-a', 'managers', 'active'],
+    ['privada-a-reserva', 'p-a', 'o-a', 'managers', 'active'],
+    ['privada-a2', 'p-a2', 'o-a', 'managers', 'active'],
+    ['privada-b', 'p-b', 'o-b', 'managers', 'active'],
+    ['gestao-organizacao', null, 'o-a', 'managers', 'active'],
+    ['equipe-do-projeto', 'p-a', 'o-a', 'project', 'active'],
+    ['arquivada-a', 'p-a', 'o-a', 'managers', 'archived'],
+  ]) {
+    f.insert('google_drive_folders', { id, name: id, drive_name: id, drive_folder_id: 'drive-sintetico-' + id, purpose: 'Teste de vídeos',
+      project_id: project, organization_id: org, audience, status, created_by: owner.userId, updated_by: owner.userId, created_at: f.now, updated_at: f.now });
+  }
+  return { ...f, manager, otherManager, externalManager, owner, viewer, operator, participant };
+}
+const mediaContext = { projectId: 'p-a', scheduleItemId: 'atividade-a' };
+const mediaWrite = { ...mediaContext, folderId: 'privada-a', expectedVersion: 0, operationKey: 'grava-pasta-a' };
+const unavailableMedia = error => error.status === 404 && error.code === 'activity_media_unavailable';
+
+test('vídeos: somente gestão do projeto encontra a atividade e seleciona pastas privadas do próprio projeto', async t => {
+  const f = await mediaFixture(t);
+  for (const actor of [f.manager, f.owner]) {
+    const view = await activityMedia.activityMediaFolder(f.db, actor, mediaContext);
+    assert.deepEqual(view, { ...mediaContext, viewerId: actor.userId, version: 0, selected: null, unavailable: false,
+      folders: [{ id: 'privada-a', name: 'privada-a' }, { id: 'privada-a-reserva', name: 'privada-a-reserva' }], truncated: false });
+    assert.doesNotMatch(JSON.stringify(view), /drive-sintetico|drive\.google\.com/);
+  }
+  for (const actor of [f.otherManager, f.externalManager, f.viewer, f.operator, f.participant]) {
+    await assert.rejects(() => activityMedia.activityMediaFolder(f.db, actor, mediaContext), unavailableMedia);
+    await assert.rejects(() => activityMedia.activityMediaFolderUrl(f.db, actor, mediaContext), unavailableMedia);
+    await assert.rejects(() => activityMedia.saveActivityMediaFolder(f.db, actor, mediaWrite), unavailableMedia);
+  }
+  await assert.rejects(() => activityMedia.activityMediaFolder(f.db, f.owner, { ...mediaContext, scheduleItemId: 'atividade-a2' }), unavailableMedia);
+  await assert.rejects(() => activityMedia.activityMediaFolderUrl(f.db, f.manager, mediaContext), unavailableMedia);
+  for (const folderId of ['privada-a2', 'privada-b', 'gestao-organizacao', 'equipe-do-projeto', 'arquivada-a', 'inexistente']) {
+    await assert.rejects(() => activityMedia.saveActivityMediaFolder(f.db, f.owner, { ...mediaWrite, folderId }), unavailableMedia);
+  }
+  assert.equal(count(f, 'schedule_item_media_folders'), 0);
+  assert.equal(count(f, 'mutation_keys'), 0);
+  assert.equal(count(f, 'audit', "action LIKE 'activity.media-folder.%'"), 0);
+  const catalogue = await folders.usableFolders(f.db, f.otherManager);
+  assert.deepEqual(catalogue.map(folder => folder.id).sort(), ['gestao-organizacao', 'privada-a2']);
+  await assert.rejects(() => folders.usableFolder(f.db, f.otherManager, 'privada-a'), e => e.status === 404);
+  assert.throws(() => f.insert('schedule_item_media_folders', { schedule_item_id: 'atividade-a', folder_id: 'privada-a2', version: 1, updated_at: f.now }), /activity_media_scope_mismatch/);
+});
+
+test('vídeos: gravação idempotente, alteração concorrente, remoção, histórico e atividades separadas', async t => {
+  const f = await mediaFixture(t);
+  const [saved, retried] = await Promise.all([f.manager, f.manager].map(actor => activityMedia.saveActivityMediaFolder(f.db, actor, mediaWrite)));
+  assert.deepEqual(saved, retried);
+  assert.equal(saved.version, 1);
+  assert.equal(saved.selected.id, 'privada-a');
+  assert.equal(await activityMedia.activityMediaFolderUrl(f.db, f.manager, mediaContext), 'https://drive.google.com/drive/folders/drive-sintetico-privada-a');
+  assert.equal((await activityMedia.activityMediaFolder(f.db, f.manager, { ...mediaContext, scheduleItemId: 'sem-vinculo' })).selected, null);
+  await assert.rejects(() => activityMedia.saveActivityMediaFolder(f.db, f.owner, { ...mediaWrite, folderId: 'privada-a-reserva', operationKey: 'alteracao-concorrente' }), e => e.status === 409 && e.code === 'activity_media_conflict');
+  const removed = await activityMedia.saveActivityMediaFolder(f.db, f.manager, { ...mediaWrite, folderId: null, expectedVersion: 1, operationKey: 'remove-pasta-a' });
+  assert.equal(removed.version, 2);
+  assert.equal(removed.selected, null);
+  await assert.rejects(() => activityMedia.activityMediaFolderUrl(f.db, f.manager, mediaContext), unavailableMedia);
+  await assert.rejects(() => activityMedia.saveActivityMediaFolder(f.db, f.manager, { ...mediaWrite, expectedVersion: 0, operationKey: 'edicao-antiga-a' }), e => e.status === 409);
+  const audit = f.native.prepare("SELECT action, entity_id, details FROM audit WHERE action LIKE 'activity.media-folder.%' ORDER BY rowid").all();
+  assert.deepEqual(audit.map(row => ({ ...row })), [
+    { action: 'activity.media-folder.link', entity_id: 'atividade-a', details: '{}' },
+    { action: 'activity.media-folder.unlink', entity_id: 'atividade-a', details: '{}' },
+  ]);
+  assert.equal(count(f, 'mutation_keys'), 2);
+  assert.equal(f.google.calls.length, 0, 'vínculo somente guarda uma referência');
+});
+
+test('vídeos: revogação durante a transação e mudança de escopo bloqueiam gravação e abertura', async t => {
+  const f = await mediaFixture(t);
+  f.db.beforeBatch = () => f.native.prepare("UPDATE members SET revoked_at=? WHERE user_id=?").run(f.now, f.manager.userId);
+  await assert.rejects(() => activityMedia.saveActivityMediaFolder(f.db, f.manager, mediaWrite), unavailableMedia);
+  f.db.beforeBatch = () => f.native.prepare("UPDATE google_drive_folders SET status='archived' WHERE id='privada-a'").run();
+  await assert.rejects(() => activityMedia.saveActivityMediaFolder(f.db, f.owner, mediaWrite), unavailableMedia);
+  assert.equal(count(f, 'schedule_item_media_folders'), 0);
+  assert.equal(count(f, 'mutation_keys'), 0);
+  assert.equal(count(f, 'audit', "action LIKE 'activity.media-folder.%'"), 0);
+  f.native.prepare("UPDATE google_drive_folders SET status='active' WHERE id='privada-a'").run();
+  await activityMedia.saveActivityMediaFolder(f.db, f.owner, mediaWrite);
+  const initial = await activityMedia.activityMediaFolder(f.db, f.owner, mediaContext);
+  assert.equal(initial.selected.id, 'privada-a');
+  f.native.prepare("UPDATE google_drive_folders SET project_id='p-a2' WHERE id='privada-a'").run();
+  const moved = await activityMedia.activityMediaFolder(f.db, f.owner, mediaContext);
+  assert.equal(moved.selected, null);
+  assert.equal(moved.unavailable, true);
+  assert.equal(moved.version, initial.version);
+  assert.doesNotMatch(JSON.stringify(moved), /"privada-a"/);
+  await assert.rejects(() => activityMedia.activityMediaFolderUrl(f.db, f.owner, mediaContext), unavailableMedia);
+  await assert.rejects(() => activityMedia.activityMediaFolder(f.db, f.manager, mediaContext), unavailableMedia);
+  await assert.rejects(() => activityMedia.activityMediaFolderUrl(f.db, f.manager, mediaContext), unavailableMedia);
+  await assert.rejects(() => activityMedia.saveActivityMediaFolder(f.db, f.owner, { ...mediaWrite, expectedVersion: 1 }), e => e.status === 409 && e.code === 'operation_changed');
+});
+
+test('vídeos: resposta privada, redirecionamento canônico, CSRF e sessão revalidados nas rotas', async t => {
+  const f = await mediaFixture(t);
+  const endpoint = ENV.origin + '/api/records/activity-media';
+  const url = endpoint + '?' + new URLSearchParams(mediaContext), open = url + '&view=open';
+  assert.equal((await activityMediaRoute.GET(new Request(url))).status, 401);
+  globalThis.__driveTest.user = f.manager;
+  const crossSite = await activityMediaRoute.POST(new Request(endpoint, { method: 'POST',
+    headers: { Origin: 'https://another.example.test', 'X-Proex-Action': '1', 'Content-Type': 'application/json' }, body: JSON.stringify(mediaWrite) }));
+  assert.equal(crossSite.status, 403);
+  const write = input => activityMediaRoute.POST(new Request(endpoint, { method: 'POST',
+    headers: { Origin: ENV.origin, 'X-Proex-Action': '1', 'Content-Type': 'application/json' }, body: JSON.stringify(input) }));
+  assert.equal((await write({ ...mediaWrite, url: 'https://another.example.test' })).status, 400);
+  assert.equal((await write(mediaWrite)).status, 200);
+  const metadata = await activityMediaRoute.GET(new Request(url));
+  assert.equal(metadata.status, 200);
+  assert.equal(metadata.headers.get('Cache-Control'), 'private, no-store');
+  assert.doesNotMatch(await metadata.text(), /drive-sintetico|drive\.google\.com/);
+  const opened = await activityMediaRoute.GET(new Request(open));
+  assert.equal(opened.status, 302);
+  assert.equal(opened.headers.get('Location'), 'https://drive.google.com/drive/folders/drive-sintetico-privada-a');
+  assert.equal(opened.headers.get('Cache-Control'), 'private, no-store');
+  assert.equal(opened.headers.get('Referrer-Policy'), 'no-referrer');
+  globalThis.__driveTest.user = f.otherManager;
+  const unrelated = await activityMediaRoute.GET(new Request(open));
+  assert.equal(unrelated.status, 404);
+  assert.equal(unrelated.headers.get('Location'), null);
+  assert.doesNotMatch(await unrelated.text(), /privada-a|drive-sintetico/);
+  globalThis.__driveTest.user = f.manager;
+  f.native.prepare("UPDATE portal_users SET activation_pending=1 WHERE user_id=?").run(f.manager.userId);
+  assert.equal((await activityMediaRoute.GET(new Request(open))).status, 404);
+  assert.equal(f.google.calls.length, 0);
 });
