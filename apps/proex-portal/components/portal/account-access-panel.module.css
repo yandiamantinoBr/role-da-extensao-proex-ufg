@@ -1,0 +1,25 @@
+.card { display:grid; gap:14px; min-width:0; container-type:inline-size; }
+.header { display:flex; align-items:center; justify-content:space-between; gap:12px 18px; flex-wrap:wrap; }
+.header > div { margin:0; }
+.header button { min-height:44px; }
+.header button[aria-disabled=true] { opacity:.65; cursor:wait; }
+.group { min-width:0; border:1px solid var(--line); border-radius:14px; padding:13px 16px; background:var(--surface-soft); }
+.group h3 { font-size:15px; }
+.group p,.list dd { margin:3px 0 0; color:var(--text-secondary); font-size:13px; line-height:1.55; }
+.orgTitle,.list dt { display:flex; align-items:center; flex-wrap:wrap; gap:6px 10px; overflow-wrap:anywhere; }
+.list { margin:8px 0 0; }
+.list > div { padding:8px 0; border-top:1px solid var(--line); }
+.list > div:last-child { padding-bottom:0; }
+.list dt,.events strong { font-weight:650; }
+.list dd,.events strong,.group h3 { overflow-wrap:anywhere; }
+.events { display:grid; padding:0; margin:8px 0 0; list-style:none; }
+.events li { display:flex; align-items:flex-start; gap:9px; padding:8px 0 0; border-top:1px solid var(--line); }
+.events li + li { margin-top:8px; }
+.events svg { margin-top:3px; color:var(--brand-ink); }
+.events div { min-width:0; overflow-wrap:anywhere; }
+.notice { display:flex; align-items:center; gap:8px; color:var(--text-secondary); }
+.notice[role=alert] { color:var(--danger); }
+@container (max-width:440px) {
+  .header { align-items:flex-start; }
+  .group { padding:12px; }
+}

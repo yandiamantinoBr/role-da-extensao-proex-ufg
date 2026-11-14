@@ -8,6 +8,7 @@ import DateTimeField from './date-time-field';
 import DestinationField, { destinationFields, loadDestinations } from './destination-field';
 import { MOVEMENT_NAMES, when } from './material-movement-history';
 import { UPLOAD_LIMIT_LABEL, MAX_UPLOAD_FILE_BYTES, uploadErrorMessage } from '@/lib/upload-limits';
+import { prepareUploadPhoto } from '@/lib/prepare-upload-photo';
 import styles from './material-movements.module.css';
 
 type Snapshot = { delta: number; note: string; counterpartyName: string | null; processReference: string; beneficiaryReference: string; occurredAt: string; destinationName: string | null; unit: string };
@@ -31,18 +32,7 @@ async function portalAction(name: string, payload: Record<string, unknown>) {
 async function preparedFile(file: File): Promise<File> {
   if (file.type === 'application/pdf') { if (file.size > MAX_UPLOAD_FILE_BYTES) throw new Error(`O PDF deve ter no máximo ${UPLOAD_LIMIT_LABEL}.`); return file; }
   if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw new Error('Use uma foto (JPEG, PNG ou WebP) ou um PDF.');
-  if (file.size > 25 * 1024 * 1024) throw new Error('Escolha uma foto com até 25 MB para preparar o envio.');
-  const url = URL.createObjectURL(file);
-  try {
-    const image = new window.Image(); image.src = url; await image.decode();
-    const ratio = Math.min(1, 2000 / Math.max(image.naturalWidth, image.naturalHeight));
-    const canvas = document.createElement('canvas'); canvas.width = Math.max(1, Math.round(image.naturalWidth * ratio)); canvas.height = Math.max(1, Math.round(image.naturalHeight * ratio));
-    const context = canvas.getContext('2d'); if (!context) throw new Error('Não foi possível preparar esta foto.');
-    context.fillStyle = '#fff'; context.fillRect(0, 0, canvas.width, canvas.height); context.drawImage(image, 0, 0, canvas.width, canvas.height);
-    const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(new Error('Não foi possível preparar esta foto.')), 'image/jpeg', .86));
-    if (blob.size > MAX_UPLOAD_FILE_BYTES) throw new Error(`A foto ficou maior que ${UPLOAD_LIMIT_LABEL}. Tente outra.`);
-    return new File([blob], `${file.name.replace(/\.[^.]+$/, '') || 'comprovante'}.jpg`, { type: 'image/jpeg' });
-  } finally { URL.revokeObjectURL(url); }
+  return prepareUploadPhoto(file, 'comprovante');
 }
 function Changes({ before, after }: { before: Snapshot | null; after: Snapshot | null }) {
   if (!before) return null;
