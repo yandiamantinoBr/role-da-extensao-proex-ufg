@@ -37,10 +37,20 @@ export default function ProjectAreaOwners({ userId, projectId, areas, onCreateTe
     const query = new URLSearchParams({ view: 'list', projectId, target: 'area', status: 'active', limit: '50' });
     // O catálogo sem projeto é leve: só diz em quais projetos a pessoa gerencia responsáveis (quem não gerencia não vê botão).
     Promise.all([workApi(`/api/responsibilities?${query}`, isResponsibilityList, controller.signal), workApi('/api/responsibilities?view=catalog', isResponsibilityCatalog, controller.signal)])
-      .then(([list, catalog]) => { if (!controller.signal.aborted) setState({ key, owner, rows: list.items, canManage: catalog.projects.some(project => project.id === projectId && project.canManage) }); })
-      .catch(error => { if (!controller.signal.aborted) setState({ key, owner, error: error instanceof Error ? error.message : 'Não foi possível consultar quem cuida de cada área.' }); });
+      .then(([list, catalog]) => {
+        if (controller.signal.aborted) return;
+        if (list.viewerId !== userId || catalog.viewerId !== userId || list.projectId !== projectId || catalog.projectId !== null) {
+          throw new Error('A sessão ou o projeto da resposta mudou. Atualize este contexto.');
+        }
+        setState({ key, owner, rows: list.items, canManage: catalog.projects.some(project => project.id === projectId && project.canManage) });
+      })
+      .catch(error => {
+        if (controller.signal.aborted) return;
+        setOpen(null);
+        setState({ key, owner, error: error instanceof Error ? error.message : 'Não foi possível consultar quem cuida de cada área.' });
+      });
     return () => controller.abort();
-  }, [key, owner, projectId, any]);
+  }, [key, owner, userId, projectId, any]);
   const shown = OWNED_AREAS.filter(entry => areas.includes(entry.area));
   if (!shown.length) return null;
   // Ao recarregar, mantém na tela o que já estava.

@@ -351,15 +351,21 @@ export async function activityFeed(db: D1Database, actor: PortalActor | null, in
         .sort((a, b) => b.days - a.days || b.actions - a.actions || a.name.localeCompare(b.name, 'pt-BR')).slice(0, 20) };
   }
   if (filtered.length > MAX_EVENTS) truncated = true;
-  return { range: { from: range.from, to: range.to, days: range.days }, types: wanted, events: filtered.slice(0, MAX_EVENTS), truncated, subject: subject ? { ...subject, name: await subjectName(db, actor, subject) } : null,
+  return { range: { from: range.from, to: range.to, days: range.days }, types: wanted, events: filtered.slice(0, MAX_EVENTS), truncated, subject: subject ? { ...subject, name: await subjectName(db, actor, subject, projectId, organizationId) } : null,
     people: [...nameOf].map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')), loansNow, aiVisible: configurable.length > 0,
     summary: { days: [...perDay.values()], stock }, deadlines, team };
 }
 
 /** Nome do assunto, só para quem pode lê-lo no módulo de origem. Fora do alcance e inexistente respondem igual: sem nome. */
-async function subjectName(db: D1Database, actor: PortalActor, subject: { kind: ActivitySubjectKind; id: string }): Promise<string> {
+async function subjectName(
+  db: D1Database, actor: PortalActor, subject: { kind: ActivitySubjectKind; id: string },
+  projectId: string | null, organizationId: string | null,
+): Promise<string> {
   if (subject.kind === 'task') {
-    const [row] = await all(db, `SELECT f.title name FROM followup_tasks f WHERE ${followupAuthority('?', 'f.organization_id', 'f.project_id')} AND f.id=? LIMIT 1`, [actor.userId, subject.id]);
+    const projectFilter = projectId ? ' AND f.project_id=?' : '';
+    const organizationFilter = organizationId ? ' AND f.organization_id=?' : '';
+    const [row] = await all(db, `SELECT f.title name FROM followup_tasks f WHERE ${followupAuthority('?', 'f.organization_id', 'f.project_id')} AND f.id=?${projectFilter}${organizationFilter} LIMIT 1`,
+      [actor.userId, subject.id, ...(projectId ? [projectId] : []), ...(organizationId ? [organizationId] : [])]);
     return row ? String(row.name) : '';
   }
   // Material: quem lê o estoque vê qualquer material do projeto; quem só lê empréstimos vê equipamentos, como no módulo.
@@ -367,7 +373,7 @@ async function subjectName(db: D1Database, actor: PortalActor, subject: { kind: 
     loan: [{ capabilities: ['loans.read'], from: 'loans s JOIN items i ON i.id=s.item_id AND i.project_id=s.project_id JOIN projects p ON p.id=s.project_id', name: 'i.name', extra: '' }],
     campaign: [{ capabilities: ['campaigns.manage', 'access.manage', 'reports.read'], from: 'campaigns s JOIN projects p ON p.id=s.project_id', name: 's.name', extra: '' }] }[subject.kind];
   for (const source of sources) {
-    const scope = scoped(actor, source.capabilities, 'p.id', null);
+    const scope = scoped(actor, source.capabilities, 'p.id', projectId, organizationId);
     const [row] = await all(db, `SELECT ${source.name} name FROM ${source.from} WHERE ${scope.sql}${source.extra} AND s.id=? LIMIT 1`, [...scope.values, subject.id]);
     if (row) return String(row.name);
   }

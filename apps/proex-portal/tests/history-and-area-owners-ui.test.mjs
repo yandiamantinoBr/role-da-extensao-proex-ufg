@@ -73,10 +73,12 @@ test('project sheet and old top panel mount the same responsibility form for the
   const row = (area, extra = {}) => ({project_id: 'project-a', area, status: 'active', item_id: null, loan_id: null, campaign_id: null, assignees: [{user_id: 'u1', team_id: null, name: 'Pessoa sintética'}], ...extra});
   const requests = [];
   // A tela consulta a lista de áreas do projeto e o catálogo leve (em quais projetos a pessoa gerencia responsáveis).
-  const mount = (canManage, rows = [row('materials')]) => {
+  const mount = (canManage, rows = [row('materials')], response = {}) => {
     const effects = [];
     const sheet = component('../components/portal/project-area-owners.tsx', {'@/lib/my-work/contracts': {isResponsibilityList: () => true, isResponsibilityCatalog: () => true}, './responsibility-manager': {default: 'ResponsibilityManager'},
-      './my-work-api': {workApi: async url => { requests.push(url); return url.includes('view=catalog') ? {projects: [{id: 'project-a', canManage}, {id: 'project-b', canManage: true}]} : {items: rows}; }}}, effects);
+      './my-work-api': {workApi: async url => { requests.push(url); return url.includes('view=catalog')
+        ? {viewerId: 'user-a', projectId: null, projects: [{id: 'project-a', canManage}, {id: 'project-b', canManage: true}], ...response.catalog}
+        : {viewerId: 'user-a', projectId: 'project-a', items: rows, ...response.list}; }}}, effects);
     return {sheet, async load(props) { sheet.render('default', props); for (const effect of effects.splice(0)) effect(); await new Promise(resolve => setImmediate(resolve)); return sheet.render('default', props); }};
   };
   const props = {userId: 'user-a', projectId: 'project-a', areas: ['materials', 'loans', 'campaigns']};
@@ -126,6 +128,32 @@ test('project sheet and old top panel mount the same responsibility form for the
   assert.equal(buttons(tree).length, 0);
   assert.match(text(tree), /Só quem gerencia este projeto pode indicar ou trocar/);
   assert.ok(!text(tree).includes('Empréstimos'), 'área que a pessoa não abre no módulo não aparece na ficha');
+  // Um retorno de outra sessão ou projeto descarta os nomes e fecha a edição, inclusive na atualização após salvar.
+  for (const mismatch of [
+    {list: {viewerId: 'user-b'}},
+    {catalog: {viewerId: 'user-b'}},
+    {list: {projectId: 'project-b'}},
+  ]) {
+    const staleResponse = {};
+    const instance = mount(true, [row('materials')], staleResponse);
+    const authorized = await instance.load(props);
+    buttons(authorized)[0].props.onClick();
+    const opened = instance.sheet.render('default', props);
+    const editor = nodes(opened).find(node => node.type === 'ResponsibilityManager');
+    assert.ok(editor);
+    Object.assign(staleResponse, mismatch);
+    editor.props.onChanged();
+    const denied = await instance.load(props);
+    assert.match(text(denied), /A sessão ou o projeto da resposta mudou/);
+    assert.doesNotMatch(text(denied), /Pessoa sintética/);
+    assert.equal(buttons(denied).length, 0);
+    assert.equal(nodes(denied).filter(node => node.type === 'ResponsibilityManager').length, 0);
+    for (const key of Object.keys(mismatch)) delete staleResponse[key];
+    const recovered = await instance.load(props);
+    assert.match(text(recovered), /Pessoa sintética/);
+    assert.equal(nodes(recovered).filter(node => node.type === 'ResponsibilityManager').length, 0);
+  }
+
   // Sem nenhuma área, a seção some e nada é consultado.
   const before = requests.length, none = mount(true);
   assert.equal(await none.load({...props, areas: []}), null);

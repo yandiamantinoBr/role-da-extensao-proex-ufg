@@ -353,6 +353,26 @@ test('history of one subject narrows each source and never widens what the perso
     const feed = await activityFeed(db, outsider, { ...range, itemId: 'item-a' }, NOW);
     assert.deepEqual([feed.events.length, feed.subject.name], [0, '']);
   }
+  // A gestora pode ler os dois projetos, mas o título segue o recorte explícito dos eventos.
+  for (const [subjectFilter, expected] of [
+    [{ itemId: 'item-a' }, 'Planner'],
+    [{ loanId: 'loan-a' }, 'Projetor'],
+    [{ taskId: 'task-a' }, 'Contar planners'],
+    [{ campaignId: 'camp-a' }, 'Roleta sintética'],
+  ]) {
+    for (const scope of [{ projectId: 'project-b' }, { organizationId: 'org-other' }]) {
+      const filtered = await activityFeed(db, actors.manager, { ...range, ...subjectFilter, ...scope }, NOW);
+      assert.deepEqual([filtered.events.length, filtered.subject.name], [0, ''], JSON.stringify({ ...subjectFilter, ...scope }));
+    }
+    const permitted = await activityFeed(db, actors.manager, { ...range, ...subjectFilter, projectId: 'project-a', organizationId: 'org_proex' }, NOW);
+    assert.equal(permitted.subject.name, expected);
+  }
+  globalThis.__activityDb = db;
+  globalThis.__activityUser = { userId: actors.manager.userId, email: actors.manager.email, displayName: actors.manager.displayName };
+  const wrongProject = await route.GET(new Request('https://portal.test/api/activity?projectId=project-b&itemId=item-a'));
+  assert.equal(wrongProject.status, 200);
+  assert.equal((await wrongProject.json()).subject.name, '');
+
   // Entradas inválidas e a rota.
   await assert.rejects(activityFeed(db, actors.manager, { ...range, itemId: 'item-a', loanId: 'loan-a' }, NOW), error => error.status === 400 && error.code === 'invalid_activity_subject');
   await assert.rejects(activityFeed(db, actors.manager, { ...range, taskId: "x' OR 1=1" }, NOW), error => error.status === 400);
