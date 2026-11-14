@@ -25,7 +25,10 @@ function validResponse(value:unknown,query:URLSearchParams|string,body?:Record<s
 }
 export async function followupApi<T>(query:URLSearchParams|string,body?:Record<string,unknown>,signal?:AbortSignal):Promise<T>{
  const endpoint=body?.action==='task.triage.apply'?'/api/follow-up/triage':'/api/follow-up';
- const response=await fetch(`${endpoint}${String(query)?`?${query}`:''}`,{method:body?'POST':'GET',credentials:'same-origin',cache:'no-store',signal,...(body?{headers:{'Content-Type':'application/json','X-Proex-Action':'1'},body:JSON.stringify(body)}:{})});
+ const params = new URLSearchParams(String(query));
+ const isSearch = !body && params.get('view') === 'tasks' && params.has('search');
+ const payload = isSearch ? { ...Object.fromEntries(params), action: 'tasks.search' } : body;
+ const response=await fetch(`${endpoint}${!isSearch && String(query)?`?${query}`:''}`,{method:payload?'POST':'GET',credentials:'same-origin',cache:'no-store',signal,...(payload?{headers:{'Content-Type':'application/json','X-Proex-Action':'1'},body:JSON.stringify(payload)}:{})});
  let data:unknown;
  try{data=await response.json();}catch(error){if(signal?.aborted)throw signal.reason??error;if(object(error)&&error.name==='AbortError')throw error;if(response.ok)throw new Error('A resposta chegou incompleta. Seus campos foram preservados; atualize e tente novamente.');data={};}
  if(signal?.aborted){const error=new Error('Consulta cancelada.');error.name='AbortError';throw error;}
