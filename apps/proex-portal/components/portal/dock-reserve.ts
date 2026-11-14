@@ -5,8 +5,7 @@ export const DOCK_RESERVE_GAP = 16;
 
 /**
  * Room to leave at the end of the page so nothing ends up under the dock: from the top of its highest
- * resting part (Rolê, the Widgets button, a minimized chip) down to the bottom of the screen, which already
- * covers the phone's bottom bar and safe area because the dock itself is positioned above them.
+ * resting desktop part (Rolê, the Widgets button, a minimized chip) down to the bottom of the screen.
  * Returns null when there is nothing to measure (no visible part), so the caller keeps the CSS fallback.
  */
 export function dockReserve(viewportHeight: number, tops: number[], gap = DOCK_RESERVE_GAP): number | null {
