@@ -13,6 +13,7 @@ import ExportFormats, {type DocumentFormat} from './export-formats';
 import { documentExport } from './document-export';
 import { toast } from 'sonner';
 import { MAX_UPLOAD_FILE_BYTES as MAX_FILE_BYTES, UPLOAD_LIMIT_LABEL, uploadErrorMessage } from '../../lib/upload-limits';
+import { prepareUploadPhoto } from '../../lib/prepare-upload-photo';
 import DriveSaveButton from './drive-save-button';
 import ActivityMediaFolder from './activity-media-folder';
 
@@ -23,6 +24,7 @@ type Entry = {
   id: string; project_id: string; kind: Kind; title: string; body: string; occurred_at: string;
   starts_at: string | null; ends_at: string | null; item_id: string | null; loan_id: string | null;
   attachments: Attachment[];
+  canAttachCoverage?: boolean;
   origin?: { via: 'assistant'; label: string; summary?: string };
 };
 type Props = {
@@ -35,7 +37,7 @@ type Props = {
   canWrite?(capability: string, projectId: string): boolean;
 };
 type Filters = { projectId: string; from: string; to: string };
-type UploadEntry = { key: string; file: File; status: 'pending' | 'sending' | 'done' | 'error' | 'uncertain'; uncertain: boolean; error?: string };
+type UploadEntry = { key: string; selection: string; file: File; status: 'pending' | 'sending' | 'done' | 'error' | 'uncertain'; uncertain: boolean; error?: string };
 const kinds: { value: Kind; label: string; capability: string }[] = [
   { value: 'observation', label: 'Observação geral', capability: 'campaigns.manage' },
   { value: 'maintenance', label: 'Manutenção e condição', capability: 'inventory.manage' },
@@ -106,45 +108,93 @@ function attachmentValue(value: unknown): Attachment {
   if (typeof attachment.id !== 'string' || typeof attachment.name !== 'string' || typeof attachment.mime !== 'string' || typeof attachment.size !== 'number') throw new RequestFailure('O envio ainda não pôde ser confirmado. Tente novamente.');
   return attachment;
 }
-function fileProblem(file: File): string | null {
-  if (!file.size || file.size > MAX_FILE_BYTES) return `${file.name}: escolha um arquivo de até ${UPLOAD_LIMIT_LABEL}, com conteúdo.`;
+async function prepareRecordAttachment(file: File, signal: AbortSignal): Promise<File> {
   const accepted = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
-  if (!accepted.includes(file.type.toLowerCase()) && !((!file.type || file.type === 'application/octet-stream') && /\.(pdf|jpe?g|png|webp)$/i.test(file.name))) return `${file.name}: use PDF, JPEG, PNG ou WebP. Converta fotos HEIC antes de enviar.`;
-  return null;
+  const mime = file.type.toLowerCase(), generic = !mime || mime === 'application/octet-stream';
+  if (!accepted.includes(mime) && !(generic && /\.(pdf|jpe?g|png|webp)$/i.test(file.name))) {
+    throw new Error('Use PDF, JPEG, PNG ou WebP. Converta fotos HEIC para JPEG antes de enviar.');
+  }
+  if (!file.size) throw new Error('Escolha um arquivo com conteúdo.');
+  if (file.size <= MAX_FILE_BYTES) return file;
+  const extension = /\.([a-z0-9]+)$/i.exec(file.name)?.[1];
+  const jpeg = mime === 'image/jpeg' || (generic && /\.jpe?g$/i.test(file.name));
+  if (!jpeg || (extension && !/^jpe?g$/i.test(extension))) {
+    throw new Error(`Escolha um arquivo de até ${UPLOAD_LIMIT_LABEL} ou uma foto JPEG que possa ser reduzida.`);
+  }
+  const [start, end] = await Promise.all([file.slice(0, 3).arrayBuffer(), file.slice(-2).arrayBuffer()]);
+  signal.throwIfAborted();
+  const [a, b, c] = new Uint8Array(start), [y, z] = new Uint8Array(end);
+  if (a !== 0xff || b !== 0xd8 || c !== 0xff || y !== 0xff || z !== 0xd9) {
+    throw new Error('A imagem não contém uma foto JPEG válida.');
+  }
+  return prepareUploadPhoto(file, 'foto-do-registro', signal);
 }
 
 function AttachmentQueue({ recordId, onAttachment, onPendingChange }: {
   recordId: string; onAttachment(attachment: Attachment): void; onPendingChange?(pending: boolean): void;
 }) {
   const [entries, setEntries] = useState<UploadEntry[]>([]), [busy, setBusy] = useState(false);
+  const [preparing, setPreparing] = useState(false);
   const [error, setError] = useState(''), [message, setMessage] = useState('');
   const entriesRef = useRef<UploadEntry[]>([]), busyRef = useRef(false);
+  const preparation = useRef<AbortController | null>(null), mounted = useRef(false);
+  const pendingChanged = useRef(onPendingChange);
   const cameraRef = useRef<HTMLInputElement>(null), galleryRef = useRef<HTMLInputElement>(null);
   const inputId = `attachment-${useId().replace(/:/g, '')}`; // um par de campos por registro: id único
   const pending = entries.some(entry => entry.status !== 'done');
+  const working = preparing || busy;
   useEffect(() => {
-    if (!pending) return;
+    pendingChanged.current = onPendingChange;
+  }, [onPendingChange]);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      preparation.current?.abort();
+      if (preparation.current || entriesRef.current.some(entry => entry.status !== 'done')) pendingChanged.current?.(false);
+    };
+  }, []);
+  useEffect(() => {
+    if (!pending && !preparing) return;
     const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
     window.addEventListener('beforeunload', warn);
     return () => window.removeEventListener('beforeunload', warn);
-  }, [pending]);
+  }, [pending, preparing]);
   function update(next: UploadEntry[]) {
     entriesRef.current = next; setEntries(next); onPendingChange?.(next.some(entry => entry.status !== 'done'));
   }
-  function choose(event: ChangeEvent<HTMLInputElement>) {
+  async function choose(event: ChangeEvent<HTMLInputElement>) {
     const files = Array.from(event.target.files ?? []); event.target.value = '';
-    if (busyRef.current) return;
+    if (!files.length || busyRef.current || preparation.current) return;
+    const controller = new AbortController();
+    preparation.current = controller;
+    setPreparing(true); onPendingChange?.(true); setError(''); setMessage('');
     const next = [...entriesRef.current], problems: string[] = [];
-    for (const file of files) {
-      const problem = fileProblem(file);
-      if (problem) { problems.push(problem); continue; }
-      if (next.some(entry => entry.file.name === file.name && entry.file.size === file.size && entry.file.lastModified === file.lastModified && entry.file.type === file.type)) continue;
-      next.push({ key: crypto.randomUUID(), file, status: 'pending', uncertain: false });
+    let reduced = 0;
+    try {
+      for (const source of files) {
+        const selection = JSON.stringify([source.name, source.size, source.lastModified, source.type]);
+        if (next.some(entry => entry.selection === selection)) continue;
+        try {
+          const file = await prepareRecordAttachment(source, controller.signal);
+          if (controller.signal.aborted) return;
+          if (file !== source) reduced++;
+          next.push({ key: crypto.randomUUID(), selection, file, status: 'pending', uncertain: false });
+        } catch (cause) {
+          if (controller.signal.aborted) return;
+          problems.push(`${source.name}: ${cause instanceof Error ? cause.message : 'Não foi possível preparar este arquivo.'}`);
+        }
+      }
+      update(next);
+      setError(problems.slice(0, 3).join(' '));
+      if (reduced) setMessage(reduced === 1 ? 'Foto preparada. Envie os anexos quando terminar.' : `${reduced} fotos preparadas. Envie os anexos quando terminar.`);
+    } finally {
+      if (preparation.current === controller) preparation.current = null;
+      if (!controller.signal.aborted) setPreparing(false);
     }
-    update(next); setError(problems.slice(0, 3).join(' ')); setMessage('');
   }
   async function upload() {
-    if (busyRef.current || !entriesRef.current.some(entry => entry.status !== 'done')) return;
+    if (busyRef.current || preparation.current || !entriesRef.current.some(entry => entry.status !== 'done')) return;
     busyRef.current = true; setBusy(true); setError(''); setMessage('');
     try {
       for (const entry of [...entriesRef.current]) {
@@ -154,11 +204,13 @@ function AttachmentQueue({ recordId, onAttachment, onPendingChange }: {
           const form = new FormData();
           form.set('recordId', recordId); form.set('operationKey', entry.key); form.set('file', entry.file);
           const result = await requestJson('/api/records', { method: 'POST', headers: { 'X-Proex-Action': '1' }, body: form });
+          if (!mounted.current) return;
           const attachment = attachmentValue(result.attachment);
           if (result.recordId !== recordId) throw new RequestFailure('O envio ainda não pôde ser confirmado. Tente novamente.');
           update(entriesRef.current.map(value => value.key === entry.key ? { ...value, status: 'done', uncertain: false, error: undefined } : value));
           onAttachment(attachment);
         } catch (cause) {
+          if (!mounted.current) return;
           const uncertain = entry.uncertain || !confirmedRejection(cause);
           const detail = cause instanceof Error ? cause.message : 'Não foi possível enviar o anexo.';
           update(entriesRef.current.map(value => value.key === entry.key ? { ...value, status: uncertain ? 'uncertain' : 'error', uncertain, error: detail } : value));
@@ -167,26 +219,27 @@ function AttachmentQueue({ recordId, onAttachment, onPendingChange }: {
         }
       }
       setMessage('Todos os anexos desta seleção foram confirmados.');
-    } finally { busyRef.current = false; setBusy(false); }
+    } finally { busyRef.current = false; if (mounted.current) setBusy(false); }
   }
   return <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--line)' }}>
-    <p className="p-form-help">Fotografe um termo ou escolha arquivos. PDF, JPEG, PNG e WebP, até {UPLOAD_LIMIT_LABEL} por arquivo. O acesso fica restrito às permissões do registro.</p>
+    <p className="p-form-help">Anexe PDF, JPEG, PNG ou WebP de até {UPLOAD_LIMIT_LABEL}. Fotos JPEG maiores são reduzidas neste aparelho antes do envio. Os anexos ficam restritos a quem pode consultar o registro.</p>
     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-      <button type="button" className="p-button p-button-subtle" disabled={busy} onClick={() => cameraRef.current?.click()}><Camera size={17} aria-hidden="true" />Usar câmera</button>
-      <button type="button" className="p-button p-button-subtle" disabled={busy} onClick={() => galleryRef.current?.click()}><ImagePlus size={17} aria-hidden="true" />Galeria ou PDF</button>
+      <button type="button" className="p-button p-button-subtle" disabled={working} onClick={() => cameraRef.current?.click()}><Camera size={17} aria-hidden="true" />Usar câmera</button>
+      <button type="button" className="p-button p-button-subtle" disabled={working} onClick={() => galleryRef.current?.click()}><ImagePlus size={17} aria-hidden="true" />Galeria ou PDF</button>
     </div>
+    {preparing && <p className="p-form-help" role="status">Preparando arquivos neste aparelho…</p>}
+    {message && <p role="status" style={{ color: 'var(--success-ink)' }}>{message}</p>}
     <input ref={cameraRef} id={`${inputId}-camera`} aria-label="Tirar foto do anexo" type="file" accept="image/*" capture="environment" hidden onChange={choose} />
     <input ref={galleryRef} id={`${inputId}-file`} aria-label="Escolher arquivo do anexo" type="file" accept="application/pdf,image/jpeg,image/png,image/webp,.pdf,.jpg,.jpeg,.png,.webp" multiple hidden onChange={choose} />
     {!!entries.length && <ul style={{ padding: 0, margin: '14px 0', listStyle: 'none', display: 'grid', gap: 8 }} aria-label="Fila de anexos">
       {entries.map(entry => <li key={entry.key} style={{ border: '1px solid var(--line)', borderRadius: 12, padding: 12, display: 'flex', gap: 10, alignItems: 'flex-start', justifyContent: 'space-between' }}>
         <div style={{ minWidth: 0, overflowWrap: 'anywhere' }}><strong style={{ fontSize: 14 }}>{entry.file.name}</strong><small style={{ display: 'block', color: 'var(--text-secondary)', marginTop: 4 }}>{sizeLabel(entry.file.size)} · {entry.status === 'done' ? 'Envio confirmado' : entry.status === 'sending' ? 'Enviando…' : entry.status === 'uncertain' ? 'Aguardando confirmação' : entry.status === 'error' ? 'Envio recusado' : 'Aguardando envio'}</small>{entry.error && <small style={{ display: 'block', color: 'var(--danger)', marginTop: 5 }}>{entry.error}</small>}{entry.uncertain && <small className="p-form-help" style={{ display: 'block' }}>Repita o envio nesta tela para confirmar se o arquivo foi salvo.</small>}</div>
-        {entry.status === 'done' ? <Check size={19} aria-label="Confirmado" style={{ flexShrink: 0, color: 'var(--success-ink)' }} /> : entry.status === 'sending' ? <LoaderCircle size={19} className="p-spin" aria-label="Enviando" style={{ flexShrink: 0 }} /> : !entry.uncertain && <button type="button" className="p-button p-button-subtle" aria-label={`Remover ${entry.file.name} da seleção`} disabled={busy} onClick={() => { update(entriesRef.current.filter(value => value.key !== entry.key)); setError(''); }}><Trash2 size={16} /></button>}
+        {entry.status === 'done' ? <Check size={19} aria-label="Confirmado" style={{ flexShrink: 0, color: 'var(--success-ink)' }} /> : entry.status === 'sending' ? <LoaderCircle size={19} className="p-spin" aria-label="Enviando" style={{ flexShrink: 0 }} /> : !entry.uncertain && <button type="button" className="p-button p-button-subtle" aria-label={`Remover ${entry.file.name} da seleção`} disabled={working} onClick={() => { if (preparation.current || busyRef.current) return; update(entriesRef.current.filter(value => value.key !== entry.key)); setError(''); }}><Trash2 size={16} /></button>}
       </li>)}
     </ul>}
-    {pending && <button type="button" className="p-button p-button-primary" disabled={busy} onClick={() => void upload()}>{busy ? <LoaderCircle size={17} className="p-spin" /> : <Upload size={17} />}{busy ? 'Enviando anexos…' : entries.some(entry => entry.status === 'error' || entry.status === 'uncertain') ? 'Tentar os envios pendentes' : 'Enviar anexos selecionados'}</button>}
+    {pending && <button type="button" className="p-button p-button-primary" disabled={working} onClick={() => void upload()}>{busy ? <LoaderCircle size={17} className="p-spin" /> : <Upload size={17} />}{busy ? 'Enviando anexos…' : entries.some(entry => entry.status === 'error' || entry.status === 'uncertain') ? 'Tentar os envios pendentes' : 'Enviar anexos selecionados'}</button>}
     {pending && <p className="p-form-help">Mantenha esta tela aberta até confirmar os envios. A seleção e a recuperação ficam neste aparelho enquanto esta tela estiver aberta; recarregar a página perde a fila.</p>}
     {error && <p className="p-inline-error" role="alert">{error}</p>}
-    {message && <p role="status" style={{ color: 'var(--success-ink)' }}>{message}</p>}
   </div>;
 }
 
@@ -195,10 +248,12 @@ export default function RecordsPanel({ userId, projects: sourceProjects, items, 
   const writableProjects = projects.filter(project => kinds.some(kind => canWrite(kind.capability, project.id)));
   const [records, setRecords] = useState<Entry[]>([]), [truncated, setTruncated] = useState(false);
   const [scheduleTitle, setScheduleTitle] = useState('');
+  const [coverageTaskId,setCoverageTaskId]=useState('');
   const [loading, setLoading] = useState(true), [readError, setReadError] = useState(''), [reload, setReload] = useState(0);
   const [filterProject, setFilterProject] = useState(initialProjectId), [from, setFrom] = useState(''), [to, setTo] = useState('');
   const [filters, setFilters] = useState<Filters>({ projectId: initialProjectId, from: '', to: '' });
-  const canCreateHere = scheduleItemId ? Boolean(scheduleTitle && !readError && canWrite('campaigns.manage',filters.projectId))
+  const canManageActivity=Boolean(scheduleItemId&&canWrite('campaigns.manage',filters.projectId));
+  const canCreateHere = scheduleItemId ? Boolean(scheduleTitle && !readError && (canManageActivity||coverageTaskId))
     : filters.projectId ? writableProjects.some(project => project.id === filters.projectId) : writableProjects.length > 0;
   const pendingProject = filterProject !== filters.projectId;
   const readDenied = Boolean(scheduleItemId && !filters.projectId) || Boolean(filters.projectId ? !canRead(filters.projectId) : !projects.length);
@@ -218,17 +273,18 @@ export default function RecordsPanel({ userId, projects: sourceProjects, items, 
     if (readDenied) return;
     const controller = new AbortController();
     void fetch(`/api/records?${query}`, { credentials: 'same-origin', cache: 'no-store', signal: controller.signal }).then(async response => {
-      const result = await response.json() as { records?: unknown[]; truncated?: boolean; error?: string; scheduleItem?: { id: string; title: string } };
+      const result = await response.json() as { records?: unknown[]; truncated?: boolean; error?: string; scheduleItem?: { id: string; title: string };coverageTaskId?:unknown };
       if (!response.ok) throw new Error(result.error || 'Não foi possível consultar os registros.');
       if (!Array.isArray(result.records)) throw new Error('Não foi possível ler a lista de registros.');
       if (scheduleItemId && result.scheduleItem?.id !== scheduleItemId) throw new Error('Não foi possível confirmar a atividade deste registro.');
-      return { records: result.records.map(asEntry), truncated: result.truncated === true, scheduleTitle: result.scheduleItem?.title ?? '' };
+      return { records: result.records.map(asEntry), truncated: result.truncated === true, scheduleTitle: result.scheduleItem?.title ?? '',
+        coverageTaskId:typeof result.coverageTaskId==='string'?result.coverageTaskId:'' };
     }).then(result => {
       if (controller.signal.aborted) return;
-      setRecords(result.records); setTruncated(result.truncated); setScheduleTitle(result.scheduleTitle); setReadError(''); setLoading(false);
+      setRecords(result.records); setTruncated(result.truncated); setScheduleTitle(result.scheduleTitle); setCoverageTaskId(result.coverageTaskId); setReadError(''); setLoading(false);
     }, (cause: unknown) => {
       if (controller.signal.aborted) return;
-      setRecords([]); setTruncated(false); setScheduleTitle(''); setReadError(cause instanceof Error ? cause.message : 'Não foi possível consultar os registros.'); setLoading(false);
+      setRecords([]); setTruncated(false); setScheduleTitle(''); setCoverageTaskId(''); setReadError(cause instanceof Error ? cause.message : 'Não foi possível consultar os registros.'); setLoading(false);
     });
     return () => controller.abort();
   }, [query, reload, readDenied, scheduleItemId]);
@@ -261,7 +317,9 @@ export default function RecordsPanel({ userId, projects: sourceProjects, items, 
     setTitle(''); setBody(''); setOccurredAt(localNow()); setHasInterval(false); setStartsAt(''); setEndsAt(''); setItemId(''); setLoanId('');
     setSaved(null); setSavedPending(false); setSaveError(''); setUnconfirmed(false); attempt.current = null; setOpen(true);
   }
-  const allowedKinds = kinds.filter(value => canWrite(value.capability, projectId) && (!scheduleItemId || value.value === 'project' || value.value === 'observation'));
+  const allowedKinds=kinds.filter(value => scheduleItemId
+    ? projectId===filters.projectId&&(canManageActivity||coverageTaskId)&&(value.value==='project'||value.value==='observation')
+    : canWrite(value.capability,projectId));
   const projectItems = items.filter(item => text(item, 'project_id') === projectId);
   const projectLoans = loans.filter(loan => text(loan, 'project_id') === projectId);
   const allowLoanLink = canWrite('loans.manage', projectId) && (kind === 'loan' || canWrite('campaigns.manage', projectId));
@@ -274,6 +332,7 @@ export default function RecordsPanel({ userId, projects: sourceProjects, items, 
     if (!(canWrite('loans.manage', projectId) && (value === 'loan' || canWrite('campaigns.manage', projectId)))) setLoanId('');
   }
   function canAttach(record: Entry): boolean {
+    if(scheduleItemId&&coverageTaskId&&record.canAttachCoverage===true)return true;
     const capability = kinds.find(value => value.value === record.kind)?.capability;
     return !!capability && canWrite(capability, record.project_id) && (!record.loan_id || record.kind === 'loan' || (canWrite('loans.manage', record.project_id) && canWrite('campaigns.manage', record.project_id)));
   }
@@ -308,7 +367,7 @@ export default function RecordsPanel({ userId, projects: sourceProjects, items, 
         const occurrence = toIso(occurredAt, 'a ocorrência');
         const start = hasInterval ? toIso(startsAt, 'o início da atividade') : null, end = hasInterval ? toIso(endsAt, 'o fim da atividade') : null;
         if (start && end && end < start) throw new Error('O fim da atividade deve ocorrer no mesmo horário ou depois do início.');
-        attempt.current = { uncertain: false, payload: { action: 'create', operationKey: crypto.randomUUID(), projectId, kind, title, body, occurredAt: occurrence, startsAt: start, endsAt: end, itemId: itemId || null, loanId: allowLoanLink ? loanId || null : null, ...(scheduleItemId ? { scheduleItemId } : {}) } };
+        attempt.current = { uncertain: false, payload: { action: 'create', operationKey: crypto.randomUUID(), projectId, kind, title, body, occurredAt: occurrence, startsAt: start, endsAt: end, itemId: itemId || null, loanId: allowLoanLink ? loanId || null : null, ...(scheduleItemId ? { scheduleItemId } : {}),...(!canManageActivity&&scheduleItemId&&coverageTaskId?{coverageTaskId}:{}) } };
       } catch (cause) { setSaveError(cause instanceof Error ? cause.message : 'Confira o formulário.'); return; }
     }
     savingRef.current = true; setSaving(true); setUnconfirmed(true);
@@ -317,7 +376,7 @@ export default function RecordsPanel({ userId, projects: sourceProjects, items, 
       const result = await requestJson('/api/records', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Proex-Action': '1' }, body: JSON.stringify(currentAttempt.payload) });
       const record = asEntry(result.record);
       if (record.id !== result.id || (scheduleItemId && text(result.record as Row,'schedule_item_id') !== scheduleItemId)) throw new RequestFailure('A confirmação do registro não pôde ser lida. Tente novamente.');
-      setSaved(record); setUnconfirmed(false); attempt.current = null; draft.clear(); refresh(); toast.success('Registro salvo. Você pode adicionar os anexos.');
+      setSaved(currentAttempt.payload.coverageTaskId?{...record,canAttachCoverage:true}:record); setUnconfirmed(false); attempt.current = null; draft.clear(); refresh(); toast.success('Registro salvo. Você pode adicionar os anexos.');
     } catch (cause) {
       const uncertain = currentAttempt.uncertain || !confirmedRejection(cause);
       currentAttempt.uncertain = uncertain;
@@ -401,9 +460,12 @@ export default function RecordsPanel({ userId, projects: sourceProjects, items, 
         {canAttach(saved) && <AttachmentQueue key={saved.id} recordId={saved.id} onAttachment={attachment => attach(saved.id, attachment)} onPendingChange={setSavedPending} />}
         <div style={{ marginTop: 20 }}><button type="button" className="p-button p-button-subtle" disabled={savedPending || existingPending || pendingProject || !canCreateHere} onClick={begin}><FilePlus2 size={17} />Criar outro registro</button>{savedPending && <p className="p-form-help">Confirme os anexos pendentes ou remova da seleção os arquivos que ainda não foram enviados.</p>}</div>
       </div> : <form ref={createRef} className="p-form" onSubmit={create}><DraftNotice draft={draft}/>
-        <p className="p-form-help">Salve para anexar fotos e PDFs. {scheduleItemId ? 'Para vídeos, vincule a pasta do Drive em Vídeos da atividade.' : 'Para vídeos, abra os registros da atividade no Cronograma do projeto.'}</p>
+        <p className="p-form-help">Salve para anexar fotos e PDFs. {scheduleItemId ? (canManageActivity?'Para vídeos, vincule a pasta do Drive em Vídeos da atividade.':'Você pode anexar aos seus registros desta atividade. Quem tem acesso aos registros do projeto poderá ver os anexos.') : 'Para vídeos, abra os registros da atividade no Cronograma do projeto.'}</p>
         <fieldset disabled={saving || unconfirmed}>
-          <div className="p-form-grid"><label className="p-field"><span>Projeto</span><select name="projectId" required value={projectId} onChange={event => changeProject(event.target.value)}>{writableProjects.filter(project => !createScope || project.id === createScope).map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label><label className="p-field"><span>Categoria</span><select name="kind" required value={kind} onChange={event => changeKind(event.target.value as Kind)}>{allowedKinds.map(value => <option key={value.value} value={value.value}>{value.label}</option>)}</select></label></div>
+          <div className="p-form-grid">
+            {scheduleItemId?<input type="hidden" name="projectId" value={projectId}/>:<label className="p-field"><span>Projeto</span><select name="projectId" required value={projectId} onChange={event => changeProject(event.target.value)}>{writableProjects.filter(project => !createScope || project.id === createScope).map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>}
+            <label className="p-field"><span>Categoria</span><select name="kind" required value={kind} onChange={event => changeKind(event.target.value as Kind)}>{allowedKinds.map(value => <option key={value.value} value={value.value}>{value.label}</option>)}</select></label>
+          </div>
           <label className="p-field"><span>Título</span><input name="title" required maxLength={160} value={title} onChange={event => setTitle(event.target.value)} placeholder="Ex.: devolução e conferência da caixa de som" /></label>
           <label className="p-field"><span>Descrição e observações</span><textarea name="body" rows={5} maxLength={6000} value={body} onChange={event => setBody(event.target.value)} placeholder="Registre apenas as informações necessárias para a equipe." /></label>
           <label className="p-field"><span>Data e hora da ocorrência</span><DateTimeField aria-label="Data e hora da ocorrência" name="occurredAt"  required min="2000-01-01T00:00" max="2200-12-31T23:59" value={occurredAt} onChange={event => setOccurredAt(event.target.value)} /></label>

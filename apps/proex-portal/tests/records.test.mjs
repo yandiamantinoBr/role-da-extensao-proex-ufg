@@ -26,6 +26,7 @@ function compile(file) {
 const records = await import(compile('lib/records.ts'));
 const route = await import(compile('app/api/records/route.ts'));
 const download = await import(compile('app/api/records/files/[id]/route.ts'));
+const {followupAction}=await import(compile('lib/follow-up/service.ts'));
 const { listRecords, createRecord, uploadRecordAttachment, recordAttachment, validatedRecordFile, readRecordForm, requireRecordMutation, MAX_RECORD_FILE_BYTES } = records;
 
 function fixture() {
@@ -71,6 +72,81 @@ const pdf = new TextEncoder().encode('%PDF-1.7\nTest document\n%%EOF');
 const png = new Uint8Array(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6qdsAAAAASUVORK5CYII=', 'base64'));
 const file = (recordId, overrides = {}) => ({ recordId, bytes: pdf, name: 'term.pdf', declaredMime: 'application/pdf', operationKey: crypto.randomUUID(), ...overrides });
 const count = (db, table) => db.native.prepare(`SELECT COUNT(*) n FROM ${table}`).get().n;
+
+test('explicit activity coverage allows own record and photo only while the grant is live',async t=>{
+ const {db,storage}=fixture();
+ t.after(()=>db.native.close());
+ const manager=principal(db,'manager'),reader=principal(db,'viewer'),foreign=principal(db,'viewer','project-b'),inventory=principal(db,'inventory');
+ const at='2026-11-14T12:00:00.000Z';
+ for(const id of ['sparks','nearby'])db.native.prepare('INSERT INTO project_schedule_items(id,project_id,title,starts_at,ends_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?)').run(id,'project-a',id,at,at,at,at);
+ const action=(actor,name,values)=>followupAction(db,actor,name,{action:name,operationKey:crypto.randomUUID(),...values});
+ const checklist=await action(manager,'checklist.activity.create',{projectId:'project-a',scheduleItemId:'sparks',title:'Cobertura QA',rows:[{label:'Foto guardada?'}],userIds:[reader.userId,inventory.userId]});
+ const taskId=checklist.task.id;
+ const values=input({scheduleItemId:'sparks',coverageTaskId:taskId});
+ await assert.rejects(createRecord(db,reader,values),{status:403});
+ await assert.rejects(action(reader,'task.worker.grant',{id:taskId,userId:reader.userId,confirmed:true,allowCoverage:true}),{status:403});
+ const grant=await action(manager,'task.worker.grant',{id:taskId,userId:reader.userId,confirmed:true});
+ await assert.rejects(createRecord(db,reader,values),{status:403});
+ await action(manager,'task.worker.revoke',{id:taskId,grantId:grant.workGrants[0].id,confirmed:true});
+ const withMedia=await action(manager,'task.worker.grant',{id:taskId,userId:reader.userId,confirmed:true,allowCoverage:true});
+ await assert.rejects(createRecord(db,reader,input({scheduleItemId:'nearby',coverageTaskId:taskId})),{status:403});
+ await assert.rejects(createRecord(db,foreign,values),{status:403});
+ await assert.rejects(createRecord(db,reader,input({coverageTaskId:taskId})),{status:400});
+ await assert.rejects(action(manager,'task.worker.grant',{id:taskId,userId:inventory.userId,confirmed:true,allowCoverage:true}));
+ const saved=await createRecord(db,reader,values);
+ assert.equal((await createRecord(db,reader,values)).id,saved.id);
+ const managementRecord=await createRecord(db,manager,input({scheduleItemId:'sparks'}));
+ await assert.rejects(uploadRecordAttachment(db,storage,reader,file(managementRecord.id)),{status:403});
+ const upload=file(saved.id,{bytes:png,name:'foto.png',declaredMime:'image/png'});
+ const receipt=await uploadRecordAttachment(db,storage,reader,upload);
+ assert.equal((await recordAttachment(db,manager,receipt.attachment.id)).mime,'image/png');
+ const recordsBefore=await listRecords(db,reader,{projectId:'project-a',scheduleItemId:'sparks'});
+ const allowed=await records.withCoveragePermissions(db,reader,'project-a','sparks',recordsBefore.records);
+ assert.equal(allowed.coverageTaskId,taskId);
+ assert.deepEqual(allowed.records.filter(row=>row.canAttachCoverage).map(row=>row.id),[saved.id]);
+ storage.onPut=()=>db.native.prepare("UPDATE followup_work_grants SET revoked_at=? WHERE id=?").run(at,withMedia.workGrants[0].id);
+ await assert.rejects(uploadRecordAttachment(db,storage,reader,file(saved.id)),{status:403,code:'record_coverage_forbidden'});
+ assert.equal(storage.objects.size,1);
+ assert.equal(count(db,'record_attachments'),1);
+ await assert.rejects(uploadRecordAttachment(db,storage,reader,upload),{status:403});
+ await assert.rejects(createRecord(db,reader,values),{status:403});
+ assert.equal((await records.withCoveragePermissions(db,reader,'project-a','sparks',recordsBefore.records)).coverageTaskId,null);
+ assert.equal((await recordAttachment(db,reader,receipt.attachment.id)).id,receipt.attachment.id,'project reading is unchanged');
+});
+
+test('reinviting, reassigning and unblocking do not restore previously granted activity coverage',async t=>{
+ const {db}=fixture();
+ t.after(()=>db.native.close());
+ const manager=principal(db,'manager'),reader=principal(db,'viewer');
+ const at='2026-11-14T12:00:00.000Z';
+ db.native.prepare('INSERT INTO project_schedule_items(id,project_id,title,starts_at,ends_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?)').run('sparks','project-a','Sparks',at,at,at,at);
+ const action=(actor,name,values)=>followupAction(db,actor,name,{action:name,operationKey:crypto.randomUUID(),...values});
+ const created=await action(manager,'checklist.activity.create',{projectId:'project-a',scheduleItemId:'sparks',title:'Cobertura QA',rows:[{label:'Foto guardada?'}],userIds:[reader.userId]});
+ const id=created.task.id;
+ const saved=await action(manager,'task.worker.grant',{id,userId:reader.userId,confirmed:true,allowCoverage:true});
+ const grantId=saved.workGrants[0].id;
+ const permission=()=>records.coverageTaskForActivity(db,reader,'project-a','sparks');
+ const coverage=allowCoverage=>action(manager,'task.worker.coverage',{id,grantId,allowCoverage,confirmed:true});
+ assert.equal(await permission(),id);
+ await coverage(false);
+ assert.equal(await permission(),null);
+ assert.equal((await action(reader,'checklist.activity.answer',{id:saved.checklist.id,rowId:saved.checklist.rows[0].id,answer:'yes',expectedVersion:1})).checklist.rows[0].answer,'yes');
+ await coverage(true);
+ assert.equal(await permission(),id);
+ db.native.prepare('UPDATE members SET revoked_at=? WHERE user_id=?').run(at,reader.userId);
+ db.native.prepare("INSERT INTO members(id,user_id,email,role,project_id,revoked_at,created_at) VALUES(?,?,?,'viewer','project-a',NULL,?)").run('replacement-member',reader.userId,reader.email,at);
+ assert.equal(await permission(),null,'reinvitation with the same identity needs a new explicit grant');
+ await coverage(true);
+ const active=await action(manager,'task.update',{id,title:'Cobertura revisada',expectedVersion:2});
+ assert.equal(await permission(),id,'an unrelated edit keeps coverage');
+ const removed=await action(manager,'task.update',{id,userIds:[],expectedVersion:active.task.version});
+ await action(manager,'task.update',{id,userIds:[reader.userId],expectedVersion:removed.task.version});
+ assert.equal(await permission(),null,'reassignment needs a new explicit grant');
+ await coverage(true);
+ db.native.prepare("UPDATE portal_users SET status='blocked' WHERE user_id=?").run(reader.userId);
+ db.native.prepare("UPDATE portal_users SET status='active' WHERE user_id=?").run(reader.userId);
+ assert.equal(await permission(),null,'unblocking alone never restores coverage');
+});
 
 test('a chronology entry organizes photos and PDFs while preserving project authorization and idempotency', async t => {
   const { db, storage } = fixture();

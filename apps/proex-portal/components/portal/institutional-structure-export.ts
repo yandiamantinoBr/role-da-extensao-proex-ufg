@@ -19,5 +19,3 @@ export function structureExportReport(data:StructureWorkspace,includeArchived=fa
  const presentation:ReportPdfPresentation={columnWeights:[3.9,2.7,1.9,1.3],columnGroups:[{label:'Unidade formal',keys:['unidade','tipo']},{label:'Vínculo institucional',keys:['superior','relacao']},{label:'Equipes visíveis',keys:['equipes']},{label:'Situação',keys:['situacao']}],metrics:[{label:'Unidades no recorte',value:data.nodes.length},{label:'Relações de governança',value:data.nodes.filter(node=>node.relation==='governance').length},{label:'Equipes vinculadas visíveis',value:new Set(data.links.map(link=>link.teamId)).size}]};
  return{title:'Estrutura institucional e equipes',columns:structureExportColumns,rows,info,presentation};
 }
-/** Source/version, authorized links and even removed nodes fence a rendered artifact. */
-export function structureFingerprint(data:StructureWorkspace){const {asOf:ignored,...snapshot}=data;void ignored;return JSON.stringify(snapshot);}

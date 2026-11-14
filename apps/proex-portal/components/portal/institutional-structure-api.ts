@@ -1,4 +1,5 @@
 import {NODE_KINDS,RELATIONS,type StructureWorkspace} from '@/lib/institutional-structure/contracts';
+import type { DocumentFormat } from './export-formats';
 
 export type StructureQuery={viewerId:string;organizationId:string;projectId:string|null;includeArchived:boolean};
 export class StructureApiError extends Error{constructor(message:string,readonly status=0,readonly code='structure_response'){super(message);}}
@@ -19,12 +20,48 @@ export function isStructureWorkspace(value:unknown):value is StructureWorkspace{
  for(const link of value.links){if(!object(link)||!identifier(link.nodeId)||!identifier(link.teamId)||!nodes.has(link.nodeId)||!teams.has(link.teamId))return false;const key=JSON.stringify([link.nodeId,link.teamId]);if(links.has(key))return false;links.add(key);}
  return true;
 }
-export function structureQueryPath(query:StructureQuery){return'/api/institutional-structure?'+new URLSearchParams({organizationId:query.organizationId,...(query.projectId?{projectId:query.projectId}:{}),includeArchived:String(query.includeArchived)});}
+function structureScopeParams(query:StructureQuery){
+ return new URLSearchParams({organizationId:query.organizationId,...(query.projectId?{projectId:query.projectId}:{}),includeArchived:String(query.includeArchived)});
+}
+export function structureQueryPath(query:StructureQuery){return '/api/institutional-structure?'+structureScopeParams(query);}
 async function responseValue(response:Response,signal:AbortSignal){let value:unknown;try{value=await response.json();}catch{throw new StructureApiError('A resposta chegou incompleta. Atualize antes de continuar.',response.status);}if(signal.aborted)throw new DOMException('Consulta cancelada.','AbortError');if(!response.ok)throw new StructureApiError(object(value)&&typeof value.error==='string'?value.error:'Não foi possível consultar a estrutura.',response.status,object(value)&&typeof value.code==='string'?value.code:'structure_response');return value;}
 export async function readStructure(query:StructureQuery,signal:AbortSignal):Promise<StructureWorkspace>{
  const value=await responseValue(await fetch(structureQueryPath(query),{credentials:'same-origin',cache:'no-store',redirect:'error',signal}),signal);
  if(!isStructureWorkspace(value)||value.viewerId!==query.viewerId||value.scope.organizationId!==query.organizationId||value.scope.projectId!==query.projectId||query.includeArchived&&!value.scope.canManage||!query.includeArchived&&value.nodes.some(node=>node.status==='archived')||!value.scope.canManage&&value.teams.some(team=>team.status==='archived'))throw new StructureApiError('A resposta não corresponde à sua conta ou ao recorte escolhido.',403,'structure_context');
  return value;
+}
+const artifactMime: Record<DocumentFormat, string> = {
+ pdf: 'application/pdf',
+ xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+ docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+};
+export async function readStructureExport(query: StructureQuery, format: DocumentFormat, signal: AbortSignal) {
+ const params = structureScopeParams(query);
+ params.set('format', format);
+ let response: Response;
+ try {
+  response = await fetch('/api/institutional-structure/export?'+params, {
+   headers: {'X-Proex-Viewer':query.viewerId}, credentials:'same-origin', cache:'no-store', redirect:'error', signal,
+  });
+ } catch {
+  signal.throwIfAborted();
+  throw new StructureApiError('Não foi possível conectar ao Portal. Confira a conexão e tente baixar novamente.');
+ }
+ if (!response.ok) {
+  if (response.status === 404) throw new StructureApiError('Atualize a página e tente baixar a estrutura novamente.', 404);
+  await responseValue(response, signal);
+ }
+ const snapshot = response.headers.get('X-Proex-Structure-Snapshot');
+ if (!snapshot || !/^[0-9a-f]{64}$/.test(snapshot) || response.headers.get('Content-Type') !== artifactMime[format]) {
+  throw new StructureApiError('O arquivo chegou incompleto. Atualize a estrutura e tente novamente.', 502);
+ }
+ const artifact = await response.blob().catch(() => {
+  signal.throwIfAborted();
+  throw new StructureApiError('O arquivo chegou incompleto. Atualize a estrutura e tente novamente.', 502);
+ });
+ signal.throwIfAborted();
+ if (!artifact.size) throw new StructureApiError('O arquivo chegou vazio. Atualize a estrutura e tente novamente.', 502);
+ return { artifact, snapshot };
 }
 export async function saveStructure(input:Record<string,unknown>,query:StructureQuery,signal:AbortSignal){
  const value=await responseValue(await fetch('/api/institutional-structure',{method:'POST',credentials:'same-origin',cache:'no-store',redirect:'error',signal,headers:{'Content-Type':'application/json','X-Proex-Action':'1'},body:JSON.stringify(input)}),signal);

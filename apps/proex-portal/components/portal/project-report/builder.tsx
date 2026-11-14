@@ -1,23 +1,22 @@
 'use client';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, FilePlus2, LoaderCircle, MessageSquarePlus, RefreshCw, Save, Trash2 } from 'lucide-react';
 import {
   defaultReportConfig, normalizeReportConfig, periodRange, REFERENCE_TYPE_LABEL, REPORT_NOTES_LIMIT, REPORT_SECTION_NOTE_LIMIT, REPORT_SECTIONS, REPORT_TEMPLATE_NAME_LIMIT, REPORT_TITLE_LIMIT,
   starterTemplates, type ReportConfig, type ReportPeriod, type ReportSectionId,
 } from '@/lib/project-report-config';
 import DateField from '../date-field';
-import ExportFormats, { type DocumentFormat } from '../export-formats';
+import ExportFormats, { ExportHandledError, type DocumentFormat } from '../export-formats';
 import { download } from '../report-export';
 import { projectBrandFor } from '../reports-center';
 import { personalDraftKey } from '../use-form-draft';
-import { buildReportDocument, sectionAvailable, type ReportData } from './document';
+import { prepareProjectReport, ProjectReportError, readProjectReport, reportErrorMessage, type ProjectReportPayload } from './api';
+import { buildReportDocument, sectionAvailable } from './document';
 import { toReportDocx, toReportXlsx } from './ooxml';
 import ReportPreview from './preview';
 import styles from './project-report.module.css';
 
-type Template = { id: string; name: string; version: number; config: ReportConfig };
-type Payload = ReportData & { permissions: { canSaveTemplates: boolean; canAddReferences: boolean }; templates: Template[] };
-type Props = { projectId: string; projectName?: string; officialUrl?: string; refreshKey?: string; onAddReference?: () => void };
+type Props = { projectId: string; viewerId: string; projectName?: string; officialUrl?: string; refreshKey?: string; onAddReference?: () => void };
 
 const DRAFT_KEY = 'project-report:';
 const MONTH_NAMES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
@@ -35,20 +34,15 @@ function readDraft(projectId: string): ReportConfig {
   try { const key = personalDraftKey(DRAFT_KEY + projectId), raw = key ? window.localStorage.getItem(key) : null; if (raw) return normalizeReportConfig(JSON.parse(raw)); } catch { /* rascunho opcional */ }
   return defaultReportConfig();
 }
-function errorMessage(body: unknown, fallback: string): string {
-  const value = body && typeof body === 'object' ? (body as Record<string, unknown>).error ?? (body as Record<string, unknown>).message : null;
-  const detail = value && typeof value === 'object' && 'message' in value ? (value as { message?: unknown }).message : value;
-  return typeof detail === 'string' && detail ? detail : fallback;
-}
 function slug(value: string): string {
   return value.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 48) || 'projeto';
 }
 
-export default function ProjectReportBuilder({ projectId, projectName, officialUrl, refreshKey = '', onAddReference }: Props) {
-  // Montado só no cliente (a ficha do projeto carrega depois da página); `key` troca por projeto.
+export default function ProjectReportBuilder({ projectId, viewerId, projectName, officialUrl, refreshKey = '', onAddReference }: Props) {
+  // A ficha remonta este componente só quando muda o projeto ou a conta.
   const [config, setConfig] = useState<ReportConfig>(() => typeof window === 'undefined' ? defaultReportConfig() : readDraft(projectId));
   const [templateKey, setTemplateKey] = useState('');
-  const [payload, setPayload] = useState<Payload | null>(null);
+  const [payload, setPayload] = useState<ProjectReportPayload | null>(null);
   const [loading, setLoading] = useState(true), [error, setError] = useState(''), [reload, setReload] = useState(0);
   const [naming, setNaming] = useState(false), [templateName, setTemplateName] = useState(''), [saving, setSaving] = useState(false);
   const [templateMessage, setTemplateMessage] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
@@ -59,6 +53,8 @@ export default function ProjectReportBuilder({ projectId, projectName, officialU
   const months = useMemo(() => recentMonths(), []);
   const starters = useMemo(() => starterTemplates(today()), []);
   const sectionRefs = useRef(new Map<string, HTMLButtonElement | null>());
+  const exportJob = useRef<AbortController | null>(null);
+  useLayoutEffect(() => () => exportJob.current?.abort(), [viewerId, projectId, config]);
 
   useEffect(() => {
     try { const key = personalDraftKey(DRAFT_KEY + projectId); if (key) window.localStorage.setItem(key, JSON.stringify(config)); } catch { /* sem armazenamento local */ }
@@ -69,23 +65,22 @@ export default function ProjectReportBuilder({ projectId, projectName, officialU
     const timer = window.setTimeout(async () => {
       setLoading(true); setError('');
       try {
-        const query = new URLSearchParams(from ? { from, to } : {});
-        const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/report?${query}`, { credentials: 'same-origin', cache: 'no-store', signal: controller.signal });
-        const body = await response.json().catch(() => null) as Partial<Payload> | null;
-        // Acesso retirado: some com os dados antigos em vez de continuar mostrando e baixando.
-        if ([401, 403, 404].includes(response.status) && !controller.signal.aborted) setPayload(null);
-        if (!response.ok || !body || typeof body !== 'object' || !body.project || !body.sections) throw new Error(errorMessage(body, 'Não foi possível carregar os dados do relatório.'));
-        if (!controller.signal.aborted) setPayload(body as Payload);
+        if (!viewerId) throw new ProjectReportError('Entre com sua conta para consultar o relatório.', 401);
+        const data = await readProjectReport({ viewerId, projectId, from, to }, controller.signal);
+        if (!controller.signal.aborted) setPayload(data);
       } catch (cause) {
-        if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'Não foi possível carregar os dados do relatório.');
+        if (!controller.signal.aborted) {
+          if (cause instanceof ProjectReportError && [401, 403, 404].includes(cause.status)) setPayload(null);
+          setError(cause instanceof ProjectReportError ? cause.message : 'Não foi possível carregar os dados do relatório.');
+        }
       } finally { if (!controller.signal.aborted) setLoading(false); }
     }, 250);
     return () => { controller.abort(); window.clearTimeout(timer); };
-  }, [projectId, from, to, refreshKey, reload]);
+  }, [viewerId, projectId, from, to, refreshKey, reload]);
 
   const brand = projectBrandFor(projectId, payload?.project.name ?? projectName, payload?.project.officialUrl ?? officialUrl);
   // Só monta o documento quando os dados correspondem ao período escolhido (evita rótulo de um período com dados de outro).
-  const current = !!payload && payload.period.from === (from || null) && payload.period.to === (to || null);
+  const current = !!payload && payload.project.id === projectId && payload.period.from === (from || null) && payload.period.to === (to || null);
   const doc = useMemo(() => payload && current ? buildReportDocument(payload, config, new Date(payload.generatedAt)) : null, [payload, config, current]);
   const busy = loading && !current;
   const saved = payload?.templates ?? [];
@@ -122,9 +117,9 @@ export default function ProjectReportBuilder({ projectId, projectName, officialU
   async function templateRequest(body: Record<string, unknown>, success: string) {
     setSaving(true); setTemplateMessage(null);
     try {
-      const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/report`, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-Proex-Action': '1' }, body: JSON.stringify(body) });
-      const result = await response.json().catch(() => null) as { templates?: Template[]; id?: string } | null;
-      if (!response.ok || !result || !Array.isArray(result.templates)) throw new Error(errorMessage(result, 'Não foi possível salvar o modelo.'));
+      const response = await fetch(`/api/projects/${encodeURIComponent(projectId)}/report`, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', 'X-Proex-Action': '1', 'X-Proex-Viewer': viewerId }, body: JSON.stringify(body) });
+      const result = await response.json().catch(() => null) as { templates?: ProjectReportPayload['templates']; id?: string } | null;
+      if (!response.ok || !result || !Array.isArray(result.templates)) throw new Error(reportErrorMessage(result, 'Não foi possível salvar o modelo.'));
       const templates = result.templates;
       setPayload(current => current ? { ...current, templates } : current);
       setTemplateKey(result.id ? `saved:${result.id}` : '');
@@ -136,10 +131,42 @@ export default function ProjectReportBuilder({ projectId, projectName, officialU
   }
 
   async function exportFile(format: DocumentFormat) {
-    if (!doc) throw new Error('Espere a prévia terminar de carregar e tente de novo.');
+    if (!payload || !doc || loading) throw new Error('Espere a prévia terminar de carregar e tente de novo.');
     if (!doc.sections.length) throw new Error('Marque ao menos uma seção antes de baixar.');
-    const blob = format === 'pdf' ? await (await import('./pdf')).toReportPdf(doc, { projectBrand: brand }) : format === 'docx' ? toReportDocx(doc) : toReportXlsx(doc);
-    download(`relatorio-${slug(doc.projectName)}-${doc.generatedIso.slice(0, 10)}.${format}`, blob);
+    const controller = new AbortController();
+    exportJob.current?.abort();
+    exportJob.current = controller;
+    setError('');
+    const read = () => readProjectReport({ viewerId, projectId, from, to }, controller.signal);
+    try {
+      const blob = await prepareProjectReport(payload, read, async () => {
+        if (format === 'docx') return toReportDocx(doc);
+        if (format === 'xlsx') return toReportXlsx(doc);
+        const { toReportPdf } = await import('./pdf').catch(() => {
+          throw new ProjectReportError('Atualize a página e tente baixar o PDF novamente.', 503);
+        });
+        controller.signal.throwIfAborted();
+        return toReportPdf(doc, { projectBrand: brand });
+      }, setPayload, controller.signal);
+      controller.signal.throwIfAborted();
+      download(`relatorio-${slug(doc.projectName)}-${doc.generatedIso.slice(0, 10)}.${format}`, blob);
+    } catch (cause) {
+      controller.signal.throwIfAborted();
+      if (cause instanceof ProjectReportError) {
+        if ([401, 403, 404].includes(cause.status)) {
+          setPayload(null);
+          setError(cause.message);
+          throw new ExportHandledError();
+        }
+        throw cause;
+      }
+      if (cause instanceof Error && cause.message.startsWith('O relatório passou de 400 páginas.')) throw cause;
+      throw new Error(format === 'pdf'
+        ? 'Não foi possível preparar o PDF. Atualize a página e tente novamente.'
+        : 'Não foi possível preparar o arquivo. Tente novamente.');
+    } finally {
+      if (exportJob.current === controller) exportJob.current = null;
+    }
   }
 
   const order = config.sections;
@@ -270,7 +297,7 @@ export default function ProjectReportBuilder({ projectId, projectName, officialU
             <h4>Baixar o relatório</h4>
             <p title={doc?.period}>{busy || (!doc && !error) ? 'Atualizando a prévia…' : doc ? `${doc.sections.length} ${doc.sections.length === 1 ? 'seção' : 'seções'} · ${doc.period}` : 'Prévia indisponível'}</p>
           </div>
-          <ExportFormats label="Baixar relatório do projeto" disabled={!doc || !doc.sections.length} onExport={exportFile}/>
+          <ExportFormats label="Baixar relatório do projeto" disabled={loading || !doc || !doc.sections.length} onExport={exportFile}/>
         </div>
         {doc && doc.unavailable.length > 0 && <p className={styles.notice}>Fora do relatório por falta de acesso: {doc.unavailable.join(', ')}.</p>}
         {error && <div className={styles.errorBox} role="alert"><p>{error}</p><button type="button" className="p-button p-button-subtle" onClick={() => setReload(value => value + 1)}><RefreshCw size={16} aria-hidden="true"/>Tentar de novo</button></div>}

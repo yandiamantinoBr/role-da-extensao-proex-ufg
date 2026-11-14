@@ -14,7 +14,8 @@ function load(file, dependencies = {}) {
     return compiledModule.exports;
 }
 
-const { readPortalLocation, commitPortalLocation, deniedPortalModule } = load('portal-history', { './work-navigation': load('work-navigation'), './my-work/contracts': load('my-work/contracts'), './report-links': load('report-links', { './civil-date': load('civil-date') }) });
+const { readPortalLocation, commitPortalLocation, deniedPortalModule } = load('portal-history', { './work-navigation': load('work-navigation'), './my-work/contracts': load('my-work/contracts'), './report-links': load('report-links', { './civil-date': load('civil-date') }), './follow-up/contracts':load('follow-up/contracts',{'../errors':load('errors')}) });
+const { dashboardLoginDestination, loginHref, safeLoginDestination } = load('login-destination', { './report-links': load('report-links', { './civil-date': load('civil-date') }) });
 const origin = 'https://example.test';
 const scope = {
     modules: ['overview', 'projects', 'materials', 'calendar', 'reports', 'demands', 'my-work', 'records'],
@@ -25,6 +26,49 @@ const scope = {
     canSelectOrganization: (organization, project) => organization === 'org-a' && (!project || project === 'project-a'),
 };
 const read = (query, current = scope) => readPortalLocation(new URLSearchParams(query), current);
+
+test('demand reports retain their enumerated filters across login and reload, while lexical search stays private',()=>{
+    const params={module:'reports',report:'demands',taskFilter:'1',taskState:'blocked',taskPriority:'high',taskScope:'organization',organizationId:'org-a',taskSearch:'1',privateTerm:'private-synthetic'};
+    const url=new URL(safeLoginDestination(dashboardLoginDestination(params)),origin);
+    assert.doesNotMatch(url.href,/private-synthetic/);
+    const route=read(url.search);
+    assert.deepEqual({...route.demandReport},{status:'blocked',priority:'high',generalOnly:true,organizationId:'org-a',needsSearch:true,unavailable:false});
+    const unavailable=read(url.search,{...scope,canSelectOrganization:()=>false});
+    assert.equal(unavailable.demandReport.unavailable,true);
+    assert.equal(read('module=reports&report=demands&taskFilter=1&taskScope=organization').demandReport.unavailable,true);
+});
+test('signing in preserves the shared activity, demand or project; access is resolved for that account', () => {
+    const afterLogin = params => {
+        const login = new URL(loginHref(dashboardLoginDestination(params)), origin);
+        assert.equal(login.pathname, '/login');
+        return safeLoginDestination(login.searchParams.get('returnTo'));
+    };
+    const activity = afterLogin({module:'records', project:'project-a', view:'documents', scheduleItemId:'activity-sparks', token:'private', unknown:'no'});
+    assert.equal(activity, '/?module=records&project=project-a&view=documents&scheduleItemId=activity-sparks');
+    assert.equal(read(new URL(activity, origin).search).recordsScheduleItemId, 'activity-sparks');
+    const restricted = read(new URL(activity, origin).search, {...scope, canSelectProject: () => false});
+    assert.equal(restricted.project, '');
+    assert.equal(restricted.recordsScheduleItemId, undefined);
+    const demand = afterLogin({module:['demands', 'settings'], project:'project-a', demandId:'front-a', scheduleItemId:'activity-sparks'});
+    assert.equal(read(new URL(demand, origin).search).demand, 'front-a');
+    const project = afterLogin({module:'projects', project:'project-a', detailProject:'project-a'});
+    assert.equal(read(new URL(project, origin).search).record.recordId, 'project-a');
+    const report = new URL(afterLogin({module:'reports', recorte:'1', from:'2026-11-09', to:'2026-11-13', q:'Rolê da Extensão'}), origin);
+    assert.equal(report.searchParams.get('from'), '2026-11-09');
+    assert.equal(report.searchParams.get('to'), '2026-11-13');
+    assert.equal(report.searchParams.get('q'), 'Rolê da Extensão');
+    assert.equal(loginHref(dashboardLoginDestination({ token:'private' })), '/login');
+});
+
+test('login refuses external or actionable URLs and preserves the existing public activity entry', () => {
+    for (const unsafe of [
+        'https://outside.example', '//outside.example', '/\\outside.example', '/\t/outside.example', '/%5coutside.example',
+        '/api/account', '/login', '/events/../api', '/events/id\n', '/convite?token=private', ['/?module=records'],
+    ]) assert.equal(safeLoginDestination(unsafe), '/');
+    assert.equal(safeLoginDestination('/?module=records%0A&returnTo=https://outside.example&token=private'), '/');
+    assert.equal(safeLoginDestination('/events/activity-2026'), '/events/activity-2026');
+    assert.equal(safeLoginDestination('/participante'), '/participante');
+});
 
 test('a project documents link survives reload and selecting another module clears its view',()=>{
     const href=origin+'/?module=records&view=documents&project=project-a&scheduleItemId=activity-sparks';
@@ -38,6 +82,19 @@ test('a project documents link survives reload and selecting another module clea
     assert.equal(new URL(location).searchParams.get('view'),null);
     assert.equal(new URL(location).searchParams.get('scheduleItemId'),null);
     assert.equal(read('module=records&view=unknown').recordsView,undefined);
+});
+
+test('activity fronts preserve the selected commitment without carrying it into general modules',()=>{
+    const fronts=read('module=demands&project=project-a&scheduleItemId=sparks&demandId=front-a');
+    assert.equal(fronts.demandsScheduleItemId,'sparks');
+    assert.equal(fronts.demand,'front-a');
+    assert.equal(read('module=demands&scheduleItemId=foo/bar').demandsScheduleItemId,undefined);
+    assert.equal(read('module=overview&scheduleItemId=sparks').demandsScheduleItemId,undefined);
+    let location;
+    const history={state:null,pushState(_state,_title,url){location=url.href;}};
+    const href=origin+'/?module=demands&project=project-a&scheduleItemId=sparks&demandId=front-a';
+    commitPortalLocation(history,href,{...fronts,tab:'projects'},true);
+    assert.equal(new URL(location).searchParams.get('scheduleItemId'),null);
 });
 
 test('module navigation retains each view, replaces filter edits, and restores both directions', () => {

@@ -3,10 +3,14 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
+import { load } from './support/project-report-module.mjs';
+
+const civilDate = await load('lib/civil-date.ts');
+const search = await load('lib/list-search.ts');
 
 const text = node => typeof node === 'string' || typeof node === 'number' ? String(node) : Array.isArray(node) ? node.map(text).join('') : node && typeof node === 'object' ? text(node.props?.children) : '';
 function nodes(tree) { const result = []; function visit(node) { if (!node || typeof node !== 'object') return; if (Array.isArray(node)) return node.forEach(visit); result.push(node); visit(node.props?.children); } visit(tree); return result; }
-function harness(file, props) {
+function harness(file, props, exportName = 'default') {
  const slots = [], effects = [], requests = []; let index = 0, tree;
  const hooks = {
   useState(initial) { const key = index++; if (!(key in slots)) slots[key] = { value: typeof initial === 'function' ? initial() : initial }; return [slots[key].value, next => { slots[key].value = typeof next === 'function' ? next(slots[key].value) : next; }]; },
@@ -18,8 +22,8 @@ function harness(file, props) {
  const catalogue = { THEMATIC_AREAS: [{ key: 'education', label: 'Educação' }], areaLabel: value => value, unitText: unit => unit.name, groupUnits: units => [{ group: 'Unidades', units }] };
  const accessLabels = { projectAccessRoleLabels: { viewer: 'Leitor de relatórios' } };
  const source = ts.transpileModule(readFileSync(new URL(`../components/portal/${file}.tsx`, import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
- vm.runInNewContext(source, { module: compiled, exports: compiled.exports, require: name => name === 'react' ? hooks : name === 'react/jsx-runtime' ? { jsx, jsxs: jsx } : name === 'lucide-react' ? new Proxy({}, { get: (_, key) => String(key) }) : name.endsWith('.css') ? { default: new Proxy({}, { get: (_, key) => String(key) }) } : name.includes('extension-catalog') ? catalogue : name.includes('team-access-labels') ? accessLabels : name.includes('date-field') ? { default: 'DateField' } : name.includes('use-form-draft') ? { DraftNotice: () => null, useFormDraft: () => ({ clear() {} }) } : { default: () => null }, Date, Intl, URLSearchParams, AbortController, Map, Error, fetch: (url, init) => { requests.push({ url, init }); return new Promise(() => {}); } });
- const h = { requests, render() { index = 0; tree = compiled.exports.default(props); return tree; }, all() { return nodes(tree); }, flush() { while (effects.length) effects.shift()(); }, button(label) { const button = this.all().find(node => node.type === 'button' && text(node).trim() === label); assert.ok(button, label); return button; }, field(label) { const parent = this.all().find(node => node.type === 'label' && text(Array.isArray(node.props.children) ? node.props.children[0] : node.props.children).trim() === label); const input = parent && nodes(parent).find(node => ['input', 'select', 'DateField'].includes(node.type)); assert.ok(input, label); return input; }, change(label, value) { const input = this.field(label); if (input.type === 'DateField') input.props.onValueChange(value); else input.props.onChange({ target: { value } }); this.render(); this.flush(); }, disclosure(label) { return this.all().find(node => node.type === 'details' && nodes(node).some(child => child.type === 'summary' && text(child).startsWith(label))); }, dispose() { slots.forEach(slot => slot?.cleanup?.()); } };
+ vm.runInNewContext(source, { module: compiled, exports: compiled.exports, require: name => name === 'react' ? hooks : name === 'react/jsx-runtime' ? { jsx, jsxs: jsx } : name === 'lucide-react' ? new Proxy({}, { get: (_, key) => String(key) }) : name.endsWith('.css') ? { default: new Proxy({}, { get: (_, key) => String(key) }) } : name.includes('extension-catalog') ? catalogue : name.includes('team-access-labels') ? accessLabels : name === '@/lib/civil-date' ? civilDate : name === '@/lib/list-search' ? search : name.includes('date-field') ? { default: 'DateField' } : name.includes('use-form-draft') ? { DraftNotice: () => null, useFormDraft: () => ({ clear() {} }) } : { default: () => null }, Date, Intl, URLSearchParams, AbortController, Map, Error, fetch: (url, init) => { requests.push({ url, init }); return new Promise(() => {}); } });
+ const h = { requests, render() { index = 0; tree = compiled.exports[exportName](props); return tree; }, all() { return nodes(tree); }, flush() { while (effects.length) effects.shift()(); }, button(label) { const button = this.all().find(node => node.type === 'button' && text(node).trim() === label); assert.ok(button, label); return button; }, field(label) { const parent = this.all().find(node => node.type === 'label' && text(Array.isArray(node.props.children) ? node.props.children[0] : node.props.children).trim() === label); const input = parent && nodes(parent).find(node => ['input', 'select', 'DateField'].includes(node.type)); assert.ok(input, label); return input; }, change(label, value) { const input = this.field(label); if (input.type === 'DateField') input.props.onValueChange(value); else input.props.onChange({ target: { value } }); this.render(); this.flush(); }, disclosure(label) { return this.all().find(node => node.type === 'details' && nodes(node).some(child => child.type === 'summary' && text(child).startsWith(label))); }, dispose() { slots.forEach(slot => slot?.cleanup?.()); } };
  h.render(); h.flush(); return h;
 }
 const projects = [
@@ -43,6 +47,55 @@ test('collapsed project refinements preserve unique working filters, count activ
   assert.equal(h.field('Unidade responsável').props.value, '');
   assert.equal(h.field('Situação').props.value, 'all');
   assert.doesNotMatch(text(h.disclosure('Refinar projetos')), /\d+\s+ativos?\b/);
+ } finally { h.dispose(); }
+});
+
+test('catalog search composes with material filters, discovers authorized kits and recovers from no results', () => {
+ const props = {
+  materials: [
+   {id: 'one', name: 'Projetor móvel', typeKey: 'equipment', categoryLabel: 'Comunicação', assetCode: 'UFG-42', destinationName: 'São Miguel', lowStock: false},
+   {id: 'two', name: 'Bóton', typeKey: 'gift', categoryLabel: 'Extensão', assetCode: '', destinationName: 'Goiás', lowStock: true},
+  ],
+  kits: [{id: 'kit', name: 'Kit da edição', project: 'Projeto A', active: true, kind: 'regular', components: [{name: 'Bóton', quantity: 1, available: 1}]}],
+  onOpen() {},
+ };
+ const h = harness('material-catalog', props, 'FilterableMaterialCatalog');
+ try {
+  const results = () => h.all().find(node => typeof node.type === 'function' && node.props.materials)?.props.materials.map(material => material.id).join(',');
+  const summary = () => text(h.all().find(node => node.props.role === 'status'));
+  assert.equal(results(), 'one,two');
+  h.button('Filtros').props.onClick(); h.render();
+  assert.equal(h.all().find(node => node.props.id === 'material-filters').props.hidden, false);
+  h.change('Buscar no catálogo', 'sao ufg-42 comunicacao');
+  assert.equal(results(), 'one');
+  assert.match(summary(), /1 de 2 materiais/);
+  h.change('Situação', 'low');
+  assert.equal(results(), undefined);
+  assert.match(summary(), /0 de 2 materiais/);
+  assert.equal(h.field('Buscar no catálogo').props.value, 'sao ufg-42 comunicacao');
+  assert.equal(h.field('Situação').props.value, 'low');
+  h.change('Buscar no catálogo', 'boton');
+  assert.equal(results(), 'two');
+  assert.equal(h.field('Situação').props.value, 'low');
+  h.change('Situação', '');
+  h.change('Tipo', 'kit');
+  assert.equal(results(), undefined);
+  assert.match(summary(), /1 de 1 kit/);
+  assert.ok(h.all().some(node => node.type === 'strong' && text(node) === 'Kit da edição'));
+  const previous = props.materials;
+  props.materials = [previous[0]];
+  props.kits = [];
+  h.render();
+  assert.equal(h.field('Buscar no catálogo').props.value, 'boton');
+  assert.equal(h.field('Tipo').props.value, 'kit');
+  assert.equal(results(), undefined);
+  assert.match(text(h.field('Tipo')), /Seleção indisponível neste recorte/);
+  props.materials = previous;
+  h.render();
+  h.button('Limpar busca e filtros').props.onClick(); h.render();
+  assert.equal(results(), 'one,two');
+  assert.equal(h.field('Buscar no catálogo').props.value, '');
+  assert.equal(h.field('Tipo').props.value, '');
  } finally { h.dispose(); }
 });
 

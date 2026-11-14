@@ -7,6 +7,7 @@ function compile(file){file=resolve(root,file);if(cache.has(file))return cache.g
 const {getActor}=await import(compile('lib/access.ts'));
 const {followupAction,followupList,followupDetail,followupCatalog,notificationInbox}=await import(compile('lib/follow-up/service.ts'));
 const {manualShareUrl}=await import(compile('lib/follow-up/contracts.ts'));
+const {followupReportRows}=await import(compile('lib/follow-up/reports.ts'));
 const {exportPortablePage,describePortableSchemas}=await import(compile('lib/sync/portable.ts'));
 function fixture(t){const native=new DatabaseSync(':memory:');native.exec('PRAGMA foreign_keys=ON');for(const name of readdirSync(root+'drizzle').filter(n=>n.endsWith('.sql')).sort())native.exec(readFileSync(root+'drizzle/'+name,'utf8'));t.after(()=>native.close());const now=new Date().toISOString();
  const insert=(table,row)=>{const cols=Object.keys(row);native.prepare(`INSERT INTO ${table}(${cols.join(',')}) VALUES(${cols.map(()=>'?').join(',')})`).run(...Object.values(row));};
@@ -71,6 +72,46 @@ test('task creation, CAS updates and lost replies are idempotent without orphan 
  await assert.rejects(act(f,actor,'task.update',{...update,operationKey:crypto.randomUUID()}),{status:409});assert.equal(f.native.prepare('SELECT COUNT(*) n FROM followup_history').get().n,2);
  const count=f.native.prepare('SELECT COUNT(*) n FROM mutation_keys').get().n;f.db.before=()=>f.native.prepare("UPDATE members SET revoked_at=? WHERE user_id='manager-a'").run(f.now);await assert.rejects(act(f,actor,'task.create',create()));assert.equal(f.native.prepare('SELECT COUNT(*) n FROM mutation_keys').get().n,count);
  await assert.rejects(act(f,actor,'task.create',input),{status:403});
+});
+
+test('organization scopes and report filters select the same authorized demands, including literal search characters', async t => {
+ const f=fixture(t), admin=await f.actor('admin-a'), reader=await f.actor('viewer-a');
+ f.insert('projects',{id:'project-a2',organization_id:'org-a',name:'Project A2',created_at:f.now});
+ const project=await act(f,admin,'task.create',create({title:'Compras 20%',userIds:[]}));
+ const another=await act(f,admin,'task.create',create({projectId:'project-a2',title:'Compras 20%',userIds:[]}));
+ const general=await act(f,admin,'task.create',create({projectId:null,title:'Compras 20%',userIds:[]}));
+ await act(f,admin,'task.create',create({projectId:null,title:'Compras 200',userIds:[]}));
+ const ids=result=>result.tasks.map(task=>task.id);
+ const filters={organizationId:'org-a',status:'open',priority:'high',search:'20%'};
+ assert.deepEqual(new Set(ids(await followupList(f.db,admin,filters))),new Set([project.task.id,another.task.id,general.task.id]));
+ assert.deepEqual(ids(await followupList(f.db,reader,filters)),[project.task.id]);
+ assert.deepEqual(ids(await followupList(f.db,admin,{...filters,projectScope:'organization'})),[general.task.id]);
+ assert.deepEqual(ids(await followupList(f.db,reader,{...filters,projectScope:'organization'})),[]);
+ assert.equal((await followupCatalog(f.db,reader,{organizationId:'org-a'})).canEdit,false);
+ await assert.rejects(followupList(f.db,reader,{projectScope:'organization',projectId:'project-a'}),{status:400});
+ const report={organizationId:'org-a',demandStatus:'open',demandPriority:'high',demandSearch:'20%',demandProjectScope:'organization'};
+ assert.deepEqual((await followupReportRows(f.db,admin,'demands',report,100)).rows.map(row=>row.id),[general.task.id]);
+ assert.deepEqual((await followupReportRows(f.db,reader,'demands',report,100)).rows,[]);
+});
+
+test('accent-insensitive demand search still matches titles and descriptions literally before pagination', async t => {
+ const f = fixture(t), reader = await f.actor('viewer-a'), admin = await f.actor('admin-a');
+ const insertTask = (id, project_id, title, body) => f.insert('followup_tasks', {
+  id, project_id, title, body, organization_id: 'org-a', priority: 'high', status: 'open', version: 1,
+  created_at: f.now, updated_at: f.now, created_by: admin.userId,
+ });
+ f.insert('projects', { id: 'project-a2', organization_id: 'org-a', name: 'Vizinho', created_at: f.now });
+ for (let index = 0; index < 60; index++) insertTask(`task-${index}`, 'project-a', 'Primeiros resultados', '');
+ insertTask('zz-match', 'project-a', 'Criação de peças', 'ENTREGA NA EXTENSA\u0303O · 20% · DOIS_ITENS');
+ insertTask('zz-neighbor', 'project-a2', 'Criação de peças', 'ENTREGA NA EXTENSÃO · 20%');
+ insertTask('zz-decoy', 'project-a', 'Percentual', 'Entrega na extensão · 200 · DOIS-ITENS');
+ for (const search of ['criacao de pecas', 'extensao · 20%', 'EXTENSÃO · 20%', 'dois_itens', 'PEÇ']) {
+  const list = await followupList(f.db, reader, { organizationId: 'org-a', search });
+  const report = await followupReportRows(f.db, reader, 'demands', { organizationId: 'org-a', demandSearch: search }, 100);
+  assert.deepEqual(list.tasks.map(task => task.id), ['zz-match'], search);
+  assert.deepEqual(report.rows.map(row => row.id), ['zz-match'], search);
+  assert.equal(list.hasMore, false);
+ }
 });
 
 test('references and responsible people cannot cross organization/project boundaries even inside the transaction',async t=>{
@@ -372,6 +413,45 @@ test('hidden pending cursor preserves priority, due date and ID after a concurre
 const activityInput=(extra={})=>({organizationId:'org-a',projectId:'project-a',title:'Mesa de apresentação QA',rows:[{label:'Apresentação realizada?'},{label:'Avaliação registrada?'}],userIds:['viewer-a'],operationKey:crypto.randomUUID(),...extra});
 async function activityGrant(f,manager,taskId,userId='viewer-a'){return act(f,manager,'task.worker.grant',{id:taskId,userId,confirmed:true,operationKey:crypto.randomUUID()});}
 const answerStep=(f,actor,detail,index,answer='yes',note='')=>act(f,actor,'checklist.activity.answer',{id:detail.checklist.id,rowId:detail.checklist.rows[index].id,expectedVersion:detail.checklist.rows[index].version,answer,note,operationKey:crypto.randomUUID()});
+
+test('schedule checklists expose only fronts of the chosen activity and preserve existing checklists',async t=>{
+ const f=fixture(t),manager=await f.actor('manager-a'),reader=await f.actor('viewer-a'),inventory=await f.actor('worker-a');
+ const day='2026-11-14';
+ for(const [id,project,title] of [['sparks','project-a','Ação no Sparks'],['other','project-a','Outro compromisso'],['private','project-b','Outro projeto']]){
+  f.insert('project_schedule_items',{id,project_id:project,title,starts_at:day,ends_at:day,created_at:f.now,updated_at:f.now});
+ }
+ const body=activityInput({scheduleItemId:'sparks',title:'Água e lanches QA'});
+ const saved=await act(f,manager,'checklist.activity.create',body);
+ assert.equal((await act(f,manager,'checklist.activity.create',body)).task.id,saved.task.id);
+ assert.equal(saved.checklist.scheduleItem.title,'Ação no Sparks');
+ const legacy=await act(f,manager,'checklist.activity.create',activityInput());
+ assert.equal(legacy.checklist.scheduleItem,undefined);
+ const scope={projectId:'project-a',scheduleItemId:'sparks'};
+ assert.deepEqual((await followupList(f.db,reader,scope)).tasks.map(task=>task.id),[saved.task.id]);
+ assert.deepEqual((await followupList(f.db,reader,{...scope,scheduleItemId:'other'})).tasks,[]);
+ await assert.rejects(followupList(f.db,reader,{...scope,organizationId:'org-b'}),{status:404});
+ await assert.rejects(followupDetail(f.db,reader,saved.task.id,{...scope,organizationId:'org-b'}),{status:404});
+ await assert.rejects(followupDetail(f.db,reader,legacy.task.id,scope),{status:404});
+ await assert.rejects(followupList(f.db,inventory,scope),{status:404});
+ assert.equal((await followupDetail(f.db,inventory,saved.task.id)).checklist.scheduleItem,undefined);
+ for(const scheduleItemId of ['private','absent']){
+  await assert.rejects(followupList(f.db,reader,{...scope,scheduleItemId}),{status:404});
+  await assert.rejects(act(f,manager,'checklist.activity.create',activityInput({scheduleItemId})),{status:404});
+ }
+ await assert.rejects(act(f,inventory,'checklist.activity.create',activityInput({scheduleItemId:'sparks'})),{status:404});
+ assert.throws(()=>f.native.prepare("UPDATE followup_tasks SET project_id='project-b' WHERE id=?").run(saved.task.id),/checklist_schedule_mismatch/);
+ assert.throws(()=>f.native.prepare("UPDATE project_schedule_items SET project_id='project-b' WHERE id='sparks'").run(),/checklist_schedule_mismatch/);
+ const before=f.native.prepare('SELECT COUNT(*) n FROM followup_tasks').get().n;
+ f.db.before=()=>f.native.prepare("UPDATE project_schedule_items SET status='cancelled' WHERE id='sparks'").run();
+ await assert.rejects(act(f,manager,'checklist.activity.create',activityInput({scheduleItemId:'sparks'})),{status:404});
+ assert.equal(f.native.prepare('SELECT COUNT(*) n FROM followup_tasks').get().n,before);
+ f.native.prepare("UPDATE project_schedule_items SET status='cancelled' WHERE id='sparks'").run();
+ assert.equal((await followupList(f.db,reader,scope)).scheduleItem.status,'cancelled');
+ await assert.rejects(act(f,manager,'checklist.activity.create',activityInput({scheduleItemId:'sparks'})),{status:404});
+ f.native.prepare("UPDATE members SET revoked_at=? WHERE user_id='viewer-a'").run(f.now);
+ await assert.rejects(followupList(f.db,reader,scope),{status:404});
+ await assert.rejects(followupDetail(f.db,reader,saved.task.id,scope),{status:404});
+});
 
 test('activity checklists preserve material contracts and never complete through the material branch or alter stock',async t=>{
  const f=fixture(t),manager=await f.actor('manager-a'),viewer=await f.actor('viewer-a'),before=f.native.prepare('SELECT stock,reserved FROM items WHERE id=?').get('item-a');

@@ -22,25 +22,31 @@ const row = project => ({ id: `item-${project}`, projeto: `Projeto ${project.toU
  * No DOM, network, filesystem writes or framework build is involved.
  */
 function harness(storage = new Map()) {
- const slots = [], pendingEffects = [], requests = [], downloads = [], pdfInputs = []; let index = 0, tree, opened = 0;
+ const slots = [], pendingEffects = [], requests = [], downloads = [], pdfInputs = []; let index = 0, tree, opened = 0, popup = null;
  const same = (left, right) => left?.length === right?.length && left?.every((value, i) => Object.is(value, right[i]));
  const hooks = {
   useState(initial) { const key = index++; if (!(key in slots)) slots[key] = { value: typeof initial === 'function' ? initial() : initial }; return [slots[key].value, next => { slots[key].value = typeof next === 'function' ? next(slots[key].value) : next; }]; },
   useRef(initial) { const key = index++; slots[key] ??= { value: { current: initial } }; return slots[key].value; },
-  useMemo(callback) { index++; return callback(); },
+  useMemo(callback, deps) {
+   const key = index++;
+   if (!same(slots[key]?.deps, deps)) slots[key] = { deps, value: callback() };
+   return slots[key].value;
+  },
   useId() { index++; return "report"; },
   useCallback(callback) { index++; return callback; },
   useEffect(callback, deps) { const key = index++; if (!same(slots[key]?.deps, deps)) pendingEffects.push(() => { slots[key]?.cleanup?.(); slots[key] = { deps, cleanup: callback() }; }); },
  };
+ hooks.useLayoutEffect = hooks.useEffect;
  const jsx = { jsx: (type, props) => ({ type, props }), jsxs: (type, props) => ({ type, props }) };
  const exporters = pure('components/portal/report-export.ts'); exporters.download = (name, blob) => downloads.push({ name, blob });
  const require = name => name === 'react' ? hooks : name === 'react/jsx-runtime' ? jsx : name === './report-export' ? exporters : name === './report-pdf' ? { toPdf(...args) { pdfInputs.push(args); return new Blob(['synthetic pdf'], { type: 'application/pdf' }); } } : name === '@/lib/report-quantities' ? pure('lib/report-quantities.ts') : name === '@/lib/report-links' ? reportLinks : name === '@/lib/extension-catalog' ? { areaLabel: value => value } : name.endsWith('.css') ? { default: new Proxy({}, { get: (_object, key) => key }) } : new Proxy({}, { get: (_object, key) => String(key) });
  const compiledModule = { exports: {} };
- const window = { setTimeout(callback) { callback(); return 1; }, clearTimeout() {}, open() { opened++; return null; } };
- vm.runInNewContext(transpile('components/portal/reports-center.tsx'), { module: compiledModule, exports: compiledModule.exports, require, Blob, Intl, Date, Map, Set, URL, URLSearchParams, AbortController, window, localStorage: { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value), removeItem: key => storage.delete(key) }, fetch: (url, init) => new Promise((resolve, reject) => requests.push({ url, init, resolve, reject })) });
+ const window = { setTimeout(callback) { callback(); return 1; }, clearTimeout() {}, open() { opened++; return popup; }, location: { origin: 'https://synthetic.example.invalid' } };
+ vm.runInNewContext(transpile('components/portal/reports-center.tsx'), { module: compiledModule, exports: compiledModule.exports, require, Blob, Intl, Date, Map, Set, URL, URLSearchParams, AbortController, window, localStorage: { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value), removeItem: key => storage.delete(key) }, fetch: (url, init) => new Promise((resolve, reject) => requests.push({ url, init, resolve(response) { this.response = response; resolve(response); }, reject })) });
  function nodes() { const result = []; const visit = node => { if (!node || typeof node !== 'object') return; if (Array.isArray(node)) { node.forEach(visit); return; } result.push(node); visit(node.props?.children); }; visit(tree); return result; }
  return {
   requests, downloads, pdfInputs,
+  nextPrint(target) { popup = target; },
   renderProject(projectId, identity = {}) { index = 0; tree = compiledModule.exports.ProjectReportExports({projectId,...identity}); return tree; },
   render(props = base) { index = 0; tree = compiledModule.exports.default(props); return tree; },
   flushEffects() { while (pendingEffects.length) pendingEffects.shift()(); },
@@ -49,7 +55,7 @@ function harness(storage = new Map()) {
    // Os três formatos vêm do componente comum ExportFormats (aqui um nó simulado): o "clique" chama onExport.
    const format = { Excel: 'xlsx', 'Excel (XLSX)': 'xlsx', Word: 'docx', 'Word (DOCX)': 'docx', PDF: 'pdf' }[name];
    const formats = !found && format ? nodes().find(node => typeof node.props?.onExport === 'function') : null;
-   if (formats) return { type: 'button', props: { disabled: Boolean(formats.props.disabled), onClick: () => { const result = formats.props.onExport(format); result?.catch?.(() => {}); } } };
+   if (formats) return { type: 'button', props: { disabled: Boolean(formats.props.disabled), onClick: () => { const result = formats.props.onExport(format); return result?.catch?.(() => {}); } } };
    assert.ok(found, `button ${name}`); return found;
   },
   input(label) { const node=nodes().find(node=>node.type==='label'&&text(node).includes(label)),input=node&&nodesInside(node).find(child=>['input','select'].includes(child.type));assert.ok(input,label);return input; },
@@ -112,7 +118,21 @@ test('all ten available subjects preserve fresh-query export gating through the 
   }
  } finally { h.dispose(); }
 });
-async function jsonDownload(h) { h.button('JSON').props.onClick(); return JSON.parse(await h.downloads.at(-1).blob.text()); }
+async function confirmExport(h, name) {
+ const query = h.requests.at(-1);
+ const first = h.requests.length;
+ const completion = h.button(name).props.onClick();
+ for (let index = first; index < first + 2; index++) {
+  const request = h.requests[index];
+  assert.ok(request, 'each delivery confirms the report in the current session');
+  assert.equal(request.url, query.url);
+  assert.equal(request.init.body, query.init.body);
+  request.resolve(query.response);
+  await tick();
+ }
+ await completion;
+}
+async function jsonDownload(h) { await confirmExport(h, 'JSON'); return JSON.parse(await h.downloads.at(-1).blob.text()); }
 
 test('report exports remain disabled immediately on any server-filter or dataset change, before effects run', async () => {
  const h = harness(); try {
@@ -271,6 +291,93 @@ test('a blocked print is announced beside export actions while the loaded rows s
  } finally { h.dispose(); }
 });
 
+test('loss of access during PDF preparation discards the artifact and the old rows', async () => {
+ const h = harness();
+ try {
+  await load(h);
+  const prior = h.requests.at(-1);
+  const download = h.button('PDF').props.onClick();
+  h.requests.at(-1).resolve(prior.response);
+  await tick();
+  assert.equal(h.pdfInputs.length, 1);
+  assert.equal(h.downloads.length, 0);
+  const validation = h.requests.at(-1);
+  assert.equal(validation.init.headers['X-Proex-Viewer'], base.userId);
+  validation.resolve({ ok: false, json: async () => ({ error: 'Acesso encerrado' }) });
+  await download;
+  h.render();
+  assert.equal(h.downloads.length, 0);
+  assert.equal(h.button('Excel').props.disabled, true);
+  assert.doesNotMatch(h.text(), /Material A/);
+  assert.match(h.text(), /confirmar o acesso/);
+ } finally { h.dispose(); }
+});
+
+test('print keeps the window blank until the same rows are authorized and closes it on change', async () => {
+ const h = harness();
+ const writes = [];
+ const popup = { closed: false, close() { this.closed = true; }, document: { write: html => writes.push(html), close() {} } };
+ try {
+  await load(h);
+  h.nextPrint(popup);
+  h.button('Imprimir').props.onClick();
+  assert.equal(h.opened, 1);
+  assert.deepEqual(writes, []);
+  h.requests.at(-1).resolve({ ok: true, json: async () => ({ dataset: 'materials', rows: [row('b')], truncated: false }) });
+  await tick();
+  h.render();
+  assert.equal(popup.closed, true);
+  assert.deepEqual(writes, []);
+  assert.match(h.text(), /Material B/);
+  assert.match(h.text(), /Confira o recorte atualizado/);
+  popup.closed = false;
+  h.button('Imprimir').props.onClick();
+  h.requests.at(-1).resolve({ ok: true, json: async () => ({ dataset: 'materials', rows: [row('b')], truncated: false }) });
+  await tick();
+  assert.equal(popup.closed, false);
+  assert.match(writes[0], /Material B/);
+  assert.doesNotMatch(writes[0], /Material A/);
+ } finally { h.dispose(); }
+});
+
+test('changing the table filters while an export waits discards the old download', async () => {
+ const h = harness();
+ try {
+  await load(h);
+  const prior = h.requests.at(-1);
+  const download = h.button('Excel').props.onClick();
+  const pending = h.requests.at(-1);
+  h.input('Buscar nas linhas').props.onChange({ target: { value: 'Material A' } });
+  h.render();
+  h.flushEffects();
+  assert.equal(pending.init.signal.aborted, true);
+  pending.resolve(prior.response);
+  await download;
+  assert.deepEqual(h.downloads, []);
+  h.render();
+  assert.equal(h.button('Excel').props.disabled, false);
+ } finally { h.dispose(); }
+});
+
+test('search inherited from Demands is sent in the request body and omitted from exported metadata', async () => {
+ const h = harness();
+ const props = { ...base, available: ['demands'], demandFilters: { organizationId: '', generalOnly: false, status: 'all', priority: 'all', search: 'private term' } };
+ try {
+  h.render(props);
+  h.flushEffects();
+  const query = h.requests.at(-1);
+  assert.equal(query.url, '/api/reports');
+  assert.equal(query.init.method, 'POST');
+  assert.equal(JSON.parse(query.init.body).demandSearch, 'private term');
+  query.resolve({ ok: true, json: async () => ({ dataset: 'demands', rows: [{ id: 'synthetic', demanda: 'Demanda sintética' }], truncated: false }) });
+  await tick();
+  h.render(props);
+  const file = await jsonDownload(h);
+  assert.match(file.filtros.Recorte, /Busca de Demandas aplicada/);
+  assert.doesNotMatch(JSON.stringify(file), /private term/);
+ } finally { h.dispose(); }
+});
+
 test('an aborted response whose JSON resolves late cannot replace a newer successful scope', async () => {
  const h = harness(), b = { ...base, projectId: 'project-b', scopeLabel: 'Projeto B' }, c = { ...base, projectId: 'project-c', scopeLabel: 'Projeto C' }; let resolveBody;
  try {
@@ -345,7 +452,7 @@ test('the report offers XLSX, PDF and Word and marks partial XLSX in the filenam
   for(const name of ['Excel','PDF','Word']) assert.equal(h.button(name).props.disabled,false);
   assert.ok(!nodesInside(h.render(detailedProps)).some(node=>node.type==='button'&&text(node)==='CSV'));
   const json=await jsonDownload(h);assert.match(json.filtros.Cobertura,/parcial/);
-  h.button('Excel').props.onClick();
+  await confirmExport(h, 'Excel');
   const xlsx=h.downloads.at(-1),entries=await zipEntries(xlsx.blob);
   assert.match(xlsx.name,/-parcial\.xlsx$/);
   assert.match(entries.get('xl/worksheets/sheet2.xml'),/Consulta parcial/);

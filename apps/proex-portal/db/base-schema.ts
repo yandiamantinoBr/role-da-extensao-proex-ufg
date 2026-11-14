@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { sqliteTable, text, integer, index, uniqueIndex, primaryKey, check, type AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
 
+
 // The schema has no production seed data. All quantities begin at zero.
 // SQL migrations remain authoritative for triggers, backfills and immutable history.
 // Drizzle snapshots cannot represent triggers. Review every generated table rebuild:
@@ -325,6 +326,12 @@ export const calendarFeeds = sqliteTable('calendar_feeds', {
   uniqueIndex('calendar_feeds_token_hash_unique').on(t.tokenHash),
   index('calendar_feeds_owner_idx').on(t.ownerId, t.revokedAt),
 ]);
+export const followupTasks = sqliteTable('followup_tasks', {
+ id:text('id').primaryKey().notNull(), organizationId:text('organization_id').notNull().references(()=>organizations.id), projectId:text('project_id').references(()=>projects.id),
+ title:text('title').notNull(),body:text('body').notNull().default(''),priority:text('priority').notNull().default('medium'),importance:text('importance'),status:text('status').notNull().default('open'),dueAt:text('due_at'),
+ campaignId:text('campaign_id').references(()=>campaigns.id),itemId:text('item_id').references(()=>items.id),loanId:text('loan_id').references(()=>loans.id),
+ version:integer('version').notNull().default(1),createdBy:text('created_by').notNull(),createdAt:text('created_at').notNull(),updatedAt:text('updated_at').notNull(),
+},t=>[index('followup_tasks_scope_idx').on(t.organizationId,t.projectId,t.status,t.updatedAt,t.id),check('followup_task_title',sql`length(${t.title}) BETWEEN 1 AND 160`),check('followup_task_body',sql`length(${t.body})<=4000`),check('followup_task_priority',sql`${t.priority} IN ('high','medium','low')`),check('followup_task_importance',sql`${t.importance} IN ('high','medium','low')`),check('followup_task_status',sql`${t.status} IN ('open','in_progress','blocked','completed','cancelled')`),check('followup_task_version',sql`${t.version}>0`),check('followup_task_references',sql`${t.projectId} IS NOT NULL OR (${t.campaignId} IS NULL AND ${t.itemId} IS NULL AND ${t.loanId} IS NULL)`)]);
 export const records = sqliteTable('records', {
   id: text('id').primaryKey(), projectId: text('project_id').notNull().references(() => projects.id),
   kind: text('kind').notNull(), title: text('title').notNull(), body: text('body').notNull().default(''),
@@ -332,6 +339,7 @@ export const records = sqliteTable('records', {
   itemId: text('item_id').references(() => items.id), loanId: text('loan_id').references(() => loans.id),
   groupId: text('group_id').references(() => activityGroups.id),
   scheduleItemId: text('schedule_item_id').references(() => projectScheduleItems.id),
+  coverageTaskId: text('coverage_task_id').references(():AnySQLiteColumn => followupTasks.id),
   createdBy: text('created_by').notNull(), createdAt: text('created_at').notNull(),
 }, t => [
   index('records_project_occurred_idx').on(t.projectId, t.occurredAt),

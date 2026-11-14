@@ -7,6 +7,7 @@ import { compile, teamFixture } from './support/work-teams-fixture.mjs';
 
 // Voluntário por ação (10/11/2026): acesso a uma única dinâmica, com data de fim. Dados sintéticos.
 const { accessAction, getActor, requireCapability } = await import(compile('lib/access.ts'));
+const { accountAccess } = await import(compile('lib/account-access.ts'));
 const { participationAction } = await import(compile('lib/participation.ts'));
 const { cancelAttendance } = await import(compile('lib/attendance-cancel.ts'));
 const { portalSnapshot } = await import(compile('lib/portal-data.ts'));
@@ -118,11 +119,19 @@ test('volunteer sees and operates only their own action', async t => {
 
 test('access ends by itself at the deadline, even for a session loaded before it, and the end goes to Registros', async t => {
   const s = scenario(t);
-  const { volunteerId } = await s.enroll();
+  const deadline = inHours(3);
+  const { volunteerId } = await s.enroll(deadline);
   const stale = await s.as('volunteer-v');
+  const ownAccess = await accountAccess(s.db, stale.userId);
+  assert.equal(ownAccess.platformAdmin,false);
+  assert.deepEqual(ownAccess.organizations,[{
+    name:'Organização A', archived:false, work:[],
+    events:[{name:'Ação no parque',project:'Projeto Aurora',endsAt:deadline}],
+  }]);
   // Simulate the clock passing the deadline (the trigger otherwise forbids moving the end).
   s.native.exec('DROP TRIGGER campaign_volunteer_update');
   s.native.prepare('UPDATE campaign_volunteers SET ends_at=? WHERE id=?').run(inHours(-1), volunteerId);
+  assert.deepEqual((await accountAccess(s.db, stale.userId)).organizations,[], 'a read alone excludes stale access before expiration is audited');
   await assert.rejects(s.ticket('volunteer-v', 'camp-a1').catch(error => { throw error; }), error => error.status === 403);
   await assert.rejects(participationAction(s.db, stale, 'participation.ticket', { campaignId: 'camp-a1', operationKey: key() }), error => error.status === 403 && error.code === 'access_changed', 'SQL rechecks the deadline');
   const row = s.native.prepare('SELECT revoked_at,revoke_reason,ends_at FROM campaign_volunteers WHERE id=?').get(volunteerId);
@@ -153,6 +162,7 @@ test('manager can end a volunteer access early; the person can be invited again 
   assert.ok(listed.invites.some(row => row.volunteer_campaign_id === 'camp-a1' && row.volunteer_campaign_name === 'Ação no parque'));
   await assert.rejects(accessAction(s.db, await s.as('other-a2'), 'volunteer.revoke', { id: volunteerId }, ORIGIN, SECRET), error => error.status === 403);
   assert.deepEqual(await accessAction(s.db, manager, 'volunteer.revoke', { id: volunteerId }, ORIGIN, SECRET), { revoked: true, id: volunteerId });
+  assert.deepEqual((await accountAccess(s.db, 'volunteer-v')).organizations, []);
   assert.equal(s.native.prepare("SELECT COUNT(*) n FROM audit WHERE action='volunteer.revoke' AND entity_id=?").get(volunteerId).n, 1);
   await assert.rejects(s.ticket('volunteer-v', 'camp-a1'), error => error.status === 403);
   await s.enroll();
@@ -192,6 +202,7 @@ test('volunteer home offers only what the access opens: no links, no agenda, onl
   const volunteerBranch = portal.indexOf('if (!role && volunteerAccess.length)'), shell = portal.indexOf('<DesktopSidebar');
   assert.ok(volunteerBranch > 0 && volunteerBranch < shell, 'volunteer page returns before the navigation shell');
   assert.doesNotMatch(portal.slice(volunteerBranch, portal.indexOf('if (!role || !capabilities.length)')), /href=|navigate\(|DesktopSidebar|MobileNavigation/);
+  assert.match(portal.slice(volunteerBranch, portal.indexOf('if (!role || !capabilities.length)')), /volunteerAccountOpen && <AccountAccessPanel/);
   assert.match(portal, /t\.id === 'calendar' && data\.calendarAvailable !== false/);
   // The root page sends accounts without a team to the participant area; a volunteer must reach the portal instead.
   assert.match(readFileSync(new URL('../app/page.tsx', import.meta.url), 'utf8'), /if\(!actor\.members\.length&&!actor\.volunteers\?\.length\)redirect\('\/participante'\)/);
