@@ -5,6 +5,7 @@ import { ArrowUpRight, CheckCircle2, Pin, PinOff, Circle, CircleDot, CircleX, Fl
 import { toast } from 'sonner';
 import { priorityLabels, stateLabels, TASK_STATES, type TaskStatus } from '@/lib/follow-up/contracts';
 import { TEAM_TASK_PAGE_SIZE, type TeamsWorkspace, type WorkTeam, type TeamPerson } from '@/lib/follow-up/teams-contract';
+import { projectAccessHref } from '@/lib/team-access-labels';
 import { followupChanged, FOLLOWUP_CHANGED } from './follow-up-api';
 import { saveWorkTeam, TeamsApiError, workTeamsApi } from './work-teams-api';
 import { WorkTaskCard } from './work-task-card';
@@ -21,7 +22,7 @@ type Props = {
  projects: { id: string; name: string; organization_id: string }[];
  onChanged?: () => void | Promise<void>;
  onOpenDemand: (id: string, projectId: string | null) => void;
- canOpenAccess?: boolean;
+ canOpenAccess?: (projectId: string) => boolean;
  /** Equipes fixadas na conta (0038) e ação para fixar ou desafixar. */
  pinnedTeamIds?: string[];
  onTogglePin?: (teamId: string, pinned: boolean) => Promise<void>;
@@ -64,7 +65,7 @@ function TeamForm({ team, people, organizationId, busy, onSave }: { team?: WorkT
  </form>;
 }
 
-export default function WorkTeamsPanel({ userId, defaultProjectId = '', organizations, projects, onChanged, onOpenDemand, canOpenAccess = false, pinnedTeamIds = [], onTogglePin, intent = null, onTeamShown }: Props) {
+export default function WorkTeamsPanel({ userId, defaultProjectId = '', organizations, projects, onChanged, onOpenDemand, canOpenAccess, pinnedTeamIds = [], onTogglePin, intent = null, onTeamShown }: Props) {
  const initialProject = projects.find(project => project.id === defaultProjectId) ?? projects[0];
  // Um pedido vindo de fora escolhe a organização: abrir uma equipe fixada ou criar uma nova.
  const intentOrg = organizations.find(organization => organization.id === intent?.organizationId)
@@ -175,7 +176,7 @@ export default function WorkTeamsPanel({ userId, defaultProjectId = '', organiza
  const pinRank = (id: string) => { const at = pinnedTeamIds.indexOf(id); return at === -1 ? Number.MAX_SAFE_INTEGER : at; };
  const visible = (data?.teams.filter(team => (!mine || team.isMine) && team.name.toLocaleLowerCase('pt-BR').includes(search.toLocaleLowerCase('pt-BR'))) ?? []).map((team, order) => ({ team, order })).sort((a, b) => pinRank(a.team.id) - pinRank(b.team.id) || a.order - b.order).map(entry => entry.team);
  return <section className={styles.workspace} aria-label="Equipes de trabalho">
-  <div className={styles.intro}><div><h2><Users size={22} aria-hidden="true"/>Trabalho em equipe</h2><p>Acompanhe entregas e integrantes no contexto que você pode acessar.</p></div><div className={styles.actions}>
+  <div className={styles.intro}><h2><Users size={22} aria-hidden="true"/>Trabalho em equipe</h2><div className={styles.actions}>
    <button className="p-button" disabled={busy || exporting} onClick={() => { setEditor(null); setAttempt(value => value + 1); }}><RefreshCw size={17} aria-hidden="true"/>Atualizar</button>
    {(canEditTeams || data?.scope.canManage) && <button className="p-button p-button-primary" disabled={busy || exporting || loading} onClick={startNewTeam}><Plus size={17} aria-hidden="true"/>Nova equipe</button>}
   </div></div>
@@ -184,9 +185,12 @@ export default function WorkTeamsPanel({ userId, defaultProjectId = '', organiza
    <label>Projeto<select name="teamsProject" aria-label="Projeto" value={projectId} disabled={busy || exporting} onChange={event => changeContext(organizationId, event.target.value)}>{selectedOrganization?.canManage && <option value="">Todos os projetos da organização</option>}{!canQuery && <option value={projectId} disabled>Escolha um projeto permitido</option>}{ownProjects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
    <label className={styles.search}>Buscar equipe<div><Search size={17} aria-hidden="true"/><input name="teamSearch" type="search" value={search} maxLength={100} placeholder="Nome da equipe" onChange={event => setSearch(event.target.value)}/></div></label>
   </div>
+  <div className={styles.accessHelp}>
+   <p className={styles.help}><ShieldCheck size={16} aria-hidden="true"/><span>Equipes como TI, Comunicação ou Eventos organizam quem faz o trabalho. Para ajustar permissões, fale com a gestão do projeto ou da organização.</span></p>
+   {projectId && canOpenAccess?.(projectId) && <a className="p-button p-button-subtle" href={projectAccessHref(projectId)}>Pessoas e acessos<ArrowUpRight size={15} aria-hidden="true"/></a>}
+  </div>
   {canQuery&&<TeamTemplates key={organizationId} organizationId={organizationId} selectedTeamId={data?.selectedTeamId} onApplied={created => { setTeamId(created); setAttempt(value => value + 1); }}/>}
   {canQuery&&<InstitutionalStructurePanel userId={userId} organizationId={organizationId} projectId={projectId||null} onSelectTeam={chooseTeam}/>}
-  <p className={styles.help}><ShieldCheck size={16} aria-hidden="true"/><span>Aqui você cria e edita as equipes de trabalho da organização. Elas recebem demandas e podem ser responsáveis por empréstimos, materiais e dinâmicas. Quem entra no portal e com qual permissão fica {canOpenAccess ? <>em <a href="?module=team">Pessoas e acessos</a></> : 'com os responsáveis do projeto'}.</span></p>
   <p role="status" className={styles.help} hidden={!pinMessage}>{pinMessage}</p>
   {error && <div role="alert" className="p-notice p-notice-error"><p>{error}</p><button className="p-button" onClick={() => { setTeamId(''); setOffset(0); setAttempt(value => value + 1); }}>Consultar novamente</button></div>}
   {!data && !error && <p role="status">{canQuery ? 'Consultando equipes e demandas…' : 'Escolha um projeto permitido para consultar as equipes.'}</p>}
