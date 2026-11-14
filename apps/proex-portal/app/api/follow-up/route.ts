@@ -14,5 +14,18 @@ export async function GET(request:Request){try{
  }catch(error){return privateResponse(publicError(error));}}
 export async function POST(request:Request){try{
  if(request.headers.get('Origin')!==new URL(request.url).origin||request.headers.get('X-Proex-Action')!=='1'||!request.headers.get('Content-Type')?.includes('application/json'))throw new HttpError(403,'Atualize o portal antes de salvar.','invalid_origin');
- const input=await boundedJson(request,64*1024);if(typeof input.action!=='string')throw new HttpError(400,'Escolha uma operação válida.','followup_action');const db=database();return privateResponse(Response.json(await followupAction(db,await getActor(db,await getPortalUser()),input.action,input)));
+ const input=await boundedJson(request,64*1024);
+ if(typeof input.action!=='string')throw new HttpError(400,'Escolha uma operação válida.','followup_action');
+ const db=database();
+ if (input.action === 'tasks.search') {
+   const fields = ['action','view','projectId','organizationId','projectScope','scheduleItemId','status','priority','search','offset'];
+   if (input.view !== 'tasks' || Object.keys(input).some(key => !fields.includes(key))
+      || (input.offset !== undefined && (typeof input.offset !== 'string' || !/^\d{1,5}$/.test(input.offset)))) {
+     throw new HttpError(400, 'Confira os filtros da busca.', 'followup_search');
+   }
+   const actor = await getActor(db, await getPortalUser({ refresh: false }));
+   const offset = input.offset === undefined ? undefined : Number(input.offset);
+   return privateResponse(Response.json(await followupList(db, actor, { ...input, offset })));
+ }
+ return privateResponse(Response.json(await followupAction(db,await getActor(db,await getPortalUser()),input.action,input)));
  }catch(error){return privateResponse(publicError(error));}}
