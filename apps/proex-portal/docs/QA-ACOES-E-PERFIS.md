@@ -29,6 +29,12 @@ No navegador, verificar 390 e 1366 px, temas claro e escuro, com a ficha, Docume
 - Na ficha, use **Acessos do projeto** em **Quem cuida de cada área**. Em Equipes, selecione um projeto e abra **Pessoas e acessos**. Os dois caminhos devem preservar o projeto. Voltar deve recuperar a página anterior. Com uma conta de leitura, os atalhos não aparecem e a URL de Pessoas e acessos redireciona para o Início.
 - No convite, a escolha do projeto orienta as funções disponíveis. A ação selecionada define o projeto do voluntário. Ao voltar para uma função de projeto, confira se o projeto anterior continua selecionado e se a confirmação de todos os projetos precisa ser marcada novamente.
 
+### Meus acessos
+
+- Em **Conta**, confira os vínculos de uma pessoa que é gestora no projeto A e leitora no projeto B. A lista distingue administração do Portal, administração de uma organização e função de projeto. Os nomes aparecem apenas quando há um vínculo próprio. Uma organização arquivada mantém vínculos vigentes, identificados como arquivados.
+- Com a sessão da pessoa ainda aberta, revogue o vínculo em B como administrador. Clique em **Atualizar** em Meus acessos. O projeto B deve sair da lista e o projeto A deve permanecer.
+- Com uma conta apenas de voluntariado, abra **Minha conta** na página da ação. Confira a ação e o prazo no horário de Brasília. A página continua sem menu. A consulta deve excluir acessos vencidos e revogados.
+
 ## Continuidade
 
 O vínculo à atividade do cronograma preserva os mesmos acessos ao registro do projeto. A migração SQLite 0047 acrescenta uma referência opcional e valida o projeto e a categoria no banco. Registros antigos seguem válidos. A atividade pode ser renomeada ou cancelada, com o vínculo preservado. A sincronização da administração expõe somente o identificador da atividade, além da projeção que já existia para Registros. Anexos continuam privados.

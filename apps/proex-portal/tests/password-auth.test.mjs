@@ -28,8 +28,9 @@ function compile(source, target) {
   writeFileSync(join(temporary, `${target}.js`), output);
 }
 compile('../db/auth-schema.ts', 'auth-schema');
-for (const name of ['password-auth', 'session', 'access', 'database', 'errors', 'http', 'rate-limit', 'mutations', 'login-identifiers', 'privacy', 'owner-setup']) compile(`../lib/${name}.ts`, name);
+for (const name of ['password-auth', 'session', 'access', 'database', 'errors', 'http', 'rate-limit', 'mutations', 'login-identifiers', 'privacy', 'owner-setup', 'account-access', 'team-access-labels']) compile(`../lib/${name}.ts`, name);
 compile('../app/api/account/route.ts', 'account-route');
+compile('../app/api/account/access/route.ts', 'account-access-route');
 compile('../app/api/auth/[...all]/route.ts', 'auth-route');
 writeFileSync(join(temporary, 'request-headers.js'), 'export async function headers(){return globalThis.__proexPasswordTestContext.headers;}');
 writeFileSync(join(temporary, 'native-auth.js'), 'export async function getChatGPTUser(){return globalThis.__proexPasswordTestContext.native ?? null;}');
@@ -46,6 +47,7 @@ const { passwordAuth } = await import(pathToFileURL(join(temporary, 'password-au
 const { getPortalUser, ensureNativePrincipal } = await import(pathToFileURL(join(temporary, 'session.js')).href);
 const { getActor, requireCapability, accessAction } = await import(pathToFileURL(join(temporary, 'access.js')).href);
 const { POST: accountPost, GET: accountGet } = await import(pathToFileURL(join(temporary, 'account-route.js')).href);
+const { GET: ownAccessGet } = await import(pathToFileURL(join(temporary, 'account-access-route.js')).href);
 const { GET: authGet } = await import(pathToFileURL(join(temporary, 'auth-route.js')).href);
 const origin = 'https://portal.example.test';
 const originalPassword = 'Uma frase de teste 2026!';
@@ -567,6 +569,69 @@ async function accountRead(f, action, cookie) {
   f.context.headers=request.headers;
   return accountGet(request);
 }
+
+test('account access reads only the signed-in person and immediately reflects revoked project grants', async t => {
+  const f = fixture(t), { auth, user } = await createAccount(f);
+  const now = new Date().toISOString();
+  f.seedPrincipal('own-person', user.email); f.alias(user.id, 'own-person');
+  f.sqlite.prepare('DELETE FROM members WHERE user_id=?').run('own-person');
+  f.seedPrincipal('other-person', 'other@private.test', { role:'owner' });
+  f.sqlite.prepare("INSERT INTO organizations(id,name,slug,status,version,created_at,updated_at) VALUES('org-q','Outra organização','outra','archived',1,?,?)").run(now, now);
+  const project = f.sqlite.prepare('INSERT INTO projects(id,name,created_at,organization_id) VALUES(?,?,?,?)');
+  project.run('proj-private-a','Projeto A',now,'org_proex');
+  project.run('proj-private-b','Projeto B',now,'org-q');
+  project.run('proj-other','Projeto de outra pessoa',now,'org_proex');
+  const grant = f.sqlite.prepare('INSERT INTO members(id,user_id,email,role,project_id,organization_id,created_at) VALUES(?,?,?,?,?,?,?)');
+  grant.run('member-private-a','own-person',user.email,'manager','proj-private-a','org_proex',now);
+  grant.run('member-private-b','own-person',user.email,'viewer','proj-private-b','org-q',now);
+  grant.run('member-other','other-person','other@private.test','viewer','proj-other','org_proex',now);
+
+  const read = (userId='own-person') => ownAccessGet(new Request(`${origin}/api/account/access`, { headers:{'X-Proex-Account':userId} }));
+  assert.equal((await read()).status,401);
+  const { cookie } = await signIn(auth,user.email);
+  f.context.headers=new Headers({ cookie });
+  assert.equal((await read('other-person')).status,403,'a different account cannot overwrite a stale tab');
+  const response=await read();
+  assert.equal(response.status,200);
+  assert.equal(response.headers.get('Cache-Control'),'private, no-store');
+  assert.equal(response.headers.getSetCookie().length,0);
+  const raw=await response.text(), body=JSON.parse(raw);
+  assert.doesNotMatch(raw,/proj-private|member-private|own-person|@|outra pessoa|org-q/);
+  assert.equal(body.platformAdmin,false);
+  assert.ok(Number.isFinite(body.checkedAt));
+  assert.deepEqual(body.organizations,[
+    {name:'Outra organização',archived:true,work:[{project:'Projeto B',roles:['Leitor de relatórios'],archived:false}],events:[]},
+    {name:'PROEX UFG',archived:false,work:[{project:'Projeto A',roles:['Gestor de projeto'],archived:false}],events:[]},
+  ]);
+  assert.equal((await getActor(f.db,{userId:'own-person',email:user.email,displayName:'Própria'})).members.length,2);
+  f.sqlite.prepare('UPDATE members SET revoked_at=? WHERE id=?').run(now,'member-private-a');
+  assert.deepEqual((await(await read()).json()).organizations.map(org=>org.name),['Outra organização']);
+  f.sqlite.prepare('UPDATE members SET revoked_at=? WHERE id=?').run(now,'member-private-b');
+  assert.deepEqual((await(await read()).json()).organizations,[]);
+
+  // Revocation after identity resolution still wins in the SQL that reads the grants.
+  grant.run('member-restored','own-person',user.email,'manager','proj-private-a','org_proex',now);
+  f.hooks.afterFirst = sql => {
+    if (sql.startsWith('SELECT u.*,p.display_name')) f.sqlite.prepare('UPDATE members SET revoked_at=? WHERE id=?').run(now,'member-restored');
+  };
+  assert.deepEqual((await(await read()).json()).organizations,[]);
+  f.sqlite.prepare("UPDATE portal_users SET status='blocked' WHERE user_id='own-person'").run();
+  assert.equal((await read()).status,403);
+});
+
+test('account access distinguishes platform and organization administrators without enumerating projects', async t => {
+  const f=fixture(t), {auth,user}=await createAccount(f);
+  f.seedPrincipal('own-admin',user.email,{role:'owner'}); f.alias(user.id,'own-admin');
+  const {cookie}=await signIn(auth,user.email); f.context.headers=new Headers({cookie});
+  const request=new Request(`${origin}/api/account/access`, {headers:{'X-Proex-Account':'own-admin'}});
+  const first=await(await ownAccessGet(request)).json();
+  assert.equal(first.platformAdmin,true);
+  assert.deepEqual(first.organizations,[]);
+  f.sqlite.prepare("UPDATE members SET organization_id='org_proex' WHERE user_id='own-admin'").run();
+  const scoped=await(await ownAccessGet(request)).json();
+  assert.equal(scoped.platformAdmin,false);
+  assert.deepEqual(scoped.organizations,[{name:'PROEX UFG',archived:false,work:[{project:null,roles:['Administração da organização'],archived:false}],events:[]}]);
+});
 
 test('optional username and CPF require the current password and reuse the canonical password account', async t=>{
   const f=fixture(t),{auth,user}=await createAccount(f);
