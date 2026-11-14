@@ -65,7 +65,7 @@
 .nodeTitle h4 { margin-top:1px; font-size:14px; font-weight:700; line-height:1.45; overflow-wrap:anywhere; }
 .badge { flex-shrink:0; align-self:flex-start; max-width:45%; padding:4px 7px; border-radius:6px; color:var(--muted); background:var(--surface-soft); font-size:11px; font-weight:650; overflow-wrap:anywhere; }
 .node[data-relation=governance]>.nodeCard .badge { border:1px dashed var(--muted); background:var(--canvas); }
-.nodeActions { display:flex; flex-wrap:nowrap; gap:6px; margin-left:auto; }
+.nodeActions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:6px; margin-left:auto; }
 .nodeActions button { font-size:12px; padding-inline:11px; background:var(--canvas); }
 /* Archiving is rarer and confirmed separately, so it reads as secondary to Editar and Equipes. */
 .nodeActions .quietAction { background:transparent; border:1px dashed var(--line); color:var(--muted); box-shadow:none; }
