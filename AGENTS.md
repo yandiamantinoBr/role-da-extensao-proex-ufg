@@ -4,6 +4,8 @@ Fale em português simples. Confirme a autorização da conversa antes de amplia
 
 ## Contexto
 
+Use a [retomada de 13/11](docs/RETOMADA-13NOV-PORTAL-PROEX.md) como ponte para a Vault, as PRs em andamento e os critérios de validação. Para peças que precisam de edição manual, use o app pertinente da ArtCraft e confira a reabertura do editável. Ao escolher modelos de IA, consulte o [Artificial Analysis](https://artificialanalysis.ai/), registre a data, confirme o preço oficial e teste antes de mudar o padrão quando possível.
+
 Antes de agir, leia `C:/Users/yan1n/Documents/Vault Yan/AGENTS.md`, `00 Início.md` e, em `20 Áreas/Trabalho/PROEX/Portal PROEX/`, as notas `Portal PROEX.md`, `Portal PROEX - Decisões.md`, `Portal PROEX - Plano.md` e `Portal PROEX - Auditoria.md`. O roteiro está em `Portal PROEX - Prompt para o Codex.md`. Decisões têm precedência sobre contexto e plano; confira a revisão do código descrita nas notas. Instruções explícitas da conversa têm precedência.
 
 ## Desenvolvimento

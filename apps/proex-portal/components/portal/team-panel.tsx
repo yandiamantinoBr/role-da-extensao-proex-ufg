@@ -2,10 +2,12 @@
 import { useId, useRef, useState, type FormEvent } from 'react';
 import { ArrowUpRight, Check, Copy, KeyRound, LoaderCircle, Mail, Search, ShieldCheck, UserPlus, Users } from 'lucide-react';
 import TeamPersonDetail from './team-person-detail';
+import TeamInviteShare from './team-invite-share';
 import DateTimeField from './date-time-field';
 import styles from './team-person.module.css';
 import { useFormDraft, DraftNotice } from './use-form-draft';
 import { officialTeamPrefill, type OfficialTeamSelection } from '../../lib/catalog/proex-team';
+import { invitationShareLink } from '../../lib/invitation-link';
 // Server-projected directory and scoped memberships.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = Record<string, any>;
@@ -36,6 +38,12 @@ const toLocal = (iso: unknown) => { const time = typeof iso === 'string' ? Date.
 const fromLocal = (local: string) => /^\d{4}-\d\d-\d\dT\d\d:\d\d$/.test(local) ? new Date(`${local}:00-03:00`).toISOString() : '';
 const WHEN = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'America/Sao_Paulo' });
 const moment = (iso: unknown) => { const time = typeof iso === 'string' ? Date.parse(iso) : NaN; return Number.isFinite(time) ? WHEN.format(new Date(time)).replace(',', ' às') : ''; };
+function inviteStatus(invite: Row | undefined, now: number, fallbackExpiry = '') {
+    if (invite?.revoked_at ?? invite?.revokedAt) return 'revoked';
+    if (invite?.accepted_at ?? invite?.acceptedAt) return 'accepted';
+    const expiry = Date.parse(invite?.expires_at ?? invite?.expiresAt ?? fallbackExpiry);
+    return Number.isFinite(expiry) && expiry <= now ? 'expired' : 'pending';
+}
 async function accountAction(payload: Row): Promise<Row> { const response = await fetch('/api/account', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Proex-Action': '1' }, body: JSON.stringify(payload) }); const data = await response.json().catch(() => null) as Row | null; if (!response.ok || !data)
     throw new Error(data?.error || 'Não foi possível concluir. Atualize e tente novamente.'); return data; }
 function CopyLink({ url, label }: {
@@ -191,8 +199,8 @@ function VolunteerList({ volunteers, projects, canRevoke, mutate }: { volunteers
 }
 export default function TeamPanel(props: Props) {
     const [selectedUserId,setSelectedUserId]=useState<string|null>(null);
-    const [query, setQuery] = useState(''), [inviteUrl, setInviteUrl] = useState(''), [saving, setSaving] = useState(false), [error, setError] = useState('');
-    const [issuedSelection, setIssuedSelection] = useState('');
+    const [query, setQuery] = useState(''), [saving, setSaving] = useState(false), [error, setError] = useState('');
+    const [issuedInvite, setIssuedInvite] = useState<{ id: string; url: string; expiresAt: string; selection: string } | null>(null);
     const key = useRef<{ selection: string; operationKey: string } | null>(null), inviteRef = useRef<HTMLFormElement>(null);
     const official = props.officialSuggestion ? officialTeamPrefill(props.officialSuggestion.id) : null;
     const suggestionKey = official ? `${props.officialSuggestion!.selectionKey}:${official.id}` : 'manual';
@@ -217,8 +225,8 @@ export default function TeamPanel(props: Props) {
         const globalAccess = selectedScope === '__global__';
         if (globalAccess && (!props.globalAdmin || !globalConfirmed)) throw new Error('Confirme o alcance do convite ou escolha um projeto.');
         const result = await props.mutate('invite.create', { email: form.get('email'), role: asVolunteer ? 'operator' : form.get('role'), projectId: globalAccess ? null : selectedScope, globalAccess: globalAccess && globalConfirmed, ...(asVolunteer ? { campaignId: form.get('campaignId'), endsAt } : {}), operationKey: key.current.operationKey });
-        setIssuedSelection(suggestionKey);
-        setInviteUrl(result.inviteUrl || '');
+        const url = invitationShareLink(result.inviteUrl, window.location.origin);
+        setIssuedInvite({ id: result.id, url, expiresAt: result.expiresAt ?? '', selection: suggestionKey });
         key.current = null;
         draft.clear();
         element.reset();
@@ -230,7 +238,18 @@ export default function TeamPanel(props: Props) {
     finally {
         setSaving(false);
     } }
+    async function revokeInvite(id: string) {
+        try {
+            await props.mutate('invite.revoke', { id, operationKey: crypto.randomUUID() });
+            setIssuedInvite(current => current?.id === id ? null : current);
+        } catch (cause) {
+            setError(cause instanceof Error ? cause.message : 'Não foi possível revogar o convite.');
+        }
+    }
     const visibleInvites = props.invites.filter(i => !props.selectedProjectId || !projectIdOf(i) || projectIdOf(i) === props.selectedProjectId);
+    const issuedInviteRow = issuedInvite ? props.invites.find(invite => invite.id === issuedInvite.id) : undefined;
+    const shareableInvite = issuedInvite?.selection === suggestionKey
+        && inviteStatus(issuedInviteRow, props.now, issuedInvite.expiresAt) === 'pending' ? issuedInvite : null;
     return <>
     <section className="p-section">
     <div className="p-section-heading">
@@ -259,7 +278,7 @@ export default function TeamPanel(props: Props) {
         </div>
         {official && <p className="p-form-help" role="status">Sugestão da fonte oficial: {official.name}. Confira o e-mail e escolha projeto e função. O nome é apenas referência; a pessoa define seu próprio perfil na ativação. {props.onClearOfficialSuggestion && <button type="button" className="p-text-link" disabled={saving} onClick={props.onClearOfficialSuggestion}>Limpar sugestão</button>}</p>}
         <form id="team-invite-form" ref={inviteRef} className="p-form" onSubmit={invite} onChange={() => { if (!saving)
-            { key.current = null; setInviteUrl(''); } }}>{!official && <DraftNotice draft={draft}/>}
+            { key.current = null; setIssuedInvite(null); } }}>{!official && <DraftNotice draft={draft}/>}
         <fieldset disabled={saving}>
         <div className="p-form-grid">
         {official && <label className="p-field"><span>Nome na fonte oficial</span><input id="team-invite-official-name" readOnly value={official.name} aria-label="Nome na fonte oficial"/></label>}
@@ -291,7 +310,7 @@ export default function TeamPanel(props: Props) {
         <div className="p-form-footer">{error && <p className="p-inline-error" role="alert">{error}</p>}<button className="p-button p-button-primary" type="submit">{saving ? <LoaderCircle size={17} className="p-spin"/> : <UserPlus size={17}/>}{saving ? 'Criando…' : 'Gerar convite'}</button>
         </div>
         </fieldset>
-        </form>{inviteUrl && issuedSelection === suggestionKey && <CopyLink url={inviteUrl} label="Convite criado para a equipe"/>}</section>}<VolunteerList volunteers={(props.volunteers ?? []).filter(volunteer => !props.selectedProjectId || projectIdOf(volunteer) === props.selectedProjectId)} projects={props.projects} canRevoke={projectId => props.globalAdmin || props.canProject(projectId, 'access.manage')} mutate={props.mutate}/>{visibleInvites.length > 0 && <section className="p-section">
+        </form>{shareableInvite && <TeamInviteShare key={shareableInvite.id} url={shareableInvite.url} expiresAt={shareableInvite.expiresAt}/>}</section>}<VolunteerList volunteers={(props.volunteers ?? []).filter(volunteer => !props.selectedProjectId || projectIdOf(volunteer) === props.selectedProjectId)} projects={props.projects} canRevoke={projectId => props.globalAdmin || props.canProject(projectId, 'access.manage')} mutate={props.mutate}/>{visibleInvites.length > 0 && <section className="p-section">
         <div className="p-section-heading">
         <div>
         <h2>Convites emitidos</h2>
@@ -299,14 +318,14 @@ export default function TeamPanel(props: Props) {
         </div>
         </div>
         <div className="p-card p-member-list">{visibleInvites.map(invite => {
-                const revoked = Boolean(invite.revoked_at ?? invite.revokedAt), accepted = Boolean(invite.accepted_at ?? invite.acceptedAt), expires = new Date(invite.expires_at ?? invite.expiresAt), expired = Number.isFinite(expires.getTime()) && expires.getTime() < props.now;
+                const status = inviteStatus(invite, props.now);
                 return <div className="p-member" key={invite.id}>
                 <div>
                 <strong>{invite.email}</strong>
                 <small>{invite.volunteer_campaign_id ? `Voluntário · ${invite.volunteer_campaign_name || 'ação'}` : roles[invite.role]} · {projectIdOf(invite) ? props.projects.find(p => p.id === projectIdOf(invite))?.name : 'Organização'}</small>
-                <small>{invite.volunteer_campaign_id ? `Link vale até ${moment(invite.expires_at ?? invite.expiresAt)} · acesso até ${moment(invite.volunteer_ends_at)}` : `Válido até ${expires.toLocaleDateString('pt-BR')}`}</small>
+                <small>{invite.volunteer_campaign_id ? `Link vale até ${moment(invite.expires_at ?? invite.expiresAt)} · acesso até ${moment(invite.volunteer_ends_at)}` : `Válido até ${moment(invite.expires_at ?? invite.expiresAt)}`}</small>
                 </div>
-                <span className="p-badge">{revoked ? 'Revogado' : accepted ? 'Aceito' : expired ? 'Expirado' : 'Pendente'}</span>{!revoked && !accepted && (props.globalAdmin || props.canProject(projectIdOf(invite), 'access.manage')) && <button className="p-button p-button-danger" onClick={() => void props.mutate('invite.revoke', { id: invite.id, operationKey: crypto.randomUUID() }).catch(e => setError(e instanceof Error ? e.message : 'Não foi possível revogar o convite.'))}>Revogar</button>}</div>;
+                <span className="p-badge">{{ revoked: 'Revogado', accepted: 'Aceito', expired: 'Expirado', pending: 'Pendente' }[status]}</span>{(status === 'pending' || status === 'expired') && (props.globalAdmin || props.canProject(projectIdOf(invite), 'access.manage')) && <button className="p-button p-button-danger" onClick={() => void revokeInvite(invite.id)}>Revogar</button>}</div>;
             })}</div>
         </section>}{selectedUserId&&<TeamPersonDetail key={`${selectedUserId}:${props.selectedProjectId||''}`} userId={selectedUserId} projectId={props.selectedProjectId} projects={props.projects.map(p=>({id:p.id,name:p.name}))} onClose={()=>setSelectedUserId(null)} onOpenOwnProfile={props.onOpenOwnProfile}/>}</>;
 }

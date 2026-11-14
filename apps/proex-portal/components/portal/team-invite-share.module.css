@@ -1,0 +1,64 @@
+.result {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  margin-top: 16px;
+  padding: clamp(14px, 3vw, 22px);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--ink);
+}
+
+.heading,
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.heading {
+  font-size: 1rem;
+}
+
+.heading svg {
+  color: var(--brand-ink, var(--purple));
+}
+
+.result p,
+.label {
+  margin: 0;
+  font-size: .875rem;
+  line-height: 1.5;
+}
+
+.label {
+  font-weight: 650;
+}
+
+.result input {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+}
+
+.actions > *,
+.qr a {
+  min-height: 44px;
+}
+
+.qr {
+  display: grid;
+  justify-items: start;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.qr img {
+  display: block;
+  width: min(224px, 100%);
+  height: auto;
+  border-radius: 8px;
+  image-rendering: pixelated;
+}

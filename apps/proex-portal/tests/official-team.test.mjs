@@ -13,6 +13,8 @@ const url = name => pathToFileURL(join(temporary, name)).href;
 const catalogCode = ts.transpileModule(readFileSync(new URL('../lib/catalog/proex-team.ts', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
 writeFileSync(join(temporary, 'catalog.js'), catalogCode);
 const { PROEX_TEAM, PROEX_TEAM_SOURCE, officialTeamPrefill, searchOfficialTeam, isPublishedInstitutionalEmail } = await import(url('catalog.js'));
+const invitationLink = ts.transpileModule(readFileSync(new URL('../lib/invitation-link.ts', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
+writeFileSync(join(temporary, 'invitation-link.js'), invitationLink);
 
 test('verified snapshot contains only sourced professional fields, with unique people and honest provenance', () => {
   assert.equal(PROEX_TEAM_SOURCE.url, 'https://proex.ufg.br/p/equipe-proex');
@@ -53,15 +55,30 @@ test('institutional domains confer no role or identity and prefills are a pure e
 
 // Execute the real component event handlers with inert hooks and JSX nodes.
 // This verifies selection/submission behavior, not browser layout or hydration.
-writeFileSync(join(temporary, 'react.js'), 'export const useState=value=>[typeof value==="function"?value():value,()=>{}];export const useRef=value=>({current:value});export const useId=()=>"synthetic-id";');
+writeFileSync(join(temporary, 'react.js'), `
+export const useState=initial=>{
+  const harness=globalThis.__officialHarness;
+  if(!harness)return [typeof initial==="function"?initial():initial,()=>{}];
+  const slot=harness.index++;
+  if(!(slot in harness.slots))harness.slots[slot]=typeof initial==="function"?initial():initial;
+  return [harness.slots[slot],next=>{harness.slots[slot]=typeof next==="function"?next(harness.slots[slot]):next;}];
+};
+export const useRef=value=>{
+  const harness=globalThis.__officialHarness;
+  return harness?(harness.slots[harness.index++]??={current:value}):{current:value};
+};
+export const useId=()=>"synthetic-id";
+`);
 writeFileSync(join(temporary, 'jsx.js'), 'export const Fragment="fragment";export const jsx=(type,props,key)=>({type,props:props??{},key});export const jsxs=jsx;');
 writeFileSync(join(temporary, 'css.js'), 'export default new Proxy({},{get:(_target,key)=>String(key)});');
 function component(name) {
   let code = ts.transpileModule(readFileSync(new URL(`../components/portal/${name}.tsx`, import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
   code = code.replace(/from ['"]react['"]/g, `from ${JSON.stringify(url('react.js'))}`).replace(/from ['"]react\/jsx-runtime['"]/g, `from ${JSON.stringify(url('jsx.js'))}`)
     .replace(/from ['"]\.\.\/\.\.\/lib\/catalog\/proex-team['"]/g, `from ${JSON.stringify(url('catalog.js'))}`)
+    .replace(/from ['"]\.\.\/\.\.\/lib\/invitation-link['"]/g, `from ${JSON.stringify(url('invitation-link.js'))}`)
     .replace(/from ['"]\.\/[^'"]+\.css['"]/g, `from ${JSON.stringify(url('css.js'))}`)
     .replace(/import TeamPersonDetail from ['"]\.\/team-person-detail['"];?/, 'const TeamPersonDetail=()=>null;')
+    .replace(/import TeamInviteShare from ['"]\.\/team-invite-share['"];?/, 'const TeamInviteShare="TeamInviteShare";')
     .replace(/import DateTimeField from ['"]\.\/date-time-field['"];?/, 'const DateTimeField=()=>null;')
     .replace(/import \{ useFormDraft, DraftNotice \} from ['"]\.\/use-form-draft['"];?/, 'const useFormDraft=(_ref,key)=>{globalThis.__officialDraftKeys.push(key);return{clear(){},savedAt:null}};const DraftNotice=()=>null;')
     .replace(/import \{([^}]+)\} from ['"]lucide-react['"];?/, (_all, names) => names.split(',').map(name => `const ${name.trim()}="icon";`).join(''));
@@ -88,7 +105,7 @@ test('TeamPanel uses only the verified contact, resets scope choices and does no
   let mutations = 0, payload; globalThis.__officialDraftKeys = [];
   const selected = { ...officialTeamPrefill('luana-ribeiro'), selectionKey: 'synthetic-selection', email: 'forged@outside.invalid', name: 'forged name' };
   const props = { now: 0, officialSuggestion: selected, users: [], members: [], invites: [], projects: [{ id: 'synthetic-project', name: 'Synthetic project' }], selectedProjectId: 'synthetic-project', globalAdmin: true, canProject: () => true,
-    mutate: async (_action, value) => { mutations++; payload = value; return { inviteUrl: 'https://synthetic.invalid/convite?token=synthetic-only' }; } };
+    mutate: async (_action, value) => { mutations++; payload = value; return { inviteUrl: 'https://synthetic.invalid/convite?token=' + 'S'.repeat(43) }; } };
   const tree = TeamPanel(props), form = nodes(tree, node => node.type === 'form')[0];
   assert.equal(nodes(tree, node => node.type === 'input' && node.props.name === 'email')[0].props.defaultValue, officialTeamPrefill('luana-ribeiro').email);
   const name = nodes(tree, node => node.type === 'input' && node.props['aria-label'] === 'Nome na fonte oficial')[0]; assert.equal(name.props.name, undefined); assert.equal(name.props.readOnly, true);
@@ -96,22 +113,24 @@ test('TeamPanel uses only the verified contact, resets scope choices and does no
   assert.equal(nodes(tree, node => node.type === 'option' && node.props.value === '__global__').length, 0);
   assert.equal(nodes(tree, node => typeof node.type === 'function' && node.type.name === 'DraftNotice').length, 0, 'a stale manual draft discard cannot overwrite the official prefill');
   assert.deepEqual(globalThis.__officialDraftKeys, [null], 'no previous person’s project or role draft is inherited'); assert.equal(mutations, 0);
-  const original = globalThis.FormData; let values = {};
+  const original = globalThis.FormData, originalWindow = globalThis.window; let values = {};
+  globalThis.window = { location: { origin: 'https://synthetic.invalid' } };
   globalThis.FormData = class { get(name) { return values[name] ?? ''; } };
   const event = { preventDefault() {}, currentTarget: { reset() {} } };
   try {
     for (const scope of [{}, { role: 'viewer' }, { role: 'viewer', projectId: '__global__' }]) { values = scope; await form.props.onSubmit(event); assert.equal(mutations, 0); }
     values = { email: 'synthetic@outside.invalid', role: 'viewer', projectId: 'synthetic-project' }; await form.props.onSubmit(event);
     assert.equal(mutations, 1); assert.deepEqual(Object.keys(payload).sort(), ['email', 'role', 'projectId', 'globalAccess', 'operationKey'].sort()); assert.equal(payload.projectId, 'synthetic-project'); assert.equal(payload.role, 'viewer');
-  } finally { globalThis.FormData = original; delete globalThis.__officialDraftKeys; }
+  } finally { globalThis.FormData = original; globalThis.window = originalWindow; delete globalThis.__officialDraftKeys; }
 });
 
 test('manual external invitations remain possible with an explicit role and scope', async () => {
   globalThis.__officialDraftKeys = []; let payload;
   const props = { now: 0, users: [], members: [], invites: [], projects: [{ id: 'synthetic-project', name: 'Synthetic project' }], globalAdmin: true, canProject: () => true,
-    mutate: async (_action, value) => { payload = value; return {}; } };
+    mutate: async (_action, value) => { payload = value; return { inviteUrl: 'https://synthetic.invalid/convite?token=' + 'T'.repeat(43) }; } };
   const form = nodes(TeamPanel(props), node => node.type === 'form')[0];
-  const original = globalThis.FormData;
+  const original = globalThis.FormData, originalWindow = globalThis.window;
+  globalThis.window = { location: { origin: 'https://synthetic.invalid' } };
   let selectedScope = '__global__';
   globalThis.FormData = class { get(name) { return { email: 'synthetic@external.invalid', role: 'viewer', projectId: selectedScope }[name]; } };
   try {
@@ -121,7 +140,59 @@ test('manual external invitations remain possible with an explicit role and scop
     assert.equal(payload.email, 'synthetic@external.invalid'); assert.equal(payload.projectId, 'synthetic-project'); assert.equal(payload.globalAccess, false); assert.equal(payload.role, 'viewer');
     const restricted = TeamPanel({ ...props, globalAdmin: false });
     assert.equal(nodes(restricted, node => node.type === 'option' && node.props.value === '__global__').length, 0);
-  } finally { globalThis.FormData = original; delete globalThis.__officialDraftKeys; }
+  } finally { globalThis.FormData = original; globalThis.window = originalWindow; delete globalThis.__officialDraftKeys; }
+});
+
+test('the share card tracks its invite across revocation, acceptance and expiry', async () => {
+  globalThis.__officialDraftKeys = [];
+  globalThis.__officialHarness = { slots: [], index: 0 };
+  const originalFormData = globalThis.FormData, originalWindow = globalThis.window;
+  const origin = 'https://synthetic.invalid';
+  globalThis.window = { location: { origin } };
+  globalThis.FormData = class {
+    get(name) { return { email: 'synthetic@external.invalid', role: 'viewer', projectId: 'synthetic-project' }[name]; }
+  };
+
+  const expiry = '2030-01-01T00:00:00Z', id = 'invite-new';
+  const props = { now: Date.parse(expiry) - 1000, users: [], members: [], invites: [],
+    projects: [{ id: 'synthetic-project', name: 'Synthetic project' }], globalAdmin: true, canProject: () => true,
+    mutate: async (action, payload) => {
+      if (action === 'invite.create') return { id, expiresAt: expiry, inviteUrl: origin + '/convite?token=' + 'Q'.repeat(43) };
+      assert.equal(action, 'invite.revoke');
+      assert.ok([id, 'invite-other'].includes(payload.id));
+      return {};
+    } };
+  const render = () => { globalThis.__officialHarness.index = 0; return TeamPanel(props); };
+  const share = () => nodes(render(), node => node.type === 'TeamInviteShare')[0];
+  const row = (rowId, fields = {}) => ({ id: rowId, expires_at: expiry, email: 'synthetic@external.invalid', role: 'viewer', project_id: 'synthetic-project', ...fields });
+  async function revoke(index) {
+    nodes(render(), node => node.type === 'button' && node.props.children === 'Revogar')[index].props.onClick();
+    await new Promise(resolve => setImmediate(resolve));
+  }
+
+  try {
+    const form = nodes(render(), node => node.type === 'form')[0];
+    await form.props.onSubmit({ preventDefault() {}, currentTarget: { reset() {} } });
+    assert.equal(share()?.props.url, origin + '/convite#token=' + 'Q'.repeat(43));
+    props.invites = [row('invite-other'), row(id)];
+    await revoke(0);
+    assert.ok(share(), 'revoking another invite must not hide the newly issued QR');
+    props.invites = [row(id, { accepted_at: expiry })];
+    assert.equal(share(), undefined);
+    props.invites = [row(id, { revoked_at: expiry })];
+    assert.equal(share(), undefined);
+    props.invites = [row(id)];
+    props.now = Date.parse(expiry);
+    assert.equal(share(), undefined);
+    props.now -= 1000;
+    await revoke(0);
+    assert.equal(share(), undefined, 'successful revocation hides the QR even before refreshing the list');
+  } finally {
+    globalThis.FormData = originalFormData;
+    globalThis.window = originalWindow;
+    delete globalThis.__officialHarness;
+    delete globalThis.__officialDraftKeys;
+  }
 });
 
 
