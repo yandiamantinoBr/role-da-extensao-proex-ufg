@@ -53,7 +53,7 @@ export async function followupReportRows(db: D1Database, actor: PortalActor, dat
       (SELECT COUNT(*) FROM followup_checklist_items r JOIN followup_checklists c ON c.id=r.checklist_id WHERE c.task_id=f.id) AS itens_conferencia,
       (SELECT COUNT(*) FROM followup_checklist_items r JOIN followup_checklists c ON c.id=r.checklist_id WHERE c.task_id=f.id AND r.counted IS NULL) AS contagens_pendentes
       FROM ${base} LEFT JOIN campaigns ev ON ev.id=f.campaign_id LEFT JOIN items i ON i.id=f.item_id
-      WHERE ${conditions.join(' AND ')} ORDER BY CASE f.priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,f.due_at IS NULL,f.due_at,f.created_at DESC,f.id`;
+      WHERE ${conditions.join(' AND ')} ORDER BY CASE f.status WHEN 'completed' THEN 1 WHEN 'cancelled' THEN 1 ELSE 0 END,CASE f.priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,COALESCE(f.due_at,'9999'),f.updated_at DESC,f.id`;
   } else {
     query = `SELECT r.id,c.id AS conferencia_id,${shared},c.title AS conferencia,c.status AS situacao,
       date(c.created_at,'-3 hours') AS data,COALESCE(ev.name,'') AS evento,i.name AS material,i.unit AS unidade_medida,r.size AS tamanho,

@@ -14,7 +14,7 @@ function load(file, dependencies = {}) {
     return compiledModule.exports;
 }
 
-const { readPortalLocation, commitPortalLocation, deniedPortalModule } = load('portal-history', { './work-navigation': load('work-navigation'), './my-work/contracts': load('my-work/contracts'), './report-links': load('report-links', { './civil-date': load('civil-date') }) });
+const { readPortalLocation, commitPortalLocation, deniedPortalModule } = load('portal-history', { './work-navigation': load('work-navigation'), './my-work/contracts': load('my-work/contracts'), './report-links': load('report-links', { './civil-date': load('civil-date') }), './follow-up/contracts':load('follow-up/contracts',{'../errors':load('errors')}) });
 const { dashboardLoginDestination, loginHref, safeLoginDestination } = load('login-destination', { './report-links': load('report-links', { './civil-date': load('civil-date') }) });
 const origin = 'https://example.test';
 const scope = {
@@ -27,6 +27,16 @@ const scope = {
 };
 const read = (query, current = scope) => readPortalLocation(new URLSearchParams(query), current);
 
+test('demand reports retain their enumerated filters across login and reload, while lexical search stays private',()=>{
+    const params={module:'reports',report:'demands',taskFilter:'1',taskState:'blocked',taskPriority:'high',taskScope:'organization',organizationId:'org-a',taskSearch:'1',privateTerm:'private-synthetic'};
+    const url=new URL(safeLoginDestination(dashboardLoginDestination(params)),origin);
+    assert.doesNotMatch(url.href,/private-synthetic/);
+    const route=read(url.search);
+    assert.deepEqual({...route.demandReport},{status:'blocked',priority:'high',generalOnly:true,organizationId:'org-a',needsSearch:true,unavailable:false});
+    const unavailable=read(url.search,{...scope,canSelectOrganization:()=>false});
+    assert.equal(unavailable.demandReport.unavailable,true);
+    assert.equal(read('module=reports&report=demands&taskFilter=1&taskScope=organization').demandReport.unavailable,true);
+});
 test('signing in preserves the shared activity, demand or project; access is resolved for that account', () => {
     const afterLogin = params => {
         const login = new URL(loginHref(dashboardLoginDestination(params)), origin);

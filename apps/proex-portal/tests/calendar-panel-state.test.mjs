@@ -10,6 +10,8 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
 const civilDateSource = readFileSync(new URL('../lib/civil-date.ts', import.meta.url), 'utf8');
 const civilDateCode = ts.transpileModule(civilDateSource, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
 const civilDates = await import(`data:text/javascript;base64,${Buffer.from(civilDateCode).toString('base64')}`);
+const listSearchCode = ts.transpileModule(readFileSync(new URL('../lib/list-search.ts', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
+const listSearch = await import(`data:text/javascript;base64,${Buffer.from(listSearchCode).toString('base64')}`);
 function harness(initialProject = '', initialUnit = '') {
   const slots = [], effects = [], requests = [], copied = []; let index = 0, tree;
   let selectedProjectId = initialProject;
@@ -24,7 +26,7 @@ function harness(initialProject = '', initialUnit = '') {
   const source = ts.transpileModule(readFileSync(new URL('../components/portal/calendar-panel.tsx', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
   vm.runInNewContext(source, {
     module: compiled, exports: compiled.exports,
-    require: name => name === 'react' ? hooks : name === 'react/jsx-runtime' ? { jsx, jsxs: jsx } : name === 'lucide-react' ? new Proxy({}, { get: (_, key) => String(key) }) : name.endsWith('.css') ? { default: new Proxy({}, { get: (_, key) => String(key) }) } : name === '@/lib/civil-date' ? civilDates : { groupUnits: () => [] },
+    require: name => name === 'react' ? hooks : name === 'react/jsx-runtime' ? { jsx, jsxs: jsx } : name === 'lucide-react' ? new Proxy({}, { get: (_, key) => String(key) }) : name.endsWith('.css') ? { default: new Proxy({}, { get: (_, key) => String(key) }) } : name === '@/lib/civil-date' ? civilDates : name === '@/lib/list-search' ? listSearch : { groupUnits: () => [] },
     Date, Intl, URLSearchParams, AbortController, Map, Error,
     fetch: (url, init) => new Promise(resolve => requests.push({ url, init, resolve })),
     navigator: { clipboard: { async writeText(value) { copied.push(value); } } },
@@ -51,6 +53,30 @@ function harness(initialProject = '', initialUnit = '') {
   h.render(); return h;
 }
 async function ready(h) { h.respond(h.requests[0], { entries: [], feeds: [], availableCategories: ['projects'] }); await tick(); h.render(); }
+
+test('agenda searches authorized visible titles, places and projects without changing the ICS query', async () => {
+  const h=harness();
+  try {
+    const day=new URL(h.requests[0].url,'https://example.test').searchParams.get('from');
+    const end=new Date(`${day}T12:00:00Z`); end.setUTCDate(end.getUTCDate()+1);
+    const sameDay={category:'projects',projectName:'Projeto Rolê',startsAt:day,endsAt:end.toISOString().slice(0,10),allDay:true};
+    h.respond(h.requests[0],{entries:[
+      {...sameDay,uid:'a',title:'Apresentação pública',location:'Auditório principal'},
+      {...sameDay,uid:'b',title:'Reunião interna',location:'Sala 2'},
+    ],feeds:[],availableCategories:['projects']});await tick();h.render();
+    const findSearch=()=>h.all().find(node=>node.type==='input'&&node.props.name==='calendarSearch');
+    findSearch().props.onChange({target:{value:'apresentacao auditorio'}});h.render();
+    assert.match(h.body(),/Apresentação pública/);
+    assert.doesNotMatch(h.body(),/Reunião interna/);
+    assert.equal(h.requests.length,1);
+    const ics=h.all().find(node=>node.type==='a'&&node.props.href.includes('format=ics'));
+    assert.doesNotMatch(ics.props.href,/search=|auditorio/);
+    findSearch().props.onChange({target:{value:'inexistente'}});h.render();
+    assert.match(h.body(),/Nenhum resultado para esta busca/);
+    h.button('Voltar ao mês atual e limpar filtros').props.onClick();h.render();
+    assert.match(h.body(),/Reunião interna/);
+  }finally{h.dispose();}
+});
 
 test('the project and unit from the route scope the calendar query and ICS, and clearing the project keeps the unit', async () => {
   const h = harness('project-a', 'unit-a');

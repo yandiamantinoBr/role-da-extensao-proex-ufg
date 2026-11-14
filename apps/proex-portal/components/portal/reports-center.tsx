@@ -390,8 +390,9 @@ export function ProjectReportExports({ projectId, projectName, officialUrl, hasL
   </section>;
 }
 
-export default function ReportsCenter({ userId, projectId, unitId, area, from, to, scopeLabel, available, initialDataset, initialSearch = '', projectIdentity, canSync = false, demandFilters, demandOrganizationName, onClearDemandFilters }: {
-  userId: string; projectId: string; unitId: string; area: string; from: string; to: string; scopeLabel: string; available: DatasetId[]; initialDataset?: DatasetId; initialSearch?: string; projectIdentity?: ExportRow; canSync?: boolean; demandFilters?: DemandReportFilter|null; demandOrganizationName?: string; onClearDemandFilters?: ()=>void;
+export default function ReportsCenter({ userId, projectId, unitId, area, from, to, scopeLabel, available, initialDataset, initialSearch = '', projectIdentity, canSync = false, demandFilters, demandOrganizationName, needsDemandSearch = false, demandReportUnavailable = false, onRestoreDemandSearch, onClearDemandFilters }: {
+  userId: string; projectId: string; unitId: string; area: string; from: string; to: string; scopeLabel: string; available: DatasetId[]; initialDataset?: DatasetId; initialSearch?: string; projectIdentity?: ExportRow; canSync?: boolean; demandFilters?: DemandReportFilter|null; demandOrganizationName?: string;
+  needsDemandSearch?:boolean; demandReportUnavailable?:boolean; onRestoreDemandSearch?:(value:string)=>void; onClearDemandFilters?: ()=>void;
 }) {
   // Ids estáveis para os campos (painel Issues do DevTools); não mudam o FormData.
   const fieldId = useId();
@@ -407,17 +408,21 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
   // A busca pode vir pronta de um botão "Exportar" de outra tela (ex.: o nome da equipe).
   const [searchState, setSearchState] = useState({ userId, value: initialSearch });
   const search = searchState.userId === userId ? searchState.value : '';
+  const [restoredSearch, setRestoredSearch] = useState('');
   const setSearch = (value: string) => setSearchState({ userId, value });
   const [sort, setSort] = useState<{ key: string; dir: 1 | -1 } | null>(null);
   const [pageSize, setPageSize] = useState(25);
   const demandScope = dataset === 'demands' ? demandFilters : null;
+  const waitingForDemandSearch = Boolean(demandScope && needsDemandSearch);
+  const inaccessibleDemandScope = Boolean(demandScope && demandReportUnavailable);
+  const waitingForDemandScope = waitingForDemandSearch || inaccessibleDemandScope;
   const demandFilterLabel = demandScope ? [
     demandOrganizationName, demandScope.generalOnly && 'Somente demandas gerais',
     demandScope.status !== 'all' && stateLabels[demandScope.status],
     demandScope.priority !== 'all' && `Prioridade ${priorityLabels[demandScope.priority].toLocaleLowerCase('pt-BR')}`,
-    demandScope.search && `Busca “${demandScope.search}”`,
+    demandScope.search && 'Busca de Demandas aplicada',
   ].filter(Boolean).join(' · ') : '';
-  const queryKey = JSON.stringify([userId, dataset, projectId, unitId, area, from, to, assetDetails, includeNotes, outflowType, returnState, demandScope]);
+  const queryKey = JSON.stringify([userId, dataset, projectId, unitId, area, from, to, assetDetails, includeNotes, outflowType, returnState, demandScope, waitingForDemandScope]);
   const initialView = { queryKey, focus: '', measurementUnit: '', page: 0 };
   const [view, setView] = useState(initialView);
   if (view.queryKey !== queryKey) setView(initialView);
@@ -430,7 +435,7 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
   const [exportError, setExportError] = useState<{ key: string; message: string } | null>(null);
   const [attempt, setAttempt] = useState(0);
   const rows = loadedQueryKey === queryKey ? loadedRows : EMPTY_ROWS;
-  const loading = fetching || loadedQueryKey !== queryKey;
+  const loading = !waitingForDemandScope && (fetching || loadedQueryKey !== queryKey);
   const queryFailure = !loading && queryError?.key === queryKey ? queryError.message : '';
   const presetKey = userId ? PRESETS_PREFIX + encodeURIComponent(userId) : '';
   const [presetState, setPresetState] = useState<{ key: string; values: Preset[]; name: string }>({ key: '', values: [], name: '' });
@@ -449,6 +454,7 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
     return () => window.clearTimeout(timer);
   }, [presetKey]);
   useEffect(() => {
+    if (waitingForDemandScope) return;
     const controller = new AbortController();
     const query = new URLSearchParams({ dataset });
     if (dataset === 'materials' && assetDetails) query.set('assetDetails', '1');
@@ -486,7 +492,7 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
         setLoading(false);
       });
     return () => { window.clearTimeout(start); controller.abort(); };
-  }, [dataset, projectId, unitId, area, from, to, queryKey, assetDetails, includeNotes, outflowType, returnState, demandScope, attempt]);
+  }, [dataset, projectId, unitId, area, from, to, queryKey, assetDetails, includeNotes, outflowType, returnState, demandScope, waitingForDemandScope, attempt]);
 
   function retryReport() {
     reportResultRef.current?.focus();
@@ -667,10 +673,15 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
     {mixedUnits && <p className="p-form-help" role="status">Há medidas físicas diferentes neste recorte. Selecione uma unidade de medida para somar quantidades; os gráficos mostram contagens de registros.</p>}
 
     {includeNotes && <p className="p-form-help" role="status">Textos livres ativos: podem conter dados pessoais. Revise as colunas escolhidas antes de exportar.</p>}
-    {demandFilterLabel && <div className="p-notice"><span>{demandFilterLabel}</span><button className="p-text-link" type="button" onClick={()=>{reportResultRef.current?.focus();onClearDemandFilters?.();}}>Limpar filtros de Demandas</button></div>}
+    {inaccessibleDemandScope ? <div className="p-notice"><span>O recorte do link está fora do seu acesso atual.</span><button type="button" className="p-text-link" onClick={onClearDemandFilters}>Abrir relatório geral</button></div>
+     : waitingForDemandSearch ? <form className="p-notice" onSubmit={event=>{event.preventDefault();if(restoredSearch.trim())onRestoreDemandSearch?.(restoredSearch.trim());}}>
+      <label className="p-field"><span>Informe a busca original para recuperar o recorte. O texto da busca fica fora do link.</span><input type="search" maxLength={120} required value={restoredSearch} onChange={event=>setRestoredSearch(event.target.value)}/></label>
+      <button type="submit" className="p-button p-button-subtle">Aplicar busca</button>
+      <button className="p-text-link" type="button" onClick={onClearDemandFilters}>Limpar filtros de Demandas</button>
+    </form> : demandFilterLabel && <div className="p-notice"><span>{demandFilterLabel}</span><button className="p-text-link" type="button" onClick={()=>{reportResultRef.current?.focus();onClearDemandFilters?.();}}>Limpar filtros de Demandas</button></div>}
     <div className={styles.summary} ref={reportResultRef} tabIndex={-1} role="group" aria-label="Resultado da consulta">
       <span className={styles.summaryIcon}><Icon size={20} /></span>
-      <p role="status"><strong>{config.label}</strong> · {loading ? 'carregando…' : queryFailure ? 'consulta indisponível' : `${formatNumber(filtered.length)} ${filtered.length === 1 ? 'linha' : 'linhas'}`}{scopeLabel ? ` · ${scopeLabel}` : ''}{positionOnly || from || to ? ` · ${periodLabel}` : ''}</p>
+      <p role="status"><strong>{config.label}</strong> · {inaccessibleDemandScope ? 'Recorte indisponível' : waitingForDemandSearch ? 'Aguardando o termo da busca' : loading ? 'carregando…' : queryFailure ? 'consulta indisponível' : `${formatNumber(filtered.length)} ${filtered.length === 1 ? 'linha' : 'linhas'}`}{scopeLabel ? ` · ${scopeLabel}` : ''}{positionOnly || from || to ? ` · ${periodLabel}` : ''}</p>
       {focus && <button type="button" className={styles.focusChip} aria-label={`Limpar filtro de grupo: ${focusLabel}`} onClick={event => { setGroupFocus(''); if (event.detail === 0) reportSearchRef.current?.focus(); }}>{groupLabel}: {focusLabel}<X size={13} aria-hidden="true" /></button>}
       {!loading && truncated && <small className={styles.warn}>{dataset === 'outflow_details' ? 'Consulta parcial: limite de 5.000 linhas ou 3 MiB. Refine o recorte para consultar e exportar tudo.' : 'Mostrando as primeiras 5.000 linhas. Refine o recorte para ver tudo.'}</small>}
     </div>
@@ -679,7 +690,7 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
 
     <div role="alert">{queryFailure && <p className="p-notice p-notice-error">{queryFailure}</p>}</div>
     {queryFailure && <button type="button" className="p-button p-button-subtle" onClick={retryReport}><RefreshCw size={16} aria-hidden="true" />Tentar carregar relatório novamente</button>}
-    {loading ? <div className={styles.loading}><LoaderCircle className="p-spin" size={22} aria-hidden="true" />Carregando dados…</div> : queryFailure ? null : !rows.length ? <div className={styles.empty}><FileText size={22} aria-hidden="true" /><strong>Nada para mostrar neste recorte</strong><span>Altere os filtros, o período ou escolha outro assunto.</span></div> : <>
+    {waitingForDemandScope ? null : loading ? <div className={styles.loading}><LoaderCircle className="p-spin" size={22} aria-hidden="true" />Carregando dados…</div> : queryFailure ? null : !rows.length ? <div className={styles.empty}><FileText size={22} aria-hidden="true" /><strong>Nada para mostrar neste recorte</strong><span>Altere os filtros, o período ou escolha outro assunto.</span></div> : <>
       <div className={styles.tableHead}>
         <strong>Tabela detalhada</strong>
         <small>{chosen.length ? `${chosen.length} colunas · clique no título para ordenar` : 'Escolha ao menos uma coluna'}</small>
