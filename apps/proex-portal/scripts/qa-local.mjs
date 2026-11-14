@@ -302,6 +302,9 @@ async function rolesSmoke(owner, fixture) {
   assert.equal((await viewer('/api/follow-up', answer)).status, 403, 'atribuição sem autorização de execução');
   ok(await manager('/api/follow-up', { action: 'task.worker.grant', id: task.task.id, userId, confirmed: true, operationKey: randomUUID() }), 'Autorização só neste checklist QA');
   assert.equal(ok(await viewer('/api/follow-up', answer), 'Verificação pelo bolsista QA').checklist.rows[0].answer, 'yes');
+  const ownRecord = {action:'create',projectId,scheduleItemId:action.id,coverageTaskId:task.task.id,kind:'project',
+    title:'Cobertura do bolsista QA',occurredAt:new Date().toISOString(),operationKey:randomUUID()};
+  assert.equal((await viewer('/api/records',ownRecord)).status,403,'acompanhar não concede cobertura');
   assert.equal((await viewer('/api/follow-up', { action: 'task.create', title: 'Demanda recusada QA', projectId, operationKey: randomUUID() })).status, 403);
   assert.equal((await operator(`/api/follow-up?view=detail&id=${task.task.id}`)).status, 404);
   const mediaQuery = '/api/records/activity-media?' + new URLSearchParams({ projectId, scheduleItemId: action.id });
@@ -340,6 +343,19 @@ async function rolesSmoke(owner, fixture) {
   assert.deepEqual(ok(await viewer(`/api/records?projectId=${projectId}&scheduleItemId=${otherAction.id}`), 'Outra atividade QA').records, []);
   assert.equal((await inventory(actionRecords)).status, 404);
   assert.equal((await operator(filePath)).status, 403);
+  const delegates=ok(await manager(`/api/follow-up?view=detail&id=${task.task.id}`),'Autorização em vigor QA');
+  const coverageChange={action:'task.worker.coverage',id:task.task.id,grantId:delegates.workGrants[0].id,confirmed:true};
+  async function setCoverage(allowCoverage) {return ok(await manager('/api/follow-up',{...coverageChange,allowCoverage,operationKey:randomUUID()}),'Autorização de cobertura QA');}
+  await setCoverage(true);
+  const delegatedRecord=ok(await viewer('/api/records',ownRecord),'Registro próprio da cobertura QA');
+  const ownPhoto=new FormData();
+  ownPhoto.set('recordId',delegatedRecord.id);ownPhoto.set('operationKey',randomUUID());
+  ownPhoto.set('file',new Blob([picture],{type:'image/png'}),'cobertura-sintetica.png');
+  const delegatedPhoto=ok(await viewer('/api/records',ownPhoto),'Foto da cobertura QA');
+  assert.equal((await manager(`/api/records/files/${delegatedPhoto.attachment.id}`,undefined,true,true)).status,200);
+  await setCoverage(false);
+  assert.equal((await viewer('/api/records',ownPhoto)).status,403);
+  assert.equal((await viewer('/api/records',ownRecord)).status,403);
   const member = ok(await owner('/api/portal'), 'Vínculos QA').members.find(member => member.email === 'viewer@proex.example.test' && member.project_id === projectId && !member.revoked_at);
   assert.ok(member, 'vínculo sintético encontrado');
   ok(await owner('/api/portal', { action: 'member.revoke', id: member.id }), 'Revogação QA');
@@ -409,7 +425,7 @@ async function backupSmoke(api, directory, server, activity) {
     assert.equal(response.headers['content-length'], undefined, 'backup deve usar streaming sem Content-Length');
     assert.equal(response.headers['transfer-encoding'], 'chunked');
     const dry = await restoreEncryptedBackup(response.value, protection, { dryRun: true, migrations: localMigrations() });
-    assert.equal(dry.verified, true); assert.equal(dry.objects, activity ? 2 : 1);
+    assert.equal(dry.verified, true); assert.equal(dry.objects, activity ? 3 : 1);
     restored = await restoreEncryptedBackup(response.value, protection, { migrations: localMigrations() });
     const copied = readFileSync(join(restored.directory, 'data', 'objects', key));
     assert.equal(createHash('sha256').update(copied).digest('hex'), createHash('sha256').update(bytes).digest('hex'));

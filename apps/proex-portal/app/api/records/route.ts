@@ -2,7 +2,7 @@ import { getActor } from '../../../lib/access';
 import { HttpError, publicError } from '../../../lib/errors';
 import { boundedJson } from '../../../lib/http';
 import { bucket, database } from '../../../lib/platform';
-import { createRecord, listRecords, readRecordForm, requireRecordMutation, scheduleItemForRecordRead, uploadRecordAttachment, withRecordOrigins } from '../../../lib/records';
+import { createRecord, listRecords, readRecordForm, requireRecordMutation, scheduleItemForRecordRead, uploadRecordAttachment, withCoveragePermissions, withRecordOrigins } from '../../../lib/records';
 import { getPortalUser } from '../../../lib/session';
 
 export const dynamic = 'force-dynamic';
@@ -18,8 +18,9 @@ export async function GET(request: Request): Promise<Response> {
     const listed = await listRecords(db, actor, { projectId, scheduleItemId: url.searchParams.get('scheduleItemId'), from: url.searchParams.get('from'), to: url.searchParams.get('to'), limit: url.searchParams.get('limit') });
     // Só esta tela mostra "Feito pelo Rolê a pedido de…" e o pedido: a lista já saiu autorizada de listRecords.
     const records = await withRecordOrigins(db, listed.records);
+    const coverage=listed.scheduleItem&&actor&&projectId?await withCoveragePermissions(db,actor,projectId,listed.scheduleItem.id,records):null;
     const scheduleItem = listed.scheduleItem ? await scheduleItemForRecordRead(db, actor, projectId, listed.scheduleItem.id) : undefined;
-    return privateResponse(Response.json({ ...listed, records, scheduleItem }));
+    return privateResponse(Response.json({ ...listed, records:coverage?.records??records, scheduleItem, ...(coverage?{coverageTaskId:coverage.coverageTaskId}:{}) }));
   } catch (error) { return privateResponse(publicError(error)); }
 }
 export async function POST(request: Request): Promise<Response> {
