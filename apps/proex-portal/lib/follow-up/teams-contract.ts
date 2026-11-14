@@ -6,7 +6,7 @@ export type TeamCounts = Record<TaskStatus, number> & { total: number; high: num
 export type TeamProject = {
  id: string;
  name: string;
- archived: boolean;
+ stage: 'active' | 'past' | 'catalog' | 'archived';
  hasDemands: boolean;
  hasResponsibilities: boolean;
 };

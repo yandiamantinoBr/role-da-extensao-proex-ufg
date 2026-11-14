@@ -2,7 +2,7 @@ import type { PortalActor } from '../access';
 import { all, one } from '../database';
 import { HttpError } from '../errors';
 import { choices, id, integer, TASK_STATES } from './contracts';
-import { activeAccount, actorRequired, authority, requireScope } from './scope';
+import { activeAccount, actorRequired, authority, requireScope, visibleTeamInScope } from './scope';
 import { serverWorkClock } from './time';
 import { TEAM_TASK_PAGE_SIZE, type TeamsWorkspace } from './teams-contract';
 
@@ -26,12 +26,7 @@ export async function teamsWorkspace(db: D1Database, actor: PortalActor | null, 
  FROM followup_teams team JOIN(SELECT ? user_id,? project_id) caller
  WHERE team.organization_id=? AND (team.status='active' OR ?=1)
  AND ${authority('caller.user_id', 'team.organization_id', 'caller.project_id')}
- AND (?=1 OR EXISTS(SELECT 1 FROM followup_team_members mine WHERE mine.team_id=team.id AND mine.user_id=caller.user_id AND mine.removed_at IS NULL)
- OR EXISTS(SELECT 1 FROM followup_assignees a JOIN followup_tasks t ON t.id=a.task_id WHERE a.team_id=team.id AND a.removed_at IS NULL AND t.organization_id=team.organization_id
- AND (caller.project_id IS NULL OR t.project_id=caller.project_id) AND ${authority('caller.user_id', 't.organization_id', 't.project_id')})
- OR EXISTS(SELECT 1 FROM work_responsibility_assignees a JOIN work_responsibility_scopes s ON s.id=a.scope_id
- WHERE a.team_id=team.id AND a.revoked_at IS NULL AND s.status='active' AND s.organization_id=team.organization_id
- AND (caller.project_id IS NULL OR s.project_id=caller.project_id) AND ${authority('caller.user_id', 's.organization_id', 's.project_id')}))
+ AND ${visibleTeamInScope('?')}
  ORDER BY is_mine DESC,team.name,team.id LIMIT 201`, [actor.userId, projectId, organizationId, canManage ? 1 : 0, canManage ? 1 : 0]);
  const rows = await readVisibleTeams();
  const visibleTeams = rows.slice(0, 200), teamIds = visibleTeams.map(team => team.id as string);
@@ -49,7 +44,7 @@ export async function teamsWorkspace(db: D1Database, actor: PortalActor | null, 
  // names already authorized for this caller are included, including historical projects.
  const readProjects = () => teamIds.length ? all(db, `WITH caller AS (SELECT ? user_id,? project_id,? organization_id),
  eligible AS (
-   SELECT p.id,p.name,p.status FROM projects p JOIN caller ON p.organization_id=caller.organization_id
+   SELECT p.id,p.name,p.status,p.lifecycle FROM projects p JOIN caller ON p.organization_id=caller.organization_id
    WHERE (caller.project_id IS NULL OR p.id=caller.project_id)
    AND ${authority('caller.user_id', 'p.organization_id', 'p.id')}
  ),
@@ -64,9 +59,9 @@ export async function teamsWorkspace(db: D1Database, actor: PortalActor | null, 
    JOIN work_responsibility_assignees a ON a.scope_id=s.id AND a.revoked_at IS NULL
    JOIN selected team ON team.id=a.team_id AND team.status='active' WHERE s.status='active'
  )
- SELECT links.team_id,p.id,p.name,p.status,MAX(links.has_demands) has_demands,MAX(links.has_responsibilities) has_responsibilities
+ SELECT links.team_id,p.id,p.name,p.status,p.lifecycle,MAX(links.has_demands) has_demands,MAX(links.has_responsibilities) has_responsibilities
  FROM links JOIN eligible p ON p.id=links.project_id
- GROUP BY links.team_id,p.id,p.name,p.status ORDER BY links.team_id,p.name,p.id`, [actor.userId, canManage ? null : projectId, organizationId, idsJson]) : Promise.resolve([]);
+ GROUP BY links.team_id,p.id,p.name,p.status,p.lifecycle ORDER BY links.team_id,p.name,p.id`, [actor.userId, canManage ? null : projectId, organizationId, idsJson]) : Promise.resolve([]);
  const readUnits = () => teamIds.length ? all(db, `SELECT link.team_id,node.id,node.name,node.acronym
  FROM institutional_team_links link JOIN institutional_nodes node ON node.id=link.node_id AND node.organization_id=link.organization_id
  JOIN (SELECT ? organization_id,? project_id,? user_id) caller ON caller.organization_id=link.organization_id
@@ -111,7 +106,7 @@ export async function teamsWorkspace(db: D1Database, actor: PortalActor | null, 
     id: team.id, name: team.name, status: team.status, version: team.version, isMine: Boolean(team.is_mine),
     members: roster.filter(row => row.team_id === team.id).map(row => ({ userId: row.userId, name: row.name })),
     counts: { total: count?.total ?? 0, open: count?.open ?? 0, in_progress: count?.in_progress ?? 0, blocked: count?.blocked ?? 0, completed: count?.completed ?? 0, cancelled: count?.cancelled ?? 0, high: count?.high ?? 0, overdue: count?.overdue ?? 0 },
-    projects: projectLinks.filter(row => row.team_id === team.id).map(row => ({ id: row.id, name: row.name, archived: row.status === 'archived', hasDemands: Boolean(row.has_demands), hasResponsibilities: Boolean(row.has_responsibilities) })),
+    projects: projectLinks.filter(row => row.team_id === team.id).map(row => ({ id: row.id, name: row.name, stage: row.status === 'archived' ? 'archived' : row.lifecycle, hasDemands: Boolean(row.has_demands), hasResponsibilities: Boolean(row.has_responsibilities) })),
     units: unitLinks.filter(row => row.team_id === team.id).map(row => ({ id: row.id, name: row.name, acronym: row.acronym })),
    };
   }),

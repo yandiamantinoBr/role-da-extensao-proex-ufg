@@ -4,7 +4,7 @@ import { TASK_PRIORITIES, TASK_STATES } from '@/lib/follow-up/contracts';
 const object = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 const list = (value: unknown, valid: (row: unknown) => boolean) => Array.isArray(value) && value.every(valid);
 const person = (value: unknown) => object(value) && typeof value.userId === 'string' && typeof value.name === 'string';
-const project = (value: unknown) => object(value) && typeof value.id === 'string' && typeof value.name === 'string' && typeof value.archived === 'boolean'
+const project = (value: unknown) => object(value) && typeof value.id === 'string' && typeof value.name === 'string' && ['active','past','catalog','archived'].includes(String(value.stage))
  && typeof value.hasDemands === 'boolean' && typeof value.hasResponsibilities === 'boolean' && (value.hasDemands || value.hasResponsibilities);
 const unit = (value: unknown) => object(value) && typeof value.id === 'string' && typeof value.name === 'string' && typeof value.acronym === 'string';
 const count = (value: unknown) => Number.isSafeInteger(value) && Number(value) >= 0;

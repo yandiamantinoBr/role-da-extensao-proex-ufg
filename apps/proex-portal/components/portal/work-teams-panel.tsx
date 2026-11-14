@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { ArrowUpRight, CheckCircle2, Pin, PinOff, Circle, CircleDot, CircleX, Flag, FolderKanban, Landmark, PauseCircle, Pencil, Plus, RefreshCw, Search, ShieldCheck, UserRoundCheck, Users, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { priorityLabels, stateLabels, TASK_STATES, type TaskStatus } from '@/lib/follow-up/contracts';
-import { TEAM_TASK_PAGE_SIZE, type TeamsWorkspace, type WorkTeam, type TeamPerson } from '@/lib/follow-up/teams-contract';
+import { TEAM_TASK_PAGE_SIZE, type TeamsWorkspace, type WorkTeam, type TeamPerson, type TeamProject } from '@/lib/follow-up/teams-contract';
 import { projectAccessHref } from '@/lib/team-access-labels';
 import { followupChanged, FOLLOWUP_CHANGED } from './follow-up-api';
 import { saveWorkTeam, TeamsApiError, workTeamsApi } from './work-teams-api';
@@ -37,12 +37,13 @@ const aborted = (cause: unknown) => cause instanceof Error && cause.name === 'Ab
 const initials = (name: string) => name.trim().split(/\s+/).slice(0,2).map(word => word[0]).join('').toLocaleUpperCase('pt-BR');
 const quantity = (value: number, singular: string, plural: string) => `${value} ${value === 1 ? singular : plural}`;
 const projectHref = (id: string) => `/?module=projects&project=${encodeURIComponent(id)}&detailProject=${encodeURIComponent(id)}`;
+const projectStageLabels: Record<TeamProject['stage'], string> = { active: '', past: 'Histórico', catalog: 'Catálogo', archived: 'Arquivado' };
 const normalize = (value: string) => value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLocaleLowerCase('pt-BR').trim();
 type TeamFilter = '' | 'project' | 'multi' | 'unit' | 'unlinked';
 function matchesScope(team: WorkTeam, scope: TeamFilter, projectId: string, canManage: boolean): boolean {
  if (scope === 'unit') return team.units.length > 0;
  if (scope === 'project' && projectId) return team.projects.some(project => project.id === projectId);
- if (canManage && scope === 'multi') return team.projects.filter(project => !project.archived).length > 1;
+ if (canManage && scope === 'multi') return team.projects.filter(project => project.stage === 'active').length > 1;
  if (canManage && scope === 'unlinked') return team.projects.length === 0;
  return true;
 }
@@ -234,7 +235,7 @@ export default function WorkTeamsPanel({ userId, defaultProjectId = '', organiza
     </div></div>
     <section className={styles.assignment} aria-label="Atuação registrada">
      <div><h4>Projetos com atuação registrada</h4><p>{canManage ? 'Demandas atribuídas e responsabilidades vigentes na organização.' : 'Demandas atribuídas e responsabilidades no projeto selecionado.'}</p></div>
-     {selected.projects.length > 0 ? <ul>{selected.projects.map(project => <li key={project.id}><a className="p-text-link" href={projectHref(project.id)}>{project.name}<ArrowUpRight size={15} aria-hidden="true"/></a><small>{[project.hasDemands && 'Demandas', project.hasResponsibilities && 'Responsabilidades', project.archived && 'Arquivado'].filter(Boolean).join(' · ')}</small></li>)}</ul> : <p>{canManage ? 'Nenhuma atuação em projeto registrada para esta equipe.' : 'Nenhuma atuação registrada no projeto selecionado.'}</p>}
+     {selected.projects.length > 0 ? <ul>{selected.projects.map(project => <li key={project.id}><a className="p-text-link" href={projectHref(project.id)}>{project.name}<ArrowUpRight size={15} aria-hidden="true"/></a><small>{[project.hasDemands && 'Demandas', project.hasResponsibilities && 'Responsabilidades', projectStageLabels[project.stage]].filter(Boolean).join(' · ')}</small></li>)}</ul> : <p>{canManage ? 'Nenhuma atuação em projeto registrada para esta equipe.' : 'Nenhuma atuação registrada no projeto selecionado.'}</p>}
      {selected.units.length > 0 && <p><strong>Vínculos no organograma</strong> {selected.units.map(unit => `${unit.name}${unit.acronym ? ` (${unit.acronym})` : ''}`).join(' · ')}</p>}
      {data.scope.canManage && projectId && !selected.projects.some(project => project.id === projectId && project.hasResponsibilities) && <p>Para indicar uma equipe em <strong>Quem cuida de cada área</strong>, abra a <a className="p-text-link" href={projectHref(projectId)}>ficha deste projeto<ArrowUpRight size={15} aria-hidden="true"/></a>.</p>}
     </section>

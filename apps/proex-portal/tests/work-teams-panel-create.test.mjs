@@ -88,10 +88,11 @@ test('the panel reports which team is shown, so the side menu marks the right pi
 });
 
 test('organization managers distinguish multi-project teams and units with no project and can reset the search', async () => {
-  const project = (id, name) => ({ id, name, archived: false, hasDemands: true, hasResponsibilities: false });
+  const project = (id, name, stage = 'active') => ({ id, name, stage, hasDemands: true, hasResponsibilities: false });
   const teams = [
     teamRow('team-x', 'Eventos', { projects: [project('project-a', 'Projeto A'), project('project-b', 'Extensão Circular')] }),
     teamRow('team-y', 'Apoio Administrativo', { units: [{ id: 'unit-a', name: 'Coordenação Administrativa', acronym: 'CA' }] }),
+    teamRow('team-z', 'Apoio com acervo', { projects: [project('project-a', 'Projeto A'), project('project-h', 'Projeto antigo', 'past'), project('project-c', 'Acervo', 'catalog'), project('project-d', 'Arquivado', 'archived')] }),
   ];
   const h = harness({ defaultProjectId: '' }, teams);
   const select = scope => h.nodes().find(node => node.type === 'select' && node.props.name === 'teamsScope').props.onChange({ target: { value: scope } });
@@ -103,7 +104,7 @@ test('organization managers distinguish multi-project teams and units with no pr
   assert.equal(h.requests.at(-1).get('projectId'), 'project-a');
   assert.equal(h.requests.at(-1).get('teamId'), 'team-x', 'the manager keeps following the same team across the recut');
   select('project'); await h.settle();
-  assert.equal(cards().length, 1); assert.match(cards()[0], /Eventos/);
+  assert.equal(cards().length, 2); assert.match(cards()[0], /Eventos/); assert.match(cards()[1], /Apoio com acervo/);
   select('multi'); await h.settle();
   assert.equal(cards().length, 1); assert.match(cards()[0], /Eventos/);
   select('unlinked'); await h.settle();
@@ -115,7 +116,7 @@ test('organization managers distinguish multi-project teams and units with no pr
   await h.settle();
   assert.equal(cards().length, 1); assert.match(cards()[0], /Eventos/);
   h.button('Limpar filtros de equipes').props.onClick(); await h.settle();
-  assert.equal(cards().length, 2);
+  assert.equal(cards().length, 3);
 });
 
 test('a project reader sees only the project and unit recuts and has no organizational classification controls', async () => {

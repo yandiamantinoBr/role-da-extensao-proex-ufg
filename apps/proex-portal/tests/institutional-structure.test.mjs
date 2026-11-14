@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {compile,teamScenario} from './support/work-teams-fixture.mjs';
 const {structureWorkspace,structureAction}=await import(compile('lib/institutional-structure/service.ts'));
 const {OFFICIAL_TEMPLATE,OFFICIAL_SOURCE}=await import(compile('lib/institutional-structure/contracts.ts'));
+const {responsibilityAction}=await import(compile('lib/responsibilities/service.ts'));
 async function scenario(t){const f=await teamScenario(t);return{...f,read:async(who='owner-a',input={organizationId:'org-a'})=>structureWorkspace(f.db,await f.actor(who),input),write:async(input,who='owner-a')=>structureAction(f.db,await f.actor(who),{organizationId:'org-a',operationKey:crypto.randomUUID(),expectedVersion:f.native.prepare("SELECT version FROM institutional_structures WHERE organization_id='org-a'").get()?.version??0,...input})};}
 const node=(name,parentId=null)=>({action:'node.save',name,parentId,kind:'unit',relation:parentId?'subordination':'root',acronym:'',position:0});
 test('migration is empty and reads have no writes; official model is explicit and preserves legacy data',async t=>{
@@ -41,6 +42,28 @@ test('project readers receive the formal tree but only team links they already c
  assert.doesNotMatch(JSON.stringify(read),new RegExp([f.hidden,f.b,'Horizonte','reservada B','user_id','@example','members','counts'].join('|')));
  await assert.rejects(f.read('viewer-a',{organizationId:'org-a',projectId:'project-b'}),{status:403});
  await assert.rejects(f.write({action:'link.save',nodeId:root.entityId,teamId:f.b,linked:true}),{status:404});
+});
+test('the organogram shares responsibility visibility with Equipes and rechecks removal during the read',async t=>{
+ const f=await scenario(t),root=await f.write(node('Unidade de atuação'));
+ await f.write({action:'link.save',nodeId:root.entityId,teamId:f.hidden,linked:true});
+ const owner=await f.actor('owner-a'), context={organizationId:'org-a',projectId:'project-a'};
+ const linkIn = async projectId => responsibilityAction(f.db,owner,'responsibility.save',{projectId,area:'projects',teamIds:[f.hidden],expectedVersion:0,operationKey:crypto.randomUUID()});
+ await linkIn('project-a2');
+ assert.deepEqual((await f.read('viewer-a',context)).links,[]);
+ const visible=await linkIn('project-a');
+ const inProject=await f.read('viewer-a',context);
+ assert.deepEqual(inProject.links,[{nodeId:root.entityId,teamId:f.hidden}]);
+ assert.deepEqual(Object.keys(inProject.teams.find(team=>team.id===f.hidden)).sort(),['id','name','status']);
+ assert.doesNotMatch(JSON.stringify(inProject),/Projeto Horizonte|other-a2|@example/);
+ let fired=false;
+ f.db.afterRead=sql=>{
+  if(fired||!sql.startsWith('WITH caller AS'))return;
+  fired=true;
+  f.native.prepare('UPDATE work_responsibility_assignees SET revoked_at=? WHERE scope_id=?').run(f.now,visible.responsibility.id);
+ };
+ await assert.rejects(f.read('viewer-a',context),{status:403,code:'structure_access_changed'});
+ assert.equal(fired,true);
+ assert.deepEqual((await f.read('viewer-a',context)).links,[]);
 });
 test('SQL independently rejects cycles, cross-org parents/links and archived parents; archive requires children and links closed',async t=>{
  const f=await scenario(t),root=await f.write(node('Raiz')),child=await f.write(node('Filho',root.entityId)),leaf=await f.write(node('Neto',child.entityId));
