@@ -3,7 +3,7 @@ import {one,iso,uid,type Row} from '../database';
 import {HttpError} from '../errors';
 import {prepareMutation} from '../mutations';
 import {id,text,date,integer,choices,onlyKeys} from '../follow-up/contracts';
-import {actorRequired,authority,scopeStatement,type Scope} from '../follow-up/scope';
+import {actorRequired,authority,scopeStatement,type Scope,visibleTeamInScope} from '../follow-up/scope';
 import {NODE_KINDS,RELATIONS,OFFICIAL_SOURCE,OFFICIAL_TEMPLATE,type StructureNode,type StructureWorkspace,type TemplateNode} from './contracts';
 function fail(message:string,code='structure_invalid',status=400):never{throw new HttpError(status,message,code);}
 
@@ -25,8 +25,7 @@ export async function structureWorkspace(db:D1Database,actor:PortalActor|null,in
    visible_nodes AS(SELECT n.* FROM institutional_nodes n JOIN caller JOIN management WHERE n.organization_id=caller.organization_id AND(n.status='active' OR ?=1 AND management.can_manage=1) ORDER BY n.position,n.name,n.id LIMIT 201),
    visible_teams AS(SELECT team.id,team.name,team.status FROM followup_teams team JOIN caller JOIN management
    WHERE team.organization_id=caller.organization_id AND(team.status='active' OR management.can_manage=1) AND ${authority('caller.user_id','team.organization_id','caller.project_id')}
-   AND(management.can_manage=1 OR EXISTS(SELECT 1 FROM followup_team_members mine WHERE mine.team_id=team.id AND mine.user_id=caller.user_id AND mine.removed_at IS NULL)
-   OR EXISTS(SELECT 1 FROM followup_assignees a JOIN followup_tasks t ON t.id=a.task_id WHERE a.team_id=team.id AND a.removed_at IS NULL AND t.organization_id=team.organization_id AND(caller.project_id IS NULL OR t.project_id=caller.project_id) AND ${authority('caller.user_id','t.organization_id','t.project_id')}))
+   AND ${visibleTeamInScope('management.can_manage')}
    ORDER BY team.name,team.id LIMIT 501)
    SELECT o.name organization_name,COALESCE(p.name,'Organização') project_name,management.can_manage,
    (management.can_manage=1 AND NOT EXISTS(SELECT 1 FROM institutional_nodes WHERE organization_id=caller.organization_id)) can_apply_template,
