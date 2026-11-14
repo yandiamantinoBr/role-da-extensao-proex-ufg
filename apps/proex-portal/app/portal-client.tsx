@@ -83,7 +83,7 @@ import { useNavigationPreferences } from '@/components/portal/use-navigation-pre
 import { useFormDraft, DraftNotice, setDraftScope, clearCurrentDrafts, watchDraftLogout } from '@/components/portal/use-form-draft';
 import { THEMATIC_AREAS, groupUnits } from '@/lib/extension-catalog';
 import { MAX_UPLOAD_FILE_BYTES, UPLOAD_LIMIT_LABEL, uploadErrorMessage } from '@/lib/upload-limits';
-import { ArrowRight, ArrowUpRight, Boxes, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronRight, ExternalLink, FileText, Filter, Gift, LoaderCircle, LogOut, MessageSquarePlus, Plus, RefreshCw, Search, ShieldCheck, Truck, Users, Wifi, WifiOff, X } from 'lucide-react';
+import { ArrowRight, ArrowUpRight, Boxes, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronRight, ExternalLink, FileText, Filter, Gift, LoaderCircle, LogOut, MessageSquarePlus, Plus, RefreshCw, ShieldCheck, Truck, Users, Wifi, WifiOff, X } from 'lucide-react';
 // API projections vary by module; the server validates every mutation.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = Record<string, any>;
@@ -348,7 +348,6 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
     const [draftProject, setDraftProject] = useState('');
     const [offerProject, setOfferProject] = useState('');
     const [materialsView, setMaterialsView] = useState<'catalog' | 'prizes'>('catalog');
-    const [query, setQuery] = useState('');
     const [selectedMaterialId, setSelectedMaterialId] = useState<string | null>(null);
     const [convocationFocus,setConvocationFocus]=useState('');
     const [stockUnit,setStockUnit]=useState(''),[destinationOpen,setDestinationOpen]=useState('');
@@ -503,7 +502,6 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
     const effectiveProject = formProjects.some(p => p.id === selectedFormProject) ? selectedFormProject : formProjects.length === 1 ? string(formProjects[0].id) : '';
     const formItems = items.filter(i => effectiveProject && get(i, 'projectId', 'project_id') === effectiveProject);
     const available = (item: Row) => item.available !== undefined && item.available !== null ? Number(item.available) : Number(item.stock ?? item.quantity ?? 0) - Number(item.reserved ?? 0);
-    const searchItems = visibleItems.filter(i => !query || `${i.name} ${i.description ?? ''}`.toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR')));
     const accessibleProjectKey = scopedProjects.map(project => project.id).join('|');
     const accessibleUnitKey = [...visibleUnits.map(unit => string(unit.id)), ...(hasUnassignedProjects ? ['__unassigned__'] : [])].join('|');
     useEffect(() => { if (tab === requestedTab) return; const timer = window.setTimeout(() => { if (requestedTab !== 'overview' && tabs.some(module => module.id === requestedTab)) setDeniedModule(requestedTab as ModuleId); setTab(tab); setWorkRecord(null); setSelectedMaterialId(null);setMaterialMode('view'); setSelectedDemandId(''); }, 0); return () => window.clearTimeout(timer); }, [tab, requestedTab]);
@@ -558,7 +556,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         setDemandsScheduleItemId(next.demandsScheduleItemId ?? '');
         setPersonalStatus(next.workStatus ?? 'pending'); setPersonalOrganization(next.organization ?? '');
         setHistoryParam(next.history ?? '');
-        setQuery(''); setAccountOpen(false);
+        setAccountOpen(false);
     }
     const restoreLocation = useEffectEvent((traversal: boolean) => {
         const url = new URL(window.location.href);
@@ -600,7 +598,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
             pushNavigation.current = true;
             navigation.recordVisit(id);
         }
-        setTab(id); setQuery(''); setAccountOpen(false); setSelectedMaterialId(null);setMaterialMode('view'); setWorkRecord(null);
+        setTab(id); setAccountOpen(false); setSelectedMaterialId(null);setMaterialMode('view'); setWorkRecord(null);
         setRecordsScheduleItemId('');
         setDemandsScheduleItemId('');
         setDeniedModule(null); setHistoryParam('');
@@ -668,7 +666,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         return <ProjectAreaOwners key={JSON.stringify([user.userId, projectId])} userId={string(user.userId)} projectId={projectId} areas={areas} canManageAccess={canManagePeople(projectId)} onCreateTeam={allowedTabs.some(module => module.id === 'work-teams') ? () => openTeams({ kind: 'new', organizationId: string(projects.find(project => project.id === projectId)?.organization_id) || undefined }) : undefined}/>;
     }
     const areaOwnerShortcut = filter ? visibleOwnerAreas(filter).find(scope => scope.tab === tab) : undefined;
-    function selectUnit(id: string) { setRecordsScheduleItemId(''); setDemandsScheduleItemId(''); setWorkRecord(null); setSelectedMaterialId(null);setMaterialMode('view'); setUnitFilter(id); setFilter(''); setDraftProject(''); setOfferProject(''); setQuery(''); }
+    function selectUnit(id: string) { setRecordsScheduleItemId(''); setDemandsScheduleItemId(''); setWorkRecord(null); setSelectedMaterialId(null);setMaterialMode('view'); setUnitFilter(id); setFilter(''); setDraftProject(''); setOfferProject(''); }
     function selectArea(key: string) { setRecordsScheduleItemId(''); setDemandsScheduleItemId(''); setWorkRecord(null); setSelectedMaterialId(null);setMaterialMode('view'); setAreaFilter(key); setFilter(''); setDraftProject(''); setOfferProject(''); }
     function clearScope() { setAreaFilter(''); selectUnit(''); }
     async function mutate(action: string, payload: Payload): Promise<Row> {
@@ -989,10 +987,8 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         <div hidden={showPrizeView}>
 
 
-        <Section title="Materiais e estoque" description="Saldo físico, reservas e unidades disponíveis ficam separados." aside={<div className={workStyles.catalogAside}>{can('inventory.manage') && formProjects.length > 0 && <button type="button" className="p-button p-button-subtle" onClick={()=>setMovementLauncher('one')}>Registrar movimento<ArrowRight size={15} aria-hidden="true"/></button>}<div className="p-search">
-            <Search size={17}/>
-            <input name="materialSearch" aria-label="Buscar materiais" placeholder="Buscar material" value={query} onChange={e => setQuery(e.target.value)}/>
-            </div></div>}>{searchItems.length ? <MaterialCatalog onOpen={id=>{setMaterialMode('view');setSelectedMaterialId(id);}} materials={searchItems.map(item => {
+        <Section title="Materiais e estoque" description="Saldo físico, reservas e unidades disponíveis ficam separados." aside={can('inventory.manage') && formProjects.length > 0 && <button type="button" className="p-button p-button-subtle" onClick={()=>setMovementLauncher('one')}>Registrar movimento<ArrowRight size={15} aria-hidden="true"/></button>}>
+            <MaterialCatalog key={string(user.userId)} onOpen={id=>{setMaterialMode('view');setSelectedMaterialId(id);}} materials={visibleItems.map(item => {
                 const availableQuantity = available(item);
                 const projectId = string(get(item, 'projectId', 'project_id'));
                 const hasLoan = Number(get(item, 'onLoan', 'on_loan')) === 1;
@@ -1001,6 +997,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
                 return {
                     id: string(item.id),
                     name: string(item.name),
+                    description: string(item.description),
                     category: string(categoryNames[item.category] || item.category),
                     project: string(projectName(projectId)),
                     assetCode: string(item.asset_code || item.assetCode),
@@ -1019,7 +1016,8 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
                     ownerLabel: item.owner_unit_id ? string(item.owner_unit_name || 'Unidade') : string(projectName(projectId)),
                     destinationName: string(item.event_destination_name ?? ''),
                 };
-            })} kits={!query ? byProject(offers).map(offer => ({ id: string(offer.id), name: string(offer.name), kind: string(offer.kind), project: string(projectName(get(offer, 'projectId', 'project_id'))), active: Number(offer.active) !== 0, components: list(offer.components).map(component => { const part = items.find(row => row.id === component.item_id); return { name: string(component.name), quantity: Number(component.quantity) || 1, unit: string(component.unit || 'unidade'), available: part ? available(part) : 0 }; }) })) : []} /> : <Empty title={query ? 'Nenhum material encontrado' : 'Seu catálogo ainda está vazio'} text={query ? 'Tente outro nome ou selecione outro projeto.' : 'Cadastre os materiais e registre o recebimento após conferir a quantidade real.'}/>}</Section>
+            })} kits={byProject(offers).map(offer => ({ id: string(offer.id), name: string(offer.name), kind: string(offer.kind), project: string(projectName(get(offer, 'projectId', 'project_id'))), active: Number(offer.active) !== 0, components: list(offer.components).map(component => { const part = items.find(row => row.id === component.item_id); return { name: string(component.name), quantity: Number(component.quantity) || 1, unit: string(component.unit || 'unidade'), available: part ? available(part) : 0 }; }) }))} />
+        </Section>
         {visibleItems.length > 0 && <ProjectOperationalChart key={`materials-${filter || 'all'}`} variant="overview" title="Panorama dos materiais" projectId={filter || undefined} schedule={null} items={visibleItems.map(item => ({ ...item, available: available(item), low_stock: get(item, 'lowStock', 'low_stock') ?? 0, project_id: get(item, 'projectId', 'project_id') }))} now={now}/>}
         {can('inventory.manage') && formProjects.length > 0 && <div className={workStyles.formStack}>
             <Section title="Cadastrar material" description="O cadastro começa sem saldo. Registre o recebimento depois da contagem.">

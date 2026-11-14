@@ -1,6 +1,6 @@
 'use client';
-import { useMemo, useState, type ChangeEvent, type ReactNode } from 'react';
-import { ArrowRight, Gift, MapPin, Package, SlidersHorizontal, X } from 'lucide-react';
+import { useMemo, useRef, useState, type ChangeEvent } from 'react';
+import { ArrowRight, Gift, MapPin, Package, Search, SlidersHorizontal, X } from 'lucide-react';
 import styles from './material-catalog.module.css';
 
 type CatalogMaterial = {
@@ -8,6 +8,7 @@ type CatalogMaterial = {
   name: string;
   category: string;
   project: string;
+  description?: string;
   assetCode: string;
   condition: string;
   unit: string;
@@ -31,6 +32,8 @@ type Filters = { owner: string; type: string; category: string; situation: strin
 const EMPTY: Filters = { owner: '', type: '', category: '', situation: '', photo: '' };
 const TYPE_NAMES: Record<string, string> = { gift: 'Brindes', equipment: 'Equipamentos', distribution: 'Distribuição institucional', consumption: 'Consumo interno', kit: 'Kits de brinde' };
 const SITUATIONS: Record<string, string> = { active: 'Em uso', low: 'Estoque baixo', empty: 'Sem saldo disponível', maintenance: 'Em manutenção', inactive: 'Fora de uso' };
+const normalizeSearch = (value: string) => value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLocaleLowerCase('pt-BR');
+
 function matches(material: CatalogMaterial, filters: Filters): boolean {
   if (filters.type === 'kit') return false;
   if (filters.owner && material.ownerKey !== filters.owner) return false;
@@ -53,40 +56,80 @@ function MaterialThumb({ url }: { url?: string | null }) {
   </span>;
 }
 
-/** Catalog with filters (owner, type, category, situation, photo) and the gift kits of the selection. */
-export function FilterableMaterialCatalog({ materials: everything, kits = [], onOpen, empty }: {
+/** Search and filters apply to the same material and kit rows received from the authorized snapshot. */
+export function FilterableMaterialCatalog({ materials: everything, kits = [], onOpen }: {
   materials: CatalogMaterial[];
   kits?: CatalogKit[];
   onOpen: (id: string) => void;
-  empty?: ReactNode;
 }) {
-  const [filters, setFilters] = useState<Filters>(EMPTY), [open, setOpen] = useState(false);
+  const [search, setSearch] = useState(''), [filters, setFilters] = useState<Filters>(EMPTY), [open, setOpen] = useState(false);
+  const searchField = useRef<HTMLInputElement>(null);
   const options = useMemo(() => {
     const owners = new Map<string, string>(), categories = new Set<string>(), types = new Set<string>();
     for (const material of everything) { if (material.ownerKey) owners.set(material.ownerKey, material.ownerLabel || material.ownerKey); if (material.categoryLabel) categories.add(material.categoryLabel); if (material.typeKey) types.add(material.typeKey); }
     if (kits.length) types.add('kit');
     return { owners: [...owners].sort((a, b) => a[1].localeCompare(b[1], 'pt-BR')), categories: [...categories].sort((a, b) => a.localeCompare(b, 'pt-BR')), types: [...types] };
   }, [everything, kits.length]);
-  const materials = everything.filter(material => matches(material, filters));
-  const showKits = kits.length > 0 && (!filters.type || filters.type === 'kit' || filters.type === 'gift') && !filters.category && !filters.situation && !filters.photo && !filters.owner;
+  const terms = normalizeSearch(search).trim().split(/\s+/).filter(Boolean);
+  const matchesSearch = (fields: (string | undefined)[]) => {
+    if (!terms.length) return true;
+    const haystack = normalizeSearch(fields.join(' '));
+    return terms.every(term => haystack.includes(term));
+  };
+  const materials = everything.filter(material => matches(material, filters) && matchesSearch([
+    material.name, material.description, material.assetCode, material.category, material.categoryLabel,
+    material.project, material.ownerLabel, material.destinationName,
+  ]));
+  const showKits = (!filters.type || filters.type === 'kit' || filters.type === 'gift') && !filters.category && !filters.situation && !filters.photo && !filters.owner;
+  const matchingKits = showKits ? kits.filter(kit => matchesSearch([kit.name, kit.project, ...kit.components.map(component => component.name)])) : [];
   const active = Object.values(filters).filter(Boolean).length;
+  const restricted = active > 0 || terms.length > 0;
+  const hasEntries = everything.length > 0 || kits.length > 0;
+  const materialCount = `${materials.length} de ${everything.length} ${everything.length === 1 ? 'material' : 'materiais'}`;
+  const kitCount = `${matchingKits.length} de ${kits.length} ${kits.length === 1 ? 'kit' : 'kits'}`;
+  const resultCount = [filters.type !== 'kit' && everything.length > 0 ? materialCount : '', kits.length > 0 && showKits ? kitCount : ''].filter(Boolean).join(' · ');
   const set = (key: keyof Filters) => (event: ChangeEvent<HTMLSelectElement>) => setFilters(current => ({ ...current, [key]: event.target.value }));
-  const select = (key: keyof Filters, label: string, entries: [string, string][], allLabel: string) => entries.length > (key === 'photo' || key === 'situation' ? 0 : 1) || filters[key] ? <label className={styles.filter}><span>{label}</span><select name={`materialFilter-${key}`} value={filters[key]} onChange={set(key)}><option value="">{allLabel}</option>{entries.map(([value, name]) => <option key={value} value={value}>{name}</option>)}</select></label> : null;
+  const clear = () => {
+    setSearch('');
+    setFilters(EMPTY);
+    searchField.current?.focus();
+  };
+  const select = (key: keyof Filters, label: string, entries: [string, string][], allLabel: string) => {
+    const current = filters[key];
+    if (!current && entries.length <= (key === 'photo' || key === 'situation' ? 0 : 1)) return null;
+    return <label className={styles.filter}><span>{label}</span><select name={`materialFilter-${key}`} value={current} onChange={set(key)}>
+      <option value="">{allLabel}</option>
+      {current && !entries.some(([value]) => value === current) && <option value={current}>Seleção indisponível neste recorte</option>}
+      {entries.map(([value, name]) => <option key={value} value={value}>{name}</option>)}
+    </select></label>;
+  };
   return <div className={styles.catalog}>
-    {everything.length > 0 && <div className={styles.filterBar}>
-      <button type="button" className={`p-button p-button-subtle ${styles.filterToggle}`} aria-expanded={open} aria-controls="material-filters" onClick={() => setOpen(value => !value)}><SlidersHorizontal size={16} aria-hidden="true"/>Filtros{active ? ` (${active})` : ''}</button>
-      <div id="material-filters" className={`${styles.filterBody} ${open ? styles.filterOpen : ''}`} role="group" aria-label="Filtrar catálogo de materiais">
+    <div className={styles.filterBar}>
+      <div className={styles.filterHeading}>
+        <label className={styles.search}><span>Buscar no catálogo</span><span className={`p-search ${styles.searchField}`}>
+          <Search size={17} aria-hidden="true"/><input ref={searchField} name="materialSearch" type="search" value={search} maxLength={120}
+            placeholder="Nome, patrimônio ou destino" onChange={event => setSearch(event.target.value)}/>
+        </span></label>
+        {hasEntries && <button type="button" className={`p-button p-button-subtle ${styles.filterToggle}`} aria-expanded={open} aria-controls="material-filters" onClick={() => setOpen(value => !value)}><SlidersHorizontal size={16} aria-hidden="true"/>Filtros{active ? ` (${active})` : ''}</button>}
+      </div>
+      {hasEntries && <div id="material-filters" className={styles.filterBody} hidden={!open} role="group" aria-label="Filtrar catálogo de materiais">
         {select('owner', 'Dono', options.owners, 'Todos os donos')}
         {select('type', 'Tipo', options.types.map(type => [type, TYPE_NAMES[type] ?? type] as [string, string]), 'Todos os tipos')}
         {select('category', 'Categoria', options.categories.map(label => [label, label] as [string, string]), 'Todas as categorias')}
         {select('situation', 'Situação', Object.entries(SITUATIONS), 'Todas')}
         {select('photo', 'Foto', [['with', 'Com foto'], ['without', 'Sem foto']], 'Todas')}
+      </div>}
+      <div className={styles.filterCount}>
+        <p role="status">{resultCount || 'Nenhum resultado'}</p>
+        {restricted && <button type="button" className="p-text-link" onClick={clear}><X size={14} aria-hidden="true"/>Limpar busca e filtros</button>}
       </div>
-      <p className={styles.filterCount} role="status">{filters.type === 'kit' ? `${kits.length} ${kits.length === 1 ? 'kit' : 'kits'}` : `${materials.length} de ${everything.length} ${everything.length === 1 ? 'material' : 'materiais'}`}{active > 0 && <button type="button" className="p-text-link" onClick={() => setFilters(EMPTY)}><X size={14} aria-hidden="true"/>Limpar filtros</button>}</p>
-    </div>}
-    {materials.length === 0 && filters.type !== 'kit' && (everything.length ? <p className={styles.noResults}>Nenhum material com esses filtros.</p> : empty)}
+    </div>
+    {materials.length === 0 && matchingKits.length === 0 && <div className={styles.noResults}><Package size={22} aria-hidden="true"/><div>
+      <strong>{hasEntries ? 'Nenhum resultado no catálogo' : 'Nenhum material neste recorte'}</strong>
+      <p>{hasEntries ? 'Limpe a busca e os filtros para ver o catálogo de novo.' : 'Selecione outro projeto ou ajuste o contexto acima.'}</p>
+    </div></div>}
     {materials.length > 0 && <MaterialCatalog materials={materials} onOpen={onOpen}/>}
-    {showKits && <section className={styles.kits} aria-labelledby="catalog-kits"><h3 id="catalog-kits"><Gift size={17} aria-hidden="true"/>Kits de brinde</h3><ul>{kits.map(kit => { const possible = kit.components.length ? Math.max(0, Math.min(...kit.components.map(component => Math.floor(component.available / Math.max(1, component.quantity))))) : 0; return <li key={kit.id}><div><strong>{kit.name}</strong><small>{kit.kind === 'super' ? 'Super brinde' : 'Brinde'} · {kit.project}{kit.active ? '' : ' · inativo'}</small><small>{kit.components.map(component => `${component.quantity} × ${component.name}`).join(' + ')}</small></div><span className={possible > 0 ? styles.available : styles.low}>{possible}<small> {possible === 1 ? 'kit possível' : 'kits possíveis'}</small></span></li>; })}</ul></section>}
+    {matchingKits.length > 0 && <section className={styles.kits} aria-labelledby="catalog-kits"><h3 id="catalog-kits"><Gift size={17} aria-hidden="true"/>Kits de brinde</h3><ul>{matchingKits.map(kit => { const possible = kit.components.length ? Math.max(0, Math.min(...kit.components.map(component => Math.floor(component.available / Math.max(1, component.quantity))))) : 0; return <li key={kit.id}><div><strong>{kit.name}</strong><small>{kit.kind === 'super' ? 'Super brinde' : 'Brinde'} · {kit.project}{kit.active ? '' : ' · inativo'}</small><small>{kit.components.map(component => `${component.quantity} × ${component.name}`).join(' + ')}</small></div><span className={possible > 0 ? styles.available : styles.low}>{possible}<small> {possible === 1 ? 'kit possível' : 'kits possíveis'}</small></span></li>; })}</ul></section>}
   </div>;
 }
 
@@ -121,7 +164,8 @@ export default function MaterialCatalog({ materials, onOpen }: {
                   <strong>{material.name}</strong>
                 </button>}
                 <strong className={`${styles.materialName} ${material.canOpen ? styles.mobileName : ''}`}>{material.name}</strong>
-                <small>{material.category} · {material.ownerLabel && material.ownerLabel !== material.project ? `${material.ownerLabel} (em ${material.project})` : material.project}</small>
+                <small>{[material.category, material.categoryLabel && material.categoryLabel !== material.category ? material.categoryLabel : '',
+                  material.ownerLabel && material.ownerLabel !== material.project ? `${material.ownerLabel} (em ${material.project})` : material.project].filter(Boolean).join(' · ')}</small>
                 {material.destinationName && <small className={styles.destination}><MapPin size={12} aria-hidden="true"/>Para {material.destinationName}</small>}
                 {material.assetCode && <small>Código: {material.assetCode}</small>}
                 {material.availabilityNote && <span className={`p-badge p-status-paused ${styles.mobileNote}`}>{material.availabilityNote}</span>}
