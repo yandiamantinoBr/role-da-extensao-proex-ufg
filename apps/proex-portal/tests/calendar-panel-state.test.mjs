@@ -107,6 +107,35 @@ test('agenda searches authorized visible titles, places and projects without cha
   }finally{h.dispose();}
 });
 
+test('cancelled replacements do not clutter the active agenda, but remain visible on request and in ICS', async () => {
+  const h = harness();
+  try {
+    const day = new URL(h.requests[0].url, 'https://example.test').searchParams.get('from');
+    const base = { category: 'projects', title: 'Turno vigente', projectName: 'Projeto A', startsAt: day, endsAt: civilDates.offsetCivilDate(day, 1), allDay: true };
+    h.respond(h.requests[0], { feeds: [], availableCategories: ['projects'], entries: [
+      { ...base, uid: 'active', status: 'CONFIRMED' },
+      { ...base, uid: 'cancelled', title: 'Turno substituído', status: 'CANCELLED' },
+    ] });
+    await tick();
+    h.render();
+    assert.match(h.body(), /Turno vigente/);
+    assert.doesNotMatch(h.body(), /Turno substituído/);
+    assert.match(h.body(), /Mostrar cancelados \(1\)/);
+    const toggle = h.all().find(node => node.type === 'input' && node.props.type === 'checkbox');
+    assert.equal(toggle.props.checked, false);
+    toggle.props.onChange({ target: { checked: true } });
+    h.render();
+    assert.match(h.body(), /Turno substituído/);
+    assert.match(h.body(), /Cancelado \/ arquivado/);
+    const ics = h.all().find(node => node.type === 'a' && node.props.href.includes('format=ics'));
+    assert.doesNotMatch(ics.props.href, /cancelled/i);
+    assert.equal(h.requests.length, 1);
+    h.button('Voltar ao mês atual e limpar filtros').props.onClick();
+    h.render();
+    assert.doesNotMatch(h.body(), /Turno substituído/);
+  } finally { h.dispose(); }
+});
+
 test('the project and unit from the route scope the calendar query and ICS, and clearing the project keeps the unit', async () => {
   const h = harness('project-a', 'unit-a');
   try {
