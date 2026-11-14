@@ -74,6 +74,16 @@
   text-underline-offset: 3px;
 }
 .entryLink:hover { text-decoration: underline; }
+.cancelledFilter {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  margin-block-start: 6px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+.cancelledFilter input { accent-color: var(--brand-ink); }
 .search { max-width: 420px; margin-block-start: 14px; }
 .searchField { position: relative; }
 .searchField svg {

@@ -51,6 +51,7 @@ export default function CalendarPanel({ projects: sourceProjects, organizational
   const [from, setFrom] = useState(initial.from), [to, setTo] = useState(initial.to);
   const [category, setCategory] = useState('all');
   const [search, setSearch] = useState('');
+  const [showCancelled, setShowCancelled] = useState(false);
   const unit = organizationalUnits.find(unit => unit.id === selectedUnitId);
   const unitId = unit ? selectedUnitId : '';
   const unitProjects = unitId ? projects.filter(project => project.unitId === unitId) : projects;
@@ -102,7 +103,9 @@ export default function CalendarPanel({ projects: sourceProjects, organizational
   const cells = [...Array(monthStart.getUTCDay()).fill(null), ...Array.from({ length: monthEnd.getUTCDate() }, (_, i) => `${displayMonth}-${String(i + 1).padStart(2, '0')}`)];
   const entries = data?.entries ?? [];
   const matches = listSearch(search);
-  const visibleEntries = entries.filter(event => matches([event.title, event.projectName, event.location]));
+  const matchingEntries = entries.filter(event => matches([event.title, event.projectName, event.location]));
+  const cancelledCount = matchingEntries.filter(event => event.status === 'CANCELLED').length;
+  const visibleEntries = showCancelled ? matchingEntries : matchingEntries.filter(event => event.status !== 'CANCELLED');
   const shown = selectedDay ? visibleEntries.filter(event => inDay(event, selectedDay)) : visibleEntries;
   const today = civilDay(new Date(mountedAt));
   const totalMap = new Map<CalendarCategory, number>(); for (const event of visibleEntries) totalMap.set(event.category, (totalMap.get(event.category) ?? 0) + 1);
@@ -110,11 +113,11 @@ export default function CalendarPanel({ projects: sourceProjects, organizational
   const activeFeeds = data?.feeds.filter(feed => !feed.revoked_at && Date.parse(feed.expires_at) > (result?.receivedAt??mountedAt)) ?? [];
   const scopeName = project?.name || String(unit?.name || 'Todos os projetos permitidos');
   const downloadLabel=validRange?`Baixar .ics de ${from.split('-').reverse().join('/')} a ${to.split('-').reverse().join('/')}`:'Informe um período válido para baixar';
-  const filteredContext = Boolean(projectId || unitId || category!=='all' || from!==initial.from || to!==initial.to || search.trim());
+  const filteredContext = Boolean(projectId || unitId || category!=='all' || from!==initial.from || to!==initial.to || search.trim() || showCancelled);
   function clearFilters() {
     searchField.current?.focus({preventScroll:true});
     onUnitChange('');
-    setCategory('all'); setFrom(initial.from); setTo(initial.to); setSearch(''); setSelectedDay('');
+    setCategory('all'); setFrom(initial.from); setTo(initial.to); setSearch(''); setSelectedDay(''); setShowCancelled(false);
   }
   function entryLink(event: CalendarEntry) {
     const destination = calendarDestination(event);
@@ -139,9 +142,13 @@ export default function CalendarPanel({ projects: sourceProjects, organizational
         <label className="p-field"><span>Data final (incluída)</span><DateField aria-label="Data final (incluída)" value={to} min={from} onValueChange={next=>{setTo(next);setSelectedDay('');}}/></label>
       </div>
       <div className={styles.actions}><button type="button" className="p-button p-button-subtle" onClick={()=>setReload(value=>value+1)} disabled={loading||!validRange}><RefreshCw size={16}/>Atualizar consulta</button>{validRange?<a className="p-button p-button-subtle" href={`/api/calendar?${query}&format=ics`}><Download size={16}/>{downloadLabel}</a>:<button type="button" className="p-button p-button-subtle" disabled><Download size={16}/>{downloadLabel}</button>}</div>
-      <p className={styles.help}>O arquivo .ics usa período, categoria, unidade e projeto. A busca por texto vale para a lista e o calendário desta página.</p>
+      <p className={styles.help}>O arquivo .ics usa período, categoria, unidade e projeto e inclui cancelamentos para atualizar calendários. A busca por texto e o controle de cancelamentos valem para esta página.</p>
       </div></details>
       {entries.length>0&&<div className={styles.totals} role="group" aria-label="Registros por categoria no período">{totals.map(([kind,total])=><button key={kind} type="button" aria-pressed={category===kind} className={category===kind?styles.totalActive:''} onClick={()=>{setCategory(current=>current===kind?'all':kind);setSelectedDay('');}}><span style={{background:colors[kind]}}/><b>{total}</b>{labels[kind]}</button>)}</div>}
+      {(cancelledCount > 0 || showCancelled) && <label className={styles.cancelledFilter}>
+        <input type="checkbox" name="agendaShowCancelled" checked={showCancelled} onChange={event => setShowCancelled(event.target.checked)} />
+        Mostrar cancelados{cancelledCount > 0 && ` (${cancelledCount})`}
+      </label>}
       {!validRange&&<p className="p-inline-error" role="alert">Escolha um período válido de até dois anos, com a data final igual ou posterior à inicial.</p>}{displayError&&<p className="p-inline-error" role="alert">{displayError}</p>}
 
     </section>
