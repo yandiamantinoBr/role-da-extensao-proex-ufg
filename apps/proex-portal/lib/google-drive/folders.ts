@@ -21,7 +21,9 @@ export function folderAudienceSql(alias: string) {
     (m.role='owner' AND m.project_id IS NULL AND m.organization_id IS NULL)
     OR (m.project_id IS NULL AND COALESCE(m.organization_id,'${LEGACY_ORGANIZATION_ID}')=${alias}.organization_id AND (${alias}.audience!='managers' OR m.role IN ('owner','manager')))
     OR (m.project_id IS NOT NULL AND EXISTS(SELECT 1 FROM projects mp WHERE mp.id=m.project_id AND mp.organization_id=${alias}.organization_id)
-      AND (${alias}.audience='organization' OR (${alias}.audience='project' AND m.project_id=${alias}.project_id) OR (${alias}.audience='managers' AND m.role IN ('owner','manager'))))))`;
+      AND (${alias}.audience='organization'
+        OR (${alias}.audience='project' AND m.project_id=${alias}.project_id)
+        OR (${alias}.audience='managers' AND m.role IN ('owner','manager') AND (${alias}.project_id IS NULL OR m.project_id=${alias}.project_id))))))`;
 }
 
 function requireActor(actor: PortalActor | null): PortalActor {
