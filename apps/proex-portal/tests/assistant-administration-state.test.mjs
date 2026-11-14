@@ -64,7 +64,7 @@ test('explicit OpenAI selection clears both text functions without starting infe
 // Modelo por tarefa: três seletores só para a administração geral, com a mesma regra de lista que o servidor aplica.
 const TASK_LABELS=['Modelo para ler documentos','Modelo para conferir e triar','Modelo para transcrever voz'];
 const optionsOf=select=>{const out=[];(function walk(node){if(Array.isArray(node)){node.forEach(walk);return;}if(node&&typeof node==='object'&&node.type==='option')out.push({value:node.props.value,label:text(node),...(node.props.disabled?{disabled:true}:{})});})(select.props.children);return out;};
-const STANDARD=['Padrão do portal (DeepSeek)','Padrão do portal (JEV, da TypeSafe)','Padrão do portal (Deepgram)'];
+const STANDARD=['Padrão do portal (DeepSeek)','Padrão do portal (TypeSafe)','Padrão do portal (Deepgram)'];
 const catalogReply=(h,change=models=>models,keyed=['groq','openai'])=>{const base=h.catalog.defaultCatalog('2026-01-01T00:00:00.000Z');return{organizationId:'org-a',stamp:'synthetic',catalog:{...base,models:change(base.models),providers:base.providers.map(provider=>({...provider,hasKey:keyed.includes(provider.id)}))}};};
 test('general administration chooses a model per task: the list loads when the functions area opens, the standard is named, keyless models cannot be chosen and the save sends the three keys',async()=>{
  const h=harness({canManageKeys:true});try{
