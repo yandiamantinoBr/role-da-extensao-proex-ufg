@@ -1,17 +1,18 @@
 'use client';
 
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
 import { ArrowUpRight, CheckCircle2, Pin, PinOff, Circle, CircleDot, CircleX, Flag, FolderKanban, Landmark, PauseCircle, Pencil, Plus, RefreshCw, Search, ShieldCheck, UserRoundCheck, Users, X } from 'lucide-react';
 import { toast } from 'sonner';
-import { priorityLabels, stateLabels, TASK_STATES, type TaskStatus } from '@/lib/follow-up/contracts';
+import { stateLabels, TASK_STATES, type TaskStatus } from '@/lib/follow-up/contracts';
 import { TEAM_TASK_PAGE_SIZE, type TeamsWorkspace, type WorkTeam, type TeamPerson, type TeamProject } from '@/lib/follow-up/teams-contract';
 import { projectAccessHref } from '@/lib/team-access-labels';
 import { followupChanged, FOLLOWUP_CHANGED } from './follow-up-api';
 import { saveWorkTeam, TeamsApiError, workTeamsApi } from './work-teams-api';
+import { prepareTeamExport, teamExportDocument } from './work-teams-export';
 import { WorkTaskCard } from './work-task-card';
 import { DraftNotice, useFormDraft } from './use-form-draft';
 import styles from './work-teams-panel.module.css';
-import ExportFormats, { type DocumentFormat } from './export-formats';
+import ExportFormats, { ExportHandledError, type DocumentFormat } from './export-formats';
 import TeamSheetsPanel from './team-sheets-panel';
 import TeamTemplates from './management/team-templates';
 import InstitutionalStructurePanel from './institutional-structure-panel';
@@ -160,28 +161,48 @@ export default function WorkTeamsPanel({ userId, defaultProjectId = '', organiza
   } finally { pendingMutation.current = false; if (mounted.current) setBusy(false); }
  }
  async function exportTeam(format: DocumentFormat) {
-  if (!selected || exporting || loading) return;
+  if (!selected || !shownTeamId || exporting || loading) throw new ExportHandledError();
   const controller = new AbortController(), sequence = generation.current;
   exportRequest.current?.abort(); exportRequest.current = controller; setExporting(true);
   const current = () => mounted.current && sequence === generation.current && !controller.signal.aborted;
+  const guard = () => {
+   if (!current()) throw new DOMException('Exportação cancelada.', 'AbortError');
+  };
+  const query = new URLSearchParams({ view: 'export', organizationId, teamId: selected.id, ...(projectId ? { projectId } : {}), ...(status ? { status } : {}) });
+  const fetchReport = () => workTeamsApi(query, userId, controller.signal);
   try {
-   const fresh = await workTeamsApi(new URLSearchParams({ view: 'export', organizationId, teamId: selected.id, ...(projectId ? { projectId } : {}), ...(status ? { status } : {}) }), userId, controller.signal);
-   if (!current()) return;
-   const freshTeam = fresh.teams.find(team => team.id === fresh.selectedTeamId);
-   if (!freshTeam) throw new TeamsApiError('A equipe mudou. Atualize o contexto antes de exportar.', 403);
-   if (fresh.hasMore) throw new Error('Este recorte passa de 5.000 demandas. Escolha um projeto ou estado para exportar o conjunto completo.');
-   const exports = await import('./report-export');
-   const columns = [{ key: 'title', label: 'Demanda' }, { key: 'project_name', label: 'Projeto' }, { key: 'status', label: 'Estado' }, { key: 'priority', label: 'Prioridade' }, { key: 'due_at', label: 'Prazo' }];
-   const rows = fresh.tasks.map(task => ({ ...task, status: stateLabels[task.status], priority: priorityLabels[task.priority], due_at: task.due_at?.split('-').reverse().join('/') ?? 'Sem prazo' }));
-   const display = (row: Record<string, unknown>, column: string) => row[column] ?? '';
-   const info: [string, string][] = [['Organização', fresh.scope.organizationName], ['Recorte', fresh.scope.projectName], ['Equipe', freshTeam.name], ['Estado', status ? stateLabels[status] : 'Todos'], ['Linhas', String(rows.length)], ['Gerado em', new Date(fresh.asOf).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) + ' (Brasília)']];
-   const title = `Demandas · ${freshTeam.name}`;
-   const blob = format === 'pdf' ? await (await import('./report-pdf')).toPdf(title, columns, rows, display, info, { presentation: { metrics: [{ label: 'Demandas no arquivo', value: rows.length }, { label: 'Pendentes de prioridade alta', value: fresh.tasks.filter(task => task.priority === 'high' && !['completed','cancelled'].includes(task.status)).length }] } }) : format === 'xlsx' ? exports.toXlsx('Demandas da equipe', columns, rows, display, info) : exports.toDocx(title, columns, rows, display, info);
-   if (!current()) return;
-   exports.download(`proex-equipe-${fresh.today}.${format}`, blob); toast.success(`${format.toUpperCase()} preparado com ${rows.length} demandas.`);
+   const artifact = await prepareTeamExport(fetchReport, async fresh => {
+    const [{ documentExport }, { download }] = await Promise.all([import('./document-export'), import('./report-export')]).catch(() => {
+     throw new TeamsApiError('Atualize a página e tente baixar as demandas novamente.', 503);
+    });
+    guard();
+    const { title, columns, rows, display, info, metrics } = teamExportDocument(fresh, status);
+    try {
+     const blob = await documentExport(format, format === 'xlsx' ? 'Demandas da equipe' : title, columns, rows, display, info, { metrics });
+     return { blob, download, day: fresh.today, count: rows.length };
+    } catch (cause) {
+     if (cause instanceof Error && /2\.000 linhas|muito extenso|páginas/.test(cause.message)) throw new TeamsApiError(cause.message, 413);
+     throw new TeamsApiError('Não foi possível preparar o arquivo. Atualize a página e tente novamente.', 503);
+    }
+   }, guard);
+   guard();
+   artifact.download(`proex-equipe-${artifact.day}.${format}`, artifact.blob);
+   toast.success(`${format.toUpperCase()} preparado com ${artifact.count} demandas.`);
   } catch (cause) {
-   if (current() && !aborted(cause)) { toast.error(message(cause)); if (cause instanceof TeamsApiError && [401,403,404].includes(cause.status)) { setStored(null); setEditor(null); setError(message(cause)); } }
-  } finally { if (current()) setExporting(false); }
+   if (!current() || aborted(cause)) throw new ExportHandledError();
+   const detail = cause instanceof TeamsApiError ? cause.message : 'Não foi possível consultar as demandas. Confira a conexão e tente novamente.';
+   toast.error(detail);
+   if (cause instanceof TeamsApiError && [401,403,404].includes(cause.status)) {
+    setStored(null); setEditor(null); setError(detail);
+    throw new ExportHandledError();
+   }
+   throw new Error(detail);
+  } finally {
+   if (exportRequest.current === controller) {
+    exportRequest.current = null;
+    if (mounted.current) setExporting(false);
+   }
+  }
  }
 
  // Fixadas primeiro, na ordem em que foram fixadas; as demais seguem a ordem do servidor.
@@ -192,6 +213,7 @@ export default function WorkTeamsPanel({ userId, defaultProjectId = '', organiza
   .map((team, order) => ({ team, order })).sort((a, b) => pinRank(a.team.id) - pinRank(b.team.id) || a.order - b.order).map(entry => entry.team);
  const hasTeamFilters = Boolean(mine || term || teamScope);
  const shownTeamId = selected && visible.some(team => team.id === selected.id) ? selected.id : '';
+ useLayoutEffect(() => () => exportRequest.current?.abort(), [context, canQuery, status, shownTeamId]);
  useEffect(() => { onTeamShown?.(shownTeamId); }, [shownTeamId, onTeamShown]);
  useEffect(() => {
   if (loading || !shownTeamId || !focusNextTeam.current) return;
