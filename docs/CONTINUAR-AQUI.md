@@ -2,6 +2,14 @@
 
 Comece pela [Retomada de 13/11](RETOMADA-13NOV-PORTAL-PROEX.md) para conferir a base publicada, a ordem das PRs pendentes, o padrão visual e o roteiro de convite. Para a rodada de 14/11, consulte [Ações de projeto e acessos](../apps/proex-portal/docs/QA-ACOES-E-PERFIS.md).
 
+## R3 · Exportar concentrado em Relatórios · em ramo, sem merge antes de 14/11 · 2026-11-11
+
+Branch `claude/r3-exportar-em-relatorios` (Claude Code), PR em **rascunho**. Decisão do Yan de 10/11 ("Sim, seguir todas"), item R3 da consolidação. Detalhes e a lista do que fica onde: `apps/proex-portal/docs/EXPORTACOES.md`.
+
+- Relatórios passa a mostrar **Dinâmicas por dia** no lugar do bloco repetido de indicadores e ganha a coluna **Equipes** em Demandas. A correção de 14/11 mantém os downloads nas telas de Equipes e Registros até existir o mesmo recorte em Relatórios. A leitura dos endereços com período usa o validador de datas do Portal.
+- **Não fazer:** mesclar antes de 14/11 (regra da consolidação: nada muda nas telas de saída e estoque durante a distribuição do CONPEEX); criar exportador novo para dado em tabela fora de Relatórios.
+- **Falta:** decisão do Yan sobre a lista de presença das convocações e os gastos de IA (seguem com botão próprio); o histórico de "Consumo por unidade" entra com a frente "Registrar movimento"; rebase e nova conferência antes do merge.
+
 ## Gestão da organização · guia, riscos, equipes-modelo e painel · 2026-11-09
 
 Branch `claude/gestao-organizacao` (Claude Code), migração **0045_management_guide_risks** (aditiva; a 0044 é das convocações). Módulo **Gestão** no menu, com quatro abas. Detalhes, comparação de ferramentas de painel e passo a passo do Looker Studio: `apps/proex-portal/docs/GESTAO-DA-ORGANIZACAO.md`.

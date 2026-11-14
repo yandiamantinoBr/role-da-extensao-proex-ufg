@@ -14,7 +14,7 @@ function load(file, dependencies = {}) {
     return compiledModule.exports;
 }
 
-const { readPortalLocation, commitPortalLocation, deniedPortalModule } = load('portal-history', { './work-navigation': load('work-navigation'), './my-work/contracts': load('my-work/contracts') });
+const { readPortalLocation, commitPortalLocation, deniedPortalModule } = load('portal-history', { './work-navigation': load('work-navigation'), './my-work/contracts': load('my-work/contracts'), './report-links': load('report-links', { './civil-date': load('civil-date') }) });
 const origin = 'https://example.test';
 const scope = {
     modules: ['overview', 'projects', 'materials', 'calendar', 'reports', 'demands', 'my-work', 'records'],

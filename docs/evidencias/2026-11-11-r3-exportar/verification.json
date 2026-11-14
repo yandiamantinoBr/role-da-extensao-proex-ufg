@@ -1,0 +1,26 @@
+{
+  "origin": "http://127.0.0.1:5175",
+  "base": "descartável, loopback, dados sintéticos",
+  "branch": "claude/r3-exportar-em-relatorios",
+  "shots": [
+    "1366-light-02-dinamicas-por-dia",
+    "1366-light-04-registros-exportar",
+    "1366-light-06-equipes-exportar",
+    "1366-light-07-relatorios-demandas-equipe",
+    "1366-dark-05-relatorios-registros",
+    "390-light-04-registros-exportar",
+    "390-light-07-relatorios-demandas-equipe",
+    "390-dark-06-equipes-exportar"
+  ],
+  "checks": {
+    "subjects": "Projetos e ações | Materiais e estoque | Movimentações | Saídas institucionais | Saídas rastreáveis | Empréstimos | Registros | Eventos e dinâmicas | Dinâmicas por dia | Demandas e prioridades | Conferências e avarias",
+    "legacyBlockPresent": false,
+    "recordsLink": "/?module=reports&report=records&recorte=1",
+    "recordsArrival": "?module=reports&report=records (assunto Registros)",
+    "teamLink": "/?module=reports&project=<projeto>&report=demands&recorte=1&q=Equipe+QA+Eventos",
+    "teamArrival": "?module=reports&project=<projeto>&report=demands (assunto Demandas e prioridades, busca preenchida)",
+    "horizontalOverflow": { "390": false, "1366": false },
+    "variants": ["1366 light", "1366 dark", "390 light", "390 dark"]
+  },
+  "notVerified": ["conta sem leitura de relatórios (botão antigo em Registros)", "375 px e janela de 1250 px"]
+}

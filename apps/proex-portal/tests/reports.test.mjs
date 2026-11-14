@@ -238,3 +238,51 @@ test('institutional outflows total only effective distribution and delivered pri
   assert.ok(!JSON.stringify(rows).includes('No personal details'));
   assert.deepEqual((await reportRows(db, actor(db, 'loans', 'project-b'), { dataset: 'outflows' })).rows, []);
 });
+
+test('R3: daily dynamics report counts each event on its own Brasília day, by type, inside the reader scope', async () => {
+  const db = fixture(), now = '2026-10-10T15:00:00.000Z';
+  db.native.prepare("INSERT INTO campaigns(id,project_id,name,starts_at,ends_at,status,created_at,retry_limit) VALUES('campaign-a','project-a','Roleta A',?,?,'active',?,0),('campaign-b','project-b','Dado B',?,?,'active',?,0)").run(now, '2099-01-01T00:00:00.000Z', now, now, '2099-01-01T00:00:00.000Z', now);
+  db.native.exec('PRAGMA foreign_keys=OFF');
+  const participation = db.native.prepare('INSERT INTO participations(id,campaign_id,identity_id,identity_method,modality,attempt_count,state,created_at) VALUES(?,?,?,?,?,0,?,?)');
+  // 02:30 UTC de 11/10 ainda é 10/10 em Brasília.
+  participation.run('p-1', 'campaign-a', 'synthetic-1', 'account', 'wheel', 'ready', '2026-10-11T02:30:00.000Z');
+  participation.run('p-2', 'campaign-a', 'synthetic-2', 'ticket', 'wheel', 'ready', '2026-10-11T15:00:00.000Z');
+  participation.run('p-3', 'campaign-b', 'synthetic-3', 'account', 'dice', 'ready', '2026-10-11T15:00:00.000Z');
+  const attempt = db.native.prepare("INSERT INTO attempts(id,participation_id,number,idempotency_key,result,state,created_at) VALUES(?,?,1,?,'brinde','done',?)");
+  attempt.run('a-1', 'p-1', 'k-1', '2026-10-11T02:31:00.000Z'); attempt.run('a-2', 'p-2', 'k-2', '2026-10-11T15:01:00.000Z'); attempt.run('a-3', 'p-3', 'k-3', '2026-10-11T15:01:00.000Z');
+  db.native.prepare("INSERT INTO entitlements(id,attempt_id,participation_id,offer_id,state,created_at,delivered_at) VALUES('e-1','a-1','p-1','offer','delivered',?,?),('e-2','a-2','p-2','offer','reserved',?,NULL)").run('2026-10-11T02:31:00.000Z', '2026-10-12T14:00:00.000Z', '2026-10-11T15:01:00.000Z');
+  db.native.exec('PRAGMA foreign_keys=ON');
+  const owner = actor(db, 'owner');
+  const all = await reportRows(db, owner, { dataset: 'campaign_days' });
+  const plain = all.rows.map(row => [row.evento, row.data, row.tipo_dinamica, row.participacoes, row.tentativas, row.premios_entregues, row.atendimentos_assistidos]);
+  assert.deepEqual(plain, [
+    ['Roleta A', '2026-10-12', 'wheel', 0, 0, 1, 0],
+    ['Dado B', '2026-10-11', 'dice', 1, 1, 0, 0],
+    ['Roleta A', '2026-10-11', 'wheel', 1, 1, 0, 1],
+    ['Roleta A', '2026-10-10', 'wheel', 1, 1, 0, 0],
+  ]);
+  assert.equal(new Set(all.rows.map(row => row.id)).size, 4, 'each row has a stable distinct id');
+  const day = await reportRows(db, owner, { dataset: 'campaign_days', from: '2026-10-11', to: '2026-10-11' });
+  assert.deepEqual(day.rows.map(row => row.evento), ['Dado B', 'Roleta A']);
+  const scoped = await reportRows(db, actor(db, 'manager', 'project-b'), { dataset: 'campaign_days' });
+  assert.deepEqual(scoped.rows.map(row => row.evento), ['Dado B'], 'another project never appears');
+  assert.deepEqual((await reportRows(db, owner, { dataset: 'campaign_days', projectId: 'project-a' })).rows.map(row => row.projeto), ['Projeto A', 'Projeto A', 'Projeto A']);
+  assert.equal((await reportRows(db, actor(db, 'loans', 'project-a'), { dataset: 'campaign_days' })).rows.length, 0, 'loan operators do not read dynamics');
+});
+
+test('R3: demand reports name the active teams, so a team export can be found by search', async () => {
+  const db = fixture(); taskFixture(db);
+  const now = '2026-10-10T15:00:00.000Z';
+  db.native.prepare("INSERT INTO followup_teams(id,organization_id,name,status,version,created_by,created_at,updated_at) VALUES('team-1','org_proex','Equipe Sintética Eventos','active',1,'synthetic',?,?),('team-2','org_proex','Equipe Arquivada','archived',1,'synthetic',?,?)").run(now, now, now, now);
+  db.native.prepare("INSERT INTO followup_assignees(id,task_id,user_id,team_id,created_at,removed_at) VALUES('as-1','task-a',NULL,'team-1',?,NULL),('as-2','task-a',NULL,'team-2',?,NULL),('as-3','task-b',NULL,'team-1',?,?)").run(now, now, now, now);
+  const rows = (await reportRows(db, actor(db, 'owner'), { dataset: 'demands' })).rows;
+  const byTitle = Object.fromEntries(rows.map(row => [row.demanda, row.equipes]));
+  assert.equal(byTitle['Recontar bottons'], 'Equipe Sintética Eventos', 'archived teams stay out');
+  assert.equal(byTitle['Outra demanda'], '', 'removed assignments stay out');
+});
+
+test('R3: the address subjects and the server datasets are the same list', async () => {
+  const { REPORT_DATASETS } = await import(compile('lib/reports.ts'));
+  const { REPORT_DATASET_IDS } = await import(compile('lib/report-links.ts'));
+  assert.deepEqual([...REPORT_DATASET_IDS].sort(), Object.keys(REPORT_DATASETS).sort());
+});
