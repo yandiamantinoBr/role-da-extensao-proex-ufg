@@ -4,6 +4,7 @@
  * Os valores padrão são só linhas iniciais; tudo pode ser editado ou apagado na tela.
  */
 import { HttpError } from '../errors';
+import { taskRouteLabel } from './role-contracts';
 
 export const CAPABILITIES = ['text', 'vision', 'document', 'speech', 'decision'] as const;
 export type Capability = (typeof CAPABILITIES)[number];
@@ -148,6 +149,17 @@ export function parseCatalog(raw: string | null | undefined): ModelCatalog {
   } catch { return defaultCatalog(); }
 }
 
+/**
+ * Nome de um modelo do catálogo para avisos e histórico: o nome e, se ele ainda não disser, o serviço
+ * (a mesma regra dos avisos). null quando o modelo não está neste catálogo.
+ */
+export function catalogModelName(catalog: Pick<ModelCatalog, 'providers' | 'models'>, id: string): string | null {
+  const model = catalog.models.find(entry => entry.id === id);
+  return model ? taskRouteLabel({ label: model.label, service: catalog.providers.find(entry => entry.id === model.providerId)?.label ?? '' }) : null;
+}
+/** O mesmo nome, pelas linhas iniciais do catálogo: serve a registros antigos, que só guardaram o id. */
+export function builtinModelName(id: string): string | null { return catalogModelName(defaultCatalog(''), id); }
+
 export function modelMicrosPerToken(model: CatalogModel) { return { input: model.price.inputPerM, output: model.price.outputPerM }; }
 export function fitsFunction(model: CatalogModel, provider: CatalogProvider | undefined, need: 'chat' | 'vision'): string | null {
   if (!provider) return 'Provedor removido.';
@@ -156,6 +168,73 @@ export function fitsFunction(model: CatalogModel, provider: CatalogProvider | un
   if (!model.capabilities.includes('text')) return 'Este modelo não está marcado para texto.';
   if (need === 'vision' && !model.capabilities.includes('vision')) return 'Este modelo não está marcado para foto.';
   return null;
+}
+
+/** Tarefas que podem trocar o padrão fixo por um modelo do catálogo. */
+export type RoutedTask = 'document' | 'decision' | 'speech';
+/** Endereço revisado do Deepgram; outro provedor do tipo "voz" ainda não tem formato de envio conferido. */
+const REVIEWED_SPEECH_BASE = 'https://api.deepgram.com/v1';
+/**
+ * Diz se o modelo serve para a tarefa: devolve null ou o motivo, em português simples.
+ * Documento: conversa por texto (OpenAI ou Anthropic). Decisão: só o formato JEV. Voz: Deepgram nova-3
+ * revisado ou serviço compatível com OpenAI (<endereço>/audio/transcriptions).
+ */
+export function fitsTask(model: CatalogModel, provider: CatalogProvider | undefined, task: RoutedTask): string | null {
+  if (!provider) return 'Provedor removido.';
+  if (model.testOnly) return 'Modelo só para teste: não pode receber dados reais.';
+  if (task === 'document') {
+    if (provider.kind !== 'openai_chat' && provider.kind !== 'anthropic_messages') return 'Esse provedor não lê documentos por texto.';
+    if (!model.capabilities.includes('document')) return 'Este modelo não está marcado para documento.';
+    if (!(model.price.inputPerM > 0) || !(model.price.outputPerM > 0)) return 'Falta o preço de entrada e de saída deste modelo.';
+    return null;
+  }
+  if (task === 'decision') {
+    if (provider.kind !== 'typesafe') return 'Esse serviço não responde no formato de conferência (JEV).';
+    if (!model.capabilities.includes('decision')) return 'Este modelo não está marcado para decisão.';
+    if (!(model.price.inputPerM > 0)) return 'Falta o preço de entrada deste modelo.';
+    return null;
+  }
+  if (!model.capabilities.includes('speech')) return 'Este modelo não está marcado para voz.';
+  if (!(model.price.perHour > 0)) return 'Falta o preço por hora deste modelo.';
+  if (provider.kind === 'openai_chat') return null;
+  let base = '';
+  try { base = safeBaseUrl(provider.baseUrl); } catch { /* endereço inválido não serve */ }
+  if (provider.kind === 'speech' && base === REVIEWED_SPEECH_BASE && model.model === 'nova-3') return null;
+  return 'Esse provedor de voz ainda não tem formato de envio revisado.';
+}
+/**
+ * Modelos que a administração pode escolher para a tarefa: ligados e aprovados pela mesma regra que o
+ * servidor aplica ao salvar e ao usar (fitsTask). `hasKey` diz se o provedor já tem chave salva.
+ */
+export function taskModelOptions(catalog: { providers: (CatalogProvider & { hasKey?: boolean })[]; models: CatalogModel[] }, task: RoutedTask): { id: string; label: string; hasKey: boolean }[] {
+  return catalog.models.flatMap(model => {
+    const provider = catalog.providers.find(entry => entry.id === model.providerId);
+    return model.enabled && provider && !fitsTask(model, provider, task) ? [{ id: model.id, label: model.label, hasKey: Boolean(provider.hasKey) }] : [];
+  });
+}
+
+/** O que define o padrão do portal em cada tarefa, para reconhecer no catálogo o modelo que é o próprio padrão. */
+export type TaskDefaults = { textKeyRef: string; textModel: string; decisionEndpoint: string; decisionModel: string; speech?: 'deepgram' | 'groq' };
+const GROQ_BASE = 'https://api.groq.com/openai/v1', GROQ_SPEECH_MODEL = 'whisper-large-v3-turbo';
+/**
+ * O modelo aponta para o mesmo destino do padrão da tarefa? É a mesma regra no servidor (que então segue o
+ * caminho de sempre, sem rota) e nos seletores (que não repetem o padrão na lista). `baseUrl` já validado.
+ */
+export function isTaskDefault(provider: Pick<CatalogProvider, 'kind' | 'keyRef'>, model: Pick<CatalogModel, 'model'>, baseUrl: string, task: RoutedTask, defaults: TaskDefaults): boolean {
+  if (task === 'document') return provider.keyRef === defaults.textKeyRef && model.model === defaults.textModel;
+  if (task === 'decision') return provider.keyRef === 'typesafe' && `${baseUrl}/systemone` === defaults.decisionEndpoint && model.model === defaults.decisionModel;
+  if (defaults.speech === 'groq') return provider.keyRef === 'groq' && baseUrl === GROQ_BASE && model.model === GROQ_SPEECH_MODEL;
+  return defaults.speech === 'deepgram' && provider.kind === 'speech' && provider.keyRef === 'deepgram';
+}
+/** Ids dos modelos do catálogo que são o próprio padrão da tarefa (para o seletor não oferecer o padrão duas vezes). */
+export function taskDefaultIds(catalog: { providers: CatalogProvider[]; models: CatalogModel[] }, task: RoutedTask, defaults: TaskDefaults): string[] {
+  return catalog.models.flatMap(model => {
+    const provider = catalog.providers.find(entry => entry.id === model.providerId);
+    if (!provider) return [];
+    let baseUrl: string;
+    try { baseUrl = safeBaseUrl(provider.baseUrl); } catch { return []; }
+    return isTaskDefault(provider, model, baseUrl, task, defaults) ? [model.id] : [];
+  });
 }
 
 export const COMPARE_SYSTEM = 'Você ajuda a equipe da Pró-Reitoria de Extensão da UFG. Responda em português do Brasil, de forma curta e direta. Se a pergunta pedir JSON, responda só com JSON válido.';

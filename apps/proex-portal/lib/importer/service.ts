@@ -55,7 +55,7 @@ export async function previewImport(db: D1Database, actor: PortalActor | null, i
   if(input.useAi!==undefined&&typeof input.useAi!=='boolean')throw new HttpError(400,'Escolha usar ou não a IA documental.','document_ai_consent');
   if(input.useAi===true){
     if(input.sourceMode==='manual'||candidates.length!==1)throw new HttpError(400,'A IA documental recebe um único cadastro de uma fonte textual. Use a importação normal para vários registros.','document_ai_rows');
-    interpretation=await interpretDocument(db,actor!,{kind,organizationId,projectId,itemId},{content,format,base:candidates[0],consent:input.aiConsent,operationKey:input.aiOperationKey},secret,{fetcher,keys});candidates=[interpretation.candidate];
+    interpretation=await interpretDocument(db,actor!,{kind,organizationId,projectId,itemId},{content,format,base:candidates[0],consent:input.aiConsent,operationKey:input.aiOperationKey,destination:input.aiDestination,approval:input.aiApproval},secret,{fetcher,keys});candidates=[interpretation.candidate];
   }
   if (kind === 'project') {
     const [units, types] = await Promise.all([all(db, "SELECT id,name,acronym FROM organizational_units WHERE status='active'"), all(db, "SELECT id,key,label FROM project_types WHERE status='active'")]);

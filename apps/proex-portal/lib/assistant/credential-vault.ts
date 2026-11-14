@@ -1,7 +1,7 @@
 import { platformOwnerAuthoritySql, type PortalActor } from '../access';
 import { all, iso, one } from '../database';
 import { HttpError } from '../errors';
-import { credentialProviders, DEFAULT_ASSISTANT_CONFIG, newAssistantConfig, object, onlyKeys, validateConfig, type AssistantConfig, type CredentialProvider } from './contracts';
+import { credentialProviders, DEFAULT_ASSISTANT_CONFIG, newAssistantConfig, object, onlyKeys, storedConfigJson, validateConfig, type AssistantConfig, type CredentialProvider } from './contracts';
 import { credentialKeyId, decryptProviderCredentials, encryptProviderCredentials, type CredentialKeys } from './crypto';
 import { speechProviderForOrganization, validProviderKey, type SpeechEnvironment } from './settings';
 
@@ -188,9 +188,9 @@ export async function manageAssistantCredential(db: D1Database, caller: PortalAc
   const state = action === 'remove' ? 'removed' : action === 'disable' ? 'disabled' : 'active';
   const guard = db.prepare(`SELECT CASE WHEN ${authority.sql} AND EXISTS(SELECT 1 FROM organizations WHERE id=? AND status='active') THEN 1 ELSE json_extract('[]','vault_authority_changed') END`).bind(...authority.values, id);
   const write = row ? db.prepare('UPDATE ai_organization_settings SET revision=?,config_json=?,credentials_ciphertext=?,updated_by=?,updated_at=? WHERE organization_id=? AND revision=? AND credentials_ciphertext=?')
-    .bind(revision, JSON.stringify(config), ciphertext, actor.userId, at, id, input.expectedRevision, row.credentials_ciphertext)
+    .bind(revision, storedConfigJson(config), ciphertext, actor.userId, at, id, input.expectedRevision, row.credentials_ciphertext)
     : db.prepare('INSERT INTO ai_organization_settings(organization_id,revision,config_json,credentials_ciphertext,updated_by,updated_at) VALUES(?,?,?,?,?,?)')
-      .bind(id, revision, JSON.stringify(config), ciphertext, actor.userId, at);
+      .bind(id, revision, storedConfigJson(config), ciphertext, actor.userId, at);
   const verify = db.prepare("SELECT CASE WHEN changes()=1 THEN 1 ELSE json_extract('[]','vault_revision_changed') END");
   const metadata = db.prepare(`INSERT INTO ai_provider_credential_metadata(organization_id,provider,label,mask,state,created_at,created_by,updated_at,updated_by)
     VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(organization_id,provider) DO UPDATE SET label=excluded.label,mask=excluded.mask,state=excluded.state,updated_at=excluded.updated_at,updated_by=excluded.updated_by`)

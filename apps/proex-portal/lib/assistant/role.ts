@@ -15,8 +15,9 @@ import { containsCredential } from './sensitive';
 import { ChargedError, firstJsonObject, genericChat } from './generic-provider';
 import { fitsFunction, type CatalogModel, type CatalogProvider, type ModelCatalog } from './model-catalog';
 import { loadCatalog } from './model-catalog-store';
-import { catalogPricing, type RolePricing } from './role-contracts';
+import { catalogPricing, type RolePricing, type SpeechRouteModel } from './role-contracts';
 import { assistantUsageSql, loadAssistantSettings, speechProviderForOrganization, validProviderKey, type SpeechEnvironment } from './settings';
+import { resolveTaskRoute, speechDestination, speechRouteModel, taskApproval, taskRouteName } from './task-routing';
 
 type Options = { fetcher?: typeof fetch; now?: number; keys?: CredentialKeys; signal?: AbortSignal; speech?: SpeechEnvironment };
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
@@ -79,7 +80,11 @@ export type RoleAvailability = {
   contract: string; organizationId: string; projectId: string; available: boolean; reason: string | null;
   provider: string; model: string; visionAvailable: boolean; operationsAvailable: boolean;
   textPricing: RolePricing | null; visionPricing: RolePricing | null;
-  speech: { available: boolean; provider: 'groq' | 'deepgram' };
+  /** `route` só existe com modelo do catálogo escolhido para voz: é o destino (`catalog:<id>`) que o consentimento precisa nomear. */
+  /** `route` e `routeModel` só existem com modelo do catálogo escolhido para voz e em condição de receber o áudio. */
+  speech: { available: boolean; provider: 'groq' | 'deepgram'; route?: string; routeModel?: SpeechRouteModel };
+  /** Só existe com modelo do catálogo escolhido e apto para a conferência dos registros: é o nome que o aviso precisa mostrar. */
+  decisionRouteName?: string;
   dailyLimitMicros: number; reservedTodayMicros: number;
   /** Consultas ao portal (só leitura) disponíveis na conversa e na foto. */
   tools: { text: boolean; vision: boolean };
@@ -123,10 +128,16 @@ export async function roleStatus(db: D1Database, actor: PortalActor | null, inpu
   const usage = await one(db, 'SELECT reserved_usd_micros FROM ai_organization_usage WHERE organization_id=? AND day=?', [organizationId, today]);
   const base = { contract: ROLE_CONTRACT, organizationId, projectId: project, reservedTodayMicros: Number(usage?.reserved_usd_micros ?? 0), canConfigure: (await responsibleName(db, current, organizationId)).canConfigure };
   try {
-    const { config, credentials, rawCredentials } = await loadAssistantSettings(db, secret, organizationId, 'configuration', options.keys, current.userId);
+    const { config, credentials, rawCredentials, revision } = await loadAssistantSettings(db, secret, organizationId, 'configuration', options.keys, current.userId);
     const catalog = config.roleModel || config.roleVisionModel ? (await loadCatalog(db, organizationId)).catalog : null;
     const { text, vision, ...state } = availability(config, credentials, organizationId, options.speech, rawCredentials, catalog);
-    return { ...base, ...state, provider: text?.kind === 'catalog' ? text.provider.id : config.roleProvider, model: text?.pricing.label ?? ROLE_MODELS[config.roleProvider].label,
+    let speech: RoleAvailability['speech'] = state.speech;
+    if (config.speechModel && speech.available) {
+      const resolved = await resolveTaskRoute(db, organizationId, config, rawCredentials, 'speech', speech.provider), routeModel = speechRouteModel(resolved);
+      if (routeModel) speech = { ...speech, route: speechDestination(resolved, speech.provider), routeModel: { ...routeModel, approval: await taskApproval(organizationId, revision, 'speech', [resolved]) } };
+    }
+    const decisionRouteName = state.operationsAvailable && config.jevEnabled && config.decisionModel ? taskRouteName(await resolveTaskRoute(db, organizationId, config, rawCredentials, 'decision').catch(() => null)) : null;
+    return { ...base, ...state, speech, ...(decisionRouteName ? { decisionRouteName } : {}), provider: text?.kind === 'catalog' ? text.provider.id : config.roleProvider, model: text?.pricing.label ?? ROLE_MODELS[config.roleProvider].label,
       textPricing: text?.pricing ?? null, visionPricing: vision?.pricing ?? null, dailyLimitMicros: config.dailyUsdMicros, tools: { text: text?.kind === 'legacy', vision: vision?.kind === 'legacy' },
       reason: state.available ? null : !config.roleEnabled ? 'O Rolê ainda não foi ligado nesta organização.' : 'Falta a chave do provedor escolhido para o Rolê.', scopes: state.available ? await roleScopes(db, current, organizationId) : undefined };
   } catch (error) {

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { priorityLabels, TASK_PRIORITIES, type Task } from '@/lib/follow-up/contracts';
 import { TRIAGE_CONTEXT_LIMIT, TRIAGE_CRITERIA, TRIAGE_CURRENCY, TRIAGE_INPUT_LIMIT, type TriageResponse } from '@/lib/follow-up/triage-contract';
 import { PROVIDERS } from '@/lib/assistant/contracts';
+import { shownRouteName, triageConsentText, triageNoticeText } from '@/lib/assistant/role-contracts';
 
 const button='p-button p-button-subtle min-h-11 justify-self-start';
 const triageUrl='/api/follow-up/triage';
@@ -38,19 +39,33 @@ export function TaskTriageMatrix({tasks}:{tasks:Task[]}) {
 }
 
 export function TaskTriage({task,busy,save}:{task:Task;busy:boolean;save:(input:Record<string,unknown>)=>Promise<void>}) {
- const [opened,setOpened]=useState(false),[enabled,setEnabled]=useState<boolean|null>(null);
+ const [opened,setOpened]=useState(false),[enabled,setEnabled]=useState<boolean|null>(null),[reserve,setReserve]=useState<number|null>(null);
+ // Nome do modelo escolhido que recebe o resumo; null = padrão de hoje (JEV, da TypeSafe).
+ const [destination,setDestination]=useState<string|null>(null),[approval,setApproval]=useState<string|undefined>();
+ const failed=destination?'Não foi possível concluir a triagem.':'Não foi possível consultar o JEV.';
  const [context,setContext]=useState(''),[consent,setConsent]=useState(false),[reviewed,setReviewed]=useState(false);
  const [proposal,setProposal]=useState<Ready|null>(null),[feedback,setFeedback]=useState(''),[preparing,setPreparing]=useState(false);
  const request=useRef<AbortController|null>(null),operation=useRef<string|null>(null);
  useEffect(()=>()=>request.current?.abort(),[]);
- async function check() {
-  if(opened)return;
+ async function check(again=false) {
+  if(opened&&!again)return;
   setOpened(true);
+  setEnabled(null);
   const controller=new AbortController();request.current=controller;
   try {
    const response=await fetch(`${triageUrl}?id=${encodeURIComponent(task.id)}`,{cache:'no-store',signal:controller.signal});
-   const data=await response.json() as {enabled?:unknown}|null;
-   if(!controller.signal.aborted)setEnabled(response.ok&&data?.enabled===true);
+   const data=await response.json() as {enabled?:unknown;reserveUsdMicros?:unknown;destinationName?:unknown;approval?:unknown}|null;
+   if(controller.signal.aborted)return;
+   setEnabled(response.ok&&data?.enabled===true);
+   // Com modelo de decisão escolhido, o servidor informa a reserva que vai fazer; sem ele, vale o número de sempre.
+   const micros=response.ok?data?.reserveUsdMicros:null;
+   setReserve(typeof micros==='number'&&Number.isSafeInteger(micros)&&micros>0?micros:null);
+   // Com modelo escolhido, o servidor diz quem recebe o resumo. A autorização vale só para o destino mostrado: se ele muda, a pessoa marca de novo.
+   const name=response.ok?shownRouteName(data?.destinationName):'';
+   const reviewedApproval=typeof data?.approval==='string'?data.approval:undefined;
+   if(name!==(destination??'')||reviewedApproval!==approval)setConsent(false);
+   setApproval(reviewedApproval);
+   setDestination(name||null);
   } catch {if(!controller.signal.aborted)setEnabled(false);}
  }
  async function prepare(event:FormEvent<HTMLFormElement>) {
@@ -62,34 +77,38 @@ export function TaskTriage({task,busy,save}:{task:Task;busy:boolean;save:(input:
   try {
    const response=await fetch(triageUrl,{method:'POST',cache:'no-store',signal:controller.signal,
     headers:{'Content-Type':'application/json','X-Proex-Action':'1'},
-    body:JSON.stringify({id:task.id,expectedVersion:task.version,operationKey:operation.current,context,consent})});
-   const data=await response.json() as {error?:unknown;status?:unknown;proposalId?:unknown;
+    body:JSON.stringify({id:task.id,expectedVersion:task.version,operationKey:operation.current,context,consent,destinationName:destination??'',approval})});
+   const data=await response.json() as {error?:unknown;code?:unknown;status?:unknown;proposalId?:unknown;
     proposal?:{urgency?:unknown;importance?:unknown}}|null;
    if(controller.signal.aborted)return;
-   if(!response.ok)throw new Error(typeof data?.error==='string'?data.error:'Não foi possível consultar o JEV.');
+   if(!response.ok){
+    // O modelo que recebe o resumo mudou depois do aviso: mostra o destino de agora e pede a autorização de novo.
+    if(data?.code==='triage_destination'){operation.current=null;setConsent(false);void check(true);}
+    throw new Error(typeof data?.error==='string'?data.error:failed);
+   }
    if(data?.status==='abstained'){
-    setFeedback('O JEV identificou informação insuficiente. Revise a classificação manualmente.');
+    setFeedback(`${destination?'A triagem':'O JEV'} identificou informação insuficiente. Revise a classificação manualmente.`);
    }else if(data?.status==='ready'&&typeof data.proposalId==='string'&&
      isLevel(data.proposal?.urgency)&&isLevel(data.proposal?.importance)){
     setProposal({status:'ready',proposalId:data.proposalId,proposal:{urgency:data.proposal.urgency,importance:data.proposal.importance}});
    }else throw new Error('A sugestão chegou incompleta.');
   } catch(error) {
-   if(!controller.signal.aborted)setFeedback(error instanceof Error?error.message:'Não foi possível consultar o JEV.');
+   if(!controller.signal.aborted)setFeedback(error instanceof Error?error.message:failed);
   } finally {if(!controller.signal.aborted)setPreparing(false);}
  }
  return <details className="rounded-xl border border-[var(--line)] p-3" onToggle={event=>{if(event.currentTarget.open)void check();}}>
-  <summary className="min-h-11 cursor-pointer font-semibold">Triagem com JEV</summary>
+  <summary className="min-h-11 cursor-pointer font-semibold">{destination?'Triagem com IA':'Triagem com JEV'}</summary>
   {opened&&enabled===null&&<p role="status">Consultando disponibilidade…</p>}
   {enabled===false&&<p className="text-sm text-[var(--text-secondary)]">A triagem com IA está indisponível. Use a edição manual da demanda.</p>}
+  {feedback&&<p role="status" className="text-sm text-[var(--text-secondary)]">{feedback}</p>}
   {enabled===true&&<form className="grid gap-3" onSubmit={event=>void prepare(event)}>
-   <p className="text-sm text-[var(--text-secondary)]">Escreva um resumo operacional sem nomes, contatos ou documentos. O JEV recebe esse resumo e o prazo desta demanda. Reserva estimada de até {maxReserve} por análise.</p>
+   <p className="text-sm text-[var(--text-secondary)]">Escreva um resumo operacional sem nomes, contatos ou documentos. {triageNoticeText(destination)} Reserva estimada de até {reserve===null?maxReserve:TRIAGE_CURRENCY.format(reserve/1_000_000)} por análise.</p>
    <label className="p-field"><span>Resumo a enviar</span><textarea required maxLength={TRIAGE_CONTEXT_LIMIT} rows={3} value={context} disabled={preparing||busy}
     onChange={event=>{operation.current=null;setContext(event.target.value);setProposal(null);setReviewed(false);setConsent(false);setFeedback('');}}/></label>
    <label className="flex min-h-11 items-start gap-2"><input type="checkbox" checked={consent} disabled={preparing||busy}
-    onChange={event=>setConsent(event.target.checked)}/> Autorizo enviar este resumo e prazo à TypeSafe.</label>
+    onChange={event=>setConsent(event.target.checked)}/> {triageConsentText(destination)}</label>
    <button type="submit" className={button} disabled={!context.trim()||!consent||preparing||busy||!!proposal}>Preparar sugestão</button>
    {preparing&&<p role="status">Preparando sugestão…</p>}
-   {feedback&&<p role="status" className="text-sm text-[var(--text-secondary)]">{feedback}</p>}
    {proposal&&<div className="grid gap-3 rounded-xl border border-[var(--line)] bg-[var(--surface-soft)] p-3">
     <h4 className="font-bold">Sugestão para revisão</h4>
     <dl className="grid gap-3 @min-[560px]:grid-cols-2">
