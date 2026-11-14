@@ -14,8 +14,8 @@ const models = {
  'Apoio no dia': ['O espaço e os equipamentos foram conferidos?', 'O acolhimento e as trocas de turno foram combinados?', 'A desmontagem e as devoluções foram conferidas?'],
  'Água e lanches': ['Os totais de participantes e necessidades alimentares foram conferidos?', 'As quantidades e o horário de entrega foram confirmados?', 'As sobras e os itens que faltaram foram registrados?'],
 } as const;
-export function ActivityChecklistCreator({catalog,organizationId,projectId,busy,save,assignments}:{catalog:Catalog;organizationId:string;projectId:string;busy:boolean;save:Save;assignments?:ReactNode}) {
- const form=useRef<HTMLFormElement>(null),operation=useRef<string|null>(null),draft=useFormDraft(form,`followup:activity:new:${organizationId}:${projectId}`);
+export function ActivityChecklistCreator({catalog,organizationId,projectId,scheduleItemId,busy,save,assignments}:{catalog:Catalog;organizationId:string;projectId:string;scheduleItemId?:string;busy:boolean;save:Save;assignments?:ReactNode}) {
+ const form=useRef<HTMLFormElement>(null),operation=useRef<string|null>(null),draft=useFormDraft(form,`followup:activity:new:${organizationId}:${projectId}${scheduleItemId?':'+scheduleItemId:''}`);
  const stepsField=useRef<HTMLTextAreaElement>(null);
  const [error,setError]=useState(''),[message,setMessage]=useState('');
  const [model,setModel]=useState<keyof typeof models>('Mesa de apresentação');
@@ -36,11 +36,11 @@ export function ActivityChecklistCreator({catalog,organizationId,projectId,busy,
   if(!rows.length||rows.length>100||rows.some(row=>row.label.length>160)){setError('Inclua de 1 a 100 verificações, com até 160 caracteres por linha.');return;}
   const selected=(prefix:string)=>[...values.entries()].filter(([name,value])=>name.startsWith(prefix)&&value==='on').map(([name])=>name.slice(prefix.length));
   operation.current??=crypto.randomUUID();
-  try{await save({action:'checklist.activity.create',projectId,organizationId,title:values.get('title'),body:values.get('body'),campaignId:values.get('campaignId')||null,rows,userIds:selected('person:'),teamIds:selected('team:'),operationKey:operation.current});draft.clear();operation.current=null;}
+  try{await save({action:'checklist.activity.create',projectId,organizationId,title:values.get('title'),body:values.get('body'),campaignId:values.get('campaignId')||null,...(scheduleItemId?{scheduleItemId}:{}),rows,userIds:selected('person:'),teamIds:selected('team:'),operationKey:operation.current});draft.clear();operation.current=null;}
   catch(cause){setError(cause instanceof Error?cause.message:'Não foi possível salvar. Seu checklist foi preservado.');}
  }
  return <form ref={form} className={styles.creator} onSubmit={event=>void submit(event)}><DraftNotice draft={draft}/><fieldset disabled={busy}>
-  <label>Título da atividade<input name="title" required maxLength={160} placeholder="Ex.: Mesa de apresentação"/></label>
+  <label>{scheduleItemId?'Título do checklist':'Título da atividade'}<input name="title" required maxLength={160} placeholder={scheduleItemId?'Ex.: Apoio no dia':'Ex.: Mesa de apresentação'}/></label>
   <label>Orientações<textarea name="body" maxLength={4000} rows={2}/></label>
   {catalog.campaigns.length>0&&<label>Evento relacionado<select name="campaignId" defaultValue=""><option value="">Sem evento vinculado</option>{catalog.campaigns.map(campaign=><option key={campaign.id} value={campaign.id}>{campaign.name}</option>)}</select></label>}
   <div className={styles.model}>
