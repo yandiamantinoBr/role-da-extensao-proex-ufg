@@ -9,15 +9,11 @@ const source = read('components/portal/dock-reserve.ts');
 const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
 const { dockReserve, DOCK_RESERVE_PROPERTY, DOCK_RESERVE_GAP } = await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`);
 
-test('doca: o espaço no fim da página cobre a parte mais alta da doca em repouso, com folga', () => {
-  // Celular de 844 px: barra inferior + área segura empurram a doca; Rolê (660) fica acima do botão Widgets (712).
-  assert.equal(dockReserve(844, [712]), 844 - 712 + DOCK_RESERVE_GAP);
-  assert.equal(dockReserve(844, [712, 660]), 844 - 660 + DOCK_RESERVE_GAP, 'com o Rolê na doca, o espaço cresce');
-  // Chip minimizado acima dos botões também conta.
-  assert.equal(dockReserve(844, [712, 660, 604]), 844 - 604 + DOCK_RESERVE_GAP);
-  // Computador: Widgets a 24 px do fim da tela.
+test('doca de computador: o espaço no fim da página cobre a parte mais alta em repouso, com folga', () => {
   assert.equal(dockReserve(900, [824]), 900 - 824 + DOCK_RESERVE_GAP);
-  assert.equal(dockReserve(844, [700.4]), Math.ceil(844 - 700.4 + DOCK_RESERVE_GAP), 'arredonda para cima, nunca menos');
+  assert.equal(dockReserve(900, [824, 772]), 900 - 772 + DOCK_RESERVE_GAP, 'com o Rolê na doca, o espaço cresce');
+  assert.equal(dockReserve(900, [824, 772, 716]), 900 - 716 + DOCK_RESERVE_GAP, 'o chip minimizado também entra na medição');
+  assert.equal(dockReserve(900, [830.4]), Math.ceil(900 - 830.4 + DOCK_RESERVE_GAP), 'arredonda para cima');
 });
 
 test('doca: sem parte visível, mantém o valor de reserva do CSS', () => {
@@ -26,13 +22,13 @@ test('doca: sem parte visível, mantém o valor de reserva do CSS', () => {
   assert.equal(dockReserve(0, [10]), null);
 });
 
-test('doca: a reserva vem da medição, vale em todas as páginas do portal e some com a doca', () => {
+test('doca: a reserva medida vale no computador e some com a doca', () => {
   const css = read('components/portal/floating-dock.module.css');
   const tsx = read('components/portal/floating-dock.tsx');
   assert.equal(DOCK_RESERVE_PROPERTY, '--dock-reserve');
   // Uma regra só, na área de conteúdo, usando a medição; nada de números soltos por tela ou por estado.
   assert.match(css, /:global\(\.p-main\):has\(\.dock\)\{padding-bottom:var\(--dock-reserve,/);
-  assert.match(css, /:global\(\.pn-shell \.p-main\):has\(\.dock\)\{padding-bottom:var\(--dock-reserve,/);
+  assert.match(css, /@media \(width > 720px\)\{\s*:global\(\.p-main\):has\(\.dock\)\{padding-bottom:var\(--dock-reserve,/);
   assert.doesNotMatch(css, /:has\(\.panel\[data-minimized\]\)\{padding-bottom/, 'o chip minimizado entra na medição, não numa regra fixa');
   assert.doesNotMatch(css, /p-main\):has\(\.dock\)\{padding-bottom:\d/, 'sem padding fixo que ignora o Rolê na doca');
   // Partes medidas: Rolê (itens), botão Widgets e chip minimizado.
@@ -43,6 +39,22 @@ test('doca: a reserva vem da medição, vale em todas as páginas do portal e so
   assert.match(tsx, /removeProperty\(DOCK_RESERVE_PROPERTY\)/);
   assert.match(tsx, /new ResizeObserver\(measure\)/);
   assert.match(tsx, /addEventListener\('resize', measure\)/);
+  assert.match(tsx, /launchers\.current\[returnTo\] \?\? launchers\.current\.toggle/, 'fechar um painel minimizado volta ao botão Widgets se a pilha estiver recolhida');
+});
+
+test('celular: Widgets e o Rolê independente ficam no cabeçalho, e a folha só existe depois de abrir', () => {
+  const dock = read('components/portal/floating-dock.tsx');
+  const role = read('components/portal/role-assistant.tsx');
+  const css = read('components/portal/floating-dock.module.css');
+  assert.match(dock, /document\.querySelector\('\.pn-shell \.p-topbar-actions'\)/);
+  assert.match(dock, /if \(toolbar\) \{[\s\S]*createPortal\(<button[\s\S]*setMobileView\('launchers'\)/);
+  assert.match(dock, /mobileOpen && <dialog[^>]*className=\{styles\.mobileDialog\}/);
+  assert.match(dock, /sheet\.showModal\(\)/);
+  assert.match(dock, /event\.shiftKey && \(current === first \|\| current === mobileHeading\.current\)/);
+  assert.match(dock, /const shown = dock !== null && !toolbar/);
+  assert.match(css, /@media \(max-width:720px\)\{\s*\.dock\{display:none\}/);
+  assert.match(role, /!open && ready && !dock\.registered/);
+  assert.match(role, /toolbar \? createPortal\(launcher, toolbar\) : launcher/);
 });
 
 test('doca: páginas sem doca (voluntário, convite, convocação pública, login) não carregam a doca nem a reserva', () => {

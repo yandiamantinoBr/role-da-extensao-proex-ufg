@@ -1,6 +1,5 @@
-/* Floating dock: launchers stacked in the bottom-right corner, above the Rolê button while it still draws its own. */
+/* Desktop dock. Mobile launchers live in the page header. */
 .dock{position:fixed;right:24px;bottom:24px;z-index:44;display:flex;flex-direction:row;align-items:flex-end;gap:10px;pointer-events:none}
-:global(body:has(button[aria-keyshortcuts="Alt+R"])) .dock{bottom:96px}
 .dock>*{pointer-events:auto}
 .launchers{display:flex;flex-direction:column;align-items:center;gap:8px}
 .stack{display:flex;flex-direction:column;align-items:flex-end;gap:6px;padding:6px;border:1px solid color-mix(in srgb,var(--text-secondary) 35%,var(--line));border-radius:999px;background:color-mix(in srgb,var(--surface) 94%,transparent);box-shadow:0 10px 28px -14px rgb(25 11 41/.45);backdrop-filter:blur(6px)}
@@ -62,39 +61,20 @@
 .rowTime{display:inline-flex;align-items:center;gap:4px;color:var(--brand-ink);font-size:12px;font-weight:650;white-space:nowrap}
 .rowTitle{font-size:13.5px;line-height:1.4;overflow-wrap:anywhere}
 .more{display:inline-flex;align-items:center;justify-self:start;gap:6px;min-height:44px;padding:0 4px;border:0;background:none;color:var(--brand-ink);font:inherit;font-size:13px;font-weight:650;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
-/* Phones: launchers above the bottom bar; panels become a bottom sheet over the bar. */
-@media (max-width:720px){
-  .dock{right:14px;bottom:calc(84px + env(safe-area-inset-bottom,0px))}
-  :global(body:has(button[aria-keyshortcuts="Alt+R"])) .dock{bottom:calc(154px + env(safe-area-inset-bottom,0px))}
-  .stack{gap:4px;padding:4px}
-  .launchers .toggleLauncher{width:48px;height:48px}
-  .panel{position:fixed;left:0;right:0;bottom:0;width:auto;max-height:78vh;border-radius:20px 20px 0 0;z-index:60;padding-bottom:env(safe-area-inset-bottom,0px)}
-  .panel[data-minimized] .panelHead::before{display:none}
-  .panelHead::before{content:'';position:absolute;left:50%;top:6px;width:40px;height:4px;margin-left:-20px;border-radius:999px;background:var(--line)}
-  .panelHead{position:relative;padding-top:12px}
-  .dock[data-open] .launchers{visibility:hidden}
-}
 @media (prefers-reduced-motion:no-preference){.panel{animation:dock-in .16s ease-out}@keyframes dock-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}}
 /* Leave room at the end of each page so the dock never sits on top of the last content. The dock measures
    its resting parts and sets --dock-reserve on <html> (see dock-reserve.ts); the numbers below are only the
    first-paint fallback. Without the dock (volunteer and public pages) nothing here applies. */
-:global(.p-main):has(.dock){padding-bottom:var(--dock-reserve,96px)}
-@media (max-width:720px){:global(.pn-shell .p-main):has(.dock){padding-bottom:var(--dock-reserve,calc(150px + env(safe-area-inset-bottom,0px)))}}
 .stackItem{display:flex;align-items:center;gap:8px}
 .stackLabel{padding:4px 10px;border-radius:999px;background:var(--ink);color:var(--surface);font-size:12px;font-weight:650;white-space:nowrap;box-shadow:0 6px 16px -10px rgb(25 11 41/.6)}
 .rowTime{min-width:76px}
-.scrim{display:none}
 /* Minimized: a compact chip above the buttons, never a wide bar over the page. */
 .panel[data-minimized]{position:absolute;right:0;bottom:calc(100% + 8px);width:auto;max-width:280px;border-radius:999px;box-shadow:0 10px 26px -14px rgb(25 11 41/.55)}
 .panel[data-minimized] .panelHead{padding:2px 2px 2px 14px;background:var(--surface)}
 .panel[data-minimized] .panelHead h2{font-size:13.5px;white-space:nowrap}
-/* The footer actions stay clear of the corner buttons. */
-:global(.p-main):has(.dock) :global(.p-footer){padding-right:76px}
-@media (max-width:720px){
-  .scrim{display:block;position:fixed;inset:0;z-index:59;background:rgb(0 0 0/.38)}
-  .panel[data-minimized]{position:absolute;left:auto;right:0;bottom:calc(100% + 8px);border-radius:999px;max-height:none}
-  .stackLabel{font-size:11.5px;padding:3px 8px}
-  :global(.p-main):has(.dock) :global(.p-footer){padding-right:0}
+@media (width > 720px){
+  :global(.p-main):has(.dock){padding-bottom:var(--dock-reserve,96px)}
+  :global(.p-main):has(.dock) :global(.p-footer){padding-right:76px}
 }
 /* The open stack is just labeled buttons, no big bubble behind them. */
 .launchers{align-items:flex-end}
@@ -102,5 +82,19 @@
 .stack .launcher{border:1px solid var(--line);background:var(--surface);box-shadow:0 8px 20px -12px rgb(25 11 41/.5)}
 .stack .launcher[data-active]{background:var(--brand-ink);color:var(--surface);border-color:var(--brand-ink)}
 .stack{margin-bottom:8px}
-/* Phones: the notification center covers the screen like a sheet; the dock steps aside while it is open. */
-@media (max-width:720px){:global(body:has(button[aria-controls="followup-notification-center"][aria-expanded="true"])) .dock{visibility:hidden}}
+.mobileTrigger{display:none}
+@media (max-width:720px){
+  .dock{display:none}
+  .mobileTrigger{position:relative;display:grid;place-items:center;flex:none;width:44px;height:44px;border:1px solid #ffffff32;border-radius:10px;background:#ffffff12;color:#f4eaf9}
+  .mobileTrigger:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+  .mobileDialog{position:fixed;inset:auto 0 0;width:100%;max-width:none;max-height:calc(100dvh - 8px);margin:0 auto;padding:0;border:0;border-radius:20px 20px 0 0;overflow:hidden;background:var(--surface);color:var(--ink)}
+  .mobileDialog::backdrop{background:rgb(0 0 0/.38)}
+  .mobileSheet{display:flex;flex-direction:column;max-height:min(82dvh,600px);padding-bottom:env(safe-area-inset-bottom,0px)}
+  .mobileSheet .panelHead{padding:6px 10px 6px 16px}
+  .mobileSheet .panelHead .headButton[aria-label="Voltar aos widgets"]{order:-1}
+  .mobileSheet .panelHead h2:focus{outline:none}
+  .mobileSheet .shortcuts button{min-height:58px}
+  .mobileSheet .shortcuts img{width:24px;height:24px;border-radius:50%;flex:none}
+  .mobileSheet .shortcuts small{white-space:normal}
+  :global(body):has(.mobileDialog[open]){overflow:hidden}
+}
