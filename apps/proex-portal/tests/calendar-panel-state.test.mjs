@@ -3,6 +3,7 @@ import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
+import { load } from './support/project-report-module.mjs';
 
 const text = node => typeof node === 'string' || typeof node === 'number' ? String(node) : Array.isArray(node) ? node.map(text).join('') : node && typeof node === 'object' ? text(node.props?.children) : '';
 const nodes = tree => { const result = []; function visit(node) { if (!node || typeof node !== 'object') return; if (Array.isArray(node)) return node.forEach(visit); result.push(node); visit(node.props?.children); } visit(tree); return result; };
@@ -12,7 +13,8 @@ const civilDateCode = ts.transpileModule(civilDateSource, { compilerOptions: { m
 const civilDates = await import(`data:text/javascript;base64,${Buffer.from(civilDateCode).toString('base64')}`);
 const listSearchCode = ts.transpileModule(readFileSync(new URL('../lib/list-search.ts', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
 const listSearch = await import(`data:text/javascript;base64,${Buffer.from(listSearchCode).toString('base64')}`);
-function harness(initialProject = '', initialUnit = '') {
+const links = await load('lib/calendar-links.ts');
+function harness(initialProject = '', initialUnit = '', canOpenModule = () => true) {
   const slots = [], effects = [], requests = [], copied = []; let index = 0, tree;
   let selectedProjectId = initialProject;
   let selectedUnitId = initialUnit;
@@ -26,7 +28,7 @@ function harness(initialProject = '', initialUnit = '') {
   const source = ts.transpileModule(readFileSync(new URL('../components/portal/calendar-panel.tsx', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
   vm.runInNewContext(source, {
     module: compiled, exports: compiled.exports,
-    require: name => name === 'react' ? hooks : name === 'react/jsx-runtime' ? { jsx, jsxs: jsx } : name === 'lucide-react' ? new Proxy({}, { get: (_, key) => String(key) }) : name.endsWith('.css') ? { default: new Proxy({}, { get: (_, key) => String(key) }) } : name === '@/lib/civil-date' ? civilDates : name === '@/lib/list-search' ? listSearch : { groupUnits: () => [] },
+    require: name => name === 'react' ? hooks : name === 'react/jsx-runtime' ? { jsx, jsxs: jsx } : name === 'lucide-react' ? new Proxy({}, { get: (_, key) => String(key) }) : name.endsWith('.css') ? { default: new Proxy({}, { get: (_, key) => String(key) }) } : name === '@/lib/civil-date' ? civilDates : name === '@/lib/list-search' ? listSearch : name === '@/lib/calendar-links' ? links : { groupUnits: () => [] },
     Date, Intl, URLSearchParams, AbortController, Map, Error,
     fetch: (url, init) => new Promise(resolve => requests.push({ url, init, resolve })),
     navigator: { clipboard: { async writeText(value) { copied.push(value); } } },
@@ -38,7 +40,7 @@ function harness(initialProject = '', initialUnit = '') {
       tree = compiled.exports.default({
         projects: [{ id: 'project-a', name: 'Projeto sintético A', unit_id: 'unit-a' }],
         organizationalUnits: [{ id: 'unit-a', name: 'Unidade sintética A' }, { id: 'unit-b', name: 'Unidade sintética B' }],
-        selectedProjectId, selectedUnitId,
+        selectedProjectId, selectedUnitId, canOpenModule,
         onProjectChange: id => { selectedProjectId = id; },
         onUnitChange: id => { selectedUnitId = id; selectedProjectId = ''; },
       });
@@ -53,6 +55,33 @@ function harness(initialProject = '', initialUnit = '') {
   h.render(); return h;
 }
 async function ready(h) { h.respond(h.requests[0], { entries: [], feeds: [], availableCategories: ['projects'] }); await tick(); h.render(); }
+
+test('agenda opens exact authorized sources and uses the parent for a shift or movement', async () => {
+  const h = harness('', '', (module, entry) => module !== 'events' || entry.projectId === 'project-a');
+  try {
+    const day = new URL(h.requests[0].url, 'https://example.test').searchParams.get('from');
+    const base = { category: 'projects', title: 'Agenda fictícia', projectName: 'Projeto A', projectId: 'project-a', startsAt: day, endsAt: civilDates.offsetCivilDate(day, 1), allDay: true };
+    const entry = (sourceKind, sourceId, extra = {}) => ({ ...base, uid: sourceId, sourceKind, sourceId, ...extra });
+    h.respond(h.requests[0], { feeds: [], availableCategories: ['projects'], entries: [
+      entry('project', 'project-a'), entry('deadline', 'task-a', { projectId: '' }),
+      entry('loan', 'loan-a'), entry('campaign-session', 'shift-a', { parentId: 'campaign-a' }),
+      entry('campaign-session', 'shift-other', { projectId: 'project-b', parentId: 'hidden-campaign' }),
+      entry('movement', 'item-a.consume.2026-11-14', { parentId: 'item-a' }),
+      entry('movement', 'legacy'), entry('project-schedule', 'schedule-a'),
+    ] });
+    await tick();
+    h.render();
+    const targets = h.all().filter(node => node.type === 'a' && node.props.href.startsWith('/?')).map(node => new URL(node.props.href, 'https://example.test').searchParams);
+    assert.equal(targets.length, 7);
+    assert.ok(targets.some(query => query.get('detailProject') === 'project-a'));
+    assert.ok(targets.some(query => query.get('demandId') === 'task-a' && !query.has('project')));
+    assert.ok(targets.some(query => query.get('loanId') === 'loan-a'));
+    assert.ok(targets.some(query => query.get('campaignId') === 'campaign-a'));
+    assert.ok(targets.some(query => query.get('itemId') === 'item-a'));
+    assert.equal(targets.filter(query => query.get('scheduleItemId') === 'schedule-a').length, 2);
+    assert.ok(targets.every(query => !query.has('project') || query.get('project') === 'project-a'));
+  } finally { h.dispose(); }
+});
 
 test('agenda searches authorized visible titles, places and projects without changing the ICS query', async () => {
   const h=harness();

@@ -12,6 +12,8 @@ export const CALENDAR_LABELS: Record<CalendarCategory, string> = {
 };
 export type CalendarEntry = {
   uid: string; sourceId: string; sourceKind: string; projectId: string; projectName: string;
+  /** Parent record when the entry represents a session or an aggregate. */
+  parentId?: string;
   category: CalendarCategory; title: string; startsAt: string;
   /** Exclusive civil date for all-day entries, as in iCalendar. */
   endsAt: string; allDay: boolean;
@@ -98,6 +100,7 @@ function entry(row: Row, category: CalendarCategory, sourceKind: string, allDay 
   const endsAt = allDay ? String(row.ends_at) : iso(row.ends_at, startsAt);
   return {
     uid: `${sourceKind}.${row.id}@proex-gestao`, sourceId: String(row.id), sourceKind,
+    ...(row.parent_id ? { parentId: String(row.parent_id) } : {}),
     projectId: String(row.project_id), projectName: String(row.project_name), category,
     title: String(row.title), startsAt, endsAt, allDay,
     status: row.state === 'cancelled' || row.state === 'archived' ? 'CANCELLED' : 'CONFIRMED',
@@ -175,7 +178,7 @@ export async function calendarEntries(db: D1Database, actor: PortalActor | null,
       // Turnos das dinâmicas (R7): data civil com horário opcional (HH:MM, Brasília). Entram também os de dinâmica em
       // rascunho, porque o planejamento da equipe acontece antes de ativar a dinâmica (caso real do Rolê no CONPEEX);
       // quem vê a Agenda já vê esses turnos no planejamento. Organização inativa fica fora. A nota livre do turno não sai.
-      rows = await all(db, `SELECT s.id,c.project_id,p.name project_name,
+      rows = await all(db, `SELECT s.id,c.id parent_id,c.project_id,p.name project_name,
         'Turno · ' || CASE WHEN s.label!='' THEN s.label ELSE s.ordinal || 'º turno' END || ' · ' || c.name title,
         s.session_date,s.starts_at start_time,s.ends_at end_time,s.status state,s.version revision,c.location,s.created_at,s.updated_at last_modified
         FROM campaign_sessions s JOIN campaigns c ON c.id=s.campaign_id JOIN projects p ON p.id=c.project_id
@@ -209,7 +212,7 @@ export async function calendarEntries(db: D1Database, actor: PortalActor | null,
       const occurred='COALESCE(smc.occurred_at,m.created_at)',measure='COALESCE(smc.measurement_unit,i.unit)';
       rows = await all(db, `SELECT i.id || '.' || m.kind || '.' || date(${occurred},'-3 hours') ||
         CASE WHEN smc.movement_id IS NULL THEN '' ELSE '.ctx.' || hex(smc.measurement_unit) END id,
-        i.project_id,p.name project_name,? || ' · ' || MAX(COALESCE(smc.material_name,i.name)) || ' · ' || SUM(m.delta) || ' ' || ${measure} title,
+        i.id parent_id,i.project_id,p.name project_name,? || ' · ' || MAX(COALESCE(smc.material_name,i.name)) || ' · ' || SUM(m.delta) || ' ' || ${measure} title,
         date(${occurred},'-3 hours') starts_at,date(${occurred},'-3 hours','+1 day') ends_at,
         'recorded' state,COUNT(*) revision,MIN(m.created_at) created_at,MAX(m.created_at) last_modified
         FROM stock_movements m JOIN items i ON i.id=m.item_id JOIN projects p ON p.id=i.project_id
