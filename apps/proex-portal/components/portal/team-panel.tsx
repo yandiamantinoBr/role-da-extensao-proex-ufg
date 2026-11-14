@@ -1,6 +1,6 @@
 'use client';
 import { useId, useRef, useState, type FormEvent } from 'react';
-import { ArrowUpRight, Check, Copy, KeyRound, LoaderCircle, Mail, Search, ShieldCheck, UserPlus, Users } from 'lucide-react';
+import { ArrowUpRight, Check, ChevronDown, Copy, KeyRound, LoaderCircle, Mail, Search, ShieldCheck, UserPlus, Users } from 'lucide-react';
 import TeamPersonDetail from './team-person-detail';
 import TeamInviteShare from './team-invite-share';
 import DateTimeField from './date-time-field';
@@ -8,6 +8,7 @@ import styles from './team-person.module.css';
 import { useFormDraft, DraftNotice } from './use-form-draft';
 import { officialTeamPrefill, type OfficialTeamSelection } from '../../lib/catalog/proex-team';
 import { invitationShareLink } from '../../lib/invitation-link';
+import { accessRoleLabel, accessScopeLabel, projectAccessRoleLabels } from '../../lib/team-access-labels';
 // Server-projected directory and scoped memberships.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = Record<string, any>;
@@ -20,6 +21,7 @@ type Props = {
     members: Row[];
     invites: Row[];
     projects: Row[];
+    organizations?: { id: string; name: string }[];
     /** Actions (campaigns) visible to the inviter, for the volunteer scope. */
     campaigns?: Row[];
     /** Volunteer grants of the projects this person manages (active and ended in the last 30 days). */
@@ -30,9 +32,8 @@ type Props = {
     canProject: (id: string, capability: string) => boolean;
     mutate: (action: string, payload: Record<string, unknown>) => Promise<Row>;
 };
-const roles: Record<string, string> = { owner: 'Responsável institucional', manager: 'Gestor de projeto', operator: 'Operador de evento', inventory: 'Responsável por materiais', loans: 'Responsável por empréstimos', viewer: 'Leitor de relatórios' };
 const roleHelp: Record<string, string> = {
-    manager: 'Edita a ficha do projeto, organiza demandas, gerencia dinâmicas, materiais e empréstimos e convida pessoas para o projeto.',
+    manager: 'Edita a ficha, organiza demandas e registros e gerencia dinâmicas, materiais e empréstimos. Pode convidar operadores, responsáveis por materiais ou empréstimos e leitores.',
     operator: 'Atende e entrega brindes nas dinâmicas do projeto. Também pode criar e editar demandas do projeto.',
     inventory: 'Consulta e movimenta materiais do projeto. Também pode criar demandas e registrar consumo.',
     loans: 'Consulta, reserva e registra retiradas e devoluções dos empréstimos do projeto. Também pode criar demandas.',
@@ -40,6 +41,8 @@ const roleHelp: Record<string, string> = {
     volunteer: 'Atende e entrega brindes em uma ação específica, até a data e hora definidas no convite.',
 };
 const projectIdOf = (row: Row) => row.project_id ?? row.projectId ?? null;
+const membershipScope = (member: Row, props: Props) =>
+    accessScopeLabel(member.role, projectIdOf(member), member.organization_id, props.projects.map(p => ({id:p.id,name:p.name})), props.organizations ?? []);
 // Brasília (UTC-3, sem horário de verão): o campo de data e hora trabalha em hora local.
 const BRASILIA_MS = 3 * 60 * 60 * 1000;
 const toLocal = (iso: unknown) => { const time = typeof iso === 'string' ? Date.parse(iso) : NaN; return Number.isFinite(time) ? new Date(time - BRASILIA_MS).toISOString().slice(0, 16) : ''; };
@@ -99,12 +102,13 @@ function Membership({ member, editable, globalAdmin, projectName, mutate }: {
     <div className="p-row-between">
     <div>
     <strong>{projectName}</strong>
-    <small>{roles[member.role] || member.role}</small>
+    <small>{accessRoleLabel(member.role, member.organization_id)}</small>
     </div>{revoked && <span className="p-badge p-status-revoked">Revogado</span>}</div>{editable && !revoked && <>
         <div className="p-access-controls">
         <label className="p-field">
         <span>Função neste escopo</span>
-        <select id={roleId} value={role} disabled={saving} onChange={e => { setRole(e.target.value); key.current = null; }}>{Object.entries(roles).filter(([key]) => key !== 'owner' && (globalAdmin || key !== 'manager')).map(([key, label]) => <option value={key} key={key}>{label}</option>)}</select>
+        <select id={roleId} value={role} disabled={saving} aria-describedby={roleId + '-help'} onChange={e => { setRole(e.target.value); key.current = null; }}>{Object.entries(projectAccessRoleLabels).filter(([key]) => globalAdmin || key !== 'manager').map(([key, label]) => <option value={key} key={key}>{label}</option>)}</select>
+        <small id={roleId + '-help'}>{roleHelp[role]}</small>
         </label>
         <button type="button" className="p-button p-button-primary" disabled={saving || role === member.role} onClick={() => void send('member.change')}>{saving ? <LoaderCircle size={16} className="p-spin"/> : <Check size={16}/>}Salvar função</button>
         </div>{revoke ? <div className="p-inline-confirm">
@@ -127,7 +131,6 @@ function DirectoryUser({ user, props, onOpen }: {
     const isAnonymized=Boolean(user.anonymizedAt),[brokenAvatar,setBrokenAvatar]=useState('');
     const displayName=user.displayName||user.display_name||user.email||'Integrante';
     const hasOwner = (user.members ?? []).some((m: Row) => m.role === 'owner' && !(m.revoked_at ?? m.revokedAt));
-    const projectName = (id: string | null) => id ? props.projects.find(p => p.id === id)?.name || 'Projeto' : 'Toda a organização';
     async function reset() { if (busy)
         return; setBusy(true); setError(''); try {
         const result = await accountAction({ action: 'adminReset', userId: id });
@@ -160,7 +163,7 @@ function DirectoryUser({ user, props, onOpen }: {
     <span className={styles.cardAvatar}><Users size={21} aria-hidden="true"/>{user.avatarUrl&&brokenAvatar!==user.avatarUrl&&<img src={user.avatarUrl} alt="" width={48} height={48} loading="lazy" onError={()=>setBrokenAvatar(user.avatarUrl)}/>}</span>
     <span className={styles.personText}><strong className={styles.personName}>{displayName}</strong>{user.email&&<span className={styles.personEmail}><Mail size={13}/>{user.email}</span>}</span>
     <ArrowUpRight size={19} className={styles.openIcon} aria-hidden="true"/>
-    </button>{user.status&&<span className={`p-badge ${isBlocked?'p-status-cancelled':'p-status-active'}`}>{isAnonymized?'Anonimizada':user.activationPending?'Ativação pendente':isBlocked?'Bloqueado':'Ativo'}</span>}</div>{memberships.map((m: Row) => <Membership key={`${m.id}-${m.role}`} member={m} globalAdmin={props.globalAdmin || Boolean(props.canManageManagers?.(projectIdOf(m), m.organization_id))} projectName={projectName(projectIdOf(m))} editable={m.role !== 'owner' && (props.globalAdmin || Boolean(props.canManageManagers?.(projectIdOf(m), m.organization_id)) || Boolean(projectIdOf(m) && props.canProject(projectIdOf(m), 'access.manage') && m.role !== 'manager'))} mutate={props.mutate}/>)}{!memberships.length && <p className="p-form-help">Sem vínculo neste contexto.</p>}{props.globalAdmin && id && !isAnonymized && <div className="p-user-admin">
+    </button>{user.status&&<span className={`p-badge ${isBlocked?'p-status-cancelled':'p-status-active'}`}>{isAnonymized?'Anonimizada':user.activationPending?'Ativação pendente':isBlocked?'Bloqueado':'Ativo'}</span>}</div>{memberships.map((m: Row) => <Membership key={`${m.id}-${m.role}`} member={m} globalAdmin={props.globalAdmin || Boolean(props.canManageManagers?.(projectIdOf(m), m.organization_id))} projectName={membershipScope(m, props)} editable={m.role !== 'owner' && (props.globalAdmin || Boolean(props.canManageManagers?.(projectIdOf(m), m.organization_id)) || Boolean(projectIdOf(m) && props.canProject(projectIdOf(m), 'access.manage') && m.role !== 'manager'))} mutate={props.mutate}/>)}{!memberships.length && <p className="p-form-help">Sem vínculo neste contexto.</p>}{props.globalAdmin && id && !isAnonymized && <div className="p-user-admin">
         <button className="p-text-link" disabled={busy||user.activationPending} onClick={() => void reset()}>
         <KeyRound size={15}/>{busy ? 'Aguarde…' : user.hasPassword ? 'Gerar recuperação de senha' : 'Gerar link para definir senha'}</button>{!hasOwner && (confirmBlock ? <div className="p-inline-confirm">
             <p>{isBlocked ? 'Reativar esta conta?' : 'Bloquear esta conta impede novos acessos. O histórico será preservado.'}</p>
@@ -267,7 +270,7 @@ export default function TeamPanel(props: Props) {
     <div className="p-section-heading">
     <div>
     <h2>Pessoas e acessos</h2>
-    <p>Clique em uma pessoa para ver seu perfil e os dados institucionais preenchidos. As permissões são definidas por projeto.</p>
+    <p>Consulte o perfil e os acessos de cada pessoa no Portal, na organização ou no projeto.</p>
     </div>
     {(props.globalAdmin || allowed.length > 0) && <a href="#team-invite-form" className="p-button p-button-primary"><UserPlus size={17} aria-hidden="true"/>Convidar pessoa</a>}
     </div>
@@ -280,17 +283,26 @@ export default function TeamPanel(props: Props) {
     </label>{filtered.length ? <div className="p-directory">{filtered.map((u, index) => <DirectoryUser key={u.userId ?? `${u.email}-${index}`} user={u} props={props} onOpen={setSelectedUserId}/>)}</div> : <div className="p-empty">
         <Users size={28}/>
         <h3>Nenhuma pessoa neste contexto</h3>
-        <p>Busque outro nome ou gere um convite para integrar a equipe.</p>
+        <p>Busque outro nome ou selecione outro projeto permitido.</p>
         </div>}</section>{(props.globalAdmin || allowed.length > 0) && <section className="p-section">
         <div className="p-section-heading">
         <div>
         <h2>Convidar uma pessoa</h2>
-        <p>Use o e-mail institucional ou pessoal. Escolha o projeto e a função conforme o trabalho da pessoa.</p>
+        <p>Use o e-mail institucional ou pessoal de quem precisa de acesso.</p>
         </div>
         </div>
         {official && <p className="p-form-help" role="status">Sugestão da fonte oficial: {official.name}. Confira o e-mail e escolha projeto e função. O nome é apenas referência; a pessoa define seu próprio perfil na ativação. {props.onClearOfficialSuggestion && <button type="button" className="p-text-link" disabled={saving} onClick={props.onClearOfficialSuggestion}>Limpar sugestão</button>}</p>}
-        <form id="team-invite-form" ref={inviteRef} className="p-form" onSubmit={invite} onChange={() => { if (!saving)
+        <form id="team-invite-form" tabIndex={-1} ref={inviteRef} className={`p-form ${styles.inviteForm}`} onSubmit={invite} onChange={() => { if (!saving)
             { key.current = null; setIssuedInvite(null); } }}>{!official && <DraftNotice draft={draft}/>}
+        <details className={styles.inviteGuide}>
+          <summary><ShieldCheck size={17} aria-hidden="true"/>Qual acesso escolher?<ChevronDown size={16} aria-hidden="true"/></summary>
+          <dl>
+            <div><dt>Administração e TI</dt><dd>A administração do Portal abrange todas as organizações. Cada organização também tem sua própria gestão. Organize o trabalho de TI em Equipes, com os acessos necessários por projeto.</dd></div>
+            <div><dt>Liderança de projeto</dt><dd>Escolha Gestor de projeto para quem coordena a ficha, as operações e os convites do projeto.</dd></div>
+            <div><dt>Atuação em uma frente</dt><dd>Escolha a função de eventos, materiais ou empréstimos. Na ficha, use Quem cuida de cada área para indicar a pessoa ou equipe.</dd></div>
+            <div><dt>Acesso restrito</dt><dd>Leitor consulta e pode receber autorização para atualizar uma demanda. Voluntário atende e entrega brindes em uma ação até o horário indicado.</dd></div>
+          </dl>
+        </details>
         <fieldset disabled={saving}>
         <div className="p-form-grid">
         {official && <label className="p-field"><span>Nome na fonte oficial</span><input id="team-invite-official-name" readOnly value={official.name} aria-label="Nome na fonte oficial"/></label>}
@@ -298,19 +310,19 @@ export default function TeamPanel(props: Props) {
         <span>E-mail da pessoa *</span>
         <input key={`email-${suggestionKey}`} name="email" type="email" required maxLength={254} autoComplete="off" placeholder="nome@exemplo.com" defaultValue={official?.email ?? ''}/>
         </label>
-        <label className="p-field">
-        <span id="invite-role-label">Função</span>
-        <select key={`role-${suggestionKey}`} name="role" value={activeInviteRole} required aria-labelledby="invite-role-label" aria-describedby="invite-role-help" onChange={event => { setInviteRole(event.target.value); setVolunteerCampaign(''); }}><option value="" disabled>Selecione a função</option>{Object.entries(roles).filter(([id]) => id !== 'owner' && (canInviteManager(inviteProject) || id !== 'manager')).map(([id, name]) => <option key={id} value={id}>{name}</option>)}{!official && <option value="volunteer">Voluntário de uma ação (com prazo)</option>}</select>
-        <small id="invite-role-help">{roleHelp[activeInviteRole] || 'Selecione uma função para ver o que ela permite.'}</small>
-        </label>
-        {inviteRole === 'volunteer' ? <input type="hidden" name="projectId" value={inviteProject}/> : <label className="p-field">
-        <span>Escopo do acesso</span>
-        <select key={`project-${suggestionKey}`} name="projectId" value={inviteProject} onChange={event => { const next=event.target.value; setInviteProject(next); setGlobalConfirmed(false); if (inviteRole === 'manager' && !canInviteManager(next)) setInviteRole(''); }} required><option value="" disabled>Selecione um projeto</option>{allowed.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}{props.globalAdmin && !official && <option value="__global__">Todos os projetos da PROEX UFG</option>}</select>
-        <small>{inviteProject === '__global__' ? 'A função vale para todos os projetos da PROEX UFG.' : 'A função vale para o projeto selecionado.'}</small>
+        {inviteRole === 'volunteer' ? <input type="hidden" name="projectId" value={chosenCampaign ? String(projectIdOf(chosenCampaign)) : ''}/> : <label className="p-field">
+        <span>Onde a pessoa vai atuar</span>
+        <select key={`project-${suggestionKey}`} name="projectId" value={inviteProject} aria-describedby="invite-project-help" onChange={event => { const next=event.target.value; setInviteProject(next); setGlobalConfirmed(false); if (inviteRole === 'manager' && !canInviteManager(next)) setInviteRole(''); }} required><option value="" disabled>Selecione um projeto</option>{allowed.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}{props.globalAdmin && !official && <option value="__global__">Todos os projetos da PROEX UFG</option>}</select>
+        <small id="invite-project-help">{inviteProject === '__global__' ? 'A função vale para todos os projetos da PROEX UFG.' : inviteProject || official ? 'A função vale para o projeto escolhido.' : 'Para voluntariado, escolha a função e depois a ação.'}</small>
         </label>}
+        <label className="p-field">
+        <span id="invite-role-label">Função de acesso</span>
+        <select key={`role-${suggestionKey}`} name="role" value={activeInviteRole} required aria-labelledby="invite-role-label" aria-describedby="invite-role-help" onChange={event => { setInviteRole(event.target.value); setVolunteerCampaign(''); setGlobalConfirmed(false); }}><option value="" disabled>Selecione a função</option>{Object.entries(projectAccessRoleLabels).filter(([id]) => id !== 'manager' || canInviteManager(inviteProject)).map(([id, name]) => <option key={id} value={id}>{name}</option>)}{!official && <option value="volunteer">Voluntário de uma ação (com prazo)</option>}</select>
+        <small id="invite-role-help" aria-live="polite">{roleHelp[activeInviteRole] || 'Selecione uma função para ver o que ela permite.'}</small>
+        </label>
         {inviteRole === 'volunteer' && <label className="p-field">
         <span>Ação do voluntário *</span>
-        <select name="campaignId" value={volunteerCampaign} onChange={event => { const chosen = volunteerCampaigns.find(campaign => campaign.id === event.target.value); setVolunteerCampaign(event.target.value); setInviteProject(chosen ? String(projectIdOf(chosen)) : ''); }} required disabled={!volunteerCampaigns.length}><option value="" disabled>{volunteerCampaigns.length ? 'Selecione a ação' : 'Nenhuma ação aberta nos seus projetos'}</option>{volunteerGroups.map(group => <optgroup key={group.project.id} label={group.project.name}>{group.campaigns.map(campaign => <option key={campaign.id} value={campaign.id}>{campaign.name}{campaign.status === 'draft' ? ' (em preparação)' : campaign.status === 'paused' ? ' (pausada)' : ''}</option>)}</optgroup>)}</select>
+        <select name="campaignId" value={volunteerCampaign} onChange={event => setVolunteerCampaign(event.target.value)} required disabled={!volunteerCampaigns.length}><option value="" disabled>{volunteerCampaigns.length ? 'Selecione a ação' : 'Nenhuma ação aberta nos seus projetos'}</option>{volunteerGroups.map(group => <optgroup key={group.project.id} label={group.project.name}>{group.campaigns.map(campaign => <option key={campaign.id} value={campaign.id}>{campaign.name}{campaign.status === 'draft' ? ' (em preparação)' : campaign.status === 'paused' ? ' (pausada)' : ''}</option>)}</optgroup>)}</select>
         <small>{volunteerCampaigns.length ? (chosenCampaign ? `Projeto: ${allowed.find(project => project.id === projectIdOf(chosenCampaign))?.name ?? ''}. A pessoa vê só o atendimento e os brindes desta ação.` : 'A pessoa vê só o atendimento e os brindes desta ação.') : 'Crie a dinâmica em Dinâmicas antes de convidar o voluntário.'}</small>
         </label>}
         {inviteRole === 'volunteer' && <label className="p-field">
@@ -319,7 +331,7 @@ export default function TeamPanel(props: Props) {
         <small>Sugerimos o fim da ação. Depois desse horário, o acesso termina sozinho e isso fica em Registros.</small>
         </label>}
         </div>
-        {props.globalAdmin && inviteProject === '__global__' && <label className="p-field"><span><input id="team-invite-global-confirm" type="checkbox" checked={globalConfirmed} onChange={event => setGlobalConfirmed(event.target.checked)} required/> Confirmo que esta pessoa pode atuar em todos os projetos da PROEX UFG, inclusive futuros.</span><small>Use este alcance somente para a equipe institucional autorizada. Esta confirmação não fica no rascunho.</small></label>}
+        {props.globalAdmin && inviteRole !== 'volunteer' && inviteProject === '__global__' && <label className="p-field"><span><input id="team-invite-global-confirm" type="checkbox" checked={globalConfirmed} onChange={event => setGlobalConfirmed(event.target.checked)} required/> Confirmo que esta pessoa pode atuar em todos os projetos da PROEX UFG, inclusive futuros.</span><small>Use este alcance somente para a equipe institucional autorizada. Esta confirmação não fica no rascunho.</small></label>}
         <div className="p-form-footer">{error && <p className="p-inline-error" role="alert">{error}</p>}<button className="p-button p-button-primary" type="submit">{saving ? <LoaderCircle size={17} className="p-spin"/> : <UserPlus size={17}/>}{saving ? 'Criando…' : 'Gerar convite'}</button>
         </div>
         </fieldset>
@@ -335,10 +347,10 @@ export default function TeamPanel(props: Props) {
                 return <div className="p-member" key={invite.id}>
                 <div>
                 <strong>{invite.email}</strong>
-                <small>{invite.volunteer_campaign_id ? `Voluntário · ${invite.volunteer_campaign_name || 'ação'}` : roles[invite.role]} · {projectIdOf(invite) ? props.projects.find(p => p.id === projectIdOf(invite))?.name : 'Organização'}</small>
+                <small>{invite.volunteer_campaign_id ? `Voluntário · ${invite.volunteer_campaign_name || 'ação'}` : accessRoleLabel(invite.role, invite.organization_id)} · {membershipScope(invite, props)}</small>
                 <small>{invite.volunteer_campaign_id ? `Link vale até ${moment(invite.expires_at ?? invite.expiresAt)} · acesso até ${moment(invite.volunteer_ends_at)}` : `Válido até ${moment(invite.expires_at ?? invite.expiresAt)}`}</small>
                 </div>
                 <span className="p-badge">{{ revoked: 'Revogado', accepted: 'Aceito', expired: 'Expirado', pending: 'Pendente' }[status]}</span>{(status === 'pending' || status === 'expired') && (props.globalAdmin || props.canProject(projectIdOf(invite), 'access.manage')) && <button className="p-button p-button-danger" onClick={() => void revokeInvite(invite.id)}>Revogar</button>}</div>;
             })}</div>
-        </section>}{selectedUserId&&<TeamPersonDetail key={`${selectedUserId}:${props.selectedProjectId||''}`} userId={selectedUserId} projectId={props.selectedProjectId} projects={props.projects.map(p=>({id:p.id,name:p.name}))} onClose={()=>setSelectedUserId(null)} onOpenOwnProfile={props.onOpenOwnProfile}/>}</>;
+        </section>}{selectedUserId&&<TeamPersonDetail key={`${selectedUserId}:${props.selectedProjectId||''}`} userId={selectedUserId} projectId={props.selectedProjectId} projects={props.projects.map(p=>({id:p.id,name:p.name}))} organizations={props.organizations ?? []} onClose={()=>setSelectedUserId(null)} onOpenOwnProfile={props.onOpenOwnProfile}/>}</>;
 }

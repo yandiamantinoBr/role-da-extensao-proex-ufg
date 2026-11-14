@@ -15,6 +15,9 @@ writeFileSync(join(temporary, 'catalog.js'), catalogCode);
 const { PROEX_TEAM, PROEX_TEAM_SOURCE, officialTeamPrefill, searchOfficialTeam, isPublishedInstitutionalEmail } = await import(url('catalog.js'));
 const invitationLink = ts.transpileModule(readFileSync(new URL('../lib/invitation-link.ts', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
 writeFileSync(join(temporary, 'invitation-link.js'), invitationLink);
+const labelsCode = ts.transpileModule(readFileSync(new URL('../lib/team-access-labels.ts', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
+writeFileSync(join(temporary, 'team-access-labels.js'), labelsCode);
+const { accessRoleLabel, accessScopeLabel } = await import(url('team-access-labels.js'));
 
 test('verified snapshot contains only sourced professional fields, with unique people and honest provenance', () => {
   assert.equal(PROEX_TEAM_SOURCE.url, 'https://proex.ufg.br/p/equipe-proex');
@@ -76,6 +79,7 @@ function component(name) {
   code = code.replace(/from ['"]react['"]/g, `from ${JSON.stringify(url('react.js'))}`).replace(/from ['"]react\/jsx-runtime['"]/g, `from ${JSON.stringify(url('jsx.js'))}`)
     .replace(/from ['"]\.\.\/\.\.\/lib\/catalog\/proex-team['"]/g, `from ${JSON.stringify(url('catalog.js'))}`)
     .replace(/from ['"]\.\.\/\.\.\/lib\/invitation-link['"]/g, `from ${JSON.stringify(url('invitation-link.js'))}`)
+    .replace(/from ['"]\.\.\/\.\.\/lib\/team-access-labels['"]/g, `from ${JSON.stringify(url('team-access-labels.js'))}`)
     .replace(/from ['"]\.\/[^'"]+\.css['"]/g, `from ${JSON.stringify(url('css.js'))}`)
     .replace(/import TeamPersonDetail from ['"]\.\/team-person-detail['"];?/, 'const TeamPersonDetail=()=>null;')
     .replace(/import TeamInviteShare from ['"]\.\/team-invite-share['"];?/, 'const TeamInviteShare="TeamInviteShare";')
@@ -206,4 +210,45 @@ test('organization administrators can choose project managers only inside their 
       assert.equal(nodes(tree, node => node.type === 'option' && node.props.value === '__global__').length, 0);
     }
   } finally { delete globalThis.__officialDraftKeys; }
+});
+
+test('the invitation explains access separately from team duties and keeps a volunteer bound to the chosen action', () => {
+  globalThis.__officialDraftKeys = [];
+  globalThis.__officialHarness = { slots: [], index: 0 };
+  const props = {
+    now: 0, users: [], members: [], invites: [], projects: [{ id: 'A', name: 'Projeto A' }, { id: 'B', name: 'Projeto B' }], selectedProjectId: 'A',
+    campaigns: [{ id: 'event-b', project_id: 'B', status: 'active', name: 'Ação B' }],
+    globalAdmin: true, canProject: () => true, mutate: async () => { throw new Error('not submitted'); },
+  };
+  const form = () => {
+    globalThis.__officialHarness.index = 0;
+    return nodes(TeamPanel(props), node => node.type === 'form')[0];
+  };
+  const select = (form, name) => nodes(form, node => node.type === 'select' && node.props.name === name)[0];
+  const change = (name, value) => select(form(), name).props.onChange({ target: { value } });
+  try {
+    const guide = nodes(form(), node => node.type === 'details')[0];
+    assert.equal(guide.props.open, undefined);
+    assert.equal(nodes(guide, node => node.type === 'dt').length, 4);
+    assert.deepEqual(nodes(form(), node => node.type === 'select').map(node => node.props.name), ['projectId', 'role']);
+    change('projectId', '__global__');
+    change('role', 'volunteer');
+    assert.equal(select(form(), 'projectId'), undefined);
+    assert.equal(nodes(form(), node => node.props.id === 'team-invite-global-confirm').length, 0);
+    change('campaignId', 'event-b');
+    assert.equal(nodes(form(), node => node.type === 'input' && node.props.name === 'projectId')[0].props.value, 'B');
+    change('role', 'viewer');
+    assert.equal(select(form(), 'projectId').props.value, '__global__');
+    assert.equal(nodes(form(), node => node.props.id === 'team-invite-global-confirm')[0].props.checked, false);
+    assert.equal(nodes(form(), node => node.type === 'option' && node.props.value === 'owner').length, 0);
+  } finally { delete globalThis.__officialHarness; delete globalThis.__officialDraftKeys; }
+});
+
+test('administration labels show the actual platform or organization scope', () => {
+  const organizations = [{ id: 'org-a', name: 'Organização A' }];
+  assert.equal(accessRoleLabel('owner', null), 'Administração do Portal');
+  assert.equal(accessScopeLabel('owner', null, null, [], organizations), 'Todas as organizações do Portal');
+  assert.equal(accessRoleLabel('owner', 'org-a'), 'Administração da organização');
+  assert.equal(accessScopeLabel('owner', null, 'org-a', [], organizations), 'Organização A');
+  assert.equal(accessRoleLabel('manager', 'org-a'), 'Gestor de projeto');
 });
