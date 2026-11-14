@@ -10,6 +10,8 @@ Referência pública: [organograma da PROEX UFG](https://files.cercomp.ufg.br/we
 
 A migração 0029 cria três tabelas vazias. O administrador precisa abrir a prévia, conferir os nomes e aplicar explicitamente o modelo, apenas em uma estrutura ainda vazia. A prévia é editável. A fonte guardada registra a proveniência; não certifica alterações feitas na instituição. Prévia editada e edições posteriores das unidades marcam a estrutura como adaptada. Fonte manual não recebe o endereço do documento oficial automaticamente.
 
+Em Equipes → Estrutura institucional, use **Nova unidade** no cabeçalho para começar uma raiz ou o botão de adicionar na própria unidade para preencher a superior e iniciar com subordinação. Escolha Governança quando a relação for colegiada ou consultiva. Ao salvar, o Portal abre o ramo que recebeu a nova unidade.
+
 ## Autorização e armazenamento
 
 - `institutional_structures`: um cabeçalho por organização, proveniência e versão CAS global.
@@ -34,9 +36,13 @@ Até 200 unidades por organização, oito níveis, 500 vínculos ativos e 500 eq
 
 PDF, DOCX e XLSX usam os geradores e a marca existentes. Campos permitidos: nomes/siglas/tipos das unidades, nome do superior, tipo de relação, situação e nomes das equipes autorizadas. Proveniência, recorte, versão e horário acompanham o documento. Não exportar identificadores internos, pessoas, contatos, notas privadas, URLs de equipes ou dados de projetos relacionados.
 
-A exportação consulta novamente o mesmo recorte antes de produzir o artefato e novamente antes de baixar. Conta, organização, projeto, filtro de arquivados e época do componente precisam continuar iguais. Revogação, resposta tardia ou mudança de dados impedem o download. Os arquivos não alegam acesso completo a equipes da instituição quando o usuário só vê seu recorte.
+A rota autenticada `GET /api/institutional-structure/export` usa os mesmos filtros e valida a sessão e o conteúdo antes e depois de gerar o arquivo. Na tela, a última leitura do mesmo recorte é comparada com a identificação do documento antes de entregá-lo ao navegador. Troca de conta, organização, projeto ou filtro, revogação e mudanças de conteúdo interrompem o download. As respostas são privadas e sem cache.
+
+O navegador pede o arquivo completo ao servidor. Se uma aba aberta antes da implantação ainda pedir o código antigo e mostrar erro, recarregue a página uma vez antes de exportar.
 
 ## Validação desta frente
+
+Em 14/11/2026, a bancada local com servidor compilado aplicou a referência de 11 unidades, acrescentou uma coordenação fictícia e conferiu a distinção entre subordinação e governança. PDF de duas páginas, DOCX e XLSX foram baixados e tiveram seu conteúdo relido. No Chrome, o atalho de criação a partir da superior exibiu o formulário, salvou a unidade e abriu o ramo. Os três botões de exportação funcionaram em uma sessão autenticada. Também foram testadas a ausência de sessão, a troca de conta, o projeto vizinho e a revogação durante a preparação. A verificação usa dados sintéticos locais.
 
 Backend inicial: `0928dbe` e `81ad4c7`. Onze testes novos verificam SQLite real e proteção de rotas; junto dos nove de Equipes e três de migração preservada, 23/23 passaram. Tipos e lint focal passaram. Casos cobertos: duas organizações, três formas de não autorização, fonte editada, nomes longos, ciclos e pais inválidos via SQL direto, arquivamento/restauração, limites, concorrência, replay e revogação durante leitura/escrita. A migração preserva os registros anteriores e passa `foreign_key_check`.
 
