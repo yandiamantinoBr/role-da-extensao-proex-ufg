@@ -5,6 +5,7 @@ import { newAssistantConfig, object, onlyKeys, storedConfigJson } from './contra
 import { credentialKeyId, decryptProviderCredentials, encryptProviderCredentials, type CredentialKeys } from './crypto';
 import { looksLikeSecret, parseCatalog, safeBaseUrl, validateModel, validateProvider, VAULT_KEYS, type CatalogProvider, type ModelCatalog } from './model-catalog';
 import { boundedJson } from './generic-provider';
+import { requestProvider } from './provider-transport';
 /** Same rule as settings.validProviderKey (kept local to avoid an import cycle). */
 const validProviderKey = (value: unknown): value is string => typeof value === 'string' && value.length >= 12 && value.length <= 512 && !/\s|[\u0000-\u001f]/u.test(value);
 
@@ -18,10 +19,10 @@ function findNumber(value: unknown, pattern: RegExp, depth = 0): number | null {
   return null;
 }
 /** Artificial Analysis Data API (x-api-key). Tolerant to field names; only names and the intelligence index are used. */
-async function referenceModels(baseUrl: string, apiKey: string, fetcher: typeof fetch = fetch) {
+async function referenceModels(baseUrl: string, apiKey: string, fetcher?: typeof fetch) {
   let data: Record<string, unknown>;
   try {
-    data = await boundedJson(await fetcher(`${safeBaseUrl(baseUrl)}/language/models`, { method: 'GET', redirect: 'error', cache: 'no-store', headers: { 'x-api-key': apiKey, Accept: 'application/json' } }), 4 * 1024 * 1024);
+    data = await boundedJson(await requestProvider(`${safeBaseUrl(baseUrl)}/language/models`, { method: 'GET', headers: { 'x-api-key': apiKey, Accept: 'application/json' } }, fetcher), 4 * 1024 * 1024);
   } catch (error) { if (error instanceof HttpError) throw error; throw new HttpError(503, 'O Artificial Analysis não respondeu.', 'reference_unavailable'); }
   if (JSON.stringify(data).includes(apiKey)) throw new HttpError(502, 'Resposta inesperada do Artificial Analysis.', 'reference_schema');
   const list = Array.isArray(data.data) ? data.data : Array.isArray(data) ? data as unknown[] : [];

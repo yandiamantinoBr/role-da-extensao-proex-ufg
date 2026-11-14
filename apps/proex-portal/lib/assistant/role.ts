@@ -12,7 +12,7 @@ import {
 import { ROLE_TOOL_NAMES, ROLE_TOOLS, resolveRoleScope, roleScopes, runRoleTool, type RoleToolResult } from './role-tools';
 import { ROLE_SUGGESTION_DAYS, roleSuggestions } from './role-suggestions';
 import { containsCredential } from './sensitive';
-import { ChargedError, firstJsonObject, genericChat } from './generic-provider';
+import { ChargedError, firstJsonObject, genericChat, requireConversationEndpoint } from './generic-provider';
 import { fitsFunction, type CatalogModel, type CatalogProvider, type ModelCatalog } from './model-catalog';
 import { loadCatalog } from './model-catalog-store';
 import { catalogPricing, type RolePricing, type SpeechRouteModel } from './role-contracts';
@@ -362,7 +362,7 @@ export function operationNumbersAllowed(operation: string, userTexts: string[]):
 }
 
 /** Catalog models: same prompt and limits; JSON parsed leniently, plain text kept as the reply. */
-async function catalogDispatch(chosen: Extract<Route, { kind: 'catalog' }>, turns: RoleTurn[], message: string, projectName: string, image: string | null, signal: AbortSignal, fetcher: typeof fetch) {
+async function catalogDispatch(chosen: Extract<Route, { kind: 'catalog' }>, turns: RoleTurn[], message: string, projectName: string, image: string | null, signal: AbortSignal, fetcher?: typeof fetch) {
   const result = await genericChat({ provider: chosen.provider, model: chosen.model, apiKey: chosen.apiKey, system: ROLE_SYSTEM_PROMPT, maxTokens: ROLE_MAX_OUTPUT_TOKENS, json: chosen.provider.kind === 'openai_chat', signal, fetcher,
     turns: [...turns, { role: 'user', content: `Projeto atual: ${projectName}\nMensagem: ${message}`, image }] });
   if (result.outputTokens > ROLE_MAX_OUTPUT_TOKENS * 2) throw new ChargedError('O modelo passou do limite de resposta. O custo foi registrado.', result.costMicros, result.inputTokens + result.outputTokens);
@@ -388,6 +388,7 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
   const scope = await resolveRoleScope(db, current, organizationId, input.scope);
   if (image && !state.visionAvailable) throw new HttpError(503, 'A leitura de imagens não está ligada nesta organização. Envie só o texto.', 'role_vision_unavailable');
   const chosen = (image ? state.vision : state.text)!;
+  if (chosen.kind === 'catalog') requireConversationEndpoint(chosen.provider, options.fetcher);
   const provider = chosen.kind === 'catalog' ? chosen.provider.id : chosen.provider, modelName = chosen.kind === 'catalog' ? chosen.model.model : ROLE_MODELS[chosen.provider].model;
   const apiKey = chosen.apiKey;
   const toolsOn = chosen.kind === 'legacy', timeoutMs = roleTimeoutMs(config.timeoutMs, toolsOn);
@@ -426,7 +427,7 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
     const startedAt = Date.now();
     const result: { reply: string; operation: string | null; inputTokens: number; outputTokens: number; costMicros: number; tools?: { name: string; rows: number }[]; sources?: RoleSource[]; steps?: number } = chosen.kind === 'legacy'
       ? await dispatchWithTools(chosen.provider, apiKey, transportBody(chosen.provider, turns, message, projectName, image?.dataUrl ?? null, brasiliaToday(now), scope.label), (name, args, budget) => runRoleTool(db, current, organizationId, name, args, budget, scope), controller.signal, options.fetcher ?? fetch)
-      : await catalogDispatch(chosen, turns, message, projectName, image?.dataUrl ?? null, controller.signal, options.fetcher ?? fetch);
+      : await catalogDispatch(chosen, turns, message, projectName, image?.dataUrl ?? null, controller.signal, options.fetcher);
     const dropped = !!result.operation && !operationNumbersAllowed(result.operation, [message, ...turns.filter(turn => turn.role === 'user').map(turn => turn.content)]);
     if (dropped) result.operation = null;
     const extraCost = Math.max(0, result.costMicros - estimate.costMicros), extraTokens = Math.max(0, result.inputTokens + result.outputTokens - estimate.tokens), elapsed = Date.now() - startedAt;
