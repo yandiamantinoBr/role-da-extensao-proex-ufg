@@ -613,6 +613,23 @@ test('Jev is optional typed confirmation; low confidence blocks the proposal and
   assert.equal(preview.plan.provenance.jevModel, 'jev-1.14.0'); assert.equal(good.calls, 2);
  } finally { f.native.close(); }
 });
+test('Jev reviews a record for title and facts without asking for a stock quantity', async () => {
+ const f = fixture();
+ try {
+  await configureAssistant(f.db, f.actors.owner, configInput({ jevEnabled: true }, { typesafeKey: key }), secret);
+  const note = 'Registrar ocorrência: montagem concluída.';
+  const provider = fakeProvider({ proposal: { intent: 'record.create', itemId: null, quantity: 0, title: 'Montagem da oficina', body: 'Montagem concluída.', evidence: [{ source: 'request', quote: 'montagem concluída' }] }, decision: { confidence: 0.4 } });
+  let prompt;
+  const fetcher = async (url, init) => {
+   if (String(url).includes('typesafe')) prompt = JSON.parse(init.body).questions.faithful;
+   return provider.fetch(url, init);
+  };
+  await assert.rejects(prepareAssistantPlan(f.db, f.actors.manager, request({ request: note }), secret, { fetcher }), { code: 'assistant_needs_review', message: /título e os fatos/ });
+  assert.match(prompt.instructions, /título e os fatos/);
+  assert.match(prompt.criteria.supported, /sem movimentação de estoque/);
+  assert.equal(f.native.prepare('SELECT COUNT(*) n FROM ai_plans').get().n, 0);
+ } finally { f.native.close(); }
+});
 test('normal domain idempotency recovers a crash after movement without duplicating physical effects', async () => {
  const f = fixture(), provider = fakeProvider(); try {
   await configureAssistant(f.db, f.actors.owner, configInput(), secret); const preview = await prepareAssistantPlan(f.db, f.actors.inventory, request(), secret, { fetcher: provider.fetch });
