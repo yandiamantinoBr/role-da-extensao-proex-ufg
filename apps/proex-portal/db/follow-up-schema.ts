@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { check, index, integer, primaryKey, sqliteTable, text, unique, uniqueIndex } from 'drizzle-orm/sqlite-core';
-import { organizations, projects, members, portalUsers, items, campaigns, loans } from './base-schema';
+import { organizations, projects, members, portalUsers, items, campaigns, loans, projectScheduleItems } from './base-schema';
 
 // Export these tables from db/schema.ts when integrating 0014. Runtime SQL owns
 // relationship/immutability triggers; Drizzle has no trigger model.
@@ -27,7 +27,8 @@ export const followupHistory = sqliteTable('followup_history', {
 },t=>[uniqueIndex('followup_history_version_idx').on(t.taskId,t.version)]);
 export const followupChecklists = sqliteTable('followup_checklists', {
  id:text('id').primaryKey().notNull(),organizationId:text('organization_id').notNull().references(()=>organizations.id),projectId:text('project_id').notNull().references(()=>projects.id),campaignId:text('campaign_id').references(()=>campaigns.id),taskId:text('task_id').notNull().unique().references(()=>followupTasks.id),title:text('title').notNull(),kind:text('kind').notNull().default('materials'),status:text('status').notNull().default('open'),version:integer('version').notNull().default(1),createdBy:text('created_by').notNull(),createdAt:text('created_at').notNull(),updatedAt:text('updated_at').notNull(),
-},t=>[check('followup_checklist_kind',sql`${t.kind} IN ('materials','activity')`),check('followup_checklist_title',sql`length(${t.title}) BETWEEN 1 AND 160`),check('followup_checklist_status',sql`${t.status} IN ('open','completed')`),check('followup_checklist_version',sql`${t.version}>0`)]);
+ scheduleItemId:text('schedule_item_id').references(()=>projectScheduleItems.id),
+},t=>[index('followup_checklists_schedule_idx').on(t.scheduleItemId,t.taskId),check('followup_checklist_kind',sql`${t.kind} IN ('materials','activity')`),check('followup_checklist_title',sql`length(${t.title}) BETWEEN 1 AND 160`),check('followup_checklist_status',sql`${t.status} IN ('open','completed')`),check('followup_checklist_version',sql`${t.version}>0`)]);
 export const followupChecklistItems = sqliteTable('followup_checklist_items', {
  id:text('id').primaryKey().notNull(),checklistId:text('checklist_id').notNull().references(()=>followupChecklists.id),itemId:text('item_id').notNull().references(()=>items.id),size:text('size').notNull().default(''),expected:integer('expected').notNull(),counted:integer('counted'),damaged:integer('damaged').notNull().default(0),note:text('note').notNull().default(''),
 },t=>[unique().on(t.checklistId,t.itemId,t.size),check('followup_checklist_size',sql`length(${t.size})<=40`),check('followup_checklist_expected',sql`${t.expected} BETWEEN 0 AND 1000000`),check('followup_checklist_counted',sql`${t.counted} IS NULL OR ${t.counted} BETWEEN 0 AND 1000000`),check('followup_checklist_damaged',sql`${t.damaged}>=0`),check('followup_checklist_note',sql`length(${t.note})<=600`),check('followup_checklist_damage_limit',sql`(${t.counted} IS NULL AND ${t.damaged}=0) OR (${t.counted} IS NOT NULL AND ${t.damaged}<=${t.counted})`)]);

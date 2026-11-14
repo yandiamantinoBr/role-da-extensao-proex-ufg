@@ -40,6 +40,19 @@ test('a project documents link survives reload and selecting another module clea
     assert.equal(read('module=records&view=unknown').recordsView,undefined);
 });
 
+test('activity fronts preserve the selected commitment without carrying it into general modules',()=>{
+    const fronts=read('module=demands&project=project-a&scheduleItemId=sparks&demandId=front-a');
+    assert.equal(fronts.demandsScheduleItemId,'sparks');
+    assert.equal(fronts.demand,'front-a');
+    assert.equal(read('module=demands&scheduleItemId=foo/bar').demandsScheduleItemId,undefined);
+    assert.equal(read('module=overview&scheduleItemId=sparks').demandsScheduleItemId,undefined);
+    let location;
+    const history={state:null,pushState(_state,_title,url){location=url.href;}};
+    const href=origin+'/?module=demands&project=project-a&scheduleItemId=sparks&demandId=front-a';
+    commitPortalLocation(history,href,{...fronts,tab:'projects'},true);
+    assert.equal(new URL(location).searchParams.get('scheduleItemId'),null);
+});
+
 test('module navigation retains each view, replaces filter edits, and restores both directions', () => {
     const entries = [origin + '/'];
     const routerState = { frameworkState: true };
