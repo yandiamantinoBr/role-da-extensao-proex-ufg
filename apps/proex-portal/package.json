@@ -41,6 +41,7 @@
     "pdfjs-dist": "6.4.299",
     "pngjs": "7.0.0",
     "postgres": "3.4.9",
+    "qrcode-generator": "2.0.4",
     "radix-ui": "^1.6.7",
     "react": "19.2.6",
     "react-day-picker": "^10.0.1",

@@ -328,6 +328,42 @@ test('account endpoint rejects cross-origin or incomplete requests before issuin
   assert.equal(f.sqlite.prepare('SELECT COUNT(*) n FROM auth_user').get().n, 0);
 });
 
+test('invite inspection accepts the code in the body and preserves legacy reads without writing', async t => {
+  const f = fixture(t);
+  const email = 'invite-preview@example.test';
+  f.seedPrincipal('inviting-owner', 'owner@example.test', { role: 'owner' });
+  const owner = await getActor(f.db, { userId: 'inviting-owner', email: 'owner@example.test', displayName: 'Responsável' });
+  const invite = await accessAction(f.db, owner, 'invite.create', { email, role: 'viewer', globalAccess: true, operationKey: crypto.randomUUID() }, origin, f.runtimeEnv.BETTER_AUTH_SECRET);
+  const token = new URL(invite.inviteUrl).searchParams.get('token');
+  const snapshot = () => f.sqlite.prepare('SELECT total_changes() n').get().n;
+  const changes = snapshot();
+  const input = { action: 'inspectInvite', token };
+
+  for (const options of [{ requestOrigin: 'https://outside.example.test' }, { omitHeader: 'Origin' }, { omitHeader: 'X-Proex-Action' }]) {
+    const rejected = await accountRequest(f, input, options);
+    assert.equal(rejected.status, 403);
+    assert.doesNotMatch(await rejected.text(), new RegExp(email));
+  }
+
+  const inspected = await accountRequest(f, input);
+  assert.equal(inspected.status, 200);
+  assert.equal(inspected.headers.get('Cache-Control'), 'private, no-store');
+  assert.equal(inspected.headers.get('Referrer-Policy'), 'no-referrer');
+  assert.equal(inspected.headers.get('X-Robots-Tag'), 'noindex, nofollow');
+  assert.equal(inspected.headers.getSetCookie().length, 0);
+  assert.deepEqual(await inspected.json(), { email, role: 'viewer', accepted: false, projectName: null, volunteer: null });
+  const legacy = await accountGet(new Request(`${origin}/api/account?token=${token}`));
+  assert.equal(legacy.status, 200);
+  assert.equal((await legacy.json()).email, email);
+  assert.equal(snapshot(), changes);
+
+  for (const invalid of [null, ['invalid'], 'short']) assert.equal((await accountRequest(f, { ...input, token: invalid })).status, 400);
+  f.sqlite.prepare('UPDATE invites SET expires_at=? WHERE id=?').run('2000-01-01T00:00:00.000Z', invite.id);
+  assert.equal((await accountRequest(f, input)).status, 410);
+  f.sqlite.prepare('UPDATE invites SET expires_at=?, revoked_at=? WHERE id=?').run(invite.expiresAt, new Date().toISOString(), invite.id);
+  assert.equal((await accountRequest(f, input)).status, 410);
+});
+
 test('account login admits only an active canonical registration and preserves the login cookie', async t => {
   const f = fixture(t), { user } = await createAccount(f);
   const input = { action: 'login', email: user.email, password: originalPassword };

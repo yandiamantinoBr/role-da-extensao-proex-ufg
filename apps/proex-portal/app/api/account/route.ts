@@ -16,6 +16,14 @@ function password(value:unknown){if(typeof value!=='string'||value.length<12||va
 async function invitation(db:D1Database,token:string){if(!/^[A-Za-z0-9_-]{32,120}$/.test(token))throw new HttpError(400,'Convite inválido.');const i=await one(db,'SELECT * FROM invites WHERE token_hash=?',[await tokenHash(token)]);if(!i||i.revoked_at||i.expires_at<=iso())throw new HttpError(410,'O convite expirou ou foi revogado. Peça outro link.');return i;}
 function safePath(value:unknown){return typeof value==='string'&&value.startsWith('/')&&!value.startsWith('//')&&!value.startsWith('/api/')?value:'/';}
 function privateResponse(r:Response){r.headers.set('Cache-Control','private, no-store');return r;}
+async function inspectInvitation(db:D1Database, token:string){
+ const i=await invitation(db,token);
+ return Response.json({
+  email:i.email,role:i.role,accepted:!!i.accepted_at,
+  projectName:i.project_id?(await one(db,'SELECT name FROM projects WHERE id=?',[i.project_id]))?.name:null,
+  volunteer:await one(db,'SELECT c.name AS campaignName,s.ends_at AS endsAt FROM invite_campaign_scopes s JOIN campaigns c ON c.id=s.campaign_id WHERE s.invite_id=?',[i.id]),
+ },{headers:{'Cache-Control':'private, no-store','Referrer-Policy':'no-referrer','X-Robots-Tag':'noindex, nofollow'}});
+}
 async function admittedSignIn(db:D1Database,auth:Awaited<ReturnType<typeof authForRequest>>,email:string,secret:string,h:Headers,callbackURL='/',expected?:{userId:string;credentialId:string}){
  const response=await auth.api.signInEmail({body:{email,password:secret,callbackURL,rememberMe:true},headers:h,asResponse:true});
  if(!response.ok)return privateResponse(response);
@@ -28,10 +36,12 @@ async function admittedSignIn(db:D1Database,auth:Awaited<ReturnType<typeof authF
  return privateResponse(response);
 }
 async function ownPrivacy(db:D1Database,user:NonNullable<Awaited<ReturnType<typeof getPortalUser>>>){const actor=await getActor(db,user);if(!actor)throw new HttpError(403,'Seu acesso mudou. Entre novamente.','account_blocked');return listPrivacyRequests(db,actor);}
-export async function GET(request:Request){try{const url=new URL(request.url),token=url.searchParams.get('token');if(token){const i=await invitation(database(),token);return Response.json({email:i.email,role:i.role,accepted:!!i.accepted_at,projectName:i.project_id?(await one(database(),'SELECT name FROM projects WHERE id=?',[i.project_id]))?.name:null,volunteer:await one(database(),'SELECT c.name AS campaignName,s.ends_at AS endsAt FROM invite_campaign_scopes s JOIN campaigns c ON c.id=s.campaign_id WHERE s.invite_id=?',[i.id])},{headers:{'Cache-Control':'no-store'}});}const user=await getPortalUser();const action=url.searchParams.get('action');if(action==='identifiers'||action==='privacy'){if(!user)throw new HttpError(401,'Entre para continuar.');const db=database();const result=action==='identifiers'?await identifierSettings(db,user.userId,user.email):await ownPrivacy(db,user);return Response.json(result,{headers:{'Cache-Control':'private, no-store'}});}return Response.json({user:user?{userId:user.userId,email:user.email,displayName:user.displayName,hasPassword:user.hasPassword,source:user.source}:null},{headers:{'Cache-Control':'no-store'}});}catch(e){return publicError(e);}}
+export async function GET(request:Request){try{const url=new URL(request.url),token=url.searchParams.get('token');if(token)return await inspectInvitation(database(),token);const user=await getPortalUser();const action=url.searchParams.get('action');if(action==='identifiers'||action==='privacy'){if(!user)throw new HttpError(401,'Entre para continuar.');const db=database();const result=action==='identifiers'?await identifierSettings(db,user.userId,user.email):await ownPrivacy(db,user);return Response.json(result,{headers:{'Cache-Control':'private, no-store'}});}return Response.json({user:user?{userId:user.userId,email:user.email,displayName:user.displayName,hasPassword:user.hasPassword,source:user.source}:null},{headers:{'Cache-Control':'no-store'}});}catch(e){return publicError(e);}}
 export async function POST(request:Request){try{
  const origin=new URL(request.url).origin;if(request.headers.get('Origin')!==origin||request.headers.get('X-Proex-Action')!=='1'||!request.headers.get('content-type')?.includes('application/json'))throw new HttpError(403,'Atualize a página e tente novamente.','invalid_origin');
- const input=await boundedJson(request,12000),db=database(),h=await headers();
+ const input=await boundedJson(request,12000),db=database();
+ if(input.action==='inspectInvite')return await inspectInvitation(db,typeof input.token==='string'?input.token:'');
+ const h=await headers();
  if(input.action==='login'){
   const identifier=input.identifier??input.email;await accountRate(db,request,await loginRateSubject(inviteSecret(),identifier));if(typeof input.password!=='string'||input.password.length>128)throw new HttpError(401,'Identificador ou senha inválidos.');
   const admitted=await resolveLogin(db,inviteSecret(),identifier);
