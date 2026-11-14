@@ -74,10 +74,12 @@ export default function ExportFormats({ onExport, disabled, label = 'Baixar reco
     setBusy(format); setError('');
     try {
       await onExport(format);
-      if (announce) toast.success(`Arquivo ${FORMAT_META[format].extension} pronto para baixar.`);
+      if (announce) toast.success(`Arquivo ${FORMAT_META[format].extension} preparado. Confira os downloads do navegador.`);
     } catch (cause) {
       if (cause instanceof ExportHandledError || (cause instanceof Error && cause.name === 'AbortError')) return;
-      setError(cause instanceof Error ? cause.message : 'Não foi possível preparar o arquivo. Tente novamente.');
+      const message = cause instanceof Error ? cause.message : '';
+      const outdatedPage = /loading chunk|dynamically imported module|loading css chunk|importing a module script|module script.*failed/i.test(message);
+      setError(outdatedPage ? 'Recarregue a página do Portal e tente baixar novamente.' : message || 'Não foi possível preparar o arquivo. Tente novamente.');
       if (announce) toast.error('O arquivo não foi preparado. Confira o aviso junto às exportações.');
     } finally { setBusy(null); }
   }

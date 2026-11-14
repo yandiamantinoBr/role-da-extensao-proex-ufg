@@ -21,7 +21,7 @@ export function compile(file, replacements = new Map(), cache = new Map()) {
   code = code.replace(/from (['"])(@\/[^'"]+|\.{1,2}\/[^'"]+)\1/g, (_match, _quote, dependency) => {
     const target = dependency.startsWith('@/') ? resolve(root, dependency.slice(2)) : resolve(dirname(file), dependency);
     return `from ${JSON.stringify(compile(target.endsWith('.ts') ? target : `${target}.ts`, replacements, cache))}`;
-  });
+  }).replace(/import\(['"](pdf-lib|@pdf-lib\/fontkit)['"]\)/g, (_match, name) => `import(${JSON.stringify(import.meta.resolve(name))})`);
   const result = moduleUrl(`${code}\n//# sourceURL=${file.replace(root, '').replaceAll('\\', '/')}-under-test.mjs`);
   cache.set(file, result);
   return result;

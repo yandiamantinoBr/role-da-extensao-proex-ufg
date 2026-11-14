@@ -1,7 +1,7 @@
 'use client';
 import DateField from './date-field';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ArrowRight, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Copy, Download, ExternalLink, FileText, Link2, ListChecks, LoaderCircle, RefreshCw, Search, ShieldCheck, X } from 'lucide-react';
 import type { CalendarCategory, CalendarEntry } from '@/lib/calendar';
 import styles from './calendar-panel.module.css';
@@ -9,6 +9,8 @@ import { groupUnits } from '@/lib/extension-catalog';
 import { isCivilDate, offsetCivilDate } from '@/lib/civil-date';
 import { listSearch } from '@/lib/list-search';
 import { calendarDestination } from '@/lib/calendar-links';
+import ExportFormats from './export-formats';
+import { download } from './report-export';
 
 type Feed = { id: string; category: CalendarCategory; project_id: string | null; project_name: string | null; created_at: string; expires_at: string; revoked_at: string | null };
 type CalendarData = { entries: CalendarEntry[]; feeds: Feed[]; availableCategories: CalendarCategory[] };
@@ -36,7 +38,8 @@ function when(event: CalendarEntry): string {
   return `${format.format(new Date(event.startsAt))} → ${format.format(new Date(event.endsAt))}`;
 }
 
-export default function CalendarPanel({ projects: sourceProjects, organizationalUnits, selectedProjectId, selectedUnitId, onProjectChange, onUnitChange, canOpenModule }: {
+export default function CalendarPanel({ viewerId, projects: sourceProjects, organizationalUnits, selectedProjectId, selectedUnitId, onProjectChange, onUnitChange, canOpenModule }: {
+  viewerId: string;
   projects: Record<string, unknown>[];
   organizationalUnits: Record<string, unknown>[];
   selectedProjectId: string;
@@ -107,6 +110,8 @@ export default function CalendarPanel({ projects: sourceProjects, organizational
   const cancelledCount = matchingEntries.filter(event => event.status === 'CANCELLED').length;
   const visibleEntries = showCancelled ? matchingEntries : matchingEntries.filter(event => event.status !== 'CANCELLED');
   const shown = selectedDay ? visibleEntries.filter(event => inDay(event, selectedDay)) : visibleEntries;
+  const pdfJob = useRef<AbortController | null>(null);
+  useLayoutEffect(() => () => pdfJob.current?.abort(), [viewerId, requestKey, selectedDay, showCancelled, search]);
   const today = civilDay(new Date(mountedAt));
   const totalMap = new Map<CalendarCategory, number>(); for (const event of visibleEntries) totalMap.set(event.category, (totalMap.get(event.category) ?? 0) + 1);
   const totals = [...totalMap].sort((a, b) => b[1] - a[1]);
@@ -114,6 +119,50 @@ export default function CalendarPanel({ projects: sourceProjects, organizational
   const scopeName = project?.name || String(unit?.name || 'Todos os projetos permitidos');
   const downloadLabel=validRange?`Baixar .ics de ${from.split('-').reverse().join('/')} a ${to.split('-').reverse().join('/')}`:'Informe um período válido para baixar';
   const filteredContext = Boolean(projectId || unitId || category!=='all' || from!==initial.from || to!==initial.to || search.trim() || showCancelled);
+  async function exportPdf() {
+    if (!shown.length || !viewerId || !data) return;
+    const controller = new AbortController();
+    pdfJob.current = controller;
+    const original = JSON.stringify(shown);
+    async function verify() {
+      const response = await fetch(`/api/calendar?${query}`, {
+        cache: 'no-store', credentials: 'same-origin', redirect: 'error',
+        headers: { 'X-Proex-Viewer': viewerId }, signal: controller.signal,
+      });
+      if (!response.ok || response.headers.get('X-Proex-Viewer') !== viewerId) {
+        setReload(value => value + 1);
+        throw new Error('Não foi possível confirmar o acesso à agenda. Atualize a consulta.');
+      }
+      const fresh = await response.json() as CalendarData;
+      controller.signal.throwIfAborted();
+      const current = fresh.entries.filter(event => matches([event.title, event.projectName, event.location])
+        && (showCancelled || event.status !== 'CANCELLED') && (!selectedDay || inDay(event, selectedDay)));
+      if (JSON.stringify(current) !== original) {
+        setResult({ key: requestKey, data: fresh, error: '', receivedAt: Date.now() });
+        throw new Error('A agenda mudou. Confira a lista atualizada e baixe novamente.');
+      }
+    }
+    try {
+      await verify();
+      const { toPdf } = await import('./report-pdf');
+      const columns = [{ key: 'event', label: 'Compromisso' }, { key: 'when', label: 'Data e horário' }, { key: 'context', label: 'Projeto e local' }];
+      const rows = shown.map(event => ({
+        event: [event.title, labels[event.category], event.status === 'CANCELLED' ? 'Cancelado / arquivado' : event.state === 'tentative' ? 'A confirmar' : event.state === 'done' ? 'Concluída' : ''].filter(Boolean).join('\n'),
+        when: when(event), context: [event.projectName, event.location].filter(Boolean).join('\n'),
+      }));
+      const info: [string, string][] = [
+        ['Período', selectedDay ? prettyDay(selectedDay) : `${prettyDay(from)} a ${prettyDay(to)}`],
+        ['Recorte', scopeName], ['Horário', 'Brasília'], ['Compromissos', String(rows.length)],
+      ];
+      const blob = await toPdf('Agenda da PROEX', columns, rows, (row, key) => row[key], info,
+        { presentation: { layout: 'table', columnWeights: [1.5, 1, 1.25] } });
+      await verify();
+      controller.signal.throwIfAborted();
+      download(`agenda-proex-${selectedDay || from}.pdf`, blob);
+    } finally {
+      if (pdfJob.current === controller) pdfJob.current = null;
+    }
+  }
   function clearFilters() {
     searchField.current?.focus({preventScroll:true});
     onUnitChange('');
@@ -178,6 +227,7 @@ export default function CalendarPanel({ projects: sourceProjects, organizational
     </section>
     <section className={`p-card ${styles.listCard}`} id="calendar-day-entries" aria-labelledby="calendar-day-heading">
       <div className="p-card-title"><div><h3 ref={listHeading} id="calendar-day-heading" className={styles.listHeading} tabIndex={-1}>{selectedDay?`Compromissos de ${prettyDay(selectedDay)}`:'Registros do período'}</h3><p role="status">{loading?'Consultando registros…':displayError||!validRange?'':selectedDay?`${shown.length} ${shown.length===1?'compromisso':'compromissos'} em ${prettyDay(selectedDay)}`:`${shown.length} ${shown.length===1?'registro':'registros'}`}</p></div>{selectedDay&&<button type="button" className="p-button p-button-subtle" onClick={()=>{setSelectedDay('');dayTrigger.current?.focus({preventScroll:true});dayTrigger.current?.scrollIntoView({block:'nearest'});}}><X size={15} aria-hidden="true"/>Ver todo o período</button>}</div>
+      <ExportFormats label="Baixar compromissos da agenda" showLabel formats={['pdf']} disabled={loading || !shown.length} onExport={exportPdf}/>
       {loading?<p className="p-form-help"><LoaderCircle size={17} className="p-spin"/> Carregando agenda…</p>:!shown.length?(displayError?null:search.trim()&&data?<p className="p-form-help">Nenhum resultado para esta busca. Tente outro termo ou remova os filtros.</p>:validRange&&!selectedDay&&category==='all'&&data?<div className={styles.emptyAgenda}><strong>Nada na Agenda neste período</strong><p>Aqui aparecem {readableList((data.availableCategories??[]).map(kind=>labels[kind].toLocaleLowerCase('pt-BR')))} dos projetos que você acompanha, conforme o seu acesso.</p><p>Escolha outro mês nas setas do calendário ou confira os filtros.</p></div>:<p className="p-form-help">{validRange?selectedDay?'Nenhum compromisso neste dia.':'Nenhum registro corresponde às datas e aos filtros escolhidos.':'Informe um período válido para consultar a agenda.'}</p>):<div className={styles.entries}>{shown.map(event=><article key={event.uid} className={styles.entry} style={{borderLeftColor:colors[event.category]}}><small>{labels[event.category]}</small><h4 className={event.status==='CANCELLED'?styles.cancelled:undefined}>{event.title}</h4><p>{when(event)}</p><p className={styles.entryContext}>{event.projectName}{event.location?` · ${event.location}`:''}{event.status==='CANCELLED'?' · Cancelado / arquivado':event.state==='done'?' · Concluída':event.state==='tentative'?' · A confirmar':''}</p>{entryLink(event)}{event.sourceKind==='project-schedule'&&<div className="flex flex-wrap gap-x-3"><a className={styles.entryLink} href={`/?module=records&view=documents&project=${encodeURIComponent(event.projectId)}&scheduleItemId=${encodeURIComponent(event.sourceId)}`} aria-label={`Registros e fotos de ${event.title.replace(/^Atividade · /, "")}`}><FileText size={15} aria-hidden="true"/>Registros e fotos</a><a className={styles.entryLink} href={`/?module=demands&project=${encodeURIComponent(event.projectId)}&scheduleItemId=${encodeURIComponent(event.sourceId)}`} aria-label={`Frentes de ${event.title.replace(/^Atividade · /, "")}`}><ListChecks size={15} aria-hidden="true"/>Frentes</a></div>}</article>)}</div>}
     </section>
     </div>

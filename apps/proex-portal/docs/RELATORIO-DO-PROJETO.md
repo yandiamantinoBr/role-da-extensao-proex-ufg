@@ -4,7 +4,7 @@ Pedido do Yan em 09/11/2026: relatório mais extenso, com escolha do que entra, 
 
 ## Onde fica
 
-Projetos → abrir um projeto → seção **Relatório do projeto**, perto do fim da ficha. Aparece para **todas as pessoas que veem o projeto**. Cada seção mostra apenas os dados que a pessoa já pode ver no portal.
+Projetos → abrir um projeto → **Montar relatório e baixar PDF**, na barra da ficha. Aparece para **todas as pessoas que veem o projeto**. Cada seção mostra apenas os dados que a pessoa já pode ver no portal.
 
 ## O que dá para escolher
 
@@ -42,7 +42,7 @@ Referências ficam **sempre no fim**. As demais seções podem ser reordenadas c
 
 A prévia, o PDF, o DOCX e o XLSX desenham o **mesmo documento** (`components/portal/project-report/document.ts`): mesmas seções, mesma ordem, mesmas linhas (limite de 400 linhas por tabela e 400 acontecimentos na linha do tempo, com aviso igual nos quatro).
 
-- **PDF:** capa com marcas, sumário com o número da página de cada seção (clicável), cabeçalho e "Página X de Y", gráficos vetoriais, referências com links clicáveis.
+- **PDF:** capa com marcas, sumário com o número da página de cada seção (clicável), cabeçalho e "Página X de Y", gráficos vetoriais, referências com links clicáveis. O arquivo é gerado no Portal, sem carregar o gerador em uma aba já aberta.
 - **DOCX:** capa, sumário com links internos, títulos numerados, tabelas com cabeçalho repetido, gráficos nativos do Word, rodapé com "Página X de Y" e referências com hiperlinks.
 - **XLSX:** aba "Capa" com sumário clicável, uma aba numerada por seção, gráficos nativos do Excel ligados às células, rodapé de impressão com página, fórmulas neutralizadas.
 
@@ -50,7 +50,7 @@ Ao clicar em qualquer um dos três formatos, o Portal confere a conta, o projeto
 
 ## Código
 
-- Servidor: `lib/project-report.ts` e `app/api/projects/[id]/report/route.ts` (GET dados + modelos, conferindo a sessão da conta esperada pela ficha; POST salvar/apagar modelo, mesma origem).
+- Servidor: `lib/project-report.ts` e `app/api/projects/[id]/report/route.ts` (GET dados e modelos, POST baixar PDF ou salvar/apagar modelo, mesma origem). Para o PDF, o servidor reconstrói o documento com os dados autorizados e compara o conteúdo com a prévia antes e depois de gerar. O navegador envia as opções da prévia, e o servidor consulta as linhas na origem.
 - Catálogo e validação compartilhados: `lib/project-report-config.ts`.
 - Tela: `components/portal/project-report/builder.tsx` e `preview.tsx`.
 - Arquivos: `components/portal/project-report/pdf.ts` e `ooxml.ts`.

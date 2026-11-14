@@ -40,6 +40,7 @@ O Portal aceita endereços com assunto e recorte inicial.
 | Projeto → Relatório do projeto | Relatório montado (PDF, Word, planilha) | Documento com seções escolhidas, não um assunto da central |
 | Gestão → Guia da organização | Guia em Word e PDF | Documento |
 | Dinâmicas → Programação | Programação dos turnos | Documento de operação do evento |
+| Agenda → registros do período ou compromissos do dia | PDF da lista visível | Consulta por período, categoria, projeto, unidade, busca e cancelamentos. O .ics continua disponível para importar no calendário. |
 | Equipes → Estrutura institucional | Organograma em documento | Documento |
 | Equipes → Demandas da equipe | Demandas autorizadas da equipe no projeto e estado escolhidos | A central ainda precisa aceitar a identidade da equipe e o estado |
 | Registros → Documentos | Linhas carregadas que atendem à categoria e à busca da tela | A central ainda precisa combinar os dois filtros com a mesma regra |

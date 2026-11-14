@@ -14,8 +14,9 @@ const civilDates = await import(`data:text/javascript;base64,${Buffer.from(civil
 const listSearchCode = ts.transpileModule(readFileSync(new URL('../lib/list-search.ts', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
 const listSearch = await import(`data:text/javascript;base64,${Buffer.from(listSearchCode).toString('base64')}`);
 const links = await load('lib/calendar-links.ts');
+const ExportFormats = Symbol('ExportFormats');
 function harness(initialProject = '', initialUnit = '', canOpenModule = () => true) {
-  const slots = [], effects = [], requests = [], copied = []; let index = 0, tree;
+  const slots = [], effects = [], requests = [], copied = [], files = [], renderedPdf = []; let index = 0, tree;
   let selectedProjectId = initialProject;
   let selectedUnitId = initialUnit;
   const hooks = {
@@ -24,23 +25,24 @@ function harness(initialProject = '', initialUnit = '', canOpenModule = () => tr
     useMemo(fn) { index++; return fn(); },
     useEffect(fn, deps) { const key = index++; if (!slots[key] || deps.some((value, i) => !Object.is(value, slots[key].deps[i]))) { const previous = slots[key]; slots[key] = { deps }; effects.push(() => { previous?.cleanup?.(); slots[key].cleanup = fn(); }); } },
   };
+  hooks.useLayoutEffect = hooks.useEffect;
   const jsx = (type, props) => ({ type, props }), compiled = { exports: {} };
   const source = ts.transpileModule(readFileSync(new URL('../components/portal/calendar-panel.tsx', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
   vm.runInNewContext(source, {
     module: compiled, exports: compiled.exports,
-    require: name => name === 'react' ? hooks : name === 'react/jsx-runtime' ? { jsx, jsxs: jsx } : name === 'lucide-react' ? new Proxy({}, { get: (_, key) => String(key) }) : name.endsWith('.css') ? { default: new Proxy({}, { get: (_, key) => String(key) }) } : name === '@/lib/civil-date' ? civilDates : name === '@/lib/list-search' ? listSearch : name === '@/lib/calendar-links' ? links : { groupUnits: () => [] },
+    require: name => name === 'react' ? hooks : name === 'react/jsx-runtime' ? { jsx, jsxs: jsx } : name === 'lucide-react' ? new Proxy({}, { get: (_, key) => String(key) }) : name.endsWith('.css') ? { default: new Proxy({}, { get: (_, key) => String(key) }) } : name === '@/lib/civil-date' ? civilDates : name === '@/lib/list-search' ? listSearch : name === '@/lib/calendar-links' ? links : name === './export-formats' ? { default: ExportFormats } : name === './report-export' ? { download: (name, blob) => files.push({ name, blob }) } : name === './report-pdf' ? { toPdf: (title, columns, rows) => { renderedPdf.push({ title, columns, rows }); return new Blob(['%PDF-']); } } : { groupUnits: () => [] },
     Date, Intl, URLSearchParams, AbortController, Map, Error,
     fetch: (url, init) => new Promise(resolve => requests.push({ url, init, resolve })),
     navigator: { clipboard: { async writeText(value) { copied.push(value); } } },
   });
   const h = {
-    requests, copied,
+    requests, copied, files, renderedPdf,
     render() {
       index = 0;
       tree = compiled.exports.default({
         projects: [{ id: 'project-a', name: 'Projeto sintético A', unit_id: 'unit-a' }],
         organizationalUnits: [{ id: 'unit-a', name: 'Unidade sintética A' }, { id: 'unit-b', name: 'Unidade sintética B' }],
-        selectedProjectId, selectedUnitId, canOpenModule,
+        viewerId: 'viewer-test', selectedProjectId, selectedUnitId, canOpenModule,
         onProjectChange: id => { selectedProjectId = id; },
         onUnitChange: id => { selectedUnitId = id; selectedProjectId = ''; },
       });
@@ -48,13 +50,43 @@ function harness(initialProject = '', initialUnit = '', canOpenModule = () => tr
     },
     all() { return nodes(tree); },
     button(label) { const result = this.all().find(node => node.type === 'button' && text(node).trim() === label); assert.ok(result, label); return result; },
-    respond(request, body, ok = true) { request.resolve({ ok, json: async () => body }); },
+    respond(request, body, ok = true, viewer = 'viewer-test') { request.resolve({ ok, headers: new Headers({ 'X-Proex-Viewer': viewer }), json: async () => body }); },
     body() { return text(tree); },
     dispose() { slots.forEach(slot => slot?.cleanup?.()); },
   };
   h.render(); return h;
 }
 async function ready(h) { h.respond(h.requests[0], { entries: [], feeds: [], availableCategories: ['projects'] }); await tick(); h.render(); }
+
+test('agenda PDF exports the filtered day, excludes cancelled and refuses a session change', async () => {
+  const h = harness();
+  try {
+    const day = new URL(h.requests[0].url, 'https://example.test').searchParams.get('from');
+    const following = civilDates.offsetCivilDate(day, 1);
+    const timed = { allDay: true, category: 'projects', projectName: 'Projeto fictício', location: 'Sala 1', startsAt: day, endsAt: following, status: 'CONFIRMED' };
+    const data = { feeds: [], availableCategories: ['projects'], entries: [
+      { ...timed, uid: 'a', title: 'Oficina autorizada' },
+      { ...timed, uid: 'b', title: 'Oficina cancelada', status: 'CANCELLED' },
+      { ...timed, uid: 'c', title: 'Oficina amanhã', startsAt: following, endsAt: civilDates.offsetCivilDate(following, 1) },
+      { ...timed, uid: 'd', title: 'Palestra' },
+    ] };
+    h.respond(h.requests[0], data); await tick(); h.render();
+    h.all().find(node => node.props.name === 'calendarSearch').props.onChange({ target: { value: 'oficina' } });
+    h.render();
+    h.all().find(node => node.props['aria-controls'] === 'calendar-day-entries' && node.props['aria-label']?.endsWith('1 registro')).props.onClick({ currentTarget: null });
+    h.render();
+    const button = h.all().find(node => node.type === ExportFormats);
+    const download = button.props.onExport();
+    h.respond(h.requests[1], data); await tick();
+    assert.deepEqual(Array.from(h.renderedPdf[0].rows, row => row.event), ['Oficina autorizada\nProjetos e eventos']);
+    h.respond(h.requests[2], data); await download;
+    assert.equal(h.files[0].name, `agenda-proex-${day}.pdf`);
+    const second = button.props.onExport();
+    h.respond(h.requests[3], data, true, 'other-viewer');
+    await assert.rejects(second, /confirmar o acesso/);
+    assert.equal(h.files.length, 1);
+  } finally { h.dispose(); }
+});
 
 test('agenda opens exact authorized sources and uses the parent for a shift or movement', async () => {
   const h = harness('', '', (module, entry) => module !== 'events' || entry.projectId === 'project-a');
