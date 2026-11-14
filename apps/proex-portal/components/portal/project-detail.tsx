@@ -8,14 +8,14 @@ import StockConsumptionPanel from './stock-consumption-panel';
 import ProjectQuickEntry, { type QuickProjectEntry } from './project-quick-entry';
 import ProjectSheetsPanel from './project-sheets-panel';
 import { areaLabel, lineLabel } from '@/lib/extension-catalog';
-import { ArrowLeft, BarChart3, CalendarDays, Check, ClipboardList, Clock3, ArrowRight, ExternalLink, FileText, FolderKanban, History, Link2, LoaderCircle, Package, Pencil, Plus, RefreshCw, ShieldCheck, X } from 'lucide-react';
+import { ArrowLeft, BarChart3, CalendarDays, Check, ClipboardList, Clock3, ArrowRight, ExternalLink, FileText, FolderKanban, History, Link2, LoaderCircle, Package, Pencil, Plus, RefreshCw, ShieldCheck, UserRoundCheck, X } from 'lucide-react';
 import type { Row } from '@/lib/database';
 import { isCivilDate } from '@/lib/civil-date';
 import { COMMUNICATION_CHANNELS, COMMUNICATION_NOTE_LIMIT, communicationLabel } from '@/lib/project-communication';
 import { useFormDraft, DraftNotice } from './use-form-draft';
 import ProjectReportBuilder from './project-report/builder';
 import { SheetShortcuts } from './sheet-shortcuts';
-export type ProjectShortcutModule = 'demands' | 'calendar';
+export type ProjectShortcutModule = 'my-work' | 'demands' | 'calendar';
 export type ProjectMaterialAction = (itemId:string, mode?:'view'|'edit'|'move') => void;
 type Props={refreshKey?:number;onMaterialOpen?:ProjectMaterialAction;projectId:string;shortcutModules?:readonly ProjectShortcutModule[];sheetOwnerId?:string;projects:Row[];mutate:(action:string,payload:Row)=>Promise<Row>;onBack:()=>void;onEdit:(project:Row)=>void;onSelect?:(id:string)=>void;renderWorkContext?:(projectId:string)=>ReactNode;/** "Quem cuida de cada área" (estoque, empréstimos e dinâmicas do projeto inteiro). */renderAreaOwners?:(projectId:string)=>ReactNode};
 type Editor={kind:'link'|'call'|'schedule';row:Row|null};
@@ -183,6 +183,7 @@ export default function ProjectDetail({projectId,projects,mutate,onBack,onEdit,o
  {kpis.length>0&&<div className={styles.heroKpis}>{kpis.map(({label:title,value,detail,tone,icon:Icon})=><div key={title} className={tone?styles.kpiWarn:''}><span><Icon size={15}/>{title}</span><strong>{value}</strong><small>{detail}</small></div>)}</div>}
  <p className="p-form-help" style={{marginTop:14}}><ShieldCheck size={14}/> A relação entre programa e projeto organiza o catálogo; os acessos continuam sendo concedidos por projeto.</p></header>
  <nav className={styles.projectQuickActions} aria-label="Atalhos do projeto">
+  {shortcuts.includes('my-work') && <a className="p-button p-button-subtle" href={`/?module=my-work&project=${encodeURIComponent(project.id)}`}><UserRoundCheck size={16} aria-hidden="true"/>Meu trabalho</a>}
   {shortcuts.includes('demands') && <a className="p-button p-button-subtle" href={`/?module=demands&project=${encodeURIComponent(project.id)}`}><ClipboardList size={16} aria-hidden="true"/>Demandas</a>}
   {data.permissions?.accessManage && <a className="p-button p-button-subtle" href={`/?module=team&project=${encodeURIComponent(project.id)}`}><ShieldCheck size={16} aria-hidden="true"/>Equipe e convites</a>}
   {shortcuts.includes('calendar') && (data.permissions?.inventory || data.permissions?.loans || data.permissions?.reports || canEdit) && <a className="p-button p-button-subtle" href={`/?module=calendar&project=${encodeURIComponent(project.id)}`}><CalendarDays size={16} aria-hidden="true"/>Agenda</a>}
