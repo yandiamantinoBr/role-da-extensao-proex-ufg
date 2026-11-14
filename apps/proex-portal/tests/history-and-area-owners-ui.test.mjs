@@ -133,8 +133,60 @@ test('project sheet and old top panel mount the same responsibility form for the
 
   // A ficha mostra cada área a quem já abre o módulo dela.
   const client = source('../app/portal-client.tsx');
-  assert.match(client, /\['materials', \['inventory\.read', 'inventory\.manage', 'inventory\.deliver'\]\], \['loans', \['loans\.read', 'loans\.manage', 'loans\.checkout'\]\], \['campaigns', \['campaigns\.manage', 'participation\.operate', 'inventory\.deliver'\]\]/);
   assert.match(client, /renderAreaOwners=\{areaOwners\}/);
+});
+
+test('the owners shortcut follows the chosen project and the requested area', () => {
+  const parsed = ts.createSourceFile('portal-client.tsx', source('../app/portal-client.tsx'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  // Execute the real capability checks, sheet props and shortcut render without mounting unrelated modules.
+  const variables = new Set(['areaOwnerScopes', 'capabilities', 'globalCapabilities', 'projectCapabilities', 'canGlobal', 'canProject', 'areaOwnerShortcut']);
+  const functions = new Set(['visibleOwnerAreas', 'areaOwners']);
+  const fragments = [];
+  let shortcut;
+  function visit(node) {
+    if (ts.isVariableDeclaration(node) && variables.has(node.name.getText(parsed))) fragments.push(`const ${node.getText(parsed)};`);
+    if (ts.isFunctionDeclaration(node) && functions.has(node.name?.text)) fragments.push(node.getText(parsed));
+    if (ts.isJsxExpression(node) && node.expression?.getText(parsed).includes('<p className="p-area-owners-link">')) shortcut = node.expression.getText(parsed);
+    ts.forEachChild(node, visit);
+  }
+  visit(parsed);
+  assert.ok(shortcut, 'o atalho existe na tela');
+  const compiled = {exports: {}};
+  const jsx = (type, props) => ({type, props});
+  const code = `module.exports = (data, filter, tab) => {
+    const role = data.role, user = {userId: 'synthetic-user'}, allowedTabs = [];
+    ${fragments.join('\n')}
+    return { shortcut: (${shortcut}), areas: areaOwners(filter).props.areas };
+  };`;
+  vm.runInNewContext(ts.transpileModule(code, {compilerOptions: {module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX}}).outputText, {
+    module: compiled, exports: compiled.exports, require: () => ({jsx, jsxs: jsx}), ProjectAreaOwners: 'ProjectAreaOwners',
+    Users: 'Users', ArrowUpRight: 'ArrowUpRight', string: String,
+  });
+  const data = {role: 'inventory', capabilitiesByProject: {
+    'project-a': ['inventory.manage', 'loans.checkout'],
+    'project-b': ['reports.read'],
+    'project-c': ['participation.operate'],
+  }};
+  for (const [project, tab, visible, area, subject] of [
+    ['project-a', 'materials', true, 'materials', 'do estoque'],
+    ['project-b', 'materials', false, 'materials'],
+    ['project-a', 'loans', true, 'loans', 'dos empréstimos'],
+    ['project-b', 'loans', false, 'loans'],
+    ['project-a', 'events', false, 'campaigns'],
+    ['project-c', 'events', true, 'campaigns', 'das dinâmicas'],
+  ]) {
+    const state = compiled.exports(data, project, tab);
+    const link = nodes(state.shortcut).find(node => node.type === 'a');
+    assert.equal(state.areas.includes(area), visible, `ficha: ${project}/${area}`);
+    assert.equal(Boolean(link), visible, `atalho: ${project}/${area}`);
+    if (visible) {
+      assert.equal(link.props.href, `/?module=projects&project=${project}&detailProject=${project}`);
+      assert.equal(link.props['aria-label'], `Ver quem cuida ${subject} na ficha do projeto`);
+    }
+  }
+  assert.equal(nodes(compiled.exports({...data, globalCapabilities: ['*']}, '', 'materials').shortcut).length, 0, 'todos os projetos');
+  assert.equal(nodes(compiled.exports({...data, globalCapabilities: ['*']}, 'project-b', 'materials').shortcut).some(node => node.type === 'a'), true, 'estoque global');
+  assert.equal(nodes(compiled.exports(data, 'project-a', 'projects').shortcut).length, 0, 'outra aba');
 });
 
 test('the top panel left Materiais, Empréstimos and Dinâmicas; the way to owners and shortcuts stays one tap away (R4, etapa 2)', () => {
@@ -142,11 +194,6 @@ test('the top panel left Materiais, Empréstimos and Dinâmicas; the way to owne
   // O painel não é mais montado no topo dos módulos (nem a cópia escondida do celular); fichas e cartões continuam com ele.
   assert.ok(!/includes\(tab\) && workContext\(/.test(client), 'sem painel no topo dos módulos');
   for (const call of ["workContext(projectId,'projects')", "'loans',{loanId:string(l.id)}", "'campaigns',{campaignId:string(c.id)}"]) assert.ok(client.includes(call), call);
-  // No lugar, uma linha só quando há projeto escolhido, levando à ficha onde está "Quem cuida de cada área".
-  const line = client.match(/\{\(\['materials','loans','events'\] as string\[\]\)\.includes\(tab\) && filter && <p className="p-area-owners-link">(.*?)<\/p>\}/s)?.[1];
-  assert.ok(line, 'linha de caminho para a ficha');
-  assert.match(line, /<span>Quem cuida \{tab === 'materials' \? 'do estoque' : tab === 'loans' \? 'dos empréstimos' : 'das dinâmicas'\}:<\/span>/);
-  assert.match(line, /href=\{`\/\?module=projects&project=\$\{encodeURIComponent\(filter\)\}&detailProject=\$\{encodeURIComponent\(filter\)\}`\} aria-label=\{`Ver quem cuida .*? na ficha do projeto`\}>ficha do projeto</);
   // A linha é baixa para não empurrar a lista no celular, mas o link mantém 44 px de área de toque.
   assert.match(source('../app/globals.css'), /\.p-area-owners-link>a::after\{content:"";position:absolute;inset:-14px -10px\}/);
   // Os atalhos que estavam no painel: "Demandas" e "Meu trabalho" na ficha do projeto, já com o projeto escolhido.

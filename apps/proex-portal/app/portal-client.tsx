@@ -93,6 +93,16 @@ type Snapshot = Row;
 type Tab = ModuleId;
 type Payload = Record<string, unknown>;
 const tabs = PORTAL_MODULES;
+const areaOwnerScopes: readonly {
+    area: OwnedArea;
+    tab: Tab;
+    capabilities: readonly string[];
+    subject: string;
+}[] = [
+    { area: 'materials', tab: 'materials', capabilities: ['inventory.read', 'inventory.manage', 'inventory.deliver'], subject: 'do estoque' },
+    { area: 'loans', tab: 'loans', capabilities: ['loans.read', 'loans.manage', 'loans.checkout'], subject: 'dos empréstimos' },
+    { area: 'campaigns', tab: 'events', capabilities: ['campaigns.manage', 'participation.operate', 'inventory.deliver'], subject: 'das dinâmicas' },
+];
 const statusNames: Row = { draft: 'Rascunho', active: 'Ativo', paused: 'Pausado', closed: 'Encerrado', reserved: 'Reservado', out: 'Retirado', returned: 'Devolvido', cancelled: 'Cancelado', pending: 'Pendente', accepted: 'Aceito', revoked: 'Revogado' };
 const roleNames: Row = { owner: 'Responsável institucional', manager: 'Gestor de projeto', operator: 'Operador de evento', inventory: 'Responsável por estoque', loans: 'Responsável por empréstimos', viewer: 'Leitor de relatórios' };
 const categoryNames: Row = { gift: 'Brinde', equipment: 'Equipamento', distribution: 'Distribuição institucional', consumption: 'Consumo interno' };
@@ -629,11 +639,14 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
     }
     // R4: "Quem cuida de cada área" na ficha do projeto. Cada área aparece para quem já abre o módulo dela neste projeto,
     // ou seja, para quem via o painel do topo de Materiais, Empréstimos ou Dinâmicas. Quem pode editar é decidido pela rota.
+    function visibleOwnerAreas(projectId: string) {
+        return areaOwnerScopes.filter(scope => canProject(projectId, ...scope.capabilities));
+    }
     function areaOwners(projectId: string) {
-        const areas = ([['materials', ['inventory.read', 'inventory.manage', 'inventory.deliver']], ['loans', ['loans.read', 'loans.manage', 'loans.checkout']], ['campaigns', ['campaigns.manage', 'participation.operate', 'inventory.deliver']]] as [OwnedArea, string[]][])
-            .filter(([, needed]) => canProject(projectId, ...needed)).map(([area]) => area);
+        const areas = visibleOwnerAreas(projectId).map(scope => scope.area);
         return <ProjectAreaOwners key={JSON.stringify([user.userId, projectId])} userId={string(user.userId)} projectId={projectId} areas={areas} onCreateTeam={allowedTabs.some(module => module.id === 'work-teams') ? () => openTeams({ kind: 'new', organizationId: string(projects.find(project => project.id === projectId)?.organization_id) || undefined }) : undefined}/>;
     }
+    const areaOwnerShortcut = filter ? visibleOwnerAreas(filter).find(scope => scope.tab === tab) : undefined;
     function selectUnit(id: string) { setWorkRecord(null); setSelectedMaterialId(null);setMaterialMode('view'); setUnitFilter(id); setFilter(''); setDraftProject(''); setOfferProject(''); setQuery(''); }
     function selectArea(key: string) { setWorkRecord(null); setSelectedMaterialId(null);setMaterialMode('view'); setAreaFilter(key); setFilter(''); setDraftProject(''); setOfferProject(''); }
     function clearScope() { setAreaFilter(''); selectUnit(''); }
@@ -904,7 +917,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
       {tab === 'my-work' && <><div className={workStyles.projectFilter}>{personalOrganization&&<p className="p-form-help">Organização: {organizations.find(organization=>organization.id===personalOrganization)?.name||'organização selecionada'} <button type="button" className="p-text-link" onClick={()=>setPersonalOrganization('')}>Ver todas as organizações autorizadas</button></p>}<label className="p-field"><span>Projeto</span><select id="meu-trabalho-projeto" aria-label="Projeto" value={filter} onChange={event => selectProject(event.target.value)}><option value="">{personalOrganization?'Todos os projetos desta organização':'Todos os projetos autorizados'}</option>{projects.filter(project=>!personalOrganization||project.organization_id===personalOrganization).map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label></div><MeuTrabalhoPanel key={string(user.userId)} userId={string(user.userId)} organizationId={personalOrganization||null} projectId={filter || null} serverDay={workDayFromServerTimestamp(data?.updatedAt)} workStatus={personalStatus} onWorkStatusChange={setPersonalStatus}/></>}
       {/* R4, etapa 2: o painel "Responsáveis e demandas" saiu do topo destes módulos. Quem cuida da área inteira fica na ficha do projeto;
           o painel compacto continua nas fichas e nos cartões. Com "Todos os projetos" não há o que mostrar aqui. */}
-      {(['materials','loans','events'] as string[]).includes(tab) && filter && <p className="p-area-owners-link"><Users size={15} aria-hidden="true"/><span>Quem cuida {tab === 'materials' ? 'do estoque' : tab === 'loans' ? 'dos empréstimos' : 'das dinâmicas'}:</span> <a className="p-text-link" href={`/?module=projects&project=${encodeURIComponent(filter)}&detailProject=${encodeURIComponent(filter)}`} aria-label={`Ver quem cuida ${tab === 'materials' ? 'do estoque' : tab === 'loans' ? 'dos empréstimos' : 'das dinâmicas'} na ficha do projeto`}>ficha do projeto<ArrowUpRight size={14} aria-hidden="true"/></a></p>}
+      {areaOwnerShortcut && <p className="p-area-owners-link"><Users size={15} aria-hidden="true"/><span>Quem cuida {areaOwnerShortcut.subject}:</span> <a className="p-text-link" href={`/?module=projects&project=${encodeURIComponent(filter)}&detailProject=${encodeURIComponent(filter)}`} aria-label={`Ver quem cuida ${areaOwnerShortcut.subject} na ficha do projeto`}>ficha do projeto<ArrowUpRight size={14} aria-hidden="true"/></a></p>}
       {activeWorkRecord && ['loans','events'].includes(activeWorkRecord.module) && <div className={workStyles.focusNotice} role="status"><p>{(activeWorkRecord.module === 'loans' ? displayedLoans : displayedCampaigns).length ? 'Registro vinculado ao seu trabalho. Use as ações abaixo para acompanhar.' : 'O registro não está na lista disponível para esta conta. Atualize ou consulte a lista completa.'}</p><button type="button" className="p-button p-button-subtle" onClick={() => setWorkRecord(null)}>Ver todos</button></div>}
       {tab === 'demands' && <><FollowUpPanel key={string(user.userId)} userId={string(user.userId)} onTaskTransferred={receipt=>{selectProject(receipt.projectId);setSelectedDemandId(receipt.taskId);}} defaultProjectId={filter} initialTaskId={selectedDemandId} serverDay={workDayFromServerTimestamp(data?.updatedAt)} onSelectTask={setSelectedDemandId} onChanged={refreshModules} onOpenReports={() => navigate('reports', 'demands')}/><OrganizationEmailSettings key={string(user.userId)} userId={string(user.userId)} organizations={organizations}/></>}
       {tab === 'overview' && volunteerAccess.length > 0 && volunteerDesk(true)}
