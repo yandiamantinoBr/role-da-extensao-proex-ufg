@@ -94,6 +94,9 @@ function translateDatabaseError(error: unknown): never {
   if (error instanceof HttpError) throw error;
   const message = String(error).toLowerCase();
   if(message.includes('item_owner_scope'))throw new HttpError(409,'Escolha uma unidade ativa e um destino ativo desta organização.','item_owner_scope');
+  if (message.includes('outflow_items_changed')) {
+    throw new HttpError(409, 'A disponibilidade de um material mudou. Nenhuma linha foi registrada. Atualize o estoque e tente de novo.', 'outflow_items_changed');
+  }
   if(message.includes('stock_destination_'))throw new HttpError(409,'O destino escolhido está arquivado ou é de outra organização. Escolha outro.','stock_destination_scope');
   if(message.includes('stock_context_'))throw new HttpError(409,'O projeto, a origem ou o destino mudou. Reabra a movimentação.','stock_context_changed');
   if (message.includes('loan_checkout_window')) throw new HttpError(409, 'A retirada só pode ser registrada dentro do período reservado.', 'loan_checkout_window');
@@ -358,7 +361,9 @@ export async function materialsAction(db: D1Database, actor: PortalActor, action
         seen.add(itemId);
         return { itemId, quantity: integerValue((line as Record<string, unknown>).quantity, `A quantidade da linha ${index + 1}`, 1) };
       });
-      const found = new Map(((await db.prepare(`SELECT * FROM items WHERE id IN (${lines.map(() => '?').join(',')})`).bind(...lines.map(line => line.itemId)).all<Item>()).results ?? []).map(item => [item.id, item]));
+      const itemIds = lines.map(line => line.itemId);
+      const itemParameters = itemIds.map(() => '?').join(',');
+      const found = new Map(((await db.prepare(`SELECT * FROM items WHERE id IN (${itemParameters})`).bind(...itemIds).all<Item>()).results ?? []).map(item => [item.id, item]));
       if (found.size !== lines.length) throw new HttpError(404, 'Material não encontrado.', 'item_not_found');
       const rows = lines.map((line, index) => ({ item: found.get(line.itemId)!, delta: -line.quantity, refId: `manual:${actor.userId}:${operationKey}:${index + 1}` }));
       const projectId = rows[0].item.project_id;
@@ -391,6 +396,10 @@ export async function materialsAction(db: D1Database, actor: PortalActor, action
       const batchId = crypto.randomUUID(), movementIds = rows.map(() => crypto.randomUUID());
       try {
         await capabilityBatch(db, actor, 'inventory.manage', projectId, [
+          // Balance is guarded by the movement trigger. Recheck eligibility in the same transaction.
+          statement(db, `SELECT CASE WHEN (
+            SELECT COUNT(*) FROM items WHERE id IN (${itemParameters}) AND project_id=? AND condition='active' AND category<>'equipment'
+          )=? THEN 1 ELSE json_extract('[]','outflow_items_changed') END`, [...itemIds, projectId, itemIds.length]),
           ...context.assertions,
           ...(destination?.statements ?? []),
           ...rows.flatMap((row, index) => [

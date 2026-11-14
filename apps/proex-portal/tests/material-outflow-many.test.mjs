@@ -82,6 +82,25 @@ test('a balance that changes between the check and the write rolls every line ba
  assert.equal(f.native.prepare("SELECT COUNT(*) n FROM stock_movements WHERE kind='consume'").get().n,0);
 });
 
+test('disabling a material just before the write rejects the whole batch',async t=>{
+ const f=await fixture(t);
+ const batch=f.db.batch.bind(f.db),before=f.movements();
+ f.db.batch=async statements=>{
+  if(statements.some(statement=>statement.sql.includes('INSERT INTO stock_movements'))){
+   f.native.prepare("UPDATE items SET condition='inactive' WHERE id=?").run(f.caneta.id);
+  }
+  return batch(statements);
+ };
+ await assert.rejects(f.run('owner-a','stock.move.many',{
+  kind:'distribute',lines:lines(f),reason:'Entrega sintética',
+  destinationName:'Estande sintético',destinationKind:'event',
+ }),error=>error.status===409&&error.code==='outflow_items_changed');
+ assert.deepEqual([f.stock(f.botton.id),f.stock(f.caneta.id),f.stock(f.folder.id)],[300,120,50]);
+ assert.equal(f.movements(),before);
+ assert.equal(f.native.prepare('SELECT COUNT(*) n FROM material_destinations').get().n,0);
+ assert.equal(f.native.prepare("SELECT COUNT(*) n FROM audit WHERE action='stock.move.many'").get().n,0);
+});
+
 test('a repeated request returns the same delivery once; the same key with other data is refused',async t=>{
  const f=await fixture(t),operationKey=key(),input={kind:'consume',lines:lines(f,5,6,7),reason:'Consumo sintético da oficina',operationKey};
  const first=await f.run('owner-a','stock.move.many',input),again=await f.run('owner-a','stock.move.many',input);
