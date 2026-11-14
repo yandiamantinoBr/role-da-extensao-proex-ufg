@@ -75,7 +75,7 @@ test('general administration chooses a model per task: the list loads when the f
   for(const label of TASK_LABELS){assert.deepEqual(optionsOf(h.select(label)).map(option=>option.label),['Carregando modelos…']);assert.equal(h.select(label).props.disabled,true);}
   assert.equal(h.select(TASK_LABELS[2]).props.value,'groq-whisper-turbo','the saved choice is kept while the list loads');
   assert.equal(h.text().includes('groq-whisper-turbo'),false,'the raw code is never shown');
-  assert.match(h.text(),/As opções vêm da aba Modelos\. Se o modelo escolhido não puder responder, o portal usa o padrão e registra o motivo no histórico\./);
+  assert.match(h.text(),/As opções vêm da aba Modelos\. Se o modelo estiver indisponível antes do envio, a confirmação mostra o modelo padrão\./);
   assert.match(h.text(),/O áudio vai só para o serviço nomeado no aviso de gravação\./);
   assert.doesNotMatch(h.text(),/padrão de hoje|Padrão de hoje/);
   h.select(TASK_LABELS[0]).props.onFocus();h.select(TASK_LABELS[2]).props.onPointerDown();assert.equal(h.requests.length,3,'opening a selector does not read the list again');
@@ -103,7 +103,7 @@ test('general administration chooses a model per task: the list loads when the f
   // As caixas dizem o nome do modelo escolhido, e a voz não cita Groq nem preço fixo.
   h.select(TASK_LABELS[0]).props.onChange({target:{value:'openai-gpt-6-luna'}});h.select(TASK_LABELS[1]);h.render();
   assert.equal(h.select(TASK_LABELS[0]).props.value,'openai-gpt-6-luna');assert.equal(h.requests.length,3,'choosing does not save or call a provider');
-  assert.ok(h.text().includes('GPT-6 Luna (OpenAI) extrai campos autorizados (ou DeepSeek, se ele não puder responder); cada documento precisa de consentimento e revisão.'));
+  assert.ok(h.text().includes('GPT-6 Luna (OpenAI) extrai campos autorizados. Cada documento precisa de autorização e revisão.'));
   assert.ok(h.text().includes('TypeSafe sugere decisões dentro do contrato. Em caso de dúvida, a decisão fica manual.'),'no decision model chosen: the usual words');
   assert.ok(h.find('label',node=>text(node)==='Habilitar transcrição de voz em português'));
   assert.ok(h.text().includes('O custo segue o preço por hora do modelo escolhido abaixo. Quem grava vê o custo máximo antes de enviar.'));
@@ -127,7 +127,7 @@ test('model list: a failed read says so and can be repeated, a saved model outsi
   assert.deepEqual(optionsOf(h.select(TASK_LABELS[0])),[{value:'',label:STANDARD[0]},{value:'modelo-antigo',label:'Modelo escolhido'}]);
   assert.deepEqual(optionsOf(h.select(TASK_LABELS[1])),[{value:'',label:STANDARD[1]}]);
   assert.equal(h.text().includes('modelo-antigo'),false);
-  assert.ok(h.text().includes('O modelo escolhido extrai campos autorizados (ou DeepSeek, se ele não puder responder)'),'without the name the usual wording stays');
+  assert.ok(h.text().includes('O modelo escolhido extrai campos autorizados'),'without the name the usual wording stays');
   // Tentar de novo repete a leitura; uma segunda falha volta a avisar.
   retry()[0].props.onClick();h.render();
   assert.equal(h.requests.length,4);assert.equal(h.requests[3].url,'/api/assistant/catalog?organizationId=org-a');
@@ -171,8 +171,8 @@ test('whoever is not the general administration reads which model the general ad
   await ready(h,{canDelegate:false,organizations,config:{...defaults,documentEnabled:true,jevEnabled:true,sttEnabled:true,documentModel:'openai-gpt-6-luna',decisionModel:'perplexity-decider-v1-2',speechModel:'groq-whisper-turbo'}});
   const lines=h.nodes().filter(node=>node.type==='p'&&text(node).startsWith('Modelo definido pela administração geral: ')).map(text);
   assert.deepEqual(lines,['Modelo definido pela administração geral: GPT-6 Luna (OpenAI).','Modelo definido pela administração geral: Decider v1.2 (Perplexity).','Modelo definido pela administração geral: Whisper turbo (Groq).']);
-  assert.ok(h.text().includes('GPT-6 Luna (OpenAI) extrai campos autorizados (ou DeepSeek, se ele não puder responder)'));
-  assert.ok(h.text().includes('Decider v1.2 (Perplexity) sugere decisões dentro do contrato (ou a TypeSafe, se ele não puder responder).'));
+  assert.ok(h.text().includes('GPT-6 Luna (OpenAI) extrai campos autorizados'));
+  assert.ok(h.text().includes('Decider v1.2 (Perplexity) sugere decisões dentro do contrato.'));
   assert.ok(h.find('label',node=>text(node)==='Habilitar transcrição de voz em português'));
   for(const label of TASK_LABELS)assert.equal(h.nodes().some(node=>node.type==='label'&&text(node).startsWith(label)),false,'read-only: no selector');
   assert.equal(h.requests.length,2,'no catalog read');
@@ -184,7 +184,7 @@ test('with the three choices empty the general administration saves the same con
   await ready(h);h.button('Funções e acesso').props.onClick();h.render();
   for(const label of TASK_LABELS)assert.equal(h.select(label).props.value,'');
   // Textos de sempre nas caixas e na voz: nada cita modelo escolhido.
-  assert.ok(h.text().includes('DeepSeek extrai campos autorizados; cada documento precisa de consentimento e revisão.'));
+  assert.ok(h.text().includes('DeepSeek extrai campos autorizados. Cada documento precisa de autorização e revisão.'));
   assert.ok(h.text().includes('TypeSafe sugere decisões dentro do contrato. Em caso de dúvida, a decisão fica manual.'));
   assert.ok(h.find('label',node=>text(node)==='Habilitar transcrição Deepgram em português'));
   assert.ok(h.text().includes('O custo e a autorização de transcrição dependem da conta Deepgram.'));

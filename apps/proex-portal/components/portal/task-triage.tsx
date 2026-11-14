@@ -41,7 +41,7 @@ export function TaskTriageMatrix({tasks}:{tasks:Task[]}) {
 export function TaskTriage({task,busy,save}:{task:Task;busy:boolean;save:(input:Record<string,unknown>)=>Promise<void>}) {
  const [opened,setOpened]=useState(false),[enabled,setEnabled]=useState<boolean|null>(null),[reserve,setReserve]=useState<number|null>(null);
  // Nome do modelo escolhido que recebe o resumo; null = padrão de hoje (JEV, da TypeSafe).
- const [destination,setDestination]=useState<string|null>(null);
+ const [destination,setDestination]=useState<string|null>(null),[approval,setApproval]=useState<string|undefined>();
  const failed=destination?'Não foi possível concluir a triagem.':'Não foi possível consultar o JEV.';
  const [context,setContext]=useState(''),[consent,setConsent]=useState(false),[reviewed,setReviewed]=useState(false);
  const [proposal,setProposal]=useState<Ready|null>(null),[feedback,setFeedback]=useState(''),[preparing,setPreparing]=useState(false);
@@ -53,7 +53,7 @@ export function TaskTriage({task,busy,save}:{task:Task;busy:boolean;save:(input:
   const controller=new AbortController();request.current=controller;
   try {
    const response=await fetch(`${triageUrl}?id=${encodeURIComponent(task.id)}`,{cache:'no-store',signal:controller.signal});
-   const data=await response.json() as {enabled?:unknown;reserveUsdMicros?:unknown;destinationName?:unknown}|null;
+   const data=await response.json() as {enabled?:unknown;reserveUsdMicros?:unknown;destinationName?:unknown;approval?:unknown}|null;
    if(controller.signal.aborted)return;
    setEnabled(response.ok&&data?.enabled===true);
    // Com modelo de decisão escolhido, o servidor informa a reserva que vai fazer; sem ele, vale o número de sempre.
@@ -61,7 +61,9 @@ export function TaskTriage({task,busy,save}:{task:Task;busy:boolean;save:(input:
    setReserve(typeof micros==='number'&&Number.isSafeInteger(micros)&&micros>0?micros:null);
    // Com modelo escolhido, o servidor diz quem recebe o resumo. A autorização vale só para o destino mostrado: se ele muda, a pessoa marca de novo.
    const name=response.ok?shownRouteName(data?.destinationName):'';
-   if(name!==(destination??''))setConsent(false);
+   const reviewedApproval=typeof data?.approval==='string'?data.approval:undefined;
+   if(name!==(destination??'')||reviewedApproval!==approval)setConsent(false);
+   setApproval(reviewedApproval);
    setDestination(name||null);
   } catch {if(!controller.signal.aborted)setEnabled(false);}
  }
@@ -74,13 +76,13 @@ export function TaskTriage({task,busy,save}:{task:Task;busy:boolean;save:(input:
   try {
    const response=await fetch(triageUrl,{method:'POST',cache:'no-store',signal:controller.signal,
     headers:{'Content-Type':'application/json','X-Proex-Action':'1'},
-    body:JSON.stringify({id:task.id,expectedVersion:task.version,operationKey:operation.current,context,consent,destinationName:destination??''})});
+    body:JSON.stringify({id:task.id,expectedVersion:task.version,operationKey:operation.current,context,consent,destinationName:destination??'',approval})});
    const data=await response.json() as {error?:unknown;code?:unknown;status?:unknown;proposalId?:unknown;
     proposal?:{urgency?:unknown;importance?:unknown}}|null;
    if(controller.signal.aborted)return;
    if(!response.ok){
     // O modelo que recebe o resumo mudou depois do aviso: mostra o destino de agora e pede a autorização de novo.
-    if(data?.code==='triage_destination'){setConsent(false);void check(true);}
+    if(data?.code==='triage_destination'){operation.current=null;setConsent(false);void check(true);}
     throw new Error(typeof data?.error==='string'?data.error:failed);
    }
    if(data?.status==='abstained'){

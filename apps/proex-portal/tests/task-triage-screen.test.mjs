@@ -75,8 +75,8 @@ test('without a chosen model the notice and the authorization keep the same word
 });
 test('with a chosen model the notice and the authorization name it and the request carries the name shown',async()=>{
  const h=harness((_url,init)=>init?.method==='POST'?ready:state({enabled:true,reserveUsdMicros:173,destinationName:'Decider v1.2 (Perplexity)'}));await h.open();
- assert.ok(h.text().includes('O modelo Decider v1.2 (Perplexity) recebe esse resumo e o prazo desta demanda. Se ele não puder responder, quem recebe é o JEV, da TypeSafe (padrão do portal).'));
- assert.ok(h.text().includes('Autorizo enviar este resumo e prazo ao modelo Decider v1.2 (Perplexity) e, se ele não puder responder, ao JEV, da TypeSafe (padrão do portal).'));
+ assert.ok(h.text().includes('O modelo Decider v1.2 (Perplexity) recebe esse resumo e o prazo desta demanda.'));
+ assert.ok(h.text().includes('Autorizo enviar este resumo e prazo ao modelo Decider v1.2 (Perplexity).'));
  assert.ok(h.text().includes('Triagem com IA'));assert.equal(h.text().includes('Triagem com JEV'),false,'com modelo escolhido o título não promete o JEV');
  assert.equal(h.text().includes('Autorizo enviar este resumo e prazo à TypeSafe.'),false);
  h.write('Resumo sintético da demanda.');h.authorize();await h.submit();

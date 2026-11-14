@@ -6,7 +6,7 @@ import { configChanges } from './quota';
 import { decryptProviderCredentials, encryptProviderCredentials, type CredentialKeys } from './crypto';
 import { catalogModelName, fitsFunction, fitsTask, type RoutedTask } from './model-catalog';
 import { loadCatalog } from './model-catalog-store';
-import { TASK_MODEL_KEY, resolveTaskRoute, speechDestination, speechRouteModel, taskRouteName } from './task-routing';
+import { TASK_MODEL_KEY, documentMaximum, resolveTaskRoute, speechDestination, speechRouteModel, taskApproval, taskRouteName } from './task-routing';
 import type { SpeechRouteModel } from './role-contracts';
 
 export type SpeechProvider = 'deepgram' | 'groq';
@@ -167,12 +167,30 @@ export async function assistantStatus(db: D1Database, actor: PortalActor | null,
   try { await configurationActor(db, current, organization.id, true); canDelegate = true; } catch { /* deny */ }
   // Só existem com modelo do catálogo escolhido e apto a responder: é o destino que o aviso e a autorização precisam nomear.
   let documentRouteName: string | undefined, decisionRouteName: string | undefined;
-  const routeName = async (loaded: { config: AssistantConfig; rawCredentials: Record<string, unknown> }, task: 'document' | 'decision') => { try { return taskRouteName(await resolveTaskRoute(db, organization.id, loaded.config, loaded.rawCredentials, task)) ?? undefined; } catch { return undefined; } };
-  try { const loaded = await loadAssistantSettings(db, secret, organization.id, false, keys, current.userId); available = true; if (loaded.config.jevEnabled && loaded.config.decisionModel) decisionRouteName = await routeName(loaded, 'decision'); } catch { /* unavailable */ }
+  let decisionApproval: string | undefined, decisionCostMicros: number | undefined;
+  let documentApproval: string | undefined, documentCostMicros: number | undefined;
+  let documentProvider: 'openai' | 'deepseek' | undefined, documentHasDecision: boolean | undefined;
   try {
-   const loaded = await loadAssistantSettings(db, secret, organization.id, 'document', keys, current.userId); documentAvailable = true;
-   if (loaded.config.documentEnabled && loaded.config.documentModel) documentRouteName = await routeName(loaded, 'document');
-   if (loaded.config.documentEnabled && loaded.config.jevEnabled && loaded.config.decisionModel) decisionRouteName ??= await routeName(loaded, 'decision');
+   const loaded = await loadAssistantSettings(db, secret, organization.id, false, keys, current.userId);
+   const decision = loaded.config.jevEnabled && loaded.config.decisionModel ? await resolveTaskRoute(db, organization.id, loaded.config, loaded.rawCredentials, 'decision') : null;
+   decisionRouteName = taskRouteName(decision) ?? undefined;
+   if (decisionRouteName) {
+    decisionApproval = await taskApproval(organization.id, loaded.revision, 'operation', [decision]);
+    decisionCostMicros = documentMaximum(loaded.config, null, decision);
+   }
+   available = true;
+  } catch { /* unavailable */ }
+  try {
+   const loaded = await loadAssistantSettings(db, secret, organization.id, 'document', keys, current.userId);
+   const document = loaded.config.documentModel ? await resolveTaskRoute(db, organization.id, loaded.config, loaded.rawCredentials, 'document') : null;
+   const decision = loaded.config.jevEnabled && loaded.config.decisionModel ? await resolveTaskRoute(db, organization.id, loaded.config, loaded.rawCredentials, 'decision') : null;
+   documentRouteName = taskRouteName(document) ?? undefined;
+   decisionRouteName ??= taskRouteName(decision) ?? undefined;
+   documentApproval = await taskApproval(organization.id, loaded.revision, 'document', [document, decision]);
+   documentCostMicros = documentMaximum(loaded.config, document, decision);
+   documentProvider = loaded.config.textProvider;
+   documentHasDecision = loaded.config.jevEnabled;
+   documentAvailable = true;
   } catch { /* unavailable */ }
   let sttProvider = speechProviderForOrganization(organization.id, speechEnvironment),sttCredentialSource='vault';
   // Só existe com modelo do catálogo escolhido para voz e em condição de receber o áudio: é o destino que o consentimento precisa nomear.
@@ -181,9 +199,9 @@ export async function assistantStatus(db: D1Database, actor: PortalActor | null,
    const speech=await loadSpeechSettings(db,secret,organization.id,speechEnvironment,keys,current.userId);
    sttProvider=speech.provider;sttCredentialSource=speech.credentialSource;
    sttAvailable = true;
-   if (speech.config.speechModel) { const resolved = await resolveTaskRoute(db, organization.id, speech.config, speech.rawCredentials, 'speech', speech.provider), routeModel = speechRouteModel(resolved); if (routeModel) { sttRoute = speechDestination(resolved, speech.provider); sttRouteModel = routeModel; } }
+   if (speech.config.speechModel) { const resolved = await resolveTaskRoute(db, organization.id, speech.config, speech.rawCredentials, 'speech', speech.provider), routeModel = speechRouteModel(resolved); if (routeModel) { sttRoute = speechDestination(resolved, speech.provider); sttRouteModel = { ...routeModel, approval: await taskApproval(organization.id, speech.revision, 'speech', [resolved]) }; } }
   } catch { try{const stored=await loadAssistantSettings(db,secret,organization.id,'configuration',keys);sttProvider=speechProviderForOrganization(organization.id,speechEnvironment,stored.config.sttProvider);sttCredentialSource=sttProvider==='groq'&&stored.config.sttProvider==='legacy'?'environment':'vault';}catch{/* unavailable */} }
-  visible.push({ id: organization.id, name: organization.name, canConfigure, canDelegate, canUseAi, usageScope:policy.usageScope, usageIsMine:policy.usageScope==='private'&&policy.usageUserId===current.userId, available, sttAvailable, sttProvider, legacySttProvider:speechProviderForOrganization(organization.id,speechEnvironment), sttCredentialSource, documentAvailable, ...(sttRoute && sttRouteModel ? { sttRoute, sttRouteModel } : {}), ...(documentRouteName ? { documentRouteName } : {}), ...(decisionRouteName ? { decisionRouteName } : {}) });
+  visible.push({ id: organization.id, name: organization.name, canConfigure, canDelegate, canUseAi, usageScope:policy.usageScope, usageIsMine:policy.usageScope==='private'&&policy.usageUserId===current.userId, available, sttAvailable, sttProvider, legacySttProvider:speechProviderForOrganization(organization.id,speechEnvironment), sttCredentialSource, documentAvailable, documentApproval, documentCostMicros, documentProvider, documentHasDecision, decisionApproval, decisionCostMicros, ...(sttRoute && sttRouteModel ? { sttRoute, sttRouteModel } : {}), ...(documentRouteName ? { documentRouteName } : {}), ...(decisionRouteName ? { decisionRouteName } : {}) });
  }
  const selected = visible.find(organization => organization.id === selectedId) ?? (visible.length === 1 ? visible[0] : undefined);
  const result = { available: selected?.available ?? false, documentAvailable:selected?.documentAvailable??false, canConfigure: selected?.canConfigure ?? false, canDelegate: selected?.canDelegate ?? false, organizationId: selected?.id ?? '', organizations: visible, voice: { dictation: 'browser-optional', uploadStt: selected?.sttAvailable ?? false } };

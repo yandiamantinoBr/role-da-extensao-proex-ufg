@@ -2,27 +2,46 @@
  * Roteamento por tarefa: a administração geral pode mandar documento, conferência/triagem e voz
  * para um modelo do catálogo. Chave vazia ('') = padrão de hoje, sem nenhuma leitura a mais.
  *
- * Regra para nunca cobrar duas vezes: só se cai no padrão quando é certo que o modelo escolhido
- * não cobrou, isto é, antes do envio (sem chave, desligado, removido, não serve) ou quando o
- * serviço respondeu com um status de recusa certa (RefusedError: 400, 401, 402, 403, 404, 413, 415, 422, 429).
- * Outro status de erro (408, 5xx…), prazo, rede e formato ruim sobem como erro, sem segunda chamada.
+ * O padrão só é usado antes de um envio ao modelo do catálogo. Um intermediário pode
+ * devolver um erro HTTP depois do encaminhamento. Qualquer falha posterior encerra o pedido.
  */
 import { all } from '../database';
 import { HttpError } from '../errors';
 import { PROVIDERS, textModel, type AssistantConfig, type TaskModelKey } from './contracts';
-import { firstJsonObject, genericChat, RefusedError } from './generic-provider';
+import { firstJsonObject, genericChat } from './generic-provider';
+import { digest } from './crypto';
+import { aiReservation } from './admission';
 import { catalogModelName, fitsTask, isTaskDefault, safeBaseUrl, type CatalogModel, type CatalogProvider, type RoutedTask } from './model-catalog';
-import { loadCatalog } from './model-catalog-store';
+import { catalogSettingName, loadCatalog } from './model-catalog-store';
 import { taskRouteLabel, type SpeechRouteModel } from './role-contracts';
 
 export const TASK_MODEL_KEY: Record<RoutedTask, TaskModelKey> = { document: 'documentModel', decision: 'decisionModel', speech: 'speechModel' };
 export const TASK_LABEL: Record<RoutedTask, string> = { document: 'documentos', decision: 'conferência e triagem', speech: 'voz' };
 /** Destino resolvido: provedor e modelo do catálogo, endereço já validado e a chave do cofre. */
-export type TaskRoute = { provider: CatalogProvider; model: CatalogModel; baseUrl: string; apiKey: string };
+export type TaskRoute = { provider: CatalogProvider; model: CatalogModel; baseUrl: string; apiKey: string; catalogRaw: string | null };
 export type TaskRouteSkip = { skip: string };
 /** null = sem roteamento (chave vazia ou o escolhido é o próprio padrão). */
 export type ResolvedTaskRoute = TaskRoute | TaskRouteSkip | null;
 export type DefaultSpeech = 'deepgram' | 'groq';
+
+/** Match what was shown, even when two entries have identical display names. Never include credentials. */
+export async function taskApproval(organizationId: string, revision: number, purpose: 'operation' | 'triage' | 'document' | 'speech', routes: readonly ResolvedTaskRoute[]) {
+  const destinations = routes.map(route => route && !('skip' in route) ? [
+    route.provider.id, route.provider.kind, route.baseUrl, route.provider.keyRef, route.provider.label,
+    route.model.id, route.model.model, route.model.label, route.model.price.inputPerM, route.model.price.outputPerM, route.model.price.perHour,
+  ] : null);
+  return digest(JSON.stringify(['proex-task-route/v1', organizationId, revision, purpose, destinations]));
+}
+
+export const hasTaskRoute = (route: ResolvedTaskRoute): route is TaskRoute => Boolean(route && !('skip' in route));
+
+/** Run in the reservation transaction and again immediately before dispatch. */
+export function taskRouteGuards(db: D1Database, organizationId: string, routes: readonly ResolvedTaskRoute[]) {
+  const snapshots = new Set(routes.filter(hasTaskRoute).map(route => route.catalogRaw));
+  return [...snapshots].map(raw => db.prepare(
+    "SELECT CASE WHEN (SELECT value FROM settings WHERE name=?) IS ? THEN 1 ELSE json_extract('[]','task_route_changed') END",
+  ).bind(catalogSettingName(organizationId), raw));
+}
 
 /** Same rule as settings.validProviderKey (kept local to avoid an import cycle). */
 const validProviderKey = (value: unknown): value is string => typeof value === 'string' && value.length >= 12 && value.length <= 512 && !/\s|[\u0000-\u001f]/u.test(value);
@@ -40,7 +59,7 @@ function sameAsDefault(config: AssistantConfig, provider: CatalogProvider, model
 export async function resolveTaskRoute(db: D1Database, organizationId: string, config: AssistantConfig, rawCredentials: Record<string, unknown>, task: RoutedTask, defaultSpeech?: DefaultSpeech): Promise<ResolvedTaskRoute> {
   const chosen = config[TASK_MODEL_KEY[task]];
   if (!chosen) return null;
-  const { catalog } = await loadCatalog(db, organizationId);
+  const { catalog, raw } = await loadCatalog(db, organizationId);
   const model = catalog.models.find(entry => entry.id === chosen && entry.enabled);
   if (!model) return { skip: 'Modelo removido ou desligado no catálogo.' };
   const provider = catalog.providers.find(entry => entry.id === model.providerId);
@@ -51,7 +70,7 @@ export async function resolveTaskRoute(db: D1Database, organizationId: string, c
   if (sameAsDefault(config, provider, model, baseUrl, task, defaultSpeech)) return null;
   const apiKey = rawCredentials[provider.keyRef];
   if (!validProviderKey(apiKey)) return { skip: 'Falta a chave do provedor deste modelo.' };
-  return { provider, model, baseUrl, apiKey };
+  return { provider, model, baseUrl, apiKey, catalogRaw: raw };
 }
 
 /** Endereço do formato JEV no provedor escolhido (mesmo caminho do TypeSafe). */
@@ -73,10 +92,13 @@ export function documentCeiling(config: AssistantConfig, resolved: ResolvedTaskR
   const standard = textModel(config), price = resolved.model.price;
   return { text: { inputMicrosPerToken: Math.max(standard.inputMicrosPerToken, price.inputPerM), outputMicrosPerToken: Math.max(standard.outputMicrosPerToken, price.outputPerM) } };
 }
+export const DOCUMENT_AI_BODY_LIMIT = 24000;
+export const documentPrices = (config: AssistantConfig, document: ResolvedTaskRoute, decision: ResolvedTaskRoute) => ({ ...documentCeiling(config, document), ...decisionCeiling(decision) });
+export const documentMaximum = (config: AssistantConfig, document: ResolvedTaskRoute, decision: ResolvedTaskRoute) => aiReservation(config, DOCUMENT_AI_BODY_LIMIT, documentPrices(config, document, decision)).cost;
 /**
  * Leitura de documento no modelo escolhido: mesma instrução e mesmo texto do padrão, uma chamada só,
  * com temperatura 0 onde o portal envia temperatura (extração de campos não deve variar entre pedidos).
- * Recusa do provedor sai como RefusedError (permite o padrão); prazo, rede e formato ruim sobem como erro.
+ * Qualquer erro do provedor encerra o pedido antes de uma segunda transmissão.
  */
 export async function routedDocumentProposal(route: TaskRoute, messages: { role: string; content: string }[], maxTokens: number, signal: AbortSignal, fetcher?: typeof fetch) {
   const system = messages.find(message => message.role === 'system')?.content ?? '', user = messages.find(message => message.role === 'user')?.content ?? '';
@@ -104,10 +126,6 @@ export function speechRouteModel(resolved: ResolvedTaskRoute): SpeechRouteModel 
 export function taskRouteName(resolved: ResolvedTaskRoute): string | null {
   return resolved && !('skip' in resolved) ? taskRouteLabel({ label: resolved.model.label, service: resolved.provider.label }) : null;
 }
-/** Motivo da queda por recusa, do jeito que o histórico mostra. Chave recusada (401/403) diz onde conferir. */
-export function refusalReason(error: RefusedError) {
-  return `O serviço recusou o pedido (código ${error.providerStatus}).${error.providerStatus === 401 || error.providerStatus === 403 ? ' Confira a chave na aba Chaves.' : ''}`;
-}
 const brasiliaDay = (value: Date) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(value);
 
 /**
@@ -129,17 +147,11 @@ export async function recordRouteFallback(db: D1Database, organizationId: string
 }
 
 /**
- * Executa a tarefa no modelo escolhido e cai no padrão só nos dois casos seguros: rota pulada antes do
- * envio ou recusa certa do serviço (RefusedError). `onFallback` grava a auditoria e refaz as cercas antes do
- * padrão. Qualquer outro erro sobe sem segunda chamada. `route` diz quem respondeu (null = padrão).
+ * Usa o padrão apenas quando o escolhido não recebeu o pedido. `onFallback` registra a
+ * indisponibilidade e confere as permissões. `route` diz quem respondeu (null = padrão).
  */
 export async function withTaskRoute<T>(resolved: ResolvedTaskRoute, options: { chosen: (route: TaskRoute) => Promise<T>; fallback: () => Promise<T>; onFallback: (reason: string) => Promise<void> }): Promise<{ result: T; route: TaskRoute | null }> {
   if (!resolved) return { result: await options.fallback(), route: null };
   if ('skip' in resolved) { await options.onFallback(resolved.skip); return { result: await options.fallback(), route: null }; }
-  try { return { result: await options.chosen(resolved), route: resolved }; }
-  catch (error) {
-    if (!(error instanceof RefusedError)) throw error;
-    await options.onFallback(refusalReason(error));
-    return { result: await options.fallback(), route: null };
-  }
+  return { result: await options.chosen(resolved), route: resolved };
 }

@@ -6,14 +6,14 @@ import assert from 'node:assert/strict';
 import {resolve} from 'node:path';
 import {compile,nativeFixture,root} from './support/traffic-fixture.mjs';
 
-const {configureAssistant}=await import(compile('lib/assistant/settings.ts'));
+const {assistantStatus,configureAssistant}=await import(compile('lib/assistant/settings.ts'));
 const {migrateAssistantCredentials}=await import(compile('lib/assistant/credential-migration.ts'));
 const {manageAssistantCredential}=await import(compile('lib/assistant/credential-vault.ts'));
 const {DEFAULT_ASSISTANT_CONFIG}=await import(compile('lib/assistant/contracts.ts'));
 
 const secret='test-only-import-destination-session-secret',keys={current:'synthetic-only-dedicated-import-destination-key'};
 const base='https://portal.example.invalid',OPENAI='https://api.openai.com/v1/chat/completions',DEEPSEEK='https://api.deepseek.com/chat/completions';
-const LUNA='GPT-5.6 Luna (OpenAI)',CHANGED={error:'O modelo que recebe este texto mudou. Confira o aviso e autorize de novo.',code:'document_ai_destination'};
+const LUNA='GPT-5.6 Luna (OpenAI)',CHANGED={error:'O modelo ou o custo da leitura mudou. Confira o aviso e autorize de novo.',code:'document_ai_destination'};
 const content='O cadastro se chama Jardim universitário. Sua área informada é Comunicação. A execução começa em 31/10/2026. Não há data final informada.';
 const fields={fields:[{key:'name',value:'Jardim universitário',quote:'O cadastro se chama Jardim universitário.'},{key:'thematicArea',value:'Comunicação',quote:'Sua área informada é Comunicação.'}]};
 
@@ -35,12 +35,13 @@ async function fixture(t,documentModel) {
  t.mock.method(globalThis,'fetch',async(url,init)=>{const body=JSON.parse(init.body);calls.push(String(url));return Response.json({model:body.model,choices:[{finish_reason:'stop',message:{content:JSON.stringify(fields)}}],usage:{prompt_tokens:500,completion_tokens:200}});});
  t.after(()=>{delete globalThis.__importDestinationTest;f.close();});
  const json=await import(compile('app/api/imports/route.ts',replacements,cache)),form=await import(compile('app/api/imports/document/route.ts',replacements,cache));
+ const current=(await assistantStatus(f.db,owner,secret,org,undefined,keys)).organizations.find(entry=>entry.id===org);
  const paths={
-  json:destination=>json.POST(new Request(base+'/api/imports',{method:'POST',headers:{Origin:base,'X-Proex-Action':'1','Content-Type':'application/json'},
-   body:JSON.stringify({action:'preview',kind:'project',projectId:'',organizationId:org,itemId:'',sourceMode:'document',sourceUrl:'',format:'text',useAi:true,aiConsent:true,aiOperationKey:crypto.randomUUID(),content,...(destination===undefined?{}:{aiDestination:destination})})})),
-  form:destination=>{
+  json:(destination,approval=current.documentApproval)=>json.POST(new Request(base+'/api/imports',{method:'POST',headers:{Origin:base,'X-Proex-Action':'1','Content-Type':'application/json'},
+   body:JSON.stringify({action:'preview',kind:'project',projectId:'',organizationId:org,itemId:'',sourceMode:'document',sourceUrl:'',format:'text',useAi:true,aiConsent:true,aiOperationKey:crypto.randomUUID(),content,aiApproval:approval,...(destination===undefined?{}:{aiDestination:destination})})})),
+  form:(destination,approval=current.documentApproval)=>{
    const body=new FormData();body.set('file',new File([content],'fonte-sintetica.txt',{type:'text/plain'}));
-   for(const [name,value] of Object.entries({kind:'project',projectId:'',organizationId:org,itemId:'',sourceUrl:'',useAi:'true',aiConsent:'true',aiOperationKey:crypto.randomUUID(),...(destination===undefined?{}:{aiDestination:destination})}))body.set(name,value);
+   for(const [name,value] of Object.entries({kind:'project',projectId:'',organizationId:org,itemId:'',sourceUrl:'',useAi:'true',aiConsent:'true',aiApproval:approval??'',aiOperationKey:crypto.randomUUID(),...(destination===undefined?{}:{aiDestination:destination})}))body.set(name,value);
    return form.POST(new Request(base+'/api/imports/document',{method:'POST',headers:{Origin:base,'X-Proex-Action':'1'},body}));
   },
  };
@@ -60,11 +61,11 @@ for(const path of ['json','form']) test(`importer ${path} path: with a chosen do
  assert.deepEqual(f.calls,[OPENAI]);assert.equal(preview.provenance.ai.provider,'catalog:openai-gpt-5-6-luna');assert.equal(f.reserved(),1);
 });
 
-for(const path of ['json','form']) test(`importer ${path} path: without a chosen model the destination field is ignored`,async t=>{
+for(const path of ['json','form']) test(`importer ${path} path: without a chosen model the approved default is used`,async t=>{
  const f=await fixture(t,'');
- for(const destination of [undefined,'',LUNA+'|']){
+ for(const destination of [undefined,'']){
   const response=await f.paths[path](destination),preview=await response.json();
   assert.equal(response.status,200,JSON.stringify(preview));assert.equal(preview.provenance.ai.provider,'deepseek');
  }
- assert.deepEqual(f.calls,[DEEPSEEK,DEEPSEEK,DEEPSEEK]);
+ assert.deepEqual(f.calls,[DEEPSEEK,DEEPSEEK]);
 });

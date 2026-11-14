@@ -6,7 +6,7 @@ import { containsCredential } from '../assistant/sensitive';
 import { assistantUsageSql, loadAssistantSettings } from '../assistant/settings';
 import { reservationStatements } from '../assistant/admission';
 import { classifyTaskTriage, taskTriageBody } from '../assistant/provider';
-import { decisionCeiling, decisionTarget, recordRouteFallback, resolveTaskRoute, taskRouteName, withTaskRoute, type ResolvedTaskRoute } from '../assistant/task-routing';
+import { decisionCeiling, decisionTarget, recordRouteFallback, resolveTaskRoute, taskApproval, taskRouteGuards, taskRouteName, withTaskRoute, type ResolvedTaskRoute } from '../assistant/task-routing';
 import { TASK_PRIORITIES, choices, fail, id, onlyKeys, text, version } from './contracts';
 import { atomic, authority, type Scope } from './scope';
 import { serverWorkClock } from './time';
@@ -43,15 +43,15 @@ export async function taskTriageAvailable(db:D1Database, actor:PortalActor, task
  * e não lê chave nem catálogo. Com modelo escolhido e apto a responder, devolve também a reserva máxima que o servidor fará
  * e o nome do modelo que recebe o resumo, para o aviso e a autorização nomearem o destino real.
  */
-export async function taskTriageState(db:D1Database, actor:PortalActor, taskId:unknown, secret:string, keys?:CredentialKeys):Promise<{enabled:boolean;reserveUsdMicros?:number;destinationName?:string}> {
+export async function taskTriageState(db:D1Database, actor:PortalActor, taskId:unknown, secret:string, keys?:CredentialKeys):Promise<{enabled:boolean;reserveUsdMicros?:number;destinationName?:string;approval?:string}> {
  if (!await taskTriageAvailable(db,actor,taskId)) return {enabled:false};
  try {
   const task = await getTask(db,actor,id(taskId)!);
   if (!await one(db, "SELECT 1 FROM ai_organization_settings WHERE organization_id=? AND COALESCE(json_extract(config_json,'$.decisionModel'),'')<>''", [task.organization_id])) return {enabled:true};
-  const {config, rawCredentials} = await loadAssistantSettings(db,secret,task.organization_id,'triage',keys,actor.userId);
+  const {config, rawCredentials, revision} = await loadAssistantSettings(db,secret,task.organization_id,'triage',keys,actor.userId);
   const decisionRoute = config.decisionModel ? await resolveTaskRoute(db,task.organization_id,config,rawCredentials,'decision') : null;
   const destinationName = taskRouteName(decisionRoute);
-  return destinationName ? {enabled:true,reserveUsdMicros:triageReserveMicros(decisionRoute),destinationName} : {enabled:true};
+  return destinationName ? {enabled:true,reserveUsdMicros:triageReserveMicros(decisionRoute),destinationName,approval:await taskApproval(task.organization_id,revision,'triage',[decisionRoute])} : {enabled:true};
  } catch { return {enabled:true}; } // sem o teto, a tela mostra o número do padrão; o envio continua validando tudo de novo
 }
 
@@ -78,7 +78,7 @@ function guardError(error:unknown):never {
 
 export async function prepareTaskTriage(db:D1Database, actor:PortalActor, input:Record<string,unknown>, secret:string,
   options:{now?:number;fetcher?:typeof fetch;keys?:CredentialKeys}={}):Promise<TriageResponse> {
- onlyKeys(input,['id','expectedVersion','operationKey','context','consent','destinationName']);
+ onlyKeys(input,['id','expectedVersion','operationKey','context','consent','destinationName','approval']);
  if (input.consent!==true) fail('Confirme o envio do resumo operacional ao provedor.', 'triage_consent');
  if (typeof input.operationKey!=='string' || !/^[A-Za-z0-9_-]{8,100}$/.test(input.operationKey)) fail('Abra a triagem novamente.', 'triage_operation');
  const rawContext = text(input.context,TRIAGE_CONTEXT_LIMIT);
@@ -94,17 +94,18 @@ export async function prepareTaskTriage(db:D1Database, actor:PortalActor, input:
  const {config, credentials, rawCredentials, revision} = await loadAssistantSettings(db,secret,task.organization_id,'triage',options.keys,actor.userId);
  const now = options.now ?? Date.now(), {asOf:createdAt,today:day} = serverWorkClock(now);
  const proposalId = await digest(JSON.stringify(['triage',actor.userId,task.id,input.operationKey]));
- const fingerprint = await digest(JSON.stringify([task.id,task.version,revision,context]));
  const authorization = guard(db,actor,task,revision);
  const body = taskTriageBody(config,context,task.due_at,day);
  if (new TextEncoder().encode(JSON.stringify(body)).byteLength>TRIAGE_INPUT_LIMIT) fail('Resuma o contexto antes de enviar.', 'triage_context_limit');
  // Triagem roteada: só existe com decisionModel escolhido. Vazio = null = exatamente o caminho de sempre.
  const decisionRoute = config.decisionModel ? await resolveTaskRoute(db,task.organization_id,config,rawCredentials,'decision') : null;
- // A tela informa o modelo que mostrou na autorização (ausente ou '' = só o padrão). Com modelo escolhido e apto, o nome
- // precisa ser o de quem recebe o resumo agora: se for outro, nada é enviado nem reservado até a pessoa ver o destino
- // e autorizar de novo. Sem modelo escolhido, o campo é ignorado e nada muda.
  const destinationName = taskRouteName(decisionRoute), shownDestination = typeof input.destinationName==='string' ? input.destinationName : '';
- if (destinationName && shownDestination!==destinationName) fail('O modelo que recebe este resumo mudou. Confira o aviso e autorize de novo.', 'triage_destination', 409);
+ const approval=destinationName?await taskApproval(task.organization_id,revision,'triage',[decisionRoute]):undefined;
+ const destinationChanged=()=>fail('O modelo ou o custo desta triagem mudou. Confira o aviso e autorize de novo.','triage_destination',409);
+ if ((destinationName??'')!==shownDestination || approval!==input.approval) return destinationChanged();
+ const fingerprint = await digest(JSON.stringify(approval?[task.id,task.version,revision,context,approval]:[task.id,task.version,revision,context]));
+ const routeGuards=taskRouteGuards(db,task.organization_id,[decisionRoute]);
+ async function dispatchFence(){if(routeGuards.length)await db.batch([...routeGuards,authorization]);else await authorization.first();}
  const routedBody = decisionRoute && !('skip' in decisionRoute) ? taskTriageBody(config,context,task.due_at,day,decisionRoute.model.model) : null;
  if (routedBody && new TextEncoder().encode(JSON.stringify(routedBody)).byteLength>TRIAGE_INPUT_LIMIT) fail('Resuma o contexto antes de enviar.', 'triage_context_limit');
  // Com rota, reserva o maior preço entre o escolhido e o padrão (o pedido pode terminar em qualquer um).
@@ -122,21 +123,21 @@ export async function prepareTaskTriage(db:D1Database, actor:PortalActor, input:
  const nonce=uid();
  try {
   await db.batch(reservationStatements(db,{
-   table:'ai_task_triage_calls', authorization,id:proposalId,fingerprint,nonce,actorId:actor.userId,
+   table:'ai_task_triage_calls', authorization,routeGuards,id:proposalId,fingerprint,nonce,actorId:actor.userId,
    projectId:task.project_id,organizationId:task.organization_id,day,createdAt,revision,config,
    reservation:{tokens:TRIAGE_INPUT_LIMIT,cost:reservedUsdMicros,calls:1,milliseconds:config.timeoutMs},
    triage:{taskId:task.id,taskVersion:task.version,expiresAt:now+10*60000},
   }));
- } catch(error) { const duplicate=await replay(); if(duplicate)return duplicate; guardError(error); }
+ } catch(error) { if(String(error).includes('task_route_changed'))return destinationChanged();const duplicate=await replay(); if(duplicate)return duplicate; guardError(error); }
  const claim=await one(db,'SELECT admission_nonce FROM ai_task_triage_calls WHERE id=?',[proposalId]);
  if(claim?.admission_nonce!==nonce) return (await replay()) ?? fail('O limite diário da organização foi atingido. Use a classificação manual.', 'triage_budget',429);
 
  const controller=new AbortController(), timer=setTimeout(()=>controller.abort(),config.timeoutMs);
  let measured:number|null=null;
  try {
-  await authorization.first();
+  await dispatchFence();
   if(controller.signal.aborted) fail('A triagem excedeu o tempo reservado.','triage_timeout',503);
-  // Com rota: uma chamada ao escolhido; o padrão só entra se o escolhido não pôde receber ou recusou (sem cobrança).
+  // Com rota: uma chamada ao escolhido; o padrão só entra se o escolhido estava indisponível antes do envio.
   const routed=decisionRoute?await withTaskRoute(decisionRoute,{
    chosen:route=>classifyTaskTriage(config,credentials,routedBody!,controller.signal,options.fetcher,decisionTarget(route)),
    fallback:()=>classifyTaskTriage(config,credentials,body,controller.signal,options.fetcher),
@@ -165,6 +166,7 @@ export async function prepareTaskTriage(db:D1Database, actor:PortalActor, input:
  } catch(error) {
   await db.prepare("UPDATE ai_task_triage_calls SET status='failed',input_tokens=?,proposal_json=NULL WHERE id=? AND admission_nonce=? AND status='reserved'")
    .bind(measured,proposalId,nonce).run();
+  if(String(error).includes('task_route_changed'))return destinationChanged();
   return guardError(error);
  } finally {clearTimeout(timer);}
 }

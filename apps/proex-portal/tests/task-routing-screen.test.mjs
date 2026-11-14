@@ -104,28 +104,28 @@ test('teto da voz: o que a tela calcula com os dados do estado é exatamente o q
  const groq = fixture(t), first = speechProviders();
  await speechSetup(groq);
  const shown = (await roleSpeech(groq)).routeModel;
- await transcribeSpeech(groq.db, groq.actors.inventory, speechInput('catalog:groq-whisper-turbo', 1), secret, { fetcher: first.fetch, keys });
+ await transcribeSpeech(groq.db, groq.actors.inventory, { ...speechInput('catalog:groq-whisper-turbo', 1), approval: shown.approval }, secret, { fetcher: first.fetch, keys });
  assert.deepEqual(first.urls, [GROQ_AUDIO]);
  assert.equal(reserved(groq), 112); assert.equal(speechRouteCeilingMicros(shown.style, 1, shown.perHour), 112);
- await transcribeSpeech(groq.db, groq.actors.inventory, speechInput('catalog:groq-whisper-turbo', 37.5), secret, { fetcher: first.fetch, keys });
+ await transcribeSpeech(groq.db, groq.actors.inventory, { ...speechInput('catalog:groq-whisper-turbo', 37.5), approval: shown.approval }, secret, { fetcher: first.fetch, keys });
  assert.equal(reserved(groq), 112 + speechRouteCeilingMicros(shown.style, 37.5, shown.perHour));
 
  // Deepgram do catálogo escolhido sobre o padrão Groq: formato Deepgram, com o piso da reserva revisada.
  const deepgram = fixture(t), second = speechProviders();
  await speechSetup(deepgram, { sttProvider: 'groq', speechModel: 'deepgram-nova-3' });
  const other = (await roleSpeech(deepgram)).routeModel;
- assert.deepEqual(other, { label: 'Nova-3 (Deepgram)', service: 'Deepgram', perHour: 0.258, style: 'deepgram' });
- await transcribeSpeech(deepgram.db, deepgram.actors.inventory, speechInput('catalog:deepgram-nova-3', 1), secret, { fetcher: second.fetch, keys });
+ assert.deepEqual({ ...other, approval: typeof other.approval }, { label: 'Nova-3 (Deepgram)', service: 'Deepgram', perHour: 0.258, style: 'deepgram', approval: 'string' });
+ await transcribeSpeech(deepgram.db, deepgram.actors.inventory, { ...speechInput('catalog:deepgram-nova-3', 1), approval: other.approval }, secret, { fetcher: second.fetch, keys });
  assert.deepEqual(second.urls, [SPEECH_ENDPOINT]);
  assert.equal(reserved(deepgram), 717); assert.equal(speechRouteCeilingMicros(other.style, 1, other.perHour), 717);
- await transcribeSpeech(deepgram.db, deepgram.actors.inventory, speechInput('catalog:deepgram-nova-3', 60), secret, { fetcher: second.fetch, keys });
+ await transcribeSpeech(deepgram.db, deepgram.actors.inventory, { ...speechInput('catalog:deepgram-nova-3', 60), approval: other.approval }, secret, { fetcher: second.fetch, keys });
  assert.equal(reserved(deepgram), 717 + 30000); assert.equal(speechRouteCeilingMicros(other.style, 60, other.perHour), 30000);
 });
 
 // ---------------------------------------------------------------------------------------------
 // Estado: nome, preço e formato só existem com modelo escolhido em condição de receber o áudio.
 // ---------------------------------------------------------------------------------------------
-const TODAY_ORGANIZATION = ['id', 'name', 'canConfigure', 'canDelegate', 'canUseAi', 'usageScope', 'usageIsMine', 'available', 'sttAvailable', 'sttProvider', 'legacySttProvider', 'sttCredentialSource', 'documentAvailable'];
+const TODAY_ORGANIZATION = ['id', 'name', 'canConfigure', 'canDelegate', 'canUseAi', 'usageScope', 'usageIsMine', 'available', 'sttAvailable', 'sttProvider', 'legacySttProvider', 'sttCredentialSource', 'documentAvailable', 'documentApproval', 'documentCostMicros', 'documentProvider', 'documentHasDecision', 'decisionApproval', 'decisionCostMicros'];
 
 test('estado sem modelo de voz escolhido: Rolê e assistente respondem exatamente como hoje e o catálogo nem é lido para a voz', async t => {
  const f = fixture(t);
@@ -141,7 +141,10 @@ test('estado sem modelo de voz escolhido: Rolê e assistente respondem exatament
 test('estado com modelo de voz escolhido: o destino vem com nome do modelo, serviço, preço por hora e formato, sem chave nem endereço', async t => {
  const f = fixture(t), expected = { label: 'Whisper turbo (Groq)', service: 'Groq', perHour: 0.04, style: 'groq' };
  await speechSetup(f);
- assert.deepEqual(await roleSpeech(f), { available: true, provider: 'deepgram', route: 'catalog:groq-whisper-turbo', routeModel: expected });
+ const voice = await roleSpeech(f);
+ assert.match(voice.routeModel.approval, /^[A-Za-z0-9_-]{43}$/);
+ Object.assign(expected, { approval: voice.routeModel.approval });
+ assert.deepEqual(voice, { available: true, provider: 'deepgram', route: 'catalog:groq-whisper-turbo', routeModel: expected });
  const organization = await organizationOf(f);
  assert.deepEqual(Object.keys(organization), [...TODAY_ORGANIZATION, 'sttRoute', 'sttRouteModel']);
  assert.equal(organization.sttRoute, 'catalog:groq-whisper-turbo'); assert.deepEqual(organization.sttRouteModel, expected);
@@ -230,31 +233,28 @@ test('textos sem modelo escolhido: exatamente os de antes, com nome ausente, nul
  assert.equal(documentConsentText(), 'Autorizo enviar o texto extraído desta fonte ao provedor de texto escolhido para esta organização (DeepSeek ou OpenAI) e ao Jev se habilitado.');
 });
 
-test('textos com modelo escolhido: nomeiam o modelo e dizem que o padrão do portal recebe se ele não puder responder', () => {
+test('textos com modelo escolhido: nomeiam apenas quem pode receber nesta confirmação', () => {
  const texts = {
   aviso: triageNoticeText(DECIDER), triagem: triageConsentText(DECIDER), documento: documentConsentText(LUNA), documentoEConferencia: documentConsentText(LUNA, DECIDER),
   conferencia: documentConsentText(null, DECIDER), registro: operationConferenceText(DECIDER), servico: operationsConferenceSentence(DECIDER),
  };
  assert.deepEqual(texts, {
-  aviso: 'O modelo Decider v1.2 (Perplexity) recebe esse resumo e o prazo desta demanda. Se ele não puder responder, quem recebe é o JEV, da TypeSafe (padrão do portal).',
-  triagem: 'Autorizo enviar este resumo e prazo ao modelo Decider v1.2 (Perplexity) e, se ele não puder responder, ao JEV, da TypeSafe (padrão do portal).',
-  documento: 'Autorizo enviar o texto desta fonte ao modelo GPT-5.6 Luna (OpenAI). Se ele não puder responder, o texto vai para o padrão do portal (DeepSeek ou OpenAI). O texto também vai ao JEV se a conferência estiver ligada.',
-  documentoEConferencia: 'Autorizo enviar o texto desta fonte ao modelo GPT-5.6 Luna (OpenAI) (leitura) e ao modelo Decider v1.2 (Perplexity) (conferência). Se um deles não puder responder, o texto vai para o padrão do portal (DeepSeek ou OpenAI; conferência pelo JEV, da TypeSafe).',
-  conferencia: 'Autorizo enviar o texto desta fonte ao padrão do portal (DeepSeek ou OpenAI) e, para a conferência, ao modelo Decider v1.2 (Perplexity). Se ele não puder responder, a conferência fica com o JEV, da TypeSafe.',
-  registro: ', com conferência do modelo Decider v1.2 (Perplexity); se ele não puder responder, a conferência fica com o JEV, da TypeSafe (padrão do portal)',
-  servico: 'Os registros de estoque são conferidos pelo modelo Decider v1.2 (Perplexity); se ele não puder responder, pelo JEV, da TypeSafe.',
+  aviso: 'O modelo Decider v1.2 (Perplexity) recebe esse resumo e o prazo desta demanda.',
+  triagem: 'Autorizo enviar este resumo e prazo ao modelo Decider v1.2 (Perplexity).',
+  documento: 'Autorizo enviar o texto desta fonte ao modelo GPT-5.6 Luna (OpenAI). O texto também vai ao JEV se a conferência estiver ligada.',
+  documentoEConferencia: 'Autorizo enviar o texto desta fonte ao modelo GPT-5.6 Luna (OpenAI) (leitura) e ao modelo Decider v1.2 (Perplexity) (conferência).',
+  conferencia: 'Autorizo enviar o texto desta fonte ao padrão do portal (DeepSeek ou OpenAI) e, para a conferência, ao modelo Decider v1.2 (Perplexity).',
+  registro: ', com conferência do modelo Decider v1.2 (Perplexity)',
+  servico: 'Os registros de estoque são conferidos pelo modelo Decider v1.2 (Perplexity).',
  });
  assert.equal(operationsServiceText(DECIDER), 'o serviço de registros de estoque', 'o item da lista não muda: quem confere vai na frase à parte');
  for (const [name, text] of Object.entries(texts)) {
-  assert.match(text, /se (ele|um deles) não puder responder/i, `${name}: diz quem recebe quando o escolhido não responde`);
+  assert.doesNotMatch(text, /se (ele|um deles) não puder responder/i, name);
   assert.doesNotMatch(text, /\b(tokens?|fallback|rotas?|endpoints?|catálogo|provedor(es)?|aptos?)\b/i, `${name}: sem termo técnico`);
   assert.doesNotMatch(text, /JEV padrão|padrão de hoje/i, `${name}: o padrão é "padrão do portal"`);
   assert.doesNotMatch(text.replaceAll(DECIDER, 'X').replaceAll(LUNA, 'Y'), /\([^)]*\(/, `${name}: sem parênteses dentro de parênteses`);
  }
- // Todo texto que nomeia um modelo continua nomeando o padrão: a autorização cobre os dois destinos.
- for (const name of ['aviso', 'triagem', 'documentoEConferencia', 'conferencia', 'registro', 'servico']) assert.match(texts[name], /JEV, da TypeSafe/, name);
- for (const name of ['aviso', 'triagem', 'registro']) assert.match(texts[name], /JEV, da TypeSafe \(padrão do portal\)/, name);
- for (const name of ['documento', 'documentoEConferencia', 'conferencia']) assert.match(texts[name], /padrão do portal \(DeepSeek ou OpenAI/, name);
+
 });
 
 test('nome do modelo escolhido: tira a observação entre parênteses do serviço e não repete o serviço que o nome já diz', () => {
@@ -268,6 +268,12 @@ test('nome do modelo escolhido: tira a observação entre parênteses do serviç
  // Nome recebido do servidor: só texto curto chega à tela.
  for (const value of [undefined, null, 7, true, {}, [LUNA]]) assert.equal(shownRouteName(value), '');
  assert.equal(shownRouteName(`  ${LUNA} `), LUNA); assert.equal(shownRouteName('x'.repeat(500)).length, 160);
+});
+
+test('a documentação na tela nomeia o serviço padrão efetivo e a conferência somente quando ligada', () => {
+ assert.equal(documentConsentText(null, null, 'deepseek', false), 'Autorizo enviar o texto desta fonte à DeepSeek.');
+ assert.equal(documentConsentText(null, DECIDER, 'openai', true), `Autorizo enviar o texto desta fonte à OpenAI e ao modelo ${DECIDER} para conferência.`);
+ assert.equal(documentConsentText(LUNA, null, 'deepseek', true), `Autorizo enviar o texto desta fonte ao modelo ${LUNA} e ao JEV, da TypeSafe, para conferência.`);
 });
 
 // ---------------------------------------------------------------------------------------------

@@ -3,11 +3,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { PROVIDERS, type AssistantPlan } from '@/lib/assistant/contracts';
 import type { SpeechProvider } from '@/lib/assistant/settings';
-import { operationsConferenceSentence, shownRouteName, type SpeechRouteModel } from '@/lib/assistant/role-contracts';
+import { formatMicros, operationsConferenceSentence, shownRouteName, type SpeechRouteModel } from '@/lib/assistant/role-contracts';
 import SpeechInput from './speech-input';
 import { startReviewedDictation, type DictationConstructor } from '@/lib/assistant/dictation';
 
-type Status = { available:boolean; organizationId?:string; organizations?:{id:string;name:string;available:boolean;sttAvailable:boolean;sttProvider?:SpeechProvider;sttRoute?:string;sttRouteModel?:SpeechRouteModel;decisionRouteName?:string}[] };
+type Status = { available:boolean; organizationId?:string; organizations?:{id:string;name:string;available:boolean;sttAvailable:boolean;sttProvider?:SpeechProvider;sttRoute?:string;sttRouteModel?:SpeechRouteModel;decisionRouteName?:string;decisionApproval?:string;decisionCostMicros?:number}[] };
 /** Só chama de TypeSafe a conferência que foi o padrão: com modelo escolhido para conferência, ou com resposta de outro modelo, o rótulo fica neutro. */
 const conferenceLabel = (model: string, routed: boolean) => !routed && model.startsWith(PROVIDERS.typesafe.model) ? 'Conferência TypeSafe' : 'Conferência';
 type Preview = { plan: Omit<AssistantPlan, 'actorId'>; planToken: string; undoReason: string };
@@ -36,7 +36,7 @@ export default function AssistantPanel({ projects, defaultProjectId, onApplied }
  async function prepare() {
   setBusy(true); setError(''); setConfirmed(false); setReceipt(''); operationKey.current ??= crypto.randomUUID();
   // Com modelo de conferência escolhido, o pedido leva o nome que esta tela mostrou; o servidor só segue se ele ainda for o de agora.
-  try { setPreview(await api<Preview>({ action: 'prepare', projectId, request, consent, operationKey: operationKey.current, ...(decisionDestination ? { decisionDestination } : {}) })); }
+  try { setPreview(await api<Preview>({ action: 'prepare', projectId, request, consent, operationKey: operationKey.current, ...(decisionDestination ? { decisionDestination, decisionApproval: activeOrg?.decisionApproval, acceptedCostMicros: activeOrg?.decisionCostMicros } : {}) })); }
   catch (e) {
    const message = e instanceof Error ? e.message : 'Não foi possível preparar a proposta.'; if (!/demorou/.test(message) && !/sendo preparado/.test(message)) operationKey.current = null; setError(message);
    // O modelo que confere mudou: nada foi enviado. A tela busca o nome de agora e pede a autorização de novo.
@@ -70,7 +70,7 @@ export default function AssistantPanel({ projects, defaultProjectId, onApplied }
     <label className="mt-3 block">Texto ditado para revisão<textarea className={`${field} min-h-24`} maxLength={4000} value={dictated} onChange={event => setDictated(event.target.value)} /></label><button type="button" className={`${secondary} mt-2`} disabled={!dictated.trim() || listening} onClick={() => { reset(); setRequest(dictated); setDictated(''); }}>Usar texto revisado no pedido</button>
    </details>
    <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={consent} onChange={event => { setConsent(event.target.checked); reset(); }} />Autorizo enviar este pedido e os materiais deste projeto aos provedores configurados. Removi dados pessoais e segredos.</label>
-   {decisionDestination && <p className="text-sm text-[var(--text-secondary)]">{operationsConferenceSentence(decisionDestination)}</p>}
+   {decisionDestination && <p className="text-sm text-[var(--text-secondary)]">{operationsConferenceSentence(decisionDestination)} {typeof activeOrg?.decisionCostMicros==='number'&&<>Custo máximo estimado: <strong>{formatMicros(activeOrg.decisionCostMicros)}</strong>.</>}</p>}
    <button type="button" className={button} disabled={!assistantAvailable || !projectId || !request.trim() || !consent || listening} onClick={prepare}>{busy ? 'Preparando…' : 'Preparar proposta'}</button>
   </fieldset>
   <SpeechInput key={`${projectId}:${activeSpeechProvider}`} projectId={projectId} provider={activeSpeechProvider} destination={activeOrg?.sttRoute} routeModel={activeOrg?.sttRouteModel} onDestinationChanged={() => { void loadStatus().catch(() => undefined); }} available={activeOrg?.sttAvailable ?? false} onReviewedText={value => { reset(); setRequest(value); }}/>

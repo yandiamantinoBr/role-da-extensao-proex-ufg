@@ -19,7 +19,7 @@ type Props = { projects: Project[]; defaultProjectId?: string; onApplied?: () =>
 type Pricing = { model: string; label: string; inputMicrosPerToken: number; outputMicrosPerToken: number };
 type Status = { available: boolean; reason: string | null; provider: string; model: string; textPricing?: Pricing | null; visionPricing?: Pricing | null; visionAvailable: boolean; operationsAvailable: boolean; speech: { available: boolean; provider: 'groq' | 'deepgram'; route?: string; routeModel?: SpeechRouteModel }; decisionRouteName?: string; dailyLimitMicros: number; reservedTodayMicros: number; canConfigure?: boolean; organizationId?: string; tools?: { text: boolean; vision: boolean }; scopes?: { units: { id: string; name: string }[]; events: { id: string; name: string; projectId: string }[] } };
 type Match = { projectId: string; projectName: string; itemName: string; score: number };
-type Operation = { request: string; stage: 'idle' | 'estimated' | 'preview' | 'done'; costMicros?: number; provider?: string; jev?: boolean; /** Modelo que confere, como veio da estimativa (vazio = padrão do portal). É o nome que o aviso mostra e que vai no preparo. */ decisionDestination?: string; stale?: boolean; projectId?: string; matches?: Match[]; ambiguous?: boolean; error?: string; limit?: boolean; preview?: { plan: Omit<AssistantPlan, 'actorId'>; planToken: string; undoReason: string }; confirmed?: boolean; receipt?: string; key: string; /** Pedido exatamente como foi enviado para preparar a prévia; vai junto na confirmação. */ prepared?: string; destinationDefault?: string; movementId?: string; destination?: string | null; revise?: 'correct' | 'undo' | null; reviseKey?: string };
+type Operation = { request: string; stage: 'idle' | 'estimated' | 'preview' | 'done'; costMicros?: number; provider?: string; jev?: boolean; /** Modelo que confere, como veio da estimativa (vazio = padrão do portal). É o nome que o aviso mostra e que vai no preparo. */ decisionDestination?: string; decisionApproval?: string; stale?: boolean; projectId?: string; matches?: Match[]; ambiguous?: boolean; error?: string; limit?: boolean; preview?: { plan: Omit<AssistantPlan, 'actorId'>; planToken: string; undoReason: string }; confirmed?: boolean; receipt?: string; key: string; /** Pedido exatamente como foi enviado para preparar a prévia; vai junto na confirmação. */ prepared?: string; destinationDefault?: string; movementId?: string; destination?: string | null; revise?: 'correct' | 'undo' | null; reviseKey?: string };
 type Source = { label: string; href: string };
 type Message = { id: string; role: 'user' | 'assistant'; content: string; image?: string; meta?: string; operation?: Operation; sources?: Source[] };
 type Picked = { dataUrl: string; bytes: number };
@@ -167,7 +167,7 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
   const tooLong = draft.length > ROLE_MAX_MESSAGE_CHARS;
   const modelLabel = status ? modelLabelFor(status, !!picked) : '';
   // Ciência única: guardada neste aparelho e refeita só quando os serviços de IA mudarem.
-  const servicesKey = status ? [status.organizationId ?? '', status.provider, modelLabelFor(status, false), status.visionAvailable ? modelLabelFor(status, true) : '', status.speech.available ? speechRoute(status)?.id ?? status.speech.provider : '', status.operationsAvailable ? `ops${status.decisionRouteName ? `:${status.decisionRouteName}` : ''}` : ''].join('|') : '';
+  const servicesKey = status ? [status.organizationId ?? '', status.provider, modelLabelFor(status, false), status.visionAvailable ? modelLabelFor(status, true) : '', status.speech.available ? speechRoute(status)?.model.approval ?? speechRoute(status)?.id ?? status.speech.provider : '', status.operationsAvailable ? `ops${status.decisionRouteName ? `:${status.decisionRouteName}` : ''}` : ''].join('|') : '';
   const stored = useMemo(() => { if (!servicesKey) return null; try { return window.localStorage.getItem(CONSENT_STORAGE); } catch { return null; } }, [servicesKey, ackTick]); // eslint-disable-line react-hooks/exhaustive-deps
   const consent = !!servicesKey && (stored === servicesKey || sessionAck === servicesKey);
   function rememberConsent() {
@@ -226,21 +226,21 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
   async function estimateOperation(message: Message, keep = '') {
     if (!message.operation?.projectId) return;
     updateOperation(message.id, { error: keep });
-    try { const result = await post<{ costMicros: number; provider: string; jev: boolean; decisionDestination?: unknown }>('/api/assistant/role', { action: 'estimate.operation', projectId: message.operation.projectId, request: message.operation.request }); updateOperation(message.id, { stage: 'estimated', costMicros: result.costMicros, provider: result.provider, jev: result.jev, decisionDestination: shownRouteName(result.decisionDestination), stale: false }); }
+    try { const result = await post<{ costMicros: number; provider: string; jev: boolean; decisionDestination?: unknown; decisionApproval?: string }>('/api/assistant/role', { action: 'estimate.operation', projectId: message.operation.projectId, request: message.operation.request }); updateOperation(message.id, { stage: 'estimated', costMicros: result.costMicros, provider: result.provider, jev: result.jev, decisionDestination: shownRouteName(result.decisionDestination), decisionApproval: result.decisionApproval, stale: false }); }
     catch (cause) { updateOperation(message.id, { stage: 'estimated', stale: true, error: cause instanceof Error ? cause.message : 'Não foi possível calcular o custo da operação.' }); }
   }
   function newConversation() { setMessages([]); setDraft(''); setPicked(null); discardRecording(); setError(''); setNotice(''); window.requestAnimationFrame(() => input.current?.focus()); }
   async function prepareOperation(message: Message) {
     if (!message.operation?.projectId) return;
     setBusy(true); setError(''); updateOperation(message.id, { error: '', limit: false });
-    try { const preview = await post<Operation['preview']>('/api/assistant', { action: 'prepare', projectId: message.operation.projectId, request: message.operation.request, consent: true, operationKey: message.operation.key, acceptedCostMicros: message.operation.costMicros, ...(message.operation.decisionDestination ? { decisionDestination: message.operation.decisionDestination } : {}) }); updateOperation(message.id, { stage: 'preview', preview, confirmed: false, prepared: message.operation.request }); if (preview) void suggestDestination(message.id, preview.plan.projectId, message.operation.request); }
+    try { const preview = await post<Operation['preview']>('/api/assistant', { action: 'prepare', projectId: message.operation.projectId, request: message.operation.request, consent: true, operationKey: message.operation.key, acceptedCostMicros: message.operation.costMicros, ...(message.operation.decisionDestination ? { decisionDestination: message.operation.decisionDestination, decisionApproval: message.operation.decisionApproval } : {}) }); updateOperation(message.id, { stage: 'preview', preview, confirmed: false, prepared: message.operation.request }); if (preview) void suggestDestination(message.id, preview.plan.projectId, message.operation.request); }
     catch (cause) {
       // O servidor respondeu: a próxima tentativa é outra chamada paga, com chave nova e custo mostrado de novo.
       // Tempo esgotado mantém a chave para recuperar o resultado sem pagar duas vezes.
       const answered = cause instanceof RequestError && cause.code !== 'assistant_call_replay';
       updateOperation(message.id, { error: cause instanceof Error ? limitText(cause) : 'Não foi possível preparar a operação.', limit: isLimit(cause), ...(answered ? { key: crypto.randomUUID() } : {}) });
       // O modelo que confere mudou: nada foi enviado. Volta ao aviso com o custo e o nome de agora, para a pessoa conferir antes de preparar de novo.
-      if (cause instanceof RequestError && cause.code === 'assistant_destination') await estimateOperation(message, cause.message);
+      if (cause instanceof RequestError && (cause.code === 'assistant_destination' || cause.code === 'assistant_cost_changed')) await estimateOperation(message, cause.message);
     }
     finally { setBusy(false); }
   }
@@ -321,7 +321,7 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
     setTranscribing(true); setError(''); setLimitHit(false);
     try {
       const body = new FormData();
-      body.set('audio', recorded.file); body.set('projectId', projectId); body.set('operationKey', crypto.randomUUID()); body.set('consent', 'true'); body.set('provider', speechRoute(status)?.id ?? status.speech.provider);
+      body.set('audio', recorded.file); body.set('projectId', projectId); body.set('operationKey', crypto.randomUUID()); body.set('consent', 'true'); const route = speechRoute(status); body.set('provider', route?.id ?? status.speech.provider); if (route?.model.approval) body.set('approval', route.model.approval);
       const result = await call<{ transcript?: string }>('/api/assistant/speech', { method: 'POST', headers: { 'X-Proex-Action': '1' }, body });
       if (typeof result.transcript !== 'string') throw new Error('A transcrição voltou vazia.');
       setDraft(current => (current ? current + ' ' : '') + result.transcript); discardRecording();

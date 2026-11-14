@@ -21,6 +21,7 @@ const { DEFAULT_ASSISTANT_CONFIG, TASK_MODEL_KEYS } = await import(compile('assi
 const { configureAssistant, assistantStatus, estimateAssistantPlan, prepareAssistantPlan, applyAssistantPlan } = await import(compile('assistant/service'));
 const { manageAssistantCredential } = await import(compile('assistant/credential-vault'));
 const { catalogView, manageCatalog } = await import(compile('assistant/model-catalog-store'));
+const { defaultCatalog } = await import(compile('assistant/model-catalog'));
 const { transcribeSpeech, validateSpeechAudio, SPEECH_ENDPOINT } = await import(compile('assistant/speech'));
 const { roleStatus } = await import(compile('assistant/role'));
 const { previewImport } = await import(compile('importer/service'));
@@ -70,6 +71,11 @@ const auditActions = f => f.native.prepare('SELECT action FROM audit ORDER BY ro
 const fallbacks = f => f.native.prepare("SELECT actor_id,details FROM audit WHERE action='assistant.route.fallback' ORDER BY rowid").all().map(row => ({ actor: row.actor_id, ...JSON.parse(row.details) }));
 const configChangesOf = f => f.native.prepare("SELECT details FROM audit WHERE action='assistant.configure' ORDER BY rowid").all().map(row => JSON.parse(row.details).changes);
 const stock = f => f.native.prepare("SELECT stock FROM items WHERE id='item-a'").get().stock;
+const changeCatalog = (f, change) => {
+ const name = 'ai.catalog.v1:org_proex', row = f.native.prepare('SELECT value FROM settings WHERE name=?').get(name);
+ const value = JSON.stringify(change(row ? JSON.parse(row.value) : defaultCatalog()));
+ f.native.prepare('INSERT INTO settings(name,value,updated_at) VALUES(?,?,?) ON CONFLICT(name) DO UPDATE SET value=excluded.value').run(name, value, new Date().toISOString());
+};
 
 // Chaves no cofre (provedores revisados) e no catálogo (provedores p:), sempre pela administração geral.
 const saveVault = (f, provider) => manageAssistantCredential(f.db, f.actors.owner, { action: 'save', organizationId: 'org_proex', provider, expectedRevision: revision(f), label: 'Chave sintética', secret: FAKE[provider] }, secret, keys);
@@ -82,6 +88,59 @@ async function decisionSetup(f, model = 'perplexity-decider-v1-2', providerId = 
  await configure(f, { jevEnabled: true, decisionModel: model });
 }
 
+test('security regression: old approval cannot send to a new endpoint with the same model label', async t => {
+ const f = fixture(t), provider = providers(f, body => jevAnswer(body.model));
+ await decisionSetup(f);
+ const estimate = await estimateAssistantPlan(f.db, f.actors.inventory, request(), secret, { keys });
+ changeCatalog(f, value => ({ ...value, providers: value.providers.map(entry => entry.id === 'perplexity'
+  ? { ...entry, baseUrl: 'https://changed.example.invalid/v1' } : entry) }));
+ const extra = estimate.decisionApproval === undefined ? {} : { decisionApproval: estimate.decisionApproval };
+ await assert.rejects(prepareAssistantPlan(f.db, f.actors.inventory, request({ decisionDestination: estimate.decisionDestination, acceptedCostMicros: estimate.costMicros, ...extra }), secret, { fetcher: provider.fetch, keys }), code('assistant_destination'));
+ assert.deepEqual(provider.calls, []);
+ assert.deepEqual(usage(f), {});
+});
+
+test('security regression: a catalog edit at admission does not reserve or send', async t => {
+ const f = fixture(t), provider = providers(f, body => jevAnswer(body.model));
+ await decisionSetup(f);
+ const approved = await operationApproval(f);
+ const batch = f.db.batch, change = value => ({ ...value, providers: value.providers.map(entry => entry.id === 'perplexity'
+  ? { ...entry, baseUrl: 'https://changed.example.invalid/v1' } : entry) });
+ f.db.batch = async statements => {
+  if (statements.some(statement => statement.sql.includes('INSERT INTO ai_calls'))) changeCatalog(f, change);
+  return batch(statements);
+ };
+ await assert.rejects(prepareAssistantPlan(f.db, f.actors.inventory, request(approved), secret, { fetcher: provider.fetch, keys }), code('assistant_destination'));
+ assert.deepEqual(provider.calls, []);
+ assert.deepEqual(usage(f), {});
+});
+
+test('security regression: a provider HTTP 429 does not permit a second destination', async t => {
+ const f = fixture(t), provider = providers(f, () => refusal(429));
+ await decisionSetup(f);
+ const estimate = await estimateAssistantPlan(f.db, f.actors.inventory, request(), secret, { keys });
+ const extra = estimate.decisionApproval === undefined ? {} : { decisionApproval: estimate.decisionApproval };
+ await assert.rejects(prepareAssistantPlan(f.db, f.actors.inventory, request({ decisionDestination: estimate.decisionDestination, acceptedCostMicros: estimate.costMicros, ...extra }), secret, { fetcher: provider.fetch, keys }), code('assistant_provider_unavailable'));
+ assert.deepEqual(provider.urls(), [DEEPSEEK, PERPLEXITY]);
+ assert.deepEqual(fallbacks(f), []);
+});
+
+test('security regression: a lookalike routed decision model cannot approve a proposal', async t => {
+ const f = fixture(t), provider = providers(f, body => jevAnswer(body.model + '-unapproved'));
+ await decisionSetup(f);
+ const estimate = await estimateAssistantPlan(f.db, f.actors.inventory, request(), secret, { keys });
+ const extra = estimate.decisionApproval === undefined ? {} : { decisionApproval: estimate.decisionApproval };
+ await assert.rejects(prepareAssistantPlan(f.db, f.actors.inventory, request({ decisionDestination: estimate.decisionDestination, acceptedCostMicros: estimate.costMicros, ...extra }), secret, { fetcher: provider.fetch, keys }), code('assistant_decision_schema'));
+ assert.deepEqual(provider.urls(), [DEEPSEEK, PERPLEXITY]);
+});
+
+const operationEstimate = f => estimateAssistantPlan(f.db, f.actors.inventory, request(), secret, { keys });
+const approveOperation = estimate => ({ decisionDestination: estimate.decisionDestination, decisionApproval: estimate.decisionApproval, acceptedCostMicros: estimate.costMicros });
+const operationApproval = async f => approveOperation(await operationEstimate(f));
+async function speechApproval(f) {
+ const { organizations } = await assistantStatus(f.db, f.actors.inventory, secret, 'org_proex', undefined, keys);
+ return organizations.find(entry => entry.id === 'org_proex')?.sttRouteModel?.approval;
+}
 const request = (extra = {}) => ({ action: 'prepare', projectId: 'project-a', request: 'Registrar entrada de 10 canetas recebidas para a oficina.', consent: true, operationKey: 'test-only-assistant-call-1', ...extra });
 const proposal = () => ({ intent: 'stock.receive', itemId: 'item-a', quantity: 10, title: 'Entrada de canetas', body: 'Canetas recebidas para a oficina', evidence: [{ source: 'request', quote: 'entrada de 10 canetas' }] });
 const confirm = preview => ({ action: 'apply', planToken: preview.planToken, confirmed: true });
@@ -180,28 +239,21 @@ test('b) modelo de conferência escolhido sem chave: a conferência vai só ao p
 });
 
 // ---------------------------------------------------------------------------------------------
-// c) O escolhido recusa com certeza (400, 401, 402, 403, 404, 413, 415, 422, 429): uma chamada a ele, uma ao
-//    padrão, cobrança só do que respondeu. Outro status de erro (408, 5xx) fica em d): sem segunda chamada.
-// ---------------------------------------------------------------------------------------------
-for (const status of [400, 401, 402, 403, 404, 413, 415, 422, 429]) test(`c) o modelo escolhido recusa com o código ${status}: uma chamada a ele, uma ao padrão, e o acerto usa o preço do padrão`, async t => {
+// Any HTTP error after dispatch preserves the reserve and prevents a second recipient.
+for (const status of [400, 401, 402, 403, 404, 413, 415, 422, 429]) test('HTTP '+status+' never sends to the default after a routed attempt', async t => {
  const f = fixture(t), provider = providers(f, () => refusal(status));
  await decisionSetup(f);
- const preview = await prepareAssistantPlan(f.db, f.actors.inventory, request({ decisionDestination: DECIDER }), secret, { fetcher: provider.fetch, keys });
- assert.deepEqual(provider.urls(), [DEEPSEEK, PERPLEXITY, TYPESAFE]);
- const [, chosen, standard] = provider.calls;
- assert.equal(chosen.auth, `Bearer ${FAKE.perplexity}`); assert.equal(chosen.body.model, 'pplx-decider-v1.2');
- assert.equal(standard.auth, `Bearer ${FAKE.typesafe}`); assert.equal(standard.sha256, TYPESAFE_CALL.sha256, 'o padrão recebe o corpo de sempre');
- assert.deepEqual(fallbacks(f), [{ actor: 'inventory-qa', task: 'decision', model: 'perplexity-decider-v1-2', name: DECIDER, reason: `O serviço recusou o pedido (código ${status}).${status === 401 || status === 403 ? ' Confira a chave na aba Chaves.' : ''}` }]);
- assert.equal(preview.plan.provenance.jevModel, 'jev-1.14.0');
- assert.deepEqual(settled(f), { calls: 2, reserved_usd_micros: 291, reserved_tokens: 1100 }, 'cobrado como DeepSeek + TypeSafe; a recusa não custa nem conta outra chamada');
- await applyAssistantPlan(f.db, f.actors.inventory, confirm(preview), secret, Date.now(), keys);
- assert.equal(stock(f), 10);
+ const input = request(await operationApproval(f));
+ await assert.rejects(prepareAssistantPlan(f.db, f.actors.inventory, input, secret, { fetcher: provider.fetch, keys }), code('assistant_provider_unavailable'));
+ assert.deepEqual(provider.urls(), [DEEPSEEK, PERPLEXITY]);
+ assert.deepEqual(fallbacks(f), []);
+ assert.equal(usage(f).reserved_usd_micros, 3378);
 });
 
 test('c) quando o escolhido responde, o padrão não é chamado e o acerto usa o preço do escolhido', async t => {
  const f = fixture(t), provider = providers(f, body => jevAnswer(body.model));
  await decisionSetup(f);
- const preview = await prepareAssistantPlan(f.db, f.actors.inventory, request({ decisionDestination: DECIDER }), secret, { fetcher: provider.fetch, keys });
+ const preview = await prepareAssistantPlan(f.db, f.actors.inventory, request(await operationApproval(f)), secret, { fetcher: provider.fetch, keys });
  assert.deepEqual(provider.urls(), [DEEPSEEK, PERPLEXITY]); assert.deepEqual(fallbacks(f), []);
  assert.equal(provider.calls[1].length, TYPESAFE_CALL.length - 'jev-1.14.0'.length + 'pplx-decider-v1.2'.length, 'mesmo corpo JEV, só o nome do modelo muda');
  assert.equal(preview.plan.provenance.jevModel, 'pplx-decider-v1.2');
@@ -229,14 +281,14 @@ const DOUBTFUL = {
 for (const [name, doubt] of Object.entries(DOUBTFUL)) test(`d) ${name} no modelo escolhido: o erro sobe e não há segunda chamada`, async t => {
  const f = fixture(t), provider = providers(f, doubt.chosen);
  await decisionSetup(f);
- await assert.rejects(prepareAssistantPlan(f.db, f.actors.inventory, request({ decisionDestination: DECIDER }), secret, { fetcher: provider.fetch, keys }), code(doubt.code));
+ await assert.rejects(prepareAssistantPlan(f.db, f.actors.inventory, request(await operationApproval(f)), secret, { fetcher: provider.fetch, keys }), code(doubt.code));
  assert.deepEqual(provider.urls(), [DEEPSEEK, PERPLEXITY], 'o padrão não recebe nada');
  assert.deepEqual(fallbacks(f), []);
  assert.equal(f.native.prepare('SELECT status FROM ai_calls').get().status, 'failed');
  assert.equal(usage(f).reserved_usd_micros, 3378, 'a reserva preventiva fica contando no dia');
  assert.equal(f.native.prepare('SELECT COUNT(*) n FROM ai_plans').get().n, 0); assert.equal(stock(f), 0);
  // A mesma tentativa não é repetida sozinha.
- await assert.rejects(prepareAssistantPlan(f.db, f.actors.inventory, request({ decisionDestination: DECIDER }), secret, { fetcher: provider.fetch, keys }), code('assistant_call_failed'));
+ await assert.rejects(prepareAssistantPlan(f.db, f.actors.inventory, request(await operationApproval(f)), secret, { fetcher: provider.fetch, keys }), code('assistant_call_failed'));
  assert.equal(provider.calls.length, 2);
 });
 
@@ -253,11 +305,13 @@ test('e) custo previsto e reserva usam o preço do modelo escolhido; o acerto ta
  assert.equal((await estimateAssistantPlan(f.db, f.actors.inventory, input, secret, { keys })).costMicros, 3378, 'antes da escolha: o previsto de sempre');
  await configure(f, { jevEnabled: true, decisionModel: 'decisor-caro' });
  // 2.476,2 (DeepSeek, como antes) + 21.454 tokens de conferência a 0,5 = 13.203,2, arredondado para cima.
- assert.deepEqual(await estimateAssistantPlan(f.db, f.actors.inventory, input, secret, { keys }), { costMicros: 13204, calls: 2, provider: 'deepseek', model: 'deepseek-flash', jev: true, decisionDestination: EXPENSIVE });
+ const estimate = await estimateAssistantPlan(f.db, f.actors.inventory, input, secret, { keys });
+ const { decisionApproval, ...shown } = estimate; assert.equal(typeof decisionApproval, "string");
+ assert.deepEqual(shown, { costMicros: 13204, calls: 2, provider: 'deepseek', model: 'deepseek-flash', jev: true, decisionDestination: EXPENSIVE });
  // Quem aceitou o valor antigo é avisado antes de qualquer envio.
- await assert.rejects(prepareAssistantPlan(f.db, f.actors.inventory, request({ acceptedCostMicros: 3378, decisionDestination: EXPENSIVE }), secret, { fetcher: provider.fetch, keys }), code('assistant_cost_changed'));
+ await assert.rejects(prepareAssistantPlan(f.db, f.actors.inventory, request({ ...approveOperation(estimate), acceptedCostMicros: 3378 }), secret, { fetcher: provider.fetch, keys }), code('assistant_cost_changed'));
  assert.equal(provider.calls.length, 0);
- const preview = await prepareAssistantPlan(f.db, f.actors.inventory, request({ acceptedCostMicros: 13204, decisionDestination: EXPENSIVE }), secret, { fetcher: provider.fetch, keys });
+ const preview = await prepareAssistantPlan(f.db, f.actors.inventory, request(approveOperation(estimate)), secret, { fetcher: provider.fetch, keys });
  assert.deepEqual(provider.urls(), [DEEPSEEK, NACE]);
  for (const call of provider.calls) assert.deepEqual(call.inflight, { calls: 2, reserved_usd_micros: 13204, reserved_tokens: 26108, reserved_ms: 12000 }, 'reserva em voo igual ao previsto');
  assert.equal(provider.calls[1].auth, `Bearer ${FAKE.nace}`); assert.equal(provider.calls[1].body.model, 'drex-caro'); assert.equal(preview.plan.provenance.jevModel, 'drex-caro');
@@ -328,14 +382,31 @@ test('g) voz no modelo escolhido: o consentimento precisa nomear o destino e o �
  await assert.rejects(transcribeSpeech(f.db, f.actors.inventory, speechInput(), secret, { fetcher: provider.fetch, keys }), speechChanged);
  await assert.rejects(transcribeSpeech(f.db, f.actors.inventory, speechInput({ expectedProvider: 'groq' }), secret, { fetcher: provider.fetch, keys }), speechChanged);
  assert.equal(provider.calls.length, 0);
- const result = await transcribeSpeech(f.db, f.actors.inventory, speechInput({ expectedProvider: ROUTED_SPEECH }), secret, { fetcher: provider.fetch, keys });
+ const result = await transcribeSpeech(f.db, f.actors.inventory, speechInput({ expectedProvider: ROUTED_SPEECH, approval: await speechApproval(f) }), secret, { fetcher: provider.fetch, keys });
  assert.deepEqual(provider.calls, [{ url: GROQ_AUDIO, auth: `Bearer ${FAKE.groq}`, model: 'whisper-large-v3-turbo', fields: ['file', 'model', 'language', 'response_format'] }]);
  assert.equal(result.transcript, 'Texto para revisão humana.'); assert.equal(result.provenance.provider, ROUTED_SPEECH); assert.equal(result.provenance.model, 'whisper-large-v3-turbo');
  assert.equal(usage(f).reserved_usd_micros, 112, 'reserva pelo preço por hora do modelo escolhido');
  assert.equal(JSON.parse(f.native.prepare("SELECT details FROM audit WHERE action='assistant.transcribe'").get().details).provider, ROUTED_SPEECH);
  assert.deepEqual(fallbacks(f), []);
- assert.equal((await transcribeSpeech(f.db, f.actors.inventory, speechInput({ expectedProvider: ROUTED_SPEECH }), secret, { fetcher: provider.fetch, keys })).replayed, true);
+ assert.equal((await transcribeSpeech(f.db, f.actors.inventory, speechInput({ expectedProvider: ROUTED_SPEECH, approval: await speechApproval(f) }), secret, { fetcher: provider.fetch, keys })).replayed, true);
  assert.equal(provider.calls.length, 1, 'repetir o mesmo envio não chama provedor de novo');
+});
+
+test('security regression: updated audio pricing requires renewed approval even for the same catalog ID', async t => {
+ const f = fixture(t), provider = speechProviders();
+ await speechSetup(f);
+ const approval = await speechApproval(f);
+ changeCatalog(f, value => ({ ...value, models: value.models.map(model => model.id === 'groq-whisper-turbo'
+  ? { ...model, price: { ...model.price, perHour: 0.5 } } : model) }));
+ const input = speechInput({ expectedProvider: ROUTED_SPEECH, approval });
+ await assert.rejects(transcribeSpeech(f.db, f.actors.inventory, input, secret, { fetcher: provider.fetch, keys }), code('speech_provider_changed'));
+ assert.deepEqual(usage(f), {});
+ assert.equal(provider.calls.length, 0);
+ const newApproval = await speechApproval(f);
+ assert.notEqual(newApproval, approval);
+ await transcribeSpeech(f.db, f.actors.inventory, { ...input, approval: newApproval }, secret, { fetcher: provider.fetch, keys });
+ assert.deepEqual(provider.urls(), [GROQ_AUDIO]);
+ assert.equal(usage(f).reserved_usd_micros, 1389);
 });
 
 const SPEECH_FAILURES = {
@@ -347,11 +418,11 @@ const SPEECH_FAILURES = {
 for (const [name, failure] of Object.entries(SPEECH_FAILURES)) test(`g) voz: ${name} no modelo escolhido não leva o áudio a um segundo provedor`, async t => {
  const f = fixture(t), provider = speechProviders(failure);
  await speechSetup(f);
- await assert.rejects(transcribeSpeech(f.db, f.actors.inventory, speechInput({ expectedProvider: ROUTED_SPEECH }), secret, { fetcher: provider.fetch, keys }));
+ await assert.rejects(transcribeSpeech(f.db, f.actors.inventory, speechInput({ expectedProvider: ROUTED_SPEECH, approval: await speechApproval(f) }), secret, { fetcher: provider.fetch, keys }));
  assert.deepEqual(provider.urls(), [GROQ_AUDIO], 'uma chamada só; o Deepgram (padrão) não recebe o áudio');
  assert.deepEqual(fallbacks(f), []);
  // Nem na nova tentativa do mesmo envio.
- await assert.rejects(transcribeSpeech(f.db, f.actors.inventory, speechInput({ expectedProvider: ROUTED_SPEECH }), secret, { fetcher: provider.fetch, keys }));
+ await assert.rejects(transcribeSpeech(f.db, f.actors.inventory, speechInput({ expectedProvider: ROUTED_SPEECH, approval: await speechApproval(f) }), secret, { fetcher: provider.fetch, keys }));
  assert.deepEqual(provider.urls(), [GROQ_AUDIO]);
 });
 
@@ -362,7 +433,7 @@ test('g) voz: modelo escolhido sem chave cai no padrão antes do envio, com o de
  assert.equal(storedConfig(f).speechModel, 'groq-whisper-turbo');
  const organization = (await assistantStatus(f.db, f.actors.owner, secret, 'org_proex', undefined, keys)).organizations.find(entry => entry.id === 'org_proex');
  assert.equal(organization.sttRoute, undefined, 'o portal mostra o provedor padrão como destino');
- await assert.rejects(transcribeSpeech(f.db, f.actors.inventory, speechInput({ expectedProvider: ROUTED_SPEECH }), secret, { fetcher: provider.fetch, keys }), code('speech_provider_changed'));
+ await assert.rejects(transcribeSpeech(f.db, f.actors.inventory, speechInput({ expectedProvider: ROUTED_SPEECH, approval: await speechApproval(f) }), secret, { fetcher: provider.fetch, keys }), code('speech_provider_changed'));
  assert.equal(provider.calls.length, 0);
  const result = await transcribeSpeech(f.db, f.actors.inventory, speechInput(), secret, { fetcher: provider.fetch, keys });
  assert.deepEqual(provider.calls, [{ url: SPEECH_ENDPOINT, auth: `Token ${FAKE.deepgram}`, model: null, fields: null }]);
@@ -380,7 +451,24 @@ const content = 'O cadastro se chama Jardim universitário. Sua área informada 
 const fields = () => ({ fields: [{ key: 'name', value: 'Jardim universitário', quote: 'O cadastro se chama Jardim universitário.' }, { key: 'thematicArea', value: 'Comunicação', quote: 'Sua área informada é Comunicação.' }, { key: 'startsAt', value: '31/10/2026', quote: 'A execução começa em 31/10/2026.' }] });
 // Com modelo escolhido, o pedido leva o destino que a autorização mostrou: "<modelo do documento>|<modelo da conferência>".
 const LUNA = 'GPT-5.6 Luna (OpenAI)', DECIDER = 'Decider v1.2 (Perplexity)';
-const documentInput = (aiDestination) => ({ kind: 'project', organizationId: 'org_proex', sourceMode: 'document', format: 'text', content, useAi: true, aiConsent: true, aiOperationKey: crypto.randomUUID(), ...(aiDestination === undefined ? {} : { aiDestination }) });
+const documentApproval = async f => (await assistantStatus(f.db, f.actors.owner, secret, 'org_proex', undefined, keys)).organizations.find(entry => entry.id === 'org_proex').documentApproval;
+const documentInput = (aiDestination, aiApproval) => ({ aiApproval, kind: 'project', organizationId: 'org_proex', sourceMode: 'document', format: 'text', content, useAi: true, aiConsent: true, aiOperationKey: crypto.randomUUID(), ...(aiDestination === undefined ? {} : { aiDestination }) });
+
+test('security regression: the document quote caps the reservation and replay never refunds twice', async t => {
+ const f = fixture(t), provider = providers(f, openAiAnswer, fields());
+ await documentSetup(f);
+ const shown = (await assistantStatus(f.db, f.actors.owner, secret, 'org_proex', undefined, keys)).organizations.find(entry => entry.id === 'org_proex');
+ assert.equal(shown.documentCostMicros, 8640);
+ const input = documentInput(LUNA+'|', shown.documentApproval);
+ const first = await previewImport(f.db, f.actors.owner, input, secret, provider.fetch, undefined, keys);
+ assert.equal(first.provenance.ai.provider, 'catalog:openai-gpt-5-6-luna');
+ assert.ok(provider.calls[0].inflight.reserved_usd_micros <= shown.documentCostMicros);
+ const used = settled(f);
+ await previewImport(f.db, f.actors.owner, input, secret, provider.fetch, undefined, keys);
+ assert.deepEqual(provider.urls(), [OPENAI]);
+ assert.deepEqual(settled(f), used);
+ assert.equal(used.reserved_usd_micros, 365);
+});
 const openAiAnswer = body => Response.json({ model: body.model, choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(fields()) } }], usage: { prompt_tokens: 500, completion_tokens: 200 } });
 async function documentSetup(f, config = { documentModel: 'openai-gpt-5-6-luna' }) {
  await saveVault(f, 'deepseek'); await saveVault(f, 'openai');
@@ -390,16 +478,16 @@ async function documentSetup(f, config = { documentModel: 'openai-gpt-5-6-luna' 
 test('documento: chave vazia faz a chamada e a reserva de antes; modelo escolhido recebe uma chamada só, com a mesma instrução', async t => {
  const standard = fixture(t), first = providers(standard, undefined, fields());
  await documentSetup(standard, {});
- const before = await previewImport(standard.db, standard.actors.owner, documentInput(), secret, first.fetch, undefined, keys);
+ const before = await previewImport(standard.db, standard.actors.owner, documentInput(undefined, await documentApproval(standard)), secret, first.fetch, undefined, keys);
  assert.deepEqual(first.urls(), [DEEPSEEK]); assert.equal(before.provenance.ai.provider, 'deepseek');
  assert.deepEqual(first.calls.map(({ url, length, sha256 }) => ({ url, length, sha256 })), [DOCUMENT_BEFORE.call], 'mesmo endereço, mesmo corpo, uma chamada');
- assert.deepEqual(first.calls[0].inflight, { ...DOCUMENT_BEFORE.usage, reserved_ms: 12000 }); assert.deepEqual(settled(standard), DOCUMENT_BEFORE.usage);
+ assert.deepEqual(first.calls[0].inflight, { ...DOCUMENT_BEFORE.usage, reserved_ms: 12000 }); assert.deepEqual(settled(standard), { calls: 1, reserved_usd_micros: 390, reserved_tokens: 700 });
  assert.equal(standard.sql.some(text => /FROM settings WHERE name/.test(text)), false, 'com a chave vazia o catálogo nem é lido');
  assert.deepEqual(fallbacks(standard), []);
 
  const routed = fixture(t), second = providers(routed, openAiAnswer, fields());
  await documentSetup(routed);
- const preview = await previewImport(routed.db, routed.actors.owner, documentInput(`${LUNA}|`), secret, second.fetch, undefined, keys);
+ const preview = await previewImport(routed.db, routed.actors.owner, documentInput(`${LUNA}|`, await documentApproval(routed)), secret, second.fetch, undefined, keys);
  assert.deepEqual(second.urls(), [OPENAI]);
  assert.equal(second.calls[0].auth, `Bearer ${FAKE.openai}`); assert.equal(second.calls[0].body.model, 'gpt-5.6-luna');
  assert.deepEqual(second.calls[0].body.messages.map(message => message.role), ['system', 'user']);
@@ -408,7 +496,7 @@ test('documento: chave vazia faz a chamada e a reserva de antes; modelo escolhid
  assert.equal(preview.candidates[0].fields.name, 'Jardim universitário');
  assert.equal(preview.provenance.ai.provider, 'catalog:openai-gpt-5-6-luna'); assert.equal(preview.provenance.ai.model, 'gpt-5.6-luna');
  // O escolhido (0,25 / 1,2) é mais barato que o padrão (0,3 / 1,2): a reserva fica no maior preço, o do padrão.
- assert.deepEqual(settled(routed), DOCUMENT_BEFORE.usage); assert.deepEqual(fallbacks(routed), []);
+ assert.deepEqual(settled(routed), { calls: 1, reserved_usd_micros: 365, reserved_tokens: 700 }); assert.deepEqual(fallbacks(routed), []);
 });
 
 test('documento: a reserva usa o preço do modelo escolhido quando ele é mais caro que o padrão', async t => {
@@ -416,30 +504,28 @@ test('documento: a reserva usa o preço do modelo escolhido quando ele é mais c
  await saveVault(f, 'deepseek'); await saveVault(f, 'openai');
  await catalog(f, { action: 'model.save', model: { id: 'leitor-caro', providerId: 'openai', model: 'leitor-caro-1', label: 'Leitor caro (sintético)', capabilities: ['text', 'document'], price: { inputPerM: 1, outputPerM: 2 }, source: { url: 'https://precos.example.invalid/', readAt: '2026-11-10' } } });
  await configure(f, { documentEnabled: true, documentModel: 'leitor-caro' });
- const preview = await previewImport(f.db, f.actors.owner, documentInput('Leitor caro (sintético) (OpenAI)|'), secret, provider.fetch, undefined, keys);
+ const preview = await previewImport(f.db, f.actors.owner, documentInput('Leitor caro (sintético) (OpenAI)|', await documentApproval(f)), secret, provider.fetch, undefined, keys);
  assert.deepEqual(provider.urls(), [OPENAI]); assert.equal(provider.calls[0].body.model, 'leitor-caro-1'); assert.equal(preview.provenance.ai.provider, 'catalog:leitor-caro');
  // Mesmo tamanho de pedido do padrão (3.829 de entrada reservados, 1.200 de saída), a 1 e 2 em vez de 0,3 e 1,2.
  assert.deepEqual(provider.calls[0].inflight, { calls: 1, reserved_usd_micros: 3829 + 2400, reserved_tokens: 5029, reserved_ms: 12000 });
 });
 
-test('documento: recusa do escolhido cai no padrão com auditoria; tempo esgotado não gera segunda chamada', async t => {
+test('documento: erros do provedor preservam a reserva e encerram o envio', async t => {
  const refused = fixture(t), first = providers(refused, () => refusal(429), fields());
  await documentSetup(refused);
- const preview = await previewImport(refused.db, refused.actors.owner, documentInput(`${LUNA}|`), secret, first.fetch, undefined, keys);
- assert.deepEqual(first.urls(), [OPENAI, DEEPSEEK]);
- assert.equal(preview.provenance.ai.provider, 'deepseek'); assert.deepEqual(settled(refused), DOCUMENT_BEFORE.usage, 'uma reserva só: a recusa não conta outra chamada nem outro custo');
- assert.equal(first.calls[1].sha256, DOCUMENT_BEFORE.call.sha256, 'o padrão recebe o corpo de sempre');
- assert.deepEqual(fallbacks(refused), [{ actor: 'owner-qa', task: 'document', model: 'openai-gpt-5-6-luna', name: LUNA, reason: 'O serviço recusou o pedido (código 429).' }]);
-
+ await assert.rejects(previewImport(refused.db, refused.actors.owner, documentInput(LUNA+'|', await documentApproval(refused)), secret, first.fetch, undefined, keys), code('generic_provider_unavailable'));
+ assert.deepEqual(first.urls(), [OPENAI]);
+ assert.deepEqual(fallbacks(refused), []);
+ assert.equal(usage(refused).calls, 1);
  // Status 500 não é recusa certa: o padrão não recebe o documento.
  const unsure = fixture(t), third = providers(unsure, () => refusal(500), fields());
  await documentSetup(unsure);
- await assert.rejects(previewImport(unsure.db, unsure.actors.owner, documentInput(`${LUNA}|`), secret, third.fetch, undefined, keys), error => error?.code !== 'document_ai_destination');
+ await assert.rejects(previewImport(unsure.db, unsure.actors.owner, documentInput(`${LUNA}|`, await documentApproval(unsure)), secret, third.fetch, undefined, keys), error => error?.code !== 'document_ai_destination');
  assert.deepEqual(third.urls(), [OPENAI], 'uma chamada só'); assert.deepEqual(fallbacks(unsure), []);
 
  const doubtful = fixture(t), second = providers(doubtful, () => { throw new DOMException('synthetic timeout', 'TimeoutError'); }, fields());
  await documentSetup(doubtful);
- await assert.rejects(previewImport(doubtful.db, doubtful.actors.owner, documentInput(`${LUNA}|`), secret, second.fetch, undefined, keys), error => error?.code !== 'document_ai_destination');
+ await assert.rejects(previewImport(doubtful.db, doubtful.actors.owner, documentInput(`${LUNA}|`, await documentApproval(doubtful)), secret, second.fetch, undefined, keys), error => error?.code !== 'document_ai_destination');
  assert.deepEqual(second.urls(), [OPENAI], 'o padrão não recebe o documento'); assert.deepEqual(fallbacks(doubtful), []);
  assert.equal(doubtful.native.prepare('SELECT status FROM ai_document_calls').get().status, 'failed');
 });
@@ -448,7 +534,7 @@ test('documento: recusa do escolhido cai no padrão com auditoria; tempo esgotad
 // Destino do documento: a autorização vale só para os modelos que a tela mostrou. Com modelo escolhido
 // e apto, destino errado ou ausente não reserva nem envia nada; sem modelo escolhido o campo é ignorado.
 // ---------------------------------------------------------------------------------------------
-const destinationChanged = error => error?.code === 'document_ai_destination' && error.status === 409 && error.message === 'O modelo que recebe este texto mudou. Confira o aviso e autorize de novo.';
+const destinationChanged = error => error?.code === 'document_ai_destination' && error.status === 409 && error.message === 'O modelo ou o custo da leitura mudou. Confira o aviso e autorize de novo.';
 const documentRows = f => f.native.prepare('SELECT COUNT(*) n FROM ai_document_calls').get().n;
 /** O que a tela monta com o estado do assistente: é o mesmo texto que o servidor confere. */
 const shownDestination = async (f, actor = f.actors.owner) => { const shown = (await assistantStatus(f.db, actor, secret, 'org_proex', undefined, keys)).organizations.find(entry => entry.id === 'org_proex'); return shown.documentRouteName || shown.decisionRouteName ? `${shown.documentRouteName ?? ''}|${shown.decisionRouteName ?? ''}` : ''; };
@@ -463,9 +549,9 @@ test('destino do documento: com modelo escolhido, destino errado ou ausente resp
   assert.equal(provider.calls.length, 0, 'nenhuma chamada a provedor'); assert.equal(documentRows(f), 0, 'nenhuma reserva aberta'); assert.deepEqual(usage(f), {}, 'nada reservado no dia');
  }
  assert.deepEqual(fallbacks(f), []); assert.deepEqual(auditActions(f).filter(action => action.startsWith('import.')), []);
- const preview = await previewImport(f.db, f.actors.owner, documentInput(await shownDestination(f)), secret, provider.fetch, undefined, keys);
+ const preview = await previewImport(f.db, f.actors.owner, documentInput(await shownDestination(f), await documentApproval(f)), secret, provider.fetch, undefined, keys);
  assert.deepEqual(provider.urls(), [OPENAI]); assert.equal(preview.provenance.ai.provider, 'catalog:openai-gpt-5-6-luna');
- assert.deepEqual(settled(f), DOCUMENT_BEFORE.usage);
+ assert.deepEqual(settled(f), { calls: 1, reserved_usd_micros: 365, reserved_tokens: 700 });
 });
 
 test('destino do documento: a conferência escolhida também faz parte do destino, com ou sem modelo de documento escolhido', async t => {
@@ -477,7 +563,7 @@ test('destino do documento: a conferência escolhida também faz parte do destin
  assert.equal(await shownDestination(both), `${LUNA}|${DECIDER}`);
  for (const shown of [undefined, '', `${LUNA}|`, `|${DECIDER}`, `${DECIDER}|${LUNA}`]) await assert.rejects(previewImport(both.db, both.actors.owner, documentInput(shown), secret, first.fetch, undefined, keys), destinationChanged, JSON.stringify(shown));
  assert.equal(first.calls.length, 0); assert.equal(documentRows(both), 0); assert.deepEqual(usage(both), {});
- const preview = await previewImport(both.db, both.actors.owner, documentInput(`${LUNA}|${DECIDER}`), secret, first.fetch, undefined, keys);
+ const preview = await previewImport(both.db, both.actors.owner, documentInput(`${LUNA}|${DECIDER}`, await documentApproval(both)), secret, first.fetch, undefined, keys);
  assert.deepEqual(first.urls(), [OPENAI, PERPLEXITY]); assert.equal(preview.provenance.ai.jevModel, 'pplx-decider-v1.2');
  // Só a conferência escolhida: o documento segue no padrão, mas o destino mostrado ainda nomeia quem confere.
  const decision = fixture(t), second = providers(decision, answer, fields());
@@ -486,21 +572,21 @@ test('destino do documento: a conferência escolhida também faz parte do destin
  assert.equal(await shownDestination(decision), `|${DECIDER}`);
  for (const shown of [undefined, '', DECIDER, `${LUNA}|${DECIDER}`]) await assert.rejects(previewImport(decision.db, decision.actors.owner, documentInput(shown), secret, second.fetch, undefined, keys), destinationChanged, JSON.stringify(shown));
  assert.equal(second.calls.length, 0); assert.equal(documentRows(decision), 0);
- await previewImport(decision.db, decision.actors.owner, documentInput(`|${DECIDER}`), secret, second.fetch, undefined, keys);
+ await previewImport(decision.db, decision.actors.owner, documentInput(`|${DECIDER}`, await documentApproval(decision)), secret, second.fetch, undefined, keys);
  assert.deepEqual(second.urls(), [DEEPSEEK, PERPLEXITY]);
  assert.equal(second.calls[0].sha256, DOCUMENT_BEFORE.call.sha256, 'o padrão lê o documento com o corpo de sempre');
 });
 
-test('destino do documento: sem modelo escolhido, ou com um que não pode receber, o campo é ignorado e o caminho padrão não muda', async t => {
+test('destino do documento: falta de rota mantém prévia, autorização e envio pelo padrão', async t => {
  // Chaves vazias: qualquer valor (ou nenhum) dá a mesma chamada e a mesma reserva de antes do roteamento.
- for (const shown of [undefined, '', `${LUNA}|`, 'qualquer coisa', 7]) {
+ for (const shown of [undefined, '']) {
   const f = fixture(t), provider = providers(f, undefined, fields());
   await documentSetup(f, {});
   assert.equal(await shownDestination(f), '');
   f.sql.length = 0;
-  const preview = await previewImport(f.db, f.actors.owner, documentInput(shown), secret, provider.fetch, undefined, keys);
+  const preview = await previewImport(f.db, f.actors.owner, documentInput(shown, await documentApproval(f)), secret, provider.fetch, undefined, keys);
   assert.deepEqual(provider.calls.map(({ url, length, sha256 }) => ({ url, length, sha256 })), [DOCUMENT_BEFORE.call], JSON.stringify(shown));
-  assert.deepEqual(settled(f), DOCUMENT_BEFORE.usage); assert.equal(preview.provenance.ai.provider, 'deepseek');
+  assert.deepEqual(settled(f), { calls: 1, reserved_usd_micros: 390, reserved_tokens: 700 }); assert.equal(preview.provenance.ai.provider, 'deepseek');
   assert.equal(f.sql.some(text => /FROM settings WHERE name/.test(text)), false, 'com a chave vazia o catálogo nem é lido');
  }
  // Modelo escolhido sem chave: não há destino novo para nomear; o texto vai só ao padrão, com a queda na auditoria.
@@ -508,8 +594,8 @@ test('destino do documento: sem modelo escolhido, ou com um que não pode recebe
  await documentSetup(f);
  await manageAssistantCredential(f.db, f.actors.owner, { action: 'remove', organizationId: 'org_proex', provider: 'openai', expectedRevision: revision(f) }, secret, keys);
  assert.equal(storedConfig(f).documentModel, 'openai-gpt-5-6-luna'); assert.equal(await shownDestination(f), '');
- await previewImport(f.db, f.actors.owner, documentInput(), secret, provider.fetch, undefined, keys);
- await previewImport(f.db, f.actors.owner, documentInput(`${LUNA}|`), secret, provider.fetch, undefined, keys);
+ await previewImport(f.db, f.actors.owner, documentInput(undefined, await documentApproval(f)), secret, provider.fetch, undefined, keys);
+ await previewImport(f.db, f.actors.owner, documentInput(undefined, await documentApproval(f)), secret, provider.fetch, undefined, keys);
  assert.deepEqual(provider.urls(), [DEEPSEEK, DEEPSEEK]);
  assert.deepEqual(fallbacks(f).map(entry => entry.reason), ['Falta a chave do provedor deste modelo.'], 'a mesma queda, no mesmo dia, fica registrada uma vez só');
 });
@@ -532,7 +618,7 @@ test('trava de destino: com modelo de conferência escolhido, nome ausente ou er
   assert.equal(provider.calls.length, 0, 'nenhuma chamada a serviço'); assert.equal(callRows(f), 0, 'nenhuma reserva aberta'); assert.deepEqual(usage(f), {}, 'nada reservado no dia');
  }
  assert.deepEqual(fallbacks(f), []);
- const preview = await prepareAssistantPlan(f.db, f.actors.inventory, request({ decisionDestination: estimate.decisionDestination }), secret, { fetcher: provider.fetch, keys });
+ const preview = await prepareAssistantPlan(f.db, f.actors.inventory, request(approveOperation(estimate)), secret, { fetcher: provider.fetch, keys });
  assert.deepEqual(provider.urls(), [DEEPSEEK, PERPLEXITY]); assert.equal(preview.plan.provenance.jevModel, 'pplx-decider-v1.2');
  await applyAssistantPlan(f.db, f.actors.inventory, confirm(preview), secret, Date.now(), keys);
  assert.equal(stock(f), 10);
@@ -548,12 +634,12 @@ test('trava de destino: a troca do modelo depois da estimativa é barrada; o nom
  assert.equal(provider.calls.length, 0); assert.equal(callRows(f), 0);
  const after = await estimateAssistantPlan(f.db, f.actors.inventory, input, secret, { keys });
  assert.equal(after.decisionDestination, 'Drex Max v1.1 (Nace)');
- await prepareAssistantPlan(f.db, f.actors.inventory, request({ decisionDestination: after.decisionDestination }), secret, { fetcher: provider.fetch, keys });
+ await prepareAssistantPlan(f.db, f.actors.inventory, request(approveOperation(after)), secret, { fetcher: provider.fetch, keys });
  assert.deepEqual(provider.urls(), [DEEPSEEK, NACE]);
 });
 
-test('trava de destino: sem modelo escolhido, ou com um que não pode receber, o campo é ignorado e as chamadas são as de antes', async t => {
- for (const shown of [undefined, '', DECIDER, 'qualquer coisa', 7]) {
+test('trava de destino: sem modelo escolhido, ou com um que não pode receber, o envio autorizado mantém o padrão', async t => {
+ for (const shown of [undefined, '']) {
   const f = fixture(t), provider = providers(f);
   await configureAssistant(f.db, f.actors.owner, { action: 'configure', organizationId: 'org_proex', expectedRevision: 0, config: { ...DEFAULT_ASSISTANT_CONFIG, enabled: true, jevEnabled: true }, deepseekKey: key, typesafeKey: key }, secret);
   const estimate = await estimateAssistantPlan(f.db, f.actors.inventory, { projectId: 'project-a', request: request().request }, secret);
@@ -568,7 +654,7 @@ test('trava de destino: sem modelo escolhido, ou com um que não pode receber, o
  await decisionSetup(f);
  await catalog(f, { action: 'key.remove', providerId: 'perplexity' });
  assert.equal('decisionDestination' in await estimateAssistantPlan(f.db, f.actors.inventory, { projectId: 'project-a', request: request().request }, secret, { keys }), false);
- await prepareAssistantPlan(f.db, f.actors.inventory, request({ decisionDestination: DECIDER }), secret, { fetcher: provider.fetch, keys });
+ await prepareAssistantPlan(f.db, f.actors.inventory, request(await operationApproval(f)), secret, { fetcher: provider.fetch, keys });
  assert.deepEqual(provider.urls(), [DEEPSEEK, TYPESAFE]);
 });
 
@@ -630,7 +716,7 @@ test('documento no modelo escolhido: serviço compatível recebe temperatura 0',
  await saveVault(f, 'deepseek'); await saveVault(f, 'groq');
  await catalog(f, { action: 'model.save', model: { id: 'leitor-groq', providerId: 'groq', model: 'leitor-groq-1', label: 'Leitor Groq (sintético)', capabilities: ['text', 'document'], price: { inputPerM: 0.2, outputPerM: 0.6 }, source: { url: 'https://precos.example.invalid/', readAt: '2026-11-10' } } });
  await configure(f, { documentEnabled: true, documentModel: 'leitor-groq' });
- const preview = await previewImport(f.db, f.actors.owner, documentInput('Leitor Groq (sintético)|'), secret, provider.fetch, undefined, keys);
+ const preview = await previewImport(f.db, f.actors.owner, documentInput('Leitor Groq (sintético)|', await documentApproval(f)), secret, provider.fetch, undefined, keys);
  assert.deepEqual(provider.urls(), ['https://api.groq.com/openai/v1/chat/completions']);
  assert.equal(provider.calls[0].body.temperature, 0); assert.equal(provider.calls[0].body.model, 'leitor-groq-1');
  assert.equal(preview.provenance.ai.provider, 'catalog:leitor-groq');
@@ -669,7 +755,7 @@ test('voz: sem modelo escolhido o aviso de troca de serviço é o de sempre; que
  await assert.rejects(transcribeSpeech(f.db, f.actors.inventory, speechInput(), secret, { fetcher: provider.fetch, keys }), said(usual));
  await assert.rejects(transcribeSpeech(f.db, f.actors.inventory, speechInput({ expectedProvider: 'deepgram' }), secret, { fetcher: provider.fetch, keys }), said(usual));
  // A tela mostrava um modelo escolhido que a administração desfez: o aviso novo.
- await assert.rejects(transcribeSpeech(f.db, f.actors.inventory, speechInput({ expectedProvider: ROUTED_SPEECH }), secret, { fetcher: provider.fetch, keys }), said(fresh));
+ await assert.rejects(transcribeSpeech(f.db, f.actors.inventory, speechInput({ expectedProvider: ROUTED_SPEECH, approval: await speechApproval(f) }), secret, { fetcher: provider.fetch, keys }), said(fresh));
  assert.equal(provider.calls.length, 0, 'nada foi enviado');
 });
 

@@ -7,24 +7,12 @@ const withheld = () => new HttpError(502, 'A resposta do provedor não pôde ser
 /** Erro depois de o provedor já ter cobrado: leva o custo conhecido para entrar no limite diário. */
 export class ChargedError extends HttpError { constructor(message: string, readonly chargedMicros: number, readonly chargedTokens: number) { super(502, message, 'generic_provider_schema'); } }
 
-/**
- * O serviço respondeu com um status de recusa certa: não aceitou o pedido e, com certeza, não cobrou.
- * É o único erro pós-envio que permite cair no padrão sem risco de cobrança dupla.
- */
-export class RefusedError extends HttpError { constructor(message: string, readonly providerStatus: number, code = 'generic_provider_unavailable') { super(503, message, code); } }
-/**
- * Status em que a recusa é certa (pedido inválido, chave, saldo, modelo, tamanho, formato ou limite de uso).
- * Qualquer outro status de erro (408, 5xx…) pode ter sido processado: sobe como erro comum, sem segunda chamada.
- */
-const REFUSAL_STATUSES: ReadonlySet<number> = new Set([400, 401, 402, 403, 404, 413, 415, 422, 429]);
-export function certainRefusal(status: number): boolean { return REFUSAL_STATUSES.has(status); }
 
 export async function boundedJson(response: Response, limit = 256 * 1024): Promise<Record<string, unknown>> {
   if (!response.ok || !/^application\/json(?:\s*;|$)/i.test(response.headers.get('content-type') ?? '')) {
     await response.body?.cancel().catch(() => {});
     const status = response.status;
     const message = status === 401 || status === 403 ? 'O provedor recusou a chave. Confira a chave em Chaves e modelos.' : status === 404 ? 'O provedor não reconheceu o modelo. Confira o nome do modelo na API.' : status === 429 ? 'O provedor atingiu o limite de uso agora. Tente de novo em alguns minutos.' : 'O provedor não respondeu.';
-    if (!response.ok && certainRefusal(status)) throw new RefusedError(message, status);
     throw new HttpError(503, message, 'generic_provider_unavailable');
   }
   const reader = response.body?.getReader();

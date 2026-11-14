@@ -26,7 +26,7 @@ test('account renders only profile while authorized configuration remains in Set
 // Trava de destino: com modelo de conferência escolhido, a tela mostra quem confere, manda esse nome no preparo
 // e, se o servidor disser que mudou, busca o nome de agora e pede a autorização de novo.
 const DECIDER='Decider v1.2 (Perplexity)',OTHER='Drex Max v1.1 (Nace)';
-const sentence=name=>`Os registros de estoque são conferidos pelo modelo ${name}; se ele não puder responder, pelo JEV, da TypeSafe.`;
+const sentence=name=>`Os registros de estoque são conferidos pelo modelo ${name}.`;
 const routedStatus=(h,name)=>({...h.status('org-a'),organizations:h.status('org-a').organizations.map(organization=>organization.id==='org-a'&&name?{...organization,decisionRouteName:name}:organization)});
 async function fill(h){
  h.find('textarea',node=>node.props.placeholder?.startsWith('Ex.:')).props.onChange({target:{value:'Registrar entrada de 10 canetas.'}});

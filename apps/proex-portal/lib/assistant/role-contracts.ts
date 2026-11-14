@@ -46,7 +46,7 @@ export function roleSpeechCeilingMicros(provider: 'groq' | 'deepgram', seconds: 
  * Modelo do catálogo escolhido para voz, do jeito que a tela precisa para pedir a autorização:
  * nome do modelo, nome do serviço, preço por hora e formato de envio. Nunca chave nem endereço.
  */
-export type SpeechRouteModel = { label: string; service: string; perHour: number; style: 'groq' | 'deepgram' };
+export type SpeechRouteModel = { label: string; service: string; perHour: number; style: 'groq' | 'deepgram'; approval?: string };
 /**
  * Teto da voz no modelo escolhido: preço por hora com mínimo de 10 s cobrados; nunca fica abaixo da reserva
  * revisada do mesmo formato de envio (Groq ou Deepgram), mesmo que o preço cadastrado seja menor.
@@ -62,10 +62,8 @@ export function speechRouteName(model: Pick<SpeechRouteModel, 'label' | 'service
 
 /**
  * Avisos e autorizações de documento, conferência e triagem. Sem modelo escolhido, o texto é o de sempre.
- * Com modelo escolhido e apto a responder, o texto nomeia esse modelo e avisa que, se ele não puder responder,
- * o pedido segue pelo padrão do portal. "(padrão do portal)" evita confusão quando o modelo escolhido também é da TypeSafe.
+ * As telas nomeiam os destinatários confirmados para o envio.
  */
-const DEFAULT_DECISION = 'JEV, da TypeSafe (padrão do portal)';
 /**
  * Nome de um modelo escolhido para documento ou conferência: o nome do modelo e, se ele ainda não disser, o serviço.
  * O serviço entra sem a observação entre parênteses do catálogo ("Perplexity (decisão)" vira "Perplexity").
@@ -77,21 +75,26 @@ export function taskRouteLabel(model: { label: string; service: string }): strin
 /** Nome de modelo recebido do servidor, pronto para a tela: só texto curto; qualquer outra coisa vira vazio (= padrão do portal). */
 export function shownRouteName(value: unknown): string { return typeof value === 'string' ? value.trim().slice(0, 160) : ''; }
 export function triageNoticeText(name?: string | null): string {
-  return name ? `O modelo ${name} recebe esse resumo e o prazo desta demanda. Se ele não puder responder, quem recebe é o ${DEFAULT_DECISION}.` : 'O JEV recebe esse resumo e o prazo desta demanda.';
+  return name ? `O modelo ${name} recebe esse resumo e o prazo desta demanda.` : 'O JEV recebe esse resumo e o prazo desta demanda.';
 }
 export function triageConsentText(name?: string | null): string {
-  return name ? `Autorizo enviar este resumo e prazo ao modelo ${name} e, se ele não puder responder, ao ${DEFAULT_DECISION}.` : 'Autorizo enviar este resumo e prazo à TypeSafe.';
+  return name ? `Autorizo enviar este resumo e prazo ao modelo ${name}.` : 'Autorizo enviar este resumo e prazo à TypeSafe.';
 }
 /** Autorização de leitura de documento. Sem nenhum modelo escolhido, o texto de sempre, letra por letra. */
-export function documentConsentText(documentName?: string | null, decisionName?: string | null): string {
-  if (documentName && decisionName) return `Autorizo enviar o texto desta fonte ao modelo ${documentName} (leitura) e ao modelo ${decisionName} (conferência). Se um deles não puder responder, o texto vai para o padrão do portal (DeepSeek ou OpenAI; conferência pelo JEV, da TypeSafe).`;
-  if (documentName) return `Autorizo enviar o texto desta fonte ao modelo ${documentName}. Se ele não puder responder, o texto vai para o padrão do portal (DeepSeek ou OpenAI). O texto também vai ao JEV se a conferência estiver ligada.`;
-  if (decisionName) return `Autorizo enviar o texto desta fonte ao padrão do portal (DeepSeek ou OpenAI) e, para a conferência, ao modelo ${decisionName}. Se ele não puder responder, a conferência fica com o JEV, da TypeSafe.`;
+export function documentConsentText(documentName?: string | null, decisionName?: string | null, defaultText?: 'deepseek' | 'openai', decisionEnabled?: boolean): string {
+  if (defaultText) {
+    const reader = documentName ? `ao modelo ${documentName}` : defaultText === 'openai' ? 'à OpenAI' : 'à DeepSeek';
+    const reviewer = decisionEnabled ? decisionName ? ` e ao modelo ${decisionName} para conferência` : ' e ao JEV, da TypeSafe, para conferência' : '';
+    return `Autorizo enviar o texto desta fonte ${reader}${reviewer}.`;
+  }
+  if (documentName && decisionName) return `Autorizo enviar o texto desta fonte ao modelo ${documentName} (leitura) e ao modelo ${decisionName} (conferência).`;
+  if (documentName) return `Autorizo enviar o texto desta fonte ao modelo ${documentName}. O texto também vai ao JEV se a conferência estiver ligada.`;
+  if (decisionName) return `Autorizo enviar o texto desta fonte ao padrão do portal (DeepSeek ou OpenAI) e, para a conferência, ao modelo ${decisionName}.`;
   return 'Autorizo enviar o texto extraído desta fonte ao provedor de texto escolhido para esta organização (DeepSeek ou OpenAI) e ao Jev se habilitado.';
 }
 /** Complemento do aviso de um registro do Rolê quando há conferência. */
 export function operationConferenceText(name?: string | null): string {
-  return name ? `, com conferência do modelo ${name}; se ele não puder responder, a conferência fica com o ${DEFAULT_DECISION}` : ', com conferência da TypeSafe (JEV)';
+  return name ? `, com conferência do modelo ${name}` : ', com conferência da TypeSafe (JEV)';
 }
 /**
  * Item "registros de estoque" da lista de serviços do Rolê. É sempre o mesmo: com modelo de conferência
@@ -104,7 +107,7 @@ export function operationsServiceText(): string { return 'o serviço de registro
  * sem ele devolve vazio e o aviso fica como sempre.
  */
 export function operationsConferenceSentence(name?: string | null): string {
-  return name ? `Os registros de estoque são conferidos pelo modelo ${name}; se ele não puder responder, pelo JEV, da TypeSafe.` : '';
+  return name ? `Os registros de estoque são conferidos pelo modelo ${name}.` : '';
 }
 
 export type RoleTurn = { role: 'user' | 'assistant'; content: string };

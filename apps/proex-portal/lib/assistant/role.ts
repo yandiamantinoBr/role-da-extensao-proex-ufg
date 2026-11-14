@@ -17,7 +17,7 @@ import { fitsFunction, type CatalogModel, type CatalogProvider, type ModelCatalo
 import { loadCatalog } from './model-catalog-store';
 import { catalogPricing, type RolePricing, type SpeechRouteModel } from './role-contracts';
 import { assistantUsageSql, loadAssistantSettings, speechProviderForOrganization, validProviderKey, type SpeechEnvironment } from './settings';
-import { resolveTaskRoute, speechDestination, speechRouteModel, taskRouteName } from './task-routing';
+import { resolveTaskRoute, speechDestination, speechRouteModel, taskApproval, taskRouteName } from './task-routing';
 
 type Options = { fetcher?: typeof fetch; now?: number; keys?: CredentialKeys; signal?: AbortSignal; speech?: SpeechEnvironment };
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
@@ -128,13 +128,13 @@ export async function roleStatus(db: D1Database, actor: PortalActor | null, inpu
   const usage = await one(db, 'SELECT reserved_usd_micros FROM ai_organization_usage WHERE organization_id=? AND day=?', [organizationId, today]);
   const base = { contract: ROLE_CONTRACT, organizationId, projectId: project, reservedTodayMicros: Number(usage?.reserved_usd_micros ?? 0), canConfigure: (await responsibleName(db, current, organizationId)).canConfigure };
   try {
-    const { config, credentials, rawCredentials } = await loadAssistantSettings(db, secret, organizationId, 'configuration', options.keys, current.userId);
+    const { config, credentials, rawCredentials, revision } = await loadAssistantSettings(db, secret, organizationId, 'configuration', options.keys, current.userId);
     const catalog = config.roleModel || config.roleVisionModel ? (await loadCatalog(db, organizationId)).catalog : null;
     const { text, vision, ...state } = availability(config, credentials, organizationId, options.speech, rawCredentials, catalog);
     let speech: RoleAvailability['speech'] = state.speech;
     if (config.speechModel && speech.available) {
       const resolved = await resolveTaskRoute(db, organizationId, config, rawCredentials, 'speech', speech.provider), routeModel = speechRouteModel(resolved);
-      if (routeModel) speech = { ...speech, route: speechDestination(resolved, speech.provider), routeModel };
+      if (routeModel) speech = { ...speech, route: speechDestination(resolved, speech.provider), routeModel: { ...routeModel, approval: await taskApproval(organizationId, revision, 'speech', [resolved]) } };
     }
     const decisionRouteName = state.operationsAvailable && config.jevEnabled && config.decisionModel ? taskRouteName(await resolveTaskRoute(db, organizationId, config, rawCredentials, 'decision').catch(() => null)) : null;
     return { ...base, ...state, speech, ...(decisionRouteName ? { decisionRouteName } : {}), provider: text?.kind === 'catalog' ? text.provider.id : config.roleProvider, model: text?.pricing.label ?? ROLE_MODELS[config.roleProvider].label,
