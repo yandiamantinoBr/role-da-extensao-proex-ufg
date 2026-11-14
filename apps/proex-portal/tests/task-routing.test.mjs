@@ -100,6 +100,22 @@ test('security regression: old approval cannot send to a new endpoint with the s
  assert.deepEqual(usage(f), {});
 });
 
+test('Worker recusa conferência personalizada antes do primeiro envio e da reserva', async t => {
+ const f = fixture(t);
+ await decisionSetup(f);
+ changeCatalog(f, value => ({ ...value, providers: value.providers.map(entry => entry.id === 'perplexity'
+  ? { ...entry, baseUrl: 'https://changed.example.invalid/v1' } : entry) }));
+ const approved = await operationApproval(f);
+ const realFetch = globalThis.fetch;
+ const calls = [];
+ globalThis.fetch = async (...args) => { calls.push(args); throw new Error('Nenhum envio era esperado.'); };
+ try {
+   await assert.rejects(prepareAssistantPlan(f.db, f.actors.inventory, request(approved), secret, { keys }), code('assistant_custom_destination_unavailable'));
+   assert.deepEqual(usage(f), {});
+   assert.deepEqual(calls, []);
+ } finally { globalThis.fetch = realFetch; }
+});
+
 test('security regression: a catalog edit at admission does not reserve or send', async t => {
  const f = fixture(t), provider = providers(f, body => jevAnswer(body.model));
  await decisionSetup(f);

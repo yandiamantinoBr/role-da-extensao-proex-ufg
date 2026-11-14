@@ -1,4 +1,5 @@
 import { HttpError } from '../errors';
+import { requestProvider } from './provider-transport';
 import { TRIAGE_CRITERIA, type TriageLevel, type TriageProposal } from '../follow-up/triage-contract';
 import { PROVIDERS, object, type AssistantConfig, type AssistantCredentials, type AssistantItem } from './contracts';
 import {generateOpenAiJson,openAiGenerationBody,type TextPurpose} from './openai-provider';
@@ -37,7 +38,7 @@ export type DecisionRoute = { endpoint: string; apiKey: string; model: string };
  */
 async function postRoute(route: DecisionRoute, body: unknown, signal: AbortSignal, fetcher: typeof fetch): Promise<Record<string, unknown>> {
  try {
-  const response = await fetcher(route.endpoint, { method: 'POST', redirect: 'error', cache: 'no-store', signal, headers: { Authorization: `Bearer ${route.apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const response = await requestProvider(route.endpoint, { method: 'POST', signal, headers: { Authorization: `Bearer ${route.apiKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }, fetcher);
   if (!response.ok) {
    await response.body?.cancel().catch(() => {});
    if (response.status === 429) throw new HttpError(503, 'O modelo escolhido atingiu o limite de uso. A reserva continua contando na cota.', 'assistant_provider_unavailable');

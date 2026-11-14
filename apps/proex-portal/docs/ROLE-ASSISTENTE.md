@@ -273,6 +273,7 @@ Motivo: às 13h o Yan perguntou "quantos brindes, super brindes e super super br
   - Conferência e triagem só aceitam serviços no formato de conferência (JEV).
 - **Quando o modelo escolhido não responde** (`lib/assistant/task-routing.ts`):
   - Antes do envio (sem chave, desligado, removido): o pedido segue pelo padrão do portal.
+  - No Worker/Sites, um endereço fora dos endpoints fixos é recusado antes da reserva e de qualquer envio da tarefa. Na Vercel/Node, a conexão ao destino escolhido usa a validação DNS e HTTPS do catálogo. Uma recusa de DNS no momento da chamada encerra o pedido sem transmitir dados ao endereço recusado.
   - Depois do envio, qualquer erro HTTP, falha de rede, tempo esgotado ou resposta inválida encerra o pedido. Um proxy pode devolver 429 após encaminhar. A reserva fica na cota e a interface apresenta o erro.
   - Conferência e triagem do catálogo só aceitam a identidade exata do modelo configurado. O TypeSafe fixo mantém sua validação anterior.
   - O motivo fica no histórico da administração como "Aviso de IA" ("O modelo escolhido para … não respondeu"), no máximo uma vez por dia para o mesmo modelo e motivo.

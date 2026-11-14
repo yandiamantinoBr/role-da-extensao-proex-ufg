@@ -1,6 +1,7 @@
 import { getActor, requireLiveCapability, projectAuthoritySql, type PortalActor } from '../access';
 import { one } from '../database';
 import { HttpError } from '../errors';
+import { requestProvider } from './provider-transport';
 import { object, safeRequest } from './contracts';
 import { decryptCredentials, digest, encryptCredentials, type CredentialKeys } from './crypto';
 import { assistantUsageSql, loadSpeechSettings, type SpeechEnvironment, type SpeechProvider } from './settings';
@@ -14,7 +15,7 @@ export const SPEECH_ENDPOINT = 'https://api.deepgram.com/v1/listen?model=nova-3&
 export function speechEndpoint(value: unknown = SPEECH_ENDPOINT): string { if (value !== SPEECH_ENDPOINT) throw new HttpError(400, 'Use apenas o endpoint oficial de transcrição autorizado.', 'speech_endpoint'); return SPEECH_ENDPOINT; }
 import { validateSpeechAudio } from './audio';
 import { quotaRefusal } from './quota';
-import { recordRouteFallback, resolveTaskRoute, speechDestination, speechRouteStyle, taskApproval, taskRouteGuards } from './task-routing';
+import { recordRouteFallback, resolveTaskRoute, speechDestination, speechRouteStyle, speechTaskEndpoint, requireTaskEndpoint, taskApproval, taskRouteGuards } from './task-routing';
 import { speechRouteCeilingMicros } from './role-contracts';
 export { validateSpeechAudio } from './audio';
 export async function speechActor(db: D1Database, actor: PortalActor | null, projectId: string) {
@@ -23,7 +24,7 @@ export async function speechActor(db: D1Database, actor: PortalActor | null, pro
  const project = await one(db,"SELECT p.organization_id FROM projects p JOIN organizations o ON o.id=p.organization_id AND o.status='active' WHERE p.id=?",[projectId]);
  if (!project) throw new HttpError(403,'O projeto ou sua organização está indisponível.','speech_forbidden'); return { current, organizationId: String(project.organization_id) };
 }
-async function providerSpeech(provider: SpeechProvider, bytes: Uint8Array, apiKey: string, signal: AbortSignal, fetcher: typeof fetch, target?: { endpoint: string; model: string }) {
+async function providerSpeech(provider: SpeechProvider, bytes: Uint8Array, apiKey: string, signal: AbortSignal, fetcher?: typeof fetch, target?: { endpoint: string; model: string }) {
  const wav = new Uint8Array(bytes).buffer;
  let endpoint = speechEndpoint();
  let headers: Record<string, string> = { Authorization: `Token ${apiKey}`, 'Content-Type': 'audio/wav' };
@@ -39,7 +40,8 @@ async function providerSpeech(provider: SpeechProvider, bytes: Uint8Array, apiKe
   requestBody = form;
  }
  try {
-  const response = await fetcher(endpoint, { method:'POST', redirect:'error', cache:'no-store', signal, headers, body:requestBody });
+  const init: RequestInit = { method:'POST', redirect:'error', cache:'no-store', signal, headers, body:requestBody };
+  const response = target ? await requestProvider(endpoint, init, fetcher) : await (fetcher ?? fetch)(endpoint, init);
   if (!response.ok || !response.headers.get('Content-Type')?.includes('application/json')) throw new HttpError(503,'O provedor não transcreveu o áudio. A reserva permanece na cota.','speech_provider');
   const reader = response.body?.getReader(); if (!reader) throw new Error('empty'); const chunks: Uint8Array[]=[]; let size=0;
   try { for (;;) { const {value,done}=await reader.read(); if(done) break; size+=value.length; if(size>256*1024) throw new Error('limit'); chunks.push(value); } } finally { await reader.cancel().catch(()=>{}); }
@@ -75,11 +77,12 @@ export async function transcribeSpeech(db:D1Database, actor:PortalActor|null, in
  const approval=routed?await taskApproval(organizationId,settings.revision,'speech',[routed]):undefined;
  const destinationChanged=()=>new HttpError(409,'O serviço ou o custo da transcrição mudou. Nada foi enviado. Confira o aviso e autorize de novo.','speech_provider_changed');
  if(input.approval!==approval)throw destinationChanged();
+ requireTaskEndpoint(speechRoute,'speech',options.fetcher);
  const routeGuards=taskRouteGuards(db,organizationId,[speechRoute]);
  const audio=validateSpeechAudio(input.bytes,input.mime),now=options.now??Date.now(),apiKey=routed?routed.apiKey:settings.apiKey;
  // Formato de envio do destino: provedor de voz revisado (Deepgram) ou formulário de áudio compatível com OpenAI.
  const style:SpeechProvider=routed?speechRouteStyle(routed):provider;
- const target=routed&&style==='groq'?{endpoint:`${routed.baseUrl}/audio/transcriptions`,model:routed.model.model}:undefined;
+ const target=routed&&style==='groq'?{endpoint:speechTaskEndpoint(routed),model:routed.model.model}:undefined;
  const model=routed?routed.model.model:provider==='groq'?GROQ_SPEECH_MODEL:'nova-3';
  await db.prepare("UPDATE ai_transcriptions SET result_ciphertext=NULL WHERE organization_id=? AND status='complete' AND created_at<? AND result_ciphertext IS NOT NULL").bind(organizationId,new Date(now-3600000).toISOString()).run();
  const audioSha256=await digest(input.bytes),id=await digest(`${current.userId}\n${input.projectId}\n${input.operationKey}`);
@@ -106,7 +109,7 @@ export async function transcribeSpeech(db:D1Database, actor:PortalActor|null, in
   await speechActor(db,current,input.projectId);const fresh=await loadSpeechSettings(db,secret,organizationId,options.environment,options.keys,current.userId);if(fresh.revision!==settings.revision)throw new HttpError(409,settings.config.speechModel?'A configuração de voz mudou durante o envio. Nada foi enviado. Envie de novo.':'A configuração mudou antes da transcrição.','speech_configuration_changed');
   if(speechRoute&&'skip' in speechRoute)await recordRouteFallback(db,organizationId,current.userId,'speech',settings.config.speechModel,speechRoute.skip);
   await authorized(true);if(controller.signal.aborted)throw new HttpError(503,'A transcrição excedeu o tempo reservado.','speech_provider');
-  const response=await providerSpeech(style,input.bytes,apiKey,controller.signal,options.fetcher??fetch,target);
+  const response=await providerSpeech(style,input.bytes,apiKey,controller.signal,options.fetcher,target);
   if(JSON.stringify(response).includes(apiKey))throw new HttpError(502,'O provedor retornou dados que não podem ser apresentados.','speech_schema');
   const { transcript, returnedVersion } = validatedTranscript(response, style, audio.duration);
   const result={transcript,provenance:{provider:destination,model,credentialSource:routed?'vault':settings.credentialSource,returnedVersion,organizationId,projectId:input.projectId,audioSha256,duration:audio.duration,at:new Date(now).toISOString()}};

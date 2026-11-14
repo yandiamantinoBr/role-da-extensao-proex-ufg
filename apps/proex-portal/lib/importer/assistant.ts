@@ -6,7 +6,7 @@ import {aiReservation,aiSettlement,reservationStatements,settlementStatement} fr
 import {assistantUsageSql,loadAssistantSettings} from '../assistant/settings';
 import {textModel,object,onlyKeys} from '../assistant/contracts';
 import {generateProposal,checkDecision,generationBody,decisionBody,providerGenerationBody} from '../assistant/provider';
-import {decisionSettled,decisionTarget,documentPrices,DOCUMENT_AI_BODY_LIMIT,recordRouteFallback,resolveTaskRoute,routedDocumentProposal,taskApproval,taskRouteGuards,taskRouteName,withTaskRoute,type ResolvedTaskRoute,type TaskRoute} from '../assistant/task-routing';
+import {decisionSettled,decisionTarget,documentPrices,DOCUMENT_AI_BODY_LIMIT,recordRouteFallback,requireTaskEndpoint,resolveTaskRoute,routedDocumentProposal,taskApproval,taskRouteGuards,taskRouteName,withTaskRoute,type ResolvedTaskRoute,type TaskRoute} from '../assistant/task-routing';
 import {encryptCredentials,decryptCredentials,type CredentialKeys} from '../assistant/crypto';
 import {importFields,type ImportCandidate,type ImportKind,type ImportAiProvenance,type ImportFieldEvidence} from './contracts';
 import {validateImportedFields,importEvidenceText} from './parse';
@@ -75,6 +75,8 @@ export async function interpretDocument(db:D1Database,actor:PortalActor,context:
  // Clients predating the quote can still use the existing default. Catalog routing always requires it.
  const shownApproval = input.approval === '' ? undefined : input.approval;
  if((input.destination??'')!==destination||((destination||shownApproval!==undefined)&&shownApproval!==approval))return destinationChanged();
+ requireTaskEndpoint(documentRoute,'document',options.fetcher);
+ requireTaskEndpoint(decisionRoute,'decision',options.fetcher);
  const routeGuards=taskRouteGuards(db,context.organizationId,routes);
  const fingerprint=await importDigest(JSON.stringify({context,sourceDigest,revision,base:input.base,approval:destination?approval:undefined}));
  const replay=await existing();if(replay)return replay;

@@ -9,7 +9,7 @@ import { assistantUsageSql, loadAssistantSettings as loadSettings } from './sett
 import { aiReservation, aiSettlement, reservationStatements, settlementStatement } from './admission';
 import { quotaRefusal } from './quota';
 import { checkDecision, decisionBody, generateProposal, generationBody,providerGenerationBody } from './provider';
-import { decisionCeiling, decisionSettled, decisionTarget, hasTaskRoute, recordRouteFallback, resolveTaskRoute, taskApproval, taskRouteGuards, taskRouteName, withTaskRoute, type TaskRoute } from './task-routing';
+import { decisionCeiling, decisionSettled, decisionTarget, hasTaskRoute, recordRouteFallback, requireTaskEndpoint, resolveTaskRoute, taskApproval, taskRouteGuards, taskRouteName, withTaskRoute, type TaskRoute } from './task-routing';
 
 const nowIso = () => new Date().toISOString();
 async function currentActor(db: D1Database, actor: PortalActor | null): Promise<PortalActor> { const current = actor && await getActor(db, actor); if (!current) throw new HttpError(403, 'Seu acesso mudou. Entre novamente.', 'assistant_forbidden'); return current; }
@@ -64,6 +64,7 @@ export async function prepareAssistantPlan(db: D1Database, actor: PortalActor | 
  const decisionApproval = decisionDestination ? await taskApproval(organizationId, revision, 'operation', [decisionRoute]) : undefined;
  const destinationChanged = () => new HttpError(409, 'O modelo que confere este registro mudou. Confira o aviso e confirme de novo.', 'assistant_destination');
  if (decisionApproval !== input.decisionApproval || (decisionDestination ?? '') !== (input.decisionDestination ?? '')) throw destinationChanged();
+ requireTaskEndpoint(decisionRoute, 'decision', options.fetcher);
  const routeGuards = taskRouteGuards(db, organizationId, [decisionRoute]);
  let decisionAnswered: TaskRoute | null = null;
  const reservation=aiReservation(config,bodyBytes,decisionCeiling(decisionRoute)),reservedCost=reservation.cost;

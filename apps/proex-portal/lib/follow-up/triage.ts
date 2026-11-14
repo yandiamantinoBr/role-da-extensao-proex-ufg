@@ -6,7 +6,7 @@ import { containsCredential } from '../assistant/sensitive';
 import { assistantUsageSql, loadAssistantSettings } from '../assistant/settings';
 import { reservationStatements } from '../assistant/admission';
 import { classifyTaskTriage, taskTriageBody } from '../assistant/provider';
-import { decisionCeiling, decisionTarget, recordRouteFallback, resolveTaskRoute, taskApproval, taskRouteGuards, taskRouteName, withTaskRoute, type ResolvedTaskRoute } from '../assistant/task-routing';
+import { decisionCeiling, decisionTarget, recordRouteFallback, requireTaskEndpoint, resolveTaskRoute, taskApproval, taskRouteGuards, taskRouteName, withTaskRoute, type ResolvedTaskRoute } from '../assistant/task-routing';
 import { TASK_PRIORITIES, choices, fail, id, onlyKeys, text, version } from './contracts';
 import { atomic, authority, type Scope } from './scope';
 import { serverWorkClock } from './time';
@@ -103,6 +103,7 @@ export async function prepareTaskTriage(db:D1Database, actor:PortalActor, input:
  const approval=destinationName?await taskApproval(task.organization_id,revision,'triage',[decisionRoute]):undefined;
  const destinationChanged=()=>fail('O modelo ou o custo desta triagem mudou. Confira o aviso e autorize de novo.','triage_destination',409);
  if ((destinationName??'')!==shownDestination || approval!==input.approval) return destinationChanged();
+ requireTaskEndpoint(decisionRoute, 'decision', options.fetcher);
  const fingerprint = await digest(JSON.stringify(approval?[task.id,task.version,revision,context,approval]:[task.id,task.version,revision,context]));
  const routeGuards=taskRouteGuards(db,task.organization_id,[decisionRoute]);
  async function dispatchFence(){if(routeGuards.length)await db.batch([...routeGuards,authorization]);else await authorization.first();}

@@ -8,8 +8,9 @@
 import { all } from '../database';
 import { HttpError } from '../errors';
 import { PROVIDERS, textModel, type AssistantConfig, type TaskModelKey } from './contracts';
-import { firstJsonObject, genericChat } from './generic-provider';
+import { firstJsonObject, genericChat, requireConversationEndpoint } from './generic-provider';
 import { digest } from './crypto';
+import { requireProviderEndpoint } from './provider-transport';
 import { aiReservation } from './admission';
 import { catalogModelName, fitsTask, isTaskDefault, safeBaseUrl, type CatalogModel, type CatalogProvider, type RoutedTask } from './model-catalog';
 import { catalogSettingName, loadCatalog } from './model-catalog-store';
@@ -75,6 +76,17 @@ export async function resolveTaskRoute(db: D1Database, organizationId: string, c
 
 /** Endereço do formato JEV no provedor escolhido (mesmo caminho do TypeSafe). */
 export function decisionEndpoint(route: TaskRoute) { return `${route.baseUrl}/systemone`; }
+export function speechTaskEndpoint(route: TaskRoute) {
+  return route.baseUrl + '/audio/transcriptions';
+}
+
+export function requireTaskEndpoint(route: ResolvedTaskRoute, task: RoutedTask, syntheticFetch?: typeof fetch) {
+  if (!hasTaskRoute(route)) return;
+  if (task === 'document') requireConversationEndpoint(route.provider, syntheticFetch);
+  else if (task === 'decision') requireProviderEndpoint(decisionEndpoint(route), syntheticFetch);
+  else if (speechRouteStyle(route) === 'groq') requireProviderEndpoint(speechTaskEndpoint(route), syntheticFetch);
+}
+
 /** Destino JEV no formato que checkDecision e classifyTaskTriage recebem. */
 export function decisionTarget(route: TaskRoute) { return { endpoint: decisionEndpoint(route), apiKey: route.apiKey, model: route.model.model }; }
 /**
