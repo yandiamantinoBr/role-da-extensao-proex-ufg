@@ -1,4 +1,5 @@
 import { HttpError } from '../errors';
+import { requestProvider, requireProviderEndpoint } from './provider-transport';
 import { safeBaseUrl, type CatalogModel, type CatalogProvider } from './model-catalog';
 
 export type ChatTurn = { role: 'user' | 'assistant'; content: string; image?: string | null };
@@ -33,25 +34,35 @@ function dataUrlParts(dataUrl: string) {
 
 const tokens = (value: unknown) => Number.isSafeInteger(value) && Number(value) >= 0 ? Number(value) : null;
 
+function conversationEndpoint(provider: CatalogProvider) {
+  const base = safeBaseUrl(provider.baseUrl);
+  if (provider.kind === 'anthropic_messages') return `${base}/v1/messages`;
+  if (provider.kind === 'openai_chat') return `${base}/chat/completions`;
+  throw new HttpError(400, 'Este provedor não conversa por texto.', 'generic_provider_kind');
+}
+
+export function requireConversationEndpoint(provider: CatalogProvider, syntheticFetch?: typeof fetch) {
+  return requireProviderEndpoint(conversationEndpoint(provider), syntheticFetch);
+}
+
 /** Uma chamada de conversa a um modelo do catálogo. Sem nova tentativa automática. */
 export async function genericChat(options: { provider: CatalogProvider; model: CatalogModel; apiKey: string; system: string; turns: ChatTurn[]; maxTokens: number; json: boolean; signal: AbortSignal; fetcher?: typeof fetch }): Promise<GenericResult> {
   const { provider, model, apiKey, system, turns, maxTokens, json, signal } = options;
-  const fetcher = options.fetcher ?? fetch;
   if (!apiKey || apiKey.length < 12) throw new HttpError(503, 'Falta a chave deste provedor.', 'generic_provider_key');
-  const base = safeBaseUrl(provider.baseUrl);
+  const endpoint = conversationEndpoint(provider);
   let data: Record<string, unknown>;
   try {
     if (provider.kind === 'anthropic_messages') {
       const messages = turns.map(turn => ({ role: turn.role, content: turn.image ? [{ type: 'text', text: turn.content }, { type: 'image', source: { type: 'base64', media_type: dataUrlParts(turn.image).mime, data: dataUrlParts(turn.image).data } }] : turn.content }));
-      data = await boundedJson(await fetcher(`${base}/v1/messages`, { method: 'POST', redirect: 'error', cache: 'no-store', signal,
+      data = await boundedJson(await requestProvider(endpoint, { method: 'POST', signal,
         headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ model: model.model, max_tokens: maxTokens, system, messages }) }));
+        body: JSON.stringify({ model: model.model, max_tokens: maxTokens, system, messages }) }, options.fetcher));
     } else if (provider.kind === 'openai_chat') {
-      const official = new URL(base).hostname === 'api.openai.com';
+      const official = new URL(endpoint).hostname === 'api.openai.com';
       const messages = [{ role: 'system', content: system }, ...turns.map(turn => ({ role: turn.role, content: turn.image ? [{ type: 'text', text: turn.content }, { type: 'image_url', image_url: { url: turn.image } }] : turn.content }))];
-      data = await boundedJson(await fetcher(`${base}/chat/completions`, { method: 'POST', redirect: 'error', cache: 'no-store', signal,
+      data = await boundedJson(await requestProvider(endpoint, { method: 'POST', signal,
         headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ model: model.model, messages, stream: false, ...(official ? { max_completion_tokens: maxTokens } : { max_tokens: maxTokens, temperature: 0.3 }), ...(json ? { response_format: { type: 'json_object' } } : {}) }) }));
+        body: JSON.stringify({ model: model.model, messages, stream: false, ...(official ? { max_completion_tokens: maxTokens } : { max_tokens: maxTokens, temperature: 0.3 }), ...(json ? { response_format: { type: 'json_object' } } : {}) }) }, options.fetcher));
     } else throw new HttpError(400, 'Este provedor não conversa por texto.', 'generic_provider_kind');
   } catch (error) {
     if (error instanceof HttpError) throw error;

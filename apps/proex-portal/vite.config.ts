@@ -51,6 +51,7 @@ export default defineConfig(async ({ command }): Promise<UserConfig> => {
   configureToolEnvironment(process.cwd());
   if (nodeTarget) {
     const nodeEnv = fileURLToPath(new URL("./platform-node/env.ts", import.meta.url));
+    const providerRuntime = fileURLToPath(new URL("./platform-node/provider-runtime.ts", import.meta.url));
     return {
       ...cssModules,
       ...(process.env.PROEX_DEBUG_BUILD === "1" ? { build: { minify: false } } : {}),
@@ -65,7 +66,15 @@ export default defineConfig(async ({ command }): Promise<UserConfig> => {
         ],
       },
       plugins: [
-        { name: "proex-node-env", enforce: "pre" as const, resolveId: (id: string) => (id === "cloudflare:workers" ? nodeEnv : null) },
+        {
+          name: "proex-node-env",
+          enforce: "pre" as const,
+          resolveId(id: string, importer?: string) {
+            if (id === "cloudflare:workers") return nodeEnv;
+            if (id === "./provider-runtime" && importer?.replace(/\\/g, "/").endsWith("/lib/assistant/provider-transport.ts")) return providerRuntime;
+            return null;
+          },
+        },
         vinext(),
       ],
     };

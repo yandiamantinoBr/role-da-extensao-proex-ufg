@@ -3,7 +3,7 @@ import { one } from '../database';
 import { HttpError } from '../errors';
 import { onlyKeys, safeRequest } from './contracts';
 import type { CredentialKeys } from './crypto';
-import { ChargedError, genericChat } from './generic-provider';
+import { ChargedError, genericChat, requireConversationEndpoint } from './generic-provider';
 import { COMPARE_MAX_OUTPUT, COMPARE_SYSTEM, compareEstimate, fitsFunction, type CatalogModel, type CatalogProvider } from './model-catalog';
 import { loadCatalog } from './model-catalog-store';
 import { loadAssistantSettings } from './settings';
@@ -34,6 +34,7 @@ export async function compareModels(db: D1Database, actor: PortalActor | null, i
   const chosen = ids.map(id => {
     const model = catalog.models.find(entry => entry.id === id && entry.enabled), provider = catalog.providers.find(entry => entry.id === model?.providerId);
     if (!model || !provider || fitsFunction({ ...model, testOnly: false }, provider, 'chat')) throw new HttpError(400, 'Escolha modelos de texto do catálogo.', 'compare_models');
+    requireConversationEndpoint(provider, options.fetcher);
     const apiKey = rawCredentials[provider.keyRef];
     if (typeof apiKey !== 'string' || apiKey.length < 12) throw new HttpError(400, `Falta a chave de ${provider.label}.`, 'compare_key');
     return { model, provider, apiKey } as { model: CatalogModel; provider: CatalogProvider; apiKey: string };
