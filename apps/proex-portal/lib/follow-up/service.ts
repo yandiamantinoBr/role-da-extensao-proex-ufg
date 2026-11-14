@@ -23,10 +23,11 @@ async function taskWorkPermission(db:D1Database,actor:PortalActor,taskId:string)
 async function taskAtomic(db:D1Database,actor:PortalActor,taskId:string,statements:D1PreparedStatement[],managerOnly=false){try{return(await db.batch([taskWorkAssertion(db,actor,taskId,managerOnly),...statements])).slice(1);}catch(error){if(String(error).includes('followup_authority_changed'))fail('Sua autorização para esta demanda mudou.','followup_forbidden',403);if(String(error).includes('followup_version_changed'))fail('O registro mudou. Reabra a edição.','followup_conflict',409);throw error;}}
 async function checklistRow(db:D1Database,actor:PortalActor,checklistId:string,write=false){const row=await one(db,`SELECT c.* FROM followup_checklists c WHERE c.id=? AND ${authority('?','c.organization_id','c.project_id',write)}`,[checklistId,actor.userId]);if(!row)fail('Conferência não encontrada neste contexto.','followup_not_found',404);return row!;}
 const checklistScheduleCapabilities = ['reports.read', 'campaigns.manage'];
-async function checklistSchedule(db:D1Database,actor:PortalActor,projectId:string,scheduleItemId:string) {
+async function checklistSchedule(db:D1Database,actor:PortalActor,projectId:string,scheduleItemId:string,organizationId:string|null = null) {
  const guard=projectAuthoritySql(actor,checklistScheduleCapabilities,'s.project_id');
- return one(db,`SELECT s.id,s.title,s.status FROM project_schedule_items s WHERE s.id=? AND s.project_id=? AND ${guard.sql}`,
-  [scheduleItemId,projectId,...guard.values]);
+ return one(db,`SELECT s.id,s.title,s.status FROM project_schedule_items s JOIN projects p ON p.id=s.project_id
+   WHERE s.id=? AND s.project_id=? AND (? IS NULL OR p.organization_id=?) AND ${guard.sql}`,
+  [scheduleItemId,projectId,organizationId,organizationId,...guard.values]);
 }
 // One guarded SQL read per page/detail projection. Strong SnapshotD1 reads check
 // storage version on every query; per-task SELECT loops would add network RTTs.
@@ -51,27 +52,29 @@ async function projection(db:D1Database,actor:PortalActor,taskId:string):Promise
  if(!task)fail('Demanda não encontrada neste contexto ou seu acesso mudou.','followup_not_found',404);
  return projectedTask(task!);
 }
-export async function followupDetail(db:D1Database,actor:PortalActor|null,taskId:unknown,context?:{projectId?:string;scheduleItemId?:string}){actorRequired(actor);const task=await projection(db,actor,id(taskId)!);
+export async function followupDetail(db:D1Database,actor:PortalActor|null,taskId:unknown,context?:{projectId?:string;organizationId?:string;scheduleItemId?:string}){actorRequired(actor);const task=await projection(db,actor,id(taskId)!);
  const checklist=task.checklist_id?await checklistRow(db,actor,task.checklist_id):null;
  const expectedSchedule=id(context?.scheduleItemId,true);
- if(expectedSchedule&&(!context?.projectId||task.project_id!==context.projectId||checklist?.schedule_item_id!==expectedSchedule))
+ if(expectedSchedule&&(!context?.projectId||task.project_id!==context.projectId||checklist?.schedule_item_id!==expectedSchedule
+     ||(context.organizationId&&context.organizationId!==task.organization_id)))
   fail('Esta demanda não pertence à atividade selecionada.','followup_not_found',404);
  const rows=checklist?.kind==='activity'?await all(db,`SELECT s.id,s.position,s.label,s.answer,s.note,s.version,s.updated_at FROM followup_checklist_steps s JOIN followup_checklists c ON c.id=s.checklist_id WHERE c.id=? AND c.kind='activity' AND ${authority('?','c.organization_id','c.project_id')} ORDER BY s.position,s.id`,[checklist.id,actor.userId]):checklist?await all(db,`SELECT r.id,r.item_id,i.name material,r.size,r.expected,r.counted,r.damaged,r.note FROM followup_checklist_items r JOIN followup_checklists c ON c.id=r.checklist_id JOIN items i ON i.id=r.item_id AND i.project_id=c.project_id WHERE r.checklist_id=? AND ${authority('?','c.organization_id','c.project_id')} ORDER BY i.name,r.size,r.id`,[checklist.id,actor.userId]):[];
  const followups=checklist?await all(db,`SELECT a.row_id,a.task_id FROM followup_checklist_actions a JOIN followup_checklists c ON c.id=a.checklist_id WHERE a.checklist_id=? AND ${authority('?','c.organization_id','c.project_id')}`,[checklist.id,actor.userId]):[];
  const revisions=await all(db,`SELECT h.version,h.snapshot_json,h.created_at FROM followup_history h JOIN followup_tasks t ON t.id=h.task_id WHERE t.id=? AND ${authority('?','t.organization_id','t.project_id')} ORDER BY h.version DESC LIMIT 30`,[task.id,actor.userId]);
  const workCandidates=task.canDelegateWork?await all(db,`SELECT u.user_id userId,COALESCE(NULLIF(p.display_name,''),'Integrante') name FROM portal_users u LEFT JOIN profiles p ON p.user_id=u.user_id JOIN followup_tasks t ON t.id=? WHERE ${activeAccount('u')} AND ${authority('u.user_id','t.organization_id','t.project_id')} AND ${assignedRecipient('u.user_id')} AND ${authority('?','t.organization_id','t.project_id',true,true)} ORDER BY name,u.user_id`,[task.id,actor.userId]):[];
  const workGrants=task.canDelegateWork?await all(db,`SELECT g.id,g.user_id userId FROM followup_work_grants g JOIN followup_tasks t ON t.id=g.task_id WHERE g.task_id=? AND g.revoked_at IS NULL AND ${authority('?','t.organization_id','t.project_id',true,true)}`,[task.id,actor.userId]):[];
- const schedule=checklist?.schedule_item_id?await checklistSchedule(db,actor,task.project_id,checklist.schedule_item_id):null;
- if(expectedSchedule&&!schedule)fail('Atividade indisponível neste projeto.','followup_schedule_not_found',404);
  await requireScope(db,actor,scopeOf(task));
+ const schedule=checklist?.schedule_item_id?await checklistSchedule(db,actor,task.project_id,checklist.schedule_item_id,task.organization_id):null;
+ if(expectedSchedule&&!schedule)fail('Atividade indisponível neste projeto.','followup_schedule_not_found',404);
+ if(checklist?.schedule_item_id&&!schedule&&!expectedSchedule)await requireScope(db,actor,scopeOf(task));
  return{task,checklist:checklist?{id:checklist.id,task_id:checklist.task_id,title:checklist.title,kind:checklist.kind,status:checklist.status,version:checklist.version,rows,followups,...(schedule?{scheduleItem:{id:schedule.id,title:schedule.title}}:{})}:null,workCandidates,workGrants,history:revisions.map(r=>({version:r.version,createdAt:r.created_at,snapshot:JSON.parse(r.snapshot_json)}))};
 }
 export async function followupList(db:D1Database,actor:PortalActor|null,input:Record<string,unknown>={}){actorRequired(actor);const conditions=[authority('caller.user_id','t.organization_id','t.project_id')],values:unknown[]=[actor.userId];
- if(input.projectId){conditions.push('t.project_id=?');values.push(id(input.projectId));}if(input.organizationId){conditions.push('t.organization_id=?');values.push(id(input.organizationId));}
+ const projectId=id(input.projectId,true),organizationId=id(input.organizationId,true);
+ if(projectId){conditions.push('t.project_id=?');values.push(projectId);}if(organizationId){conditions.push('t.organization_id=?');values.push(organizationId);}
  const scheduleItemId=id(input.scheduleItemId,true);
- const schedule=scheduleItemId&&input.projectId?await checklistSchedule(db,actor,id(input.projectId)!,scheduleItemId):null;
+ if(scheduleItemId&&!projectId)fail('Atividade indisponível neste projeto.','followup_schedule_not_found',404);
  if(scheduleItemId){
-  if(!schedule)fail('Atividade indisponível neste projeto.','followup_schedule_not_found',404);
   const guard=projectAuthoritySql(actor,checklistScheduleCapabilities,'s.project_id');
   conditions.push(`EXISTS(SELECT 1 FROM followup_checklists c JOIN project_schedule_items s ON s.id=c.schedule_item_id AND s.project_id=t.project_id
     WHERE c.task_id=t.id AND s.id=? AND ${guard.sql})`);
@@ -80,7 +83,7 @@ export async function followupList(db:D1Database,actor:PortalActor|null,input:Re
  if(input.status&&input.status!=='all'){conditions.push('t.status=?');values.push(choices(input.status,TASK_STATES));}if(input.priority&&input.priority!=='all'){conditions.push('t.priority=?');values.push(choices(input.priority,TASK_PRIORITIES));}
  const search=text(input.search,120,true);if(search){conditions.push("(t.title LIKE ? ESCAPE '\\' OR t.body LIKE ? ESCAPE '\\')");const needle='%'+search.replace(/[\\%_]/g,'\\$&')+'%';values.push(needle,needle);}
  const offset=input.offset===undefined?0:integer(input.offset,50000);const rows=await all(db,`${taskProjectionSql} WHERE ${conditions.join(' AND ')} ORDER BY CASE t.status WHEN 'completed' THEN 1 WHEN 'cancelled' THEN 1 ELSE 0 END,CASE t.priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,COALESCE(t.due_at,'9999'),t.updated_at DESC,t.id LIMIT 51 OFFSET ?`,[...values,offset]);
- const confirmed=schedule?await checklistSchedule(db,actor,id(input.projectId)!,scheduleItemId!):null;
+ const confirmed=scheduleItemId?await checklistSchedule(db,actor,projectId!,scheduleItemId,organizationId):null;
  if(scheduleItemId&&!confirmed)fail('Atividade indisponível neste projeto.','followup_schedule_not_found',404);
  return{tasks:rows.slice(0,50).map(projectedTask),hasMore:rows.length>50,nextOffset:offset+50,...(confirmed?{scheduleItem:{id:confirmed.id,title:confirmed.title,status:confirmed.status}}:{}),...serverWorkClock()};
 }

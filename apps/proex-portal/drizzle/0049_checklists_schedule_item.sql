@@ -29,3 +29,10 @@ WHEN NEW.project_id IS NOT OLD.project_id AND EXISTS (SELECT 1 FROM followup_che
 BEGIN
   SELECT RAISE(ABORT,'checklist_schedule_mismatch');
 END;
+--> statement-breakpoint
+CREATE TRIGGER followup_tasks_schedule_keep BEFORE UPDATE OF project_id,organization_id ON followup_tasks
+WHEN (NEW.project_id IS NOT OLD.project_id OR NEW.organization_id IS NOT OLD.organization_id)
+ AND EXISTS (SELECT 1 FROM followup_checklists c WHERE c.task_id=OLD.id AND c.schedule_item_id IS NOT NULL)
+BEGIN
+  SELECT RAISE(ABORT,'checklist_schedule_mismatch');
+END;
