@@ -1,7 +1,8 @@
 import { type PortalActor } from '../access';
 import { all } from '../database';
 import { HttpError } from '../errors';
-import { choices, date, TASK_PRIORITIES, TASK_STATES, taskSearchPattern } from './contracts';
+import { choices, date, TASK_PRIORITIES, TASK_STATES } from './contracts';
+import { taskSearch } from './task-search';
 import { authority, activeAccount } from './scope';
 
 export async function followupReportRows(db: D1Database, actor: PortalActor, dataset: 'demands' | 'reviews', input: Record<string, unknown>, limit: number) {
@@ -21,11 +22,8 @@ export async function followupReportRows(db: D1Database, actor: PortalActor, dat
     }
     if (input.demandStatus && input.demandStatus !== 'all') { conditions.push('f.status=?'); values.push(choices(input.demandStatus, TASK_STATES)); }
     if (input.demandPriority && input.demandPriority !== 'all') { conditions.push('f.priority=?'); values.push(choices(input.demandPriority, TASK_PRIORITIES)); }
-    const search = taskSearchPattern(input.demandSearch);
-    if (search) {
-      conditions.push("(f.title LIKE ? ESCAPE '\\' OR f.body LIKE ? ESCAPE '\\')");
-      values.push(search, search);
-    }
+    const search = taskSearch('f', input.demandSearch);
+    if (search) { conditions.push(search.sql); values.push(...search.values); }
   }
   const from = date(input.from), to = date(input.to);
   if (from && to && from > to) throw new HttpError(400, 'A data inicial precisa anteceder a final.', 'invalid_report_date');
