@@ -81,10 +81,11 @@ export function localClient(port = PORT) {
   const cookies = new Map();
   return async function api(path, body, authenticated = true, binary = false) {
     if (!path.startsWith('/') || path.startsWith('//')) throw new Error('QA aceita somente caminhos locais.');
-    const payload = body === undefined ? null : Buffer.from(JSON.stringify(body));
+    const upload = body instanceof FormData ? new Response(body) : null;
+    const payload = upload ? Buffer.from(await upload.arrayBuffer()) : body === undefined ? null : Buffer.from(JSON.stringify(body));
     const headers = { Accept: 'application/json' };
     if (authenticated && cookies.size) headers.Cookie = [...cookies].map(([key, value]) => `${key}=${value}`).join('; ');
-    if (payload) Object.assign(headers, { Origin: origin, 'X-Proex-Action': '1', 'Content-Type': 'application/json', 'Content-Length': payload.byteLength });
+    if (payload) Object.assign(headers, { Origin: origin, 'X-Proex-Action': '1', 'Content-Type': upload?.headers.get('content-type') ?? 'application/json', 'Content-Length': payload.byteLength });
     // Native http.request connects directly to loopback and never follows redirects
     // or inherits an HTTP proxy agent. No browser session/cookie is written to disk.
     return new Promise((done, reject) => {
@@ -251,6 +252,72 @@ async function invitationSmoke(owner, fixture) {
   console.log('Convites QA: ativação, sessão de sete dias, sair/entrar, escopo do projeto, voluntário com prazo e revogação aprovados.');
 }
 
+async function rolesSmoke(owner, fixture) {
+  const projectId = fixture.projectId;
+  const other = ok(await owner('/api/portal', { action: 'project.create', operationKey: randomUUID(), name: 'Projeto QA B', status: 'active', scope: 'internal' }), 'Projeto QA B');
+  const people = {};
+  for (const [role, name, scope] of [
+    ['manager', 'Coordenação QA', projectId], ['viewer', 'Bolsista QA', projectId],
+    ['inventory', 'Materiais QA', projectId], ['loans', 'Empréstimos QA', projectId],
+    ['operator', 'Operação QA', other.id],
+  ]) {
+    const email = `${role}@proex.example.test`;
+    const issued = ok(await owner('/api/portal', { action: 'invite.create', operationKey: randomUUID(), projectId: scope, email, role }), 'Emissão QA por perfil');
+    const link = new URL(issued.inviteUrl);
+    assert.equal(link.origin, QA_ORIGIN);
+    const token = link.searchParams.get('token') ?? new URLSearchParams(link.hash.slice(1)).get('token');
+    assert.ok(token, 'convite de teste válido');
+    const api = localClient();
+    ok(await api('/api/account', { action: 'activateInvite', token, password: QA_TEST_PASSWORD, name }), 'Ativação QA por perfil');
+    const account = ok(await api('/api/account'), 'Identidade QA');
+    assert.equal(account.user.email, email);
+    people[role] = { api, userId: account.user.userId };
+  }
+  const { api: manager } = people.manager, { api: viewer, userId } = people.viewer;
+  const { api: inventory } = people.inventory, { api: loans } = people.loans, { api: operator } = people.operator;
+  const catalogPath = `/api/follow-up?view=catalog&projectId=${projectId}`;
+  for (const [client, expected] of [[manager, [true, true, true]], [inventory, [true, false, false]], [loans, [false, false, true]], [viewer, [false, false, false]]]) {
+    const catalog = ok(await client(catalogPath), 'Opções autorizadas QA');
+    assert.deepEqual([catalog.items.length > 0, catalog.campaigns.length > 0, catalog.loans.length > 0], expected);
+  }
+  for (const loanId of [fixture.loanId, 'inexistente-qa']) {
+    assert.equal((await inventory('/api/follow-up', { action: 'task.create', title: 'Vínculo recusado QA', projectId, loanId, operationKey: randomUUID() })).status, 403);
+  }
+  assert.equal((await operator(catalogPath)).status, 403);
+  assert.equal((await operator(`/api/calendar?projectId=${other.id}`)).status, 403);
+  assert.equal(ok(await operator(`/api/projects/${other.id}`), 'Ficha sem registros para operação QA').relationships.records, null);
+  const task = ok(await manager('/api/follow-up', { action: 'checklist.activity.create', projectId, campaignId: fixture.campaignId, title: 'Sparks QA · Cobertura', rows: [{ label: 'Fotos da ação reunidas?' }], userIds: [userId], operationKey: randomUUID() }), 'Checklist da ação QA');
+  const answer = { action: 'checklist.activity.answer', id: task.checklist.id, rowId: task.checklist.rows[0].id, expectedVersion: 1, answer: 'yes', note: 'Conferido no cenário fictício.', operationKey: randomUUID() };
+  assert.equal((await viewer('/api/follow-up', answer)).status, 403, 'atribuição sem autorização de execução');
+  ok(await manager('/api/follow-up', { action: 'task.worker.grant', id: task.task.id, userId, confirmed: true, operationKey: randomUUID() }), 'Autorização só neste checklist QA');
+  assert.equal(ok(await viewer('/api/follow-up', answer), 'Verificação pelo bolsista QA').checklist.rows[0].answer, 'yes');
+  assert.equal((await viewer('/api/follow-up', { action: 'task.create', title: 'Demanda recusada QA', projectId, operationKey: randomUUID() })).status, 403);
+  assert.equal((await operator(`/api/follow-up?view=detail&id=${task.task.id}`)).status, 404);
+  const observation = { action: 'create', projectId, kind: 'project', title: 'Sparks QA · Registro e fotos', occurredAt: new Date().toISOString(), operationKey: randomUUID() };
+  assert.equal((await viewer('/api/records', observation)).status, 403);
+  assert.equal((await inventory('/api/records', observation)).status, 403);
+  const receipt = ok(await manager('/api/records', observation), 'Registro da ação QA');
+  const picture = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6qdsAAAAASUVORK5CYII=', 'base64');
+  const form = new FormData();
+  form.set('recordId', receipt.id);
+  form.set('operationKey', randomUUID());
+  form.set('file', new Blob([picture], { type: 'image/png' }), 'evidencia-sintetica.png');
+  assert.equal((await viewer('/api/records', form)).status, 403);
+  const uploaded = ok(await manager('/api/records', form), 'Foto privada QA');
+  const filePath = `/api/records/files/${uploaded.attachment.id}`;
+  const downloaded = await viewer(filePath, undefined, true, true);
+  assert.equal(downloaded.status, 200);
+  assert.deepEqual(downloaded.value, picture);
+  assert.match(String(downloaded.headers['cache-control']), /private.*no-store/i);
+  assert.equal((await operator(filePath)).status, 403);
+  const member = ok(await owner('/api/portal'), 'Vínculos QA').members.find(member => member.email === 'viewer@proex.example.test' && member.project_id === projectId && !member.revoked_at);
+  assert.ok(member, 'vínculo sintético encontrado');
+  ok(await owner('/api/portal', { action: 'member.revoke', id: member.id }), 'Revogação QA');
+  assert.equal((await viewer(filePath)).status, 403);
+  assert.equal((await viewer(`/api/follow-up?view=detail&id=${task.task.id}`)).status, 404);
+  console.log('Perfis QA: responsável, gestor, bolsista leitor, materiais, empréstimos e operação. Vínculos, checklist, foto privada e revogação aprovados.');
+}
+
 async function benchmark(api, fixture) {
   for (const [label, path, authenticated] of [['evento_publico', `/api/events/${encodeURIComponent(fixture.campaignId)}`, false], ['painel_autenticado', '/api/portal', true]]) {
     for (let index = 0; index < 3; index++) ok(await api(path, undefined, authenticated), `Aquecimento ${label}`);
@@ -383,6 +450,7 @@ async function run(options) {
     if (options.syncSmoke) await syncSmoke(api, directory, redact);
     if (options.backupSmoke) await backupSmoke(api, directory, child);
     if (options.inviteSmoke) await invitationSmoke(api, fixture);
+    if (options.rolesSmoke) await rolesSmoke(api, fixture);
     console.log('Smoke autenticado concluído: servidor → API → dados → relatório.');
     if (!options.smoke) {
       console.log('Servidor mantido para revisão no navegador. Digite parar ou Ctrl+C para encerrar somente este QA e limpar sua pasta temporária.');
@@ -401,11 +469,11 @@ async function main() {
   const args = process.argv.slice(2);
   if (args.length === 1 && args[0] === '--serve') return serve();
   if (args.includes('--help')) {
-    console.log('Uso: node scripts/qa-local.mjs [--smoke] [--invite-smoke] [--sync-smoke] [--backup-smoke] [--benchmark] [--credential-vault]\nRequer build:node atual e porta 5173 livre. Sem --smoke, mantém o QA aberto para o navegador.\nHost fixo 127.0.0.1; não aceita URL/host remoto. Não lê .env/.dev.vars, não instala dependências e não acessa a planilha/Drive reais.');
+    console.log('Uso: node scripts/qa-local.mjs [--smoke] [--invite-smoke] [--roles-smoke] [--sync-smoke] [--backup-smoke] [--benchmark] [--credential-vault]\nRequer build:node atual e porta 5173 livre. Sem --smoke, mantém o QA aberto para o navegador.\nHost fixo 127.0.0.1; não aceita URL/host remoto. Não lê .env/.dev.vars, não instala dependências e não acessa a planilha/Drive reais.');
     return;
   }
-  if (args.some(arg => !['--smoke', '--invite-smoke', '--sync-smoke', '--backup-smoke', '--benchmark', '--credential-vault'].includes(arg))) throw new Error('Opção desconhecida; use --help. Host/URL remoto não são aceitos.');
-  await run({ smoke: args.includes('--smoke'), inviteSmoke: args.includes('--invite-smoke'), syncSmoke: args.includes('--sync-smoke'), backupSmoke: args.includes('--backup-smoke'), benchmark: args.includes('--benchmark'), credentialVault: args.includes('--credential-vault') });
+  if (args.some(arg => !['--smoke', '--invite-smoke', '--roles-smoke', '--sync-smoke', '--backup-smoke', '--benchmark', '--credential-vault'].includes(arg))) throw new Error('Opção desconhecida; use --help. Host/URL remoto não são aceitos.');
+  await run({ smoke: args.includes('--smoke'), inviteSmoke: args.includes('--invite-smoke'), rolesSmoke: args.includes('--roles-smoke'), syncSmoke: args.includes('--sync-smoke'), backupSmoke: args.includes('--backup-smoke'), benchmark: args.includes('--benchmark'), credentialVault: args.includes('--credential-vault') });
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === scriptPath) {

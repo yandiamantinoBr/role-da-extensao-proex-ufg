@@ -13,7 +13,7 @@ export async function publicEvent(db:D1Database,id:string){
 /** A private destination is returned only by a live authorized project read. */
 export async function privateEventDestination(db:D1Database,actor:PortalActor|null,id:string):Promise<string|null>{
  if(!actor)return null;
- const authority=projectAuthoritySql(actor,['campaigns.manage','participation.operate','reports.read'],'p.id');
+ const authority=projectAuthoritySql(actor,['campaigns.manage','participation.operate'],'p.id');
  const row=await one(db,`SELECT c.id,c.project_id FROM campaigns c JOIN projects p ON p.id=c.project_id JOIN organizations o ON o.id=p.organization_id WHERE c.id=? AND c.status='draft' AND p.status='active' AND o.status='active' AND (${authority.sql})`,[id,...authority.values]);
  return row?`/?module=events&project=${encodeURIComponent(row.project_id)}&campaignId=${encodeURIComponent(row.id)}`:null;
 }

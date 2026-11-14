@@ -10,6 +10,7 @@ export type PortalLocation = {
     demand: string;
     record: WorkRecordSelection | null;
     report: 'projects' | 'demands';
+    recordsView?: 'history' | 'documents';
     workStatus?: MyWorkStatus;
     organization?: string;
 };
@@ -54,6 +55,7 @@ export function readPortalLocation(params: URLSearchParams, scope: Scope): Porta
         demand: tab === 'demands' ? demand : '',
         record: record?.module === tab && record.projectId === project && scope.canOpenRecord(record) ? record : null,
         report: tab === 'reports' && params.get('report') === 'demands' ? 'demands' : 'projects',
+        ...(tab === 'records' && params.get('view') === 'documents' ? { recordsView: 'documents' as const } : {}),
         workStatus: tab === 'my-work' ? MY_WORK_STATUSES.find(value => value === params.get('workStatus')) ?? 'pending' : 'pending',
         organization,
     };
@@ -67,6 +69,8 @@ export function writePortalLocation(params: URLSearchParams, route: PortalLocati
         area: route.area,
         demandId: route.tab === 'demands' ? route.demand : '',
         report: route.tab === 'reports' && route.report === 'demands' ? 'demands' : '',
+        ...(route.tab === 'records' || params.get('view') === 'documents'
+            ? { view: route.tab === 'records' && route.recordsView === 'documents' ? 'documents' : '' } : {}),
         workStatus: route.tab === 'my-work' && route.workStatus && MY_WORK_STATUSES.includes(route.workStatus) && route.workStatus !== 'pending' ? route.workStatus : '',
         organizationId: route.tab === 'my-work' || route.tab === 'overview' ? route.organization || '' : '',
     })) {

@@ -5,7 +5,7 @@ import DateField from './date-field';
 import Link from 'next/link';
 
 import { useEffect, useId, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
-import { BarChart3, Camera, Check, ClipboardList, ExternalLink, FilePlus2, ImagePlus, LoaderCircle, Paperclip, Plus, RefreshCw, Search, Trash2, Upload } from 'lucide-react';
+import { BarChart3, Camera, Check, ClipboardList, ExternalLink, FilePlus2, ImagePlus, Info, LoaderCircle, Paperclip, Plus, RefreshCw, Search, Trash2, Upload } from 'lucide-react';
 import { useFormDraft, DraftNotice } from './use-form-draft';
 import styles from './records-panel.module.css';
 import { download } from './report-export';
@@ -27,6 +27,7 @@ type Entry = {
 type Props = {
   initialProjectId?:string;
   projects: Row[]; items: Row[]; loans: Row[];
+  canRead?(projectId: string): boolean;
   canWrite?(capability: string, projectId: string): boolean;
 };
 type Filters = { projectId: string; from: string; to: string };
@@ -40,11 +41,10 @@ const kinds: { value: Kind; label: string; capability: string }[] = [
   { value: 'material', label: 'Registro de material', capability: 'inventory.manage' },
   { value: 'loan', label: 'Registro de empréstimo', capability: 'loans.manage' },
 ];
-/** Permissões que deixam criar algum tipo de registro (quem não tem nenhuma vê a explicação de como pedir). */
-export const RECORD_CAPABILITIES = [...new Set(kinds.map(kind => kind.capability))];
 const kindLabel = (kind: Kind) => kinds.find(value => value.value === kind)?.label ?? kind;
 const text = (row: Row, key: string) => typeof row[key] === 'string' ? row[key] as string : '';
 const noWrite = () => false;
+const readListed = () => true;
 const KIND_TONES: Record<Kind, number> = { observation: 1, maintenance: 2, distribution: 3, consumption: 4, project: 5, material: 6, loan: 7 };
 const SHORT_MONTHS = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 const MONTH_FORMAT = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', month: 'long', year: 'numeric' });
@@ -186,15 +186,19 @@ function AttachmentQueue({ recordId, onAttachment, onPendingChange }: {
   </div>;
 }
 
-export default function RecordsPanel({ projects: sourceProjects, items, loans, initialProjectId='', canWrite = noWrite }: Props) {
-  const projects = useMemo(() => sourceProjects.filter(project => text(project, 'id') && text(project, 'name')).map(project => ({ id: text(project, 'id'), name: text(project, 'name') })), [sourceProjects]);
+export default function RecordsPanel({ projects: sourceProjects, items, loans, initialProjectId='', canRead = readListed, canWrite = noWrite }: Props) {
+  const projects = sourceProjects.filter(project => text(project, 'name') && text(project, 'id') && canRead(text(project, 'id'))).map(project => ({ id: text(project, 'id'), name: text(project, 'name') }));
   const writableProjects = projects.filter(project => kinds.some(kind => canWrite(kind.capability, project.id)));
   const [records, setRecords] = useState<Entry[]>([]), [truncated, setTruncated] = useState(false);
   const [loading, setLoading] = useState(true), [readError, setReadError] = useState(''), [reload, setReload] = useState(0);
   const [filterProject, setFilterProject] = useState(initialProjectId), [from, setFrom] = useState(''), [to, setTo] = useState('');
   const [filters, setFilters] = useState<Filters>({ projectId: initialProjectId, from: '', to: '' });
+  const canCreateHere = filters.projectId ? writableProjects.some(project => project.id === filters.projectId) : writableProjects.length > 0;
+  const pendingProject = filterProject !== filters.projectId;
+  const readDenied = Boolean(filters.projectId ? !canRead(filters.projectId) : !projects.length);
   const [category, setCategory] = useState(''), [search, setSearch] = useState('');
   const [open, setOpen] = useState(false), [projectId, setProjectId] = useState(''), [kind, setKind] = useState<Kind>('observation');
+  const [createScope, setCreateScope] = useState('');
   const [title, setTitle] = useState(''), [body, setBody] = useState(''), [occurredAt, setOccurredAt] = useState('');
   const [hasInterval, setHasInterval] = useState(false), [startsAt, setStartsAt] = useState(''), [endsAt, setEndsAt] = useState('');
   const [itemId, setItemId] = useState(''), [loanId, setLoanId] = useState('');
@@ -205,6 +209,7 @@ export default function RecordsPanel({ projects: sourceProjects, items, loans, i
   const savingRef = useRef(false), attempt = useRef<{ payload: Record<string, unknown>; uncertain: boolean } | null>(null);
   const query = useMemo(() => new URLSearchParams({ limit: '100', ...(filters.projectId ? { projectId: filters.projectId } : {}), ...(filters.from ? { from: filters.from } : {}), ...(filters.to ? { to: filters.to } : {}) }).toString(), [filters]);
   useEffect(() => {
+    if (readDenied) return;
     const controller = new AbortController();
     void fetch(`/api/records?${query}`, { credentials: 'same-origin', cache: 'no-store', signal: controller.signal }).then(async response => {
       const result = await response.json() as { records?: unknown[]; truncated?: boolean; error?: string };
@@ -219,7 +224,7 @@ export default function RecordsPanel({ projects: sourceProjects, items, loans, i
       setRecords([]); setTruncated(false); setReadError(cause instanceof Error ? cause.message : 'Não foi possível consultar os registros.'); setLoading(false);
     });
     return () => controller.abort();
-  }, [query, reload]);
+  }, [query, reload, readDenied]);
   useEffect(() => {
     if (!unconfirmed && !savedPending) return;
     const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
@@ -242,8 +247,9 @@ export default function RecordsPanel({ projects: sourceProjects, items, loans, i
     } catch (cause) { setReadError(cause instanceof Error ? cause.message : 'Confira o período informado.'); }
   }
   function begin() {
-    if (savingRef.current || unconfirmed || savedPending || existingPending || !writableProjects.length) return;
-    const nextProject = writableProjects.find(project => project.id === filterProject)?.id ?? writableProjects[0].id;
+    if (savingRef.current || unconfirmed || savedPending || existingPending || pendingProject || !canCreateHere) return;
+    const nextProject = filters.projectId || writableProjects[0].id;
+    setCreateScope(filters.projectId);
     setProjectId(nextProject); setKind(kinds.find(value => canWrite(value.capability, nextProject))!.value);
     setTitle(''); setBody(''); setOccurredAt(localNow()); setHasInterval(false); setStartsAt(''); setEndsAt(''); setItemId(''); setLoanId('');
     setSaved(null); setSavedPending(false); setSaveError(''); setUnconfirmed(false); attempt.current = null; setOpen(true);
@@ -283,7 +289,7 @@ export default function RecordsPanel({ projects: sourceProjects, items, loans, i
       newRecordButton.current?.focus();
     }
   }, [open, savedId]);
-  const draft = useFormDraft(createRef, open && !saved ? 'record:new' : null);
+  const draft = useFormDraft(createRef, open && !saved ? `record:new:${createScope || 'all'}` : null);
   async function create(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (savingRef.current || saved) return;
@@ -350,9 +356,16 @@ export default function RecordsPanel({ projects: sourceProjects, items, loans, i
     </>;
   }
 
+  if (readDenied) return <div className="p-notice" role="status">
+    <Info size={18} aria-hidden="true"/>
+    <span>{filters.projectId ? 'Seu acesso a este projeto não inclui documentos e fotos.' : 'Nenhum projeto com acesso a documentos e fotos.'}</span>
+    {filters.projectId && projects.length > 0 && <button type="button" className="p-button p-button-subtle" onClick={() => { setFilterProject(''); setLoading(true); setFilters({ projectId: '', from: '', to: '' }); }}>Consultar meus projetos</button>}
+  </div>;
   return <div style={{ display: 'grid', gap: 20 }}>
     <section className="p-card" aria-labelledby="records-title">
-      <div className="p-row-between" style={{ gap: 16, flexWrap: 'wrap', marginBottom: 20 }}><div style={{ display: 'flex', gap: 12, alignItems: 'center' }}><div><h2 id="records-title" className="sr-only">Registros e documentos</h2><p className="p-form-help" style={{ margin: 0, fontSize: 13 }}>Histórico dos projetos, materiais e empréstimos, com anexos privados.</p></div></div>{!!writableProjects.length && !open && <button ref={newRecordButton} type="button" className="p-button p-button-primary" onClick={begin} disabled={existingPending}><Plus size={17} aria-hidden="true" />Novo registro</button>}</div>
+      <div className="p-row-between" style={{ gap: 16, flexWrap: 'wrap', marginBottom: 20 }}><div style={{ display: 'flex', gap: 12, alignItems: 'center' }}><div><h2 id="records-title" className="sr-only">Registros e documentos</h2><p className="p-form-help" style={{ margin: 0, fontSize: 13 }}>Histórico dos projetos, materiais e empréstimos, com anexos privados.</p></div></div>{canCreateHere && !open && <button ref={newRecordButton} type="button" className="p-button p-button-primary" onClick={begin} disabled={existingPending || pendingProject}><Plus size={17} aria-hidden="true" />Novo registro</button>}</div>
+      {pendingProject && <p className="p-form-help" role="status">Use Consultar para aplicar o projeto selecionado.</p>}
+      {!canCreateHere && projects.length > 0 && <div className="p-notice p-records-ask" role="note"><Info size={18} aria-hidden="true"/><div><strong>{filters.projectId ? 'Cadastro de registros restrito neste projeto' : 'Cadastro de registros restrito'}</strong><span>Para guardar uma ocorrência, foto ou documento, peça a quem coordena o projeto que crie o registro.</span></div></div>}
       <form onSubmit={applyFilters} className={styles.filterBar}>
         <label className="p-field"><span>Projeto</span><select id="records-filter-project" value={filterProject} onChange={event => setFilterProject(event.target.value)}><option value="">Todos os projetos permitidos</option>{projects.map(project => <option key={project.id as string} value={project.id as string}>{project.name as string}</option>)}</select></label>
         <label className="p-field"><span>De</span><DateField aria-label="De" min="2000-01-01" max="2200-12-31" value={from} onValueChange={next => setFrom(next)} /></label>
@@ -370,11 +383,11 @@ export default function RecordsPanel({ projects: sourceProjects, items, loans, i
         <p role="status" style={{ color: 'var(--success-ink)', display: 'flex', alignItems: 'center', gap: 8 }}><Check size={18} aria-hidden="true" />Registro confirmado. Os anexos são enviados na próxima etapa.</p>
         <span className="p-badge">{kindLabel(saved.kind)}</span><h4 style={{ margin: '10px 0 0', overflowWrap: 'anywhere' }}>{saved.title}</h4>{entryDetails(saved)}
         {canAttach(saved) && <AttachmentQueue key={saved.id} recordId={saved.id} onAttachment={attachment => attach(saved.id, attachment)} onPendingChange={setSavedPending} />}
-        <div style={{ marginTop: 20 }}><button type="button" className="p-button p-button-subtle" disabled={savedPending || existingPending} onClick={begin}><FilePlus2 size={17} />Criar outro registro</button>{savedPending && <p className="p-form-help">Confirme os anexos pendentes ou remova da seleção os arquivos que ainda não foram enviados.</p>}</div>
+        <div style={{ marginTop: 20 }}><button type="button" className="p-button p-button-subtle" disabled={savedPending || existingPending || pendingProject || !canCreateHere} onClick={begin}><FilePlus2 size={17} />Criar outro registro</button>{savedPending && <p className="p-form-help">Confirme os anexos pendentes ou remova da seleção os arquivos que ainda não foram enviados.</p>}</div>
       </div> : <form ref={createRef} className="p-form" onSubmit={create}><DraftNotice draft={draft}/>
-        <p className="p-form-help">Descreva a ocorrência e salve. Depois, anexe fotos ou documentos ao registro confirmado. Este histórico não movimenta estoque nem altera reservas.</p>
+        <p className="p-form-help">Salve para anexar fotos e PDFs. Para vídeos, adicione a pasta compartilhada com a equipe em Links e documentos, na ficha do projeto.</p>
         <fieldset disabled={saving || unconfirmed}>
-          <div className="p-form-grid"><label className="p-field"><span>Projeto</span><select name="projectId" required value={projectId} onChange={event => changeProject(event.target.value)}>{writableProjects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label><label className="p-field"><span>Categoria</span><select name="kind" required value={kind} onChange={event => changeKind(event.target.value as Kind)}>{allowedKinds.map(value => <option key={value.value} value={value.value}>{value.label}</option>)}</select></label></div>
+          <div className="p-form-grid"><label className="p-field"><span>Projeto</span><select name="projectId" required value={projectId} onChange={event => changeProject(event.target.value)}>{writableProjects.filter(project => !createScope || project.id === createScope).map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label><label className="p-field"><span>Categoria</span><select name="kind" required value={kind} onChange={event => changeKind(event.target.value as Kind)}>{allowedKinds.map(value => <option key={value.value} value={value.value}>{value.label}</option>)}</select></label></div>
           <label className="p-field"><span>Título</span><input name="title" required maxLength={160} value={title} onChange={event => setTitle(event.target.value)} placeholder="Ex.: devolução e conferência da caixa de som" /></label>
           <label className="p-field"><span>Descrição e observações</span><textarea name="body" rows={5} maxLength={6000} value={body} onChange={event => setBody(event.target.value)} placeholder="Registre apenas as informações necessárias para a equipe." /></label>
           <label className="p-field"><span>Data e hora da ocorrência</span><DateTimeField aria-label="Data e hora da ocorrência" name="occurredAt"  required min="2000-01-01T00:00" max="2200-12-31T23:59" value={occurredAt} onChange={event => setOccurredAt(event.target.value)} /></label>
