@@ -351,6 +351,13 @@
       "when": 1794628852288,
       "tag": "0049_checklists_schedule_item",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "6",
+      "when": 1794655778022,
+      "tag": "0050_activity_coverage",
+      "breakpoints": true
     }
   ]
 }

@@ -1,6 +1,7 @@
 import { memberProjectScopeSql, accessibleProjects, projectAuthoritySql, requireCapability, type PortalActor } from './access';
 import { HttpError } from './errors';
 import { prepareMutation } from './mutations';
+import { activityCoverageReader, activityCoverageScope, workAuthority } from './follow-up/scope';
 import { MAX_UPLOAD_FILE_BYTES, MAX_UPLOAD_BODY_BYTES, UPLOAD_LIMIT_MESSAGE } from './upload-limits';
 
 export const MAX_RECORD_FILE_BYTES = MAX_UPLOAD_FILE_BYTES;
@@ -11,7 +12,7 @@ type Scope = string[] | null;
 // SQL projections vary by record kind; each read/write is scoped and validated below.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = Record<string, any>;
-type StoredRecord = { id: string; project_id: string; kind: Kind; loan_id: string | null; item_id: string | null; schedule_item_id: string | null };
+type StoredRecord = { id: string; project_id: string; kind: Kind; loan_id: string | null; item_id: string | null; schedule_item_id: string | null; coverage_task_id: string | null; created_by: string };
 type Attachment = { id: string; record_id: string; project_id: string; object_key: string; name: string; mime: string; size: number };
 export type RecordFileInput = { recordId: string; bytes: Uint8Array; name: string; declaredMime: string; operationKey: string };
 const MIME_EXTENSIONS: Record<string, string[]> = {
@@ -70,7 +71,7 @@ async function liveMembership(db: D1Database, actor: PortalActor, projectId: str
   if (!row) throw new HttpError(403, 'Seu acesso a estes registros mudou. Atualize o portal.', 'access_changed');
 }
 async function recordById(db: D1Database, id: string): Promise<StoredRecord> {
-  const record = await stmt(db, `SELECT r.id,r.project_id,r.kind,r.loan_id,r.item_id,r.schedule_item_id FROM records r
+  const record = await stmt(db, `SELECT r.id,r.project_id,r.kind,r.loan_id,r.item_id,r.schedule_item_id,r.coverage_task_id,r.created_by FROM records r
     LEFT JOIN items i ON i.id=r.item_id LEFT JOIN loans l ON l.id=r.loan_id
     WHERE r.id=? AND (r.item_id IS NULL OR i.project_id=r.project_id) AND (r.loan_id IS NULL OR l.project_id=r.project_id)`, [id]).first<StoredRecord>();
   if (!record || !(KINDS as readonly string[]).includes(record.kind)) throw new HttpError(404, 'Registro não encontrado.', 'record_not_found');
@@ -100,6 +101,51 @@ async function projectedRecord(db: D1Database, id: string): Promise<Row> {
 
 type RecordScheduleItem = { id: string; title: string };
 const RECORD_ACTIVITY_READ = ['reports.read', 'campaigns.manage'];
+function coverageSql() {
+  return `FROM followup_tasks t JOIN (SELECT ? AS user_id) caller WHERE t.id=? AND t.project_id=?
+   AND ${activityCoverageScope('t','?')} AND ${activityCoverageReader('caller.user_id','t.project_id')}
+   AND ${workAuthority('caller.user_id','t',true)}`;
+}
+function coverageInput(actor:PortalActor,taskId:string,projectId:string,scheduleItemId:string) {
+  return [actor.userId,taskId,projectId,scheduleItemId];
+}
+function coverageDenied() {
+  return new HttpError(403,'Você precisa de uma autorização de cobertura ativa para esta atividade.','record_coverage_forbidden');
+}
+async function requireCoverage(db:D1Database,actor:PortalActor,taskId:string,projectId:string,scheduleItemId:string) {
+  if(!await stmt(db,`SELECT 1 ${coverageSql()}`,coverageInput(actor,taskId,projectId,scheduleItemId)).first())throw coverageDenied();
+}
+export async function coverageTaskForActivity(db:D1Database,actor:PortalActor,projectId:string,scheduleItemId:string) {
+  const guard=projectAuthoritySql(actor,RECORD_ACTIVITY_READ,'s.project_id');
+  const result=await stmt(db,`SELECT t.id FROM followup_tasks t JOIN followup_checklists c ON c.task_id=t.id
+    JOIN project_schedule_items s ON s.id=c.schedule_item_id AND s.project_id=t.project_id JOIN (SELECT ? AS user_id) caller
+    WHERE s.id=? AND t.project_id=? AND ${guard.sql} AND ${activityCoverageScope('t','s.id')}
+      AND ${workAuthority('caller.user_id','t',true)} ORDER BY t.id LIMIT 1`,
+    [actor.userId,scheduleItemId,projectId,...guard.values]).first<{id:string}>();
+  return result?.id??null;
+}
+async function requireAttachmentWrite(db:D1Database,actor:PortalActor,record:StoredRecord) {
+  const management=accessibleProjects(actor,'campaigns.manage');
+  if (record.coverage_task_id && record.schedule_item_id && record.created_by===actor.userId
+      && management!==null && !management.includes(record.project_id)) {
+    await requireCoverage(db,actor,record.coverage_task_id,record.project_id,record.schedule_item_id);
+    return true;
+  }
+  requireWrite(actor,record);
+  await liveMembership(db,actor,record.project_id,writeRoles(record));
+  return false;
+}
+export async function withCoveragePermissions(db:D1Database,actor:PortalActor,projectId:string,scheduleItemId:string,records:Row[]) {
+  const coverageTaskId=await coverageTaskForActivity(db,actor,projectId,scheduleItemId);
+  if(!coverageTaskId||!records.length)return {coverageTaskId,records};
+  const allowed=(await stmt(db,`SELECT r.id FROM records r JOIN followup_tasks t ON t.id=r.coverage_task_id
+    JOIN (SELECT ? AS user_id) caller WHERE r.created_by=caller.user_id AND r.project_id=? AND r.schedule_item_id=?
+    AND r.id IN (SELECT value FROM json_each(?)) AND ${activityCoverageScope('t','r.schedule_item_id')}
+    AND ${activityCoverageReader('caller.user_id','r.project_id')} AND ${workAuthority('caller.user_id','t',true)}`,
+    [actor.userId,projectId,scheduleItemId,JSON.stringify(records.map(record=>String(record.id)))]).all<{id:string}>()).results??[];
+  const writable=new Set(allowed.map(row=>row.id));
+  return {coverageTaskId,records:records.map(record=>writable.has(String(record.id))?{...record,canAttachCoverage:true}:record)};
+}
 export async function scheduleItemForRecordRead(db: D1Database, actor: PortalActor | null, projectId: unknown, scheduleItemId: string): Promise<RecordScheduleItem> {
   actorRequired(actor);
   const guard = projectAuthoritySql(actor, RECORD_ACTIVITY_READ, 's.project_id');
@@ -172,13 +218,22 @@ export async function createRecord(db: D1Database, actor: PortalActor | null, in
   const projectId = idValue(input.projectId, 'o projeto')!, kind = kindValue(input.kind);
   const itemId = idValue(input.itemId, 'o material', true), loanId = idValue(input.loanId, 'o empréstimo', true);
   const scheduleItemId = idValue(input.scheduleItemId, 'a atividade', true);
+  const coverageTaskId = idValue(input.coverageTaskId, 'a demanda de cobertura', true);
   if (scheduleItemId && (itemId || loanId || !['project', 'observation'].includes(kind))) throw new HttpError(400, 'Escolha uma categoria de atividade para vincular ao cronograma.', 'invalid_schedule_record');
+  if (coverageTaskId && !scheduleItemId) throw new HttpError(400, 'Escolha a atividade desta cobertura.', 'invalid_schedule_record');
   const target = { project_id: projectId, kind, item_id: itemId, loan_id: loanId };
-  requireWrite(actor, target);
-  await liveMembership(db, actor, projectId, writeRoles(target));
+  if (coverageTaskId) await requireCoverage(db,actor,coverageTaskId,projectId,scheduleItemId!);
+  else {
+    requireWrite(actor, target);
+    await liveMembership(db, actor, projectId, writeRoles(target));
+  }
   if (!await stmt(db, 'SELECT id FROM projects WHERE id=?', [projectId]).first()) throw new HttpError(404, 'Projeto não encontrado.', 'project_not_found');
   const mutation = await prepareMutation(db, actor.userId, 'record.create', input);
-  if (mutation.existingId) return { id: mutation.existingId, record: await projectedRecord(db, mutation.existingId), duplicate: true };
+  if (mutation.existingId) {
+    const record=await projectedRecord(db,mutation.existingId);
+    if(coverageTaskId)await requireCoverage(db,actor,coverageTaskId,projectId,scheduleItemId!);
+    return { id: mutation.existingId, record, duplicate: true };
+  }
   const title = value(input.title, 'o título', 160), body = value(input.body, 'o texto do registro', 6000, true);
   const occurredAt = isoValue(input.occurredAt, 'A data do registro')!;
   const startsAt = isoValue(input.startsAt, 'A data inicial', true), endsAt = isoValue(input.endsAt, 'A data final', true);
@@ -194,18 +249,23 @@ export async function createRecord(db: D1Database, actor: PortalActor | null, in
   let createdId = id;
   try {
     await db.batch([
+      ...(coverageTaskId?[stmt(db,`SELECT CASE WHEN EXISTS(SELECT 1 ${coverageSql()}) THEN 1 ELSE json_extract('[]','record_coverage_denied') END`,
+        coverageInput(actor,coverageTaskId,projectId,scheduleItemId!))]:[]),
       mutation.claimStatement(id),
-      stmt(db, `INSERT INTO records(id,project_id,kind,title,body,occurred_at,starts_at,ends_at,item_id,loan_id,schedule_item_id,created_by,created_at)
-        VALUES(?,CASE WHEN ${authorization} THEN ? ELSE NULL END,?,?,?,?,?,?,?,?,?,?,?)`,
-        [id, actor.userId, ...roles, projectId, actor.userId, projectId, kind, title, body, occurredAt, startsAt, endsAt, itemId, loanId, scheduleItemId, actor.userId, now]),
+      stmt(db, `INSERT INTO records(id,project_id,kind,title,body,occurred_at,starts_at,ends_at,item_id,loan_id,schedule_item_id,coverage_task_id,created_by,created_at)
+        VALUES(?,${coverageTaskId?'?':`CASE WHEN ${authorization} THEN ? ELSE NULL END`},?,?,?,?,?,?,?,?,?,?,?,?)`,
+        [id, ...(coverageTaskId?[]:[actor.userId, ...roles, projectId, actor.userId]), projectId, kind, title, body, occurredAt, startsAt, endsAt, itemId, loanId, scheduleItemId, coverageTaskId, actor.userId, now]),
       stmt(db, 'INSERT INTO audit(id,actor_id,project_id,action,entity_id,details,created_at) VALUES(?,?,?,\'record.create\',?,?,?)',
-        [crypto.randomUUID(), actor.userId, projectId, id, JSON.stringify({ kind, linkedToItem: !!itemId, linkedToLoan: !!loanId, ...(scheduleItemId ? { scheduleItemId } : {}) }), now]),
+        [crypto.randomUUID(), actor.userId, projectId, id, JSON.stringify({ kind, linkedToItem: !!itemId, linkedToLoan: !!loanId, ...(scheduleItemId ? { scheduleItemId } : {}), ...(coverageTaskId?{delegatedCoverage:true}:{}) }), now]),
     ]);
   } catch (error) {
     if (String(error).includes('record_schedule_mismatch')) throw new HttpError(404, 'Atividade indisponível neste projeto.', 'schedule_record_not_found');
+    if (/record_coverage_(denied|mismatch)/.test(String(error))) throw coverageDenied();
     createdId = await mutation.recover(error);
   }
-  return { id: createdId, record: await projectedRecord(db, createdId), ...(createdId !== id ? { duplicate: true } : {}) };
+  const result=await projectedRecord(db,createdId);
+  if(coverageTaskId)await requireCoverage(db,actor,coverageTaskId,projectId,scheduleItemId!);
+  return { id: createdId, record: result, ...(createdId !== id ? { duplicate: true } : {}) };
 }
 
 export function requireRecordMutation(request: Request, type: 'json' | 'form'): void {
@@ -300,30 +360,39 @@ async function attachmentById(db: D1Database, id: string): Promise<Attachment> {
 export async function uploadRecordAttachment(db: D1Database, storage: R2Bucket, actor: PortalActor | null, input: RecordFileInput): Promise<{ attachment: ReturnType<typeof attachmentProjection>; recordId: string; duplicate?: boolean }> {
   actorRequired(actor);
   const record = await recordById(db, idValue(input.recordId, 'o registro')!);
-  requireWrite(actor, record);
-  await liveMembership(db, actor, record.project_id, writeRoles(record));
+  const delegated=await requireAttachmentWrite(db,actor,record);
   const { mime, name } = validatedRecordFile(input), contentHash = await sha256(input.bytes);
   const mutation = await prepareMutation(db, actor.userId, `record.attachment:${record.id}`, { operationKey: input.operationKey, recordId: record.id, mime, name, size: input.bytes.byteLength, contentHash });
-  if (mutation.existingId) return { attachment: attachmentProjection(await attachmentById(db, mutation.existingId)), recordId: record.id, duplicate: true };
+  if (mutation.existingId) {
+    const attachment=attachmentProjection(await attachmentById(db,mutation.existingId));
+    if(delegated)await requireAttachmentWrite(db,actor,record);
+    return { attachment, recordId: record.id, duplicate: true };
+  }
   const id = crypto.randomUUID(), objectKey = `record-attachments/${crypto.randomUUID()}`, now = new Date().toISOString(), roles = writeRoles(record);
   let committed = false, safeToDelete = true, databaseAttempted = false, resultId = id;
   try {
     await storage.put(objectKey, input.bytes, { httpMetadata: { contentType: mime } });
     databaseAttempted = true;
     await db.batch([
+      ...(delegated?[stmt(db,`SELECT CASE WHEN EXISTS(SELECT 1 ${coverageSql()} AND EXISTS(
+        SELECT 1 FROM records r WHERE r.id=? AND r.project_id=t.project_id AND r.coverage_task_id=t.id AND r.created_by=caller.user_id
+        AND r.schedule_item_id=?)) THEN 1 ELSE json_extract('[]','record_coverage_denied') END`,
+        [...coverageInput(actor,record.coverage_task_id!,record.project_id,record.schedule_item_id!),record.id,record.schedule_item_id])]:[]),
       mutation.claimStatement(id),
       stmt(db, `INSERT INTO record_attachments(id,record_id,project_id,object_key,name,mime,size,operation_key,created_by,created_at)
-        VALUES(?,?,CASE WHEN EXISTS(SELECT 1 FROM members m WHERE m.user_id=? AND m.revoked_at IS NULL AND m.role IN (${roles.map(() => '?').join(',')}) AND ${memberProjectScopeSql("m","?")}) AND NOT EXISTS(SELECT 1 FROM portal_users u WHERE u.user_id=? AND (u.status!='active' OR COALESCE(u.activation_pending,0)!=0 OR u.anonymized_at IS NOT NULL)) THEN ? ELSE NULL END,?,?,?,?,?,?,?)`,
-        [id, record.id, actor.userId, ...roles, record.project_id, actor.userId, record.project_id, objectKey, name, mime, input.bytes.byteLength, mutation.scope, actor.userId, now]),
+        VALUES(?,?,${delegated?'?':`CASE WHEN EXISTS(SELECT 1 FROM members m WHERE m.user_id=? AND m.revoked_at IS NULL AND m.role IN (${roles.map(() => '?').join(',')}) AND ${memberProjectScopeSql("m","?")}) AND NOT EXISTS(SELECT 1 FROM portal_users u WHERE u.user_id=? AND (u.status!='active' OR COALESCE(u.activation_pending,0)!=0 OR u.anonymized_at IS NOT NULL)) THEN ? ELSE NULL END`},?,?,?,?,?,?,?)`,
+        [id, record.id, ...(delegated?[]:[actor.userId, ...roles, record.project_id, actor.userId]), record.project_id, objectKey, name, mime, input.bytes.byteLength, mutation.scope, actor.userId, now]),
       stmt(db, "INSERT INTO audit(id,actor_id,project_id,action,entity_id,details,created_at) VALUES(?,?,?,'record.attachment',?,?,?)", [crypto.randomUUID(), actor.userId, record.project_id, id, JSON.stringify({ recordId: record.id, mime, size: input.bytes.byteLength }), now]),
     ]);
     committed = true;
   } catch (error) {
+    if(String(error).includes('record_coverage_denied'))throw coverageDenied();
     if (databaseAttempted) {
       try {
         resultId = await mutation.recover(error);
         const stored = await attachmentById(db, resultId);
         committed = stored.object_key === objectKey;
+        if(delegated)await requireAttachmentWrite(db,actor,record);
         return { attachment: attachmentProjection(stored), recordId: record.id, duplicate: true };
       } catch (recoveryError) {
         // A lost DB response may follow a successful commit. Never delete a possibly referenced object.
@@ -338,7 +407,9 @@ export async function uploadRecordAttachment(db: D1Database, storage: R2Bucket, 
       catch { try { await queuePrivateObjectDeletion(db,actor.userId,objectKey,mime); } catch { console.error('Private record cleanup could not be queued.'); } }
     }
   }
-  return { attachment: attachmentProjection(await attachmentById(db, resultId)), recordId: record.id };
+  const attachment=attachmentProjection(await attachmentById(db,resultId));
+  if(delegated)await requireAttachmentWrite(db,actor,record);
+  return { attachment, recordId: record.id };
 }
 
 export async function recordAttachment(db: D1Database, actor: PortalActor | null, attachmentId: unknown): Promise<Attachment & { scheduleItemId: string | null }> {

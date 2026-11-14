@@ -23,6 +23,7 @@ type Entry = {
   id: string; project_id: string; kind: Kind; title: string; body: string; occurred_at: string;
   starts_at: string | null; ends_at: string | null; item_id: string | null; loan_id: string | null;
   attachments: Attachment[];
+  canAttachCoverage?: boolean;
   origin?: { via: 'assistant'; label: string; summary?: string };
 };
 type Props = {
@@ -195,10 +196,12 @@ export default function RecordsPanel({ userId, projects: sourceProjects, items, 
   const writableProjects = projects.filter(project => kinds.some(kind => canWrite(kind.capability, project.id)));
   const [records, setRecords] = useState<Entry[]>([]), [truncated, setTruncated] = useState(false);
   const [scheduleTitle, setScheduleTitle] = useState('');
+  const [coverageTaskId,setCoverageTaskId]=useState('');
   const [loading, setLoading] = useState(true), [readError, setReadError] = useState(''), [reload, setReload] = useState(0);
   const [filterProject, setFilterProject] = useState(initialProjectId), [from, setFrom] = useState(''), [to, setTo] = useState('');
   const [filters, setFilters] = useState<Filters>({ projectId: initialProjectId, from: '', to: '' });
-  const canCreateHere = scheduleItemId ? Boolean(scheduleTitle && !readError && canWrite('campaigns.manage',filters.projectId))
+  const canManageActivity=Boolean(scheduleItemId&&canWrite('campaigns.manage',filters.projectId));
+  const canCreateHere = scheduleItemId ? Boolean(scheduleTitle && !readError && (canManageActivity||coverageTaskId))
     : filters.projectId ? writableProjects.some(project => project.id === filters.projectId) : writableProjects.length > 0;
   const pendingProject = filterProject !== filters.projectId;
   const readDenied = Boolean(scheduleItemId && !filters.projectId) || Boolean(filters.projectId ? !canRead(filters.projectId) : !projects.length);
@@ -218,17 +221,18 @@ export default function RecordsPanel({ userId, projects: sourceProjects, items, 
     if (readDenied) return;
     const controller = new AbortController();
     void fetch(`/api/records?${query}`, { credentials: 'same-origin', cache: 'no-store', signal: controller.signal }).then(async response => {
-      const result = await response.json() as { records?: unknown[]; truncated?: boolean; error?: string; scheduleItem?: { id: string; title: string } };
+      const result = await response.json() as { records?: unknown[]; truncated?: boolean; error?: string; scheduleItem?: { id: string; title: string };coverageTaskId?:unknown };
       if (!response.ok) throw new Error(result.error || 'Não foi possível consultar os registros.');
       if (!Array.isArray(result.records)) throw new Error('Não foi possível ler a lista de registros.');
       if (scheduleItemId && result.scheduleItem?.id !== scheduleItemId) throw new Error('Não foi possível confirmar a atividade deste registro.');
-      return { records: result.records.map(asEntry), truncated: result.truncated === true, scheduleTitle: result.scheduleItem?.title ?? '' };
+      return { records: result.records.map(asEntry), truncated: result.truncated === true, scheduleTitle: result.scheduleItem?.title ?? '',
+        coverageTaskId:typeof result.coverageTaskId==='string'?result.coverageTaskId:'' };
     }).then(result => {
       if (controller.signal.aborted) return;
-      setRecords(result.records); setTruncated(result.truncated); setScheduleTitle(result.scheduleTitle); setReadError(''); setLoading(false);
+      setRecords(result.records); setTruncated(result.truncated); setScheduleTitle(result.scheduleTitle); setCoverageTaskId(result.coverageTaskId); setReadError(''); setLoading(false);
     }, (cause: unknown) => {
       if (controller.signal.aborted) return;
-      setRecords([]); setTruncated(false); setScheduleTitle(''); setReadError(cause instanceof Error ? cause.message : 'Não foi possível consultar os registros.'); setLoading(false);
+      setRecords([]); setTruncated(false); setScheduleTitle(''); setCoverageTaskId(''); setReadError(cause instanceof Error ? cause.message : 'Não foi possível consultar os registros.'); setLoading(false);
     });
     return () => controller.abort();
   }, [query, reload, readDenied, scheduleItemId]);
@@ -261,7 +265,9 @@ export default function RecordsPanel({ userId, projects: sourceProjects, items, 
     setTitle(''); setBody(''); setOccurredAt(localNow()); setHasInterval(false); setStartsAt(''); setEndsAt(''); setItemId(''); setLoanId('');
     setSaved(null); setSavedPending(false); setSaveError(''); setUnconfirmed(false); attempt.current = null; setOpen(true);
   }
-  const allowedKinds = kinds.filter(value => canWrite(value.capability, projectId) && (!scheduleItemId || value.value === 'project' || value.value === 'observation'));
+  const allowedKinds=kinds.filter(value => scheduleItemId
+    ? projectId===filters.projectId&&(canManageActivity||coverageTaskId)&&(value.value==='project'||value.value==='observation')
+    : canWrite(value.capability,projectId));
   const projectItems = items.filter(item => text(item, 'project_id') === projectId);
   const projectLoans = loans.filter(loan => text(loan, 'project_id') === projectId);
   const allowLoanLink = canWrite('loans.manage', projectId) && (kind === 'loan' || canWrite('campaigns.manage', projectId));
@@ -274,6 +280,7 @@ export default function RecordsPanel({ userId, projects: sourceProjects, items, 
     if (!(canWrite('loans.manage', projectId) && (value === 'loan' || canWrite('campaigns.manage', projectId)))) setLoanId('');
   }
   function canAttach(record: Entry): boolean {
+    if(scheduleItemId&&coverageTaskId&&record.canAttachCoverage===true)return true;
     const capability = kinds.find(value => value.value === record.kind)?.capability;
     return !!capability && canWrite(capability, record.project_id) && (!record.loan_id || record.kind === 'loan' || (canWrite('loans.manage', record.project_id) && canWrite('campaigns.manage', record.project_id)));
   }
@@ -308,7 +315,7 @@ export default function RecordsPanel({ userId, projects: sourceProjects, items, 
         const occurrence = toIso(occurredAt, 'a ocorrência');
         const start = hasInterval ? toIso(startsAt, 'o início da atividade') : null, end = hasInterval ? toIso(endsAt, 'o fim da atividade') : null;
         if (start && end && end < start) throw new Error('O fim da atividade deve ocorrer no mesmo horário ou depois do início.');
-        attempt.current = { uncertain: false, payload: { action: 'create', operationKey: crypto.randomUUID(), projectId, kind, title, body, occurredAt: occurrence, startsAt: start, endsAt: end, itemId: itemId || null, loanId: allowLoanLink ? loanId || null : null, ...(scheduleItemId ? { scheduleItemId } : {}) } };
+        attempt.current = { uncertain: false, payload: { action: 'create', operationKey: crypto.randomUUID(), projectId, kind, title, body, occurredAt: occurrence, startsAt: start, endsAt: end, itemId: itemId || null, loanId: allowLoanLink ? loanId || null : null, ...(scheduleItemId ? { scheduleItemId } : {}),...(!canManageActivity&&scheduleItemId&&coverageTaskId?{coverageTaskId}:{}) } };
       } catch (cause) { setSaveError(cause instanceof Error ? cause.message : 'Confira o formulário.'); return; }
     }
     savingRef.current = true; setSaving(true); setUnconfirmed(true);
@@ -317,7 +324,7 @@ export default function RecordsPanel({ userId, projects: sourceProjects, items, 
       const result = await requestJson('/api/records', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Proex-Action': '1' }, body: JSON.stringify(currentAttempt.payload) });
       const record = asEntry(result.record);
       if (record.id !== result.id || (scheduleItemId && text(result.record as Row,'schedule_item_id') !== scheduleItemId)) throw new RequestFailure('A confirmação do registro não pôde ser lida. Tente novamente.');
-      setSaved(record); setUnconfirmed(false); attempt.current = null; draft.clear(); refresh(); toast.success('Registro salvo. Você pode adicionar os anexos.');
+      setSaved(currentAttempt.payload.coverageTaskId?{...record,canAttachCoverage:true}:record); setUnconfirmed(false); attempt.current = null; draft.clear(); refresh(); toast.success('Registro salvo. Você pode adicionar os anexos.');
     } catch (cause) {
       const uncertain = currentAttempt.uncertain || !confirmedRejection(cause);
       currentAttempt.uncertain = uncertain;
@@ -401,9 +408,12 @@ export default function RecordsPanel({ userId, projects: sourceProjects, items, 
         {canAttach(saved) && <AttachmentQueue key={saved.id} recordId={saved.id} onAttachment={attachment => attach(saved.id, attachment)} onPendingChange={setSavedPending} />}
         <div style={{ marginTop: 20 }}><button type="button" className="p-button p-button-subtle" disabled={savedPending || existingPending || pendingProject || !canCreateHere} onClick={begin}><FilePlus2 size={17} />Criar outro registro</button>{savedPending && <p className="p-form-help">Confirme os anexos pendentes ou remova da seleção os arquivos que ainda não foram enviados.</p>}</div>
       </div> : <form ref={createRef} className="p-form" onSubmit={create}><DraftNotice draft={draft}/>
-        <p className="p-form-help">Salve para anexar fotos e PDFs. {scheduleItemId ? 'Para vídeos, vincule a pasta do Drive em Vídeos da atividade.' : 'Para vídeos, abra os registros da atividade no Cronograma do projeto.'}</p>
+        <p className="p-form-help">Salve para anexar fotos e PDFs. {scheduleItemId ? (canManageActivity?'Para vídeos, vincule a pasta do Drive em Vídeos da atividade.':'Você pode anexar aos seus registros desta atividade. Quem tem acesso aos registros do projeto poderá ver os anexos.') : 'Para vídeos, abra os registros da atividade no Cronograma do projeto.'}</p>
         <fieldset disabled={saving || unconfirmed}>
-          <div className="p-form-grid"><label className="p-field"><span>Projeto</span><select name="projectId" required value={projectId} onChange={event => changeProject(event.target.value)}>{writableProjects.filter(project => !createScope || project.id === createScope).map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label><label className="p-field"><span>Categoria</span><select name="kind" required value={kind} onChange={event => changeKind(event.target.value as Kind)}>{allowedKinds.map(value => <option key={value.value} value={value.value}>{value.label}</option>)}</select></label></div>
+          <div className="p-form-grid">
+            {scheduleItemId?<input type="hidden" name="projectId" value={projectId}/>:<label className="p-field"><span>Projeto</span><select name="projectId" required value={projectId} onChange={event => changeProject(event.target.value)}>{writableProjects.filter(project => !createScope || project.id === createScope).map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>}
+            <label className="p-field"><span>Categoria</span><select name="kind" required value={kind} onChange={event => changeKind(event.target.value as Kind)}>{allowedKinds.map(value => <option key={value.value} value={value.value}>{value.label}</option>)}</select></label>
+          </div>
           <label className="p-field"><span>Título</span><input name="title" required maxLength={160} value={title} onChange={event => setTitle(event.target.value)} placeholder="Ex.: devolução e conferência da caixa de som" /></label>
           <label className="p-field"><span>Descrição e observações</span><textarea name="body" rows={5} maxLength={6000} value={body} onChange={event => setBody(event.target.value)} placeholder="Registre apenas as informações necessárias para a equipe." /></label>
           <label className="p-field"><span>Data e hora da ocorrência</span><DateTimeField aria-label="Data e hora da ocorrência" name="occurredAt"  required min="2000-01-01T00:00" max="2200-12-31T23:59" value={occurredAt} onChange={event => setOccurredAt(event.target.value)} /></label>

@@ -1,11 +1,11 @@
-import { projectAuthoritySql, type PortalActor } from '../access';
+import { memberProjectScopeSql, organizationOwnerSql, projectAuthoritySql, type PortalActor } from '../access';
 import { all, one, uid, iso, type Row } from '../database';
 import { HttpError } from '../errors';
 import { prepareMutation } from '../mutations';
 import { campaignAction } from '../campaigns';
 import { listOrganizations } from '../organizations';
 import { TASK_STATES, TASK_PRIORITIES, type TaskPriority, id, text, integer, version, date, choices, ids, onlyKeys, fail } from './contracts';
-import { authority, workAuthority, assignedRecipient, activeAccount, actorRequired, requireScope, scopeStatement, atomic, cas, fanout, recipientLimit, effectiveRecipient, type Scope } from './scope';
+import { authority, workAuthority, assignedRecipient, activeAccount, activityCoverageReader, activityCoverageScope, actorRequired, requireScope, scopeStatement, atomic, cas, fanout, recipientLimit, effectiveRecipient, type Scope } from './scope';
 import { serverWorkClock } from './time';
 import { groupNotifications, type NoticeForGroup } from './notification-groups';
 
@@ -61,13 +61,13 @@ export async function followupDetail(db:D1Database,actor:PortalActor|null,taskId
  const rows=checklist?.kind==='activity'?await all(db,`SELECT s.id,s.position,s.label,s.answer,s.note,s.version,s.updated_at FROM followup_checklist_steps s JOIN followup_checklists c ON c.id=s.checklist_id WHERE c.id=? AND c.kind='activity' AND ${authority('?','c.organization_id','c.project_id')} ORDER BY s.position,s.id`,[checklist.id,actor.userId]):checklist?await all(db,`SELECT r.id,r.item_id,i.name material,r.size,r.expected,r.counted,r.damaged,r.note FROM followup_checklist_items r JOIN followup_checklists c ON c.id=r.checklist_id JOIN items i ON i.id=r.item_id AND i.project_id=c.project_id WHERE r.checklist_id=? AND ${authority('?','c.organization_id','c.project_id')} ORDER BY i.name,r.size,r.id`,[checklist.id,actor.userId]):[];
  const followups=checklist?await all(db,`SELECT a.row_id,a.task_id FROM followup_checklist_actions a JOIN followup_checklists c ON c.id=a.checklist_id WHERE a.checklist_id=? AND ${authority('?','c.organization_id','c.project_id')}`,[checklist.id,actor.userId]):[];
  const revisions=await all(db,`SELECT h.version,h.snapshot_json,h.created_at FROM followup_history h JOIN followup_tasks t ON t.id=h.task_id WHERE t.id=? AND ${authority('?','t.organization_id','t.project_id')} ORDER BY h.version DESC LIMIT 30`,[task.id,actor.userId]);
- const workCandidates=task.canDelegateWork?await all(db,`SELECT u.user_id userId,COALESCE(NULLIF(p.display_name,''),'Integrante') name FROM portal_users u LEFT JOIN profiles p ON p.user_id=u.user_id JOIN followup_tasks t ON t.id=? WHERE ${activeAccount('u')} AND ${authority('u.user_id','t.organization_id','t.project_id')} AND ${assignedRecipient('u.user_id')} AND ${authority('?','t.organization_id','t.project_id',true,true)} ORDER BY name,u.user_id`,[task.id,actor.userId]):[];
- const workGrants=task.canDelegateWork?await all(db,`SELECT g.id,g.user_id userId FROM followup_work_grants g JOIN followup_tasks t ON t.id=g.task_id WHERE g.task_id=? AND g.revoked_at IS NULL AND ${authority('?','t.organization_id','t.project_id',true,true)}`,[task.id,actor.userId]):[];
+ const workCandidates=task.canDelegateWork?await all(db,`SELECT u.user_id userId,COALESCE(NULLIF(p.display_name,''),'Integrante') name, ${activityCoverageReader('u.user_id','t.project_id')} canReceiveCoverage FROM portal_users u LEFT JOIN profiles p ON p.user_id=u.user_id JOIN followup_tasks t ON t.id=? WHERE ${activeAccount('u')} AND ${authority('u.user_id','t.organization_id','t.project_id')} AND ${assignedRecipient('u.user_id')} AND ${authority('?','t.organization_id','t.project_id',true,true)} ORDER BY name,u.user_id`,[task.id,actor.userId]):[];
+ const workGrants=task.canDelegateWork?await all(db,`SELECT g.id,g.user_id userId,CAST(g.can_record_activity AS INTEGER) canRecordActivity FROM followup_work_grants g JOIN followup_tasks t ON t.id=g.task_id WHERE g.task_id=? AND g.revoked_at IS NULL AND ${authority('?','t.organization_id','t.project_id',true,true)}`,[task.id,actor.userId]):[];
  await requireScope(db,actor,scopeOf(task));
  const schedule=checklist?.schedule_item_id?await checklistSchedule(db,actor,task.project_id,checklist.schedule_item_id,task.organization_id):null;
  if(expectedSchedule&&!schedule)fail('Atividade indisponível neste projeto.','followup_schedule_not_found',404);
  if(checklist?.schedule_item_id&&!schedule&&!expectedSchedule)await requireScope(db,actor,scopeOf(task));
- return{task,checklist:checklist?{id:checklist.id,task_id:checklist.task_id,title:checklist.title,kind:checklist.kind,status:checklist.status,version:checklist.version,rows,followups,...(schedule?{scheduleItem:{id:schedule.id,title:schedule.title}}:{})}:null,workCandidates,workGrants,history:revisions.map(r=>({version:r.version,createdAt:r.created_at,snapshot:JSON.parse(r.snapshot_json)}))};
+ return{task,checklist:checklist?{id:checklist.id,task_id:checklist.task_id,title:checklist.title,kind:checklist.kind,status:checklist.status,version:checklist.version,rows,followups,...(schedule?{scheduleItem:{id:schedule.id,title:schedule.title,status:schedule.status}}:{})}:null,workCandidates,workGrants,history:revisions.map(r=>({version:r.version,createdAt:r.created_at,snapshot:JSON.parse(r.snapshot_json)}))};
 }
 export async function followupList(db:D1Database,actor:PortalActor|null,input:Record<string,unknown>={}){actorRequired(actor);const conditions=[authority('caller.user_id','t.organization_id','t.project_id')],values:unknown[]=[actor.userId];
  const projectId=id(input.projectId,true),organizationId=id(input.organizationId,true);
@@ -114,7 +114,15 @@ async function catalogReferences(db:D1Database,actor:PortalActor,scope:Scope){
  ]);
  return{items:items.results??[],campaigns:campaigns.results??[],loans:loans.results??[],canCloseCampaign:Boolean(campaigns.results?.length&&management.results?.length)};
 }
-function assignmentStatements(db:D1Database,taskId:string,users:string[],teams:string[],at:string){return[db.prepare('UPDATE followup_assignees SET removed_at=? WHERE task_id=? AND removed_at IS NULL').bind(at,taskId),...users.map(user=>db.prepare('INSERT INTO followup_assignees(id,task_id,user_id,created_at) VALUES(?,?,?,?)').bind(uid(),taskId,user,at)),...teams.map(team=>db.prepare('INSERT INTO followup_assignees(id,task_id,team_id,created_at) VALUES(?,?,?,?)').bind(uid(),taskId,team,at))];}
+function assignmentStatements(db:D1Database,taskId:string,users:string[],teams:string[],at:string){
+ return [
+  db.prepare('UPDATE followup_assignees SET removed_at=? WHERE task_id=? AND removed_at IS NULL').bind(at,taskId),
+  ...users.map(user=>db.prepare('INSERT INTO followup_assignees(id,task_id,user_id,created_at) VALUES(?,?,?,?)').bind(uid(),taskId,user,at)),
+  ...teams.map(team=>db.prepare('INSERT INTO followup_assignees(id,task_id,team_id,created_at) VALUES(?,?,?,?)').bind(uid(),taskId,team,at)),
+  db.prepare(`UPDATE followup_work_grants AS g SET can_record_activity=0 WHERE g.task_id=? AND g.can_record_activity=1 AND g.revoked_at IS NULL
+    AND EXISTS(SELECT 1 FROM followup_tasks t WHERE t.id=g.task_id AND NOT ${assignedRecipient('g.user_id')})`).bind(taskId),
+ ];
+}
 async function assignmentValidation(db:D1Database,scope:Scope,users:string[],teams:string[]){const eligible=new Set((await people(db,scope)).map(p=>p.userId));if(users.some(user=>!eligible.has(user)))fail('Os responsáveis precisam ter acesso ativo a este contexto.','followup_assignee');for(const team of teams)if(!await one(db,"SELECT id FROM followup_teams WHERE id=? AND organization_id=? AND status='active'",[team,scope.organizationId]))fail('Escolha equipes ativas da mesma organização.','followup_assignee');}
 function assignmentAssertions(db:D1Database,scope:Scope,users:string[],teams:string[]){return[...users.map(user=>db.prepare(`SELECT CASE WHEN EXISTS(SELECT 1 FROM portal_users u WHERE u.user_id=? AND ${activeAccount('u')} AND ${authority('u.user_id','scope.organization_id','scope.project_id')}) THEN 1 ELSE json_extract('[]','followup_assignee_changed') END FROM(SELECT ? organization_id,? project_id) scope`).bind(user,scope.organizationId,scope.projectId)),...teams.map(team=>db.prepare("SELECT CASE WHEN EXISTS(SELECT 1 FROM followup_teams WHERE id=? AND organization_id=? AND status='active') THEN 1 ELSE json_extract('[]','followup_assignee_changed') END").bind(team,scope.organizationId))];}
 function insertTask(db:D1Database,actor:PortalActor,scope:Scope,taskId:string,input:Row,at:string){return db.prepare('INSERT INTO followup_tasks(id,organization_id,project_id,title,body,priority,importance,status,due_at,campaign_id,item_id,loan_id,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').bind(taskId,scope.organizationId,scope.projectId,input.title,input.body,input.priority,input.importance??null,input.status,input.dueAt,input.campaignId,input.itemId,input.loanId,actor.userId,at,at);}
@@ -181,17 +189,42 @@ async function workerAction(db:D1Database,actor:PortalActor,action:string,input:
   if(status==='completed'&&await one(db,"SELECT id FROM followup_checklists WHERE task_id=? AND status='open'",[task.id]))fail('Conclua ou peça revisão da conferência antes de encerrar.','followup_checklist_pending');
   try{await taskAtomic(db,actor,task.id,[cas(db,'followup_tasks',task.id,expected),mutation.claimStatement(task.id),db.prepare('UPDATE followup_tasks SET status=?,version=version+1,updated_at=? WHERE id=?').bind(status,at,task.id),history(db,actor,task.id,at,note),audit(db,actor,scopeOf(task),action,task.id,{version:expected+1,status,delegated:true},at),fanout(db,task.id,`task:${expected+1}`,at)]);}catch(error){if(error instanceof HttpError)throw error;await mutation.recover(error);await taskWorkPermission(db,actor,task.id);return{...await followupDetail(db,actor,task.id),duplicate:true};}return followupDetail(db,actor,task.id);
  }
- if(!['task.worker.grant','task.worker.revoke'].includes(action))fail('Operação de delegação inválida.');
- onlyKeys(input,['action','id','userId','grantId','confirmed','operationKey']);if(input.confirmed!==true)fail('Confirme a autorização limitada a esta demanda.');
+ if(!['task.worker.grant','task.worker.revoke','task.worker.coverage'].includes(action))fail('Operação de delegação inválida.');
+ onlyKeys(input,['action','id','userId','grantId','confirmed','allowCoverage','operationKey']);if(input.confirmed!==true)fail('Confirme a autorização limitada a esta demanda.');
+ if((input.allowCoverage!==undefined&&(action==='task.worker.revoke'||typeof input.allowCoverage!=='boolean'))
+   ||(action==='task.worker.coverage'&&typeof input.allowCoverage!=='boolean'))fail('Confira a opção de registro da atividade.');
  const task=await taskRow(db,actor,id(input.id)!);const permission=await one(db,`SELECT 1 allowed FROM followup_tasks t WHERE t.id=? AND ${authority('?','t.organization_id','t.project_id',true,true)}`,[task.id,actor.userId]);if(!permission)fail('Somente a gestão pode delegar o acompanhamento.','followup_forbidden',403);
  const mutation=await prepareMutation(db,actor.userId,action,input);if(mutation.existingId){await taskAtomic(db,actor,task.id,[],true);return{...await followupDetail(db,actor,task.id),duplicate:true};}const at=iso();let statement:D1PreparedStatement;
  if(action==='task.worker.revoke')statement=db.prepare('UPDATE followup_work_grants SET revoked_at=? WHERE id=? AND task_id=? AND revoked_at IS NULL').bind(at,id(input.grantId),task.id);
+ else if(action==='task.worker.coverage'&&!input.allowCoverage)statement=db.prepare('UPDATE followup_work_grants SET can_record_activity=0 WHERE id=? AND task_id=? AND revoked_at IS NULL').bind(id(input.grantId),task.id);
  else{
-  const userId=id(input.userId)!;const issuer=await one(db,`SELECT m.id FROM members m LEFT JOIN portal_users u ON u.user_id=m.user_id JOIN followup_tasks t ON t.id=? WHERE m.user_id=? AND m.revoked_at IS NULL AND m.role IN ('owner','manager') AND COALESCE(u.status,'active')='active' AND COALESCE(u.activation_pending,0)=0 AND u.anonymized_at IS NULL AND ((t.project_id IS NULL AND m.role='owner' AND m.project_id IS NULL AND(m.organization_id IS NULL OR m.organization_id=t.organization_id)) OR(t.project_id IS NOT NULL AND EXISTS(SELECT 1 FROM projects p WHERE p.id=t.project_id AND (m.project_id=p.id OR(m.project_id IS NULL AND(m.organization_id=p.organization_id OR(m.role='owner' AND m.organization_id IS NULL))))))) ORDER BY m.id LIMIT 1`,[task.id,actor.userId]);
+  const coverage=input.allowCoverage===true;
+  const coverageGuard=projectAuthoritySql(actor,['campaigns.manage'],'t.project_id');
+  if(coverage&&!await one(db,`SELECT 1 FROM followup_tasks t
+   WHERE t.id=? AND ${activityCoverageScope('t')} AND ${coverageGuard.sql}`,
+    [task.id,...coverageGuard.values]))fail('Escolha um checklist aberto de uma atividade do seu projeto.','followup_coverage_unavailable',403);
+  const issuer=await one(db,`SELECT m.id FROM members m LEFT JOIN portal_users u ON u.user_id=m.user_id JOIN followup_tasks t ON t.id=? WHERE m.user_id=? AND m.revoked_at IS NULL AND m.role IN ('owner','manager') AND COALESCE(u.status,'active')='active' AND COALESCE(u.activation_pending,0)=0 AND u.anonymized_at IS NULL AND ((t.project_id IS NULL AND m.role='owner' AND m.project_id IS NULL AND(m.organization_id IS NULL OR m.organization_id=t.organization_id)) OR(t.project_id IS NOT NULL AND EXISTS(SELECT 1 FROM projects p WHERE p.id=t.project_id AND (m.project_id=p.id OR(m.project_id IS NULL AND(m.organization_id=p.organization_id OR(m.role='owner' AND m.organization_id IS NULL))))))) ORDER BY m.id LIMIT 1`,[task.id,actor.userId]);
   if(!issuer)fail('Seu acesso de gestão mudou.','followup_forbidden',403);
-  statement=db.prepare(`INSERT OR IGNORE INTO followup_work_grants(id,task_id,user_id,grantor_member_id,created_by,created_at) SELECT ?,t.id,u.user_id,issuer.id,?,? FROM followup_tasks t JOIN portal_users u ON u.user_id=? JOIN members issuer ON issuer.id=? WHERE t.id=? AND ${activeAccount('u')} AND issuer.revoked_at IS NULL AND issuer.role IN ('owner','manager') AND ((t.project_id IS NULL AND issuer.role='owner' AND issuer.project_id IS NULL AND (issuer.organization_id IS NULL OR issuer.organization_id=t.organization_id)) OR (t.project_id IS NOT NULL AND EXISTS(SELECT 1 FROM projects issuer_project WHERE issuer_project.id=t.project_id AND (issuer.project_id=issuer_project.id OR (issuer.project_id IS NULL AND (issuer.organization_id=issuer_project.organization_id OR (issuer.role='owner' AND issuer.organization_id IS NULL))))))) AND ${authority('u.user_id','t.organization_id','t.project_id')} AND ${assignedRecipient('u.user_id')}`).bind(uid(),actor.userId,at,userId,issuer!.id,task.id);
+  const coverageRule=` AND ${activityCoverageScope('t')} AND ${activityCoverageReader('u.user_id','t.project_id')} AND ${coverageGuard.sql}`;
+  if(action==='task.worker.coverage'){
+   statement=db.prepare(`UPDATE followup_work_grants AS g SET can_record_activity=1,coverage_grantor_member_id=?
+     WHERE g.id=? AND g.task_id=? AND g.revoked_at IS NULL AND EXISTS(
+       SELECT 1 FROM followup_tasks t JOIN portal_users u ON u.user_id=g.user_id JOIN members issuer ON issuer.id=?
+       WHERE t.id=g.task_id AND ${activeAccount('u')} AND issuer.revoked_at IS NULL
+         AND issuer.role IN ('owner','manager') AND ${memberProjectScopeSql('issuer','t.project_id')}
+         AND ${workAuthority('u.user_id')} ${coverageRule})`)
+     .bind(issuer!.id,id(input.grantId),task.id,issuer!.id,...coverageGuard.values);
+  }else{
+   statement=db.prepare(`INSERT OR IGNORE INTO followup_work_grants(id,task_id,user_id,grantor_member_id,created_by,created_at,can_record_activity,coverage_grantor_member_id)
+      SELECT ?,t.id,u.user_id,issuer.id,?,?,?,CASE WHEN ? THEN issuer.id ELSE NULL END FROM followup_tasks t JOIN portal_users u ON u.user_id=? JOIN members issuer ON issuer.id=?
+      WHERE t.id=? AND ${activeAccount('u')} AND issuer.revoked_at IS NULL AND issuer.role IN ('owner','manager')
+      AND ((t.project_id IS NULL AND ${organizationOwnerSql('issuer','t.organization_id')}) OR
+      (t.project_id IS NOT NULL AND ${memberProjectScopeSql('issuer','t.project_id')}))
+      AND ${authority('u.user_id','t.organization_id','t.project_id')} AND ${assignedRecipient('u.user_id')}${coverage?coverageRule:''}`)
+     .bind(uid(),actor.userId,at,coverage?1:0,coverage?1:0,id(input.userId),issuer!.id,task.id,...(coverage?coverageGuard.values:[]));
+  }
  }
- try{await taskAtomic(db,actor,task.id,[mutation.claimStatement(task.id),statement,db.prepare("SELECT CASE WHEN changes()=1 OR ?='task.worker.revoke' THEN 1 ELSE json_extract('[]','followup_assignee_changed') END").bind(action),db.prepare('INSERT INTO audit(id,actor_id,project_id,organization_id,action,entity_id,details,created_at) SELECT ?,?,t.project_id,t.organization_id,?,?,?,? FROM followup_tasks t WHERE t.id=?').bind(uid(),actor.userId,action,task.id,JSON.stringify({userId:input.userId??null,grantId:input.grantId??null}),at,task.id)],true);}catch(error){if(error instanceof HttpError)throw error;const recovered=await mutation.recover(error);await taskAtomic(db,actor,recovered,[],true);return{...await followupDetail(db,actor,recovered),duplicate:true};}return followupDetail(db,actor,task.id);
+ try{await taskAtomic(db,actor,task.id,[mutation.claimStatement(task.id),statement,db.prepare("SELECT CASE WHEN changes()=1 OR ?='task.worker.revoke' THEN 1 ELSE json_extract('[]','followup_assignee_changed') END").bind(action),db.prepare('INSERT INTO audit(id,actor_id,project_id,organization_id,action,entity_id,details,created_at) SELECT ?,?,t.project_id,t.organization_id,?,?,?,? FROM followup_tasks t WHERE t.id=?').bind(uid(),actor.userId,action,task.id,JSON.stringify({userId:input.userId??null,grantId:input.grantId??null,activityCoverage:input.allowCoverage===true}),at,task.id)],true);}catch(error){if(error instanceof HttpError)throw error;if(action==='task.worker.coverage'&&String(error).includes('followup_assignee_changed'))fail('A autorização ou a atribuição mudou. Atualize a demanda e confira o acesso.','followup_coverage_unavailable',409);const recovered=await mutation.recover(error);await taskAtomic(db,actor,recovered,[],true);return{...await followupDetail(db,actor,recovered),duplicate:true};}return followupDetail(db,actor,task.id);
 }
 type CheckInput={itemId:string;size:string;expected:number};
 function checklistInputs(value:unknown):CheckInput[]{if(!Array.isArray(value)||!value.length||value.length>100)fail('Selecione de 1 a 100 itens para conferir.');const result=(value as Record<string,unknown>[]).map(row=>{if(!row||typeof row!=='object'||Array.isArray(row))fail('Confira os itens da lista.');onlyKeys(row,['itemId','size','expected']);return{itemId:id(row.itemId)!,size:text(row.size,40,true),expected:integer(row.expected)};});if(new Set(result.map(r=>JSON.stringify([r.itemId,r.size]))).size!==result.length)fail('Não repita o mesmo material e tamanho.');return result;}

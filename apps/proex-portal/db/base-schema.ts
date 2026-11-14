@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { sqliteTable, text, integer, index, uniqueIndex, primaryKey, check, type AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
+import { followupTasks } from './follow-up-schema';
 
 // The schema has no production seed data. All quantities begin at zero.
 // SQL migrations remain authoritative for triggers, backfills and immutable history.
@@ -332,6 +333,7 @@ export const records = sqliteTable('records', {
   itemId: text('item_id').references(() => items.id), loanId: text('loan_id').references(() => loans.id),
   groupId: text('group_id').references(() => activityGroups.id),
   scheduleItemId: text('schedule_item_id').references(() => projectScheduleItems.id),
+  coverageTaskId: text('coverage_task_id').references(():AnySQLiteColumn => followupTasks.id),
   createdBy: text('created_by').notNull(), createdAt: text('created_at').notNull(),
 }, t => [
   index('records_project_occurred_idx').on(t.projectId, t.occurredAt),

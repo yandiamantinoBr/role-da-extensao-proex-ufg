@@ -50,7 +50,9 @@ export const followupHiddenPending = sqliteTable('followup_hidden_pending', {
 },t=>[primaryKey({columns:[t.userId,t.taskId]}),check('followup_hidden_pending_version',sql`${t.taskVersion}>0`)]);
 export const followupWorkGrants = sqliteTable('followup_work_grants', {
  id:text('id').primaryKey().notNull(),taskId:text('task_id').notNull().references(()=>followupTasks.id),userId:text('user_id').notNull().references(()=>portalUsers.userId),grantorMemberId:text('grantor_member_id').notNull().references(()=>members.id),createdBy:text('created_by').notNull(),createdAt:text('created_at').notNull(),revokedAt:text('revoked_at'),
-},t=>[uniqueIndex('followup_work_grants_active_idx').on(t.taskId,t.userId).where(sql`${t.revokedAt} IS NULL`)]);
+ canRecordActivity:integer('can_record_activity',{mode:'boolean'}).notNull().default(false),
+ coverageGrantorMemberId:text('coverage_grantor_member_id').references(()=>members.id),
+},t=>[uniqueIndex('followup_work_grants_active_idx').on(t.taskId,t.userId).where(sql`${t.revokedAt} IS NULL`),check('followup_grant_record_activity',sql`${t.canRecordActivity} IN (0,1)`)]);
 
 export const aiTaskTriageCalls = sqliteTable('ai_task_triage_calls', {
  id:text('id').primaryKey().notNull(), actorId:text('actor_id').notNull(), organizationId:text('organization_id').notNull().references(()=>organizations.id),
