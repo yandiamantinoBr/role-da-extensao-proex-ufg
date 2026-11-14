@@ -23,6 +23,12 @@ Uma alteração só de título preserva os vínculos que o editor não tem autor
 
 No navegador, verificar 390 e 1366 px, temas claro e escuro, com a ficha, Documentos, convite e checklist. Criar registro, recarregar Documentos, voltar à ficha e fechar/reabrir um checklist que contém linhas de um modelo. O ensaio por HTTP salva e relê um PNG privado, byte a byte. Câmera física e Drive autenticado ficam como aceites separados.
 
+### Equipes, convite e responsáveis
+
+- Abra **Qual acesso escolher?** em Pessoas e acessos com Tab e Espaço. O guia distingue administração do Portal, administração da organização, gestão de projeto, frentes de trabalho e acessos restritos. Equipes, como TI, organizam atribuições.
+- Na ficha, use **Acessos do projeto** em **Quem cuida de cada área**. Em Equipes, selecione um projeto e abra **Pessoas e acessos**. Os dois caminhos devem preservar o projeto. Voltar deve recuperar a página anterior. Com uma conta de leitura, os atalhos não aparecem e a URL de Pessoas e acessos redireciona para o Início.
+- No convite, a escolha do projeto orienta as funções disponíveis. A ação selecionada define o projeto do voluntário. Ao voltar para uma função de projeto, confira se o projeto anterior continua selecionado e se a confirmação de todos os projetos precisa ser marcada novamente.
+
 ## Continuidade
 
 O vínculo à atividade do cronograma preserva os mesmos acessos ao registro do projeto. A migração SQLite 0047 acrescenta uma referência opcional e valida o projeto e a categoria no banco. Registros antigos seguem válidos. A atividade pode ser renomeada ou cancelada, com o vínculo preservado. A sincronização da administração expõe somente o identificador da atividade, além da projeção que já existia para Registros. Anexos continuam privados.

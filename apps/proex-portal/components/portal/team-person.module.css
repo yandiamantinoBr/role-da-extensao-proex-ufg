@@ -18,6 +18,18 @@
 @media(max-width:540px){.dialog{border-radius:19px;max-height:calc(100dvh - 20px);width:calc(100vw - 20px)}.topline{padding:12px 15px 0}.hero{align-items:flex-start;gap:15px;padding:17px 20px 23px}.detailAvatar{width:66px;height:66px;border-width:3px}.detailAvatar>svg{width:29px;height:29px}.name{font-size:1.35rem}.body{padding:24px 20px}.fields{grid-template-columns:1fr;gap:19px}.footer{padding:17px 20px}.footer>a,.footer>button{flex:1;justify-content:center}.personTrigger{gap:11px}.cardAvatar{width:42px;height:42px}.openIcon{width:17px}.memberships li{align-items:flex-start}.eyebrow{font-size:.6rem}}
 @media(prefers-reduced-motion:reduce){.personName{transition:none}}
 
+.inviteForm{scroll-margin-top:calc(var(--topbar-height, 75px) + 12px)}
+.inviteGuide{margin-bottom:20px;border:1px solid var(--line);border-radius:12px;background:var(--surface-soft)}
+.inviteGuide>summary{display:flex;align-items:center;gap:9px;min-height:44px;padding:10px 14px;border-radius:12px;color:var(--brand-ink);font-weight:650;list-style:none}
+.inviteGuide>summary::marker{content:''}
+.inviteGuide>summary::-webkit-details-marker{display:none}
+.inviteGuide>summary svg:last-child{margin-left:auto}
+.inviteGuide[open]>summary svg:last-child{transform:rotate(180deg)}
+.inviteGuide dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 20px;margin:0;padding:12px 14px 15px;border-top:1px solid var(--line);font-size:13px;line-height:1.55}
+.inviteGuide dt{color:var(--ink);font-weight:700}
+.inviteGuide dd{margin:4px 0 0;color:var(--text-secondary)}
+@media(max-width:760px){.inviteGuide dl{grid-template-columns:minmax(0,1fr)}}
+
 /* Voluntários por ação (10/11): no celular, ações embaixo do texto e confirmação em linha própria. */
 .volunteers{container-type:inline-size}
 .volunteerRow{flex-wrap:wrap}

@@ -107,7 +107,7 @@ export default function ResponsibilityManager({userId, projectId, area, itemId =
   function save(event: FormEvent<HTMLFormElement>) {event.preventDefault(); void submit();}
   const confirming = confirmOwner === owner && record?.status === 'active';
   return <section className={styles.panel} aria-label="Responsáveis pelo registro" aria-busy={!loaded || busy}>
-    <header className={styles.heading}><div><h3><UserRoundCheck size={18} aria-hidden="true"/> {heading ?? `Responsáveis pelo ${names[area]}`}</h3><p>Selecione pessoas ou equipes explicitamente. Criar o registro ou ter um cargo não atribui responsabilidade.</p></div><button type="button" className="p-button" disabled={busy} onClick={refresh}><RefreshCw size={16} aria-hidden="true"/>Recarregar designação</button></header>
+    <header className={styles.heading}><div><h3><UserRoundCheck size={18} aria-hidden="true"/> {heading ?? `Responsáveis pelo ${names[area]}`}</h3><p>As pessoas e equipes escolhidas acompanham este trabalho com os acessos que já têm.</p></div><button type="button" className="p-button" disabled={busy} onClick={refresh}><RefreshCw size={16} aria-hidden="true"/>Recarregar designação</button></header>
     {!loaded && <p role="status" className={styles.notice}>Consultando designação e pessoas elegíveis…</p>}
     {loaded?.error && <p role="alert" className={`${styles.notice} ${styles.error}`}>{loaded.error}</p>}
     {notice && <p role={notice.error ? 'alert' : 'status'} className={`${styles.notice} ${notice.error ? styles.error : ''}`}>{notice.message}</p>}
