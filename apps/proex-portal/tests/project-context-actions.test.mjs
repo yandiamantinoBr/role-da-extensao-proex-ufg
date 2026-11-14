@@ -147,8 +147,7 @@ test('actual navigation handlers clear an earlier edit/move mode before opening 
     vm.runInNewContext(transpile(declarations.get(name).getText(ast))+`\nmodule.exports=${name};`,globals);
     globals.module.exports(name==='applyLocation'?{tab:'materials',project:'project-a',unit:'',area:'',record:{module:'materials',recordId:'item-b'},demand:'',report:'projects'}:name==='navigate'?'materials':name==='selectProject'?'project-a':'new-context');
     assert.ok(calls.some(([setter,value])=>setter==='setMaterialMode'&&value==='view'),name);
-    if (name === 'applyLocation' || name === 'navigate') {
-      assert.ok(calls.some(([setter,value])=>setter==='setRecordsScheduleItemId'&&value===''),name);
-    }
+    assert.ok(calls.some(([setter,value])=>setter==='setRecordsScheduleItemId'&&value===''),name);
+    assert.ok(calls.some(([setter,value])=>setter==='setDemandsScheduleItemId'&&value===''),name);
   }
 });
