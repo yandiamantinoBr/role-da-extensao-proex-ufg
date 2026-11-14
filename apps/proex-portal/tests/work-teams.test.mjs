@@ -2,6 +2,42 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { compile, teamScenario, teamsWorkspace } from './support/work-teams-fixture.mjs';
 const { isTeamsWorkspace, workTeamsApi, saveWorkTeam, TeamsApiError } = await import(compile('components/portal/work-teams-api.ts'));
+const { responsibilityAction } = await import(compile('lib/responsibilities/service.ts'));
+
+test('team involvement distinguishes demand assignments, active responsibilities and formal units within the live scope', async t => {
+ const f = await teamScenario(t);
+ const owner = await f.actor('owner-a'), viewer = await f.actor('viewer-a');
+ const role = await responsibilityAction(f.db, owner, 'responsibility.save', { projectId:'project-a', area:'projects', teamIds:[f.a, f.hidden], expectedVersion:0, operationKey:crypto.randomUUID() });
+ f.insert('institutional_structures',{ organization_id:'org-a',created_at:f.now,updated_at:f.now });
+ f.insert('institutional_nodes',{ id:'node-a',organization_id:'org-a',name:'Unidade administrativa',acronym:'UN',kind:'unit',relation:'root',created_at:f.now,updated_at:f.now });
+ f.insert('institutional_team_links',{ organization_id:'org-a',node_id:'node-a',team_id:f.hidden,created_at:f.now });
+ const read = await teamsWorkspace(f.db, viewer, { projectId:'project-a', teamId:f.hidden });
+ assert.deepEqual(read.teams.find(team=>team.id===f.hidden).projects,[{ id:'project-a',name:'Projeto Aurora',archived:false,hasDemands:false,hasResponsibilities:true }]);
+ assert.deepEqual(read.teams.find(team=>team.id===f.hidden).units,[{ id:'node-a',name:'Unidade administrativa',acronym:'UN' }]);
+ assert.equal(read.teams.find(team=>team.id===f.hidden).members.length,0);
+ assert.doesNotMatch(JSON.stringify(read), /Projeto Horizonte|other-a2|Projeto reservado B/);
+ const organization = await teamsWorkspace(f.db, owner, { organizationId:'org-a',teamId:f.a });
+ assert.deepEqual(organization.teams.find(team=>team.id===f.a).projects.map(project=>[project.id,project.hasDemands,project.hasResponsibilities]),[['project-a',true,true],['project-a2',true,false]]);
+ assert.equal(organization.tasks.find(task=>task.project_id===null)?.project_name,'Demandas da organização');
+ const scopedExport = await teamsWorkspace(f.db, owner, { projectId:'project-a',teamId:f.a }, true);
+ assert.ok(scopedExport.tasks.every(task=>task.project_id==='project-a'));
+ await responsibilityAction(f.db, owner, 'responsibility.revoke', { id:role.responsibility.id,expectedVersion:1,operationKey:crypto.randomUUID() });
+ const after = await teamsWorkspace(f.db, owner, { organizationId:'org-a',teamId:f.hidden });
+ assert.deepEqual(after.teams.find(team=>team.id===f.hidden).projects,[], 'a unidade permanece sem atuação registrada em projeto');
+ assert.equal(after.teams.find(team=>team.id===f.hidden).units.length,1);
+ await assert.rejects(teamsWorkspace(f.db, viewer, { projectId:'project-a',teamId:f.hidden }), { status:404 });
+});
+
+test('a responsibility revoked during a projection cannot disclose a formerly visible team', async t => {
+ const f = await teamScenario(t), owner = await f.actor('owner-a'), viewer = await f.actor('viewer-a');
+ const role = await responsibilityAction(f.db, owner, 'responsibility.save', { projectId:'project-a',area:'projects',teamIds:[f.hidden],expectedVersion:0,operationKey:crypto.randomUUID() });
+ f.db.afterRead = sql => {
+  if (!sql.startsWith('WITH caller AS (SELECT')) return;
+  f.db.afterRead=null;
+  f.native.prepare("UPDATE work_responsibility_assignees SET revoked_at=? WHERE scope_id=?").run(f.now,role.responsibility.id);
+ };
+ await assert.rejects(teamsWorkspace(f.db,viewer,{ projectId:'project-a',teamId:f.hidden },true), { status:403, code:'team_access_changed' });
+});
 
 test('multi-team workspace intersects tasks, counts and roster with the current project, excluding both a second project and organization', async t => {
  const f = await teamScenario(t), viewer = await f.actor('viewer-a');
