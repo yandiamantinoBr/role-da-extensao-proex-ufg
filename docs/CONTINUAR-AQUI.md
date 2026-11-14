@@ -2,6 +2,17 @@
 
 Comece pela [Retomada de 13/11](RETOMADA-13NOV-PORTAL-PROEX.md) para conferir a base publicada, a ordem das PRs pendentes, o padrão visual e o roteiro de convite. Para a rodada de 14/11, consulte [Ações de projeto e acessos](../apps/proex-portal/docs/QA-ACOES-E-PERFIS.md).
 
+## Checkpoint de 14/11 · organograma, equipes, buscas e exportações
+
+- [Organograma](../apps/proex-portal/docs/ESTRUTURA-INSTITUCIONAL.md) · [PR123](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/123). O navegador baixou PDF, DOCX e XLSX de produção. Cadastro de unidade subordinada foi testado com dados fictícios. O PDF da UFG ainda corresponde à referência 5.0.3 registrada.
+- [Equipes](../apps/proex-portal/docs/EQUIPES-E-ESTRUTURA.md) · [PR122](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/122). As unidades representam a estrutura formal e as designações representam a atuação em cada projeto. O usuário vê vínculos dentro do próprio acesso. Crie a designação em **Quem cuida de cada área** de cada projeto atendido.
+- [Busca e contexto](../apps/proex-portal/docs/FILTROS-E-CONTEXTO.md) · [PR120](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/120), [PR121](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/121) e [PR125](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/125). A busca de Demandas aceita acentos opcionais em português e pagina após aplicar o filtro autorizado. A [PR130](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/130) liga registros da Agenda às suas fichas. O feed e o ICS guardam seus escopos próprios.
+- Documentos · Central ([PR124](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/124)), [relatório de projeto](../apps/proex-portal/docs/RELATORIO-DO-PROJETO.md) ([PR127](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/127)) e exportação de Equipes ([PR129](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/129)) repetem a verificação de dados e permissões antes de entregar arquivos.
+- [Widgets no celular](../apps/proex-portal/docs/COMUNIDADE.md) · [PR126](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/126). O botão fica no cabeçalho e o painel abre o Rolê e os widgets. Testado com teclado, mudança de largura e uma anotação salva em Chrome local.
+- [Conexões do Rolê](../apps/proex-portal/docs/ROLE-ASSISTENTE.md) · A [PR128](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/128) protege a conexão com destinos cadastrados. A ativação de um provedor e a primeira execução real têm verificação própria. Para novas integrações, mantenha a autorização de destino, escopo, modelo e custo na mesma operação.
+
+Para retomar o aceite, confira os merges, o domínio oficial e o rodapé. Em bancada, use pelo menos duas sessões e um projeto vizinho. Repita o download com o acesso revogado e confira modo claro e escuro em 390 e 1366 px. Para detalhes de acesso e sincronização real, consulte as notas **Portal PROEX - Organograma, equipes e filtros 14nov** e **Portal PROEX - Rolê e conexões 14nov** na Vault.
+
 ## R3 · Exportar concentrado em Relatórios · em ramo, sem merge antes de 14/11 · 2026-11-11
 
 Branch `claude/r3-exportar-em-relatorios` (Claude Code), PR em **rascunho**. Decisão do Yan de 10/11 ("Sim, seguir todas"), item R3 da consolidação. Detalhes e a lista do que fica onde: `apps/proex-portal/docs/EXPORTACOES.md`.
