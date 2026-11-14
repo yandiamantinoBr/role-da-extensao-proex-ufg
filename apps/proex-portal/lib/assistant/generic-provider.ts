@@ -8,11 +8,13 @@ const withheld = () => new HttpError(502, 'A resposta do provedor não pôde ser
 /** Erro depois de o provedor já ter cobrado: leva o custo conhecido para entrar no limite diário. */
 export class ChargedError extends HttpError { constructor(message: string, readonly chargedMicros: number, readonly chargedTokens: number) { super(502, message, 'generic_provider_schema'); } }
 
+
 export async function boundedJson(response: Response, limit = 256 * 1024): Promise<Record<string, unknown>> {
   if (!response.ok || !/^application\/json(?:\s*;|$)/i.test(response.headers.get('content-type') ?? '')) {
     await response.body?.cancel().catch(() => {});
     const status = response.status;
-    throw new HttpError(503, status === 401 || status === 403 ? 'O provedor recusou a chave. Confira a chave em Chaves e modelos.' : status === 404 ? 'O provedor não reconheceu o modelo. Confira o nome do modelo na API.' : status === 429 ? 'O provedor atingiu o limite de uso agora. Tente de novo em alguns minutos.' : 'O provedor não respondeu.', 'generic_provider_unavailable');
+    const message = status === 401 || status === 403 ? 'O provedor recusou a chave. Confira a chave em Chaves e modelos.' : status === 404 ? 'O provedor não reconheceu o modelo. Confira o nome do modelo na API.' : status === 429 ? 'O provedor atingiu o limite de uso agora. Tente de novo em alguns minutos.' : 'O provedor não respondeu.';
+    throw new HttpError(503, message, 'generic_provider_unavailable');
   }
   const reader = response.body?.getReader();
   if (!reader) throw withheld();
@@ -46,7 +48,7 @@ export function requireConversationEndpoint(provider: CatalogProvider, synthetic
 }
 
 /** Uma chamada de conversa a um modelo do catálogo. Sem nova tentativa automática. */
-export async function genericChat(options: { provider: CatalogProvider; model: CatalogModel; apiKey: string; system: string; turns: ChatTurn[]; maxTokens: number; json: boolean; signal: AbortSignal; fetcher?: typeof fetch }): Promise<GenericResult> {
+export async function genericChat(options: { provider: CatalogProvider; model: CatalogModel; apiKey: string; system: string; turns: ChatTurn[]; maxTokens: number; json: boolean; signal: AbortSignal; fetcher?: typeof fetch; /** Só vale onde o portal já envia temperatura (serviço compatível com OpenAI, fora o endereço oficial). Sem valor: 0,3, como sempre. */ temperature?: number }): Promise<GenericResult> {
   const { provider, model, apiKey, system, turns, maxTokens, json, signal } = options;
   if (!apiKey || apiKey.length < 12) throw new HttpError(503, 'Falta a chave deste provedor.', 'generic_provider_key');
   const endpoint = conversationEndpoint(provider);
@@ -62,7 +64,7 @@ export async function genericChat(options: { provider: CatalogProvider; model: C
       const messages = [{ role: 'system', content: system }, ...turns.map(turn => ({ role: turn.role, content: turn.image ? [{ type: 'text', text: turn.content }, { type: 'image_url', image_url: { url: turn.image } }] : turn.content }))];
       data = await boundedJson(await requestProvider(endpoint, { method: 'POST', signal,
         headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ model: model.model, messages, stream: false, ...(official ? { max_completion_tokens: maxTokens } : { max_tokens: maxTokens, temperature: 0.3 }), ...(json ? { response_format: { type: 'json_object' } } : {}) }) }, options.fetcher));
+        body: JSON.stringify({ model: model.model, messages, stream: false, ...(official ? { max_completion_tokens: maxTokens } : { max_tokens: maxTokens, temperature: options.temperature ?? 0.3 }), ...(json ? { response_format: { type: 'json_object' } } : {}) }) }, options.fetcher));
     } else throw new HttpError(400, 'Este provedor não conversa por texto.', 'generic_provider_kind');
   } catch (error) {
     if (error instanceof HttpError) throw error;

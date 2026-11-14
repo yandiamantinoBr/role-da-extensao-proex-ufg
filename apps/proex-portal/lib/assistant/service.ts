@@ -9,6 +9,7 @@ import { assistantUsageSql, loadAssistantSettings as loadSettings } from './sett
 import { aiReservation, aiSettlement, reservationStatements, settlementStatement } from './admission';
 import { quotaRefusal } from './quota';
 import { checkDecision, decisionBody, generateProposal, generationBody,providerGenerationBody } from './provider';
+import { decisionCeiling, decisionSettled, decisionTarget, hasTaskRoute, recordRouteFallback, requireTaskEndpoint, resolveTaskRoute, taskApproval, taskRouteGuards, taskRouteName, withTaskRoute, type TaskRoute } from './task-routing';
 
 const nowIso = () => new Date().toISOString();
 async function currentActor(db: D1Database, actor: PortalActor | null): Promise<PortalActor> { const current = actor && await getActor(db, actor); if (!current) throw new HttpError(403, 'Seu acesso mudou. Entre novamente.', 'assistant_forbidden'); return current; }
@@ -29,42 +30,56 @@ function dayKey(now: number): string { const parts = new Intl.DateTimeFormat('en
 export async function estimateAssistantPlan(db: D1Database, actor: PortalActor | null, input: Record<string, unknown>, secret: string, options: { keys?: CredentialKeys } = {}) {
  const project = projectId(input.projectId), current = await scopedActor(db, actor, project), request = safeRequest(input.request);
  const organizationId = String((await one(db, 'SELECT organization_id FROM projects WHERE id=?', [project]))?.organization_id);
- const { config } = await loadSettings(db, secret, organizationId, false, options.keys, current.userId);
+ const { config, rawCredentials, revision } = await loadSettings(db, secret, organizationId, false, options.keys, current.userId);
  const rows = await all(db, 'SELECT id,name,category,unit,stock,reserved,condition FROM items WHERE project_id=? ORDER BY id LIMIT 101', [project]);
  if (rows.length > 100) throw new HttpError(400, 'Este projeto possui mais de 100 materiais. Use os filtros de Materiais para esta consulta.', 'assistant_context_limit');
  const items = rows.map(row => ({ ...row, name: safeRequest(row.name), unit: safeRequest(row.unit) })) as AssistantItem[], body = generationBody(config, request, items);
  const bodyBytes = new TextEncoder().encode(JSON.stringify(providerGenerationBody(config,body))).byteLength + 2048;
  if (bodyBytes > 24000) throw new HttpError(400, 'Reduza o pedido ou a quantidade de materiais do contexto.', 'assistant_context_limit');
- const reservation = aiReservation(config, bodyBytes), selected = textModel(config);
- return { costMicros: reservation.cost, calls: reservation.calls, provider: selected.provider, model: selected.model, jev: config.jevEnabled };
+ // Conferência roteada (só com decisionModel escolhido): o previsto usa o maior preço entre o escolhido e o padrão.
+ const decisionRoute = config.decisionModel && config.jevEnabled ? await resolveTaskRoute(db, organizationId, config, rawCredentials, 'decision') : null;
+ const reservation = aiReservation(config, bodyBytes, decisionCeiling(decisionRoute)), selected = textModel(config);
+ // Só com modelo de conferência escolhido e apto: o nome que o aviso mostra e que o preparo confere antes de enviar.
+ const decisionDestination = taskRouteName(decisionRoute);
+ const decisionApproval = decisionDestination ? await taskApproval(organizationId, revision, 'operation', [decisionRoute]) : undefined;
+ return { costMicros: reservation.cost, calls: reservation.calls, provider: selected.provider, model: selected.model, jev: config.jevEnabled, ...(decisionDestination ? { decisionDestination, decisionApproval } : {}) };
 }
 export async function prepareAssistantPlan(db: D1Database, actor: PortalActor | null, input: Record<string, unknown>, secret: string, options: { fetcher?: typeof fetch; now?: number; keys?: CredentialKeys } = {}) {
- onlyKeys(input, ['action', 'projectId', 'request', 'operationKey', 'consent', 'acceptedCostMicros']);
+ onlyKeys(input, ['action', 'projectId', 'request', 'operationKey', 'consent', 'acceptedCostMicros', 'decisionDestination', 'decisionApproval']);
  if (input.consent !== true) throw new HttpError(400, 'Confirme o envio do pedido e do estoque deste projeto aos provedores configurados.', 'assistant_consent');
  if (input.acceptedCostMicros !== undefined && (!Number.isSafeInteger(input.acceptedCostMicros) || Number(input.acceptedCostMicros) < 0)) throw new HttpError(400, 'Confira o custo previsto antes de preparar.', 'assistant_cost');
  if (typeof input.operationKey !== 'string' || !/^[A-Za-z0-9_-]{8,100}$/.test(input.operationKey)) throw new HttpError(400, 'Reabra o assistente antes de enviar.', 'assistant_operation');
  const project = projectId(input.projectId), current = await scopedActor(db, actor, project), request = safeRequest(input.request), now = options.now ?? Date.now();
  const organizationId = String((await one(db, 'SELECT organization_id FROM projects WHERE id=?', [project]))?.organization_id);
- const { config, credentials, revision } = await loadSettings(db, secret, organizationId, false, options.keys, current.userId);
+ const { config, credentials, rawCredentials, revision } = await loadSettings(db, secret, organizationId, false, options.keys, current.userId);
  const selectedText=textModel(config);
  const rows = await all(db, 'SELECT id,name,category,unit,stock,reserved,condition FROM items WHERE project_id=? ORDER BY id LIMIT 101', [project]);
  if (rows.length > 100) throw new HttpError(400, 'Este projeto possui mais de 100 materiais. Use os filtros de Materiais para esta consulta.', 'assistant_context_limit');
  const items = rows.map(row => ({ ...row, name: safeRequest(row.name), unit: safeRequest(row.unit) })) as AssistantItem[], body = generationBody(config, request, items);
  const bodyBytes = new TextEncoder().encode(JSON.stringify(providerGenerationBody(config,body))).byteLength + 2048;
  if (bodyBytes > 24000) throw new HttpError(400, 'Reduza o pedido ou a quantidade de materiais do contexto.', 'assistant_context_limit');
- const reservation=aiReservation(config,bodyBytes),reservedCost=reservation.cost;
- if (input.acceptedCostMicros !== undefined && reservedCost > Number(input.acceptedCostMicros)) throw new HttpError(409, 'O custo previsto mudou. Confira o novo valor e prepare de novo.', 'assistant_cost_changed');
- const id = await digest(`${current.userId}\n${project}\n${input.operationKey}`), fingerprint = await digest(JSON.stringify({ request, project, revision })), day = dayKey(now);
+ // Conferência roteada: só existe com decisionModel escolhido. Vazio = null = exatamente o caminho de sempre.
+ const decisionRoute = config.decisionModel && config.jevEnabled ? await resolveTaskRoute(db, organizationId, config, rawCredentials, 'decision') : null;
+ const decisionDestination = taskRouteName(decisionRoute);
+ const decisionApproval = decisionDestination ? await taskApproval(organizationId, revision, 'operation', [decisionRoute]) : undefined;
+ const destinationChanged = () => new HttpError(409, 'O modelo que confere este registro mudou. Confira o aviso e confirme de novo.', 'assistant_destination');
+ if (decisionApproval !== input.decisionApproval || (decisionDestination ?? '') !== (input.decisionDestination ?? '')) throw destinationChanged();
+ requireTaskEndpoint(decisionRoute, 'decision', options.fetcher);
+ const routeGuards = taskRouteGuards(db, organizationId, [decisionRoute]);
+ let decisionAnswered: TaskRoute | null = null;
+ const reservation=aiReservation(config,bodyBytes,decisionCeiling(decisionRoute)),reservedCost=reservation.cost;
+ if ((hasTaskRoute(decisionRoute) || input.acceptedCostMicros !== undefined) && (!Number.isSafeInteger(input.acceptedCostMicros) || reservedCost > Number(input.acceptedCostMicros))) throw new HttpError(409, 'O custo previsto mudou. Confira o novo valor e prepare de novo.', 'assistant_cost_changed');
+ const id = await digest(`${current.userId}\n${project}\n${input.operationKey}`), fingerprint = await digest(JSON.stringify({ request, project, revision, decisionApproval })), day = dayKey(now);
  const authorization = planAuthorization(db,current,project,organizationId,revision);
  async function existingCall() { const call = await one(db, 'SELECT fingerprint,status,plan_id FROM ai_calls WHERE id=?', [id]); if (call && call.fingerprint !== fingerprint) throw new HttpError(409, 'Este envio já foi usado com outro pedido. Prepare uma nova solicitação.', 'assistant_operation_changed'); if (!call) return null; if (call.status === 'complete') { const stored = await one(db, 'SELECT payload_json,payload_digest,status FROM ai_plans WHERE id=?', [call.plan_id]); if (stored?.status === 'ready') { const plan = JSON.parse(stored.payload_json) as AssistantPlan; if (plan.expiresAt > now) { const result=await presentPlan(plan, stored.payload_digest, secret); await assertPlanAuthorization(authorization); return result; } } } if (call.status === 'failed') throw new HttpError(409, 'A tentativa anterior não deu certo e não é repetida sozinha. Toque em Preparar de novo para uma nova tentativa.', 'assistant_call_failed'); throw new HttpError(409, 'Este pedido ainda está sendo preparado. Aguarde alguns segundos.', 'assistant_call_replay'); }
  const admissionNonce = crypto.randomUUID();
  const existing = await existingCall(); if (existing) return existing;
- try { await db.batch(reservationStatements(db,{table:'ai_calls',authorization,id,fingerprint,nonce:admissionNonce,actorId:current.userId,projectId:project,organizationId,day,createdAt:new Date(now).toISOString(),revision,config,reservation})); } catch (error) { if(String(error).includes('assistant_authority_changed')) throw new HttpError(403,'Seu acesso ou a configuração mudou.','assistant_forbidden'); const recovered = await existingCall(); if (recovered) return recovered; throw error; }
+ try { await db.batch(reservationStatements(db,{table:'ai_calls',authorization,routeGuards,id,fingerprint,nonce:admissionNonce,actorId:current.userId,projectId:project,organizationId,day,createdAt:new Date(now).toISOString(),revision,config,reservation})); } catch (error) { if(String(error).includes('task_route_changed')) throw destinationChanged(); if(String(error).includes('assistant_authority_changed')) throw new HttpError(403,'Seu acesso ou a configuração mudou.','assistant_forbidden'); const recovered = await existingCall(); if (recovered) return recovered; throw error; }
  const admitted = await one(db, 'SELECT admission_nonce FROM ai_calls WHERE id=?', [id]);
  if (admitted && admitted.admission_nonce !== admissionNonce) { const recovered=await existingCall(); if(recovered)return recovered; throw new HttpError(409,'Este envio já está em processamento.','assistant_call_replay'); }
  if (!admitted) throw await quotaRefusal(db, current, organizationId, day, config, { cost: reservation.cost, tokens: reservation.tokens, ms: reservation.milliseconds, calls: reservation.calls });
  const controller = new AbortController(), timer = setTimeout(() => controller.abort(), config.timeoutMs);
- async function dispatchFence(){await assertPlanAuthorization(authorization);if(controller.signal.aborted)throw new HttpError(503,'A chamada excedeu o tempo reservado. Não houve repetição automática.','assistant_provider_unavailable');}
+ async function dispatchFence(){if(routeGuards.length)await db.batch([...routeGuards,authorization]);else await assertPlanAuthorization(authorization);if(controller.signal.aborted)throw new HttpError(503,'A chamada excedeu o tempo reservado. Não houve repetição automática.','assistant_provider_unavailable');}
  try {
   await scopedActor(db,current,project);
   if((await loadSettings(db,secret,organizationId,false,options.keys,current.userId)).revision!==revision)throw new HttpError(409,'A configuração mudou antes da chamada.','assistant_configuration_changed');
@@ -74,16 +89,24 @@ export async function prepareAssistantPlan(db: D1Database, actor: PortalActor | 
   if (generated.inputTokens > bodyBytes) throw new HttpError(502, 'O uso de tokens excedeu a reserva preventiva.', 'assistant_usage');
   const fresh = await scopedActor(db, current, project); requireCapability(fresh, operationCapability(proposal.intent), project);
   let jevModel: string | null = null, jevTokens = 0;
-  if (config.jevEnabled) { if((await loadSettings(db,secret,organizationId,false,options.keys,current.userId)).revision!==revision)throw new HttpError(409,'A configuração mudou antes da conferência.','assistant_configuration_changed'); await scopedActor(db,current,project); await dispatchFence();const decision = await checkDecision(config, credentials, decisionBody(config, request, proposal), controller.signal, options.fetcher); if (!decision.approved || decision.inputTokens > bodyBytes + 18000) throw new HttpError(409, 'O classificador indicou dúvida. Esclareça ação, material e quantidade no pedido.', 'assistant_needs_review'); jevModel = decision.model; jevTokens = decision.inputTokens; }
+  if (config.jevEnabled) { if((await loadSettings(db,secret,organizationId,false,options.keys,current.userId)).revision!==revision)throw new HttpError(409,'A configuração mudou antes da conferência.','assistant_configuration_changed'); await scopedActor(db,current,project); await dispatchFence();
+    // Com rota: uma chamada ao escolhido; o padrão só entra se o escolhido estava indisponível antes do envio.
+    const routed = decisionRoute ? await withTaskRoute(decisionRoute, {
+      chosen: route => checkDecision(config, credentials, decisionBody(config, request, proposal, route.model.model), controller.signal, options.fetcher, decisionTarget(route)),
+      fallback: () => checkDecision(config, credentials, decisionBody(config, request, proposal), controller.signal, options.fetcher),
+      onFallback: async reason => { await recordRouteFallback(db, organizationId, current.userId, 'decision', config.decisionModel, reason); await dispatchFence(); },
+    }) : null;
+    if (routed) decisionAnswered = routed.route;
+    const decision = routed ? routed.result : await checkDecision(config, credentials, decisionBody(config, request, proposal), controller.signal, options.fetcher); if (!decision.approved || decision.inputTokens > bodyBytes + 18000) throw new HttpError(409, 'O classificador indicou dúvida. Esclareça ação, material e quantidade no pedido.', 'assistant_needs_review'); jevModel = decision.model; jevTokens = decision.inputTokens; }
   if ((await loadSettings(db, secret, organizationId, false, options.keys,current.userId)).revision !== revision) throw new HttpError(409, 'A configuração de IA mudou. Prepare a proposta novamente.', 'assistant_configuration_changed');
   const before = proposal.itemId ? items.find(item => item.id === proposal.itemId)! : null, delta = proposal.intent === 'stock.receive' ? proposal.quantity : ['stock.distribute', 'stock.consume'].includes(proposal.intent) ? -proposal.quantity : 0;
   if (before && delta && (before.condition !== 'active' || before.stock + delta < before.reserved || before.category === 'equipment' && (delta < 0 || before.stock + delta > 1))) throw new HttpError(409, 'O material não permite essa movimentação. Confira disponibilidade e categoria em Materiais.', 'assistant_stock');
   const plan: AssistantPlan = { contract: ASSISTANT_CONTRACT, id: crypto.randomUUID(), actorId: current.userId, organizationId, projectId: project, configRevision: revision, proposal, before, after: before ? { stock: before.stock + delta, available: before.stock + delta - before.reserved } : null, provenance: { requestSha256: await digest(request), contextSha256: await digest(JSON.stringify(items)), provider: selectedText.provider, model: selectedText.model, modelRevision: selectedText.revision, returnedModel: generated.returnedModel, jevModel, reviewedAt: new Date(now).toISOString() }, expiresAt: now + 10 * 60000 }, payload = JSON.stringify(plan), hash = await digest(payload);
   await scopedActor(db, current, project);
-  const refund = aiSettlement(config, reservation, { input: generated.inputTokens, output: generated.outputTokens, jev: jevTokens }, Date.now() - startedAt);
+  const refund = aiSettlement(config, reservation, { input: generated.inputTokens, output: generated.outputTokens, jev: jevTokens }, Date.now() - startedAt, decisionSettled(decisionAnswered));
   await db.batch([authorization,db.prepare('INSERT INTO ai_plans(id,actor_id,project_id,payload_json,payload_digest,expires_at,created_at) VALUES(?,?,?,?,?,?,?)').bind(plan.id, current.userId, project, payload, hash, plan.expiresAt, new Date(now).toISOString()), db.prepare("UPDATE ai_calls SET status='complete',plan_id=? WHERE id=? AND status='reserved'").bind(plan.id, id), settlementStatement(db, organizationId, day, refund), db.prepare("INSERT INTO audit(id,actor_id,project_id,action,entity_id,details,created_at) VALUES(?,?,?,'assistant.plan',?,?,?)").bind(crypto.randomUUID(), current.userId, project, plan.id, JSON.stringify({ intent: proposal.intent, model: selectedText.model, provider:selectedText.provider, jevModel, configRevision: revision, requestSha256: plan.provenance.requestSha256, reservedUsdMicros: reservedCost, usdMicros: reservedCost - refund.cost, inputTokens: generated.inputTokens, outputTokens: generated.outputTokens, jevTokens }), nowIso())]);
   const result=await presentPlan(plan,hash,secret); await assertPlanAuthorization(authorization); return result;
- } catch (error) { await db.prepare("UPDATE ai_calls SET status='failed' WHERE id=? AND status='reserved'").bind(id).run(); if(String(error).includes('assistant_authority_changed'))throw new HttpError(403,'Seu acesso ou a configuração mudou antes de salvar a prévia.','assistant_forbidden'); throw error; } finally { clearTimeout(timer); }
+ } catch (error) { await db.prepare("UPDATE ai_calls SET status='failed' WHERE id=? AND status='reserved'").bind(id).run(); if(String(error).includes('task_route_changed'))throw destinationChanged(); if(String(error).includes('assistant_authority_changed'))throw new HttpError(403,'Seu acesso ou a configuração mudou antes de salvar a prévia.','assistant_forbidden'); throw error; } finally { clearTimeout(timer); }
 }
 async function presentPlan(plan: AssistantPlan, hash: string, secret: string) { if(plan.contract!==ASSISTANT_CONTRACT||!plan.organizationId)throw new HttpError(409,'A proposta usa um contrato antigo. Prepare outra prévia.','assistant_plan_invalid'); const { actorId: _actorId, ...publicPlan } = plan; void _actorId; return { plan: publicPlan, planToken: await signPlan(secret, { id: plan.id, digest: hash, actorId: plan.actorId, organizationId: plan.organizationId, projectId: plan.projectId, expiresAt: plan.expiresAt }), undoAvailable: false, undoReason: 'Movimentos físicos e registros exigem conferência. Correções são novos registros auditados nas telas correspondentes.' }; }
 function guardedStockDatabase(db: D1Database, plan: AssistantPlan, authorization: D1PreparedStatement, refId?: string): D1Database {

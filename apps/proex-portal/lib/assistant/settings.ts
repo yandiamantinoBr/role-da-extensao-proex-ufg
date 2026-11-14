@@ -1,11 +1,13 @@
 import { aiConfigurationAuthority, getActor, organizationAuthoritySql, platformOwnerAuthoritySql, type PortalActor } from '../access';
 import { all, one } from '../database';
 import { HttpError } from '../errors';
-import { availableProviderCredentials, dailyLimits, newAssistantConfig, object, onlyKeys, TEST_MODE_LIMITS, validateConfig, type AssistantConfig, type DailyLimits } from './contracts';
+import { availableProviderCredentials, dailyLimits, newAssistantConfig, object, onlyKeys, storedConfigJson, TASK_MODEL_KEYS, TEST_MODE_LIMITS, validateConfig, type AssistantConfig, type DailyLimits } from './contracts';
 import { configChanges } from './quota';
 import { decryptProviderCredentials, encryptProviderCredentials, type CredentialKeys } from './crypto';
-import { fitsFunction } from './model-catalog';
+import { catalogModelName, fitsFunction, fitsTask, type RoutedTask } from './model-catalog';
 import { loadCatalog } from './model-catalog-store';
+import { TASK_MODEL_KEY, documentMaximum, resolveTaskRoute, speechDestination, speechRouteModel, taskApproval, taskRouteName } from './task-routing';
+import type { SpeechRouteModel } from './role-contracts';
 
 export type SpeechProvider = 'deepgram' | 'groq';
 export type SpeechEnvironment = { provider?: string; organizationId?: string; groqKey?: string };
@@ -93,7 +95,9 @@ export async function configureAssistant(db: D1Database, actor: PortalActor | nu
  if (!Number.isSafeInteger(input.expectedRevision) || input.expectedRevision !== (old?.revision ?? 0)) throw new HttpError(409, 'A configuração mudou. Atualize antes de salvar.', 'assistant_configuration_changed');
  const proposed = object(input.config), previousConfig = old ? validateConfig(JSON.parse(old.config_json)) : newAssistantConfig(current.userId);
  const usageScope = Object.hasOwn(proposed,'usageScope') ? proposed.usageScope : previousConfig.usageScope;
- const config = withTestMode(previousConfig, validateConfig({ ...proposed, usageScope, usageUserId: usageScope === 'private' ? current.userId : null }));
+ // Modelo por tarefa que não veio no pedido fica como estava: uma tela que ainda não conhece essas chaves não desfaz a escolha.
+ const keptTaskModels = Object.fromEntries(TASK_MODEL_KEYS.filter(taskKey => !Object.hasOwn(proposed, taskKey)).map(taskKey => [taskKey, previousConfig[taskKey]]));
+ const config = withTestMode(previousConfig, validateConfig({ ...proposed, ...keptTaskModels, usageScope, usageUserId: usageScope === 'private' ? current.userId : null }));
  const previous = old && input.replaceCredentials !== true ? object(await decryptProviderCredentials(secret, old.credentials_ciphertext, organizationId, keys)) : {};
  const credentials = availableProviderCredentials(previous);
  const catalogKeys = Object.fromEntries(Object.entries(previous).filter(([name]) => /^p:[a-z0-9-]+$/.test(name)));
@@ -117,15 +121,36 @@ export async function configureAssistant(db: D1Database, actor: PortalActor | nu
   const owner = platformOwnerAuthoritySql(current);
   if (!await one(db, `SELECT 1 WHERE ${owner.sql}`, owner.values)) throw new HttpError(403, 'Só a administração geral escolhe modelos do catálogo para o Rolê.', 'catalog_admin');
  }
+ // Modelo por tarefa (documentos, conferência/triagem, voz): só a administração geral troca. O escolhido precisa
+ // existir, estar ligado, servir para a tarefa e ter chave salva. A chave do padrão segue obrigatória (abaixo): é a queda.
+ const changedTasks = (Object.keys(TASK_MODEL_KEY) as RoutedTask[]).filter(task => config[TASK_MODEL_KEY[task]] !== previousConfig[TASK_MODEL_KEY[task]]);
+ const changedModelNames: Record<string, string> = {};
+ // Com troca de modelo por tarefa, a conferência de administração geral também entra na asserção atômica do salvamento (abaixo).
+ const taskOwner = changedTasks.length ? platformOwnerAuthoritySql(current) : null;
+ if (taskOwner) {
+  const owner = taskOwner;
+  if (!await one(db, `SELECT 1 WHERE ${owner.sql}`, owner.values)) throw new HttpError(403, 'Só a administração geral escolhe os modelos de documentos, conferência e voz.', 'catalog_admin');
+  const chosenTasks = changedTasks.filter(task => config[TASK_MODEL_KEY[task]]);
+  // O catálogo também dá os nomes que o histórico mostra (o modelo que saiu e o que entrou).
+  const taskCatalog = catalog ?? (await loadCatalog(db, organizationId)).catalog;
+  for (const task of changedTasks) for (const modelId of [previousConfig[TASK_MODEL_KEY[task]], config[TASK_MODEL_KEY[task]]]) { const name = modelId ? catalogModelName(taskCatalog, modelId) : null; if (name) changedModelNames[modelId] = name.slice(0, 120); }
+  for (const task of chosenTasks) {
+   const model = taskCatalog.models.find(entry => entry.id === config[TASK_MODEL_KEY[task]] && entry.enabled), provider = taskCatalog.providers.find(entry => entry.id === model?.providerId);
+   if (!model) throw new HttpError(400, 'Escolha um modelo que exista e esteja ligado na aba Modelos.', 'assistant_model');
+   const unfit = fitsTask(model, provider, task);
+   if (unfit || !provider) throw new HttpError(400, unfit ?? 'Provedor removido.', 'assistant_model');
+   if (!validProviderKey((credentials as Record<string, unknown>)[provider.keyRef] || previous[provider.keyRef])) throw new HttpError(400, 'Falta a chave do serviço deste modelo. Cole a chave na aba Chaves e escolha o modelo de novo.', 'assistant_credentials');
+  }
+ }
  const roleTextKey = config.roleModel ? catalogKey(config.roleModel, 'chat') : !!credentials[config.roleProvider];
  const roleVisionKey = config.roleVisionModel ? catalogKey(config.roleVisionModel, 'vision') : !!credentials.deepseek;
  if (config.roleEnabled && !roleTextKey || config.roleVisionEnabled && (!config.roleEnabled || !roleVisionKey) || (config.enabled || config.documentEnabled) && !credentials[config.textProvider] || config.jevEnabled && !credentials.typesafe || config.sttEnabled && speechProvider === 'deepgram' && !credentials.deepgram) throw new HttpError(400, 'Cadastre as credenciais dos provedores habilitados.', 'assistant_credentials');
  const credentialsChanged = !old || writesKeys;
  const ciphertext = old && !credentialsChanged ? old.credentials_ciphertext : await encryptProviderCredentials(secret, { ...catalogKeys, ...credentials }, organizationId, keys, old?.credentials_ciphertext);
  const revision = Number(input.expectedRevision) + 1, at = new Date().toISOString();
- const assertion = db.prepare(`SELECT CASE WHEN ${auth.sql} THEN 1 ELSE json_extract('[]','ai_configuration_revoked') END`).bind(...auth.values);
- const statement = old ? db.prepare('UPDATE ai_organization_settings SET revision=?,config_json=?,credentials_ciphertext=?,updated_by=?,updated_at=? WHERE organization_id=? AND revision=? AND credentials_ciphertext=?').bind(revision, JSON.stringify(config), ciphertext, current.userId, at, organizationId, input.expectedRevision, old.credentials_ciphertext) : db.prepare('INSERT INTO ai_organization_settings(organization_id,revision,config_json,credentials_ciphertext,updated_by,updated_at) VALUES(?,?,?,?,?,?)').bind(organizationId, revision, JSON.stringify(config), ciphertext, current.userId, at);
- try { const result = await db.batch([assertion, statement, db.prepare("INSERT INTO audit(id,actor_id,project_id,organization_id,action,entity_id,details,created_at) SELECT ?,?,NULL,?,'assistant.configure',?,?,? WHERE changes()=1").bind(crypto.randomUUID(), current.userId, organizationId, organizationId, JSON.stringify({ revision, enabled: config.enabled, sttEnabled: config.sttEnabled, jevEnabled: config.jevEnabled, roleEnabled: config.roleEnabled, roleProvider: config.roleProvider, roleVisionEnabled: config.roleVisionEnabled, testMode: config.testMode, changes: configChanges(previousConfig, config) }), at)]); if (result[1].meta.changes !== 1) throw new HttpError(409, 'A configuração mudou. Atualize a página.', 'assistant_configuration_changed'); }
+ const assertion = db.prepare(`SELECT CASE WHEN ${auth.sql}${taskOwner ? ` AND ${taskOwner.sql}` : ''} THEN 1 ELSE json_extract('[]','ai_configuration_revoked') END`).bind(...auth.values, ...(taskOwner?.values ?? []));
+ const statement = old ? db.prepare('UPDATE ai_organization_settings SET revision=?,config_json=?,credentials_ciphertext=?,updated_by=?,updated_at=? WHERE organization_id=? AND revision=? AND credentials_ciphertext=?').bind(revision, storedConfigJson(config), ciphertext, current.userId, at, organizationId, input.expectedRevision, old.credentials_ciphertext) : db.prepare('INSERT INTO ai_organization_settings(organization_id,revision,config_json,credentials_ciphertext,updated_by,updated_at) VALUES(?,?,?,?,?,?)').bind(organizationId, revision, storedConfigJson(config), ciphertext, current.userId, at);
+ try { const result = await db.batch([assertion, statement, db.prepare("INSERT INTO audit(id,actor_id,project_id,organization_id,action,entity_id,details,created_at) SELECT ?,?,NULL,?,'assistant.configure',?,?,? WHERE changes()=1").bind(crypto.randomUUID(), current.userId, organizationId, organizationId, JSON.stringify({ revision, enabled: config.enabled, sttEnabled: config.sttEnabled, jevEnabled: config.jevEnabled, roleEnabled: config.roleEnabled, roleProvider: config.roleProvider, roleVisionEnabled: config.roleVisionEnabled, testMode: config.testMode, changes: configChanges(previousConfig, config), ...(Object.keys(changedModelNames).length ? { modelNames: changedModelNames } : {}) }), at)]); if (result[1].meta.changes !== 1) throw new HttpError(409, 'A configuração mudou. Atualize a página.', 'assistant_configuration_changed'); }
  catch (error) { if (String(error).includes('ai_configuration_revoked')) throw new HttpError(403, 'A autorização de configuração foi revogada.', 'assistant_configuration_forbidden'); throw error; }
  return { ok: true, revision };
 }
@@ -140,15 +165,43 @@ export async function assistantStatus(db: D1Database, actor: PortalActor | null,
   const canUseAi = savedPolicy ? Boolean(await one(db, `SELECT 1 FROM ai_organization_settings s JOIN organizations o ON o.id=s.organization_id WHERE s.organization_id=? AND o.status='active' AND ${usagePolicy.sql}`, [organization.id,...usagePolicy.values])) : false;
   try { await configurationActor(db, current, organization.id); canConfigure = true; } catch { /* deny */ }
   try { await configurationActor(db, current, organization.id, true); canDelegate = true; } catch { /* deny */ }
-  try { await loadAssistantSettings(db, secret, organization.id, false, keys, current.userId); available = true; } catch { /* unavailable */ }
-  try { await loadAssistantSettings(db, secret, organization.id, 'document', keys, current.userId); documentAvailable = true; } catch { /* unavailable */ }
+  // Só existem com modelo do catálogo escolhido e apto a responder: é o destino que o aviso e a autorização precisam nomear.
+  let documentRouteName: string | undefined, decisionRouteName: string | undefined;
+  let decisionApproval: string | undefined, decisionCostMicros: number | undefined;
+  let documentApproval: string | undefined, documentCostMicros: number | undefined;
+  let documentProvider: 'openai' | 'deepseek' | undefined, documentHasDecision: boolean | undefined;
+  try {
+   const loaded = await loadAssistantSettings(db, secret, organization.id, false, keys, current.userId);
+   const decision = loaded.config.jevEnabled && loaded.config.decisionModel ? await resolveTaskRoute(db, organization.id, loaded.config, loaded.rawCredentials, 'decision') : null;
+   decisionRouteName = taskRouteName(decision) ?? undefined;
+   if (decisionRouteName) {
+    decisionApproval = await taskApproval(organization.id, loaded.revision, 'operation', [decision]);
+    decisionCostMicros = documentMaximum(loaded.config, null, decision);
+   }
+   available = true;
+  } catch { /* unavailable */ }
+  try {
+   const loaded = await loadAssistantSettings(db, secret, organization.id, 'document', keys, current.userId);
+   const document = loaded.config.documentModel ? await resolveTaskRoute(db, organization.id, loaded.config, loaded.rawCredentials, 'document') : null;
+   const decision = loaded.config.jevEnabled && loaded.config.decisionModel ? await resolveTaskRoute(db, organization.id, loaded.config, loaded.rawCredentials, 'decision') : null;
+   documentRouteName = taskRouteName(document) ?? undefined;
+   decisionRouteName ??= taskRouteName(decision) ?? undefined;
+   documentApproval = await taskApproval(organization.id, loaded.revision, 'document', [document, decision]);
+   documentCostMicros = documentMaximum(loaded.config, document, decision);
+   documentProvider = loaded.config.textProvider;
+   documentHasDecision = loaded.config.jevEnabled;
+   documentAvailable = true;
+  } catch { /* unavailable */ }
   let sttProvider = speechProviderForOrganization(organization.id, speechEnvironment),sttCredentialSource='vault';
+  // Só existe com modelo do catálogo escolhido para voz e em condição de receber o áudio: é o destino que o consentimento precisa nomear.
+  let sttRoute: string | undefined, sttRouteModel: SpeechRouteModel | undefined;
   try {
    const speech=await loadSpeechSettings(db,secret,organization.id,speechEnvironment,keys,current.userId);
    sttProvider=speech.provider;sttCredentialSource=speech.credentialSource;
    sttAvailable = true;
+   if (speech.config.speechModel) { const resolved = await resolveTaskRoute(db, organization.id, speech.config, speech.rawCredentials, 'speech', speech.provider), routeModel = speechRouteModel(resolved); if (routeModel) { sttRoute = speechDestination(resolved, speech.provider); sttRouteModel = { ...routeModel, approval: await taskApproval(organization.id, speech.revision, 'speech', [resolved]) }; } }
   } catch { try{const stored=await loadAssistantSettings(db,secret,organization.id,'configuration',keys);sttProvider=speechProviderForOrganization(organization.id,speechEnvironment,stored.config.sttProvider);sttCredentialSource=sttProvider==='groq'&&stored.config.sttProvider==='legacy'?'environment':'vault';}catch{/* unavailable */} }
-  visible.push({ id: organization.id, name: organization.name, canConfigure, canDelegate, canUseAi, usageScope:policy.usageScope, usageIsMine:policy.usageScope==='private'&&policy.usageUserId===current.userId, available, sttAvailable, sttProvider, legacySttProvider:speechProviderForOrganization(organization.id,speechEnvironment), sttCredentialSource, documentAvailable });
+  visible.push({ id: organization.id, name: organization.name, canConfigure, canDelegate, canUseAi, usageScope:policy.usageScope, usageIsMine:policy.usageScope==='private'&&policy.usageUserId===current.userId, available, sttAvailable, sttProvider, legacySttProvider:speechProviderForOrganization(organization.id,speechEnvironment), sttCredentialSource, documentAvailable, documentApproval, documentCostMicros, documentProvider, documentHasDecision, decisionApproval, decisionCostMicros, ...(sttRoute && sttRouteModel ? { sttRoute, sttRouteModel } : {}), ...(documentRouteName ? { documentRouteName } : {}), ...(decisionRouteName ? { decisionRouteName } : {}) });
  }
  const selected = visible.find(organization => organization.id === selectedId) ?? (visible.length === 1 ? visible[0] : undefined);
  const result = { available: selected?.available ?? false, documentAvailable:selected?.documentAvailable??false, canConfigure: selected?.canConfigure ?? false, canDelegate: selected?.canDelegate ?? false, organizationId: selected?.id ?? '', organizations: visible, voice: { dictation: 'browser-optional', uploadStt: selected?.sttAvailable ?? false } };

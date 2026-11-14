@@ -70,6 +70,7 @@ Branch `claude/visual-coerencia-09nov` (Claude Code), PR [42](https://github.com
 - **Testes:** 1.334 do portal localmente, incluindo `tests/role-assistant.test.mjs` com o LEAK GUARD. Corrigida a bomba de data em `my-work-markdown.test.mjs`, que falhava em 09/11/2026.
 - **Revisões:** segurança sem P0/P1, com os P2 corrigidos. A nota da crítica de design está registrada na PR.
 - **Falta:** o Yan colar as chaves reais (DeepSeek e Groq; TypeSafe opcional), testar na central e ligar o Rolê. O primeiro uso real de cada provedor fica no histórico. Não houve chamada real a provedor nesta rodada.
+- **Modelo por tarefa (revisado em 14/11/2026):** a administração geral escolhe na aba Modelos quem lê documentos, faz a conferência e triagem, ou transcreve voz. Campo vazio usa o padrão do Portal. O servidor confere destino, revisão da credencial e preços antes de enviar. Se o destino do catálogo estiver indisponível antes do envio, o padrão só recebe o pedido quando a autorização vigente o identifica. Qualquer erro após o envio encerra a tentativa. Os testes usaram provedores simulados. Veja a seção "Modelo por tarefa" em `apps/proex-portal/docs/ROLE-ASSISTENTE.md`.
 
 ## PR39 publicada sobre a PR38 · edição, estoque e eventos · 2026-11-06
 

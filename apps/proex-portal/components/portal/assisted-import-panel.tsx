@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { Camera, Check, FileInput, LoaderCircle, Paperclip, X } from 'lucide-react';
 import { importFields, IMPORT_TEXT_LIMIT, type ImportKind, type ImportPreview } from '@/lib/importer/contracts';
 import { validateImportedFields } from '@/lib/importer/parse';
+import { documentConsentText, formatMicros, shownRouteName } from '@/lib/assistant/role-contracts';
 import { MAX_UPLOAD_FILE_BYTES, UPLOAD_LIMIT_LABEL, uploadErrorMessage } from '@/lib/upload-limits';
 import styles from './assisted-import-panel.module.css';
 
@@ -24,7 +25,7 @@ async function post(input: Record<string, unknown> | FormData, url = '/api/impor
     const multipart = input instanceof FormData;
     const response = await fetch(url, { method: 'POST', credentials: 'same-origin', cache: 'no-store', signal: controller.signal, headers: { ...(!multipart ? { 'Content-Type': 'application/json' } : {}), 'X-Proex-Action': '1' }, body: multipart ? input : JSON.stringify(input) });
     const data = await response.json().catch(() => null) as Record<string, unknown> | null;
-    if (!response.ok || !data) throw new Error(typeof data?.error === 'string' ? data.error : 'Não foi possível confirmar a resposta. Repita a mesma operação.');
+    if (!response.ok || !data) throw Object.assign(new Error(typeof data?.error === 'string' ? data.error : 'Não foi possível confirmar a resposta. Repita a mesma operação.'), { code: data?.code });
     return data;
   } catch (error) { if (error instanceof Error && error.name === 'AbortError') throw new Error('A resposta demorou. Repita a mesma operação para conferir o resultado.'); throw error; }
   finally { window.clearTimeout(timer);signal?.removeEventListener('abort',cancel); }
@@ -53,6 +54,35 @@ export default function AssistedImportPanel({ kind, projects, projectTypes = [],
   const problems: Record<string, string> = { ...checkedFields?.problems, ...(candidate && !editableFields.name ? { name: 'Informe o nome ou título antes de selecionar este campo.' } : {}) };
   const validDestination = projectId ? permitted.some(project => project.id === projectId) : kind === 'project' && createAllowed && managedOrganizations.some(organization => organization.id === organizationId);
   const destinationOrganizationId=projectId?projects.find(project=>project.id===projectId)?.organization_id??'':organizationId, destinationOrganization=organizations.find(organization=>organization.id===destinationOrganizationId&&organization.status==='active');
+  // Modelos escolhidos (e aptos) que recebem o texto nesta organização. Vazio = padrão de hoje, com o texto de sempre.
+  const [aiRoutes,setAiRoutes]=useState<{organizationId:string;document:string;decision:string;approval:string;cost:number;defaultText?:'openai'|'deepseek';decisionEnabled?:boolean}|null>(null);
+  // Sobe quando o servidor avisa que o destino mostrado não é o de agora: a tela busca os nomes de novo.
+  const [aiRoutesCheck,setAiRoutesCheck]=useState(0);
+  const [aiRoutesFailed,setAiRoutesFailed]=useState<string|null>(null);
+  useEffect(()=>{
+    if(!useAi||!destinationOrganizationId)return;
+    const controller=new AbortController();
+    void fetch(`/api/assistant?organizationId=${encodeURIComponent(destinationOrganizationId)}`,{cache:'no-store',credentials:'same-origin',signal:controller.signal}).then(async response=>{
+      if(!response.ok)throw new Error('names');
+      const body=await response.json() as {organizations?:{id?:unknown;documentRouteName?:unknown;decisionRouteName?:unknown;documentApproval?:unknown;documentCostMicros?:unknown;documentProvider?:'openai'|'deepseek';documentHasDecision?:boolean}[]}|null;
+      if(controller.signal.aborted)return;
+      const found=body?.organizations?.find(organization=>organization.id===destinationOrganizationId);
+      if(typeof found?.documentCostMicros!=='number'||!Number.isSafeInteger(found.documentCostMicros)||found.documentCostMicros<0)throw new Error('approval');
+      const next={approval:typeof found.documentApproval==='string'?found.documentApproval:'',cost:found.documentCostMicros,defaultText:found.documentProvider,decisionEnabled:found.documentHasDecision,organizationId:destinationOrganizationId,document:shownRouteName(found.documentRouteName),decision:shownRouteName(found.decisionRouteName)};
+      if((next.document||next.decision)&&!next.approval)throw new Error('approval');
+      setAiConsent(false); // o texto da autorização passou a nomear outro destino: a pessoa marca de novo
+      setAiRoutesFailed(null);setAiRoutes(next);
+    }).catch(()=>{
+      if(!controller.signal.aborted)setAiRoutesFailed(destinationOrganizationId);
+    });
+    return()=>controller.abort();
+  },[useAi,destinationOrganizationId,aiRoutesCheck]);
+  const aiNames=aiRoutes?.organizationId===destinationOrganizationId?aiRoutes:null;
+  const aiRoutesFailure=aiRoutesFailed===destinationOrganizationId;
+  // Enquanto a tela confere quem recebe o texto, a autorização fica desabilitada: a pessoa só autoriza o que leu.
+  const aiRoutesLoading=useAi&&!!destinationOrganizationId&&!aiNames&&!aiRoutesFailure,aiRoutesBlocked=!aiNames&&!!aiRoutesFailure;
+  // O que a autorização mostrou, para o servidor conferir antes de enviar: '' = o texto de sempre (só o padrão).
+  const aiDestination=aiNames&&(aiNames.document||aiNames.decision)?`${aiNames.document}|${aiNames.decision}`:'';
   const available = kind === 'project' ? createAllowed || permitted.length > 0 : permitted.length > 0;
   const contextDiffers = defaultProjectId !== undefined && defaultProjectId !== projectId;
   if (!available) return null;
@@ -78,21 +108,27 @@ export default function AssistedImportPanel({ kind, projects, projectTypes = [],
   }
   async function prepare() {
     if (busy || readingFile||prepareRequest.current) return;
-    if(useAi&&(!aiConsent||!destinationOrganization)){setError('Confira a organização e autorize explicitamente o envio do texto à IA.');return;}
+    if(useAi&&(!aiConsent||!destinationOrganization||!aiNames)){setError('Confira a organização e autorize explicitamente o envio do texto à IA.');return;}
     if (sourceMode === 'document' && !sourceFile && !content.trim()) { setError('Selecione um documento válido ou informe o conteúdo antes de preparar a prévia.'); return; }
     const epoch=++previewEpoch.current,controller=new AbortController();prepareRequest.current=controller;
     setBusy(true); setError(''); setConfirmed(false); operation.current = null;if(useAi)aiOperation.current??=crypto.randomUUID();
     try {
       let value: Record<string, unknown>;
       if (sourceMode === 'document' && sourceFile) {
-        const body = new FormData(); body.set('file', sourceFile); body.set('kind', kind); body.set('projectId', projectId); body.set('organizationId', projectId ? '' : organizationId); body.set('itemId', kind === 'asset' ? itemId : ''); body.set('sourceUrl', sourceUrl);body.set('useAi',String(useAi));body.set('aiConsent',String(aiConsent));body.set('aiOperationKey',aiOperation.current??'');
+        const body = new FormData(); body.set('file', sourceFile); body.set('kind', kind); body.set('projectId', projectId); body.set('organizationId', projectId ? '' : organizationId); body.set('itemId', kind === 'asset' ? itemId : ''); body.set('sourceUrl', sourceUrl);body.set('useAi',String(useAi));body.set('aiConsent',String(aiConsent));body.set('aiOperationKey',aiOperation.current??'');body.set('aiDestination',aiDestination);body.set('aiApproval',aiNames?.approval??'');
         if (sourceFile.name.toLowerCase().endsWith('.pdf')) { const { extractPdfText } = await import('./import-pdf-text'); const extracted = await extractPdfText(sourceFile); body.set('extractedText', extracted.text); body.set('pageCount', String(extracted.pageCount)); }
         value = await post(body, '/api/imports/document',controller.signal);
-      } else value = await post({ action: 'preview', kind, projectId, organizationId: projectId ? '' : organizationId, itemId: kind === 'asset' ? itemId : '', sourceMode, sourceUrl, format,useAi,aiConsent,aiOperationKey:aiOperation.current, content: sourceMode === 'manual' ? JSON.stringify(manual) : content },'/api/imports',controller.signal);
+      } else value = await post({ action: 'preview', kind, projectId, organizationId: projectId ? '' : organizationId, itemId: kind === 'asset' ? itemId : '', sourceMode, sourceUrl, format,useAi,aiConsent,aiOperationKey:aiOperation.current,aiDestination,aiApproval:aiNames?.approval, content: sourceMode === 'manual' ? JSON.stringify(manual) : content },'/api/imports',controller.signal);
       if(controller.signal.aborted||epoch!==previewEpoch.current)return;
       if (typeof value.reviewToken !== 'string' || !Array.isArray(value.candidates) || !value.candidates.length) throw new Error('A prévia não pôde ser confirmada.');
       const next = value as ImportPreview; setPreview(next); chooseCandidate(next, 0); setSaveOfficialUrl(!projectId && !!next.provenance.url);
-    } catch (error) {if(!controller.signal.aborted&&epoch===previewEpoch.current)setError(message(error)); } finally {if(epoch===previewEpoch.current){prepareRequest.current=null;setBusy(false);}}
+    } catch (error) {
+      if(!controller.signal.aborted&&epoch===previewEpoch.current){
+        setError(message(error));
+        // O modelo que recebe o texto mudou depois do aviso: mostra o destino de agora e pede a autorização de novo.
+        if((error as {code?:unknown}|null)?.code==='document_ai_destination'){aiOperation.current=null;setAiConsent(false);setAiRoutes(null);setAiRoutesFailed(null);setAiRoutesCheck(count=>count+1);}
+      }
+    } finally {if(epoch===previewEpoch.current){prepareRequest.current=null;setBusy(false);}}
   }
   async function apply() {
     if (!preview || !candidate || !confirmed || busy) return;
@@ -148,12 +184,12 @@ export default function AssistedImportPanel({ kind, projects, projectTypes = [],
             {sourceFile && /\.(?:pdf|docx)$/i.test(sourceFile.name) ? <p className="p-form-help">O texto será extraído para a prévia. PDF: até cinquenta páginas com texto selecionável. Revise e complete os campos que não forem identificados; imagens e documentos digitalizados não passam por OCR.</p> : <><label className="p-field"><span>Formato do texto</span><select value={format} onChange={event => { sourceEdited();setFormat(event.target.value); setSourceFile(null); }}><option value="text">Texto com campos identificados</option><option value="html">HTML salvo da consulta</option><option value="json">JSON</option><option value="csv">CSV / TSV</option></select></label><label className="p-field"><span>Conteúdo do documento</span><textarea rows={8} maxLength={IMPORT_TEXT_LIMIT} value={content} onChange={event => { sourceEdited();setContent(event.target.value); setSourceFile(null); }} placeholder={kind === 'project' ? 'Título: Projeto de demonstração\nÁrea temática: Comunicação\nUnidade proponente: PROEX' : 'Nome: Equipamento de demonstração\nTombamento: 000123\nMarca: Marca informada'}/></label></>}
             <label className="p-field"><span>Link de referência do documento · opcional</span><input type="url" maxLength={500} value={sourceUrl} onChange={event => {sourceEdited();setSourceUrl(event.target.value);}} placeholder="https://..."/></label>
           </>}
-          {sourceMode!=='manual'&&<div className="p-form" aria-label="Interpretação documental opcional"><label className={styles.confirm}><input type="checkbox" checked={useAi} disabled={!destinationOrganization} onChange={event=>{setUseAi(event.target.checked);setAiConsent(false);aiOperation.current=null;}}/>Usar IA para estruturar um cadastro deste documento</label><p className="p-form-help">Opcional e desativado inicialmente. A administração precisa habilitar documentos na configuração de IA da organização. O fluxo normal continua disponível.</p>{useAi&&<>{sourceFile&&/\.(?:pdf|docx)$/i.test(sourceFile.name)&&<button type="button" className="p-button p-button-subtle" onClick={()=>{setSourceFile(null);setFormat('text');setContent('');setAiConsent(false);aiOperation.current=null;}}>Usar um trecho textual em vez do arquivo</button>}<p className="p-form-help">Organização: <strong>{destinationOrganization?.name??'selecione o destino'}</strong>. Limite: 16 KiB de texto extraído, um cadastro por prévia.{sourceFile?` Arquivo selecionado: ${sourceFile.size.toLocaleString('pt-BR')} bytes; o texto extraído será conferido pelo servidor.`:` Texto informado: ${new TextEncoder().encode(content).byteLength.toLocaleString('pt-BR')} bytes antes da normalização.`} Documentos maiores precisam de um trecho menor; a fonte não será truncada silenciosamente.</p><label className={styles.confirm}><input type="checkbox" checked={aiConsent} onChange={event=>setAiConsent(event.target.checked)}/>Autorizo enviar o texto extraído desta fonte ao provedor de texto escolhido para esta organização (DeepSeek ou OpenAI) e ao Jev se habilitado. Conferirei os trechos, ausências e campos antes de salvar.</label></>}</div>}
+          {sourceMode!=='manual'&&<div className="p-form" aria-label="Interpretação documental opcional"><label className={styles.confirm}><input type="checkbox" checked={useAi} disabled={!destinationOrganization} onChange={event=>{setUseAi(event.target.checked);setAiConsent(false);aiOperation.current=null;}}/>Usar IA para estruturar um cadastro deste documento</label><p className="p-form-help">Opcional e desativado inicialmente. A administração precisa habilitar documentos na configuração de IA da organização. O fluxo normal continua disponível.</p>{useAi&&<>{sourceFile&&/\.(?:pdf|docx)$/i.test(sourceFile.name)&&<button type="button" className="p-button p-button-subtle" onClick={()=>{setSourceFile(null);setFormat('text');setContent('');setAiConsent(false);aiOperation.current=null;}}>Usar um trecho textual em vez do arquivo</button>}<p className="p-form-help">Organização: <strong>{destinationOrganization?.name??'selecione o destino'}</strong>. Limite: 16 KiB de texto extraído, um cadastro por prévia.{sourceFile?` Arquivo selecionado: ${sourceFile.size.toLocaleString('pt-BR')} bytes; o texto extraído será conferido pelo servidor.`:` Texto informado: ${new TextEncoder().encode(content).byteLength.toLocaleString('pt-BR')} bytes antes da normalização.`} Documentos maiores precisam de um trecho menor; a fonte não será truncada silenciosamente.</p>{aiRoutesBlocked?<p className="p-form-help" role="status">Não foi possível conferir qual serviço recebe o texto. <button type="button" className="p-button p-button-subtle" onClick={()=>{setAiRoutesFailed(null);setAiRoutesCheck(count=>count+1);}}>Tentar de novo</button></p>:<><p className="p-form-help">{aiNames&&<>Custo máximo estimado por documento: <strong>{formatMicros(aiNames.cost)}</strong>.</>}</p><label className={styles.confirm}><input type="checkbox" checked={aiConsent&&!aiRoutesLoading} disabled={aiRoutesLoading} onChange={event=>setAiConsent(event.target.checked)}/>{aiRoutesLoading?'Conferindo qual serviço recebe o texto…':<>{documentConsentText(aiNames?.document,aiNames?.decision,aiNames?.defaultText,aiNames?.decisionEnabled)} Conferirei os trechos, ausências e campos antes de salvar.</>}</label></>}</>}</div>}
           <p className="p-form-help">Use dados operacionais. Contatos, CPF, credenciais, contas e permissões não são importados. Cada documento admite até vinte registros, confirmados um por vez.</p>
           {kind === 'asset' && <p className="p-form-help">{itemId ? 'O bem existente receberá uma conferência com os dados selecionados e anexos. O cadastro e seu saldo permanecem como estão.' : 'O equipamento será cadastrado com saldo zero. Após a conferência física, registre a entrada em Materiais.'}</p>}
           {!validDestination && <p className="p-inline-error">Escolha um projeto disponível para sua conta antes de preparar a prévia.</p>}
           {readingFile && <p className="p-form-help" role="status">Lendo o documento selecionado…</p>}
-          <button type="button" className="p-button p-button-primary" disabled={busy || readingFile || !validDestination||useAi&&!aiConsent} onClick={() => void prepare()}>{busy || readingFile ? <LoaderCircle size={16} className="p-spin"/> : <FileInput size={16}/>} Preparar prévia</button>
+          <button type="button" className="p-button p-button-primary" disabled={busy || readingFile || !validDestination||useAi&&(!aiConsent||aiRoutesLoading||aiRoutesBlocked)} onClick={() => void prepare()}>{busy || readingFile ? <LoaderCircle size={16} className="p-spin"/> : <FileInput size={16}/>} Preparar prévia</button>
         </fieldset> : candidate && <>
           <div className={styles.source}><strong>{preview.provenance.label}</strong><span>Organização: {organizations.find(organization => organization.id === preview.organizationId)?.name ?? preview.organizationId}</span><span>Destino: {preview.projectId ? projects.find(project => project.id === preview.projectId)?.name ?? 'Projeto selecionado' : 'Novo projeto'}{preview.itemId ? ' · conferência de bem existente' : kind === 'asset' ? ' · novo equipamento individual' : ''}</span>{preview.provenance.url && <a className="p-text-link" href={preview.provenance.url} target="_blank" rel="noopener noreferrer">Abrir fonte</a>}<small>Consulta: {new Date(preview.provenance.retrievedAt).toLocaleString('pt-BR')} · confirmação válida por 15 minutos</small></div>
           {preview.provenance.ai&&<p className="p-form-help" role="status">Interpretação: {preview.provenance.ai.model} · configuração {preview.provenance.ai.configRevision}. Trechos literais foram comparados com o texto normalizado enviado. Ausências permanecem vazias; confiança numérica não está disponível. Fonte e campos ainda precisam de sua conferência.</p>}

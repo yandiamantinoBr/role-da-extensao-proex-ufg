@@ -65,3 +65,11 @@ test('doca: páginas sem doca (voluntário, convite, convocação pública, logi
   assert.deepEqual(users, ['app/portal-client.tsx'], 'só o portal autenticado monta a doca');
   assert.match(read('app/portal-client.tsx'), /module\.id === 'community'\) && <FloatingDock /, 'a doca só monta para quem tem a Comunidade');
 });
+
+
+test('Rolê pode receber Escape com o estado ainda carregando', () => {
+  const role = read('components/portal/role-assistant.tsx');
+  assert.match(role, /ref=\{dialog\}[^>]+tabIndex=\{-1\}/);
+  assert.match(role, /\(input\.current \?\? panel\)\.focus/);
+  assert.match(role, /\[open, status\?\.available\]/);
+});

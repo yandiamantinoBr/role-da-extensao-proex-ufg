@@ -262,3 +262,27 @@ Motivo: às 13h o Yan perguntou "quantos brindes, super brindes e super super br
 - **Aviso na prévia:** antes de confirmar, o cartão diz que o histórico vai mostrar o pedido e que a equipe do projeto pode ver.
 - **Quem vê:** quem já pode abrir o detalhe daquele movimento. Nada novo é exposto a outro projeto.
 - **Não faz:** movimentos antigos não ganham resumo; o painel de administração do assistente não envia o pedido na confirmação, então os registros feitos por lá ficam só com a marca.
+
+## Modelo por tarefa: documento, conferência e voz · 11/11/2026
+
+- **O que é:** a administração geral pode escolher um modelo da aba Modelos para três tarefas: ler documentos, conferir e triar, e transcrever voz. Fica em Configurações → Chaves e modelos → Funções e acesso → "Outras funções com IA".
+- **Sem escolha, nada muda:** as três chaves (`documentModel`, `decisionModel`, `speechModel`) nascem vazias. Vazio quer dizer "padrão do portal": mesmas chamadas e mesma reserva de admissão. Um teste compara as chamadas e os custos com valores fixos tirados do código anterior (`tests/task-routing.test.mjs`, teste "a").
+  - As chaves vazias não são gravadas no banco, para a versão anterior continuar lendo a configuração se for preciso voltar.
+- **Quem escolhe:** só a administração geral. Quem configura a IA da organização sem ser administração geral salva o resto e as três escolhas ficam como estavam.
+  - O modelo precisa existir, estar ligado, ter preço, servir para a tarefa e ter a chave do serviço salva. A regra é `fitsTask` (`lib/assistant/model-catalog.ts`).
+  - Conferência e triagem só aceitam serviços no formato de conferência (JEV).
+- **Quando o modelo escolhido não responde** (`lib/assistant/task-routing.ts`):
+  - Antes do envio (sem chave, desligado, removido): o pedido segue pelo padrão do portal.
+  - No Worker/Sites, um endereço fora dos endpoints fixos é recusado antes da reserva e de qualquer envio da tarefa. Na Vercel/Node, a conexão ao destino escolhido usa a validação DNS e HTTPS do catálogo. Uma recusa de DNS no momento da chamada encerra o pedido sem transmitir dados ao endereço recusado.
+  - Depois do envio, qualquer erro HTTP, falha de rede, tempo esgotado ou resposta inválida encerra o pedido. Um proxy pode devolver 429 após encaminhar. A reserva fica na cota e a interface apresenta o erro.
+  - Conferência e triagem do catálogo só aceitam a identidade exata do modelo configurado. O TypeSafe fixo mantém sua validação anterior.
+  - O motivo fica no histórico da administração como "Aviso de IA" ("O modelo escolhido para … não respondeu"), no máximo uma vez por dia para o mesmo modelo e motivo.
+- **Custo:** a reserva usa o maior preço entre o modelo escolhido e o padrão; o acerto usa o preço de quem respondeu.
+  - Voz: preço por hora do modelo, com mínimo de 10 s. A tela mostra o mesmo teto que o servidor reserva (`speechRouteCeilingMicros`).
+  - Triagem: a tela mostra a reserva que o servidor informa.
+  - Leitura de documento: a confirmação mostra o teto por documento. O uso confirmado em resposta válida é acertado na mesma transação do resultado, uma vez por envio. Falhas sem informação confiável conservam a reserva. A cota de chamadas conta as etapas reservadas (leitura, conferência e voz), e cada etapa faz no máximo uma requisição de inferência.
+- **Autorização nomeia o destino real:** com modelo escolhido, os avisos de voz, triagem, importação e gravação com prévia nomeiam quem recebe o conteúdo.
+  - A confirmação traz uma impressão digital da configuração escolhida, sem chave ou endereço no estado público. A versão do modelo, destino e preço fazem parte dela. Se os dados da confirmação mudarem, o servidor responde 409 antes da reserva. O catálogo também é conferido na transação de admissão e antes da transmissão: `speech_provider_changed`, `triage_destination`, `document_ai_destination`, `assistant_destination`.
+- **Histórico:** a troca aparece com antes e depois e com o nome do modelo ("Modelo para transcrever voz: padrão do portal → …"), só para quem configura a IA da organização.
+- **Não verificado:** nenhum serviço real foi chamado com modelo escolhido. O primeiro teste de cada serviço depende de chave e gasto autorizados pelo Yan. Não se sabe se Perplexity e Nace respondem no formato JEV, nem se os serviços compatíveis com OpenAI aceitam o áudio no mesmo formato da Groq.
+- **Fica para depois:** publicar na base atual e conferir o fluxo pelo navegador, com o mesmo modelo em cada confirmação e dados fictícios.

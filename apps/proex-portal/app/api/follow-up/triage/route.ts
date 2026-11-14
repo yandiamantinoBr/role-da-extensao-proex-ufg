@@ -4,7 +4,7 @@ import { getPortalUser } from '@/lib/session';
 import { boundedJson } from '@/lib/http';
 import { HttpError, publicError } from '@/lib/errors';
 import { actorRequired } from '@/lib/follow-up/scope';
-import { applyTaskTriage, prepareTaskTriage, taskTriageAvailable } from '@/lib/follow-up/triage';
+import { applyTaskTriage, prepareTaskTriage, taskTriageState } from '@/lib/follow-up/triage';
 
 export const dynamic='force-dynamic';
 const headers={'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'};
@@ -17,9 +17,11 @@ export async function GET(request:Request) {
  try {
   const db=database(), actor=await getActor(db,await getPortalUser());
   actorRequired(actor);
-  const enabled=taskTriageEnabled() && Boolean(inviteSecret()) &&
-   await taskTriageAvailable(db,actor,new URL(request.url).searchParams.get('id'));
-  return Response.json({enabled},{headers});
+  // Sem modelo de decisão escolhido a resposta é só {enabled}; com ele, vem também a reserva máxima (reserveUsdMicros).
+  const secret=inviteSecret();
+  const state=taskTriageEnabled() && secret
+   ? await taskTriageState(db,actor,new URL(request.url).searchParams.get('id'),secret,assistantCredentialKeys()) : {enabled:false};
+  return Response.json(state,{headers});
  } catch(error) {return failure(error);}
 }
 export async function POST(request:Request) {
