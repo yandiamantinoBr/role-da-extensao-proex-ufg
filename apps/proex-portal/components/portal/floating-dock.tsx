@@ -1,6 +1,7 @@
 'use client';
 import { lazy, Suspense, useCallback, useEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
-import { AlarmClock, CalendarDays, ChevronUp, LayoutGrid, ListChecks, LoaderCircle, Minus, Pin, Settings2, StickyNote, X, type LucideIcon } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { AlarmClock, ArrowLeft, CalendarDays, ChevronUp, LayoutGrid, ListChecks, LoaderCircle, Minus, Pin, Settings2, StickyNote, X, type LucideIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { communityGet, communityPost, errorText } from './community-api';
 import type { ModuleId, PortalModule } from './navigation-model';
@@ -38,6 +39,20 @@ export function useDockItem(item: DockItem | null): { registered: boolean; hidde
 /* ── Widgets: each one is its own chunk, fetched only when its panel opens. ── */
 type WidgetId = 'notes' | 'reminders' | 'calendar' | 'demands' | 'shortcuts';
 type Dock = { enabled: WidgetId[]; open: WidgetId | 'gallery' | null; minimized: boolean; hidden: string[] };
+type MobileView = NonNullable<Dock['open']> | 'launchers' | null;
+const mobileWidth = '(max-width: 720px)';
+function subscribeToToolbar(listener: () => void) {
+  const media = window.matchMedia(mobileWidth);
+  media.addEventListener('change', listener);
+  return () => media.removeEventListener('change', listener);
+}
+function mobileToolbar() {
+  return window.matchMedia(mobileWidth).matches ? document.querySelector('.pn-shell .p-topbar-actions') : null;
+}
+const desktopToolbar = () => null;
+export function useMobileDockToolbar() {
+  return useSyncExternalStore(subscribeToToolbar, mobileToolbar, desktopToolbar);
+}
 const NotesWidget = lazy(() => import('./dock-personal').then(module => ({ default: module.NotesWidget })));
 const RemindersWidget = lazy(() => import('./dock-personal').then(module => ({ default: module.RemindersWidget })));
 const CalendarWidget = lazy(() => import('./dock-calendar'));
@@ -55,8 +70,11 @@ type Props = { userId: string; serverDay: string; modules: PortalModule[]; pinne
 /** Floating dock on every page: small launchers in the corner, one suspended panel at a time, state kept per person. */
 export default function FloatingDock({ userId, serverDay, modules, pinned, onNavigate }: Props) {
   const id = useId(), state = useSyncExternalStore(subscribe, read, read);
+  const toolbar = useMobileDockToolbar();
   const [dock, setDock] = useState<Dock | null>(null), [badges, setBadges] = useState({ reminders: 0 }), [expanded, setExpanded] = useState(false);
+  const [mobileView, setMobileView] = useState<MobileView>(null);
   const launchers = useRef<Record<string, HTMLButtonElement | null>>({}), panel = useRef<HTMLElement>(null), saveTimer = useRef(0), pendingSave = useRef<Dock | null>(null);
+  const mobileDialog = useRef<HTMLDialogElement>(null), mobileHeading = useRef<HTMLHeadingElement>(null), mobileTrigger = useRef<HTMLButtonElement>(null);
   useEffect(() => { registry.mounted = true; publish(); return () => { registry.mounted = false; publish(); }; }, []);
   useEffect(() => {
     let live = true;
@@ -80,8 +98,22 @@ export default function FloatingDock({ userId, serverDay, modules, pinned, onNav
     saveTimer.current = window.setTimeout(flush, immediate ? 0 : 1200);
   }, [flush]);
   const close = useCallback((returnTo?: string) => { update(current => ({ ...current, open: null, minimized: false })); if (returnTo) window.requestAnimationFrame(() => launchers.current[returnTo]?.focus()); }, [update]);
+  const closeMobile = useCallback(() => {
+    mobileDialog.current?.close();
+    setMobileView(null);
+  }, []);
+  const roleReady = state.items.some(item => item.shortcut === 'Alt+R');
   useEffect(() => {
-    if (!dock?.open && !expanded) return;
+    if (!mobileView || !roleReady) return;
+    // Close the native sheet before the assistant's shortcut opens its panel.
+    const onKey = (event: KeyboardEvent) => {
+      if (event.altKey && !event.ctrlKey && !event.metaKey && event.key.toLowerCase() === 'r') closeMobile();
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [mobileView, roleReady, closeMobile]);
+  useEffect(() => {
+    if (toolbar || (!dock?.open && !expanded)) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape' || event.defaultPrevented || !(panel.current?.contains(document.activeElement) || Object.values(launchers.current).includes(document.activeElement as HTMLButtonElement))) return;
       event.preventDefault();
@@ -89,8 +121,30 @@ export default function FloatingDock({ userId, serverDay, modules, pinned, onNav
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [dock?.open, expanded, close]);
-  useEffect(() => { if (dock?.open && !dock.minimized) window.requestAnimationFrame(() => panel.current?.querySelector<HTMLElement>('[data-autofocus], button, input, textarea, select, a[href]')?.focus()); }, [dock?.open, dock?.minimized]);
+  }, [dock?.open, expanded, close, toolbar]);
+  useEffect(() => { if (!toolbar && dock?.open && !dock.minimized) window.requestAnimationFrame(() => panel.current?.querySelector<HTMLElement>('[data-autofocus], button, input, textarea, select, a[href]')?.focus()); }, [dock?.open, dock?.minimized, toolbar]);
+  const mobileOpen = !!toolbar && mobileView !== null;
+  useEffect(() => {
+    const sheet = mobileDialog.current;
+    if (!mobileOpen || !sheet) return;
+    sheet.showModal();
+    return () => { if (sheet.open) sheet.close(); };
+  }, [mobileOpen]);
+  useEffect(() => { if (mobileOpen) mobileHeading.current?.focus({ preventScroll: true }); }, [mobileView, mobileOpen]);
+  useEffect(() => {
+    const media = window.matchMedia(mobileWidth);
+    const reset = () => {
+      const focus = document.activeElement;
+      if (mobileDialog.current?.contains(focus) || focus === mobileTrigger.current || root.current?.contains(focus)) {
+        mobileDialog.current?.close();
+        document.getElementById('main')?.focus({ preventScroll: true });
+      }
+      setMobileView(null);
+      setExpanded(false);
+    };
+    media.addEventListener('change', reset);
+    return () => media.removeEventListener('change', reset);
+  }, []);
   // The page keeps room at its end for the dock's resting parts, measured from the screen, so buttons at the
   // end of any page stay clear of it (Rolê, Widgets, a minimized chip, phone bar and safe area included).
   const root = useRef<HTMLDivElement>(null);
@@ -100,7 +154,7 @@ export default function FloatingDock({ userId, serverDay, modules, pinned, onNav
     const reserve = dockReserve(window.innerHeight, [...node.querySelectorAll<HTMLElement>('[data-dock-anchor]')].map(part => part.getBoundingClientRect()).filter(rect => rect.height > 0).map(rect => rect.top));
     if (reserve !== null) document.documentElement.style.setProperty(DOCK_RESERVE_PROPERTY, `${reserve}px`);
   }, []);
-  const shown = dock !== null;
+  const shown = dock !== null && !toolbar;
   useEffect(() => {
     if (!shown) return;
     const html = document.documentElement, observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measure);
@@ -116,24 +170,52 @@ export default function FloatingDock({ userId, serverDay, modules, pinned, onNav
   const openWidget = dock.open && dock.open !== 'gallery' ? WIDGETS.find(widget => widget.id === dock.open) : null;
   const panelTitle = dock.open === 'gallery' ? 'Meu espaço' : openWidget?.label ?? '';
   const pinnedModules = pinned.map(moduleId => modules.find(module => module.id === moduleId)).filter((module): module is PortalModule => !!module);
-  return <div ref={root} className={styles.dock} data-open={dock.open && !dock.minimized ? 'true' : undefined} data-has-role={items.length > 0 || undefined}>
-    {dock.open && !dock.minimized && <div className={styles.scrim} aria-hidden="true" onClick={() => close(dock.open ?? undefined)}/>}
+  const reminderBadge = active.some(widget => widget.id === 'reminders') ? badges.reminders : 0;
+  const widgetLabel = `Widgets${reminderBadge ? `, ${reminderBadge} ${reminderBadge === 1 ? 'lembrete' : 'lembretes'} para hoje` : ''}`;
+  const gallery = <Gallery dock={dock} items={state.items} onChange={next => update(() => next, true)}/>;
+  function widgetBody(target: Dock['open']) {
+    if (target === 'gallery') return gallery;
+    return <Suspense fallback={<p className={styles.loading}><LoaderCircle className="p-spin" size={16}/>Abrindo…</p>}>
+      {target === 'notes' && <NotesWidget/>}
+      {target === 'reminders' && <RemindersWidget serverDay={serverDay} onBadge={count => setBadges(current => ({ ...current, reminders: count }))}/>}
+      {target === 'calendar' && <CalendarWidget serverDay={serverDay} onOpenCalendar={() => { if (toolbar) closeMobile(); onNavigate('calendar'); }}/>}
+      {target === 'demands' && <DemandsWidget serverDay={serverDay}/>}
+      {target === 'shortcuts' && <Shortcuts modules={pinnedModules} onNavigate={target => { if (toolbar) closeMobile(); else close(); onNavigate(target); }}/>}
+    </Suspense>;
+  }
+  if (toolbar) {
+    const viewingList = mobileView === 'launchers';
+    const title = viewingList ? 'Widgets' : mobileView === 'gallery' ? 'Meu espaço' : WIDGETS.find(widget => widget.id === mobileView)?.label;
+    return <>
+      {createPortal(<button ref={mobileTrigger} type="button" className={styles.mobileTrigger} data-dock-toggle aria-label={widgetLabel} title="Widgets" aria-haspopup="dialog" aria-expanded={mobileOpen} onClick={event => { event.currentTarget.focus({ preventScroll: true }); setMobileView('launchers'); }}>
+        <LayoutGrid size={19} aria-hidden="true"/>{reminderBadge > 0 && <span className={styles.badge} aria-hidden="true">{reminderBadge > 9 ? '9+' : reminderBadge}</span>}
+      </button>, toolbar)}
+      {mobileOpen && <dialog ref={mobileDialog} className={styles.mobileDialog} aria-labelledby={`${id}-mobile-title`} onCancel={event => { event.preventDefault(); closeMobile(); }} onClick={event => { if (event.target === event.currentTarget) closeMobile(); }}>
+        <div className={styles.mobileSheet}>
+          <header className={styles.panelHead}>
+            <h2 id={`${id}-mobile-title`} ref={mobileHeading} tabIndex={-1}>{title}</h2>
+            {!viewingList && <button type="button" className={styles.headButton} aria-label="Voltar aos widgets" onClick={() => setMobileView('launchers')}><ArrowLeft size={18} aria-hidden="true"/></button>}
+            <button type="button" className={styles.headButton} aria-label="Fechar painel de widgets" onClick={closeMobile}><X size={18} aria-hidden="true"/></button>
+          </header>
+          <div className={styles.panelBody} key={mobileView}>{viewingList ? <ul className={styles.shortcuts}>
+            {items.map(item => <li key={item.id}><button type="button" aria-haspopup="dialog" aria-keyshortcuts={item.shortcut} onClick={() => { closeMobile(); item.onOpen(); }}>
+              {item.icon}<span><strong>{item.label}</strong>{item.id === 'role' && <small>Assistente da PROEX</small>}</span>
+            </button></li>)}
+            {active.map(({ id: widgetId, label, description, icon: Icon }) => <li key={widgetId}><button type="button" onClick={() => setMobileView(widgetId)}><Icon size={18} aria-hidden="true"/><span><strong>{label}</strong><small>{description}</small></span></button></li>)}
+            <li><button type="button" onClick={() => setMobileView('gallery')}><Settings2 size={18} aria-hidden="true"/><span><strong>Meu espaço</strong><small>Escolher os widgets</small></span></button></li>
+          </ul> : widgetBody(mobileView)}</div>
+        </div>
+      </dialog>}
+    </>;
+  }
+  return <div ref={root} className={styles.dock}>
     {dock.open && <section ref={panel} id={`${id}-panel`} className={styles.panel} data-minimized={dock.minimized || undefined} data-dock-anchor={dock.minimized || undefined} role="dialog" aria-modal="false" aria-labelledby={`${id}-title`}>
       <header className={styles.panelHead}>
         <h2 id={`${id}-title`}>{panelTitle}</h2>
         <button type="button" className={styles.headButton} aria-label={dock.minimized ? `Expandir ${panelTitle}` : `Minimizar ${panelTitle}`} aria-expanded={!dock.minimized} onClick={() => { if (!dock.minimized) setExpanded(false); update(current => ({ ...current, minimized: !current.minimized })); }}>{dock.minimized ? <ChevronUp size={18}/> : <Minus size={18}/>}</button>
         <button type="button" className={styles.headButton} aria-label={`Fechar ${panelTitle}`} onClick={() => close(dock.open ?? undefined)}><X size={18}/></button>
       </header>
-      {!dock.minimized && <div className={styles.panelBody}>
-        {dock.open === 'gallery' ? <Gallery dock={dock} items={state.items} onChange={next => update(() => next, true)}/>
-          : <Suspense fallback={<p className={styles.loading}><LoaderCircle className="p-spin" size={16}/>Abrindo…</p>}>
-            {dock.open === 'notes' && <NotesWidget/>}
-            {dock.open === 'reminders' && <RemindersWidget serverDay={serverDay} onBadge={count => setBadges(current => ({ ...current, reminders: count }))}/>}
-            {dock.open === 'calendar' && <CalendarWidget serverDay={serverDay} onOpenCalendar={() => onNavigate('calendar')}/>}
-            {dock.open === 'demands' && <DemandsWidget serverDay={serverDay}/>}
-            {dock.open === 'shortcuts' && <Shortcuts modules={pinnedModules} onNavigate={target => { onNavigate(target); close(); }}/>}
-          </Suspense>}
-      </div>}
+      {!dock.minimized && <div className={styles.panelBody}>{widgetBody(dock.open)}</div>}
     </section>}
     <nav className={styles.launchers} aria-label="Widgets" data-expanded={expanded || undefined}>
       {expanded && <div id={`${id}-stack`} className={styles.stack}>
@@ -142,11 +224,11 @@ export default function FloatingDock({ userId, serverDay, modules, pinned, onNav
         </button></div>; })}
         <div className={styles.stackItem}><span className={styles.stackLabel} aria-hidden="true">Meu espaço</span><button ref={node => { launchers.current.gallery = node; }} type="button" className={`${styles.launcher} ${styles.galleryLauncher}`} aria-label="Meu espaço: escolher widgets" aria-expanded={dock.open === 'gallery'} aria-controls={dock.open === 'gallery' ? `${id}-panel` : undefined} data-active={dock.open === 'gallery' || undefined} onClick={() => toggle('gallery')}><Settings2 size={18}/></button></div>
       </div>}
-      {items.map(item => <button key={item.id} type="button" className={`${styles.launcher} ${styles.itemLauncher}`} data-dock-anchor aria-label={`${item.label}${item.shortcut ? ` (${item.shortcut})` : ''}`} title={item.label} onClick={() => item.onOpen()}>
+      {items.map(item => <button key={item.id} type="button" className={`${styles.launcher} ${styles.itemLauncher}`} data-dock-anchor aria-label={item.label} aria-haspopup="dialog" aria-keyshortcuts={item.shortcut} title={item.label} onClick={event => { setExpanded(false); event.currentTarget.focus({ preventScroll: true }); item.onOpen(); }}>
         {item.icon}{item.badge ? <span className={styles.badge} aria-hidden="true">{item.badge > 9 ? '9+' : item.badge}</span> : null}
       </button>)}
-      <button ref={node => { launchers.current.toggle = node; }} type="button" className={`${styles.launcher} ${styles.toggleLauncher}`} data-dock-anchor aria-label={expanded ? 'Recolher widgets' : `Widgets${badges.reminders && active.some(widget => widget.id === 'reminders') ? `, ${badges.reminders} lembretes para hoje` : ''}`} title="Widgets" aria-expanded={expanded} aria-controls={expanded ? `${id}-stack` : undefined} data-active={expanded || undefined} onClick={() => setExpanded(value => !value)}>
-        {expanded ? <X size={20}/> : <LayoutGrid size={20}/>}{!expanded && badges.reminders > 0 && active.some(widget => widget.id === 'reminders') && <span className={styles.badge} aria-hidden="true">{badges.reminders > 9 ? '9+' : badges.reminders}</span>}
+      <button ref={node => { launchers.current.toggle = node; }} type="button" className={`${styles.launcher} ${styles.toggleLauncher}`} data-dock-anchor data-dock-toggle aria-label={expanded ? 'Recolher widgets' : widgetLabel} title="Widgets" aria-expanded={expanded} aria-controls={expanded ? `${id}-stack` : undefined} data-active={expanded || undefined} onClick={() => setExpanded(value => !value)}>
+        {expanded ? <X size={20}/> : <LayoutGrid size={20}/>}{!expanded && reminderBadge > 0 && <span className={styles.badge} aria-hidden="true">{reminderBadge > 9 ? '9+' : reminderBadge}</span>}
       </button>
     </nav>
   </div>;
@@ -154,14 +236,14 @@ export default function FloatingDock({ userId, serverDay, modules, pinned, onNav
 
 function Gallery({ dock, items, onChange }: { dock: Dock; items: DockItem[]; onChange(next: Dock): void }) {
   return <div className={styles.gallery}>
-    <p className={styles.help}>Ligue só o que ajuda no seu dia. Os widgets ficam no canto, em todas as páginas, e abrem por cima do conteúdo.</p>
+    <p className={styles.help}>Escolha os atalhos que quer abrir em Widgets.</p>
     <ul>{WIDGETS.map(widget => { const Icon = widget.icon, on = dock.enabled.includes(widget.id); return <li key={widget.id}><label className={styles.toggle}>
       <input type="checkbox" name={`dock-${widget.id}`} checked={on} onChange={event => onChange({ ...dock, enabled: event.target.checked ? [...dock.enabled, widget.id] : dock.enabled.filter(item => item !== widget.id), open: !event.target.checked && dock.open === widget.id ? null : dock.open })}/>
       <span className={styles.toggleIcon} aria-hidden="true"><Icon size={18}/></span><span><strong>{widget.label}</strong><small>{widget.description}</small></span>
     </label></li>; })}
     {items.map(item => { const shown = !dock.hidden.includes(item.id); return <li key={item.id}><label className={styles.toggle}>
       <input type="checkbox" name={`dock-item-${item.id}`} checked={shown} onChange={event => onChange({ ...dock, hidden: event.target.checked ? dock.hidden.filter(hidden => hidden !== item.id) : [...dock.hidden, item.id] })}/>
-      <span className={styles.toggleIcon} aria-hidden="true">{item.icon}</span><span><strong>{item.label}</strong><small>Mostrar o botão {item.label === 'Rolê' ? 'do Rolê' : `de ${item.label}`} no canto.{item.shortcut ? ` Atalho ${item.shortcut} continua valendo.` : ''}</small></span>
+      <span className={styles.toggleIcon} aria-hidden="true">{item.icon}</span><span><strong>{item.label}</strong><small>Mostrar em Widgets.{item.shortcut ? ` Atalho ${item.shortcut} continua valendo.` : ''}</small></span>
     </label></li>; })}</ul>
   </div>;
 }
