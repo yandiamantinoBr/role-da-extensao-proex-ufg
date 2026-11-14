@@ -165,6 +165,92 @@ async function seed(api, setupToken) {
   return { projectId, campaignId: campaign.id, loanId: loan.id, recordId: record.id };
 }
 
+// Separate clients model a fresh browser, a signed-in manager and a volunteer.
+// All writes use the same disposable fixture and the loopback-only client.
+async function invitationSmoke(owner, fixture) {
+  const fresh = localClient();
+  const client = localClient();
+  const email = 'equipe.qa@example.test';
+  const volunteerEmail = 'voluntaria.qa@example.test';
+  const other = ok(await owner('/api/portal', {
+    action: 'project.create', operationKey: randomUUID(), name: 'Projeto fora do convite QA',
+    status: 'active', scope: 'internal',
+  }), 'Segundo projeto QA');
+  const issue = async input => {
+    const invite = ok(await owner('/api/portal', {
+      action: 'invite.create', operationKey: randomUUID(), projectId: fixture.projectId, ...input,
+    }), 'Emissão de convite QA');
+    const link = new URL(invite.inviteUrl);
+    assert.equal(link.origin, QA_ORIGIN);
+    assert.equal(link.pathname, '/convite');
+    const token = link.searchParams.get('token') ?? new URLSearchParams(link.hash.slice(1)).get('token');
+    assert.match(token ?? '', /^[A-Za-z0-9_-]{43}$/);
+    return { id: invite.id, token, expiresAt: invite.expiresAt };
+  };
+  const startedAt = Date.now();
+  const invite = await issue({ email, role: 'viewer' });
+  const duration = Date.parse(invite.expiresAt) - startedAt;
+  assert.ok(duration >= 7 * 86400000 && duration < 7 * 86400000 + 15000, 'convite comum deve valer sete dias');
+  assert.equal((await fresh('/api/portal')).status, 401);
+  const publicPage = await fresh('/convite', undefined, false, true);
+  assert.equal(publicPage.status, 200);
+  const publicHtml = publicPage.value.toString('utf8');
+  assert.ok(publicHtml.includes('og:image') && publicHtml.includes('/convite-proex.png'), 'prévia institucional disponível');
+  assert.ok(!publicHtml.includes(invite.token) && !publicHtml.includes(email), 'prévia genérica sem dados da pessoa');
+  const legacyPage = await fresh(`/convite?token=${encodeURIComponent(invite.token)}`, undefined, false, true);
+  assert.equal(legacyPage.status, 307, 'link antigo deve passar pelo redirecionamento antes de chegar ao HTML');
+  assert.match(String(legacyPage.headers['cache-control']), /private.*no-store/i);
+  assert.equal(legacyPage.headers['referrer-policy'], 'no-referrer');
+  const location = new URL(legacyPage.headers.location, QA_ORIGIN);
+  assert.equal(location.origin, QA_ORIGIN);
+  assert.equal(location.pathname, '/convite');
+  assert.equal(location.search, '');
+  assert.ok(new URLSearchParams(location.hash.slice(1)).get('token') === invite.token, 'redirecionamento preserva o código somente no fragmento');
+  assert.ok(!legacyPage.value.toString('utf8').includes(invite.token), 'resposta anterior à renderização não deve expor código no corpo');
+  const bodyDetails = await fresh('/api/account', { action: 'inspectInvite', token: invite.token }, false);
+  assert.equal(ok(bodyDetails, 'Consulta de convite sem segredo na URL').email, email);
+  assert.match(String(bodyDetails.headers['cache-control']), /private.*no-store/i);
+  const details = ok(await client(`/api/account?token=${encodeURIComponent(invite.token)}`), 'Consulta de link legado');
+  assert.equal(details.email, email);
+  assert.equal(details.accepted, false);
+  const activated = await client('/api/account', {
+    action: 'activateInvite', token: invite.token, password: QA_TEST_PASSWORD, name: 'Pessoa fictícia QA',
+  });
+  ok(activated, 'Ativação convidada');
+  assert.ok(activated.headers['set-cookie']?.some(row => /HttpOnly/i.test(row) && /Max-Age=604800(?:;|$)/i.test(row)), 'sessão local HttpOnly com sete dias');
+  const account = ok(await client('/api/account'), 'Sessão após ativar');
+  assert.equal(account.user.email, email);
+  const snapshot = ok(await client('/api/portal'), 'Releitura com sessão ativada');
+  assert.ok(snapshot.projects.some(project => project.id === fixture.projectId));
+  assert.ok(!snapshot.projects.some(project => project.id === other.id));
+  const escalation = await client('/api/portal', {
+    action: 'invite.create', operationKey: randomUUID(), projectId: fixture.projectId,
+    email: 'elevacao.qa@example.test', role: 'manager',
+  });
+  assert.equal(escalation.status, 403, 'convite de consulta não pode delegar acesso');
+  assert.equal((await client('/api/account', { action: 'logout' })).status, 200);
+  assert.equal((await client('/api/portal')).status, 401);
+  ok(await client('/api/account', { action: 'login', identifier: email, password: QA_TEST_PASSWORD }), 'Novo login com a conta persistida');
+  assert.equal(ok(await client('/api/account'), 'Releitura da identidade persistida').user.userId, account.user.userId);
+
+  const endsAt = new Date(Date.now() + 2 * 3600000).toISOString();
+  const volunteer = await issue({ email: volunteerEmail, role: 'operator', campaignId: fixture.campaignId, endsAt });
+  assert.equal(volunteer.expiresAt, endsAt, 'convite de voluntário não pode sobreviver ao acesso');
+  ok(await fresh('/api/account', {
+    action: 'activateInvite', token: volunteer.token, password: QA_TEST_PASSWORD, name: 'Voluntária fictícia QA',
+  }), 'Ativação voluntária');
+  const restricted = ok(await fresh('/api/portal'), 'Painel de voluntário');
+  assert.deepEqual(restricted.volunteerAccess.map(row => row.campaign_id), [fixture.campaignId]);
+  assert.ok(!restricted.projects?.some(project => project.id === other.id));
+
+  const revoked = await issue({ email: 'revogado.qa@example.test', role: 'viewer' });
+  ok(await owner('/api/portal', { action: 'invite.revoke', id: revoked.id }), 'Revogação local');
+  assert.equal((await localClient()('/api/account', {
+    action: 'activateInvite', token: revoked.token, password: QA_TEST_PASSWORD, name: 'Pessoa revogada QA',
+  })).status, 410, 'link revogado não cria sessão');
+  console.log('Convites QA: ativação, sessão de sete dias, sair/entrar, escopo do projeto, voluntário com prazo e revogação aprovados.');
+}
+
 async function benchmark(api, fixture) {
   for (const [label, path, authenticated] of [['evento_publico', `/api/events/${encodeURIComponent(fixture.campaignId)}`, false], ['painel_autenticado', '/api/portal', true]]) {
     for (let index = 0; index < 3; index++) ok(await api(path, undefined, authenticated), `Aquecimento ${label}`);
@@ -296,6 +382,7 @@ async function run(options) {
     if (options.benchmark) await benchmark(api, fixture);
     if (options.syncSmoke) await syncSmoke(api, directory, redact);
     if (options.backupSmoke) await backupSmoke(api, directory, child);
+    if (options.inviteSmoke) await invitationSmoke(api, fixture);
     console.log('Smoke autenticado concluído: servidor → API → dados → relatório.');
     if (!options.smoke) {
       console.log('Servidor mantido para revisão no navegador. Digite parar ou Ctrl+C para encerrar somente este QA e limpar sua pasta temporária.');
@@ -314,11 +401,11 @@ async function main() {
   const args = process.argv.slice(2);
   if (args.length === 1 && args[0] === '--serve') return serve();
   if (args.includes('--help')) {
-    console.log('Uso: node scripts/qa-local.mjs [--smoke] [--sync-smoke] [--backup-smoke] [--benchmark] [--credential-vault]\nRequer build:node atual e porta 5173 livre. Sem --smoke, mantém o QA aberto para o navegador.\nHost fixo 127.0.0.1; não aceita URL/host remoto. Não lê .env/.dev.vars, não instala dependências e não acessa a planilha/Drive reais.');
+    console.log('Uso: node scripts/qa-local.mjs [--smoke] [--invite-smoke] [--sync-smoke] [--backup-smoke] [--benchmark] [--credential-vault]\nRequer build:node atual e porta 5173 livre. Sem --smoke, mantém o QA aberto para o navegador.\nHost fixo 127.0.0.1; não aceita URL/host remoto. Não lê .env/.dev.vars, não instala dependências e não acessa a planilha/Drive reais.');
     return;
   }
-  if (args.some(arg => !['--smoke', '--sync-smoke', '--backup-smoke', '--benchmark', '--credential-vault'].includes(arg))) throw new Error('Opção desconhecida; use --help. Host/URL remoto não são aceitos.');
-  await run({ smoke: args.includes('--smoke'), syncSmoke: args.includes('--sync-smoke'), backupSmoke: args.includes('--backup-smoke'), benchmark: args.includes('--benchmark'), credentialVault: args.includes('--credential-vault') });
+  if (args.some(arg => !['--smoke', '--invite-smoke', '--sync-smoke', '--backup-smoke', '--benchmark', '--credential-vault'].includes(arg))) throw new Error('Opção desconhecida; use --help. Host/URL remoto não são aceitos.');
+  await run({ smoke: args.includes('--smoke'), inviteSmoke: args.includes('--invite-smoke'), syncSmoke: args.includes('--sync-smoke'), backupSmoke: args.includes('--backup-smoke'), benchmark: args.includes('--benchmark'), credentialVault: args.includes('--credential-vault') });
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === scriptPath) {

@@ -1,5 +1,7 @@
 # Continuar Portal PROEX
 
+Comece pela [Retomada de 13/11](RETOMADA-13NOV-PORTAL-PROEX.md) para conferir a base publicada, a ordem das PRs pendentes, o padrão visual e o roteiro de convite. As seções abaixo registram entregas anteriores.
+
 ## Gestão da organização · guia, riscos, equipes-modelo e painel · 2026-11-09
 
 Branch `claude/gestao-organizacao` (Claude Code), migração **0045_management_guide_risks** (aditiva; a 0044 é das convocações). Módulo **Gestão** no menu, com quatro abas. Detalhes, comparação de ferramentas de painel e passo a passo do Looker Studio: `apps/proex-portal/docs/GESTAO-DA-ORGANIZACAO.md`.
