@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { check, index, integer, primaryKey, sqliteTable, text, unique, uniqueIndex } from 'drizzle-orm/sqlite-core';
-import { organizations, projects, members, portalUsers, items, campaigns, loans, projectScheduleItems } from './base-schema';
+import { organizations, projects, members, portalUsers, items, campaigns, loans, projectScheduleItems, followupTasks } from './base-schema';
+export { followupTasks } from './base-schema';
 
 // Export these tables from db/schema.ts when integrating 0014. Runtime SQL owns
 // relationship/immutability triggers; Drizzle has no trigger model.
@@ -13,12 +14,6 @@ export const followupTeamMembers = sqliteTable('followup_team_members', {
  id:text('id').primaryKey().notNull(), teamId:text('team_id').notNull().references(()=>followupTeams.id),userId:text('user_id').notNull().references(()=>portalUsers.userId),
  addedBy:text('added_by').notNull(),createdAt:text('created_at').notNull(),removedAt:text('removed_at'),
 },t=>[uniqueIndex('followup_team_member_active_idx').on(t.teamId,t.userId).where(sql`${t.removedAt} IS NULL`)]);
-export const followupTasks = sqliteTable('followup_tasks', {
- id:text('id').primaryKey().notNull(), organizationId:text('organization_id').notNull().references(()=>organizations.id), projectId:text('project_id').references(()=>projects.id),
- title:text('title').notNull(),body:text('body').notNull().default(''),priority:text('priority').notNull().default('medium'),importance:text('importance'),status:text('status').notNull().default('open'),dueAt:text('due_at'),
- campaignId:text('campaign_id').references(()=>campaigns.id),itemId:text('item_id').references(()=>items.id),loanId:text('loan_id').references(()=>loans.id),
- version:integer('version').notNull().default(1),createdBy:text('created_by').notNull(),createdAt:text('created_at').notNull(),updatedAt:text('updated_at').notNull(),
-},t=>[index('followup_tasks_scope_idx').on(t.organizationId,t.projectId,t.status,t.updatedAt,t.id),check('followup_task_title',sql`length(${t.title}) BETWEEN 1 AND 160`),check('followup_task_body',sql`length(${t.body})<=4000`),check('followup_task_priority',sql`${t.priority} IN ('high','medium','low')`),check('followup_task_importance',sql`${t.importance} IN ('high','medium','low')`),check('followup_task_status',sql`${t.status} IN ('open','in_progress','blocked','completed','cancelled')`),check('followup_task_version',sql`${t.version}>0`),check('followup_task_references',sql`${t.projectId} IS NOT NULL OR (${t.campaignId} IS NULL AND ${t.itemId} IS NULL AND ${t.loanId} IS NULL)`)]);
 export const followupAssignees = sqliteTable('followup_assignees', {
  id:text('id').primaryKey().notNull(),taskId:text('task_id').notNull().references(()=>followupTasks.id),userId:text('user_id').references(()=>portalUsers.userId),teamId:text('team_id').references(()=>followupTeams.id),createdAt:text('created_at').notNull(),removedAt:text('removed_at'),
 },t=>[uniqueIndex('followup_assignee_active_idx').on(t.taskId,sql`COALESCE(${t.userId},'')`,sql`COALESCE(${t.teamId},'')`).where(sql`${t.removedAt} IS NULL`),check('followup_assignee_one',sql`(${t.userId} IS NULL)!=(${t.teamId} IS NULL)`)]);
