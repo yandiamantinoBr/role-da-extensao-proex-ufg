@@ -78,6 +78,7 @@ export function readPortalLocation(params: URLSearchParams, scope: Scope): Porta
             needsSearch:params.get('taskSearch')==='1',
             unavailable:params.get('taskUnavailable')==='1'||Boolean(organizationId&&!demandReportOrganization)||Boolean(projectId&&!project)||(params.get('taskScope')==='organization'&&(!demandReportOrganization||Boolean(projectId))),
         }} : {}),
+        ...(tab === 'records' && params.get('view') === 'history' ? { recordsView: 'history' as const } : {}),
         ...(tab === 'records' && params.get('view') === 'documents' ? {
             recordsView: 'documents' as const,
             ...(project && scheduleItemId ? { recordsScheduleItemId: scheduleItemId } : {}),
@@ -97,8 +98,8 @@ export function writePortalLocation(params: URLSearchParams, route: PortalLocati
         area: route.area,
         demandId: route.tab === 'demands' ? route.demand : '',
         report: route.tab === 'reports' && route.report !== 'projects' && isReportDataset(route.report) ? route.report : '',
-        ...(route.tab === 'records' || params.get('view') === 'documents'
-            ? { view: route.tab === 'records' && route.recordsView === 'documents' ? 'documents' : '' } : {}),
+        ...(route.tab === 'records' || ['documents', 'history'].includes(params.get('view') || '')
+            ? { view: route.tab === 'records' ? route.recordsView || '' : '' } : {}),
         scheduleItemId: route.tab === 'demands' ? route.demandsScheduleItemId || ''
             : route.tab === 'records' && route.recordsView === 'documents' ? route.recordsScheduleItemId || '' : '',
         workStatus: route.tab === 'my-work' && route.workStatus && MY_WORK_STATUSES.includes(route.workStatus) && route.workStatus !== 'pending' ? route.workStatus : '',

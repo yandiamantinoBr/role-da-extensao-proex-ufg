@@ -40,19 +40,19 @@ function mount(prepareUploadPhoto) {
       slots[key] = { deps, cleanup: run() };
     },
   };
-  const module = { exports: {} };
+  const compiledModule = { exports: {} };
   vm.runInNewContext(code, {
-    module, exports: module.exports, require(name) { assert.equal(name, 'react/jsx-runtime'); return { jsx, jsxs: jsx }; }, ...hooks,
+    module: compiledModule, exports: compiledModule.exports, require(name) { assert.equal(name, 'react/jsx-runtime'); return { jsx, jsxs: jsx }; }, ...hooks,
     prepareUploadPhoto, AbortController, MAX_FILE_BYTES: MAX_UPLOAD_FILE_BYTES, UPLOAD_LIMIT_LABEL: '4 MB', FormData, crypto,
     window: { addEventListener() {}, removeEventListener() {} }, sizeLabel: bytes => String(bytes),
-    Camera: 'Camera', ImagePlus: 'ImagePlus', Trash2: 'Trash2', Check: 'Check', LoaderCircle: 'LoaderCircle', Upload: 'Upload',
+    Camera: 'Camera', ImagePlus: 'ImagePlus', Trash2: 'Trash2', Check: 'Check', LoaderCircle: 'LoaderCircle', Upload: 'Upload', RecordPhotoPreview: 'RecordPhotoPreview',
     async requestJson(_url, { body }) {
       uploads.push({ recordId: body.get('recordId'), file: body.get('file') });
       return { recordId: 'record-a', attachment: { id: 'upload-' + uploads.length } };
     },
     attachmentValue: value => value,
   });
-  const render = () => { index = 0; tree = module.exports.AttachmentQueue({ recordId: 'record-a', onAttachment() {}, onPendingChange: value => pending.push(value) }); };
+  const render = () => { index = 0; tree = compiledModule.exports.AttachmentQueue({ recordId: 'record-a', onAttachment() {}, onPendingChange: value => pending.push(value) }); };
   const query = (type, check) => {
     function find(node) {
       if (!node || typeof node !== 'object') return undefined;
@@ -62,7 +62,7 @@ function mount(prepareUploadPhoto) {
     return find(tree);
   };
   render();
-  return { render, query, uploads, pending, prepare: module.exports.prepareRecordAttachment,
+  return { render, query, uploads, pending, prepare: compiledModule.exports.prepareRecordAttachment,
     choose(files) { return query('input', props => props.multiple).onChange({ target: { files, value: 'anything' } }); },
     dispose() { slots.forEach(slot => slot.cleanup?.()); },
   };
@@ -78,6 +78,7 @@ test('the record picker prepares only oversized JPEG photos and keeps PDF bytes 
   await h.choose([pdf, invalid, largePng, jpeg, jpeg]);
   h.render();
   assert.deepEqual(seen, [jpeg]);
+  assert.equal(h.query('RecordPhotoPreview', props => props.file === prepared)?.file, prepared);
   assert.ok(h.query('p', props => props.role === 'alert').children.includes('broken.jpg'));
   assert.ok(h.query('p', props => props.role === 'status').children.includes('Foto preparada'));
   await h.choose([jpeg]);
