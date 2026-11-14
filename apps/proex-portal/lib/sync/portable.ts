@@ -27,7 +27,7 @@ const DEFINITIONS: Record<string, Definition> = {
  activity_groups: {label:'Atividades e entregas',fields:'id,project_id,title,occurred_at,kind,note,created_at',mode:'append_only',omitted:['created_by']},
  loans: {label:'Empréstimos',fields:'id,project_id,item_id,action_name,starts_at,ends_at,status,note,condition_out,condition_in,created_at,returned_at,checked_out_at,updated_at,group_id',mode:'append_only',omitted:['borrower_name','borrower_contact','created_by']},
  documents: {label:'Termos anexados',fields:'id,loan_id,project_id,mime,size,created_at',omitted:['object_key','name','created_by','operation_key','content_hash']},
- records: {label:'Registros',fields:'id,project_id,kind,title,body,occurred_at,starts_at,ends_at,item_id,loan_id,group_id,created_at',mode:'append_only',omitted:['created_by']},
+ records: {label:'Registros',fields:'id,project_id,kind,title,body,occurred_at,starts_at,ends_at,item_id,loan_id,group_id,schedule_item_id,created_at',mode:'append_only',omitted:['created_by']},
  record_attachments: {label:'Anexos de registros',fields:'id,record_id,project_id,mime,size,created_at,caption,attachment_role,display_order,deleted_at',omitted:['object_key','name','operation_key','created_by']},
  campaigns: {label:'Ações da roleta',fields:'id,project_id,name,location,starts_at,ends_at,status,retry_limit,brinde_offer_id,super_offer_id,rules_text,version,created_at',editable:'name,location,starts_at,ends_at,retry_limit,brinde_offer_id,super_offer_id,rules_text',action:'campaign.update'},
  offers: {label:'Ofertas de brindes',fields:'id,project_id,name,kind,active',mode:'append_only'},

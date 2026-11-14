@@ -331,11 +331,13 @@ export const records = sqliteTable('records', {
   occurredAt: text('occurred_at').notNull(), startsAt: text('starts_at'), endsAt: text('ends_at'),
   itemId: text('item_id').references(() => items.id), loanId: text('loan_id').references(() => loans.id),
   groupId: text('group_id').references(() => activityGroups.id),
+  scheduleItemId: text('schedule_item_id').references(() => projectScheduleItems.id),
   createdBy: text('created_by').notNull(), createdAt: text('created_at').notNull(),
 }, t => [
   index('records_project_occurred_idx').on(t.projectId, t.occurredAt),
   index('records_loan_idx').on(t.loanId),
   index('records_item_idx').on(t.itemId),
+  index('records_schedule_occurred_idx').on(t.projectId, t.scheduleItemId, t.occurredAt),
   check('records_interval_check', sql`${t.startsAt} IS NULL OR ${t.endsAt} IS NULL OR ${t.endsAt} >= ${t.startsAt}`),
 ]);
 export const recordAttachments = sqliteTable('record_attachments', {

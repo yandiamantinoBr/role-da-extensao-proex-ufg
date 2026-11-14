@@ -322,6 +322,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
     const pushNavigation = useRef(false);
     const [selectedDemandId, setSelectedDemandId] = useState('');
     const [recordsView, setRecordsView] = useState<'history' | 'documents'>('history');
+    const [recordsScheduleItemId, setRecordsScheduleItemId] = useState('');
     // Registros aberto pelo atalho "Ver histórico" de uma ficha: assunto no formato item:<id>.
     const [historyParam, setHistoryParam] = useState('');
     const [reportInitialDataset, setReportInitialDataset] = useState<ReportDatasetId>('projects');
@@ -514,7 +515,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
     const draftUserId = string(user.userId);
     useEffect(() => watchDraftLogout(draftUserId), [draftUserId]);
 
-    const route: PortalLocation = { tab, project: filter, unit: unitFilter, area: areaFilter, demand: selectedDemandId, record: activeWorkRecord, report: reportInitialDataset, recordsView, workStatus: personalStatus, organization: personalOrganization, history: recordsView === 'history' ? historyParam : '' };
+    const route: PortalLocation = { tab, project: filter, unit: unitFilter, area: areaFilter, demand: selectedDemandId, record: activeWorkRecord, report: reportInitialDataset, recordsView, recordsScheduleItemId, workStatus: personalStatus, organization: personalOrganization, history: recordsView === 'history' ? historyParam : '' };
     function readLocation(params: URLSearchParams) {
         return readPortalLocation(params, {
             modules: allowedTabs.map(module => module.id),
@@ -549,6 +550,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         setWorkRecord(next.record); setSelectedMaterialId(next.record?.module === 'materials' ? next.record.recordId : null);setMaterialMode('view');
         setSelectedDemandId(next.demand); setReportInitialDataset(next.report);
         if (next.tab === 'records') setRecordsView(next.history ? 'history' : next.recordsView ?? 'history');
+        setRecordsScheduleItemId(next.recordsScheduleItemId ?? '');
         setPersonalStatus(next.workStatus ?? 'pending'); setPersonalOrganization(next.organization ?? '');
         setHistoryParam(next.history ?? '');
         setQuery(''); setAccountOpen(false);
@@ -594,6 +596,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
             navigation.recordVisit(id);
         }
         setTab(id); setQuery(''); setAccountOpen(false); setSelectedMaterialId(null);setMaterialMode('view'); setWorkRecord(null);
+        setRecordsScheduleItemId('');
         setDeniedModule(null); setHistoryParam('');
         // Um pedido de Equipes (abrir fixada, criar) vale só para esta ida; voltar pelo menu abre a página normal.
         if (!teamIntentPending.current) setTeamIntent(null);
@@ -1124,7 +1127,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
       {tab === 'records' && <>
         <nav className="p-material-tabs" aria-label="Partes de Registros"><button type="button" aria-pressed={recordsView === 'history'} className={recordsView === 'history' ? 'is-active' : ''} onClick={() => setRecordsView('history')}><CalendarDays size={18}/>Histórico</button><button type="button" aria-pressed={recordsView === 'documents'} className={recordsView === 'documents' ? 'is-active' : ''} onClick={() => setRecordsView('documents')}><FileText size={18}/>Documentos</button></nav>
         {recordsView === 'history' && <ActivityPanel key={`${filter}:${historyParam}`} initialProjectId={filter} subject={parseHistorySubject(historyParam)} onClearSubject={() => setHistoryParam('')} projects={projects.map(project => ({ id: string(project.id), name: string(project.name) }))}/>}
-        <div hidden={recordsView !== 'documents'}><RecordsPanel key={filter} initialProjectId={filter} projects={projects} items={items} loans={loans} canRead={projectId => canProject(projectId, 'reports.read', 'campaigns.manage', 'inventory.read', 'loans.read')} canWrite={(capability: string, projectId?: string | null) => projectId ? canProject(projectId, capability) : canGlobal(capability)}/></div>
+        <div hidden={recordsView !== 'documents'}><RecordsPanel key={JSON.stringify([filter,recordsScheduleItemId])} initialProjectId={filter} scheduleItemId={recordsScheduleItemId} onClearScheduleItem={() => { pushNavigation.current = true; setRecordsScheduleItemId(''); focusModule(false); }} projects={projects} items={items} loans={loans} canRead={projectId => canProject(projectId, 'reports.read', 'campaigns.manage', 'inventory.read', 'loans.read')} canWrite={(capability: string, projectId?: string | null) => projectId ? canProject(projectId, capability) : canGlobal(capability)}/></div>
       </>}
 
       {tab === 'reports' && <>

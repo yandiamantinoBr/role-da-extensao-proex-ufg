@@ -71,6 +71,49 @@ const pdf = new TextEncoder().encode('%PDF-1.7\nTest document\n%%EOF');
 const png = new Uint8Array(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6qdsAAAAASUVORK5CYII=', 'base64'));
 const file = (recordId, overrides = {}) => ({ recordId, bytes: pdf, name: 'term.pdf', declaredMime: 'application/pdf', operationKey: crypto.randomUUID(), ...overrides });
 const count = (db, table) => db.native.prepare(`SELECT COUNT(*) n FROM ${table}`).get().n;
+
+test('a chronology entry organizes photos and PDFs while preserving project authorization and idempotency', async t => {
+  const { db, storage } = fixture();
+  t.after(() => db.native.close());
+  const manager = principal(db, 'manager'), viewer = principal(db, 'viewer'), inventory = principal(db, 'inventory');
+  const other = principal(db, 'viewer', 'project-b');
+  const scheduled = db.native.prepare('INSERT INTO project_schedule_items(id,project_id,title,starts_at,ends_at,status,note,created_at,updated_at) VALUES(?,?,?,?,?,\'planned\',\'\',?,?)');
+  const at = '2026-11-14T12:00:00.000Z';
+  for (const [id, project, title] of [['act-sparks','project-a','Ação Sparks QA'],['act-other','project-a','Outra atividade'],['act-foreign','project-b','Contexto privado']]) {
+    scheduled.run(id, project, title, at, at, at, at);
+  }
+  const values = input({kind:'project',scheduleItemId:'act-sparks'});
+  const saved = await createRecord(db,manager,values);
+  const duplicate = await createRecord(db,manager,values);
+  assert.equal(duplicate.id,saved.id);
+  assert.equal(duplicate.duplicate,true);
+  assert.equal(saved.record.schedule_item_id,'act-sparks');
+  const photo = await uploadRecordAttachment(db,storage,manager,file(saved.id,{bytes:png,name:'foto.png',declaredMime:'image/png'}));
+  await uploadRecordAttachment(db,storage,manager,file(saved.id));
+  const scope = {projectId:'project-a',scheduleItemId:'act-sparks'};
+  const read = await listRecords(db,viewer,scope);
+  assert.equal(read.scheduleItem.title,'Ação Sparks QA');
+  assert.equal(read.records[0].attachments.length,2);
+  assert.equal((await recordAttachment(db,viewer,photo.attachment.id)).mime,'image/png');
+  assert.deepEqual((await listRecords(db,viewer,{...scope,scheduleItemId:'act-other'})).records,[]);
+  await assert.rejects(listRecords(db,inventory,scope),{status:404});
+  await assert.rejects(listRecords(db,other,scope),{status:403});
+  await assert.rejects(recordAttachment(db,other,photo.attachment.id),{status:403});
+  await assert.rejects(createRecord(db,viewer,input({scheduleItemId:'act-sparks'})),{status:403});
+  await assert.rejects(createRecord(db,manager,input({scheduleItemId:'act-sparks',itemId:'asset-a'})),{status:400});
+  for (const scheduleItemId of ['act-foreign','invented']) {
+    await assert.rejects(createRecord(db,manager,input({scheduleItemId})),{status:404,code:'schedule_record_not_found'});
+    await assert.rejects(listRecords(db,viewer,{...scope,scheduleItemId}),{status:404,code:'schedule_record_not_found'});
+  }
+  db.native.prepare("UPDATE project_schedule_items SET title='Ação retomada QA',status='cancelled' WHERE id='act-sparks'").run();
+  const retained = await listRecords(db,viewer,scope);
+  assert.equal(retained.scheduleItem.title,'Ação retomada QA');
+  assert.equal(retained.records[0].id,saved.id);
+  assert.throws(()=>db.native.prepare("UPDATE project_schedule_items SET project_id='project-b' WHERE id='act-sparks'").run(),/record_schedule_mismatch/);
+  db.native.prepare('UPDATE members SET revoked_at=? WHERE user_id=?').run(at,viewer.userId);
+  await assert.rejects(recordAttachment(db,viewer,photo.attachment.id),{status:403});
+  await assert.rejects(listRecords(db,viewer,scope),{status:404});
+});
 function transport(db, storage, actor) { globalThis.__recordsDb = db; globalThis.__recordsBucket = storage; globalThis.__recordsUser = actor ? { userId: actor.userId, email: actor.email, displayName: actor.displayName, hasPassword: false } : null; }
 
  test('record creation uses real project roles, validates links and is idempotent under concurrency', async () => {

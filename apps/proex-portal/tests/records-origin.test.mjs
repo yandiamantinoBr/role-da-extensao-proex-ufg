@@ -85,6 +85,37 @@ const byId = (records, id) => records.find(record => record.id === id);
 function transport(db, actor) { globalThis.__originDb = db; globalThis.__originUser = actor ? { userId: actor.userId, email: actor.email, displayName: actor.displayName, hasPassword: false } : null; }
 const get = async query => { const response = await route.GET(new Request(`https://portal.example.invalid/api/records${query}`)); return { status: response.status, body: await response.json() }; };
 
+test('the HTTP activity response rechecks scope after enriching origin metadata',async()=>{
+  const {db}=setup();
+  try {
+    const viewer=person(db,'viewer','project-a','Leitor sintético');
+    const occurs=at('2026-11-10');
+    db.native.prepare("INSERT INTO project_schedule_items(id,project_id,title,starts_at,ends_at,created_at,updated_at) VALUES('action-qa','project-a','Título privado de QA',?,?,?,?)").run(occurs,occurs,occurs,occurs);
+    db.native.prepare("UPDATE records SET schedule_item_id='action-qa' WHERE id='rec-role'").run();
+    let revoked=false;
+    const prepare=db.prepare;
+    db.prepare=sql=>{
+      const statement=prepare(sql);
+      if(sql.includes('FROM ai_plans a LEFT JOIN profiles p')){
+        const all=statement.all;
+        statement.all=async()=>{
+          const result=await all();
+          db.native.prepare('UPDATE members SET revoked_at=? WHERE user_id=?').run(occurs,viewer.userId);
+          revoked=true;
+          return result;
+        };
+      }
+      return statement;
+    };
+    transport(db,viewer);
+    const result=await get('?projectId=project-a&scheduleItemId=action-qa');
+    assert.equal(revoked,true);
+    assert.equal(result.status,404);
+    assert.equal(result.body.records,undefined);
+    assert.equal(result.body.scheduleItem,undefined);
+  }finally{transport(null,null);db.native.close();}
+});
+
 test('ORIGEM: registro gravado pelo Rolê lista quem pediu e o pedido; registro feito à mão não tem origem', async () => {
   const { db, actors } = setup();
   try {
