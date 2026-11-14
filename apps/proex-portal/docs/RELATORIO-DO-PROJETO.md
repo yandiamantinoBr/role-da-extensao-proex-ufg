@@ -46,12 +46,14 @@ A prévia, o PDF, o DOCX e o XLSX desenham o **mesmo documento** (`components/po
 - **DOCX:** capa, sumário com links internos, títulos numerados, tabelas com cabeçalho repetido, gráficos nativos do Word, rodapé com "Página X de Y" e referências com hiperlinks.
 - **XLSX:** aba "Capa" com sumário clicável, uma aba numerada por seção, gráficos nativos do Excel ligados às células, rodapé de impressão com página, fórmulas neutralizadas.
 
+Ao clicar em qualquer um dos três formatos, o Portal confere a conta, o projeto, o período e os dados da prévia antes e depois de preparar o arquivo. Se algo mudar, a prévia é atualizada e a pessoa pode conferir antes de baixar de novo. Se ela perder acesso ao projeto, a prévia é retirada. Trocar de conta, projeto ou opções durante a preparação cancela o pedido. Se uma aba anterior à publicação pedir para atualizar a página ao baixar o PDF, recarregue e tente novamente.
+
 ## Código
 
-- Servidor: `lib/project-report.ts` e `app/api/projects/[id]/report/route.ts` (GET dados + modelos; POST salvar/apagar modelo, mesma origem).
+- Servidor: `lib/project-report.ts` e `app/api/projects/[id]/report/route.ts` (GET dados + modelos, conferindo a sessão da conta esperada pela ficha; POST salvar/apagar modelo, mesma origem).
 - Catálogo e validação compartilhados: `lib/project-report-config.ts`.
 - Tela: `components/portal/project-report/builder.tsx` e `preview.tsx`.
 - Arquivos: `components/portal/project-report/pdf.ts` e `ooxml.ts`.
-- Testes: `tests/project-report.test.mjs` (permissões por papel, período, modelos, revogação) e `tests/project-report-documents.test.mjs` (ordem, permissões no documento, gráfico, três arquivos). `PROEX_REPORT_OUT=<pasta> node --test tests/project-report-documents.test.mjs` grava os três arquivos sintéticos para abrir.
+- Testes: `tests/project-report.test.mjs` (permissões por papel, período, modelos, revogação), `tests/project-report-download.test.mjs` (conta, recorte e mudanças antes e durante o download) e `tests/project-report-documents.test.mjs` (ordem, permissões no documento, gráfico, três arquivos). `PROEX_REPORT_OUT=<pasta> node --test tests/project-report-documents.test.mjs` grava os três arquivos sintéticos para abrir.
 
 O componente antigo `ProjectReportExports` (resumo de uma linha) continua em `reports-center.tsx`, sem uso na ficha; pode ser removido numa limpeza.
