@@ -21,10 +21,6 @@ export function integer(value:unknown,max=1000000):number {if(typeof value!=='nu
 export function version(value:unknown):number {if(typeof value!=='number'||!Number.isSafeInteger(value)||value<1)return fail('Reabra o registro antes de salvar.','followup_version');return value;}
 export function date(value:unknown):string|null {if(value===undefined||value===null||value==='')return null;if(typeof value!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(value)||!Number.isFinite(Date.parse(value))||new Date(value).toISOString().slice(0,10)!==value)return fail('Informe o prazo como uma data válida.');return value;}
 export function choices<T extends string>(value:unknown,allowed:readonly T[]):T {if(typeof value!=='string'||!allowed.includes(value as T))return fail('Escolha uma opção válida.');return value as T;}
-export function taskSearchPattern(value:unknown):string {
- const search=text(value,120,true);
- return search ? '%'+search.replace(/[\\%_]/g,'\\$&')+'%' : '';
-}
 export function ids(value:unknown,max=20):string[] {if(value===undefined)return [];if(!Array.isArray(value)||value.length>max)return fail(`Selecione até ${max} responsáveis.`);return [...new Set(value.map(v=>id(v)!))].sort();}
 export function onlyKeys(input:Record<string,unknown>,keys:string[]) {if(Object.keys(input).some(k=>!keys.includes(k)))fail('Há campos não permitidos nesta operação.');}
 export function manualShareUrl(title:string,taskId:string,baseUrl:string):string {const base=new URL(baseUrl);if(!['https:','http:'].includes(base.protocol)||base.username||base.password)throw new Error('Endereço inválido.');base.searchParams.set('demandId',taskId);return `https://wa.me/?text=${encodeURIComponent(`${title.slice(0,160)}\n${base.href}`)}`;}

@@ -94,6 +94,26 @@ test('organization scopes and report filters select the same authorized demands,
  assert.deepEqual((await followupReportRows(f.db,reader,'demands',report,100)).rows,[]);
 });
 
+test('accent-insensitive demand search still matches titles and descriptions literally before pagination', async t => {
+ const f = fixture(t), reader = await f.actor('viewer-a'), admin = await f.actor('admin-a');
+ const insertTask = (id, project_id, title, body) => f.insert('followup_tasks', {
+  id, project_id, title, body, organization_id: 'org-a', priority: 'high', status: 'open', version: 1,
+  created_at: f.now, updated_at: f.now, created_by: admin.userId,
+ });
+ f.insert('projects', { id: 'project-a2', organization_id: 'org-a', name: 'Vizinho', created_at: f.now });
+ for (let index = 0; index < 60; index++) insertTask(`task-${index}`, 'project-a', 'Primeiros resultados', '');
+ insertTask('zz-match', 'project-a', 'Criação de peças', 'ENTREGA NA EXTENSA\u0303O · 20% · DOIS_ITENS');
+ insertTask('zz-neighbor', 'project-a2', 'Criação de peças', 'ENTREGA NA EXTENSÃO · 20%');
+ insertTask('zz-decoy', 'project-a', 'Percentual', 'Entrega na extensão · 200 · DOIS-ITENS');
+ for (const search of ['criacao de pecas', 'extensao · 20%', 'EXTENSÃO · 20%', 'dois_itens', 'PEÇ']) {
+  const list = await followupList(f.db, reader, { organizationId: 'org-a', search });
+  const report = await followupReportRows(f.db, reader, 'demands', { organizationId: 'org-a', demandSearch: search }, 100);
+  assert.deepEqual(list.tasks.map(task => task.id), ['zz-match'], search);
+  assert.deepEqual(report.rows.map(row => row.id), ['zz-match'], search);
+  assert.equal(list.hasMore, false);
+ }
+});
+
 test('references and responsible people cannot cross organization/project boundaries even inside the transaction',async t=>{
  const f=fixture(t),actor=await f.actor('admin-a');for(const extra of [{campaignId:'campaign-b'},{itemId:'item-b'},{userIds:['worker-b']}])await assert.rejects(act(f,actor,'task.create',create(extra)));
  assert.equal(f.native.prepare('SELECT COUNT(*) n FROM followup_tasks').get().n,0);assert.equal(f.native.prepare('SELECT COUNT(*) n FROM mutation_keys').get().n,0);

@@ -4,7 +4,8 @@ import { HttpError } from '../errors';
 import { prepareMutation } from '../mutations';
 import { campaignAction } from '../campaigns';
 import { listOrganizations } from '../organizations';
-import { TASK_STATES, TASK_PRIORITIES, type TaskPriority, id, text, integer, version, date, choices, ids, onlyKeys, fail, taskSearchPattern } from './contracts';
+import { TASK_STATES, TASK_PRIORITIES, type TaskPriority, id, text, integer, version, date, choices, ids, onlyKeys, fail } from './contracts';
+import { taskSearch } from './task-search';
 import { authority, workAuthority, assignedRecipient, activeAccount, activityCoverageReader, activityCoverageScope, actorRequired, requireScope, scopeStatement, atomic, cas, fanout, recipientLimit, effectiveRecipient, type Scope } from './scope';
 import { serverWorkClock } from './time';
 import { groupNotifications, type NoticeForGroup } from './notification-groups';
@@ -86,7 +87,8 @@ export async function followupList(db:D1Database,actor:PortalActor|null,input:Re
   values.push(scheduleItemId,...guard.values);
  }
  if(input.status&&input.status!=='all'){conditions.push('t.status=?');values.push(choices(input.status,TASK_STATES));}if(input.priority&&input.priority!=='all'){conditions.push('t.priority=?');values.push(choices(input.priority,TASK_PRIORITIES));}
- const search=taskSearchPattern(input.search);if(search){conditions.push("(t.title LIKE ? ESCAPE '\\' OR t.body LIKE ? ESCAPE '\\')");values.push(search,search);}
+ const search=taskSearch('t', input.search);
+ if(search){conditions.push(search.sql);values.push(...search.values);}
  const offset=input.offset===undefined?0:integer(input.offset,50000);const rows=await all(db,`${taskProjectionSql} WHERE ${conditions.join(' AND ')} ORDER BY CASE t.status WHEN 'completed' THEN 1 WHEN 'cancelled' THEN 1 ELSE 0 END,CASE t.priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,COALESCE(t.due_at,'9999'),t.updated_at DESC,t.id LIMIT 51 OFFSET ?`,[...values,offset]);
  const confirmed=scheduleItemId?await checklistSchedule(db,actor,projectId!,scheduleItemId,organizationId):null;
  if(scheduleItemId&&!confirmed)fail('Atividade indisponível neste projeto.','followup_schedule_not_found',404);
