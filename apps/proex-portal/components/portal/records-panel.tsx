@@ -13,6 +13,7 @@ import ExportFormats, {type DocumentFormat} from './export-formats';
 import { documentExport } from './document-export';
 import { toast } from 'sonner';
 import { MAX_UPLOAD_FILE_BYTES as MAX_FILE_BYTES, UPLOAD_LIMIT_LABEL, uploadErrorMessage } from '../../lib/upload-limits';
+import { prepareUploadPhoto } from '../../lib/prepare-upload-photo';
 import DriveSaveButton from './drive-save-button';
 import ActivityMediaFolder from './activity-media-folder';
 
@@ -35,7 +36,7 @@ type Props = {
   canWrite?(capability: string, projectId: string): boolean;
 };
 type Filters = { projectId: string; from: string; to: string };
-type UploadEntry = { key: string; file: File; status: 'pending' | 'sending' | 'done' | 'error' | 'uncertain'; uncertain: boolean; error?: string };
+type UploadEntry = { key: string; selection: string; file: File; status: 'pending' | 'sending' | 'done' | 'error' | 'uncertain'; uncertain: boolean; error?: string };
 const kinds: { value: Kind; label: string; capability: string }[] = [
   { value: 'observation', label: 'Observação geral', capability: 'campaigns.manage' },
   { value: 'maintenance', label: 'Manutenção e condição', capability: 'inventory.manage' },
@@ -106,45 +107,93 @@ function attachmentValue(value: unknown): Attachment {
   if (typeof attachment.id !== 'string' || typeof attachment.name !== 'string' || typeof attachment.mime !== 'string' || typeof attachment.size !== 'number') throw new RequestFailure('O envio ainda não pôde ser confirmado. Tente novamente.');
   return attachment;
 }
-function fileProblem(file: File): string | null {
-  if (!file.size || file.size > MAX_FILE_BYTES) return `${file.name}: escolha um arquivo de até ${UPLOAD_LIMIT_LABEL}, com conteúdo.`;
+async function prepareRecordAttachment(file: File, signal: AbortSignal): Promise<File> {
   const accepted = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
-  if (!accepted.includes(file.type.toLowerCase()) && !((!file.type || file.type === 'application/octet-stream') && /\.(pdf|jpe?g|png|webp)$/i.test(file.name))) return `${file.name}: use PDF, JPEG, PNG ou WebP. Converta fotos HEIC antes de enviar.`;
-  return null;
+  const mime = file.type.toLowerCase(), generic = !mime || mime === 'application/octet-stream';
+  if (!accepted.includes(mime) && !(generic && /\.(pdf|jpe?g|png|webp)$/i.test(file.name))) {
+    throw new Error('Use PDF, JPEG, PNG ou WebP. Converta fotos HEIC para JPEG antes de enviar.');
+  }
+  if (!file.size) throw new Error('Escolha um arquivo com conteúdo.');
+  if (file.size <= MAX_FILE_BYTES) return file;
+  const extension = /\.([a-z0-9]+)$/i.exec(file.name)?.[1];
+  const jpeg = mime === 'image/jpeg' || (generic && /\.jpe?g$/i.test(file.name));
+  if (!jpeg || (extension && !/^jpe?g$/i.test(extension))) {
+    throw new Error(`Escolha um arquivo de até ${UPLOAD_LIMIT_LABEL} ou uma foto JPEG que possa ser reduzida.`);
+  }
+  const [start, end] = await Promise.all([file.slice(0, 3).arrayBuffer(), file.slice(-2).arrayBuffer()]);
+  signal.throwIfAborted();
+  const [a, b, c] = new Uint8Array(start), [y, z] = new Uint8Array(end);
+  if (a !== 0xff || b !== 0xd8 || c !== 0xff || y !== 0xff || z !== 0xd9) {
+    throw new Error('A imagem não contém uma foto JPEG válida.');
+  }
+  return prepareUploadPhoto(file, 'foto-do-registro', signal);
 }
 
 function AttachmentQueue({ recordId, onAttachment, onPendingChange }: {
   recordId: string; onAttachment(attachment: Attachment): void; onPendingChange?(pending: boolean): void;
 }) {
   const [entries, setEntries] = useState<UploadEntry[]>([]), [busy, setBusy] = useState(false);
+  const [preparing, setPreparing] = useState(false);
   const [error, setError] = useState(''), [message, setMessage] = useState('');
   const entriesRef = useRef<UploadEntry[]>([]), busyRef = useRef(false);
+  const preparation = useRef<AbortController | null>(null), mounted = useRef(false);
+  const pendingChanged = useRef(onPendingChange);
   const cameraRef = useRef<HTMLInputElement>(null), galleryRef = useRef<HTMLInputElement>(null);
   const inputId = `attachment-${useId().replace(/:/g, '')}`; // um par de campos por registro: id único
   const pending = entries.some(entry => entry.status !== 'done');
+  const working = preparing || busy;
   useEffect(() => {
-    if (!pending) return;
+    pendingChanged.current = onPendingChange;
+  }, [onPendingChange]);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      preparation.current?.abort();
+      if (preparation.current || entriesRef.current.some(entry => entry.status !== 'done')) pendingChanged.current?.(false);
+    };
+  }, []);
+  useEffect(() => {
+    if (!pending && !preparing) return;
     const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
     window.addEventListener('beforeunload', warn);
     return () => window.removeEventListener('beforeunload', warn);
-  }, [pending]);
+  }, [pending, preparing]);
   function update(next: UploadEntry[]) {
     entriesRef.current = next; setEntries(next); onPendingChange?.(next.some(entry => entry.status !== 'done'));
   }
-  function choose(event: ChangeEvent<HTMLInputElement>) {
+  async function choose(event: ChangeEvent<HTMLInputElement>) {
     const files = Array.from(event.target.files ?? []); event.target.value = '';
-    if (busyRef.current) return;
+    if (!files.length || busyRef.current || preparation.current) return;
+    const controller = new AbortController();
+    preparation.current = controller;
+    setPreparing(true); onPendingChange?.(true); setError(''); setMessage('');
     const next = [...entriesRef.current], problems: string[] = [];
-    for (const file of files) {
-      const problem = fileProblem(file);
-      if (problem) { problems.push(problem); continue; }
-      if (next.some(entry => entry.file.name === file.name && entry.file.size === file.size && entry.file.lastModified === file.lastModified && entry.file.type === file.type)) continue;
-      next.push({ key: crypto.randomUUID(), file, status: 'pending', uncertain: false });
+    let reduced = 0;
+    try {
+      for (const source of files) {
+        const selection = JSON.stringify([source.name, source.size, source.lastModified, source.type]);
+        if (next.some(entry => entry.selection === selection)) continue;
+        try {
+          const file = await prepareRecordAttachment(source, controller.signal);
+          if (controller.signal.aborted) return;
+          if (file !== source) reduced++;
+          next.push({ key: crypto.randomUUID(), selection, file, status: 'pending', uncertain: false });
+        } catch (cause) {
+          if (controller.signal.aborted) return;
+          problems.push(`${source.name}: ${cause instanceof Error ? cause.message : 'Não foi possível preparar este arquivo.'}`);
+        }
+      }
+      update(next);
+      setError(problems.slice(0, 3).join(' '));
+      if (reduced) setMessage(reduced === 1 ? 'Foto preparada. Envie os anexos quando terminar.' : `${reduced} fotos preparadas. Envie os anexos quando terminar.`);
+    } finally {
+      if (preparation.current === controller) preparation.current = null;
+      if (!controller.signal.aborted) setPreparing(false);
     }
-    update(next); setError(problems.slice(0, 3).join(' ')); setMessage('');
   }
   async function upload() {
-    if (busyRef.current || !entriesRef.current.some(entry => entry.status !== 'done')) return;
+    if (busyRef.current || preparation.current || !entriesRef.current.some(entry => entry.status !== 'done')) return;
     busyRef.current = true; setBusy(true); setError(''); setMessage('');
     try {
       for (const entry of [...entriesRef.current]) {
@@ -154,11 +203,13 @@ function AttachmentQueue({ recordId, onAttachment, onPendingChange }: {
           const form = new FormData();
           form.set('recordId', recordId); form.set('operationKey', entry.key); form.set('file', entry.file);
           const result = await requestJson('/api/records', { method: 'POST', headers: { 'X-Proex-Action': '1' }, body: form });
+          if (!mounted.current) return;
           const attachment = attachmentValue(result.attachment);
           if (result.recordId !== recordId) throw new RequestFailure('O envio ainda não pôde ser confirmado. Tente novamente.');
           update(entriesRef.current.map(value => value.key === entry.key ? { ...value, status: 'done', uncertain: false, error: undefined } : value));
           onAttachment(attachment);
         } catch (cause) {
+          if (!mounted.current) return;
           const uncertain = entry.uncertain || !confirmedRejection(cause);
           const detail = cause instanceof Error ? cause.message : 'Não foi possível enviar o anexo.';
           update(entriesRef.current.map(value => value.key === entry.key ? { ...value, status: uncertain ? 'uncertain' : 'error', uncertain, error: detail } : value));
@@ -167,26 +218,27 @@ function AttachmentQueue({ recordId, onAttachment, onPendingChange }: {
         }
       }
       setMessage('Todos os anexos desta seleção foram confirmados.');
-    } finally { busyRef.current = false; setBusy(false); }
+    } finally { busyRef.current = false; if (mounted.current) setBusy(false); }
   }
   return <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--line)' }}>
-    <p className="p-form-help">Fotografe um termo ou escolha arquivos. PDF, JPEG, PNG e WebP, até {UPLOAD_LIMIT_LABEL} por arquivo. O acesso fica restrito às permissões do registro.</p>
+    <p className="p-form-help">Anexe PDF, JPEG, PNG ou WebP de até {UPLOAD_LIMIT_LABEL}. Fotos JPEG maiores são reduzidas neste aparelho antes do envio. Os anexos ficam restritos a quem pode consultar o registro.</p>
     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-      <button type="button" className="p-button p-button-subtle" disabled={busy} onClick={() => cameraRef.current?.click()}><Camera size={17} aria-hidden="true" />Usar câmera</button>
-      <button type="button" className="p-button p-button-subtle" disabled={busy} onClick={() => galleryRef.current?.click()}><ImagePlus size={17} aria-hidden="true" />Galeria ou PDF</button>
+      <button type="button" className="p-button p-button-subtle" disabled={working} onClick={() => cameraRef.current?.click()}><Camera size={17} aria-hidden="true" />Usar câmera</button>
+      <button type="button" className="p-button p-button-subtle" disabled={working} onClick={() => galleryRef.current?.click()}><ImagePlus size={17} aria-hidden="true" />Galeria ou PDF</button>
     </div>
+    {preparing && <p className="p-form-help" role="status">Preparando arquivos neste aparelho…</p>}
+    {message && <p role="status" style={{ color: 'var(--success-ink)' }}>{message}</p>}
     <input ref={cameraRef} id={`${inputId}-camera`} aria-label="Tirar foto do anexo" type="file" accept="image/*" capture="environment" hidden onChange={choose} />
     <input ref={galleryRef} id={`${inputId}-file`} aria-label="Escolher arquivo do anexo" type="file" accept="application/pdf,image/jpeg,image/png,image/webp,.pdf,.jpg,.jpeg,.png,.webp" multiple hidden onChange={choose} />
     {!!entries.length && <ul style={{ padding: 0, margin: '14px 0', listStyle: 'none', display: 'grid', gap: 8 }} aria-label="Fila de anexos">
       {entries.map(entry => <li key={entry.key} style={{ border: '1px solid var(--line)', borderRadius: 12, padding: 12, display: 'flex', gap: 10, alignItems: 'flex-start', justifyContent: 'space-between' }}>
         <div style={{ minWidth: 0, overflowWrap: 'anywhere' }}><strong style={{ fontSize: 14 }}>{entry.file.name}</strong><small style={{ display: 'block', color: 'var(--text-secondary)', marginTop: 4 }}>{sizeLabel(entry.file.size)} · {entry.status === 'done' ? 'Envio confirmado' : entry.status === 'sending' ? 'Enviando…' : entry.status === 'uncertain' ? 'Aguardando confirmação' : entry.status === 'error' ? 'Envio recusado' : 'Aguardando envio'}</small>{entry.error && <small style={{ display: 'block', color: 'var(--danger)', marginTop: 5 }}>{entry.error}</small>}{entry.uncertain && <small className="p-form-help" style={{ display: 'block' }}>Repita o envio nesta tela para confirmar se o arquivo foi salvo.</small>}</div>
-        {entry.status === 'done' ? <Check size={19} aria-label="Confirmado" style={{ flexShrink: 0, color: 'var(--success-ink)' }} /> : entry.status === 'sending' ? <LoaderCircle size={19} className="p-spin" aria-label="Enviando" style={{ flexShrink: 0 }} /> : !entry.uncertain && <button type="button" className="p-button p-button-subtle" aria-label={`Remover ${entry.file.name} da seleção`} disabled={busy} onClick={() => { update(entriesRef.current.filter(value => value.key !== entry.key)); setError(''); }}><Trash2 size={16} /></button>}
+        {entry.status === 'done' ? <Check size={19} aria-label="Confirmado" style={{ flexShrink: 0, color: 'var(--success-ink)' }} /> : entry.status === 'sending' ? <LoaderCircle size={19} className="p-spin" aria-label="Enviando" style={{ flexShrink: 0 }} /> : !entry.uncertain && <button type="button" className="p-button p-button-subtle" aria-label={`Remover ${entry.file.name} da seleção`} disabled={working} onClick={() => { if (preparation.current || busyRef.current) return; update(entriesRef.current.filter(value => value.key !== entry.key)); setError(''); }}><Trash2 size={16} /></button>}
       </li>)}
     </ul>}
-    {pending && <button type="button" className="p-button p-button-primary" disabled={busy} onClick={() => void upload()}>{busy ? <LoaderCircle size={17} className="p-spin" /> : <Upload size={17} />}{busy ? 'Enviando anexos…' : entries.some(entry => entry.status === 'error' || entry.status === 'uncertain') ? 'Tentar os envios pendentes' : 'Enviar anexos selecionados'}</button>}
+    {pending && <button type="button" className="p-button p-button-primary" disabled={working} onClick={() => void upload()}>{busy ? <LoaderCircle size={17} className="p-spin" /> : <Upload size={17} />}{busy ? 'Enviando anexos…' : entries.some(entry => entry.status === 'error' || entry.status === 'uncertain') ? 'Tentar os envios pendentes' : 'Enviar anexos selecionados'}</button>}
     {pending && <p className="p-form-help">Mantenha esta tela aberta até confirmar os envios. A seleção e a recuperação ficam neste aparelho enquanto esta tela estiver aberta; recarregar a página perde a fila.</p>}
     {error && <p className="p-inline-error" role="alert">{error}</p>}
-    {message && <p role="status" style={{ color: 'var(--success-ink)' }}>{message}</p>}
   </div>;
 }
 
