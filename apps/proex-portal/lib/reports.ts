@@ -105,7 +105,7 @@ export async function reportRows(db: D1Database, actor: PortalActor | null, inpu
       (SELECT COUNT(*) FROM items i WHERE i.project_id=p.id) AS materiais,(SELECT COUNT(*) FROM campaigns c WHERE c.project_id=p.id) AS eventos,
       (SELECT COUNT(*) FROM project_schedule_items s WHERE s.project_id=p.id AND s.status<>'cancelled') AS marcos_agenda,
       (SELECT COUNT(*) FROM loans l WHERE l.project_id=p.id) AS emprestimos,(SELECT COUNT(*) FROM records r WHERE r.project_id=p.id) AS registros,
-      date(p.created_at,'-3 hours') AS criado_em FROM ${base} /*WHERE*/ ORDER BY p.name`);
+      date(p.created_at,'-3 hours') AS criado_em FROM ${base} /*WHERE*/ ORDER BY p.name,p.id`);
   } else if (dataset === 'materials') {
     rows = await run(`SELECT i.id,${projectColumns},i.name AS material,i.category AS classe,COALESCE(mc.label,'') AS categoria,i.unit AS unidade_medida,
       i.stock AS saldo,i.reserved AS reservado,i.stock-i.reserved AS disponivel,i.low_stock AS alerta_minimo,
@@ -114,25 +114,25 @@ export async function reportRows(db: D1Database, actor: PortalActor | null, inpu
       i.responsible_unit AS unidade_responsavel,i.responsible_reference AS responsavel_documentado,i.conservation_state AS conservacao,i.asset_status AS situacao_patrimonial,
       i.origin AS origem,i.destination AS destino,i.process_reference AS processo,i.responsibility_term AS termo_responsabilidade,i.invoice_reference AS nota_fiscal,
       i.acquisition_date AS data_aquisicao,i.acquisition_value_cents AS valor_aquisicao_centavos,i.source_reference AS fonte_cadastro,` : ''}
-      date(i.updated_at,'-3 hours') AS atualizado_em FROM items i JOIN ${base.replace('projects p', 'projects p ON p.id=i.project_id')} LEFT JOIN material_categories mc ON mc.id=i.category_id /*WHERE*/ ORDER BY p.name,i.name`);
+      date(i.updated_at,'-3 hours') AS atualizado_em FROM items i JOIN ${base.replace('projects p', 'projects p ON p.id=i.project_id')} LEFT JOIN material_categories mc ON mc.id=i.category_id /*WHERE*/ ORDER BY p.name,i.name,i.id`);
   } else if (dataset === 'movements') {
     rows = await run(`SELECT m.id,date(m.created_at,'-3 hours') AS data,${projectColumns},i.name AS material,i.category AS classe,i.unit AS unidade_medida,m.kind AS tipo,m.delta AS quantidade,
       CASE WHEN m.delta>0 THEN 'entrada' ELSE 'saida' END AS sentido,m.note AS observacao
-      FROM stock_movements m JOIN items i ON i.id=m.item_id JOIN ${base.replace('projects p', 'projects p ON p.id=i.project_id')} /*WHERE*/ ORDER BY m.created_at DESC`, period('m.created_at'));
+      FROM stock_movements m JOIN items i ON i.id=m.item_id JOIN ${base.replace('projects p', 'projects p ON p.id=i.project_id')} /*WHERE*/ ORDER BY m.created_at DESC,m.id`, period('m.created_at'));
   } else if (dataset === 'outflows') {
     const range = period('m.created_at');
     rows = await run(`SELECT i.id||':'||m.kind AS id,${projectColumns},i.name AS material,i.category AS classe,i.unit AS unidade_medida,m.kind AS tipo,
       SUM(-m.delta) AS quantidade,COUNT(*) AS movimentacoes,MIN(date(m.created_at,'-3 hours')) AS primeira_saida,MAX(date(m.created_at,'-3 hours')) AS ultima_saida
-      FROM stock_movements m JOIN items i ON i.id=m.item_id JOIN ${base.replace('projects p', 'projects p ON p.id=i.project_id')} /*WHERE*/ GROUP BY i.id,m.kind ORDER BY p.name,i.name,m.kind`, { clauses: [...range.clauses, "m.delta<0", "m.kind IN ('distribute','redeem')", effectiveMovementSql('m')], values: range.values });
+      FROM stock_movements m JOIN items i ON i.id=m.item_id JOIN ${base.replace('projects p', 'projects p ON p.id=i.project_id')} /*WHERE*/ GROUP BY i.id,m.kind ORDER BY p.name,i.name,m.kind,i.id`, { clauses: [...range.clauses, "m.delta<0", "m.kind IN ('distribute','redeem')", effectiveMovementSql('m')], values: range.values });
   } else if (dataset === 'loans') {
     rows = await run(`SELECT l.id,${projectColumns},i.name AS material,l.action_name AS acao,date(l.starts_at/1000,'unixepoch','-3 hours') AS inicio,date(l.ends_at/1000,'unixepoch','-3 hours') AS fim,
       l.status AS situacao,date(l.checked_out_at,'-3 hours') AS retirado_em,date(l.returned_at,'-3 hours') AS devolvido_em,
       CASE WHEN l.status='out' AND l.ends_at<CAST(strftime('%s','now') AS INTEGER)*1000 THEN 'sim' ELSE 'nao' END AS em_atraso,l.condition_out AS condicao_saida,l.condition_in AS condicao_retorno
-      FROM loans l JOIN items i ON i.id=l.item_id JOIN ${base.replace('projects p', 'projects p ON p.id=l.project_id')} /*WHERE*/ ORDER BY l.starts_at DESC`, period('l.starts_at', true));
+      FROM loans l JOIN items i ON i.id=l.item_id JOIN ${base.replace('projects p', 'projects p ON p.id=l.project_id')} /*WHERE*/ ORDER BY l.starts_at DESC,l.id`, period('l.starts_at', true));
   } else if (dataset === 'records') {
     rows = await run(`SELECT r.id,date(r.occurred_at,'-3 hours') AS data,${projectColumns},r.kind AS categoria,r.title AS titulo,substr(r.body,1,500) AS descricao,
       (SELECT COUNT(*) FROM record_attachments a WHERE a.record_id=r.id AND a.deleted_at IS NULL) AS anexos
-      FROM records r JOIN ${base.replace('projects p', 'projects p ON p.id=r.project_id')} /*WHERE*/ ORDER BY r.occurred_at DESC`, recordVisibility(actor, period('r.occurred_at')));
+      FROM records r JOIN ${base.replace('projects p', 'projects p ON p.id=r.project_id')} /*WHERE*/ ORDER BY r.occurred_at DESC,r.id`, recordVisibility(actor, period('r.occurred_at')));
   } else if (dataset === 'campaign_days') {
     // Uma linha por dinâmica, dia (Brasília) e tipo. Participação, tentativa e entrega contam no dia em que cada uma aconteceu.
     const days = [...(from ? ['ev.dia>=?'] : []), ...(to ? ['ev.dia<=?'] : [])];
@@ -148,13 +148,13 @@ export async function reportRows(db: D1Database, actor: PortalActor | null, inpu
       ) SELECT s.id||':'||ev.dia||':'||ev.tipo AS id,s.projeto,s.unidade_sigla,s.unidade,s.unidade_grupo,s.area_tematica,s.modalidade,s.evento,ev.dia AS data,ev.tipo AS tipo_dinamica,
         SUM(ev.participacoes) AS participacoes,SUM(ev.tentativas) AS tentativas,SUM(ev.premios) AS premios_entregues,SUM(ev.tiquetes) AS atendimentos_assistidos
       FROM ev JOIN alcance s ON s.id=ev.campaign_id ${days.length ? `WHERE ${days.join(' AND ')}` : ''}
-      GROUP BY s.id,ev.dia,ev.tipo ORDER BY ev.dia DESC,s.evento,ev.tipo LIMIT ${MAX_ROWS + 1}`, [...params, ...(from ? [from] : []), ...(to ? [to] : [])]);
+      GROUP BY s.id,ev.dia,ev.tipo ORDER BY ev.dia DESC,s.evento,ev.tipo,s.id LIMIT ${MAX_ROWS + 1}`, [...params, ...(from ? [from] : []), ...(to ? [to] : [])]);
   } else {
     rows = await run(`SELECT c.id,${projectColumns},c.name AS evento,c.location AS local,date(c.starts_at,'-3 hours') AS inicio,date(c.ends_at,'-3 hours') AS fim,c.status AS situacao,
       (SELECT COUNT(*) FROM participations x WHERE x.campaign_id=c.id) AS participacoes,
       (SELECT COUNT(*) FROM attempts a JOIN participations x ON x.id=a.participation_id WHERE x.campaign_id=c.id) AS tentativas,
       (SELECT COUNT(*) FROM entitlements e JOIN participations x ON x.id=e.participation_id WHERE x.campaign_id=c.id AND e.state='delivered') AS premios_entregues
-      FROM campaigns c JOIN ${base.replace('projects p', 'projects p ON p.id=c.project_id')} /*WHERE*/ ORDER BY c.starts_at DESC`, period('c.starts_at'));
+      FROM campaigns c JOIN ${base.replace('projects p', 'projects p ON p.id=c.project_id')} /*WHERE*/ ORDER BY c.starts_at DESC,c.id`, period('c.starts_at'));
   }
   if (dataset === 'outflow_details') {
     const selected: Row[] = [], encoder = new TextEncoder(); let bytes = 128;

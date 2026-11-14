@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { ArrowDown, ArrowUp, BarChart3, Boxes, CalendarRange, ClipboardList, Columns3, FileJson, FileText, FolderKanban, LoaderCircle, Printer, RefreshCw, Repeat2, Save, Search, Trash2, Truck, X } from 'lucide-react';
 import { areaLabel } from '@/lib/extension-catalog';
@@ -207,8 +207,17 @@ function ChartTooltip({ active, payload, label, unit }: { active?: boolean; payl
   return <div className={styles.tooltip}><strong>{label}</strong>{payload.map(item => <span key={item.name}><i style={{ background: item.color }} />{item.name}<b>{formatNumber(Number(item.value) || 0)} {unit}</b></span>)}</div>;
 }
 
-async function requestReport(query: URLSearchParams, signal: AbortSignal): Promise<{ rows: ExportRow[]; truncated: boolean }> {
-  const response = await fetch(`/api/reports?${query}`, { credentials: 'same-origin', cache: 'no-store', signal });
+type ReportResult = { rows: ExportRow[]; truncated: boolean };
+
+async function requestReport(query: URLSearchParams, signal: AbortSignal, userId?: string): Promise<ReportResult> {
+  const options: RequestInit = { credentials: 'same-origin', cache: 'no-store', signal };
+  if (userId) options.headers = { 'X-Proex-Viewer': userId };
+  const response = query.has('demandSearch')
+    ? await fetch('/api/reports', {
+      ...options, method: 'POST', body: JSON.stringify(Object.fromEntries(query)),
+      headers: { ...options.headers, 'Content-Type': 'application/json', 'X-Proex-Action': '1' },
+    })
+    : await fetch(`/api/reports?${query}`, options);
   let value: unknown;
   try {
     value = await response.json();
@@ -442,7 +451,8 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
   const presetsReady = Boolean(presetKey) && presetState.key === presetKey;
   const presetName = presetsReady ? presetState.name : '';
   const visiblePresets = presetsReady ? presetState.values.filter(preset => datasets.includes(preset.dataset)) : [];
-  const [exporting, setExporting] = useState<DocumentFormat | null>(null);
+  const [exporting, setExporting] = useState<DocumentFormat | 'json' | 'print' | null>(null);
+  const pendingExport = useRef<{ controller: AbortController; popup?: Window } | null>(null);
   const [categoryAxisWidth, setCategoryAxisWidth] = useState(150);
   const chartsRef = useRef<HTMLDivElement>(null);
   const reportSearchRef = useRef<HTMLInputElement>(null);
@@ -453,9 +463,7 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
     const timer = window.setTimeout(() => setPresetState({ key: presetKey, values: readPresets(presetKey), name: '' }), 0);
     return () => window.clearTimeout(timer);
   }, [presetKey]);
-  useEffect(() => {
-    if (waitingForDemandScope) return;
-    const controller = new AbortController();
+  const reportQuery = useMemo(() => {
     const query = new URLSearchParams({ dataset });
     if (dataset === 'materials' && assetDetails) query.set('assetDetails', '1');
     if (dataset === 'outflow_details') { query.set('outflowType', outflowType); query.set('returnState', returnState); if (includeNotes) query.set('includeNotes', '1'); }
@@ -471,8 +479,13 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
     if (area) query.set('thematicArea', area);
     if (from) query.set('from', from);
     if (to) query.set('to', to);
+    return query;
+  }, [dataset, projectId, unitId, area, from, to, assetDetails, includeNotes, outflowType, returnState, demandScope]);
+  useEffect(() => {
+    if (waitingForDemandScope) return;
+    const controller = new AbortController();
     const start = window.setTimeout(() => setLoading(true), 0);
-    requestReport(query, controller.signal)
+    requestReport(reportQuery, controller.signal, userId)
       .then(body => {
         if (controller.signal.aborted) return;
         window.clearTimeout(start);
@@ -492,7 +505,7 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
         setLoading(false);
       });
     return () => { window.clearTimeout(start); controller.abort(); };
-  }, [dataset, projectId, unitId, area, from, to, queryKey, assetDetails, includeNotes, outflowType, returnState, demandScope, waitingForDemandScope, attempt]);
+  }, [reportQuery, queryKey, userId, waitingForDemandScope, attempt]);
 
   function retryReport() {
     reportResultRef.current?.focus();
@@ -581,13 +594,81 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
     ['Operador', 'Nome atual do perfil, somente para quem tem permissão operacional vigente; não identifica o beneficiário.'], ['Textos livres', includeNotes ? 'Consulta opcional sujeita à permissão operacional atual; confira as colunas antes de compartilhar.' : 'Não consultados nem exportados.'],
     ['Cobertura', truncated ? 'Consulta parcial por limite de linhas ou tamanho. Refine os filtros antes de considerar o relatório completo.' : 'Registros do recorte retornados pela consulta.']);
 
-  async function exportDocument(format: DocumentFormat) {
-    if (exporting || loading || !chosen.length || !sorted.length) throw new ExportHandledError();
-    setExporting(format); setExportError(null);
+  const exportContext = JSON.stringify([queryKey, search, focus, measurementUnit, columns, sort, groupBy, measure, scopeLabel, demandFilterLabel, attempt]);
+  useLayoutEffect(() => {
+    return () => {
+      const pending = pendingExport.current;
+      if (!pending) return;
+      pendingExport.current = null;
+      pending.controller.abort();
+      pending.popup?.close();
+    };
+  }, [exportContext]);
+
+  const exportDisabled = loading || Boolean(queryFailure) || waitingForDemandScope || !chosen.length || !sorted.length;
+  async function exportCurrent(format: DocumentFormat | 'json' | 'print'): Promise<void> {
+    if (pendingExport.current || exportDisabled) throw new ExportHandledError();
+    const controller = new AbortController();
+    const message = (value: string) => setExportError({ key: queryKey, message: value });
+    const popup = format === 'print' ? window.open('', '_blank', 'width=1100,height=800') : undefined;
+    if (popup === null) {
+      message('O navegador bloqueou a janela de impressão. Permita pop-ups para este site e tente de novo.');
+      throw new ExportHandledError();
+    }
+    if (popup) popup.opener = null;
+    const pending = { controller, popup };
+    pendingExport.current = pending;
+    setExporting(format);
+    setExportError(null);
+    let delivered = false;
+    async function verify() {
+      let current: ReportResult;
+      try {
+        current = await requestReport(reportQuery, controller.signal, userId);
+      } catch (reason) {
+        if (controller.signal.aborted) throw reason;
+        setRows(EMPTY_ROWS);
+        setTruncated(false);
+        setQueryError({ key: queryKey, message: 'Não foi possível confirmar o acesso às linhas. Atualize a consulta.' });
+        message('O relatório precisa ser consultado novamente antes da exportação.');
+        throw new ExportHandledError();
+      }
+      controller.signal.throwIfAborted();
+      if (current.truncated === truncated && JSON.stringify(current.rows) === JSON.stringify(rows)) return;
+      setRows(current.rows);
+      setTruncated(current.truncated);
+      message('As linhas ou o acesso mudaram. Confira o recorte atualizado antes de exportar.');
+      throw new ExportHandledError();
+    }
     try {
-      const blob = await reportDocument(format, config.label, exportColumns, sorted, exportValue, info, reportProjectName ? { projectName: reportProjectName, projectBrand: reportBrand } : undefined);
-      download(`${fileBase}.${format}`, blob);
-    } finally { setExporting(null); }
+      await verify();
+      if (popup) {
+        if (popup.closed) throw new ExportHandledError();
+        printReport(popup);
+      } else {
+        const blob = format === 'json'
+          ? toJson({ relatorio: config.label, filtros: Object.fromEntries(info) }, exportColumns, sorted, exportValue)
+          : format === 'print' ? null
+          : await reportDocument(format, config.label, exportColumns, sorted, exportValue, info, reportProjectName ? { projectName: reportProjectName, projectBrand: reportBrand } : undefined);
+        if (!blob) throw new ExportHandledError();
+        await verify();
+        controller.signal.throwIfAborted();
+        download(`${fileBase}.${format}`, blob);
+      }
+      delivered = true;
+    } catch (cause) {
+      if (!controller.signal.aborted && !(cause instanceof ExportHandledError)) {
+        const staleModule = cause instanceof Error && /loading chunk|dynamically imported module|loading css chunk/i.test(cause.message);
+        message(staleModule
+          ? 'Há uma versão mais recente do Portal. Recarregue a página e tente novamente.'
+          : 'Não foi possível preparar o relatório. Tente novamente.');
+      }
+      throw new ExportHandledError();
+    } finally {
+      if (!delivered) popup?.close();
+      if (pendingExport.current === pending) pendingExport.current = null;
+      if (!pendingExport.current) setExporting(null);
+    }
   }
 
   function toggleColumn(key: string) { setColumns(current => current.includes(key) ? current.filter(item => item !== key) : config.columns.map(column => column.key).filter(item => item === key || current.includes(item))); }
@@ -604,17 +685,9 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
     setPresetState({ ...presetState, values });
     writePresets(presetKey, values);
   }
-  function print() {
-    if (loading || !chosen.length || !sorted.length) return;
-    setExportError(null);
-    const popup = window.open('', '_blank', 'width=1100,height=800');
-    if (!popup) {
-      setExportError({ key: queryKey, message: 'O navegador bloqueou a janela de impressão. Permita pop-ups para este site e tente de novo.' });
-      return;
-    }
+  function printReport(popup: Window) {
     const charts = chartsRef.current?.querySelectorAll('svg.recharts-surface') ?? [];
     const escape = (value: unknown) => String(value ?? '').replace(/[&<>"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[char]!));
-    popup.opener = null;
     const brandBase = escape(window.location.origin);
     popup.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${escape(config.label)} — PROEX/UFG</title><style>
       :root{--rc-1:#2a78d6;--rc-2:#eb6834;--rc-grid:#e6e1ec;--rc-axis:#6b6275}body{font:12px/1.5 system-ui,sans-serif;color:#231b2b;margin:28px}h1{font-size:20px;margin:0 0 4px;color:#54216c}dl{display:grid;grid-template-columns:140px 1fr;gap:2px 12px;margin:12px 0 18px}dt{color:#6b6275}dd{margin:0}.k{display:flex;gap:10px;margin-bottom:16px}.k div{border:1px solid #ddd3e6;border-radius:8px;padding:8px 12px;min-width:120px}.k b{display:block;font-size:20px;color:#54216c}.c{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px}.c svg{max-width:100%;height:auto}table{width:100%;border-collapse:collapse;font-size:11px}th{background:#54216c;color:#fff;text-align:left;padding:5px}td{border-bottom:1px solid #e6e1ec;padding:4px 5px}td.n{text-align:right;font-variant-numeric:tabular-nums}@media print{body{margin:10mm}} .masthead{display:flex;justify-content:space-between;align-items:center;gap:14px;border-bottom:3px solid #ffaa3d;margin:0 0 14px;padding-bottom:12px}.masthead p{margin:0}.logos{display:flex;gap:10px;align-items:center;flex-shrink:0}.logos img{width:70px;height:40px;object-fit:contain;filter:brightness(0)}.k{display:grid;grid-template-columns:repeat(4,minmax(0,1fr))}.k div{min-width:0;break-inside:avoid}thead{display:table-header-group}tr{break-inside:avoid}th,td{overflow-wrap:anywhere}body{print-color-adjust:exact;-webkit-print-color-adjust:exact}</style></head><body>
@@ -715,10 +788,11 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
       </div>
     </>}
     <details className={styles.exportOptions}><summary>Exportar linhas deste recorte</summary>
-      <ExportFormats key={queryKey} className={styles.exportBar} label="Exportar relatório" disabled={loading || !chosen.length || !sorted.length} onExport={format => format === 'xlsx' ? download(`${fileBase}.xlsx`, toXlsx(config.label, exportColumns, sorted, exportValue, info)) : exportDocument(format)}>
-        <button type="button" className="p-button p-button-subtle" disabled={loading || !chosen.length || !sorted.length || !!exporting} onClick={() => download(`${fileBase}.json`, toJson({ relatorio: config.label, filtros: Object.fromEntries(info) }, exportColumns, sorted, exportValue))}><FileJson size={16} />JSON</button>
-        <button type="button" className="p-button p-button-subtle" disabled={loading || !chosen.length || !sorted.length || !!exporting} onClick={print}><Printer size={16} />Imprimir</button>
+      <ExportFormats key={queryKey} className={styles.exportBar} label="Exportar relatório" disabled={exportDisabled || !!exporting} onExport={exportCurrent}>
+        <button type="button" className="p-button p-button-subtle" disabled={exportDisabled || !!exporting} onClick={() => void exportCurrent('json').catch(() => {})}><FileJson size={16} />JSON</button>
+        <button type="button" className="p-button p-button-subtle" disabled={exportDisabled || !!exporting} onClick={() => void exportCurrent('print').catch(() => {})}><Printer size={16} />Imprimir</button>
       </ExportFormats>
+      {exporting && <p role="status" className={styles.reportHelp}>Conferindo o recorte para exportação…</p>}
       <div role="alert">{exportError?.key === queryKey && <p className="p-notice p-notice-error">{exportError.message}</p>}</div>
     </details>
     {!loading && breakdown.length > 0 && <>
