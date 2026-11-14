@@ -23,6 +23,8 @@ Uma alteração só de título preserva os vínculos que o editor não tem autor
 
 No navegador, verificar 390 e 1366 px, temas claro e escuro, com a ficha, Documentos, convite e checklist. Criar registro, recarregar Documentos, voltar à ficha e fechar/reabrir um checklist que contém linhas de um modelo. O ensaio por HTTP salva e relê um PNG privado, byte a byte. Câmera física e Drive autenticado ficam como aceites separados.
 
+Abra um link de Registros e fotos com a sessão encerrada. Após entrar com a coordenação, confira se a atividade e seus registros aparecem direto. Repita com um leitor vinculado a outro projeto. O recorte de atividade deve sumir do endereço e seu conteúdo deve ficar inacessível.
+
 ### Equipes, convite e responsáveis
 
 - Abra **Qual acesso escolher?** em Pessoas e acessos com Tab e Espaço. O guia distingue administração do Portal, administração da organização, gestão de projeto, frentes de trabalho e acessos restritos. Equipes, como TI, organizam atribuições.

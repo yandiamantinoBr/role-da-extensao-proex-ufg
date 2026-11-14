@@ -10,11 +10,11 @@ import {boundedJson} from '@/lib/http';
 import {accountRate,rateLimit,clientIp} from '@/lib/rate-limit';
 import {resolveLogin,loginRateSubject,identifierSettings,changeIdentifier} from '@/lib/login-identifiers';
 import {listPrivacyRequests,requestPrivacy,resolvePrivacy} from '@/lib/privacy';
+import {safeLoginDestination} from '@/lib/login-destination';
 export const dynamic='force-dynamic';
 async function tokenHash(value:string){return [...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value)))].map(b=>b.toString(16).padStart(2,'0')).join('');}
 function password(value:unknown){if(typeof value!=='string'||value.length<12||value.length>128)throw new HttpError(400,'Use uma senha de 12 a 128 caracteres.','invalid_password');return value;}
 async function invitation(db:D1Database,token:string){if(!/^[A-Za-z0-9_-]{32,120}$/.test(token))throw new HttpError(400,'Convite inválido.');const i=await one(db,'SELECT * FROM invites WHERE token_hash=?',[await tokenHash(token)]);if(!i||i.revoked_at||i.expires_at<=iso())throw new HttpError(410,'O convite expirou ou foi revogado. Peça outro link.');return i;}
-function safePath(value:unknown){return typeof value==='string'&&value.startsWith('/')&&!value.startsWith('//')&&!value.startsWith('/api/')?value:'/';}
 function privateResponse(r:Response){r.headers.set('Cache-Control','private, no-store');return r;}
 async function inspectInvitation(db:D1Database, token:string){
  const i=await invitation(db,token);
@@ -47,7 +47,7 @@ export async function POST(request:Request){try{
   const admitted=await resolveLogin(db,inviteSecret(),identifier);
   if(!admitted)throw new HttpError(401,'Identificador ou senha inválidos, ou cadastro ainda não ativado.');
   await rateLimit(db,`account:canonical-login:${admitted.userId}`,10,600000);
-  return await admittedSignIn(db,await authForRequest(db),admitted.email,input.password,h,safePath(input.returnTo),admitted);
+  return await admittedSignIn(db,await authForRequest(db),admitted.email,input.password,h,safeLoginDestination(input.returnTo),admitted);
  }
  if(input.action==='logout'){const response=privateResponse(await(await authForRequest(db)).api.signOut({headers:h,asResponse:true}));response.headers.set('Clear-Site-Data','"cache"');return response;}
  if(input.action==='initialPassword'){

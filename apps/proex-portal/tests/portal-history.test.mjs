@@ -15,6 +15,7 @@ function load(file, dependencies = {}) {
 }
 
 const { readPortalLocation, commitPortalLocation, deniedPortalModule } = load('portal-history', { './work-navigation': load('work-navigation'), './my-work/contracts': load('my-work/contracts'), './report-links': load('report-links', { './civil-date': load('civil-date') }) });
+const { dashboardLoginDestination, loginHref, safeLoginDestination } = load('login-destination', { './report-links': load('report-links', { './civil-date': load('civil-date') }) });
 const origin = 'https://example.test';
 const scope = {
     modules: ['overview', 'projects', 'materials', 'calendar', 'reports', 'demands', 'my-work', 'records'],
@@ -25,6 +26,39 @@ const scope = {
     canSelectOrganization: (organization, project) => organization === 'org-a' && (!project || project === 'project-a'),
 };
 const read = (query, current = scope) => readPortalLocation(new URLSearchParams(query), current);
+
+test('signing in preserves the shared activity, demand or project; access is resolved for that account', () => {
+    const afterLogin = params => {
+        const login = new URL(loginHref(dashboardLoginDestination(params)), origin);
+        assert.equal(login.pathname, '/login');
+        return safeLoginDestination(login.searchParams.get('returnTo'));
+    };
+    const activity = afterLogin({module:'records', project:'project-a', view:'documents', scheduleItemId:'activity-sparks', token:'private', unknown:'no'});
+    assert.equal(activity, '/?module=records&project=project-a&view=documents&scheduleItemId=activity-sparks');
+    assert.equal(read(new URL(activity, origin).search).recordsScheduleItemId, 'activity-sparks');
+    const restricted = read(new URL(activity, origin).search, {...scope, canSelectProject: () => false});
+    assert.equal(restricted.project, '');
+    assert.equal(restricted.recordsScheduleItemId, undefined);
+    const demand = afterLogin({module:['demands', 'settings'], project:'project-a', demandId:'front-a', scheduleItemId:'activity-sparks'});
+    assert.equal(read(new URL(demand, origin).search).demand, 'front-a');
+    const project = afterLogin({module:'projects', project:'project-a', detailProject:'project-a'});
+    assert.equal(read(new URL(project, origin).search).record.recordId, 'project-a');
+    const report = new URL(afterLogin({module:'reports', recorte:'1', from:'2026-11-09', to:'2026-11-13', q:'Rolê da Extensão'}), origin);
+    assert.equal(report.searchParams.get('from'), '2026-11-09');
+    assert.equal(report.searchParams.get('to'), '2026-11-13');
+    assert.equal(report.searchParams.get('q'), 'Rolê da Extensão');
+    assert.equal(loginHref(dashboardLoginDestination({ token:'private' })), '/login');
+});
+
+test('login refuses external or actionable URLs and preserves the existing public activity entry', () => {
+    for (const unsafe of [
+        'https://outside.example', '//outside.example', '/\\outside.example', '/\t/outside.example', '/%5coutside.example',
+        '/api/account', '/login', '/events/../api', '/events/id\n', '/convite?token=private', ['/?module=records'],
+    ]) assert.equal(safeLoginDestination(unsafe), '/');
+    assert.equal(safeLoginDestination('/?module=records%0A&returnTo=https://outside.example&token=private'), '/');
+    assert.equal(safeLoginDestination('/events/activity-2026'), '/events/activity-2026');
+    assert.equal(safeLoginDestination('/participante'), '/participante');
+});
 
 test('a project documents link survives reload and selecting another module clears its view',()=>{
     const href=origin+'/?module=records&view=documents&project=project-a&scheduleItemId=activity-sparks';

@@ -28,7 +28,7 @@ function compile(source, target) {
   writeFileSync(join(temporary, `${target}.js`), output);
 }
 compile('../db/auth-schema.ts', 'auth-schema');
-for (const name of ['password-auth', 'session', 'access', 'database', 'errors', 'http', 'rate-limit', 'mutations', 'login-identifiers', 'privacy', 'owner-setup', 'account-access', 'team-access-labels']) compile(`../lib/${name}.ts`, name);
+for (const name of ['password-auth', 'session', 'access', 'database', 'errors', 'http', 'rate-limit', 'mutations', 'login-identifiers', 'privacy', 'owner-setup', 'account-access', 'team-access-labels', 'login-destination', 'report-links', 'civil-date']) compile(`../lib/${name}.ts`, name);
 compile('../app/api/account/route.ts', 'account-route');
 compile('../app/api/account/access/route.ts', 'account-access-route');
 compile('../app/api/auth/[...all]/route.ts', 'auth-route');
