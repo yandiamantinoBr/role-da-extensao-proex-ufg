@@ -3,7 +3,12 @@
 .launcher:hover{background:var(--surface-soft)}
 .launcher:focus-visible,.iconButton:focus-visible,.send:focus-visible,.suggestions button:focus-visible{outline:3px solid var(--focus);outline-offset:3px}
 @media (prefers-reduced-motion:no-preference){.launcher{transition:transform .15s ease}.launcher:hover{transform:translateY(-2px)}}
-@media (max-width:720px){.launcher{right:14px;bottom:calc(84px + env(safe-area-inset-bottom,0px));padding:6px}.launcherLabel{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}}
+@media (max-width:720px){
+  .launcher{display:none}
+  :global(.p-topbar-actions) .launcher{position:static;display:grid;place-items:center;flex:none;width:44px;height:44px;min-height:44px;padding:0;border:1px solid #ffffff32;border-radius:10px;background:#ffffff12;box-shadow:none}
+  :global(.p-topbar-actions) .launcher img{width:30px;height:30px;border:0}
+  .launcherLabel{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+}
 
 .backdrop{position:fixed;inset:0;z-index:80;display:flex;justify-content:flex-end;background:#14091f66;backdrop-filter:blur(2px)}
 .dialog{display:flex;flex-direction:column;width:min(440px,100%);height:100dvh;background:var(--surface);color:var(--text-strong);border-left:1px solid var(--line);box-shadow:-20px 0 60px #170a2730;container-type:inline-size}
@@ -89,7 +94,6 @@
 .loadingLine{display:flex;align-items:center;gap:.35rem;margin:0;font-size:max(13px,.85rem);color:var(--text-secondary)}
 /* Folga para o botão flutuante não cobrir o fim da página. */
 :global(.p-main):has(.launcher){padding-bottom:96px}
-@media (max-width:720px){:global(.pn-shell .p-main):has(.launcher){padding-bottom:calc(176px + env(safe-area-inset-bottom,0px))}}
 @container (max-width:430px){.textButton{padding:0 .6rem}.textButton span{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}}
 :global(html[data-theme=dark]) .operation{border-left-color:#b48ad6}
 .composer{grid-template-columns:minmax(0,1fr)}

@@ -10,7 +10,8 @@ import {
 } from '@/lib/assistant/role-contracts';
 import { prepareSpeechWav } from './speech-audio';
 import AiPeopleUsage from './ai-people-usage';
-import { useDockItem } from './floating-dock';
+import { createPortal } from 'react-dom';
+import { useDockItem, useMobileDockToolbar } from './floating-dock';
 import DestinationField, { destinationFields, loadDestinations } from './destination-field';
 import styles from './role-assistant.module.css';
 
@@ -107,6 +108,7 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
   const usageRange = useMemo(() => { const day = (offset: number) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(Date.now() - offset * 86400000)); return { from: day(29), to: day(0) }; }, [usageOpen]); // eslint-disable-line react-hooks/exhaustive-deps
   const [recording, setRecording] = useState(false), [recorded, setRecorded] = useState<Recorded | null>(null), [transcribing, setTranscribing] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null), dialog = useRef<HTMLDivElement>(null), input = useRef<HTMLTextAreaElement>(null), log = useRef<HTMLOListElement>(null);
+  const returnFocus = useRef<HTMLElement | null>(null);
   const recorder = useRef<MediaRecorder | null>(null), stream = useRef<MediaStream | null>(null), stopTimer = useRef<number | null>(null), mounted = useRef(true);
   const project = projects.find(item => item.id === projectId);
 
@@ -118,11 +120,16 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
     try { const next = await call<Status>(`/api/assistant/role?projectId=${encodeURIComponent(id)}`); if (mounted.current) setStatus(next); }
     catch (cause) { if (mounted.current) setStatusError(cause instanceof Error ? cause.message : 'Não foi possível consultar o Rolê.'); }
   }, []);
-  const openRole = useCallback(() => { setOpen(true); void loadStatus(projectId); }, [loadStatus, projectId]);
+  const openRole = useCallback(() => {
+    returnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setOpen(true);
+    void loadStatus(projectId);
+  }, [loadStatus, projectId]);
   // Sonda grátis (sem provedor): o botão só aparece quando o Rolê está ligado para esta pessoa.
   const [ready, setReady] = useState(false);
   // Doca comum de widgets: quando existe, ela desenha o botão (com o X para esconder); o painel e o Alt+R continuam aqui.
   const dock = useDockItem(ready ? { id: 'role', label: 'Rolê', icon: <img src="/brand/role-mascote/role-rosto.svg" alt="" width={28} height={28}/>, onOpen: openRole, shortcut: 'Alt+R' } : null);
+  const toolbar = useMobileDockToolbar();
   useEffect(() => {
     if (!projectId) return;
     let alive = true;
@@ -130,10 +137,16 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
     return () => { alive = false; };
   }, [projectId]);
 
-  const close = useCallback(() => {
+  const close = useCallback((restoreFocus = true) => {
     if (recorder.current?.state === 'recording') recorder.current.stop();
     setOpen(false);
-    window.requestAnimationFrame(() => trigger.current?.focus());
+    if (!restoreFocus) return;
+    window.requestAnimationFrame(() => {
+      const opener = returnFocus.current;
+      const target = opener?.isConnected && opener.getClientRects().length && opener !== document.body ? opener
+        : trigger.current ?? document.querySelector<HTMLElement>('[data-dock-toggle]') ?? document.getElementById('main');
+      target?.focus({ preventScroll: true });
+    });
   }, []);
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
@@ -340,20 +353,21 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
   // Com o botão na tela, a mensagem aponta para ele em vez de repetir o caminho do menu.
   const limitText = (cause: Error) => isLimit(cause) && status?.canConfigure && onOpenLimits ? cause.message.replace(/Você pode aumentar [^.]*\.$/, 'Use o botão Ajustar limites abaixo.') : cause.message;
   // Quem pode configurar vai direto a Limites e cotas; os outros já recebem na mensagem o nome de quem ajusta.
-  const limitsButton = status?.canConfigure && onOpenLimits ? <button type="button" className={`p-button p-button-primary ${styles.limitsButton}`} onClick={() => { close(); onOpenLimits(); }}>Ajustar limites</button> : null;
+  const limitsButton = status?.canConfigure && onOpenLimits ? <button type="button" className={`p-button p-button-primary ${styles.limitsButton}`} onClick={() => { close(false); onOpenLimits(); }}>Ajustar limites</button> : null;
+  const launcher = !open && ready && !dock.registered && <button ref={trigger} type="button" className={styles.launcher} aria-haspopup="dialog" aria-keyshortcuts="Alt+R" onClick={event => { event.currentTarget.focus({ preventScroll: true }); openRole(); }} title="Falar com o Rolê (Alt + R)">
+    <img src="/brand/role-mascote/role-rosto.svg" alt="" width={44} height={44}/>
+    <span className={styles.launcherLabel}>Falar com o Rolê</span>
+  </button>;
 
   return <>
-    {!open && ready && !dock.registered && <button ref={trigger} type="button" className={styles.launcher} aria-haspopup="dialog" aria-keyshortcuts="Alt+R" onClick={openRole} title="Falar com o Rolê (Alt + R)">
-      <img src="/brand/role-mascote/role-rosto.svg" alt="" width={44} height={44}/>
-      <span className={styles.launcherLabel}>Falar com o Rolê</span>
-    </button>}
+    {toolbar ? createPortal(launcher, toolbar) : launcher}
     {open && <div className={styles.backdrop} onClick={event => { if (event.target === event.currentTarget) close(); }}>
       <div ref={dialog} className={styles.dialog} role="dialog" aria-modal="true" aria-labelledby="role-title" aria-describedby="role-subtitle" onKeyDown={onDialogKey}>
         <header className={styles.header}>
           <img className={styles.avatar} src="/brand/role-mascote/role-rosto.svg" alt="" width={48} height={48}/>
           <div className={styles.headerText}><h2 id="role-title">Rolê</h2><p id="role-subtitle">Assistente da PROEX</p></div>
           {messages.length > 0 && <button type="button" className={styles.textButton} onClick={newConversation} disabled={busy} aria-label="Nova conversa"><MessageSquarePlus size={16} aria-hidden="true"/>Nova<span> conversa</span></button>}
-          <button type="button" className={styles.iconButton} onClick={close} aria-label="Fechar o Rolê"><X size={20} aria-hidden="true"/></button>
+          <button type="button" className={styles.iconButton} onClick={() => close()} aria-label="Fechar o Rolê"><X size={20} aria-hidden="true"/></button>
         </header>
         <label className={styles.project}><span>Procurar em</span><select value={scopeValue} disabled={busy} onChange={event => {
           const value = event.target.value; setScopeValue(value);
