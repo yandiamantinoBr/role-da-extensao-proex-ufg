@@ -156,6 +156,27 @@ test('advanced filters stay native and initially collapsed while active values s
  h.select('Estado','all');h.render();h.select('Prioridade','all');h.render();h.find('input',node=>node.props.placeholder==='Título ou contexto').props.onChange({target:{value:''}});h.render();h.timers();query=new URL(h.pending('tasks').url,'http://127.0.0.1').searchParams;assert.equal(query.get('search'),null);assert.equal(query.get('status'),'all');assert.equal(query.get('priority'),'all');assert.equal(text(h.find('summary',node=>text(node).startsWith('Buscar e filtrar'))),'Buscar e filtrar');}finally{h.dispose();}
 });
 
+test('organization keeps all visible projects, general demands are explicit, and the report uses the current filters',async()=>{
+ const h=harness(), opened=[];
+ try{
+  h.render({onOpenReports:filters=>opened.push(filters)});await ready(h);
+  h.select('Organização','org-b');h.render();h.timers();
+  let query=new URL(h.pending('tasks').url,'http://127.0.0.1').searchParams;
+  assert.equal(query.get('organizationId'),'org-b');
+  assert.equal(query.get('projectId'),null);
+  assert.equal(query.get('projectScope'),null);
+  h.reply(h.pending('catalog'),catalog());await tick();h.render();
+  h.select('Projeto','__organization__');h.select('Prioridade','high');h.render();h.timers();
+  query=new URL(h.pending('tasks').url,'http://127.0.0.1').searchParams;
+  assert.equal(query.get('projectScope'),'organization');
+  h.button('Relatório do recorte').props.onClick();
+  assert.deepEqual(JSON.parse(JSON.stringify(opened[0])),{projectId:'',organizationId:'org-b',generalOnly:true,status:'all',priority:'high',search:''});
+  h.button('Limpar busca e filtros').props.onClick();h.render();
+  assert.equal(h.value('Prioridade'),'all');
+  assert.equal(h.value('Projeto'),'__organization__');
+ }finally{h.dispose();}
+});
+
 test('explicit close restores the opening card or the list heading for a detached trigger',async()=>{
  const h=harness(),focused=[];
  try{

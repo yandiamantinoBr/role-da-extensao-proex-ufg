@@ -1,7 +1,7 @@
 import { type PortalActor } from '../access';
 import { all } from '../database';
 import { HttpError } from '../errors';
-import { date } from './contracts';
+import { choices, date, TASK_PRIORITIES, TASK_STATES, taskSearchPattern } from './contracts';
 import { authority, activeAccount } from './scope';
 
 export async function followupReportRows(db: D1Database, actor: PortalActor, dataset: 'demands' | 'reviews', input: Record<string, unknown>, limit: number) {
@@ -12,6 +12,20 @@ export async function followupReportRows(db: D1Database, actor: PortalActor, dat
     if (typeof value !== 'string' || value.length > 200) throw new HttpError(400, 'Confira os filtros do relatório.', 'invalid_report_filter');
     if (value === '__none__') conditions.push(`(${column} IS NULL OR ${column}='')`);
     else { conditions.push(`${column}=?`); values.push(value); }
+  }
+  if (dataset === 'demands') {
+    if (input.demandProjectScope !== undefined) {
+      choices(input.demandProjectScope, ['organization']);
+      if (!input.organizationId || input.projectId) throw new HttpError(400, 'Confira a organização e o projeto deste relatório.', 'invalid_report_filter');
+      conditions.push('f.project_id IS NULL');
+    }
+    if (input.demandStatus && input.demandStatus !== 'all') { conditions.push('f.status=?'); values.push(choices(input.demandStatus, TASK_STATES)); }
+    if (input.demandPriority && input.demandPriority !== 'all') { conditions.push('f.priority=?'); values.push(choices(input.demandPriority, TASK_PRIORITIES)); }
+    const search = taskSearchPattern(input.demandSearch);
+    if (search) {
+      conditions.push("(f.title LIKE ? ESCAPE '\\' OR f.body LIKE ? ESCAPE '\\')");
+      values.push(search, search);
+    }
   }
   const from = date(input.from), to = date(input.to);
   if (from && to && from > to) throw new HttpError(400, 'A data inicial precisa anteceder a final.', 'invalid_report_date');
@@ -39,7 +53,7 @@ export async function followupReportRows(db: D1Database, actor: PortalActor, dat
       (SELECT COUNT(*) FROM followup_checklist_items r JOIN followup_checklists c ON c.id=r.checklist_id WHERE c.task_id=f.id) AS itens_conferencia,
       (SELECT COUNT(*) FROM followup_checklist_items r JOIN followup_checklists c ON c.id=r.checklist_id WHERE c.task_id=f.id AND r.counted IS NULL) AS contagens_pendentes
       FROM ${base} LEFT JOIN campaigns ev ON ev.id=f.campaign_id LEFT JOIN items i ON i.id=f.item_id
-      WHERE ${conditions.join(' AND ')} ORDER BY CASE f.priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,f.due_at IS NULL,f.due_at,f.created_at DESC,f.id`;
+      WHERE ${conditions.join(' AND ')} ORDER BY CASE f.status WHEN 'completed' THEN 1 WHEN 'cancelled' THEN 1 ELSE 0 END,CASE f.priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,COALESCE(f.due_at,'9999'),f.updated_at DESC,f.id`;
   } else {
     query = `SELECT r.id,c.id AS conferencia_id,${shared},c.title AS conferencia,c.status AS situacao,
       date(c.created_at,'-3 hours') AS data,COALESCE(ev.name,'') AS evento,i.name AS material,i.unit AS unidade_medida,r.size AS tamanho,

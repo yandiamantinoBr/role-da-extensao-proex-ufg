@@ -7,6 +7,7 @@ function compile(file){file=resolve(root,file);if(cache.has(file))return cache.g
 const {getActor}=await import(compile('lib/access.ts'));
 const {followupAction,followupList,followupDetail,followupCatalog,notificationInbox}=await import(compile('lib/follow-up/service.ts'));
 const {manualShareUrl}=await import(compile('lib/follow-up/contracts.ts'));
+const {followupReportRows}=await import(compile('lib/follow-up/reports.ts'));
 const {exportPortablePage,describePortableSchemas}=await import(compile('lib/sync/portable.ts'));
 function fixture(t){const native=new DatabaseSync(':memory:');native.exec('PRAGMA foreign_keys=ON');for(const name of readdirSync(root+'drizzle').filter(n=>n.endsWith('.sql')).sort())native.exec(readFileSync(root+'drizzle/'+name,'utf8'));t.after(()=>native.close());const now=new Date().toISOString();
  const insert=(table,row)=>{const cols=Object.keys(row);native.prepare(`INSERT INTO ${table}(${cols.join(',')}) VALUES(${cols.map(()=>'?').join(',')})`).run(...Object.values(row));};
@@ -71,6 +72,26 @@ test('task creation, CAS updates and lost replies are idempotent without orphan 
  await assert.rejects(act(f,actor,'task.update',{...update,operationKey:crypto.randomUUID()}),{status:409});assert.equal(f.native.prepare('SELECT COUNT(*) n FROM followup_history').get().n,2);
  const count=f.native.prepare('SELECT COUNT(*) n FROM mutation_keys').get().n;f.db.before=()=>f.native.prepare("UPDATE members SET revoked_at=? WHERE user_id='manager-a'").run(f.now);await assert.rejects(act(f,actor,'task.create',create()));assert.equal(f.native.prepare('SELECT COUNT(*) n FROM mutation_keys').get().n,count);
  await assert.rejects(act(f,actor,'task.create',input),{status:403});
+});
+
+test('organization scopes and report filters select the same authorized demands, including literal search characters', async t => {
+ const f=fixture(t), admin=await f.actor('admin-a'), reader=await f.actor('viewer-a');
+ f.insert('projects',{id:'project-a2',organization_id:'org-a',name:'Project A2',created_at:f.now});
+ const project=await act(f,admin,'task.create',create({title:'Compras 20%',userIds:[]}));
+ const another=await act(f,admin,'task.create',create({projectId:'project-a2',title:'Compras 20%',userIds:[]}));
+ const general=await act(f,admin,'task.create',create({projectId:null,title:'Compras 20%',userIds:[]}));
+ await act(f,admin,'task.create',create({projectId:null,title:'Compras 200',userIds:[]}));
+ const ids=result=>result.tasks.map(task=>task.id);
+ const filters={organizationId:'org-a',status:'open',priority:'high',search:'20%'};
+ assert.deepEqual(new Set(ids(await followupList(f.db,admin,filters))),new Set([project.task.id,another.task.id,general.task.id]));
+ assert.deepEqual(ids(await followupList(f.db,reader,filters)),[project.task.id]);
+ assert.deepEqual(ids(await followupList(f.db,admin,{...filters,projectScope:'organization'})),[general.task.id]);
+ assert.deepEqual(ids(await followupList(f.db,reader,{...filters,projectScope:'organization'})),[]);
+ assert.equal((await followupCatalog(f.db,reader,{organizationId:'org-a'})).canEdit,false);
+ await assert.rejects(followupList(f.db,reader,{projectScope:'organization',projectId:'project-a'}),{status:400});
+ const report={organizationId:'org-a',demandStatus:'open',demandPriority:'high',demandSearch:'20%',demandProjectScope:'organization'};
+ assert.deepEqual((await followupReportRows(f.db,admin,'demands',report,100)).rows.map(row=>row.id),[general.task.id]);
+ assert.deepEqual((await followupReportRows(f.db,reader,'demands',report,100)).rows,[]);
 });
 
 test('references and responsible people cannot cross organization/project boundaries even inside the transaction',async t=>{

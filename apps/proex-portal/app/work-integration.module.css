@@ -21,5 +21,16 @@
 .consumption > :global(.p-button[aria-expanded=true])::before { content: '▾'; }
 .consumption > :global(.p-button) > svg { display: none; }
 .formStack :global(.p-form) { max-width: 880px; }
+.loanFilters { display: grid; gap: 8px; margin-block-end: 14px; container-type: inline-size; }
+.loanFilterFields { display: grid; gap: 10px; grid-template-columns: repeat(2,minmax(0,1fr)); }
+.loanFilterFields > :global(.p-field) { margin: 0; min-width: 0; }
+.loanFilterFields > :global(.p-field):first-child,
+.loanFilterFields > :global(.p-field):nth-child(2) { grid-column: 1 / -1; }
+.loanFilterResult { display: flex; min-height: 44px; align-items: center; flex-wrap: wrap; justify-content: space-between; gap: 6px 16px; color: var(--text-secondary); font-size: .875rem; }
+.loanFilterResult > button { min-height: 44px; }
+@container (min-width: 690px) {
+  .loanFilterFields { grid-template-columns: minmax(0,1.5fr) minmax(0,1fr) repeat(2,minmax(0,1fr)); }
+  .loanFilterFields > :global(.p-field):nth-child(n) { grid-column: auto; }
+}
 .anchor { scroll-margin-top: 84px; }
 .movementEntry{display:flex;flex-wrap:wrap;gap:10px}.movementEntry :global(.p-button){min-height:44px}@media(max-width:540px){.movementEntry>*{flex:1 1 100%;justify-content:center}}

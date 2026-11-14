@@ -2,6 +2,7 @@ import type { ModuleId } from '../components/portal/navigation-model';
 import { MY_WORK_STATUSES, type MyWorkStatus } from './my-work/contracts';
 import { workRecordFromParams, writeWorkRecordParams, type WorkRecordSelection } from './work-navigation';
 import { isReportDataset, type ReportDatasetId } from './report-links';
+import { TASK_PRIORITIES, TASK_STATES, type DemandReportFilter } from './follow-up/contracts';
 
 export type PortalLocation = {
     tab: ModuleId;
@@ -12,6 +13,7 @@ export type PortalLocation = {
     record: WorkRecordSelection | null;
     /** Conjunto aberto em Relatórios (o botão "Exportar" das outras telas escolhe um). */
     report: ReportDatasetId;
+    demandReport?: Omit<DemandReportFilter,'search'> & { needsSearch:boolean; unavailable?:boolean };
     recordsView?: 'history' | 'documents';
     recordsScheduleItemId?: string;
     demandsScheduleItemId?: string;
@@ -57,6 +59,8 @@ export function readPortalLocation(params: URLSearchParams, scope: Scope): Porta
     const project = projectId && scope.canSelectProject(projectId, unit, area) ? projectId : '';
     const organizationId = params.get('organizationId') || '';
     const organization = (tab === 'my-work' || tab === 'overview') && organizationId && scope.canSelectOrganization?.(organizationId, project) ? organizationId : '';
+    const demandReportRequested=tab==='reports'&&params.get('report')==='demands'&&params.get('taskFilter')==='1';
+    const demandReportOrganization=demandReportRequested&&organizationId&&scope.canSelectOrganization?.(organizationId,project)?organizationId:'';
     const record = workRecordFromParams(params);
     const scheduleCandidate = params.get('scheduleItemId') || '';
     const scheduleItemId = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(scheduleCandidate) ? scheduleCandidate : '';
@@ -66,6 +70,14 @@ export function readPortalLocation(params: URLSearchParams, scope: Scope): Porta
         ...(tab === 'demands' && scheduleItemId ? { demandsScheduleItemId: scheduleItemId } : {}),
         record: record?.module === tab && record.projectId === project && scope.canOpenRecord(record) ? record : null,
         report: tab === 'reports' && isReportDataset(params.get('report')) ? params.get('report') as ReportDatasetId : 'projects',
+        ...(demandReportRequested ? {demandReport:{
+            organizationId:demandReportOrganization,
+            generalOnly:params.get('taskScope')==='organization',
+            status:TASK_STATES.find(value=>value===params.get('taskState'))??'all' as const,
+            priority:TASK_PRIORITIES.find(value=>value===params.get('taskPriority'))??'all' as const,
+            needsSearch:params.get('taskSearch')==='1',
+            unavailable:params.get('taskUnavailable')==='1'||Boolean(organizationId&&!demandReportOrganization)||Boolean(projectId&&!project)||(params.get('taskScope')==='organization'&&(!demandReportOrganization||Boolean(projectId))),
+        }} : {}),
         ...(tab === 'records' && params.get('view') === 'documents' ? {
             recordsView: 'documents' as const,
             ...(project && scheduleItemId ? { recordsScheduleItemId: scheduleItemId } : {}),
@@ -77,6 +89,7 @@ export function readPortalLocation(params: URLSearchParams, scope: Scope): Porta
 }
 
 export function writePortalLocation(params: URLSearchParams, route: PortalLocation) {
+    const demandReport=route.tab==='reports'&&route.report==='demands'?route.demandReport:undefined;
     for (const [key, value] of Object.entries({
         module: route.tab === 'overview' ? '' : route.tab,
         project: route.project,
@@ -89,7 +102,13 @@ export function writePortalLocation(params: URLSearchParams, route: PortalLocati
         scheduleItemId: route.tab === 'demands' ? route.demandsScheduleItemId || ''
             : route.tab === 'records' && route.recordsView === 'documents' ? route.recordsScheduleItemId || '' : '',
         workStatus: route.tab === 'my-work' && route.workStatus && MY_WORK_STATUSES.includes(route.workStatus) && route.workStatus !== 'pending' ? route.workStatus : '',
-        organizationId: route.tab === 'my-work' || route.tab === 'overview' ? route.organization || '' : '',
+        organizationId: demandReport?.organizationId || (route.tab === 'my-work' || route.tab === 'overview' ? route.organization || '' : ''),
+        taskFilter: demandReport?'1':'',
+        taskScope: demandReport?.generalOnly?'organization':'',
+        taskState: demandReport?.status==='all'?'':demandReport?.status??'',
+        taskPriority: demandReport?.priority==='all'?'':demandReport?.priority??'',
+        taskSearch: demandReport?.needsSearch?'1':'',
+        taskUnavailable: demandReport?.unavailable?'1':'',
         history: route.tab === 'records' ? route.history || '' : '',
     })) {
         if (value) params.set(key, value);

@@ -5,7 +5,7 @@ export type PortalSearchParams = Record<string, string | string[] | undefined>;
 const portalFields = [
   'module', 'project', 'unit', 'area', 'demandId', 'report', 'view', 'scheduleItemId',
   'workStatus', 'organizationId', 'history', 'detailProject', 'itemId', 'loanId',
-  'campaignId', 'teamId', 'destinationId', 'convocation',
+  'campaignId', 'teamId', 'destinationId', 'convocation', 'taskFilter', 'taskScope', 'taskState', 'taskPriority', 'taskSearch', 'taskUnavailable',
 ] as const;
 const routeValue = (value: string) => value.length <= 200 && /^[A-Za-z0-9_]/.test(value) && !/[^A-Za-z0-9._:-]/.test(value);
 

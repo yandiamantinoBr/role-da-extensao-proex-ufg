@@ -5,6 +5,7 @@ export const stateLabels = { open:'Aberta',in_progress:'Em andamento',blocked:'B
 export const priorityLabels = { high:'Alta',medium:'Média',low:'Baixa' };
 export type TaskStatus = typeof TASK_STATES[number];
 export type TaskPriority = typeof TASK_PRIORITIES[number];
+export type DemandReportFilter = { organizationId:string; generalOnly:boolean; status:TaskStatus|'all'; priority:TaskPriority|'all'; search:string };
 export type Task = { id:string;organization_id:string;project_id:string|null;title:string;body:string;priority:TaskPriority;importance?:TaskPriority|null;status:TaskStatus;due_at:string|null;version:number;created_at:string;updated_at:string;canEdit:boolean;canWork:boolean;canDelegateWork:boolean;project_name:string;organization_name:string;campaign_id:string|null;item_id:string|null;loan_id:string|null;assignees:{user_id:string|null;team_id:string|null;name:string}[];checklist_id?:string|null };
 export type ChecklistRow = {id:string;item_id:string;material:string;size:string;expected:number;counted:number|null;damaged:number;note:string};
 export type MaterialChecklist = {kind?:'materials';id:string;task_id:string;title:string;status:'open'|'completed';version:number;rows:ChecklistRow[];followups:{row_id:string;task_id:string}[]};
@@ -20,6 +21,10 @@ export function integer(value:unknown,max=1000000):number {if(typeof value!=='nu
 export function version(value:unknown):number {if(typeof value!=='number'||!Number.isSafeInteger(value)||value<1)return fail('Reabra o registro antes de salvar.','followup_version');return value;}
 export function date(value:unknown):string|null {if(value===undefined||value===null||value==='')return null;if(typeof value!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(value)||!Number.isFinite(Date.parse(value))||new Date(value).toISOString().slice(0,10)!==value)return fail('Informe o prazo como uma data válida.');return value;}
 export function choices<T extends string>(value:unknown,allowed:readonly T[]):T {if(typeof value!=='string'||!allowed.includes(value as T))return fail('Escolha uma opção válida.');return value as T;}
+export function taskSearchPattern(value:unknown):string {
+ const search=text(value,120,true);
+ return search ? '%'+search.replace(/[\\%_]/g,'\\$&')+'%' : '';
+}
 export function ids(value:unknown,max=20):string[] {if(value===undefined)return [];if(!Array.isArray(value)||value.length>max)return fail(`Selecione até ${max} responsáveis.`);return [...new Set(value.map(v=>id(v)!))].sort();}
 export function onlyKeys(input:Record<string,unknown>,keys:string[]) {if(Object.keys(input).some(k=>!keys.includes(k)))fail('Há campos não permitidos nesta operação.');}
 export function manualShareUrl(title:string,taskId:string,baseUrl:string):string {const base=new URL(baseUrl);if(!['https:','http:'].includes(base.protocol)||base.username||base.password)throw new Error('Endereço inválido.');base.searchParams.set('demandId',taskId);return `https://wa.me/?text=${encodeURIComponent(`${title.slice(0,160)}\n${base.href}`)}`;}

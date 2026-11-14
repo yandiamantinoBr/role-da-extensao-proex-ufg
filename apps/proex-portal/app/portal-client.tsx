@@ -48,6 +48,8 @@ import CalendarPanel from '@/components/portal/calendar-panel';
 import RecordsPanel from '@/components/portal/records-panel';
 import ReportsCenter from '@/components/portal/reports-center';
 import { readReportArrival, REPORT_ARRIVAL_PARAMS, type ReportDatasetId } from '@/lib/report-links';
+import type { DemandReportFilter } from '@/lib/follow-up/contracts';
+import { emptyLoanFilters, isOverdueLoan, isValidLoanFilterPeriod, loanMatches, loanStates, type LoanListFilters, type LoanStateFilter } from '@/lib/loan-list-filters';
 import FollowUpPanel from '@/components/portal/follow-up-panel';
 import MeuTrabalhoPanel from '@/components/portal/meu-trabalho-panel';
 import PersonalWorkSummary from '@/components/portal/personal-work-summary';
@@ -330,6 +332,9 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
     const [reportInitialDataset, setReportInitialDataset] = useState<ReportDatasetId>('projects');
     // Busca que chega pelo botão "Exportar" de outra tela (ex.: nome da equipe); vale só naquela chegada.
     const [reportSearch, setReportSearch] = useState('');
+    const [demandReportFilters, setDemandReportFilters] = useState<DemandReportFilter | null>(null);
+    const [needsDemandSearch, setNeedsDemandSearch] = useState(false);
+    const [demandReportUnavailable, setDemandReportUnavailable] = useState(false);
     const [personalStatus, setPersonalStatus] = useState<MyWorkStatus>('pending');
     const [personalOrganization, setPersonalOrganization] = useState('');
     const [accountOpen, setAccountOpen] = useState(false);
@@ -348,6 +353,8 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
     const [draftProject, setDraftProject] = useState('');
     const [offerProject, setOfferProject] = useState('');
     const [materialsView, setMaterialsView] = useState<'catalog' | 'prizes'>('catalog');
+    const [loanFilters, setLoanFilters] = useState<LoanListFilters>(emptyLoanFilters);
+    const loanSearch = useRef<HTMLInputElement>(null);
     const [selectedMaterialId, setSelectedMaterialId] = useState<string | null>(null);
     const [convocationFocus,setConvocationFocus]=useState('');
     const [stockUnit,setStockUnit]=useState(''),[destinationOpen,setDestinationOpen]=useState('');
@@ -481,6 +488,20 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         return () => window.clearTimeout(timer);
     }, [selectedMaterialId, materialDrawerId]);
     const displayedLoans = activeWorkRecord?.module === 'loans' ? visibleLoans.filter(row => row.id === activeWorkRecord.recordId) : visibleLoans;
+    const loanPeriodValid = isValidLoanFilterPeriod(loanFilters);
+    const hasLoanFilters = Boolean(loanFilters.search.trim()||loanFilters.state!=='all'||loanFilters.from||loanFilters.to);
+    const shownLoans = useMemo(() => {
+        if (tab !== 'loans' || !hasLoanFilters || activeWorkRecord?.module === 'loans') return displayedLoans;
+        if (!loanPeriodValid) return [];
+        const matches = loanMatches(loanFilters, now);
+        const names = new Map(items.map(item=>[item.id,string(item.name)]));
+        return displayedLoans.filter(loan=>matches({
+            state:string(loan.status),
+            startsAt:get(loan,'startsAt','starts_at')??null,
+            endsAt:get(loan,'endsAt','ends_at')??null,
+            labels:[names.get(get(loan,'itemId','item_id')),string(loan.itemName),string(get(loan,'actionName','action_name'))],
+        }));
+    }, [tab,hasLoanFilters,activeWorkRecord?.module,displayedLoans,loanPeriodValid,loanFilters,now,items]);
     const displayedCampaigns = activeWorkRecord?.module === 'events' ? visibleCampaigns.filter(row => row.id === activeWorkRecord.recordId) : visibleCampaigns;
     const recordModule = activeWorkRecord?.module, recordId = activeWorkRecord?.recordId;
     useEffect(() => {
@@ -505,8 +526,29 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
     const accessibleProjectKey = scopedProjects.map(project => project.id).join('|');
     const accessibleUnitKey = [...visibleUnits.map(unit => string(unit.id)), ...(hasUnassignedProjects ? ['__unassigned__'] : [])].join('|');
     useEffect(() => { if (tab === requestedTab) return; const timer = window.setTimeout(() => { if (requestedTab !== 'overview' && tabs.some(module => module.id === requestedTab)) setDeniedModule(requestedTab as ModuleId); setTab(tab); setWorkRecord(null); setSelectedMaterialId(null);setMaterialMode('view'); setSelectedDemandId(''); }, 0); return () => window.clearTimeout(timer); }, [tab, requestedTab]);
-    useEffect(() => { if (!filter || accessibleProjectKey.split('|').includes(filter)) return; const timer = window.setTimeout(() => { setFilter(''); setDraftProject(''); setWorkRecord(null); setSelectedMaterialId(null);setMaterialMode('view'); }, 0); return () => window.clearTimeout(timer); }, [accessibleProjectKey, filter]);
-    useEffect(() => { if (!unitFilter || accessibleUnitKey.split('|').includes(unitFilter)) return; const timer = window.setTimeout(() => { setUnitFilter(''); setFilter(''); setDraftProject(''); }, 0); return () => window.clearTimeout(timer); }, [accessibleUnitKey, unitFilter]);
+    const inheritedDemandReport = tab === 'reports' && demandReportFilters !== null;
+    useEffect(() => {
+        if (!filter || accessibleProjectKey.split('|').includes(filter)) return;
+        const timer = window.setTimeout(() => {
+            if (inheritedDemandReport) setDemandReportUnavailable(true);
+            setFilter('');
+            setDraftProject('');
+            setWorkRecord(null);
+            setSelectedMaterialId(null);
+            setMaterialMode('view');
+        }, 0);
+        return () => window.clearTimeout(timer);
+    }, [accessibleProjectKey, filter, inheritedDemandReport]);
+    useEffect(() => {
+        if (!unitFilter || accessibleUnitKey.split('|').includes(unitFilter)) return;
+        const timer = window.setTimeout(() => {
+            if (inheritedDemandReport) setDemandReportUnavailable(true);
+            setUnitFilter('');
+            setFilter('');
+            setDraftProject('');
+        }, 0);
+        return () => window.clearTimeout(timer);
+    }, [accessibleUnitKey, unitFilter, inheritedDemandReport]);
     const navigation = useNavigationPreferences(string(user.userId), allowedTabs.map(module => module.id));
     // Fixados de projetos e equipes, salvos na conta (0038) e mostrados também no menu lateral.
     const pins = usePinnedItems(string(user.userId));
@@ -517,7 +559,8 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
     const draftUserId = string(user.userId);
     useEffect(() => watchDraftLogout(draftUserId), [draftUserId]);
 
-    const route: PortalLocation = { tab, project: filter, unit: unitFilter, area: areaFilter, demand: selectedDemandId, record: activeWorkRecord, report: reportInitialDataset, recordsView, recordsScheduleItemId, demandsScheduleItemId, workStatus: personalStatus, organization: personalOrganization, history: recordsView === 'history' ? historyParam : '' };
+    const route: PortalLocation = { tab, project: filter, unit: unitFilter, area: areaFilter, demand: selectedDemandId, record: activeWorkRecord, report: reportInitialDataset, recordsView, recordsScheduleItemId, demandsScheduleItemId, workStatus: personalStatus, organization: personalOrganization, history: recordsView === 'history' ? historyParam : '',
+        demandReport:demandReportFilters ? {organizationId:demandReportFilters.organizationId,generalOnly:demandReportFilters.generalOnly,status:demandReportFilters.status,priority:demandReportFilters.priority,needsSearch:needsDemandSearch||Boolean(demandReportFilters.search),unavailable:demandReportUnavailable}:undefined };
     function readLocation(params: URLSearchParams) {
         return readPortalLocation(params, {
             modules: allowedTabs.map(module => module.id),
@@ -551,12 +594,16 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         setUnitFilter(next.unit); setAreaFilter(next.area);
         setWorkRecord(next.record); setSelectedMaterialId(next.record?.module === 'materials' ? next.record.recordId : null);setMaterialMode('view');
         setSelectedDemandId(next.demand); setReportInitialDataset(next.report);
+        setDemandReportFilters(next.demandReport ? { organizationId:next.demandReport.organizationId, generalOnly:next.demandReport.generalOnly, status:next.demandReport.status, priority:next.demandReport.priority, search:'' } : null);
+        setNeedsDemandSearch(Boolean(next.demandReport?.needsSearch));
+        setDemandReportUnavailable(Boolean(next.demandReport?.unavailable));
         if (next.tab === 'records') setRecordsView(next.history ? 'history' : next.recordsView ?? 'history');
         setRecordsScheduleItemId(next.recordsScheduleItemId ?? '');
         setDemandsScheduleItemId(next.demandsScheduleItemId ?? '');
         setPersonalStatus(next.workStatus ?? 'pending'); setPersonalOrganization(next.organization ?? '');
         setHistoryParam(next.history ?? '');
         setAccountOpen(false);
+        setLoanFilters(emptyLoanFilters);
     }
     const restoreLocation = useEffectEvent((traversal: boolean) => {
         const url = new URL(window.location.href);
@@ -599,6 +646,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
             navigation.recordVisit(id);
         }
         setTab(id); setAccountOpen(false); setSelectedMaterialId(null);setMaterialMode('view'); setWorkRecord(null);
+        setLoanFilters(emptyLoanFilters);
         setRecordsScheduleItemId('');
         setDemandsScheduleItemId('');
         setDeniedModule(null); setHistoryParam('');
@@ -606,7 +654,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         if (!teamIntentPending.current) setTeamIntent(null);
         teamIntentPending.current = false;
         if (id !== 'my-work' && id !== 'overview') setPersonalOrganization('');
-        if (id === 'reports') { setReportInitialDataset(report); setReportSearch(''); }
+        if (id === 'reports') { setReportInitialDataset(report); setReportSearch(''); setDemandReportFilters(null); setNeedsDemandSearch(false); setDemandReportUnavailable(false); }
         if (id === 'my-work' || (id === 'calendar' && unitFilter === '__unassigned__')) setUnitFilter('');
         if (id === 'my-work' || id === 'calendar') setAreaFilter('');
         focusModule(true);
@@ -645,7 +693,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         projects: pins.projectPins.flatMap(id => projects.filter(project => project.id === id)).map(project => ({ id: string(project.id), label: string(project.short_name) || string(project.name), current: tab === 'projects' && activeWorkRecord?.module === 'projects' && activeWorkRecord.recordId === project.id, onOpen: () => openPinnedProject(string(project.id)) })),
         'work-teams': pins.teams.filter(team => pins.teamPins.includes(team.id)).map(team => ({ id: team.id, label: team.name, current: tab === 'work-teams' && shownTeamId === team.id, onOpen: () => openTeams({ kind: 'open', teamId: team.id, organizationId: team.organizationId }) })),
     };
-    function selectProject(id: string) { const project = projects.find(row => row.id === id); if (id && !project) return; setRecordsScheduleItemId(''); setDemandsScheduleItemId(''); if (project && personalOrganization && project.organization_id !== personalOrganization) setPersonalOrganization(''); setWorkRecord(null); setSelectedMaterialId(null);setMaterialMode('view'); if (project && unitFilter && unitOf(project) !== unitFilter) setUnitFilter(unitOf(project) || '__unassigned__'); if (project && areaFilter && !inArea(project)) setAreaFilter(''); setFilter(id); setDraftProject(id); setOfferProject(''); }
+    function selectProject(id: string) { const project = projects.find(row => row.id === id); if (id && !project) return; if (tab === 'reports') { setDemandReportFilters(null); setNeedsDemandSearch(false); setDemandReportUnavailable(false); } setRecordsScheduleItemId(''); setDemandsScheduleItemId(''); if (project && personalOrganization && project.organization_id !== personalOrganization) setPersonalOrganization(''); setWorkRecord(null); setSelectedMaterialId(null);setMaterialMode('view'); if (project && unitFilter && unitOf(project) !== unitFilter) setUnitFilter(unitOf(project) || '__unassigned__'); if (project && areaFilter && !inArea(project)) setAreaFilter(''); setFilter(id); setDraftProject(id); setOfferProject(''); }
     function openProject(id: string) {
         if (!projects.some(project => project.id === id)) return;
         if (tab !== 'projects' || activeWorkRecord?.recordId !== id) pushNavigation.current = true;
@@ -666,8 +714,8 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         return <ProjectAreaOwners key={JSON.stringify([user.userId, projectId])} userId={string(user.userId)} projectId={projectId} areas={areas} canManageAccess={canManagePeople(projectId)} onCreateTeam={allowedTabs.some(module => module.id === 'work-teams') ? () => openTeams({ kind: 'new', organizationId: string(projects.find(project => project.id === projectId)?.organization_id) || undefined }) : undefined}/>;
     }
     const areaOwnerShortcut = filter ? visibleOwnerAreas(filter).find(scope => scope.tab === tab) : undefined;
-    function selectUnit(id: string) { setRecordsScheduleItemId(''); setDemandsScheduleItemId(''); setWorkRecord(null); setSelectedMaterialId(null);setMaterialMode('view'); setUnitFilter(id); setFilter(''); setDraftProject(''); setOfferProject(''); }
-    function selectArea(key: string) { setRecordsScheduleItemId(''); setDemandsScheduleItemId(''); setWorkRecord(null); setSelectedMaterialId(null);setMaterialMode('view'); setAreaFilter(key); setFilter(''); setDraftProject(''); setOfferProject(''); }
+    function selectUnit(id: string) { setRecordsScheduleItemId(''); if (tab === 'reports') { setDemandReportFilters(null); setNeedsDemandSearch(false); setDemandReportUnavailable(false); } setDemandsScheduleItemId(''); setWorkRecord(null); setSelectedMaterialId(null);setMaterialMode('view'); setUnitFilter(id); setFilter(''); setDraftProject(''); setOfferProject(''); }
+    function selectArea(key: string) { setRecordsScheduleItemId(''); if (tab === 'reports') { setDemandReportFilters(null); setNeedsDemandSearch(false); setDemandReportUnavailable(false); } setDemandsScheduleItemId(''); setWorkRecord(null); setSelectedMaterialId(null);setMaterialMode('view'); setAreaFilter(key); setFilter(''); setDraftProject(''); setOfferProject(''); }
     function clearScope() { setAreaFilter(''); selectUnit(''); }
     async function mutate(action: string, payload: Payload): Promise<Row> {
         if (!navigator.onLine)
@@ -915,7 +963,12 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
           defaultProjectId={filter} initialTaskId={selectedDemandId} scheduleItemId={demandsScheduleItemId}
           canManageSchedule={Boolean(filter && canProject(filter,'campaigns.manage'))}
           serverDay={workDayFromServerTimestamp(data?.updatedAt)} onSelectTask={setSelectedDemandId} onChanged={refreshModules}
-          onOpenReports={demandsScheduleItemId ? undefined : () => navigate('reports', 'demands')}/>
+          onOpenReports={demandsScheduleItemId ? undefined : ({projectId, ...filters}) => {
+              navigate('reports', 'demands');
+              setUnitFilter(''); setAreaFilter(''); selectProject(projectId);
+              setReportFrom(''); setReportTo('');
+              setDemandReportFilters(filters);
+          }}/>
         {!demandsScheduleItemId&&<OrganizationEmailSettings key={string(user.userId)} userId={string(user.userId)} organizations={organizations}/>}
       </>}
       {tab === 'overview' && volunteerAccess.length > 0 && volunteerDesk(true)}
@@ -1065,9 +1118,22 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
       </div>}
 
       {tab === 'loans' && <>
-        <Section title="Agenda de empréstimos" description="A reserva é confirmada por intervalo. Um bem em atraso continua indisponível." aside={can('loans.manage') && formProjects.length > 0 ? <button type="button" className="p-button p-button-primary" onClick={() => { const form = document.getElementById('loan-reservation'); form?.focus({preventScroll:true}); form?.scrollIntoView({block:'start'}); }}><Plus size={16} aria-hidden="true"/>Nova reserva</button> : undefined}>{displayedLoans.length ? <div className="p-loan-list">{displayedLoans.map(l => {
+        <Section title="Agenda de empréstimos" description="A reserva é confirmada por intervalo. Um bem em atraso continua indisponível." aside={can('loans.manage') && formProjects.length > 0 ? <button type="button" className="p-button p-button-primary" onClick={() => { const form = document.getElementById('loan-reservation'); form?.focus({preventScroll:true}); form?.scrollIntoView({block:'start'}); }}><Plus size={16} aria-hidden="true"/>Nova reserva</button> : undefined}>
+          {activeWorkRecord?.module!=='loans'&&<div className={workStyles.loanFilters} aria-label="Filtrar empréstimos" role="group">
+            <div className={workStyles.loanFilterFields}>
+              <Field label="Buscar empréstimos"><input ref={loanSearch} type="search" name="loanSearch" maxLength={120} placeholder="Equipamento ou ação" value={loanFilters.search} onChange={event=>setLoanFilters(current=>({...current,search:event.target.value}))}/></Field>
+              <Field label="Situação"><select name="loanFilterState" value={loanFilters.state} onChange={event=>setLoanFilters(current=>({...current,state:event.target.value as LoanStateFilter}))}>{Object.entries(loanStates).map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></Field>
+              <Field label="De"><DateField aria-label="De" value={loanFilters.from} onValueChange={from=>setLoanFilters(current=>({...current,from}))}/></Field>
+              <Field label="Até (inclusive)"><DateField aria-label="Até (inclusive)" min={loanFilters.from||undefined} value={loanFilters.to} onValueChange={to=>setLoanFilters(current=>({...current,to}))}/></Field>
+            </div>
+            <div className={workStyles.loanFilterResult}>
+              <p role="status">{loanPeriodValid?`${shownLoans.length} ${shownLoans.length===1?'empréstimo':'empréstimos'} no recorte`:'Confira as datas do período.'}</p>
+              {hasLoanFilters&&<button className="p-text-link" type="button" onClick={()=>{loanSearch.current?.focus({preventScroll:true});setLoanFilters(emptyLoanFilters);}}>Limpar busca e filtros</button>}
+            </div>
+          </div>}
+          {shownLoans.length ? <div className="p-loan-list">{shownLoans.map(l => {
                     const item = items.find(i => i.id === get(l, 'itemId', 'item_id'));
-                    const late = l.status === 'out' && new Date(get(l, 'endsAt', 'ends_at')).getTime() < now;
+                    const late = isOverdueLoan(string(l.status),get(l,'endsAt','ends_at')??null,now);
                     return <article className={`p-card p-loan-card ${workStyles.record}`} id={`work-record-${l.id}`} tabIndex={-1} key={l.id}>
                     <div className="p-row-between">
                     <span className="p-kicker">{projectName(get(l, 'projectId', 'project_id'))}</span>
@@ -1103,7 +1169,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
                         </OperationForm>}</div>
                     </details>
                     </article>;
-                })}</div> : <Empty title="Nenhuma reserva nos filtros selecionados" text="Cadastre o equipamento, confira a disponibilidade e registre a ação que fará a retirada." icon={Truck}/>}</Section>{can('loans.manage') && formProjects.length > 0 && <div id="loan-reservation" className={workStyles.record} tabIndex={-1} role="region" aria-label="Formulário de reserva de equipamento">
+                })}</div> : <Empty title={loanPeriodValid||activeWorkRecord?.module==='loans'?'Nenhum empréstimo no recorte':'Período inválido'} text={hasLoanFilters?'Confira o período, altere o termo da busca ou limpe os filtros.':'As reservas do projeto selecionado aparecem aqui.'} icon={Truck}/>}</Section>{can('loans.manage') && formProjects.length > 0 && <div id="loan-reservation" className={workStyles.record} tabIndex={-1} role="region" aria-label="Formulário de reserva de equipamento">
             <Section title="Reservar equipamento" description="Conflitos de horário e bens indisponíveis são conferidos antes da confirmação.">
             <OperationForm onProjectFocus={setDraftProject} action="loan.create" mutate={mutate} submit="Confirmar reserva" make={f => ({ projectId: f.get('projectId'), itemId: f.get('itemId'), actionName: f.get('actionName'), borrowerName: f.get('borrowerName'), borrowerContact: f.get('borrowerContact'), startsAt: iso(f.get('startsAt')), endsAt: iso(f.get('endsAt')), note: f.get('note') })}>
             <div className="p-form-grid">{projectField}<Field label="Equipamento">
@@ -1157,7 +1223,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         <button className="p-button p-button-subtle" onClick={() => { setReportFrom(''); setReportTo(''); }}>Todo o período</button>
         <p>Datas de Brasília para os relatórios com período. Projetos e materiais mostram a posição atual. Em “Dinâmicas por dia”, participações, tentativas e entregas usam a data de cada registro.</p>
         </div>
-        <ReportsCenter key={`${string(user.userId)}:${reportInitialDataset}:${reportSearch}`} userId={string(user.userId)} canSync={isPlatformOwner} projectIdentity={projects.find(project => project.id === filter)} initialDataset={reportInitialDataset === 'projects' && !canAny('reports.read') ? 'demands' : reportInitialDataset} initialSearch={reportSearch} projectId={filter} unitId={unitFilter} area={areaFilter} from={reportFrom} to={reportTo} available={[
+        <ReportsCenter key={`${string(user.userId)}:${reportInitialDataset}:${reportSearch}`} userId={string(user.userId)} canSync={isPlatformOwner} projectIdentity={projects.find(project => project.id === filter)} initialDataset={reportInitialDataset === 'projects' && !canAny('reports.read') ? 'demands' : reportInitialDataset} initialSearch={reportSearch} demandFilters={demandReportFilters} needsDemandSearch={needsDemandSearch} demandReportUnavailable={demandReportUnavailable} onRestoreDemandSearch={value=>{setDemandReportFilters(current=>current ? {...current,search:value} : null);setNeedsDemandSearch(false);}} onClearDemandFilters={()=>{setDemandReportFilters(null);setNeedsDemandSearch(false);setDemandReportUnavailable(false);}} demandOrganizationName={organizations.find(org=>org.id===demandReportFilters?.organizationId)?.name} projectId={filter} unitId={unitFilter} area={areaFilter} from={reportFrom} to={reportTo} available={[
           ...(projects.length ? ['projects' as const] : []),
           ...(canAny('inventory.read', 'reports.read') ? ['materials', 'movements', 'outflows'] as const : []),
           ...(canAny('inventory.read', 'loans.read', 'reports.read') ? ['outflow_details' as const] : []),
