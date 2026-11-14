@@ -158,7 +158,16 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [open, close, openRole, ready]);
-  useEffect(() => { if (open) window.requestAnimationFrame(() => input.current?.focus()); }, [open]);
+  useEffect(() => {
+    if (!open) return;
+    const frame = window.requestAnimationFrame(() => {
+      const panel = dialog.current;
+      if (panel && (!panel.contains(document.activeElement) || document.activeElement === panel)) {
+        (input.current ?? panel).focus({ preventScroll: true });
+      }
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [open, status?.available]);
   useEffect(() => { log.current?.lastElementChild?.scrollIntoView({ block: 'nearest' }); }, [messages, busy]);
 
   const [tips, setTips] = useState<{ key: string; list: string[] } | null>(null), [tipsTick, setTipsTick] = useState(0);
@@ -373,7 +382,7 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
   return <>
     {toolbar ? createPortal(launcher, toolbar) : launcher}
     {open && <div className={styles.backdrop} onClick={event => { if (event.target === event.currentTarget) close(); }}>
-      <div ref={dialog} className={styles.dialog} role="dialog" aria-modal="true" aria-labelledby="role-title" aria-describedby="role-subtitle" onKeyDown={onDialogKey}>
+      <div ref={dialog} className={styles.dialog} role="dialog" aria-modal="true" tabIndex={-1} aria-labelledby="role-title" aria-describedby="role-subtitle" onKeyDown={onDialogKey}>
         <header className={styles.header}>
           <img className={styles.avatar} src="/brand/role-mascote/role-rosto.svg" alt="" width={48} height={48}/>
           <div className={styles.headerText}><h2 id="role-title">Rolê</h2><p id="role-subtitle">Assistente da PROEX</p></div>
