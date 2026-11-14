@@ -78,6 +78,16 @@ test('catalog search composes with material filters, discovers authorized kits a
   assert.equal(results(), undefined);
   assert.match(summary(), /1 de 1 kit/);
   assert.ok(h.all().some(node => node.type === 'strong' && text(node) === 'Kit da edição'));
+  const previous = props.materials;
+  props.materials = [previous[0]];
+  props.kits = [];
+  h.render();
+  assert.equal(h.field('Buscar no catálogo').props.value, 'boton');
+  assert.equal(h.field('Tipo').props.value, 'kit');
+  assert.equal(results(), undefined);
+  assert.match(text(h.field('Tipo')), /Seleção indisponível neste recorte/);
+  props.materials = previous;
+  h.render();
   h.button('Limpar busca e filtros').props.onClick(); h.render();
   assert.equal(results(), 'one,two');
   assert.equal(h.field('Buscar no catálogo').props.value, '');
