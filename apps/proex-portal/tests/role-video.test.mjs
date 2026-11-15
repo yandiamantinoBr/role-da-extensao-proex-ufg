@@ -47,6 +47,7 @@ test('video reserve covers audio and documented default sampling, and prices swi
   assert.ok(browser.costMicros > exact.costMicros);
   assert.equal(browser.tokens, browser.inputTokens + 300);
   assert.equal(roleVideoCostMicros(400, 100, now), 675);
+  assert.equal(roleVideoCostMicros(400, 100, now, 'gemini-4-hydrogen'), 1350);
   assert.equal(roleVideoCostMicros(400, 100, Date.UTC(2027, 0, 1)), 1350);
   assert.equal(requireProviderEndpoint(ROLE_VIDEO_ENDPOINT).href, ROLE_VIDEO_ENDPOINT);
 });
@@ -88,7 +89,7 @@ test('uses one fixed, inline Google request and bills thought tokens without dis
     return Response.json(metered);
   });
   assert.equal(calls, 1);
-  assert.deepEqual(result, { reply: 'Vermelho, depois azul.', operation: null, inputTokens: 400, outputTokens: 75, costMicros: 582 });
+  assert.deepEqual(result, { reply: 'Vermelho, depois azul.', operation: null, inputTokens: 400, outputTokens: 75, reasoningTokens: 60, costMicros: 582 });
 });
 
 test('blocks input over the limit and retains metered cost on incomplete or censored output', async () => {

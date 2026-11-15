@@ -18,6 +18,7 @@ function compile(name) {
 }
 const { DEFAULT_ASSISTANT_CONFIG, safeRequest } = await import(compile('assistant/contracts'));
 const { configureAssistant, estimateAssistantPlan } = await import(compile('assistant/service'));
+const { manageAssistantGrant } = await import(compile('assistant/settings'));
 const { manageAssistantCredential, assistantCredentialVault } = await import(compile('assistant/credential-vault'));
 const { manageCatalog, catalogView } = await import(compile('assistant/model-catalog-store'));
 const { roleVideoEstimate, ROLE_VIDEO_ENDPOINT } = await import(compile('assistant/role-video-contracts'));
@@ -491,7 +492,7 @@ async function enableVideo(f, config = {}) {
     config: { ...DEFAULT_ASSISTANT_CONFIG, roleEnabled: true, roleVideoEnabled: true, roleInputTokenCeiling: 4000, ...config } }, secret, undefined, keys);
   return key;
 }
-const videoResponse = () => Response.json({ model: 'gemini-3.8-flash', status: 'completed',
+const videoResponse = (model = 'gemini-3.8-flash') => Response.json({ model, status: 'completed',
   steps: [{ type: 'model_output', content: [{ type: 'text', text: 'Vermelho e depois azul.' }] }],
   usage: { total_input_tokens: 410, total_output_tokens: 12, total_thought_tokens: 40 } });
 
@@ -553,6 +554,60 @@ test('Vídeo do Rolê: acesso revogado durante a resposta bloqueia o retorno do 
     } }), { code:'assistant_forbidden' });
     assert.equal(f.native.prepare("SELECT count(*) n FROM audit WHERE action='assistant.role.chat'").get().n, 0);
     assert.equal(f.native.prepare("SELECT status FROM ai_calls").get().status, 'failed');
+  } finally { f.native.close(); }
+});
+
+test('Vídeo do Rolê: Hydrogen XHigh exige administração geral, novo consentimento e tarifa própria', async () => {
+  const f = fixture();
+  try {
+    await enableVideo(f);
+    const organizationId = 'org_proex', projectId = 'project-a', { owner, viewer } = f.actors;
+    const old = await roleStatus(f.db, viewer, { projectId }, secret, { keys });
+    assert.equal(old.video.effort, 'low');
+    const expectedRevision = f.native.prepare('SELECT revision FROM ai_organization_settings WHERE organization_id=?').get(organizationId).revision;
+    const config = { ...DEFAULT_ASSISTANT_CONFIG, roleEnabled: true, roleVideoEnabled: true, roleVideoEffort: 'xhigh' };
+    const save = (actor, next) => configureAssistant(f.db, actor, { action: 'configure', organizationId, expectedRevision, config: next }, secret, undefined, keys);
+    await assert.rejects(save(owner, config), { code: 'role_video_model' });
+    await manageAssistantGrant(f.db, owner, { action: 'grant.create', organizationId, userId: viewer.userId });
+    const model = 'gemini-4-hydrogen', hydrogen = { ...config, roleVideoModel: model };
+    await assert.rejects(save(viewer, hydrogen), { code: 'catalog_admin' });
+    await save(owner, hydrogen);
+    const ready = await roleStatus(f.db, viewer, { projectId }, secret, { keys });
+    assert.equal(ready.video.model, model);
+    assert.equal(ready.video.effort, 'xhigh');
+    assert.notEqual(old.video.approval, ready.video.approval);
+    const now = Date.UTC(2026, 10, 15), quote = roleVideoEstimate({
+      textBytes: Buffer.byteLength(videoMessage), maxOutputTokens: 700, seconds: 4, model, now,
+    });
+    const input = chatInput(f, { video: roleVideoFixture(), message: videoMessage, videoConsent: true,
+      videoApproval: ready.video.approval, acceptedCostMicros: quote.costMicros });
+    const blocked = { keys, now, fetcher: () => assert.fail('must reject before sending') };
+    await assert.rejects(roleChat(f.db, viewer, { ...input, videoApproval: old.video.approval }, secret, blocked), { code: 'role_video_consent' });
+    await assert.rejects(roleChat(f.db, viewer, { ...input, acceptedCostMicros: quote.costMicros - 1 }, secret, blocked), { code: 'role_cost_changed' });
+    const reply = await roleChat(f.db, viewer, input, secret, { keys, now, fetcher: async (_url, init) => {
+      const body = JSON.parse(init.body);
+      assert.equal(body.model, model);
+      assert.equal(body.generation_config.thinking_level, 'xhigh');
+      assert.equal(body.generation_config.max_output_tokens, 700);
+      return videoResponse(model);
+    } });
+    assert.equal(reply.costMicros, 1005);
+    assert.equal(reply.videoEffort, 'xhigh');
+    assert.equal(reply.reasoningTokens, 40);
+    const details = JSON.parse(f.native.prepare("SELECT details FROM audit WHERE action='assistant.role.chat'").get().details);
+    assert.equal(details.videoEffort, 'xhigh');
+    assert.equal(details.reasoningTokens, 40);
+    assert.equal(details.model, model);
+
+    await assert.rejects(roleChat(f.db, viewer, { ...input, operationKey: 'video-exhausts-output-limit' }, secret, {
+      keys, now, fetcher: async () => Response.json({ model, status: 'incomplete',
+        usage: { total_input_tokens: 410, total_output_tokens: 0, total_thought_tokens: 700 } }),
+    }), /teto de saída/);
+    const failed = JSON.parse(f.native.prepare("SELECT details FROM audit WHERE action='assistant.role.chat.failed'").get().details);
+    assert.equal(failed.outputTokens, 700);
+    assert.equal(failed.reasoningTokens, 700);
+    assert.equal(failed.usdMicros, 5865);
+    assert.equal(f.native.prepare("SELECT reserved_usd_micros FROM ai_organization_usage WHERE organization_id=?").get(organizationId).reserved_usd_micros, 6870);
   } finally { f.native.close(); }
 });
 

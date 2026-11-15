@@ -8,6 +8,7 @@ export const PROVIDERS = {
  openai: { endpoint:'https://api.openai.com/v1/responses',model:'gpt-5.6-luna',revision:'gpt-5.6-luna · alias verificado em 2026-11-05',inputMicrosPerToken:0.25,outputMicrosPerToken:1.2 },
 } as const;
 import { DEFAULT_ROLE_POLICY, ROLE_EFFORT_LABELS, ROLE_POLICY_BOUNDS, type RolePolicy } from './role-policy';
+import { supportsRoleVideo } from './role-video-contracts';
 
 export type TextProvider = 'deepseek'|'openai';
 export type RoleProvider = 'deepseek'|'groq';
@@ -60,6 +61,7 @@ export function validateConfig(value: unknown): AssistantConfig {
  if (!['private','organization'].includes(result.usageScope) || (result.usageScope === 'private' ? typeof result.usageUserId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(result.usageUserId) : result.usageUserId !== null)) throw new HttpError(400, 'Escolha uso pessoal ou da organização.', 'assistant_usage_scope');
  if (typeof result.roleEnabled !== 'boolean' || typeof result.roleVisionEnabled !== 'boolean' || !['deepseek','groq'].includes(result.roleProvider)) throw new HttpError(400, 'Escolha um modelo revisado para o Rolê.', 'assistant_model');
  if (!Object.hasOwn(ROLE_EFFORT_LABELS, result.roleReasoningEffort) || typeof result.rolePortalContextEnabled !== 'boolean' || typeof result.rolePublicSearchEnabled !== 'boolean' || typeof result.roleVideoEnabled !== 'boolean') throw new HttpError(400, 'Confira o esforço e as fontes do Rolê.', 'assistant_role_policy');
+ if (!supportsRoleVideo(result.roleVideoModel, result.roleVideoEffort)) throw new HttpError(400, 'Escolha um modelo de vídeo e um nível de esforço compatível.', 'role_video_model');
  for (const [field, bounds] of Object.entries(ROLE_POLICY_BOUNDS)) {
   const value = result[field as keyof typeof ROLE_POLICY_BOUNDS];
   if (field === 'roleInputTokenCeiling' && value === 0) continue;

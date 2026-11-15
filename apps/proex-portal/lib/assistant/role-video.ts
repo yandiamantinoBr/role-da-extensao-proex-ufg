@@ -3,7 +3,7 @@ import { boundedJson, ChargedError } from './generic-provider';
 import { requestProvider } from './provider-transport';
 import {
   ROLE_VIDEO_ENDPOINT, ROLE_VIDEO_MAX_BYTES, ROLE_VIDEO_MAX_SECONDS, ROLE_VIDEO_MIME,
-  ROLE_VIDEO_MIN_SECONDS, ROLE_VIDEO_MODEL, roleVideoCostMicros, roleVideoEstimate,
+  ROLE_VIDEO_MIN_SECONDS, DEFAULT_ROLE_VIDEO, roleVideoCostMicros, roleVideoEstimate, type RoleVideoProfile,
 } from './role-video-contracts';
 import { containsCredential } from './sensitive';
 
@@ -165,7 +165,7 @@ function responseUsage(value: unknown) {
   const thoughts = usageCount(usage.total_thought_tokens ?? 0);
   const toolUse = usageCount(usage.total_tool_use_tokens ?? 0);
   if (input === null || input < 1 || output === null || thoughts === null || toolUse === null) return null;
-  return { inputTokens: input + toolUse, outputTokens: output + thoughts };
+  return { inputTokens: input + toolUse, outputTokens: output + thoughts, reasoningTokens: thoughts };
 }
 
 function responseText(value: unknown) {
@@ -184,12 +184,18 @@ function sensitive(value: string) {
   return containsCredential(value) || /(?:^|[^A-Za-z0-9_-])AIza[A-Za-z0-9_-]{35}(?![A-Za-z0-9_-])/.test(value);
 }
 
+export class RoleVideoChargedError extends ChargedError {
+  constructor(message: string, costMicros: number, readonly usage: NonNullable<ReturnType<typeof responseUsage>>) {
+    super(message, costMicros, usage.inputTokens + usage.outputTokens);
+  }
+}
+
 /** One foreground interaction with no saved conversation, internal data, or tools. */
 export async function dispatchRoleVideo({
-  apiKey, video, message, maxOutputTokens, inputCeiling, signal, fetcher, now = Date.now(),
+  apiKey, video, message, maxOutputTokens, inputCeiling, signal, fetcher, now = Date.now(), profile = DEFAULT_ROLE_VIDEO,
 }: {
   apiKey: string; video: RoleVideo; message: string; maxOutputTokens: number; inputCeiling: number;
-  signal: AbortSignal; fetcher?: typeof fetch; now?: number;
+  signal: AbortSignal; fetcher?: typeof fetch; now?: number; profile?: RoleVideoProfile;
 }) {
   if (typeof apiKey !== 'string' || apiKey.length < 12 || apiKey.length > 512 || /\s|[\u0000-\u001f]/u.test(apiKey)) {
     throw new HttpError(503, 'Confira a chave do Gemini em Chaves e modelos.', 'role_video_credentials');
@@ -198,7 +204,7 @@ export async function dispatchRoleVideo({
     throw new HttpError(400, 'Retire a credencial da pergunta antes de enviar o vídeo.', 'assistant_sensitive');
   }
   const estimate = roleVideoEstimate({
-    textBytes: new TextEncoder().encode(message).byteLength, maxOutputTokens, seconds: video.seconds, now,
+    textBytes: new TextEncoder().encode(message).byteLength, maxOutputTokens, seconds: video.seconds, now, model: profile.model,
   });
   if (inputCeiling && estimate.inputTokens > inputCeiling) {
     throw new HttpError(400, 'O vídeo e a pergunta excedem o limite de entrada do Rolê. Envie um clipe mais curto.', 'role_input_limit');
@@ -214,7 +220,7 @@ export async function dispatchRoleVideo({
         'x-goog-api-key': apiKey, 'Api-Revision': '2026-05-20',
       },
       body: JSON.stringify({
-        model: ROLE_VIDEO_MODEL,
+        model: profile.model,
         service_tier: 'standard',
         stream: false,
         background: false,
@@ -227,7 +233,7 @@ export async function dispatchRoleVideo({
           },
           { type: 'text', text: message },
         ],
-        generation_config: { thinking_level: 'low', thinking_summaries: 'none', max_output_tokens: maxOutputTokens },
+        generation_config: { thinking_level: profile.effort, thinking_summaries: 'none', max_output_tokens: maxOutputTokens },
       }),
     }, fetcher), 96 * 1024);
   } catch (error) {
@@ -237,17 +243,20 @@ export async function dispatchRoleVideo({
 
   const usage = responseUsage(response.usage);
   if (!usage) throw new HttpError(502, 'O Gemini não informou o consumo de tokens.', 'role_video_usage');
-  const { inputTokens, outputTokens } = usage;
-  const costMicros = roleVideoCostMicros(inputTokens, outputTokens, now);
-  const fail = (message: string) => new ChargedError(message, costMicros, inputTokens + outputTokens);
+  const { inputTokens, outputTokens, reasoningTokens } = usage;
+  const costMicros = roleVideoCostMicros(inputTokens, outputTokens, now, profile.model);
+  const fail = (message: string) => new RoleVideoChargedError(message, costMicros, usage);
   if (inputTokens > estimate.inputTokens || outputTokens > maxOutputTokens) {
     throw fail('O Gemini excedeu o limite dessa análise. O custo foi registrado.');
   }
-  if (response.model !== ROLE_VIDEO_MODEL) throw fail('O Gemini retornou um modelo fora da configuração do Rolê.');
+  if (response.model !== profile.model) throw fail('O Gemini retornou um modelo fora da configuração do Rolê.');
+  if (response.status === 'incomplete' && outputTokens >= maxOutputTokens) {
+    throw fail('O Gemini atingiu o teto de saída desta análise. O custo foi registrado. A administração pode selecionar um esforço menor para vídeos.');
+  }
   if (response.status !== 'completed') throw fail('O Gemini encerrou a análise sem uma resposta completa. O custo foi registrado.');
   const reply = responseText(response.steps);
   if (!reply || reply.length > 4000 || sensitive(reply) || reply.includes(apiKey) || reply.includes(video.data)) {
     throw fail('O Gemini não retornou uma descrição de vídeo que possa ser exibida.');
   }
-  return { reply, operation: null, inputTokens, outputTokens, costMicros };
+  return { reply, operation: null, inputTokens, outputTokens, reasoningTokens, costMicros };
 }
