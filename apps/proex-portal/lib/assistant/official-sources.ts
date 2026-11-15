@@ -1,6 +1,8 @@
 import { aiConfigurationAuthority, platformOwnerAuthoritySql, type PortalActor } from '../access';
 import { one } from '../database';
 import { HttpError } from '../errors';
+import { officialPdfIn, officialPdfUrl, requestsOfficialPdf } from './official-pdf-url';
+import { searchOfficialPdfs, type OfficialDocument, type OfficialPassage } from './official-pdfs';
 
 /*
  * Fontes oficiais do Rolê, sem chamada paga:
@@ -44,6 +46,24 @@ const clean = (value: string, max: number) => decode(value.replace(/<[^>]*>/g, '
 const withoutActiveContent = (html: string) => html.replace(/<(script|style|noscript|svg)\b[\s\S]*?<\/\1>/gi, ' ');
 const descriptionOf = (body: string) => clean(body.match(/<meta\s+property=["']og:description["']\s+content=(["'])([\s\S]*?)\1/i)?.[2] ?? '', 600);
 
+/** Limita a descoberta de PDFs aos links do corpo editorial da página. */
+function pdfLinks(html: string, base: string): OfficialDocument[] {
+  const body = withoutActiveContent(html);
+  const article = body.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i)?.[1] ?? body.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i)?.[1] ?? '';
+  const documents = new Map<string, OfficialDocument>();
+  for (const match of article.matchAll(/<a[^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)) {
+    let raw: URL;
+    try { raw = new URL(decode(match[1]), base); } catch { continue; }
+    const url = officialPdfUrl(raw.href);
+    const title = clean(match[2], 150);
+    if (!url || !title) continue;
+    url.hash = '';
+    if (!documents.has(url.href)) documents.set(url.href, { url: url.href, title });
+    if (documents.size === 60) break;
+  }
+  return [...documents.values()];
+}
+
 /** Extrai título, resumo curto (descrição ou primeiros parágrafos) e links de notícias/páginas do mesmo site. */
 export function extractPage(html: string, base: string): { title: string; summary: string; links: { text: string; url: string }[] } {
   const body = withoutActiveContent(html);
@@ -82,7 +102,9 @@ async function boundedText(response: Response): Promise<string> {
 
 type SearchEntry = { url: string; title: string; lastModified: string };
 type PublicIndex = SearchEntry[];
-type PublicResult = SearchEntry & { summary: string; fetchedAt: string };
+type PublicResult = SearchEntry & { summary: string; fetchedAt: string; documents: OfficialDocument[] };
+type PublicLookup = { status: 'ok' | 'partial' | 'unavailable'; pages: PublicResult[]; passages: OfficialPassage[]; unreadable: OfficialDocument[] };
+const emptyLookup = { pages: [], passages: [], unreadable: [] };
 type SearchIndexCache = Map<string, { refreshAt: number; value: Promise<PublicIndex | null> }>;
 const searchIndexes = new WeakMap<typeof fetch, SearchIndexCache>();
 const searchWords = (value: string) => (value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase().match(/[a-z0-9]{2,}/g) ?? []);
@@ -133,10 +155,40 @@ async function readSearchIndex(host: string, fetcher: typeof fetch): Promise<Pub
   return value;
 }
 
-/** Lê apenas os mapas e páginas públicas listadas por eles. O assunto nunca é transmitido aos sites. */
-export async function searchOfficialPages(subject: string, fetcher: typeof fetch = fetch): Promise<{ status: 'ok' | 'partial' | 'unavailable'; pages: PublicResult[] }> {
+function editalNumber(value: string): string | null {
+  const match = value.normalize('NFD').replace(/\p{Diacritic}/gu, '')
+    .match(/\bedital(?:\s+(?:proex|proec|final|preliminar))*\s*(?:n[º°o.]?\s*)?(\d{1,3})[\s/-]+(20\d{2})\b/i);
+  return match ? `${Number(match[1])}/${match[2]}` : null;
+}
+
+function documentPriority(title: string, wanted: string[], updated: boolean, preliminary: boolean) {
+  const words = new Set(searchWords(title));
+  const heading = [...words].join(' ');
+  const draft = /\bpreliminar\b/.test(heading);
+  const amendment = /\b(?:aditivo|retificacao|prorrogacao)\b/.test(heading);
+  const edition = /^edital\b/.test(heading) && !/\bresultado\b/.test(heading);
+  const related = /\b(?:avaliadores|homologacao|resultado)\b/.test(heading)
+    && !wanted.some(word => ['avaliadore', 'homologacao', 'resultado'].includes(word));
+  const main = edition ? draft ? (preliminary ? 20 : -15) : words.has('final') ? 20 : 13 : 0;
+  return wanted.filter(word => words.has(word)).length * 2
+    + (updated ? amendment ? 22 : -5 : amendment ? -10 : 0) + main - (related ? 30 : 0);
+}
+
+/** Lê os mapas, as páginas públicas e seus PDFs oficiais. Nenhum termo é enviado ao site. */
+export async function searchOfficialPages(subject: string, fetcher: typeof fetch = fetch): Promise<PublicLookup> {
+  const direct = officialPdfIn(subject);
+  if (direct) {
+    const title = decodeURIComponent(direct.pathname.split('/').at(-1)!).replace(/_/g, ' ');
+    const pdf = await searchOfficialPdfs([{ url: direct.href, title }], subject, fetcher, USER_AGENT, officialSearchTerms, disallowed);
+    return { status: pdf.passages.length ? 'ok' : 'partial', pages: [], ...pdf };
+  }
   const wanted = officialSearchTerms(subject);
-  if (!wanted.length) return { status: 'ok', pages: [] };
+  if (!wanted.length) return { status: 'ok', ...emptyLookup };
+  const pdfSearch = requestsOfficialPdf(searchWords(subject).join(' '));
+  const programs = wanted.filter(word => word === 'probec' || word === 'conpeex');
+  const years = wanted.filter(word => /^20\d{2}$/.test(word));
+  const targetEdition = pdfSearch ? editalNumber(subject) : null;
+  const documentFocus = pdfSearch ? officialSearchTerms(subject.split(/[,:?]/).find(part => /\b(?:probec|conpeex|edital)\b/i.test(part)) ?? subject) : [];
   const indexes = await Promise.all(OFFICIAL_HOSTS.map(host => readSearchIndex(host, fetcher)));
   const entries = new Map(indexes.flatMap(index => index ?? []).map(entry => [entry.url, entry]));
   const minimum = wanted.length <= 2 ? wanted.length : Math.ceil(wanted.length / 2);
@@ -146,10 +198,17 @@ export async function searchOfficialPages(subject: string, fetcher: typeof fetch
     // O site do evento tem páginas como “Programação geral” com o nome do evento só no domínio.
     const conpeexSite = new URL(entry.url).hostname === OFFICIAL_HOSTS[1];
     const hits = wanted.filter(word => words.has(word) || conpeexSite && (word === 'conpeex' || word === '23')).length;
-    if (hits < minimum) return [];
+    const editions = years.filter(year => words.has(year)).length;
+    const topicalPdf = pdfSearch && (programs.length
+      ? programs.some(program => words.has(program)) && (words.has('edital') || words.has('retificacao'))
+      : words.has('edital') && documentFocus.filter(word => words.has(word)).length >= Math.min(3, documentFocus.length));
+    if (!topicalPdf && hits < minimum) return [];
+    if (topicalPdf && years.length && !editions) return [];
     const fullPhrase = focus.length > 1 && [...words].join(' ').includes(focus.join(' '));
     const precision = hits / words.size;
-    return [{ entry, score: hits * 6 + Number(fullPhrase) * 2 + precision + Number(conpeexSite && wanted.includes('conpeex')) }];
+    const editionScore = targetEdition && editalNumber(entry.title) === targetEdition ? 45 : 0;
+    const documentScore = topicalPdf ? 12 + editions * 12 + (words.has('edital') && [...words][0] === 'edital' ? 14 : 0) : 0;
+    return [{ entry, score: editionScore + documentScore + hits * 6 + Number(fullPhrase) * 2 + precision + Number(conpeexSite && wanted.includes('conpeex')) }];
   }).sort((a, b) => b.score - a.score || b.entry.lastModified.localeCompare(a.entry.lastModified));
 
   let failed = indexes.filter(index => !index).length;
@@ -160,7 +219,7 @@ export async function searchOfficialPages(subject: string, fetcher: typeof fetch
       if (!title) throw new Error('Página pública sem título.');
       const summaryWords = new Set(officialSearchTerms(summary));
       return {
-        result: { ...entry, title, summary, fetchedAt: new Date().toISOString() },
+        result: { ...entry, title, summary, fetchedAt: new Date().toISOString(), documents: pdfSearch ? pdfLinks(html, entry.url) : [] },
         score: score + focus.filter(word => summaryWords.has(word)).length * 2,
       };
     } catch {
@@ -170,7 +229,16 @@ export async function searchOfficialPages(subject: string, fetcher: typeof fetch
   }));
   const results = pages.filter(page => page !== null).sort((a, b) => b.score - a.score).slice(0, 3).map(page => page.result);
   const status = failed ? indexes.every(index => !index) || (ranked.length > 0 && !results.length) ? 'unavailable' : 'partial' : 'ok';
-  return { status, pages: results };
+  const normalized = searchWords(subject).join(' ');
+  const amended = /\b(?:retificac(?:ao|oes)|aditiv[oa]s?|prorrogac(?:ao|oes)|recurso)\b/.test(normalized);
+  const preliminary = /\bpreliminar\b/.test(normalized);
+  const choices = results.flatMap((page, index) => page.documents.map(pdf => ({
+    pdf, score: documentPriority(pdf.title, wanted, amended, preliminary) + (3 - index) * 5
+      + (targetEdition && (editalNumber(pdf.title) ?? editalNumber(page.title)) === targetEdition ? 45 : 0),
+  }))).sort((a, b) => b.score - a.score);
+  const best = choices[0];
+  const pdf = await searchOfficialPdfs(best ? [best.pdf] : [], subject, fetcher, USER_AGENT, officialSearchTerms, disallowed);
+  return { status, pages: results, ...pdf };
 }
 
 export async function readOfficialSnapshot(db: D1Database): Promise<OfficialSnapshot> {

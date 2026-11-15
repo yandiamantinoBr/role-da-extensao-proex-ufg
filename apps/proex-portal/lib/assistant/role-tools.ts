@@ -266,7 +266,16 @@ export async function resolveRoleScope(db: D1Database, actor: PortalActor, organ
 async function officialTool(db: D1Database, organizationId: string, subject: string, budget: number, fetcher?: typeof fetch): Promise<RoleToolResult> {
   const wanted = officialSearchTerms(subject);
   if (!wanted.length) return pack('consultar_fontes_oficiais', [], [], budget, 'Diga qual assunto você quer buscar nos sites oficiais.');
-  const [snapshot, posts, live] = await Promise.all([readOfficialSnapshot(db), listInstagramPosts(db, organizationId), searchOfficialPages(subject, fetcher)]);
+  const live = await searchOfficialPages(subject, fetcher);
+  if (live.passages.length || live.unreadable.length) {
+    const documents = [
+      ...live.passages.map(passage => ({ titulo: passage.title, pagina: passage.page, resumo: passage.text, link: passage.url })),
+      ...live.unreadable.map(document => ({ titulo: document.title, resumo: 'Encontrei este PDF, mas não consegui confirmar um trecho para a pergunta. Abra o documento ou indique a página.', link: document.url })),
+    ];
+    const sources = documents.map(document => ({ label: 'pagina' in document ? `${document.titulo} · p. ${document.pagina}` : document.titulo, href: document.link }));
+    return pack('consultar_fontes_oficiais', documents, sources, budget, 'Cite o PDF e a página. Use o trecho como fonte, sem presumir outras informações.');
+  }
+  const [snapshot, posts] = await Promise.all([readOfficialSnapshot(db), listInstagramPosts(db, organizationId)]);
   const hits: { s: number; item: Record<string, unknown>; source: RoleToolSource }[] = [];
   for (const page of live.pages) {
     hits.push({ s: wanted.length + 3, item: { fonte: new URL(page.url).hostname === 'proex.ufg.br' ? 'Site oficial da PROEX' : 'Site oficial do 23º CONPEEX', titulo: page.title, resumo: page.summary, consultadoEm: brasilia(page.fetchedAt), link: page.url }, source: { label: page.title, href: page.url } });
@@ -294,10 +303,11 @@ async function officialTool(db: D1Database, organizationId: string, subject: str
 /** Uma pesquisa explicitamente pública funciona também com modelos sem ferramentas. */
 export async function officialSearchReply(db: D1Database, organizationId: string, subject: string, fetcher?: typeof fetch): Promise<{ reply: string; sources: RoleToolSource[] }> {
   const result = await officialTool(db, organizationId, subject, ROLE_TOOL_RESULT_BYTES, fetcher);
-  const data = JSON.parse(result.content) as { observacao?: string; resultados: { titulo?: string; fonte?: string; resumo?: string; legenda?: string; consultadoEm?: string; copiadoEm?: string; publicadoEm?: string }[] };
+  const data = JSON.parse(result.content) as { observacao?: string; resultados: { titulo?: string; fonte?: string; resumo?: string; legenda?: string; consultadoEm?: string; copiadoEm?: string; publicadoEm?: string; pagina?: number }[] };
   const choices = data.resultados.slice(0, 3);
   const reply = choices.length ? choices.map(page => {
-    const lines = [page.titulo || page.fonte || 'Página oficial'];
+    const title = page.titulo || page.fonte || 'Página oficial';
+    const lines = [page.pagina ? `${title} · p. ${page.pagina}` : title];
     const summary = page.resumo || page.legenda;
     if (summary) lines.push(summary);
     if (page.consultadoEm) lines.push(`Consultada em ${page.consultadoEm} (Brasília).`);
