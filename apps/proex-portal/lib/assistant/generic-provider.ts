@@ -63,8 +63,9 @@ export async function genericChat(options: { provider: CatalogProvider; model: C
         headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify(body) }, options.fetcher));
     } else if (provider.kind === 'openai_chat') {
-      const useCompletionLimit = ['api.openai.com', 'api.groq.com'].includes(new URL(endpoint).hostname);
+      const host = new URL(endpoint).hostname;
       const reasoning = options.reasoningEffort !== undefined ? roleReasoningParameters({ kind: provider.kind, baseUrl: safeBaseUrl(provider.baseUrl), model: model.model }, options.reasoningEffort) : null;
+      const useCompletionLimit = host === 'api.openai.com' || (host === 'api.groq.com' && !!reasoning);
       const messages = [{ role: 'system', content: system }, ...turns.map(turn => ({ role: turn.role, content: turn.image ? [{ type: 'text', text: turn.content }, { type: 'image_url', image_url: { url: turn.image } }] : turn.content }))];
       const body = { model: model.model, messages, stream: false, ...(useCompletionLimit ? { max_completion_tokens: maxTokens } : { max_tokens: maxTokens, ...(reasoning?.thinking?.type === 'enabled' ? {} : { temperature: options.temperature ?? 0.3 }) }), ...reasoning, ...(json ? { response_format: { type: 'json_object' } } : {}) };
       options.assertPayload?.(body);

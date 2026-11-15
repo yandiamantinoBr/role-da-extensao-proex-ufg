@@ -53,7 +53,7 @@ export default function AssistantAdministrationPanel({ canManageKeys=false, refr
         if (!active.current || controller.signal.aborted || request!==epoch.current) return;
         const next = statusValue(value), configurable = next.organizations.filter(org=>org.canConfigure);
         if (!selection && configurable.length) { setSelection(configurable[0].id); return; }
-        setData({scope:selection,status:next}); setConfig(next.config??DEFAULT_ASSISTANT_CONFIG); setFailure('');
+        setData({scope:selection,status:next}); setConfig({...DEFAULT_ASSISTANT_CONFIG,...next.config}); setFailure('');
       }).catch(error => { if (active.current&&!controller.signal.aborted&&request===epoch.current) { setData(null); setDelegateId(''); setFailure(error instanceof Error?error.message:'Não foi possível consultar os ajustes.'); } });
     return () => controller.abort();
   }, [selection,refresh,refreshKey]);
