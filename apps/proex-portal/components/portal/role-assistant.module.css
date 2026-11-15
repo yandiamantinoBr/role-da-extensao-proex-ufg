@@ -1,7 +1,7 @@
 .launcher{position:fixed;right:24px;bottom:24px;z-index:45;display:inline-flex;align-items:center;gap:.6rem;min-height:60px;padding:6px 18px 6px 6px;border:2px solid var(--purple);border-radius:999px;background:var(--surface);color:var(--brand-ink);font:inherit;font-weight:700;font-size:.95rem;box-shadow:0 10px 30px #2914353a;cursor:pointer}
 .launcher img{width:46px;height:46px;border-radius:999px;background:#fff;border:2px solid var(--purple)}
 .launcher:hover{background:var(--surface-soft)}
-.launcher:focus-visible,.iconButton:focus-visible,.send:focus-visible,.suggestions button:focus-visible{outline:3px solid var(--focus);outline-offset:3px}
+.launcher:focus-visible,.iconButton:focus-visible,.iconButton:focus-within,.send:focus-visible,.suggestions button:focus-visible{outline:3px solid var(--focus);outline-offset:3px}
 @media (prefers-reduced-motion:no-preference){.launcher{transition:transform .15s ease}.launcher:hover{transform:translateY(-2px)}}
 @media (max-width:720px){
   .launcher{display:none}

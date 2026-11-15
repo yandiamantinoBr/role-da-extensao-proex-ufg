@@ -246,7 +246,7 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
         acceptedCostMicros: officialLookup ? 0 : estimate.costMicros,
       });
       if (!mounted.current) return;
-      const reply: Message = { id: crypto.randomUUID(), role: 'assistant', content: result.reply, ...(encodedVideo ? { video: true } : {}), sources: (result.sources ?? []).filter(source => source.href.startsWith('/?module=') || OFFICIAL_LINK.test(source.href)).slice(0, 6), meta: result.provider === 'official' ? 'Consulta pública · sem custo de IA' : `Custou ${friendlyMicros(result.costMicros)}${result.lookups ? ` · consultou o portal ${result.lookups === 1 ? '1 vez' : `${result.lookups} vezes`}` : ''}${result.operationDropped ? ' · Não foi preparado rascunho. Confira suas permissões e os dados informados.' : ''}`,
+      const reply: Message = { id: crypto.randomUUID(), role: 'assistant', content: result.reply, ...(encodedVideo ? { video: true } : {}), sources: (result.sources ?? []).filter(source => source.href.startsWith('/?module=') || OFFICIAL_LINK.test(source.href)).slice(0, 6), meta: result.provider === 'official' ? 'Consulta pública · sem custo de IA' : `${encodedVideo ? 'Google Gemini · ' : ''}Custou ${friendlyMicros(result.costMicros)}${result.lookups ? ` · consultou o portal ${result.lookups === 1 ? '1 vez' : `${result.lookups} vezes`}` : ''}${result.operationDropped ? ' · Não foi preparado rascunho. Confira suas permissões e os dados informados.' : ''}`,
         operation: result.operation ? { request: result.operation, stage: 'idle', key: crypto.randomUUID() } : undefined };
       setMessages(current => [...current, reply]);
       if (encodedVideo) clearVideo();
