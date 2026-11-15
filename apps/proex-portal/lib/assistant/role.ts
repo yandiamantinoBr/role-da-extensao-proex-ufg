@@ -14,6 +14,7 @@ import { ROLE_SUGGESTION_DAYS, roleSuggestions } from './role-suggestions';
 import { ROLE_VIDEO_MODELS, roleVideoEstimate, type RoleVideoProfile, type RoleVideoStatus } from './role-video-contracts';
 import { dispatchRoleVideo, parseRoleVideo, RoleVideoChargedError } from './role-video';
 import { isOfficialSearch } from './official-search-intent';
+import { roleDocumentExcerpt, roleDocumentMessage } from './role-document-contracts';
 import { roleHistoryForPolicy, roleReasoningParameters, roleReasoningSupport, type RolePolicy, type RoleEffort } from './role-policy';
 import { containsCredential } from './sensitive';
 import { ChargedError, firstJsonObject, genericChat, requireConversationEndpoint } from './generic-provider';
@@ -119,10 +120,15 @@ function videoApproval(organizationId: string, project: string, revision: number
   return digest(JSON.stringify(['role-video/v2', organizationId, project, revision, profile.model, profile.effort]));
 }
 
+function documentApproval(actor: PortalActor, project: string, revision: number) {
+  return digest(JSON.stringify(['role-document/v1', actor.userId, project, revision]));
+}
+
 export type RoleAvailability = {
   contract: string; organizationId: string; projectId: string; available: boolean; reason: string | null;
   provider: string; model: string; visionAvailable: boolean; operationsAvailable: boolean;
   video?: RoleVideoStatus;
+  document?: { approval: string; canSaveToRecords: boolean };
   textPricing: RolePricing | null; visionPricing: RolePricing | null;
   /** `route` só existe com modelo do catálogo escolhido para voz: é o destino (`catalog:<id>`) que o consentimento precisa nomear. */
   /** `route` e `routeModel` só existem com modelo do catálogo escolhido para voz e em condição de receber o áudio. */
@@ -186,7 +192,12 @@ export async function roleStatus(db: D1Database, actor: PortalActor | null, inpu
       ? { ...profile, label: ROLE_VIDEO_MODELS[profile.model].label, approval: await videoApproval(organizationId, project, revision, profile) }
       : undefined;
     const decisionRouteName = state.operationsAvailable && config.jevEnabled && config.decisionModel ? taskRouteName(await resolveTaskRoute(db, organizationId, config, rawCredentials, 'decision').catch(() => null)) : null;
-    return { ...base, ...state, speech, ...(video ? { video } : {}), ...(decisionRouteName ? { decisionRouteName } : {}), provider: text?.kind === 'catalog' ? text.provider.id : config.roleProvider, model: text?.pricing.label ?? ROLE_MODELS[config.roleProvider].label,
+    const recordScope = projectAuthoritySql(current, ['campaigns.manage'], '?');
+    const document = state.available ? {
+      approval: await documentApproval(current, project, revision),
+      canSaveToRecords: !!await one(db, `SELECT 1 WHERE ${recordScope.sql}`, [...recordScope.values, project]),
+    } : undefined;
+    return { ...base, ...state, speech, ...(document ? { document } : {}), ...(video ? { video } : {}), ...(decisionRouteName ? { decisionRouteName } : {}), provider: text?.kind === 'catalog' ? text.provider.id : config.roleProvider, model: text?.pricing.label ?? ROLE_MODELS[config.roleProvider].label,
       textPricing: text?.pricing ?? null, visionPricing: vision?.pricing ?? null, dailyLimitMicros: config.dailyUsdMicros, tools: { text: !!toolRoute(text) && !!roleTools(config).length, vision: !!toolRoute(vision) && !!roleTools(config).length },
       policy: { historyMessages: config.roleHistoryMessages, inputCeiling: config.roleInputTokenCeiling, maxOutputTokens: config.roleOutputTokenLimit, reasoningCarry: keepReasoning(toolRoute(text), config.roleReasoningEffort), publicSearch: config.rolePublicSearchEnabled },
       reason: state.available ? null : !config.roleEnabled ? 'O Rolê ainda não foi ligado nesta organização.' : 'Falta a chave do provedor escolhido para o Rolê.', scopes: state.available ? await roleScopes(db, current, organizationId) : undefined };
@@ -194,6 +205,18 @@ export async function roleStatus(db: D1Database, actor: PortalActor | null, inpu
     const reason = error instanceof HttpError && error.status === 403 ? 'A IA desta organização está liberada só para outra pessoa.' : 'O Rolê ainda não foi configurado nesta organização.';
     return { ...base, available: false, reason, provider: 'deepseek', model: ROLE_MODELS.deepseek.label, visionAvailable: false, operationsAvailable: false, textPricing: null, visionPricing: null, speech: { available: false, provider: 'groq' }, dailyLimitMicros: 0, tools: { text: false, vision: false } };
   }
+}
+
+/** Bloqueia a leitura de anexos antes do corpo da requisição e revalida antes de devolver o texto. */
+export async function requireRoleDocumentAccess(db: D1Database, actor: PortalActor, projectId: string | null, secret: string, options: Options = {}) {
+  const status = await roleStatus(db, actor, { projectId }, secret, options);
+  if (!status.document) throw new HttpError(403, 'Anexos do Rolê estão indisponíveis neste projeto.', 'assistant_forbidden');
+  return async () => {
+    const current = await roleStatus(db, actor, { projectId }, secret, options);
+    if (!current.document || current.document.approval !== status.document?.approval) {
+      throw new HttpError(403, 'Seu acesso ou a configuração mudou durante a leitura.', 'assistant_forbidden');
+    }
+  };
 }
 
 /** Sugestões por pessoa (regras, sem IA nem custo): só para quem já pode conversar com o Rolê neste projeto. */
@@ -433,7 +456,7 @@ async function catalogDispatch(chosen: Extract<Route, { kind: 'catalog' }>, turn
 
 /** One paid call, only after the person accepted a cost ceiling at least as high as the server's. */
 export async function roleChat(db: D1Database, actor: PortalActor | null, input: Record<string, unknown>, secret: string, options: Options = {}) {
-  onlyKeys(input, ['action', 'projectId', 'operationKey', 'consent', 'history', 'message', 'image', 'video', 'videoApproval', 'videoConsent', 'acceptedCostMicros', 'scope']);
+  onlyKeys(input, ['action', 'projectId', 'operationKey', 'consent', 'history', 'message', 'image', 'video', 'videoApproval', 'videoConsent', 'acceptedCostMicros', 'scope', 'document', 'documentConsent', 'documentApproval']);
   if (input.consent !== true) throw new HttpError(400, 'Confirme que o texto e a imagem podem ir para o provedor de IA.', 'assistant_consent');
   if (typeof input.operationKey !== 'string' || !/^[A-Za-z0-9_-]{8,100}$/.test(input.operationKey)) throw new HttpError(400, 'Reabra o Rolê antes de enviar.', 'assistant_operation');
   if (typeof input.message !== 'string' || input.message.length > ROLE_MAX_MESSAGE_CHARS) throw new HttpError(400, 'Escreva até 2.000 caracteres por mensagem.', 'assistant_request');
@@ -445,6 +468,12 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
   const state = availability(config, credentials, organizationId, options.speech, rawCredentials, catalog);
   if (!state.available) throw new HttpError(503, 'O Rolê está desligado ou sem chave nesta organização.', 'role_unavailable');
   const scope = await resolveRoleScope(db, current, organizationId, input.scope);
+  const document = Object.hasOwn(input, 'document') ? roleDocumentExcerpt(input.document) : null;
+  if (document && (hasVideo || input.image != null)) throw new HttpError(400, 'Envie um documento, uma foto ou um vídeo por vez.', 'role_document_media');
+  if (document && (input.documentConsent !== true || input.documentApproval !== await documentApproval(current, project, revision))) {
+    throw new HttpError(409, 'Confirme novamente o envio do trecho ao modelo de conversa atual.', 'role_document_consent');
+  }
+  const providerMessage = document ? roleDocumentMessage(message, document) : message;
   const videoProfile = { model: config.roleVideoModel, effort: config.roleVideoEffort };
   const videoKey = hasVideo && config.roleVideoEnabled ? geminiVideoCredential(catalog, rawCredentials) : null;
   if (hasVideo && !validProviderKey(videoKey)) throw new HttpError(403, 'A análise de vídeo não está liberada neste projeto.', 'role_video_disabled');
@@ -454,8 +483,8 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
   if (hasVideo && input.image != null) throw new HttpError(400, 'Envie uma foto ou um vídeo por vez.', 'role_video_input');
   const video = hasVideo ? parseRoleVideo(input.video) : null;
   if (hasVideo && !video) throw new HttpError(400, 'Selecione um vídeo MP4.', 'role_video_input');
-  const image = parseRoleImage(input.image), submittedTurns = video ? [] : history(input.history);
-  if (!video && !image && config.rolePublicSearchEnabled && isOfficialSearch(message)) {
+  const image = parseRoleImage(input.image), submittedTurns = video || document ? [] : history(input.history);
+  if (!video && !image && !document && config.rolePublicSearchEnabled && isOfficialSearch(message)) {
     const authorization = roleAuthorization(db, current, project, organizationId, revision);
     try {
       await authorization.first();
@@ -475,14 +504,14 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
   const modelName = video ? videoProfile.model : chosen.kind === 'catalog' ? chosen.model.model : ROLE_MODELS[chosen.provider].model;
   const apiKey = chosen.apiKey;
   const callable = video ? null : toolRoute(chosen);
-  const tools = callable ? roleTools(config) : [], toolsOn = tools.length > 0;
+  const tools = callable && !document ? roleTools(config) : [], toolsOn = tools.length > 0;
   // Leave ten seconds for validation and settlement in the 60 s Vercel function.
   const timeoutMs = video && videoProfile.effort === 'xhigh' ? 50_000 : roleTimeoutMs(config.timeoutMs, toolsOn || !!video);
   const turns = roleHistoryForPolicy(submittedTurns, config.roleHistoryMessages);
   const reasoningCarry = !image && keepReasoning(callable, config.roleReasoningEffort);
-  const envelope = callable ? transportBody(callable, turns, message, projectName, image?.dataUrl ?? null, toolsOn ? brasiliaToday(now) : null, toolsOn ? scope.label : null, config.roleOutputTokenLimit, image ? 'default' : config.roleReasoningEffort) : null;
+  const envelope = callable ? transportBody(callable, turns, providerMessage, projectName, image?.dataUrl ?? null, toolsOn ? brasiliaToday(now) : null, toolsOn ? scope.label : null, config.roleOutputTokenLimit, image ? 'default' : config.roleReasoningEffort) : null;
   if (envelope) assertInputLimit(toolsOn ? { ...envelope, tools, tool_choice: 'auto' } : envelope, config.roleInputTokenCeiling);
-  const textBytes = roleConversationBytes(turns, message, projectName);
+  const textBytes = roleConversationBytes(turns, providerMessage, projectName);
   if (!video && !envelope && config.roleInputTokenCeiling && textBytes + ROLE_SYSTEM_PROMPT_BYTES + (image ? ROLE_IMAGE_TOKEN_CEILING : 0) > config.roleInputTokenCeiling) throw inputLimitError();
   const videoQuote = video ? roleVideoEstimate({ textBytes: new TextEncoder().encode(message).byteLength, maxOutputTokens: config.roleOutputTokenLimit, seconds: video.seconds, now, model: videoProfile.model }) : null;
   if (videoQuote && config.roleInputTokenCeiling && videoQuote.inputTokens > config.roleInputTokenCeiling) throw inputLimitError();
@@ -492,7 +521,7 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
   }
   const reservation = { tokens: estimate.tokens, cost: estimate.costMicros, calls: 1, milliseconds: timeoutMs }; // uma pergunta = uma chamada; custo, tokens e tempo cobrem as até 3 requisições
   const id = await digest(`role\n${current.userId}\n${project}\n${input.operationKey}`);
-  const fingerprint = await digest(JSON.stringify({ contract: ROLE_CONTRACT, message, turns, image: image ? await digest(image.dataUrl) : null,
+  const fingerprint = await digest(JSON.stringify({ contract: ROLE_CONTRACT, message: providerMessage, turns, image: image ? await digest(image.dataUrl) : null,
     ...(video ? { video: await digest(video.data) } : {}), revision }));
   const authorization = roleAuthorization(db, current, project, organizationId, revision, !!video), nonce = crypto.randomUUID(), day = dayKey(now);
   // One person cannot use up the whole organization budget: half of the daily calls (all of them under private use).
@@ -529,16 +558,16 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
           await authorization.first();
           return runRoleTool(db, current, organizationId, name, args, budget, scope, options.officialFetcher);
         }, config, tools, reasoningCarry, () => authorization.first(), controller.signal, options.fetcher ?? fetch)
-      : await catalogDispatch(chosen as Extract<Route, { kind: 'catalog' }>, turns, message, projectName, image?.dataUrl ?? null, config, controller.signal, options.fetcher);
+      : await catalogDispatch(chosen as Extract<Route, { kind: 'catalog' }>, turns, providerMessage, projectName, image?.dataUrl ?? null, config, controller.signal, options.fetcher);
     // A model can suggest a draft only to someone with write authority in this project.
     // The separate review endpoint still checks the exact action and live permissions.
     const write = projectAuthoritySql(current, ['inventory.manage', 'campaigns.manage'], '?');
-    const allowDraft = result.operation && state.operationsAvailable && !!await one(db, `SELECT 1 WHERE ${write.sql}`, [...write.values, project]);
+    const allowDraft = !document && result.operation && state.operationsAvailable && !!await one(db, `SELECT 1 WHERE ${write.sql}`, [...write.values, project]);
     const dropped = !!result.operation && (!allowDraft || !operationNumbersAllowed(result.operation, [message, ...turns.filter(turn => turn.role === 'user').map(turn => turn.content)]));
     if (dropped) result.operation = null;
     const extraCost = Math.max(0, result.costMicros - estimate.costMicros), extraTokens = Math.max(0, result.inputTokens + result.outputTokens - estimate.tokens), elapsed = Date.now() - startedAt;
     const videoReceipt = video ? { hasVideo: true, videoEffort: videoProfile.effort, reasoningTokens: result.reasoningTokens } : {};
-    const details = { provider, model: modelName, hasImage: !!image, ...videoReceipt, inputTokens: result.inputTokens, outputTokens: result.outputTokens, reservedUsdMicros: estimate.costMicros, usdMicros: result.costMicros, operationSuggested: !!result.operation, operationDropped: dropped, overrun: extraCost > 0 || extraTokens > 0, tools: result.tools ?? [], steps: result.steps ?? 1 };
+    const details = { provider, model: modelName, hasImage: !!image, ...(document ? { hasDocumentExcerpt: true } : {}), ...videoReceipt, inputTokens: result.inputTokens, outputTokens: result.outputTokens, reservedUsdMicros: estimate.costMicros, usdMicros: result.costMicros, operationSuggested: !!result.operation, operationDropped: dropped, overrun: extraCost > 0 || extraTokens > 0, tools: result.tools ?? [], steps: result.steps ?? 1 };
     await db.batch([
       authorization,
       db.prepare("UPDATE ai_calls SET status='complete' WHERE id=? AND admission_nonce=? AND status='reserved'").bind(id, nonce),

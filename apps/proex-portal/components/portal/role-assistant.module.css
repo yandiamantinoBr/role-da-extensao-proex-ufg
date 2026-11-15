@@ -129,3 +129,15 @@
 .confirmForm :global(.p-field){margin:0}
 .reviseActions{display:flex;flex-wrap:wrap;gap:.5rem}
 .reviseActions :global(.p-button){min-height:44px}
+
+.bubble[data-media="document"]{width:min(100%,26rem);max-width:100%;background:var(--surface);color:var(--text-strong);border-color:var(--line)}
+:global(html[data-theme=dark]) .mine .bubble[data-media="document"]{background:var(--surface);border-color:var(--line)}
+.documentCard,.documentEditor,.documentCard details{display:grid;gap:.5rem;min-width:0}
+.documentCard details>summary{cursor:pointer;color:var(--text-strong);padding:.45rem 0;font-weight:600}
+.documentCard button{max-width:100%;white-space:normal;text-align:left}
+.documentTitle{display:flex;align-items:flex-start;gap:.45rem}
+.documentTitle svg{flex:none;margin-top:.18rem;color:var(--purple)}
+.documentText{white-space:pre-wrap;overflow:auto;overflow-wrap:anywhere;max-height:12rem;margin:.4rem 0;padding:.65rem;border-radius:10px;border:1px solid var(--line);background:var(--surface-soft);color:var(--text-strong);font:inherit;font-size:.875rem;line-height:1.45}
+.documentEditor input:not([type=checkbox]){width:100%;min-height:44px;padding:.5rem .65rem;border:1px solid var(--control-border);border-radius:10px;background:var(--surface);color:var(--text-strong);font:inherit;font-size:16px}
+.documentEditor textarea{resize:vertical;max-height:9rem}
+.documentEditor .videoConsent{padding:.5rem .6rem}

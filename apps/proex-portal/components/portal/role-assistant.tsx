@@ -2,7 +2,7 @@
 /* eslint-disable @next/next/no-img-element -- mascote em SVG estático e imagens locais em data URL */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react';
-import { Film, ImagePlus, LoaderCircle, MessageSquarePlus, Mic, Send, Square, Trash2, X } from 'lucide-react';
+import { Film, FileAudio, FileText, ImagePlus, LoaderCircle, MessageSquarePlus, Mic, Send, Square, Trash2, X } from 'lucide-react';
 import { safeRequest, type AssistantPlan } from '@/lib/assistant/contracts';
 import {
   ROLE_MAX_HISTORY, ROLE_MAX_HISTORY_CHARS, ROLE_MAX_IMAGE_BYTES, ROLE_MAX_IMAGE_SIDE, ROLE_MAX_MESSAGE_CHARS, ROLE_MODELS,
@@ -10,6 +10,9 @@ import {
 } from '@/lib/assistant/role-contracts';
 import { prepareSpeechWav } from './speech-audio';
 import { RoleLocalPlayer, type RoleLocalMedia } from './role-local-media';
+import RoleDocumentCard, { type RoleDocumentRevision } from './role-document-card';
+import { ROLE_DOCUMENT_EXCERPT_LIMIT, roleDocumentExcerpt, roleDocumentMessage, type RoleDocumentExcerpt, type RoleDocumentPreview } from '@/lib/assistant/role-document-contracts';
+import { MAX_UPLOAD_FILE_BYTES } from '@/lib/upload-limits';
 import AiPeopleUsage from './ai-people-usage';
 import { createPortal } from 'react-dom';
 import { useDockItem, useMobileDockToolbar } from './floating-dock';
@@ -23,11 +26,11 @@ import styles from './role-assistant.module.css';
 type Project = { id: string; name: string; organization_id?: string };
 type Props = { projects: Project[]; defaultProjectId?: string; onApplied?: () => void | Promise<void>; onOpenSettings?: () => void; onOpenLimits?: () => void };
 type Pricing = { model: string; label: string; inputMicrosPerToken: number; outputMicrosPerToken: number };
-type Status = { video?: RoleVideoStatus; policy?: { historyMessages: number; inputCeiling: number; maxOutputTokens: number; reasoningCarry: boolean; publicSearch: boolean }; available: boolean; reason: string | null; provider: string; model: string; textPricing?: Pricing | null; visionPricing?: Pricing | null; visionAvailable: boolean; operationsAvailable: boolean; speech: { available: boolean; provider: 'groq' | 'deepgram'; route?: string; routeModel?: SpeechRouteModel }; decisionRouteName?: string; dailyLimitMicros: number; reservedTodayMicros: number; canConfigure?: boolean; organizationId?: string; tools?: { text: boolean; vision: boolean }; scopes?: { units: { id: string; name: string }[]; events: { id: string; name: string; projectId: string }[] } };
+type Status = { document?: { approval: string; canSaveToRecords: boolean }; video?: RoleVideoStatus; policy?: { historyMessages: number; inputCeiling: number; maxOutputTokens: number; reasoningCarry: boolean; publicSearch: boolean }; available: boolean; reason: string | null; provider: string; model: string; textPricing?: Pricing | null; visionPricing?: Pricing | null; visionAvailable: boolean; operationsAvailable: boolean; speech: { available: boolean; provider: 'groq' | 'deepgram'; route?: string; routeModel?: SpeechRouteModel }; decisionRouteName?: string; dailyLimitMicros: number; reservedTodayMicros: number; canConfigure?: boolean; organizationId?: string; tools?: { text: boolean; vision: boolean }; scopes?: { units: { id: string; name: string }[]; events: { id: string; name: string; projectId: string }[] } };
 type Match = { projectId: string; projectName: string; itemName: string; score: number };
 type Operation = { request: string; stage: 'idle' | 'estimated' | 'preview' | 'done'; costMicros?: number; provider?: string; jev?: boolean; /** Modelo que confere, como veio da estimativa (vazio = padrão do portal). É o nome que o aviso mostra e que vai no preparo. */ decisionDestination?: string; decisionApproval?: string; stale?: boolean; projectId?: string; matches?: Match[]; ambiguous?: boolean; error?: string; limit?: boolean; preview?: { plan: Omit<AssistantPlan, 'actorId'>; planToken: string; undoReason: string }; confirmed?: boolean; receipt?: string; key: string; /** Pedido exatamente como foi enviado para preparar a prévia; vai junto na confirmação. */ prepared?: string; destinationDefault?: string; movementId?: string; destination?: string | null; revise?: 'correct' | 'undo' | null; reviseKey?: string };
 type Source = { label: string; href: string };
-type Message = { id: string; role: 'user' | 'assistant'; content: string; image?: string; video?: true; official?: true; media?: RoleLocalMedia; meta?: string; operation?: Operation; sources?: Source[] };
+type Message = { id: string; role: 'user' | 'assistant'; content: string; image?: string; video?: true; official?: true; isolated?: true; document?: RoleDocumentPreview; documentRevision?: RoleDocumentRevision; media?: RoleLocalMedia; meta?: string; operation?: Operation; sources?: Source[] };
 type Picked = { dataUrl: string; bytes: number };
 type Recorded = { file: File; seconds: number };
 
@@ -109,7 +112,7 @@ function sendableVideo(file: File): Promise<string> {
 
 function trimmedHistory(messages: Message[]): RoleTurn[] {
   // Mesma limpeza do servidor (e-mail e CPF omitidos), para o custo previsto bater com o dele.
-  const turns: RoleTurn[] = messages.filter(message => !message.video && !message.official && message.content.trim()).flatMap(message => { try { return [{ role: message.role, content: safeRequest(message.content.slice(0, 4000)) }]; } catch { return []; } });
+  const turns: RoleTurn[] = messages.filter(message => !message.video && !message.official && !message.isolated && message.content.trim()).flatMap(message => { try { return [{ role: message.role, content: safeRequest(message.content.slice(0, 4000)) }]; } catch { return []; } });
   const recent = turns.slice(-ROLE_MAX_HISTORY);
   while (recent.length && recent.reduce((total, turn) => total + turn.content.length, 0) > ROLE_MAX_HISTORY_CHARS) recent.shift();
   return recent;
@@ -130,12 +133,15 @@ function RoleConversation({ projects, defaultProjectId, onApplied, onOpenSetting
   const projectId = scopeKind === 'project' && projects.some(item => item.id === scopeId) ? scopeId : baseProjectId;
   const [status, setStatus] = useState<Status | null>(null), [statusError, setStatusError] = useState('');
   const [messages, setMessages] = useState<Message[]>([]), [draft, setDraft] = useState(''), [picked, setPicked] = useState<Picked | null>(null);
+  const [documentDraft, setDocumentDraft] = useState<{ name: string; excerpt: RoleDocumentExcerpt } | null>(null);
+  const [documentConsent, setDocumentConsent] = useState<string | null>(null), [readingDocument, setReadingDocument] = useState(false);
+  const copies = useRef(new Map<string, { content: string; operationKey: string; occurredAt: string }>());
   const [video, setVideo] = useState<{ file: File; seconds: number | null } | null>(null);
   const [videoConsent, setVideoConsent] = useState(false);
   function clearVideo() { setVideo(null); setVideoConsent(false); }
-  const [ackTick, setAckTick] = useState(0), [sessionAck, setSessionAck] = useState(''), [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState(''), [limitHit, setLimitHit] = useState(false), [usageOpen, setUsageOpen] = useState(false);
-  const usageRange = useMemo(() => { const day = (offset: number) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(Date.now() - offset * 86400000)); return { from: day(29), to: day(0) }; }, [usageOpen]); // eslint-disable-line react-hooks/exhaustive-deps
-  const [recording, setRecording] = useState(false), [recorded, setRecorded] = useState<Recorded | null>(null), [transcribing, setTranscribing] = useState(false);
+  const [ackTick, setAckTick] = useState(0), [sessionAck, setSessionAck] = useState(''), [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState(''), [limitHit, setLimitHit] = useState(false);
+  const [usageRange, setUsageRange] = useState<{ from: string; to: string } | null>(null);
+  const [recording, setRecording] = useState(false), [recorded, setRecorded] = useState<Recorded | null>(null), [transcribing, setTranscribing] = useState(false), [preparingAudio, setPreparingAudio] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null), dialog = useRef<HTMLDivElement>(null), input = useRef<HTMLTextAreaElement>(null), log = useRef<HTMLOListElement>(null);
   const returnFocus = useRef<HTMLElement | null>(null);
   const recorder = useRef<MediaRecorder | null>(null), stream = useRef<MediaStream | null>(null), stopTimer = useRef<number | null>(null), mounted = useRef(true);
@@ -147,8 +153,10 @@ function RoleConversation({ projects, defaultProjectId, onApplied, onOpenSetting
     if (recorder.current?.state === 'recording') recorder.current.stop();
     stream.current?.getTracks().forEach(track => track.stop());
     if (stopTimer.current) window.clearTimeout(stopTimer.current);
+    copies.current.clear();
+    setDocumentDraft(null); setDocumentConsent(null); setReadingDocument(false);
     setMessages([]); setDraft(''); setPicked(null); setVideo(null); setVideoConsent(false);
-    setRecorded(null); setRecording(false); setTranscribing(false); setBusy(false);
+    setRecorded(null); setRecording(false); setTranscribing(false); setPreparingAudio(false); setBusy(false);
     setError(''); setNotice(''); setLimitHit(false);
   }, []);
 
@@ -215,7 +223,7 @@ function RoleConversation({ projects, defaultProjectId, onApplied, onOpenSetting
     });
     return () => window.cancelAnimationFrame(frame);
   }, [open, status?.available]);
-  useEffect(() => { log.current?.lastElementChild?.scrollIntoView({ block: 'nearest' }); }, [messages, busy, open, status?.available]);
+  useEffect(() => { log.current?.lastElementChild?.scrollIntoView({ block: 'nearest' }); }, [messages.length, busy, open, status?.available]);
 
   const [tips, setTips] = useState<{ key: string; list: string[] } | null>(null), [tipsTick, setTipsTick] = useState(0);
   const tipsOff = useMemo(() => { try { return window.localStorage.getItem(TIPS_STORAGE) === 'off'; } catch { return false; } }, [tipsTick]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -232,14 +240,19 @@ function RoleConversation({ projects, defaultProjectId, onApplied, onOpenSetting
   function toggleTips() { try { if (tipsOff) window.localStorage.removeItem(TIPS_STORAGE); else window.localStorage.setItem(TIPS_STORAGE, 'off'); } catch { /* sem armazenamento: nada muda */ } setTipsTick(tick => tick + 1); }
   const sanitized = useMemo(() => { if (!draft.trim()) return { text: '', problem: '' }; try { return { text: safeRequest(draft), problem: '' }; } catch (cause) { return { text: '', problem: cause instanceof Error ? cause.message : 'Revise a mensagem.' }; } }, [draft]);
   const history = useMemo(() => roleHistoryForPolicy(trimmedHistory(messages), status?.policy?.historyMessages ?? ROLE_MAX_HISTORY), [messages, status?.policy?.historyMessages]);
-  const officialLookup = !video && !picked && !!status?.policy?.publicSearch && isOfficialSearch(sanitized.text);
+  const documentInput = useMemo(() => {
+    if (!documentDraft) return { excerpt: null, problem: '' };
+    try { return { excerpt: roleDocumentExcerpt(documentDraft.excerpt), problem: '' }; }
+    catch (cause) { return { excerpt: null, problem: cause instanceof Error ? cause.message : 'Confira o trecho.' }; }
+  }, [documentDraft]);
+  const officialLookup = !documentDraft && !video && !picked && !!status?.policy?.publicSearch && isOfficialSearch(sanitized.text);
   const videoQuote = video?.seconds && status?.video && sanitized.text ? roleVideoEstimate({
     textBytes: new TextEncoder().encode(sanitized.text).byteLength,
     maxOutputTokens: status.policy?.maxOutputTokens ?? 700,
     seconds: video.seconds, model: status.video.model,
   }) : null;
   const videoOverInput = !!videoQuote && !!status?.policy?.inputCeiling && videoQuote.inputTokens > status.policy.inputCeiling;
-  const textEstimate = useMemo(() => status && sanitized.text ? roleEstimate({ textProvider: status.provider === 'groq' ? 'groq' : 'deepseek', textBytes: roleConversationBytes(history, sanitized.text, project?.name ?? ''), hasImage: !!picked, text: status.textPricing, vision: status.visionPricing, tools: picked ? !!status.tools?.vision : !!status.tools?.text, inputCeiling: status.policy?.inputCeiling, maxOutputTokens: status.policy?.maxOutputTokens, reasoningCarry: !picked && status.policy?.reasoningCarry }) : null, [status, sanitized.text, history, project?.name, picked]);
+  const textEstimate = useMemo(() => status && sanitized.text ? roleEstimate({ textProvider: status.provider === 'groq' ? 'groq' : 'deepseek', textBytes: roleConversationBytes(documentDraft ? [] : history, documentInput.excerpt ? roleDocumentMessage(sanitized.text, documentInput.excerpt) : sanitized.text, project?.name ?? ''), hasImage: !!picked, text: status.textPricing, vision: status.visionPricing, tools: !documentDraft && (picked ? !!status.tools?.vision : !!status.tools?.text), inputCeiling: status.policy?.inputCeiling, maxOutputTokens: status.policy?.maxOutputTokens, reasoningCarry: !picked && status.policy?.reasoningCarry }) : null, [status, sanitized.text, history, project?.name, picked, documentDraft, documentInput.excerpt]);
   const estimate = video ? videoQuote : textEstimate;
   const tooLong = draft.length > ROLE_MAX_MESSAGE_CHARS;
   const videoLabel = status?.video ? `${status.video.label} · ${ROLE_VIDEO_EFFORT_LABELS[status.video.effort]}` : 'Google Gemini';
@@ -254,7 +267,7 @@ function RoleConversation({ projects, defaultProjectId, onApplied, onOpenSetting
     setAckTick(value => value + 1);
   }
   const servicesChanged = !!stored && stored !== servicesKey;
-  const canSend = !!status?.available && !!estimate && !busy && !transcribing && !recording && !tooLong && consent && (!picked || status.visionAvailable) && (!video || !!status.video && videoConsent && !videoOverInput);
+  const canSend = !!status?.available && !!estimate && !busy && !transcribing && !recording && !preparingAudio && !readingDocument && !tooLong && consent && (!documentDraft || !!(documentInput.excerpt && status.document && documentConsent === status.document.approval)) && (!picked || status.visionAvailable) && (!video || !!status.video && videoConsent && !videoOverInput);
 
   // Só em memória: some ao recarregar ou trocar de conta.
 
@@ -262,25 +275,27 @@ function RoleConversation({ projects, defaultProjectId, onApplied, onOpenSetting
     event?.preventDefault();
     if (!canSend || !estimate || !status) return;
     const epoch = conversationEpoch.current;
-    const text = sanitized.text, image = picked?.dataUrl;
-    const user: Message = { id: crypto.randomUUID(), role: 'user', content: text, image, ...(officialLookup ? { official: true } : {}), ...(video ? { video: true, meta: 'Vídeo MP4' } : {}) };
+    const text = sanitized.text, image = picked?.dataUrl, document = documentInput.excerpt;
+    const user: Message = { id: crypto.randomUUID(), role: 'user', content: text, image, ...(officialLookup ? { official: true } : {}), ...(document ? { isolated: true, meta: documentDraft?.name } : {}), ...(video ? { video: true, meta: 'Vídeo MP4' } : {}) };
     setMessages(current => [...current, user]); setDraft(''); setPicked(null); setBusy(true); setError(''); setNotice(''); setLimitHit(false);
     try {
       const encodedVideo = video && status.video ? await sendableVideo(video.file) : null;
       const result = await post<{ reply: string; operation: string | null; operationDropped?: boolean; model: string; provider?: string; costMicros: number; reservedMicros: number; inputTokens: number; outputTokens: number; reasoningTokens?: number; sources?: Source[]; lookups?: number }>('/api/assistant/role', {
-        action: 'chat', projectId, scope: scopeKind === 'org' ? { kind: 'org' } : { kind: scopeKind, id: scopeId }, operationKey: crypto.randomUUID(), consent: true, history: encodedVideo || officialLookup ? [] : history, message: text, ...(image ? { image } : {}),
+        action: 'chat', projectId, scope: scopeKind === 'org' ? { kind: 'org' } : { kind: scopeKind, id: scopeId }, operationKey: crypto.randomUUID(), consent: true, history: encodedVideo || officialLookup || document ? [] : history, message: text, ...(image ? { image } : {}),
         ...(encodedVideo ? { video: encodedVideo, videoConsent: true, videoApproval: status.video?.approval } : {}),
+        ...(document ? { document, documentConsent: true, documentApproval: status.document?.approval } : {}),
         acceptedCostMicros: officialLookup ? 0 : estimate.costMicros,
       }, encodedVideo && status.video?.effort === 'xhigh' ? 58_000 : undefined);
       if (!mounted.current || conversationEpoch.current !== epoch) return;
       const videoUsage = encodedVideo ? ` · ${result.inputTokens} tokens de entrada · ${result.outputTokens} de saída${typeof result.reasoningTokens === 'number' ? ` (${result.reasoningTokens} de raciocínio)` : ''}` : '';
-      const reply: Message = { id: crypto.randomUUID(), role: 'assistant', content: result.reply, ...(result.provider === 'official' ? { official: true } : {}), ...(encodedVideo ? { video: true } : {}), sources: (result.sources ?? []).filter(source => source.href.startsWith('/?module=') || OFFICIAL_LINK.test(source.href) || officialPdfUrl(source.href)).slice(0, 6), meta: result.provider === 'official' ? 'Consulta pública · sem custo de IA' : `${encodedVideo ? `${videoLabel} · Custo estimado` : 'Custou'} ${friendlyMicros(result.costMicros)}${videoUsage}${result.lookups ? ` · consultou o portal ${result.lookups === 1 ? '1 vez' : `${result.lookups} vezes`}` : ''}${result.operationDropped ? ' · Não foi preparado rascunho. Confira suas permissões e os dados informados.' : ''}`,
+      const reply: Message = { id: crypto.randomUUID(), role: 'assistant', content: result.reply, ...(result.provider === 'official' ? { official: true } : {}), ...(document ? { isolated: true } : {}), ...(encodedVideo ? { video: true } : {}), sources: (result.sources ?? []).filter(source => source.href.startsWith('/?module=') || OFFICIAL_LINK.test(source.href) || officialPdfUrl(source.href)).slice(0, 6), meta: result.provider === 'official' ? 'Consulta pública · sem custo de IA' : `${encodedVideo ? `${videoLabel} · Custo estimado` : 'Custou'} ${friendlyMicros(result.costMicros)}${videoUsage}${result.lookups ? ` · consultou o portal ${result.lookups === 1 ? '1 vez' : `${result.lookups} vezes`}` : ''}${result.operationDropped ? ' · Não foi preparado rascunho. Confira suas permissões e os dados informados.' : ''}`,
         operation: result.operation ? { request: result.operation, stage: 'idle', key: crypto.randomUUID() } : undefined };
       setMessages(current => [
         ...(encodedVideo && video ? current.map(message => message.id === user.id ? { ...message, media: { kind: 'video', file: video.file } satisfies RoleLocalMedia } : message) : current),
         reply,
       ]);
       if (encodedVideo) clearVideo();
+      if (document) clearDocumentDraft();
       if (reply.operation && status.operationsAvailable) void locateOperation(reply);
       void loadStatus(projectId);
     } catch (cause) {
@@ -288,8 +303,71 @@ function RoleConversation({ projects, defaultProjectId, onApplied, onOpenSetting
       setMessages(current => current.filter(message => message.id !== user.id)); setDraft(text); if (image && picked) setPicked(picked);
       setError(cause instanceof Error ? limitText(cause) : 'O Rolê não conseguiu responder.'); setLimitHit(isLimit(cause));
       if (video) setVideoConsent(false);
-      if (cause instanceof RequestError && (cause.status === 401 || cause.status === 403 || cause.code === 'role_video_consent')) void loadStatus(projectId);
+      if (document) setDocumentConsent(null);
+      if (cause instanceof RequestError && (cause.status === 401 || cause.status === 403 || cause.code === 'role_video_consent' || cause.code === 'role_document_consent')) void loadStatus(projectId);
     } finally { if (mounted.current && conversationEpoch.current === epoch) setBusy(false); }
+  }
+
+  function clearDocumentDraft() { setDocumentDraft(null); setDocumentConsent(null); }
+
+  async function attachDocument(file: File | undefined) {
+    if (!file || !status?.document || busy || readingDocument || preparingAudio) return;
+    setError(''); setNotice('');
+    if (!/\.(pdf|docx)$/i.test(file.name)) { setError('Use um PDF ou um documento Word (.docx).'); return; }
+    if (!file.size || file.size > MAX_UPLOAD_FILE_BYTES) { setError('Use um arquivo de até 4 MB.'); return; }
+    const epoch = conversationEpoch.current;
+    setReadingDocument(true);
+    try {
+      const body = new FormData();
+      body.set('file', file);
+      const document = await call<RoleDocumentPreview>(`/api/assistant/role/document?projectId=${encodeURIComponent(projectId)}`, { method: 'POST', body, headers: { 'X-Proex-Action': '1' } });
+      if (!mounted.current || epoch !== conversationEpoch.current) return;
+      const message: Message = { id: crypto.randomUUID(), role: 'user', content: '', document };
+      setMessages(current => [...current, message]);
+    } catch (cause) {
+      if (!mounted.current || epoch !== conversationEpoch.current) return;
+      setError(cause instanceof Error ? cause.message : 'Não foi possível ler o documento.');
+      if (cause instanceof RequestError && (cause.status === 401 || cause.status === 403)) void loadStatus(projectId);
+    } finally { if (mounted.current && epoch === conversationEpoch.current) setReadingDocument(false); }
+  }
+
+  function askAboutDocument(excerpt: RoleDocumentExcerpt, name: string) {
+    setPicked(null); clearVideo(); discardRecording();
+    setDocumentDraft({ name, excerpt }); setDocumentConsent(null); setError('');
+    window.requestAnimationFrame(() => input.current?.focus());
+  }
+
+  async function saveDocumentCopy(messageId: string, revision: RoleDocumentRevision, destination: 'download' | 'records') {
+    const epoch = conversationEpoch.current;
+    const currentContext = () => mounted.current && epoch === conversationEpoch.current;
+    const title = revision.title.trim(), text = revision.text.trim();
+    const blob = destination === 'download' ? (await import('./role-document-copy')).revisedDocx(title, text) : null;
+    try {
+      const current = await call<Status>(`/api/assistant/role?projectId=${encodeURIComponent(projectId)}`);
+      if (!currentContext()) throw new Error('O recorte da conversa mudou.');
+      if (!current.document || (destination === 'records' && !current.document.canSaveToRecords)) {
+        if (!current.document) void loadStatus(projectId);
+        throw new Error('Seu acesso a esta opção mudou. Confira o projeto.');
+      }
+      if (blob) {
+        const url = URL.createObjectURL(blob), link = window.document.createElement('a');
+        link.href = url;
+        link.download = `${title.replace(/[^\p{L}\p{N} ._()-]/gu, '_').replace(/^\.+/, '').slice(0, 125) || 'copia-revisada'}.docx`;
+        link.click();
+        window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+        return;
+      }
+      const content = JSON.stringify([title, text]);
+      let request = copies.current.get(messageId);
+      if (!request || content !== request.content) {
+        request = { content, operationKey: crypto.randomUUID(), occurredAt: new Date().toISOString() };
+        copies.current.set(messageId, request);
+      }
+      await post('/api/records', { action: 'create', projectId, kind: 'project', title, body: text, operationKey: request.operationKey, occurredAt: request.occurredAt });
+    } catch (cause) {
+      if (currentContext() && cause instanceof RequestError && (cause.status === 401 || cause.status === 403)) void loadStatus(projectId);
+      throw cause;
+    }
   }
 
   function updateOperation(messageId: string, change: Partial<Operation>) {
@@ -381,7 +459,7 @@ function RoleConversation({ projects, defaultProjectId, onApplied, onOpenSetting
     try {
       const image = await shrinkImage(file);
       if (!mounted.current || conversationEpoch.current !== epoch) return;
-      setPicked(image); clearVideo(); discardRecording();
+      setPicked(image); clearVideo(); discardRecording(); clearDocumentDraft();
     } catch (cause) {
       if (mounted.current && conversationEpoch.current === epoch) setError(cause instanceof Error ? cause.message : 'Não foi possível usar esta imagem.');
     }
@@ -392,13 +470,13 @@ function RoleConversation({ projects, defaultProjectId, onApplied, onOpenSetting
     setError('');
     if (!/\.mp4$/i.test(file.name) || (file.type && file.type !== ROLE_VIDEO_MIME)) { setError('Escolha um vídeo MP4.'); return; }
     if (file.size < 1 || file.size > ROLE_VIDEO_MAX_BYTES) { setError('Use um vídeo MP4 de até 2 MB.'); return; }
-    setPicked(null); discardRecording(); setVideoConsent(false); setVideo({ file, seconds: null });
+    setPicked(null); discardRecording(); clearDocumentDraft(); setVideoConsent(false); setVideo({ file, seconds: null });
   }
 
   async function startRecording() {
-    if (recording || !consent) return;
+    if (recording || preparingAudio || !consent) return;
     const capture = ++captureEpoch.current;
-    setError(''); setRecorded(null); clearVideo();
+    setError(''); setRecorded(null); clearVideo(); clearDocumentDraft();
     try {
       if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') throw new Error('Este navegador não grava áudio. Escreva a mensagem.');
       const media = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -428,6 +506,20 @@ function RoleConversation({ projects, defaultProjectId, onApplied, onOpenSetting
     }
   }
   function discardRecording() { captureEpoch.current++; setRecorded(null); }
+  async function attachAudioFile(file: File | undefined) {
+    if (!file || !/\.wav$/i.test(file.name) || preparingAudio || !consent || !status?.speech.available) return;
+    const epoch = conversationEpoch.current;
+    setPreparingAudio(true); setError(''); setNotice('');
+    try {
+      const wav = await prepareSpeechWav(file.type ? file : new File([file], file.name, { type: 'audio/wav' }));
+      if (!mounted.current || epoch !== conversationEpoch.current) return;
+      setPicked(null); clearVideo(); clearDocumentDraft(); discardRecording();
+      setRecorded({ file: wav, seconds: Math.max(0, (wav.size - 44) / 32000) });
+    } catch (cause) {
+      if (mounted.current && epoch === conversationEpoch.current) setError(cause instanceof Error ? cause.message : 'Não foi possível preparar o áudio.');
+    } finally { if (mounted.current && epoch === conversationEpoch.current) setPreparingAudio(false); }
+  }
+
   async function transcribe() {
     if (!recorded || !status?.speech.available || transcribing || !consent) return;
     const epoch = conversationEpoch.current;
@@ -481,10 +573,10 @@ function RoleConversation({ projects, defaultProjectId, onApplied, onOpenSetting
         <header className={styles.header}>
           <img className={styles.avatar} src="/brand/role-mascote/role-rosto.svg" alt="" width={48} height={48}/>
           <div className={styles.headerText}><h2 id="role-title">Rolê</h2><p id="role-subtitle">Assistente da PROEX</p></div>
-          {messages.length > 0 && <button type="button" className={styles.textButton} onClick={newConversation} disabled={busy || recording || transcribing} aria-label="Nova conversa"><MessageSquarePlus size={16} aria-hidden="true"/>Nova<span> conversa</span></button>}
+          {messages.length > 0 && <button type="button" className={styles.textButton} onClick={newConversation} disabled={busy || recording || transcribing || readingDocument || preparingAudio} aria-label="Nova conversa"><MessageSquarePlus size={16} aria-hidden="true"/>Nova<span> conversa</span></button>}
           <button type="button" className={styles.iconButton} onClick={() => close()} aria-label="Fechar o Rolê"><X size={20} aria-hidden="true"/></button>
         </header>
-        <label className={styles.project}><span>Procurar em</span><select value={scopeValue} disabled={busy || recording || transcribing} onChange={event => {
+        <label className={styles.project}><span>Procurar em</span><select value={scopeValue} disabled={busy || recording || transcribing || readingDocument || preparingAudio} onChange={event => {
           const value = event.target.value; resetConversation(); setScopeValue(value);
           const event_ = value.startsWith('event:') ? status?.scopes?.events.find(entry => entry.id === value.slice(6)) : null;
           const next = value.startsWith('project:') ? value.slice(8) : event_?.projectId && projects.some(item => item.id === event_.projectId) ? event_.projectId : '';
@@ -518,9 +610,14 @@ function RoleConversation({ projects, defaultProjectId, onApplied, onOpenSetting
             <ol ref={log} className={styles.log} aria-live="polite" aria-label="Conversa com o Rolê">
               {messages.map(message => <li key={message.id} className={message.role === 'user' ? styles.mine : styles.theirs}>
                 {message.role === 'assistant' && <img className={styles.bubbleAvatar} src="/brand/role-mascote/role-rosto.svg" alt="" width={32} height={32}/>}
-                <div className={styles.bubble} data-media={message.media?.kind}>
+                <div className={styles.bubble} data-media={message.document ? 'document' : message.media?.kind}>
                   <span className="visually-hidden">{message.role === 'user' ? 'Você disse:' : 'Rolê respondeu:'}</span>
                   {message.image && <img className={styles.sentImage} src={message.image} alt="Imagem enviada ao Rolê"/>}
+                  {message.document && <RoleDocumentCard document={message.document} revision={message.documentRevision}
+                    disabled={busy || recording || transcribing || readingDocument || preparingAudio} projectName={project?.name ?? 'Projeto atual'}
+                    canSave={!!status.document?.canSaveToRecords}
+                    onEdit={documentRevision => setMessages(current => current.map(entry => entry.id === message.id ? { ...entry, documentRevision } : entry))}
+                    onAsk={askAboutDocument} onCopy={(draft, destination) => saveDocumentCopy(message.id, draft, destination)}/>}
                   {message.media && <RoleLocalPlayer media={message.media} className={styles.sentMedia}
                     label={message.media.kind === 'video' ? 'Reproduzir vídeo enviado' : 'Ouvir gravação transcrita'}/>}
                   {message.content && <p>{message.content}</p>}
@@ -595,6 +692,18 @@ function RoleConversation({ projects, defaultProjectId, onApplied, onOpenSetting
             <p><strong>{servicesChanged ? 'O serviço de IA mudou' : 'Antes de começar'}</strong> O que você escrever, fotografar ou gravar vai para {servicesList(status)}, escolhidos pela PROEX, junto com dados do portal que você já pode ver.{status.operationsAvailable && status.decisionRouteName ? ` ${operationsConferenceSentence(status.decisionRouteName)}` : ''} Não envie senhas, CPF nem dados pessoais.</p>
             <button type="button" className="p-button p-button-primary" onClick={rememberConsent}>Entendi</button>
           </div>}
+          {preparingAudio && <p role="status" className={styles.notice}>Preparando o áudio…</p>}
+          {readingDocument && <p role="status" className={styles.notice}>Lendo o documento…</p>}
+          {documentDraft && <div className={styles.documentEditor}>
+            <div className={styles.attachment}><FileText size={18} aria-hidden="true"/><span>{documentDraft.name}{documentDraft.excerpt.page ? ` · p. ${documentDraft.excerpt.page}` : ''}</span>
+              <button type="button" className={styles.iconButton} onClick={clearDocumentDraft} disabled={busy} aria-label="Remover trecho"><Trash2 size={18} aria-hidden="true"/></button>
+            </div>
+            <label className={styles.editable}><span>Trecho para enviar à IA</span><textarea rows={3} maxLength={ROLE_DOCUMENT_EXCERPT_LIMIT} value={documentDraft.excerpt.text} disabled={busy}
+              onChange={event => { setDocumentDraft({ ...documentDraft, excerpt: { ...documentDraft.excerpt, text: event.target.value } }); setDocumentConsent(null); }}/></label>
+            <label className={styles.videoConsent}><input type="checkbox" checked={!!status.document && documentConsent === status.document.approval} disabled={busy || !status.document} onChange={event => setDocumentConsent(event.target.checked ? status.document?.approval ?? null : null)}/>
+              <span>Autorizo enviar este trecho e a pergunta a <strong>{providerName(status.provider)} · {status.model}</strong>.</span></label>
+            {documentInput.problem && <p className={styles.error}>{documentInput.problem}</p>}
+          </div>}
           {picked && <div className={styles.attachment}><img src={picked.dataUrl} alt="Imagem anexada"/><span>Imagem pronta ({Math.round(picked.bytes / 1024)} KB, reduzida no aparelho)</span><button type="button" className={styles.iconButton} onClick={() => setPicked(null)} aria-label="Remover imagem"><Trash2 size={18} aria-hidden="true"/></button></div>}
           {video && <div className={styles.videoNotice}>
             <div className={styles.attachment}><Film size={20} aria-hidden="true"/><span>{video.file.name} · {Math.max(1, Math.round(video.file.size / 1024))} KB{video.seconds ? ` · ${Math.ceil(video.seconds)} s` : ''}</span>
@@ -624,22 +733,30 @@ function RoleConversation({ projects, defaultProjectId, onApplied, onOpenSetting
           {(sanitized.problem || tooLong) && <p className={styles.error}>{tooLong ? 'Use até 2.000 caracteres.' : sanitized.problem}</p>}
           {picked && !status.visionAvailable && <p className={styles.error}>A leitura de imagens não está ligada nesta organização.</p>}
           <div className={styles.toolbar}>
-            {status.video && <label className={`${styles.iconButton} ${busy || !consent || recording || transcribing ? styles.disabled : ''}`} title={`MP4 de até ${ROLE_VIDEO_MAX_SECONDS} segundos e 2 MB`}>
-              <Film size={20} aria-hidden="true"/><span className="visually-hidden">Anexar vídeo MP4</span>
-              <input type="file" accept=".mp4,video/mp4" disabled={busy || !consent || recording || transcribing} onChange={event=>{pickVideo(event.target.files?.[0]);event.target.value='';}}/>
+            {status.document && <label className={`${styles.iconButton} ${busy || recording || transcribing || readingDocument ? styles.disabled : ''}`} title="PDF ou Word de até 4 MB">
+              <FileText size={20} aria-hidden="true"/><span className="visually-hidden">Anexar PDF ou Word</span>
+              <input type="file" accept=".pdf,.docx" disabled={busy || recording || transcribing || readingDocument || preparingAudio} onChange={event => { void attachDocument(event.target.files?.[0]); event.target.value = ''; }}/>
             </label>}
-            <label className={`${styles.iconButton} ${!status.visionAvailable || busy || !consent || recording || transcribing ? styles.disabled : ''}`} title={status.visionAvailable ? 'Anexar foto' : 'Leitura de imagens desligada'}>
+            {status.video && <label className={`${styles.iconButton} ${busy || !consent || recording || transcribing || preparingAudio ? styles.disabled : ''}`} title={`MP4 de até ${ROLE_VIDEO_MAX_SECONDS} segundos e 2 MB`}>
+              <Film size={20} aria-hidden="true"/><span className="visually-hidden">Anexar vídeo MP4</span>
+              <input type="file" accept=".mp4,video/mp4" disabled={busy || !consent || recording || transcribing || preparingAudio} onChange={event=>{pickVideo(event.target.files?.[0]);event.target.value='';}}/>
+            </label>}
+            <label className={`${styles.iconButton} ${!status.visionAvailable || busy || !consent || recording || transcribing || preparingAudio ? styles.disabled : ''}`} title={status.visionAvailable ? 'Anexar foto' : 'Leitura de imagens desligada'}>
               <ImagePlus size={20} aria-hidden="true"/><span className="visually-hidden">Anexar foto</span>
-              <input type="file" accept="image/*" disabled={!status.visionAvailable || busy || !consent || recording || transcribing} onChange={event => { void pickImage(event.target.files?.[0]); event.target.value = ''; }}/>
+              <input type="file" accept="image/*" disabled={!status.visionAvailable || busy || !consent || recording || transcribing || preparingAudio} onChange={event => { void pickImage(event.target.files?.[0]); event.target.value = ''; }}/>
             </label>
-            <button type="button" className={`${styles.iconButton} ${recording ? styles.recording : ''}`} disabled={!status.speech.available || !consent || busy || transcribing} onClick={() => recording ? recorder.current?.stop() : void startRecording()} aria-label={recording ? 'Parar gravação' : 'Gravar áudio'} title={status.speech.available ? (recording ? 'Parar gravação' : 'Gravar áudio (até 60 s)') : 'Transcrição desligada'}>
+            <button type="button" className={`${styles.iconButton} ${recording ? styles.recording : ''}`} disabled={!status.speech.available || !consent || busy || transcribing || preparingAudio || readingDocument} onClick={() => recording ? recorder.current?.stop() : void startRecording()} aria-label={recording ? 'Parar gravação' : 'Gravar áudio'} title={status.speech.available ? (recording ? 'Parar gravação' : 'Gravar áudio (até 60 s)') : 'Transcrição desligada'}>
               {recording ? <Square size={18} aria-hidden="true"/> : <Mic size={20} aria-hidden="true"/>}
             </button>
+            {status.speech.available && <label className={`${styles.iconButton} ${!consent || busy || recording || transcribing || readingDocument || preparingAudio ? styles.disabled : ''}`} title="Anexar gravação WAV">
+              <FileAudio size={20} aria-hidden="true"/><span className="visually-hidden">Anexar áudio WAV</span>
+              <input type="file" accept=".wav,audio/wav" disabled={!consent || busy || recording || transcribing || readingDocument || preparingAudio} onChange={event => { void attachAudioFile(event.target.files?.[0]); event.target.value = ''; }}/>
+            </label>}
             <p className={styles.cost} aria-live="polite">{!consent ? 'Toque em Entendi para conversar.' : officialLookup ? 'Consulta às fontes oficiais, sem custo de IA.' : estimate ? <>Custo máximo: <strong>{(() => { const [words, exact] = friendlyMicros(estimate.costMicros).split(' ('); return exact ? <><span className={styles.nowrap}>{words}</span> <span className={styles.nowrap}>({exact}</span></> : <span className={styles.nowrap}>{words}</span>; })()}</strong></> : 'O custo aparece aqui antes de enviar.'}</p>
             <button type="submit" className={styles.send} disabled={!canSend} aria-label={officialLookup ? 'Consultar fontes oficiais' : estimate ? `Enviar, custo máximo ${formatMicros(estimate.costMicros)}` : 'Enviar'}><Send size={18} aria-hidden="true"/><span>Enviar</span></button>
           </div>
           <p className={styles.disclaimer}>O Rolê pode errar. Confira antes de usar. Respondido por {modelLabel}{video ? '.' : ` (${providerName(status.provider)}).`}</p>
-          {status.organizationId && <details className={styles.myUsage} onToggle={event => setUsageOpen(event.currentTarget.open)}><summary>Meu uso de IA nos últimos 30 dias</summary>{usageOpen && <AiPeopleUsage organizationId={status.organizationId} from={usageRange.from} to={usageRange.to}/>}</details>}
+          {status.organizationId && <details className={styles.myUsage} onToggle={event => { const now = Date.now(); const day = (offset: number) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(now - offset * 86400000)); setUsageRange(event.currentTarget.open ? { from: day(29), to: day(0) } : null); }}><summary>Meu uso de IA nos últimos 30 dias</summary>{usageRange && <AiPeopleUsage organizationId={status.organizationId} from={usageRange.from} to={usageRange.to}/>}</details>}
         </form>}
       </div>
     </div>}

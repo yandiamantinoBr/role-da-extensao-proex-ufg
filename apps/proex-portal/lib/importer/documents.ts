@@ -45,7 +45,7 @@ export function docxText(bytes: Uint8Array): string {
     // Read only body text. Relationships, macros, comments, attachments, URLs and
     // external entities are never resolved. No package path is written to disk.
     let content = '';
-    for (const match of xml.matchAll(/<(?:\w+:)?t(?:\s[^>]*)?>([^]*?)<\/(?:\w+:)?t\s*>|<\/(?:\w+:)?p\s*>|<(?:\w+:)?(?:br|tab)\b[^>]*\/?\s*>/g)) content += match[1] === undefined ? '\n' : decodeEntities(match[1].replace(/<[^>]*>/g, ''));
+    for (const match of xml.matchAll(/<(?:\w+:)?t(?:\s[^>]*)?>([^]*?)<\/(?:\w+:)?t\s*>|<\/(?:\w+:)?p\s*>|<(?:\w+:)?(?:br|tab)\b[^>]*\/?\s*>/g)) content += match[1] === undefined ? '\n' : decodeEntities(match[1].replace(/<[^>]*>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>'));
     if (!content.trim()) throw new HttpError(422, 'O DOCX não tem texto no corpo principal. Use um documento com texto selecionável.', 'import_document_empty');
     if (new TextEncoder().encode(content).byteLength > IMPORT_TEXT_LIMIT) throw new HttpError(413, 'O texto extraído excede 256 KiB. Divida o documento.', 'import_document_limit');
     return content;
