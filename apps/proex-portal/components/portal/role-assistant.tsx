@@ -518,7 +518,7 @@ function RoleConversation({ projects, defaultProjectId, onApplied, onOpenSetting
             <ol ref={log} className={styles.log} aria-live="polite" aria-label="Conversa com o Rolê">
               {messages.map(message => <li key={message.id} className={message.role === 'user' ? styles.mine : styles.theirs}>
                 {message.role === 'assistant' && <img className={styles.bubbleAvatar} src="/brand/role-mascote/role-rosto.svg" alt="" width={32} height={32}/>}
-                <div className={styles.bubble}>
+                <div className={styles.bubble} data-media={message.media?.kind}>
                   <span className="visually-hidden">{message.role === 'user' ? 'Você disse:' : 'Rolê respondeu:'}</span>
                   {message.image && <img className={styles.sentImage} src={message.image} alt="Imagem enviada ao Rolê"/>}
                   {message.media && <RoleLocalPlayer media={message.media} className={styles.sentMedia}
