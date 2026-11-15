@@ -14,6 +14,8 @@ function compile(name) {
   if (name.endsWith('.json')) return `data:text/javascript;base64,${Buffer.from(`export default ${readFileSync(`${root}lib/${name}`, 'utf8')}`).toString('base64')}`;
   let source = ts.transpileModule(readFileSync(`${root}lib/${name}.ts`, 'utf8'), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
   source = source.replace(/from (['"])(\.{1,2}\/[^'"]+)\1/g, (_m, _q, dependency) => `from ${JSON.stringify(compile(path.posix.normalize(path.posix.join(path.posix.dirname(name), dependency)).replace(/\.ts$/, '')))}`);
+  source = source.replace(/import\(['"](pdfjs-dist\/legacy\/build\/pdf(?:\.worker)?\.mjs)['"]\)/g,
+    (_match, dependency) => `import(${JSON.stringify(import.meta.resolve(dependency))})`);
   const result = `data:text/javascript;base64,${Buffer.from(`${source}\n//# sourceURL=${name}-role-test.mjs`).toString('base64')}`; modules.set(name, result); return result;
 }
 const { DEFAULT_ASSISTANT_CONFIG, safeRequest } = await import(compile('assistant/contracts'));
@@ -867,6 +869,90 @@ test('BUSCA OFICIAL: site indisponível é informado, e o acesso à resposta é 
     } }), error => error.code === 'assistant_forbidden');
   } finally { f.native.close(); }
 });
+
+test('PDF OFICIAL: encontra a edição final, cita a página lida e mantém a autorização do chat', async () => {
+  const f = fixture();
+  try {
+    await setup(f);
+    const { PDFDocument } = await import('pdf-lib');
+    const pdf = await PDFDocument.create();
+    pdf.addPage().drawText('Edital PROBEC 2026/2027. Apresentação oficial do programa.');
+    pdf.addPage().drawText('2.1 Serão ofertadas 93 bolsas para projetos e 7 para programas institucionais.', { size: 11 });
+    const bytes = await pdf.save();
+    const article = 'https://proex.ufg.br/p/123-edital-proec-05-2026-probec-2026-2027';
+    const old = 'https://proex.ufg.br/p/124-edital-proec-05-2025-probec-2025-2026';
+    const file = 'https://files.cercomp.ufg.br/weby/up/694/o/teste-final.pdf';
+    const preliminary = 'https://files.cercomp.ufg.br/weby/up/694/o/teste-preliminar.pdf';
+    const requested = [];
+    let blocked = false, revokeDuringPdf = false;
+    const officialFetcher = async (url, init) => {
+      requested.push(url);
+      assert.equal(init.redirect, 'error');
+      assert.equal(init.credentials, 'omit');
+      assert.equal(init.body, undefined);
+      if (url.endsWith('/robots.txt')) {
+        const disallow = blocked && url.startsWith('https://files.cercomp.ufg.br') ? `\nDisallow: ${new URL(file).pathname}` : '';
+        return new Response(`User-agent: *${disallow}`, { headers: { 'content-type': 'text/plain' } });
+      }
+      if (url.endsWith('/sitemap.xml')) return new Response(`<urlset>${url.startsWith('https://proex.ufg.br') ? [article, old].map(link => `<url><loc>${link}</loc></url>`).join('') : ''}</urlset>`, { headers: { 'content-type': 'application/xml' } });
+      if ([article, old].includes(url)) return new Response(`<h1>Edital PROBEC</h1><article>
+        <a href="${preliminary}">Edital Preliminar PROBEC</a>
+        <a href="${file}">Edital Final PROBEC 2026/2027</a>
+        <a href="https://files.cercomp.ufg.br/weby/up/999/o/externo.pdf">Edital perigoso PROBEC 2026/2027</a>
+        </article>`, { headers: { 'content-type': 'text/html' } });
+      if (url === file) {
+        if (revokeDuringPdf) f.native.prepare("UPDATE members SET revoked_at='2026-11-15T13:00:00.000Z' WHERE user_id=?").run(f.actors.viewer.userId);
+        return new Response(new Uint8Array(bytes), { headers: { 'content-type': 'application/pdf' } });
+      }
+      assert.fail(`Unexpected official request ${url}`);
+    };
+    const fetcher = () => assert.fail('PDF lookup must not call an AI provider');
+    const query = chatInput(f, { message: 'No PDF final do edital PROBEC 2026/2027, quantas bolsas são para projetos e programas institucionais? Cite a página.', acceptedCostMicros: 0 });
+    const options = { keys, fetcher, officialFetcher };
+    const result = await roleChat(f.db, f.actors.viewer, query, secret, options);
+    assert.equal(result.provider, 'official');
+    assert.equal(result.costMicros, 0);
+    assert.equal(result.operation, null);
+    assert.match(result.reply, /93 bolsas para projetos e 7 para programas institucionais/);
+    assert.deepEqual(result.sources, [{ href: `${file}#page=2`, label: 'Edital Final PROBEC 2026/2027 · p. 2' }]);
+    assert.ok(!requested.includes(preliminary));
+    requested.length = 0;
+    await assert.rejects(roleChat(f.db, f.actors.outsider, query, secret, options), error => error.status === 403);
+    await assert.rejects(roleChat(f.db, null, query, secret, options), error => error.code === 'assistant_forbidden');
+    assert.deepEqual(requested, []);
+    const direct = { ...query, message: `${file}#page=2` };
+    const directResult = await roleChat(f.db, f.actors.viewer, direct, secret, options);
+    assert.match(directResult.reply, /p\. 2/);
+    assert.deepEqual(requested, ['https://files.cercomp.ufg.br/robots.txt', file]);
+    requested.length = 0;
+    blocked = true;
+    const robotsResult = await roleChat(f.db, f.actors.viewer, direct, secret, options);
+    assert.deepEqual(requested, ['https://files.cercomp.ufg.br/robots.txt']);
+    assert.match(robotsResult.reply, /não consegui confirmar/);
+    assert.doesNotMatch(robotsResult.reply, /93 bolsas/);
+    blocked = false;
+    revokeDuringPdf = true;
+    await assert.rejects(roleChat(f.db, f.actors.viewer, direct, secret, options), error => error.code === 'assistant_forbidden');
+    assert.equal(f.native.prepare('SELECT COUNT(*) n FROM ai_calls').get().n, 0);
+  } finally { f.native.close(); }
+});
+
+test('PDF OFICIAL AO VIVO: PROBEC final na página 1 sem chamada de IA', { skip: process.env.PROEX_TEST_OFFICIAL_PDF_LIVE !== '1' }, async () => {
+  const f = fixture();
+  try {
+    await setup(f);
+    const result = await roleChat(f.db, f.actors.viewer, chatInput(f, {
+      message: 'Consulte o site oficial da PROEX. No PDF final do Edital PROEC nº 05/2026 (PROBEC 2026/2027), quantas bolsas são para projetos e quantas para programas institucionais? Cite o PDF e a página.',
+      acceptedCostMicros: 0,
+    }), secret, { keys, fetcher: () => assert.fail('PDF lookup must not call an AI provider') });
+    assert.equal(result.provider, 'official');
+    assert.equal(result.costMicros, 0);
+    assert.deepEqual(result.sources.map(source => source.href), ['https://files.cercomp.ufg.br/weby/up/694/o/SEI_6045486_Edital_133.pdf#page=1']);
+    assert.match(result.reply, /93\s*\(noventa e três\) para projetos/);
+    assert.match(result.reply, /7\s*\(sete\) destinadas aos programas institucionais/);
+  } finally { f.native.close(); }
+});
+
 
 test('SUGESTÕES: rules only, per person; follow the moment, the own activity and what the team may see; never another project', async () => {
   const f = fixture();
