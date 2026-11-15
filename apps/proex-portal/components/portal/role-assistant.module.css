@@ -141,3 +141,4 @@
 .documentEditor input:not([type=checkbox]){width:100%;min-height:44px;padding:.5rem .65rem;border:1px solid var(--control-border);border-radius:10px;background:var(--surface);color:var(--text-strong);font:inherit;font-size:16px}
 .documentEditor textarea{resize:vertical;max-height:9rem}
 .documentEditor .videoConsent{padding:.5rem .6rem}
+@container (max-width:390px){.cost{flex-basis:100%;order:1}.send{margin-left:auto}.composer[data-document-draft]{max-height:62dvh;overflow:auto}}

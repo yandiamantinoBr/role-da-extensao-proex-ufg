@@ -684,7 +684,7 @@ function RoleConversation({ projects, defaultProjectId, onApplied, onOpenSetting
             </ol>
           </>}
         </div>
-        {status?.available && <form className={styles.composer} onSubmit={send}>
+        {status?.available && <form className={styles.composer} data-document-draft={documentDraft ? true : undefined} onSubmit={send}>
           {error && <p role="alert" className={styles.error}>{error}</p>}
           {error && limitHit && limitsButton}
           {notice && !error && <p role="status" className={styles.notice}>{notice}</p>}
