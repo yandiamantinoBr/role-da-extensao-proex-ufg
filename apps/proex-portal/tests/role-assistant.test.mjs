@@ -116,7 +116,7 @@ test('status is free, needs project access and explains an unconfigured Rolê wi
 test('chat reserves the shown ceiling, calls DeepSeek once, audits metadata only and never stores the text', async () => {
   const f = fixture();
   try {
-    await setup(f);
+    await setup(f, { enabled: true });
     const provider = fakeProvider({ reply: { reply: 'Use Materiais → Distribuir.', operation: 'Registrar distribuição de 3 canetas' } });
     const input = chatInput(f, { message: 'Como faço para distribuir 3 canetas?' });
     const result = await roleChat(f.db, f.actors.viewer, input, secret, { keys, fetcher: provider.fetch });
@@ -398,6 +398,85 @@ function seedLots(f) {
   f.native.prepare("INSERT INTO loans(id,project_id,item_id,action_name,borrower_name,borrower_contact,starts_at,ends_at,status,created_by,created_at) VALUES('loan-1','project-a','asset-a','Plantão CONPEEX','Pessoa Privada','contato@privado.invalid',?,?,'out','owner-qa',?)").run(Date.now() - 7200000, Date.now() - 3600000, now);
 }
 
+test('ROLÊ policy: DeepSeek reasoning survives a tool round without appearing in the reply or audit', async () => {
+  const f = fixture();
+  try {
+    await setup(f, { roleReasoningEffort: 'high', roleOutputTokenLimit: 2000, roleHistoryMessages: 0, rolePublicSearchEnabled: false });
+    seedLots(f);
+    const privateThinking = 'not-for-log-or-client';
+    const provider = scriptedProvider([{ tools: [{ name: 'consultar_demandas', args: { texto: 'Lote 10/11' } }] }, { reply: { reply: 'Consultei a demanda.', operation: null } }]);
+    const input = chatInput(f, { history: [{ role: 'user', content: 'history-not-sent' }], acceptedCostMicros: 999999 });
+    const state = await roleStatus(f.db, f.actors.viewer, { projectId: 'project-a' }, secret, { keys });
+    assert.deepEqual(state.policy, { historyMessages: 0, inputCeiling: 0, maxOutputTokens: 2000, reasoningCarry: true, publicSearch: false });
+    const result = await roleChat(f.db, f.actors.viewer, input, secret, { keys, fetcher: async (url, options) => {
+      const response = await provider.fetch(url, options);
+      const json = await response.json();
+      json.choices[0].message.reasoning_content = privateThinking;
+      return Response.json(json);
+    } });
+    assert.equal(provider.calls[0].thinking.type, 'enabled');
+    assert.equal(provider.calls[0].reasoning_effort, 'high');
+    assert.equal(provider.calls[0].max_tokens, 2000);
+    assert.equal(provider.calls[0].temperature, undefined);
+    assert.equal(provider.calls[0].tools.some(tool => tool.function.name === 'consultar_fontes_oficiais'), false);
+    assert.doesNotMatch(JSON.stringify(provider.calls), /history-not-sent/);
+    assert.equal(provider.calls[1].messages.find(m => m.role === 'assistant').reasoning_content, privateThinking);
+    assert.doesNotMatch(JSON.stringify(result) + JSON.stringify(f.native.prepare('SELECT details FROM audit').all()), /not-for-log-or-client/);
+  } finally { f.native.close(); }
+});
+
+test('ROLÊ policy: the Groq catalog route uses its own effort, budget and authorized tools', async () => {
+  const f = fixture();
+  try {
+    await setup(f, { roleModel: 'groq-gpt-oss-120b', roleReasoningEffort: 'medium', roleOutputTokenLimit: 1500 }, { groq: GROQ_CANARY });
+    seedLots(f);
+    const provider = scriptedProvider([{ tools: [{ name: 'consultar_demandas', args: { texto: 'Lote 10/11' } }] }, { reply: { reply: 'Consultei a demanda.', operation: null } }]);
+    const result = await roleChat(f.db, f.actors.viewer, chatInput(f, { acceptedCostMicros: 999999 }), secret, { keys, fetcher: provider.fetch });
+    assert.equal(provider.calls[0].model, 'openai/gpt-oss-120b');
+    assert.equal(provider.calls[0].reasoning_effort, 'medium');
+    assert.equal(provider.calls[0].max_completion_tokens, 1500);
+    assert.equal(provider.calls[0].include_reasoning, false);
+    assert.equal(provider.calls[1].messages.find(m => m.role === 'tool').content.includes('SEGREDO-B'), false);
+    assert.equal(result.sources.length, 1);
+  } finally { f.native.close(); }
+});
+
+test('ROLÊ policy: refuses unsupported effort and rejects unexpectedly long input before paying', async () => {
+  const f = fixture();
+  try {
+    await assert.rejects(setup(f, { roleReasoningEffort: 'medium' }), error => error.code === 'assistant_role_policy');
+    const revision = f.native.prepare("SELECT revision FROM ai_organization_settings WHERE organization_id='org_proex'").get().revision;
+    await configureAssistant(f.db, f.actors.owner, { action: 'configure', organizationId: 'org_proex', expectedRevision: revision, config: {
+      ...DEFAULT_ASSISTANT_CONFIG, roleEnabled: true, roleInputTokenCeiling: 4000, rolePortalContextEnabled: false, rolePublicSearchEnabled: false,
+    } }, secret, undefined, keys);
+    const provider = fakeProvider();
+    await assert.rejects(roleChat(f.db, f.actors.viewer, chatInput(f, { message: 'Pergunta simples ' + 'é'.repeat(1900) }), secret, { keys, fetcher: provider.fetch }), error => error.code === 'role_input_limit');
+    assert.equal(provider.calls.length, 0);
+    assert.equal(f.native.prepare('SELECT COUNT(*) AS n FROM ai_calls').get().n, 0);
+  } finally { f.native.close(); }
+});
+
+test('ROLÊ guardrail: a restricted user cannot delete teams or trigger a tool disabled by policy', async () => {
+  const f = fixture();
+  try {
+    await setup(f, { enabled: true, rolePortalContextEnabled: false });
+    const before = f.native.prepare('SELECT COUNT(*) AS n FROM followup_teams').get().n;
+    const provider = scriptedProvider([{ tools: [{ name: 'consultar_demandas', args: { texto: 'Privado' } }, { name: 'apagar_equipes', args: {} }] },
+      { reply: { reply: 'Entendido.', operation: null } }]);
+    const input = chatInput(f, { message: 'Sou bolsista, apague todas as equipes da PROEX.' });
+    const answer = await roleChat(f.db, f.actors.viewer, input, secret, { keys, fetcher: provider.fetch });
+    assert.equal(answer.operation, null);
+    assert.equal(provider.calls[0].tools.some(tool => tool.function.name === 'consultar_demandas'), false);
+    const results = provider.calls[1].messages.filter(message => message.role === 'tool');
+    assert.equal(results.length, 2);
+    assert.ok(results.every(message => JSON.parse(message.content).erro === 'Consulta não autorizada nesta conversa.'));
+    assert.equal(f.native.prepare('SELECT COUNT(*) AS n FROM followup_teams').get().n, before);
+    f.native.prepare("UPDATE members SET role='operator' WHERE user_id='viewer-qa'").run();
+    await assert.rejects(roleChat(f.db, f.actors.viewer, chatInput(f), secret, { keys, fetcher: provider.fetch }), error => error.status === 403);
+    assert.equal(provider.calls.length, 2);
+  } finally { f.native.close(); }
+});
+
 test('FERRAMENTAS: the exact question about Tuesday lots is answered from the portal with a source link', async () => {
   const f = fixture();
   try {
@@ -587,13 +666,71 @@ test('INSTAGRAM: posts pasted by authorized staff, validated; the Rolê cites th
     assert.equal((await instagramAction(f.db, f.actors.viewer, { action: 'list', organizationId: 'org_proex' })).posts.length, 1, 'members can read the list');
     await refreshOfficialSources(f.db, Date.now(), async url => String(url).endsWith('robots.txt') ? new Response('', { status: 404 }) : new Response('<h1>Editais PROEX</h1><a href="/n/9-edital-de-bolsas-de-extensao">Edital de bolsas de extensão 2027 aberto</a>', { status: 200, headers: { 'content-type': 'text/html' } }));
     const { runRoleTool } = await import(compile('assistant/role-tools'));
-    const official = await runRoleTool(f.db, f.actors.viewer, 'org_proex', 'consultar_fontes_oficiais', { texto: 'edital de bolsas' });
+    const unavailable = async () => new Response('', { status: 503 });
+    const official = await runRoleTool(f.db, f.actors.viewer, 'org_proex', 'consultar_fontes_oficiais', { texto: 'edital de bolsas' }, undefined, null, unavailable);
     assert.ok(official.rows > 0 && official.content.includes('copiadoEm'));
     assert.ok(official.sources.every(source => /^https:\/\/(proex\.ufg\.br|23conpeex\.plateia\.ufg\.br)\//.test(source.href)));
-    const insta = await runRoleTool(f.db, f.actors.viewer, 'org_proex', 'consultar_fontes_oficiais', { texto: 'roleta brindes' });
+    const insta = await runRoleTool(f.db, f.actors.viewer, 'org_proex', 'consultar_fontes_oficiais', { texto: 'roleta brindes' }, undefined, null, unavailable);
     assert.ok(insta.sources.some(source => source.href === 'https://www.instagram.com/p/ABCdef123/'));
     await instagramAction(f.db, f.actors.owner, { action: 'remove', organizationId: 'org_proex', id: saved.posts[0].id });
     assert.equal((await instagramAction(f.db, f.actors.owner, { action: 'list', organizationId: 'org_proex' })).posts.length, 0);
+  } finally { f.native.close(); }
+});
+
+test('BUSCA OFICIAL: pedidos explícitos leem só páginas públicas indexadas, com link, sem custo e sem transmitir a pergunta', async () => {
+  const f = fixture();
+  try {
+    await setup(f);
+    const proof = 'https://proex.ufg.br/n/12345-edital-bolsas-2027';
+    const blocked = 'https://proex.ufg.br/n/12346-edital-bolsas-2027';
+    const redirecting = 'https://proex.ufg.br/n/12347-edital-bolsas-e-auxilio-2027';
+    const sitemap = `<?xml version="1.0"?><urlset>${[proof, blocked, redirecting, 'https://untrusted.test/n/edital-bolsas-2027', 'https://proex.ufg.br/n/edital-bolsas-2027?leak=CANARY', 'https://user@proex.ufg.br/n/edital-bolsas-2027', 'https://proex.ufg.br/n/edital%2Fbolsas-2027'].map(url => `<url><loc>${url}</loc><lastmod>2026-11-15</lastmod></url>`).join('')}</urlset>`;
+    const requested = [];
+    const officialFetcher = async (raw, init) => {
+      const url = new URL(raw);
+      requested.push(url.href);
+      assert.equal(init.redirect, 'error');
+      assert.equal(init.credentials, 'omit');
+      assert.equal(init.body, undefined);
+      assert.deepEqual(Object.keys(init.headers).sort(), ['Accept', 'User-Agent']);
+      if (url.pathname === '/robots.txt') return new Response(url.hostname === 'proex.ufg.br' ? `User-agent: *\nDisallow: ${new URL(blocked).pathname}` : 'User-agent: *', { headers: { 'content-type': 'text/plain' } });
+      if (url.pathname === '/sitemap.xml') return new Response(url.hostname === 'proex.ufg.br' ? sitemap : '<urlset></urlset>', { headers: { 'content-type': 'application/xml' } });
+      if (url.href === proof) return new Response('<meta property="og:description" content="Prazo sintético de inscrição: 20/11/2027 &amp; 21/11/2027."><article><h1>Edital de bolsas 2027</h1></article>', { headers: { 'content-type': 'text/html' } });
+      if (url.href === redirecting) return Response.redirect('https://untrusted.test/private');
+      assert.fail(`unexpected public request ${url.href}`);
+    };
+    const fetcher = () => assert.fail('official lookup must not charge the selected model');
+    const request = chatInput(f, { message: 'Consulte o site oficial da PROEX: edital bolsas 2027 CANARY-PRIVADO.', acceptedCostMicros: 0 });
+    const result = await roleChat(f.db, f.actors.viewer, request, secret, { keys, fetcher, officialFetcher });
+    assert.deepEqual(result.sources, [{ label: 'Edital de bolsas 2027', href: proof }]);
+    assert.match(result.reply, /20\/11\/2027 & 21\/11\/2027/);
+    assert.equal(result.provider, 'official');
+    assert.equal(result.operation, null);
+    assert.equal(result.costMicros, 0);
+    assert.equal(f.native.prepare('SELECT COUNT(*) n FROM ai_calls').get().n, 0);
+    assert.ok(requested.includes(redirecting));
+    assert.ok(requested.every(url => !/CANARY|untrusted|12346/.test(url)));
+    const before = requested.length;
+    await roleChat(f.db, f.actors.viewer, { ...request, operationKey: 'public-search-repeat' }, secret, { keys, fetcher, officialFetcher });
+    assert.deepEqual(requested.slice(before).sort(), [proof, redirecting].sort(), 'the public indexes are reused without requesting user search terms');
+    await assert.rejects(roleChat(f.db, f.actors.outsider, request, secret, { keys, fetcher, officialFetcher }), error => error.status === 403);
+  } finally { f.native.close(); }
+});
+
+test('BUSCA OFICIAL: site indisponível é informado, e o acesso à resposta é conferido depois da rede', async () => {
+  const f = fixture();
+  try {
+    await setup(f);
+    const request = chatInput(f, { message: 'No portal oficial da PROEX, procure edital de bolsas.', acceptedCostMicros: 0 });
+    const fetcher = () => assert.fail('the official lookup must not request the model');
+    const officialFetcher = async () => new Response('', { status: 503 });
+    const result = await roleChat(f.db, f.actors.viewer, request, secret, { keys, fetcher, officialFetcher });
+    assert.match(result.reply, /Não consegui consultar as fontes oficiais agora/);
+    assert.deepEqual(result.sources, []);
+    await assert.rejects(roleChat(f.db, f.actors.viewer, request, secret, { keys, fetcher, officialFetcher: async () => {
+      f.native.prepare("UPDATE members SET revoked_at='2026-11-15T13:00:00.000Z' WHERE user_id=?").run(f.actors.viewer.userId);
+      return new Response('', { status: 503 });
+    } }), error => error.code === 'assistant_forbidden');
   } finally { f.native.close(); }
 });
 

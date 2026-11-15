@@ -1,5 +1,6 @@
 import { HttpError } from '../errors';
 import { requestProvider, requireProviderEndpoint } from './provider-transport';
+import { roleReasoningParameters, type RoleEffort } from './role-policy';
 import { safeBaseUrl, type CatalogModel, type CatalogProvider } from './model-catalog';
 
 export type ChatTurn = { role: 'user' | 'assistant'; content: string; image?: string | null };
@@ -48,7 +49,7 @@ export function requireConversationEndpoint(provider: CatalogProvider, synthetic
 }
 
 /** Uma chamada de conversa a um modelo do catálogo. Sem nova tentativa automática. */
-export async function genericChat(options: { provider: CatalogProvider; model: CatalogModel; apiKey: string; system: string; turns: ChatTurn[]; maxTokens: number; json: boolean; signal: AbortSignal; fetcher?: typeof fetch; /** Só vale onde o portal já envia temperatura (serviço compatível com OpenAI, fora o endereço oficial). Sem valor: 0,3, como sempre. */ temperature?: number }): Promise<GenericResult> {
+export async function genericChat(options: { provider: CatalogProvider; model: CatalogModel; apiKey: string; system: string; turns: ChatTurn[]; maxTokens: number; json: boolean; signal: AbortSignal; fetcher?: typeof fetch; /** Só vale onde o portal já envia temperatura (serviço compatível com OpenAI, fora o endereço oficial). Sem valor: 0,3, como sempre. */ temperature?: number; reasoningEffort?: RoleEffort; assertPayload?: (body: object) => void }): Promise<GenericResult> {
   const { provider, model, apiKey, system, turns, maxTokens, json, signal } = options;
   if (!apiKey || apiKey.length < 12) throw new HttpError(503, 'Falta a chave deste provedor.', 'generic_provider_key');
   const endpoint = conversationEndpoint(provider);
@@ -56,15 +57,20 @@ export async function genericChat(options: { provider: CatalogProvider; model: C
   try {
     if (provider.kind === 'anthropic_messages') {
       const messages = turns.map(turn => ({ role: turn.role, content: turn.image ? [{ type: 'text', text: turn.content }, { type: 'image', source: { type: 'base64', media_type: dataUrlParts(turn.image).mime, data: dataUrlParts(turn.image).data } }] : turn.content }));
+      const body = { model: model.model, max_tokens: maxTokens, system, messages };
+      options.assertPayload?.(body);
       data = await boundedJson(await requestProvider(endpoint, { method: 'POST', signal,
         headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ model: model.model, max_tokens: maxTokens, system, messages }) }, options.fetcher));
+        body: JSON.stringify(body) }, options.fetcher));
     } else if (provider.kind === 'openai_chat') {
-      const official = new URL(endpoint).hostname === 'api.openai.com';
+      const useCompletionLimit = ['api.openai.com', 'api.groq.com'].includes(new URL(endpoint).hostname);
+      const reasoning = options.reasoningEffort !== undefined ? roleReasoningParameters({ kind: provider.kind, baseUrl: safeBaseUrl(provider.baseUrl), model: model.model }, options.reasoningEffort) : null;
       const messages = [{ role: 'system', content: system }, ...turns.map(turn => ({ role: turn.role, content: turn.image ? [{ type: 'text', text: turn.content }, { type: 'image_url', image_url: { url: turn.image } }] : turn.content }))];
+      const body = { model: model.model, messages, stream: false, ...(useCompletionLimit ? { max_completion_tokens: maxTokens } : { max_tokens: maxTokens, ...(reasoning?.thinking?.type === 'enabled' ? {} : { temperature: options.temperature ?? 0.3 }) }), ...reasoning, ...(json ? { response_format: { type: 'json_object' } } : {}) };
+      options.assertPayload?.(body);
       data = await boundedJson(await requestProvider(endpoint, { method: 'POST', signal,
         headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ model: model.model, messages, stream: false, ...(official ? { max_completion_tokens: maxTokens } : { max_tokens: maxTokens, temperature: options.temperature ?? 0.3 }), ...(json ? { response_format: { type: 'json_object' } } : {}) }) }, options.fetcher));
+        body: JSON.stringify(body) }, options.fetcher));
     } else throw new HttpError(400, 'Este provedor não conversa por texto.', 'generic_provider_kind');
   } catch (error) {
     if (error instanceof HttpError) throw error;

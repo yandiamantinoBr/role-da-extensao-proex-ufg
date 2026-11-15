@@ -9,7 +9,7 @@ import { groupUnits } from '@/lib/extension-catalog';
 import { isCivilDate, offsetCivilDate } from '@/lib/civil-date';
 import { listSearch } from '@/lib/list-search';
 import { calendarDestination } from '@/lib/calendar-links';
-import ExportFormats from './export-formats';
+import ExportFormats, { type DocumentFormat } from './export-formats';
 import { download } from './report-export';
 
 type Feed = { id: string; category: CalendarCategory; project_id: string | null; project_name: string | null; created_at: string; expires_at: string; revoked_at: string | null };
@@ -18,6 +18,8 @@ const labels: Record<CalendarCategory, string> = { loans: 'Empréstimos', materi
 const colors: Record<CalendarCategory, string> = { loans: 'var(--brand-ink)', materials: 'var(--agenda-materials)', projects: 'var(--agenda-projects)', consumption: 'var(--success-ink)', deadlines: 'var(--agenda-deadlines)' };
 const weekday = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 const timeZone = 'America/Sao_Paulo';
+const shortDate = new Intl.DateTimeFormat('pt-BR', { timeZone, day: '2-digit', month: '2-digit', year: 'numeric' });
+const shortTime = new Intl.DateTimeFormat('pt-BR', { timeZone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 const googleCalendarAddByUrl = 'https://calendar.google.com/calendar/u/0/r/settings/addbyurl';
 function civilDay(value: string | Date): string { return new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(value)); }
 function monthRange(value: string): { from: string; to: string } { const first = `${value.slice(0, 7)}-01`, end = new Date(`${first}T12:00:00Z`); end.setUTCMonth(end.getUTCMonth() + 1); end.setUTCDate(0); return { from: first, to: end.toISOString().slice(0, 10) }; }
@@ -34,8 +36,10 @@ function when(event: CalendarEntry): string {
     const period = lastDay === event.startsAt ? prettyDay(event.startsAt) : `${prettyDay(event.startsAt)} a ${prettyDay(lastDay)}`;
     return `${period} · Dia inteiro`;
   }
-  const format = new Intl.DateTimeFormat('pt-BR', { timeZone, day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-  return `${format.format(new Date(event.startsAt))} → ${format.format(new Date(event.endsAt))}`;
+  const start = new Date(event.startsAt), end = new Date(event.endsAt);
+  const startDate = shortDate.format(start), endDate = shortDate.format(end);
+  if (startDate === endDate) return `${startDate}, ${shortTime.format(start)} a ${shortTime.format(end)}`;
+  return `${startDate}, ${shortTime.format(start)} a ${endDate}, ${shortTime.format(end)}`;
 }
 
 export default function CalendarPanel({ viewerId, projects: sourceProjects, organizationalUnits, selectedProjectId, selectedUnitId, onProjectChange, onUnitChange, canOpenModule }: {
@@ -53,6 +57,7 @@ export default function CalendarPanel({ viewerId, projects: sourceProjects, orga
   const initial = useMemo(() => monthRange(civilDay(new Date())), []);
   const [from, setFrom] = useState(initial.from), [to, setTo] = useState(initial.to);
   const [category, setCategory] = useState('all');
+  const [listCategory, setListCategory] = useState<CalendarCategory | 'all'>('all');
   const [search, setSearch] = useState('');
   const [showCancelled, setShowCancelled] = useState(false);
   const unit = organizationalUnits.find(unit => unit.id === selectedUnitId);
@@ -106,23 +111,30 @@ export default function CalendarPanel({ viewerId, projects: sourceProjects, orga
   const cells = [...Array(monthStart.getUTCDay()).fill(null), ...Array.from({ length: monthEnd.getUTCDate() }, (_, i) => `${displayMonth}-${String(i + 1).padStart(2, '0')}`)];
   const entries = data?.entries ?? [];
   const matches = listSearch(search);
-  const matchingEntries = entries.filter(event => matches([event.title, event.projectName, event.location]));
+  const matchesSearch = (event: CalendarEntry) => matches([event.title, event.projectName, event.location]);
+  const matchingEntries = entries.filter(matchesSearch);
   const cancelledCount = matchingEntries.filter(event => event.status === 'CANCELLED').length;
-  const visibleEntries = showCancelled ? matchingEntries : matchingEntries.filter(event => event.status !== 'CANCELLED');
-  const shown = selectedDay ? visibleEntries.filter(event => inDay(event, selectedDay)) : visibleEntries;
-  const pdfJob = useRef<AbortController | null>(null);
-  useLayoutEffect(() => () => pdfJob.current?.abort(), [viewerId, requestKey, selectedDay, showCancelled, search]);
+  const showsStatus = (event: CalendarEntry) => showCancelled || event.status !== 'CANCELLED';
+  const visibleEntries = matchingEntries.filter(showsStatus);
+  const listCategories = data?.availableCategories.filter(kind => category === 'all' || kind === category) ?? [];
+  const effectiveListCategory = listCategory !== 'all' && listCategories.includes(listCategory) ? listCategory : 'all';
+  const matchesList = (event: CalendarEntry) => (!selectedDay || inDay(event, selectedDay))
+    && (effectiveListCategory === 'all' || event.category === effectiveListCategory);
+  const shown = visibleEntries.filter(matchesList);
+  const exportJob = useRef<AbortController | null>(null);
+  useLayoutEffect(() => () => exportJob.current?.abort(), [viewerId, requestKey, selectedDay, showCancelled, search, effectiveListCategory]);
   const today = civilDay(new Date(mountedAt));
   const totalMap = new Map<CalendarCategory, number>(); for (const event of visibleEntries) totalMap.set(event.category, (totalMap.get(event.category) ?? 0) + 1);
   const totals = [...totalMap].sort((a, b) => b[1] - a[1]);
   const activeFeeds = data?.feeds.filter(feed => !feed.revoked_at && Date.parse(feed.expires_at) > (result?.receivedAt??mountedAt)) ?? [];
   const scopeName = project?.name || String(unit?.name || 'Todos os projetos permitidos');
   const downloadLabel=validRange?`Baixar .ics de ${from.split('-').reverse().join('/')} a ${to.split('-').reverse().join('/')}`:'Informe um período válido para baixar';
-  const filteredContext = Boolean(projectId || unitId || category!=='all' || from!==initial.from || to!==initial.to || search.trim() || showCancelled);
-  async function exportPdf() {
+  const filteredContext = Boolean(projectId || unitId || category!=='all' || from!==initial.from || to!==initial.to || search.trim() || showCancelled || effectiveListCategory!=='all');
+  async function exportCommitments(format: DocumentFormat) {
     if (!shown.length || !viewerId || !data) return;
+    exportJob.current?.abort();
     const controller = new AbortController();
-    pdfJob.current = controller;
+    exportJob.current = controller;
     const original = JSON.stringify(shown);
     async function verify() {
       const response = await fetch(`/api/calendar?${query}`, {
@@ -135,8 +147,7 @@ export default function CalendarPanel({ viewerId, projects: sourceProjects, orga
       }
       const fresh = await response.json() as CalendarData;
       controller.signal.throwIfAborted();
-      const current = fresh.entries.filter(event => matches([event.title, event.projectName, event.location])
-        && (showCancelled || event.status !== 'CANCELLED') && (!selectedDay || inDay(event, selectedDay)));
+      const current = fresh.entries.filter(event => matchesSearch(event) && showsStatus(event) && matchesList(event));
       if (JSON.stringify(current) !== original) {
         setResult({ key: requestKey, data: fresh, error: '', receivedAt: Date.now() });
         throw new Error('A agenda mudou. Confira a lista atualizada e baixe novamente.');
@@ -144,7 +155,7 @@ export default function CalendarPanel({ viewerId, projects: sourceProjects, orga
     }
     try {
       await verify();
-      const { toPdf } = await import('./report-pdf');
+      const { documentExport } = await import('./document-export');
       const columns = [{ key: 'event', label: 'Compromisso' }, { key: 'when', label: 'Data e horário' }, { key: 'context', label: 'Projeto e local' }];
       const rows = shown.map(event => ({
         event: [event.title, labels[event.category], event.status === 'CANCELLED' ? 'Cancelado / arquivado' : event.state === 'tentative' ? 'A confirmar' : event.state === 'done' ? 'Concluída' : ''].filter(Boolean).join('\n'),
@@ -152,21 +163,23 @@ export default function CalendarPanel({ viewerId, projects: sourceProjects, orga
       }));
       const info: [string, string][] = [
         ['Período', selectedDay ? prettyDay(selectedDay) : `${prettyDay(from)} a ${prettyDay(to)}`],
-        ['Recorte', scopeName], ['Horário', 'Brasília'], ['Compromissos', String(rows.length)],
+        ['Recorte', scopeName],
+        ['Categoria', effectiveListCategory !== 'all' ? labels[effectiveListCategory] : category === 'all' ? 'Todas as categorias permitidas' : labels[category as CalendarCategory]],
+        ['Horário', 'Brasília'], ['Compromissos', String(rows.length)],
       ];
-      const blob = await toPdf('Agenda da PROEX', columns, rows, (row, key) => row[key], info,
-        { presentation: { layout: 'table', columnWeights: [1.5, 1, 1.25] } });
+      const blob = await documentExport(format, 'Agenda da PROEX', columns, rows, (row, key) => row[key], info,
+        { layout: 'table', columnWeights: [1.5, 1, 1.25] });
       await verify();
       controller.signal.throwIfAborted();
-      download(`agenda-proex-${selectedDay || from}.pdf`, blob);
+      download(`agenda-proex-${selectedDay || from}.${format}`, blob);
     } finally {
-      if (pdfJob.current === controller) pdfJob.current = null;
+      if (exportJob.current === controller) exportJob.current = null;
     }
   }
   function clearFilters() {
     searchField.current?.focus({preventScroll:true});
     onUnitChange('');
-    setCategory('all'); setFrom(initial.from); setTo(initial.to); setSearch(''); setSelectedDay(''); setShowCancelled(false);
+    setCategory('all'); setListCategory('all'); setFrom(initial.from); setTo(initial.to); setSearch(''); setSelectedDay(''); setShowCancelled(false);
   }
   function entryLink(event: CalendarEntry) {
     const destination = calendarDestination(event);
@@ -184,16 +197,16 @@ export default function CalendarPanel({ viewerId, projects: sourceProjects, orga
       </div>
       <details className={styles.filterDisclosure}><summary>Filtrar período e contexto</summary><div className={styles.filterBody}>
       <div className={styles.filters}>
-        <label className="p-field"><span>Categoria</span><select name="agendaCategory" value={category} onChange={event=>{setCategory(event.target.value);setSelectedDay('');}}><option value="all">Todas as categorias permitidas</option>{(data?.availableCategories??Object.keys(labels)).map(value=><option key={value} value={value}>{labels[value as CalendarCategory]}</option>)}</select></label>
+        <label className="p-field"><span>Categoria</span><select name="agendaCategory" value={category} onChange={event=>{setCategory(event.target.value);setListCategory('all');setSelectedDay('');}}><option value="all">Todas as categorias permitidas</option>{(data?.availableCategories??Object.keys(labels)).map(value=><option key={value} value={value}>{labels[value as CalendarCategory]}</option>)}</select></label>
         <label className="p-field"><span>Unidade responsável</span><select name="agendaUnit" value={unitId} onChange={event=>{onUnitChange(event.target.value);setSelectedDay('');}}><option value="">Todas as unidades</option>{groupUnits(organizationalUnits.map(unit=>({...unit,name:String(unit.name),group_label:String(unit.group_label??'')}) as typeof unit & {name:string;group_label:string;acronym?:unknown})).map(group=><optgroup key={group.group} label={group.group}>{group.units.map(unit=><option key={String(unit.id)} value={String(unit.id)}>{unit.acronym?`${unit.acronym} · `:''}{unit.name}</option>)}</optgroup>)}</select></label>
         <label className="p-field"><span>Projeto</span><select name="agendaProject" value={projectId} onChange={event=>{onProjectChange(event.target.value);setSelectedDay('');}}><option value="">{unitId?'Todos os projetos desta unidade':'Todos os projetos permitidos'}</option>{unitProjects.map(project=><option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
         <label className="p-field"><span>Data inicial</span><DateField aria-label="Data inicial" value={from} onValueChange={next=>{setFrom(next);setSelectedDay('');}}/></label>
         <label className="p-field"><span>Data final (incluída)</span><DateField aria-label="Data final (incluída)" value={to} min={from} onValueChange={next=>{setTo(next);setSelectedDay('');}}/></label>
       </div>
       <div className={styles.actions}><button type="button" className="p-button p-button-subtle" onClick={()=>setReload(value=>value+1)} disabled={loading||!validRange}><RefreshCw size={16}/>Atualizar consulta</button>{validRange?<a className="p-button p-button-subtle" href={`/api/calendar?${query}&format=ics`}><Download size={16}/>{downloadLabel}</a>:<button type="button" className="p-button p-button-subtle" disabled><Download size={16}/>{downloadLabel}</button>}</div>
-      <p className={styles.help}>O arquivo .ics usa período, categoria, unidade e projeto e inclui cancelamentos para atualizar calendários. A busca por texto e o controle de cancelamentos valem para esta página.</p>
+      <p className={styles.help}>O arquivo .ics usa período, categoria, unidade e projeto e inclui cancelamentos para atualizar calendários. A busca por texto, o filtro da lista e o controle de cancelamentos valem para a página e seus relatórios.</p>
       </div></details>
-      {entries.length>0&&<div className={styles.totals} role="group" aria-label="Registros por categoria no período">{totals.map(([kind,total])=><button key={kind} type="button" aria-pressed={category===kind} className={category===kind?styles.totalActive:''} onClick={()=>{setCategory(current=>current===kind?'all':kind);setSelectedDay('');}}><span style={{background:colors[kind]}}/><b>{total}</b>{labels[kind]}</button>)}</div>}
+      {entries.length>0&&<div className={styles.totals} role="group" aria-label="Registros por categoria no período">{totals.map(([kind,total])=><button key={kind} type="button" aria-pressed={category===kind} className={category===kind?styles.totalActive:''} onClick={()=>{setCategory(current=>current===kind?'all':kind);setListCategory('all');setSelectedDay('');}}><span style={{background:colors[kind]}}/><b>{total}</b>{labels[kind]}</button>)}</div>}
       {(cancelledCount > 0 || showCancelled) && <label className={styles.cancelledFilter}>
         <input type="checkbox" name="agendaShowCancelled" checked={showCancelled} onChange={event => setShowCancelled(event.target.checked)} />
         Mostrar cancelados{cancelledCount > 0 && ` (${cancelledCount})`}
@@ -214,7 +227,7 @@ export default function CalendarPanel({ viewerId, projects: sourceProjects, orga
             onClick={event => { dayTrigger.current = event.currentTarget; setSelectedDay(current => current === day ? '' : day); }}
             aria-pressed={selectedDay === day} aria-controls="calendar-day-entries" aria-current={day === today ? 'date' : undefined}
             aria-label={`${prettyDay(day)}, ${count} ${count === 1 ? 'registro' : 'registros'}`}>
-            <strong className={day === today ? styles.today : undefined}>{Number(day.slice(-2))}</strong>
+            <strong className={styles.dayNumber}>{Number(day.slice(-2))}</strong>
             {count > 0 && <span className={styles.dayCount} aria-hidden="true">{count}</span>}
             <span className={styles.dots} aria-hidden="true">{[...new Set(dayEntries.map(event => event.category))].map(kind => <span key={kind} style={{ background: colors[kind] }}/>)}</span>
             {dayEntries.slice(0, 2).map(event => <em key={event.uid} className={styles.chip} style={{ borderLeftColor: colors[event.category] }} title={event.title}>{event.title}</em>)}
@@ -222,13 +235,40 @@ export default function CalendarPanel({ viewerId, projects: sourceProjects, orga
           </button>;
         })}
       </div>
-      {selectedDay&&shown.length>0&&<button type="button" className={`p-text-link ${styles.jump}`} onClick={showDayList} aria-controls="calendar-day-entries">Ver {shown.length} {shown.length===1?"compromisso":"compromissos"} do dia {Number(selectedDay.slice(-2))}<ChevronDown size={16} aria-hidden="true"/></button>}
+      {selectedDay&&<button type="button" className={`p-text-link ${styles.jump}`} onClick={showDayList} aria-controls="calendar-day-entries">{shown.length ? `Ver ${shown.length} ${shown.length===1?'compromisso':'compromissos'} do dia` : 'Ver lista do dia'} {Number(selectedDay.slice(-2))}<ChevronDown size={16} aria-hidden="true"/></button>}
       <div className={styles.legend}>{Object.entries(labels).map(([key,label])=><small key={key}><span style={{background:colors[key as CalendarCategory]}}/>{label}</small>)}</div>
     </section>
-    <section className={`p-card ${styles.listCard}`} id="calendar-day-entries" aria-labelledby="calendar-day-heading">
-      <div className="p-card-title"><div><h3 ref={listHeading} id="calendar-day-heading" className={styles.listHeading} tabIndex={-1}>{selectedDay?`Compromissos de ${prettyDay(selectedDay)}`:'Registros do período'}</h3><p role="status">{loading?'Consultando registros…':displayError||!validRange?'':selectedDay?`${shown.length} ${shown.length===1?'compromisso':'compromissos'} em ${prettyDay(selectedDay)}`:`${shown.length} ${shown.length===1?'registro':'registros'}`}</p></div>{selectedDay&&<button type="button" className="p-button p-button-subtle" onClick={()=>{setSelectedDay('');dayTrigger.current?.focus({preventScroll:true});dayTrigger.current?.scrollIntoView({block:'nearest'});}}><X size={15} aria-hidden="true"/>Ver todo o período</button>}</div>
-      <ExportFormats label="Baixar compromissos da agenda" showLabel formats={['pdf']} disabled={loading || !shown.length} onExport={exportPdf}/>
-      {loading?<p className="p-form-help"><LoaderCircle size={17} className="p-spin"/> Carregando agenda…</p>:!shown.length?(displayError?null:search.trim()&&data?<p className="p-form-help">Nenhum resultado para esta busca. Tente outro termo ou remova os filtros.</p>:validRange&&!selectedDay&&category==='all'&&data?<div className={styles.emptyAgenda}><strong>Nada na Agenda neste período</strong><p>Aqui aparecem {readableList((data.availableCategories??[]).map(kind=>labels[kind].toLocaleLowerCase('pt-BR')))} dos projetos que você acompanha, conforme o seu acesso.</p><p>Escolha outro mês nas setas do calendário ou confira os filtros.</p></div>:<p className="p-form-help">{validRange?selectedDay?'Nenhum compromisso neste dia.':'Nenhum registro corresponde às datas e aos filtros escolhidos.':'Informe um período válido para consultar a agenda.'}</p>):<div className={styles.entries}>{shown.map(event=><article key={event.uid} className={styles.entry} style={{borderLeftColor:colors[event.category]}}><small>{labels[event.category]}</small><h4 className={event.status==='CANCELLED'?styles.cancelled:undefined}>{event.title}</h4><p>{when(event)}</p><p className={styles.entryContext}>{event.projectName}{event.location?` · ${event.location}`:''}{event.status==='CANCELLED'?' · Cancelado / arquivado':event.state==='done'?' · Concluída':event.state==='tentative'?' · A confirmar':''}</p>{entryLink(event)}{event.sourceKind==='project-schedule'&&<div className="flex flex-wrap gap-x-3"><a className={styles.entryLink} href={`/?module=records&view=documents&project=${encodeURIComponent(event.projectId)}&scheduleItemId=${encodeURIComponent(event.sourceId)}`} aria-label={`Registros e fotos de ${event.title.replace(/^Atividade · /, "")}`}><FileText size={15} aria-hidden="true"/>Registros e fotos</a><a className={styles.entryLink} href={`/?module=demands&project=${encodeURIComponent(event.projectId)}&scheduleItemId=${encodeURIComponent(event.sourceId)}`} aria-label={`Frentes de ${event.title.replace(/^Atividade · /, "")}`}><ListChecks size={15} aria-hidden="true"/>Frentes</a></div>}</article>)}</div>}
+    <section className={`p-card ${styles.listCard}`} id="calendar-day-entries" aria-labelledby="calendar-day-heading" aria-busy={loading}>
+      <div className={`p-card-title ${styles.listTitle}`}><div><h3 ref={listHeading} id="calendar-day-heading" className={styles.listHeading} tabIndex={-1}>{selectedDay?`Compromissos de ${prettyDay(selectedDay)}`:'Registros do período'}</h3><p role="status">{loading?'Consultando registros…':displayError||!validRange?'':selectedDay?`${shown.length} ${shown.length===1?'compromisso':'compromissos'} em ${prettyDay(selectedDay)}`:`${shown.length} ${shown.length===1?'registro':'registros'}`}</p></div>{selectedDay&&<button type="button" className="p-button p-button-subtle" onClick={()=>{setSelectedDay('');dayTrigger.current?.focus({preventScroll:true});dayTrigger.current?.scrollIntoView({block:'nearest'});}}><X size={15} aria-hidden="true"/>Ver todo o período</button>}</div>
+      <div className={styles.listTools}>
+        {listCategories.length > 1 && <label className="p-field">
+          <span>Categoria dos compromissos</span>
+          <select name="agendaListCategory" value={effectiveListCategory} onChange={event => setListCategory(event.target.value as CalendarCategory | 'all')}>
+            <option value="all">Todas as categorias</option>
+            {listCategories.map(kind => <option key={kind} value={kind}>{labels[kind]}</option>)}
+          </select>
+        </label>}
+        <ExportFormats label="Baixar compromissos da agenda" showLabel disabled={loading || !shown.length || !viewerId} onExport={exportCommitments}/>
+      </div>
+      {loading ? <p className="p-form-help"><LoaderCircle size={17} className="p-spin"/> Carregando agenda…</p>
+        : shown.length ? <div className={styles.entries}>{shown.map(event => <article key={event.uid} className={styles.entry} style={{borderLeftColor:colors[event.category]}}>
+          <small>{labels[event.category]}</small>
+          <h4 className={event.status === 'CANCELLED' ? styles.cancelled : undefined}>{event.title}</h4>
+          <p>{when(event)}</p>
+          <p className={styles.entryContext}>{event.projectName}{event.location ? ` · ${event.location}` : ''}{event.status === 'CANCELLED' ? ' · Cancelado / arquivado' : event.state === 'done' ? ' · Concluída' : event.state === 'tentative' ? ' · A confirmar' : ''}</p>
+          {entryLink(event)}
+          {event.sourceKind === 'project-schedule' && <div className="flex flex-wrap gap-x-3">
+            <a className={styles.entryLink} href={`/?module=records&view=documents&project=${encodeURIComponent(event.projectId)}&scheduleItemId=${encodeURIComponent(event.sourceId)}`} aria-label={`Registros e fotos de ${event.title.replace(/^Atividade · /, '')}`}><FileText size={15} aria-hidden="true"/>Registros e fotos</a>
+            <a className={styles.entryLink} href={`/?module=demands&project=${encodeURIComponent(event.projectId)}&scheduleItemId=${encodeURIComponent(event.sourceId)}`} aria-label={`Frentes de ${event.title.replace(/^Atividade · /, '')}`}><ListChecks size={15} aria-hidden="true"/>Frentes</a>
+          </div>}
+        </article>)}</div>
+        : displayError ? null
+        : effectiveListCategory !== 'all' ? <p className="p-form-help">Nenhum compromisso desta categoria no recorte atual.</p>
+        : search.trim() && data ? <p className="p-form-help">Nenhum resultado para esta busca. Tente outro termo ou remova os filtros.</p>
+        : validRange && !selectedDay && category === 'all' && data ? <div className={styles.emptyAgenda}>
+          <strong>Nada na Agenda neste período</strong><p>Aqui aparecem {readableList(data.availableCategories.map(kind => labels[kind].toLocaleLowerCase('pt-BR')))} dos projetos que você acompanha, conforme o seu acesso.</p><p>Escolha outro mês nas setas do calendário ou confira os filtros.</p>
+        </div>
+        : <p className="p-form-help">{validRange ? selectedDay ? 'Nenhum compromisso neste dia.' : 'Nenhum registro corresponde às datas e aos filtros escolhidos.' : 'Informe um período válido para consultar a agenda.'}</p>}
     </section>
     </div>
     <section className="p-card">

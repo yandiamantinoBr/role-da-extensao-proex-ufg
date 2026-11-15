@@ -3,7 +3,8 @@ import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import ts from 'typescript';
-import { load } from './support/project-report-module.mjs';
+import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
+import { fontBytes, load, zipEntries } from './support/project-report-module.mjs';
 
 const text = node => typeof node === 'string' || typeof node === 'number' ? String(node) : Array.isArray(node) ? node.map(text).join('') : node && typeof node === 'object' ? text(node.props?.children) : '';
 const nodes = tree => { const result = []; function visit(node) { if (!node || typeof node !== 'object') return; if (Array.isArray(node)) return node.forEach(visit); result.push(node); visit(node.props?.children); } visit(tree); return result; };
@@ -14,9 +15,10 @@ const civilDates = await import(`data:text/javascript;base64,${Buffer.from(civil
 const listSearchCode = ts.transpileModule(readFileSync(new URL('../lib/list-search.ts', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
 const listSearch = await import(`data:text/javascript;base64,${Buffer.from(listSearchCode).toString('base64')}`);
 const links = await load('lib/calendar-links.ts');
+const { documentExport } = await load('components/portal/document-export.ts');
 const ExportFormats = Symbol('ExportFormats');
 function harness(initialProject = '', initialUnit = '', canOpenModule = () => true) {
-  const slots = [], effects = [], requests = [], copied = [], files = [], renderedPdf = []; let index = 0, tree;
+  const slots = [], effects = [], requests = [], copied = [], files = [], exports = []; let index = 0, tree;
   let selectedProjectId = initialProject;
   let selectedUnitId = initialUnit;
   const hooks = {
@@ -30,13 +32,16 @@ function harness(initialProject = '', initialUnit = '', canOpenModule = () => tr
   const source = ts.transpileModule(readFileSync(new URL('../components/portal/calendar-panel.tsx', import.meta.url), 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
   vm.runInNewContext(source, {
     module: compiled, exports: compiled.exports,
-    require: name => name === 'react' ? hooks : name === 'react/jsx-runtime' ? { jsx, jsxs: jsx } : name === 'lucide-react' ? new Proxy({}, { get: (_, key) => String(key) }) : name.endsWith('.css') ? { default: new Proxy({}, { get: (_, key) => String(key) }) } : name === '@/lib/civil-date' ? civilDates : name === '@/lib/list-search' ? listSearch : name === '@/lib/calendar-links' ? links : name === './export-formats' ? { default: ExportFormats } : name === './report-export' ? { download: (name, blob) => files.push({ name, blob }) } : name === './report-pdf' ? { toPdf: (title, columns, rows) => { renderedPdf.push({ title, columns, rows }); return new Blob(['%PDF-']); } } : { groupUnits: () => [] },
+    require(name) {
+      if (name === './document-export') return { documentExport: (...args) => { exports.push(args); return new Blob(); } };
+      return name === 'react' ? hooks : name === 'react/jsx-runtime' ? { jsx, jsxs: jsx } : name === 'lucide-react' ? new Proxy({}, { get: (_, key) => String(key) }) : name.endsWith('.css') ? { default: new Proxy({}, { get: (_, key) => String(key) }) } : name === '@/lib/civil-date' ? civilDates : name === '@/lib/list-search' ? listSearch : name === '@/lib/calendar-links' ? links : name === './export-formats' ? { default: ExportFormats } : name === './report-export' ? { download: (name, blob) => files.push({ name, blob }) } : { groupUnits: () => [] };
+    },
     Date, Intl, URLSearchParams, AbortController, Map, Error,
     fetch: (url, init) => new Promise(resolve => requests.push({ url, init, resolve })),
     navigator: { clipboard: { async writeText(value) { copied.push(value); } } },
   });
   const h = {
-    requests, copied, files, renderedPdf,
+    requests, copied, files, exports,
     render() {
       index = 0;
       tree = compiled.exports.default({
@@ -58,33 +63,94 @@ function harness(initialProject = '', initialUnit = '', canOpenModule = () => tr
 }
 async function ready(h) { h.respond(h.requests[0], { entries: [], feeds: [], availableCategories: ['projects'] }); await tick(); h.render(); }
 
-test('agenda PDF exports the filtered day, excludes cancelled and refuses a session change', async () => {
+test('agenda exports the same filtered commitments in PDF, DOCX and XLSX with Brazilian times', async t => {
+  t.mock.method(globalThis, 'fetch', async path => {
+    assert.equal(path, '/fonts/NotoSans-Regular.ttf');
+    return new Response(fontBytes);
+  });
   const h = harness();
   try {
     const day = new URL(h.requests[0].url, 'https://example.test').searchParams.get('from');
     const following = civilDates.offsetCivilDate(day, 1);
-    const timed = { allDay: true, category: 'projects', projectName: 'Projeto fictício', location: 'Sala 1', startsAt: day, endsAt: following, status: 'CONFIRMED' };
-    const data = { feeds: [], availableCategories: ['projects'], entries: [
-      { ...timed, uid: 'a', title: 'Oficina autorizada' },
-      { ...timed, uid: 'b', title: 'Oficina cancelada', status: 'CANCELLED' },
-      { ...timed, uid: 'c', title: 'Oficina amanhã', startsAt: following, endsAt: civilDates.offsetCivilDate(following, 1) },
-      { ...timed, uid: 'd', title: 'Palestra' },
+    const allDay = { allDay: true, category: 'projects', projectName: 'Projeto fictício', location: 'Sala 1', startsAt: day, endsAt: following, status: 'CONFIRMED' };
+    const data = { feeds: [], availableCategories: ['projects', 'materials', 'loans'], entries: [
+      { ...allDay, uid: 'a', title: 'Oficina autorizada', allDay: false, startsAt: `${day}T13:00:00Z`, endsAt: `${day}T13:30:00Z` },
+      { ...allDay, uid: 'b', title: 'Oficina cancelada', status: 'CANCELLED' },
+      { ...allDay, uid: 'c', title: 'Oficina amanhã', startsAt: following, endsAt: civilDates.offsetCivilDate(following, 1) },
+      { ...allDay, uid: 'd', title: 'Palestra' },
+      { ...allDay, uid: 'e', title: 'Oficina de materiais', category: 'materials' },
+      { ...allDay, uid: 'f', title: 'Oficina à noite', allDay: false, startsAt: `${following}T02:30:00Z`, endsAt: `${following}T03:30:00Z` },
     ] };
     h.respond(h.requests[0], data); await tick(); h.render();
+    const listFilter = () => h.all().find(node => node.props.name === 'agendaListCategory');
+    const exportControl = () => h.all().find(node => node.type === ExportFormats);
+    const listTitles = () => h.all().filter(node => node.type === 'article').map(node => text(node.props.children.find(child => child?.type === 'h4')));
+    const ics = () => h.all().find(node => node.props.href?.endsWith('&format=ics')).props.href;
+    const icsBefore = ics();
+
     h.all().find(node => node.props.name === 'calendarSearch').props.onChange({ target: { value: 'oficina' } });
     h.render();
-    h.all().find(node => node.props['aria-controls'] === 'calendar-day-entries' && node.props['aria-label']?.endsWith('1 registro')).props.onClick({ currentTarget: null });
+    const dayButton = () => h.all().find(node => node.props['aria-controls'] === 'calendar-day-entries' && node.props['aria-label']?.startsWith('1 de '));
+    dayButton().props.onClick({ currentTarget: null }); h.render();
+    listFilter().props.onChange({ target: { value: 'projects' } }); h.render();
+    assert.deepEqual(listTitles(), ['Oficina autorizada', 'Oficina à noite']);
+    assert.match(dayButton().props['aria-label'], /3 registros$/);
+    assert.equal(ics(), icsBefore);
+
+    const datePt = day.split('-').reverse().join('/');
+    const followingPt = following.split('-').reverse().join('/');
+    assert.ok(h.body().includes(`${datePt}, 10:00 a 10:30`));
+    assert.ok(h.body().includes(`${datePt}, 23:30 a ${followingPt}, 00:30`));
+    for (const format of ['pdf', 'docx', 'xlsx']) {
+      const index = h.requests.length;
+      const download = exportControl().props.onExport(format);
+      h.respond(h.requests[index], data); await tick();
+      const args = h.exports.at(-1);
+      assert.equal(args[0], format);
+      assert.deepEqual(Array.from(args[3], row => row.event), ['Oficina autorizada\nProjetos e eventos', 'Oficina à noite\nProjetos e eventos']);
+      h.respond(h.requests[index + 1], data); await download;
+      assert.equal(h.files.at(-1).name, `agenda-proex-${day}.${format}`);
+
+      const blob = await documentExport(...args);
+      let content;
+      if (format === 'pdf') {
+        const task = getDocument({ data: new Uint8Array(await blob.arrayBuffer()), useSystemFonts: true, disableFontFace: true });
+        try {
+          const pdf = await task.promise;
+          const page = await pdf.getPage(1);
+          content = (await page.getTextContent()).items.map(item => item.str ?? '').join(' ').replace(/\s+/g, ' ');
+        } finally { await task.destroy(); }
+      } else {
+        const zip = await zipEntries(blob);
+        assert.ok(zip.has('[Content_Types].xml'));
+        content = zip.get(format === 'docx' ? 'word/document.xml' : 'xl/worksheets/sheet1.xml');
+      }
+      assert.ok(content.includes(`${datePt}, 10:00 a 10:30`), format);
+      assert.ok(content.includes(`${datePt}, 23:30 a ${followingPt}, 00:30`), format);
+      assert.doesNotMatch(content, /\[U\+2192\]|→|Oficina cancelada|Oficina amanhã|Oficina de materiais|Palestra/);
+    }
+
+    const index = h.requests.length;
+    const interrupted = exportControl().props.onExport('docx');
+    h.respond(h.requests[index], data); await tick();
+    h.respond(h.requests[index + 1], data, true, 'other-viewer');
+    await assert.rejects(interrupted, /confirmar o acesso/);
+    assert.equal(h.files.length, 3);
+
     h.render();
-    const button = h.all().find(node => node.type === ExportFormats);
-    const download = button.props.onExport();
-    h.respond(h.requests[1], data); await tick();
-    assert.deepEqual(Array.from(h.renderedPdf[0].rows, row => row.event), ['Oficina autorizada\nProjetos e eventos']);
-    h.respond(h.requests[2], data); await download;
-    assert.equal(h.files[0].name, `agenda-proex-${day}.pdf`);
-    const second = button.props.onExport();
-    h.respond(h.requests[3], data, true, 'other-viewer');
-    await assert.rejects(second, /confirmar o acesso/);
-    assert.equal(h.files.length, 1);
+    h.respond(h.requests.at(-1), data); await tick(); h.render();
+    const pending = exportControl().props.onExport('xlsx');
+    listFilter().props.onChange({ target: { value: 'loans' } }); h.render();
+    assert.equal(h.requests.at(-1).init.signal.aborted, true);
+    h.respond(h.requests.at(-1), data); await assert.rejects(pending, { name: 'AbortError' });
+    assert.equal(h.files.length, 3);
+    assert.equal(exportControl().props.disabled, true);
+    assert.match(h.body(), /Nenhum compromisso desta categoria no recorte atual/);
+
+    listFilter().props.onChange({ target: { value: 'projects' } }); h.render();
+    h.button('Ver todo o período').props.onClick(); h.render();
+    assert.deepEqual(listTitles(), ['Oficina autorizada', 'Oficina amanhã', 'Oficina à noite']);
+    assert.equal(ics(), icsBefore);
   } finally { h.dispose(); }
 });
 

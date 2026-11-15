@@ -1,6 +1,8 @@
 import { aiConfigurationAuthority, getActor, organizationAuthoritySql, platformOwnerAuthoritySql, type PortalActor } from '../access';
 import { all, one } from '../database';
 import { HttpError } from '../errors';
+import { ROLE_POLICY_KEYS, roleReasoningSupport } from './role-policy';
+import { ROLE_MODELS } from './role-contracts';
 import { availableProviderCredentials, dailyLimits, newAssistantConfig, object, onlyKeys, storedConfigJson, TASK_MODEL_KEYS, TEST_MODE_LIMITS, validateConfig, type AssistantConfig, type DailyLimits } from './contracts';
 import { configChanges } from './quota';
 import { decryptProviderCredentials, encryptProviderCredentials, type CredentialKeys } from './crypto';
@@ -96,7 +98,7 @@ export async function configureAssistant(db: D1Database, actor: PortalActor | nu
  const proposed = object(input.config), previousConfig = old ? validateConfig(JSON.parse(old.config_json)) : newAssistantConfig(current.userId);
  const usageScope = Object.hasOwn(proposed,'usageScope') ? proposed.usageScope : previousConfig.usageScope;
  // Modelo por tarefa que não veio no pedido fica como estava: uma tela que ainda não conhece essas chaves não desfaz a escolha.
- const keptTaskModels = Object.fromEntries(TASK_MODEL_KEYS.filter(taskKey => !Object.hasOwn(proposed, taskKey)).map(taskKey => [taskKey, previousConfig[taskKey]]));
+ const keptTaskModels = Object.fromEntries([...TASK_MODEL_KEYS, ...ROLE_POLICY_KEYS].filter(taskKey => !Object.hasOwn(proposed, taskKey)).map(taskKey => [taskKey, previousConfig[taskKey]]));
  const config = withTestMode(previousConfig, validateConfig({ ...proposed, ...keptTaskModels, usageScope, usageUserId: usageScope === 'private' ? current.userId : null }));
  const previous = old && input.replaceCredentials !== true ? object(await decryptProviderCredentials(secret, old.credentials_ciphertext, organizationId, keys)) : {};
  const credentials = availableProviderCredentials(previous);
@@ -117,10 +119,8 @@ export async function configureAssistant(db: D1Database, actor: PortalActor | nu
   if (!model || fitsFunction(model, provider, need)) throw new HttpError(400, need === 'vision' ? 'Escolha para fotos um modelo do catálogo marcado com Foto.' : 'Escolha para a conversa um modelo do catálogo marcado com Texto.', 'assistant_model');
   return validProviderKey(previous[provider!.keyRef]);
  };
- if (config.roleModel !== previousConfig.roleModel || config.roleVisionModel !== previousConfig.roleVisionModel) {
-  const owner = platformOwnerAuthoritySql(current);
-  if (!await one(db, `SELECT 1 WHERE ${owner.sql}`, owner.values)) throw new HttpError(403, 'Só a administração geral escolhe modelos do catálogo para o Rolê.', 'catalog_admin');
- }
+ const roleOwner = config.roleModel !== previousConfig.roleModel || config.roleVisionModel !== previousConfig.roleVisionModel ? platformOwnerAuthoritySql(current) : null;
+ if (roleOwner && !await one(db, `SELECT 1 WHERE ${roleOwner.sql}`, roleOwner.values)) throw new HttpError(403, 'Só a administração geral escolhe modelos do catálogo para o Rolê.', 'catalog_admin');
  // Modelo por tarefa (documentos, conferência/triagem, voz): só a administração geral troca. O escolhido precisa
  // existir, estar ligado, servir para a tarefa e ter chave salva. A chave do padrão segue obrigatória (abaixo): é a queda.
  const changedTasks = (Object.keys(TASK_MODEL_KEY) as RoutedTask[]).filter(task => config[TASK_MODEL_KEY[task]] !== previousConfig[TASK_MODEL_KEY[task]]);
@@ -142,13 +142,23 @@ export async function configureAssistant(db: D1Database, actor: PortalActor | nu
    if (!validProviderKey((credentials as Record<string, unknown>)[provider.keyRef] || previous[provider.keyRef])) throw new HttpError(400, 'Falta a chave do serviço deste modelo. Cole a chave na aba Chaves e escolha o modelo de novo.', 'assistant_credentials');
   }
  }
+ if (config.roleReasoningEffort !== 'default') {
+  const model = catalog?.models.find(entry => entry.id === config.roleModel && entry.enabled);
+  const provider = catalog?.providers.find(entry => entry.id === model?.providerId);
+  const fallback = ROLE_MODELS[config.roleProvider];
+  const identity = config.roleModel
+   ? model && provider && { kind: provider.kind, baseUrl: provider.baseUrl, model: model.model }
+   : { kind: 'openai_chat', baseUrl: fallback.endpoint.replace('/chat/completions', ''), model: fallback.model };
+  if (!identity || !roleReasoningSupport(identity).includes(config.roleReasoningEffort)) throw new HttpError(400, 'Este modelo não aceita o esforço escolhido. Selecione um nível disponível.', 'assistant_role_policy');
+ }
  const roleTextKey = config.roleModel ? catalogKey(config.roleModel, 'chat') : !!credentials[config.roleProvider];
  const roleVisionKey = config.roleVisionModel ? catalogKey(config.roleVisionModel, 'vision') : !!credentials.deepseek;
  if (config.roleEnabled && !roleTextKey || config.roleVisionEnabled && (!config.roleEnabled || !roleVisionKey) || (config.enabled || config.documentEnabled) && !credentials[config.textProvider] || config.jevEnabled && !credentials.typesafe || config.sttEnabled && speechProvider === 'deepgram' && !credentials.deepgram) throw new HttpError(400, 'Cadastre as credenciais dos provedores habilitados.', 'assistant_credentials');
  const credentialsChanged = !old || writesKeys;
  const ciphertext = old && !credentialsChanged ? old.credentials_ciphertext : await encryptProviderCredentials(secret, { ...catalogKeys, ...credentials }, organizationId, keys, old?.credentials_ciphertext);
  const revision = Number(input.expectedRevision) + 1, at = new Date().toISOString();
- const assertion = db.prepare(`SELECT CASE WHEN ${auth.sql}${taskOwner ? ` AND ${taskOwner.sql}` : ''} THEN 1 ELSE json_extract('[]','ai_configuration_revoked') END`).bind(...auth.values, ...(taskOwner?.values ?? []));
+ const catalogOwner = taskOwner ?? roleOwner;
+ const assertion = db.prepare(`SELECT CASE WHEN ${auth.sql}${catalogOwner ? ` AND ${catalogOwner.sql}` : ''} THEN 1 ELSE json_extract('[]','ai_configuration_revoked') END`).bind(...auth.values, ...(catalogOwner?.values ?? []));
  const statement = old ? db.prepare('UPDATE ai_organization_settings SET revision=?,config_json=?,credentials_ciphertext=?,updated_by=?,updated_at=? WHERE organization_id=? AND revision=? AND credentials_ciphertext=?').bind(revision, storedConfigJson(config), ciphertext, current.userId, at, organizationId, input.expectedRevision, old.credentials_ciphertext) : db.prepare('INSERT INTO ai_organization_settings(organization_id,revision,config_json,credentials_ciphertext,updated_by,updated_at) VALUES(?,?,?,?,?,?)').bind(organizationId, revision, storedConfigJson(config), ciphertext, current.userId, at);
  try { const result = await db.batch([assertion, statement, db.prepare("INSERT INTO audit(id,actor_id,project_id,organization_id,action,entity_id,details,created_at) SELECT ?,?,NULL,?,'assistant.configure',?,?,? WHERE changes()=1").bind(crypto.randomUUID(), current.userId, organizationId, organizationId, JSON.stringify({ revision, enabled: config.enabled, sttEnabled: config.sttEnabled, jevEnabled: config.jevEnabled, roleEnabled: config.roleEnabled, roleProvider: config.roleProvider, roleVisionEnabled: config.roleVisionEnabled, testMode: config.testMode, changes: configChanges(previousConfig, config), ...(Object.keys(changedModelNames).length ? { modelNames: changedModelNames } : {}) }), at)]); if (result[1].meta.changes !== 1) throw new HttpError(409, 'A configuração mudou. Atualize a página.', 'assistant_configuration_changed'); }
  catch (error) { if (String(error).includes('ai_configuration_revoked')) throw new HttpError(403, 'A autorização de configuração foi revogada.', 'assistant_configuration_forbidden'); throw error; }

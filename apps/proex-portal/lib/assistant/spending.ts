@@ -2,6 +2,7 @@ import { platformOwnerAuthoritySql, type PortalActor } from '../access';
 import { all, one } from '../database';
 import { HttpError } from '../errors';
 import { DEFAULT_ASSISTANT_CONFIG, validateConfig } from './contracts';
+import { containsCredential } from './sensitive';
 
 /*
  * Painel de gastos de IA (somente administração geral).
@@ -20,11 +21,13 @@ export const SPENDING_PROVIDERS = { deepseek: 'DeepSeek', groq: 'Groq', openai: 
 export type SpendingProvider = keyof typeof SPENDING_PROVIDERS;
 export const SPENDING_FUNCTIONS = { role: 'Conversa do Rolê', photos: 'Fotos', operations: 'Operações', documents: 'Documentos', speech: 'Voz para texto', triage: 'Decisão/triagem', compare: 'Comparação' } as const;
 export type SpendingFunction = keyof typeof SPENDING_FUNCTIONS;
+export const SPENDING_RESULTS = { complete: 'Concluída', partial: 'Parcial', failed: 'Falhou' } as const;
+export type SpendingResult = keyof typeof SPENDING_RESULTS;
 
 /** Ação de auditoria → função mostrada. Fotos são separadas pela marca `hasImage` da conversa. */
-const ACTIONS = ['assistant.role.chat', 'assistant.plan', 'import.ai.preview', 'assistant.transcribe', 'task.triage.prepare', 'assistant.compare'] as const;
+const ACTIONS = ['assistant.role.chat', 'assistant.role.chat.failed', 'assistant.plan', 'import.ai.preview', 'assistant.transcribe', 'task.triage.prepare', 'assistant.compare'] as const;
 type SpendingAction = (typeof ACTIONS)[number];
-const ACTION_FUNCTION: Record<Exclude<SpendingAction, 'assistant.role.chat'>, SpendingFunction> = {
+const ACTION_FUNCTION: Record<Exclude<SpendingAction, 'assistant.role.chat' | 'assistant.role.chat.failed'>, SpendingFunction> = {
   'assistant.plan': 'operations', 'import.ai.preview': 'documents', 'assistant.transcribe': 'speech', 'task.triage.prepare': 'triage', 'assistant.compare': 'compare',
 };
 /** A triagem usa sempre o JEV; a auditoria não grava o provedor. */
@@ -37,7 +40,7 @@ export type SpendingDay = {
   realUsdMicros: number;
   /** Teto reservado no dia para a organização (ai_organization_usage). */
   reservedUsdMicros: number;
-  /** Chamadas concluídas registradas na auditoria. */
+  /** Tentativas registradas na auditoria. */
   calls: number;
   /** Custo real quando existe; senão, o teto da própria chamada. */
   spentUsdMicros: number;
@@ -54,8 +57,9 @@ export type SpendingCall = {
   at: string; time: string; function: SpendingFunction; functionLabel: string;
   provider: SpendingProvider | 'mixed'; providerLabel: string; model: string | null;
   realUsdMicros: number | null; ceilingUsdMicros: number | null; who: string;
+  inputTokens: number | null; outputTokens: number | null; result: SpendingResult; resultLabel: string;
 };
-export type AiSpendingDay = { organizationId: string; day: string; calls: SpendingCall[]; total: number; truncated: boolean };
+export type AiSpendingDay = { organizationId: string; day: string; calls: SpendingCall[]; total: number; truncated: boolean; partial: boolean };
 
 const DAY = 86_400_000;
 const brasiliaDay = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' });
@@ -96,13 +100,13 @@ function providerKey(value: unknown): SpendingProvider {
   return typeof value === 'string' && value !== 'other' && Object.hasOwn(SPENDING_PROVIDERS, value) ? value as SpendingProvider : 'other';
 }
 function modelName(value: unknown): string | null {
-  return typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,79}$/.test(value) ? value : null;
+  return typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,79}$/.test(value) && !containsCredential(value) ? value : null;
 }
 function displayName(value: unknown): string {
   const name = typeof value === 'string' ? value.normalize('NFC').trim() : '';
   if (!name) return 'Pessoa sem nome';
   // Nome de exibição nunca pode vazar e-mail ou caracteres de controle.
-  if (name.includes('@') || name.length > 120 || /[\u0000-\u001f\u007f-\u009f‪-‮⁦-⁩]/u.test(name)) return 'Pessoa da equipe';
+  if (name.includes('@') || name.length > 120 || containsCredential(name) || /[\u0000-\u001f\u007f-\u009f‪-‮⁦-⁩]/u.test(name)) return 'Pessoa da equipe';
   return name;
 }
 
@@ -111,7 +115,7 @@ type Charge = { fn: SpendingFunction; provider: SpendingProvider; real: number |
 function charges(action: string, details: Record<string, unknown>): { fn: SpendingFunction; parts: Charge[]; models: string[]; ceiling: number | null; real: number | null } | null {
   if (!(ACTIONS as readonly string[]).includes(action)) return null;
   const typed = action as SpendingAction;
-  const fn: SpendingFunction = typed === 'assistant.role.chat' ? (details.hasImage === true ? 'photos' : 'role') : ACTION_FUNCTION[typed];
+  const fn: SpendingFunction = typed === 'assistant.role.chat' || typed === 'assistant.role.chat.failed' ? (details.hasImage === true ? 'photos' : 'role') : ACTION_FUNCTION[typed];
   const ceiling = micros(details.reservedUsdMicros);
   if (typed === 'assistant.compare') {
     const list = Array.isArray(details.models) ? details.models.slice(0, 8) : [];
@@ -158,6 +162,22 @@ function merge(target: SpendingTotals, source: SpendingTotals) {
 }
 
 const actionList = ACTIONS.map(() => '?').join(',');
+
+function resultKey(action: string, details: Record<string, unknown>): SpendingResult {
+  if (action === 'assistant.role.chat.failed') return 'failed';
+  // A mesma comparação pode terminar com alguns modelos bem sucedidos e outros em falha.
+  if (action === 'assistant.compare' && Array.isArray(details.models)) {
+    const entries = details.models.slice(0, 8) as ({ ok?: unknown } | null)[];
+    if (entries.some(entry => entry?.ok === false)) return entries.length && entries.every(entry => entry?.ok === false) ? 'failed' : 'partial';
+  }
+  return 'complete';
+}
+
+function filterKey<T extends string>(value: unknown, allowed: Record<T, string>, label: string): T | null {
+  if (value === undefined || value === null || value === '') return null;
+  if (typeof value !== 'string' || !Object.hasOwn(allowed, value)) throw new HttpError(400, `Confira o filtro de ${label}.`, 'assistant_spending_filter');
+  return value as T;
+}
 async function activeOrganization(db: D1Database, id: string, authority: { sql: string; values: unknown[] }) {
   if (!await one(db, `SELECT 1 FROM organizations WHERE id=? AND status='active' AND ${authority.sql}`, [id, ...authority.values])) throw new HttpError(404, 'Organização indisponível.', 'assistant_organization');
 }
@@ -216,31 +236,40 @@ export async function aiSpending(db: D1Database, actor: PortalActor | null, inpu
 }
 
 /** Chamadas de um dia (Brasília), mais recentes primeiro, no máximo 200. Mostra só o nome de exibição de quem pediu. */
-export async function aiSpendingDay(db: D1Database, actor: PortalActor | null, input: { organizationId: unknown; day: unknown }): Promise<AiSpendingDay> {
+export async function aiSpendingDay(db: D1Database, actor: PortalActor | null, input: { organizationId: unknown; day: unknown; fn?: unknown; provider?: unknown; result?: unknown }): Promise<AiSpendingDay> {
   const authority = await requireOwner(db, actor);
   const id = organizationId(input.organizationId), day = dayValue(input.day, 'o dia');
+  const fn = filterKey(input.fn, SPENDING_FUNCTIONS, 'função');
+  const filterProvider = filterKey(input.provider, SPENDING_PROVIDERS, 'provedor');
+  const filterResult = filterKey(input.result, SPENDING_RESULTS, 'resultado');
   await activeOrganization(db, id, authority);
   const rows = await all(db, `SELECT a.action,a.details,a.created_at,p.display_name FROM audit a LEFT JOIN profiles p ON p.user_id=a.actor_id
     WHERE a.organization_id=? AND a.action IN (${actionList}) AND a.created_at>=? AND a.created_at<? AND ${authority.sql}
-    ORDER BY a.created_at DESC,a.id DESC LIMIT ?`, [id, ...ACTIONS, windowStart(day), windowEnd(day), ...authority.values, SPENDING_ROW_LIMIT]);
+    ORDER BY a.created_at DESC,a.id DESC LIMIT ?`, [id, ...ACTIONS, windowStart(day), windowEnd(day), ...authority.values, SPENDING_ROW_LIMIT + 1]);
+  const partial = rows.length > SPENDING_ROW_LIMIT;
+  if (partial) rows.length = SPENDING_ROW_LIMIT;
   const calls: SpendingCall[] = [];
   let total = 0;
   for (const row of rows) {
     const time = Date.parse(String(row.created_at ?? ''));
     if (!Number.isFinite(time) || brasiliaDay.format(new Date(time)) !== day) continue;
-    const charge = charges(String(row.action ?? ''), parseDetails(row.details));
-    if (!charge) continue;
+    const action = String(row.action ?? ''), details = parseDetails(row.details);
+    const charge = charges(action, details), result = resultKey(action, details);
+    if (!charge || (fn && fn !== charge.fn) || (filterResult && filterResult !== result)) continue;
+    const providers = [...new Set(charge.parts.map(part => part.provider))];
+    if (filterProvider && !providers.includes(filterProvider)) continue;
     total += 1;
     if (calls.length >= SPENDING_DAY_LIMIT) continue;
-    const providers = [...new Set(charge.parts.map(part => part.provider))];
     const provider = providers.length === 1 ? providers[0] : 'mixed';
     calls.push({
       at: new Date(time).toISOString(), time: brasiliaTime.format(new Date(time)), function: charge.fn, functionLabel: SPENDING_FUNCTIONS[charge.fn],
       provider, providerLabel: provider === 'mixed' ? providers.map(key => SPENDING_PROVIDERS[key]).join(' + ') : SPENDING_PROVIDERS[provider],
       model: charge.models.length ? charge.models.slice(0, 4).join(', ') : null,
       realUsdMicros: charge.real, ceilingUsdMicros: charge.ceiling, who: displayName(row.display_name),
+      inputTokens: micros(details.inputTokens), outputTokens: micros(details.outputTokens),
+      result, resultLabel: SPENDING_RESULTS[result],
     });
   }
   if (!await one(db, `SELECT 1 WHERE ${authority.sql}`, authority.values)) throw forbidden();
-  return { organizationId: id, day, calls, total, truncated: total > calls.length };
+  return { organizationId: id, day, calls, total, truncated: total > calls.length, partial };
 }
