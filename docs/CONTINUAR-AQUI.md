@@ -2,6 +2,10 @@
 
 Comece pela [Retomada de 13/11](RETOMADA-13NOV-PORTAL-PROEX.md) para conferir a base publicada, a ordem das PRs pendentes, o padrão visual e o roteiro de convite. Para a rodada de 14/11, consulte [Ações de projeto e acessos](../apps/proex-portal/docs/QA-ACOES-E-PERFIS.md).
 
+## Checkpoint de 15/11 · tutoriais, empréstimos, widgets e Rolê
+
+A [passagem para Claude Code](../apps/proex-portal/docs/QA-TUTORIAIS-WIDGETS-E-ROLE.md) reúne os casos reproduzidos e as próximas entregas. Comece pelo [roteiro por público](../apps/proex-portal/docs/ROTEIRO-TUTORIAIS-PROEX.md) e pelo [guia de Empréstimos](../apps/proex-portal/docs/GUIA-EMPRESTIMOS.md). O Portal em produção foi a base da pesquisa. A implementação das melhorias segue na fila.
+
 ## Checkpoint de 14/11 · organograma, equipes, buscas e exportações
 
 - [Organograma](../apps/proex-portal/docs/ESTRUTURA-INSTITUCIONAL.md) · [PR123](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/123). O navegador baixou PDF, DOCX e XLSX de produção. Cadastro de unidade subordinada foi testado com dados fictícios. O PDF da UFG ainda corresponde à referência 5.0.3 registrada.
