@@ -215,7 +215,7 @@ function RoleConversation({ projects, defaultProjectId, onApplied, onOpenSetting
     });
     return () => window.cancelAnimationFrame(frame);
   }, [open, status?.available]);
-  useEffect(() => { log.current?.lastElementChild?.scrollIntoView({ block: 'nearest' }); }, [messages, busy]);
+  useEffect(() => { log.current?.lastElementChild?.scrollIntoView({ block: 'nearest' }); }, [messages, busy, open, status?.available]);
 
   const [tips, setTips] = useState<{ key: string; list: string[] } | null>(null), [tipsTick, setTipsTick] = useState(0);
   const tipsOff = useMemo(() => { try { return window.localStorage.getItem(TIPS_STORAGE) === 'off'; } catch { return false; } }, [tipsTick]); // eslint-disable-line react-hooks/exhaustive-deps
