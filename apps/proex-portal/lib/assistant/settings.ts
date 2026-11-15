@@ -120,7 +120,9 @@ export async function configureAssistant(db: D1Database, actor: PortalActor | nu
   if (!model || fitsFunction(model, provider, need)) throw new HttpError(400, need === 'vision' ? 'Escolha para fotos um modelo do catálogo marcado com Foto.' : 'Escolha para a conversa um modelo do catálogo marcado com Texto.', 'assistant_model');
   return validProviderKey(previous[provider!.keyRef]);
  };
- const roleOwner = config.roleModel !== previousConfig.roleModel || config.roleVisionModel !== previousConfig.roleVisionModel || (config.roleVideoEnabled !== previousConfig.roleVideoEnabled && config.roleEnabled) ? platformOwnerAuthoritySql(current) : null;
+ const videoRouteChanged = config.roleVideoModel !== previousConfig.roleVideoModel || config.roleVideoEffort !== previousConfig.roleVideoEffort;
+ const roleOwner = config.roleModel !== previousConfig.roleModel || config.roleVisionModel !== previousConfig.roleVisionModel ||
+   videoRouteChanged || (config.roleVideoEnabled !== previousConfig.roleVideoEnabled && config.roleEnabled) ? platformOwnerAuthoritySql(current) : null;
  if (roleOwner && !await one(db, `SELECT 1 WHERE ${roleOwner.sql}`, roleOwner.values)) throw new HttpError(403, 'Só a administração geral escolhe os modelos do catálogo e libera vídeo para o Rolê.', 'catalog_admin');
  // Modelo por tarefa (documentos, conferência/triagem, voz): só a administração geral troca. O escolhido precisa
  // existir, estar ligado, servir para a tarefa e ter chave salva. A chave do padrão segue obrigatória (abaixo): é a queda.

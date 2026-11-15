@@ -3,6 +3,7 @@ import { all, one } from '../database';
 import { HttpError } from '../errors';
 import { DEFAULT_ASSISTANT_CONFIG, validateConfig } from './contracts';
 import { containsCredential } from './sensitive';
+import { ROLE_VIDEO_EFFORT_LABELS, supportsRoleVideo, type RoleVideoEffort } from './role-video-contracts';
 
 /*
  * Painel de gastos de IA (somente administração geral).
@@ -133,7 +134,11 @@ function charges(action: string, details: Record<string, unknown>): { fn: Spendi
   }
   const provider = IMPLICIT_PROVIDER[typed] ?? providerKey(details.provider);
   const real = micros(details.usdMicros);
-  return { fn, parts: [{ fn, provider, real, ceiling }], models: [modelName(details.model)].filter((model): model is string => !!model), ceiling, real };
+  const model = modelName(details.model);
+  const label = model && fn === 'videos' && supportsRoleVideo(model, details.videoEffort)
+    ? `${model} · ${ROLE_VIDEO_EFFORT_LABELS[details.videoEffort as RoleVideoEffort]}`
+    : model;
+  return { fn, parts: [{ fn, provider, real, ceiling }], models: label ? [label] : [], ceiling, real };
 }
 
 const emptyBucket = (): SpendingBucket => ({ calls: 0, realUsdMicros: 0, ceilingUsdMicros: 0, spentUsdMicros: 0 });

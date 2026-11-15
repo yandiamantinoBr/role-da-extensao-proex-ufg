@@ -1,3 +1,5 @@
+import { DEFAULT_ROLE_VIDEO, type RoleVideoModel, type RoleVideoEffort } from './role-video-contracts';
+
 // Browser-safe policy shared by Settings and the Rolê runtime.
 export const ROLE_EFFORT_LABELS = {
   default: 'Padrão do Portal', off: 'Desligado', low: 'Baixo', medium: 'Médio', high: 'Alto', max: 'Máximo',
@@ -12,6 +14,8 @@ export const DEFAULT_ROLE_POLICY = {
   rolePortalContextEnabled: true,
   rolePublicSearchEnabled: true,
   roleVideoEnabled: false,
+  roleVideoModel: DEFAULT_ROLE_VIDEO.model as RoleVideoModel,
+  roleVideoEffort: DEFAULT_ROLE_VIDEO.effort as RoleVideoEffort,
 };
 export type RolePolicy = typeof DEFAULT_ROLE_POLICY;
 export const ROLE_POLICY_KEYS = Object.keys(DEFAULT_ROLE_POLICY) as (keyof RolePolicy)[];

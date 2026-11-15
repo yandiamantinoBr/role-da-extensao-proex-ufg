@@ -1,4 +1,6 @@
 'use client';
+
+import { ROLE_VIDEO_MODELS, ROLE_VIDEO_EFFORT_LABELS, type RoleVideoModel, type RoleVideoEffort } from '@/lib/assistant/role-video-contracts';
 /* eslint-disable @next/next/no-img-element -- mascote em SVG estático */
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
@@ -103,7 +105,7 @@ export default function AssistantAdministrationPanel({ canManageKeys=false, refr
   useEffect(() => { if (view==='functions') loadRoleOptions(); }, [view,selection,canManageKeys,refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
   function selectOrganization(value: string) { optionsFor.current = ''; mutation.current?.abort(); ++epoch.current; ++mutationEpoch.current; setSelection(value); setData(null); setFailure(''); setNotice(''); setDelegateId(''); setBusy(false); }
   // Só a administração geral escolhe o modelo de cada tarefa. As outras pessoas não mandam essas chaves: o servidor mantém o que já estava salvo.
-  const sentConfig = (value: AssistantConfig) => canManageKeys ? value : Object.fromEntries(Object.entries(value).filter(([key]) => !([...TASK_MODEL_KEYS,'roleVideoEnabled'] as readonly string[]).includes(key)));
+  const sentConfig = (value: AssistantConfig) => canManageKeys ? value : Object.fromEntries(Object.entries(value).filter(([key]) => !([...TASK_MODEL_KEYS, 'roleVideoEnabled', 'roleVideoModel', 'roleVideoEffort'] as readonly string[]).includes(key)));
   async function save(action: 'configure'|'grant.create'|'grant.revoke', grantId?: string, override?: AssistantConfig) {
     if (busy || !status?.canConfigure || !status.organizationId || status.organizationId!==selection) return;
     const request=++mutationEpoch.current, controller=new AbortController(); mutation.current?.abort(); mutation.current=controller;
@@ -189,6 +191,22 @@ export default function AssistantAdministrationPanel({ canManageKeys=false, refr
             onChange={event=>setConfig({...config,roleVideoEnabled:event.target.checked})}/>
           <span><strong>Analisar vídeos com Google Gemini</strong><small>Vídeos MP4 curtos, com confirmação a cada envio. A análise respeita o acesso e as cotas da organização.</small></span>
         </label>}
+        {canManageKeys && <div className={styles.voice}>
+          <label className="p-field"><span>Modelo para vídeos</span>
+            <select disabled={busy} value={config.roleVideoModel} onChange={event => {
+              const model = event.target.value as RoleVideoModel;
+              setConfig({ ...config, roleVideoModel: model, roleVideoEffort: ROLE_VIDEO_MODELS[model].defaultEffort });
+            }}>
+              {Object.entries(ROLE_VIDEO_MODELS).map(([id, option]) => <option key={id} value={id}>{option.label}</option>)}
+            </select>
+          </label>
+          <label className="p-field"><span>Esforço para vídeos</span>
+            <select disabled={busy} value={config.roleVideoEffort} onChange={event => setConfig({ ...config, roleVideoEffort: event.target.value as RoleVideoEffort })}>
+              {ROLE_VIDEO_MODELS[config.roleVideoModel].efforts.map(effort => <option key={effort} value={effort}>{ROLE_VIDEO_EFFORT_LABELS[effort]}</option>)}
+            </select>
+          </label>
+          {config.roleVideoEffort === 'xhigh' && <p className="p-form-help">Com XHigh, o raciocínio conta no teto de saída. O Gemini pode levar até 50 segundos.</p>}
+        </div>}
         {canManageKeys && geminiKey?.organizationId === selection && !geminiKey.ready && <p className="p-form-help">Cadastre a chave do Google Gemini na aba Chaves, em Outros provedores.</p>}
         {!canManageKeys && config.roleVideoEnabled && <p className="p-form-help">Vídeo está liberado pela administração geral.</p>}
         <p className="p-form-help">Para áudio, use “Voz para texto” abaixo. A pessoa revisa a transcrição antes de enviar ao chat.</p>
