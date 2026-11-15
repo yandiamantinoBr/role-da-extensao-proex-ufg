@@ -2,10 +2,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { LoaderCircle, RefreshCw } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import ExportFormats, { type DocumentFormat } from './export-formats';
+import ExportFormats, { downloadFromServer, type DocumentFormat } from './export-formats';
 import AiPeopleUsage from './ai-people-usage';
 import type { ExportColumn, ExportRow } from './report-export';
-import type { AiSpending, AiSpendingDay, SpendingBucket, SpendingDay, SpendingFunction, SpendingProvider } from '@/lib/assistant/spending';
+import type { AiSpending, AiSpendingDay, SpendingBucket, SpendingDay, SpendingFunction, SpendingProvider, SpendingResult } from '@/lib/assistant/spending';
 import styles from './ai-spending-panel.module.css';
 
 const PERIODS = [7, 30, 90] as const;
@@ -13,6 +13,7 @@ type Period = (typeof PERIODS)[number];
 type View = 'provider' | 'function';
 const PROVIDER_KEYS: SpendingProvider[] = ['deepseek', 'groq', 'openai', 'typesafe', 'deepgram', 'other'];
 const FUNCTION_KEYS: SpendingFunction[] = ['role', 'photos', 'operations', 'documents', 'speech', 'triage', 'compare'];
+const RESULT_OPTIONS: [SpendingResult, string][] = [['complete', 'Concluída'], ['partial', 'Parcial'], ['failed', 'Falhou']];
 
 const usd = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'USD', minimumFractionDigits: 4, maximumFractionDigits: 4 });
 const usd2 = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -29,6 +30,7 @@ function Money({ micros, zero }: { micros: number; zero?: string }) {
   return <>{micros < 10_000 ? 'menos de US$ 0,01' : usd2.format(micros / 1_000_000)}<small className={styles.exact}> ({formatUsdMicros(micros)})</small></>;
 }
 const integer = new Intl.NumberFormat('pt-BR');
+const shownTokens = (value: number | null) => value == null ? '—' : integer.format(value);
 /** US$ com 4 casas (ex.: US$ 0,0012) e espaço fixo para não quebrar a linha. */
 function formatUsdMicros(micros: number | null | undefined): string {
   return micros === null || micros === undefined || !Number.isFinite(micros) ? '—' : usd.format(micros / 1_000_000).replace(/\s/g, ' ');
@@ -80,7 +82,9 @@ export default function AiSpendingPanel({ organizationId }: { organizationId: st
   // Dia de outra organização ou fora do período atual fecha a lista sozinho.
   const day = selected.organizationId === organizationId && data?.days.some(item => item.day === selected.day) ? selected.day : '';
   const setDay = useCallback((value: string) => setSelected({ organizationId, day: value }), [organizationId]);
-  const detailKey = `${organizationId}|${day}|${reload}`;
+  const [fn, setFn] = useState(''), [provider, setProvider] = useState(''), [result, setResult] = useState('');
+  const detailQuery = new URLSearchParams({ organizationId, day, fn, provider, result }).toString();
+  const detailKey = `${detailQuery}|${reload}`;
   const [detailLoaded, setDetailLoaded] = useState<{ key: string; detail: AiSpendingDay | null; error: string } | null>(null);
   const detailLoading = !!day && detailLoaded?.key !== detailKey;
   const detail = !detailLoading && detailLoaded?.key === detailKey ? detailLoaded.detail : null;
@@ -99,12 +103,12 @@ export default function AiSpendingPanel({ organizationId }: { organizationId: st
 
   useEffect(() => {
     if (!day) return;
-    const controller = new AbortController(), key = `${organizationId}|${day}|${reload}`;
-    requestJson<AiSpendingDay>(`/api/assistant/spending?${new URLSearchParams({ organizationId, day })}`, controller.signal)
+    const controller = new AbortController(), key = detailKey;
+    requestJson<AiSpendingDay>(`/api/assistant/spending?${detailQuery}`, controller.signal)
       .then(value => { if (!Array.isArray(value.calls)) throw new Error('A lista de chamadas veio incompleta.'); setDetailLoaded({ key, detail: value, error: '' }); })
       .catch(cause => { if (!isAbort(cause) && !controller.signal.aborted) setDetailLoaded({ key, detail: null, error: cause instanceof Error ? cause.message : 'Não foi possível carregar as chamadas do dia.' }); });
     return () => controller.abort();
-  }, [organizationId, day, reload]);
+  }, [day, detailKey, detailQuery]);
 
   const openDay = useCallback((value: string) => {
     setDay(value);
@@ -148,7 +152,7 @@ export default function AiSpendingPanel({ organizationId }: { organizationId: st
     const info: [string, string][] = [
       ['Organização', data.organizationId], ['Período', `${longDay(data.from)} a ${longDay(data.to)} (horário de Brasília)`],
       ['Limite por dia', formatUsdMicros(data.dailyLimitUsdMicros)],
-      ['Gasto real', 'Custo informado pelo provedor, quando ele informa.'],
+      ['Gasto real', 'Custo calculado com o consumo da chamada, quando disponível. Pode diferir da fatura do provedor.'],
       ['Teto reservado', 'O valor máximo guardado antes de cada chamada.'],
     ];
     const [{ documentExport }, { download }] = await Promise.all([import('./document-export'), import('./report-export')]);
@@ -159,7 +163,7 @@ export default function AiSpendingPanel({ organizationId }: { organizationId: st
     <header className={styles.heading}>
       <div>
         <h3 id="ai-spending-title">Gastos de IA</h3>
-        <p>Quanto a organização gastou com IA por dia, em dólar e no horário de Brasília.</p>
+        <p>Acompanhe custos e chamadas de IA por dia. Valores em dólar e horários de Brasília.</p>
       </div>
       <button type="button" className="p-button p-button-subtle" onClick={() => setReload(value => value + 1)} disabled={loading}>
         {loading ? <LoaderCircle size={16} className="p-spin" aria-hidden="true" /> : <RefreshCw size={16} aria-hidden="true" />} Atualizar
@@ -187,7 +191,7 @@ export default function AiSpendingPanel({ organizationId }: { organizationId: st
         <div><dt>Reservado no período (máximo possível)</dt><dd><Money micros={data.totals.reservedUsdMicros} zero="Nada reservado"/></dd></div>
       </dl>
       <ul className={styles.glossary}>
-        <li><strong>Gasto real:</strong> o custo que o provedor informou. Algumas funções ainda não informam o custo.</li>
+        <li><strong>Gasto real:</strong> calculado quando o consumo da chamada é conhecido. Pode diferir da fatura do provedor.</li>
         <li><strong>Reservado:</strong> antes de cada uso, o portal separa o custo máximo possível. O limite por dia conta esse valor.</li>
         <li>{data.today.reservedUsdMicros ? `Hoje: ${data.today.reservedUsdMicros < 10_000 ? 'menos de US$ 0,01' : usd2.format(data.today.reservedUsdMicros / 1_000_000)} reservados do limite de ${usd2.format(data.dailyLimitUsdMicros / 1_000_000)}.` : `Hoje: nada reservado do limite de ${usd2.format(data.dailyLimitUsdMicros / 1_000_000)}.`}</li>
       </ul>
@@ -197,7 +201,7 @@ export default function AiSpendingPanel({ organizationId }: { organizationId: st
         <figure className={styles.chart}>
           <figcaption>
             <strong>Gasto por dia, {view === 'provider' ? 'por provedor' : 'por função'}</strong>
-            <small>Valores em dólar (US$). Cada barra soma o gasto real; quando o provedor não informa o custo, usa o valor reservado. {showLimit ? 'A linha tracejada é o limite por dia.' : `O limite por dia (${usd2.format(data.dailyLimitUsdMicros / 1_000_000)}) fica bem acima e não aparece no gráfico.`}</small>
+            <small>Valores em dólar (US$). Cada barra usa o gasto calculado ou, quando ele não está disponível, o valor reservado. {showLimit ? 'A linha tracejada é o limite por dia.' : `O limite por dia (${usd2.format(data.dailyLimitUsdMicros / 1_000_000)}) fica bem acima e não aparece no gráfico.`}</small>
           </figcaption>
           <ul className={styles.legend} aria-label="Legenda">
             {usedKeys.map(key => <li key={key}><i style={{ background: `var(--as-${keys.indexOf(key) + 1})` }} />{names[key] ?? key}</li>)}
@@ -229,25 +233,64 @@ export default function AiSpendingPanel({ organizationId }: { organizationId: st
         <ExportFormats onExport={exportFile} disabled={loading} label="Baixar gastos do período" />
       </div>
 
-      <div ref={detailRef} className={styles.detail} aria-live="polite">
-        {day && detailLoading && <p className={styles.loading} role="status"><LoaderCircle size={18} className="p-spin" aria-hidden="true" /> Carregando as chamadas de {longDay(day)}…</p>}
-        {day && detailError && <p className="p-inline-error" role="alert">{detailError}</p>}
-        {day && detail && !detailLoading && detail.day === day && <>
+      <div ref={detailRef} className={styles.detail}>
+        {day && <>
           <div className={styles.detailHead}>
-            <strong>Chamadas de {longDay(day)}</strong>
-            <small>{detail.truncated ? `Mostrando as ${integer.format(detail.calls.length)} mais recentes de ${integer.format(detail.total)}.` : detail.total === 1 ? '1 chamada.' : `${integer.format(detail.total)} chamadas.`}</small>
+            <h4>Chamadas de {longDay(day)}</h4>
             <button type="button" className="p-button p-button-subtle" onClick={() => setDay('')}>Fechar lista</button>
           </div>
-          {detail.calls.length === 0 ? <p className={styles.emptyLine}>Nenhuma chamada registrada neste dia. O teto reservado pode vir de chamadas que falharam.</p> :
+          <div className={styles.detailFilters} role="group" aria-label="Filtros das chamadas">
+            <label className="p-field"><span>Função</span><select value={fn} onChange={event => setFn(event.target.value)}>
+              <option value="">Todas as funções</option>{data.functions.map(option => <option key={option.key} value={option.key}>{option.label}</option>)}
+            </select></label>
+            <label className="p-field"><span>Provedor</span><select value={provider} onChange={event => setProvider(event.target.value)}>
+              <option value="">Todos os provedores</option>{data.providers.map(option => <option key={option.key} value={option.key}>{option.label}</option>)}
+            </select></label>
+            <label className="p-field"><span>Resultado</span><select value={result} onChange={event => setResult(event.target.value)}>
+              <option value="">Todos os resultados</option>{RESULT_OPTIONS.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+            </select></label>
+            {(fn || provider || result) && <button type="button" className="p-button p-button-subtle" onClick={() => { setFn(''); setProvider(''); setResult(''); }}>Limpar filtros</button>}
+          </div>
+          <div className={styles.detailHead}>
+            <small role="status">
+              {detailLoading ? 'Carregando chamadas…' : detail ? (detail.partial ? `Consulta parcial: ${integer.format(detail.calls.length)} chamada(s) exibida(s).` : detail.truncated ? `Mostrando as ${integer.format(detail.calls.length)} mais recentes de ${integer.format(detail.total)}.` : detail.total === 1 ? '1 chamada.' : `${integer.format(detail.total)} chamadas.`) : ''}
+            </small>
+            <ExportFormats formats={['xlsx']} disabled={detailLoading || !detail?.calls.length} label="Baixar chamadas filtradas"
+              onExport={() => downloadFromServer(`/api/assistant/spending?${detailQuery}&format=xlsx`, `proex-chamadas-ia-${day}.xlsx`)} />
+          </div>
+          {detailError && <p className="p-inline-error" role="alert">{detailError}</p>}
+          {detail && detail.day === day && (detail.calls.length ? <>
+            <p className={styles.emptyLine}>O traço indica que o dado não foi informado. Algumas chamadas antigas têm apenas o custo reservado.</p>
             <div className={styles.tableWrap} tabIndex={0} role="region" aria-label={`Chamadas de ${longDay(day)}`}>
               <table>
-                <thead><tr><th scope="col">Hora</th><th scope="col">Função</th><th scope="col">Provedor</th><th scope="col">Modelo</th><th scope="col" className={styles.num}>Gasto real</th><th scope="col" className={styles.num}>Teto</th><th scope="col">Quem</th></tr></thead>
+                <thead><tr><th scope="col">Hora</th><th scope="col">Função</th><th scope="col">Provedor</th><th scope="col">Modelo</th><th scope="col">Resultado</th><th scope="col" className={styles.num}>Tokens de entrada</th><th scope="col" className={styles.num}>Tokens de saída</th><th scope="col" className={styles.num}>Gasto real</th><th scope="col" className={styles.num}>Teto</th><th scope="col">Quem</th></tr></thead>
                 <tbody>{detail.calls.map((call, index) => <tr key={`${call.at}-${index}`}>
                   <td className={styles.num}>{call.time}</td><td>{call.functionLabel}</td><td>{call.providerLabel}</td><td className={styles.model}>{call.model ?? '—'}</td>
+                  <td><span className={call.result === 'complete' ? undefined : styles.resultAttention}>{call.resultLabel}</span></td>
+                  <td className={styles.num}>{shownTokens(call.inputTokens)}</td>
+                  <td className={styles.num}>{shownTokens(call.outputTokens)}</td>
                   <td className={styles.num}>{formatUsdMicros(call.realUsdMicros)}</td><td className={styles.num}>{formatUsdMicros(call.ceilingUsdMicros)}</td><td>{call.who}</td>
                 </tr>)}</tbody>
               </table>
-            </div>}
+            </div>
+            <ul className={styles.callCards} aria-label={`Chamadas de ${longDay(day)}`}>
+              {detail.calls.map((call, index) => <li key={`${call.at}-${index}`}>
+                <div className={styles.callCardTitle}>
+                  <strong>{call.time} · {call.functionLabel}</strong>
+                  <span className={call.result === 'complete' ? undefined : styles.resultAttention}>{call.resultLabel}</span>
+                </div>
+                <dl>
+                  <div><dt>Provedor</dt><dd>{call.providerLabel}</dd></div>
+                  <div><dt>Modelo</dt><dd>{call.model ?? '—'}</dd></div>
+                  <div><dt>Tokens de entrada</dt><dd>{shownTokens(call.inputTokens)}</dd></div>
+                  <div><dt>Tokens de saída</dt><dd>{shownTokens(call.outputTokens)}</dd></div>
+                  <div><dt>Gasto real</dt><dd>{formatUsdMicros(call.realUsdMicros)}</dd></div>
+                  <div><dt>Teto</dt><dd>{formatUsdMicros(call.ceilingUsdMicros)}</dd></div>
+                  <div><dt>Quem</dt><dd>{call.who}</dd></div>
+                </dl>
+              </li>)}
+            </ul>
+          </> : <p className={styles.emptyLine}>Nenhuma chamada encontrada para este dia com esses filtros.</p>)}
         </>}
       </div>
     </>}

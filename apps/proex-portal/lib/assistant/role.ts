@@ -6,11 +6,13 @@ import { quotaRefusal, responsibleName } from './quota';
 import { onlyKeys, safeRequest, type AssistantConfig, type AssistantCredentials } from './contracts';
 import { digest, type CredentialKeys } from './crypto';
 import {
-  ROLE_CONTRACT, ROLE_MAX_HISTORY, ROLE_MAX_HISTORY_CHARS, ROLE_MAX_IMAGE_BYTES, ROLE_MAX_IMAGE_SIDE, ROLE_MAX_MESSAGE_CHARS, ROLE_MAX_OUTPUT_TOKENS, ROLE_MODELS,
+  ROLE_CONTRACT, ROLE_MAX_HISTORY, ROLE_MAX_HISTORY_CHARS, ROLE_MAX_IMAGE_BYTES, ROLE_MAX_IMAGE_SIDE, ROLE_MAX_MESSAGE_CHARS, ROLE_IMAGE_TOKEN_CEILING, ROLE_SYSTEM_PROMPT_BYTES, ROLE_MODELS,
   ROLE_SYSTEM_PROMPT, ROLE_SYSTEM_PROMPT_TOOLS, ROLE_TOOL_CALLS_PER_ROUND, ROLE_TOOL_RESULT_BYTES, ROLE_TOOL_ROUNDS, roleConversationBytes, roleEstimate, roleTimeoutMs, validateRoleReply, type RoleSource, type RoleTurn,
 } from './role-contracts';
-import { ROLE_TOOL_NAMES, ROLE_TOOLS, resolveRoleScope, roleScopes, runRoleTool, type RoleToolResult } from './role-tools';
+import { ROLE_TOOL_NAMES, ROLE_TOOLS, officialSearchReply, resolveRoleScope, roleScopes, runRoleTool, type RoleToolResult } from './role-tools';
 import { ROLE_SUGGESTION_DAYS, roleSuggestions } from './role-suggestions';
+import { isOfficialSearch } from './official-search-intent';
+import { roleHistoryForPolicy, roleReasoningParameters, roleReasoningSupport, type RolePolicy, type RoleEffort } from './role-policy';
 import { containsCredential } from './sensitive';
 import { ChargedError, firstJsonObject, genericChat, requireConversationEndpoint } from './generic-provider';
 import { fitsFunction, type CatalogModel, type CatalogProvider, type ModelCatalog } from './model-catalog';
@@ -19,7 +21,7 @@ import { catalogPricing, type RolePricing, type SpeechRouteModel } from './role-
 import { assistantUsageSql, loadAssistantSettings, speechProviderForOrganization, validProviderKey, type SpeechEnvironment } from './settings';
 import { resolveTaskRoute, speechDestination, speechRouteModel, taskApproval, taskRouteName } from './task-routing';
 
-type Options = { fetcher?: typeof fetch; now?: number; keys?: CredentialKeys; signal?: AbortSignal; speech?: SpeechEnvironment };
+type Options = { fetcher?: typeof fetch; officialFetcher?: typeof fetch; now?: number; keys?: CredentialKeys; signal?: AbortSignal; speech?: SpeechEnvironment };
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
 const IMAGE_TYPES = { 'image/jpeg': [0xff, 0xd8, 0xff], 'image/png': [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 'image/webp': [0x52, 0x49, 0x46, 0x46] } as const;
 
@@ -58,6 +60,41 @@ function projectId(value: unknown): string {
   return value;
 }
 
+type PortalTools = typeof ROLE_TOOLS;
+function roleTools(config: RolePolicy): PortalTools {
+  return ROLE_TOOLS.filter(tool => tool.function.name === 'consultar_fontes_oficiais' ? config.rolePublicSearchEnabled : config.rolePortalContextEnabled);
+}
+type ToolRoute = { family: 'deepseek' | 'groq'; model: string; endpoint: string; pricing: RolePricing };
+function toolRoute(route: Route | null): ToolRoute | null {
+  if (!route) return null;
+  if (route.kind === 'legacy') {
+    const model = ROLE_MODELS[route.provider];
+    return { family: route.provider, model: model.model, endpoint: model.endpoint, pricing: route.pricing };
+  }
+  const { provider, model } = route, kind = provider.kind, baseUrl = provider.baseUrl.replace(/\/$/, '');
+  const supported = roleReasoningSupport({ kind, baseUrl, model: model.model });
+  if (!supported.length) return null;
+  return { family: supported.includes('off') ? 'deepseek' : 'groq', model: model.model, endpoint: `${baseUrl}/chat/completions`, pricing: route.pricing };
+}
+function toolReasoning(route: ToolRoute, effort: RoleEffort) {
+  return roleReasoningParameters({ kind: 'openai_chat', baseUrl: route.endpoint.replace('/chat/completions', ''), model: route.model }, effort);
+}
+function keepReasoning(route: ToolRoute | null, effort: RoleEffort) {
+  return !!route && toolReasoning(route, effort)?.thinking?.type === 'enabled';
+}
+function inputLimitError() {
+  return new HttpError(413, 'A conversa ultrapassou o limite de entrada do Rolê. Encurte o pedido ou comece uma nova conversa.', 'role_input_limit');
+}
+function assertInputLimit(payload: object, limit: number) {
+  if (!limit) return;
+  let images = 0;
+  const envelope = JSON.stringify(payload, (key, value) => {
+    if (key === 'source' && value?.type === 'base64' && typeof value?.data === 'string') { images++; return { ...value, data: '' }; }
+    if (key === 'url' && typeof value === 'string' && value.startsWith('data:image/')) { images++; return ''; }
+    return value;
+  });
+  if (new TextEncoder().encode(envelope).byteLength + images * ROLE_IMAGE_TOKEN_CEILING > limit) throw inputLimitError();
+}
 async function scopedActor(db: D1Database, actor: PortalActor | null, project: string) {
   const current = actor && await getActor(db, actor);
   if (!current) throw new HttpError(403, 'Seu acesso mudou. Entre novamente.', 'assistant_forbidden');
@@ -88,6 +125,7 @@ export type RoleAvailability = {
   dailyLimitMicros: number; reservedTodayMicros: number;
   /** Consultas ao portal (só leitura) disponíveis na conversa e na foto. */
   tools: { text: boolean; vision: boolean };
+  policy?: { historyMessages: number; inputCeiling: number; maxOutputTokens: number; reasoningCarry: boolean; publicSearch: boolean };
   /** Opções do seletor "Procurar em" (só o que a pessoa vê). */
   scopes?: { units: { id: string; name: string }[]; events: { id: string; name: string; projectId: string }[] };
 };
@@ -138,7 +176,8 @@ export async function roleStatus(db: D1Database, actor: PortalActor | null, inpu
     }
     const decisionRouteName = state.operationsAvailable && config.jevEnabled && config.decisionModel ? taskRouteName(await resolveTaskRoute(db, organizationId, config, rawCredentials, 'decision').catch(() => null)) : null;
     return { ...base, ...state, speech, ...(decisionRouteName ? { decisionRouteName } : {}), provider: text?.kind === 'catalog' ? text.provider.id : config.roleProvider, model: text?.pricing.label ?? ROLE_MODELS[config.roleProvider].label,
-      textPricing: text?.pricing ?? null, visionPricing: vision?.pricing ?? null, dailyLimitMicros: config.dailyUsdMicros, tools: { text: text?.kind === 'legacy', vision: vision?.kind === 'legacy' },
+      textPricing: text?.pricing ?? null, visionPricing: vision?.pricing ?? null, dailyLimitMicros: config.dailyUsdMicros, tools: { text: !!toolRoute(text) && !!roleTools(config).length, vision: !!toolRoute(vision) && !!roleTools(config).length },
+      policy: { historyMessages: config.roleHistoryMessages, inputCeiling: config.roleInputTokenCeiling, maxOutputTokens: config.roleOutputTokenLimit, reasoningCarry: keepReasoning(toolRoute(text), config.roleReasoningEffort), publicSearch: config.rolePublicSearchEnabled },
       reason: state.available ? null : !config.roleEnabled ? 'O Rolê ainda não foi ligado nesta organização.' : 'Falta a chave do provedor escolhido para o Rolê.', scopes: state.available ? await roleScopes(db, current, organizationId) : undefined };
   } catch (error) {
     const reason = error instanceof HttpError && error.status === 403 ? 'A IA desta organização está liberada só para outra pessoa.' : 'O Rolê ainda não foi configurado nesta organização.';
@@ -194,17 +233,16 @@ export function brasiliaToday(now: number): string {
   const date = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(now));
   return `${date} (${new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'long' }).format(new Date(now))})`;
 }
-function transportBody(provider: 'deepseek' | 'groq', turns: RoleTurn[], message: string, projectName: string, image: string | null, today: string | null = null, scopeLabel: string | null = null) {
+function transportBody(route: ToolRoute, turns: RoleTurn[], message: string, projectName: string, image: string | null, today: string | null, scopeLabel: string | null, maxOutput: number, effort: RoleEffort) {
   const user = `${today ? `Hoje: ${today}, horário de Brasília\n` : ''}${scopeLabel ? `Procurar em: ${scopeLabel} (as consultas já ficam limitadas a isso)\n` : ''}Projeto atual: ${projectName}\nMensagem: ${message}`;
   const messages = [
     { role: 'system', content: today ? ROLE_SYSTEM_PROMPT_TOOLS : ROLE_SYSTEM_PROMPT },
     ...turns.map(turn => ({ role: turn.role, content: turn.content })),
     { role: 'user', content: image ? [{ type: 'text', text: user }, { type: 'image_url', image_url: { url: image } }] : user },
   ];
-  if (provider === 'groq') {
-    return { model: ROLE_MODELS.groq.model, temperature: 0.4, max_completion_tokens: ROLE_MAX_OUTPUT_TOKENS, stream: false, reasoning_effort: 'low', include_reasoning: false, response_format: { type: 'json_object' }, messages };
-  }
-  return { model: ROLE_MODELS.deepseek.model, thinking: { type: 'disabled' }, temperature: 0.4, max_tokens: ROLE_MAX_OUTPUT_TOKENS, stream: false, response_format: { type: 'json_object' }, messages };
+  const reasoning = toolReasoning(route, effort);
+  return { model: route.model, ...reasoning, ...(reasoning?.thinking?.type === 'enabled' ? {} : { temperature: 0.4 }),
+    ...(route.family === 'groq' ? { max_completion_tokens: maxOutput } : { max_tokens: maxOutput }), stream: false, response_format: { type: 'json_object' }, messages };
 }
 
 const withheld = () => new HttpError(502, 'A resposta do provedor não pôde ser mostrada. Nada foi cobrado além do previsto.', 'role_provider_schema');
@@ -228,23 +266,25 @@ async function boundedJson(response: Response): Promise<Record<string, unknown>>
 type ToolCall = { id: string; type: 'function'; function: { name: string; arguments: string } };
 const FINAL_INSTRUCTION = 'Agora responda à pessoa usando só os dados consultados acima (não há mais consultas). Responda somente em JSON: {"reply":"texto para a pessoa","operation":null}.';
 /** One provider step of the tool loop: a reply or tool calls, with confirmed usage. */
-async function toolStep(provider: 'deepseek' | 'groq', apiKey: string, body: unknown, signal: AbortSignal, fetcher: typeof fetch) {
-  const model = ROLE_MODELS[provider];
+async function toolStep(route: ToolRoute, apiKey: string, body: unknown, maxOutput: number, retainReasoning: boolean, signal: AbortSignal, fetcher: typeof fetch) {
   let data: Record<string, unknown>;
   try {
-    data = await boundedJson(await fetcher(model.endpoint, { method: 'POST', redirect: 'error', cache: 'no-store', signal, headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) }));
+    data = await boundedJson(await fetcher(route.endpoint, { method: 'POST', redirect: 'error', cache: 'no-store', signal, headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) }));
   } catch (error) {
     if (error instanceof HttpError) throw error;
     throw new HttpError(503, 'A chamada ao Rolê falhou ou demorou demais. Não houve nova tentativa automática.', 'role_provider_unavailable');
   }
   if (JSON.stringify(data).includes(apiKey)) throw withheld();
-  const choices = Array.isArray(data.choices) ? data.choices as { finish_reason?: unknown; message?: { content?: unknown; tool_calls?: unknown } }[] : [];
+  const choices = Array.isArray(data.choices) ? data.choices as { finish_reason?: unknown; message?: { content?: unknown; tool_calls?: unknown; reasoning_content?: unknown } }[] : [];
   const choice = choices.length === 1 ? choices[0] : null;
   const usage = data.usage && typeof data.usage === 'object' ? data.usage as Record<string, unknown> : {};
   const inputTokens = Number(usage.prompt_tokens), outputTokens = Number(usage.completion_tokens);
-  if (data.model !== model.model || !choice || !Number.isSafeInteger(inputTokens) || !Number.isSafeInteger(outputTokens) || inputTokens < 0 || outputTokens < 0 || outputTokens > ROLE_MAX_OUTPUT_TOKENS) throw withheld();
-  const costMicros = Math.ceil(inputTokens * model.inputMicrosPerToken + outputTokens * model.outputMicrosPerToken);
+  if (data.model !== route.model || !choice || !Number.isSafeInteger(inputTokens) || !Number.isSafeInteger(outputTokens) || inputTokens < 0 || outputTokens < 0) throw withheld();
+  const costMicros = Math.ceil(inputTokens * route.pricing.inputMicrosPerToken + outputTokens * route.pricing.outputMicrosPerToken);
   const charged = (message: string) => new ChargedError(message, costMicros, inputTokens + outputTokens);
+  if (outputTokens > maxOutput) throw charged('O provedor excedeu o limite de saída. O custo foi registrado.');
+  const thinking = retainReasoning && typeof choice.message?.reasoning_content === 'string' ? choice.message.reasoning_content : '';
+  if (new TextEncoder().encode(thinking).byteLength > maxOutput * 4) throw charged('A resposta usada na consulta ficou longa demais. O custo foi registrado.');
   const raw = choice.message?.tool_calls, content = typeof choice.message?.content === 'string' ? choice.message.content : '';
   if (content.length > 16000) throw charged('A resposta do provedor não pôde ser mostrada.');
   let toolCalls: ToolCall[] = [];
@@ -254,7 +294,7 @@ async function toolStep(provider: 'deepseek' | 'groq', apiKey: string, body: unk
     toolCalls = (raw as ToolCall[]).map(call => ({ id: call.id, type: 'function', function: { name: call.function.name, arguments: call.function.arguments } }));
   }
   if (!toolCalls.length && choice.finish_reason !== 'stop') throw charged('A resposta do Rolê veio incompleta. O custo foi registrado.');
-  return { content, toolCalls, inputTokens, outputTokens, costMicros, finish: String(choice.finish_reason ?? '').slice(0, 20) };
+  return { content, thinking, toolCalls, inputTokens, outputTokens, costMicros, finish: String(choice.finish_reason ?? '').slice(0, 20) };
 }
 
 /**
@@ -262,7 +302,7 @@ async function toolStep(provider: 'deepseek' | 'groq', apiKey: string, body: unk
  * person's live permissions), then a final answer without tools. Lookup results are data, never
  * instructions; nothing is written; only tool names and row counts are audited.
  */
-async function dispatchWithTools(provider: 'deepseek' | 'groq', apiKey: string, body: { messages: Record<string, unknown>[] } & Record<string, unknown>, run: (name: string, args: Record<string, unknown>, budget: number) => Promise<RoleToolResult>, signal: AbortSignal, fetcher: typeof fetch) {
+async function dispatchWithTools(route: ToolRoute, apiKey: string, body: { messages: Record<string, unknown>[] } & Record<string, unknown>, run: (name: string, args: Record<string, unknown>, budget: number) => Promise<RoleToolResult>, policy: RolePolicy, offeredTools: PortalTools, retainReasoning: boolean, checkAccess: () => Promise<unknown>, signal: AbortSignal, fetcher: typeof fetch) {
   const messages = [...body.messages], used: { name: string; rows: number }[] = [], sources = new Map<string, RoleSource>();
   let inputTokens = 0, outputTokens = 0, costMicros = 0, steps = 0;
   const charged = (message: string) => new ChargedError(message, costMicros, inputTokens + outputTokens);
@@ -271,11 +311,17 @@ async function dispatchWithTools(provider: 'deepseek' | 'groq', apiKey: string, 
   const { response_format: _format, ...free } = body; void _format;
   let finalNudged = false;
   for (let round = 0; ; round++) {
-    const offer = round < ROLE_TOOL_ROUNDS;
-    if (!offer && !finalNudged) { messages.push({ role: 'system', content: FINAL_INSTRUCTION }); finalNudged = true; }
+    const offer = !!offeredTools.length && round < ROLE_TOOL_ROUNDS;
+    if (offeredTools.length && !offer && !finalNudged) { messages.push({ role: 'system', content: FINAL_INSTRUCTION }); finalNudged = true; }
     let step;
-    try { step = await toolStep(provider, apiKey, offer ? { ...free, messages, tools: ROLE_TOOLS, tool_choice: 'auto' } : { ...free, messages }, signal, fetcher); }
+    try {
+      const payload = offer ? { ...free, messages, tools: offeredTools, tool_choice: 'auto' } : { ...free, messages };
+      assertInputLimit(payload, policy.roleInputTokenCeiling);
+      await checkAccess();
+      step = await toolStep(route, apiKey, payload, policy.roleOutputTokenLimit, retainReasoning && offer, signal, fetcher);
+    }
     catch (error) {
+      if (String(error).includes('assistant_authority_changed')) throw error;
       if (error instanceof ChargedError) throw new ChargedError(error.message, costMicros + error.chargedMicros, inputTokens + outputTokens + error.chargedTokens);
       if (costMicros > 0) throw charged(error instanceof HttpError ? error.message : 'A chamada ao Rolê falhou.');
       throw error;
@@ -283,13 +329,14 @@ async function dispatchWithTools(provider: 'deepseek' | 'groq', apiKey: string, 
     inputTokens += step.inputTokens; outputTokens += step.outputTokens; costMicros += step.costMicros; steps++;
     if (step.toolCalls.length) {
       if (!offer) throw charged('O Rolê tentou consultar demais. Reformule a pergunta de um jeito mais direto.');
-      messages.push({ role: 'assistant', content: step.content, tool_calls: step.toolCalls });
+      messages.push({ role: 'assistant', content: step.content, tool_calls: step.toolCalls, ...(retainReasoning ? { reasoning_content: step.thinking } : {}) });
       let budget = ROLE_TOOL_RESULT_BYTES;
       for (const [index, call] of step.toolCalls.entries()) {
         let content: string;
         if (index >= ROLE_TOOL_CALLS_PER_ROUND || budget < 600) content = JSON.stringify({ erro: 'Limite de consultas desta pergunta. Responda com o que já tem.' });
         else {
           try {
+            if (!offeredTools.some(tool => tool.function.name === call.function.name)) throw new HttpError(400, 'Consulta não autorizada nesta conversa.', 'role_tool_disabled');
             const args: unknown = call.function.arguments.trim() ? JSON.parse(call.function.arguments) : {};
             if (!args || typeof args !== 'object' || Array.isArray(args)) throw new HttpError(400, 'Consulta com dados inválidos.', 'role_tool_input');
             const result = await run(call.function.name, args as Record<string, unknown>, budget);
@@ -307,7 +354,7 @@ async function dispatchWithTools(provider: 'deepseek' | 'groq', apiKey: string, 
     }
     if (!step.content.trim()) {
       // Empty message in a lookup round: one closing call without tools. Empty at the end: stop.
-      console.warn('role_empty_reply', JSON.stringify({ provider, steps, round, finish: step.finish, lookups: used.map(entry => entry.name) }));
+      console.warn('role_empty_reply', JSON.stringify({ provider: route.family, steps, round, finish: step.finish, lookups: used.map(entry => entry.name) }));
       if (offer) { round = ROLE_TOOL_ROUNDS - 1; continue; }
       throw charged('O Rolê não conseguiu montar a resposta agora. Tente de novo com uma pergunta mais curta. O custo foi registrado.');
     }
@@ -362,10 +409,10 @@ export function operationNumbersAllowed(operation: string, userTexts: string[]):
 }
 
 /** Catalog models: same prompt and limits; JSON parsed leniently, plain text kept as the reply. */
-async function catalogDispatch(chosen: Extract<Route, { kind: 'catalog' }>, turns: RoleTurn[], message: string, projectName: string, image: string | null, signal: AbortSignal, fetcher?: typeof fetch) {
-  const result = await genericChat({ provider: chosen.provider, model: chosen.model, apiKey: chosen.apiKey, system: ROLE_SYSTEM_PROMPT, maxTokens: ROLE_MAX_OUTPUT_TOKENS, json: chosen.provider.kind === 'openai_chat', signal, fetcher,
+async function catalogDispatch(chosen: Extract<Route, { kind: 'catalog' }>, turns: RoleTurn[], message: string, projectName: string, image: string | null, policy: RolePolicy, signal: AbortSignal, fetcher?: typeof fetch) {
+  const result = await genericChat({ provider: chosen.provider, model: chosen.model, apiKey: chosen.apiKey, system: ROLE_SYSTEM_PROMPT, maxTokens: policy.roleOutputTokenLimit, reasoningEffort: !image && policy.roleReasoningEffort !== 'default' ? policy.roleReasoningEffort : undefined, assertPayload: body => assertInputLimit(body, policy.roleInputTokenCeiling), json: chosen.provider.kind === 'openai_chat', signal, fetcher,
     turns: [...turns, { role: 'user', content: `Projeto atual: ${projectName}\nMensagem: ${message}`, image }] });
-  if (result.outputTokens > ROLE_MAX_OUTPUT_TOKENS * 2) throw new ChargedError('O modelo passou do limite de resposta. O custo foi registrado.', result.costMicros, result.inputTokens + result.outputTokens);
+  if (result.outputTokens > policy.roleOutputTokenLimit) throw new ChargedError('O modelo passou do limite de resposta. O custo foi registrado.', result.costMicros, result.inputTokens + result.outputTokens);
   let reply: { reply: string; operation: string | null };
   try { reply = validateRoleReply(firstJsonObject(result.text)); }
   catch { reply = { reply: result.text.trim().slice(0, 4000), operation: null }; }
@@ -379,20 +426,40 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
   if (input.consent !== true) throw new HttpError(400, 'Confirme que o texto e a imagem podem ir para o provedor de IA.', 'assistant_consent');
   if (typeof input.operationKey !== 'string' || !/^[A-Za-z0-9_-]{8,100}$/.test(input.operationKey)) throw new HttpError(400, 'Reabra o Rolê antes de enviar.', 'assistant_operation');
   if (typeof input.message !== 'string' || input.message.length > ROLE_MAX_MESSAGE_CHARS) throw new HttpError(400, 'Escreva até 2.000 caracteres por mensagem.', 'assistant_request');
-  const project = projectId(input.projectId), message = safeRequest(input.message), turns = history(input.history), image = parseRoleImage(input.image);
+  const project = projectId(input.projectId), message = safeRequest(input.message), submittedTurns = history(input.history), image = parseRoleImage(input.image);
   const { current, organizationId, projectName } = await scopedActor(db, actor, project), now = options.now ?? Date.now();
   const { config, credentials, rawCredentials, revision } = await loadAssistantSettings(db, secret, organizationId, 'configuration', options.keys, current.userId);
   const catalog = config.roleModel || config.roleVisionModel ? (await loadCatalog(db, organizationId)).catalog : null;
   const state = availability(config, credentials, organizationId, options.speech, rawCredentials, catalog);
   if (!state.available) throw new HttpError(503, 'O Rolê está desligado ou sem chave nesta organização.', 'role_unavailable');
   const scope = await resolveRoleScope(db, current, organizationId, input.scope);
+  if (!image && config.rolePublicSearchEnabled && isOfficialSearch(message)) {
+    const authorization = roleAuthorization(db, current, project, organizationId, revision);
+    try {
+      await authorization.first();
+      const result = await officialSearchReply(db, organizationId, message, options.officialFetcher);
+      await authorization.first();
+      return { contract: ROLE_CONTRACT, reply: result.reply, operation: null, operationDropped: false, provider: 'official', model: 'Consulta oficial',
+        reservedMicros: 0, costMicros: 0, inputTokens: 0, outputTokens: 0, sources: result.sources, lookups: 1 };
+    } catch (error) {
+      if (String(error).includes('assistant_authority_changed')) throw new HttpError(403, 'Seu acesso ou a configuração mudou antes da resposta.', 'assistant_forbidden');
+      throw error;
+    }
+  }
   if (image && !state.visionAvailable) throw new HttpError(503, 'A leitura de imagens não está ligada nesta organização. Envie só o texto.', 'role_vision_unavailable');
   const chosen = (image ? state.vision : state.text)!;
   if (chosen.kind === 'catalog') requireConversationEndpoint(chosen.provider, options.fetcher);
   const provider = chosen.kind === 'catalog' ? chosen.provider.id : chosen.provider, modelName = chosen.kind === 'catalog' ? chosen.model.model : ROLE_MODELS[chosen.provider].model;
   const apiKey = chosen.apiKey;
-  const toolsOn = chosen.kind === 'legacy', timeoutMs = roleTimeoutMs(config.timeoutMs, toolsOn);
-  const estimate = roleEstimate({ textProvider: config.roleProvider, textBytes: roleConversationBytes(turns, message, projectName), hasImage: !!image, text: state.text?.pricing, vision: state.vision?.pricing, tools: toolsOn });
+  const callable = toolRoute(chosen);
+  const tools = callable ? roleTools(config) : [], toolsOn = tools.length > 0, timeoutMs = roleTimeoutMs(config.timeoutMs, toolsOn);
+  const turns = roleHistoryForPolicy(submittedTurns, config.roleHistoryMessages);
+  const reasoningCarry = !image && keepReasoning(callable, config.roleReasoningEffort);
+  const envelope = callable ? transportBody(callable, turns, message, projectName, image?.dataUrl ?? null, toolsOn ? brasiliaToday(now) : null, toolsOn ? scope.label : null, config.roleOutputTokenLimit, image ? 'default' : config.roleReasoningEffort) : null;
+  if (envelope) assertInputLimit(toolsOn ? { ...envelope, tools, tool_choice: 'auto' } : envelope, config.roleInputTokenCeiling);
+  const textBytes = roleConversationBytes(turns, message, projectName);
+  if (!envelope && config.roleInputTokenCeiling && textBytes + ROLE_SYSTEM_PROMPT_BYTES + (image ? ROLE_IMAGE_TOKEN_CEILING : 0) > config.roleInputTokenCeiling) throw inputLimitError();
+  const estimate = roleEstimate({ textProvider: config.roleProvider, textBytes, hasImage: !!image, text: state.text?.pricing, vision: state.vision?.pricing, tools: toolsOn, reasoningCarry, maxOutputTokens: config.roleOutputTokenLimit, inputCeiling: config.roleInputTokenCeiling });
   if (!Number.isSafeInteger(input.acceptedCostMicros) || Number(input.acceptedCostMicros) < estimate.costMicros) {
     throw new HttpError(409, 'O custo previsto mudou. Confira o novo valor e envie de novo.', 'role_cost_changed');
   }
@@ -425,10 +492,17 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
     // Last live fence before money leaves: access or configuration may have changed during decryption.
     await authorization.first();
     const startedAt = Date.now();
-    const result: { reply: string; operation: string | null; inputTokens: number; outputTokens: number; costMicros: number; tools?: { name: string; rows: number }[]; sources?: RoleSource[]; steps?: number } = chosen.kind === 'legacy'
-      ? await dispatchWithTools(chosen.provider, apiKey, transportBody(chosen.provider, turns, message, projectName, image?.dataUrl ?? null, brasiliaToday(now), scope.label), (name, args, budget) => runRoleTool(db, current, organizationId, name, args, budget, scope), controller.signal, options.fetcher ?? fetch)
-      : await catalogDispatch(chosen, turns, message, projectName, image?.dataUrl ?? null, controller.signal, options.fetcher);
-    const dropped = !!result.operation && !operationNumbersAllowed(result.operation, [message, ...turns.filter(turn => turn.role === 'user').map(turn => turn.content)]);
+    const result: { reply: string; operation: string | null; inputTokens: number; outputTokens: number; costMicros: number; tools?: { name: string; rows: number }[]; sources?: RoleSource[]; steps?: number } = callable
+      ? await dispatchWithTools(callable, apiKey, envelope!, async (name, args, budget) => {
+          await authorization.first();
+          return runRoleTool(db, current, organizationId, name, args, budget, scope, options.officialFetcher);
+        }, config, tools, reasoningCarry, () => authorization.first(), controller.signal, options.fetcher ?? fetch)
+      : await catalogDispatch(chosen as Extract<Route, { kind: 'catalog' }>, turns, message, projectName, image?.dataUrl ?? null, config, controller.signal, options.fetcher);
+    // A model can suggest a draft only to someone with write authority in this project.
+    // The separate review endpoint still checks the exact action and live permissions.
+    const write = projectAuthoritySql(current, ['inventory.manage', 'campaigns.manage'], '?');
+    const allowDraft = result.operation && state.operationsAvailable && !!await one(db, `SELECT 1 WHERE ${write.sql}`, [...write.values, project]);
+    const dropped = !!result.operation && (!allowDraft || !operationNumbersAllowed(result.operation, [message, ...turns.filter(turn => turn.role === 'user').map(turn => turn.content)]));
     if (dropped) result.operation = null;
     const extraCost = Math.max(0, result.costMicros - estimate.costMicros), extraTokens = Math.max(0, result.inputTokens + result.outputTokens - estimate.tokens), elapsed = Date.now() - startedAt;
     const details = { provider, model: modelName, hasImage: !!image, inputTokens: result.inputTokens, outputTokens: result.outputTokens, reservedUsdMicros: estimate.costMicros, usdMicros: result.costMicros, operationSuggested: !!result.operation, operationDropped: dropped, overrun: extraCost > 0 || extraTokens > 0, tools: result.tools ?? [], steps: result.steps ?? 1 };
@@ -444,7 +518,13 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
       reservedMicros: estimate.costMicros, costMicros: result.costMicros, inputTokens: result.inputTokens, outputTokens: result.outputTokens,
       sources: result.sources ?? [], lookups: (result.tools ?? []).length };
   } catch (error) {
-    await db.prepare("UPDATE ai_calls SET status='failed' WHERE id=? AND status='reserved'").bind(id).run();
+    const failureDetails = { provider, model: modelName, hasImage: !!image, reservedUsdMicros: estimate.costMicros,
+      ...(error instanceof ChargedError ? { usdMicros: error.chargedMicros } : {}) };
+    await db.batch([
+      db.prepare("UPDATE ai_calls SET status='failed' WHERE id=? AND admission_nonce=? AND status='reserved'").bind(id, nonce),
+      db.prepare("INSERT INTO audit(id,actor_id,project_id,organization_id,action,entity_id,details,created_at) SELECT ?,?,?,?,'assistant.role.chat.failed',?,?,? WHERE changes()=1")
+        .bind(crypto.randomUUID(), current.userId, project, organizationId, id, JSON.stringify(failureDetails), new Date().toISOString()),
+    ]);
     if (error instanceof ChargedError && (error.chargedMicros > estimate.costMicros || error.chargedTokens > estimate.tokens)) {
       await db.prepare('UPDATE ai_organization_usage SET reserved_usd_micros=reserved_usd_micros+?,reserved_tokens=reserved_tokens+? WHERE organization_id=? AND day=?').bind(Math.max(0, error.chargedMicros - estimate.costMicros), Math.max(0, error.chargedTokens - estimate.tokens), organizationId, day).run();
     }

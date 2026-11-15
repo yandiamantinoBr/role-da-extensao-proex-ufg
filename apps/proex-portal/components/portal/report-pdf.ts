@@ -91,7 +91,7 @@ export async function toPdf(
   const supported = new Set(font.getCharacterSet());
   const boldSupported = new Set(bold.getCharacterSet());
   const text = (value: string) => Array.from(value.normalize('NFC').replace(/\r\n?/g, '\n').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u202a-\u202e\u2066-\u2069]/g, '')).map(char =>
-    char === '\n' || supported.has(char.codePointAt(0)!) ? char : '[U+' + char.codePointAt(0)!.toString(16).toUpperCase() + ']').join('');
+    char === '\n' || supported.has(char.codePointAt(0)!) ? char : char === '→' ? '->' : '[U+' + char.codePointAt(0)!.toString(16).toUpperCase() + ']').join('');
   const strongFont = (value: string) => Array.from(value).every(char => char === '\n' || boldSupported.has(char.codePointAt(0)!)) ? bold : font;
 
   const width = 595.28, height = 841.89, margin = 42, usable = width - 2 * margin, bottom = 52;

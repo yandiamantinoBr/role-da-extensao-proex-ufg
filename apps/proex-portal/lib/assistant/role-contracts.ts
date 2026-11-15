@@ -112,17 +112,19 @@ export function operationsConferenceSentence(name?: string | null): string {
 
 export type RoleTurn = { role: 'user' | 'assistant'; content: string };
 export type RolePricing = { model: string; label: string; inputMicrosPerToken: number; outputMicrosPerToken: number };
-export type RoleEstimateInput = { textProvider: RoleProvider; textBytes: number; hasImage: boolean; text?: RolePricing | null; vision?: RolePricing | null; tools?: boolean };
+export type RoleEstimateInput = { textProvider: RoleProvider; textBytes: number; hasImage: boolean; text?: RolePricing | null; vision?: RolePricing | null; tools?: boolean; maxOutputTokens?: number; inputCeiling?: number; reasoningCarry?: boolean };
 export type RoleEstimate = { model: string; visionModel: string | null; tokens: number; costMicros: number; calls: number };
 
 /** Mesma conta no navegador e no servidor. O servidor recusa se o teto aceito ficar abaixo do seu cálculo. */
-export function roleEstimate({ textProvider, textBytes, hasImage, text, vision, tools = false }: RoleEstimateInput): RoleEstimate {
+export function roleEstimate({ textProvider, textBytes, hasImage, text, vision, tools = false, maxOutputTokens = ROLE_MAX_OUTPUT_TOKENS, inputCeiling = 0, reasoningCarry = false }: RoleEstimateInput): RoleEstimate {
   const model: RolePricing = hasImage ? vision ?? ROLE_MODELS.deepseek : text ?? ROLE_MODELS[textProvider];
   const base = Math.max(0, Math.ceil(textBytes)) + ROLE_SYSTEM_PROMPT_BYTES + (hasImage ? ROLE_IMAGE_TOKEN_CEILING : 0);
   // Com consultas: a chamada k reenvia a conversa, o esquema (exceto na última) e tudo o que as rodadas anteriores trouxeram.
   const rounds = tools ? ROLE_TOOL_ROUNDS : 0, calls = rounds + 1;
-  const input = calls * base + rounds * ROLE_TOOLS_SCHEMA_BYTES + (ROLE_TOOL_RESULT_BYTES + ROLE_MAX_OUTPUT_TOKENS) * rounds * (rounds + 1) / 2;
-  const output = calls * ROLE_MAX_OUTPUT_TOKENS;
+  const accumulated = (ROLE_TOOL_RESULT_BYTES + maxOutputTokens * (reasoningCarry ? 5 : 1)) * rounds * (rounds + 1) / 2;
+  const unlimitedInput = calls * base + rounds * ROLE_TOOLS_SCHEMA_BYTES + accumulated;
+  const input = inputCeiling ? Math.min(unlimitedInput, inputCeiling * calls) : unlimitedInput;
+  const output = calls * maxOutputTokens;
   const cost = Math.ceil(input * model.inputMicrosPerToken + output * model.outputMicrosPerToken);
   return { model: model.model, visionModel: hasImage ? model.model : null, tokens: input + output, costMicros: cost, calls: 1 };
 }

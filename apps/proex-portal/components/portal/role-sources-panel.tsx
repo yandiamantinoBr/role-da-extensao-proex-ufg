@@ -52,8 +52,8 @@ export default function RoleSourcesPanel({ organizationId }: { organizationId: s
     {sources && <>
       <div className={styles.block}>
         <h5>Páginas públicas da PROEX e do CONPEEX</h5>
-        <p className={styles.muted}>Copiadas uma vez por dia (título, resumo curto e links), respeitando o robots.txt de cada site. Última cópia: {when(sources.refreshedAt)}{sources.refreshedAt ? ` · ${okPages} de ${sources.pages.length} páginas copiadas` : ''}.</p>
-        <details><summary>Ver as {sources.pages.length} páginas da lista</summary><ul className={styles.pages}>{sources.pages.map(page => <li key={page.id}><a href={page.url} target="_blank" rel="noopener noreferrer">{page.label} ↗</a><span className={page.ok ? styles.ok : styles.warn}>{page.ok ? `copiada ${when(page.fetchedAt)}` : page.fetchedAt ? 'última tentativa falhou' : 'ainda não copiada'}</span></li>)}</ul></details>
+        <p className={styles.muted}>A busca consulta os índices públicos dos sites. Algumas páginas também têm uma cópia para quando os sites ficarem indisponíveis.</p>
+        <details><summary>Ver as páginas com cópia diária</summary><p className={styles.muted}>{sources.refreshedAt ? `Última cópia em ${when(sources.refreshedAt)} · ${okPages} de ${sources.pages.length} páginas` : 'A primeira cópia ainda está pendente.'}</p><ul className={styles.pages}>{sources.pages.map(page => <li key={page.id}><a href={page.url} target="_blank" rel="noopener noreferrer">{page.label} ↗</a><span className={page.ok ? styles.ok : styles.warn}>{page.ok ? `copiada ${when(page.fetchedAt)}` : page.fetchedAt ? 'última tentativa falhou' : 'ainda não copiada'}</span></li>)}</ul></details>
       </div>
       <div className={styles.block}>
         <h5>Publicações do Instagram</h5>

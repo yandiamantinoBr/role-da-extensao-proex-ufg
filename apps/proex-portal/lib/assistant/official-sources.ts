@@ -19,27 +19,39 @@ export const OFFICIAL_SOURCES = [
   { id: 'proex-equipe', label: 'PROEX · equipe e contatos', url: 'https://proex.ufg.br/p/equipe-proex' },
   { id: 'proex-o-que-e', label: 'PROEX · o que é', url: 'https://proex.ufg.br/p/29427-o-que-e-a-proex' },
   { id: 'proex-role', label: 'PROEX · Rolê da Extensão', url: 'https://proex.ufg.br/p/60194-role-da-extensao' },
-  { id: 'conpeex-programacao', label: 'CONPEEX · programação geral', url: 'https://proex.ufg.br/p/59955-programacao-geral' },
+  { id: 'conpeex-programacao', label: 'CONPEEX · programação geral', url: 'https://23conpeex.plateia.ufg.br/p/59955-programacao-geral' },
   { id: 'conpeex-site', label: '23º CONPEEX', url: 'https://23conpeex.plateia.ufg.br/' },
 ] as const;
 export const OFFICIAL_HOSTS = ['proex.ufg.br', '23conpeex.plateia.ufg.br'] as const;
 const SNAPSHOT = 'role.official.v1', REFRESH_MS = 20 * 3600_000, PAGE_BYTES = 600_000;
-const USER_AGENT = 'PortalPROEX-Role/1.0 (+https://proex-gestao.vercel.app; consulta diária de páginas públicas)';
+const USER_AGENT = 'PortalPROEX-Role/1.0 (+https://proex-gestao.vercel.app; consulta de paginas publicas)';
+const SEARCH_TIMEOUT_MS = 2500;
+const SEARCH_INDEX_TTL_MS = 30 * 60_000;
+const SEARCH_RETRY_MS = 60_000;
+const SEARCH_PAGE_LIMIT = 5;
 
 export type OfficialPage = { id: string; label: string; url: string; fetchedAt: string | null; title: string; summary: string; links: { text: string; url: string }[]; error?: string };
 export type OfficialSnapshot = { refreshedAt: string | null; startedAt?: string | null; pages: OfficialPage[] };
 
 const entities: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', ndash: '–', mdash: '—', ordm: 'º', ordf: 'ª' };
-const decode = (value: string) => value.replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, (match, code: string) => code[0] === '#' ? String.fromCodePoint(parseInt(code.slice(code[1] === 'x' || code[1] === 'X' ? 2 : 1), code[1] === 'x' || code[1] === 'X' ? 16 : 10)) : entities[code.toLowerCase()] ?? match);
+const decode = (value: string) => value.replace(/&(#(?:x[0-9a-f]+|[0-9]+)|[a-z]+);/gi, (match, code: string) => {
+  if (code[0] !== '#') return entities[code.toLowerCase()] ?? match;
+  const hex = code[1].toLowerCase() === 'x';
+  const point = parseInt(code.slice(hex ? 2 : 1), hex ? 16 : 10);
+  return point <= 0x10ffff && (point < 0xd800 || point > 0xdfff) ? String.fromCodePoint(point) : match;
+});
 const clean = (value: string, max: number) => decode(value.replace(/<[^>]*>/g, ' ')).replace(/\s+/g, ' ').trim().slice(0, max);
+const withoutActiveContent = (html: string) => html.replace(/<(script|style|noscript|svg)\b[\s\S]*?<\/\1>/gi, ' ');
+const descriptionOf = (body: string) => clean(body.match(/<meta\s+property=["']og:description["']\s+content=(["'])([\s\S]*?)\1/i)?.[2] ?? '', 600);
 
 /** Extrai título, resumo curto (descrição ou primeiros parágrafos) e links de notícias/páginas do mesmo site. */
 export function extractPage(html: string, base: string): { title: string; summary: string; links: { text: string; url: string }[] } {
-  const body = html.replace(/<(script|style|noscript|svg)[\s\S]*?<\/\1>/gi, ' ');
+  const body = withoutActiveContent(html);
+  const article = body.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i)?.[1];
   const title = clean(body.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i)?.[1] ?? body.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? '', 160);
   const description = body.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']*)["']/i)?.[1] ?? '';
-  const paragraphs = [...body.matchAll(/<p[^>]*>([\s\S]*?)<\/p>/gi)].map(match => clean(match[1], 400)).filter(text => text.length > 40).slice(0, 3).join(' ');
-  const summary = clean(description, 600) || paragraphs.slice(0, 600);
+  const paragraphs = [...(article ?? body).matchAll(/<p\b[^>]*>([\s\S]*?)<\/p>/gi)].map(match => clean(match[1], 400)).filter(text => text.length > 40).slice(0, 3).join(' ');
+  const summary = descriptionOf(body) || (article && paragraphs.slice(0, 600)) || clean(description, 600) || paragraphs.slice(0, 600);
   const host = new URL(base).host, links: { text: string; url: string }[] = [], seen = new Set<string>();
   for (const match of body.matchAll(/<a[^>]+href=["']([^"'#]+)["'][^>]*>([\s\S]*?)<\/a>/gi)) {
     let url: URL; try { url = new URL(decode(match[1]), base); } catch { continue; }
@@ -66,6 +78,99 @@ async function boundedText(response: Response): Promise<string> {
   try { for (;;) { const { value, done } = await reader.read(); if (done) break; size += value.byteLength; if (size > PAGE_BYTES) break; chunks.push(value); } } finally { await reader.cancel().catch(() => {}); }
   const bytes = new Uint8Array(chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0)); let offset = 0; for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
   return new TextDecoder('utf-8').decode(bytes);
+}
+
+type SearchEntry = { url: string; title: string; lastModified: string };
+type PublicIndex = SearchEntry[];
+type PublicResult = SearchEntry & { summary: string; fetchedAt: string };
+type SearchIndexCache = Map<string, { refreshAt: number; value: Promise<PublicIndex | null> }>;
+const searchIndexes = new WeakMap<typeof fetch, SearchIndexCache>();
+const searchWords = (value: string) => (value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase().match(/[a-z0-9]{2,}/g) ?? []);
+const searchFiller = new Set(['de', 'da', 'do', 'das', 'dos', 'as', 'os', 'em', 'no', 'na', 'nos', 'nas', 'para', 'com', 'por', 'um', 'uma', 'que', 'esta', 'tem', 'foi', 'proex', 'proec', 'ufg', 'site', 'portal', 'oficial', 'favor', 'acesse', 'busque', 'consulte', 'procure', 'pesquise', 'veja', 'encontre', 'onde', 'quando', 'qual', 'quais', 'como', 'sobre', 'diga', 'mostre', 'me', 'quero', 'pode', 'informacao', 'informacoes']);
+const singular = (word: string) => word.length > 4 ? word.replace(/oes$/, 'ao').replace(/s$/, '') : word;
+export const officialSearchTerms = (value: string) => [...new Set(searchWords(value).filter(word => !searchFiller.has(word)).map(singular))];
+
+function searchEntry(urlText: string, host: string, lastModified: string): SearchEntry | null {
+  let url: URL;
+  try { url = new URL(decode(urlText.trim())); } catch { return null; }
+  if (url.origin !== `https://${host}` || url.username || url.password || url.search || url.hash || !/^\/(?:n|p)\/[a-z0-9][a-z0-9-]{1,240}\/?$/i.test(url.pathname)) return null;
+  const title = url.pathname.slice(3).replace(/^\d+-|\/$/g, '').replace(/-/g, ' ');
+  return { url: url.href, title, lastModified: /^\d{4}-\d{2}-\d{2}$/.test(lastModified) ? lastModified : '' };
+}
+
+async function fetchPublicText(url: string, accept: string, contentType: RegExp, fetcher: typeof fetch): Promise<string> {
+  const response = await fetcher(url, { headers: { 'User-Agent': USER_AGENT, Accept: accept }, redirect: 'error', credentials: 'omit', signal: AbortSignal.timeout(SEARCH_TIMEOUT_MS) });
+  if (!response.ok || !contentType.test(response.headers.get('content-type') ?? '')) {
+    await response.body?.cancel().catch(() => {});
+    throw new Error('Fonte pública indisponível.');
+  }
+  return boundedText(response);
+}
+
+async function readSearchIndex(host: string, fetcher: typeof fetch): Promise<PublicIndex | null> {
+  if (!searchIndexes.has(fetcher)) searchIndexes.set(fetcher, new Map());
+  const indexes = searchIndexes.get(fetcher)!;
+  const saved = indexes.get(host), now = Date.now();
+  if (saved && saved.refreshAt > now) return saved.value;
+
+  const value = (async () => {
+    const origin = `https://${host}`;
+    const robots = await fetchPublicText(`${origin}/robots.txt`, 'text/plain', /^text\/plain\b/i, fetcher);
+    if (disallowed(robots, '/sitemap.xml')) return null;
+    const xml = await fetchPublicText(`${origin}/sitemap.xml`, 'application/xml, text/xml', /^(?:application|text)\/xml\b/i, fetcher);
+    if (!/<urlset\b/i.test(xml)) return null;
+    const entries = [...xml.matchAll(/<url>([\s\S]*?)<\/url>/gi)].flatMap(([, block]) => {
+      const url = block.match(/<loc>([^<]+)<\/loc>/i)?.[1];
+      const modified = block.match(/<lastmod>([^<]+)<\/lastmod>/i)?.[1]?.trim() ?? '';
+      const entry = url && searchEntry(url, host, modified);
+      return entry && !disallowed(robots, new URL(entry.url).pathname) ? [entry] : [];
+    });
+    return entries;
+  })().catch(() => null);
+  const current = { value, refreshAt: now + SEARCH_INDEX_TTL_MS };
+  indexes.set(host, current);
+  if (!await value) current.refreshAt = now + SEARCH_RETRY_MS;
+  return value;
+}
+
+/** Lê apenas os mapas e páginas públicas listadas por eles. O assunto nunca é transmitido aos sites. */
+export async function searchOfficialPages(subject: string, fetcher: typeof fetch = fetch): Promise<{ status: 'ok' | 'partial' | 'unavailable'; pages: PublicResult[] }> {
+  const wanted = officialSearchTerms(subject);
+  if (!wanted.length) return { status: 'ok', pages: [] };
+  const indexes = await Promise.all(OFFICIAL_HOSTS.map(host => readSearchIndex(host, fetcher)));
+  const entries = new Map(indexes.flatMap(index => index ?? []).map(entry => [entry.url, entry]));
+  const minimum = wanted.length <= 2 ? wanted.length : Math.ceil(wanted.length / 2);
+  const focus = wanted.filter(word => word !== 'conpeex' && !/^\d+$/.test(word));
+  const ranked = [...entries.values()].flatMap(entry => {
+    const words = new Set(officialSearchTerms(entry.title));
+    // O site do evento tem páginas como “Programação geral” com o nome do evento só no domínio.
+    const conpeexSite = new URL(entry.url).hostname === OFFICIAL_HOSTS[1];
+    const hits = wanted.filter(word => words.has(word) || conpeexSite && (word === 'conpeex' || word === '23')).length;
+    if (hits < minimum) return [];
+    const fullPhrase = focus.length > 1 && [...words].join(' ').includes(focus.join(' '));
+    const precision = hits / words.size;
+    return [{ entry, score: hits * 6 + Number(fullPhrase) * 2 + precision + Number(conpeexSite && wanted.includes('conpeex')) }];
+  }).sort((a, b) => b.score - a.score || b.entry.lastModified.localeCompare(a.entry.lastModified));
+
+  let failed = indexes.filter(index => !index).length;
+  const pages = await Promise.all(ranked.slice(0, SEARCH_PAGE_LIMIT).map(async ({ entry, score }) => {
+    try {
+      const html = await fetchPublicText(entry.url, 'text/html', /^text\/html\b/i, fetcher);
+      const { title, summary } = extractPage(html, entry.url);
+      if (!title) throw new Error('Página pública sem título.');
+      const summaryWords = new Set(officialSearchTerms(summary));
+      return {
+        result: { ...entry, title, summary, fetchedAt: new Date().toISOString() },
+        score: score + focus.filter(word => summaryWords.has(word)).length * 2,
+      };
+    } catch {
+      failed += 1;
+      return null;
+    }
+  }));
+  const results = pages.filter(page => page !== null).sort((a, b) => b.score - a.score).slice(0, 3).map(page => page.result);
+  const status = failed ? indexes.every(index => !index) || (ranked.length > 0 && !results.length) ? 'unavailable' : 'partial' : 'ok';
+  return { status, pages: results };
 }
 
 export async function readOfficialSnapshot(db: D1Database): Promise<OfficialSnapshot> {

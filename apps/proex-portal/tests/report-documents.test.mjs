@@ -51,6 +51,13 @@ async function readPdfPages(blob) {
   } finally { await task.destroy(); }
 }
 
+test('PDF text never exposes the fallback Unicode code of a right arrow', async () => {
+  const blob = await reportPdf.toPdf('Fluxo de dados', columns, [{ ...rows[0], material: 'Portal → Agenda' }], display, info, { fontBytes, brandBytes });
+  const output = (await readPdfPages(blob)).join(' ');
+  assert.match(output, /Portal (?:→|->) Agenda/);
+  assert.doesNotMatch(output, /U\+2192/);
+});
+
 test('PDF keeps a table heading with its first row and terminates when one row exceeds a full page',async()=>{
  const longColumns=[{key:'name',label:'Registro'},{key:'details',label:'Conteúdo'}],source=[{name:'PRIMEIRA LINHA ALTA',details:'Conteúdo conferido da extensão. '.repeat(260)+' FIM DA LINHA ALTA'},{name:'SEGUNDA LINHA FINAL',details:'Texto conferido final.'}];
  const blob=await reportPdf.toPdf('Paginação com linha alta',longColumns,source,(row,key)=>row[key],Array.from({length:12},(_,i)=>['Contexto '+i,'Metadado de recorte conferido '.repeat(2)]),{fontBytes,brandBytes,presentation:{columnWeights:[1,2]}});

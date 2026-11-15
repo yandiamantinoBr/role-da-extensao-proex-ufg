@@ -220,14 +220,16 @@ Motivo: às 13h o Yan perguntou "quantos brindes, super brindes e super super br
 - **Páginas públicas** (`lib/assistant/official-sources.ts`):
   - Lista fechada de 9 páginas: PROEX (início, notícias, editais, editais externos, equipe e contatos, o que é, Rolê da Extensão), programação do CONPEEX e o site do 23º CONPEEX.
   - A cópia roda uma vez por dia, na rotina que já chama `/api/health`, com trava de 20 h e só na Vercel.
-  - O `robots.txt` de cada site é respeitado (o site do CONPEEX hoje bloqueia `/`; ele fica de fora até liberar). Cada página tem 8 s para responder e um teto de 600 KB.
+  - A cópia diária respeita o `robots.txt` de cada site. Cada página tem 8 s para responder e um teto de 600 KB.
   - Guarda só título, um resumo curto (meta description ou primeiros parágrafos, até 600 caracteres) e até 15 links de notícias/páginas do mesmo site. Fica na tabela `settings`, sem migração.
 - **Instagram:** sem raspagem.
   - A comunicação cola o link (`instagram.com/p/…` ou `/reel/…`), a data e um resumo da legenda em Configurações → Chaves e modelos → Funções e acesso → "Fontes oficiais do Rolê".
   - Só a administração geral ou quem configura a IA da organização cadastra ou remove; qualquer membro lê.
   - **oEmbed:** a Meta exige token de aplicativo desde 2020, então não é usado.
   - **Integração oficial (desligada):** para ler posts recentes e métricas, a comunicação precisaria de uma conta profissional ligada a uma Página do Facebook, um app na Meta com Instagram Graph API (permissões `instagram_basic` e `pages_read_engagement`, com revisão da Meta) e um token de longa duração guardado no cofre de chaves.
-- **Rolê:** a nova consulta `consultar_fontes_oficiais` busca nas páginas copiadas e nos posts cadastrados e devolve título, resumo, data da cópia e link.
+- **Rolê** (15/11/2026): quando a pessoa pede uma consulta ao site oficial, o Portal busca nas páginas públicas da PROEX e do 23º CONPEEX e devolve até três fontes com título, trecho, data e link, com qualquer modelo ativo. Essa resposta não chama nem cobra o provedor de IA.
+  - O Portal compara o assunto localmente com os endereços dos mapas públicos dos dois sites. Faz apenas requisições HTTPS sem credenciais, sem texto da pergunta e sem seguir redirecionamentos. Os mapas são reaproveitados por até 30 minutos por instância e até cinco páginas públicas são verificadas por consulta.
+  - A ferramenta `consultar_fontes_oficiais` usa a mesma busca e pode aproveitar a cópia diária ou as publicações do Instagram cadastradas. A resposta informa a data da consulta, cópia ou publicação. A busca depende do que os sites listam nos mapas e da disponibilidade das páginas.
   - Na resposta, os links externos aparecem só se forem de `proex.ufg.br`, `23conpeex.plateia.ufg.br` ou `instagram.com` e abrem em nova aba.
   - O conteúdo é público e entra como dado, não instrução.
 
@@ -286,3 +288,15 @@ Motivo: às 13h o Yan perguntou "quantos brindes, super brindes e super super br
 - **Histórico:** a troca aparece com antes e depois e com o nome do modelo ("Modelo para transcrever voz: padrão do portal → …"), só para quem configura a IA da organização.
 - **Não verificado:** nenhum serviço real foi chamado com modelo escolhido. O primeiro teste de cada serviço depende de chave e gasto autorizados pelo Yan. Não se sabe se Perplexity e Nace respondem no formato JEV, nem se os serviços compatíveis com OpenAI aceitam o áudio no mesmo formato da Groq.
 - **Fica para depois:** publicar na base atual e conferir o fluxo pelo navegador, com o mesmo modelo em cada confirmação e dados fictícios.
+
+
+## Política da conversa e Gastos por chamada · 15/11/2026
+
+Em **Configurações → Chaves e modelos → Funções e acesso → Rolê**, a configuração da organização define o esforço da conversa por texto, o histórico enviado (0–6 mensagens), as consultas internas, a busca em fontes públicas e os limites estimados de entrada e de saída por envio ao modelo. O padrão preserva o limite de saída anterior (700 tokens) e as cotas diárias. Fotos continuam numa função própria e áudio é transcrito separadamente, com revisão. O servidor recusa anexos fora do contrato; o catálogo não libera uma modalidade por si só.
+
+- **Esforço:** só aparece em destinos/modelos revisados da DeepSeek e da Groq, incluindo suas rotas equivalentes do catálogo. Usa os parâmetros documentados em [DeepSeek](https://api-docs.deepseek.com/guides/thinking_mode/) e [Groq](https://console.groq.com/docs/reasoning). A DeepSeek exige conservar o raciocínio durante rodadas de ferramentas da mesma pergunta. Esse conteúdo não vai à tela, ao banco ou à exportação. Na Groq, a resposta solicita omitir o raciocínio.
+- **Limites:** o teto de entrada é conservador, em bytes do corpo textual mais a estimativa da imagem. Inclui instruções, descrição das ferramentas e resultados. A reserva usa o mesmo cálculo na tela e no servidor; o servidor também confere o corpo real de cada chamada. O teto de saída entra no parâmetro do provedor; pode incluir raciocínio. Se a resposta for parcial, não há tentativa automática. Falhas mantêm a reserva; quando o provedor informa um custo válido, o log o separa da estimativa.
+- **Permissões:** o Rolê não tem ferramenta de apagar equipes. Consultas internas permitem apenas as ferramentas apresentadas pelo servidor, verificam permissões por projeto e conferem a autorização novamente entre chamadas. A escrita segue o fluxo de rascunho, conferência, confirmação humana e permissão ao aplicar, e apenas para as operações previstas no contrato.
+- **Gastos:** a administração geral filtra as chamadas do dia por função, provedor e resultado. A planilha XLSX refaz a checagem de acesso e contém só metadados, incluindo tokens de entrada e saída quando conhecidos. Chamadas antigas sem esses contadores permanecem em branco.
+
+Próximas etapas: verificar de ponta a ponta novos modelos antes de habilitar ferramentas neles. Para vídeo de entrada na [Gemini API](https://ai.google.dev/gemini-api/docs/video-understanding?hl=en), usar um adaptador nativo e um identificador confirmado no [catálogo oficial](https://ai.google.dev/gemini-api/docs/models?hl=en). O piloto deve pôr opt-in por organização e por envio, mostrar o destino e a faixa de custo, limitar MIME/duração/tamanho, usar vídeo sintético para QA e verificar retenção, tokens de mídia, resposta interrompida e revogação durante o processamento. Só depois oferecer a opção real no chat. Não foi incluído provedor, ativada nova modalidade nem alterada a configuração real.

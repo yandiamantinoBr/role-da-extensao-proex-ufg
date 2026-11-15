@@ -16,6 +16,7 @@ function compile(name) {
   const result = `data:text/javascript;base64,${Buffer.from(`${source}\n//# sourceURL=${name}-spending-test.mjs`).toString('base64')}`; modules.set(name, result); return result;
 }
 const { aiSpending, aiSpendingDay, SPENDING_DAY_LIMIT } = await import(compile('assistant/spending'));
+const { spendingCallsWorkbook } = await import(compile('assistant/spending-export'));
 
 // "Agora" fixo: 09/11/2026 12:00 em Brasília (15:00 UTC).
 const NOW = Date.parse('2026-11-09T15:00:00.000Z');
@@ -147,11 +148,11 @@ test('nada fora da lista de permissão sai: prompt, chave, e-mail e campos estra
       assert.equal(/"(?:prompt|apiKey|details|email|reply|actor_id|entity_id)"/.test(output), false);
     }
     assert.equal(period.today.byProvider.other.realUsdMicros, 400, 'provedor desconhecido vira "Outro"');
-    const allowed = ['at', 'time', 'function', 'functionLabel', 'provider', 'providerLabel', 'model', 'realUsdMicros', 'ceilingUsdMicros', 'who'];
+    const allowed = ['at', 'time', 'function', 'functionLabel', 'provider', 'providerLabel', 'model', 'realUsdMicros', 'ceilingUsdMicros', 'who', 'inputTokens', 'outputTokens', 'result', 'resultLabel'];
     for (const call of day.calls) assert.deepEqual(Object.keys(call).sort(), [...allowed].sort());
     const injected = day.calls.find(call => call.realUsdMicros === 400);
     assert.equal(injected.model, null); assert.equal(injected.provider, 'other'); assert.equal(injected.who, 'Pessoa da equipe', 'nome com @ é trocado');
-    assert.deepEqual(Object.keys(day).sort(), ['calls', 'day', 'organizationId', 'total', 'truncated']);
+    assert.deepEqual(Object.keys(day).sort(), ['calls', 'day', 'organizationId', 'partial', 'total', 'truncated']);
     assert.deepEqual(Object.keys(period).sort(), ['dailyLimitUsdMicros', 'days', 'from', 'functions', 'organizationId', 'partial', 'providers', 'to', 'today', 'totals']);
   } finally { f.native.close(); }
 });
@@ -166,6 +167,8 @@ test('lista do dia: hora e nome em Brasília, mais recentes primeiro, no máximo
     assert.equal(day.calls[0].functionLabel, 'Fotos'); assert.equal(day.calls[0].who, 'Pessoa da equipe');
     assert.equal(day.calls[1].who, 'Dona Sintética'); assert.equal(day.calls[1].providerLabel, 'DeepSeek'); assert.equal(day.calls[1].model, 'deepseek-flash');
     assert.equal(day.calls[1].realUsdMicros, 1200); assert.equal(day.calls[1].ceilingUsdMicros, 3000);
+    assert.equal(day.calls[1].inputTokens, 900); assert.equal(day.calls[1].outputTokens, 120);
+    assert.equal(day.calls[0].inputTokens, null); assert.equal(day.calls[0].outputTokens, null);
     const compare = (await aiSpendingDay(f.db, f.actors.owner, { organizationId: 'org_proex', day: '2026-11-07' })).calls.find(call => call.function === 'compare');
     assert.equal(compare.provider, 'mixed'); assert.equal(compare.providerLabel, 'DeepSeek + OpenAI'); assert.equal(compare.model, 'deepseek-flash, gpt-5.6-luna');
     const documents = (await aiSpendingDay(f.db, f.actors.owner, { organizationId: 'org_proex', day: '2026-11-07' })).calls.find(call => call.function === 'documents');
@@ -179,6 +182,78 @@ test('lista do dia: hora e nome em Brasília, mais recentes primeiro, no máximo
     const period = await aiSpending(f.db, f.actors.owner, { organizationId: 'org_proex', from: '2026-11-05', to: '2026-11-05' }, NOW);
     assert.equal(period.days[0].calls, 205, 'o resumo conta todas, mesmo com a lista limitada');
   } finally { f.native.close(); }
+});
+
+test('trilha do dia filtra antes do limite, separa falha de uso concluído e exporta só contadores permitidos', async () => {
+  const f = fixture();
+  try {
+    const day = '2026-11-09';
+    f.audit('assistant.role.chat.failed', { provider: 'deepseek', model: KEY_CANARY, hasImage: true, inputTokens: 119, outputTokens: 0, reservedUsdMicros: 1000, usdMicros: 250, error: PROMPT_CANARY, prompt: PROMPT_CANARY }, `${day}T04:00:00.000Z`);
+    f.audit('assistant.role.chat.failed', { provider: 'deepseek', hasImage: true, inputTokens: '400', outputTokens: -1, reservedUsdMicros: 1000 }, `${day}T04:10:00.000Z`);
+    f.audit('assistant.role.chat.failed', { provider: 'groq', hasImage: false, reservedUsdMicros: 1000 }, `${day}T04:20:00.000Z`);
+    f.audit('assistant.compare', { models: [{ provider: 'deepseek', model: 'deepseek-flash', ok: true }, { provider: 'openai', model: 'gpt-sintetico', ok: false, error: PROMPT_CANARY }] }, `${day}T04:30:00.000Z`);
+    f.audit('assistant.role.chat.failed', { provider: 'deepseek', hasImage: true, inputTokens: 123456, reservedUsdMicros: 999999 }, `${day}T04:15:00.000Z`, { org: 'org_outra' });
+    for (let index = 0; index < SPENDING_DAY_LIMIT; index++) {
+      f.audit('assistant.role.chat', { provider: 'deepseek' }, new Date(Date.parse(`${day}T12:00:00.000Z`) + index * 1000).toISOString());
+    }
+    const filters = { fn: 'photos', provider: 'deepseek', result: 'failed' };
+    const input = { organizationId: 'org_proex', day, ...filters };
+    const filtered = await aiSpendingDay(f.db, f.actors.owner, input);
+    assert.equal(filtered.total, 2);
+    assert.deepEqual(filtered.calls.map(call => [call.time, call.result, call.inputTokens, call.outputTokens, call.realUsdMicros, call.model]), [
+      ['01:10', 'failed', null, null, null, null], ['01:00', 'failed', 119, 0, 250, null],
+    ]);
+    const comparison = await aiSpendingDay(f.db, f.actors.owner, { ...input, fn: 'compare', provider: 'openai', result: 'partial' });
+    assert.equal(comparison.calls[0]?.provider, 'mixed');
+    assert.equal(comparison.calls[0]?.result, 'partial');
+    await assert.rejects(aiSpendingDay(f.db, f.actors.owner, { ...input, result: 'constructor' }), error => error.status === 400);
+    await assert.rejects(aiSpendingDay(f.db, f.actors.viewer, input), error => error.status === 403);
+    const period = await aiSpending(f.db, f.actors.owner, { organizationId: 'org_proex', from: day, to: day }, NOW);
+    assert.equal(period.today.calls, 204); assert.equal(period.today.realUsdMicros, 250, 'custo conhecido de tentativa com falha aparece no total');
+    const workbook = spendingCallsWorkbook(filtered, filters);
+    assert.equal(workbook.type, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    const bytes = Buffer.from(await workbook.arrayBuffer());
+    assert.equal(bytes.readUInt32LE(), 0x04034b50);
+    const xml = bytes.toString('utf8');
+    assert.match(xml, /Tokens de entrada/);
+    assert.match(xml, /Resultado.*Falhou/s);
+    assert.match(xml, /<c r="F3"><v>119<\/v><\/c><c r="G3"><v>0<\/v><\/c><c r="H3"><v>0\.00025<\/v><\/c>/);
+    assert.doesNotMatch(xml, /123456|09:00|openai|<f[ >]/);
+    assert.equal(xml.includes(KEY_CANARY) || xml.includes(PROMPT_CANARY), false);
+  } finally { f.native.close(); }
+});
+
+test('o download HTTP faz uma nova checagem de permissão e não guarda a planilha em cache', async () => {
+  const f = fixture();
+  try {
+    seed(f);
+    const dataUrl = content => `data:text/javascript;base64,${Buffer.from(content).toString('base64')}`;
+    const source = ts.transpileModule(readFileSync(`${root}app/api/assistant/spending/route.ts`, 'utf8'), { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
+    const bootstrap = {
+      platform: dataUrl('export const database = () => globalThis.__aiSpendingRoute.db'),
+      session: dataUrl('export const getPortalUser = () => globalThis.__aiSpendingRoute.user'),
+    };
+    const route = await import(dataUrl(source.replace(/from ['"]@\/lib\/([^'"]+)['"]/g, (_whole, name) => `from ${JSON.stringify(bootstrap[name] ?? compile(name))}`)));
+    const req = (suffix = '') => new Request(`https://example.test/api/assistant/spending?organizationId=org_proex&day=2026-11-09&fn=photos${suffix}`);
+    globalThis.__aiSpendingRoute = { db: f.db, user: f.actors.owner };
+    const list = await route.GET(req());
+    assert.equal(list.status, 200);
+    assert.equal((await list.json()).calls.length, 1);
+    const response = await route.GET(req('&format=xlsx'));
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('Cache-Control'), 'private, no-store');
+    assert.equal(response.headers.get('Content-Disposition'), 'attachment; filename="proex-chamadas-ia-2026-11-09.xlsx"');
+    assert.equal(Buffer.from(await response.arrayBuffer()).readUInt32LE(), 0x04034b50);
+    assert.equal((await route.GET(req('&format=xlsx&fn=role'))).status, 400);
+    assert.equal((await route.GET(req('&format=xlsx&result=failed'))).status, 409);
+    globalThis.__aiSpendingRoute.user = f.actors.viewer;
+    assert.equal((await route.GET(req('&format=xlsx'))).status, 403);
+    globalThis.__aiSpendingRoute.user = null;
+    assert.equal((await route.GET(req('&format=xlsx'))).status, 401);
+    globalThis.__aiSpendingRoute.user = f.actors.owner;
+    f.native.prepare("UPDATE members SET revoked_at=? WHERE id='owner-qa'").run(new Date(NOW).toISOString());
+    assert.equal((await route.GET(req('&format=xlsx'))).status, 403);
+  } finally { delete globalThis.__aiSpendingRoute; f.native.close(); }
 });
 
 const { aiPeopleUsage, usageTips } = await import(compile('assistant/usage-people'));

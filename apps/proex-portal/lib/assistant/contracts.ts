@@ -7,9 +7,11 @@ export const PROVIDERS = {
  typesafe: { endpoint: 'https://api.typesafe.ai/v1/systemone', model: 'jev-1.14.0', inputMicrosPerToken: 0.042 },
  openai: { endpoint:'https://api.openai.com/v1/responses',model:'gpt-5.6-luna',revision:'gpt-5.6-luna · alias verificado em 2026-11-05',inputMicrosPerToken:0.25,outputMicrosPerToken:1.2 },
 } as const;
+import { DEFAULT_ROLE_POLICY, ROLE_EFFORT_LABELS, ROLE_POLICY_BOUNDS, type RolePolicy } from './role-policy';
+
 export type TextProvider = 'deepseek'|'openai';
 export type RoleProvider = 'deepseek'|'groq';
-export type AssistantConfig = { roleEnabled: boolean; roleProvider: RoleProvider; roleVisionEnabled: boolean; roleModel: string; roleVisionModel: string; documentModel: string; decisionModel: string; speechModel: string; enabled: boolean; documentEnabled: boolean; jevEnabled: boolean; sttEnabled: boolean; sttProvider: 'legacy' | 'deepgram' | 'groq'; textProvider:TextProvider; openaiModel:'gpt-5.6-luna'; usageScope: 'private' | 'organization'; usageUserId: string | null; model: 'deepseek-flash'; jevModel: 'jev-1.14.0'; dailyUsdMicros: number; dailyTokens: number; dailyCalls: number; dailyMs: number; timeoutMs: number; maxOutputTokens: number; testMode: boolean; testModeRestore: DailyLimits | null };
+export type AssistantConfig = RolePolicy & { roleEnabled: boolean; roleProvider: RoleProvider; roleVisionEnabled: boolean; roleModel: string; roleVisionModel: string; documentModel: string; decisionModel: string; speechModel: string; enabled: boolean; documentEnabled: boolean; jevEnabled: boolean; sttEnabled: boolean; sttProvider: 'legacy' | 'deepgram' | 'groq'; textProvider:TextProvider; openaiModel:'gpt-5.6-luna'; usageScope: 'private' | 'organization'; usageUserId: string | null; model: 'deepseek-flash'; jevModel: 'jev-1.14.0'; dailyUsdMicros: number; dailyTokens: number; dailyCalls: number; dailyMs: number; timeoutMs: number; maxOutputTokens: number; testMode: boolean; testModeRestore: DailyLimits | null };
 /** Tarefas que a administração geral pode mandar para um modelo do catálogo. Vazio = padrão de hoje. */
 export const TASK_MODEL_KEYS = ['documentModel', 'decisionModel', 'speechModel'] as const;
 export type TaskModelKey = (typeof TASK_MODEL_KEYS)[number];
@@ -20,14 +22,14 @@ export const LIMIT_BOUNDS = { dailyUsdMicros: [1000, 10_000_000], dailyTokens: [
 export function dailyLimits(config: DailyLimits): DailyLimits { return { dailyUsdMicros: config.dailyUsdMicros, dailyTokens: config.dailyTokens, dailyCalls: config.dailyCalls, dailyMs: config.dailyMs }; }
 // JSON saved before usage policies remains organization-scoped. New registrations
 // must use newAssistantConfig so that an old document never changes meaning.
-export const DEFAULT_ASSISTANT_CONFIG: AssistantConfig = { roleEnabled: false, roleProvider: 'deepseek', roleVisionEnabled: false, roleModel: '', roleVisionModel: '', documentModel: '', decisionModel: '', speechModel: '', enabled: false, documentEnabled: false, jevEnabled: false, sttEnabled: false, sttProvider: 'legacy',textProvider:'deepseek',openaiModel:'gpt-5.6-luna', usageScope: 'organization', usageUserId: null, model: 'deepseek-flash', jevModel: 'jev-1.14.0', dailyUsdMicros: 1_000_000, dailyTokens: 100_000, dailyCalls: 20, dailyMs: 300_000, timeoutMs: 12_000, maxOutputTokens: 1200, testMode: false, testModeRestore: null };
+export const DEFAULT_ASSISTANT_CONFIG: AssistantConfig = { ...DEFAULT_ROLE_POLICY, roleEnabled: false, roleProvider: 'deepseek', roleVisionEnabled: false, roleModel: '', roleVisionModel: '', documentModel: '', decisionModel: '', speechModel: '', enabled: false, documentEnabled: false, jevEnabled: false, sttEnabled: false, sttProvider: 'legacy',textProvider:'deepseek',openaiModel:'gpt-5.6-luna', usageScope: 'organization', usageUserId: null, model: 'deepseek-flash', jevModel: 'jev-1.14.0', dailyUsdMicros: 1_000_000, dailyTokens: 100_000, dailyCalls: 20, dailyMs: 300_000, timeoutMs: 12_000, maxOutputTokens: 1200, testMode: false, testModeRestore: null };
 /**
  * JSON da configuração para gravar: modelo por tarefa vazio não é gravado. Assim uma versão anterior do portal
  * (que recusa chaves que não conhece) continua lendo a configuração de quem nunca escolheu modelo.
  * A leitura (validateConfig) preenche o padrão ('') antes de validar.
  */
 export function storedConfigJson(config: AssistantConfig): string {
- return JSON.stringify(Object.fromEntries(Object.entries(config).filter(([key, value]) => !((TASK_MODEL_KEYS as readonly string[]).includes(key) && value === ''))));
+ return JSON.stringify(Object.fromEntries(Object.entries(config).filter(([key, value]) => !((TASK_MODEL_KEYS as readonly string[]).includes(key) && value === '') && !(Object.hasOwn(DEFAULT_ROLE_POLICY, key) && DEFAULT_ROLE_POLICY[key as keyof RolePolicy] === value))));
 }
 export function textModel(config:AssistantConfig){return{provider:config.textProvider,...PROVIDERS[config.textProvider],model:config.textProvider==='openai'?config.openaiModel:config.model};}
 export function newAssistantConfig(actorId: string): AssistantConfig { return { ...DEFAULT_ASSISTANT_CONFIG, usageScope: 'private', usageUserId: actorId }; }
@@ -57,6 +59,12 @@ export function validateConfig(value: unknown): AssistantConfig {
  if(!['deepseek','openai'].includes(result.textProvider)||result.openaiModel!==PROVIDERS.openai.model)throw new HttpError(400,'Escolha um provedor e modelo de texto revisados nesta versão.','assistant_model');
  if (!['private','organization'].includes(result.usageScope) || (result.usageScope === 'private' ? typeof result.usageUserId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(result.usageUserId) : result.usageUserId !== null)) throw new HttpError(400, 'Escolha uso pessoal ou da organização.', 'assistant_usage_scope');
  if (typeof result.roleEnabled !== 'boolean' || typeof result.roleVisionEnabled !== 'boolean' || !['deepseek','groq'].includes(result.roleProvider)) throw new HttpError(400, 'Escolha um modelo revisado para o Rolê.', 'assistant_model');
+ if (!Object.hasOwn(ROLE_EFFORT_LABELS, result.roleReasoningEffort) || typeof result.rolePortalContextEnabled !== 'boolean' || typeof result.rolePublicSearchEnabled !== 'boolean') throw new HttpError(400, 'Confira o esforço e as fontes do Rolê.', 'assistant_role_policy');
+ for (const [field, bounds] of Object.entries(ROLE_POLICY_BOUNDS)) {
+  const value = result[field as keyof typeof ROLE_POLICY_BOUNDS];
+  if (field === 'roleInputTokenCeiling' && value === 0) continue;
+  if (!Number.isSafeInteger(value) || value < bounds[0] || value > bounds[1]) throw new HttpError(400, 'Confira os limites de contexto e de tokens do Rolê.', 'assistant_role_policy');
+ }
  // Catalog model ids ('' keeps the reviewed DeepSeek/Groq path). Existence is checked against the catalog when saving.
  if (typeof result.roleModel !== 'string' || typeof result.roleVisionModel !== 'string' || [result.roleModel, result.roleVisionModel].some(id => id !== '' && !/^[a-z0-9][a-z0-9-]{1,47}$/.test(id))) throw new HttpError(400, 'Escolha um modelo do catálogo para o Rolê.', 'assistant_model');
  // Per-task routing: '' keeps today's default for documents, the decision check/triage and voice.
