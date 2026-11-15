@@ -68,6 +68,7 @@ export const CONFIG_FIELDS: { key: keyof AssistantConfig; label: string; kind: '
   { key: 'roleOutputTokenLimit', label: 'Teto de saída do Rolê', kind: 'tokens' },
   { key: 'rolePortalContextEnabled', label: 'Consultar dados do Portal', kind: 'bool' },
   { key: 'rolePublicSearchEnabled', label: 'Consultar fontes públicas oficiais', kind: 'bool' },
+  { key: 'roleVideoEnabled', label: 'Analisar vídeos com Gemini', kind: 'bool' },
   { key: 'roleVisionEnabled', label: 'Rolê lê fotos', kind: 'bool' },
   { key: 'roleVisionModel', label: 'Modelo para fotos', kind: 'text' },
   { key: 'enabled', label: 'Pedidos de operações', kind: 'bool' },

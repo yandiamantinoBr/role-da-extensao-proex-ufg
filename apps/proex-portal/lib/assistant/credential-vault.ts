@@ -134,7 +134,7 @@ function historyEntry(row: Record<string, unknown>): VaultHistoryEntry | null {
 }
 
 function suspendDependentFeatures(config: AssistantConfig, provider: CredentialProvider, id: string, speech?: SpeechEnvironment) {
-  if (provider === config.roleProvider) { config.roleEnabled = false; config.roleVisionEnabled = false; }
+  if (provider === config.roleProvider) { config.roleEnabled = false; config.roleVisionEnabled = false; config.roleVideoEnabled = false; }
   if (provider === 'deepseek') config.roleVisionEnabled = false;
   if ((provider === 'deepseek'||provider==='openai')&&config.textProvider===provider) { config.enabled = false; config.documentEnabled = false; }
   if (provider === 'typesafe') config.jevEnabled = false;
@@ -181,7 +181,10 @@ export async function manageAssistantCredential(db: D1Database, caller: PortalAc
   if (action === 'enable') current[provider] = previousKey;
   current.disabledCredentials = disabled;
   const config = row ? validateConfig(JSON.parse(row.config_json)) : newAssistantConfig(actor.userId);
-  if (recover) credentialProviders.forEach(name => suspendDependentFeatures(config, name, id, speech));
+  if (recover) {
+    credentialProviders.forEach(name => suspendDependentFeatures(config, name, id, speech));
+    config.roleVideoEnabled = false;
+  }
   if (action !== 'enable') suspendDependentFeatures(config, provider, id, speech);
   const ciphertext = await encryptProviderCredentials(authSecret, current, id, keys, row?.credentials_ciphertext);
   const at = iso(), revision = Number(input.expectedRevision) + 1;

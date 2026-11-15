@@ -5,6 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import ts from 'typescript';
+import { roleVideoFixture } from './support/role-video-fixture.mjs';
 
 // Dados 100% sintéticos. Nenhuma chamada sai da máquina: todo transporte é falso.
 const root = fileURLToPath(new URL('../', import.meta.url)), modules = new Map();
@@ -18,6 +19,8 @@ function compile(name) {
 const { DEFAULT_ASSISTANT_CONFIG, safeRequest } = await import(compile('assistant/contracts'));
 const { configureAssistant, estimateAssistantPlan } = await import(compile('assistant/service'));
 const { manageAssistantCredential, assistantCredentialVault } = await import(compile('assistant/credential-vault'));
+const { manageCatalog, catalogView } = await import(compile('assistant/model-catalog-store'));
+const { roleVideoEstimate, ROLE_VIDEO_ENDPOINT } = await import(compile('assistant/role-video-contracts'));
 const { roleChat, roleStatus, parseRoleImage } = await import(compile('assistant/role'));
 const { roleEstimate, roleConversationBytes, validateRoleReply, formatMicros, friendlyMicros, roleSpeechCeilingMicros, ROLE_SYSTEM_PROMPT, ROLE_SYSTEM_PROMPT_BYTES, ROLE_MODELS } = await import(compile('assistant/role-contracts'));
 const { speechReservedUsdMicros } = await import(compile('assistant/speech'));
@@ -474,6 +477,82 @@ test('ROLÊ guardrail: a restricted user cannot delete teams or trigger a tool d
     f.native.prepare("UPDATE members SET role='operator' WHERE user_id='viewer-qa'").run();
     await assert.rejects(roleChat(f.db, f.actors.viewer, chatInput(f), secret, { keys, fetcher: provider.fetch }), error => error.status === 403);
     assert.equal(provider.calls.length, 2);
+  } finally { f.native.close(); }
+});
+
+const GEMINI_TEST_KEY = 'gemini-test-key-not-for-production';
+const videoMessage = 'Quais são as duas cores do vídeo, na ordem?';
+async function enableVideo(f, config = {}) {
+  await setup(f);
+  const view = await catalogView(f.db, f.actors.owner, 'org_proex', secret, keys);
+  const key = await manageCatalog(f.db, f.actors.owner, { action: 'key.save', organizationId: 'org_proex', expected: view.stamp, providerId: 'gemini-video', label: 'Vídeo de teste', secret: GEMINI_TEST_KEY }, secret, keys);
+  const setting = f.native.prepare("SELECT revision FROM ai_organization_settings WHERE organization_id='org_proex'").get();
+  await configureAssistant(f.db, f.actors.owner, { action: 'configure', organizationId: 'org_proex', expectedRevision: setting.revision,
+    config: { ...DEFAULT_ASSISTANT_CONFIG, roleEnabled: true, roleVideoEnabled: true, roleInputTokenCeiling: 4000, ...config } }, secret, undefined, keys);
+  return key;
+}
+const videoResponse = () => Response.json({ model: 'gemini-3.8-flash', status: 'completed',
+  steps: [{ type: 'model_output', content: [{ type: 'text', text: 'Vermelho e depois azul.' }] }],
+  usage: { total_input_tokens: 410, total_output_tokens: 12, total_thought_tokens: 40 } });
+
+test('Vídeo do Rolê: revisão do consentimento, entrada, custo, permissões e auditoria sem anexos', async () => {
+  const f = fixture();
+  try {
+    const catalog = await enableVideo(f);
+    const actor = f.actors.viewer, video = roleVideoFixture(), options = { keys, now: Date.UTC(2026,10,15), fetcher: async (url, init) => {
+      calls++;
+      assert.equal(String(url), ROLE_VIDEO_ENDPOINT);
+      assert.equal(init.headers['x-goog-api-key'], GEMINI_TEST_KEY);
+      const payload = JSON.parse(init.body);
+      assert.equal(payload.input.length, 2);
+      assert.equal(payload.tools, undefined);
+      assert.doesNotMatch(init.body, /chat-privado-anterior|Projeto A/);
+      return videoResponse();
+    } };
+    let calls = 0;
+    const status = await roleStatus(f.db, actor, { projectId: 'project-a' }, secret, options);
+    assert.equal(status.video.model, 'gemini-3.8-flash');
+    assert.equal((await roleStatus(f.db, f.actors.outsider, { projectId: 'project-b' }, secret, options)).video?.model, 'gemini-3.8-flash');
+    const quote = roleVideoEstimate({ textBytes: Buffer.byteLength(videoMessage), maxOutputTokens: 700, seconds: 4, now: options.now });
+    const input = chatInput(f, { video, message: videoMessage, videoConsent: true, videoApproval: status.video.approval,
+      history: [{ role: 'user', content: 'chat-privado-anterior' }], acceptedCostMicros: quote.costMicros });
+    for (const [change, code] of [[{ videoConsent:false }, 'role_video_consent'], [{ videoApproval:'stale' }, 'role_video_consent'],
+      [{ image: PNG }, 'role_video_input'], [{ acceptedCostMicros:0 }, 'role_cost_changed'], [{ video:roleVideoFixture({seconds:12}) }, 'role_input_limit']]) {
+      await assert.rejects(roleChat(f.db, actor, { ...input, ...change }, secret, options), { code });
+    }
+    await assert.rejects(roleChat(f.db, f.actors.outsider, input, secret, options), error => error.status === 403);
+    assert.equal(calls, 0); assert.equal(f.native.prepare('SELECT COUNT(*) n FROM ai_calls').get().n, 0);
+
+    const reply = await roleChat(f.db, actor, input, secret, options);
+    assert.equal(reply.reply, 'Vermelho e depois azul.');
+    assert.equal(reply.operation, null); assert.equal(reply.provider, 'gemini'); assert.equal(reply.outputTokens, 52);
+    assert.equal(reply.costMicros, 503); assert.equal(reply.reservedMicros, quote.costMicros);
+    const details = f.native.prepare("SELECT details FROM audit WHERE action='assistant.role.chat'").get().details;
+    assert.equal(JSON.parse(details).hasVideo, true);
+    assert.doesNotMatch(details, /gemini-test-key|chat-privado|base64|Vermelho/);
+    assert.equal(f.native.prepare("SELECT reserved_usd_micros FROM ai_organization_usage WHERE organization_id='org_proex'").get().reserved_usd_micros, reply.costMicros);
+    await assert.rejects(roleChat(f.db, actor, input, secret, options), { code: 'assistant_call_replay' });
+    await manageCatalog(f.db, f.actors.owner, { action: 'key.remove', organizationId: 'org_proex', expected: catalog.stamp, providerId: 'gemini-video' }, secret, keys);
+    assert.equal((await roleStatus(f.db, actor, { projectId: 'project-a' }, secret, options)).video, undefined);
+    await assert.rejects(roleChat(f.db, actor, input, secret, options), { code: 'role_video_disabled' });
+    assert.equal(calls, 1);
+  } finally { f.native.close(); }
+});
+
+test('Vídeo do Rolê: acesso revogado durante a resposta bloqueia o retorno do provedor', async () => {
+  const f = fixture();
+  try {
+    await enableVideo(f);
+    const actor = f.actors.viewer;
+    const status = await roleStatus(f.db, actor, { projectId: 'project-a' }, secret, { keys });
+    const input = chatInput(f, { video: roleVideoFixture(), message: videoMessage,
+      videoConsent: true, videoApproval: status.video.approval, acceptedCostMicros: 10_000 });
+    await assert.rejects(roleChat(f.db, actor, input, secret, { keys, fetcher: async () => {
+      f.native.prepare("UPDATE members SET revoked_at=? WHERE user_id='viewer-qa'").run(new Date().toISOString());
+      return videoResponse();
+    } }), { code:'assistant_forbidden' });
+    assert.equal(f.native.prepare("SELECT count(*) n FROM audit WHERE action='assistant.role.chat'").get().n, 0);
+    assert.equal(f.native.prepare("SELECT status FROM ai_calls").get().status, 'failed');
   } finally { f.native.close(); }
 });
 

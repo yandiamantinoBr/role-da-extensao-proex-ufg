@@ -101,7 +101,7 @@ export default function ModelCatalogPanel({ organizationId }: { organizationId: 
     {editing ? <form className={styles.form} onSubmit={saveModel} aria-label="Modelo do catálogo">
       <h4>{editing.replaceId ? `Editar ${editing.label}` : 'Novo modelo'}</h4>
       <div className={styles.grid}>
-        <label className="p-field"><span>Provedor</span><select value={editing.providerId} onChange={event => setEditing({ ...editing, providerId: event.target.value })}>{view.catalog.providers.map(provider => <option key={provider.id} value={provider.id}>{provider.label}</option>)}</select></label>
+        <label className="p-field"><span>Provedor</span><select value={editing.providerId} onChange={event => setEditing({ ...editing, providerId: event.target.value })}>{view.catalog.providers.filter(provider => provider.kind !== 'gemini_video').map(provider => <option key={provider.id} value={provider.id}>{provider.label}</option>)}</select></label>
         <label className="p-field"><span>Nome na tela</span><input required maxLength={60} value={editing.label} onChange={event => setEditing({ ...editing, label: event.target.value })}/></label>
         <label className="p-field"><span>Nome exato na API</span><input required maxLength={120} value={editing.model} onChange={event => setEditing({ ...editing, model: event.target.value })} placeholder="ex.: gpt-6-luna"/></label>
         <label className="p-field"><span>Identificador interno</span><input required maxLength={48} pattern="[a-z0-9][a-z0-9-]{1,47}" value={editing.id} onChange={event => setEditing({ ...editing, id: event.target.value.toLowerCase() })} placeholder="ex.: openai-gpt-6-luna"/></label>

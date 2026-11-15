@@ -7,6 +7,7 @@ import styles from './credential-vault-panel.module.css';
 type Provider = CatalogProvider & { hasKey: boolean };
 type View = { stamp: string; catalog: { providers: Provider[] } };
 const HINTS: Record<string, string> = {
+  'gemini-video': 'Analisa vídeos curtos no Rolê. Depois de salvar a chave, ative Vídeo em Funções e acesso.',
   nvidia: 'Grátis só para teste: a NVIDIA pode usar o que for enviado. Use apenas dados de exemplo.',
   anthropic: 'Modelos Claude (conversa, fotos e documentos).',
   perplexity: 'Decider: responde perguntas fechadas (como “é urgente?”), como a triagem que o portal já usa. Para um teste comparativo.',
@@ -22,7 +23,7 @@ async function request<T>(path: string, body?: unknown): Promise<T> {
 }
 
 /** Chaves dos provedores cadastrados no catálogo (p:<id>), no mesmo lugar das outras chaves. */
-export default function CatalogKeysGroup({ organizationId }: { organizationId: string }) {
+export default function CatalogKeysGroup({ organizationId, onChanged }: { organizationId: string; onChanged?: () => void }) {
   const [view, setView] = useState<View | null>(null), [open, setOpen] = useState<string | null>(null), [busy, setBusy] = useState(false), [message, setMessage] = useState<{ error: boolean; text: string } | null>(null);
   useEffect(() => { let alive = true; request<View>(`/api/assistant/catalog?organizationId=${encodeURIComponent(organizationId)}`).then(next => { if (alive) setView(next); }).catch(() => { if (alive) setView(null); }); return () => { alive = false; }; }, [organizationId]);
   const providers = (view?.catalog.providers ?? []).filter(provider => provider.keyRef.startsWith('p:'));
@@ -31,7 +32,7 @@ export default function CatalogKeysGroup({ organizationId }: { organizationId: s
   async function act(body: Record<string, unknown>, done: string) {
     if (!view) return false;
     setBusy(true); setMessage(null);
-    try { setView(await request<View>('/api/assistant/catalog', { organizationId, expected: view.stamp, ...body })); setMessage({ error: false, text: done }); return true; }
+    try { setView(await request<View>('/api/assistant/catalog', { organizationId, expected: view.stamp, ...body })); setMessage({ error: false, text: done }); onChanged?.(); return true; }
     catch (cause) { setMessage({ error: true, text: cause instanceof Error ? cause.message : 'Não foi possível salvar.' }); return false; }
     finally { setBusy(false); }
   }

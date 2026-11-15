@@ -6,7 +6,7 @@ import { ROLE_MODELS } from './role-contracts';
 import { availableProviderCredentials, dailyLimits, newAssistantConfig, object, onlyKeys, storedConfigJson, TASK_MODEL_KEYS, TEST_MODE_LIMITS, validateConfig, type AssistantConfig, type DailyLimits } from './contracts';
 import { configChanges } from './quota';
 import { decryptProviderCredentials, encryptProviderCredentials, type CredentialKeys } from './crypto';
-import { catalogModelName, fitsFunction, fitsTask, type RoutedTask } from './model-catalog';
+import { catalogModelName, fitsFunction, fitsTask, geminiVideoCredential, type RoutedTask } from './model-catalog';
 import { loadCatalog } from './model-catalog-store';
 import { TASK_MODEL_KEY, documentMaximum, resolveTaskRoute, speechDestination, speechRouteModel, taskApproval, taskRouteName } from './task-routing';
 import type { SpeechRouteModel } from './role-contracts';
@@ -100,6 +100,7 @@ export async function configureAssistant(db: D1Database, actor: PortalActor | nu
  // Modelo por tarefa que não veio no pedido fica como estava: uma tela que ainda não conhece essas chaves não desfaz a escolha.
  const keptTaskModels = Object.fromEntries([...TASK_MODEL_KEYS, ...ROLE_POLICY_KEYS].filter(taskKey => !Object.hasOwn(proposed, taskKey)).map(taskKey => [taskKey, previousConfig[taskKey]]));
  const config = withTestMode(previousConfig, validateConfig({ ...proposed, ...keptTaskModels, usageScope, usageUserId: usageScope === 'private' ? current.userId : null }));
+ if (!config.roleEnabled) config.roleVideoEnabled = false;
  const previous = old && input.replaceCredentials !== true ? object(await decryptProviderCredentials(secret, old.credentials_ciphertext, organizationId, keys)) : {};
  const credentials = availableProviderCredentials(previous);
  const catalogKeys = Object.fromEntries(Object.entries(previous).filter(([name]) => /^p:[a-z0-9-]+$/.test(name)));
@@ -113,14 +114,14 @@ export async function configureAssistant(db: D1Database, actor: PortalActor | nu
  }
 
  // Catalog-backed Rolê: the chosen models must exist, fit the function and have a key.
- const catalog = config.roleModel || config.roleVisionModel ? (await loadCatalog(db, organizationId)).catalog : null;
+ const catalog = config.roleModel || config.roleVisionModel || config.roleVideoEnabled ? (await loadCatalog(db, organizationId)).catalog : null;
  const catalogKey = (modelId: string, need: 'chat' | 'vision') => {
   const model = catalog?.models.find(entry => entry.id === modelId && entry.enabled), provider = catalog?.providers.find(entry => entry.id === model?.providerId);
   if (!model || fitsFunction(model, provider, need)) throw new HttpError(400, need === 'vision' ? 'Escolha para fotos um modelo do catálogo marcado com Foto.' : 'Escolha para a conversa um modelo do catálogo marcado com Texto.', 'assistant_model');
   return validProviderKey(previous[provider!.keyRef]);
  };
- const roleOwner = config.roleModel !== previousConfig.roleModel || config.roleVisionModel !== previousConfig.roleVisionModel ? platformOwnerAuthoritySql(current) : null;
- if (roleOwner && !await one(db, `SELECT 1 WHERE ${roleOwner.sql}`, roleOwner.values)) throw new HttpError(403, 'Só a administração geral escolhe modelos do catálogo para o Rolê.', 'catalog_admin');
+ const roleOwner = config.roleModel !== previousConfig.roleModel || config.roleVisionModel !== previousConfig.roleVisionModel || (config.roleVideoEnabled !== previousConfig.roleVideoEnabled && config.roleEnabled) ? platformOwnerAuthoritySql(current) : null;
+ if (roleOwner && !await one(db, `SELECT 1 WHERE ${roleOwner.sql}`, roleOwner.values)) throw new HttpError(403, 'Só a administração geral escolhe os modelos do catálogo e libera vídeo para o Rolê.', 'catalog_admin');
  // Modelo por tarefa (documentos, conferência/triagem, voz): só a administração geral troca. O escolhido precisa
  // existir, estar ligado, servir para a tarefa e ter chave salva. A chave do padrão segue obrigatória (abaixo): é a queda.
  const changedTasks = (Object.keys(TASK_MODEL_KEY) as RoutedTask[]).filter(task => config[TASK_MODEL_KEY[task]] !== previousConfig[TASK_MODEL_KEY[task]]);
@@ -150,6 +151,9 @@ export async function configureAssistant(db: D1Database, actor: PortalActor | nu
    ? model && provider && { kind: provider.kind, baseUrl: provider.baseUrl, model: model.model }
    : { kind: 'openai_chat', baseUrl: fallback.endpoint.replace('/chat/completions', ''), model: fallback.model };
   if (!identity || !roleReasoningSupport(identity).includes(config.roleReasoningEffort)) throw new HttpError(400, 'Este modelo não aceita o esforço escolhido. Selecione um nível disponível.', 'assistant_role_policy');
+ }
+ if (config.roleVideoEnabled && (!config.roleEnabled || !validProviderKey(geminiVideoCredential(catalog, previous)))) {
+  throw new HttpError(400, 'Ligue o Rolê e cadastre a chave do Google Gemini em Chaves antes de liberar vídeo.', 'role_video_key');
  }
  const roleTextKey = config.roleModel ? catalogKey(config.roleModel, 'chat') : !!credentials[config.roleProvider];
  const roleVisionKey = config.roleVisionModel ? catalogKey(config.roleVisionModel, 'vision') : !!credentials.deepseek;

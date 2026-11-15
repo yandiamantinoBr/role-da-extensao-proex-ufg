@@ -4,10 +4,11 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { AudioLines, Boxes, Check, CircleDollarSign, KeyRound, ScanText, Settings2, ShieldCheck, Stethoscope, Users } from 'lucide-react';
 import { DEFAULT_ASSISTANT_CONFIG, PROVIDERS, TASK_MODEL_KEYS, textModel, validateConfig, type AssistantConfig, type TaskModelKey } from '@/lib/assistant/contracts';
-import { taskDefaultIds, taskModelOptions, type RoutedTask, type TaskDefaults } from '@/lib/assistant/model-catalog';
+import { GEMINI_VIDEO_PROVIDER_ID, taskDefaultIds, taskModelOptions, type RoutedTask, type TaskDefaults } from '@/lib/assistant/model-catalog';
 import { ROLE_EFFORT_LABELS, roleReasoningSupport, type RoleEffort } from '@/lib/assistant/role-policy';
 import { ROLE_MODELS, shownRouteName, speechRouteName } from '@/lib/assistant/role-contracts';
 import AssistantConnectionPanel from './assistant-connection-panel';
+import AssistantEffortProbePanel from './assistant-effort-probe-panel';
 import ModelCatalogPanel from './model-catalog-panel';
 import AiSpendingSlot from './ai-spending-slot';
 import AiLimitsSection, { type AiUsage } from './ai-limits-section';
@@ -74,15 +75,20 @@ export default function AssistantAdministrationPanel({ canManageKeys=false, refr
   const [taskOptions,setTaskOptions] = useState<TaskOptions>({ document: [], decision: [], speech: [] });
   const [taskCatalog,setTaskCatalog] = useState<TaskCatalog|null>(null);
   // Situação da leitura da lista para a organização em tela: lendo, pronta ou com falha (aí aparece "Tentar de novo").
+  const [geminiKey, setGeminiKey] = useState<{ organizationId: string; ready: boolean } | null>(null);
   const [optionsState,setOptionsState] = useState<{scope:string;state:'loading'|'ready'|'failed'}|null>(null);
   function loadRoleOptions() {
-    if (!canManageKeys || !selection || optionsFor.current === selection) return;
-    const scope = selection; optionsFor.current = scope; setOptionsState({ scope, state:'loading' });
+    const requestKey = `${selection}:${refreshKey ?? 0}`;
+    if (!canManageKeys || !selection || optionsFor.current === requestKey) return;
+    const scope = selection;
+    optionsFor.current = requestKey;
+    setOptionsState({ scope, state:'loading' });
     fetch(`/api/assistant/catalog?organizationId=${encodeURIComponent(scope)}`, { cache:'no-store', credentials:'same-origin', redirect:'error' })
       .then(response => { if (!response.ok) throw new Error('catalog'); return response.json() as Promise<unknown>; })
       .then((raw: unknown) => { const data = raw as { catalog?: { providers: { id:string; kind:string; hasKey:boolean; baseUrl:string }[]; models: { id:string; label:string; model:string; providerId:string; capabilities:string[]; enabled:boolean }[] } } | null;
         if (!data?.catalog) throw new Error('catalog');
-        if (!active.current || optionsFor.current !== scope) return;
+        if (!active.current || optionsFor.current !== requestKey) return;
+        setGeminiKey({ organizationId: scope, ready: !!data.catalog.providers.find(provider => provider.id === GEMINI_VIDEO_PROVIDER_ID)?.hasKey });
         const providers = new Map(data.catalog.providers.map(provider => [provider.id, provider]));
         setRoleOptions(data.catalog.models.filter(model => model.enabled && model.capabilities.includes('text') && ['openai_chat','anthropic_messages'].includes(providers.get(model.providerId)?.kind ?? '')).map(model => ({ id:model.id, label:model.label, vision:model.capabilities.includes('vision'), hasKey:!!providers.get(model.providerId)?.hasKey,
           efforts:roleReasoningSupport({ kind:providers.get(model.providerId)?.kind??'', baseUrl:providers.get(model.providerId)?.baseUrl??'', model:model.model }) })));
@@ -90,14 +96,14 @@ export default function AssistantAdministrationPanel({ canManageKeys=false, refr
         const catalog = data.catalog as unknown as TaskCatalog;
         setTaskOptions({ document: taskModelOptions(catalog,'document'), decision: taskModelOptions(catalog,'decision'), speech: taskModelOptions(catalog,'speech') });
         setTaskCatalog(catalog); setOptionsState({ scope, state:'ready' });
-      }).catch(() => { if (optionsFor.current !== scope) return; optionsFor.current = ''; if (active.current) setOptionsState({ scope, state:'failed' }); });
+      }).catch(() => { if (optionsFor.current !== requestKey) return; optionsFor.current = ''; if (active.current) setOptionsState({ scope, state:'failed' }); });
   }
   function retryRoleOptions() { optionsFor.current = ''; loadRoleOptions(); }
   // A lista é lida ao abrir a parte de funções (não só ao tocar no seletor), para a tela já mostrar o nome do modelo salvo.
-  useEffect(() => { if (view==='functions') loadRoleOptions(); }, [view,selection,canManageKeys]); // eslint-disable-line react-hooks/exhaustive-deps
-  function selectOrganization(value: string) { mutation.current?.abort(); ++epoch.current; ++mutationEpoch.current; setSelection(value); setData(null); setFailure(''); setNotice(''); setDelegateId(''); setBusy(false); }
+  useEffect(() => { if (view==='functions') loadRoleOptions(); }, [view,selection,canManageKeys,refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  function selectOrganization(value: string) { optionsFor.current = ''; mutation.current?.abort(); ++epoch.current; ++mutationEpoch.current; setSelection(value); setData(null); setFailure(''); setNotice(''); setDelegateId(''); setBusy(false); }
   // Só a administração geral escolhe o modelo de cada tarefa. As outras pessoas não mandam essas chaves: o servidor mantém o que já estava salvo.
-  const sentConfig = (value: AssistantConfig) => canManageKeys ? value : Object.fromEntries(Object.entries(value).filter(([key]) => !(TASK_MODEL_KEYS as readonly string[]).includes(key)));
+  const sentConfig = (value: AssistantConfig) => canManageKeys ? value : Object.fromEntries(Object.entries(value).filter(([key]) => !([...TASK_MODEL_KEYS,'roleVideoEnabled'] as readonly string[]).includes(key)));
   async function save(action: 'configure'|'grant.create'|'grant.revoke', grantId?: string, override?: AssistantConfig) {
     if (busy || !status?.canConfigure || !status.organizationId || status.organizationId!==selection) return;
     const request=++mutationEpoch.current, controller=new AbortController(); mutation.current?.abort(); mutation.current=controller;
@@ -169,8 +175,8 @@ export default function AssistantAdministrationPanel({ canManageKeys=false, refr
         {config.usageScope==='private'&&status.organizations.find(org=>org.id===selection)?.usageIsMine===false&&<p className={styles.note}>O uso está privado para outra conta. Se salvar a opção “Só eu”, ele passa a ficar vinculado à sua conta.</p>}
       </section>
       <section className={styles.configuration} aria-labelledby="ai-role-title"><div className={styles.heading}><img className={styles.roleAvatar} src="/brand/role-mascote/role-rosto.svg" alt="" width={44} height={44}/><div><h4 id="ai-role-title">Rolê, o assistente da PROEX</h4><p>Conversa, lê fotos e ouve áudios. Antes de cada envio a pessoa vê o custo máximo, e nada muda no estoque sem a confirmação dela.</p></div></div>
-        <label className={styles.confirm}><input type="checkbox" disabled={busy} checked={config.roleEnabled} onChange={event=>setConfig({...config,roleEnabled:event.target.checked,roleVisionEnabled:event.target.checked?config.roleVisionEnabled:false})}/><span><strong>Ligar o Rolê</strong><small>Aparece um botão com o rosto do Rolê no canto da tela (atalho Alt + R) para quem pode usar a IA.</small></span></label>
-        <label className="p-field"><span>Modelo do Rolê</span><select onFocus={loadRoleOptions} onPointerDown={loadRoleOptions} disabled={busy} value={config.roleModel?`catalog:${config.roleModel}`:config.roleProvider} onChange={event=>{const value=event.target.value;setConfig(value.startsWith('catalog:')?{...config,roleModel:value.slice(8),roleEnabled:false,roleVisionEnabled:false,roleReasoningEffort:'default'}:{...config,roleModel:'',roleProvider:value as AssistantConfig['roleProvider'],roleEnabled:false,roleVisionEnabled:false,roleReasoningEffort:'default'});}}><option value="deepseek">DeepSeek Flash</option><option value="groq">Groq · GPT-OSS 120B</option>{config.roleModel&&!roleOptions.some(option=>option.id===config.roleModel)&&<option value={`catalog:${config.roleModel}`}>{config.roleModel}</option>}{roleOptions.filter(option=>option.id!=='deepseek-flash'&&option.id!=='groq-gpt-oss-120b').map(option=><option key={option.id} value={`catalog:${option.id}`}>{option.label}{option.hasKey?'':' (sem chave)'}</option>)}</select></label>
+        <label className={styles.confirm}><input type="checkbox" disabled={busy} checked={config.roleEnabled} onChange={event=>setConfig({...config,roleEnabled:event.target.checked,roleVisionEnabled:event.target.checked?config.roleVisionEnabled:false,roleVideoEnabled:event.target.checked?config.roleVideoEnabled:false})}/><span><strong>Ligar o Rolê</strong><small>Aparece um botão com o rosto do Rolê no canto da tela (atalho Alt + R) para quem pode usar a IA.</small></span></label>
+        <label className="p-field"><span>Modelo do Rolê</span><select onFocus={loadRoleOptions} onPointerDown={loadRoleOptions} disabled={busy} value={config.roleModel?`catalog:${config.roleModel}`:config.roleProvider} onChange={event=>{const value=event.target.value;setConfig(value.startsWith('catalog:')?{...config,roleModel:value.slice(8),roleEnabled:false,roleVisionEnabled:false,roleReasoningEffort:'default',roleVideoEnabled:false}:{...config,roleModel:'',roleProvider:value as AssistantConfig['roleProvider'],roleEnabled:false,roleVisionEnabled:false,roleReasoningEffort:'default',roleVideoEnabled:false});}}><option value="deepseek">DeepSeek Flash</option><option value="groq">Groq · GPT-OSS 120B</option>{config.roleModel&&!roleOptions.some(option=>option.id===config.roleModel)&&<option value={`catalog:${config.roleModel}`}>{config.roleModel}</option>}{roleOptions.filter(option=>option.id!=='deepseek-flash'&&option.id!=='groq-gpt-oss-120b').map(option=><option key={option.id} value={`catalog:${option.id}`}>{option.label}{option.hasKey?'':' (sem chave)'}</option>)}</select></label>
         <p className="p-form-help">Se trocar o modelo, ligue o Rolê novamente para confirmar. O teto de custo depende do modelo, dos limites e das consultas permitidas.</p>
         <label className="p-field"><span>Esforço para conversar por texto</span><select disabled={busy || !efforts.length} value={config.roleReasoningEffort} onChange={event=>setConfig({...config,roleReasoningEffort:event.target.value as RoleEffort})}><option value="default">{ROLE_EFFORT_LABELS.default}</option>{config.roleReasoningEffort!=='default'&&!efforts.includes(config.roleReasoningEffort)&&<option value={config.roleReasoningEffort}>{ROLE_EFFORT_LABELS[config.roleReasoningEffort]}</option>}{efforts.map(effort=><option key={effort} value={effort}>{ROLE_EFFORT_LABELS[effort]}</option>)}</select></label>
         <p className="p-form-help">{efforts.length ? 'Mais esforço pode aumentar o tempo e consumir parte do limite de resposta.' : 'O Portal ainda não controla o esforço deste modelo.'}</p>
@@ -178,7 +184,14 @@ export default function AssistantAdministrationPanel({ canManageKeys=false, refr
         <label className={styles.confirm}><input type="checkbox" disabled={busy||!config.roleEnabled} checked={config.roleVisionEnabled} onChange={event=>setConfig({...config,roleVisionEnabled:event.target.checked})}/><span><strong>Ler fotos</strong><small>A foto é reduzida no aparelho antes de sair.</small></span></label>
         {config.roleVisionEnabled&&<label className="p-field"><span>Modelo para fotos</span><select onFocus={loadRoleOptions} onPointerDown={loadRoleOptions} disabled={busy} value={config.roleVisionModel} onChange={event=>setConfig({...config,roleVisionModel:event.target.value,roleVisionEnabled:false})}><option value="">DeepSeek Flash (recomendado)</option>{config.roleVisionModel&&!roleOptions.some(option=>option.id===config.roleVisionModel)&&<option value={config.roleVisionModel}>{config.roleVisionModel}</option>}{roleOptions.filter(option=>option.vision&&option.id!=='deepseek-flash').map(option=><option key={option.id} value={option.id}>{option.label}{option.hasKey?'':' (sem chave)'}</option>)}</select></label>}
         {canManageKeys&&<p className="p-form-help">Outros modelos (OpenAI, Anthropic, NVIDIA, qualquer serviço compatível com OpenAI) entram pela aba Modelos e aparecem nestas listas.</p>}
-        <p className="p-form-help">Para áudio, use “Voz para texto” abaixo. A pessoa revisa a transcrição antes de enviar ao chat. O chat ainda não aceita vídeo.</p>
+        {canManageKeys && <label className={styles.confirm}>
+          <input type="checkbox" disabled={busy || !config.roleEnabled || !(geminiKey?.organizationId === selection && geminiKey.ready)} checked={config.roleVideoEnabled}
+            onChange={event=>setConfig({...config,roleVideoEnabled:event.target.checked})}/>
+          <span><strong>Analisar vídeos com Google Gemini</strong><small>Vídeos MP4 curtos, com confirmação a cada envio. A análise respeita o acesso e as cotas da organização.</small></span>
+        </label>}
+        {canManageKeys && geminiKey?.organizationId === selection && !geminiKey.ready && <p className="p-form-help">Cadastre a chave do Google Gemini na aba Chaves, em Outros provedores.</p>}
+        {!canManageKeys && config.roleVideoEnabled && <p className="p-form-help">Vídeo está liberado pela administração geral.</p>}
+        <p className="p-form-help">Para áudio, use “Voz para texto” abaixo. A pessoa revisa a transcrição antes de enviar ao chat.</p>
         <details className={styles.priceDetails}>
           <summary>Contexto e limites por mensagem</summary>
           <label className={styles.confirm}><input type="checkbox" disabled={busy} checked={config.rolePortalContextEnabled} onChange={event=>setConfig({...config,rolePortalContextEnabled:event.target.checked})}/><span><strong>Consultar dados do Portal</strong><small>Só consulta o que a pessoa já pode acessar, nos modelos que usam essa ferramenta.</small></span></label>
@@ -208,6 +221,7 @@ export default function AssistantAdministrationPanel({ canManageKeys=false, refr
       </>}
       {view==='models'&&canManageKeys&&<ModelCatalogPanel organizationId={selection}/>}
       {view==='spending'&&canManageKeys&&<AiSpendingSlot organizationId={selection}/>}
+      {view==='diagnostics'&&canManageKeys&&Number(status.revision)>0&&<AssistantEffortProbePanel key={`${selection}:${status.revision}`} organizationId={selection}/>}
       {view==='diagnostics'&&(Number(status.revision)>0?<AssistantConnectionPanel key={`${selection}:${status.revision}`} orgId={selection} revision={status.revision!}/>:<p className={styles.note} role="status">Salve as funções e as credenciais antes de consultar os diagnósticos.</p>)}
     </>}
   </div>;

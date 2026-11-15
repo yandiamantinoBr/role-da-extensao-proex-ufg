@@ -17,18 +17,18 @@ export const SPENDING_DAY_LIMIT = 200;
 /** Teto de linhas lidas por consulta: protege o servidor; acima disso o resultado é marcado como parcial. */
 export const SPENDING_ROW_LIMIT = 50_000;
 
-export const SPENDING_PROVIDERS = { deepseek: 'DeepSeek', groq: 'Groq', openai: 'OpenAI', typesafe: 'TypeSafe JEV', deepgram: 'Deepgram', other: 'Outro' } as const;
+export const SPENDING_PROVIDERS = { deepseek: 'DeepSeek', groq: 'Groq', openai: 'OpenAI', typesafe: 'TypeSafe JEV', deepgram: 'Deepgram', gemini: 'Google Gemini', other: 'Outro' } as const;
 export type SpendingProvider = keyof typeof SPENDING_PROVIDERS;
-export const SPENDING_FUNCTIONS = { role: 'Conversa do Rolê', photos: 'Fotos', operations: 'Operações', documents: 'Documentos', speech: 'Voz para texto', triage: 'Decisão/triagem', compare: 'Comparação' } as const;
+export const SPENDING_FUNCTIONS = { role: 'Conversa do Rolê', photos: 'Fotos', videos: 'Vídeos', operations: 'Operações', documents: 'Documentos', speech: 'Voz para texto', triage: 'Decisão/triagem', compare: 'Comparação', diagnostics: 'Diagnóstico de esforço' } as const;
 export type SpendingFunction = keyof typeof SPENDING_FUNCTIONS;
 export const SPENDING_RESULTS = { complete: 'Concluída', partial: 'Parcial', failed: 'Falhou' } as const;
 export type SpendingResult = keyof typeof SPENDING_RESULTS;
 
 /** Ação de auditoria → função mostrada. Fotos são separadas pela marca `hasImage` da conversa. */
-const ACTIONS = ['assistant.role.chat', 'assistant.role.chat.failed', 'assistant.plan', 'import.ai.preview', 'assistant.transcribe', 'task.triage.prepare', 'assistant.compare'] as const;
+const ACTIONS = ['assistant.role.chat', 'assistant.role.chat.failed', 'assistant.plan', 'import.ai.preview', 'assistant.transcribe', 'task.triage.prepare', 'assistant.compare', 'assistant.effort.result'] as const;
 type SpendingAction = (typeof ACTIONS)[number];
 const ACTION_FUNCTION: Record<Exclude<SpendingAction, 'assistant.role.chat' | 'assistant.role.chat.failed'>, SpendingFunction> = {
-  'assistant.plan': 'operations', 'import.ai.preview': 'documents', 'assistant.transcribe': 'speech', 'task.triage.prepare': 'triage', 'assistant.compare': 'compare',
+  'assistant.plan': 'operations', 'import.ai.preview': 'documents', 'assistant.transcribe': 'speech', 'task.triage.prepare': 'triage', 'assistant.compare': 'compare', 'assistant.effort.result': 'diagnostics',
 };
 /** A triagem usa sempre o JEV; a auditoria não grava o provedor. */
 const IMPLICIT_PROVIDER: Partial<Record<SpendingAction, SpendingProvider>> = { 'task.triage.prepare': 'typesafe' };
@@ -115,7 +115,7 @@ type Charge = { fn: SpendingFunction; provider: SpendingProvider; real: number |
 function charges(action: string, details: Record<string, unknown>): { fn: SpendingFunction; parts: Charge[]; models: string[]; ceiling: number | null; real: number | null } | null {
   if (!(ACTIONS as readonly string[]).includes(action)) return null;
   const typed = action as SpendingAction;
-  const fn: SpendingFunction = typed === 'assistant.role.chat' || typed === 'assistant.role.chat.failed' ? (details.hasImage === true ? 'photos' : 'role') : ACTION_FUNCTION[typed];
+  const fn: SpendingFunction = typed === 'assistant.role.chat' || typed === 'assistant.role.chat.failed' ? (details.hasVideo === true ? 'videos' : details.hasImage === true ? 'photos' : 'role') : ACTION_FUNCTION[typed];
   const ceiling = micros(details.reservedUsdMicros);
   if (typed === 'assistant.compare') {
     const list = Array.isArray(details.models) ? details.models.slice(0, 8) : [];
@@ -165,6 +165,7 @@ const actionList = ACTIONS.map(() => '?').join(',');
 
 function resultKey(action: string, details: Record<string, unknown>): SpendingResult {
   if (action === 'assistant.role.chat.failed') return 'failed';
+  if (action === 'assistant.effort.result') return details.outcome === 'passed' ? 'complete' : details.outcome === 'unexpected_answer' ? 'partial' : 'failed';
   // A mesma comparação pode terminar com alguns modelos bem sucedidos e outros em falha.
   if (action === 'assistant.compare' && Array.isArray(details.models)) {
     const entries = details.models.slice(0, 8) as ({ ok?: unknown } | null)[];

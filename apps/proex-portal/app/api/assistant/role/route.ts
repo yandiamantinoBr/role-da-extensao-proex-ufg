@@ -29,8 +29,8 @@ export async function POST(request: Request): Promise<Response> {
     const db = database(), actor = await getActor(db, await getPortalUser()), secret = inviteSecret();
     if (!actor) throw new HttpError(401, 'Entre para conversar com o Rolê.', 'unauthenticated');
     if (!secret) throw new HttpError(503, 'O Rolê precisa da configuração de segurança do portal.', 'assistant_unavailable');
-    // A imagem reduzida no navegador cabe em 1,5 MB; base64 + conversa ficam abaixo de 2,2 MB.
-    const input = await boundedJson(request, 2_200_000);
+    // O vídeo de até 2 MB em base64 cabe no limite junto com a mensagem. O servidor confere os dois.
+    const input = await boundedJson(request, 2_750_000);
     if (input.action === 'chat') return Response.json(await roleChat(db, actor, input, secret, { keys: assistantCredentialKeys(), speech: speechEnvironment(), signal: request.signal }), { headers });
     if (input.action === 'match.operation') return Response.json(await matchOperationProjects(db, actor, String(input.request ?? '')), { headers });
     if (input.action === 'estimate.operation') {

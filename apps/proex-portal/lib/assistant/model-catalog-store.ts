@@ -3,7 +3,7 @@ import { one } from '../database';
 import { HttpError } from '../errors';
 import { newAssistantConfig, object, onlyKeys, storedConfigJson } from './contracts';
 import { credentialKeyId, decryptProviderCredentials, encryptProviderCredentials, type CredentialKeys } from './crypto';
-import { looksLikeSecret, parseCatalog, safeBaseUrl, validateModel, validateProvider, VAULT_KEYS, type CatalogProvider, type ModelCatalog } from './model-catalog';
+import { looksLikeSecret, parseCatalog, safeBaseUrl, validateModel, validateProvider, GEMINI_VIDEO_PROVIDER_ID, VAULT_KEYS, type CatalogProvider, type ModelCatalog } from './model-catalog';
 import { boundedJson } from './generic-provider';
 import { requestProvider } from './provider-transport';
 /** Same rule as settings.validProviderKey (kept local to avoid an import cycle). */
@@ -72,7 +72,7 @@ export async function catalogView(db: D1Database, actor: PortalActor | null, org
   const organizationId = organization(organizationIdInput);
   const { catalog, stamp } = await loadCatalog(db, organizationId);
   const { credentials } = await decrypted(db, organizationId, secret, keys);
-  const providers = catalog.providers.map(provider => ({ ...provider, hasKey: !!credentials && validProviderKey(credentials[provider.keyRef]) }));
+  const providers = catalog.providers.map(provider => ({ ...provider, hasKey: !!credentials && (provider.id !== GEMINI_VIDEO_PROVIDER_ID || provider.key?.state === 'active') && validProviderKey(credentials[provider.keyRef]) }));
   return { organizationId, stamp, catalog: { ...catalog, providers } };
 }
 
@@ -132,7 +132,7 @@ export async function manageCatalog(db: D1Database, actor: PortalActor | null, i
     onlyKeys(input, ['action', 'organizationId', 'expected', 'providerId']);
     const provider = catalog.providers.find(entry => entry.id === input.providerId);
     if (!provider) throw changed();
-    if (provider.builtin && (VAULT_KEYS as readonly string[]).includes(provider.keyRef)) throw new HttpError(409, 'Este provedor faz parte das integrações revisadas e não pode ser apagado. Desligue a chave, se quiser.', 'catalog_builtin');
+    if (provider.id === GEMINI_VIDEO_PROVIDER_ID || (provider.builtin && (VAULT_KEYS as readonly string[]).includes(provider.keyRef))) throw new HttpError(409, 'Este provedor faz parte das integrações revisadas e não pode ser apagado. Desligue a chave, se quiser.', 'catalog_builtin');
     if (catalog.models.some(model => model.providerId === provider.id)) throw new HttpError(409, 'Apague antes os modelos deste provedor.', 'catalog_in_use');
     const vault = await decrypted(db, organizationId, secret, keys);
     if (provider.key?.state === 'active' || !vault.credentials || provider.keyRef in vault.credentials) throw new HttpError(409, 'Remova antes a chave deste provedor.', 'catalog_in_use');
@@ -146,6 +146,7 @@ export async function manageCatalog(db: D1Database, actor: PortalActor | null, i
     if (action === 'key.save' && (!validProviderKey(input.secret) || looksLikeSecret(label) || label.includes(String(input.secret).slice(-8)) || /[A-Za-z0-9_-]{24,}/.test(label))) throw new HttpError(400, 'Cole uma chave válida e um nome curto sem a chave.', 'catalog_key');
     const { row, credentials } = await decrypted(db, organizationId, secret, keys);
     if (credentials === null) throw new HttpError(409, 'O cofre desta organização precisa ser recriado na aba Chaves antes.', 'assistant_key_recovery');
+    if (provider.id === GEMINI_VIDEO_PROVIDER_ID && !provider.builtin) throw forbidden();
     const next: Record<string, unknown> = { ...credentials };
     if (action === 'key.save') next[provider.keyRef] = input.secret; else delete next[provider.keyRef];
     const ciphertext = await encryptProviderCredentials(secret, next, organizationId, keys, row ? String(row.credentials_ciphertext) : undefined);
@@ -154,7 +155,8 @@ export async function manageCatalog(db: D1Database, actor: PortalActor | null, i
     const providers: CatalogProvider[] = catalog.providers.map(entry => entry.id === provider.id ? { ...entry, key: keyMeta } : entry);
     const authority = platformOwnerAuthoritySql(current);
     const write = row
-      ? db.prepare('UPDATE ai_organization_settings SET revision=?,credentials_ciphertext=?,updated_by=?,updated_at=? WHERE organization_id=? AND revision=? AND credentials_ciphertext=?').bind(revision, ciphertext, current.userId, at, organizationId, row.revision, row.credentials_ciphertext)
+      ? db.prepare("UPDATE ai_organization_settings SET revision=?,credentials_ciphertext=?,updated_by=?,updated_at=?,config_json=CASE WHEN ? THEN json_remove(config_json,'$.roleVideoEnabled') ELSE config_json END WHERE organization_id=? AND revision=? AND credentials_ciphertext=?")
+        .bind(revision, ciphertext, current.userId, at, Number(provider.id === GEMINI_VIDEO_PROVIDER_ID), organizationId, row.revision, row.credentials_ciphertext)
       : db.prepare('INSERT INTO ai_organization_settings(organization_id,revision,config_json,credentials_ciphertext,updated_by,updated_at) VALUES(?,?,?,?,?,?)').bind(organizationId, revision, storedConfigJson(newAssistantConfig(current.userId)), ciphertext, current.userId, at);
     const nextCatalog = { ...catalog, providers, updatedAt: at, updatedBy: current.displayName || 'Administração geral' };
     try {

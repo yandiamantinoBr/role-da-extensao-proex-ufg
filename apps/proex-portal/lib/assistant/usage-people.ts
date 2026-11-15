@@ -34,7 +34,7 @@ function dayValue(value: unknown, fallback: string, label: string): string {
 const micros = (value: unknown) => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 && value <= 1_000_000_000 ? value : null;
 function details(raw: unknown): Record<string, unknown> { try { const parsed: unknown = JSON.parse(String(raw ?? '{}')); return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {}; } catch { return {}; } }
 function typeOf(action: string, info: Record<string, unknown>): UsageType {
-  if (action === 'assistant.role.chat') return info.hasImage === true ? 'photo' : 'text';
+  if (action === 'assistant.role.chat') return info.hasVideo === true ? 'other' : info.hasImage === true ? 'photo' : 'text';
   return action === 'assistant.transcribe' ? 'audio' : 'other';
 }
 function displayName(value: unknown): string {
