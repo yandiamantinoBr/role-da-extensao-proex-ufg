@@ -15,6 +15,7 @@ function compile(file, dependencies = {}) {
     name in dependencies ? `from ${JSON.stringify(dependencies[name])}` : match));
 }
 const errors = compile('../lib/errors.ts');
+const videoContracts = compile('../lib/assistant/role-video-contracts.ts');
 const workerRuntime = compile('../lib/assistant/provider-runtime.ts');
 // Substitui o socket por uma resposta sintética. O restante é o transporte real,
 // inclusive a serialização multipart, a configuração HTTPS e a leitura de resposta.
@@ -126,7 +127,7 @@ test('aborto ou falha de resolução encerra antes do envio e a falha TLS não r
 
 test('Worker só envia aos endpoints exatos e impede redirecionamento', async () => {
   const { requestProvider } = await import(compile('../lib/assistant/provider-transport.ts', {
-    '../errors': errors, './provider-runtime': workerRuntime,
+    '../errors': errors, './provider-runtime': workerRuntime, './role-video-contracts': videoContracts,
   }));
   const originalFetch = globalThis.fetch;
   const attempted = [];
@@ -162,7 +163,7 @@ test('Node recusa redirecionamento de endpoint personalizado depois de uma únic
     'node:https': syntheticHttps, 'node:dns/promises': syntheticDns,
   });
   const { requestProvider } = await import(compile('../lib/assistant/provider-transport.ts', {
-    '../errors': errors, './provider-runtime': runtime,
+    '../errors': errors, './provider-runtime': runtime, './role-video-contracts': videoContracts,
   }));
   const { names } = await import(syntheticDns);
   const count = httpsCalls.length;

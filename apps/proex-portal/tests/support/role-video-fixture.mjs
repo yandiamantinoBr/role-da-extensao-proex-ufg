@@ -33,4 +33,3 @@ export function roleVideoFixture({ seconds = 4, sampleSeconds = seconds, kind = 
   if (fragmented) chunks.push(box('moof'));
   return 'data:video/mp4;base64,' + Buffer.concat(chunks).toString('base64');
 }
-

@@ -221,7 +221,7 @@ export default function AssistantAdministrationPanel({ canManageKeys=false, refr
       </>}
       {view==='models'&&canManageKeys&&<ModelCatalogPanel organizationId={selection}/>}
       {view==='spending'&&canManageKeys&&<AiSpendingSlot organizationId={selection}/>}
-      {view==='diagnostics'&&canManageKeys&&<AssistantEffortProbePanel key={selection} organizationId={selection}/>}
+      {view==='diagnostics'&&canManageKeys&&Number(status.revision)>0&&<AssistantEffortProbePanel key={`${selection}:${status.revision}`} organizationId={selection}/>}
       {view==='diagnostics'&&(Number(status.revision)>0?<AssistantConnectionPanel key={`${selection}:${status.revision}`} orgId={selection} revision={status.revision!}/>:<p className={styles.note} role="status">Salve as funções e as credenciais antes de consultar os diagnósticos.</p>)}
     </>}
   </div>;
