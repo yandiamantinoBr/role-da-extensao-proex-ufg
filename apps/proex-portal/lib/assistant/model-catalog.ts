@@ -10,9 +10,9 @@ export const CAPABILITIES = ['text', 'vision', 'document', 'speech', 'decision']
 export type Capability = (typeof CAPABILITIES)[number];
 export const CAPABILITY_LABELS: Record<Capability, string> = { text: 'Texto', vision: 'Foto', document: 'Documento', speech: 'Voz para texto', decision: 'Decisão' };
 /** Formato da API. "openai_chat" cobre DeepSeek, Groq, NVIDIA, OpenRouter e qualquer serviço compatível com OpenAI. */
-export const PROVIDER_KINDS = ['openai_chat', 'anthropic_messages', 'typesafe', 'speech', 'reference'] as const;
+export const PROVIDER_KINDS = ['openai_chat', 'anthropic_messages', 'typesafe', 'speech', 'reference', 'gemini_video'] as const;
 export type ProviderKind = (typeof PROVIDER_KINDS)[number];
-export const KIND_LABELS: Record<ProviderKind, string> = { openai_chat: 'Compatível com OpenAI', anthropic_messages: 'Anthropic', typesafe: 'Decisão (formato JEV)', speech: 'Voz (integração revisada)', reference: 'Referência de notas e preços' };
+export const KIND_LABELS: Record<ProviderKind, string> = { openai_chat: 'Compatível com OpenAI', anthropic_messages: 'Anthropic', typesafe: 'Decisão (formato JEV)', speech: 'Voz (integração revisada)', reference: 'Referência de notas e preços', gemini_video: 'Vídeo para o Rolê' };
 /** Chaves já existentes no cofre; provedores novos usam "p:<id>". */
 export const VAULT_KEYS = ['deepseek', 'openai', 'typesafe', 'deepgram', 'groq'] as const;
 
@@ -36,6 +36,15 @@ const P = (id: string, label: string, kind: ProviderKind, baseUrl: string, keyRe
 const M = (id: string, providerId: string, model: string, label: string, capabilities: Capability[], price: Partial<CatalogModel['price']>, url: string, notes = ''): CatalogModel =>
   ({ id, providerId, model, label, capabilities, price: { inputPerM: 0, outputPerM: 0, perHour: 0, ...price }, source: { url, readAt: read }, notes, enabled: true, testOnly: providerId === 'nvidia', score: null });
 
+export const GEMINI_VIDEO_PROVIDER_ID = 'gemini-video';
+export const GEMINI_VIDEO_KEY = `p:${GEMINI_VIDEO_PROVIDER_ID}`;
+const geminiVideoProvider = P(GEMINI_VIDEO_PROVIDER_ID, 'Google Gemini · vídeos', 'gemini_video', 'https://generativelanguage.googleapis.com/v1beta', GEMINI_VIDEO_KEY);
+
+export function geminiVideoCredential(catalog: ModelCatalog | null, credentials: Record<string, unknown>): unknown {
+  const provider = catalog?.providers.find(entry => entry.id === GEMINI_VIDEO_PROVIDER_ID);
+  return provider?.key?.state === 'active' ? credentials[GEMINI_VIDEO_KEY] : undefined;
+}
+
 export function defaultCatalog(now = new Date().toISOString()): ModelCatalog {
   return {
     version: 1, updatedAt: now, updatedBy: 'padrão',
@@ -50,6 +59,7 @@ export function defaultCatalog(now = new Date().toISOString()): ModelCatalog {
       P('perplexity', 'Perplexity (decisão)', 'typesafe', 'https://api.perplexity.ai/v1', 'p:perplexity'),
       P('nace', 'Nace (decisão)', 'typesafe', 'https://console.nace.ai/v1', 'p:nace'),
       P('artificialanalysis', 'Artificial Analysis', 'reference', 'https://artificialanalysis.ai/api/v2', 'p:artificialanalysis'),
+      geminiVideoProvider,
     ],
     models: [
       M('deepseek-flash', 'deepseek', 'deepseek-flash', 'DeepSeek Flash', ['text', 'vision', 'document'], { inputPerM: 0.3, outputPerM: 1.2 }, 'https://api-docs.deepseek.com/quick_start/pricing/', 'Padrão do Rolê. Metade do preço fora do pico.'),
@@ -103,7 +113,7 @@ export function validateModel(input: Record<string, unknown>, providers: Catalog
   const id = text(input.id, 48, 'Use um identificador curto (letras minúsculas, números e hífen).').toLowerCase();
   if (!ID.test(id)) throw bad('Use um identificador curto (letras minúsculas, números e hífen).');
   const providerId = String(input.providerId ?? '');
-  if (!providers.some(provider => provider.id === providerId)) throw bad('Escolha um provedor cadastrado.');
+  if (!providers.some(provider => provider.id === providerId && provider.kind !== 'gemini_video')) throw bad('Escolha um provedor cadastrado.');
   const model = text(input.model, 120, 'Informe o nome exato do modelo na API.');
   if (!MODEL_ID.test(model)) throw bad('Nome do modelo na API com caracteres inválidos.');
   const label = text(input.label, 60, 'Dê um nome curto ao modelo.');
@@ -129,7 +139,7 @@ export function validateModel(input: Record<string, unknown>, providers: Catalog
 
 export function validateProvider(input: Record<string, unknown>): CatalogProvider {
   const id = text(input.id, 48, 'Use um identificador curto (letras minúsculas, números e hífen).').toLowerCase();
-  if (!ID.test(id) || (VAULT_KEYS as readonly string[]).includes(id)) throw bad('Esse identificador já é usado por um provedor do portal.');
+  if (!ID.test(id) || id === GEMINI_VIDEO_PROVIDER_ID || (VAULT_KEYS as readonly string[]).includes(id)) throw bad('Esse identificador já é usado por um provedor do portal.');
   const kind = input.kind as ProviderKind;
   if (kind !== 'openai_chat' && kind !== 'anthropic_messages') throw bad('Por enquanto, novos provedores podem ser compatíveis com OpenAI ou Anthropic.');
   const label = text(input.label, 40, 'Dê um nome curto ao provedor.');
@@ -143,8 +153,10 @@ export function parseCatalog(raw: string | null | undefined): ModelCatalog {
   try {
     const value = JSON.parse(raw) as ModelCatalog;
     if (value?.version !== 1 || !Array.isArray(value.providers) || !Array.isArray(value.models)) return defaultCatalog();
-    const providers = value.providers.filter(provider => provider && ID.test(provider.id) && PROVIDER_KINDS.includes(provider.kind));
-    const models = value.models.filter(model => model && ID.test(model.id) && providers.some(provider => provider.id === model.providerId)).map(model => ({ ...model, testOnly: model.testOnly === true || model.providerId === 'nvidia' }));
+    const saved = value.providers.find(provider => provider?.id === GEMINI_VIDEO_PROVIDER_ID && provider.builtin && provider.kind === 'gemini_video' && provider.keyRef === GEMINI_VIDEO_KEY && provider.baseUrl === geminiVideoProvider.baseUrl);
+    const others = value.providers.filter(provider => provider && ID.test(provider.id) && provider.id !== GEMINI_VIDEO_PROVIDER_ID && provider.keyRef !== GEMINI_VIDEO_KEY && provider.kind !== 'gemini_video' && PROVIDER_KINDS.includes(provider.kind));
+    const providers = [...others, { ...geminiVideoProvider, key: saved?.key ?? null }];
+    const models = value.models.filter(model => model && model.providerId !== GEMINI_VIDEO_PROVIDER_ID && ID.test(model.id) && providers.some(provider => provider.id === model.providerId)).map(model => ({ ...model, testOnly: model.testOnly === true || model.providerId === 'nvidia' }));
     return { version: 1, providers, models, updatedAt: String(value.updatedAt ?? ''), updatedBy: String(value.updatedBy ?? '') };
   } catch { return defaultCatalog(); }
 }

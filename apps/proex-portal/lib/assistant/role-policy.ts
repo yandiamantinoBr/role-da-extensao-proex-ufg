@@ -11,6 +11,7 @@ export const DEFAULT_ROLE_POLICY = {
   roleOutputTokenLimit: 700,
   rolePortalContextEnabled: true,
   rolePublicSearchEnabled: true,
+  roleVideoEnabled: false,
 };
 export type RolePolicy = typeof DEFAULT_ROLE_POLICY;
 export const ROLE_POLICY_KEYS = Object.keys(DEFAULT_ROLE_POLICY) as (keyof RolePolicy)[];

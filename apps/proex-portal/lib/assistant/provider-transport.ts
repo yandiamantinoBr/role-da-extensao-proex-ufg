@@ -1,5 +1,6 @@
 import { HttpError } from '../errors';
 import { pinnedProviderRequest } from './provider-runtime';
+import { ROLE_VIDEO_ENDPOINT } from './role-video-contracts';
 
 // Endereços já registrados no catálogo do Portal. A permissão no Worker vale para
 // o endpoint exato, mesmo se alguém reutilizar o id ou a origem de um provedor.
@@ -14,6 +15,7 @@ const fixedEndpoints = new Set([
   'https://api.perplexity.ai/v1/systemone',
   'https://console.nace.ai/v1/systemone',
   'https://artificialanalysis.ai/api/v2/language/models',
+  ROLE_VIDEO_ENDPOINT,
 ]);
 
 export const customProviderUnavailable = 'Endereços personalizados precisam da hospedagem Node do Portal. Nesta hospedagem, escolha um provedor integrado.';

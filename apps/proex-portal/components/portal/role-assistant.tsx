@@ -2,7 +2,7 @@
 /* eslint-disable @next/next/no-img-element -- mascote em SVG estático e imagens locais em data URL */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react';
-import { ImagePlus, LoaderCircle, MessageSquarePlus, Mic, Send, Square, Trash2, X } from 'lucide-react';
+import { Film, ImagePlus, LoaderCircle, MessageSquarePlus, Mic, Send, Square, Trash2, X } from 'lucide-react';
 import { safeRequest, type AssistantPlan } from '@/lib/assistant/contracts';
 import {
   ROLE_MAX_HISTORY, ROLE_MAX_HISTORY_CHARS, ROLE_MAX_IMAGE_BYTES, ROLE_MAX_IMAGE_SIDE, ROLE_MAX_MESSAGE_CHARS, ROLE_MODELS,
@@ -14,17 +14,18 @@ import { createPortal } from 'react-dom';
 import { useDockItem, useMobileDockToolbar } from './floating-dock';
 import DestinationField, { destinationFields, loadDestinations } from './destination-field';
 import { isOfficialSearch } from '@/lib/assistant/official-search-intent';
+import { ROLE_VIDEO_MAX_BYTES, ROLE_VIDEO_MAX_SECONDS, ROLE_VIDEO_MIN_SECONDS, ROLE_VIDEO_MIME, roleVideoEstimate } from '@/lib/assistant/role-video-contracts';
 import { roleHistoryForPolicy } from '@/lib/assistant/role-policy';
 import styles from './role-assistant.module.css';
 
 type Project = { id: string; name: string; organization_id?: string };
 type Props = { projects: Project[]; defaultProjectId?: string; onApplied?: () => void | Promise<void>; onOpenSettings?: () => void; onOpenLimits?: () => void };
 type Pricing = { model: string; label: string; inputMicrosPerToken: number; outputMicrosPerToken: number };
-type Status = { policy?: { historyMessages: number; inputCeiling: number; maxOutputTokens: number; reasoningCarry: boolean; publicSearch: boolean }; available: boolean; reason: string | null; provider: string; model: string; textPricing?: Pricing | null; visionPricing?: Pricing | null; visionAvailable: boolean; operationsAvailable: boolean; speech: { available: boolean; provider: 'groq' | 'deepgram'; route?: string; routeModel?: SpeechRouteModel }; decisionRouteName?: string; dailyLimitMicros: number; reservedTodayMicros: number; canConfigure?: boolean; organizationId?: string; tools?: { text: boolean; vision: boolean }; scopes?: { units: { id: string; name: string }[]; events: { id: string; name: string; projectId: string }[] } };
+type Status = { video?: { model: string; label: string; approval: string }; policy?: { historyMessages: number; inputCeiling: number; maxOutputTokens: number; reasoningCarry: boolean; publicSearch: boolean }; available: boolean; reason: string | null; provider: string; model: string; textPricing?: Pricing | null; visionPricing?: Pricing | null; visionAvailable: boolean; operationsAvailable: boolean; speech: { available: boolean; provider: 'groq' | 'deepgram'; route?: string; routeModel?: SpeechRouteModel }; decisionRouteName?: string; dailyLimitMicros: number; reservedTodayMicros: number; canConfigure?: boolean; organizationId?: string; tools?: { text: boolean; vision: boolean }; scopes?: { units: { id: string; name: string }[]; events: { id: string; name: string; projectId: string }[] } };
 type Match = { projectId: string; projectName: string; itemName: string; score: number };
 type Operation = { request: string; stage: 'idle' | 'estimated' | 'preview' | 'done'; costMicros?: number; provider?: string; jev?: boolean; /** Modelo que confere, como veio da estimativa (vazio = padrão do portal). É o nome que o aviso mostra e que vai no preparo. */ decisionDestination?: string; decisionApproval?: string; stale?: boolean; projectId?: string; matches?: Match[]; ambiguous?: boolean; error?: string; limit?: boolean; preview?: { plan: Omit<AssistantPlan, 'actorId'>; planToken: string; undoReason: string }; confirmed?: boolean; receipt?: string; key: string; /** Pedido exatamente como foi enviado para preparar a prévia; vai junto na confirmação. */ prepared?: string; destinationDefault?: string; movementId?: string; destination?: string | null; revise?: 'correct' | 'undo' | null; reviseKey?: string };
 type Source = { label: string; href: string };
-type Message = { id: string; role: 'user' | 'assistant'; content: string; image?: string; meta?: string; operation?: Operation; sources?: Source[] };
+type Message = { id: string; role: 'user' | 'assistant'; content: string; image?: string; video?: true; meta?: string; operation?: Operation; sources?: Source[] };
 type Picked = { dataUrl: string; bytes: number };
 type Recorded = { file: File; seconds: number; url: string };
 
@@ -91,9 +92,22 @@ async function shrinkImage(file: File): Promise<Picked> {
   } finally { URL.revokeObjectURL(url); }
 }
 
+function sendableVideo(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const data = typeof reader.result === 'string' ? reader.result.split(',')[1] : null;
+      if (data) resolve(`data:${ROLE_VIDEO_MIME};base64,${data}`);
+      else reject(new Error('Não foi possível ler o vídeo.'));
+    };
+    reader.onerror = () => reject(new Error('Não foi possível ler o vídeo.'));
+    reader.readAsDataURL(file);
+  });
+}
+
 function trimmedHistory(messages: Message[]): RoleTurn[] {
   // Mesma limpeza do servidor (e-mail e CPF omitidos), para o custo previsto bater com o dele.
-  const turns: RoleTurn[] = messages.filter(message => message.content.trim()).flatMap(message => { try { return [{ role: message.role, content: safeRequest(message.content.slice(0, 4000)) }]; } catch { return []; } });
+  const turns: RoleTurn[] = messages.filter(message => !message.video && message.content.trim()).flatMap(message => { try { return [{ role: message.role, content: safeRequest(message.content.slice(0, 4000)) }]; } catch { return []; } });
   const recent = turns.slice(-ROLE_MAX_HISTORY);
   while (recent.length && recent.reduce((total, turn) => total + turn.content.length, 0) > ROLE_MAX_HISTORY_CHARS) recent.shift();
   return recent;
@@ -109,6 +123,11 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
   const projectId = scopeKind === 'project' && projects.some(item => item.id === scopeId) ? scopeId : baseProjectId;
   const [status, setStatus] = useState<Status | null>(null), [statusError, setStatusError] = useState('');
   const [messages, setMessages] = useState<Message[]>([]), [draft, setDraft] = useState(''), [picked, setPicked] = useState<Picked | null>(null);
+  const [video, setVideo] = useState<{ file: File; url: string; seconds: number | null } | null>(null);
+  const videoURL = video?.url;
+  useEffect(() => () => { if (videoURL) URL.revokeObjectURL(videoURL); }, [videoURL]);
+  const [videoConsent, setVideoConsent] = useState(false);
+  function clearVideo() { setVideo(null); setVideoConsent(false); }
   const [ackTick, setAckTick] = useState(0), [sessionAck, setSessionAck] = useState(''), [busy, setBusy] = useState(false), [error, setError] = useState(''), [notice, setNotice] = useState(''), [limitHit, setLimitHit] = useState(false), [usageOpen, setUsageOpen] = useState(false);
   const usageRange = useMemo(() => { const day = (offset: number) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(Date.now() - offset * 86400000)); return { from: day(29), to: day(0) }; }, [usageOpen]); // eslint-disable-line react-hooks/exhaustive-deps
   const [recording, setRecording] = useState(false), [recorded, setRecorded] = useState<Recorded | null>(null), [transcribing, setTranscribing] = useState(false);
@@ -145,6 +164,7 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
   const close = useCallback((restoreFocus = true) => {
     if (recorder.current?.state === 'recording') recorder.current.stop();
     setOpen(false);
+    setVideo(null); setVideoConsent(false);
     if (!restoreFocus) return;
     window.requestAnimationFrame(() => {
       const opener = returnFocus.current;
@@ -187,10 +207,17 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
   function toggleTips() { try { if (tipsOff) window.localStorage.removeItem(TIPS_STORAGE); else window.localStorage.setItem(TIPS_STORAGE, 'off'); } catch { /* sem armazenamento: nada muda */ } setTipsTick(tick => tick + 1); }
   const sanitized = useMemo(() => { if (!draft.trim()) return { text: '', problem: '' }; try { return { text: safeRequest(draft), problem: '' }; } catch (cause) { return { text: '', problem: cause instanceof Error ? cause.message : 'Revise a mensagem.' }; } }, [draft]);
   const history = useMemo(() => roleHistoryForPolicy(trimmedHistory(messages), status?.policy?.historyMessages ?? ROLE_MAX_HISTORY), [messages, status?.policy?.historyMessages]);
-  const officialLookup = !picked && !!status?.policy?.publicSearch && isOfficialSearch(sanitized.text);
-  const estimate = useMemo(() => status && sanitized.text ? roleEstimate({ textProvider: status.provider === 'groq' ? 'groq' : 'deepseek', textBytes: roleConversationBytes(history, sanitized.text, project?.name ?? ''), hasImage: !!picked, text: status.textPricing, vision: status.visionPricing, tools: picked ? !!status.tools?.vision : !!status.tools?.text, inputCeiling: status.policy?.inputCeiling, maxOutputTokens: status.policy?.maxOutputTokens, reasoningCarry: !picked && status.policy?.reasoningCarry }) : null, [status, sanitized.text, history, project?.name, picked]);
+  const officialLookup = !video && !picked && !!status?.policy?.publicSearch && isOfficialSearch(sanitized.text);
+  const videoQuote = video?.seconds && status?.video && sanitized.text ? roleVideoEstimate({
+    textBytes: new TextEncoder().encode(sanitized.text).byteLength,
+    maxOutputTokens: status.policy?.maxOutputTokens ?? 700,
+    seconds: video.seconds,
+  }) : null;
+  const videoOverInput = !!videoQuote && !!status?.policy?.inputCeiling && videoQuote.inputTokens > status.policy.inputCeiling;
+  const textEstimate = useMemo(() => status && sanitized.text ? roleEstimate({ textProvider: status.provider === 'groq' ? 'groq' : 'deepseek', textBytes: roleConversationBytes(history, sanitized.text, project?.name ?? ''), hasImage: !!picked, text: status.textPricing, vision: status.visionPricing, tools: picked ? !!status.tools?.vision : !!status.tools?.text, inputCeiling: status.policy?.inputCeiling, maxOutputTokens: status.policy?.maxOutputTokens, reasoningCarry: !picked && status.policy?.reasoningCarry }) : null, [status, sanitized.text, history, project?.name, picked]);
+  const estimate = video ? videoQuote : textEstimate;
   const tooLong = draft.length > ROLE_MAX_MESSAGE_CHARS;
-  const modelLabel = status ? modelLabelFor(status, !!picked) : '';
+  const modelLabel = video ? status?.video?.label ?? 'Google Gemini' : status ? modelLabelFor(status, !!picked) : '';
   // Ciência única: guardada neste aparelho e refeita só quando os serviços de IA mudarem.
   const servicesKey = status ? [status.organizationId ?? '', status.provider, modelLabelFor(status, false), status.visionAvailable ? modelLabelFor(status, true) : '', status.speech.available ? speechRoute(status)?.model.approval ?? speechRoute(status)?.id ?? status.speech.provider : '', status.operationsAvailable ? `ops${status.decisionRouteName ? `:${status.decisionRouteName}` : ''}` : ''].join('|') : '';
   const stored = useMemo(() => { if (!servicesKey) return null; try { return window.localStorage.getItem(CONSENT_STORAGE); } catch { return null; } }, [servicesKey, ackTick]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -201,7 +228,7 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
     setAckTick(value => value + 1);
   }
   const servicesChanged = !!stored && stored !== servicesKey;
-  const canSend = !!status?.available && !!estimate && !busy && !tooLong && consent && (!picked || status.visionAvailable);
+  const canSend = !!status?.available && !!estimate && !busy && !tooLong && consent && (!picked || status.visionAvailable) && (!video || !!status.video && videoConsent && !videoOverInput);
 
   // Só em memória: some ao recarregar ou trocar de conta.
 
@@ -209,23 +236,28 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
     event?.preventDefault();
     if (!canSend || !estimate || !status) return;
     const text = sanitized.text, image = picked?.dataUrl;
-    const user: Message = { id: crypto.randomUUID(), role: 'user', content: text, image };
+    const user: Message = { id: crypto.randomUUID(), role: 'user', content: text, image, ...(video ? { video: true, meta: 'Vídeo MP4' } : {}) };
     setMessages(current => [...current, user]); setDraft(''); setPicked(null); setBusy(true); setError(''); setNotice(''); setLimitHit(false);
     try {
+      const encodedVideo = video && status.video ? await sendableVideo(video.file) : null;
       const result = await post<{ reply: string; operation: string | null; operationDropped?: boolean; model: string; provider?: string; costMicros: number; reservedMicros: number; sources?: Source[]; lookups?: number }>('/api/assistant/role', {
-        action: 'chat', projectId, scope: scopeKind === 'org' ? { kind: 'org' } : { kind: scopeKind, id: scopeId }, operationKey: crypto.randomUUID(), consent: true, history, message: text, ...(image ? { image } : {}), acceptedCostMicros: officialLookup ? 0 : estimate.costMicros,
+        action: 'chat', projectId, scope: scopeKind === 'org' ? { kind: 'org' } : { kind: scopeKind, id: scopeId }, operationKey: crypto.randomUUID(), consent: true, history: encodedVideo ? [] : history, message: text, ...(image ? { image } : {}),
+        ...(encodedVideo ? { video: encodedVideo, videoConsent: true, videoApproval: status.video?.approval } : {}),
+        acceptedCostMicros: officialLookup ? 0 : estimate.costMicros,
       });
       if (!mounted.current) return;
-      const reply: Message = { id: crypto.randomUUID(), role: 'assistant', content: result.reply, sources: (result.sources ?? []).filter(source => source.href.startsWith('/?module=') || OFFICIAL_LINK.test(source.href)).slice(0, 6), meta: result.provider === 'official' ? 'Consulta pública · sem custo de IA' : `Custou ${friendlyMicros(result.costMicros)}${result.lookups ? ` · consultou o portal ${result.lookups === 1 ? '1 vez' : `${result.lookups} vezes`}` : ''}${result.operationDropped ? ' · Não foi preparado rascunho. Confira suas permissões e os dados informados.' : ''}`,
+      const reply: Message = { id: crypto.randomUUID(), role: 'assistant', content: result.reply, ...(encodedVideo ? { video: true } : {}), sources: (result.sources ?? []).filter(source => source.href.startsWith('/?module=') || OFFICIAL_LINK.test(source.href)).slice(0, 6), meta: result.provider === 'official' ? 'Consulta pública · sem custo de IA' : `Custou ${friendlyMicros(result.costMicros)}${result.lookups ? ` · consultou o portal ${result.lookups === 1 ? '1 vez' : `${result.lookups} vezes`}` : ''}${result.operationDropped ? ' · Não foi preparado rascunho. Confira suas permissões e os dados informados.' : ''}`,
         operation: result.operation ? { request: result.operation, stage: 'idle', key: crypto.randomUUID() } : undefined };
       setMessages(current => [...current, reply]);
+      if (encodedVideo) clearVideo();
       if (reply.operation && status.operationsAvailable) void locateOperation(reply);
       void loadStatus(projectId);
     } catch (cause) {
       if (!mounted.current) return;
       setMessages(current => current.filter(message => message.id !== user.id)); setDraft(text); if (image && picked) setPicked(picked);
       setError(cause instanceof Error ? limitText(cause) : 'O Rolê não conseguiu responder.'); setLimitHit(isLimit(cause));
-      if (cause instanceof RequestError && (cause.status === 401 || cause.status === 403)) void loadStatus(projectId);
+      if (video) setVideoConsent(false);
+      if (cause instanceof RequestError && (cause.status === 401 || cause.status === 403 || cause.code === 'role_video_consent')) void loadStatus(projectId);
     } finally { if (mounted.current) setBusy(false); }
   }
 
@@ -254,7 +286,7 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
     try { const result = await post<{ costMicros: number; provider: string; jev: boolean; decisionDestination?: unknown; decisionApproval?: string }>('/api/assistant/role', { action: 'estimate.operation', projectId: message.operation.projectId, request: message.operation.request }); updateOperation(message.id, { stage: 'estimated', costMicros: result.costMicros, provider: result.provider, jev: result.jev, decisionDestination: shownRouteName(result.decisionDestination), decisionApproval: result.decisionApproval, stale: false }); }
     catch (cause) { updateOperation(message.id, { stage: 'estimated', stale: true, error: cause instanceof Error ? cause.message : 'Não foi possível calcular o custo da operação.' }); }
   }
-  function newConversation() { setMessages([]); setDraft(''); setPicked(null); discardRecording(); setError(''); setNotice(''); window.requestAnimationFrame(() => input.current?.focus()); }
+  function newConversation() { setMessages([]); setDraft(''); setPicked(null); clearVideo(); discardRecording(); setError(''); setNotice(''); window.requestAnimationFrame(() => input.current?.focus()); }
   async function prepareOperation(message: Message) {
     if (!message.operation?.projectId) return;
     setBusy(true); setError(''); updateOperation(message.id, { error: '', limit: false });
@@ -314,12 +346,20 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
   async function pickImage(file: File | undefined) {
     if (!file) return;
     setError('');
-    try { setPicked(await shrinkImage(file)); } catch (cause) { setError(cause instanceof Error ? cause.message : 'Não foi possível usar esta imagem.'); }
+    try { setPicked(await shrinkImage(file)); clearVideo(); discardRecording(); } catch (cause) { setError(cause instanceof Error ? cause.message : 'Não foi possível usar esta imagem.'); }
+  }
+
+  function pickVideo(file: File | undefined) {
+    if (!file) return;
+    setError('');
+    if (!/\.mp4$/i.test(file.name) || (file.type && file.type !== ROLE_VIDEO_MIME)) { setError('Escolha um vídeo MP4.'); return; }
+    if (file.size < 1 || file.size > ROLE_VIDEO_MAX_BYTES) { setError('Use um vídeo MP4 de até 2 MB.'); return; }
+    setPicked(null); discardRecording(); setVideoConsent(false); setVideo({ file, url: URL.createObjectURL(file), seconds: null });
   }
 
   async function startRecording() {
     if (recording || !consent) return;
-    setError(''); setRecorded(null);
+    setError(''); setRecorded(null); clearVideo();
     try {
       if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') throw new Error('Este navegador não grava áudio. Escreva a mensagem.');
       const media = await navigator.mediaDevices.getUserMedia({ audio: true }); stream.current = media;
@@ -393,7 +433,7 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
           <button type="button" className={styles.iconButton} onClick={() => close()} aria-label="Fechar o Rolê"><X size={20} aria-hidden="true"/></button>
         </header>
         <label className={styles.project}><span>Procurar em</span><select value={scopeValue} disabled={busy} onChange={event => {
-          const value = event.target.value; setScopeValue(value);
+          const value = event.target.value; setScopeValue(value); clearVideo();
           const event_ = value.startsWith('event:') ? status?.scopes?.events.find(entry => entry.id === value.slice(6)) : null;
           const next = value.startsWith('project:') ? value.slice(8) : event_?.projectId && projects.some(item => item.id === event_.projectId) ? event_.projectId : '';
           if (next && next !== projectId) { setProjectId(next); void loadStatus(next); }
@@ -501,6 +541,26 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
             <button type="button" className="p-button p-button-primary" onClick={rememberConsent}>Entendi</button>
           </div>}
           {picked && <div className={styles.attachment}><img src={picked.dataUrl} alt="Imagem anexada"/><span>Imagem pronta ({Math.round(picked.bytes / 1024)} KB, reduzida no aparelho)</span><button type="button" className={styles.iconButton} onClick={() => setPicked(null)} aria-label="Remover imagem"><Trash2 size={18} aria-hidden="true"/></button></div>}
+          {video && <div className={styles.videoNotice}>
+            <div className={styles.attachment}><Film size={20} aria-hidden="true"/><span>{video.file.name} · {Math.max(1, Math.round(video.file.size / 1024))} KB{video.seconds ? ` · ${Math.ceil(video.seconds)} s` : ''}</span>
+              <button type="button" className={styles.iconButton} disabled={busy} onClick={clearVideo} aria-label="Remover vídeo"><Trash2 size={18} aria-hidden="true"/></button>
+            </div>
+            <video src={video.url} controls preload="metadata" aria-label="Prévia local do vídeo"
+              onLoadedMetadata={event=>{
+                const seconds = event.currentTarget.duration;
+                if (!Number.isFinite(seconds) || seconds < ROLE_VIDEO_MIN_SECONDS || seconds > ROLE_VIDEO_MAX_SECONDS) {
+                  setError(`Use um vídeo MP4 de ${ROLE_VIDEO_MIN_SECONDS} a ${ROLE_VIDEO_MAX_SECONDS} segundos.`);
+                  clearVideo();
+                  return;
+                }
+                setVideo(current=>current?.url === video.url ? {...current,seconds} : current);
+              }}
+              onError={()=>{setError('Não foi possível abrir este MP4.');clearVideo();}}/>
+            {status.video ? <label className={styles.videoConsent}><input type="checkbox" disabled={busy} checked={videoConsent} onChange={event=>setVideoConsent(event.target.checked)}/>
+              <span>Autorizo enviar este vídeo e a pergunta ao <strong>{status.video.label}</strong>. A faixa gratuita do Google pode usar o conteúdo para melhorar seus produtos. Envie material autorizado.</span>
+            </label> : <p role="status">A análise de vídeo está desligada neste projeto.</p>}
+            {videoOverInput && <p className={styles.error}>Este envio ultrapassa o limite de entrada por mensagem definido pela administração.</p>}
+          </div>}
           {recorded && <div className={styles.attachment}><audio controls src={recorded.url} aria-label="Ouvir a gravação antes de transcrever"/><button type="button" className="p-button p-button-primary" disabled={transcribing || !status.speech.available || !consent} onClick={() => void transcribe()}>{transcribing ? 'Transcrevendo…' : `Transcrever · até ${speechCost}`}</button><button type="button" className={styles.iconButton} onClick={discardRecording} aria-label="Descartar gravação"><Trash2 size={18} aria-hidden="true"/></button></div>}
           <label className="visually-hidden" htmlFor="role-message">Mensagem para o Rolê</label>
           <textarea id="role-message" ref={input} value={draft} maxLength={ROLE_MAX_MESSAGE_CHARS + 200} rows={2} placeholder="Escreva para o Rolê…" disabled={busy}
@@ -509,6 +569,10 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
           {(sanitized.problem || tooLong) && <p className={styles.error}>{tooLong ? 'Use até 2.000 caracteres.' : sanitized.problem}</p>}
           {picked && !status.visionAvailable && <p className={styles.error}>A leitura de imagens não está ligada nesta organização.</p>}
           <div className={styles.toolbar}>
+            {status.video && <label className={`${styles.iconButton} ${busy || !consent || recording ? styles.disabled : ''}`} title={`MP4 de até ${ROLE_VIDEO_MAX_SECONDS} segundos e 2 MB`}>
+              <Film size={20} aria-hidden="true"/><span className="visually-hidden">Anexar vídeo MP4</span>
+              <input type="file" accept=".mp4,video/mp4" disabled={busy || !consent || recording} onChange={event=>{pickVideo(event.target.files?.[0]);event.target.value='';}}/>
+            </label>}
             <label className={`${styles.iconButton} ${!status.visionAvailable || busy || !consent ? styles.disabled : ''}`} title={status.visionAvailable ? 'Anexar foto' : 'Leitura de imagens desligada'}>
               <ImagePlus size={20} aria-hidden="true"/><span className="visually-hidden">Anexar foto</span>
               <input type="file" accept="image/*" disabled={!status.visionAvailable || busy || !consent} onChange={event => { void pickImage(event.target.files?.[0]); event.target.value = ''; }}/>
@@ -519,7 +583,7 @@ export default function RoleAssistant({ projects, defaultProjectId, onApplied, o
             <p className={styles.cost} aria-live="polite">{!consent ? 'Toque em Entendi para conversar.' : officialLookup ? 'Consulta às fontes oficiais, sem custo de IA.' : estimate ? <>Custo máximo: <strong>{(() => { const [words, exact] = friendlyMicros(estimate.costMicros).split(' ('); return exact ? <><span className={styles.nowrap}>{words}</span> <span className={styles.nowrap}>({exact}</span></> : <span className={styles.nowrap}>{words}</span>; })()}</strong></> : 'O custo aparece aqui antes de enviar.'}</p>
             <button type="submit" className={styles.send} disabled={!canSend} aria-label={officialLookup ? 'Consultar fontes oficiais' : estimate ? `Enviar, custo máximo ${formatMicros(estimate.costMicros)}` : 'Enviar'}><Send size={18} aria-hidden="true"/><span>Enviar</span></button>
           </div>
-          <p className={styles.disclaimer}>O Rolê pode errar. Confira antes de usar. Respondido por {modelLabel} ({providerName(status.provider)}).</p>
+          <p className={styles.disclaimer}>O Rolê pode errar. Confira antes de usar. Respondido por {modelLabel}{video ? '.' : ` (${providerName(status.provider)}).`}</p>
           {status.organizationId && <details className={styles.myUsage} onToggle={event => setUsageOpen(event.currentTarget.open)}><summary>Meu uso de IA nos últimos 30 dias</summary>{usageOpen && <AiPeopleUsage organizationId={status.organizationId} from={usageRange.from} to={usageRange.to}/>}</details>}
         </form>}
       </div>

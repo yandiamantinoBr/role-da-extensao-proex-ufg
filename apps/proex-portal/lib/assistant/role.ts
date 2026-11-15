@@ -11,11 +11,13 @@ import {
 } from './role-contracts';
 import { ROLE_TOOL_NAMES, ROLE_TOOLS, officialSearchReply, resolveRoleScope, roleScopes, runRoleTool, type RoleToolResult } from './role-tools';
 import { ROLE_SUGGESTION_DAYS, roleSuggestions } from './role-suggestions';
+import { ROLE_VIDEO_LABEL, ROLE_VIDEO_MODEL, roleVideoEstimate } from './role-video-contracts';
+import { dispatchRoleVideo, parseRoleVideo } from './role-video';
 import { isOfficialSearch } from './official-search-intent';
 import { roleHistoryForPolicy, roleReasoningParameters, roleReasoningSupport, type RolePolicy, type RoleEffort } from './role-policy';
 import { containsCredential } from './sensitive';
 import { ChargedError, firstJsonObject, genericChat, requireConversationEndpoint } from './generic-provider';
-import { fitsFunction, type CatalogModel, type CatalogProvider, type ModelCatalog } from './model-catalog';
+import { fitsFunction, geminiVideoCredential, type CatalogModel, type CatalogProvider, type ModelCatalog } from './model-catalog';
 import { loadCatalog } from './model-catalog-store';
 import { catalogPricing, type RolePricing, type SpeechRouteModel } from './role-contracts';
 import { assistantUsageSql, loadAssistantSettings, speechProviderForOrganization, validProviderKey, type SpeechEnvironment } from './settings';
@@ -106,16 +108,21 @@ async function scopedActor(db: D1Database, actor: PortalActor | null, project: s
 }
 
 /** Same live fence as operational plans, but bound to the Rolê switch. */
-function roleAuthorization(db: D1Database, actor: PortalActor, project: string, organizationId: string, revision: number) {
+function roleAuthorization(db: D1Database, actor: PortalActor, project: string, organizationId: string, revision: number, video = false) {
   const authority = projectAuthoritySql(actor, ['inventory.read'], '?');
   const usage = assistantUsageSql(actor.userId);
-  return db.prepare(`SELECT CASE WHEN ${authority.sql} AND EXISTS(SELECT 1 FROM ai_organization_settings s JOIN projects p ON p.organization_id=s.organization_id JOIN organizations o ON o.id=s.organization_id WHERE p.id=? AND s.organization_id=? AND s.revision=? AND json_extract(s.config_json,'$.roleEnabled')=1 AND o.status='active' AND ${usage.sql}) THEN 1 ELSE json_extract('[]','assistant_authority_changed') END`)
-    .bind(...authority.values, project, project, organizationId, revision, ...usage.values);
+  return db.prepare(`SELECT CASE WHEN ${authority.sql} AND EXISTS(SELECT 1 FROM ai_organization_settings s JOIN projects p ON p.organization_id=s.organization_id JOIN organizations o ON o.id=s.organization_id WHERE p.id=? AND s.organization_id=? AND s.revision=? AND json_extract(s.config_json,'$.roleEnabled')=1 AND (?=0 OR json_extract(s.config_json,'$.roleVideoEnabled')=1) AND o.status='active' AND ${usage.sql}) THEN 1 ELSE json_extract('[]','assistant_authority_changed') END`)
+    .bind(...authority.values, project, project, organizationId, revision, Number(video), ...usage.values);
+}
+
+function videoApproval(organizationId: string, project: string, revision: number) {
+  return digest(JSON.stringify(['role-video/v1', organizationId, project, revision, ROLE_VIDEO_MODEL]));
 }
 
 export type RoleAvailability = {
   contract: string; organizationId: string; projectId: string; available: boolean; reason: string | null;
   provider: string; model: string; visionAvailable: boolean; operationsAvailable: boolean;
+  video?: { model: string; label: string; approval: string };
   textPricing: RolePricing | null; visionPricing: RolePricing | null;
   /** `route` só existe com modelo do catálogo escolhido para voz: é o destino (`catalog:<id>`) que o consentimento precisa nomear. */
   /** `route` e `routeModel` só existem com modelo do catálogo escolhido para voz e em condição de receber o áudio. */
@@ -167,15 +174,18 @@ export async function roleStatus(db: D1Database, actor: PortalActor | null, inpu
   const base = { contract: ROLE_CONTRACT, organizationId, projectId: project, reservedTodayMicros: Number(usage?.reserved_usd_micros ?? 0), canConfigure: (await responsibleName(db, current, organizationId)).canConfigure };
   try {
     const { config, credentials, rawCredentials, revision } = await loadAssistantSettings(db, secret, organizationId, 'configuration', options.keys, current.userId);
-    const catalog = config.roleModel || config.roleVisionModel ? (await loadCatalog(db, organizationId)).catalog : null;
+    const catalog = config.roleModel || config.roleVisionModel || config.roleVideoEnabled ? (await loadCatalog(db, organizationId)).catalog : null;
     const { text, vision, ...state } = availability(config, credentials, organizationId, options.speech, rawCredentials, catalog);
     let speech: RoleAvailability['speech'] = state.speech;
     if (config.speechModel && speech.available) {
       const resolved = await resolveTaskRoute(db, organizationId, config, rawCredentials, 'speech', speech.provider), routeModel = speechRouteModel(resolved);
       if (routeModel) speech = { ...speech, route: speechDestination(resolved, speech.provider), routeModel: { ...routeModel, approval: await taskApproval(organizationId, revision, 'speech', [resolved]) } };
     }
+    const video = state.available && config.roleVideoEnabled && validProviderKey(geminiVideoCredential(catalog, rawCredentials))
+      ? { model: ROLE_VIDEO_MODEL, label: ROLE_VIDEO_LABEL, approval: await videoApproval(organizationId, project, revision) }
+      : undefined;
     const decisionRouteName = state.operationsAvailable && config.jevEnabled && config.decisionModel ? taskRouteName(await resolveTaskRoute(db, organizationId, config, rawCredentials, 'decision').catch(() => null)) : null;
-    return { ...base, ...state, speech, ...(decisionRouteName ? { decisionRouteName } : {}), provider: text?.kind === 'catalog' ? text.provider.id : config.roleProvider, model: text?.pricing.label ?? ROLE_MODELS[config.roleProvider].label,
+    return { ...base, ...state, speech, ...(video ? { video } : {}), ...(decisionRouteName ? { decisionRouteName } : {}), provider: text?.kind === 'catalog' ? text.provider.id : config.roleProvider, model: text?.pricing.label ?? ROLE_MODELS[config.roleProvider].label,
       textPricing: text?.pricing ?? null, visionPricing: vision?.pricing ?? null, dailyLimitMicros: config.dailyUsdMicros, tools: { text: !!toolRoute(text) && !!roleTools(config).length, vision: !!toolRoute(vision) && !!roleTools(config).length },
       policy: { historyMessages: config.roleHistoryMessages, inputCeiling: config.roleInputTokenCeiling, maxOutputTokens: config.roleOutputTokenLimit, reasoningCarry: keepReasoning(toolRoute(text), config.roleReasoningEffort), publicSearch: config.rolePublicSearchEnabled },
       reason: state.available ? null : !config.roleEnabled ? 'O Rolê ainda não foi ligado nesta organização.' : 'Falta a chave do provedor escolhido para o Rolê.', scopes: state.available ? await roleScopes(db, current, organizationId) : undefined };
@@ -422,18 +432,28 @@ async function catalogDispatch(chosen: Extract<Route, { kind: 'catalog' }>, turn
 
 /** One paid call, only after the person accepted a cost ceiling at least as high as the server's. */
 export async function roleChat(db: D1Database, actor: PortalActor | null, input: Record<string, unknown>, secret: string, options: Options = {}) {
-  onlyKeys(input, ['action', 'projectId', 'operationKey', 'consent', 'history', 'message', 'image', 'acceptedCostMicros', 'scope']);
+  onlyKeys(input, ['action', 'projectId', 'operationKey', 'consent', 'history', 'message', 'image', 'video', 'videoApproval', 'videoConsent', 'acceptedCostMicros', 'scope']);
   if (input.consent !== true) throw new HttpError(400, 'Confirme que o texto e a imagem podem ir para o provedor de IA.', 'assistant_consent');
   if (typeof input.operationKey !== 'string' || !/^[A-Za-z0-9_-]{8,100}$/.test(input.operationKey)) throw new HttpError(400, 'Reabra o Rolê antes de enviar.', 'assistant_operation');
   if (typeof input.message !== 'string' || input.message.length > ROLE_MAX_MESSAGE_CHARS) throw new HttpError(400, 'Escreva até 2.000 caracteres por mensagem.', 'assistant_request');
-  const project = projectId(input.projectId), message = safeRequest(input.message), submittedTurns = history(input.history), image = parseRoleImage(input.image);
+  const project = projectId(input.projectId), message = safeRequest(input.message);
+  const hasVideo = Object.hasOwn(input, 'video');
   const { current, organizationId, projectName } = await scopedActor(db, actor, project), now = options.now ?? Date.now();
   const { config, credentials, rawCredentials, revision } = await loadAssistantSettings(db, secret, organizationId, 'configuration', options.keys, current.userId);
-  const catalog = config.roleModel || config.roleVisionModel ? (await loadCatalog(db, organizationId)).catalog : null;
+  const catalog = config.roleModel || config.roleVisionModel || hasVideo && config.roleVideoEnabled ? (await loadCatalog(db, organizationId)).catalog : null;
   const state = availability(config, credentials, organizationId, options.speech, rawCredentials, catalog);
   if (!state.available) throw new HttpError(503, 'O Rolê está desligado ou sem chave nesta organização.', 'role_unavailable');
   const scope = await resolveRoleScope(db, current, organizationId, input.scope);
-  if (!image && config.rolePublicSearchEnabled && isOfficialSearch(message)) {
+  const videoKey = hasVideo && config.roleVideoEnabled ? geminiVideoCredential(catalog, rawCredentials) : null;
+  if (hasVideo && !validProviderKey(videoKey)) throw new HttpError(403, 'A análise de vídeo não está liberada neste projeto.', 'role_video_disabled');
+  if (hasVideo && (input.videoConsent !== true || input.videoApproval !== await videoApproval(organizationId, project, revision))) {
+    throw new HttpError(409, 'Confirme novamente o envio deste vídeo ao Google Gemini.', 'role_video_consent');
+  }
+  if (hasVideo && input.image != null) throw new HttpError(400, 'Envie uma foto ou um vídeo por vez.', 'role_video_input');
+  const video = hasVideo ? parseRoleVideo(input.video) : null;
+  if (hasVideo && !video) throw new HttpError(400, 'Selecione um vídeo MP4.', 'role_video_input');
+  const image = parseRoleImage(input.image), submittedTurns = video ? [] : history(input.history);
+  if (!video && !image && config.rolePublicSearchEnabled && isOfficialSearch(message)) {
     const authorization = roleAuthorization(db, current, project, organizationId, revision);
     try {
       await authorization.first();
@@ -448,25 +468,29 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
   }
   if (image && !state.visionAvailable) throw new HttpError(503, 'A leitura de imagens não está ligada nesta organização. Envie só o texto.', 'role_vision_unavailable');
   const chosen = (image ? state.vision : state.text)!;
-  if (chosen.kind === 'catalog') requireConversationEndpoint(chosen.provider, options.fetcher);
-  const provider = chosen.kind === 'catalog' ? chosen.provider.id : chosen.provider, modelName = chosen.kind === 'catalog' ? chosen.model.model : ROLE_MODELS[chosen.provider].model;
+  if (!video && chosen.kind === 'catalog') requireConversationEndpoint(chosen.provider, options.fetcher);
+  const provider = video ? 'gemini' : chosen.kind === 'catalog' ? chosen.provider.id : chosen.provider;
+  const modelName = video ? ROLE_VIDEO_MODEL : chosen.kind === 'catalog' ? chosen.model.model : ROLE_MODELS[chosen.provider].model;
   const apiKey = chosen.apiKey;
-  const callable = toolRoute(chosen);
-  const tools = callable ? roleTools(config) : [], toolsOn = tools.length > 0, timeoutMs = roleTimeoutMs(config.timeoutMs, toolsOn);
+  const callable = video ? null : toolRoute(chosen);
+  const tools = callable ? roleTools(config) : [], toolsOn = tools.length > 0, timeoutMs = roleTimeoutMs(config.timeoutMs, toolsOn || !!video);
   const turns = roleHistoryForPolicy(submittedTurns, config.roleHistoryMessages);
   const reasoningCarry = !image && keepReasoning(callable, config.roleReasoningEffort);
   const envelope = callable ? transportBody(callable, turns, message, projectName, image?.dataUrl ?? null, toolsOn ? brasiliaToday(now) : null, toolsOn ? scope.label : null, config.roleOutputTokenLimit, image ? 'default' : config.roleReasoningEffort) : null;
   if (envelope) assertInputLimit(toolsOn ? { ...envelope, tools, tool_choice: 'auto' } : envelope, config.roleInputTokenCeiling);
   const textBytes = roleConversationBytes(turns, message, projectName);
-  if (!envelope && config.roleInputTokenCeiling && textBytes + ROLE_SYSTEM_PROMPT_BYTES + (image ? ROLE_IMAGE_TOKEN_CEILING : 0) > config.roleInputTokenCeiling) throw inputLimitError();
-  const estimate = roleEstimate({ textProvider: config.roleProvider, textBytes, hasImage: !!image, text: state.text?.pricing, vision: state.vision?.pricing, tools: toolsOn, reasoningCarry, maxOutputTokens: config.roleOutputTokenLimit, inputCeiling: config.roleInputTokenCeiling });
+  if (!video && !envelope && config.roleInputTokenCeiling && textBytes + ROLE_SYSTEM_PROMPT_BYTES + (image ? ROLE_IMAGE_TOKEN_CEILING : 0) > config.roleInputTokenCeiling) throw inputLimitError();
+  const videoQuote = video ? roleVideoEstimate({ textBytes: new TextEncoder().encode(message).byteLength, maxOutputTokens: config.roleOutputTokenLimit, seconds: video.seconds, now }) : null;
+  if (videoQuote && config.roleInputTokenCeiling && videoQuote.inputTokens > config.roleInputTokenCeiling) throw inputLimitError();
+  const estimate = videoQuote ?? roleEstimate({ textProvider: config.roleProvider, textBytes, hasImage: !!image, text: state.text?.pricing, vision: state.vision?.pricing, tools: toolsOn, reasoningCarry, maxOutputTokens: config.roleOutputTokenLimit, inputCeiling: config.roleInputTokenCeiling });
   if (!Number.isSafeInteger(input.acceptedCostMicros) || Number(input.acceptedCostMicros) < estimate.costMicros) {
     throw new HttpError(409, 'O custo previsto mudou. Confira o novo valor e envie de novo.', 'role_cost_changed');
   }
   const reservation = { tokens: estimate.tokens, cost: estimate.costMicros, calls: 1, milliseconds: timeoutMs }; // uma pergunta = uma chamada; custo, tokens e tempo cobrem as até 3 requisições
   const id = await digest(`role\n${current.userId}\n${project}\n${input.operationKey}`);
-  const fingerprint = await digest(JSON.stringify({ contract: ROLE_CONTRACT, message, turns, image: image ? await digest(image.dataUrl) : null, revision }));
-  const authorization = roleAuthorization(db, current, project, organizationId, revision), nonce = crypto.randomUUID(), day = dayKey(now);
+  const fingerprint = await digest(JSON.stringify({ contract: ROLE_CONTRACT, message, turns, image: image ? await digest(image.dataUrl) : null,
+    ...(video ? { video: await digest(video.data) } : {}), revision }));
+  const authorization = roleAuthorization(db, current, project, organizationId, revision, !!video), nonce = crypto.randomUUID(), day = dayKey(now);
   // One person cannot use up the whole organization budget: half of the daily calls (all of them under private use).
   const personalCap = config.usageScope === 'private' ? config.dailyCalls : Math.max(3, Math.ceil(config.dailyCalls / 2));
   const personalQuota = db.prepare("SELECT CASE WHEN (SELECT COUNT(*) FROM ai_calls WHERE actor_id=? AND day=?) < ? THEN 1 ELSE json_extract('[]','role_user_quota') END").bind(current.userId, day, personalCap);
@@ -488,11 +512,15 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
   const controller = new AbortController(), timer = setTimeout(() => controller.abort(), timeoutMs);
   const abort = () => controller.abort();
   options.signal?.addEventListener('abort', abort, { once: true });
+  if (options.signal?.aborted) abort();
   try {
     // Last live fence before money leaves: access or configuration may have changed during decryption.
     await authorization.first();
     const startedAt = Date.now();
-    const result: { reply: string; operation: string | null; inputTokens: number; outputTokens: number; costMicros: number; tools?: { name: string; rows: number }[]; sources?: RoleSource[]; steps?: number } = callable
+    const result: { reply: string; operation: string | null; inputTokens: number; outputTokens: number; costMicros: number; tools?: { name: string; rows: number }[]; sources?: RoleSource[]; steps?: number } = video && validProviderKey(videoKey)
+      ? await dispatchRoleVideo({ apiKey: videoKey, video, message, maxOutputTokens: config.roleOutputTokenLimit,
+          inputCeiling: config.roleInputTokenCeiling, now, signal: controller.signal, fetcher: options.fetcher })
+      : callable
       ? await dispatchWithTools(callable, apiKey, envelope!, async (name, args, budget) => {
           await authorization.first();
           return runRoleTool(db, current, organizationId, name, args, budget, scope, options.officialFetcher);
@@ -505,7 +533,7 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
     const dropped = !!result.operation && (!allowDraft || !operationNumbersAllowed(result.operation, [message, ...turns.filter(turn => turn.role === 'user').map(turn => turn.content)]));
     if (dropped) result.operation = null;
     const extraCost = Math.max(0, result.costMicros - estimate.costMicros), extraTokens = Math.max(0, result.inputTokens + result.outputTokens - estimate.tokens), elapsed = Date.now() - startedAt;
-    const details = { provider, model: modelName, hasImage: !!image, inputTokens: result.inputTokens, outputTokens: result.outputTokens, reservedUsdMicros: estimate.costMicros, usdMicros: result.costMicros, operationSuggested: !!result.operation, operationDropped: dropped, overrun: extraCost > 0 || extraTokens > 0, tools: result.tools ?? [], steps: result.steps ?? 1 };
+    const details = { provider, model: modelName, hasImage: !!image, ...(video ? { hasVideo: true } : {}), inputTokens: result.inputTokens, outputTokens: result.outputTokens, reservedUsdMicros: estimate.costMicros, usdMicros: result.costMicros, operationSuggested: !!result.operation, operationDropped: dropped, overrun: extraCost > 0 || extraTokens > 0, tools: result.tools ?? [], steps: result.steps ?? 1 };
     await db.batch([
       authorization,
       db.prepare("UPDATE ai_calls SET status='complete' WHERE id=? AND admission_nonce=? AND status='reserved'").bind(id, nonce),
@@ -518,7 +546,7 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
       reservedMicros: estimate.costMicros, costMicros: result.costMicros, inputTokens: result.inputTokens, outputTokens: result.outputTokens,
       sources: result.sources ?? [], lookups: (result.tools ?? []).length };
   } catch (error) {
-    const failureDetails = { provider, model: modelName, hasImage: !!image, reservedUsdMicros: estimate.costMicros,
+    const failureDetails = { provider, model: modelName, hasImage: !!image, ...(video ? { hasVideo: true } : {}), reservedUsdMicros: estimate.costMicros,
       ...(error instanceof ChargedError ? { usdMicros: error.chargedMicros } : {}) };
     await db.batch([
       db.prepare("UPDATE ai_calls SET status='failed' WHERE id=? AND admission_nonce=? AND status='reserved'").bind(id, nonce),

@@ -59,7 +59,7 @@ export function validateConfig(value: unknown): AssistantConfig {
  if(!['deepseek','openai'].includes(result.textProvider)||result.openaiModel!==PROVIDERS.openai.model)throw new HttpError(400,'Escolha um provedor e modelo de texto revisados nesta versão.','assistant_model');
  if (!['private','organization'].includes(result.usageScope) || (result.usageScope === 'private' ? typeof result.usageUserId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(result.usageUserId) : result.usageUserId !== null)) throw new HttpError(400, 'Escolha uso pessoal ou da organização.', 'assistant_usage_scope');
  if (typeof result.roleEnabled !== 'boolean' || typeof result.roleVisionEnabled !== 'boolean' || !['deepseek','groq'].includes(result.roleProvider)) throw new HttpError(400, 'Escolha um modelo revisado para o Rolê.', 'assistant_model');
- if (!Object.hasOwn(ROLE_EFFORT_LABELS, result.roleReasoningEffort) || typeof result.rolePortalContextEnabled !== 'boolean' || typeof result.rolePublicSearchEnabled !== 'boolean') throw new HttpError(400, 'Confira o esforço e as fontes do Rolê.', 'assistant_role_policy');
+ if (!Object.hasOwn(ROLE_EFFORT_LABELS, result.roleReasoningEffort) || typeof result.rolePortalContextEnabled !== 'boolean' || typeof result.rolePublicSearchEnabled !== 'boolean' || typeof result.roleVideoEnabled !== 'boolean') throw new HttpError(400, 'Confira o esforço e as fontes do Rolê.', 'assistant_role_policy');
  for (const [field, bounds] of Object.entries(ROLE_POLICY_BOUNDS)) {
   const value = result[field as keyof typeof ROLE_POLICY_BOUNDS];
   if (field === 'roleInputTokenCeiling' && value === 0) continue;
