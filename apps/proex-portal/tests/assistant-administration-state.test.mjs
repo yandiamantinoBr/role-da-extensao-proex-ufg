@@ -12,11 +12,25 @@ function harness(initialProps={}){
  const hooks={useState(initial){const key=index++;if(!(key in slots))slots[key]=typeof initial==='function'?initial():initial;return[slots[key],value=>slots[key]=typeof value==='function'?value(slots[key]):value];},useRef(initial){const key=index++;return slots[key]??={current:initial};},useEffect(callback,deps){const key=index++,old=effects[key];if(old&&deps&&deps.every((value,i)=>Object.is(value,old.deps?.[i])))return;pending.push(()=>{old?.cleanup?.();effects[key]={deps,cleanup:callback()};});}};
  const mod={exports:{}},jsx={jsx:(type,props)=>({type,props}),jsxs:(type,props)=>({type,props})};
  const source=ts.transpileModule(readFileSync(new URL('../components/portal/assistant-administration-panel.tsx',import.meta.url),'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX}}).outputText;
- const policy={exports:{}};vm.runInNewContext(ts.transpileModule(readFileSync(new URL('../lib/assistant/role-policy.ts',import.meta.url),'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText,{module:policy,exports:policy.exports});
- const contracts={exports:{}};vm.runInNewContext(ts.transpileModule(readFileSync(new URL('../lib/assistant/contracts.ts',import.meta.url),'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText,{module:contracts,exports:contracts.exports,require:name=>name==='./role-policy'?policy.exports:{HttpError:Error}});
+ function readAssistantModule(id, dependencies = {}) {
+  const module = {exports:{}};
+  const source = readFileSync(new URL(`../lib/assistant/${id}.ts`, import.meta.url), 'utf8');
+  const compiled = ts.transpileModule(source, {compilerOptions:{target:ts.ScriptTarget.ES2022, module:ts.ModuleKind.CommonJS}}).outputText;
+  vm.runInNewContext(compiled, {module, exports:module.exports, require:name=>dependencies[name] ?? {HttpError:Error}});
+  return module.exports;
+ }
+ const video = readAssistantModule('role-video-contracts');
+ const policy = readAssistantModule('role-policy', {'./role-video-contracts':video});
+ const contracts = readAssistantModule('contracts', {'./role-policy':policy, './role-video-contracts':video});
  const catalog={exports:{}};vm.runInNewContext(ts.transpileModule(readFileSync(new URL('../lib/assistant/model-catalog.ts',import.meta.url),'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText,{module:catalog,exports:catalog.exports,require:()=>({HttpError:Error}),URL});
  const roleContracts={exports:{}};vm.runInNewContext(ts.transpileModule(readFileSync(new URL('../lib/assistant/role-contracts.ts',import.meta.url),'utf8'),{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS}}).outputText,{module:roleContracts,exports:roleContracts.exports,require:()=>({})});
- vm.runInNewContext(source,{module:mod,exports:mod.exports,require:name=>name==='react'?hooks:name==='react/jsx-runtime'?jsx:name==='@/lib/assistant/role-policy'?policy.exports:name==='@/lib/assistant/role-contracts'?roleContracts.exports:name.includes('contracts')?contracts.exports:name==='@/lib/assistant/model-catalog'?catalog.exports:name==='./ai-limits-link'?{AI_LIMITS_EVENT:'proex:ai-limits',takeAiLimitsRequest:()=>false}:name==='./role-sources-panel'?{default:()=>null}:{default:{}},window:{addEventListener(){},removeEventListener(){},requestAnimationFrame:()=>0,cancelAnimationFrame(){}},document:{getElementById:()=>null},Error,AbortController,fetch:(url,init)=>new Promise((resolve,reject)=>requests.push({url,init,resolve,reject}))});
+ const imports = {
+  react:hooks, 'react/jsx-runtime':jsx, '@/lib/assistant/contracts':contracts, '@/lib/assistant/role-policy':policy,
+  '@/lib/assistant/role-contracts':roleContracts.exports, '@/lib/assistant/role-video-contracts':video,
+  '@/lib/assistant/model-catalog':catalog.exports, './ai-limits-link':{AI_LIMITS_EVENT:'proex:ai-limits',takeAiLimitsRequest:()=>false},
+  './role-sources-panel':{default:()=>null},
+ };
+ vm.runInNewContext(source,{module:mod,exports:mod.exports,require:name=>imports[name]??{default:{}},window:{addEventListener(){},removeEventListener(){},requestAnimationFrame:()=>0,cancelAnimationFrame(){}},document:{getElementById:()=>null},Error,AbortController,fetch:(url,init)=>new Promise((resolve,reject)=>requests.push({url,init,resolve,reject}))});
  function nodes(){const out=[];function walk(node){if(Array.isArray(node)){node.forEach(walk);return;}if(!node||typeof node!=='object')return;out.push(node);walk(node.props?.children);}walk(tree);return out;}
  const h={requests,callbacks,nodes,catalog:catalog.exports,render(next=props){props=next;index=0;tree=mod.exports.default({onChanged:()=>callbacks.push('changed'),renderCredentials:id=>({type:'credential-area',props:{children:'Cofre '+id}}),...props});pending.splice(0).forEach(effect=>effect());},find(type,predicate){const found=nodes().find(node=>node.type===type&&predicate(node));assert.ok(found,type);return found;},button(label){return h.find('button',node=>text(node)===label);},select(label){return h.find('label',node=>text(node).startsWith(label)).props.children.find(child=>child?.type==='select');},text:()=>text(tree),dispose(){effects.forEach(effect=>effect?.cleanup?.());}};h.render();return h;
 }
@@ -67,6 +81,27 @@ const TASK_LABELS=['Modelo para ler documentos','Modelo para conferir e triar','
 const optionsOf=select=>{const out=[];(function walk(node){if(Array.isArray(node)){node.forEach(walk);return;}if(node&&typeof node==='object'&&node.type==='option')out.push({value:node.props.value,label:text(node),...(node.props.disabled?{disabled:true}:{})});})(select.props.children);return out;};
 const STANDARD=['Padrão do portal (DeepSeek)','Padrão do portal (TypeSafe)','Padrão do portal (Deepgram)'];
 const catalogReply=(h,change=models=>models,keyed=['groq','openai'])=>{const base=h.catalog.defaultCatalog('2026-01-01T00:00:00.000Z');return{organizationId:'org-a',stamp:'synthetic',catalog:{...base,models:change(base.models),providers:base.providers.map(provider=>({...provider,hasKey:keyed.includes(provider.id)}))}};};
+test('vídeo tem seletores de modelo e esforço somente para a administração geral', async () => {
+ const h = harness({canManageKeys:true}), delegated = harness();
+ try {
+  await ready(h); await ready(delegated);
+  h.button('Funções e acesso').props.onClick(); h.render();
+  assert.doesNotMatch(delegated.text(), /Modelo para vídeos|Esforço para vídeos/);
+  delegated.button('Salvar funções, acesso e limites').props.onClick(); await tick();
+  const delegatedConfig = JSON.parse(delegated.requests[2].init.body).config;
+  for (const field of ['roleVideoEnabled','roleVideoModel','roleVideoEffort']) assert.equal(Object.hasOwn(delegatedConfig, field), false);
+  const model = () => h.select('Modelo para vídeos'), effort = () => h.select('Esforço para vídeos');
+  assert.equal(model().props.value, 'gemini-3.8-flash');
+  model().props.onChange({target:{value:'gemini-4-hydrogen'}}); h.render();
+  assert.equal(effort().props.value, 'xhigh');
+  assert.deepEqual(optionsOf(effort()).map(option=>option.value), ['low','medium','high','xhigh']);
+  effort().props.onChange({target:{value:'medium'}}); h.render();
+  h.button('Salvar funções, acesso e limites').props.onClick(); await tick();
+  const saved = JSON.parse(h.requests[3].init.body).config;
+  assert.equal(saved.roleVideoModel, 'gemini-4-hydrogen');
+  assert.equal(saved.roleVideoEffort, 'medium');
+ } finally { h.dispose(); delegated.dispose(); }
+});
 test('general administration chooses a model per task: the list loads when the functions area opens, the standard is named, keyless models cannot be chosen and the save sends the three keys',async()=>{
  const h=harness({canManageKeys:true});try{
   await ready(h,{config:{...defaults,speechModel:'groq-whisper-turbo'}});h.button('Funções e acesso').props.onClick();h.render();
