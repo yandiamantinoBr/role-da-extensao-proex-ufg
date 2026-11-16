@@ -50,7 +50,7 @@ test('the activity panel and every sheet use that single component and the appro
   assert.match(panel, /if \(subject\) params\.set\(SUBJECT_PARAM\[subject\.kind\], subject\.id\);/);
   for (const [file, kind] of [['../components/portal/material-detail-drawer.tsx', 'item'], ['../components/portal/follow-up-panel.tsx', 'task'], ['../app/portal-client.tsx', 'loan'], ['../app/portal-client.tsx', 'campaign']]) {
     const code = source(file);
-    assert.match(code, new RegExp(`href=\\{historyHref\\(\\{ kind: '${kind}', id: [^}]+\\}, .{1,80}?\\)\\}[^>]*>Ver histórico<`), `${file}: ${kind}`);
+    assert.match(code, new RegExp(`href=\\{historyHref\\(\\{ kind: '${kind}', id: [^}]+\\}, .{1,80}?\\)\\}[^>]*>(Ver histórico|Histórico)<`), `${file}: ${kind}`);
   }
   const detail = source('../components/portal/project-detail.tsx');
   assert.match(detail, /<section id="project-timeline"[^>]*>.{0,120}<h3><CalendarDays size=\{17\}\/>Cronograma<\/h3>/s);
@@ -235,4 +235,31 @@ test('the top panel left Materiais, Empréstimos and Dinâmicas; the way to owne
   const panel = source('../components/portal/work-context-panel.tsx');
   assert.ok(!/wideOnly|narrowOnly|Acompanhamento deste contexto/.test(panel + source('../components/portal/work-context-panel.module.css')));
   assert.equal(panel.match(/<ResponsibilityManager /g).length, 1);
+});
+
+test('only the single component is called Histórico; every other list says what it is and points to it (R1, última etapa)', () => {
+  // O que cada lista é, e o caminho para o Histórico (o assunto da ficha, filtrado em Registros).
+  const lists = [
+    ['../components/portal/material-detail-drawer.tsx', /\['history', 'Movimentações'\]/, /Movimentações do material<\/h3>/, "kind: 'item'"],
+    ['../components/portal/follow-up-panel.tsx', null, />Versões da demanda<\/summary>/, "kind: 'task'"],
+    ['../components/portal/asset-details-panel.tsx', null, />Histórico deste bem</, "kind: 'item'"],
+  ];
+  for (const [file, tab, title, kind] of lists) {
+    const code = source(file);
+    if (tab) assert.match(code, tab, file);
+    assert.match(code, title, file);
+    assert.ok(code.includes(`historyHref({ ${kind}, id:`), `${file}: atalho para o Histórico`);
+  }
+  assert.match(source('../components/portal/project-detail.tsx'), /<h3>Versões do cadastro<\/h3>/);
+  assert.match(source('../components/portal/material-movement-panel.tsx'), />Alterações deste lançamento<\/h3>/);
+  assert.match(source('../components/portal/records-panel.tsx'), /<h3 id="records-list-title">Documentos e registros<\/h3>/);
+  assert.match(source('../components/portal/stock-consumption-panel.tsx'), /<summary>Lançamentos /);
+  // As listas do patrimônio que repetiam o Histórico (empréstimos e movimentações do bem) saíram.
+  const asset = source('../components/portal/asset-details-panel.tsx');
+  assert.ok(!/Histórico de empréstimos|Movimentações e registros|loanHistory\?\.map|data\.movements\?\.map/.test(asset));
+  // Nenhuma outra tela usa "Histórico" como título de lista ou aba (o selo "Histórico" de projeto encerrado é outra coisa).
+  const titled = /<(h[2-4]|summary)[^>]*>(<[^>]+>)*Histórico( d[eoa]s? [^<]*)?</;
+  for (const file of ['material-detail-drawer', 'follow-up-panel', 'project-detail', 'asset-details-panel', 'material-movement-panel', 'records-panel', 'stock-consumption-panel']) {
+    assert.ok(!titled.test(source(`../components/portal/${file}.tsx`)), `${file}: título "Histórico" fora do componente único`);
+  }
 });
