@@ -68,7 +68,7 @@ test('exports are built from the same rows: the reader file has no condition tex
  const route=readFileSync(new URL('../app/api/reports/route.ts',import.meta.url),'utf8');
  assert.match(route,/reportRows\(db, actor, params\)/);
  // Both loan forms warn that the action name shows in reports.
- for(const file of ['../app/portal-client.tsx','../components/portal/project-quick-entry.tsx'])assert.match(readFileSync(new URL(file,import.meta.url),'utf8'),/Aparece em relatórios\. Nome e contato de pessoas vão nos campos Responsável e Contato, abaixo\./);
+ for(const file of ['../app/portal-client.tsx','../components/portal/project-quick-entry.tsx'])assert.match(readFileSync(new URL(file,import.meta.url),'utf8'),/Aparece em relatórios\. Nome e contato de pessoas vão nos campos Responsável e Contato\./);
 });
 
 test('Agenda: loans only for who reads loans; the ICS file leaves without the action name typed by people',async t=>{

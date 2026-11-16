@@ -210,3 +210,5 @@
 /* Privacidade: colunas de texto livre restritas para quem só lê relatórios. Bloco próprio, informativo, não de erro. */
 .restricted { display: flex; align-items: flex-start; gap: 10px; margin: 0 0 14px; padding: 12px 14px; border: 1px solid color-mix(in srgb, var(--rc-warn-ink) 30%, transparent); border-radius: 12px; background: var(--rc-warn-bg); color: var(--rc-warn-ink); font-size: 14px; line-height: 1.55; }
 .restricted svg { flex-shrink: 0; margin-top: 2px; }
+.restricted span { max-width: 75ch; }
+.restrictedCell { color: var(--muted, #6b6475); font-style: italic; }

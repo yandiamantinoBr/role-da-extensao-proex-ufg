@@ -754,6 +754,7 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
           <tbody>{visible.map((row, index) => <tr key={String(row.id ?? index)}>{chosen.map(column => {
             const value = valueOf(row, column.key);
             const tone = column.key === 'situacao_estoque' && row.situacao_estoque === 'baixo' || column.key === 'em_atraso' && row.em_atraso === 'sim' ? styles.badgeWarn : column.key === 'sentido' ? (row.sentido === 'entrada' ? styles.badgeIn : styles.badgeOut) : '';
+            if (withheld && value === 'Restrito' && (column.key === 'condicao_saida' || column.key === 'condicao_retorno')) return <td key={column.key}><span className={styles.restrictedCell} title="Só quem gerencia os empréstimos do projeto vê esta anotação.">Restrito</span></td>;
             return <td key={column.key} className={column.numeric ? styles.numeric : ''}>{tone ? <span className={`${styles.badge} ${tone}`}>{String(value)}</span> : column.date ? dateLabel(value) : column.numeric ? formatNumber(reportNumber(value)) : String(value ?? '') || '—'}</td>;
           })}</tr>)}</tbody>
         </table>

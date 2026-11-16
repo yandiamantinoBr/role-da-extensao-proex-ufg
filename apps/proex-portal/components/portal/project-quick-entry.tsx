@@ -60,7 +60,7 @@ export default function ProjectQuickEntry({ kind, project, items, mutate, onClos
         <label className={`p-field ${styles.wide}`}><span>Descrição</span><textarea name="description" maxLength={500} rows={2}/></label>
       </> : <>
         <label className={`p-field ${styles.wide}`}><span>Equipamento *</span><select data-entry-focus name="itemId" required defaultValue=""><option value="">Selecione um equipamento</option>{equipment.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select>{!equipment.length && <small>Cadastre um equipamento neste projeto antes de fazer a reserva.</small>}</label>
-        <label className={`p-field ${styles.wide}`}><span>Ação atendida *</span><input name="actionName" required maxLength={160} defaultValue={project.name}/><small>Aparece em relatórios. Nome e contato de pessoas vão nos campos Responsável e Contato, abaixo.</small></label>
+        <label className={`p-field ${styles.wide}`}><span>Ação atendida *</span><input name="actionName" required maxLength={160} defaultValue={project.name}/><small>Aparece em relatórios. Nome e contato de pessoas vão nos campos Responsável e Contato.</small></label>
         <label className="p-field"><span>Responsável pela retirada *</span><input name="borrowerName" required maxLength={120}/></label>
         <label className="p-field"><span>Contato para o empréstimo</span><input name="borrowerContact" maxLength={150}/></label>
         <label className="p-field"><span>Retirada prevista *</span><DateTimeField aria-label="Retirada prevista" name="startsAt"  required/></label>
