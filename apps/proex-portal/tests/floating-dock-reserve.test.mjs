@@ -143,5 +143,6 @@ test('celular: o botão do canto abre o mesmo leque com nomes do computador, e f
 test('celular: sem lugar livre, o botão do canto fica em casa em vez de sumir', () => {
   const tsx = read('components/portal/floating-dock.tsx');
   assert.doesNotMatch(tsx, /if \(shift === null\) \{ button\.dataset\.state = 'away'; return; \}/, 'na tela cheia de cartões (Início) o botão sumia');
-  assert.match(tsx, /--dock-fab-shift', `\$\{shift \?\? 0\}px`/);
+  assert.match(tsx, /--dock-fab-shift', '0px'\)/, 'o botão fica sempre no mesmo lugar, não pula');
+  assert.doesNotMatch(tsx, /fabPlacement\(/, 'nada de procurar outro lugar na tela');
 });

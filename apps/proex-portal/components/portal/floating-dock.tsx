@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import { communityGet, communityPost, errorText } from './community-api';
 import type { ModuleId, PortalModule } from './navigation-model';
 import styles from './floating-dock.module.css';
-import { DOCK_RESERVE_PROPERTY, dockReserve, fabPlacement } from './dock-reserve';
+import { DOCK_RESERVE_PROPERTY, dockReserve } from './dock-reserve';
 
 /* ── Registry: other features (the Rolê) put a launcher in the dock without the dock knowing them. ── */
 export type DockItem = { id: string; label: string; icon: ReactNode; onOpen(): void; shortcut?: string; badge?: number };
@@ -393,17 +393,15 @@ function MobileFab({ buttonRef, label, badge, open, onOpen }: { buttonRef: React
         const nav = document.querySelector('.pn-mobile-nav');
         const navTop = nav ? nav.getBoundingClientRect().top : window.innerHeight;
         html.style.setProperty('--dock-fab-nav', `${Math.max(0, Math.round(window.innerHeight - navTop))}px`);
-        const size = button.offsetHeight || 52, right = window.innerWidth - 14, homeBottom = navTop - 12;
+        const size = button.offsetHeight || 52, homeBottom = navTop - 12;
         const reserve = dockReserve(window.innerHeight, [homeBottom - size]);
         if (reserve !== null) html.style.setProperty(DOCK_RESERVE_PROPERTY, `${reserve}px`);
         // While a sheet or dialog is open the button is hidden by CSS; keep its spot, so closing returns the focus to it.
         if (document.querySelector('dialog[open]')) return;
         if (editing()) { button.dataset.state = 'away'; return; }
-        const area = { left: right - size, right, bottom: homeBottom, size, limit: Math.round(window.innerHeight * 0.4) };
-        // First an empty spot close to home (so it doesn't jump around); otherwise any spot without a control.
-        const shift = fabPlacement({ ...area, limit: Math.min(area.limit, 160), blocked: (x, y) => blockedAt(x, y, button, true) }) ?? fabPlacement({ ...area, blocked: (x, y) => blockedAt(x, y, button, false) });
-        // No free spot: stay at home anyway, like the computer's corner button (the page end keeps room for it).
-        button.style.setProperty('--dock-fab-shift', `${shift ?? 0}px`);
+        // Always at home, like the computer's corner button: it never jumps between spots (Yan, 16/11).
+        // The page end keeps room for it, so the last buttons stay reachable; it only steps aside while scrolling or typing.
+        button.style.setProperty('--dock-fab-shift', '0px');
         button.dataset.state = 'shown';
       });
     };
@@ -433,18 +431,3 @@ function MobileFab({ buttonRef, label, badge, open, onOpen }: { buttonRef: React
   </button>;
 }
 
-const INTERACTIVE = 'a[href], button, input, select, textarea, summary, label, [role="button"], [role="link"], [role="tab"], [role="checkbox"], [role="switch"], [contenteditable="true"], [tabindex]:not([tabindex="-1"])';
-const hasOwnText = (element: Element) => [...element.childNodes].some(node => node.nodeType === Node.TEXT_NODE && !!node.textContent?.trim()) || element.matches('img, svg, canvas, video, picture');
-/**
- * True when something sits at this point of the screen: always a control the person can use; with `strict`, also text,
- * numbers and images (so the button prefers empty space). The button itself and the bottom bar don't count.
- */
-function blockedAt(x: number, y: number, self: HTMLElement, strict: boolean) {
-  for (const element of document.elementsFromPoint(x, y)) {
-    if (element === self || self.contains(element) || element.closest('.pn-mobile-nav')) continue;
-    if (element.closest(INTERACTIVE)) return true;
-    if (strict && hasOwnText(element)) return true;
-    if (strict && element.matches('main, body, html')) return false;
-  }
-  return false;
-}
