@@ -93,6 +93,12 @@ function sqlScope(column: string, scope: string[] | null): { sql: string; values
   if (!scope.length) return { sql: '1=0', values: [] };
   return { sql: `${column} IN (${scope.map(() => '?').join(',')})`, values: scope };
 }
+/** "40 unidades", "1 unidade", "-3 caixas"; unidades já no plural ou abreviadas (kg, m, un.) ficam como estão. */
+export function quantityLabel(count: number, unit: string): string {
+  const name = unit.trim() || 'unidade';
+  const plural = Math.abs(count) === 1 || /s$/i.test(name) || !/[aeiou]$/i.test(name) || name.length < 3 ? name : `${name}s`;
+  return `${count.toLocaleString('pt-BR')} ${plural}`;
+}
 function iso(value: unknown, fallback: string): string {
   const parsed = typeof value === 'number' || typeof value === 'string' ? new Date(value) : null;
   return parsed && Number.isFinite(parsed.getTime()) ? parsed.toISOString() : fallback;
@@ -214,7 +220,7 @@ export async function calendarEntries(db: D1Database, actor: PortalActor | null,
       const occurred='COALESCE(smc.occurred_at,m.created_at)',measure='COALESCE(smc.measurement_unit,i.unit)';
       rows = await all(db, `SELECT i.id || '.' || m.kind || '.' || date(${occurred},'-3 hours') ||
         CASE WHEN smc.movement_id IS NULL THEN '' ELSE '.ctx.' || hex(smc.measurement_unit) END id,
-        i.id parent_id,i.project_id,p.name project_name,? || ' · ' || MAX(COALESCE(smc.material_name,i.name)) || ' · ' || SUM(m.delta) || ' ' || ${measure} title,
+        i.id parent_id,i.project_id,p.name project_name,? || ' · ' || MAX(COALESCE(smc.material_name,i.name)) title,SUM(m.delta) quantity,MAX(${measure}) measure,
         date(${occurred},'-3 hours') starts_at,date(${occurred},'-3 hours','+1 day') ends_at,
         'recorded' state,COUNT(*) revision,MIN(m.created_at) created_at,MAX(m.created_at) last_modified
         FROM stock_movements m JOIN items i ON i.id=m.item_id JOIN projects p ON p.id=i.project_id
@@ -223,7 +229,7 @@ export async function calendarEntries(db: D1Database, actor: PortalActor | null,
         AND julianday(${occurred})>=julianday(?) AND julianday(${occurred})<julianday(?)
         GROUP BY i.id,m.kind,date(${occurred},'-3 hours'),CASE WHEN smc.movement_id IS NULL THEN '' ELSE smc.measurement_unit END LIMIT ${MAX_ENTRIES + 1}`,
       [CALENDAR_LABELS[category], ...filter.values, range.startsAt, range.endsAt]);
-      result.push(...rows.map(row => entry(row, category, 'movement', true)));
+      result.push(...rows.map(row => entry({ ...row, title: `${row.title} · ${quantityLabel(Number(row.quantity), String(row.measure || ''))}` }, category, 'movement', true)));
     }
     const kinds: Record<CalendarCategory, string[]> = {
       loans: ['loan'], materials: ['material', 'maintenance', 'distribution'],

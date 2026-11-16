@@ -334,6 +334,15 @@ test('material calendar uses the declared occurrence and preserves separate reco
  const registered=await calendar.calendarEntries(f.db,inventory,{category:'consumption',projectId:'project-a',range:calendar.calendarRange('2026-10-19','2026-10-19')});assert.equal(registered.entries.length,1);
 });
 
+test('material quantities agree with the unit word ("40 unidades", not "40 unidade"), crítica de 16/11', async t => {
+ const f=fixture(t),inventory=await actor(f,'inventory');
+ const add=(id,unit,delta,day)=>{f.sqlite.prepare('UPDATE items SET unit=? WHERE id=?').run(unit,'material-a');f.insert('stock_movements',{id,item_id:'material-a',kind:'consume',delta,note:'',actor_id:'qa',created_at:timestamp});f.insert('stock_movement_contexts',{movement_id:id,project_id:'project-a',process_reference:'Processo sintético',beneficiary_reference:'Beneficiário sintético',occurred_at:`${day}T15:00:00Z`,date_source:'declared',material_name:'Material a',measurement_unit:unit,created_at:timestamp});};
+ add('singular-many','unidade',-12,'2026-10-12');add('singular-one','caixa',-1,'2026-10-13');add('abbrev','kg',-2,'2026-10-14');
+ const result=await calendar.calendarEntries(f.db,inventory,{category:'consumption',projectId:'project-a',range:calendar.calendarRange('2026-10-12','2026-10-14')});
+ assert.deepEqual(result.entries.map(row=>row.title).sort(),['Consumo · Material a · -1 caixa','Consumo · Material a · -12 unidades','Consumo · Material a · -2 kg']);
+ assert.equal(calendar.quantityLabel(1500,'unidade'),'1.500 unidades');assert.equal(calendar.quantityLabel(0.5,'litro'),'0,5 litros');
+});
+
 // R7 (revisão geral de 09/11, aprovada em 10/11/2026): turnos das dinâmicas e prazos de demanda na Agenda.
 function workFixture(t) {
   const f = fixture(t);

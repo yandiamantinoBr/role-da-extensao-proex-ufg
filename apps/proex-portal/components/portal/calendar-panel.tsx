@@ -30,11 +30,25 @@ function inDay(event: CalendarEntry, day: string): boolean {
 /** "a, b e c" em português. */
 function readableList(items: string[]): string { return items.length <= 1 ? items.join('') : `${items.slice(0, -1).join(', ')} e ${items.at(-1)}`; }
 function prettyDay(day: string): string { return new Intl.DateTimeFormat('pt-BR', { timeZone, day: 'numeric', month: 'long', year: 'numeric' }).format(new Date(`${day}T12:00:00Z`)); }
+const civilShort = (day: string) => shortDate.format(new Date(`${day}T12:00:00Z`));
+const SOURCE_KINDS = new Set(['Empréstimo', 'Prazo', 'Projeto', 'Evento', 'Turno', 'Atividade', 'Registro', ...Object.values(labels)]);
+/** O servidor põe o tipo na frente do título ("Atividade · Mostra"), o que ajuda no .ics. Na tela, a cor e o rótulo já
+ * dizem a categoria: o tipo vai para o rótulo pequeno e o título fica só com o nome. */
+export function splitTitle(event: Pick<CalendarEntry, 'title' | 'category'>): { kind: string; name: string } {
+  const [first, ...rest] = event.title.split(' · ');
+  const label = labels[event.category];
+  if (!rest.length || !SOURCE_KINDS.has(first)) return { kind: label, name: event.title };
+  return { kind: first === label ? label : `${label} · ${first}`, name: rest.join(' · ') };
+}
+function statusLabel(event: CalendarEntry): string {
+  if (event.status === 'CANCELLED') return event.state === 'archived' ? 'Arquivado' : 'Cancelado';
+  return event.state === 'tentative' ? 'A confirmar' : event.state === 'done' ? 'Concluída' : '';
+}
 function when(event: CalendarEntry): string {
   if (event.allDay) {
     const lastDay = offsetCivilDate(event.endsAt, -1);
-    const period = lastDay === event.startsAt ? prettyDay(event.startsAt) : `${prettyDay(event.startsAt)} a ${prettyDay(lastDay)}`;
-    return `${period} · Dia inteiro`;
+    const period = lastDay === event.startsAt ? civilShort(event.startsAt) : `${civilShort(event.startsAt)} a ${civilShort(lastDay)}`;
+    return `${period} · dia inteiro`;
   }
   const start = new Date(event.startsAt), end = new Date(event.endsAt);
   const startDate = shortDate.format(start), endDate = shortDate.format(end);
@@ -157,18 +171,21 @@ export default function CalendarPanel({ viewerId, projects: sourceProjects, orga
       await verify();
       const { documentExport } = await import('./document-export');
       const columns = [{ key: 'event', label: 'Compromisso' }, { key: 'when', label: 'Data e horário' }, { key: 'context', label: 'Projeto e local' }];
-      const rows = shown.map(event => ({
-        event: [event.title, labels[event.category], event.status === 'CANCELLED' ? 'Cancelado / arquivado' : event.state === 'tentative' ? 'A confirmar' : event.state === 'done' ? 'Concluída' : ''].filter(Boolean).join('\n'),
-        when: when(event), context: [event.projectName, event.location].filter(Boolean).join('\n'),
-      }));
+      const rows = shown.map(event => {
+        const { kind, name } = splitTitle(event), status = statusLabel(event), cancelled = event.status === 'CANCELLED';
+        return {
+          event: [cancelled ? `${status.toUpperCase()} · ${name}` : name, kind, cancelled ? '' : status].filter(Boolean).join('\n'),
+          when: when(event), context: [event.projectName, event.location].filter(Boolean).join('\n'),
+        };
+      });
       const info: [string, string][] = [
         ['Período', selectedDay ? prettyDay(selectedDay) : `${prettyDay(from)} a ${prettyDay(to)}`],
         ['Recorte', scopeName],
         ['Categoria', effectiveListCategory !== 'all' ? labels[effectiveListCategory] : category === 'all' ? 'Todas as categorias permitidas' : labels[category as CalendarCategory]],
-        ['Horário', 'Brasília'], ['Compromissos', String(rows.length)],
+        ['Horário', 'Brasília'],
       ];
       const blob = await documentExport(format, 'Agenda da PROEX', columns, rows, (row, key) => row[key], info,
-        { layout: 'table', columnWeights: [1.5, 1, 1.25] });
+        { layout: 'table', columnWeights: [1.45, 1.15, 1.1] });
       await verify();
       controller.signal.throwIfAborted();
       download(`agenda-proex-${selectedDay || from}.${format}`, blob);
@@ -193,7 +210,7 @@ export default function CalendarPanel({ viewerId, projects: sourceProjects, orga
       <div className="p-card-title"><span className="p-icon-tile"><CalendarDays size={21}/></span><div><h3>Agenda integrada</h3><p>Reservas, atividades e movimentações reais, no horário de Brasília.</p></div></div>
       <label className={`p-field ${styles.search}`}><span>Buscar no período</span><span className={styles.searchField}><Search size={16} aria-hidden="true"/><input ref={searchField} type="search" name="calendarSearch" value={search} maxLength={120} onChange={event=>setSearch(event.target.value)} placeholder="Título, projeto ou local"/></span></label>
       <div className={styles.summaryRow}><div className={styles.rangeSummary}><strong>{validRange?`${prettyDay(from)} a ${prettyDay(to)}`:'Escolha as datas inicial e final'}</strong><span>{scopeName} · {category==='all'?'Todas as categorias permitidas':labels[category as CalendarCategory]}</span></div>
-        {filteredContext&&<button className="p-text-link" type="button" onClick={clearFilters}>Voltar ao mês atual e limpar filtros</button>}
+        {filteredContext&&<button className="p-text-link" type="button" onClick={clearFilters}>{from!==initial.from||to!==initial.to?'Voltar ao mês atual e limpar filtros':'Limpar filtros'}</button>}
       </div>
       <details className={styles.filterDisclosure}><summary>Filtrar período e contexto</summary><div className={styles.filterBody}>
       <div className={styles.filters}>
@@ -216,7 +233,7 @@ export default function CalendarPanel({ viewerId, projects: sourceProjects, orga
     </section>
     <div className={styles.workspace}>
     <section className={`p-card ${styles.monthCard}`} aria-label="Visão mensal da agenda" aria-busy={loading}>
-      <div className={styles.monthHeading}><button type="button" className="p-button p-button-subtle" aria-label="Consultar mês anterior" onClick={()=>shiftMonth(-1)}><ChevronLeft size={18}/></button><div><h3>{new Intl.DateTimeFormat('pt-BR',{timeZone,month:'long',year:'numeric'}).format(monthStart)}</h3><small>Mês inicial do período consultado</small></div><button type="button" className="p-button p-button-subtle" aria-label="Consultar próximo mês" onClick={()=>shiftMonth(1)}><ChevronRight size={18}/></button></div>
+      <div className={styles.monthHeading}><button type="button" className="p-button p-button-subtle" aria-label="Consultar mês anterior" onClick={()=>shiftMonth(-1)}><ChevronLeft size={18}/></button><div><h3>{new Intl.DateTimeFormat('pt-BR',{timeZone,month:'long',year:'numeric'}).format(monthStart)}</h3>{from.slice(0,7)!==to.slice(0,7)&&<small>Primeiro mês do período</small>}</div><button type="button" className="p-button p-button-subtle" aria-label="Consultar próximo mês" onClick={()=>shiftMonth(1)}><ChevronRight size={18}/></button></div>
       <div className={styles.monthGrid}>
         {weekday.map(day => <span key={day} className={styles.weekday}>{day}</span>)}
         {cells.map((day, index) => {
@@ -230,7 +247,7 @@ export default function CalendarPanel({ viewerId, projects: sourceProjects, orga
             <strong className={styles.dayNumber}>{Number(day.slice(-2))}</strong>
             {count > 0 && <span className={styles.dayCount} aria-hidden="true">{count}</span>}
             <span className={styles.dots} aria-hidden="true">{[...new Set(dayEntries.map(event => event.category))].map(kind => <span key={kind} style={{ background: colors[kind] }}/>)}</span>
-            {dayEntries.slice(0, 2).map(event => <em key={event.uid} className={styles.chip} style={{ borderLeftColor: colors[event.category] }} title={event.title}>{event.title}</em>)}
+            {dayEntries.slice(0, 2).map(event => <em key={event.uid} className={styles.chip} style={{ borderLeftColor: colors[event.category] }} title={event.title}>{splitTitle(event).name}</em>)}
             {count > 2 && <small className={styles.extraEntries}>+{count - 2}</small>}
           </button>;
         })}
@@ -252,14 +269,14 @@ export default function CalendarPanel({ viewerId, projects: sourceProjects, orga
       </div>
       {loading ? <p className="p-form-help"><LoaderCircle size={17} className="p-spin"/> Carregando agenda…</p>
         : shown.length ? <div className={styles.entries}>{shown.map(event => <article key={event.uid} className={styles.entry} style={{borderLeftColor:colors[event.category]}}>
-          <small>{labels[event.category]}</small>
-          <h4 className={event.status === 'CANCELLED' ? styles.cancelled : undefined}>{event.title}</h4>
+          <small>{splitTitle(event).kind}</small>
+          <h4 className={event.status === 'CANCELLED' ? styles.cancelled : undefined}>{splitTitle(event).name}</h4>
           <p>{when(event)}</p>
-          <p className={styles.entryContext}>{event.projectName}{event.location ? ` · ${event.location}` : ''}{event.status === 'CANCELLED' ? ' · Cancelado / arquivado' : event.state === 'done' ? ' · Concluída' : event.state === 'tentative' ? ' · A confirmar' : ''}</p>
+          <p className={styles.entryContext}>{event.projectName}{event.location ? ` · ${event.location}` : ''}{statusLabel(event) ? ` · ${statusLabel(event)}` : ''}</p>
           {entryLink(event)}
           {event.sourceKind === 'project-schedule' && <div className="flex flex-wrap gap-x-3">
-            <a className={styles.entryLink} href={`/?module=records&view=documents&project=${encodeURIComponent(event.projectId)}&scheduleItemId=${encodeURIComponent(event.sourceId)}`} aria-label={`Registros e fotos de ${event.title.replace(/^Atividade · /, '')}`}><FileText size={15} aria-hidden="true"/>Registros e fotos</a>
-            <a className={styles.entryLink} href={`/?module=demands&project=${encodeURIComponent(event.projectId)}&scheduleItemId=${encodeURIComponent(event.sourceId)}`} aria-label={`Frentes de ${event.title.replace(/^Atividade · /, '')}`}><ListChecks size={15} aria-hidden="true"/>Frentes</a>
+            <a className={styles.entryLink} href={`/?module=records&view=documents&project=${encodeURIComponent(event.projectId)}&scheduleItemId=${encodeURIComponent(event.sourceId)}`} aria-label={`Registros e fotos de ${splitTitle(event).name}`}><FileText size={15} aria-hidden="true"/>Registros e fotos</a>
+            <a className={styles.entryLink} href={`/?module=demands&project=${encodeURIComponent(event.projectId)}&scheduleItemId=${encodeURIComponent(event.sourceId)}`} aria-label={`Frentes de ${splitTitle(event).name}`}><ListChecks size={15} aria-hidden="true"/>Frentes</a>
           </div>}
         </article>)}</div>
         : displayError ? null
