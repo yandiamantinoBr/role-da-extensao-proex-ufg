@@ -200,7 +200,7 @@ test('agenda searches authorized visible titles, places and projects without cha
     assert.doesNotMatch(ics.props.href,/search=|auditorio/);
     findSearch().props.onChange({target:{value:'inexistente'}});h.render();
     assert.match(h.body(),/Nenhum resultado para esta busca/);
-    h.button('Voltar ao mês atual e limpar filtros').props.onClick();h.render();
+    h.button('Limpar filtros').props.onClick();h.render();
     assert.match(h.body(),/Reunião interna/);
   }finally{h.dispose();}
 });
@@ -224,13 +224,55 @@ test('cancelled replacements do not clutter the active agenda, but remain visibl
     toggle.props.onChange({ target: { checked: true } });
     h.render();
     assert.match(h.body(), /Turno substituído/);
-    assert.match(h.body(), /Cancelado \/ arquivado/);
+    assert.match(h.body(), /Projeto A · Cancelado/);
+    assert.doesNotMatch(h.body(), /arquivado/, 'cancelado não é arquivado');
     const ics = h.all().find(node => node.type === 'a' && node.props.href.includes('format=ics'));
     assert.doesNotMatch(ics.props.href, /cancelled/i);
     assert.equal(h.requests.length, 1);
-    h.button('Voltar ao mês atual e limpar filtros').props.onClick();
+    h.button('Limpar filtros').props.onClick();
     h.render();
     assert.doesNotMatch(h.body(), /Turno substituído/);
+  } finally { h.dispose(); }
+});
+
+test('cards, day previews and exports drop the repeated type word but keep it in the small label (crítica de 16/11)', async () => {
+  const h = harness();
+  try {
+    const day = new URL(h.requests[0].url, 'https://example.test').searchParams.get('from');
+    const base = { projectName: 'Projeto A', startsAt: day, endsAt: civilDates.offsetCivilDate(day, 1), allDay: true, status: 'CONFIRMED' };
+    const data = { feeds: [], availableCategories: ['projects', 'materials'], entries: [
+      { ...base, uid: 'm', category: 'materials', title: 'Materiais · Botton azul · 40 unidades' },
+      { ...base, uid: 'a', category: 'projects', title: 'Atividade · Mostra de extensão' },
+      { ...base, uid: 'x', category: 'projects', title: 'Oficina · parte 2' },
+      { ...base, uid: 'c', category: 'projects', title: 'Atividade · Oficina suspensa', status: 'CANCELLED', state: 'cancelled' },
+    ] };
+    h.respond(h.requests[0], data); await tick(); h.render();
+    h.all().find(node => node.type === 'input' && node.props.name === 'agendaShowCancelled').props.onChange({ target: { checked: true } }); h.render();
+    const cards = h.all().filter(node => node.type === 'article').map(node => {
+      const children = node.props.children; return [text(children.find(c => c?.type === 'small')), text(children.find(c => c?.type === 'h4'))];
+    });
+    assert.deepEqual(cards.sort(), [
+      ['Materiais', 'Botton azul · 40 unidades'],
+      ['Projetos e eventos · Atividade', 'Mostra de extensão'],
+      ['Projetos e eventos · Atividade', 'Oficina suspensa'],
+      ['Projetos e eventos', 'Oficina · parte 2'],
+    ], 'antes: "Materiais" em cima e "Materiais · Botton azul" no título');
+    const chips = h.all().filter(node => node.type === 'em').map(node => text(node));
+    assert.ok(chips.includes('Botton azul · 40 unidades') && !chips.some(chip => chip.startsWith('Materiais ·')));
+    assert.match(h.body(), /Projeto A · Cancelado/);
+    assert.ok(h.button('Limpar filtros'), 'no mês atual, o link não fala em voltar ao mês');
+    assert.ok(!h.all().some(node => node.type === 'button' && text(node) === 'Voltar ao mês atual e limpar filtros'));
+    const index = h.requests.length;
+    const download = h.all().find(node => node.type === ExportFormats).props.onExport('xlsx');
+    h.respond(h.requests[index], data); await tick();
+    const args = h.exports.at(-1);
+    assert.deepEqual(Array.from(args[3], row => row.event).sort(), [
+      'Botton azul · 40 unidades\nMateriais', 'CANCELADO · Oficina suspensa\nProjetos e eventos · Atividade',
+      'Mostra de extensão\nProjetos e eventos · Atividade', 'Oficina · parte 2\nProjetos e eventos',
+    ]);
+    assert.ok(!args[5].some(([label]) => label === 'Compromissos'), 'o total já aparece no quadro do PDF');
+    assert.equal(h.all().find(node => node.type === ExportFormats).props.tiles, true, 'os três formatos cabem lado a lado na coluna da lista');
+    h.respond(h.requests[index + 1], data); await download;
   } finally { h.dispose(); }
 });
 
@@ -350,8 +392,8 @@ test('the agenda label uses the last included day rather than the exclusive ICS 
     await tick();
     h.render();
     const activity = h.all().find(node => node.type === 'article' && text(node).includes('Atividade sintética'));
-    assert.match(text(activity), /9 de novembro de 2026 a 13 de novembro de 2026 · Dia inteiro/);
-    assert.doesNotMatch(text(activity), /14 de novembro/);
+    assert.match(text(activity), /09\/11\/2026 a 13\/11\/2026 · dia inteiro/);
+    assert.doesNotMatch(text(activity), /14\/11/);
   } finally { h.dispose(); }
 });
 
