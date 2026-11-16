@@ -251,7 +251,7 @@ export async function projectDetail(db:D1Database,actor:PortalActor|null,id:stri
       FROM items i WHERE i.project_id=? AND ${inventoryAuthority.sql} ORDER BY i.name`,
       [availabilityNow,availabilityNow,id,...inventoryAuthority.values]):Promise.resolve(null),
     campaigns?all(db,'SELECT id,name,location,starts_at,ends_at,status FROM campaigns WHERE project_id=? ORDER BY starts_at DESC',[id]):Promise.resolve(null),
-    loans?all(db,`SELECT l.id,l.item_id,i.name item_name,l.action_name,l.starts_at,l.ends_at,l.status FROM loans l JOIN items i ON i.id=l.item_id AND i.project_id=l.project_id WHERE l.project_id=? ORDER BY l.starts_at DESC LIMIT 100`,[id]):Promise.resolve(null),
+    loans?all(db,`SELECT l.id,l.item_id,i.name item_name,l.action_name,l.starts_at,l.ends_at,l.status,l.close_reason FROM loans l JOIN items i ON i.id=l.item_id AND i.project_id=l.project_id WHERE l.project_id=? ORDER BY l.starts_at DESC LIMIT 100`,[id]):Promise.resolve(null),
     recordsRead?listRecords(db,actor,{projectId:id,limit:100}):Promise.resolve({records:null}),
     permitted(actor,'loans.manage',id)?all(db,`SELECT i.id,i.name,i.category FROM items i WHERE i.project_id=? AND i.category='equipment' AND i.condition='active' AND ${projectAuthoritySql(actor,['loans.manage'],'i.project_id').sql} ORDER BY i.name,i.id`,[id,...projectAuthoritySql(actor,['loans.manage'],'i.project_id').values]):Promise.resolve(null),
   ]);

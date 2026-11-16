@@ -211,7 +211,9 @@ test('snapshot exposes editable V3 project, item and loan fields without widenin
     official_url='https://proex.ufg.br/',starts_at=?,ends_at=?,location='Campus Samambaia',version=4 WHERE id='project-a'`)
     .run(timestamp, '2026-12-20T02:30:00.000Z');
   f.sqlite.prepare("UPDATE items SET asset_code='UFG-001',version=3,updated_at=? WHERE id='equipment-a'").run(timestamp);
-  f.sqlite.prepare('UPDATE loans SET checked_out_at=?,updated_at=? WHERE id=?').run(timestamp, timestamp, 'loan-a');
+  // A loan with a checkout date is out; a past reservation without checkout would be closed as not collected (0051).
+  // It keeps a future return date so it is a current loan, not a reservation that expired.
+  f.sqlite.prepare("UPDATE loans SET ends_at=?,status='out',checked_out_at=?,updated_at=? WHERE id=?").run(Date.parse('2099-01-01T00:00:00.000Z'), timestamp, timestamp, 'loan-a');
   const data = await snapshot(f, 'manager');
   assert.deepEqual({ ...data.projects[0] }, {
     id: 'project-a', name: 'Projeto A', description: '', created_at: timestamp,

@@ -238,8 +238,11 @@ export const loans = sqliteTable('loans', {
   createdBy: text('created_by').notNull(), createdAt: text('created_at').notNull(), returnedAt: text('returned_at'),
   checkedOutAt: text('checked_out_at'), updatedAt: text('updated_at').notNull().default(''),
   groupId: text('group_id').references(() => activityGroups.id),
+  /** 'not_collected': reserva cujo horário venceu sem retirada (status 'cancelled'). Migração 0051. */
+  closeReason: text('close_reason'),
 }, t => [
   index('loans_item_interval_idx').on(t.itemId, t.status, t.startsAt, t.endsAt),
+  index('loans_status_ends_idx').on(t.status, t.endsAt),
   index('loans_project_idx').on(t.projectId),
   check('loans_interval_check', sql`${t.endsAt} > ${t.startsAt}`),
   check('loans_status_check', sql`${t.status} IN ('reserved','out','returned','cancelled')`),

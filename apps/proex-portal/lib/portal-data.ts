@@ -248,7 +248,7 @@ export async function portalSnapshot(db: D1Database, actor: PortalActor | null):
       FROM offer_components oc JOIN offers o ON o.id=oc.offer_id
       JOIN items i ON i.id=oc.item_id AND i.project_id=o.project_id
       WHERE ${offersFilter.sql} ORDER BY oc.offer_id,oc.item_id`, offersFilter.params),
-    all(db, `SELECT id,project_id,item_id,action_name,starts_at,ends_at,status,created_at,returned_at,checked_out_at,updated_at
+    all(db, `SELECT id,project_id,item_id,action_name,starts_at,ends_at,status,close_reason,created_at,returned_at,checked_out_at,updated_at
       FROM loans WHERE ${loansFilter.sql} ORDER BY starts_at DESC,id`, loansFilter.params),
     all(db, `SELECT id,project_id,borrower_name,borrower_contact,note,condition_out,condition_in
       FROM loans WHERE ${privateLoansFilter.sql}`, privateLoansFilter.params),

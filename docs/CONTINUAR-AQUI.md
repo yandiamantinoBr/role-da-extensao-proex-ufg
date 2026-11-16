@@ -2,6 +2,14 @@
 
 Comece pela [Retomada de 13/11](RETOMADA-13NOV-PORTAL-PROEX.md) para conferir a base publicada, a ordem das PRs pendentes, o padrão visual e o roteiro de convite. Para a rodada de 14/11, consulte [Ações de projeto e acessos](../apps/proex-portal/docs/QA-ACOES-E-PERFIS.md).
 
+## Empréstimos · rodada de 16/11 (itens 1 e 2 de 5)
+
+- **1 · Privacidade (PR153, publicada):** quem só lê relatórios vê "Restrito" na condição de saída e de retorno (tela e arquivos). O ICS de empréstimos sai sem a ação atendida, e registros ligados a empréstimos saem sem título livre. Teste: `tests/loan-privacy.test.mjs`.
+- **2 · Não retirado (esta PR):** reserva com `ends_at <= agora` e sem retirada vira `status='cancelled'` com `close_reason='not_collected'` (migração 0051) e aparece como "Não retirado". O encerramento roda em `getActor` (`closeUncollectedLoans`, `lib/access.ts`), numa consulta só e sem derrubar a requisição se falhar. Empréstimo retirado nunca vira devolução. `loan.create` recusa reserva que já terminou. Teste: `tests/loan-not-collected.test.mjs`.
+- **Próximos:** 3, motivo de indisponibilidade no seletor de equipamento; 4, cartão com ação principal e confirmação curta; 5, critério de data (sobreposição) e fuso escritos na tela.
+- **Pendente de decisão:** a planilha mestre (só administração) ainda exporta observação e condições dos empréstimos (`lib/sync/portable.ts`).
+- **QA local:** se a porta 5173 estiver em uso por outra sessão, rode uma cópia do script com `5173` trocado por `5174` e apague a cópia depois. Não encerre o QA de outra sessão.
+
 ## Auditoria de permissões das PRs 105–143 · 16/11
 
 - **No ar:** PR145 (`77c7d74`, `dpl_CyyYfr2DkymRGgZEaCkize4jf5ca`). A leitura de DOCX (`lib/importer/documents.ts`) passou a percorrer o XML uma vez só. Antes, marcas `<w:t>` sem fechamento faziam o tempo crescer ao quadrado: 120 KB levavam 6,6 s, e o limite de 1 MB prendia o servidor por minutos (Rolê e importação). Os testes de tempo e de texto igual estão em `tests/import-documents.test.mjs`.

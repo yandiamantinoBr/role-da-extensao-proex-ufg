@@ -44,7 +44,7 @@ export function splitTitle(event: Pick<CalendarEntry, 'title' | 'category'>): { 
   return { kind: first === label || label.startsWith(first) ? label : `${label} · ${first}`, name: rest.join(' · ') };
 }
 function statusLabel(event: CalendarEntry): string {
-  if (event.status === 'CANCELLED') return event.state === 'archived' ? 'Arquivado' : 'Cancelado';
+  if (event.status === 'CANCELLED') return event.state === 'archived' ? 'Arquivado' : event.state === 'not_collected' ? 'Não retirado' : 'Cancelado';
   return event.state === 'tentative' ? 'A confirmar' : event.state === 'done' ? 'Concluída' : '';
 }
 function when(event: CalendarEntry): string {

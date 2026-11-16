@@ -25,7 +25,9 @@ export function projectOperationalDatasets({ schedule, items, loans, now, varian
   { id: 'late', label: 'Em atraso', rows: loans.filter(row => loanLate(row, now)), tone: 'danger', Icon: TriangleAlert },
   { id: 'current', label: 'Em andamento', rows: loans.filter(row => row.status === 'reserved' || row.status === 'out' && !loanLate(row, now)), tone: 'brand', Icon: Clock3 },
   { id: 'returned', label: 'Devolvidos', rows: loans.filter(row => row.status === 'returned'), tone: 'success', Icon: CheckCircle2 },
-  { id: 'cancelled', label: 'Cancelados', rows: loans.filter(row => row.status === 'cancelled'), tone: 'muted', Icon: CircleDot },
+  { id: 'cancelled', label: 'Cancelados', rows: loans.filter(row => row.status === 'cancelled' && (row.close_reason ?? row.closeReason) !== 'not_collected'), tone: 'muted', Icon: CircleDot },
+  // Reservas que venceram sem retirada (0051): grupo próprio, só quando existem.
+  ...(loans.some(row => (row.close_reason ?? row.closeReason) === 'not_collected') ? [{ id: 'not_collected', label: 'Não retirados', rows: loans.filter(row => (row.close_reason ?? row.closeReason) === 'not_collected'), tone: 'muted', Icon: CircleDot }] : []),
  ] });
  return datasets;
 }

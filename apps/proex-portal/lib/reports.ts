@@ -126,7 +126,7 @@ export async function reportRows(db: D1Database, actor: PortalActor | null, inpu
       FROM stock_movements m JOIN items i ON i.id=m.item_id JOIN ${base.replace('projects p', 'projects p ON p.id=i.project_id')} /*WHERE*/ GROUP BY i.id,m.kind ORDER BY p.name,i.name,m.kind,i.id`, { clauses: [...range.clauses, "m.delta<0", "m.kind IN ('distribute','redeem')", effectiveMovementSql('m')], values: range.values });
   } else if (dataset === 'loans') {
     rows = await run(`SELECT l.id,${projectColumns},i.name AS material,l.action_name AS acao,date(l.starts_at/1000,'unixepoch','-3 hours') AS inicio,date(l.ends_at/1000,'unixepoch','-3 hours') AS fim,
-      l.status AS situacao,date(l.checked_out_at,'-3 hours') AS retirado_em,date(l.returned_at,'-3 hours') AS devolvido_em,
+      CASE WHEN l.close_reason='not_collected' THEN 'not_collected' ELSE l.status END AS situacao,date(l.checked_out_at,'-3 hours') AS retirado_em,date(l.returned_at,'-3 hours') AS devolvido_em,
       CASE WHEN l.status='out' AND l.ends_at<CAST(strftime('%s','now') AS INTEGER)*1000 THEN 'sim' ELSE 'nao' END AS em_atraso,l.condition_out AS condicao_saida,l.condition_in AS condicao_retorno,l.project_id AS __loan_project
       FROM loans l JOIN items i ON i.id=l.item_id JOIN ${base.replace('projects p', 'projects p ON p.id=l.project_id')} /*WHERE*/ ORDER BY l.starts_at DESC,l.id`, period('l.starts_at', true));
     // Condição na retirada e na devolução são texto livre: podem conter nome, contato ou observação pessoal.
