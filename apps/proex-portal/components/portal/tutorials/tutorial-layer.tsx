@@ -177,7 +177,7 @@ export default function TutorialLayer({ modules, tab, projectId, onNavigate }: {
           {TUTORIAL_CHAPTERS.length > 1 && <button type="button" className="p-button p-button-subtle" onClick={() => finishTutorial('chooser')}>Ver outros assuntos</button>}
         </> : <>
           {goTo && <button type="button" className={`p-button p-button-primary ${styles.goTo}`} onClick={() => { refocus.current = true; heading.current?.focus({ preventScroll: true }); onNavigate(copy.module!); }}>{copy.openLabel}<ArrowRight size={16} aria-hidden="true"/></button>}
-          <button type="button" className={`p-button p-button-subtle ${styles.compact}`} disabled={position <= 1} onClick={previousStep} aria-label="Voltar"><ArrowLeft size={16} aria-hidden="true"/><span className={styles.label}>Voltar</span></button>
+          {position > 1 && <button type="button" className={`p-button p-button-subtle ${styles.compact}`} onClick={previousStep} aria-label="Voltar"><ArrowLeft size={16} aria-hidden="true"/><span className={styles.label}>Voltar</span></button>}
           <button type="button" className="p-button p-button-subtle" onClick={pauseTutorial}><Pause size={16} aria-hidden="true"/>Pausar</button>
           <button type="button" className={`p-button ${goTo ? 'p-button-subtle' : 'p-button-primary'} ${styles.next}`} onClick={nextStep}>{goTo ? 'Pular' : 'Próximo'}<ArrowRight size={16} aria-hidden="true"/></button>
         </>}

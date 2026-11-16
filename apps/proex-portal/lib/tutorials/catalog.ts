@@ -115,7 +115,7 @@ export const TUTORIAL_CHAPTERS: readonly TutorialChapter[] = [
         id: 'fim', title: 'Tudo certo',
         speech: 'Você já sabe se localizar no Portal. Para rever, abra Ajuda e tutoriais no menu da conta.',
         speechMobile: 'Você já sabe se localizar no Portal. Para rever, abra Ajuda e tutoriais no menu da conta ou em Mais.',
-        youWillSee: 'Você pode repetir esta parte ou ver outros assuntos.',
+        youWillSee: 'Concluir fecha o tutorial. Repetir esta parte começa de novo.',
         labels: ['Ajuda e tutoriais'],
       },
     ],
