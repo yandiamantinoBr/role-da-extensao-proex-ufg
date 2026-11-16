@@ -1,6 +1,6 @@
 'use client';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
-import { Check, Copy, KeyRound, Link2, LoaderCircle, Plus, ShieldCheck, Unplug } from 'lucide-react';
+import { Check, Copy, KeyRound, Link2, LoaderCircle, Plus, ShieldCheck, Unplug, ChevronDown } from 'lucide-react';
 import styles from './mcp-connections-panel.module.css';
 
 type Token = { id: string; label: string; scopes: string[]; projectIds: string[]; expiresAt: string; revokedAt: string | null; createdAt: string };
@@ -105,7 +105,7 @@ export default function McpConnectionsPanel() {
     });
   }
   return <details ref={group} className={`p-card ${styles.panel}`} id="mcp-connections" onToggle={event => toggle(event.currentTarget.open)}>
-    <summary className={styles.summary} onClick={() => { if (group.current?.open) toggle(false); }}><Link2 size={20} aria-hidden="true"/><span><strong>Conectar uma IA ao meu trabalho</strong><small>Consultas pessoais por MCP, com prazo e projetos escolhidos.</small></span></summary>
+    <summary className={styles.summary} onClick={() => { if (group.current?.open) toggle(false); }}><Link2 size={20} aria-hidden="true"/><span><strong>Conectar uma IA ao meu trabalho</strong><small>Consultas pessoais por MCP, com prazo e projetos escolhidos.</small></span><ChevronDown size={18} className={styles.chevron} aria-hidden="true"/></summary>
     {opened && <div className={styles.body}>
       <p className={styles.note}><ShieldCheck size={18} aria-hidden="true"/><span>Essa conexão consulta somente os resumos e demandas selecionados. Não altera estoque, envia avisos ou usa chaves de modelos. Seu acesso atual continua sendo conferido em cada consulta.</span></p>
       {failure && <p ref={failureRef} tabIndex={-1} className="p-inline-error" role="alert">{failure}</p>}{notice && <p role="status" className={styles.note}><Check size={16} aria-hidden="true"/>{notice}</p>}

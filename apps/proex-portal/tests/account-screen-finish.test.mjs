@@ -10,9 +10,18 @@ test('the profile card keeps the same 20px gap as the cards above it on the Cont
   assert.match(client, /<GoogleDriveConnectionPanel key=\{`drive-\$\{string\(user\.userId\)\}`\}\/><div className="mt-5"><ProfilePanel /);
 });
 
-test('refresh buttons on Conta use the same word, with a distinct accessible name', () => {
-  assert.doesNotMatch(profile, /Recarregar dados/);
-  assert.match(profile, /aria-label="Atualizar meu perfil"><RefreshCw size=\{16\} aria-hidden="true" \/>Atualizar</);
+test('Conta keeps one refresh per page: the profile card no longer has its own (crítica de 16/11)', () => {
+  assert.doesNotMatch(profile, /Recarregar dados|Atualizar meu perfil/);
+  assert.equal((profile.match(/onClick=\{\(\) => void refreshProfile\(\)\}/g) ?? []).length, 1, 'só a tela de erro mantém "Tentar novamente"');
+});
+
+test('the profile summary lists only filled values, the photo rules sit under the photo buttons and the name is below the page title size', () => {
+  assert.doesNotMatch(profile, /'Não informada'\}|\|\| 'Não informado'\}/, 'nada de "Não informado" repetido no resumo');
+  assert.match(profile, /Escolher foto<\/button>\s*<\/div>\s*<p className=\{styles\.photoHelp\}>/);
+  const css = readFileSync(new URL('../components/portal/profile-panel.module.css', import.meta.url), 'utf8');
+  assert.match(css, /\.name\{font-size:clamp\(22px,2\.4vw,27px\)\}/);
+  const mcp = readFileSync(new URL('../components/portal/mcp-connections-panel.tsx', import.meta.url), 'utf8');
+  assert.match(mcp, /<ChevronDown size=\{18\} className=\{styles\.chevron\} aria-hidden="true"\/><\/summary>/, '"Conectar uma IA" segue o padrão da linha "Google Drive"');
 });
 
 test('the photo help is one short sentence and the iPhone tip moves to the error that needs it', () => {

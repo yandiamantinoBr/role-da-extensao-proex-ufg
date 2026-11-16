@@ -305,15 +305,16 @@ export default function ProfilePanel({ onUpdated }: Props) {
             <button type="button" className="p-button p-button-subtle" disabled={disabled} onClick={takePhoto}><Camera size={16} aria-hidden="true" />Tirar foto</button>
             <button type="button" className="p-button p-button-subtle" disabled={disabled} onClick={() => galleryRef.current?.click()}><ImagePlus size={16} aria-hidden="true" />Escolher foto</button>
           </div>
+          <p className={styles.photoHelp}>JPEG, PNG ou WebP de até 20 MB. A foto é salva assim que escolhida, reduzida a 256 pixels e sem metadados.</p>
         </div>
         <div className={styles.heroBody}>
-          <div className={styles.heroHeading}><div><p className={styles.kicker}>Meu perfil</p><h2 className={styles.name} id="profile-title">{profile.displayName}</h2><p className={styles.email}>{profile.email}</p></div><button className="p-button p-button-subtle" type="button" disabled={disabled} onClick={() => void refreshProfile()} aria-label="Atualizar meu perfil"><RefreshCw size={16} aria-hidden="true" />Atualizar</button></div>
-          <dl className={styles.summary}>
-            <div><dt>Unidade institucional</dt><dd>{selectedUnit ? unitLabel(selectedUnit) : profile.unitId ? 'Unidade cadastrada' : profile.unit || 'Não informada'}{selectedUnit && profile.unit && <small>{profile.unit}</small>}{selectedUnit?.status === 'archived' && <small>Unidade arquivada · vínculo preservado</small>}</dd></div>
-            <div><dt>Vínculo principal</dt><dd>{affiliations[profile.affiliation]}{profile.jobTitle && <small>{profile.jobTitle}</small>}</dd></div>
-            <div><dt>Registro institucional</dt><dd>{profile.registrationNumber || 'Não informado'}{profile.registrationType && <small>{registrationTypes[profile.registrationType]}</small>}</dd></div>
-          </dl>
-          <p className={styles.photoHelp}>JPEG, PNG ou WebP de até 20 MB. A foto é salva assim que escolhida, reduzida a 256 pixels e sem metadados.</p>
+          <div className={styles.heroHeading}><div><p className={styles.kicker}>Meu perfil</p><h2 className={styles.name} id="profile-title">{profile.displayName}</h2><p className={styles.email}>{profile.email}</p></div></div>
+          {/* O resumo só mostra o que foi preenchido; os campos completos ficam logo abaixo (crítica de 16/11). */}
+          {(selectedUnit || profile.unitId || profile.unit || profile.affiliation || profile.jobTitle || profile.registrationNumber) && <dl className={styles.summary}>
+            {(selectedUnit || profile.unitId || profile.unit) && <div><dt>Unidade institucional</dt><dd>{selectedUnit ? unitLabel(selectedUnit) : profile.unitId ? 'Unidade cadastrada' : profile.unit}{selectedUnit && profile.unit && <small>{profile.unit}</small>}{selectedUnit?.status === 'archived' && <small>Unidade arquivada · vínculo preservado</small>}</dd></div>}
+            {(profile.affiliation || profile.jobTitle) && <div><dt>Vínculo principal</dt><dd>{profile.affiliation ? affiliations[profile.affiliation] : profile.jobTitle}{profile.affiliation && profile.jobTitle && <small>{profile.jobTitle}</small>}</dd></div>}
+            {profile.registrationNumber && <div><dt>Registro institucional</dt><dd>{profile.registrationNumber}{profile.registrationType && <small>{registrationTypes[profile.registrationType]}</small>}</dd></div>}
+          </dl>}
           {photo && !busy && <div className="p-inline"><button type="button" className="p-button p-button-primary" disabled={disabled} onClick={() => void retryPhoto()}>Tentar salvar a foto novamente</button><button type="button" className="p-text-link" disabled={disabled} onClick={discardPhoto}>Descartar foto escolhida</button></div>}
           {preparing && <p role="status" className={styles.busy}><LoaderCircle size={16} className="p-spin" aria-hidden="true" />Preparando a foto neste aparelho…</p>}
         </div>
