@@ -224,8 +224,11 @@ test('cancelled replacements do not clutter the active agenda, but remain visibl
     toggle.props.onChange({ target: { checked: true } });
     h.render();
     assert.match(h.body(), /Turno substituído/);
-    assert.match(h.body(), /Projeto A · Cancelado/);
-    assert.doesNotMatch(h.body(), /arquivado/, 'cancelado não é arquivado');
+    const cancelled = h.all().find(node => node.type === 'article' && node.props['data-cancelled']);
+    assert.ok(cancelled, 'o cartão cancelado é marcado para o estilo próprio');
+    assert.ok(h.all().some(node => node.type === 'em' && node.props['data-cancelled'] && node.props.title === 'Cancelado · Turno substituído'), 'a prévia do mês também mostra o cancelamento');
+    assert.equal(text(cancelled.props.children.find(child => child?.type === 'span')), 'Cancelado', 'selo "Cancelado" acima do título');
+    assert.doesNotMatch(h.body(), /arquivado|Projeto A · Cancelado/, 'cancelado não é arquivado, e o selo não se repete na linha do projeto');
     const ics = h.all().find(node => node.type === 'a' && node.props.href.includes('format=ics'));
     assert.doesNotMatch(ics.props.href, /cancelled/i);
     assert.equal(h.requests.length, 1);
@@ -259,7 +262,8 @@ test('cards, day previews and exports drop the repeated type word but keep it in
     ], 'antes: "Materiais" em cima e "Materiais · Botton azul" no título');
     const chips = h.all().filter(node => node.type === 'em').map(node => text(node));
     assert.ok(chips.includes('Botton azul · 40 unidades') && !chips.some(chip => chip.startsWith('Materiais ·')));
-    assert.match(h.body(), /Projeto A · Cancelado/);
+    const counters = h.all().filter(node => node.type === 'button' && /^\d/.test(text(node))).map(text);
+    assert.ok(counters.includes('1Material') && counters.includes('3Projetos e eventos'), `antes: "1 Materiais"; agora: ${counters}`);
     assert.ok(h.button('Limpar filtros'), 'no mês atual, o link não fala em voltar ao mês');
     assert.ok(!h.all().some(node => node.type === 'button' && text(node) === 'Voltar ao mês atual e limpar filtros'));
     const index = h.requests.length;
@@ -271,6 +275,7 @@ test('cards, day previews and exports drop the repeated type word but keep it in
       'Mostra de extensão\nProjetos e eventos · Atividade', 'Oficina · parte 2\nProjetos e eventos',
     ]);
     assert.ok(!args[5].some(([label]) => label === 'Compromissos'), 'o total já aparece no quadro do PDF');
+    assert.equal(args[5].map(([label]) => label).join(' | '), 'Período | Projetos | Categoria | Horário | Gerado em', '"Recorte" virou "Projetos" e o PDF diz quando foi gerado');
     assert.equal(h.all().find(node => node.type === ExportFormats).props.tiles, true, 'os três formatos cabem lado a lado na coluna da lista');
     h.respond(h.requests[index + 1], data); await download;
   } finally { h.dispose(); }
