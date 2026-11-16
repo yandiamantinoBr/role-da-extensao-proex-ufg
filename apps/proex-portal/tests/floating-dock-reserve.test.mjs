@@ -112,7 +112,7 @@ test('modos escolhidos: lateral fixa reserva o próprio espaço, botão do celul
   assert.match(css, /aria-controls="followup-notification-center"\]\[aria-expanded="true"\]\)\) \.mobileFab,:global\(body:has\(dialog\[open\]\)\) \.mobileFab/);
   assert.match(tsx, /const onScroll = \(\) => \{ button\.dataset\.state = 'away';/);
   assert.match(tsx, /if \(editing\(\)\) \{ button\.dataset\.state = 'away'; return; \}/);
-  assert.match(tsx, /layout\.mobile === 'floating'\s*\? <MobileFab/);
+  assert.match(tsx, /layout\.mobile === 'floating'\s*\? <>[\s\S]{0,4000}<MobileFab/);
   // Escolha por conta, em Meu espaço, sem roubar o foco ao carregar.
   assert.match(tsx, /name=\{`dock-layout-\$\{choice\.device\}`\}/);
   assert.match(tsx, /action: 'layout', device, value/);
@@ -122,3 +122,20 @@ test('modos escolhidos: lateral fixa reserva o próprio espaço, botão do celul
   assert.match(tsx, /if \(toolbar \|\| !dock\?\.open \|\| dock\.minimized \|\| !openedByPerson\.current\) return;/, 'carregar com um painel aberto não move o foco');
 });
 
+
+test('celular: o botão do canto abre o mesmo leque com nomes do computador, e flutuante é o padrão', () => {
+  const css = read('components/portal/floating-dock.module.css');
+  const tsx = read('components/portal/floating-dock.tsx');
+  const lib = read('lib/community/widgets.ts');
+  // Pedido do Yan (16/11): no celular, o leque com rótulos como no computador, sem precisar escolher.
+  assert.match(tsx, /const DEFAULT_LAYOUT: DockLayout = \{ desktop: 'floating', mobile: 'floating' \}/);
+  assert.match(lib, /DEFAULT_DOCK_LAYOUT: DockLayout = \{ desktop: 'floating', mobile: 'floating' \}/);
+  assert.match(tsx, /\{fan && <MobileFan onClose=\{\(\) => setFan\(false\)\}>/, 'o botão abre o leque, não a folha');
+  assert.match(tsx, /onOpen=\{\(\) => setFan\(value => !value\)\}/, 'tocar de novo recolhe');
+  assert.match(tsx, /className=\{styles\.stackLabel\}[^>]*>\{label\}/, 'cada botão do leque tem o nome ao lado');
+  assert.match(tsx, /setFan\(false\); setMobileView\(widgetId\)/, 'escolher um widget abre o painel dele');
+  assert.match(tsx, /setFan\(false\); item\.onOpen\(\)/, 'o Rolê também está no leque');
+  assert.match(tsx, /event\.key === 'Escape'/);
+  assert.match(css, /\.mobileFan\{position:fixed;right:14px;bottom:calc\(var\(--dock-fab-nav,72px\)/, 'o leque sobe a partir do botão, acima da barra de baixo');
+  assert.match(css, /\.mobileFab\[data-open\]\{[^}]*visibility:visible/, 'com o leque aberto o botão não some');
+});
