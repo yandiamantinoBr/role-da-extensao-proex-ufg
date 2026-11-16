@@ -42,7 +42,7 @@ export default function PersonalWorkSummary({userId,organizationId=null,organiza
  const current=loaded?.key===key?loaded:null,data=current?.data,loading=!current;
  useEffect(()=>{if(!data)return;const timer=window.setTimeout(refresh,nextWorkDayDelay(data));return()=>window.clearTimeout(timer);},[data,refresh]);
  const metrics=[
-  {label:'Atenção',status:'attention' as const,count:data?.tasks.attention,help:'Em atraso ou bloqueadas',Icon:AlertTriangle,tone:'danger'},
+  {label:'Atenção',status:'attention' as const,count:data?.tasks.attention,help:'Em atraso ou bloqueadas',Icon:AlertTriangle,tone:'warning'},
   {label:'Prazo hoje',status:'due_today' as const,count:data?.tasks.dueToday,help:'Pendentes com prazo para hoje',Icon:CalendarClock,tone:'warning'},
   {label:'Pendentes',status:'pending' as const,count:data?.tasks.pending,help:'Ainda não finalizadas',Icon:ClipboardList,tone:'brand'},
   {label:'Em andamento',status:'in_progress' as const,count:data?.tasks.inProgress,help:'Trabalho iniciado',Icon:CircleDot,tone:'info'},
