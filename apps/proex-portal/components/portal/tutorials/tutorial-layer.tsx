@@ -2,6 +2,9 @@
 /* eslint-disable @next/next/no-img-element -- mascote em SVG estático */
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { ArrowLeft, ArrowRight, ExternalLink, LifeBuoy, Pause, RotateCcw, X } from 'lucide-react';
+
+/** Espaço do topo (cabeçalho fixo do Portal) que o controle destacado não deve ocupar. */
+const TOP_GAP = 72;
 import type { ModuleId } from '../navigation-model';
 import { chapterById, type TutorialStep } from '@/lib/tutorials/catalog';
 import ChapterList from './chapter-list';
@@ -48,7 +51,7 @@ export default function TutorialLayer({ modules, tab, projectId, onNavigate }: {
   const mobile = useMobile();
   // Resultado da busca do controle, guardado por passo: um passo novo começa sem resultado.
   const [spot, setSpot] = useState<{ key: string; found: boolean | null }>({ key: '', found: null });
-  const heading = useRef<HTMLHeadingElement>(null), dialog = useRef<HTMLDivElement>(null);
+  const heading = useRef<HTMLHeadingElement>(null), dialog = useRef<HTMLDivElement>(null), card = useRef<HTMLElement>(null);
   // Depois de "Ir para…", o Portal move o foco para a página nova; o título do cartão o recupera.
   const refocus = useRef(false);
 
@@ -86,9 +89,10 @@ export default function TutorialLayer({ modules, tab, projectId, onNavigate }: {
       const target = visibleTarget(copy.target);
       if (target) {
         spotted = target; target.setAttribute(SPOT, '');
-        // Só rola quando o controle está fora da área visível (acima do cartão no celular).
-        const box = target.getBoundingClientRect(), limit = mobile ? innerHeight * 0.5 : innerHeight - 80;
-        if (box.top < 0 || box.top > limit) target.scrollIntoView({ block: mobile ? 'start' : 'center', inline: 'nearest', behavior: reduce ? 'auto' : 'smooth' });
+        // Rola só se o controle estiver escondido: atrás do cabeçalho ou do próprio cartão.
+        const box = target.getBoundingClientRect(), guideTop = card.current?.getBoundingClientRect().top ?? innerHeight;
+        const coversCard = box.left < (card.current?.getBoundingClientRect().right ?? 0) && box.right > (card.current?.getBoundingClientRect().left ?? innerWidth);
+        if (box.top < TOP_GAP || (coversCard && box.top > guideTop - 48) || box.bottom > innerHeight) window.scrollBy({ top: box.top - TOP_GAP, behavior: reduce ? 'auto' : 'smooth' });
         setSpot({ key: spotKey, found: true }); return;
       }
       if (!copy.target || ++tries > 10) { setSpot({ key: spotKey, found: copy.target ? false : null }); return; }
@@ -134,11 +138,11 @@ export default function TutorialLayer({ modules, tab, projectId, onNavigate }: {
         <ChapterList headingLevel={3}/>
       </div>
     </div>}
-    {chapter && step && copy && <section className={styles.guide} aria-labelledby="tutorial-step-title" onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); pauseTutorial(); } }}>
+    {chapter && step && copy && <section ref={card} className={styles.guide} aria-labelledby="tutorial-step-title" onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); pauseTutorial(); } }}>
       <header className={styles.guideHead}>
         <img src="/brand/role-mascote/role-rosto.svg" alt="" width={36} height={36}/>
         <p className={styles.guideContext}><LifeBuoy size={14} aria-hidden="true"/>{chapter.title} · {position} de {allowedIndexes.length}</p>
-        <button type="button" className={`p-icon-button ${styles.guideClose}`} aria-label="Sair do tutorial (guarda onde você parou)" onClick={pauseTutorial}><X size={18} aria-hidden="true"/></button>
+        <button type="button" className={`p-icon-button ${styles.guideClose}`} aria-label="Pausar o tutorial (continua de onde parou)" title="Pausar o tutorial (continua de onde parou)" onClick={pauseTutorial}><X size={18} aria-hidden="true"/></button>
       </header>
       <h2 id="tutorial-step-title" ref={heading} tabIndex={-1}>{step.title}</h2>
       <p className={styles.speech}>{copy.speech}</p>
@@ -147,13 +151,13 @@ export default function TutorialLayer({ modules, tab, projectId, onNavigate }: {
       {found === false && !goTo && <p className={styles.muted}>Siga para o próximo passo: este controle aparece quando houver dados ou acesso para ele.</p>}
       <div className={styles.guideActions}>
         {last ? <>
+          <button type="button" className={`p-button p-button-primary ${styles.goTo}`} onClick={() => finishTutorial()}>Concluir</button>
           <button type="button" className="p-button p-button-subtle" onClick={() => finishTutorial('repeat')}><RotateCcw size={16} aria-hidden="true"/>Repetir esta parte</button>
           <button type="button" className="p-button p-button-subtle" onClick={() => finishTutorial('chooser')}>Ver outros assuntos</button>
-          <button type="button" className="p-button p-button-primary" onClick={() => finishTutorial()}>Concluir</button>
         </> : <>
           {goTo && <button type="button" className={`p-button p-button-primary ${styles.goTo}`} onClick={() => { refocus.current = true; heading.current?.focus({ preventScroll: true }); onNavigate(copy.module!); }}><ExternalLink size={16} aria-hidden="true"/>{copy.openLabel}</button>}
-          <button type="button" className="p-button p-button-subtle" disabled={position <= 1} onClick={previousStep}><ArrowLeft size={16} aria-hidden="true"/>Voltar</button>
-          <button type="button" className="p-button p-button-subtle" onClick={pauseTutorial}><Pause size={16} aria-hidden="true"/>Pausar</button>
+          <button type="button" className={`p-button p-button-subtle ${styles.compact}`} disabled={position <= 1} onClick={previousStep} aria-label="Voltar"><ArrowLeft size={16} aria-hidden="true"/><span className={styles.label}>Voltar</span></button>
+          <button type="button" className={`p-button p-button-subtle ${styles.compact}`} onClick={pauseTutorial} aria-label="Pausar"><Pause size={16} aria-hidden="true"/><span className={styles.label}>Pausar</span></button>
           <button type="button" className={`p-button ${goTo ? 'p-button-subtle' : 'p-button-primary'} ${styles.next}`} onClick={nextStep}>{goTo ? 'Pular' : 'Próximo'}<ArrowRight size={16} aria-hidden="true"/></button>
         </>}
       </div>

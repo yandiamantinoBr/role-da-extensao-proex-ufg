@@ -73,8 +73,8 @@ export const TUTORIAL_CHAPTERS: readonly TutorialChapter[] = [
         id: 'menu', title: 'Onde ficam os módulos',
         speech: 'No computador, os módulos ficam no menu à esquerda, no grupo Trabalho e, conforme o seu acesso, em Gestão. Recolher menu deixa só os ícones para ganhar espaço.',
         speechMobile: 'No celular, a barra de baixo mostra o Início e três atalhos. Mais abre a lista completa, com uma busca de módulos.',
-        youWillSee: 'O menu lateral destacado.', youWillSeeMobile: 'O botão Mais destacado.',
-        target: '[data-tutorial="nav-menu"]', targetMobile: '[data-tutorial="nav-mais"]',
+        youWillSee: 'O menu lateral destacado.', youWillSeeMobile: 'A barra de baixo destacada, com o Mais à direita.',
+        target: '[data-tutorial="nav-menu"]', targetMobile: '[data-tutorial="nav-barra"]',
         labels: ['Trabalho', 'Gestão', 'Recolher menu', 'Mais'],
       },
       {

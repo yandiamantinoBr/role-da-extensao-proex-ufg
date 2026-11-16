@@ -37,6 +37,8 @@
 
 /* Janela "Ajuda e tutoriais" */
 .backdrop { position: fixed; inset: 0; z-index: 70; display: grid; place-items: center; padding: 16px; background: rgb(23 12 32 / .45); }
+:global(html[data-theme=dark]) .backdrop { background: rgb(8 4 12 / .72); }
+:global(html[data-theme=dark]) .dialog { border-color: color-mix(in srgb, var(--brand-ink) 35%, var(--line)); }
 .dialog { display: grid; gap: 14px; width: min(640px, 100%); max-height: min(86dvh, 760px); overflow: auto; padding: 18px; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); box-shadow: 0 24px 60px -24px #1d0b2b80; }
 .dialogHead { display: grid; grid-template-columns: auto 1fr auto; align-items: start; gap: 12px; }
 .dialogHead h2 { margin: 0; color: var(--ink); font-family: var(--font-display); font-size: 20px; }
@@ -46,7 +48,7 @@
 
 /* Cartão guiado: não é modal; fica acima do lançador da doca no computador e da barra de baixo no celular. */
 .guide { position: fixed; z-index: 60; right: 92px; bottom: 24px; width: min(390px, calc(100vw - 32px)); max-height: min(70dvh, 520px); overflow: auto; display: grid; gap: 8px; padding: 14px 16px 16px; border: 1px solid var(--line); border-top: 4px solid var(--brand-ink); border-radius: 16px; background: var(--surface); color: var(--ink); box-shadow: 0 18px 48px -20px #1d0b2b80; }
-@media (max-width: 720px) { .guide { left: 12px; right: 12px; width: auto; bottom: calc(78px + env(safe-area-inset-bottom, 0px)); max-height: 46dvh; } }
+@media (max-width: 720px) { .guide { left: 0; right: 0; width: auto; bottom: calc(66px + env(safe-area-inset-bottom, 0px)); max-height: 46dvh; border-radius: 16px 16px 0 0; border-left: 0; border-right: 0; } }
 :global(body):has(.guide) :global(.p-main) { padding-bottom: 300px; }
 .guideHead { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; }
 .guideHead img, .dialogHead img { border-radius: 10px; }
@@ -63,4 +65,7 @@
 .guideActions { position: sticky; bottom: -16px; z-index: 1; display: flex; flex-wrap: wrap; gap: 8px; margin: 4px -16px -16px; padding: 10px 16px 16px; border-top: 1px solid var(--line); background: var(--surface); }
 .guideActions :global(.p-button) { min-height: 44px; }
 .next { margin-left: auto; }
-@media (max-width: 380px) { .guideActions :global(.p-button) { flex: 1 1 auto; justify-content: center; } .next { margin-left: 0; } }
+/* Telas estreitas: Voltar e Pausar só com ícone, tudo numa linha; o texto ganha mais espaço. */
+@media (max-width: 400px) { .guideActions { flex-wrap: nowrap; } .compact { width: 44px; padding: 0; justify-content: center; } .compact .label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; } .next { flex: 1 1 auto; justify-content: center; margin-left: 0; } .guideActions:has(.goTo) { flex-wrap: wrap; } }
+/* Sombra discreta quando há texto para rolar dentro do cartão. */
+.guide { background: linear-gradient(var(--surface) 30%, transparent) center bottom / 100% 24px no-repeat local, radial-gradient(farthest-side at 50% 100%, rgb(0 0 0 / .14), transparent) center bottom / 100% 10px no-repeat scroll, var(--surface); }

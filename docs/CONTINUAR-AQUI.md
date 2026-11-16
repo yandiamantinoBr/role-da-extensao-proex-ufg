@@ -10,6 +10,15 @@ Comece pela [Retomada de 13/11](RETOMADA-13NOV-PORTAL-PROEX.md) para conferir a 
 - **Pendente de decisão:** a planilha mestre (só administração) ainda exporta observação e condições dos empréstimos (`lib/sync/portable.ts`).
 - **QA local:** se a porta 5173 estiver em uso por outra sessão, rode uma cópia do script com `5173` trocado por `5174` e apague a cópia depois. Não encerre o QA de outra sessão.
 
+## Tutoriais do Portal sem IA · Navegação · 2026-11-16
+
+Branch `claude/tutoriais-navegacao-16nov` (Claude Code), migração **0052_user_tutorials** (só acréscimo). Detalhes e como criar capítulos: [TUTORIAIS](../apps/proex-portal/docs/TUTORIAIS.md).
+
+- Convite do Rolê no Início (uma vez), **Ajuda e tutoriais** no menu da conta, em Mais e na Conta, cartão guiado não modal com contorno no controle real, pausar, retomar, repetir. Funciona sem IA, chave ou `inventory.read`.
+- Passos resolvidos pelo acesso da sessão a cada abertura e troca de projeto (projeto vizinho, conta bloqueada ou pendente, vínculo revogado com a tela aberta). Progresso pessoal; a anonimização apaga.
+- Junto (PR #144, no ar): a dica de Demandas só cita **Somente demandas gerais** para quem tem a opção.
+- **Falta:** capítulos por público (Meu trabalho, Projetos, Demandas, Equipes, Agenda, Materiais, Dinâmicas; Empréstimos por último), **Experimentar**, ajuda na página do voluntário e na área pública, abrir pelo chat do Rolê.
+
 ## Auditoria de permissões das PRs 105–143 · 16/11
 
 - **No ar:** PR145 (`77c7d74`, `dpl_CyyYfr2DkymRGgZEaCkize4jf5ca`). A leitura de DOCX (`lib/importer/documents.ts`) passou a percorrer o XML uma vez só. Antes, marcas `<w:t>` sem fechamento faziam o tempo crescer ao quadrado: 120 KB levavam 6,6 s, e o limite de 1 MB prendia o servidor por minutos (Rolê e importação). Os testes de tempo e de texto igual estão em `tests/import-documents.test.mjs`.
@@ -146,7 +155,6 @@ Branch `claude/visual-coerencia-09nov` (Claude Code), PR [42](https://github.com
 
 **Continuidade técnica:** snapshots e journal estão em ordem até 0034, com SQL complementar preservado. Não gerar novamente uma migração customizada sem cópia e conferência. Não reconstruir `dist` enquanto o servidor de QA estiver rodando. As projeções da mestre não incluem automaticamente as novas tabelas. Validar CI antes do merge e conferir o fluxo autenticado após o deploy. Pendências de Sheets, cofre e coleta pelo Google permanecem separadas.
 
-
 ## Histórico · PR37 publicada e migração conferida · 2026-11-05
 
 Produção funcional **5ad7025d58a7d3351edc301377c72079ed0cb961**, Vercel **dpl_FnF94q2dLgVWgLgVyo1993UUcawo READY**, alias oficial e Chrome autenticado conferidos. Head funcional testado **dc5796e**: **1.237/1.237**, tipos, lint sem erros (dois avisos antigos), Worker/Node e smoke; CI42094055194 aprovado. Saúde200; APIs novas com consulta válida sem sessão401/no-store. [Entrega](ENTREGA-05NOV-ROLE-CONPEEX.md), [aceite independente9/10 no escopo](REVISAO-05NOV-ROLE-CONPEEX-DESIGN-ACEITE.md), [recibos e imagens sintéticas](evidencias/2026-11-05-role-conpeex/README.md).
@@ -171,7 +179,6 @@ Chrome restaurado, mas extensão sem debugger e captura nativa divergente da jan
 
 A próxima composição está na [PR #36, rascunho](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/36), branch `codex/proex-resumo-e-estrutura-05nov`: organograma formal0029, estrutura/equipes com permissões separadas, exportações e resumo pessoal do Início com totais privados. Não foi publicada. [Registro, gates e próximos aceites](ENTREGA-05NOV-RESUMO-E-ESTRUTURA.md). Ler o registro antes de continuar; a interrupção dos subagentes por limite de uso não constitui aceite de revisão. Os checkpoints antigos abaixo permanecem históricos.
 
-
 ## Publicação confirmada e próxima composição · 05/11/2026
 
 PR #33 publicada: merge `c8182d2e4b34f99033b861daa8064e12f1e2d937`, Vercel `dpl_7vA9LLPkEtiJoewFzEThQAfiKqFy` READY. CI `42030415419`: 1003 testes do Portal, tipos, builds Worker/Node e autenticação aprovados. Chrome autenticado confirmou versão no rodapé, cartão do CONPEEX abrindo a ficha, calendário em português no mês atual e campo `05/11/2026`, além do feedback com versão. Nenhuma demanda/aviso de QA foi criada em produção.
@@ -189,7 +196,6 @@ Frente seguinte iniciada em worktree isolada: estrutura institucional formal den
 PR #33, branch `codex/proex-evolucao-05nov`: filtros/datas brasileiras, favoritos/gráfico de projetos, origem da demanda, planilha exclusiva por projeto, versão/feedback e PDF/DOCX/XLSX em Registros e Resumo diário. [Resultado, testes e limites](ENTREGA-05NOV-UX-E-SHEETS.md) e [fila completa](RODADA-05NOV-UX-E-PLANILHAS.md). Não confundir esta branch com produção antes do recibo de merge/deploy.
 
 Agentes mantêm frentes separadas de MCP pessoal (0024), Groq no cofre (0025) e checklist de atividade (0026). Integrar e gerar snapshots em ordem após os respectivos testes. Não ler segredos, usar dados reais em QA ou iniciar chamadas pagas. A instalação do script por projeto é uma etapa própria no Google; preservar script/gatilhos da mestre.
-
 
 ## Voltar e Avançar entre os módulos · 04/11/2026
 
@@ -312,11 +318,9 @@ Requisitos R01–R22 e achados A01–A28 continuam rastreados. Não declarar tud
 
 Leia docs/COBERTURA-DE-REQUISITOS.md e docs/ENTREGA-V13.md; V12 é histórico em docs/ENTREGA-V12.md. Histórico em docs/ANDAMENTO.md; Vault salva/relida localmente não comprova sincronização em nuvem.
 
-
 ## Verificações em continuidade - 05/11
 
 A reconsulta Google Calendar da assinatura existente PROEX · Projetos e eventos,9–13/11, retornou zero eventos às10h54 de Brasília. Coleta ainda pendente; não criar cópia ou revogar link para esconder a lacuna. A conexão de inventário dos chats não devolveu resultado e foi encerrada sem envio; não declarar comunicação das novas entregas aos oito chats. A próxima composição recebeu snapshot0027, nove colunas/PK/FK preservadas e rollback sob falha.26focais passaram. Rodada ampla1094/1095 teve falso positivo antigo na busca de prefixo CPF de três dígitos em UUID/timestamp; f4b744d agora valida as duas formas completas e JSON exato de auditoria. Focal passou; repetir integrado depois das novas mudanças, sem registrar100% antecipadamente.
-
 
 ## QA final e frente seguinte em paralelo - 05/11
 

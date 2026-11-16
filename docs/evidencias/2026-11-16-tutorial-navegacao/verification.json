@@ -1,0 +1,16 @@
+{
+  "origin": "http://127.0.0.1:5175",
+  "base": "descartável, loopback, dados sintéticos; node scripts/qa-local.mjs --credential-vault --roles-smoke (porta 5175)",
+  "branch": "claude/tutoriais-navegacao-16nov",
+  "accounts": ["responsável (completa)", "gestão de projeto", "operação em um projeto (restrita)", "materiais", "bolsista revogada pelo smoke (cai na tela de participante, sem tutorial)"],
+  "journey": "convite do Rolê → Fazer o tour completo → 8 passos → Ir para Meus acessos → Concluir; reabertura por Mais/menu da conta → Ajuda e tutoriais → Repetir; Escape fecha a janela",
+  "checks": {
+    "stepsAvailable": "boas-vindas,inicio,menu,fixar,projeto,conta,meus-acessos,fim (todas as contas com projeto)",
+    "spotted": ["nav-inicio", "nav-menu (computador) / nav-mais (celular)", "inicio-personalizar (computador)", "filtro-projeto", "conta-menu", "meus-acessos (depois de Ir para)"],
+    "focusAfterGoTo": "tutorial-step-title",
+    "progressSaved": "completed em fim; convite started",
+    "pageErrors": [],
+    "horizontalOverflow": { "360": false, "390": false, "1366": false }
+  },
+  "notVerified": ["leitor de tela real (NVDA/TalkBack/VoiceOver)", "aparelho físico", "zoom de 400%"]
+}

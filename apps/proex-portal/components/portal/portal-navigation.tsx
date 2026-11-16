@@ -123,7 +123,7 @@ export function MobileNavigation({ modules, active, onNavigate, pinned, role, on
     }, [open, close]);
     function navigate(id: ModuleId) { onNavigate(id); close(); }
     return <>
-    <nav ref={navigation} className="pn-mobile-nav" aria-label="Navegação principal no celular">{items.map(({ id, label, icon: Icon }) => <button key={id} data-tutorial={id === 'overview' ? 'nav-inicio' : undefined} className={active === id ? 'is-active' : ''} onClick={() => onNavigate(id)} aria-current={active === id ? 'page' : undefined}>
+    <nav ref={navigation} className="pn-mobile-nav" data-tutorial="nav-barra" aria-label="Navegação principal no celular">{items.map(({ id, label, icon: Icon }) => <button key={id} data-tutorial={id === 'overview' ? 'nav-inicio' : undefined} className={active === id ? 'is-active' : ''} onClick={() => onNavigate(id)} aria-current={active === id ? 'page' : undefined}>
         <Icon size={20}/>
         <span>{label}</span>
         </button>)}<button ref={trigger} data-tutorial="nav-mais" className={open || !primaryIds.includes(active) ? 'is-active' : ''} onClick={() => setOpen(true)} aria-haspopup="dialog" aria-expanded={open} aria-controls="portal-mobile-navigation">
