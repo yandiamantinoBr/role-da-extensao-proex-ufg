@@ -28,7 +28,7 @@ const DAY = 86_400_000;
 const STATE_LABELS: Record<string, string> = {
   open: 'Aberta', in_progress: 'Em andamento', blocked: 'Bloqueada', done: 'Concluída', cancelled: 'Cancelado', tentative: 'A confirmar',
   confirmed: 'Confirmado', active: 'Ativo', paused: 'Pausado', closed: 'Encerrado', archived: 'Arquivado', reserved: 'Reservado',
-  out: 'Retirado', returned: 'Devolvido', late: 'Atrasado', recorded: 'Registrado',
+  out: 'Retirado', returned: 'Devolvido', late: 'Atrasado', recorded: 'Registrado', not_collected: 'Não retirada',
 };
 /** "Cancelada" para demanda; "Cancelado" para turno, evento e empréstimo. */
 function stateLabel(event: Pick<CalendarEntry, 'state' | 'sourceKind'>): string {
@@ -111,10 +111,10 @@ function entry(row: Row, category: CalendarCategory, sourceKind: string, allDay 
     ...(row.parent_id ? { parentId: String(row.parent_id) } : {}),
     projectId: String(row.project_id), projectName: String(row.project_name), category,
     title: String(row.title), ...(row.export_title ? { exportTitle: String(row.export_title) } : {}), startsAt, endsAt, allDay,
-    status: row.state === 'cancelled' || row.state === 'archived' ? 'CANCELLED' : 'CONFIRMED',
+    status: row.state === 'cancelled' || row.state === 'archived' || row.state === 'not_collected' ? 'CANCELLED' : 'CONFIRMED',
     state: String(row.state || 'recorded'), revision: Math.max(0, Number(row.revision) || 0),
     lastModified: iso(row.last_modified, iso(row.created_at, `${startsAt.slice(0, 10)}T12:00:00.000Z`)),
-    transparent: allDay || row.state === 'returned' || row.state === 'cancelled' || row.state === 'archived',
+    transparent: allDay || row.state === 'returned' || row.state === 'cancelled' || row.state === 'archived' || row.state === 'not_collected',
     location: String(row.location || ''),
   };
 }
@@ -147,7 +147,7 @@ export async function calendarEntries(db: D1Database, actor: PortalActor | null,
     let rows: Row[] = [];
     if (category === 'loans') {
       rows = await all(db, `SELECT l.id,l.project_id,p.name project_name,
-        'Empréstimo · ' || i.name || ' · ' || l.action_name title,'Empréstimo · ' || i.name export_title,l.starts_at,l.ends_at,l.status state,
+        'Empréstimo · ' || i.name || ' · ' || l.action_name title,'Empréstimo · ' || i.name export_title,l.starts_at,l.ends_at,CASE WHEN l.close_reason='not_collected' THEN 'not_collected' ELSE l.status END state,
         l.created_at,COALESCE(NULLIF(l.updated_at,''),l.returned_at,l.checked_out_at,l.created_at) last_modified,
         (SELECT COUNT(*) FROM audit a WHERE a.entity_id=l.id)+1 revision
         FROM loans l JOIN projects p ON p.id=l.project_id JOIN items i ON i.id=l.item_id AND i.project_id=l.project_id

@@ -50,6 +50,7 @@ import ReportsCenter from '@/components/portal/reports-center';
 import { readReportArrival, REPORT_ARRIVAL_PARAMS, type ReportDatasetId } from '@/lib/report-links';
 import type { DemandReportFilter } from '@/lib/follow-up/contracts';
 import { emptyLoanFilters, isOverdueLoan, isValidLoanFilterPeriod, loanMatches, loanStates, type LoanListFilters, type LoanStateFilter } from '@/lib/loan-list-filters';
+import { loanDisplayState } from '@/lib/loan-lifecycle';
 import FollowUpPanel from '@/components/portal/follow-up-panel';
 import MeuTrabalhoPanel from '@/components/portal/meu-trabalho-panel';
 import PersonalWorkSummary from '@/components/portal/personal-work-summary';
@@ -104,7 +105,7 @@ const areaOwnerScopes: readonly {
     { area: 'loans', tab: 'loans', capabilities: ['loans.read', 'loans.manage', 'loans.checkout'], subject: 'dos empréstimos' },
     { area: 'campaigns', tab: 'events', capabilities: ['campaigns.manage', 'participation.operate', 'inventory.deliver'], subject: 'das dinâmicas' },
 ];
-const statusNames: Row = { draft: 'Rascunho', active: 'Ativo', paused: 'Pausado', closed: 'Encerrado', reserved: 'Reservado', out: 'Retirado', returned: 'Devolvido', cancelled: 'Cancelado', pending: 'Pendente', accepted: 'Aceito', revoked: 'Revogado' };
+const statusNames: Row = { draft: 'Rascunho', active: 'Ativo', paused: 'Pausado', closed: 'Encerrado', reserved: 'Reservado', out: 'Retirado', returned: 'Devolvido', cancelled: 'Cancelado', not_collected: 'Não retirada', pending: 'Pendente', accepted: 'Aceito', revoked: 'Revogado' };
 // Mesmos rótulos de convites e de Meus acessos (lib/team-access-labels.ts); só a chave `inventory` fica no banco.
 const roleNames: Row = { owner: 'Responsável institucional', ...projectAccessRoleLabels };
 const categoryNames: Row = { gift: 'Brinde', equipment: 'Equipamento', distribution: 'Distribuição institucional', consumption: 'Consumo interno' };
@@ -498,7 +499,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         const matches = loanMatches(loanFilters, now);
         const names = new Map(items.map(item=>[item.id,string(item.name)]));
         return displayedLoans.filter(loan=>matches({
-            state:string(loan.status),
+            state:loanDisplayState(loan.status,get(loan,'closeReason','close_reason')),
             startsAt:get(loan,'startsAt','starts_at')??null,
             endsAt:get(loan,'endsAt','ends_at')??null,
             labels:[names.get(get(loan,'itemId','item_id')),string(loan.itemName),string(get(loan,'actionName','action_name'))],
@@ -1140,7 +1141,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
                     return <article className={`p-card p-loan-card ${workStyles.record}`} id={`work-record-${l.id}`} tabIndex={-1} key={l.id}>
                     <div className="p-row-between">
                     <span className="p-kicker">{projectName(get(l, 'projectId', 'project_id'))}</span>
-                    <div className="p-inline">{late && <span className="p-badge p-status-late">Em atraso</span>}<Badge status={l.status}/>
+                    <div className="p-inline">{late && <span className="p-badge p-status-late">Em atraso</span>}<Badge status={loanDisplayState(l.status,get(l,'closeReason','close_reason'))}/>
                     </div>
                     </div>
                     <h3>{item?.name || l.itemName || 'Equipamento'}</h3>{workContext(string(get(l,'projectId','project_id')),'loans',{loanId:string(l.id)})}
@@ -1152,6 +1153,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
                     <span>até {when(get(l, 'endsAt', 'ends_at'))}</span>
                     </div>
                     </div>
+                    {loanDisplayState(l.status,get(l,'closeReason','close_reason')) === 'not_collected' && <p className="p-form-help">A reserva venceu sem retirada, e o equipamento foi liberado. Para usar, faça uma nova reserva.</p>}
                     <a className="p-text-link p-history-link" href={historyHref({ kind: 'loan', id: string(l.id) }, string(get(l,'projectId','project_id')))} aria-label="Ver histórico deste empréstimo em Registros">Ver histórico<ArrowUpRight size={14} aria-hidden="true"/></a>
                     <details className={l.status === 'out' || l.status === 'reserved' ? 'p-loan-next' : undefined}>
                     <summary>{l.status === 'out' ? 'Registrar devolução' : l.status === 'reserved' ? 'Registrar retirada' : 'Detalhes, termos e ocorrências'}{(l.status === 'out' || l.status === 'reserved') && <small>termos e ocorrências</small>} <ChevronDown size={16}/>

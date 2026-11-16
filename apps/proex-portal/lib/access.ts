@@ -150,6 +150,7 @@ export async function getActor(
   if (!user || !identifier(user.userId) || !email(user.email)) return null;
   const normalizedEmail = email(user.email)!;
   await expireVolunteerAccess(db);
+  await closeUncollectedLoans(db);
   const account=await db.prepare('SELECT status,activation_pending,anonymized_at FROM portal_users WHERE user_id=?').bind(user.userId).first<{status:string;activation_pending:number;anonymized_at:string|null}>();
   if(account?.status==='blocked'||account?.anonymized_at)return null;
   if (!account?.activation_pending && email(configuredOwnerEmail) === normalizedEmail) {
@@ -299,6 +300,27 @@ export async function expireVolunteerAccess(db: D1Database): Promise<number> {
     db.prepare(`INSERT OR IGNORE INTO audit (id,actor_id,project_id,action,entity_id,details,created_at)
       SELECT ?,v.user_id,v.project_id,'volunteer.expired',v.id,json_object('campaignId',v.campaign_id,'endsAt',v.ends_at,'recordedAt',?),v.ends_at
       FROM campaign_volunteers v WHERE v.id=? AND v.revoke_reason='expired'`).bind(`volunteer-expired:${id}`, now, id),
+  ]));
+  return due.length;
+}
+
+/**
+ * Reserva com horário vencido e sem retirada (decisão de 2026-11-16): vira "Não retirada" e libera o equipamento.
+ * - Limite exato: a retirada vale enquanto now < ends_at (lib/materials.ts, loan.status). Em now >= ends_at
+ *   a reserva não pode mais ser retirada e é encerrada aqui.
+ * - Grava status 'cancelled' com close_reason 'not_collected' e um registro de auditoria, uma única vez.
+ * - Nunca vira devolução: só reservas (status 'reserved') são encerradas; empréstimos retirados seguem em atraso.
+ * Roda a cada requisição autenticada (getActor) e só escreve quando há algo vencido. Ver lib/loan-lifecycle.ts.
+ */
+export async function closeUncollectedLoans(db: D1Database, now = Date.now()): Promise<number> {
+  const due = (await db.prepare("SELECT id FROM loans WHERE status='reserved' AND ends_at<=? ORDER BY ends_at,id LIMIT 100").bind(now).all<{ id: string }>()).results ?? [];
+  if (!due.length) return 0;
+  const at = new Date(now).toISOString();
+  await db.batch(due.flatMap(({ id }) => [
+    db.prepare("UPDATE loans SET status='cancelled',close_reason='not_collected',updated_at=? WHERE id=? AND status='reserved' AND ends_at<=?").bind(at, id, now),
+    db.prepare(`INSERT OR IGNORE INTO audit (id,actor_id,project_id,action,entity_id,details,created_at)
+      SELECT ?,l.created_by,l.project_id,'loan.not_collected',l.id,json_object('previous','reserved','status','cancelled','reason','not_collected','endsAt',l.ends_at),?
+      FROM loans l WHERE l.id=? AND l.close_reason='not_collected'`).bind(`loan-not-collected:${id}`, at, id),
   ]));
   return due.length;
 }

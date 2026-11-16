@@ -1,7 +1,7 @@
 import { isCivilDate } from './civil-date';
 import { listSearch } from './list-search';
 
-export const loanStates = { all:'Todas as situações', reserved:'Reservado', out:'Retirado', overdue:'Em atraso', returned:'Devolvido', cancelled:'Cancelado' };
+export const loanStates = { all:'Todas as situações', reserved:'Reservado', out:'Retirado', overdue:'Em atraso', returned:'Devolvido', not_collected:'Não retirada', cancelled:'Cancelado' };
 export type LoanStateFilter = keyof typeof loanStates;
 export type LoanListFilters = { search:string; state:LoanStateFilter; from:string; to:string };
 export const emptyLoanFilters: LoanListFilters = { search:'', state:'all', from:'', to:'' };

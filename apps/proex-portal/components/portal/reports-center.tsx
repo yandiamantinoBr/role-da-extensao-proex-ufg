@@ -158,7 +158,7 @@ const LABELS: Record<string, Record<string, string>> = {
 };
 const STATUS: Partial<Record<DatasetId, Record<string, string>>> = {
   projects: { active: 'Ativo', archived: 'Arquivado' },
-  loans: { reserved: 'Reservado', out: 'Retirado', returned: 'Devolvido', cancelled: 'Cancelado' },
+  loans: { reserved: 'Reservado', out: 'Retirado', returned: 'Devolvido', cancelled: 'Cancelado', not_collected: 'Não retirada' },
   campaigns: { draft: 'Rascunho', active: 'Ativo', paused: 'Pausado', closed: 'Encerrado' },
   demands: { open: 'Aberta', in_progress: 'Em andamento', blocked: 'Bloqueada', completed: 'Concluída', cancelled: 'Cancelada' },
   reviews: { open: 'Aberta', completed: 'Concluída' },
