@@ -14,6 +14,8 @@ export type CalendarEntry = {
   uid: string; sourceId: string; sourceKind: string; projectId: string; projectName: string;
   /** Parent record when the entry represents a session or an aggregate. */
   parentId?: string;
+  /** Title for files that leave the portal (ICS download and feed): no free text typed by people. */
+  exportTitle?: string;
   category: CalendarCategory; title: string; startsAt: string;
   /** Exclusive civil date for all-day entries, as in iCalendar. */
   endsAt: string; allDay: boolean;
@@ -102,7 +104,7 @@ function entry(row: Row, category: CalendarCategory, sourceKind: string, allDay 
     uid: `${sourceKind}.${row.id}@proex-gestao`, sourceId: String(row.id), sourceKind,
     ...(row.parent_id ? { parentId: String(row.parent_id) } : {}),
     projectId: String(row.project_id), projectName: String(row.project_name), category,
-    title: String(row.title), startsAt, endsAt, allDay,
+    title: String(row.title), ...(row.export_title ? { exportTitle: String(row.export_title) } : {}), startsAt, endsAt, allDay,
     status: row.state === 'cancelled' || row.state === 'archived' ? 'CANCELLED' : 'CONFIRMED',
     state: String(row.state || 'recorded'), revision: Math.max(0, Number(row.revision) || 0),
     lastModified: iso(row.last_modified, iso(row.created_at, `${startsAt.slice(0, 10)}T12:00:00.000Z`)),
@@ -139,7 +141,7 @@ export async function calendarEntries(db: D1Database, actor: PortalActor | null,
     let rows: Row[] = [];
     if (category === 'loans') {
       rows = await all(db, `SELECT l.id,l.project_id,p.name project_name,
-        'Empréstimo · ' || i.name || ' · ' || l.action_name title,l.starts_at,l.ends_at,l.status state,
+        'Empréstimo · ' || i.name || ' · ' || l.action_name title,'Empréstimo · ' || i.name export_title,l.starts_at,l.ends_at,l.status state,
         l.created_at,COALESCE(NULLIF(l.updated_at,''),l.returned_at,l.checked_out_at,l.created_at) last_modified,
         (SELECT COUNT(*) FROM audit a WHERE a.entity_id=l.id)+1 revision
         FROM loans l JOIN projects p ON p.id=l.project_id JOIN items i ON i.id=l.item_id AND i.project_id=l.project_id
@@ -347,7 +349,7 @@ export function serializeCalendar(entries: CalendarEntry[], label = 'Agenda PROE
     lines.push('BEGIN:VEVENT', `UID:${escapeICalText(event.uid)}`, `DTSTAMP:${icalTime(event.lastModified)}`, `LAST-MODIFIED:${icalTime(event.lastModified)}`, `SEQUENCE:${event.revision}`);
     if (event.allDay) lines.push(`DTSTART;VALUE=DATE:${event.startsAt.replaceAll('-', '')}`, `DTEND;VALUE=DATE:${event.endsAt.replaceAll('-', '')}`);
     else lines.push(`DTSTART:${icalTime(event.startsAt)}`, `DTEND:${icalTime(event.endsAt)}`);
-    lines.push(`SUMMARY:${escapeICalText(event.title)}`, `DESCRIPTION:${escapeICalText(`${event.projectName} · ${stateLabel(event)}`)}`, `CATEGORIES:${escapeICalText(CALENDAR_LABELS[event.category])}`, `STATUS:${event.status}`, `TRANSP:${event.transparent ? 'TRANSPARENT' : 'OPAQUE'}`, 'CLASS:PRIVATE');
+    lines.push(`SUMMARY:${escapeICalText(event.exportTitle ?? event.title)}`, `DESCRIPTION:${escapeICalText(`${event.projectName} · ${stateLabel(event)}`)}`, `CATEGORIES:${escapeICalText(CALENDAR_LABELS[event.category])}`, `STATUS:${event.status}`, `TRANSP:${event.transparent ? 'TRANSPARENT' : 'OPAQUE'}`, 'CLASS:PRIVATE');
     if (event.location) lines.push(`LOCATION:${escapeICalText(event.location)}`);
     lines.push('END:VEVENT');
   }

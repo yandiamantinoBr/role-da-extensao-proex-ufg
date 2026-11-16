@@ -62,7 +62,7 @@ function recordVisibility(actor: PortalActor, extra: { clauses: string[]; values
 }
 
 /** Filtros comuns: projeto, unidade, área temática e período (datas no horário de Brasília). */
-export async function reportRows(db: D1Database, actor: PortalActor | null, input: Record<string, unknown>): Promise<{ dataset: ReportDataset; rows: Row[]; truncated: boolean }> {
+export async function reportRows(db: D1Database, actor: PortalActor | null, input: Record<string, unknown>): Promise<{ dataset: ReportDataset; rows: Row[]; truncated: boolean; withheldColumns?: string[] }> {
   if (!actor) throw new HttpError(401, 'Entre para consultar relatórios.', 'unauthenticated');
   const dataset = input.dataset as ReportDataset;
   if (!Object.hasOwn(REPORT_DATASETS, dataset)) throw new HttpError(400, 'Escolha um relatório válido.', 'invalid_report');
@@ -127,8 +127,27 @@ export async function reportRows(db: D1Database, actor: PortalActor | null, inpu
   } else if (dataset === 'loans') {
     rows = await run(`SELECT l.id,${projectColumns},i.name AS material,l.action_name AS acao,date(l.starts_at/1000,'unixepoch','-3 hours') AS inicio,date(l.ends_at/1000,'unixepoch','-3 hours') AS fim,
       l.status AS situacao,date(l.checked_out_at,'-3 hours') AS retirado_em,date(l.returned_at,'-3 hours') AS devolvido_em,
-      CASE WHEN l.status='out' AND l.ends_at<CAST(strftime('%s','now') AS INTEGER)*1000 THEN 'sim' ELSE 'nao' END AS em_atraso,l.condition_out AS condicao_saida,l.condition_in AS condicao_retorno
+      CASE WHEN l.status='out' AND l.ends_at<CAST(strftime('%s','now') AS INTEGER)*1000 THEN 'sim' ELSE 'nao' END AS em_atraso,l.condition_out AS condicao_saida,l.condition_in AS condicao_retorno,l.project_id AS __loan_project
       FROM loans l JOIN items i ON i.id=l.item_id JOIN ${base.replace('projects p', 'projects p ON p.id=l.project_id')} /*WHERE*/ ORDER BY l.starts_at DESC,l.id`, period('l.starts_at', true));
+    // Condição na retirada e na devolução são texto livre: podem conter nome, contato ou observação pessoal.
+    // Só quem consulta empréstimos daquele projeto as recebe; quem só lê relatórios recebe o campo vazio.
+    // A permissão é relida no banco agora, como as demais; o perfil carregado no início da requisição não basta.
+    const loanReaders = new Set<string>();
+    const ids = [...new Set(rows.map(row => String(row.__loan_project)))];
+    if (ids.length) {
+      const live = projectAuthoritySql(actor, ['loans.read'], 'p.id');
+      for (const row of await all(db, `SELECT p.id FROM projects p WHERE p.id IN (${ids.map(() => '?').join(',')}) AND ${live.sql}`, [...ids, ...live.values])) loanReaders.add(String(row.id));
+    }
+    let withheld = false;
+    rows = rows.map(({ __loan_project, ...row }) => {
+      if (loanReaders.has(String(__loan_project))) return row;
+      if (row.condicao_saida || row.condicao_retorno) withheld = true;
+      return { ...row, condicao_saida: '', condicao_retorno: '' };
+    });
+    if (withheld || rows.length && loanReaders.size < ids.length) {
+      const truncated = rows.length > MAX_ROWS;
+      return { dataset, rows: truncated ? rows.slice(0, MAX_ROWS) : rows, truncated, withheldColumns: ['condicao_saida', 'condicao_retorno'] };
+    }
   } else if (dataset === 'records') {
     rows = await run(`SELECT r.id,date(r.occurred_at,'-3 hours') AS data,${projectColumns},r.kind AS categoria,r.title AS titulo,substr(r.body,1,500) AS descricao,
       (SELECT COUNT(*) FROM record_attachments a WHERE a.record_id=r.id AND a.deleted_at IS NULL) AS anexos

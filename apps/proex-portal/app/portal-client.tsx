@@ -1179,7 +1179,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
             <select name="itemId" required>
             <option value="">Selecione um bem</option>{formItems.filter(i => i.category === 'equipment').map(i => <option key={i.id} value={i.id}>{i.name}</option>)}</select>
             </Field>
-            <Field label="Ação ou projeto atendido">
+            <Field label="Ação ou projeto atendido" help="Aparece em relatórios. Não escreva nome ou contato de pessoas aqui.">
             <input name="actionName" required maxLength={160} placeholder="Nome da ação de extensão"/>
             </Field>
             <Field label="Responsável pela retirada">

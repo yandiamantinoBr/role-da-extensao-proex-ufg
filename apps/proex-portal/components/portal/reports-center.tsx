@@ -208,7 +208,7 @@ function ChartTooltip({ active, payload, label, unit }: { active?: boolean; payl
   return <div className={styles.tooltip}><strong>{label}</strong>{payload.map(item => <span key={item.name}><i style={{ background: item.color }} />{item.name}<b>{formatNumber(Number(item.value) || 0)} {unit}</b></span>)}</div>;
 }
 
-type ReportResult = { rows: ExportRow[]; truncated: boolean };
+type ReportResult = { rows: ExportRow[]; truncated: boolean; withheld: boolean };
 
 async function requestReport(query: URLSearchParams, signal: AbortSignal, userId?: string): Promise<ReportResult> {
   const options: RequestInit = { credentials: 'same-origin', cache: 'no-store', signal };
@@ -234,7 +234,7 @@ async function requestReport(query: URLSearchParams, signal: AbortSignal, userId
   if (!body || body.dataset !== query.get('dataset') || !Array.isArray(body.rows) || !body.rows.every(row => row !== null && typeof row === 'object' && !Array.isArray(row)) || typeof body.truncated !== 'boolean') {
     throw new Error('Não foi possível carregar o relatório: resposta incompleta ou inválida.');
   }
-  return { rows: body.rows as ExportRow[], truncated: body.truncated };
+  return { rows: body.rows as ExportRow[], truncated: body.truncated, withheld: Array.isArray(body.withheldColumns) && body.withheldColumns.length > 0 };
 }
 
 
@@ -413,7 +413,7 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
   const { focus, measurementUnit, page } = view.queryKey === queryKey ? view : initialView;
   const updateView = (changes: Partial<Omit<typeof view, 'queryKey'>>) => setView(current => ({ ...current, ...changes }));
   const [loadedQueryKey, setLoadedQueryKey] = useState('');
-  const [loadedRows, setRows] = useState<ExportRow[]>([]), [truncated, setTruncated] = useState(false);
+  const [loadedRows, setRows] = useState<ExportRow[]>([]), [truncated, setTruncated] = useState(false), [withheld, setWithheld] = useState(false);
   const [fetching, setLoading] = useState(true);
   const [queryError, setQueryError] = useState<{ key: string; message: string } | null>(null);
   const [exportError, setExportError] = useState<{ key: string; message: string } | null>(null);
@@ -467,6 +467,7 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
         setRows(body.rows);
         setLoadedQueryKey(queryKey);
         setTruncated(body.truncated);
+        setWithheld(body.withheld);
         setQueryError(null);
         setLoading(false);
       })
@@ -568,6 +569,7 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
     ['Referências', 'Unidade e saldo atuais do cadastro. Saldos repetidos por registro não devem ser somados. Uma unidade individual por retirada de equipamento; retornos não criam nova saída.'], ['Datas ausentes', 'Sem filtro de período é possível consultar retiradas sem data efetiva; previsões não substituem o histórico.'],
     ['Operador', 'Nome atual do perfil, somente para quem tem permissão operacional vigente; não identifica o beneficiário.'], ['Textos livres', includeNotes ? 'Consulta opcional sujeita à permissão operacional atual; confira as colunas antes de compartilhar.' : 'Não consultados nem exportados.'],
     ['Cobertura', truncated ? 'Consulta parcial por limite de linhas ou tamanho. Refine os filtros antes de considerar o relatório completo.' : 'Registros do recorte retornados pela consulta.']);
+  if (withheld) info.push(['Textos livres', 'Condição na saída e no retorno ficam vazias para quem só lê relatórios. Elas aparecem só para quem consulta empréstimos do projeto.']);
 
   const exportContext = JSON.stringify([queryKey, search, focus, measurementUnit, columns, sort, groupBy, measure, scopeLabel, demandFilterLabel, attempt]);
   useLayoutEffect(() => {
@@ -731,6 +733,7 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
       <span className={styles.summaryIcon}><Icon size={20} /></span>
       <p role="status"><strong>{config.label}</strong> · {inaccessibleDemandScope ? 'Recorte indisponível' : waitingForDemandSearch ? 'Aguardando o termo da busca' : loading ? 'carregando…' : queryFailure ? 'consulta indisponível' : `${formatNumber(filtered.length)} ${filtered.length === 1 ? 'linha' : 'linhas'}`}{scopeLabel ? ` · ${scopeLabel}` : ''}{positionOnly || from || to ? ` · ${periodLabel}` : ''}</p>
       {focus && <button type="button" className={styles.focusChip} aria-label={`Limpar filtro de grupo: ${focusLabel}`} onClick={event => { setGroupFocus(''); if (event.detail === 0) reportSearchRef.current?.focus(); }}>{groupLabel}: {focusLabel}<X size={13} aria-hidden="true" /></button>}
+      {!loading && withheld && <small className={styles.warn}>Condição na saída e no retorno ficam vazias: são texto livre e só aparecem para quem consulta empréstimos do projeto.</small>}
       {!loading && truncated && <small className={styles.warn}>{dataset === 'outflow_details' ? 'Consulta parcial: limite de 5.000 linhas ou 3 MiB. Refine o recorte para consultar e exportar tudo.' : 'Mostrando as primeiras 5.000 linhas. Refine o recorte para ver tudo.'}</small>}
     </div>
 
