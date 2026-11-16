@@ -23,6 +23,15 @@ export function visibleTarget(selector: string | undefined, root: ParentNode = d
   return null;
 }
 
+/** Controle fixo na tela (barra de baixo, cabeçalho): rolar a página não muda a posição dele. */
+function pinned(element: HTMLElement): boolean {
+  for (let node: HTMLElement | null = element, depth = 0; node && depth < 5; node = node.parentElement, depth++) {
+    const position = getComputedStyle(node).position;
+    if (position === 'fixed' || position === 'sticky') return true;
+  }
+  return false;
+}
+
 /** Texto do passo para a largura atual. */
 export function stepCopy(step: TutorialStep, mobile: boolean) {
   return {
@@ -92,7 +101,7 @@ export default function TutorialLayer({ modules, tab, projectId, onNavigate }: {
         // Rola só se o controle estiver escondido: atrás do cabeçalho ou do próprio cartão.
         const box = target.getBoundingClientRect(), guideTop = card.current?.getBoundingClientRect().top ?? innerHeight;
         const coversCard = box.left < (card.current?.getBoundingClientRect().right ?? 0) && box.right > (card.current?.getBoundingClientRect().left ?? innerWidth);
-        if (box.top < TOP_GAP || (coversCard && box.top > guideTop - 48) || box.bottom > innerHeight) window.scrollBy({ top: box.top - TOP_GAP, behavior: reduce ? 'auto' : 'smooth' });
+        if (!pinned(target) && (box.top < TOP_GAP || (coversCard && box.top > guideTop - 48) || box.bottom > innerHeight)) window.scrollBy({ top: box.top - TOP_GAP, behavior: reduce ? 'auto' : 'smooth' });
         setSpot({ key: spotKey, found: true }); return;
       }
       if (!copy.target || ++tries > 10) { setSpot({ key: spotKey, found: copy.target ? false : null }); return; }
