@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {compile,teamFixture} from './support/work-teams-fixture.mjs';
-// Reserva com horário vencido e sem retirada vira "Não retirada" e libera o equipamento (decisão de 2026-11-16).
+// Reserva com horário vencido e sem retirada vira "Não retirado" e libera o equipamento (decisão de 2026-11-16).
 // Serviços reais sobre todas as migrações em SQLite. Dados sintéticos.
 const {materialsAction}=await import(compile('lib/materials.ts'));
 const {loanDisplayState}=await import(compile('lib/loan-lifecycle.ts'));
@@ -62,7 +62,7 @@ test('a reservation that already ended is refused at creation',async t=>{
  await assert.rejects(f.reserve(item,now-3*HOUR,now-HOUR),e=>e.status===400&&e.code==='loan_already_ended');
 });
 
-test('report, agenda and list call it "Não retirada", apart from cancellations',async t=>{
+test('report, agenda and list call it "Não retirado", apart from cancellations',async t=>{
  const f=await fixture(t),a=await f.equipment('Câmera sintética'),b=await f.equipment('Tripé sintético'),now=Date.now();
  const missed=f.legacy(a,now-60000);
  const cancelled=await f.reserve(b,now+HOUR,now+2*HOUR);await f.run('owner-a','loan.status',{id:cancelled.id,status:'cancelled'});
@@ -88,4 +88,17 @@ test('the reason is born only when a reservation is closed, and never changes af
  assert.equal(f.loan(old).close_reason,'not_collected');
  assert.throws(()=>f.native.prepare("UPDATE loans SET close_reason=NULL WHERE id=?").run(old),/loan_close_reason/);
  assert.throws(()=>f.native.prepare("UPDATE loans SET status='reserved' WHERE id=?").run(old),/loan_close_reason/);
+});
+
+test('project detail and snapshot carry the reason, so no screen shows it as a plain cancellation',async t=>{
+ const f=await fixture(t),item=await f.equipment('Câmera sintética'),now=Date.now();
+ const missed=f.legacy(item,now-60000);
+ const owner=await f.actor('owner-a');
+ const {projectDetail}=await import(compile('lib/projects.ts'));
+ const detail=await projectDetail(f.db,owner,'project-a');
+ const row=(detail.relationships?.loans??[]).find(loan=>loan.id===missed);
+ assert.equal(row?.close_reason,'not_collected','project detail');
+ const {portalSnapshot}=await import(compile('lib/portal-data.ts'));
+ const snapshot=await portalSnapshot(f.db,owner);
+ assert.equal(snapshot.loans.find(loan=>loan.id===missed).close_reason,'not_collected','snapshot');
 });

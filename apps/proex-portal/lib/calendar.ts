@@ -28,7 +28,7 @@ const DAY = 86_400_000;
 const STATE_LABELS: Record<string, string> = {
   open: 'Aberta', in_progress: 'Em andamento', blocked: 'Bloqueada', done: 'Concluída', cancelled: 'Cancelado', tentative: 'A confirmar',
   confirmed: 'Confirmado', active: 'Ativo', paused: 'Pausado', closed: 'Encerrado', archived: 'Arquivado', reserved: 'Reservado',
-  out: 'Retirado', returned: 'Devolvido', late: 'Atrasado', recorded: 'Registrado', not_collected: 'Não retirada',
+  out: 'Retirado', returned: 'Devolvido', late: 'Atrasado', recorded: 'Registrado', not_collected: 'Não retirado',
 };
 /** "Cancelada" para demanda; "Cancelado" para turno, evento e empréstimo. */
 function stateLabel(event: Pick<CalendarEntry, 'state' | 'sourceKind'>): string {

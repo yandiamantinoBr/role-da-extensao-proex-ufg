@@ -105,7 +105,7 @@ const areaOwnerScopes: readonly {
     { area: 'loans', tab: 'loans', capabilities: ['loans.read', 'loans.manage', 'loans.checkout'], subject: 'dos empréstimos' },
     { area: 'campaigns', tab: 'events', capabilities: ['campaigns.manage', 'participation.operate', 'inventory.deliver'], subject: 'das dinâmicas' },
 ];
-const statusNames: Row = { draft: 'Rascunho', active: 'Ativo', paused: 'Pausado', closed: 'Encerrado', reserved: 'Reservado', out: 'Retirado', returned: 'Devolvido', cancelled: 'Cancelado', not_collected: 'Não retirada', pending: 'Pendente', accepted: 'Aceito', revoked: 'Revogado' };
+const statusNames: Row = { draft: 'Rascunho', active: 'Ativo', paused: 'Pausado', closed: 'Encerrado', reserved: 'Reservado', out: 'Retirado', returned: 'Devolvido', cancelled: 'Cancelado', not_collected: 'Não retirado', pending: 'Pendente', accepted: 'Aceito', revoked: 'Revogado' };
 // Mesmos rótulos de convites e de Meus acessos (lib/team-access-labels.ts); só a chave `inventory` fica no banco.
 const roleNames: Row = { owner: 'Responsável institucional', ...projectAccessRoleLabels };
 const categoryNames: Row = { gift: 'Brinde', equipment: 'Equipamento', distribution: 'Distribuição institucional', consumption: 'Consumo interno' };
@@ -1153,7 +1153,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
                     <span>até {when(get(l, 'endsAt', 'ends_at'))}</span>
                     </div>
                     </div>
-                    {loanDisplayState(l.status,get(l,'closeReason','close_reason')) === 'not_collected' && <p className="p-form-help">A reserva venceu sem retirada, e o equipamento foi liberado. Para usar, faça uma nova reserva.</p>}
+                    {loanDisplayState(l.status,get(l,'closeReason','close_reason')) === 'not_collected' && <div className="p-loan-missed" role="note"><p><strong>Venceu sem retirada.</strong> O equipamento foi liberado. Para usar, faça uma nova reserva.</p>{can('loans.manage') && <button type="button" className="p-text-link" onClick={() => { const form = document.getElementById('loan-reservation') as HTMLElement | null, itemId = string(get(l, 'itemId', 'item_id')); const select = form ? form.querySelector('select[name="itemId"]') as HTMLSelectElement | null : null; if (select && Array.from(select.options).some(option => option.value === itemId)) select.value = itemId; form?.scrollIntoView({block:'start'}); (select ?? form)?.focus({preventScroll:true}); }}>Fazer nova reserva</button>}</div>}
                     <a className="p-text-link p-history-link" href={historyHref({ kind: 'loan', id: string(l.id) }, string(get(l,'projectId','project_id')))} aria-label="Ver histórico deste empréstimo em Registros">Ver histórico<ArrowUpRight size={14} aria-hidden="true"/></a>
                     <details className={l.status === 'out' || l.status === 'reserved' ? 'p-loan-next' : undefined}>
                     <summary>{l.status === 'out' ? 'Registrar devolução' : l.status === 'reserved' ? 'Registrar retirada' : 'Detalhes, termos e ocorrências'}{(l.status === 'out' || l.status === 'reserved') && <small>termos e ocorrências</small>} <ChevronDown size={16}/>

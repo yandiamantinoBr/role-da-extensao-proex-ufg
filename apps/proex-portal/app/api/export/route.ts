@@ -29,7 +29,7 @@ const VALUES: Record<string, Record<string, string>> = {
   condicao: { active: 'Ativo', maintenance: 'Em manutenção', inactive: 'Inativo' },
   identificacao: { account: 'Conta', ticket: 'Ficha presencial' },
   resultado: { brinde: 'Brinde', super: 'Prêmio especial', retry: 'Nova tentativa', miss: 'Não foi dessa vez', retry_exhausted: 'Tentativas esgotadas', pending: 'Aguardando resultado' },
-  estado: { ready: 'Pronta', done: 'Concluída', pending: 'Pendente', physical_pending: 'Aguardando atendimento', retry_ready: 'Nova tentativa liberada', reserved: 'Reservado', delivered: 'Entregue', cancelled: 'Cancelado', out: 'Retirado', returned: 'Devolvido' },
+  estado: { ready: 'Pronta', done: 'Concluída', pending: 'Pendente', physical_pending: 'Aguardando atendimento', retry_ready: 'Nova tentativa liberada', reserved: 'Reservado', not_collected: 'Não retirado', delivered: 'Entregue', cancelled: 'Cancelado', out: 'Retirado', returned: 'Devolvido' },
 };
 const FILE_SLUG: Record<string, string> = { participations: 'participacao', stock: 'materiais', loans: 'emprestimos' };
 /** Mensagens que podem ir à tela; qualquer outra falha vira um aviso genérico em português. */
@@ -103,10 +103,10 @@ export async function GET(request: Request): Promise<Response> {
       rows = await all(db, `SELECT pr.name AS projeto,i.name AS equipamento,l.action_name AS acao,
         datetime(l.starts_at/1000,'unixepoch','-3 hours') AS retirada_prevista_brasilia,
         datetime(l.ends_at/1000,'unixepoch','-3 hours') AS devolucao_prevista_brasilia,
-        l.status AS estado,COUNT(*) AS quantidade
+        CASE WHEN l.close_reason='not_collected' THEN 'not_collected' ELSE l.status END AS estado,COUNT(*) AS quantidade
         FROM loans l JOIN projects pr ON pr.id=l.project_id
         JOIN items i ON i.id=l.item_id AND i.project_id=l.project_id
-        WHERE ${scope.sql} GROUP BY l.project_id,l.item_id,l.action_name,l.starts_at,l.ends_at,l.status
+        WHERE ${scope.sql} GROUP BY l.project_id,l.item_id,l.action_name,l.starts_at,l.ends_at,l.status,l.close_reason
         ORDER BY l.starts_at,pr.name,i.name`, scope.params);
     }
     const keys = Object.keys(rows[0] ?? { sem_registros: null });

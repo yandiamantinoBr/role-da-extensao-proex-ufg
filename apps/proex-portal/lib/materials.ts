@@ -100,6 +100,7 @@ function translateDatabaseError(error: unknown): never {
   }
   if(message.includes('stock_destination_'))throw new HttpError(409,'O destino escolhido está arquivado ou é de outra organização. Escolha outro.','stock_destination_scope');
   if(message.includes('stock_context_'))throw new HttpError(409,'O projeto, a origem ou o destino mudou. Reabra a movimentação.','stock_context_changed');
+  if (message.includes('loan_close_reason')) throw new HttpError(409, 'Esta reserva já foi encerrada como “Não retirado”. Atualize a página.', 'loan_not_collected');
   if (message.includes('loan_checkout_window')) throw new HttpError(409, 'A retirada só pode ser registrada dentro do período reservado.', 'loan_checkout_window');
   if (message.includes('loan_overlap') || message.includes('loan_conflict') || message.includes('loan_unavailable') || message.includes('loan_overdue') || message.includes('equipment_unavailable')) {
     throw new HttpError(409, 'O equipamento já está reservado, emprestado ou com devolução pendente. Confira a agenda.', 'loan_conflict');
@@ -463,7 +464,7 @@ export async function materialsAction(db: D1Database, actor: PortalActor, action
       const startsAt = timestampValue(input.startsAt, 'A retirada');
       const endsAt = timestampValue(input.endsAt, 'A devolução');
       if (endsAt <= startsAt) throw new HttpError(400, 'A devolução deve ocorrer depois da retirada.', 'invalid_interval');
-      // Uma reserva que já terminou não pode mais ser retirada; ela seria encerrada como "Não retirada" na hora.
+      // Uma reserva que já terminou não pode mais ser retirada; ela seria encerrada como "Não retirado" na hora.
       if (endsAt <= Date.now()) throw new HttpError(400, 'A devolução prevista já passou. Escolha um horário futuro para a reserva.', 'loan_already_ended');
       const note = textValue(input.note, 'a observação', 2000, true);
       const conflict = await statement(db, `SELECT id FROM loans WHERE item_id=? AND status IN ('reserved','out') AND ((starts_at<? AND ends_at>?) OR (status='out' AND ends_at<=?)) LIMIT 1`, [item.id, endsAt, startsAt, Date.now()]).first();
@@ -486,7 +487,7 @@ export async function materialsAction(db: D1Database, actor: PortalActor, action
     await requireLiveCapability(db, actor, 'loans.manage', loan.project_id);
     const status = textValue(input.status, 'a situação', 20);
     if (!['out', 'returned', 'cancelled'].includes(status)) throw new HttpError(400, 'Escolha uma situação válida.', 'invalid_status');
-    if (loan.close_reason === NOT_COLLECTED) throw new HttpError(409, 'Esta reserva venceu sem retirada e foi encerrada como “Não retirada”. Para usar o equipamento, faça uma nova reserva.', 'loan_not_collected');
+    if (loan.close_reason === NOT_COLLECTED) throw new HttpError(409, 'Esta reserva venceu sem retirada e foi encerrada como “Não retirado”. Para usar o equipamento, faça uma nova reserva.', 'loan_not_collected');
     if (loan.status === status) return { loan, duplicate: true };
     if (!((loan.status === 'reserved' && (status === 'out' || status === 'cancelled')) || (loan.status === 'out' && status === 'returned'))) {
       throw new HttpError(409, 'Esta mudança não é permitida. Cancele uma reserva ou registre retirada e depois devolução.', 'invalid_transition');
@@ -506,6 +507,7 @@ export async function materialsAction(db: D1Database, actor: PortalActor, action
     ]);
     if (!results[0].results?.length) {
       const latest = await statement(db, 'SELECT * FROM loans WHERE id=?', [id]).first<Loan>();
+      if (latest?.close_reason === NOT_COLLECTED) throw new HttpError(409, 'Esta reserva venceu sem retirada enquanto você registrava e foi encerrada como “Não retirado”. Para usar o equipamento, faça uma nova reserva.', 'loan_not_collected');
       if (latest?.status === status) return { loan: latest, duplicate: true };
       throw new HttpError(409, 'Outra pessoa atualizou este empréstimo. Atualize a página.', 'loan_changed');
     }
