@@ -1,7 +1,7 @@
 import { aiConfigurationAuthority, platformOwnerAuthoritySql, type PortalActor } from '../access';
 import { one } from '../database';
 import { HttpError } from '../errors';
-import { officialPdfIn, officialPdfUrl, requestsOfficialPdf } from './official-pdf-url';
+import { OFFICIAL_HOSTS, officialPageIn, officialPdfIn, officialPdfUrl, requestsOfficialPdf } from './official-pdf-url';
 import { searchOfficialPdfs, type OfficialDocument, type OfficialPassage } from './official-pdfs';
 
 /*
@@ -24,7 +24,7 @@ export const OFFICIAL_SOURCES = [
   { id: 'conpeex-programacao', label: 'CONPEEX · programação geral', url: 'https://23conpeex.plateia.ufg.br/p/59955-programacao-geral' },
   { id: 'conpeex-site', label: '23º CONPEEX', url: 'https://23conpeex.plateia.ufg.br/' },
 ] as const;
-export const OFFICIAL_HOSTS = ['proex.ufg.br', '23conpeex.plateia.ufg.br'] as const;
+export { OFFICIAL_HOSTS };
 const SNAPSHOT = 'role.official.v1', REFRESH_MS = 20 * 3600_000, PAGE_BYTES = 600_000;
 const USER_AGENT = 'PortalPROEX-Role/1.0 (+https://proex-gestao.vercel.app; consulta de paginas publicas)';
 const SEARCH_TIMEOUT_MS = 2500;
@@ -103,8 +103,10 @@ async function boundedText(response: Response): Promise<string> {
 type SearchEntry = { url: string; title: string; lastModified: string };
 type PublicIndex = SearchEntry[];
 type PublicResult = SearchEntry & { summary: string; fetchedAt: string; documents: OfficialDocument[] };
-type PublicLookup = { status: 'ok' | 'partial' | 'unavailable'; pages: PublicResult[]; passages: OfficialPassage[]; unreadable: OfficialDocument[] };
-const emptyLookup = { pages: [], passages: [], unreadable: [] };
+/** Dois documentos parecidos (mesmo programa e tipo, edições diferentes) sem pedido que desempate. */
+export type OfficialAmbiguity = { used: OfficialDocument; other: OfficialDocument };
+type PublicLookup = { status: 'ok' | 'partial' | 'unavailable'; pages: PublicResult[]; passages: OfficialPassage[]; unreadable: OfficialDocument[]; ambiguity: OfficialAmbiguity | null };
+const emptyLookup = { pages: [], passages: [], unreadable: [], ambiguity: null };
 type SearchIndexCache = Map<string, { refreshAt: number; value: Promise<PublicIndex | null> }>;
 const searchIndexes = new WeakMap<typeof fetch, SearchIndexCache>();
 const searchWords = (value: string) => (value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase().match(/[a-z0-9]{2,}/g) ?? []);
@@ -174,14 +176,102 @@ function documentPriority(title: string, wanted: string[], updated: boolean, pre
     + (updated ? amendment ? 22 : -5 : amendment ? -10 : 0) + main - (related ? 30 : 0);
 }
 
+type Edition = { start: number | null; end: number | null; numbers: { n: number; year: number | null }[] };
+const plain = (value: string) => value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase().replace(/[_+]/g, ' ');
+
+/** Ano ou ciclo (2026/27, 2026-2027, 2026) e número (nº 133/2026, Edital 133) de títulos e nomes de arquivo. */
+function editionOf(...texts: string[]): Edition {
+  const edition: Edition = { start: null, end: null, numbers: [] };
+  for (const raw of texts) {
+    const value = plain(raw);
+    for (const match of value.matchAll(/\bedital(?:\s+(?:proex|proec|final|preliminar|probec|conpeex))*\s*(?:n\s*[º°o.]?\s*)?(\d{1,3})\b(?:\s*[/\s-]\s*(20\d{2})\b)?|\bn\s*[º°.]\s*(\d{1,3})\s*\/\s*(20\d{2})\b/g)) {
+      const n = Number(match[1] ?? match[3]), year = Number(match[2] ?? match[4]) || null;
+      if (!edition.numbers.some(item => item.n === n && item.year === year)) edition.numbers.push({ n, year });
+    }
+    if (edition.start) continue;
+    const cycle = [...value.matchAll(/\b(20\d{2})\s*[/\s-]\s*(?:20)?(\d{2})\b/g)].find(match => (Number(match[1]) + 1) % 100 === Number(match[2]));
+    const year = cycle?.[1] ?? value.match(/\b(20\d{2})\b/)?.[1];
+    if (year) { edition.start = Number(year); edition.end = cycle ? edition.start + 1 : null; }
+  }
+  return edition;
+}
+
+const documentKind = (title: string) => {
+  const heading = searchWords(title).join(' ');
+  return /\b(?:aditivo|retificacao|prorrogacao|errata)\b/.test(heading) ? 'alteracao' : /^edital\b/.test(heading) && !/\bresultado\b/.test(heading) ? 'edital' : 'outro';
+};
+const programOf = (value: string) => searchWords(value).find(word => word === 'probec' || word === 'conpeex') ?? '';
+
+/** Ordena os PDFs das páginas pela pergunta: edição pedida, versão final/preliminar, aditivo e edição mais recente. */
+function chooseDocument(results: PublicResult[], subject: string) {
+  const question = subject.replace(/https:\/\/\S+/gi, ' ');
+  const wanted = officialSearchTerms(question), normalized = searchWords(question).join(' ');
+  const amended = /\b(?:retificac(?:ao|oes)|aditiv[oa]s?|prorrogac(?:ao|oes)|recurso)\b/.test(normalized);
+  const preliminary = /\bpreliminar\b/.test(normalized);
+  const asked = editionOf(question);
+  const askedYears = [...new Set([asked.start, ...searchWords(question).filter(word => /^20\d{2}$/.test(word)).map(Number)].filter((year): year is number => !!year))];
+  const askedNumbers = asked.numbers;
+  const byUrl = new Map<string, { pdf: OfficialDocument; priority: number; score: number; edition: Edition; kind: string; program: string }>();
+  results.forEach((page, index) => {
+    const pageEdition = editionOf(page.title, new URL(page.url).pathname.replace(/[/-]/g, ' '));
+    for (const pdf of page.documents) {
+      const own = editionOf(pdf.title, decodeURIComponent(new URL(pdf.url).pathname.split('/').at(-1) ?? ''));
+      const edition = { start: own.start ?? pageEdition.start, end: own.start ? own.end : pageEdition.end, numbers: [...own.numbers, ...pageEdition.numbers] };
+      const priority = documentPriority(pdf.title, wanted, amended, preliminary);
+      const choice = { pdf, priority, score: priority + (3 - index) * 5, edition, kind: documentKind(pdf.title), program: programOf(`${pdf.title} ${page.title}`) };
+      const saved = byUrl.get(pdf.url);
+      if (!saved || saved.score < choice.score) byUrl.set(pdf.url, choice);
+    }
+  });
+  let choices = [...byUrl.values()];
+  if (askedNumbers.length) {
+    choices = choices.filter(({ edition }) => !edition.numbers.length || askedNumbers.some(item => edition.numbers.some(found => found.n === item.n && (!item.year || !found.year || found.year === item.year))));
+  }
+  if (askedYears.length) {
+    const byStart = choices.filter(({ edition }) => edition.start !== null && askedYears.includes(edition.start));
+    choices = byStart.length ? byStart : choices.filter(({ edition }) => edition.end !== null && askedYears.includes(edition.end));
+  }
+  const decided = askedYears.length > 0 || askedNumbers.length > 0;
+  const newest = Math.max(0, ...choices.map(({ edition }) => edition.start ?? 0));
+  for (const choice of choices) {
+    if (!decided && choice.edition.start) choice.score += (choice.edition.start - newest) * 25;
+    if (askedNumbers.length && choice.edition.numbers.length) choice.score += 45;
+  }
+  choices.sort((a, b) => b.score - a.score);
+  const best = choices[0];
+  const other = best && !decided && best.edition.start ? choices.find(choice => choice.pdf.url !== best.pdf.url && choice.kind === best.kind && choice.kind !== 'outro'
+    && choice.program === best.program && choice.edition.start !== null && choice.edition.start !== best.edition.start && Math.abs(choice.priority - best.priority) <= 10) : undefined;
+  return { best: best?.pdf ?? null, ambiguity: best && other ? { used: best.pdf, other: other.pdf } : null };
+}
+
+/** Link de página oficial colado: lê só essa página (robots, HTTPS, host exato, sem redirecionamento) e os PDFs dela. */
+async function searchPastedPage(page: URL, subject: string, fetcher: typeof fetch): Promise<PublicLookup> {
+  let result: PublicResult;
+  try {
+    const robots = await fetchPublicText(`${page.origin}/robots.txt`, 'text/plain', /^text\/plain\b/i, fetcher);
+    if (disallowed(robots, page.pathname)) throw new Error('Página não liberada para consulta automática.');
+    const html = await fetchPublicText(page.href, 'text/html', /^text\/html\b/i, fetcher);
+    const { title, summary } = extractPage(html, page.href);
+    if (!title) throw new Error('Página pública sem título.');
+    result = { url: page.href, title, lastModified: '', summary, fetchedAt: new Date().toISOString(), documents: pdfLinks(html, page.href) };
+  } catch {
+    return { status: 'unavailable', ...emptyLookup };
+  }
+  const { best, ambiguity } = chooseDocument([result], subject);
+  const pdf = await searchOfficialPdfs(best ? [best] : [], subject, fetcher, USER_AGENT, officialSearchTerms, disallowed);
+  return { status: 'ok', pages: [result], ...pdf, ambiguity };
+}
+
 /** Lê os mapas, as páginas públicas e seus PDFs oficiais. Nenhum termo é enviado ao site. */
 export async function searchOfficialPages(subject: string, fetcher: typeof fetch = fetch): Promise<PublicLookup> {
   const direct = officialPdfIn(subject);
   if (direct) {
     const title = decodeURIComponent(direct.pathname.split('/').at(-1)!).replace(/_/g, ' ');
     const pdf = await searchOfficialPdfs([{ url: direct.href, title }], subject, fetcher, USER_AGENT, officialSearchTerms, disallowed);
-    return { status: pdf.passages.length ? 'ok' : 'partial', pages: [], ...pdf };
+    return { status: pdf.passages.length ? 'ok' : 'partial', pages: [], ...pdf, ambiguity: null };
   }
+  const page = officialPageIn(subject);
+  if (page) return searchPastedPage(page, subject, fetcher);
   const wanted = officialSearchTerms(subject);
   if (!wanted.length) return { status: 'ok', ...emptyLookup };
   const pdfSearch = requestsOfficialPdf(searchWords(subject).join(' '));
@@ -208,8 +298,12 @@ export async function searchOfficialPages(subject: string, fetcher: typeof fetch
     const precision = hits / words.size;
     const editionScore = targetEdition && editalNumber(entry.title) === targetEdition ? 45 : 0;
     const documentScore = topicalPdf ? 12 + editions * 12 + (words.has('edital') && [...words][0] === 'edital' ? 14 : 0) : 0;
-    return [{ entry, score: editionScore + documentScore + hits * 6 + Number(fullPhrase) * 2 + precision + Number(conpeexSite && wanted.includes('conpeex')) }];
-  }).sort((a, b) => b.score - a.score || b.entry.lastModified.localeCompare(a.entry.lastModified));
+    return [{ entry, topicalPdf, start: editionOf(entry.title).start, score: editionScore + documentScore + hits * 6 + Number(fullPhrase) * 2 + precision + Number(conpeexSite && wanted.includes('conpeex')) }];
+  });
+  // Sem ano na pergunta, a edição mais recente de um edital vem antes da anterior.
+  const newestPage = Math.max(0, ...ranked.filter(item => item.topicalPdf).map(item => item.start ?? 0));
+  if (!years.length) for (const item of ranked) if (item.topicalPdf && item.start) item.score += Math.max(-3, item.start - newestPage) * 8;
+  ranked.sort((a, b) => b.score - a.score || b.entry.lastModified.localeCompare(a.entry.lastModified));
 
   let failed = indexes.filter(index => !index).length;
   const pages = await Promise.all(ranked.slice(0, SEARCH_PAGE_LIMIT).map(async ({ entry, score }) => {
@@ -229,16 +323,9 @@ export async function searchOfficialPages(subject: string, fetcher: typeof fetch
   }));
   const results = pages.filter(page => page !== null).sort((a, b) => b.score - a.score).slice(0, 3).map(page => page.result);
   const status = failed ? indexes.every(index => !index) || (ranked.length > 0 && !results.length) ? 'unavailable' : 'partial' : 'ok';
-  const normalized = searchWords(subject).join(' ');
-  const amended = /\b(?:retificac(?:ao|oes)|aditiv[oa]s?|prorrogac(?:ao|oes)|recurso)\b/.test(normalized);
-  const preliminary = /\bpreliminar\b/.test(normalized);
-  const choices = results.flatMap((page, index) => page.documents.map(pdf => ({
-    pdf, score: documentPriority(pdf.title, wanted, amended, preliminary) + (3 - index) * 5
-      + (targetEdition && (editalNumber(pdf.title) ?? editalNumber(page.title)) === targetEdition ? 45 : 0),
-  }))).sort((a, b) => b.score - a.score);
-  const best = choices[0];
-  const pdf = await searchOfficialPdfs(best ? [best.pdf] : [], subject, fetcher, USER_AGENT, officialSearchTerms, disallowed);
-  return { status, pages: results, ...pdf };
+  const { best, ambiguity } = chooseDocument(results, subject);
+  const pdf = await searchOfficialPdfs(best ? [best] : [], subject, fetcher, USER_AGENT, officialSearchTerms, disallowed);
+  return { status, pages: results, ...pdf, ambiguity };
 }
 
 export async function readOfficialSnapshot(db: D1Database): Promise<OfficialSnapshot> {
