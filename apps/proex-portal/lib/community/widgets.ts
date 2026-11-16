@@ -49,7 +49,7 @@ const DOCK_ITEM = /^[a-z][a-z0-9-]{0,30}$/;
  */
 export const DOCK_LAYOUTS = { desktop: ['floating', 'sidebar'], mobile: ['header', 'floating'] } as const;
 export type DockLayout = { desktop: typeof DOCK_LAYOUTS.desktop[number]; mobile: typeof DOCK_LAYOUTS.mobile[number] };
-export const DEFAULT_DOCK_LAYOUT: DockLayout = { desktop: 'floating', mobile: 'header' };
+export const DEFAULT_DOCK_LAYOUT: DockLayout = { desktop: 'floating', mobile: 'floating' };
 export function parseDockLayout(raw: unknown): DockLayout {
   let value: Record<string, unknown> = {};
   try { const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw; const layout = parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>).layout : null; if (layout && typeof layout === 'object' && !Array.isArray(layout)) value = layout as Record<string, unknown>; } catch { value = {}; }

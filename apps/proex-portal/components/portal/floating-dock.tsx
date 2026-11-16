@@ -41,7 +41,7 @@ type WidgetId = 'notes' | 'reminders' | 'calendar' | 'demands' | 'shortcuts';
 type Dock = { enabled: WidgetId[]; open: WidgetId | 'gallery' | null; minimized: boolean; hidden: string[] };
 /** Where the dock sits, per person (lib/community/widgets.ts). Defaults are the modes that existed before the choice. */
 export type DockLayout = { desktop: 'floating' | 'sidebar'; mobile: 'header' | 'floating' };
-const DEFAULT_LAYOUT: DockLayout = { desktop: 'floating', mobile: 'header' };
+const DEFAULT_LAYOUT: DockLayout = { desktop: 'floating', mobile: 'floating' };
 type MobileView = NonNullable<Dock['open']> | 'launchers' | null;
 const mobileWidth = '(max-width: 720px)';
 function subscribeToToolbar(listener: () => void) {
@@ -79,7 +79,7 @@ export default function FloatingDock({ userId, serverDay, modules, pinned, onNav
   const id = useId(), state = useSyncExternalStore(subscribe, read, read);
   const [dock, setDock] = useState<Dock | null>(null), [badges, setBadges] = useState({ reminders: 0 }), [expanded, setExpanded] = useState(false);
   const [layout, setLayout] = useState<DockLayout>(DEFAULT_LAYOUT);
-  const [mobileView, setMobileView] = useState<MobileView>(null);
+  const [mobileView, setMobileView] = useState<MobileView>(null), [fan, setFan] = useState(false);
   const launchers = useRef<Record<string, HTMLButtonElement | null>>({}), panel = useRef<HTMLElement>(null), saveTimer = useRef(0), pendingSave = useRef<Dock | null>(null);
   const mobileDialog = useRef<HTMLDialogElement>(null), mobileHeading = useRef<HTMLHeadingElement>(null), mobileTrigger = useRef<HTMLButtonElement>(null);
   const root = useRef<HTMLDivElement>(null);
@@ -227,7 +227,14 @@ export default function FloatingDock({ userId, serverDay, modules, pinned, onNav
     const title = viewingList ? 'Widgets' : mobileView === 'gallery' ? 'Meu espaço' : WIDGETS.find(widget => widget.id === mobileView)?.label;
     return <>
       {layout.mobile === 'floating'
-        ? <MobileFab buttonRef={mobileTrigger} label={widgetLabel} badge={reminderBadge} open={mobileOpen} onOpen={() => setMobileView('launchers')}/>
+        ? <>
+          {fan && <MobileFan onClose={() => setFan(false)}>
+            {active.map(({ id: widgetId, label, icon: Icon }) => { const badge = widgetId === 'reminders' ? badges.reminders : 0; return <div key={widgetId} className={styles.stackItem}><span className={styles.stackLabel} aria-hidden="true">{label}</span><button type="button" className={styles.launcher} aria-label={`${label}${badge ? `, ${badge} ${badge === 1 ? 'lembrete' : 'lembretes'} para hoje ou atrasado` : ''}`} aria-haspopup="dialog" onClick={() => { setFan(false); setMobileView(widgetId); }}><Icon size={20}/>{badge > 0 && <span className={styles.badge} aria-hidden="true">{badge > 9 ? '9+' : badge}</span>}</button></div>; })}
+            <div className={styles.stackItem}><span className={styles.stackLabel} aria-hidden="true">Meu espaço</span><button type="button" className={`${styles.launcher} ${styles.galleryLauncher}`} aria-label="Meu espaço: escolher widgets e posição" aria-haspopup="dialog" onClick={() => { setFan(false); setMobileView('gallery'); }}><Settings2 size={18}/></button></div>
+            {items.map(item => <div key={item.id} className={styles.stackItem}><span className={styles.stackLabel} aria-hidden="true">{item.label}</span><button type="button" className={`${styles.launcher} ${styles.itemLauncher}`} aria-label={item.label} aria-haspopup="dialog" aria-keyshortcuts={item.shortcut} onClick={() => { setFan(false); item.onOpen(); }}>{item.icon}</button></div>)}
+          </MobileFan>}
+          <MobileFab buttonRef={mobileTrigger} label={fan ? 'Recolher widgets' : widgetLabel} badge={fan ? 0 : reminderBadge} open={fan} onOpen={() => setFan(value => !value)}/>
+        </>
         : createPortal(<button ref={mobileTrigger} type="button" className={styles.mobileTrigger} data-dock-toggle aria-label={widgetLabel} title="Widgets" aria-haspopup="dialog" aria-expanded={mobileOpen} onClick={event => { event.currentTarget.focus({ preventScroll: true }); setMobileView('launchers'); }}>
           <LayoutGrid size={19} aria-hidden="true"/>{reminderBadge > 0 && <span className={styles.badge} aria-hidden="true">{reminderBadge > 9 ? '9+' : reminderBadge}</span>}
         </button>, toolbar)}
@@ -355,6 +362,24 @@ function Shortcuts({ modules, onNavigate }: { modules: PortalModule[]; onNavigat
  * - it hides while a text field has focus (keyboard) and while the notification center is open;
  * - the end of each page keeps room for its home position, so the last buttons are always reachable.
  */
+// The mobile fan: the same labelled stack as on the computer, opened from the corner button. It closes on Esc,
+// on a tap outside, when the page scrolls and when an item is chosen; the item then opens in the bottom sheet.
+function MobileFan({ children, onClose }: { children: ReactNode; onClose(): void }) {
+  const nav = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    nav.current?.querySelector<HTMLElement>('button')?.focus({ preventScroll: true });
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') { event.preventDefault(); onClose(); document.querySelector<HTMLElement>('[data-dock-toggle]')?.focus({ preventScroll: true }); } };
+    const onScroll = () => onClose();
+    document.addEventListener('keydown', onKey);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => { document.removeEventListener('keydown', onKey); window.removeEventListener('scroll', onScroll); };
+  }, [onClose]);
+  return <>
+    <div className={styles.fanScrim} aria-hidden="true" onClick={onClose}/>
+    <nav ref={nav} className={styles.mobileFan} aria-label="Widgets">{children}</nav>
+  </>;
+}
+
 function MobileFab({ buttonRef, label, badge, open, onOpen }: { buttonRef: React.RefObject<HTMLButtonElement | null>; label: string; badge: number; open: boolean; onOpen(): void }) {
   useEffect(() => {
     const button = buttonRef.current;
@@ -403,8 +428,8 @@ function MobileFab({ buttonRef, label, badge, open, onOpen }: { buttonRef: React
       html.style.removeProperty(DOCK_RESERVE_PROPERTY); html.style.removeProperty('--dock-fab-nav');
     };
   }, [buttonRef]);
-  return <button ref={buttonRef} type="button" className={styles.mobileFab} data-dock-toggle data-state="away" aria-label={label} title="Widgets" aria-haspopup="dialog" aria-expanded={open} onClick={event => { event.currentTarget.focus({ preventScroll: true }); onOpen(); }}>
-    <LayoutGrid size={21} aria-hidden="true"/>{badge > 0 && <span className={styles.badge} aria-hidden="true">{badge > 9 ? '9+' : badge}</span>}
+  return <button ref={buttonRef} type="button" className={styles.mobileFab} data-dock-toggle data-state="away" aria-label={label} title="Widgets" aria-expanded={open} data-open={open || undefined} onClick={event => { event.currentTarget.focus({ preventScroll: true }); onOpen(); }}>
+    {open ? <X size={21} aria-hidden="true"/> : <LayoutGrid size={21} aria-hidden="true"/>}{badge > 0 && <span className={styles.badge} aria-hidden="true">{badge > 9 ? '9+' : badge}</span>}
   </button>;
 }
 
