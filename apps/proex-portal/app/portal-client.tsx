@@ -51,6 +51,7 @@ import { readReportArrival, REPORT_ARRIVAL_PARAMS, type ReportDatasetId } from '
 import type { DemandReportFilter } from '@/lib/follow-up/contracts';
 import { emptyLoanFilters, isOverdueLoan, isValidLoanFilterPeriod, loanMatches, loanStates, type LoanListFilters, type LoanStateFilter } from '@/lib/loan-list-filters';
 import { loanDisplayState } from '@/lib/loan-lifecycle';
+import { equipmentOptionLabel, equipmentStatus, equipmentBlockMessage } from '@/lib/equipment-availability';
 import FollowUpPanel from '@/components/portal/follow-up-panel';
 import MeuTrabalhoPanel from '@/components/portal/meu-trabalho-panel';
 import PersonalWorkSummary from '@/components/portal/personal-work-summary';
@@ -1159,6 +1160,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
                     <span>até {when(get(l, 'endsAt', 'ends_at'))}</span>
                     </div>
                     </div>
+                    {l.status === 'reserved' && item && equipmentBlockMessage(item, 'checkout') && <div className="p-loan-missed" role="note"><p>{equipmentBlockMessage(item, 'checkout')}</p></div>}
                     {loanDisplayState(l.status,get(l,'closeReason','close_reason')) === 'not_collected' && <div className="p-loan-missed" role="note"><p><strong>Venceu sem retirada.</strong> O equipamento foi liberado.{canProject(get(l, 'projectId', 'project_id'), 'loans.manage') ? '' : ' Para usar, peça uma nova reserva à coordenação do projeto.'}</p>{canProject(get(l, 'projectId', 'project_id'), 'loans.manage') && <button type="button" className="p-text-link" aria-label={`Fazer nova reserva de ${item?.name || l.itemName || 'equipamento'}`} onClick={() => { const form = document.getElementById('loan-reservation') as HTMLElement | null, itemId = string(get(l, 'itemId', 'item_id')); const select = form ? form.querySelector('select[name="itemId"]') as HTMLSelectElement | null : null; if (select && Array.from(select.options).some(option => option.value === itemId)) select.value = itemId; form?.scrollIntoView({block:'start'}); (select ?? form)?.focus({preventScroll:true}); }}><Plus size={15} aria-hidden="true"/>Fazer nova reserva</button>}</div>}
                     <a className="p-text-link p-history-link" href={historyHref({ kind: 'loan', id: string(l.id) }, string(get(l,'projectId','project_id')))} aria-label="Ver histórico deste empréstimo em Registros">Ver histórico<ArrowUpRight size={14} aria-hidden="true"/></a>
                     <details className={l.status === 'out' || l.status === 'reserved' ? 'p-loan-next' : undefined}>
@@ -1183,9 +1185,9 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
                 })}</div> : <Empty title={loanPeriodValid||activeWorkRecord?.module==='loans'?'Nenhum empréstimo no recorte':'Período inválido'} text={hasLoanFilters?'Confira o período, altere o termo da busca ou limpe os filtros.':'As reservas do projeto selecionado aparecem aqui.'} icon={Truck}/>}</Section>{can('loans.manage') && formProjects.length > 0 && <div id="loan-reservation" className={workStyles.record} tabIndex={-1} role="region" aria-label="Formulário de reserva de equipamento">
             <Section title="Reservar equipamento" description="Conflitos de horário e bens indisponíveis são conferidos antes da confirmação.">
             <OperationForm onProjectFocus={setDraftProject} action="loan.create" mutate={mutate} submit="Confirmar reserva" make={f => ({ projectId: f.get('projectId'), itemId: f.get('itemId'), actionName: f.get('actionName'), borrowerName: f.get('borrowerName'), borrowerContact: f.get('borrowerContact'), startsAt: iso(f.get('startsAt')), endsAt: iso(f.get('endsAt')), note: f.get('note') })}>
-            <div className="p-form-grid">{projectField}<Field label="Equipamento">
+            <div className="p-form-grid">{projectField}<Field label="Equipamento" help="Em manutenção, inativos ou sem entrada no estoque aparecem desativados. O choque de horários é conferido ao salvar.">
             <select name="itemId" required>
-            <option value="">Selecione um bem</option>{formItems.filter(i => i.category === 'equipment').map(i => <option key={i.id} value={i.id}>{i.name}</option>)}</select>
+            <option value="">Selecione um bem</option>{formItems.filter(i => i.category === 'equipment').map(i => <option key={i.id} value={i.id} disabled={!equipmentStatus(i).reservable}>{equipmentOptionLabel(i)}</option>)}</select>
             </Field>
             <Field label="Ação ou projeto atendido" help="Aparece em relatórios. Nome e contato de pessoas vão nos campos Responsável e Contato.">
             <input name="actionName" required maxLength={160} placeholder="Ex.: Oficina de fotografia"/>

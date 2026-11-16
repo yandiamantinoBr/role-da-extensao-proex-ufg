@@ -57,7 +57,9 @@ test('a loans-only profile receives only the minimum reservable equipment catalo
   const data=await projectDetail(f.db,await f.actor('viewer-a'),'project-a');
   assert.equal(data.relationships.items,null);assert.equal(data.permissions.inventoryManage,false);assert.equal(data.permissions.loansManage,true);
   assert.equal(data.relationships.loanEquipment[0].id,equipment.id);
-  assert.deepEqual(Object.keys(data.relationships.loanEquipment[0]).sort(),['category','id','name']);
+  // Availability only (16/11): the same condition/unit/on-loan state the loans profile already gets for equipment in the snapshot,
+  // so the selector can say why an item cannot be reserved. No description or other inventory data.
+  assert.deepEqual(Object.keys(data.relationships.loanEquipment[0]).sort(),['category','condition','id','name','on_loan','stock']);
   assert.ok(!JSON.stringify(data.relationships.loanEquipment).includes('Descrição privada'));
   const h=harness('project-detail',{projectId:'project-a',projects:[data.project],mutate:async()=>({}),onBack(){},onEdit(){}});try{
     await h.reply(data,'/api/projects/');h.click('Reservar');

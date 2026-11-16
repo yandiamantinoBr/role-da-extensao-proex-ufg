@@ -6,6 +6,7 @@ import { Check, LoaderCircle, PackagePlus, Truck, X } from 'lucide-react';
 import { useFormDraft, DraftNotice } from './use-form-draft';
 import styles from './project-quick-entry.module.css';
 import type { Row } from '@/lib/database';
+import { equipmentOptionLabel, equipmentStatus } from '@/lib/equipment-availability';
 
 export type QuickProjectEntry = 'material' | 'loan';
 type Props = { kind: QuickProjectEntry; project: Row; items: Row[]; mutate: (action: string, payload: Row) => Promise<Row>; onClose: () => void; onSaved: (itemId?: string) => void };
@@ -59,7 +60,7 @@ export default function ProjectQuickEntry({ kind, project, items, mutate, onClos
         <label className="p-field"><span>Código do equipamento</span><input name="assetCode" maxLength={100}/></label>
         <label className={`p-field ${styles.wide}`}><span>Descrição</span><textarea name="description" maxLength={500} rows={2}/></label>
       </> : <>
-        <label className={`p-field ${styles.wide}`}><span>Equipamento *</span><select data-entry-focus name="itemId" required defaultValue=""><option value="">Selecione um equipamento</option>{equipment.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select>{!equipment.length && <small>Cadastre um equipamento neste projeto antes de fazer a reserva.</small>}</label>
+        <label className={`p-field ${styles.wide}`}><span>Equipamento *</span><select data-entry-focus name="itemId" required defaultValue=""><option value="">Selecione um equipamento</option>{equipment.map(item => <option key={item.id} value={item.id} disabled={!equipmentStatus(item).reservable}>{equipmentOptionLabel(item)}</option>)}</select>{!equipment.length ? <small>Cadastre um equipamento neste projeto antes de fazer a reserva.</small> : <small>Equipamentos em manutenção, inativos ou sem entrada no estoque aparecem desativados. O choque de horários é conferido ao salvar.</small>}</label>
         <label className={`p-field ${styles.wide}`}><span>Ação atendida *</span><input name="actionName" required maxLength={160} defaultValue={project.name}/><small>Aparece em relatórios. Nome e contato de pessoas vão nos campos Responsável e Contato.</small></label>
         <label className="p-field"><span>Responsável pela retirada *</span><input name="borrowerName" required maxLength={120}/></label>
         <label className="p-field"><span>Contato para o empréstimo</span><input name="borrowerContact" maxLength={150}/></label>
@@ -70,7 +71,7 @@ export default function ProjectQuickEntry({ kind, project, items, mutate, onClos
       </div>
       <p className="p-form-help">{kind === 'material' ? 'Começa com saldo zero. Depois da contagem, abra Movimentar para registrar o recebimento.' : 'Horários do aparelho. A disponibilidade é conferida antes de confirmar.'}</p>
       {error && <p role="alert" className="p-inline-error">{error}</p>}
-      <footer className={styles.footer}><button type="button" className="p-button p-button-subtle" onClick={close}>Cancelar</button><button className="p-button p-button-primary" type="submit" disabled={kind === 'loan' && !equipment.length}>{saving ? <LoaderCircle size={17} className="p-spin"/> : <Check size={17}/>}Salvar {kind === 'material' ? 'material' : 'reserva'}</button></footer>
+      <footer className={styles.footer}><button type="button" className="p-button p-button-subtle" onClick={close}>Cancelar</button><button className="p-button p-button-primary" type="submit" disabled={kind === 'loan' && !equipment.some(item => equipmentStatus(item).reservable)}>{saving ? <LoaderCircle size={17} className="p-spin"/> : <Check size={17}/>}Salvar {kind === 'material' ? 'material' : 'reserva'}</button></footer>
       </fieldset>
     </form>
   </dialog>;
