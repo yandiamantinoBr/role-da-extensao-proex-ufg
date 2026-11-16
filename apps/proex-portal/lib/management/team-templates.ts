@@ -4,7 +4,7 @@
 export type SuggestedAccess = 'owner' | 'manager' | 'operator' | 'inventory' | 'loans' | 'viewer';
 export const ACCESS_LABEL: Record<SuggestedAccess, string> = {
   owner: 'Responsável (administra tudo)', manager: 'Gestor', operator: 'Operador de dinâmicas',
-  inventory: 'Estoque', loans: 'Empréstimos', viewer: 'Só leitura',
+  inventory: 'Materiais', loans: 'Empréstimos', viewer: 'Só leitura',
 };
 export type TeamTemplate = {
   id: string; name: string; purpose: string;

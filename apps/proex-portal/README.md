@@ -59,7 +59,7 @@ Se alguém esquecer a senha, o responsável institucional pode gerar um **link p
 | Responsável institucional | Configuração geral, projetos, acessos e operações institucionais |
 | Gestor de projeto | Campanhas, equipe subordinada e operações no escopo concedido |
 | Operador de evento | Atendimento presencial, registro da dinâmica e entrega autorizada |
-| Responsável por estoque | Consulta, cadastro e movimentações de estoque permitidas |
+| Responsável por materiais | Consulta, cadastro e movimentações de materiais permitidas |
 | Responsável por empréstimos | Reservas, retirada, devolução e ocorrências |
 | Leitor de relatórios | Indicadores e exportações agregadas do escopo autorizado |
 
