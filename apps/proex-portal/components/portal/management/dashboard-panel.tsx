@@ -73,7 +73,7 @@ export default function DashboardPanel({ organizationId, onOpenRisks }: { organi
     <div className={styles.toolbar}>
       <label className="p-field"><span>Projeto</span><select value={projectId} onChange={event => setProjectId(event.target.value)}><option value="">Todos os projetos que você vê</option>{data?.projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
       <label className="p-field"><span>Período</span><select value={period} onChange={event => setPeriod(event.target.value)}>{PERIODS.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}</select></label>
-      <button type="button" className="p-button p-button-subtle" onClick={() => setReload(value => value + 1)} disabled={loading}><RefreshCw size={16} aria-hidden="true"/>Recarregar dados</button>
+      <button type="button" className="p-button p-button-subtle" onClick={() => setReload(value => value + 1)} disabled={loading}><RefreshCw size={16} aria-hidden="true"/>Atualizar</button>
       {data && <p className={`${styles.help} ${styles.toolbarNote}`}>De {brDate(data.period.from)} a {brDate(data.period.to)}, comparado com {brDate(data.previous.from)} a {brDate(data.previous.to)}. Cada indicador abre o detalhe.</p>}
     </div>
     {error && <div className={styles.errorBox} role="alert"><p>{error}</p><button type="button" className="p-button p-button-subtle" onClick={() => setReload(value => value + 1)}>Tentar de novo</button></div>}

@@ -222,7 +222,7 @@ export default function WorkTeamsPanel({ userId, defaultProjectId = '', organiza
  }, [loading, shownTeamId, data]);
  return <section className={styles.workspace} aria-label="Equipes de trabalho">
   <div className={styles.intro}><h2><Users size={22} aria-hidden="true"/>Trabalho em equipe</h2><div className={styles.actions}>
-   <button className="p-button" disabled={busy || exporting} onClick={() => { setEditor(null); setAttempt(value => value + 1); }}><RefreshCw size={17} aria-hidden="true"/>Atualizar</button>
+   <button type="button" className="p-button p-button-subtle" disabled={busy || exporting} onClick={() => { setEditor(null); setAttempt(value => value + 1); }}><RefreshCw size={16} aria-hidden="true"/>Atualizar</button>
    {(canEditTeams || data?.scope.canManage) && <button className="p-button p-button-primary" disabled={busy || exporting || loading} onClick={startNewTeam}><Plus size={17} aria-hidden="true"/>Nova equipe</button>}
   </div></div>
   <div className={styles.filters}>
