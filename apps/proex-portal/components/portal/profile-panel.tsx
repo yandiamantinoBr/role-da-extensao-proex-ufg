@@ -98,7 +98,7 @@ async function decodePhoto(file: File): Promise<DecodedPhoto> {
     return await load(source);
   } catch {
     try { return await load(await photoDataUrl(file)); }
-    catch { throw new Error('O navegador não conseguiu abrir esta foto. Escolha uma cópia em JPEG ou PNG; se estiver no aplicativo, tente abrir o portal em outra aba.'); }
+    catch { throw new Error('O navegador não conseguiu abrir esta foto. Escolha uma cópia em JPEG ou PNG (no iPhone, ajuste a câmera para “Mais compatível”); se estiver no aplicativo, tente abrir o portal em outra aba.'); }
   } finally { releasePhotoUrl(source); }
 }
 function canvasPng(canvas: HTMLCanvasElement): Promise<Blob> {
@@ -307,13 +307,13 @@ export default function ProfilePanel({ onUpdated }: Props) {
           </div>
         </div>
         <div className={styles.heroBody}>
-          <div className={styles.heroHeading}><div><p className={styles.kicker}>Meu perfil</p><h2 className={styles.name} id="profile-title">{profile.displayName}</h2><p className={styles.email}>{profile.email}</p></div><button className="p-button p-button-subtle" type="button" disabled={disabled} onClick={() => void refreshProfile()}><RefreshCw size={16} aria-hidden="true" />Recarregar dados</button></div>
+          <div className={styles.heroHeading}><div><p className={styles.kicker}>Meu perfil</p><h2 className={styles.name} id="profile-title">{profile.displayName}</h2><p className={styles.email}>{profile.email}</p></div><button className="p-button p-button-subtle" type="button" disabled={disabled} onClick={() => void refreshProfile()} aria-label="Atualizar meu perfil"><RefreshCw size={16} aria-hidden="true" />Atualizar</button></div>
           <dl className={styles.summary}>
             <div><dt>Unidade institucional</dt><dd>{selectedUnit ? unitLabel(selectedUnit) : profile.unitId ? 'Unidade cadastrada' : profile.unit || 'Não informada'}{selectedUnit && profile.unit && <small>{profile.unit}</small>}{selectedUnit?.status === 'archived' && <small>Unidade arquivada · vínculo preservado</small>}</dd></div>
             <div><dt>Vínculo principal</dt><dd>{affiliations[profile.affiliation]}{profile.jobTitle && <small>{profile.jobTitle}</small>}</dd></div>
             <div><dt>Registro institucional</dt><dd>{profile.registrationNumber || 'Não informado'}{profile.registrationType && <small>{registrationTypes[profile.registrationType]}</small>}</dd></div>
           </dl>
-          <p className={styles.photoHelp}>Foto de até 20 MB em JPEG, PNG ou WebP. Ela é salva assim que escolhida: o portal prepara uma imagem de até 256 pixels e remove os metadados. Fotos HEIC do iPhone dependem do navegador; se não abrir, ajuste a câmera para “Mais compatível” ou escolha outra imagem.</p>
+          <p className={styles.photoHelp}>JPEG, PNG ou WebP de até 20 MB. A foto é salva assim que escolhida, reduzida a 256 pixels e sem metadados.</p>
           {photo && !busy && <div className="p-inline"><button type="button" className="p-button p-button-primary" disabled={disabled} onClick={() => void retryPhoto()}>Tentar salvar a foto novamente</button><button type="button" className="p-text-link" disabled={disabled} onClick={discardPhoto}>Descartar foto escolhida</button></div>}
           {preparing && <p role="status" className={styles.busy}><LoaderCircle size={16} className="p-spin" aria-hidden="true" />Preparando a foto neste aparelho…</p>}
         </div>
