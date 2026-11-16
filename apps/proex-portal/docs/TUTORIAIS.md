@@ -22,7 +22,7 @@ Funciona sem IA, chave, consentimento de provedor, widgets, saldo ou `inventory.
 | Catálogo (capítulos, passos, falas, rótulos citados, âncoras, requisitos de acesso) | `lib/tutorials/catalog.ts` |
 | Acesso e progresso no servidor | `lib/tutorials/service.ts` |
 | Rota | `app/api/tutorials/route.ts`: GET `?projectId=` e POST com ações `progress.save`, `progress.restart`, `invite.dismiss`, `invite.start` |
-| Tabela | `user_tutorials` (migração **0051**): pessoa, capítulo, versão, último passo, situação e datas. O convite usa o capítulo reservado `convite` |
+| Tabela | `user_tutorials` (migração **0052**): pessoa, capítulo, versão, último passo, situação e datas. O convite usa o capítulo reservado `convite` |
 | Tela | `components/portal/tutorials/` (estado compartilhado, camada com cartão e janela, convite, lista e cartão da Conta) |
 | Âncoras | `data-tutorial` em `portal-navigation.tsx` (Início, menu, Mais), `portal-client.tsx` (menu da conta), `dashboard-panel.tsx` (Personalizar) e `account-access-panel.tsx` (Meus acessos). O campo Projeto usa o `id="filtro-projeto"` que já existia |
 
