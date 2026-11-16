@@ -499,7 +499,7 @@ export default function RecordsPanel({ userId, projects: sourceProjects, items, 
     </section>}
 
     <section className="p-card" aria-labelledby="records-list-title" aria-busy={loading}>
-      <div className={styles.historyHead}><div><h3 id="records-list-title">Histórico</h3><p className="p-form-help" style={{ margin: 0 }}>{loading ? 'Consultando registros…' : `${shown.length} de ${records.length} registros carregados${filters.from || filters.to ? ' no período escolhido' : ''}`}</p></div>
+      <div className={styles.historyHead}><div><h3 id="records-list-title">Documentos e registros</h3><p className="p-form-help" style={{ margin: 0 }}>{loading ? 'Consultando registros…' : `${shown.length} de ${records.length} registros carregados${filters.from || filters.to ? ' no período escolhido' : ''}`}</p></div>
         <div className={styles.historyActions}>{!scheduleItemId && <Link className="p-button p-button-subtle" href="/?module=reports" prefetch={false}><BarChart3 size={16} />Central de relatórios</Link>}<ExportFormats label="Baixar registros" disabled={loading || !shown.length || !!readError} onExport={exportHistory}/></div></div>
       <div className={styles.historyFilters}>
         <div className={styles.kindChips} role="group" aria-label="Filtrar por categoria">
