@@ -2,6 +2,24 @@
 
 Comece pela [Retomada de 13/11](RETOMADA-13NOV-PORTAL-PROEX.md) para conferir a base publicada, a ordem das PRs pendentes, o padrão visual e o roteiro de convite. Para a rodada de 14/11, consulte [Ações de projeto e acessos](../apps/proex-portal/docs/QA-ACOES-E-PERFIS.md).
 
+## Auditoria de permissões das PRs 105–143 · 16/11
+
+- **No ar:** PR145 (`77c7d74`, `dpl_CyyYfr2DkymRGgZEaCkize4jf5ca`). A leitura de DOCX (`lib/importer/documents.ts`) passou a percorrer o XML uma vez só. Antes, marcas `<w:t>` sem fechamento faziam o tempo crescer ao quadrado: 120 KB levavam 6,6 s, e o limite de 1 MB prendia o servidor por minutos (Rolê e importação). Os testes de tempo e de texto igual estão em `tests/import-documents.test.mjs`.
+- **Conferido sem achado:** 32 sondas com cinco perfis sintéticos e outra organização. O teste cobriu:
+  - registros e cobertura (PR111/112/118);
+  - convite e `returnTo` (PR106/119);
+  - Meus acessos (PR116);
+  - exportações (PR124/127/129);
+  - busca fora do endereço (PR132);
+  - documento do Rolê sem login;
+  - revogação na mesma sessão.
+- **R4, critérios 4 a 8 (PR103):** passaram, local e em produção (só leitura). A exceção são os campos sem `id`/`name` da ficha do projeto ("Monte o relatório", "Histórico exibido") e de Dinâmicas ("Evento atendido"), que não vêm da PR103.
+- **Pendências (P2/P3) com correção sugerida:** na nota da Vault `Portal PROEX - Auditoria 16nov`. As mais urgentes:
+  - a prévia do convite já aceito ainda devolve e-mail e papel (`app/api/account/route.ts`, `invitation()`);
+  - a observação livre das movimentações chega a quem só tem `reports.read` (`lib/reports.ts:120`, `lib/project-report.ts:83`);
+  - a conferência de convite não tem limite de tentativas.
+- **Não fazer:** mexer em Empréstimos antes da PR de privacidade da sessão de materiais. A auditoria confere depois do merge.
+
 ## Checkpoint de 15/11 · tutoriais, empréstimos, widgets e Rolê
 
 A [passagem para Claude Code](../apps/proex-portal/docs/QA-TUTORIAIS-WIDGETS-E-ROLE.md) reúne os casos reproduzidos e as próximas entregas. Comece pelo [roteiro por público](../apps/proex-portal/docs/ROTEIRO-TUTORIAIS-PROEX.md) e pelo [guia de Empréstimos](../apps/proex-portal/docs/GUIA-EMPRESTIMOS.md). O Portal em produção foi a base da pesquisa. A implementação das melhorias segue na fila.
