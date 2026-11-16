@@ -18,7 +18,8 @@ import { ActivityChecklistCreator, ActivityChecklistView } from './activity-chec
 const activityAnswerLabels:Record<string,string>={yes:'Sim',no:'Não',not_applicable:'Não se aplica'};
 
 const field='mt-1 min-h-11 w-full min-w-0 rounded-xl border bg-[var(--canvas)] px-3 py-2 text-base text-[var(--ink)] '+styles.field;
-const button='justify-self-start max-w-full inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[var(--muted)] bg-[var(--canvas)] px-4 py-2 font-semibold text-[var(--ink)] disabled:opacity-50';
+// Botão secundário de Demandas no padrão do portal (p-button p-button-subtle), com o mesmo tamanho de letra dos outros módulos.
+const button='p-button p-button-subtle justify-self-start max-w-full';
 const primary='justify-self-start max-w-full p-button p-button-primary min-h-11 disabled:opacity-50';
 const focusAnchor=styles.focusAnchor;
 const emptyCatalog:Catalog={organizations:[],projects:[],people:[],teamPeople:[],teams:[],items:[],campaigns:[],loans:[],canEdit:false,canManageTeams:false};

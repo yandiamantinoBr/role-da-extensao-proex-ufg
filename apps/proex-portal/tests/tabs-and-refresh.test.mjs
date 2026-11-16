@@ -31,3 +31,12 @@ test('module-level refresh is a secondary button with icon and the word "Atualiz
   for (const [file, pattern] of Object.entries(buttons)) assert.match(source(file), pattern, file);
   assert.ok(!source('../components/portal/management/dashboard-panel.tsx').includes('Recarregar dados'));
 });
+
+test('Demandas secondary buttons and Equipes fields use the portal sizes', () => {
+  assert.match(source('../components/portal/follow-up-panel.tsx'), /const button='p-button p-button-subtle justify-self-start max-w-full'/);
+  const teams = source('../components/portal/work-teams-panel.module.css');
+  assert.match(teams, /\.filters :is\(select,input\),\.form :is\(input:not\(\[type=checkbox\]\),select\) \{[^}]*font-size: 13px;/);
+  assert.match(teams, /@media \(max-width: 720px\) \{ \.filters :is\(select,input\),\.form :is\(input:not\(\[type=checkbox\]\),select\) \{ font-size: 16px; \} \}/);
+  // Configurações no celular: as pílulas que passam da borda esmaecem, mostrando que dá para rolar.
+  assert.match(source('../app/settings-groups.module.css'), /\.index \{ flex-wrap: nowrap; overflow-x: auto;[^}]*mask-image: linear-gradient\(to right, #000 82%, transparent\);/);
+});
