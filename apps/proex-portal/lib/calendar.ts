@@ -231,12 +231,15 @@ export async function calendarEntries(db: D1Database, actor: PortalActor | null,
     };
     const linkedLoanScope = sqlScope('r.project_id', accessibleProjects(actor, 'loans.read'));
     const linkedLoanAuthority = projectAuthoritySql(actor, ['loans.read'], 'r.project_id');
+    // Registros de empréstimo saem do portal (ICS) sem o título livre, como o próprio empréstimo.
     rows = await all(db, `SELECT r.id,r.project_id,p.name project_name,'Registro · ' || r.title title,
+      CASE WHEN r.kind='loan' OR r.loan_id IS NOT NULL THEN 'Registro de empréstimo' || COALESCE(' · ' || COALESCE(loan_item.name,linked_item.name),'') END export_title,
       COALESCE(r.starts_at,r.occurred_at) starts_at,COALESCE(r.ends_at,r.starts_at,r.occurred_at) ends_at,
       r.starts_at scheduled,'recorded' state,0 revision,r.created_at,r.created_at last_modified
       FROM records r JOIN projects p ON p.id=r.project_id
       LEFT JOIN loans linked_loan ON linked_loan.id=r.loan_id
-      LEFT JOIN items linked_item ON linked_item.id=r.item_id WHERE ${filter.sql}
+      LEFT JOIN items linked_item ON linked_item.id=r.item_id
+      LEFT JOIN items loan_item ON loan_item.id=linked_loan.item_id AND loan_item.project_id=r.project_id WHERE ${filter.sql}
       AND (r.loan_id IS NULL OR (linked_loan.project_id=r.project_id AND (${linkedLoanScope.sql}) AND (${linkedLoanAuthority.sql})))
       AND (r.item_id IS NULL OR linked_item.project_id=r.project_id)
       AND r.kind IN (${kinds[category].map(() => '?').join(',')})

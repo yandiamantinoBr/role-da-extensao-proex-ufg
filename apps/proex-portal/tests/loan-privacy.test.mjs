@@ -84,3 +84,33 @@ test('Agenda: loans only for who reads loans; the ICS file leaves without the ac
  const all=await calendarEntries(f.db,await f.actor('viewer-a'),{range});
  assert.equal(all.entries.some(row=>row.sourceKind==='loan'),false);
 });
+
+test('mixed scope in one answer: conditions only for the project where the person reads loans',async t=>{
+ const f=await fixture(t);
+ // loaner-a reads loans in project A and only reports in project A2.
+ f.insert('members',{id:'member-loaner-a2',user_id:'loaner-a',email:'loaner-a@example.invalid',role:'viewer',project_id:'project-a2',organization_id:'org-a',created_at:f.now});
+ const other=(await f.run('owner-a','item.create',{projectId:'project-a2',name:'Câmera sintética',category:'equipment',unit:'unidade',lowStock:0})).item;
+ await f.run('owner-a','stock.move',{itemId:other.id,kind:'receive',delta:1,reason:'Entrada sintética'});
+ const now=Date.now();
+ const loan=(await f.run('owner-a','loan.create',{projectId:'project-a2',itemId:other.id,actionName:'Feira sintética',borrowerName:'Pessoa fictícia',startsAt:new Date(now-3600000).toISOString(),endsAt:new Date(now+7200000).toISOString()})).loan;
+ await f.run('owner-a','loan.status',{id:loan.id,status:'out',conditionOut:'Retirada por outra.pessoa@exemplo.invalid'});
+ const result=await reportRows(f.db,await f.actor('loaner-a'),{dataset:'loans'});
+ const byMaterial=Object.fromEntries(result.rows.map(row=>[row.material,row]));
+ assert.equal(byMaterial['Projetor sintético'].condicao_saida,SECRET_OUT,'project A: full');
+ assert.equal(byMaterial['Câmera sintética'].condicao_saida,'','project A2: report only');
+ assert.deepEqual(result.withheldColumns,['condicao_saida','condicao_retorno']);
+ assert.doesNotMatch(JSON.stringify(result),/outra\.pessoa@exemplo\.invalid/);
+});
+
+test('records linked to a loan also leave the portal (ICS) without their free-text title',async t=>{
+ const f=await fixture(t),{createRecord}=await import(compile('lib/records.ts'));
+ const occurred=new Date(Date.now()-1800000).toISOString();
+ await createRecord(f.db,await f.actor('owner-a'),{projectId:'project-a',kind:'loan',loanId:f.loan.id,title:'Conversa com fulana.registro@exemplo.invalid',body:'Texto sintético',occurredAt:occurred,operationKey:key()});
+ const own=await calendarEntries(f.db,await f.actor('loaner-a'),{category:'loans',range:calendarRange()});
+ const record=own.entries.find(row=>row.sourceKind==='record');
+ assert.ok(record,'the record shows in the loan agenda');
+ assert.match(record.title,/fulana\.registro/,'inside the portal the full title stays');
+ const ics=serializeCalendar(own.entries);
+ assert.match(ics,/SUMMARY:Registro de empréstimo · Projetor sintético/);
+ assert.doesNotMatch(ics,/exemplo\.invalid/);
+});
