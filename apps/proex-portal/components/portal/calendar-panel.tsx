@@ -40,7 +40,8 @@ export function splitTitle(event: Pick<CalendarEntry, 'title' | 'category'>): { 
   const [first, ...rest] = event.title.split(' · ');
   const label = labels[event.category];
   if (!rest.length || !SOURCE_KINDS.has(first)) return { kind: label, name: event.title };
-  return { kind: first === label ? label : `${label} · ${first}`, name: rest.join(' · ') };
+  // "Prazo" já está em "Prazos de demandas" e "Empréstimo" em "Empréstimos": só "Projetos e eventos" ganha o tipo.
+  return { kind: first === label || label.startsWith(first) ? label : `${label} · ${first}`, name: rest.join(' · ') };
 }
 function statusLabel(event: CalendarEntry): string {
   if (event.status === 'CANCELLED') return event.state === 'archived' ? 'Arquivado' : 'Cancelado';

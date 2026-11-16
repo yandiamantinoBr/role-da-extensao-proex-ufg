@@ -243,8 +243,9 @@ test('cards, day previews and exports drop the repeated type word but keep it in
   try {
     const day = new URL(h.requests[0].url, 'https://example.test').searchParams.get('from');
     const base = { projectName: 'Projeto A', startsAt: day, endsAt: civilDates.offsetCivilDate(day, 1), allDay: true, status: 'CONFIRMED' };
-    const data = { feeds: [], availableCategories: ['projects', 'materials'], entries: [
+    const data = { feeds: [], availableCategories: ['projects', 'materials', 'deadlines'], entries: [
       { ...base, uid: 'm', category: 'materials', title: 'Materiais · Botton azul · 40 unidades' },
+      { ...base, uid: 'p', category: 'deadlines', title: 'Prazo · Separar brindes' },
       { ...base, uid: 'a', category: 'projects', title: 'Atividade · Mostra de extensão' },
       { ...base, uid: 'x', category: 'projects', title: 'Oficina · parte 2' },
       { ...base, uid: 'c', category: 'projects', title: 'Atividade · Oficina suspensa', status: 'CANCELLED', state: 'cancelled' },
@@ -256,6 +257,7 @@ test('cards, day previews and exports drop the repeated type word but keep it in
     });
     assert.deepEqual(cards.sort(), [
       ['Materiais', 'Botton azul · 40 unidades'],
+      ['Prazos de demandas', 'Separar brindes'],
       ['Projetos e eventos · Atividade', 'Mostra de extensão'],
       ['Projetos e eventos · Atividade', 'Oficina suspensa'],
       ['Projetos e eventos', 'Oficina · parte 2'],
@@ -272,7 +274,7 @@ test('cards, day previews and exports drop the repeated type word but keep it in
     const args = h.exports.at(-1);
     assert.deepEqual(Array.from(args[3], row => row.event).sort(), [
       'Botton azul · 40 unidades\nMateriais', 'CANCELADO · Oficina suspensa\nProjetos e eventos · Atividade',
-      'Mostra de extensão\nProjetos e eventos · Atividade', 'Oficina · parte 2\nProjetos e eventos',
+      'Mostra de extensão\nProjetos e eventos · Atividade', 'Oficina · parte 2\nProjetos e eventos', 'Separar brindes\nPrazos de demandas',
     ]);
     assert.ok(!args[5].some(([label]) => label === 'Compromissos'), 'o total já aparece no quadro do PDF');
     assert.equal(args[5].map(([label]) => label).join(' | '), 'Período | Projetos | Categoria | Horário | Gerado em', '"Recorte" virou "Projetos" e o PDF diz quando foi gerado');
