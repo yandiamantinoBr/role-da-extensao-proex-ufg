@@ -81,6 +81,7 @@ import DashboardPanel from '@/components/portal/dashboard-panel';
 import { DesktopSidebar, MobileNavigation, type NavSubitems } from '@/components/portal/portal-navigation';
 import { setPinned, usePinnedItems } from '@/components/portal/use-pinned-items';
 import { PORTAL_MODULES, type ModuleId } from '@/components/portal/navigation-model';
+import { projectAccessRoleLabels } from '@/lib/team-access-labels';
 import { useNavigationPreferences } from '@/components/portal/use-navigation-preferences';
 import { useFormDraft, DraftNotice, setDraftScope, clearCurrentDrafts, watchDraftLogout } from '@/components/portal/use-form-draft';
 import { THEMATIC_AREAS, groupUnits } from '@/lib/extension-catalog';
@@ -104,7 +105,8 @@ const areaOwnerScopes: readonly {
     { area: 'campaigns', tab: 'events', capabilities: ['campaigns.manage', 'participation.operate', 'inventory.deliver'], subject: 'das dinâmicas' },
 ];
 const statusNames: Row = { draft: 'Rascunho', active: 'Ativo', paused: 'Pausado', closed: 'Encerrado', reserved: 'Reservado', out: 'Retirado', returned: 'Devolvido', cancelled: 'Cancelado', pending: 'Pendente', accepted: 'Aceito', revoked: 'Revogado' };
-const roleNames: Row = { owner: 'Responsável institucional', manager: 'Gestor de projeto', operator: 'Operador de evento', inventory: 'Responsável por estoque', loans: 'Responsável por empréstimos', viewer: 'Leitor de relatórios' };
+// Mesmos rótulos de convites e de Meus acessos (lib/team-access-labels.ts); só a chave `inventory` fica no banco.
+const roleNames: Row = { owner: 'Responsável institucional', ...projectAccessRoleLabels };
 const categoryNames: Row = { gift: 'Brinde', equipment: 'Equipamento', distribution: 'Distribuição institucional', consumption: 'Consumo interno' };
 const get = (r: Row, ...keys: string[]) => keys.map(k => r?.[k]).find(v => v !== undefined && v !== null);
 const list = (value: unknown): Row[] => Array.isArray(value) ? value : [];
