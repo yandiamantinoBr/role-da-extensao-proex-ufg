@@ -7,7 +7,7 @@ import ts from 'typescript';
 const read = path => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 const source = read('components/portal/dock-reserve.ts');
 const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
-const { dockReserve, DOCK_RESERVE_PROPERTY, DOCK_RESERVE_GAP } = await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`);
+const { dockReserve, fabPlacement, FAB_STEP, FAB_MARGIN, DOCK_RESERVE_PROPERTY, DOCK_RESERVE_GAP } = await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`);
 
 test('doca de computador: o espaço no fim da página cobre a parte mais alta em repouso, com folga', () => {
   assert.equal(dockReserve(900, [824]), 900 - 824 + DOCK_RESERVE_GAP);
@@ -73,3 +73,52 @@ test('Rolê pode receber Escape com o estado ainda carregando', () => {
   assert.match(role, /\(input\.current \?\? panel\)\.focus/);
   assert.match(role, /\[open, status\?\.available\]/);
 });
+
+test('celular flutuante: o botão fica em casa quando nada está embaixo e sobe só o necessário quando há um botão', () => {
+  const home = { left: 324, right: 376, bottom: 760, size: 52, limit: 300 };
+  assert.equal(fabPlacement({ ...home, blocked: () => false }), 0, 'livre: fica em casa');
+  // Um botão de largura total ocupa de 700 a 760 px: o botão flutuante precisa subir acima dele, com margem.
+  const shift = fabPlacement({ ...home, blocked: (x, y) => y >= 700 && y <= 760 });
+  assert.ok(shift !== null && shift % FAB_STEP === 0);
+  assert.ok(760 - shift + FAB_MARGIN < 700, 'a parte de baixo do botão, com a margem, fica acima do controle');
+  assert.ok(760 - (shift - FAB_STEP) + FAB_MARGIN >= 700, 'e não sobe mais que um passo além do necessário');
+  // Um controle só na lateral esquerda não atrapalha o canto direito.
+  assert.equal(fabPlacement({ ...home, blocked: x => x < 200 }), 0);
+});
+
+test('celular flutuante: sem lugar livre, o botão some em vez de cobrir algo', () => {
+  const home = { left: 324, right: 376, bottom: 760, size: 52, limit: 300 };
+  assert.equal(fabPlacement({ ...home, blocked: () => true }), null, 'tudo ocupado: esconde');
+  assert.equal(fabPlacement({ ...home, bottom: 40, blocked: () => false }), null, 'sem espaço acima da barra: esconde');
+  let probes = 0;
+  fabPlacement({ ...home, blocked: () => { probes++; return false; } });
+  assert.ok(probes > 0 && probes <= 9, 'em casa, no máximo nove pontos são consultados');
+});
+
+test('modos escolhidos: lateral fixa reserva o próprio espaço, botão do celular sai da frente e a escolha fica em Meu espaço', () => {
+  const css = read('components/portal/floating-dock.module.css');
+  const tsx = read('components/portal/floating-dock.tsx');
+  // Computador, fixo na lateral: a área de trabalho (cabeçalho incluso) encolhe; nada fica por baixo do trilho.
+  // A classe local fica fora do :global(), senão o CSS Module não troca o nome e a regra nunca vale (a lateral cobria 85 px).
+  assert.match(css, /:global\(html\):has\(\.sideDock\) :global\(\.pn-shell>\.p-workspace\)\{width:calc\(100% - var\(--portal-sidebar-width\) - var\(--dock-side\)\)\}/);
+  assert.match(css, /:global\(html\):has\(\.sideDock\)\{--dock-side:84px\}/);
+  assert.match(css, /:global\(html\):has\(\.sideDock\[data-open\]\)\{--dock-side:424px\}/);
+  assert.doesNotMatch(css, /:global\([^)]*\.(sideDock|mobileFab|dock)\b/, 'nenhuma classe local dentro de :global()');
+  assert.match(tsx, /const sidebar = !toolbar && layout\.desktop === 'sidebar'/);
+  assert.match(tsx, /const shown = dock !== null && !toolbar && !sidebar/, 'a reserva de baixo do modo flutuante não vale na lateral');
+  // Celular, flutuante no canto: some ao rolar, com campo focado e com a central ou uma folha aberta; reserva o fim da página.
+  assert.match(css, /\.mobileFab\[data-state=away\]\{opacity:0;visibility:hidden;pointer-events:none\}/);
+  assert.match(css, /:global\(\.pn-shell \.p-main\):has\(\.mobileFab\)\{padding-bottom:var\(--dock-reserve,/);
+  assert.match(css, /aria-controls="followup-notification-center"\]\[aria-expanded="true"\]\)\) \.mobileFab,:global\(body:has\(dialog\[open\]\)\) \.mobileFab/);
+  assert.match(tsx, /const onScroll = \(\) => \{ button\.dataset\.state = 'away';/);
+  assert.match(tsx, /if \(editing\(\)\) \{ button\.dataset\.state = 'away'; return; \}/);
+  assert.match(tsx, /layout\.mobile === 'floating'\s*\? <MobileFab/);
+  // Escolha por conta, em Meu espaço, sem roubar o foco ao carregar.
+  assert.match(tsx, /name=\{`dock-layout-\$\{choice\.device\}`\}/);
+  assert.match(tsx, /action: 'layout', device, value/);
+  assert.match(tsx, /setLayout\(current => current\[device\] === value \? \{ \.\.\.current, \[device\]: previous \}/, 'falha ao gravar desfaz só aquele aparelho, se a tela ainda mostrar o valor que falhou');
+  assert.match(tsx, /if \(layoutRequests\.current\[device\] === request\) setLayout/, 'resposta atrasada de uma escolha anterior é ignorada');
+  assert.doesNotMatch(tsx, /setLayout\(current => \{[\s\S]{0,200}communityPost/, 'nada de gravar dentro da função que atualiza o estado');
+  assert.match(tsx, /if \(toolbar \|\| !dock\?\.open \|\| dock\.minimized \|\| !openedByPerson\.current\) return;/, 'carregar com um painel aberto não move o foco');
+});
+
