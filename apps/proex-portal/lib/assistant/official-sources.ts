@@ -2,7 +2,7 @@ import { aiConfigurationAuthority, platformOwnerAuthoritySql, type PortalActor }
 import { one } from '../database';
 import { HttpError } from '../errors';
 import { OFFICIAL_HOSTS, officialPageIn, officialPdfIn, officialPdfUrl, requestsOfficialPdf } from './official-pdf-url';
-import { searchOfficialPdfs, type OfficialDocument, type OfficialPassage } from './official-pdfs';
+import { searchOfficialPdfs, type OfficialDocument, type OfficialPassage, type OfficialUnread } from './official-pdfs';
 
 /*
  * Fontes oficiais do Rolê, sem chamada paga:
@@ -105,8 +105,9 @@ type PublicIndex = SearchEntry[];
 type PublicResult = SearchEntry & { summary: string; fetchedAt: string; documents: OfficialDocument[] };
 /** Dois documentos parecidos (mesmo programa e tipo, edições diferentes) sem pedido que desempate. */
 export type OfficialAmbiguity = { used: OfficialDocument; other: OfficialDocument };
-type PublicLookup = { status: 'ok' | 'partial' | 'unavailable'; pages: PublicResult[]; passages: OfficialPassage[]; unreadable: OfficialDocument[]; ambiguity: OfficialAmbiguity | null };
-const emptyLookup = { pages: [], passages: [], unreadable: [], ambiguity: null };
+/** documentSearch: a pergunta pedia um documento (ou colou uma página); resumo de página não substitui o PDF. */
+type PublicLookup = { status: 'ok' | 'partial' | 'unavailable'; pages: PublicResult[]; passages: OfficialPassage[]; unreadable: OfficialUnread[]; ambiguity: OfficialAmbiguity | null; documentSearch: boolean };
+const emptyLookup = { pages: [], passages: [], unreadable: [], ambiguity: null, documentSearch: false };
 type SearchIndexCache = Map<string, { refreshAt: number; value: Promise<PublicIndex | null> }>;
 const searchIndexes = new WeakMap<typeof fetch, SearchIndexCache>();
 const searchWords = (value: string) => (value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase().match(/[a-z0-9]{2,}/g) ?? []);
@@ -201,8 +202,10 @@ const documentKind = (title: string) => {
   return /\b(?:aditivo|retificacao|prorrogacao|errata)\b/.test(heading) ? 'alteracao' : /^edital\b/.test(heading) && !/\bresultado\b/.test(heading) ? 'edital' : 'outro';
 };
 const programOf = (value: string) => searchWords(value).find(word => word === 'probec' || word === 'conpeex') ?? '';
+/** Número da retificação ou do aditivo (Retificação nº 02 → 2); 0 quando não há. */
+const amendmentNumber = (title: string) => Number(plain(title).match(/\b(?:retificacao|aditivo|errata)\s+(?:n\s*[º°o.]?\s*)?(\d{1,2})\b/)?.[1] ?? 0);
 
-/** Ordena os PDFs das páginas pela pergunta: edição pedida, versão final/preliminar, aditivo e edição mais recente. */
+/** Ordena os PDFs das páginas pela pergunta: edição pedida, versão final/preliminar, aditivo, edição e retificação mais recentes. */
 function chooseDocument(results: PublicResult[], subject: string) {
   const question = subject.replace(/https:\/\/\S+/gi, ' ');
   const wanted = officialSearchTerms(question), normalized = searchWords(question).join(' ');
@@ -210,15 +213,18 @@ function chooseDocument(results: PublicResult[], subject: string) {
   const preliminary = /\bpreliminar\b/.test(normalized);
   const asked = editionOf(question);
   const askedYears = [...new Set([asked.start, ...searchWords(question).filter(word => /^20\d{2}$/.test(word)).map(Number)].filter((year): year is number => !!year))];
-  const askedNumbers = asked.numbers;
-  const byUrl = new Map<string, { pdf: OfficialDocument; priority: number; score: number; edition: Edition; kind: string; program: string }>();
+  const askedNumbers = asked.numbers, askedVersion = amendmentNumber(question);
+  const byUrl = new Map<string, { pdf: OfficialDocument; page: string; priority: number; score: number; edition: Edition; kind: string; version: number; program: string }>();
   results.forEach((page, index) => {
     const pageEdition = editionOf(page.title, new URL(page.url).pathname.replace(/[/-]/g, ' '));
     for (const pdf of page.documents) {
       const own = editionOf(pdf.title, decodeURIComponent(new URL(pdf.url).pathname.split('/').at(-1) ?? ''));
       const edition = { start: own.start ?? pageEdition.start, end: own.start ? own.end : pageEdition.end, numbers: [...own.numbers, ...pageEdition.numbers] };
       const priority = documentPriority(pdf.title, wanted, amended, preliminary);
-      const choice = { pdf, priority, score: priority + (3 - index) * 5, edition, kind: documentKind(pdf.title), program: programOf(`${pdf.title} ${page.title}`) };
+      const kind = documentKind(pdf.title), version = kind === 'alteracao' ? amendmentNumber(pdf.title) : 0;
+      // Retificação nº 02 vem antes da nº 01; com número pedido, só a pedida sobe.
+      const versionScore = askedVersion ? (version === askedVersion ? 45 : 0) : version * 3;
+      const choice = { pdf, page: page.url, priority, score: priority + (3 - index) * 5 + versionScore, edition, kind, version, program: programOf(`${pdf.title} ${page.title}`) };
       const saved = byUrl.get(pdf.url);
       if (!saved || saved.score < choice.score) byUrl.set(pdf.url, choice);
     }
@@ -239,8 +245,11 @@ function chooseDocument(results: PublicResult[], subject: string) {
   }
   choices.sort((a, b) => b.score - a.score);
   const best = choices[0];
-  const other = best && !decided && best.edition.start ? choices.find(choice => choice.pdf.url !== best.pdf.url && choice.kind === best.kind && choice.kind !== 'outro'
-    && choice.program === best.program && choice.edition.start !== null && choice.edition.start !== best.edition.start && Math.abs(choice.priority - best.priority) <= 10) : undefined;
+  // Avisa só quando o escolhido é de fato o mais recente: edição anterior, ou retificação anterior da mesma página.
+  const olderEdition = (choice: typeof best) => !decided && !!best.edition.start && choice.edition.start !== null && choice.edition.start < best.edition.start;
+  const olderVersion = (choice: typeof best) => !askedVersion && choice.page === best.page && choice.version > 0 && choice.version < best.version;
+  const other = best ? choices.find(choice => choice.pdf.url !== best.pdf.url && choice.kind === best.kind && choice.kind !== 'outro'
+    && choice.program === best.program && Math.abs(choice.priority - best.priority) <= 10 && (olderEdition(choice) || olderVersion(choice))) : undefined;
   return { best: best?.pdf ?? null, ambiguity: best && other ? { used: best.pdf, other: other.pdf } : null };
 }
 
@@ -255,11 +264,11 @@ async function searchPastedPage(page: URL, subject: string, fetcher: typeof fetc
     if (!title) throw new Error('Página pública sem título.');
     result = { url: page.href, title, lastModified: '', summary, fetchedAt: new Date().toISOString(), documents: pdfLinks(html, page.href) };
   } catch {
-    return { status: 'unavailable', ...emptyLookup };
+    return { status: 'unavailable', ...emptyLookup, documentSearch: true };
   }
   const { best, ambiguity } = chooseDocument([result], subject);
   const pdf = await searchOfficialPdfs(best ? [best] : [], subject, fetcher, USER_AGENT, officialSearchTerms, disallowed);
-  return { status: 'ok', pages: [result], ...pdf, ambiguity };
+  return { status: 'ok', pages: [result], ...pdf, ambiguity, documentSearch: true };
 }
 
 /** Lê os mapas, as páginas públicas e seus PDFs oficiais. Nenhum termo é enviado ao site. */
@@ -268,7 +277,7 @@ export async function searchOfficialPages(subject: string, fetcher: typeof fetch
   if (direct) {
     const title = decodeURIComponent(direct.pathname.split('/').at(-1)!).replace(/_/g, ' ');
     const pdf = await searchOfficialPdfs([{ url: direct.href, title }], subject, fetcher, USER_AGENT, officialSearchTerms, disallowed);
-    return { status: pdf.passages.length ? 'ok' : 'partial', pages: [], ...pdf, ambiguity: null };
+    return { status: pdf.passages.length ? 'ok' : 'partial', pages: [], ...pdf, ambiguity: null, documentSearch: true };
   }
   const page = officialPageIn(subject);
   if (page) return searchPastedPage(page, subject, fetcher);
@@ -325,7 +334,7 @@ export async function searchOfficialPages(subject: string, fetcher: typeof fetch
   const status = failed ? indexes.every(index => !index) || (ranked.length > 0 && !results.length) ? 'unavailable' : 'partial' : 'ok';
   const { best, ambiguity } = chooseDocument(results, subject);
   const pdf = await searchOfficialPdfs(best ? [best] : [], subject, fetcher, USER_AGENT, officialSearchTerms, disallowed);
-  return { status, pages: results, ...pdf, ambiguity };
+  return { status, pages: results, ...pdf, ambiguity, documentSearch: pdfSearch };
 }
 
 export async function readOfficialSnapshot(db: D1Database): Promise<OfficialSnapshot> {

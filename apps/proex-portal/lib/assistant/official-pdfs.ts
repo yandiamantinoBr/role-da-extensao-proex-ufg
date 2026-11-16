@@ -3,6 +3,9 @@ import { readOfficialPdfText, type PdfTextPage } from './official-pdf-text';
 
 export type OfficialDocument = { url: string; title: string };
 export type OfficialPassage = OfficialDocument & { page: number; text: string };
+/** Por que um PDF encontrado não virou trecho: escaneado (sem texto), sem trecho que responda ou não abriu. */
+export type OfficialReadFailure = 'sem_texto' | 'sem_trecho' | 'indisponivel';
+export type OfficialUnread = OfficialDocument & { reason: OfficialReadFailure };
 const PDF_BYTES = 2_000_000;
 const FETCH_TIMEOUT_MS = 4_000;
 const robotsUrl = new URL('/robots.txt', 'https://files.cercomp.ufg.br').href;
@@ -42,7 +45,8 @@ async function readBounded(response: Response, limit: number): Promise<Uint8Arra
 
 function passageFor(document: OfficialDocument, pages: PdfTextPage[], subject: string, terms: (text: string) => string[]): OfficialPassage | null {
   const question = subject.match(/\b(?:quais|qual|quantas|quantos|quando|quanto|onde|como|o que)\b[^?]*/i)?.[0] ?? subject;
-  const wanted = terms(question).filter(word => !['edital', 'pdf', 'pagina', 'cite', 'link', 'final', 'quantas', 'quantos', 'leia', 'diga'].includes(word));
+  // Programa e ano já escolheram o documento; dentro dele, não pesam (a abertura repete os dois).
+  const wanted = terms(question).filter(word => !['edital', 'pdf', 'pagina', 'cite', 'link', 'final', 'quantas', 'quantos', 'leia', 'diga', 'probec', 'conpeex'].includes(word) && !/^20\d{2}$/.test(word));
   const anchor = officialPdfUrl(document.url);
   if (!anchor) return null;
   const requestedPage = Number(anchor.hash.slice(6)) || 0;
@@ -72,15 +76,16 @@ function passageFor(document: OfficialDocument, pages: PdfTextPage[], subject: s
 export async function searchOfficialPdfs(
   documents: OfficialDocument[], subject: string, fetcher: typeof fetch, userAgent: string,
   terms: (text: string) => string[], disallowed: (robots: string, path: string) => boolean,
-): Promise<{ passages: OfficialPassage[]; unreadable: OfficialDocument[] }> {
-  const passages: OfficialPassage[] = [], unreadable: OfficialDocument[] = [];
+): Promise<{ passages: OfficialPassage[]; unreadable: OfficialUnread[] }> {
+  const passages: OfficialPassage[] = [], unreadable: OfficialUnread[] = [];
   if (!documents.length) return { passages, unreadable };
   let robots: string | null = null;
   try { robots = await pdfRobots(fetcher, userAgent); } catch { /* respeita indisponibilidade temporária */ }
-  if (robots === null) return { passages, unreadable: documents };
+  if (robots === null) return { passages, unreadable: documents.map(document => ({ ...document, reason: 'indisponivel' as const })) };
   await Promise.all(documents.map(async document => {
     const url = officialPdfUrl(document.url);
     if (!url) return;
+    let reason: OfficialReadFailure = 'indisponivel';
     try {
       if (disallowed(robots, url.pathname)) throw new Error('Documento não liberado para consulta automática.');
       url.hash = '';
@@ -94,10 +99,13 @@ export async function searchOfficialPdfs(
       }
       const bytes = await readBounded(response, PDF_BYTES);
       if (new TextDecoder().decode(bytes.subarray(0, 5)) !== '%PDF-') throw new Error('Assinatura de PDF ausente.');
-      const passage = passageFor(document, await readOfficialPdfText(bytes), subject, terms);
-      if (!passage) throw new Error('Sem texto relevante.');
+      // Sem OCR: um PDF que abre com zero páginas de texto é tratado como imagem escaneada.
+      const pages = await readOfficialPdfText(bytes);
+      if (!pages.length) { reason = 'sem_texto'; throw new Error('PDF sem texto.'); }
+      const passage = passageFor(document, pages, subject, terms);
+      if (!passage) { reason = 'sem_trecho'; throw new Error('Sem texto relevante.'); }
       passages.push(passage);
-    } catch { unreadable.push(document); }
+    } catch { unreadable.push({ ...document, reason }); }
   }));
   const documentIndex = (url: string) => documents.findIndex(document => document.url.split('#')[0] === url.split('#')[0]);
   passages.sort((a, b) => documentIndex(a.url) - documentIndex(b.url));

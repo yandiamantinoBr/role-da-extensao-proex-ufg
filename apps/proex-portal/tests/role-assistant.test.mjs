@@ -928,7 +928,7 @@ test('PDF OFICIAL: encontra a edição final, cita a página lida e mantém a au
     blocked = true;
     const robotsResult = await roleChat(f.db, f.actors.viewer, direct, secret, options);
     assert.deepEqual(requested, ['https://files.cercomp.ufg.br/robots.txt']);
-    assert.match(robotsResult.reply, /não consegui confirmar/);
+    assert.match(robotsResult.reply, /Encontrei o link, mas não consegui abrir o PDF agora\. O link está abaixo para você conferir\./);
     assert.doesNotMatch(robotsResult.reply, /93 bolsas/);
     blocked = false;
     revokeDuringPdf = true;

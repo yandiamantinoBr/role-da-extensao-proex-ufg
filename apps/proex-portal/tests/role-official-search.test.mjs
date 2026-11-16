@@ -192,3 +192,87 @@ test('LINK DE PÁGINA OFICIAL: outro host, query ou redirecionamento são recusa
   assert.equal(result.status, 'unavailable');
   assert.deepEqual(result.pages, []);
 });
+
+test('PROBEC: edital final, aditivo e preliminar na mesma página; cada pergunta lê o documento certo e cita a página', async () => {
+  const page = 'https://proex.ufg.br/p/401-edital-proec-n-05-2026-probec-2026-2027';
+  const final = `${FILES}SEI_100_Edital_133.pdf`, preliminary = `${FILES}SEI_090_Edital_Preliminar.pdf`, amendment = `${FILES}SEI_110_Termo_Aditivo.pdf`;
+  const site = () => officialSite({
+    pages: { [page]: pageHtml('Edital PROEC nº 05/2026 · PROBEC 2026/2027', [
+      [preliminary, 'Edital Preliminar PROBEC 2026/2027'], [final, 'Edital Final PROBEC 2026/2027'], [amendment, 'Termo Aditivo nº 01 ao Edital PROBEC 2026/2027'],
+    ]) },
+    pdfs: {
+      // Como no edital real, a abertura repete o nome do programa e a palavra "bolsas": o trecho certo é o item 2.1.
+      [final]: pdfWith(['EDITAL PROEC Nº 05/2026 - PROBEC 2026/2027 - VERSÃO FINAL', 'A UFG convida os interessados ao Programa de Bolsas de Extensão e Cultura', '(PROBEC 2026/2027) nos termos deste edital.', '2.1 Serão ofertadas 100 bolsas, sendo 93 para projetos e 7 para programas', 'institucionais.', '2.2 O valor da bolsa é de R$ 700,00 mensais, por 12 meses.']),
+      [preliminary]: pdfWith(['EDITAL PROEC Nº 05/2026 - PROBEC 2026/2027 - VERSÃO PRELIMINAR', '2.1 Serão ofertadas 90 bolsas para projetos e programas institucionais.']),
+      [amendment]: pdfWith(['TERMO ADITIVO Nº 01 AO EDITAL PROEC Nº 05/2026 - PROBEC 2026/2027', 'Onde se lê: recurso da habilitação até 15/05/2026.', 'Leia-se: o prazo de recurso da habilitação passa para 18/05/2026 às 17h.']),
+    },
+  });
+  const ask = message => officialSearchReply(emptyDb, 'org_test', message, site().fetcher);
+
+  const grants = await ask('quantas bolsas tem o edital do PROBEC?');
+  assert.match(grants.reply, /^Edital Final PROBEC 2026\/2027 · p\. 1\nLi o PDF e o trecho está na p\. 1\.\n2\.1 Serão ofertadas 100 bolsas, sendo 93 para projetos e 7 para programas institucionais\./);
+  assert.ok(grants.reply.endsWith(`${final}#page=1`));
+  assert.deepEqual(grants.sources, [{ label: 'Edital Final PROBEC 2026/2027 · p. 1', href: `${final}#page=1` }]);
+  assert.doesNotMatch(grants.reply, /mais de um documento possível/);
+
+  const appeal = await ask('qual o prazo de recurso do PROBEC depois do aditivo?');
+  assert.match(appeal.reply, /^Termo Aditivo nº 01 ao Edital PROBEC 2026\/2027 · p\. 1\nLi o PDF e o trecho está na p\. 1\./);
+  assert.match(appeal.reply, /18\/05\/2026 às 17h/);
+
+  const draft = await ask('edital preliminar do PROBEC');
+  assert.match(draft.reply, /^Edital Preliminar PROBEC 2026\/2027 · p\. 1\nLi o PDF e o trecho está na p\. 1\./);
+  assert.ok(draft.reply.endsWith(`${preliminary}#page=1`));
+});
+
+test('LEITURA: cada documento diz se o PDF foi lido, se é escaneado, se não tinha trecho ou se não abriu', async () => {
+  const link = `${FILES}SEI_7_Edital_Teste.pdf`;
+  const question = `Quantas bolsas tem este edital? ${link}`;
+  const transport = (bytes, status = 200) => async raw => {
+    if (String(raw).endsWith('/robots.txt')) return new Response('User-agent: *', { headers: text });
+    if (String(raw) === link) return status === 200 ? new Response(await bytes, { headers: pdfType }) : new Response('', { status });
+    assert.fail(`pedido inesperado ${raw}`);
+  };
+  const cases = {
+    lido: [pdfWith(['Apresentação do edital sintético de extensão.'], ['2.1 Serão ofertadas 40 bolsas para projetos de extensão.'])],
+    sem_texto: [pdfWith([])],
+    sem_trecho: [pdfWith(['O calendário de reuniões do comitê será divulgado depois.'])],
+    indisponivel: [null, 503],
+  };
+  const replies = {};
+  for (const [state, [bytes, status]] of Object.entries(cases)) {
+    const lookup = await searchOfficialPages(question, transport(bytes, status));
+    if (state === 'lido') assert.equal(lookup.passages[0]?.page, 2);
+    else assert.deepEqual(lookup.unreadable.map(item => item.reason), [state]);
+    replies[state] = (await officialSearchReply(emptyDb, 'org_test', question, transport(bytes, status))).reply;
+  }
+  assert.equal(replies.lido, ['SEI 7 Edital Teste.pdf · p. 2', 'Li o PDF e o trecho está na p. 2.', '2.1 Serão ofertadas 40 bolsas para projetos de extensão.', `${link}#page=2`].join('\n'));
+  assert.equal(replies.sem_texto, ['SEI 7 Edital Teste.pdf', 'Encontrei o PDF, mas ele parece ser uma imagem escaneada: não há texto que eu consiga ler. Abra o link para conferir.', link].join('\n'));
+  assert.equal(replies.sem_trecho, ['SEI 7 Edital Teste.pdf', 'Li o PDF, mas não achei um trecho que responda. Abra o documento ou diga a página.', link].join('\n'));
+  assert.equal(replies.indisponivel, ['SEI 7 Edital Teste.pdf', 'Encontrei o link, mas não consegui abrir o PDF agora. O link está abaixo para você conferir.', link].join('\n'));
+});
+
+test('LEITURA: página sem PDF lido deixa claro que é resumo da página, não do documento', async () => {
+  const page = 'https://proex.ufg.br/p/501-edital-de-extensao-sem-anexo';
+  const { fetcher } = officialSite({ pages: { [page]: pageHtml('Edital de extensão sem anexo', []) } });
+  const result = await officialSearchReply(emptyDb, 'org_test', `O que diz este edital? ${page}`, fetcher);
+  assert.match(result.reply, /^Edital de extensão sem anexo\nIsto é o resumo da página, não do documento: não li nenhum PDF\.\nPágina sintética do edital/);
+  assert.deepEqual(result.sources, [{ label: 'Edital de extensão sem anexo', href: page }]);
+});
+
+test('VERSÃO: com duas retificações do mesmo edital, a mais recente vem primeiro e o Rolê avisa da outra', async () => {
+  const page = 'https://proex.ufg.br/p/60322-edital-proec-n-08-2026-conpeex';
+  const first = `${FILES}SEI_1_Termo_Aditivo.pdf`, second = `${FILES}SEI_2_Termo_Aditivo.pdf`;
+  const { fetcher, requested } = officialSite({
+    pages: { [page]: pageHtml('Edital PROEC nº 08/2026 · 23º CONPEEX', [
+      [first, 'Retificação Nº 01 - Edital PROEC N° 08/2026 - 23° Conpeex'], [second, 'Retificação Nº 02 - Edital PROEC N° 08/2026 - 23° Conpeex'],
+    ]) },
+    pdfs: {
+      [first]: pdfWith(['Retificação nº 01. Leia-se: o envio da apresentação vai de 07/10 a 19/10/2026, até 17h.']),
+      [second]: pdfWith(['Retificação nº 02. Leia-se: o envio da apresentação vai até 22/10/2026 às 17h.']),
+    },
+  });
+  const question = `Qual o novo prazo de envio da apresentação depois da retificação? ${page}`;
+  const result = await officialSearchReply(emptyDb, 'org_test', question, fetcher);
+  assert.match(result.reply, /^Encontrei mais de um documento possível: Retificação Nº 02 - Edital PROEC N° 08\/2026 - 23° Conpeex e Retificação Nº 01 - Edital PROEC N° 08\/2026 - 23° Conpeex\. Usei o mais recente; diga se quer o outro\.\n\nRetificação Nº 02 .* · p\. 1\nLi o PDF e o trecho está na p\. 1\.\n.*22\/10\/2026 às 17h/);
+  assert.ok(!requested.includes(first));
+});
