@@ -1041,7 +1041,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
             </Field>
             </OperationForm>
             </Section>}{can('campaigns.manage') && formProjects.length > 0 && <Section title="Preparar dinâmica" description="A campanha começa como rascunho. Confira as regras e os brindes antes de ativar.">
-            <details className={workStyles.tools}><summary><Plus size={17} aria-hidden="true"/>Nova dinâmica</summary><div className={workStyles.toolsBody}>
+            <details className={workStyles.tools}><summary className="p-disclosure"><Plus size={17} aria-hidden="true"/>Nova dinâmica</summary><div className={workStyles.toolsBody}>
             <CampaignForm key={`campaign-create-${unitFilter}-${filter}`} projects={formProjects} offers={offers} defaultProject={effectiveProject} mutate={mutate}/></div></details>
             </Section>}{can('campaigns.manage') && !prizeProjects.length && <div className="p-explainer"><Gift size={22} /><div><h3>Quais projetos usam roleta e dado?</h3><p>No cadastro do projeto, marque “Habilitar dinâmicas e brindes” para preparar campanhas e compor os kits desta área.</p><button type="button" className="p-text-link" onClick={() => navigate('projects')}>Abrir projetos <ArrowRight size={15} /></button></div></div>}</>}
 
@@ -1084,7 +1084,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         {visibleItems.length > 0 && <ProjectOperationalChart key={`materials-${filter || 'all'}`} variant="overview" title="Panorama dos materiais" projectId={filter || undefined} schedule={null} items={visibleItems.map(item => ({ ...item, available: available(item), low_stock: get(item, 'lowStock', 'low_stock') ?? 0, project_id: get(item, 'projectId', 'project_id') }))} now={now}/>}
         {can('inventory.manage') && formProjects.length > 0 && <div className={workStyles.formStack}>
             <Section title="Cadastrar material" description="O cadastro começa sem saldo. Registre o recebimento depois da contagem.">
-            <details className={workStyles.tools}><summary><Plus size={17} aria-hidden="true"/>Novo material</summary><div className={workStyles.toolsBody}>
+            <details className={workStyles.tools}><summary className="p-disclosure"><Plus size={17} aria-hidden="true"/>Novo material</summary><div className={workStyles.toolsBody}>
             <OperationForm onProjectFocus={setDraftProject} action="item.create" mutate={mutate} submit="Cadastrar material" make={f => ({ projectId: f.get('projectId'), name: f.get('name'), category: f.get('category'), categoryId: f.get('categoryId') || null, unit: f.get('unit'), lowStock: Number(f.get('lowStock')), description: f.get('description'), assetCode: f.get('assetCode') })}>
             <div className="p-form-grid">{projectField}<Field label="Nome">
             <input name="name" required maxLength={120} placeholder="Ex.: Botton azul 2,5 cm"/>
@@ -1116,7 +1116,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
             </div>}</div>
         <section className={`p-card ${workStyles.consumption}`}><button type="button" className="p-button p-button-subtle" aria-expanded={showConsumption} onClick={()=>setShowConsumption(value=>!value)}><Boxes size={18}/>Consumo por unidade e cobertura</button>{showConsumption&&<StockConsumptionPanel key={filter} projectId={filter} onOpenMaterial={id=>{setMaterialMode('view');setSelectedMaterialId(id);}}/>}</section>
         {/* Ferramentas de cadastro e importação no fim: no evento, o saldo vem primeiro. */}
-        {canAny('inventory.manage') && <div hidden={showPrizeView}><details className={`p-card ${workStyles.catalogRegistration}`}><summary className="p-text-link">Cadastrar um patrimônio individual</summary>{filter && canProject(filter, 'inventory.manage') ? <AssetDetailsPanel key={filter} itemId={null} projectId={filter} onSaved={refreshModules}/> : <p className="p-form-help">Selecione um projeto no filtro acima para cadastrar seu patrimônio, com documentos e conferência antes de salvar.</p>}</details></div>}
+        {canAny('inventory.manage') && <div hidden={showPrizeView}><details className={`p-card ${workStyles.catalogRegistration}`}><summary className="p-disclosure p-text-link">Cadastrar um patrimônio individual</summary>{filter && canProject(filter, 'inventory.manage') ? <AssetDetailsPanel key={filter} itemId={null} projectId={filter} onSaved={refreshModules}/> : <p className="p-form-help">Selecione um projeto no filtro acima para cadastrar seu patrimônio, com documentos e conferência antes de salvar.</p>}</details></div>}
         {prizeProjects.length > 0 && <div hidden={!showPrizeView}><PrizeKits projects={offerProjects} offers={visibleOffers} items={offerItems} projectId={effectiveOfferProject} onProjectChange={setOfferProject} projectName={projectName} mutate={mutate} /></div>}
         {(assistantProjects.length > 0 || canAny('inventory.manage')) && <details className={workStyles.tools}>
           <summary>Assistente e importação de materiais</summary>

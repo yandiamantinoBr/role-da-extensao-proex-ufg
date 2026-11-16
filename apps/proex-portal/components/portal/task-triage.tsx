@@ -19,7 +19,7 @@ export function TaskTriageMatrix({tasks}:{tasks:Task[]}) {
  if(!pending.length)return null;
  const without=pending.filter(task=>task.importance==null).length;
  return <details className="rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3 open:pb-3">
-  <summary className="min-h-11 cursor-pointer py-2.5 font-semibold text-[var(--brand-ink)]">Matriz de urgência e importância</summary>
+  <summary className="p-disclosure min-h-11 cursor-pointer py-2.5 font-semibold text-[var(--brand-ink)]">Matriz de urgência e importância</summary>
   <p className="mb-2 text-sm text-[var(--text-secondary)]">{pending.length} demandas pendentes nesta página. Sem importância definida: {without}.</p>
   <table className="w-full table-fixed border-collapse text-center text-xs">
    <caption className="sr-only">Contagem por urgência e importância na página atual</caption>
@@ -97,7 +97,7 @@ export function TaskTriage({task,busy,save}:{task:Task;busy:boolean;save:(input:
   } finally {if(!controller.signal.aborted)setPreparing(false);}
  }
  return <details className="rounded-xl border border-[var(--line)] p-3" onToggle={event=>{if(event.currentTarget.open)void check();}}>
-  <summary className="min-h-11 cursor-pointer font-semibold">{destination?'Triagem com IA':'Triagem com JEV'}</summary>
+  <summary className="p-disclosure min-h-11 cursor-pointer font-semibold">{destination?'Triagem com IA':'Triagem com JEV'}</summary>
   {opened&&enabled===null&&<p role="status">Consultando disponibilidade…</p>}
   {enabled===false&&<p className="text-sm text-[var(--text-secondary)]">A triagem com IA está indisponível. Use a edição manual da demanda.</p>}
   {feedback&&<p role="status" className="text-sm text-[var(--text-secondary)]">{feedback}</p>}

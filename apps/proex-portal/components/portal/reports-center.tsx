@@ -696,7 +696,7 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
     <div className={styles.primaryControls}>
       <label className={`p-field ${styles.search}`}><span>Buscar nas linhas</span><span className={styles.searchBox}><Search size={15} /><input id={`${fieldId}-search`} ref={reportSearchRef} value={search} onChange={event => { setSearch(event.target.value); updateView({ page: 0 }); }} placeholder="Nome, material, título, observação…" />{search && <button type="button" aria-label="Limpar busca" onClick={() => { setSearch(''); updateView({ page: 0 }); }}><X size={14} /></button>}</span></label>
     </div>
-    <details className={styles.options}><summary>Ajustar recorte e colunas <span>{chosen.length} colunas · {visiblePresets.length} modelos</span>{activeOptions.length > 0 && <small>{activeOptions.join(' · ')}</small>}</summary><div className={styles.optionsBody}>
+    <details className={styles.options}><summary className="p-disclosure">Ajustar recorte e colunas <span>{chosen.length} colunas · {visiblePresets.length} modelos</span>{activeOptions.length > 0 && <small>{activeOptions.join(' · ')}</small>}</summary><div className={styles.optionsBody}>
     {dataset === 'materials' && <label className="p-form-help"><input id={`${fieldId}-asset-details`} type="checkbox" checked={assetDetails} onChange={event => { setAssetDetails(event.target.checked); setColumns(DATASETS.materials.defaults); setRows([]); setMeasure('__count__'); }}/>{' '}Consultar metadados patrimoniais privados (somente projetos com permissão vigente de inventário). A referência de responsável, processo e valor documentado só entra na exportação ao escolher essas colunas.</label>}
     {dataset === 'outflow_details' && <div className="space-y-3"><p className="p-form-help">A ação aparece quando foi vinculada no registro. O operador é quem registrou a saída, com nome atual do perfil; beneficiários e contatos não são consultados. Saldo e unidade são os atuais do cadastro.</p><label className="p-form-help"><input id={`${fieldId}-include-notes`} type="checkbox" checked={includeNotes} onChange={event => { setIncludeNotes(event.target.checked); setColumns(DATASETS.outflow_details.defaults); setRows([]); setMeasure('__count__'); }}/>{' '}Disponibilizar motivos, observações e condições com permissão operacional vigente (textos livres podem conter dados pessoais). Selecione essas colunas e revise seu conteúdo antes de exportar.</label></div>}
     <div className={styles.controls}>
@@ -705,7 +705,7 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
       <label className="p-field"><span>Medida</span><select id={`${fieldId}-measure`} value={effectiveMeasure} onChange={event => setMeasure(event.target.value)}><option value="__count__">Quantidade de {dataset === 'movements' ? 'movimentações' : 'linhas'}</option>{numericColumns.map(column => <option key={column.key} value={column.key} disabled={mixedUnits && PHYSICAL_MEASURES.includes(column.key)}>Soma de {column.label.toLowerCase()}</option>)}</select></label>
       {unitOptions.length > 0 && <label className="p-field"><span>Unidade de medida</span><select id={`${fieldId}-unit`} value={measurementUnit} onChange={event => updateView({ measurementUnit: event.target.value, focus: '', page: 0 })}><option value="">Todas as medidas</option>{unitOptions.map(unit => <option key={unit} value={unit}>{unit}</option>)}</select></label>}
       <details className={styles.columns}>
-        <summary><Columns3 size={16} />Colunas ({chosen.length}/{config.columns.length})</summary>
+        <summary className="p-disclosure"><Columns3 size={16} />Colunas ({chosen.length}/{config.columns.length})</summary>
         <div>
           <div className={styles.columnActions}><button type="button" onClick={() => setColumns(config.columns.map(column => column.key))}>Todas</button><button type="button" onClick={() => setColumns(config.defaults)}>Padrão</button><button type="button" onClick={() => setColumns([])}>Nenhuma</button></div>
           {config.columns.map(column => <label key={column.key}><input id={`${fieldId}-column-${column.key}`} type="checkbox" checked={columns.includes(column.key)} onChange={() => toggleColumn(column.key)} />{column.label}</label>)}
@@ -766,7 +766,7 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
         <button type="button" className="p-button p-button-subtle" disabled={current >= pages - 1} onClick={() => updateView({ page: current + 1 })}>Próxima</button>
       </div>
     </>}
-    <details className={styles.exportOptions}><summary>Exportar linhas deste recorte</summary>
+    <details className={styles.exportOptions}><summary className="p-disclosure">Exportar linhas deste recorte</summary>
       <ExportFormats key={queryKey} className={styles.exportBar} label="Exportar relatório" disabled={exportDisabled || !!exporting} onExport={exportCurrent}>
         <button type="button" className="p-button p-button-subtle" disabled={exportDisabled || !!exporting} onClick={() => void exportCurrent('json').catch(() => {})}><FileJson size={16} />JSON</button>
         <button type="button" className="p-button p-button-subtle" disabled={exportDisabled || !!exporting} onClick={() => void exportCurrent('print').catch(() => {})}><Printer size={16} />Imprimir</button>
@@ -817,7 +817,7 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
             </ResponsiveContainer>
           </div>
           <details className={styles.monthValues}>
-            <summary>Ver valores por mês</summary>
+            <summary className="p-disclosure">Ver valores por mês</summary>
             <table>
               <caption className="sr-only">Valores da evolução por mês</caption>
               <thead><tr><th scope="col">Mês</th>{monthColumns.map(column => <th key={column.key} scope="col">{column.label}</th>)}</tr></thead>
