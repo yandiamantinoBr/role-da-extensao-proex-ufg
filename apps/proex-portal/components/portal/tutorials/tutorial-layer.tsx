@@ -127,9 +127,9 @@ export default function TutorialLayer({ modules, tab, projectId, onNavigate }: {
       </header>
       <h2 id="tutorial-step-title" ref={heading} tabIndex={-1}>{step.title}</h2>
       <p className={styles.speech}>{copy.speech}</p>
-      <p className={styles.see}><strong>Você verá:</strong> {found === false ? 'este controle não está nesta página agora.' : copy.youWillSee}</p>
+      <p className={styles.see}><strong>Você verá:</strong> {found === false && !(copy.module && moduleAllowed && tab !== copy.module) ? 'este controle não está nesta página agora.' : copy.youWillSee}</p>
       {notice && <p className={styles.notice} role="status">{notice}</p>}
-      {found === false && copy.module && moduleAllowed && tab !== copy.module && <button type="button" className={`p-button p-button-subtle ${styles.openHere}`} onClick={() => onNavigate(copy.module!)}><ExternalLink size={16} aria-hidden="true"/>Abrir no Portal</button>}
+      {found !== true && copy.module && moduleAllowed && tab !== copy.module && <button type="button" className={`p-button p-button-subtle ${styles.openHere}`} onClick={() => onNavigate(copy.module!)}><ExternalLink size={16} aria-hidden="true"/>Abrir no Portal</button>}
       {found === false && (!copy.module || !moduleAllowed || tab === copy.module) && <p className={styles.muted}>Siga para o próximo passo: este controle aparece quando houver dados ou acesso para ele.</p>}
       <div className={styles.guideActions}>
         {last ? <>

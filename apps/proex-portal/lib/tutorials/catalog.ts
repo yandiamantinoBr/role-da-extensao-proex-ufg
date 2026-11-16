@@ -92,7 +92,9 @@ export const TUTORIAL_CHAPTERS: readonly TutorialChapter[] = [
       {
         id: 'conta', title: 'O menu da conta',
         speech: 'Seu nome, no alto da página, abre o menu da conta: Minha conta e senha, Atualizar dados e Sair. Ajuda e tutoriais também fica ali.',
+        speechMobile: 'A sua foto ou inicial, no alto da página, abre o menu da conta: Minha conta e senha, Atualizar dados e Sair. Ajuda e tutoriais também fica ali.',
         youWillSee: 'O seu nome destacado no alto da página.',
+        youWillSeeMobile: 'A sua foto ou inicial destacada no alto da página.',
         target: '[data-tutorial="conta-menu"]',
         labels: ['Minha conta e senha', 'Atualizar dados', 'Ajuda e tutoriais'],
       },
