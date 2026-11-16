@@ -15,7 +15,6 @@ type Proposal = { input: Record<string, unknown>; changes: { label: string; befo
 type Upload = { file: File; recordId: string | null; recordKey: string; uploadKey: string; occurredAt: string };
 const absent = (value: unknown) => value === null || value === undefined || value === '' ? 'Não informado' : String(value);
 const previewValue = (value: unknown, money: boolean) => money && typeof value === 'number' ? (value / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) : absent(value);
-const when = (value: unknown) => value ? new Date(Number.isFinite(Number(value)) ? Number(value) : String(value)).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : 'Não informado';
 async function responseJson(response: Response): Promise<Partial<Detail> & { id?: string; error?: string }> { const data = await response.json().catch(() => ({})) as Partial<Detail> & { id?: string; error?: string }; if (!response.ok) throw new Error(typeof data.error === 'string' ? data.error : 'Não foi possível concluir a operação. Atualize e confira o cadastro.'); return data; }
 export default function AssetDetailsPanel(props: Props) { return props.projectId ? <AssetEditor key={`${props.projectId}:${props.itemId ?? 'new'}`} {...props}/> : null; }
 function AssetEditor({ itemId, projectId, onSaved }: Props) {
