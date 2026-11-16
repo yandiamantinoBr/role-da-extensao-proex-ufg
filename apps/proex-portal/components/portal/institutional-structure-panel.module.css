@@ -63,13 +63,19 @@
 .nodeTitle>div { flex:1; min-width:0; }
 .eyebrow { color:var(--brand-ink); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.045em; overflow-wrap:anywhere; }
 .nodeTitle h4 { margin-top:1px; font-size:14px; font-weight:700; line-height:1.45; overflow-wrap:anywhere; }
-.badge { flex-shrink:0; align-self:flex-start; max-width:45%; padding:4px 7px; border-radius:6px; color:var(--muted); background:var(--surface-soft); font-size:11px; font-weight:650; overflow-wrap:anywhere; }
+.badge { flex-shrink:0; align-self:center; max-width:45%; padding:4px 7px; border-radius:6px; color:var(--muted); background:var(--surface-soft); font-size:11px; font-weight:650; overflow-wrap:anywhere; }
 .node[data-relation=governance]>.nodeCard .badge { border:1px dashed var(--muted); background:var(--canvas); }
 .nodeActions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:6px; margin-left:auto; }
 .nodeActions button { font-size:12px; padding-inline:11px; background:var(--canvas); }
-/* Archiving is rarer and confirmed separately, so it reads as secondary to Editar and Equipes. */
-.nodeActions .quietAction { background:transparent; border:1px dashed var(--line); color:var(--muted); box-shadow:none; }
-.nodeActions .quietAction:hover:not(:disabled) { border-color:var(--muted); color:var(--ink); }
+/* "Mais" abre Nova unidade e Arquivar; Arquivar usa o tom de alerta, não o de botão desativado (crítica de 16/11). */
+.more { position:relative; }
+.more>summary { list-style:none; cursor:pointer; font-size:12px; padding-inline:11px; background:var(--canvas); }
+.more>summary::-webkit-details-marker { display:none; }
+.moreMenu { position:absolute; right:0; top:calc(100% + 4px); z-index:5; display:grid; gap:2px; min-width:11rem; padding:5px; border:1px solid var(--line); border-radius:10px; background:var(--surface); box-shadow:0 10px 28px #190b2926; }
+.menuItem { display:flex; align-items:center; gap:8px; min-height:44px; padding:0 10px; border:0; border-radius:7px; background:transparent; color:var(--ink); font-size:12px; font-weight:600; text-align:left; white-space:nowrap; }
+.menuItem:hover:not(:disabled),.menuItem:focus-visible { background:var(--surface-soft); }
+.menuItem:disabled { opacity:.55; cursor:not-allowed; }
+.dangerAction { color:var(--danger); }
 .children { min-width:0; margin-top:4px; }
 .childrenSummary { display:inline-flex; align-items:center; gap:6px; min-height:44px; padding:0 10px; border-radius:10px; color:var(--brand-ink); font-size:12px; font-weight:650; line-height:1.4; cursor:pointer; list-style:none; }
 .childrenSummary::-webkit-details-marker { display:none; }
@@ -119,7 +125,7 @@
 /* Narrow panels: repeated node actions become 44px icon buttons (aria-label and title keep action and unit),
    and the three metrics stay on one compact row: small icon beside the number, label underneath. */
 @container (max-width:599px) {
- .nodeActions .actionLabel { display:none; } .nodeActions button { justify-content:center; min-width:44px; padding-inline:0; } .nodeTitle { flex-basis:12rem; }
+ .nodeActions { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); width:100%; margin-left:0; } .nodeActions>button,.more>summary { justify-content:center; min-width:44px; padding-inline:6px; } .more>summary { width:100%; } .nodeTitle { flex-basis:12rem; }
  .metrics { gap:6px; } .metrics>li { grid-template-columns:auto minmax(0,1fr); align-items:center; column-gap:6px; row-gap:2px; padding:8px 9px; border-radius:11px; }
  .metrics svg { width:15px; height:15px; } .metrics strong { font-size:19px; } .metrics span { grid-column:1/-1; line-height:1.35; }
 }

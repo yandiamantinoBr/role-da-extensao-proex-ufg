@@ -134,10 +134,12 @@ test('compact preamble: metrics are one list and the source is a closed native d
  const reader=harness();try{await reader.open(response({scope:{...response().scope,canManage:false}}));const reference=reader.find('details',entry=>entry.props.className==='reference');assert.ok(reference);assert.equal(contains(reference,entry=>entry.type==='button'),false);}finally{reader.dispose();}
 });
 
-test('icon actions carry full titles, archive is the quiet action, and new units still open above the tree',async()=>{
+test('actions carry full titles, Nova unidade and Arquivar live in "Mais" (Arquivar in the alert tone), and new units still open above the tree',async()=>{
  const h=harness();try{await h.open();
   for(const label of ['Editar Câmara de Extensão e Cultura','Vincular equipes: Câmara de Extensão e Cultura','Arquivar Câmara de Extensão e Cultura'])assert.equal(h.button(label).props.title,label);
-  assert.match(h.button('Arquivar Câmara de Extensão e Cultura').props.className,/quietAction/);assert.doesNotMatch(h.button('Editar Câmara de Extensão e Cultura').props.className,/quietAction/);
+  assert.match(h.button('Arquivar Câmara de Extensão e Cultura').props.className,/dangerAction/);assert.equal(h.button('Arquivar Câmara de Extensão e Cultura').props.role,'menuitem');assert.doesNotMatch(h.button('Editar Câmara de Extensão e Cultura').props.className,/dangerAction|menuItem/);
+  const menus=h.all('details').filter(entry=>entry.props.className==='more');assert.ok(menus.length>0,'cada unidade ativa tem o menu "Mais"');for(const menu of menus)assert.equal(text(menu).includes('Editar'),false,'Editar continua fora do menu');
+  assert.equal(h.find('button',entry=>text(entry)==='Nova unidade'&&entry.props.role!=='menuitem'&&String(entry.props['aria-label']).startsWith('Adicionar unidade vinculada')),undefined,'Nova unidade da unidade saiu da linha de botões');
   h.click('Nova unidade');assert.ok(editorSection(h));assert.equal(contains(h.find('div',entry=>entry.props.className==='tree'),entry=>entry.type==='section'),false);assert.match(text(h.find('h4',entry=>entry.props.tabIndex===-1)),/^Nova unidade formal$/);
  }finally{h.dispose();}
 });
