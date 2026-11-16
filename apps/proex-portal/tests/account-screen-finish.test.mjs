@@ -21,3 +21,11 @@ test('the photo help is one short sentence and the iPhone tip moves to the error
   assert.doesNotMatch(help, /HEIC|iPhone/);
   assert.match(profile, /O navegador não conseguiu abrir esta foto\.[^']*Mais compatível/);
 });
+
+test('choices say "Não informar" and the summary says "Não informado(a)"; the access refresh stays on the title row on phones', () => {
+  assert.match(profile, /Object\.entries\(affiliations\)\.map\(\(\[value, label\]\) => <option key=\{value\} value=\{value\}>\{value \? label : 'Não informar'\}<\/option>\)\}/);
+  const access = readFileSync(new URL('../components/portal/account-access-panel.tsx', import.meta.url), 'utf8');
+  const css = readFileSync(new URL('../components/portal/account-access-panel.module.css', import.meta.url), 'utf8');
+  assert.match(access, /aria-label="Atualizar meus acessos"><RefreshCw size=\{16\} aria-hidden="true"\/><span className=\{styles\.refreshLabel\}>Atualizar<\/span>/);
+  assert.match(css, /@container \(max-width:440px\) \{[^}]*\.header \{ align-items:flex-start; flex-wrap:nowrap; \}[\s\S]*\.refreshLabel \{ display:none; \}/);
+});
