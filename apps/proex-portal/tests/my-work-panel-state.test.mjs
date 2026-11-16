@@ -209,6 +209,18 @@ test('the loaded summary is only for screen readers, and the export card waits f
   } finally {h.dispose();}
 });
 
+test('a zero total is marked so it reads as calm grey instead of an alert colour (crítica de 16/11)', async () => {
+  const h = harness(); try {
+    await h.ready();
+    const metrics = [];
+    (function walk(node) { if (!node || typeof node !== 'object') return; if (Array.isArray(node)) return node.forEach(walk); if (node.type === 'button' && node.props?.['data-tone'] !== undefined) metrics.push(node); walk(node.props?.children); })(h.find('div', node => node.props['aria-label'] === 'Totais de demandas atribuídas'));
+    assert.ok(metrics.length > 0);
+    for (const metric of metrics) assert.equal(Boolean(metric.props['data-zero']), text(metric.props.children[1]) === '0', text(metric));
+    const css = readFileSync(new URL('../components/portal/meu-trabalho-panel.module.css', import.meta.url), 'utf8');
+    assert.match(css, /:root \.metrics \.metric\[data-zero\]\{--metric-tone:var\(--muted\)\}/);
+  } finally {h.dispose();}
+});
+
 test('a new server day hides stale totals, cancels old responses and preserves the selected filters', async () => {
   const h = harness('meu-trabalho-panel', {serverDay: '2026-10-31'}); try {
     await h.ready(); h.changeStatus('overdue'); h.render();
