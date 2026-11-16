@@ -172,7 +172,7 @@ export default function DashboardPanel({ modules, pinned, frequent, onNavigate, 
     <h2 id="pd-shortcut-title">{shortcutTitle}</h2>
     <p>{shortcutDescription}</p>
     </div>
-    <button className="p-button p-button-subtle" onClick={() => setCustomizing(value => !value)} aria-expanded={customizing} aria-controls="pd-shortcut-options">
+    <button className="p-button p-button-subtle" data-tutorial="inicio-personalizar" onClick={() => setCustomizing(value => !value)} aria-expanded={customizing} aria-controls="pd-shortcut-options">
     <Settings2 size={16}/>{customizing ? 'Concluir' : 'Personalizar'}</button>
     </div>{customizing && <div className="pd-shortcut-options" id="pd-shortcut-options">
         <div>

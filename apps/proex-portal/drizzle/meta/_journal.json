@@ -365,6 +365,13 @@
       "when": 1794860834688,
       "tag": "0051_loan_not_collected",
       "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "6",
+      "when": 1794866447429,
+      "tag": "0052_user_tutorials",
+      "breakpoints": true
     }
   ]
 }

@@ -65,7 +65,7 @@ export default function AccountAccessPanel({ userId }: { userId: string }) {
   }, [revision, userId]);
 
   const loading = !access && !error;
-  return <section className={`p-card ${styles.card}`} aria-labelledby={heading} aria-busy={loading}>
+  return <section className={`p-card ${styles.card}`} data-tutorial="meus-acessos" aria-labelledby={heading} aria-busy={loading}>
     <header className={styles.header}>
       <div className="p-card-title">
         <span className="p-icon-tile"><ShieldCheck size={19} aria-hidden="true"/></span>

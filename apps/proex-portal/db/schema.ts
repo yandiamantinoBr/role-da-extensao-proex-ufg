@@ -23,3 +23,4 @@ export * from './google-drive-schema';
 export * from './convocation-schema';
 export * from './management-schema';
 export * from './volunteer-schema';
+export * from './tutorial-schema';
