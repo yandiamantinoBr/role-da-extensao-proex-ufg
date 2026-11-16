@@ -271,6 +271,7 @@ test('cards, day previews and exports drop the repeated type word but keep it in
       'Mostra de extensão\nProjetos e eventos · Atividade', 'Oficina · parte 2\nProjetos e eventos',
     ]);
     assert.ok(!args[5].some(([label]) => label === 'Compromissos'), 'o total já aparece no quadro do PDF');
+    assert.equal(h.all().find(node => node.type === ExportFormats).props.tiles, true, 'os três formatos cabem lado a lado na coluna da lista');
     h.respond(h.requests[index + 1], data); await download;
   } finally { h.dispose(); }
 });

@@ -265,7 +265,7 @@ export default function CalendarPanel({ viewerId, projects: sourceProjects, orga
             {listCategories.map(kind => <option key={kind} value={kind}>{labels[kind]}</option>)}
           </select>
         </label>}
-        <ExportFormats label="Baixar compromissos da agenda" showLabel disabled={loading || !shown.length || !viewerId} onExport={exportCommitments}/>
+        <ExportFormats label="Baixar compromissos da agenda" showLabel tiles disabled={loading || !shown.length || !viewerId} onExport={exportCommitments}/>
       </div>
       {loading ? <p className="p-form-help"><LoaderCircle size={17} className="p-spin"/> Carregando agenda…</p>
         : shown.length ? <div className={styles.entries}>{shown.map(event => <article key={event.uid} className={styles.entry} style={{borderLeftColor:colors[event.category]}}>
