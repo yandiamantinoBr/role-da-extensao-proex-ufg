@@ -34,7 +34,7 @@ test('report readers get the loan report without free-text conditions; who reads
  const f=await fixture(t);
  const reader=await reportRows(f.db,await f.actor('viewer-a'),{dataset:'loans'});
  assert.equal(reader.rows.length,1,'the reader still sees the loan itself');
- assert.equal(reader.rows[0].condicao_saida,'');assert.equal(reader.rows[0].condicao_retorno,'');
+ assert.equal(reader.rows[0].condicao_saida,'Restrito');assert.equal(reader.rows[0].condicao_retorno,'Restrito');
  assert.deepEqual(reader.withheldColumns,['condicao_saida','condicao_retorno']);
  assert.doesNotMatch(textOf({...reader,rows:reader.rows.map(row=>({...row,acao:''}))}),/exemplo\.invalid|capa rasgada|sem o cabo|Pessoa fictícia|Observação fictícia/,'no condition, borrower or note reaches the reader');
  // Decision (2026-11-16): the action name is the activity the report is about, so it stays; the form warns not to type people there.
@@ -54,7 +54,7 @@ test('the permission to read conditions is checked again in the database, not ta
  const f=await fixture(t),stale=await f.actor('loaner-a');
  f.native.prepare("UPDATE members SET role='viewer' WHERE user_id='loaner-a'").run();
  const result=await reportRows(f.db,stale,{dataset:'loans'});
- assert.equal(result.rows[0].condicao_saida,'');assert.equal(result.rows[0].condicao_retorno,'');
+ assert.equal(result.rows[0].condicao_saida,'Restrito');assert.equal(result.rows[0].condicao_retorno,'Restrito');
  f.native.prepare("UPDATE members SET revoked_at=? WHERE user_id='loaner-a'").run(f.now);
  const revoked=await reportRows(f.db,stale,{dataset:'loans'});
  assert.doesNotMatch(textOf(revoked),/capa rasgada|sem o cabo/);
@@ -68,7 +68,7 @@ test('exports are built from the same rows: the reader file has no condition tex
  const route=readFileSync(new URL('../app/api/reports/route.ts',import.meta.url),'utf8');
  assert.match(route,/reportRows\(db, actor, params\)/);
  // Both loan forms warn that the action name shows in reports.
- for(const file of ['../app/portal-client.tsx','../components/portal/project-quick-entry.tsx'])assert.match(readFileSync(new URL(file,import.meta.url),'utf8'),/Aparece em relatórios\. Não escreva nome ou contato de pessoas aqui\./);
+ for(const file of ['../app/portal-client.tsx','../components/portal/project-quick-entry.tsx'])assert.match(readFileSync(new URL(file,import.meta.url),'utf8'),/Aparece em relatórios\. Nome e contato de pessoas vão nos campos Responsável e Contato, abaixo\./);
 });
 
 test('Agenda: loans only for who reads loans; the ICS file leaves without the action name typed by people',async t=>{
@@ -97,7 +97,7 @@ test('mixed scope in one answer: conditions only for the project where the perso
  const result=await reportRows(f.db,await f.actor('loaner-a'),{dataset:'loans'});
  const byMaterial=Object.fromEntries(result.rows.map(row=>[row.material,row]));
  assert.equal(byMaterial['Projetor sintético'].condicao_saida,SECRET_OUT,'project A: full');
- assert.equal(byMaterial['Câmera sintética'].condicao_saida,'','project A2: report only');
+ assert.equal(byMaterial['Câmera sintética'].condicao_saida,'Restrito','project A2: report only');
  assert.deepEqual(result.withheldColumns,['condicao_saida','condicao_retorno']);
  assert.doesNotMatch(JSON.stringify(result),/outra\.pessoa@exemplo\.invalid/);
 });

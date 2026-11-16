@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { ArrowDown, ArrowUp, BarChart3, Boxes, CalendarRange, ClipboardList, Columns3, FileJson, FileText, FolderKanban, LoaderCircle, Printer, RefreshCw, Repeat2, Save, Search, Trash2, Truck, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, BarChart3, Info, Boxes, CalendarRange, ClipboardList, Columns3, FileJson, FileText, FolderKanban, LoaderCircle, Printer, RefreshCw, Repeat2, Save, Search, Trash2, Truck, X } from 'lucide-react';
 import { areaLabel } from '@/lib/extension-catalog';
 import { quantityTotal } from '@/lib/report-quantities';
 import { projectBrandFor, type ProjectBrand } from '@/lib/project-brand';
@@ -569,7 +569,7 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
     ['Referências', 'Unidade e saldo atuais do cadastro. Saldos repetidos por registro não devem ser somados. Uma unidade individual por retirada de equipamento; retornos não criam nova saída.'], ['Datas ausentes', 'Sem filtro de período é possível consultar retiradas sem data efetiva; previsões não substituem o histórico.'],
     ['Operador', 'Nome atual do perfil, somente para quem tem permissão operacional vigente; não identifica o beneficiário.'], ['Textos livres', includeNotes ? 'Consulta opcional sujeita à permissão operacional atual; confira as colunas antes de compartilhar.' : 'Não consultados nem exportados.'],
     ['Cobertura', truncated ? 'Consulta parcial por limite de linhas ou tamanho. Refine os filtros antes de considerar o relatório completo.' : 'Registros do recorte retornados pela consulta.']);
-  if (withheld) info.push(['Textos livres', 'Condição na saída e no retorno ficam vazias para quem só lê relatórios. Elas aparecem só para quem consulta empréstimos do projeto.']);
+  if (withheld) info.push(['Colunas restritas', 'As colunas Condição na saída e Condição no retorno aparecem como “Restrito” porque podem ter anotações pessoais. Só quem gerencia os empréstimos do projeto vê esse conteúdo.']);
 
   const exportContext = JSON.stringify([queryKey, search, focus, measurementUnit, columns, sort, groupBy, measure, scopeLabel, demandFilterLabel, attempt]);
   useLayoutEffect(() => {
@@ -733,10 +733,10 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
       <span className={styles.summaryIcon}><Icon size={20} /></span>
       <p role="status"><strong>{config.label}</strong> · {inaccessibleDemandScope ? 'Recorte indisponível' : waitingForDemandSearch ? 'Aguardando o termo da busca' : loading ? 'carregando…' : queryFailure ? 'consulta indisponível' : `${formatNumber(filtered.length)} ${filtered.length === 1 ? 'linha' : 'linhas'}`}{scopeLabel ? ` · ${scopeLabel}` : ''}{positionOnly || from || to ? ` · ${periodLabel}` : ''}</p>
       {focus && <button type="button" className={styles.focusChip} aria-label={`Limpar filtro de grupo: ${focusLabel}`} onClick={event => { setGroupFocus(''); if (event.detail === 0) reportSearchRef.current?.focus(); }}>{groupLabel}: {focusLabel}<X size={13} aria-hidden="true" /></button>}
-      {!loading && withheld && <small className={styles.warn}>Condição na saída e no retorno ficam vazias: são texto livre e só aparecem para quem consulta empréstimos do projeto.</small>}
       {!loading && truncated && <small className={styles.warn}>{dataset === 'outflow_details' ? 'Consulta parcial: limite de 5.000 linhas ou 3 MiB. Refine o recorte para consultar e exportar tudo.' : 'Mostrando as primeiras 5.000 linhas. Refine o recorte para ver tudo.'}</small>}
     </div>
 
+    {!loading && withheld && <p className={styles.restricted}><Info size={17} aria-hidden="true"/><span>As colunas Condição na saída e Condição no retorno aparecem como “Restrito” porque podem ter anotações pessoais. Só quem gerencia os empréstimos do projeto vê esse conteúdo.</span></p>}
     {!loading && filtered.length > 0 && <ReportMetrics metrics={kpis}/>}
 
     <div role="alert">{queryFailure && <p className="p-notice p-notice-error">{queryFailure}</p>}</div>

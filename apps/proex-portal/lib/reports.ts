@@ -130,7 +130,8 @@ export async function reportRows(db: D1Database, actor: PortalActor | null, inpu
       CASE WHEN l.status='out' AND l.ends_at<CAST(strftime('%s','now') AS INTEGER)*1000 THEN 'sim' ELSE 'nao' END AS em_atraso,l.condition_out AS condicao_saida,l.condition_in AS condicao_retorno,l.project_id AS __loan_project
       FROM loans l JOIN items i ON i.id=l.item_id JOIN ${base.replace('projects p', 'projects p ON p.id=l.project_id')} /*WHERE*/ ORDER BY l.starts_at DESC,l.id`, period('l.starts_at', true));
     // Condição na retirada e na devolução são texto livre: podem conter nome, contato ou observação pessoal.
-    // Só quem consulta empréstimos daquele projeto as recebe; quem só lê relatórios recebe o campo vazio.
+    // Só quem consulta empréstimos daquele projeto as recebe; quem só lê relatórios recebe "Restrito",
+    // sempre, para não revelar se havia ou não alguma anotação.
     // A permissão é relida no banco agora, como as demais; o perfil carregado no início da requisição não basta.
     const loanReaders = new Set<string>();
     const ids = [...new Set(rows.map(row => String(row.__loan_project)))];
@@ -141,10 +142,10 @@ export async function reportRows(db: D1Database, actor: PortalActor | null, inpu
     let withheld = false;
     rows = rows.map(({ __loan_project, ...row }) => {
       if (loanReaders.has(String(__loan_project))) return row;
-      if (row.condicao_saida || row.condicao_retorno) withheld = true;
-      return { ...row, condicao_saida: '', condicao_retorno: '' };
+      withheld = true;
+      return { ...row, condicao_saida: 'Restrito', condicao_retorno: 'Restrito' };
     });
-    if (withheld || rows.length && loanReaders.size < ids.length) {
+    if (withheld) {
       const truncated = rows.length > MAX_ROWS;
       return { dataset, rows: truncated ? rows.slice(0, MAX_ROWS) : rows, truncated, withheldColumns: ['condicao_saida', 'condicao_retorno'] };
     }
