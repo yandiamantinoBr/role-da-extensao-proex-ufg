@@ -20,6 +20,36 @@ Comece pela [Retomada de 13/11](RETOMADA-13NOV-PORTAL-PROEX.md) para conferir a 
   - a conferência de convite não tem limite de tentativas.
 - **Não fazer:** mexer em Empréstimos antes da PR de privacidade da sessão de materiais. A auditoria confere depois do merge.
 
+## Nome do papel e acabamento das telas novas · 16/11
+
+- **Papel `inventory` = "Responsável por materiais"** em todas as telas, convites, exportações e no glossário. A chave no banco não mudou. PR146 (`169301b`). O teste `tests/role-label-materials.test.mjs` impede o nome antigo de voltar.
+- **Crítica visual independente** das telas que o Codex mudou entre 13 e 15/11. Capturas em 390 e 1366 px, claro e escuro, com login local de teste. Três rodadas de crítica:
+  - antes: 6,8 a 7,4;
+  - depois: 7 a 7,5, ainda abaixo de 9.
+- **Primeira rodada de correções (no ar):**
+  - PR149, Agenda: "40 unidades"; sem a categoria repetida no título; "Cancelado"; "Limpar filtros"; seta no filtro; formatos lado a lado; PDF com datas iguais e sem total repetido;
+  - PR150, Conta: espaço antes de "Meu perfil", um só "Atualizar", ajuda da foto curta;
+  - PR151, organograma: "Editar", "Equipes" e "Mais" (com "Nova unidade" e "Arquivar"), texto nos botões do celular, Arquivar em tom de alerta;
+  - PR152, Meu trabalho: resumo só para leitor de tela; "Baixar resumo" some sem dados.
+- **Segunda rodada de correções:**
+  - PR155, Agenda: cancelado com selo e borda tracejada; "1 Empréstimo"; prévias em duas linhas; PDF com "Projetos" e "Gerado em"; sem "Prazos de demandas · Prazo";
+  - PR156, Conta: "Não informar" nas escolhas; "Atualizar" só com ícone no celular;
+  - PR157: zero em cinza em Meu trabalho; Equipes sem exportação vazia.
+- **O que falta para 9** (pede decisão de layout, não acabamento):
+  - Conta: perfil no topo; resumo só com dados preenchidos; mesmo padrão nas linhas "Conectar uma IA" e "Google Drive".
+  - Agenda: lista agrupada por dia; título do cartão em peso 600; "Mostrar cancelados" sem contar como filtro; links apagados no cancelado.
+  - Organograma: botões mais leves no computador; uma linha vertical só; "Mostrar arquivadas" ao lado de "Atualizar estrutura".
+  - Meu trabalho: Projeto e Atualizar numa barra só; seletor de origem compacto; títulos de seção iguais.
+  - PDF: segunda linha da célula menor e cinza (`report-pdf.ts`, compartilhado); total com a quebra por categoria.
+- **Para a sessão de coerência visual**, porque é do Portal inteiro: um formato de horário (hoje são cinco), onde fica o botão "Atualizar", o lugar das ações no cabeçalho da página, o padrão de título dos cartões, a fonte em negrito do gerador de PDF e o texto de ajuda com 12 px.
+- **Ficou para a sessão de materiais**, porque ela está mexendo nessa tela:
+  - Materiais tem dois botões de filtro e dois "Registrar movimento";
+  - números da tabela desalinhados;
+  - caixa sobrando em "Consumo por unidade" no tema escuro;
+  - texto de busca cortado.
+- **Não fazer:** trocar "designação" por "responsabilidade" sem decisão. "Revogar designação" é a ação; a lista se chama "Responsabilidades".
+- **QA local quando a 5173 está ocupada:** copie `scripts/qa-local.mjs` para um `.tmp.mjs` trocando `QA_ORIGIN` e `PORT`. Para logar pela API, envie o cabeçalho `X-Proex-Action: 1`. Apague a cópia e a pasta `proex-qa-local-*` ao terminar.
+
 ## Checkpoint de 15/11 · tutoriais, empréstimos, widgets e Rolê
 
 A [passagem para Claude Code](../apps/proex-portal/docs/QA-TUTORIAIS-WIDGETS-E-ROLE.md) reúne os casos reproduzidos e as próximas entregas. Comece pelo [roteiro por público](../apps/proex-portal/docs/ROTEIRO-TUTORIAIS-PROEX.md) e pelo [guia de Empréstimos](../apps/proex-portal/docs/GUIA-EMPRESTIMOS.md). O Portal em produção foi a base da pesquisa. A implementação das melhorias segue na fila.
