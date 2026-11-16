@@ -206,3 +206,9 @@
   .chart { padding: 14px 0 6px; border: 0; border-top: 1px solid var(--line); border-radius: 0; }
 }
 .pageSize { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+
+/* Privacidade: colunas de texto livre restritas para quem só lê relatórios. Bloco próprio, informativo, não de erro. */
+.restricted { display: flex; align-items: flex-start; gap: 10px; margin: 0 0 14px; padding: 12px 14px; border: 1px solid color-mix(in srgb, var(--rc-warn-ink) 30%, transparent); border-radius: 12px; background: var(--rc-warn-bg); color: var(--rc-warn-ink); font-size: 14px; line-height: 1.55; }
+.restricted svg { flex-shrink: 0; margin-top: 2px; }
+.restricted span { max-width: 75ch; }
+.restrictedCell { color: color-mix(in srgb, var(--muted, #746c7e) 80%, var(--ink, #241c2b)); font-style: italic; }

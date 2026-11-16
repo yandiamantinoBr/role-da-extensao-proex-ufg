@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { ArrowDown, ArrowUp, BarChart3, Boxes, CalendarRange, ClipboardList, Columns3, FileJson, FileText, FolderKanban, LoaderCircle, Printer, RefreshCw, Repeat2, Save, Search, Trash2, Truck, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, BarChart3, Info, Boxes, CalendarRange, ClipboardList, Columns3, FileJson, FileText, FolderKanban, LoaderCircle, Printer, RefreshCw, Repeat2, Save, Search, Trash2, Truck, X } from 'lucide-react';
 import { areaLabel } from '@/lib/extension-catalog';
 import { quantityTotal } from '@/lib/report-quantities';
 import { projectBrandFor, type ProjectBrand } from '@/lib/project-brand';
@@ -208,7 +208,7 @@ function ChartTooltip({ active, payload, label, unit }: { active?: boolean; payl
   return <div className={styles.tooltip}><strong>{label}</strong>{payload.map(item => <span key={item.name}><i style={{ background: item.color }} />{item.name}<b>{formatNumber(Number(item.value) || 0)} {unit}</b></span>)}</div>;
 }
 
-type ReportResult = { rows: ExportRow[]; truncated: boolean };
+type ReportResult = { rows: ExportRow[]; truncated: boolean; withheld: boolean };
 
 async function requestReport(query: URLSearchParams, signal: AbortSignal, userId?: string): Promise<ReportResult> {
   const options: RequestInit = { credentials: 'same-origin', cache: 'no-store', signal };
@@ -234,7 +234,7 @@ async function requestReport(query: URLSearchParams, signal: AbortSignal, userId
   if (!body || body.dataset !== query.get('dataset') || !Array.isArray(body.rows) || !body.rows.every(row => row !== null && typeof row === 'object' && !Array.isArray(row)) || typeof body.truncated !== 'boolean') {
     throw new Error('Não foi possível carregar o relatório: resposta incompleta ou inválida.');
   }
-  return { rows: body.rows as ExportRow[], truncated: body.truncated };
+  return { rows: body.rows as ExportRow[], truncated: body.truncated, withheld: Array.isArray(body.withheldColumns) && body.withheldColumns.length > 0 };
 }
 
 
@@ -413,7 +413,7 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
   const { focus, measurementUnit, page } = view.queryKey === queryKey ? view : initialView;
   const updateView = (changes: Partial<Omit<typeof view, 'queryKey'>>) => setView(current => ({ ...current, ...changes }));
   const [loadedQueryKey, setLoadedQueryKey] = useState('');
-  const [loadedRows, setRows] = useState<ExportRow[]>([]), [truncated, setTruncated] = useState(false);
+  const [loadedRows, setRows] = useState<ExportRow[]>([]), [truncated, setTruncated] = useState(false), [withheld, setWithheld] = useState(false);
   const [fetching, setLoading] = useState(true);
   const [queryError, setQueryError] = useState<{ key: string; message: string } | null>(null);
   const [exportError, setExportError] = useState<{ key: string; message: string } | null>(null);
@@ -467,6 +467,7 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
         setRows(body.rows);
         setLoadedQueryKey(queryKey);
         setTruncated(body.truncated);
+        setWithheld(body.withheld);
         setQueryError(null);
         setLoading(false);
       })
@@ -568,6 +569,7 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
     ['Referências', 'Unidade e saldo atuais do cadastro. Saldos repetidos por registro não devem ser somados. Uma unidade individual por retirada de equipamento; retornos não criam nova saída.'], ['Datas ausentes', 'Sem filtro de período é possível consultar retiradas sem data efetiva; previsões não substituem o histórico.'],
     ['Operador', 'Nome atual do perfil, somente para quem tem permissão operacional vigente; não identifica o beneficiário.'], ['Textos livres', includeNotes ? 'Consulta opcional sujeita à permissão operacional atual; confira as colunas antes de compartilhar.' : 'Não consultados nem exportados.'],
     ['Cobertura', truncated ? 'Consulta parcial por limite de linhas ou tamanho. Refine os filtros antes de considerar o relatório completo.' : 'Registros do recorte retornados pela consulta.']);
+  if (withheld) info.push(['Colunas restritas', 'As colunas Condição na saída e Condição no retorno aparecem como “Restrito” porque podem ter anotações pessoais. Só quem gerencia os empréstimos do projeto vê esse conteúdo.']);
 
   const exportContext = JSON.stringify([queryKey, search, focus, measurementUnit, columns, sort, groupBy, measure, scopeLabel, demandFilterLabel, attempt]);
   useLayoutEffect(() => {
@@ -734,6 +736,7 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
       {!loading && truncated && <small className={styles.warn}>{dataset === 'outflow_details' ? 'Consulta parcial: limite de 5.000 linhas ou 3 MiB. Refine o recorte para consultar e exportar tudo.' : 'Mostrando as primeiras 5.000 linhas. Refine o recorte para ver tudo.'}</small>}
     </div>
 
+    {!loading && withheld && (columns.includes('condicao_saida') || columns.includes('condicao_retorno')) && <p className={styles.restricted}><Info size={17} aria-hidden="true"/><span>As colunas Condição na saída e Condição no retorno aparecem como “Restrito” porque podem ter anotações pessoais. Só quem gerencia os empréstimos do projeto vê esse conteúdo.</span></p>}
     {!loading && filtered.length > 0 && <ReportMetrics metrics={kpis}/>}
 
     <div role="alert">{queryFailure && <p className="p-notice p-notice-error">{queryFailure}</p>}</div>
@@ -751,6 +754,7 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
           <tbody>{visible.map((row, index) => <tr key={String(row.id ?? index)}>{chosen.map(column => {
             const value = valueOf(row, column.key);
             const tone = column.key === 'situacao_estoque' && row.situacao_estoque === 'baixo' || column.key === 'em_atraso' && row.em_atraso === 'sim' ? styles.badgeWarn : column.key === 'sentido' ? (row.sentido === 'entrada' ? styles.badgeIn : styles.badgeOut) : '';
+            if (withheld && value === 'Restrito' && (column.key === 'condicao_saida' || column.key === 'condicao_retorno')) return <td key={column.key}><span className={styles.restrictedCell} title="Só quem gerencia os empréstimos do projeto vê esta anotação.">Restrito</span></td>;
             return <td key={column.key} className={column.numeric ? styles.numeric : ''}>{tone ? <span className={`${styles.badge} ${tone}`}>{String(value)}</span> : column.date ? dateLabel(value) : column.numeric ? formatNumber(reportNumber(value)) : String(value ?? '') || '—'}</td>;
           })}</tr>)}</tbody>
         </table>

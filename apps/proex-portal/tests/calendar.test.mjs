@@ -226,7 +226,8 @@ test('ICS has stable IDs, cancellation tombstones, valid date boundaries, escapi
   f.insert('audit', { id: 'cancel-audit', actor_id: 'PRIVATE ACTOR', project_id: 'project-a', action: 'loan.cancel', entity_id: 'loan-a', details: 'PRIVATE DETAILS', created_at: timestamp });
   result = await calendar.calendarEntries(f.db, manager, { range, category: 'loans' });
   assert.equal(result.entries[0].uid, uid); assert.equal(result.entries[0].status, 'CANCELLED'); assert.ok(result.entries[0].revision > revision);
-  result.entries[0].title = 'Extensão; café, ação\\teste\n' + 'á🙂'.repeat(80);
+  // Loans leave the portal with exportTitle (no action name typed by people); escaping is checked on what is written.
+  result.entries[0].exportTitle = 'Extensão; café, ação\\teste\n' + 'á🙂'.repeat(80);
   const ics = calendar.serializeCalendar(result.entries);
   assert.ok(ics.endsWith('\r\n')); assert.ok(!/(?<!\r)\n/.test(ics));
   for (const line of ics.split('\r\n')) assert.ok(Buffer.byteLength(line, 'utf8') <= 75);
