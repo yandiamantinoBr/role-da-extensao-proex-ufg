@@ -139,3 +139,9 @@ test('celular: o botão do canto abre o mesmo leque com nomes do computador, e f
   assert.match(css, /\.mobileFan\{position:fixed;right:14px;bottom:calc\(var\(--dock-fab-nav,72px\)/, 'o leque sobe a partir do botão, acima da barra de baixo');
   assert.match(css, /\.mobileFab\[data-open\]\{[^}]*visibility:visible/, 'com o leque aberto o botão não some');
 });
+
+test('celular: sem lugar livre, o botão do canto fica em casa em vez de sumir', () => {
+  const tsx = read('components/portal/floating-dock.tsx');
+  assert.doesNotMatch(tsx, /if \(shift === null\) \{ button\.dataset\.state = 'away'; return; \}/, 'na tela cheia de cartões (Início) o botão sumia');
+  assert.match(tsx, /--dock-fab-shift', `\$\{shift \?\? 0\}px`/);
+});
