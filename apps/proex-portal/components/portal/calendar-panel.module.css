@@ -124,3 +124,11 @@
 .entry[data-cancelled] { border-left-style: dashed; background: var(--canvas); }
 .entry[data-cancelled] h4, .entry[data-cancelled] > p { color: var(--muted); }
 .chip[data-cancelled] { border-left-style: dashed; color: var(--muted); text-decoration: line-through; background: transparent; }
+
+/* Lista agrupada por dia (crítica de 16/11): o título do grupo leva a data; o cartão mostra o nome com mais peso que a categoria. */
+.dayHeading { margin: 10px 0 -2px; font-size: 13px; font-weight: 700; color: var(--text-strong); }
+.dayHeading:first-child { margin-top: 0; }
+.entry > small { color: var(--text-secondary); font-weight: 500; }
+.entry > h4 { font-weight: 600; }
+.entry[data-cancelled] .entryLink { color: var(--muted); }
+.chip { max-height: calc(2.7em + 6px); }

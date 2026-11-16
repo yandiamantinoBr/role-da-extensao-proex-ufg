@@ -19,6 +19,8 @@ export type ReportPdfPresentation = {
   projectName?: string;
   projectBrand?: ProjectMark;
   metrics?: readonly { label: string; value: number | null; detail?: string }[];
+  /** Em cada célula, o que vem depois da primeira quebra de linha sai em cinza (ex.: a categoria abaixo do título). */
+  mutedDetailLines?: boolean;
   columnWeights?: readonly number[];
   /** Print-only grouping preserves every authorized field; spreadsheet/Word keep original columns. */
   columnGroups?: readonly { label: string; keys: readonly string[] }[];
@@ -218,6 +220,7 @@ export async function toPdf(
     const padding = !isHeader && (projectSheet || options?.presentation?.compactRows) ? 6 : 9;
     const faces = values.map(value => isHeader ? strongFont(value) : font);
     const cells = values.map((value, index) => wrap(value, faces[index], size, widths[index] - 2 * padding));
+    const leadLines = values.map((value, index) => !isHeader && options?.presentation?.mutedDetailLines ? wrap(value.split(/\r?\n/)[0] ?? '', faces[index], size, widths[index] - 2 * padding).length : Infinity);
     const total = Math.max(1, ...cells.map(lines => lines.length));
     const room = () => Math.floor((y - bottom - 2 * padding) / leading);
     if (!isHeader && (room() < 1 || (room() < total && total * leading + 2 * padding <= height - 160))) onBreak();
@@ -231,7 +234,7 @@ export async function toPdf(
         const face = faces[index], alignRight = aligns[index];
         lines.slice(offset, offset + count).forEach((line, row) => {
           const position = alignRight ? x + widths[index] - padding - face.widthOfTextAtSize(line, size) : x + padding;
-          paint(line, position, y - padding - row * leading, size, isHeader ? white : ink, face);
+          paint(line, position, y - padding - row * leading, size, isHeader ? white : offset + row >= leadLines[index] ? muted : ink, face);
         });
         x += widths[index];
       });
