@@ -42,7 +42,7 @@ const decode = (value: string) => value.replace(/&(#(?:x[0-9a-f]+|[0-9]+)|[a-z]+
   const point = parseInt(code.slice(hex ? 2 : 1), hex ? 16 : 10);
   return point <= 0x10ffff && (point < 0xd800 || point > 0xdfff) ? String.fromCodePoint(point) : match;
 });
-const clean = (value: string, max: number) => decode(value.replace(/<[^>]*>/g, ' ')).replace(/\s+/g, ' ').trim().slice(0, max);
+const clean = (value: string, max: number) => decode(value.replace(/<[^>]*>/g, ' ')).replace(/[\p{Cc}\p{Cf}]/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
 const withoutActiveContent = (html: string) => html.replace(/<(script|style|noscript|svg)\b[\s\S]*?<\/\1>/gi, ' ');
 const descriptionOf = (body: string) => clean(body.match(/<meta\s+property=["']og:description["']\s+content=(["'])([\s\S]*?)\1/i)?.[2] ?? '', 600);
 
@@ -178,6 +178,8 @@ function documentPriority(title: string, wanted: string[], updated: boolean, pre
 }
 
 type Edition = { start: number | null; end: number | null; numbers: { n: number; year: number | null }[] };
+/** "até 20/11/2027" é prazo, não a edição pedida. */
+const withoutDates = (value: string) => value.replace(/\b\d{1,2}\/\d{1,2}\/(?:20)?\d{2}\b/g, ' ');
 const plain = (value: string) => value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase().replace(/[_+]/g, ' ');
 
 /** Ano ou ciclo (2026/27, 2026-2027, 2026) e número (nº 133/2026, Edital 133) de títulos e nomes de arquivo. */
@@ -206,8 +208,8 @@ const programOf = (value: string) => searchWords(value).find(word => word === 'p
 const amendmentNumber = (title: string) => Number(plain(title).match(/\b(?:retificacao|aditivo|errata)\s+(?:n\s*[º°o.]?\s*)?(\d{1,2})\b/)?.[1] ?? 0);
 
 /** Ordena os PDFs das páginas pela pergunta: edição pedida, versão final/preliminar, aditivo, edição e retificação mais recentes. */
-function chooseDocument(results: PublicResult[], subject: string) {
-  const question = subject.replace(/https:\/\/\S+/gi, ' ');
+function chooseDocument(results: PublicResult[], subject: string, pasted = false) {
+  const question = withoutDates(subject.replace(/https:\/\/\S+/gi, ' '));
   const wanted = officialSearchTerms(question), normalized = searchWords(question).join(' ');
   const amended = /\b(?:retificac(?:ao|oes)|aditiv[oa]s?|prorrogac(?:ao|oes)|recurso)\b/.test(normalized);
   const preliminary = /\bpreliminar\b/.test(normalized);
@@ -229,7 +231,8 @@ function chooseDocument(results: PublicResult[], subject: string) {
       if (!saved || saved.score < choice.score) byUrl.set(pdf.url, choice);
     }
   });
-  let choices = [...byUrl.values()];
+  const all = [...byUrl.values()];
+  let choices = all;
   if (askedNumbers.length) {
     choices = choices.filter(({ edition }) => !edition.numbers.length || askedNumbers.some(item => edition.numbers.some(found => found.n === item.n && (!item.year || !found.year || found.year === item.year))));
   }
@@ -237,7 +240,10 @@ function chooseDocument(results: PublicResult[], subject: string) {
     const byStart = choices.filter(({ edition }) => edition.start !== null && askedYears.includes(edition.start));
     choices = byStart.length ? byStart : choices.filter(({ edition }) => edition.end !== null && askedYears.includes(edition.end));
   }
-  const decided = askedYears.length > 0 || askedNumbers.length > 0;
+  // Página colada é o destino: um ano citado de passagem ("vale para 2027?") não descarta os PDFs dela.
+  const relaxed = pasted && !choices.length;
+  if (relaxed) choices = all;
+  const decided = !relaxed && (askedYears.length > 0 || askedNumbers.length > 0);
   const newest = Math.max(0, ...choices.map(({ edition }) => edition.start ?? 0));
   for (const choice of choices) {
     if (!decided && choice.edition.start) choice.score += (choice.edition.start - newest) * 25;
@@ -266,7 +272,7 @@ async function searchPastedPage(page: URL, subject: string, fetcher: typeof fetc
   } catch {
     return { status: 'unavailable', ...emptyLookup, documentSearch: true };
   }
-  const { best, ambiguity } = chooseDocument([result], subject);
+  const { best, ambiguity } = chooseDocument([result], subject, true);
   const pdf = await searchOfficialPdfs(best ? [best] : [], subject, fetcher, USER_AGENT, officialSearchTerms, disallowed);
   return { status: 'ok', pages: [result], ...pdf, ambiguity, documentSearch: true };
 }
@@ -285,7 +291,7 @@ export async function searchOfficialPages(subject: string, fetcher: typeof fetch
   if (!wanted.length) return { status: 'ok', ...emptyLookup };
   const pdfSearch = requestsOfficialPdf(searchWords(subject).join(' '));
   const programs = wanted.filter(word => word === 'probec' || word === 'conpeex');
-  const years = wanted.filter(word => /^20\d{2}$/.test(word));
+  const years = searchWords(withoutDates(subject)).filter(word => /^20\d{2}$/.test(word));
   const targetEdition = pdfSearch ? editalNumber(subject) : null;
   const documentFocus = pdfSearch ? officialSearchTerms(subject.split(/[,:?]/).find(part => /\b(?:probec|conpeex|edital)\b/i.test(part)) ?? subject) : [];
   const indexes = await Promise.all(OFFICIAL_HOSTS.map(host => readSearchIndex(host, fetcher)));

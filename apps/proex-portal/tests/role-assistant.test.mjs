@@ -876,7 +876,8 @@ test('PDF OFICIAL: encontra a edição final, cita a página lida e mantém a au
     await setup(f);
     const { PDFDocument } = await import('pdf-lib');
     const pdf = await PDFDocument.create();
-    pdf.addPage().drawText('Edital PROBEC 2026/2027. Apresentação oficial do programa.');
+    // Texto de abertura neutro: um PDF com menos de 200 caracteres de texto conta como escaneado.
+    pdf.addPage().drawText('Edital PROBEC 2026/2027. Apresentação oficial do programa.\nTexto sintético de abertura, sem dado real, usado apenas na verificação automática do leitor.', { x: 40, y: 780, size: 11, lineHeight: 14 });
     pdf.addPage().drawText('2.1 Serão ofertadas 93 bolsas para projetos e 7 para programas institucionais.', { size: 11 });
     const bytes = await pdf.save();
     const article = 'https://proex.ufg.br/p/123-edital-proec-05-2026-probec-2026-2027';
@@ -928,7 +929,7 @@ test('PDF OFICIAL: encontra a edição final, cita a página lida e mantém a au
     blocked = true;
     const robotsResult = await roleChat(f.db, f.actors.viewer, direct, secret, options);
     assert.deepEqual(requested, ['https://files.cercomp.ufg.br/robots.txt']);
-    assert.match(robotsResult.reply, /Encontrei o link, mas não consegui abrir o PDF agora\. O link está abaixo para você conferir\./);
+    assert.match(robotsResult.reply, /Encontrei o PDF, mas o site não permite leitura automática dele\. Abra o link para conferir\./);
     assert.doesNotMatch(robotsResult.reply, /93 bolsas/);
     blocked = false;
     revokeDuringPdf = true;

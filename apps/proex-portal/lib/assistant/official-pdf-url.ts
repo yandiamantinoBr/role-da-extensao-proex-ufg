@@ -30,7 +30,9 @@ export function officialPageUrl(raw: string): URL | null {
     const url = new URL(raw);
     if (!(OFFICIAL_HOSTS as readonly string[]).some(host => url.origin === `https://${host}`)) return null;
     if (url.username || url.password || url.search || url.hash) return null;
-    return /^\/(?:n|p)\/\d{1,9}-[a-z0-9][a-z0-9-]{0,240}\/?$/i.test(url.pathname) ? url : null;
+    url.search = '';
+    // Sem /i: /P/ ou letra maiúscula seria outro caminho para o robots.txt.
+    return /^\/(?:n|p)\/\d{1,9}-[a-z0-9][a-z0-9-]{0,240}\/?$/.test(url.pathname) ? url : null;
   } catch { return null; }
 }
 
