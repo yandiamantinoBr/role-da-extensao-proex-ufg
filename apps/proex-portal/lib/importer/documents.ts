@@ -38,14 +38,39 @@ function mainDocxXml(bytes: Uint8Array): string {
   if (xml.byteLength !== main.size || xml.byteLength > XML_LIMIT || crc32(xml) !== main.crc) throw invalidDocx();
   return new TextDecoder(xml[0] === 0xff && xml[1] === 0xfe ? 'utf-16le' : 'utf-8', { fatal: true }).decode(xml);
 }
+/**
+ * Texto do corpo do DOCX numa única passada pelo XML. A expressão regular anterior procurava o
+ * fechamento de cada <w:t> até o fim do arquivo: com tags sem fechamento o tempo crescia ao quadrado
+ * (1 MB de XML, poucos KB comprimidos, prendia o servidor por minutos). Regras iguais às de antes:
+ * texto só dentro de <t>, marcas internas ignoradas, quebra de linha em </p>, <br> e <tab>.
+ */
+function docxBodyText(xml: string): string {
+  let content = '', buffer = '', inText = false, position = 0;
+  const flush = () => { content += decodeEntities(buffer.replace(/&lt;/g, '<').replace(/&gt;/g, '>')); buffer = ''; };
+  while (position < xml.length) {
+    const open = xml.indexOf('<', position);
+    if (open < 0) break; // texto solto depois da última tag não pertence a <t> fechado
+    if (inText) buffer += xml.slice(position, open);
+    const close = xml.indexOf('>', open + 1);
+    if (close < 0) break; // tag sem fechamento: o resto não é XML válido
+    const tag = xml.slice(open + 1, close), name = /^(\/?)(?:[A-Za-z_][\w.-]*:)?([A-Za-z_][\w.-]*)/.exec(tag);
+    if (name) {
+      const closing = name[1] === '/', local = name[2], selfClosing = tag.endsWith('/');
+      if (local === 't') { if (closing) { if (inText) { flush(); inText = false; } } else if (!selfClosing) { inText = true; buffer = ''; } }
+      else if (local === 'p' && closing) content += '\n';
+      else if ((local === 'br' || local === 'tab') && !closing) content += '\n';
+    }
+    position = close + 1;
+  }
+  return content;
+}
 export function docxText(bytes: Uint8Array): string {
   try {
     const xml = mainDocxXml(bytes);
     if (/<!DOCTYPE|<!ENTITY/i.test(xml) || !/<(?:\w+:)?document\b/.test(xml)) throw invalidDocx();
     // Read only body text. Relationships, macros, comments, attachments, URLs and
     // external entities are never resolved. No package path is written to disk.
-    let content = '';
-    for (const match of xml.matchAll(/<(?:\w+:)?t(?:\s[^>]*)?>([^]*?)<\/(?:\w+:)?t\s*>|<\/(?:\w+:)?p\s*>|<(?:\w+:)?(?:br|tab)\b[^>]*\/?\s*>/g)) content += match[1] === undefined ? '\n' : decodeEntities(match[1].replace(/<[^>]*>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>'));
+    const content = docxBodyText(xml);
     if (!content.trim()) throw new HttpError(422, 'O DOCX não tem texto no corpo principal. Use um documento com texto selecionável.', 'import_document_empty');
     if (new TextEncoder().encode(content).byteLength > IMPORT_TEXT_LIMIT) throw new HttpError(413, 'O texto extraído excede 256 KiB. Divida o documento.', 'import_document_limit');
     return content;

@@ -82,3 +82,22 @@ test('browser PDF pipeline uses text-only safe options, tracks pages and cleans 
   const scanned = fakeEngine([[]]); await assert.rejects(extractPdfText(file, async () => scanned.engine), /OCR/);
   const huge = fakeEngine([['x'.repeat(256 * 1024 + 1)]]); await assert.rejects(extractPdfText(file, async () => huge.engine), /excede 256 KiB/);
 });
+
+test('DOCX text extraction stays linear: unclosed text tags cannot hold the server (Rolê and import)', () => {
+  // 40.000 tags <t> sem fechamento (cerca de 120 KB): a expressão antiga voltava ao início a cada tag e levava segundos;
+  // no limite de 1 MB do XML, minutos de CPU. A leitura agora percorre o XML uma vez.
+  const bomb = zip(packageEntries('<w:document><w:body>' + '<w:t>'.repeat(40000)));
+  const started = performance.now();
+  assert.throws(() => docxText(bomb), error => error.code === 'import_document_empty');
+  assert.ok(performance.now() - started < 500, `extração levou ${Math.round(performance.now() - started)} ms`);
+  const angles = zip(packageEntries('<w:document><w:body><w:p><w:r><w:t>ok</w:t></w:r></w:p>' + '<'.repeat(200000)));
+  const second = performance.now();
+  assert.equal(docxText(angles), 'ok\n');
+  assert.ok(performance.now() - second < 500);
+});
+
+test('DOCX keeps the same text rules: nested runs, entities, breaks, tabs and self-closing tags', () => {
+  const body = '<w:document xmlns:w="x"><w:body><w:p><w:r><w:t xml:space="preserve">A &amp; B </w:t><w:t>C<w:x/>D</w:t></w:r><w:r><w:br/><w:tab/><w:t/></w:r></w:p>'
+    + '<w:p><w:r><w:t>&lt;tag&gt; &#233;</w:t></w:r><w:tabs><w:tab w:val="left"/></w:tabs></w:p><w:tbl><w:tr><w:tc><w:p><w:r><w:t>Célula</w:t></w:r></w:p></w:tc></w:tr></w:tbl></w:body></w:document>';
+  assert.equal(docxText(zip(packageEntries(body))), 'A & B CD\n\n\n<tag> é\n\nCélula\n');
+});
