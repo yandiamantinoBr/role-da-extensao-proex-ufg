@@ -33,6 +33,10 @@ a.kpi:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 .kpi small { color: var(--text-secondary); font-size: 12px; }
 .kpiWarn { border-color: #e9b07a; background: color-mix(in srgb, var(--lvl-alto) 55%, var(--surface)); }
 .kpiWarn strong { color: var(--lvl-alto-ink); }
+/* Prazo vencido e risco crítico: vermelho, como em Demandas (16/11). */
+.kpiDanger { border-color: color-mix(in srgb, var(--danger) 45%, var(--line)); background: color-mix(in srgb, var(--danger) 8%, var(--surface)); }
+.kpiDanger strong { color: var(--danger); }
+.attention li[data-tone=danger] a svg, .attention li[data-tone=danger] button svg { color: var(--danger); }
 .grid2 { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); align-items: start; }
 @container management (min-width: 760px) { .grid2 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .card { display: flex; flex-direction: column; gap: 10px; min-width: 0; margin: 0; padding: 14px 16px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: var(--shadow-card); }

@@ -66,8 +66,8 @@ export default function DashboardPanel({ organizationId, onOpenRisks }: { organi
   ].filter(Boolean) as { key: string; icon: React.ReactNode; text: string; href?: string; action?: () => void }[];
   const demandsEmpty = !!data && data.demandsByMonth.every(row => !row.created && !row.completed);
   const deliveriesEmpty = !!data?.deliveriesByMonth && data.deliveriesByMonth.every(row => row.itemsOut === 0);
-  const card = (label: string, value: number | null | undefined, detail: string, href: string, warn = false) => value === null || value === undefined ? null
-    : <a key={label} className={`${styles.kpi} ${warn && value > 0 ? styles.kpiWarn : ''}`} href={href}><span>{label}</span><strong>{fmt(value)}</strong><small>{detail}</small></a>;
+  const card = (label: string, value: number | null | undefined, detail: string, href: string, warn: boolean | 'danger' = false) => value === null || value === undefined ? null
+    : <a key={label} className={`${styles.kpi} ${warn && value > 0 ? (warn === 'danger' ? styles.kpiDanger : styles.kpiWarn) : ''}`} href={href}><span>{label}</span><strong>{fmt(value)}</strong><small>{detail}</small></a>;
 
   return <div className={styles.root}>
     <div className={styles.toolbar}>
@@ -81,12 +81,12 @@ export default function DashboardPanel({ organizationId, onOpenRisks }: { organi
     {data && k && <div aria-busy={loading} style={{ display: 'grid', gap: 18, opacity: loading ? .7 : 1 }}>
       <section className={styles.attention} aria-labelledby="dash-attention">
         <h3 id="dash-attention">Atenção agora</h3>
-        {attention.length ? <ul>{attention.map(item => <li key={item.key}>{item.href ? <a href={item.href}>{item.icon}<span>{item.text}</span></a> : <button type="button" onClick={item.action}>{item.icon}<span>{item.text}</span></button>}</li>)}</ul>
+        {attention.length ? <ul>{attention.map(item => <li key={item.key} data-tone={item.key === 'overdue' || item.key === 'critical' ? 'danger' : undefined}>{item.href ? <a href={item.href}>{item.icon}<span>{item.text}</span></a> : <button type="button" onClick={item.action}>{item.icon}<span>{item.text}</span></button>}</li>)}</ul>
           : <p className={styles.attentionOk}><CheckCircle2 size={18} aria-hidden="true"/>Nada pedindo decisão agora: sem atrasos, riscos críticos, revisões vencidas ou estoque no limite.</p>}
       </section>
       <div className={styles.kpis}>
         {card('Demandas abertas', k.demandsOpen, `${fmt(k.demandsHighOpen)} de prioridade alta`, link('demands', projectId))}
-        {card('Demandas em atraso', k.demandsOverdue, 'prazo vencido', link('demands', projectId), true)}
+        {card('Demandas em atraso', k.demandsOverdue, 'prazo vencido', link('demands', projectId), 'danger')}
         {card('Demandas criadas', k.demandsCreated, versus(k.demandsCreated, data.previous.demandsCreated), link('demands', projectId))}
         {card('Demandas concluídas', k.demandsCompleted, versus(k.demandsCompleted, data.previous.demandsCompleted), link('demands', projectId))}
         {data.deliveriesByMonth && card('Brindes distribuídos', k.itemsOut, versus(k.itemsOut, data.previous.itemsOut) || 'saídas de brindes no período', link('materials', projectId))}
