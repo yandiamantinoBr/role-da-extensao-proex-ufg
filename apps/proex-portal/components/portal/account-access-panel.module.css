@@ -20,6 +20,10 @@
 .notice { display:flex; align-items:center; gap:8px; color:var(--text-secondary); }
 .notice[role=alert] { color:var(--danger); }
 @container (max-width:440px) {
-  .header { align-items:flex-start; }
+  /* No celular o botão fica só com o ícone, na mesma linha do título (antes caía sozinho numa linha). */
+  .header { align-items:flex-start; flex-wrap:nowrap; }
+  .header > div { flex:1; min-width:0; }
+  .header button { flex:none; width:44px; padding-inline:0; justify-content:center; }
+  .refreshLabel { display:none; }
   .group { padding:12px; }
 }

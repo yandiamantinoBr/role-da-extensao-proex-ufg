@@ -71,7 +71,7 @@ export default function AccountAccessPanel({ userId }: { userId: string }) {
         <span className="p-icon-tile"><ShieldCheck size={19} aria-hidden="true"/></span>
         <div><h2 id={heading}>Meus acessos</h2><p>Veja qual função vale em cada projeto, organização ou ação.</p></div>
       </div>
-      <button type="button" className="p-button p-button-subtle" onClick={() => { if (!loading) update(); }} aria-disabled={loading} aria-label="Atualizar meus acessos"><RefreshCw size={16} aria-hidden="true"/>Atualizar</button>
+      <button type="button" className="p-button p-button-subtle" onClick={() => { if (!loading) update(); }} aria-disabled={loading} aria-label="Atualizar meus acessos"><RefreshCw size={16} aria-hidden="true"/><span className={styles.refreshLabel}>Atualizar</span></button>
     </header>
     {loading && <p className={styles.notice} role="status"><LoaderCircle size={16} className="p-spin" aria-hidden="true"/>Consultando seus acessos…</p>}
     {error && <p className={styles.notice} role="alert">{error}</p>}
