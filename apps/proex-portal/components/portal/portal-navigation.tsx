@@ -155,7 +155,7 @@ export function MobileNavigation({ modules, active, onNavigate, pinned, role, on
         <span className="visually-hidden">Buscar módulo</span>
         <input value={query} onChange={event => setQuery(event.target.value)} placeholder="O que você precisa fazer?"/>
         </label>
-        <p className="pn-drawer-help">Fixe seus módulos para encontrá-los no seu início.</p>
+        <p className="pn-drawer-help">Toque no alfinete: o módulo vai para a barra de baixo e para Seus atalhos no Início.</p>
         {onHelp ? <button type="button" className="pn-drawer-link pn-drawer-help-link" onClick={() => { close(); onHelp(); }}>
             <span>
             <LifeBuoy size={21}/>

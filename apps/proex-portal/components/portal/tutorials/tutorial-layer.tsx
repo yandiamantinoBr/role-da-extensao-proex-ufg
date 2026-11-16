@@ -1,12 +1,12 @@
 'use client';
 /* eslint-disable @next/next/no-img-element -- mascote em SVG estático */
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { ArrowLeft, ArrowRight, ExternalLink, LifeBuoy, Pause, RotateCcw, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, LifeBuoy, Pause, RotateCcw, X } from 'lucide-react';
 
 /** Espaço do topo (cabeçalho fixo do Portal) que o controle destacado não deve ocupar. */
 const TOP_GAP = 72;
 import type { ModuleId } from '../navigation-model';
-import { chapterById, type TutorialStep } from '@/lib/tutorials/catalog';
+import { TUTORIAL_CHAPTERS, chapterById, type TutorialStep } from '@/lib/tutorials/catalog';
 import ChapterList from './chapter-list';
 import { closeTutorialChooser, finishTutorial, loadTutorials, nextStep, pauseTutorial, previousStep, startChapter, useTutorials } from './tutorial-store';
 import styles from './tutorials.module.css';
@@ -40,7 +40,7 @@ export function stepCopy(step: TutorialStep, mobile: boolean) {
     target: mobile && step.targetMobile ? step.targetMobile : step.target,
     module: mobile && step.moduleMobile ? step.moduleMobile : step.module,
     openLabel: step.openLabel ?? 'Abrir no Portal',
-    beforeOpen: step.beforeOpen,
+    beforeOpen: mobile && step.beforeOpenMobile ? step.beforeOpenMobile : step.beforeOpen,
   };
 }
 
@@ -60,6 +60,8 @@ export default function TutorialLayer({ modules, tab, projectId, onNavigate }: {
   const mobile = useMobile();
   // Resultado da busca do controle, guardado por passo: um passo novo começa sem resultado.
   const [spot, setSpot] = useState<{ key: string; found: boolean | null }>({ key: '', found: null });
+  // Há texto escondido abaixo no cartão (tela baixa): a barra de botões ganha uma sombra de aviso.
+  const [more, setMore] = useState(false);
   const heading = useRef<HTMLHeadingElement>(null), dialog = useRef<HTMLDivElement>(null), card = useRef<HTMLElement>(null);
   // Depois de "Ir para…", o Portal move o foco para a página nova; o título do cartão o recupera.
   const refocus = useRef(false);
@@ -118,6 +120,16 @@ export default function TutorialLayer({ modules, tab, projectId, onNavigate }: {
     return () => window.clearTimeout(timer);
   }, [tab]);
 
+  useEffect(() => {
+    const element = card.current;
+    if (!element) return;
+    const check = () => setMore(element.scrollTop + element.clientHeight < element.scrollHeight - 4);
+    const timer = window.setTimeout(check, 0);
+    element.addEventListener('scroll', check, { passive: true });
+    window.addEventListener('resize', check);
+    return () => { window.clearTimeout(timer); element.removeEventListener('scroll', check); window.removeEventListener('resize', check); };
+  }, [step?.id, mobile, found]);
+
   // O título do cartão recebe o foco a cada passo (o anúncio fica com o leitor de tela).
   useEffect(() => { if (step) heading.current?.focus({ preventScroll: true }); }, [step?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -147,7 +159,7 @@ export default function TutorialLayer({ modules, tab, projectId, onNavigate }: {
         <ChapterList headingLevel={3}/>
       </div>
     </div>}
-    {chapter && step && copy && <section ref={card} className={styles.guide} aria-labelledby="tutorial-step-title" onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); pauseTutorial(); } }}>
+    {chapter && step && copy && <section ref={card} className={`${styles.guide}${more ? ` ${styles.hasMore}` : ''}`} aria-labelledby="tutorial-step-title" onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); pauseTutorial(); } }}>
       <header className={styles.guideHead}>
         <img src="/brand/role-mascote/role-rosto.svg" alt="" width={36} height={36}/>
         <p className={styles.guideContext}><LifeBuoy size={14} aria-hidden="true"/>{chapter.title} · {position} de {allowedIndexes.length}</p>
@@ -162,11 +174,11 @@ export default function TutorialLayer({ modules, tab, projectId, onNavigate }: {
         {last ? <>
           <button type="button" className={`p-button p-button-primary ${styles.goTo}`} onClick={() => finishTutorial()}>Concluir</button>
           <button type="button" className="p-button p-button-subtle" onClick={() => finishTutorial('repeat')}><RotateCcw size={16} aria-hidden="true"/>Repetir esta parte</button>
-          <button type="button" className="p-button p-button-subtle" onClick={() => finishTutorial('chooser')}>Ver outros assuntos</button>
+          {TUTORIAL_CHAPTERS.length > 1 && <button type="button" className="p-button p-button-subtle" onClick={() => finishTutorial('chooser')}>Ver outros assuntos</button>}
         </> : <>
-          {goTo && <button type="button" className={`p-button p-button-primary ${styles.goTo}`} onClick={() => { refocus.current = true; heading.current?.focus({ preventScroll: true }); onNavigate(copy.module!); }}><ExternalLink size={16} aria-hidden="true"/>{copy.openLabel}</button>}
+          {goTo && <button type="button" className={`p-button p-button-primary ${styles.goTo}`} onClick={() => { refocus.current = true; heading.current?.focus({ preventScroll: true }); onNavigate(copy.module!); }}>{copy.openLabel}<ArrowRight size={16} aria-hidden="true"/></button>}
           <button type="button" className={`p-button p-button-subtle ${styles.compact}`} disabled={position <= 1} onClick={previousStep} aria-label="Voltar"><ArrowLeft size={16} aria-hidden="true"/><span className={styles.label}>Voltar</span></button>
-          <button type="button" className={`p-button p-button-subtle ${styles.compact}`} onClick={pauseTutorial} aria-label="Pausar"><Pause size={16} aria-hidden="true"/><span className={styles.label}>Pausar</span></button>
+          <button type="button" className="p-button p-button-subtle" onClick={pauseTutorial}><Pause size={16} aria-hidden="true"/>Pausar</button>
           <button type="button" className={`p-button ${goTo ? 'p-button-subtle' : 'p-button-primary'} ${styles.next}`} onClick={nextStep}>{goTo ? 'Pular' : 'Próximo'}<ArrowRight size={16} aria-hidden="true"/></button>
         </>}
       </div>

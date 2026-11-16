@@ -69,5 +69,5 @@
 .next { margin-left: auto; }
 /* Telas estreitas: Voltar e Pausar só com ícone, tudo numa linha; o texto ganha mais espaço. */
 @media (max-width: 400px) { .guideActions { flex-wrap: nowrap; } .compact { width: 44px; padding: 0; justify-content: center; } .compact .label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; } .next { flex: 1 1 auto; justify-content: center; margin-left: 0; } .guideActions:has(.goTo) { flex-wrap: wrap; } }
-/* Sombra discreta quando há texto para rolar dentro do cartão. */
-.guide { background: linear-gradient(var(--surface) 30%, transparent) center bottom / 100% 24px no-repeat local, radial-gradient(farthest-side at 50% 100%, rgb(0 0 0 / .14), transparent) center bottom / 100% 10px no-repeat scroll, var(--surface); }
+/* Aviso de texto escondido: sombra sobre a barra de botões enquanto houver o que rolar no cartão. */
+.hasMore .guideActions { box-shadow: 0 -12px 12px -10px rgb(0 0 0 / .24); }

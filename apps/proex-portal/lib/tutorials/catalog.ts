@@ -33,6 +33,7 @@ export type TutorialStep = {
   openLabel?: string;
   /** "Você verá" enquanto a pessoa ainda não foi ao módulo do passo. */
   beforeOpen?: string;
+  beforeOpenMobile?: string;
   requires?: StepRequirement;
   /** Rótulos da interface citados no passo. Um teste confere que existem no código. */
   labels: string[];
@@ -79,18 +80,18 @@ export const TUTORIAL_CHAPTERS: readonly TutorialChapter[] = [
       },
       {
         id: 'fixar', title: 'Fixar atalhos',
-        speech: 'Fixe os módulos que você mais usa: eles sobem para Seus atalhos. No Início, toque em Personalizar ou no alfinete de um módulo.',
+        speech: 'Fixe os módulos que você mais usa: eles passam a aparecer em Seus atalhos, no alto do menu. Aqui no Início, clique em Personalizar ou no alfinete ao lado de um módulo.',
         speechMobile: 'Fixe os módulos que você mais usa: eles vão para a barra de baixo. Em Mais, toque no alfinete ao lado do módulo.',
         youWillSee: 'O botão Personalizar do Início destacado. A escolha fica salva na sua conta.',
         youWillSeeMobile: 'O botão Mais destacado. Lá dentro, cada módulo tem um alfinete.',
-        target: '[data-tutorial="inicio-personalizar"]', targetMobile: '[data-tutorial="nav-mais"]', module: 'overview', openLabel: 'Ir para o Início', beforeOpen: 'Toque em Ir para o Início: Personalizar fica em Seus atalhos.',
+        target: '[data-tutorial="inicio-personalizar"]', targetMobile: '[data-tutorial="nav-mais"]', module: 'overview', openLabel: 'Ir para o Início', beforeOpen: 'Clique em Ir para o Início: Personalizar fica no quadro de módulos.', beforeOpenMobile: 'Toque em Ir para o Início: Personalizar fica no quadro de módulos.',
         labels: ['Seus atalhos', 'Personalizar', 'Mais'],
       },
       {
         id: 'projeto', title: 'Escolher o projeto',
         speech: 'No campo Projeto, onde está escrito Todos os projetos, escolha um projeto: listas e números passam a mostrar só ele. Para ver tudo de novo, volte para Todos os projetos.',
         youWillSee: 'O campo Projeto destacado no alto da página.',
-        target: '#filtro-projeto', module: 'overview', openLabel: 'Ir para o Início', beforeOpen: 'Toque em Ir para o Início: o campo Projeto fica no alto da página.', requires: { projects: true },
+        target: '#filtro-projeto', module: 'overview', openLabel: 'Ir para o Início', beforeOpen: 'Clique em Ir para o Início: o campo Projeto fica no alto da página.', beforeOpenMobile: 'Toque em Ir para o Início: o campo Projeto fica no alto da página.', requires: { projects: true },
         labels: ['Projeto', 'Todos os projetos'],
       },
       {
@@ -105,8 +106,9 @@ export const TUTORIAL_CHAPTERS: readonly TutorialChapter[] = [
       {
         id: 'meus-acessos', title: 'Meus acessos',
         speech: 'Na sua conta, Meus acessos mostra qual função vale em cada projeto, organização ou ação. Se faltar um acesso, peça a quem enviou o convite ou à coordenação.',
+        speechMobile: 'Meus acessos mostra sua função em cada projeto ou ação. Se faltar um acesso, peça a quem enviou o convite ou à coordenação.',
         youWillSee: 'O quadro Meus acessos destacado na sua conta.',
-        target: '[data-tutorial="meus-acessos"]', module: 'profile', openLabel: 'Ir para Meus acessos', beforeOpen: 'Toque em Ir para Meus acessos: a sua conta abre com o quadro destacado.',
+        target: '[data-tutorial="meus-acessos"]', module: 'profile', openLabel: 'Ir para Meus acessos', beforeOpen: 'Clique em Ir para Meus acessos: a sua conta abre com o quadro destacado.', beforeOpenMobile: 'Toque em Ir para Meus acessos: a sua conta abre com o quadro destacado.',
         labels: ['Meus acessos'],
       },
       {
