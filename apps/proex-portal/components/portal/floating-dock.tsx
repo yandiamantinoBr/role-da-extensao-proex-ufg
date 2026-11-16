@@ -402,8 +402,8 @@ function MobileFab({ buttonRef, label, badge, open, onOpen }: { buttonRef: React
         const area = { left: right - size, right, bottom: homeBottom, size, limit: Math.round(window.innerHeight * 0.4) };
         // First an empty spot close to home (so it doesn't jump around); otherwise any spot without a control.
         const shift = fabPlacement({ ...area, limit: Math.min(area.limit, 160), blocked: (x, y) => blockedAt(x, y, button, true) }) ?? fabPlacement({ ...area, blocked: (x, y) => blockedAt(x, y, button, false) });
-        if (shift === null) { button.dataset.state = 'away'; return; }
-        button.style.setProperty('--dock-fab-shift', `${shift}px`);
+        // No free spot: stay at home anyway, like the computer's corner button (the page end keeps room for it).
+        button.style.setProperty('--dock-fab-shift', `${shift ?? 0}px`);
         button.dataset.state = 'shown';
       });
     };
