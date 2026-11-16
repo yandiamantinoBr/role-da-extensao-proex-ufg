@@ -11,17 +11,17 @@ const day = (iso: string | null) => iso ? new Intl.DateTimeFormat('pt-BR', { day
 
 /** Lista de capítulos com a situação de cada um. Usada na janela "Ajuda e tutoriais" e na Conta. */
 export default function ChapterList({ headingLevel = 3 }: { headingLevel?: 2 | 3 }) {
-  const { data, loading, error } = useTutorials();
+  const { data, loading, error, active } = useTutorials();
   const Heading = headingLevel === 2 ? 'h2' : 'h3';
   if (!data && loading) return <p className={styles.muted} role="status">Carregando os tutoriais…</p>;
-  if (!data) return <p className={styles.muted} role="alert">{error || 'Os tutoriais não abriram agora. Tente de novo em instantes.'}</p>;
+  if (!data) return <p className={styles.muted} role="alert">{/acesso mudou|Entre/i.test(error) ? 'Os tutoriais ficam disponíveis quando a sua conta estiver ativa.' : error || 'Os tutoriais não abriram agora. Tente de novo em instantes.'}</p>;
   return <div className={styles.list}>
     <ul className={styles.chapters}>
       {TUTORIAL_CHAPTERS.map(chapter => {
         const state = data.chapters.find(entry => entry.id === chapter.id), progress = data.progress[chapter.id];
         const total = state?.steps.filter(step => step.available).length ?? 0;
         const stopped = progress && progress.status !== 'completed' && progress.stepId ? chapter.steps.find(step => step.id === progress.stepId) : undefined;
-        const finished = Boolean(progress?.completedAt);
+        const finished = Boolean(progress?.completedAt) && active?.chapterId !== chapter.id;
         return <li key={chapter.id} className={styles.chapter}>
           <div className={styles.chapterText}>
             <Heading>{chapter.title}</Heading>
@@ -29,11 +29,11 @@ export default function ChapterList({ headingLevel = 3 }: { headingLevel?: 2 | 3
             <p className={styles.meta}>
               {total} {total === 1 ? 'passo' : 'passos'} · cerca de {chapter.minutes} min
               {finished && <span className={styles.done}><CheckCircle2 size={14} aria-hidden="true"/>Concluído em {day(progress!.completedAt)}{state?.outdated ? ' · com novidades' : ''}</span>}
-              {stopped && <span>Parou em “{stopped.title}”</span>}
+              {stopped && active?.chapterId !== chapter.id && <span>Parou em “{stopped.title}”</span>}
             </p>
           </div>
           <div className={styles.chapterActions}>
-            {total === 0 ? <span className={styles.muted}>Sem passos para o seu acesso agora.</span> : stopped
+            {active?.chapterId === chapter.id ? <span className={styles.now}>Em andamento agora</span> : total === 0 ? <span className={styles.muted}>Sem passos para o seu acesso agora.</span> : stopped
               ? <><button type="button" className="p-button p-button-primary" onClick={() => void startChapter(chapter.id)}><Play size={16} aria-hidden="true"/>Retomar</button>
                 <button type="button" className="p-button p-button-subtle" onClick={() => void startChapter(chapter.id, { restart: true })}><RotateCcw size={16} aria-hidden="true"/>Recomeçar</button></>
               : <button type="button" className="p-button p-button-primary" onClick={() => void startChapter(chapter.id, { restart: finished })}>{finished ? <><RotateCcw size={16} aria-hidden="true"/>Repetir</> : <><Play size={16} aria-hidden="true"/>Começar</>}</button>}

@@ -156,6 +156,16 @@ export function MobileNavigation({ modules, active, onNavigate, pinned, role, on
         <input value={query} onChange={event => setQuery(event.target.value)} placeholder="O que você precisa fazer?"/>
         </label>
         <p className="pn-drawer-help">Fixe seus módulos para encontrá-los no seu início.</p>
+        {onHelp ? <button type="button" className="pn-drawer-link pn-drawer-help-link" onClick={() => { close(); onHelp(); }}>
+            <span>
+            <LifeBuoy size={21}/>
+            </span>
+            <div>
+            <strong>Ajuda e tutoriais</strong>
+            <small>Passo a passo guiado pelo Rolê, sem IA.</small>
+            </div>
+            <ArrowRight size={16}/>
+            </button> : null}
         <div className="pn-drawer-modules">{modules.filter(module => `${module.label} ${module.description}`.toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR'))).map(({ id, label, description, icon: Icon }) => <div key={id} className={active === id ? 'is-active' : ''}>
             <button className="pn-drawer-link" onClick={() => navigate(id)} aria-current={active === id ? 'page' : undefined}>
             <span>
@@ -169,16 +179,6 @@ export function MobileNavigation({ modules, active, onNavigate, pinned, role, on
             </button>{id !== 'overview' && <button className={`pn-pin-button ${pinned.includes(id) ? 'is-pinned' : ''}`} aria-label={`${pinned.includes(id) ? 'Remover' : 'Fixar'} ${label} ${pinned.includes(id) ? 'dos' : 'nos'} atalhos`} aria-pressed={pinned.includes(id)} onClick={() => onTogglePin(id)}>
                 <Pin size={17}/>
                 </button>}{(subitems[id]?.length ?? 0) > 0 && <ul className={subStyles.mobileList} aria-label={`${label} ${id === 'work-teams' ? 'fixadas' : 'fixados'}`}>{(showAll[id] ? subitems[id]! : subitems[id]!.slice(0, SUBITEM_LIMIT)).map(item => <li key={item.id}><button type="button" className={subStyles.mobileItem} aria-current={item.current ? 'page' : undefined} onClick={() => { item.onOpen(); close(); }}><Pin size={13} aria-hidden="true"/><span>{item.label}</span></button></li>)}{subitems[id]!.length > SUBITEM_LIMIT && <li><button type="button" className={subStyles.mobileItem} aria-expanded={!!showAll[id]} onClick={() => setShowAll(current => ({ ...current, [id]: !current[id] }))}><span>{showAll[id] ? 'Mostrar menos' : moreLabel(id, subitems[id]!.length)}</span></button></li>}</ul>}</div>)}</div>{!modules.some(module => `${module.label} ${module.description}`.toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR'))) && <p className="pn-no-results">Nenhum módulo encontrado. Tente outro nome.</p>}
-        {onHelp ? <button type="button" className="pn-drawer-link pn-drawer-help-link" onClick={() => { setOpen(false); setQuery(''); onHelp(); }}>
-            <span>
-            <LifeBuoy size={21}/>
-            </span>
-            <div>
-            <strong>Ajuda e tutoriais</strong>
-            <small>Passo a passo guiado pelo Rolê, sem IA.</small>
-            </div>
-            <ArrowRight size={16}/>
-            </button> : null}
         </div>
         </div>}</>;
 }

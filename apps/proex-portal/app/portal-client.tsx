@@ -880,7 +880,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         </div>
         <button role="menuitem" onClick={() => { navigate('profile'); }}>Minha conta e senha <Users size={16}/>
         </button>
-        <button role="menuitem" onClick={() => { setAccountOpen(false); openTutorialChooser(); }}>Ajuda e tutoriais <LifeBuoy size={16}/></button>
+        <button role="menuitem" onClick={() => { setAccountOpen(false); accountRef.current?.querySelector<HTMLButtonElement>('.p-account-trigger')?.focus({ preventScroll: true }); openTutorialChooser(); }}>Ajuda e tutoriais <LifeBuoy size={16}/></button>
         <button role="menuitem" disabled={refreshing} onClick={() => { setAccountOpen(false); void refresh(); }}>Atualizar dados <RefreshCw size={16}/></button>
         <button role="menuitem" disabled={busy} onClick={() => void logout()}>Sair e trocar de conta <LogOut size={16}/>
         </button>

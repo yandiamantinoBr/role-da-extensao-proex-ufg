@@ -29,6 +29,10 @@ export type TutorialStep = {
   /** Módulo onde o controle fica; a tela oferece "Abrir no Portal" fora dele. */
   module?: ModuleId;
   moduleMobile?: ModuleId;
+  /** Texto do botão que leva ao módulo do passo (ex.: "Ir para Meus acessos"). */
+  openLabel?: string;
+  /** "Você verá" enquanto a pessoa ainda não foi ao módulo do passo. */
+  beforeOpen?: string;
   requires?: StepRequirement;
   /** Rótulos da interface citados no passo. Um teste confere que existem no código. */
   labels: string[];
@@ -53,7 +57,7 @@ export const TUTORIAL_CHAPTERS: readonly TutorialChapter[] = [
     steps: [
       {
         id: 'boas-vindas', title: 'Comece por aqui',
-        speech: 'Oi, eu sou o Rolê. Em poucos passos você vai se localizar no Portal. Nada do que fizermos aqui grava ou muda dados: só mostro onde ficam as coisas.',
+        speech: 'Oi, eu sou o Rolê. Em poucos passos você vai se localizar no Portal. O tour não muda seus registros de trabalho: só mostro onde ficam as coisas.',
         youWillSee: 'Este cartão. Use Próximo para seguir, Voltar para rever e Pausar para continuar outra hora.',
         labels: [],
       },
@@ -79,15 +83,15 @@ export const TUTORIAL_CHAPTERS: readonly TutorialChapter[] = [
         speechMobile: 'Fixe os módulos que você mais usa: eles vão para a barra de baixo. Em Mais, toque no alfinete ao lado do módulo.',
         youWillSee: 'O botão Personalizar do Início destacado. A escolha fica salva na sua conta.',
         youWillSeeMobile: 'O botão Mais destacado. Lá dentro, cada módulo tem um alfinete.',
-        target: '[data-tutorial="inicio-personalizar"]', targetMobile: '[data-tutorial="nav-mais"]', module: 'overview',
+        target: '[data-tutorial="inicio-personalizar"]', targetMobile: '[data-tutorial="nav-mais"]', module: 'overview', openLabel: 'Ir para o Início', beforeOpen: 'Toque em Ir para o Início: Personalizar fica em Seus atalhos.',
         labels: ['Seus atalhos', 'Personalizar', 'Mais'],
       },
       {
         id: 'projeto', title: 'Escolher o projeto',
-        speech: 'No campo Projeto, escolha um projeto: listas e números passam a mostrar só ele. Limpar filtros volta a todos os projetos que você pode ver.',
+        speech: 'No campo Projeto, onde está escrito Todos os projetos, escolha um projeto: listas e números passam a mostrar só ele. Para ver tudo de novo, volte para Todos os projetos.',
         youWillSee: 'O campo Projeto destacado no alto da página.',
-        target: '#filtro-projeto', module: 'overview', requires: { projects: true },
-        labels: ['Projeto', 'Limpar filtros'],
+        target: '#filtro-projeto', module: 'overview', openLabel: 'Ir para o Início', beforeOpen: 'Toque em Ir para o Início: o campo Projeto fica no alto da página.', requires: { projects: true },
+        labels: ['Projeto', 'Todos os projetos'],
       },
       {
         id: 'conta', title: 'O menu da conta',
@@ -102,13 +106,13 @@ export const TUTORIAL_CHAPTERS: readonly TutorialChapter[] = [
         id: 'meus-acessos', title: 'Meus acessos',
         speech: 'Na sua conta, Meus acessos mostra qual função vale em cada projeto, organização ou ação. Se faltar um acesso, peça a quem enviou o convite ou à coordenação.',
         youWillSee: 'O quadro Meus acessos destacado na sua conta.',
-        target: '[data-tutorial="meus-acessos"]', module: 'profile',
+        target: '[data-tutorial="meus-acessos"]', module: 'profile', openLabel: 'Ir para Meus acessos', beforeOpen: 'Toque em Ir para Meus acessos: a sua conta abre com o quadro destacado.',
         labels: ['Meus acessos'],
       },
       {
-        id: 'fim', title: 'Pronto',
-        speech: 'Pronto! Quando quiser rever, abra Ajuda e tutoriais no menu da conta.',
-        speechMobile: 'Pronto! Quando quiser rever, abra Ajuda e tutoriais no menu da conta ou em Mais.',
+        id: 'fim', title: 'Tudo certo',
+        speech: 'Você já sabe se localizar no Portal. Para rever, abra Ajuda e tutoriais no menu da conta.',
+        speechMobile: 'Você já sabe se localizar no Portal. Para rever, abra Ajuda e tutoriais no menu da conta ou em Mais.',
         youWillSee: 'Você pode repetir esta parte ou ver outros assuntos.',
         labels: ['Ajuda e tutoriais'],
       },

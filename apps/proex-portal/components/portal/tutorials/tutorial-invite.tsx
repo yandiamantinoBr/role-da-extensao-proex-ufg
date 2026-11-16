@@ -14,7 +14,7 @@ export default function TutorialInvite() {
     <img src="/brand/role-mascote/role-frontal.svg" alt="" width={56} height={102} className={styles.inviteMascot}/>
     <div className={styles.inviteText}>
       <h2 id="tutorial-invite-title">Oi, sou o Rolê. Quer conhecer o Portal?</h2>
-      <p>Você pode fazer um tour, escolher uma área ou voltar quando quiser. Leva uns 3 minutos e não muda nenhum dado.</p>
+      <p>Você pode fazer um tour, escolher um assunto ou voltar quando quiser. Leva uns 3 minutos e não muda seus registros de trabalho.</p>
       <div className={styles.inviteActions}>
         <button type="button" className="p-button p-button-primary" onClick={() => void answerInvite('tour')}>Fazer o tour completo</button>
         <button type="button" className="p-button p-button-subtle" onClick={() => void answerInvite('choose')}>Escolher assunto</button>

@@ -75,7 +75,13 @@ export async function loadTutorials(projectId = state.projectId) {
   }
 }
 
-async function save(body: Record<string, unknown>) {
+// Gravações em fila: uma de cada vez, na ordem dos cliques (o ponto de parada nunca volta um passo).
+let queue: Promise<void> = Promise.resolve();
+function save(body: Record<string, unknown>): Promise<void> {
+  queue = queue.then(() => send(body));
+  return queue;
+}
+async function send(body: Record<string, unknown>) {
   try { const data = await request('POST', body); set({ data }); reconcile(data); }
   catch (error) {
     const status = (error as { status?: number }).status;
@@ -146,6 +152,8 @@ export function pauseTutorial() {
 export function finishTutorial(then?: 'repeat' | 'chooser') {
   const active = state.active;
   set({ active: null, notice: '' });
+  // Garante a conclusão mesmo se a gravação ao chegar no último passo tiver falhado.
+  if (active) void save({ action: 'progress.save', chapterId: active.chapterId, stepId: chapterById(active.chapterId)!.steps[active.index].id, status: 'completed' });
   if (then === 'repeat' && active) { void startChapter(active.chapterId, { restart: true }); return; }
   if (then === 'chooser') { set({ chooser: true }); void loadTutorials(); return; }
   restoreFocus();

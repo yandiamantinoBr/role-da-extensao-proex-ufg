@@ -1,7 +1,7 @@
 /* Tutoriais do Portal: convite do Rolê, janela de assuntos, cartão guiado e destaque do controle. Tokens do Portal. */
 
 /* Destaque do controle real do passo (fora deste componente, por isso global). */
-:global([data-tutorial-spot]) { outline: 3px solid var(--focus); outline-offset: 3px; border-radius: 10px; box-shadow: 0 0 0 7px color-mix(in srgb, var(--focus) 28%, transparent); position: relative; z-index: 2; }
+:global([data-tutorial-spot]) { outline: 3px solid var(--focus); outline-offset: 3px; border-radius: 10px; box-shadow: 0 0 0 7px color-mix(in srgb, var(--focus) 28%, transparent); scroll-margin-top: 84px; }
 @media (prefers-reduced-motion: no-preference) {
   :global([data-tutorial-spot]) { animation: spot 1.6s ease-out 2; }
   @keyframes spot { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--focus) 55%, transparent); } 100% { box-shadow: 0 0 0 7px color-mix(in srgb, var(--focus) 28%, transparent); } }
@@ -49,6 +49,8 @@
 @media (max-width: 720px) { .guide { left: 12px; right: 12px; width: auto; bottom: calc(78px + env(safe-area-inset-bottom, 0px)); max-height: 46dvh; } }
 :global(body):has(.guide) :global(.p-main) { padding-bottom: 300px; }
 .guideHead { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; }
+.guideHead img, .dialogHead img { border-radius: 10px; }
+.now { display: inline-flex; align-items: center; min-height: 44px; color: var(--brand-ink); font-size: 13.5px; font-weight: 700; }
 .guideContext { display: inline-flex; align-items: center; gap: 6px; margin: 0; color: var(--text-secondary); font-size: 12.5px; font-weight: 700; letter-spacing: .02em; }
 .guideClose { width: 44px; height: 44px; }
 .guide h2 { margin: 0; color: var(--ink); font-family: var(--font-display); font-size: 18px; line-height: 1.3; outline: none; }
@@ -57,8 +59,8 @@
 .see { margin: 0; padding: 8px 10px; border-radius: 10px; background: var(--surface-soft); color: var(--text-secondary); font-size: 13px; line-height: 1.5; }
 .see strong { color: var(--ink); }
 .notice { margin: 0; color: var(--brand-ink); font-size: 13px; font-weight: 600; }
-.openHere { justify-self: start; min-height: 44px; }
-.guideActions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.goTo { flex: 1 1 100%; justify-content: center; }
+.guideActions { position: sticky; bottom: -16px; z-index: 1; display: flex; flex-wrap: wrap; gap: 8px; margin: 4px -16px -16px; padding: 10px 16px 16px; border-top: 1px solid var(--line); background: var(--surface); }
 .guideActions :global(.p-button) { min-height: 44px; }
 .next { margin-left: auto; }
 @media (max-width: 380px) { .guideActions :global(.p-button) { flex: 1 1 auto; justify-content: center; } .next { margin-left: 0; } }

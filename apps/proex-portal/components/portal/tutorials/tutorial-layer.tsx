@@ -27,6 +27,8 @@ export function stepCopy(step: TutorialStep, mobile: boolean) {
     youWillSee: mobile && step.youWillSeeMobile ? step.youWillSeeMobile : step.youWillSee,
     target: mobile && step.targetMobile ? step.targetMobile : step.target,
     module: mobile && step.moduleMobile ? step.moduleMobile : step.module,
+    openLabel: step.openLabel ?? 'Abrir no Portal',
+    beforeOpen: step.beforeOpen,
   };
 }
 
@@ -47,6 +49,8 @@ export default function TutorialLayer({ modules, tab, projectId, onNavigate }: {
   // Resultado da busca do controle, guardado por passo: um passo novo começa sem resultado.
   const [spot, setSpot] = useState<{ key: string; found: boolean | null }>({ key: '', found: null });
   const heading = useRef<HTMLHeadingElement>(null), dialog = useRef<HTMLDivElement>(null);
+  // Depois de "Ir para…", o Portal move o foco para a página nova; o título do cartão o recupera.
+  const refocus = useRef(false);
 
   // Acesso atual: consulta ao montar e a cada troca de projeto.
   useEffect(() => { void loadTutorials(projectId); }, [projectId]);
@@ -70,6 +74,8 @@ export default function TutorialLayer({ modules, tab, projectId, onNavigate }: {
   const moduleAllowed = copy?.module ? modules.includes(copy.module) : false;
   const spotKey = active ? `${active.chapterId}:${active.index}:${tab}:${copy?.target ?? ''}` : '';
   const found = spot.key === spotKey ? spot.found : null;
+  /** O controle fica em outro módulo que a pessoa pode abrir: o cartão oferece ir até lá. */
+  const goTo = Boolean(copy?.module && moduleAllowed && tab !== copy.module && found !== true);
 
   // Destaque do controle real. A página pode estar carregando: tenta por até ~2,5 s.
   useEffect(() => {
@@ -80,7 +86,9 @@ export default function TutorialLayer({ modules, tab, projectId, onNavigate }: {
       const target = visibleTarget(copy.target);
       if (target) {
         spotted = target; target.setAttribute(SPOT, '');
-        target.scrollIntoView({ block: 'center', inline: 'nearest', behavior: reduce ? 'auto' : 'smooth' });
+        // Só rola quando o controle está fora da área visível (acima do cartão no celular).
+        const box = target.getBoundingClientRect(), limit = mobile ? innerHeight * 0.5 : innerHeight - 80;
+        if (box.top < 0 || box.top > limit) target.scrollIntoView({ block: mobile ? 'start' : 'center', inline: 'nearest', behavior: reduce ? 'auto' : 'smooth' });
         setSpot({ key: spotKey, found: true }); return;
       }
       if (!copy.target || ++tries > 10) { setSpot({ key: spotKey, found: copy.target ? false : null }); return; }
@@ -88,7 +96,14 @@ export default function TutorialLayer({ modules, tab, projectId, onNavigate }: {
     };
     timer = window.setTimeout(look, 0);
     return () => { window.clearTimeout(timer); spotted?.removeAttribute(SPOT); };
-  }, [spotKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [spotKey, mobile]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!refocus.current) return;
+    refocus.current = false;
+    const timer = window.setTimeout(() => heading.current?.focus({ preventScroll: true }), 400);
+    return () => window.clearTimeout(timer);
+  }, [tab]);
 
   // O título do cartão recebe o foco a cada passo (o anúncio fica com o leitor de tela).
   useEffect(() => { if (step) heading.current?.focus({ preventScroll: true }); }, [step?.id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -127,19 +142,19 @@ export default function TutorialLayer({ modules, tab, projectId, onNavigate }: {
       </header>
       <h2 id="tutorial-step-title" ref={heading} tabIndex={-1}>{step.title}</h2>
       <p className={styles.speech}>{copy.speech}</p>
-      <p className={styles.see}><strong>Você verá:</strong> {found === false && !(copy.module && moduleAllowed && tab !== copy.module) ? 'este controle não está nesta página agora.' : copy.youWillSee}</p>
+      <p className={styles.see}><strong>Você verá:</strong> {goTo && copy.beforeOpen ? copy.beforeOpen : found === false && !goTo ? 'este controle não está nesta página agora.' : copy.youWillSee}</p>
       {notice && <p className={styles.notice} role="status">{notice}</p>}
-      {found !== true && copy.module && moduleAllowed && tab !== copy.module && <button type="button" className={`p-button p-button-subtle ${styles.openHere}`} onClick={() => onNavigate(copy.module!)}><ExternalLink size={16} aria-hidden="true"/>Abrir no Portal</button>}
-      {found === false && (!copy.module || !moduleAllowed || tab === copy.module) && <p className={styles.muted}>Siga para o próximo passo: este controle aparece quando houver dados ou acesso para ele.</p>}
+      {found === false && !goTo && <p className={styles.muted}>Siga para o próximo passo: este controle aparece quando houver dados ou acesso para ele.</p>}
       <div className={styles.guideActions}>
         {last ? <>
           <button type="button" className="p-button p-button-subtle" onClick={() => finishTutorial('repeat')}><RotateCcw size={16} aria-hidden="true"/>Repetir esta parte</button>
           <button type="button" className="p-button p-button-subtle" onClick={() => finishTutorial('chooser')}>Ver outros assuntos</button>
           <button type="button" className="p-button p-button-primary" onClick={() => finishTutorial()}>Concluir</button>
         </> : <>
+          {goTo && <button type="button" className={`p-button p-button-primary ${styles.goTo}`} onClick={() => { refocus.current = true; heading.current?.focus({ preventScroll: true }); onNavigate(copy.module!); }}><ExternalLink size={16} aria-hidden="true"/>{copy.openLabel}</button>}
           <button type="button" className="p-button p-button-subtle" disabled={position <= 1} onClick={previousStep}><ArrowLeft size={16} aria-hidden="true"/>Voltar</button>
           <button type="button" className="p-button p-button-subtle" onClick={pauseTutorial}><Pause size={16} aria-hidden="true"/>Pausar</button>
-          <button type="button" className={`p-button p-button-primary ${styles.next}`} onClick={nextStep}>Próximo<ArrowRight size={16} aria-hidden="true"/></button>
+          <button type="button" className={`p-button ${goTo ? 'p-button-subtle' : 'p-button-primary'} ${styles.next}`} onClick={nextStep}>{goTo ? 'Pular' : 'Próximo'}<ArrowRight size={16} aria-hidden="true"/></button>
         </>}
       </div>
     </section>}

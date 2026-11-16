@@ -39,7 +39,7 @@ test('every highlighted control exists: data-tutorial anchors and ids are in the
 test('the Portal offers the tutorial from the Início invite, the account menu, Mais and Conta, and mounts the guide once', () => {
   const client = read('app/portal-client.tsx');
   assert.match(client, /\{tab === 'overview' && <TutorialInvite\/>\}/);
-  assert.match(client, /role="menuitem" onClick=\{\(\) => \{ setAccountOpen\(false\); openTutorialChooser\(\); \}\}>Ajuda e tutoriais/);
+  assert.match(client, /role="menuitem" onClick=\{\(\) => \{ setAccountOpen\(false\);.*openTutorialChooser\(\); \}\}>Ajuda e tutoriais/);
   assert.match(client, /onHelp=\{openTutorialChooser\}/);
   assert.match(client, /<AccountAccessPanel[^>]*\/><TutorialHelpCard\/>/);
   assert.equal(client.match(/<TutorialLayer /g)?.length, 1);
@@ -65,7 +65,7 @@ function store() {
   const require = name => name === 'react' ? { useSyncExternalStore: () => null } : name === '@/lib/tutorials/catalog' ? catalog : {};
   const doc = { activeElement: null, body: {}, getElementById: () => null };
   const api = cjs('components/portal/tutorials/tutorial-store.ts', require, { fetch, document: doc, HTMLElement: class {} });
-  const answer = async (data, ok = true, status = 200) => { const request = requests.shift(); request.resolve({ ok, status, json: async () => data }); await new Promise(resolve => setImmediate(resolve)); return request; };
+  const answer = async (data, ok = true, status = 200) => { for (let wait = 0; wait < 20 && !requests.length; wait++) await new Promise(resolve => setImmediate(resolve)); const request = requests.shift(); request.resolve({ ok, status, json: async () => data }); await new Promise(resolve => setImmediate(resolve)); return request; };
   return { api, requests, answer, responses };
 }
 const workspace = (available = {}, extra = {}) => ({

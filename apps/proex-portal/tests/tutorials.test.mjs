@@ -100,6 +100,16 @@ test('revoked or blocked accounts: no actor means 401; a stale actor of a blocke
   assert.equal(steps(await tutorialWorkspace(db, await revoked.actor(), {})).projeto, false);
 });
 
+test('an account still pending activation cannot read or write tutorial progress', async () => {
+  const db = fixture(), pending = await person(db, 'pending', [['viewer', 'project-a']]);
+  db.native.prepare("UPDATE portal_users SET activation_pending=1 WHERE user_id='user-pending'").run();
+  const actor = await pending.actor();
+  assert.deepEqual(plain(actor.members), [], 'pending accounts carry no role');
+  await assert.rejects(tutorialWorkspace(db, actor, {}), error => error.status === 403);
+  await assert.rejects(tutorialAction(db, actor, { action: 'invite.dismiss' }), error => error.status === 403);
+  assert.equal(db.native.prepare('SELECT COUNT(*) n FROM user_tutorials').get().n, 0);
+});
+
 test('progress: pause, resume, complete, repeat and restart keep the first completion; each person sees only their own', async () => {
   const db = fixture(), ana = await person(db, 'ana', [['manager', 'project-a']]), bia = await person(db, 'bia', [['viewer', 'project-b']]);
   const actor = await ana.actor();
