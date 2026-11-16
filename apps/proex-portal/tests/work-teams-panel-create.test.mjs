@@ -129,3 +129,10 @@ test('a project reader sees only the project and unit recuts and has no organiza
   assert.ok(!filters.includes('multi') && !filters.includes('unlinked'));
   assert.equal(h.button('Nova equipe'), undefined);
 });
+
+test('a team with no demands on the page shows no grey export buttons (crítica de 16/11)', async () => {
+  const h = harness({}, [teamRow('team-x', 'Comunicação')]);
+  await h.settle();
+  assert.ok(h.body().includes('Comunicação'));
+  assert.equal(h.nodes().find(node => node.props?.label === 'Exportar demandas da equipe'), undefined);
+});

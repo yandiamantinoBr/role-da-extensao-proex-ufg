@@ -21,3 +21,6 @@
 .metric{border:1px solid var(--line)}
 .metric strong{font-size:28px}
 .metric>span{font-weight:600;color:var(--ink)}
+
+/* Zero não é alerta (crítica de 16/11): "Atenção 0" e "Prazo hoje 0" ficam em cinza, nos dois temas. */
+:root .metrics .metric[data-zero]{--metric-tone:var(--muted)}
