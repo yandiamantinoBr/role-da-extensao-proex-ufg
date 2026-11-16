@@ -345,3 +345,24 @@ test('the client accepts versioned activity steps and rejects unknown checklist 
  await assert.rejects(client({...valid,checklist:{...valid.checklist,rows:[{...valid.checklist.rows[0],answer:'invented'}]}})('view=detail'),/não corresponde/);
  const h=harness();try{await ready(h);h.button('Task A').props.onClick();h.render();h.reply(h.pending('detail'),valid);await tick();h.render();assert.ok(h.hasComponent('ActivityChecklistView'));assert.ok(!h.body().includes('Registre todos os tamanhos'));}finally{h.dispose();}
 });
+
+test('the create hint offers general demands only when the organization option exists for this person',async()=>{
+ const hint=h=>h.find('p',node=>/Para criar uma demanda/.test(text(node)));
+ const managing=harness();
+ try{
+  managing.render();await ready(managing);managing.select('Projeto','');managing.render();managing.timers();
+  for(const kind of ['catalog','tasks']){const request=managing.pending(kind);if(request)managing.reply(request,kind==='catalog'?catalog():{tasks:[task()],hasMore:false,today:'2026-10-31'});}await tick();managing.render();
+  assert.match(text(hint(managing)),/selecione um projeto ou Somente demandas gerais/);
+ }finally{managing.dispose();}
+ const editor=harness();
+ try{
+  editor.render();
+  const restricted={...catalog(),organizations:catalog().organizations.map(org=>({...org,canManage:false}))};
+  editor.reply(editor.pending('catalog'),restricted);editor.reply(editor.pending('tasks'),{tasks:[task()],hasMore:false,today:'2026-10-31'});await tick();editor.render();editor.select('Projeto','');editor.render();editor.timers();
+  for(const kind of ['catalog','tasks']){const request=editor.pending(kind);if(request)editor.reply(request,kind==='catalog'?restricted:{tasks:[task()],hasMore:false,today:'2026-10-31'});}await tick();editor.render();
+  const message=text(hint(editor));
+  assert.match(message,/Para criar uma demanda, selecione um projeto\./);
+  assert.doesNotMatch(message,/demandas gerais/,'project editors never see an option they do not have');
+  assert.equal(editor.find('option',node=>node.props.value==='__organization__'),undefined);
+ }finally{editor.dispose();}
+});
