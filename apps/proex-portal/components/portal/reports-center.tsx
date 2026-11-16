@@ -736,7 +736,7 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
       {!loading && truncated && <small className={styles.warn}>{dataset === 'outflow_details' ? 'Consulta parcial: limite de 5.000 linhas ou 3 MiB. Refine o recorte para consultar e exportar tudo.' : 'Mostrando as primeiras 5.000 linhas. Refine o recorte para ver tudo.'}</small>}
     </div>
 
-    {!loading && withheld && <p className={styles.restricted}><Info size={17} aria-hidden="true"/><span>As colunas Condição na saída e Condição no retorno aparecem como “Restrito” porque podem ter anotações pessoais. Só quem gerencia os empréstimos do projeto vê esse conteúdo.</span></p>}
+    {!loading && withheld && (columns.includes('condicao_saida') || columns.includes('condicao_retorno')) && <p className={styles.restricted}><Info size={17} aria-hidden="true"/><span>As colunas Condição na saída e Condição no retorno aparecem como “Restrito” porque podem ter anotações pessoais. Só quem gerencia os empréstimos do projeto vê esse conteúdo.</span></p>}
     {!loading && filtered.length > 0 && <ReportMetrics metrics={kpis}/>}
 
     <div role="alert">{queryFailure && <p className="p-notice p-notice-error">{queryFailure}</p>}</div>
