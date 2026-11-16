@@ -197,6 +197,18 @@ test('a persistent polite result summary announces the loaded scope and page aft
   } finally {h.dispose();}
 });
 
+test('the loaded summary is only for screen readers, and the export card waits for something to export (crítica de 16/11)', async () => {
+  const h = harness(); try {
+    await h.ready(); const summary = h.find('p', node => node.props.role === 'status');
+    assert.equal(summary.props.className, 'visually-hidden', 'antes, a frase "Demandas (Pendentes): 1–1 de 90" aparecia na tela repetindo os totais');
+    assert.ok(h.find('h3', node => node.props.id === 'my-work-export-title' && text(node) === 'Baixar resumo'));
+    assert.match(h.body(), /6 responsabilidades das páginas atuais/); assert.doesNotMatch(h.body(), /acompanhamentos|Resumo destas páginas/);
+    h.changeStatus('completed'); h.render();
+    await h.ready(response({scope: {...response().scope, status: 'completed'}, tasks: {items: [], total: 0, hasMore: false, nextOffset: null}, responsibilities: {items: [], total: 0, hasMore: false, nextOffset: null}}));
+    assert.equal(h.find('section', node => node.props['aria-labelledby'] === 'my-work-export-title'), undefined, 'sem nada para baixar, os botões cinza somem');
+  } finally {h.dispose();}
+});
+
 test('a new server day hides stale totals, cancels old responses and preserves the selected filters', async () => {
   const h = harness('meu-trabalho-panel', {serverDay: '2026-10-31'}); try {
     await h.ready(); h.changeStatus('overdue'); h.render();
