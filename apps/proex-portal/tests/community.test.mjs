@@ -125,6 +125,22 @@ test('ombuds per-person brake lives only in memory and the collective message ce
  const put=f.native.prepare("INSERT INTO ombuds_messages(id,report_id,side,body,sent_on,seq) VALUES(?,?,'reporter','x',?,?)");for(let i=0;i<ombuds.OMBUDS_DAILY_MESSAGES;i++)put.run(crypto.randomUUID(),id,day,100+i);
  ombuds.resetOmbudsMemoryBrake();await assert.rejects(()=>ombuds.ombudsReporterAction(f.db,a,{action:'reply',code,body:'Além do teto coletivo.'}),e=>e.status===429);});
 
+test('posição dos widgets: padrão é o modo de hoje, cada campo grava sozinho, valores validados e nada apaga a escolha',async t=>{const f=fixture(t),a=await f.user('a','viewer','p-a','o-a'),b=await f.user('b','viewer','p-a','o-a'),outsider=await f.user('v',null);
+ assert.deepEqual((await widgets.dockState(f.db,a)).layout,{desktop:'floating',mobile:'header'},'nobody changes without choosing');
+ assert.deepEqual(await widgets.saveDockLayout(f.db,a,{action:'layout',device:'mobile',value:'floating'}),{layout:{desktop:'floating',mobile:'floating'}},'saving first time creates the row');
+ await widgets.saveDock(f.db,a,{action:'dock',enabled:['notes','calendar'],open:'notes',minimized:false,hidden:['role']});
+ assert.deepEqual(await widgets.saveDockLayout(f.db,a,{action:'layout',device:'desktop',value:'sidebar'}),{layout:{desktop:'sidebar',mobile:'floating'}},'one field does not erase the other');
+ const state=await widgets.dockState(f.db,a);assert.deepEqual(state.layout,{desktop:'sidebar',mobile:'floating'});assert.deepEqual(state.dock,{enabled:['notes','calendar'],open:'notes',minimized:false,hidden:['role']},'choosing a position keeps the widgets');
+ await widgets.saveDock(f.db,a,{action:'dock',enabled:['notes'],open:null,minimized:false,hidden:[]});assert.deepEqual((await widgets.dockState(f.db,a)).layout,{desktop:'sidebar',mobile:'floating'},'dock saves from an old tab preserve the layout');
+ await assert.rejects(()=>widgets.saveDock(f.db,a,{action:'dock',enabled:[],open:null,minimized:false,hidden:[],layout:{desktop:'floating'}}),e=>e.status===400,'the dock save cannot carry a layout');
+ for(const bad of [{device:'desktop',value:'header'},{device:'mobile',value:'sidebar'},{device:'tablet',value:'floating'},{device:'desktop'},{device:'desktop',value:'floating',extra:1},{device:'desktop',value:{x:1}}])
+  await assert.rejects(()=>widgets.saveDockLayout(f.db,a,{action:'layout',...bad}),e=>e.status===400);
+ assert.deepEqual((await widgets.dockState(f.db,a)).layout,{desktop:'sidebar',mobile:'floating'},'a refused value changes nothing');
+ assert.deepEqual((await widgets.dockState(f.db,b)).layout,{desktop:'floating',mobile:'header'},'each person has their own choice');
+ await assert.rejects(()=>widgets.saveDockLayout(f.db,outsider,{action:'layout',device:'desktop',value:'sidebar'}),e=>e.status===403);await assert.rejects(()=>widgets.saveDockLayout(f.db,null,{action:'layout',device:'desktop',value:'sidebar'}),e=>e.status===401);
+ assert.deepEqual(widgets.parseDockLayout('{"layout":{"desktop":"evil","mobile":"floating"}}'),{desktop:'floating',mobile:'floating'},'unknown stored values fall back to the default');assert.deepEqual(widgets.parseDockLayout('not json'),{desktop:'floating',mobile:'header'});
+ f.native.prepare("UPDATE personal_widget_settings SET dock='broken' WHERE user_id='a'").run();assert.deepEqual((await widgets.saveDockLayout(f.db,a,{action:'layout',device:'mobile',value:'header'})).layout,{desktop:'floating',mobile:'header'},'a damaged row is repaired, not trusted');
+ const route=readFileSync(new URL('../app/api/community/widgets/route.ts',import.meta.url),'utf8');assert.match(route,/input\.action === 'layout' \? await saveDockLayout/);});
 test('doca: tudo desligado por padrão, estado por pessoa, validação e compatibilidade com os widgets antigos',async t=>{const f=fixture(t),a=await f.user('a','viewer','p-a','o-a'),b=await f.user('b','viewer','p-a','o-a');
  assert.deepEqual((await widgets.dockState(f.db,a)).dock,{enabled:[],open:null,minimized:false,hidden:[]});
  await widgets.saveDock(f.db,a,{action:'dock',enabled:['notes','calendar'],open:'calendar',minimized:true,hidden:['role']});

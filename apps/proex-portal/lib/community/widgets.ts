@@ -40,6 +40,24 @@ export const DOCK_WIDGETS = ['notes', 'reminders', 'calendar', 'demands', 'short
 export type DockWidget = typeof DOCK_WIDGETS[number];
 export type DockState = { enabled: DockWidget[]; open: DockWidget | 'gallery' | null; minimized: boolean; hidden: string[] };
 const DOCK_ITEM = /^[a-z][a-z0-9-]{0,30}$/;
+/*
+ * Where the dock sits, chosen per person (2026-11-16): on a computer "floating" (corner button and fan) or "sidebar"
+ * (a rail fixed on the right that reserves its own space); on a phone "header" (button in the page header, sheet
+ * from the bottom) or "floating" (button in the corner that steps aside from actions). The defaults are the modes that
+ * existed before the choice, so nobody changes without choosing. Stored under `layout` in the same JSON column, but
+ * written only by its own action and preserved by every other save, so an old tab cannot erase it.
+ */
+export const DOCK_LAYOUTS = { desktop: ['floating', 'sidebar'], mobile: ['header', 'floating'] } as const;
+export type DockLayout = { desktop: typeof DOCK_LAYOUTS.desktop[number]; mobile: typeof DOCK_LAYOUTS.mobile[number] };
+export const DEFAULT_DOCK_LAYOUT: DockLayout = { desktop: 'floating', mobile: 'header' };
+export function parseDockLayout(raw: unknown): DockLayout {
+  let value: Record<string, unknown> = {};
+  try { const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw; const layout = parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>).layout : null; if (layout && typeof layout === 'object' && !Array.isArray(layout)) value = layout as Record<string, unknown>; } catch { value = {}; }
+  return {
+    desktop: (DOCK_LAYOUTS.desktop as readonly unknown[]).includes(value.desktop) ? value.desktop as DockLayout['desktop'] : DEFAULT_DOCK_LAYOUT.desktop,
+    mobile: (DOCK_LAYOUTS.mobile as readonly unknown[]).includes(value.mobile) ? value.mobile as DockLayout['mobile'] : DEFAULT_DOCK_LAYOUT.mobile,
+  };
+}
 export function parseDock(raw: unknown, legacy?: { notes?: unknown; reminders?: unknown }): DockState {
   let value: Record<string, unknown> = {};
   try { const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw; if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) value = parsed as Record<string, unknown>; } catch { value = {}; }
@@ -57,7 +75,7 @@ export async function dockState(db: D1Database, rawActor: PortalActor | null) {
   // One light count for the reminders badge; widget contents load only when a panel opens.
   const today = new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10);
   const due = dock.enabled.includes('reminders') ? await one(db, "SELECT COUNT(*) n FROM personal_notes WHERE user_id=? AND kind='reminder' AND done_at IS NULL AND due_on IS NOT NULL AND due_on<=?", [actor.userId, today]) : null;
-  return { dock, badges: { reminders: Number(due?.n ?? 0) } };
+  return { dock, layout: parseDockLayout(row?.dock ?? '{}'), badges: { reminders: Number(due?.n ?? 0) } };
 }
 export async function saveDock(db: D1Database, rawActor: PortalActor | null, input: Record<string, unknown>) {
   const actor = requireActor(rawActor);
@@ -71,10 +89,35 @@ export async function saveDock(db: D1Database, rawActor: PortalActor | null, inp
     await db.batch([
       db.prepare(`SELECT CASE WHEN ${member.sql} THEN 1 ELSE json_extract('[]','community_access_changed') END`).bind(...member.values),
       db.prepare(`INSERT INTO personal_widget_settings(user_id,notes,reminders,role_shortcut,dock,version,updated_at) VALUES(?,?,?,0,?,1,?)
-        ON CONFLICT(user_id) DO UPDATE SET notes=excluded.notes,reminders=excluded.reminders,dock=excluded.dock,version=version+1,updated_at=excluded.updated_at`).bind(actor.userId, notes, reminders, JSON.stringify(dock), now),
+        ON CONFLICT(user_id) DO UPDATE SET notes=excluded.notes,reminders=excluded.reminders,
+          dock=CASE WHEN json_valid(personal_widget_settings.dock) AND json_type(personal_widget_settings.dock,'$.layout')='object'
+            THEN json_set(excluded.dock,'$.layout',json(json_extract(personal_widget_settings.dock,'$.layout'))) ELSE excluded.dock END,
+          version=version+1,updated_at=excluded.updated_at`).bind(actor.userId, notes, reminders, JSON.stringify(dock), now),
     ]);
   } catch (error) { failure(error); }
   return { dock };
+}
+
+/** Saves one layout choice (computer or phone) without touching the other one or the widgets. */
+export async function saveDockLayout(db: D1Database, rawActor: PortalActor | null, input: Record<string, unknown>) {
+  const actor = requireActor(rawActor);
+  const member = await requireInternalMember(db, actor);
+  only(input, ['action', 'device', 'value']);
+  const device = input.device === 'desktop' || input.device === 'mobile' ? input.device : null;
+  if (!device || !(DOCK_LAYOUTS[device] as readonly unknown[]).includes(input.value)) throw new HttpError(400, 'Posição dos widgets inválida.', 'invalid_dock_layout');
+  const value = String(input.value), now = iso();
+  try {
+    await db.batch([
+      db.prepare(`SELECT CASE WHEN ${member.sql} THEN 1 ELSE json_extract('[]','community_access_changed') END`).bind(...member.values),
+      db.prepare(`INSERT INTO personal_widget_settings(user_id,notes,reminders,role_shortcut,dock,version,updated_at) VALUES(?,0,0,0,json_object('layout',json_object(?,?)),1,?)
+        ON CONFLICT(user_id) DO UPDATE SET
+          dock=json_set(CASE WHEN json_valid(personal_widget_settings.dock) THEN personal_widget_settings.dock ELSE '{}' END,'$.layout',
+            json_patch(CASE WHEN json_valid(personal_widget_settings.dock) AND json_type(personal_widget_settings.dock,'$.layout')='object' THEN json_extract(personal_widget_settings.dock,'$.layout') ELSE '{}' END,json_object(?,?))),
+          version=version+1,updated_at=excluded.updated_at`).bind(actor.userId, device, value, now, device, value),
+    ]);
+  } catch (error) { failure(error); }
+  const row = await one(db, 'SELECT dock FROM personal_widget_settings WHERE user_id=?', [actor.userId]);
+  return { layout: parseDockLayout(row?.dock ?? '{}') };
 }
 
 export async function widgetState(db: D1Database, rawActor: PortalActor | null) {

@@ -98,3 +98,62 @@
   .mobileSheet .shortcuts small{white-space:normal}
   :global(body):has(.mobileDialog[open]){overflow:hidden}
 }
+/* "Meu espaço": where the dock sits, per device. */
+.galleryHeading{margin:6px 0 0;font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--text-secondary)}
+.galleryHeading:first-child{margin-top:0}
+.layoutChoice{display:grid;gap:6px;min-width:0;margin:0;padding:0;border:0}
+.layoutChoice legend{display:flex;align-items:center;gap:8px;margin-bottom:6px;padding:0;font-size:13px;font-weight:700}
+.here{padding:2px 8px;border-radius:999px;background:var(--surface-soft);color:var(--brand-ink);font-size:11px;font-weight:650}
+.layoutChoice .toggle:has(input:checked){border-color:var(--brand-ink);background:color-mix(in srgb,var(--brand-ink) 9%,var(--surface));box-shadow:inset 0 0 0 1px var(--brand-ink)}
+.layoutChoice .toggle:has(input:checked) strong{color:var(--brand-ink)}
+.layoutChoice input[type=radio]{appearance:none;display:grid;place-items:center;border:2px solid var(--text-secondary);border-radius:50%;background:var(--surface)}
+.layoutChoice input[type=radio]:checked{border-color:var(--brand-ink)}
+.layoutChoice input[type=radio]:checked::after{content:'';width:10px;height:10px;border-radius:50%;background:var(--brand-ink)}
+.layoutChoice input[type=radio]:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+.panelHead h2[data-side-heading]:focus{outline:none}
+/* Computer, "Fixo na lateral": a rail on the right that is always there, and the open widget beside it.
+   The page (header included) shrinks to make room, so nothing is covered. */
+.sideDock{display:none}
+.mobileFab{display:none}
+@media (width > 720px){
+  .sideDock{position:fixed;top:0;right:0;bottom:0;z-index:36;display:flex;flex-direction:row;background:var(--surface);border-left:1px solid var(--line);color:var(--ink)}
+  .rail{display:flex;flex-direction:column;justify-content:space-between;gap:12px;width:84px;padding:12px 6px;overflow-y:auto}
+  .rail ul{display:grid;gap:4px;margin:0;padding:0;list-style:none}
+  .railEnd{padding-top:8px !important;border-top:1px solid var(--line)}
+  .railButton{display:grid;justify-items:center;gap:4px;width:100%;min-height:64px;padding:8px 4px;border:0;border-radius:12px;background:none;color:var(--text-secondary);font:inherit;cursor:pointer}
+  .railButton:hover{background:var(--surface-soft);color:var(--brand-ink)}
+  .railButton[data-active]{background:color-mix(in srgb,var(--brand-ink) 13%,var(--surface));color:var(--brand-ink)}
+  .railButton:focus-visible{outline:3px solid var(--focus);outline-offset:-3px}
+  .railIcon{position:relative;display:grid;place-items:center;width:36px;height:36px;color:var(--brand-ink)}
+  .railIcon img{width:30px;height:30px;border-radius:50%}
+  .railLabel{font-size:11.5px;font-weight:650;line-height:1.2;text-align:center;overflow-wrap:anywhere}
+  .sidePanel{display:flex;flex-direction:column;width:340px;min-height:0;border-right:1px solid var(--line);background:var(--surface)}
+  .sidePanel .panelBody{flex:1;min-height:0}
+  :global(html):has(.sideDock){--dock-side:84px}
+  :global(html):has(.sideDock[data-open]){--dock-side:424px}
+  :global(html):has(.sideDock) :global(.pn-shell>.p-workspace){width:calc(100% - var(--portal-sidebar-width) - var(--dock-side))}
+}
+.sideScrim{display:none}
+/* Medium computers: a slimmer open widget, and the account in the header shows just the photo. */
+@media (1100px <= width < 1400px){
+  :global(html):has(.sideDock[data-open]){--dock-side:384px}
+  .sidePanel{width:300px}
+  :global(html):has(.sideDock[data-open]) :global(.p-topbar .p-user){display:none}
+}
+/* Narrow computers: the rail still reserves its place, the open widget slides over a dimmed page until closed (X, Esc or a click outside). */
+@media (720px < width < 1100px){
+  :global(html):has(.sideDock[data-open]){--dock-side:84px}
+  .sidePanel{position:absolute;top:0;right:84px;bottom:0;z-index:1;box-shadow:-24px 0 60px -20px rgb(25 11 41/.55)}
+  .sideScrim{position:fixed;inset:0 84px 0 0;z-index:-1;display:block;background:rgb(20 9 31/.32)}
+}
+/* Phone, "Flutuante no canto": the button finds a free spot (floating-dock.tsx, dock-reserve.ts) and fades away
+   while the page scrolls, while a field has focus and while the notification center or a sheet is open. */
+@media (max-width:720px){
+  .mobileFab{position:fixed;right:14px;bottom:calc(var(--dock-fab-nav,72px) + 12px);z-index:39;display:grid;place-items:center;width:52px;height:52px;border:0;border-radius:50%;background:var(--brand-ink);color:var(--surface);box-shadow:0 12px 30px -12px rgb(25 11 41/.6);transform:translateY(calc(-1 * var(--dock-fab-shift,0px)));transition:opacity .14s ease,transform .18s ease,visibility 0s linear .14s;cursor:pointer}
+  .mobileFab[data-state=away]{opacity:0;visibility:hidden;pointer-events:none}
+  .mobileFab[data-state=shown]{opacity:1;visibility:visible;transition:opacity .14s ease,transform .18s ease}
+  .mobileFab:focus-visible{outline:3px solid var(--focus);outline-offset:3px}
+  :global(.pn-shell .p-main):has(.mobileFab){padding-bottom:var(--dock-reserve,calc(170px + env(safe-area-inset-bottom,0px)))}
+  :global(body:has(button[aria-controls="followup-notification-center"][aria-expanded="true"])) .mobileFab,:global(body:has(dialog[open])) .mobileFab{opacity:0;visibility:hidden;pointer-events:none}
+}
+@media (prefers-reduced-motion:reduce){.mobileFab,.mobileFab[data-state]{transition:none}}
