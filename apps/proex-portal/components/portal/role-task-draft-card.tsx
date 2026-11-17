@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Check, ClipboardList } from 'lucide-react';
 import { priorityLabels, TASK_PRIORITIES, type TaskPriority } from '@/lib/follow-up/contracts';
 import { followupApi, followupChanged } from './follow-up-api';
@@ -9,7 +9,7 @@ import styles from './role-assistant.module.css';
 /** Rascunho que o Rolê preparou (resposta do chat). Nada é gravado até o toque em "Criar demanda". */
 export type RoleTaskDraftView = {
   organizationId: string; projectId: string; projectName: string; title: string; description: string;
-  dueAt: string | null; priority: TaskPriority; assigneeId?: string; assigneeName?: string; expiresAt: number; signature: string;
+  dueAt: string | null; priority: TaskPriority; assigneeId?: string; assigneeName?: string; afterUntrusted?: true; expiresAt: number; signature: string;
 };
 export type RoleTaskDraftStatus = { createdId?: string; discarded?: true };
 
@@ -21,63 +21,86 @@ export function roleTaskDraftFrom(value: unknown): RoleTaskDraftView | undefined
   const valid = text(draft.organizationId, 200) && text(draft.projectId, 200) && text(draft.projectName, 400) && text(draft.title, 160) && !!String(draft.title).trim()
     && text(draft.description, 4000) && (draft.dueAt === null || typeof draft.dueAt === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(draft.dueAt))
     && TASK_PRIORITIES.includes(draft.priority as TaskPriority) && (draft.assigneeId === undefined || text(draft.assigneeId, 200) && text(draft.assigneeName, 400))
-    && typeof draft.expiresAt === 'number' && text(draft.signature, 2000);
+    && (draft.afterUntrusted === undefined || draft.afterUntrusted === true) && typeof draft.expiresAt === 'number' && text(draft.signature, 2000);
   return valid ? draft as RoleTaskDraftView : undefined;
 }
+
+/** Erros em que a demanda pode já existir (toque anterior gravou, ou o rascunho venceu): não convidar a criar de novo. */
+const MAYBE_CREATED = new Set(['operation_changed', 'role_task_draft_invalid']);
+const demandsOf = (projectId: string) => `/?module=demands&project=${encodeURIComponent(projectId)}`;
 
 type Props = { draft: RoleTaskDraftView; status?: RoleTaskDraftStatus; onStatus: (status: RoleTaskDraftStatus) => void; onOpen?: () => void };
 
 export default function RoleTaskDraftCard({ draft, status, onStatus, onOpen }: Props) {
   const [title, setTitle] = useState(draft.title), [description, setDescription] = useState(draft.description);
   const [dueAt, setDueAt] = useState(draft.dueAt ?? ''), [priority, setPriority] = useState<TaskPriority>(draft.priority);
-  const [keepAssignee, setKeepAssignee] = useState(!!draft.assigneeId);
-  const [saving, setSaving] = useState(false), [error, setError] = useState('');
+  // O responsável começa desmarcado: só entra se a pessoa marcar.
+  const [keepAssignee, setKeepAssignee] = useState(false);
+  const [saving, setSaving] = useState(false), [locked, setLocked] = useState(false);
+  const [error, setError] = useState(''), [maybeCreated, setMaybeCreated] = useState(false);
   // Uma chave por cartão: dois toques (ou uma nova tentativa depois de erro de rede) não criam duas demandas.
+  // Com a chave criada, os campos ficam travados para que a nova tentativa envie exatamente o mesmo.
   const running = useRef(false), operation = useRef<string | null>(null);
+  const focusNext = useRef<'open' | 'note' | null>(null), openLink = useRef<HTMLAnchorElement | null>(null), note = useRef<HTMLParagraphElement | null>(null);
   const ready = !!title.trim() && title.trim().length <= 160 && description.trim().length <= 4000;
+  const frozen = saving || locked;
+
+  // Foco depois da ação da pessoa: no link da demanda criada ou no aviso de descarte.
+  useEffect(() => {
+    const target = focusNext.current === 'open' ? openLink.current : focusNext.current === 'note' ? note.current : null;
+    focusNext.current = null;
+    target?.focus();
+  }, [status?.createdId, status?.discarded]);
 
   if (status?.createdId) {
-    const href = `/?module=demands&project=${encodeURIComponent(draft.projectId)}&demandId=${encodeURIComponent(status.createdId)}`;
-    return <div className={styles.operation} role="status">
-      <p className={styles.operationTitle}><Check size={16} aria-hidden="true"/> Demanda criada</p>
+    const href = `${demandsOf(draft.projectId)}&demandId=${encodeURIComponent(status.createdId)}`;
+    return <div className={`${styles.operation} ${styles.taskDraft}`} role="status">
+      <p className={styles.operationTitle}><Check size={16} aria-hidden="true"/>Demanda criada</p>
       <p>{title.trim() || draft.title} · <strong>{draft.projectName}</strong></p>
-      <a className="p-text-link" href={href} onClick={() => onOpen?.()}>Abrir demanda</a>
+      <a ref={openLink} className={`p-button p-button-subtle ${styles.taskDraftOpen}`} href={href} onClick={() => onOpen?.()}>Abrir demanda</a>
     </div>;
   }
-  if (status?.discarded) return <p className={styles.help}>Rascunho descartado. Nada foi criado.</p>;
+  if (status?.discarded) return <p ref={note} tabIndex={-1} role="status" className={`${styles.help} ${styles.taskDraftNote}`}>Rascunho descartado. Nada foi criado.</p>;
 
   async function create() {
-    if (running.current || !ready) return;
-    running.current = true; setSaving(true); setError('');
+    if (running.current || !ready || maybeCreated) return;
+    running.current = true; setSaving(true); setLocked(true); setError('');
     operation.current ??= crypto.randomUUID();
     try {
       const result = await followupApi<{ task: { id: string } }>('', {
         action: 'task.create', projectId: draft.projectId, title: title.trim(), body: description.trim(), priority, dueAt: dueAt || null,
         userIds: keepAssignee && draft.assigneeId ? [draft.assigneeId] : [], operationKey: operation.current, roleDraft: draft.signature,
       });
+      focusNext.current = 'open';
       onStatus({ createdId: result.task.id });
       followupChanged();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Não foi possível criar a demanda.');
+      const code = cause && typeof cause === 'object' && 'code' in cause ? String((cause as { code?: unknown }).code) : '';
+      if (MAYBE_CREATED.has(code)) setMaybeCreated(true);
+      else setError(cause instanceof Error ? cause.message : 'Não foi possível criar a demanda.');
     } finally { running.current = false; setSaving(false); }
   }
 
-  return <section className={`${styles.operation} ${styles.documentEditor}`} aria-label="Rascunho de demanda">
-    <p className={styles.operationTitle}><ClipboardList size={16} aria-hidden="true"/> Rascunho de demanda</p>
+  return <section className={`${styles.operation} ${styles.documentEditor} ${styles.taskDraft}`} aria-label="Rascunho de demanda">
+    <p className={styles.operationTitle}><ClipboardList size={16} aria-hidden="true"/>Rascunho de demanda</p>
     <p>Projeto: <strong>{draft.projectName}</strong></p>
-    <p className={styles.help}>Nada foi criado ainda. Confira e toque em Criar demanda.</p>
-    <label className={styles.editable}><span>Título</span><input value={title} maxLength={160} required disabled={saving} onChange={event => setTitle(event.target.value)}/></label>
-    <label className={styles.editable}><span>Descrição</span><textarea rows={4} value={description} maxLength={4000} disabled={saving} onChange={event => setDescription(event.target.value)}/></label>
-    <label className={styles.editable}><span>Prazo</span><input type="date" value={dueAt} disabled={saving} onChange={event => setDueAt(event.target.value)}/></label>
-    <label className={styles.editable}><span>Prioridade</span><select value={priority} disabled={saving} onChange={event => setPriority(event.target.value as TaskPriority)}>
+    <p className={styles.help}><strong>Nada foi criado ainda.</strong> Confira os campos e escolha Criar demanda.</p>
+    <p className={styles.help}>Este rascunho vale por 30 minutos.</p>
+    {draft.afterUntrusted && <p className={styles.searchOnlyNotice}>Preparado depois de ler conteúdo do portal ou da internet. Confira links e responsável antes de criar.</p>}
+    <label className={styles.editable}><span>Título</span><textarea className={styles.taskDraftTitle} rows={2} value={title} maxLength={160} required disabled={frozen}
+      onKeyDown={event => { if (event.key === 'Enter') event.preventDefault(); }} onChange={event => setTitle(event.target.value.replace(/\s*[\r\n]+\s*/g, ' '))}/></label>
+    <label className={styles.editable}><span>Descrição</span><textarea className={styles.taskDraftBody} rows={4} value={description} maxLength={4000} disabled={frozen} onChange={event => setDescription(event.target.value)}/></label>
+    <label className={styles.editable}><span>Prazo</span><input type="date" value={dueAt} disabled={frozen} onChange={event => setDueAt(event.target.value)}/></label>
+    <label className={styles.editable}><span>Prioridade</span><select value={priority} disabled={frozen} onChange={event => setPriority(event.target.value as TaskPriority)}>
       {TASK_PRIORITIES.map(value => <option key={value} value={value}>{priorityLabels[value]}</option>)}
     </select></label>
-    {draft.assigneeId && <label className={`${styles.videoConsent} min-h-11 items-center`}><input type="checkbox" checked={keepAssignee} disabled={saving} onChange={event => setKeepAssignee(event.target.checked)}/><span>Responsável: {draft.assigneeName}</span></label>}
+    {draft.assigneeId && <label className={`${styles.videoConsent} min-h-11 items-center`}><input type="checkbox" checked={keepAssignee} disabled={frozen} onChange={event => setKeepAssignee(event.target.checked)}/><span>Responsável: {draft.assigneeName}</span></label>}
     <div className={styles.reviseActions}>
-      <button type="button" className="p-button p-button-primary" disabled={saving || !ready} onClick={() => void create()}>Criar demanda</button>
-      <button type="button" className="p-button p-button-subtle" disabled={saving} onClick={() => onStatus({ discarded: true })}>Descartar</button>
+      <button type="button" className="p-button p-button-primary" disabled={saving || !ready || maybeCreated} onClick={() => void create()}>Criar demanda</button>
+      <button type="button" className="p-button p-button-subtle" disabled={saving} onClick={() => { focusNext.current = 'note'; onStatus({ discarded: true }); }}>Descartar</button>
     </div>
     {saving && <p role="status">Criando a demanda…</p>}
-    {error && <p role="alert">{error} O rascunho continua aqui.</p>}
+    {maybeCreated && <p role="alert" className={styles.error}>A demanda pode já ter sido criada. Confira em Demandas antes de criar de novo. <a href={demandsOf(draft.projectId)} onClick={() => onOpen?.()}>Abrir Demandas do projeto</a></p>}
+    {error && <p role="alert" className={styles.error}>{error} O rascunho continua aqui.</p>}
   </section>;
 }

@@ -32,7 +32,7 @@ export async function followupApi<T>(query:URLSearchParams|string,body?:Record<s
  let data:unknown;
  try{data=await response.json();}catch(error){if(signal?.aborted)throw signal.reason??error;if(object(error)&&error.name==='AbortError')throw error;if(response.ok)throw new Error('A resposta chegou incompleta. Seus campos foram preservados; atualize e tente novamente.');data={};}
  if(signal?.aborted){const error=new Error('Consulta cancelada.');error.name='AbortError';throw error;}
- if(!response.ok){const message=object(data)?data.error:null;throw new Error(typeof message==='string'?message:object(message)&&typeof message.message==='string'?message.message:'Não foi possível concluir. Preserve suas informações e tente novamente.');}
+ if(!response.ok){const message=object(data)?data.error:null;const failure:Error&{code?:string}=new Error(typeof message==='string'?message:object(message)&&typeof message.message==='string'?message.message:'Não foi possível concluir. Preserve suas informações e tente novamente.');if(object(data)&&typeof data.code==='string')failure.code=data.code;throw failure;}
  if(!validResponse(data,query,body))throw new Error('A resposta não corresponde à consulta. Seus campos foram preservados; atualize e tente novamente.');
  return data as T;
 }
