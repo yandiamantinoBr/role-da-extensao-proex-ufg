@@ -62,7 +62,8 @@ export function parseDock(raw: unknown, legacy?: { notes?: unknown; reminders?: 
   let value: Record<string, unknown> = {};
   try { const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw; if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) value = parsed as Record<string, unknown>; } catch { value = {}; }
   const enabledRaw = Array.isArray(value.enabled) ? value.enabled : [...(legacy?.notes ? ['notes'] : []), ...(legacy?.reminders ? ['reminders'] : [])];
-  const enabled = DOCK_WIDGETS.filter(id => enabledRaw.includes(id));
+  // The order of `enabled` is the order of the fan (2026-11-17); duplicates and unknown ids are dropped.
+  const enabled = [...new Set(enabledRaw)].filter((id): id is DockWidget => (DOCK_WIDGETS as readonly unknown[]).includes(id));
   const open = value.open === 'gallery' || (enabled as string[]).includes(String(value.open)) ? value.open as DockState['open'] : null;
   const hidden = Array.isArray(value.hidden) ? [...new Set(value.hidden.filter((item): item is string => typeof item === 'string' && DOCK_ITEM.test(item)))].slice(0, 10) : [];
   return { enabled, open, minimized: open !== null && value.minimized === true, hidden };
@@ -82,7 +83,7 @@ export async function saveDock(db: D1Database, rawActor: PortalActor | null, inp
   const member = await requireInternalMember(db, actor);
   only(input, ['action', 'enabled', 'open', 'minimized', 'hidden']);
   if (!Array.isArray(input.enabled) || !Array.isArray(input.hidden) || typeof input.minimized !== 'boolean' || !(input.open === null || typeof input.open === 'string')) throw new HttpError(400, 'Estado da doca inválido.', 'invalid_dock');
-  if (input.enabled.some(id => !(DOCK_WIDGETS as readonly unknown[]).includes(id)) || input.hidden.some(id => typeof id !== 'string' || !DOCK_ITEM.test(id)) || input.hidden.length > 10) throw new HttpError(400, 'Estado da doca inválido.', 'invalid_dock');
+  if (input.enabled.some(id => !(DOCK_WIDGETS as readonly unknown[]).includes(id)) || new Set(input.enabled).size !== input.enabled.length || input.hidden.some(id => typeof id !== 'string' || !DOCK_ITEM.test(id)) || input.hidden.length > 10) throw new HttpError(400, 'Estado da doca inválido.', 'invalid_dock');
   const dock = parseDock(input), now = iso();
   const notes = dock.enabled.includes('notes') ? 1 : 0, reminders = dock.enabled.includes('reminders') ? 1 : 0;
   try {
