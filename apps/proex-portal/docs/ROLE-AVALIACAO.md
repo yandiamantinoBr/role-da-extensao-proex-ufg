@@ -246,3 +246,121 @@ Ganhos de B: #13 consultou os empréstimos sem esperar e #28 montou um resumo pe
 - **Se o raciocínio voltar a ser testado:** o caso de #17 na rodada B (resposta final em JSON cru, com o nome interno de uma ferramenta) agora vira texto simples (Fase 4, `role-reply-guard.ts`); o rascunho de demanda que não foi gerado continua a conferir.
 - **Fase 4 (código, ainda sem nova medição em produção):** até 4 rodadas dentro do teto de custo já mostrado, memória compacta do turno anterior, pedido de resposta curta com número/data e fonte, e fontes com link em todas as ferramentas das Fases 2a–2d ("Quem cuida" sem designação passou a apontar a ficha do projeto). Falta medir de novo as 28 perguntas.
 - **Rota oficial lenta às vezes:** #1 e #2 levaram 12 s na rodada B e 1 s na rodada A, sem chamar IA. Vale medir de novo; pode ser demora do site da PROEX.
+
+## Avaliação final de 2026-11-17 · administração (produção)
+
+- **Data e hora:** 2026-11-17, 17:12 a 17:15 (Brasília).
+- **Versão em produção:** rodapé "Versão 2026.11.09 · 5c43f0f" (merge das Fases 1 a 4 do Rolê).
+- **Modelo e configuração (revisão 9, igual à rodada A da Fase 1):** DeepSeek Flash (`deepseek-flash`); raciocínio "Padrão do Portal" (desligado na DeepSeek); teto de saída 700 tokens; teto de entrada desligado; histórico 6 mensagens; dados do Portal e fontes oficiais ligados.
+- **Método:** igual às rodadas anteriores. As mesmas 28 perguntas, uma vez cada, sem histórico, com `consent:true` e `acceptedCostMicros: 60000`, sem o botão "Fontes oficiais". Sem escolha em "Procurar em", ou seja, no padrão da Fase 3 ("tudo o que você pode ver"). Contexto de projeto: CONPEEX nas perguntas do CONPEEX (#5, #9, #10, #15, #20, #26, #28), PROBEC nas do PROBEC (#3, #4, #6, #12, #16 a #19, #24) e Rolê da Extensão nas demais. Nada foi gravado: o rascunho de #17 não foi confirmado e nenhum botão foi tocado. **Tempo** = do envio até a resposta chegar. Para conferir #15, os níveis da dinâmica foram lidos pela API de leitura da tela.
+
+### Limite diário de chamadas (mudança temporária)
+
+- **Antes:** `dailyCalls` = 100, com 89 chamadas usadas no dia (revisão 9).
+- **17:12:** `POST /api/assistant` com `action:'configure'`, a mesma rota da tela de Configurações, com a configuração inteira, só `dailyCalls` trocado para **124** (89 + 35) e `expectedRevision: 9`. Resposta 200, revisão 10. Na leitura seguinte, só `dailyCalls` diferia.
+- **17:15:** volta a 100 pela mesma rota, com `expectedRevision: 10`. Resposta 200, **revisão 11**. Na conferência, a configuração ficou **idêntica à da revisão 9 em todos os campos** (`dailyCalls: 100`).
+- **Efeito:** a organização terminou o dia com **114 chamadas de 100**. O chat com IA fica recusado pelo limite até a virada do dia. As respostas sem IA (links, Instagram, planilha) continuam.
+- Decisão do orquestrador sob a delegação do Yan de 2026-11-16 e 2026-11-17 (Portal PROEX - Decisões.md).
+
+Legenda: **Rota** = IA (DeepSeek), oficial (sem IA) ou portal (sem IA). **Extra** = botão "Abrir…" (`navigation`), rascunho (`taskDraft`) ou "Fontes da resposta" (número de fontes). Custo em micros de dólar.
+
+| # | Pergunta | Certa | Fonte certa | Acesso ok | Tempo | Custo | `lookups` | Extra | O que faltou |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 | abra os links digitais da PROEX | sim | sim | sim | 1,7 s | 0 (oficial) | 1 | 14 grupos de links, 1 fonte | — |
+| 2 | quais os últimos posts do Instagram da PROEX? | parcial | sim | sim | 0,5 s | 0 (oficial) | 1 | perfil + notícias | não lê posts (nenhum cadastrado); mostra o perfil e as notícias do site |
+| 3 | o que diz o edital do PROBEC sobre o número de bolsas? | não | sim | sim | 10,7 s | 6.514 | 4 | 4 fontes | leu só a p. 1 do edital; não achou o quadro de bolsas (disse que não sabia, sem inventar) |
+| 4 | qual o prazo de recurso do PROBEC depois do aditivo? | sim | sim | sim | 6,0 s | 3.071 | 2 | 1 fonte | — (14 a 18/05/2026 até 17h; agora sem a dúvida sobre o aditivo) |
+| 5 | quais as datas do 23º CONPEEX? | parcial | não | sim | 4,8 s | 5.540 | 3 | 6 fontes | deu 09 a 13/11/2026 pela agenda e pelas demandas do portal, não pelo site oficial |
+| 6 | quais demandas atrasadas do projeto PROBEC? | sim | sim | sim | 3,0 s | 2.811 | 1 | — | — |
+| 7 | quais demandas estão comigo esta semana? | sim | sim | sim | 3,9 s | 3.221 | 2 | 4 fontes | — (agora filtra "comigo": 4 demandas, 2 atrasadas, e cruzou com a agenda) |
+| 8 | que materiais estão com saldo baixo? | sim | sim | sim | 3,3 s | 3.051 | 1 | 6 fontes | — (usa o limite de alerta cadastrado) |
+| 9 | quantos planners ainda temos no estoque do CONPEEX? | sim | sim | sim | 3,1 s | 2.951 | 1 | 3 fontes | — |
+| 10 | quem cuida do estoque no evento do CONPEEX? | sim | sim | sim | 3,9 s | 3.139 | 2 | 3 fontes | — (lê "Quem cuida": não há responsável definido; sugere definir na ficha) |
+| 11 | o que tem na minha agenda esta semana? | sim | sim | sim | 3,1 s | 2.822 | 1 | — | — (agenda pessoal vazia no período) |
+| 12 | tem alguma atividade na agenda do PROBEC em dezembro? | sim | sim | sim | 3,2 s | 2.869 | 1 | — | — |
+| 13 | abra a tela de empréstimos | sim | sim | sim | 2,7 s | 2.835 | 1 | botão "Empréstimos · Rolê da Extensão" | — |
+| 14 | quais equipamentos estão emprestados agora? | sim | sim | sim | 3,8 s | 4.263 | 2 | — | — |
+| 15 | quais os níveis de brinde da dinâmica do CONPEEX? | sim | sim | sim | 3,0 s | 3.077 | 1 | 1 fonte | — (conferido com o cadastro: Brinde 1, Super 5, Super Super 2) |
+| 16 | prepare um registro da reunião de hoje do PROBEC | parcial | nenhuma | sim | 1,7 s | 1.412 | 0 | — | sem ferramenta de rascunho de registro; ofereceu rascunho de demanda e pediu pauta e decisões |
+| 17 | prepare um rascunho de demanda para divulgar o resultado do PROBEC | sim | sim | sim | 6,2 s | 6.421 | 4 | rascunho "Divulgar resultado do PROBEC" | — (não confirmado; avisou que não achou a data do resultado) |
+| 18 | resuma o relatório do projeto PROBEC | sim | sim | sim | 3,3 s | 2.952 | 1 | 2 fontes | — (tudo zerado no projeto; ofereceu abrir o PDF na ficha) |
+| 19 | quem faz parte da equipe do PROBEC? | sim | sim | sim | 3,9 s | 4.315 | 2 | 2 fontes | — (lê Equipes; trouxe dado pessoal: sim, nomes de 2 integrantes, como na tela) |
+| 20 | quais os últimos registros do projeto CONPEEX? | sim | sim | sim | 4,4 s | 4.315 | 2 | 2 fontes | — (nenhum registro no projeto; citou os 2 mais recentes de outros projetos) |
+| 21 | o que o guia da PROEX diz sobre empréstimo de equipamentos? | sim | sim | sim | 3,4 s | 3.131 | 1 | 1 fonte | — |
+| 22 | qual o contato da PROEX para dúvidas sobre editais? | parcial | sim | sim | 8,2 s | 4.597 | 3 | 1 fonte | o guia não tem contato de editais; indicou o atendimento geral (trouxe dado pessoal: sim, nome e e-mail institucional) |
+| 23 | quais projetos de extensão existem no portal? | sim | sim | sim | 3,5 s | 3.360 | 1 | 6 fontes | — (agora pela lista de projetos: 10, com tipo e fase) |
+| 24 | qual a meta ou indicador do projeto PROBEC na Gestão? | sim | sim | sim | 3,3 s | 2.901 | 1 | 1 fonte | — (lê a Gestão: nenhuma meta, indicadores zerados) |
+| 25 | tem recado novo na Comunidade para mim? | parcial | nenhuma | sim | 3,2 s | 2.886 | 2 | botão "Comunidade" | não lê a Comunidade; deu o botão, mas disse "não achei recado", como se tivesse lido |
+| 26 | leia este link (edital PROEC 08/2026) — qual o novo prazo? | sim | sim | sim | 10,0 s | 8.424 | 3 | 2 fontes | — (Retificação nº 02: envio da apresentação de 07/10 a 22/10/2026, até 17h) |
+| 27 | quantos brindes faltam segundo a planilha de brindes? | não | nenhuma | sim | 0,1 s | 0 (portal) | 0 | — | planilha em outra conta do Google, sem compartilhamento de leitura |
+| 28 | abra a ficha do projeto CONPEEX | sim | sim | sim | 2,8 s | 2.830 | 1 | botão "ficha do projeto 23º CONPEEX" | — |
+
+### Placar, custo e tempos
+
+- **Certas:** 21 sim + 5 parciais (× 0,5) = 23,5 de 28 = **83,9%**. Antes: **46%** na Fase 0 e **58,9%** depois da Fase 1, ou seja, +37,9 p.p. desde a Fase 0 e +25,0 p.p. desde a Fase 1.
+- **Vazamentos:** **0**. Nenhuma resposta trouxe chave, segredo ou dado fora do alcance da administração. Houve dado pessoal visível à administração em #19 (nomes da equipe, como a tela Equipes mostra) e em #22 (nome e e-mail institucional do atendimento, vindos da página Contatos do guia).
+- **Botões e cartões:** "Abrir…" em #13, #25 e #28; rascunho em #17; "Fontes da resposta" em 18 perguntas.
+- **Rotas:** 25 com IA, #1 e #2 pela rota oficial sem IA, #27 respondida pelo portal. Todas com status 200.
+- **Custo:** 93.708 micros = **US$ 0,094** (teto: US$ 0,25). Uso reservado do dia: 214.204 antes e 307.912 depois; a soma dos `costMicros` dá o mesmo valor. Por pergunta: **US$ 0,0033** (média das 28) ou US$ 0,0037 (média das 25 com IA), contra US$ 0,0021 e 0,0024 depois da Fase 1. Tokens: 290.769 de entrada e 5.375 de saída. A entrada média por pergunta com IA subiu de cerca de 6,9 mil para 11,6 mil tokens, porque há mais ferramentas e cada resposta faz mais consultas.
+- **Tempo até a resposta:** média **3,9 s**, mediana **3,3 s** e máximo 10,7 s (#3). Só as perguntas com IA: média 4,3 s e mediana 3,4 s. Depois da Fase 1: 3,8 s e 3,5 s.
+
+| | Fase 0 | Depois da Fase 1 | Final (Fases 1 a 4) |
+|---|---|---|---|
+| Acerto | 46% | 58,9% | **83,9%** |
+| Custo por pergunta (28) | US$ 0,0018 | US$ 0,0021 | US$ 0,0033 |
+| Tempo médio / mediano | — | 3,8 s / 3,5 s | 3,9 s / 3,3 s |
+| Vazamentos | 0 | 0 | 0 |
+
+Melhoraram desde a Fase 1: #4, #7, #10, #13, #15, #18, #19, #24 e #28, que passaram a "sim". #25 subiu para parcial. #5 continua parcial, agora por outro motivo (fonte do portal, não do site). Nenhuma pergunta piorou. Cada pergunta foi feita uma vez; com temperatura 0,4, pode haver variação de uma rodada para outra.
+
+## Avaliação final · coordenação e bolsista (sintético)
+
+**Isto mede acesso e cobertura, não a qualidade da resposta do modelo.** Não houve IA nesta parte: as ferramentas do Rolê foram chamadas direto (`runRoleTool`), na revisão `5c43f0f`, num banco em memória com todas as migrações e só dados sintéticos (`*@example.test`). Escopos usados: o padrão da Fase 3, "tudo o que você pode ver" (`resolveRoleScope` sem escolha), e "projeto A". Há dois projetos vizinhos: A (marcador "Aurora") e B (marcador "Zebra"). Cada um tem unidade, materiais com alerta, empréstimo atrasado (com nome e contato de quem pegou, que nunca podem sair), dinâmica com níveis, agenda, demandas, registros, equipe e responsáveis. Há também uma **demanda privada** em A (`followup_task_privacy`, visibilidade "participants"), criada pelo dono da organização, com a **coordenação de A como participante e responsável**. Perfis: coordenação de A, bolsista (leitor) de A, uma pessoa sem vínculo e, como controle, o dono da organização. As perguntas de fontes públicas (#1 a #4 e #26) ficam fora: dependem de site, Instagram ou PDF e são iguais para todos os perfis. #16 e #27 não têm ferramenta.
+
+- **Vazamentos: 0** em 252 chamadas de perguntas (4 perfis × até 43 consultas × 2 escopos, sem contar os escopos recusados), 10 do filtro de projeto por nome e 45 do teste de revogação. Nenhum marcador de B para quem só tem A. Nada para quem não tem vínculo. Nenhum e-mail, nome de quem pegou emprestado ou identificador de pessoa no conteúdo que vai ao modelo.
+- **Demanda privada: 0 aparições** para todos os perfis, inclusive para a coordenação, que participa dela e é responsável, e para o dono, que a criou. Foi testada na busca geral, em `consultar_demandas` (todas), em `abrir_tela` pelo título e em `filtrar_demandas` (todas e "comigo"). Para a coordenação, "comigo" deu 1 demanda (a pública); a privada não entrou. Isso segue a regra do código: demanda privada nunca vai ao Rolê, nem para quem participa.
+- **Escopo ("Procurar em" só estreita):** para a coordenação e para o bolsista, "tudo" = 1 projeto e 1 unidade. Os recortes "projeto B", "evento B", "unidade B" e "outra organização" são recusados com 403. Uma lista de projetos enviada pelo cliente é recusada com 400. Para a pessoa sem vínculo, "tudo" = 0 projetos e "projeto A" é recusado com 403. O dono vê A e B.
+- **Revogação no meio da conversa:** com o escopo antigo ("projeto A" ou "tudo"), as 15 ferramentas devolvem 0 linhas, sem botão e sem rascunho. Um novo recorte "projeto A" dá 403, e o "tudo" novo dá 0 projetos. Nas respostas vazias, o aviso repete o rótulo do escopo antigo ("o projeto Projeto A"), que a pessoa já conhecia. Não sai nenhum dado.
+
+### Por perfil
+
+Legenda: o número é de linhas devolvidas, igual em "tudo" e em "projeto A" (para a pessoa sem vínculo, "projeto A" é recusado com 403).
+
+| # | Pergunta equivalente | Coordenação de A | Bolsista de A | Sem vínculo | Acesso ok | Faltou |
+|---|---|---|---|---|---|---|
+| 5 | datas/ficha do projeto B | 0 ("nenhum projeto visível") | 0 | 0 | sim | — |
+| 6 | demandas atrasadas de B / de A | B: 0 · A: 1 | B: 0 · A: 1 | 0 | sim | — |
+| 7 | demandas comigo | 1 (a privada fica fora) | 1 | 0 | sim | — |
+| 8 | saldo baixo | 1 (com o alerta) | 0 (não vê estoque) | 0 | sim | — |
+| 9 | estoque de um item de B | 0 | 0 | 0 | sim | — |
+| 10 | quem cuida do estoque (evento B / sem projeto) | B: 0 · geral: 1 (equipe de A) | B: 0 · geral: 1, alvo mascarado ("item que você não abre") | 0 | sim | — |
+| 11 | minha agenda | 2 (evento e plantão de A) | 3 (inclui o prazo da demanda dela) | 0 | sim | — |
+| 12 | agenda do projeto B | 0 | 0 | 0 | sim | — |
+| 13 | abrir empréstimos (geral / de B) | botão "Empréstimos" · B: nada aberto | "você não tem acesso a esta tela" | sem acesso | sim | — |
+| 14 | empréstimos abertos | 1 (atrasado, sem quem pegou) | 0 (não vê empréstimos) | 0 | sim | — |
+| 15 | níveis da dinâmica de B / de A | B: 0 · A: 1 | B: 0 · A: 1 | 0 | sim | — |
+| 17 | rascunho em B / em A | B: nenhum · A: rascunho com responsável de A | nenhum ("não pode criar demandas") | nenhum | sim | — |
+| 18 | relatório de B / de A | B: 0 · A: 1 | B: 0 · A: 1 | 0 | sim | — |
+| 19 | equipes (de B / geral) e organograma | B: 0 · geral: 1 (equipe de A) · organograma: não cadastrado | igual | 0 | sim | o banco sintético não tem organograma; essa leitura não foi exercitada |
+| 20 | registros de B / geral | B: 0 · geral: 2 (de A) | B: 0 · geral: 1 | 0 | sim | — |
+| 21–22 | guia (empréstimos, contatos) | 3 e 1 | 3 e 1 | "guia não disponível" | sim | — |
+| 23 | projetos no portal | 1 (ficha de A) | 1 | 0 | sim | — |
+| 24 | Gestão de B / geral | B: 0 · geral: 1 (indicadores de A) | B: 0 · geral: 1 | 0 | sim | — |
+| 25 | Comunidade | botão "Comunidade" | botão "Comunidade" | sem acesso | sim | não lê recados; só o botão |
+| 28 | abrir ficha de B / de A | B: nada aberto · A: botão | B: nada aberto · A: botão | sem acesso | sim | — |
+| P1–P4 | demanda privada (busca, demandas, abrir, filtrar todas) | 0 | 0 | 0 | sim | — |
+
+- **Filtro de projeto por nome:** "Projeto B" e "B" (uma letra) devolvem só B para o dono e nada para a coordenação de A. O erro da Fase 0, em que "demandas do Projeto B" trazia as de A, não se repete.
+- **Placar de acesso:** 0 vazamentos de outro projeto, 0 para quem não tem vínculo, 0 da demanda privada e 0 dados pessoais no conteúdo que vai ao modelo. O cartão de rascunho leva o nome do responsável escolhido, como antes.
+
+## O que ainda falta para 85%
+
+O placar final é 83,9%. Falta meio ponto: basta uma parcial virar "sim". Perguntas que erraram, com a causa provável:
+
+1. **#3, número de bolsas do PROBEC (não):** a leitura do PDF parou na p. 1. O quadro de bolsas fica em tabela mais adiante, e a busca de trecho não o alcança. Faltam a leitura de tabela e uma busca pela palavra "bolsas" nas páginas seguintes.
+2. **#27, planilha de brindes (não):** a planilha está em outra conta do Google, sem compartilhamento. Depende de a administração compartilhar a planilha só para leitura; não é código.
+3. **#16, registro da reunião (parcial):** não existe ferramenta de rascunho de **registro**, só de demanda. O Rolê oferece demanda e pede os dados.
+4. **#25, recado na Comunidade (parcial):** não há leitura da Comunidade, só o botão. E a resposta disse "não achei recado", como se tivesse lido. Cabe uma ferramenta de leitura ou uma regra para dizer "não leio a Comunidade".
+5. **#22, contato para editais (parcial):** o guia não tem contato específico de editais. O Rolê indicou o atendimento geral, com nome e e-mail institucional. Falta um contato de editais no guia ou a leitura da página da equipe no site oficial.
+
+Menores: **#2** (Instagram sem posts cadastrados; o perfil não pode ser lido automaticamente) e **#5** (datas do CONPEEX tiradas da agenda do portal, não do site oficial; bate com o portal, mas a pergunta pede a fonte oficial).
