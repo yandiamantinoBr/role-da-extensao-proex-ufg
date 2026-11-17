@@ -264,7 +264,7 @@ test('cards, day previews and exports drop the repeated type word but keep it in
       ['Projetos e eventos', 'Oficina · parte 2'],
     ], 'antes: "Materiais" em cima e "Materiais · Botton azul" no título');
     const chips = h.all().filter(node => node.type === 'em').map(node => text(node));
-    assert.ok(chips.includes('Botton azul · 40 unidades') && !chips.some(chip => chip.startsWith('Materiais ·')));
+    assert.ok(chips.includes('Botton azul') && !chips.some(chip => chip.startsWith('Materiais ·') || chip.includes('unidades')), `a prévia leva só o nome; a quantidade fica no cartão: ${chips}`);
     const counters = h.all().filter(node => node.type === 'button' && /^\d/.test(text(node))).map(text);
     assert.ok(counters.includes('1Material') && counters.includes('3Projetos e eventos'), `antes: "1 Materiais"; agora: ${counters}`);
     h.all().find(node => node.type === 'input' && node.props.name === 'calendarSearch').props.onChange({ target: { value: 'oficina' } }); h.render();
@@ -476,4 +476,12 @@ test('today uses the brand colour, not the Materiais orange, and the legend expl
   assert.match(tail, /^\.day\[aria-current=date\] \.dayNumber \{ background: var\(--surface-soft\); color: var\(--brand-ink\); \}/);
   const source = readFileSync(new URL('../components/portal/calendar-panel.tsx', import.meta.url), 'utf8');
   assert.match(source, /\{showCancelled&&<small><span className=\{styles\.legendCancelled\}\/>Cancelado<\/small>\}/);
+});
+
+test('desktop weeks share one height, the cancelled preview stays readable and the PDF title column is wider (nona crítica de 16/11)', () => {
+  const css = readFileSync(new URL('../components/portal/calendar-panel.module.css', import.meta.url), 'utf8');
+  assert.match(css, /@container agenda \(min-width:860px\)\{\.day\{min-height:146px\}\}/);
+  assert.match(css, /\.chip\[data-cancelled\]\{text-decoration:none;border:1px dashed var\(--muted\);/, 'contorno tracejado inteiro, com fundo leve (décima crítica)');
+  assert.match(css, /\.chip\[data-cancelled\] \.chipText\{color:var\(--muted\)\}/);
+  assert.match(readFileSync(new URL('../components/portal/calendar-panel.tsx', import.meta.url), 'utf8'), /columnWeights: \[1\.6, 1\.15, 0\.95\]/);
 });

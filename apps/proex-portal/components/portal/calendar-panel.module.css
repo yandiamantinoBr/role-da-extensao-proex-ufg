@@ -150,3 +150,9 @@
 .activeFeeds h4{font-weight:650}
 /* "+7" com cara de que há mais (nona crítica de 16/11). */
 .extraEntries{color:var(--brand-ink);font-weight:650}
+/* Nona crítica de 16/11: semanas com a mesma altura no computador e prévia cancelada legível (uma linha, cinza, sem risco). */
+@container agenda (min-width:860px){.day{min-height:146px}}
+.chip[data-cancelled]{text-decoration:none;border:1px dashed var(--muted);border-left-width:1px;background:color-mix(in srgb,var(--surface-soft) 55%,transparent)}
+.chip[data-cancelled] .chipText{color:var(--muted)}
+/* Décima primeira crítica de 16/11: a prévia leva só o nome (a quantidade fica no cartão) e o "+7" ganha a cor da marca. */
+.day .extraEntries{color:var(--brand-ink);font-weight:650}
