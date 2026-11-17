@@ -237,14 +237,15 @@ export const TUTORIAL_CHAPTERS: readonly TutorialChapter[] = [
       },
       {
         id: 'cronograma', title: 'Cronograma',
-        speech: 'No fim da ficha, Cronograma mostra as datas importantes e as próximas atividades do projeto. Quem pode editar a ficha vê o botão Atividade para incluir uma.',
+        speech: 'Mais abaixo na ficha, Cronograma mostra as datas importantes e as próximas atividades do projeto. Quem pode editar a ficha vê o botão Atividade para incluir uma.',
         youWillSee: 'O quadro Cronograma destacado na ficha.',
         target: '#project-timeline', module: 'projects', openLabel: 'Ir para Projetos', missing: 'Abra um projeto com Acessar projeto: esta parte fica na ficha.', missingMobile: 'Abra um projeto com Acessar projeto: esta parte fica na ficha.', requires: { projects: true },
         labels: ['Cronograma', 'Atividade'],
       },
       {
         id: 'voltar', title: 'Voltar à lista',
-        speech: 'Todos os projetos volta à lista. Os atalhos da ficha, como Demandas e Agenda, abrem esses módulos já neste projeto. Usar este projeto nos outros módulos, no fim da ficha, mantém o projeto escolhido.',
+        speech: 'Todos os projetos volta à lista. Os atalhos da ficha, como Meu trabalho e Demandas, abrem esses módulos já neste projeto. Usar este projeto nos outros módulos, no fim da ficha, leva ao Início com este projeto escolhido.',
+        speechMobile: 'Todos os projetos volta à lista. Os atalhos da ficha, como Demandas, abrem esses módulos já neste projeto.',
         youWillSee: 'O botão Todos os projetos destacado, no alto da ficha.',
         target: '[data-tutorial="projeto-voltar"]', module: 'projects', openLabel: 'Ir para Projetos', missing: 'Abra um projeto com Acessar projeto: esta parte fica na ficha.', missingMobile: 'Abra um projeto com Acessar projeto: esta parte fica na ficha.', requires: { projects: true },
         labels: ['Todos os projetos', 'Usar este projeto nos outros módulos'],
