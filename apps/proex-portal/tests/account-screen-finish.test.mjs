@@ -57,6 +57,6 @@ test('photo buttons keep their natural width, the read-only e-mail looks read-on
 
 test('long disclosure titles keep space before the "+" on phones (sétima crítica de 16/11)', () => {
   const css = readFileSync(new URL('../components/portal/profile-panel.module.css', import.meta.url), 'utf8');
-  assert.match(css, /\.disclosure>summary>\.summaryTitle\{flex:1;min-width:0\}/);
+  assert.match(css, /\.disclosure>summary>\.summaryTitle\{flex:1;min-width:0;flex-wrap:nowrap\}/, 'o escudo fica ao lado do título, sem cair numa linha própria');
   assert.match(css, /\.disclosure>summary::after\{margin-left:8px\}/);
 });
