@@ -276,7 +276,7 @@ export default function CalendarPanel({ viewerId, projects: sourceProjects, orga
           if (!day) return <span key={`empty-${index}`}/>;
           const dayEntries = visibleEntries.filter(event => inDay(event, day));
           const count = dayEntries.length;
-          return <button type="button" key={day} className={`${styles.day} ${selectedDay === day ? styles.selected : ''}`}
+          return <button type="button" key={day} data-tutorial={day === today ? 'agenda-hoje' : undefined} className={`${styles.day} ${selectedDay === day ? styles.selected : ''}`}
             onClick={event => { dayTrigger.current = event.currentTarget; setSelectedDay(current => current === day ? '' : day); }}
             aria-pressed={selectedDay === day} aria-controls="calendar-day-entries" aria-current={day === today ? 'date' : undefined}
             aria-label={`${prettyDay(day)}, ${count} ${count === 1 ? 'registro' : 'registros'}`}>
