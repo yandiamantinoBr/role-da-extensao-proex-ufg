@@ -5,7 +5,7 @@ import { rateLimitAll } from '../rate-limit';
 import { reservationStatements } from './admission';
 import { quotaRefusal, responsibleName } from './quota';
 import { onlyKeys, safeRequest, type AssistantConfig, type AssistantCredentials } from './contracts';
-import { ROLE_TASK_DRAFT_TTL_MS, digest, signTaskDraft, type CredentialKeys } from './crypto';
+import { ROLE_PDF_OFFER_TTL_MS, ROLE_TASK_DRAFT_TTL_MS, digest, signPdfOffer, signTaskDraft, verifyPdfOffer, type CredentialKeys } from './crypto';
 import {
   ROLE_CONTRACT, ROLE_MAX_HISTORY, ROLE_MAX_HISTORY_CHARS, ROLE_MAX_IMAGE_BYTES, ROLE_MAX_IMAGE_SIDE, ROLE_MAX_MESSAGE_CHARS, ROLE_IMAGE_TOKEN_CEILING, ROLE_SYSTEM_PROMPT_BYTES, ROLE_MODELS,
   ROLE_SYSTEM_PROMPT, ROLE_SYSTEM_PROMPT_TOOLS, ROLE_TOOL_CALLS_PER_ROUND, ROLE_TOOL_RESULT_BYTES, ROLE_TOOL_ROUNDS, roleConversationBytes, roleEstimate, roleTimeoutMs, validateRoleReply, type RoleSource, type RoleTurn,
@@ -192,8 +192,12 @@ function availability(config: AssistantConfig, credentials: AssistantCredentials
 /** Busca em fontes oficiais (sem IA nem custo): basta o Rolê ligado e a busca pública ligada, mesmo sem chave de conversa. */
 const officialSearchOn = (config: AssistantConfig) => config.roleEnabled && config.rolePublicSearchEnabled;
 
-/** Chave do Gemini já usada para vídeo; sem ela, a leitura de PDF escaneado não aparece nem roda. */
-async function pdfReadingKey(db: D1Database, organizationId: string, rawCredentials: Record<string, unknown>): Promise<string | null> {
+/**
+ * Mesmo interruptor e mesma chave do Gemini do vídeo (liberados pela administração geral):
+ * sem os dois, a leitura de PDF escaneado não aparece nem roda.
+ */
+async function pdfReadingKey(db: D1Database, organizationId: string, config: AssistantConfig, rawCredentials: Record<string, unknown>): Promise<string | null> {
+  if (!config.roleVideoEnabled) return null;
   const key = geminiVideoCredential((await loadCatalog(db, organizationId)).catalog, rawCredentials);
   return validProviderKey(key) ? key : null;
 }
@@ -537,9 +541,16 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
     try {
       await authorization.first();
       const result = await officialSearchReply(db, organizationId, message, options.officialFetcher);
-      // PDF escaneado: oferece a leitura com IA (só aparece com a chave do Gemini e um teto que caiba).
+      // PDF escaneado: oferece a leitura com IA (só com o interruptor e a chave do Gemini, e um teto que caiba), assinada no servidor.
       const quote = result.scanned.length ? pdfReadingQuote(config, message, now) : null;
-      const pdfReading: RolePdfReadingOffer | null = quote && await pdfReadingKey(db, organizationId, rawCredentials) ? { ...result.scanned[0], costMicros: quote.costMicros } : null;
+      const scannedUrl = quote ? officialPdfUrl(result.scanned[0].url) : null;
+      if (scannedUrl) scannedUrl.hash = '';
+      let pdfReading: RolePdfReadingOffer | null = null;
+      if (quote && scannedUrl && await pdfReadingKey(db, organizationId, config, rawCredentials)) {
+        const expiresAt = now + ROLE_PDF_OFFER_TTL_MS;
+        const signature = await signPdfOffer(secret, { actorId: current.userId, organizationId, projectId: project, url: scannedUrl.href, question: await digest(message), costMicros: quote.costMicros, revision, expiresAt });
+        pdfReading = { url: scannedUrl.href, title: result.scanned[0].title, costMicros: quote.costMicros, expiresAt, signature };
+      }
       await authorization.first();
       return { contract: ROLE_CONTRACT, reply: result.reply, operation: null, operationDropped: false, provider: 'official', model: 'Consulta oficial',
         reservedMicros: 0, costMicros: 0, inputTokens: 0, outputTokens: 0, sources: result.sources, lookups: 1, ...(pdfReading ? { pdfReading } : {}) };
@@ -677,13 +688,16 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
   }
 }
 
-const PDF_READING_TIMEOUT_MS = 40_000;
+/** Prazo total do pedido (função de 60 s): download, reserva, Gemini e acerto cabem em 45 s contados do início. */
+const PDF_READING_DEADLINE_MS = 45_000;
+/** Menos que isso para o Gemini depois do download: recusa sem reservar. */
+const PDF_READING_MIN_PROVIDER_MS = 15_000;
 const PDF_READING_REFUSALS = {
   fora: [400, 'Só dá para ler com IA um PDF público oficial da PROEX.', 'role_pdf_url'],
-  bloqueado: [403, 'O site não permite leitura automática deste PDF. Abra o link para conferir.', 'role_pdf_blocked'],
-  indisponivel: [503, 'Não consegui abrir o PDF oficial agora. Tente de novo em instantes.', 'role_pdf_unavailable'],
-  tamanho: [413, 'O PDF passa de 2 MB; a leitura com IA não aceita arquivos desse tamanho.', 'role_pdf_size'],
-  com_texto: [409, 'Este PDF tem texto: a busca nas fontes oficiais já consegue ler. Pergunte de novo por lá.', 'role_pdf_has_text'],
+  bloqueado: [403, 'O site não permite leitura automática deste PDF. Nada foi cobrado. Abra o link para conferir.', 'role_pdf_blocked'],
+  indisponivel: [503, 'Não consegui abrir o PDF oficial agora. Nada foi cobrado. Tente de novo em instantes.', 'role_pdf_unavailable'],
+  tamanho: [413, 'O PDF passa de 2 MB; a leitura com IA não aceita arquivos desse tamanho. Nada foi cobrado. Abra o link para conferir.', 'role_pdf_size'],
+  com_texto: [409, 'Este PDF tem texto: a busca nas fontes oficiais já consegue ler. Nada foi cobrado. Pergunte de novo por lá.', 'role_pdf_has_text'],
 } as const;
 
 /**
@@ -692,7 +706,8 @@ const PDF_READING_REFUSALS = {
  * confere o teto aceito, reserva no orçamento do dia e manda ao Gemini uma vez por chave de operação.
  */
 export async function roleReadScannedPdf(db: D1Database, actor: PortalActor | null, input: Record<string, unknown>, secret: string, options: Options = {}) {
-  onlyKeys(input, ['action', 'projectId', 'operationKey', 'consent', 'message', 'url', 'acceptedCostMicros', 'scope']);
+  const deadline = Date.now() + PDF_READING_DEADLINE_MS;
+  onlyKeys(input, ['action', 'projectId', 'operationKey', 'consent', 'message', 'url', 'acceptedCostMicros', 'scope', 'offer']);
   if (input.consent !== true) throw new HttpError(400, 'Toque em Ler com IA para enviar o PDF público ao Google Gemini.', 'role_pdf_consent');
   if (typeof input.operationKey !== 'string' || !/^[A-Za-z0-9_-]{8,100}$/.test(input.operationKey)) throw new HttpError(400, 'Reabra o Rolê antes de enviar.', 'assistant_operation');
   if (typeof input.message !== 'string' || input.message.length > ROLE_MAX_MESSAGE_CHARS) throw new HttpError(400, 'Escreva até 2.000 caracteres por mensagem.', 'assistant_request');
@@ -704,16 +719,18 @@ export async function roleReadScannedPdf(db: D1Database, actor: PortalActor | nu
   const { current, organizationId } = await scopedActor(db, actor, project), now = options.now ?? Date.now();
   const { config, rawCredentials, revision } = await loadAssistantSettings(db, secret, organizationId, 'configuration', options.keys, current.userId);
   if (!officialSearchOn(config)) throw new HttpError(403, 'A busca em fontes oficiais está desligada nesta organização.', 'role_official_disabled');
-  const apiKey = await pdfReadingKey(db, organizationId, rawCredentials);
+  const apiKey = await pdfReadingKey(db, organizationId, config, rawCredentials);
   if (!apiKey) throw new HttpError(403, PDF_READING_DISABLED, 'role_pdf_disabled');
   await resolveRoleScope(db, current, organizationId, input.scope);
   const ceiling = pdfReadingQuote(config, message, now);
-  if (!ceiling) throw new HttpError(400, 'Esta leitura passaria do limite por leitura com IA (custo ou tamanho da entrada). Encurte a pergunta ou abra o PDF.', 'role_pdf_cost');
+  if (!ceiling) throw new HttpError(400, 'Esta leitura passaria do limite por leitura com IA (custo ou tamanho da entrada). Nada foi cobrado. Encurte a pergunta ou abra o PDF.', 'role_pdf_cost');
   if (!Number.isSafeInteger(input.acceptedCostMicros) || Number(input.acceptedCostMicros) < ceiling.costMicros) {
     throw new HttpError(409, 'O custo previsto mudou. Faça a busca de novo e toque em Ler com IA.', 'role_cost_changed');
   }
+  // A oferta assinada na busca: mesma pessoa, organização, projeto, endereço, pergunta, custo e revisão, por 30 min.
+  await verifyPdfOffer(secret, input.offer, { actorId: current.userId, organizationId, projectId: project, url, question: await digest(message), revision, minCostMicros: ceiling.costMicros }, now);
   const id = await digest(`role-pdf\n${current.userId}\n${project}\n${input.operationKey}`);
-  const fingerprint = await digest(JSON.stringify({ contract: ROLE_CONTRACT, kind: 'role-pdf', url, message, revision }));
+  const fingerprint = await digest(JSON.stringify({ contract: ROLE_CONTRACT, kind: 'role-pdf', url, message, revision, offer: input.offer }));
   const replay = async () => {
     const call = await one(db, 'SELECT fingerprint FROM ai_calls WHERE id=?', [id]);
     if (call) throw new HttpError(409, call.fingerprint === fingerprint ? 'Esta leitura já foi enviada por este botão. Faça a busca de novo para tentar outra vez.' : 'Este envio já foi usado com outro pedido.', 'assistant_call_replay');
@@ -725,7 +742,8 @@ export async function roleReadScannedPdf(db: D1Database, actor: PortalActor | nu
     if (error instanceof HttpError && error.code === 'rate_limited') throw new HttpError(429, 'Muitas buscas seguidas. Espere um minuto e tente de novo.', 'role_official_rate');
     throw error;
   }
-  const authorization = roleAuthorization(db, current, project, organizationId, revision);
+  // Cerca com o interruptor do Gemini (o mesmo do vídeo): desligar no meio bloqueia a reserva e a resposta.
+  const authorization = roleAuthorization(db, current, project, organizationId, revision, true);
   try { await authorization.first(); } catch (error) {
     if (String(error).includes('assistant_authority_changed')) throw new HttpError(403, 'Seu acesso ou a configuração mudou antes da resposta.', 'assistant_forbidden');
     throw error;
@@ -733,12 +751,15 @@ export async function roleReadScannedPdf(db: D1Database, actor: PortalActor | nu
   // Mesmo download da busca: endereço oficial, robots, ≤ 2 MB, assinatura e páginas. O cliente não manda arquivo.
   const pdf = await downloadScannedOfficialPdf(url, PDF_READING_MAX_PAGES, options.officialFetcher);
   if (!pdf.ok) {
-    if (pdf.reason === 'paginas') throw new HttpError(413, `${pdf.pageCount ? `Este PDF tem ${pdf.pageCount} páginas; a` : 'A'} leitura com IA aceita até ${PDF_READING_MAX_PAGES} páginas. Abra o link para conferir.`, 'role_pdf_pages');
+    if (pdf.reason === 'paginas') throw new HttpError(413, `${pdf.pageCount ? `Este PDF tem ${pdf.pageCount} páginas; a` : 'A'} leitura com IA aceita até ${PDF_READING_MAX_PAGES} páginas. Nada foi cobrado. Abra o link para conferir.`, 'role_pdf_pages');
     const [status, text, code] = PDF_READING_REFUSALS[pdf.reason];
     throw new HttpError(status, text, code);
   }
+  // Prazo do Gemini: o que sobra dos 45 s, no máximo 30 s e dentro do tempo configurado no Rolê.
+  const timeoutMs = Math.min(30_000, roleTimeoutMs(config.timeoutMs, true), deadline - Date.now());
+  if (deadline - Date.now() < PDF_READING_MIN_PROVIDER_MS) throw new HttpError(503, 'A leitura com IA demorou para começar. Nada foi cobrado. Tente de novo em instantes.', 'role_pdf_late');
   const estimate = pdfReadingEstimate({ textBytes: new TextEncoder().encode(`Pergunta: ${message}`).byteLength, pages: pdf.pageCount, now });
-  const reservation = { tokens: estimate.tokens, cost: estimate.costMicros, calls: 1, milliseconds: PDF_READING_TIMEOUT_MS };
+  const reservation = { tokens: estimate.tokens, cost: estimate.costMicros, calls: 1, milliseconds: timeoutMs };
   const nonce = crypto.randomUUID(), day = dayKey(now);
   const personalCap = config.usageScope === 'private' ? config.dailyCalls : Math.max(3, Math.ceil(config.dailyCalls / 2));
   const personalQuota = db.prepare("SELECT CASE WHEN (SELECT COUNT(*) FROM ai_calls WHERE actor_id=? AND day=?) < ? THEN 1 ELSE json_extract('[]','role_user_quota') END").bind(current.userId, day, personalCap);
@@ -752,7 +773,7 @@ export async function roleReadScannedPdf(db: D1Database, actor: PortalActor | nu
   }
   const admitted = await one(db, 'SELECT admission_nonce FROM ai_calls WHERE id=?', [id]);
   if (admitted?.admission_nonce !== nonce) throw await quotaRefusal(db, current, organizationId, day, config, { cost: reservation.cost, tokens: reservation.tokens, ms: reservation.milliseconds, calls: 1 });
-  const controller = new AbortController(), timer = setTimeout(() => controller.abort(), PDF_READING_TIMEOUT_MS);
+  const controller = new AbortController(), timer = setTimeout(() => controller.abort(), Math.max(1, Math.min(timeoutMs, deadline - Date.now())));
   const abort = () => controller.abort();
   options.signal?.addEventListener('abort', abort, { once: true });
   if (options.signal?.aborted) abort();
@@ -771,7 +792,7 @@ export async function roleReadScannedPdf(db: D1Database, actor: PortalActor | nu
       db.prepare("INSERT INTO audit(id,actor_id,project_id,organization_id,action,entity_id,details,created_at) VALUES(?,?,?,?,'assistant.role.chat',?,?,?)")
         .bind(crypto.randomUUID(), current.userId, project, organizationId, id, JSON.stringify(details), new Date().toISOString()),
     ]);
-    return { contract: ROLE_CONTRACT, reply: answer.reply, operation: null, operationDropped: false, provider: 'gemini', model: PDF_READING_PROFILE.model,
+    return { contract: ROLE_CONTRACT, reply: answer.reply, notice: answer.notice, operation: null, operationDropped: false, provider: 'gemini', model: PDF_READING_PROFILE.model,
       reservedMicros: estimate.costMicros, costMicros: result.costMicros, inputTokens: result.inputTokens, outputTokens: result.outputTokens,
       sources: [answer.source], lookups: 0, page: answer.page };
   } catch (error) {

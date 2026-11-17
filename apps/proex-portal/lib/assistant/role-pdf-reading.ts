@@ -1,7 +1,7 @@
 import { HttpError } from '../errors';
 import { boundedJson } from './generic-provider';
 import { requestProvider } from './provider-transport';
-import { PDF_READING_AI_LINE, PDF_READING_OUTPUT_TOKENS, PDF_READING_PROFILE, pdfReadingEstimate } from './role-pdf-reading-contracts';
+import { PDF_READING_AI_LINE, PDF_READING_OUTPUT_TOKENS, PDF_READING_PROFILE, PDF_READING_RESOLUTION, pdfReadingEstimate } from './role-pdf-reading-contracts';
 import { ROLE_VIDEO_ENDPOINT, roleVideoCostMicros } from './role-video-contracts';
 import { responseText, responseUsage, RoleVideoChargedError, sensitive } from './role-video';
 
@@ -49,8 +49,8 @@ export async function dispatchRolePdfReading({
         background: false,
         store: false,
         system_instruction: PDF_PROMPT,
-        // Formato documentado para PDF em linha na Interactions API: type document + mime_type application/pdf.
-        input: [{ type: 'document', data, mime_type: 'application/pdf' }, { type: 'text', text }],
+        // Formato documentado para PDF em linha na Interactions API (type document + mime_type application/pdf) e resolução por item.
+        input: [{ type: 'document', data, mime_type: 'application/pdf', resolution: PDF_READING_RESOLUTION }, { type: 'text', text }],
         generation_config: { thinking_level: PDF_READING_PROFILE.effort, thinking_summaries: 'none', max_output_tokens: PDF_READING_OUTPUT_TOKENS },
       }),
     }, fetcher), 96 * 1024);
@@ -71,7 +71,7 @@ export async function dispatchRolePdfReading({
   return { raw, inputTokens, outputTokens, reasoningTokens, costMicros };
 }
 
-/** Monta a resposta só com o que veio do documento: trecho limpo e limitado, página válida, link e o aviso de IA. */
+/** Monta a resposta só com o que veio do documento: trecho limpo e limitado e página válida. O link vai na fonte; o aviso de IA, à parte. */
 export function pdfReadingReply(raw: string, url: string, title: string, pageCount: number) {
   const clean = (value: string) => value.replace(UNSAFE, ' ').replace(/\s+/g, ' ').trim();
   const flat = clean(raw);
@@ -86,7 +86,8 @@ export function pdfReadingReply(raw: string, url: string, title: string, pageCou
     ? 'Li o PDF com IA (escaneado), mas não achei um trecho que responda à pergunta.'
     : page ? `Li o PDF com IA (escaneado). Na p. ${page}: ${passage}` : `Li o PDF com IA (escaneado): ${passage}`;
   return {
-    reply: [reading, link.href, PDF_READING_AI_LINE].join('\n'),
+    reply: reading,
+    notice: PDF_READING_AI_LINE,
     found,
     page: found ? page : null,
     source: { label: found && page ? `${title} · p. ${page}` : title, href: link.href },

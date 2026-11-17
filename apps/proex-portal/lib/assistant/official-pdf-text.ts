@@ -5,8 +5,11 @@ export async function readOfficialPdfText(bytes: Uint8Array): Promise<PdfTextPag
   return (await readOfficialPdf(bytes)).pages;
 }
 
+/** Acima do limite, recusa logo depois de saber o total de páginas, sem abrir nenhuma. */
+export class PdfPageLimitError extends Error { constructor(readonly pageCount: number) { super('PDF acima do limite de páginas.'); } }
+
 /** Páginas com texto e o total de páginas do arquivo (as escaneadas contam, mesmo sem texto). */
-export async function readOfficialPdf(bytes: Uint8Array): Promise<{ pageCount: number; pages: PdfTextPage[] }> {
+export async function readOfficialPdf(bytes: Uint8Array, maxPages = 50): Promise<{ pageCount: number; pages: PdfTextPage[] }> {
   const [engine, worker] = await Promise.all([
     import('pdfjs-dist/legacy/build/pdf.mjs'),
     import('pdfjs-dist/legacy/build/pdf.worker.mjs'),
@@ -22,7 +25,7 @@ export async function readOfficialPdf(bytes: Uint8Array): Promise<{ pageCount: n
   const timer = setTimeout(() => { void task.destroy().catch(() => {}); }, 5_000);
   try {
     const pdf = await task.promise;
-    if (pdf.numPages > 50) throw new Error('PDF acima do limite de páginas.');
+    if (pdf.numPages > Math.min(50, maxPages)) throw new PdfPageLimitError(pdf.numPages);
     const pages: PdfTextPage[] = [];
     let textSize = 0;
     for (let number = 1; number <= pdf.numPages; number++) {

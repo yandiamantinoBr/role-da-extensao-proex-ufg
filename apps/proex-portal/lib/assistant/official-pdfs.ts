@@ -1,5 +1,5 @@
 import { officialPdfUrl } from './official-pdf-url';
-import { readOfficialPdf, readOfficialPdfText, type PdfTextPage } from './official-pdf-text';
+import { PdfPageLimitError, readOfficialPdf, readOfficialPdfText, type PdfTextPage } from './official-pdf-text';
 
 export type OfficialDocument = { url: string; title: string };
 export type OfficialPassage = OfficialDocument & { page: number; text: string };
@@ -89,10 +89,9 @@ export async function readScannedOfficialPdf(
   catch (error) { return { ok: false, reason: error instanceof PdfTooLarge ? 'tamanho' : 'indisponivel' }; }
   let read: Awaited<ReturnType<typeof readOfficialPdf>>;
   // O PDF.js pode transferir o buffer que recebe: ele lê uma cópia e o original segue para o provedor.
-  try { read = await readOfficialPdf(bytes.slice()); }
-  catch (error) { return { ok: false, reason: /limite de páginas/.test(String(error)) ? 'paginas' : 'indisponivel' }; }
+  try { read = await readOfficialPdf(bytes.slice(), maxPages); }
+  catch (error) { return error instanceof PdfPageLimitError ? { ok: false, reason: 'paginas', pageCount: error.pageCount } : { ok: false, reason: 'indisponivel' }; }
   if (read.pageCount < 1) return { ok: false, reason: 'indisponivel' };
-  if (read.pageCount > maxPages) return { ok: false, reason: 'paginas', pageCount: read.pageCount };
   const textSize = read.pages.reduce((size, page) => size + page.text.replace(/\s+/g, ' ').trim().length, 0);
   if (textSize >= MIN_PDF_TEXT) return { ok: false, reason: 'com_texto' };
   return { ok: true, url: url.href, bytes, pageCount: read.pageCount };
