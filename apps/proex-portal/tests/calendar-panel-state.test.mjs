@@ -459,3 +459,9 @@ test('an empty agenda explains what appears there for this access (P7, 10/11/202
     assert.match(h.body(), /Aqui aparecem materiais e prazos de demandas dos projetos que você acompanha/);
   } finally { h.dispose(); }
 });
+
+test('on phones the month cells keep only dots and counts: the last chip rule hides the previews again (quinta crítica de 16/11)', () => {
+  const css = readFileSync(new URL('../components/portal/calendar-panel.module.css', import.meta.url), 'utf8');
+  const lastShow = css.lastIndexOf('.chip { display:block'), lastHide = css.lastIndexOf('@media(max-width:720px){.chip{display:none}}');
+  assert.ok(lastShow > 0 && lastHide > lastShow, 'a regra que esconde no celular vem depois da que mostra');
+});

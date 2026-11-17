@@ -136,3 +136,5 @@
 /* O corte em duas linhas fica no texto interno: o respiro do chip não deixa aparecer pedaço da terceira linha. */
 .chip { display:block; max-height:none; }
 .chipText { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; overflow-wrap:anywhere; }
+/* No celular a célula do mês mostra só os pontos e o total: repetir aqui, depois da regra do chip acima. */
+@media(max-width:720px){.chip{display:none}}
