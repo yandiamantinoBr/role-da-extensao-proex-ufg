@@ -1,7 +1,7 @@
 /* Blocos de links da resposta direta do Rolê (links da PROEX, Instagram e notícias). */
 .groups{display:grid;gap:.4rem;min-width:0}
 .group{border:1px solid var(--line);border-radius:12px;background:var(--surface);min-width:0}
-.summary{display:flex;align-items:center;flex-wrap:wrap;gap:0 .25rem;min-height:44px;padding:.35rem .75rem;cursor:pointer;border-radius:12px;list-style:none}
+.summary{display:flex;align-items:center;gap:0 .25rem;min-height:44px;padding:.35rem .75rem;cursor:pointer;border-radius:12px;list-style:none}
 .summary:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
 /* Com display:flex o triângulo nativo some: seta própria, que gira ao abrir. */
 .summary::-webkit-details-marker{display:none}
@@ -16,3 +16,6 @@
 .link:focus-visible{outline:3px solid var(--focus);outline-offset:1px}
 .name{font-size:max(13px,.88rem);font-weight:650;line-height:1.35}
 .host{font-size:max(12px,.75rem);color:var(--text-secondary)}
+
+.label{flex:1;min-width:0}
+.count{white-space:nowrap}

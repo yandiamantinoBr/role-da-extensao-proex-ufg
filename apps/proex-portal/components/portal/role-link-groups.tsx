@@ -30,7 +30,7 @@ const hostOf = (url: string) => { try { return new URL(url).hostname.replace(/^w
 export default function RoleLinkGroups({ groups, label = 'Links da página inicial da PROEX' }: { groups: RoleLinkGroupView[]; label?: string }) {
   return <section className={styles.groups} aria-label={label}>
     {groups.map((group, index) => <details key={`${index}-${group.title}`} className={styles.group} open={index < 2}>
-      <summary className={styles.summary}><span className={styles.title}>{group.title}</span><span className={styles.count}> · {group.links.length} {group.links.length === 1 ? 'link' : 'links'}</span></summary>
+      <summary className={styles.summary}><span className={styles.label}><span className={styles.title}>{group.title}</span><span className={styles.count}> · {group.links.length} {group.links.length === 1 ? 'link' : 'links'}</span></span></summary>
       <ul className={styles.list}>
         {group.links.map(link => <li key={link.url}>
           <a className={styles.link} href={link.url} target="_blank" rel="noopener noreferrer">

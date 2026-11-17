@@ -364,7 +364,7 @@ const RECENT_FILLER = new Set(['instagram', 'post', 'posts', 'postagem', 'postag
 /** Pergunta sobre o que saiu: Instagram, posts, publicações, notícias, últimos ou recentes. */
 const asksRecent = (subject: string) => /\b(?:instagram|posts?|postage(?:m|ns)|publicac(?:ao|oes)|publicou|noticias?|novidades?|ultim[oa]s?|recentes?)\b/.test(norm(subject));
 const newsItem = (entry: OfficialNews) => ({ fonte: 'Notícias do site da PROEX', titulo: entry.title, ...(entry.publishedAt ? { publicadoEm: brasiliaDay(entry.publishedAt) } : {}), resumo: entry.summary, link: entry.url });
-const INSTAGRAM_NOTICE = 'O Instagram não deixa o Rolê ler os posts sozinho. O perfil está no link abaixo. Abaixo estão as publicações cadastradas pela comunicação e as últimas notícias do site.';
+const INSTAGRAM_NOTICE = 'O Instagram não deixa o Rolê ler os posts sozinho. Nos links abaixo estão o perfil, as publicações cadastradas pela comunicação e as últimas notícias do site.';
 const INSTAGRAM_TIP = 'A comunicação pode cadastrar posts em Configurações → Chaves e modelos → Fontes oficiais do Rolê.';
 const INSTAGRAM_ASK = 'Peça à comunicação para cadastrar os posts no Portal.';
 const NEWS_UNAVAILABLE = 'Não consegui abrir as notícias do site da PROEX agora. Confira em https://proex.ufg.br/.';

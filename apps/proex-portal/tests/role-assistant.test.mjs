@@ -1379,7 +1379,7 @@ test('INSTAGRAM: "últimos posts do Instagram" lista as cadastradas por data (se
     const { instagramAction } = await import(compile('assistant/official-sources'));
     const provider = fakeProvider(), official = proexSite(), options = { keys, fetcher: provider.fetch, officialFetcher: official.fetch };
     const empty = await roleChat(f.db, f.actors.viewer, chatInput(f, { message: 'últimos posts do Instagram da PROEX', acceptedCostMicros: 0 }), secret, options);
-    assert.equal(empty.reply.split('\n\n')[0], 'O Instagram não deixa o Rolê ler os posts sozinho. O perfil está no link abaixo. Abaixo estão as publicações cadastradas pela comunicação e as últimas notícias do site.');
+    assert.equal(empty.reply.split('\n\n')[0], 'O Instagram não deixa o Rolê ler os posts sozinho. Nos links abaixo estão o perfil, as publicações cadastradas pela comunicação e as últimas notícias do site.');
     assert.match(empty.reply, /Nenhuma publicação do Instagram foi cadastrada ainda\. Peça à comunicação para cadastrar os posts no Portal\./, 'quem não cadastra recebe o pedido, não o caminho das Configurações');
     assert.deepEqual(empty.sources, []);
     assert.deepEqual(empty.linkGroups.map(group => group.title), ['Instagram da PROEX', 'Últimas notícias do site da PROEX']);

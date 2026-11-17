@@ -248,7 +248,7 @@ test('NOTÍCIAS: RSS lido sem dependência, com título, data, resumo e só link
   await assert.rejects(readProexNews(blocked.fetch), error => error.kind === 'bloqueado');
 });
 
-const INSTAGRAM_FIRST = 'O Instagram não deixa o Rolê ler os posts sozinho. O perfil está no link abaixo. Abaixo estão as publicações cadastradas pela comunicação e as últimas notícias do site.';
+const INSTAGRAM_FIRST = 'O Instagram não deixa o Rolê ler os posts sozinho. Nos links abaixo estão o perfil, as publicações cadastradas pela comunicação e as últimas notícias do site.';
 test('INSTAGRAM E NOTÍCIAS · RESPOSTA: perfil e cadastradas por data em blocos clicáveis, notícias do RSS; dica só para quem cadastra; RSS fora do ar, o aviso', async () => {
   const feed = site({ pages: { 'https://proex.ufg.br/feed': FEED } });
   const answer = await proexNewsReply(postsDb(POSTS), 'org_proex', feed.fetch);
