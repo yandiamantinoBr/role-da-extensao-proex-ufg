@@ -266,8 +266,8 @@ test('the governance dash marks only the governance card, not the whole subtree 
   const css = readFileSync(new URL('../components/portal/institutional-structure-panel.module.css', import.meta.url), 'utf8');
   const tail = css.slice(css.lastIndexOf('.node[data-relation=governance] {'));
   assert.match(tail, /^\.node\[data-relation=governance\] \{ border-left:0; padding-left:0; \}/);
-  assert.match(css, /\.node\[data-relation=governance\]>\.nodeCard \{ border-left:2px dashed var\(--muted\); \}/);
-  assert.match(readFileSync(new URL('../components/portal/work-teams-panel.module.css', import.meta.url), 'utf8'), /\.members \{ align-self: start; \}/);
+  assert.match(css, /\.node\[data-relation=governance\]>\.nodeCard \{ border:1px dashed var\(--muted\); \}/, 'contorno todo tracejado, sem a quina torta da borda esquerda');
+  assert.doesNotMatch(readFileSync(new URL('../components/portal/work-teams-panel.module.css', import.meta.url), 'utf8'), /\.members \{ align-self: start; \}/, 'caixas lado a lado com a mesma altura (oitava crítica)');
 });
 
 test('summary numbers agree in number and the legend sample looks like the governance card (sétima crítica de 16/11)', async () => {
@@ -276,7 +276,7 @@ test('summary numbers agree in number and the legend sample looks like the gover
    assert.match(h.body(), /1Equipe vinculada/);
   } finally { h.dispose(); }
   const css = readFileSync(new URL('../components/portal/institutional-structure-panel.module.css', import.meta.url), 'utf8');
-  assert.match(css, /\.legend i\.dashed \{ width:16px; height:12px; border:1px solid var\(--line\); border-left:2px dashed var\(--muted\); border-radius:3px; \}/);
+  assert.doesNotMatch(css, /\.legend i\.dashed \{ width:16px/, 'a amostra volta a ser uma linha tracejada, sem parecer caixa de marcar (oitava crítica)');
   const sheets = readFileSync(new URL('../components/portal/project-sheets-panel.module.css', import.meta.url), 'utf8');
   assert.match(sheets, /\.heading p\{grid-row:2;grid-column:1\/-1;margin-top:0\}/, 'a descrição da planilha usa a largura toda');
 });

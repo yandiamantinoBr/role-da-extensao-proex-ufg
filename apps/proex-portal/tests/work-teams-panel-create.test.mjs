@@ -151,3 +151,9 @@ test('an empty team list does not say "0 nesta página" (quinta crítica de 16/1
   assert.doesNotMatch(h.body(), /0 nesta página/);
   assert.match(h.body(), /Nenhuma demanda atribuída à equipe neste recorte/);
 });
+
+test('the team sheet title inside the team detail matches the sibling block titles (oitava crítica de 16/11)', () => {
+  const css = readFileSync(new URL('../components/portal/work-teams-panel.module.css', import.meta.url), 'utf8');
+  assert.match(css, /\.sheets h3 \{ font-size: 15px; \}/);
+  assert.match(css, /\.sheets h3 > svg \{ display: none; \}/);
+});
