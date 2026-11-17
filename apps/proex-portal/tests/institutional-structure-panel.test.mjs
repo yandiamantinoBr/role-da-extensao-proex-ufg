@@ -280,3 +280,10 @@ test('summary numbers agree in number and the legend sample looks like the gover
   const sheets = readFileSync(new URL('../components/portal/project-sheets-panel.module.css', import.meta.url), 'utf8');
   assert.match(sheets, /\.heading p\{grid-row:2;grid-column:1\/-1;margin-top:0\}/, 'a descrição da planilha usa a largura toda');
 });
+
+test('the legend samples match the tree rails: soft brand solid for subordination, dashed for governance (crítica final de 16/11)', () => {
+  const css = readFileSync(new URL('../components/portal/institutional-structure-panel.module.css', import.meta.url), 'utf8');
+  assert.match(css, /\.children>\.branch \{ border-left-color:color-mix\(in srgb,var\(--brand-ink\) 40%,var\(--line\)\); \}/);
+  assert.match(css, /\.legend i \{ border-top-color:color-mix\(in srgb,var\(--brand-ink\) 40%,var\(--line\)\); \}/);
+  assert.match(css, /\.children>\.branch:has\(>\.node\[data-relation=governance\]\) \{ border-left-style:dashed; border-left-color:var\(--muted\); \}/);
+});

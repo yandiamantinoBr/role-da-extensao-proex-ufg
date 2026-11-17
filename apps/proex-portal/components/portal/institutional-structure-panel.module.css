@@ -153,3 +153,8 @@
 /* Sexta crítica de 16/11: a linha tracejada marca só o cartão em governança, sem correr pelas unidades abaixo dele. */
 .node[data-relation=governance] { border-left:0; padding-left:0; }
 .node[data-relation=governance]>.nodeCard { border:1px dashed var(--muted); }
+/* Crítica final de 16/11: legenda igual às linhas da árvore (subordinação em roxo suave e contínua; governança tracejada). */
+.children>.branch { border-left-color:color-mix(in srgb,var(--brand-ink) 40%,var(--line)); }
+.legend i { border-top-color:color-mix(in srgb,var(--brand-ink) 40%,var(--line)); }
+.legend i.dashed { border-top-color:var(--muted); }
+.children>.branch:has(>.node[data-relation=governance]) { border-left-style:dashed; border-left-color:var(--muted); }
