@@ -367,3 +367,17 @@ PRs #176, #187, #191 e #194, todas validadas em produção com login (custo de I
   - **Não verificado:** chamada real com PDF escaneado (o formato da resposta foi suposto igual ao do vídeo). Conferir no primeiro caso real e registrar o gasto.
 - **Gasto real da rodada de 2026-11-17:** US$ 0,0109 (avaliação e conferências; DeepSeek Flash).
 - **Pendência:** quando o mesmo pedido chega duas vezes, a segunda cópia volta "Esta mensagem já foi enviada" e a resposta paga da primeira se perde (sem cobrança dupla). Devolver a resposta guardada quando a impressão digital for igual e a chamada estiver completa.
+
+## Rolê mais inteligente: Fases 0 a 4 · 2026-11-17
+
+Pedido do Yan em 2026-11-17 ("ainda está muito burrinho"; navegar por todas as funcionalidades, com o alcance vindo dos privilégios da pessoa). Medição com 28 perguntas reais em produção (perfil administração) e checagem de acesso sintética (coordenação e bolsista): **46% → 58,9% → 83,9%, 0 vazamentos** (detalhes em `ROLE-AVALIACAO.md`).
+
+- **Fase 1** ([PR215](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/215)): "links da PROEX" (blocos da página inicial, sem IA), `abrir_link_oficial` (domínios da UFG autorizados, robots, até 2 redirecionamentos), Instagram com aviso honesto + RSS do site, busca oficial com IA quando a conversa está disponível.
+- **Fase 2a** ([PR220](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/220)): `consultar_projetos`, `filtrar_demandas` (comigo/atrasadas), `minha_agenda`; nome de projeto por palavra/sigla. Demandas privadas nunca chegam ao Rolê (`publicTaskAuthority`).
+- **Fase 2b** ([PR218](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/218)): `consultar_estoque` (saldo baixo real, projeto que hospeda a dinâmica), `consultar_niveis_dinamica` (exatos), `consultar_emprestimos` (com atrasados), `consultar_responsaveis`.
+- **Fase 2c** ([PR223](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/223)): `registros_recentes` (tipo/período), `consultar_equipes`, `consultar_organograma`, `resumir_relatorio_projeto`, `consultar_gestao`; limite `role-heavy` de 10 por minuto.
+- **Fase 2d** ([PR224](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/224)): `abrir_tela` com botão "Abrir {tela}" (só no toque; "Sugestão do Rolê" quando veio depois de ler conteúdo de terceiros).
+- **Fase 3** ([PR225](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/225)): escopo padrão "Tudo o que eu posso ver" dentro da organização da conversa, recalculado a cada pergunta; "Procurar em" só estreita; não cruza organizações.
+- **Fase 4** ([PR226](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/226)): até 4 rodadas de consulta dentro do custo e do tempo já aceitos (35 s), mensagem de limite, memória compacta validada no servidor, fonte citada, guarda contra resposta em JSON cru.
+- **Modelo:** DeepSeek Flash sem raciocínio continua o padrão. O raciocínio "alto" foi testado (51,8%, mais lento) e revertido. Opção para o Yan: Muse Ember (Meta), exige chave nova.
+- **Falta para 85%:** leitura do quadro de bolsas além da p. 1 do PDF do PROBEC; planilha de brindes (compartilhamento); rascunho de registro (só há de demanda); leitura da Comunidade (hoje só abre a tela, e o Rolê não deve dizer "não achei" sem ler); contato para editais no guia.
