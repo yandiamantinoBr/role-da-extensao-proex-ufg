@@ -5,7 +5,7 @@ import { startChapter, useTutorials } from './tutorial-store';
 import styles from './tutorials.module.css';
 
 /** Assuntos que entram nos próximos capítulos (roteiro de 15/11). Só texto: nada aqui abre telas. */
-export const UPCOMING_TOPICS = ['Empréstimos'];
+export const UPCOMING_TOPICS: string[] = [];
 
 const day = (iso: string | null) => iso ? new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'America/Sao_Paulo' }).format(new Date(iso)) : '';
 
@@ -46,7 +46,7 @@ export default function ChapterList({ headingLevel = 3 }: { headingLevel?: 2 | 3
       })}
     </ul>
     {hidden > 0 && <p className={styles.muted}>{hidden === 1 ? 'Um assunto aparece quando o seu acesso incluir o módulo dele.' : `${hidden} assuntos aparecem quando o seu acesso incluir os módulos deles.`}</p>}
-    <p className={styles.upcoming}><strong>Próximos assuntos:</strong> {UPCOMING_TOPICS.join(', ')}. Eles entram aqui conforme ficarem prontos.</p>
+    {UPCOMING_TOPICS.length > 0 && <p className={styles.upcoming}><strong>Próximos assuntos:</strong> {UPCOMING_TOPICS.join(', ')}. Eles entram aqui conforme ficarem prontos.</p>}
     <p className={styles.muted}>Os tutoriais funcionam sem IA e não gravam nada no seu trabalho: só lembram onde você parou.</p>
   </div>;
 }

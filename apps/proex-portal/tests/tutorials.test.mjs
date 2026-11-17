@@ -228,3 +228,10 @@ test('Dinâmicas: each step follows its own capability (operate, deliver, manage
   assert.equal(mg.situacao && mg.preparar, true);
   assert.ok(Object.values(chapterSteps(await tutorialWorkspace(db, await reader.actor(), {}))).every(available => !available), 'a reader has no Dinâmicas');
 });
+
+test('Empréstimos: read, manage or checkout opens the chapter; the next action needs manage or checkout; Nova reserva needs manage', async () => {
+  const db = fixture(), loans = await person(db, 'em-loans', [['loans', 'project-a']]), reader = await person(db, 'em-reader', [['viewer', 'project-a']]);
+  const chapterSteps = state => Object.fromEntries(state.chapters.find(chapter => chapter.id === 'emprestimos').steps.map(step => [step.id, step.available]));
+  assert.ok(Object.values(chapterSteps(await tutorialWorkspace(db, await loans.actor(), {}))).every(Boolean), 'the loans role gets every step');
+  assert.ok(Object.values(chapterSteps(await tutorialWorkspace(db, await reader.actor(), {}))).every(available => !available), 'reports.read alone does not open Empréstimos');
+});
