@@ -26,7 +26,7 @@ export const OFFICIAL_SOURCES = [
 ] as const;
 export { OFFICIAL_HOSTS };
 const SNAPSHOT = 'role.official.v1', REFRESH_MS = 20 * 3600_000, PAGE_BYTES = 600_000;
-const USER_AGENT = 'PortalPROEX-Role/1.0 (+https://proex-gestao.vercel.app; consulta de paginas publicas)';
+export const USER_AGENT = 'PortalPROEX-Role/1.0 (+https://proex-gestao.vercel.app; consulta de paginas publicas)';
 const SEARCH_TIMEOUT_MS = 2500;
 // robots.txt + sitemap.xml (o da PROEX tem ~205 KB): tempo próprio, maior que o das páginas.
 const SEARCH_INDEX_TIMEOUT_MS = 6000;
@@ -38,14 +38,14 @@ export type OfficialPage = { id: string; label: string; url: string; fetchedAt: 
 export type OfficialSnapshot = { refreshedAt: string | null; startedAt?: string | null; pages: OfficialPage[] };
 
 const entities: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', ndash: '–', mdash: '—', ordm: 'º', ordf: 'ª' };
-const decode = (value: string) => value.replace(/&(#(?:x[0-9a-f]+|[0-9]+)|[a-z]+);/gi, (match, code: string) => {
+export const decode = (value: string) => value.replace(/&(#(?:x[0-9a-f]+|[0-9]+)|[a-z]+);/gi, (match, code: string) => {
   if (code[0] !== '#') return entities[code.toLowerCase()] ?? match;
   const hex = code[1].toLowerCase() === 'x';
   const point = parseInt(code.slice(hex ? 2 : 1), hex ? 16 : 10);
   return point <= 0x10ffff && (point < 0xd800 || point > 0xdfff) ? String.fromCodePoint(point) : match;
 });
-const clean = (value: string, max: number) => decode(value.replace(/<[^>]*>/g, ' ')).replace(/[\p{Cc}\p{Cf}]/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
-const withoutActiveContent = (html: string) => html.replace(/<(script|style|noscript|svg)\b[\s\S]*?<\/\1>/gi, ' ');
+export const clean = (value: string, max: number) => decode(value.replace(/<[^>]*>/g, ' ')).replace(/[\p{Cc}\p{Cf}]/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
+export const withoutActiveContent = (html: string) => html.replace(/<(script|style|noscript|svg)\b[\s\S]*?<\/\1>/gi, ' ');
 const descriptionOf = (body: string) => clean(body.match(/<meta\s+property=["']og:description["']\s+content=(["'])([\s\S]*?)\1/i)?.[2] ?? '', 600);
 
 /** Limita a descoberta de PDFs aos links do corpo editorial da página. */
@@ -85,7 +85,7 @@ export function extractPage(html: string, base: string): { title: string; summar
   return { title, summary, links };
 }
 
-function disallowed(robots: string, path: string): boolean {
+export function disallowed(robots: string, path: string): boolean {
   let applies = false; const rules: string[] = [];
   for (const raw of robots.split(/\r?\n/)) {
     const line = raw.replace(/#.*/, '').trim(); const [key, ...rest] = line.split(':'); const value = rest.join(':').trim();

@@ -10,11 +10,11 @@ import {
   ROLE_CONTRACT, ROLE_MAX_HISTORY, ROLE_MAX_HISTORY_CHARS, ROLE_MAX_IMAGE_BYTES, ROLE_MAX_IMAGE_SIDE, ROLE_MAX_MESSAGE_CHARS, ROLE_IMAGE_TOKEN_CEILING, ROLE_SYSTEM_PROMPT_BYTES, ROLE_MODELS,
   ROLE_SYSTEM_PROMPT, ROLE_SYSTEM_PROMPT_TOOLS, ROLE_TOOL_CALLS_PER_ROUND, ROLE_TOOL_RESULT_BYTES, ROLE_TOOL_ROUNDS, roleConversationBytes, roleEstimate, roleTimeoutMs, validateRoleReply, type RoleSource, type RoleTurn,
 } from './role-contracts';
-import { ROLE_TASK_DRAFT_TOOL, ROLE_TOOL_NAMES, ROLE_TOOLS, canDraftTasks, officialSearchReply, resolveRoleScope, roleScopes, runRoleTool, type RoleTaskDraft, type RoleToolResult } from './role-tools';
+import { ROLE_TASK_DRAFT_TOOL, ROLE_TOOL_NAMES, ROLE_TOOLS, canDraftTasks, officialLinksReply, officialSearchReply, pastedLinkPage, proexNewsReply, resolveRoleScope, roleScopes, runRoleTool, type RoleTaskDraft, type RoleToolResult } from './role-tools';
 import { ROLE_SUGGESTION_DAYS, roleSuggestions } from './role-suggestions';
 import { ROLE_VIDEO_MODELS, roleVideoEstimate, type RoleVideoProfile, type RoleVideoStatus } from './role-video-contracts';
 import { dispatchRoleVideo, parseRoleVideo, RoleVideoChargedError } from './role-video';
-import { isOfficialSearch } from './official-search-intent';
+import { directOfficialKind, isOfficialSearch } from './official-search-intent';
 import { officialPdfUrl } from './official-pdf-url';
 import { downloadScannedOfficialPdf } from './official-sources';
 import { PDF_READING_DISABLED, PDF_READING_MAX_COST_MICROS, PDF_READING_MAX_PAGES, PDF_READING_PROFILE, pdfReadingEstimate, type RolePdfReadingOffer } from './role-pdf-reading-contracts';
@@ -71,7 +71,7 @@ function projectId(value: unknown): string {
 
 type PortalTools = typeof ROLE_TOOLS;
 function roleTools(config: RolePolicy): PortalTools {
-  return ROLE_TOOLS.filter(tool => tool.function.name === 'consultar_fontes_oficiais' ? config.rolePublicSearchEnabled : config.rolePortalContextEnabled);
+  return ROLE_TOOLS.filter(tool => tool.function.name === 'consultar_fontes_oficiais' || tool.function.name === 'abrir_link_oficial' ? config.rolePublicSearchEnabled : config.rolePortalContextEnabled);
 }
 type ToolRoute = { family: 'deepseek' | 'groq'; model: string; endpoint: string; pricing: RolePricing };
 function toolRoute(route: Route | null): ToolRoute | null {
@@ -527,7 +527,13 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
     return { contract: ROLE_CONTRACT, reply: GIFT_SHEET_REPLY, operation: null, operationDropped: false, provider: 'portal', model: 'Resposta do Portal',
       reservedMicros: 0, costMicros: 0, inputTokens: 0, outputTokens: 0, sources: [], lookups: 0 };
   }
-  if (!hasMedia && officialSearchOn(config) && (explicitSearch || isOfficialSearch(message))) {
+  const catalog = config.roleModel || config.roleVisionModel || hasVideo && config.roleVideoEnabled ? (await loadCatalog(db, organizationId)).catalog : null;
+  const state = availability(config, credentials, organizationId, options.speech, rawCredentials, catalog);
+  // Respostas diretas, sem IA e sem custo: "links da PROEX" e "Instagram/notícias" em qualquer modo; a busca
+  // oficial só com o botão "Fontes oficiais" ou sem conversa disponível (modo só busca). Com a conversa
+  // disponível, a pergunta reconhecida vai ao modelo, que lê as fontes com consultar_fontes_oficiais e abrir_link_oficial.
+  const direct = !hasMedia && officialSearchOn(config) ? directOfficialKind(message) : null;
+  if (!hasMedia && officialSearchOn(config) && (direct || explicitSearch || isOfficialSearch(message))) {
     await resolveRoleScope(db, current, organizationId, input.scope);
     history(input.history);
     // Sem custo de IA, mas cada busca lê sites públicos: limite por pessoa e por organização, antes de qualquer pedido externo.
@@ -540,6 +546,13 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
     const authorization = roleAuthorization(db, current, project, organizationId, revision);
     try {
       await authorization.first();
+      const pasted = direct ? null : pastedLinkPage(message);
+      if (direct || pasted) {
+        const answer = direct === 'news' ? await proexNewsReply(db, organizationId, options.officialFetcher) : await officialLinksReply(pasted ?? undefined, options.officialFetcher, now);
+        await authorization.first();
+        return { contract: ROLE_CONTRACT, reply: answer.reply, operation: null, operationDropped: false, provider: 'official', model: 'Consulta oficial',
+          reservedMicros: 0, costMicros: 0, inputTokens: 0, outputTokens: 0, sources: answer.sources, lookups: 1 };
+      }
       const result = await officialSearchReply(db, organizationId, message, options.officialFetcher);
       // PDF escaneado: oferece a leitura com IA (só com o interruptor e a chave do Gemini, e um teto que caiba), assinada no servidor.
       const quote = result.scanned.length ? pdfReadingQuote(config, message, now) : null;
@@ -559,8 +572,6 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
       throw error;
     }
   }
-  const catalog = config.roleModel || config.roleVisionModel || hasVideo && config.roleVideoEnabled ? (await loadCatalog(db, organizationId)).catalog : null;
-  const state = availability(config, credentials, organizationId, options.speech, rawCredentials, catalog);
   if (!state.available) throw new HttpError(503, 'O Rolê está desligado ou sem chave nesta organização.', 'role_unavailable');
   const scope = await resolveRoleScope(db, current, organizationId, input.scope);
   const document = Object.hasOwn(input, 'document') ? roleDocumentExcerpt(input.document) : null;

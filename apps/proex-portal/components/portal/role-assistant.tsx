@@ -55,7 +55,7 @@ const CONSENT_STORAGE = 'proex-role-ciencia';
 /** Preferência da pessoa neste aparelho: 'off' esconde as sugestões e nem consulta o portal. */
 const TIPS_STORAGE = 'proex-role-sugestoes';
 /** Links externos aceitos nas fontes: só os sites oficiais copiados e publicações do Instagram. */
-const OFFICIAL_LINK = /^https:\/\/(proex\.ufg\.br|23conpeex\.plateia\.ufg\.br|www\.instagram\.com|instagram\.com)\//;
+const OFFICIAL_LINK = /^https:\/\/(proex\.ufg\.br|23conpeex\.plateia\.ufg\.br|analisa\.ufg\.br|centrodeeventos\.ufg\.br|www\.instagram\.com|instagram\.com)\//;
 const PROVIDER_NAMES: Record<string, string> = { deepseek: 'DeepSeek', groq: 'Groq', openai: 'OpenAI', anthropic: 'Anthropic', nvidia: 'NVIDIA', deepgram: 'Deepgram' };
 const providerName = (id: string) => PROVIDER_NAMES[id] ?? id.replace(/^./, letter => letter.toUpperCase());
 function modelLabelFor(status: Status, photo: boolean) { return photo ? status.visionPricing?.label ?? ROLE_MODELS.deepseek.label : status.textPricing?.label ?? status.model; }

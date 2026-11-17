@@ -836,7 +836,7 @@ test('BUSCA OFICIAL: pedidos explícitos leem só páginas públicas indexadas, 
       assert.fail(`unexpected public request ${url.href}`);
     };
     const fetcher = () => assert.fail('official lookup must not charge the selected model');
-    const request = chatInput(f, { message: 'Consulte o site oficial da PROEX: edital bolsas 2027 CANARY-PRIVADO.', acceptedCostMicros: 0 });
+    const request = chatInput(f, { message: 'Consulte o site oficial da PROEX: edital bolsas 2027 CANARY-PRIVADO.', acceptedCostMicros: 0, officialSearch: true });
     const result = await roleChat(f.db, f.actors.viewer, request, secret, { keys, fetcher, officialFetcher });
     assert.deepEqual(result.sources, [{ label: 'Edital de bolsas 2027', href: proof }]);
     assert.match(result.reply, /20\/11\/2027 & 21\/11\/2027/);
@@ -857,7 +857,7 @@ test('BUSCA OFICIAL: site indisponível é informado, e o acesso à resposta é 
   const f = fixture();
   try {
     await setup(f);
-    const request = chatInput(f, { message: 'No portal oficial da PROEX, procure edital de bolsas.', acceptedCostMicros: 0 });
+    const request = chatInput(f, { message: 'No portal oficial da PROEX, procure edital de bolsas.', acceptedCostMicros: 0, officialSearch: true });
     const fetcher = () => assert.fail('the official lookup must not request the model');
     const officialFetcher = async () => new Response('', { status: 503 });
     const result = await roleChat(f.db, f.actors.viewer, request, secret, { keys, fetcher, officialFetcher });
@@ -908,7 +908,7 @@ test('PDF OFICIAL: encontra a edição final, cita a página lida e mantém a au
       assert.fail(`Unexpected official request ${url}`);
     };
     const fetcher = () => assert.fail('PDF lookup must not call an AI provider');
-    const query = chatInput(f, { message: 'No PDF final do edital PROBEC 2026/2027, quantas bolsas são para projetos e programas institucionais? Cite a página.', acceptedCostMicros: 0 });
+    const query = chatInput(f, { message: 'No PDF final do edital PROBEC 2026/2027, quantas bolsas são para projetos e programas institucionais? Cite a página.', acceptedCostMicros: 0, officialSearch: true });
     const options = { keys, fetcher, officialFetcher };
     const result = await roleChat(f.db, f.actors.viewer, query, secret, options);
     assert.equal(result.provider, 'official');
@@ -1322,3 +1322,72 @@ test('PLANILHA DE BRINDES · DESLIGADO: com o Rolê desligado não há resposta 
       error => error.status === 503 && error.code === 'role_unavailable');
   } finally { f.native.close(); }
 });
+
+// Fase 1 (2026-11-17): links da PROEX e Instagram/notícias respondem direto, sem IA; a busca oficial
+// determinística só vale com o botão "Fontes oficiais" ou no modo só busca.
+const SYNTHETIC_HOME = '<title>PROEX</title><h1>PROEX</h1><h2>Acesso Rápido</h2><a href="https://proex.ufg.br/p/editais-proex">Editais</a><a href="https://docs.google.com/forms/d/e/sintetico/viewform">Inscrição</a><h2>Sistemas</h2><a href="https://sigaa.ufg.br/">SIGAA</a>';
+const SYNTHETIC_FEED = '<rss><channel><item><title>Notícia sintética da semana</title><link>https://proex.ufg.br/n/91000-noticia-sintetica</link><pubDate>Sat, 15 Nov 2026 10:00:00 -0300</pubDate></item></channel></rss>';
+function proexSite() {
+  const requested = [];
+  const fetch = async (raw, init) => {
+    const url = String(raw);
+    requested.push(url);
+    assert.equal(init.credentials, 'omit');
+    assert.equal(init.body, undefined);
+    if (url.endsWith('/robots.txt')) return new Response('User-agent: *', { headers: { 'content-type': 'text/plain' } });
+    if (url === 'https://proex.ufg.br/') return new Response(SYNTHETIC_HOME, { headers: { 'content-type': 'text/html' } });
+    if (url === 'https://proex.ufg.br/feed') return new Response(SYNTHETIC_FEED, { headers: { 'content-type': 'application/rss+xml' } });
+    return new Response('', { status: 503 });
+  };
+  return { fetch, requested };
+}
+
+test('LINKS DA PROEX: "abra os links digitais da PROEX" responde direto, custo 0, sem provedor, com a primeira linha e os blocos', async () => {
+  const f = fixture();
+  try {
+    await setup(f);
+    const provider = fakeProvider(), official = proexSite(), options = { keys, fetcher: provider.fetch, officialFetcher: official.fetch };
+    const result = await roleChat(f.db, f.actors.viewer, chatInput(f, { message: 'abra os links digitais da PROEX', acceptedCostMicros: 0 }), secret, options);
+    assert.equal(result.provider, 'official');
+    assert.equal(result.costMicros, 0);
+    assert.equal(provider.calls.length, 0);
+    assert.equal(f.native.prepare('SELECT COUNT(*) n FROM ai_calls').get().n, 0);
+    assert.equal(result.reply.split('\n')[0], 'Estes são os links publicados na página inicial da PROEX.');
+    assert.match(result.reply, /Acesso Rápido\n• Editais: https:\/\/proex\.ufg\.br\/p\/editais-proex\n• Inscrição: https:\/\/docs\.google\.com/);
+    assert.match(result.reply, /Sistemas\n• SIGAA: https:\/\/sigaa\.ufg\.br\//);
+    assert.deepEqual(result.sources, [{ label: 'PROEX · página inicial', href: 'https://proex.ufg.br/' }]);
+    assert.deepEqual(official.requested, ['https://proex.ufg.br/robots.txt', 'https://proex.ufg.br/'], 'só a página inicial; nenhum link externo é aberto');
+    // Mesmas checagens da busca: sem acesso ao projeto, recusado antes de buscar.
+    official.requested.length = 0;
+    await assert.rejects(roleChat(f.db, f.actors.outsider, chatInput(f, { message: 'links da PROEX', acceptedCostMicros: 0 }), secret, options), error => error.status === 403);
+    assert.deepEqual(official.requested, []);
+    // Modo só busca (sem chave de conversa): também direto.
+    dropChatKey(f);
+    const searchOnly = await roleChat(f.db, f.actors.viewer, chatInput(f, { message: 'acesso rápido da PROEX', acceptedCostMicros: 0, officialSearch: true }), secret, options);
+    assert.equal(searchOnly.provider, 'official');
+    assert.match(searchOnly.reply, /^Estes são os links publicados na página inicial da PROEX\./);
+  } finally { f.native.close(); }
+});
+
+test('INSTAGRAM: "últimos posts do Instagram" lista as cadastradas por data (sem exigir palavras na legenda) e as notícias, sem IA', async () => {
+  const f = fixture();
+  try {
+    await setup(f);
+    const { instagramAction } = await import(compile('assistant/official-sources'));
+    const provider = fakeProvider(), official = proexSite(), options = { keys, fetcher: provider.fetch, officialFetcher: official.fetch };
+    const empty = await roleChat(f.db, f.actors.viewer, chatInput(f, { message: 'últimos posts do Instagram da PROEX', acceptedCostMicros: 0 }), secret, options);
+    assert.equal(empty.reply.split('\n\n')[0], 'O Instagram não permite que o Rolê leia os posts sozinho. Estas são as publicações cadastradas pela comunicação e as últimas notícias do site da PROEX.');
+    assert.match(empty.reply, /Nenhuma publicação do Instagram foi cadastrada ainda\. A comunicação pode cadastrar posts em Configurações → Chaves e modelos → Fontes oficiais do Rolê\./);
+    assert.match(empty.reply, /Últimas notícias do site da PROEX\n• 15\/11\/2026 · Notícia sintética da semana: https:\/\/proex\.ufg\.br\/n\/91000-noticia-sintetica/);
+    await instagramAction(f.db, f.actors.owner, { action: 'add', organizationId: 'org_proex', url: 'https://www.instagram.com/p/OLDER12345/', postedAt: '2026-11-03', caption: 'Mutirão sintético de limpeza do campus.' });
+    await instagramAction(f.db, f.actors.owner, { action: 'add', organizationId: 'org_proex', url: 'https://www.instagram.com/p/NEWER12345/', postedAt: '2026-11-12', caption: 'Sarau sintético na praça universitária.' });
+    const listed = await roleChat(f.db, f.actors.viewer, chatInput(f, { message: 'o que a PROEX publicou?', acceptedCostMicros: 0 }), secret, options);
+    assert.equal(listed.provider, 'official');
+    assert.equal(listed.costMicros, 0);
+    assert.ok(listed.reply.indexOf('NEWER12345') < listed.reply.indexOf('OLDER12345'), 'mais recentes primeiro');
+    assert.match(listed.reply, /• 12\/11\/2026 · Sarau sintético na praça universitária\.: https:\/\/www\.instagram\.com\/p\/NEWER12345\//);
+    assert.equal(provider.calls.length, 0);
+    assert.equal(f.native.prepare('SELECT COUNT(*) n FROM ai_calls').get().n, 0);
+  } finally { f.native.close(); }
+});
+
