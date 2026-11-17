@@ -29,3 +29,10 @@
 
 /* Zero não é alerta (crítica de 16/11): "Atenção 0" e "Prazo hoje 0" ficam em cinza, nos dois temas. */
 :root .metrics .metric[data-zero]{--metric-tone:var(--muted)}
+
+/* Terceira crítica de 16/11: origem em controle segmentado compacto e títulos de seção iguais (ícone, 17px). */
+.assignment{display:inline-flex;flex-wrap:nowrap;width:fit-content;max-width:100%;gap:2px;padding:3px;border:1px solid var(--line);border-radius:12px;background:var(--canvas)}
+.assignment button{flex:0 0 auto;border:0;border-radius:9px;padding:9px 16px;background:transparent}
+.assignment button[aria-pressed=true]{background:var(--surface);box-shadow:0 1px 3px #190b2922}
+.areas h3{display:flex;align-items:center;gap:8px}
+@container my-work (max-width:400px){.assignment{display:flex;width:100%}.assignment button{flex:1 1 0;padding-inline:8px}}

@@ -315,3 +315,19 @@ test('general area targets are requested explicitly, partial catalogs are labell
     const before = h.requests.length; submit(h); h.render(); assert.equal(h.requests.length, before); assert.match(h.body(), /Selecione pelo menos uma pessoa ou equipe/);
   } finally {h.dispose();}
 });
+
+test('section headings share one pattern and the origin picker is a compact segmented control (crítica de 16/11)', () => {
+  const source = readFileSync(new URL('../components/portal/meu-trabalho-panel.tsx', import.meta.url), 'utf8');
+  for (const heading of ['Demandas · ', 'Responsabilidades · ', 'Por módulo de trabalho']) assert.ok(new RegExp('<h3><[A-Za-z]+ size=[{]18[}] aria-hidden="true"/> ' + heading).test(source), heading);
+  const css = readFileSync(new URL('../components/portal/meu-trabalho-panel.module.css', import.meta.url), 'utf8');
+  assert.match(css, /\.assignment\{display:inline-flex;flex-wrap:nowrap;width:fit-content;/);
+});
+
+test('with nothing assigned in any module, one line replaces the empty bars (quinta crítica de 16/11)', async () => {
+  const h = harness(); try {
+    const zero = Object.fromEntries(Object.entries(counts()).map(([key, value]) => [key, typeof value === 'number' ? 0 : value]));
+    await h.ready(response({areas: [{area: 'materials', taskCounts: zero, responsibilityCount: 0}, {area: 'projects', taskCounts: zero, responsibilityCount: 0}]}));
+    assert.match(h.body(), /Nenhuma demanda ou designação atribuída a você em nenhum módulo\./);
+    assert.doesNotMatch(h.body(), /0 demandas · 0 designações/);
+  } finally {h.dispose();}
+});
