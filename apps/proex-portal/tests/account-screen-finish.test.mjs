@@ -6,8 +6,8 @@ import { readFileSync } from 'node:fs';
 const client = readFileSync(new URL('../app/portal-client.tsx', import.meta.url), 'utf8');
 const profile = readFileSync(new URL('../components/portal/profile-panel.tsx', import.meta.url), 'utf8');
 
-test('the profile card keeps the same 20px gap as the cards above it on the Conta tab', () => {
-  assert.match(client, /<GoogleDriveConnectionPanel key=\{`drive-\$\{string\(user\.userId\)\}`\}\/><div className="mt-5"><ProfilePanel /);
+test('Conta opens with the profile, then access and connections, with the same 20px gap (crítica de 16/11)', () => {
+  assert.match(client, /\{tab === 'profile' && <><ProfilePanel onUpdated=\{\(\) => \{ void refresh\(\); \}\}\/><div className="mt-5"><AccountAccessPanel /);
 });
 
 test('Conta keeps one refresh per page: the profile card no longer has its own (crítica de 16/11)', () => {
