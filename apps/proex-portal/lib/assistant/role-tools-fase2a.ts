@@ -86,13 +86,13 @@ function flag(value: unknown, label: string): boolean {
 const ENTRY_KIND: Record<string, string> = { 'project-schedule': 'atividade', campaign: 'evento', 'campaign-session': 'turno' };
 /**
  * Atividades, eventos e turnos pela própria tela Agenda (categoria Projetos e eventos), filtrada no serviço por
- * projeto (um só) ou unidade (escopo da conversa) para não varrer o banco. calendarEntries não aceita organização:
- * o filtro por organização é a lista `ids`. Sem Agenda para a pessoa (403) ou com registros demais (422): null.
+ * projeto (um só), unidade (escopo da conversa) e sempre pela organização da conversa, para não varrer o banco de
+ * outras organizações; a lista `ids` ainda estreita. Sem Agenda para a pessoa (403) ou com registros demais (422): null.
  */
 async function agendaEntries(ctx: Fase2aContext, from: string, to: string, ids: string[]): Promise<CalendarEntry[] | null> {
   const allowed = new Set(ids), filter = ids.length === 1 ? { projectId: ids[0] } : ctx.scope?.kind === 'unit' && ctx.scope.id ? { unitId: ctx.scope.id } : {};
   try {
-    const { entries } = await calendarEntries(ctx.db, ctx.actor, { category: 'projects', ...filter, range: calendarRange(from, to) });
+    const { entries } = await calendarEntries(ctx.db, ctx.actor, { category: 'projects', ...filter, organizationId: ctx.organizationId, range: calendarRange(from, to) });
     return entries.filter(entry => ENTRY_KIND[entry.sourceKind] && allowed.has(entry.projectId) && entry.status !== 'CANCELLED');
   } catch (error) { if (error instanceof HttpError && (error.status === 403 || error.status === 422)) return null; throw error; }
 }

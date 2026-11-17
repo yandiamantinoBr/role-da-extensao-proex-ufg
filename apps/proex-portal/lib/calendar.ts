@@ -129,9 +129,11 @@ function shiftEntry(row: Row, category: CalendarCategory): CalendarEntry {
 /** A public projection: SQL never selects contacts, free notes, document keys or account identities. */
 export async function calendarEntries(db: D1Database, actor: PortalActor | null, options: {
   category?: string | null; projectId?: string | null; unitId?: string | null; range: CalendarRange;
+  /** Opcional (Rolê): só projetos e demandas gerais desta organização. Sem ele, nada muda para quem já chama. */
+  organizationId?: string | null;
 }): Promise<{ entries: CalendarEntry[]; availableCategories: CalendarCategory[] }> {
   if (!actor) throw new HttpError(401, 'Entre para acessar a agenda.', 'unauthenticated');
-  const projectId = projectValue(options.projectId), unitId = projectValue(options.unitId);
+  const projectId = projectValue(options.projectId), unitId = projectValue(options.unitId), organizationId = projectValue(options.organizationId);
   const availableCategories = CALENDAR_CATEGORIES.filter(category => {
     const scope = categoryScope(actor, category);
     return scope === null || (projectId ? scope.includes(projectId) : scope.length > 0);
@@ -144,6 +146,7 @@ export async function calendarEntries(db: D1Database, actor: PortalActor | null,
     const scope = requireScope(actor, category, projectId), filter = sqlScope('p.id', scope),authority=projectAuthoritySql(actor,capabilities[category],'p.id');
     filter.sql=`(${filter.sql}) AND (${authority.sql})`;filter.values.push(...authority.values);
     if (unitId) { filter.sql = `(${filter.sql}) AND p.unit_id=?`; filter.values.push(unitId); }
+    if (organizationId) { filter.sql = `(${filter.sql}) AND p.organization_id=?`; filter.values.push(organizationId); }
     let rows: Row[] = [];
     if (category === 'loans') {
       rows = await all(db, `SELECT l.id,l.project_id,p.name project_name,
@@ -162,8 +165,8 @@ export async function calendarEntries(db: D1Database, actor: PortalActor | null,
         t.due_at starts_at,t.status state,t.version revision,t.created_at,t.updated_at last_modified
         FROM followup_tasks t JOIN organizations o ON o.id=t.organization_id LEFT JOIN projects p ON p.id=t.project_id
         WHERE t.due_at IS NOT NULL AND t.due_at>=? AND t.due_at<=? AND ${publicTaskAuthority('?', 't')}
-        AND ((t.project_id IS NOT NULL AND ${filter.sql}) OR (t.project_id IS NULL AND ?=1)) LIMIT ${MAX_ENTRIES + 1}`,
-      [range.from, range.to, actor.userId, ...filter.values, organizationWide]);
+        AND ((t.project_id IS NOT NULL AND ${filter.sql}) OR (t.project_id IS NULL AND ?=1))${organizationId ? ' AND t.organization_id=?' : ''} LIMIT ${MAX_ENTRIES + 1}`,
+      [range.from, range.to, actor.userId, ...filter.values, organizationWide, ...(organizationId ? [organizationId] : [])]);
       for (const row of rows) result.push(entry({ ...row, ends_at: offsetCivilDate(String(row.starts_at), 1), state: row.state === 'completed' ? 'done' : row.state }, category, 'deadline', true));
       // Mesmo limite das demais categorias; os prazos não têm registros vinculados, então a consulta de registros não roda.
       if (result.length > MAX_ENTRIES) throw new HttpError(422, 'Há muitos registros. Reduza o período ou escolha um projeto.', 'calendar_range_too_large');

@@ -758,6 +758,21 @@ test('ESCOPO: "Procurar em" never widens access; unit, project and event narrow 
   } finally { f.native.close(); }
 });
 
+test('ESCOPO: sem "Procurar em", o modelo recebe "tudo o que você pode ver", recalculado no servidor a cada pergunta', async () => {
+  const f = fixture();
+  try {
+    await setup(f); seedLots(f);
+    const provider = scriptedProvider([{ reply: { reply: 'ok', operation: null } }, { reply: { reply: 'ok', operation: null } }]);
+    await roleChat(f.db, f.actors.viewer, chatInput(f), secret, { keys, fetcher: provider.fetch });
+    assert.match(provider.calls[0].messages.at(-1).content, /Procurar em: tudo o que você pode ver: 1 projeto em 1 organização \(PROEX UFG\) \(as consultas/);
+    // Ganhou acesso a B no meio da conversa: a próxima pergunta já conta B, sem nada guardado no cliente.
+    const now = new Date().toISOString();
+    f.native.prepare("INSERT INTO members(id,user_id,email,role,project_id,created_at) VALUES('viewer-qa-b','viewer-qa','viewer@example.test','viewer','project-b',?)").run(now);
+    await roleChat(f.db, f.actors.viewer, chatInput(f, { scope: { kind: 'org' } }), secret, { keys, fetcher: provider.fetch });
+    assert.match(provider.calls[1].messages.at(-1).content, /Procurar em: tudo o que você pode ver: 2 projetos em 1 organização \(PROEX UFG\)/);
+  } finally { f.native.close(); }
+});
+
 test('FONTES OFICIAIS: daily copy keeps title, short summary and same-site links, respects robots.txt and runs at most every 20 h', async () => {
   const f = fixture();
   try {

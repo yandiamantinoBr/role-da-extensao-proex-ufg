@@ -97,7 +97,7 @@ function hosting(found: Target): { note: string; extra: Record<string, unknown> 
 }
 function empty(ctx: Ctx, name: string): RoleToolResult {
   const scoped = ctx.scope && ctx.scope.kind !== 'org';
-  return ctx.kit.pack(name, [], [], ctx.budget, scoped ? 'Nada visível para você no recorte desta conversa com esse filtro. Para procurar em toda a PROEX, troque "Procurar em".' : 'Nenhum projeto ou dinâmica visível para você com esse nome.');
+  return ctx.kit.pack(name, [], [], ctx.budget, scoped ? 'Nada visível para você no recorte desta conversa com esse filtro. Para procurar em tudo, escolha "Tudo o que eu posso ver" em "Procurar em".' : 'Nenhum projeto ou dinâmica visível para você com esse nome.');
 }
 const orgActive = `JOIN organizations o ON o.id=p.organization_id AND o.status='active'`;
 const joinNotes = (...notes: string[]) => notes.filter(Boolean).join(' ');
@@ -213,11 +213,14 @@ async function responsibleTool(ctx: Ctx, found: Target, ids: string[]): Promise<
   const name = 'consultar_responsaveis', rawArea = ctx.args.area;
   if (rawArea !== undefined && !Object.hasOwn(AREAS, String(rawArea))) bad('Use estoque, emprestimos, dinamicas ou projeto.');
   const area = rawArea === undefined ? null : AREAS[String(rawArea)];
-  const projects = ids.slice(0, 10), items: Record<string, unknown>[] = [], sources: RoleToolSource[] = [], missing: string[] = [], more: { projeto: string | undefined; total: number }[] = [];
-  for (const projectId of projects) {
-    // Mesmo serviço e mesma regra de leitura da ficha do projeto ("Quem cuida de cada área").
-    const filter = { organizationId: ctx.organizationId, projectId, ...(area ? { area } : {}), status: 'active' };
-    const [list, areas] = [await responsibilityList(ctx.db, ctx.actor, { ...filter, limit: 50 }), await responsibilityList(ctx.db, ctx.actor, { ...filter, target: 'area', limit: 4 })];
+  // Sem projeto pedido e com escopo amplo, olha até 3 projetos (em paralelo) e pede qual; com projeto pedido, até 10.
+  const asked = !!str(ctx.args.projeto, 'o projeto'), cap = asked ? 10 : 3;
+  const projects = ids.slice(0, cap), items: Record<string, unknown>[] = [], sources: RoleToolSource[] = [], missing: string[] = [], more: { projeto: string | undefined; total: number }[] = [];
+  // Mesmo serviço e mesma regra de leitura da ficha do projeto ("Quem cuida de cada área").
+  const filterOf = (projectId: string) => ({ organizationId: ctx.organizationId, projectId, ...(area ? { area } : {}), status: 'active' });
+  const reads = await Promise.all(projects.map(projectId => Promise.all([responsibilityList(ctx.db, ctx.actor, { ...filterOf(projectId), limit: 50 }), responsibilityList(ctx.db, ctx.actor, { ...filterOf(projectId), target: 'area', limit: 4 })])));
+  for (const [index, projectId] of projects.entries()) {
+    const [list, areas] = reads[index];
     for (const row of list.items) {
       const entity = Boolean(row.item_id || row.loan_id || row.campaign_id), href = row.target.href ?? contextLink('projects', projectId);
       items.push({ projeto: row.project_name, papel: ROLE_OF[row.area], alvo: entity ? row.target.name ?? 'item que você não abre' : 'toda a área', responsaveis: row.assignees.map(person => person.team_id ? `${person.name} (equipe)` : person.name), situacao: row.assignees.length ? 'responsável definido' : 'sem responsável ativo', ...(row.assignmentVia ? { voceEstaEntre: true } : {}), link: href });
@@ -230,7 +233,7 @@ async function responsibleTool(ctx: Ctx, found: Target, ids: string[]): Promise<
     }
   }
   const host = hosting(found);
-  const notes = joinNotes(host.note, ids.length > projects.length ? `Mostrando 10 de ${ids.length} projetos; diga o projeto para afunilar.` : '', more.length ? 'Há mais designações do que as mostradas (veja "maisDesignacoes"); a lista completa está na tela.' : '', items.length ? '' : 'Nenhuma designação de responsável nos projetos que você vê.');
+  const notes = joinNotes(host.note, ids.length > projects.length ? (asked ? `Mostrando 10 de ${ids.length} projetos; diga o projeto para afunilar.` : `Mostrando ${projects.length} de ${ids.length} projetos: pergunte de qual projeto a pessoa quer saber.`) : '', more.length ? 'Há mais designações do que as mostradas (veja "maisDesignacoes"); a lista completa está na tela.' : '', items.length ? '' : 'Nenhuma designação de responsável nos projetos que você vê.');
   return ctx.kit.pack(name, items, sources, ctx.budget, notes, { ...host.extra, ...(more.length ? { maisDesignacoes: more } : {}), ...(missing.length ? { semResponsavelDefinido: missing.slice(0, 12) } : {}) });
 }
 

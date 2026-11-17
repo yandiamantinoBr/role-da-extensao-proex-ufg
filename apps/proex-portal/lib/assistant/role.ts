@@ -260,7 +260,7 @@ export async function requireRoleDocumentAccess(db: D1Database, actor: PortalAct
 export async function roleSuggestionList(db: D1Database, actor: PortalActor | null, input: { projectId?: string | null; scope?: unknown }, now = Date.now()) {
   const { current, organizationId } = await scopedActor(db, actor, projectId(input.projectId));
   // Mesmo "Procurar em" da conversa, conferido pela mesma função: recorte que a pessoa não vê é recusado, nunca ampliado.
-  const scope = await resolveRoleScope(db, current, organizationId, input.scope);
+  const scope = await resolveRoleScope(db, current, organizationId, input.scope, { label: false });
   return { days: ROLE_SUGGESTION_DAYS, suggestions: await roleSuggestions(db, current, organizationId, now, scope.projectIds) };
 }
 
@@ -521,7 +521,7 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
   if (explicitSearch && !officialSearchOn(config)) throw new HttpError(403, 'A busca em fontes oficiais está desligada nesta organização.', 'role_official_disabled');
   // Planilha de brindes: o Rolê ainda não tem acesso. Resposta fixa, sem IA e sem custo, também no modo só busca.
   if (!hasMedia && config.roleEnabled && asksGiftSheet(message)) {
-    await resolveRoleScope(db, current, organizationId, input.scope);
+    await resolveRoleScope(db, current, organizationId, input.scope, { label: false });
     history(input.history);
     try {
       await roleAuthorization(db, current, project, organizationId, revision).first();
@@ -559,7 +559,7 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
     deterministic = !loaded?.state.available;
   }
   if (deterministic) {
-    await resolveRoleScope(db, current, organizationId, input.scope);
+    await resolveRoleScope(db, current, organizationId, input.scope, { label: false });
     history(input.history);
     // Sem custo de IA, mas cada busca lê sites públicos: limite por pessoa e por organização, antes de qualquer pedido externo.
     await officialRateLimit(db, current.userId, organizationId);
@@ -587,7 +587,8 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
   }
   const { catalog, state } = loaded ?? await loadState();
   if (!state.available) throw new HttpError(503, 'O Rolê está desligado ou sem chave nesta organização.', 'role_unavailable');
-  const scope = await resolveRoleScope(db, current, organizationId, input.scope);
+  // O projeto da conversa vai junto só como padrão do rascunho de demanda (nunca amplia o recorte).
+  const scope = { ...await resolveRoleScope(db, current, organizationId, input.scope), conversationProjectId: project };
   const document = Object.hasOwn(input, 'document') ? roleDocumentExcerpt(input.document) : null;
   if (document && (hasVideo || input.image != null)) throw new HttpError(400, 'Envie um documento, uma foto ou um vídeo por vez.', 'role_document_media');
   if (document && (input.documentConsent !== true || input.documentApproval !== await documentApproval(current, project, revision))) {
@@ -748,7 +749,7 @@ export async function roleReadScannedPdf(db: D1Database, actor: PortalActor | nu
   if (!officialSearchOn(config)) throw new HttpError(403, 'A busca em fontes oficiais está desligada nesta organização.', 'role_official_disabled');
   const apiKey = await pdfReadingKey(db, organizationId, config, rawCredentials);
   if (!apiKey) throw new HttpError(403, PDF_READING_DISABLED, 'role_pdf_disabled');
-  await resolveRoleScope(db, current, organizationId, input.scope);
+  await resolveRoleScope(db, current, organizationId, input.scope, { label: false });
   const ceiling = pdfReadingQuote(config, message, now);
   if (!ceiling) throw new HttpError(400, 'Esta leitura passaria do limite por leitura com IA (custo ou tamanho da entrada). Nada foi cobrado. Encurte a pergunta ou abra o PDF.', 'role_pdf_cost');
   if (!Number.isSafeInteger(input.acceptedCostMicros) || Number(input.acceptedCostMicros) < ceiling.costMicros) {
