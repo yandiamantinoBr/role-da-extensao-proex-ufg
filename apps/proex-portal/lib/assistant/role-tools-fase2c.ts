@@ -94,7 +94,8 @@ export async function runFase2cTool(ctx: Fase2cContext, name: string, args: Reco
 
 /**
  * Mesma leitura da tela Registros (listRecords). Tipo e período estreitam; nunca ampliam. Com até 5 projetos
- * escolhidos, consulta um a um (100 por projeto) antes de filtrar o tipo; com mais, uma consulta só.
+ * escolhidos, consulta um a um (100 por projeto) antes de filtrar o tipo; com mais, uma consulta só, já filtrada pela
+ * organização da conversa antes do limite (registros de outra organização não empurram os desta para fora).
  */
 async function recordsTool(ctx: Fase2cContext, args: Record<string, unknown>): Promise<RoleToolResult> {
   const kind = 'registros_recentes';
@@ -115,7 +116,7 @@ async function recordsTool(ctx: Fase2cContext, args: Record<string, unknown>): P
     let before = period.to, hits = 0;
     for (let page = 0; page < 5 && hits < 20; page++) {
       let result: Awaited<ReturnType<typeof listRecords>>;
-      try { result = await listRecords(ctx.db, ctx.actor, { projectId, limit: 100, ...period, ...(before ? { to: before } : {}) }); }
+      try { result = await listRecords(ctx.db, ctx.actor, { projectId, ...(projectId ? {} : { organizationId: ctx.organizationId }), limit: 100, ...period, ...(before ? { to: before } : {}) }); }
       catch (error) { if (!denied(error)) throw error; break; }
       rows.push(...result.records); hits += result.records.filter(wanted).length;
       const oldest = result.records.at(-1)?.occurred_at;

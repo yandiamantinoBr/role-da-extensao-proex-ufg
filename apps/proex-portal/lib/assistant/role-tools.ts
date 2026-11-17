@@ -52,7 +52,8 @@ export const ROLE_TOOLS_ACTUAL_SCHEMA_BYTES = new TextEncoder().encode(JSON.stri
 export type RoleToolSource = { label: string; href: string };
 /** Onde procurar: tudo o que a pessoa vê (padrão, kind org), uma unidade, um projeto ou um evento (dinâmica). Só estreita, nunca amplia. */
 export type RoleScope = { kind: 'org' } | { kind: 'unit' | 'project' | 'event'; id: string };
-export type ResolvedScope = { kind: RoleScope['kind']; id: string | null; label: string; projectIds: string[] | null };
+/** `conversationProjectId`: projeto da conversa (cobrança e escrita), posto pelo servidor; só serve de padrão, nunca amplia. */
+export type ResolvedScope = { kind: RoleScope['kind']; id: string | null; label: string; projectIds: string[] | null; conversationProjectId?: string };
 /** Rascunho de demanda: vai para o cartão de revisão, nunca para o modelo (que só recebe o resumo sem identificadores). */
 export type RoleTaskDraft = { organizationId: string; projectId: string; projectName: string; title: string; description: string; dueAt: string | null; priority: 'high' | 'medium' | 'low'; assigneeId?: string; assigneeName?: string; afterUntrusted?: true };
 export const ROLE_TASK_DRAFT_TOOL = 'preparar_rascunho_demanda';
@@ -85,12 +86,36 @@ const brasilia = (iso: string) => { const t = Date.parse(iso); return Number.isF
  * Projetos que a pessoa enxerga, só da organização da conversa (a chave, o provedor e a política
  * de IA são dessa organização: dados de outra organização nunca vão para este provedor).
  */
+const VISIBLE_LIMIT = 400;
 async function visibleProjects(db: D1Database, actor: PortalActor, organizationId: string, wanted: string, scope: ResolvedScope | null = null): Promise<Map<string, string>> {
-  const rows = await all(db, `SELECT p.id,p.name,p.short_name FROM projects p JOIN organizations o ON o.id=p.organization_id AND o.status='active' WHERE p.organization_id=? AND ${followupAuthority('?', 'p.organization_id', 'p.id')} ORDER BY p.name LIMIT 400`, [organizationId, actor.userId]);
+  const rows = await all(db, `SELECT p.id,p.name,p.short_name FROM projects p JOIN organizations o ON o.id=p.organization_id AND o.status='active' WHERE p.organization_id=? AND ${followupAuthority('?', 'p.organization_id', 'p.id')} ORDER BY p.name LIMIT ${VISIBLE_LIMIT}`, [organizationId, actor.userId]);
   const allowed = scope?.projectIds ? new Set(scope.projectIds) : null;
   return new Map(matchProjectNames(rows.filter(row => !allowed || allowed.has(String(row.id))), wanted).map(row => [String(row.id), String(row.name)]));
 }
 const inList = (ids: string[]) => ids.length ? `(${ids.map(() => '?').join(',')})` : '(NULL)';
+
+/**
+ * Prefiltro do termo no SQL, tolerante a acento e maiúscula: vogais e "c" viram "_" (um caractere qualquer) e
+ * %, _ e \ são escapados. Basta um termo bater; quem decide é o score() no código, como antes.
+ */
+function likeTerms(column: string, wanted: string[]) {
+  const patterns = wanted.map(term => `%${[...term].map(char => '\\%_'.includes(char) ? `\\${char}` : 'aeiouc'.includes(char) ? '_' : char).join('')}%`);
+  return { sql: `(${patterns.map(() => `${column} LIKE ? ESCAPE '\\'`).join(' OR ')})`, values: patterns };
+}
+/**
+ * Lê até `limit` linhas (as mais recentes). Se chegar ao limite e houver termo, lê de novo só as linhas com o termo
+ * (prefiltro no SQL), para nada mais antigo sumir em silêncio. `full` diz se ainda assim bateu no limite.
+ * `build(extra)` monta a consulta com `extra` logo antes de ORDER BY/LIMIT; os valores do termo vão por último.
+ */
+async function boundedRows(db: D1Database, build: (extra: string) => string, values: unknown[], limit: number, column: string, wanted: string[]): Promise<{ rows: Row[]; full: boolean }> {
+  const first = await all(db, build(''), values);
+  if (first.length < limit || !wanted.length) return { rows: first, full: first.length >= limit };
+  const like = likeTerms(column, wanted), more = await all(db, build(` AND ${like.sql}`), [...values, ...like.values]);
+  const seen = new Set(first.map(row => String(row.id)));
+  return { rows: [...first, ...more.filter(row => !seen.has(String(row.id)))], full: more.length >= limit };
+}
+const LIMIT_NOTE = 'A consulta chegou ao limite de linhas e pode haver mais: diga o projeto (ou um termo mais específico) para afunilar.';
+const withNotes = (...list: string[]) => list.filter(Boolean).join(' ');
 
 /** Monta a resposta em JSON compacto, item a item, sem passar do orçamento de bytes. */
 function pack(kind: string, items: Record<string, unknown>[], sources: RoleToolSource[], budget: number, note = '', extra: Record<string, unknown> = {}): RoleToolResult {
@@ -137,7 +162,9 @@ async function taskDraftTool(db: D1Database, actor: PortalActor, organizationId:
   const wanted = str(args.projeto, 'o projeto'), wantedName = str(args.responsavel, 'o responsável');
   // Nome do projeto conferido palavra por palavra ("Projeto A" nunca vira "Projeto B"), só entre os visíveis no escopo.
   const wantedWords = nameWords(wanted), visible = await visibleProjects(db, actor, organizationId, '', scope);
-  const projects = new Map([...visible].filter(([, projectName]) => { const own = nameWords(projectName); return wantedWords.every(word => own.includes(word)); }));
+  // Sem projeto pedido, vale o projeto da conversa, se a pessoa o vê no escopo.
+  const current = !wanted && scope?.conversationProjectId ? visible.get(scope.conversationProjectId) : undefined;
+  const projects = current ? new Map([[scope!.conversationProjectId!, current]]) : new Map([...visible].filter(([, projectName]) => { const own = nameWords(projectName); return wantedWords.every(word => own.includes(word)); }));
   if (!projects.size) return pack(kind, [], [], budget, scope && scope.kind !== 'org' ? `Nenhum projeto visível para você em ${scope.label} com esse nome. Nenhum rascunho foi preparado.` : 'Nenhum projeto visível para você com esse nome. Nenhum rascunho foi preparado.');
   let entries = [...projects.entries()];
   if (entries.length > 1 && wantedWords.length) { const exact = entries.filter(([, projectName]) => nameWords(projectName).join(' ') === wantedWords.join(' ')); if (exact.length === 1) entries = exact; }
@@ -190,30 +217,31 @@ export async function runRoleTool(db: D1Database, actor: PortalActor, organizati
     const auth = projectAuthoritySql(actor, ['inventory.read'], 'p.id'), wanted = terms(str(args.material, 'o material'));
     const days = args.dias === undefined ? 7 : Number(args.dias);
     if (!Number.isSafeInteger(days) || days < 1 || days > 31) throw new HttpError(400, 'Use de 1 a 31 dias.', 'role_tool_input');
-    const rows = await all(db, `SELECT m.kind,m.delta,m.created_at,i.id item_id,i.name,i.unit,p.id project_id,p.name project_name FROM stock_movements m JOIN items i ON i.id=m.item_id JOIN projects p ON p.id=i.project_id
-      WHERE ${auth.sql} AND p.id IN ${inList(ids)} AND m.created_at>=? ORDER BY m.created_at DESC LIMIT 600`, [...auth.values, ...ids, new Date(Date.now() - days * 86400000).toISOString()]);
+    const { rows, full } = await boundedRows(db, extra => `SELECT m.id,m.kind,m.delta,m.created_at,i.id item_id,i.name,i.unit,p.id project_id,p.name project_name FROM stock_movements m JOIN items i ON i.id=m.item_id JOIN projects p ON p.id=i.project_id
+      WHERE ${auth.sql} AND p.id IN ${inList(ids)} AND m.created_at>=?${extra} ORDER BY m.created_at DESC LIMIT 600`, [...auth.values, ...ids, new Date(Date.now() - days * 86400000).toISOString()], 600, 'i.name', wanted);
     const found = rows.filter(row => score(String(row.name), wanted) > 0).slice(0, 60);
     const sources = found.map(row => ({ label: `${row.name} · ${row.project_name}`, href: link('materials', String(row.project_id), `&itemId=${encodeURIComponent(String(row.item_id))}`) }));
-    return pack(name, found.map((row, index) => ({ quando: brasilia(String(row.created_at)), tipo: MOVES[String(row.kind)] ?? row.kind, quantidade: Number(row.delta), material: row.name, projeto: row.project_name, link: sources[index].href })), sources, budget, found.length ? '' : `Nenhuma movimentação nos últimos ${days} dias com esse filtro.`);
+    return pack(name, found.map((row, index) => ({ quando: brasilia(String(row.created_at)), tipo: MOVES[String(row.kind)] ?? row.kind, quantidade: Number(row.delta), material: row.name, projeto: row.project_name, link: sources[index].href })), sources, budget, withNotes(found.length ? '' : `Nenhuma movimentação nos últimos ${days} dias com esse filtro.`, full ? LIMIT_NOTE : ''));
   }
   if (name === 'consultar_demandas' || name === 'buscar_no_portal') {
     const wanted = terms(str(args.texto, 'o texto', name === 'buscar_no_portal')), open = name === 'buscar_no_portal' || args.situacao !== 'todas';
     if (args.situacao !== undefined && !['abertas', 'todas'].includes(String(args.situacao))) throw new HttpError(400, 'Use abertas ou todas.', 'role_tool_input');
-    const tasks = await all(db, `SELECT t.id,t.title,t.body,t.status,t.due_at,t.project_id,p.name project_name FROM followup_tasks t JOIN projects p ON p.id=t.project_id
-      WHERE ${publicTaskAuthority('?','t')} AND t.project_id IN ${inList(ids)} AND t.status${open ? " NOT IN ('completed','cancelled')" : "!='cancelled'"} ORDER BY t.updated_at DESC LIMIT 600`, [actor.userId, ...ids]);
+    const { rows: tasks, full: tasksFull } = await boundedRows(db, extra => `SELECT t.id,t.title,t.body,t.status,t.due_at,t.project_id,p.name project_name FROM followup_tasks t JOIN projects p ON p.id=t.project_id
+      WHERE ${publicTaskAuthority('?','t')} AND t.project_id IN ${inList(ids)} AND t.status${open ? " NOT IN ('completed','cancelled')" : "!='cancelled'"}${extra} ORDER BY t.updated_at DESC LIMIT 600`, [actor.userId, ...ids], 600, "(t.title || ' ' || COALESCE(t.body,''))", wanted);
     const demandHits = tasks.map(row => ({ row, s: score(`${row.title}\n${row.body}`, wanted) * 2 + score(String(row.title), wanted) })).filter(entry => entry.s > 0).sort((a, b) => b.s - a.s).map(entry => entry.row);
     const demandLink = (row: Row) => link('demands', String(row.project_id), `&demandId=${encodeURIComponent(String(row.id))}`);
     if (name === 'consultar_demandas') {
       const sources = demandHits.map(row => ({ label: `${row.title} · ${row.project_name}`, href: demandLink(row) }));
-      return pack(name, demandHits.map(row => ({ demanda: row.title, projeto: row.project_name, situacao: STATUS[String(row.status)] ?? row.status, prazo: row.due_at ? brasilia(String(row.due_at)) : null, texto: String(row.body ?? '').slice(0, 2500), link: demandLink(row) })), sources, budget, demandHits.length ? '' : 'Nenhuma demanda encontrada com esse texto nos projetos que você pode ver.');
+      return pack(name, demandHits.map(row => ({ demanda: row.title, projeto: row.project_name, situacao: STATUS[String(row.status)] ?? row.status, prazo: row.due_at ? brasilia(String(row.due_at)) : null, texto: String(row.body ?? '').slice(0, 2500), link: demandLink(row) })), sources, budget, withNotes(demandHits.length ? '' : 'Nenhuma demanda encontrada com esse texto nos projetos que você pode ver.', tasksFull ? LIMIT_NOTE : ''));
     }
     // Busca geral: títulos de materiais, demandas, dinâmicas e agenda.
     const inventory = projectAuthoritySql(actor, ['inventory.read'], 'p.id'), agenda = projectAuthoritySql(actor, ['reports.read', 'campaigns.manage'], 'p.id');
-    const [items, campaigns, schedule] = await Promise.all([
-      all(db, `SELECT i.id,i.name,i.stock,i.reserved,i.unit,p.id project_id,p.name project_name FROM items i JOIN projects p ON p.id=i.project_id WHERE ${inventory.sql} AND p.id IN ${inList(ids)} AND i.condition!='inactive' LIMIT 2000`, [...inventory.values, ...ids]),
-      all(db, `SELECT c.id,c.name,c.status,c.starts_at,p.id project_id,p.name project_name FROM campaigns c JOIN projects p ON p.id=c.project_id WHERE ${followupAuthority('?', 'p.organization_id', 'c.project_id')} AND p.id IN ${inList(ids)} LIMIT 400`, [actor.userId, ...ids]),
-      all(db, `SELECT s.title,s.starts_at,p.id project_id,p.name project_name FROM project_schedule_items s JOIN projects p ON p.id=s.project_id WHERE ${agenda.sql} AND p.id IN ${inList(ids)} AND s.status!='cancelled' AND substr(s.starts_at,1,10)>=? LIMIT 800`, [...agenda.values, ...ids, new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10)]),
+    const [itemRead, campaignRead, scheduleRead] = await Promise.all([
+      boundedRows(db, extra => `SELECT i.id,i.name,i.stock,i.reserved,i.unit,p.id project_id,p.name project_name FROM items i JOIN projects p ON p.id=i.project_id WHERE ${inventory.sql} AND p.id IN ${inList(ids)} AND i.condition!='inactive'${extra} LIMIT 2000`, [...inventory.values, ...ids], 2000, 'i.name', wanted),
+      boundedRows(db, extra => `SELECT c.id,c.name,c.status,c.starts_at,p.id project_id,p.name project_name FROM campaigns c JOIN projects p ON p.id=c.project_id WHERE ${followupAuthority('?', 'p.organization_id', 'c.project_id')} AND p.id IN ${inList(ids)}${extra} LIMIT 400`, [actor.userId, ...ids], 400, 'c.name', wanted),
+      boundedRows(db, extra => `SELECT s.id,s.title,s.starts_at,p.id project_id,p.name project_name FROM project_schedule_items s JOIN projects p ON p.id=s.project_id WHERE ${agenda.sql} AND p.id IN ${inList(ids)} AND s.status!='cancelled' AND substr(s.starts_at,1,10)>=?${extra} LIMIT 800`, [...agenda.values, ...ids, new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10)], 800, 's.title', wanted),
     ]);
+    const [items, campaigns, schedule] = [itemRead.rows, campaignRead.rows, scheduleRead.rows], anyFull = tasksFull || itemRead.full || campaignRead.full || scheduleRead.full;
     const hits: { s: number; item: Record<string, unknown>; source: RoleToolSource }[] = [];
     for (const row of items) { const s = score(String(row.name), wanted); if (s) { const href = link('materials', String(row.project_id), `&itemId=${encodeURIComponent(String(row.id))}`); hits.push({ s: s + 1, item: { tipo: 'material', nome: row.name, projeto: row.project_name, disponivel: Number(row.stock) - Number(row.reserved), unidade: row.unit, link: href }, source: { label: `${row.name} · ${row.project_name}`, href } }); } }
     // As 3 demandas mais próximas já vêm com o texto (tabelas de lotes), para fechar em uma rodada.
@@ -232,7 +260,7 @@ export async function runRoleTool(db: D1Database, actor: PortalActor, organizati
     for (const row of schedule) { const s = score(String(row.title), wanted); if (s) { const href = link('calendar', String(row.project_id)); hits.push({ s, item: { tipo: 'agenda', nome: row.title, quando: String(row.starts_at).length === 10 ? row.starts_at : brasilia(String(row.starts_at)), projeto: row.project_name, link: href }, source: { label: `Agenda · ${row.project_name}`, href } }); } }
     hits.sort((a, b) => b.s - a.s);
     const top = hits.slice(0, 20);
-    return pack(name, top.map(hit => hit.item), top.map(hit => hit.source), budget, top.length ? '' : 'Nada encontrado nos projetos que você pode ver.');
+    return pack(name, top.map(hit => hit.item), top.map(hit => hit.source), budget, withNotes(top.length ? '' : 'Nada encontrado nos projetos que você pode ver.', anyFull ? LIMIT_NOTE : ''));
   }
   if (name === 'consultar_agenda') {
     const from = str(args.de, 'a data inicial', true), to = str(args.ate, 'a data final') || from;
@@ -298,12 +326,19 @@ const plural = (count: number, one: string, many: string) => `${count} ${count =
  * entra só a contagem, para o Rolê saber explicar onde procurar.
  */
 async function everythingScope(db: D1Database, actor: PortalActor, organizationId: string): Promise<ResolvedScope> {
-  const rows = await all(db, `SELECT p.organization_id,o.name org_name,COUNT(*) projects,COUNT(DISTINCT u.id) units FROM projects p JOIN organizations o ON o.id=p.organization_id AND o.status='active'
-    LEFT JOIN organizational_units u ON u.id=p.unit_id AND u.status='active' WHERE ${followupAuthority('?', 'p.organization_id', 'p.id')} GROUP BY p.organization_id,o.name`, [actor.userId]);
-  const here = rows.find(row => String(row.organization_id) === organizationId);
-  const name = here ? String(here.org_name) : String((await one(db, 'SELECT name FROM organizations WHERE id=?', [organizationId]))?.name ?? 'esta organização');
-  const projects = Number(here?.projects ?? 0), units = Number(here?.units ?? 0), others = rows.filter(row => String(row.organization_id) !== organizationId).length;
+  // Outras organizações contam só onde a pessoa consegue conversar (inventory.read), como o "Procurar em" lista projetos.
+  const chat = projectAuthoritySql(actor, ['inventory.read'], 'p.id');
+  const [here, other] = await Promise.all([
+    one(db, `SELECT o.name org_name,COUNT(p.id) projects,COUNT(DISTINCT u.id) units FROM organizations o
+      LEFT JOIN projects p ON p.organization_id=o.id AND o.status='active' AND ${followupAuthority('?', 'p.organization_id', 'p.id')}
+      LEFT JOIN organizational_units u ON u.id=p.unit_id AND u.status='active' WHERE o.id=? GROUP BY o.id,o.name`, [actor.userId, organizationId]),
+    one(db, `SELECT COUNT(DISTINCT p.organization_id) n FROM projects p JOIN organizations o ON o.id=p.organization_id AND o.status='active' WHERE p.organization_id!=? AND ${chat.sql}`, [organizationId, ...chat.values]),
+  ]);
+  const name = here ? String(here.org_name) : 'esta organização';
+  const projects = Number(here?.projects ?? 0), units = Number(here?.units ?? 0), others = Number(other?.n ?? 0);
   const label = `tudo o que você pode ver: ${plural(projects, 'projeto', 'projetos')} em 1 organização (${name})${units ? `, ${plural(units, 'unidade', 'unidades')}` : ''}`
+    // Mesmo teto de visibleProjects (400, por nome): passou disso, o rótulo diz.
+    + (projects > VISIBLE_LIMIT ? `; as consultas cobrem os primeiros ${VISIBLE_LIMIT} em ordem alfabética` : '')
     + (others ? `. ${others === 1 ? 'A outra organização' : `As outras ${others} organizações`} em que você tem acesso ${others === 1 ? 'fica' : 'ficam'} fora desta conversa: para ver, escolha um projeto dela em "Procurar em"` : '');
   return { kind: 'org', id: null, label, projectIds: null };
 }
@@ -312,14 +347,16 @@ async function everythingScope(db: D1Database, actor: PortalActor, organizationI
  * Sem escolha, vale tudo o que ela vê (everythingScope). O recorte só estreita: aceita apenas `kind` e `id`
  * (lista de projetos, papel ou outra organização enviados pelo cliente são recusados).
  */
-export async function resolveRoleScope(db: D1Database, actor: PortalActor, organizationId: string, input: unknown): Promise<ResolvedScope> {
-  if (input === undefined || input === null) return everythingScope(db, actor, organizationId);
+export async function resolveRoleScope(db: D1Database, actor: PortalActor, organizationId: string, input: unknown, options: { label?: boolean } = {}): Promise<ResolvedScope> {
+  // Caminhos que não mandam o rótulo ao modelo (sugestões, respostas sem IA, leitura de PDF) só validam o formato do "tudo".
+  const everything = () => options.label === false ? Promise.resolve<ResolvedScope>({ kind: 'org', id: null, label: 'tudo o que você pode ver', projectIds: null }) : everythingScope(db, actor, organizationId);
+  if (input === undefined || input === null) return everything();
   if (typeof input !== 'object' || Array.isArray(input)) throw new HttpError(400, 'Escolha onde procurar.', 'role_scope');
   const record = input as Record<string, unknown>;
   if (Object.keys(record).some(key => key !== 'kind' && key !== 'id' && record[key] !== undefined)) throw new HttpError(400, 'Escolha onde procurar.', 'role_scope');
   const { kind, id } = record;
   const forbidden = () => new HttpError(403, 'Você não vê esse escopo. Escolha outro em "Procurar em".', 'role_scope_forbidden');
-  if (kind === 'org') { if (id !== undefined && id !== null && id !== organizationId) throw forbidden(); return everythingScope(db, actor, organizationId); }
+  if (kind === 'org') { if (id !== undefined && id !== null && id !== organizationId) throw forbidden(); return everything(); }
   if (!['unit', 'project', 'event'].includes(String(kind)) || typeof id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(id)) throw new HttpError(400, 'Escolha onde procurar.', 'role_scope');
   const visible = await all(db, `SELECT p.id,p.name,p.unit_id FROM projects p JOIN organizations o ON o.id=p.organization_id AND o.status='active' WHERE p.organization_id=? AND ${followupAuthority('?', 'p.organization_id', 'p.id')} LIMIT 400`, [organizationId, actor.userId]);
   if (kind === 'project') { const row = visible.find(entry => String(entry.id) === id); if (!row) throw forbidden(); return { kind: 'project', id, label: `o projeto ${row.name}`, projectIds: [id] }; }
