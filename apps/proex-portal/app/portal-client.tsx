@@ -43,6 +43,7 @@ import { requestAiLimits } from '@/components/portal/ai-limits-link';
 import PublicParticipantsSettingsPanel from '@/components/portal/public-participants-settings-panel';
 import ProfilePanel from '@/components/portal/profile-panel';
 import AccountAccessPanel from '@/components/portal/account-access-panel';
+import DispatchPanel from '@/components/portal/dispatch-panel';
 import { VolunteerDesk, volunteerAccessFrom } from '@/components/portal/volunteer-home';
 import volunteerStyles from '@/components/portal/volunteer-home.module.css';
 import CalendarPanel from '@/components/portal/calendar-panel';
@@ -435,6 +436,8 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
     } }; document.addEventListener('pointerdown', close); document.addEventListener('keydown', keyboard); return () => { document.removeEventListener('pointerdown', close); document.removeEventListener('keydown', keyboard); }; }, [accountOpen]);
     const projects = list(data.projects), campaigns = list(data.campaigns), items = list(data.items), offers = list(data.offers), loans = list(data.loans);
     const members = list(data.members), invites = list(data.invites), documents = list(data.documents);
+    // Despachos (demandas privadas) é uma visão dentro de Demandas; o endereço ?despachos=1 abre direto nela.
+    const [demandsView, setDemandsView] = useState<'list' | 'dispatch'>(() => typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('despachos') === '1' ? 'dispatch' : 'list');
     const organizations = useMemo<OrganizationSummary[]>(() => list(data.organizations).map(organization => ({
         id: string(organization.id), name: string(organization.name), slug: string(organization.slug),
         status: string(organization.status), version: Number(organization.version) || 1, canManage: organization.canManage === true,
@@ -971,6 +974,8 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
       {areaOwnerShortcut && <p className="p-area-owners-link"><Users size={15} aria-hidden="true"/><span>Quem cuida {areaOwnerShortcut.subject}:</span> <a className="p-text-link" href={`/?module=projects&project=${encodeURIComponent(filter)}&detailProject=${encodeURIComponent(filter)}`} aria-label={`Ver quem cuida ${areaOwnerShortcut.subject} na ficha do projeto`}>ficha do projeto<ArrowUpRight size={14} aria-hidden="true"/></a></p>}
       {activeWorkRecord && ['loans','events'].includes(activeWorkRecord.module) && <div className={workStyles.focusNotice} role="status"><p>{(activeWorkRecord.module === 'loans' ? displayedLoans : displayedCampaigns).length ? 'Registro vinculado ao seu trabalho. Use as ações abaixo para acompanhar.' : 'O registro não está na lista disponível para esta conta. Atualize ou consulte a lista completa.'}</p><button type="button" className="p-button p-button-subtle" onClick={() => setWorkRecord(null)}>Ver todos</button></div>}
       {tab === 'demands' && <>
+        {!demandsScheduleItemId&&<div className="flex flex-wrap gap-2" role="group" aria-label="Visão de Demandas">{([['list','Demandas'],['dispatch','Despachos']] as const).map(([value,label])=><button key={value} type="button" className={demandsView===value?'p-button p-button-primary':'p-button p-button-subtle'} aria-pressed={demandsView===value} onClick={()=>setDemandsView(value)}>{label}</button>)}</div>}
+        {demandsView==='dispatch'&&!demandsScheduleItemId?<DispatchPanel key={string(user.userId)} userId={string(user.userId)} organizations={organizations.map(organization=>({id:organization.id,name:organization.name}))}/>:<>
         <FollowUpPanel key={JSON.stringify([string(user.userId),demandsScheduleItemId ? filter : '',demandsScheduleItemId])} userId={string(user.userId)}
           onTaskTransferred={receipt=>{selectProject(receipt.projectId);setSelectedDemandId(receipt.taskId);}}
           defaultProjectId={filter} initialTaskId={selectedDemandId} scheduleItemId={demandsScheduleItemId}
@@ -982,7 +987,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
               setReportFrom(''); setReportTo('');
               setDemandReportFilters(filters);
           }}/>
-        {!demandsScheduleItemId&&<OrganizationEmailSettings key={string(user.userId)} userId={string(user.userId)} organizations={organizations}/>}
+        {!demandsScheduleItemId&&<OrganizationEmailSettings key={string(user.userId)} userId={string(user.userId)} organizations={organizations}/>}</>}
       </>}
       {tab === 'overview' && <TutorialInvite/>}
       {tab === 'overview' && volunteerAccess.length > 0 && volunteerDesk(true)}

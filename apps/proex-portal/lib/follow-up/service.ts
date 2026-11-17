@@ -55,7 +55,8 @@ export const taskProjectionSql = `SELECT t.*,COALESCE(p.name,'Organização') pr
 export function projectedTask(task:Row):Row {
  const {created_by:_createdBy,can_edit:canEdit,can_work:canWork,can_delegate_work:canDelegateWork,assignees_json:assigneesJson,dispatch_json:dispatchJson,participants_json:participantsJson,is_author:isAuthor,privacy,...safe}=task;void _createdBy;
  const dispatch=dispatchJson?JSON.parse(String(dispatchJson)):null;
- return {...safe,canEdit:Boolean(canEdit),canWork:Boolean(canWork),canDelegateWork:Boolean(canDelegateWork),assignees:JSON.parse(assigneesJson??'[]'),
+ // Demanda privada muda só pelo painel de Despachos: na lista comum ela aparece só para leitura.
+ return {...safe,canEdit:Boolean(canEdit)&&!privacy,canWork:Boolean(canWork)&&!privacy,canDelegateWork:Boolean(canDelegateWork),assignees:JSON.parse(assigneesJson??'[]'),
   privacy:privacy??null,isAuthor:Boolean(isAuthor),participants:privacy?JSON.parse(String(participantsJson??'[]')):[],
   dispatch:dispatch?{...dispatch,onAgenda:Boolean(dispatch.onAgenda)}:null};
 }
