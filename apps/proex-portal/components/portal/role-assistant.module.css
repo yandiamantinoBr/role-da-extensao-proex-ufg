@@ -175,3 +175,5 @@
 .pdfReading button:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
 :global(html[data-theme=dark]) .pdfReading :global(.p-button-primary:not(:disabled)){border-color:#d4b3e8}
 .taskDraftNote{margin:0;border-radius:6px}
+.bubble p[tabindex="-1"]:focus-visible{outline:3px solid var(--focus);outline-offset:4px;border-radius:6px}
+.pdfReading .sendsTo{font-size:max(13.6px,.85rem)}
