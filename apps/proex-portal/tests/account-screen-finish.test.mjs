@@ -54,3 +54,9 @@ test('photo buttons keep their natural width, the read-only e-mail looks read-on
   assert.match(css, /\.subheading\{font-weight:650\}/);
   assert.match(profile, /placeholder="Ex\.: atendimento ou coordenação"/);
 });
+
+test('long disclosure titles keep space before the "+" on phones (sétima crítica de 16/11)', () => {
+  const css = readFileSync(new URL('../components/portal/profile-panel.module.css', import.meta.url), 'utf8');
+  assert.match(css, /\.disclosure>summary>\.summaryTitle\{flex:1;min-width:0\}/);
+  assert.match(css, /\.disclosure>summary::after\{margin-left:8px\}/);
+});
