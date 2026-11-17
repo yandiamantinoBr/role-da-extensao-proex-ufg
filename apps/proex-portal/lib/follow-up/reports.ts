@@ -3,7 +3,7 @@ import { all } from '../database';
 import { HttpError } from '../errors';
 import { choices, date, TASK_PRIORITIES, TASK_STATES } from './contracts';
 import { taskSearch } from './task-search';
-import { authority, activeAccount, publicTaskAuthority } from './scope';
+import { activeAccount, publicTaskAuthority } from './scope';
 
 export async function followupReportRows(db: D1Database, actor: PortalActor, dataset: 'demands' | 'reviews', input: Record<string, unknown>, limit: number) {
   const conditions = [publicTaskAuthority('?','f')], values: unknown[] = [actor.userId];

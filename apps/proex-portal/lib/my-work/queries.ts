@@ -1,4 +1,4 @@
-import {authority,assignedRecipient,publicTaskAuthority} from '../follow-up/scope';
+import {assignedRecipient,publicTaskAuthority} from '../follow-up/scope';
 import {responsibilityRead,responsibilityDirect,responsibilityTeam,taskDirect,taskTeam} from '../responsibilities/scope';
 import type {TaskCounts,AssignmentFilter} from './contracts';
 

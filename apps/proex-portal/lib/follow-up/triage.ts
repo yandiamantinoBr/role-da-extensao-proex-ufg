@@ -8,7 +8,7 @@ import { reservationStatements } from '../assistant/admission';
 import { classifyTaskTriage, taskTriageBody } from '../assistant/provider';
 import { decisionCeiling, decisionTarget, recordRouteFallback, requireTaskEndpoint, resolveTaskRoute, taskApproval, taskRouteGuards, taskRouteName, withTaskRoute, type ResolvedTaskRoute } from '../assistant/task-routing';
 import { TASK_PRIORITIES, choices, fail, id, onlyKeys, text, version } from './contracts';
-import { atomic, authority, publicTaskAuthority, type Scope } from './scope';
+import { atomic, publicTaskAuthority, type Scope } from './scope';
 import { serverWorkClock } from './time';
 import { followupDetail, saveTaskTriage } from './service';
 import { TRIAGE_CONTEXT_LIMIT, TRIAGE_INPUT_LIMIT, type TriageProposal, type TriageResponse } from './triage-contract';
