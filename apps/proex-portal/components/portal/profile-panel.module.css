@@ -80,6 +80,6 @@
 .photoRow>.photoActions button{width:auto}
 .field input[readonly]{border-style:dashed;cursor:default}
 .subheading{font-weight:650}
-/* Sétima crítica de 16/11: título longo não encosta no "+" no celular. */
-.disclosure>summary>.summaryTitle{flex:1;min-width:0}
+/* Sétima e oitava críticas de 16/11: título longo não encosta no "+" e o ícone não cai sozinho numa linha no celular. */
+.disclosure>summary>.summaryTitle{flex:1;min-width:0;flex-wrap:nowrap}
 .disclosure>summary::after{margin-left:8px}
