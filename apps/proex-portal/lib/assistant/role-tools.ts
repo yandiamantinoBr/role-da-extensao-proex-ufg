@@ -392,11 +392,13 @@ async function officialTool(db: D1Database, organizationId: string, subject: str
 }
 
 /** Uma pesquisa explicitamente pública funciona também com modelos sem ferramentas. */
-export async function officialSearchReply(db: D1Database, organizationId: string, subject: string, fetcher?: typeof fetch): Promise<{ reply: string; sources: RoleToolSource[] }> {
+export async function officialSearchReply(db: D1Database, organizationId: string, subject: string, fetcher?: typeof fetch): Promise<{ reply: string; sources: RoleToolSource[]; scanned: { url: string; title: string }[] }> {
   const result = await officialTool(db, organizationId, subject, ROLE_TOOL_RESULT_BYTES, fetcher);
   const data = JSON.parse(result.content) as { observacao?: string; escolha?: { usado: string; outro: string }; resultados: { titulo?: string; fonte?: string; estado?: string; leitura?: string; link?: string; resumo?: string; legenda?: string; consultadoEm?: string; copiadoEm?: string; publicadoEm?: string; pagina?: number }[] };
   const choices = data.resultados.slice(0, 3);
-  if (choices.length === 1 && choices[0].estado === 'pagina_indisponivel') return { reply: choices[0].leitura ?? '', sources: result.sources.slice(0, 1) };
+  if (choices.length === 1 && choices[0].estado === 'pagina_indisponivel') return { reply: choices[0].leitura ?? '', sources: result.sources.slice(0, 1), scanned: [] };
+  // PDFs escaneados (sem texto): o chat pode oferecer a leitura com IA, só com o toque da pessoa.
+  const scanned = choices.flatMap(page => page.estado === 'sem_texto' && page.link ? [{ url: page.link, title: page.titulo || 'PDF oficial' }] : []);
   const notice = data.escolha ? `Encontrei mais de um documento possível: ${data.escolha.usado} e ${data.escolha.outro}. Usei o mais recente; diga se quer o outro.` : '';
   const reply = choices.length ? choices.map(page => {
     const title = page.titulo || page.fonte || 'Página oficial';
@@ -411,6 +413,6 @@ export async function officialSearchReply(db: D1Database, organizationId: string
     else if (page.publicadoEm) lines.push(`Publicada em ${brasilia(`${page.publicadoEm}T12:00:00-03:00`).split(',')[0]}.`);
     return lines.join('\n');
   }).join('\n\n') : data.observacao || 'Não encontrei páginas oficiais para esse assunto.';
-  return { reply: notice && choices.length ? `${notice}\n\n${reply}` : reply, sources: result.sources.slice(0, choices.length) };
+  return { reply: notice && choices.length ? `${notice}\n\n${reply}` : reply, sources: result.sources.slice(0, choices.length), scanned };
 }
 

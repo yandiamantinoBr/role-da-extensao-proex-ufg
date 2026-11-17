@@ -3,7 +3,7 @@ import { assistantCredentialKeys, database, inviteSecret, speechEnvironment } fr
 import { getPortalUser } from '@/lib/session';
 import { HttpError, publicError } from '@/lib/errors';
 import { boundedJson } from '@/lib/http';
-import { matchOperationProjects, roleChat, roleStatus, roleSuggestionList } from '@/lib/assistant/role';
+import { matchOperationProjects, roleChat, roleReadScannedPdf, roleStatus, roleSuggestionList } from '@/lib/assistant/role';
 import { estimateAssistantPlan } from '@/lib/assistant/service';
 
 export const dynamic = 'force-dynamic';
@@ -32,6 +32,8 @@ export async function POST(request: Request): Promise<Response> {
     // O vídeo de até 2 MB em base64 cabe no limite junto com a mensagem. O servidor confere os dois.
     const input = await boundedJson(request, 2_750_000);
     if (input.action === 'chat') return Response.json(await roleChat(db, actor, input, secret, { keys: assistantCredentialKeys(), speech: speechEnvironment(), signal: request.signal }), { headers });
+    // Leitura com IA de PDF oficial escaneado: o corpo traz só endereço e pergunta; o servidor baixa o PDF.
+    if (input.action === 'pdf.read') return Response.json(await roleReadScannedPdf(db, actor, input, secret, { keys: assistantCredentialKeys(), signal: request.signal }), { headers });
     if (input.action === 'match.operation') return Response.json(await matchOperationProjects(db, actor, String(input.request ?? '')), { headers });
     if (input.action === 'estimate.operation') {
       const { action: _action, ...rest } = input;

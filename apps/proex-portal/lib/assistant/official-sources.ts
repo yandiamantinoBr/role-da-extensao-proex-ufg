@@ -2,7 +2,7 @@ import { aiConfigurationAuthority, platformOwnerAuthoritySql, type PortalActor }
 import { one } from '../database';
 import { HttpError } from '../errors';
 import { OFFICIAL_HOSTS, officialPageIn, officialPdfIn, officialPdfUrl, requestsOfficialPdf } from './official-pdf-url';
-import { searchOfficialPdfs, type OfficialDocument, type OfficialPassage, type OfficialUnread } from './official-pdfs';
+import { readScannedOfficialPdf, searchOfficialPdfs, type OfficialDocument, type OfficialPassage, type OfficialUnread } from './official-pdfs';
 
 /*
  * Fontes oficiais do Rolê, sem chamada paga:
@@ -312,6 +312,11 @@ async function searchPastedPage(page: URL, subject: string, fetcher: typeof fetc
   const { best, ambiguity } = chooseDocument([result], subject, true);
   const pdf = await searchOfficialPdfs(best ? [best] : [], subject, fetcher, USER_AGENT, officialSearchTerms, disallowed);
   return { status: 'ok', pages: [result], ...pdf, ambiguity, documentSearch: true };
+}
+
+/** Leitura com IA de um PDF oficial escaneado: mesmo agente, robots e regras de download da busca. */
+export function downloadScannedOfficialPdf(raw: string, maxPages: number, fetcher: typeof fetch = fetch) {
+  return readScannedOfficialPdf(raw, maxPages, fetcher, USER_AGENT, disallowed);
 }
 
 /**

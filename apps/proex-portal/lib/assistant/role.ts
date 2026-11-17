@@ -15,6 +15,10 @@ import { ROLE_SUGGESTION_DAYS, roleSuggestions } from './role-suggestions';
 import { ROLE_VIDEO_MODELS, roleVideoEstimate, type RoleVideoProfile, type RoleVideoStatus } from './role-video-contracts';
 import { dispatchRoleVideo, parseRoleVideo, RoleVideoChargedError } from './role-video';
 import { isOfficialSearch } from './official-search-intent';
+import { officialPdfUrl } from './official-pdf-url';
+import { downloadScannedOfficialPdf } from './official-sources';
+import { PDF_READING_DISABLED, PDF_READING_MAX_COST_MICROS, PDF_READING_MAX_PAGES, PDF_READING_PROFILE, pdfReadingEstimate, type RolePdfReadingOffer } from './role-pdf-reading-contracts';
+import { dispatchRolePdfReading, pdfReadingReply } from './role-pdf-reading';
 import { GIFT_SHEET_REPLY, asksGiftSheet } from './gift-sheet-intent';
 import { roleDocumentExcerpt, roleDocumentMessage } from './role-document-contracts';
 import { roleHistoryForPolicy, roleReasoningParameters, roleReasoningSupport, type RolePolicy, type RoleEffort } from './role-policy';
@@ -187,6 +191,19 @@ function availability(config: AssistantConfig, credentials: AssistantCredentials
 
 /** Busca em fontes oficiais (sem IA nem custo): basta o Rolê ligado e a busca pública ligada, mesmo sem chave de conversa. */
 const officialSearchOn = (config: AssistantConfig) => config.roleEnabled && config.rolePublicSearchEnabled;
+
+/** Chave do Gemini já usada para vídeo; sem ela, a leitura de PDF escaneado não aparece nem roda. */
+async function pdfReadingKey(db: D1Database, organizationId: string, rawCredentials: Record<string, unknown>): Promise<string | null> {
+  const key = geminiVideoCredential((await loadCatalog(db, organizationId)).catalog, rawCredentials);
+  return validProviderKey(key) ? key : null;
+}
+
+/** Teto da leitura com IA no limite de páginas; null quando passaria do custo máximo ou do teto de entrada do Rolê. */
+function pdfReadingQuote(config: AssistantConfig, question: string, now: number) {
+  const quote = pdfReadingEstimate({ textBytes: new TextEncoder().encode(`Pergunta: ${question}`).byteLength, now });
+  if (quote.costMicros > PDF_READING_MAX_COST_MICROS || config.roleInputTokenCeiling && quote.inputTokens > config.roleInputTokenCeiling) return null;
+  return quote;
+}
 
 /** No provider call. Reports what Rolê can do for this person in this project. */
 export async function roleStatus(db: D1Database, actor: PortalActor | null, input: { projectId?: string | null }, secret: string, options: Options = {}): Promise<RoleAvailability> {
@@ -520,9 +537,12 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
     try {
       await authorization.first();
       const result = await officialSearchReply(db, organizationId, message, options.officialFetcher);
+      // PDF escaneado: oferece a leitura com IA (só aparece com a chave do Gemini e um teto que caiba).
+      const quote = result.scanned.length ? pdfReadingQuote(config, message, now) : null;
+      const pdfReading: RolePdfReadingOffer | null = quote && await pdfReadingKey(db, organizationId, rawCredentials) ? { ...result.scanned[0], costMicros: quote.costMicros } : null;
       await authorization.first();
       return { contract: ROLE_CONTRACT, reply: result.reply, operation: null, operationDropped: false, provider: 'official', model: 'Consulta oficial',
-        reservedMicros: 0, costMicros: 0, inputTokens: 0, outputTokens: 0, sources: result.sources, lookups: 1 };
+        reservedMicros: 0, costMicros: 0, inputTokens: 0, outputTokens: 0, sources: result.sources, lookups: 1, ...(pdfReading ? { pdfReading } : {}) };
     } catch (error) {
       if (String(error).includes('assistant_authority_changed')) throw new HttpError(403, 'Seu acesso ou a configuração mudou antes da resposta.', 'assistant_forbidden');
       throw error;
@@ -649,6 +669,124 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
     if (error instanceof ChargedError && !(error instanceof RoleVideoChargedError) && (error.chargedMicros > estimate.costMicros || error.chargedTokens > estimate.tokens)) {
       await db.prepare('UPDATE ai_organization_usage SET reserved_usd_micros=reserved_usd_micros+?,reserved_tokens=reserved_tokens+? WHERE organization_id=? AND day=?').bind(Math.max(0, error.chargedMicros - estimate.costMicros), Math.max(0, error.chargedTokens - estimate.tokens), organizationId, day).run();
     }
+    if (String(error).includes('assistant_authority_changed')) throw new HttpError(403, 'Seu acesso ou a configuração mudou antes da resposta.', 'assistant_forbidden');
+    throw error;
+  } finally {
+    clearTimeout(timer);
+    options.signal?.removeEventListener('abort', abort);
+  }
+}
+
+const PDF_READING_TIMEOUT_MS = 40_000;
+const PDF_READING_REFUSALS = {
+  fora: [400, 'Só dá para ler com IA um PDF público oficial da PROEX.', 'role_pdf_url'],
+  bloqueado: [403, 'O site não permite leitura automática deste PDF. Abra o link para conferir.', 'role_pdf_blocked'],
+  indisponivel: [503, 'Não consegui abrir o PDF oficial agora. Tente de novo em instantes.', 'role_pdf_unavailable'],
+  tamanho: [413, 'O PDF passa de 2 MB; a leitura com IA não aceita arquivos desse tamanho.', 'role_pdf_size'],
+  com_texto: [409, 'Este PDF tem texto: a busca nas fontes oficiais já consegue ler. Pergunte de novo por lá.', 'role_pdf_has_text'],
+} as const;
+
+/**
+ * Leitura com IA de um PDF público oficial escaneado, só depois do toque em "Ler com IA".
+ * O navegador manda só o endereço e a pergunta; o servidor baixa de novo o PDF pela regra da busca oficial,
+ * confere o teto aceito, reserva no orçamento do dia e manda ao Gemini uma vez por chave de operação.
+ */
+export async function roleReadScannedPdf(db: D1Database, actor: PortalActor | null, input: Record<string, unknown>, secret: string, options: Options = {}) {
+  onlyKeys(input, ['action', 'projectId', 'operationKey', 'consent', 'message', 'url', 'acceptedCostMicros', 'scope']);
+  if (input.consent !== true) throw new HttpError(400, 'Toque em Ler com IA para enviar o PDF público ao Google Gemini.', 'role_pdf_consent');
+  if (typeof input.operationKey !== 'string' || !/^[A-Za-z0-9_-]{8,100}$/.test(input.operationKey)) throw new HttpError(400, 'Reabra o Rolê antes de enviar.', 'assistant_operation');
+  if (typeof input.message !== 'string' || input.message.length > ROLE_MAX_MESSAGE_CHARS) throw new HttpError(400, 'Escreva até 2.000 caracteres por mensagem.', 'assistant_request');
+  const official = typeof input.url === 'string' ? officialPdfUrl(input.url) : null;
+  if (!official) throw new HttpError(...PDF_READING_REFUSALS.fora);
+  official.hash = '';
+  const url = official.href, title = decodeURIComponent(official.pathname.split('/').at(-1)!).replace(/_/g, ' ');
+  const project = projectId(input.projectId), message = safeRequest(input.message);
+  const { current, organizationId } = await scopedActor(db, actor, project), now = options.now ?? Date.now();
+  const { config, rawCredentials, revision } = await loadAssistantSettings(db, secret, organizationId, 'configuration', options.keys, current.userId);
+  if (!officialSearchOn(config)) throw new HttpError(403, 'A busca em fontes oficiais está desligada nesta organização.', 'role_official_disabled');
+  const apiKey = await pdfReadingKey(db, organizationId, rawCredentials);
+  if (!apiKey) throw new HttpError(403, PDF_READING_DISABLED, 'role_pdf_disabled');
+  await resolveRoleScope(db, current, organizationId, input.scope);
+  const ceiling = pdfReadingQuote(config, message, now);
+  if (!ceiling) throw new HttpError(400, 'Esta leitura passaria do custo máximo por leitura com IA. Encurte a pergunta ou abra o PDF.', 'role_pdf_cost');
+  if (!Number.isSafeInteger(input.acceptedCostMicros) || Number(input.acceptedCostMicros) < ceiling.costMicros) {
+    throw new HttpError(409, 'O custo previsto mudou. Faça a busca de novo e toque em Ler com IA.', 'role_cost_changed');
+  }
+  const id = await digest(`role-pdf\n${current.userId}\n${project}\n${input.operationKey}`);
+  const fingerprint = await digest(JSON.stringify({ contract: ROLE_CONTRACT, kind: 'role-pdf', url, message, revision }));
+  const replay = async () => {
+    const call = await one(db, 'SELECT fingerprint FROM ai_calls WHERE id=?', [id]);
+    if (call) throw new HttpError(409, call.fingerprint === fingerprint ? 'Esta leitura já foi feita. A resposta está na conversa.' : 'Este envio já foi usado com outro pedido.', 'assistant_call_replay');
+  };
+  await replay();
+  try {
+    await rateLimitAll(db, [{ bucket: `role-official:${current.userId}`, limit: 20, windowMs: 60_000 }, { bucket: `role-official:org:${organizationId}`, limit: 300, windowMs: 60_000 }]);
+  } catch (error) {
+    if (error instanceof HttpError && error.code === 'rate_limited') throw new HttpError(429, 'Muitas buscas seguidas. Espere um minuto e tente de novo.', 'role_official_rate');
+    throw error;
+  }
+  const authorization = roleAuthorization(db, current, project, organizationId, revision);
+  try { await authorization.first(); } catch (error) {
+    if (String(error).includes('assistant_authority_changed')) throw new HttpError(403, 'Seu acesso ou a configuração mudou antes da resposta.', 'assistant_forbidden');
+    throw error;
+  }
+  // Mesmo download da busca: endereço oficial, robots, ≤ 2 MB, assinatura e páginas. O cliente não manda arquivo.
+  const pdf = await downloadScannedOfficialPdf(url, PDF_READING_MAX_PAGES, options.officialFetcher);
+  if (!pdf.ok) {
+    if (pdf.reason === 'paginas') throw new HttpError(413, `${pdf.pageCount ? `Este PDF tem ${pdf.pageCount} páginas; a` : 'A'} leitura com IA aceita até ${PDF_READING_MAX_PAGES} páginas. Abra o link para conferir.`, 'role_pdf_pages');
+    const [status, text, code] = PDF_READING_REFUSALS[pdf.reason];
+    throw new HttpError(status, text, code);
+  }
+  const estimate = pdfReadingEstimate({ textBytes: new TextEncoder().encode(`Pergunta: ${message}`).byteLength, pages: pdf.pageCount, now });
+  const reservation = { tokens: estimate.tokens, cost: estimate.costMicros, calls: 1, milliseconds: PDF_READING_TIMEOUT_MS };
+  const nonce = crypto.randomUUID(), day = dayKey(now);
+  const personalCap = config.usageScope === 'private' ? config.dailyCalls : Math.max(3, Math.ceil(config.dailyCalls / 2));
+  const personalQuota = db.prepare("SELECT CASE WHEN (SELECT COUNT(*) FROM ai_calls WHERE actor_id=? AND day=?) < ? THEN 1 ELSE json_extract('[]','role_user_quota') END").bind(current.userId, day, personalCap);
+  try {
+    await db.batch([personalQuota, ...reservationStatements(db, { table: 'ai_calls', authorization, id, fingerprint, nonce, actorId: current.userId, projectId: project, organizationId, day, createdAt: new Date(now).toISOString(), revision, config, reservation })]);
+  } catch (error) {
+    if (String(error).includes('assistant_authority_changed')) throw new HttpError(403, 'Seu acesso ou a configuração mudou.', 'assistant_forbidden');
+    if (String(error).includes('role_user_quota')) throw await quotaRefusal(db, current, organizationId, day, config, { cost: reservation.cost, tokens: reservation.tokens, ms: reservation.milliseconds, calls: 1 }, { used: Number((await one(db, 'SELECT COUNT(*) n FROM ai_calls WHERE actor_id=? AND day=?', [current.userId, day]))?.n ?? personalCap), max: personalCap });
+    await replay();
+    throw error;
+  }
+  const admitted = await one(db, 'SELECT admission_nonce FROM ai_calls WHERE id=?', [id]);
+  if (admitted?.admission_nonce !== nonce) throw await quotaRefusal(db, current, organizationId, day, config, { cost: reservation.cost, tokens: reservation.tokens, ms: reservation.milliseconds, calls: 1 });
+  const controller = new AbortController(), timer = setTimeout(() => controller.abort(), PDF_READING_TIMEOUT_MS);
+  const abort = () => controller.abort();
+  options.signal?.addEventListener('abort', abort, { once: true });
+  if (options.signal?.aborted) abort();
+  const base = { provider: 'gemini', model: PDF_READING_PROFILE.model, hasImage: false, hasScannedPdf: true, pages: pdf.pageCount, reservedUsdMicros: estimate.costMicros };
+  try {
+    // Última cerca antes do envio: acesso ou configuração podem ter mudado durante o download.
+    await authorization.first();
+    const startedAt = Date.now();
+    const result = await dispatchRolePdfReading({ apiKey, pdf: pdf.bytes, pageCount: pdf.pageCount, question: message, signal: controller.signal, fetcher: options.fetcher, now });
+    const answer = pdfReadingReply(result.raw, url, title, pdf.pageCount), elapsed = Date.now() - startedAt;
+    const details = { ...base, inputTokens: result.inputTokens, outputTokens: result.outputTokens, reasoningTokens: result.reasoningTokens, usdMicros: result.costMicros, found: answer.found, operationSuggested: false, operationDropped: false, overrun: false, tools: [], steps: 1 };
+    await db.batch([
+      authorization,
+      db.prepare("UPDATE ai_calls SET status='complete' WHERE id=? AND admission_nonce=? AND status='reserved'").bind(id, nonce),
+      db.prepare('UPDATE ai_organization_usage SET reserved_usd_micros=MAX(0,reserved_usd_micros+?),reserved_tokens=MAX(0,reserved_tokens+?),reserved_ms=MAX(0,reserved_ms-?) WHERE organization_id=? AND day=? AND changes()=1').bind(result.costMicros - estimate.costMicros, result.inputTokens + result.outputTokens - estimate.tokens, Math.max(0, reservation.milliseconds - elapsed), organizationId, day),
+      db.prepare("INSERT INTO audit(id,actor_id,project_id,organization_id,action,entity_id,details,created_at) VALUES(?,?,?,?,'assistant.role.chat',?,?,?)")
+        .bind(crypto.randomUUID(), current.userId, project, organizationId, id, JSON.stringify(details), new Date().toISOString()),
+    ]);
+    return { contract: ROLE_CONTRACT, reply: answer.reply, operation: null, operationDropped: false, provider: 'gemini', model: PDF_READING_PROFILE.model,
+      reservedMicros: estimate.costMicros, costMicros: result.costMicros, inputTokens: result.inputTokens, outputTokens: result.outputTokens,
+      sources: [answer.source], lookups: 0, page: answer.page };
+  } catch (error) {
+    const charged = error instanceof RoleVideoChargedError ? error : null;
+    const failureDetails = { ...base, ...(charged ? { usdMicros: charged.chargedMicros, ...charged.usage } : {}) };
+    await db.batch([
+      db.prepare("UPDATE ai_calls SET status='failed' WHERE id=? AND admission_nonce=? AND status='reserved'").bind(id, nonce),
+      db.prepare("INSERT INTO audit(id,actor_id,project_id,organization_id,action,entity_id,details,created_at) SELECT ?,?,?,?,'assistant.role.chat.failed',?,?,? WHERE changes()=1")
+        .bind(crypto.randomUUID(), current.userId, project, organizationId, id, JSON.stringify(failureDetails), new Date().toISOString()),
+      // Cobrado pelo provedor: o dia fica com o custo real. Sem cobrança, a chamada continua contada, como no vídeo.
+      ...(charged ? [
+        db.prepare('UPDATE ai_organization_usage SET reserved_usd_micros=MAX(0,reserved_usd_micros+?),reserved_tokens=MAX(0,reserved_tokens+?) WHERE organization_id=? AND day=? AND changes()=1')
+          .bind(charged.chargedMicros - estimate.costMicros, charged.chargedTokens - estimate.tokens, organizationId, day),
+      ] : []),
+    ]);
     if (String(error).includes('assistant_authority_changed')) throw new HttpError(403, 'Seu acesso ou a configuração mudou antes da resposta.', 'assistant_forbidden');
     throw error;
   } finally {

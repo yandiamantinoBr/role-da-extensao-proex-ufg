@@ -2,6 +2,11 @@
 export type PdfTextPage = { number: number; text: string };
 
 export async function readOfficialPdfText(bytes: Uint8Array): Promise<PdfTextPage[]> {
+  return (await readOfficialPdf(bytes)).pages;
+}
+
+/** Páginas com texto e o total de páginas do arquivo (as escaneadas contam, mesmo sem texto). */
+export async function readOfficialPdf(bytes: Uint8Array): Promise<{ pageCount: number; pages: PdfTextPage[] }> {
   const [engine, worker] = await Promise.all([
     import('pdfjs-dist/legacy/build/pdf.mjs'),
     import('pdfjs-dist/legacy/build/pdf.worker.mjs'),
@@ -29,7 +34,7 @@ export async function readOfficialPdfText(bytes: Uint8Array): Promise<PdfTextPag
       if (textSize > 160_000) throw new Error('PDF acima do limite de texto.');
       if (text.trim()) pages.push({ number, text });
     }
-    return pages;
+    return { pageCount: pdf.numPages, pages };
   } finally {
     clearTimeout(timer);
     await task.destroy().catch(() => {});
