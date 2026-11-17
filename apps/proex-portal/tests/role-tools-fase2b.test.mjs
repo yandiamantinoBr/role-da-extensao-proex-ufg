@@ -62,7 +62,7 @@ function fixture() {
   run("INSERT INTO work_responsibility_scopes(id,organization_id,project_id,area,created_by,created_at,updated_at) VALUES('resp-estoque','org_proex','proj-role','materials','coord-a',?,?),('resp-b','org_proex','proj-b','materials','coord-b',?,?)", now, now, now, now);
   run("INSERT INTO work_responsibility_assignees(id,scope_id,team_id,user_id,created_at) VALUES('as-1','resp-estoque','team-estoque',NULL,?),('as-2','resp-estoque',NULL,'coord-a',?),('as-3','resp-b','team-b',NULL,?)", now, now, now);
   const db = { prepare(sql) { let values = []; return { sql, bind(...args) { values = args; return this; }, async first() { return native.prepare(sql).get(...values) ?? null; }, async all() { return { results: native.prepare(sql).all(...values) }; }, async run() { return { meta: { changes: Number(native.prepare(sql).run(...values).changes) } }; }, execute() { const results = native.prepare(sql).all(...values); return { results, meta: { changes: Number(native.prepare('SELECT changes() n').get().n) } }; } }; }, async batch(statements) { native.exec('BEGIN'); try { const results = statements.map(statement => statement.execute()); native.exec('COMMIT'); return results; } catch (error) { native.exec('ROLLBACK'); throw error; } } };
-  const call = (actor, name, args = {}, scope = null) => runRoleTool(db, actors[actor], 'org_proex', name, args, undefined, scope);
+  const call = (actor, name, args = {}, scope = null, budget = undefined) => runRoleTool(db, actors[actor], 'org_proex', name, args, budget, scope);
   return { native, db, actors, call };
 }
 const parse = result => JSON.parse(result.content);
@@ -98,7 +98,8 @@ test('FASE 2b: "quantos planners no CONPEEX" acha o item no projeto que hospeda 
     const body = parse(result);
     assert.equal(body.resultados.length, 1);
     assert.deepEqual([body.resultados[0].material, body.resultados[0].projeto, body.resultados[0].saldo], ['Planner', 'Rolê da Extensão', 0]);
-    assert.match(body.observacao, /hospeda Dinâmica CONPEEX 2026/);
+    assert.deepEqual(body.hospedagem, [{ projeto: 'Rolê da Extensão', dinamicas: ['Dinâmica CONPEEX 2026'] }]);
+    assert.ok(!body.observacao.includes('Rolê') && !body.observacao.includes('CONPEEX'), 'observação só com texto fixo, sem nomes cadastrados');
     clean(result, 'planners CONPEEX');
     assert.equal(parse(await f.call('coord-a', 'consultar_estoque', { material: 'planner', projeto: 'evento do CONPEEX' })).resultados.length, 1, 'palavras genéricas não atrapalham');
     const event = await resolveRoleScope(f.db, f.actors['coord-a'], 'org_proex', { kind: 'event', id: 'camp-conpeex' });
@@ -191,4 +192,82 @@ test('FASE 2b: sem acesso nada sai; revogar no meio da conversa zera a próxima 
 test('FASE 2b: ferramentas registradas e esquema dentro do teto', () => {
   for (const name of ['consultar_estoque', 'consultar_niveis_dinamica', 'consultar_emprestimos', 'consultar_responsaveis']) assert.equal(ROLE_TOOL_NAMES.filter(entry => entry === name).length, 1, name);
   assert.ok(ROLE_TOOLS_ACTUAL_SCHEMA_BYTES <= ROLE_TOOLS_SCHEMA_BYTES, `esquema ${ROLE_TOOLS_ACTUAL_SCHEMA_BYTES} <= ${ROLE_TOOLS_SCHEMA_BYTES}`);
+});
+
+// Revisão independente (P2/P3): orçamento, listas cortadas, ordem e contagem, período, filtros e escopo.
+test('REVISÃO 2b: o orçamento vale mesmo sem itens; hospedagem estruturada com no máximo 5 projetos', async () => {
+  const f = fixture();
+  try {
+    const now = new Date().toISOString();
+    for (let n = 1; n <= 6; n++) {
+      f.native.prepare("INSERT INTO projects(id,name,description,scope,organization_id,created_at) VALUES(?,?,'','external','org_proex',?)").run(`proj-h${n}`, `Projeto Hospedeiro ${n} com nome bem comprido para ocupar espaço`, now);
+      f.native.prepare('INSERT INTO members(id,user_id,email,role,project_id,created_at) VALUES(?,?,?,?,?,?)').run(`coord-a-h${n}`, 'coord-a', 'coord-a@example.test', 'manager', `proj-h${n}`, now);
+      f.native.prepare("INSERT INTO campaigns(id,project_id,name,starts_at,ends_at,status,created_at) VALUES(?,?,?,?,?,'draft',?)").run(`camp-h${n}`, `proj-h${n}`, `CONPEEX extra ${n}`, now, now, now);
+    }
+    const body = parse(await f.call('coord-a', 'consultar_estoque', { projeto: 'CONPEEX' }));
+    assert.equal(body.hospedagem.length, 5, 'no máximo 5 projetos');
+    assert.equal(body.maisProjetosHospedeiros, 2, '"e mais N"');
+    for (const budget of [260, 400]) {
+      const small = await f.call('coord-a', 'consultar_estoque', { projeto: 'CONPEEX' }, null, budget);
+      assert.ok(new TextEncoder().encode(small.content).byteLength <= budget, `cabe em ${budget} bytes: ${small.content}`);
+      JSON.parse(small.content);
+    }
+  } finally { f.native.close(); }
+});
+
+test('REVISÃO 2b: lista de designações cortada em 50 não inventa "sem responsável"', async () => {
+  const f = fixture();
+  try {
+    const now = new Date().toISOString();
+    for (let n = 0; n < 55; n++) {
+      f.native.prepare("INSERT INTO campaigns(id,project_id,name,starts_at,ends_at,status,created_at) VALUES(?,?,?,?,?,'closed',?)").run(`oficina-${n}`, 'proj-role', `Oficina ${n}`, now, now, now);
+      f.native.prepare("INSERT INTO work_responsibility_scopes(id,organization_id,project_id,area,campaign_id,target_key,created_by,created_at,updated_at) VALUES(?,'org_proex','proj-role','campaigns',?,?,'coord-a',?,?)").run(`resp-of-${n}`, `oficina-${n}`, `oficina-${n}`, now, now);
+      f.native.prepare("INSERT INTO work_responsibility_assignees(id,scope_id,team_id,created_at) VALUES(?,?,'team-estoque',?)").run(`as-of-${n}`, `resp-of-${n}`, now);
+    }
+    const body = parse(await f.call('coord-a', 'consultar_responsaveis', { projeto: 'Rolê' }));
+    assert.ok(!(body.semResponsavelDefinido ?? []).includes('Estoque · Rolê da Extensão'), 'o estoque tem responsável, mesmo fora das 50 primeiras');
+    assert.ok((body.semResponsavelDefinido ?? []).includes('Empréstimos · Rolê da Extensão'));
+    assert.deepEqual(body.maisDesignacoes, [{ projeto: 'Rolê da Extensão', total: 56 }]);
+    assert.match(body.observacao, /mais designações/);
+  } finally { f.native.close(); }
+});
+
+test('REVISÃO 2b: "todos" mais recentes primeiro, contagem completa; período inclui retirados em atraso', async () => {
+  const f = fixture();
+  try {
+    const t = Date.now(), now = new Date().toISOString();
+    for (let n = 0; n < 205; n++) f.native.prepare("INSERT INTO loans(id,project_id,item_id,action_name,borrower_name,borrower_contact,starts_at,ends_at,status,created_by,created_at) VALUES(?,'proj-role','camera-4',?,'Pessoa Privada','',?,?,'returned','coord-a',?)").run(`antigo-${n}`, `Antigo ${n}`, t - (30 + n) * DAY, t - (30 + n) * DAY + 3600000, now);
+    const every = parse(await f.call('coord-a', 'consultar_emprestimos', { situacao: 'todos' }));
+    assert.equal(every.resultados[0].acao, 'Ação longo', 'o mais recente primeiro');
+    assert.deepEqual(every.contagem, { retirados: 2, emAtraso: 1, reservados: 1, devolvidos: 206 }, 'contagem de tudo, além das 200 linhas');
+    const tomorrow = brasiliaDay(t + DAY);
+    const week = parse(await f.call('coord-a', 'consultar_emprestimos', { de: tomorrow, ate: tomorrow }));
+    assert.ok(week.resultados.some(row => row.acao === 'Ação atrasado'), 'retirado em atraso continua emprestado no período');
+    assert.ok(week.resultados.some(row => row.acao === 'Ação longo') && !week.resultados.some(row => row.acao === 'Ação reserva'));
+  } finally { f.native.close(); }
+});
+
+test('REVISÃO 2b: saldo baixo filtrado no SQL e limite avisado; filtros sem herança de objeto', async () => {
+  const f = fixture();
+  try {
+    const now = new Date().toISOString(), insert = f.native.prepare("INSERT INTO items(id,project_id,name,category,unit,stock,reserved,low_stock,created_at,updated_at) VALUES(?,'proj-role',?,'gift','unidade',100,0,1,?,?)");
+    f.native.exec('BEGIN'); for (let n = 0; n < 2000; n++) insert.run(`aaa-${n}`, `Aaa ${String(n).padStart(4, '0')}`, now, now); f.native.exec('COMMIT');
+    const low = parse(await f.call('coord-a', 'consultar_estoque', { saldo_baixo: true }));
+    assert.deepEqual(low.resultados.map(row => row.material).sort(), ['Botton', 'Planner'], 'os em alerta aparecem mesmo depois de 2.000 itens');
+    const everything = parse(await f.call('coord-a', 'consultar_estoque'));
+    assert.notEqual(everything.resultados[0].situacao, 'ok', 'os em alerta vêm primeiro');
+    assert.match(everything.observacao, /limite de 2\.000/);
+    for (const situacao of ['constructor', '__proto__', 'toString']) await assert.rejects(f.call('coord-a', 'consultar_emprestimos', { situacao }), error => error.code === 'role_tool_input', situacao);
+    for (const area of ['constructor', 'toString', 'hasOwnProperty']) await assert.rejects(f.call('coord-a', 'consultar_responsaveis', { area }), error => error.code === 'role_tool_input', area);
+  } finally { f.native.close(); }
+});
+
+test('REVISÃO 2b: no escopo de um evento, sem dinâmica, os níveis são os da dinâmica do escopo', async () => {
+  const f = fixture();
+  try {
+    f.native.prepare("INSERT INTO campaigns(id,project_id,name,starts_at,ends_at,status,created_at) VALUES('camp-verao','proj-role','Oficina de Verão','2099-01-01','2099-01-02','draft',?)").run(new Date().toISOString());
+    const event = await resolveRoleScope(f.db, f.actors['coord-a'], 'org_proex', { kind: 'event', id: 'camp-conpeex' });
+    const result = await f.call('coord-a', 'consultar_niveis_dinamica', {}, event);
+    assert.deepEqual(parse(result).resultados.map(row => row.dinamica), ['Dinâmica CONPEEX 2026']);
+  } finally { f.native.close(); }
 });
