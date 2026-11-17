@@ -150,3 +150,6 @@
 }
 /* Quinta crítica de 16/11: no celular os botões da unidade ficam juntos à esquerda, sem meia célula vazia. */
 @container (max-width:599px) { .nodeActions { display:flex; justify-content:flex-start; gap:8px; } .nodeActions>button,.more>summary { width:auto; padding-inline:12px; } }
+/* Sexta crítica de 16/11: a linha tracejada marca só o cartão em governança, sem correr pelas unidades abaixo dele. */
+.node[data-relation=governance] { border-left:0; padding-left:0; }
+.node[data-relation=governance]>.nodeCard { border-left:2px dashed var(--muted); }
