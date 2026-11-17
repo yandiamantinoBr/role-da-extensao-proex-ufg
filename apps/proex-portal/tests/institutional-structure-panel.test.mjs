@@ -261,3 +261,11 @@ test('the consultation time uses the portal-wide wording, without seconds (crít
    assert.doesNotMatch(h.body(), /\d{2}:\d{2}:\d{2}/, 'sem segundos');
   } finally { h.dispose(); }
 });
+
+test('the governance dash marks only the governance card, not the whole subtree (sexta crítica de 16/11)', () => {
+  const css = readFileSync(new URL('../components/portal/institutional-structure-panel.module.css', import.meta.url), 'utf8');
+  const tail = css.slice(css.lastIndexOf('.node[data-relation=governance] {'));
+  assert.match(tail, /^\.node\[data-relation=governance\] \{ border-left:0; padding-left:0; \}/);
+  assert.match(css, /\.node\[data-relation=governance\]>\.nodeCard \{ border-left:2px dashed var\(--muted\); \}/);
+  assert.match(readFileSync(new URL('../components/portal/work-teams-panel.module.css', import.meta.url), 'utf8'), /\.members \{ align-self: start; \}/);
+});
