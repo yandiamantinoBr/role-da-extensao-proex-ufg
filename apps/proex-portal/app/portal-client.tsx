@@ -1142,7 +1142,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
             </div>
             <p className={workStyles.loanFilterCriterion}>Entram os empréstimos em curso em algum momento entre as datas, mesmo que tenham começado antes. Horário de Brasília.</p>
             <div className={workStyles.loanFilterResult}>
-              <p role="status">{loanPeriodValid?`${shownLoans.length} ${shownLoans.length===1?'empréstimo':'empréstimos'} no recorte`:'Confira as datas do período.'}</p>
+              <p role="status">{loanPeriodValid?`${shownLoans.length} ${shownLoans.length===1?'empréstimo encontrado':'empréstimos encontrados'}`:'Confira as datas do período.'}</p>
               {hasLoanFilters&&<button className="p-text-link" type="button" onClick={()=>{loanSearch.current?.focus({preventScroll:true});setLoanFilters(emptyLoanFilters);}}>Limpar busca e filtros</button>}
             </div>
           </div>}
@@ -1182,7 +1182,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
                         </a>)}{documents.filter(d => get(d, 'loanId', 'loan_id') === l.id).length > 0 && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, margin: '6px 0' }}>{documents.filter(d => get(d, 'loanId', 'loan_id') === l.id).map(d => <DriveSaveButton key={`drive-${d.id}`} source={{ kind: 'loan_document', id: d.id }} label={d.name || 'Termo anexado'}/>)}</div>}{canProject(get(l, 'projectId', 'project_id'), 'loans.manage', 'loans.checkout') && <LoanAttachment loanId={l.id} onSaved={refresh}/>}</div>
                     </details>
                     </article>;
-                })}</div> : <Empty title={loanPeriodValid||activeWorkRecord?.module==='loans'?'Nenhum empréstimo no recorte':'Período inválido'} text={hasLoanFilters?'Confira o período, altere o termo da busca ou limpe os filtros.':'As reservas do projeto selecionado aparecem aqui.'} icon={Truck}/>}</Section>{can('loans.manage') && formProjects.length > 0 && <div id="loan-reservation" className={workStyles.record} tabIndex={-1} role="region" aria-label="Formulário de reserva de equipamento">
+                })}</div> : <Empty title={loanPeriodValid||activeWorkRecord?.module==='loans'?'Nenhum empréstimo encontrado':'Período inválido'} text={hasLoanFilters?'Confira o período, altere o termo da busca ou limpe os filtros.':'As reservas do projeto selecionado aparecem aqui.'} icon={Truck}/>}</Section>{can('loans.manage') && formProjects.length > 0 && <div id="loan-reservation" className={workStyles.record} tabIndex={-1} role="region" aria-label="Formulário de reserva de equipamento">
             <Section title="Reservar equipamento" description="Conflitos de horário e bens indisponíveis são conferidos antes da confirmação.">
             <OperationForm onProjectFocus={setDraftProject} action="loan.create" mutate={mutate} submit="Confirmar reserva" make={f => ({ projectId: f.get('projectId'), itemId: f.get('itemId'), actionName: f.get('actionName'), borrowerName: f.get('borrowerName'), borrowerContact: f.get('borrowerContact'), startsAt: iso(f.get('startsAt')), endsAt: iso(f.get('endsAt')), note: f.get('note') })}>
             <div className="p-form-grid">{projectField}<Field label="Equipamento" help="Bens indisponíveis ficam no fim da lista, desativados. O choque de horários é conferido ao salvar.">
@@ -1243,7 +1243,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
             setReportFrom(next); }}/>
         </label>
         <button className="p-button p-button-subtle" onClick={() => { setReportFrom(''); setReportTo(''); }}>Todo o período</button>
-        <p>Horário de Brasília. <strong>Empréstimos:</strong> entram os que estavam em curso em algum momento do período, mesmo que tenham começado antes. <strong>Projetos e materiais:</strong> posição atual. <strong>Dinâmicas por dia, participações, tentativas e entregas:</strong> data de cada registro.</p>
+        <p>Horário de Brasília.<br/><strong>Empréstimos:</strong> entram os que estavam em curso em algum momento do período, mesmo que tenham começado antes.<br/><strong>Projetos e materiais:</strong> posição atual.<br/><strong>Dinâmicas por dia, participações, tentativas e entregas:</strong> data de cada registro.</p>
         </div>
         <ReportsCenter key={`${string(user.userId)}:${reportInitialDataset}:${reportSearch}`} userId={string(user.userId)} canSync={isPlatformOwner} projectIdentity={projects.find(project => project.id === filter)} initialDataset={reportInitialDataset === 'projects' && !canAny('reports.read') ? 'demands' : reportInitialDataset} initialSearch={reportSearch} demandFilters={demandReportFilters} needsDemandSearch={needsDemandSearch} demandReportUnavailable={demandReportUnavailable} onRestoreDemandSearch={value=>{setDemandReportFilters(current=>current ? {...current,search:value} : null);setNeedsDemandSearch(false);}} onClearDemandFilters={()=>{setDemandReportFilters(null);setNeedsDemandSearch(false);setDemandReportUnavailable(false);}} demandOrganizationName={organizations.find(org=>org.id===demandReportFilters?.organizationId)?.name} projectId={filter} unitId={unitFilter} area={areaFilter} from={reportFrom} to={reportTo} available={[
           ...(projects.length ? ['projects' as const] : []),
