@@ -391,3 +391,42 @@ test('REVISÃO · LEITURA: PDF só com carimbo é sem_texto; robots que bloqueia
   const reply = await officialSearchReply(emptyDb, 'org_test', question, blocked);
   assert.equal(reply.reply, ['SEI 7 Edital Teste.pdf', 'Encontrei o PDF, mas o site não permite leitura automática dele. Abra o link para conferir.', link].join('\n'));
 });
+
+test('TELA · MODO: chat indisponível com busca disponível abre só a busca; a alternância manda a pergunta à busca', async () => {
+  const { roleComposerMode, officialRoute } = await import(compile('assistant/official-search-intent'));
+  assert.equal(roleComposerMode(null), 'off');
+  assert.equal(roleComposerMode({ available: true, policy: { publicSearch: false } }), 'chat');
+  assert.equal(roleComposerMode({ available: false, policy: { publicSearch: true } }), 'search');
+  assert.equal(roleComposerMode({ available: false, policy: { publicSearch: false } }), 'off');
+  assert.equal(roleComposerMode({ available: false }), 'off', 'status sem política (Rolê não configurado) continua desligado');
+  const plain = 'Como registro a entrega de brindes?', notice = 'Quais editais de extensão estão abertos?';
+  const base = { mode: 'chat', toggled: false, publicSearch: true, attachment: false };
+  assert.deepEqual(officialRoute({ ...base, text: plain }), { official: false, explicit: false });
+  assert.deepEqual(officialRoute({ ...base, text: notice }), { official: true, explicit: false }, 'o reconhecimento automático continua');
+  assert.deepEqual(officialRoute({ ...base, toggled: true, text: plain }), { official: true, explicit: true });
+  assert.deepEqual(officialRoute({ ...base, toggled: true, attachment: true, text: plain }), { official: false, explicit: false }, 'com anexo não vai à busca');
+  assert.deepEqual(officialRoute({ ...base, toggled: true, publicSearch: false, text: notice }), { official: false, explicit: false });
+  assert.deepEqual(officialRoute({ ...base, mode: 'search', text: plain }), { official: true, explicit: true }, 'só a busca disponível: todo envio é busca');
+  assert.deepEqual(officialRoute({ ...base, mode: 'off', toggled: true, text: notice }), { official: false, explicit: false });
+});
+
+test('TELA · COMPOSITOR: alternância "Buscar em fontes oficiais" com estado visível, pedido explícito e aviso de só busca', () => {
+  const tsx = readFileSync(`${root}components/portal/role-assistant.tsx`, 'utf8');
+  const css = readFileSync(`${root}components/portal/role-assistant.module.css`, 'utf8');
+  assert.match(tsx, /<button type="button" className=\{styles\.officialToggle\} aria-pressed=\{officialMode\}[^>]*>/);
+  assert.match(tsx, />Buscar em fontes oficiais</);
+  assert.match(tsx, /\.\.\.\(route\.explicit \? \{ officialSearch: true \} : \{\}\)/, 'o pedido manda officialSearch: true');
+  assert.match(tsx, /history: encodedVideo \|\| officialLookup \|\| document \? \[\] : history/, 'busca segue sem histórico');
+  assert.match(tsx, /acceptedCostMicros: officialLookup \|\| !estimate \? 0 : estimate\.costMicros/);
+  assert.match(tsx, /'Consulta às fontes oficiais, sem custo de IA\.'/);
+  assert.match(tsx, /'Consultar fontes oficiais'/);
+  assert.match(tsx, /Agora só a busca em fontes oficiais está disponível\. A conversa com IA está desligada nesta organização\./);
+  // A sonda do botão e o recarregar do status contam a busca: a tela abre e a conversa não some depois de cada resposta.
+  assert.match(tsx, /setReady\(roleComposerMode\(next\) !== 'off'\)/);
+  assert.match(tsx, /if \(roleComposerMode\(next\) === 'off'\) resetConversation\(\);/);
+  assert.match(tsx, /\{status && mode === 'off' && <div className=\{styles\.unavailable\}/);
+  // Toque de 44 px, estado ligado visível e tema escuro.
+  assert.match(css, /\.officialToggle\{[^}]*min-height:44px/);
+  assert.match(css, /\.officialToggle\[aria-pressed=true\]\{[^}]*background:var\(--purple\)/);
+  assert.match(css, /:global\(html\[data-theme=dark\]\) \.officialToggle\[aria-pressed=true\]\{/);
+});

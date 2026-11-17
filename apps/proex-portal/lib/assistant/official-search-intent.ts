@@ -44,3 +44,18 @@ export function isOfficialSearch(message: string): boolean {
   const lookup = /\b(?:pesquise|pesquisar|busque|buscar|procure|procurar|consulte|consultar|ache|encontre|encontrar|verifique|confira|acesse|veja|qual|quais|onde|quando|quanto|quantos|quantas|saber|tem|esta)\b/;
   return site.test(value) && (lookup.test(value) || value.includes('?') || /^(?:site|portal|https:\/\/)/.test(value));
 }
+
+export type RoleComposerMode = 'chat' | 'search' | 'off';
+/** Conversa com IA, só a busca em fontes oficiais (sem chave de conversa) ou nada. */
+export function roleComposerMode(status: { available: boolean; policy?: { publicSearch: boolean } } | null | undefined): RoleComposerMode {
+  if (!status) return 'off';
+  if (status.available) return 'chat';
+  return status.policy?.publicSearch ? 'search' : 'off';
+}
+
+/** Para onde vai o envio: busca oficial (pedida na alternância, imposta no modo só busca ou reconhecida na frase) ou conversa. */
+export function officialRoute(input: { mode: RoleComposerMode; toggled: boolean; publicSearch: boolean; attachment: boolean; text: string }): { official: boolean; explicit: boolean } {
+  if (input.mode === 'off' || !input.publicSearch || input.attachment) return { official: false, explicit: false };
+  const explicit = input.mode === 'search' || input.toggled;
+  return { official: explicit || isOfficialSearch(input.text), explicit };
+}

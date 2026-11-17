@@ -142,3 +142,9 @@
 .documentEditor textarea{resize:vertical;max-height:9rem}
 .documentEditor .videoConsent{padding:.5rem .6rem}
 @container (max-width:390px){.cost{flex-basis:100%;order:1}.send{margin-left:auto}.composer[data-document-draft]{max-height:62dvh;overflow:auto}}
+/* "Buscar em fontes oficiais": alternância com estado visível (ligada = roxa), mesmo toque de 44 px dos botões do compositor. */
+.officialToggle{display:inline-flex;align-items:center;gap:.4rem;min-height:44px;padding:0 .75rem;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--text-strong);font:inherit;font-size:max(13px,.82rem);font-weight:700;cursor:pointer;flex-shrink:0}
+.officialToggle:focus-visible{outline:3px solid var(--focus);outline-offset:3px}
+.officialToggle:disabled{opacity:.45;cursor:not-allowed}
+.officialToggle[aria-pressed=true]{background:var(--purple);border-color:var(--purple);color:#fff}
+:global(html[data-theme=dark]) .officialToggle[aria-pressed=true]{background:#7b45a0;border-color:#b48ad6}
