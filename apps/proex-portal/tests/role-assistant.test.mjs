@@ -1124,3 +1124,121 @@ test('ANEXOS DO ROLÊ: leitura acompanha o acesso e a IA recebe só o trecho aut
     await assert.rejects(check(), error => error.status === 403);
   } finally { f.native.close(); }
 });
+
+// Chave de conversa ausente com o Rolê ligado: a configuração aponta para um provedor sem chave no cofre.
+function dropChatKey(f) {
+  f.native.prepare("UPDATE ai_organization_settings SET config_json=json_set(config_json,'$.roleProvider','groq') WHERE organization_id='org_proex'").run();
+}
+function countingOfficial() {
+  const state = { calls: 0 };
+  state.fetch = async (_raw, init) => { state.calls++; assert.equal(init.redirect, 'error'); return new Response('', { status: 503 }); };
+  return state;
+}
+const noModel = () => assert.fail('a busca oficial não chama modelo de IA');
+
+test('BUSCA SEM CHAVE DE CHAT: com o Rolê e a busca pública ligados, a busca oficial funciona sem chave e sem custo', async () => {
+  const f = fixture();
+  try {
+    await setup(f, { rolePublicSearchEnabled: true });
+    dropChatKey(f);
+    const status = await roleStatus(f.db, f.actors.viewer, { projectId: 'project-a' }, secret, { keys });
+    assert.equal(status.available, false);
+    assert.equal(status.policy.publicSearch, true, 'a tela precisa saber que a busca continua disponível');
+    assert.match(status.reason, /chave/);
+    const official = countingOfficial(), options = { keys, fetcher: noModel, officialFetcher: official.fetch };
+    const recognized = await roleChat(f.db, f.actors.viewer, chatInput(f, { message: 'No portal oficial da PROEX, procure edital de bolsas.', acceptedCostMicros: 0 }), secret, options);
+    assert.equal(recognized.provider, 'official');
+    assert.equal(recognized.costMicros, 0);
+    assert.match(recognized.reply, /Não consegui consultar as fontes oficiais agora/);
+    const plain = 'Como registro a entrega de brindes?';
+    const explicit = await roleChat(f.db, f.actors.viewer, chatInput(f, { message: plain, acceptedCostMicros: 0, officialSearch: true }), secret, options);
+    assert.equal(explicit.provider, 'official', 'pedido explícito vai para a busca mesmo sem reconhecer a frase');
+    assert.equal(explicit.costMicros, 0);
+    assert.equal(f.native.prepare('SELECT COUNT(*) n FROM ai_calls').get().n, 0);
+    const searched = official.calls;
+    assert.ok(searched > 0);
+    // Frase comum, sem pedido explícito: continua indisponível como hoje.
+    await assert.rejects(roleChat(f.db, f.actors.viewer, chatInput(f, { message: plain }), secret, options), error => error.status === 503 && error.code === 'role_unavailable');
+    // Sem acesso ao projeto: recusado antes de buscar.
+    await assert.rejects(roleChat(f.db, f.actors.outsider, chatInput(f, { message: plain, acceptedCostMicros: 0, officialSearch: true }), secret, options), error => error.status === 403);
+    await assert.rejects(roleChat(f.db, null, chatInput(f, { message: plain, acceptedCostMicros: 0, officialSearch: true }), secret, options), error => error.code === 'assistant_forbidden');
+    // Pedido explícito com anexo: recusado com texto claro.
+    for (const media of [{ image: PNG }, { document: { text: 'Trecho sintético.', name: 'teste.pdf' } }, { video: 'data:video/mp4;base64,AAAA' }]) {
+      await assert.rejects(roleChat(f.db, f.actors.viewer, chatInput(f, { message: plain, acceptedCostMicros: 0, officialSearch: true, ...media }), secret, options),
+        error => error.status === 400 && error.code === 'role_official_media' && /só texto/.test(error.message));
+    }
+    await assert.rejects(roleChat(f.db, f.actors.viewer, chatInput(f, { message: plain, acceptedCostMicros: 0, officialSearch: 'sim' }), secret, options), error => error.status === 400);
+    assert.equal(official.calls, searched, 'nenhuma recusa chegou a buscar');
+    // A autorização continua conferida depois da rede.
+    await assert.rejects(roleChat(f.db, f.actors.viewer, chatInput(f, { message: plain, acceptedCostMicros: 0, officialSearch: true }), secret, { keys, fetcher: noModel, officialFetcher: async () => {
+      f.native.prepare("UPDATE members SET revoked_at='2026-11-16T13:00:00.000Z' WHERE user_id=?").run(f.actors.viewer.userId);
+      return new Response('', { status: 503 });
+    } }), error => error.code === 'assistant_forbidden');
+  } finally { f.native.close(); }
+});
+
+test('BUSCA SEM CHAVE DE CHAT: Rolê ou busca pública desligados continuam indisponíveis, sem buscar', async () => {
+  for (const config of [{ rolePublicSearchEnabled: false }, { roleEnabled: false, rolePublicSearchEnabled: true }, { roleEnabled: false, rolePublicSearchEnabled: false }]) {
+    const f = fixture();
+    try {
+      await setup(f, config);
+      if (config.roleEnabled !== false) dropChatKey(f);
+      const status = await roleStatus(f.db, f.actors.viewer, { projectId: 'project-a' }, secret, { keys });
+      assert.equal(status.available, false);
+      assert.equal(status.policy.publicSearch, false, JSON.stringify(config));
+      if (config.roleEnabled === false) assert.equal(status.reason, 'O Rolê ainda não foi ligado nesta organização.');
+      const official = countingOfficial(), options = { keys, fetcher: noModel, officialFetcher: official.fetch };
+      await assert.rejects(roleChat(f.db, f.actors.viewer, chatInput(f, { message: 'Quais editais de extensão estão abertos?', acceptedCostMicros: 0, officialSearch: true }), secret, options),
+        error => error.status === 403 && error.code === 'role_official_disabled' && error.message === 'A busca em fontes oficiais está desligada nesta organização.');
+      await assert.rejects(roleChat(f.db, f.actors.viewer, chatInput(f, { message: 'Quais editais de extensão estão abertos?', acceptedCostMicros: 0 }), secret, options),
+        error => error.status === 503 && error.code === 'role_unavailable');
+      assert.equal(official.calls, 0);
+    } finally { f.native.close(); }
+  }
+});
+
+test('BUSCA EXPLÍCITA COM CHAVE: o pedido explícito vai à busca sem custo; sem ele, a mesma frase segue para a conversa com IA', async () => {
+  const f = fixture();
+  try {
+    await setup(f);
+    const status = await roleStatus(f.db, f.actors.viewer, { projectId: 'project-a' }, secret, { keys });
+    assert.equal(status.available, true);
+    assert.equal(status.policy.publicSearch, true);
+    const official = countingOfficial(), provider = fakeProvider();
+    const plain = 'Como registro a entrega de brindes?';
+    const explicit = await roleChat(f.db, f.actors.viewer, chatInput(f, { message: plain, acceptedCostMicros: 0, officialSearch: true }), secret, { keys, fetcher: provider.fetch, officialFetcher: official.fetch });
+    assert.equal(explicit.provider, 'official');
+    assert.equal(provider.calls.length, 0);
+    assert.equal(f.native.prepare('SELECT COUNT(*) n FROM ai_calls').get().n, 0);
+    const chat = await roleChat(f.db, f.actors.viewer, chatInput(f, { message: plain }), secret, { keys, fetcher: provider.fetch, officialFetcher: official.fetch });
+    assert.equal(chat.provider, 'deepseek');
+    assert.equal(provider.calls.length, 1);
+  } finally { f.native.close(); }
+});
+
+test('BUSCA OFICIAL · LIMITE E CIÊNCIA: a 21ª busca no minuto é recusada sem buscar; o pedido explícito dispensa a ciência de IA, a conversa não', async () => {
+  const f = fixture();
+  try {
+    await setup(f);
+    const official = countingOfficial(), provider = fakeProvider(), options = { keys, fetcher: provider.fetch, officialFetcher: official.fetch };
+    const ask = extra => { const input = chatInput(f, { message: 'Quais editais de extensão estão abertos?', acceptedCostMicros: 0, ...extra }); delete input.consent; return input; };
+    // Pedido explícito sem "consent": a busca não manda nada para IA.
+    const first = await roleChat(f.db, f.actors.viewer, ask({ officialSearch: true }), secret, options);
+    assert.equal(first.provider, 'official');
+    // Sem pedido explícito, a falta de ciência continua recusada como hoje (o caminho com IA exige).
+    await assert.rejects(roleChat(f.db, f.actors.viewer, ask({}), secret, options), error => error.code === 'assistant_consent');
+    await assert.rejects(roleChat(f.db, f.actors.viewer, ask({ message: 'Como registro a entrega de brindes?' }), secret, options), error => error.code === 'assistant_consent');
+    for (let index = 1; index < 20; index++) await roleChat(f.db, f.actors.viewer, ask({ officialSearch: true }), secret, options);
+    const searched = official.calls;
+    await assert.rejects(roleChat(f.db, f.actors.viewer, ask({ officialSearch: true }), secret, options),
+      error => error.status === 429 && error.code === 'role_official_rate' && error.message === 'Muitas buscas seguidas. Espere um minuto e tente de novo.');
+    // Busca reconhecida automaticamente conta no mesmo limite.
+    await assert.rejects(roleChat(f.db, f.actors.viewer, chatInput(f, { message: 'Quais editais de extensão estão abertos?', acceptedCostMicros: 0 }), secret, options), error => error.code === 'role_official_rate');
+    assert.equal(official.calls, searched, 'a recusa por limite não chega a buscar');
+    assert.equal(provider.calls.length, 0);
+    // Outra pessoa tem o próprio limite.
+    f.native.prepare("INSERT INTO members(id,user_id,email,role,project_id,created_at) VALUES('outsider-a','outsider-qa','outsider@example.test','inventory','project-a',?)").run(new Date().toISOString());
+    const other = { ...f.actors.outsider, members: [...f.actors.outsider.members, { id: 'outsider-a', user_id: 'outsider-qa', email: 'outsider@example.test', role: 'inventory', project_id: 'project-a', revoked_at: null, created_at: new Date().toISOString() }] };
+    assert.equal((await roleChat(f.db, other, ask({ officialSearch: true }), secret, options)).provider, 'official');
+  } finally { f.native.close(); }
+});
