@@ -283,7 +283,7 @@ export default function CalendarPanel({ viewerId, projects: sourceProjects, orga
             <strong className={styles.dayNumber}>{Number(day.slice(-2))}</strong>
             {count > 0 && <span className={styles.dayCount} aria-hidden="true">{count}</span>}
             <span className={styles.dots} aria-hidden="true">{[...new Set(dayEntries.filter(event => event.status !== 'CANCELLED').map(event => event.category))].map(kind => <span key={kind} style={{ background: colors[kind] }}/>)}{dayEntries.some(event => event.status === 'CANCELLED') && <span className={styles.dotCancelled}/>}</span>
-            {dayEntries.slice(0, 2).map(event => <em key={event.uid} className={styles.chip} data-cancelled={event.status === 'CANCELLED' || undefined} style={{ borderLeftColor: colors[event.category] }} title={event.status === 'CANCELLED' ? `${statusLabel(event)} · ${event.title}` : event.title}><span className={styles.chipText}>{splitTitle(event).name}</span></em>)}
+            {dayEntries.slice(0, 2).map(event => <em key={event.uid} className={styles.chip} data-cancelled={event.status === 'CANCELLED' || undefined} style={{ borderLeftColor: colors[event.category] }} title={event.status === 'CANCELLED' ? `${statusLabel(event)} · ${event.title}` : event.title}><span className={styles.chipText}>{splitTitle(event).name.split(' · ')[0]}</span></em>)}
             {count > 2 && <small className={styles.extraEntries}>+{count - 2}</small>}
           </button>;
         })}

@@ -264,7 +264,7 @@ test('cards, day previews and exports drop the repeated type word but keep it in
       ['Projetos e eventos', 'Oficina · parte 2'],
     ], 'antes: "Materiais" em cima e "Materiais · Botton azul" no título');
     const chips = h.all().filter(node => node.type === 'em').map(node => text(node));
-    assert.ok(chips.includes('Botton azul · 40 unidades') && !chips.some(chip => chip.startsWith('Materiais ·')));
+    assert.ok(chips.includes('Botton azul') && !chips.some(chip => chip.startsWith('Materiais ·') || chip.includes('unidades')), `a prévia leva só o nome; a quantidade fica no cartão: ${chips}`);
     const counters = h.all().filter(node => node.type === 'button' && /^\d/.test(text(node))).map(text);
     assert.ok(counters.includes('1Material') && counters.includes('3Projetos e eventos'), `antes: "1 Materiais"; agora: ${counters}`);
     h.all().find(node => node.type === 'input' && node.props.name === 'calendarSearch').props.onChange({ target: { value: 'oficina' } }); h.render();
