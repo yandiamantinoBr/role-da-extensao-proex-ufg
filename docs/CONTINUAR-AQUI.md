@@ -29,14 +29,17 @@ Comece pela [Retomada de 13/11](RETOMADA-13NOV-PORTAL-PROEX.md) para conferir a 
 - **Pendente de decisão:** a planilha mestre (só administração) ainda exporta observação e condições dos empréstimos (`lib/sync/portable.ts`).
 - **QA local:** se a porta 5173 estiver em uso por outra sessão, rode uma cópia do script com `5173` trocado por `5174` e apague a cópia depois. Não encerre o QA de outra sessão.
 
-## Tutoriais do Portal sem IA · Navegação · 2026-11-16
+## Tutoriais do Portal sem IA · 2026-11-16 e 17
 
 **No ar:** PR164 (`22f62ee`, `dpl_dJosyguMJgVXaq1dJ3HdKB9f3s8y`), migração **0052_user_tutorials** (só acréscimo; a 0051 é da PR163). **Próxima migração livre: 0053.** Conferido em produção com login, só lendo: `/api/tutorials` devolve 200 `private, no-store` com Navegação v1 (8 de 8 passos para a responsável institucional), o convite aparece no Início, todas as âncoras estão presentes, há "Ajuda e tutoriais" no menu da conta e não há rolagem lateral em 1920 px. O tutorial não foi iniciado em produção, para não gravar progresso. Detalhes e como criar capítulos: [TUTORIAIS](../apps/proex-portal/docs/TUTORIAIS.md).
 
 - Convite do Rolê no Início (uma vez), **Ajuda e tutoriais** no menu da conta, em Mais e na Conta, cartão guiado não modal com contorno no controle real, pausar, retomar, repetir. Funciona sem IA, chave ou `inventory.read`.
 - Passos resolvidos pelo acesso da sessão a cada abertura e troca de projeto (projeto vizinho, conta bloqueada ou pendente, vínculo revogado com a tela aberta). Progresso pessoal; a anonimização apaga.
 - Junto (PR #144, no ar): a dica de Demandas só cita **Somente demandas gerais** para quem tem a opção.
-- **Falta:** capítulos por público (Meu trabalho, Projetos, Demandas, Equipes, Agenda, Materiais, Dinâmicas; Empréstimos por último), **Experimentar**, ajuda na página do voluntário e na área pública, abrir pelo chat do Rolê.
+- **Capítulos no ar (17/11), cada um com crítica visual independente ≥ 9 e conferido em produção só leitura:** Meu trabalho (PR183), Projetos (PR190), Demandas (PR193), Equipes (PR195), Agenda (PR198), Materiais (PR199) e Dinâmicas (PR202). Evidências em `docs/evidencias/2026-11-1{6,7}-tutorial-*`.
+- **Requisitos do catálogo:** `projects`, `capability` (+`scope`), `anyOf`, `manageOrganization` e `calendar`. Cada um repete a regra que mostra o módulo ou o controle. Os campos `reveal: 'below'` e `missing` controlam rolagem e aviso ("Para continuar").
+- **Comportamento comum:** o cartão continua procurando o controle; elemento sem tamanho não conta; o espaço de rolagem vence a reserva da doca; Ajuda e tutoriais mostra só os assuntos com passos para o acesso atual.
+- **Falta:** Empréstimos (liberado: as PRs 163 e 169 entraram), **Experimentar**, ajuda na página do voluntário e na área pública, abrir pelo chat do Rolê. Fora do tutorial: em 360 px o botão "Externos e parceiros" de Projetos quebra em três linhas.
 
 ## Auditoria de permissões das PRs 105–143 · 16/11
 
