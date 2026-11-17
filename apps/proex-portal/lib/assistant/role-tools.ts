@@ -26,6 +26,7 @@ import { ROLE_TOOL_RESULT_BYTES } from './role-contracts';
 import { ROLE_TOOLS_FASE2B, ROLE_TOOL_NAMES_FASE2B, runFase2bTool, tierLevels } from './role-tools-fase2b';
 import { FASE2A_TOOLS, FASE2A_TOOL_NAMES, matchProjectNames, runFase2aTool } from './role-tools-fase2a';
 import { FASE2C_TOOLS, FASE2C_TOOL_NAMES, runFase2cTool } from './role-tools-fase2c';
+import { FASE2D_TOOLS, FASE2D_TOOL_NAMES, runFase2dTool, type RoleNavigation } from './role-tools-fase2d';
 
 const text = (description: string) => ({ type: 'string', description, maxLength: 120 });
 const fn = (name: string, description: string, properties: Record<string, unknown>, required: string[] = []) => ({ type: 'function', function: { name, description, parameters: { type: 'object', properties, required, additionalProperties: false } } });
@@ -42,6 +43,7 @@ export const ROLE_TOOLS = [
   ...ROLE_TOOLS_FASE2B,
   ...FASE2A_TOOLS,
   ...FASE2C_TOOLS,
+  ...FASE2D_TOOLS,
 ];
 export const ROLE_TOOL_NAMES = ROLE_TOOLS.map(tool => tool.function.name);
 /** Bytes reais do esquema (o custo máximo usa ROLE_TOOLS_SCHEMA_BYTES, que precisa ser maior). */
@@ -54,7 +56,7 @@ export type ResolvedScope = { kind: RoleScope['kind']; id: string | null; label:
 /** Rascunho de demanda: vai para o cartão de revisão, nunca para o modelo (que só recebe o resumo sem identificadores). */
 export type RoleTaskDraft = { organizationId: string; projectId: string; projectName: string; title: string; description: string; dueAt: string | null; priority: 'high' | 'medium' | 'low'; assigneeId?: string; assigneeName?: string; afterUntrusted?: true };
 export const ROLE_TASK_DRAFT_TOOL = 'preparar_rascunho_demanda';
-export type RoleToolResult = { content: string; sources: RoleToolSource[]; rows: number; taskDraft?: RoleTaskDraft; scanned?: { url: string; title: string }[] };
+export type RoleToolResult = { content: string; sources: RoleToolSource[]; rows: number; taskDraft?: RoleTaskDraft; scanned?: { url: string; title: string }[]; navigation?: RoleNavigation };
 
 const STOP = new Set(['de', 'da', 'do', 'das', 'dos', 'e', 'a', 'o', 'as', 'os', 'em', 'no', 'na', 'nos', 'nas', 'para', 'com', 'por', 'um', 'uma', 'que', 'quantos', 'quantas', 'qual', 'quais']);
 export const norm = (value: string) => value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
@@ -172,6 +174,7 @@ export async function runRoleTool(db: D1Database, actor: PortalActor, organizati
   if (ROLE_TOOL_NAMES_FASE2B.has(name)) return runFase2bTool(db, actor, organizationId, name, args, budget, scope, { pack, visibleProjects, terms, score });
   if (FASE2A_TOOL_NAMES.includes(name)) return runFase2aTool({ db, actor, organizationId, args, budget, scope, pack, visibleProjects: wanted => visibleProjects(db, actor, organizationId, wanted, scope) }, name);
   if (FASE2C_TOOL_NAMES.has(name)) return runFase2cTool({ db, actor, organizationId, scope, budget, pack, projects: (wanted = '') => visibleProjects(db, actor, organizationId, wanted, scope) }, name, args);
+  if (FASE2D_TOOL_NAMES.includes(name)) return runFase2dTool({ db, actor, organizationId, args, budget, scope, pack, terms, score, visibleProjects: (wanted, scoped) => visibleProjects(db, actor, organizationId, wanted, scoped ? scope : null) });
   if (Object.keys(args).some(key => !['texto', 'projeto', 'material', 'dias', 'situacao', 'dinamica', 'de', 'ate', 'paginas', 'titulo', 'descricao', 'prazo', 'prioridade', 'responsavel', 'url'].includes(key))) throw new HttpError(400, 'Consulta com campos não permitidos.', 'role_tool_input');
   if (name === 'consultar_guia') return guideTool(db, actor, organizationId, args, budget);
   if (name === 'preparar_rascunho_demanda') return taskDraftTool(db, actor, organizationId, args, budget, scope);

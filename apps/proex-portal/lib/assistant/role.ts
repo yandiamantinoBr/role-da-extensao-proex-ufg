@@ -375,7 +375,7 @@ async function toolStep(route: ToolRoute, apiKey: string, body: unknown, maxOutp
  */
 async function dispatchWithTools(route: ToolRoute, apiKey: string, body: { messages: Record<string, unknown>[] } & Record<string, unknown>, run: (name: string, args: Record<string, unknown>, budget: number) => Promise<RoleToolResult>, policy: RolePolicy, offeredTools: PortalTools, retainReasoning: boolean, checkAccess: () => Promise<unknown>, signal: AbortSignal, fetcher: typeof fetch) {
   const messages = [...body.messages], used: { name: string; rows: number }[] = [], sources = new Map<string, RoleSource>();
-  let taskDraft: RoleTaskDraft | undefined, draftCalls = 0, scanned: { url: string; title: string }[] = [];
+  let taskDraft: RoleTaskDraft | undefined, draftCalls = 0, scanned: { url: string; title: string }[] = [], navigation: RoleToolResult['navigation'];
   let inputTokens = 0, outputTokens = 0, costMicros = 0, steps = 0;
   const charged = (message: string) => new ChargedError(message, costMicros, inputTokens + outputTokens);
   // No JSON mode in the loop: after lookups, DeepSeek's JSON mode can return an empty message.
@@ -418,6 +418,8 @@ async function dispatchWithTools(route: ToolRoute, apiKey: string, body: { messa
             used.push({ name: call.function.name, rows: result.rows });
             for (const source of result.sources) if (sources.size < 8) sources.set(source.href, source);
             if (result.taskDraft) taskDraft = result.taskDraft;
+            // "Abrir esta tela": o último destino conferido vira um botão; só o toque da pessoa navega.
+            if (result.navigation) navigation = result.navigation;
             if (result.scanned?.length && !scanned.length) scanned = result.scanned;
           } catch (error) {
             content = JSON.stringify({ erro: error instanceof HttpError && error.status < 500 ? error.message : 'Consulta indisponível agora.' });
@@ -441,7 +443,7 @@ async function dispatchWithTools(route: ToolRoute, apiKey: string, body: { messa
     if (containsCredential(reply.reply) || reply.operation && containsCredential(reply.operation)) throw charged('A resposta do provedor não pôde ser mostrada.');
     // Conteúdo lido de outras consultas na mesma resposta pode tentar dirigir o rascunho: o cartão avisa.
     const untrusted = used.some(entry => entry.name !== ROLE_TASK_DRAFT_TOOL && entry.rows > 0);
-    return { ...reply, inputTokens, outputTokens, costMicros, steps, tools: used, sources: [...sources.values()], scanned, ...(taskDraft ? { taskDraft: untrusted ? { ...taskDraft, afterUntrusted: true as const } : taskDraft } : {}) };
+    return { ...reply, inputTokens, outputTokens, costMicros, steps, tools: used, sources: [...sources.values()], scanned, ...(navigation ? { navigation } : {}), ...(taskDraft ? { taskDraft: untrusted ? { ...taskDraft, afterUntrusted: true as const } : taskDraft } : {}) };
   }
 }
 
@@ -655,7 +657,7 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
     // Last live fence before money leaves: access or configuration may have changed during decryption.
     await authorization.first();
     const startedAt = Date.now();
-    const result: { reply: string; operation: string | null; inputTokens: number; outputTokens: number; reasoningTokens?: number; costMicros: number; tools?: { name: string; rows: number }[]; sources?: RoleSource[]; steps?: number; taskDraft?: RoleTaskDraft; scanned?: { url: string; title: string }[] } = video && validProviderKey(videoKey)
+    const result: { reply: string; operation: string | null; inputTokens: number; outputTokens: number; reasoningTokens?: number; costMicros: number; tools?: { name: string; rows: number }[]; sources?: RoleSource[]; steps?: number; taskDraft?: RoleTaskDraft; scanned?: { url: string; title: string }[]; navigation?: RoleToolResult['navigation'] } = video && validProviderKey(videoKey)
       ? await dispatchRoleVideo({ apiKey: videoKey, video, message, maxOutputTokens: config.roleOutputTokenLimit,
           inputCeiling: config.roleInputTokenCeiling, now, profile: videoProfile, signal: controller.signal, fetcher: options.fetcher })
       : callable
@@ -685,7 +687,7 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
     const pdfReading = result.scanned?.length ? await scannedOffer(result.scanned).catch(() => null) : null;
     return { contract: ROLE_CONTRACT, reply: result.reply, operation: result.operation, operationDropped: dropped, provider, model: modelName,
       ...(pdfReading ? { pdfReading } : {}), ...videoReceipt, reservedMicros: estimate.costMicros, costMicros: result.costMicros, inputTokens: result.inputTokens, outputTokens: result.outputTokens,
-      sources: result.sources ?? [], lookups: (result.tools ?? []).length,
+      sources: result.sources ?? [], lookups: (result.tools ?? []).length, ...(result.navigation ? { navigation: result.navigation } : {}),
       ...(result.taskDraft ? { taskDraft: await signedTaskDraft(secret, current.userId, image && !result.taskDraft.afterUntrusted ? { ...result.taskDraft, afterUntrusted: true } : result.taskDraft, Date.now()) } : {}) };
   } catch (error) {
     const failureDetails = { provider, model: modelName, hasImage: !!image, ...(video ? { hasVideo: true, videoEffort: videoProfile.effort } : {}), reservedUsdMicros: estimate.costMicros,
