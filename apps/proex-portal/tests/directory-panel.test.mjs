@@ -128,7 +128,7 @@ test('several people can be invited at once, one link each, with the progress of
  const other=person({id:'person-b',name:'Outra pessoa',contact:'outra@example.invalid',invite:{state:'none'}});
  const h=harness(inviteOptions);try{
   await h.open(response({people:[person({invite:{state:'expired',expiresAt:'2026-11-01T12:00:00Z'}}),other]}));
-  h.click('Selecionar quem pode ser convidado nesta página');assert.match(h.body(),/2 selecionadas/);h.click('Convidar selecionadas');
+  h.click('Selecionar todos para convidar');assert.match(h.body(),/2 selecionadas/);h.click('Convidar selecionadas');
   assert.match(h.body(),/Convidar 2 pessoas/);const form=h.find('form',n=>text(n).includes('Gerar 2 convites'));form.props.onSubmit({preventDefault(){}});h.render();
   assert.equal(JSON.parse(h.last().init.body).email,'pessoa@example.invalid');assert.match(h.body(),/Criando convites: 0 de 2 prontos/);
   await h.ready(created('invite-a'));await tick();h.render();
