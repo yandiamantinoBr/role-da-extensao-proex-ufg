@@ -150,3 +150,7 @@
 .activeFeeds h4{font-weight:650}
 /* "+7" com cara de que há mais (nona crítica de 16/11). */
 .extraEntries{color:var(--brand-ink);font-weight:650}
+/* Nona crítica de 16/11: semanas com a mesma altura no computador e prévia cancelada legível (uma linha, cinza, sem risco). */
+@container agenda (min-width:860px){.day{min-height:146px}}
+.chip[data-cancelled]{text-decoration:none}
+.chip[data-cancelled] .chipText{-webkit-line-clamp:1;color:var(--muted)}

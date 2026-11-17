@@ -216,7 +216,7 @@ export default function CalendarPanel({ viewerId, projects: sourceProjects, orga
         ['Fuso horário', 'Brasília'], ['Gerado em', `${shortDate.format(new Date())}, ${shortTime.format(new Date())}`],
       ];
       const blob = await documentExport(format, 'Agenda da PROEX', columns, rows, (row, key) => row[key], info,
-        { layout: 'table', columnWeights: [1.45, 1.15, 1.1], recordsLabel: 'Compromissos do período', mutedDetailLines: true, mutedRows: shown.flatMap((event, index) => event.status === 'CANCELLED' ? [index] : []), metrics: [
+        { layout: 'table', columnWeights: [1.6, 1.15, 0.95], recordsLabel: 'Compromissos do período', mutedDetailLines: true, mutedRows: shown.flatMap((event, index) => event.status === 'CANCELLED' ? [index] : []), metrics: [
           // Total e as categorias da tela, na mesma ordem dos contadores; os cancelados viram nota do total (crítica de 16/11).
           { label: shown.length === 1 ? 'Compromisso' : 'Compromissos', value: shown.length, ...(cancelledShown ? { detail: `inclui ${cancelledShown} ${cancelledShown === 1 ? 'cancelado' : 'cancelados'}` } : {}) },
           ...[...new Set(shown.map(event => event.category))].map(kind => [kind, shown.filter(event => event.category === kind).length] as const)
