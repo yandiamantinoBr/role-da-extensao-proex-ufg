@@ -716,7 +716,7 @@ export async function roleReadScannedPdf(db: D1Database, actor: PortalActor | nu
   const fingerprint = await digest(JSON.stringify({ contract: ROLE_CONTRACT, kind: 'role-pdf', url, message, revision }));
   const replay = async () => {
     const call = await one(db, 'SELECT fingerprint FROM ai_calls WHERE id=?', [id]);
-    if (call) throw new HttpError(409, call.fingerprint === fingerprint ? 'Esta leitura já foi feita. A resposta está na conversa.' : 'Este envio já foi usado com outro pedido.', 'assistant_call_replay');
+    if (call) throw new HttpError(409, call.fingerprint === fingerprint ? 'Esta leitura já foi enviada por este botão. Faça a busca de novo para tentar outra vez.' : 'Este envio já foi usado com outro pedido.', 'assistant_call_replay');
   };
   await replay();
   try {

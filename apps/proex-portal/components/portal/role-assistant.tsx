@@ -12,6 +12,7 @@ import { prepareSpeechWav } from './speech-audio';
 import { RoleLocalPlayer, type RoleLocalMedia } from './role-local-media';
 import RoleDocumentCard, { type RoleDocumentRevision } from './role-document-card';
 import RoleTaskDraftCard, { roleTaskDraftFrom, type RoleTaskDraftStatus, type RoleTaskDraftView } from './role-task-draft-card';
+import RoleScannedPdfCard, { roleScannedPdfFrom, type RoleScannedPdfOffer } from './role-scanned-pdf-card';
 import { ROLE_DOCUMENT_EXCERPT_LIMIT, roleDocumentExcerpt, roleDocumentMessage, type RoleDocumentExcerpt, type RoleDocumentPreview } from '@/lib/assistant/role-document-contracts';
 import { MAX_UPLOAD_FILE_BYTES } from '@/lib/upload-limits';
 import AiPeopleUsage from './ai-people-usage';
@@ -31,7 +32,7 @@ type Status = { document?: { approval: string; canSaveToRecords: boolean }; vide
 type Match = { projectId: string; projectName: string; itemName: string; score: number };
 type Operation = { request: string; stage: 'idle' | 'estimated' | 'preview' | 'done'; costMicros?: number; provider?: string; jev?: boolean; /** Modelo que confere, como veio da estimativa (vazio = padrão do portal). É o nome que o aviso mostra e que vai no preparo. */ decisionDestination?: string; decisionApproval?: string; stale?: boolean; projectId?: string; matches?: Match[]; ambiguous?: boolean; error?: string; limit?: boolean; preview?: { plan: Omit<AssistantPlan, 'actorId'>; planToken: string; undoReason: string }; confirmed?: boolean; receipt?: string; key: string; /** Pedido exatamente como foi enviado para preparar a prévia; vai junto na confirmação. */ prepared?: string; destinationDefault?: string; movementId?: string; destination?: string | null; revise?: 'correct' | 'undo' | null; reviseKey?: string };
 type Source = { label: string; href: string };
-type Message = { id: string; role: 'user' | 'assistant'; content: string; image?: string; video?: true; official?: true; isolated?: true; document?: RoleDocumentPreview; documentRevision?: RoleDocumentRevision; media?: RoleLocalMedia; meta?: string; operation?: Operation; sources?: Source[]; taskDraft?: RoleTaskDraftView; taskDraftStatus?: RoleTaskDraftStatus };
+type Message = { id: string; role: 'user' | 'assistant'; content: string; image?: string; video?: true; official?: true; isolated?: true; document?: RoleDocumentPreview; documentRevision?: RoleDocumentRevision; media?: RoleLocalMedia; meta?: string; operation?: Operation; sources?: Source[]; taskDraft?: RoleTaskDraftView; taskDraftStatus?: RoleTaskDraftStatus; pdfReading?: RoleScannedPdfOffer };
 type Picked = { dataUrl: string; bytes: number };
 type Recorded = { file: File; seconds: number };
 
@@ -292,6 +293,34 @@ function RoleConversation({ projects, defaultProjectId, onApplied, onOpenSetting
 
   // Só em memória: some ao recarregar ou trocar de conta.
 
+  /** Só com o toque: o servidor baixa de novo o PDF oficial, confere o teto e manda ao Gemini uma vez por chave. */
+  async function readScannedPdf(messageId: string) {
+    const offer = messages.find(message => message.id === messageId)?.pdfReading;
+    if (!offer || offer.reading || offer.done || busy) return;
+    const epoch = conversationEpoch.current;
+    const update = (patch: Partial<RoleScannedPdfOffer>) => setMessages(current => current.map(entry => entry.id === messageId && entry.pdfReading ? { ...entry, pdfReading: { ...entry.pdfReading, ...patch } } : entry));
+    update({ reading: true, error: undefined }); setBusy(true); setError(''); setLimitHit(false);
+    try {
+      const result = await post<{ reply: string; costMicros: number; sources?: Source[] }>('/api/assistant/role', {
+        action: 'pdf.read', projectId, scope: scopeKind === 'org' ? { kind: 'org' } : { kind: scopeKind, id: scopeId }, operationKey: offer.key,
+        consent: true, message: offer.question, url: offer.url, acceptedCostMicros: offer.costMicros,
+      }, 55_000);
+      if (!mounted.current || conversationEpoch.current !== epoch) return;
+      const reply: Message = { id: crypto.randomUUID(), role: 'assistant', content: result.reply, official: true,
+        sources: (result.sources ?? []).filter(source => officialPdfUrl(source.href)).slice(0, 1), meta: `Leitura por IA (Google Gemini) · Custou ${friendlyMicros(result.costMicros)}` };
+      setMessages(current => [...current.map(entry => entry.id === messageId && entry.pdfReading ? { ...entry, pdfReading: { ...entry.pdfReading, reading: false, done: true } } : entry), reply]);
+      void loadStatus(projectId, { keep: true });
+    } catch (cause) {
+      if (!mounted.current || conversationEpoch.current !== epoch) return;
+      // Resposta do servidor: a tentativa terminou e uma nova chave pode tentar de novo. Sem resposta (tempo esgotado), a chave fica: nunca cobra em dobro.
+      const answered = cause instanceof RequestError && cause.code !== 'assistant_call_replay';
+      const closed = cause instanceof RequestError && ['role_pdf_disabled', 'role_official_disabled', 'role_pdf_has_text', 'role_pdf_pages', 'role_pdf_size', 'role_pdf_blocked', 'role_pdf_url'].includes(cause.code ?? '');
+      update({ reading: false, closed, error: cause instanceof Error ? limitText(cause) : 'Não foi possível ler o PDF com IA.', ...(answered ? { key: crypto.randomUUID() } : {}) });
+      setLimitHit(isLimit(cause));
+      if (cause instanceof RequestError && cause.status === 401) void loadStatus(projectId);
+    } finally { if (mounted.current && conversationEpoch.current === epoch) setBusy(false); }
+  }
+
   async function send(event?: FormEvent) {
     event?.preventDefault();
     if (!canSend || !status || (!officialLookup && !estimate)) return;
@@ -301,7 +330,7 @@ function RoleConversation({ projects, defaultProjectId, onApplied, onOpenSetting
     setMessages(current => [...current, user]); setDraft(''); setPicked(null); setBusy(true); setError(''); setNotice(''); setLimitHit(false);
     try {
       const encodedVideo = video && status.video ? await sendableVideo(video.file) : null;
-      const result = await post<{ reply: string; operation: string | null; operationDropped?: boolean; model: string; provider?: string; costMicros: number; reservedMicros: number; inputTokens: number; outputTokens: number; reasoningTokens?: number; sources?: Source[]; lookups?: number; taskDraft?: unknown }>('/api/assistant/role', {
+      const result = await post<{ reply: string; operation: string | null; operationDropped?: boolean; model: string; provider?: string; costMicros: number; reservedMicros: number; inputTokens: number; outputTokens: number; reasoningTokens?: number; sources?: Source[]; lookups?: number; taskDraft?: unknown; pdfReading?: unknown }>('/api/assistant/role', {
         action: 'chat', projectId, scope: scopeKind === 'org' ? { kind: 'org' } : { kind: scopeKind, id: scopeId }, operationKey: crypto.randomUUID(), history: encodedVideo || officialLookup || document ? [] : history, message: text, ...(image ? { image } : {}),
         ...(encodedVideo ? { video: encodedVideo, videoConsent: true, videoApproval: status.video?.approval } : {}),
         ...(document ? { document, documentConsent: true, documentApproval: status.document?.approval } : {}),
@@ -311,7 +340,9 @@ function RoleConversation({ projects, defaultProjectId, onApplied, onOpenSetting
       if (!mounted.current || conversationEpoch.current !== epoch) return;
       const videoUsage = encodedVideo ? ` · ${result.inputTokens} tokens de entrada · ${result.outputTokens} de saída${typeof result.reasoningTokens === 'number' ? ` (${result.reasoningTokens} de raciocínio)` : ''}` : '';
       const taskDraft = roleTaskDraftFrom(result.taskDraft);
-      const reply: Message = { id: crypto.randomUUID(), role: 'assistant', content: result.reply, ...(taskDraft ? { taskDraft } : {}), ...(result.provider === 'official' ? { official: true } : {}), ...(document ? { isolated: true } : {}), ...(encodedVideo ? { video: true } : {}), sources: (result.sources ?? []).filter(source => source.href.startsWith('/?module=') || OFFICIAL_LINK.test(source.href) || officialPdfUrl(source.href)).slice(0, 6), meta: result.provider === 'official' ? 'Consulta pública · sem custo de IA' : result.provider === 'portal' ? 'Resposta do Portal · sem custo de IA' : `${encodedVideo ? `${videoLabel} · Custo estimado` : 'Custou'} ${friendlyMicros(result.costMicros)}${videoUsage}${result.lookups ? ` · consultou o portal ${result.lookups === 1 ? '1 vez' : `${result.lookups} vezes`}` : ''}${result.operationDropped ? ' · Não foi preparado rascunho. Confira suas permissões e os dados informados.' : ''}`,
+      // PDF escaneado na busca oficial: a oferta guarda a pergunta e uma chave fixa para o toque em Ler com IA.
+      const pdfReading = result.provider === 'official' ? roleScannedPdfFrom(result.pdfReading, text, crypto.randomUUID()) : undefined;
+      const reply: Message = { id: crypto.randomUUID(), role: 'assistant', content: result.reply, ...(taskDraft ? { taskDraft } : {}), ...(pdfReading ? { pdfReading } : {}), ...(result.provider === 'official' ? { official: true } : {}), ...(document ? { isolated: true } : {}), ...(encodedVideo ? { video: true } : {}), sources: (result.sources ?? []).filter(source => source.href.startsWith('/?module=') || OFFICIAL_LINK.test(source.href) || officialPdfUrl(source.href)).slice(0, 6), meta: result.provider === 'official' ? 'Consulta pública · sem custo de IA' : result.provider === 'portal' ? 'Resposta do Portal · sem custo de IA' : `${encodedVideo ? `${videoLabel} · Custo estimado` : 'Custou'} ${friendlyMicros(result.costMicros)}${videoUsage}${result.lookups ? ` · consultou o portal ${result.lookups === 1 ? '1 vez' : `${result.lookups} vezes`}` : ''}${result.operationDropped ? ' · Não foi preparado rascunho. Confira suas permissões e os dados informados.' : ''}`,
         operation: result.operation ? { request: result.operation, stage: 'idle', key: crypto.randomUUID() } : undefined };
       setMessages(current => [
         ...(encodedVideo && video ? current.map(message => message.id === user.id ? { ...message, media: { kind: 'video', file: video.file } satisfies RoleLocalMedia } : message) : current),
@@ -653,6 +684,7 @@ function RoleConversation({ projects, defaultProjectId, onApplied, onOpenSetting
                   {!!message.sources?.length && <div className={styles.sources}><span>Fontes da resposta</span><ul>{message.sources.map(source => <li key={source.href}>{source.href.startsWith('/') ? <a href={source.href} onClick={() => close()}>{source.label}</a> : <a href={source.href} target="_blank" rel="noopener noreferrer">{source.label} ↗</a>}</li>)}</ul></div>}
                   {message.taskDraft && <RoleTaskDraftCard draft={message.taskDraft} status={message.taskDraftStatus} onOpen={() => close()}
                     onStatus={taskDraftStatus => setMessages(current => current.map(entry => entry.id === message.id ? { ...entry, taskDraftStatus } : entry))}/>}
+                  {message.pdfReading && <RoleScannedPdfCard offer={message.pdfReading} disabled={busy || recording || transcribing || readingDocument || preparingAudio} onRead={() => void readScannedPdf(message.id)}/>}
                   {message.meta && <small>{message.meta}</small>}
                   {message.operation && <div className={styles.operation}>
                     <p className={styles.operationTitle}>Posso preparar isto para você</p>
