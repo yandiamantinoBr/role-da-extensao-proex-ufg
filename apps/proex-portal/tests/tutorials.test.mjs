@@ -218,3 +218,13 @@ test('Materiais: any of read, manage or deliver opens the chapter; Registrar mov
   assert.equal(readerSteps.registrar, false, 'a reader never gets Registrar movimento');
   assert.ok(Object.values(chapterSteps(await tutorialWorkspace(db, await none.actor(), {}))).every(available => !available));
 });
+
+test('Dinâmicas: each step follows its own capability (operate, deliver, manage)', async () => {
+  const db = fixture(), operator = await person(db, 'dn-operator', [['operator', 'project-a']]), manager = await person(db, 'dn-manager', [['manager', 'project-a']]), reader = await person(db, 'dn-reader', [['viewer', 'project-a']]);
+  const chapterSteps = state => Object.fromEntries(state.chapters.find(chapter => chapter.id === 'dinamicas').steps.map(step => [step.id, step.available]));
+  const op = chapterSteps(await tutorialWorkspace(db, await operator.actor(), {}));
+  assert.deepEqual([op.acoes, op.atendimento, op.retirada, op.situacao, op.preparar], [true, true, true, false, false], 'the operator attends and delivers, but does not manage');
+  const mg = chapterSteps(await tutorialWorkspace(db, await manager.actor(), {}));
+  assert.equal(mg.situacao && mg.preparar, true);
+  assert.ok(Object.values(chapterSteps(await tutorialWorkspace(db, await reader.actor(), {}))).every(available => !available), 'a reader has no Dinâmicas');
+});

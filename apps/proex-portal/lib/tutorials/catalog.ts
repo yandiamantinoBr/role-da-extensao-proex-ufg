@@ -512,6 +512,61 @@ export const TUTORIAL_CHAPTERS: readonly TutorialChapter[] = [
       },
     ],
   },
+  {
+    id: 'dinamicas', version: 1, title: 'Dinâmicas', minutes: 3,
+    summary: 'Começar pela ação certa, atender na roleta ou no dado e conferir a retirada de brinde.',
+    steps: [
+      {
+        id: 'acoes', title: 'Comece pela ação certa',
+        speech: 'Dinâmicas reúne as ações com roleta, dado e brindes. Em Roleta e dado, cada cartão mostra o projeto, a situação, o local e o horário. Página do evento abre a página pública da ação. Seguir este tutorial não registra nada.',
+        speechMobile: 'Em Roleta e dado, cada cartão mostra o projeto, a situação, o local e o horário da ação. Página do evento abre a página pública.',
+        youWillSee: 'As ações de Roleta e dado destacadas.',
+        target: '[data-tutorial="dinamicas-acoes"]', module: 'events', openLabel: 'Ir para Dinâmicas', requires: { anyOf: ['campaigns.manage', 'participation.operate', 'inventory.deliver'] },
+        beforeOpen: 'Clique em Ir para Dinâmicas: o módulo abre com as ações.', beforeOpenMobile: 'Toque em Ir para Dinâmicas: o módulo abre com as ações.',
+        labels: ['Roleta e dado', 'Página do evento'],
+      },
+      {
+        id: 'atendimento', title: 'Atendimento presencial',
+        speech: 'Em Operação presencial, escolha o Evento ativo e abra um atendimento para cada pessoa. Registre o que saiu no dado ou na roleta. Não abra outro atendimento para a mesma pessoa.',
+        speechMobile: 'Em Operação presencial, escolha o Evento ativo e abra um atendimento por pessoa. Registre o que saiu no dado ou na roleta.',
+        youWillSee: 'O quadro Atendimento presencial destacado.',
+        target: '[data-tutorial="dinamicas-atendimento"]', module: 'events', openLabel: 'Ir para Dinâmicas', requires: { capability: 'participation.operate' },
+        missing: 'Atendimento presencial aparece quando há uma ação ativa no seu acesso.',
+        labels: ['Operação presencial', 'Evento ativo', 'Atendimento presencial'],
+      },
+      {
+        id: 'retirada', title: 'Retirada de brinde',
+        speech: 'Em Retirada de brinde, digite o Código de retirada que a pessoa mostrar e use Confirmar entrega antes de entregar o material. Um código já entregue é sinalizado.',
+        speechMobile: 'Em Retirada de brinde, digite o Código de retirada e use Confirmar entrega antes de entregar. Código já entregue é sinalizado.',
+        youWillSee: 'O quadro Retirada de brinde destacado.',
+        target: '[data-tutorial="dinamicas-retirada"]', module: 'events', openLabel: 'Ir para Dinâmicas', requires: { anyOf: ['participation.operate', 'inventory.deliver'] },
+        labels: ['Retirada de brinde', 'Código de retirada', 'Confirmar entrega'],
+      },
+      {
+        id: 'situacao', title: 'A situação da ação',
+        speech: 'Quem gerencia a ação muda a situação no próprio cartão: Ativo, Pausado ou Encerrado. Encerrar interrompe novas participações e guarda o histórico.',
+        youWillSee: 'A situação da primeira ação destacada.',
+        target: '[data-tutorial="dinamicas-situacao"]', module: 'events', openLabel: 'Ir para Dinâmicas', requires: { capability: 'campaigns.manage' },
+        missing: 'A situação aparece no cartão das ações que você gerencia.',
+        labels: ['Ativo', 'Pausado', 'Encerrado'],
+      },
+      {
+        id: 'preparar', title: 'Preparar uma dinâmica',
+        speech: 'Em Preparar dinâmica, Nova dinâmica cria a ação como rascunho, com projeto, horário e local. Confira as regras e os brindes antes de ativar.',
+        youWillSee: 'O quadro Preparar dinâmica destacado.',
+        target: '[data-tutorial="dinamicas-preparar"]', module: 'events', openLabel: 'Ir para Dinâmicas', requires: { capability: 'campaigns.manage' },
+        missing: 'Preparar dinâmica aparece nos projetos com dinâmicas e brindes ativados.',
+        labels: ['Preparar dinâmica', 'Nova dinâmica'],
+      },
+      {
+        id: 'fim', title: 'Tudo certo',
+        speech: 'Você já sabe começar pela ação certa. Se a ação não estiver ativa ou fora do horário e o atendimento for recusado, procure a coordenação dela.',
+        youWillSee: 'Concluir fecha o tutorial. Repetir esta parte começa de novo.',
+        requires: { anyOf: ['campaigns.manage', 'participation.operate', 'inventory.deliver'] },
+        labels: [],
+      },
+    ],
+  },
 ];
 
 export const chapterById = (id: unknown) => TUTORIAL_CHAPTERS.find(chapter => chapter.id === id);

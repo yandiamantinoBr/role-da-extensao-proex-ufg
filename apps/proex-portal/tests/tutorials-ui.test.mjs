@@ -14,7 +14,7 @@ const cjs = (file, require, extra = {}) => {
 };
 const catalog = cjs('lib/tutorials/catalog.ts', () => ({}));
 // Onde os rótulos e as âncoras dos passos precisam existir de fato.
-const SOURCES = ['app/portal-client.tsx', 'components/portal/portal-navigation.tsx', 'components/portal/navigation-model.ts', 'components/portal/dashboard-panel.tsx', 'components/portal/account-access-panel.tsx', 'components/portal/meu-trabalho-panel.tsx', 'components/portal/project-panel.tsx', 'components/portal/project-detail.tsx', 'components/portal/follow-up-panel.tsx', 'components/portal/work-teams-panel.tsx', 'components/portal/calendar-panel.tsx', 'components/portal/material-catalog.tsx', 'components/portal/material-detail-drawer.tsx', 'lib/follow-up/contracts.ts', 'components/portal/tutorials/tutorial-layer.tsx', 'components/portal/tutorials/tutorial-help-card.tsx'];
+const SOURCES = ['app/portal-client.tsx', 'components/portal/portal-navigation.tsx', 'components/portal/navigation-model.ts', 'components/portal/dashboard-panel.tsx', 'components/portal/account-access-panel.tsx', 'components/portal/meu-trabalho-panel.tsx', 'components/portal/project-panel.tsx', 'components/portal/project-detail.tsx', 'components/portal/follow-up-panel.tsx', 'components/portal/work-teams-panel.tsx', 'components/portal/calendar-panel.tsx', 'components/portal/material-catalog.tsx', 'components/portal/material-detail-drawer.tsx', 'components/portal/physical-attendance.tsx', 'lib/follow-up/contracts.ts', 'components/portal/tutorials/tutorial-layer.tsx', 'components/portal/tutorials/tutorial-help-card.tsx'];
 const source = SOURCES.map(read).join('\n');
 
 test('every label a step cites exists in the Portal interface code', () => {
@@ -29,7 +29,7 @@ test('every highlighted control exists: data-tutorial anchors and ids are in the
   for (const chapter of catalog.TUTORIAL_CHAPTERS) for (const step of chapter.steps) for (const selector of [step.target, step.targetMobile].filter(Boolean)) {
     const anchor = /^\[data-tutorial="([a-z-]+)"\]$/.exec(selector), id = /^#([a-z-]+)$/.exec(selector);
     assert.ok(anchor || id, `${step.id}: use âncora data-tutorial ou id (${selector})`);
-    if (anchor) assert.match(source, new RegExp(`data-tutorial(=|=\\{[^}]*)["']${anchor[1]}["']`), `${step.id}: âncora ${anchor[1]} ausente`);
+    if (anchor) assert.match(source, new RegExp(`(?:data-tutorial|tutorial)(=|=\\{[^}]*)["']${anchor[1]}["']`), `${step.id}: âncora ${anchor[1]} ausente`);
     if (id) assert.match(source, new RegExp(`id="${id[1]}"`), `${step.id}: id ${id[1]} ausente`);
   }
   const modules = [...read('components/portal/navigation-model.ts').matchAll(/id: '([a-z-]+)'/g)].map(match => match[1]);
