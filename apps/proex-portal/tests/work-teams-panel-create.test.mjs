@@ -162,3 +162,13 @@ test('the team sheet inside the team card uses the same 14px padding as its sibl
   const css = readFileSync(new URL('../components/portal/work-teams-panel.module.css', import.meta.url), 'utf8');
   assert.match(css, /\.sheets > section \{ padding: 14px !important; \}/);
 });
+
+test('an empty team demand list has no empty paragraph under its heading (décima crítica de 16/11)', async () => {
+  const h = harness({}, [teamRow('team-x', 'Comunicação')]);
+  await h.settle();
+  const heading = h.nodes().find(node => node.type === 'h4' && text(node) === 'Demandas da equipe');
+  assert.ok(heading);
+  const block = h.nodes().find(node => node.type === 'div' && node.props.className === 'taskHeading');
+  const inner = []; (function walk(node) { if (!node || typeof node !== 'object') return; if (Array.isArray(node)) return node.forEach(walk); inner.push(node); walk(node.props?.children); })(block?.props.children);
+  assert.ok(block && !inner.some(node => node.type === 'p' && text(node) === ''), 'sem parágrafo vazio abrindo espaço sob o título');
+});
