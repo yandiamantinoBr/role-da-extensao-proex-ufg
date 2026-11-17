@@ -60,7 +60,7 @@ export default function DispatchPanel({ userId, organizations }: { userId: strin
     <div className={`p-card ${styles.header}`}>
       <div className={styles.titleRow}>
         <div><h3 id="dispatch-title"><Lock size={18} aria-hidden="true"/>Demandas privadas</h3><p>Só as pessoas incluídas veem, nem a administração geral.</p></div>
-        <button type="button" className="p-button p-button-primary" onClick={() => { setNotice(''); setForm({ mode: 'new' }); }}><Plus size={16} aria-hidden="true"/>Nova demanda</button>
+        {form?.mode !== 'new' && <button type="button" className="p-button p-button-primary" onClick={() => { setNotice(''); setForm({ mode: 'new' }); }}><Plus size={16} aria-hidden="true"/>Nova demanda</button>}
       </div>
       <div className={styles.filters}>
         {organizations.length > 1 && <label className="p-field"><span>Organização</span><select name="dispatchOrganization" value={organizationId} onChange={event => { setOrganizationId(event.target.value); setWithWhom(''); }}>{organizations.map(org => <option key={org.id} value={org.id}>{org.name}</option>)}</select></label>}

@@ -60,6 +60,7 @@ test('choosing a person names the counter, and "Nova demanda" starts private wit
   const radio = h.nodes().find(node => node.type === 'input' && node.props.name === 'dispatchVisibility' && node.props.value === 'participants');
   assert.equal(radio.props.checked, true, '"Só as pessoas escolhidas" vem marcado');
   assert.ok(h.nodes().some(node => node.type === 'ul' && node.props['aria-label'] === 'Pessoas incluídas' && text(node).includes('Pessoa Chefia')), 'a outra pessoa já vem incluída');
+  assert.ok(!h.nodes().some(node => node.type === 'button' && text(node).includes('Nova demanda') && !text(node).includes('privada')), 'com o formulário aberto, o botão de criar não se repete');
   assert.match(h.body(), /nem a administração geral/);
   assert.match(h.body(), /Quem administra o banco de dados tecnicamente pode ler/, 'limite honesto na tela');
 });
@@ -68,7 +69,6 @@ test('visual fixes from the 17/11 critique: one title, short options, wrapping t
   const css = readFileSync(new URL('../components/portal/dispatch-panel.module.css', import.meta.url), 'utf8');
   assert.match(source, /<Lock size=\{18\} aria-hidden="true"\/>Demandas privadas<\/h3>/, 'não repete "Despachos" logo abaixo da aba');
   assert.doesNotMatch(source, /' · Gestão superior'/, 'a opção do seletor leva só o nome');
-  assert.match(css, /\.tabs \{ flex-wrap: wrap; overflow-x: visible; \}/);
+  assert.match(css, /\.tabs \{ display: grid; grid-template-columns: repeat\(2, minmax\(0, 1fr\)\); gap: 4px; overflow-x: visible; \}/);
   assert.match(css, /\.leadershipWrap \{ padding-block: 20px 32px; \}/);
-  assert.match(css, /@container leadership \(max-width: 640px\) \{ \.filters > button \{ flex: 1 1 100%; \} \}/);
 });

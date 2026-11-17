@@ -77,9 +77,11 @@
 .hint { flex-basis: 100%; margin-top: -4px; color: var(--text-secondary); font-size: 12px; font-weight: 500; }
 .metric { display: flex; flex-direction: column; justify-content: space-between; min-height: 92px; }
 @container dispatch (max-width: 640px) {
-  .tabs { flex-wrap: wrap; overflow-x: visible; }
+  .tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; overflow-x: visible; }
+  .tabs button { justify-content: space-between; }
   .rowIcon { align-self: start; }
   .tabs { row-gap: 2px; }
   .tabs button { min-height: 36px; }
 }
-@container leadership (max-width: 640px) { .filters > button { flex: 1 1 100%; } }
+/* Terceira crítica de 17/11: rótulos dos contadores equilibrados em duas linhas. */
+.metric span { text-wrap: balance; }
