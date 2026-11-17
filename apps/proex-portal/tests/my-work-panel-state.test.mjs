@@ -331,3 +331,13 @@ test('with nothing assigned in any module, one line replaces the empty bars (qui
     assert.doesNotMatch(h.body(), /0 demandas · 0 designações/);
   } finally {h.dispose();}
 });
+
+test('every list section explains itself, empty states share one format and sections share one divider (sétima crítica de 16/11)', async () => {
+  const h = harness(); try {
+    await h.ready(response({tasks: {items: [], total: 0, hasMore: false, nextOffset: null}, responsibilities: {items: [], total: 0, hasMore: false, nextOffset: null}}));
+    assert.match(h.body(), /Demandas atribuídas a você ou às suas equipes/);
+    assert.match(h.body(), /Nenhuma responsabilidade designada neste contexto\.Quando a coordenação designar você/);
+  } finally {h.dispose();}
+  const css = readFileSync(new URL('../components/portal/meu-trabalho-panel.module.css', import.meta.url), 'utf8');
+  assert.match(css, /\.listSection\+\.listSection\{border-top:1px solid var\(--line\);padding-top:20px\}/);
+});

@@ -36,3 +36,6 @@
 .assignment button[aria-pressed=true]{background:var(--surface);box-shadow:0 1px 3px #190b2922}
 .areas h3{display:flex;align-items:center;gap:8px}
 @container my-work (max-width:400px){.assignment{display:flex;width:100%}.assignment button{flex:1 1 0;padding-inline:8px}}
+
+/* Sétima crítica de 16/11: a mesma divisória entre todas as seções da lista. */
+.listSection+.listSection{border-top:1px solid var(--line);padding-top:20px}
