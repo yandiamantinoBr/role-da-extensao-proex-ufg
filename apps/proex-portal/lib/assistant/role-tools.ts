@@ -171,7 +171,7 @@ export async function runRoleTool(db: D1Database, actor: PortalActor, organizati
   if (!ROLE_TOOL_NAMES.includes(name)) throw new HttpError(400, 'Consulta desconhecida.', 'role_tool_unknown');
   if (ROLE_TOOL_NAMES_FASE2B.has(name)) return runFase2bTool(db, actor, organizationId, name, args, budget, scope, { pack, visibleProjects, terms, score });
   if (FASE2A_TOOL_NAMES.includes(name)) return runFase2aTool({ db, actor, organizationId, args, budget, scope, pack, visibleProjects: wanted => visibleProjects(db, actor, organizationId, wanted, scope) }, name);
-  if (FASE2C_TOOL_NAMES.has(name)) return runFase2cTool({ db, actor, organizationId, scope, budget, pack, projects: () => visibleProjects(db, actor, organizationId, '', scope) }, name, args);
+  if (FASE2C_TOOL_NAMES.has(name)) return runFase2cTool({ db, actor, organizationId, scope, budget, pack, projects: (wanted = '') => visibleProjects(db, actor, organizationId, wanted, scope) }, name, args);
   if (Object.keys(args).some(key => !['texto', 'projeto', 'material', 'dias', 'situacao', 'dinamica', 'de', 'ate', 'paginas', 'titulo', 'descricao', 'prazo', 'prioridade', 'responsavel', 'url'].includes(key))) throw new HttpError(400, 'Consulta com campos não permitidos.', 'role_tool_input');
   if (name === 'consultar_guia') return guideTool(db, actor, organizationId, args, budget);
   if (name === 'preparar_rascunho_demanda') return taskDraftTool(db, actor, organizationId, args, budget, scope);

@@ -26,9 +26,10 @@ function fixture() {
   for (const migration of readdirSync(`${root}drizzle`).filter(file => file.endsWith('.sql')).sort()) native.exec(readFileSync(`${root}drizzle/${migration}`, 'utf8'));
   const now = new Date().toISOString(), recent = new Date(Date.now() - 2 * DAY).toISOString(), old = new Date(Date.now() - 60 * DAY).toISOString();
   native.prepare("INSERT INTO projects(id,name,description,scope,organization_id,created_at) VALUES('project-a','Projeto A','','external','org_proex',?),('project-b','Projeto B','','external','org_proex',?)").run(now, now);
+  native.prepare("UPDATE projects SET short_name='PRB' WHERE id='project-b'").run();
   const actors = {};
   // owner: administração geral; coordA/coordB: coordenação de cada projeto; bolsista: só leitura do A; semAcesso: nenhum vínculo.
-  for (const [key, role, project, name] of [['owner', 'owner', null, 'Coordenação Geral QA'], ['coordA', 'manager', 'project-a', 'Ana Coordenadora'], ['bolsista', 'viewer', 'project-a', 'Bruno Bolsista'], ['coordB', 'manager', 'project-b', 'Carla Beta'], ['semAcesso', null, null, 'Davi Sem Vínculo']]) {
+  for (const [key, role, project, name] of [['owner', 'owner', null, 'Coordenação Geral QA'], ['coordA', 'manager', 'project-a', 'Ana Coordenadora'], ['bolsista', 'viewer', 'project-a', 'Bruno Bolsista'], ['coordB', 'manager', 'project-b', 'Carla Beta'], ['emprestimos', 'loans', 'project-a', 'Elis Empréstimos'], ['semAcesso', null, null, 'Davi Sem Vínculo']]) {
     const userId = `${key}-qa`, email = `${key}@example.test`;
     native.prepare("INSERT INTO portal_users(user_id,email,status,created_at,updated_at) VALUES(?,?,'active',?,?)").run(userId, email, now, now);
     native.prepare('INSERT INTO profiles(user_id,display_name,phone,created_at,updated_at) VALUES(?,?,?,?,?)').run(userId, name, '+55 62 90000-0000', now, now);
@@ -50,6 +51,10 @@ function fixture() {
   native.prepare("INSERT INTO records(id,project_id,kind,title,body,occurred_at,created_by,created_at) VALUES('rec-a1','project-a','project','Oficina na escola A','',?,'coordA-qa',?),('rec-a2','project-a','observation','Observação antiga A','',?,'coordA-qa',?),('rec-b1','project-b','project','Registro do B','',?,'coordB-qa',?)").run(recent, now, old, now, recent, now);
   // Riscos: um de cada projeto e um da organização (só a administração vê). O responsável é texto livre e não sai.
   native.prepare("INSERT INTO org_risks(id,organization_id,project_id,title,category,probability,impact,owner_label,mitigation,status,created_by,updated_by,created_at,updated_at) VALUES('risk-a','org_proex','project-a','Chuva no evento A','operacional',3,4,'Fulano Responsável','Ter local coberto.','open','owner-qa','owner-qa',?,?),('risk-b','org_proex','project-b','Risco do B','operacional',2,2,'','','open','owner-qa','owner-qa',?,?),('risk-org','org_proex',NULL,'Risco da organização','tecnologia',4,5,'','','open','owner-qa','owner-qa',?,?)").run(now, now, now, now, now, now);
+  // Demanda privada da organização (sem projeto), com a administração e a coordenação de A como participantes: nunca vai ao Rolê.
+  native.prepare("INSERT INTO followup_tasks(id,organization_id,project_id,title,body,priority,status,due_at,created_by,created_at,updated_at) VALUES('task-priv','org_proex',NULL,'Despacho privado sigiloso','','high','open',?,'owner-qa',?,?)").run(old.slice(0, 10), now, now);
+  native.prepare("INSERT INTO followup_task_privacy(task_id,visibility,created_by,created_at,updated_at) VALUES('task-priv','participants','owner-qa',?,?)").run(now, now);
+  for (const user of ['owner-qa', 'coordA-qa']) native.prepare("INSERT INTO followup_task_participants(id,task_id,user_id,added_by,created_at) VALUES(?,'task-priv',?,'owner-qa',?)").run(`part-${user}`, user, now);
   const db = { prepare(sql) { let values = []; return { sql, bind(...args) { values = args; return this; }, async first() { return native.prepare(sql).get(...values) ?? null; }, async all() { return { results: native.prepare(sql).all(...values) }; }, async run() { return { meta: { changes: Number(native.prepare(sql).run(...values).changes) } }; }, execute() { const results = native.prepare(sql).all(...values); return { results, meta: { changes: Number(native.prepare('SELECT changes() n').get().n) } }; } }; }, async batch(statements) { native.exec('BEGIN'); try { const results = statements.map(statement => statement.execute()); native.exec('COMMIT'); return results; } catch (error) { native.exec('ROLLBACK'); throw error; } } };
   const revoke = key => native.prepare('UPDATE members SET revoked_at=? WHERE user_id=?').run(new Date().toISOString(), `${key}-qa`);
   return { native, db, actors, revoke };
@@ -181,5 +186,66 @@ test('consultar_gestao: indicadores e riscos só de quem vê a Gestão daquele r
     privateFree(coord); privateFree(owner);
     f.revoke('coordA');
     assert.equal((await run(f, 'coordA', 'consultar_gestao', {})).rows, 0, 'acesso revogado no meio da conversa');
+  } finally { f.native.close(); }
+});
+
+test('revisão 2c: nomes únicos e teto do esquema ajustado ao tamanho medido', () => {
+  assert.equal(new Set(ROLE_TOOL_NAMES).size, ROLE_TOOL_NAMES.length, 'nenhuma ferramenta repetida');
+  assert.ok(ROLE_TOOLS_SCHEMA_BYTES - ROLE_TOOLS_ACTUAL_SCHEMA_BYTES < 100, `teto ${ROLE_TOOLS_SCHEMA_BYTES} perto do medido ${ROLE_TOOLS_ACTUAL_SCHEMA_BYTES}`);
+});
+
+test('revisão 2c: demanda privada não entra no relatório, na Gestão nem nos registros', async () => {
+  const f = fixture();
+  try {
+    for (const who of ['owner', 'coordA']) {
+      const gestao = await run(f, who, 'consultar_gestao', {});
+      assert.ok(!gestao.content.includes('Despacho privado'), `${who}: Gestão sem a demanda privada`);
+      assert.equal(data(gestao).indicadores.demandasAbertas, who === 'owner' ? 2 : 1, `${who}: só demandas públicas contam`);
+      const report = await run(f, who, 'resumir_relatorio_projeto', { projeto: 'Projeto A' });
+      assert.equal(data(report).resultados[0].demandas.total, 1); assert.ok(!report.content.includes('Despacho privado'));
+      assert.ok(!(await run(f, who, 'registros_recentes', {})).content.includes('Despacho privado'));
+    }
+  } finally { f.native.close(); }
+});
+
+test('revisão 2c: sigla do projeto, equipes do projeto para quem gerencia e organograma com um link só', async () => {
+  const f = fixture();
+  try {
+    const bySigla = await run(f, 'owner', 'consultar_gestao', { projeto: 'PRB' });
+    assert.equal(data(bySigla).recorte, 'Projeto B', 'sigla encontra o projeto');
+    const teams = await run(f, 'owner', 'consultar_equipes', { projeto: 'Projeto A' });
+    assert.deepEqual(data(teams).resultados.map(item => item.equipe), ['Equipe Alfa'], 'quem gerencia vê só as equipes do projeto pedido');
+    const chart = await run(f, 'coordA', 'consultar_organograma', {});
+    assert.ok(data(chart).resultados.every(unit => !('link' in unit)), 'sem link repetido por unidade');
+    assert.equal(data(chart).link, '/?module=work-teams&project=project-a'); assert.equal(chart.sources.length, 1);
+  } finally { f.native.close(); }
+});
+
+test('revisão 2c: período do relatório rotulado, entregas só para quem vê materiais e registros por tipo além dos 100 mais recentes', async () => {
+  const f = fixture();
+  try {
+    const monthsAgo = new Date(Date.now() - 90 * DAY).toISOString().slice(0, 10), monthAgo = new Date(Date.now() - 30 * DAY).toISOString().slice(0, 10);
+    const period = data(await run(f, 'coordA', 'resumir_relatorio_projeto', { projeto: 'Projeto A', de: monthsAgo, ate: monthAgo })).resultados[0];
+    assert.equal(period.demandas.recorte, 'criadas no período'); assert.equal(period.demandas.total, 0, 'a demanda criada hoje fica fora');
+    assert.ok(!('truncado' in period.demandas));
+    const loansOnly = data(await run(f, 'emprestimos', 'consultar_gestao', {}));
+    assert.ok(!('itensEntreguesNoPeriodo' in loansOnly.indicadores), 'sem acesso a materiais, sem o zero de entregas');
+    assert.ok('itensEntreguesNoPeriodo' in data(await run(f, 'coordA', 'consultar_gestao', {})).indicadores);
+    const insert = f.native.prepare("INSERT INTO records(id,project_id,kind,title,body,occurred_at,created_by,created_at) VALUES(?,'project-a','project',?,'',?,'coordA-qa',?)");
+    for (let index = 0; index < 120; index++) insert.run(`rec-many-${index}`, `Atividade ${index}`, new Date(Date.now() - DAY - index * 60000).toISOString(), new Date().toISOString());
+    const typed = await run(f, 'coordA', 'registros_recentes', { projeto: 'Projeto A', tipo: 'observacao' });
+    assert.equal(typed.rows, 1, 'a observação antiga aparece mesmo depois de 120 registros novos de outro tipo');
+    assert.equal((await run(f, 'owner', 'registros_recentes', { tipo: 'observacao' })).rows, 1);
+  } finally { f.native.close(); }
+});
+
+test('revisão 2c: relatório, equipes e Gestão têm limite por pessoa, com texto simples', async () => {
+  const f = fixture();
+  try {
+    for (let index = 0; index < 10; index++) assert.equal((await run(f, 'coordA', index % 2 ? 'consultar_equipes' : 'resumir_relatorio_projeto', { projeto: 'Projeto A' })).rows > 0, true);
+    const blocked = await run(f, 'coordA', 'consultar_gestao', {});
+    assert.equal(blocked.rows, 0); assert.match(data(blocked).observacao, /Espere um minuto/);
+    assert.ok((await run(f, 'coordA', 'registros_recentes', {})).rows > 0, 'registros não contam no limite');
+    assert.ok((await run(f, 'bolsista', 'consultar_gestao', {})).rows > 0, 'o limite é de cada pessoa');
   } finally { f.native.close(); }
 });
