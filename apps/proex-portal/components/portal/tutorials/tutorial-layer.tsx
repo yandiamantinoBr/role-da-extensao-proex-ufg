@@ -42,6 +42,7 @@ export function stepCopy(step: TutorialStep, mobile: boolean) {
     openLabel: step.openLabel ?? 'Abrir no Portal',
     beforeOpen: mobile && step.beforeOpenMobile ? step.beforeOpenMobile : step.beforeOpen,
     reveal: step.reveal,
+    missing: mobile && step.missingMobile ? step.missingMobile : step.missing,
   };
 }
 
@@ -110,8 +111,11 @@ export default function TutorialLayer({ modules, tab, projectId, onNavigate }: {
         if (!pinned(target) && (toTop || box.top < TOP_GAP || box.bottom > limit)) window.scrollBy({ top: toTop || box.top < TOP_GAP ? box.top - TOP_GAP : Math.min(box.top - TOP_GAP, box.bottom - limit), behavior: reduce ? 'auto' : 'smooth' });
         setSpot({ key: spotKey, found: true }); return;
       }
-      if (!copy.target || ++tries > 10) { setSpot({ key: spotKey, found: copy.target ? false : null }); return; }
-      timer = window.setTimeout(look, 250);
+      if (!copy.target) { setSpot({ key: spotKey, found: null }); return; }
+      // Depois de ~1 s (passo com texto próprio) ou ~2,5 s mostra o aviso, mas continua procurando: a pessoa pode abrir a ficha com o cartão aberto.
+      const patience = copy.missing ? 4 : 10;
+      if (++tries === patience) setSpot({ key: spotKey, found: false });
+      timer = window.setTimeout(look, tries < patience ? 250 : 1000);
     };
     timer = window.setTimeout(look, 0);
     return () => { window.clearTimeout(timer); spotted?.removeAttribute(SPOT); };
@@ -171,9 +175,9 @@ export default function TutorialLayer({ modules, tab, projectId, onNavigate }: {
       </header>
       <h2 id="tutorial-step-title" ref={heading} tabIndex={-1}>{step.title}</h2>
       <p className={styles.speech}>{copy.speech}</p>
-      <p className={styles.see}><strong>Você verá:</strong> {goTo && copy.beforeOpen ? copy.beforeOpen : found === false && !goTo ? 'este controle não está nesta página agora.' : copy.youWillSee}</p>
+      <p className={styles.see}><strong>{found === false && !goTo && copy.missing ? 'Para continuar:' : 'Você verá:'}</strong> {goTo && copy.beforeOpen ? copy.beforeOpen : found === false && !goTo ? (copy.missing ?? 'este controle não está nesta página agora.') : copy.youWillSee}</p>
       {notice && <p className={styles.notice} role="status">{notice}</p>}
-      {found === false && !goTo && <p className={styles.muted}>Siga para o próximo passo: este controle aparece quando houver dados ou acesso para ele.</p>}
+      {found === false && !goTo && !copy.missing && <p className={styles.muted}>Siga para o próximo passo: este controle aparece quando houver dados ou acesso para ele.</p>}
       <div className={styles.guideActions}>
         {last ? <>
           <button type="button" className={`p-button p-button-primary ${styles.goTo}`} onClick={() => finishTutorial()}>Concluir</button>

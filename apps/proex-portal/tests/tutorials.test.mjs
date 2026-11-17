@@ -176,3 +176,11 @@ test('Meu trabalho: open to every team account; the project step follows the pro
   assert.deepEqual([state.progress['meu-trabalho'].stepId, state.progress['meu-trabalho'].status], ['totais', 'paused']);
   assert.equal(state.chapters.find(chapter => chapter.id === 'meu-trabalho').resumeAt, catalog.chapterById('meu-trabalho').steps.findIndex(step => step.id === 'totais'));
 });
+
+test('Projetos: open to every team account; the steps that need a project disappear without one', async () => {
+  const db = fixture(), reader = await person(db, 'pj-reader', [['viewer', 'project-a']]), none = await person(db, 'pj-none');
+  const chapterSteps = state => Object.fromEntries(state.chapters.find(chapter => chapter.id === 'projetos').steps.map(step => [step.id, step.available]));
+  assert.ok(Object.values(chapterSteps(await tutorialWorkspace(db, await reader.actor(), {}))).every(Boolean));
+  const empty = chapterSteps(await tutorialWorkspace(db, await none.actor(), {}));
+  assert.deepEqual(Object.entries(empty).filter(([, available]) => available).map(([id]) => id), ['abrir', 'fim']);
+});

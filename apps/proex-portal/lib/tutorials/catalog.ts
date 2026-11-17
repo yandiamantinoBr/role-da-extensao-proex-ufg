@@ -37,6 +37,9 @@ export type TutorialStep = {
   requires?: StepRequirement;
   /** `below`: leva o controle ao alto da tela, para mostrar também o que vem logo depois dele (ex.: o primeiro cartão de uma lista). */
   reveal?: 'below';
+  /** Texto no lugar de "este controle não está nesta página" (ex.: "Abra um projeto…"). */
+  missing?: string;
+  missingMobile?: string;
   /** Rótulos da interface citados no passo. Um teste confere que existem no código. */
   labels: string[];
 };
@@ -178,6 +181,80 @@ export const TUTORIAL_CHAPTERS: readonly TutorialChapter[] = [
         youWillSee: 'O botão Atualizar destacado. Concluir fecha o tutorial; Repetir esta parte começa de novo.',
         target: '[data-tutorial="trabalho-atualizar"]', module: 'my-work', openLabel: 'Ir para Meu trabalho',
         labels: ['Atualizar', 'Suas atribuições'],
+      },
+    ],
+  },
+  {
+    id: 'projetos', version: 1, title: 'Projetos', minutes: 4,
+    summary: 'Achar um projeto, fixá-lo e abrir a ficha com cronograma, materiais e documentos.',
+    steps: [
+      {
+        id: 'abrir', title: 'Os seus projetos',
+        speech: 'Projetos reúne os programas e projetos que você pode ver, organizados por unidade. Seguir este tutorial não muda nada nos projetos.',
+        youWillSee: 'O título Projetos da equipe destacado, acima da lista.',
+        target: '[data-tutorial="projetos-inicio"]', module: 'projects', openLabel: 'Ir para Projetos',
+        beforeOpen: 'Clique em Ir para Projetos: o módulo abre com a lista de projetos.', beforeOpenMobile: 'Toque em Ir para Projetos: o módulo abre com a lista de projetos.',
+        labels: ['Projetos'],
+      },
+      {
+        id: 'buscar', title: 'Achar um projeto',
+        speech: 'Em Buscar projeto, escreva o nome, a sigla ou a unidade. Refinar projetos filtra por unidade, área, modalidade e situação. Os botões logo abaixo separam projetos internos e externos.',
+        youWillSee: 'A busca e o Refinar projetos destacados.',
+        target: '[data-tutorial="projetos-filtros"]', module: 'projects', openLabel: 'Ir para Projetos', requires: { projects: true },
+        labels: ['Buscar projeto', 'Refinar projetos'],
+      },
+      {
+        id: 'fixar', title: 'Fixar um projeto',
+        speech: 'O alfinete de cada cartão fixa o projeto: ele sobe para Fixados, no alto da lista, e aparece no menu lateral. Clique de novo para desafixar.',
+        speechMobile: 'O alfinete de cada cartão fixa o projeto: ele sobe para Fixados, no alto da lista. Toque de novo para desafixar.',
+        youWillSee: 'O alfinete do primeiro cartão destacado.',
+        target: '[data-tutorial="projetos-fixar"]', module: 'projects', openLabel: 'Ir para Projetos', requires: { projects: true },
+        labels: ['Fixados'],
+      },
+      {
+        id: 'acessar', title: 'Abrir a ficha',
+        speech: 'Acessar projeto abre a ficha com materiais, documentos e cronograma. Clique em Acessar projeto em um cartão para seguir.',
+        speechMobile: 'Acessar projeto abre a ficha com materiais, documentos e cronograma. Toque em Acessar projeto em um cartão para seguir.',
+        youWillSee: 'O Acessar projeto do primeiro cartão destacado.',
+        target: '[data-tutorial="projetos-acessar"]', module: 'projects', openLabel: 'Ir para Projetos', requires: { projects: true },
+        missing: 'Você já está numa ficha. Siga para o próximo passo.',
+        labels: ['Acessar projeto'],
+      },
+      {
+        id: 'materiais', title: 'Materiais e atividades',
+        speech: 'Materiais e atividades reúne materiais, dinâmicas, empréstimos e registros do projeto, conforme o seu acesso.',
+        youWillSee: 'O quadro Materiais e atividades destacado.',
+        target: '#project-operations', module: 'projects', openLabel: 'Ir para Projetos', requires: { projects: true },
+        missing: 'Abra um projeto com Acessar projeto. Se esta parte não aparecer na ficha, o seu acesso não inclui materiais, dinâmicas, empréstimos nem registros deste projeto.',
+        labels: ['Materiais e atividades'],
+      },
+      {
+        id: 'links', title: 'Links e documentos',
+        speech: 'Links e documentos guarda páginas, relatórios, editais e arquivos de referência do projeto.',
+        youWillSee: 'O quadro Links e documentos destacado.',
+        target: '[data-tutorial="projeto-links"]', module: 'projects', openLabel: 'Ir para Projetos', missing: 'Abra um projeto com Acessar projeto: esta parte fica na ficha.', missingMobile: 'Abra um projeto com Acessar projeto: esta parte fica na ficha.', requires: { projects: true },
+        labels: ['Links e documentos'],
+      },
+      {
+        id: 'cronograma', title: 'Cronograma',
+        speech: 'Mais abaixo na ficha, Cronograma mostra as datas importantes e as próximas atividades do projeto. Quem pode editar a ficha vê o botão Atividade para incluir uma.',
+        youWillSee: 'O quadro Cronograma destacado na ficha.',
+        target: '#project-timeline', module: 'projects', openLabel: 'Ir para Projetos', missing: 'Abra um projeto com Acessar projeto: esta parte fica na ficha.', missingMobile: 'Abra um projeto com Acessar projeto: esta parte fica na ficha.', requires: { projects: true },
+        labels: ['Cronograma', 'Atividade'],
+      },
+      {
+        id: 'voltar', title: 'Voltar à lista',
+        speech: 'Todos os projetos volta à lista. Os atalhos da ficha, como Meu trabalho e Demandas, abrem esses módulos já neste projeto. Usar este projeto nos outros módulos, no fim da ficha, leva ao Início com este projeto escolhido.',
+        speechMobile: 'Todos os projetos volta à lista. Os atalhos da ficha, como Demandas, abrem esses módulos já neste projeto.',
+        youWillSee: 'O botão Todos os projetos destacado, no alto da ficha.',
+        target: '[data-tutorial="projeto-voltar"]', module: 'projects', openLabel: 'Ir para Projetos', missing: 'Abra um projeto com Acessar projeto: esta parte fica na ficha.', missingMobile: 'Abra um projeto com Acessar projeto: esta parte fica na ficha.', requires: { projects: true },
+        labels: ['Todos os projetos', 'Usar este projeto nos outros módulos'],
+      },
+      {
+        id: 'fim', title: 'Tudo certo',
+        speech: 'Você já sabe achar um projeto e abrir a ficha. Editar projeto só aparece para quem pode alterar a ficha; o resto também depende do seu acesso naquele projeto.',
+        youWillSee: 'Concluir fecha o tutorial. Repetir esta parte começa de novo.',
+        labels: ['Editar projeto'],
       },
     ],
   },
