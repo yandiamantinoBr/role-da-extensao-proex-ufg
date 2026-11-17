@@ -21,7 +21,7 @@ export const ROLE_TOOL_ROUNDS = 2;
 export const ROLE_TOOL_CALLS_PER_ROUND = 4;
 export const ROLE_TOOL_RESULT_BYTES = 8_000;
 /** Teto do esquema das ferramentas enviado ao modelo (o teste confere o tamanho real). */
-export const ROLE_TOOLS_SCHEMA_BYTES = 8_850;
+export const ROLE_TOOLS_SCHEMA_BYTES = 10_400;
 /** Com consultas, cada pergunta pode levar até 3 chamadas ao modelo: o prazo dobra (até 30 s). */
 export function roleTimeoutMs(timeoutMs: number, tools: boolean): number { return tools ? Math.min(30_000, timeoutMs * 2) : timeoutMs; }
 
