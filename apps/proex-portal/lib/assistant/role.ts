@@ -5,12 +5,12 @@ import { rateLimitAll } from '../rate-limit';
 import { reservationStatements } from './admission';
 import { quotaRefusal, responsibleName } from './quota';
 import { onlyKeys, safeRequest, type AssistantConfig, type AssistantCredentials } from './contracts';
-import { digest, type CredentialKeys } from './crypto';
+import { ROLE_TASK_DRAFT_TTL_MS, digest, signTaskDraft, type CredentialKeys } from './crypto';
 import {
   ROLE_CONTRACT, ROLE_MAX_HISTORY, ROLE_MAX_HISTORY_CHARS, ROLE_MAX_IMAGE_BYTES, ROLE_MAX_IMAGE_SIDE, ROLE_MAX_MESSAGE_CHARS, ROLE_IMAGE_TOKEN_CEILING, ROLE_SYSTEM_PROMPT_BYTES, ROLE_MODELS,
   ROLE_SYSTEM_PROMPT, ROLE_SYSTEM_PROMPT_TOOLS, ROLE_TOOL_CALLS_PER_ROUND, ROLE_TOOL_RESULT_BYTES, ROLE_TOOL_ROUNDS, roleConversationBytes, roleEstimate, roleTimeoutMs, validateRoleReply, type RoleSource, type RoleTurn,
 } from './role-contracts';
-import { ROLE_TOOL_NAMES, ROLE_TOOLS, officialSearchReply, resolveRoleScope, roleScopes, runRoleTool, type RoleToolResult } from './role-tools';
+import { ROLE_TOOL_NAMES, ROLE_TOOLS, officialSearchReply, resolveRoleScope, roleScopes, runRoleTool, type RoleTaskDraft, type RoleToolResult } from './role-tools';
 import { ROLE_SUGGESTION_DAYS, roleSuggestions } from './role-suggestions';
 import { ROLE_VIDEO_MODELS, roleVideoEstimate, type RoleVideoProfile, type RoleVideoStatus } from './role-video-contracts';
 import { dispatchRoleVideo, parseRoleVideo, RoleVideoChargedError } from './role-video';
@@ -120,6 +120,17 @@ function roleAuthorization(db: D1Database, actor: PortalActor, project: string, 
 
 function videoApproval(organizationId: string, project: string, revision: number, profile: RoleVideoProfile) {
   return digest(JSON.stringify(['role-video/v2', organizationId, project, revision, profile.model, profile.effort]));
+}
+
+/**
+ * Rascunho de demanda para o cartão do chat: a assinatura vincula pessoa, projeto e campos e vale por
+ * pouco tempo. Não grava nada; quem cria é a API de demandas, depois do toque da pessoa.
+ */
+async function signedTaskDraft(secret: string, actorId: string, draft: RoleTaskDraft, now: number) {
+  const expiresAt = now + ROLE_TASK_DRAFT_TTL_MS;
+  const fields = await digest(JSON.stringify(['role-task-draft/v1', draft.projectId, draft.title, draft.description, draft.dueAt, draft.priority, draft.assigneeId ?? null]));
+  const signature = await signTaskDraft(secret, { actorId, organizationId: draft.organizationId, projectId: draft.projectId, digest: fields, expiresAt });
+  return { ...draft, expiresAt, signature };
 }
 
 function documentApproval(actor: PortalActor, project: string, revision: number) {
@@ -343,6 +354,7 @@ async function toolStep(route: ToolRoute, apiKey: string, body: unknown, maxOutp
  */
 async function dispatchWithTools(route: ToolRoute, apiKey: string, body: { messages: Record<string, unknown>[] } & Record<string, unknown>, run: (name: string, args: Record<string, unknown>, budget: number) => Promise<RoleToolResult>, policy: RolePolicy, offeredTools: PortalTools, retainReasoning: boolean, checkAccess: () => Promise<unknown>, signal: AbortSignal, fetcher: typeof fetch) {
   const messages = [...body.messages], used: { name: string; rows: number }[] = [], sources = new Map<string, RoleSource>();
+  let taskDraft: RoleTaskDraft | undefined;
   let inputTokens = 0, outputTokens = 0, costMicros = 0, steps = 0;
   const charged = (message: string) => new ChargedError(message, costMicros, inputTokens + outputTokens);
   // No JSON mode in the loop: after lookups, DeepSeek's JSON mode can return an empty message.
@@ -382,6 +394,7 @@ async function dispatchWithTools(route: ToolRoute, apiKey: string, body: { messa
             content = result.content; budget -= new TextEncoder().encode(content).byteLength;
             used.push({ name: call.function.name, rows: result.rows });
             for (const source of result.sources) if (sources.size < 8) sources.set(source.href, source);
+            if (result.taskDraft) taskDraft = result.taskDraft;
           } catch (error) {
             content = JSON.stringify({ erro: error instanceof HttpError && error.status < 500 ? error.message : 'Consulta indisponível agora.' });
             used.push({ name: ROLE_TOOL_NAMES.includes(call.function.name) ? call.function.name : 'desconhecida', rows: -1 });
@@ -402,7 +415,7 @@ async function dispatchWithTools(route: ToolRoute, apiKey: string, body: { messa
     catch { reply = { reply: step.content.trim().slice(0, 4000), operation: null }; }
     if (!reply.reply) throw charged('A resposta do Rolê veio vazia. O custo foi registrado.');
     if (containsCredential(reply.reply) || reply.operation && containsCredential(reply.operation)) throw charged('A resposta do provedor não pôde ser mostrada.');
-    return { ...reply, inputTokens, outputTokens, costMicros, steps, tools: used, sources: [...sources.values()] };
+    return { ...reply, inputTokens, outputTokens, costMicros, steps, tools: used, sources: [...sources.values()], ...(taskDraft ? { taskDraft } : {}) };
   }
 }
 
@@ -584,7 +597,7 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
     // Last live fence before money leaves: access or configuration may have changed during decryption.
     await authorization.first();
     const startedAt = Date.now();
-    const result: { reply: string; operation: string | null; inputTokens: number; outputTokens: number; reasoningTokens?: number; costMicros: number; tools?: { name: string; rows: number }[]; sources?: RoleSource[]; steps?: number } = video && validProviderKey(videoKey)
+    const result: { reply: string; operation: string | null; inputTokens: number; outputTokens: number; reasoningTokens?: number; costMicros: number; tools?: { name: string; rows: number }[]; sources?: RoleSource[]; steps?: number; taskDraft?: RoleTaskDraft } = video && validProviderKey(videoKey)
       ? await dispatchRoleVideo({ apiKey: videoKey, video, message, maxOutputTokens: config.roleOutputTokenLimit,
           inputCeiling: config.roleInputTokenCeiling, now, profile: videoProfile, signal: controller.signal, fetcher: options.fetcher })
       : callable
@@ -612,7 +625,8 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
     ]);
     return { contract: ROLE_CONTRACT, reply: result.reply, operation: result.operation, operationDropped: dropped, provider, model: modelName,
       ...videoReceipt, reservedMicros: estimate.costMicros, costMicros: result.costMicros, inputTokens: result.inputTokens, outputTokens: result.outputTokens,
-      sources: result.sources ?? [], lookups: (result.tools ?? []).length };
+      sources: result.sources ?? [], lookups: (result.tools ?? []).length,
+      ...(result.taskDraft ? { taskDraft: await signedTaskDraft(secret, current.userId, result.taskDraft, Date.now()) } : {}) };
   } catch (error) {
     const failureDetails = { provider, model: modelName, hasImage: !!image, ...(video ? { hasVideo: true, videoEffort: videoProfile.effort } : {}), reservedUsdMicros: estimate.costMicros,
       ...(error instanceof ChargedError ? { usdMicros: error.chargedMicros } : {}),

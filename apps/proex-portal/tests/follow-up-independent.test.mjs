@@ -110,7 +110,7 @@ test('independent: team name-only update preserves membership when the roster fi
 function routeModule(){
  let source=ts.transpileModule(readFileSync(root+'app/api/follow-up/route.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
  const inline=s=>'data:text/javascript;base64,'+Buffer.from(s).toString('base64');
- source=source.replace(/from (['"])@\/lib\/([^'"]+)\1/g,(_m,_q,name)=>`from ${JSON.stringify(name==='platform'?inline('export function database(){return globalThis.__followupReview.db}'):name==='session'?inline('export async function getPortalUser(){return globalThis.__followupReview.user}'):compile('lib/'+name+'.ts'))}`);
+ source=source.replace(/from (['"])@\/lib\/([^'"]+)\1/g,(_m,_q,name)=>`from ${JSON.stringify(name==='platform'?inline('export function database(){return globalThis.__followupReview.db}export function inviteSecret(){return globalThis.__followupReview.secret}'):name==='session'?inline('export async function getPortalUser(){return globalThis.__followupReview.user}'):compile('lib/'+name+'.ts'))}`);
  return import(inline(source));
 }
 const route=await routeModule();
@@ -132,6 +132,21 @@ test('independent: HTTP boundary honors the trusted session adapter, enforces CS
  const created=await route.POST(new Request(url,{method:'POST',headers,body:JSON.stringify({action:'task.create',...create()})}));assert.equal(created.status,200);const detail=await created.json();
  globalThis.__followupReview.user=f.users['worker-b'];
  const denied=await route.GET(new Request(url+'?view=detail&id='+detail.task.id));assert.equal(denied.status,404);assert.ok(!JSON.stringify(await denied.json()).includes('Recontagem'));
+});
+
+test('independent: a Rolê draft confirmed in the chat goes through the same task API, only with a valid signature for this person and project',async t=>{
+ const f=fixture(t),secret='test-only-role-auth-secret-no-production-access';globalThis.__followupReview={db:f.db,user:f.users['manager-a'],secret};t.after(()=>delete globalThis.__followupReview);
+ const {signTaskDraft}=await import(compile('lib/assistant/crypto.ts'));
+ const url='https://portal.example.invalid/api/follow-up',headers={Origin:'https://portal.example.invalid','X-Proex-Action':'1','Content-Type':'application/json'};
+ const post=body=>route.POST(new Request(url,{method:'POST',headers,body:JSON.stringify(body)}));
+ const token=await signTaskDraft(secret,{actorId:'manager-a',organizationId:'org-a',projectId:'project-a',digest:'sintetico',expiresAt:Date.now()+60_000});
+ const foreign=await signTaskDraft(secret,{actorId:'worker-a',organizationId:'org-a',projectId:'project-a',digest:'sintetico',expiresAt:Date.now()+60_000});
+ const refused=await post({action:'task.create',...create(),roleDraft:foreign});assert.equal(refused.status,409);
+ assert.equal(f.native.prepare('SELECT COUNT(*) n FROM followup_tasks').get().n,0);
+ const operationKey=crypto.randomUUID(),first=await post({action:'task.create',...create({operationKey}),roleDraft:token});assert.equal(first.status,200);
+ const second=await post({action:'task.create',...create({operationKey}),roleDraft:token});assert.equal(second.status,200);assert.equal((await second.json()).duplicate,true);
+ assert.equal(f.native.prepare('SELECT COUNT(*) n FROM followup_tasks').get().n,1);
+ globalThis.__followupReview.secret=undefined;assert.equal((await post({action:'task.create',...create(),roleDraft:token})).status,503);
 });
 
 test('independent: maximum valid teams/direct assignees bound fanout, dedupe repeated calls and never add application access',async t=>{
