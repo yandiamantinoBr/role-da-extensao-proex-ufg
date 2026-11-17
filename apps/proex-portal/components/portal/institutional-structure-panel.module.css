@@ -133,3 +133,20 @@
 @media (prefers-reduced-motion:reduce) { .chevron,.childrenSummary svg,.referenceChevron { transition:none; } }
 
 @container (max-width:599px){.heading>div:first-child{flex:1 1 125px}.heading>.actions{flex:0 0 auto;gap:6px}.actions button:first-child{width:44px;padding-inline:0;justify-content:center}.refreshLabel{display:none}.actions button{padding-inline:9px}.legend{gap:6px 10px}}
+
+/* Terceira crítica de 16/11: botões leves no computador, uma linha vertical só e espaço igual entre unidades. */
+.nodeActions>button,.nodeActions>span>button,.more>summary { background:transparent; border-color:transparent; box-shadow:none; color:var(--brand-ink); }
+.nodeActions>button:hover:not(:disabled),.nodeActions>span>button:hover:not(:disabled),.more>summary:hover,.more[open]>summary { background:var(--surface-soft); }
+.node[data-relation=subordination]>.nodeCard { border-left:1px solid var(--line); }
+.branch { gap:10px; }
+.children { margin-top:6px; }
+.wideOnly { display:contents; }
+.narrowOnly { display:none; }
+.narrowOnly>.menuItem { width:100%; }
+@container (max-width:599px) {
+ .wideOnly { display:none; }
+ .narrowOnly { display:contents; }
+ .nodeActions { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+/* Quinta crítica de 16/11: no celular os botões da unidade ficam juntos à esquerda, sem meia célula vazia. */
+@container (max-width:599px) { .nodeActions { display:flex; justify-content:flex-start; gap:8px; } .nodeActions>button,.more>summary { width:auto; padding-inline:12px; } }

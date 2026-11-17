@@ -77,7 +77,7 @@ function harness(initial={}){
 }
 
 test('closed disclosure has no GET, then shows a semantic tree, governance and authorized team navigation',async()=>{
- const h=harness();try{assert.equal(h.requests.length,0);await h.open();assert.equal(h.requests.length,1);assert.match(h.body(),/Governança/);assert.match(h.body(),/CEC/);assert.match(h.body(),/versão 2/);assert.equal(h.find('ul',entry=>entry.props.role==='tree'),undefined);assert.ok(h.find('article'));assert.ok(h.find('a',entry=>entry.props.href==='https://official.example/organograma.pdf'));h.click('Comunicação');assert.deepEqual(h.selected,['team-a']);assert.equal(h.last().init.cache,'no-store');assert.equal(h.last().init.redirect,'error');}finally{h.dispose();}
+ const h=harness();try{assert.equal(h.requests.length,0);await h.open();assert.equal(h.requests.length,1);assert.match(h.body(),/Governança/);assert.match(h.body(),/CEC/);assert.doesNotMatch(h.body(),/versão/,'a versão é detalhe interno: fica só na dica do título');assert.equal(h.find('h3',entry=>entry.props.title==='Versão 2 da estrutura')?.props.title,'Versão 2 da estrutura');assert.equal(h.find('ul',entry=>entry.props.role==='tree'),undefined);assert.ok(h.find('article'));assert.ok(h.find('a',entry=>entry.props.href==='https://official.example/organograma.pdf'));h.click('Comunicação');assert.deepEqual(h.selected,['team-a']);assert.equal(h.last().init.cache,'no-store');assert.equal(h.last().init.redirect,'error');}finally{h.dispose();}
 });
 
 test('read-only scope cannot edit, inspect archives or prepare a reference; visible links do not contain a roster',async()=>{
@@ -239,4 +239,18 @@ test('an old route or malformed file gives an actionable message without downloa
    assert.match((await pending).message,/Atualize/);assert.equal(h.requests.length,2);assert.equal(h.downloads.length,0);
   } finally {h.dispose();}
  }
+});
+
+test('organograma layout (crítica de 16/11): light actions, Equipes in "Mais" on phones, archived toggle beside refresh, one vertical line', async () => {
+  const h = harness(); try { await h.open();
+   const actions = h.find('div', entry => entry.props.className === 'actions');
+   assert.ok(actions && JSON.stringify(actions.props.children ?? '').includes('structureShowArchived'), '"Mostrar arquivadas" fica junto de "Atualizar estrutura"');
+   const legend = h.find('div', entry => entry.props.className === 'legend');
+   assert.ok(legend && !JSON.stringify(legend.props.children ?? '').includes('structureShowArchived'), 'a legenda só explica as linhas');
+   assert.ok(h.all('span').some(entry => entry.props.className === 'narrowOnly'), 'no celular, "Equipes" entra no menu "Mais"');
+   assert.ok(h.all('span').some(entry => entry.props.className === 'wideOnly'), 'no computador, "Equipes" continua à vista');
+  } finally { h.dispose(); }
+  const css = readFileSync(new URL('../components/portal/institutional-structure-panel.module.css', import.meta.url), 'utf8');
+  assert.match(css, /\.node\[data-relation=subordination\]>\.nodeCard \{ border-left:1px solid var\(--line\); \}/, 'sem a borda roxa que somava com as linhas da árvore');
+  assert.match(css, /\.more>summary \{ background:transparent; border-color:transparent; box-shadow:none; color:var\(--brand-ink\); \}/);
 });
