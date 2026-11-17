@@ -101,5 +101,6 @@
 /* Quarta crítica de 16/11: os blocos do detalhe da equipe com o mesmo tratamento (borda, fundo e cantos iguais). */
 .assignment, .chart, .members { padding: 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--canvas); }
 .sheets > section { margin: 0; border: 1px solid var(--line); border-radius: 14px; background: var(--canvas); box-shadow: none; }
-/* "Integrantes" não estica até a altura de "Andamento" (sexta crítica de 16/11). */
-.members { align-self: start; }
+/* Oitava crítica de 16/11: caixas lado a lado com a mesma altura e a planilha com o mesmo título dos blocos vizinhos. */
+.sheets h3 { font-size: 15px; }
+.sheets h3 > svg { display: none; }
