@@ -350,3 +350,18 @@ PRs #176, #187, #191 e #194, todas validadas em produção com login (custo de I
   - Cruzar prazo com a Agenda: depois da PR #194, o pedido vai para a conversa, que lê o aditivo e consulta a Agenda; a ferramenta consultou o mês seguinte em vez do período do prazo — a descrição de `consultar_agenda` agora pede as datas do prazo citado.
   - Preparar demanda como rascunho: o Rolê monta título, descrição, responsável sugerido e prazo em texto, sem gravar. Não há ferramenta de criar demanda; uma ferramenta nova só com escopo por pessoa e projeto.
 - **Fica para depois:** OCR de PDF escaneado com orçamento; busca explícita curta sem a palavra "edital" ("bolsas PROBEC 2026") devolve o resumo da página, não o PDF; sugestões quase escondidas em 390 px; leitura real da planilha depois do compartilhamento.
+
+## Rascunho de demanda e leitura de PDF escaneado · 2026-11-17
+
+- **Rascunho de demanda** ([PR201](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/201), `0ae41ba`, validado em produção):
+  - Ferramenta `preparar_rascunho_demanda` (`lib/assistant/role-task-draft.ts`, `role-tools.ts`): só lê. Confere o projeto do escopo e a mesma permissão de escrita da criação de demanda (`requireScope(..., true)` em `lib/follow-up/scope.ts`). O responsável só sai da lista que a criação aceita; o nome não vai para o provedor de IA. Um rascunho por pergunta; oferecida só a quem pode escrever em algum projeto do escopo.
+  - Cartão no chat (`components/portal/role-task-draft-card.tsx`): campos editáveis, responsável desmarcado, validade de 30 min, aviso quando o rascunho veio depois de ler conteúdo do portal, da internet ou de imagem. O estado do cartão fica guardado na mensagem.
+  - Só o toque em **Criar demanda** grava, por `/api/follow-up` com `roleDraft` (assinatura de pessoa, projeto e validade), chave idempotente e permissão conferida de novo. Auditoria: `task.create` com `source: 'role_draft'`.
+  - Produção: "Monte um rascunho de demanda no PROBEC…" → US$ 0,0030, rascunho com prazo e prioridade; nenhuma demanda criada.
+- **Leitura de PDF oficial escaneado com IA** ([PR207](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/207), `be98be1`, implantado):
+  - Só aparece quando a busca oficial acha um PDF público oficial sem texto. Cartão "Ler o PDF escaneado com IA" com custo máximo e aviso de envio ao Google Gemini; nada é enviado sem o toque.
+  - Servidor (`lib/assistant/role-pdf-reading.ts`, ação `pdf.read`): oferta assinada; baixa de novo o PDF com a validação da busca (até 2 MB, até 10 páginas, sem texto); Gemini 3.8 Flash, esforço baixo, resolução média; teto de US$ 0,03 por leitura; reserva e acerto na cota; prazo total de 45 s.
+  - Depende do interruptor do Gemini que a administração geral liga para vídeo (`roleVideoEnabled`).
+  - **Não verificado:** chamada real com PDF escaneado (o formato da resposta foi suposto igual ao do vídeo). Conferir no primeiro caso real e registrar o gasto.
+- **Gasto real da rodada de 2026-11-17:** US$ 0,0109 (avaliação e conferências; DeepSeek Flash).
+- **Pendência:** quando o mesmo pedido chega duas vezes, a segunda cópia volta "Esta mensagem já foi enviada" e a resposta paga da primeira se perde (sem cobrança dupla). Devolver a resposta guardada quando a impressão digital for igual e a chamada estiver completa.
