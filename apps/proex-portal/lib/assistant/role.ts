@@ -10,7 +10,7 @@ import {
   ROLE_CONTRACT, ROLE_MAX_HISTORY, ROLE_MAX_HISTORY_CHARS, ROLE_MAX_IMAGE_BYTES, ROLE_MAX_IMAGE_SIDE, ROLE_MAX_MESSAGE_CHARS, ROLE_IMAGE_TOKEN_CEILING, ROLE_SYSTEM_PROMPT_BYTES, ROLE_MODELS,
   ROLE_SYSTEM_PROMPT, ROLE_SYSTEM_PROMPT_TOOLS, ROLE_TOOL_CALLS_PER_ROUND, ROLE_TOOL_RESULT_BYTES, ROLE_TOOL_ROUNDS, roleConversationBytes, roleEstimate, roleTimeoutMs, validateRoleReply, type RoleSource, type RoleTurn,
 } from './role-contracts';
-import { ROLE_TOOL_NAMES, ROLE_TOOLS, officialSearchReply, resolveRoleScope, roleScopes, runRoleTool, type RoleTaskDraft, type RoleToolResult } from './role-tools';
+import { ROLE_TASK_DRAFT_TOOL, ROLE_TOOL_NAMES, ROLE_TOOLS, canDraftTasks, officialSearchReply, resolveRoleScope, roleScopes, runRoleTool, type RoleTaskDraft, type RoleToolResult } from './role-tools';
 import { ROLE_SUGGESTION_DAYS, roleSuggestions } from './role-suggestions';
 import { ROLE_VIDEO_MODELS, roleVideoEstimate, type RoleVideoProfile, type RoleVideoStatus } from './role-video-contracts';
 import { dispatchRoleVideo, parseRoleVideo, RoleVideoChargedError } from './role-video';
@@ -123,13 +123,13 @@ function videoApproval(organizationId: string, project: string, revision: number
 }
 
 /**
- * Rascunho de demanda para o cartão do chat: a assinatura vincula pessoa, projeto e campos e vale por
- * pouco tempo. Não grava nada; quem cria é a API de demandas, depois do toque da pessoa.
+ * Rascunho de demanda para o cartão do chat: a assinatura vincula só a pessoa, o projeto e a validade
+ * (30 minutos). Os campos não entram: a pessoa pode editá-los no cartão. Não grava nada; quem cria é a
+ * API de demandas, depois do toque da pessoa.
  */
 async function signedTaskDraft(secret: string, actorId: string, draft: RoleTaskDraft, now: number) {
   const expiresAt = now + ROLE_TASK_DRAFT_TTL_MS;
-  const fields = await digest(JSON.stringify(['role-task-draft/v1', draft.projectId, draft.title, draft.description, draft.dueAt, draft.priority, draft.assigneeId ?? null]));
-  const signature = await signTaskDraft(secret, { actorId, organizationId: draft.organizationId, projectId: draft.projectId, digest: fields, expiresAt });
+  const signature = await signTaskDraft(secret, { actorId, organizationId: draft.organizationId, projectId: draft.projectId, expiresAt });
   return { ...draft, expiresAt, signature };
 }
 
@@ -354,7 +354,7 @@ async function toolStep(route: ToolRoute, apiKey: string, body: unknown, maxOutp
  */
 async function dispatchWithTools(route: ToolRoute, apiKey: string, body: { messages: Record<string, unknown>[] } & Record<string, unknown>, run: (name: string, args: Record<string, unknown>, budget: number) => Promise<RoleToolResult>, policy: RolePolicy, offeredTools: PortalTools, retainReasoning: boolean, checkAccess: () => Promise<unknown>, signal: AbortSignal, fetcher: typeof fetch) {
   const messages = [...body.messages], used: { name: string; rows: number }[] = [], sources = new Map<string, RoleSource>();
-  let taskDraft: RoleTaskDraft | undefined;
+  let taskDraft: RoleTaskDraft | undefined, draftCalls = 0;
   let inputTokens = 0, outputTokens = 0, costMicros = 0, steps = 0;
   const charged = (message: string) => new ChargedError(message, costMicros, inputTokens + outputTokens);
   // No JSON mode in the loop: after lookups, DeepSeek's JSON mode can return an empty message.
@@ -385,6 +385,8 @@ async function dispatchWithTools(route: ToolRoute, apiKey: string, body: { messa
       for (const [index, call] of step.toolCalls.entries()) {
         let content: string;
         if (index >= ROLE_TOOL_CALLS_PER_ROUND || budget < 600) content = JSON.stringify({ erro: 'Limite de consultas desta pergunta. Responda com o que já tem.' });
+        // Um rascunho por pergunta: da segunda chamada em diante, nenhum rascunho novo.
+        else if (call.function.name === ROLE_TASK_DRAFT_TOOL && ++draftCalls > 1) { content = JSON.stringify({ erro: 'Um rascunho por vez. Confirme ou descarte o primeiro.' }); used.push({ name: ROLE_TASK_DRAFT_TOOL, rows: -1 }); }
         else {
           try {
             if (!offeredTools.some(tool => tool.function.name === call.function.name)) throw new HttpError(400, 'Consulta não autorizada nesta conversa.', 'role_tool_disabled');
@@ -415,7 +417,9 @@ async function dispatchWithTools(route: ToolRoute, apiKey: string, body: { messa
     catch { reply = { reply: step.content.trim().slice(0, 4000), operation: null }; }
     if (!reply.reply) throw charged('A resposta do Rolê veio vazia. O custo foi registrado.');
     if (containsCredential(reply.reply) || reply.operation && containsCredential(reply.operation)) throw charged('A resposta do provedor não pôde ser mostrada.');
-    return { ...reply, inputTokens, outputTokens, costMicros, steps, tools: used, sources: [...sources.values()], ...(taskDraft ? { taskDraft } : {}) };
+    // Conteúdo lido de outras consultas na mesma resposta pode tentar dirigir o rascunho: o cartão avisa.
+    const untrusted = used.some(entry => entry.name !== ROLE_TASK_DRAFT_TOOL && entry.rows > 0);
+    return { ...reply, inputTokens, outputTokens, costMicros, steps, tools: used, sources: [...sources.values()], ...(taskDraft ? { taskDraft: untrusted ? { ...taskDraft, afterUntrusted: true as const } : taskDraft } : {}) };
   }
 }
 
@@ -551,7 +555,9 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
   const modelName = video ? videoProfile.model : chosen.kind === 'catalog' ? chosen.model.model : ROLE_MODELS[chosen.provider].model;
   const apiKey = chosen.apiKey;
   const callable = video ? null : toolRoute(chosen);
-  const tools = callable && !document ? roleTools(config) : [], toolsOn = tools.length > 0;
+  // O rascunho de demanda só é oferecido a quem pode criar demanda em algum projeto do escopo (mesma regra da criação).
+  const offered = callable && !document ? roleTools(config) : [];
+  const tools = offered.some(tool => tool.function.name === ROLE_TASK_DRAFT_TOOL) && !await canDraftTasks(db, current, organizationId, scope) ? offered.filter(tool => tool.function.name !== ROLE_TASK_DRAFT_TOOL) : offered, toolsOn = tools.length > 0;
   // Leave ten seconds for validation and settlement in the 60 s Vercel function.
   const timeoutMs = video && videoProfile.effort === 'xhigh' ? 50_000 : roleTimeoutMs(config.timeoutMs, toolsOn || !!video);
   const turns = roleHistoryForPolicy(submittedTurns, config.roleHistoryMessages);
@@ -564,7 +570,7 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
   if (videoQuote && config.roleInputTokenCeiling && videoQuote.inputTokens > config.roleInputTokenCeiling) throw inputLimitError();
   const estimate = videoQuote ?? roleEstimate({ textProvider: config.roleProvider, textBytes, hasImage: !!image, text: state.text?.pricing, vision: state.vision?.pricing, tools: toolsOn, reasoningCarry, maxOutputTokens: config.roleOutputTokenLimit, inputCeiling: config.roleInputTokenCeiling });
   if (!Number.isSafeInteger(input.acceptedCostMicros) || Number(input.acceptedCostMicros) < estimate.costMicros) {
-    throw new HttpError(409, 'O custo previsto mudou. Confira o novo valor e envie de novo.', 'role_cost_changed');
+    throw new HttpError(409, 'O custo previsto mudou. Atualize a página e envie de novo.', 'role_cost_changed');
   }
   const reservation = { tokens: estimate.tokens, cost: estimate.costMicros, calls: 1, milliseconds: timeoutMs }; // uma pergunta = uma chamada; custo, tokens e tempo cobrem as até 3 requisições
   const id = await digest(`role\n${current.userId}\n${project}\n${input.operationKey}`);
@@ -626,7 +632,7 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
     return { contract: ROLE_CONTRACT, reply: result.reply, operation: result.operation, operationDropped: dropped, provider, model: modelName,
       ...videoReceipt, reservedMicros: estimate.costMicros, costMicros: result.costMicros, inputTokens: result.inputTokens, outputTokens: result.outputTokens,
       sources: result.sources ?? [], lookups: (result.tools ?? []).length,
-      ...(result.taskDraft ? { taskDraft: await signedTaskDraft(secret, current.userId, result.taskDraft, Date.now()) } : {}) };
+      ...(result.taskDraft ? { taskDraft: await signedTaskDraft(secret, current.userId, image && !result.taskDraft.afterUntrusted ? { ...result.taskDraft, afterUntrusted: true } : result.taskDraft, Date.now()) } : {}) };
   } catch (error) {
     const failureDetails = { provider, model: modelName, hasImage: !!image, ...(video ? { hasVideo: true, videoEffort: videoProfile.effort } : {}), reservedUsdMicros: estimate.costMicros,
       ...(error instanceof ChargedError ? { usdMicros: error.chargedMicros } : {}),

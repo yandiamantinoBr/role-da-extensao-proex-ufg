@@ -2,6 +2,7 @@
  * Confirmação do rascunho de demanda do Rolê. A criação é a mesma da tela de Demandas
  * (followupAction 'task.create'), com permissão conferida de novo e chave de operação idempotente.
  * A assinatura do rascunho só confere pessoa, projeto e validade; campos editados pela pessoa valem.
+ * A auditoria de task.create registra source:'role_draft'.
  */
 import type { PortalActor } from '../access';
 import { HttpError } from '../errors';
@@ -14,5 +15,5 @@ export async function confirmRoleTaskDraft(db: D1Database, actor: PortalActor | 
   const { roleDraft, ...task } = input;
   if (task.action !== 'task.create') throw new HttpError(400, 'Escolha uma operação válida.', 'followup_action');
   await verifyTaskDraft(secret, roleDraft, actor.userId, typeof task.projectId === 'string' ? task.projectId : '', now);
-  return followupAction(db, actor, 'task.create', task);
+  return followupAction(db, actor, 'task.create', task, { source: 'role_draft' });
 }

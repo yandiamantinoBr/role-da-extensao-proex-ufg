@@ -6,7 +6,7 @@
  * O conteúdo volta ao modelo marcado como dado do portal, sem autoridade para mudar regras.
  */
 import { projectAuthoritySql, type PortalActor } from '../access';
-import { all, type Row } from '../database';
+import { all, one, type Row } from '../database';
 import { HttpError } from '../errors';
 import { authority as followupAuthority, requireScope } from '../follow-up/scope';
 import { followupAssignablePeople } from '../follow-up/service';
@@ -47,7 +47,8 @@ export type RoleToolSource = { label: string; href: string };
 export type RoleScope = { kind: 'org' } | { kind: 'unit' | 'project' | 'event'; id: string };
 export type ResolvedScope = { kind: RoleScope['kind']; id: string | null; label: string; projectIds: string[] | null };
 /** Rascunho de demanda: vai para o cartão de revisão, nunca para o modelo (que só recebe o resumo sem identificadores). */
-export type RoleTaskDraft = { organizationId: string; projectId: string; projectName: string; title: string; description: string; dueAt: string | null; priority: 'high' | 'medium' | 'low'; assigneeId?: string; assigneeName?: string };
+export type RoleTaskDraft = { organizationId: string; projectId: string; projectName: string; title: string; description: string; dueAt: string | null; priority: 'high' | 'medium' | 'low'; assigneeId?: string; assigneeName?: string; afterUntrusted?: true };
+export const ROLE_TASK_DRAFT_TOOL = 'preparar_rascunho_demanda';
 export type RoleToolResult = { content: string; sources: RoleToolSource[]; rows: number; taskDraft?: RoleTaskDraft };
 
 const STOP = new Set(['de', 'da', 'do', 'das', 'dos', 'e', 'a', 'o', 'as', 'os', 'em', 'no', 'na', 'nos', 'nas', 'para', 'com', 'por', 'um', 'uma', 'que', 'quantos', 'quantas', 'qual', 'quais']);
@@ -93,6 +94,12 @@ function pack(kind: string, items: Record<string, unknown>[], sources: RoleToolS
   return { content: envelope(kept, items.length - kept.length), sources: sources.filter(source => used.has(source.href)), rows: kept.length };
 }
 
+/** Pode criar demanda em algum projeto do escopo? Mesma regra de escrita da criação (authority com escrita). Uma consulta. */
+export async function canDraftTasks(db: D1Database, actor: PortalActor, organizationId: string, scope: ResolvedScope | null): Promise<boolean> {
+  const allowed = scope?.projectIds ?? null;
+  if (allowed && !allowed.length) return false;
+  return !!await one(db, `SELECT 1 ok FROM projects p JOIN organizations o ON o.id=p.organization_id AND o.status='active' WHERE p.organization_id=? AND ${followupAuthority('?', 'p.organization_id', 'p.id', true)}${allowed ? ` AND p.id IN ${inList(allowed)}` : ''} LIMIT 1`, [organizationId, actor.userId, ...(allowed ?? [])]);
+}
 const DRAFT_PRIORITY: Record<string, RoleTaskDraft['priority']> = { alta: 'high', media: 'medium', baixa: 'low' };
 const DRAFT_PRIORITY_LABEL: Record<RoleTaskDraft['priority'], string> = { high: 'alta', medium: 'média', low: 'baixa' };
 /** Mesmos limites e caracteres da criação de demanda (lib/follow-up/contracts.ts): corta o excesso e avisa. */
@@ -146,7 +153,7 @@ async function taskDraftTool(db: D1Database, actor: PortalActor, organizationId:
     else notes.push(matches.length ? 'Há mais de uma pessoa com esse nome neste projeto; o responsável ficou vazio para a pessoa escolher.' : 'Não encontrei essa pessoa entre quem pode receber demandas neste projeto; o responsável ficou vazio.');
   }
   const taskDraft: RoleTaskDraft = { organizationId, projectId, projectName, title: title.value, description: description.value, dueAt, priority, ...(assignee ? { assigneeId: assignee.userId, assigneeName: assignee.name } : {}) };
-  const summary = { projeto: projectName, titulo: taskDraft.title, descricao: taskDraft.description.length > 1200 ? `${taskDraft.description.slice(0, 1200)}…` : taskDraft.description, prazo: dueAt ?? 'sem prazo', prioridade: DRAFT_PRIORITY_LABEL[priority], responsavel: assignee?.name ?? 'sem responsável' };
+  const summary = { projeto: projectName, titulo: taskDraft.title, descricao: taskDraft.description.length > 1200 ? `${taskDraft.description.slice(0, 1200)}…` : taskDraft.description, prazo: dueAt ?? 'sem prazo', prioridade: DRAFT_PRIORITY_LABEL[priority], responsavel: assignee ? 'definido (confira no cartão)' : 'sem responsável' };
   const result = pack(kind, [summary], [], budget, 'Rascunho pronto. Nada foi gravado: a pessoa confere no cartão abaixo da resposta e toca em Criar demanda.', notes.length ? { avisos: notes } : {});
   return { ...result, rows: 1, taskDraft };
 }
