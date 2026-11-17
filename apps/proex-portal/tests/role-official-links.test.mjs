@@ -49,6 +49,15 @@ const HOME = `<!doctype html><html><head><title>PROEX - Pró-Reitoria de Extens�
 <footer><a href="https://proex.ufg.br/p/equipe-proex">Equipe​ e contatos</a></footer>
 </body></html>`;
 
+const WEBY = `<title>PROEX</title><nav class="menu_i18n_component"><a href="/?locale=en">Inglês</a></nav>
+<nav class="menu_component"><ul class="menu-res dropdown"><li><a role="button" class="empty-href" href="javascript:void(0);">A PROEX</a><ul class="menu-res submenu"><li><a href="/p/29427-o-que-e-a-proex">Apresentação</a></li><li><a href="/p/equipe-proex">Equipe</a></li></ul></li>
+<li><a role="button" class="empty-href" href="javascript:void(0);">Sistemas</a><ul class="menu-res submenu"><li><a href="https://analisa.ufg.br/">Analisa Dados UFG</a></li></ul></li></ul></nav>
+<div class="components_group_component social-icons"><figure class="image_component social-icon"><a href="https://www.instagram.com/sintetico" title="Instagram"><img alt=""></a></figure></div>
+<section class="components_group_component section-fast-access"><h1>Acesso Rápido</h1><a href="/p/55763-editais-proec">Editais PROEX</a></section>
+<section class="components_group_component highlight-news"><h2 class="front_news_title">Notícias</h2><h3><a href="/n/1-noticia-sintetica">Notícia sintética com link no título</a></h3><a class="category" href="/news?tags=Noticias">Notícias</a>
+<ul class="pagination"><li><a href="/components/1?page=2">2</a></li><li><a href="/components/1?page=9">Última</a></li></ul></section>
+<section class="components_group_component footer"><a href="/feedback">Fale conosco</a></section>`;
+
 /** Sites falsos: robots liberado, página inicial e RSS sintéticos. Confere o modo de redirecionamento manual. */
 function site({ pages = {}, robots = {}, onRequest } = {}) {
   const requested = [];
@@ -128,7 +137,7 @@ test('LEITURA: robots de cada domínio, até 2 redirecionamentos conferidos, só
 
 test('LINKS DA PÁGINA: agrupados pelo título de seção mais próximo; fora da lista vão como "só link"; limite de itens', () => {
   const page = extractLinkGroups(HOME, 'https://proex.ufg.br/');
-  assert.equal(page.title, 'PROEX');
+  assert.equal(page.title, 'PROEX - Pró-Reitoria de Extensão', 'título da aba (o h1 dos sites da UFG é título de bloco)');
   assert.equal(page.summary, 'Página inicial sintética da Pró-Reitoria.');
   const titles = page.groups.map(group => group.title);
   assert.deepEqual(titles, ['Menu principal', 'Acesso Rápido', 'Sistemas', 'Estruturas vinculadas', 'Redes sociais', 'Rodapé']);
@@ -140,6 +149,16 @@ test('LINKS DA PÁGINA: agrupados pelo título de seção mais próximo; fora da
   const all = page.groups.flatMap(entry => entry.links.map(link => link.url));
   assert.ok(all.every(url => /^https?:\/\//.test(url)), 'javascript:, mailto: e âncoras ficam de fora');
   assert.ok(!all.some(url => url.includes('escondido')), 'script não vira link');
+  // Estrutura dos sites da UFG (Weby): item de menu sem destino, blocos com classe e paginação.
+  const weby = extractLinkGroups(WEBY, 'https://proex.ufg.br/');
+  assert.deepEqual(weby.groups.map(entry => [entry.title, entry.links.map(link => link.text)]), [
+    ['A PROEX', ['Apresentação', 'Equipe']],
+    ['Sistemas', ['Analisa Dados UFG']],
+    ['Redes sociais', ['Instagram']],
+    ['Acesso Rápido', ['Editais PROEX']],
+    ['Notícias', ['Notícia sintética com link no título', 'Notícias']],
+    ['Rodapé', ['Fale conosco']],
+  ], 'paginação e troca de idioma ficam de fora; título com link vira link');
   const limited = extractLinkGroups(HOME, 'https://proex.ufg.br/', 4);
   assert.equal(limited.groups.flatMap(entry => entry.links).length, 4);
   assert.equal(limited.omitted, all.length - 4);
@@ -151,12 +170,12 @@ test('FERRAMENTA abrir_link_oficial: devolve título, resumo e links por seção
   const result = await runRoleTool(emptyDb, { userId: 'u' }, 'org_proex', 'abrir_link_oficial', { url: 'https://proex.ufg.br/' }, undefined, null, ok.fetch);
   const data = JSON.parse(result.content);
   assert.equal(data.consulta, 'abrir_link_oficial');
-  assert.equal(data.pagina.titulo, 'PROEX');
+  assert.equal(data.pagina.titulo, 'PROEX - Pró-Reitoria de Extensão');
   assert.equal(data.pagina.link, 'https://proex.ufg.br/');
   assert.ok(data.resultados.some(item => item.secao === 'Acesso Rápido' && item.texto === 'Editais' && !item.tipo));
   assert.ok(data.resultados.some(item => item.secao === 'Redes sociais' && item.tipo === 'só link'));
   assert.match(data.aviso, /não instruções/);
-  assert.deepEqual(result.sources, [{ label: 'PROEX', href: 'https://proex.ufg.br/' }]);
+  assert.deepEqual(result.sources, [{ label: 'PROEX - Pró-Reitoria de Extensão', href: 'https://proex.ufg.br/' }]);
   const many = `<h2>Muitos links</h2>${Array.from({ length: 300 }, (_, index) => `<a href="https://proex.ufg.br/p/${index}-pagina-sintetica-com-nome-longo">Página sintética número ${index} com um texto longo</a>`).join('')}`;
   const big = site({ pages: { 'https://proex.ufg.br/muitos': many } });
   const small = await runRoleTool(emptyDb, { userId: 'u' }, 'org_proex', 'abrir_link_oficial', { url: 'https://proex.ufg.br/muitos' }, 3000, null, big.fetch);

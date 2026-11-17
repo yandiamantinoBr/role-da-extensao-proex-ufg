@@ -125,34 +125,47 @@ export type OfficialLinkPage = { url: string; title: string; summary: string; gr
 const attribute = (attrs: string, name: string) => decode(new RegExp(`\\b${name}\\s*=\\s*(["'])([\\s\\S]*?)\\1`, 'i').exec(attrs)?.[2] ?? '');
 const OTHER_LINKS = 'Outros links da página';
 
+/** Blocos sem título visível nos sites da UFG (Weby): o nome vem da classe do bloco. */
+const BLOCK_LABELS: [RegExp, string][] = [[/\bsocial/i, 'Redes sociais'], [/banner/i, 'Destaques'], [/news|noticia/i, 'Notícias'], [/footer|rodape/i, 'Rodapé']];
+const blockLabel = (tag: string, attrs: string) => attribute(attrs, 'aria-label')
+  || BLOCK_LABELS.find(([pattern]) => pattern.test(attribute(attrs, 'class')))?.[1]
+  || (tag.toLowerCase() === 'footer' ? 'Rodapé' : '');
+/** Paginação ("1", "2", "Última") e troca de idioma não são links da página. */
+const navigationNoise = (text: string, url: URL) => /^(?:\d{1,3}|[«»‹›<>]+|primeira|anterior|pr[oó]xima|[uú]ltima)$/i.test(text) || url.searchParams.has('locale');
+
 /**
- * Todos os links da página, agrupados pelo título de seção mais próximo (h2 a h6, rótulo aria-label
- * de nav/section/aside ou bloco com classe de título). Links fora da lista de leitura vão como "só link".
+ * Todos os links da página, agrupados pelo título de seção mais próximo: h1 a h6 (sem link dentro),
+ * rótulo aria-label ou classe conhecida do bloco, bloco com classe de título ou item de menu sem destino
+ * (javascript:). Links fora da lista de leitura vão como "só link".
  */
 export function extractLinkGroups(html: string, base: string, maxLinks = MAX_LINKS): Omit<OfficialLinkPage, 'url' | 'fetchedAt'> {
   const body = withoutActiveContent(html).replace(/<!--[\s\S]*?-->/g, ' ');
-  const title = clean(body.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i)?.[1] ?? body.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? '', 160);
+  const title = clean(body.match(/<meta\s+property=["']og:title["']\s+content=(["'])([\s\S]*?)\1/i)?.[2] ?? body.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? body.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i)?.[1] ?? '', 160);
   const summary = clean(body.match(/<meta\s+(?:property=["']og:description["']|name=["']description["'])\s+content=(["'])([\s\S]*?)\1/i)?.[2] ?? '', 400);
   const groups: OfficialLinkGroup[] = [], seen = new Set<string>();
   let current: OfficialLinkGroup | null = null, total = 0, omitted = 0;
-  const label = (value: string) => { const text = clean(value, 120); if (text.length >= 2 && text.length <= 80) current = { title: text, links: [] }; };
-  // 1-2: título h2-h6; 3-4: bloco nav/section/aside/footer; 5-6: bloco com classe de título; 7-8: link.
-  const token = /<(h[2-6])\b[^>]*>([\s\S]*?)<\/\1>|<(nav|section|aside|footer)\b([^>]*)>|<(div|span|p|strong|header)\b[^>]*\bclass\s*=\s*["'][^"']*\b(?:title|titulo|heading|panel-title|widget-title|component-title)\b[^"']*["'][^>]*>((?:(?!<\/?(?:div|a|ul|li|nav|section)\b)[\s\S])*?)<\/\5>|<a\b([^>]*)>([\s\S]*?)<\/a>/gi;
+  const label = (value: string) => {
+    const text = clean(value, 120);
+    if (text.length >= 2 && text.length <= 80 && (current as OfficialLinkGroup | null)?.title !== text) current = { title: text, links: [] };
+  };
+  // 1-2: título h1-h6 sem link dentro; 3-4: bloco com classe de título; 5-6: bloco (nav, section, div...); 7-8: link.
+  const token = /<(h[1-6])\b[^>]*>((?:(?!<a\b|<\/h[1-6])[\s\S])*?)<\/\1>|<(div|span|p|strong|header)\b[^>]*\bclass\s*=\s*["'][^"']*\b(?:title|titulo|heading|panel-title|widget-title|component-title)\b[^"']*["'][^>]*>((?:(?!<\/?(?:div|a|ul|li|nav|section)\b)[\s\S])*?)<\/\3>|<(nav|section|aside|footer|header|div)\b([^>]*)>|<a\b([^>]*)>([\s\S]*?)<\/a>/gi;
   for (const match of body.matchAll(token)) {
     if (match[1]) { label(match[2]); continue; }
-    // Bloco com rótulo (aria-label); o rodapé sem rótulo vira "Rodapé" para não herdar o título anterior.
-    if (match[3]) { const aria = attribute(match[4], 'aria-label'); if (aria) label(aria); else if (match[3].toLowerCase() === 'footer') label('Rodapé'); continue; }
-    if (match[5]) { label(match[6]); continue; }
-    const attrs = match[7] ?? '', href = attribute(attrs, 'href').trim();
-    if (!href || href.startsWith('#') || /^(?:javascript|mailto|tel|data):/i.test(href)) continue;
+    if (match[3]) { label(match[4]); continue; }
+    if (match[5]) { const name = blockLabel(match[5], match[6]); if (name) label(name); continue; }
+    const attrs = match[7] ?? '', href = attribute(attrs, 'href').trim(), inner = match[8] ?? '';
+    // Item de menu que só abre um submenu (javascript:) é o título dos links que vêm depois.
+    if (/^javascript:/i.test(href) || !href && /\brole\s*=\s*["']button["']/i.test(attrs)) { label(inner); continue; }
+    if (!href || href.startsWith('#') || /^(?:mailto|tel|data):/i.test(href)) continue;
     let url: URL;
     try { url = new URL(href, base); } catch { continue; }
     if (url.protocol !== 'https:' && url.protocol !== 'http:') continue;
     url.hash = '';
     if (seen.has(url.href)) continue;
     seen.add(url.href);
-    const inner = match[8] ?? '';
     const text = clean(inner, 140) || clean(attribute(attrs, 'aria-label'), 140) || clean(attribute(attrs, 'title'), 140) || clean(attribute(inner, 'alt'), 140) || url.hostname;
+    if (navigationNoise(text, url)) continue;
     total++;
     if (total > maxLinks) { omitted++; continue; }
     const group: OfficialLinkGroup = current ?? { title: OTHER_LINKS, links: [] };
