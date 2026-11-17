@@ -136,3 +136,11 @@ test('a team with no demands on the page shows no grey export buttons (crítica 
   assert.ok(h.body().includes('Comunicação'));
   assert.equal(h.nodes().find(node => node.props?.label === 'Exportar demandas da equipe'), undefined);
 });
+
+test('team detail blocks share one box treatment and the team sheet is not a card inside a card (crítica de 16/11)', () => {
+  const css = readFileSync(new URL('../components/portal/work-teams-panel.module.css', import.meta.url), 'utf8');
+  assert.match(css, /\.assignment, \.chart, \.members \{ padding: 14px; border: 1px solid var\(--line\); border-radius: 14px; background: var\(--canvas\); \}/);
+  assert.match(css, /\.sheets > section \{[^}]*box-shadow: none; \}/);
+  const source = readFileSync(new URL('../components/portal/work-teams-panel.tsx', import.meta.url), 'utf8');
+  assert.match(source, /<div className=\{styles\.sheets\}><TeamSheetsPanel /);
+});
