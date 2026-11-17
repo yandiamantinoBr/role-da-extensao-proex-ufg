@@ -1,0 +1,1925 @@
+{
+  "data": "2026-11-17",
+  "branch": "claude/role-fase2d-17nov",
+  "commit": "a6f86fe2",
+  "origin": "http://127.0.0.1:5187",
+  "base": "Descartável, loopback (cópia local de scripts/qa-local.mjs --credential-vault na porta 5187, worktree temporária), conta e chave sintéticas. Nenhuma IA nem rede externa: as respostas do POST /api/assistant/role foram simuladas no navegador (texto curto + navigation).",
+  "login": 200,
+  "setup": {
+    "org": "org_proex",
+    "status": 200,
+    "body": "",
+    "keys": [
+      "user",
+      "profile",
+      "hasPassword",
+      "role",
+      "capabilities",
+      "globalCapabilities",
+      "capabilitiesByProject",
+      "canConfigureAi",
+      "organizations",
+      "projects",
+      "campaigns",
+      "projectTypes",
+      "organizationalUnits",
+      "items",
+      "offers",
+      "loans",
+      "members",
+      "invites",
+      "users",
+      "metrics",
+      "audit",
+      "settings",
+      "documents",
+      "physicalTickets",
+      "pendingPrizes",
+      "volunteerAccess",
+      "volunteers",
+      "calendarAvailable",
+      "pendingPrizesTotal",
+      "pendingPrizesTruncated",
+      "pendingPrizesLimit",
+      "updatedAt"
+    ]
+  },
+  "projeto": {
+    "id": "705922c1-b96b-479d-835a-79ff55fbedff",
+    "name": "Projeto QA descartável"
+  },
+  "fichaLabel": "ficha do projeto Congresso de Pesquisa, Ensino e Extensão da UFG – CONPEEX 2…",
+  "telas": {
+    "390-claro": {
+      "abriu": "atalho",
+      "entendi": true,
+      "fontes": "false",
+      "enviarTela": true,
+      "tela": {
+        "tema": "light",
+        "innerWidth": 390,
+        "docScrollWidth": 390,
+        "semRolagemHorizontal": true,
+        "dialog": {
+          "x": 0,
+          "y": 0,
+          "w": 390,
+          "h": 844,
+          "scrollW": 390,
+          "clientW": 390
+        },
+        "bloqueados": [],
+        "mocked": [
+          "chat:tela"
+        ],
+        "botao": {
+          "tag": "A",
+          "href": "/?module=loans",
+          "texto": "Abrir Empréstimos",
+          "x": 71.4,
+          "y": 288,
+          "w": 185.5,
+          "h": 44,
+          "display": "flex",
+          "minH": "44px",
+          "padding": "11px 15px",
+          "radius": "9px",
+          "fonte": "14.4px",
+          "peso": "600",
+          "lh": "19.44px",
+          "cor": "rgb(255, 255, 255)",
+          "fundo": "rgb(59, 23, 83)",
+          "borda": "1px solid rgb(59, 23, 83)",
+          "contrasteTexto": 14.65,
+          "contrasteFundoVsBalao": 12.83,
+          "linhasTexto": 1,
+          "spanBox": {
+            "x": 87.4,
+            "y": 301,
+            "w": 131.1,
+            "h": 19.4
+          },
+          "ws": "normal",
+          "overflow": "visible",
+          "textOverflow": "clip",
+          "transborda": false,
+          "spanTransborda": false,
+          "icone": {
+            "x": 224.9,
+            "y": 302,
+            "w": 16,
+            "h": 16
+          },
+          "iconeShrink": "0",
+          "ariaLabel": null,
+          "title": "",
+          "target": "",
+          "role": null,
+          "dentroDoBalao": true,
+          "balao": {
+            "x": 56,
+            "y": 218,
+            "w": 304.3,
+            "h": 171.3,
+            "padding": "11.2px 14.4px",
+            "fundo": "rgb(243, 238, 248)"
+          },
+          "cursor": "pointer",
+          "decoracao": "none"
+        },
+        "outrosBotoesPainel": [
+          {
+            "t": "Nova conversa",
+            "cls": "RoleAssistant_textButton__03715",
+            "x": 243.2,
+            "y": 16,
+            "w": 74.8,
+            "h": 44,
+            "fundo": "rgb(255, 255, 255)",
+            "cor": "rgb(88, 39, 113)",
+            "radius": "12px",
+            "fonte": "13.12px",
+            "peso": "700",
+            "minH": "44px"
+          },
+          {
+            "t": "Fechar o Rolê",
+            "cls": "RoleAssistant_iconButton__1c4c8",
+            "x": 330,
+            "y": 16,
+            "w": 44,
+            "h": 44,
+            "fundo": "rgb(255, 255, 255)",
+            "cor": "rgb(41, 35, 51)",
+            "radius": "12px",
+            "fonte": "14px",
+            "peso": "400",
+            "minH": "44px"
+          },
+          {
+            "t": "Fontes oficiais: buscar nas páginas da P",
+            "cls": "RoleAssistant_officialToggle__ee861",
+            "x": 16,
+            "y": 645,
+            "w": 137.1,
+            "h": 44,
+            "fundo": "rgb(255, 255, 255)",
+            "cor": "rgb(41, 35, 51)",
+            "radius": "12px",
+            "fonte": "13.12px",
+            "peso": "700",
+            "minH": "44px"
+          },
+          {
+            "t": "Gravar áudio",
+            "cls": "RoleAssistant_iconButton__1c4c8 ",
+            "x": 265.1,
+            "y": 645,
+            "w": 44,
+            "h": 44,
+            "fundo": "rgb(255, 255, 255)",
+            "cor": "rgb(41, 35, 51)",
+            "radius": "12px",
+            "fonte": "14px",
+            "peso": "400",
+            "minH": "44px"
+          },
+          {
+            "t": "Enviar",
+            "cls": "RoleAssistant_send__5f167",
+            "x": 274.4,
+            "y": 697,
+            "w": 99.6,
+            "h": 44,
+            "fundo": "rgb(59, 23, 83)",
+            "cor": "rgb(255, 255, 255)",
+            "radius": "12px",
+            "fonte": "14px",
+            "peso": "700",
+            "minH": "44px"
+          }
+        ],
+        "irmaos": [
+          {
+            "tag": "SPAN",
+            "cls": "visually-hidden",
+            "t": "Rolê respondeu:",
+            "x": 70.4,
+            "y": 229,
+            "w": 1,
+            "h": 1
+          },
+          {
+            "tag": "P",
+            "cls": "",
+            "t": "Pronto. Separei o atalho para a tela de Empréstimos; toque n",
+            "x": 71.4,
+            "y": 230,
+            "w": 273.5,
+            "h": 43.4
+          },
+          {
+            "tag": "A",
+            "cls": "p-button p-button-primary RoleAssistant_navigation",
+            "t": "Abrir Empréstimos",
+            "x": 71.4,
+            "y": 288,
+            "w": 185.5,
+            "h": 44
+          },
+          {
+            "tag": "SMALL",
+            "cls": "",
+            "t": "Custou menos de 1 centavo (US$ 0,0001) · consultou o portal ",
+            "x": 71.4,
+            "y": 340,
+            "w": 273.5,
+            "h": 37.2
+          }
+        ]
+      },
+      "enviarFicha": true,
+      "ficha": {
+        "tema": "light",
+        "innerWidth": 390,
+        "docScrollWidth": 390,
+        "semRolagemHorizontal": true,
+        "dialog": {
+          "x": 0,
+          "y": 0,
+          "w": 390,
+          "h": 844,
+          "scrollW": 390,
+          "clientW": 390
+        },
+        "bloqueados": [],
+        "mocked": [
+          "chat:tela",
+          "chat:ficha"
+        ],
+        "botao": {
+          "tag": "A",
+          "href": "/?module=projects&project=705922c1-b96b-479d-835a-79ff55fbedff&detailProject=705922c1-b96b-479d-835a-79ff55fbedff",
+          "texto": "Abrir ficha do projeto Congresso de Pesquisa, Ensino e Extensão da UFG – CONPEEX 2…",
+          "x": 71.4,
+          "y": 394,
+          "w": 273.5,
+          "h": 101.8,
+          "display": "flex",
+          "minH": "44px",
+          "padding": "11px 15px",
+          "radius": "9px",
+          "fonte": "14.4px",
+          "peso": "600",
+          "lh": "19.44px",
+          "cor": "rgb(255, 255, 255)",
+          "fundo": "rgb(59, 23, 83)",
+          "borda": "1px solid rgb(59, 23, 83)",
+          "contrasteTexto": 14.65,
+          "contrasteFundoVsBalao": 12.83,
+          "linhasTexto": 4,
+          "spanBox": {
+            "x": 87.4,
+            "y": 406,
+            "w": 219.1,
+            "h": 77.8
+          },
+          "ws": "normal",
+          "overflow": "visible",
+          "textOverflow": "clip",
+          "transborda": false,
+          "spanTransborda": false,
+          "icone": {
+            "x": 312.9,
+            "y": 437,
+            "w": 16,
+            "h": 16
+          },
+          "iconeShrink": "0",
+          "ariaLabel": null,
+          "title": "",
+          "target": "",
+          "role": null,
+          "dentroDoBalao": true,
+          "balao": {
+            "x": 56,
+            "y": 323,
+            "w": 304.3,
+            "h": 229.1,
+            "padding": "11.2px 14.4px",
+            "fundo": "rgb(243, 238, 248)"
+          },
+          "cursor": "pointer",
+          "decoracao": "none"
+        },
+        "outrosBotoesPainel": [
+          {
+            "t": "Nova conversa",
+            "cls": "RoleAssistant_textButton__03715",
+            "x": 243.2,
+            "y": 16,
+            "w": 74.8,
+            "h": 44,
+            "fundo": "rgb(255, 255, 255)",
+            "cor": "rgb(88, 39, 113)",
+            "radius": "12px",
+            "fonte": "13.12px",
+            "peso": "700",
+            "minH": "44px"
+          },
+          {
+            "t": "Fechar o Rolê",
+            "cls": "RoleAssistant_iconButton__1c4c8",
+            "x": 330,
+            "y": 16,
+            "w": 44,
+            "h": 44,
+            "fundo": "rgb(255, 255, 255)",
+            "cor": "rgb(41, 35, 51)",
+            "radius": "12px",
+            "fonte": "14px",
+            "peso": "400",
+            "minH": "44px"
+          },
+          {
+            "t": "Abrir Empréstimos",
+            "cls": "p-button p-button-primary RoleAssistant_navigation__62916",
+            "x": 71.4,
+            "y": 149,
+            "w": 185.5,
+            "h": 44,
+            "fundo": "rgb(59, 23, 83)",
+            "cor": "rgb(255, 255, 255)",
+            "radius": "9px",
+            "fonte": "14.4px",
+            "peso": "600",
+            "minH": "44px"
+          },
+          {
+            "t": "Fontes oficiais: buscar nas páginas da P",
+            "cls": "RoleAssistant_officialToggle__ee861",
+            "x": 16,
+            "y": 645,
+            "w": 137.1,
+            "h": 44,
+            "fundo": "rgb(255, 255, 255)",
+            "cor": "rgb(41, 35, 51)",
+            "radius": "12px",
+            "fonte": "13.12px",
+            "peso": "700",
+            "minH": "44px"
+          },
+          {
+            "t": "Gravar áudio",
+            "cls": "RoleAssistant_iconButton__1c4c8 ",
+            "x": 265.1,
+            "y": 645,
+            "w": 44,
+            "h": 44,
+            "fundo": "rgb(255, 255, 255)",
+            "cor": "rgb(41, 35, 51)",
+            "radius": "12px",
+            "fonte": "14px",
+            "peso": "400",
+            "minH": "44px"
+          },
+          {
+            "t": "Enviar",
+            "cls": "RoleAssistant_send__5f167",
+            "x": 274.4,
+            "y": 697,
+            "w": 99.6,
+            "h": 44,
+            "fundo": "rgb(59, 23, 83)",
+            "cor": "rgb(255, 255, 255)",
+            "radius": "12px",
+            "fonte": "14px",
+            "peso": "700",
+            "minH": "44px"
+          }
+        ],
+        "irmaos": [
+          {
+            "tag": "SPAN",
+            "cls": "visually-hidden",
+            "t": "Rolê respondeu:",
+            "x": 70.4,
+            "y": 473,
+            "w": 1,
+            "h": 1
+          },
+          {
+            "tag": "P",
+            "cls": "",
+            "t": "Achei o projeto. Toque no botão para abrir a ficha completa.",
+            "x": 71.4,
+            "y": 335,
+            "w": 273.5,
+            "h": 43.4
+          },
+          {
+            "tag": "A",
+            "cls": "p-button p-button-primary RoleAssistant_navigation",
+            "t": "Abrir ficha do projeto Congresso de Pesquisa, Ensino e Exten",
+            "x": 71.4,
+            "y": 394,
+            "w": 273.5,
+            "h": 101.8
+          },
+          {
+            "tag": "SMALL",
+            "cls": "",
+            "t": "Custou menos de 1 centavo (US$ 0,0001) · consultou o portal ",
+            "x": 71.4,
+            "y": 503,
+            "w": 273.5,
+            "h": 37.2
+          }
+        ]
+      },
+      "teclado": [
+        {
+          "tag": "A",
+          "t": "Abrir ficha do projeto Congresso de Pesquisa, Ensino e Extensão da UFG",
+          "focusVisible": true,
+          "outline": "solid 3px rgb(35, 133, 150)",
+          "offset": "2px",
+          "boxShadow": "rgba(255, 255, 255, 0.12) 0px 1px 0px 0px inset, rgba(59, 23, 83, 0.6) 0px 6px 14px -8px",
+          "contrasteContorno": 3.78,
+          "y": 394,
+          "h": 102
+        }
+      ],
+      "toqueTela": {
+        "x": 164.140625,
+        "y": 310.40625,
+        "topo": "SPAN"
+      },
+      "destinoTela": {
+        "url": "/?module=loans",
+        "module": "loans",
+        "detailProject": null,
+        "semRecarregar": true,
+        "rolêAberto": false,
+        "breadcrumb": "Empréstimos",
+        "titulos": [
+          "Empréstimos",
+          "Agenda de empréstimos",
+          "Reservar equipamento"
+        ],
+        "focoEm": "BUTTON ",
+        "fichaVisivel": false,
+        "semRolagemHorizontal": true,
+        "bloqueados": []
+      },
+      "reabriu": "atalho",
+      "conversaMantida": true,
+      "toqueFicha": {
+        "x": 208.1484375,
+        "y": 429.84375,
+        "topo": "SPAN"
+      },
+      "destinoFicha": {
+        "url": "/?module=projects&project=705922c1-b96b-479d-835a-79ff55fbedff&detailProject=705922c1-b96b-479d-835a-79ff55fbedff",
+        "module": "projects",
+        "detailProject": "705922c1-b96b-479d-835a-79ff55fbedff",
+        "semRecarregar": true,
+        "rolêAberto": false,
+        "breadcrumb": "Projetos",
+        "titulos": [
+          "Projetos",
+          "Detalhe do projeto",
+          "Projeto QA descartávelQA LOCAL"
+        ],
+        "focoEm": "MAIN Gestão da extensãoProjetosÁreas de trabalho, ident",
+        "fichaVisivel": false,
+        "semRolagemHorizontal": true,
+        "bloqueados": []
+      }
+    },
+    "390-escuro": {
+      "abriu": "atalho",
+      "entendi": false,
+      "fontes": "false",
+      "enviarTela": true,
+      "tela": {
+        "tema": "dark",
+        "innerWidth": 390,
+        "docScrollWidth": 390,
+        "semRolagemHorizontal": true,
+        "dialog": {
+          "x": 0,
+          "y": 0,
+          "w": 390,
+          "h": 844,
+          "scrollW": 390,
+          "clientW": 390
+        },
+        "bloqueados": [],
+        "mocked": [
+          "chat:tela"
+        ],
+        "botao": {
+          "tag": "A",
+          "href": "/?module=loans",
+          "texto": "Abrir Empréstimos",
+          "x": 71.4,
+          "y": 288,
+          "w": 185.5,
+          "h": 44,
+          "display": "flex",
+          "minH": "44px",
+          "padding": "11px 15px",
+          "radius": "9px",
+          "fonte": "14.4px",
+          "peso": "600",
+          "lh": "19.44px",
+          "cor": "rgb(255, 255, 255)",
+          "fundo": "rgb(134, 81, 166)",
+          "borda": "1px solid rgb(155, 103, 186)",
+          "contrasteTexto": 5.61,
+          "contrasteFundoVsBalao": 2.6,
+          "linhasTexto": 1,
+          "spanBox": {
+            "x": 87.4,
+            "y": 301,
+            "w": 131.1,
+            "h": 19.4
+          },
+          "ws": "normal",
+          "overflow": "visible",
+          "textOverflow": "clip",
+          "transborda": false,
+          "spanTransborda": false,
+          "icone": {
+            "x": 224.9,
+            "y": 302,
+            "w": 16,
+            "h": 16
+          },
+          "iconeShrink": "0",
+          "ariaLabel": null,
+          "title": "",
+          "target": "",
+          "role": null,
+          "dentroDoBalao": true,
+          "balao": {
+            "x": 56,
+            "y": 218,
+            "w": 304.3,
+            "h": 171.3,
+            "padding": "11.2px 14.4px",
+            "fundo": "rgb(48, 36, 59)"
+          },
+          "cursor": "pointer",
+          "decoracao": "none"
+        },
+        "outrosBotoesPainel": [
+          {
+            "t": "Nova conversa",
+            "cls": "RoleAssistant_textButton__03715",
+            "x": 243.2,
+            "y": 16,
+            "w": 74.8,
+            "h": 44,
+            "fundo": "rgb(36, 27, 46)",
+            "cor": "rgb(223, 186, 244)",
+            "radius": "12px",
+            "fonte": "13.12px",
+            "peso": "700",
+            "minH": "44px"
+          },
+          {
+            "t": "Fechar o Rolê",
+            "cls": "RoleAssistant_iconButton__1c4c8",
+            "x": 330,
+            "y": 16,
+            "w": 44,
+            "h": 44,
+            "fundo": "rgb(36, 27, 46)",
+            "cor": "rgb(242, 235, 248)",
+            "radius": "12px",
+            "fonte": "14px",
+            "peso": "400",
+            "minH": "44px"
+          },
+          {
+            "t": "Fontes oficiais: buscar nas páginas da P",
+            "cls": "RoleAssistant_officialToggle__ee861",
+            "x": 16,
+            "y": 645,
+            "w": 137.1,
+            "h": 44,
+            "fundo": "rgb(36, 27, 46)",
+            "cor": "rgb(242, 235, 248)",
+            "radius": "12px",
+            "fonte": "13.12px",
+            "peso": "700",
+            "minH": "44px"
+          },
+          {
+            "t": "Gravar áudio",
+            "cls": "RoleAssistant_iconButton__1c4c8 ",
+            "x": 265.1,
+            "y": 645,
+            "w": 44,
+            "h": 44,
+            "fundo": "rgb(36, 27, 46)",
+            "cor": "rgb(242, 235, 248)",
+            "radius": "12px",
+            "fonte": "14px",
+            "peso": "400",
+            "minH": "44px"
+          },
+          {
+            "t": "Enviar",
+            "cls": "RoleAssistant_send__5f167",
+            "x": 274.4,
+            "y": 697,
+            "w": 99.6,
+            "h": 44,
+            "fundo": "rgb(123, 69, 160)",
+            "cor": "rgb(255, 255, 255)",
+            "radius": "12px",
+            "fonte": "14px",
+            "peso": "700",
+            "minH": "44px"
+          }
+        ],
+        "irmaos": [
+          {
+            "tag": "SPAN",
+            "cls": "visually-hidden",
+            "t": "Rolê respondeu:",
+            "x": 70.4,
+            "y": 229,
+            "w": 1,
+            "h": 1
+          },
+          {
+            "tag": "P",
+            "cls": "",
+            "t": "Pronto. Separei o atalho para a tela de Empréstimos; toque n",
+            "x": 71.4,
+            "y": 230,
+            "w": 273.5,
+            "h": 43.4
+          },
+          {
+            "tag": "A",
+            "cls": "p-button p-button-primary RoleAssistant_navigation",
+            "t": "Abrir Empréstimos",
+            "x": 71.4,
+            "y": 288,
+            "w": 185.5,
+            "h": 44
+          },
+          {
+            "tag": "SMALL",
+            "cls": "",
+            "t": "Custou menos de 1 centavo (US$ 0,0001) · consultou o portal ",
+            "x": 71.4,
+            "y": 340,
+            "w": 273.5,
+            "h": 37.2
+          }
+        ]
+      },
+      "enviarFicha": true,
+      "ficha": {
+        "tema": "dark",
+        "innerWidth": 390,
+        "docScrollWidth": 390,
+        "semRolagemHorizontal": true,
+        "dialog": {
+          "x": 0,
+          "y": 0,
+          "w": 390,
+          "h": 844,
+          "scrollW": 390,
+          "clientW": 390
+        },
+        "bloqueados": [],
+        "mocked": [
+          "chat:tela",
+          "chat:ficha"
+        ],
+        "botao": {
+          "tag": "A",
+          "href": "/?module=projects&project=705922c1-b96b-479d-835a-79ff55fbedff&detailProject=705922c1-b96b-479d-835a-79ff55fbedff",
+          "texto": "Abrir ficha do projeto Congresso de Pesquisa, Ensino e Extensão da UFG – CONPEEX 2…",
+          "x": 71.4,
+          "y": 394,
+          "w": 273.5,
+          "h": 101.8,
+          "display": "flex",
+          "minH": "44px",
+          "padding": "11px 15px",
+          "radius": "9px",
+          "fonte": "14.4px",
+          "peso": "600",
+          "lh": "19.44px",
+          "cor": "rgb(255, 255, 255)",
+          "fundo": "rgb(134, 81, 166)",
+          "borda": "1px solid rgb(155, 103, 186)",
+          "contrasteTexto": 5.61,
+          "contrasteFundoVsBalao": 2.6,
+          "linhasTexto": 4,
+          "spanBox": {
+            "x": 87.4,
+            "y": 406,
+            "w": 219.1,
+            "h": 77.8
+          },
+          "ws": "normal",
+          "overflow": "visible",
+          "textOverflow": "clip",
+          "transborda": false,
+          "spanTransborda": false,
+          "icone": {
+            "x": 312.9,
+            "y": 437,
+            "w": 16,
+            "h": 16
+          },
+          "iconeShrink": "0",
+          "ariaLabel": null,
+          "title": "",
+          "target": "",
+          "role": null,
+          "dentroDoBalao": true,
+          "balao": {
+            "x": 56,
+            "y": 323,
+            "w": 304.3,
+            "h": 229.1,
+            "padding": "11.2px 14.4px",
+            "fundo": "rgb(48, 36, 59)"
+          },
+          "cursor": "pointer",
+          "decoracao": "none"
+        },
+        "outrosBotoesPainel": [
+          {
+            "t": "Nova conversa",
+            "cls": "RoleAssistant_textButton__03715",
+            "x": 243.2,
+            "y": 16,
+            "w": 74.8,
+            "h": 44,
+            "fundo": "rgb(36, 27, 46)",
+            "cor": "rgb(223, 186, 244)",
+            "radius": "12px",
+            "fonte": "13.12px",
+            "peso": "700",
+            "minH": "44px"
+          },
+          {
+            "t": "Fechar o Rolê",
+            "cls": "RoleAssistant_iconButton__1c4c8",
+            "x": 330,
+            "y": 16,
+            "w": 44,
+            "h": 44,
+            "fundo": "rgb(36, 27, 46)",
+            "cor": "rgb(242, 235, 248)",
+            "radius": "12px",
+            "fonte": "14px",
+            "peso": "400",
+            "minH": "44px"
+          },
+          {
+            "t": "Abrir Empréstimos",
+            "cls": "p-button p-button-primary RoleAssistant_navigation__62916",
+            "x": 71.4,
+            "y": 149,
+            "w": 185.5,
+            "h": 44,
+            "fundo": "rgb(134, 81, 166)",
+            "cor": "rgb(255, 255, 255)",
+            "radius": "9px",
+            "fonte": "14.4px",
+            "peso": "600",
+            "minH": "44px"
+          },
+          {
+            "t": "Fontes oficiais: buscar nas páginas da P",
+            "cls": "RoleAssistant_officialToggle__ee861",
+            "x": 16,
+            "y": 645,
+            "w": 137.1,
+            "h": 44,
+            "fundo": "rgb(36, 27, 46)",
+            "cor": "rgb(242, 235, 248)",
+            "radius": "12px",
+            "fonte": "13.12px",
+            "peso": "700",
+            "minH": "44px"
+          },
+          {
+            "t": "Gravar áudio",
+            "cls": "RoleAssistant_iconButton__1c4c8 ",
+            "x": 265.1,
+            "y": 645,
+            "w": 44,
+            "h": 44,
+            "fundo": "rgb(36, 27, 46)",
+            "cor": "rgb(242, 235, 248)",
+            "radius": "12px",
+            "fonte": "14px",
+            "peso": "400",
+            "minH": "44px"
+          },
+          {
+            "t": "Enviar",
+            "cls": "RoleAssistant_send__5f167",
+            "x": 274.4,
+            "y": 697,
+            "w": 99.6,
+            "h": 44,
+            "fundo": "rgb(123, 69, 160)",
+            "cor": "rgb(255, 255, 255)",
+            "radius": "12px",
+            "fonte": "14px",
+            "peso": "700",
+            "minH": "44px"
+          }
+        ],
+        "irmaos": [
+          {
+            "tag": "SPAN",
+            "cls": "visually-hidden",
+            "t": "Rolê respondeu:",
+            "x": 70.4,
+            "y": 473,
+            "w": 1,
+            "h": 1
+          },
+          {
+            "tag": "P",
+            "cls": "",
+            "t": "Achei o projeto. Toque no botão para abrir a ficha completa.",
+            "x": 71.4,
+            "y": 335,
+            "w": 273.5,
+            "h": 43.4
+          },
+          {
+            "tag": "A",
+            "cls": "p-button p-button-primary RoleAssistant_navigation",
+            "t": "Abrir ficha do projeto Congresso de Pesquisa, Ensino e Exten",
+            "x": 71.4,
+            "y": 394,
+            "w": 273.5,
+            "h": 101.8
+          },
+          {
+            "tag": "SMALL",
+            "cls": "",
+            "t": "Custou menos de 1 centavo (US$ 0,0001) · consultou o portal ",
+            "x": 71.4,
+            "y": 503,
+            "w": 273.5,
+            "h": 37.2
+          }
+        ]
+      },
+      "teclado": [
+        {
+          "tag": "A",
+          "t": "Abrir ficha do projeto Congresso de Pesquisa, Ensino e Extensão da UFG",
+          "focusVisible": true,
+          "outline": "solid 3px rgb(119, 220, 229)",
+          "offset": "2px",
+          "boxShadow": "rgba(255, 255, 255, 0.12) 0px 1px 0px 0px inset, rgba(59, 23, 83, 0.6) 0px 6px 14px -8px",
+          "contrasteContorno": 9.13,
+          "y": 394,
+          "h": 102
+        }
+      ],
+      "toqueTela": {
+        "x": 164.140625,
+        "y": 310.40625,
+        "topo": "SPAN"
+      },
+      "destinoTela": {
+        "url": "/?module=loans",
+        "module": "loans",
+        "detailProject": null,
+        "semRecarregar": true,
+        "rolêAberto": false,
+        "breadcrumb": "Empréstimos",
+        "titulos": [
+          "Empréstimos",
+          "Agenda de empréstimos",
+          "Reservar equipamento"
+        ],
+        "focoEm": "BUTTON ",
+        "fichaVisivel": false,
+        "semRolagemHorizontal": true,
+        "bloqueados": []
+      },
+      "reabriu": "atalho",
+      "conversaMantida": true,
+      "toqueFicha": {
+        "x": 208.1484375,
+        "y": 429.84375,
+        "topo": "SPAN"
+      },
+      "destinoFicha": {
+        "url": "/?module=projects&project=705922c1-b96b-479d-835a-79ff55fbedff&detailProject=705922c1-b96b-479d-835a-79ff55fbedff",
+        "module": "projects",
+        "detailProject": "705922c1-b96b-479d-835a-79ff55fbedff",
+        "semRecarregar": true,
+        "rolêAberto": false,
+        "breadcrumb": "Projetos",
+        "titulos": [
+          "Projetos",
+          "Detalhe do projeto",
+          "Projeto QA descartávelQA LOCAL"
+        ],
+        "focoEm": "MAIN Gestão da extensãoProjetosÁreas de trabalho, ident",
+        "fichaVisivel": false,
+        "semRolagemHorizontal": true,
+        "bloqueados": []
+      }
+    },
+    "1366-claro": {
+      "abriu": "botao",
+      "entendi": false,
+      "fontes": "false",
+      "enviarTela": true,
+      "tela": {
+        "tema": "light",
+        "innerWidth": 1366,
+        "docScrollWidth": 1366,
+        "semRolagemHorizontal": true,
+        "dialog": {
+          "x": 926,
+          "y": 0,
+          "w": 440,
+          "h": 900,
+          "scrollW": 439,
+          "clientW": 439
+        },
+        "bloqueados": [],
+        "mocked": [
+          "chat:tela"
+        ],
+        "botao": {
+          "tag": "A",
+          "href": "/?module=loans",
+          "texto": "Abrir Empréstimos",
+          "x": 998.4,
+          "y": 288,
+          "w": 185.5,
+          "h": 44,
+          "display": "flex",
+          "minH": "44px",
+          "padding": "11px 15px",
+          "radius": "9px",
+          "fonte": "14.4px",
+          "peso": "600",
+          "lh": "19.44px",
+          "cor": "rgb(255, 255, 255)",
+          "fundo": "rgb(59, 23, 83)",
+          "borda": "1px solid rgb(59, 23, 83)",
+          "contrasteTexto": 14.65,
+          "contrasteFundoVsBalao": 12.83,
+          "linhasTexto": 1,
+          "spanBox": {
+            "x": 1014.4,
+            "y": 301,
+            "w": 131.1,
+            "h": 19.4
+          },
+          "ws": "normal",
+          "overflow": "visible",
+          "textOverflow": "clip",
+          "transborda": false,
+          "spanTransborda": false,
+          "icone": {
+            "x": 1151.9,
+            "y": 302,
+            "w": 16,
+            "h": 16
+          },
+          "iconeShrink": "0",
+          "ariaLabel": null,
+          "title": "",
+          "target": "",
+          "role": null,
+          "dentroDoBalao": true,
+          "balao": {
+            "x": 983,
+            "y": 218,
+            "w": 345.9,
+            "h": 171.3,
+            "padding": "11.2px 14.4px",
+            "fundo": "rgb(243, 238, 248)"
+          },
+          "cursor": "pointer",
+          "decoracao": "none"
+        },
+        "outrosBotoesPainel": [
+          {
+            "t": "Nova conversa",
+            "cls": "RoleAssistant_textButton__03715",
+            "x": 1151.4,
+            "y": 16,
+            "w": 142.6,
+            "h": 44,
+            "fundo": "rgb(255, 255, 255)",
+            "cor": "rgb(88, 39, 113)",
+            "radius": "12px",
+            "fonte": "13.12px",
+            "peso": "700",
+            "minH": "44px"
+          },
+          {
+            "t": "Fechar o Rolê",
+            "cls": "RoleAssistant_iconButton__1c4c8",
+            "x": 1306,
+            "y": 16,
+            "w": 44,
+            "h": 44,
+            "fundo": "rgb(255, 255, 255)",
+            "cor": "rgb(41, 35, 51)",
+            "radius": "12px",
+            "fonte": "14px",
+            "peso": "400",
+            "minH": "44px"
+          },
+          {
+            "t": "Fontes oficiais: buscar nas páginas da P",
+            "cls": "RoleAssistant_officialToggle__ee861",
+            "x": 943,
+            "y": 701,
+            "w": 137.1,
+            "h": 44,
+            "fundo": "rgb(255, 255, 255)",
+            "cor": "rgb(41, 35, 51)",
+            "radius": "12px",
+            "fonte": "13.12px",
+            "peso": "700",
+            "minH": "44px"
+          },
+          {
+            "t": "Gravar áudio",
+            "cls": "RoleAssistant_iconButton__1c4c8 ",
+            "x": 1192.1,
+            "y": 701,
+            "w": 44,
+            "h": 44,
+            "fundo": "rgb(255, 255, 255)",
+            "cor": "rgb(41, 35, 51)",
+            "radius": "12px",
+            "fonte": "14px",
+            "peso": "400",
+            "minH": "44px"
+          },
+          {
+            "t": "Enviar",
+            "cls": "RoleAssistant_send__5f167",
+            "x": 1250.4,
+            "y": 753,
+            "w": 99.6,
+            "h": 44,
+            "fundo": "rgb(59, 23, 83)",
+            "cor": "rgb(255, 255, 255)",
+            "radius": "12px",
+            "fonte": "14px",
+            "peso": "700",
+            "minH": "44px"
+          }
+        ],
+        "irmaos": [
+          {
+            "tag": "SPAN",
+            "cls": "visually-hidden",
+            "t": "Rolê respondeu:",
+            "x": 997.4,
+            "y": 229,
+            "w": 1,
+            "h": 1
+          },
+          {
+            "tag": "P",
+            "cls": "",
+            "t": "Pronto. Separei o atalho para a tela de Empréstimos; toque n",
+            "x": 998.4,
+            "y": 230,
+            "w": 315.2,
+            "h": 43.4
+          },
+          {
+            "tag": "A",
+            "cls": "p-button p-button-primary RoleAssistant_navigation",
+            "t": "Abrir Empréstimos",
+            "x": 998.4,
+            "y": 288,
+            "w": 185.5,
+            "h": 44
+          },
+          {
+            "tag": "SMALL",
+            "cls": "",
+            "t": "Custou menos de 1 centavo (US$ 0,0001) · consultou o portal ",
+            "x": 998.4,
+            "y": 340,
+            "w": 315.2,
+            "h": 37.2
+          }
+        ]
+      },
+      "enviarFicha": true,
+      "ficha": {
+        "tema": "light",
+        "innerWidth": 1366,
+        "docScrollWidth": 1366,
+        "semRolagemHorizontal": true,
+        "dialog": {
+          "x": 926,
+          "y": 0,
+          "w": 440,
+          "h": 900,
+          "scrollW": 439,
+          "clientW": 439
+        },
+        "bloqueados": [],
+        "mocked": [
+          "chat:tela",
+          "chat:ficha"
+        ],
+        "botao": {
+          "tag": "A",
+          "href": "/?module=projects&project=705922c1-b96b-479d-835a-79ff55fbedff&detailProject=705922c1-b96b-479d-835a-79ff55fbedff",
+          "texto": "Abrir ficha do projeto Congresso de Pesquisa, Ensino e Extensão da UFG – CONPEEX 2…",
+          "x": 998.4,
+          "y": 470,
+          "w": 315.2,
+          "h": 82.3,
+          "display": "flex",
+          "minH": "44px",
+          "padding": "11px 15px",
+          "radius": "9px",
+          "fonte": "14.4px",
+          "peso": "600",
+          "lh": "19.44px",
+          "cor": "rgb(255, 255, 255)",
+          "fundo": "rgb(59, 23, 83)",
+          "borda": "1px solid rgb(59, 23, 83)",
+          "contrasteTexto": 14.65,
+          "contrasteFundoVsBalao": 12.83,
+          "linhasTexto": 3,
+          "spanBox": {
+            "x": 1014.4,
+            "y": 482,
+            "w": 260.8,
+            "h": 58.3
+          },
+          "ws": "normal",
+          "overflow": "visible",
+          "textOverflow": "clip",
+          "transborda": false,
+          "spanTransborda": false,
+          "icone": {
+            "x": 1281.5,
+            "y": 503,
+            "w": 16,
+            "h": 16
+          },
+          "iconeShrink": "0",
+          "ariaLabel": null,
+          "title": "",
+          "target": "",
+          "role": null,
+          "dentroDoBalao": true,
+          "balao": {
+            "x": 983,
+            "y": 399,
+            "w": 345.9,
+            "h": 209.6,
+            "padding": "11.2px 14.4px",
+            "fundo": "rgb(243, 238, 248)"
+          },
+          "cursor": "pointer",
+          "decoracao": "none"
+        },
+        "outrosBotoesPainel": [
+          {
+            "t": "Nova conversa",
+            "cls": "RoleAssistant_textButton__03715",
+            "x": 1151.4,
+            "y": 16,
+            "w": 142.6,
+            "h": 44,
+            "fundo": "rgb(255, 255, 255)",
+            "cor": "rgb(88, 39, 113)",
+            "radius": "12px",
+            "fonte": "13.12px",
+            "peso": "700",
+            "minH": "44px"
+          },
+          {
+            "t": "Fechar o Rolê",
+            "cls": "RoleAssistant_iconButton__1c4c8",
+            "x": 1306,
+            "y": 16,
+            "w": 44,
+            "h": 44,
+            "fundo": "rgb(255, 255, 255)",
+            "cor": "rgb(41, 35, 51)",
+            "radius": "12px",
+            "fonte": "14px",
+            "peso": "400",
+            "minH": "44px"
+          },
+          {
+            "t": "Abrir Empréstimos",
+            "cls": "p-button p-button-primary RoleAssistant_navigation__62916",
+            "x": 998.4,
+            "y": 225,
+            "w": 185.5,
+            "h": 44,
+            "fundo": "rgb(59, 23, 83)",
+            "cor": "rgb(255, 255, 255)",
+            "radius": "9px",
+            "fonte": "14.4px",
+            "peso": "600",
+            "minH": "44px"
+          },
+          {
+            "t": "Fontes oficiais: buscar nas páginas da P",
+            "cls": "RoleAssistant_officialToggle__ee861",
+            "x": 943,
+            "y": 701,
+            "w": 137.1,
+            "h": 44,
+            "fundo": "rgb(255, 255, 255)",
+            "cor": "rgb(41, 35, 51)",
+            "radius": "12px",
+            "fonte": "13.12px",
+            "peso": "700",
+            "minH": "44px"
+          },
+          {
+            "t": "Gravar áudio",
+            "cls": "RoleAssistant_iconButton__1c4c8 ",
+            "x": 1192.1,
+            "y": 701,
+            "w": 44,
+            "h": 44,
+            "fundo": "rgb(255, 255, 255)",
+            "cor": "rgb(41, 35, 51)",
+            "radius": "12px",
+            "fonte": "14px",
+            "peso": "400",
+            "minH": "44px"
+          },
+          {
+            "t": "Enviar",
+            "cls": "RoleAssistant_send__5f167",
+            "x": 1250.4,
+            "y": 753,
+            "w": 99.6,
+            "h": 44,
+            "fundo": "rgb(59, 23, 83)",
+            "cor": "rgb(255, 255, 255)",
+            "radius": "12px",
+            "fonte": "14px",
+            "peso": "700",
+            "minH": "44px"
+          }
+        ],
+        "irmaos": [
+          {
+            "tag": "SPAN",
+            "cls": "visually-hidden",
+            "t": "Rolê respondeu:",
+            "x": 997.4,
+            "y": 473,
+            "w": 1,
+            "h": 1
+          },
+          {
+            "tag": "P",
+            "cls": "",
+            "t": "Achei o projeto. Toque no botão para abrir a ficha completa.",
+            "x": 998.4,
+            "y": 411,
+            "w": 315.2,
+            "h": 43.4
+          },
+          {
+            "tag": "A",
+            "cls": "p-button p-button-primary RoleAssistant_navigation",
+            "t": "Abrir ficha do projeto Congresso de Pesquisa, Ensino e Exten",
+            "x": 998.4,
+            "y": 470,
+            "w": 315.2,
+            "h": 82.3
+          },
+          {
+            "tag": "SMALL",
+            "cls": "",
+            "t": "Custou menos de 1 centavo (US$ 0,0001) · consultou o portal ",
+            "x": 998.4,
+            "y": 559,
+            "w": 315.2,
+            "h": 37.2
+          }
+        ]
+      },
+      "teclado": [
+        {
+          "tag": "A",
+          "t": "Abrir ficha do projeto Congresso de Pesquisa, Ensino e Extensão da UFG",
+          "focusVisible": true,
+          "outline": "solid 3px rgb(35, 133, 150)",
+          "offset": "2px",
+          "boxShadow": "rgba(255, 255, 255, 0.12) 0px 1px 0px 0px inset, rgba(59, 23, 83, 0.6) 0px 6px 14px -8px",
+          "contrasteContorno": 3.78,
+          "y": 470,
+          "h": 82
+        }
+      ],
+      "toqueTela": {
+        "x": 1091.140625,
+        "y": 310.40625,
+        "topo": "SPAN"
+      },
+      "destinoTela": {
+        "url": "/?module=loans",
+        "module": "loans",
+        "detailProject": null,
+        "semRecarregar": true,
+        "rolêAberto": false,
+        "breadcrumb": "Empréstimos",
+        "titulos": [
+          "Empréstimos",
+          "Agenda de empréstimos",
+          "Reservar equipamento"
+        ],
+        "focoEm": "BUTTON ",
+        "fichaVisivel": false,
+        "semRolagemHorizontal": true,
+        "bloqueados": []
+      },
+      "reabriu": "botao",
+      "conversaMantida": true,
+      "toqueFicha": {
+        "x": 1155.96875,
+        "y": 495.125,
+        "topo": "SPAN"
+      },
+      "destinoFicha": {
+        "url": "/?module=projects&project=705922c1-b96b-479d-835a-79ff55fbedff&detailProject=705922c1-b96b-479d-835a-79ff55fbedff",
+        "module": "projects",
+        "detailProject": "705922c1-b96b-479d-835a-79ff55fbedff",
+        "semRecarregar": true,
+        "rolêAberto": false,
+        "breadcrumb": "Projetos",
+        "titulos": [
+          "Projetos",
+          "Detalhe do projeto",
+          "Projeto QA descartávelQA LOCAL"
+        ],
+        "focoEm": "BUTTON ",
+        "fichaVisivel": false,
+        "semRolagemHorizontal": true,
+        "bloqueados": []
+      }
+    },
+    "1366-escuro": {
+      "abriu": "botao",
+      "entendi": false,
+      "fontes": "false",
+      "enviarTela": true,
+      "tela": {
+        "tema": "dark",
+        "innerWidth": 1366,
+        "docScrollWidth": 1366,
+        "semRolagemHorizontal": true,
+        "dialog": {
+          "x": 926,
+          "y": 0,
+          "w": 440,
+          "h": 900,
+          "scrollW": 439,
+          "clientW": 439
+        },
+        "bloqueados": [],
+        "mocked": [
+          "chat:tela"
+        ],
+        "botao": {
+          "tag": "A",
+          "href": "/?module=loans",
+          "texto": "Abrir Empréstimos",
+          "x": 998.4,
+          "y": 288,
+          "w": 185.5,
+          "h": 44,
+          "display": "flex",
+          "minH": "44px",
+          "padding": "11px 15px",
+          "radius": "9px",
+          "fonte": "14.4px",
+          "peso": "600",
+          "lh": "19.44px",
+          "cor": "rgb(255, 255, 255)",
+          "fundo": "rgb(134, 81, 166)",
+          "borda": "1px solid rgb(155, 103, 186)",
+          "contrasteTexto": 5.61,
+          "contrasteFundoVsBalao": 2.6,
+          "linhasTexto": 1,
+          "spanBox": {
+            "x": 1014.4,
+            "y": 301,
+            "w": 131.1,
+            "h": 19.4
+          },
+          "ws": "normal",
+          "overflow": "visible",
+          "textOverflow": "clip",
+          "transborda": false,
+          "spanTransborda": false,
+          "icone": {
+            "x": 1151.9,
+            "y": 302,
+            "w": 16,
+            "h": 16
+          },
+          "iconeShrink": "0",
+          "ariaLabel": null,
+          "title": "",
+          "target": "",
+          "role": null,
+          "dentroDoBalao": true,
+          "balao": {
+            "x": 983,
+            "y": 218,
+            "w": 345.9,
+            "h": 171.3,
+            "padding": "11.2px 14.4px",
+            "fundo": "rgb(48, 36, 59)"
+          },
+          "cursor": "pointer",
+          "decoracao": "none"
+        },
+        "outrosBotoesPainel": [
+          {
+            "t": "Nova conversa",
+            "cls": "RoleAssistant_textButton__03715",
+            "x": 1151.4,
+            "y": 16,
+            "w": 142.6,
+            "h": 44,
+            "fundo": "rgb(36, 27, 46)",
+            "cor": "rgb(223, 186, 244)",
+            "radius": "12px",
+            "fonte": "13.12px",
+            "peso": "700",
+            "minH": "44px"
+          },
+          {
+            "t": "Fechar o Rolê",
+            "cls": "RoleAssistant_iconButton__1c4c8",
+            "x": 1306,
+            "y": 16,
+            "w": 44,
+            "h": 44,
+            "fundo": "rgb(36, 27, 46)",
+            "cor": "rgb(242, 235, 248)",
+            "radius": "12px",
+            "fonte": "14px",
+            "peso": "400",
+            "minH": "44px"
+          },
+          {
+            "t": "Fontes oficiais: buscar nas páginas da P",
+            "cls": "RoleAssistant_officialToggle__ee861",
+            "x": 943,
+            "y": 701,
+            "w": 137.1,
+            "h": 44,
+            "fundo": "rgb(36, 27, 46)",
+            "cor": "rgb(242, 235, 248)",
+            "radius": "12px",
+            "fonte": "13.12px",
+            "peso": "700",
+            "minH": "44px"
+          },
+          {
+            "t": "Gravar áudio",
+            "cls": "RoleAssistant_iconButton__1c4c8 ",
+            "x": 1192.1,
+            "y": 701,
+            "w": 44,
+            "h": 44,
+            "fundo": "rgb(36, 27, 46)",
+            "cor": "rgb(242, 235, 248)",
+            "radius": "12px",
+            "fonte": "14px",
+            "peso": "400",
+            "minH": "44px"
+          },
+          {
+            "t": "Enviar",
+            "cls": "RoleAssistant_send__5f167",
+            "x": 1250.4,
+            "y": 753,
+            "w": 99.6,
+            "h": 44,
+            "fundo": "rgb(123, 69, 160)",
+            "cor": "rgb(255, 255, 255)",
+            "radius": "12px",
+            "fonte": "14px",
+            "peso": "700",
+            "minH": "44px"
+          }
+        ],
+        "irmaos": [
+          {
+            "tag": "SPAN",
+            "cls": "visually-hidden",
+            "t": "Rolê respondeu:",
+            "x": 997.4,
+            "y": 229,
+            "w": 1,
+            "h": 1
+          },
+          {
+            "tag": "P",
+            "cls": "",
+            "t": "Pronto. Separei o atalho para a tela de Empréstimos; toque n",
+            "x": 998.4,
+            "y": 230,
+            "w": 315.2,
+            "h": 43.4
+          },
+          {
+            "tag": "A",
+            "cls": "p-button p-button-primary RoleAssistant_navigation",
+            "t": "Abrir Empréstimos",
+            "x": 998.4,
+            "y": 288,
+            "w": 185.5,
+            "h": 44
+          },
+          {
+            "tag": "SMALL",
+            "cls": "",
+            "t": "Custou menos de 1 centavo (US$ 0,0001) · consultou o portal ",
+            "x": 998.4,
+            "y": 340,
+            "w": 315.2,
+            "h": 37.2
+          }
+        ]
+      },
+      "enviarFicha": true,
+      "ficha": {
+        "tema": "dark",
+        "innerWidth": 1366,
+        "docScrollWidth": 1366,
+        "semRolagemHorizontal": true,
+        "dialog": {
+          "x": 926,
+          "y": 0,
+          "w": 440,
+          "h": 900,
+          "scrollW": 439,
+          "clientW": 439
+        },
+        "bloqueados": [],
+        "mocked": [
+          "chat:tela",
+          "chat:ficha"
+        ],
+        "botao": {
+          "tag": "A",
+          "href": "/?module=projects&project=705922c1-b96b-479d-835a-79ff55fbedff&detailProject=705922c1-b96b-479d-835a-79ff55fbedff",
+          "texto": "Abrir ficha do projeto Congresso de Pesquisa, Ensino e Extensão da UFG – CONPEEX 2…",
+          "x": 998.4,
+          "y": 470,
+          "w": 315.2,
+          "h": 82.3,
+          "display": "flex",
+          "minH": "44px",
+          "padding": "11px 15px",
+          "radius": "9px",
+          "fonte": "14.4px",
+          "peso": "600",
+          "lh": "19.44px",
+          "cor": "rgb(255, 255, 255)",
+          "fundo": "rgb(134, 81, 166)",
+          "borda": "1px solid rgb(155, 103, 186)",
+          "contrasteTexto": 5.61,
+          "contrasteFundoVsBalao": 2.6,
+          "linhasTexto": 3,
+          "spanBox": {
+            "x": 1014.4,
+            "y": 482,
+            "w": 260.8,
+            "h": 58.3
+          },
+          "ws": "normal",
+          "overflow": "visible",
+          "textOverflow": "clip",
+          "transborda": false,
+          "spanTransborda": false,
+          "icone": {
+            "x": 1281.5,
+            "y": 503,
+            "w": 16,
+            "h": 16
+          },
+          "iconeShrink": "0",
+          "ariaLabel": null,
+          "title": "",
+          "target": "",
+          "role": null,
+          "dentroDoBalao": true,
+          "balao": {
+            "x": 983,
+            "y": 399,
+            "w": 345.9,
+            "h": 209.6,
+            "padding": "11.2px 14.4px",
+            "fundo": "rgb(48, 36, 59)"
+          },
+          "cursor": "pointer",
+          "decoracao": "none"
+        },
+        "outrosBotoesPainel": [
+          {
+            "t": "Nova conversa",
+            "cls": "RoleAssistant_textButton__03715",
+            "x": 1151.4,
+            "y": 16,
+            "w": 142.6,
+            "h": 44,
+            "fundo": "rgb(36, 27, 46)",
+            "cor": "rgb(223, 186, 244)",
+            "radius": "12px",
+            "fonte": "13.12px",
+            "peso": "700",
+            "minH": "44px"
+          },
+          {
+            "t": "Fechar o Rolê",
+            "cls": "RoleAssistant_iconButton__1c4c8",
+            "x": 1306,
+            "y": 16,
+            "w": 44,
+            "h": 44,
+            "fundo": "rgb(36, 27, 46)",
+            "cor": "rgb(242, 235, 248)",
+            "radius": "12px",
+            "fonte": "14px",
+            "peso": "400",
+            "minH": "44px"
+          },
+          {
+            "t": "Abrir Empréstimos",
+            "cls": "p-button p-button-primary RoleAssistant_navigation__62916",
+            "x": 998.4,
+            "y": 225,
+            "w": 185.5,
+            "h": 44,
+            "fundo": "rgb(134, 81, 166)",
+            "cor": "rgb(255, 255, 255)",
+            "radius": "9px",
+            "fonte": "14.4px",
+            "peso": "600",
+            "minH": "44px"
+          },
+          {
+            "t": "Fontes oficiais: buscar nas páginas da P",
+            "cls": "RoleAssistant_officialToggle__ee861",
+            "x": 943,
+            "y": 701,
+            "w": 137.1,
+            "h": 44,
+            "fundo": "rgb(36, 27, 46)",
+            "cor": "rgb(242, 235, 248)",
+            "radius": "12px",
+            "fonte": "13.12px",
+            "peso": "700",
+            "minH": "44px"
+          },
+          {
+            "t": "Gravar áudio",
+            "cls": "RoleAssistant_iconButton__1c4c8 ",
+            "x": 1192.1,
+            "y": 701,
+            "w": 44,
+            "h": 44,
+            "fundo": "rgb(36, 27, 46)",
+            "cor": "rgb(242, 235, 248)",
+            "radius": "12px",
+            "fonte": "14px",
+            "peso": "400",
+            "minH": "44px"
+          },
+          {
+            "t": "Enviar",
+            "cls": "RoleAssistant_send__5f167",
+            "x": 1250.4,
+            "y": 753,
+            "w": 99.6,
+            "h": 44,
+            "fundo": "rgb(123, 69, 160)",
+            "cor": "rgb(255, 255, 255)",
+            "radius": "12px",
+            "fonte": "14px",
+            "peso": "700",
+            "minH": "44px"
+          }
+        ],
+        "irmaos": [
+          {
+            "tag": "SPAN",
+            "cls": "visually-hidden",
+            "t": "Rolê respondeu:",
+            "x": 997.4,
+            "y": 473,
+            "w": 1,
+            "h": 1
+          },
+          {
+            "tag": "P",
+            "cls": "",
+            "t": "Achei o projeto. Toque no botão para abrir a ficha completa.",
+            "x": 998.4,
+            "y": 411,
+            "w": 315.2,
+            "h": 43.4
+          },
+          {
+            "tag": "A",
+            "cls": "p-button p-button-primary RoleAssistant_navigation",
+            "t": "Abrir ficha do projeto Congresso de Pesquisa, Ensino e Exten",
+            "x": 998.4,
+            "y": 470,
+            "w": 315.2,
+            "h": 82.3
+          },
+          {
+            "tag": "SMALL",
+            "cls": "",
+            "t": "Custou menos de 1 centavo (US$ 0,0001) · consultou o portal ",
+            "x": 998.4,
+            "y": 559,
+            "w": 315.2,
+            "h": 37.2
+          }
+        ]
+      },
+      "teclado": [
+        {
+          "tag": "A",
+          "t": "Abrir ficha do projeto Congresso de Pesquisa, Ensino e Extensão da UFG",
+          "focusVisible": true,
+          "outline": "solid 3px rgb(119, 220, 229)",
+          "offset": "2px",
+          "boxShadow": "rgba(255, 255, 255, 0.12) 0px 1px 0px 0px inset, rgba(59, 23, 83, 0.6) 0px 6px 14px -8px",
+          "contrasteContorno": 9.13,
+          "y": 470,
+          "h": 82
+        }
+      ],
+      "toqueTela": {
+        "x": 1091.140625,
+        "y": 310.40625,
+        "topo": "SPAN"
+      },
+      "destinoTela": {
+        "url": "/?module=loans",
+        "module": "loans",
+        "detailProject": null,
+        "semRecarregar": true,
+        "rolêAberto": false,
+        "breadcrumb": "Empréstimos",
+        "titulos": [
+          "Empréstimos",
+          "Agenda de empréstimos",
+          "Reservar equipamento"
+        ],
+        "focoEm": "BUTTON ",
+        "fichaVisivel": false,
+        "semRolagemHorizontal": true,
+        "bloqueados": []
+      },
+      "reabriu": "botao",
+      "conversaMantida": true,
+      "toqueFicha": {
+        "x": 1155.96875,
+        "y": 495.125,
+        "topo": "SPAN"
+      },
+      "destinoFicha": {
+        "url": "/?module=projects&project=705922c1-b96b-479d-835a-79ff55fbedff&detailProject=705922c1-b96b-479d-835a-79ff55fbedff",
+        "module": "projects",
+        "detailProject": "705922c1-b96b-479d-835a-79ff55fbedff",
+        "semRecarregar": true,
+        "rolêAberto": false,
+        "breadcrumb": "Projetos",
+        "titulos": [
+          "Projetos",
+          "Detalhe do projeto",
+          "Projeto QA descartávelQA LOCAL"
+        ],
+        "focoEm": "BUTTON ",
+        "fichaVisivel": false,
+        "semRolagemHorizontal": true,
+        "bloqueados": []
+      }
+    }
+  },
+  "shots": [
+    {
+      "file": "botao-tela-390-claro.png",
+      "bytes": 127476
+    },
+    {
+      "file": "botao-ficha-390-claro.png",
+      "bytes": 169214
+    },
+    {
+      "file": "botao-ficha-foco-390-claro.png",
+      "bytes": 168781
+    },
+    {
+      "file": "depois-do-toque-tela-390-claro.png",
+      "bytes": 157057
+    },
+    {
+      "file": "depois-do-toque-390-claro.png",
+      "bytes": 163248
+    },
+    {
+      "file": "botao-tela-390-escuro.png",
+      "bytes": 127484
+    },
+    {
+      "file": "botao-ficha-390-escuro.png",
+      "bytes": 167774
+    },
+    {
+      "file": "botao-ficha-foco-390-escuro.png",
+      "bytes": 167979
+    },
+    {
+      "file": "depois-do-toque-tela-390-escuro.png",
+      "bytes": 152603
+    },
+    {
+      "file": "depois-do-toque-390-escuro.png",
+      "bytes": 159482
+    },
+    {
+      "file": "botao-tela-1366-claro.png",
+      "bytes": 263012
+    },
+    {
+      "file": "botao-ficha-1366-claro.png",
+      "bytes": 289364
+    },
+    {
+      "file": "botao-ficha-foco-1366-claro.png",
+      "bytes": 289890
+    },
+    {
+      "file": "depois-do-toque-tela-1366-claro.png",
+      "bytes": 138399
+    },
+    {
+      "file": "depois-do-toque-1366-claro.png",
+      "bytes": 156283
+    },
+    {
+      "file": "botao-tela-1366-escuro.png",
+      "bytes": 263198
+    },
+    {
+      "file": "botao-ficha-1366-escuro.png",
+      "bytes": 289049
+    },
+    {
+      "file": "botao-ficha-foco-1366-escuro.png",
+      "bytes": 289273
+    },
+    {
+      "file": "depois-do-toque-tela-1366-escuro.png",
+      "bytes": 136150
+    },
+    {
+      "file": "depois-do-toque-1366-escuro.png",
+      "bytes": 154528
+    }
+  ],
+  "pageErrors": []
+}

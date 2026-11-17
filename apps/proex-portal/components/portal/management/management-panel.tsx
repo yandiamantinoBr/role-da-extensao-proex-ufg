@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useEffectEvent, useRef, useState, type KeyboardEvent } from 'react';
 import { BookOpen, Gauge, ShieldAlert, Users } from 'lucide-react';
 import DashboardPanel from './dashboard-panel';
 import GuidePanel from './guide-panel';
@@ -14,6 +14,8 @@ const TABS: { id: Tab; label: string; icon: typeof Gauge }[] = [
   { id: 'risks', label: 'Riscos', icon: ShieldAlert }, { id: 'teams', label: 'Equipes-modelo', icon: Users },
 ];
 const TAB_PARAM = 'gestao';
+/** Link interno para uma aba com a Gestão já aberta (ex.: botão do Rolê): o portal avisa por este evento. */
+export const MANAGEMENT_TAB_EVENT = 'proex:management-tab';
 const isTab = (value: unknown): value is Tab => TABS.some(entry => entry.id === value);
 
 /** Gestão da organização: painel estratégico, guia vivo, riscos e equipes-modelo. */
@@ -44,6 +46,17 @@ export default function ManagementPanel({ organizations, defaultOrganizationId =
     try { const url = new URL(window.location.href); url.searchParams.set(TAB_PARAM, next); window.history.replaceState(window.history.state, '', url); } catch { /* endereço é conveniência */ }
     if (focus) tabRefs.current[next]?.focus();
   }
+  const chooseFromLink = useEffectEvent((wanted: unknown) => {
+    if (!isTab(wanted)) return;
+    choose(wanted);
+    // Recusou sair da edição do guia: o endereço volta para a aba que ficou.
+    if (guideDirty.current) { try { const url = new URL(window.location.href); url.searchParams.set(TAB_PARAM, tab); window.history.replaceState(window.history.state, '', url); } catch { /* endereço é conveniência */ } }
+  });
+  useEffect(() => {
+    const listen = (event: Event) => chooseFromLink((event as CustomEvent<unknown>).detail);
+    window.addEventListener(MANAGEMENT_TAB_EVENT, listen);
+    return () => window.removeEventListener(MANAGEMENT_TAB_EVENT, listen);
+  }, []);
   function onTabKey(event: KeyboardEvent<HTMLButtonElement>) {
     const index = TABS.findIndex(entry => entry.id === tab);
     const target = event.key === 'ArrowRight' ? TABS[(index + 1) % TABS.length] : event.key === 'ArrowLeft' ? TABS[(index + TABS.length - 1) % TABS.length] : event.key === 'Home' ? TABS[0] : event.key === 'End' ? TABS[TABS.length - 1] : null;

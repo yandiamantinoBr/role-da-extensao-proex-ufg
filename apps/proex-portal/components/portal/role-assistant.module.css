@@ -118,6 +118,13 @@
 .sources ul{display:grid;gap:.15rem;margin:0;padding:0;list-style:none}
 .sources a{display:inline-flex;align-items:center;gap:.25rem;min-height:44px;color:var(--brand-ink);font-weight:650;font-size:max(13px,.85rem);text-decoration:underline;text-underline-offset:2px;overflow-wrap:anywhere}
 .sources a:focus-visible{outline:3px solid var(--focus);outline-offset:2px;border-radius:4px}
+/* "Abrir esta tela" (abrir_tela): botão do portal, alvo de 44 px; as cores vêm de .p-button-primary nos dois temas. */
+.navigation{justify-self:start;display:inline-flex;align-items:center;justify-content:space-between;gap:.4rem;min-height:44px;max-width:100%;margin-top:.5rem;font-size:max(14px,.9rem);font-weight:700;text-align:start;border-radius:12px;text-decoration:none;overflow-wrap:anywhere}
+:global(html[data-theme=dark]) .navigation{border-color:color-mix(in srgb,#fff 35%,transparent)}
+.navigation:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+.navigationBox{display:grid;justify-items:start;gap:.2rem;margin-top:.5rem}
+.navigationBox .navigation{margin-top:0}
+.navigationNote{font-size:max(12px,.78rem);font-weight:700;color:var(--text-secondary)}
 .myUsage{margin:0}
 .myUsage>summary{min-height:36px;display:flex;align-items:center;cursor:pointer;font-size:max(12px,.8rem);font-weight:650;color:var(--brand-ink)}
 .myUsage>summary:focus-visible{outline:3px solid var(--focus);outline-offset:2px;border-radius:6px}
