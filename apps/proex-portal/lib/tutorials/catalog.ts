@@ -120,6 +120,63 @@ export const TUTORIAL_CHAPTERS: readonly TutorialChapter[] = [
       },
     ],
   },
+  {
+    id: 'meu-trabalho', version: 1, title: 'Meu trabalho', minutes: 3,
+    summary: 'Encontrar o que chegou para você e para suas equipes, com prazos e responsabilidades.',
+    steps: [
+      {
+        id: 'abrir', title: 'O que chegou para você',
+        speech: 'Meu trabalho reúne as demandas atribuídas a você e às suas equipes, em todos os projetos que você pode ver. Nada aqui muda ao seguir o tour.',
+        youWillSee: 'O título Suas atribuições, no alto do módulo.',
+        target: '[data-tutorial="trabalho-inicio"]', module: 'my-work', openLabel: 'Ir para Meu trabalho',
+        beforeOpen: 'Clique em Ir para Meu trabalho: o módulo abre com as suas atribuições.', beforeOpenMobile: 'Toque em Ir para Meu trabalho: o módulo abre com as suas atribuições.',
+        labels: ['Meu trabalho', 'Suas atribuições'],
+      },
+      {
+        id: 'projeto', title: 'Um projeto ou todos',
+        speech: 'No campo Projeto, escolha um projeto para ver só o trabalho dele. Todos os projetos autorizados mostra tudo de novo.',
+        youWillSee: 'O campo Projeto destacado, acima das atribuições.',
+        target: '#meu-trabalho-projeto', module: 'my-work', openLabel: 'Ir para Meu trabalho', requires: { projects: true },
+        labels: ['Projeto', 'Todos os projetos autorizados'],
+      },
+      {
+        id: 'origem', title: 'De onde veio a tarefa',
+        speech: 'Diretas são as demandas com o seu nome. Por equipe são as que chegaram para uma equipe sua. Todas junta as duas. Cada cartão diz a origem: Atribuição direta, Pela sua equipe ou Direta e pela equipe.',
+        youWillSee: 'Os botões Todas, Diretas e Por equipe destacados.',
+        target: '[data-tutorial="trabalho-origem"]', module: 'my-work', openLabel: 'Ir para Meu trabalho',
+        labels: ['Todas', 'Diretas', 'Por equipe', 'Atribuição direta', 'Pela sua equipe', 'Direta e pela equipe'],
+      },
+      {
+        id: 'totais', title: 'O que pede atenção',
+        speech: 'Os quadros contam as demandas de todas as páginas. Clique em Atenção, Prazo hoje, Em andamento ou Concluídas para filtrar a lista logo abaixo.',
+        speechMobile: 'Os quadros contam as demandas de todas as páginas. Toque em Atenção, Prazo hoje, Em andamento ou Concluídas para filtrar a lista logo abaixo.',
+        youWillSee: 'Os quatro quadros de totais destacados.',
+        target: '[data-tutorial="trabalho-totais"]', module: 'my-work', openLabel: 'Ir para Meu trabalho',
+        labels: ['Atenção', 'Prazo hoje', 'Em andamento', 'Concluídas'],
+      },
+      {
+        id: 'demandas', title: 'Abrir uma demanda',
+        speech: 'Cada cartão mostra a situação, a prioridade, o prazo e os responsáveis. Clique no título para abrir a demanda. Lista vazia? Troque o Estado da lista ou o projeto.',
+        speechMobile: 'Cada cartão mostra a situação, a prioridade, o prazo e os responsáveis. Toque no título para abrir a demanda. Lista vazia? Troque o Estado da lista ou o projeto.',
+        youWillSee: 'A lista de demandas destacada, com o Estado da lista no alto.',
+        target: '[data-tutorial="trabalho-demandas"]', module: 'my-work', openLabel: 'Ir para Meu trabalho',
+        labels: ['Estado da lista'],
+      },
+      {
+        id: 'responsabilidades', title: 'Responsabilidades',
+        speech: 'Responsabilidades são frentes contínuas que você cuida num projeto, como materiais ou empréstimos. Não têm prazo como uma demanda e não mudam o que você pode abrir: isso vem dos seus acessos.',
+        youWillSee: 'A lista Responsabilidades destacada, abaixo das demandas.',
+        target: '[data-tutorial="trabalho-responsabilidades"]', module: 'my-work', openLabel: 'Ir para Meu trabalho',
+        labels: ['Responsabilidades'],
+      },
+      {
+        id: 'fim', title: 'Tudo certo',
+        speech: 'Você já sabe encontrar o seu trabalho. Se alguém acabou de atribuir algo a você, use Atualizar no alto do módulo.',
+        youWillSee: 'Concluir fecha o tutorial. Repetir esta parte começa de novo.',
+        labels: ['Atualizar'],
+      },
+    ],
+  },
 ];
 
 export const chapterById = (id: unknown) => TUTORIAL_CHAPTERS.find(chapter => chapter.id === id);

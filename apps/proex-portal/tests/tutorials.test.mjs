@@ -161,3 +161,18 @@ test('resume rules: removed or forbidden saved steps continue at the next allowe
 test('anonymization removes tutorial progress', () => {
   assert.match(readFileSync(new URL('lib/privacy.ts', root), 'utf8'), /DELETE FROM user_tutorials WHERE user_id=\?/);
 });
+
+test('Meu trabalho: open to every team account; the project step follows the projects; progress is kept per chapter', async () => {
+  const db = fixture(), reader = await person(db, 'mw-reader', [['viewer', 'project-a']]), none = await person(db, 'mw-none');
+  const chapterSteps = (state, id) => Object.fromEntries(state.chapters.find(chapter => chapter.id === id).steps.map(step => [step.id, step.available]));
+  const withProject = chapterSteps(await tutorialWorkspace(db, await reader.actor(), { projectId: 'project-a' }), 'meu-trabalho');
+  assert.ok(Object.values(withProject).every(Boolean), 'a reader sees the whole chapter (Meu trabalho is not gated by a capability)');
+  const actor = await none.actor(), noProject = chapterSteps(await tutorialWorkspace(db, actor, {}), 'meu-trabalho');
+  assert.equal(noProject.projeto, false);
+  assert.equal(noProject.origem && noProject.totais && noProject.demandas && noProject.responsabilidades, true);
+  await tutorialAction(db, actor, { action: 'progress.save', chapterId: 'navegacao', stepId: 'fim', status: 'completed' });
+  const state = await tutorialAction(db, actor, { action: 'progress.save', chapterId: 'meu-trabalho', stepId: 'totais', status: 'paused' });
+  assert.equal(state.progress.navegacao.status, 'completed');
+  assert.deepEqual([state.progress['meu-trabalho'].stepId, state.progress['meu-trabalho'].status], ['totais', 'paused']);
+  assert.equal(state.chapters.find(chapter => chapter.id === 'meu-trabalho').resumeAt, catalog.chapterById('meu-trabalho').steps.findIndex(step => step.id === 'totais'));
+});

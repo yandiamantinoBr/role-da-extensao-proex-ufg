@@ -1,6 +1,6 @@
 # Tutoriais do Portal (sem IA)
 
-Pedido da coordenação em 2026-11-16, a partir do [roteiro por público](ROTEIRO-TUTORIAIS-PROEX.md) e da [passagem de QA](QA-TUTORIAIS-WIDGETS-E-ROLE.md). Primeira jornada: **Navegação**. Os próximos capítulos entram um por PR.
+Pedido da coordenação em 2026-11-16, a partir do [roteiro por público](ROTEIRO-TUTORIAIS-PROEX.md) e da [passagem de QA](QA-TUTORIAIS-WIDGETS-E-ROLE.md). Capítulos prontos: **Navegação** e **Meu trabalho**. Os próximos entram um por PR.
 
 ## O que a pessoa vê
 
@@ -24,7 +24,7 @@ Funciona sem IA, chave, consentimento de provedor, widgets, saldo ou `inventory.
 | Rota | `app/api/tutorials/route.ts`: GET `?projectId=` e POST com ações `progress.save`, `progress.restart`, `invite.dismiss`, `invite.start` |
 | Tabela | `user_tutorials` (migração **0052**): pessoa, capítulo, versão, último passo, situação e datas. O convite usa o capítulo reservado `convite` |
 | Tela | `components/portal/tutorials/` (estado compartilhado, camada com cartão e janela, convite, lista e cartão da Conta) |
-| Âncoras | `data-tutorial` em `portal-navigation.tsx` (Início, menu, Mais), `portal-client.tsx` (menu da conta), `dashboard-panel.tsx` (Personalizar) e `account-access-panel.tsx` (Meus acessos). O campo Projeto usa o `id="filtro-projeto"` que já existia |
+| Âncoras | `data-tutorial` em `portal-navigation.tsx` (Início, menu, Mais), `portal-client.tsx` (menu da conta), `dashboard-panel.tsx` (Personalizar), `account-access-panel.tsx` (Meus acessos) e `meu-trabalho-panel.tsx` (cabeçalho, origem, totais, demandas e responsabilidades). O campo Projeto usa o `id="filtro-projeto"` que já existia |
 
 **Permissões efetivas:**
 - A cada abertura e a cada troca de projeto, a tela consulta `GET /api/tutorials`.
@@ -54,7 +54,7 @@ Funciona sem IA, chave, consentimento de provedor, widgets, saldo ou `inventory.
 
 ## O que ainda falta
 
-- Capítulos por público: Meu trabalho, Projetos, Demandas, Equipes, Agenda, Materiais, Empréstimos (por último: a sessão de materiais mexe na tela) e Dinâmicas.
+- Capítulos por público: Projetos, Demandas, Equipes, Agenda, Materiais, Empréstimos (por último: a sessão de materiais mexe na tela) e Dinâmicas.
 - **Experimentar** com exemplo fictício nos capítulos de operação.
 - Ajuda local na página do voluntário e na área pública da ação (público anônimo com progresso só no aparelho).
 - Abrir a mesma ajuda pelo chat do Rolê.
