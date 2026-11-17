@@ -14,6 +14,8 @@ export type StepRequirement = {
   scope?: 'selected' | 'any';
   /** Administra pelo menos uma organização (ex.: demandas gerais). */
   manageOrganization?: true;
+  /** Pelo menos uma categoria da Agenda legível (a mesma regra que mostra o módulo). */
+  calendar?: true;
 };
 
 export type TutorialStep = {
@@ -404,6 +406,61 @@ export const TUTORIAL_CHAPTERS: readonly TutorialChapter[] = [
       },
     ],
   },
+  {
+    id: 'agenda', version: 1, title: 'Agenda', minutes: 3,
+    summary: 'Escolher o período e o contexto, achar um compromisso no mês e baixar o recorte.',
+    steps: [
+      {
+        id: 'abrir', title: 'A Agenda',
+        speech: 'A Agenda reúne reservas, atividades e movimentações dos projetos, conforme o seu acesso, sempre no horário de Brasília. Buscar no período acha pelo título, projeto ou local.',
+        speechMobile: 'A Agenda reúne reservas, atividades e movimentações, conforme o seu acesso, no horário de Brasília. Buscar no período acha um compromisso.',
+        youWillSee: 'O quadro Agenda integrada destacado.',
+        target: '[data-tutorial="agenda-inicio"]', module: 'calendar', openLabel: 'Ir para Agenda', requires: { calendar: true },
+        beforeOpen: 'Clique em Ir para Agenda: o módulo abre no mês atual.', beforeOpenMobile: 'Toque em Ir para Agenda: o módulo abre no mês atual.',
+        labels: ['Agenda integrada', 'Buscar no período'],
+      },
+      {
+        id: 'filtros', title: 'Período e contexto',
+        speech: 'Filtrar período e contexto abre Categoria, Unidade responsável, Projeto e as datas. Atualizar consulta refaz a busca com o que você escolheu.',
+        speechMobile: 'Filtrar período e contexto abre Categoria, Unidade responsável, Projeto e as datas. Atualizar consulta refaz a busca.',
+        youWillSee: 'O Filtrar período e contexto destacado.',
+        target: '[data-tutorial="agenda-filtros"]', module: 'calendar', openLabel: 'Ir para Agenda', requires: { calendar: true },
+        labels: ['Filtrar período e contexto', 'Categoria', 'Unidade responsável', 'Atualizar consulta'],
+      },
+      {
+        id: 'mes', title: 'O mês',
+        speech: 'Cada dia mostra os primeiros compromissos, com a cor da categoria; +N indica que há mais. As setas trocam de mês. Clique num dia para ver os compromissos dele.',
+        speechMobile: 'O número em cada dia diz quantos registros ele tem. As setas trocam de mês. Toque num dia, como hoje, destacado.',
+        youWillSee: 'O calendário do mês destacado.', youWillSeeMobile: 'O dia de hoje destacado no calendário.',
+        missingMobile: 'Volte ao mês atual com as setas, ou toque num dia que tenha número.',
+        target: '[data-tutorial="agenda-mes"]', targetMobile: '[data-tutorial="agenda-hoje"]', module: 'calendar', openLabel: 'Ir para Agenda', requires: { calendar: true },
+        labels: [],
+      },
+      {
+        id: 'dia', title: 'Os compromissos',
+        speech: 'Ao escolher um dia, a lista vira Compromissos de… com os registros dele. Categoria dos compromissos filtra a lista, e Ver todo o período tira a seleção do dia e volta ao período escolhido.',
+        speechMobile: 'Ver … compromissos do dia, abaixo do mês, traz você até aqui. Ver todo o período tira a seleção do dia.',
+        youWillSee: 'A lista de compromissos destacada.',
+        target: '#calendar-day-entries', module: 'calendar', openLabel: 'Ir para Agenda', requires: { calendar: true },
+        labels: ['Compromissos de', 'Categoria dos compromissos', 'Ver todo o período'],
+      },
+      {
+        id: 'baixar', title: 'Baixar o recorte',
+        speech: 'Baixar compromissos da agenda gera um arquivo com a lista que está na tela. Para levar a outro calendário, use o arquivo .ics, dentro de Filtrar período e contexto: ele inclui cancelamentos.',
+        speechMobile: 'Baixar compromissos da agenda gera um arquivo com a lista da tela. O .ics fica em Filtrar período e contexto.',
+        youWillSee: 'A Categoria dos compromissos e as opções de download destacadas.',
+        target: '[data-tutorial="agenda-baixar"]', module: 'calendar', openLabel: 'Ir para Agenda', requires: { calendar: true },
+        labels: ['Baixar compromissos da agenda'],
+      },
+      {
+        id: 'fim', title: 'Tudo certo',
+        speech: 'Você já sabe achar um compromisso e voltar ao período. Quando o compromisso tiver link, ele abre a área de origem, se o seu acesso permitir.',
+        youWillSee: 'Concluir fecha o tutorial. Repetir esta parte começa de novo.',
+        requires: { calendar: true },
+        labels: [],
+      },
+    ],
+  },
 ];
 
 export const chapterById = (id: unknown) => TUTORIAL_CHAPTERS.find(chapter => chapter.id === id);
@@ -415,6 +472,7 @@ export type TutorialAccess = {
   selectedProject: string | null;
   capabilityScope: (capability: string) => string[] | null;
   managesOrganization?: boolean;
+  calendar?: boolean;
 };
 export type ResolvedStep = { id: string; available: boolean; reason?: string };
 
@@ -426,6 +484,7 @@ export function resolveSteps(chapter: TutorialChapter, access: TutorialAccess): 
     const need = step.requires;
     if (!need) return { id: step.id, available: true };
     if (need.projects && !inScope(access.projectScope, null)) return { id: step.id, available: false, reason: 'Este passo aparece quando sua conta tiver um projeto.' };
+    if (need.calendar && !access.calendar) return { id: step.id, available: false, reason: 'A Agenda não faz parte do seu acesso atual.' };
     if (need.manageOrganization && !access.managesOrganization) return { id: step.id, available: false, reason: 'Este passo é para quem administra uma organização.' };
     if (need.capability) {
       const scope = access.capabilityScope(need.capability);
