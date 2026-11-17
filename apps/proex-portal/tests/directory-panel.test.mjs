@@ -31,6 +31,7 @@ function harness(initial={}){
    if(name==='./date-field')return{default:values=>jsx('input',{...values,type:'text','data-pt-br-date':true})};
    if(name==='./export-formats')return{default:values=>jsx('div',{children:['pdf','xlsx','docx'].map(format=>jsx('button',{type:'button',disabled:values.disabled,'aria-label':`${values.label} em ${format.toUpperCase()}`,onClick:()=>values.onExport(format),children:format.toUpperCase()}))})};
    if(name==='./document-export')return{documentExport:async(format,title,columns,rows,display,info,presentation)=>{artifacts.push({format,title,columns,rows,info,presentation});if(gate)await gate;return new Blob([JSON.stringify({columns,rows,info})]);}};
+   if(name==='qrcode-generator')return{default:()=>({addData(){},make(){},getModuleCount:()=>21,renderTo2dContext(){}})};
    if(name==='./report-export')return{download:(name,blob)=>downloads.push({name,blob})};
    let target=name.startsWith('@/')?path.join(root,name.slice(2)):path.resolve(path.dirname(file),name);target=[target,target+'.ts',target+'.tsx'].find(existsSync);assert.ok(target,name);return load(target);
   }
@@ -142,6 +143,12 @@ test('several people can be invited at once, one link each, with the progress of
   assert.equal(JSON.parse(h.last().init.body).email,'outra@example.invalid','the second one only after the first');
   await h.ready(created('invite-b'));await tick();h.render();
   assert.match(h.body(),/2 convites prontos/);const wa=h.find('a',n=>n.props['aria-label']==='Compartilhar no WhatsApp para Outra pessoa');assert.ok(wa);assert.match(decodeURIComponent(wa.props.href),/Olá, Outra pessoa!/);
+  // In the room: each row shows its own QR, one at a time (this harness has no canvas, so it ends in the readable fallback).
+  const qrOf=name=>h.find('button',n=>String(n.props['aria-label']).endsWith(`QR code do convite de ${name}`));
+  assert.equal(qrOf('Outra pessoa').props['aria-expanded'],false);
+  qrOf('Outra pessoa').props.onClick();h.render();assert.equal(qrOf('Outra pessoa').props['aria-expanded'],true);assert.match(h.body(),/Gerando QR code/);
+  await tick();await tick();h.render();assert.match(h.body(),/Não foi possível gerar o QR code. Use o WhatsApp ou copie a mensagem./);
+  qrOf('Pessoa de exemplo').props.onClick();h.render();assert.equal(qrOf('Outra pessoa').props['aria-expanded'],false,'opening another closes the first');
  }finally{h.dispose();}
 });
 test('without a working e-mail queue the invite says so in one line and keeps WhatsApp, copy and QR',async()=>{

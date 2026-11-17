@@ -1,13 +1,13 @@
 'use client';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { Check, CheckCircle2, Clock3, LoaderCircle, Mail, MessageCircle, MessageSquareText, UserPlus, X, XCircle } from 'lucide-react';
+import { Check, CheckCircle2, Clock3, LoaderCircle, Mail, MessageCircle, MessageSquareText, QrCode, UserPlus, X, XCircle } from 'lucide-react';
 import type { DirectoryPerson } from '@/lib/directory/contracts';
 import { invitationShareLink } from '@/lib/invitation-link';
 import { inviteMessage, whatsappShareHref } from '@/lib/invite-message';
 import { INVITE_EMAIL_OFF, inviteEmailStateOf, portalAction, type InviteEmailState } from './portal-action';
 export { portalAction } from './portal-action';
 import { projectAccessRoleLabels } from '@/lib/team-access-labels';
-import TeamInviteShare from './team-invite-share';
+import TeamInviteShare, { invitationQr } from './team-invite-share';
 import styles from './directory-invite.module.css';
 
 export type DirectoryInviteOptions = {
@@ -45,6 +45,7 @@ export default function DirectoryInvite({ people, projects, defaultProjectId, ca
   const [projectId, setProjectId] = useState(initialProject), [role, setRole] = useState(replaces?.role && replaces.role in projectAccessRoleLabels ? replaces.role : 'viewer');
   const [email, setEmail] = useState(person?.contact ?? ''), [phase, setPhase] = useState<'form' | 'running' | 'done'>('form'), [error, setError] = useState('');
   const [results, setResults] = useState<Record<string, Result>>({}), [copied, setCopied] = useState(''), [emailReady, setEmailReady] = useState<boolean | null>(null);
+  const [qr, setQr] = useState<{ id: string; data: string; failed: boolean } | null>(null);
   const keys = useRef(new Map<string, string>()), title = useRef<HTMLHeadingElement>(null), alive = useRef(true), checkedEmail = useRef(false);
   useEffect(() => { title.current?.focus({ preventScroll: true }); title.current?.scrollIntoView({ block: 'nearest' }); return () => { alive.current = false; }; }, []);
   const managerAllowed = projectId ? canInviteManager(projectId) : false;
@@ -99,6 +100,13 @@ export default function DirectoryInvite({ people, projects, defaultProjectId, ca
   async function copyMessage(id: string, message: string) {
     try { await navigator.clipboard.writeText(message); setCopied(id); } catch { setCopied(''); }
   }
+  /** One QR open at a time, so the projector shows a single person's link. */
+  async function toggleQr(id: string, url: string) {
+    if (qr?.id === id) { setQr(null); return; }
+    setQr({ id, data: '', failed: false });
+    try { const data = await invitationQr(url); setQr(current => current?.id === id ? { id, data, failed: false } : current); }
+    catch { setQr(current => current?.id === id ? { id, data: '', failed: true } : current); }
+  }
   const failed = people.filter(p => results[p.id]?.status === 'error').length, ready = people.filter(p => results[p.id]?.status === 'ready').length;
   const lone = single ? results[person.id] : undefined;
 
@@ -124,6 +132,7 @@ export default function DirectoryInvite({ people, projects, defaultProjectId, ca
     </form>}
     {!single && Object.keys(results).length > 0 && <div className={styles.progress}>
       <p role="status" className={styles.lead}>{running ? `Criando convites: ${ready} de ${people.length} prontos.` : failed ? `${ready} de ${people.length} convites prontos. Os que falharam podem ser tentados de novo.` : `${ready} convites prontos. Envie a mensagem de cada pessoa.`}</p>
+      {emailReady === false && ready > 0 && <p className={styles.lead}>{INVITE_EMAIL_OFF}</p>}
       <ul className={styles.rows}>{people.map(p => {
         const result = results[p.id], message = result?.url ? inviteMessage({ name: p.name, roleLabel: roleLabel, scopeLabel: projectName, url: result.url, expiresAt: result.expiresAt }) : '';
         return <li key={p.id} className={styles.row}>
@@ -133,10 +142,17 @@ export default function DirectoryInvite({ people, projects, defaultProjectId, ca
             {(result.email === 'queued' || result.email === 'sent') && <span className={styles.emailDone}><Check size={15} aria-hidden="true" />{result.email === 'sent' ? 'E-mail enviado' : 'E-mail agendado'}</span>}
             <a className="p-button p-button-subtle" href={whatsappShareHref(message)} target="_blank" rel="noopener noreferrer" aria-label={`Compartilhar no WhatsApp para ${p.name}`}><MessageCircle size={15} aria-hidden="true" />WhatsApp</a>
             <button type="button" className="p-button p-button-subtle" aria-label={`Copiar a mensagem para ${p.name}`} onClick={() => void copyMessage(p.id, message)}>{copied === p.id ? <Check size={15} aria-hidden="true" /> : <MessageSquareText size={15} aria-hidden="true" />}{copied === p.id ? 'Copiada' : 'Copiar mensagem'}</button>
+            <button type="button" className="p-button p-button-subtle" aria-expanded={qr?.id === p.id} aria-controls={`directory-invite-qr-${p.id}`} aria-label={`${qr?.id === p.id ? 'Ocultar' : 'Mostrar'} o QR code do convite de ${p.name}`} onClick={() => void toggleQr(p.id, result.url ?? "")}><QrCode size={15} aria-hidden="true" />{qr?.id === p.id ? 'Ocultar QR' : 'QR code'}</button>
+          </div>}
+          {result?.status === 'ready' && qr?.id === p.id && <div id={`directory-invite-qr-${p.id}`} className={styles.rowQr}>
+            {qr.failed ? <p role="alert">Não foi possível gerar o QR code. Use o WhatsApp ou copie a mensagem.</p>
+              : qr.data ? <>{/* Browser-generated PNG; WhatsApp and the copied message are its text equivalent. */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={qr.data} alt={`QR code do convite de ${p.name}`} width={224} height={224} /><p>{p.name} aponta a câmera do celular para abrir o convite. O link é só dessa pessoa.</p></>
+              : <p role="status">Gerando QR code…</p>}
           </div>}
         </li>;
       })}</ul>
-      {emailReady === false && ready > 0 && <p className={styles.lead}>{INVITE_EMAIL_OFF}</p>}
       {people.some(p => results[p.id]?.email === 'error') && <p className="p-inline-error" role="alert">{people.map(p => results[p.id]?.email === 'error' ? results[p.id]?.note : '').filter(Boolean)[0]}</p>}
       {phase === 'done' && failed > 0 && <button type="button" className="p-button p-button-primary" onClick={() => setPhase('form')}>Tentar de novo os que falharam</button>}
     </div>}
