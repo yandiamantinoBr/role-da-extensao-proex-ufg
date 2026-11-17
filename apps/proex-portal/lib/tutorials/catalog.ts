@@ -298,7 +298,7 @@ export const TUTORIAL_CHAPTERS: readonly TutorialChapter[] = [
       },
       {
         id: 'detalhe', title: 'O detalhe',
-        speech: 'O detalhe mostra a situação, o prazo e Cadastro e responsáveis. No fim, abra Versões da demanda para ver o que mudou; lá dentro, o link Histórico abre tudo em Registros.',
+        speech: 'O detalhe mostra a situação e o prazo; Cadastro e responsáveis diz quem cuida dela. No fim, abra Versões da demanda para ver o que mudou; lá dentro, o link Histórico abre tudo em Registros.',
         youWillSee: 'O detalhe da demanda destacado.',
         target: '[data-tutorial="demanda-detalhe"]', module: 'demands', openLabel: 'Ir para Demandas', requires: { projects: true },
         missing: 'Abra uma demanda da lista: o detalhe aparece ao lado.', missingMobile: 'Toque numa demanda da lista: o detalhe aparece logo abaixo dela.',
@@ -307,7 +307,8 @@ export const TUTORIAL_CHAPTERS: readonly TutorialChapter[] = [
       {
         id: 'estados', title: 'Editar e mudar o estado',
         speech: 'Editar demanda muda título, responsáveis, prazo e estado: Aberta, Em andamento, Bloqueada (diga o que falta), Concluída ou Cancelada. Para um leitor responder ao checklist, a gestão usa Autorizar atualizações nesta demanda.',
-        youWillSee: 'O botão Editar demanda destacado.',
+        speechMobile: 'Editar demanda muda título, responsáveis, prazo e estado: Aberta, Em andamento, Bloqueada (diga o que falta), Concluída ou Cancelada. A gestão pode Autorizar atualizações nesta demanda para um leitor.',
+        youWillSee: 'O botão Editar demanda destacado. Um checklist aberto pode impedir Concluída.',
         target: '[data-tutorial="demanda-editar"]', module: 'demands', openLabel: 'Ir para Demandas', requires: { projects: true },
         missing: 'Abra uma demanda. Se Editar demanda não aparecer, você acompanha a demanda e responde só ao que estiver liberado para você.',
         labels: ['Editar demanda', 'Aberta', 'Em andamento', 'Bloqueada', 'Concluída', 'Cancelada', 'Autorizar atualizações nesta demanda'],
