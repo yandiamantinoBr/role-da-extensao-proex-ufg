@@ -49,7 +49,8 @@ export const FASE2D_TOOLS = [{ type: 'function', function: { name: 'abrir_tela',
 }, required: ['tela'], additionalProperties: false } } }];
 export const FASE2D_TOOL_NAMES = FASE2D_TOOLS.map(tool => tool.function.name);
 
-export type RoleNavigation = { href: string; label: string };
+/** afterUntrusted: a mesma resposta leu conteúdo de terceiros (a tela avisa "Sugestão do Rolê"). */
+export type RoleNavigation = { href: string; label: string; afterUntrusted?: true };
 type Pack = (kind: string, items: Record<string, unknown>[], sources: RoleToolSource[], budget: number, note?: string, extra?: Record<string, unknown>) => RoleToolResult;
 export type Fase2dContext = {
   db: D1Database; actor: PortalActor; organizationId: string; args: Record<string, unknown>; budget: number; scope: ResolvedScope | null; pack: Pack;
@@ -69,7 +70,9 @@ function optionalText(value: unknown, label: string): string {
 const norm = (value: string) => value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 const inList = (ids: string[]) => ids.length ? `(${ids.map(() => '?').join(',')})` : '(NULL)';
 const enc = encodeURIComponent;
-const short = (value: string) => value.length > 60 ? `${value.slice(0, 59).trimEnd()}…` : value;
+/** Rótulo que nunca some na tela: sem controles, marcas de direção (bidi) nem caracteres de largura zero; até 120 caracteres. */
+export const cleanLabel = (value: string) => value.replace(/[\u0000-\u001f\u007f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g, ' ').replace(/ {2,}/g, ' ').trim().slice(0, 120).trim();
+const short = (value: string) => { const clean = cleanLabel(value); return clean.length > 60 ? `${clean.slice(0, 59).trimEnd()}…` : clean; };
 const orgActive = `JOIN organizations o ON o.id=p.organization_id AND o.status='active'`;
 
 /* ---------- Permissão da tela: a mesma regra de allowedTabs (app/portal-client.tsx), ao vivo no SQL ---------- */
@@ -98,9 +101,11 @@ async function volunteer(ctx: Fase2dContext, projectId: string | null): Promise<
  * (administra a organização ou vê algum projeto dela). Sem isso, nenhuma tela.
  */
 async function screenAllowed(ctx: Fase2dContext, screen: Screen, projectId: string | null, dataset: ReportDatasetId | null): Promise<boolean> {
+  // Como no menu: Início, Meu trabalho e Conta sempre aparecem; Configurações tem regra própria, fora do portão da organização.
+  if (screen === 'inicio' || screen === 'meu_trabalho' || screen === 'conta') return true;
+  if (screen === 'configuracoes') return await yes(ctx.db, platformOwnerAuthoritySql(ctx.actor)) || await yes(ctx.db, aiConfigurationAuthority(ctx.actor, ctx.organizationId));
   const manages = await yes(ctx.db, organizationAuthoritySql(ctx.actor, ctx.organizationId));
   if (!manages && !(await ctx.visibleProjects('', false)).size) return false;
-  if (screen === 'configuracoes') return await yes(ctx.db, platformOwnerAuthoritySql(ctx.actor)) || await yes(ctx.db, aiConfigurationAuthority(ctx.actor, ctx.organizationId));
   if (screen === 'pessoas') return (!projectId && manages) || anyProject(ctx, ['access.invite', 'access.manage'], projectId);
   if (screen === 'relatorios' && dataset) return anyProject(ctx, REPORT_DATASETS[dataset].capabilities, projectId);
   const capabilities = CAPS[screen];
@@ -131,7 +136,9 @@ async function projectTarget(ctx: Fase2dContext, wanted: string): Promise<{ id: 
   if (found.length > 1) return { options: found.slice(0, 5).map(([id, name]) => ({ label: name, href: projectRecord(id) })) };
   // Nome de evento ou dinâmica ("CONPEEX"): o projeto que hospeda, se for um só.
   const visible = await ctx.visibleProjects('', true), ids = [...visible.keys()], words = ctx.terms(wanted);
-  const events = ids.length && words.length ? await all(ctx.db, `SELECT c.name,c.project_id FROM campaigns c WHERE c.project_id IN ${inList(ids)} ORDER BY c.starts_at DESC LIMIT 400`, ids) : [];
+  // Só dinâmicas que a pessoa vê na tela Dinâmicas (mesma regra de campaignTarget).
+  const auth = projectAuthoritySql(ctx.actor, EVENTS, 'c.project_id'), grant = volunteerCampaignSql(ctx.actor, 'c.id');
+  const events = ids.length && words.length ? await all(ctx.db, `SELECT c.name,c.project_id FROM campaigns c WHERE c.project_id IN ${inList(ids)} AND (${auth.sql} OR ${grant.sql}) ORDER BY c.starts_at DESC LIMIT 400`, [...ids, ...auth.values, ...grant.values]) : [];
   const hosts = [...new Set(events.filter(row => ctx.score(String(row.name), words) > 0).map(row => String(row.project_id)))];
   if (hosts.length === 1) return { id: hosts[0], name: visible.get(hosts[0])! };
   return { note: notFound('projeto') };
@@ -201,11 +208,15 @@ export async function runFase2dTool(ctx: Fase2dContext): Promise<RoleToolResult 
   // Nas telas sem ficha própria, o alvo é o projeto ("abra a agenda do CONPEEX").
   if (alvo && !wantedProject && ['projetos', 'registros', 'agenda', 'pessoas', 'equipes'].includes(screen)) { wantedProject = alvo; alvo = ''; }
   const deny = () => ctx.pack(KIND, [], [], ctx.budget, NO_ACCESS);
-  const done = (href: string, label: string) => {
-    const navigation = { href, label };
+  const done = (href: string, raw: string) => {
+    const label = cleanLabel(raw), navigation = { href, label };
     return { ...ctx.pack(KIND, [{ abrir: label }], [], ctx.budget, `O botão "Abrir ${label}" aparece para a pessoa abaixo da resposta. Nada foi aberto: só o toque dela abre. Não escreva o endereço.`), rows: 1, navigation };
   };
-  const options = (list: { label: string; href: string }[]) => ctx.pack(KIND, list.map(option => ({ opcao: option.label, link: option.href })), list, ctx.budget, 'Há mais de uma opção. Pergunte qual abrir; os links aparecem abaixo da resposta. Nada foi aberto.');
+  // Várias opções: o modelo recebe só número e rótulo (sem identificador nem endereço); os links vão à parte, para a tela.
+  const options = (list: { label: string; href: string }[]) => {
+    const result = ctx.pack(KIND, list.map((option, index) => ({ opcao: index + 1, rotulo: cleanLabel(option.label) })), [], ctx.budget, 'Há mais de uma opção. Pergunte qual abrir; os links aparecem abaixo da resposta. Nada foi aberto.');
+    return { ...result, sources: list.map(option => ({ label: cleanLabel(option.label), href: option.href })) };
+  };
   const info = SCREENS[screen];
 
   // Demandas atrasadas: a tela Meu trabalho já filtra as atrasadas (com a pessoa ou a equipe dela).

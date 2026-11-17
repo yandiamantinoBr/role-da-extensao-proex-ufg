@@ -443,7 +443,9 @@ async function dispatchWithTools(route: ToolRoute, apiKey: string, body: { messa
     if (containsCredential(reply.reply) || reply.operation && containsCredential(reply.operation)) throw charged('A resposta do provedor não pôde ser mostrada.');
     // Conteúdo lido de outras consultas na mesma resposta pode tentar dirigir o rascunho: o cartão avisa.
     const untrusted = used.some(entry => entry.name !== ROLE_TASK_DRAFT_TOOL && entry.rows > 0);
-    return { ...reply, inputTokens, outputTokens, costMicros, steps, tools: used, sources: [...sources.values()], scanned, ...(navigation ? { navigation } : {}), ...(taskDraft ? { taskDraft: untrusted ? { ...taskDraft, afterUntrusted: true as const } : taskDraft } : {}) };
+    // Mesma regra para o botão de abrir tela: outra consulta com resultado na resposta vira "Sugestão do Rolê".
+    const navigationUntrusted = used.some(entry => entry.name !== ROLE_TASK_DRAFT_TOOL && entry.name !== 'abrir_tela' && entry.rows > 0);
+    return { ...reply, inputTokens, outputTokens, costMicros, steps, tools: used, sources: [...sources.values()], scanned, ...(navigation ? { navigation: navigationUntrusted ? { ...navigation, afterUntrusted: true as const } : navigation } : {}), ...(taskDraft ? { taskDraft: untrusted ? { ...taskDraft, afterUntrusted: true as const } : taskDraft } : {}) };
   }
 }
 
@@ -687,7 +689,7 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
     const pdfReading = result.scanned?.length ? await scannedOffer(result.scanned).catch(() => null) : null;
     return { contract: ROLE_CONTRACT, reply: result.reply, operation: result.operation, operationDropped: dropped, provider, model: modelName,
       ...(pdfReading ? { pdfReading } : {}), ...videoReceipt, reservedMicros: estimate.costMicros, costMicros: result.costMicros, inputTokens: result.inputTokens, outputTokens: result.outputTokens,
-      sources: result.sources ?? [], lookups: (result.tools ?? []).length, ...(result.navigation ? { navigation: result.navigation } : {}),
+      sources: result.sources ?? [], lookups: (result.tools ?? []).length, ...(result.navigation ? { navigation: image && !result.navigation.afterUntrusted ? { ...result.navigation, afterUntrusted: true as const } : result.navigation } : {}),
       ...(result.taskDraft ? { taskDraft: await signedTaskDraft(secret, current.userId, image && !result.taskDraft.afterUntrusted ? { ...result.taskDraft, afterUntrusted: true } : result.taskDraft, Date.now()) } : {}) };
   } catch (error) {
     const failureDetails = { provider, model: modelName, hasImage: !!image, ...(video ? { hasVideo: true, videoEffort: videoProfile.effort } : {}), reservedUsdMicros: estimate.costMicros,

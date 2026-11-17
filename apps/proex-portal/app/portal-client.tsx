@@ -11,7 +11,7 @@ import scopeStyles from './scope-filters.module.css';
 import FeedbackPanel from '@/components/portal/feedback-panel';
 import CommunityPanel, { type CommunityFocus, type CommunityPrefill } from '@/components/portal/community-panel';
 import FloatingDock from '@/components/portal/floating-dock';
-import ManagementPanel from '@/components/portal/management/management-panel';
+import ManagementPanel, { MANAGEMENT_TAB_EVENT } from '@/components/portal/management/management-panel';
 import { toast } from 'sonner';
 import settingsStyles from './settings-groups.module.css';
 import deniedStyles from './denied-module-notice.module.css';
@@ -695,9 +695,12 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         if (destinationParam && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(destinationParam)) setDestinationOpen(destinationParam);
         const convocationLink = destination.searchParams.get('convocation');
         if (convocationLink && /^[A-Za-z0-9-]{8,80}$/.test(convocationLink)) setConvocationFocus(convocationLink);
+        const wantedTab = next.tab === 'management' && /^[a-z]{1,20}$/.test(destination.searchParams.get('gestao') || '') ? destination.searchParams.get('gestao')! : '';
+        // Gestão já aberta: a aba do link vai para o endereço e o painel troca (ele só lê o endereço ao abrir).
+        if (wantedTab && tab === 'management') { const url = new URL(window.location.href); url.searchParams.set('gestao', wantedTab); window.history.replaceState(window.history.state, '', url); window.dispatchEvent(new CustomEvent(MANAGEMENT_TAB_EVENT, { detail: wantedTab })); }
         if (portalLocationKey(next) === routeKey) return;
         pushNavigation.current = true;
-        managementTab.current = next.tab === 'management' && /^[a-z]{1,20}$/.test(destination.searchParams.get('gestao') || '') ? destination.searchParams.get('gestao')! : '';
+        managementTab.current = wantedTab;
         if (next.tab !== tab) navigation.recordVisit(next.tab);
         applyLocation(next);
         focusModule(true);

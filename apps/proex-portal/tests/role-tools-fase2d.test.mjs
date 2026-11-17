@@ -61,6 +61,9 @@ function fixture() {
   item('camera-2', 'project-a', 'Câmera QA 2', 'equipment');
   item('camera-3', 'project-a', 'Câmera QA 3', 'equipment');
   item('planner-b', 'project-b', 'Planner SEGREDO-B');
+  // Nome com controle, marca de direção (bidi) e largura zero: o rótulo do botão nunca pode sumir.
+  item('faixa', 'project-a', 'Faixa\u202e\u200b\u0007 Lilás\u2066');
+  task('ta-long', 'project-a', `Cronograma ${'longo '.repeat(20)}fim`);
   run("INSERT INTO loans(id,project_id,item_id,action_name,borrower_name,borrower_contact,starts_at,ends_at,status,created_by,created_at) VALUES('loan-old','project-a','projetor','Ação antiga','Pessoa Privada','contato@privado.invalid',?,?,'returned','owner-qa',?),('loan-out','project-a','projetor','Ação atual','Pessoa Privada','contato@privado.invalid',?,?,'out','owner-qa',?)", t - 10 * DAY, t - 9 * DAY, now, t - DAY, t + DAY, now);
   run("INSERT INTO campaigns(id,project_id,name,starts_at,ends_at,status,created_at) VALUES('camp-conpeex','project-host','Dinâmica CONPEEX 2026',?,?,'draft',?),('camp-b','project-b','Dinâmica SEGREDO-B',?,?,'draft',?)", now, now, now, now, now, now);
   const db = { prepare(sql) { let values = []; return { sql, bind(...args) { values = args; return this; }, async first() { return native.prepare(sql).get(...values) ?? null; }, async all() { return { results: native.prepare(sql).all(...values) }; }, async run() { return { meta: { changes: Number(native.prepare(sql).run(...values).changes) } }; }, execute() { const results = native.prepare(sql).all(...values); return { results, meta: { changes: Number(native.prepare('SELECT changes() n').get().n) } }; } }; }, async batch(statements) { native.exec('BEGIN'); try { const results = statements.map(statement => statement.execute()); native.exec('COMMIT'); return results; } catch (error) { native.exec('ROLLBACK'); throw error; } } };
@@ -164,7 +167,11 @@ test('PERMISSÃO POR PERFIL: a mesma regra do menu do portal; sem acesso, "Você
     await denied(f, 'estoque', { tela: 'materiais', projeto: 'Rolê da Extensão' });
     await notFound(f, 'estoque', { tela: 'materiais', projeto: 'Projeto B' });
     // Pessoa sem nenhum acesso: nenhuma tela.
-    for (const tela of ['inicio', 'projetos', 'demandas', 'agenda', 'materiais', 'comunidade']) await denied(f, 'nobody', { tela });
+    for (const tela of ['projetos', 'demandas', 'agenda', 'materiais', 'comunidade', 'configuracoes']) await denied(f, 'nobody', { tela });
+    // Início, Meu trabalho e Conta sempre aparecem no menu; Configurações tem regra própria, antes do portão da organização.
+    await opens(f, 'nobody', { tela: 'inicio' }, '/?module=overview', 'Início');
+    await opens(f, 'nobody', { tela: 'meu_trabalho' }, '/?module=my-work', 'Meu trabalho');
+    await opens(f, 'nobody', { tela: 'conta' }, '/?module=profile', 'Conta');
   } finally { f.native.close(); }
 });
 
@@ -187,9 +194,25 @@ test('ALVO FORA DO ESCOPO: projeto, demanda, material, empréstimo e dinâmica d
     assert.equal(many.navigation, undefined);
     assert.deepEqual(many.sources.map(source => source.href).sort(), ['/?module=materials&project=project-a&itemId=camera-2', '/?module=materials&project=project-a&itemId=camera-3']);
     assert.match(note(many), /Pergunte qual abrir/);
+    // O modelo recebe só número e rótulo: nenhum identificador nem endereço.
+    assert.deepEqual(JSON.parse(many.content).resultados, [{ opcao: 1, rotulo: 'Câmera QA 2 · Projeto A' }, { opcao: 2, rotulo: 'Câmera QA 3 · Projeto A' }]);
+    assert.doesNotMatch(many.content, /camera-|project-a|module=|itemId/);
+    // Busca de reserva pelo nome da dinâmica: só quem vê a dinâmica na tela Dinâmicas chega ao projeto que a hospeda.
+    await notFound(f, 'estoque', { tela: 'projetos', projeto: 'CONPEEX' });
     // Entrada inválida não abre nada.
     await assert.rejects(f.call('coordA', { tela: 'planilhas' }), /Escolha uma tela/);
     await assert.rejects(f.call('coordA', { tela: 'agenda', url: 'https://example.test' }), /campos não permitidos/);
+  } finally { f.native.close(); }
+});
+
+test('RÓTULO LIMPO: sem controles, bidi nem largura zero; demanda longa encurtada; nunca passa de 120', async () => {
+  const f = fixture();
+  try {
+    const faixa = await opens(f, 'coordA', { tela: 'materiais', alvo: 'Faixa' }, '/?module=materials&project=project-a&itemId=faixa', 'material Faixa Lilás');
+    assert.doesNotMatch(faixa.content, /[\u0000-\u001f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/);
+    const long = await f.call('coordA', { tela: 'demandas', alvo: 'Cronograma longo' });
+    assert.ok(long.navigation.label.length <= 120 && long.navigation.label.endsWith('…”'), long.navigation.label);
+    assert.equal(long.navigation.href, '/?module=demands&project=project-a&demandId=ta-long');
   } finally { f.native.close(); }
 });
 
@@ -207,7 +230,7 @@ test('REVOGAR NO MEIO: a próxima chamada já não abre nada; conteúdo sem dado
   try {
     await opens(f, 'coordA', { tela: 'emprestimos', alvo: 'Projetor' }, '/?module=loans&project=project-a&loanId=loan-out', 'empréstimo de Projetor QA');
     revoke(f, 'coordA');
-    for (const args of [{ tela: 'emprestimos' }, { tela: 'emprestimos', alvo: 'Projetor' }, { tela: 'projetos', alvo: 'Projeto A' }, { tela: 'inicio' }]) noPersonalData(await denied(f, 'coordA', args));
+    for (const args of [{ tela: 'emprestimos' }, { tela: 'emprestimos', alvo: 'Projetor' }, { tela: 'projetos', alvo: 'Projeto A' }, { tela: 'demandas' }]) noPersonalData(await denied(f, 'coordA', args));
     // Só a permissão de empréstimos sai (troca de papel): a tela some, as outras continuam.
     f.native.prepare("UPDATE members SET revoked_at=NULL, role='viewer' WHERE user_id='coorda-qa'").run();
     await denied(f, 'coordA', { tela: 'emprestimos' });
@@ -233,8 +256,14 @@ test('CONVERSA: o modelo chama abrir_tela e a resposta do chat leva o destino em
     const before = f.native.prepare('SELECT (SELECT COUNT(*) FROM loans)+(SELECT COUNT(*) FROM followup_tasks) n').get().n;
     const answer = await roleChat(f.db, f.actors.coordA, { action: 'chat', projectId: 'project-a', operationKey: 'role-fase2d-0001', consent: true, message, acceptedCostMicros: estimate.costMicros }, secret, { keys, fetcher });
     assert.ok(calls[0].tools.some(tool => tool.function.name === 'abrir_tela'), 'a ferramenta é oferecida');
-    assert.deepEqual(answer.navigation, { href: '/?module=loans', label: 'Empréstimos' });
+    assert.deepEqual(answer.navigation, { href: '/?module=loans', label: 'Empréstimos' }, 'só abrir_tela: sem aviso');
     assert.equal(f.native.prepare('SELECT (SELECT COUNT(*) FROM loans)+(SELECT COUNT(*) FROM followup_tasks) n').get().n, before, 'nada gravado');
+    // Outra consulta com resultado na mesma resposta (conteúdo de terceiros): o botão vem marcado como sugestão.
+    steps.splice(0, steps.length, { tools: [{ name: 'consultar_estoque', args: { material: 'Caneta' } }, { name: 'abrir_tela', args: { tela: 'materiais', alvo: 'Caneta' } }] }, { reply: { reply: 'Toque no botão.', operation: null } });
+    calls.length = 0;
+    const mixed = await roleChat(f.db, f.actors.coordA, { action: 'chat', projectId: 'project-a', operationKey: 'role-fase2d-0003', consent: true, message, acceptedCostMicros: estimate.costMicros }, secret, { keys, fetcher });
+    assert.deepEqual(mixed.navigation, { href: '/?module=materials&project=project-a&itemId=caneta', label: 'material Caneta', afterUntrusted: true });
+    steps.splice(0, steps.length, { tools: [{ name: 'abrir_tela', args: { tela: 'emprestimos' } }] }, { reply: { reply: 'Sem acesso.', operation: null } });
     // Estoque usa o Rolê, mas não abre Empréstimos: a mesma frase volta sem botão e o modelo recebe a recusa.
     calls.length = 0;
     const refused = await roleChat(f.db, f.actors.estoque, { action: 'chat', projectId: 'project-a', operationKey: 'role-fase2d-0002', consent: true, message, acceptedCostMicros: estimate.costMicros }, secret, { keys, fetcher });
@@ -260,9 +289,9 @@ test('BOTÃO NA TELA: "Abrir {rótulo}" é um link interno do portal, alvo de 44
   assert.deepEqual(JSON.parse(JSON.stringify(roleNavigationFrom({ href: '/?module=loans', label: 'Empréstimos' }))), { href: '/?module=loans', label: 'Empréstimos' });
   assert.ok(roleNavigationFrom({ href: '/?module=projects&project=project-a&detailProject=project-a', label: 'ficha do projeto Projeto A' }));
   assert.ok(roleNavigationFrom({ href: '/?module=demands&project=project-a&demandId=ta-final', label: 'demanda “Relatório final do semestre”' }));
-  for (const href of ['https://example.test/?module=loans', '//example.test/?module=loans', 'javascript:alert(1)', '/?module=loans&next=https://example.test', '/api/assistant/role', '/?module=loans#x', ''])
+  for (const href of ['https://example.test/?module=loans', '//example.test/?module=loans', 'javascript:alert(1)', '/?module=loans&next=https://example.test', '/?module=work-teams&teamId=x', '/?module=loans&project=a&project=b&project=c&project=d&project=e', '/api/assistant/role', '/?module=loans#x', ''])
     assert.equal(roleNavigationFrom({ href, label: 'Empréstimos' }), undefined, `recusa ${href}`);
-  for (const label of ['', '   ', 'x'.repeat(121), 'linha\nquebrada', 12]) assert.equal(roleNavigationFrom({ href: '/?module=loans', label }), undefined);
+  for (const label of ['', '   ', 'x'.repeat(121), 'linha\nquebrada', 'oculto\u202e', 12]) assert.equal(roleNavigationFrom({ href: '/?module=loans', label }), undefined);
   assert.equal(roleNavigationFrom(null), undefined);
   const opened = [];
   const node = RoleNavigationButton({ navigation: { href: '/?module=loans', label: 'Empréstimos' }, onOpen: () => opened.push(true) });
@@ -273,6 +302,13 @@ test('BOTÃO NA TELA: "Abrir {rótulo}" é um link interno do portal, alvo de 44
   assert.equal(node.props.target, undefined, 'abre no próprio portal');
   assert.deepEqual(opened, [], 'nada acontece antes do toque');
   node.props.onClick(); assert.deepEqual(opened, [true], 'o toque fecha o painel');
+  // Depois de conteúdo de terceiros: "Sugestão do Rolê" em texto pequeno, acima do botão.
+  const marked = roleNavigationFrom({ href: '/?module=loans', label: 'Empréstimos', afterUntrusted: true });
+  assert.equal(marked.afterUntrusted, true);
+  assert.equal(roleNavigationFrom({ href: '/?module=loans', label: 'Empréstimos', afterUntrusted: 'sim' }).afterUntrusted, undefined);
+  const box = RoleNavigationButton({ navigation: marked });
+  assert.equal(box.props.children[0].type, 'small'); assert.equal(text(box.props.children[0]), 'Sugestão do Rolê');
+  assert.equal(box.props.children[1].type, 'a'); assert.equal(text(box.props.children[1]), 'Abrir Empréstimos');
   const css = readFileSync(`${root}components/portal/role-assistant.module.css`, 'utf8'), rule = css.match(/\.navigation\{[^}]*\}/)?.[0] ?? '';
   assert.match(rule, /min-height:44px/, 'alvo de 44 px');
   assert.doesNotMatch(rule, /(?:^|;|\{)(?:color|background)\s*:/, 'cores do .p-button-primary global, que já tem tema claro e escuro');
@@ -282,6 +318,10 @@ test('BOTÃO NA TELA: "Abrir {rótulo}" é um link interno do portal, alvo de 44
   assert.match(panel, /navigation = roleNavigationFrom\(result\.navigation\)/);
   assert.match(panel, /\{message\.navigation && <RoleNavigationButton navigation=\{message\.navigation\} onOpen=\{\(\) => close\(\)\}\/>\}/);
   const portal = readFileSync(`${root}app/portal-client.tsx`, 'utf8');
-  assert.match(portal, /managementTab\.current = next\.tab === 'management'/);
+  assert.match(portal, /managementTab\.current = wantedTab;/);
   assert.match(portal, /url\.searchParams\.set\('gestao', managementTab\.current\)/);
+  // Gestão já aberta: grava a aba com replaceState e avisa o painel antes do return.
+  const early = portal.slice(portal.indexOf('const wantedTab = '), portal.indexOf('if (portalLocationKey(next) === routeKey) return;'));
+  assert.match(early, /window\.history\.replaceState/); assert.match(early, /dispatchEvent\(new CustomEvent\(MANAGEMENT_TAB_EVENT/);
+  assert.match(readFileSync(`${root}components/portal/management/management-panel.tsx`, 'utf8'), /addEventListener\(MANAGEMENT_TAB_EVENT/);
 });
