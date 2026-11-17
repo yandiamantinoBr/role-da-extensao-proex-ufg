@@ -12,3 +12,10 @@
  .credentials{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 22px}
  .credentials li{align-content:start}
 }
+
+/* Título e botão na mesma linha; a descrição embaixo, na largura toda (sétima crítica de 16/11). */
+.heading{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:6px 12px}
+.heading>div{display:contents}
+.heading h3{grid-row:1;grid-column:1}
+.heading>button,.heading>a{grid-row:1;grid-column:2}
+.heading p{grid-row:2;grid-column:1/-1;margin-top:0}

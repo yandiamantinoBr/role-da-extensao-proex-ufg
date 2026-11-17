@@ -153,3 +153,5 @@
 /* Sexta crítica de 16/11: a linha tracejada marca só o cartão em governança, sem correr pelas unidades abaixo dele. */
 .node[data-relation=governance] { border-left:0; padding-left:0; }
 .node[data-relation=governance]>.nodeCard { border-left:2px dashed var(--muted); }
+/* Sétima crítica de 16/11: a amostra da legenda repete o que se vê (cartão com borda esquerda tracejada). */
+.legend i.dashed { width:16px; height:12px; border:1px solid var(--line); border-left:2px dashed var(--muted); border-radius:3px; }
