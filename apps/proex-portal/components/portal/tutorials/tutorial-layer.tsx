@@ -100,10 +100,12 @@ export default function TutorialLayer({ modules, tab, projectId, onNavigate }: {
       const target = visibleTarget(copy.target);
       if (target) {
         spotted = target; target.setAttribute(SPOT, '');
-        // Rola só se o controle estiver escondido: atrás do cabeçalho ou do próprio cartão.
-        const box = target.getBoundingClientRect(), guideTop = card.current?.getBoundingClientRect().top ?? innerHeight;
-        const coversCard = box.left < (card.current?.getBoundingClientRect().right ?? 0) && box.right > (card.current?.getBoundingClientRect().left ?? innerWidth);
-        if (!pinned(target) && (box.top < TOP_GAP || (coversCard && box.top > guideTop - 48) || box.bottom > innerHeight)) window.scrollBy({ top: box.top - TOP_GAP, behavior: reduce ? 'auto' : 'smooth' });
+        // Rola só se parte do controle estiver escondida: atrás do cabeçalho, do próprio cartão ou fora da tela.
+        // Leva o fim do controle para logo acima do cartão, sem passar o começo para baixo do cabeçalho.
+        const box = target.getBoundingClientRect(), guide = card.current?.getBoundingClientRect();
+        const coversCard = Boolean(guide) && box.left < guide!.right && box.right > guide!.left;
+        const limit = coversCard ? guide!.top - 16 : innerHeight - 16;
+        if (!pinned(target) && (box.top < TOP_GAP || box.bottom > limit)) window.scrollBy({ top: box.top < TOP_GAP ? box.top - TOP_GAP : Math.min(box.top - TOP_GAP, box.bottom - limit), behavior: reduce ? 'auto' : 'smooth' });
         setSpot({ key: spotKey, found: true }); return;
       }
       if (!copy.target || ++tries > 10) { setSpot({ key: spotKey, found: copy.target ? false : null }); return; }
