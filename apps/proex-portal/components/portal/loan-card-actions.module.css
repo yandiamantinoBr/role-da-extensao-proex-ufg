@@ -9,6 +9,7 @@
 .hint { margin: 0; font-size: 14px; line-height: 1.55; color: var(--text-secondary); }
 .confirm :global(.p-field) { margin: 0; }
 .confirm textarea { min-height: 64px; height: 64px; resize: vertical; }
+.confirm :global(.p-field) > span { color: var(--ink); }
 .confirm :global(.p-field) em { font-style: normal; font-weight: 400; color: var(--text-secondary); }
 .buttons { display: flex; flex-wrap: wrap; gap: 8px; }
 .buttons :global(.p-button) { min-height: 44px; }
