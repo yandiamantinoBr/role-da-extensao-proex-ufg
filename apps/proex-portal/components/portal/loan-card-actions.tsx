@@ -45,7 +45,7 @@ export default function LoanCardActions({ loanId, itemName, status, checkoutBloc
   }
   if (!step) return <div className={styles.actions}>
     {primary && <button type="button" className="p-button p-button-primary" aria-label={`${primary === 'out' ? 'Registrar retirada' : 'Registrar devolução'} de ${itemName}`} onClick={event => open(primary, event.currentTarget)}>{primary === 'out' ? <ArrowUpFromLine size={17} aria-hidden="true"/> : <ArrowDownToLine size={17} aria-hidden="true"/>}{primary === 'out' ? 'Registrar retirada' : 'Registrar devolução'}</button>}
-    {status === 'reserved' && <button type="button" className={checkoutBlocked ? 'p-button p-button-subtle' : `p-text-link ${styles.cancel}`} aria-label={`Cancelar a reserva de ${itemName}`} onClick={event => open('cancelled', event.currentTarget)}>{checkoutBlocked && <X size={16} aria-hidden="true"/>}Cancelar reserva</button>}
+    {status === 'reserved' && <button type="button" className={checkoutBlocked ? 'p-button p-button-subtle' : styles.cancel} aria-label={`Cancelar a reserva de ${itemName}`} onClick={event => open('cancelled', event.currentTarget)}>{checkoutBlocked && <X size={16} aria-hidden="true"/>}Cancelar reserva</button>}
   </div>;
   const copy = COPY[step];
   return <section className={styles.confirm} aria-label={`${copy.title}: ${itemName}`}>

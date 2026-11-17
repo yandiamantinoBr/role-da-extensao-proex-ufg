@@ -1158,7 +1158,8 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
                     <CalendarDays size={18}/>
                     <div>
                     {l.status === 'out' ? <><strong className="p-loan-due">Devolver até {when(get(l, 'endsAt', 'ends_at'))}</strong>
-                    <span>Reserva desde {when(get(l, 'startsAt', 'starts_at'))}</span></> : <><strong>{when(get(l, 'startsAt', 'starts_at'))}</strong>
+                    <span>Reserva desde {when(get(l, 'startsAt', 'starts_at'))}</span></> : l.status === 'reserved' ? <><strong>Retirar a partir de {when(get(l, 'startsAt', 'starts_at'))}</strong>
+                    <span>Devolver até {when(get(l, 'endsAt', 'ends_at'))}</span></> : <><strong>{when(get(l, 'startsAt', 'starts_at'))}</strong>
                     <span>até {when(get(l, 'endsAt', 'ends_at'))}</span></>}
                     </div>
                     </div>
