@@ -21,7 +21,7 @@ Comece pela [Retomada de 13/11](RETOMADA-13NOV-PORTAL-PROEX.md) para conferir a 
 
 ## Tutoriais do Portal sem IA · Navegação · 2026-11-16
 
-Branch `claude/tutoriais-navegacao-16nov` (Claude Code), migração **0052_user_tutorials** (só acréscimo). Detalhes e como criar capítulos: [TUTORIAIS](../apps/proex-portal/docs/TUTORIAIS.md).
+**No ar:** PR164 (`22f62ee`, `dpl_dJosyguMJgVXaq1dJ3HdKB9f3s8y`), migração **0052_user_tutorials** (só acréscimo; a 0051 é da PR163). **Próxima migração livre: 0053.** Conferido em produção com login, só lendo: `/api/tutorials` devolve 200 `private, no-store` com Navegação v1 (8 de 8 passos para a responsável institucional), o convite aparece no Início, todas as âncoras estão presentes, há "Ajuda e tutoriais" no menu da conta e não há rolagem lateral em 1920 px. O tutorial não foi iniciado em produção, para não gravar progresso. Detalhes e como criar capítulos: [TUTORIAIS](../apps/proex-portal/docs/TUTORIAIS.md).
 
 - Convite do Rolê no Início (uma vez), **Ajuda e tutoriais** no menu da conta, em Mais e na Conta, cartão guiado não modal com contorno no controle real, pausar, retomar, repetir. Funciona sem IA, chave ou `inventory.read`.
 - Passos resolvidos pelo acesso da sessão a cada abertura e troca de projeto (projeto vizinho, conta bloqueada ou pendente, vínculo revogado com a tela aberta). Progresso pessoal; a anonimização apaga.
