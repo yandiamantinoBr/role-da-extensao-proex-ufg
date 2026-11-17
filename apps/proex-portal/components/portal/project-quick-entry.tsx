@@ -64,8 +64,8 @@ export default function ProjectQuickEntry({ kind, project, items, mutate, onClos
         <label className={`p-field ${styles.wide}`}><span>Ação atendida *</span><input name="actionName" required maxLength={160} defaultValue={project.name}/><small>Aparece em relatórios. Nome e contato de pessoas vão nos campos Responsável e Contato.</small></label>
         <label className="p-field"><span>Responsável pela retirada *</span><input name="borrowerName" required maxLength={120}/></label>
         <label className="p-field"><span>Contato para o empréstimo</span><input name="borrowerContact" maxLength={150}/></label>
-        <label className="p-field"><span>Retirada prevista *</span><DateTimeField aria-label="Retirada prevista" name="startsAt"  required/></label>
-        <label className="p-field"><span>Devolução prevista *</span><DateTimeField aria-label="Devolução prevista" name="endsAt"  required/></label>
+        <label className="p-field"><span>Retirada prevista (horário de Brasília) *</span><DateTimeField aria-label="Retirada prevista" name="startsAt"  required/></label>
+        <label className="p-field"><span>Devolução prevista (horário de Brasília) *</span><DateTimeField aria-label="Devolução prevista" name="endsAt"  required/></label>
         <label className={`p-field ${styles.wide}`}><span>Observações</span><textarea name="note" rows={2} maxLength={1000}/></label>
       </>}
       </div>

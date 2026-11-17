@@ -90,6 +90,14 @@ export async function reportRows(db: D1Database, actor: PortalActor | null, inpu
     if (to) { clauses.push(`${calendarDay}<=?`); values.push(to); }
     return { clauses, values };
   };
+  // Critério de sobreposição (decisão de 16/11), o mesmo da lista e da Agenda: entra o que estiver em curso
+  // em algum momento do período, em Brasília. Início antes do período e fim depois dele também contam.
+  const overlap = (startColumn: string, endColumn: string) => {
+    const clauses: string[] = [], values: unknown[] = [];
+    if (from) { clauses.push(`${endColumn}>?`); values.push(Date.parse(`${from}T00:00:00-03:00`)); }
+    if (to) { clauses.push(`${startColumn}<?`); values.push(Date.parse(`${to}T00:00:00-03:00`) + 86400000); }
+    return { clauses, values };
+  };
   const base = `projects p LEFT JOIN organizational_units u ON u.id=p.unit_id LEFT JOIN project_types t ON t.id=p.type_id`;
   const projectColumns = `p.name AS projeto,COALESCE(u.acronym,'') AS unidade_sigla,COALESCE(u.name,'') AS unidade,COALESCE(u.group_label,'') AS unidade_grupo,p.thematic_area AS area_tematica,COALESCE(t.label,'') AS modalidade`;
   const run = async (sql: string, extra: { clauses: string[]; values: unknown[] } = { clauses: [], values: [] }) => {
@@ -128,7 +136,7 @@ export async function reportRows(db: D1Database, actor: PortalActor | null, inpu
     rows = await run(`SELECT l.id,${projectColumns},i.name AS material,l.action_name AS acao,date(l.starts_at/1000,'unixepoch','-3 hours') AS inicio,date(l.ends_at/1000,'unixepoch','-3 hours') AS fim,
       CASE WHEN l.close_reason='not_collected' THEN 'not_collected' ELSE l.status END AS situacao,date(l.checked_out_at,'-3 hours') AS retirado_em,date(l.returned_at,'-3 hours') AS devolvido_em,
       CASE WHEN l.status='out' AND l.ends_at<CAST(strftime('%s','now') AS INTEGER)*1000 THEN 'sim' ELSE 'nao' END AS em_atraso,l.condition_out AS condicao_saida,l.condition_in AS condicao_retorno,l.project_id AS __loan_project
-      FROM loans l JOIN items i ON i.id=l.item_id JOIN ${base.replace('projects p', 'projects p ON p.id=l.project_id')} /*WHERE*/ ORDER BY l.starts_at DESC,l.id`, period('l.starts_at', true));
+      FROM loans l JOIN items i ON i.id=l.item_id JOIN ${base.replace('projects p', 'projects p ON p.id=l.project_id')} /*WHERE*/ ORDER BY l.starts_at DESC,l.id`, overlap('l.starts_at', 'l.ends_at'));
     // Condição na retirada e na devolução são texto livre: podem conter nome, contato ou observação pessoal.
     // Só quem consulta empréstimos daquele projeto as recebe; quem só lê relatórios recebe "Restrito",
     // sempre, para não revelar se havia ou não alguma anotação.

@@ -97,7 +97,7 @@ const DATASETS: Record<DatasetId, Dataset> = {
     kpis: rows => [{ label: 'Registros de saída', value: rows.length }, { label: 'Materiais', value: distinct(rows, 'material') }, { label: 'Quantidade das saídas', value: quantityTotal(rows, 'quantidade') }, { label: 'Retornos pendentes', value: count(rows, row => row.situacao_retorno === 'out'), tone: 'warn' }],
   },
   loans: {
-    label: 'Empréstimos', description: 'Agenda, retiradas, devoluções e atrasos. Não inclui dados de contato.', icon: Truck,
+    label: 'Empréstimos', description: 'Agenda, retiradas, devoluções e atrasos. O período inclui todo empréstimo em curso entre as datas, mesmo que tenha começado antes (horário de Brasília). Não inclui dados de contato.', icon: Truck,
     columns: [...shared, { key: 'material', label: 'Material' }, { key: 'acao', label: 'Ação' }, { key: 'inicio', label: 'Início', date: true }, { key: 'fim', label: 'Devolução prevista', date: true }, { key: 'situacao', label: 'Situação' }, { key: 'em_atraso', label: 'Em atraso' }, { key: 'retirado_em', label: 'Retirado em', date: true }, { key: 'devolvido_em', label: 'Devolvido em', date: true }, { key: 'condicao_saida', label: 'Condição na saída' }, { key: 'condicao_retorno', label: 'Condição no retorno' }],
     defaults: ['material', 'projeto', 'acao', 'inicio', 'fim', 'situacao', 'em_atraso', 'devolvido_em'],
     groups: ['situacao', 'material', 'projeto', 'unidade_sigla', 'em_atraso', 'mes'], dateKey: 'inicio',
@@ -569,6 +569,7 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
     ['Referências', 'Unidade e saldo atuais do cadastro. Saldos repetidos por registro não devem ser somados. Uma unidade individual por retirada de equipamento; retornos não criam nova saída.'], ['Datas ausentes', 'Sem filtro de período é possível consultar retiradas sem data efetiva; previsões não substituem o histórico.'],
     ['Operador', 'Nome atual do perfil, somente para quem tem permissão operacional vigente; não identifica o beneficiário.'], ['Textos livres', includeNotes ? 'Consulta opcional sujeita à permissão operacional atual; confira as colunas antes de compartilhar.' : 'Não consultados nem exportados.'],
     ['Cobertura', truncated ? 'Consulta parcial por limite de linhas ou tamanho. Refine os filtros antes de considerar o relatório completo.' : 'Registros do recorte retornados pela consulta.']);
+  if (dataset === 'loans') info.push(['Critério de data', 'Entram os empréstimos em curso em algum momento entre as datas, mesmo que tenham começado antes. Horário de Brasília.']);
   if (withheld) info.push(['Colunas restritas', 'As colunas Condição na saída e Condição no retorno aparecem como “Restrito” porque podem ter anotações pessoais. Só quem gerencia os empréstimos do projeto vê esse conteúdo.']);
 
   const exportContext = JSON.stringify([queryKey, search, focus, measurementUnit, columns, sort, groupBy, measure, scopeLabel, demandFilterLabel, attempt]);

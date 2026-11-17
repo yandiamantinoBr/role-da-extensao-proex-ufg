@@ -256,6 +256,7 @@ export default function CalendarPanel({ viewerId, projects: sourceProjects, orga
         <label className="p-field"><span>Data inicial</span><DateField aria-label="Data inicial" value={from} onValueChange={next=>{setFrom(next);setSelectedDay('');}}/></label>
         <label className="p-field"><span>Data final (incluída)</span><DateField aria-label="Data final (incluída)" value={to} min={from} onValueChange={next=>{setTo(next);setSelectedDay('');}}/></label>
       </div>
+      <p className={styles.help}>Entram os compromissos em curso em algum momento entre as datas, mesmo que tenham começado antes. Horário de Brasília.</p>
       <div className={styles.actions}><button type="button" className="p-button p-button-subtle" onClick={()=>setReload(value=>value+1)} disabled={loading||!validRange}><RefreshCw size={16}/>Atualizar consulta</button>{validRange?<a className="p-button p-button-subtle" href={`/api/calendar?${query}&format=ics`}><Download size={16}/>{downloadLabel}</a>:<button type="button" className="p-button p-button-subtle" disabled><Download size={16}/>{downloadLabel}</button>}</div>
       <p className={styles.help}>O arquivo .ics usa período, categoria, unidade e projeto e inclui cancelamentos para atualizar calendários. A busca por texto, o filtro da lista e o controle de cancelamentos valem para a página e seus relatórios.</p>
       </div></details>
