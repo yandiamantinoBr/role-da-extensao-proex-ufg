@@ -92,7 +92,7 @@ test('wrong account, project, cycles, duplicate IDs and archived regressions dis
 test('one scope notice, deep branches collapse behind named summaries, and only exceptional relations get a badge',async()=>{
  const deep=response({nodes:[node(),node({id:'unit-b',parentId:'unit-a',name:'Pró-reitoria de Extensão',acronym:'PROEX',kind:'office',relation:'governance'}),node({id:'unit-c',parentId:'unit-b',name:'Diretoria C',acronym:'',kind:'directorate',relation:'subordination'}),node({id:'unit-d',parentId:'unit-c',name:'Coordenação D',acronym:'',kind:'coordination',relation:'subordination'}),node({id:'unit-e',parentId:'unit-d',name:'Coordenação E com um nome institucional bastante longo',acronym:'',kind:'coordination',relation:'subordination'})],links:[]});
  const h=harness();try{await h.open(deep);
-  assert.equal(h.body().split('não concede').length-1,1);assert.match(h.body(),/toda a organização/);assert.match(h.body(),/Relações de governança/);
+  assert.equal(h.body().split('não concede').length-1,1);assert.match(h.body(),/toda a organização/);assert.match(h.body(),/Relaç(ão|ões) de governança/);
   const branches=h.all('details').filter(entry=>entry.props.className==='children');assert.equal(branches.length,4);assert.deepEqual(branches.map(entry=>Boolean(entry.props.open)),[true,true,false,false]);
   const summaries=branches.map(entry=>text(entry.props.children.find(child=>child?.type==='summary')));assert.match(summaries[0],/1 unidade em governança.*Câmara de Extensão e Cultura/);assert.match(summaries[2],/1 unidade subordinada.*Diretoria C/);
   assert.deepEqual(h.all('span').filter(entry=>entry.props.className==='badge').map(text),['Governança']);assert.doesNotMatch(h.body(),/0 equipes/);
@@ -124,7 +124,7 @@ test('one live region exists before opening and carries loading, then feedback, 
 
 test('compact preamble: metrics are one list and the source is a closed native disclosure that keeps its meaning and edit action',async()=>{
  const h=harness();try{await h.open();
-  const metrics=h.find('ul',entry=>entry.props['aria-label']==='Resumo da estrutura');assert.ok(metrics);assert.equal(metrics.props.children.length,3);assert.match(text(metrics),/Unidades visíveis.*Relações de governança.*Equipes vinculadas/);
+  const metrics=h.find('ul',entry=>entry.props['aria-label']==='Resumo da estrutura');assert.ok(metrics);assert.equal(metrics.props.children.length,3);assert.match(text(metrics),/Unidades? visíve(l|is).*Relaç(ão|ões) de governança.*Equipes? vinculadas?/);
   const reference=h.find('details',entry=>entry.props.className==='reference');assert.ok(reference);assert.equal(reference.props.open,undefined);
   const summary=reference.props.children.find(child=>child?.type==='summary');assert.match(text(summary),/^Fonte: Organograma público/);assert.match(text(summary),/não certifica a estrutura vigente/);
   assert.equal(h.body().split('não certifica').length-1,1);assert.equal(h.body().split('não concede').length-1,1);
@@ -268,4 +268,15 @@ test('the governance dash marks only the governance card, not the whole subtree 
   assert.match(tail, /^\.node\[data-relation=governance\] \{ border-left:0; padding-left:0; \}/);
   assert.match(css, /\.node\[data-relation=governance\]>\.nodeCard \{ border-left:2px dashed var\(--muted\); \}/);
   assert.match(readFileSync(new URL('../components/portal/work-teams-panel.module.css', import.meta.url), 'utf8'), /\.members \{ align-self: start; \}/);
+});
+
+test('summary numbers agree in number and the legend sample looks like the governance card (sétima crítica de 16/11)', async () => {
+  const h = harness(); try { await h.open();
+   assert.match(h.body(), /1Relação de governança/); assert.doesNotMatch(h.body(), /1Relações de governança/);
+   assert.match(h.body(), /1Equipe vinculada/);
+  } finally { h.dispose(); }
+  const css = readFileSync(new URL('../components/portal/institutional-structure-panel.module.css', import.meta.url), 'utf8');
+  assert.match(css, /\.legend i\.dashed \{ width:16px; height:12px; border:1px solid var\(--line\); border-left:2px dashed var\(--muted\); border-radius:3px; \}/);
+  const sheets = readFileSync(new URL('../components/portal/project-sheets-panel.module.css', import.meta.url), 'utf8');
+  assert.match(sheets, /\.heading p\{grid-row:2;grid-column:1\/-1;margin-top:0\}/, 'a descrição da planilha usa a largura toda');
 });
