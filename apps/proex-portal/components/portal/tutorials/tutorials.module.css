@@ -2,6 +2,8 @@
 
 /* Destaque do controle real do passo (fora deste componente, por isso global). */
 :global([data-tutorial-spot]) { outline: 3px solid var(--focus); outline-offset: 3px; border-radius: 10px; box-shadow: 0 0 0 7px color-mix(in srgb, var(--focus) 28%, transparent); scroll-margin-top: 84px; }
+/* Seções inteiras (título solto, sem caixa): mais folga para o contorno não encostar no texto. */
+:global(.p-section[data-tutorial-spot]) { outline-offset: 8px; }
 /* Na barra de baixo do celular o contorno fica por dentro, para o cartão logo acima não escondê-lo. */
 :global(.pn-mobile-nav[data-tutorial-spot]), :global(.pn-mobile-nav [data-tutorial-spot]) { outline-offset: -3px; box-shadow: inset 0 0 0 6px color-mix(in srgb, var(--focus) 28%, transparent); animation: none; }
 @media (prefers-reduced-motion: no-preference) {
