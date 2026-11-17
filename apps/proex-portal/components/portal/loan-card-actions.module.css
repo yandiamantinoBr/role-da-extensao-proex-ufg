@@ -1,7 +1,8 @@
 /* Ação principal do cartão de empréstimo e a confirmação curta. Container query para o celular. */
-.actions { container-type: inline-size; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 14px 0 4px; }
+.actions { container-type: inline-size; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 14px 0 10px; }
 .actions :global(.p-button) { min-height: 44px; }
-.cancel { min-height: 44px; }
+.cancel { min-height: 44px; font-size: 14px; color: var(--text-secondary); text-decoration: underline; text-underline-offset: 3px; }
+.cancel:hover { color: var(--ink); }
 .confirm { display: grid; gap: 10px; margin: 14px 0 4px; padding: 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface-soft); }
 .title { margin: 0; font-size: 15px; line-height: 1.45; color: var(--ink); overflow-wrap: anywhere; }
 .hint { margin: 0; font-size: 14px; line-height: 1.55; color: var(--text-secondary); }
@@ -9,6 +10,7 @@
 .confirm :global(.p-field) em { font-style: normal; font-weight: 400; color: var(--text-secondary); }
 .buttons { display: flex; flex-wrap: wrap; gap: 8px; }
 .buttons :global(.p-button) { min-height: 44px; }
+.buttons :global(.p-button-subtle) { background: var(--surface); border-color: var(--control-border); }
 @container (max-width: 360px) {
   .actions > :global(.p-button) { flex: 1 1 100%; justify-content: center; }
 }

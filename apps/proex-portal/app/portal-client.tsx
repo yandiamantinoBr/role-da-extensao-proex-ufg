@@ -1157,8 +1157,9 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
                     <div className="p-loan-period">
                     <CalendarDays size={18}/>
                     <div>
-                    <strong>{when(get(l, 'startsAt', 'starts_at'))}</strong>
-                    <span>até {when(get(l, 'endsAt', 'ends_at'))}</span>
+                    {l.status === 'out' ? <><strong className="p-loan-due">Devolver até {when(get(l, 'endsAt', 'ends_at'))}</strong>
+                    <span>Reserva desde {when(get(l, 'startsAt', 'starts_at'))}</span></> : <><strong>{when(get(l, 'startsAt', 'starts_at'))}</strong>
+                    <span>até {when(get(l, 'endsAt', 'ends_at'))}</span></>}
                     </div>
                     </div>
                     {l.status === 'reserved' && item && equipmentBlockCause(item) && <div className="p-loan-missed" role="note"><p><strong>A retirada fica bloqueada:</strong> {equipmentBlockCause(item)}.{canProject(get(l, 'projectId', 'project_id'), 'inventory.manage') ? '' : ' Avise a equipe de materiais ou reserve outro bem.'}</p>{canProject(get(l, 'projectId', 'project_id'), 'inventory.manage') && <button type="button" className="p-text-link" aria-label={`Abrir a ficha de ${item.name || 'equipamento'}`} onClick={() => { setMaterialMode('view'); setSelectedMaterialId(string(item.id)); }}><ArrowUpRight size={15} aria-hidden="true"/>Abrir ficha do material</button>}</div>}

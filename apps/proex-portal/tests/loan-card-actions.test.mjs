@@ -42,7 +42,7 @@ test('reserved: retirada is the visible main action; the confirmation asks only 
  try{
   assert.ok(h.has('Registrar retirada de Projetor sintético'));assert.ok(h.has('Cancelar a reserva de Projetor sintético'));
   h.click('Registrar retirada de Projetor sintético');
-  assert.match(h.body(),/Confirmar retirada · Projetor sintético/);assert.equal(h.focus.at(-1),'textarea','focus goes to the condition field');
+  assert.match(h.body(),/Confirmar retirada/);assert.equal(h.textarea()&&true,true);assert.equal(h.focus.at(-1),'textarea','focus goes to the condition field');
   assert.doesNotMatch(h.body(),/Escolha a ação|Atualização do empréstimo/);
   h.type('Com capa, sem avarias');h.click('Confirmar retirada');
   assert.equal(h.click('Confirmar retirada'),'disabled','a second tap while saving sends nothing');
@@ -50,7 +50,7 @@ test('reserved: retirada is the visible main action; the confirmation asks only 
   assert.equal(call.action,'loan.status');assert.deepEqual({...call.payload,operationKey:undefined},{id:'loan-a',status:'out',conditionOut:'Com capa, sem avarias',operationKey:undefined});
   assert.match(call.payload.operationKey,/^[0-9a-f-]{36}$/);
   call.resolve({});await tick();h.render();
-  assert.doesNotMatch(h.body(),/Confirmar retirada ·/,'closes after success');
+  assert.equal(h.textarea(),undefined,'closes after success');assert.ok(h.has('Registrar retirada de Projetor sintético'));
  }finally{h.dispose();}
 });
 

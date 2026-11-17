@@ -15,8 +15,8 @@ type Props = {
   mutate: (action: string, payload: Record<string, unknown>) => Promise<Record<string, unknown>>;
 };
 const COPY: Record<Step, { title: string; confirm: string; field?: string; placeholder?: string; hint: string }> = {
-  out: { title: 'Confirmar retirada', confirm: 'Confirmar retirada', field: 'Condição e acessórios na saída', placeholder: 'Ex.: com capa e carregador, sem avarias', hint: 'Registre como o equipamento saiu. Isso ajuda a conferir a devolução.' },
-  returned: { title: 'Confirmar devolução', confirm: 'Confirmar devolução', field: 'Condição e acessórios na volta', placeholder: 'Ex.: voltou com todos os acessórios, sem avarias', hint: 'Registre como o equipamento voltou. Avarias ficam no histórico.' },
+  out: { title: 'Confirmar retirada', confirm: 'Confirmar retirada', field: 'Condição e acessórios na saída', placeholder: 'Ex.: com capa e carregador, sem avarias', hint: 'Descreva como o equipamento saiu e com quais acessórios. Isso ajuda a conferir a devolução.' },
+  returned: { title: 'Confirmar devolução', confirm: 'Confirmar devolução', field: 'Condição e acessórios na volta', placeholder: 'Ex.: voltou com todos os acessórios, sem avarias', hint: 'Se houver avaria ou faltar acessório, descreva aqui. Fica registrado no histórico do empréstimo.' },
   cancelled: { title: 'Cancelar esta reserva?', confirm: 'Cancelar reserva', hint: 'O equipamento fica livre para outras reservas. O histórico continua guardado.' },
 };
 
@@ -49,7 +49,7 @@ export default function LoanCardActions({ loanId, itemName, status, checkoutBloc
   </div>;
   const copy = COPY[step];
   return <section className={styles.confirm} aria-label={`${copy.title}: ${itemName}`}>
-    <p className={styles.title}><strong>{copy.title}</strong> · {itemName}</p>
+    <p className={styles.title}><strong>{copy.title}</strong></p>
     <p className={styles.hint}>{copy.hint}</p>
     {copy.field && <label className="p-field"><span>{copy.field} <em>(opcional)</em></span><textarea ref={field} rows={2} maxLength={1000} value={note} disabled={saving} placeholder={copy.placeholder} onChange={event => { setNote(event.target.value); key.current = null; }}/></label>}
     {error && <p className="p-inline-error" role="alert">{error}</p>}

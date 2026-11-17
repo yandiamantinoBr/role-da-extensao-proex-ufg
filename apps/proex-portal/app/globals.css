@@ -253,3 +253,9 @@ html[data-theme=dark] .p-status-out,html[data-theme=dark] .p-status-reserved{bac
 html[data-theme=dark] .p-status-paused,html[data-theme=dark] .p-status-pending{background:#3b2a16;color:#ffc983}
 /* Botão desativado no tema escuro: cor própria em vez de transparência, para o texto continuar legível. */
 html[data-theme=dark] .p-button:disabled,html[data-theme=dark] .p-button-primary:disabled{opacity:1;background:#2c2236;border-color:#4a3a58;color:#a99bb6}
+/* Cartão do empréstimo (16/11): reservado e retirado com cores diferentes; prazo de devolução em destaque; a confirmação aberta não estica o cartão vizinho. */
+.p-loan-list{align-items:start}
+.p-status-reserved{background:#efe7f6;color:#5b3a73}.p-status-out{background:#e3eefc;color:#2f5687}
+html[data-theme=dark] .p-status-reserved{background:#3a2a48;color:#e6cdf6}
+.p-loan-period strong.p-loan-due{font-size:14px;font-weight:600;color:var(--ink)}
+html[data-theme=dark] .p-loan-period strong.p-loan-due{color:var(--ink)}
