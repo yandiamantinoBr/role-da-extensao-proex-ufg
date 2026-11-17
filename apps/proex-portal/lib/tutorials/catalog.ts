@@ -478,7 +478,7 @@ export const TUTORIAL_CHAPTERS: readonly TutorialChapter[] = [
       },
       {
         id: 'saldo', title: 'Físico, reservado e disponível',
-        speech: 'Físico é quanto existe. Reservado já está separado para alguém. Disponível é o que pode ser usado agora, na mesma unidade. Num equipamento emprestado, o físico continua 1 e o disponível cai para 0.',
+        speech: 'Físico é quanto existe. Reservado já está separado para alguém. Disponível é o que pode ser usado agora, na mesma unidade. Num equipamento emprestado, o físico não muda, mas o disponível cai para 0.',
         speechMobile: 'Físico é quanto existe. Reservado já está separado. Disponível é o que pode ser usado agora.',
         youWillSee: 'A tabela de saldo destacada.', youWillSeeMobile: 'Os cartões dos materiais destacados, com Físico, Reservado e Disponível.',
         target: '[data-tutorial="materiais-saldo"]', module: 'materials', openLabel: 'Ir para Materiais', requires: { anyOf: ['inventory.read', 'inventory.manage', 'inventory.deliver'] },
