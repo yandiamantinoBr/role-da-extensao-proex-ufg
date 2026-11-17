@@ -14,11 +14,12 @@ import styles from './tutorials.module.css';
 const MOBILE = '(max-width: 720px)';
 const SPOT = 'data-tutorial-spot';
 
-/** O primeiro elemento visível que corresponde ao seletor (o menu do computador e o do celular coexistem). */
+/** O primeiro elemento visível e com tamanho que corresponde ao seletor (o menu do computador e o do celular coexistem; lista vazia não conta). */
 export function visibleTarget(selector: string | undefined, root: ParentNode = document): HTMLElement | null {
   if (!selector) return null;
   for (const element of Array.from(root.querySelectorAll<HTMLElement>(selector))) {
-    if (element.getClientRects().length > 0 && getComputedStyle(element).visibility !== 'hidden') return element;
+    const box = element.getBoundingClientRect();
+    if (box.width > 0 && box.height > 0 && getComputedStyle(element).visibility !== 'hidden') return element;
   }
   return null;
 }
