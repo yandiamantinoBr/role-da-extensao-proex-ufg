@@ -28,6 +28,18 @@ const actionAnywhere = new RegExp(String.raw`\b(?:${actionVerb})\b`);
 const question = /\?|\b(?:quando|qual|quais|quanto|quantos|quantas|como|onde|o que|por que|existe|ha)\b/;
 // Dado do Portal (projetos, demandas, estoque...) não é documento publicado. "projetos" sozinho não veta.
 const portalData = /\b(?:no portal(?!\s+(?:oficial|da\s+proe[xc]|do\s+conpeex))|aqui no|no sistema|projetos?\s+(?:do|no)\s+portal|demandas?|tarefas?|entregas?|estoque|brindes?|kits?|emprestimos?|responsavel)\b/;
+// Agenda e compromissos do projeto, ou pedido em duas partes que termina no Portal ("depois veja na Agenda"):
+// vão para a conversa com IA, que tem consultar_fontes_oficiais e consultar_agenda. Cronograma, calendário
+// ou agenda do edital e data de evento do CONPEEX são documento oficial e continuam busca.
+const ofEdital = String.raw`(?!\s+(?:d[oa]s?\s+)?(?:edital|editais|conpeex|23[º°o]?\s*conpeex|probec|proe[xc])\b)`;
+const portalSchedule = new RegExp([
+  String.raw`\bagenda\b${ofEdital}`,
+  String.raw`\bcompromissos?\b`,
+  String.raw`\breuni(?:ao|oes)\b`,
+  String.raw`\b(?:eventos?|calendarios?)\s+d[oe]s?\s+(?:(?:meu|nosso)\s+)?projetos?\b`,
+  String.raw`\b(?:meu|nosso)\s+calendario\b`,
+  String.raw`\bdepois\b[^.?!]{0,20}?\b(?:veja|ve|consulte|confira|verifique|olhe|procure|busque)\b[^.?!]{0,40}?\b(?:n[oa]s?|em)\s+(?:portal(?!\s+(?:oficial|da\s+proe[xc]|do\s+conpeex))|agenda|demandas?|tarefas?|calendario|estoque|projetos?|sistema)\b`,
+].join('|'));
 
 function portalAction(value: string): boolean {
   const text = value.replace(/https:\/\/\S+/g, ' ').replace(/\s+/g, ' ').trim();
@@ -39,6 +51,8 @@ export function isOfficialSearch(message: string): boolean {
   const value = message.trim().normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
   // Link oficial colado é destino exato, salvo quando a frase pede uma operação no Portal.
   if (officialPdfIn(message) || officialPageIn(message)) return !portalAction(value);
+  // Sem link: pedido que também consulta a Agenda ou o Portal não vira busca automática (o botão continua valendo).
+  if (portalSchedule.test(value)) return false;
   if (requestsOfficialPdf(value) && (program.test(value) || documentCue.test(value)) && !portalAction(value) && !portalData.test(value)) return true;
   const site = /\b(?:(?:site|portal)\s+oficial\b|(?:site|portal)\s+(?:da|do)\s+(?:proe[xc]|23[º°o]?\s*conpeex|conpeex)\b|(?:proex\.ufg\.br|23conpeex\.plateia\.ufg\.br)(?![\w.-]))/;
   const lookup = /\b(?:pesquise|pesquisar|busque|buscar|procure|procurar|consulte|consultar|ache|encontre|encontrar|verifique|confira|acesse|veja|qual|quais|onde|quando|quanto|quantos|quantas|saber|tem|esta)\b/;

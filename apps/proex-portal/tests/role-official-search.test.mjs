@@ -538,3 +538,34 @@ test('ÍNDICE · RESERVA: sem índice nenhum, usa as páginas /p/ e /n/ da cópi
   const empty = await officialSearchReply(emptyDb, 'org_test', APPEAL, cold.fetcher);
   assert.equal(empty.reply, 'Não consegui consultar as fontes oficiais agora. Tente novamente em instantes.');
 });
+
+test('INTENÇÃO · PEDIDO MISTO: Agenda, compromissos e "depois veja no Portal" vão para a conversa; cronograma do edital continua busca', async () => {
+  const mixed = 'Leia o termo aditivo do edital do PROBEC e me diga o novo prazo de recurso da habilitação. Depois veja na Agenda do projeto se há algum compromisso nesse período.';
+  const official = [
+    'qual o calendário do edital PROBEC?',
+    'qual o cronograma do edital PROBEC?',
+    'Qual o calendário do edital PROEC nº 08/2026?',
+    'Quando é o evento de apresentação do CONPEEX, segundo o edital?',
+    'Qual a data do evento CONPEEX no edital PROEC nº 08/2026?',
+    'No site oficial da PROEX, quando é o evento de apresentação do CONPEEX?',
+    'Qual a agenda do edital PROBEC?',
+  ];
+  const portal = [
+    mixed,
+    'Qual o prazo de recurso do edital PROBEC? Tenho algum compromisso nesse dia?',
+    'O prazo do aditivo do edital PROBEC bate com alguma reunião do projeto?',
+    'Tem evento do projeto no período de inscrição do edital PROBEC?',
+    'Compare o cronograma do edital PROBEC com o calendário do projeto',
+    'O resultado do edital PROBEC cai em que dia da minha agenda?',
+    'Qual o prazo do aditivo do edital? Depois consulte as demandas sobre isso.',
+    'Leia o edital PROBEC e depois confira no Portal quais atividades temos.',
+    'Veja o edital do PROBEC e depois verifique na agenda as reuniões.',
+    'No site oficial da PROEX, qual o prazo do edital? Depois veja na Agenda.',
+  ];
+  for (const phrase of official) assert.equal(isOfficialSearch(phrase), true, `deveria buscar: ${phrase}`);
+  for (const phrase of portal) assert.equal(isOfficialSearch(phrase), false, `não deveria buscar: ${phrase}`);
+  // Com o botão "Fontes oficiais" ligado, a decisão é da pessoa: continua busca.
+  const { officialRoute } = await import(compile('assistant/official-search-intent'));
+  assert.deepEqual(officialRoute({ mode: 'chat', toggled: true, publicSearch: true, attachment: false, text: mixed }), { official: true, explicit: true });
+  assert.deepEqual(officialRoute({ mode: 'chat', toggled: false, publicSearch: true, attachment: false, text: mixed }), { official: false, explicit: false });
+});
