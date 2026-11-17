@@ -105,5 +105,5 @@ export function roleComposerMode(status: { available: boolean; policy?: { public
 export function officialRoute(input: { mode: RoleComposerMode; toggled: boolean; publicSearch: boolean; attachment: boolean; text: string }): { official: boolean; explicit: boolean } {
   if (input.mode === 'off' || !input.publicSearch || input.attachment) return { official: false, explicit: false };
   const explicit = input.mode === 'search' || input.toggled;
-  return { official: explicit || isOfficialSearch(input.text) || directOfficialKind(input.text) !== null, explicit };
+  return { official: explicit || directOfficialKind(input.text) !== null, explicit };
 }

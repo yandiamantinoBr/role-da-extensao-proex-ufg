@@ -18,7 +18,7 @@ function compile(name) {
 }
 
 const { readableOfficialUrl, readOfficial, extractLinkGroups, parseNewsFeed, readProexNews, READ_BYTES } = await import(compile('assistant/official-links'));
-const { asksProexLinks, asksProexNews, directOfficialKind } = await import(compile('assistant/official-search-intent'));
+const { asksProexLinks, asksProexNews, directOfficialKind, officialRoute, isOfficialSearch } = await import(compile('assistant/official-search-intent'));
 const { runRoleTool, officialLinksReply, proexNewsReply, ROLE_TOOL_NAMES } = await import(compile('assistant/role-tools'));
 const { ROLE_TOOL_RESULT_BYTES } = await import(compile('assistant/role-contracts'));
 
@@ -239,3 +239,17 @@ test('INTENÇÃO: "links da PROEX" e "Instagram/notícias" disparam a resposta d
   for (const phrase of neither) assert.equal(directOfficialKind(phrase), null, `não deveria disparar: ${phrase}`);
 });
 
+test('TELA: officialLookup segue a regra — direto (sem custo) com o botão, no modo só busca e para links/notícias; edital reconhecido vai ao modelo', () => {
+  const base = { mode: 'chat', toggled: false, publicSearch: true, attachment: false };
+  const edital = 'Quais editais de extensão estão abertos?';
+  assert.equal(isOfficialSearch(edital), true, 'a frase continua reconhecida');
+  assert.deepEqual(officialRoute({ ...base, text: edital }), { official: false, explicit: false }, 'com a conversa disponível vai ao modelo, com custo');
+  assert.deepEqual(officialRoute({ ...base, toggled: true, text: edital }), { official: true, explicit: true });
+  assert.deepEqual(officialRoute({ ...base, mode: 'search', text: edital }), { official: true, explicit: true });
+  assert.deepEqual(officialRoute({ ...base, text: 'abra os links digitais da PROEX' }), { official: true, explicit: false }, 'links da PROEX: direto e sem custo');
+  assert.deepEqual(officialRoute({ ...base, text: 'últimos posts do Instagram da PROEX' }), { official: true, explicit: false });
+  assert.deepEqual(officialRoute({ ...base, publicSearch: false, text: 'links da PROEX' }), { official: false, explicit: false });
+  assert.deepEqual(officialRoute({ ...base, attachment: true, text: 'links da PROEX' }), { official: false, explicit: false });
+  const tsx = readFileSync(`${root}components/portal/role-assistant.tsx`, 'utf8');
+  assert.match(tsx, /const officialLookup = route\.official;/, 'a tela usa a mesma regra para o custo mostrado');
+});

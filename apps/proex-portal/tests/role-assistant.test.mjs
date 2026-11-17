@@ -1232,8 +1232,8 @@ test('BUSCA OFICIAL · LIMITE E CIÊNCIA: a 21ª busca no minuto é recusada sem
     const searched = official.calls;
     await assert.rejects(roleChat(f.db, f.actors.viewer, ask({ officialSearch: true }), secret, options),
       error => error.status === 429 && error.code === 'role_official_rate' && error.message === 'Muitas buscas seguidas. Espere um minuto e tente de novo.');
-    // Busca reconhecida automaticamente conta no mesmo limite.
-    await assert.rejects(roleChat(f.db, f.actors.viewer, chatInput(f, { message: 'Quais editais de extensão estão abertos?', acceptedCostMicros: 0 }), secret, options), error => error.code === 'role_official_rate');
+    // Com a conversa disponível, a frase reconhecida vai ao modelo (exige o custo aceito) e não conta como busca.
+    await assert.rejects(roleChat(f.db, f.actors.viewer, chatInput(f, { message: 'Quais editais de extensão estão abertos?', acceptedCostMicros: 0 }), secret, options), error => error.code === 'role_cost_changed');
     assert.equal(official.calls, searched, 'a recusa por limite não chega a buscar');
     assert.equal(provider.calls.length, 0);
     // Outra pessoa tem o próprio limite.
@@ -1391,3 +1391,27 @@ test('INSTAGRAM: "últimos posts do Instagram" lista as cadastradas por data (se
   } finally { f.native.close(); }
 });
 
+test('BUSCA OFICIAL COM CONVERSA: frase reconhecida sem o botão vai ao modelo com as ferramentas (custo aceito exigido); com o botão ou só busca, direto', async () => {
+  const f = fixture();
+  try {
+    await setup(f);
+    const question = 'o que diz o edital do PROBEC sobre o número de bolsas?';
+    const provider = fakeProvider({ reply: { reply: 'Resposta sintética do modelo.', operation: null } }), official = countingOfficial(), options = { keys, fetcher: provider.fetch, officialFetcher: official.fetch };
+    await assert.rejects(roleChat(f.db, f.actors.viewer, chatInput(f, { message: question, acceptedCostMicros: 0 }), secret, options), error => error.code === 'role_cost_changed', 'vai ao modelo: sem custo aceito, recusa');
+    assert.equal(official.calls, 0);
+    const chat = await roleChat(f.db, f.actors.viewer, chatInput(f, { message: question }), secret, options);
+    assert.equal(chat.provider, 'deepseek');
+    assert.ok(chat.costMicros > 0);
+    assert.equal(provider.calls.length, 1);
+    const offered = provider.calls[0].body.tools.map(tool => tool.function.name);
+    assert.ok(offered.includes('consultar_fontes_oficiais') && offered.includes('abrir_link_oficial'), offered.join(','));
+    assert.match(provider.calls[0].body.messages[0].content, /abrir_link_oficial/);
+    const explicit = await roleChat(f.db, f.actors.viewer, chatInput(f, { message: question, acceptedCostMicros: 0, officialSearch: true }), secret, options);
+    assert.equal(explicit.provider, 'official');
+    assert.equal(provider.calls.length, 1, 'com o botão, nenhuma chamada ao modelo');
+    dropChatKey(f);
+    const searchOnly = await roleChat(f.db, f.actors.viewer, chatInput(f, { message: question, acceptedCostMicros: 0 }), secret, options);
+    assert.equal(searchOnly.provider, 'official', 'sem conversa disponível, a frase reconhecida continua indo à busca');
+    assert.equal(provider.calls.length, 1);
+  } finally { f.native.close(); }
+});

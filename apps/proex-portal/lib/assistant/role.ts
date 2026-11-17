@@ -533,7 +533,7 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
   // oficial só com o botão "Fontes oficiais" ou sem conversa disponível (modo só busca). Com a conversa
   // disponível, a pergunta reconhecida vai ao modelo, que lê as fontes com consultar_fontes_oficiais e abrir_link_oficial.
   const direct = !hasMedia && officialSearchOn(config) ? directOfficialKind(message) : null;
-  if (!hasMedia && officialSearchOn(config) && (direct || explicitSearch || isOfficialSearch(message))) {
+  if (!hasMedia && officialSearchOn(config) && (direct || explicitSearch || !state.available && isOfficialSearch(message))) {
     await resolveRoleScope(db, current, organizationId, input.scope);
     history(input.history);
     // Sem custo de IA, mas cada busca lê sites públicos: limite por pessoa e por organização, antes de qualquer pedido externo.
