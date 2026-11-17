@@ -405,7 +405,8 @@ function MobileFab({ buttonRef, label, badge, open, onOpen }: { buttonRef: React
         button.dataset.state = 'shown';
       });
     };
-    const onScroll = () => { button.dataset.state = 'away'; window.clearTimeout(settle); settle = window.setTimeout(place, 180); };
+    // The button stays visible while the page scrolls (Yan, 17/11); scrolling only measures the page end again.
+    const onScroll = () => { window.clearTimeout(settle); settle = window.setTimeout(place, 180); };
     const onFocus = () => { window.clearTimeout(settle); settle = window.setTimeout(place, 60); };
     // Page changes (lists loading, a section opening): place again, at most every half second even if changes keep coming.
     let pendingSince = 0;

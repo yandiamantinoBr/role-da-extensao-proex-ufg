@@ -106,11 +106,11 @@ test('modos escolhidos: lateral fixa reserva o próprio espaço, botão do celul
   assert.doesNotMatch(css, /:global\([^)]*\.(sideDock|mobileFab|dock)\b/, 'nenhuma classe local dentro de :global()');
   assert.match(tsx, /const sidebar = !toolbar && layout\.desktop === 'sidebar'/);
   assert.match(tsx, /const shown = dock !== null && !toolbar && !sidebar/, 'a reserva de baixo do modo flutuante não vale na lateral');
-  // Celular, flutuante no canto: some ao rolar, com campo focado e com a central ou uma folha aberta; reserva o fim da página.
+  // Celular, flutuante no canto: fica visível ao rolar; some só com campo focado e com a central ou uma folha aberta; reserva o fim da página.
   assert.match(css, /\.mobileFab\[data-state=away\]\{opacity:0;visibility:hidden;pointer-events:none\}/);
   assert.match(css, /:global\(\.pn-shell \.p-main\):has\(\.mobileFab\)\{padding-bottom:var\(--dock-reserve,/);
   assert.match(css, /aria-controls="followup-notification-center"\]\[aria-expanded="true"\]\)\) \.mobileFab,:global\(body:has\(dialog\[open\]\)\) \.mobileFab/);
-  assert.match(tsx, /const onScroll = \(\) => \{ button\.dataset\.state = 'away';/);
+  assert.doesNotMatch(tsx, /const onScroll = \(\) => \{ button\.dataset\.state = 'away';/, 'o botão não some ao rolar (Yan, 17/11)');
   assert.match(tsx, /if \(editing\(\)\) \{ button\.dataset\.state = 'away'; return; \}/);
   assert.match(tsx, /layout\.mobile === 'floating'\s*\? <>[\s\S]{0,4000}<MobileFab/);
   // Escolha por conta, em Meu espaço, sem roubar o foco ao carregar.
