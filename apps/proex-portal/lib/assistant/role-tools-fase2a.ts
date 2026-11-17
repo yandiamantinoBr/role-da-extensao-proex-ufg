@@ -12,17 +12,17 @@ import { projectAuthoritySql, type PortalActor } from '../access';
 import { all, type Row } from '../database';
 import { HttpError } from '../errors';
 import { calendarEntries, calendarRange, type CalendarEntry } from '../calendar';
-import { activeAccount, authority, assignedRecipient } from '../follow-up/scope';
+import { activeAccount, authority, assignedRecipient, publicTaskAuthority } from '../follow-up/scope';
 import { serverWorkClock } from '../follow-up/time';
 import { responsibilityRead, taskDirect } from '../responsibilities/scope';
 import type { ResolvedScope, RoleToolResult, RoleToolSource } from './role-tools';
 
 /**
  * ÚNICO ponto de visibilidade de demanda destas ferramentas. Toda leitura de followup_tasks aqui passa
- * por esta condição. Demanda privada (PR #212) nunca vai para o Rolê, nem para quem participa: quando a
- * PR #212 estiver na main, troque o corpo por `publicTaskAuthority(userSql, alias)` de lib/follow-up/scope.ts.
+ * por esta condição. Demanda privada (PR #212) nunca vai para o Rolê, nem para quem participa:
+ * `publicTaskAuthority` é o `authority` com a exclusão de `followup_task_privacy`.
  */
-export const roleTaskVisible = (userSql: string, alias = 't') => authority(userSql, `${alias}.organization_id`, `${alias}.project_id`);
+export const roleTaskVisible = (userSql: string, alias = 't') => publicTaskAuthority(userSql, alias);
 
 const day = { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$' };
 const fn = (name: string, description: string, properties: Record<string, unknown>) => ({ type: 'function', function: { name, description, parameters: { type: 'object', properties, additionalProperties: false } } });
