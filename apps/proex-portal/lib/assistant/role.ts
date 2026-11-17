@@ -708,7 +708,7 @@ export async function roleReadScannedPdf(db: D1Database, actor: PortalActor | nu
   if (!apiKey) throw new HttpError(403, PDF_READING_DISABLED, 'role_pdf_disabled');
   await resolveRoleScope(db, current, organizationId, input.scope);
   const ceiling = pdfReadingQuote(config, message, now);
-  if (!ceiling) throw new HttpError(400, 'Esta leitura passaria do custo máximo por leitura com IA. Encurte a pergunta ou abra o PDF.', 'role_pdf_cost');
+  if (!ceiling) throw new HttpError(400, 'Esta leitura passaria do limite por leitura com IA (custo ou tamanho da entrada). Encurte a pergunta ou abra o PDF.', 'role_pdf_cost');
   if (!Number.isSafeInteger(input.acceptedCostMicros) || Number(input.acceptedCostMicros) < ceiling.costMicros) {
     throw new HttpError(409, 'O custo previsto mudou. Faça a busca de novo e toque em Ler com IA.', 'role_cost_changed');
   }
