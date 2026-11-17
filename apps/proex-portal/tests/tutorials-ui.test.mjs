@@ -14,7 +14,7 @@ const cjs = (file, require, extra = {}) => {
 };
 const catalog = cjs('lib/tutorials/catalog.ts', () => ({}));
 // Onde os rótulos e as âncoras dos passos precisam existir de fato.
-const SOURCES = ['app/portal-client.tsx', 'components/portal/portal-navigation.tsx', 'components/portal/navigation-model.ts', 'components/portal/dashboard-panel.tsx', 'components/portal/account-access-panel.tsx', 'components/portal/tutorials/tutorial-layer.tsx', 'components/portal/tutorials/tutorial-help-card.tsx'];
+const SOURCES = ['app/portal-client.tsx', 'components/portal/portal-navigation.tsx', 'components/portal/navigation-model.ts', 'components/portal/dashboard-panel.tsx', 'components/portal/account-access-panel.tsx', 'components/portal/meu-trabalho-panel.tsx', 'components/portal/tutorials/tutorial-layer.tsx', 'components/portal/tutorials/tutorial-help-card.tsx'];
 const source = SOURCES.map(read).join('\n');
 
 test('every label a step cites exists in the Portal interface code', () => {

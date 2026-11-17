@@ -35,6 +35,8 @@ export type TutorialStep = {
   beforeOpen?: string;
   beforeOpenMobile?: string;
   requires?: StepRequirement;
+  /** `below`: leva o controle ao alto da tela, para mostrar também o que vem logo depois dele (ex.: o primeiro cartão de uma lista). */
+  reveal?: 'below';
   /** Rótulos da interface citados no passo. Um teste confere que existem no código. */
   labels: string[];
 };
@@ -117,6 +119,65 @@ export const TUTORIAL_CHAPTERS: readonly TutorialChapter[] = [
         speechMobile: 'Você já sabe se localizar no Portal. Para rever, abra Ajuda e tutoriais no menu da conta ou em Mais.',
         youWillSee: 'Concluir fecha o tutorial. Repetir esta parte começa de novo.',
         labels: ['Ajuda e tutoriais'],
+      },
+    ],
+  },
+  {
+    id: 'meu-trabalho', version: 1, title: 'Meu trabalho', minutes: 3,
+    summary: 'Encontrar o que chegou para você e para suas equipes, com prazos e responsabilidades.',
+    steps: [
+      {
+        id: 'abrir', title: 'O que chegou para você',
+        speech: 'Meu trabalho reúne as demandas atribuídas a você e às suas equipes, nos projetos que você pode ver. Seguir este tutorial não muda nada no seu trabalho.',
+        youWillSee: 'O título Suas atribuições, no alto do módulo.',
+        target: '[data-tutorial="trabalho-inicio"]', module: 'my-work', openLabel: 'Ir para Meu trabalho',
+        beforeOpen: 'Clique em Ir para Meu trabalho: o módulo abre com as suas atribuições.', beforeOpenMobile: 'Toque em Ir para Meu trabalho: o módulo abre com as suas atribuições.',
+        labels: ['Meu trabalho', 'Suas atribuições'],
+      },
+      {
+        id: 'projeto', title: 'Um projeto ou todos',
+        speech: 'No campo Projeto, escolha um projeto para ver só o trabalho dele. A primeira opção, Todos os projetos, mostra tudo de novo.',
+        youWillSee: 'O campo Projeto destacado, acima das atribuições.',
+        target: '[data-tutorial="trabalho-projeto"]', module: 'my-work', openLabel: 'Ir para Meu trabalho', requires: { projects: true },
+        labels: ['Projeto', 'Todos os projetos'],
+      },
+      {
+        id: 'origem', title: 'De onde veio a tarefa',
+        speech: 'Diretas são as demandas com o seu nome. Por equipe são as que chegaram para uma equipe sua. Todas junta as duas. Cada cartão diz a origem: Atribuição direta, Pela sua equipe ou Direta e pela equipe.',
+        speechMobile: 'Diretas têm o seu nome; Por equipe chegaram a uma equipe sua; Todas junta as duas. Se veio pelos dois caminhos, o cartão diz Direta e pela equipe.',
+        youWillSee: 'Os botões Todas, Diretas e Por equipe destacados.',
+        target: '[data-tutorial="trabalho-origem"]', module: 'my-work', openLabel: 'Ir para Meu trabalho',
+        labels: ['Todas', 'Diretas', 'Por equipe', 'Atribuição direta', 'Pela sua equipe', 'Direta e pela equipe'],
+      },
+      {
+        id: 'totais', title: 'O que pede atenção',
+        speech: 'Os quadros somam suas demandas no projeto e na origem escolhidos, inclusive as que não cabem na lista. Clique em Atenção, Prazo hoje, Em andamento ou Concluídas para ver só essas na lista de Demandas.',
+        speechMobile: 'Os quadros somam suas demandas no projeto e na origem escolhidos. Toque em Atenção, Prazo hoje, Em andamento ou Concluídas para ver só essas na lista de Demandas.',
+        youWillSee: 'Os quatro quadros de totais destacados.',
+        target: '[data-tutorial="trabalho-totais"]', module: 'my-work', openLabel: 'Ir para Meu trabalho',
+        labels: ['Atenção', 'Prazo hoje', 'Em andamento', 'Concluídas'],
+      },
+      {
+        id: 'demandas', title: 'Abrir uma demanda',
+        speech: 'Cada cartão mostra a situação, a prioridade, o prazo e os responsáveis. Clique no título para abrir a demanda. Lista vazia? Escolha Todas no Estado da lista ou troque o projeto.',
+        speechMobile: 'Cada cartão mostra a situação, a prioridade, o prazo e os responsáveis. Toque no título para abrir a demanda. Lista vazia? Escolha Todas no Estado da lista ou troque o projeto.',
+        youWillSee: 'O título Demandas e o Estado da lista destacados. Quando houver demandas, os cartões aparecem logo abaixo.',
+        target: '[data-tutorial="trabalho-demandas"]', reveal: 'below', module: 'my-work', openLabel: 'Ir para Meu trabalho',
+        labels: ['Estado da lista', 'Demandas'],
+      },
+      {
+        id: 'responsabilidades', title: 'Responsabilidades',
+        speech: 'Responsabilidades mostram quem cuida de uma frente contínua num projeto, como materiais ou empréstimos: você ou uma equipe sua. Não têm prazo como uma demanda e não mudam o que você pode abrir: isso vem dos seus acessos.',
+        youWillSee: 'A lista Responsabilidades destacada, abaixo das demandas.',
+        target: '[data-tutorial="trabalho-responsabilidades"]', module: 'my-work', openLabel: 'Ir para Meu trabalho',
+        labels: ['Responsabilidades'],
+      },
+      {
+        id: 'fim', title: 'Tudo certo',
+        speech: 'Você já sabe encontrar o seu trabalho. Se alguém acabou de atribuir algo a você, use Atualizar, ao lado de Suas atribuições.',
+        youWillSee: 'O botão Atualizar destacado. Concluir fecha o tutorial; Repetir esta parte começa de novo.',
+        target: '[data-tutorial="trabalho-atualizar"]', module: 'my-work', openLabel: 'Ir para Meu trabalho',
+        labels: ['Atualizar', 'Suas atribuições'],
       },
     ],
   },
