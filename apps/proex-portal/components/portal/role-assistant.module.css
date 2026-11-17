@@ -100,7 +100,7 @@
 .textButton{display:inline-flex;align-items:center;gap:.35rem;min-height:44px;padding:0 .7rem;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--brand-ink);font:inherit;font-size:.82rem;font-weight:700;cursor:pointer;flex-shrink:0}
 .textButton:focus-visible{outline:3px solid var(--focus);outline-offset:3px}
 .textButton:disabled{opacity:.45}
-.disclaimer{margin:0;min-height:2.8em;font-size:max(12px,.75rem);color:var(--text-secondary)}
+.disclaimer{margin:0;min-height:3.1em;font-size:max(12px,.75rem);color:var(--text-secondary)}
 .loadingLine{display:flex;align-items:center;gap:.35rem;margin:0;font-size:max(13px,.85rem);color:var(--text-secondary)}
 /* Folga para o botão flutuante não cobrir o fim da página. */
 :global(.p-main):has(.launcher){padding-bottom:96px}
@@ -142,7 +142,7 @@
 .documentEditor input:not([type=checkbox]){width:100%;min-height:44px;padding:.5rem .65rem;border:1px solid var(--control-border);border-radius:10px;background:var(--surface);color:var(--text-strong);font:inherit;font-size:16px}
 .documentEditor textarea{resize:vertical;max-height:9rem}
 .documentEditor .videoConsent{padding:.5rem .6rem}
-@container (max-width:390px){.cost{flex:1 1 0;order:0}.send{margin-left:auto}.composer[data-document-draft]{max-height:62dvh;overflow:auto}}
+@container (max-width:390px){.send{margin-left:auto}.composer[data-document-draft]{max-height:62dvh;overflow:auto}}
 /* "Fontes oficiais": alternância com estado visível, mesmo toque de 44 px dos botões do compositor.
    Ligada ela fica clara com borda roxa, para não parecer um segundo Enviar. */
 .officialToggle{display:inline-flex;align-items:center;gap:.35rem;min-height:44px;padding:0 .6rem;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--text-strong);font:inherit;font-size:max(13px,.82rem);font-weight:700;white-space:nowrap;cursor:pointer;flex-shrink:0}
