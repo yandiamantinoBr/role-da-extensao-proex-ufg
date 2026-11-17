@@ -469,7 +469,7 @@ export const TUTORIAL_CHAPTERS: readonly TutorialChapter[] = [
     steps: [
       {
         id: 'abrir', title: 'O catálogo',
-        speech: 'Materiais mostra o catálogo de cada projeto. Buscar no catálogo acha pelo nome, patrimônio ou destino; Filtros separa por dono, tipo, categoria e situação. Seguir este tutorial não mexe no estoque.',
+        speech: 'Materiais mostra o catálogo de cada projeto: escolha o projeto no alto ou deixe Todos os projetos. Buscar no catálogo acha pelo nome, patrimônio ou destino; Filtros separa por dono, tipo, categoria e situação. Seguir este tutorial não mexe no estoque.',
         speechMobile: 'Buscar no catálogo acha um material pelo nome, patrimônio ou destino. Filtros separa por dono, tipo, categoria e situação.',
         youWillSee: 'A busca do catálogo destacada.',
         target: '[data-tutorial="materiais-busca"]', module: 'materials', openLabel: 'Ir para Materiais', requires: { anyOf: ['inventory.read', 'inventory.manage', 'inventory.deliver'] },
@@ -478,8 +478,9 @@ export const TUTORIAL_CHAPTERS: readonly TutorialChapter[] = [
       },
       {
         id: 'saldo', title: 'Físico, reservado e disponível',
-        speech: 'Físico é quanto existe. Reservado já está separado para alguém. Disponível é o que pode ser usado agora. Os três usam a mesma unidade de medida.',
-        youWillSee: 'A tabela de saldo destacada.',
+        speech: 'Físico é quanto existe. Reservado já está separado para alguém. Disponível é o que pode ser usado agora, na mesma unidade. Num equipamento emprestado, o físico continua 1 e o disponível cai para 0.',
+        speechMobile: 'Físico é quanto existe. Reservado já está separado. Disponível é o que pode ser usado agora.',
+        youWillSee: 'A tabela de saldo destacada.', youWillSeeMobile: 'Os cartões dos materiais destacados, com Físico, Reservado e Disponível.',
         target: '[data-tutorial="materiais-saldo"]', module: 'materials', openLabel: 'Ir para Materiais', requires: { anyOf: ['inventory.read', 'inventory.manage', 'inventory.deliver'] },
         missing: 'Nenhum material neste recorte. Troque o projeto ou limpe a busca e os filtros.',
         labels: ['Físico', 'Reservado', 'Disponível'],
@@ -490,8 +491,16 @@ export const TUTORIAL_CHAPTERS: readonly TutorialChapter[] = [
         speechMobile: 'A seta de cada material abre a ficha, com a condição e o histórico de movimentações. Quem só consulta o saldo vê Somente consulta de saldo.',
         youWillSee: 'O botão Detalhes do primeiro material destacado.', youWillSeeMobile: 'A seta do primeiro material destacada.',
         target: '[data-tutorial="materiais-detalhes"]', module: 'materials', openLabel: 'Ir para Materiais', requires: { anyOf: ['inventory.read', 'inventory.manage', 'inventory.deliver'] },
-        missing: 'Seu acesso mostra só o saldo destes materiais: a ficha abre para quem consulta materiais no projeto.',
+        missing: 'Se a lista estiver vazia, troque o projeto ou limpe a busca. Se aparecer Somente consulta de saldo, o seu acesso mostra só o saldo; a ficha abre para quem consulta materiais no projeto.',
         labels: ['Detalhes', 'Somente consulta de saldo'],
+      },
+      {
+        id: 'historico', title: 'O histórico',
+        speech: 'Na ficha, o link Histórico abre as movimentações deste material em Registros, com origem e destino.',
+        youWillSee: 'O link Histórico destacado na ficha.',
+        target: '[data-tutorial="material-historico"]', module: 'materials', openLabel: 'Ir para Materiais', requires: { anyOf: ['inventory.read', 'inventory.manage', 'inventory.deliver'] },
+        missing: 'Abra Detalhes de um material: o histórico fica na ficha.', missingMobile: 'Toque na seta de um material: o histórico fica na ficha.',
+        labels: ['Histórico'],
       },
       {
         id: 'registrar', title: 'Registrar movimento',
