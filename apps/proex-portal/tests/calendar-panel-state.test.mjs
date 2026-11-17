@@ -275,7 +275,8 @@ test('cards, day previews and exports drop the repeated type word but keep it in
     assert.match(range, /^1 a \d{2} de [a-zç]+ de \d{4}$/, `período curto, sem repetir mês e ano: ${range}`);
     const dayHeadings = h.all().filter(node => node.type === 'h4' && node.props.className === 'dayHeading').map(text);
     assert.equal(dayHeadings.length, 1, 'a lista do período tem um título por dia, e os cartões não repetem a data');
-    assert.ok(h.all().filter(node => node.type === 'article').every(node => text(node).includes('Dia inteiro') && !text(node).includes('/')));
+    assert.ok(h.all().filter(node => node.type === 'article').every(node => text(node).includes('Dia inteiro · Projeto A') && !text(node).includes('/')), 'horário e projeto numa linha só');
+    assert.ok(h.all().filter(node => node.type === 'em').every(node => node.props.children?.type === 'span' && node.props.children.props.className === 'chipText'), 'o corte em duas linhas fica no texto interno da prévia');
     const index = h.requests.length;
     const download = h.all().find(node => node.type === ExportFormats).props.onExport('xlsx');
     h.respond(h.requests[index], data); await tick();
@@ -287,7 +288,8 @@ test('cards, day previews and exports drop the repeated type word but keep it in
     assert.ok(!args[5].some(([label]) => label === 'Compromissos'), 'o total já aparece no quadro do PDF');
     assert.equal(args[5].map(([label]) => label).join(' | '), 'Período | Projetos | Categoria | Fuso horário | Gerado em', '"Recorte" virou "Projetos" e o PDF diz quando foi gerado');
     assert.equal(args[6].recordsLabel, 'Compromissos do período'); assert.equal(args[6].mutedDetailLines, true);
-    assert.equal(args[6].metrics.map(metric => `${metric.value} ${metric.label}`).join(' | '), '5 Compromissos | 3 Projetos e eventos | 1 Material | 1 Cancelado', 'o quadro do PDF quebra o total por categoria e conta os cancelados');
+    assert.equal(args[6].metrics.map(metric => `${metric.value} ${metric.label}`).join(' | '), '5 Compromissos | 3 Projetos e eventos | 1 Material | 1 Prazo de demanda', 'o quadro do PDF repete os contadores da tela');
+    assert.equal(args[6].metrics[0].detail, 'inclui 1 cancelado', 'os cancelados viram nota do total');
     assert.equal(h.all().find(node => node.type === ExportFormats).props.tiles, true, 'os três formatos cabem lado a lado na coluna da lista');
     h.respond(h.requests[index + 1], data); await download;
   } finally { h.dispose(); }
