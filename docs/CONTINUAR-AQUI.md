@@ -56,9 +56,17 @@ Comece pela [Retomada de 13/11](RETOMADA-13NOV-PORTAL-PROEX.md) para conferir a 
 ## Nome do papel e acabamento das telas novas · 16/11
 
 - **Papel `inventory` = "Responsável por materiais"** em todas as telas, convites, exportações e no glossário. A chave no banco não mudou. PR146 (`169301b`). O teste `tests/role-label-materials.test.mjs` impede o nome antigo de voltar.
-- **Crítica visual independente** das telas que o Codex mudou entre 13 e 15/11. Capturas em 390 e 1366 px, claro e escuro, com login local de teste. Três rodadas de crítica:
+- **Crítica visual independente** das telas que o Codex mudou entre 13 e 15/11. Capturas em 390 e 1366 px, claro e escuro, com login local de teste. Doze rodadas de crítica (16 e 17/11):
   - antes: 6,8 a 7,4;
-  - depois: 7 a 7,5, ainda abaixo de 9.
+  - no fim: **9 em todas** — Conta, Equipes com organograma, Agenda (com e sem cancelados), Meu trabalho e PDF da Agenda. Produção em `8cf0bdb`, conferida só leitura.
+- **Decisões de layout** (autonomia dada pelo Yan em 16/11, opção recomendada pela crítica):
+  - Agenda: lista agrupada por dia; "Mostrar cancelados" é exibição, não filtro; datas sem o ano repetido; semanas do mês com a mesma altura; prévia do mês só com o nome.
+  - PDF da Agenda: quadro com total e categorias; cada linha com o dia; linha cancelada em cinza. Opções novas e opcionais do gerador: `mutedDetailLines` e `mutedRows` (`report-pdf.ts`); os outros relatórios não mudam.
+  - Conta: abre pelo perfil; resumo só com o que foi preenchido; um "Atualizar" por página.
+  - Organograma: botões discretos, "Equipes" no "Mais" no celular, governança com contorno tracejado e legenda igual às linhas.
+  - Meu trabalho: origem em controle segmentado; títulos de seção iguais; vazios no mesmo formato.
+  - Horário de consulta igual em Equipes, organograma e Meu trabalho: "Consultado em 16/11/2026 às 17:43 (Brasília)".
+  - PRs 170–174, 177–182, 184–186, 188, 189 e 192.
 - **Primeira rodada de correções (no ar):**
   - PR149, Agenda: "40 unidades"; sem a categoria repetida no título; "Cancelado"; "Limpar filtros"; seta no filtro; formatos lado a lado; PDF com datas iguais e sem total repetido;
   - PR150, Conta: espaço antes de "Meu perfil", um só "Atualizar", ajuda da foto curta;
@@ -68,13 +76,7 @@ Comece pela [Retomada de 13/11](RETOMADA-13NOV-PORTAL-PROEX.md) para conferir a 
   - PR155, Agenda: cancelado com selo e borda tracejada; "1 Empréstimo"; prévias em duas linhas; PDF com "Projetos" e "Gerado em"; sem "Prazos de demandas · Prazo";
   - PR156, Conta: "Não informar" nas escolhas; "Atualizar" só com ícone no celular;
   - PR157: zero em cinza em Meu trabalho; Equipes sem exportação vazia.
-- **O que falta para 9** (pede decisão de layout, não acabamento):
-  - Conta: perfil no topo; resumo só com dados preenchidos; mesmo padrão nas linhas "Conectar uma IA" e "Google Drive".
-  - Agenda: lista agrupada por dia; título do cartão em peso 600; "Mostrar cancelados" sem contar como filtro; links apagados no cancelado.
-  - Organograma: botões mais leves no computador; uma linha vertical só; "Mostrar arquivadas" ao lado de "Atualizar estrutura".
-  - Meu trabalho: Projeto e Atualizar numa barra só; seletor de origem compacto; títulos de seção iguais.
-  - PDF: segunda linha da célula menor e cinza (`report-pdf.ts`, compartilhado); total com a quebra por categoria.
-- **Para a sessão de coerência visual**, porque é do Portal inteiro: um formato de horário (hoje são cinco), onde fica o botão "Atualizar", o lugar das ações no cabeçalho da página, o padrão de título dos cartões, a fonte em negrito do gerador de PDF e o texto de ajuda com 12 px.
+- **Para a sessão de coerência visual**, porque é do Portal inteiro: o padrão de título dos cartões (três estilos na mesma tela), o subtítulo dos cartões com 11 px, a cor dos rótulos de campo no tema escuro (`.p-field>span` lilás em `globals.css`), a fonte em negrito do gerador de PDF e o cabeçalho que repete "PRÓ-REITORIA DE EXTENSÃO" ao lado do logo.
 - **Ficou para a sessão de materiais**, porque ela está mexendo nessa tela:
   - Materiais tem dois botões de filtro e dois "Registrar movimento";
   - números da tabela desalinhados;
