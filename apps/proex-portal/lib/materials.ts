@@ -6,6 +6,7 @@ import { stockContextInput, prepareStockContext, matchingStockContext, fencedMov
 import { setPrimaryPhoto, currentPrimaryPhoto, primaryPhotoHistory } from './material-photos';
 import { movementAction, annotateMovements, attachmentDeletions, HIDE_MIRRORS_SQL } from './material-movements';
 import { NOT_COLLECTED } from './loan-lifecycle';
+import { equipmentBlockMessage } from './equipment-availability';
 import { destinationAction, resolveDestination, movementDestinations } from './material-destinations';
 
 type Item = { id: string; project_id: string; name: string; category: string; unit: string; stock: number; reserved: number; condition: string; description: string; low_stock: number; asset_code: string; version: number; updated_at: string; category_id: string | null; owner_unit_id: string | null; event_destination_id: string | null };
@@ -456,7 +457,9 @@ export async function materialsAction(db: D1Database, actor: PortalActor, action
       if (mutation.existingId) return { loan: await statement(db, 'SELECT * FROM loans WHERE id=?', [mutation.existingId]).first(), duplicate: true };
       const item = await itemById(db, input.itemId);
       if (item.project_id !== projectId) throw new HttpError(400, 'O equipamento deve pertencer ao projeto selecionado.', 'project_mismatch');
-      if (item.category !== 'equipment' || item.condition !== 'active' || item.stock !== 1) throw new HttpError(409, 'Selecione um equipamento individual ativo e com entrada de uma unidade registrada no estoque.', 'equipment_unavailable');
+      if (item.category !== 'equipment') throw new HttpError(409, 'Selecione um equipamento individual. Brindes e materiais de consumo não são emprestados.', 'equipment_unavailable');
+      const blocked = equipmentBlockMessage(item, 'reserve');
+      if (blocked) throw new HttpError(409, blocked, 'equipment_unavailable');
       const groupId = await assignedGroup(db, input.groupId, projectId);
       const actionName = textValue(input.actionName, 'o nome da ação');
       const borrowerName = textValue(input.borrowerName, 'o nome de quem recebe');
@@ -495,6 +498,8 @@ export async function materialsAction(db: D1Database, actor: PortalActor, action
     const note = textValue(input.note, 'a observação', 2000, true);
     const conditionOut = status === 'out' ? textValue(input.conditionOut ?? input.note, 'a condição na retirada', 2000, true) : loan.condition_out;
     const conditionIn = status === 'returned' ? textValue(input.conditionIn ?? input.note, 'a condição na devolução', 2000, true) : loan.condition_in;
+    // A manutenção ou a inativação registrada depois da reserva bloqueia a retirada: o motivo vem escrito.
+    if (status === 'out') { const item = await itemById(db, loan.item_id); const blocked = equipmentBlockMessage(item, 'checkout'); if (blocked) throw new HttpError(409, blocked, 'equipment_unavailable'); }
     if (status === 'out' && (loan.starts_at > Date.now() || loan.ends_at <= Date.now())) throw new HttpError(409, 'A retirada só pode ser registrada dentro do período reservado.', 'loan_checkout_window');
     const checkedOutAt = status === 'out' ? now : loan.checked_out_at;
     const returnedAt = status === 'returned' ? now : loan.returned_at;
