@@ -341,3 +341,8 @@ test('every list section explains itself, empty states share one format and sect
   const css = readFileSync(new URL('../components/portal/meu-trabalho-panel.module.css', import.meta.url), 'utf8');
   assert.match(css, /\.listSection\+\.listSection\{border-top:1px solid var\(--line\);padding-top:20px\}/);
 });
+
+test('the Demandas description stays with its title, before the list-state select (décima primeira crítica de 16/11)', () => {
+  const source = readFileSync(new URL('../components/portal/meu-trabalho-panel.tsx', import.meta.url), 'utf8');
+  assert.match(source, /<div className=\{styles\.headingText\}><h3><ClipboardList[^]*?Demandas · \{data\.tasks\.total\}<\/h3><p className=\{styles\.help\}>Demandas atribuídas/);
+});

@@ -44,3 +44,7 @@
 @media (max-height:700px) and (max-width:420px){.metrics[data-tutorial-spot] .metric small{display:none}.metrics[data-tutorial-spot] .metric{padding-block:10px}}
 .heading[data-tutorial-spot],.listSection[data-tutorial-spot]{outline-offset:8px}
 .rowTop strong{display:inline-flex;align-items:center;gap:6px}
+
+/* Décima primeira crítica de 16/11: a descrição de Demandas fica junto do título; o seletor vai ao lado no computador e embaixo no celular. */
+.headingText{flex:1 1 260px;min-width:0}
+.headingText>p{margin-top:4px}
