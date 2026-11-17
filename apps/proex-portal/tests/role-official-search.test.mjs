@@ -410,23 +410,40 @@ test('TELA · MODO: chat indisponível com busca disponível abre só a busca; a
   assert.deepEqual(officialRoute({ ...base, mode: 'off', toggled: true, text: notice }), { official: false, explicit: false });
 });
 
-test('TELA · COMPOSITOR: alternância "Buscar em fontes oficiais" com estado visível, pedido explícito e aviso de só busca', () => {
+test('TELA · COMPOSITOR: alternância "Fontes oficiais" com estado visível, pedido explícito e aviso de só busca', () => {
   const tsx = readFileSync(`${root}components/portal/role-assistant.tsx`, 'utf8');
   const css = readFileSync(`${root}components/portal/role-assistant.module.css`, 'utf8');
-  assert.match(tsx, /<button type="button" className=\{styles\.officialToggle\} aria-pressed=\{officialMode\}[^>]*>/);
-  assert.match(tsx, />Buscar em fontes oficiais</);
-  assert.match(tsx, /\.\.\.\(route\.explicit \? \{ officialSearch: true \} : \{\}\)/, 'o pedido manda officialSearch: true');
+  assert.match(tsx, /<button type="button" className=\{styles\.officialToggle\} aria-pressed=\{officialMode\} aria-label="Fontes oficiais: buscar nas páginas da PROEX"[^>]*>/);
+  assert.match(tsx, /\{officialMode \? <Check size=\{18\} aria-hidden="true"\/> : <Landmark size=\{18\} aria-hidden="true"\/>\}Fontes oficiais<\/button>/);
+  assert.match(tsx, /\.\.\.\(route\.explicit \? \{ officialSearch: true \} : \{ consent: true \}\)/, 'pedido explícito vai sem ciência de IA; a conversa continua com ela');
   assert.match(tsx, /history: encodedVideo \|\| officialLookup \|\| document \? \[\] : history/, 'busca segue sem histórico');
   assert.match(tsx, /acceptedCostMicros: officialLookup \|\| !estimate \? 0 : estimate\.costMicros/);
-  assert.match(tsx, /'Consulta às fontes oficiais, sem custo de IA\.'/);
-  assert.match(tsx, /'Consultar fontes oficiais'/);
-  assert.match(tsx, /Agora só a busca em fontes oficiais está disponível\. A conversa com IA está desligada nesta organização\./);
-  // A sonda do botão e o recarregar do status contam a busca: a tela abre e a conversa não some depois de cada resposta.
+  assert.match(tsx, /Consulta às fontes oficiais, <span className=\{styles\.nowrap\}>sem custo de IA\.<\/span>/);
+  assert.match(tsx, /aria-label=\{officialLookup \? 'Enviar para as fontes oficiais'/, 'o nome acessível contém o texto visível "Enviar"');
+  assert.doesNotMatch(tsx, /'Consultar fontes oficiais'/);
+  assert.match(tsx, /\{searchOnly \|\| officialLookup \? 'O Rolê pode errar\. Confira no link da fonte antes de usar\.' :/, 'sem "Respondido por" na busca');
+  assert.match(tsx, /<p className=\{styles\.searchOnlyNotice\} role="note">Por enquanto, o Rolê só procura nas páginas oficiais da PROEX\. A conversa com IA está desligada\.<\/p>/);
+  // A sonda do botão conta a busca; a conversa só é apagada quando a conversa com IA deixa de existir.
   assert.match(tsx, /setReady\(roleComposerMode\(next\) !== 'off'\)/);
-  assert.match(tsx, /if \(roleComposerMode\(next\) === 'off'\) resetConversation\(\);/);
+  assert.match(tsx, /if \(previousMode\.current === 'chat' && nextMode !== 'chat'\) resetConversation\(\);\s*previousMode\.current = nextMode;/);
   assert.match(tsx, /\{status && mode === 'off' && <div className=\{styles\.unavailable\}/);
-  // Toque de 44 px, estado ligado visível e tema escuro.
-  assert.match(css, /\.officialToggle\{[^}]*min-height:44px/);
-  assert.match(css, /\.officialToggle\[aria-pressed=true\]\{[^}]*background:var\(--purple\)/);
-  assert.match(css, /:global\(html\[data-theme=dark\]\) \.officialToggle\[aria-pressed=true\]\{/);
+  // Sem botão visível, sem busca invisível ligada.
+  assert.match(tsx, /if \(nextMode !== 'chat' \|\| !next\.policy\?\.publicSearch\) setOfficialMode\(false\);/);
+  assert.match(tsx, /cause\.code === 'role_official_disabled'\) \{\s*\/\/[^\n]*\n\s*setOfficialMode\(false\);/);
+  // "Procurar em" não vale para a busca: some no modo só busca e trava com o botão ligado.
+  assert.match(tsx, /\{!searchOnly && <label className=\{styles\.project\}><span>Procurar em<\/span><select value=\{scopeValue\} disabled=\{officialOn \|\| busy/);
+  // Botão ligado esmaece todos os anexos e a voz.
+  assert.match(tsx, /disabled=\{!status\.speech\.available \|\| officialOn \|\| !consent/);
+  assert.match(tsx, /<input type="file" accept="\.wav,audio\/wav" disabled=\{officialOn \|\| !consent/);
+  assert.match(tsx, /'Muitas buscas seguidas\. Espere um minuto e tente de novo\.'/);
+  assert.match(tsx, /data-search-only=\{searchOnly \? true : undefined\}/);
+  // Toque de 44 px, ligado sem parecer um segundo Enviar, bordas com contraste e tema escuro.
+  assert.match(css, /\.officialToggle\{[^}]*min-height:44px[^}]*padding:0 \.6rem/);
+  assert.match(css, /\.officialToggle\[aria-pressed=true\]\{background:#efe6f6;border:2px solid var\(--purple\);color:var\(--purple\)\}/);
+  assert.match(css, /:global\(html\[data-theme=dark\]\) \.officialToggle\[aria-pressed=true\]\{background:#3a2850;border-color:#b48ad6;color:#f2ebf8\}/);
+  assert.match(css, /\.dialog\{--role-control-border:#8e7aa0\}/);
+  assert.match(css, /:global\(html\[data-theme=dark\]\) \.dialog\{--role-control-border:#8a6ba0\}/);
+  assert.match(css, /\.iconButton,\.officialToggle\{border-color:var\(--role-control-border\)\}/);
+  assert.match(css, /\.searchOnlyNotice\{[^}]*border-left:4px solid/);
+  assert.match(css, /@container \(max-width:390px\)\{\.composer\[data-search-only\] \.cost\{flex-basis:auto;order:0\}\}/);
 });

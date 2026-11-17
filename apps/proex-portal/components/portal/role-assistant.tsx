@@ -2,7 +2,7 @@
 /* eslint-disable @next/next/no-img-element -- mascote em SVG estático e imagens locais em data URL */
 
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react';
-import { Film, FileAudio, FileText, ImagePlus, Landmark, LoaderCircle, MessageSquarePlus, Mic, Send, Square, Trash2, X } from 'lucide-react';
+import { Check, Film, FileAudio, FileText, ImagePlus, Landmark, LoaderCircle, MessageSquarePlus, Mic, Send, Square, Trash2, X } from 'lucide-react';
 import { safeRequest, type AssistantPlan } from '@/lib/assistant/contracts';
 import {
   ROLE_MAX_HISTORY, ROLE_MAX_HISTORY_CHARS, ROLE_MAX_IMAGE_BYTES, ROLE_MAX_IMAGE_SIDE, ROLE_MAX_MESSAGE_CHARS, ROLE_MODELS,
@@ -148,6 +148,8 @@ function RoleConversation({ projects, defaultProjectId, onApplied, onOpenSetting
   const returnFocus = useRef<HTMLElement | null>(null);
   const recorder = useRef<MediaRecorder | null>(null), stream = useRef<MediaStream | null>(null), stopTimer = useRef<number | null>(null), mounted = useRef(true);
   const conversationEpoch = useRef(0), captureEpoch = useRef(0), statusEpoch = useRef(0);
+  // Último modo carregado: a conversa só é apagada quando a conversa com IA deixa de existir, não a cada recarga.
+  const previousMode = useRef<ReturnType<typeof roleComposerMode>>('off');
   const project = projects.find(item => item.id === projectId);
   const resetConversation = useCallback(() => {
     conversationEpoch.current++;
@@ -171,7 +173,11 @@ function RoleConversation({ projects, defaultProjectId, onApplied, onOpenSetting
     try {
       const next = await call<Status>(`/api/assistant/role?projectId=${encodeURIComponent(id)}`);
       if (!mounted.current || statusEpoch.current !== epoch) return;
-      if (roleComposerMode(next) === 'off') resetConversation();
+      const nextMode = roleComposerMode(next);
+      if (previousMode.current === 'chat' && nextMode !== 'chat') resetConversation();
+      previousMode.current = nextMode;
+      // Sem botão visível, sem busca invisível ligada: o status só muda aqui e na recusa da busca desligada.
+      if (nextMode !== 'chat' || !next.policy?.publicSearch) setOfficialMode(false);
       setStatus(next);
     } catch (cause) {
       if (!mounted.current || statusEpoch.current !== epoch) return;
@@ -254,6 +260,7 @@ function RoleConversation({ projects, defaultProjectId, onApplied, onOpenSetting
   const route = officialRoute({ mode, toggled: officialMode, publicSearch: !!status?.policy?.publicSearch, attachment, text: sanitized.text });
   const officialLookup = route.official;
   function toggleOfficial() { setOfficialMode(value => !value); setError(''); }
+  const officialCost = <>Consulta às fontes oficiais, <span className={styles.nowrap}>sem custo de IA.</span></>;
   const videoQuote = video?.seconds && status?.video && sanitized.text ? roleVideoEstimate({
     textBytes: new TextEncoder().encode(sanitized.text).byteLength,
     maxOutputTokens: status.policy?.maxOutputTokens ?? 700,
@@ -276,7 +283,7 @@ function RoleConversation({ projects, defaultProjectId, onApplied, onOpenSetting
   }
   const servicesChanged = !!stored && stored !== servicesKey;
   const canSend = officialLookup
-    ? !!sanitized.text && !busy && !transcribing && !recording && !preparingAudio && !readingDocument && !tooLong && (searchOnly || consent)
+    ? !!sanitized.text && !busy && !transcribing && !recording && !preparingAudio && !readingDocument && !tooLong && (route.explicit || consent)
     : !!status?.available && !!estimate && !busy && !transcribing && !recording && !preparingAudio && !readingDocument && !tooLong && consent && (!documentDraft || !!(documentInput.excerpt && status.document && documentConsent === status.document.approval)) && (!picked || status.visionAvailable) && (!video || !!status.video && videoConsent && !videoOverInput);
 
   // Só em memória: some ao recarregar ou trocar de conta.
@@ -291,10 +298,10 @@ function RoleConversation({ projects, defaultProjectId, onApplied, onOpenSetting
     try {
       const encodedVideo = video && status.video ? await sendableVideo(video.file) : null;
       const result = await post<{ reply: string; operation: string | null; operationDropped?: boolean; model: string; provider?: string; costMicros: number; reservedMicros: number; inputTokens: number; outputTokens: number; reasoningTokens?: number; sources?: Source[]; lookups?: number }>('/api/assistant/role', {
-        action: 'chat', projectId, scope: scopeKind === 'org' ? { kind: 'org' } : { kind: scopeKind, id: scopeId }, operationKey: crypto.randomUUID(), consent: true, history: encodedVideo || officialLookup || document ? [] : history, message: text, ...(image ? { image } : {}),
+        action: 'chat', projectId, scope: scopeKind === 'org' ? { kind: 'org' } : { kind: scopeKind, id: scopeId }, operationKey: crypto.randomUUID(), history: encodedVideo || officialLookup || document ? [] : history, message: text, ...(image ? { image } : {}),
         ...(encodedVideo ? { video: encodedVideo, videoConsent: true, videoApproval: status.video?.approval } : {}),
         ...(document ? { document, documentConsent: true, documentApproval: status.document?.approval } : {}),
-        ...(route.explicit ? { officialSearch: true } : {}),
+        ...(route.explicit ? { officialSearch: true } : { consent: true }),
         acceptedCostMicros: officialLookup || !estimate ? 0 : estimate.costMicros,
       }, encodedVideo && status.video?.effort === 'xhigh' ? 58_000 : undefined);
       if (!mounted.current || conversationEpoch.current !== epoch) return;
@@ -312,7 +319,7 @@ function RoleConversation({ projects, defaultProjectId, onApplied, onOpenSetting
     } catch (cause) {
       if (!mounted.current || conversationEpoch.current !== epoch) return;
       setMessages(current => current.filter(message => message.id !== user.id)); setDraft(text); if (image && picked) setPicked(picked);
-      setError(cause instanceof Error ? limitText(cause) : 'O Rolê não conseguiu responder.'); setLimitHit(isLimit(cause));
+      setError(cause instanceof RequestError && (cause.code === 'role_official_rate' || officialLookup && cause.code === 'rate_limited') ? 'Muitas buscas seguidas. Espere um minuto e tente de novo.' : cause instanceof Error ? limitText(cause) : 'O Rolê não conseguiu responder.'); setLimitHit(isLimit(cause));
       if (video) setVideoConsent(false);
       if (document) setDocumentConsent(null);
       if (cause instanceof RequestError && cause.code === 'role_official_disabled') {
@@ -591,7 +598,7 @@ function RoleConversation({ projects, defaultProjectId, onApplied, onOpenSetting
           {messages.length > 0 && <button type="button" className={styles.textButton} onClick={newConversation} disabled={busy || recording || transcribing || readingDocument || preparingAudio} aria-label="Nova conversa"><MessageSquarePlus size={16} aria-hidden="true"/>Nova<span> conversa</span></button>}
           <button type="button" className={styles.iconButton} onClick={() => close()} aria-label="Fechar o Rolê"><X size={20} aria-hidden="true"/></button>
         </header>
-        <label className={styles.project}><span>Procurar em</span><select value={scopeValue} disabled={busy || recording || transcribing || readingDocument || preparingAudio} onChange={event => {
+        {!searchOnly && <label className={styles.project}><span>Procurar em</span><select value={scopeValue} disabled={officialOn || busy || recording || transcribing || readingDocument || preparingAudio} onChange={event => {
           const value = event.target.value; resetConversation(); setScopeValue(value);
           const event_ = value.startsWith('event:') ? status?.scopes?.events.find(entry => entry.id === value.slice(6)) : null;
           const next = value.startsWith('project:') ? value.slice(8) : event_?.projectId && projects.some(item => item.id === event_.projectId) ? event_.projectId : '';
@@ -602,7 +609,7 @@ function RoleConversation({ projects, defaultProjectId, onApplied, onOpenSetting
           {!!status?.scopes?.units.length && <optgroup label="Unidades">{status.scopes.units.map(unit => <option key={unit.id} value={`unit:${unit.id}`}>{unit.name}</option>)}</optgroup>}
           <optgroup label="Projetos">{projects.map(item => <option key={item.id} value={`project:${item.id}`}>{item.name}</option>)}</optgroup>
           {!!status?.scopes?.events.length && <optgroup label="Eventos e dinâmicas">{status.scopes.events.map(entry => <option key={entry.id} value={`event:${entry.id}`}>{entry.name}</option>)}</optgroup>}
-        </select></label>
+        </select></label>}
         <div className={styles.body}>
           {!status && !statusError && <p className={styles.state} role="status"><LoaderCircle size={16} className="p-spin" aria-hidden="true"/>Acordando o Rolê…</p>}
           {statusError && <div className={styles.unavailable} role="alert"><p>{statusError}</p><button type="button" className="p-button p-button-subtle" onClick={() => void loadStatus(projectId)}>Tentar de novo</button></div>}
@@ -701,11 +708,11 @@ function RoleConversation({ projects, defaultProjectId, onApplied, onOpenSetting
             </ol>
           </>}
         </div>
-        {status && mode !== 'off' && <form className={styles.composer} data-document-draft={documentDraft ? true : undefined} onSubmit={send}>
+        {status && mode !== 'off' && <form className={styles.composer} data-document-draft={documentDraft ? true : undefined} data-search-only={searchOnly ? true : undefined} onSubmit={send}>
           {error && <p role="alert" className={styles.error}>{error}</p>}
           {error && limitHit && limitsButton}
           {notice && !error && <p role="status" className={styles.notice}>{notice}</p>}
-          {searchOnly && <p className={styles.help} role="note">Agora só a busca em fontes oficiais está disponível. A conversa com IA está desligada nesta organização.</p>}
+          {searchOnly && <p className={styles.searchOnlyNotice} role="note">Por enquanto, o Rolê só procura nas páginas oficiais da PROEX. A conversa com IA está desligada.</p>}
           {!consent && chatOn && <div className={styles.dataNotice} role="note">
             <p><strong>{servicesChanged ? 'O serviço de IA mudou' : 'Antes de começar'}</strong> O que você escrever, fotografar ou gravar vai para {servicesList(status)}, escolhidos pela PROEX, junto com dados do portal que você já pode ver.{status.operationsAvailable && status.decisionRouteName ? ` ${operationsConferenceSentence(status.decisionRouteName)}` : ''} Não envie senhas, CPF nem dados pessoais.</p>
             <button type="button" className="p-button p-button-primary" onClick={rememberConsent}>Entendi</button>
@@ -751,7 +758,7 @@ function RoleConversation({ projects, defaultProjectId, onApplied, onOpenSetting
           {(sanitized.problem || tooLong) && <p className={styles.error}>{tooLong ? 'Use até 2.000 caracteres.' : sanitized.problem}</p>}
           {picked && !status.visionAvailable && <p className={styles.error}>A leitura de imagens não está ligada nesta organização.</p>}
           <div className={styles.toolbar}>
-            {chatOn && !!status.policy?.publicSearch && <button type="button" className={styles.officialToggle} aria-pressed={officialMode} disabled={busy || attachment} title={attachment ? 'Tire o anexo para buscar nas fontes oficiais' : 'Manda a pergunta direto para as páginas oficiais da PROEX, sem custo de IA'} onClick={toggleOfficial}><Landmark size={18} aria-hidden="true"/>Buscar em fontes oficiais</button>}
+            {chatOn && !!status.policy?.publicSearch && <button type="button" className={styles.officialToggle} aria-pressed={officialMode} aria-label="Fontes oficiais: buscar nas páginas da PROEX" disabled={busy || attachment} title={attachment ? 'Tire o anexo para buscar nas fontes oficiais' : 'Manda a pergunta direto para as páginas oficiais da PROEX, sem custo de IA'} onClick={toggleOfficial}>{officialMode ? <Check size={18} aria-hidden="true"/> : <Landmark size={18} aria-hidden="true"/>}Fontes oficiais</button>}
             {chatOn && <>
             {status.document && <label className={`${styles.iconButton} ${busy || officialOn || recording || transcribing || readingDocument ? styles.disabled : ''}`} title="PDF ou Word de até 4 MB">
               <FileText size={20} aria-hidden="true"/><span className="visually-hidden">Anexar PDF ou Word</span>
@@ -765,18 +772,18 @@ function RoleConversation({ projects, defaultProjectId, onApplied, onOpenSetting
               <ImagePlus size={20} aria-hidden="true"/><span className="visually-hidden">Anexar foto</span>
               <input type="file" accept="image/*" disabled={!status.visionAvailable || officialOn || busy || !consent || recording || transcribing || preparingAudio} onChange={event => { void pickImage(event.target.files?.[0]); event.target.value = ''; }}/>
             </label>
-            <button type="button" className={`${styles.iconButton} ${recording ? styles.recording : ''}`} disabled={!status.speech.available || !consent || busy || transcribing || preparingAudio || readingDocument} onClick={() => recording ? recorder.current?.stop() : void startRecording()} aria-label={recording ? 'Parar gravação' : 'Gravar áudio'} title={status.speech.available ? (recording ? 'Parar gravação' : 'Gravar áudio (até 60 s)') : 'Transcrição desligada'}>
+            <button type="button" className={`${styles.iconButton} ${recording ? styles.recording : ''}`} disabled={!status.speech.available || officialOn || !consent || busy || transcribing || preparingAudio || readingDocument} onClick={() => recording ? recorder.current?.stop() : void startRecording()} aria-label={recording ? 'Parar gravação' : 'Gravar áudio'} title={status.speech.available ? (recording ? 'Parar gravação' : 'Gravar áudio (até 60 s)') : 'Transcrição desligada'}>
               {recording ? <Square size={18} aria-hidden="true"/> : <Mic size={20} aria-hidden="true"/>}
             </button>
-            {status.speech.available && <label className={`${styles.iconButton} ${!consent || busy || recording || transcribing || readingDocument || preparingAudio ? styles.disabled : ''}`} title="Anexar gravação WAV">
+            {status.speech.available && <label className={`${styles.iconButton} ${officialOn || !consent || busy || recording || transcribing || readingDocument || preparingAudio ? styles.disabled : ''}`} title="Anexar gravação WAV">
               <FileAudio size={20} aria-hidden="true"/><span className="visually-hidden">Anexar áudio WAV</span>
-              <input type="file" accept=".wav,audio/wav" disabled={!consent || busy || recording || transcribing || readingDocument || preparingAudio} onChange={event => { void attachAudioFile(event.target.files?.[0]); event.target.value = ''; }}/>
+              <input type="file" accept=".wav,audio/wav" disabled={officialOn || !consent || busy || recording || transcribing || readingDocument || preparingAudio} onChange={event => { void attachAudioFile(event.target.files?.[0]); event.target.value = ''; }}/>
             </label>}
             </>}
-            <p className={styles.cost} aria-live="polite">{searchOnly ? 'Consulta às fontes oficiais, sem custo de IA.' : !consent ? 'Toque em Entendi para conversar.' : officialLookup ? 'Consulta às fontes oficiais, sem custo de IA.' : estimate ? <>Custo máximo: <strong>{(() => { const [words, exact] = friendlyMicros(estimate.costMicros).split(' ('); return exact ? <><span className={styles.nowrap}>{words}</span> <span className={styles.nowrap}>({exact}</span></> : <span className={styles.nowrap}>{words}</span>; })()}</strong></> : 'O custo aparece aqui antes de enviar.'}</p>
-            <button type="submit" className={styles.send} disabled={!canSend} aria-label={officialLookup ? 'Consultar fontes oficiais' : estimate ? `Enviar, custo máximo ${formatMicros(estimate.costMicros)}` : 'Enviar'}><Send size={18} aria-hidden="true"/><span>Enviar</span></button>
+            <p className={styles.cost} aria-live="polite">{route.explicit ? officialCost : !consent ? 'Toque em Entendi para conversar.' : officialLookup ? officialCost : estimate ? <>Custo máximo: <strong>{(() => { const [words, exact] = friendlyMicros(estimate.costMicros).split(' ('); return exact ? <><span className={styles.nowrap}>{words}</span> <span className={styles.nowrap}>({exact}</span></> : <span className={styles.nowrap}>{words}</span>; })()}</strong></> : 'O custo aparece aqui antes de enviar.'}</p>
+            <button type="submit" className={styles.send} disabled={!canSend} aria-label={officialLookup ? 'Enviar para as fontes oficiais' : estimate ? `Enviar, custo máximo ${formatMicros(estimate.costMicros)}` : 'Enviar'}><Send size={18} aria-hidden="true"/><span>Enviar</span></button>
           </div>
-          <p className={styles.disclaimer}>{searchOnly ? 'O Rolê pode errar. Confira no link da fonte antes de usar.' : <>O Rolê pode errar. Confira antes de usar. Respondido por {modelLabel}{video ? '.' : ` (${providerName(status.provider)}).`}</>}</p>
+          <p className={styles.disclaimer}>{searchOnly || officialLookup ? 'O Rolê pode errar. Confira no link da fonte antes de usar.' : <>O Rolê pode errar. Confira antes de usar. Respondido por {modelLabel}{video ? '.' : ` (${providerName(status.provider)}).`}</>}</p>
           {chatOn && status.organizationId && <details className={styles.myUsage} onToggle={event => { const now = Date.now(); const day = (offset: number) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(now - offset * 86400000)); setUsageRange(event.currentTarget.open ? { from: day(29), to: day(0) } : null); }}><summary>Meu uso de IA nos últimos 30 dias</summary>{usageRange && <AiPeopleUsage organizationId={status.organizationId} from={usageRange.from} to={usageRange.to}/>}</details>}
         </form>}
       </div>

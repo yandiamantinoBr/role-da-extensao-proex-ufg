@@ -142,9 +142,17 @@
 .documentEditor textarea{resize:vertical;max-height:9rem}
 .documentEditor .videoConsent{padding:.5rem .6rem}
 @container (max-width:390px){.cost{flex-basis:100%;order:1}.send{margin-left:auto}.composer[data-document-draft]{max-height:62dvh;overflow:auto}}
-/* "Buscar em fontes oficiais": alternância com estado visível (ligada = roxa), mesmo toque de 44 px dos botões do compositor. */
-.officialToggle{display:inline-flex;align-items:center;gap:.4rem;min-height:44px;padding:0 .75rem;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--text-strong);font:inherit;font-size:max(13px,.82rem);font-weight:700;cursor:pointer;flex-shrink:0}
+/* "Fontes oficiais": alternância com estado visível, mesmo toque de 44 px dos botões do compositor.
+   Ligada ela fica clara com borda roxa, para não parecer um segundo Enviar. */
+.officialToggle{display:inline-flex;align-items:center;gap:.35rem;min-height:44px;padding:0 .6rem;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--text-strong);font:inherit;font-size:max(13px,.82rem);font-weight:700;white-space:nowrap;cursor:pointer;flex-shrink:0}
 .officialToggle:focus-visible{outline:3px solid var(--focus);outline-offset:3px}
 .officialToggle:disabled{opacity:.45;cursor:not-allowed}
-.officialToggle[aria-pressed=true]{background:var(--purple);border-color:var(--purple);color:#fff}
-:global(html[data-theme=dark]) .officialToggle[aria-pressed=true]{background:#7b45a0;border-color:#b48ad6}
+/* Bordas dos controles do compositor com contraste de pelo menos 3:1 sobre o fundo, nos dois temas (só no Rolê). */
+.dialog{--role-control-border:#8e7aa0}
+:global(html[data-theme=dark]) .dialog{--role-control-border:#8a6ba0}
+.iconButton,.officialToggle{border-color:var(--role-control-border)}
+.officialToggle[aria-pressed=true]{background:#efe6f6;border:2px solid var(--purple);color:var(--purple)}
+:global(html[data-theme=dark]) .officialToggle[aria-pressed=true]{background:#3a2850;border-color:#b48ad6;color:#f2ebf8}
+/* Modo só busca: aviso com borda à esquerda; custo e Enviar dividem a linha em telas estreitas. */
+.searchOnlyNotice{margin:0;padding:.6rem .75rem;border-left:4px solid var(--warning-ink);border-radius:8px;background:var(--surface-soft);color:var(--text-strong);font-size:max(13px,.85rem);line-height:1.5}
+@container (max-width:390px){.composer[data-search-only] .cost{flex-basis:auto;order:0}}
