@@ -72,7 +72,7 @@ const inList = (ids: string[]) => ids.length ? `(${ids.map(() => '?').join(',')}
 const enc = encodeURIComponent;
 /** Rótulo que nunca some na tela: sem controles, marcas de direção (bidi) nem caracteres de largura zero; até 120 caracteres. */
 export const cleanLabel = (value: string) => value.replace(/[\u0000-\u001f\u007f\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g, ' ').replace(/ {2,}/g, ' ').trim().slice(0, 120).trim();
-const short = (value: string) => { const clean = cleanLabel(value); return clean.length > 60 ? `${clean.slice(0, 59).trimEnd()}…` : clean; };
+const short = (value: string) => { const clean = cleanLabel(value); return clean.length > 60 ? `${(clean.slice(0, 59).replace(/\s+\S*$/, '') || clean.slice(0, 59)).trimEnd()}…` : clean; };
 const orgActive = `JOIN organizations o ON o.id=p.organization_id AND o.status='active'`;
 
 /* ---------- Permissão da tela: a mesma regra de allowedTabs (app/portal-client.tsx), ao vivo no SQL ---------- */
