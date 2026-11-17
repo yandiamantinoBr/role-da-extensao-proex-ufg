@@ -62,3 +62,9 @@
   border-radius: 8px;
   image-rendering: pixelated;
 }
+
+/* Mensagem pronta (17/11): fica recolhida; ao abrir, preserva as quebras de linha. */
+.message { border: 1px solid var(--line); border-radius: 10px; background: var(--surface-soft); }
+.message summary { display: flex; align-items: center; min-height: 44px; padding: 0 12px; cursor: pointer; font-size: 14px; font-weight: 600; color: var(--brand-ink, var(--purple)); }
+.message p { margin: 0; padding: 0 12px 12px; white-space: pre-line; overflow-wrap: anywhere; font-size: 14px; line-height: 1.6; }
+.actions :global(.p-button) { min-height: 44px; }

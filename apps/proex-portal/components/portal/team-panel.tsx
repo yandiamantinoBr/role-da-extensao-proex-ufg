@@ -211,7 +211,7 @@ function VolunteerList({ volunteers, projects, canRevoke, mutate }: { volunteers
 export default function TeamPanel(props: Props) {
     const [selectedUserId,setSelectedUserId]=useState<string|null>(null);
     const [query, setQuery] = useState(''), [saving, setSaving] = useState(false), [error, setError] = useState('');
-    const [issuedInvite, setIssuedInvite] = useState<{ id: string; url: string; expiresAt: string; selection: string } | null>(null);
+    const [issuedInvite, setIssuedInvite] = useState<{ id: string; url: string; expiresAt: string; selection: string; name?: string; email?: string; roleLabel?: string; scopeLabel?: string } | null>(null);
     const key = useRef<{ selection: string; operationKey: string } | null>(null), inviteRef = useRef<HTMLFormElement>(null);
     const official = props.officialSuggestion ? officialTeamPrefill(props.officialSuggestion.id) : null;
     const suggestionKey = official ? `${props.officialSuggestion!.selectionKey}:${official.id}` : 'manual';
@@ -241,7 +241,7 @@ export default function TeamPanel(props: Props) {
         if (globalAccess && (!props.globalAdmin || !globalConfirmed)) throw new Error('Confirme o alcance do convite ou escolha um projeto.');
         const result = await props.mutate('invite.create', { email: form.get('email'), role: asVolunteer ? 'operator' : form.get('role'), projectId: globalAccess ? null : selectedScope, globalAccess: globalAccess && globalConfirmed, ...(asVolunteer ? { campaignId: form.get('campaignId'), endsAt } : {}), operationKey: key.current.operationKey });
         const url = invitationShareLink(result.inviteUrl, window.location.origin);
-        setIssuedInvite({ id: result.id, url, expiresAt: result.expiresAt ?? '', selection: suggestionKey });
+        setIssuedInvite({ id: result.id, url, expiresAt: result.expiresAt ?? '', selection: suggestionKey, name: official?.name, email: String(form.get('email') ?? ''), roleLabel: asVolunteer ? 'voluntário' : projectAccessRoleLabels[String(chosenRole)], scopeLabel: globalAccess ? 'todos os projetos da PROEX UFG' : asVolunteer ? String(chosenCampaign?.name ?? allowed.find(p => p.id === selectedScope)?.name ?? '') : String(allowed.find(p => p.id === selectedScope)?.name ?? '') });
         key.current = null;
         draft.clear();
         element.reset();
@@ -335,7 +335,7 @@ export default function TeamPanel(props: Props) {
         <div className="p-form-footer">{error && <p className="p-inline-error" role="alert">{error}</p>}<button className="p-button p-button-primary" type="submit">{saving ? <LoaderCircle size={17} className="p-spin"/> : <UserPlus size={17}/>}{saving ? 'Criando…' : 'Gerar convite'}</button>
         </div>
         </fieldset>
-        </form>{shareableInvite && <TeamInviteShare key={shareableInvite.id} url={shareableInvite.url} expiresAt={shareableInvite.expiresAt}/>}</section>}<VolunteerList volunteers={(props.volunteers ?? []).filter(volunteer => !props.selectedProjectId || projectIdOf(volunteer) === props.selectedProjectId)} projects={props.projects} canRevoke={projectId => props.globalAdmin || props.canProject(projectId, 'access.manage')} mutate={props.mutate}/>{visibleInvites.length > 0 && <section className="p-section">
+        </form>{shareableInvite && <TeamInviteShare key={shareableInvite.id} url={shareableInvite.url} expiresAt={shareableInvite.expiresAt} name={shareableInvite.name} email={shareableInvite.email} roleLabel={shareableInvite.roleLabel} scopeLabel={shareableInvite.scopeLabel}/>}</section>}<VolunteerList volunteers={(props.volunteers ?? []).filter(volunteer => !props.selectedProjectId || projectIdOf(volunteer) === props.selectedProjectId)} projects={props.projects} canRevoke={projectId => props.globalAdmin || props.canProject(projectId, 'access.manage')} mutate={props.mutate}/>{visibleInvites.length > 0 && <section className="p-section">
         <div className="p-section-heading">
         <div>
         <h2>Convites emitidos</h2>
