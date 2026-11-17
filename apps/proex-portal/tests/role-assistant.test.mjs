@@ -1242,3 +1242,83 @@ test('BUSCA OFICIAL · LIMITE E CIÊNCIA: a 21ª busca no minuto é recusada sem
     assert.equal((await roleChat(f.db, other, ask({ officialSearch: true }), secret, options)).provider, 'official');
   } finally { f.native.close(); }
 });
+
+// Planilha de brindes (decisão de 2026-11-16): fica em outra conta do Google; até ser compartilhada, o Rolê diz que não tem acesso.
+const { asksGiftSheet, GIFT_SHEET_REPLY } = await import(compile('assistant/gift-sheet-intent'));
+const GIFT_SHEET_ASKS = [
+  'O que tem na planilha de brindes?',
+  'Quantos brindes já foram distribuídos segundo a planilha?',
+  'Confere na planilha dos brindes quanto falta entregar',
+  'Rolê, abre a planilha de distribuição de brindes',
+  'Qual o total de brindes no Google Sheets?',
+  'me passa os dados do sheet de brindes',
+  'Na tabela do Google dos brindes, quem recebeu ontem?',
+  'PLANILHA DE BRINDES está atualizada?',
+  'planilha brinde',
+  'Você consegue ler as planilhas de brindes da equipe?',
+];
+const GIFT_SHEET_OTHERS = [
+  'Como registro a entrega de brindes?',
+  'Quais são os níveis de brinde da dinâmica CONPEEX?',
+  'Registra a entrega de 20 brindes',
+  'Quantos brindes temos no estoque?',
+  'planilha de presença',
+  'Atualiza a planilha de presença do evento',
+  'Qual a tabela de distribuição de brindes do lote 10/11?',
+  'Exporte as entregas de brindes para uma planilha',
+  'Gere uma planilha com os brindes entregues',
+  'Qual o saldo de brindes?',
+];
+
+test('PLANILHA DE BRINDES · INTENÇÃO: só pedidos sobre a planilha de brindes disparam a resposta direta', () => {
+  for (const message of GIFT_SHEET_ASKS) assert.equal(asksGiftSheet(message), true, message);
+  for (const message of GIFT_SHEET_OTHERS) assert.equal(asksGiftSheet(message), false, message);
+  assert.match(ROLE_SYSTEM_PROMPT, /não tem acesso a planilhas do Google/);
+});
+
+test('PLANILHA DE BRINDES · RESPOSTA: sem IA, custo 0 e sem reserva, com chave ou só com a busca; sem acesso ao projeto é recusado antes', async () => {
+  const f = fixture();
+  try {
+    await setup(f, { roleVisionEnabled: true });
+    const failing = () => assert.fail('a resposta sobre a planilha de brindes não chama provedor de IA');
+    const options = { keys, fetcher: failing, officialFetcher: failing };
+    for (const message of GIFT_SHEET_ASKS) {
+      const result = await roleChat(f.db, f.actors.viewer, chatInput(f, { message }), secret, options);
+      assert.equal(result.reply, GIFT_SHEET_REPLY, message);
+      assert.equal(result.provider, 'portal');
+      assert.equal(result.operation, null);
+      assert.equal(result.reservedMicros, 0);
+      assert.equal(result.costMicros, 0);
+      assert.equal(result.inputTokens + result.outputTokens, 0);
+    }
+    assert.equal(f.native.prepare('SELECT COUNT(*) n FROM ai_calls').get().n, 0);
+    const message = 'O que tem na planilha de brindes?';
+    // Sem acesso ao projeto ou sem login: recusado antes de responder.
+    await assert.rejects(roleChat(f.db, f.actors.outsider, chatInput(f, { message }), secret, options), error => error.status === 403);
+    await assert.rejects(roleChat(f.db, null, chatInput(f, { message }), secret, options), error => error.code === 'assistant_forbidden');
+    // Sem a ciência de envio (conversa comum) continua recusado como hoje.
+    const noConsent = chatInput(f, { message }); delete noConsent.consent;
+    await assert.rejects(roleChat(f.db, f.actors.viewer, noConsent, secret, options), error => error.code === 'assistant_consent');
+    // Com anexo não dispara: segue para a conversa com IA.
+    const provider = fakeProvider();
+    const withImage = await roleChat(f.db, f.actors.viewer, chatInput(f, { message, image: PNG }), secret, { keys, fetcher: provider.fetch, officialFetcher: failing });
+    assert.equal(provider.calls.length, 1);
+    assert.notEqual(withImage.reply, GIFT_SHEET_REPLY);
+    // Modo só busca (Rolê ligado, sem chave de conversa): o pedido explícito também recebe a resposta direta.
+    dropChatKey(f);
+    const searchOnly = chatInput(f, { message, acceptedCostMicros: 0, officialSearch: true }); delete searchOnly.consent;
+    const direct = await roleChat(f.db, f.actors.viewer, searchOnly, secret, options);
+    assert.equal(direct.reply, GIFT_SHEET_REPLY);
+    assert.equal(direct.costMicros, 0);
+  } finally { f.native.close(); }
+});
+
+test('PLANILHA DE BRINDES · DESLIGADO: com o Rolê desligado não há resposta direta', async () => {
+  const f = fixture();
+  try {
+    await setup(f, { roleEnabled: false });
+    const failing = () => assert.fail('nenhum provedor com o Rolê desligado');
+    await assert.rejects(roleChat(f.db, f.actors.viewer, chatInput(f, { message: 'O que tem na planilha de brindes?' }), secret, { keys, fetcher: failing, officialFetcher: failing }),
+      error => error.status === 503 && error.code === 'role_unavailable');
+  } finally { f.native.close(); }
+});
