@@ -1140,6 +1140,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
               <Field label="De"><DateField aria-label="De" value={loanFilters.from} onValueChange={from=>setLoanFilters(current=>({...current,from}))}/></Field>
               <Field label="Até (inclusive)"><DateField aria-label="Até (inclusive)" min={loanFilters.from||undefined} value={loanFilters.to} onValueChange={to=>setLoanFilters(current=>({...current,to}))}/></Field>
             </div>
+            <p className={workStyles.loanFilterCriterion}>Entra no recorte o empréstimo em curso em algum momento do período, mesmo que tenha começado antes. Datas e horários no fuso de Brasília.</p>
             <div className={workStyles.loanFilterResult}>
               <p role="status">{loanPeriodValid?`${shownLoans.length} ${shownLoans.length===1?'empréstimo':'empréstimos'} no recorte`:'Confira as datas do período.'}</p>
               {hasLoanFilters&&<button className="p-text-link" type="button" onClick={()=>{loanSearch.current?.focus({preventScroll:true});setLoanFilters(emptyLoanFilters);}}>Limpar busca e filtros</button>}
@@ -1197,10 +1198,10 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
             <Field label="Contato necessário ao empréstimo">
             <input name="borrowerContact" maxLength={150} placeholder="E-mail ou telefone"/>
             </Field>
-            <Field label="Retirada prevista">
+            <Field label="Retirada prevista" help="Horário de Brasília.">
             <DateTimeField aria-label="Retirada prevista" name="startsAt"  required/>
             </Field>
-            <Field label="Devolução prevista">
+            <Field label="Devolução prevista" help="Horário de Brasília.">
             <DateTimeField aria-label="Devolução prevista" name="endsAt"  required/>
             </Field>
             </div>
