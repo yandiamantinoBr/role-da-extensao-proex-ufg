@@ -465,3 +465,11 @@ test('on phones the month cells keep only dots and counts: the last chip rule hi
   const lastShow = css.lastIndexOf('.chip { display:block'), lastHide = css.lastIndexOf('@media(max-width:720px){.chip{display:none}}');
   assert.ok(lastShow > 0 && lastHide > lastShow, 'a regra que esconde no celular vem depois da que mostra');
 });
+
+test('today uses the brand colour, not the Materiais orange, and the legend explains cancelled previews when they show (sexta crítica de 16/11)', () => {
+  const css = readFileSync(new URL('../components/portal/calendar-panel.module.css', import.meta.url), 'utf8');
+  const tail = css.slice(css.lastIndexOf('.day[aria-current=date] .dayNumber'));
+  assert.match(tail, /^\.day\[aria-current=date\] \.dayNumber \{ background: var\(--surface-soft\); color: var\(--brand-ink\); \}/);
+  const source = readFileSync(new URL('../components/portal/calendar-panel.tsx', import.meta.url), 'utf8');
+  assert.match(source, /\{showCancelled&&<small><span className=\{styles\.legendCancelled\}\/>Cancelado<\/small>\}/);
+});
