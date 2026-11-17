@@ -21,6 +21,8 @@ export type ReportPdfPresentation = {
   metrics?: readonly { label: string; value: number | null; detail?: string }[];
   /** Em cada célula, o que vem depois da primeira quebra de linha sai em cinza (ex.: a categoria abaixo do título). */
   mutedDetailLines?: boolean;
+  /** Linhas da tabela (pela posição em `data`) desenhadas inteiras em cinza, como um compromisso cancelado. */
+  mutedRows?: readonly number[];
   columnWeights?: readonly number[];
   /** Print-only grouping preserves every authorized field; spreadsheet/Word keep original columns. */
   columnGroups?: readonly { label: string; keys: readonly string[] }[];
@@ -215,7 +217,7 @@ export async function toPdf(
    * that fits on a fresh page stays together. Larger rows continue with the
    * appropriate heading repeated by their caller.
    */
-  function tableRow(values: string[], widths: number[], aligns: (boolean | undefined)[], background: Color, onBreak: () => void, isHeader = false) {
+  function tableRow(values: string[], widths: number[], aligns: (boolean | undefined)[], background: Color, onBreak: () => void, isHeader = false, mutedRow = false) {
     const size = isHeader ? 9.5 : 10, leading = 14;
     const padding = !isHeader && (projectSheet || options?.presentation?.compactRows) ? 6 : 9;
     const faces = values.map(value => isHeader ? strongFont(value) : font);
@@ -234,7 +236,7 @@ export async function toPdf(
         const face = faces[index], alignRight = aligns[index];
         lines.slice(offset, offset + count).forEach((line, row) => {
           const position = alignRight ? x + widths[index] - padding - face.widthOfTextAtSize(line, size) : x + padding;
-          paint(line, position, y - padding - row * leading, size, isHeader ? white : offset + row >= leadLines[index] ? muted : ink, face);
+          paint(line, position, y - padding - row * leading, size, isHeader ? white : mutedRow || offset + row >= leadLines[index] ? muted : ink, face);
         });
         x += widths[index];
       });
@@ -277,10 +279,11 @@ export async function toPdf(
       tableRow(headers, widths, numeric, purple, addPage, true);
     };
     tableHeading();
+    const mutedRows = new Set(options?.presentation?.mutedRows ?? []);
     normalizedRows.forEach((row, index) => tableRow(row, widths, numeric, index % 2 ? wash : white, () => {
       addPage();
       tableHeading(true,row);
-    }));
+    }, false, mutedRows.has(index)));
   } else {
     const widths = [171, usable - 171];
     data.forEach((row, index) => {
