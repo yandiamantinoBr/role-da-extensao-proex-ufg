@@ -242,13 +242,13 @@ export default function CalendarPanel({ viewerId, projects: sourceProjects, orga
     </a>;
   }
   return <div className={styles.panel}>
-    <section className="p-card" aria-label="Filtros da agenda">
+    <section className="p-card" aria-label="Filtros da agenda" data-tutorial="agenda-inicio">
       <div className="p-card-title"><div><h3>Agenda integrada</h3><p>Reservas, atividades e movimentações reais, no horário de Brasília.</p></div></div>
       <label className={`p-field ${styles.search}`}><span>Buscar no período</span><span className={styles.searchField}><Search size={16} aria-hidden="true"/><input ref={searchField} type="search" name="calendarSearch" value={search} maxLength={120} onChange={event=>setSearch(event.target.value)} placeholder="Título, projeto ou local"/></span></label>
       <div className={styles.summaryRow}><div className={styles.rangeSummary}><strong>{validRange?prettyRange(from, to):'Escolha as datas inicial e final'}</strong><span>{scopeName} · {category==='all'?'Todas as categorias permitidas':labels[category as CalendarCategory]}</span></div>
         {filteredContext&&<button className="p-text-link" type="button" onClick={clearFilters}>{from!==initial.from||to!==initial.to?'Voltar ao mês atual e limpar filtros':'Limpar filtros'}</button>}
       </div>
-      <details className={styles.filterDisclosure}><summary>Filtrar período e contexto</summary><div className={styles.filterBody}>
+      <details className={styles.filterDisclosure} data-tutorial="agenda-filtros"><summary>Filtrar período e contexto</summary><div className={styles.filterBody}>
       <div className={styles.filters}>
         <label className="p-field"><span>Categoria</span><select name="agendaCategory" value={category} onChange={event=>{setCategory(event.target.value);setListCategory('all');setSelectedDay('');}}><option value="all">Todas as categorias permitidas</option>{(data?.availableCategories??Object.keys(labels)).map(value=><option key={value} value={value}>{labels[value as CalendarCategory]}</option>)}</select></label>
         <label className="p-field"><span>Unidade responsável</span><select name="agendaUnit" value={unitId} onChange={event=>{onUnitChange(event.target.value);setSelectedDay('');}}><option value="">Todas as unidades</option>{groupUnits(organizationalUnits.map(unit=>({...unit,name:String(unit.name),group_label:String(unit.group_label??'')}) as typeof unit & {name:string;group_label:string;acronym?:unknown})).map(group=><optgroup key={group.group} label={group.group}>{group.units.map(unit=><option key={String(unit.id)} value={String(unit.id)}>{unit.acronym?`${unit.acronym} · `:''}{unit.name}</option>)}</optgroup>)}</select></label>
@@ -268,7 +268,7 @@ export default function CalendarPanel({ viewerId, projects: sourceProjects, orga
 
     </section>
     <div className={styles.workspace}>
-    <section className={`p-card ${styles.monthCard}`} aria-label="Visão mensal da agenda" aria-busy={loading}>
+    <section className={`p-card ${styles.monthCard}`} aria-label="Visão mensal da agenda" aria-busy={loading} data-tutorial="agenda-mes">
       <div className={styles.monthHeading}><button type="button" className="p-button p-button-subtle" aria-label="Consultar mês anterior" onClick={()=>shiftMonth(-1)}><ChevronLeft size={18}/></button><div><h3>{new Intl.DateTimeFormat('pt-BR',{timeZone,month:'long',year:'numeric'}).format(monthStart)}</h3>{from.slice(0,7)!==to.slice(0,7)&&<small>Primeiro mês do período</small>}</div><button type="button" className="p-button p-button-subtle" aria-label="Consultar próximo mês" onClick={()=>shiftMonth(1)}><ChevronRight size={18}/></button></div>
       <div className={styles.monthGrid}>
         {weekday.map(day => <span key={day} className={styles.weekday}>{day}</span>)}
@@ -293,7 +293,7 @@ export default function CalendarPanel({ viewerId, projects: sourceProjects, orga
     </section>
     <section className={`p-card ${styles.listCard}`} id="calendar-day-entries" aria-labelledby="calendar-day-heading" aria-busy={loading}>
       <div className={`p-card-title ${styles.listTitle}`}><div><h3 ref={listHeading} id="calendar-day-heading" className={styles.listHeading} tabIndex={-1}>{selectedDay?`Compromissos de ${prettyDay(selectedDay)}`:'Registros do período'}</h3><p role="status">{loading?'Consultando registros…':displayError||!validRange?'':selectedDay?`${shown.length} ${shown.length===1?'compromisso':'compromissos'} em ${prettyDay(selectedDay)}`:`${shown.length} ${shown.length===1?'registro':'registros'}`}</p></div>{selectedDay&&<button type="button" className="p-button p-button-subtle" onClick={()=>{setSelectedDay('');dayTrigger.current?.focus({preventScroll:true});dayTrigger.current?.scrollIntoView({block:'nearest'});}}><X size={15} aria-hidden="true"/>Ver todo o período</button>}</div>
-      <div className={styles.listTools}>
+      <div className={styles.listTools} data-tutorial="agenda-baixar">
         {listCategories.length > 1 && <label className="p-field">
           <span>Categoria dos compromissos</span>
           <select name="agendaListCategory" value={effectiveListCategory} onChange={event => setListCategory(event.target.value as CalendarCategory | 'all')}>

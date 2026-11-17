@@ -1,4 +1,5 @@
 import { accessibleProjects, accountBatch, requireLiveAccount, type PortalActor } from '../access';
+import { calendarAvailable } from '../calendar';
 import { all, iso } from '../database';
 import { HttpError } from '../errors';
 import { TUTORIAL_CHAPTERS, TUTORIAL_INVITE_ID, chapterById, resolveSteps, resumeIndex, stepById, type ResolvedStep, type TutorialAccess } from './catalog';
@@ -29,7 +30,7 @@ function accessFor(actor: PortalActor, rawProject: unknown): { access: TutorialA
   // Projeto vizinho ou de outra organização: tratado como "nenhum projeto escolhido", sem revelar nada.
   const selectedProject = asked && (projectScope === null || projectScope.includes(asked)) ? asked : null;
   const managesOrganization = (actor.organizations ?? []).some(organization => organization.canManage);
-  return { access: { projectScope, selectedProject, capabilityScope: capability => accessibleProjects(actor, capability), managesOrganization }, denied: Boolean(asked && !selectedProject) };
+  return { access: { projectScope, selectedProject, capabilityScope: capability => accessibleProjects(actor, capability), managesOrganization, calendar: calendarAvailable(actor) }, denied: Boolean(asked && !selectedProject) };
 }
 
 async function readProgress(db: D1Database, userId: string) {

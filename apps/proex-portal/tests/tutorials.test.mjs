@@ -198,3 +198,13 @@ test('Demandas: needs a project; the general-demands step only for whoever manag
   assert.equal(adminSteps.gerais, true);
   assert.equal(adminSteps.abrir, true);
 });
+
+test('Agenda: follows the same rule that shows the module (an event operator alone has no Agenda)', async () => {
+  const db = fixture(), reader = await person(db, 'ag-reader', [['viewer', 'project-a']]), operator = await person(db, 'ag-operator', [['operator', 'project-a']]);
+  const chapterSteps = state => Object.values(Object.fromEntries(state.chapters.find(chapter => chapter.id === 'agenda').steps.map(step => [step.id, step.available])));
+  const { calendarAvailable } = await load('lib/calendar.ts');
+  const readerActor = await reader.actor(), operatorActor = await operator.actor();
+  assert.equal(chapterSteps(await tutorialWorkspace(db, readerActor, {})).every(Boolean), calendarAvailable(readerActor));
+  assert.equal(chapterSteps(await tutorialWorkspace(db, operatorActor, {})).some(Boolean), calendarAvailable(operatorActor));
+  assert.equal(calendarAvailable(operatorActor), false, 'the synthetic operator has no Agenda, so the chapter has no steps');
+});
