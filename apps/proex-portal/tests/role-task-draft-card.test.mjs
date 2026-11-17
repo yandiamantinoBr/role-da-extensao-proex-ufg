@@ -19,8 +19,8 @@ const contracts = load('lib/follow-up/contracts.ts', () => ({ HttpError: Error }
 const base = { organizationId: 'org_proex', projectId: 'project-a', projectName: 'Projeto A', title: 'Divulgar novo prazo de recurso', description: 'Publicar o aviso nas redes.', dueAt: '2026-11-20', priority: 'high', assigneeId: 'leitor-qa', assigneeName: 'Bruno Leitor', expiresAt: Date.now() + 60_000, signature: 'corpo.assinatura' };
 const failure = (message, code) => Object.assign(new Error(message), code ? { code } : {});
 
-function harness(answer, draft = base) {
-  let index = 0, tree, status;
+function harness(answer, draft = base, initialStatus) {
+  let index = 0, tree, status = initialStatus;
   const slots = [], effects = [], requests = [], statuses = [], changed = [], opened = [], focused = [];
   const hooks = {
     useState(initial) { const key = index++; if (!(key in slots)) slots[key] = initial; return [slots[key], value => slots[key] = typeof value === 'function' ? value(slots[key]) : value]; },
@@ -37,7 +37,7 @@ function harness(answer, draft = base) {
   const card = load('components/portal/role-task-draft-card.tsx', name => modules[name], { crypto, Error, encodeURIComponent });
   const nodes = () => { const found = [], visit = node => { if (!node || typeof node !== 'object') return; if (Array.isArray(node)) { node.forEach(visit); return; } found.push(node); visit(node.props?.children); }; visit(tree); return found; };
   const h = {
-    requests, statuses, changed, opened, focused, card,
+    requests, statuses, changed, opened, focused, card, status: () => status,
     render() {
       index = 0; effects.length = 0;
       tree = card.default({ draft, status, onStatus: value => { statuses.push(value); status = value; }, onOpen: () => opened.push(true) });
@@ -94,7 +94,10 @@ test('CARTÃO DO RASCUNHO: Criar demanda envia o que está no cartão, uma vez, 
   const { body } = h.requests[0];
   assert.deepEqual(plain({ ...body, operationKey: undefined }), { action: 'task.create', projectId: 'project-a', title: 'Divulgar prazo revisado', body: 'Publicar o aviso nas redes.', priority: 'low', dueAt: null, userIds: ['leitor-qa'], roleDraft: 'corpo.assinatura' });
   assert.match(body.operationKey, /^[0-9a-f-]{36}$/);
-  assert.deepEqual(plain(h.statuses), [{ createdId: 'task-nova' }]);
+  const saved = plain(h.status());
+  assert.equal(saved.createdId, 'task-nova');
+  assert.equal(saved.operationKey, body.operationKey);
+  assert.deepEqual({ title: saved.title, dueAt: saved.dueAt, priority: saved.priority, keepAssignee: saved.keepAssignee }, { title: '  Divulgar prazo revisado  ', dueAt: '', priority: 'low', keepAssignee: true });
   assert.equal(h.changed.length, 1, 'the Demandas screen is told to refresh');
   const shown = h.text();
   assert.ok(shown.includes('Demanda criada') && shown.includes('Divulgar prazo revisado') && shown.includes('Abrir demanda'));
@@ -111,11 +114,11 @@ test('CARTÃO DO RASCUNHO: erro usa o estilo de erro, trava os campos e repete a
   const h = harness(() => { if (fail) throw failure('Seu acesso a este projeto ou organização mudou.', 'followup_forbidden'); return { task: { id: 'task-depois' } }; });
   h.field('Descrição').props.onChange({ target: { value: 'Texto ajustado.' } }); h.render();
   await h.click('Criar demanda');
-  assert.equal(text(h.alert()), 'Seu acesso a este projeto ou organização mudou. O rascunho continua aqui.');
+  assert.equal(text(h.alert()), 'Seu acesso a este projeto ou organização mudou. O rascunho continua aqui. Os campos ficam travados para a nova tentativa não criar a demanda em dobro.');
   assert.equal(h.alert().props.className, 'error');
   assert.equal(h.field('Descrição').props.value, 'Texto ajustado.', 'the draft stays');
   for (const label of ['Título', 'Descrição', 'Prazo', 'Prioridade']) assert.equal(h.field(label).props.disabled, true, `${label} locked after the first tap`);
-  assert.equal(h.statuses.length, 0);
+  assert.equal(h.status().createdId, undefined);
   fail = false;
   await h.click('Criar demanda');
   assert.equal(h.requests.length, 2);
@@ -128,9 +131,12 @@ test('CARTÃO DO RASCUNHO: rascunho vencido ou chave já usada não convida a cr
     const h = harness(() => { throw failure('mensagem do servidor', code); });
     await h.click('Criar demanda');
     const alert = h.alert();
-    assert.equal(text(alert), 'A demanda pode já ter sido criada. Confira em Demandas antes de criar de novo. Abrir Demandas do projeto');
+    assert.equal(text(alert), 'A demanda pode já ter sido criada. Confira em Demandas antes de criar de novo.');
     assert.equal(alert.props.className, 'error');
-    assert.equal(h.nodes().find(node => node.type === 'a').props.href, '/?module=demands&project=project-a');
+    const link = h.nodes().find(node => node.type === 'a');
+    assert.equal(text(link), 'Abrir Demandas do projeto');
+    assert.equal(link.props.href, '/?module=demands&project=project-a');
+    assert.equal(link.props.className, 'p-button p-button-subtle taskDraftOpen', 'a discreet button, apart from the paragraph');
     assert.equal(h.button('Criar demanda').props.disabled, true, code);
   }
 });
@@ -138,7 +144,7 @@ test('CARTÃO DO RASCUNHO: rascunho vencido ou chave já usada não convida a cr
 test('CARTÃO DO RASCUNHO: Descartar não envia nada, anuncia e recebe o foco; formato estranho não vira cartão', async () => {
   const h = harness({ task: { id: 'x' } });
   await h.click('Descartar');
-  assert.deepEqual(plain(h.statuses), [{ discarded: true }]);
+  assert.equal(h.status().discarded, true);
   assert.equal(h.requests.length, 0);
   const note = h.nodes()[0];
   assert.equal(h.text(), 'Rascunho descartado. Nada foi criado.');
@@ -165,4 +171,42 @@ test('CARTÃO DO RASCUNHO: chat usa o cartão; estilos do cartão ficam no CSS d
   assert.match(css, /\.taskDraft :global\(\.p-button-subtle\)\{border:1px solid var\(--task-draft-border\)\}/);
   assert.match(css, /\.taskDraft \.taskDraftOpen\{[^}]*font-size:max\(14px/);
   for (const name of ['operation', 'documentEditor', 'editable', 'help', 'videoConsent', 'reviseActions', 'error', 'searchOnlyNotice']) assert.ok(new RegExp(`\\.${name}\\b`).test(css), `existing class ${name}`);
+});
+
+test('CARTÃO DO RASCUNHO: remontar com o estado guardado na mensagem mantém trava, aviso, chave e edições', async () => {
+  // Erro comum: campos travados e chave guardada; a conversa recarrega e o cartão volta igual.
+  const first = harness(() => { throw failure('Falha de rede.', 'network'); });
+  first.field('Título').props.onChange({ target: { value: 'Título editado' } }); first.render();
+  first.checkbox().props.onChange({ target: { checked: true } }); first.render();
+  await first.click('Criar demanda');
+  const saved = plain(first.status());
+  assert.equal(saved.title, 'Título editado'); assert.equal(saved.keepAssignee, true); assert.match(saved.operationKey, /^[0-9a-f-]{36}$/);
+  const again = harness({ task: { id: 'task-uma' } }, base, saved);
+  assert.equal(again.field('Título').props.value, 'Título editado', 'edits survive');
+  assert.equal(again.field('Título').props.disabled, true, 'fields stay locked');
+  assert.equal(again.checkbox().props.checked, true);
+  await again.click('Criar demanda');
+  assert.equal(again.requests[0].body.operationKey, saved.operationKey, 'same key after remount: never a second task');
+  assert.deepEqual(plain(again.requests[0].body.userIds), ['leitor-qa']);
+  // "Talvez criada": depois de remontar, o aviso continua e Criar segue desativado.
+  const maybe = harness(() => { throw failure('mensagem do servidor', 'role_task_draft_invalid'); });
+  await maybe.click('Criar demanda');
+  const remounted = harness({ task: { id: 'x' } }, base, plain(maybe.status()));
+  assert.ok(remounted.text().includes('A demanda pode já ter sido criada.'));
+  assert.equal(remounted.button('Criar demanda').props.disabled, true);
+  assert.equal(remounted.field('Descrição').props.disabled, true);
+  assert.equal(remounted.requests.length, 0);
+  // Criada ou descartada continuam assim.
+  assert.ok(harness({}, base, { createdId: 'task-uma', operationKey: saved.operationKey }).text().includes('Demanda criada'));
+  assert.equal(harness({}, base, { discarded: true }).text(), 'Rascunho descartado. Nada foi criado.');
+});
+
+test('CARTÃO DO RASCUNHO: a recarga depois de cada resposta não desmonta a conversa', () => {
+  const source = readFileSync(new URL('../components/portal/role-assistant.tsx', import.meta.url), 'utf8');
+  assert.ok(source.includes('const loadStatus = useCallback(async (id: string, options?: { keep?: boolean }) => {'));
+  assert.ok(source.includes('if (!options?.keep) setStatus(null);'));
+  assert.ok(source.includes("if (reply.operation && status.operationsAvailable) void locateOperation(reply);\n      void loadStatus(projectId, { keep: true });"), 'send() keeps the conversation mounted');
+  assert.ok(source.includes("if (previousMode.current === 'chat' && nextMode !== 'chat') resetConversation();"), 'leaving chat mode still clears the conversation (PR 187)');
+  const css = readFileSync(new URL('../components/portal/role-assistant.module.css', import.meta.url), 'utf8');
+  assert.ok(css.includes('.taskDraft .reviseActions :global(.p-button){font-size:max(14px,.9rem)}'));
 });

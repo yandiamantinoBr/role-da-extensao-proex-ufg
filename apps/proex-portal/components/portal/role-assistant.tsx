@@ -167,9 +167,12 @@ function RoleConversation({ projects, defaultProjectId, onApplied, onOpenSetting
 
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; stream.current?.getTracks().forEach(track => track.stop()); if (stopTimer.current) window.clearTimeout(stopTimer.current); }; }, []);
 
-  const loadStatus = useCallback(async (id: string) => {
+  // keep: recarga depois de uma resposta não desmonta a conversa (o cartão de rascunho guarda estado vivo).
+  // A conversa só é apagada quando o modo sai de "chat" (resetConversation abaixo), como antes.
+  const loadStatus = useCallback(async (id: string, options?: { keep?: boolean }) => {
     if (!id) return;
-    setStatus(null); setStatusError('');
+    if (!options?.keep) setStatus(null);
+    setStatusError('');
     const epoch = ++statusEpoch.current;
     try {
       const next = await call<Status>(`/api/assistant/role?projectId=${encodeURIComponent(id)}`);
@@ -317,7 +320,7 @@ function RoleConversation({ projects, defaultProjectId, onApplied, onOpenSetting
       if (encodedVideo) clearVideo();
       if (document) clearDocumentDraft();
       if (reply.operation && status.operationsAvailable) void locateOperation(reply);
-      void loadStatus(projectId);
+      void loadStatus(projectId, { keep: true });
     } catch (cause) {
       if (!mounted.current || conversationEpoch.current !== epoch) return;
       setMessages(current => current.filter(message => message.id !== user.id)); setDraft(text); if (image && picked) setPicked(picked);
@@ -370,7 +373,7 @@ function RoleConversation({ projects, defaultProjectId, onApplied, onOpenSetting
       const current = await call<Status>(`/api/assistant/role?projectId=${encodeURIComponent(projectId)}`);
       if (!currentContext()) throw new Error('O recorte da conversa mudou.');
       if (!current.document || (destination === 'records' && !current.document.canSaveToRecords)) {
-        if (!current.document) void loadStatus(projectId);
+        if (!current.document) void loadStatus(projectId, { keep: true });
         throw new Error('Seu acesso a esta opção mudou. Confira o projeto.');
       }
       if (blob) {
