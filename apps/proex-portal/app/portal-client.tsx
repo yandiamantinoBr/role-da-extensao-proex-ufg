@@ -1,5 +1,6 @@
 'use client';
 import DateTimeField from '@/components/portal/date-time-field';
+import LoanCardActions from '@/components/portal/loan-card-actions';
 import DateField from '@/components/portal/date-field';
 import McpConnectionsPanel from '@/components/portal/mcp-connections-panel';
 import GoogleDriveConnectionPanel from '@/components/portal/google-drive-connection-panel';
@@ -1162,9 +1163,10 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
                     </div>
                     {l.status === 'reserved' && item && equipmentBlockCause(item) && <div className="p-loan-missed" role="note"><p><strong>A retirada fica bloqueada:</strong> {equipmentBlockCause(item)}.{canProject(get(l, 'projectId', 'project_id'), 'inventory.manage') ? '' : ' Avise a equipe de materiais ou reserve outro bem.'}</p>{canProject(get(l, 'projectId', 'project_id'), 'inventory.manage') && <button type="button" className="p-text-link" aria-label={`Abrir a ficha de ${item.name || 'equipamento'}`} onClick={() => { setMaterialMode('view'); setSelectedMaterialId(string(item.id)); }}><ArrowUpRight size={15} aria-hidden="true"/>Abrir ficha do material</button>}</div>}
                     {loanDisplayState(l.status,get(l,'closeReason','close_reason')) === 'not_collected' && <div className="p-loan-missed" role="note"><p><strong>Venceu sem retirada.</strong> O equipamento foi liberado.{canProject(get(l, 'projectId', 'project_id'), 'loans.manage') ? '' : ' Para usar, peça uma nova reserva à coordenação do projeto.'}</p>{canProject(get(l, 'projectId', 'project_id'), 'loans.manage') && <button type="button" className="p-text-link" aria-label={`Fazer nova reserva de ${item?.name || l.itemName || 'equipamento'}`} onClick={() => { const form = document.getElementById('loan-reservation') as HTMLElement | null, itemId = string(get(l, 'itemId', 'item_id')); const select = form ? form.querySelector('select[name="itemId"]') as HTMLSelectElement | null : null; if (select && Array.from(select.options).some(option => option.value === itemId)) select.value = itemId; form?.scrollIntoView({block:'start'}); (select ?? form)?.focus({preventScroll:true}); }}><Plus size={15} aria-hidden="true"/>Fazer nova reserva</button>}</div>}
+                    {canProject(get(l, 'projectId', 'project_id'), 'loans.manage', 'loans.checkout') && <LoanCardActions loanId={string(l.id)} itemName={string(item?.name || l.itemName || 'Equipamento')} status={string(l.status)} checkoutBlocked={Boolean(item && equipmentBlockCause(item))} mutate={mutate}/>}
                     <a className="p-text-link p-history-link" href={historyHref({ kind: 'loan', id: string(l.id) }, string(get(l,'projectId','project_id')))} aria-label="Ver histórico deste empréstimo em Registros">Ver histórico<ArrowUpRight size={14} aria-hidden="true"/></a>
-                    <details className={l.status === 'out' || l.status === 'reserved' ? 'p-loan-next' : undefined}>
-                    <summary>{l.status === 'out' ? 'Registrar devolução' : l.status === 'reserved' ? (item && equipmentBlockCause(item) ? 'Cancelar reserva' : 'Registrar retirada') : 'Detalhes, termos e ocorrências'}{(l.status === 'out' || l.status === 'reserved') && <small>termos e ocorrências</small>} <ChevronDown size={16}/>
+                    <details>
+                    <summary>Detalhes, termos e ocorrências <ChevronDown size={16}/>
                     </summary>
                     <div className="p-loan-details">
                     <p>
@@ -1172,14 +1174,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
                         <strong>Contato:</strong> {get(l, 'borrowerContact', 'borrower_contact')}</p>}{l.note && <p>
                         <strong>Observações:</strong> {l.note}</p>}{documents.filter(d => get(d, 'loanId', 'loan_id') === l.id).map(d => <a className="p-file-link" key={d.id} href={`/api/files/${d.id}`} target="_blank" rel="noreferrer">
                         <FileText size={16}/>{d.name || 'Termo anexado'}<ExternalLink size={13}/>
-                        </a>)}{documents.filter(d => get(d, 'loanId', 'loan_id') === l.id).length > 0 && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, margin: '6px 0' }}>{documents.filter(d => get(d, 'loanId', 'loan_id') === l.id).map(d => <DriveSaveButton key={`drive-${d.id}`} source={{ kind: 'loan_document', id: d.id }} label={d.name || 'Termo anexado'}/>)}</div>}{canProject(get(l, 'projectId', 'project_id'), 'loans.manage', 'loans.checkout') && <LoanAttachment loanId={l.id} onSaved={refresh}/>}{canProject(get(l, 'projectId', 'project_id'), 'loans.manage', 'loans.checkout') && l.status !== 'returned' && l.status !== 'cancelled' && <OperationForm action="loan.status" draftKey={`loan-status:${l.id}:${l.status}`} mutate={mutate} submit="Registrar atualização" make={f => ({ id: l.id, status: f.get('status'), note: f.get('note') })}>
-                        <Field label="Atualização do empréstimo">
-                        <select name="status" data-no-draft="true" required defaultValue=""><option value="" disabled>Escolha a ação</option>{l.status === 'reserved' && !(item && equipmentBlockCause(item)) && <option value="out">Registrar retirada</option>}{l.status === 'out' && <option value="returned">Registrar devolução</option>}{l.status === 'reserved' && <option value="cancelled">Cancelar reserva</option>}</select>
-                        </Field>
-                        <Field label="Condição e observações">
-                        <textarea name="note" rows={2} maxLength={1000} placeholder="Condição observada, acessórios, avarias ou outros detalhes"/>
-                        </Field>
-                        </OperationForm>}</div>
+                        </a>)}{documents.filter(d => get(d, 'loanId', 'loan_id') === l.id).length > 0 && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, margin: '6px 0' }}>{documents.filter(d => get(d, 'loanId', 'loan_id') === l.id).map(d => <DriveSaveButton key={`drive-${d.id}`} source={{ kind: 'loan_document', id: d.id }} label={d.name || 'Termo anexado'}/>)}</div>}{canProject(get(l, 'projectId', 'project_id'), 'loans.manage', 'loans.checkout') && <LoanAttachment loanId={l.id} onSaved={refresh}/>}</div>
                     </details>
                     </article>;
                 })}</div> : <Empty title={loanPeriodValid||activeWorkRecord?.module==='loans'?'Nenhum empréstimo no recorte':'Período inválido'} text={hasLoanFilters?'Confira o período, altere o termo da busca ou limpe os filtros.':'As reservas do projeto selecionado aparecem aqui.'} icon={Truck}/>}</Section>{can('loans.manage') && formProjects.length > 0 && <div id="loan-reservation" className={workStyles.record} tabIndex={-1} role="region" aria-label="Formulário de reserva de equipamento">

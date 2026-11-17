@@ -216,12 +216,6 @@ html[data-theme=dark] .p-material-tabs button.is-active{background:#3a2a48;color
 .p-file-button{width:fit-content;cursor:pointer}
 .p-file-input:focus-visible+.p-file-button{outline:3px solid var(--focus);outline-offset:3px}
 .p-file-input:disabled+.p-file-button{opacity:.55;cursor:not-allowed}
-/* Empréstimo: a próxima ação (retirada/devolução) aparece como botão. */
-.p-loan-card details.p-loan-next>summary{justify-content:flex-start;gap:10px;min-height:44px;margin-top:6px;padding:8px 14px;border:1px solid var(--brand-ink);border-radius:10px;background:var(--surface-soft);color:var(--brand-ink);font-size:14px;font-weight:600}
-.p-loan-card details.p-loan-next>summary small{color:var(--text-secondary);font-size:12px;font-weight:400}
-.p-loan-card details.p-loan-next>summary>svg{margin-left:auto}
-.p-loan-card details.p-loan-next>summary{background:#efe4f7}
-html[data-theme=dark] .p-loan-card details.p-loan-next>summary{background:#3a2a48}
 /* Contraste no tema escuro (revisão de 10/11): contorno de botões lilás, campos e chips a pelo menos 3:1
    contra o cartão (#241b2e) e a página (#17111f). Corrigido no token, não tela a tela. */
 html[data-theme=dark]{--control-border:#8a6ba0;--button-subtle-bg:#3a2a48;--button-subtle-border:#8a6ba0}

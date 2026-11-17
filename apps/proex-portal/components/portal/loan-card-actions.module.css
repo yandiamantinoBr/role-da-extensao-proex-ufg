@@ -1,0 +1,17 @@
+/* Ação principal do cartão de empréstimo e a confirmação curta. Container query para o celular. */
+.actions { container-type: inline-size; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 14px 0 4px; }
+.actions :global(.p-button) { min-height: 44px; }
+.cancel { min-height: 44px; }
+.confirm { display: grid; gap: 10px; margin: 14px 0 4px; padding: 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface-soft); }
+.title { margin: 0; font-size: 15px; line-height: 1.45; color: var(--ink); overflow-wrap: anywhere; }
+.hint { margin: 0; font-size: 14px; line-height: 1.55; color: var(--text-secondary); }
+.confirm :global(.p-field) { margin: 0; }
+.confirm :global(.p-field) em { font-style: normal; font-weight: 400; color: var(--text-secondary); }
+.buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+.buttons :global(.p-button) { min-height: 44px; }
+@container (max-width: 360px) {
+  .actions > :global(.p-button) { flex: 1 1 100%; justify-content: center; }
+}
+@media (max-width: 480px) {
+  .buttons > :global(.p-button) { flex: 1 1 auto; justify-content: center; }
+}
