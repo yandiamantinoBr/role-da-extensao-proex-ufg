@@ -13,7 +13,8 @@ const expiryFormat = new Intl.DateTimeFormat('pt-BR', {
   hourCycle: 'h23',
 });
 
-async function invitationQr(url: string): Promise<string> {
+/** PNG data URL of the invite link; the link only lives in the browser, never on the server. */
+export async function invitationQr(url: string): Promise<string> {
   const { default: encode } = await import('qrcode-generator');
   const qr = encode(0, 'M');
   qr.addData(url);
