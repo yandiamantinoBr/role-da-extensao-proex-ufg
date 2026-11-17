@@ -2,6 +2,13 @@
 
 Comece pela [Retomada de 13/11](RETOMADA-13NOV-PORTAL-PROEX.md) para conferir a base publicada, a ordem das PRs pendentes, o padrão visual e o roteiro de convite. Para a rodada de 14/11, consulte [Ações de projeto e acessos](../apps/proex-portal/docs/QA-ACOES-E-PERFIS.md).
 
+## Rolê · fontes oficiais, botão de busca e planilha de brindes · 17/11 (Claude Code, sessão do Rolê)
+
+- **No ar e validado com login:** [PR176](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/176) (`3332edb`, edital certo e dizer o que leu), [PR187](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/187) (`bbec860`, botão "Fontes oficiais" e busca sem chave de conversa), [PR191](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/191) (`f52f54f`, aviso da planilha de brindes) e [PR194](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/194) (`ce83525`, índice do site que não fica preso e pedido com a Agenda indo para a conversa).
+- **Avaliação com tarefas reais:** em `apps/proex-portal/docs/ROLE-ASSISTENTE.md`, seção "Fontes oficiais, botão de busca e planilha de brindes". Gasto real: US$ 0,0049 em duas chamadas.
+- **Gate local:** `node scripts/qa-local.mjs --credential-vault --roles-smoke` termina com o servidor aberto na porta 5173 esperando "parar"; rode com `timeout` e confira a porta depois.
+- **Falta:** OCR de PDF escaneado; ferramenta de rascunho de demanda (com escopo por pessoa e projeto); leitura real da planilha de brindes depois do compartilhamento (ação da administração); anexos como itens distintos (item 2 da fila).
+
 ## Coerência visual e fim do R1 · 16/11 (Claude Code, sessão de aparência)
 
 - **R1, última etapa** · [PR147](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/147), integrada em `700f455`. "Histórico" nomeia só a linha do tempo única (Registros → Histórico). As outras listas dizem o que são e levam a ela: **Movimentações** (ficha do material), **Versões da demanda**, **Versões do cadastro**, **Alterações deste lançamento**, **Documentos e registros** e **Lançamentos**. As listas do patrimônio que repetiam o Histórico viraram um atalho.

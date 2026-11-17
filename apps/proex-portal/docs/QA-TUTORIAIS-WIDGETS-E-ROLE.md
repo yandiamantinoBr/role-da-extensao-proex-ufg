@@ -47,6 +47,8 @@ Preserve o identificador do empréstimo, histórico, termo, Agenda e vínculos c
 
 ## Rolê · recuperar fontes e tornar anexos úteis
 
+
+> **Estado em 2026-11-17:** os itens 1 e 5 da busca oficial (intenção, link colado como destino exato, edição certa à frente, aviso de mais de um documento, dizer se leu o PDF, escaneado sem texto) e a busca pública sem chave de conversa entraram nas PRs #176, #187 e #194, validadas em produção. A avaliação com tarefas reais está em [ROLE-ASSISTENTE.md](ROLE-ASSISTENTE.md), seção "Fontes oficiais, botão de busca e planilha de brindes". Continuam abertos: OCR, a ferramenta de rascunho de demanda e o item 2 (anexos como itens distintos).
 ### 1. Busca oficial que lê o documento
 
 A busca atual consulta os sitemaps de PROEX e CONPEEX e devolve títulos e resumos HTML. O PDF do edital está no próprio domínio institucional de arquivos, que a lista atual exclui. Uma consulta curta pode encontrar a página, enquanto a pergunta completa pode retornar vazia. A revisão independente também encontrou uma consulta em que a edição 2025/26 ficou à frente de 2026/27. A rota pública depende da disponibilidade geral do chat mesmo quando a consulta não usa um provedor. Confira intenção, ranqueamento, acesso a documentos e disponibilidade separadamente. [Busca e fontes](../lib/assistant/official-sources.ts) · [Intenção da busca](../lib/assistant/official-search-intent.ts) · [Rota do Rolê](../lib/assistant/role.ts).
