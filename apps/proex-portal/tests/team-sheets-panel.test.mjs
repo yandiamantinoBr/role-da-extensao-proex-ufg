@@ -45,3 +45,16 @@ test('a hung old POST cannot block a new context and its finally cannot unlock t
 test('closing a hung POST aborts it and immediately allows a deliberate new action after reopening',async()=>{
  const h=harness();try{await h.ready();h.toggle(true);const old=h.submit('2. Autorizar',{credentialLabel:'A',days:'7'}),post=h.requests.at(-1);h.toggle(false);assert.equal(post.init.signal.aborted,true);h.toggle(true);const newer=h.submit('2. Autorizar',{credentialLabel:'B',days:'7'}),fresh=h.requests.at(-1);assert.notEqual(fresh,post);h.reply(post,{token:syntheticSecret,expiresAt:'2026-11-12T12:00:00Z'});await old;await tick();h.render();assert.equal(h.node('fieldset',n=>text(n).includes('Gerar chave de consulta')).props.disabled,true);h.reply(fresh,{token:syntheticSecret,expiresAt:'2026-11-12T12:00:00Z'});await newer;await tick();h.render();assert.ok(h.node('input',n=>n.props.value===syntheticSecret));}finally{h.dispose();}
 });
+
+test('the team sheet copy names the project picker and does not assume a project is selected (décima segunda crítica de 16/11)', async () => {
+  const { readFileSync } = await import('node:fs');
+  const source = readFileSync(new URL('../components/portal/team-sheets-panel.tsx', import.meta.url), 'utf8');
+  assert.match(source, /atribuídas a esta equipe no projeto escolhido/);
+  assert.match(source, /Escolha um projeto em “Onde acompanhar”, acima/);
+  assert.doesNotMatch(source, /esta equipe neste projeto/);
+});
+
+test('the team sheet refresh is disabled until a project is chosen (crítica final de 16/11)', () => {
+  const source = readFileSync(new URL('../components/portal/team-sheets-panel.tsx', import.meta.url), 'utf8');
+  assert.match(source, /aria-label="Atualizar vínculo da equipe" disabled=\{!projectId\|\|working\|\|reading\}/);
+});

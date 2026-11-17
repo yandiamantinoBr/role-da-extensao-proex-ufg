@@ -104,3 +104,11 @@
 /* Oitava crítica de 16/11: caixas lado a lado com a mesma altura e a planilha com o mesmo título dos blocos vizinhos. */
 .sheets h3 { font-size: 15px; }
 .sheets h3 > svg { display: none; }
+/* Nona crítica de 16/11: a planilha dentro do cartão da equipe com o mesmo respiro dos blocos vizinhos (14px). */
+.sheets > section { padding: 14px !important; }
+.sheets h3 { margin: 0; }
+/* Décima crítica de 16/11: o botão de atualizar da planilha não aumenta a linha do título. */
+.sheets h3 + p, .sheets .heading p { margin-top: 2px; }
+.sheets section > div:first-child > button { margin-block: -8px; }
+/* Onze críticas de 16/11: a lista vazia não soma um segundo espaço sob "Demandas da equipe". */
+.tasks:empty { display: none; }
