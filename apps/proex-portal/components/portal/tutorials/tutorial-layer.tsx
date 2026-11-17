@@ -175,7 +175,7 @@ export default function TutorialLayer({ modules, tab, projectId, onNavigate }: {
       </header>
       <h2 id="tutorial-step-title" ref={heading} tabIndex={-1}>{step.title}</h2>
       <p className={styles.speech}>{copy.speech}</p>
-      <p className={styles.see}><strong>Você verá:</strong> {goTo && copy.beforeOpen ? copy.beforeOpen : found === false && !goTo ? (copy.missing ?? 'este controle não está nesta página agora.') : copy.youWillSee}</p>
+      <p className={styles.see}><strong>{found === false && !goTo && copy.missing ? 'Para continuar:' : 'Você verá:'}</strong> {goTo && copy.beforeOpen ? copy.beforeOpen : found === false && !goTo ? (copy.missing ?? 'este controle não está nesta página agora.') : copy.youWillSee}</p>
       {notice && <p className={styles.notice} role="status">{notice}</p>}
       {found === false && !goTo && !copy.missing && <p className={styles.muted}>Siga para o próximo passo: este controle aparece quando houver dados ou acesso para ele.</p>}
       <div className={styles.guideActions}>
