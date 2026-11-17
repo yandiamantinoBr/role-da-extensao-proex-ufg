@@ -21,6 +21,7 @@ type Input = Record<string, unknown>;
 export const INVITE_EMAIL_PREFIX = 'iv-';
 export const INVITE_EMAIL_SUBJECT = 'PROEX · Convite para o portal';
 export const INVITE_EMAIL_READY_MS = 48 * 3_600_000;
+export const INVITE_EMAIL_PER_INVITER_DAILY = 20;
 export const isInviteEmailId = (value: unknown) => typeof value === 'string' && value.startsWith(INVITE_EMAIL_PREFIX);
 const scopeOf = (id: string) => `invite-email:${id}`;
 const lookback = (now: number) => new Date(now - e.LOOKBACK_MS).toISOString();
@@ -36,8 +37,17 @@ function fail(status: number, message: string, code: string): never { throw new 
 
 /** Whether invite e-mails can go out for this organization now. */
 export async function inviteEmailReady(db: D1Database, organizationId: string, now = Date.now()) {
-  const row = await one(db, `SELECT c.enabled,s.invite_kind_at FROM followup_email_configuration c LEFT JOIN followup_email_dispatch_state s ON s.organization_id=c.organization_id WHERE c.organization_id=?`, [organizationId]);
-  return Boolean(row && Number(row.enabled) === 1 && row.invite_kind_at && Date.parse(String(row.invite_kind_at)) > now - INVITE_EMAIL_READY_MS);
+  const row = await one(db, `SELECT c.enabled,s.invite_kind_at,EXISTS(SELECT 1 FROM followup_email_dispatch_tokens k WHERE k.organization_id=c.organization_id AND k.revoked_at IS NULL AND k.expires_at>?) has_key
+    FROM followup_email_configuration c LEFT JOIN followup_email_dispatch_state s ON s.organization_id=c.organization_id WHERE c.organization_id=?`, [new Date(now).toISOString(), organizationId]);
+  return Boolean(row && Number(row.enabled) === 1 && Number(row.has_key) === 1 && row.invite_kind_at && Date.parse(String(row.invite_kind_at)) > now - INVITE_EMAIL_READY_MS);
+}
+/**
+ * Queued e-mails that can no longer go out (invite accepted, cancelled or expired, or waiting longer than the dispatch
+ * window) are cancelled and their code erased. Runs on claim and whenever the screen reads the status.
+ */
+export function cancelStaleInviteEmails(db: D1Database, organizationId: string | null, now = Date.now()) {
+  return db.prepare(`UPDATE invite_email_queue SET status='cancelled',code_cipher=NULL,updated_at=? WHERE status='queued' AND (? IS NULL OR organization_id=?)
+    AND (created_at<? OR NOT EXISTS(SELECT 1 FROM invites i WHERE i.id=invite_email_queue.invite_id AND ${live(now)}))`).bind(new Date(now).toISOString(), organizationId, organizationId, lookback(now));
 }
 /** The Apps Script declared support for invites in this claim (kinds includes 'invite'). */
 export async function recordInviteEmailSupport(db: D1Database, organizationId: string, now = Date.now()) {
@@ -59,6 +69,7 @@ async function ownInvite(db: D1Database, actor: PortalActor | null, inviteId: un
 /** Screen: is e-mail available for this invite, and where is its message? */
 export async function inviteEmailStatus(db: D1Database, actor: PortalActor | null, input: Input) {
   const invite = await ownInvite(db, actor, input.inviteId);
+  await cancelStaleInviteEmails(db, String(invite.org)).run();
   const queued = await one(db, 'SELECT status FROM invite_email_queue WHERE invite_id=?', [invite.id]);
   return { available: await inviteEmailReady(db, String(invite.org)), status: queued ? String(queued.status) : null };
 }
@@ -98,7 +109,7 @@ export async function claimInviteEmail(db: D1Database, principal: EmailDispatche
   await e.batch(db, [e.dispatcherAssertion(db, principal), e.configAssertion(db, c),
     db.prepare("UPDATE invite_email_queue SET status='queued',claim_hash=NULL,claim_nonce=NULL,claim_expires_at=NULL,updated_at=? WHERE organization_id=? AND status='claimed' AND claim_expires_at<=?").bind(at, c.organization_id, now),
     // An invite accepted, cancelled or expired before its turn is never sent, and its code is erased.
-    db.prepare(`UPDATE invite_email_queue SET status='cancelled',code_cipher=NULL,updated_at=? WHERE organization_id=? AND status='queued' AND NOT EXISTS(SELECT 1 FROM invites i WHERE i.id=invite_email_queue.invite_id AND ${live(now)})`).bind(at, c.organization_id)]);
+    cancelStaleInviteEmails(db, c.organization_id, now)]);
   const candidate = await one(db, `SELECT q.id ${joins} WHERE q.organization_id=? AND q.status='queued' AND q.code_cipher IS NOT NULL AND q.created_at>=? AND ${live(now)} ORDER BY q.created_at,q.id LIMIT 1`, [c.organization_id, lookback(now)]);
   if (!candidate) return { claim: null, state: 'idle' };
   const token = e.randomToken(), hash = await syncDigest(token), nonce = crypto.randomUUID();
@@ -117,9 +128,11 @@ async function queueRow(db: D1Database, principal: EmailDispatcher, input: Input
   return row!;
 }
 
+/** Fixed text before the link; the Apps Script compares the whole body with it. */
+export const INVITE_EMAIL_TEXT = 'Você recebeu um convite para o Portal PROEX UFG.\n\nO link é pessoal e vale por tempo limitado. Não o repasse a outras pessoas. Se você não esperava este convite, ignore esta mensagem.\nPara ativar seu acesso, abra:\n';
 /** Fixed template; the last line is the personal link, rebuilt from the configured portal origin. */
 export function inviteEmailBody(portalOrigin: string, code: string) {
-  return `Você recebeu um convite para o Portal PROEX UFG.\n\nO link é pessoal e vale por tempo limitado. Não o repasse a outras pessoas.\nPara ativar seu acesso, abra:\n${portalOrigin}/convite#token=${code}`;
+  return `${INVITE_EMAIL_TEXT}${portalOrigin}/convite#token=${code}`;
 }
 
 export async function beginInviteEmail(db: D1Database, principal: EmailDispatcher, input: Input, runtimeOrigin: unknown, secret: string | undefined, now = Date.now()) {
@@ -132,7 +145,7 @@ export async function beginInviteEmail(db: D1Database, principal: EmailDispatche
   if (row.status !== 'claimed' || Number(row.claim_expires_at) <= now) e.fail('email_claim_changed', 'O aviso já foi iniciado ou o claim expirou.');
   const at = new Date(now).toISOString(), day = e.dayKey(now);
   // Shared organization quota plus a smaller invite bucket, and one e-mail per invite, ever.
-  const buckets = [{ day, bucket: 'organization', limit: c.daily_limit }, { day, bucket: 'invites:organization', limit: Math.max(1, Math.floor(c.daily_limit / 3)) }, { day: 'all', bucket: 'invite:' + row.invite_id, limit: 1 }];
+  const buckets = [{ day, bucket: 'organization', limit: c.daily_limit }, { day, bucket: 'invites:organization', limit: Math.max(1, Math.floor(c.daily_limit / 3)) }, { day, bucket: 'invites:by:' + row.requested_by, limit: INVITE_EMAIL_PER_INVITER_DAILY }, { day: 'all', bucket: 'invite:' + row.invite_id, limit: 1 }];
   const sendNonce = crypto.randomUUID(), acceptanceToken = e.randomToken(), acceptanceHash = await syncDigest(acceptanceToken);
   await e.batch(db, [e.dispatcherAssertion(db, principal), e.configAssertion(db, c),
     e.assertion(db, "EXISTS(SELECT 1 FROM invite_email_queue WHERE id=? AND status='claimed' AND claim_hash=? AND claim_nonce=? AND claim_expires_at>? AND dispatcher_id=? AND credential_hash=? AND configuration_version=?)", [row.id, row.claim_hash, row.claim_nonce, now, row.dispatcher_id, row.credential_hash, row.configuration_version], 'email_claim_changed'),

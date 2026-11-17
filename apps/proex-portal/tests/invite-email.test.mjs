@@ -70,3 +70,13 @@ test('the dispatch route records the script support and routes iv- ids; the scre
  const share=readFileSync(new URL('../components/portal/team-invite-share.tsx',import.meta.url),'utf8');
  assert.match(share,/emailButton && <button/);assert.match(share,/emailState === 'off' && <p/);assert.doesNotMatch(share,/mailto:|emailShareHref/);
 });
+
+test('a queued e-mail that waited past the dispatch window is cancelled and its code erased; a revoked key turns the queue off',async t=>{
+ const f=await fixture(t);
+ await f.queue();
+ f.native.prepare('UPDATE invite_email_queue SET created_at=?').run(new Date(Date.now()-2*24*3600000).toISOString());
+ assert.equal((await f.status()).status,'cancelled','the screen no longer says "queued" forever');
+ assert.equal(f.native.prepare('SELECT code_cipher FROM invite_email_queue').get().code_cipher,null);
+ f.native.prepare("UPDATE followup_email_dispatch_tokens SET revoked_at=? WHERE organization_id='org-a'").run(new Date().toISOString());
+ assert.equal((await f.status()).available,false);
+});
