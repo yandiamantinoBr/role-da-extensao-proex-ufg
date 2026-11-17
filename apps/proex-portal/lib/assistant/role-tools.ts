@@ -276,7 +276,10 @@ const OFFICIAL_READING: Record<OfficialReadFailure, string> = {
 async function officialTool(db: D1Database, organizationId: string, subject: string, budget: number, fetcher?: typeof fetch): Promise<RoleToolResult> {
   const wanted = officialSearchTerms(subject);
   if (!wanted.length) return pack('consultar_fontes_oficiais', [], [], budget, 'Diga qual assunto você quer buscar nos sites oficiais.');
-  const live = await searchOfficialPages(subject, fetcher);
+  // A cópia diária é lida uma vez só, e só quando precisa: reserva sem índice ou resultados de sempre.
+  let copy: ReturnType<typeof readOfficialSnapshot> | null = null;
+  const snapshotCopy = () => copy ??= readOfficialSnapshot(db);
+  const live = await searchOfficialPages(subject, fetcher, async () => (await snapshotCopy()).pages.flatMap(page => Array.isArray(page.links) ? page.links : []));
   const choice = live.ambiguity ? { escolha: { usado: live.ambiguity.used.title, outro: live.ambiguity.other.title } } : {};
   if (live.passages.length || live.unreadable.length) {
     const documents = [
@@ -292,7 +295,7 @@ async function officialTool(db: D1Database, organizationId: string, subject: str
     const text = 'Não consegui abrir a página colada agora. Abra o link para conferir.';
     return pack('consultar_fontes_oficiais', [{ estado: 'pagina_indisponivel', leitura: text, link: pasted.href }], [{ label: 'Página colada', href: pasted.href }], budget, text);
   }
-  const [snapshot, posts] = await Promise.all([readOfficialSnapshot(db), listInstagramPosts(db, organizationId)]);
+  const [snapshot, posts] = await Promise.all([snapshotCopy(), listInstagramPosts(db, organizationId)]);
   const hits: { s: number; item: Record<string, unknown>; source: RoleToolSource }[] = [];
   for (const page of live.pages) {
     const pageOnly = live.documentSearch ? { leitura: 'Isto é o resumo da página, não do documento: não li nenhum PDF.' } : {};
