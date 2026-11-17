@@ -159,9 +159,9 @@ export const TUTORIAL_CHAPTERS: readonly TutorialChapter[] = [
         id: 'demandas', title: 'Abrir uma demanda',
         speech: 'Cada cartão mostra a situação, a prioridade, o prazo e os responsáveis. Clique no título para abrir a demanda. Lista vazia? Escolha Todas no Estado da lista ou troque o projeto.',
         speechMobile: 'Cada cartão mostra a situação, a prioridade, o prazo e os responsáveis. Toque no título para abrir a demanda. Lista vazia? Escolha Todas no Estado da lista ou troque o projeto.',
-        youWillSee: 'A lista de demandas destacada, com o Estado da lista no alto.',
+        youWillSee: 'O título Demandas e o Estado da lista destacados. Os cartões ficam logo abaixo.',
         target: '[data-tutorial="trabalho-demandas"]', module: 'my-work', openLabel: 'Ir para Meu trabalho',
-        labels: ['Estado da lista'],
+        labels: ['Estado da lista', 'Demandas'],
       },
       {
         id: 'responsabilidades', title: 'Responsabilidades',
