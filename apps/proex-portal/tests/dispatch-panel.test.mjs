@@ -72,3 +72,19 @@ test('visual fixes from the 17/11 critique: one title, short options, wrapping t
   assert.match(css, /\.tabs \{ display: grid; grid-template-columns: repeat\(2, minmax\(0, 1fr\)\); gap: 4px; overflow-x: visible; \}/);
   assert.match(css, /\.leadershipWrap \{ padding-block: 0 32px; \}/);
 });
+
+test('the agenda export lists only Pauta items, with subject, deadline, status and holder (PR 3)', async () => {
+  const h = harness();
+  const rows = h.module.agendaRows(workspace(null).tasks);
+  assert.equal(rows.length, 1);
+  assert.match(rows[0].item, /^Demanda b\nDúvida · Termo$/);
+  assert.match(rows[0].prazo, /^20\/11\/2026\nAlta$/);
+  assert.match(rows[0].situacao, /^Pendente\ncom Pessoa Chefia$/);
+  await h.settle();
+  assert.ok(!h.nodes().some(node => node.props?.label === 'Baixar a pauta'), 'fora da aba Pauta não há download');
+  h.nodes().find(node => node.type === 'button' && node.props.role === 'tab' && text(node).startsWith('Pauta')).props.onClick();
+  await h.settle();
+  const exporter = h.nodes().find(node => node.props?.label === 'Baixar a pauta');
+  assert.ok(exporter, 'na aba Pauta, a pauta baixa em PDF ou DOCX');
+  assert.deepEqual(Array.from(exporter.props.formats), ['pdf', 'docx']);
+});
