@@ -98,6 +98,7 @@ export async function resolvePrivacy(db:D1Database,actor:PortalActor,input:Recor
   cleanup(`DELETE FROM community_badges WHERE user_id=? AND ${confirmed}`,target),
   // Fixados de navegação são preferências pessoais (0038).
   cleanup(`DELETE FROM user_preferences WHERE user_id=? AND ${confirmed}`,target),
+  cleanup(`DELETE FROM user_tutorials WHERE user_id=? AND ${confirmed}`,target),
   // Phase 3 (0040): chat messages are blanked, images queued for object deletion, reads and e-mail queue removed.
   cleanup(`UPDATE chat_messages SET body='',deleted_at=COALESCE(deleted_at,?) WHERE sender_id=? AND ${confirmed}`,now,target),
   cleanup(`INSERT INTO private_object_deletions(id,user_id,object_key,mime,created_at) SELECT lower(hex(randomblob(16))),uploader_id,object_key,mime,? FROM chat_attachments WHERE uploader_id=? AND deleted_at IS NULL AND ${confirmed}`,now,target),

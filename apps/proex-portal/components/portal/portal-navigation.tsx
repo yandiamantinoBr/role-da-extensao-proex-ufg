@@ -1,6 +1,6 @@
 'use client';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowRight, ChevronDown, ChevronRight, ExternalLink, Menu, PanelLeftClose, PanelLeftOpen, Pin, Search, ShieldCheck, Sparkles, X } from 'lucide-react';
+import { ArrowRight, ChevronDown, ChevronRight, ExternalLink, LifeBuoy, Menu, PanelLeftClose, PanelLeftOpen, Pin, Search, ShieldCheck, Sparkles, X } from 'lucide-react';
 import { BrandMark } from '@/components/theme/brand-mark';
 import { recommendedModules, type ModuleId, type PortalModule } from './navigation-model';
 import subStyles from './portal-navigation.module.css';
@@ -40,7 +40,7 @@ export function DesktopSidebar({ modules, active, onNavigate, pinned, collapsed,
     }
     function plainLink(module: PortalModule) {
         const Icon = module.icon;
-        return <button type="button" key={module.id} className={`pn-link ${active === module.id ? 'is-active' : ''}`} aria-label={module.label} title={collapsed ? module.label : undefined} aria-current={active === module.id ? 'page' : undefined} onClick={() => onNavigate(module.id)}>
+        return <button type="button" key={module.id} data-tutorial={module.id === 'overview' ? 'nav-inicio' : undefined} className={`pn-link ${active === module.id ? 'is-active' : ''}`} aria-label={module.label} title={collapsed ? module.label : undefined} aria-current={active === module.id ? 'page' : undefined} onClick={() => onNavigate(module.id)}>
         <Icon size={20}/>
         <span className="pn-link-label">{module.label}</span>{pinned.includes(module.id) && <Pin size={12} className="pn-pin-mark" aria-hidden="true"/>}{active === module.id && !collapsed && <ChevronRight size={14} className="pn-active-chevron" aria-hidden="true"/>}</button>;
     }
@@ -54,7 +54,7 @@ export function DesktopSidebar({ modules, active, onNavigate, pinned, collapsed,
     </div>
     <button className="pn-collapse" onClick={onToggle} aria-label={collapsed ? 'Expandir menu lateral' : 'Recolher menu lateral'} aria-expanded={!collapsed} title={collapsed ? 'Expandir menu lateral' : undefined}>{collapsed ? <PanelLeftOpen size={19}/> : <PanelLeftClose size={19}/>}<span>{collapsed ? 'Expandir' : 'Recolher menu'}</span>
     </button>
-    <nav className="pn-desktop-nav" aria-label="Módulos do portal">{modules.filter(module => module.id === 'overview').map(link)}{favorites.length > 0 && <div className="pn-nav-group">
+    <nav className="pn-desktop-nav" data-tutorial="nav-menu" aria-label="Módulos do portal">{modules.filter(module => module.id === 'overview').map(link)}{favorites.length > 0 && <div className="pn-nav-group">
         <span className="pn-group-label">Seus atalhos</span>{favorites.map(link)}</div>}<div className="pn-nav-group">
     <span className="pn-group-label">Trabalho</span>{work.map(link)}</div>{management.length > 0 && <div className="pn-nav-group">
         <span className="pn-group-label">Gestão</span>{management.map(link)}</div>}<div className="pn-nav-group pn-account-group">{modules.filter(module => module.id === 'profile' && !pinned.includes('profile')).map(link)}</div>
@@ -73,8 +73,10 @@ export function DesktopSidebar({ modules, active, onNavigate, pinned, collapsed,
     </aside>;
 }
 const MOBILE_FIELD_MODULES: ModuleId[] = ['materials', 'events', 'demands', 'calendar'];
-export function MobileNavigation({ modules, active, onNavigate, pinned, role, onTogglePin, subitems = {} }: Props & {
+export function MobileNavigation({ modules, active, onNavigate, pinned, role, onTogglePin, subitems = {}, onHelp }: Props & {
     onTogglePin: (id: ModuleId) => void;
+    /** Abre "Ajuda e tutoriais" (tutoriais sem IA). */
+    onHelp?: () => void;
 }) {
     const [open, setOpen] = useState(false), [query, setQuery] = useState(''), [showAll, setShowAll] = useState<Partial<Record<ModuleId, boolean>>>({});
     const dialog = useRef<HTMLDivElement>(null), trigger = useRef<HTMLButtonElement>(null);
@@ -121,10 +123,10 @@ export function MobileNavigation({ modules, active, onNavigate, pinned, role, on
     }, [open, close]);
     function navigate(id: ModuleId) { onNavigate(id); close(); }
     return <>
-    <nav ref={navigation} className="pn-mobile-nav" aria-label="Navegação principal no celular">{items.map(({ id, label, icon: Icon }) => <button key={id} className={active === id ? 'is-active' : ''} onClick={() => onNavigate(id)} aria-current={active === id ? 'page' : undefined}>
+    <nav ref={navigation} className="pn-mobile-nav" data-tutorial="nav-barra" aria-label="Navegação principal no celular">{items.map(({ id, label, icon: Icon }) => <button key={id} data-tutorial={id === 'overview' ? 'nav-inicio' : undefined} className={active === id ? 'is-active' : ''} onClick={() => onNavigate(id)} aria-current={active === id ? 'page' : undefined}>
         <Icon size={20}/>
         <span>{label}</span>
-        </button>)}<button ref={trigger} className={open || !primaryIds.includes(active) ? 'is-active' : ''} onClick={() => setOpen(true)} aria-haspopup="dialog" aria-expanded={open} aria-controls="portal-mobile-navigation">
+        </button>)}<button ref={trigger} data-tutorial="nav-mais" className={open || !primaryIds.includes(active) ? 'is-active' : ''} onClick={() => setOpen(true)} aria-haspopup="dialog" aria-expanded={open} aria-controls="portal-mobile-navigation">
     <Menu size={20}/>
     <span>Mais</span>
     </button>
@@ -153,7 +155,17 @@ export function MobileNavigation({ modules, active, onNavigate, pinned, role, on
         <span className="visually-hidden">Buscar módulo</span>
         <input value={query} onChange={event => setQuery(event.target.value)} placeholder="O que você precisa fazer?"/>
         </label>
-        <p className="pn-drawer-help">Fixe seus módulos para encontrá-los no seu início.</p>
+        <p className="pn-drawer-help">Toque no alfinete: o módulo vai para a barra de baixo e para Seus atalhos no Início.</p>
+        {onHelp ? <button type="button" className="pn-drawer-link pn-drawer-help-link" onClick={() => { close(); onHelp(); }}>
+            <span>
+            <LifeBuoy size={21}/>
+            </span>
+            <div>
+            <strong>Ajuda e tutoriais</strong>
+            <small>Passo a passo guiado pelo Rolê, sem IA.</small>
+            </div>
+            <ArrowRight size={16}/>
+            </button> : null}
         <div className="pn-drawer-modules">{modules.filter(module => `${module.label} ${module.description}`.toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR'))).map(({ id, label, description, icon: Icon }) => <div key={id} className={active === id ? 'is-active' : ''}>
             <button className="pn-drawer-link" onClick={() => navigate(id)} aria-current={active === id ? 'page' : undefined}>
             <span>
@@ -166,6 +178,7 @@ export function MobileNavigation({ modules, active, onNavigate, pinned, role, on
             <ArrowRight size={16}/>
             </button>{id !== 'overview' && <button className={`pn-pin-button ${pinned.includes(id) ? 'is-pinned' : ''}`} aria-label={`${pinned.includes(id) ? 'Remover' : 'Fixar'} ${label} ${pinned.includes(id) ? 'dos' : 'nos'} atalhos`} aria-pressed={pinned.includes(id)} onClick={() => onTogglePin(id)}>
                 <Pin size={17}/>
-                </button>}{(subitems[id]?.length ?? 0) > 0 && <ul className={subStyles.mobileList} aria-label={`${label} ${id === 'work-teams' ? 'fixadas' : 'fixados'}`}>{(showAll[id] ? subitems[id]! : subitems[id]!.slice(0, SUBITEM_LIMIT)).map(item => <li key={item.id}><button type="button" className={subStyles.mobileItem} aria-current={item.current ? 'page' : undefined} onClick={() => { item.onOpen(); close(); }}><Pin size={13} aria-hidden="true"/><span>{item.label}</span></button></li>)}{subitems[id]!.length > SUBITEM_LIMIT && <li><button type="button" className={subStyles.mobileItem} aria-expanded={!!showAll[id]} onClick={() => setShowAll(current => ({ ...current, [id]: !current[id] }))}><span>{showAll[id] ? 'Mostrar menos' : moreLabel(id, subitems[id]!.length)}</span></button></li>}</ul>}</div>)}</div>{!modules.some(module => `${module.label} ${module.description}`.toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR'))) && <p className="pn-no-results">Nenhum módulo encontrado. Tente outro nome.</p>}</div>
+                </button>}{(subitems[id]?.length ?? 0) > 0 && <ul className={subStyles.mobileList} aria-label={`${label} ${id === 'work-teams' ? 'fixadas' : 'fixados'}`}>{(showAll[id] ? subitems[id]! : subitems[id]!.slice(0, SUBITEM_LIMIT)).map(item => <li key={item.id}><button type="button" className={subStyles.mobileItem} aria-current={item.current ? 'page' : undefined} onClick={() => { item.onOpen(); close(); }}><Pin size={13} aria-hidden="true"/><span>{item.label}</span></button></li>)}{subitems[id]!.length > SUBITEM_LIMIT && <li><button type="button" className={subStyles.mobileItem} aria-expanded={!!showAll[id]} onClick={() => setShowAll(current => ({ ...current, [id]: !current[id] }))}><span>{showAll[id] ? 'Mostrar menos' : moreLabel(id, subitems[id]!.length)}</span></button></li>}</ul>}</div>)}</div>{!modules.some(module => `${module.label} ${module.description}`.toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR'))) && <p className="pn-no-results">Nenhum módulo encontrado. Tente outro nome.</p>}
+        </div>
         </div>}</>;
 }

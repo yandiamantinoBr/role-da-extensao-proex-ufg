@@ -80,6 +80,10 @@ import { historyHref, parseHistorySubject } from '@/components/portal/history-ti
 import ProjectOperationalChart from '@/components/portal/project-operational-chart';
 import DashboardPanel from '@/components/portal/dashboard-panel';
 import { DesktopSidebar, MobileNavigation, type NavSubitems } from '@/components/portal/portal-navigation';
+import TutorialLayer from '@/components/portal/tutorials/tutorial-layer';
+import TutorialInvite from '@/components/portal/tutorials/tutorial-invite';
+import TutorialHelpCard from '@/components/portal/tutorials/tutorial-help-card';
+import { openTutorialChooser } from '@/components/portal/tutorials/tutorial-store';
 import { setPinned, usePinnedItems } from '@/components/portal/use-pinned-items';
 import { PORTAL_MODULES, type ModuleId } from '@/components/portal/navigation-model';
 import { projectAccessRoleLabels } from '@/lib/team-access-labels';
@@ -87,7 +91,7 @@ import { useNavigationPreferences } from '@/components/portal/use-navigation-pre
 import { useFormDraft, DraftNotice, setDraftScope, clearCurrentDrafts, watchDraftLogout } from '@/components/portal/use-form-draft';
 import { THEMATIC_AREAS, groupUnits } from '@/lib/extension-catalog';
 import { MAX_UPLOAD_FILE_BYTES, UPLOAD_LIMIT_LABEL, uploadErrorMessage } from '@/lib/upload-limits';
-import { ArrowRight, ArrowUpRight, Boxes, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronRight, ExternalLink, FileText, Filter, Gift, LoaderCircle, LogOut, MessageSquarePlus, Plus, RefreshCw, ShieldCheck, Truck, Users, Wifi, WifiOff, X } from 'lucide-react';
+import { ArrowRight, ArrowUpRight, Boxes, LifeBuoy, CalendarDays, Check, CheckCircle2, ChevronDown, ChevronRight, ExternalLink, FileText, Filter, Gift, LoaderCircle, LogOut, MessageSquarePlus, Plus, RefreshCw, ShieldCheck, Truck, Users, Wifi, WifiOff, X } from 'lucide-react';
 // API projections vary by module; the server validates every mutation.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Row = Record<string, any>;
@@ -857,7 +861,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
     {canFollowUp && <NotificationBell community={allowedTabs.some(module => module.id === 'community')} onSelectCommunity={target => { setCommunityFocus({ ...target, nonce: Date.now() }); navigate('community'); }} onSelectConvocation={id=>{setConvocationFocus(id);navigate('convocations');}} onSelectMaterial={(itemId,projectId)=>{navigate('materials');selectProject(projectId);setMaterialMode('view');setSelectedMaterialId(itemId);setWorkRecord({module:'materials',projectId,recordId:itemId});}} key={string(user.userId)} userId={string(user.userId)} onSelectTask={id => { if (id !== selectedDemandId) pushNavigation.current = true; setSelectedDemandId(id); setFilter(''); setUnitFilter(''); setAreaFilter(''); navigate('demands'); }}/>}
     <ThemeSwitch />
     <div className="p-account" ref={accountRef}>
-    <button className="p-account-trigger" aria-label="Abrir menu da minha conta" aria-expanded={accountOpen} aria-controls="account-menu" onClick={() => setAccountOpen(v => !v)} onKeyDown={e => { if (e.key === 'ArrowDown') {
+    <button className="p-account-trigger" data-tutorial="conta-menu" aria-label="Abrir menu da minha conta" aria-expanded={accountOpen} aria-controls="account-menu" onClick={() => setAccountOpen(v => !v)} onKeyDown={e => { if (e.key === 'ArrowDown') {
         e.preventDefault();
         setAccountOpen(true);
         window.setTimeout(() => accountRef.current?.querySelector<HTMLButtonElement>('[role=menuitem]')?.focus(), 0);
@@ -876,13 +880,14 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         </div>
         <button role="menuitem" onClick={() => { navigate('profile'); }}>Minha conta e senha <Users size={16}/>
         </button>
+        <button role="menuitem" onClick={() => { setAccountOpen(false); accountRef.current?.querySelector<HTMLButtonElement>('.p-account-trigger')?.focus({ preventScroll: true }); openTutorialChooser(); }}>Ajuda e tutoriais <LifeBuoy size={16}/></button>
         <button role="menuitem" disabled={refreshing} onClick={() => { setAccountOpen(false); void refresh(); }}>Atualizar dados <RefreshCw size={16}/></button>
         <button role="menuitem" disabled={busy} onClick={() => void logout()}>Sair e trocar de conta <LogOut size={16}/>
         </button>
         </div>}</div>
     </div>
     </header>
-      <MobileNavigation modules={allowedTabs} active={tab} onNavigate={navigate} pinned={navigation.pinned} role={role} subitems={navSubitems} onTogglePin={navigation.togglePin} />
+      <MobileNavigation modules={allowedTabs} active={tab} onNavigate={navigate} pinned={navigation.pinned} role={role} subitems={navSubitems} onTogglePin={navigation.togglePin} onHelp={openTutorialChooser} />
       <main className="p-main" id="main" tabIndex={-1}>
     <header className={`${headingStyles.heading} ${tab === 'overview' ? headingStyles.welcome : ''}`}>
       {ModuleIcon && <span className={headingStyles.mark} aria-hidden="true"><ModuleIcon size={22}/></span>}
@@ -975,6 +980,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
           }}/>
         {!demandsScheduleItemId&&<OrganizationEmailSettings key={string(user.userId)} userId={string(user.userId)} organizations={organizations}/>}
       </>}
+      {tab === 'overview' && <TutorialInvite/>}
       {tab === 'overview' && volunteerAccess.length > 0 && volunteerDesk(true)}
       {tab === 'overview' && <><PersonalWorkSummary userId={string(user.userId)} organizationId={personalOrganization||null} organizationName={organizations.find(organization=>organization.id===personalOrganization)?.name} projectId={filter||null} projectName={string(projects.find(project=>project.id===filter)?.name)} serverDay={workDayFromServerTimestamp(data?.updatedAt)}/><DashboardPanel modules={allowedTabs} pinned={navigation.pinned} frequent={navigation.frequent} onNavigate={navigate} onTogglePin={navigation.togglePin} displayName={string(user.displayName)} role={role} roleLabel={roleNames[role] || 'Equipe PROEX'} projects={scopedProjects} items={visibleItems} loans={visibleLoans} campaigns={visibleCampaigns} selectedProjectId={filter} unitName={unitFilter === '__unassigned__' ? 'Sem unidade vinculada' : string(visibleUnits.find(unit => unit.id === unitFilter)?.acronym || visibleUnits.find(unit => unit.id === unitFilter)?.name)} now={now} onOpenProject={openProject} known={{ projects: Array.isArray(data.projects), items: Array.isArray(data.items), loans: Array.isArray(data.loans), campaigns: Array.isArray(data.campaigns) }} /></>}
       {tab === 'convocations' && <ConvocationsPanel key={`convocations:${string(user.userId)}:${convocationFocus}`} initialId={convocationFocus} projects={projects.map(project => ({ id: string(project.id), name: string(project.name), canManage: canProject(string(project.id), 'campaigns.manage') }))}/>}
@@ -1205,7 +1211,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
 
       {tab === 'work-teams' && <WorkTeamsPanel key={`${string(user.userId)}:${filter}:${teamIntent?.nonce ?? 0}`} userId={string(user.userId)} intent={teamIntent} onTeamShown={setShownTeamId} pinnedTeamIds={pins.teamPins} onTogglePin={(id, pinned) => setPinned('team', id, pinned)} defaultProjectId={filter} organizations={organizations} projects={projects.map(project => ({id:string(project.id),name:string(project.name),organization_id:string(project.organization_id)}))} canOpenAccess={canManagePeople} onChanged={refreshModules} onOpenDemand={(id,projectId)=>{selectProject(projectId??'');setSelectedDemandId(id);navigate('demands');}}/>}
       {tab === 'team' && <><OrganizationsPanel organizations={organizations} currentActor={{ userId: string(user.userId), isPlatformOwner }} people={organizationPeople} onChanged={refreshModules}/>{organizations.filter(organization=>organization.canManage||isPlatformOwner).map(organization=><DirectoryPanel key={organization.id} userId={string(user.userId)} organizationId={organization.id}/>)}<OfficialTeamDirectory onSelect={canAny('access.invite') ? setOfficialSuggestion : undefined}/><TeamPanel key={officialSuggestion?.selectionKey ?? `manual:${filter}`} officialSuggestion={officialSuggestion} onClearOfficialSuggestion={() => setOfficialSuggestion(null)} users={list(data.users)} members={members} invites={invites} projects={projects} organizations={organizations} campaigns={campaigns} volunteers={list(data.volunteers)} selectedProjectId={filter} globalAdmin={isPlatformOwner} canManageManagers={(projectId, organizationId) => isPlatformOwner || organizations.some(organization => organization.canManage && organization.id === (projectId ? projects.find(project => project.id === projectId)?.organization_id : organizationId))} canProject={canProject} mutate={mutate} now={now}/>{canGlobal('organization.manage') && <AdminPrivacyPanel />}</>}
-      {tab === 'profile' && <><AccountAccessPanel key={string(user.userId)} userId={string(user.userId)}/><McpConnectionsPanel key={`mcp-${string(user.userId)}`}/><GoogleDriveConnectionPanel key={`drive-${string(user.userId)}`}/><div className="mt-5"><ProfilePanel onUpdated={() => { void refresh(); }}/></div></>}
+      {tab === 'profile' && <><AccountAccessPanel key={string(user.userId)} userId={string(user.userId)}/><TutorialHelpCard/><McpConnectionsPanel key={`mcp-${string(user.userId)}`}/><GoogleDriveConnectionPanel key={`drive-${string(user.userId)}`}/><div className="mt-5"><ProfilePanel onUpdated={() => { void refresh(); }}/></div></>}
       {tab === 'calendar' && <CalendarPanel viewerId={string(user.userId)} projects={projects} organizationalUnits={visibleUnits} selectedProjectId={filter} selectedUnitId={unitFilter} onProjectChange={selectProject} onUnitChange={selectUnit} canOpenModule={(id,entry) => {
           if (!allowedTabs.some(tab => tab.id === id)) return false;
           if (id === 'events') return canProject(entry.projectId, 'campaigns.manage', 'participation.operate', 'inventory.deliver');
@@ -1311,5 +1317,6 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
     </footer>
       </main>
     </div>
+    <TutorialLayer modules={allowedTabs.map(module => module.id)} tab={tab} projectId={filter} onNavigate={navigate}/>
   </div>;
 }
