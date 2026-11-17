@@ -375,7 +375,7 @@ async function toolStep(route: ToolRoute, apiKey: string, body: unknown, maxOutp
  */
 async function dispatchWithTools(route: ToolRoute, apiKey: string, body: { messages: Record<string, unknown>[] } & Record<string, unknown>, run: (name: string, args: Record<string, unknown>, budget: number) => Promise<RoleToolResult>, policy: RolePolicy, offeredTools: PortalTools, retainReasoning: boolean, checkAccess: () => Promise<unknown>, signal: AbortSignal, fetcher: typeof fetch) {
   const messages = [...body.messages], used: { name: string; rows: number }[] = [], sources = new Map<string, RoleSource>();
-  let taskDraft: RoleTaskDraft | undefined, draftCalls = 0;
+  let taskDraft: RoleTaskDraft | undefined, draftCalls = 0, scanned: { url: string; title: string }[] = [];
   let inputTokens = 0, outputTokens = 0, costMicros = 0, steps = 0;
   const charged = (message: string) => new ChargedError(message, costMicros, inputTokens + outputTokens);
   // No JSON mode in the loop: after lookups, DeepSeek's JSON mode can return an empty message.
@@ -418,6 +418,7 @@ async function dispatchWithTools(route: ToolRoute, apiKey: string, body: { messa
             used.push({ name: call.function.name, rows: result.rows });
             for (const source of result.sources) if (sources.size < 8) sources.set(source.href, source);
             if (result.taskDraft) taskDraft = result.taskDraft;
+            if (result.scanned?.length && !scanned.length) scanned = result.scanned;
           } catch (error) {
             content = JSON.stringify({ erro: error instanceof HttpError && error.status < 500 ? error.message : 'Consulta indisponível agora.' });
             used.push({ name: ROLE_TOOL_NAMES.includes(call.function.name) ? call.function.name : 'desconhecida', rows: -1 });
@@ -440,7 +441,7 @@ async function dispatchWithTools(route: ToolRoute, apiKey: string, body: { messa
     if (containsCredential(reply.reply) || reply.operation && containsCredential(reply.operation)) throw charged('A resposta do provedor não pôde ser mostrada.');
     // Conteúdo lido de outras consultas na mesma resposta pode tentar dirigir o rascunho: o cartão avisa.
     const untrusted = used.some(entry => entry.name !== ROLE_TASK_DRAFT_TOOL && entry.rows > 0);
-    return { ...reply, inputTokens, outputTokens, costMicros, steps, tools: used, sources: [...sources.values()], ...(taskDraft ? { taskDraft: untrusted ? { ...taskDraft, afterUntrusted: true as const } : taskDraft } : {}) };
+    return { ...reply, inputTokens, outputTokens, costMicros, steps, tools: used, sources: [...sources.values()], scanned, ...(taskDraft ? { taskDraft: untrusted ? { ...taskDraft, afterUntrusted: true as const } : taskDraft } : {}) };
   }
 }
 
@@ -535,6 +536,16 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
   // oficial só com o botão "Fontes oficiais" ou sem conversa disponível (modo só busca). Com a conversa
   // disponível, a pergunta reconhecida vai ao modelo, que lê as fontes com consultar_fontes_oficiais e abrir_link_oficial.
   // O caminho sem custo não depende do catálogo: ele só é lido para decidir a frase reconhecida, e falha conta como sem conversa.
+  /** Oferta de leitura com IA do PDF escaneado (interruptor e chave do Gemini, teto que caiba), assinada no servidor. */
+  const scannedOffer = async (scanned: { url: string; title: string }[]): Promise<RolePdfReadingOffer | null> => {
+    const quote = scanned.length ? pdfReadingQuote(config, message, now) : null;
+    const scannedUrl = quote ? officialPdfUrl(scanned[0].url) : null;
+    if (scannedUrl) scannedUrl.hash = '';
+    if (!quote || !scannedUrl || !await pdfReadingKey(db, organizationId, config, rawCredentials)) return null;
+    const expiresAt = now + ROLE_PDF_OFFER_TTL_MS;
+    const signature = await signPdfOffer(secret, { actorId: current.userId, organizationId, projectId: project, url: scannedUrl.href, question: await digest(message), costMicros: quote.costMicros, revision, expiresAt });
+    return { url: scannedUrl.href, title: scanned[0].title, costMicros: quote.costMicros, expiresAt, signature };
+  };
   const officialOn = !hasMedia && officialSearchOn(config);
   const direct = officialOn ? directOfficialKind(message) : null;
   let loaded: Awaited<ReturnType<typeof loadState>> | null = null;
@@ -560,15 +571,7 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
       }
       const result = await officialSearchReply(db, organizationId, message, options.officialFetcher);
       // PDF escaneado: oferece a leitura com IA (só com o interruptor e a chave do Gemini, e um teto que caiba), assinada no servidor.
-      const quote = result.scanned.length ? pdfReadingQuote(config, message, now) : null;
-      const scannedUrl = quote ? officialPdfUrl(result.scanned[0].url) : null;
-      if (scannedUrl) scannedUrl.hash = '';
-      let pdfReading: RolePdfReadingOffer | null = null;
-      if (quote && scannedUrl && await pdfReadingKey(db, organizationId, config, rawCredentials)) {
-        const expiresAt = now + ROLE_PDF_OFFER_TTL_MS;
-        const signature = await signPdfOffer(secret, { actorId: current.userId, organizationId, projectId: project, url: scannedUrl.href, question: await digest(message), costMicros: quote.costMicros, revision, expiresAt });
-        pdfReading = { url: scannedUrl.href, title: result.scanned[0].title, costMicros: quote.costMicros, expiresAt, signature };
-      }
+      const pdfReading = await scannedOffer(result.scanned);
       await authorization.first();
       return { contract: ROLE_CONTRACT, reply: result.reply, operation: null, operationDropped: false, provider: 'official', model: 'Consulta oficial',
         reservedMicros: 0, costMicros: 0, inputTokens: 0, outputTokens: 0, sources: result.sources, lookups: 1, ...(pdfReading ? { pdfReading } : {}) };
@@ -651,7 +654,7 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
     // Last live fence before money leaves: access or configuration may have changed during decryption.
     await authorization.first();
     const startedAt = Date.now();
-    const result: { reply: string; operation: string | null; inputTokens: number; outputTokens: number; reasoningTokens?: number; costMicros: number; tools?: { name: string; rows: number }[]; sources?: RoleSource[]; steps?: number; taskDraft?: RoleTaskDraft } = video && validProviderKey(videoKey)
+    const result: { reply: string; operation: string | null; inputTokens: number; outputTokens: number; reasoningTokens?: number; costMicros: number; tools?: { name: string; rows: number }[]; sources?: RoleSource[]; steps?: number; taskDraft?: RoleTaskDraft; scanned?: { url: string; title: string }[] } = video && validProviderKey(videoKey)
       ? await dispatchRoleVideo({ apiKey: videoKey, video, message, maxOutputTokens: config.roleOutputTokenLimit,
           inputCeiling: config.roleInputTokenCeiling, now, profile: videoProfile, signal: controller.signal, fetcher: options.fetcher })
       : callable
@@ -677,8 +680,10 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
       db.prepare("INSERT INTO audit(id,actor_id,project_id,organization_id,action,entity_id,details,created_at) VALUES(?,?,?,?,'assistant.role.chat',?,?,?)")
         .bind(crypto.randomUUID(), current.userId, project, organizationId, id, JSON.stringify(details), new Date().toISOString()),
     ]);
+    // PDF escaneado lido pelas ferramentas: a mesma oferta assinada do caminho direto (falha na oferta não derruba a resposta paga).
+    const pdfReading = result.scanned?.length ? await scannedOffer(result.scanned).catch(() => null) : null;
     return { contract: ROLE_CONTRACT, reply: result.reply, operation: result.operation, operationDropped: dropped, provider, model: modelName,
-      ...videoReceipt, reservedMicros: estimate.costMicros, costMicros: result.costMicros, inputTokens: result.inputTokens, outputTokens: result.outputTokens,
+      ...(pdfReading ? { pdfReading } : {}), ...videoReceipt, reservedMicros: estimate.costMicros, costMicros: result.costMicros, inputTokens: result.inputTokens, outputTokens: result.outputTokens,
       sources: result.sources ?? [], lookups: (result.tools ?? []).length,
       ...(result.taskDraft ? { taskDraft: await signedTaskDraft(secret, current.userId, image && !result.taskDraft.afterUntrusted ? { ...result.taskDraft, afterUntrusted: true } : result.taskDraft, Date.now()) } : {}) };
   } catch (error) {
