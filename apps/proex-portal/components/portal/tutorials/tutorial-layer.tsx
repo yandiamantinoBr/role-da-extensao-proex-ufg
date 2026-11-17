@@ -41,6 +41,7 @@ export function stepCopy(step: TutorialStep, mobile: boolean) {
     module: mobile && step.moduleMobile ? step.moduleMobile : step.module,
     openLabel: step.openLabel ?? 'Abrir no Portal',
     beforeOpen: mobile && step.beforeOpenMobile ? step.beforeOpenMobile : step.beforeOpen,
+    reveal: step.reveal,
   };
 }
 
@@ -105,7 +106,8 @@ export default function TutorialLayer({ modules, tab, projectId, onNavigate }: {
         const box = target.getBoundingClientRect(), guide = card.current?.getBoundingClientRect();
         const coversCard = Boolean(guide) && box.left < guide!.right && box.right > guide!.left;
         const limit = coversCard ? guide!.top - 16 : innerHeight - 16;
-        if (!pinned(target) && (box.top < TOP_GAP || box.bottom > limit)) window.scrollBy({ top: box.top < TOP_GAP ? box.top - TOP_GAP : Math.min(box.top - TOP_GAP, box.bottom - limit), behavior: reduce ? 'auto' : 'smooth' });
+        const toTop = copy.reveal === 'below' && box.top > TOP_GAP + 8;
+        if (!pinned(target) && (toTop || box.top < TOP_GAP || box.bottom > limit)) window.scrollBy({ top: toTop || box.top < TOP_GAP ? box.top - TOP_GAP : Math.min(box.top - TOP_GAP, box.bottom - limit), behavior: reduce ? 'auto' : 'smooth' });
         setSpot({ key: spotKey, found: true }); return;
       }
       if (!copy.target || ++tries > 10) { setSpot({ key: spotKey, found: copy.target ? false : null }); return; }

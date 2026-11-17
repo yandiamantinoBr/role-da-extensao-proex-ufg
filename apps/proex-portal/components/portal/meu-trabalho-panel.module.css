@@ -43,3 +43,4 @@
 /* Tutorial: com o cartão aberto em tela baixa, os quatro totais cabem acima dele; contorno com folga onde não há caixa. */
 @media (max-height:700px) and (max-width:420px){.metrics[data-tutorial-spot] .metric small{display:none}.metrics[data-tutorial-spot] .metric{padding-block:10px}}
 .heading[data-tutorial-spot],.listSection[data-tutorial-spot]{outline-offset:8px}
+.rowTop strong{display:inline-flex;align-items:center;gap:6px}

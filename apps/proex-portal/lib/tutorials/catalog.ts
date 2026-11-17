@@ -35,6 +35,8 @@ export type TutorialStep = {
   beforeOpen?: string;
   beforeOpenMobile?: string;
   requires?: StepRequirement;
+  /** `below`: leva o controle ao alto da tela, para mostrar também o que vem logo depois dele (ex.: o primeiro cartão de uma lista). */
+  reveal?: 'below';
   /** Rótulos da interface citados no passo. Um teste confere que existem no código. */
   labels: string[];
 };
@@ -149,8 +151,8 @@ export const TUTORIAL_CHAPTERS: readonly TutorialChapter[] = [
       },
       {
         id: 'totais', title: 'O que pede atenção',
-        speech: 'Os quadros somam suas demandas no projeto e na origem escolhidos, inclusive as que não cabem na lista. Clique em Atenção, Prazo hoje, Em andamento ou Concluídas para ver só essas logo abaixo.',
-        speechMobile: 'Os quadros somam suas demandas no projeto e na origem escolhidos. Toque em Atenção, Prazo hoje, Em andamento ou Concluídas para ver só essas logo abaixo.',
+        speech: 'Os quadros somam suas demandas no projeto e na origem escolhidos, inclusive as que não cabem na lista. Clique em Atenção, Prazo hoje, Em andamento ou Concluídas para ver só essas na lista de Demandas.',
+        speechMobile: 'Os quadros somam suas demandas no projeto e na origem escolhidos. Toque em Atenção, Prazo hoje, Em andamento ou Concluídas para ver só essas na lista de Demandas.',
         youWillSee: 'Os quatro quadros de totais destacados.',
         target: '[data-tutorial="trabalho-totais"]', module: 'my-work', openLabel: 'Ir para Meu trabalho',
         labels: ['Atenção', 'Prazo hoje', 'Em andamento', 'Concluídas'],
@@ -159,8 +161,8 @@ export const TUTORIAL_CHAPTERS: readonly TutorialChapter[] = [
         id: 'demandas', title: 'Abrir uma demanda',
         speech: 'Cada cartão mostra a situação, a prioridade, o prazo e os responsáveis. Clique no título para abrir a demanda. Lista vazia? Escolha Todas no Estado da lista ou troque o projeto.',
         speechMobile: 'Cada cartão mostra a situação, a prioridade, o prazo e os responsáveis. Toque no título para abrir a demanda. Lista vazia? Escolha Todas no Estado da lista ou troque o projeto.',
-        youWillSee: 'O título Demandas e o Estado da lista destacados. Os cartões ficam logo abaixo.',
-        target: '[data-tutorial="trabalho-demandas"]', module: 'my-work', openLabel: 'Ir para Meu trabalho',
+        youWillSee: 'O título Demandas e o Estado da lista destacados. Quando houver demandas, os cartões aparecem logo abaixo.',
+        target: '[data-tutorial="trabalho-demandas"]', reveal: 'below', module: 'my-work', openLabel: 'Ir para Meu trabalho',
         labels: ['Estado da lista', 'Demandas'],
       },
       {
