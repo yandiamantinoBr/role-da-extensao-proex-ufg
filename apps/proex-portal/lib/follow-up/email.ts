@@ -2,7 +2,7 @@ import {type PortalActor,organizationOwnerSql} from '../access';
 import {all,one} from '../database';
 import {HttpError} from '../errors';
 import {syncDigest} from '../sync/contracts';
-import {activeAccount,assignedRecipient,authority} from './scope';
+import {activeAccount,assignedRecipient,participantSql,taskAuthority} from './scope';
 export type EmailDispatcher={actor:PortalActor;credentialHash:string;organizationId:string;tokenId:string};
 type Input=Record<string,unknown>;
 type Configuration={organization_id:string;version:number;enabled:number;sender_email:string;portal_origin:string;daily_limit:number;person_daily_limit:number;event_limit:number;interval_seconds:number;next_send_at:number};
@@ -29,7 +29,7 @@ async function config(db:D1Database,orgId:string,origin:unknown,installer:unknow
 function configAssertion(db:D1Database,c:Configuration){return assertion(db,'EXISTS(SELECT 1 FROM followup_email_configuration WHERE organization_id=? AND version=? AND enabled=1 AND sender_email=? AND portal_origin=?)',[c.organization_id,c.version,c.sender_email,c.portal_origin],'email_configuration_changed');}
 // A group is never an e-mail recipient. Its currently authorized assigned people
 // are expanded by the existing notification fanout, then rechecked on every send.
-function eligible(){return `${activeAccount('recipient')} AND prefs.enabled=1 AND lower(recipient.email)=prefs.consent_email AND n.created_at>=prefs.enabled_at AND n.read_at IS NULL AND n.created_at>=? AND t.status IN('open','in_progress','blocked') AND EXISTS(SELECT 1 FROM organizations org WHERE org.id=t.organization_id AND org.status='active') AND ${authority('recipient.user_id','t.organization_id','t.project_id')} AND ${assignedRecipient('recipient.user_id')}`;}
+function eligible(){return `${activeAccount('recipient')} AND prefs.enabled=1 AND lower(recipient.email)=prefs.consent_email AND n.created_at>=prefs.enabled_at AND n.read_at IS NULL AND n.created_at>=? AND t.status IN('open','in_progress','blocked') AND EXISTS(SELECT 1 FROM organizations org WHERE org.id=t.organization_id AND org.status='active') AND ${taskAuthority('recipient.user_id','t')} AND (${assignedRecipient('recipient.user_id')} OR ${participantSql('recipient.user_id')})`;}
 const joins=`FROM followup_email_queue q JOIN followup_notifications n ON n.id=q.notification_id JOIN followup_tasks t ON t.id=q.task_id JOIN portal_users recipient ON recipient.user_id=q.user_id JOIN followup_email_preferences prefs ON prefs.organization_id=q.organization_id AND prefs.user_id=q.user_id`;
 function recipientAssertion(db:D1Database,queueId:string,now:number,selfId?:string){return assertion(db,`EXISTS(SELECT 1 ${joins} WHERE q.id=? AND ${eligible()}${selfId?' AND recipient.user_id=?':''})`,[queueId,new Date(now-LOOKBACK_MS).toISOString(),...(selfId?[selfId]:[])],'email_recipient_changed');}
 function pilotSenderAssertion(db:D1Database,principal:EmailDispatcher,c:Configuration){return assertion(db,`EXISTS(SELECT 1 FROM portal_users pilot_user WHERE pilot_user.user_id=? AND lower(pilot_user.email)=? AND ${activeAccount('pilot_user')})`,[principal.actor.userId,c.sender_email],'email_recipient_changed');}

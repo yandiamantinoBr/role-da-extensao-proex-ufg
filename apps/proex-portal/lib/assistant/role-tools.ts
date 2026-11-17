@@ -10,7 +10,7 @@ import { all, one, type Row } from '../database';
 import { HttpError } from '../errors';
 import { containsCredential } from './sensitive';
 import { rateLimitAll } from '../rate-limit';
-import { authority as followupAuthority, requireScope } from '../follow-up/scope';
+import { authority as followupAuthority, publicTaskAuthority, requireScope } from '../follow-up/scope';
 import { followupAssignablePeople } from '../follow-up/service';
 import { prizeTiersWorkspace } from '../prize-tiers/service';
 import { listRecords } from '../records';
@@ -197,7 +197,7 @@ export async function runRoleTool(db: D1Database, actor: PortalActor, organizati
     const wanted = terms(str(args.texto, 'o texto', name === 'buscar_no_portal')), open = name === 'buscar_no_portal' || args.situacao !== 'todas';
     if (args.situacao !== undefined && !['abertas', 'todas'].includes(String(args.situacao))) throw new HttpError(400, 'Use abertas ou todas.', 'role_tool_input');
     const tasks = await all(db, `SELECT t.id,t.title,t.body,t.status,t.due_at,t.project_id,p.name project_name FROM followup_tasks t JOIN projects p ON p.id=t.project_id
-      WHERE ${followupAuthority('?', 't.organization_id', 't.project_id')} AND t.project_id IN ${inList(ids)} AND t.status${open ? " NOT IN ('completed','cancelled')" : "!='cancelled'"} ORDER BY t.updated_at DESC LIMIT 600`, [actor.userId, ...ids]);
+      WHERE ${publicTaskAuthority('?','t')} AND t.project_id IN ${inList(ids)} AND t.status${open ? " NOT IN ('completed','cancelled')" : "!='cancelled'"} ORDER BY t.updated_at DESC LIMIT 600`, [actor.userId, ...ids]);
     const demandHits = tasks.map(row => ({ row, s: score(`${row.title}\n${row.body}`, wanted) * 2 + score(String(row.title), wanted) })).filter(entry => entry.s > 0).sort((a, b) => b.s - a.s).map(entry => entry.row);
     const demandLink = (row: Row) => link('demands', String(row.project_id), `&demandId=${encodeURIComponent(String(row.id))}`);
     if (name === 'consultar_demandas') {

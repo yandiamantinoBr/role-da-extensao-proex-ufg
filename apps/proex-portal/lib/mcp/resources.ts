@@ -22,7 +22,8 @@ export async function callPersonalTool(db: D1Database, identity: McpIdentity, na
   if (name === 'proex_project_summary') return projectSummary(db, identity.actor, args.projectId);
   const offset = args.offset === undefined ? 0 : args.offset, limit = args.limit === undefined ? 25 : args.limit;
   if (!Number.isSafeInteger(offset) || Number(offset) < 0 || Number(offset) > 50000 || !Number.isSafeInteger(limit) || Number(limit) < 1 || Number(limit) > 25) throw new HttpError(400, 'Confira o limite e a página de demandas.', 'mcp_arguments');
-  const result = await followupList(db, identity.actor, { projectId: args.projectId, offset });
+  // Demanda privada não sai do Portal pela conexão pessoal (MCP).
+  const result = await followupList(db, identity.actor, { projectId: args.projectId, offset }, { excludePrivate: true });
   const hasMore = Number(offset) + Number(limit) <= 50000 && (result.hasMore || result.tasks.length > Number(limit));
   return { projectId: args.projectId, tasks: result.tasks.slice(0, Number(limit)).map(task => ({ id: task.id, projectId: task.project_id, title: task.title, status: task.status, priority: task.priority, importance: task.importance, dueAt: task.due_at, updatedAt: task.updated_at, version: task.version })), hasMore, nextOffset: hasMore ? Number(offset) + Number(limit) : null };
 }

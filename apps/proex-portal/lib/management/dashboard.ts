@@ -3,7 +3,7 @@ import { all, one, type Row } from '../database';
 import { HttpError } from '../errors';
 import { reportRows } from '../reports';
 import { activityFeed } from '../activity';
-import { authority as followAuthority } from '../follow-up/scope';
+import { publicTaskAuthority } from '../follow-up/scope';
 import { identifier, projectAuthoritySql, requireActor, requireOrganizationMember } from './scope';
 import { risksWorkspace } from './risks';
 
@@ -54,7 +54,7 @@ export async function managementDashboard(db: D1Database, rawActor: PortalActor 
     seesMaterials ? safe(reportRows(db, actor, { dataset: 'materials', ...scope })) : Promise.resolve(null),
     safe(risksWorkspace(db, actor, { organizationId, ...(projectId ? { projectId } : {}) })),
     all(db, `SELECT h.task_id id,MIN(h.created_at) at FROM followup_history h JOIN followup_tasks f ON f.id=h.task_id
-      WHERE f.organization_id=? AND (? IS NULL OR f.project_id=?) AND json_extract(h.snapshot_json,'$.status')='completed' AND ${followAuthority('?', 'f.organization_id', 'f.project_id')}
+      WHERE f.organization_id=? AND (? IS NULL OR f.project_id=?) AND json_extract(h.snapshot_json,'$.status')='completed' AND ${publicTaskAuthority('?', 'f')}
       GROUP BY h.task_id LIMIT 5000`, [organizationId, projectId, projectId, actor.userId]),
     all(db, `SELECT s.title,s.starts_at,p.id project_id,p.name project FROM project_schedule_items s JOIN projects p ON p.id=s.project_id
       WHERE p.organization_id=? AND (? IS NULL OR p.id=?) AND s.status='planned' AND date(s.starts_at,'-3 hours') BETWEEN ? AND ? AND ${visible.sql} ORDER BY s.starts_at LIMIT 12`,

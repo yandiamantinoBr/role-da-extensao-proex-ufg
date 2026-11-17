@@ -43,13 +43,48 @@ export function activityCoverageScope(taskSql:string,scheduleSql?:string):string
      AND coverage_checklist.kind='activity' AND coverage_checklist.status='open' AND coverage_schedule.status!='cancelled'
      AND COALESCE(coverage_project.status,'active')='active'${scheduleSql?` AND coverage_schedule.id=${scheduleSql}`:''})`;
 }
-export function effectiveRecipient(userSql:string,taskSql='t'):string {return `(${taskSql}.created_by=${userSql} OR ${assignedRecipient(userSql,taskSql)})`;}
-export function workAuthority(userSql:string,taskSql='t',coverage=false):string {return `(${authority(userSql,`${taskSql}.organization_id`,`${taskSql}.project_id`)} AND EXISTS(SELECT 1 FROM organizations work_org WHERE work_org.id=${taskSql}.organization_id AND work_org.status='active') AND ${assignedRecipient(userSql,taskSql)} AND EXISTS(SELECT 1 FROM followup_work_grants grant_row JOIN members issuer ON issuer.id=grant_row.grantor_member_id LEFT JOIN portal_users issuer_user ON issuer_user.user_id=issuer.user_id WHERE grant_row.task_id=${taskSql}.id AND grant_row.user_id=${userSql} AND grant_row.revoked_at IS NULL ${coverage?`AND grant_row.can_record_activity=1 AND EXISTS(
+export function effectiveRecipient(userSql:string,taskSql='t'):string {return `(${taskSql}.created_by=${userSql} OR ${assignedRecipient(userSql,taskSql)} OR ${participantSql(userSql,taskSql)})`;}
+export function workAuthority(userSql:string,taskSql='t',coverage=false):string {return `(${publicTask(taskSql)} AND ${authority(userSql,`${taskSql}.organization_id`,`${taskSql}.project_id`)} AND EXISTS(SELECT 1 FROM organizations work_org WHERE work_org.id=${taskSql}.organization_id AND work_org.status='active') AND ${assignedRecipient(userSql,taskSql)} AND EXISTS(SELECT 1 FROM followup_work_grants grant_row JOIN members issuer ON issuer.id=grant_row.grantor_member_id LEFT JOIN portal_users issuer_user ON issuer_user.user_id=issuer.user_id WHERE grant_row.task_id=${taskSql}.id AND grant_row.user_id=${userSql} AND grant_row.revoked_at IS NULL ${coverage?`AND grant_row.can_record_activity=1 AND EXISTS(
   SELECT 1 FROM members cov_issuer LEFT JOIN portal_users cov_account ON cov_account.user_id=cov_issuer.user_id
   WHERE cov_issuer.id=grant_row.coverage_grantor_member_id AND cov_issuer.revoked_at IS NULL AND cov_issuer.role IN ('owner','manager')
     AND COALESCE(cov_account.status,'active')='active' AND COALESCE(cov_account.activation_pending,0)=0 AND cov_account.anonymized_at IS NULL
     AND ${memberProjectScopeSql('cov_issuer',`${taskSql}.project_id`)})`:''} AND issuer.revoked_at IS NULL AND issuer.role IN ('owner','manager') AND COALESCE(issuer_user.status,'active')='active' AND COALESCE(issuer_user.activation_pending,0)=0 AND issuer_user.anonymized_at IS NULL AND((${taskSql}.project_id IS NULL AND ${organizationOwnerSql('issuer',`${taskSql}.organization_id`)}) OR(${taskSql}.project_id IS NOT NULL AND ${memberProjectScopeSql('issuer',`${taskSql}.project_id`)}))))`;}
 export function fanout(db:D1Database,taskId:string,cause:string,at:string):D1PreparedStatement {return db.prepare(`INSERT OR IGNORE INTO followup_notifications(id,task_id,user_id,cause_key,created_at)
  SELECT lower(hex(randomblob(16))),t.id,recipient.user_id,?,? FROM followup_tasks t JOIN portal_users recipient
- WHERE t.id=? AND EXISTS(SELECT 1 FROM organizations notify_org WHERE notify_org.id=t.organization_id AND notify_org.status='active') AND ${activeAccount('recipient')} AND ${authority('recipient.user_id','t.organization_id','t.project_id')} AND ${effectiveRecipient('recipient.user_id')}`).bind(cause,at,taskId);}
-export function recipientLimit(db:D1Database,taskId:string){return db.prepare(`SELECT CASE WHEN (SELECT COUNT(*) FROM portal_users recipient JOIN followup_tasks t ON t.id=? WHERE ${activeAccount('recipient')} AND ${authority('recipient.user_id','t.organization_id','t.project_id')} AND ${effectiveRecipient('recipient.user_id')})<=1000 THEN 1 ELSE json_extract('[]','followup_too_many_recipients') END`).bind(taskId);}
+ WHERE t.id=? AND EXISTS(SELECT 1 FROM organizations notify_org WHERE notify_org.id=t.organization_id AND notify_org.status='active') AND ${activeAccount('recipient')} AND ${taskAuthority('recipient.user_id','t')} AND ${effectiveRecipient('recipient.user_id')}`).bind(cause,at,taskId);}
+export function recipientLimit(db:D1Database,taskId:string){return db.prepare(`SELECT CASE WHEN (SELECT COUNT(*) FROM portal_users recipient JOIN followup_tasks t ON t.id=? WHERE ${activeAccount('recipient')} AND ${taskAuthority('recipient.user_id','t')} AND ${effectiveRecipient('recipient.user_id')})<=1000 THEN 1 ELSE json_extract('[]','followup_too_many_recipients') END`).bind(taskId);}
+/*
+ * Demandas privadas (0053). Uma demanda sem linha em followup_task_privacy é pública no seu escopo, como sempre.
+ * Com a linha, só participantes (e, em `leadership`, quem está na Gestão superior da organização) a leem ou editam,
+ * e nem a administração geral entra sem ser incluída. Todas as superfícies passam por aqui:
+ * - Demandas, sino e e-mail usam taskAuthority;
+ * - relatórios, exportações, planilhas, Agenda, painel, Rolê, Meu trabalho, registros e cópias legíveis usam publicTask
+ *   (a demanda privada não sai de Demandas).
+ */
+export function publicTask(taskSql='t'):string {return `NOT EXISTS(SELECT 1 FROM followup_task_privacy pub_privacy WHERE pub_privacy.task_id=${taskSql}.id)`;}
+/** Conta ativa com algum acesso vigente na organização (sem exigir o projeto: a demanda privada é da organização). */
+export function organizationMemberSql(userSql:string,orgSql:string):string {
+ return `EXISTS(SELECT 1 FROM members org_member LEFT JOIN portal_users org_account ON org_account.user_id=org_member.user_id
+  WHERE org_member.user_id=${userSql} AND org_member.revoked_at IS NULL
+  AND COALESCE(org_account.status,'active')='active' AND COALESCE(org_account.activation_pending,0)=0 AND org_account.anonymized_at IS NULL
+  AND (org_member.organization_id=${orgSql} OR (org_member.organization_id IS NULL AND org_member.project_id IS NULL)
+   OR EXISTS(SELECT 1 FROM projects org_member_project WHERE org_member_project.id=org_member.project_id AND org_member_project.organization_id=${orgSql})))`;
+}
+export function leadershipMemberSql(userSql:string,orgSql:string):string {return `EXISTS(SELECT 1 FROM leadership_group_members lead WHERE lead.organization_id=${orgSql} AND lead.user_id=${userSql} AND lead.removed_at IS NULL)`;}
+export function participantSql(userSql:string,taskSql='t'):string {return `EXISTS(SELECT 1 FROM followup_task_participants part WHERE part.task_id=${taskSql}.id AND part.user_id=${userSql} AND part.removed_at IS NULL)`;}
+/** Leitura/edição de uma demanda privada: participante, ou Gestão superior quando a visibilidade é `leadership`. Nunca `manage`. */
+export function privateTaskAccess(userSql:string,taskSql='t'):string {
+ return `(EXISTS(SELECT 1 FROM followup_task_privacy priv WHERE priv.task_id=${taskSql}.id AND (${participantSql(userSql,taskSql)}
+   OR (priv.visibility='leadership' AND ${leadershipMemberSql(userSql,`${taskSql}.organization_id`)})))
+  AND ${organizationMemberSql(userSql,`${taskSql}.organization_id`)})`;
+}
+/**
+ * Filtro único de Demandas: pública → regra de sempre (authority); privada → privateTaskAccess.
+ * `manage` (delegar trabalho, equipes) nunca vale para privada. Aceita '?' como usuário: vira um único parâmetro.
+ */
+export function taskAuthority(userSql:string,taskSql='t',write=false,manage=false):string {
+ const build=(user:string)=>`((${publicTask(taskSql)} AND ${authority(user,`${taskSql}.organization_id`,`${taskSql}.project_id`,write,manage)})${manage?'':` OR ${privateTaskAccess(user,taskSql)}`})`;
+ return userSql==='?'?`EXISTS(SELECT 1 FROM (SELECT ? AS uid) task_caller WHERE ${build('task_caller.uid')})`:build(userSql);
+}
+/** Superfícies fora de Demandas (relatórios, painel, Agenda, Rolê, equipes, triagem, transferência): só demandas públicas, com a regra de sempre. */
+export function publicTaskAuthority(userSql:string,taskSql='t',write=false,manage=false):string {return `(${publicTask(taskSql)} AND ${authority(userSql,`${taskSql}.organization_id`,`${taskSql}.project_id`,write,manage)})`;}

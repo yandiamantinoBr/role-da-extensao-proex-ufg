@@ -24,3 +24,4 @@ export * from './convocation-schema';
 export * from './management-schema';
 export * from './volunteer-schema';
 export * from './tutorial-schema';
+export * from './private-dispatch-schema';

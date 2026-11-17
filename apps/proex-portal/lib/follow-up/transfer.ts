@@ -2,7 +2,7 @@ import { memberProjectScopeSql, type PortalActor } from '../access';
 import { all, one, uid, iso, type Row } from '../database';
 import { isRateLimitedError, rateLimitedError } from '../rate-limit';
 import { fail } from './contracts';
-import { authority, activeAccount, actorRequired, fanout, recipientLimit } from './scope';
+import { authority, activeAccount, actorRequired, fanout, publicTaskAuthority, recipientLimit } from './scope';
 import { transferInput, transferTaskId, type TransferBlocker, type TransferPreview, type TransferReceipt } from './transfer-contracts';
 
 /**
@@ -39,9 +39,9 @@ const linked=()=>fail('Somente demandas simples, sem conferência, ação, mater
 const taskSql=`SELECT t.id,t.organization_id,t.project_id,t.version,t.campaign_id,t.item_id,t.loan_id,p.name project_name,
  (EXISTS(SELECT 1 FROM followup_checklists WHERE task_id=t.id) OR EXISTS(SELECT 1 FROM followup_checklist_actions WHERE task_id=t.id)) has_checklist,
  (COALESCE(p.status,'')='active' AND EXISTS(SELECT 1 FROM organizations o WHERE o.id=t.organization_id AND o.status='active')) source_active,
- CASE WHEN t.project_id IS NULL THEN ${authority('caller.user_id','t.organization_id','t.project_id',true,true)} ELSE ${transferManageSql('caller.user_id','t.organization_id','t.project_id',false)} END can_manage
+ CASE WHEN t.project_id IS NULL THEN ${publicTaskAuthority('caller.user_id','t',true,true)} ELSE ${transferManageSql('caller.user_id','t.organization_id','t.project_id',false)} END can_manage
  FROM followup_tasks t JOIN(SELECT ? user_id) caller LEFT JOIN projects p ON p.id=t.project_id
- WHERE t.id=? AND ${authority('caller.user_id','t.organization_id','t.project_id')}`;
+ WHERE t.id=? AND ${publicTaskAuthority('caller.user_id','t')}`;
 
 function blockerOf(task:Row):TransferBlocker|null {
  if(task.project_id===null)return 'organization_scope';
@@ -60,7 +60,7 @@ async function visibleTask(db:D1Database,actor:PortalActor,taskId:string):Promis
 // lose visibility at the candidate are counted. No names or ids leave the server.
 const candidatesSql=`SELECT d.id project_id,d.name,
  (SELECT COUNT(*) FROM followup_assignees a JOIN portal_users person ON person.user_id=a.user_id
-  WHERE a.task_id=t.id AND a.removed_at IS NULL AND ${activeAccount('person')} AND ${authority('a.user_id','t.organization_id','t.project_id')}
+  WHERE a.task_id=t.id AND a.removed_at IS NULL AND ${activeAccount('person')} AND ${publicTaskAuthority('a.user_id','t')}
   AND NOT ${authority('a.user_id','t.organization_id','d.id')}) lost
  FROM followup_tasks t JOIN(SELECT ? user_id) caller JOIN projects d ON d.organization_id=t.organization_id AND d.status='active' AND d.id<>t.project_id
  WHERE t.id=? AND t.project_id IS NOT NULL AND ${transferManageSql('caller.user_id','t.organization_id','d.id')}
@@ -74,13 +74,13 @@ export async function transferPreview(db:D1Database,actor:PortalActor|null,taskI
  let blocker=blockerOf(task);
  const candidates=blocker?[]:await all(db,candidatesSql,[actor.userId,taskId]);
  const counts=await one(db,`SELECT
-  (SELECT COUNT(*) FROM followup_assignees a JOIN portal_users person ON person.user_id=a.user_id WHERE a.task_id=t.id AND a.removed_at IS NULL AND ${activeAccount('person')} AND ${authority('a.user_id','t.organization_id','t.project_id')}) people,
+  (SELECT COUNT(*) FROM followup_assignees a JOIN portal_users person ON person.user_id=a.user_id WHERE a.task_id=t.id AND a.removed_at IS NULL AND ${activeAccount('person')} AND ${publicTaskAuthority('a.user_id','t')}) people,
   (SELECT COUNT(*) FROM followup_assignees a JOIN followup_teams team ON team.id=a.team_id WHERE a.task_id=t.id AND a.removed_at IS NULL AND team.organization_id=t.organization_id AND team.status='active') teams
   FROM followup_tasks t WHERE t.id=?`,[taskId]);
  // Second snapshot: same viewer, same version/project, management still live on both sides.
  const again=await one(db,`SELECT t.version,t.project_id,${task.project_id===null?'0':transferManageSql('caller.user_id','t.organization_id','t.project_id',false)} can_manage,
   (SELECT COALESCE(json_group_array(d.id),'[]') FROM projects d WHERE d.organization_id=t.organization_id AND d.status='active' AND d.id<>t.project_id AND ${transferManageSql('caller.user_id','t.organization_id','d.id')}) allowed
-  FROM followup_tasks t JOIN(SELECT ? user_id) caller WHERE t.id=? AND ${authority('caller.user_id','t.organization_id','t.project_id')}`,[actor.userId,taskId]);
+  FROM followup_tasks t JOIN(SELECT ? user_id) caller WHERE t.id=? AND ${publicTaskAuthority('caller.user_id','t')}`,[actor.userId,taskId]);
  if(!again)fail('Demanda não encontrada neste contexto ou seu acesso mudou.','followup_not_found',404);
  if(task.project_id!==null&&!again!.can_manage)forbidden();
  if(again!.version!==task.version||again!.project_id!==task.project_id)conflict();

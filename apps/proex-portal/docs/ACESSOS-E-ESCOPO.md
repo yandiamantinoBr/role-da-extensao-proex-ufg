@@ -22,6 +22,15 @@ Uma conta identifica a pessoa; um vínculo em `members` define a função e os p
 
 O responsável é global no esquema atual. Gestor e demais funções normalmente recebem um projeto específico; vínculos globais antigos continuam válidos e devem ser revisados pela administração. Um gestor de projeto só pode convidar, alterar ou revogar funções subordinadas no próprio projeto; não pode conceder gestor, responsável ou escopo global. O responsável não é convidável pelo fluxo comum.
 
+## Demandas privadas e Despachos (17/11/2026)
+
+- **Quem vê:** cada demanda tem "Projeto ou equipe" (o padrão, como sempre), "Gestão superior" (o grupo mantido pela administração em Pessoas e acessos, mais quem participa) ou "Só as pessoas escolhidas" (o autor e as pessoas que ele indicar).
+- **Nem a administração geral vê** uma demanda privada sem ser incluída. O filtro está num lugar só, no servidor (`lib/follow-up/scope.ts`, `taskAuthority` e `publicTask`).
+- **Onde aparece:** só em Demandas, no painel Despachos, no sino e no e-mail de quem participa. Não entra em Meu trabalho, Início, Agenda e `.ics`, relatórios e exportações, painel da Gestão, Registros, planilha Google, cópia legível, Rolê nem conexão pessoal (MCP).
+- **Auditoria:** a ação fica registrada, mas sem o título.
+- **Mudanças de pessoas:** só o autor inclui ou tira pessoas e muda a visibilidade. Cada pessoa precisa ter acesso vigente à organização. Quem sai, ou deixa a Gestão superior, perde o acesso na próxima consulta, inclusive numa tela que já estava aberta.
+- **Limite honesto:** quem administra o banco de dados tecnicamente pode ler. A privacidade vale dentro do Portal.
+
 ## Convites com o menor escopo por padrão
 
 O formulário seleciona o projeto atual ou o único projeto disponível. Havendo vários projetos sem seleção atual, exige uma escolha. O alcance “Portal inteiro” fica separado das opções de projeto e aparece apenas à administração geral.

@@ -3,10 +3,10 @@ import { all } from '../database';
 import { HttpError } from '../errors';
 import { choices, date, TASK_PRIORITIES, TASK_STATES } from './contracts';
 import { taskSearch } from './task-search';
-import { authority, activeAccount } from './scope';
+import { authority, activeAccount, publicTaskAuthority } from './scope';
 
 export async function followupReportRows(db: D1Database, actor: PortalActor, dataset: 'demands' | 'reviews', input: Record<string, unknown>, limit: number) {
-  const conditions = [authority('?', 'f.organization_id', 'f.project_id')], values: unknown[] = [actor.userId];
+  const conditions = [publicTaskAuthority('?','f')], values: unknown[] = [actor.userId];
   for (const [key, column] of [['projectId', 'f.project_id'], ['organizationId', 'f.organization_id'], ['unitId', 'p.unit_id'], ['thematicArea', 'p.thematic_area']] as const) {
     const value = input[key];
     if (value === undefined || value === null || value === '') continue;
@@ -43,7 +43,7 @@ export async function followupReportRows(db: D1Database, actor: PortalActor, dat
       CASE WHEN f.status IN ('open','in_progress','blocked') AND f.due_at<date('now','-3 hours') THEN 'sim' ELSE 'nao' END AS em_atraso,
       COALESCE(ev.name,'') AS evento,COALESCE(i.name,'') AS material,
       (SELECT COUNT(*) FROM followup_assignees a JOIN portal_users recipient ON recipient.user_id=a.user_id
-       WHERE a.task_id=f.id AND a.removed_at IS NULL AND ${activeAccount('recipient')} AND ${authority('recipient.user_id', 'f.organization_id', 'f.project_id')}) AS responsaveis_ativos,
+       WHERE a.task_id=f.id AND a.removed_at IS NULL AND ${activeAccount('recipient')} AND ${publicTaskAuthority('recipient.user_id','f')}) AS responsaveis_ativos,
       (SELECT COUNT(*) FROM followup_assignees a JOIN followup_teams team ON team.id=a.team_id
        WHERE a.task_id=f.id AND a.removed_at IS NULL AND team.status='active' AND team.organization_id=f.organization_id) AS equipes_ativas,
       COALESCE((SELECT GROUP_CONCAT(nome,' · ') FROM (SELECT team.name AS nome FROM followup_assignees a JOIN followup_teams team ON team.id=a.team_id
