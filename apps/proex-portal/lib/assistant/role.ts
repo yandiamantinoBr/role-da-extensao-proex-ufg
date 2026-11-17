@@ -172,6 +172,9 @@ function availability(config: AssistantConfig, credentials: AssistantCredentials
   };
 }
 
+/** Busca em fontes oficiais (sem IA nem custo): basta o Rolê ligado e a busca pública ligada, mesmo sem chave de conversa. */
+const officialSearchOn = (config: AssistantConfig) => config.roleEnabled && config.rolePublicSearchEnabled;
+
 /** No provider call. Reports what Rolê can do for this person in this project. */
 export async function roleStatus(db: D1Database, actor: PortalActor | null, input: { projectId?: string | null }, secret: string, options: Options = {}): Promise<RoleAvailability> {
   const project = projectId(input.projectId), { current, organizationId } = await scopedActor(db, actor, project);
@@ -199,7 +202,7 @@ export async function roleStatus(db: D1Database, actor: PortalActor | null, inpu
     } : undefined;
     return { ...base, ...state, speech, ...(document ? { document } : {}), ...(video ? { video } : {}), ...(decisionRouteName ? { decisionRouteName } : {}), provider: text?.kind === 'catalog' ? text.provider.id : config.roleProvider, model: text?.pricing.label ?? ROLE_MODELS[config.roleProvider].label,
       textPricing: text?.pricing ?? null, visionPricing: vision?.pricing ?? null, dailyLimitMicros: config.dailyUsdMicros, tools: { text: !!toolRoute(text) && !!roleTools(config).length, vision: !!toolRoute(vision) && !!roleTools(config).length },
-      policy: { historyMessages: config.roleHistoryMessages, inputCeiling: config.roleInputTokenCeiling, maxOutputTokens: config.roleOutputTokenLimit, reasoningCarry: keepReasoning(toolRoute(text), config.roleReasoningEffort), publicSearch: config.rolePublicSearchEnabled },
+      policy: { historyMessages: config.roleHistoryMessages, inputCeiling: config.roleInputTokenCeiling, maxOutputTokens: config.roleOutputTokenLimit, reasoningCarry: keepReasoning(toolRoute(text), config.roleReasoningEffort), publicSearch: officialSearchOn(config) },
       reason: state.available ? null : !config.roleEnabled ? 'O Rolê ainda não foi ligado nesta organização.' : 'Falta a chave do provedor escolhido para o Rolê.', scopes: state.available ? await roleScopes(db, current, organizationId) : undefined };
   } catch (error) {
     const reason = error instanceof HttpError && error.status === 403 ? 'A IA desta organização está liberada só para outra pessoa.' : 'O Rolê ainda não foi configurado nesta organização.';
@@ -456,7 +459,8 @@ async function catalogDispatch(chosen: Extract<Route, { kind: 'catalog' }>, turn
 
 /** One paid call, only after the person accepted a cost ceiling at least as high as the server's. */
 export async function roleChat(db: D1Database, actor: PortalActor | null, input: Record<string, unknown>, secret: string, options: Options = {}) {
-  onlyKeys(input, ['action', 'projectId', 'operationKey', 'consent', 'history', 'message', 'image', 'video', 'videoApproval', 'videoConsent', 'acceptedCostMicros', 'scope', 'document', 'documentConsent', 'documentApproval']);
+  onlyKeys(input, ['action', 'projectId', 'operationKey', 'consent', 'history', 'message', 'image', 'video', 'videoApproval', 'videoConsent', 'acceptedCostMicros', 'scope', 'document', 'documentConsent', 'documentApproval', 'officialSearch']);
+  if (input.officialSearch !== undefined && input.officialSearch !== true) throw new HttpError(400, 'Pedido de busca em fontes oficiais inválido.', 'assistant_request');
   if (input.consent !== true) throw new HttpError(400, 'Confirme que o texto e a imagem podem ir para o provedor de IA.', 'assistant_consent');
   if (typeof input.operationKey !== 'string' || !/^[A-Za-z0-9_-]{8,100}$/.test(input.operationKey)) throw new HttpError(400, 'Reabra o Rolê antes de enviar.', 'assistant_operation');
   if (typeof input.message !== 'string' || input.message.length > ROLE_MAX_MESSAGE_CHARS) throw new HttpError(400, 'Escreva até 2.000 caracteres por mensagem.', 'assistant_request');
@@ -464,6 +468,26 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
   const hasVideo = Object.hasOwn(input, 'video');
   const { current, organizationId, projectName } = await scopedActor(db, actor, project), now = options.now ?? Date.now();
   const { config, credentials, rawCredentials, revision } = await loadAssistantSettings(db, secret, organizationId, 'configuration', options.keys, current.userId);
+  // Busca em fontes oficiais: sem IA, sem custo e sem histórico, por isso vale também sem chave de conversa.
+  // Login, projeto, escopo e a cerca de autorização (antes e depois da rede) são os mesmos da conversa.
+  const explicitSearch = input.officialSearch === true, hasMedia = hasVideo || input.image != null || Object.hasOwn(input, 'document');
+  if (explicitSearch && hasMedia) throw new HttpError(400, 'A busca em fontes oficiais aceita só texto. Tire o anexo e envie de novo.', 'role_official_media');
+  if (explicitSearch && !officialSearchOn(config)) throw new HttpError(403, 'A busca em fontes oficiais está desligada nesta organização.', 'role_official_disabled');
+  if (!hasMedia && officialSearchOn(config) && (explicitSearch || isOfficialSearch(message))) {
+    await resolveRoleScope(db, current, organizationId, input.scope);
+    history(input.history);
+    const authorization = roleAuthorization(db, current, project, organizationId, revision);
+    try {
+      await authorization.first();
+      const result = await officialSearchReply(db, organizationId, message, options.officialFetcher);
+      await authorization.first();
+      return { contract: ROLE_CONTRACT, reply: result.reply, operation: null, operationDropped: false, provider: 'official', model: 'Consulta oficial',
+        reservedMicros: 0, costMicros: 0, inputTokens: 0, outputTokens: 0, sources: result.sources, lookups: 1 };
+    } catch (error) {
+      if (String(error).includes('assistant_authority_changed')) throw new HttpError(403, 'Seu acesso ou a configuração mudou antes da resposta.', 'assistant_forbidden');
+      throw error;
+    }
+  }
   const catalog = config.roleModel || config.roleVisionModel || hasVideo && config.roleVideoEnabled ? (await loadCatalog(db, organizationId)).catalog : null;
   const state = availability(config, credentials, organizationId, options.speech, rawCredentials, catalog);
   if (!state.available) throw new HttpError(503, 'O Rolê está desligado ou sem chave nesta organização.', 'role_unavailable');
@@ -484,19 +508,6 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
   const video = hasVideo ? parseRoleVideo(input.video) : null;
   if (hasVideo && !video) throw new HttpError(400, 'Selecione um vídeo MP4.', 'role_video_input');
   const image = parseRoleImage(input.image), submittedTurns = video || document ? [] : history(input.history);
-  if (!video && !image && !document && config.rolePublicSearchEnabled && isOfficialSearch(message)) {
-    const authorization = roleAuthorization(db, current, project, organizationId, revision);
-    try {
-      await authorization.first();
-      const result = await officialSearchReply(db, organizationId, message, options.officialFetcher);
-      await authorization.first();
-      return { contract: ROLE_CONTRACT, reply: result.reply, operation: null, operationDropped: false, provider: 'official', model: 'Consulta oficial',
-        reservedMicros: 0, costMicros: 0, inputTokens: 0, outputTokens: 0, sources: result.sources, lookups: 1 };
-    } catch (error) {
-      if (String(error).includes('assistant_authority_changed')) throw new HttpError(403, 'Seu acesso ou a configuração mudou antes da resposta.', 'assistant_forbidden');
-      throw error;
-    }
-  }
   if (image && !state.visionAvailable) throw new HttpError(503, 'A leitura de imagens não está ligada nesta organização. Envie só o texto.', 'role_vision_unavailable');
   const chosen = (image ? state.vision : state.text)!;
   if (!video && chosen.kind === 'catalog') requireConversationEndpoint(chosen.provider, options.fetcher);
