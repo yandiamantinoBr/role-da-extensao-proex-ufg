@@ -44,7 +44,7 @@ const HOME = `<!doctype html><html><head><title>PROEX - Pró-Reitoria de Extens�
 <li><a href="https://proex.ufg.br/p/editais-proex">Editais (repetido)</a></li>
 </ul></section>
 <div class="component-title">Sistemas</div>
-<ul><li><a href="https://sigaa.ufg.br/sigaa/">SIGAA</a></li><li><a href="https://analisa.ufg.br/p/sintetica">Analisa UFG</a></li><li><a href="http://antigo.example.test/">Sistema antigo</a></li></ul>
+<ul><li><a href="https://sigaa.ufg.br/sigaa/">SIGAA</a></li><li><a href="https://analisa.ufg.br/p/sintetica">Analisa UFG</a></li><li><a href="http://antigo.example.test/">Sistema antigo</a></li><li><a href="http://www.gov.br/antigo">Governo em http</a></li><li><a href="https://proex.ufg.br/p/9-banner">Banner Site</a></li></ul>
 <h3>Estruturas vinculadas</h3><a href="https://centrodeeventos.ufg.br/">Centro de Eventos</a><a href="mailto:contato@example.test">Fale conosco</a>
 <aside aria-label="Redes sociais"><a href="https://www.instagram.com/proex.sintetica/" title="Instagram"><img alt="ícone"></a><a href="https://www.youtube.com/@sintetico" aria-label="YouTube"></a></aside>
 <footer><a href="https://proex.ufg.br/p/equipe-proex">Equipe​ e contatos</a></footer>
@@ -148,7 +148,8 @@ test('LINKS DA PÁGINA: agrupados pelo título de seção mais próximo; fora da
   assert.deepEqual(titles, ['Menu principal', 'Acesso Rápido', 'Sistemas', 'Estruturas vinculadas', 'Redes sociais', 'Rodapé']);
   const group = name => page.groups.find(entry => entry.title === name).links;
   assert.deepEqual(group('Acesso Rápido').map(link => [link.text, link.readable]), [['Editais', true], ['Formulário de inscrição', false], ['Modelos de documentos', false]], 'repetido sai; Google Forms e Drive são só link');
-  assert.deepEqual(group('Sistemas').map(link => [link.text, link.readable]), [['SIGAA', false], ['Analisa UFG', true]], 'link http fica de fora');
+  assert.deepEqual(group('Sistemas').map(link => [link.text, link.readable]), [['SIGAA', false], ['Analisa UFG', true], ['Sistema antigo', false]], 'http vira https; .gov.br em http e "Banner…" ficam de fora');
+  assert.equal(group('Sistemas')[2].url, 'https://antigo.example.test/');
   assert.deepEqual(group('Redes sociais').map(link => [link.text, link.url, link.readable]), [['Instagram', 'https://www.instagram.com/proex.sintetica/', false], ['YouTube', 'https://www.youtube.com/@sintetico', false]], 'ícone sem texto usa title ou aria-label');
   assert.deepEqual(group('Rodapé').map(link => link.text), ['Equipe e contatos'], 'rodapé sem rótulo não herda o título anterior; caractere invisível sai do texto');
   const all = page.groups.flatMap(entry => entry.links.map(link => link.url));
@@ -247,7 +248,7 @@ test('NOTÍCIAS: RSS lido sem dependência, com título, data, resumo e só link
   await assert.rejects(readProexNews(blocked.fetch), error => error.kind === 'bloqueado');
 });
 
-const INSTAGRAM_FIRST = 'O Instagram não deixa o Rolê ler os posts sozinho. Veja o perfil em https://www.instagram.com/proex.ufg. Abaixo estão as publicações cadastradas pela comunicação e as últimas notícias do site.';
+const INSTAGRAM_FIRST = 'O Instagram não deixa o Rolê ler os posts sozinho. O perfil está no link abaixo. Abaixo estão as publicações cadastradas pela comunicação e as últimas notícias do site.';
 test('INSTAGRAM E NOTÍCIAS · RESPOSTA: perfil e cadastradas por data em blocos clicáveis, notícias do RSS; dica só para quem cadastra; RSS fora do ar, o aviso', async () => {
   const feed = site({ pages: { 'https://proex.ufg.br/feed': FEED } });
   const answer = await proexNewsReply(postsDb(POSTS), 'org_proex', feed.fetch);

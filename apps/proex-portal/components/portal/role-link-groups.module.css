@@ -1,8 +1,13 @@
 /* Blocos de links da resposta direta do Rolê (links da PROEX, Instagram e notícias). */
 .groups{display:grid;gap:.4rem;min-width:0}
 .group{border:1px solid var(--line);border-radius:12px;background:var(--surface);min-width:0}
-.summary{display:flex;align-items:center;flex-wrap:wrap;gap:0 .25rem;min-height:44px;padding:.35rem .75rem;cursor:pointer;border-radius:12px;list-style-position:inside}
+.summary{display:flex;align-items:center;flex-wrap:wrap;gap:0 .25rem;min-height:44px;padding:.35rem .75rem;cursor:pointer;border-radius:12px;list-style:none}
 .summary:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+/* Com display:flex o triângulo nativo some: seta própria, que gira ao abrir. */
+.summary::-webkit-details-marker{display:none}
+.summary::after{content:'';margin-left:auto;width:.5rem;height:.5rem;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(45deg);color:var(--text-secondary);flex-shrink:0}
+.group[open]>.summary::after{transform:rotate(-135deg)}
+@media (prefers-reduced-motion:no-preference){.summary::after{transition:transform .15s}}
 .title{display:inline;margin:0;font-size:max(13px,.82rem);font-weight:700;color:var(--text-secondary)}
 .count{font-size:max(13px,.82rem);color:var(--text-secondary)}
 .list{display:grid;gap:0;margin:0;padding:0 .35rem .35rem;list-style:none}

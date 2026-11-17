@@ -22,21 +22,23 @@ export function roleLinkGroupsFrom(value: unknown): RoleLinkGroupView[] | undefi
   return groups.length ? groups : undefined;
 }
 
+/** Site da UFG fora da lista de sites oficiais (sigaa, seacult...): não é "site externo". */
+const otherUfgSite = (url: string) => { try { return /(?:^|\.)ufg\.br$/i.test(new URL(url).hostname); } catch { return false; } };
 const hostOf = (url: string) => { try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return ''; } };
 
 /** Blocos recolhíveis (só os 2 primeiros abertos); cada link abre em nova aba e mostra só o nome. */
-export default function RoleLinkGroups({ groups }: { groups: RoleLinkGroupView[] }) {
-  return <div className={styles.groups}>
+export default function RoleLinkGroups({ groups, label = 'Links da página inicial da PROEX' }: { groups: RoleLinkGroupView[]; label?: string }) {
+  return <section className={styles.groups} aria-label={label}>
     {groups.map((group, index) => <details key={`${index}-${group.title}`} className={styles.group} open={index < 2}>
-      <summary className={styles.summary}><h3 className={styles.title}>{group.title}</h3><span className={styles.count}> · {group.links.length} {group.links.length === 1 ? 'link' : 'links'}</span></summary>
+      <summary className={styles.summary}><span className={styles.title}>{group.title}</span><span className={styles.count}> · {group.links.length} {group.links.length === 1 ? 'link' : 'links'}</span></summary>
       <ul className={styles.list}>
         {group.links.map(link => <li key={link.url}>
           <a className={styles.link} href={link.url} target="_blank" rel="noopener noreferrer">
             <span className={styles.name}>{link.text}<span className="visually-hidden"> (abre em nova aba)</span><span aria-hidden="true"> ↗</span></span>
-            <small className={styles.host}>{hostOf(link.url)}{link.readable ? '' : ' · site externo'}</small>
+            <small className={styles.host}>{hostOf(link.url)}{link.readable ? '' : otherUfgSite(link.url) ? ' · outro site da UFG' : ' · site externo'}</small>
           </a>
         </li>)}
       </ul>
     </details>)}
-  </div>;
+  </section>;
 }

@@ -568,7 +568,7 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
         await authorization.first();
         return { contract: ROLE_CONTRACT, reply: answer.reply, operation: null, operationDropped: false, provider: 'official', model: 'Consulta oficial',
           reservedMicros: 0, costMicros: 0, inputTokens: 0, outputTokens: 0, sources: answer.sources, lookups: 1,
-          ...(answer.linkGroups?.length ? { linkGroups: answer.linkGroups, linkIntro: answer.linkIntro } : {}) };
+          ...(answer.linkGroups?.length ? { linkGroups: answer.linkGroups, linkIntro: answer.linkIntro, linkLabel: answer.linkLabel } : {}) };
       }
       const result = await officialSearchReply(db, organizationId, message, options.officialFetcher);
       // PDF escaneado: oferece a leitura com IA (só com o interruptor e a chave do Gemini, e um teto que caiba), assinada no servidor.

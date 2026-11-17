@@ -1356,7 +1356,8 @@ test('LINKS DA PROEX: "abra os links digitais da PROEX" responde direto, custo 0
     assert.match(result.reply, /Acesso Rápido\n• Editais: https:\/\/proex\.ufg\.br\/p\/editais-proex\n• Inscrição \(site externo\): https:\/\/docs\.google\.com/);
     assert.deepEqual(result.linkGroups.map(group => group.title), ['Acesso Rápido', 'Sistemas'], 'a tela recebe os blocos clicáveis');
     assert.match(result.linkIntro, /^Estes são os links publicados na página inicial da PROEX\./);
-    assert.match(result.reply, /Sistemas\n• SIGAA \(site externo\): https:\/\/sigaa\.ufg\.br\//);
+    assert.equal(result.linkLabel, 'Links da página inicial da PROEX', 'rótulo da região de links para leitor de tela');
+    assert.match(result.reply, /Sistemas\n• SIGAA \(outro site da UFG\): https:\/\/sigaa\.ufg\.br\//);
     assert.deepEqual(result.sources, [{ label: 'PROEX · página inicial', href: 'https://proex.ufg.br/' }]);
     assert.deepEqual(official.requested, ['https://proex.ufg.br/robots.txt', 'https://proex.ufg.br/'], 'só a página inicial; nenhum link externo é aberto');
     // Mesmas checagens da busca: sem acesso ao projeto, recusado antes de buscar.
@@ -1378,7 +1379,7 @@ test('INSTAGRAM: "últimos posts do Instagram" lista as cadastradas por data (se
     const { instagramAction } = await import(compile('assistant/official-sources'));
     const provider = fakeProvider(), official = proexSite(), options = { keys, fetcher: provider.fetch, officialFetcher: official.fetch };
     const empty = await roleChat(f.db, f.actors.viewer, chatInput(f, { message: 'últimos posts do Instagram da PROEX', acceptedCostMicros: 0 }), secret, options);
-    assert.equal(empty.reply.split('\n\n')[0], 'O Instagram não deixa o Rolê ler os posts sozinho. Veja o perfil em https://www.instagram.com/proex.ufg. Abaixo estão as publicações cadastradas pela comunicação e as últimas notícias do site.');
+    assert.equal(empty.reply.split('\n\n')[0], 'O Instagram não deixa o Rolê ler os posts sozinho. O perfil está no link abaixo. Abaixo estão as publicações cadastradas pela comunicação e as últimas notícias do site.');
     assert.match(empty.reply, /Nenhuma publicação do Instagram foi cadastrada ainda\. Peça à comunicação para cadastrar os posts no Portal\./, 'quem não cadastra recebe o pedido, não o caminho das Configurações');
     assert.deepEqual(empty.sources, []);
     assert.deepEqual(empty.linkGroups.map(group => group.title), ['Instagram da PROEX', 'Últimas notícias do site da PROEX']);

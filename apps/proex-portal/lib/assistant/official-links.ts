@@ -164,7 +164,7 @@ const blockLabel = (tag: string, attrs: string) => attribute(attrs, 'aria-label'
   || BLOCK_LABELS.find(([pattern]) => pattern.test(attribute(attrs, 'class')))?.[1]
   || (tag.toLowerCase() === 'footer' ? 'Rodapé' : '');
 /** Paginação ("1", "2", "Última"), troca de idioma, barra do Governo e login não são links da página. */
-const navigationNoise = (text: string, url: URL) => /^(?:\d{1,3}|[«»‹›<>]+|primeira|anterior|pr[oó]xima|[uú]ltima)$/i.test(text) || url.searchParams.has('locale')
+const navigationNoise = (text: string, url: URL) => /^(?:\d{1,3}|[«»‹›<>]+|primeira|anterior|pr[oó]xima|[uú]ltima)$/i.test(text) || /^banner/i.test(text) || url.searchParams.has('locale')
   || /(?:^|\.)(?:epwg\.governoeletronico\.gov\.br|brasil\.gov\.br)$/i.test(url.hostname) || /^portais\.ufg\.br$/i.test(url.hostname) && /^\/login\b/i.test(url.pathname);
 /** Mesmo endereço com maiúsculas ou acento diferentes ("Notícias", "notícias", "Noticias") conta uma vez. */
 const linkKey = (href: string) => { let value = href; try { value = decodeURIComponent(href); } catch { /* fica como veio */ } return value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase(); };
@@ -200,6 +200,8 @@ export function extractLinkGroups(html: string, base: string, maxLinks = MAX_LIN
     let url: URL;
     try { url = new URL(href, base); } catch { continue; }
     // Só HTTPS e endereços curtos: link inseguro ou gigante não chega à pessoa.
+    // Link antigo em http: vira https (o mesmo site costuma responder nos dois); .gov.br em http sai como navegação.
+    if (url.protocol === 'http:' && !/(?:^|\.)gov\.br$/i.test(url.hostname)) url.protocol = 'https:';
     if (url.protocol !== 'https:' || url.href.length > MAX_HREF) continue;
     url.hash = '';
     const key = linkKey(url.href);
