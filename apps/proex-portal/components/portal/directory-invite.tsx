@@ -3,7 +3,9 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Check, CheckCircle2, Clock3, LoaderCircle, Mail, MessageCircle, MessageSquareText, UserPlus, X, XCircle } from 'lucide-react';
 import type { DirectoryPerson } from '@/lib/directory/contracts';
 import { invitationShareLink } from '@/lib/invitation-link';
-import { emailShareHref, inviteMessage, whatsappShareHref } from '@/lib/invite-message';
+import { inviteMessage, whatsappShareHref } from '@/lib/invite-message';
+import { INVITE_EMAIL_OFF, inviteEmailStateOf, portalAction, type InviteEmailState } from './portal-action';
+export { portalAction } from './portal-action';
 import { projectAccessRoleLabels } from '@/lib/team-access-labels';
 import TeamInviteShare from './team-invite-share';
 import styles from './directory-invite.module.css';
@@ -23,7 +25,7 @@ type Props = DirectoryInviteOptions & {
   onClose: () => void;
   onDone: () => void;
 };
-type Result = { status: 'waiting' | 'creating' | 'ready' | 'error'; url?: string; expiresAt?: string; error?: string; note?: string };
+type Result = { status: 'waiting' | 'creating' | 'ready' | 'error'; inviteId?: string; url?: string; expiresAt?: string; error?: string; note?: string; email?: InviteEmailState };
 
 const LAST_PROJECT = 'proex.directoryInvite.lastProject';
 const ROLE_HELP: Record<string, string> = {
@@ -34,19 +36,6 @@ const ROLE_HELP: Record<string, string> = {
   manager: 'Coordena o projeto e pode convidar outras pessoas para ele.',
 };
 
-/** Same contract as the portal's own mutate: the server checks permission and scope again. */
-export async function portalAction(action: string, payload: Record<string, unknown>): Promise<Record<string, unknown>> {
-  if (typeof navigator !== 'undefined' && navigator.onLine === false) throw new Error('Você está sem conexão. Reconecte e tente de novo.');
-  const response = await fetch('/api/portal', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Proex-Action': '1' }, body: JSON.stringify({ action, ...payload }) })
-    .catch(() => { throw new Error('A conexão caiu. Tente de novo: o mesmo pedido não cria dois convites.'); });
-  const body = await response.json().catch(() => null) as Record<string, unknown> | null;
-  if (!response.ok || !body || body.error) {
-    const error = body?.error, text = typeof error === 'string' ? error : typeof (error as { message?: unknown } | undefined)?.message === 'string' ? String((error as { message: string }).message) : '';
-    throw new Error(text && text.length < 300 && !/SQLITE|D1_|JSON|<html/i.test(text) ? text : 'Não foi possível criar o convite. Tente de novo.');
-  }
-  return body;
-}
-
 /** Convite a partir do pré-cadastro: já preenchido, quem convida confere projeto e função e confirma. Uma ou várias pessoas. */
 export default function DirectoryInvite({ people, projects, defaultProjectId, canInviteManager, replaces, onChanged, onClose, onDone }: Props) {
   const single = people.length === 1, person = people[0];
@@ -55,8 +44,8 @@ export default function DirectoryInvite({ people, projects, defaultProjectId, ca
   const initialProject = [replaces?.projectId, defaultProjectId, remembered, projects.length === 1 ? projects[0].id : ''].find(id => id && projects.some(p => p.id === id)) ?? '';
   const [projectId, setProjectId] = useState(initialProject), [role, setRole] = useState(replaces?.role && replaces.role in projectAccessRoleLabels ? replaces.role : 'viewer');
   const [email, setEmail] = useState(person?.contact ?? ''), [phase, setPhase] = useState<'form' | 'running' | 'done'>('form'), [error, setError] = useState('');
-  const [results, setResults] = useState<Record<string, Result>>({}), [copied, setCopied] = useState('');
-  const keys = useRef(new Map<string, string>()), title = useRef<HTMLHeadingElement>(null), alive = useRef(true);
+  const [results, setResults] = useState<Record<string, Result>>({}), [copied, setCopied] = useState(''), [emailReady, setEmailReady] = useState<boolean | null>(null);
+  const keys = useRef(new Map<string, string>()), title = useRef<HTMLHeadingElement>(null), alive = useRef(true), checkedEmail = useRef(false);
   useEffect(() => { title.current?.focus({ preventScroll: true }); title.current?.scrollIntoView({ block: 'nearest' }); return () => { alive.current = false; }; }, []);
   const managerAllowed = projectId ? canInviteManager(projectId) : false;
   const activeRole = role === 'manager' && !managerAllowed ? 'viewer' : role;
@@ -89,7 +78,9 @@ export default function DirectoryInvite({ people, projects, defaultProjectId, ca
           try { await portalAction('invite.revoke', { id: replaces.inviteId, operationKey: crypto.randomUUID() }); }
           catch { note = 'O convite anterior continua valendo. Cancele-o em Convites emitidos.'; }
         }
-        if (alive.current) setResults(current => ({ ...current, [target.id]: { status: 'ready', url, expiresAt: String(created.expiresAt ?? ''), note } }));
+        if (alive.current) setResults(current => ({ ...current, [target.id]: { status: 'ready', inviteId: String(created.id), url, expiresAt: String(created.expiresAt ?? ''), note } }));
+        // Ask once, with the first invite, whether the organization's e-mail queue is working.
+        if (!single && emailReady === null && !checkedEmail.current) { checkedEmail.current = true; portalAction('invite.email.status', { inviteId: String(created.id) }).then(r => { if (alive.current) setEmailReady(r.available === true); }).catch(() => { if (alive.current) setEmailReady(false); }); }
       } catch (cause) {
         failures++;
         if (alive.current) setResults(current => ({ ...current, [target.id]: { status: 'error', error: cause instanceof Error ? cause.message : 'Não foi possível criar o convite.' } }));
@@ -98,6 +89,12 @@ export default function DirectoryInvite({ people, projects, defaultProjectId, ca
     if (!alive.current) return;
     // A single invite that failed goes back to the form, with the message; what was typed stays.
     setPhase(single && failures > 0 ? 'form' : 'done'); if (failures < targets.length) { onChanged?.(); onDone(); }
+  }
+  async function queueEmail(personId: string, result: Result) {
+    if (!result.inviteId || !result.url) return;
+    setResults(current => ({ ...current, [personId]: { ...current[personId], email: 'sending-request' } }));
+    try { const done = await portalAction('invite.email.queue', { inviteId: result.inviteId, url: result.url }); if (alive.current) setResults(current => ({ ...current, [personId]: { ...current[personId], email: inviteEmailStateOf(true, typeof done.status === 'string' ? done.status : 'queued') } })); }
+    catch (cause) { if (alive.current) setResults(current => ({ ...current, [personId]: { ...current[personId], email: 'error', note: cause instanceof Error ? cause.message : 'Não foi possível pôr o e-mail na fila.' } })); }
   }
   async function copyMessage(id: string, message: string) {
     try { await navigator.clipboard.writeText(message); setCopied(id); } catch { setCopied(''); }
@@ -132,16 +129,19 @@ export default function DirectoryInvite({ people, projects, defaultProjectId, ca
         return <li key={p.id} className={styles.row}>
           <div className={styles.rowName}><strong>{p.name}</strong><span className={styles[`state_${result?.status ?? 'waiting'}`]}>{result?.status === 'ready' ? <><CheckCircle2 size={14} aria-hidden="true" />Convite pronto</> : result?.status === 'error' ? <><XCircle size={14} aria-hidden="true" />{result.error}</> : result?.status === 'creating' ? <><LoaderCircle size={14} className="p-spin" aria-hidden="true" />Criando…</> : <><Clock3 size={14} aria-hidden="true" />Aguardando</>}</span></div>
           {result?.status === 'ready' && <div className={styles.rowActions}>
-            <a className="p-button p-button-subtle" href={emailShareHref(p.contact, message)} target="_blank" rel="noopener noreferrer" aria-label={`Enviar por e-mail para ${p.name}`}><Mail size={15} aria-hidden="true" />E-mail</a>
+            {emailReady && (!result.email || result.email === 'ready' || result.email === 'error' || result.email === 'sending-request') && <button type="button" className="p-button p-button-subtle" disabled={result.email === 'sending-request'} aria-label={`Enviar por e-mail para ${p.name}`} onClick={() => void queueEmail(p.id, result)}>{result.email === 'sending-request' ? <LoaderCircle size={15} className="p-spin" aria-hidden="true" /> : <Mail size={15} aria-hidden="true" />}E-mail</button>}
+            {(result.email === 'queued' || result.email === 'sent') && <span className={styles.emailDone}><Check size={15} aria-hidden="true" />{result.email === 'sent' ? 'E-mail enviado' : 'E-mail agendado'}</span>}
             <a className="p-button p-button-subtle" href={whatsappShareHref(message)} target="_blank" rel="noopener noreferrer" aria-label={`Compartilhar no WhatsApp para ${p.name}`}><MessageCircle size={15} aria-hidden="true" />WhatsApp</a>
             <button type="button" className="p-button p-button-subtle" aria-label={`Copiar a mensagem para ${p.name}`} onClick={() => void copyMessage(p.id, message)}>{copied === p.id ? <Check size={15} aria-hidden="true" /> : <MessageSquareText size={15} aria-hidden="true" />}{copied === p.id ? 'Copiada' : 'Copiar mensagem'}</button>
           </div>}
         </li>;
       })}</ul>
+      {emailReady === false && ready > 0 && <p className={styles.lead}>{INVITE_EMAIL_OFF}</p>}
+      {people.some(p => results[p.id]?.email === 'error') && <p className="p-inline-error" role="alert">{people.map(p => results[p.id]?.email === 'error' ? results[p.id]?.note : '').filter(Boolean)[0]}</p>}
       {phase === 'done' && failed > 0 && <button type="button" className="p-button p-button-primary" onClick={() => setPhase('form')}>Tentar de novo os que falharam</button>}
     </div>}
     {single && lone?.status === 'ready' && lone.url && <>
-      <TeamInviteShare url={lone.url} expiresAt={lone.expiresAt ?? ''} name={person.name} email={email.trim()} roleLabel={roleLabel} scopeLabel={projectName} />
+      <TeamInviteShare inviteId={lone.inviteId} url={lone.url} expiresAt={lone.expiresAt ?? ''} name={person.name} email={email.trim()} roleLabel={roleLabel} scopeLabel={projectName} />
       {lone.note && <p className="p-inline-error" role="alert">{lone.note}</p>}
     </>}
   </section>;

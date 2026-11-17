@@ -30,3 +30,5 @@
   .rowActions { width: 100%; }
   .rowActions :global(.p-button) { flex: 1 1 auto; justify-content: center; }
 }
+.emailDone { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; font-size: 14px; font-weight: 600; color: #2c7956; }
+:global(html[data-theme=dark]) .emailDone { color: #8fe0b8; }

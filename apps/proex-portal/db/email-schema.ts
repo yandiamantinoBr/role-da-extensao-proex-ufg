@@ -1,6 +1,6 @@
 import { sql } from 'drizzle-orm';
-import { check, index, integer, primaryKey, sqliteTable, text, unique } from 'drizzle-orm/sqlite-core';
-import { organizations, portalUsers } from './base-schema';
+import { check, index, integer, primaryKey, sqliteTable, text, unique, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { invites, organizations, portalUsers } from './base-schema';
 import { followupNotifications, followupTasks } from './follow-up-schema';
 
 // Internal dispatch state. Full encrypted backup includes it; Sheets and portable
@@ -54,4 +54,16 @@ export const followupEmailDispatchState = sqliteTable('followup_email_dispatch_s
   organizationId: text('organization_id').references(() => organizations.id), lastAttemptAt: text('last_attempt_at'),
   lastAcceptedAt: text('last_accepted_at'), remainingQuota: integer('remaining_quota'),
   lastOutcome: text('last_outcome').notNull().default('not_started'), updatedAt: text('updated_at').notNull(),
+  // Last time the Apps Script declared it can send invite e-mails (kinds includes 'invite'). 0054.
+  inviteKindAt: text('invite_kind_at'),
 }, t => [primaryKey({ columns: [t.organizationId] })]);
+/* Invite e-mail (0054): same MailApp dispatch, its own queue (ids `iv-…`). The invite code is stored encrypted only
+   until MailApp accepts the message; then it is erased. Cancelled, accepted or expired invites are never sent. */
+export const inviteEmailQueue = sqliteTable('invite_email_queue', {
+  id: text('id').primaryKey().notNull(), inviteId: text('invite_id').notNull().references(() => invites.id), organizationId: text('organization_id').notNull().references(() => organizations.id),
+  codeCipher: text('code_cipher'), requestedBy: text('requested_by').notNull().references(() => portalUsers.userId),
+  status: text('status').notNull().default('queued'), claimHash: text('claim_hash'), claimNonce: text('claim_nonce'), claimExpiresAt: integer('claim_expires_at'), dispatcherId: text('dispatcher_id'), credentialHash: text('credential_hash'),
+  configurationVersion: integer('configuration_version'), sendNonce: text('send_nonce'), acceptanceHash: text('acceptance_hash'), sendingAt: text('sending_at'), acceptedAt: text('accepted_at'), reconciledAt: text('reconciled_at'),
+  createdAt: text('created_at').notNull(), updatedAt: text('updated_at').notNull(),
+}, t => [uniqueIndex('invite_email_queue_invite_idx').on(t.inviteId), index('invite_email_queue_dispatch_idx').on(t.organizationId, t.status, t.createdAt, t.id),
+  check('invite_email_queue_status', sql`${t.status} IN ('queued','claimed','sending','accepted','accepted_attested','uncertain','closed_unconfirmed','cancelled')`)]);

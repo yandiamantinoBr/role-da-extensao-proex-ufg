@@ -70,3 +70,9 @@
 .actions :global(.p-button) { min-height: 44px; }
 
 @media (max-width: 480px) { .actions > :global(.p-button) { flex: 1 1 100%; justify-content: center; } }
+
+/* E-mail pela fila de avisos (17/11): situação em uma linha curta. */
+.result p.note, .note { margin: 0; font-size: 14px; line-height: 1.55; color: var(--text-secondary); }
+.result p.emailDone, .emailDone { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 14px; font-weight: 600; color: #2c7956; }
+:global(html[data-theme=dark]) .result p.emailDone { color: #8fe0b8; }
+.result p.emailError, .emailError { margin: 0; font-size: 14px; color: var(--danger); }
