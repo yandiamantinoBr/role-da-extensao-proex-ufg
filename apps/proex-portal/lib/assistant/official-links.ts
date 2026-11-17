@@ -70,9 +70,13 @@ async function limitedText(response: Response, max: number): Promise<string | nu
   return new TextDecoder('utf-8').decode(bytes);
 }
 
+/** Pedido da pessoa (cancelado se ela desistir) somado ao tempo máximo de cada leitura. */
+const deadline = (signal?: AbortSignal) => signal ? AbortSignal.any([signal, AbortSignal.timeout(READ_TIMEOUT_MS)]) : AbortSignal.timeout(READ_TIMEOUT_MS);
+export type ReadOptions = { signal?: AbortSignal; now?: number };
+
 /** robots.txt do domínio: 404/410 é "sem regras"; outra falha impede a leitura. */
-async function robotsOf(host: string, fetcher: typeof fetch): Promise<string> {
-  const response = await fetcher(`https://${host}/robots.txt`, { headers: { 'User-Agent': USER_AGENT, Accept: 'text/plain' }, redirect: 'manual', credentials: 'omit', signal: AbortSignal.timeout(READ_TIMEOUT_MS) });
+async function robotsOf(host: string, fetcher: typeof fetch, signal?: AbortSignal): Promise<string> {
+  const response = await fetcher(`https://${host}/robots.txt`, { headers: { 'User-Agent': USER_AGENT, Accept: 'text/plain' }, redirect: 'manual', credentials: 'omit', signal: deadline(signal) });
   if (response.status === 404 || response.status === 410) { await response.body?.cancel().catch(() => {}); return ''; }
   if (!response.ok || !/^text\/plain\b/i.test(response.headers.get('content-type') ?? '')) {
     await response.body?.cancel().catch(() => {});
@@ -83,19 +87,46 @@ async function robotsOf(host: string, fetcher: typeof fetch): Promise<string> {
   return text;
 }
 
+/**
+ * Cópia em memória da instância, por transporte: robots.txt por domínio e a página inicial e o RSS da
+ * PROEX por 10 minutos. Falha não fica guardada (a próxima pergunta tenta de novo).
+ */
+const CACHE_MS = 10 * 60_000;
+const CACHED_PAGES = new Set([PROEX_HOME, PROEX_FEED]);
+type Cached<T> = { expires: number; value: Promise<T> };
+type ReadCache = { robots: Map<string, Cached<string>>; pages: Map<string, Cached<{ url: URL; text: string }>> };
+const readCaches = new WeakMap<typeof fetch, ReadCache>();
+function cacheFor(fetcher: typeof fetch): ReadCache {
+  let cache = readCaches.get(fetcher);
+  if (!cache) { cache = { robots: new Map(), pages: new Map() }; readCaches.set(fetcher, cache); }
+  return cache;
+}
+function remember<T>(map: Map<string, Cached<T>>, key: string, now: number, load: () => Promise<T>): Promise<T> {
+  const saved = map.get(key);
+  if (saved && saved.expires > now) return saved.value;
+  const value = load();
+  map.set(key, { expires: now + CACHE_MS, value });
+  value.catch(() => { if (map.get(key)?.value === value) map.delete(key); });
+  return value;
+}
+
 /** Lê uma página da lista, seguindo até 2 redirecionamentos que continuem na lista e liberados pelo robots.txt. */
-export async function readOfficial(start: URL, accept: string, type: RegExp, fetcher: typeof fetch = fetch): Promise<{ url: URL; text: string }> {
-  const robots = new Map<string, Promise<string>>();
+export async function readOfficial(start: URL, accept: string, type: RegExp, fetcher: typeof fetch = fetch, options: ReadOptions = {}): Promise<{ url: URL; text: string }> {
+  const cache = cacheFor(fetcher), now = options.now ?? Date.now();
+  if (CACHED_PAGES.has(start.href)) return remember(cache.pages, `${accept} ${start.href}`, now, () => readFresh(start, accept, type, fetcher, cache, now, options.signal));
+  return readFresh(start, accept, type, fetcher, cache, now, options.signal);
+}
+
+async function readFresh(start: URL, accept: string, type: RegExp, fetcher: typeof fetch, cache: ReadCache, now: number, signal?: AbortSignal): Promise<{ url: URL; text: string }> {
   let url = start;
   for (let hop = 0; ; hop++) {
-    if (!robots.has(url.host)) robots.set(url.host, robotsOf(url.host, fetcher));
     let rules: string;
-    try { rules = await robots.get(url.host)!; }
+    try { rules = await remember(cache.robots, url.host, now, () => robotsOf(url.host, fetcher, signal)); }
     catch (error) { throw error instanceof OfficialReadError ? error : new OfficialReadError('indisponivel'); }
     if (disallowed(rules, url.pathname + url.search)) throw new OfficialReadError('bloqueado');
     let response: Response;
     try {
-      response = await fetcher(url.href, { headers: { 'User-Agent': USER_AGENT, Accept: accept }, redirect: 'manual', credentials: 'omit', signal: AbortSignal.timeout(READ_TIMEOUT_MS) });
+      response = await fetcher(url.href, { headers: { 'User-Agent': USER_AGENT, Accept: accept }, redirect: 'manual', credentials: 'omit', signal: deadline(signal) });
     } catch { throw new OfficialReadError('indisponivel'); }
     if (response.type === 'opaqueredirect' || response.status >= 300 && response.status < 400) {
       await response.body?.cancel().catch(() => {});
@@ -189,8 +220,8 @@ export function extractLinkGroups(html: string, base: string, maxLinks = MAX_LIN
 }
 
 /** Lê a página oficial e devolve título, resumo e links agrupados. */
-export async function readOfficialLinks(page: URL, fetcher: typeof fetch = fetch, now = Date.now()): Promise<OfficialLinkPage> {
-  const { url, text } = await readOfficial(page, 'text/html', /^text\/html\b/i, fetcher);
+export async function readOfficialLinks(page: URL, fetcher: typeof fetch = fetch, now = Date.now(), signal?: AbortSignal): Promise<OfficialLinkPage> {
+  const { url, text } = await readOfficial(page, 'text/html', /^text\/html\b/i, fetcher, { now, signal });
   return { url: url.href, ...extractLinkGroups(text, url.href), fetchedAt: new Date(now).toISOString() };
 }
 
@@ -216,8 +247,8 @@ export function parseNewsFeed(xml: string, max = 10): OfficialNews[] {
   return news;
 }
 
-export async function readProexNews(fetcher: typeof fetch = fetch, max = 8): Promise<OfficialNews[]> {
-  const { text } = await readOfficial(new URL(PROEX_FEED), 'application/rss+xml, application/xml, text/xml', /^(?:application\/(?:rss\+)?xml|text\/xml)\b/i, fetcher);
+export async function readProexNews(fetcher: typeof fetch = fetch, max = 8, options: ReadOptions = {}): Promise<OfficialNews[]> {
+  const { text } = await readOfficial(new URL(PROEX_FEED), 'application/rss+xml, application/xml, text/xml', /^(?:application\/(?:rss\+)?xml|text\/xml)\b/i, fetcher, options);
   return parseNewsFeed(text, max);
 }
 

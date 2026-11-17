@@ -10,7 +10,7 @@ import {
   ROLE_CONTRACT, ROLE_MAX_HISTORY, ROLE_MAX_HISTORY_CHARS, ROLE_MAX_IMAGE_BYTES, ROLE_MAX_IMAGE_SIDE, ROLE_MAX_MESSAGE_CHARS, ROLE_IMAGE_TOKEN_CEILING, ROLE_SYSTEM_PROMPT_BYTES, ROLE_MODELS,
   ROLE_SYSTEM_PROMPT, ROLE_SYSTEM_PROMPT_TOOLS, ROLE_TOOL_CALLS_PER_ROUND, ROLE_TOOL_RESULT_BYTES, ROLE_TOOL_ROUNDS, roleConversationBytes, roleEstimate, roleTimeoutMs, validateRoleReply, type RoleSource, type RoleTurn,
 } from './role-contracts';
-import { ROLE_TASK_DRAFT_TOOL, ROLE_TOOL_NAMES, ROLE_TOOLS, canDraftTasks, officialLinksReply, officialSearchReply, pastedLinkPage, proexNewsReply, resolveRoleScope, roleScopes, runRoleTool, type RoleTaskDraft, type RoleToolResult } from './role-tools';
+import { ROLE_TASK_DRAFT_TOOL, ROLE_TOOL_NAMES, ROLE_TOOLS, canDraftTasks, officialLinksReply, officialRateLimit, officialSearchReply, pastedLinkPage, proexNewsReply, resolveRoleScope, roleScopes, runRoleTool, type RoleTaskDraft, type RoleToolResult } from './role-tools';
 import { ROLE_SUGGESTION_DAYS, roleSuggestions } from './role-suggestions';
 import { ROLE_VIDEO_MODELS, roleVideoEstimate, type RoleVideoProfile, type RoleVideoStatus } from './role-video-contracts';
 import { dispatchRoleVideo, parseRoleVideo, RoleVideoChargedError } from './role-video';
@@ -547,18 +547,13 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
     await resolveRoleScope(db, current, organizationId, input.scope);
     history(input.history);
     // Sem custo de IA, mas cada busca lê sites públicos: limite por pessoa e por organização, antes de qualquer pedido externo.
-    try {
-      await rateLimitAll(db, [{ bucket: `role-official:${current.userId}`, limit: 20, windowMs: 60_000 }, { bucket: `role-official:org:${organizationId}`, limit: 300, windowMs: 60_000 }]);
-    } catch (error) {
-      if (error instanceof HttpError && error.code === 'rate_limited') throw new HttpError(429, 'Muitas buscas seguidas. Espere um minuto e tente de novo.', 'role_official_rate');
-      throw error;
-    }
+    await officialRateLimit(db, current.userId, organizationId);
     const authorization = roleAuthorization(db, current, project, organizationId, revision);
     try {
       await authorization.first();
       const pasted = direct ? null : pastedLinkPage(message);
       if (direct || pasted) {
-        const answer = direct === 'news' ? await proexNewsReply(db, organizationId, options.officialFetcher) : await officialLinksReply(pasted ?? undefined, options.officialFetcher, now);
+        const answer = direct === 'news' ? await proexNewsReply(db, organizationId, options.officialFetcher, options.signal) : await officialLinksReply(pasted ?? undefined, options.officialFetcher, now, options.signal);
         await authorization.first();
         return { contract: ROLE_CONTRACT, reply: answer.reply, operation: null, operationDropped: false, provider: 'official', model: 'Consulta oficial',
           reservedMicros: 0, costMicros: 0, inputTokens: 0, outputTokens: 0, sources: answer.sources, lookups: 1 };
@@ -662,7 +657,7 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
       : callable
       ? await dispatchWithTools(callable, apiKey, envelope!, async (name, args, budget) => {
           await authorization.first();
-          return runRoleTool(db, current, organizationId, name, args, budget, scope, options.officialFetcher);
+          return runRoleTool(db, current, organizationId, name, args, budget, scope, options.officialFetcher, controller.signal);
         }, config, tools, reasoningCarry, () => authorization.first(), controller.signal, options.fetcher ?? fetch)
       : await catalogDispatch(chosen as Extract<Route, { kind: 'catalog' }>, turns, providerMessage, projectName, image?.dataUrl ?? null, config, controller.signal, options.fetcher);
     // A model can suggest a draft only to someone with write authority in this project.

@@ -23,9 +23,10 @@ const { runRoleTool, officialLinksReply, proexNewsReply, ROLE_TOOL_NAMES } = awa
 const { ROLE_TOOL_RESULT_BYTES } = await import(compile('assistant/role-contracts'));
 
 const text = { 'content-type': 'text/plain' }, html = { 'content-type': 'text/html; charset=utf-8' }, rss = { 'content-type': 'application/rss+xml; charset=utf-8' };
-const emptyDb = { prepare: () => ({ bind: () => ({ first: async () => null, all: async () => ({ results: [] }) }) }) };
+// batch: o limite da busca oficial (portal_rate_limits) grava em lote; aqui não há limite.
+const emptyDb = { prepare: () => ({ bind: () => ({ first: async () => null, all: async () => ({ results: [] }) }) }), batch: async () => [] };
 /** Banco falso só com as publicações do Instagram cadastradas (mesma linha que instagramAction grava). */
-const postsDb = posts => ({ prepare: sql => ({ bind: name => ({ first: async () => /FROM settings/.test(sql) && String(name).startsWith('role.instagram.v1:') ? { value: JSON.stringify(posts) } : null, all: async () => ({ results: [] }) }) }) });
+const postsDb = posts => ({ prepare: sql => ({ bind: name => ({ first: async () => /FROM settings/.test(sql) && String(name).startsWith('role.instagram.v1:') ? { value: JSON.stringify(posts) } : null, all: async () => ({ results: [] }) }) }) , batch: async () => [] });
 const POSTS = [
   { id: 'p1', url: 'https://www.instagram.com/p/AAAAA11111/', postedAt: '2026-11-02', caption: 'Oficina sintética de fotografia no campus, com inscrições abertas.', addedBy: 'Equipe', addedAt: '2026-11-02T12:00:00.000Z' },
   { id: 'p2', url: 'https://www.instagram.com/p/BBBBB22222/', postedAt: '2026-11-14', caption: 'Roda de conversa sintética sobre extensão e cultura.', addedBy: 'Equipe', addedAt: '2026-11-14T12:00:00.000Z' },
@@ -284,4 +285,27 @@ test('TELA: officialLookup segue a regra — direto (sem custo) com o botão, no
   assert.deepEqual(officialRoute({ ...base, attachment: true, text: 'links da PROEX' }), { official: false, explicit: false });
   const tsx = readFileSync(`${root}components/portal/role-assistant.tsx`, 'utf8');
   assert.match(tsx, /const officialLookup = route\.official;/, 'a tela usa a mesma regra para o custo mostrado');
+});
+
+test('REVISÃO · CÓPIA E CANCELAMENTO: página inicial e RSS ficam 10 min em memória, robots por domínio; o pedido cancelado chega ao transporte', async () => {
+  const home = site({ pages: { 'https://proex.ufg.br/': HOME } }), at = Date.parse('2026-11-17T15:00:00Z');
+  await officialLinksReply(undefined, home.fetch, at);
+  await officialLinksReply(undefined, home.fetch, at + 5 * 60_000);
+  assert.deepEqual(home.requested, ['https://proex.ufg.br/robots.txt', 'https://proex.ufg.br/'], 'dentro de 10 min, nada é pedido de novo');
+  await officialLinksReply(undefined, home.fetch, at + 11 * 60_000);
+  assert.equal(home.requested.length, 4, 'depois de 10 min, lê de novo');
+  const pages = site({ pages: { 'https://proex.ufg.br/p/1-a': '<h1>a</h1>', 'https://proex.ufg.br/p/2-b': '<h1>b</h1>' } });
+  await readOfficial(new URL('https://proex.ufg.br/p/1-a'), 'text/html', /^text\/html\b/i, pages.fetch, { now: at });
+  await readOfficial(new URL('https://proex.ufg.br/p/2-b'), 'text/html', /^text\/html\b/i, pages.fetch, { now: at });
+  assert.deepEqual(pages.requested, ['https://proex.ufg.br/robots.txt', 'https://proex.ufg.br/p/1-a', 'https://proex.ufg.br/p/2-b'], 'robots uma vez por domínio; outras páginas não ficam guardadas');
+  let failing = true;
+  const flaky = site({ pages: { 'https://proex.ufg.br/feed': () => failing ? new Response('', { status: 503 }) : new Response(FEED, { headers: rss }) } });
+  await assert.rejects(readProexNews(flaky.fetch, 8, { now: at }));
+  failing = false;
+  assert.equal((await readProexNews(flaky.fetch, 8, { now: at })).length, 2, 'falha não fica guardada');
+  const controller = new AbortController(); controller.abort();
+  const seen = [];
+  const watcher = async (_raw, init) => { seen.push(init.signal.aborted); throw new Error('cancelado'); };
+  await assert.rejects(readOfficial(new URL('https://analisa.ufg.br/p/1'), 'text/html', /^text\/html\b/i, watcher, { signal: controller.signal }), error => error.kind === 'indisponivel');
+  assert.deepEqual(seen, [true], 'o sinal do pedido chega ao fetch');
 });

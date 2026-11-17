@@ -1445,3 +1445,17 @@ test('REVISÃO · SEM CATÁLOGO: busca explícita e resposta direta não depende
     assert.equal(recognized.provider, 'official', 'catálogo com falha: a frase reconhecida vai à busca sem custo');
   } finally { f.native.close(); }
 });
+
+test('REVISÃO · LIMITE NA CONVERSA: abrir_link_oficial e o RSS das ferramentas contam no limite da busca oficial', async () => {
+  const f = fixture();
+  try {
+    await setup(f);
+    const { runRoleTool } = await import(compile('assistant/role-tools'));
+    const official = proexSite();
+    for (let index = 0; index < 20; index++) await runRoleTool(f.db, f.actors.viewer, 'org_proex', 'abrir_link_oficial', { url: 'https://proex.ufg.br/' }, undefined, null, official.fetch);
+    const before = official.requested.length;
+    await assert.rejects(runRoleTool(f.db, f.actors.viewer, 'org_proex', 'abrir_link_oficial', { url: 'https://proex.ufg.br/' }, undefined, null, official.fetch), error => error.code === 'role_official_rate');
+    await assert.rejects(runRoleTool(f.db, f.actors.viewer, 'org_proex', 'consultar_fontes_oficiais', { texto: 'últimas notícias' }, undefined, null, official.fetch), error => error.code === 'role_official_rate');
+    assert.equal(official.requested.length, before, 'recusa por limite não chega a buscar');
+  } finally { f.native.close(); }
+});
