@@ -2,6 +2,8 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { AlertCircle, CalendarClock, FileSignature, Inbox, Lock, Plus, RefreshCw, UserRoundCheck, X } from 'lucide-react';
 import DateField from './date-field';
+import ExportFormats, { type DocumentFormat } from './export-formats';
+import { download } from './report-export';
 import styles from './dispatch-panel.module.css';
 import { loadDispatchDetail, loadDispatchWorkspace, saveDispatch, type DispatchDetail, type DispatchKind, type DispatchStatus, type DispatchTask, type DispatchUrgency, type DispatchWorkspace } from './dispatch-api';
 
@@ -19,6 +21,15 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'document_review', label: 'Documentos' }, { id: 'referral', label: 'Encaminhamentos' }, { id: 'agenda', label: 'Pauta' }, { id: 'history', label: 'Histórico' },
 ];
 const dueText = (date: string | null) => date ? `Prazo ${date.slice(8, 10)}/${date.slice(5, 7)}` : 'Sem prazo';
+/** Linhas da pauta (só o que a pessoa já vê no painel): assunto e tipo, prazo e prioridade, situação e com quem está. */
+export function agendaRows(tasks: DispatchTask[]) {
+  const lines = (parts: string[]) => parts.filter(Boolean).join('\n');
+  return visibleTasks(tasks, 'agenda').map(task => ({
+    item: lines([task.title, [KIND_LABELS[task.kind], task.documentKind ? DOCUMENT_LABELS[task.documentKind] : ''].filter(Boolean).join(' · ')]),
+    prazo: lines([task.dueAt ? task.dueAt.split('-').reverse().join('/') : 'Sem prazo', URGENCY_LABELS[task.urgency]]),
+    situacao: lines([STATUS_LABELS[task.status], task.holderName ? `com ${task.holderName}` : '']),
+  }));
+}
 export function visibleTasks(tasks: DispatchTask[], tab: Tab): DispatchTask[] {
   if (tab === 'history') return tasks.filter(task => task.status === 'completed');
   const open = tasks.filter(task => task.status !== 'completed');
@@ -55,6 +66,15 @@ export default function DispatchPanel({ userId, organizations }: { userId: strin
     try { setForm({ mode: 'edit', detail: await loadDispatchDetail(task.id) }); }
     catch (cause) { setActionError(cause instanceof Error ? cause.message : 'Esta demanda não está mais disponível.'); setReload(value => value + 1); }
   }
+  async function exportAgenda(format: DocumentFormat) {
+    if (!data) return;
+    // Gerada no aparelho com o que a pessoa já vê: a pauta não passa por servidor de arquivos nem vai para quem não participa.
+    const { documentExport } = await import('./document-export');
+    const rows = agendaRows(data.tasks), columns = [{ key: 'item', label: 'Assunto' }, { key: 'prazo', label: 'Prazo e prioridade' }, { key: 'situacao', label: 'Situação' }];
+    const info: [string, string][] = [['Despachos com', group ? 'Gestão superior' : counterpart?.name ?? 'Todas as minhas demandas privadas'], ['Itens', String(rows.length)], ['Aviso', 'Documento reservado às pessoas incluídas.']];
+    const blob = await documentExport(format, 'Pauta de despachos', columns, rows, (row, key) => row[key as keyof typeof row], info, { layout: 'table', recordsLabel: 'Itens da pauta', mutedDetailLines: true, columnWeights: [1.7, 0.9, 1] });
+    download(`pauta-despachos-${data.today}.${format}`, blob);
+  }
   if (!organizations.length) return <section className={`p-card ${styles.panel}`}><p className="p-form-help">Você ainda não tem acesso a uma organização para despachar.</p></section>;
   return <section className={styles.panel} aria-labelledby="dispatch-title">
     <div className={`p-card ${styles.header}`}>
@@ -87,6 +107,7 @@ export default function DispatchPanel({ userId, organizations }: { userId: strin
       <div className={styles.tabs} role="tablist" aria-label="Tipos de despacho">
         {TABS.map(item => { const count = data ? visibleTasks(data.tasks, item.id).length : 0; return <button key={item.id} type="button" role="tab" aria-selected={tab === item.id} className={tab === item.id ? styles.tabActive : ''} onClick={() => setTab(item.id)}>{item.label}{count > 0 && <b>{count}</b>}</button>; })}
       </div>
+      {tab === 'agenda' && data && visibleTasks(data.tasks, 'agenda').length > 0 && <ExportFormats label="Baixar a pauta" showLabel formats={['pdf', 'docx']} onExport={format => exportAgenda(format)}/>}
       {loading && !data ? <p className="p-form-help" role="status">Carregando despachos…</p>
         : !shown.length ? <div className={styles.empty}><strong>{tab === 'history' ? 'Nada concluído por aqui ainda.' : 'Nenhuma demanda nesta lista.'}</strong><p>{counterpart ? `Use "Nova demanda" para despachar com ${counterpart.name}.` : 'Escolha com quem despachar ou crie uma demanda privada.'}</p></div>
         : <ul className={styles.list}>{shown.map(task => <li key={task.id}>
