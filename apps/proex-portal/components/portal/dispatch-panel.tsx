@@ -33,24 +33,27 @@ type FormState = { mode: 'new' } | { mode: 'edit'; detail: DispatchDetail };
 export default function DispatchPanel({ userId, organizations }: { userId: string; organizations: Organization[] }) {
   const [organizationId, setOrganizationId] = useState(organizations[0]?.id ?? '');
   const [withWhom, setWithWhom] = useState(''), [tab, setTab] = useState<Tab>('open');
-  const [data, setData] = useState<DispatchWorkspace | null>(null), [loading, setLoading] = useState(false), [error, setError] = useState('');
   const [form, setForm] = useState<FormState | null>(null), [reload, setReload] = useState(0), [notice, setNotice] = useState('');
+  const [actionError, setActionError] = useState('');
   const group = withWhom === 'group';
+  // O resultado guarda a consulta que o produziu: "carregando" é derivado, sem setState dentro do efeito.
+  const requestKey = JSON.stringify([organizationId, withWhom, reload]);
+  const [result, setResult] = useState<{ key: string; data: DispatchWorkspace | null; error: string } | null>(null);
   useEffect(() => {
     if (!organizationId) return;
     const controller = new AbortController();
-    setLoading(true); setError('');
     loadDispatchWorkspace({ organizationId, withUserId: group ? undefined : withWhom || undefined, group }, controller.signal)
-      .then(value => { setData(value); setLoading(false); })
-      .catch(cause => { if (controller.signal.aborted) return; setError(cause instanceof Error ? cause.message : 'Não foi possível carregar.'); setLoading(false); });
+      .then(value => setResult({ key: requestKey, data: value, error: '' }))
+      .catch(cause => { if (!controller.signal.aborted) setResult(previous => ({ key: requestKey, data: previous?.data ?? null, error: cause instanceof Error ? cause.message : 'Não foi possível carregar.' })); });
     return () => controller.abort();
-  }, [organizationId, withWhom, group, reload]);
+  }, [organizationId, withWhom, group, requestKey]);
+  const loading = result?.key !== requestKey, data = result?.data ?? null, error = actionError || (result?.key === requestKey ? result.error : '');
   const counterpart = data?.people.find(person => person.userId === withWhom) ?? null;
   const shown = useMemo(() => data ? visibleTasks(data.tasks, tab) : [], [data, tab]);
   async function openTask(task: DispatchTask) {
-    setNotice('');
+    setNotice(''); setActionError('');
     try { setForm({ mode: 'edit', detail: await loadDispatchDetail(task.id) }); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : 'Esta demanda não está mais disponível.'); setReload(value => value + 1); }
+    catch (cause) { setActionError(cause instanceof Error ? cause.message : 'Esta demanda não está mais disponível.'); setReload(value => value + 1); }
   }
   if (!organizations.length) return <section className={`p-card ${styles.panel}`}><p className="p-form-help">Você ainda não tem acesso a uma organização para despachar.</p></section>;
   return <section className={styles.panel} aria-labelledby="dispatch-title">
