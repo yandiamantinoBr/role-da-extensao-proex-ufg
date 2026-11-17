@@ -15,6 +15,7 @@ import { ROLE_SUGGESTION_DAYS, roleSuggestions } from './role-suggestions';
 import { ROLE_VIDEO_MODELS, roleVideoEstimate, type RoleVideoProfile, type RoleVideoStatus } from './role-video-contracts';
 import { dispatchRoleVideo, parseRoleVideo, RoleVideoChargedError } from './role-video';
 import { isOfficialSearch } from './official-search-intent';
+import { GIFT_SHEET_REPLY, asksGiftSheet } from './gift-sheet-intent';
 import { roleDocumentExcerpt, roleDocumentMessage } from './role-document-contracts';
 import { roleHistoryForPolicy, roleReasoningParameters, roleReasoningSupport, type RolePolicy, type RoleEffort } from './role-policy';
 import { containsCredential } from './sensitive';
@@ -475,6 +476,19 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
   const explicitSearch = input.officialSearch === true, hasMedia = hasVideo || input.image != null || Object.hasOwn(input, 'document');
   if (explicitSearch && hasMedia) throw new HttpError(400, 'A busca em fontes oficiais aceita só texto. Tire o anexo e envie de novo.', 'role_official_media');
   if (explicitSearch && !officialSearchOn(config)) throw new HttpError(403, 'A busca em fontes oficiais está desligada nesta organização.', 'role_official_disabled');
+  // Planilha de brindes: o Rolê ainda não tem acesso. Resposta fixa, sem IA e sem custo, também no modo só busca.
+  if (!hasMedia && config.roleEnabled && asksGiftSheet(message)) {
+    await resolveRoleScope(db, current, organizationId, input.scope);
+    history(input.history);
+    try {
+      await roleAuthorization(db, current, project, organizationId, revision).first();
+    } catch (error) {
+      if (String(error).includes('assistant_authority_changed')) throw new HttpError(403, 'Seu acesso ou a configuração mudou antes da resposta.', 'assistant_forbidden');
+      throw error;
+    }
+    return { contract: ROLE_CONTRACT, reply: GIFT_SHEET_REPLY, operation: null, operationDropped: false, provider: 'portal', model: 'Resposta do Portal',
+      reservedMicros: 0, costMicros: 0, inputTokens: 0, outputTokens: 0, sources: [], lookups: 0 };
+  }
   if (!hasMedia && officialSearchOn(config) && (explicitSearch || isOfficialSearch(message))) {
     await resolveRoleScope(db, current, organizationId, input.scope);
     history(input.history);
