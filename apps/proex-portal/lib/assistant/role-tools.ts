@@ -13,7 +13,6 @@ import { rateLimitAll } from '../rate-limit';
 import { authority as followupAuthority, publicTaskAuthority, requireScope } from '../follow-up/scope';
 import { followupAssignablePeople } from '../follow-up/service';
 import { prizeTiersWorkspace } from '../prize-tiers/service';
-import { listRecords } from '../records';
 import { guideForAssistant } from '../management/guide';
 import { listInstagramPosts, officialSearchTerms, readOfficialSnapshot, searchOfficialPages } from './official-sources';
 import type { OfficialReadFailure } from './official-pdfs';
@@ -26,6 +25,7 @@ export const GUIDE_SLUGS = ['estrutura', 'programas-e-projetos', 'processos-conp
 import { ROLE_TOOL_RESULT_BYTES } from './role-contracts';
 import { ROLE_TOOLS_FASE2B, ROLE_TOOL_NAMES_FASE2B, runFase2bTool, tierLevels } from './role-tools-fase2b';
 import { FASE2A_TOOLS, FASE2A_TOOL_NAMES, matchProjectNames, runFase2aTool } from './role-tools-fase2a';
+import { FASE2C_TOOLS, FASE2C_TOOL_NAMES, runFase2cTool } from './role-tools-fase2c';
 
 const text = (description: string) => ({ type: 'string', description, maxLength: 120 });
 const fn = (name: string, description: string, properties: Record<string, unknown>, required: string[] = []) => ({ type: 'function', function: { name, description, parameters: { type: 'object', properties, required, additionalProperties: false } } });
@@ -35,13 +35,13 @@ export const ROLE_TOOLS = [
   fn('consultar_movimentacoes', 'Entradas, saídas, consumos e ajustes recentes de estoque.', { material: text('Nome (ou parte) do material.'), projeto, dias: { type: 'integer', minimum: 1, maximum: 31, description: 'Quantos dias para trás (padrão 7).' } }),
   fn('consultar_demandas', 'Demandas (tarefas) com o texto completo, inclusive tabelas de lotes e distribuição por dia e período.', { texto: text('Palavras do título ou do texto, por exemplo "Lote 10/11".'), projeto, situacao: { type: 'string', enum: ['abertas', 'todas'], description: 'Padrão: abertas.' } }),
   fn('consultar_agenda', 'Atividades da agenda dos projetos num período. Para cruzar com um prazo (de edital, por exemplo), use as datas desse prazo em de e ate, mesmo que já tenham passado; sem prazo citado, comece hoje.', { de: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$', description: 'Data inicial AAAA-MM-DD.' }, ate: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$', description: 'Data final AAAA-MM-DD (até 31 dias depois).' }, projeto }, ['de']),
-  fn('registros_recentes', 'Últimos registros de atividades dos projetos.', { projeto }),
   fn('consultar_fontes_oficiais', 'Busca páginas públicas da PROEX e do 23º CONPEEX, notícias do site e publicações do Instagram cadastradas pela comunicação. Informa link e data de consulta ou cópia.', { texto: text('Assunto, por exemplo "edital de bolsas" ou "programação do CONPEEX".') }, ['texto']),
   fn('abrir_link_oficial', 'Lê um link de site oficial da UFG: título, resumo e links da página por seção.', { url: { type: 'string', maxLength: 500, description: 'Link https.' } }, ['url']),
   fn('preparar_rascunho_demanda', 'Prepara um rascunho de demanda (tarefa) para a pessoa revisar num cartão. Não grava: só o toque dela em Criar demanda cria.', { projeto, titulo: { type: 'string', maxLength: 160, description: 'Título curto.' }, descricao: { type: 'string', maxLength: 4000, description: 'Texto da demanda.' }, prazo: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$', description: 'AAAA-MM-DD, se houver.' }, prioridade: { type: 'string', enum: ['alta', 'media', 'baixa'] }, responsavel: text('Nome de quem vai fazer, se a pessoa disser.') }, ['titulo']),
   fn('consultar_guia', 'Guia da PROEX: estrutura, programas, processos (CONPEEX, editais, empréstimos, brindes, comunicação), calendário, contatos e glossário. Traz as seções mais próximas do assunto e a linha de fontes.', { texto: text('Assunto, por exemplo "como pedir empréstimo" ou "contato da comunicação".'), paginas: { type: 'array', items: { type: 'string', enum: [...GUIDE_SLUGS] }, maxItems: 4, description: 'Páginas do guia, se souber.' } }, ['texto']),
   ...ROLE_TOOLS_FASE2B,
   ...FASE2A_TOOLS,
+  ...FASE2C_TOOLS,
 ];
 export const ROLE_TOOL_NAMES = ROLE_TOOLS.map(tool => tool.function.name);
 /** Bytes reais do esquema (o custo máximo usa ROLE_TOOLS_SCHEMA_BYTES, que precisa ser maior). */
@@ -171,6 +171,7 @@ export async function runRoleTool(db: D1Database, actor: PortalActor, organizati
   if (!ROLE_TOOL_NAMES.includes(name)) throw new HttpError(400, 'Consulta desconhecida.', 'role_tool_unknown');
   if (ROLE_TOOL_NAMES_FASE2B.has(name)) return runFase2bTool(db, actor, organizationId, name, args, budget, scope, { pack, visibleProjects, terms, score });
   if (FASE2A_TOOL_NAMES.includes(name)) return runFase2aTool({ db, actor, organizationId, args, budget, scope, pack, visibleProjects: wanted => visibleProjects(db, actor, organizationId, wanted, scope) }, name);
+  if (FASE2C_TOOL_NAMES.has(name)) return runFase2cTool({ db, actor, organizationId, scope, budget, pack, projects: (wanted = '') => visibleProjects(db, actor, organizationId, wanted, scope) }, name, args);
   if (Object.keys(args).some(key => !['texto', 'projeto', 'material', 'dias', 'situacao', 'dinamica', 'de', 'ate', 'paginas', 'titulo', 'descricao', 'prazo', 'prioridade', 'responsavel', 'url'].includes(key))) throw new HttpError(400, 'Consulta com campos não permitidos.', 'role_tool_input');
   if (name === 'consultar_guia') return guideTool(db, actor, organizationId, args, budget);
   if (name === 'preparar_rascunho_demanda') return taskDraftTool(db, actor, organizationId, args, budget, scope);
@@ -239,17 +240,8 @@ export async function runRoleTool(db: D1Database, actor: PortalActor, organizati
     const sources = rows.map(row => ({ label: `Agenda · ${row.project_name}`, href: link('calendar', String(row.project_id)) }));
     return pack(name, rows.map((row, index) => ({ atividade: row.title, inicio: String(row.starts_at).length === 10 ? `${row.starts_at} (dia inteiro)` : brasilia(String(row.starts_at)), fim: row.ends_at ? (String(row.ends_at).length === 10 ? row.ends_at : brasilia(String(row.ends_at))) : null, situacao: row.status === 'completed' ? 'realizada' : 'planejada', projeto: row.project_name, link: sources[index].href })), sources, budget, rows.length ? '' : 'Nenhuma atividade na agenda nesse período.');
   }
-  // registros_recentes: mesma regra de leitura da tela Registros.
-  const projectFilter = projects.size === 1 ? ids[0] : null, results: Record<string, unknown>[] = [], sources: RoleToolSource[] = [];
-  try {
-    const { records } = await listRecords(db, actor, { projectId: projectFilter, limit: 15 });
-    for (const record of records.filter(entry => projects.has(String(entry.project_id)))) {
-      const href = link('records', String(record.project_id));
-      results.push({ registro: record.title, tipo: record.kind, quando: brasilia(String(record.occurred_at)), projeto: projects.get(String(record.project_id)), link: href });
-      sources.push({ label: `Registros · ${projects.get(String(record.project_id))}`, href });
-    }
-  } catch (error) { if (!(error instanceof HttpError && error.status === 403)) throw error; }
-  return pack(name, results, sources, budget, results.length ? '' : 'Nenhum registro recente que você possa ver.');
+  // registros_recentes e as demais da Fase 2c: role-tools-fase2c.ts.
+  throw new HttpError(400, 'Consulta desconhecida.', 'role_tool_unknown');
 }
 
 /**
