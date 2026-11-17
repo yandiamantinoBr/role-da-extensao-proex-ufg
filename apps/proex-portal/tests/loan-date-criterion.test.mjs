@@ -49,10 +49,10 @@ test('list, Agenda and reports agree on the same loans for the same period',asyn
 test('the criterion is written on the screen in the list, Agenda and Reports, and the forms say Brasília before saving',()=>{
  const read=file=>readFileSync(new URL(file,import.meta.url),'utf8');
  const client=read('../app/portal-client.tsx'),agenda=read('../components/portal/calendar-panel.tsx'),reports=read('../components/portal/reports-center.tsx'),quick=read('../components/portal/project-quick-entry.tsx');
- for(const source of [client,agenda]) assert.match(source,/em curso em algum momento .*mesmo que tenha começado antes\. Datas e horários no fuso de Brasília\./);
+ assert.match(client,/Entram os empréstimos em curso em algum momento entre as datas, mesmo que tenham começado antes\. Horário de Brasília\./);assert.match(agenda,/Entram os compromissos em curso em algum momento entre as datas, mesmo que tenham começado antes\. Horário de Brasília\./);
  assert.match(reports,/O período inclui todo empréstimo em curso entre as datas, mesmo que tenha começado antes \(horário de Brasília\)/);
- assert.match(client,/Empréstimos entram quando estão em curso em algum momento do período, mesmo que tenham começado antes\./,'visible next to the report period');
- assert.match(reports,/\['Critério de data', 'Entra no recorte o empréstimo em curso/,'the exported file carries the criterion');
- assert.match(client,/<Field label="Retirada prevista" help="Horário de Brasília\.">/);assert.match(client,/<Field label="Devolução prevista" help="Horário de Brasília\.">/);
- assert.equal((quick.match(/name="(startsAt|endsAt)"  required\/><small>Horário de Brasília\.<\/small>/g)||[]).length,2);
+ assert.match(client,/<strong>Empréstimos:<\/strong> entram os que estavam em curso em algum momento do período, mesmo que tenham começado antes\./,'visible next to the report period');
+ assert.match(reports,/\['Critério de data', 'Entram os empréstimos em curso/,'the exported file carries the criterion');
+ assert.match(client,/<Field label="Retirada prevista \(horário de Brasília\)">/);assert.match(client,/<Field label="Devolução prevista \(horário de Brasília\)">/);
+ assert.equal((quick.match(/<span>(Retirada|Devolução) prevista \(horário de Brasília\) \*<\/span>/g)||[]).length,2);
 });

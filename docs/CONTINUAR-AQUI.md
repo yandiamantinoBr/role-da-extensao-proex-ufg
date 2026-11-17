@@ -18,11 +18,14 @@ Comece pela [Retomada de 13/11](RETOMADA-13NOV-PORTAL-PROEX.md) para conferir a 
 - **Lint:** 3 erros que já estão na `main` e não são desta frente: `app/portal-client.tsx` (memoização de `shownLoans`, Empréstimos) e `tests/assistant-administration-state.test.mjs` (atribuição a `module`).
 - **Falta:** cartões de número em quatro formatos (Início, Meu trabalho, Demandas, Materiais, Gestão); filtro de projeto em cinco formatos; escala única de títulos de seção; posição do botão principal; "Histórico de alterações" do pré-cadastro e "Histórico das chaves" (telas de outras frentes).
 
-## Empréstimos · rodada de 16/11 (itens 1 e 2 de 5)
+## Empréstimos · rodada de 16 e 17/11 (5 de 5)
 
 - **1 · Privacidade (PR153, publicada):** quem só lê relatórios vê "Restrito" na condição de saída e de retorno (tela e arquivos). O ICS de empréstimos sai sem a ação atendida, e registros ligados a empréstimos saem sem título livre. Teste: `tests/loan-privacy.test.mjs`.
-- **2 · Não retirado (esta PR):** reserva com `ends_at <= agora` e sem retirada vira `status='cancelled'` com `close_reason='not_collected'` (migração 0051) e aparece como "Não retirado". O encerramento roda em `getActor` (`closeUncollectedLoans`, `lib/access.ts`), numa consulta só e sem derrubar a requisição se falhar. Empréstimo retirado nunca vira devolução. `loan.create` recusa reserva que já terminou. Teste: `tests/loan-not-collected.test.mjs`.
-- **Próximos:** 3, motivo de indisponibilidade no seletor de equipamento; 4, cartão com ação principal e confirmação curta; 5, critério de data (sobreposição) e fuso escritos na tela.
+- **2 · Não retirado (PR163, publicada):** reserva com `ends_at <= agora` e sem retirada vira `status='cancelled'` com `close_reason='not_collected'` (migração 0051) e aparece como "Não retirado". O encerramento roda em `getActor` (`closeUncollectedLoans`, `lib/access.ts`), numa consulta só e sem derrubar a requisição se falhar. Empréstimo retirado nunca vira devolução. `loan.create` recusa reserva que já terminou. Teste: `tests/loan-not-collected.test.mjs`.
+- **3 · Seletor (PR169, publicada):** o seletor de equipamento separa "Disponíveis" de "Indisponíveis agora" e diz o motivo (manutenção, inativo, sem estoque). O servidor recusa com o mesmo motivo (`lib/equipment-availability.ts`). Teste: `tests/loan-equipment-reason.test.mjs`.
+- **4 · Cartão (PR200, publicada):** a ação principal (Registrar retirada ou devolução) fica no cartão, com confirmação curta que pede só a condição, trava o duplo clique e reaproveita a chave de operação (`components/portal/loan-card-actions.tsx`). Cancelar fica ao lado; termos, anexos e histórico continuam alcançáveis. Teste: `tests/loan-card-actions.test.mjs`.
+- **5 · Critério de data (esta PR):** Relatórios passam a usar sobreposição, como a lista e a Agenda: entra o empréstimo em curso em algum momento do período, em Brasília. O critério está escrito nas três telas e no arquivo exportado; os campos da reserva dizem "Horário de Brasília". Horários antigos não mudam. Teste: `tests/loan-date-criterion.test.mjs`.
+- **Falta:** o capítulo de Empréstimos nos tutoriais (fica com a sessão de tutoriais).
 - **Pendente de decisão:** a planilha mestre (só administração) ainda exporta observação e condições dos empréstimos (`lib/sync/portable.ts`).
 - **QA local:** se a porta 5173 estiver em uso por outra sessão, rode uma cópia do script com `5173` trocado por `5174` e apague a cópia depois. Não encerre o QA de outra sessão.
 

@@ -569,7 +569,7 @@ export default function ReportsCenter({ userId, projectId, unitId, area, from, t
     ['Referências', 'Unidade e saldo atuais do cadastro. Saldos repetidos por registro não devem ser somados. Uma unidade individual por retirada de equipamento; retornos não criam nova saída.'], ['Datas ausentes', 'Sem filtro de período é possível consultar retiradas sem data efetiva; previsões não substituem o histórico.'],
     ['Operador', 'Nome atual do perfil, somente para quem tem permissão operacional vigente; não identifica o beneficiário.'], ['Textos livres', includeNotes ? 'Consulta opcional sujeita à permissão operacional atual; confira as colunas antes de compartilhar.' : 'Não consultados nem exportados.'],
     ['Cobertura', truncated ? 'Consulta parcial por limite de linhas ou tamanho. Refine os filtros antes de considerar o relatório completo.' : 'Registros do recorte retornados pela consulta.']);
-  if (dataset === 'loans') info.push(['Critério de data', 'Entra no recorte o empréstimo em curso em algum momento do período, mesmo que tenha começado antes. Datas e horários no fuso de Brasília.']);
+  if (dataset === 'loans') info.push(['Critério de data', 'Entram os empréstimos em curso em algum momento entre as datas, mesmo que tenham começado antes. Horário de Brasília.']);
   if (withheld) info.push(['Colunas restritas', 'As colunas Condição na saída e Condição no retorno aparecem como “Restrito” porque podem ter anotações pessoais. Só quem gerencia os empréstimos do projeto vê esse conteúdo.']);
 
   const exportContext = JSON.stringify([queryKey, search, focus, measurementUnit, columns, sort, groupBy, measure, scopeLabel, demandFilterLabel, attempt]);

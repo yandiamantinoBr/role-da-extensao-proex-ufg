@@ -1140,7 +1140,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
               <Field label="De"><DateField aria-label="De" value={loanFilters.from} onValueChange={from=>setLoanFilters(current=>({...current,from}))}/></Field>
               <Field label="Até (inclusive)"><DateField aria-label="Até (inclusive)" min={loanFilters.from||undefined} value={loanFilters.to} onValueChange={to=>setLoanFilters(current=>({...current,to}))}/></Field>
             </div>
-            <p className={workStyles.loanFilterCriterion}>Entra no recorte o empréstimo em curso em algum momento do período, mesmo que tenha começado antes. Datas e horários no fuso de Brasília.</p>
+            <p className={workStyles.loanFilterCriterion}>Entram os empréstimos em curso em algum momento entre as datas, mesmo que tenham começado antes. Horário de Brasília.</p>
             <div className={workStyles.loanFilterResult}>
               <p role="status">{loanPeriodValid?`${shownLoans.length} ${shownLoans.length===1?'empréstimo':'empréstimos'} no recorte`:'Confira as datas do período.'}</p>
               {hasLoanFilters&&<button className="p-text-link" type="button" onClick={()=>{loanSearch.current?.focus({preventScroll:true});setLoanFilters(emptyLoanFilters);}}>Limpar busca e filtros</button>}
@@ -1198,10 +1198,10 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
             <Field label="Contato necessário ao empréstimo">
             <input name="borrowerContact" maxLength={150} placeholder="E-mail ou telefone"/>
             </Field>
-            <Field label="Retirada prevista" help="Horário de Brasília.">
+            <Field label="Retirada prevista (horário de Brasília)">
             <DateTimeField aria-label="Retirada prevista" name="startsAt"  required/>
             </Field>
-            <Field label="Devolução prevista" help="Horário de Brasília.">
+            <Field label="Devolução prevista (horário de Brasília)">
             <DateTimeField aria-label="Devolução prevista" name="endsAt"  required/>
             </Field>
             </div>
@@ -1243,7 +1243,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
             setReportFrom(next); }}/>
         </label>
         <button className="p-button p-button-subtle" onClick={() => { setReportFrom(''); setReportTo(''); }}>Todo o período</button>
-        <p>Datas de Brasília para os relatórios com período. Projetos e materiais mostram a posição atual. Empréstimos entram quando estão em curso em algum momento do período, mesmo que tenham começado antes. Em “Dinâmicas por dia”, participações, tentativas e entregas usam a data de cada registro.</p>
+        <p>Horário de Brasília. <strong>Empréstimos:</strong> entram os que estavam em curso em algum momento do período, mesmo que tenham começado antes. <strong>Projetos e materiais:</strong> posição atual. <strong>Dinâmicas por dia, participações, tentativas e entregas:</strong> data de cada registro.</p>
         </div>
         <ReportsCenter key={`${string(user.userId)}:${reportInitialDataset}:${reportSearch}`} userId={string(user.userId)} canSync={isPlatformOwner} projectIdentity={projects.find(project => project.id === filter)} initialDataset={reportInitialDataset === 'projects' && !canAny('reports.read') ? 'demands' : reportInitialDataset} initialSearch={reportSearch} demandFilters={demandReportFilters} needsDemandSearch={needsDemandSearch} demandReportUnavailable={demandReportUnavailable} onRestoreDemandSearch={value=>{setDemandReportFilters(current=>current ? {...current,search:value} : null);setNeedsDemandSearch(false);}} onClearDemandFilters={()=>{setDemandReportFilters(null);setNeedsDemandSearch(false);setDemandReportUnavailable(false);}} demandOrganizationName={organizations.find(org=>org.id===demandReportFilters?.organizationId)?.name} projectId={filter} unitId={unitFilter} area={areaFilter} from={reportFrom} to={reportTo} available={[
           ...(projects.length ? ['projects' as const] : []),
