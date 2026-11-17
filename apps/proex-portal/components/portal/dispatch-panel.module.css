@@ -70,3 +70,13 @@
   .refresh span { display: none; }
   .refresh { width: 44px; padding-inline: 0; justify-content: center; }
 }
+
+/* Crítica visual de 17/11: espaço do cartão da Gestão superior, dica sob o seletor, contadores alinhados e abas que quebram no celular. */
+.leadershipCard { margin-block: 20px 32px; }
+.hint { display: block; margin-top: 4px; color: var(--text-secondary); font-size: 12px; font-weight: 500; }
+.metric { display: flex; flex-direction: column; justify-content: space-between; min-height: 92px; }
+@container dispatch (max-width: 640px) {
+  .tabs { flex-wrap: wrap; overflow-x: visible; }
+  .rowIcon { align-self: start; }
+  .leadershipCard .filters > button { flex: 1 1 100%; }
+}

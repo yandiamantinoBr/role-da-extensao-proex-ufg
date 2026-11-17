@@ -59,7 +59,7 @@ export default function DispatchPanel({ userId, organizations }: { userId: strin
   return <section className={styles.panel} aria-labelledby="dispatch-title">
     <div className={`p-card ${styles.header}`}>
       <div className={styles.titleRow}>
-        <div><h3 id="dispatch-title"><Lock size={18} aria-hidden="true"/>Despachos</h3><p>Demandas privadas: só as pessoas incluídas veem, nem a administração geral.</p></div>
+        <div><h3 id="dispatch-title"><Lock size={18} aria-hidden="true"/>Demandas privadas</h3><p>Só as pessoas incluídas veem, nem a administração geral.</p></div>
         <button type="button" className="p-button p-button-primary" onClick={() => { setNotice(''); setForm({ mode: 'new' }); }}><Plus size={16} aria-hidden="true"/>Nova demanda</button>
       </div>
       <div className={styles.filters}>
@@ -67,8 +67,8 @@ export default function DispatchPanel({ userId, organizations }: { userId: strin
         <label className="p-field"><span>Despachos com</span><select name="dispatchWith" value={withWhom} onChange={event => setWithWhom(event.target.value)}>
           <option value="">Todas as minhas demandas privadas</option>
           {data?.inLeadership && <option value="group">Todas da Gestão superior</option>}
-          {(data?.people ?? []).map(person => <option key={person.userId} value={person.userId}>{person.name}{person.inLeadership ? ' · Gestão superior' : ''}</option>)}
-        </select></label>
+          {(data?.people ?? []).map(person => <option key={person.userId} value={person.userId}>{person.name}</option>)}
+        </select>{counterpart?.inLeadership && <small className={styles.hint}>Está na Gestão superior</small>}</label>
         <button type="button" className={`p-button p-button-subtle ${styles.refresh}`} onClick={() => setReload(value => value + 1)} aria-label="Atualizar despachos" disabled={loading}><RefreshCw size={16} aria-hidden="true"/><span>Atualizar</span></button>
       </div>
     </div>
@@ -149,7 +149,7 @@ function DispatchForm({ userId, organizationId, workspace, counterpartId, state,
       <label className="p-field"><span>Com quem está agora</span><select name="dispatchHolder" value={holderOptions.includes(holder) ? holder : ''} onChange={event => setHolder(event.target.value)}>
         <option value="" disabled>Escolha uma pessoa incluída</option>
         {holderOptions.map(id => <option key={id} value={id}>{id === userId ? 'Você' : names.get(id) ?? 'Pessoa incluída'}</option>)}</select></label>
-      <label className={`p-field ${styles.wide}`}><span>Documento no SEI ou Drive (opcional)</span><input name="dispatchRef" maxLength={500} value={documentRef} onChange={event => setDocumentRef(event.target.value)} placeholder="Número do processo ou endereço https://"/></label>
+      <label className={`p-field ${styles.wide}`}><span>Documento no SEI ou Drive (opcional)</span><input name="dispatchRef" maxLength={500} value={documentRef} onChange={event => setDocumentRef(event.target.value)} placeholder="Nº do processo ou link"/></label>
       <label className={`p-field ${styles.wide}`}><span>Detalhes (opcional)</span><textarea name="dispatchBody" maxLength={4000} rows={3} value={body} onChange={event => setBody(event.target.value)}/></label>
       <label className={`${styles.check} ${styles.wide}`}><input type="checkbox" name="dispatchAgenda" checked={onAgenda} onChange={event => setOnAgenda(event.target.checked)}/>Levar para a pauta da próxima conversa</label>
     </div>

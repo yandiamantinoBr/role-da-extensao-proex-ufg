@@ -26,9 +26,9 @@ export default function LeadershipGroupCard({ organizationId, organizationName }
     finally { setBusy(false); }
   }
   const candidates = people.filter(person => !members.some(member => member.userId === person.userId));
-  return <section className={`p-card ${styles.header}`} aria-labelledby={`leadership-${organizationId}`}>
+  return <section className={`p-card ${styles.header} ${styles.leadershipCard}`} aria-labelledby={`leadership-${organizationId}`}>
     <div className={styles.titleRow}><div><h3 id={`leadership-${organizationId}`}><ShieldCheck size={18} aria-hidden="true"/>Gestão superior · {organizationName}</h3>
-      <p>Quem está aqui vê as demandas privadas marcadas como &quot;Gestão superior&quot;. Tirar alguém corta o acesso na hora.</p></div></div>
+      <p>Quem está aqui vê as demandas privadas marcadas como “Gestão superior”. Tirar alguém corta o acesso na hora.</p></div></div>
     {members.length ? <ul className={styles.chips} aria-label="Integrantes da Gestão superior">{members.map(member => <li key={member.userId}>{member.name}
       <button type="button" disabled={busy} onClick={() => void change('leadership.remove', member.userId)} aria-label={`Tirar ${member.name} da Gestão superior`}><X size={14} aria-hidden="true"/></button></li>)}</ul>
       : <p className="p-form-help">Ninguém no grupo ainda.</p>}

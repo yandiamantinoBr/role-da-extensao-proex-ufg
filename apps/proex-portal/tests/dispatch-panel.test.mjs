@@ -63,3 +63,11 @@ test('choosing a person names the counter, and "Nova demanda" starts private wit
   assert.match(h.body(), /nem a administração geral/);
   assert.match(h.body(), /Quem administra o banco de dados tecnicamente pode ler/, 'limite honesto na tela');
 });
+
+test('visual fixes from the 17/11 critique: one title, short options, wrapping tabs and spacing around the group card', () => {
+  const css = readFileSync(new URL('../components/portal/dispatch-panel.module.css', import.meta.url), 'utf8');
+  assert.match(source, /<Lock size=\{18\} aria-hidden="true"\/>Demandas privadas<\/h3>/, 'não repete "Despachos" logo abaixo da aba');
+  assert.doesNotMatch(source, /' · Gestão superior'/, 'a opção do seletor leva só o nome');
+  assert.match(css, /\.tabs \{ flex-wrap: wrap; overflow-x: visible; \}/);
+  assert.match(css, /\.leadershipCard \{ margin-block: 20px 32px; \}/);
+});
