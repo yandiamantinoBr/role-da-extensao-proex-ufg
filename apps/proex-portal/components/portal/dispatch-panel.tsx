@@ -18,7 +18,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: 'open', label: 'Abertas' }, { id: 'signature', label: 'Assinaturas' }, { id: 'question', label: 'Dúvidas' }, { id: 'decision', label: 'Decisões' },
   { id: 'document_review', label: 'Documentos' }, { id: 'referral', label: 'Encaminhamentos' }, { id: 'agenda', label: 'Pauta' }, { id: 'history', label: 'Histórico' },
 ];
-const dueText = (date: string | null) => date ? `Prazo ${date.slice(8, 10)}/${date.slice(5, 7)}` : 'Sem prazo';
+const dueText = (date: string | null) => date ? `Prazo ${date.slice(8, 10)}/${date.slice(5, 7)}` : 'Sem prazo';
 export function visibleTasks(tasks: DispatchTask[], tab: Tab): DispatchTask[] {
   if (tab === 'history') return tasks.filter(task => task.status === 'completed');
   const open = tasks.filter(task => task.status !== 'completed');
@@ -92,7 +92,7 @@ export default function DispatchPanel({ userId, organizations }: { userId: strin
         : <ul className={styles.list}>{shown.map(task => <li key={task.id}>
           <button type="button" className={styles.row} onClick={() => void openTask(task)} aria-label={`Abrir ${task.title}`}>
             <span className={styles.rowIcon} aria-hidden="true"><FileSignature size={17}/></span>
-            <span className={styles.rowMain}><strong>{task.title}</strong><small>{[KIND_LABELS[task.kind], task.documentKind ? DOCUMENT_LABELS[task.documentKind] : '', dueText(task.dueAt), task.holderName ? `com ${task.holderName}` : ''].filter(Boolean).join(' · ')}</small></span>
+            <span className={styles.rowMain}><strong>{task.title}</strong><small>{[KIND_LABELS[task.kind], task.documentKind ? DOCUMENT_LABELS[task.documentKind] : '', dueText(task.dueAt), task.holderName ? `com ${task.holderName.replace(/ /g, ' ')}` : ''].filter(Boolean).join(' · ')}</small></span>
             <span className={styles.rowSide}><span className={styles.urgency} data-urgency={task.urgency}>{URGENCY_LABELS[task.urgency]}</span><small>{STATUS_LABELS[task.status]}</small></span>
           </button></li>)}</ul>}
     </div>
