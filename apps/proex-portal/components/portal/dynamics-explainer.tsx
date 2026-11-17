@@ -14,7 +14,7 @@ export default function DynamicsExplainer({ dynamics, onOpenProject }: { dynamic
     ? <button type="button" className={styles.link} onClick={() => onOpenProject(id)}>{name}<ArrowRight size={13} aria-hidden="true"/></button>
     : <strong>{name}</strong>;
   return <details className={styles.box} open>
-    <summary><Dices size={18} aria-hidden="true"/>O que é uma dinâmica?</summary>
+    <summary className="p-disclosure"><Dices size={18} aria-hidden="true"/>O que é uma dinâmica?</summary>
     <div className={styles.body}>
       <ol className={styles.steps}>
         <li><Gift size={17} aria-hidden="true"/><span><strong>É uma atividade com brindes</strong>: roleta, dado ou atendimento presencial, com regras e limite de participação.</span></li>

@@ -59,7 +59,7 @@ export function TaskPageSummary({ tasks, today, page = 1, hasMore = false, selec
   {tasks.length > 0 && <>
    <p className={styles.caption}>Página {page} · Com os filtros acima{hasMore && ' · Há mais na próxima página'}</p>
    <details className={styles.visual}>
-    <summary>Distribuição por estado e prioridade</summary>
+    <summary className="p-disclosure">Distribuição por estado e prioridade</summary>
     <div className={styles.breakdown}>
      <div>
       <h4>Estados</h4>
@@ -78,7 +78,7 @@ export function TaskPageSummary({ tasks, today, page = 1, hasMore = false, selec
     </div>
    </details>
    <details className={styles.visual}>
-    <summary>Linha do tempo de prazos</summary>
+    <summary className="p-disclosure">Linha do tempo de prazos</summary>
     <p className={styles.caption}>Nesta página, cada ponto marca uma data de vencimento registrada.</p>
     {!!due.size && <ol className={styles.timeline}>
      {[...due].sort(([left], [right]) => left.localeCompare(right)).map(([date, group]) => <li key={date}>
