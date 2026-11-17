@@ -70,7 +70,7 @@ test('independent: settings transport accepts real GET and mutation DTOs and nor
  globalThis.__emailUiReview={db:f.db,user:f.owner};
  t.after(()=>{globalThis.fetch=original;delete globalThis.__emailUiReview;});
  const replacements=new Map([
-  [resolve(root,'lib/platform.ts'),'export function database(){return globalThis.__emailUiReview.db;}'],
+  [resolve(root,'lib/platform.ts'),'export function database(){return globalThis.__emailUiReview.db;}export function inviteSecret(){return undefined;}'],
   [resolve(root,'lib/session.ts'),'export async function getPortalUser(){return globalThis.__emailUiReview.user;}'],
   [resolve(root,'lib/follow-up/email-platform.ts'),'export function followupEmailOrigin(){return "https://synthetic.invalid";}'],
  ]);
