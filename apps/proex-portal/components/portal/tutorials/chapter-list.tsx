@@ -45,7 +45,7 @@ export default function ChapterList({ headingLevel = 3 }: { headingLevel?: 2 | 3
         </li>;
       })}
     </ul>
-    {hidden > 0 && <p className={styles.muted}>{hidden === 1 ? 'Um assunto aparece' : `${hidden} assuntos aparecem`} quando o seu acesso incluir os módulos deles.</p>}
+    {hidden > 0 && <p className={styles.muted}>{hidden === 1 ? 'Um assunto aparece quando o seu acesso incluir o módulo dele.' : `${hidden} assuntos aparecem quando o seu acesso incluir os módulos deles.`}</p>}
     <p className={styles.upcoming}><strong>Próximos assuntos:</strong> {UPCOMING_TOPICS.join(', ')}. Eles entram aqui conforme ficarem prontos.</p>
     <p className={styles.muted}>Os tutoriais funcionam sem IA e não gravam nada no seu trabalho: só lembram onde você parou.</p>
   </div>;
