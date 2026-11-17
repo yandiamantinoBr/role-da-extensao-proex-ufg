@@ -13,6 +13,7 @@ const {followupReportRows}=await import(compile('lib/follow-up/reports.ts'));
 const {exportPortablePage}=await import(compile('lib/sync/portable.ts'));
 const {activityFeed}=await import(compile('lib/activity.ts'));
 const {calendarEntries,calendarRange}=await import(compile('lib/calendar.ts'));
+const {teamsWorkspace}=await import(compile('lib/follow-up/teams.ts'));
 
 function fixture(t){const native=new DatabaseSync(':memory:');native.exec('PRAGMA foreign_keys=ON');for(const name of readdirSync(root+'drizzle').filter(n=>n.endsWith('.sql')).sort())native.exec(readFileSync(root+'drizzle/'+name,'utf8'));t.after(()=>native.close());const now=new Date().toISOString();
  const insert=(table,row)=>{const cols=Object.keys(row);native.prepare(`INSERT INTO ${table}(${cols.join(',')}) VALUES(${cols.map(()=>'?').join(',')})`).run(...Object.values(row));};
@@ -154,4 +155,19 @@ test('nobody adds themselves to "Gestão superior", not even the administration'
  await assert.rejects(act(f,platform,'leadership.add',{organizationId:'org-a',userId:'platform',operationKey:key()}),{status:403});
  await act(f,platform,'leadership.add',{organizationId:'org-a',userId:'admin-a',operationKey:key()});
  assert.deepEqual((await leadershipRoster(f.db,admin,'org-a')).members.map(m=>m.userId),['admin-a'],'outra pessoa da administração inclui');
+});
+
+test('even if a private demand ended up with a project and a team, it never makes that team visible (defesa em profundidade)', async t => {
+ const f=fixture(t);people(f);
+ // Hoje a demanda privada nasce sem projeto e sem equipe (e o banco não deixa mudar o projeto depois). Aqui ela é gravada
+ // direto no banco já com projeto e equipe, como um caminho futuro faria, para provar que as leituras de Equipes não dependem disso.
+ f.insert('followup_teams',{id:'team-hidden',organization_id:'org-a',name:'Equipe só da privada',status:'active',version:1,created_by:'admin-a',created_at:f.now,updated_at:f.now});
+ f.insert('followup_tasks',{id:'task-hidden',organization_id:'org-a',project_id:'project-a',title:SECRET,body:'',priority:'high',status:'open',version:1,created_by:'staff-a',created_at:f.now,updated_at:f.now});
+ f.insert('followup_task_privacy',{task_id:'task-hidden',visibility:'participants',created_by:'staff-a',created_at:f.now,updated_at:f.now});
+ f.insert('followup_task_participants',{id:'part-hidden',task_id:'task-hidden',user_id:'staff-a',added_by:'staff-a',created_at:f.now});
+ f.insert('followup_assignees',{id:'assign-hidden',task_id:'task-hidden',team_id:'team-hidden',created_at:f.now});
+ const manager=await f.actor('manager-a');
+ const workspace=await teamsWorkspace(f.db,manager,{organizationId:'org-a',projectId:'project-a'});
+ assert.ok(!JSON.stringify(workspace).includes('Equipe só da privada'),'a equipe não aparece por causa da demanda privada');
+ assert.ok(!JSON.stringify(workspace).includes(SECRET));
 });

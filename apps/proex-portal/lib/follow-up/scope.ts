@@ -20,7 +20,7 @@ export function visibleTeamInScope(managementSql: string): string {
   EXISTS(SELECT 1 FROM followup_team_members mine WHERE mine.team_id=team.id AND mine.user_id=caller.user_id AND mine.removed_at IS NULL)
   OR EXISTS(SELECT 1 FROM followup_assignees a JOIN followup_tasks t ON t.id=a.task_id
    WHERE a.team_id=team.id AND a.removed_at IS NULL AND t.organization_id=team.organization_id
-   AND (caller.project_id IS NULL OR t.project_id=caller.project_id) AND ${authority('caller.user_id','t.organization_id','t.project_id')})
+   AND (caller.project_id IS NULL OR t.project_id=caller.project_id) AND ${publicTaskAuthority('caller.user_id','t')})
   OR EXISTS(SELECT 1 FROM work_responsibility_assignees a JOIN work_responsibility_scopes s ON s.id=a.scope_id
    WHERE a.team_id=team.id AND a.revoked_at IS NULL AND s.status='active' AND s.organization_id=team.organization_id
    AND (caller.project_id IS NULL OR s.project_id=caller.project_id) AND ${authority('caller.user_id','s.organization_id','s.project_id')}))`;

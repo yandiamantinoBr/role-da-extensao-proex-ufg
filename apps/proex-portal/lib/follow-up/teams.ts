@@ -2,7 +2,7 @@ import type { PortalActor } from '../access';
 import { all, one } from '../database';
 import { HttpError } from '../errors';
 import { choices, id, integer, TASK_STATES } from './contracts';
-import { activeAccount, actorRequired, authority, publicTaskAuthority, requireScope, visibleTeamInScope } from './scope';
+import { activeAccount, actorRequired, authority, publicTask, publicTaskAuthority, requireScope, visibleTeamInScope } from './scope';
 import { serverWorkClock } from './time';
 import { TEAM_TASK_PAGE_SIZE, type TeamsWorkspace } from './teams-contract';
 
@@ -53,6 +53,7 @@ export async function teamsWorkspace(db: D1Database, actor: PortalActor | null, 
    SELECT a.team_id,t.project_id,1 has_demands,0 has_responsibilities
    FROM followup_tasks t JOIN caller ON caller.organization_id=t.organization_id JOIN eligible p ON p.id=t.project_id
    JOIN followup_assignees a ON a.task_id=t.id AND a.removed_at IS NULL JOIN selected team ON team.id=a.team_id
+   WHERE ${publicTask('t')}
    UNION ALL
    SELECT a.team_id,s.project_id,0,1
    FROM work_responsibility_scopes s JOIN caller ON caller.organization_id=s.organization_id JOIN eligible p ON p.id=s.project_id
