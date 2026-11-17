@@ -439,7 +439,7 @@ export const TUTORIAL_CHAPTERS: readonly TutorialChapter[] = [
       {
         id: 'dia', title: 'Os compromissos',
         speech: 'Ao escolher um dia, a lista vira Compromissos de… com os registros dele. Categoria dos compromissos filtra a lista, e Ver todo o período tira a seleção do dia e volta ao período escolhido.',
-        speechMobile: 'Depois de tocar num dia, Ver … compromissos do dia, abaixo do mês, traz você até aqui. Categoria dos compromissos filtra a lista, e Ver todo o período tira a seleção do dia.',
+        speechMobile: 'Ver … compromissos do dia, abaixo do mês, traz você até aqui. Ver todo o período tira a seleção do dia.',
         youWillSee: 'A lista de compromissos destacada.',
         target: '#calendar-day-entries', module: 'calendar', openLabel: 'Ir para Agenda', requires: { calendar: true },
         labels: ['Compromissos de', 'Categoria dos compromissos', 'Ver todo o período'],
@@ -447,7 +447,7 @@ export const TUTORIAL_CHAPTERS: readonly TutorialChapter[] = [
       {
         id: 'baixar', title: 'Baixar o recorte',
         speech: 'Baixar compromissos da agenda gera um arquivo com a lista que está na tela. Para levar a outro calendário, use o arquivo .ics, dentro de Filtrar período e contexto: ele inclui cancelamentos.',
-        speechMobile: 'Baixar compromissos da agenda gera um arquivo com a lista da tela. O arquivo .ics, em Filtrar período e contexto, leva a outro calendário.',
+        speechMobile: 'Baixar compromissos da agenda gera um arquivo com a lista da tela. O .ics fica em Filtrar período e contexto.',
         youWillSee: 'A Categoria dos compromissos e as opções de download destacadas.',
         target: '[data-tutorial="agenda-baixar"]', module: 'calendar', openLabel: 'Ir para Agenda', requires: { calendar: true },
         labels: ['Baixar compromissos da agenda'],
