@@ -148,3 +148,5 @@
  .narrowOnly { display:contents; }
  .nodeActions { grid-template-columns:repeat(2,minmax(0,1fr)); }
 }
+/* Quinta crítica de 16/11: no celular os botões da unidade ficam juntos à esquerda, sem meia célula vazia. */
+@container (max-width:599px) { .nodeActions { display:flex; justify-content:flex-start; gap:8px; } .nodeActions>button,.more>summary { width:auto; padding-inline:12px; } }
