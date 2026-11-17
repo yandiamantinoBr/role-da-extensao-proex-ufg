@@ -24,23 +24,22 @@ import { OfficialReadError, PROEX_HOME, brasiliaDay, readOfficialLinks, readProe
 export const GUIDE_SLUGS = ['estrutura', 'programas-e-projetos', 'processos-conpeex', 'processos-ufg-nos-parques', 'processos-editais', 'processos-emprestimos', 'processos-brindes', 'processos-comunicacao', 'calendario', 'contatos', 'glossario'] as const;
 
 import { ROLE_TOOL_RESULT_BYTES } from './role-contracts';
+import { ROLE_TOOLS_FASE2B, ROLE_TOOL_NAMES_FASE2B, runFase2bTool, tierLevels } from './role-tools-fase2b';
 
 const text = (description: string) => ({ type: 'string', description, maxLength: 120 });
 const fn = (name: string, description: string, properties: Record<string, unknown>, required: string[] = []) => ({ type: 'function', function: { name, description, parameters: { type: 'object', properties, required, additionalProperties: false } } });
 const projeto = text('Nome (ou parte) do projeto. Omita para procurar em todos os projetos que a pessoa pode ver.');
 export const ROLE_TOOLS = [
   fn('buscar_no_portal', 'Procura um termo em materiais, demandas, dinâmicas e agenda de todos os projetos que a pessoa pode ver. Use quando não souber onde está a informação.', { texto: text('Palavras a procurar, por exemplo "Botton azul" ou "Lote 10/11".'), projeto }, ['texto']),
-  fn('consultar_estoque', 'Saldo, reservado e disponível de materiais.', { material: text('Nome (ou parte) do material. Omita para listar.'), projeto }),
   fn('consultar_movimentacoes', 'Entradas, saídas, consumos e ajustes recentes de estoque.', { material: text('Nome (ou parte) do material.'), projeto, dias: { type: 'integer', minimum: 1, maximum: 31, description: 'Quantos dias para trás (padrão 7).' } }),
   fn('consultar_demandas', 'Demandas (tarefas) com o texto completo, inclusive tabelas de lotes e distribuição por dia e período.', { texto: text('Palavras do título ou do texto, por exemplo "Lote 10/11".'), projeto, situacao: { type: 'string', enum: ['abertas', 'todas'], description: 'Padrão: abertas.' } }),
-  fn('consultar_niveis_dinamica', 'Níveis de prêmio de uma dinâmica (Brinde, Super, Super Super) e o que compõe cada opção.', { dinamica: text('Nome (ou parte) da dinâmica, por exemplo "CONPEEX".'), projeto }),
   fn('consultar_agenda', 'Atividades da agenda dos projetos num período. Para cruzar com um prazo (de edital, por exemplo), use as datas desse prazo em de e ate, mesmo que já tenham passado; sem prazo citado, comece hoje.', { de: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$', description: 'Data inicial AAAA-MM-DD.' }, ate: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$', description: 'Data final AAAA-MM-DD (até 31 dias depois).' }, projeto }, ['de']),
-  fn('consultar_emprestimos', 'Empréstimos de equipamentos em aberto e atrasados (sem dados de quem pegou).', { projeto }),
   fn('registros_recentes', 'Últimos registros de atividades dos projetos.', { projeto }),
   fn('consultar_fontes_oficiais', 'Busca páginas públicas da PROEX e do 23º CONPEEX, notícias do site e publicações do Instagram cadastradas pela comunicação. Informa link e data de consulta ou cópia.', { texto: text('Assunto, por exemplo "edital de bolsas" ou "programação do CONPEEX".') }, ['texto']),
   fn('abrir_link_oficial', 'Lê um link de site oficial da UFG: título, resumo e links da página por seção.', { url: { type: 'string', maxLength: 500, description: 'Link https.' } }, ['url']),
   fn('preparar_rascunho_demanda', 'Prepara um rascunho de demanda (tarefa) para a pessoa revisar num cartão. Não grava: só o toque dela em Criar demanda cria.', { projeto, titulo: { type: 'string', maxLength: 160, description: 'Título curto.' }, descricao: { type: 'string', maxLength: 4000, description: 'Texto da demanda.' }, prazo: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$', description: 'AAAA-MM-DD, se houver.' }, prioridade: { type: 'string', enum: ['alta', 'media', 'baixa'] }, responsavel: text('Nome de quem vai fazer, se a pessoa disser.') }, ['titulo']),
   fn('consultar_guia', 'Guia da PROEX: estrutura, programas, processos (CONPEEX, editais, empréstimos, brindes, comunicação), calendário, contatos e glossário. Traz as seções mais próximas do assunto e a linha de fontes.', { texto: text('Assunto, por exemplo "como pedir empréstimo" ou "contato da comunicação".'), paginas: { type: 'array', items: { type: 'string', enum: [...GUIDE_SLUGS] }, maxItems: 4, description: 'Páginas do guia, se souber.' } }, ['texto']),
+  ...ROLE_TOOLS_FASE2B,
 ];
 export const ROLE_TOOL_NAMES = ROLE_TOOLS.map(tool => tool.function.name);
 /** Bytes reais do esquema (o custo máximo usa ROLE_TOOLS_SCHEMA_BYTES, que precisa ser maior). */
@@ -164,6 +163,7 @@ async function taskDraftTool(db: D1Database, actor: PortalActor, organizationId:
 
 export async function runRoleTool(db: D1Database, actor: PortalActor, organizationId: string, name: string, args: Record<string, unknown>, budget = ROLE_TOOL_RESULT_BYTES, scope: ResolvedScope | null = null, officialFetcher?: typeof fetch, officialSignal?: AbortSignal): Promise<RoleToolResult> {
   if (!ROLE_TOOL_NAMES.includes(name)) throw new HttpError(400, 'Consulta desconhecida.', 'role_tool_unknown');
+  if (ROLE_TOOL_NAMES_FASE2B.has(name)) return runFase2bTool(db, actor, organizationId, name, args, budget, scope, { pack, visibleProjects, terms, score });
   if (Object.keys(args).some(key => !['texto', 'projeto', 'material', 'dias', 'situacao', 'dinamica', 'de', 'ate', 'paginas', 'titulo', 'descricao', 'prazo', 'prioridade', 'responsavel', 'url'].includes(key))) throw new HttpError(400, 'Consulta com campos não permitidos.', 'role_tool_input');
   if (name === 'consultar_guia') return guideTool(db, actor, organizationId, args, budget);
   if (name === 'preparar_rascunho_demanda') return taskDraftTool(db, actor, organizationId, args, budget, scope);
@@ -175,14 +175,6 @@ export async function runRoleTool(db: D1Database, actor: PortalActor, organizati
   const ids = [...projects.keys()];
   if (!ids.length) return pack(name, [], [], budget, scope && scope.kind !== 'org' ? `Nada visível para você em ${scope.label} com esse filtro. Para procurar em toda a PROEX, troque "Procurar em".` : 'Nenhum projeto visível para você com esse nome.');
 
-  if (name === 'consultar_estoque') {
-    const auth = projectAuthoritySql(actor, ['inventory.read'], 'p.id'), wanted = terms(str(args.material, 'o material'));
-    const rows = await all(db, `SELECT i.id,i.name,i.unit,i.stock,i.reserved,i.category,p.id project_id,p.name project_name FROM items i JOIN projects p ON p.id=i.project_id
-      WHERE ${auth.sql} AND p.id IN ${inList(ids)} AND i.condition!='inactive' ORDER BY p.name,i.name LIMIT 2000`, [...auth.values, ...ids]);
-    const found = rows.map(row => ({ row, s: score(String(row.name), wanted) })).filter(entry => entry.s > 0).sort((a, b) => b.s - a.s).map(entry => entry.row);
-    const sources = found.map(row => ({ label: `${row.name} · ${row.project_name}`, href: link('materials', String(row.project_id), `&itemId=${encodeURIComponent(String(row.id))}`) }));
-    return pack(name, found.map((row, index) => ({ material: row.name, projeto: row.project_name, unidade: row.unit, saldo: Number(row.stock), reservado: Number(row.reserved), disponivel: Number(row.stock) - Number(row.reserved), link: sources[index].href })), sources, budget, found.length ? '' : 'Nenhum material encontrado nos projetos em que você pode ver o estoque.');
-  }
   if (name === 'consultar_movimentacoes') {
     const auth = projectAuthoritySql(actor, ['inventory.read'], 'p.id'), wanted = terms(str(args.material, 'o material'));
     const days = args.dias === undefined ? 7 : Number(args.dias);
@@ -219,9 +211,9 @@ export async function runRoleTool(db: D1Database, actor: PortalActor, organizati
     for (const row of campaigns) {
       const s = score(String(row.name), wanted); if (!s) continue;
       const href = link('events', String(row.project_id), `&campaignId=${encodeURIComponent(String(row.id))}`);
-      let niveis: Record<string, string[]> | null = null;
+      let niveis: ReturnType<typeof tierLevels> | null = null;
       if (!tiersShown) {
-        try { const workspace = await prizeTiersWorkspace(db, actor, { campaignId: String(row.id) }); const names = (tier: string) => workspace.options.filter(option => option.tier === tier).map(option => option.name); niveis = { brinde: names('brinde'), super: names('super'), superSuper: names('super_super') }; tiersShown = true; }
+        try { niveis = tierLevels((await prizeTiersWorkspace(db, actor, { campaignId: String(row.id) })).options, false); tiersShown = true; }
         catch (error) { if (!(error instanceof HttpError && error.status === 403)) throw error; }
       }
       hits.push({ s: s + (niveis ? 2 : 0), item: { tipo: 'dinâmica', nome: row.name, projeto: row.project_name, ...(niveis ? { niveis } : { dica: 'Use consultar_niveis_dinamica para os níveis.' }), link: href }, source: { label: `${row.name} · ${row.project_name}`, href } });
@@ -231,23 +223,6 @@ export async function runRoleTool(db: D1Database, actor: PortalActor, organizati
     const top = hits.slice(0, 20);
     return pack(name, top.map(hit => hit.item), top.map(hit => hit.source), budget, top.length ? '' : 'Nada encontrado nos projetos que você pode ver.');
   }
-  if (name === 'consultar_niveis_dinamica') {
-    const wanted = terms(str(args.dinamica, 'a dinâmica'));
-    const campaigns = (await all(db, `SELECT c.id,c.name,c.status,c.starts_at,p.id project_id,p.name project_name FROM campaigns c JOIN projects p ON p.id=c.project_id
-      WHERE ${followupAuthority('?', 'p.organization_id', 'c.project_id')} AND p.id IN ${inList(ids)} AND c.status!='closed' ORDER BY c.starts_at DESC LIMIT 200`, [actor.userId, ...ids]))
-      .map(row => ({ row, s: score(String(row.name), wanted) })).filter(entry => entry.s > 0).sort((a, b) => b.s - a.s).slice(0, 3).map(entry => entry.row);
-    const results: Record<string, unknown>[] = [], sources: RoleToolSource[] = [];
-    for (const campaign of campaigns) {
-      try {
-        const workspace = await prizeTiersWorkspace(db, actor, { campaignId: String(campaign.id) });
-        const href = link('events', String(campaign.project_id), `&campaignId=${encodeURIComponent(String(campaign.id))}`);
-        const tier = (key: string) => workspace.options.filter(option => option.tier === key).map(option => ({ opcao: option.name, componentes: option.components.map(component => `${component.name} × ${component.quantity}`) }));
-        results.push({ dinamica: campaign.name, projeto: campaign.project_name, situacao: workspace.campaign.status, percentualSuperSuper: workspace.superSuperPercent, brinde: tier('brinde'), super: tier('super'), superSuper: tier('super_super'), semNivel: workspace.options.filter(option => !option.tier).map(option => option.name), link: href });
-        sources.push({ label: `${campaign.name} · níveis`, href });
-      } catch (error) { if (!(error instanceof HttpError && error.status === 403)) throw error; }
-    }
-    return pack(name, results, sources, budget, results.length ? '' : 'Nenhuma dinâmica com esse nome nos projetos que você pode ver.');
-  }
   if (name === 'consultar_agenda') {
     const from = str(args.de, 'a data inicial', true), to = str(args.ate, 'a data final') || from;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || to < from || Date.parse(to) - Date.parse(from) > 31 * 86400000) throw new HttpError(400, 'Use datas AAAA-MM-DD, com até 31 dias.', 'role_tool_input');
@@ -256,14 +231,6 @@ export async function runRoleTool(db: D1Database, actor: PortalActor, organizati
       WHERE ${auth.sql} AND p.id IN ${inList(ids)} AND s.status!='cancelled' AND substr(s.starts_at,1,10)>=? AND substr(s.starts_at,1,10)<=? ORDER BY s.starts_at LIMIT 200`, [...auth.values, ...ids, from, to]);
     const sources = rows.map(row => ({ label: `Agenda · ${row.project_name}`, href: link('calendar', String(row.project_id)) }));
     return pack(name, rows.map((row, index) => ({ atividade: row.title, inicio: String(row.starts_at).length === 10 ? `${row.starts_at} (dia inteiro)` : brasilia(String(row.starts_at)), fim: row.ends_at ? (String(row.ends_at).length === 10 ? row.ends_at : brasilia(String(row.ends_at))) : null, situacao: row.status === 'completed' ? 'realizada' : 'planejada', projeto: row.project_name, link: sources[index].href })), sources, budget, rows.length ? '' : 'Nenhuma atividade na agenda nesse período.');
-  }
-  if (name === 'consultar_emprestimos') {
-    const auth = projectAuthoritySql(actor, ['loans.read'], 'p.id'), now = Date.now();
-    const rows = await all(db, `SELECT l.id,l.status,l.action_name,l.starts_at,l.ends_at,i.name item_name,p.id project_id,p.name project_name FROM loans l JOIN items i ON i.id=l.item_id JOIN projects p ON p.id=l.project_id
-      WHERE ${auth.sql} AND p.id IN ${inList(ids)} AND l.status IN ('reserved','out') ORDER BY l.ends_at LIMIT 200`, [...auth.values, ...ids]);
-    const sources = rows.map(row => ({ label: `${row.item_name} · empréstimo`, href: link('loans', String(row.project_id), `&loanId=${encodeURIComponent(String(row.id))}`) }));
-    const when = (ms: unknown) => new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' }).format(new Date(Number(ms)));
-    return pack(name, rows.map((row, index) => ({ equipamento: row.item_name, acao: row.action_name, situacao: row.status === 'out' ? (Number(row.ends_at) < now ? 'atrasado' : 'retirado') : 'reservado', devolucaoPrevista: when(row.ends_at), projeto: row.project_name, link: sources[index].href })), sources, budget, rows.length ? '' : 'Nenhum empréstimo em aberto nos projetos em que você vê empréstimos.');
   }
   // registros_recentes: mesma regra de leitura da tela Registros.
   const projectFilter = projects.size === 1 ? ids[0] : null, results: Record<string, unknown>[] = [], sources: RoleToolSource[] = [];

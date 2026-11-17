@@ -655,7 +655,7 @@ test('FERRAMENTAS: lookups run with the asking person permissions; loans never s
     const crossOrg = await runRoleTool(f.db, f.actors.owner, 'org_proex', 'consultar_demandas', { texto: 'Lote 10/11' });
     assert.ok(crossOrg.content.includes('24 conjuntos') && !crossOrg.content.includes('SEGREDO-C'), 'only projects of the conversation organization');
     assert.ok((await runRoleTool(f.db, f.actors.owner, 'org_outra', 'consultar_demandas', { texto: 'Lote 10/11' })).content.includes('SEGREDO-C'), 'the other organization answers only in its own conversations');
-    assert.ok(loans.content.includes('Plantão CONPEEX') && loans.content.includes('atrasado'));
+    assert.ok(loans.content.includes('Plantão CONPEEX') && loans.content.includes('Em atraso'));
     for (const secretText of ['Pessoa Privada', 'contato@privado.invalid', '@example.test']) assert.ok(!loans.content.includes(secretText), secretText);
     assert.equal((await runRoleTool(f.db, f.actors.viewer, 'org_proex', 'consultar_emprestimos', {})).rows, 0, 'inventory role does not read loans');
     await assert.rejects(runRoleTool(f.db, f.actors.viewer, 'org_proex', 'apagar_tudo', {}), error => error.code === 'role_tool_unknown');
