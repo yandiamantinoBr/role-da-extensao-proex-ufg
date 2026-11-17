@@ -63,3 +63,12 @@ As cotas oficiais consultadas em 2026-10-31 indicam 100 destinatários/dia para 
 Testes locais usam banco descartável, endereços `example.test`, credenciais sintéticas e MailApp falso. Cobrem revogação, mudança de e-mail, opt-out, equipe, escopos A/B, quota, admissão concorrente, expiração, timeout, ACK perdido, incerteza e exclusão das projeções Sheets/MCP/Drive. As tabelas `followup_email_*` são internas e não entram no formato portátil. O backup completo criptografado pode contê-las, como restante do estado privado da aplicação.
 
 O componente `EmailSettingsPanel` recebe somente `organizationId`; o coordenador monta-o no contexto apropriado, com remount ao mudar organização. Revisão independente, reconciliação de schema/migração e testes integrados foram concluídos na publicação V12. A preparação operacional posterior à V13 e a nova autorização após V15 estão descritas acima. Verificação desta mudança: somente fixtures sintéticas, sem credencial real, Google, envio ou alteração em produção pelo implementador; execução e recibo reais devem ser registrados separadamente pela coordenação.
+
+## Convite por e-mail (17/11, migração 0054)
+
+Quem cria um convite em Equipes ou no pré-cadastro pode enviá-lo por esta mesma fila. O envio usa a fila própria `invite_email_queue` (ids `iv-…`) e as mesmas configuração, credencial, cota e intervalo dos outros avisos. A cota de convites é de até um terço da cota diária da organização, e cada convite gera no máximo um e-mail.
+
+- **Quando o botão aparece.** "Enviar por e-mail" só aparece se o e-mail estiver ligado em Configurações e se o script tiver declarado `kinds` com `'invite'` nas últimas 48 h. Sem isso, a tela mostra uma linha curta dizendo que o e-mail ainda não está ligado, e quem convida usa WhatsApp, a mensagem ou o QR.
+- **Para ligar.** Cole o `public/integracoes/proex-notificacoes.gs` atualizado no projeto Apps Script da organização. Ele declara `'invite'` e aceita só o modelo fixo: assunto "PROEX · Convite para o portal", texto fixo e, na última linha, `<portal>/convite#token=<código>`.
+- **O código do convite.** Fica cifrado (AES-GCM, chave do servidor) só até o MailApp aceitar a mensagem. Depois é apagado. Convite aceito, cancelado ou expirado antes da vez nunca sai: a linha vira `cancelled` e o código é apagado.
+- **O destinatário.** É sempre o e-mail do próprio convite. Só quem criou o convite pode pedir o envio.

@@ -96,16 +96,21 @@ function avisoProcessar_(pilot) {
       if (Date.now() - start >= NOTIFY_BUDGET_MS) throw avisoErro_('email_time_budget');
       if (avisoConta_() !== actual) throw avisoErro_('email_sender_mismatch');
       var quota = MailApp.getRemainingDailyQuota(); if (!Number.isSafeInteger(quota) || quota < 1) { avisoEstado_({ status: 'google_quota', at: new Date().toISOString(), accepted: accepted, remainingQuota: Math.max(0, quota || 0) }); return { accepted: accepted, state: 'google_quota' }; }
-      var response = avisoApi_(Object.assign({}, common, pilot ? { action: 'dispatch.pilot.claim', remainingQuota: quota } : { action: 'dispatch.claim', remainingQuota: quota, kinds: ['demand', 'message', 'convocation'] }));
+      var response = avisoApi_(Object.assign({}, common, pilot ? { action: 'dispatch.pilot.claim', remainingQuota: quota } : { action: 'dispatch.claim', remainingQuota: quota, kinds: ['demand', 'message', 'convocation', 'invite'] }));
       if (!response.claim) { avisoEstado_({ status: response.state || 'idle', at: new Date().toISOString(), accepted: accepted, remainingQuota: quota }); return { accepted: accepted, state: response.state || 'idle' }; }
       pending = { organizationId: organizationId, installerEmail: actual, id: response.claim.id, claimToken: response.claim.claimToken, stage: 'begin_pending', pilot: !!pilot }; avisoPending_(pending);
       var message = avisoApi_(Object.assign({}, common, { action: pilot ? 'dispatch.pilot.begin' : 'dispatch.begin', id: pending.id, claimToken: pending.claimToken, remainingQuota: quota }));
-      // Três modelos fixos: aviso de demanda (com o identificador), de recado (sem conteúdo nem remetente) ou de convocação (só contagens e o link).
+      // Quatro modelos fixos: aviso de demanda (com o identificador), de recado (sem conteúdo nem remetente), de convocação (só contagens e o link) ou de convite (link pessoal).
       var recado = !pilot && message.subject === 'PROEX · Novo recado';
       var convocacao = !pilot && message.subject === 'PROEX · Convocação';
+      var convite = !pilot && message.subject === 'PROEX · Convite para o portal';
       if (convocacao) {
         var convLines = typeof message.body === 'string' ? message.body.split('\n') : [], convLink = convLines[convLines.length - 1], convBase = props.getProperty('PORTAL_URL').replace(/:443$/, '') + '/?module=convocations&convocation=';
         if (message.senderEmail !== actual || !message.acceptanceToken || !/^[A-Za-z0-9_-]{20,100}$/.test(message.acceptanceToken) || message.body.length > 800 || convLines[convLines.length - 2] !== 'Acompanhe no portal:' || convLink.indexOf(convBase) !== 0 || !/^[A-Za-z0-9._~%:-]+$/.test(convLink.slice(convBase.length)) || avisoEmail_(message.to) !== message.to || /[,;\r\n]/.test(message.to)) throw avisoErro_('email_message_invalid');
+      } else if (convite) {
+        // Convite: texto fixo; a última linha é o link pessoal do portal (código depois do "#"), nada mais.
+        var invLines = typeof message.body === 'string' ? message.body.split('\n') : [], invLink = invLines[invLines.length - 1], invBase = props.getProperty('PORTAL_URL').replace(/:443$/, '') + '/convite#token=';
+        if (message.senderEmail !== actual || !message.acceptanceToken || !/^[A-Za-z0-9_-]{20,100}$/.test(message.acceptanceToken) || message.body.length > 800 || message.body.indexOf('Você recebeu um convite para o Portal PROEX UFG.\n\n') !== 0 || invLines[invLines.length - 2] !== 'Para ativar seu acesso, abra:' || invLink.indexOf(invBase) !== 0 || !/^[A-Za-z0-9_-]{43}$/.test(invLink.slice(invBase.length)) || avisoEmail_(message.to) !== message.to || /[,;\r\n]/.test(message.to)) throw avisoErro_('email_message_invalid');
       } else {
       if (message.senderEmail !== actual || !message.acceptanceToken || !/^[A-Za-z0-9_-]{20,100}$/.test(message.acceptanceToken) || (message.subject !== 'PROEX · Nova demanda' && !recado) || typeof message.body !== 'string' || message.body.length > 800 || !(recado ? /^Você recebeu um recado no Portal PROEX\.\n\nAcesse o portal para ler:\nhttps:\/\//.test(message.body) : /^Você recebeu uma demanda na PROEX\.\n\nAcesse o portal para consultar os detalhes:\nhttps:\/\//.test(message.body)) || avisoEmail_(message.to) !== message.to || /[,;\r\n]/.test(message.to)) throw avisoErro_('email_message_invalid');
       var linkLines = message.body.split('\n'), link = linkLines[linkLines.length - 1], portalBase = props.getProperty('PORTAL_URL').replace(/:443$/, ''), expectedLink = portalBase + '/?module=demands&demandId=';

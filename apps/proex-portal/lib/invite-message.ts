@@ -1,6 +1,6 @@
 /**
- * Mensagem pronta do convite (17/11): vai pelo WhatsApp (wa.me, sem API nem conta da Meta), pelo e-mail de quem convida
- * (mailto) ou copiada. O link já vem no formato com o código depois do "#", que não chega ao servidor nem aos logs.
+ * Mensagem pronta do convite (17/11): vai pelo WhatsApp (wa.me, sem API nem conta da Meta) ou copiada; o e-mail
+ * sai pela fila de avisos (lib/invites/invite-email.ts), com texto fixo próprio. O link já vem no formato com o código depois do "#", que não chega ao servidor nem aos logs.
  * Puro, sem rede: só monta textos e endereços.
  */
 export type InviteMessageInput = { name?: string | null; roleLabel?: string | null; scopeLabel?: string | null; url: string; expiresAt?: string | null };
@@ -8,8 +8,6 @@ export type InviteMessageInput = { name?: string | null; roleLabel?: string | nu
 const dayFormat = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeZone: 'America/Sao_Paulo' });
 const timeFormat = new Intl.DateTimeFormat('pt-BR', { timeStyle: 'short', timeZone: 'America/Sao_Paulo', hourCycle: 'h23' });
 const clean = (value: string | null | undefined) => String(value ?? '').replace(/\s+/g, ' ').trim();
-
-export const INVITE_EMAIL_SUBJECT = 'Convite para o Portal PROEX UFG';
 
 export function inviteMessage({ name, roleLabel, scopeLabel, url, expiresAt }: InviteMessageInput): string {
   const first = clean(name), scope = clean(scopeLabel), rawRole = clean(roleLabel);
@@ -27,11 +25,4 @@ export function inviteMessage({ name, roleLabel, scopeLabel, url, expiresAt }: I
 /** Link do WhatsApp sem número: a pessoa escolhe o contato no próprio aplicativo. */
 export function whatsappShareHref(message: string): string {
   return `https://wa.me/?text=${encodeURIComponent(message)}`;
-}
-
-/** Abre o e-mail de quem convida, com destinatário, assunto e texto prontos. */
-export function emailShareHref(email: string | null | undefined, message: string): string {
-  const to = clean(email);
-  const recipient = /^[^\s@<>?&]+@[^\s@<>?&]+\.[^\s@<>?&]+$/.test(to) ? encodeURIComponent(to).replace(/%40/g, '@') : '';
-  return `mailto:${recipient}?subject=${encodeURIComponent(INVITE_EMAIL_SUBJECT)}&body=${encodeURIComponent(message)}`;
 }

@@ -19,6 +19,11 @@ Comece pela [Retomada de 13/11](RETOMADA-13NOV-PORTAL-PROEX.md) para conferir a 
   - O Yan (ou a administração) precisa incluir a Pró-Reitora e as coordenações na Gestão superior.
 - **Não fazer:** mudar uma demanda de pública para privada ou o contrário (o histórico já foi avisado a outras pessoas); colocar nomes reais no repositório (o modelo de tela tinha um).
 
+## Convite pelo pré-cadastro · 17/11 (Claude Code, sessão de empréstimos e convites)
+
+- **No ar (PR217):** cada pessoa do pré-cadastro mostra a situação do convite e ganha Convidar, Reenviar e Cancelar convite. O convite abre já preenchido e sai com mensagem pronta (WhatsApp, copiar e QR). Dá para convidar várias pessoas de uma vez, vendo o andamento de cada uma. Testes: `tests/directory-invite.test.mjs` e `tests/directory-panel.test.mjs`.
+- **E-mail pela fila de avisos (esta PR, migração 0054):** o e-mail do convite sai pela fila de avisos (MailApp). O botão só aparece quando a fila está funcionando. Para ligar, o Yan cola o `proex-notificacoes.gs` atualizado no Apps Script; até lá, a tela diz que o e-mail ainda não está ligado. Detalhes em `apps/proex-portal/docs/AVISOS-EMAIL.md`. Teste: `tests/invite-email.test.mjs`. **Próxima migração livre: 0055.**
+
 ## Rolê · fontes oficiais, botão de busca e planilha de brindes · 17/11 (Claude Code, sessão do Rolê)
 
 - **No ar e validado com login:** [PR176](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/176) (`3332edb`, edital certo e dizer o que leu), [PR187](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/187) (`bbec860`, botão "Fontes oficiais" e busca sem chave de conversa), [PR191](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/191) (`f52f54f`, aviso da planilha de brindes) e [PR194](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/194) (`ce83525`, índice do site que não fica preso e pedido com a Agenda indo para a conversa).

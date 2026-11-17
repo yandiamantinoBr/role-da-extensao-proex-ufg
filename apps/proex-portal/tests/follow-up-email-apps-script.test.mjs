@@ -25,3 +25,15 @@ test('a message notice (recado) uses its own fixed template and link; the regula
  const f=fixture({message:recado});f.context.ativarAvisosEmail();assert.equal(f.context.avisosEmailAutomaticos().accepted,1);assert.equal(f.sent[0].subject,'PROEX · Novo recado');assert.doesNotMatch(f.sent[0].body,/demandId/);
  const claimCall=f.calls.map(call=>typeof call==='string'?call:JSON.stringify(call)).find(call=>call.includes('dispatch.claim'));assert.ok(claimCall&&claimCall.includes('message'),'the regular claim asks for message notices too');
  for(const bad of [{...recado,body:recado.body.replace('tab=messages','tab=messages&x=1')},{...recado,body:recado.body.replace('recado no Portal','demanda no Portal')},{...recado,subject:'PROEX · Recado'}]){const g=fixture({message:bad});g.context.ativarAvisosEmail();assert.throws(()=>g.context.avisosEmailAutomaticos(),/email_message_invalid/);assert.equal(g.sent.length,0);}});
+
+// Convite (17/11): o script declara 'invite' e só envia o modelo fixo, com o link pessoal do próprio portal (código depois do "#").
+const inviteBody=code=>`Você recebeu um convite para o Portal PROEX UFG.\n\nO link é pessoal e vale por tempo limitado. Não o repasse a outras pessoas.\nPara ativar seu acesso, abra:\nhttps://synthetic.invalid/convite#token=${code}`;
+test('the invite model is declared and sent only with the fixed text and a personal link of this portal',()=>{
+ assert.match(source,/kinds: \['demand', 'message', 'convocation', 'invite'\]/);
+ const f=fixture({message:{subject:'PROEX · Convite para o portal',body:inviteBody('i'.repeat(43))}});f.context.ativarAvisosEmail();
+ assert.equal(f.context.avisosEmailAutomaticos().accepted,1);assert.equal(f.sent.length,1);assert.equal(f.sent[0].subject,'PROEX · Convite para o portal');
+ for(const body of [inviteBody('i'.repeat(43)).replace('/convite#token=','/convite?token='),inviteBody('i'.repeat(43)).replace('https://synthetic.invalid','https://outro.invalid'),inviteBody('i'.repeat(42)+'!'),inviteBody('i'.repeat(43))+'\nhttps://outro.invalid']){
+  const bad=fixture({message:{subject:'PROEX · Convite para o portal',body}});bad.context.ativarAvisosEmail();
+  assert.throws(()=>bad.context.avisosEmailAutomaticos(),/email_message_invalid/);assert.equal(bad.sent.length,0,'never calls MailApp');
+ }
+});

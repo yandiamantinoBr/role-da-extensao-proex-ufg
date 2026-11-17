@@ -7,7 +7,7 @@ import {compile,teamFixture} from './support/work-teams-fixture.mjs';
 const {directoryWorkspace,directoryAction}=await import(compile('lib/directory/service.ts'));
 const access=await import(compile('lib/access.ts'));
 const {invitationShareLink}=await import(compile('lib/invitation-link.ts'));
-const {inviteMessage,whatsappShareHref,emailShareHref}=await import(compile('lib/invite-message.ts'));
+const {inviteMessage,whatsappShareHref}=await import(compile('lib/invite-message.ts'));
 const origin='https://portal.example.test',secret='segredo-sintetico-de-teste-com-mais-de-32-caracteres';
 const CONTACT='convidada@example.invalid';
 
@@ -67,8 +67,6 @@ test('the ready message carries the name, what the person will access and a link
  assert.match(message,/^Olá, Pessoa Convidada! Você recebeu um convite para o Portal PROEX UFG como leitor de relatórios, em Projeto sintético\./);
  assert.match(message,/vale até 10\/03\/2099 às 12:00, horário de Brasília/);assert.ok(message.includes(url));assert.match(message,/O link é pessoal/);
  const wa=whatsappShareHref(message);assert.ok(wa.startsWith('https://wa.me/?text='));assert.equal(decodeURIComponent(wa.slice('https://wa.me/?text='.length)),message);
- const mail=emailShareHref(CONTACT,message);assert.ok(mail.startsWith(`mailto:${CONTACT}?subject=`));assert.equal(new URLSearchParams(mail.split('?')[1]).get('body'),message);
- assert.ok(emailShareHref('x@y.z?bcc=evil@example.invalid',message).startsWith('mailto:?'),'a contact with query characters never adds recipients');
 });
 
 test('the screens never log the invite code and the share actions are wired in both places',()=>{

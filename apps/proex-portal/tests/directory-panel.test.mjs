@@ -112,7 +112,14 @@ test('Convidar opens the invite already filled; confirming sends one invite with
   const request=h.last(),input=JSON.parse(request.init.body);
   assert.equal(request.url,'/api/portal');assert.equal(input.action,'invite.create');assert.equal(input.email,'pessoa@example.invalid');assert.equal(input.role,'viewer');assert.equal(input.projectId,'project-a');assert.ok(input.operationKey);
   await h.ready(created());await tick();h.render();
-  assert.match(h.body(),/Convite criado para Pessoa de exemplo/);for(const label of ['Enviar por e-mail','Compartilhar no WhatsApp','Copiar mensagem','Copiar link'])assert.ok(h.body().includes(label),label);
+  assert.match(h.body(),/Convite criado para Pessoa de exemplo/);for(const label of ['Compartilhar no WhatsApp','Copiar mensagem','Copiar link'])assert.ok(h.body().includes(label),label);
+  // E-mail goes through the organization's notice queue, and the button only shows when the queue is working.
+  const action=name=>h.requests.find(r=>r.init?.body&&JSON.parse(r.init.body).action===name);
+  const status=action('invite.email.status');assert.equal(JSON.parse(status.init.body).inviteId,'invite-new');assert.ok(!h.body().includes('Enviar por e-mail'),'nothing before the answer');
+  h.reply(status,{available:true,status:null});await tick();h.render();
+  h.click('Enviar por e-mail para pessoa@example.invalid');const queue=action('invite.email.queue'),queued=JSON.parse(queue.init.body);
+  assert.equal(queued.inviteId,'invite-new');assert.match(queued.url,/\/convite#token=/);
+  h.reply(queue,{queued:true,status:'queued'});await tick();h.render();assert.match(h.body(),/E-mail na fila: sai pelo e-mail da organização/);
   const wa=h.find('a',n=>text(n).includes('Compartilhar no WhatsApp'));assert.match(decodeURIComponent(wa.props.href),/Olá, Pessoa de exemplo!.*leitor de relatórios, em Projeto A/s);assert.match(decodeURIComponent(wa.props.href),/convite#token=/);
  }finally{h.dispose();}
 });
@@ -135,5 +142,15 @@ test('several people can be invited at once, one link each, with the progress of
   assert.equal(JSON.parse(h.last().init.body).email,'outra@example.invalid','the second one only after the first');
   await h.ready(created('invite-b'));await tick();h.render();
   assert.match(h.body(),/2 convites prontos/);const wa=h.find('a',n=>n.props['aria-label']==='Compartilhar no WhatsApp para Outra pessoa');assert.ok(wa);assert.match(decodeURIComponent(wa.props.href),/Olá, Outra pessoa!/);
+ }finally{h.dispose();}
+});
+test('without a working e-mail queue the invite says so in one line and keeps WhatsApp, copy and QR',async()=>{
+ const h=harness(inviteOptions);try{
+  await h.open(response({people:[person({invite:{state:'none'}})]}));h.click('Convidar Pessoa de exemplo');
+  h.find('form',n=>text(n).includes('Gerar convite')).props.onSubmit({preventDefault(){}});h.render();
+  await h.ready(created());await tick();h.render();
+  const status=h.requests.find(r=>r.init?.body&&JSON.parse(r.init.body).action==='invite.email.status');h.reply(status,{available:false,status:null});await tick();h.render();
+  assert.match(h.body(),/O envio por e-mail ainda não está ligado nesta organização/);assert.ok(!h.find('button',n=>String(n.props['aria-label']??'').startsWith('Enviar por e-mail')));
+  for(const label of ['Compartilhar no WhatsApp','Copiar mensagem','Copiar link','Mostrar QR code'])assert.ok(h.body().includes(label),label);
  }finally{h.dispose();}
 });
