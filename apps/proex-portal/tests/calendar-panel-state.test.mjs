@@ -290,6 +290,10 @@ test('cards, day previews and exports drop the repeated type word but keep it in
     assert.equal(args[6].recordsLabel, 'Compromissos do período'); assert.equal(args[6].mutedDetailLines, true);
     assert.equal(args[6].metrics.map(metric => `${metric.value} ${metric.label}`).join(' | '), '5 Compromissos | 3 Projetos e eventos | 1 Material | 1 Prazo de demanda', 'o quadro do PDF repete os contadores da tela');
     assert.equal(args[6].metrics[0].detail, 'inclui 1 cancelado', 'os cancelados viram nota do total');
+    const whens = Array.from(args[3], row => row.when);
+    assert.ok(whens[0].includes('/') && whens.slice(1).every(value => value === 'Dia inteiro'), `a data só na primeira linha do dia: ${whens}`);
+    assert.equal(Array.from(args[6].mutedRows).join(), String(Array.from(args[3]).findIndex(row => row.event.startsWith('CANCELADO'))), 'a linha cancelada sai em cinza no PDF');
+    assert.ok(h.all().some(node => node.type === 'span' && node.props.className === 'dotCancelled'), 'no celular, o ponto tracejado indica o cancelado do dia');
     assert.equal(h.all().find(node => node.type === ExportFormats).props.tiles, true, 'os três formatos cabem lado a lado na coluna da lista');
     h.respond(h.requests[index + 1], data); await download;
   } finally { h.dispose(); }

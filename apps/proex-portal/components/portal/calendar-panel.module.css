@@ -142,3 +142,9 @@
 .day[aria-current=date] .dayNumber { background: var(--surface-soft); color: var(--brand-ink); }
 .day[aria-current=date]:not(.selected) { border-color: color-mix(in srgb, var(--brand-ink) 45%, var(--line)); }
 .legend .legendCancelled { background: transparent; border: 1.5px dashed var(--muted); }
+/* Sétima crítica de 16/11: calendário mais largo no computador, legenda numa linha, cancelado visível nos pontos e rótulos da assinatura como os dos campos. */
+@container agenda (min-width:860px){.workspace{grid-template-columns:minmax(0,1.85fr) minmax(300px,1fr)}}
+.legend{gap:6px 10px}
+.dots>.dotCancelled{background:transparent;border:1.5px dashed var(--muted);box-sizing:border-box}
+.feedScope>span{font-size:13px;font-weight:600;color:var(--ink)}
+.activeFeeds h4{font-weight:650}
