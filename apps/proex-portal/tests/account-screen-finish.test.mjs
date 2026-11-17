@@ -7,7 +7,7 @@ const client = readFileSync(new URL('../app/portal-client.tsx', import.meta.url)
 const profile = readFileSync(new URL('../components/portal/profile-panel.tsx', import.meta.url), 'utf8');
 
 test('Conta opens with the profile, then access and connections, with the same 20px gap (crítica de 16/11)', () => {
-  assert.match(client, /\{tab === 'profile' && <><ProfilePanel onUpdated=\{\(\) => \{ void refresh\(\); \}\}\/><div className="mt-5"><AccountAccessPanel /);
+  assert.match(client, /\{tab === 'profile' && <><ProfilePanel onUpdated=\{\(\) => \{ void refresh\(\); \}\}\/><div className="mt-5 grid gap-5"><AccountAccessPanel /);
 });
 
 test('Conta keeps one refresh per page: the profile card no longer has its own (crítica de 16/11)', () => {
@@ -37,4 +37,12 @@ test('choices say "Não informar" and the summary says "Não informado(a)"; the 
   const css = readFileSync(new URL('../components/portal/account-access-panel.module.css', import.meta.url), 'utf8');
   assert.match(access, /aria-label="Atualizar meus acessos"><RefreshCw size=\{16\} aria-hidden="true"\/><span className=\{styles\.refreshLabel\}>Atualizar<\/span>/);
   assert.match(css, /@container \(max-width:440px\) \{[^}]*\.header \{ align-items:flex-start; flex-wrap:nowrap; \}[\s\S]*\.refreshLabel \{ display:none; \}/);
+});
+
+test('photo buttons and rules sit in the name column, and the IA and Drive rows have dark titles (quarta crítica de 16/11)', () => {
+  assert.match(profile, /<div className=\{styles\.photoRow\}>\s*<div className=\{styles\.photoActions\}>/);
+  assert.doesNotMatch(profile.slice(profile.indexOf('styles.avatarColumn'), profile.indexOf('styles.heroBody')), /photoActions|photoHelp/, 'a coluna da foto fica só com a foto');
+  for (const file of ['mcp-connections-panel.module.css', 'google-drive.module.css']) {
+    assert.match(readFileSync(new URL(`../components/portal/${file}`, import.meta.url), 'utf8'), /\.summary strong \{ color: var\(--text-strong\); \}/, file);
+  }
 });

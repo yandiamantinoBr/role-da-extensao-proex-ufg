@@ -30,3 +30,6 @@
 .summary::-webkit-details-marker { display: none; }
 .chevron { flex-shrink: 0; color: var(--text-secondary); }
 .panel[open] .chevron { transform: rotate(180deg); }
+
+/* Título escuro como "Senha de acesso"; o roxo fica para links (crítica de 16/11). */
+.summary strong { color: var(--text-strong); }

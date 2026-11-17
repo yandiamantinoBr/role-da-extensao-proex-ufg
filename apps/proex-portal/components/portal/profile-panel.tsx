@@ -301,14 +301,17 @@ export default function ProfilePanel({ onUpdated }: Props) {
             {/* eslint-disable-next-line @next/next/no-img-element -- Private avatars must be fetched by the signed-in browser without an image proxy. */}
             {avatar ? <img src={avatar} alt={preview ? 'Prévia da sua nova foto' : 'Sua foto de perfil'} width={144} height={144} /> : <UserRound size={52} aria-hidden="true" />}
           </div>
-          <div className={styles.photoActions}>
-            <button type="button" className="p-button p-button-subtle" disabled={disabled} onClick={takePhoto}><Camera size={16} aria-hidden="true" />Tirar foto</button>
-            <button type="button" className="p-button p-button-subtle" disabled={disabled} onClick={() => galleryRef.current?.click()}><ImagePlus size={16} aria-hidden="true" />Escolher foto</button>
-          </div>
-          <p className={styles.photoHelp}>JPEG, PNG ou WebP de até 20 MB. A foto é salva assim que escolhida, reduzida a 256 pixels e sem metadados.</p>
         </div>
         <div className={styles.heroBody}>
           <div className={styles.heroHeading}><div><p className={styles.kicker}>Meu perfil</p><h2 className={styles.name} id="profile-title">{profile.displayName}</h2><p className={styles.email}>{profile.email}</p></div></div>
+          {/* Foto: botões e regras na coluna do nome, sem coluna estreita ao lado (crítica de 16/11). */}
+          <div className={styles.photoRow}>
+            <div className={styles.photoActions}>
+              <button type="button" className="p-button p-button-subtle" disabled={disabled} onClick={takePhoto}><Camera size={16} aria-hidden="true" />Tirar foto</button>
+              <button type="button" className="p-button p-button-subtle" disabled={disabled} onClick={() => galleryRef.current?.click()}><ImagePlus size={16} aria-hidden="true" />Escolher foto</button>
+            </div>
+            <p className={styles.photoHelp}>JPEG, PNG ou WebP de até 20 MB. A foto é salva assim que escolhida, reduzida a 256 pixels e sem metadados.</p>
+          </div>
           {/* O resumo só mostra o que foi preenchido; os campos completos ficam logo abaixo (crítica de 16/11). */}
           {(selectedUnit || profile.unitId || profile.unit || profile.affiliation || profile.jobTitle || profile.registrationNumber) && <dl className={styles.summary}>
             {(selectedUnit || profile.unitId || profile.unit) && <div><dt>Unidade institucional</dt><dd>{selectedUnit ? unitLabel(selectedUnit) : profile.unitId ? 'Unidade cadastrada' : profile.unit}{selectedUnit && profile.unit && <small>{profile.unit}</small>}{selectedUnit?.status === 'archived' && <small>Unidade arquivada · vínculo preservado</small>}</dd></div>}
