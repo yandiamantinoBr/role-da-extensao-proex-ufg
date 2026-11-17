@@ -15,6 +15,7 @@ function harness(initial={}){
  const same=(a,b)=>a&&b&&a.length===b.length&&a.every((value,i)=>Object.is(value,b[i]));
  const hooks={
   useState(initial){const slot=frame.index++,owner=frame;if(!(slot in owner.slots))owner.slots[slot]=typeof initial==='function'?initial():initial;return[owner.slots[slot],next=>{owner.slots[slot]=typeof next==='function'?next(owner.slots[slot]):next;}];},
+  useId(){const slot=frame.index++;return frame.slots[slot]??=`id-${slot}`;},
   useRef(initial){const slot=frame.index++;return frame.slots[slot]??={current:initial};},
   useEffect(fn,deps){effect(fn,deps,effects);},useLayoutEffect(fn,deps){effect(fn,deps,layouts);},
  };
@@ -35,7 +36,7 @@ function harness(initial={}){
   }
   class FormData{constructor(form){this.values=new Map(Object.entries(form.values));}get(key){return this.values.get(key)??null;}}
   const code=ts.transpileModule(readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText;
-  vm.runInNewContext(code,{module:mod,exports:mod.exports,require,Date,Intl,JSON,URL,URLSearchParams,Error,DOMException,AbortController,Blob,crypto,FormData,fetch:(url,init)=>new Promise(resolve=>requests.push({url,init,resolve}))});return mod.exports;
+  vm.runInNewContext(code,{module:mod,exports:mod.exports,require,Date,Intl,JSON,URL,URLSearchParams,Error,DOMException,AbortController,Blob,crypto,FormData,window:{location:{origin:'https://portal.example.test'},setTimeout},navigator:{onLine:true},fetch:(url,init)=>new Promise(resolve=>requests.push({url,init,resolve}))});return mod.exports;
  }
  const Component=load(path.join(root,'components/portal/directory-panel.tsx')).default;
  function expand(value,address,used){
@@ -64,7 +65,7 @@ function harness(initial={}){
  };h.render();return h;
 }
 test('directory is opt-in and private: matching read, bounded cards, direct editor and independently loaded history',async()=>{
- const h=harness();try{assert.equal(h.requests.length,0);assert.match(h.body(),/não cria conta, convite, acesso ou aviso/);await h.open();assert.equal(h.last().init.cache,'no-store');assert.match(h.body(),/Pré-cadastrado/);h.click('Editar pré-cadastro de Pessoa de exemplo');const req=h.last();assert.match(req.url,/personId=person-a/);await h.ready(detail());h.click('Histórico de alterações');assert.match(h.body(),/Versão 1/);assert.ok(h.find('input',n=>n.props.name==='name'));h.click('Cancelar');assert.ok(!h.find('form'));}finally{h.dispose();}
+ const h=harness();try{assert.equal(h.requests.length,0);assert.match(h.body(),/Salvar um pré-cadastro não cria conta nem acesso: o convite só sai quando você clica em Convidar/);await h.open();assert.equal(h.last().init.cache,'no-store');assert.match(h.body(),/Pré-cadastrado/);h.click('Editar pré-cadastro de Pessoa de exemplo');const req=h.last();assert.match(req.url,/personId=person-a/);await h.ready(detail());h.click('Histórico de alterações');assert.match(h.body(),/Versão 1/);assert.ok(h.find('input',n=>n.props.name==='name'));h.click('Cancelar');assert.ok(!h.find('form'));}finally{h.dispose();}
 });
 test('save is explicit and status remains pending; success is shown only after a fresh matching read',async()=>{
  const h=harness();try{await h.open();h.click('Adicionar pessoa');h.submit('Adicionar pré-cadastro',{name:'Outra pessoa',position:'Apoio',sector:'Área de exemplo',contact:'outra@example.invalid',status:'pending'});const req=h.last();assert.equal(req.init.method,'POST');const input=JSON.parse(req.init.body);assert.equal(input.action,'person.create');assert.equal(input.status,'pending');assert.equal(input.organizationId,'org-a');assert.equal(input.userId,undefined);assert.ok(input.operationKey);assert.equal(req.init.headers['X-Proex-Action'],'1');await h.ready(detail({person:person({id:'person-b',name:'Outra pessoa'}),history:[{version:1,at:'2026-11-06T12:00:00Z',person:person({id:'person-b',name:'Outra pessoa'})}]}));assert.match(h.body(),/Salvando/);assert.ok(!h.body().includes('Pré-cadastro salvo.'));await h.ready(response({people:[person(),person({id:'person-b',name:'Outra pessoa'})]}));assert.match(h.body(),/Pré-cadastro salvo/);assert.ok(!h.find('form'));assert.equal(h.toasts.at(-1)[0],'success');}finally{h.dispose();}
@@ -96,4 +97,43 @@ test('retries preserve operation identity after ambiguous failure and changed fo
 });
 test('list pages and filters keep history separate from account authority',async()=>{
  const h=harness();try{await h.open(response({people:Array.from({length:8},(_,n)=>person({id:`person-${n}`,name:`Pessoa ${n}`,status:n===7?'archived':'pending'}))}));assert.equal(h.all('button').filter(b=>String(b.props['aria-label']).startsWith('Editar pré-cadastro')).length,6);h.click('Próxima');assert.match(h.body(),/Pessoa 6/);assert.ok(!h.body().includes('Pessoa 0'));}finally{h.dispose();}
+});
+
+// Convite a partir do pré-cadastro (17/11): convidar, cancelar e convidar várias pessoas. Dados sintéticos.
+const inviteOptions={invite:{projects:[{id:'project-a',name:'Projeto A'}],defaultProjectId:'project-a',canInviteManager:()=>false}};
+const sentInvite={state:'pending',inviteId:'invite-1',role:'viewer',projectId:'project-a',projectName:'Projeto A',sentAt:'2026-11-17T12:00:00Z',expiresAt:'2099-11-24T12:00:00Z'};
+const created=(id='invite-new')=>({id,inviteUrl:`https://portal.example.test/convite?token=${'a'.repeat(43)}`,expiresAt:'2099-11-24T12:00:00Z',delivery:'manual'});
+test('Convidar opens the invite already filled; confirming sends one invite with the suggested role and shows the ready message',async()=>{
+ const h=harness(inviteOptions);try{
+  await h.open(response({people:[person({invite:{state:'none'}})]}));assert.match(h.body(),/Ainda não convidado/);
+  h.click('Convidar Pessoa de exemplo');assert.match(h.body(),/Os dados vêm do pré-cadastro/);
+  assert.ok(h.find('select',n=>n.props.value==='project-a'),'project already chosen');assert.ok(h.find('select',n=>n.props.value==='viewer'),'least access suggested');
+  const form=h.find('form',n=>text(n).includes('Gerar convite'));form.props.onSubmit({preventDefault(){}});h.render();
+  const request=h.last(),input=JSON.parse(request.init.body);
+  assert.equal(request.url,'/api/portal');assert.equal(input.action,'invite.create');assert.equal(input.email,'pessoa@example.invalid');assert.equal(input.role,'viewer');assert.equal(input.projectId,'project-a');assert.ok(input.operationKey);
+  await h.ready(created());await tick();h.render();
+  assert.match(h.body(),/Convite criado para Pessoa de exemplo/);for(const label of ['Enviar por e-mail','Compartilhar no WhatsApp','Copiar mensagem','Copiar link'])assert.ok(h.body().includes(label),label);
+  const wa=h.find('a',n=>text(n).includes('Compartilhar no WhatsApp'));assert.match(decodeURIComponent(wa.props.href),/Olá, Pessoa de exemplo!.*leitor de relatórios, em Projeto A/s);assert.match(decodeURIComponent(wa.props.href),/convite#token=/);
+ }finally{h.dispose();}
+});
+test('a sent invite shows its date and can be resent or cancelled; cancelling sends invite.revoke for that invite',async()=>{
+ const h=harness(inviteOptions);try{
+  await h.open(response({people:[person({invite:sentInvite})]}));assert.match(h.body(),/Convite enviado em 17\/11\/2026 · vale até 24\/11\/2099 · Projeto A/);
+  assert.ok(h.button('Reenviar o convite de Pessoa de exemplo'));assert.ok(!h.body().includes('Selecionar Pessoa de exemplo'));
+  h.click('Cancelar o convite de Pessoa de exemplo');const input=JSON.parse(h.last().init.body);assert.equal(input.action,'invite.revoke');assert.equal(input.id,'invite-1');
+ }finally{h.dispose();}
+ const member=harness(inviteOptions);try{await member.open(response({people:[person({invite:{state:'member'}})]}));assert.match(member.body(),/Já tem acesso ao portal/);assert.ok(!member.find('button',n=>String(n.props['aria-label']??'').startsWith('Convidar')));assert.ok(!member.find('input',n=>n.props.type==='checkbox'));}finally{member.dispose();}
+});
+test('several people can be invited at once, one link each, with the progress of each person',async()=>{
+ const other=person({id:'person-b',name:'Outra pessoa',contact:'outra@example.invalid',invite:{state:'none'}});
+ const h=harness(inviteOptions);try{
+  await h.open(response({people:[person({invite:{state:'expired',expiresAt:'2026-11-01T12:00:00Z'}}),other]}));
+  h.click('Selecionar todos para convidar');assert.match(h.body(),/2 selecionadas/);h.click('Convidar selecionadas');
+  assert.match(h.body(),/Convidar 2 pessoas/);const form=h.find('form',n=>text(n).includes('Gerar 2 convites'));form.props.onSubmit({preventDefault(){}});h.render();
+  assert.equal(JSON.parse(h.last().init.body).email,'pessoa@example.invalid');assert.match(h.body(),/Criando convites: 0 de 2 prontos/);
+  await h.ready(created('invite-a'));await tick();h.render();
+  assert.equal(JSON.parse(h.last().init.body).email,'outra@example.invalid','the second one only after the first');
+  await h.ready(created('invite-b'));await tick();h.render();
+  assert.match(h.body(),/2 convites prontos/);const wa=h.find('a',n=>n.props['aria-label']==='Compartilhar no WhatsApp para Outra pessoa');assert.ok(wa);assert.match(decodeURIComponent(wa.props.href),/Olá, Outra pessoa!/);
+ }finally{h.dispose();}
 });

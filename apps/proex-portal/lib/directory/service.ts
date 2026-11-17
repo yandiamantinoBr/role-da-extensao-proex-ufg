@@ -5,11 +5,19 @@ import {prepareMutation} from '../mutations';
 import {id,text,version,choices,onlyKeys} from '../follow-up/contracts';
 import {authority,scopeStatement} from '../follow-up/scope';
 import {PROEX_TEAM,PROEX_TEAM_SOURCE} from '../catalog/proex-team';
-import {DIRECTORY_STATES,type DirectoryPerson,type DirectoryWorkspace,type DirectoryDetail} from './contracts';
+import {DIRECTORY_STATES,NO_INVITE,type DirectoryInvite,type DirectoryPerson,type DirectoryWorkspace,type DirectoryDetail} from './contracts';
 
 function fail(message:string,code='directory_invalid',status=400):never{throw new HttpError(status,message,code);}
 function actorRequired(actor:PortalActor|null):asserts actor is PortalActor{if(!actor)fail('Entre com sua conta para consultar os pré-cadastros.','unauthenticated',401);}
-function projection(row:Row):DirectoryPerson{return{id:row.id,name:row.name,position:row.position,sector:row.sector,contact:row.contact,contactStatus:row.contact_status,status:row.status,version:row.version,sourceKind:row.source_kind,referenceId:row.reference_id,sourceUrl:row.source_url,sourceUpdatedOn:row.source_updated_on,checkedOn:row.checked_on,adapted:Boolean(row.adapted),createdAt:row.created_at,updatedAt:row.updated_at};}
+/** Convite mais recente para o contato, nesta organização; quem já tem acesso ativo aparece como 'member'. */
+function inviteSummary(row:Row):DirectoryInvite{
+ if(Number(row.has_access)===1)return{...NO_INVITE,state:'member'};
+ const invite=row.invite&&typeof row.invite==='object'?row.invite as Row:null;
+ if(!invite||invite.accepted_at)return NO_INVITE;
+ const state=invite.revoked_at?'cancelled':Date.parse(String(invite.expires_at))<=Date.now()?'expired':'pending';
+ return{state,inviteId:invite.id,role:invite.role,projectId:invite.project_id??null,projectName:invite.project_name??null,sentAt:invite.created_at,expiresAt:invite.expires_at};
+}
+function projection(row:Row):DirectoryPerson{return{id:row.id,name:row.name,position:row.position,sector:row.sector,contact:row.contact,contactStatus:row.contact_status,status:row.status,version:row.version,sourceKind:row.source_kind,referenceId:row.reference_id,sourceUrl:row.source_url,sourceUpdatedOn:row.source_updated_on,checkedOn:row.checked_on,adapted:Boolean(row.adapted),createdAt:row.created_at,updatedAt:row.updated_at,invite:inviteSummary(row)};}
 async function requireAdmin(db:D1Database,actor:PortalActor,organizationId:string){
  if(!await one(db,`SELECT 1 FROM organizations org WHERE org.id=? AND org.status='active' AND ${authority('?','org.id','NULL',true)}`,[organizationId,actor.userId]))fail('Somente a administração desta organização pode consultar e preparar pré-cadastros.','directory_forbidden',403);
 }
@@ -17,7 +25,13 @@ async function requireAdmin(db:D1Database,actor:PortalActor,organizationId:strin
 async function snapshot(db:D1Database,actor:PortalActor,organizationId:string,personId:string|null){
  const read=()=>one(db,`WITH caller AS(SELECT ? user_id,? organization_id), visible AS(
  SELECT person.* FROM directory_people person JOIN caller WHERE person.organization_id=caller.organization_id AND (? IS NULL OR person.id=?) ORDER BY person.name,person.id LIMIT 501)
- SELECT org.name organization_name,(SELECT json_group_array(json_object('id',id,'name',name,'position',position,'sector',sector,'contact',contact,'contact_status',contact_status,'status',status,'version',version,'source_kind',source_kind,'reference_id',reference_id,'source_url',source_url,'source_updated_on',source_updated_on,'checked_on',checked_on,'adapted',adapted,'created_at',created_at,'updated_at',updated_at)) FROM visible) people,
+ SELECT org.name organization_name,(SELECT json_group_array(json_object('id',id,'name',name,'position',position,'sector',sector,'contact',contact,'contact_status',contact_status,'status',status,'version',version,'source_kind',source_kind,'reference_id',reference_id,'source_url',source_url,'source_updated_on',source_updated_on,'checked_on',checked_on,'adapted',adapted,'created_at',created_at,'updated_at',updated_at,
+  'invite',json((SELECT json_object('id',i.id,'role',i.role,'project_id',i.project_id,'project_name',ip.name,'created_at',i.created_at,'expires_at',i.expires_at,'accepted_at',i.accepted_at,'revoked_at',i.revoked_at)
+   FROM invites i LEFT JOIN projects ip ON ip.id=i.project_id WHERE visible.contact<>'' AND lower(i.email)=lower(visible.contact) AND (i.organization_id=visible.organization_id OR ip.organization_id=visible.organization_id)
+   ORDER BY i.created_at DESC,i.id DESC LIMIT 1)),
+  'has_access',EXISTS(SELECT 1 FROM members m LEFT JOIN projects mp ON mp.id=m.project_id LEFT JOIN portal_users mu ON mu.user_id=m.user_id
+   WHERE visible.contact<>'' AND lower(m.email)=lower(visible.contact) AND m.revoked_at IS NULL AND COALESCE(mu.status,'active')='active' AND mu.anonymized_at IS NULL
+    AND (m.organization_id=visible.organization_id OR mp.organization_id=visible.organization_id OR (m.organization_id IS NULL AND m.project_id IS NULL))))) FROM visible) people,
  (SELECT json_group_array(json_object('version',version,'snapshot',snapshot_json,'created_at',created_at)) FROM(SELECT h.version,h.snapshot_json,h.created_at FROM directory_people_history h JOIN visible p ON p.id=h.person_id WHERE p.id=? ORDER BY h.version DESC LIMIT 51)) history
  FROM caller JOIN organizations org ON org.id=caller.organization_id WHERE org.status='active' AND ${authority('caller.user_id','org.id','NULL',true)}`,[actor.userId,organizationId,personId,personId,personId]);
  const first=await read(),last=await read();

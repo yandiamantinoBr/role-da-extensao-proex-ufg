@@ -1,7 +1,8 @@
 'use client';
 
 import { useId, useRef, useState } from 'react';
-import { Check, Copy, Download, QrCode, ShieldCheck } from 'lucide-react';
+import { Check, Copy, Download, Mail, MessageCircle, MessageSquareText, QrCode, ShieldCheck } from 'lucide-react';
+import { emailShareHref, inviteMessage, whatsappShareHref } from '@/lib/invite-message';
 import styles from './team-invite-share.module.css';
 
 const expiryFormat = new Intl.DateTimeFormat('pt-BR', {
@@ -31,7 +32,9 @@ async function invitationQr(url: string): Promise<string> {
   return canvas.toDataURL('image/png');
 }
 
-export default function TeamInviteShare({ url, expiresAt }: { url: string; expiresAt: string }) {
+type ShareProps = { url: string; expiresAt: string; name?: string | null; email?: string | null; roleLabel?: string | null; scopeLabel?: string | null };
+/** Link, mensagem pronta, WhatsApp, e-mail e QR do convite recém-criado. Nada é enviado pelo portal: quem convida escolhe o canal. */
+export default function TeamInviteShare({ url, expiresAt, name, email, roleLabel, scopeLabel }: ShareProps) {
   const id = useId();
   const input = useRef<HTMLInputElement>(null);
   const [copyState, setCopyState] = useState('');
@@ -39,11 +42,12 @@ export default function TeamInviteShare({ url, expiresAt }: { url: string; expir
   const [qrData, setQrData] = useState('');
   const [qrFailed, setQrFailed] = useState(false);
   const expiry = Date.parse(expiresAt);
+  const message = inviteMessage({ name, roleLabel, scopeLabel, url, expiresAt });
 
-  async function copy() {
+  async function copy(what: 'link' | 'message' = 'link') {
     try {
-      await navigator.clipboard.writeText(url);
-      setCopyState('Link copiado.');
+      await navigator.clipboard.writeText(what === 'link' ? url : message);
+      setCopyState(what === 'link' ? 'Link copiado.' : 'Mensagem copiada. Cole no aplicativo que preferir.');
     } catch {
       input.current?.focus();
       input.current?.select();
@@ -65,14 +69,22 @@ export default function TeamInviteShare({ url, expiresAt }: { url: string; expir
   return <section className={styles.result} aria-labelledby={`${id}-title`}>
     <div className={styles.heading} role="status">
       <ShieldCheck size={20} aria-hidden="true" />
-      <strong id={`${id}-title`}>Convite criado para a equipe</strong>
+      <strong id={`${id}-title`}>{name ? `Convite criado para ${name}` : 'Convite criado para a equipe'}</strong>
     </div>
     {Number.isFinite(expiry) && <p>Válido até <time dateTime={expiresAt}>{expiryFormat.format(expiry)}</time>, no horário de Brasília.</p>}
-    <p>Envie o link ou QR code diretamente à pessoa convidada.</p>
+    <p>Envie a mensagem pronta pelo canal que preferir. O link é pessoal e pode ser cancelado em Convites emitidos.</p>
+    <div className={styles.actions}>
+      {email && <a className="p-button p-button-primary" href={emailShareHref(email, message)} target="_blank" rel="noopener noreferrer"><Mail size={16} aria-hidden="true" />Enviar por e-mail</a>}
+      <a className={email ? 'p-button p-button-subtle' : 'p-button p-button-primary'} href={whatsappShareHref(message)} target="_blank" rel="noopener noreferrer"><MessageCircle size={16} aria-hidden="true" />Compartilhar no WhatsApp</a>
+      <button type="button" className="p-button p-button-subtle" onClick={() => void copy('message')}>
+        {copyState.startsWith('Mensagem') ? <Check size={16} aria-hidden="true" /> : <MessageSquareText size={16} aria-hidden="true" />}Copiar mensagem
+      </button>
+    </div>
+    <details className={styles.message}><summary>Ver a mensagem</summary><p>{message}</p></details>
     <label className={styles.label} htmlFor={`${id}-link`}>Link do convite</label>
     <input id={`${id}-link`} ref={input} readOnly value={url} spellCheck={false} onFocus={event => event.target.select()} />
     <div className={styles.actions}>
-      <button type="button" className="p-button p-button-primary" onClick={() => void copy()}>
+      <button type="button" className="p-button p-button-subtle" onClick={() => void copy()}>
         {copyState === 'Link copiado.' ? <Check size={16} aria-hidden="true" /> : <Copy size={16} aria-hidden="true" />}
         Copiar link
       </button>
