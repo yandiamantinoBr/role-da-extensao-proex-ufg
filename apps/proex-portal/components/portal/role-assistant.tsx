@@ -132,9 +132,10 @@ export default function RoleAssistant(props: Props) {
 
 function RoleConversation({ projects, defaultProjectId, onApplied, onOpenSettings, onOpenLimits }: Props) {
   const [open, setOpen] = useState(false), [chosenProjectId, setProjectId] = useState(defaultProjectId ?? '');
-  // "Procurar em": toda a PROEX (padrão), uma unidade, um projeto ou um evento. O projeto de cobrança e de escrita
-  // é o do escopo quando há um; senão, o projeto padrão da pessoa.
-  const [scopeValue, setScopeValue] = useState(defaultProjectId ? `project:${defaultProjectId}` : 'org');
+  // "Procurar em": por padrão, tudo o que a pessoa pode ver (o servidor recalcula a cada pergunta pelos privilégios dela);
+  // unidade, projeto ou evento só estreitam. O projeto aberto na tela não restringe a busca: é o de cobrança e de escrita
+  // (e define a organização da conversa) quando não há um projeto escolhido no escopo.
+  const [scopeValue, setScopeValue] = useState('org');
   const baseProjectId = projects.some(item => item.id === chosenProjectId) ? chosenProjectId : projects[0]?.id ?? '';
   const [scopeKind, scopeId] = scopeValue === 'org' ? ['org', ''] : [scopeValue.slice(0, scopeValue.indexOf(':')), scopeValue.slice(scopeValue.indexOf(':') + 1)];
   const projectId = scopeKind === 'project' && projects.some(item => item.id === scopeId) ? scopeId : baseProjectId;
@@ -662,7 +663,7 @@ function RoleConversation({ projects, defaultProjectId, onApplied, onOpenSetting
           if (next && next !== projectId) setProjectId(next);
           void loadStatus(next || projectId);
         }}>
-          <option value="org">Toda a PROEX</option>
+          <option value="org">Tudo o que eu posso ver</option>
           {!!status?.scopes?.units.length && <optgroup label="Unidades">{status.scopes.units.map(unit => <option key={unit.id} value={`unit:${unit.id}`}>{unit.name}</option>)}</optgroup>}
           <optgroup label="Projetos">{projects.map(item => <option key={item.id} value={`project:${item.id}`}>{item.name}</option>)}</optgroup>
           {!!status?.scopes?.events.length && <optgroup label="Eventos e dinâmicas">{status.scopes.events.map(entry => <option key={entry.id} value={`event:${entry.id}`}>{entry.name}</option>)}</optgroup>}

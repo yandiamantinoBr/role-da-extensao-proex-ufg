@@ -97,7 +97,7 @@ function hosting(found: Target): { note: string; extra: Record<string, unknown> 
 }
 function empty(ctx: Ctx, name: string): RoleToolResult {
   const scoped = ctx.scope && ctx.scope.kind !== 'org';
-  return ctx.kit.pack(name, [], [], ctx.budget, scoped ? 'Nada visível para você no recorte desta conversa com esse filtro. Para procurar em toda a PROEX, troque "Procurar em".' : 'Nenhum projeto ou dinâmica visível para você com esse nome.');
+  return ctx.kit.pack(name, [], [], ctx.budget, scoped ? 'Nada visível para você no recorte desta conversa com esse filtro. Para procurar em tudo, escolha "Tudo o que eu posso ver" em "Procurar em".' : 'Nenhum projeto ou dinâmica visível para você com esse nome.');
 }
 const orgActive = `JOIN organizations o ON o.id=p.organization_id AND o.status='active'`;
 const joinNotes = (...notes: string[]) => notes.filter(Boolean).join(' ');

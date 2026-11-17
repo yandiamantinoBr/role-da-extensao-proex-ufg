@@ -50,7 +50,7 @@ export const ROLE_TOOL_NAMES = ROLE_TOOLS.map(tool => tool.function.name);
 export const ROLE_TOOLS_ACTUAL_SCHEMA_BYTES = new TextEncoder().encode(JSON.stringify(ROLE_TOOLS)).byteLength;
 
 export type RoleToolSource = { label: string; href: string };
-/** Onde procurar: toda a organização, uma unidade, um projeto ou um evento (dinâmica). Sempre dentro do que a pessoa vê. */
+/** Onde procurar: tudo o que a pessoa vê (padrão, kind org), uma unidade, um projeto ou um evento (dinâmica). Só estreita, nunca amplia. */
 export type RoleScope = { kind: 'org' } | { kind: 'unit' | 'project' | 'event'; id: string };
 export type ResolvedScope = { kind: RoleScope['kind']; id: string | null; label: string; projectIds: string[] | null };
 /** Rascunho de demanda: vai para o cartão de revisão, nunca para o modelo (que só recebe o resumo sem identificadores). */
@@ -184,7 +184,7 @@ export async function runRoleTool(db: D1Database, actor: PortalActor, organizati
   if (name === 'abrir_link_oficial') return openLinkTool(args.url, budget, officialFetcher, officialSignal, limit);
   const projects = await visibleProjects(db, actor, organizationId, str(args.projeto, 'o projeto'), scope);
   const ids = [...projects.keys()];
-  if (!ids.length) return pack(name, [], [], budget, scope && scope.kind !== 'org' ? `Nada visível para você em ${scope.label} com esse filtro. Para procurar em toda a PROEX, troque "Procurar em".` : 'Nenhum projeto visível para você com esse nome.');
+  if (!ids.length) return pack(name, [], [], budget, scope && scope.kind !== 'org' ? `Nada visível para você em ${scope.label} com esse filtro. Para procurar em tudo, escolha "Tudo o que eu posso ver" em "Procurar em".` : 'Nenhum projeto visível para você com esse nome.');
 
   if (name === 'consultar_movimentacoes') {
     const auth = projectAuthoritySql(actor, ['inventory.read'], 'p.id'), wanted = terms(str(args.material, 'o material'));
@@ -289,15 +289,39 @@ export async function roleScopes(db: D1Database, actor: PortalActor, organizatio
     events: events.map(row => ({ id: String(row.id), name: String(row.name), projectId: String(row.project_id) })),
   };
 }
-/** Confere o escopo pedido contra o que a pessoa vê agora; devolve o rótulo e os projetos permitidos. */
+const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
+/**
+ * Padrão da conversa: tudo o que a pessoa pode ver agora, recalculado a cada pergunta (nunca vem do cliente).
+ * Cobre todas as unidades e projetos que ela vê nesta organização, pela mesma regra das telas (authority de
+ * lib/follow-up/scope.ts); projectIds fica null porque cada ferramenta reconfere o acesso no próprio SQL.
+ * Organizações são fronteiras de segurança (chave, provedor e política de IA de cada uma): de outra organização
+ * entra só a contagem, para o Rolê saber explicar onde procurar.
+ */
+async function everythingScope(db: D1Database, actor: PortalActor, organizationId: string): Promise<ResolvedScope> {
+  const rows = await all(db, `SELECT p.organization_id,o.name org_name,COUNT(*) projects,COUNT(DISTINCT u.id) units FROM projects p JOIN organizations o ON o.id=p.organization_id AND o.status='active'
+    LEFT JOIN organizational_units u ON u.id=p.unit_id AND u.status='active' WHERE ${followupAuthority('?', 'p.organization_id', 'p.id')} GROUP BY p.organization_id,o.name`, [actor.userId]);
+  const here = rows.find(row => String(row.organization_id) === organizationId);
+  const name = here ? String(here.org_name) : String((await one(db, 'SELECT name FROM organizations WHERE id=?', [organizationId]))?.name ?? 'esta organização');
+  const projects = Number(here?.projects ?? 0), units = Number(here?.units ?? 0), others = rows.filter(row => String(row.organization_id) !== organizationId).length;
+  const label = `tudo o que você pode ver: ${plural(projects, 'projeto', 'projetos')} em 1 organização (${name})${units ? `, ${plural(units, 'unidade', 'unidades')}` : ''}`
+    + (others ? `. ${others === 1 ? 'A outra organização' : `As outras ${others} organizações`} em que você tem acesso ${others === 1 ? 'fica' : 'ficam'} fora desta conversa: para ver, escolha um projeto dela em "Procurar em"` : '');
+  return { kind: 'org', id: null, label, projectIds: null };
+}
+/**
+ * Confere o recorte pedido contra o que a pessoa vê agora; devolve o rótulo e os projetos permitidos.
+ * Sem escolha, vale tudo o que ela vê (everythingScope). O recorte só estreita: aceita apenas `kind` e `id`
+ * (lista de projetos, papel ou outra organização enviados pelo cliente são recusados).
+ */
 export async function resolveRoleScope(db: D1Database, actor: PortalActor, organizationId: string, input: unknown): Promise<ResolvedScope> {
-  if (input === undefined || input === null) return { kind: 'org', id: null, label: 'toda a organização', projectIds: null };
+  if (input === undefined || input === null) return everythingScope(db, actor, organizationId);
   if (typeof input !== 'object' || Array.isArray(input)) throw new HttpError(400, 'Escolha onde procurar.', 'role_scope');
-  const { kind, id } = input as Record<string, unknown>;
-  if (kind === 'org') return { kind: 'org', id: null, label: 'toda a organização', projectIds: null };
+  const record = input as Record<string, unknown>;
+  if (Object.keys(record).some(key => key !== 'kind' && key !== 'id' && record[key] !== undefined)) throw new HttpError(400, 'Escolha onde procurar.', 'role_scope');
+  const { kind, id } = record;
+  const forbidden = () => new HttpError(403, 'Você não vê esse escopo. Escolha outro em "Procurar em".', 'role_scope_forbidden');
+  if (kind === 'org') { if (id !== undefined && id !== null && id !== organizationId) throw forbidden(); return everythingScope(db, actor, organizationId); }
   if (!['unit', 'project', 'event'].includes(String(kind)) || typeof id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(id)) throw new HttpError(400, 'Escolha onde procurar.', 'role_scope');
   const visible = await all(db, `SELECT p.id,p.name,p.unit_id FROM projects p JOIN organizations o ON o.id=p.organization_id AND o.status='active' WHERE p.organization_id=? AND ${followupAuthority('?', 'p.organization_id', 'p.id')} LIMIT 400`, [organizationId, actor.userId]);
-  const forbidden = () => new HttpError(403, 'Você não vê esse escopo. Escolha outro em "Procurar em".', 'role_scope_forbidden');
   if (kind === 'project') { const row = visible.find(entry => String(entry.id) === id); if (!row) throw forbidden(); return { kind: 'project', id, label: `o projeto ${row.name}`, projectIds: [id] }; }
   if (kind === 'unit') {
     const ids = visible.filter(entry => String(entry.unit_id ?? '') === id).map(entry => String(entry.id));
