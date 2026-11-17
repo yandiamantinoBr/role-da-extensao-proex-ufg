@@ -150,8 +150,9 @@ async function updateDispatch(db: D1Database, actor: PortalActor, input: Record<
 async function leadershipAction(db: D1Database, actor: PortalActor, action: string, input: Record<string, unknown>) {
   onlyKeys(input, ['action','organizationId','userId','operationKey']);
   const organizationId = id(input.organizationId)!, userId = id(input.userId)!;
-  // Só a administração da organização mantém a Gestão superior.
+  // Só a administração da organização mantém a Gestão superior, e ninguém se inclui sozinho (revisão de privacidade de 17/11).
   await requireScope(db, actor, { organizationId, projectId: null }, true);
+  if (action === 'leadership.add' && userId === actor.userId) fail('Peça a outra pessoa da administração para incluir você na Gestão superior.', 'followup_forbidden', 403);
   const at = iso();
   const statements = action === 'leadership.add'
     ? [memberAssertion(db, userId, organizationId), db.prepare('INSERT OR IGNORE INTO leadership_group_members(id,organization_id,user_id,added_by,created_at) SELECT ?,?,?,?,? WHERE NOT EXISTS(SELECT 1 FROM leadership_group_members WHERE organization_id=? AND user_id=? AND removed_at IS NULL)').bind(uid(), organizationId, userId, actor.userId, at, organizationId, userId)]

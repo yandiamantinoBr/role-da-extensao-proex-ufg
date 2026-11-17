@@ -130,3 +130,28 @@ test('dispatch input stays inside the organization and the privacy row cannot be
  const created=await dispatch(f);
  assert.throws(()=>f.native.prepare('DELETE FROM followup_task_privacy WHERE task_id=?').run(created.taskId),/followup_privacy_immutable/);
 });
+
+test('a forged id answers the same for a private demand and a nonexistent one (no existence oracle)', async t => {
+ const f=fixture(t);people(f);
+ const created=await dispatch(f);
+ const outcome=async(actor,action,taskId)=>{try{await act(f,actor,action,{id:taskId,expectedVersion:1,status:'in_progress',userId:'worker-a',allowCoverage:true,operationKey:key()});return 'ok';}catch(error){return `${error.status}:${error.code}`;}};
+ for(const name of ['platform','admin-a','manager-a','viewer-a']){
+  const actor=await f.actor(name);
+  for(const action of ['task.work','task.worker.coverage','task.worker.revoke']){
+   const privateAnswer=await outcome(actor,action,created.taskId), missingAnswer=await outcome(actor,action,crypto.randomUUID());
+   assert.equal(privateAnswer,missingAnswer,`${name} · ${action}: mesma resposta para ID privado e inexistente`);
+   assert.doesNotMatch(privateAnswer,/followup_private_task/);
+  }
+ }
+ const staff=await f.actor('staff-a');
+ assert.equal(await outcome(staff,'task.work',created.taskId),'409:followup_private_task','quem participa é orientado a usar Despachos');
+});
+
+test('nobody adds themselves to "Gestão superior", not even the administration', async t => {
+ const f=fixture(t);people(f);
+ const [admin,platform]=await Promise.all(['admin-a','platform'].map(name=>f.actor(name)));
+ await assert.rejects(act(f,admin,'leadership.add',{organizationId:'org-a',userId:'admin-a',operationKey:key()}),{status:403});
+ await assert.rejects(act(f,platform,'leadership.add',{organizationId:'org-a',userId:'platform',operationKey:key()}),{status:403});
+ await act(f,platform,'leadership.add',{organizationId:'org-a',userId:'admin-a',operationKey:key()});
+ assert.deepEqual((await leadershipRoster(f.db,admin,'org-a')).members.map(m=>m.userId),['admin-a'],'outra pessoa da administração inclui');
+});

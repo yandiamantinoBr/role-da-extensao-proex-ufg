@@ -6,7 +6,7 @@ import { campaignAction } from '../campaigns';
 import { listOrganizations } from '../organizations';
 import { TASK_STATES, TASK_PRIORITIES, type TaskPriority, id, text, integer, version, date, choices, ids, onlyKeys, fail } from './contracts';
 import { taskSearch } from './task-search';
-import { authority, taskAuthority, publicTask, workAuthority, assignedRecipient, activeAccount, activityCoverageReader, activityCoverageScope, actorRequired, requireScope, scopeStatement, atomic, cas, fanout, recipientLimit, effectiveRecipient, type Scope } from './scope';
+import { authority, taskAuthority, publicTask, privateTaskAccess, workAuthority, assignedRecipient, activeAccount, activityCoverageReader, activityCoverageScope, actorRequired, requireScope, scopeStatement, atomic, cas, fanout, recipientLimit, effectiveRecipient, type Scope } from './scope';
 import { serverWorkClock } from './time';
 import { privateDispatchAction } from './private';
 import { groupNotifications, type NoticeForGroup } from './notification-groups';
@@ -20,7 +20,8 @@ const scopeOf=(r:Row):Scope=>({organizationId:r.organization_id,projectId:r.proj
 function audit(db:D1Database,actor:PortalActor,scope:Scope,action:string,entity:string,details:unknown,at:string){return db.prepare('INSERT INTO audit(id,actor_id,project_id,organization_id,action,entity_id,details,created_at) VALUES(?,?,?,?,?,?,?,?)').bind(uid(),actor.userId,scope.projectId,scope.organizationId,action,entity,JSON.stringify(details),at);}
 function history(db:D1Database,actor:PortalActor,taskId:string,at:string,note=''){return db.prepare(`INSERT INTO followup_history(id,task_id,version,snapshot_json,actor_id,created_at) SELECT ?,id,version,json_object('title',title,'body',body,'priority',priority,'importance',importance,'status',status,'dueAt',due_at,'campaignId',campaign_id,'itemId',item_id,'loanId',loan_id,'progressNote',?),?,? FROM followup_tasks WHERE id=?`).bind(uid(),note,actor.userId,at,taskId);}
 /** Demandas privadas só mudam pelas ações de despacho (lib/follow-up/private.ts). */
-export async function assertPublicTask(db:D1Database,taskId:string){if(await one(db,'SELECT 1 private FROM followup_task_privacy WHERE task_id=?',[taskId]))fail('Esta demanda é privada. Edite pelo painel de Despachos.','followup_private_task',409);}
+/** Só quem participa recebe o 409; para os demais, segue e os passos seguintes respondem como a um ID inexistente (sem oráculo de existência). */
+export async function assertPublicTask(db:D1Database,actor:PortalActor,taskId:string){if(await one(db,`SELECT 1 private FROM followup_tasks t JOIN followup_task_privacy p ON p.task_id=t.id JOIN (SELECT ? AS uid) me WHERE t.id=? AND ${privateTaskAccess('me.uid','t')}`,[actor.userId,taskId]))fail('Esta demanda é privada. Edite pelo painel de Despachos.','followup_private_task',409);}
 async function taskRow(db:D1Database,actor:PortalActor,taskId:string,write=false):Promise<Row>{const row=await one(db,`SELECT t.* FROM followup_tasks t WHERE t.id=? AND ${taskAuthority('?','t',write)}`,[taskId,actor.userId]);if(!row)fail('Demanda não encontrada neste contexto ou seu acesso mudou.','followup_not_found',404);return row!;}
 function taskWorkAssertion(db:D1Database,actor:PortalActor,taskId:string,managerOnly=false){return db.prepare(`SELECT CASE WHEN EXISTS(SELECT 1 FROM followup_tasks t JOIN(SELECT ? user_id) caller WHERE t.id=? AND (${taskAuthority('caller.user_id','t',true,managerOnly)}${managerOnly?'':` OR ${workAuthority('caller.user_id')}`})) THEN 1 ELSE json_extract('[]','followup_authority_changed') END`).bind(actor.userId,taskId);}
 async function taskWorkPermission(db:D1Database,actor:PortalActor,taskId:string){const row=await one(db,`SELECT ${taskAuthority('caller.user_id','t',true)} direct,${workAuthority('caller.user_id')} delegated FROM followup_tasks t JOIN(SELECT ? user_id) caller WHERE t.id=?`,[actor.userId,taskId]);if(!row||!row.direct&&!row.delegated)fail('Você não possui autorização para acompanhar esta demanda.','followup_forbidden',403);return{delegatedOnly:!row!.direct};}
@@ -161,7 +162,7 @@ function referenceAssertion(db:D1Database,actor:PortalActor,scope:Scope,key:keyo
 function referenceError(error:unknown){
  if(String(error).includes('followup_reference_unavailable'))fail('Não foi possível vincular o item neste projeto com seu acesso atual.','followup_reference',403);
 }
-async function taskAction(db:D1Database,actor:PortalActor,action:string,input:Record<string,unknown>,source?:FollowupSource){onlyKeys(input,['action','id','organizationId','projectId','title','body','priority','importance','status','dueAt','campaignId','itemId','loanId','userIds','teamIds','expectedVersion','operationKey']);const old=action==='task.update'?await taskRow(db,actor,id(input.id)!,true):null,scope=old?scopeOf(old):await resolveScope(db,input);if(old)await assertPublicTask(db,old.id);await requireScope(db,actor,scope,true);
+async function taskAction(db:D1Database,actor:PortalActor,action:string,input:Record<string,unknown>,source?:FollowupSource){onlyKeys(input,['action','id','organizationId','projectId','title','body','priority','importance','status','dueAt','campaignId','itemId','loanId','userIds','teamIds','expectedVersion','operationKey']);const old=action==='task.update'?await taskRow(db,actor,id(input.id)!,true):null,scope=old?scopeOf(old):await resolveScope(db,input);if(old)await assertPublicTask(db,actor,old.id);await requireScope(db,actor,scope,true);
  if(old&&(input.projectId!==undefined&&input.projectId!==old.project_id||input.organizationId!==undefined&&input.organizationId!==old.organization_id))fail('O contexto de uma demanda é permanente. Crie outra demanda.');
  const mutation=await prepareMutation(db,actor.userId,action,input);if(mutation.existingId)return{...await followupDetail(db,actor,mutation.existingId),duplicate:true};
  const value=fields(input,old??undefined),users=input.userIds===undefined&&old?(await all(db,'SELECT user_id FROM followup_assignees WHERE task_id=? AND user_id IS NOT NULL AND removed_at IS NULL',[old.id])).map(r=>r.user_id):ids(input.userIds),teams=input.teamIds===undefined&&old?(await all(db,'SELECT team_id FROM followup_assignees WHERE task_id=? AND team_id IS NOT NULL AND removed_at IS NULL',[old.id])).map(r=>r.team_id):ids(input.teamIds,8);
@@ -202,7 +203,7 @@ async function teamAction(db:D1Database,actor:PortalActor,action:string,input:Re
  try{await atomic(db,actor,scope,statements);}catch(error){if(error instanceof HttpError)throw error;const recovered=await mutation.recover(error);await requireScope(db,actor,scope,true);return{teamId:recovered,duplicate:true};}return{teamId};
 }
 async function workerAction(db:D1Database,actor:PortalActor,action:string,input:Record<string,unknown>){
- if(typeof input.id==='string')await assertPublicTask(db,input.id);
+ if(typeof input.id==='string')await assertPublicTask(db,actor,input.id);
  if(action==='task.work'){
   onlyKeys(input,['action','id','status','note','expectedVersion','operationKey']);const task=await taskRow(db,actor,id(input.id)!);await taskWorkPermission(db,actor,task.id);
   const mutation=await prepareMutation(db,actor.userId,action,input);if(mutation.existingId){await taskWorkPermission(db,actor,task.id);return{...await followupDetail(db,actor,task.id),duplicate:true};}
