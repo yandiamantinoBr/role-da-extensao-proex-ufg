@@ -25,6 +25,7 @@ export const GUIDE_SLUGS = ['estrutura', 'programas-e-projetos', 'processos-conp
 
 import { ROLE_TOOL_RESULT_BYTES } from './role-contracts';
 import { ROLE_TOOLS_FASE2B, ROLE_TOOL_NAMES_FASE2B, runFase2bTool, tierLevels } from './role-tools-fase2b';
+import { FASE2A_TOOLS, FASE2A_TOOL_NAMES, matchProjectNames, runFase2aTool } from './role-tools-fase2a';
 
 const text = (description: string) => ({ type: 'string', description, maxLength: 120 });
 const fn = (name: string, description: string, properties: Record<string, unknown>, required: string[] = []) => ({ type: 'function', function: { name, description, parameters: { type: 'object', properties, required, additionalProperties: false } } });
@@ -40,6 +41,7 @@ export const ROLE_TOOLS = [
   fn('preparar_rascunho_demanda', 'Prepara um rascunho de demanda (tarefa) para a pessoa revisar num cartão. Não grava: só o toque dela em Criar demanda cria.', { projeto, titulo: { type: 'string', maxLength: 160, description: 'Título curto.' }, descricao: { type: 'string', maxLength: 4000, description: 'Texto da demanda.' }, prazo: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$', description: 'AAAA-MM-DD, se houver.' }, prioridade: { type: 'string', enum: ['alta', 'media', 'baixa'] }, responsavel: text('Nome de quem vai fazer, se a pessoa disser.') }, ['titulo']),
   fn('consultar_guia', 'Guia da PROEX: estrutura, programas, processos (CONPEEX, editais, empréstimos, brindes, comunicação), calendário, contatos e glossário. Traz as seções mais próximas do assunto e a linha de fontes.', { texto: text('Assunto, por exemplo "como pedir empréstimo" ou "contato da comunicação".'), paginas: { type: 'array', items: { type: 'string', enum: [...GUIDE_SLUGS] }, maxItems: 4, description: 'Páginas do guia, se souber.' } }, ['texto']),
   ...ROLE_TOOLS_FASE2B,
+  ...FASE2A_TOOLS,
 ];
 export const ROLE_TOOL_NAMES = ROLE_TOOLS.map(tool => tool.function.name);
 /** Bytes reais do esquema (o custo máximo usa ROLE_TOOLS_SCHEMA_BYTES, que precisa ser maior). */
@@ -83,8 +85,8 @@ const brasilia = (iso: string) => { const t = Date.parse(iso); return Number.isF
  */
 async function visibleProjects(db: D1Database, actor: PortalActor, organizationId: string, wanted: string, scope: ResolvedScope | null = null): Promise<Map<string, string>> {
   const rows = await all(db, `SELECT p.id,p.name FROM projects p JOIN organizations o ON o.id=p.organization_id AND o.status='active' WHERE p.organization_id=? AND ${followupAuthority('?', 'p.organization_id', 'p.id')} ORDER BY p.name LIMIT 400`, [organizationId, actor.userId]);
-  const query = terms(wanted), allowed = scope?.projectIds ? new Set(scope.projectIds) : null;
-  return new Map(rows.filter(row => (!allowed || allowed.has(String(row.id))) && (!query.length || score(`${row.name} ${row.id}`, query) > 0)).map(row => [String(row.id), String(row.name)]));
+  const allowed = scope?.projectIds ? new Set(scope.projectIds) : null;
+  return new Map(matchProjectNames(rows.filter(row => !allowed || allowed.has(String(row.id))), wanted).map(row => [String(row.id), String(row.name)]));
 }
 const inList = (ids: string[]) => ids.length ? `(${ids.map(() => '?').join(',')})` : '(NULL)';
 
@@ -168,6 +170,7 @@ async function taskDraftTool(db: D1Database, actor: PortalActor, organizationId:
 export async function runRoleTool(db: D1Database, actor: PortalActor, organizationId: string, name: string, args: Record<string, unknown>, budget = ROLE_TOOL_RESULT_BYTES, scope: ResolvedScope | null = null, officialFetcher?: typeof fetch, officialSignal?: AbortSignal): Promise<RoleToolResult> {
   if (!ROLE_TOOL_NAMES.includes(name)) throw new HttpError(400, 'Consulta desconhecida.', 'role_tool_unknown');
   if (ROLE_TOOL_NAMES_FASE2B.has(name)) return runFase2bTool(db, actor, organizationId, name, args, budget, scope, { pack, visibleProjects, terms, score });
+  if (FASE2A_TOOL_NAMES.includes(name)) return runFase2aTool({ db, actor, organizationId, args, budget, scope, pack, visibleProjects: wanted => visibleProjects(db, actor, organizationId, wanted, scope) }, name);
   if (Object.keys(args).some(key => !['texto', 'projeto', 'material', 'dias', 'situacao', 'dinamica', 'de', 'ate', 'paginas', 'titulo', 'descricao', 'prazo', 'prioridade', 'responsavel', 'url'].includes(key))) throw new HttpError(400, 'Consulta com campos não permitidos.', 'role_tool_input');
   if (name === 'consultar_guia') return guideTool(db, actor, organizationId, args, budget);
   if (name === 'preparar_rascunho_demanda') return taskDraftTool(db, actor, organizationId, args, budget, scope);
