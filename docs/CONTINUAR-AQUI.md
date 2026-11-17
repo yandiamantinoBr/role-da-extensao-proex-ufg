@@ -2,6 +2,23 @@
 
 Comece pela [Retomada de 13/11](RETOMADA-13NOV-PORTAL-PROEX.md) para conferir a base publicada, a ordem das PRs pendentes, o padrão visual e o roteiro de convite. Para a rodada de 14/11, consulte [Ações de projeto e acessos](../apps/proex-portal/docs/QA-ACOES-E-PERFIS.md).
 
+## Demandas privadas e Despachos · 17/11 (Claude Code)
+
+- **No ar em `0e37cb8`:** PR212 (servidor, `395bb09`), PR213 (tela, `5795532`) e PR214 (pauta, `0e37cb8`). Conferido em produção, só leitura: o painel abre em `?module=demands&despachos=1` e o cartão "Gestão superior" aparece em Pessoas e acessos, ainda vazio.
+- **Migração 0053_private_dispatch**, só com tabelas novas: `followup_task_privacy`, `followup_task_participants`, `leadership_group_members` e `followup_dispatch_details`. Um gatilho impede apagar a linha de privacidade. **Próxima livre: 0054.**
+- **Filtro único** em `lib/follow-up/scope.ts`:
+  - `taskAuthority`: Demandas, Despachos, sino e e-mail;
+  - `publicTask` e `publicTaskAuthority`: todo o resto. A privada não sai de Demandas: fica fora de Meu trabalho, Início, Agenda/.ics, relatórios, painel da Gestão, Registros, planilhas, cópia legível, Rolê e MCP.
+  - **Ao criar uma superfície nova que leia demandas, use `publicTaskAuthority`.**
+- **Revisão independente de privacidade:** a sessão de auditoria rodou duas vezes (`revisao-privacidade-despachos-17nov.md`, na pasta de notas). O P1 (oráculo de existência por ID forjado) e o P2 (autoinclusão na Gestão superior) foram corrigidos; a segunda rodada saiu sem P0 nem P1.
+- **Crítica visual independente:** cinco rodadas, até 9 no painel, no formulário e no cartão, em 390 e 1366 px nos dois temas.
+- **Limite honesto**, na tela e em `docs/ACESSOS-E-ESCOPO.md`: quem administra o banco tecnicamente pode ler.
+- **Falta:**
+  - Em produção, duas contas de teste despachando entre si: não criei contas em nome do Yan. O teste foi feito com contas sintéticas no QA local e nos testes automáticos.
+  - P3 da auditoria, para decidir: o painel mostra a qualquer pessoa da organização quem está na Gestão superior; o grupo não recebe aviso das demandas marcadas para ele; a privada não aparece em Meu trabalho nem na Agenda, nem para quem participa.
+  - O Yan (ou a administração) precisa incluir a Pró-Reitora e as coordenações na Gestão superior.
+- **Não fazer:** mudar uma demanda de pública para privada ou o contrário (o histórico já foi avisado a outras pessoas); colocar nomes reais no repositório (o modelo de tela tinha um).
+
 ## Rolê · fontes oficiais, botão de busca e planilha de brindes · 17/11 (Claude Code, sessão do Rolê)
 
 - **No ar e validado com login:** [PR176](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/176) (`3332edb`, edital certo e dizer o que leu), [PR187](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/187) (`bbec860`, botão "Fontes oficiais" e busca sem chave de conversa), [PR191](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/191) (`f52f54f`, aviso da planilha de brindes) e [PR194](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/194) (`ce83525`, índice do site que não fica preso e pedido com a Agenda indo para a conversa).
