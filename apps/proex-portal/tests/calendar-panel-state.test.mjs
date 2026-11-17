@@ -480,7 +480,7 @@ test('today uses the brand colour, not the Materiais orange, and the legend expl
 
 test('desktop weeks share one height, the cancelled preview stays readable and the PDF title column is wider (nona crítica de 16/11)', () => {
   const css = readFileSync(new URL('../components/portal/calendar-panel.module.css', import.meta.url), 'utf8');
-  assert.match(css, /@container agenda \(min-width:860px\)\{\.day\{min-height:128px\}\}/);
+  assert.match(css, /@container agenda \(min-width:860px\)\{\.day\{min-height:146px\}\}/);
   assert.match(css, /\.chip\[data-cancelled\] \.chipText\{-webkit-line-clamp:1;color:var\(--muted\)\}/);
   assert.match(readFileSync(new URL('../components/portal/calendar-panel.tsx', import.meta.url), 'utf8'), /columnWeights: \[1\.6, 1\.15, 0\.95\]/);
 });
