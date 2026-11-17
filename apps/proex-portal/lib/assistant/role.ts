@@ -10,13 +10,13 @@ import {
   ROLE_CONTRACT, ROLE_MAX_HISTORY, ROLE_MAX_HISTORY_CHARS, ROLE_MAX_IMAGE_BYTES, ROLE_MAX_IMAGE_SIDE, ROLE_MAX_MESSAGE_CHARS, ROLE_IMAGE_TOKEN_CEILING, ROLE_SYSTEM_PROMPT_BYTES, ROLE_MODELS,
   ROLE_SYSTEM_PROMPT, ROLE_SYSTEM_PROMPT_TOOLS, ROLE_TOOL_CALLS_PER_ROUND, ROLE_TOOL_RESULT_BYTES, ROLE_TOOL_ROUNDS, roleConversationBytes, roleEstimate, roleTimeoutMs, validateRoleReply, type RoleSource, type RoleTurn,
 } from './role-contracts';
-import { ROLE_TASK_DRAFT_TOOL, ROLE_TOOL_NAMES, ROLE_TOOLS, canDraftTasks, officialSearchReply, resolveRoleScope, roleScopes, runRoleTool, type RoleTaskDraft, type RoleToolResult } from './role-tools';
+import { ROLE_TASK_DRAFT_TOOL, ROLE_TOOL_NAMES, ROLE_TOOLS, canDraftTasks, officialLinksReply, officialRateLimit, officialSearchReply, pastedLinkPage, proexNewsReply, resolveRoleScope, roleScopes, runRoleTool, type RoleTaskDraft, type RoleToolResult } from './role-tools';
 import { ROLE_SUGGESTION_DAYS, roleSuggestions } from './role-suggestions';
 import { ROLE_VIDEO_MODELS, roleVideoEstimate, type RoleVideoProfile, type RoleVideoStatus } from './role-video-contracts';
 import { dispatchRoleVideo, parseRoleVideo, RoleVideoChargedError } from './role-video';
-import { isOfficialSearch } from './official-search-intent';
+import { directOfficialKind, isOfficialSearch } from './official-search-intent';
 import { officialPdfUrl } from './official-pdf-url';
-import { downloadScannedOfficialPdf } from './official-sources';
+import { canCurateInstagram, downloadScannedOfficialPdf } from './official-sources';
 import { PDF_READING_DISABLED, PDF_READING_MAX_COST_MICROS, PDF_READING_MAX_PAGES, PDF_READING_PROFILE, pdfReadingEstimate, type RolePdfReadingOffer } from './role-pdf-reading-contracts';
 import { dispatchRolePdfReading, pdfReadingReply } from './role-pdf-reading';
 import { GIFT_SHEET_REPLY, asksGiftSheet } from './gift-sheet-intent';
@@ -71,7 +71,7 @@ function projectId(value: unknown): string {
 
 type PortalTools = typeof ROLE_TOOLS;
 function roleTools(config: RolePolicy): PortalTools {
-  return ROLE_TOOLS.filter(tool => tool.function.name === 'consultar_fontes_oficiais' ? config.rolePublicSearchEnabled : config.rolePortalContextEnabled);
+  return ROLE_TOOLS.filter(tool => tool.function.name === 'consultar_fontes_oficiais' || tool.function.name === 'abrir_link_oficial' ? config.rolePublicSearchEnabled : config.rolePortalContextEnabled);
 }
 type ToolRoute = { family: 'deepseek' | 'groq'; model: string; endpoint: string; pricing: RolePricing };
 function toolRoute(route: Route | null): ToolRoute | null {
@@ -375,7 +375,7 @@ async function toolStep(route: ToolRoute, apiKey: string, body: unknown, maxOutp
  */
 async function dispatchWithTools(route: ToolRoute, apiKey: string, body: { messages: Record<string, unknown>[] } & Record<string, unknown>, run: (name: string, args: Record<string, unknown>, budget: number) => Promise<RoleToolResult>, policy: RolePolicy, offeredTools: PortalTools, retainReasoning: boolean, checkAccess: () => Promise<unknown>, signal: AbortSignal, fetcher: typeof fetch) {
   const messages = [...body.messages], used: { name: string; rows: number }[] = [], sources = new Map<string, RoleSource>();
-  let taskDraft: RoleTaskDraft | undefined, draftCalls = 0;
+  let taskDraft: RoleTaskDraft | undefined, draftCalls = 0, scanned: { url: string; title: string }[] = [];
   let inputTokens = 0, outputTokens = 0, costMicros = 0, steps = 0;
   const charged = (message: string) => new ChargedError(message, costMicros, inputTokens + outputTokens);
   // No JSON mode in the loop: after lookups, DeepSeek's JSON mode can return an empty message.
@@ -418,6 +418,7 @@ async function dispatchWithTools(route: ToolRoute, apiKey: string, body: { messa
             used.push({ name: call.function.name, rows: result.rows });
             for (const source of result.sources) if (sources.size < 8) sources.set(source.href, source);
             if (result.taskDraft) taskDraft = result.taskDraft;
+            if (result.scanned?.length && !scanned.length) scanned = result.scanned;
           } catch (error) {
             content = JSON.stringify({ erro: error instanceof HttpError && error.status < 500 ? error.message : 'Consulta indisponível agora.' });
             used.push({ name: ROLE_TOOL_NAMES.includes(call.function.name) ? call.function.name : 'desconhecida', rows: -1 });
@@ -440,7 +441,7 @@ async function dispatchWithTools(route: ToolRoute, apiKey: string, body: { messa
     if (containsCredential(reply.reply) || reply.operation && containsCredential(reply.operation)) throw charged('A resposta do provedor não pôde ser mostrada.');
     // Conteúdo lido de outras consultas na mesma resposta pode tentar dirigir o rascunho: o cartão avisa.
     const untrusted = used.some(entry => entry.name !== ROLE_TASK_DRAFT_TOOL && entry.rows > 0);
-    return { ...reply, inputTokens, outputTokens, costMicros, steps, tools: used, sources: [...sources.values()], ...(taskDraft ? { taskDraft: untrusted ? { ...taskDraft, afterUntrusted: true as const } : taskDraft } : {}) };
+    return { ...reply, inputTokens, outputTokens, costMicros, steps, tools: used, sources: [...sources.values()], scanned, ...(taskDraft ? { taskDraft: untrusted ? { ...taskDraft, afterUntrusted: true as const } : taskDraft } : {}) };
   }
 }
 
@@ -527,30 +528,51 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
     return { contract: ROLE_CONTRACT, reply: GIFT_SHEET_REPLY, operation: null, operationDropped: false, provider: 'portal', model: 'Resposta do Portal',
       reservedMicros: 0, costMicros: 0, inputTokens: 0, outputTokens: 0, sources: [], lookups: 0 };
   }
-  if (!hasMedia && officialSearchOn(config) && (explicitSearch || isOfficialSearch(message))) {
+  const loadState = async () => {
+    const catalog = config.roleModel || config.roleVisionModel || hasVideo && config.roleVideoEnabled ? (await loadCatalog(db, organizationId)).catalog : null;
+    return { catalog, state: availability(config, credentials, organizationId, options.speech, rawCredentials, catalog) };
+  };
+  // Respostas diretas, sem IA e sem custo: "links da PROEX" e "Instagram/notícias" em qualquer modo; a busca
+  // oficial só com o botão "Fontes oficiais" ou sem conversa disponível (modo só busca). Com a conversa
+  // disponível, a pergunta reconhecida vai ao modelo, que lê as fontes com consultar_fontes_oficiais e abrir_link_oficial.
+  // O caminho sem custo não depende do catálogo: ele só é lido para decidir a frase reconhecida, e falha conta como sem conversa.
+  /** Oferta de leitura com IA do PDF escaneado (interruptor e chave do Gemini, teto que caiba), assinada no servidor. */
+  const scannedOffer = async (scanned: { url: string; title: string }[]): Promise<RolePdfReadingOffer | null> => {
+    const quote = scanned.length ? pdfReadingQuote(config, message, now) : null;
+    const scannedUrl = quote ? officialPdfUrl(scanned[0].url) : null;
+    if (scannedUrl) scannedUrl.hash = '';
+    if (!quote || !scannedUrl || !await pdfReadingKey(db, organizationId, config, rawCredentials)) return null;
+    const expiresAt = now + ROLE_PDF_OFFER_TTL_MS;
+    const signature = await signPdfOffer(secret, { actorId: current.userId, organizationId, projectId: project, url: scannedUrl.href, question: await digest(message), costMicros: quote.costMicros, revision, expiresAt });
+    return { url: scannedUrl.href, title: scanned[0].title, costMicros: quote.costMicros, expiresAt, signature };
+  };
+  const officialOn = !hasMedia && officialSearchOn(config);
+  const direct = officialOn ? directOfficialKind(message) : null;
+  let loaded: Awaited<ReturnType<typeof loadState>> | null = null;
+  let deterministic = officialOn && (!!direct || explicitSearch);
+  if (officialOn && !deterministic && isOfficialSearch(message)) {
+    loaded = await loadState().catch(() => null);
+    deterministic = !loaded?.state.available;
+  }
+  if (deterministic) {
     await resolveRoleScope(db, current, organizationId, input.scope);
     history(input.history);
     // Sem custo de IA, mas cada busca lê sites públicos: limite por pessoa e por organização, antes de qualquer pedido externo.
-    try {
-      await rateLimitAll(db, [{ bucket: `role-official:${current.userId}`, limit: 20, windowMs: 60_000 }, { bucket: `role-official:org:${organizationId}`, limit: 300, windowMs: 60_000 }]);
-    } catch (error) {
-      if (error instanceof HttpError && error.code === 'rate_limited') throw new HttpError(429, 'Muitas buscas seguidas. Espere um minuto e tente de novo.', 'role_official_rate');
-      throw error;
-    }
+    await officialRateLimit(db, current.userId, organizationId);
     const authorization = roleAuthorization(db, current, project, organizationId, revision);
     try {
       await authorization.first();
+      const pasted = direct ? null : pastedLinkPage(message);
+      if (direct || pasted) {
+        const answer = direct === 'news' ? await proexNewsReply(db, organizationId, options.officialFetcher, options.signal, await canCurateInstagram(db, current, organizationId)) : await officialLinksReply(pasted ?? undefined, options.officialFetcher, now, options.signal);
+        await authorization.first();
+        return { contract: ROLE_CONTRACT, reply: answer.reply, operation: null, operationDropped: false, provider: 'official', model: 'Consulta oficial',
+          reservedMicros: 0, costMicros: 0, inputTokens: 0, outputTokens: 0, sources: answer.sources, lookups: 1,
+          ...(answer.linkGroups?.length ? { linkGroups: answer.linkGroups, linkIntro: answer.linkIntro, linkLabel: answer.linkLabel } : {}) };
+      }
       const result = await officialSearchReply(db, organizationId, message, options.officialFetcher);
       // PDF escaneado: oferece a leitura com IA (só com o interruptor e a chave do Gemini, e um teto que caiba), assinada no servidor.
-      const quote = result.scanned.length ? pdfReadingQuote(config, message, now) : null;
-      const scannedUrl = quote ? officialPdfUrl(result.scanned[0].url) : null;
-      if (scannedUrl) scannedUrl.hash = '';
-      let pdfReading: RolePdfReadingOffer | null = null;
-      if (quote && scannedUrl && await pdfReadingKey(db, organizationId, config, rawCredentials)) {
-        const expiresAt = now + ROLE_PDF_OFFER_TTL_MS;
-        const signature = await signPdfOffer(secret, { actorId: current.userId, organizationId, projectId: project, url: scannedUrl.href, question: await digest(message), costMicros: quote.costMicros, revision, expiresAt });
-        pdfReading = { url: scannedUrl.href, title: result.scanned[0].title, costMicros: quote.costMicros, expiresAt, signature };
-      }
+      const pdfReading = await scannedOffer(result.scanned);
       await authorization.first();
       return { contract: ROLE_CONTRACT, reply: result.reply, operation: null, operationDropped: false, provider: 'official', model: 'Consulta oficial',
         reservedMicros: 0, costMicros: 0, inputTokens: 0, outputTokens: 0, sources: result.sources, lookups: 1, ...(pdfReading ? { pdfReading } : {}) };
@@ -559,8 +581,7 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
       throw error;
     }
   }
-  const catalog = config.roleModel || config.roleVisionModel || hasVideo && config.roleVideoEnabled ? (await loadCatalog(db, organizationId)).catalog : null;
-  const state = availability(config, credentials, organizationId, options.speech, rawCredentials, catalog);
+  const { catalog, state } = loaded ?? await loadState();
   if (!state.available) throw new HttpError(503, 'O Rolê está desligado ou sem chave nesta organização.', 'role_unavailable');
   const scope = await resolveRoleScope(db, current, organizationId, input.scope);
   const document = Object.hasOwn(input, 'document') ? roleDocumentExcerpt(input.document) : null;
@@ -634,13 +655,13 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
     // Last live fence before money leaves: access or configuration may have changed during decryption.
     await authorization.first();
     const startedAt = Date.now();
-    const result: { reply: string; operation: string | null; inputTokens: number; outputTokens: number; reasoningTokens?: number; costMicros: number; tools?: { name: string; rows: number }[]; sources?: RoleSource[]; steps?: number; taskDraft?: RoleTaskDraft } = video && validProviderKey(videoKey)
+    const result: { reply: string; operation: string | null; inputTokens: number; outputTokens: number; reasoningTokens?: number; costMicros: number; tools?: { name: string; rows: number }[]; sources?: RoleSource[]; steps?: number; taskDraft?: RoleTaskDraft; scanned?: { url: string; title: string }[] } = video && validProviderKey(videoKey)
       ? await dispatchRoleVideo({ apiKey: videoKey, video, message, maxOutputTokens: config.roleOutputTokenLimit,
           inputCeiling: config.roleInputTokenCeiling, now, profile: videoProfile, signal: controller.signal, fetcher: options.fetcher })
       : callable
       ? await dispatchWithTools(callable, apiKey, envelope!, async (name, args, budget) => {
           await authorization.first();
-          return runRoleTool(db, current, organizationId, name, args, budget, scope, options.officialFetcher);
+          return runRoleTool(db, current, organizationId, name, args, budget, scope, options.officialFetcher, controller.signal);
         }, config, tools, reasoningCarry, () => authorization.first(), controller.signal, options.fetcher ?? fetch)
       : await catalogDispatch(chosen as Extract<Route, { kind: 'catalog' }>, turns, providerMessage, projectName, image?.dataUrl ?? null, config, controller.signal, options.fetcher);
     // A model can suggest a draft only to someone with write authority in this project.
@@ -660,8 +681,10 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
       db.prepare("INSERT INTO audit(id,actor_id,project_id,organization_id,action,entity_id,details,created_at) VALUES(?,?,?,?,'assistant.role.chat',?,?,?)")
         .bind(crypto.randomUUID(), current.userId, project, organizationId, id, JSON.stringify(details), new Date().toISOString()),
     ]);
+    // PDF escaneado lido pelas ferramentas: a mesma oferta assinada do caminho direto (falha na oferta não derruba a resposta paga).
+    const pdfReading = result.scanned?.length ? await scannedOffer(result.scanned).catch(() => null) : null;
     return { contract: ROLE_CONTRACT, reply: result.reply, operation: result.operation, operationDropped: dropped, provider, model: modelName,
-      ...videoReceipt, reservedMicros: estimate.costMicros, costMicros: result.costMicros, inputTokens: result.inputTokens, outputTokens: result.outputTokens,
+      ...(pdfReading ? { pdfReading } : {}), ...videoReceipt, reservedMicros: estimate.costMicros, costMicros: result.costMicros, inputTokens: result.inputTokens, outputTokens: result.outputTokens,
       sources: result.sources ?? [], lookups: (result.tools ?? []).length,
       ...(result.taskDraft ? { taskDraft: await signedTaskDraft(secret, current.userId, image && !result.taskDraft.afterUntrusted ? { ...result.taskDraft, afterUntrusted: true } : result.taskDraft, Date.now()) } : {}) };
   } catch (error) {

@@ -59,6 +59,48 @@ export function isOfficialSearch(message: string): boolean {
   return site.test(value) && (lookup.test(value) || value.includes('?') || /^(?:site|portal|https:\/\/)/.test(value));
 }
 
+const plainText = (message: string) => message.trim().normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase().replace(/\s+/g, ' ');
+const proexName = String.raw`(?:proe[xc]|pro[\s-]?reitoria\s+de\s+extensao)`;
+// Operação no Portal ou redação de texto: nunca vira resposta direta de links ou notícias.
+// Dados do Portal (agenda, empréstimos, brindes, saldo, equipe...) e pedidos de análise também ficam com o modelo.
+const portalOrWriting = /\b(?:registr\w*|cadastr\w*|cri(?:a|e|ar|em)|lanc\w*|demandas?|tarefas?|entregas?|estoque|projetos?|no portal|escrev\w*|redi[gj]\w*|prepar\w*|mont\w*|elabor\w*|fa(?:ca|z|zer)|suger\w*|sugir\w*|ger(?:e|ar)|publique|publicar|postar|poste|divulg\w*|legendas?|rascunho|texto|agenda\w*|compromiss\w*|reuni\w*|emprestim\w*|brindes?|kits?|saldo|lotes?|materia\w*|equipe|responsavel|meu|minha|meus|minhas|nosso|nossa|nossos|nossas|resum\w*|analis\w*|compar\w*|expliq\w*|diga)\b/;
+// Palavras do próprio pedido ("links", "notícias", "últimas", "PROEX"...) e palavras vazias: o que sobra é o assunto.
+const requestWords = new Set(('links link digitais uteis oficiais importantes principais acesso rapido sistemas servicos atalhos enderecos pagina paginas inicial site '
+  + 'proex proec instagram post posts postagem postagens publicacao publicacoes publicou postou divulgou anunciou noticia noticias novidade novidades '
+  + 'ultima ultimas ultimo ultimos recente recentes nova novas novo novos o a os as de da do das dos que quais qual sao e me mostra mostre mostrar abra abre abrir ver veja '
+  + 'tem ha em no na nos nas para por favor role quero gostaria pode poderia voce essa esse esta este semana hoje mes um uma manda mande passa passe lista liste onde estao ficam').split(' '));
+/** Sobrou assunto depois de tirar o pedido? "sobre X" ou mais de 2 palavras de conteúdo vão ao modelo (ou à busca por assunto). */
+function hasSubject(value: string): boolean {
+  if (/\bsobre\b/.test(value)) return true;
+  // O nome "Pró-Reitoria de Extensão" é pedido; "extensão" solta ("edital de extensão") é assunto.
+  return (value.replace(new RegExp(proexName, 'g'), ' ').match(/[a-z0-9]+/g) ?? []).filter(word => !requestWords.has(word)).length > 2;
+}
+const linksCue = String.raw`\b(?:links?(?:\s+(?:uteis|oficiais|importantes|principais))?|acesso\s+rapido|sistemas|servicos|atalhos|enderecos)\b`;
+const proexLinks = new RegExp(String.raw`${linksCue}[^.?!]{0,30}?\b(?:d[ao]s?|de|n[ao])\s+(?:(?:pagina|site)(?:\s+inicial)?\s+d[ao]\s+)?${proexName}\b|\bpagina\s+inicial\s+d[ao]\s+${proexName}\b|\blinks?\s+digitais\b`);
+const proexPublished = new RegExp(String.raw`\b(?:o\s+que|que)\s+(?:a\s+)?${proexName}\s+(?:publicou|postou|divulgou|anunciou)\b`);
+const proexMention = new RegExp(String.raw`\b${proexName}\b`);
+const recentCue = /\b(?:posts?|postage(?:m|ns)|publicac(?:ao|oes)|ultim[oa]s?|recentes?|novidades?|novos?|novas?)\b/;
+
+/** "Links da PROEX": links digitais, úteis, acesso rápido, sistemas ou serviços da página inicial da PROEX. */
+export function asksProexLinks(message: string): boolean {
+  const value = plainText(message);
+  return !portalOrWriting.test(value) && !hasSubject(value) && proexLinks.test(value);
+}
+
+/** Últimos posts do Instagram da PROEX, o que a PROEX publicou ou notícias recentes do site. */
+export function asksProexNews(message: string): boolean {
+  const value = plainText(message);
+  if (portalOrWriting.test(value) || hasSubject(value)) return false;
+  if (/\binstagram\b/.test(value) && recentCue.test(value)) return true;
+  if (proexPublished.test(value)) return true;
+  return /\b(?:noticias?|novidades)\b/.test(value) && (proexMention.test(value) || /\b(?:recentes?|ultim[oa]s?|novas|site)\b/.test(value));
+}
+
+/** Resposta direta, sem IA, em qualquer modo: links da página inicial ou Instagram e notícias. */
+export function directOfficialKind(message: string): 'links' | 'news' | null {
+  return asksProexNews(message) ? 'news' : asksProexLinks(message) ? 'links' : null;
+}
+
 export type RoleComposerMode = 'chat' | 'search' | 'off';
 /** Conversa com IA, só a busca em fontes oficiais (sem chave de conversa) ou nada. */
 export function roleComposerMode(status: { available: boolean; policy?: { publicSearch: boolean } } | null | undefined): RoleComposerMode {
@@ -67,9 +109,13 @@ export function roleComposerMode(status: { available: boolean; policy?: { public
   return status.policy?.publicSearch ? 'search' : 'off';
 }
 
-/** Para onde vai o envio: busca oficial (pedida na alternância, imposta no modo só busca ou reconhecida na frase) ou conversa. */
+/**
+ * Para onde vai o envio: busca oficial sem custo quando a pessoa liga "Fontes oficiais" ou quando só a
+ * busca está disponível; links e notícias da PROEX respondem direto em qualquer modo. Com a conversa
+ * disponível, a pergunta sobre editais reconhecida na frase vai ao modelo, que lê as fontes com as ferramentas.
+ */
 export function officialRoute(input: { mode: RoleComposerMode; toggled: boolean; publicSearch: boolean; attachment: boolean; text: string }): { official: boolean; explicit: boolean } {
   if (input.mode === 'off' || !input.publicSearch || input.attachment) return { official: false, explicit: false };
   const explicit = input.mode === 'search' || input.toggled;
-  return { official: explicit || isOfficialSearch(input.text), explicit };
+  return { official: explicit || directOfficialKind(input.text) !== null, explicit };
 }

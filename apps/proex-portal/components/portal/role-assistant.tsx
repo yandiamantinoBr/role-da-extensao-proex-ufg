@@ -13,13 +13,14 @@ import { RoleLocalPlayer, type RoleLocalMedia } from './role-local-media';
 import RoleDocumentCard, { type RoleDocumentRevision } from './role-document-card';
 import RoleTaskDraftCard, { roleTaskDraftFrom, type RoleTaskDraftStatus, type RoleTaskDraftView } from './role-task-draft-card';
 import RoleScannedPdfCard, { roleScannedPdfFrom, type RoleScannedPdfOffer } from './role-scanned-pdf-card';
+import RoleLinkGroups, { roleLinkGroupsFrom, type RoleLinkGroupView } from './role-link-groups';
 import { ROLE_DOCUMENT_EXCERPT_LIMIT, roleDocumentExcerpt, roleDocumentMessage, type RoleDocumentExcerpt, type RoleDocumentPreview } from '@/lib/assistant/role-document-contracts';
 import { MAX_UPLOAD_FILE_BYTES } from '@/lib/upload-limits';
 import AiPeopleUsage from './ai-people-usage';
 import { createPortal } from 'react-dom';
 import { useDockItem, useMobileDockToolbar } from './floating-dock';
 import DestinationField, { destinationFields, loadDestinations } from './destination-field';
-import { officialRoute, roleComposerMode } from '@/lib/assistant/official-search-intent';
+import { isOfficialSearch, officialRoute, roleComposerMode } from '@/lib/assistant/official-search-intent';
 import { officialPdfUrl } from '@/lib/assistant/official-pdf-url';
 import { ROLE_VIDEO_MAX_BYTES, ROLE_VIDEO_MAX_SECONDS, ROLE_VIDEO_MIN_SECONDS, ROLE_VIDEO_MIME, ROLE_VIDEO_EFFORT_LABELS, roleVideoEstimate, type RoleVideoStatus } from '@/lib/assistant/role-video-contracts';
 import { roleHistoryForPolicy } from '@/lib/assistant/role-policy';
@@ -32,7 +33,7 @@ type Status = { document?: { approval: string; canSaveToRecords: boolean }; vide
 type Match = { projectId: string; projectName: string; itemName: string; score: number };
 type Operation = { request: string; stage: 'idle' | 'estimated' | 'preview' | 'done'; costMicros?: number; provider?: string; jev?: boolean; /** Modelo que confere, como veio da estimativa (vazio = padrão do portal). É o nome que o aviso mostra e que vai no preparo. */ decisionDestination?: string; decisionApproval?: string; stale?: boolean; projectId?: string; matches?: Match[]; ambiguous?: boolean; error?: string; limit?: boolean; preview?: { plan: Omit<AssistantPlan, 'actorId'>; planToken: string; undoReason: string }; confirmed?: boolean; receipt?: string; key: string; /** Pedido exatamente como foi enviado para preparar a prévia; vai junto na confirmação. */ prepared?: string; destinationDefault?: string; movementId?: string; destination?: string | null; revise?: 'correct' | 'undo' | null; reviseKey?: string };
 type Source = { label: string; href: string };
-type Message = { id: string; role: 'user' | 'assistant'; content: string; image?: string; video?: true; official?: true; isolated?: true; document?: RoleDocumentPreview; documentRevision?: RoleDocumentRevision; media?: RoleLocalMedia; meta?: string; operation?: Operation; sources?: Source[]; taskDraft?: RoleTaskDraftView; taskDraftStatus?: RoleTaskDraftStatus; pdfReading?: RoleScannedPdfOffer; notice?: string; focusOnShow?: true };
+type Message = { id: string; role: 'user' | 'assistant'; content: string; image?: string; video?: true; official?: true; isolated?: true; document?: RoleDocumentPreview; documentRevision?: RoleDocumentRevision; media?: RoleLocalMedia; meta?: string; operation?: Operation; sources?: Source[]; taskDraft?: RoleTaskDraftView; taskDraftStatus?: RoleTaskDraftStatus; pdfReading?: RoleScannedPdfOffer; notice?: string; focusOnShow?: true; linkGroups?: RoleLinkGroupView[]; linkIntro?: string; linkLabel?: string };
 type Picked = { dataUrl: string; bytes: number };
 type Recorded = { file: File; seconds: number };
 
@@ -55,7 +56,7 @@ const CONSENT_STORAGE = 'proex-role-ciencia';
 /** Preferência da pessoa neste aparelho: 'off' esconde as sugestões e nem consulta o portal. */
 const TIPS_STORAGE = 'proex-role-sugestoes';
 /** Links externos aceitos nas fontes: só os sites oficiais copiados e publicações do Instagram. */
-const OFFICIAL_LINK = /^https:\/\/(proex\.ufg\.br|23conpeex\.plateia\.ufg\.br|www\.instagram\.com|instagram\.com)\//;
+const OFFICIAL_LINK = /^https:\/\/(proex\.ufg\.br|23conpeex\.plateia\.ufg\.br|analisa\.ufg\.br|centrodeeventos\.ufg\.br|www\.instagram\.com|instagram\.com)\//;
 const PROVIDER_NAMES: Record<string, string> = { deepseek: 'DeepSeek', groq: 'Groq', openai: 'OpenAI', anthropic: 'Anthropic', nvidia: 'NVIDIA', deepgram: 'Deepgram' };
 const providerName = (id: string) => PROVIDER_NAMES[id] ?? id.replace(/^./, letter => letter.toUpperCase());
 function modelLabelFor(status: Status, photo: boolean) { return photo ? status.visionPricing?.label ?? ROLE_MODELS.deepseek.label : status.textPricing?.label ?? status.model; }
@@ -269,6 +270,8 @@ function RoleConversation({ projects, defaultProjectId, onApplied, onOpenSetting
   const officialOn = chatOn && officialMode && !!status?.policy?.publicSearch;
   const route = officialRoute({ mode, toggled: officialMode, publicSearch: !!status?.policy?.publicSearch, attachment, text: sanitized.text });
   const officialLookup = route.official;
+  // Pergunta de busca oficial indo ao modelo (botão desligado): a linha de custo lembra a busca sem custo.
+  const freeSearchHint = chatOn && !officialMode && !officialLookup && !!status?.policy?.publicSearch && !attachment && isOfficialSearch(sanitized.text);
   // Leitura com IA em andamento: o cartão já mostra "Lendo o PDF com IA…"; sem o "Pensando…" repetido.
   const readingPdf = messages.some(message => message.pdfReading?.reading);
   function toggleOfficial() { setOfficialMode(value => !value); setError(''); }
@@ -344,7 +347,7 @@ function RoleConversation({ projects, defaultProjectId, onApplied, onOpenSetting
     setMessages(current => [...current, user]); setDraft(''); setPicked(null); setBusy(true); setError(''); setNotice(''); setLimitHit(false);
     try {
       const encodedVideo = video && status.video ? await sendableVideo(video.file) : null;
-      const result = await post<{ reply: string; operation: string | null; operationDropped?: boolean; model: string; provider?: string; costMicros: number; reservedMicros: number; inputTokens: number; outputTokens: number; reasoningTokens?: number; sources?: Source[]; lookups?: number; taskDraft?: unknown; pdfReading?: unknown }>('/api/assistant/role', {
+      const result = await post<{ reply: string; operation: string | null; operationDropped?: boolean; model: string; provider?: string; costMicros: number; reservedMicros: number; inputTokens: number; outputTokens: number; reasoningTokens?: number; sources?: Source[]; lookups?: number; taskDraft?: unknown; pdfReading?: unknown; linkGroups?: unknown; linkIntro?: unknown; linkLabel?: unknown }>('/api/assistant/role', {
         action: 'chat', projectId, scope: scopeKind === 'org' ? { kind: 'org' } : { kind: scopeKind, id: scopeId }, operationKey: crypto.randomUUID(), history: encodedVideo || officialLookup || document ? [] : history, message: text, ...(image ? { image } : {}),
         ...(encodedVideo ? { video: encodedVideo, videoConsent: true, videoApproval: status.video?.approval } : {}),
         ...(document ? { document, documentConsent: true, documentApproval: status.document?.approval } : {}),
@@ -356,7 +359,10 @@ function RoleConversation({ projects, defaultProjectId, onApplied, onOpenSetting
       const taskDraft = roleTaskDraftFrom(result.taskDraft);
       // PDF escaneado na busca oficial: a oferta guarda a pergunta e uma chave fixa para o toque em Ler com IA.
       const pdfReading = result.provider === 'official' ? roleScannedPdfFrom(result.pdfReading, text, crypto.randomUUID()) : undefined;
-      const reply: Message = { id: crypto.randomUUID(), role: 'assistant', content: result.reply, ...(taskDraft ? { taskDraft } : {}), ...(pdfReading ? { pdfReading } : {}), ...(result.provider === 'official' ? { official: true } : {}), ...(document ? { isolated: true } : {}), ...(encodedVideo ? { video: true } : {}), sources: (result.sources ?? []).filter(source => source.href.startsWith('/?module=') || OFFICIAL_LINK.test(source.href) || officialPdfUrl(source.href)).slice(0, 6), meta: result.provider === 'official' ? (pdfReading ? 'Consulta pública · sem custo de IA (a leitura abaixo é cobrada à parte)' : 'Consulta pública · sem custo de IA') : result.provider === 'portal' ? 'Resposta do Portal · sem custo de IA' : `${encodedVideo ? `${videoLabel} · Custo estimado` : 'Custou'} ${friendlyMicros(result.costMicros)}${videoUsage}${result.lookups ? ` · consultou o portal ${result.lookups === 1 ? '1 vez' : `${result.lookups} vezes`}` : ''}${result.operationDropped ? ' · Não foi preparado rascunho. Confira suas permissões e os dados informados.' : ''}`,
+      // Links da PROEX, Instagram e notícias: blocos clicáveis; o texto completo fica como reserva.
+      const linkGroups = result.provider === 'official' ? roleLinkGroupsFrom(result.linkGroups) : undefined;
+      const linkIntro = linkGroups && typeof result.linkIntro === 'string' ? result.linkIntro.slice(0, 2000) : undefined;
+      const reply: Message = { id: crypto.randomUUID(), role: 'assistant', content: result.reply, ...(linkGroups ? { linkGroups, ...(linkIntro ? { linkIntro } : {}), ...(typeof result.linkLabel === 'string' ? { linkLabel: result.linkLabel.slice(0, 120) } : {}) } : {}), ...(taskDraft ? { taskDraft } : {}), ...(pdfReading ? { pdfReading } : {}), ...(result.provider === 'official' ? { official: true } : {}), ...(document ? { isolated: true } : {}), ...(encodedVideo ? { video: true } : {}), sources: (result.sources ?? []).filter(source => source.href.startsWith('/?module=') || OFFICIAL_LINK.test(source.href) || officialPdfUrl(source.href)).slice(0, 6), meta: result.provider === 'official' ? (pdfReading ? 'Consulta pública · sem custo de IA (a leitura abaixo é cobrada à parte)' : 'Consulta pública · sem custo de IA') : result.provider === 'portal' ? 'Resposta do Portal · sem custo de IA' : `${encodedVideo ? `${videoLabel} · Custo estimado` : 'Custou'} ${friendlyMicros(result.costMicros)}${videoUsage}${result.lookups ? ` · consultou o portal ${result.lookups === 1 ? '1 vez' : `${result.lookups} vezes`}` : ''}${result.operationDropped ? ' · Não foi preparado rascunho. Confira suas permissões e os dados informados.' : ''}`,
         operation: result.operation ? { request: result.operation, stage: 'idle', key: crypto.randomUUID() } : undefined };
       setMessages(current => [
         ...(encodedVideo && video ? current.map(message => message.id === user.id ? { ...message, media: { kind: 'video', file: video.file } satisfies RoleLocalMedia } : message) : current),
@@ -694,9 +700,10 @@ function RoleConversation({ projects, defaultProjectId, onApplied, onOpenSetting
                     onAsk={askAboutDocument} onCopy={(draft, destination) => saveDocumentCopy(message.id, draft, destination)}/>}
                   {message.media && <RoleLocalPlayer media={message.media} className={styles.sentMedia}
                     label={message.media.kind === 'video' ? 'Reproduzir vídeo enviado' : 'Ouvir gravação transcrita'}/>}
-                  {message.content && <p ref={message.focusOnShow ? focusOnMount : undefined} tabIndex={message.focusOnShow ? -1 : undefined}>{message.content}</p>}
+                  {message.content && <p ref={message.focusOnShow ? focusOnMount : undefined} tabIndex={message.focusOnShow ? -1 : undefined}>{message.linkGroups ? message.linkIntro ?? message.content.split('\n\n')[0] : message.content}</p>}
+                  {!!message.linkGroups?.length && <RoleLinkGroups groups={message.linkGroups} label={message.linkLabel}/>}
                   {message.notice && <p className={styles.help}>{message.notice}</p>}
-                  {!!message.sources?.length && <div className={styles.sources}><span>Fontes da resposta</span><ul>{message.sources.map(source => <li key={source.href}>{source.href.startsWith('/') ? <a href={source.href} onClick={() => close()}>{source.label}</a> : <a href={source.href} target="_blank" rel="noopener noreferrer">{source.label} ↗</a>}</li>)}</ul></div>}
+                  {!!message.sources?.length && <div className={styles.sources}><span>Fontes da resposta</span><ul>{message.sources.map(source => <li key={source.href}>{source.href.startsWith('/') ? <a href={source.href} onClick={() => close()}>{source.label}</a> : <a href={source.href} target="_blank" rel="noopener noreferrer">{source.label}<span className="visually-hidden"> (abre em nova aba)</span><span aria-hidden="true"> ↗</span></a>}</li>)}</ul></div>}
                   {message.taskDraft && <RoleTaskDraftCard draft={message.taskDraft} status={message.taskDraftStatus} onOpen={() => close()}
                     onStatus={taskDraftStatus => setMessages(current => current.map(entry => entry.id === message.id ? { ...entry, taskDraftStatus } : entry))}/>}
                   {message.meta && <small>{message.meta}</small>}
@@ -834,7 +841,7 @@ function RoleConversation({ projects, defaultProjectId, onApplied, onOpenSetting
               <input type="file" accept=".wav,audio/wav" disabled={officialOn || !consent || busy || recording || transcribing || readingDocument || preparingAudio} onChange={event => { void attachAudioFile(event.target.files?.[0]); event.target.value = ''; }}/>
             </label>}
             </>}
-            <p className={styles.cost} aria-live="polite">{route.explicit ? officialCost : !consent ? 'Toque em Entendi para conversar.' : officialLookup ? officialCost : estimate ? <>Custo máximo: <strong>{(() => { const [words, exact] = friendlyMicros(estimate.costMicros).split(' ('); return exact ? <><span className={styles.nowrap}>{words}</span> <span className={styles.nowrap}>({exact}</span></> : <span className={styles.nowrap}>{words}</span>; })()}</strong></> : 'O custo aparece aqui antes de enviar.'}</p>
+            <p className={styles.cost} aria-live="polite">{route.explicit ? officialCost : !consent ? 'Toque em Entendi para conversar.' : officialLookup ? officialCost : estimate ? <>Custo máximo: <strong>{(() => { const [words, exact] = friendlyMicros(estimate.costMicros).split(' ('); return exact ? <><span className={styles.nowrap}>{words}</span> <span className={styles.nowrap}>({exact}</span></> : <span className={styles.nowrap}>{words}</span>; })()}</strong>{freeSearchHint ? ' · Ligue Fontes oficiais para buscar sem custo.' : ''}</> : 'O custo aparece aqui antes de enviar.'}</p>
             <button type="submit" className={styles.send} disabled={!canSend} aria-label={officialLookup ? 'Enviar para as fontes oficiais' : estimate ? `Enviar, custo máximo ${formatMicros(estimate.costMicros)}` : 'Enviar'}><Send size={18} aria-hidden="true"/><span>Enviar</span></button>
           </div>
           <p className={styles.disclaimer}>{searchOnly || officialLookup ? 'O Rolê pode errar. Confira no link da fonte antes de usar.' : <>O Rolê pode errar. Confira antes de usar. Respondido por {modelLabel}{video ? '.' : ` (${providerName(status.provider)}).`}</>}</p>

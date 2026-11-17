@@ -402,7 +402,7 @@ test('TELA · MODO: chat indisponível com busca disponível abre só a busca; a
   const plain = 'Como registro a entrega de brindes?', notice = 'Quais editais de extensão estão abertos?';
   const base = { mode: 'chat', toggled: false, publicSearch: true, attachment: false };
   assert.deepEqual(officialRoute({ ...base, text: plain }), { official: false, explicit: false });
-  assert.deepEqual(officialRoute({ ...base, text: notice }), { official: true, explicit: false }, 'o reconhecimento automático continua');
+  assert.deepEqual(officialRoute({ ...base, text: notice }), { official: false, explicit: false }, 'com a conversa disponível, a frase reconhecida vai ao modelo com as ferramentas');
   assert.deepEqual(officialRoute({ ...base, toggled: true, text: plain }), { official: true, explicit: true });
   assert.deepEqual(officialRoute({ ...base, toggled: true, attachment: true, text: plain }), { official: false, explicit: false }, 'com anexo não vai à busca');
   assert.deepEqual(officialRoute({ ...base, toggled: true, publicSearch: false, text: notice }), { official: false, explicit: false });
