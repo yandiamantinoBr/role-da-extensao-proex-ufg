@@ -36,10 +36,10 @@ Comece pela [Retomada de 13/11](RETOMADA-13NOV-PORTAL-PROEX.md) para conferir a 
 - Convite do Rolê no Início (uma vez), **Ajuda e tutoriais** no menu da conta, em Mais e na Conta, cartão guiado não modal com contorno no controle real, pausar, retomar, repetir. Funciona sem IA, chave ou `inventory.read`.
 - Passos resolvidos pelo acesso da sessão a cada abertura e troca de projeto (projeto vizinho, conta bloqueada ou pendente, vínculo revogado com a tela aberta). Progresso pessoal; a anonimização apaga.
 - Junto (PR #144, no ar): a dica de Demandas só cita **Somente demandas gerais** para quem tem a opção.
-- **Capítulos no ar (17/11), cada um com crítica visual independente ≥ 9 e conferido em produção só leitura:** Meu trabalho (PR183), Projetos (PR190), Demandas (PR193), Equipes (PR195), Agenda (PR198), Materiais (PR199) e Dinâmicas (PR202). Evidências em `docs/evidencias/2026-11-1{6,7}-tutorial-*`.
+- **Capítulos no ar (17/11), cada um com crítica visual independente ≥ 9 e conferido em produção só leitura:** Meu trabalho (PR183), Projetos (PR190), Demandas (PR193), Equipes (PR195), Agenda (PR198), Materiais (PR199), Dinâmicas (PR202) e Empréstimos (PR205, `4d131fd`). São 9 capítulos ao todo, com a Navegação. Evidências em `docs/evidencias/2026-11-1{6,7}-tutorial-*`.
 - **Requisitos do catálogo:** `projects`, `capability` (+`scope`), `anyOf`, `manageOrganization` e `calendar`. Cada um repete a regra que mostra o módulo ou o controle. Os campos `reveal: 'below'` e `missing` controlam rolagem e aviso ("Para continuar").
 - **Comportamento comum:** o cartão continua procurando o controle; elemento sem tamanho não conta; o espaço de rolagem vence a reserva da doca; Ajuda e tutoriais mostra só os assuntos com passos para o acesso atual.
-- **Falta:** Empréstimos (liberado: as PRs 163 e 169 entraram), **Experimentar**, ajuda na página do voluntário e na área pública, abrir pelo chat do Rolê. Fora do tutorial: em 360 px o botão "Externos e parceiros" de Projetos quebra em três linhas.
+- **Falta:** **Experimentar**, ajuda na página do voluntário e na área pública, abrir pelo chat do Rolê. Fora do tutorial: em 360 px o botão "Externos e parceiros" de Projetos quebra em três linhas.
 
 ## Auditoria de permissões das PRs 105–143 · 16/11
 
