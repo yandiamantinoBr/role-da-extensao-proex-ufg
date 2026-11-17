@@ -315,3 +315,10 @@ test('general area targets are requested explicitly, partial catalogs are labell
     const before = h.requests.length; submit(h); h.render(); assert.equal(h.requests.length, before); assert.match(h.body(), /Selecione pelo menos uma pessoa ou equipe/);
   } finally {h.dispose();}
 });
+
+test('section headings share one pattern and the origin picker is a compact segmented control (crítica de 16/11)', () => {
+  const source = readFileSync(new URL('../components/portal/meu-trabalho-panel.tsx', import.meta.url), 'utf8');
+  for (const heading of ['Demandas · ', 'Responsabilidades · ', 'Por módulo de trabalho']) assert.ok(new RegExp('<h3><[A-Za-z]+ size=[{]18[}] aria-hidden="true"/> ' + heading).test(source), heading);
+  const css = readFileSync(new URL('../components/portal/meu-trabalho-panel.module.css', import.meta.url), 'utf8');
+  assert.match(css, /\.assignment\{display:inline-flex;flex-wrap:nowrap;width:fit-content;/);
+});
