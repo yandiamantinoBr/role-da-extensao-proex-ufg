@@ -12,7 +12,7 @@ import { projectAuthoritySql, type PortalActor } from '../access';
 import { all, type Row } from '../database';
 import { HttpError } from '../errors';
 import { calendarEntries, calendarRange, type CalendarEntry } from '../calendar';
-import { authority, assignedRecipient } from '../follow-up/scope';
+import { activeAccount, authority, assignedRecipient } from '../follow-up/scope';
 import { serverWorkClock } from '../follow-up/time';
 import { responsibilityRead, taskDirect } from '../responsibilities/scope';
 import type { ResolvedScope, RoleToolResult, RoleToolSource } from './role-tools';
@@ -52,12 +52,13 @@ const wordHit = (word: string, own: string[]) => word.length < 4 || /\d/.test(wo
 export function matchProjectNames<T extends Record<string, unknown>>(rows: T[], wanted: string): T[] {
   const query = words(wanted);
   if (!query.length) return rows;
-  const attempt = (list: string[]) => { const need = list.length <= 2 ? list.length : Math.ceil(list.length * 0.6); return rows.filter(row => { const own = words(`${row.name} ${row.id}`); return list.filter(word => wordHit(word, own)).length >= need; }); };
+  const attempt = (list: string[]) => { const need = list.length <= 2 ? list.length : Math.ceil(list.length * 0.6); return rows.filter(row => { const own = words(`${row.name} ${row.short_name ?? ''} ${row.id}`); return list.filter(word => wordHit(word, own)).length >= need; }); };
   let found = attempt(query);
   // A letra final fica ("Projeto A" nunca vira "projeto", que casaria com todos).
   const content = query.filter((word, index) => !STOP.has(word) || (word.length === 1 && index === query.length - 1));
   if (!found.length && content.length && content.length < query.length) found = attempt(content);
-  const exact = found.filter(row => words(String(row.name)).join(' ') === query.join(' '));
+  // Nome ou sigla idênticos ao pedido têm preferência ("PB" é o Programa de Bolsas, não "PB Extra").
+  const exact = found.filter(row => [row.name, row.short_name].some(label => label && words(String(label)).join(' ') === query.join(' ')));
   return exact.length ? exact : found;
 }
 
@@ -83,13 +84,25 @@ function flag(value: unknown, label: string): boolean {
   return value;
 }
 const ENTRY_KIND: Record<string, string> = { 'project-schedule': 'atividade', campaign: 'evento', 'campaign-session': 'turno' };
-/** Atividades, eventos e turnos pela própria tela Agenda (categoria Projetos e eventos). Sem Agenda para a pessoa, nada. */
-async function agendaEntries(ctx: Fase2aContext, from: string, to: string, ids: Set<string>): Promise<CalendarEntry[] | null> {
+/**
+ * Atividades, eventos e turnos pela própria tela Agenda (categoria Projetos e eventos), filtrada no serviço por
+ * projeto (um só) ou unidade (escopo da conversa) para não varrer o banco. calendarEntries não aceita organização:
+ * o filtro por organização é a lista `ids`. Sem Agenda para a pessoa (403) ou com registros demais (422): null.
+ */
+async function agendaEntries(ctx: Fase2aContext, from: string, to: string, ids: string[]): Promise<CalendarEntry[] | null> {
+  const allowed = new Set(ids), filter = ids.length === 1 ? { projectId: ids[0] } : ctx.scope?.kind === 'unit' && ctx.scope.id ? { unitId: ctx.scope.id } : {};
   try {
-    const { entries } = await calendarEntries(ctx.db, ctx.actor, { category: 'projects', range: calendarRange(from, to) });
-    return entries.filter(entry => ENTRY_KIND[entry.sourceKind] && ids.has(entry.projectId) && entry.status !== 'CANCELLED');
-  } catch (error) { if (error instanceof HttpError && error.status === 403) return null; throw error; }
+    const { entries } = await calendarEntries(ctx.db, ctx.actor, { category: 'projects', ...filter, range: calendarRange(from, to) });
+    return entries.filter(entry => ENTRY_KIND[entry.sourceKind] && allowed.has(entry.projectId) && entry.status !== 'CANCELLED');
+  } catch (error) { if (error instanceof HttpError && (error.status === 403 || error.status === 422)) return null; throw error; }
 }
+/** Até 5 projetos na lista: agenda consultada projeto a projeto. Acima disso a lista não traz eventos. */
+const AGENDA_LIST_LIMIT = 5;
+/** Uma fonte por link, só das que aparecem nos itens. */
+const uniqueSources = (sources: RoleToolSource[]) => [...new Map(sources.map(source => [source.href, source])).values()];
+/** Mesmo critério de responsável visível da tela de Demandas (lib/follow-up/service.ts): conta ativa com acesso ou equipe ativa. */
+const liveAssignee = (a: string, orgSql: string, projectSql: string) => `((${a}.user_id IS NOT NULL AND EXISTS(SELECT 1 FROM portal_users person WHERE person.user_id=${a}.user_id AND ${activeAccount('person')}) AND ${authority(`${a}.user_id`, orgSql, projectSql)})
+  OR EXISTS(SELECT 1 FROM followup_teams team WHERE team.id=${a}.team_id AND team.organization_id=${orgSql} AND team.status='active'))`;
 const entryLink = (entry: CalendarEntry) => entry.sourceKind === 'campaign' ? `/?module=events&project=${encodeURIComponent(entry.projectId)}&campaignId=${encodeURIComponent(entry.sourceId)}` : `/?module=calendar&project=${encodeURIComponent(entry.projectId)}`;
 const entryItem = (entry: CalendarEntry) => ({ tipo: ENTRY_KIND[entry.sourceKind], titulo: entry.title.replace(/^(Atividade|Evento|Turno) · /, ''), inicio: brWhen(entry.startsAt, entry.allDay), projeto: entry.projectName, link: entryLink(entry) });
 
@@ -120,33 +133,36 @@ async function projectsTool(ctx: Fase2aContext, ids: string[]): Promise<RoleTool
   const auth = projectAuthoritySql(ctx.actor, [], 'p.id'), { today } = serverWorkClock();
   const rows = await all(ctx.db, `SELECT p.id,p.name,p.short_name,p.description,p.status,p.lifecycle,p.starts_at,p.ends_at,t.label type_label,u.name unit_name,u.acronym unit_acronym
     FROM projects p JOIN organizations o ON o.id=p.organization_id AND o.status='active' LEFT JOIN project_types t ON t.id=p.type_id LEFT JOIN organizational_units u ON u.id=p.unit_id
-    WHERE p.organization_id=? AND p.id IN ${inList(ids)} AND ${auth.sql} ORDER BY p.name LIMIT 60`, [ctx.organizationId, ...ids, ...auth.values]);
+    WHERE p.organization_id=? AND p.id IN ${inList(ids)} AND ${auth.sql} ORDER BY p.name LIMIT 61`, [ctx.organizationId, ...ids, ...auth.values]);
   if (!rows.length) return ctx.pack(kind, [], [], ctx.budget, 'Nenhum projeto visível para você.');
-  const found = rows.map(row => String(row.id)), single = rows.length === 1;
-  const tasks = taskQuery(ctx, found, false);
-  const [owners, counts, agenda] = await Promise.all([
+  const cut = rows.length > 60, shown = rows.slice(0, 60);
+  const found = shown.map(row => String(row.id)), single = shown.length === 1, withAgenda = shown.length <= AGENDA_LIST_LIMIT;
+  const tasks = taskQuery(ctx, found, false), until = addDays(today, 30);
+  const [owners, counts, agendas] = await Promise.all([
     // Responsável pelo projeto (Responsabilidades, área Projetos): só se existe, nunca quem é.
     all(ctx.db, `SELECT DISTINCT s.project_id FROM work_responsibility_scopes s WHERE s.area='projects' AND s.target_key='' AND s.status='active' AND s.project_id IN ${inList(found)}
-      AND ${responsibilityRead('?', 's')} AND EXISTS(SELECT 1 FROM work_responsibility_assignees a WHERE a.scope_id=s.id AND a.revoked_at IS NULL)`, [...found, ctx.actor.userId]),
+      AND ${responsibilityRead('?', 's')} AND EXISTS(SELECT 1 FROM work_responsibility_assignees a WHERE a.scope_id=s.id AND a.revoked_at IS NULL AND ${liveAssignee('a', 's.organization_id', 's.project_id')})`, [...found, ctx.actor.userId]),
     all(ctx.db, `SELECT t.project_id,COUNT(CASE WHEN t.status NOT IN ('completed','cancelled') THEN 1 END) open,COUNT(CASE WHEN t.status NOT IN ('completed','cancelled') AND t.due_at<? THEN 1 END) late
       FROM ${tasks.from} WHERE ${tasks.where} GROUP BY t.project_id`, [today, ...tasks.fromValues, ...tasks.whereValues]),
-    agendaEntries(ctx, today, addDays(today, 30), new Set(found)),
+    // Agenda projeto a projeto (filtrada no serviço), só em listas curtas.
+    withAgenda ? Promise.all(found.map(id => agendaEntries(ctx, today, until, [id]))) : Promise.resolve(null),
   ]);
   const owned = new Set(owners.map(row => String(row.project_id))), tally = new Map(counts.map(row => [String(row.project_id), row]));
   const sources: RoleToolSource[] = [];
-  const items = rows.map(row => {
-    const id = String(row.id), href = projectLink(id), count = tally.get(id), next = (agenda ?? []).filter(entry => entry.projectId === id).slice(0, single ? 6 : 2);
+  const items = shown.map((row, index) => {
+    const id = String(row.id), href = projectLink(id), count = tally.get(id), agenda = agendas ? agendas[index] : undefined, next = (agenda ?? []).slice(0, single ? 6 : 2);
     sources.push({ label: `Projeto · ${row.name}`, href });
     return {
       projeto: row.name, ...(row.short_name ? { sigla: row.short_name } : {}), tipo: row.type_label ?? 'sem tipo', fase: LIFECYCLE[String(row.lifecycle)] ?? row.lifecycle, situacao: row.status === 'archived' ? 'arquivado' : 'ativo',
       unidade: row.unit_name ? (row.unit_acronym ? `${row.unit_acronym} — ${row.unit_name}` : row.unit_name) : 'sem unidade', responsavel: owned.has(id) ? 'definido' : 'não definido',
       demandasAbertas: Number(count?.open ?? 0), demandasAtrasadas: Number(count?.late ?? 0),
       ...(single ? { descricao: String(row.description ?? '').slice(0, 600), inicio: row.starts_at ? brDay(row.starts_at) : null, fim: row.ends_at ? brDay(row.ends_at) : null } : {}),
-      proximosEventos: agenda === null ? 'agenda indisponível para você' : next.map(entry => ({ tipo: ENTRY_KIND[entry.sourceKind], titulo: entry.title.replace(/^(Atividade|Evento|Turno) · /, ''), inicio: brWhen(entry.startsAt, entry.allDay) })),
+      ...(agenda === undefined ? {} : { proximosEventos: agenda === null ? 'agenda indisponível para você' : next.map(entry => ({ tipo: ENTRY_KIND[entry.sourceKind], titulo: entry.title.replace(/^(Atividade|Evento|Turno) · /, ''), inicio: brWhen(entry.startsAt, entry.allDay) })) }),
       link: href,
     };
   });
-  return ctx.pack(kind, items, sources, ctx.budget, single ? 'Ficha do projeto. Próximos eventos: 30 dias.' : 'Próximos eventos: 30 dias, até 2 por projeto. Para a ficha, peça um projeto só.');
+  const note = single ? 'Ficha do projeto. Próximos eventos: 30 dias.' : withAgenda ? 'Próximos eventos: 30 dias, até 2 por projeto. Para a ficha, peça um projeto só.' : `Lista sem eventos da agenda (mais de ${AGENDA_LIST_LIMIT} projetos). Para eventos e ficha, peça um projeto só.`;
+  return ctx.pack(kind, items, uniqueSources(sources), ctx.budget, cut ? `${note} Mostrando 60 de ${ids.length} projetos; refine pelo nome.` : note);
 }
 
 const SITUATION: Record<string, string> = { abertas: "t.status NOT IN ('completed','cancelled')", em_andamento: "t.status='in_progress'", bloqueadas: "t.status='blocked'", concluidas: "t.status='completed'", todas: "t.status!='cancelled'" };
@@ -160,7 +176,7 @@ async function tasksTool(ctx: Fase2aContext, ids: string[], organizationWide: bo
   if (mine) conditions.push(assignedRecipient('caller.user_id', 't'));
   if (late) { conditions.push("t.status NOT IN ('completed','cancelled') AND t.due_at IS NOT NULL AND t.due_at<?"); values.push(today); }
   const rows = await all(ctx.db, `SELECT t.id,t.title,t.body,t.status,t.priority,t.due_at,t.project_id,COALESCE(p.name,'Organização (geral)') project_name,
-    ${taskDirect('caller.user_id', 't')} direct,EXISTS(SELECT 1 FROM followup_assignees a WHERE a.task_id=t.id AND a.removed_at IS NULL) assigned
+    ${taskDirect('caller.user_id', 't')} direct,EXISTS(SELECT 1 FROM followup_assignees a WHERE a.task_id=t.id AND a.removed_at IS NULL AND ${liveAssignee('a', 't.organization_id', 't.project_id')}) assigned
     FROM ${tasks.from} WHERE ${conditions.join(' AND ')}
     ORDER BY CASE WHEN t.status NOT IN ('completed','cancelled') AND t.due_at<? THEN 0 ELSE 1 END,COALESCE(t.due_at,'9999'),CASE t.priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,t.updated_at DESC,t.id LIMIT 81`, [...tasks.fromValues, ...values, today]);
   const shown = rows.slice(0, 80);
@@ -172,7 +188,7 @@ async function tasksTool(ctx: Fase2aContext, ids: string[], organizationWide: bo
     resumo: String(row.body ?? '').slice(0, 280), link: demandLink(row),
   }));
   const filters = [mine ? 'comigo' : '', late ? 'atrasadas' : '', situation].filter(Boolean).join(', ');
-  return ctx.pack(kind, items, sources, ctx.budget, rows.length ? `Filtro: ${filters}. Hoje: ${brDay(today)}.${rows.length > 80 ? ' Há mais; refine por projeto.' : ''}` : `Nenhuma demanda (${filters}) que você possa ver.`, { total: rows.length > 80 ? '80+' : rows.length });
+  return ctx.pack(kind, items, uniqueSources(sources), ctx.budget, rows.length ? `Filtro: ${filters}. Hoje: ${brDay(today)}.${rows.length > 80 ? ' Há mais; refine por projeto.' : ''}` : `Nenhuma demanda (${filters}) que você possa ver.`, { total: rows.length > 80 ? '80+' : rows.length });
 }
 
 /** Minha agenda: a tela Agenda (Projetos e eventos) + prazos das demandas com a pessoa, no período. */
@@ -184,14 +200,14 @@ async function agendaTool(ctx: Fase2aContext, ids: string[], organizationWide: b
   if (!validDay(from) || !validDay(to) || to < from || Date.parse(to) - Date.parse(from) > 62 * 86400000) throw new HttpError(400, 'Use datas AAAA-MM-DD, com até 62 dias.', 'role_tool_input');
   const tasks = taskQuery(ctx, ids, organizationWide);
   const [agenda, deadlines] = await Promise.all([
-    ids.length ? agendaEntries(ctx, from, to, new Set(ids)) : Promise.resolve([] as CalendarEntry[]),
+    ids.length ? agendaEntries(ctx, from, to, ids) : Promise.resolve([] as CalendarEntry[]),
     all(ctx.db, `SELECT t.id,t.title,t.status,t.due_at,t.project_id,COALESCE(p.name,'Organização (geral)') project_name FROM ${tasks.from}
       WHERE ${tasks.where} AND ${assignedRecipient('caller.user_id', 't')} AND t.status NOT IN ('completed','cancelled') AND t.due_at>=? AND t.due_at<=? ORDER BY t.due_at,t.id LIMIT 60`, [...tasks.fromValues, ...tasks.whereValues, from, to]),
   ]);
   const entries = (agenda ?? []).map(entry => ({ at: entry.allDay ? entry.startsAt.slice(0, 10) : entry.startsAt, item: entryItem(entry) }));
   const due = deadlines.map(row => ({ at: String(row.due_at), item: { tipo: 'prazo de demanda', titulo: row.title, inicio: `${brDay(row.due_at)} (prazo)`, situacao: STATUS[String(row.status)] ?? row.status, projeto: row.project_name, link: demandLink(row) } }));
   const list = [...entries, ...due].sort((a, b) => a.at.localeCompare(b.at)).map(entry => entry.item as Record<string, unknown> & { link: string; titulo: unknown; projeto: unknown });
-  const sources = list.map(item => ({ label: `${item.titulo} · ${item.projeto}`, href: item.link }));
-  const period = `${brDay(from)} a ${brDay(to)}`, unavailable = agenda === null ? ' A Agenda dos projetos não está disponível para seu perfil; mostro só os prazos das suas demandas.' : '';
+  const sources = uniqueSources(list.map(item => ({ label: item.link.startsWith('/?module=calendar') ? `Agenda · ${item.projeto}` : `${item.titulo} · ${item.projeto}`, href: item.link })));
+  const period = `${brDay(from)} a ${brDay(to)}`, unavailable = agenda === null ? ' A Agenda dos projetos não está disponível agora (perfil sem Agenda ou período com registros demais: tente um projeto ou um período menor); mostro só os prazos das suas demandas.' : '';
   return ctx.pack(kind, list, sources, ctx.budget, (list.length ? `Período: ${period}.` : `Nada na sua agenda de ${period}.`) + unavailable, { periodo: period });
 }

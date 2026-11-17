@@ -165,6 +165,58 @@ test('AGENDA: minha semana com atividades do projeto e prazos das minhas demanda
   assert.equal((await call(f, 'bolsista', 'minha_agenda')).rows, 0);
 });
 
+test('SIGLA: projeto achado pela sigla que não faz parte do nome, com preferência pela sigla idêntica', async () => {
+  const f = fixture(), now = new Date().toISOString();
+  f.native.prepare("INSERT INTO projects(id,name,short_name,description,scope,organization_id,created_at) VALUES('project-pb','Programa de Bolsas','PB','','external','org_proex',?),('project-pbx','PB Extra Programa','','','external','org_proex',?)").run(now, now);
+  assert.deepEqual(titles(await call(f, 'owner', 'consultar_projetos', { projeto: 'PB' })), ['Programa de Bolsas']);
+  assert.deepEqual(titles(await call(f, 'owner', 'consultar_projetos', { projeto: 'PA' })), ['Projeto A']);
+  assert.deepEqual(data(await call(f, 'owner', 'consultar_demandas', { projeto: 'PA', texto: 'atrasada' })).resultados.map(item => item.projeto), ['Projeto A']);
+});
+
+test('AGENDA EM EXCESSO (422) vira "agenda indisponível" e não derruba a ferramenta; lista grande pula eventos e avisa "mostrando 60 de N"', async () => {
+  const f = fixture(), now = new Date().toISOString();
+  f.native.prepare(`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<10001)
+    INSERT INTO project_schedule_items(id,project_id,title,starts_at,ends_at,status,note,version,created_at,updated_at) SELECT 'bulk-' || i,'project-a','Lote ' || i,?,?,'planned','',1,?,? FROM n`).run(todayBr, todayBr, now, now);
+  const card = data(await call(f, 'coordA', 'consultar_projetos')).resultados[0];
+  assert.equal(card.proximosEventos, 'agenda indisponível para você');
+  assert.equal(card.demandasAbertas, 4);
+  const week = data(await call(f, 'bolsista', 'minha_agenda'));
+  assert.ok(week.resultados.some(item => item.titulo === 'A vence hoje'));
+  assert.match(week.observacao, /não está disponível/);
+  const many = fixture();
+  many.native.prepare(`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<61)
+    INSERT INTO projects(id,name,description,scope,organization_id,created_at) SELECT 'extra-' || printf('%02d', i),'Extra ' || printf('%02d', i),'','external','org_proex',? FROM n`).run(now);
+  const list = data(await call(many, 'owner', 'consultar_projetos'));
+  assert.match(list.observacao, /mostrando 60 de 64 projetos/i);
+  assert.ok(list.resultados.every(item => item.proximosEventos === undefined), 'lista grande não consulta a agenda');
+});
+
+test('RESPONSÁVEL DEFINIDO segue a tela de Demandas: conta revogada ou equipe arquivada não contam', async () => {
+  const f = fixture(), now = new Date().toISOString();
+  f.native.prepare("INSERT INTO portal_users(user_id,email,status,created_at,updated_at) VALUES('ghost-qa','ghost@example.test','active',?,?)").run(now, now);
+  f.native.prepare("INSERT INTO members(id,user_id,email,role,project_id,created_at,revoked_at) VALUES('ghost-qa','ghost-qa','ghost@example.test','viewer','project-a',?,?)").run(now, now);
+  f.native.prepare("INSERT INTO followup_teams(id,organization_id,name,status,created_by,created_at,updated_at) VALUES('team-old','org_proex','Equipe antiga','archived','owner-qa',?,?)").run(now, now);
+  f.native.prepare("INSERT INTO followup_tasks(id,organization_id,project_id,title,body,priority,status,due_at,created_by,created_at,updated_at) VALUES('ta-ghost','org_proex','project-a','A com responsável que saiu','','high','open',?,'owner-qa',?,?),('ta-oldteam','org_proex','project-a','A com equipe arquivada','','high','open',?,'owner-qa',?,?)").run(PAST, now, now, PAST, now, now);
+  f.native.prepare("INSERT INTO followup_assignees(id,task_id,user_id,team_id,created_at) VALUES('as-g','ta-ghost','ghost-qa',NULL,?),('as-t','ta-oldteam',NULL,'team-old',?)").run(now, now);
+  f.native.prepare("INSERT INTO work_responsibility_scopes(id,organization_id,project_id,area,target_key,created_by,created_at,updated_at) VALUES('resp-bem','org_proex','project-bem','projects','','owner-qa',?,?)").run(now, now);
+  f.native.prepare("INSERT INTO work_responsibility_assignees(id,scope_id,user_id,created_at) VALUES('resp-bem-1','resp-bem','ghost-qa',?)").run(now);
+  const late = data(await call(f, 'coordA', 'filtrar_demandas', { atrasadas: true })).resultados;
+  assert.equal(late.find(item => item.demanda === 'A com responsável que saiu').responsavel, 'não definido');
+  assert.equal(late.find(item => item.demanda === 'A com equipe arquivada').responsavel, 'não definido');
+  assert.equal(late.find(item => item.demanda === 'A atrasada com bolsista').responsavel, 'definido');
+  assert.equal(data(await call(f, 'owner', 'consultar_projetos', { projeto: 'bem estar' })).resultados[0].responsavel, 'não definido');
+  assert.equal(data(await call(f, 'owner', 'consultar_projetos', { projeto: 'Projeto A' })).resultados[0].responsavel, 'definido');
+});
+
+test('FONTES sem repetição pelo link', async () => {
+  const f = fixture(), now = new Date().toISOString();
+  f.native.prepare("INSERT INTO project_schedule_items(id,project_id,title,starts_at,ends_at,status,note,version,created_at,updated_at) VALUES('s-a2','project-a','Oficina A2',?,?,'planned','',1,?,?)").run(todayBr, todayBr, now, now);
+  const week = await call(f, 'bolsista', 'minha_agenda');
+  assert.ok(data(week).resultados.filter(item => item.tipo === 'atividade').length >= 2);
+  const hrefs = week.sources.map(source => source.href);
+  assert.equal(new Set(hrefs).size, hrefs.length, `fontes repetidas: ${hrefs.join(' | ')}`);
+});
+
 test('DEMANDA PRIVADA ENTRE PARES nunca vai para o Rolê, nem para quem participa', { skip: HAS_PRIVATE_TASKS ? false : 'Liga sozinho quando a migração de demandas privadas (PR #212, tabela followup_task_privacy) estiver na main; então troque roleTaskVisible por publicTaskAuthority.' }, async () => {
   const f = fixture(), now = new Date().toISOString();
   const privateTask = (id, project) => {

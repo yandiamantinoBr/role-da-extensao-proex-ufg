@@ -84,7 +84,7 @@ const brasilia = (iso: string) => { const t = Date.parse(iso); return Number.isF
  * de IA são dessa organização: dados de outra organização nunca vão para este provedor).
  */
 async function visibleProjects(db: D1Database, actor: PortalActor, organizationId: string, wanted: string, scope: ResolvedScope | null = null): Promise<Map<string, string>> {
-  const rows = await all(db, `SELECT p.id,p.name FROM projects p JOIN organizations o ON o.id=p.organization_id AND o.status='active' WHERE p.organization_id=? AND ${followupAuthority('?', 'p.organization_id', 'p.id')} ORDER BY p.name LIMIT 400`, [organizationId, actor.userId]);
+  const rows = await all(db, `SELECT p.id,p.name,p.short_name FROM projects p JOIN organizations o ON o.id=p.organization_id AND o.status='active' WHERE p.organization_id=? AND ${followupAuthority('?', 'p.organization_id', 'p.id')} ORDER BY p.name LIMIT 400`, [organizationId, actor.userId]);
   const allowed = scope?.projectIds ? new Set(scope.projectIds) : null;
   return new Map(matchProjectNames(rows.filter(row => !allowed || allowed.has(String(row.id))), wanted).map(row => [String(row.id), String(row.name)]));
 }
