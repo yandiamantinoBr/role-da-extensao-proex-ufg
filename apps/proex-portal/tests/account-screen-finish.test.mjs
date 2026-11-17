@@ -46,3 +46,11 @@ test('photo buttons and rules sit in the name column, and the IA and Drive rows 
     assert.match(readFileSync(new URL(`../components/portal/${file}`, import.meta.url), 'utf8'), /\.summary strong \{ color: var\(--text-strong\); \}/, file);
   }
 });
+
+test('photo buttons keep their natural width, the read-only e-mail looks read-only and the subheading has weight (quinta crítica de 16/11)', () => {
+  const css = readFileSync(new URL('../components/portal/profile-panel.module.css', import.meta.url), 'utf8');
+  assert.match(css, /\.photoRow>\.photoActions button\{width:auto\}/);
+  assert.match(css, /\.field input\[readonly\]\{border-style:dashed;cursor:default\}/);
+  assert.match(css, /\.subheading\{font-weight:650\}/);
+  assert.match(profile, /placeholder="Ex\.: atendimento ou coordenação"/);
+});
