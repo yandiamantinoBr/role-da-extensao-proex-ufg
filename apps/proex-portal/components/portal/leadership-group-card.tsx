@@ -13,7 +13,7 @@ export default function LeadershipGroupCard({ organizationId, organizationName }
   useEffect(() => {
     const controller = new AbortController();
     Promise.all([
-      fetch(`/api/follow-up?${new URLSearchParams({ view: 'leadership', organizationId })}`, { credentials: 'same-origin', cache: 'no-store', signal: controller.signal }).then(async response => { const data = await response.json().catch(() => null); if (!response.ok) throw new Error(data?.error?.message ?? data?.error ?? 'Não foi possível carregar o grupo.'); return data; }),
+      fetch(`/api/follow-up?${new URLSearchParams({ view: 'leadership', organizationId })}`, { credentials: 'same-origin', cache: 'no-store', signal: controller.signal }).then(async response => { const data = await response.json().catch(() => null) as { members?: Member[]; error?: string | { message?: string } } | null; if (!response.ok) throw new Error(typeof data?.error === 'string' ? data.error : data?.error?.message ?? 'Não foi possível carregar o grupo.'); return data; }),
       loadDispatchWorkspace({ organizationId }, controller.signal),
     ]).then(([roster, workspace]) => { setMembers(Array.isArray(roster?.members) ? roster.members : []); setPeople(workspace.people); setError(''); })
       .catch(cause => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : 'Não foi possível carregar o grupo.'); });
