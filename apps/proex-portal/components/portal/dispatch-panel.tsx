@@ -68,8 +68,9 @@ export default function DispatchPanel({ userId, organizations }: { userId: strin
           <option value="">Todas as minhas demandas privadas</option>
           {data?.inLeadership && <option value="group">Todas da Gestão superior</option>}
           {(data?.people ?? []).map(person => <option key={person.userId} value={person.userId}>{person.name}</option>)}
-        </select>{counterpart?.inLeadership && <small className={styles.hint}>Está na Gestão superior</small>}</label>
+        </select></label>
         <button type="button" className={`p-button p-button-subtle ${styles.refresh}`} onClick={() => setReload(value => value + 1)} aria-label="Atualizar despachos" disabled={loading}><RefreshCw size={16} aria-hidden="true"/><span>Atualizar</span></button>
+        {counterpart?.inLeadership && <small className={styles.hint}>{counterpart.name} está na Gestão superior.</small>}
       </div>
     </div>
     {error && <p className="p-inline-error" role="alert">{error}</p>}

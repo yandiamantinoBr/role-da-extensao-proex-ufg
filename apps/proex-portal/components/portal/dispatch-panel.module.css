@@ -72,11 +72,14 @@
 }
 
 /* Crítica visual de 17/11: espaço do cartão da Gestão superior, dica sob o seletor, contadores alinhados e abas que quebram no celular. */
-.leadershipCard { margin-block: 20px 32px; }
-.hint { display: block; margin-top: 4px; color: var(--text-secondary); font-size: 12px; font-weight: 500; }
+.leadershipWrap { padding-block: 20px 32px; }
+.leadershipCard { container-type: inline-size; container-name: leadership; }
+.hint { flex-basis: 100%; margin-top: -4px; color: var(--text-secondary); font-size: 12px; font-weight: 500; }
 .metric { display: flex; flex-direction: column; justify-content: space-between; min-height: 92px; }
 @container dispatch (max-width: 640px) {
   .tabs { flex-wrap: wrap; overflow-x: visible; }
   .rowIcon { align-self: start; }
-  .leadershipCard .filters > button { flex: 1 1 100%; }
+  .tabs { row-gap: 2px; }
+  .tabs button { min-height: 36px; }
 }
+@container leadership (max-width: 640px) { .filters > button { flex: 1 1 100%; } }

@@ -69,5 +69,6 @@ test('visual fixes from the 17/11 critique: one title, short options, wrapping t
   assert.match(source, /<Lock size=\{18\} aria-hidden="true"\/>Demandas privadas<\/h3>/, 'não repete "Despachos" logo abaixo da aba');
   assert.doesNotMatch(source, /' · Gestão superior'/, 'a opção do seletor leva só o nome');
   assert.match(css, /\.tabs \{ flex-wrap: wrap; overflow-x: visible; \}/);
-  assert.match(css, /\.leadershipCard \{ margin-block: 20px 32px; \}/);
+  assert.match(css, /\.leadershipWrap \{ padding-block: 20px 32px; \}/);
+  assert.match(css, /@container leadership \(max-width: 640px\) \{ \.filters > button \{ flex: 1 1 100%; \} \}/);
 });

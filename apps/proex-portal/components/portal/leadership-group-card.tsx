@@ -26,7 +26,7 @@ export default function LeadershipGroupCard({ organizationId, organizationName }
     finally { setBusy(false); }
   }
   const candidates = people.filter(person => !members.some(member => member.userId === person.userId));
-  return <section className={`p-card ${styles.header} ${styles.leadershipCard}`} aria-labelledby={`leadership-${organizationId}`}>
+  return <div className={styles.leadershipWrap}><section className={`p-card ${styles.header} ${styles.leadershipCard}`} aria-labelledby={`leadership-${organizationId}`}>
     <div className={styles.titleRow}><div><h3 id={`leadership-${organizationId}`}><ShieldCheck size={18} aria-hidden="true"/>Gestão superior · {organizationName}</h3>
       <p>Quem está aqui vê as demandas privadas marcadas como “Gestão superior”. Tirar alguém corta o acesso na hora.</p></div></div>
     {members.length ? <ul className={styles.chips} aria-label="Integrantes da Gestão superior">{members.map(member => <li key={member.userId}>{member.name}
@@ -37,5 +37,5 @@ export default function LeadershipGroupCard({ organizationId, organizationName }
       <button type="button" className="p-button p-button-primary" disabled={busy || !choice} onClick={() => void change('leadership.add', choice)}><Plus size={16} aria-hidden="true"/>Incluir</button>
     </div>
     {error && <p className="p-inline-error" role="alert">{error}</p>}
-  </section>;
+  </section></div>;
 }
