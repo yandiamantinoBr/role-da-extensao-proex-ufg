@@ -25,6 +25,7 @@ type Props = DirectoryInviteOptions & {
 };
 type Result = { status: 'waiting' | 'creating' | 'ready' | 'error'; url?: string; expiresAt?: string; error?: string; note?: string };
 
+const LAST_PROJECT = 'proex.directoryInvite.lastProject';
 const ROLE_HELP: Record<string, string> = {
   viewer: 'Consulta relatórios, registros e demandas. É o acesso mais restrito e o sugerido para começar.',
   operator: 'Atende e entrega brindes nas dinâmicas do projeto.',
@@ -49,7 +50,9 @@ export async function portalAction(action: string, payload: Record<string, unkno
 /** Convite a partir do pré-cadastro: já preenchido, quem convida confere projeto e função e confirma. Uma ou várias pessoas. */
 export default function DirectoryInvite({ people, projects, defaultProjectId, canInviteManager, replaces, onChanged, onClose, onDone }: Props) {
   const single = people.length === 1, person = people[0];
-  const initialProject = replaces?.projectId && projects.some(p => p.id === replaces.projectId) ? replaces.projectId : defaultProjectId && projects.some(p => p.id === defaultProjectId) ? defaultProjectId : projects.length === 1 ? projects[0].id : '';
+  // Suggested project: the previous invite's, the one filtered on the page, the last one used here, or the only one available.
+  const remembered = (() => { try { return window.localStorage.getItem(LAST_PROJECT) ?? ''; } catch { return ''; } })();
+  const initialProject = [replaces?.projectId, defaultProjectId, remembered, projects.length === 1 ? projects[0].id : ''].find(id => id && projects.some(p => p.id === id)) ?? '';
   const [projectId, setProjectId] = useState(initialProject), [role, setRole] = useState(replaces?.role && replaces.role in projectAccessRoleLabels ? replaces.role : 'viewer');
   const [email, setEmail] = useState(person?.contact ?? ''), [phase, setPhase] = useState<'form' | 'running' | 'done'>('form'), [error, setError] = useState('');
   const [results, setResults] = useState<Record<string, Result>>({}), [copied, setCopied] = useState('');
@@ -67,6 +70,7 @@ export default function DirectoryInvite({ people, projects, defaultProjectId, ca
     if (!projectId) { setError('Escolha onde a pessoa vai atuar.'); return; }
     if (single && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) { setError('Confira o e-mail antes de convidar.'); return; }
     setError(''); setPhase('running');
+    try { window.localStorage.setItem(LAST_PROJECT, projectId); } catch { /* per-viewer convenience only */ }
     const targets = people.filter(p => results[p.id]?.status !== 'ready');
     setResults(current => ({ ...current, ...Object.fromEntries(targets.map(p => [p.id, { status: 'waiting' } as Result])) }));
     let failures = 0;
