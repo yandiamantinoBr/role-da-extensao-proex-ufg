@@ -6,13 +6,22 @@ import { readFileSync } from 'node:fs';
 const client = readFileSync(new URL('../app/portal-client.tsx', import.meta.url), 'utf8');
 const profile = readFileSync(new URL('../components/portal/profile-panel.tsx', import.meta.url), 'utf8');
 
-test('the profile card keeps the same 20px gap as the cards above it on the Conta tab', () => {
-  assert.match(client, /<GoogleDriveConnectionPanel key=\{`drive-\$\{string\(user\.userId\)\}`\}\/><div className="mt-5"><ProfilePanel /);
+test('Conta opens with the profile, then access and connections, with the same 20px gap (crítica de 16/11)', () => {
+  assert.match(client, /\{tab === 'profile' && <><ProfilePanel onUpdated=\{\(\) => \{ void refresh\(\); \}\}\/><div className="mt-5 grid gap-5"><AccountAccessPanel /);
 });
 
-test('refresh buttons on Conta use the same word, with a distinct accessible name', () => {
-  assert.doesNotMatch(profile, /Recarregar dados/);
-  assert.match(profile, /aria-label="Atualizar meu perfil"><RefreshCw size=\{16\} aria-hidden="true" \/>Atualizar</);
+test('Conta keeps one refresh per page: the profile card no longer has its own (crítica de 16/11)', () => {
+  assert.doesNotMatch(profile, /Recarregar dados|Atualizar meu perfil/);
+  assert.equal((profile.match(/onClick=\{\(\) => void refreshProfile\(\)\}/g) ?? []).length, 1, 'só a tela de erro mantém "Tentar novamente"');
+});
+
+test('the profile summary lists only filled values, the photo rules sit under the photo buttons and the name is below the page title size', () => {
+  assert.doesNotMatch(profile, /'Não informada'\}|\|\| 'Não informado'\}/, 'nada de "Não informado" repetido no resumo');
+  assert.match(profile, /Escolher foto<\/button>\s*<\/div>\s*<p className=\{styles\.photoHelp\}>/);
+  const css = readFileSync(new URL('../components/portal/profile-panel.module.css', import.meta.url), 'utf8');
+  assert.match(css, /\.name\{font-size:clamp\(22px,2\.4vw,27px\)\}/);
+  const mcp = readFileSync(new URL('../components/portal/mcp-connections-panel.tsx', import.meta.url), 'utf8');
+  assert.match(mcp, /<ChevronDown size=\{18\} className=\{styles\.chevron\} aria-hidden="true"\/><\/summary>/, '"Conectar uma IA" segue o padrão da linha "Google Drive"');
 });
 
 test('the photo help is one short sentence and the iPhone tip moves to the error that needs it', () => {
@@ -28,4 +37,20 @@ test('choices say "Não informar" and the summary says "Não informado(a)"; the 
   const css = readFileSync(new URL('../components/portal/account-access-panel.module.css', import.meta.url), 'utf8');
   assert.match(access, /aria-label="Atualizar meus acessos"><RefreshCw size=\{16\} aria-hidden="true"\/><span className=\{styles\.refreshLabel\}>Atualizar<\/span>/);
   assert.match(css, /@container \(max-width:440px\) \{[^}]*\.header \{ align-items:flex-start; flex-wrap:nowrap; \}[\s\S]*\.refreshLabel \{ display:none; \}/);
+});
+
+test('photo buttons and rules sit in the name column, and the IA and Drive rows have dark titles (quarta crítica de 16/11)', () => {
+  assert.match(profile, /<div className=\{styles\.photoRow\}>\s*<div className=\{styles\.photoActions\}>/);
+  assert.doesNotMatch(profile.slice(profile.indexOf('styles.avatarColumn'), profile.indexOf('styles.heroBody')), /photoActions|photoHelp/, 'a coluna da foto fica só com a foto');
+  for (const file of ['mcp-connections-panel.module.css', 'google-drive.module.css']) {
+    assert.match(readFileSync(new URL(`../components/portal/${file}`, import.meta.url), 'utf8'), /\.summary strong \{ color: var\(--text-strong\); \}/, file);
+  }
+});
+
+test('photo buttons keep their natural width, the read-only e-mail looks read-only and the subheading has weight (quinta crítica de 16/11)', () => {
+  const css = readFileSync(new URL('../components/portal/profile-panel.module.css', import.meta.url), 'utf8');
+  assert.match(css, /\.photoRow>\.photoActions button\{width:auto\}/);
+  assert.match(css, /\.field input\[readonly\]\{border-style:dashed;cursor:default\}/);
+  assert.match(css, /\.subheading\{font-weight:650\}/);
+  assert.match(profile, /placeholder="Ex\.: atendimento ou coordenação"/);
 });

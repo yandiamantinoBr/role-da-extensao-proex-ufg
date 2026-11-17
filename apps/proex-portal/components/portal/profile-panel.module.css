@@ -70,3 +70,13 @@
 .cameraStatus{position:absolute;inset:auto 16px;color:#f4eaf9;font-size:13px;line-height:1.7;text-align:center;display:flex;gap:8px;align-items:center;justify-content:center}
 .cameraHint{font-size:12px;line-height:1.7;color:var(--text-secondary);margin:10px 0 0}
 .cameraActions{display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-top:14px}
+
+/* Crítica de 16/11: nome menor que o título da página; botões e regras da foto na coluna do nome. */
+.name{font-size:clamp(22px,2.4vw,27px)}
+.photoRow{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;margin-top:16px}
+.photoRow>.photoActions{display:flex;flex-wrap:wrap;gap:8px;margin:0}
+.photoRow>.photoHelp{flex:1 1 220px;margin:0;font-size:12px;line-height:1.6}
+/* Quinta crítica de 16/11: botões da foto no tamanho natural, lado a lado; campo só de leitura distinto nos dois temas; subtítulo com peso. */
+.photoRow>.photoActions button{width:auto}
+.field input[readonly]{border-style:dashed;cursor:default}
+.subheading{font-weight:650}

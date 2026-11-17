@@ -99,3 +99,6 @@
 .sendButton:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
 @media (max-width: 560px) { .summary { padding: 16px; } .body { padding: 0 16px 16px; } .dialog { padding: 18px; } }
 @media (prefers-reduced-motion: no-preference) { .choice { transition: border-color .15s, box-shadow .15s; } }
+
+/* Título escuro como "Senha de acesso"; o roxo fica para links (crítica de 16/11). */
+.summary strong { color: var(--text-strong); }

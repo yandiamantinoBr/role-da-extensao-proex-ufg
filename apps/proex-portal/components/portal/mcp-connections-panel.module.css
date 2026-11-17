@@ -1,6 +1,6 @@
 .panel { margin-top: 20px; padding: 0 !important; overflow: hidden; }
 .summary { display: flex; gap: 12px; align-items: center; min-height: 64px; padding: 18px 20px; color: var(--brand-ink); cursor: pointer; }
-.summary span { min-width: 0; }
+.summary > span { min-width: 0; flex: 1; }
 .summary strong { display: block; font-size: 15px; }
 .summary small { display: block; color: var(--text-secondary); font-size: 12px; margin-top: 3px; }
 .body { display: grid; gap: 22px; padding: 0 20px 20px; }
@@ -24,3 +24,12 @@
 .list strong, .list span, .list small { display: block; }
 .list span, .list small { color: var(--text-secondary); font-size: 12px; margin-top: 4px; }
 @media (max-width: 560px) { .summary { padding: 16px; }.body { padding: 0 16px 16px; }.grid { grid-template-columns: 1fr; gap: 0; }.list li { align-items: flex-start; flex-wrap: wrap; }.receipt { padding: 12px; } }
+
+/* Mesma linha que "Google Drive": seta à direita e sem o triângulo do navegador (crítica de 16/11). */
+.summary { list-style: none; }
+.summary::-webkit-details-marker { display: none; }
+.chevron { flex-shrink: 0; color: var(--text-secondary); }
+.panel[open] .chevron { transform: rotate(180deg); }
+
+/* Título escuro como "Senha de acesso"; o roxo fica para links (crítica de 16/11). */
+.summary strong { color: var(--text-strong); }

@@ -301,19 +301,23 @@ export default function ProfilePanel({ onUpdated }: Props) {
             {/* eslint-disable-next-line @next/next/no-img-element -- Private avatars must be fetched by the signed-in browser without an image proxy. */}
             {avatar ? <img src={avatar} alt={preview ? 'Prévia da sua nova foto' : 'Sua foto de perfil'} width={144} height={144} /> : <UserRound size={52} aria-hidden="true" />}
           </div>
-          <div className={styles.photoActions}>
-            <button type="button" className="p-button p-button-subtle" disabled={disabled} onClick={takePhoto}><Camera size={16} aria-hidden="true" />Tirar foto</button>
-            <button type="button" className="p-button p-button-subtle" disabled={disabled} onClick={() => galleryRef.current?.click()}><ImagePlus size={16} aria-hidden="true" />Escolher foto</button>
-          </div>
         </div>
         <div className={styles.heroBody}>
-          <div className={styles.heroHeading}><div><p className={styles.kicker}>Meu perfil</p><h2 className={styles.name} id="profile-title">{profile.displayName}</h2><p className={styles.email}>{profile.email}</p></div><button className="p-button p-button-subtle" type="button" disabled={disabled} onClick={() => void refreshProfile()} aria-label="Atualizar meu perfil"><RefreshCw size={16} aria-hidden="true" />Atualizar</button></div>
-          <dl className={styles.summary}>
-            <div><dt>Unidade institucional</dt><dd>{selectedUnit ? unitLabel(selectedUnit) : profile.unitId ? 'Unidade cadastrada' : profile.unit || 'Não informada'}{selectedUnit && profile.unit && <small>{profile.unit}</small>}{selectedUnit?.status === 'archived' && <small>Unidade arquivada · vínculo preservado</small>}</dd></div>
-            <div><dt>Vínculo principal</dt><dd>{affiliations[profile.affiliation]}{profile.jobTitle && <small>{profile.jobTitle}</small>}</dd></div>
-            <div><dt>Registro institucional</dt><dd>{profile.registrationNumber || 'Não informado'}{profile.registrationType && <small>{registrationTypes[profile.registrationType]}</small>}</dd></div>
-          </dl>
-          <p className={styles.photoHelp}>JPEG, PNG ou WebP de até 20 MB. A foto é salva assim que escolhida, reduzida a 256 pixels e sem metadados.</p>
+          <div className={styles.heroHeading}><div><p className={styles.kicker}>Meu perfil</p><h2 className={styles.name} id="profile-title">{profile.displayName}</h2><p className={styles.email}>{profile.email}</p></div></div>
+          {/* Foto: botões e regras na coluna do nome, sem coluna estreita ao lado (crítica de 16/11). */}
+          <div className={styles.photoRow}>
+            <div className={styles.photoActions}>
+              <button type="button" className="p-button p-button-subtle" disabled={disabled} onClick={takePhoto}><Camera size={16} aria-hidden="true" />Tirar foto</button>
+              <button type="button" className="p-button p-button-subtle" disabled={disabled} onClick={() => galleryRef.current?.click()}><ImagePlus size={16} aria-hidden="true" />Escolher foto</button>
+            </div>
+            <p className={styles.photoHelp}>JPEG, PNG ou WebP de até 20 MB. A foto é salva assim que escolhida, reduzida a 256 pixels e sem metadados.</p>
+          </div>
+          {/* O resumo só mostra o que foi preenchido; os campos completos ficam logo abaixo (crítica de 16/11). */}
+          {(selectedUnit || profile.unitId || profile.unit || profile.affiliation || profile.jobTitle || profile.registrationNumber) && <dl className={styles.summary}>
+            {(selectedUnit || profile.unitId || profile.unit) && <div><dt>Unidade institucional</dt><dd>{selectedUnit ? unitLabel(selectedUnit) : profile.unitId ? 'Unidade cadastrada' : profile.unit}{selectedUnit && profile.unit && <small>{profile.unit}</small>}{selectedUnit?.status === 'archived' && <small>Unidade arquivada · vínculo preservado</small>}</dd></div>}
+            {(profile.affiliation || profile.jobTitle) && <div><dt>Vínculo principal</dt><dd>{profile.affiliation ? affiliations[profile.affiliation] : profile.jobTitle}{profile.affiliation && profile.jobTitle && <small>{profile.jobTitle}</small>}</dd></div>}
+            {profile.registrationNumber && <div><dt>Registro institucional</dt><dd>{profile.registrationNumber}{profile.registrationType && <small>{registrationTypes[profile.registrationType]}</small>}</dd></div>}
+          </dl>}
           {photo && !busy && <div className="p-inline"><button type="button" className="p-button p-button-primary" disabled={disabled} onClick={() => void retryPhoto()}>Tentar salvar a foto novamente</button><button type="button" className="p-text-link" disabled={disabled} onClick={discardPhoto}>Descartar foto escolhida</button></div>}
           {preparing && <p role="status" className={styles.busy}><LoaderCircle size={16} className="p-spin" aria-hidden="true" />Preparando a foto neste aparelho…</p>}
         </div>
@@ -334,7 +338,7 @@ export default function ProfilePanel({ onUpdated }: Props) {
               <label className={styles.field}><span>Unidade institucional (opcional)</span><select name="unitId" value={draft.unitId} disabled={unitsLoading || !!unitsError} onChange={event => edit('unitId', event.target.value)} aria-describedby="profile-units-help"><option value="">Não informar</option>{currentUnitMissing && <option value={draft.unitId}>Unidade atual cadastrada</option>}{units.filter(unit => unit.status === 'active' || unit.id === profile.unitId).map(unit => <option key={unit.id} value={unit.id}>{unitLabel(unit)}{unit.status === 'archived' ? ' (arquivada)' : ''}</option>)}</select><small id="profile-units-help">{unitsLoading ? 'Carregando unidades…' : 'Escolha uma unidade do catálogo institucional.'}</small></label>
               <label className={styles.field}><span>Setor ou complemento (opcional)</span><input name="unit" autoComplete="organization" maxLength={120} value={draft.unit} onChange={event => edit('unit', event.target.value)} placeholder="Ex.: Comunicação · turno da tarde" /><small>Se você já havia informado uma unidade por texto, ela foi preservada aqui.</small></label>
               <label className={styles.field}><span>Vínculo principal (opcional)</span><select name="affiliation" value={draft.affiliation} onChange={event => edit('affiliation', event.target.value as Affiliation)}>{Object.entries(affiliations).map(([value, label]) => <option key={value} value={value}>{value ? label : 'Não informar'}</option>)}</select><small>Este dado descreve seu vínculo e não concede permissões.</small></label>
-              <label className={styles.field}><span>Função ou atividade (opcional)</span><input name="jobTitle" autoComplete="organization-title" maxLength={120} value={draft.jobTitle} onChange={event => edit('jobTitle', event.target.value)} placeholder="Ex.: atendimento, comunicação ou coordenação" /></label>
+              <label className={styles.field}><span>Função ou atividade (opcional)</span><input name="jobTitle" autoComplete="organization-title" maxLength={120} value={draft.jobTitle} onChange={event => edit('jobTitle', event.target.value)} placeholder="Ex.: atendimento ou coordenação" /></label>
               <label className={styles.field}><span>Tipo do registro (opcional)</span><select name="registrationType" value={draft.registrationType} onChange={event => { const value = event.target.value as RegistrationType; setDraft(current => current ? { ...current, registrationType: value, ...(!value ? { registrationNumber: '' } : {}) } : current); setMessage(''); }}>{Object.entries(registrationTypes).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
               <label className={styles.field}><span>Matrícula ou número do registro (opcional)</span><input name="registrationNumber" autoComplete="off" maxLength={40} value={draft.registrationNumber} onChange={event => edit('registrationNumber', event.target.value)} aria-describedby="profile-registration-help" /><small id="profile-registration-help">Até 40 caracteres. Informe o tipo se preencher o número. Este dado permanece no ambiente privado de gestão.</small></label>
               <label className={styles.field}><span>Telefone ou ramal (opcional)</span><input name="phone" type="tel" autoComplete="tel" maxLength={40} value={draft.phone} onChange={event => edit('phone', event.target.value)} placeholder="Contato útil para o trabalho da equipe" /></label>
