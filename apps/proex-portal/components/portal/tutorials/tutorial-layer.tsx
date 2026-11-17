@@ -112,9 +112,10 @@ export default function TutorialLayer({ modules, tab, projectId, onNavigate }: {
         setSpot({ key: spotKey, found: true }); return;
       }
       if (!copy.target) { setSpot({ key: spotKey, found: null }); return; }
-      // Depois de ~2,5 s mostra o aviso, mas continua procurando: a pessoa pode abrir a ficha com o cartão aberto.
-      if (++tries === 10) setSpot({ key: spotKey, found: false });
-      timer = window.setTimeout(look, tries < 10 ? 250 : 1000);
+      // Depois de ~1 s (passo com texto próprio) ou ~2,5 s mostra o aviso, mas continua procurando: a pessoa pode abrir a ficha com o cartão aberto.
+      const patience = copy.missing ? 4 : 10;
+      if (++tries === patience) setSpot({ key: spotKey, found: false });
+      timer = window.setTimeout(look, tries < patience ? 250 : 1000);
     };
     timer = window.setTimeout(look, 0);
     return () => { window.clearTimeout(timer); spotted?.removeAttribute(SPOT); };
