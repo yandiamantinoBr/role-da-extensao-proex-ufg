@@ -1,6 +1,6 @@
 .card { display: grid; align-content: start; gap: 7px; min-width: 0; padding: 16px; border: 1px solid var(--line); border-inline-start: 4px solid var(--control-border); border-radius: 14px; background: var(--surface); }
-.card[data-priority=high] { border-inline-start-color: #b91c1c; }
-.card[data-priority=medium] { border-inline-start-color: #a16207; }
+.card[data-priority=high] { border-inline-start-color: #d06f00; } /* alta = atenção (laranja); vermelho fica para o prazo vencido */
+.card[data-priority=medium] { border-inline-start-color: #c9b8d6; }
 .card[data-state=completed] { border-inline-start-color: #15803d; }
 .card[data-state=cancelled] { border-inline-start-color: var(--control-border); }
 .card[data-selected=true] { border-color: var(--brand-ink); box-shadow: 0 0 0 1px var(--brand-ink); }
@@ -17,8 +17,8 @@
 .person > svg, .unassigned > svg { flex-shrink: 0; }
 .unassigned { background: transparent; padding-inline: 0; }
 .assignment { font-size: 12px; line-height: 1.5; color: var(--text-secondary); }
-:global(html[data-theme=dark]) .card[data-priority=high] { border-inline-start-color: #fda4af; }
-:global(html[data-theme=dark]) .card[data-priority=medium] { border-inline-start-color: #f4d09a; }
+:global(html[data-theme=dark]) .card[data-priority=high] { border-inline-start-color: #f5a45a; }
+:global(html[data-theme=dark]) .card[data-priority=medium] { border-inline-start-color: #6a4c80; }
 :global(html[data-theme=dark]) .card[data-state=completed] { border-inline-start-color: #86efac; }
 /* Cartão compacto (09/11): projeto e responsáveis dividem uma linha de texto, sem fundo de etiqueta. */
 .card { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 10px 14px 12px; box-shadow: var(--shadow-card); }

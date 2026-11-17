@@ -18,7 +18,8 @@ export function TaskStateBadge({ status }: { status: TaskStatus }) {
  return <span className={styles.signal} data-tone={tone}><Icon size={15} aria-hidden="true"/><span>{stateLabels[status]}</span></span>;
 }
 export function TaskPriorityBadge({ priority }: { priority: TaskPriority }) {
- const tone: SignalTone = priority === 'high' ? 'danger' : priority === 'medium' ? 'warning' : 'info';
+ // Vermelho fica só para o prazo vencido (crítico). Alta pede atenção (laranja); média e baixa ficam neutras, com ícone e texto.
+ const tone: SignalTone = priority === 'high' ? 'warning' : 'neutral';
  return <span className={styles.signal} data-tone={tone}><Flag size={14} aria-hidden="true"/><span>Prioridade {priorityLabels[priority].toLowerCase()}</span></span>;
 }
 export function TaskDeadlineBadge({ dueAt, status, today }: { dueAt: string | null; status: TaskStatus; today: string }) {

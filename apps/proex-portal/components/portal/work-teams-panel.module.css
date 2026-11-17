@@ -30,7 +30,7 @@
 .cardTop > :last-child { margin-left: auto; color: var(--brand-ink); }
 .mark { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 11px; background: var(--surface-soft); color: var(--brand-ink); }
 .teamCard > strong { font-size: 16px; line-height: 1.4; overflow-wrap: anywhere; }
-.mine { display: inline-block; padding: 3px 7px; border-radius: 6px; background: var(--surface-soft); color: var(--brand-ink); font-size: 12px; font-weight: 650; }
+.mine { display: inline-block; padding: 3px 9px; border-radius: 999px; background: var(--surface-soft); color: var(--brand-ink); font-size: 12px; font-weight: 650; }
 .cardMeta,.cardBottom { font-size: 12px; color: var(--muted); }
 .teamScope { display: flex; flex-wrap: wrap; gap: 5px 10px; min-width: 0; color: var(--brand-ink); font-size: 12px; }
 .teamScope > span { display: inline-flex; align-items: center; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
