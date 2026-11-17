@@ -519,7 +519,7 @@ export const TUTORIAL_CHAPTERS: readonly TutorialChapter[] = [
       {
         id: 'atendimento', title: 'Atendimento presencial',
         speech: 'Comece pela ação certa: em Operação presencial, escolha o Evento ativo e abra um atendimento para cada pessoa. Registre o que saiu no dado ou na roleta. Não abra outro para a mesma pessoa. Seguir este tutorial não registra nada.',
-        speechMobile: 'Em Operação presencial, escolha o Evento ativo e abra um atendimento por pessoa. Registre o que saiu no dado ou na roleta.',
+        speechMobile: 'Em Operação presencial, escolha o Evento ativo e abra um atendimento por pessoa. Registre o que saiu no dado ou na roleta. O tutorial não registra nada.',
         youWillSee: 'O quadro Atendimento presencial destacado.',
         beforeOpen: 'Clique em Ir para Dinâmicas: o módulo abre com o atendimento e as ações.', beforeOpenMobile: 'Toque em Ir para Dinâmicas: o módulo abre com o atendimento e as ações.',
         target: '[data-tutorial="dinamicas-atendimento"]', module: 'events', openLabel: 'Ir para Dinâmicas', requires: { capability: 'participation.operate' },
@@ -547,7 +547,7 @@ export const TUTORIAL_CHAPTERS: readonly TutorialChapter[] = [
       {
         id: 'retirada', title: 'Retirada de brinde',
         speech: 'Em Retirada de brinde, digite o Código de retirada do Comprovante de brinde que a pessoa mostrar e use Confirmar entrega antes de entregar o material. Um código já entregue é sinalizado.',
-        speechMobile: 'Em Retirada de brinde, digite o Código de retirada e use Confirmar entrega antes de entregar. Código já entregue é sinalizado.',
+        speechMobile: 'Digite o Código de retirada e use Confirmar entrega antes de entregar. Código já entregue é sinalizado.',
         youWillSee: 'O quadro Retirada de brinde destacado.',
         target: '[data-tutorial="dinamicas-retirada"]', module: 'events', openLabel: 'Ir para Dinâmicas', requires: { anyOf: ['participation.operate', 'inventory.deliver'] },
         labels: ['Retirada de brinde', 'Código de retirada', 'Confirmar entrega'],
