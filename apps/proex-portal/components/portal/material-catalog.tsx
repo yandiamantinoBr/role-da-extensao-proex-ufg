@@ -105,7 +105,7 @@ export function FilterableMaterialCatalog({ materials: everything, kits = [], on
   };
   return <div className={styles.catalog}>
     <div className={styles.filterBar}>
-      <div className={styles.filterHeading}>
+      <div className={styles.filterHeading} data-tutorial="materiais-busca">
         <label className={styles.search}><span>Buscar no catálogo</span><span className={`p-search ${styles.searchField}`}>
           <Search size={17} aria-hidden="true"/><input ref={searchField} name="materialSearch" type="search" value={search} maxLength={120}
             placeholder="Nome, patrimônio ou destino" onChange={event => setSearch(event.target.value)}/>
@@ -139,7 +139,7 @@ export default function MaterialCatalog({ materials, onOpen }: {
   onOpen: (id: string) => void;
 }) {
   return <div className={styles.catalog}>
-    <div className={`p-card p-table-wrap ${styles.frame}`}>
+    <div className={`p-card p-table-wrap ${styles.frame}`} data-tutorial="materiais-saldo">
       {/* The narrow layout changes CSS display, so keep table roles explicit. */}
       <table className={styles.table} role="table" aria-label="Saldo de materiais">
         <thead className={styles.header} role="rowgroup">
@@ -191,7 +191,7 @@ export default function MaterialCatalog({ materials, onOpen }: {
                 {material.availabilityNote && <small className={styles.desktopNote}>{material.availabilityNote}</small>}
               </td>
               <td className={styles.actions} role="cell">
-                {material.canOpen ? <button type="button" className="p-button p-button-subtle" aria-label={detailsLabel} onClick={() => onOpen(material.id)}>
+                {material.canOpen ? <button type="button" data-tutorial="materiais-detalhes" className="p-button p-button-subtle" aria-label={detailsLabel} onClick={() => onOpen(material.id)}>
                   Detalhes <ArrowRight size={15} aria-hidden="true" />
                 </button> : <small>Somente consulta de saldo</small>}
               </td>

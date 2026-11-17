@@ -16,6 +16,8 @@ export type StepRequirement = {
   manageOrganization?: true;
   /** Pelo menos uma categoria da Agenda legível (a mesma regra que mostra o módulo). */
   calendar?: true;
+  /** Pelo menos uma destas capacidades em algum projeto (a regra de módulos como Materiais). */
+  anyOf?: string[];
 };
 
 export type TutorialStep = {
@@ -461,6 +463,53 @@ export const TUTORIAL_CHAPTERS: readonly TutorialChapter[] = [
       },
     ],
   },
+  {
+    id: 'materiais', version: 1, title: 'Materiais', minutes: 3,
+    summary: 'Achar um material, entender físico, reservado e disponível e abrir a ficha.',
+    steps: [
+      {
+        id: 'abrir', title: 'O catálogo',
+        speech: 'Materiais mostra o catálogo de cada projeto. Buscar no catálogo acha pelo nome, patrimônio ou destino; Filtros separa por dono, tipo, categoria e situação. Seguir este tutorial não mexe no estoque.',
+        speechMobile: 'Buscar no catálogo acha um material pelo nome, patrimônio ou destino. Filtros separa por dono, tipo, categoria e situação.',
+        youWillSee: 'A busca do catálogo destacada.',
+        target: '[data-tutorial="materiais-busca"]', module: 'materials', openLabel: 'Ir para Materiais', requires: { anyOf: ['inventory.read', 'inventory.manage', 'inventory.deliver'] },
+        beforeOpen: 'Clique em Ir para Materiais: o módulo abre com o catálogo.', beforeOpenMobile: 'Toque em Ir para Materiais: o módulo abre com o catálogo.',
+        labels: ['Buscar no catálogo', 'Filtros'],
+      },
+      {
+        id: 'saldo', title: 'Físico, reservado e disponível',
+        speech: 'Físico é quanto existe. Reservado já está separado para alguém. Disponível é o que pode ser usado agora. Os três usam a mesma unidade de medida.',
+        youWillSee: 'A tabela de saldo destacada.',
+        target: '[data-tutorial="materiais-saldo"]', module: 'materials', openLabel: 'Ir para Materiais', requires: { anyOf: ['inventory.read', 'inventory.manage', 'inventory.deliver'] },
+        missing: 'Nenhum material neste recorte. Troque o projeto ou limpe a busca e os filtros.',
+        labels: ['Físico', 'Reservado', 'Disponível'],
+      },
+      {
+        id: 'ficha', title: 'A ficha do material',
+        speech: 'Detalhes abre a ficha do material, com a condição e o histórico de movimentações. Quem só consulta o saldo vê Somente consulta de saldo no lugar.',
+        youWillSee: 'O botão Detalhes do primeiro material destacado.',
+        target: '[data-tutorial="materiais-detalhes"]', module: 'materials', openLabel: 'Ir para Materiais', requires: { anyOf: ['inventory.read', 'inventory.manage', 'inventory.deliver'] },
+        missing: 'Seu acesso mostra só o saldo destes materiais: a ficha abre para quem consulta materiais no projeto.',
+        labels: ['Detalhes', 'Somente consulta de saldo'],
+      },
+      {
+        id: 'registrar', title: 'Registrar movimento',
+        speech: 'Registrar movimento lança entradas, saídas e ajustes, para um material ou vários de uma vez. Informe quantidade, motivo e, quando o formulário pedir, origem ou referência. Não registre estoque real só para testar.',
+        speechMobile: 'Registrar movimento lança entradas, saídas e ajustes. Informe quantidade e motivo. Não registre estoque real só para testar.',
+        youWillSee: 'O botão Registrar movimento destacado.',
+        target: '[data-tutorial="materiais-registrar"]', module: 'materials', openLabel: 'Ir para Materiais', requires: { capability: 'inventory.manage' },
+        missing: 'Registrar movimento aparece para quem gerencia materiais em algum projeto.',
+        labels: ['Registrar movimento'],
+      },
+      {
+        id: 'fim', title: 'Tudo certo',
+        speech: 'Você já sabe ler o saldo e abrir a ficha. Brindes e kits ficam com quem gerencia as dinâmicas do projeto.',
+        youWillSee: 'Concluir fecha o tutorial. Repetir esta parte começa de novo.',
+        requires: { anyOf: ['inventory.read', 'inventory.manage', 'inventory.deliver'] },
+        labels: [],
+      },
+    ],
+  },
 ];
 
 export const chapterById = (id: unknown) => TUTORIAL_CHAPTERS.find(chapter => chapter.id === id);
@@ -484,6 +533,7 @@ export function resolveSteps(chapter: TutorialChapter, access: TutorialAccess): 
     const need = step.requires;
     if (!need) return { id: step.id, available: true };
     if (need.projects && !inScope(access.projectScope, null)) return { id: step.id, available: false, reason: 'Este passo aparece quando sua conta tiver um projeto.' };
+    if (need.anyOf && !need.anyOf.some(capability => inScope(access.capabilityScope(capability), null))) return { id: step.id, available: false, reason: 'Seu acesso atual não inclui esta parte.' };
     if (need.calendar && !access.calendar) return { id: step.id, available: false, reason: 'A Agenda não faz parte do seu acesso atual.' };
     if (need.manageOrganization && !access.managesOrganization) return { id: step.id, available: false, reason: 'Este passo é para quem administra uma organização.' };
     if (need.capability) {

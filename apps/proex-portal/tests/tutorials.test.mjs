@@ -208,3 +208,13 @@ test('Agenda: follows the same rule that shows the module (an event operator alo
   assert.equal(chapterSteps(await tutorialWorkspace(db, operatorActor, {})).some(Boolean), calendarAvailable(operatorActor));
   assert.equal(calendarAvailable(operatorActor), false, 'the synthetic operator has no Agenda, so the chapter has no steps');
 });
+
+test('Materiais: any of read, manage or deliver opens the chapter; Registrar movimento only for inventory.manage', async () => {
+  const db = fixture(), reader = await person(db, 'mt-reader', [['viewer', 'project-a']]), stock = await person(db, 'mt-stock', [['inventory', 'project-a']]), none = await person(db, 'mt-none');
+  const chapterSteps = state => Object.fromEntries(state.chapters.find(chapter => chapter.id === 'materiais').steps.map(step => [step.id, step.available]));
+  const stockSteps = chapterSteps(await tutorialWorkspace(db, await stock.actor(), {}));
+  assert.ok(Object.values(stockSteps).every(Boolean), 'the materials role gets every step');
+  const readerSteps = chapterSteps(await tutorialWorkspace(db, await reader.actor(), {}));
+  assert.equal(readerSteps.registrar, false, 'a reader never gets Registrar movimento');
+  assert.ok(Object.values(chapterSteps(await tutorialWorkspace(db, await none.actor(), {}))).every(available => !available));
+});
