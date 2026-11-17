@@ -53,3 +53,8 @@ test('the team sheet copy names the project picker and does not assume a project
   assert.match(source, /Escolha um projeto em “Onde acompanhar”, acima/);
   assert.doesNotMatch(source, /esta equipe neste projeto/);
 });
+
+test('the team sheet refresh is disabled until a project is chosen (crítica final de 16/11)', () => {
+  const source = readFileSync(new URL('../components/portal/team-sheets-panel.tsx', import.meta.url), 'utf8');
+  assert.match(source, /aria-label="Atualizar vínculo da equipe" disabled=\{!projectId\|\|working\|\|reading\}/);
+});
