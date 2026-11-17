@@ -167,6 +167,6 @@
 .taskDraft input:focus-visible,.taskDraft textarea:focus-visible,.taskDraft select:focus-visible,.taskDraft button:focus-visible,.taskDraft a:focus-visible,.taskDraftNote:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
 .taskDraft :global(.p-button-subtle){border:1px solid var(--task-draft-border)}
 :global(html[data-theme=dark]) .taskDraft input[type=checkbox]{accent-color:#b48ad6}
-.taskDraft .reviseActions :global(.p-button){font-size:max(14px,.9rem)}
+.taskDraft .reviseActions :global(.p-button){font-size:max(14px,.9rem);padding-inline:12px}
 .taskDraft .taskDraftOpen{justify-self:start;min-height:44px;font-size:max(14px,.9rem)}
 .taskDraftNote{margin:0;border-radius:6px}

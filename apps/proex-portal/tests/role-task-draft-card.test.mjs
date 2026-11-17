@@ -208,5 +208,5 @@ test('CARTÃO DO RASCUNHO: a recarga depois de cada resposta não desmonta a con
   assert.ok(source.includes("if (reply.operation && status.operationsAvailable) void locateOperation(reply);\n      void loadStatus(projectId, { keep: true });"), 'send() keeps the conversation mounted');
   assert.ok(source.includes("if (previousMode.current === 'chat' && nextMode !== 'chat') resetConversation();"), 'leaving chat mode still clears the conversation (PR 187)');
   const css = readFileSync(new URL('../components/portal/role-assistant.module.css', import.meta.url), 'utf8');
-  assert.ok(css.includes('.taskDraft .reviseActions :global(.p-button){font-size:max(14px,.9rem)}'));
+  assert.ok(css.includes('.taskDraft .reviseActions :global(.p-button){font-size:max(14px,.9rem);padding-inline:12px}'));
 });
