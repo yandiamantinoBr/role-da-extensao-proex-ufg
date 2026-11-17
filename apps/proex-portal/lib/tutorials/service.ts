@@ -28,7 +28,8 @@ function accessFor(actor: PortalActor, rawProject: unknown): { access: TutorialA
   const asked = typeof rawProject === 'string' && ID.test(rawProject) ? rawProject : null;
   // Projeto vizinho ou de outra organização: tratado como "nenhum projeto escolhido", sem revelar nada.
   const selectedProject = asked && (projectScope === null || projectScope.includes(asked)) ? asked : null;
-  return { access: { projectScope, selectedProject, capabilityScope: capability => accessibleProjects(actor, capability) }, denied: Boolean(asked && !selectedProject) };
+  const managesOrganization = (actor.organizations ?? []).some(organization => organization.canManage);
+  return { access: { projectScope, selectedProject, capabilityScope: capability => accessibleProjects(actor, capability), managesOrganization }, denied: Boolean(asked && !selectedProject) };
 }
 
 async function readProgress(db: D1Database, userId: string) {

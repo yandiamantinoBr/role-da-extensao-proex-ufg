@@ -184,3 +184,17 @@ test('Projetos: open to every team account; the steps that need a project disapp
   const empty = chapterSteps(await tutorialWorkspace(db, await none.actor(), {}));
   assert.deepEqual(Object.entries(empty).filter(([, available]) => available).map(([id]) => id), ['abrir', 'fim']);
 });
+
+test('Demandas: needs a project; the general-demands step only for whoever manages an organization', async () => {
+  const db = fixture(), manager = await person(db, 'dm-manager', [['manager', 'project-a']]), none = await person(db, 'dm-none');
+  const admin = await person(db, 'dm-admin');
+  db.native.prepare("INSERT INTO members(id,user_id,email,role,project_id,organization_id,revoked_at,created_at) VALUES(?,?,?,'owner',NULL,'org-b',NULL,?)").run(crypto.randomUUID(), 'user-dm-admin', 'dm-admin@example.invalid', at);
+  const chapterSteps = state => Object.fromEntries(state.chapters.find(chapter => chapter.id === 'demandas').steps.map(step => [step.id, step.available]));
+  const managerSteps = chapterSteps(await tutorialWorkspace(db, await manager.actor(), {}));
+  assert.equal(managerSteps.gerais, false, 'a project manager does not get Somente demandas gerais');
+  assert.ok(Object.entries(managerSteps).filter(([id]) => id !== 'gerais').every(([, available]) => available));
+  assert.ok(Object.values(chapterSteps(await tutorialWorkspace(db, await none.actor(), {}))).every(available => !available), 'no project, no Demandas');
+  const adminSteps = chapterSteps(await tutorialWorkspace(db, await admin.actor(), {}));
+  assert.equal(adminSteps.gerais, true);
+  assert.equal(adminSteps.abrir, true);
+});

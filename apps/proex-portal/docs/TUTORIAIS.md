@@ -1,6 +1,6 @@
 # Tutoriais do Portal (sem IA)
 
-Pedido da coordenação em 2026-11-16, a partir do [roteiro por público](ROTEIRO-TUTORIAIS-PROEX.md) e da [passagem de QA](QA-TUTORIAIS-WIDGETS-E-ROLE.md). Capítulos prontos: **Navegação**, **Meu trabalho** e **Projetos**. Os próximos entram um por PR.
+Pedido da coordenação em 2026-11-16, a partir do [roteiro por público](ROTEIRO-TUTORIAIS-PROEX.md) e da [passagem de QA](QA-TUTORIAIS-WIDGETS-E-ROLE.md). Capítulos prontos: **Navegação**, **Meu trabalho**, **Projetos** e **Demandas**. Os próximos entram um por PR.
 
 ## O que a pessoa vê
 
@@ -54,7 +54,7 @@ Funciona sem IA, chave, consentimento de provedor, widgets, saldo ou `inventory.
 
 ## O que ainda falta
 
-- Capítulos por público: Demandas, Equipes, Agenda, Materiais, Empréstimos (por último: a sessão de materiais mexe na tela) e Dinâmicas.
+- Capítulos por público: Equipes, Agenda, Materiais, Empréstimos (por último: a sessão de materiais mexe na tela) e Dinâmicas.
 - **Experimentar** com exemplo fictício nos capítulos de operação.
 - Ajuda local na página do voluntário e na área pública da ação (público anônimo com progresso só no aparelho).
 - Abrir a mesma ajuda pelo chat do Rolê.
