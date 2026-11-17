@@ -527,13 +527,23 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
     return { contract: ROLE_CONTRACT, reply: GIFT_SHEET_REPLY, operation: null, operationDropped: false, provider: 'portal', model: 'Resposta do Portal',
       reservedMicros: 0, costMicros: 0, inputTokens: 0, outputTokens: 0, sources: [], lookups: 0 };
   }
-  const catalog = config.roleModel || config.roleVisionModel || hasVideo && config.roleVideoEnabled ? (await loadCatalog(db, organizationId)).catalog : null;
-  const state = availability(config, credentials, organizationId, options.speech, rawCredentials, catalog);
+  const loadState = async () => {
+    const catalog = config.roleModel || config.roleVisionModel || hasVideo && config.roleVideoEnabled ? (await loadCatalog(db, organizationId)).catalog : null;
+    return { catalog, state: availability(config, credentials, organizationId, options.speech, rawCredentials, catalog) };
+  };
   // Respostas diretas, sem IA e sem custo: "links da PROEX" e "Instagram/notícias" em qualquer modo; a busca
   // oficial só com o botão "Fontes oficiais" ou sem conversa disponível (modo só busca). Com a conversa
   // disponível, a pergunta reconhecida vai ao modelo, que lê as fontes com consultar_fontes_oficiais e abrir_link_oficial.
-  const direct = !hasMedia && officialSearchOn(config) ? directOfficialKind(message) : null;
-  if (!hasMedia && officialSearchOn(config) && (direct || explicitSearch || !state.available && isOfficialSearch(message))) {
+  // O caminho sem custo não depende do catálogo: ele só é lido para decidir a frase reconhecida, e falha conta como sem conversa.
+  const officialOn = !hasMedia && officialSearchOn(config);
+  const direct = officialOn ? directOfficialKind(message) : null;
+  let loaded: Awaited<ReturnType<typeof loadState>> | null = null;
+  let deterministic = officialOn && (!!direct || explicitSearch);
+  if (officialOn && !deterministic && isOfficialSearch(message)) {
+    loaded = await loadState().catch(() => null);
+    deterministic = !loaded?.state.available;
+  }
+  if (deterministic) {
     await resolveRoleScope(db, current, organizationId, input.scope);
     history(input.history);
     // Sem custo de IA, mas cada busca lê sites públicos: limite por pessoa e por organização, antes de qualquer pedido externo.
@@ -572,6 +582,7 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
       throw error;
     }
   }
+  const { catalog, state } = loaded ?? await loadState();
   if (!state.available) throw new HttpError(503, 'O Rolê está desligado ou sem chave nesta organização.', 'role_unavailable');
   const scope = await resolveRoleScope(db, current, organizationId, input.scope);
   const document = Object.hasOwn(input, 'document') ? roleDocumentExcerpt(input.document) : null;

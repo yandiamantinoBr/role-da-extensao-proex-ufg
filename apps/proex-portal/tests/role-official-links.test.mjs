@@ -252,7 +252,12 @@ test('FERRAMENTA consultar_fontes_oficiais: "instagram", "posts", "últimos" sã
 test('INTENÇÃO: "links da PROEX" e "Instagram/notícias" disparam a resposta direta; operações, redação e dados do Portal não', () => {
   const links = ['abra os links digitais da PROEX', 'Links da PROEX', 'quais são os links úteis da PROEX?', 'acesso rápido da PROEX', 'Sistemas da PROEX', 'me mostra os serviços da Pró-Reitoria de Extensão', 'links da página inicial da PROEX', 'o que tem na página inicial da PROEC?', 'link do instagram da proex'];
   const news = ['últimos posts do Instagram da PROEX', 'Quais as últimas publicações do Instagram?', 'o que a PROEX publicou?', 'O que a PROEX postou essa semana?', 'notícias recentes da PROEX', 'tem novidades da PROEX?', 'últimas notícias do site'];
-  const neither = ['registrar entrega de 20 brindes', 'criar demanda para o Projeto A', 'links do projeto X no portal', 'escreva um post para o Instagram sobre o CONPEEX', 'crie uma legenda para o instagram da PROEX', 'publique no Instagram as fotos do evento', 'Qual o prazo do edital PROBEC?', 'Como registro a entrega de brindes?', 'quais os links das demandas abertas?', 'sistemas de estoque', 'faça um texto com as notícias da PROEX'];
+  const neither = ['registrar entrega de 20 brindes', 'criar demanda para o Projeto A', 'links do projeto X no portal', 'escreva um post para o Instagram sobre o CONPEEX', 'crie uma legenda para o instagram da PROEX', 'publique no Instagram as fotos do evento', 'Qual o prazo do edital PROBEC?', 'Como registro a entrega de brindes?', 'quais os links das demandas abertas?', 'sistemas de estoque', 'faça um texto com as notícias da PROEX',
+    // Revisão de segurança (2026-11-17): perguntas do Portal e com assunto vão ao modelo (ou à busca por assunto).
+    'Quais as últimas novidades da agenda?', 'Quais as novidades recentes dos empréstimos?', 'Tem notícias novas sobre o meu saldo?',
+    'Quantos posts novos do Instagram a equipe agendou na agenda?', 'Resuma as últimas notícias e diga o que importa para a equipe',
+    'Quais os links da reunião da PROEX amanhã?', 'Me manda os links dos brindes da PROEX', 'Quais as últimas notícias sobre o edital de bolsas da PROEX?',
+    'últimas notícias do edital de bolsas de extensão da PROEX', 'links da PROEX para inscrição no edital de cultura', 'compare as últimas notícias da PROEX'];
   for (const phrase of links) { assert.equal(asksProexLinks(phrase), true, `links: ${phrase}`); assert.equal(directOfficialKind(phrase), 'links', phrase); }
   for (const phrase of news) { assert.equal(asksProexNews(phrase), true, `notícias: ${phrase}`); assert.equal(directOfficialKind(phrase), 'news', phrase); }
   for (const phrase of neither) assert.equal(directOfficialKind(phrase), null, `não deveria disparar: ${phrase}`);
@@ -268,6 +273,9 @@ test('TELA: officialLookup segue a regra — direto (sem custo) com o botão, no
   assert.deepEqual(officialRoute({ ...base, text: 'abra os links digitais da PROEX' }), { official: true, explicit: false }, 'links da PROEX: direto e sem custo');
   assert.deepEqual(officialRoute({ ...base, text: 'últimos posts do Instagram da PROEX' }), { official: true, explicit: false });
   assert.deepEqual(officialRoute({ ...base, publicSearch: false, text: 'links da PROEX' }), { official: false, explicit: false });
+  for (const text of ['Quais as últimas novidades da agenda?', 'Quais as últimas notícias sobre o edital de bolsas da PROEX?', 'Me manda os links dos brindes da PROEX']) {
+    assert.deepEqual(officialRoute({ ...base, text }), { official: false, explicit: false }, `vai ao modelo: ${text}`);
+  }
   assert.deepEqual(officialRoute({ ...base, attachment: true, text: 'links da PROEX' }), { official: false, explicit: false });
   const tsx = readFileSync(`${root}components/portal/role-assistant.tsx`, 'utf8');
   assert.match(tsx, /const officialLookup = route\.official;/, 'a tela usa a mesma regra para o custo mostrado');

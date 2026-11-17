@@ -1415,3 +1415,33 @@ test('BUSCA OFICIAL COM CONVERSA: frase reconhecida sem o botão vai ao modelo c
     assert.equal(provider.calls.length, 1);
   } finally { f.native.close(); }
 });
+
+test('REVISÃO · INTENÇÃO NO SERVIDOR: pergunta do Portal parecida com notícias ou links vai ao modelo, não à resposta direta', async () => {
+  const f = fixture();
+  try {
+    await setup(f);
+    const provider = fakeProvider(), official = proexSite(), options = { keys, fetcher: provider.fetch, officialFetcher: official.fetch };
+    for (const message of ['Quais as últimas novidades da agenda?', 'Quais as últimas notícias sobre o edital de bolsas da PROEX?', 'Me manda os links dos brindes da PROEX']) {
+      const result = await roleChat(f.db, f.actors.viewer, chatInput(f, { message }), secret, options);
+      assert.equal(result.provider, 'deepseek', message);
+    }
+    assert.equal(provider.calls.length, 3);
+    assert.ok(official.requested.every(url => !url.endsWith('/feed') && url !== 'https://proex.ufg.br/'), 'nenhuma resposta direta foi montada');
+  } finally { f.native.close(); }
+});
+
+test('REVISÃO · SEM CATÁLOGO: busca explícita e resposta direta não dependem do catálogo; falha nele conta como conversa indisponível', async () => {
+  const f = fixture();
+  try {
+    await setup(f);
+    f.native.prepare("UPDATE ai_organization_settings SET config_json=json_set(config_json,'$.roleModel','modelo-sintetico') WHERE organization_id='org_proex'").run();
+    const broken = { prepare(sql) { const statement = f.db.prepare(sql); return { ...statement, bind(...args) { statement.bind(...args); if (String(args[0]).startsWith('ai.catalog.v1:')) return { ...statement, first: async () => { throw new Error('catálogo indisponível'); } }; return statement; } }; }, batch: (...args) => f.db.batch(...args) };
+    const official = proexSite(), options = { keys, fetcher: noModel, officialFetcher: official.fetch };
+    const links = await roleChat(broken, f.actors.viewer, chatInput(f, { message: 'links da PROEX', acceptedCostMicros: 0 }), secret, options);
+    assert.equal(links.provider, 'official');
+    const explicit = await roleChat(broken, f.actors.viewer, chatInput(f, { message: 'Como registro a entrega de brindes?', acceptedCostMicros: 0, officialSearch: true }), secret, options);
+    assert.equal(explicit.provider, 'official');
+    const recognized = await roleChat(broken, f.actors.viewer, chatInput(f, { message: 'Quais editais de extensão estão abertos?', acceptedCostMicros: 0 }), secret, options);
+    assert.equal(recognized.provider, 'official', 'catálogo com falha: a frase reconhecida vai à busca sem custo');
+  } finally { f.native.close(); }
+});
