@@ -186,13 +186,15 @@ function Empty({ title, text, icon: Icon = Boxes }: {
 function Badge({ status }: {
     status: unknown;
 }) { const key = string(status); return <span className={`p-badge p-status-${key}`}>{statusNames[key] ?? key}</span>; }
-function Section({ title, description, children, aside }: {
+function Section({ title, description, children, aside, tutorial }: {
     title: string;
     description?: string;
     children: ReactNode;
     aside?: ReactNode;
+    /** Âncora do tutorial guiado (data-tutorial). */
+    tutorial?: string;
 }) {
-    return <section className="p-section">
+    return <section className="p-section" data-tutorial={tutorial}>
     <div className="p-section-heading">
     <div>
     <h2>{title}</h2>{description && <p>{description}</p>}</div>{aside}</div>{children}</section>;
@@ -997,11 +999,11 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
 
       {tab === 'events' && <>
         {/* No evento, o atendimento vem antes da lista de dinâmicas. */}
-        {can('participation.operate') && <Section title="Operação presencial" description="A equipe acompanha o resultado e utiliza as mesmas regras de participação da campanha.">
+        {can('participation.operate') && <Section tutorial="dinamicas-atendimento" title="Operação presencial" description="A equipe acompanha o resultado e utiliza as mesmas regras de participação da campanha.">
             <PhysicalAttendance campaigns={visibleCampaigns.filter(c => canProject(get(c, 'projectId', 'project_id'), 'participation.operate'))} tickets={byProject(list(data.physicalTickets))} mutate={mutate}/>
             </Section>}
         <DynamicsExplainer dynamics={visibleCampaigns.map(c => ({ id: string(c.id), name: string(c.name), status: string(c.status), projectId: string(get(c, 'projectId', 'project_id')), projectName: projectName(get(c, 'projectId', 'project_id')), hosts: (Array.isArray(c.host_project_ids) ? c.host_project_ids as string[] : []).flatMap(id => projects.filter(project => project.id === id)).map(project => ({ id: string(project.id), name: string(project.name) })) }))} onOpenProject={allowedTabs.some(module => module.id === 'projects') ? openPinnedProject : undefined}/>
-        <Section title="Roleta e dado" description="Prepare as regras, os brindes e o atendimento das dinâmicas de cada ação.">{displayedCampaigns.length ? <div className={`p-event-grid ${campaignLayout.grid}`}>{displayedCampaigns.map(c => <article className={`p-card p-event-card ${workStyles.record}`} id={`work-record-${c.id}`} tabIndex={-1} key={c.id}>
+        <Section tutorial="dinamicas-acoes" title="Roleta e dado" description="Prepare as regras, os brindes e o atendimento das dinâmicas de cada ação.">{displayedCampaigns.length ? <div className={`p-event-grid ${campaignLayout.grid}`}>{displayedCampaigns.map(c => <article className={`p-card p-event-card ${workStyles.record}`} id={`work-record-${c.id}`} tabIndex={-1} key={c.id}>
                 <div className="p-row-between">
                 <span className="p-kicker">{projectName(get(c, 'projectId', 'project_id'))}</span>
                 <Badge status={c.status}/>
@@ -1017,7 +1019,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
                 <div className="p-rule-summary">{get(c, 'retryLimit', 'retry_limit') === undefined ? 'Política de repetição pendente' : `Uma participação · até ${get(c, 'retryLimit', 'retry_limit')} ${Number(get(c, 'retryLimit', 'retry_limit')) === 1 ? 'repetição' : 'repetições'} quando sair Tente novamente`}</div>
                 <div className="p-card-actions">
                 <a className="p-button p-button-subtle" href={c.status==='draft'?`/?module=events&project=${encodeURIComponent(get(c,'projectId','project_id'))}&campaignId=${encodeURIComponent(c.id)}`:`/events/${encodeURIComponent(c.id)}`} target="_blank" rel="noreferrer">{c.status==='draft'?'Abrir na equipe':'Página do evento'} <ExternalLink size={15}/>
-                </a>{canProject(get(c, 'projectId', 'project_id'), 'campaigns.manage') && <select id={`situacao-evento-${c.id}`} aria-label={`Situação do evento ${c.name}`} value={c.status} disabled={busy || c.status === 'closed'} onChange={e => e.target.value === 'closed' ? setClosingCampaign(c.id) : void quick('campaign.status', { id: c.id, status: e.target.value })}>
+                </a>{canProject(get(c, 'projectId', 'project_id'), 'campaigns.manage') && <select id={`situacao-evento-${c.id}`} data-tutorial="dinamicas-situacao" aria-label={`Situação do evento ${c.name}`} value={c.status} disabled={busy || c.status === 'closed'} onChange={e => e.target.value === 'closed' ? setClosingCampaign(c.id) : void quick('campaign.status', { id: c.id, status: e.target.value })}>
                     <option value="draft" disabled>Rascunho</option>
                     <option value="active">Ativo</option>
                     <option value="paused">Pausado</option>
@@ -1036,13 +1038,13 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
                 <Gift size={17}/>
                 <span>A fila mostra até {data.pendingPrizesLimit || 200} reservas recentes. Há {data.pendingPrizesTotal} no seu acesso completo. Use o código da pessoa em Retirada de brinde para localizar uma entrega que não esteja nesta lista.</span>
                 </div>}<PendingPrizes prizes={byProject(list(data.pendingPrizes))} mutate={mutate}/>
-            </Section>}{can('participation.operate', 'inventory.deliver') && <Section title="Retirada de brinde" description="Confirme o registro no servidor antes de entregar os materiais. Códigos já entregues serão sinalizados.">
+            </Section>}{can('participation.operate', 'inventory.deliver') && <Section tutorial="dinamicas-retirada" title="Retirada de brinde" description="Confirme o registro no servidor antes de entregar os materiais. Códigos já entregues serão sinalizados.">
             <OperationForm action="prize.redeem" make={f => ({ code: f.get('code') })} mutate={mutate} submit="Confirmar entrega" compact>
             <Field label="Código de retirada">
             <input name="code" autoComplete="off" required placeholder="Cole ou digite o código apresentado"/>
             </Field>
             </OperationForm>
-            </Section>}{can('campaigns.manage') && formProjects.length > 0 && <Section title="Preparar dinâmica" description="A campanha começa como rascunho. Confira as regras e os brindes antes de ativar.">
+            </Section>}{can('campaigns.manage') && formProjects.length > 0 && <Section tutorial="dinamicas-preparar" title="Preparar dinâmica" description="A campanha começa como rascunho. Confira as regras e os brindes antes de ativar.">
             <details className={workStyles.tools}><summary className="p-disclosure"><Plus size={17} aria-hidden="true"/>Nova dinâmica</summary><div className={workStyles.toolsBody}>
             <CampaignForm key={`campaign-create-${unitFilter}-${filter}`} projects={formProjects} offers={offers} defaultProject={effectiveProject} mutate={mutate}/></div></details>
             </Section>}{can('campaigns.manage') && !prizeProjects.length && <div className="p-explainer"><Gift size={22} /><div><h3>Quais projetos usam roleta e dado?</h3><p>No cadastro do projeto, marque “Habilitar dinâmicas e brindes” para preparar campanhas e compor os kits desta área.</p><button type="button" className="p-text-link" onClick={() => navigate('projects')}>Abrir projetos <ArrowRight size={15} /></button></div></div>}</>}

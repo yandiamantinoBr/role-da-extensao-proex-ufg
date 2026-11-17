@@ -5,7 +5,7 @@ import { startChapter, useTutorials } from './tutorial-store';
 import styles from './tutorials.module.css';
 
 /** Assuntos que entram nos próximos capítulos (roteiro de 15/11). Só texto: nada aqui abre telas. */
-export const UPCOMING_TOPICS = ['Empréstimos', 'Dinâmicas'];
+export const UPCOMING_TOPICS = ['Empréstimos'];
 
 const day = (iso: string | null) => iso ? new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'America/Sao_Paulo' }).format(new Date(iso)) : '';
 
@@ -15,11 +15,15 @@ export default function ChapterList({ headingLevel = 3 }: { headingLevel?: 2 | 3
   const Heading = headingLevel === 2 ? 'h2' : 'h3';
   if (!data && loading) return <p className={styles.muted} role="status">Carregando os tutoriais…</p>;
   if (!data) return <p className={styles.muted} role="alert">{/acesso mudou|Entre/i.test(error) ? 'Os tutoriais ficam disponíveis quando a sua conta estiver ativa.' : error || 'Os tutoriais não abriram agora. Tente de novo em instantes.'}</p>;
+  // Só os assuntos com passos para o acesso atual; os outros entram numa nota única.
+  const stepsOf = (id: string) => data.chapters.find(entry => entry.id === id)?.steps.filter(step => step.available).length ?? 0;
+  const visible = TUTORIAL_CHAPTERS.filter(chapter => stepsOf(chapter.id) > 0 || active?.chapterId === chapter.id);
+  const hidden = TUTORIAL_CHAPTERS.length - visible.length;
   return <div className={styles.list}>
     <ul className={styles.chapters}>
-      {TUTORIAL_CHAPTERS.map(chapter => {
+      {visible.map(chapter => {
         const state = data.chapters.find(entry => entry.id === chapter.id), progress = data.progress[chapter.id];
-        const total = state?.steps.filter(step => step.available).length ?? 0;
+        const total = stepsOf(chapter.id);
         const stopped = progress && progress.status !== 'completed' && progress.stepId ? chapter.steps.find(step => step.id === progress.stepId) : undefined;
         const finished = Boolean(progress?.completedAt) && active?.chapterId !== chapter.id;
         return <li key={chapter.id} className={styles.chapter}>
@@ -41,6 +45,7 @@ export default function ChapterList({ headingLevel = 3 }: { headingLevel?: 2 | 3
         </li>;
       })}
     </ul>
+    {hidden > 0 && <p className={styles.muted}>{hidden === 1 ? 'Um assunto aparece quando o seu acesso incluir o módulo dele.' : `${hidden} assuntos aparecem quando o seu acesso incluir os módulos deles.`}</p>}
     <p className={styles.upcoming}><strong>Próximos assuntos:</strong> {UPCOMING_TOPICS.join(', ')}. Eles entram aqui conforme ficarem prontos.</p>
     <p className={styles.muted}>Os tutoriais funcionam sem IA e não gravam nada no seu trabalho: só lembram onde você parou.</p>
   </div>;
