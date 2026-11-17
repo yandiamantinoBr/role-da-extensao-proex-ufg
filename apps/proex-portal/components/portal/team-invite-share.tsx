@@ -100,8 +100,8 @@ export default function TeamInviteShare({ url, expiresAt, inviteId, name, email,
       </button>
     </div>
     {emailState === 'off' && <p className={styles.note}>{INVITE_EMAIL_OFF}</p>}
-    {emailState === 'queued' && <p className={styles.emailDone} role="status"><MailCheck size={16} aria-hidden="true" />E-mail na fila: sai pelo e-mail da organização em alguns minutos.</p>}
-    {emailState === 'sent' && <p className={styles.emailDone} role="status"><MailCheck size={16} aria-hidden="true" />E-mail enviado pelo e-mail da organização.</p>}
+    {emailState === 'queued' && <p className={styles.emailDone} role="status"><MailCheck size={16} aria-hidden="true" />{email ? `E-mail agendado para ${email}: chega em alguns minutos, pelo e-mail da organização.` : 'E-mail agendado: chega em alguns minutos, pelo e-mail da organização.'}</p>}
+    {emailState === 'sent' && <p className={styles.emailDone} role="status"><MailCheck size={16} aria-hidden="true" />{email ? `E-mail enviado para ${email}, pelo e-mail da organização.` : 'E-mail enviado pelo e-mail da organização.'}</p>}
     {emailError && <p role="alert" className={styles.emailError}>{emailError}</p>}
     <details className={styles.message}><summary>Ver a mensagem</summary><p>{message}</p></details>
     <label className={styles.label} htmlFor={`${id}-link`}>Link do convite</label>

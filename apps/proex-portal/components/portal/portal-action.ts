@@ -18,4 +18,4 @@ export function inviteEmailStateOf(available: boolean, status: string | null): I
   if (status && status !== 'cancelled' && status !== 'closed_unconfirmed') return 'queued';
   return available ? 'ready' : 'off';
 }
-export const INVITE_EMAIL_OFF = 'O envio por e-mail ainda não está ligado nesta organização. Use o WhatsApp, a mensagem ou o QR.';
+export const INVITE_EMAIL_OFF = 'O envio por e-mail ainda não está ligado nesta organização. Use o WhatsApp, a mensagem ou o QR abaixo.';

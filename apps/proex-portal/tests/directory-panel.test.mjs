@@ -119,7 +119,7 @@ test('Convidar opens the invite already filled; confirming sends one invite with
   h.reply(status,{available:true,status:null});await tick();h.render();
   h.click('Enviar por e-mail para pessoa@example.invalid');const queue=action('invite.email.queue'),queued=JSON.parse(queue.init.body);
   assert.equal(queued.inviteId,'invite-new');assert.match(queued.url,/\/convite#token=/);
-  h.reply(queue,{queued:true,status:'queued'});await tick();h.render();assert.match(h.body(),/E-mail na fila: sai pelo e-mail da organização/);
+  h.reply(queue,{queued:true,status:'queued'});await tick();h.render();assert.match(h.body(),/E-mail agendado para pessoa@example.invalid: chega em alguns minutos/);
   const wa=h.find('a',n=>text(n).includes('Compartilhar no WhatsApp'));assert.match(decodeURIComponent(wa.props.href),/Olá, Pessoa de exemplo!.*leitor de relatórios, em Projeto A/s);assert.match(decodeURIComponent(wa.props.href),/convite#token=/);
  }finally{h.dispose();}
 });
