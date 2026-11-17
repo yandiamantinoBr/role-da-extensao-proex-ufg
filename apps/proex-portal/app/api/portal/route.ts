@@ -1,4 +1,5 @@
 import {getPortalUser} from '@/lib/session';
+import {inviteEmailStatus,queueInviteEmail} from '../../../lib/invites/invite-email';
 import {database,inviteSecret} from '../../../lib/platform';
 import {getActor,accessAction} from '../../../lib/access';
 import {portalSnapshot} from '../../../lib/portal-data';
@@ -16,7 +17,7 @@ export async function POST(request:Request){try{
  const url=new URL(request.url),origin=request.headers.get('origin');if(request.headers.get('X-Proex-Action')!=='1'||!request.headers.get('content-type')?.includes('application/json')||(origin&&origin!==url.origin))throw new HttpError(403,'Origem da solicitação inválida.');
  const input=await boundedJson(request);if(typeof input.action!=='string')throw new HttpError(400,'Ação inválida.');
  const db=database(),actor=await getActor(db,await getPortalUser());if(!actor)throw new HttpError(401,'Entre para continuar.');
- const action=input.action;let result=action==='participation.cancel'?await cancelAttendance(db,actor,input):await accessAction(db,actor,action,input,url.origin,inviteSecret());
+ const action=input.action;let result=action==='participation.cancel'?await cancelAttendance(db,actor,input):action==='invite.email.status'?await inviteEmailStatus(db,actor,input):action==='invite.email.queue'?await queueInviteEmail(db,actor,input,inviteSecret()):await accessAction(db,actor,action,input,url.origin,inviteSecret());
  if(result===null)result=await usersAction(db,actor,action,input);
  if(result===null)result=await campaignAction(db,actor,action,input);
  if(result===null)result=await materialsAction(db,actor,action,input);
