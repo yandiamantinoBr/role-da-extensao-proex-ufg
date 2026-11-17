@@ -487,7 +487,8 @@ export const TUTORIAL_CHAPTERS: readonly TutorialChapter[] = [
       {
         id: 'ficha', title: 'A ficha do material',
         speech: 'Detalhes abre a ficha do material, com a condição e o histórico de movimentações. Quem só consulta o saldo vê Somente consulta de saldo no lugar.',
-        youWillSee: 'O botão Detalhes do primeiro material destacado.',
+        speechMobile: 'A seta de cada material abre a ficha, com a condição e o histórico de movimentações. Quem só consulta o saldo vê Somente consulta de saldo.',
+        youWillSee: 'O botão Detalhes do primeiro material destacado.', youWillSeeMobile: 'A seta do primeiro material destacada.',
         target: '[data-tutorial="materiais-detalhes"]', module: 'materials', openLabel: 'Ir para Materiais', requires: { anyOf: ['inventory.read', 'inventory.manage', 'inventory.deliver'] },
         missing: 'Seu acesso mostra só o saldo destes materiais: a ficha abre para quem consulta materiais no projeto.',
         labels: ['Detalhes', 'Somente consulta de saldo'],
