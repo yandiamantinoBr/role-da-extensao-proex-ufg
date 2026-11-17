@@ -46,7 +46,9 @@ function Pager({label, offset, total, hasMore, nextOffset, change}: {label: stri
 }
 function consultationTime(value: string) {
   const date = new Date(value);
-  return Number.isFinite(date.getTime()) ? new Intl.DateTimeFormat('pt-BR', {dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Sao_Paulo'}).format(date) : 'horário não informado';
+  if (!Number.isFinite(date.getTime())) return 'horário não informado';
+  const zone = {timeZone: 'America/Sao_Paulo'} as const;
+  return `${new Intl.DateTimeFormat('pt-BR', {...zone, dateStyle: 'short'}).format(date)} às ${new Intl.DateTimeFormat('pt-BR', {...zone, hour: '2-digit', minute: '2-digit'}).format(date)}`;
 }
 const visibleRange = (offset: number, length: number, total: number) => length ? `${offset + 1}–${offset + length}\u00a0de\u00a0${total}` : `0\u00a0de\u00a0${total}`;
 
@@ -133,7 +135,7 @@ export default function MeuTrabalhoPanel({userId, organizationId = null, project
         <Pager label="responsabilidades" offset={responsibilityOffset} total={data.responsibilities.total} hasMore={data.responsibilities.hasMore} nextOffset={data.responsibilities.nextOffset} change={offset => choose({responsibilityOffset: offset, taskOffset})}/>
       </section>
       <section className={styles.areas} aria-label="Distribuição por módulo"><h3><LayoutGrid size={18} aria-hidden="true"/> Por módulo de trabalho</h3>{!data.areas.some(area => area.taskCounts.total || area.responsibilityCount) ? <p className={styles.help}>Nenhuma demanda ou designação atribuída a você em nenhum módulo.</p> : <>{data.areas.map(area => { const Icon = areaIcons[area.area]; return <div key={area.area} className={styles.area}><div className={styles.areaLabel}><strong><Icon size={16} aria-hidden="true"/>{areaLabels[area.area]}</strong><span>{area.taskCounts.total} demanda{area.taskCounts.total !== 1 && 's'} · {area.responsibilityCount} designaç{area.responsibilityCount === 1 ? 'ão' : 'ões'}</span></div><div className={styles.bar} aria-hidden="true"><span style={{width: `${100 * area.taskCounts.total / maxArea}%`}}/></div></div>; })}<p className={styles.help}>As barras comparam demandas; as designações são apresentadas separadamente, sem somar unidades diferentes.</p></>}</section>
-      <p className={styles.asOf}>Consulta em {consultationTime(data.asOf)} · horário de Brasília.</p>
+      <p className={styles.asOf}>Consultado em {consultationTime(data.asOf)} (Brasília)</p>
     </>}
   </section>;
 }

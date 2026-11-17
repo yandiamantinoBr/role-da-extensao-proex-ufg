@@ -121,7 +121,7 @@ function StructureBody({userId,organizationId,projectId,onSelectTeam}:Props){
     {!editingId&&editorSection}
     {!!data.nodes.length&&<div className={styles.tree} aria-label="Organograma institucional"><NodeBranch parentId={null} depth={0} data={data} locked={locked} onEdit={showEditor} onSelectTeam={onSelectTeam} editingId={editingId} nodeEditor={editorSection} expandedBranches={expandedBranches} onToggleBranch={expandBranch}/></div>}
     <div className={styles.export}><div><h4>Levar a estrutura para um documento</h4><p>Unidades e vínculos visíveis neste recorte. Acesso e conteúdo são conferidos novamente antes de baixar.</p></div><ExportFormats onExport={exportFile} disabled={locked||!data.nodes.length} label="Baixar estrutura institucional"/></div>
-    <p className={styles.updated}>Consultado em {new Date(data.asOf).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'})} (Brasília)</p>
+    <p className={styles.updated}>Consultado em {new Date(data.asOf).toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo'})} às {new Date(data.asOf).toLocaleTimeString('pt-BR',{timeZone:'America/Sao_Paulo',hour:'2-digit',minute:'2-digit'})} (Brasília)</p>
    </>}
    {/* One polite region, mounted with the body and never replaced: it carries both the loading notice and later feedback. */}
    <p role="status" aria-live="polite" aria-atomic="true" className={loading?styles.loading:feedback?styles.feedback:styles.srOnly}>{loading?'Consultando a estrutura e os vínculos permitidos…':feedback}</p>

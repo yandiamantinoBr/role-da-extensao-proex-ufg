@@ -254,3 +254,10 @@ test('organograma layout (crítica de 16/11): light actions, Equipes in "Mais" o
   assert.match(css, /\.node\[data-relation=subordination\]>\.nodeCard \{ border-left:1px solid var\(--line\); \}/, 'sem a borda roxa que somava com as linhas da árvore');
   assert.match(css, /\.more>summary \{ background:transparent; border-color:transparent; box-shadow:none; color:var\(--brand-ink\); \}/);
 });
+
+test('the consultation time uses the portal-wide wording, without seconds (crítica de 16/11)', async () => {
+  const h = harness(); try { await h.open();
+   assert.match(h.body(), /Consultado em \d{2}\/\d{2}\/\d{4} às \d{2}:\d{2} \(Brasília\)/);
+   assert.doesNotMatch(h.body(), /\d{2}:\d{2}:\d{2}/, 'sem segundos');
+  } finally { h.dispose(); }
+});
