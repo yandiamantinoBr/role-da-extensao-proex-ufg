@@ -65,18 +65,21 @@ export function prettyRange(from: string, to: string): string {
 }
 /** Dentro do grupo do dia, a data já está no título: sobra "Dia inteiro" ou o horário. */
 function whenInDay(event: CalendarEntry): string {
-  if (event.allDay) return offsetCivilDate(event.endsAt, -1) === event.startsAt ? 'Dia inteiro' : when(event);
+  if (event.allDay) return offsetCivilDate(event.endsAt, -1) === event.startsAt ? 'Dia inteiro' : when(event, false);
   const start = new Date(event.startsAt), end = new Date(event.endsAt);
-  return shortDate.format(start) === shortDate.format(end) ? `${shortTime.format(start)} a ${shortTime.format(end)}` : when(event);
+  return shortDate.format(start) === shortDate.format(end) ? `${shortTime.format(start)} a ${shortTime.format(end)}` : when(event, false);
 }
-function when(event: CalendarEntry): string {
+const dayMonth = new Intl.DateTimeFormat('pt-BR', { timeZone, day: '2-digit', month: '2-digit' });
+/** Com `withYear` falso, "16/11, 21:38 a 17/11, 22:38": o ano já está no período mostrado (nona crítica de 16/11). */
+function when(event: CalendarEntry, withYear = true): string {
+  const civil = (day: string) => withYear ? civilShort(day) : dayMonth.format(new Date(`${day}T12:00:00Z`));
   if (event.allDay) {
     const lastDay = offsetCivilDate(event.endsAt, -1);
-    const period = lastDay === event.startsAt ? civilShort(event.startsAt) : `${civilShort(event.startsAt)} a ${civilShort(lastDay)}`;
+    const period = lastDay === event.startsAt ? civil(event.startsAt) : `${civil(event.startsAt)} a ${civil(lastDay)}`;
     return `${period} · dia inteiro`;
   }
-  const start = new Date(event.startsAt), end = new Date(event.endsAt);
-  const startDate = shortDate.format(start), endDate = shortDate.format(end);
+  const start = new Date(event.startsAt), end = new Date(event.endsAt), format = withYear ? shortDate : dayMonth;
+  const startDate = format.format(start), endDate = format.format(end);
   if (startDate === endDate) return `${startDate}, ${shortTime.format(start)} a ${shortTime.format(end)}`;
   return `${startDate}, ${shortTime.format(start)} a ${endDate}, ${shortTime.format(end)}`;
 }
@@ -198,12 +201,12 @@ export default function CalendarPanel({ viewerId, projects: sourceProjects, orga
       const { documentExport } = await import('./document-export');
       const columns = [{ key: 'event', label: 'Compromisso' }, { key: 'when', label: 'Data e horário' }, { key: 'context', label: 'Projeto e local' }];
       const cancelledShown = shown.filter(event => event.status === 'CANCELLED').length;
-      const rows = shown.map((event, index) => {
+      const rows = shown.map(event => {
         const { kind, name } = splitTitle(event), status = statusLabel(event), cancelled = event.status === 'CANCELLED';
         return {
           event: [cancelled ? `${status.toUpperCase()} · ${name}` : name, kind, cancelled ? '' : status].filter(Boolean).join('\n'),
-          // A data aparece na primeira linha de cada dia; as seguintes mostram só "Dia inteiro" ou o horário.
-          when: index > 0 && startDay(shown[index - 1]) === startDay(event) ? whenInDay(event) : when(event), context: [event.projectName, event.location].filter(Boolean).join('\n'),
+          // Cada linha traz o dia (sem o ano, que está no período): numa página nova, nenhuma linha fica sem data.
+          when: when(event, from.slice(0, 4) !== to.slice(0, 4)), context: [event.projectName, event.location].filter(Boolean).join('\n'),
         };
       });
       const info: [string, string][] = [

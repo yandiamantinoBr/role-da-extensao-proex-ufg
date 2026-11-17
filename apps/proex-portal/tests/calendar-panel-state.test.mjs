@@ -97,8 +97,8 @@ test('agenda exports the same filtered commitments in PDF, DOCX and XLSX with Br
     assert.match(dayButton().props['aria-label'], /3 registros$/);
     assert.equal(ics(), icsBefore);
 
-    const datePt = day.split('-').reverse().join('/');
-    const followingPt = following.split('-').reverse().join('/');
+    const datePt = day.split('-').reverse().slice(0, 2).join('/'); // sem o ano: ele está no período (nona crítica de 16/11)
+    const followingPt = following.split('-').reverse().slice(0, 2).join('/');
     assert.ok(h.body().includes("10:00 a 10:30") && !h.body().includes(`${datePt}, 10:00`), "no grupo do dia, o cartão mostra só o horário");
     assert.ok(h.body().includes(`${datePt}, 23:30 a ${followingPt}, 00:30`));
     for (const format of ['pdf', 'docx', 'xlsx']) {
@@ -291,7 +291,7 @@ test('cards, day previews and exports drop the repeated type word but keep it in
     assert.equal(args[6].metrics.map(metric => `${metric.value} ${metric.label}`).join(' | '), '5 Compromissos | 3 Projetos e eventos | 1 Material | 1 Prazo de demanda', 'o quadro do PDF repete os contadores da tela');
     assert.equal(args[6].metrics[0].detail, 'inclui 1 cancelado', 'os cancelados viram nota do total');
     const whens = Array.from(args[3], row => row.when);
-    assert.ok(whens[0].includes('/') && whens.slice(1).every(value => value === 'Dia inteiro'), `a data só na primeira linha do dia: ${whens}`);
+    assert.ok(whens.every(value => /^\d{2}\/\d{2} · dia inteiro$/.test(value)), `toda linha traz o dia, sem o ano (que está no período): ${whens}`);
     assert.equal(Array.from(args[6].mutedRows).join(), String(Array.from(args[3]).findIndex(row => row.event.startsWith('CANCELADO'))), 'a linha cancelada sai em cinza no PDF');
     assert.ok(h.all().some(node => node.type === 'span' && node.props.className === 'dotCancelled'), 'no celular, o ponto tracejado indica o cancelado do dia');
     assert.equal(h.all().find(node => node.type === ExportFormats).props.tiles, true, 'os três formatos cabem lado a lado na coluna da lista');
@@ -415,7 +415,7 @@ test('the agenda label uses the last included day rather than the exclusive ICS 
     await tick();
     h.render();
     const activity = h.all().find(node => node.type === 'article' && text(node).includes('Atividade sintética'));
-    assert.match(text(activity), /09\/11\/2026 a 13\/11\/2026 · dia inteiro/);
+    assert.match(text(activity), /09\/11 a 13\/11 · dia inteiro/);
     assert.doesNotMatch(text(activity), /14\/11/);
   } finally { h.dispose(); }
 });

@@ -148,3 +148,5 @@
 .dots>.dotCancelled{background:transparent;border:1.5px dashed var(--muted);box-sizing:border-box}
 .feedScope>span{font-size:13px;font-weight:600;color:var(--ink)}
 .activeFeeds h4{font-weight:650}
+/* "+7" com cara de que há mais (nona crítica de 16/11). */
+.extraEntries{color:var(--brand-ink);font-weight:650}
