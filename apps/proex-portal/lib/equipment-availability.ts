@@ -9,11 +9,11 @@ export type EquipmentStatus = { reservable: boolean; reason: string };
 export function equipmentStatus(item: EquipmentLike): EquipmentStatus {
   const condition = String(item.condition ?? 'active');
   if (condition === 'inactive') return { reservable: false, reason: 'inativo' };
-  if (condition === 'maintenance') return { reservable: false, reason: 'em manutenção' };
+  if (condition === 'maintenance') return { reservable: false, reason: 'manutenção' };
   if (condition !== 'active') return { reservable: false, reason: 'indisponível' };
-  if (item.stock !== undefined && item.stock !== null && Number(item.stock) !== 1) return { reservable: false, reason: 'sem entrada no estoque' };
+  if (item.stock !== undefined && item.stock !== null && Number(item.stock) !== 1) return { reservable: false, reason: 'sem estoque' };
   // Ocupado agora não impede reservar outro horário; o servidor confere o choque de horários.
-  if (truthy(item.on_loan ?? item.onLoan)) return { reservable: true, reason: 'retirado agora' };
+  if (truthy(item.on_loan ?? item.onLoan)) return { reservable: true, reason: 'em uso agora' };
   if (truthy(item.reserved_now ?? item.reservedNow)) return { reservable: true, reason: 'reservado agora' };
   return { reservable: true, reason: '' };
 }
@@ -26,9 +26,20 @@ export function equipmentBlockMessage(item: EquipmentLike, action: 'reserve' | '
   const { reservable, reason } = equipmentStatus(item);
   if (reservable) return null;
   const what = action === 'checkout' ? 'A retirada fica bloqueada' : 'Não é possível reservar';
-  if (reason === 'em manutenção') return `${what}: o equipamento está em manutenção. Registre a volta dele ao uso na ficha do material.`;
-  if (reason === 'inativo') return `${what}: o equipamento está inativo. Reative-o na ficha do material, se ele voltou a ser usado.`;
-  if (reason === 'sem entrada no estoque') return `${what}: o equipamento não tem a unidade registrada no estoque. Registre o recebimento na ficha do material.`;
-  return `${what}: o equipamento está indisponível.`;
+  return `${what}: ${equipmentBlockCause(item)}. ${BLOCK_FIX[reason] ?? ''}`.trim();
+}
+const BLOCK_FIX: Record<string, string> = {
+  'manutenção': 'Registre a volta dele ao uso na ficha do material.',
+  'inativo': 'Reative-o na ficha do material, se ele voltou a ser usado.',
+  'sem estoque': 'Registre o recebimento na ficha do material.',
+};
+/** "o equipamento está em manutenção" etc.; vazio quando nada bloqueia. */
+export function equipmentBlockCause(item: EquipmentLike): string {
+  const { reservable, reason } = equipmentStatus(item);
+  if (reservable) return '';
+  if (reason === 'manutenção') return 'o equipamento está em manutenção';
+  if (reason === 'inativo') return 'o equipamento está inativo';
+  if (reason === 'sem estoque') return 'o equipamento não tem a unidade registrada no estoque';
+  return 'o equipamento está indisponível';
 }
 function truthy(value: unknown): boolean { return value === true || value === 1 || value === '1'; }

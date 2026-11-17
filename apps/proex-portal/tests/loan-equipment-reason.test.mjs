@@ -20,12 +20,12 @@ async function fixture(t){
 
 test('the reason is written for each case, and only active equipment with one unit can be reserved',()=>{
  assert.deepEqual(equipmentStatus({condition:'active',stock:1}),{reservable:true,reason:''});
- assert.deepEqual(equipmentStatus({condition:'maintenance',stock:1}),{reservable:false,reason:'em manutenção'});
+ assert.deepEqual(equipmentStatus({condition:'maintenance',stock:1}),{reservable:false,reason:'manutenção'});
  assert.deepEqual(equipmentStatus({condition:'inactive',stock:1}),{reservable:false,reason:'inativo'});
- assert.deepEqual(equipmentStatus({condition:'active',stock:0}),{reservable:false,reason:'sem entrada no estoque'});
- assert.deepEqual(equipmentStatus({condition:'active',stock:1,on_loan:true}),{reservable:true,reason:'retirado agora'},'another time slot can still be reserved');
+ assert.deepEqual(equipmentStatus({condition:'active',stock:0}),{reservable:false,reason:'sem estoque'});
+ assert.deepEqual(equipmentStatus({condition:'active',stock:1,on_loan:true}),{reservable:true,reason:'em uso agora'},'another time slot can still be reserved');
  assert.deepEqual(equipmentStatus({condition:'active',stock:1,reserved_now:1}),{reservable:true,reason:'reservado agora'});
- assert.equal(equipmentOptionLabel({name:'Projetor',condition:'maintenance',stock:1}),'Projetor · em manutenção');
+ assert.equal(equipmentOptionLabel({name:'Projetor',condition:'maintenance',stock:1}),'Projetor · manutenção');
  assert.equal(equipmentOptionLabel({name:'Projetor',condition:'active',stock:1}),'Projetor');
  assert.match(equipmentBlockMessage({condition:'maintenance'},'checkout'),/retirada fica bloqueada.*manutenção/);
  assert.equal(equipmentBlockMessage({condition:'active',stock:1},'reserve'),null);
@@ -62,7 +62,7 @@ test('the project quick entry lists unavailable equipment with its state, so the
  // Both forms show the reason and disable what cannot be reserved.
  for(const file of ['../app/portal-client.tsx','../components/portal/project-quick-entry.tsx']){
   const source=readFileSync(new URL(file,import.meta.url),'utf8');
-  assert.match(source,/disabled=\{!equipmentStatus\((i|item)\)\.reservable\}/);
+  assert.match(source,/<optgroup label="Indisponíveis agora">/);assert.match(source,/<option key=\{(i|item)\.id\} value=\{(i|item)\.id\} disabled>/);
   assert.match(source,/equipmentOptionLabel\((i|item)\)/);
  }
 });
