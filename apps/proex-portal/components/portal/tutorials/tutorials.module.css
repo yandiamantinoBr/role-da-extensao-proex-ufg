@@ -51,7 +51,8 @@
 /* Cartão guiado: não é modal; fica acima do lançador da doca no computador e da barra de baixo no celular. */
 .guide { position: fixed; z-index: 60; right: 92px; bottom: 24px; width: min(390px, calc(100vw - 32px)); max-height: min(70dvh, 520px); overflow: auto; display: grid; gap: 8px; padding: 14px 16px 16px; border: 1px solid var(--line); border-top: 4px solid var(--brand-ink); border-radius: 16px; background: var(--surface); color: var(--ink); box-shadow: 0 18px 48px -20px #1d0b2b80; }
 @media (max-width: 720px) { .guide { left: 0; right: 0; width: auto; bottom: calc(66px + env(safe-area-inset-bottom, 0px)); max-height: 46dvh; border-radius: 16px 16px 0 0; border-left: 0; border-right: 0; } }
-:global(body):has(.guide) :global(.p-main) { padding-bottom: max(300px, 55vh); }
+/* Enquanto o cartão está aberto, sobra espaço para rolar o último controle até acima dele (vence a reserva da doca de widgets, que é menor). */
+:global(body):has(.guide) :global(.p-main) { padding-bottom: max(300px, 55vh) !important; }
 .guideHead { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; }
 .guideHead img, .dialogHead img { border-radius: 10px; background: var(--surface-soft); box-shadow: inset 0 0 0 1px var(--line); }
 .now { display: inline-flex; align-items: center; min-height: 44px; color: var(--brand-ink); font-size: 13.5px; font-weight: 700; }
