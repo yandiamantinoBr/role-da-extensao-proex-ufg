@@ -168,3 +168,71 @@
   .mobileFab[data-open]{background:var(--surface);color:var(--brand-ink);border:1px solid var(--line);opacity:1;visibility:visible;pointer-events:auto;transform:none}
 }
 @media (prefers-reduced-motion:no-preference){.mobileFan{animation:dock-in .16s ease-out}}
+/* "Meu espaço" (2026-11-17): cards with a drawing of each mode, and the widgets in the fan's order. */
+.gallerySection{display:grid;gap:10px;min-width:0}
+.gallerySection+.gallerySection{padding-top:14px;border-top:1px solid var(--line)}
+.modeGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.modeCard{position:relative;display:grid;align-content:start;gap:8px;min-width:0;padding:8px 8px 10px;border:1px solid var(--line);border-radius:14px;background:var(--surface);cursor:pointer}
+.modeCard:hover{border-color:color-mix(in srgb,var(--brand-ink) 55%,var(--line))}
+.modeCard[data-checked]{border-color:var(--brand-ink);background:color-mix(in srgb,var(--brand-ink) 8%,var(--surface));box-shadow:inset 0 0 0 1px var(--brand-ink)}
+.modeCard:has(.modeRadio:focus-visible){outline:3px solid var(--focus);outline-offset:2px}
+.modeRadio{position:absolute;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:pointer}
+.miniature{display:block;width:100%;height:auto;border-radius:9px;background:var(--surface-soft)}
+.miniFrame{fill:var(--surface);stroke:color-mix(in srgb,var(--text-secondary) 45%,var(--line));stroke-width:1.2}
+.miniNav{fill:color-mix(in srgb,var(--brand-ink) 72%,var(--ink))}
+.miniLine{fill:color-mix(in srgb,var(--text-secondary) 30%,var(--surface))}
+.miniSoft{fill:color-mix(in srgb,var(--brand-ink) 16%,var(--surface))}
+.miniSheet{fill:var(--surface);stroke:color-mix(in srgb,var(--brand-ink) 45%,var(--line));stroke-width:1}
+.miniAccent{fill:var(--brand-ink)}
+.modeText{display:grid;gap:3px;min-width:0}
+.modeText strong{display:flex;align-items:center;gap:5px;font-size:13px;line-height:1.3}
+.modeText strong svg{flex:none;color:var(--brand-ink)}
+.modeCard[data-checked] .modeText strong{color:var(--brand-ink)}
+.modeText small{color:var(--text-secondary);font-size:11.5px;line-height:1.4}
+.saveStatus{display:inline-flex;align-items:center;gap:4px;margin:0;color:var(--text-secondary);font-size:12px;font-weight:650;white-space:nowrap}
+.saveStatus[data-state=saved]{color:var(--success-ink,var(--brand-ink))}
+.saveStatus[data-state=error]{color:var(--danger)}
+.orderList{display:grid;gap:6px;margin:0;padding:0;list-style:none}
+.orderRow{display:flex;align-items:center;gap:6px;min-width:0;padding:4px 4px 4px 0;border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.orderRow[data-off]{border-style:dashed;background:transparent}
+.orderRow[data-off] .orderText strong{color:var(--text-secondary);font-weight:600}
+.orderToggle{display:flex;flex:1;align-items:center;gap:10px;min-width:0;min-height:48px;padding:4px 4px 4px 10px;cursor:pointer}
+
+.orderToggle:has(input:focus-visible){outline:3px solid var(--focus);outline-offset:-2px;border-radius:10px}
+.orderText{display:grid;gap:1px;min-width:0}
+.orderText strong{font-size:13.5px}
+.orderText small{color:var(--text-secondary);font-size:11.5px}
+.orderMoves{display:flex;gap:4px;flex:none}
+.orderMoves button{display:grid;place-items:center;width:44px;height:44px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--brand-ink);cursor:pointer}
+.orderMoves button:hover:not(:disabled){border-color:var(--brand-ink);background:var(--surface-soft)}
+.orderMoves button:disabled{border-color:color-mix(in srgb,var(--line) 60%,transparent);color:color-mix(in srgb,var(--text-secondary) 55%,var(--surface));cursor:default}
+.orderMoves button:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+.orderRow[data-off] .toggleIcon{opacity:.6}
+/* Round 2 of the critique: status beside its title (no jump), check badge on the drawing, the other device folded,
+   switched-off widgets apart and quiet, and checkboxes with a visible border in both themes. */
+.groupHead{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;min-height:22px;padding:0;margin-bottom:6px;font-size:13px;font-weight:700}
+.groupHead>span:first-child{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.groupHead .galleryHeading{margin:0}
+.modePicture{position:relative;display:block}
+.modeCheck{position:absolute;top:6px;right:6px;display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:var(--brand-ink);color:var(--surface);box-shadow:0 0 0 2px var(--surface)}
+.miniature{border:1px solid color-mix(in srgb,var(--text-secondary) 22%,var(--line))}
+.miniHeaderButton{fill:var(--surface);stroke:var(--brand-ink);stroke-width:1.2}
+.otherDevice{border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.otherDevice>summary{display:flex;align-items:center;gap:8px;min-height:44px;padding:8px 12px;font-size:13px;font-weight:650;cursor:pointer;list-style:none}
+.otherDevice>summary::-webkit-details-marker{display:none}
+.otherDevice>summary::before{content:'';width:7px;height:7px;flex:none;border-right:2px solid var(--brand-ink);border-bottom:2px solid var(--brand-ink);transform:rotate(-45deg);transition:transform .15s ease}
+.otherDevice[open]>summary::before{transform:rotate(45deg)}
+.otherDevice>summary:focus-visible{outline:3px solid var(--focus);outline-offset:2px;border-radius:12px}
+.otherDevice>.layoutChoice{padding:0 10px 10px}
+.otherText{display:grid;gap:1px;min-width:0}
+.otherText strong{font-size:13px}
+.otherChoice{overflow:hidden;color:var(--text-secondary);font-size:12px;font-weight:600;white-space:nowrap;text-overflow:ellipsis}
+.otherDevice[open] .otherChoice{display:none}
+/* Inside "Outro aparelho" the summary already names the device: hide the repeated label, keep it for screen readers. */
+.foldedLegend{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.offHeading{margin:6px 0 0;color:var(--text-secondary);font-size:12px;font-weight:700}
+.orderCheck{appearance:none;display:grid;place-items:center;width:22px;height:22px;margin:0;flex:none;border:2px solid color-mix(in srgb,var(--text-secondary) 85%,var(--ink));border-radius:6px;background:var(--surface);cursor:pointer}
+.orderCheck:checked{border-color:var(--brand-ink);background:var(--brand-ink)}
+.orderCheck:checked::after{content:'';width:6px;height:11px;margin-top:-2px;border-right:2.5px solid var(--surface);border-bottom:2.5px solid var(--surface);transform:rotate(45deg)}
+.groupHead:has(.foldedLegend){min-height:0;margin-bottom:0}
+.groupHead:has(.foldedLegend) .saveStatus:not(:empty){margin-bottom:6px}

@@ -117,7 +117,7 @@ test('modos escolhidos: lateral fixa reserva o próprio espaço, botão do celul
   assert.match(tsx, /name=\{`dock-layout-\$\{choice\.device\}`\}/);
   assert.match(tsx, /action: 'layout', device, value/);
   assert.match(tsx, /setLayout\(current => current\[device\] === value \? \{ \.\.\.current, \[device\]: previous \}/, 'falha ao gravar desfaz só aquele aparelho, se a tela ainda mostrar o valor que falhou');
-  assert.match(tsx, /if \(layoutRequests\.current\[device\] === request\) setLayout/, 'resposta atrasada de uma escolha anterior é ignorada');
+  assert.match(tsx, /if \(layoutRequests\.current\[device\] !== request\) return; setLayout/, 'resposta atrasada de uma escolha anterior é ignorada');
   assert.doesNotMatch(tsx, /setLayout\(current => \{[\s\S]{0,200}communityPost/, 'nada de gravar dentro da função que atualiza o estado');
   assert.match(tsx, /if \(toolbar \|\| !dock\?\.open \|\| dock\.minimized \|\| !openedByPerson\.current\) return;/, 'carregar com um painel aberto não move o foco');
 });
@@ -146,3 +146,58 @@ test('celular: sem lugar livre, o botão do canto fica em casa em vez de sumir',
   assert.match(tsx, /--dock-fab-shift', '0px'\)/, 'o botão fica sempre no mesmo lugar, não pula');
   assert.doesNotMatch(tsx, /fabPlacement\(/, 'nada de procurar outro lugar na tela');
 });
+
+test('Meu espaço: cartões com desenho de cada modo, aviso de salvo, e ordem do leque por setas valendo nos dois aparelhos', () => {
+  const tsx = read('components/portal/floating-dock.tsx');
+  const css = read('components/portal/floating-dock.module.css');
+  // O leque, o trilho e a lista do celular seguem a ordem escolhida, não a ordem fixa do código.
+  assert.match(tsx, /const active = dock\.enabled\.map\(widgetId => WIDGETS\.find/);
+  assert.doesNotMatch(tsx, /const active = WIDGETS\.filter/, 'a ordem fixa antiga não volta');
+  // Quatro modos, cada um com miniatura; a escolha continua sendo um rádio por aparelho (teclado e leitor de tela).
+  for (const kind of ['desktop-floating', 'desktop-sidebar', 'mobile-floating', 'mobile-header']) assert.match(tsx, new RegExp(`picture: '${kind}'`));
+  assert.match(tsx, /<input className=\{styles\.modeRadio\} type="radio" name=\{`dock-layout-\$\{choice\.device\}`\}/);
+  assert.match(tsx, /<Miniature kind=\{option\.picture\}\/>/);
+  assert.match(tsx, /aria-hidden="true" focusable="false"/, 'o desenho é decorativo: o texto do cartão diz o mesmo');
+  assert.match(css, /\.modeCard:has\(\.modeRadio:focus-visible\)\{outline:3px solid var\(--focus\)/, 'o foco do teclado aparece no cartão');
+  // "Salvo" anunciado por aparelho e para a lista de widgets.
+  assert.match(tsx, /role="status" aria-live="polite"/);
+  assert.match(tsx, /saving: 'Salvando…', saved: 'Salvo'/);
+  assert.match(tsx, /<legend className=\{styles\.groupHead\}>[\s\S]{0,200}<SaveStatus note=\{note\} area=\{choice\.device\}\/><\/legend>/, 'o aviso fica ao lado do título do grupo e não empurra a tela');
+  assert.match(tsx, /id="dock-order-heading"[^>]*>Widgets e ordem do leque<\/h3><SaveStatus note=\{note\} area="widgets"\/>/, 'marcar, desmarcar e mover também mostram Salvo, à vista');
+  assert.match(tsx, /onChange=\{next => update\(\(\) => next, true, 'widgets'\)\}/);
+  // O que vale onde fica escrito.
+  assert.match(tsx, /Cada aparelho tem a sua escolha\./);
+  assert.match(tsx, /Vale no computador e no celular\. A ordem é a do leque, de cima para baixo\./);
+  // Setas com nome, alvo de 44 px, primeira não sobe e última não desce, e o foco fica no widget movido.
+  assert.match(tsx, /aria-label=\{`Subir \$\{widget\.label\}`\}[^>]*disabled=\{index === 0\}/);
+  assert.match(tsx, /aria-label=\{`Descer \$\{widget\.label\}`\}[^>]*disabled=\{index === dock\.enabled\.length - 1\}/);
+  assert.match(css, /\.orderMoves button\{display:grid;place-items:center;width:44px;height:44px/);
+  assert.match(tsx, /\(same && !same\.disabled \? same : other\)\?\.focus/);
+});
+
+test('Meu espaço: o aparelho em uso vem primeiro, abaixo do título da seção', () => {
+  const tsx = read('components/portal/floating-dock.tsx');
+  const css = read('components/portal/floating-dock.module.css');
+  assert.match(tsx, /<details className=\{styles\.otherDevice\}>/, 'o outro aparelho fica recolhido, para a lista subir');
+  assert.match(tsx, /\[\.\.\.LAYOUT_CHOICES\]\.sort\(\(a, b\) => Number\(b\.device === device\) - Number\(a\.device === device\)\)/);
+  assert.doesNotMatch(css, /\.layoutChoice\[data-here\]\{order:-1\}/, 'order no CSS passava o grupo para cima do título');
+});
+
+test('Meu espaço: desligados à parte e discretos, sem o lilás que marca o escolhido', () => {
+  const tsx = read('components/portal/floating-dock.tsx');
+  const css = read('components/portal/floating-dock.module.css');
+  assert.match(tsx, /<h4 className=\{styles\.offHeading\}>Desligados<\/h4>/);
+  assert.match(css, /\.orderRow\[data-off\]\{border-style:dashed;background:transparent\}/);
+  assert.doesNotMatch(css, /\.orderRow\[data-off\]\{background:var\(--surface-soft\)\}/);
+  assert.match(css, /\.orderCheck\{appearance:none;[^}]*border:2px solid/, 'caixa desmarcada com borda visível nos dois temas');
+});
+
+test('Meu espaço: o resumo do outro aparelho cabe no painel estreito e não repete o rótulo', () => {
+  const tsx = read('components/portal/floating-dock.tsx');
+  const css = read('components/portal/floating-dock.module.css');
+  assert.match(tsx, /<summary><span className=\{styles\.otherText\}><strong>Outro aparelho:/, 'título em cima, escolha atual embaixo');
+  assert.match(css, /\.otherDevice\[open\] \.otherChoice\{display:none\}/);
+  assert.match(tsx, /\{group\(choices\[1\], true\)\}/);
+  assert.match(css, /\.foldedLegend\{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset\(50%\)/, 'o rótulo repetido some da tela, mas fica para o leitor de tela');
+});
+

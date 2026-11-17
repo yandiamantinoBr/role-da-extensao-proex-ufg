@@ -141,6 +141,16 @@ test('posição dos widgets: padrão é o modo de hoje, cada campo grava sozinho
  assert.deepEqual(widgets.parseDockLayout('{"layout":{"desktop":"evil","mobile":"floating"}}'),{desktop:'floating',mobile:'floating'},'unknown stored values fall back to the default');assert.deepEqual(widgets.parseDockLayout('not json'),{desktop:'floating',mobile:'floating'});
  f.native.prepare("UPDATE personal_widget_settings SET dock='broken' WHERE user_id='a'").run();assert.deepEqual((await widgets.saveDockLayout(f.db,a,{action:'layout',device:'mobile',value:'header'})).layout,{desktop:'floating',mobile:'header'},'a damaged row is repaired, not trusted');
  const route=readFileSync(new URL('../app/api/community/widgets/route.ts',import.meta.url),'utf8');assert.match(route,/input\.action === 'layout' \? await saveDockLayout/);});
+test('ordem dos widgets: o leque segue a ordem escolhida, guardada por pessoa, sem repetir nem aceitar desconhecidos',async t=>{const f=fixture(t),a=await f.user('a','viewer','p-a','o-a'),b=await f.user('b','viewer','p-a','o-a');
+ await widgets.saveDock(f.db,a,{action:'dock',enabled:['calendar','notes','reminders'],open:null,minimized:false,hidden:[]});
+ assert.deepEqual((await widgets.dockState(f.db,a)).dock.enabled,['calendar','notes','reminders'],'the stored order is the order the person chose');
+ await widgets.saveDock(f.db,a,{action:'dock',enabled:['reminders','calendar','notes'],open:null,minimized:false,hidden:[]});
+ assert.deepEqual((await widgets.dockState(f.db,a)).dock.enabled,['reminders','calendar','notes'],'moving a widget changes only the order');
+ await widgets.saveDockLayout(f.db,a,{action:'layout',device:'desktop',value:'sidebar'});await widgets.saveDock(f.db,a,{action:'dock',enabled:['notes','reminders','calendar'],open:null,minimized:false,hidden:[]});
+ assert.equal((await widgets.dockState(f.db,a)).layout.desktop,'sidebar','reordering keeps the position choice');
+ await assert.rejects(()=>widgets.saveDock(f.db,a,{action:'dock',enabled:['notes','notes'],open:null,minimized:false,hidden:[]}),e=>e.status===400,'a widget cannot appear twice');
+ assert.deepEqual(widgets.parseDock({enabled:['shortcuts','evil','notes','shortcuts']}).enabled,['shortcuts','notes'],'stored junk is cleaned, the order is kept');
+ assert.deepEqual((await widgets.dockState(f.db,b)).dock.enabled,[],'each person has their own order');});
 test('doca: tudo desligado por padrão, estado por pessoa, validação e compatibilidade com os widgets antigos',async t=>{const f=fixture(t),a=await f.user('a','viewer','p-a','o-a'),b=await f.user('b','viewer','p-a','o-a');
  assert.deepEqual((await widgets.dockState(f.db,a)).dock,{enabled:[],open:null,minimized:false,hidden:[]});
  await widgets.saveDock(f.db,a,{action:'dock',enabled:['notes','calendar'],open:'calendar',minimized:true,hidden:['role']});

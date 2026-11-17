@@ -1,7 +1,7 @@
 'use client';
 import { lazy, Suspense, useCallback, useEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { AlarmClock, ArrowLeft, CalendarDays, ChevronUp, LayoutGrid, ListChecks, LoaderCircle, Minus, Pin, Settings2, StickyNote, X, type LucideIcon } from 'lucide-react';
+import { AlarmClock, ArrowDown, ArrowLeft, ArrowUp, CalendarDays, Check, ChevronUp, LayoutGrid, ListChecks, LoaderCircle, Minus, Pin, Settings2, StickyNote, X, type LucideIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { communityGet, communityPost, errorText } from './community-api';
 import type { ModuleId, PortalModule } from './navigation-model';
@@ -39,6 +39,8 @@ export function useDockItem(item: DockItem | null): { registered: boolean; hidde
 /* ── Widgets: each one is its own chunk, fetched only when its panel opens. ── */
 type WidgetId = 'notes' | 'reminders' | 'calendar' | 'demands' | 'shortcuts';
 type Dock = { enabled: WidgetId[]; open: WidgetId | 'gallery' | null; minimized: boolean; hidden: string[] };
+type SaveArea = 'desktop' | 'mobile' | 'widgets';
+type SaveNote = { area: SaveArea; state: 'saving' | 'saved' | 'error' };
 /** Where the dock sits, per person (lib/community/widgets.ts). Defaults are the modes that existed before the choice. */
 export type DockLayout = { desktop: 'floating' | 'sidebar'; mobile: 'header' | 'floating' };
 const DEFAULT_LAYOUT: DockLayout = { desktop: 'floating', mobile: 'floating' };
@@ -103,14 +105,17 @@ export default function FloatingDock({ userId, serverDay, modules, pinned, onNav
     return () => { live = false; };
   }, [userId]);
   // Opening and closing panels saves after a short pause, so quick clicks become one write.
-  const flush = useCallback(() => { const next = pendingSave.current; pendingSave.current = null; if (next) communityPost('/api/community/widgets', { action: 'dock', ...next }).catch(cause => toast.error(errorText(cause, 'Não foi possível guardar sua doca.'))); }, []);
+  // "Meu espaço" says when a change is saved: per computer, per phone, or for the widgets list.
+  const [saveNote, setSaveNote] = useState<SaveNote | null>(null), pendingNote = useRef<SaveArea | null>(null);
+  const flush = useCallback(() => { const next = pendingSave.current, area = pendingNote.current; pendingSave.current = null; pendingNote.current = null; if (area) setSaveNote({ area, state: 'saving' }); if (next) communityPost('/api/community/widgets', { action: 'dock', ...next }).then(() => { if (area) setSaveNote(current => current?.area === area ? { area, state: 'saved' } : current); }).catch(cause => { if (area) setSaveNote({ area, state: 'error' }); toast.error(errorText(cause, 'Não foi possível guardar sua doca.')); }); }, []);
   useEffect(() => () => { window.clearTimeout(saveTimer.current); flush(); }, [flush]);
   const dockRef = useRef<Dock | null>(null);
   useEffect(() => { dockRef.current = dock; }, [dock]);
-  const update = useCallback((change: (current: Dock) => Dock, immediate = false) => {
+  const update = useCallback((change: (current: Dock) => Dock, immediate = false, note?: SaveArea) => {
     const current = dockRef.current;
     if (!current) return;
     const next = change(current);
+    if (note) pendingNote.current = note;
     dockRef.current = next; setDock(next);
     registry.hidden = new Set(next.hidden); publish();
     pendingSave.current = next; window.clearTimeout(saveTimer.current);
@@ -124,12 +129,14 @@ export default function FloatingDock({ userId, serverDay, modules, pinned, onNav
     if (previous === value) return;
     const request = ++layoutRequests.current[device];
     setLayout(current => ({ ...current, [device]: value }) as DockLayout);
+    setSaveNote({ area: device, state: 'saving' });
     // Only the latest choice for this device counts; a late answer from an earlier one is ignored, and a failure
     // undoes only this device, and only if the screen still shows the value that failed.
     communityPost<{ layout: DockLayout }>('/api/community/widgets', { action: 'layout', device, value })
-      .then(result => { if (layoutRequests.current[device] === request) setLayout(current => ({ ...current, [device]: result.layout[device] })); })
+      .then(result => { if (layoutRequests.current[device] !== request) return; setLayout(current => ({ ...current, [device]: result.layout[device] })); setSaveNote({ area: device, state: 'saved' }); })
       .catch(cause => {
         if (layoutRequests.current[device] !== request) return;
+        setSaveNote({ area: device, state: 'error' });
         setLayout(current => current[device] === value ? { ...current, [device]: previous } as DockLayout : current);
         toast.error(errorText(cause, 'Não foi possível guardar a posição dos widgets.'));
       });
@@ -205,13 +212,14 @@ export default function FloatingDock({ userId, serverDay, modules, pinned, onNav
   if (!dock) return null;
   const toggle = (target: Dock['open']) => { openedByPerson.current = !(dock.open === target && !dock.minimized); update(current => current.open === target && !current.minimized ? { ...current, open: null, minimized: false } : { ...current, open: target, minimized: false }); };
   const items = state.items.filter(item => !dock.hidden.includes(item.id));
-  const active = WIDGETS.filter(widget => dock.enabled.includes(widget.id));
+  // The fan, the rail and the phone list follow the order the person chose in "Meu espaço".
+  const active = dock.enabled.map(widgetId => WIDGETS.find(widget => widget.id === widgetId)).filter((widget): widget is typeof WIDGETS[number] => !!widget);
   const openWidget = dock.open && dock.open !== 'gallery' ? WIDGETS.find(widget => widget.id === dock.open) : null;
   const panelTitle = dock.open === 'gallery' ? 'Meu espaço' : openWidget?.label ?? '';
   const pinnedModules = pinned.map(moduleId => modules.find(module => module.id === moduleId)).filter((module): module is PortalModule => !!module);
   const reminderBadge = active.some(widget => widget.id === 'reminders') ? badges.reminders : 0;
   const widgetLabel = `Widgets${reminderBadge ? `, ${reminderBadge} ${reminderBadge === 1 ? 'lembrete' : 'lembretes'} para hoje` : ''}`;
-  const gallery = <Gallery dock={dock} items={state.items} layout={layout} device={toolbar ? 'mobile' : 'desktop'} onLayout={chooseLayout} onChange={next => update(() => next, true)}/>;
+  const gallery = <Gallery dock={dock} items={state.items} layout={layout} device={toolbar ? 'mobile' : 'desktop'} note={saveNote} onLayout={chooseLayout} onChange={next => update(() => next, true, 'widgets')}/>;
   function widgetBody(target: Dock['open']) {
     if (target === 'gallery') return gallery;
     return <Suspense fallback={<p className={styles.loading}><LoaderCircle className="p-spin" size={16}/>Abrindo…</p>}>
@@ -316,37 +324,117 @@ function RailButton({ label, icon, badge = 0, register, ...button }: RailButtonP
   </button></li>;
 }
 
-const LAYOUT_CHOICES: { device: keyof DockLayout; legend: string; options: { value: string; label: string; help: string }[] }[] = [
+type MiniatureKind = 'desktop-floating' | 'desktop-sidebar' | 'mobile-floating' | 'mobile-header';
+const LAYOUT_CHOICES: { device: keyof DockLayout; legend: string; options: { value: string; label: string; help: string; picture: MiniatureKind }[] }[] = [
   { device: 'desktop', legend: 'No computador', options: [
-    { value: 'floating', label: 'Flutuante', help: 'Um botão no canto abre os widgets por cima da página.' },
-    { value: 'sidebar', label: 'Fixo na lateral', help: 'Uma coluna à direita, sempre à vista. A página encolhe para caber.' },
+    { value: 'floating', label: 'Flutuante no canto', help: 'Um botão redondo no canto abre o leque de widgets.', picture: 'desktop-floating' },
+    { value: 'sidebar', label: 'Fixo na lateral', help: 'Uma coluna à direita, sempre à vista. A página encolhe para caber.', picture: 'desktop-sidebar' },
   ] },
   { device: 'mobile', legend: 'No celular', options: [
-    { value: 'header', label: 'No cabeçalho', help: 'Botão no topo da tela. Os widgets abrem numa folha de baixo.' },
-    { value: 'floating', label: 'Flutuante no canto', help: 'Botão redondo no canto. Some enquanto a página rola e não fica em cima de botões.' },
+    { value: 'floating', label: 'Flutuante no canto', help: 'Um botão redondo no canto, sempre à mão, abre o leque.', picture: 'mobile-floating' },
+    { value: 'header', label: 'No cabeçalho', help: 'Um botão no topo abre os widgets numa folha de baixo.', picture: 'mobile-header' },
   ] },
 ];
-function Gallery({ dock, items, layout, device, onLayout, onChange }: { dock: Dock; items: DockItem[]; layout: DockLayout; device: keyof DockLayout; onLayout(device: keyof DockLayout, value: string): void; onChange(next: Dock): void }) {
+
+/** Small drawing of each mode, in the portal's colors (both themes). Decorative: the card's text says the same. */
+function Miniature({ kind }: { kind: MiniatureKind }) {
+  const desktop = kind.startsWith('desktop');
+  return <svg className={styles.miniature} viewBox="0 0 120 76" aria-hidden="true" focusable="false">
+    {desktop ? <>
+      <rect className={styles.miniFrame} x="3" y="3" width="114" height="70" rx="7"/>
+      <rect className={styles.miniNav} x="3" y="3" width="20" height="70" rx="7"/><rect className={styles.miniNav} x="16" y="3" width="7" height="70"/>
+      {[16, 26, 36, 46, 56].map(y => <rect key={y} className={styles.miniLine} x="30" y={y} width={kind === 'desktop-sidebar' ? 52 : 64} height="5" rx="2.5"/>)}
+      {kind === 'desktop-floating' ? <>
+        {[38, 47, 56].map(y => <rect key={y} className={styles.miniSoft} x="83" y={y} width="20" height="6" rx="3"/>)}
+        <circle className={styles.miniAccent} cx="106" cy="62" r="7"/>
+      </> : <>
+        <rect className={styles.miniSoft} x="92" y="3" width="25" height="70"/>
+        {[12, 25, 38, 51].map(y => <rect key={y} className={styles.miniAccent} x="99" y={y} width="11" height="8" rx="2.5"/>)}
+      </>}
+    </> : <>
+      <rect className={styles.miniFrame} x="40" y="2" width="40" height="72" rx="7"/>
+      <rect className={styles.miniNav} x="40" y="2" width="40" height="11" rx="7"/><rect className={styles.miniNav} x="40" y="8" width="40" height="5"/>
+      {[18, 26, 34, 42].map(y => <rect key={y} className={styles.miniLine} x="45" y={y} width="30" height="4" rx="2"/>)}
+      <rect className={styles.miniSoft} x="40" y="64" width="40" height="10" rx="7"/><rect className={styles.miniSoft} x="40" y="64" width="40" height="5"/>
+      {kind === 'mobile-floating' ? <circle className={styles.miniAccent} cx="72" cy="55" r="5.5"/> : <>
+        <rect className={styles.miniHeaderButton} x="63" y="3.5" width="13" height="8.5" rx="2.5"/>
+        <rect className={styles.miniSheet} x="40" y="47" width="40" height="17" rx="5"/>
+        <rect className={styles.miniAccent} x="45" y="52" width="18" height="3" rx="1.5"/><rect className={styles.miniLine} x="45" y="57.5" width="26" height="3" rx="1.5"/>
+      </>}
+    </>}
+  </svg>;
+}
+
+const SAVE_TEXT: Record<SaveNote['state'], string> = { saving: 'Salvando…', saved: 'Salvo', error: 'Não foi salvo. Tente de novo.' };
+function SaveStatus({ note, area }: { note: SaveNote | null; area: SaveArea }) {
+  const state = note?.area === area ? note.state : null;
+  return <p className={styles.saveStatus} role="status" aria-live="polite" data-state={state ?? undefined}>{state === 'saved' && <Check size={14} aria-hidden="true"/>}{state ? SAVE_TEXT[state] : ''}</p>;
+}
+
+function Gallery({ dock, items, layout, device, note, onLayout, onChange }: { dock: Dock; items: DockItem[]; layout: DockLayout; device: keyof DockLayout; note: SaveNote | null; onLayout(device: keyof DockLayout, value: string): void; onChange(next: Dock): void }) {
+  // Shown widgets in the fan's order; the switched-off ones apart, in the default order.
+  const shown = dock.enabled.map(widgetId => WIDGETS.find(widget => widget.id === widgetId)).filter((widget): widget is typeof WIDGETS[number] => !!widget);
+  const move = (widgetId: WidgetId, step: -1 | 1) => {
+    const order = [...dock.enabled], from = order.indexOf(widgetId), to = from + step;
+    if (from < 0 || to < 0 || to >= order.length) return;
+    [order[from], order[to]] = [order[to], order[from]];
+    onChange({ ...dock, enabled: order });
+    // Keep the keyboard on the moved widget: same arrow if it can still move, otherwise the other one.
+    window.requestAnimationFrame(() => {
+      const same = document.querySelector<HTMLButtonElement>(`[data-move="${widgetId}:${step}"]`), other = document.querySelector<HTMLButtonElement>(`[data-move="${widgetId}:${-step}"]`);
+      (same && !same.disabled ? same : other)?.focus({ preventScroll: true });
+    });
+  };
+  const off = WIDGETS.filter(widget => !dock.enabled.includes(widget.id));
+  const toggleWidget = (widgetId: WidgetId, on: boolean) => onChange({ ...dock, enabled: on ? [...dock.enabled, widgetId] : dock.enabled.filter(item => item !== widgetId), open: !on && dock.open === widgetId ? null : dock.open });
+  const choices = [...LAYOUT_CHOICES].sort((a, b) => Number(b.device === device) - Number(a.device === device));
+  const group = (choice: typeof LAYOUT_CHOICES[number], folded = false) => <fieldset key={choice.device} className={styles.layoutChoice}>
+    <legend className={styles.groupHead}><span className={folded ? styles.foldedLegend : undefined}>{choice.legend}{choice.device === device && <span className={styles.here}>você está aqui</span>}</span><SaveStatus note={note} area={choice.device}/></legend>
+    <div className={styles.modeGrid}>{choice.options.map(option => { const checked = layout[choice.device] === option.value; return <label key={option.value} className={styles.modeCard} data-checked={checked || undefined}>
+      <input className={styles.modeRadio} type="radio" name={`dock-layout-${choice.device}`} value={option.value} checked={checked} onChange={() => onLayout(choice.device, option.value)}/>
+      <span className={styles.modePicture}><Miniature kind={option.picture}/>{checked && <span className={styles.modeCheck} aria-hidden="true"><Check size={13}/></span>}</span>
+      <span className={styles.modeText}><strong>{option.label}</strong><small>{option.help}</small></span>
+    </label>; })}</div>
+  </fieldset>;
   return <div className={styles.gallery}>
-    <h3 className={styles.galleryHeading}>Posição dos widgets</h3>
-    <p className={styles.help}>Uma escolha para o computador e outra para o celular, guardadas na sua conta. Trocar não muda os widgets ligados.</p>
-    {LAYOUT_CHOICES.map(choice => <fieldset key={choice.device} className={styles.layoutChoice}>
-      <legend>{choice.legend}{choice.device === device && <span className={styles.here}>este aparelho</span>}</legend>
-      {choice.options.map(option => <label key={option.value} className={styles.toggle}>
-        <input type="radio" name={`dock-layout-${choice.device}`} value={option.value} checked={layout[choice.device] === option.value} onChange={() => onLayout(choice.device, option.value)}/>
-        <span><strong>{option.label}</strong><small>{option.help}</small></span>
-      </label>)}
-    </fieldset>)}
-    <h3 className={styles.galleryHeading}>Widgets</h3>
-    <p className={styles.help}>Escolha quais widgets aparecem.</p>
-    <ul>{WIDGETS.map(widget => { const Icon = widget.icon, on = dock.enabled.includes(widget.id); return <li key={widget.id}><label className={styles.toggle}>
-      <input type="checkbox" name={`dock-${widget.id}`} checked={on} onChange={event => onChange({ ...dock, enabled: event.target.checked ? [...dock.enabled, widget.id] : dock.enabled.filter(item => item !== widget.id), open: !event.target.checked && dock.open === widget.id ? null : dock.open })}/>
-      <span className={styles.toggleIcon} aria-hidden="true"><Icon size={18}/></span><span><strong>{widget.label}</strong><small>{widget.description}</small></span>
-    </label></li>; })}
-    {items.map(item => { const shown = !dock.hidden.includes(item.id); return <li key={item.id}><label className={styles.toggle}>
-      <input type="checkbox" name={`dock-item-${item.id}`} checked={shown} onChange={event => onChange({ ...dock, hidden: event.target.checked ? dock.hidden.filter(hidden => hidden !== item.id) : [...dock.hidden, item.id] })}/>
-      <span className={styles.toggleIcon} aria-hidden="true">{item.icon}</span><span><strong>{item.label}</strong><small>Mostrar em Widgets.{item.shortcut ? ` Atalho ${item.shortcut} continua valendo.` : ''}</small></span>
-    </label></li>; })}</ul>
+    <section className={styles.gallerySection} aria-labelledby="dock-place-heading">
+      <h3 id="dock-place-heading" className={styles.galleryHeading}>Onde ficam os widgets</h3>
+      <p className={styles.help}>Cada aparelho tem a sua escolha. Vale na hora, sem recarregar.</p>
+      {group(choices[0])}
+      <details className={styles.otherDevice}>
+        <summary><span className={styles.otherText}><strong>Outro aparelho: {choices[1].legend.replace(/^No /, '').toLowerCase()}</strong><small className={styles.otherChoice}>{choices[1].options.find(option => option.value === layout[choices[1].device])?.label}</small></span></summary>
+        {group(choices[1], true)}
+      </details>
+    </section>
+    <section className={styles.gallerySection} aria-labelledby="dock-order-heading">
+      <div className={styles.groupHead}><h3 id="dock-order-heading" className={styles.galleryHeading}>Widgets e ordem do leque</h3><SaveStatus note={note} area="widgets"/></div>
+      <p className={styles.help}>Vale no computador e no celular. A ordem é a do leque, de cima para baixo.</p>
+      {shown.length ? <ol className={styles.orderList} aria-label="Widgets ligados, na ordem do leque">{shown.map((widget, index) => { const Icon = widget.icon; return <li key={widget.id} className={styles.orderRow}>
+        <label className={styles.orderToggle}>
+          <input className={styles.orderCheck} type="checkbox" name={`dock-${widget.id}`} checked onChange={() => toggleWidget(widget.id, false)}/>
+          <span className={styles.toggleIcon} aria-hidden="true"><Icon size={18}/></span>
+          <span className={styles.orderText}><strong>{widget.label}</strong><small>{index + 1}º no leque</small></span>
+        </label>
+        <span className={styles.orderMoves}>
+          <button type="button" data-move={`${widget.id}:-1`} aria-label={`Subir ${widget.label}`} title="Subir" disabled={index === 0} onClick={() => move(widget.id, -1)}><ArrowUp size={17} aria-hidden="true"/></button>
+          <button type="button" data-move={`${widget.id}:1`} aria-label={`Descer ${widget.label}`} title="Descer" disabled={index === dock.enabled.length - 1} onClick={() => move(widget.id, 1)}><ArrowDown size={17} aria-hidden="true"/></button>
+        </span>
+      </li>; })}</ol> : <p className={styles.help}>Nenhum widget ligado. Ligue um abaixo.</p>}
+      {off.length > 0 && <>
+        <h4 className={styles.offHeading}>Desligados</h4>
+        <ul className={styles.orderList}>{off.map(widget => { const Icon = widget.icon; return <li key={widget.id} className={styles.orderRow} data-off>
+          <label className={styles.orderToggle}>
+            <input className={styles.orderCheck} type="checkbox" name={`dock-${widget.id}`} checked={false} onChange={() => toggleWidget(widget.id, true)}/>
+            <span className={styles.toggleIcon} aria-hidden="true"><Icon size={18}/></span>
+            <span className={styles.orderText}><strong>{widget.label}</strong><small>{widget.description}</small></span>
+          </label>
+        </li>; })}</ul>
+      </>}
+      {items.length > 0 && <ul className={styles.orderList}>{items.map(item => { const visible = !dock.hidden.includes(item.id); return <li key={item.id} className={styles.orderRow} data-off={!visible || undefined}><label className={styles.orderToggle}>
+        <input className={styles.orderCheck} type="checkbox" name={`dock-item-${item.id}`} checked={visible} onChange={event => onChange({ ...dock, hidden: event.target.checked ? dock.hidden.filter(hidden => hidden !== item.id) : [...dock.hidden, item.id] })}/>
+        <span className={styles.toggleIcon} aria-hidden="true">{item.icon}</span><span className={styles.orderText}><strong>{item.label}</strong><small>Fica sempre junto do botão Widgets.{item.shortcut ? ` Atalho ${item.shortcut}.` : ''}</small></span>
+      </label></li>; })}</ul>}
+    </section>
   </div>;
 }
 
