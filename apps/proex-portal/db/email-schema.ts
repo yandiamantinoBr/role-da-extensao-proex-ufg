@@ -54,10 +54,10 @@ export const followupEmailDispatchState = sqliteTable('followup_email_dispatch_s
   organizationId: text('organization_id').references(() => organizations.id), lastAttemptAt: text('last_attempt_at'),
   lastAcceptedAt: text('last_accepted_at'), remainingQuota: integer('remaining_quota'),
   lastOutcome: text('last_outcome').notNull().default('not_started'), updatedAt: text('updated_at').notNull(),
-  // Last time the Apps Script declared it can send invite e-mails (kinds includes 'invite'). 0053.
+  // Last time the Apps Script declared it can send invite e-mails (kinds includes 'invite'). 0054.
   inviteKindAt: text('invite_kind_at'),
 }, t => [primaryKey({ columns: [t.organizationId] })]);
-/* Invite e-mail (0053): same MailApp dispatch, its own queue (ids `iv-…`). The invite code is stored encrypted only
+/* Invite e-mail (0054): same MailApp dispatch, its own queue (ids `iv-…`). The invite code is stored encrypted only
    until MailApp accepts the message; then it is erased. Cancelled, accepted or expired invites are never sent. */
 export const inviteEmailQueue = sqliteTable('invite_email_queue', {
   id: text('id').primaryKey().notNull(), inviteId: text('invite_id').notNull().references(() => invites.id), organizationId: text('organization_id').notNull().references(() => organizations.id),
