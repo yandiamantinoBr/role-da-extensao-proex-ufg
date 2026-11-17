@@ -12,6 +12,8 @@ export type StepRequirement = {
   /** Capacidade no projeto escolhido (`selected`) ou em algum projeto (`any`, padrão). */
   capability?: string;
   scope?: 'selected' | 'any';
+  /** Administra pelo menos uma organização (ex.: demandas gerais). */
+  manageOrganization?: true;
 };
 
 export type TutorialStep = {
@@ -258,6 +260,76 @@ export const TUTORIAL_CHAPTERS: readonly TutorialChapter[] = [
       },
     ],
   },
+  {
+    id: 'demandas', version: 1, title: 'Demandas', minutes: 4,
+    summary: 'Escolher o projeto, filtrar, abrir uma demanda e entender estados, edição e histórico.',
+    steps: [
+      {
+        id: 'abrir', title: 'Demandas da equipe',
+        speech: 'Demandas reúne o trabalho de cada projeto, com responsáveis e, quando houver, prazo. Comece pelo campo Projeto: escolha um projeto ou deixe Todos os projetos autorizados. Seguir este tutorial não muda nenhuma demanda.',
+        speechMobile: 'Comece pelo campo Projeto: escolha um projeto ou deixe Todos os projetos autorizados. Seguir este tutorial não muda nenhuma demanda.',
+        youWillSee: 'O campo Projeto destacado, no alto do módulo.',
+        target: '[data-tutorial="demandas-projeto"]', module: 'demands', openLabel: 'Ir para Demandas', requires: { projects: true },
+        beforeOpen: 'Clique em Ir para Demandas: o módulo abre com a lista.', beforeOpenMobile: 'Toque em Ir para Demandas: o módulo abre com a lista.',
+        labels: ['Projeto', 'Todos os projetos autorizados'],
+      },
+      {
+        id: 'filtros', title: 'Buscar e filtrar',
+        speech: 'Buscar acha pelo título ou pelo contexto. Buscar e filtrar abre Estado e Prioridade. Quando houver filtro, Limpar busca e filtros volta a mostrar tudo.',
+        youWillSee: 'A busca e o Buscar e filtrar destacados.',
+        target: '[data-tutorial="demandas-filtros"]', module: 'demands', openLabel: 'Ir para Demandas', requires: { projects: true },
+        labels: ['Buscar', 'Buscar e filtrar', 'Estado', 'Prioridade', 'Limpar busca e filtros'],
+      },
+      {
+        id: 'gerais', title: 'Demandas gerais',
+        speech: 'Como você administra uma organização: em Buscar e filtrar, escolha a Organização. O campo Projeto passa a oferecer Somente demandas gerais, para o trabalho que não pertence a um projeto.',
+        youWillSee: 'Os filtros destacados: a Organização fica em Buscar e filtrar; Somente demandas gerais aparece no campo Projeto.',
+        target: '[data-tutorial="demandas-filtros"]', module: 'demands', openLabel: 'Ir para Demandas', requires: { manageOrganization: true },
+        labels: ['Organização', 'Somente demandas gerais'],
+      },
+      {
+        id: 'lista', title: 'A lista',
+        speech: 'Cada cartão mostra a situação, a prioridade, o prazo, o projeto e os responsáveis. Clique num cartão para abrir o detalhe.',
+        speechMobile: 'Cada cartão mostra a situação, a prioridade, o prazo, o projeto e os responsáveis. Toque num cartão para abrir o detalhe.',
+        youWillSee: 'A lista de demandas destacada.',
+        missing: 'Nenhuma demanda neste recorte. Troque o projeto ou use Limpar busca e filtros.',
+        target: '[data-tutorial="demandas-lista"]', reveal: 'below', module: 'demands', openLabel: 'Ir para Demandas', requires: { projects: true },
+        labels: [],
+      },
+      {
+        id: 'detalhe', title: 'O detalhe',
+        speech: 'O detalhe mostra a situação e o prazo; Cadastro e responsáveis diz quem cuida dela. No fim, abra Versões da demanda para ver o que mudou; lá dentro, o link Histórico abre tudo em Registros.',
+        youWillSee: 'O detalhe da demanda destacado.',
+        target: '[data-tutorial="demanda-detalhe"]', module: 'demands', openLabel: 'Ir para Demandas', requires: { projects: true },
+        missing: 'Abra uma demanda da lista: o detalhe aparece ao lado.', missingMobile: 'Toque numa demanda da lista: o detalhe aparece logo abaixo dela.',
+        labels: ['Cadastro e responsáveis', 'Versões da demanda', 'Histórico'],
+      },
+      {
+        id: 'estados', title: 'Editar e mudar o estado',
+        speech: 'Editar demanda muda título, responsáveis, prazo e estado: Aberta, Em andamento, Bloqueada (diga o que falta), Concluída ou Cancelada. Para um leitor responder ao checklist, a gestão usa Autorizar atualizações nesta demanda.',
+        speechMobile: 'Editar demanda muda título, responsáveis, prazo e estado: Aberta, Em andamento, Bloqueada (diga o que falta), Concluída ou Cancelada. A gestão pode Autorizar atualizações nesta demanda para um leitor.',
+        youWillSee: 'O botão Editar demanda destacado. Um checklist aberto pode impedir Concluída.',
+        target: '[data-tutorial="demanda-editar"]', module: 'demands', openLabel: 'Ir para Demandas', requires: { projects: true },
+        missing: 'Abra uma demanda. Se Editar demanda não aparecer, você acompanha a demanda e responde só ao que estiver liberado para você.',
+        labels: ['Editar demanda', 'Aberta', 'Em andamento', 'Bloqueada', 'Concluída', 'Cancelada', 'Autorizar atualizações nesta demanda'],
+      },
+      {
+        id: 'nova', title: 'Criar uma demanda',
+        speech: 'Para criar, escolha um projeto e use Nova demanda: informe o título, o responsável e o prazo.',
+        youWillSee: 'O botão Nova demanda destacado.',
+        target: '[data-tutorial="demandas-acoes"]', module: 'demands', openLabel: 'Ir para Demandas', requires: { projects: true },
+        missing: 'Nova demanda aparece depois de escolher um projeto em que você pode criar demandas.',
+        labels: ['Nova demanda'],
+      },
+      {
+        id: 'fim', title: 'Tudo certo',
+        speech: 'Você já sabe achar, abrir e acompanhar uma demanda. O que você pode mudar depende do seu acesso em cada projeto.',
+        youWillSee: 'Concluir fecha o tutorial. Repetir esta parte começa de novo.',
+        requires: { projects: true },
+        labels: [],
+      },
+    ],
+  },
 ];
 
 export const chapterById = (id: unknown) => TUTORIAL_CHAPTERS.find(chapter => chapter.id === id);
@@ -268,6 +340,7 @@ export type TutorialAccess = {
   projectScope: string[] | null;
   selectedProject: string | null;
   capabilityScope: (capability: string) => string[] | null;
+  managesOrganization?: boolean;
 };
 export type ResolvedStep = { id: string; available: boolean; reason?: string };
 
@@ -279,6 +352,7 @@ export function resolveSteps(chapter: TutorialChapter, access: TutorialAccess): 
     const need = step.requires;
     if (!need) return { id: step.id, available: true };
     if (need.projects && !inScope(access.projectScope, null)) return { id: step.id, available: false, reason: 'Este passo aparece quando sua conta tiver um projeto.' };
+    if (need.manageOrganization && !access.managesOrganization) return { id: step.id, available: false, reason: 'Este passo é para quem administra uma organização.' };
     if (need.capability) {
       const scope = access.capabilityScope(need.capability);
       const ok = need.scope === 'selected' ? Boolean(access.selectedProject) && inScope(scope, access.selectedProject) : inScope(scope, null);
