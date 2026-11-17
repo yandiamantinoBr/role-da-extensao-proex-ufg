@@ -28,6 +28,8 @@ export function readableOfficialUrl(raw: string): URL | null {
   try { url = new URL(raw); } catch { return null; }
   const host = parts[1].toLowerCase(), target = HOST_ALIASES[host] ?? host;
   if (url.protocol !== 'https:' || url.username || url.password || url.port || !(OFFICIAL_READ_HOSTS as readonly string[]).includes(target)) return null;
+  // Query só de paginação ou idioma: outra query poderia levar dados para o site ou fugir do robots.txt.
+  if (url.search && !/^\?(?:page=\d{1,4}|locale=[A-Za-z]{2}(?:-[A-Za-z]{2})?)$/.test(url.search)) return null;
   url.hostname = target;
   url.hash = '';
   if (target === 'files.cercomp.ufg.br') return officialPdfUrl(url.href);
@@ -90,7 +92,7 @@ export async function readOfficial(start: URL, accept: string, type: RegExp, fet
     let rules: string;
     try { rules = await robots.get(url.host)!; }
     catch (error) { throw error instanceof OfficialReadError ? error : new OfficialReadError('indisponivel'); }
-    if (disallowed(rules, url.pathname)) throw new OfficialReadError('bloqueado');
+    if (disallowed(rules, url.pathname + url.search)) throw new OfficialReadError('bloqueado');
     let response: Response;
     try {
       response = await fetcher(url.href, { headers: { 'User-Agent': USER_AGENT, Accept: accept }, redirect: 'manual', credentials: 'omit', signal: AbortSignal.timeout(READ_TIMEOUT_MS) });
@@ -130,8 +132,14 @@ const BLOCK_LABELS: [RegExp, string][] = [[/\bsocial/i, 'Redes sociais'], [/bann
 const blockLabel = (tag: string, attrs: string) => attribute(attrs, 'aria-label')
   || BLOCK_LABELS.find(([pattern]) => pattern.test(attribute(attrs, 'class')))?.[1]
   || (tag.toLowerCase() === 'footer' ? 'Rodapé' : '');
-/** Paginação ("1", "2", "Última") e troca de idioma não são links da página. */
-const navigationNoise = (text: string, url: URL) => /^(?:\d{1,3}|[«»‹›<>]+|primeira|anterior|pr[oó]xima|[uú]ltima)$/i.test(text) || url.searchParams.has('locale');
+/** Paginação ("1", "2", "Última"), troca de idioma, barra do Governo e login não são links da página. */
+const navigationNoise = (text: string, url: URL) => /^(?:\d{1,3}|[«»‹›<>]+|primeira|anterior|pr[oó]xima|[uú]ltima)$/i.test(text) || url.searchParams.has('locale')
+  || /(?:^|\.)(?:epwg\.governoeletronico\.gov\.br|brasil\.gov\.br)$/i.test(url.hostname) || /^portais\.ufg\.br$/i.test(url.hostname) && /^\/login\b/i.test(url.pathname);
+/** Mesmo endereço com maiúsculas ou acento diferentes ("Notícias", "notícias", "Noticias") conta uma vez. */
+const linkKey = (href: string) => { let value = href; try { value = decodeURIComponent(href); } catch { /* fica como veio */ } return value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase(); };
+/** Domínio oficial da lista (mostrado como site oficial); a leitura pelo Rolê segue readableOfficialUrl. */
+const officialHost = (url: URL) => (OFFICIAL_READ_HOSTS as readonly string[]).includes(HOST_ALIASES[url.hostname] ?? url.hostname);
+const MAX_HREF = 300;
 
 /**
  * Todos os links da página, agrupados pelo título de seção mais próximo: h1 a h6 (sem link dentro),
@@ -157,13 +165,15 @@ export function extractLinkGroups(html: string, base: string, maxLinks = MAX_LIN
     const attrs = match[7] ?? '', href = attribute(attrs, 'href').trim(), inner = match[8] ?? '';
     // Item de menu que só abre um submenu (javascript:) é o título dos links que vêm depois.
     if (/^javascript:/i.test(href) || !href && /\brole\s*=\s*["']button["']/i.test(attrs)) { label(inner); continue; }
-    if (!href || href.startsWith('#') || /^(?:mailto|tel|data):/i.test(href)) continue;
+    if (!href || href.length > MAX_HREF || href.startsWith('#') || /^(?:mailto|tel|data):/i.test(href)) continue;
     let url: URL;
     try { url = new URL(href, base); } catch { continue; }
-    if (url.protocol !== 'https:' && url.protocol !== 'http:') continue;
+    // Só HTTPS e endereços curtos: link inseguro ou gigante não chega à pessoa.
+    if (url.protocol !== 'https:' || url.href.length > MAX_HREF) continue;
     url.hash = '';
-    if (seen.has(url.href)) continue;
-    seen.add(url.href);
+    const key = linkKey(url.href);
+    if (seen.has(key)) continue;
+    seen.add(key);
     const text = clean(inner, 140) || clean(attribute(attrs, 'aria-label'), 140) || clean(attribute(attrs, 'title'), 140) || clean(attribute(inner, 'alt'), 140) || url.hostname;
     if (navigationNoise(text, url)) continue;
     total++;
@@ -171,9 +181,11 @@ export function extractLinkGroups(html: string, base: string, maxLinks = MAX_LIN
     const group: OfficialLinkGroup = current ?? { title: OTHER_LINKS, links: [] };
     if (!current) current = group;
     if (!groups.includes(group)) groups.push(group);
-    group.links.push({ text, url: url.href, readable: url.protocol === 'https:' && !!readableOfficialUrl(url.href) });
+    group.links.push({ text, url: url.href, readable: officialHost(url) });
   }
-  return { title, summary, groups, total: Math.min(total, maxLinks), omitted };
+  // Links sem bloco (barra de acessibilidade, topo) vão por último.
+  const ordered = [...groups.filter(group => group.title !== OTHER_LINKS), ...groups.filter(group => group.title === OTHER_LINKS)];
+  return { title, summary, groups: ordered, total: Math.min(total, maxLinks), omitted };
 }
 
 /** Lê a página oficial e devolve título, resumo e links agrupados. */

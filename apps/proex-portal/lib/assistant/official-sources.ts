@@ -92,7 +92,8 @@ export function disallowed(robots: string, path: string): boolean {
     if (/^user-agent$/i.test(key)) applies = value === '*';
     else if (applies && /^disallow$/i.test(key) && value) rules.push(value);
   }
-  return rules.some(rule => path.startsWith(rule));
+  // Regra com "*" ou "$" vale como bloqueio a partir do trecho antes do curinga (na dúvida, não lê).
+  return rules.some(rule => { const wildcard = rule.search(/[*$]/); return path.startsWith(wildcard < 0 ? rule : rule.slice(0, wildcard)); });
 }
 async function boundedText(response: Response): Promise<string> {
   const reader = response.body?.getReader(); if (!reader) return '';

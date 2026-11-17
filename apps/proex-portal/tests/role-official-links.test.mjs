@@ -49,12 +49,12 @@ const HOME = `<!doctype html><html><head><title>PROEX - Pró-Reitoria de Extens�
 <footer><a href="https://proex.ufg.br/p/equipe-proex">Equipe​ e contatos</a></footer>
 </body></html>`;
 
-const WEBY = `<title>PROEX</title><nav class="menu_i18n_component"><a href="/?locale=en">Inglês</a></nav>
+const WEBY = `<title>PROEX</title><nav class="menu_accessibility_component"><a href="https://www.gov.br/acessoinformacao">Acesso à Informação</a><a href="https://www.brasil.gov.br/">Portal do Governo Brasileiro</a><a href="https://epwg.governoeletronico.gov.br/barra/atualize.html">Atualize sua Barra de Governo</a><a href="https://portais.ufg.br/login?back_url=x">Entrar</a></nav><nav class="menu_i18n_component"><a href="/?locale=en">Inglês</a></nav>
 <nav class="menu_component"><ul class="menu-res dropdown"><li><a role="button" class="empty-href" href="javascript:void(0);">A PROEX</a><ul class="menu-res submenu"><li><a href="/p/29427-o-que-e-a-proex">Apresentação</a></li><li><a href="/p/equipe-proex">Equipe</a></li></ul></li>
 <li><a role="button" class="empty-href" href="javascript:void(0);">Sistemas</a><ul class="menu-res submenu"><li><a href="https://analisa.ufg.br/">Analisa Dados UFG</a></li></ul></li></ul></nav>
 <div class="components_group_component social-icons"><figure class="image_component social-icon"><a href="https://www.instagram.com/sintetico" title="Instagram"><img alt=""></a></figure></div>
 <section class="components_group_component section-fast-access"><h1>Acesso Rápido</h1><a href="/p/55763-editais-proec">Editais PROEX</a></section>
-<section class="components_group_component highlight-news"><h2 class="front_news_title">Notícias</h2><h3><a href="/n/1-noticia-sintetica">Notícia sintética com link no título</a></h3><a class="category" href="/news?tags=Noticias">Notícias</a>
+<section class="components_group_component highlight-news"><h2 class="front_news_title">Notícias</h2><h3><a href="/n/1-noticia-sintetica">Notícia sintética com link no título</a></h3><a class="category" href="/news?tags=Noticias">Notícias</a><a href="/news?tags=Not%C3%ADcias">Notícias</a><a href="/news?tags=NOTICIAS">Notícias</a><a href="https://proex.ufg.br/p/${'a'.repeat(320)}">Link gigante</a>
 <ul class="pagination"><li><a href="/components/1?page=2">2</a></li><li><a href="/components/1?page=9">Última</a></li></ul></section>
 <section class="components_group_component footer"><a href="/feedback">Fale conosco</a></section>`;
 
@@ -84,7 +84,7 @@ const FEED = `<?xml version="1.0"?><rss version="2.0"><channel><title>PROEX</tit
 </channel></rss>`;
 
 test('DOMÍNIOS: lê só os cinco domínios oficiais, com HTTPS, porta padrão e sem credencial; recusa o resto', () => {
-  for (const ok of ['https://proex.ufg.br/', 'https://proex.ufg.br/news?direction=desc', 'https://23conpeex.plateia.ufg.br/p/1-programacao', 'https://analisa.ufg.br/p/abc', 'https://centrodeeventos.ufg.br/', 'https://files.cercomp.ufg.br/weby/up/694/o/edital-sintetico.pdf', 'https://PROEX.ufg.br/p/1-x']) {
+  for (const ok of ['https://proex.ufg.br/', 'https://proex.ufg.br/news?page=2', 'https://proex.ufg.br/?locale=pt-BR', 'https://23conpeex.plateia.ufg.br/p/1-programacao', 'https://analisa.ufg.br/p/abc', 'https://centrodeeventos.ufg.br/', 'https://files.cercomp.ufg.br/weby/up/694/o/edital-sintetico.pdf', 'https://PROEX.ufg.br/p/1-x']) {
     assert.ok(readableOfficialUrl(ok), `deveria ler: ${ok}`);
   }
   assert.equal(readableOfficialUrl('https://proec.ufg.br/p/1-x')?.href, 'https://proex.ufg.br/p/1-x', 'nome antigo vira o endereço atual');
@@ -93,7 +93,7 @@ test('DOMÍNIOS: lê só os cinco domínios oficiais, com HTTPS, porta padrão e
     'https://example.test/', 'https://ufg.br/', 'https://evil.proex.ufg.br/', 'https://proex.ufg.br.example.test/', 'https://proex.ufg.br./',
     'http://proex.ufg.br/', 'https://proex.ufg.br:443/', 'https://proex.ufg.br:8443/', 'https://user:senha@proex.ufg.br/', 'https://user@proex.ufg.br/',
     'https://próex.ufg.br/', 'https://xn--prex-6oa.ufg.br/', 'https://proex.ufg.br/p/../admin', 'https://proex.ufg.br/%2e%2e/admin', 'https://proex.ufg.br/p/%2Fadmin',
-    'https://proex.ufg.br/a b', 'https://files.cercomp.ufg.br/weby/up/999/o/outro.pdf', 'https://files.cercomp.ufg.br/pagina.html', 'ftp://proex.ufg.br/', 'javascript:alert(1)',
+    'https://proex.ufg.br/a b', 'https://proex.ufg.br/news?direction=desc', 'https://proex.ufg.br/p/1-x?leak=1', 'https://proex.ufg.br/?page=2&x=1', 'https://proex.ufg.br/?page=12345', 'https://files.cercomp.ufg.br/weby/up/999/o/outro.pdf', 'https://files.cercomp.ufg.br/pagina.html', 'ftp://proex.ufg.br/', 'javascript:alert(1)',
   ]) assert.equal(readableOfficialUrl(refused), null, `deveria recusar: ${refused}`);
 });
 
@@ -121,6 +121,10 @@ test('LEITURA: robots de cada domínio, até 2 redirecionamentos conferidos, só
   const blocked = site({ robots: { 'proex.ufg.br': new Response('User-agent: *\nDisallow: /inicio', { headers: text }) }, pages: { 'https://proex.ufg.br/inicio': '<h1>x</h1>' } });
   assert.equal(await kind(blocked.fetch), 'bloqueado');
   assert.deepEqual(blocked.requested, ['https://proex.ufg.br/robots.txt'], 'robots que bloqueia: a página não é pedida');
+  const wildcard = site({ robots: { 'proex.ufg.br': new Response('User-agent: *\nDisallow: /p/*/rascunho$', { headers: text }) }, pages: { 'https://proex.ufg.br/p/1-x': '<h1>x</h1>' } });
+  assert.equal(await kind(wildcard.fetch, 'https://proex.ufg.br/p/1-x'), 'bloqueado', 'regra com * ou $ vale como bloqueio');
+  const byQuery = site({ robots: { 'proex.ufg.br': new Response('User-agent: *\nDisallow: /news?page=', { headers: text }) }, pages: { 'https://proex.ufg.br/news?page=2': '<h1>x</h1>' } });
+  assert.equal(await kind(byQuery.fetch, 'https://proex.ufg.br/news?page=2'), 'bloqueado', 'robots compara caminho e query');
   const redirectBlocked = site({ robots: { 'analisa.ufg.br': new Response('User-agent: *\nDisallow: /', { headers: text }) }, pages: { 'https://proex.ufg.br/inicio': () => new Response(null, { status: 302, headers: { location: 'https://analisa.ufg.br/p/1' } }) } });
   assert.equal(await kind(redirectBlocked.fetch), 'bloqueado', 'o destino do redirecionamento também respeita o robots');
   const noRobots = site({ robots: { 'proex.ufg.br': new Response('', { status: 404 }) }, pages: { 'https://proex.ufg.br/inicio': '<h1>x</h1>' } });
@@ -143,7 +147,7 @@ test('LINKS DA PÁGINA: agrupados pelo título de seção mais próximo; fora da
   assert.deepEqual(titles, ['Menu principal', 'Acesso Rápido', 'Sistemas', 'Estruturas vinculadas', 'Redes sociais', 'Rodapé']);
   const group = name => page.groups.find(entry => entry.title === name).links;
   assert.deepEqual(group('Acesso Rápido').map(link => [link.text, link.readable]), [['Editais', true], ['Formulário de inscrição', false], ['Modelos de documentos', false]], 'repetido sai; Google Forms e Drive são só link');
-  assert.deepEqual(group('Sistemas').map(link => [link.text, link.readable]), [['SIGAA', false], ['Analisa UFG', true], ['Sistema antigo', false]]);
+  assert.deepEqual(group('Sistemas').map(link => [link.text, link.readable]), [['SIGAA', false], ['Analisa UFG', true]], 'link http fica de fora');
   assert.deepEqual(group('Redes sociais').map(link => [link.text, link.url, link.readable]), [['Instagram', 'https://www.instagram.com/proex.sintetica/', false], ['YouTube', 'https://www.youtube.com/@sintetico', false]], 'ícone sem texto usa title ou aria-label');
   assert.deepEqual(group('Rodapé').map(link => link.text), ['Equipe e contatos'], 'rodapé sem rótulo não herda o título anterior; caractere invisível sai do texto');
   const all = page.groups.flatMap(entry => entry.links.map(link => link.url));
@@ -158,7 +162,8 @@ test('LINKS DA PÁGINA: agrupados pelo título de seção mais próximo; fora da
     ['Acesso Rápido', ['Editais PROEX']],
     ['Notícias', ['Notícia sintética com link no título', 'Notícias']],
     ['Rodapé', ['Fale conosco']],
-  ], 'paginação e troca de idioma ficam de fora; título com link vira link');
+    ['Outros links da página', ['Acesso à Informação']],
+  ], 'paginação, idioma, barra do Governo e login ficam de fora; título com link vira link; links sem bloco por último; Notícias repetido (maiúscula/acento) conta uma vez');
   const limited = extractLinkGroups(HOME, 'https://proex.ufg.br/', 4);
   assert.equal(limited.groups.flatMap(entry => entry.links).length, 4);
   assert.equal(limited.omitted, all.length - 4);
