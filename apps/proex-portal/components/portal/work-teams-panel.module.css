@@ -110,3 +110,5 @@
 /* Décima crítica de 16/11: o botão de atualizar da planilha não aumenta a linha do título. */
 .sheets h3 + p, .sheets .heading p { margin-top: 2px; }
 .sheets section > div:first-child > button { margin-block: -8px; }
+/* Onze críticas de 16/11: a lista vazia não soma um segundo espaço sob "Demandas da equipe". */
+.tasks:empty { display: none; }

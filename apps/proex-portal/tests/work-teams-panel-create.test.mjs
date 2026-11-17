@@ -171,4 +171,5 @@ test('an empty team demand list has no empty paragraph under its heading (décim
   const block = h.nodes().find(node => node.type === 'div' && node.props.className === 'taskHeading');
   const inner = []; (function walk(node) { if (!node || typeof node !== 'object') return; if (Array.isArray(node)) return node.forEach(walk); inner.push(node); walk(node.props?.children); })(block?.props.children);
   assert.ok(block && !inner.some(node => node.type === 'p' && text(node) === ''), 'sem parágrafo vazio abrindo espaço sob o título');
+  assert.match(readFileSync(new URL('../components/portal/work-teams-panel.module.css', import.meta.url), 'utf8'), /\.tasks:empty \{ display: none; \}/, 'nem lista vazia somando outro espaço');
 });
