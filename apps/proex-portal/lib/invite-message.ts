@@ -5,7 +5,8 @@
  */
 export type InviteMessageInput = { name?: string | null; roleLabel?: string | null; scopeLabel?: string | null; url: string; expiresAt?: string | null };
 
-const expiryFormat = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Sao_Paulo', hourCycle: 'h23' });
+const dayFormat = new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeZone: 'America/Sao_Paulo' });
+const timeFormat = new Intl.DateTimeFormat('pt-BR', { timeStyle: 'short', timeZone: 'America/Sao_Paulo', hourCycle: 'h23' });
 const clean = (value: string | null | undefined) => String(value ?? '').replace(/\s+/g, ' ').trim();
 
 export const INVITE_EMAIL_SUBJECT = 'Convite para o Portal PROEX UFG';
@@ -13,7 +14,7 @@ export const INVITE_EMAIL_SUBJECT = 'Convite para o Portal PROEX UFG';
 export function inviteMessage({ name, roleLabel, scopeLabel, url, expiresAt }: InviteMessageInput): string {
   const first = clean(name), scope = clean(scopeLabel), rawRole = clean(roleLabel);
   const role = rawRole ? rawRole.charAt(0).toLocaleLowerCase('pt-BR') + rawRole.slice(1) : '';
-  const expiry = expiresAt && Number.isFinite(Date.parse(expiresAt)) ? expiryFormat.format(Date.parse(expiresAt)) : '';
+  const at = expiresAt ? Date.parse(expiresAt) : NaN, expiry = Number.isFinite(at) ? `${dayFormat.format(at)} às ${timeFormat.format(at)}` : '';
   const what = role && scope ? ` como ${role}, em ${scope}` : role ? ` como ${role}` : scope ? ` em ${scope}` : '';
   return [
     `Olá${first ? `, ${first}` : ''}! Você recebeu um convite para o Portal PROEX UFG${what}.`,
