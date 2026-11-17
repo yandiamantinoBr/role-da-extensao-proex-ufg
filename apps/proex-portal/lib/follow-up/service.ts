@@ -95,6 +95,8 @@ export async function followupList(db:D1Database,actor:PortalActor|null,input:Re
  return{tasks:rows.slice(0,50).map(projectedTask),hasMore:rows.length>50,nextOffset:offset+50,...(confirmed?{scheduleItem:{id:confirmed.id,title:confirmed.title,status:confirmed.status}}:{}),...serverWorkClock()};
 }
 async function people(db:D1Database,scope:Scope){return all(db,`SELECT DISTINCT u.user_id userId,COALESCE(NULLIF(p.display_name,''),'Integrante') name FROM portal_users u LEFT JOIN profiles p ON p.user_id=u.user_id WHERE ${activeAccount('u')} AND ${authority('u.user_id','scope.organization_id','scope.project_id')} ORDER BY name,u.user_id`.replace('FROM portal_users u','FROM(SELECT ? organization_id,? project_id) scope JOIN portal_users u'),[scope.organizationId,scope.projectId]);}
+/** Quem a criação de demanda aceita como responsável neste contexto (a mesma lista que assignmentValidation confere). */
+export const followupAssignablePeople=people;
 async function orgPeople(db:D1Database,orgId:string){return all(db,`SELECT DISTINCT u.user_id userId,COALESCE(NULLIF(p.display_name,''),'Integrante') name FROM portal_users u LEFT JOIN profiles p ON p.user_id=u.user_id WHERE ${activeAccount('u')} AND EXISTS(SELECT 1 FROM members m WHERE m.user_id=u.user_id AND m.revoked_at IS NULL AND (m.organization_id=? OR(m.role='owner' AND m.project_id IS NULL AND m.organization_id IS NULL))) ORDER BY name,u.user_id`,[orgId]);}
 export async function followupCatalog(db:D1Database,actor:PortalActor|null,input:Record<string,unknown>={}){actorRequired(actor);const organizations=await listOrganizations(db,actor),projects=await all(db,`SELECT p.id,p.name,p.organization_id,${authority('?','p.organization_id','p.id',true)} can_edit FROM projects p WHERE ${authority('?','p.organization_id','p.id')} ORDER BY p.name,p.id`,[actor.userId,actor.userId]);
  const visibleProjects=projects.map(p=>({id:p.id,name:p.name,organization_id:p.organization_id,canEdit:Boolean(p.can_edit)}));
@@ -149,7 +151,7 @@ function referenceAssertion(db:D1Database,actor:PortalActor,scope:Scope,key:keyo
 function referenceError(error:unknown){
  if(String(error).includes('followup_reference_unavailable'))fail('Não foi possível vincular o item neste projeto com seu acesso atual.','followup_reference',403);
 }
-async function taskAction(db:D1Database,actor:PortalActor,action:string,input:Record<string,unknown>){onlyKeys(input,['action','id','organizationId','projectId','title','body','priority','importance','status','dueAt','campaignId','itemId','loanId','userIds','teamIds','expectedVersion','operationKey']);const old=action==='task.update'?await taskRow(db,actor,id(input.id)!,true):null,scope=old?scopeOf(old):await resolveScope(db,input);await requireScope(db,actor,scope,true);
+async function taskAction(db:D1Database,actor:PortalActor,action:string,input:Record<string,unknown>,source?:FollowupSource){onlyKeys(input,['action','id','organizationId','projectId','title','body','priority','importance','status','dueAt','campaignId','itemId','loanId','userIds','teamIds','expectedVersion','operationKey']);const old=action==='task.update'?await taskRow(db,actor,id(input.id)!,true):null,scope=old?scopeOf(old):await resolveScope(db,input);await requireScope(db,actor,scope,true);
  if(old&&(input.projectId!==undefined&&input.projectId!==old.project_id||input.organizationId!==undefined&&input.organizationId!==old.organization_id))fail('O contexto de uma demanda é permanente. Crie outra demanda.');
  const mutation=await prepareMutation(db,actor.userId,action,input);if(mutation.existingId)return{...await followupDetail(db,actor,mutation.existingId),duplicate:true};
  const value=fields(input,old??undefined),users=input.userIds===undefined&&old?(await all(db,'SELECT user_id FROM followup_assignees WHERE task_id=? AND user_id IS NOT NULL AND removed_at IS NULL',[old.id])).map(r=>r.user_id):ids(input.userIds),teams=input.teamIds===undefined&&old?(await all(db,'SELECT team_id FROM followup_assignees WHERE task_id=? AND team_id IS NOT NULL AND removed_at IS NULL',[old.id])).map(r=>r.team_id):ids(input.teamIds,8);
@@ -159,7 +161,7 @@ async function taskAction(db:D1Database,actor:PortalActor,action:string,input:Re
   const previous=old?.[taskReferenceRules[key].column]??null;
   return value[key]===previous?[]:[referenceAssertion(db,actor,scope,key,value[key],previous)];
  });
- const statements=[...(old?[cas(db,'followup_tasks',taskId,expected)]:[]),...references,...assignmentAssertions(db,scope,users,teams),mutation.claimStatement(taskId),old?db.prepare('UPDATE followup_tasks SET title=?,body=?,priority=?,importance=?,status=?,due_at=?,campaign_id=?,item_id=?,loan_id=?,version=version+1,updated_at=? WHERE id=?').bind(value.title,value.body,value.priority,value.importance,value.status,value.dueAt,value.campaignId,value.itemId,value.loanId,at,taskId):insertTask(db,actor,scope,taskId,value,at),...assignmentStatements(db,taskId,users,teams,at),recipientLimit(db,taskId),history(db,actor,taskId,at),audit(db,actor,scope,action,taskId,{version:old?expected+1:1},at),fanout(db,taskId,`task:${old?expected+1:1}`,at)];
+ const statements=[...(old?[cas(db,'followup_tasks',taskId,expected)]:[]),...references,...assignmentAssertions(db,scope,users,teams),mutation.claimStatement(taskId),old?db.prepare('UPDATE followup_tasks SET title=?,body=?,priority=?,importance=?,status=?,due_at=?,campaign_id=?,item_id=?,loan_id=?,version=version+1,updated_at=? WHERE id=?').bind(value.title,value.body,value.priority,value.importance,value.status,value.dueAt,value.campaignId,value.itemId,value.loanId,at,taskId):insertTask(db,actor,scope,taskId,value,at),...assignmentStatements(db,taskId,users,teams,at),recipientLimit(db,taskId),history(db,actor,taskId,at),audit(db,actor,scope,action,taskId,{version:old?expected+1:1,...(source&&!old?{source}:{})},at),fanout(db,taskId,`task:${old?expected+1:1}`,at)];
  try{await atomic(db,actor,scope,statements);}catch(error){if(error instanceof HttpError)throw error;referenceError(error);const recovered=await mutation.recover(error);return{...await followupDetail(db,actor,recovered),duplicate:true};}return followupDetail(db,actor,taskId);
 }
 
@@ -461,8 +463,10 @@ async function pendingVisibility(db:D1Database,actor:PortalActor,input:Record<st
  return readInbox(db,actor,{write,confirm});
 }
 
-export async function followupAction(db:D1Database,actor:PortalActor|null,action:string,input:Record<string,unknown>):Promise<Row>{actorRequired(actor);try{
- if(action==='task.create'||action==='task.update')return await taskAction(db,actor,action,input);
+/** Origem interna da criação (fica na auditoria). Não faz parte do input: a conferência de duplicidade não muda. */
+export type FollowupSource='role_draft';
+export async function followupAction(db:D1Database,actor:PortalActor|null,action:string,input:Record<string,unknown>,options:{source?:FollowupSource}={}):Promise<Row>{actorRequired(actor);try{
+ if(action==='task.create'||action==='task.update')return await taskAction(db,actor,action,input,action==='task.create'?options.source:undefined);
  if(action==='task.work'||action.startsWith('task.worker.'))return await workerAction(db,actor,action,input);
  if(action.startsWith('team.'))return await teamAction(db,actor,action,input);
  if(action.startsWith('checklist.activity.'))return await activityChecklistAction(db,actor,action,input);

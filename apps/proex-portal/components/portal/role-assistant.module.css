@@ -60,7 +60,8 @@
 .sentImage{max-width:100%;max-height:220px;border-radius:10px;object-fit:contain;background:#fff}
 .typing{display:flex;align-items:center;gap:.5rem;color:var(--text-secondary)}
 .operation{display:grid;gap:.55rem;padding:.75rem;border:1px solid var(--line);border-left:4px solid var(--purple);border-radius:12px;background:var(--surface)}
-.operationTitle{font-size:.92rem;font-weight:800;color:var(--brand-ink)}
+.operationTitle{display:flex;align-items:center;gap:.4rem;font-size:.92rem;font-weight:800;color:var(--brand-ink)}
+.operationTitle svg{flex:none}
 .preview{display:grid;gap:.5rem}
 .beforeAfter{display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin:0}
 .beforeAfter div{padding:.5rem;border-radius:10px;background:var(--surface-soft)}
@@ -157,3 +158,15 @@
 /* Modo só busca: aviso com borda à esquerda; custo e Enviar dividem a linha em telas estreitas. */
 .searchOnlyNotice{margin:0;padding:.6rem .75rem;border-left:4px solid var(--warning-ink);border-radius:8px;background:var(--surface-soft);color:var(--text-strong);font-size:max(13px,.85rem);line-height:1.5}
 @container (max-width:390px){.composer[data-search-only] .cost{flex:1 1 0;order:0}}
+/* Cartão do rascunho de demanda do Rolê: contraste e foco só aqui dentro (nada global). */
+.taskDraft{--task-draft-border:#8a7a99}
+:global(html[data-theme=dark]) .taskDraft{--task-draft-border:#a58fbb}
+.taskDraft input:not([type=checkbox]),.taskDraft textarea,.taskDraft select{border-color:var(--task-draft-border)}
+.taskDraft textarea.taskDraftTitle{min-height:44px;max-height:none;resize:none}
+.taskDraft textarea.taskDraftBody{field-sizing:content;min-height:5.5rem;max-height:14rem;overflow-y:auto;padding-bottom:.65rem}
+.taskDraft input:focus-visible,.taskDraft textarea:focus-visible,.taskDraft select:focus-visible,.taskDraft button:focus-visible,.taskDraft a:focus-visible,.taskDraftNote:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+.taskDraft :global(.p-button-subtle){border:1px solid var(--task-draft-border)}
+:global(html[data-theme=dark]) .taskDraft input[type=checkbox]{accent-color:#b48ad6}
+.taskDraft .reviseActions :global(.p-button){font-size:max(14px,.9rem);padding-inline:12px}
+.taskDraft .taskDraftOpen{justify-self:start;min-height:44px;font-size:max(14px,.9rem)}
+.taskDraftNote{margin:0;border-radius:6px}

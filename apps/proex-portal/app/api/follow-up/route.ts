@@ -1,9 +1,10 @@
 import { getActor } from '@/lib/access';
-import { database } from '@/lib/platform';
+import { database, inviteSecret } from '@/lib/platform';
 import { getPortalUser } from '@/lib/session';
 import { boundedJson } from '@/lib/http';
 import { HttpError, publicError } from '@/lib/errors';
 import { followupAction, followupCatalog, followupDetail, followupList, notificationInbox } from '@/lib/follow-up/service';
+import { confirmRoleTaskDraft } from '@/lib/assistant/role-task-draft';
 export const dynamic='force-dynamic';
 const privateResponse=(response:Response)=>{response.headers.set('Cache-Control','private, no-store');response.headers.set('X-Content-Type-Options','nosniff');return response;};
 export async function GET(request:Request){try{
@@ -27,5 +28,7 @@ export async function POST(request:Request){try{
    const offset = input.offset === undefined ? undefined : Number(input.offset);
    return privateResponse(Response.json(await followupList(db, actor, { ...input, offset })));
  }
+ // Rascunho do Rolê confirmado no chat: mesma criação da tela de Demandas, com a assinatura conferida antes.
+ if(input.action==='task.create'&&Object.hasOwn(input,'roleDraft'))return privateResponse(Response.json(await confirmRoleTaskDraft(db,await getActor(db,await getPortalUser()),input,inviteSecret())));
  return privateResponse(Response.json(await followupAction(db,await getActor(db,await getPortalUser()),input.action,input)));
  }catch(error){return privateResponse(publicError(error));}}

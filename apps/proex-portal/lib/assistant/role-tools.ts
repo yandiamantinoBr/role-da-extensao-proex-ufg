@@ -6,9 +6,10 @@
  * O conteúdo volta ao modelo marcado como dado do portal, sem autoridade para mudar regras.
  */
 import { projectAuthoritySql, type PortalActor } from '../access';
-import { all, type Row } from '../database';
+import { all, one, type Row } from '../database';
 import { HttpError } from '../errors';
-import { authority as followupAuthority } from '../follow-up/scope';
+import { authority as followupAuthority, requireScope } from '../follow-up/scope';
+import { followupAssignablePeople } from '../follow-up/service';
 import { prizeTiersWorkspace } from '../prize-tiers/service';
 import { listRecords } from '../records';
 import { guideForAssistant } from '../management/guide';
@@ -34,6 +35,7 @@ export const ROLE_TOOLS = [
   fn('consultar_emprestimos', 'Empréstimos de equipamentos em aberto e atrasados (sem dados de quem pegou).', { projeto }),
   fn('registros_recentes', 'Últimos registros de atividades dos projetos.', { projeto }),
   fn('consultar_fontes_oficiais', 'Busca páginas públicas da PROEX e do 23º CONPEEX e publicações do Instagram cadastradas pela comunicação. Informa link e data de consulta ou cópia.', { texto: text('Assunto, por exemplo "edital de bolsas" ou "programação do CONPEEX".') }, ['texto']),
+  fn('preparar_rascunho_demanda', 'Prepara um rascunho de demanda (tarefa) para a pessoa revisar num cartão. Não grava: só o toque dela em Criar demanda cria.', { projeto, titulo: { type: 'string', maxLength: 160, description: 'Título curto.' }, descricao: { type: 'string', maxLength: 4000, description: 'Texto da demanda.' }, prazo: { type: 'string', pattern: '^\\d{4}-\\d{2}-\\d{2}$', description: 'AAAA-MM-DD, se houver.' }, prioridade: { type: 'string', enum: ['alta', 'media', 'baixa'] }, responsavel: text('Nome de quem vai fazer, se a pessoa disser.') }, ['titulo']),
   fn('consultar_guia', 'Guia da PROEX: estrutura, programas, processos (CONPEEX, editais, empréstimos, brindes, comunicação), calendário, contatos e glossário. Traz as seções mais próximas do assunto e a linha de fontes.', { texto: text('Assunto, por exemplo "como pedir empréstimo" ou "contato da comunicação".'), paginas: { type: 'array', items: { type: 'string', enum: [...GUIDE_SLUGS] }, maxItems: 4, description: 'Páginas do guia, se souber.' } }, ['texto']),
 ];
 export const ROLE_TOOL_NAMES = ROLE_TOOLS.map(tool => tool.function.name);
@@ -44,7 +46,10 @@ export type RoleToolSource = { label: string; href: string };
 /** Onde procurar: toda a organização, uma unidade, um projeto ou um evento (dinâmica). Sempre dentro do que a pessoa vê. */
 export type RoleScope = { kind: 'org' } | { kind: 'unit' | 'project' | 'event'; id: string };
 export type ResolvedScope = { kind: RoleScope['kind']; id: string | null; label: string; projectIds: string[] | null };
-export type RoleToolResult = { content: string; sources: RoleToolSource[]; rows: number };
+/** Rascunho de demanda: vai para o cartão de revisão, nunca para o modelo (que só recebe o resumo sem identificadores). */
+export type RoleTaskDraft = { organizationId: string; projectId: string; projectName: string; title: string; description: string; dueAt: string | null; priority: 'high' | 'medium' | 'low'; assigneeId?: string; assigneeName?: string; afterUntrusted?: true };
+export const ROLE_TASK_DRAFT_TOOL = 'preparar_rascunho_demanda';
+export type RoleToolResult = { content: string; sources: RoleToolSource[]; rows: number; taskDraft?: RoleTaskDraft };
 
 const STOP = new Set(['de', 'da', 'do', 'das', 'dos', 'e', 'a', 'o', 'as', 'os', 'em', 'no', 'na', 'nos', 'nas', 'para', 'com', 'por', 'um', 'uma', 'que', 'quantos', 'quantas', 'qual', 'quais']);
 export const norm = (value: string) => value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
@@ -89,10 +94,75 @@ function pack(kind: string, items: Record<string, unknown>[], sources: RoleToolS
   return { content: envelope(kept, items.length - kept.length), sources: sources.filter(source => used.has(source.href)), rows: kept.length };
 }
 
+/** Pode criar demanda em algum projeto do escopo? Mesma regra de escrita da criação (authority com escrita). Uma consulta. */
+export async function canDraftTasks(db: D1Database, actor: PortalActor, organizationId: string, scope: ResolvedScope | null): Promise<boolean> {
+  const allowed = scope?.projectIds ?? null;
+  if (allowed && !allowed.length) return false;
+  return !!await one(db, `SELECT 1 ok FROM projects p JOIN organizations o ON o.id=p.organization_id AND o.status='active' WHERE p.organization_id=? AND ${followupAuthority('?', 'p.organization_id', 'p.id', true)}${allowed ? ` AND p.id IN ${inList(allowed)}` : ''} LIMIT 1`, [organizationId, actor.userId, ...(allowed ?? [])]);
+}
+const DRAFT_PRIORITY: Record<string, RoleTaskDraft['priority']> = { alta: 'high', media: 'medium', baixa: 'low' };
+const DRAFT_PRIORITY_LABEL: Record<RoleTaskDraft['priority'], string> = { high: 'alta', medium: 'média', low: 'baixa' };
+/** Mesmos limites e caracteres da criação de demanda (lib/follow-up/contracts.ts): corta o excesso e avisa. */
+function draftText(value: unknown, max: number, label: string, oneLine: boolean): { value: string; cut: boolean } {
+  if (value === undefined || value === null) return { value: '', cut: false };
+  if (typeof value !== 'string') throw new HttpError(400, `Confira ${label} do rascunho.`, 'role_tool_input');
+  let clean = value.normalize('NFC').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '');
+  if (oneLine) clean = clean.replace(/\s+/g, ' ');
+  clean = clean.trim();
+  return clean.length > max ? { value: clean.slice(0, max).trimEnd(), cut: true } : { value: clean, cut: false };
+}
+const validDay = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value;
+const nameWords = (value: string) => norm(value).split(/[^a-z0-9]+/).filter(Boolean);
+
+/**
+ * Rascunho de demanda, sem gravar. Mesma regra de permissão da criação (requireScope com escrita,
+ * em lib/follow-up/scope.ts) e responsável só entre quem a criação aceitaria neste projeto.
+ * Sem permissão, nenhum rascunho. O identificador do responsável não vai para o modelo.
+ */
+async function taskDraftTool(db: D1Database, actor: PortalActor, organizationId: string, args: Record<string, unknown>, budget: number, scope: ResolvedScope | null): Promise<RoleToolResult> {
+  const kind = 'preparar_rascunho_demanda';
+  const title = draftText(args.titulo, 160, 'o título', true);
+  if (!title.value) throw new HttpError(400, 'Informe o título da demanda.', 'role_tool_input');
+  const wanted = str(args.projeto, 'o projeto'), wantedName = str(args.responsavel, 'o responsável');
+  // Nome do projeto conferido palavra por palavra ("Projeto A" nunca vira "Projeto B"), só entre os visíveis no escopo.
+  const wantedWords = nameWords(wanted), visible = await visibleProjects(db, actor, organizationId, '', scope);
+  const projects = new Map([...visible].filter(([, projectName]) => { const own = nameWords(projectName); return wantedWords.every(word => own.includes(word)); }));
+  if (!projects.size) return pack(kind, [], [], budget, scope && scope.kind !== 'org' ? `Nenhum projeto visível para você em ${scope.label} com esse nome. Nenhum rascunho foi preparado.` : 'Nenhum projeto visível para você com esse nome. Nenhum rascunho foi preparado.');
+  let entries = [...projects.entries()];
+  if (entries.length > 1 && wantedWords.length) { const exact = entries.filter(([, projectName]) => nameWords(projectName).join(' ') === wantedWords.join(' ')); if (exact.length === 1) entries = exact; }
+  if (entries.length > 1) return pack(kind, [], [], budget, 'Pergunte em qual projeto criar a demanda. Nenhum rascunho foi preparado.', { projetos: entries.slice(0, 8).map(([, projectName]) => projectName) });
+  const [projectId, projectName] = entries[0];
+  try { await requireScope(db, actor, { organizationId, projectId }, true); }
+  catch (error) { if (error instanceof HttpError && error.status === 403) return pack(kind, [], [], budget, 'Você não pode criar demandas neste projeto. Nenhum rascunho foi preparado.', { projeto: projectName }); throw error; }
+  const notes: string[] = [];
+  const description = draftText(args.descricao, 4000, 'a descrição', false);
+  if (title.cut) notes.push('O título foi encurtado para 160 caracteres.');
+  if (description.cut) notes.push('A descrição foi encurtada para 4.000 caracteres.');
+  const rawDue = typeof args.prazo === 'string' ? args.prazo.trim() : '';
+  const dueAt = rawDue && validDay(rawDue) ? rawDue : null;
+  if (args.prazo !== undefined && args.prazo !== null && args.prazo !== '' && !dueAt) notes.push('O prazo informado não é uma data válida; ficou sem prazo.');
+  const rawPriority = typeof args.prioridade === 'string' ? norm(args.prioridade).trim() : '';
+  const priority = DRAFT_PRIORITY[rawPriority] ?? 'medium';
+  if (rawPriority && !DRAFT_PRIORITY[rawPriority]) notes.push('Prioridade inválida; ficou média.');
+  let assignee: { userId: string; name: string } | null = null;
+  if (wantedName) {
+    const words = nameWords(wantedName), people = (await followupAssignablePeople(db, { organizationId, projectId })).map(row => ({ userId: String(row.userId), name: String(row.name) }));
+    const exact = people.filter(person => nameWords(person.name).join(' ') === words.join(' '));
+    const matches = exact.length ? exact : words.length ? people.filter(person => { const own = nameWords(person.name); return words.every(word => own.includes(word)); }) : [];
+    if (matches.length === 1) assignee = matches[0];
+    else notes.push(matches.length ? 'Há mais de uma pessoa com esse nome neste projeto; o responsável ficou vazio para a pessoa escolher.' : 'Não encontrei essa pessoa entre quem pode receber demandas neste projeto; o responsável ficou vazio.');
+  }
+  const taskDraft: RoleTaskDraft = { organizationId, projectId, projectName, title: title.value, description: description.value, dueAt, priority, ...(assignee ? { assigneeId: assignee.userId, assigneeName: assignee.name } : {}) };
+  const summary = { projeto: projectName, titulo: taskDraft.title, descricao: taskDraft.description.length > 1200 ? `${taskDraft.description.slice(0, 1200)}…` : taskDraft.description, prazo: dueAt ?? 'sem prazo', prioridade: DRAFT_PRIORITY_LABEL[priority], responsavel: assignee ? 'definido (confira no cartão)' : 'sem responsável' };
+  const result = pack(kind, [summary], [], budget, 'Rascunho pronto. Nada foi gravado: a pessoa confere no cartão abaixo da resposta e toca em Criar demanda.', notes.length ? { avisos: notes } : {});
+  return { ...result, rows: 1, taskDraft };
+}
+
 export async function runRoleTool(db: D1Database, actor: PortalActor, organizationId: string, name: string, args: Record<string, unknown>, budget = ROLE_TOOL_RESULT_BYTES, scope: ResolvedScope | null = null, officialFetcher?: typeof fetch): Promise<RoleToolResult> {
   if (!ROLE_TOOL_NAMES.includes(name)) throw new HttpError(400, 'Consulta desconhecida.', 'role_tool_unknown');
-  if (Object.keys(args).some(key => !['texto', 'projeto', 'material', 'dias', 'situacao', 'dinamica', 'de', 'ate', 'paginas'].includes(key))) throw new HttpError(400, 'Consulta com campos não permitidos.', 'role_tool_input');
+  if (Object.keys(args).some(key => !['texto', 'projeto', 'material', 'dias', 'situacao', 'dinamica', 'de', 'ate', 'paginas', 'titulo', 'descricao', 'prazo', 'prioridade', 'responsavel'].includes(key))) throw new HttpError(400, 'Consulta com campos não permitidos.', 'role_tool_input');
   if (name === 'consultar_guia') return guideTool(db, actor, organizationId, args, budget);
+  if (name === 'preparar_rascunho_demanda') return taskDraftTool(db, actor, organizationId, args, budget, scope);
   if (name === 'consultar_fontes_oficiais') return officialTool(db, organizationId, str(args.texto, 'o assunto', true), budget, officialFetcher);
   const projects = await visibleProjects(db, actor, organizationId, str(args.projeto, 'o projeto'), scope);
   const ids = [...projects.keys()];
