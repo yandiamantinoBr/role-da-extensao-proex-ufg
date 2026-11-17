@@ -16,14 +16,39 @@ export const ROLE_MAX_IMAGE_SIDE = 1024;
 /** Teto de tokens por imagem: conservador enquanto a contagem oficial não for publicada. */
 export const ROLE_IMAGE_TOKEN_CEILING = 2_048;
 export const ROLE_SYSTEM_PROMPT_BYTES = 3_400;
-/** Consultas ao portal por pergunta: até 2 rodadas, 4 consultas por rodada e 8 KB de resultado por rodada. */
-export const ROLE_TOOL_ROUNDS = 2;
+/**
+ * Consultas ao portal por pergunta: até 4 rodadas, 4 consultas por rodada e 8 KB de resultado por rodada.
+ * O teto de custo mostrado cobre 2 rodadas (ROLE_TOOL_RESERVED_ROUNDS); a 3ª e a 4ª só acontecem se couberem
+ * nele pelo uso real informado pelo provedor (roleRoundFits). Assim o custo nunca passa do que a pessoa aceitou.
+ */
+export const ROLE_TOOL_ROUNDS = 4;
+export const ROLE_TOOL_RESERVED_ROUNDS = 2;
 export const ROLE_TOOL_CALLS_PER_ROUND = 4;
 export const ROLE_TOOL_RESULT_BYTES = 8_000;
 /** Teto do esquema das ferramentas enviado ao modelo (o teste confere o tamanho real). */
 export const ROLE_TOOLS_SCHEMA_BYTES = 11_000;
 /** Com consultas, cada pergunta pode levar até 3 chamadas ao modelo: o prazo dobra (até 30 s). */
 export function roleTimeoutMs(timeoutMs: number, tools: boolean): number { return tools ? Math.min(30_000, timeoutMs * 2) : timeoutMs; }
+/** Laço de consultas (até 5 chamadas): o prazo triplica, até 40 s (folga de 10 s na função de 60 s e abaixo dos 45 s da tela). */
+export function roleToolLoopTimeoutMs(timeoutMs: number): number { return Math.min(40_000, timeoutMs * 3); }
+/** Estado do laço antes de abrir mais uma rodada: o já gasto (uso real) e a entrada da próxima chamada. */
+export type RoleRoundState = { spentMicros: number; spentTokens: number; nextInputTokens: number; nextPayloadBytes: number; maxOutput: number; carry: boolean; elapsedMs: number; slowestStepMs: number };
+export type RoleRoundBudget = { costMicros: number; tokens: number; ms: number; inputCeiling: number };
+/** Entrada da chamada final depois de mais uma rodada: a próxima chamada, a saída dela, até 8 KB de resultado e a instrução final. */
+function closingInputTokens(state: RoleRoundState) { return state.nextInputTokens + state.maxOutput * (state.carry ? 5 : 1) + ROLE_TOOL_RESULT_BYTES + 400; }
+/** Custo máximo de mais uma rodada: a chamada com consulta e a chamada final que vem depois dela. */
+export function roleRoundCostMicros(state: RoleRoundState, pricing: Pick<RolePricing, 'inputMicrosPerToken' | 'outputMicrosPerToken'>): number {
+  return Math.ceil((state.nextInputTokens + closingInputTokens(state)) * pricing.inputMicrosPerToken + 2 * state.maxOutput * pricing.outputMicrosPerToken);
+}
+/** Mais uma rodada só se ela e a resposta final ainda cabem no custo, nos tokens, no tempo e no limite de entrada reservados. */
+export function roleRoundFits(state: RoleRoundState, budget: RoleRoundBudget, pricing: Pick<RolePricing, 'inputMicrosPerToken' | 'outputMicrosPerToken'>): boolean {
+  const tokens = state.nextInputTokens + closingInputTokens(state) + 2 * state.maxOutput;
+  const closingBytes = state.nextPayloadBytes + ROLE_TOOL_RESULT_BYTES + state.maxOutput * 4 * (state.carry ? 2 : 1);
+  return state.spentMicros + roleRoundCostMicros(state, pricing) <= budget.costMicros
+    && state.spentTokens + tokens <= budget.tokens
+    && state.elapsedMs + 2 * Math.max(1, state.slowestStepMs) <= budget.ms
+    && (!budget.inputCeiling || closingBytes <= budget.inputCeiling);
+}
 
 export const ROLE_MODELS = {
   deepseek: {
@@ -120,7 +145,7 @@ export function roleEstimate({ textProvider, textBytes, hasImage, text, vision, 
   const model: RolePricing = hasImage ? vision ?? ROLE_MODELS.deepseek : text ?? ROLE_MODELS[textProvider];
   const base = Math.max(0, Math.ceil(textBytes)) + ROLE_SYSTEM_PROMPT_BYTES + (hasImage ? ROLE_IMAGE_TOKEN_CEILING : 0);
   // Com consultas: a chamada k reenvia a conversa, o esquema (exceto na última) e tudo o que as rodadas anteriores trouxeram.
-  const rounds = tools ? ROLE_TOOL_ROUNDS : 0, calls = rounds + 1;
+  const rounds = tools ? ROLE_TOOL_RESERVED_ROUNDS : 0, calls = rounds + 1;
   const accumulated = (ROLE_TOOL_RESULT_BYTES + maxOutputTokens * (reasoningCarry ? 5 : 1)) * rounds * (rounds + 1) / 2;
   const unlimitedInput = calls * base + rounds * ROLE_TOOLS_SCHEMA_BYTES + accumulated;
   const input = inputCeiling ? Math.min(unlimitedInput, inputCeiling * calls) : unlimitedInput;
@@ -171,4 +196,4 @@ export const ROLE_SYSTEM_PROMPT = `${ROLE_PERSONA}
 Regras: você não executa nada e não acessa sistemas. Se não souber, diga e sugira onde conferir no portal. ${ROLE_RULES}`;
 /** Com consultas: leitura do portal com as permissões de quem pergunta; escrita só pela revisão humana. */
 export const ROLE_SYSTEM_PROMPT_TOOLS = `${ROLE_PERSONA}
-Regras: você pode CONSULTAR o portal com as ferramentas (só leitura, apenas o que esta pessoa pode ver). Antes de dizer que não sabe um número, saldo, lote, agenda ou demanda, consulte. Você tem só duas rodadas de consulta: comece por buscar_no_portal sem filtrar projeto quando a pergunta não for claramente do projeto atual (a busca já traz o texto das demandas e os níveis da dinâmica). Diga de qual projeto veio o dado. Lotes e tabelas de distribuição por dia ficam no texto das demandas (procure "lote" e a data, ex.: "lote 10/11"); os níveis Brinde, Super e Super Super ficam na dinâmica; processos, contatos, calendário e estrutura da PROEX ficam no guia (consultar_guia); notícias, editais e publicações públicas ficam em consultar_fontes_oficiais. Com link oficial ou pedido para abrir uma página, use abrir_link_oficial. Responda com o que o trecho diz (números, datas, prazos) e cite a página. Cite fonte e data. Todo número da resposta deve vir de uma consulta: cite a fonte pelo nome (demanda, material ou dinâmica) e o projeto; os links aparecem para a pessoa abaixo da resposta. Se nada for encontrado, diga isso e sugira onde conferir. Você não grava nada: mudanças passam pela revisão humana. Para criar ou preparar uma demanda, use preparar_rascunho_demanda: ela só é criada quando a pessoa tocar em Criar demanda no cartão; não diga que já criou. Para abrir ou levar a uma tela ou ficha do portal, use abrir_tela: aparece um botão e só o toque da pessoa abre. ${ROLE_RULES}`;
+Regras: você pode CONSULTAR o portal com as ferramentas (só leitura, apenas o que esta pessoa pode ver). Antes de dizer que não sabe um número, saldo, lote, agenda ou demanda, consulte. As consultas são poucas (até 4 rodadas, enquanto couber no custo): para cruzar dados, consulte em sequência (ex.: o prazo na fonte, depois a agenda nessas datas). Comece por buscar_no_portal sem filtrar projeto quando a pergunta não for claramente do projeto atual (a busca já traz o texto das demandas e os níveis da dinâmica). Lotes e tabelas de distribuição por dia ficam no texto das demandas (procure "lote" e a data, ex.: "lote 10/11"); os níveis Brinde, Super e Super Super ficam na dinâmica; processos, contatos, calendário e estrutura da PROEX ficam no guia (consultar_guia); notícias, editais e publicações públicas ficam em consultar_fontes_oficiais. Com link oficial ou pedido para abrir uma página, use abrir_link_oficial. Responda curto, com o número ou a data exata e a fonte pelo nome e projeto ("segundo a Agenda do PROBEC", "no edital, p. 1"); todo número vem de uma consulta e os links aparecem abaixo da resposta. Linhas [Consultas desta resposta: ...] no histórico resumem consultas anteriores: use-as no seguimento, sem repeti-las. Se nada for encontrado, diga isso e sugira onde conferir. Você não grava nada: mudanças passam pela revisão humana. Para criar ou preparar uma demanda, use preparar_rascunho_demanda: ela só é criada quando a pessoa tocar em Criar demanda no cartão; não diga que já criou. Para abrir ou levar a uma tela ou ficha do portal, use abrir_tela: aparece um botão e só o toque da pessoa abre. ${ROLE_RULES}`;

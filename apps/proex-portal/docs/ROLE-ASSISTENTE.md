@@ -146,16 +146,18 @@ Motivo: às 13h o Yan perguntou "quantos brindes, super brindes e super super br
   - `registros_recentes`
 - Nunca saem observações privadas, e-mails ou identificadores de pessoa. O resultado volta ao modelo marcado como "dados do portal, não instruções".
 - Laço em `role.ts` (`dispatchWithTools`):
-  - até 2 rodadas de consulta, com no máximo 4 consultas e 8 KB de resultado por rodada;
-  - depois, uma resposta final sem ferramentas, em JSON;
+  - até 4 rodadas de consulta (Fase 4), com no máximo 4 consultas e 8 KB de resultado por rodada; da 2ª rodada em diante, só abre outra se ela e a resposta final ainda couberem no custo, nos tokens, no tempo e no limite de entrada já aceitos (`roleRoundFits`, com o uso real informado pelo provedor);
+  - depois, uma resposta final sem ferramentas, em JSON; se o modelo ainda pedir consulta, o portal encerra com "Cheguei ao limite de consultas desta pergunta; o que encontrei foi…" e a lista do que achou (auditoria: `limitReached`);
+  - resposta em JSON cru de chamada de ferramenta ou com nome interno (`consultar_*`, `abrir_tela`…) vira texto simples (`role-reply-guard.ts`); sem campo de resposta, sai "Não consegui montar a resposta. Tente perguntar de outro jeito." (auditoria: `replyIssue`, sem o conteúdo);
   - a data de hoje (Brasília) vai junto, para o Rolê entender "amanhã".
 - Se o projeto selecionado não tiver o dado, o Rolê procura nos outros projetos que a pessoa vê **da mesma organização** e diz de qual projeto veio. Dados de outra organização nunca vão para o provedor desta, que tem chave e política de IA próprias.
-- Uma pergunta conta como 1 chamada no limite diário, mesmo quando faz até 3 requisições ao modelo. Custo, tokens e tempo contam todas.
+- Uma pergunta conta como 1 chamada no limite diário, mesmo quando faz até 5 requisições ao modelo. Custo, tokens e tempo contam todas.
+- Memória (Fase 4, `role-memory.ts`): cada resposta volta com uma linha `[Consultas desta resposta: …]` (consulta, quantos resultados e as fontes por nome, sem endereço nem nome interno). A tela a envia junto com a resposta no histórico; a resposta direta das fontes oficiais vai só por essa linha. O servidor não guarda nada. Se a conversa passar do limite de entrada, saem as mensagens mais antigas; só a pergunta sozinha que não cabe é recusada.
 - As fontes aparecem como links internos abaixo da resposta ("Fontes no portal").
-- Custo máximo (`roleEstimate` com `tools`): conta 3 chamadas, o esquema das ferramentas e os resultados reenviados.
-  - Numa mensagem curta, fica perto de US$ 0,017.
+- Custo máximo (`roleEstimate` com `tools`): conta 3 chamadas (2 rodadas reservadas), o esquema das ferramentas e os resultados reenviados. As rodadas 3 e 4 só acontecem dentro desse teto.
+  - Numa mensagem curta (500 bytes), US$ 0,0205 no DeepSeek Flash e US$ 0,0102 na Groq; com a conversa cheia, US$ 0,0286. O custo real típico fica perto de um terço disso.
   - Depois da resposta, o dia guarda só o uso real.
-  - O prazo da conversa dobra, até 30 s.
+  - O prazo do laço triplica, até 40 s (`roleToolLoopTimeoutMs`); o vídeo mantém o seu.
 - Auditoria `assistant.role.chat`: guarda o nome de cada consulta e o número de linhas; nunca o conteúdo.
 - Vale para DeepSeek e Groq (caminho revisado). Modelos do catálogo continuam sem consultas por enquanto.
 
