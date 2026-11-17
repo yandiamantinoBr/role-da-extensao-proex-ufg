@@ -2,7 +2,7 @@ import type { PortalActor } from '../access';
 import { all, one } from '../database';
 import { HttpError } from '../errors';
 import { choices, id, integer, TASK_STATES } from './contracts';
-import { activeAccount, actorRequired, authority, requireScope, visibleTeamInScope } from './scope';
+import { activeAccount, actorRequired, authority, publicTaskAuthority, requireScope, visibleTeamInScope } from './scope';
 import { serverWorkClock } from './time';
 import { TEAM_TASK_PAGE_SIZE, type TeamsWorkspace } from './teams-contract';
 
@@ -80,7 +80,7 @@ export async function teamsWorkspace(db: D1Database, actor: PortalActor | null, 
  FROM followup_assignees a JOIN followup_tasks t ON t.id=a.task_id JOIN followup_teams team ON team.id=a.team_id
  JOIN(SELECT ? user_id,? project_id) caller WHERE a.removed_at IS NULL AND a.team_id IN (SELECT value FROM json_each(?))
  AND t.organization_id=team.organization_id AND (caller.project_id IS NULL OR t.project_id=caller.project_id)
- AND ${authority('caller.user_id', 't.organization_id', 't.project_id')} GROUP BY a.team_id`, [clock.today, actor.userId, projectId, idsJson]) : [];
+ AND ${publicTaskAuthority('caller.user_id','t')} GROUP BY a.team_id`, [clock.today, actor.userId, projectId, idsJson]) : [];
  const ranked = [...visibleTeams].sort((a,b) => Number(b.is_mine)-Number(a.is_mine) || (counts.find(row=>row.team_id===b.id)?.total ?? 0)-(counts.find(row=>row.team_id===a.id)?.total ?? 0) || String(a.name).localeCompare(String(b.name),'pt-BR'));
  const selectedTeamId = requestedTeam ?? ranked[0]?.id ?? '';
  const people = canManage ? await all(db, `SELECT DISTINCT person.user_id userId,COALESCE(NULLIF(profile.display_name,''),'Integrante') name
@@ -91,7 +91,7 @@ export async function teamsWorkspace(db: D1Database, actor: PortalActor | null, 
  FROM followup_tasks t JOIN organizations o ON o.id=t.organization_id LEFT JOIN projects p ON p.id=t.project_id JOIN(SELECT ? user_id,? project_id) caller
  WHERE t.organization_id=? AND (caller.project_id IS NULL OR t.project_id=caller.project_id) AND (?='' OR t.status=?)
  AND EXISTS(SELECT 1 FROM followup_assignees a JOIN followup_teams team ON team.id=a.team_id WHERE a.task_id=t.id AND a.team_id=? AND a.removed_at IS NULL AND team.organization_id=t.organization_id)
- AND ${authority('caller.user_id', 't.organization_id', 't.project_id')}
+ AND ${publicTaskAuthority('caller.user_id','t')}
  ORDER BY CASE t.status WHEN 'completed' THEN 1 WHEN 'cancelled' THEN 1 ELSE 0 END,CASE t.priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,COALESCE(t.due_at,'9999'),t.id LIMIT ? OFFSET ?`, [actor.userId, projectId, organizationId, status, status, selectedTeamId, limit + 1, exporting ? 0 : offset]) : [];
  // Recheck membership, duty changes and project/unit visibility before returning either view or export.
  const currentTeams = await readVisibleTeams(), currentRoster = await readRoster(), currentProjects = await readProjects(), currentUnits = await readUnits();

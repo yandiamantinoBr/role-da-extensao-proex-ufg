@@ -3,7 +3,7 @@ import { accessibleProjects, getActor, writeAudit, projectAuthoritySql, type Por
 import { all, one, type Row } from './database';
 import { HttpError } from './errors';
 import { isCivilDate, offsetCivilDate } from './civil-date';
-import { authority as workAuthority } from './follow-up/scope';
+import { authority as workAuthority, publicTaskAuthority } from './follow-up/scope';
 
 export const CALENDAR_CATEGORIES = ['loans', 'materials', 'projects', 'consumption', 'deadlines'] as const;
 export type CalendarCategory = typeof CALENDAR_CATEGORIES[number];
@@ -161,7 +161,7 @@ export async function calendarEntries(db: D1Database, actor: PortalActor | null,
       rows = await all(db, `SELECT t.id,COALESCE(t.project_id,'') project_id,COALESCE(p.name,o.name) project_name,'Prazo · ' || t.title title,
         t.due_at starts_at,t.status state,t.version revision,t.created_at,t.updated_at last_modified
         FROM followup_tasks t JOIN organizations o ON o.id=t.organization_id LEFT JOIN projects p ON p.id=t.project_id
-        WHERE t.due_at IS NOT NULL AND t.due_at>=? AND t.due_at<=? AND ${workAuthority('?', 't.organization_id', 't.project_id')}
+        WHERE t.due_at IS NOT NULL AND t.due_at>=? AND t.due_at<=? AND ${publicTaskAuthority('?', 't')}
         AND ((t.project_id IS NOT NULL AND ${filter.sql}) OR (t.project_id IS NULL AND ?=1)) LIMIT ${MAX_ENTRIES + 1}`,
       [range.from, range.to, actor.userId, ...filter.values, organizationWide]);
       for (const row of rows) result.push(entry({ ...row, ends_at: offsetCivilDate(String(row.starts_at), 1), state: row.state === 'completed' ? 'done' : row.state }, category, 'deadline', true));

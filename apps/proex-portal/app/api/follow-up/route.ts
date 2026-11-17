@@ -5,12 +5,13 @@ import { boundedJson } from '@/lib/http';
 import { HttpError, publicError } from '@/lib/errors';
 import { followupAction, followupCatalog, followupDetail, followupList, notificationInbox } from '@/lib/follow-up/service';
 import { confirmRoleTaskDraft } from '@/lib/assistant/role-task-draft';
+import { dispatchWorkspace, leadershipRoster } from '@/lib/follow-up/private';
 export const dynamic='force-dynamic';
 const privateResponse=(response:Response)=>{response.headers.set('Cache-Control','private, no-store');response.headers.set('X-Content-Type-Options','nosniff');return response;};
 export async function GET(request:Request){try{
  const db=database(),actor=await getActor(db,await getPortalUser()),query=new URL(request.url).searchParams,view=query.get('view')??'tasks';
  const input={projectId:query.get('projectId')??undefined,organizationId:query.get('organizationId')??undefined,projectScope:query.get('projectScope')??undefined,scheduleItemId:query.get('scheduleItemId')??undefined,status:query.get('status')??undefined,priority:query.get('priority')??undefined,search:query.get('search')??undefined,offset:query.has('offset')?Number(query.get('offset')):undefined};
- const result=view==='tasks'?await followupList(db,actor,input):view==='catalog'?await followupCatalog(db,actor,input):view==='detail'?await followupDetail(db,actor,query.get('id'),input):view==='inbox'?await notificationInbox(db,actor,query.get('hiddenAfter')):null;
+ const result=view==='tasks'?await followupList(db,actor,input):view==='catalog'?await followupCatalog(db,actor,input):view==='detail'?await followupDetail(db,actor,query.get('id'),input):view==='inbox'?await notificationInbox(db,actor,query.get('hiddenAfter')):view==='dispatch'?await dispatchWorkspace(db,actor,{organizationId:query.get('organizationId')??undefined,withUserId:query.get('withUserId')??undefined,group:query.get('group')??undefined}):view==='leadership'?await leadershipRoster(db,actor,query.get('organizationId')):null;
  if(!result)throw new HttpError(400,'Escolha uma consulta válida.','followup_view');return privateResponse(Response.json(result));
  }catch(error){return privateResponse(publicError(error));}}
 export async function POST(request:Request){try{

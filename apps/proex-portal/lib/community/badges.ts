@@ -33,7 +33,7 @@ const workingHours = (column: string) => `(CAST(strftime('%H',${column},'-3 hour
 function earnedSql(): Record<Badge, string> {
   return {
     closer: `EXISTS(SELECT 1 FROM followup_tasks t JOIN followup_assignees a ON a.task_id=t.id AND a.user_id=? AND a.removed_at IS NULL
-      WHERE t.status='completed' AND t.updated_at>=? AND t.updated_at<? AND ${workingHours('t.updated_at')})`,
+      WHERE t.status='completed' AND NOT EXISTS(SELECT 1 FROM followup_task_privacy pv WHERE pv.task_id=t.id) AND t.updated_at>=? AND t.updated_at<? AND ${workingHours('t.updated_at')})`,
     helpful: `EXISTS(SELECT 1 FROM portal_feedback WHERE author_id=? AND status='resolved' AND kind IN ('problem','suggestion') AND updated_at>=? AND updated_at<?)`,
     thanks: `EXISTS(SELECT 1 FROM portal_feedback WHERE author_id=? AND kind='praise' AND created_at>=? AND created_at<? AND ${workingHours('created_at')})`,
     field: `EXISTS(SELECT 1 FROM stock_movements WHERE actor_id=? AND created_at>=? AND created_at<? AND ${workingHours('created_at')})`,

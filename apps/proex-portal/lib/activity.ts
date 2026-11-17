@@ -5,7 +5,7 @@ import { builtinModelName } from './assistant/model-catalog';
 import { isCivilDate, offsetCivilDate } from './civil-date';
 import { all, type Row } from './database';
 import { HttpError } from './errors';
-import { authority as followupAuthority } from './follow-up/scope';
+import { authority as followupAuthority, publicTask } from './follow-up/scope';
 import { listRecords } from './records';
 
 /**
@@ -196,7 +196,8 @@ export async function activityFeed(db: D1Database, actor: PortalActor | null, in
   }
 
   if (wanted.includes('demands')) {
-    const visible = followupAuthority('?', 'f.organization_id', 'f.project_id'), demandColumn = { item: 'f.item_id', loan: 'f.loan_id', task: 'f.id', campaign: 'f.campaign_id' } as const;
+    // Demanda privada não entra no Início nem no histórico da organização (nem como contagem).
+    const visible = `${followupAuthority('?', 'f.organization_id', 'f.project_id')} AND ${publicTask('f')}`, demandColumn = { item: 'f.item_id', loan: 'f.loan_id', task: 'f.id', campaign: 'f.campaign_id' } as const;
     const projectFilter = `${projectId ? ' AND f.project_id=?' : ''}${organizationId ? ' AND f.organization_id=?' : ''}${subject ? ` AND ${demandColumn[subject.kind]}=?` : ''}`;
     const values = [actor.userId, ...(projectId ? [projectId] : []), ...(organizationId ? [organizationId] : []), ...(subject ? [subject.id] : [])];
     const opened = take(await all(db, `SELECT f.id,f.title,f.priority,f.created_at,f.created_by,f.project_id,COALESCE(p.name,o.name) project_name
@@ -366,7 +367,7 @@ async function subjectName(
   if (subject.kind === 'task') {
     const projectFilter = projectId ? ' AND f.project_id=?' : '';
     const organizationFilter = organizationId ? ' AND f.organization_id=?' : '';
-    const [row] = await all(db, `SELECT f.title name FROM followup_tasks f WHERE ${followupAuthority('?', 'f.organization_id', 'f.project_id')} AND f.id=?${projectFilter}${organizationFilter} LIMIT 1`,
+    const [row] = await all(db, `SELECT f.title name FROM followup_tasks f WHERE ${followupAuthority('?', 'f.organization_id', 'f.project_id')} AND ${publicTask('f')} AND f.id=?${projectFilter}${organizationFilter} LIMIT 1`,
       [actor.userId, subject.id, ...(projectId ? [projectId] : []), ...(organizationId ? [organizationId] : [])]);
     return row ? String(row.name) : '';
   }

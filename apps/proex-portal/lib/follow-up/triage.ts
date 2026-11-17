@@ -8,7 +8,7 @@ import { reservationStatements } from '../assistant/admission';
 import { classifyTaskTriage, taskTriageBody } from '../assistant/provider';
 import { decisionCeiling, decisionTarget, recordRouteFallback, requireTaskEndpoint, resolveTaskRoute, taskApproval, taskRouteGuards, taskRouteName, withTaskRoute, type ResolvedTaskRoute } from '../assistant/task-routing';
 import { TASK_PRIORITIES, choices, fail, id, onlyKeys, text, version } from './contracts';
-import { atomic, authority, type Scope } from './scope';
+import { atomic, publicTaskAuthority, type Scope } from './scope';
 import { serverWorkClock } from './time';
 import { followupDetail, saveTaskTriage } from './service';
 import { TRIAGE_CONTEXT_LIMIT, TRIAGE_INPUT_LIMIT, type TriageProposal, type TriageResponse } from './triage-contract';
@@ -57,7 +57,7 @@ export async function taskTriageState(db:D1Database, actor:PortalActor, taskId:u
 
 async function getTask(db:D1Database, actor:PortalActor, taskId:string) {
  const task = await one(db, `SELECT t.id,t.organization_id,t.project_id,t.version,t.status,t.due_at
-  FROM followup_tasks t WHERE t.id=? AND ${authority('?','t.organization_id','t.project_id',true)}`, [taskId,actor.userId]);
+  FROM followup_tasks t WHERE t.id=? AND ${publicTaskAuthority('?','t',true)}`, [taskId,actor.userId]);
  if (!task) fail('Demanda não encontrada neste contexto ou seu acesso mudou.', 'triage_forbidden', 404);
  return task!;
 }
@@ -67,7 +67,7 @@ function guard(db:D1Database, actor:PortalActor, task:Row, revision:number) {
  return db.prepare(`SELECT CASE WHEN EXISTS(SELECT 1 FROM followup_tasks t
   JOIN ai_organization_settings s ON s.organization_id=t.organization_id WHERE t.id=? AND t.version=? AND t.organization_id=?
   AND s.revision=? AND ${configEnabled} AND ${activeTask} AND ${usage.sql}
-  AND ${authority('?','t.organization_id','t.project_id',true)})
+  AND ${publicTaskAuthority('?','t',true)})
   THEN 1 ELSE json_extract('[]','triage_authority_or_version_changed') END`)
   .bind(task.id,task.version,task.organization_id,revision,...usage.values,actor.userId);
 }
