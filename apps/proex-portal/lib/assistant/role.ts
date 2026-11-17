@@ -8,7 +8,7 @@ import { onlyKeys, safeRequest, type AssistantConfig, type AssistantCredentials 
 import { ROLE_PDF_OFFER_TTL_MS, ROLE_TASK_DRAFT_TTL_MS, digest, signPdfOffer, signTaskDraft, verifyPdfOffer, type CredentialKeys } from './crypto';
 import {
   ROLE_CONTRACT, ROLE_MAX_HISTORY, ROLE_MAX_HISTORY_CHARS, ROLE_MAX_IMAGE_BYTES, ROLE_MAX_IMAGE_SIDE, ROLE_MAX_MESSAGE_CHARS, ROLE_IMAGE_TOKEN_CEILING, ROLE_SYSTEM_PROMPT_BYTES, ROLE_MODELS,
-  ROLE_SYSTEM_PROMPT, ROLE_SYSTEM_PROMPT_TOOLS, ROLE_TOOL_CALLS_PER_ROUND, ROLE_TOOL_RESULT_BYTES, ROLE_TOOL_ROUNDS, roleConversationBytes, roleEstimate, roleTimeoutMs, validateRoleReply, type RoleSource, type RoleTurn,
+  ROLE_SYSTEM_PROMPT, ROLE_SYSTEM_PROMPT_TOOLS, ROLE_TOOL_CALLS_PER_ROUND, ROLE_TOOL_RESULT_BYTES, ROLE_TOOL_ROUNDS, ROLE_TOOL_RESERVED_ROUNDS, ROLE_CLOSING_SLACK_MS, roleClosingFits, roleClosingTimeFits, roleConversationBytes, roleEstimate, roleRoundFits, roleTimeoutMs, roleToolLoopTimeoutMs, type RoleRoundBudget, type RoleSource, type RoleTurn,
 } from './role-contracts';
 import { ROLE_TASK_DRAFT_TOOL, ROLE_TOOL_NAMES, ROLE_TOOLS, canDraftTasks, officialLinksReply, officialRateLimit, officialSearchReply, pastedLinkPage, proexNewsReply, resolveRoleScope, roleScopes, runRoleTool, type RoleTaskDraft, type RoleToolResult } from './role-tools';
 import { ROLE_SUGGESTION_DAYS, roleSuggestions } from './role-suggestions';
@@ -23,14 +23,17 @@ import { GIFT_SHEET_REPLY, asksGiftSheet } from './gift-sheet-intent';
 import { roleDocumentExcerpt, roleDocumentMessage } from './role-document-contracts';
 import { roleHistoryForPolicy, roleReasoningParameters, roleReasoningSupport, type RolePolicy, type RoleEffort } from './role-policy';
 import { containsCredential } from './sensitive';
-import { ChargedError, firstJsonObject, genericChat, requireConversationEndpoint } from './generic-provider';
+import { ROLE_TOOL_LABELS, officialTurnMemory, roleMemoryHasRows, roleMemorySanitize, roleMergedTurns, roleTurnMemory, sourceProjectIds, type RoleMemoryPart } from './role-memory';
+import { roleReplyFromModel, type RoleReplyIssue } from './role-reply-guard';
+import { ChargedError, genericChat, requireConversationEndpoint } from './generic-provider';
 import { fitsFunction, geminiVideoCredential, type CatalogModel, type CatalogProvider, type ModelCatalog } from './model-catalog';
 import { loadCatalog } from './model-catalog-store';
 import { catalogPricing, type RolePricing, type SpeechRouteModel } from './role-contracts';
 import { assistantUsageSql, loadAssistantSettings, speechProviderForOrganization, validProviderKey, type SpeechEnvironment } from './settings';
 import { resolveTaskRoute, speechDestination, speechRouteModel, taskApproval, taskRouteName } from './task-routing';
 
-type Options = { fetcher?: typeof fetch; officialFetcher?: typeof fetch; now?: number; keys?: CredentialKeys; signal?: AbortSignal; speech?: SpeechEnvironment };
+/** `clock`: relógio do laço de consultas (os testes passam um falso); `now` continua sendo a data das respostas. */
+type Options = { fetcher?: typeof fetch; officialFetcher?: typeof fetch; now?: number; keys?: CredentialKeys; signal?: AbortSignal; speech?: SpeechEnvironment; clock?: () => number };
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/;
 const IMAGE_TYPES = { 'image/jpeg': [0xff, 0xd8, 0xff], 'image/png': [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 'image/webp': [0x52, 0x49, 0x46, 0x46] } as const;
 
@@ -103,6 +106,14 @@ function assertInputLimit(payload: object, limit: number) {
     return value;
   });
   if (new TextEncoder().encode(envelope).byteLength + images * ROLE_IMAGE_TOKEN_CEILING > limit) throw inputLimitError();
+}
+function fitsInput(payload: object, limit: number): boolean {
+  try { assertInputLimit(payload, limit); return true; } catch { return false; }
+}
+/** Conversa longa: saem as mensagens mais antigas (a resposta mais recente, com o resumo das consultas, fica). */
+function withoutOldest(turns: RoleTurn[]): RoleTurn[] {
+  const rest = turns.slice(1);
+  return rest[0]?.role === 'assistant' ? rest.slice(1) : rest;
 }
 async function scopedActor(db: D1Database, actor: PortalActor | null, project: string) {
   const current = actor && await getActor(db, actor);
@@ -274,10 +285,11 @@ function history(value: unknown): RoleTurn[] {
     onlyKeys(turn, ['role', 'content']);
     if ((turn.role !== 'user' && turn.role !== 'assistant') || typeof turn.content !== 'string' || !turn.content.trim() || turn.content.length > 4000) throw new HttpError(400, 'A conversa enviada é inválida.', 'role_history');
     // Both roles are client-supplied: apply the same redaction and credential refusal.
-    const content = safeRequest(turn.content);
+    // A linha de memória só vale no formato que o servidor gera; fora dele, sai do texto.
+    const content = turn.role === 'assistant' ? roleMemorySanitize(safeRequest(turn.content)).content : safeRequest(turn.content);
     total += content.length;
     return { role: turn.role, content } as RoleTurn;
-  });
+  }).filter(turn => turn.content);
   if (total > ROLE_MAX_HISTORY_CHARS) throw new HttpError(400, 'A conversa ficou longa. Comece uma nova.', 'role_history');
   return turns;
 }
@@ -305,10 +317,12 @@ export function brasiliaToday(now: number): string {
   return `${date} (${new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'long' }).format(new Date(now))})`;
 }
 function transportBody(route: ToolRoute, turns: RoleTurn[], message: string, projectName: string, image: string | null, today: string | null, scopeLabel: string | null, maxOutput: number, effort: RoleEffort) {
-  const user = `${today ? `Hoje: ${today}, horário de Brasília\n` : ''}${scopeLabel ? `Procurar em: ${scopeLabel} (as consultas já ficam limitadas a isso)\n` : ''}Projeto atual: ${projectName}\nMensagem: ${message}`;
+  // Falas seguidas do mesmo papel viram uma só, sem fala do assistente no início; a última fala da pessoa junta-se à mensagem.
+  const merged = roleMergedTurns(turns), pending = merged.at(-1)?.role === 'user' ? merged.pop()!.content : '';
+  const user = `${pending ? `${pending}\n\n` : ''}${today ? `Hoje: ${today}, horário de Brasília\n` : ''}${scopeLabel ? `Procurar em: ${scopeLabel} (as consultas já ficam limitadas a isso)\n` : ''}Projeto atual: ${projectName}\nMensagem: ${message}`;
   const messages = [
     { role: 'system', content: today ? ROLE_SYSTEM_PROMPT_TOOLS : ROLE_SYSTEM_PROMPT },
-    ...turns.map(turn => ({ role: turn.role, content: turn.content })),
+    ...merged.map(turn => ({ role: turn.role, content: turn.content })),
     { role: 'user', content: image ? [{ type: 'text', text: user }, { type: 'image_url', image_url: { url: image } }] : user },
   ];
   const reasoning = toolReasoning(route, effort);
@@ -335,7 +349,18 @@ async function boundedJson(response: Response): Promise<Record<string, unknown>>
 }
 
 type ToolCall = { id: string; type: 'function'; function: { name: string; arguments: string } };
-const FINAL_INSTRUCTION = 'Agora responda à pessoa usando só os dados consultados acima (não há mais consultas). Responda somente em JSON: {"reply":"texto para a pessoa","operation":null}.';
+export const ROLE_LIMIT_OPENING = 'Cheguei ao limite de consultas desta pergunta; o que encontrei foi';
+const FINAL_INSTRUCTION = `Não há mais consultas nesta pergunta. Responda à pessoa só com os dados consultados acima, curto, com número ou data exata e a fonte. Se faltou algo, comece com "${ROLE_LIMIT_OPENING}…" e diga o que falta conferir. Responda somente em JSON: {"reply":"texto para a pessoa","operation":null}.`;
+/** O modelo pediu consulta depois do limite: o portal encerra com o que foi encontrado, sem nome interno. */
+function limitReply(used: readonly { name: string; rows: number }[], sources: number): string {
+  const found = new Map<string, number>();
+  for (const entry of used) {
+    const label = ROLE_TOOL_LABELS[entry.name];
+    if (entry.rows > 0 && label) found.set(label, (found.get(label) ?? 0) + entry.rows);
+  }
+  const list = [...found].map(([label, rows]) => `${label} (${rows === 1 ? '1 resultado' : `${rows} resultados`})`).join(', ');
+  return `${ROLE_LIMIT_OPENING}: ${list || 'nada que responda à pergunta'}. ${sources ? 'Veja as fontes abaixo ou pergunte' : 'Pergunte'} de um jeito mais direto, sobre uma coisa por vez.`;
+}
 /** One provider step of the tool loop: a reply or tool calls, with confirmed usage. */
 async function toolStep(route: ToolRoute, apiKey: string, body: unknown, maxOutput: number, retainReasoning: boolean, signal: AbortSignal, fetcher: typeof fetch) {
   let data: Record<string, unknown>;
@@ -368,29 +393,55 @@ async function toolStep(route: ToolRoute, apiKey: string, body: unknown, maxOutp
   return { content, thinking, toolCalls, inputTokens, outputTokens, costMicros, finish: String(choice.finish_reason ?? '').slice(0, 20) };
 }
 
+/** Teto do laço: custo e tokens aceitos, prazo em ms contado de `startedAt` (início do pedido) e o relógio (falso nos testes). */
+type LoopCeiling = Omit<RoleRoundBudget, 'inputCeiling'> & { startedAt: number; clock: () => number };
 /**
  * Read-only tool loop: up to ROLE_TOOL_ROUNDS rounds of portal lookups (run here, with the asking
- * person's live permissions), then a final answer without tools. Lookup results are data, never
- * instructions; nothing is written; only tool names and row counts are audited.
+ * person's live permissions), then a final answer without tools. A round after the first opens only if it and
+ * the closing call still fit the accepted cost, tokens, time and input limit (roleRoundFits, with the real usage
+ * reported so far). Lookup results are data, never instructions; nothing is written; only tool names and row
+ * counts are audited.
  */
-async function dispatchWithTools(route: ToolRoute, apiKey: string, body: { messages: Record<string, unknown>[] } & Record<string, unknown>, run: (name: string, args: Record<string, unknown>, budget: number) => Promise<RoleToolResult>, policy: RolePolicy, offeredTools: PortalTools, retainReasoning: boolean, checkAccess: () => Promise<unknown>, signal: AbortSignal, fetcher: typeof fetch) {
-  const messages = [...body.messages], used: { name: string; rows: number }[] = [], sources = new Map<string, RoleSource>();
+async function dispatchWithTools(route: ToolRoute, apiKey: string, body: { messages: Record<string, unknown>[] } & Record<string, unknown>, run: (name: string, args: Record<string, unknown>, budget: number, signal: AbortSignal) => Promise<RoleToolResult>, policy: RolePolicy, offeredTools: PortalTools, retainReasoning: boolean, checkAccess: () => Promise<unknown>, signal: AbortSignal, fetcher: typeof fetch, ceiling: LoopCeiling) {
+  const messages = [...body.messages], used: { name: string; rows: number }[] = [], sources = new Map<string, RoleSource>(), parts: RoleMemoryPart[] = [];
   let taskDraft: RoleTaskDraft | undefined, draftCalls = 0, scanned: { url: string; title: string }[] = [], navigation: RoleToolResult['navigation'];
   let inputTokens = 0, outputTokens = 0, costMicros = 0, steps = 0;
   const charged = (message: string) => new ChargedError(message, costMicros, inputTokens + outputTokens);
   // No JSON mode in the loop: after lookups, DeepSeek's JSON mode can return an empty message.
   // The reply is parsed leniently (JSON or plain text); the final step gets a closing instruction.
   const { response_format: _format, ...free } = body; void _format;
-  let finalNudged = false;
+  const encoder = new TextEncoder(), { clock, startedAt } = ceiling, budget = { ...ceiling, inputCeiling: policy.roleInputTokenCeiling };
+  let finalNudged = false, closing = false, lastInput = 0, pendingBytes = 0, slowest = 0, slowestTools = 0;
+  const finish = (reply: { reply: string; operation: string | null }, extra: { limitReached?: true; replyIssue?: RoleReplyIssue } = {}) => {
+    // Conteúdo lido de outras consultas na mesma resposta pode tentar dirigir o rascunho: o cartão avisa.
+    const untrusted = used.some(entry => entry.name !== ROLE_TASK_DRAFT_TOOL && entry.rows > 0);
+    // Mesma regra para o botão de abrir tela: outra consulta com resultado na resposta vira "Sugestão do Rolê".
+    const navigationUntrusted = used.some(entry => entry.name !== ROLE_TASK_DRAFT_TOOL && entry.name !== 'abrir_tela' && entry.rows > 0);
+    return { ...reply, ...extra, inputTokens, outputTokens, costMicros, steps, tools: used, sources: [...sources.values()], memoryParts: parts, scanned, ...(navigation ? { navigation: navigationUntrusted ? { ...navigation, afterUntrusted: true as const } : navigation } : {}), ...(taskDraft ? { taskDraft: untrusted ? { ...taskDraft, afterUntrusted: true as const } : taskDraft } : {}) };
+  };
+  const stopAtLimit = (reason: string) => {
+    console.warn('role_tool_limit', JSON.stringify({ provider: route.family, steps, reason, lookups: used.map(entry => entry.name) }));
+    return finish({ reply: limitReply(used, sources.size), operation: null }, { limitReached: true });
+  };
+  // Estado para as conferências: a entrada da próxima chamada é a entrada real da última mais o que entrou depois dela (a saída já está nos bytes novos).
+  const state = () => ({ spentMicros: costMicros, spentTokens: inputTokens + outputTokens, nextInputTokens: lastInput + pendingBytes,
+    nextPayloadBytes: encoder.encode(JSON.stringify({ ...free, messages, tools: offeredTools })).byteLength, maxOutput: policy.roleOutputTokenLimit, carry: retainReasoning,
+    elapsedMs: clock() - startedAt, slowestStepMs: slowest, slowestToolsMs: slowestTools });
   for (let round = 0; ; round++) {
-    const offer = !!offeredTools.length && round < ROLE_TOOL_ROUNDS;
+    let offer = !!offeredTools.length && round < ROLE_TOOL_ROUNDS && !closing;
+    // Da segunda rodada em diante: tempo e limite de entrada sempre; custo e tokens só depois das rodadas que o teto mostrado já cobre.
+    if (offer && round > 0 && !roleRoundFits(state(), budget, route.pricing, round >= ROLE_TOOL_RESERVED_ROUNDS)) { offer = false; closing = true; }
+    // Chamada final que não termina a tempo: encerra sem chamar o modelo (não cobra uma chamada que vai estourar).
+    if (!offer && steps > 0 && !roleClosingTimeFits(state(), budget.ms)) return stopAtLimit('time');
     if (offeredTools.length && !offer && !finalNudged) { messages.push({ role: 'system', content: FINAL_INSTRUCTION }); finalNudged = true; }
     let step;
     try {
       const payload = offer ? { ...free, messages, tools: offeredTools, tool_choice: 'auto' } : { ...free, messages };
       assertInputLimit(payload, policy.roleInputTokenCeiling);
       await checkAccess();
+      const stepStarted = clock();
       step = await toolStep(route, apiKey, payload, policy.roleOutputTokenLimit, retainReasoning && offer, signal, fetcher);
+      slowest = Math.max(slowest, clock() - stepStarted);
     }
     catch (error) {
       if (String(error).includes('assistant_authority_changed')) throw error;
@@ -399,13 +450,18 @@ async function dispatchWithTools(route: ToolRoute, apiKey: string, body: { messa
       throw error;
     }
     inputTokens += step.inputTokens; outputTokens += step.outputTokens; costMicros += step.costMicros; steps++;
+    lastInput = step.inputTokens; pendingBytes = 0;
     if (step.toolCalls.length) {
-      if (!offer) throw charged('O Rolê tentou consultar demais. Reformule a pergunta de um jeito mais direto.');
-      messages.push({ role: 'assistant', content: step.content, tool_calls: step.toolCalls, ...(retainReasoning ? { reasoning_content: step.thinking } : {}) });
-      let budget = ROLE_TOOL_RESULT_BYTES;
+      // Pedido de consulta depois do limite: encerra com o que já foi encontrado (o custo real fica registrado).
+      if (!offer) return stopAtLimit('rounds');
+      const assistant = { role: 'assistant', content: step.content, tool_calls: step.toolCalls, ...(retainReasoning ? { reasoning_content: step.thinking } : {}) };
+      messages.push(assistant); pendingBytes += encoder.encode(JSON.stringify(assistant)).byteLength;
+      // As consultas também têm prazo: o que sobra até o fim do laço, menos a folga da chamada final.
+      const toolsStarted = clock(), toolSignal = AbortSignal.any([signal, AbortSignal.timeout(Math.max(1, budget.ms - (toolsStarted - startedAt) - ROLE_CLOSING_SLACK_MS))]);
+      let resultBudget = ROLE_TOOL_RESULT_BYTES;
       for (const [index, call] of step.toolCalls.entries()) {
         let content: string;
-        if (index >= ROLE_TOOL_CALLS_PER_ROUND || budget < 600) content = JSON.stringify({ erro: 'Limite de consultas desta pergunta. Responda com o que já tem.' });
+        if (index >= ROLE_TOOL_CALLS_PER_ROUND || resultBudget < 600) content = JSON.stringify({ erro: 'Limite de consultas desta pergunta. Responda com o que já tem.' });
         // Um rascunho por pergunta: da segunda chamada em diante, nenhum rascunho novo.
         else if (call.function.name === ROLE_TASK_DRAFT_TOOL && ++draftCalls > 1) { content = JSON.stringify({ erro: 'Um rascunho por vez. Confirme ou descarte o primeiro.' }); used.push({ name: ROLE_TASK_DRAFT_TOOL, rows: -1 }); }
         else {
@@ -413,9 +469,10 @@ async function dispatchWithTools(route: ToolRoute, apiKey: string, body: { messa
             if (!offeredTools.some(tool => tool.function.name === call.function.name)) throw new HttpError(400, 'Consulta não autorizada nesta conversa.', 'role_tool_disabled');
             const args: unknown = call.function.arguments.trim() ? JSON.parse(call.function.arguments) : {};
             if (!args || typeof args !== 'object' || Array.isArray(args)) throw new HttpError(400, 'Consulta com dados inválidos.', 'role_tool_input');
-            const result = await run(call.function.name, args as Record<string, unknown>, budget);
-            content = result.content; budget -= new TextEncoder().encode(content).byteLength;
+            const result = await run(call.function.name, args as Record<string, unknown>, resultBudget, toolSignal);
+            content = result.content; resultBudget -= new TextEncoder().encode(content).byteLength;
             used.push({ name: call.function.name, rows: result.rows });
+            parts.push({ name: call.function.name, rows: result.rows, projects: sourceProjectIds(result.sources) });
             for (const source of result.sources) if (sources.size < 8) sources.set(source.href, source);
             if (result.taskDraft) taskDraft = result.taskDraft;
             // "Abrir esta tela": o último destino conferido vira um botão; só o toque da pessoa navega.
@@ -423,29 +480,30 @@ async function dispatchWithTools(route: ToolRoute, apiKey: string, body: { messa
             if (result.scanned?.length && !scanned.length) scanned = result.scanned;
           } catch (error) {
             content = JSON.stringify({ erro: error instanceof HttpError && error.status < 500 ? error.message : 'Consulta indisponível agora.' });
-            used.push({ name: ROLE_TOOL_NAMES.includes(call.function.name) ? call.function.name : 'desconhecida', rows: -1 });
+            const name = ROLE_TOOL_NAMES.includes(call.function.name) ? call.function.name : 'desconhecida';
+            used.push({ name, rows: -1 }); parts.push({ name, rows: -1 });
           }
         }
         messages.push({ role: 'tool', tool_call_id: call.id, content });
+        pendingBytes += encoder.encode(content).byteLength + 64;
       }
+      slowestTools = Math.max(slowestTools, clock() - toolsStarted);
       continue;
     }
     if (!step.content.trim()) {
       // Empty message in a lookup round: one closing call without tools. Empty at the end: stop.
       console.warn('role_empty_reply', JSON.stringify({ provider: route.family, steps, round, finish: step.finish, lookups: used.map(entry => entry.name) }));
-      if (offer) { round = ROLE_TOOL_ROUNDS - 1; continue; }
+      if (offer) { closing = true; continue; }
       throw charged('O Rolê não conseguiu montar a resposta agora. Tente de novo com uma pergunta mais curta. O custo foi registrado.');
     }
-    let reply: { reply: string; operation: string | null };
-    try { reply = validateRoleReply(firstJsonObject(step.content)); }
-    catch { reply = { reply: step.content.trim().slice(0, 4000), operation: null }; }
+    // JSON cru de chamada de ferramenta ou nome interno: vira texto simples; o caso fica registrado sem o conteúdo.
+    const { issue, ...reply } = roleReplyFromModel(step.content);
+    if (issue) console.warn('role_reply_guard', JSON.stringify({ provider: route.family, steps, issue }));
+    // JSON de chamada numa rodada com consulta: uma chamada final, com a instrução de encerramento, se ela couber.
+    if (issue === 'tool_json' && offer && !closing && offeredTools.length && roleClosingFits({ ...state(), nextInputTokens: lastInput + step.outputTokens }, budget, route.pricing)) { closing = true; continue; }
     if (!reply.reply) throw charged('A resposta do Rolê veio vazia. O custo foi registrado.');
     if (containsCredential(reply.reply) || reply.operation && containsCredential(reply.operation)) throw charged('A resposta do provedor não pôde ser mostrada.');
-    // Conteúdo lido de outras consultas na mesma resposta pode tentar dirigir o rascunho: o cartão avisa.
-    const untrusted = used.some(entry => entry.name !== ROLE_TASK_DRAFT_TOOL && entry.rows > 0);
-    // Mesma regra para o botão de abrir tela: outra consulta com resultado na resposta vira "Sugestão do Rolê".
-    const navigationUntrusted = used.some(entry => entry.name !== ROLE_TASK_DRAFT_TOOL && entry.name !== 'abrir_tela' && entry.rows > 0);
-    return { ...reply, inputTokens, outputTokens, costMicros, steps, tools: used, sources: [...sources.values()], scanned, ...(navigation ? { navigation: navigationUntrusted ? { ...navigation, afterUntrusted: true as const } : navigation } : {}), ...(taskDraft ? { taskDraft: untrusted ? { ...taskDraft, afterUntrusted: true as const } : taskDraft } : {}) };
+    return finish(reply, issue ? { replyIssue: issue } : {});
   }
 }
 
@@ -492,18 +550,30 @@ export function operationNumbersAllowed(operation: string, userTexts: string[]):
 
 /** Catalog models: same prompt and limits; JSON parsed leniently, plain text kept as the reply. */
 async function catalogDispatch(chosen: Extract<Route, { kind: 'catalog' }>, turns: RoleTurn[], message: string, projectName: string, image: string | null, policy: RolePolicy, signal: AbortSignal, fetcher?: typeof fetch) {
+  // Mesma regra do caminho com consultas: falas seguidas do mesmo papel viram uma só, sem assistente no início.
+  const merged = roleMergedTurns(turns), pending = merged.at(-1)?.role === 'user' ? `${merged.pop()!.content}\n\n` : '';
   const result = await genericChat({ provider: chosen.provider, model: chosen.model, apiKey: chosen.apiKey, system: ROLE_SYSTEM_PROMPT, maxTokens: policy.roleOutputTokenLimit, reasoningEffort: !image && policy.roleReasoningEffort !== 'default' ? policy.roleReasoningEffort : undefined, assertPayload: body => assertInputLimit(body, policy.roleInputTokenCeiling), json: chosen.provider.kind === 'openai_chat', signal, fetcher,
-    turns: [...turns, { role: 'user', content: `Projeto atual: ${projectName}\nMensagem: ${message}`, image }] });
+    turns: [...merged, { role: 'user', content: `${pending}Projeto atual: ${projectName}\nMensagem: ${message}`, image }] });
   if (result.outputTokens > policy.roleOutputTokenLimit) throw new ChargedError('O modelo passou do limite de resposta. O custo foi registrado.', result.costMicros, result.inputTokens + result.outputTokens);
-  let reply: { reply: string; operation: string | null };
-  try { reply = validateRoleReply(firstJsonObject(result.text)); }
-  catch { reply = { reply: result.text.trim().slice(0, 4000), operation: null }; }
+  const { issue, ...reply } = roleReplyFromModel(result.text);
+  if (issue) console.warn('role_reply_guard', JSON.stringify({ provider: chosen.provider.id, steps: 1, issue }));
   if (containsCredential(reply.reply) || reply.operation && containsCredential(reply.operation)) throw new ChargedError('A resposta do provedor não pôde ser mostrada.', result.costMicros, result.inputTokens + result.outputTokens);
-  return { ...reply, inputTokens: result.inputTokens, outputTokens: result.outputTokens, costMicros: result.costMicros };
+  return { ...reply, ...(issue ? { replyIssue: issue } : {}), inputTokens: result.inputTokens, outputTokens: result.outputTokens, costMicros: result.costMicros };
+}
+
+/** Troca os identificadores de projeto das fontes pelos nomes (só de projetos que as próprias consultas devolveram). */
+async function memoryProjects(db: D1Database, parts: RoleMemoryPart[]): Promise<RoleMemoryPart[]> {
+  const ids = [...new Set(parts.flatMap(part => part.projects ?? []))].slice(0, 30);
+  if (!ids.length) return parts;
+  const rows = await all(db, `SELECT id,name FROM projects WHERE id IN (${ids.map(() => '?').join(',')})`, ids);
+  const names = new Map(rows.map(row => [String(row.id), String(row.name)]));
+  return parts.map(part => ({ ...part, projects: (part.projects ?? []).map(id => names.get(id) ?? '').filter(Boolean) }));
 }
 
 /** One paid call, only after the person accepted a cost ceiling at least as high as the server's. */
 export async function roleChat(db: D1Database, actor: PortalActor | null, input: Record<string, unknown>, secret: string, options: Options = {}) {
+  // O prazo do laço conta do início do pedido (reserva e conferências incluídas), para tudo caber nos 45 s da tela.
+  const clock = options.clock ?? Date.now, requestStartedAt = clock(), requestStartedReal = Date.now();
   onlyKeys(input, ['action', 'projectId', 'operationKey', 'consent', 'history', 'message', 'image', 'video', 'videoApproval', 'videoConsent', 'acceptedCostMicros', 'scope', 'document', 'documentConsent', 'documentApproval', 'officialSearch']);
   if (input.officialSearch !== undefined && input.officialSearch !== true) throw new HttpError(400, 'Pedido de busca em fontes oficiais inválido.', 'assistant_request');
   // A ciência de envio à IA vale para a conversa; a busca pedida explicitamente não manda nada para IA.
@@ -571,7 +641,7 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
         const answer = direct === 'news' ? await proexNewsReply(db, organizationId, options.officialFetcher, options.signal, await canCurateInstagram(db, current, organizationId)) : await officialLinksReply(pasted ?? undefined, options.officialFetcher, now, options.signal);
         await authorization.first();
         return { contract: ROLE_CONTRACT, reply: answer.reply, operation: null, operationDropped: false, provider: 'official', model: 'Consulta oficial',
-          reservedMicros: 0, costMicros: 0, inputTokens: 0, outputTokens: 0, sources: answer.sources, lookups: 1,
+          reservedMicros: 0, costMicros: 0, inputTokens: 0, outputTokens: 0, sources: answer.sources, lookups: 1, memory: officialTurnMemory(answer.linkGroups?.reduce((total, group) => total + group.links.length, 0) || answer.sources.length),
           ...(answer.linkGroups?.length ? { linkGroups: answer.linkGroups, linkIntro: answer.linkIntro, linkLabel: answer.linkLabel } : {}) };
       }
       const result = await officialSearchReply(db, organizationId, message, options.officialFetcher);
@@ -579,7 +649,7 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
       const pdfReading = await scannedOffer(result.scanned);
       await authorization.first();
       return { contract: ROLE_CONTRACT, reply: result.reply, operation: null, operationDropped: false, provider: 'official', model: 'Consulta oficial',
-        reservedMicros: 0, costMicros: 0, inputTokens: 0, outputTokens: 0, sources: result.sources, lookups: 1, ...(pdfReading ? { pdfReading } : {}) };
+        reservedMicros: 0, costMicros: 0, inputTokens: 0, outputTokens: 0, sources: result.sources, lookups: 1, memory: officialTurnMemory(result.sources.length), ...(pdfReading ? { pdfReading } : {}) };
     } catch (error) {
       if (String(error).includes('assistant_authority_changed')) throw new HttpError(403, 'Seu acesso ou a configuração mudou antes da resposta.', 'assistant_forbidden');
       throw error;
@@ -616,10 +686,15 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
   const offered = callable && !document ? roleTools(config) : [];
   const tools = offered.some(tool => tool.function.name === ROLE_TASK_DRAFT_TOOL) && !await canDraftTasks(db, current, organizationId, scope) ? offered.filter(tool => tool.function.name !== ROLE_TASK_DRAFT_TOOL) : offered, toolsOn = tools.length > 0;
   // Leave ten seconds for validation and settlement in the 60 s Vercel function.
-  const timeoutMs = video && videoProfile.effort === 'xhigh' ? 50_000 : roleTimeoutMs(config.timeoutMs, toolsOn || !!video);
-  const turns = roleHistoryForPolicy(submittedTurns, config.roleHistoryMessages);
+  // O laço de consultas (até 5 chamadas) ganha mais prazo; o vídeo continua com o seu.
+  const timeoutMs = video ? (videoProfile.effort === 'xhigh' ? 50_000 : roleTimeoutMs(config.timeoutMs, true)) : toolsOn ? roleToolLoopTimeoutMs(config.timeoutMs) : roleTimeoutMs(config.timeoutMs, false);
+  let turns = roleHistoryForPolicy(submittedTurns, config.roleHistoryMessages);
   const reasoningCarry = !image && keepReasoning(callable, config.roleReasoningEffort);
-  const envelope = callable ? transportBody(callable, turns, providerMessage, projectName, image?.dataUrl ?? null, toolsOn ? brasiliaToday(now) : null, toolsOn ? scope.label : null, config.roleOutputTokenLimit, image ? 'default' : config.roleReasoningEffort) : null;
+  const buildEnvelope = (list: RoleTurn[]) => callable ? transportBody(callable, list, providerMessage, projectName, image?.dataUrl ?? null, toolsOn ? brasiliaToday(now) : null, toolsOn ? scope.label : null, config.roleOutputTokenLimit, image ? 'default' : config.roleReasoningEffort) : null;
+  let envelope = buildEnvelope(turns);
+  // Limite de entrada: a conversa longa perde as mensagens mais antigas até caber; só a pergunta sozinha que não cabe é recusada.
+  while (envelope && turns.length && config.roleInputTokenCeiling && !fitsInput(toolsOn ? { ...envelope, tools, tool_choice: 'auto' } : envelope, config.roleInputTokenCeiling)) { turns = withoutOldest(turns); envelope = buildEnvelope(turns); }
+  while (!video && !envelope && turns.length && config.roleInputTokenCeiling && roleConversationBytes(turns, providerMessage, projectName) + ROLE_SYSTEM_PROMPT_BYTES + (image ? ROLE_IMAGE_TOKEN_CEILING : 0) > config.roleInputTokenCeiling) turns = withoutOldest(turns);
   if (envelope) assertInputLimit(toolsOn ? { ...envelope, tools, tool_choice: 'auto' } : envelope, config.roleInputTokenCeiling);
   const textBytes = roleConversationBytes(turns, providerMessage, projectName);
   if (!video && !envelope && config.roleInputTokenCeiling && textBytes + ROLE_SYSTEM_PROMPT_BYTES + (image ? ROLE_IMAGE_TOKEN_CEILING : 0) > config.roleInputTokenCeiling) throw inputLimitError();
@@ -652,7 +727,7 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
   }
   const admitted = await one(db, 'SELECT admission_nonce FROM ai_calls WHERE id=?', [id]);
   if (admitted?.admission_nonce !== nonce) throw await quotaRefusal(db, current, organizationId, day, config, { cost: reservation.cost, tokens: reservation.tokens, ms: reservation.milliseconds, calls: 1 });
-  const controller = new AbortController(), timer = setTimeout(() => controller.abort(), timeoutMs);
+  const controller = new AbortController(), timer = setTimeout(() => controller.abort(), callable && toolsOn ? Math.max(1, timeoutMs - (Date.now() - requestStartedReal)) : timeoutMs);
   const abort = () => controller.abort();
   options.signal?.addEventListener('abort', abort, { once: true });
   if (options.signal?.aborted) abort();
@@ -660,14 +735,14 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
     // Last live fence before money leaves: access or configuration may have changed during decryption.
     await authorization.first();
     const startedAt = Date.now();
-    const result: { reply: string; operation: string | null; inputTokens: number; outputTokens: number; reasoningTokens?: number; costMicros: number; tools?: { name: string; rows: number }[]; sources?: RoleSource[]; steps?: number; taskDraft?: RoleTaskDraft; scanned?: { url: string; title: string }[]; navigation?: RoleToolResult['navigation'] } = video && validProviderKey(videoKey)
+    const result: { reply: string; operation: string | null; inputTokens: number; outputTokens: number; reasoningTokens?: number; costMicros: number; memoryParts?: RoleMemoryPart[]; limitReached?: true; replyIssue?: RoleReplyIssue; tools?: { name: string; rows: number }[]; sources?: RoleSource[]; steps?: number; taskDraft?: RoleTaskDraft; scanned?: { url: string; title: string }[]; navigation?: RoleToolResult['navigation'] } = video && validProviderKey(videoKey)
       ? await dispatchRoleVideo({ apiKey: videoKey, video, message, maxOutputTokens: config.roleOutputTokenLimit,
           inputCeiling: config.roleInputTokenCeiling, now, profile: videoProfile, signal: controller.signal, fetcher: options.fetcher })
       : callable
-      ? await dispatchWithTools(callable, apiKey, envelope!, async (name, args, budget) => {
+      ? await dispatchWithTools(callable, apiKey, envelope!, async (name, args, budget, signal) => {
           await authorization.first();
-          return runRoleTool(db, current, organizationId, name, args, budget, scope, options.officialFetcher, controller.signal);
-        }, config, tools, reasoningCarry, () => authorization.first(), controller.signal, options.fetcher ?? fetch)
+          return runRoleTool(db, current, organizationId, name, args, budget, scope, options.officialFetcher, signal);
+        }, config, tools, reasoningCarry, () => authorization.first(), controller.signal, options.fetcher ?? fetch, { costMicros: estimate.costMicros, tokens: estimate.tokens, ms: timeoutMs, startedAt: requestStartedAt, clock })
       : await catalogDispatch(chosen as Extract<Route, { kind: 'catalog' }>, turns, providerMessage, projectName, image?.dataUrl ?? null, config, controller.signal, options.fetcher);
     // A model can suggest a draft only to someone with write authority in this project.
     // The separate review endpoint still checks the exact action and live permissions.
@@ -677,7 +752,7 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
     if (dropped) result.operation = null;
     const extraCost = Math.max(0, result.costMicros - estimate.costMicros), extraTokens = Math.max(0, result.inputTokens + result.outputTokens - estimate.tokens), elapsed = Date.now() - startedAt;
     const videoReceipt = video ? { hasVideo: true, videoEffort: videoProfile.effort, reasoningTokens: result.reasoningTokens } : {};
-    const details = { provider, model: modelName, hasImage: !!image, ...(document ? { hasDocumentExcerpt: true } : {}), ...videoReceipt, inputTokens: result.inputTokens, outputTokens: result.outputTokens, reservedUsdMicros: estimate.costMicros, usdMicros: result.costMicros, operationSuggested: !!result.operation, operationDropped: dropped, overrun: extraCost > 0 || extraTokens > 0, tools: result.tools ?? [], steps: result.steps ?? 1 };
+    const details = { provider, model: modelName, hasImage: !!image, ...(document ? { hasDocumentExcerpt: true } : {}), ...videoReceipt, inputTokens: result.inputTokens, outputTokens: result.outputTokens, reservedUsdMicros: estimate.costMicros, usdMicros: result.costMicros, operationSuggested: !!result.operation, operationDropped: dropped, overrun: extraCost > 0 || extraTokens > 0, tools: result.tools ?? [], steps: result.steps ?? 1, ...(result.limitReached ? { limitReached: true } : {}), ...(result.replyIssue ? { replyIssue: result.replyIssue } : {}) };
     await db.batch([
       authorization,
       db.prepare("UPDATE ai_calls SET status='complete' WHERE id=? AND admission_nonce=? AND status='reserved'").bind(id, nonce),
@@ -686,12 +761,16 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
       db.prepare("INSERT INTO audit(id,actor_id,project_id,organization_id,action,entity_id,details,created_at) VALUES(?,?,?,?,'assistant.role.chat',?,?,?)")
         .bind(crypto.randomUUID(), current.userId, project, organizationId, id, JSON.stringify(details), new Date().toISOString()),
     ]);
+    // Memória: consulta, quantos resultados e os projetos (nomes que a pessoa já vê nas fontes), sem título nenhum.
+    const memory = result.memoryParts?.length ? roleTurnMemory(await memoryProjects(db, result.memoryParts)) : '';
+    // Resumo de consultas anteriores no histórico também é conteúdo lido: rascunho e botão viram "Sugestão do Rolê".
+    const readBefore = !!image || turns.some(turn => turn.role === 'assistant' && turn.content.split('\n').some(roleMemoryHasRows));
     // PDF escaneado lido pelas ferramentas: a mesma oferta assinada do caminho direto (falha na oferta não derruba a resposta paga).
     const pdfReading = result.scanned?.length ? await scannedOffer(result.scanned).catch(() => null) : null;
     return { contract: ROLE_CONTRACT, reply: result.reply, operation: result.operation, operationDropped: dropped, provider, model: modelName,
       ...(pdfReading ? { pdfReading } : {}), ...videoReceipt, reservedMicros: estimate.costMicros, costMicros: result.costMicros, inputTokens: result.inputTokens, outputTokens: result.outputTokens,
-      sources: result.sources ?? [], lookups: (result.tools ?? []).length, ...(result.navigation ? { navigation: image && !result.navigation.afterUntrusted ? { ...result.navigation, afterUntrusted: true as const } : result.navigation } : {}),
-      ...(result.taskDraft ? { taskDraft: await signedTaskDraft(secret, current.userId, image && !result.taskDraft.afterUntrusted ? { ...result.taskDraft, afterUntrusted: true } : result.taskDraft, Date.now()) } : {}) };
+      sources: result.sources ?? [], lookups: (result.tools ?? []).length, ...(memory ? { memory } : {}), ...(result.navigation ? { navigation: readBefore && !result.navigation.afterUntrusted ? { ...result.navigation, afterUntrusted: true as const } : result.navigation } : {}),
+      ...(result.taskDraft ? { taskDraft: await signedTaskDraft(secret, current.userId, readBefore && !result.taskDraft.afterUntrusted ? { ...result.taskDraft, afterUntrusted: true } : result.taskDraft, Date.now()) } : {}) };
   } catch (error) {
     const failureDetails = { provider, model: modelName, hasImage: !!image, ...(video ? { hasVideo: true, videoEffort: videoProfile.effort } : {}), reservedUsdMicros: estimate.costMicros,
       ...(error instanceof ChargedError ? { usdMicros: error.chargedMicros } : {}),
@@ -822,7 +901,7 @@ export async function roleReadScannedPdf(db: D1Database, actor: PortalActor | nu
     ]);
     return { contract: ROLE_CONTRACT, reply: answer.reply, notice: answer.notice, operation: null, operationDropped: false, provider: 'gemini', model: PDF_READING_PROFILE.model,
       reservedMicros: estimate.costMicros, costMicros: result.costMicros, inputTokens: result.inputTokens, outputTokens: result.outputTokens,
-      sources: [answer.source], lookups: 0, page: answer.page };
+      sources: [answer.source], lookups: 0, page: answer.page, memory: officialTurnMemory(1) };
   } catch (error) {
     const charged = error instanceof RoleVideoChargedError ? error : null;
     const failureDetails = { ...base, ...(charged ? { usdMicros: charged.chargedMicros, ...charged.usage } : {}) };

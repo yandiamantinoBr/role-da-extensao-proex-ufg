@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type
 import { Check, Film, FileAudio, FileText, ImagePlus, Landmark, LoaderCircle, MessageSquarePlus, Mic, Send, Square, Trash2, X } from 'lucide-react';
 import { safeRequest, type AssistantPlan } from '@/lib/assistant/contracts';
 import {
-  ROLE_MAX_HISTORY, ROLE_MAX_HISTORY_CHARS, ROLE_MAX_IMAGE_BYTES, ROLE_MAX_IMAGE_SIDE, ROLE_MAX_MESSAGE_CHARS, ROLE_MODELS,
+  ROLE_MAX_HISTORY, ROLE_MAX_IMAGE_BYTES, ROLE_MAX_IMAGE_SIDE, ROLE_MAX_MESSAGE_CHARS, ROLE_MODELS,
   formatMicros, friendlyMicros, operationConferenceText, operationsConferenceSentence, operationsServiceText, roleConversationBytes, roleEstimate, roleSpeechCeilingMicros, shownRouteName, speechRouteCeilingMicros, speechRouteName, type RoleTurn, type SpeechRouteModel,
 } from '@/lib/assistant/role-contracts';
 import { prepareSpeechWav } from './speech-audio';
@@ -25,6 +25,7 @@ import { isOfficialSearch, officialRoute, roleComposerMode } from '@/lib/assista
 import { officialPdfUrl } from '@/lib/assistant/official-pdf-url';
 import { ROLE_VIDEO_MAX_BYTES, ROLE_VIDEO_MAX_SECONDS, ROLE_VIDEO_MIN_SECONDS, ROLE_VIDEO_MIME, ROLE_VIDEO_EFFORT_LABELS, roleVideoEstimate, type RoleVideoStatus } from '@/lib/assistant/role-video-contracts';
 import { roleHistoryForPolicy } from '@/lib/assistant/role-policy';
+import { ROLE_MEMORY_CHARS, roleHistoryTurns } from '@/lib/assistant/role-memory';
 import styles from './role-assistant.module.css';
 
 type Project = { id: string; name: string; organization_id?: string };
@@ -34,7 +35,7 @@ type Status = { document?: { approval: string; canSaveToRecords: boolean }; vide
 type Match = { projectId: string; projectName: string; itemName: string; score: number };
 type Operation = { request: string; stage: 'idle' | 'estimated' | 'preview' | 'done'; costMicros?: number; provider?: string; jev?: boolean; /** Modelo que confere, como veio da estimativa (vazio = padrão do portal). É o nome que o aviso mostra e que vai no preparo. */ decisionDestination?: string; decisionApproval?: string; stale?: boolean; projectId?: string; matches?: Match[]; ambiguous?: boolean; error?: string; limit?: boolean; preview?: { plan: Omit<AssistantPlan, 'actorId'>; planToken: string; undoReason: string }; confirmed?: boolean; receipt?: string; key: string; /** Pedido exatamente como foi enviado para preparar a prévia; vai junto na confirmação. */ prepared?: string; destinationDefault?: string; movementId?: string; destination?: string | null; revise?: 'correct' | 'undo' | null; reviseKey?: string };
 type Source = { label: string; href: string };
-type Message = { id: string; role: 'user' | 'assistant'; content: string; image?: string; video?: true; official?: true; isolated?: true; document?: RoleDocumentPreview; documentRevision?: RoleDocumentRevision; media?: RoleLocalMedia; meta?: string; operation?: Operation; sources?: Source[]; taskDraft?: RoleTaskDraftView; taskDraftStatus?: RoleTaskDraftStatus; navigation?: RoleNavigationView; pdfReading?: RoleScannedPdfOffer; notice?: string; focusOnShow?: true; linkGroups?: RoleLinkGroupView[]; linkIntro?: string; linkLabel?: string };
+type Message = { id: string; role: 'user' | 'assistant'; content: string; memory?: string; noAi?: true; image?: string; video?: true; official?: true; isolated?: true; document?: RoleDocumentPreview; documentRevision?: RoleDocumentRevision; media?: RoleLocalMedia; meta?: string; operation?: Operation; sources?: Source[]; taskDraft?: RoleTaskDraftView; taskDraftStatus?: RoleTaskDraftStatus; navigation?: RoleNavigationView; pdfReading?: RoleScannedPdfOffer; notice?: string; focusOnShow?: true; linkGroups?: RoleLinkGroupView[]; linkIntro?: string; linkLabel?: string };
 type Picked = { dataUrl: string; bytes: number };
 type Recorded = { file: File; seconds: number };
 
@@ -118,11 +119,9 @@ function sendableVideo(file: File): Promise<string> {
 }
 
 function trimmedHistory(messages: Message[]): RoleTurn[] {
-  // Mesma limpeza do servidor (e-mail e CPF omitidos), para o custo previsto bater com o dele.
-  const turns: RoleTurn[] = messages.filter(message => !message.video && !message.official && !message.isolated && message.content.trim()).flatMap(message => { try { return [{ role: message.role, content: safeRequest(message.content.slice(0, 4000)) }]; } catch { return []; } });
-  const recent = turns.slice(-ROLE_MAX_HISTORY);
-  while (recent.length && recent.reduce((total, turn) => total + turn.content.length, 0) > ROLE_MAX_HISTORY_CHARS) recent.shift();
-  return recent;
+  // Mesma limpeza do servidor (e-mail e CPF omitidos), para o custo previsto bater com o dele. Cada resposta leva
+  // a linha compacta do que foi consultado; a resposta direta (fontes oficiais) entra só por essa linha.
+  return roleHistoryTurns(messages);
 }
 
 export default function RoleAssistant(props: Props) {
@@ -315,12 +314,12 @@ function RoleConversation({ projects, defaultProjectId, onApplied, onOpenSetting
     const update = (patch: Partial<RoleScannedPdfOffer>) => setMessages(current => current.map(entry => entry.id === messageId && entry.pdfReading ? { ...entry, pdfReading: { ...entry.pdfReading, ...patch } } : entry));
     update({ reading: true, error: undefined }); setBusy(true); setError(''); setLimitHit(false);
     try {
-      const result = await post<{ reply: string; notice?: string; costMicros: number; sources?: Source[] }>('/api/assistant/role', {
+      const result = await post<{ reply: string; notice?: string; costMicros: number; sources?: Source[]; memory?: unknown }>('/api/assistant/role', {
         action: 'pdf.read', projectId, scope: scopeKind === 'org' ? { kind: 'org' } : { kind: scopeKind, id: scopeId }, operationKey: offer.key,
         consent: true, message: offer.question, url: offer.url, acceptedCostMicros: offer.costMicros, offer: offer.signature,
       }, 55_000);
       if (!mounted.current || conversationEpoch.current !== epoch) return;
-      const reply: Message = { id: crypto.randomUUID(), role: 'assistant', content: result.reply, official: true, focusOnShow: true,
+      const reply: Message = { id: crypto.randomUUID(), role: 'assistant', content: result.reply, official: true, focusOnShow: true, ...(typeof result.memory === 'string' && result.memory ? { memory: result.memory.slice(0, ROLE_MEMORY_CHARS) } : {}),
         ...(typeof result.notice === 'string' ? { notice: result.notice.slice(0, 200) } : {}),
         sources: (result.sources ?? []).filter(source => officialPdfUrl(source.href)).slice(0, 1), meta: `Leitura por IA (Google Gemini) · Custou ${friendlyMicros(result.costMicros)}` };
       setMessages(current => [...current.map(entry => entry.id === messageId && entry.pdfReading ? { ...entry, pdfReading: { ...entry.pdfReading, reading: false, done: true } } : entry), reply]);
@@ -345,11 +344,11 @@ function RoleConversation({ projects, defaultProjectId, onApplied, onOpenSetting
     if (!canSend || !status || (!officialLookup && !estimate)) return;
     const epoch = conversationEpoch.current;
     const text = sanitized.text, image = picked?.dataUrl, document = documentInput.excerpt;
-    const user: Message = { id: crypto.randomUUID(), role: 'user', content: text, image, ...(officialLookup ? { official: true } : {}), ...(document ? { isolated: true, meta: documentDraft?.name } : {}), ...(video ? { video: true, meta: 'Vídeo MP4' } : {}) };
+    const user: Message = { id: crypto.randomUUID(), role: 'user', content: text, image, ...(officialLookup ? { official: true } : {}), ...(route.explicit ? { noAi: true } : {}), ...(document ? { isolated: true, meta: documentDraft?.name } : {}), ...(video ? { video: true, meta: 'Vídeo MP4' } : {}) };
     setMessages(current => [...current, user]); setDraft(''); setPicked(null); setBusy(true); setError(''); setNotice(''); setLimitHit(false);
     try {
       const encodedVideo = video && status.video ? await sendableVideo(video.file) : null;
-      const result = await post<{ reply: string; operation: string | null; operationDropped?: boolean; model: string; provider?: string; costMicros: number; reservedMicros: number; inputTokens: number; outputTokens: number; reasoningTokens?: number; sources?: Source[]; lookups?: number; taskDraft?: unknown; navigation?: unknown; pdfReading?: unknown; linkGroups?: unknown; linkIntro?: unknown; linkLabel?: unknown }>('/api/assistant/role', {
+      const result = await post<{ reply: string; operation: string | null; operationDropped?: boolean; model: string; provider?: string; costMicros: number; reservedMicros: number; inputTokens: number; outputTokens: number; reasoningTokens?: number; sources?: Source[]; lookups?: number; memory?: unknown; taskDraft?: unknown; navigation?: unknown; pdfReading?: unknown; linkGroups?: unknown; linkIntro?: unknown; linkLabel?: unknown }>('/api/assistant/role', {
         action: 'chat', projectId, scope: scopeKind === 'org' ? { kind: 'org' } : { kind: scopeKind, id: scopeId }, operationKey: crypto.randomUUID(), history: encodedVideo || officialLookup || document ? [] : history, message: text, ...(image ? { image } : {}),
         ...(encodedVideo ? { video: encodedVideo, videoConsent: true, videoApproval: status.video?.approval } : {}),
         ...(document ? { document, documentConsent: true, documentApproval: status.document?.approval } : {}),
@@ -364,7 +363,7 @@ function RoleConversation({ projects, defaultProjectId, onApplied, onOpenSetting
       // Links da PROEX, Instagram e notícias: blocos clicáveis; o texto completo fica como reserva.
       const linkGroups = result.provider === 'official' ? roleLinkGroupsFrom(result.linkGroups) : undefined;
       const linkIntro = linkGroups && typeof result.linkIntro === 'string' ? result.linkIntro.slice(0, 2000) : undefined;
-      const reply: Message = { id: crypto.randomUUID(), role: 'assistant', content: result.reply, ...(linkGroups ? { linkGroups, ...(linkIntro ? { linkIntro } : {}), ...(typeof result.linkLabel === 'string' ? { linkLabel: result.linkLabel.slice(0, 120) } : {}) } : {}), ...(taskDraft ? { taskDraft } : {}), ...(navigation ? { navigation } : {}), ...(pdfReading ? { pdfReading } : {}), ...(result.provider === 'official' ? { official: true } : {}), ...(document ? { isolated: true } : {}), ...(encodedVideo ? { video: true } : {}), sources: (result.sources ?? []).filter(source => source.href.startsWith('/?module=') || OFFICIAL_LINK.test(source.href) || officialPdfUrl(source.href)).slice(0, 6), meta: result.provider === 'official' ? (pdfReading ? 'Consulta pública · sem custo de IA (a leitura abaixo é cobrada à parte)' : 'Consulta pública · sem custo de IA') : result.provider === 'portal' ? 'Resposta do Portal · sem custo de IA' : `${encodedVideo ? `${videoLabel} · Custo estimado` : 'Custou'} ${friendlyMicros(result.costMicros)}${videoUsage}${result.lookups ? ` · consultou o portal ${result.lookups === 1 ? '1 vez' : `${result.lookups} vezes`}` : ''}${result.operationDropped ? ' · Não foi preparado rascunho. Confira suas permissões e os dados informados.' : ''}`,
+      const reply: Message = { id: crypto.randomUUID(), role: 'assistant', content: result.reply, ...(typeof result.memory === 'string' && result.memory ? { memory: result.memory.slice(0, ROLE_MEMORY_CHARS) } : {}), ...(linkGroups ? { linkGroups, ...(linkIntro ? { linkIntro } : {}), ...(typeof result.linkLabel === 'string' ? { linkLabel: result.linkLabel.slice(0, 120) } : {}) } : {}), ...(taskDraft ? { taskDraft } : {}), ...(navigation ? { navigation } : {}), ...(pdfReading ? { pdfReading } : {}), ...(result.provider === 'official' ? { official: true } : {}), ...(route.explicit ? { noAi: true } : {}), ...(document ? { isolated: true } : {}), ...(encodedVideo ? { video: true } : {}), sources: (result.sources ?? []).filter(source => source.href.startsWith('/?module=') || OFFICIAL_LINK.test(source.href) || officialPdfUrl(source.href)).slice(0, 6), meta: result.provider === 'official' ? (pdfReading ? 'Consulta pública · sem custo de IA (a leitura abaixo é cobrada à parte)' : 'Consulta pública · sem custo de IA') : result.provider === 'portal' ? 'Resposta do Portal · sem custo de IA' : `${encodedVideo ? `${videoLabel} · Custo estimado` : 'Custou'} ${friendlyMicros(result.costMicros)}${videoUsage}${result.lookups ? ` · consultou o portal ${result.lookups === 1 ? '1 vez' : `${result.lookups} vezes`}` : ''}${result.operationDropped ? ' · Não foi preparado rascunho. Confira suas permissões e os dados informados.' : ''}`,
         operation: result.operation ? { request: result.operation, stage: 'idle', key: crypto.randomUUID() } : undefined };
       setMessages(current => [
         ...(encodedVideo && video ? current.map(message => message.id === user.id ? { ...message, media: { kind: 'video', file: video.file } satisfies RoleLocalMedia } : message) : current),

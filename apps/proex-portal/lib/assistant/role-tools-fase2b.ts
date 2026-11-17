@@ -215,7 +215,7 @@ async function responsibleTool(ctx: Ctx, found: Target, ids: string[]): Promise<
   const area = rawArea === undefined ? null : AREAS[String(rawArea)];
   // Sem projeto pedido e com escopo amplo, olha até 3 projetos (em paralelo) e pede qual; com projeto pedido, até 10.
   const asked = !!str(ctx.args.projeto, 'o projeto'), cap = asked ? 10 : 3;
-  const projects = ids.slice(0, cap), items: Record<string, unknown>[] = [], sources: RoleToolSource[] = [], missing: string[] = [], more: { projeto: string | undefined; total: number }[] = [];
+  const projects = ids.slice(0, cap), items: Record<string, unknown>[] = [], sources: RoleToolSource[] = [], missing: string[] = [], missingProjects = new Set<string>(), more: { projeto: string | undefined; total: number }[] = [];
   // Mesmo serviço e mesma regra de leitura da ficha do projeto ("Quem cuida de cada área").
   const filterOf = (projectId: string) => ({ organizationId: ctx.organizationId, projectId, ...(area ? { area } : {}), status: 'active' });
   const reads = await Promise.all(projects.map(projectId => Promise.all([responsibilityList(ctx.db, ctx.actor, { ...filterOf(projectId), limit: 50 }), responsibilityList(ctx.db, ctx.actor, { ...filterOf(projectId), target: 'area', limit: 4 })])));
@@ -229,12 +229,15 @@ async function responsibleTool(ctx: Ctx, found: Target, ids: string[]): Promise<
     if (list.hasMore) more.push({ projeto: found.projects.get(projectId), total: list.total });
     // O que falta vem de uma consulta à parte, só das áreas inteiras (no máximo 4): a lista acima pode ter sido cortada.
     for (const wantedArea of area ? [area] : (['materials', 'loans', 'campaigns'] as WorkArea[])) {
-      if (!areas.items.some(row => row.area === wantedArea)) missing.push(`${LABEL_OF[wantedArea]} · ${found.projects.get(projectId)}`);
+      if (!areas.items.some(row => row.area === wantedArea)) { missing.push(`${LABEL_OF[wantedArea]} · ${found.projects.get(projectId)}`); missingProjects.add(projectId); }
     }
   }
   const host = hosting(found);
   const notes = joinNotes(host.note, ids.length > projects.length ? (asked ? `Mostrando 10 de ${ids.length} projetos; diga o projeto para afunilar.` : `Mostrando ${projects.length} de ${ids.length} projetos: pergunte de qual projeto a pessoa quer saber.`) : '', more.length ? 'Há mais designações do que as mostradas (veja "maisDesignacoes"); a lista completa está na tela.' : '', items.length ? '' : 'Nenhuma designação de responsável nos projetos que você vê.');
-  return ctx.kit.pack(name, items, sources, ctx.budget, notes, { ...host.extra, ...(more.length ? { maisDesignacoes: more } : {}), ...(missing.length ? { semResponsavelDefinido: missing.slice(0, 12) } : {}) });
+  const result = ctx.kit.pack(name, items, sources, ctx.budget, notes, { ...host.extra, ...(more.length ? { maisDesignacoes: more } : {}), ...(missing.length ? { semResponsavelDefinido: missing.slice(0, 12) } : {}) });
+  // Área sem responsável também é resposta: a ficha "Quem cuida" do projeto entra nas fontes, para a pessoa conferir ou designar.
+  const pending = [...missingProjects].slice(0, 6).map(projectId => ({ label: `Quem cuida · ${found.projects.get(projectId) ?? 'projeto'}`, href: contextLink('projects', projectId) }));
+  return { ...result, sources: [...result.sources, ...pending.filter(source => !result.sources.some(seen => seen.href === source.href))] };
 }
 
 export async function runFase2bTool(db: D1Database, actor: PortalActor, organizationId: string, name: string, args: Record<string, unknown>, budget: number, scope: ResolvedScope | null, kit: Fase2bKit): Promise<RoleToolResult> {

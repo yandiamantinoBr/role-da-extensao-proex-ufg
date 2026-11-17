@@ -669,17 +669,18 @@ test('FERRAMENTAS: lookups run with the asking person permissions; loans never s
   } finally { f.native.close(); }
 });
 
-test('FERRAMENTAS: at most two lookup rounds, then the answer; a model that keeps asking is charged and stopped', async () => {
+test('FERRAMENTAS: at most four lookup rounds, then the answer; a model that keeps asking is charged and stopped with a clear message', async () => {
   const f = fixture();
   try {
     await setup(f); seedLots(f);
     const greedy = scriptedProvider([{ tools: [{ name: 'buscar_no_portal', args: { texto: 'Lote' } }] }]);
-    await assert.rejects(roleChat(f.db, f.actors.viewer, chatInput(f, { message: 'procure tudo' }), secret, { keys, fetcher: greedy.fetch }), error => error.status === 502);
-    assert.equal(greedy.calls.length, 3, 'two rounds with tools, one final call without');
-    assert.ok(!('tools' in greedy.calls[2]) && !('response_format' in greedy.calls[2]), 'final call without tools and without JSON mode');
-    assert.equal(greedy.calls[2].messages.at(-1).role, 'system', 'closing instruction before the final answer');
+    const stopped = await roleChat(f.db, f.actors.viewer, chatInput(f, { message: 'procure tudo' }), secret, { keys, fetcher: greedy.fetch });
+    assert.match(stopped.reply, /^Cheguei ao limite de consultas desta pergunta; o que encontrei foi/);
+    assert.equal(greedy.calls.length, 5, 'four rounds with tools, one final call without');
+    assert.ok(!('tools' in greedy.calls[4]) && !('response_format' in greedy.calls[4]), 'final call without tools and without JSON mode');
+    assert.equal(greedy.calls[4].messages.at(-1).role, 'system', 'closing instruction before the final answer');
     const usage = f.native.prepare("SELECT reserved_usd_micros FROM ai_organization_usage WHERE organization_id='org_proex'").get();
-    assert.ok(usage.reserved_usd_micros > 0, 'the failed attempt still counts against the day');
+    assert.ok(usage.reserved_usd_micros > 0, 'the stopped attempt still counts against the day');
     const { ROLE_TOOLS_ACTUAL_SCHEMA_BYTES } = await import(compile('assistant/role-tools'));
     const { ROLE_TOOLS_SCHEMA_BYTES } = await import(compile('assistant/role-contracts'));
     assert.ok(ROLE_TOOLS_ACTUAL_SCHEMA_BYTES <= ROLE_TOOLS_SCHEMA_BYTES, `schema ${ROLE_TOOLS_ACTUAL_SCHEMA_BYTES} fits the cost ceiling`);
