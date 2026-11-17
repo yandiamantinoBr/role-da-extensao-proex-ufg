@@ -8,6 +8,7 @@
 import { projectAuthoritySql, type PortalActor } from '../access';
 import { all, one, type Row } from '../database';
 import { HttpError } from '../errors';
+import { containsCredential } from './sensitive';
 import { rateLimitAll } from '../rate-limit';
 import { authority as followupAuthority, requireScope } from '../follow-up/scope';
 import { followupAssignablePeople } from '../follow-up/service';
@@ -363,8 +364,9 @@ const RECENT_FILLER = new Set(['instagram', 'post', 'posts', 'postagem', 'postag
 /** Pergunta sobre o que saiu: Instagram, posts, publicações, notícias, últimos ou recentes. */
 const asksRecent = (subject: string) => /\b(?:instagram|posts?|postage(?:m|ns)|publicac(?:ao|oes)|publicou|noticias?|novidades?|ultim[oa]s?|recentes?)\b/.test(norm(subject));
 const newsItem = (entry: OfficialNews) => ({ fonte: 'Notícias do site da PROEX', titulo: entry.title, ...(entry.publishedAt ? { publicadoEm: brasiliaDay(entry.publishedAt) } : {}), resumo: entry.summary, link: entry.url });
-const INSTAGRAM_NOTICE = 'O Instagram não permite que o Rolê leia os posts sozinho. Estas são as publicações cadastradas pela comunicação e as últimas notícias do site da PROEX.';
+const INSTAGRAM_NOTICE = 'O Instagram não deixa o Rolê ler os posts sozinho. Veja o perfil em https://www.instagram.com/proex.ufg. Abaixo estão as publicações cadastradas pela comunicação e as últimas notícias do site.';
 const INSTAGRAM_TIP = 'A comunicação pode cadastrar posts em Configurações → Chaves e modelos → Fontes oficiais do Rolê.';
+const INSTAGRAM_ASK = 'Peça à comunicação para cadastrar os posts no Portal.';
 const NEWS_UNAVAILABLE = 'Não consegui abrir as notícias do site da PROEX agora. Confira em https://proex.ufg.br/.';
 const byDate = (posts: Awaited<ReturnType<typeof listInstagramPosts>>) => [...posts].sort((a, b) => b.postedAt.localeCompare(a.postedAt));
 
@@ -375,8 +377,8 @@ async function recentTool(db: D1Database, organizationId: string, news: Official
     ...posts.map(post => ({ fonte: 'Instagram da PROEX (cadastrado pela comunicação)', publicadoEm: post.postedAt, legenda: post.caption, link: post.url })),
     ...(news ?? []).map(newsItem),
   ];
-  const sources = [...posts.map(post => ({ label: `Instagram · ${post.postedAt}`, href: post.url })), ...(news ?? []).map(entry => ({ label: entry.title.slice(0, 80), href: entry.url }))];
-  const notes = [INSTAGRAM_NOTICE, posts.length ? '' : `Nenhuma publicação do Instagram foi cadastrada. ${INSTAGRAM_TIP}`, news ? '' : NEWS_UNAVAILABLE].filter(Boolean).join(' ');
+  const sources = [...posts.map(post => ({ label: `Instagram · ${post.postedAt}`, href: post.url })), ...(news ?? []).map(entry => ({ label: shortLabel(entry.title), href: entry.url }))];
+  const notes = [INSTAGRAM_NOTICE, posts.length ? '' : `Nenhuma publicação do Instagram foi cadastrada. ${INSTAGRAM_ASK}`, news ? '' : NEWS_UNAVAILABLE].filter(Boolean).join(' ');
   return pack('consultar_fontes_oficiais', items, sources, budget, `${notes} Cite a data e o link de cada item.`);
 }
 
@@ -449,7 +451,7 @@ async function officialTool(db: D1Database, organizationId: string, subject: str
     for (const link of page.links) { const s = score(link.text, wanted); if (s) hits.push({ s, item: { fonte: page.label, titulo: link.text, copiadoEm: copied, link: link.url }, source: { label: link.text.slice(0, 80), href: link.url } }); }
   }
   for (const post of posts) { const s = score(post.caption, wanted); if (s) hits.push({ s, item: { fonte: 'Instagram da PROEX', publicadoEm: post.postedAt, legenda: post.caption, link: post.url }, source: { label: `Instagram · ${post.postedAt}`, href: post.url } }); }
-  for (const entry of await news ?? []) { const s = score(`${entry.title} ${entry.summary}`, wanted); if (s) hits.push({ s, item: newsItem(entry), source: { label: entry.title.slice(0, 80), href: entry.url } }); }
+  for (const entry of await news ?? []) { const s = score(`${entry.title} ${entry.summary}`, wanted); if (s) hits.push({ s, item: newsItem(entry), source: { label: shortLabel(entry.title), href: entry.url } }); }
   hits.sort((a, b) => b.s - a.s);
   const seen = new Set<string>();
   const top = hits.filter(({ source }) => {
@@ -489,11 +491,47 @@ export async function officialSearchReply(db: D1Database, organizationId: string
 }
 
 
+/** Blocos de links da resposta direta, para a tela mostrar como links clicáveis (o texto continua como reserva). */
+export type RoleLinkGroup = { title: string; links: { text: string; url: string; readable: boolean }[] };
+export type DirectReply = { reply: string; sources: RoleToolSource[]; linkGroups?: RoleLinkGroup[]; linkIntro?: string };
+/** Teto do texto de reserva da resposta direta. */
+export const DIRECT_REPLY_CHARS = 8000;
+const EXTERNAL = ' (site externo)';
+const safeLink = (link: { text: string; url: string }) => link.url.startsWith('https://') && link.url.length <= 300 && !containsCredential(`${link.text} ${link.url}`);
+const linkLine = (link: { text: string; url: string; readable: boolean }) => `• ${link.text}${link.readable ? '' : EXTERNAL}: ${link.url}`;
+/** Texto de reserva com os blocos, até DIRECT_REPLY_CHARS; o que não couber vira "mais N links". */
+function groupsText(groups: RoleLinkGroup[], head: string[], tail: string[]) {
+  let used = [...head, ...tail].join('\n\n').length + 120, hidden = 0;
+  const blocks: string[] = [];
+  for (const group of groups) {
+    const lines: string[] = [];
+    for (const link of group.links) {
+      const line = linkLine(link);
+      if (hidden || used + line.length + group.title.length + 3 > DIRECT_REPLY_CHARS) { hidden++; continue; }
+      used += line.length + 1;
+      lines.push(line);
+    }
+    if (lines.length) { blocks.push([group.title, ...lines].join('\n')); used += group.title.length + 2; }
+  }
+  return { blocks, hidden };
+}
+/** Nada que pareça credencial sai na resposta direta (mesma checagem das respostas do modelo). */
+function guarded(answer: DirectReply, fallback: string): DirectReply {
+  const text = [answer.reply, answer.linkIntro ?? '', ...(answer.linkGroups ?? []).flatMap(group => [group.title, ...group.links.map(link => `${link.text} ${link.url}`)])].join('\n');
+  return containsCredential(text) ? { reply: fallback, sources: answer.sources.slice(0, 1) } : answer;
+}
+/** Rótulo de fonte curto: corta no último espaço antes de 79 caracteres, com "…". */
+export function shortLabel(value: string, max = 79): string {
+  if (value.length <= max) return value;
+  const cut = value.slice(0, max - 1), space = cut.lastIndexOf(' ');
+  return `${(space > 20 ? cut.slice(0, space) : cut).replace(/[\s,.;:–-]+$/, '')}…`;
+}
+
 /**
- * Links publicados numa página oficial (por padrão, a página inicial da PROEX), em texto simples, sem IA.
- * Quando a página não abre, diz isso e dá o link.
+ * Links publicados numa página oficial (por padrão, a página inicial da PROEX), sem IA: blocos para a tela
+ * e o mesmo conteúdo em texto (com "(site externo)"). Quando a página não abre, diz isso e dá o link.
  */
-export async function officialLinksReply(page: URL = new URL(PROEX_HOME), fetcher?: typeof fetch, now = Date.now(), signal?: AbortSignal): Promise<{ reply: string; sources: RoleToolSource[] }> {
+export async function officialLinksReply(page: URL = new URL(PROEX_HOME), fetcher?: typeof fetch, now = Date.now(), signal?: AbortSignal): Promise<DirectReply> {
   const home = page.href === PROEX_HOME, label = home ? 'PROEX · página inicial' : 'Página oficial';
   let result: OfficialLinkPage;
   try { result = await readOfficialLinks(page, fetcher, now, signal); }
@@ -501,26 +539,37 @@ export async function officialLinksReply(page: URL = new URL(PROEX_HOME), fetche
     const reply = home ? `Não consegui abrir a página inicial da PROEX agora. Os links estão em ${PROEX_HOME}` : `${readFailure(error)} Confira em ${page.href}`;
     return { reply, sources: [{ label, href: page.href }] };
   }
+  const groups = result.groups.map(group => ({ title: group.title, links: group.links.filter(safeLink) })).filter(group => group.links.length);
+  if (!groups.length) return { reply: `Abri a página, mas não encontrei links nela. Confira em ${result.url}`, sources: [{ label, href: result.url }] };
   const intro = home ? 'Estes são os links publicados na página inicial da PROEX.' : `Estes são os links publicados na página ${result.title || result.url}.`;
-  const blocks = result.groups.map(group => [group.title, ...group.links.map(link => `• ${link.text}: ${link.url}`)].join('\n'));
-  if (!blocks.length) return { reply: `Abri a página, mas não encontrei links nela. Confira em ${result.url}`, sources: [{ label, href: result.url }] };
-  const tail = [result.omitted ? `A página tem mais ${result.omitted} links; abra a página para ver todos.` : '', `Fonte: ${home ? 'página inicial da PROEX' : result.url}, consultada em ${brasilia(result.fetchedAt)} (Brasília).`].filter(Boolean).join('\n');
-  return { reply: [intro, ...blocks, tail].join('\n\n'), sources: [{ label: home ? label : result.title || label, href: result.url }] };
+  const source = `Fonte: ${home ? 'página inicial da PROEX' : result.url}, consultada em ${brasilia(result.fetchedAt)} (Brasília).`;
+  const { blocks, hidden } = groupsText(groups, [intro], [source]);
+  const more = hidden + result.omitted;
+  const tail = [more ? `Há mais ${more} links na página; abra a página para ver todos.` : '', source].filter(Boolean).join('\n');
+  const linkIntro = [intro, result.omitted ? `A página tem mais ${result.omitted} links; abra a página para ver todos.` : '', source].filter(Boolean).join('\n');
+  return guarded({ reply: [intro, ...blocks, tail].join('\n\n'), sources: [{ label: home ? label : result.title || label, href: result.url }], linkGroups: groups, linkIntro },
+    `Não consegui mostrar os links agora. Confira em ${result.url}`);
 }
 
-/** Instagram e notícias, sem IA: publicações cadastradas (mais recentes primeiro) e as últimas notícias do RSS do site. */
-export async function proexNewsReply(db: D1Database, organizationId: string, fetcher?: typeof fetch, signal?: AbortSignal): Promise<{ reply: string; sources: RoleToolSource[] }> {
+export const INSTAGRAM_PROFILE = 'https://www.instagram.com/proex.ufg';
+/**
+ * Instagram e notícias, sem IA: perfil oficial, publicações cadastradas (mais recentes primeiro) e as últimas
+ * notícias do RSS do site. A dica de Configurações aparece só para quem pode cadastrar publicações.
+ */
+export async function proexNewsReply(db: D1Database, organizationId: string, fetcher?: typeof fetch, signal?: AbortSignal, canCurate = false): Promise<DirectReply> {
   const [posts, news] = await Promise.all([listInstagramPosts(db, organizationId).then(byDate), readProexNews(fetcher, 8, { signal }).catch(() => null)]);
-  const shown = posts.slice(0, 6), parts = [INSTAGRAM_NOTICE];
-  parts.push(shown.length
-    ? ['Publicações do Instagram cadastradas', ...shown.map(post => `• ${brasiliaDay(`${post.postedAt}T12:00:00-03:00`)} · ${post.caption.length > 160 ? `${post.caption.slice(0, 160)}…` : post.caption}: ${post.url}`)].join('\n')
-    : `Nenhuma publicação do Instagram foi cadastrada ainda. ${INSTAGRAM_TIP}`);
-  if (news === null) parts.push(NEWS_UNAVAILABLE);
-  else if (!news.length) parts.push('O site da PROEX não trouxe notícias agora. Confira em https://proex.ufg.br/.');
-  else parts.push(['Últimas notícias do site da PROEX', ...news.map(entry => `• ${entry.publishedAt ? `${brasiliaDay(entry.publishedAt)} · ` : ''}${entry.title}: ${entry.url}`)].join('\n'));
-  const postSources = shown.slice(0, 3).map(post => ({ label: `Instagram · ${post.postedAt}`, href: post.url }));
-  const newsSources = (news ?? []).map(entry => ({ label: entry.title.slice(0, 80), href: entry.url }));
-  return { reply: parts.join('\n\n'), sources: [...postSources, ...newsSources].slice(0, 6) };
+  const shown = posts.slice(0, 6), intro = [INSTAGRAM_NOTICE];
+  if (!shown.length) intro.push(`Nenhuma publicação do Instagram foi cadastrada ainda. ${canCurate ? INSTAGRAM_TIP : INSTAGRAM_ASK}`);
+  if (news === null) intro.push(NEWS_UNAVAILABLE);
+  else if (!news.length) intro.push('O site da PROEX não trouxe notícias agora. Confira em https://proex.ufg.br/.');
+  const postText = (caption: string) => caption.length > 160 ? `${caption.slice(0, 160)}…` : caption;
+  const groups: RoleLinkGroup[] = [
+    { title: 'Instagram da PROEX', links: [{ text: 'Perfil da PROEX no Instagram', url: INSTAGRAM_PROFILE, readable: false }, ...shown.map(post => ({ text: `${brasiliaDay(`${post.postedAt}T12:00:00-03:00`)} · ${postText(post.caption)}`, url: post.url, readable: false }))] },
+    ...(news?.length ? [{ title: 'Últimas notícias do site da PROEX', links: news.map(entry => ({ text: `${entry.publishedAt ? `${brasiliaDay(entry.publishedAt)} · ` : ''}${entry.title}`, url: entry.url, readable: true })) }] : []),
+  ].map(group => ({ ...group, links: group.links.filter(safeLink) }));
+  const { blocks } = groupsText(groups, intro, []);
+  // As notícias e as publicações já vão nos blocos de links: as fontes não as repetem.
+  return guarded({ reply: [...intro, ...blocks].join('\n\n'), sources: [], linkGroups: groups, linkIntro: intro.join('\n\n') }, `${INSTAGRAM_NOTICE} ${NEWS_UNAVAILABLE}`);
 }
 
 /** Link colado de site oficial que não é página /p/ ou /n/ nem PDF: a busca determinística lista os links dessa página. */

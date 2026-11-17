@@ -16,7 +16,7 @@ import { ROLE_VIDEO_MODELS, roleVideoEstimate, type RoleVideoProfile, type RoleV
 import { dispatchRoleVideo, parseRoleVideo, RoleVideoChargedError } from './role-video';
 import { directOfficialKind, isOfficialSearch } from './official-search-intent';
 import { officialPdfUrl } from './official-pdf-url';
-import { downloadScannedOfficialPdf } from './official-sources';
+import { canCurateInstagram, downloadScannedOfficialPdf } from './official-sources';
 import { PDF_READING_DISABLED, PDF_READING_MAX_COST_MICROS, PDF_READING_MAX_PAGES, PDF_READING_PROFILE, pdfReadingEstimate, type RolePdfReadingOffer } from './role-pdf-reading-contracts';
 import { dispatchRolePdfReading, pdfReadingReply } from './role-pdf-reading';
 import { GIFT_SHEET_REPLY, asksGiftSheet } from './gift-sheet-intent';
@@ -564,10 +564,11 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
       await authorization.first();
       const pasted = direct ? null : pastedLinkPage(message);
       if (direct || pasted) {
-        const answer = direct === 'news' ? await proexNewsReply(db, organizationId, options.officialFetcher, options.signal) : await officialLinksReply(pasted ?? undefined, options.officialFetcher, now, options.signal);
+        const answer = direct === 'news' ? await proexNewsReply(db, organizationId, options.officialFetcher, options.signal, await canCurateInstagram(db, current, organizationId)) : await officialLinksReply(pasted ?? undefined, options.officialFetcher, now, options.signal);
         await authorization.first();
         return { contract: ROLE_CONTRACT, reply: answer.reply, operation: null, operationDropped: false, provider: 'official', model: 'Consulta oficial',
-          reservedMicros: 0, costMicros: 0, inputTokens: 0, outputTokens: 0, sources: answer.sources, lookups: 1 };
+          reservedMicros: 0, costMicros: 0, inputTokens: 0, outputTokens: 0, sources: answer.sources, lookups: 1,
+          ...(answer.linkGroups?.length ? { linkGroups: answer.linkGroups, linkIntro: answer.linkIntro } : {}) };
       }
       const result = await officialSearchReply(db, organizationId, message, options.officialFetcher);
       // PDF escaneado: oferece a leitura com IA (só com o interruptor e a chave do Gemini, e um teto que caiba), assinada no servidor.

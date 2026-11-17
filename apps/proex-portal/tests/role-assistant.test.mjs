@@ -1353,8 +1353,10 @@ test('LINKS DA PROEX: "abra os links digitais da PROEX" responde direto, custo 0
     assert.equal(provider.calls.length, 0);
     assert.equal(f.native.prepare('SELECT COUNT(*) n FROM ai_calls').get().n, 0);
     assert.equal(result.reply.split('\n')[0], 'Estes são os links publicados na página inicial da PROEX.');
-    assert.match(result.reply, /Acesso Rápido\n• Editais: https:\/\/proex\.ufg\.br\/p\/editais-proex\n• Inscrição: https:\/\/docs\.google\.com/);
-    assert.match(result.reply, /Sistemas\n• SIGAA: https:\/\/sigaa\.ufg\.br\//);
+    assert.match(result.reply, /Acesso Rápido\n• Editais: https:\/\/proex\.ufg\.br\/p\/editais-proex\n• Inscrição \(site externo\): https:\/\/docs\.google\.com/);
+    assert.deepEqual(result.linkGroups.map(group => group.title), ['Acesso Rápido', 'Sistemas'], 'a tela recebe os blocos clicáveis');
+    assert.match(result.linkIntro, /^Estes são os links publicados na página inicial da PROEX\./);
+    assert.match(result.reply, /Sistemas\n• SIGAA \(site externo\): https:\/\/sigaa\.ufg\.br\//);
     assert.deepEqual(result.sources, [{ label: 'PROEX · página inicial', href: 'https://proex.ufg.br/' }]);
     assert.deepEqual(official.requested, ['https://proex.ufg.br/robots.txt', 'https://proex.ufg.br/'], 'só a página inicial; nenhum link externo é aberto');
     // Mesmas checagens da busca: sem acesso ao projeto, recusado antes de buscar.
@@ -1376,8 +1378,12 @@ test('INSTAGRAM: "últimos posts do Instagram" lista as cadastradas por data (se
     const { instagramAction } = await import(compile('assistant/official-sources'));
     const provider = fakeProvider(), official = proexSite(), options = { keys, fetcher: provider.fetch, officialFetcher: official.fetch };
     const empty = await roleChat(f.db, f.actors.viewer, chatInput(f, { message: 'últimos posts do Instagram da PROEX', acceptedCostMicros: 0 }), secret, options);
-    assert.equal(empty.reply.split('\n\n')[0], 'O Instagram não permite que o Rolê leia os posts sozinho. Estas são as publicações cadastradas pela comunicação e as últimas notícias do site da PROEX.');
-    assert.match(empty.reply, /Nenhuma publicação do Instagram foi cadastrada ainda\. A comunicação pode cadastrar posts em Configurações → Chaves e modelos → Fontes oficiais do Rolê\./);
+    assert.equal(empty.reply.split('\n\n')[0], 'O Instagram não deixa o Rolê ler os posts sozinho. Veja o perfil em https://www.instagram.com/proex.ufg. Abaixo estão as publicações cadastradas pela comunicação e as últimas notícias do site.');
+    assert.match(empty.reply, /Nenhuma publicação do Instagram foi cadastrada ainda\. Peça à comunicação para cadastrar os posts no Portal\./, 'quem não cadastra recebe o pedido, não o caminho das Configurações');
+    assert.deepEqual(empty.sources, []);
+    assert.deepEqual(empty.linkGroups.map(group => group.title), ['Instagram da PROEX', 'Últimas notícias do site da PROEX']);
+    const owner = await roleChat(f.db, f.actors.owner, chatInput(f, { message: 'últimos posts do Instagram da PROEX', acceptedCostMicros: 0 }), secret, options);
+    assert.match(owner.reply, /A comunicação pode cadastrar posts em Configurações → Chaves e modelos → Fontes oficiais do Rolê\./);
     assert.match(empty.reply, /Últimas notícias do site da PROEX\n• 15\/11\/2026 · Notícia sintética da semana: https:\/\/proex\.ufg\.br\/n\/91000-noticia-sintetica/);
     await instagramAction(f.db, f.actors.owner, { action: 'add', organizationId: 'org_proex', url: 'https://www.instagram.com/p/OLDER12345/', postedAt: '2026-11-03', caption: 'Mutirão sintético de limpeza do campus.' });
     await instagramAction(f.db, f.actors.owner, { action: 'add', organizationId: 'org_proex', url: 'https://www.instagram.com/p/NEWER12345/', postedAt: '2026-11-12', caption: 'Sarau sintético na praça universitária.' });
@@ -1385,7 +1391,7 @@ test('INSTAGRAM: "últimos posts do Instagram" lista as cadastradas por data (se
     assert.equal(listed.provider, 'official');
     assert.equal(listed.costMicros, 0);
     assert.ok(listed.reply.indexOf('NEWER12345') < listed.reply.indexOf('OLDER12345'), 'mais recentes primeiro');
-    assert.match(listed.reply, /• 12\/11\/2026 · Sarau sintético na praça universitária\.: https:\/\/www\.instagram\.com\/p\/NEWER12345\//);
+    assert.match(listed.reply, /• 12\/11\/2026 · Sarau sintético na praça universitária\. \(site externo\): https:\/\/www\.instagram\.com\/p\/NEWER12345\//);
     assert.equal(provider.calls.length, 0);
     assert.equal(f.native.prepare('SELECT COUNT(*) n FROM ai_calls').get().n, 0);
   } finally { f.native.close(); }

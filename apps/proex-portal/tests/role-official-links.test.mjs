@@ -19,7 +19,7 @@ function compile(name) {
 
 const { readableOfficialUrl, readOfficial, extractLinkGroups, parseNewsFeed, readProexNews, READ_BYTES } = await import(compile('assistant/official-links'));
 const { asksProexLinks, asksProexNews, directOfficialKind, officialRoute, isOfficialSearch } = await import(compile('assistant/official-search-intent'));
-const { runRoleTool, officialLinksReply, proexNewsReply, ROLE_TOOL_NAMES } = await import(compile('assistant/role-tools'));
+const { runRoleTool, officialLinksReply, proexNewsReply, shortLabel, DIRECT_REPLY_CHARS, ROLE_TOOL_NAMES } = await import(compile('assistant/role-tools'));
 const { ROLE_TOOL_RESULT_BYTES } = await import(compile('assistant/role-contracts'));
 
 const text = { 'content-type': 'text/plain' }, html = { 'content-type': 'text/html; charset=utf-8' }, rss = { 'content-type': 'application/rss+xml; charset=utf-8' };
@@ -199,17 +199,39 @@ test('FERRAMENTA abrir_link_oficial: devolve título, resumo e links por seção
   await assert.rejects(runRoleTool(emptyDb, { userId: 'u' }, 'org_proex', 'abrir_link_oficial', { url: 'x'.repeat(501) }, undefined, null, never), error => error.status === 400);
 });
 
-test('LINKS DA PROEX · RESPOSTA: primeira linha fixa, blocos com links e fonte; página fora do ar diz isso e dá o link', async () => {
+test('LINKS DA PROEX · RESPOSTA: primeira linha fixa, blocos clicáveis (linkGroups) e texto de reserva com "(site externo)"; página fora do ar diz isso e dá o link', async () => {
   const ok = site({ pages: { 'https://proex.ufg.br/': HOME } });
   const answer = await officialLinksReply(undefined, ok.fetch, Date.parse('2026-11-17T15:00:00Z'));
   const lines = answer.reply.split('\n');
   assert.equal(lines[0], 'Estes são os links publicados na página inicial da PROEX.');
-  assert.match(answer.reply, /\n\nAcesso Rápido\n• Editais: https:\/\/proex\.ufg\.br\/p\/editais-proex\n/);
-  assert.match(answer.reply, /\n\nRedes sociais\n• Instagram: https:\/\/www\.instagram\.com\/proex\.sintetica\//);
+  assert.match(answer.reply, /\n\nAcesso Rápido\n• Editais: https:\/\/proex\.ufg\.br\/p\/editais-proex\n• Formulário de inscrição \(site externo\): https:\/\/docs\.google\.com/);
+  assert.match(answer.reply, /\n\nRedes sociais\n• Instagram \(site externo\): https:\/\/www\.instagram\.com\/proex\.sintetica\//);
   assert.match(answer.reply, /Fonte: página inicial da PROEX, consultada em 17\/11\/2026, 12:00 \(Brasília\)\.$/);
   assert.deepEqual(answer.sources, [{ label: 'PROEX · página inicial', href: 'https://proex.ufg.br/' }]);
+  assert.deepEqual(answer.linkGroups.map(group => group.title), ['Menu principal', 'Acesso Rápido', 'Sistemas', 'Estruturas vinculadas', 'Redes sociais', 'Rodapé']);
+  assert.deepEqual(answer.linkGroups[1].links[1], { text: 'Formulário de inscrição', url: 'https://docs.google.com/forms/d/e/sintetico/viewform', readable: false });
+  assert.match(answer.linkIntro, /^Estes são os links publicados na página inicial da PROEX\.\nFonte: página inicial da PROEX/);
   const down = await officialLinksReply(undefined, async () => new Response('', { status: 503 }));
   assert.equal(down.reply, 'Não consegui abrir a página inicial da PROEX agora. Os links estão em https://proex.ufg.br/');
+  assert.equal(down.linkGroups, undefined);
+});
+
+test('REVISÃO · LIMITES DA RESPOSTA DIRETA: texto até ~8.000 caracteres com "mais N links"; credencial na página não sai', async () => {
+  const many = `<title>PROEX</title><h2>Muitos</h2>${Array.from({ length: 80 }, (_, index) => `<a href="https://proex.ufg.br/p/${index}-pagina-sintetica-com-um-nome-bem-comprido-para-encher-a-linha-da-resposta">Página sintética número ${index} com um nome comprido para encher a resposta</a>`).join('')}`;
+  const big = await officialLinksReply(undefined, site({ pages: { 'https://proex.ufg.br/': many } }).fetch);
+  assert.ok(big.reply.length <= DIRECT_REPLY_CHARS, `texto com ${big.reply.length} caracteres`);
+  assert.match(big.reply, /Há mais \d+ links na página; abra a página para ver todos\./);
+  assert.equal(big.linkGroups[0].links.length, 80, 'os blocos clicáveis trazem todos os links lidos');
+  const leakyLink = `<title>PROEX</title><h2>Acesso</h2><a href="https://proex.ufg.br/p/1-x">senha: segredo-sintetico-123</a><a href="https://proex.ufg.br/p/2-y">Editais</a>`;
+  const dropped = await officialLinksReply(undefined, site({ pages: { 'https://proex.ufg.br/': leakyLink } }).fetch);
+  assert.deepEqual(dropped.linkGroups[0].links.map(link => link.text), ['Editais'], 'link com credencial sai');
+  assert.doesNotMatch(dropped.reply, /segredo/);
+  const leaky = `<title>PROEX</title><h2>senha: segredo-sintetico-123</h2><a href="https://proex.ufg.br/p/1-x">Editais</a>`;
+  const guarded = await officialLinksReply(undefined, site({ pages: { 'https://proex.ufg.br/': leaky } }).fetch);
+  assert.equal(guarded.reply, 'Não consegui mostrar os links agora. Confira em https://proex.ufg.br/');
+  assert.equal(guarded.linkGroups, undefined);
+  assert.equal(shortLabel('Disponível o resultado preliminar de trabalhos aprovados para apresentar no 23º Conpeex'), 'Disponível o resultado preliminar de trabalhos aprovados para apresentar no…');
+  assert.equal(shortLabel('Título curto'), 'Título curto');
 });
 
 test('NOTÍCIAS: RSS lido sem dependência, com título, data, resumo e só links do próprio site', async () => {
@@ -225,21 +247,26 @@ test('NOTÍCIAS: RSS lido sem dependência, com título, data, resumo e só link
   await assert.rejects(readProexNews(blocked.fetch), error => error.kind === 'bloqueado');
 });
 
-const INSTAGRAM_FIRST = 'O Instagram não permite que o Rolê leia os posts sozinho. Estas são as publicações cadastradas pela comunicação e as últimas notícias do site da PROEX.';
-test('INSTAGRAM E NOTÍCIAS · RESPOSTA: cadastradas por data (sem exigir palavras na legenda) e RSS; sem posts, a dica; RSS fora do ar, o aviso', async () => {
+const INSTAGRAM_FIRST = 'O Instagram não deixa o Rolê ler os posts sozinho. Veja o perfil em https://www.instagram.com/proex.ufg. Abaixo estão as publicações cadastradas pela comunicação e as últimas notícias do site.';
+test('INSTAGRAM E NOTÍCIAS · RESPOSTA: perfil e cadastradas por data em blocos clicáveis, notícias do RSS; dica só para quem cadastra; RSS fora do ar, o aviso', async () => {
   const feed = site({ pages: { 'https://proex.ufg.br/feed': FEED } });
   const answer = await proexNewsReply(postsDb(POSTS), 'org_proex', feed.fetch);
   const parts = answer.reply.split('\n\n');
   assert.equal(parts[0], INSTAGRAM_FIRST);
-  assert.deepEqual(parts[1].split('\n').map(line => line.slice(0, 14)), ['Publicações do', '• 14/11/2026 ·', '• 09/11/2026 ·', '• 02/11/2026 ·'], 'mais recentes primeiro');
+  assert.deepEqual(parts[1].split('\n').map(line => line.slice(0, 14)), ['Instagram da P', '• Perfil da PR', '• 14/11/2026 ·', '• 09/11/2026 ·', '• 02/11/2026 ·'], 'perfil e mais recentes primeiro');
   assert.match(parts[2], /^Últimas notícias do site da PROEX\n• 14\/11\/2026 · Inscrições abertas para oficina sintética: https:\/\/proex\.ufg\.br\/n\/90001-oficina-sintetica/);
-  assert.equal(answer.sources[0].href, 'https://www.instagram.com/p/BBBBB22222/');
+  assert.deepEqual(answer.linkGroups.map(group => [group.title, group.links.length]), [['Instagram da PROEX', 4], ['Últimas notícias do site da PROEX', 2]]);
+  assert.deepEqual(answer.linkGroups[0].links[0], { text: 'Perfil da PROEX no Instagram', url: 'https://www.instagram.com/proex.ufg', readable: false });
+  assert.deepEqual(answer.sources, [], 'notícias e publicações já vêm nos blocos; as fontes não repetem');
+  assert.equal(answer.linkIntro, INSTAGRAM_FIRST);
   const none = await proexNewsReply(emptyDb, 'org_proex', feed.fetch);
-  assert.equal(none.reply.split('\n\n')[1], 'Nenhuma publicação do Instagram foi cadastrada ainda. A comunicação pode cadastrar posts em Configurações → Chaves e modelos → Fontes oficiais do Rolê.');
+  assert.equal(none.reply.split('\n\n')[1], 'Nenhuma publicação do Instagram foi cadastrada ainda. Peça à comunicação para cadastrar os posts no Portal.');
+  const curator = await proexNewsReply(emptyDb, 'org_proex', feed.fetch, undefined, true);
+  assert.equal(curator.reply.split('\n\n')[1], 'Nenhuma publicação do Instagram foi cadastrada ainda. A comunicação pode cadastrar posts em Configurações → Chaves e modelos → Fontes oficiais do Rolê.');
   assert.match(none.reply, /Últimas notícias do site da PROEX/);
   const offline = await proexNewsReply(postsDb(POSTS), 'org_proex', async () => new Response('', { status: 503 }));
-  assert.equal(offline.reply.split('\n\n').at(-1), 'Não consegui abrir as notícias do site da PROEX agora. Confira em https://proex.ufg.br/.');
-  assert.match(offline.reply, /Publicações do Instagram cadastradas/);
+  assert.equal(offline.reply.split('\n\n')[1], 'Não consegui abrir as notícias do site da PROEX agora. Confira em https://proex.ufg.br/.');
+  assert.match(offline.reply, /Instagram da PROEX\n• Perfil da PROEX no Instagram/);
 });
 
 test('FERRAMENTA consultar_fontes_oficiais: "instagram", "posts", "últimos" são palavras vazias e as notícias do RSS entram como fonte', async () => {
@@ -247,7 +274,7 @@ test('FERRAMENTA consultar_fontes_oficiais: "instagram", "posts", "últimos" sã
   const recent = JSON.parse((await runRoleTool(postsDb(POSTS), { userId: 'u' }, 'org_proex', 'consultar_fontes_oficiais', { texto: 'últimos posts do Instagram da PROEX' }, undefined, null, feed.fetch)).content);
   assert.deepEqual(recent.resultados.filter(item => item.legenda).map(item => item.publicadoEm), ['2026-11-14', '2026-11-09', '2026-11-02']);
   assert.ok(recent.resultados.some(item => item.fonte === 'Notícias do site da PROEX' && item.publicadoEm === '14/11/2026'));
-  assert.match(recent.observacao, /O Instagram não permite que o Rolê leia os posts sozinho/);
+  assert.match(recent.observacao, /O Instagram não deixa o Rolê ler os posts sozinho/);
   // Com assunto: a legenda precisa ter só o assunto, não "instagram" nem "publicações".
   const topical = await runRoleTool(postsDb(POSTS), { userId: 'u' }, 'org_proex', 'consultar_fontes_oficiais', { texto: 'publicações do Instagram sobre fotografia' }, undefined, null, async (raw, init) => String(raw).endsWith('/feed') || String(raw).endsWith('/robots.txt') ? feed.fetch(raw, init) : new Response('', { status: 503 }));
   assert.ok(topical.sources.some(source => source.href === 'https://www.instagram.com/p/AAAAA11111/'));

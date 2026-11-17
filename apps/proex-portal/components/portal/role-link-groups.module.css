@@ -1,0 +1,13 @@
+/* Blocos de links da resposta direta do Rolê (links da PROEX, Instagram e notícias). */
+.groups{display:grid;gap:.4rem;min-width:0}
+.group{border:1px solid var(--line);border-radius:12px;background:var(--surface);min-width:0}
+.summary{display:flex;align-items:center;flex-wrap:wrap;gap:0 .25rem;min-height:44px;padding:.35rem .75rem;cursor:pointer;border-radius:12px;list-style-position:inside}
+.summary:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+.title{display:inline;margin:0;font-size:max(13px,.82rem);font-weight:700;color:var(--text-secondary)}
+.count{font-size:max(13px,.82rem);color:var(--text-secondary)}
+.list{display:grid;gap:0;margin:0;padding:0 .35rem .35rem;list-style:none}
+.link{display:grid;align-content:center;gap:.05rem;min-height:44px;padding:.3rem .45rem;border-radius:8px;color:var(--brand-ink);text-decoration:none;overflow-wrap:anywhere}
+.link:hover .name{text-decoration:underline;text-underline-offset:2px}
+.link:focus-visible{outline:3px solid var(--focus);outline-offset:1px}
+.name{font-size:max(13px,.88rem);font-weight:650;line-height:1.35}
+.host{font-size:max(12px,.75rem);color:var(--text-secondary)}

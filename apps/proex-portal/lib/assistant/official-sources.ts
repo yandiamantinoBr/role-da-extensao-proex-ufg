@@ -446,10 +446,14 @@ export async function listInstagramPosts(db: D1Database, organizationId: string)
   const row = await one(db, 'SELECT value FROM settings WHERE name=?', [postsName(organizationId)]);
   try { const parsed = JSON.parse(String(row?.value ?? '[]')) as InstagramPost[]; return Array.isArray(parsed) ? parsed : []; } catch { return []; }
 }
+/** Pode cadastrar publicações do Instagram (administração ou quem configura a IA da organização)? */
+export async function canCurateInstagram(db: D1Database, actor: PortalActor, organizationId: string): Promise<boolean> {
+  const owner = platformOwnerAuthoritySql(actor), configure = aiConfigurationAuthority(actor, organizationId);
+  return !!await one(db, `SELECT 1 WHERE (${owner.sql}) OR (${configure.sql})`, [...owner.values, ...configure.values]);
+}
 async function requireCurator(db: D1Database, actor: PortalActor | null, organizationId: string) {
   if (!actor) throw new HttpError(401, 'Entre para cadastrar publicações.', 'unauthenticated');
-  const owner = platformOwnerAuthoritySql(actor), configure = aiConfigurationAuthority(actor, organizationId);
-  if (!await one(db, `SELECT 1 WHERE (${owner.sql}) OR (${configure.sql})`, [...owner.values, ...configure.values])) throw new HttpError(403, 'Só a administração ou quem configura a IA da organização cadastra publicações do Instagram.', 'instagram_forbidden');
+  if (!await canCurateInstagram(db, actor, organizationId)) throw new HttpError(403, 'Só a administração ou quem configura a IA da organização cadastra publicações do Instagram.', 'instagram_forbidden');
 }
 /** Ações: list (qualquer membro ativo da organização), add e remove (administração ou quem configura a IA). */
 export async function instagramAction(db: D1Database, actor: PortalActor | null, input: Record<string, unknown>, now = Date.now()) {
