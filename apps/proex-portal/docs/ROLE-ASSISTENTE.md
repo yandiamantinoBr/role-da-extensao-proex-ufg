@@ -330,3 +330,23 @@ Em **Diagnóstico → Testar níveis de esforço**, a administração vê o teto
 5. Anexos e edições ficam na conversa local até descarte, mudança de recorte, perda de acesso observada ou recarga. Apenas a opção de gravação em Registros salva o texto no Portal. O download salva o DOCX no dispositivo.
 
 A regressão em `tests/role-assistant.test.mjs` reabre a cópia Word, recusa extensões inválidas e PDF sem texto, testa leitura após revogação e confere que o trecho autorizado não permite operações nem leva histórico ao provedor.
+
+## Fontes oficiais, botão de busca e planilha de brindes · 2026-11-17
+
+PRs #176, #187, #191 e #194, todas validadas em produção com login (custo de IA zero nas buscas).
+
+- **Busca de editais** (`lib/assistant/official-sources.ts`, `official-pdfs.ts`, `official-pdf-url.ts`, `official-search-intent.ts`):
+  - Reconhece perguntas sobre editais, aditivos, retificações e resultados. Pedidos de operação ("cria uma demanda…", "registra…", "prepara…") e perguntas sobre dados do Portal (demandas, estoque, entregas, Agenda, compromissos) vão para a conversa com IA, mesmo com "edital" ou link oficial na frase.
+  - Link de página oficial colado (`proex.ufg.br/p/<número>-…`, `/n/…`, site do 23º CONPEEX) é destino exato: só essa página e os PDFs oficiais dela. Se a página não abrir, a resposta diz isso.
+  - Sem ano na pergunta, vem a edição mais recente; com ano ou número, só a pedida. Entre retificações, a de número maior. Quando há mais de um documento possível, a resposta avisa.
+  - Por documento, a resposta diz se leu: "Li o PDF e o trecho está na p. N.", escaneado (sem texto ou só o carimbo, menos de 200 caracteres), sem trecho, bloqueado pelo robots ou indisponível. Sem OCR.
+  - Índice do site: 6 s para robots e sitemap; se a renovação falhar, fica o último índice bom; sem índice, usa as páginas `/p/` e `/n/` da cópia diária.
+  - Limite: 20 buscas por pessoa e 300 por organização por minuto.
+- **Botão "Fontes oficiais"** no compositor (`components/portal/role-assistant.tsx`): manda a pergunta direto para a busca (`officialSearch: true`), sem ciência de IA e sem custo; trava anexos, voz e "Procurar em".
+- **Busca sem chave de conversa:** com o Rolê e a busca pública ligados, a busca funciona mesmo sem chave de IA válida; a tela abre num modo só de busca. Login, projeto, escopo e autorização continuam conferidos antes e depois.
+- **Planilha de brindes** (`lib/assistant/gift-sheet-intent.ts`): pergunta sobre "a planilha de brindes" recebe na hora, sem IA, que o Rolê ainda não tem acesso e que a administração do Portal precisa compartilhar a planilha só para leitura (decisão 5 de 2026-11-16). O texto de sistema diz que o Rolê não lê planilhas do Google.
+- **Avaliação com tarefas reais (2026-11-17, produção, sem gravar; gasto total US$ 0,0049 em duas chamadas DeepSeek Flash):**
+  - Ler o edital: ok (aditivo do PROBEC, p. 1, recurso de 14 a 18/05/2026 até 17h).
+  - Cruzar prazo com a Agenda: depois da PR #194, o pedido vai para a conversa, que lê o aditivo e consulta a Agenda; a ferramenta consultou o mês seguinte em vez do período do prazo — a descrição de `consultar_agenda` agora pede as datas do prazo citado.
+  - Preparar demanda como rascunho: o Rolê monta título, descrição, responsável sugerido e prazo em texto, sem gravar. Não há ferramenta de criar demanda; uma ferramenta nova só com escopo por pessoa e projeto.
+- **Fica para depois:** OCR de PDF escaneado com orçamento; busca explícita curta sem a palavra "edital" ("bolsas PROBEC 2026") devolve o resumo da página, não o PDF; sugestões quase escondidas em 390 px; leitura real da planilha depois do compartilhamento.
