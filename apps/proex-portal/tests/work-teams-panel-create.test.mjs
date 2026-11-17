@@ -157,3 +157,8 @@ test('the team sheet title inside the team detail matches the sibling block titl
   assert.match(css, /\.sheets h3 \{ font-size: 15px; \}/);
   assert.match(css, /\.sheets h3 > svg \{ display: none; \}/);
 });
+
+test('the team sheet inside the team card uses the same 14px padding as its siblings (nona crítica de 16/11)', () => {
+  const css = readFileSync(new URL('../components/portal/work-teams-panel.module.css', import.meta.url), 'utf8');
+  assert.match(css, /\.sheets > section \{ padding: 14px !important; \}/);
+});

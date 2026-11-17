@@ -104,3 +104,6 @@
 /* Oitava crítica de 16/11: caixas lado a lado com a mesma altura e a planilha com o mesmo título dos blocos vizinhos. */
 .sheets h3 { font-size: 15px; }
 .sheets h3 > svg { display: none; }
+/* Nona crítica de 16/11: a planilha dentro do cartão da equipe com o mesmo respiro dos blocos vizinhos (14px). */
+.sheets > section { padding: 14px !important; }
+.sheets h3 { margin: 0; }
