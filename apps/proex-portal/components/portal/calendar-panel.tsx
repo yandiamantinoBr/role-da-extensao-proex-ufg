@@ -1,8 +1,8 @@
 'use client';
 import DateField from './date-field';
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ArrowRight, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Copy, Download, ExternalLink, FileText, Link2, ListChecks, LoaderCircle, RefreshCw, Search, ShieldCheck, X } from 'lucide-react';
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { ArrowRight, ChevronDown, ChevronLeft, ChevronRight, Copy, Download, ExternalLink, FileText, Link2, ListChecks, LoaderCircle, RefreshCw, Search, ShieldCheck, X } from 'lucide-react';
 import type { CalendarCategory, CalendarEntry } from '@/lib/calendar';
 import styles from './calendar-panel.module.css';
 import { groupUnits } from '@/lib/extension-catalog';
@@ -46,6 +46,28 @@ export function splitTitle(event: Pick<CalendarEntry, 'title' | 'category'>): { 
 function statusLabel(event: CalendarEntry): string {
   if (event.status === 'CANCELLED') return event.state === 'archived' ? 'Arquivado' : event.state === 'not_collected' ? 'Não retirado' : 'Cancelado';
   return event.state === 'tentative' ? 'A confirmar' : event.state === 'done' ? 'Concluída' : '';
+}
+/** Dia civil (Brasília) em que o compromisso começa: agrupa a lista por dia. */
+function startDay(event: CalendarEntry): string { return event.allDay ? event.startsAt : civilDay(event.startsAt); }
+function dayHeading(day: string): string {
+  const text = new Intl.DateTimeFormat('pt-BR', { timeZone, weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(`${day}T12:00:00Z`));
+  return text.charAt(0).toLocaleUpperCase('pt-BR') + text.slice(1);
+}
+/** "1 a 30 de novembro de 2026" no mesmo mês; "28 de novembro a 3 de dezembro de 2026" no mesmo ano. */
+export function prettyRange(from: string, to: string): string {
+  if (from === to) return prettyDay(from);
+  const [fy, fm] = from.split('-'), [ty, tm] = to.split('-');
+  const month = (day: string) => new Intl.DateTimeFormat('pt-BR', { timeZone, month: 'long' }).format(new Date(`${day}T12:00:00Z`));
+  const dayOf = (day: string) => String(Number(day.slice(8, 10)));
+  if (fy === ty && fm === tm) return `${dayOf(from)} a ${dayOf(to)} de ${month(to)} de ${ty}`;
+  if (fy === ty) return `${dayOf(from)} de ${month(from)} a ${dayOf(to)} de ${month(to)} de ${ty}`;
+  return `${prettyDay(from)} a ${prettyDay(to)}`;
+}
+/** Dentro do grupo do dia, a data já está no título: sobra "Dia inteiro" ou o horário. */
+function whenInDay(event: CalendarEntry): string {
+  if (event.allDay) return offsetCivilDate(event.endsAt, -1) === event.startsAt ? 'Dia inteiro' : when(event);
+  const start = new Date(event.startsAt), end = new Date(event.endsAt);
+  return shortDate.format(start) === shortDate.format(end) ? `${shortTime.format(start)} a ${shortTime.format(end)}` : when(event);
 }
 function when(event: CalendarEntry): string {
   if (event.allDay) {
@@ -146,7 +168,8 @@ export default function CalendarPanel({ viewerId, projects: sourceProjects, orga
   const activeFeeds = data?.feeds.filter(feed => !feed.revoked_at && Date.parse(feed.expires_at) > (result?.receivedAt??mountedAt)) ?? [];
   const scopeName = project?.name || String(unit?.name || 'Todos os projetos permitidos');
   const downloadLabel=validRange?`Baixar .ics de ${from.split('-').reverse().join('/')} a ${to.split('-').reverse().join('/')}`:'Informe um período válido para baixar';
-  const filteredContext = Boolean(projectId || unitId || category!=='all' || from!==initial.from || to!==initial.to || search.trim() || showCancelled || effectiveListCategory!=='all');
+  // "Mostrar cancelados" é uma opção de exibição, não um filtro: não faz surgir "Limpar filtros" nem empurra a tela.
+  const filteredContext = Boolean(projectId || unitId || category!=='all' || from!==initial.from || to!==initial.to || search.trim() || effectiveListCategory!=='all');
   async function exportCommitments(format: DocumentFormat) {
     if (!shown.length || !viewerId || !data) return;
     exportJob.current?.abort();
@@ -174,6 +197,7 @@ export default function CalendarPanel({ viewerId, projects: sourceProjects, orga
       await verify();
       const { documentExport } = await import('./document-export');
       const columns = [{ key: 'event', label: 'Compromisso' }, { key: 'when', label: 'Data e horário' }, { key: 'context', label: 'Projeto e local' }];
+      const cancelledShown = shown.filter(event => event.status === 'CANCELLED').length;
       const rows = shown.map(event => {
         const { kind, name } = splitTitle(event), status = statusLabel(event), cancelled = event.status === 'CANCELLED';
         return {
@@ -182,13 +206,18 @@ export default function CalendarPanel({ viewerId, projects: sourceProjects, orga
         };
       });
       const info: [string, string][] = [
-        ['Período', selectedDay ? prettyDay(selectedDay) : `${prettyDay(from)} a ${prettyDay(to)}`],
+        ['Período', selectedDay ? prettyDay(selectedDay) : prettyRange(from, to)],
         ['Projetos', scopeName],
         ['Categoria', effectiveListCategory !== 'all' ? labels[effectiveListCategory] : category === 'all' ? 'Todas as categorias permitidas' : labels[category as CalendarCategory]],
-        ['Horário', 'Brasília'], ['Gerado em', `${shortDate.format(new Date())}, ${shortTime.format(new Date())}`],
+        ['Fuso horário', 'Brasília'], ['Gerado em', `${shortDate.format(new Date())}, ${shortTime.format(new Date())}`],
       ];
       const blob = await documentExport(format, 'Agenda da PROEX', columns, rows, (row, key) => row[key], info,
-        { layout: 'table', columnWeights: [1.45, 1.15, 1.1] });
+        { layout: 'table', columnWeights: [1.45, 1.15, 1.1], recordsLabel: 'Compromissos do período', mutedDetailLines: true, metrics: [
+          // Total e as categorias da tela, na mesma ordem dos contadores; os cancelados viram nota do total (crítica de 16/11).
+          { label: shown.length === 1 ? 'Compromisso' : 'Compromissos', value: shown.length, ...(cancelledShown ? { detail: `inclui ${cancelledShown} ${cancelledShown === 1 ? 'cancelado' : 'cancelados'}` } : {}) },
+          ...[...new Set(shown.map(event => event.category))].map(kind => [kind, shown.filter(event => event.category === kind).length] as const)
+            .sort((a, b) => b[1] - a[1]).slice(0, 3).map(([kind, total]) => ({ label: total === 1 ? singular[kind] : labels[kind], value: total })),
+        ] });
       await verify();
       controller.signal.throwIfAborted();
       download(`agenda-proex-${selectedDay || from}.${format}`, blob);
@@ -210,9 +239,9 @@ export default function CalendarPanel({ viewerId, projects: sourceProjects, orga
   }
   return <div className={styles.panel}>
     <section className="p-card" aria-label="Filtros da agenda">
-      <div className="p-card-title"><span className="p-icon-tile"><CalendarDays size={21}/></span><div><h3>Agenda integrada</h3><p>Reservas, atividades e movimentações reais, no horário de Brasília.</p></div></div>
+      <div className="p-card-title"><div><h3>Agenda integrada</h3><p>Reservas, atividades e movimentações reais, no horário de Brasília.</p></div></div>
       <label className={`p-field ${styles.search}`}><span>Buscar no período</span><span className={styles.searchField}><Search size={16} aria-hidden="true"/><input ref={searchField} type="search" name="calendarSearch" value={search} maxLength={120} onChange={event=>setSearch(event.target.value)} placeholder="Título, projeto ou local"/></span></label>
-      <div className={styles.summaryRow}><div className={styles.rangeSummary}><strong>{validRange?`${prettyDay(from)} a ${prettyDay(to)}`:'Escolha as datas inicial e final'}</strong><span>{scopeName} · {category==='all'?'Todas as categorias permitidas':labels[category as CalendarCategory]}</span></div>
+      <div className={styles.summaryRow}><div className={styles.rangeSummary}><strong>{validRange?prettyRange(from, to):'Escolha as datas inicial e final'}</strong><span>{scopeName} · {category==='all'?'Todas as categorias permitidas':labels[category as CalendarCategory]}</span></div>
         {filteredContext&&<button className="p-text-link" type="button" onClick={clearFilters}>{from!==initial.from||to!==initial.to?'Voltar ao mês atual e limpar filtros':'Limpar filtros'}</button>}
       </div>
       <details className={styles.filterDisclosure}><summary>Filtrar período e contexto</summary><div className={styles.filterBody}>
@@ -250,7 +279,7 @@ export default function CalendarPanel({ viewerId, projects: sourceProjects, orga
             <strong className={styles.dayNumber}>{Number(day.slice(-2))}</strong>
             {count > 0 && <span className={styles.dayCount} aria-hidden="true">{count}</span>}
             <span className={styles.dots} aria-hidden="true">{[...new Set(dayEntries.map(event => event.category))].map(kind => <span key={kind} style={{ background: colors[kind] }}/>)}</span>
-            {dayEntries.slice(0, 2).map(event => <em key={event.uid} className={styles.chip} data-cancelled={event.status === 'CANCELLED' || undefined} style={{ borderLeftColor: colors[event.category] }} title={event.status === 'CANCELLED' ? `${statusLabel(event)} · ${event.title}` : event.title}>{splitTitle(event).name}</em>)}
+            {dayEntries.slice(0, 2).map(event => <em key={event.uid} className={styles.chip} data-cancelled={event.status === 'CANCELLED' || undefined} style={{ borderLeftColor: colors[event.category] }} title={event.status === 'CANCELLED' ? `${statusLabel(event)} · ${event.title}` : event.title}><span className={styles.chipText}>{splitTitle(event).name}</span></em>)}
             {count > 2 && <small className={styles.extraEntries}>+{count - 2}</small>}
           </button>;
         })}
@@ -271,18 +300,19 @@ export default function CalendarPanel({ viewerId, projects: sourceProjects, orga
         <ExportFormats label="Baixar compromissos da agenda" showLabel tiles disabled={loading || !shown.length || !viewerId} onExport={exportCommitments}/>
       </div>
       {loading ? <p className="p-form-help"><LoaderCircle size={17} className="p-spin"/> Carregando agenda…</p>
-        : shown.length ? <div className={styles.entries}>{shown.map(event => <article key={event.uid} className={styles.entry} data-cancelled={event.status === 'CANCELLED' || undefined} style={{borderLeftColor:colors[event.category]}}>
+        : shown.length ? <div className={styles.entries}>{shown.map((event, index) => <Fragment key={event.uid}>
+          {!selectedDay && (index === 0 || startDay(shown[index - 1]) !== startDay(event)) && <h4 className={styles.dayHeading}>{dayHeading(startDay(event))}</h4>}
+          <article className={styles.entry} data-cancelled={event.status === 'CANCELLED' || undefined} style={{borderLeftColor:colors[event.category]}}>
           <small>{splitTitle(event).kind}</small>
           {event.status === 'CANCELLED' && <span className={`p-badge p-status-cancelled ${styles.statusBadge}`}>{statusLabel(event)}</span>}
           <h4 className={event.status === 'CANCELLED' ? styles.cancelled : undefined}>{splitTitle(event).name}</h4>
-          <p>{when(event)}</p>
-          <p className={styles.entryContext}>{event.projectName}{event.location ? ` · ${event.location}` : ''}{statusLabel(event) && event.status !== 'CANCELLED' ? ` · ${statusLabel(event)}` : ''}</p>
+          <p className={styles.entryContext}>{whenInDay(event)} · {event.projectName}{event.location ? ` · ${event.location}` : ''}{statusLabel(event) && event.status !== 'CANCELLED' ? ` · ${statusLabel(event)}` : ''}</p>
           {entryLink(event)}
           {event.sourceKind === 'project-schedule' && <div className="flex flex-wrap gap-x-3">
             <a className={styles.entryLink} href={`/?module=records&view=documents&project=${encodeURIComponent(event.projectId)}&scheduleItemId=${encodeURIComponent(event.sourceId)}`} aria-label={`Registros e fotos de ${splitTitle(event).name}`}><FileText size={15} aria-hidden="true"/>Registros e fotos</a>
             <a className={styles.entryLink} href={`/?module=demands&project=${encodeURIComponent(event.projectId)}&scheduleItemId=${encodeURIComponent(event.sourceId)}`} aria-label={`Frentes de ${splitTitle(event).name}`}><ListChecks size={15} aria-hidden="true"/>Frentes</a>
           </div>}
-        </article>)}</div>
+        </article></Fragment>)}</div>
         : displayError ? null
         : effectiveListCategory !== 'all' ? <p className="p-form-help">Nenhum compromisso desta categoria no recorte atual.</p>
         : search.trim() && data ? <p className="p-form-help">Nenhum resultado para esta busca. Tente outro termo ou remova os filtros.</p>

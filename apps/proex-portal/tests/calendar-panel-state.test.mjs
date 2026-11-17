@@ -99,7 +99,7 @@ test('agenda exports the same filtered commitments in PDF, DOCX and XLSX with Br
 
     const datePt = day.split('-').reverse().join('/');
     const followingPt = following.split('-').reverse().join('/');
-    assert.ok(h.body().includes(`${datePt}, 10:00 a 10:30`));
+    assert.ok(h.body().includes("10:00 a 10:30") && !h.body().includes(`${datePt}, 10:00`), "no grupo do dia, o cartão mostra só o horário");
     assert.ok(h.body().includes(`${datePt}, 23:30 a ${followingPt}, 00:30`));
     for (const format of ['pdf', 'docx', 'xlsx']) {
       const index = h.requests.length;
@@ -232,7 +232,8 @@ test('cancelled replacements do not clutter the active agenda, but remain visibl
     const ics = h.all().find(node => node.type === 'a' && node.props.href.includes('format=ics'));
     assert.doesNotMatch(ics.props.href, /cancelled/i);
     assert.equal(h.requests.length, 1);
-    h.button('Limpar filtros').props.onClick();
+    assert.ok(!h.all().some(node => node.type === 'button' && /Limpar filtros/.test(text(node))), 'mostrar cancelados é exibição, não filtro: não surge "Limpar filtros"');
+    toggle.props.onChange({ target: { checked: false } });
     h.render();
     assert.doesNotMatch(h.body(), /Turno substituído/);
   } finally { h.dispose(); }
@@ -266,8 +267,16 @@ test('cards, day previews and exports drop the repeated type word but keep it in
     assert.ok(chips.includes('Botton azul · 40 unidades') && !chips.some(chip => chip.startsWith('Materiais ·')));
     const counters = h.all().filter(node => node.type === 'button' && /^\d/.test(text(node))).map(text);
     assert.ok(counters.includes('1Material') && counters.includes('3Projetos e eventos'), `antes: "1 Materiais"; agora: ${counters}`);
+    h.all().find(node => node.type === 'input' && node.props.name === 'calendarSearch').props.onChange({ target: { value: 'oficina' } }); h.render();
     assert.ok(h.button('Limpar filtros'), 'no mês atual, o link não fala em voltar ao mês');
     assert.ok(!h.all().some(node => node.type === 'button' && text(node) === 'Voltar ao mês atual e limpar filtros'));
+    h.all().find(node => node.type === 'input' && node.props.name === 'calendarSearch').props.onChange({ target: { value: '' } }); h.render();
+    const range = text(h.all().find(node => node.type === 'div' && node.props.className === 'rangeSummary').props.children[0]);
+    assert.match(range, /^1 a \d{2} de [a-zç]+ de \d{4}$/, `período curto, sem repetir mês e ano: ${range}`);
+    const dayHeadings = h.all().filter(node => node.type === 'h4' && node.props.className === 'dayHeading').map(text);
+    assert.equal(dayHeadings.length, 1, 'a lista do período tem um título por dia, e os cartões não repetem a data');
+    assert.ok(h.all().filter(node => node.type === 'article').every(node => text(node).includes('Dia inteiro · Projeto A') && !text(node).includes('/')), 'horário e projeto numa linha só');
+    assert.ok(h.all().filter(node => node.type === 'em').every(node => node.props.children?.type === 'span' && node.props.children.props.className === 'chipText'), 'o corte em duas linhas fica no texto interno da prévia');
     const index = h.requests.length;
     const download = h.all().find(node => node.type === ExportFormats).props.onExport('xlsx');
     h.respond(h.requests[index], data); await tick();
@@ -277,7 +286,10 @@ test('cards, day previews and exports drop the repeated type word but keep it in
       'Mostra de extensão\nProjetos e eventos · Atividade', 'Oficina · parte 2\nProjetos e eventos', 'Separar brindes\nPrazos de demandas',
     ]);
     assert.ok(!args[5].some(([label]) => label === 'Compromissos'), 'o total já aparece no quadro do PDF');
-    assert.equal(args[5].map(([label]) => label).join(' | '), 'Período | Projetos | Categoria | Horário | Gerado em', '"Recorte" virou "Projetos" e o PDF diz quando foi gerado');
+    assert.equal(args[5].map(([label]) => label).join(' | '), 'Período | Projetos | Categoria | Fuso horário | Gerado em', '"Recorte" virou "Projetos" e o PDF diz quando foi gerado');
+    assert.equal(args[6].recordsLabel, 'Compromissos do período'); assert.equal(args[6].mutedDetailLines, true);
+    assert.equal(args[6].metrics.map(metric => `${metric.value} ${metric.label}`).join(' | '), '5 Compromissos | 3 Projetos e eventos | 1 Material | 1 Prazo de demanda', 'o quadro do PDF repete os contadores da tela');
+    assert.equal(args[6].metrics[0].detail, 'inclui 1 cancelado', 'os cancelados viram nota do total');
     assert.equal(h.all().find(node => node.type === ExportFormats).props.tiles, true, 'os três formatos cabem lado a lado na coluna da lista');
     h.respond(h.requests[index + 1], data); await download;
   } finally { h.dispose(); }
@@ -446,4 +458,10 @@ test('an empty agenda explains what appears there for this access (P7, 10/11/202
     assert.match(h.body(), /Nada na Agenda neste período/);
     assert.match(h.body(), /Aqui aparecem materiais e prazos de demandas dos projetos que você acompanha/);
   } finally { h.dispose(); }
+});
+
+test('on phones the month cells keep only dots and counts: the last chip rule hides the previews again (quinta crítica de 16/11)', () => {
+  const css = readFileSync(new URL('../components/portal/calendar-panel.module.css', import.meta.url), 'utf8');
+  const lastShow = css.lastIndexOf('.chip { display:block'), lastHide = css.lastIndexOf('@media(max-width:720px){.chip{display:none}}');
+  assert.ok(lastShow > 0 && lastHide > lastShow, 'a regra que esconde no celular vem depois da que mostra');
 });
