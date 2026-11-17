@@ -487,20 +487,12 @@ export const TUTORIAL_CHAPTERS: readonly TutorialChapter[] = [
       },
       {
         id: 'ficha', title: 'A ficha do material',
-        speech: 'Detalhes abre a ficha do material, com a condição e o histórico de movimentações. Quem só consulta o saldo vê Somente consulta de saldo no lugar.',
-        speechMobile: 'A seta de cada material abre a ficha, com a condição e o histórico de movimentações. Quem só consulta o saldo vê Somente consulta de saldo.',
+        speech: 'Detalhes abre a ficha do material. Na aba Movimentações, o link Histórico mostra tudo em Registros. Feche a ficha para seguir. Quem só consulta o saldo vê Somente consulta de saldo.',
+        speechMobile: 'A seta abre a ficha; em Movimentações fica o Histórico. Feche a ficha para seguir. Quem só consulta vê Somente consulta de saldo.',
         youWillSee: 'O botão Detalhes do primeiro material destacado.', youWillSeeMobile: 'A seta do primeiro material destacada.',
         target: '[data-tutorial="materiais-detalhes"]', module: 'materials', openLabel: 'Ir para Materiais', requires: { anyOf: ['inventory.read', 'inventory.manage', 'inventory.deliver'] },
         missing: 'Se a lista estiver vazia, troque o projeto ou limpe a busca. Se aparecer Somente consulta de saldo, o seu acesso mostra só o saldo; a ficha abre para quem consulta materiais no projeto.',
-        labels: ['Detalhes', 'Somente consulta de saldo'],
-      },
-      {
-        id: 'historico', title: 'O histórico',
-        speech: 'Na ficha, o link Histórico abre as movimentações deste material em Registros, com origem e destino.',
-        youWillSee: 'O link Histórico destacado na ficha.',
-        target: '[data-tutorial="material-historico"]', module: 'materials', openLabel: 'Ir para Materiais', requires: { anyOf: ['inventory.read', 'inventory.manage', 'inventory.deliver'] },
-        missing: 'Abra Detalhes de um material: o histórico fica na ficha.', missingMobile: 'Toque na seta de um material: o histórico fica na ficha.',
-        labels: ['Histórico'],
+        labels: ['Detalhes', 'Movimentações', 'Somente consulta de saldo'],
       },
       {
         id: 'registrar', title: 'Registrar movimento',
