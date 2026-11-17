@@ -187,7 +187,7 @@ test('malformed JSON and nested DTOs show an error rather than false empty resul
 });
 
 test('refresh events preserve the selected filters, without polling or storing personal data', async () => {
-  const h = harness(); try {await h.ready(); h.changeStatus('overdue'); h.render(); await h.ready(response({scope: {...response().scope, status: 'overdue'}})); assert.match(h.body(), /Consulta em/); h.event('proex:followup-changed'); h.render(); assert.equal(new URL(h.last().url, 'http://fixture').searchParams.get('status'), 'overdue'); assert.equal(h.last().init.cache, 'no-store');} finally {h.dispose();}
+  const h = harness(); try {await h.ready(); h.changeStatus('overdue'); h.render(); await h.ready(response({scope: {...response().scope, status: 'overdue'}})); assert.match(h.body(), /Consultado em \d{2}\/\d{2}\/\d{4} às \d{2}:\d{2} \(Brasília\)/); h.event('proex:followup-changed'); h.render(); assert.equal(new URL(h.last().url, 'http://fixture').searchParams.get('status'), 'overdue'); assert.equal(h.last().init.cache, 'no-store');} finally {h.dispose();}
 });
 
 test('a persistent polite result summary announces the loaded scope and page after filtering', async () => {
