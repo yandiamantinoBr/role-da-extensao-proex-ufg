@@ -345,7 +345,7 @@ export const TUTORIAL_CHAPTERS: readonly TutorialChapter[] = [
       },
       {
         id: 'recorte', title: 'Escolher o recorte',
-        speech: 'Escolha a Organização e, em Onde acompanhar, o projeto. Quem administra a organização também pode escolher a Organização inteira. Atuação da equipe separa as que atuam neste projeto, em vários ou em nenhum. Buscar equipe acha pelo nome, projeto ou unidade.',
+        speech: 'Escolha a Organização e, em Onde acompanhar, o projeto. Quem administra a organização também pode escolher a Organização inteira. Atuação da equipe separa as que atuam neste projeto, em vários projetos ou sem atuação registrada. Buscar equipe acha pelo nome, projeto ou unidade.',
         speechMobile: 'Escolha a Organização e, em Onde acompanhar, o projeto. Buscar equipe acha pelo nome, projeto ou unidade.',
         youWillSee: 'Os campos do recorte destacados, com Atuação da equipe.',
         target: '[data-tutorial="equipes-filtros"]', module: 'work-teams', openLabel: 'Ir para Equipes', requires: { projects: true },
@@ -378,15 +378,6 @@ export const TUTORIAL_CHAPTERS: readonly TutorialChapter[] = [
         labels: ['Projetos com atuação registrada'],
       },
       {
-        id: 'integrantes', title: 'Quem está na equipe',
-        speech: 'Integrantes neste recorte mostra só as pessoas ativas com acesso ao contexto escolhido. Num projeto, quem é da equipe mas não tem acesso a ele não aparece.',
-        speechMobile: 'Integrantes neste recorte mostra só as pessoas ativas com acesso ao contexto escolhido.',
-        youWillSee: 'O quadro Integrantes neste recorte destacado.',
-        target: '[data-tutorial="equipe-integrantes"]', module: 'work-teams', openLabel: 'Ir para Equipes', requires: { projects: true },
-        missing: 'Abra uma equipe da lista: os integrantes aparecem no detalhe.',
-        labels: ['Integrantes neste recorte'],
-      },
-      {
         id: 'andamento', title: 'Andamento das demandas',
         speech: 'Andamento das demandas conta as demandas da equipe por estado. Clique num estado para filtrar Demandas da equipe, mais abaixo.',
         speechMobile: 'Andamento das demandas conta as demandas da equipe por estado. Toque num estado para filtrar Demandas da equipe, mais abaixo.',
@@ -394,6 +385,15 @@ export const TUTORIAL_CHAPTERS: readonly TutorialChapter[] = [
         target: '[data-tutorial="equipe-andamento"]', module: 'work-teams', openLabel: 'Ir para Equipes', requires: { projects: true },
         missing: 'Abra uma equipe da lista: o andamento aparece no detalhe.',
         labels: ['Andamento das demandas', 'Demandas da equipe'],
+      },
+      {
+        id: 'integrantes', title: 'Quem está na equipe',
+        speech: 'Integrantes neste recorte mostra só as pessoas ativas com acesso ao contexto escolhido. Num projeto, quem é da equipe mas não tem acesso a ele não aparece.',
+        speechMobile: 'Integrantes neste recorte mostra só as pessoas ativas com acesso ao contexto escolhido.',
+        youWillSee: 'O quadro Integrantes neste recorte destacado.',
+        target: '[data-tutorial="equipe-integrantes"]', module: 'work-teams', openLabel: 'Ir para Equipes', requires: { projects: true },
+        missing: 'Abra uma equipe da lista: os integrantes aparecem no detalhe.',
+        labels: ['Integrantes neste recorte'],
       },
       {
         id: 'fim', title: 'Tudo certo',
