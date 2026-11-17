@@ -28,6 +28,8 @@ export { OFFICIAL_HOSTS };
 const SNAPSHOT = 'role.official.v1', REFRESH_MS = 20 * 3600_000, PAGE_BYTES = 600_000;
 const USER_AGENT = 'PortalPROEX-Role/1.0 (+https://proex-gestao.vercel.app; consulta de paginas publicas)';
 const SEARCH_TIMEOUT_MS = 2500;
+// robots.txt + sitemap.xml (o da PROEX tem ~205 KB): tempo próprio, maior que o das páginas.
+const SEARCH_INDEX_TIMEOUT_MS = 6000;
 const SEARCH_INDEX_TTL_MS = 30 * 60_000;
 const SEARCH_RETRY_MS = 60_000;
 const SEARCH_PAGE_LIMIT = 5;
@@ -108,7 +110,11 @@ export type OfficialAmbiguity = { used: OfficialDocument; other: OfficialDocumen
 /** documentSearch: a pergunta pedia um documento (ou colou uma página); resumo de página não substitui o PDF. */
 type PublicLookup = { status: 'ok' | 'partial' | 'unavailable'; pages: PublicResult[]; passages: OfficialPassage[]; unreadable: OfficialUnread[]; ambiguity: OfficialAmbiguity | null; documentSearch: boolean };
 const emptyLookup = { pages: [], passages: [], unreadable: [], ambiguity: null, documentSearch: false };
-type SearchIndexCache = Map<string, { refreshAt: number; value: Promise<PublicIndex | null> }>;
+/** good: último índice válido desta instância; robots: último robots.txt lido (vale para a reserva sem índice). */
+type SearchIndexState = { refreshAt: number; value: Promise<PublicIndex | null>; good: PublicIndex | null; robots: string | null };
+type SearchIndexCache = Map<string, SearchIndexState>;
+/** Link de página oficial (texto e endereço), por exemplo da cópia diária guardada no banco. */
+export type OfficialLink = { text: string; url: string };
 const searchIndexes = new WeakMap<typeof fetch, SearchIndexCache>();
 const searchWords = (value: string) => (value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase().match(/[a-z0-9]{2,}/g) ?? []);
 const searchFiller = new Set(['de', 'da', 'do', 'das', 'dos', 'as', 'os', 'em', 'no', 'na', 'nos', 'nas', 'para', 'com', 'por', 'um', 'uma', 'que', 'esta', 'tem', 'foi', 'proex', 'proec', 'ufg', 'site', 'portal', 'oficial', 'favor', 'acesse', 'busque', 'consulte', 'procure', 'pesquise', 'veja', 'encontre', 'onde', 'quando', 'qual', 'quais', 'como', 'sobre', 'diga', 'mostre', 'me', 'quero', 'pode', 'informacao', 'informacoes']);
@@ -123,8 +129,8 @@ function searchEntry(urlText: string, host: string, lastModified: string): Searc
   return { url: url.href, title, lastModified: /^\d{4}-\d{2}-\d{2}$/.test(lastModified) ? lastModified : '' };
 }
 
-async function fetchPublicText(url: string, accept: string, contentType: RegExp, fetcher: typeof fetch): Promise<string> {
-  const response = await fetcher(url, { headers: { 'User-Agent': USER_AGENT, Accept: accept }, redirect: 'error', credentials: 'omit', signal: AbortSignal.timeout(SEARCH_TIMEOUT_MS) });
+async function fetchPublicText(url: string, accept: string, contentType: RegExp, fetcher: typeof fetch, timeoutMs = SEARCH_TIMEOUT_MS): Promise<string> {
+  const response = await fetcher(url, { headers: { 'User-Agent': USER_AGENT, Accept: accept }, redirect: 'error', credentials: 'omit', signal: AbortSignal.timeout(timeoutMs) });
   if (!response.ok || !contentType.test(response.headers.get('content-type') ?? '')) {
     await response.body?.cancel().catch(() => {});
     throw new Error('Fonte pública indisponível.');
@@ -132,30 +138,61 @@ async function fetchPublicText(url: string, accept: string, contentType: RegExp,
   return boundedText(response);
 }
 
-async function readSearchIndex(host: string, fetcher: typeof fetch): Promise<PublicIndex | null> {
+/**
+ * Índice do site (robots.txt + sitemap.xml), por instância. Se a renovação falhar, continua com o último
+ * índice bom desta instância e tenta de novo depois de SEARCH_RETRY_MS, em vez de ficar sem índice.
+ * Só o robots.txt que passa a bloquear o mapa descarta o índice anterior.
+ */
+async function readSearchIndex(host: string, fetcher: typeof fetch): Promise<{ index: PublicIndex | null; robots: string | null }> {
   if (!searchIndexes.has(fetcher)) searchIndexes.set(fetcher, new Map());
   const indexes = searchIndexes.get(fetcher)!;
   const saved = indexes.get(host), now = Date.now();
-  if (saved && saved.refreshAt > now) return saved.value;
+  if (saved && saved.refreshAt > now) return { index: await saved.value, robots: saved.robots };
 
-  const value = (async () => {
+  const state: SearchIndexState = { refreshAt: now + SEARCH_INDEX_TTL_MS, value: Promise.resolve(null), good: saved?.good ?? null, robots: saved?.robots ?? null };
+  let fresh = false;
+  state.value = (async () => {
     const origin = `https://${host}`;
-    const robots = await fetchPublicText(`${origin}/robots.txt`, 'text/plain', /^text\/plain\b/i, fetcher);
-    if (disallowed(robots, '/sitemap.xml')) return null;
-    const xml = await fetchPublicText(`${origin}/sitemap.xml`, 'application/xml, text/xml', /^(?:application|text)\/xml\b/i, fetcher);
-    if (!/<urlset\b/i.test(xml)) return null;
+    const robots = await fetchPublicText(`${origin}/robots.txt`, 'text/plain', /^text\/plain\b/i, fetcher, SEARCH_INDEX_TIMEOUT_MS);
+    state.robots = robots;
+    if (disallowed(robots, '/sitemap.xml')) { state.good = null; return null; }
+    const xml = await fetchPublicText(`${origin}/sitemap.xml`, 'application/xml, text/xml', /^(?:application|text)\/xml\b/i, fetcher, SEARCH_INDEX_TIMEOUT_MS);
+    if (!/<urlset\b/i.test(xml)) throw new Error('Mapa do site sem lista de páginas.');
     const entries = [...xml.matchAll(/<url>([\s\S]*?)<\/url>/gi)].flatMap(([, block]) => {
       const url = block.match(/<loc>([^<]+)<\/loc>/i)?.[1];
       const modified = block.match(/<lastmod>([^<]+)<\/lastmod>/i)?.[1]?.trim() ?? '';
       const entry = url && searchEntry(url, host, modified);
       return entry && !disallowed(robots, new URL(entry.url).pathname) ? [entry] : [];
     });
+    fresh = true;
+    state.good = entries;
     return entries;
-  })().catch(() => null);
-  const current = { value, refreshAt: now + SEARCH_INDEX_TTL_MS };
-  indexes.set(host, current);
-  if (!await value) current.refreshAt = now + SEARCH_RETRY_MS;
-  return value;
+  })().catch(() => {
+    // Falha de rede ou mapa inválido: o último índice bom continua, filtrado pelo robots.txt mais recente.
+    const robots = state.robots;
+    return state.good && robots !== null ? state.good.filter(entry => !disallowed(robots, new URL(entry.url).pathname)) : state.good;
+  });
+  indexes.set(host, state);
+  const index = await state.value;
+  if (!fresh) state.refreshAt = now + SEARCH_RETRY_MS;
+  return { index, robots: state.robots };
+}
+
+/**
+ * Reserva sem índice: páginas /p/ e /n/ já guardadas (cópia diária), com as mesmas regras do índice
+ * (host exato, sem query nem hash) e o robots.txt lido. Sem robots.txt lido, não há reserva.
+ */
+function fallbackIndex(links: readonly OfficialLink[], host: string, robots: string | null): PublicIndex | null {
+  if (robots === null) return null;
+  const entries = new Map<string, SearchEntry>();
+  for (const link of links) {
+    if (typeof link?.url !== 'string' || typeof link.text !== 'string') continue;
+    const entry = searchEntry(link.url, host, '');
+    if (!entry || entries.has(entry.url) || disallowed(robots, new URL(entry.url).pathname)) continue;
+    const label = clean(link.text, 140);
+    entries.set(entry.url, label ? { ...entry, title: `${label} ${entry.title}` } : entry);
+  }
+  return entries.size ? [...entries.values()] : null;
 }
 
 function editalNumber(value: string): string | null {
@@ -277,8 +314,11 @@ async function searchPastedPage(page: URL, subject: string, fetcher: typeof fetc
   return { status: 'ok', pages: [result], ...pdf, ambiguity, documentSearch: true };
 }
 
-/** Lê os mapas, as páginas públicas e seus PDFs oficiais. Nenhum termo é enviado ao site. */
-export async function searchOfficialPages(subject: string, fetcher: typeof fetch = fetch): Promise<PublicLookup> {
+/**
+ * Lê os mapas, as páginas públicas e seus PDFs oficiais. Nenhum termo é enviado ao site.
+ * fallbackLinks: chamado só quando um site fica sem índice; devolve links já guardados (cópia diária).
+ */
+export async function searchOfficialPages(subject: string, fetcher: typeof fetch = fetch, fallbackLinks?: () => Promise<readonly OfficialLink[]>): Promise<PublicLookup> {
   const direct = officialPdfIn(subject);
   if (direct) {
     const title = decodeURIComponent(direct.pathname.split('/').at(-1)!).replace(/_/g, ' ');
@@ -294,7 +334,12 @@ export async function searchOfficialPages(subject: string, fetcher: typeof fetch
   const years = searchWords(withoutDates(subject)).filter(word => /^20\d{2}$/.test(word));
   const targetEdition = pdfSearch ? editalNumber(subject) : null;
   const documentFocus = pdfSearch ? officialSearchTerms(subject.split(/[,:?]/).find(part => /\b(?:probec|conpeex|edital)\b/i.test(part)) ?? subject) : [];
-  const indexes = await Promise.all(OFFICIAL_HOSTS.map(host => readSearchIndex(host, fetcher)));
+  const loaded = await Promise.all(OFFICIAL_HOSTS.map(host => readSearchIndex(host, fetcher)));
+  let indexes = loaded.map(item => item.index);
+  if (fallbackLinks && indexes.some(index => !index)) {
+    const links = await fallbackLinks().catch(() => [] as readonly OfficialLink[]);
+    indexes = indexes.map((index, position) => index ?? fallbackIndex(links, OFFICIAL_HOSTS[position], loaded[position].robots));
+  }
   const entries = new Map(indexes.flatMap(index => index ?? []).map(entry => [entry.url, entry]));
   const minimum = wanted.length <= 2 ? wanted.length : Math.ceil(wanted.length / 2);
   const focus = wanted.filter(word => word !== 'conpeex' && !/^\d+$/.test(word));
@@ -320,7 +365,8 @@ export async function searchOfficialPages(subject: string, fetcher: typeof fetch
   if (!years.length) for (const item of ranked) if (item.topicalPdf && item.start) item.score += Math.max(-3, item.start - newestPage) * 8;
   ranked.sort((a, b) => b.score - a.score || b.entry.lastModified.localeCompare(a.entry.lastModified));
 
-  let failed = indexes.filter(index => !index).length;
+  // Site que ficou sem índice conta como falha mesmo com a reserva: no máximo resultado parcial.
+  let failed = loaded.filter(item => !item.index).length;
   const pages = await Promise.all(ranked.slice(0, SEARCH_PAGE_LIMIT).map(async ({ entry, score }) => {
     try {
       const html = await fetchPublicText(entry.url, 'text/html', /^text\/html\b/i, fetcher);

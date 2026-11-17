@@ -450,3 +450,122 @@ test('TELA · COMPOSITOR: alternância "Fontes oficiais" com estado visível, pe
   assert.match(css, /\.cost\{flex:1 1 12rem;min-width:0;/);
   assert.match(css, /\.project select:disabled\{opacity:\.55;cursor:not-allowed\}/);
 });
+
+// ---- 17/11: índice do site que falha e fica preso; pedido misto engolido pela busca ----------------
+const PROBEC_PAGE = 'https://proex.ufg.br/p/401-edital-proec-n-05-2026-probec-2026-2027';
+const PROBEC_AMENDMENT = `${FILES}SEI_110_Termo_Aditivo.pdf`;
+const APPEAL = 'qual o prazo de recurso do PROBEC depois do aditivo?';
+const fullSitemap = url => new Response(`<urlset>${url.startsWith('https://proex.ufg.br') ? `<url><loc>${PROBEC_PAGE}</loc><lastmod>2026-11-01</lastmod></url>` : ''}</urlset>`, { headers: xml });
+/** Site da PROEX com a página do PROBEC; `sitemap(url, init)` decide a resposta do mapa (padrão: normal). */
+function probecSite({ sitemap = fullSitemap, robots = 'User-agent: *' } = {}) {
+  const requested = [];
+  const amendment = pdfWith(['TERMO ADITIVO Nº 01 AO EDITAL PROEC Nº 05/2026 - PROBEC 2026/2027', 'Onde se lê: recurso da habilitação até 15/05/2026.', 'Leia-se: o prazo de recurso da habilitação passa para 18/05/2026 às 17h.']);
+  const fetcher = async (raw, init) => {
+    const url = String(raw);
+    requested.push(url);
+    assert.equal(init.redirect, 'error');
+    if (url.endsWith('/robots.txt')) return new Response(robots, { headers: text });
+    if (url.endsWith('/sitemap.xml')) return sitemap(url, init);
+    if (url === PROBEC_PAGE) return new Response(pageHtml('Edital PROEC nº 05/2026 · PROBEC 2026/2027', [[PROBEC_AMENDMENT, 'Termo Aditivo nº 01 ao Edital PROBEC 2026/2027']]), { headers: html });
+    if (url === PROBEC_AMENDMENT) return new Response(await amendment, { headers: pdfType });
+    assert.fail(`pedido inesperado ${url}`);
+  };
+  return { fetcher, requested };
+}
+/** Responde depois de `ms`, como um mapa grande; aborta se o pedido for cancelado. */
+const late = (ms, init, make) => new Promise((resolve, reject) => {
+  const timer = setTimeout(() => resolve(make()), ms);
+  init.signal?.addEventListener('abort', () => { clearTimeout(timer); reject(init.signal.reason); }, { once: true });
+});
+
+test('ÍNDICE · TEMPO: o mapa do site (~205 KB) tem tempo próprio, maior que o das páginas', async () => {
+  const { fetcher } = probecSite({ sitemap: (url, init) => late(2800, init, () => fullSitemap(url)) });
+  const result = await searchOfficialPages(APPEAL, fetcher);
+  assert.equal(result.status, 'ok');
+  assert.match(result.passages[0]?.text ?? '', /18\/05\/2026 às 17h/);
+});
+
+test('ÍNDICE · ÚLTIMO BOM: renovação que falha mantém o índice anterior e tenta de novo depois de 1 min', async () => {
+  let broken = false;
+  const { fetcher, requested } = probecSite({ sitemap: url => broken ? new Response('', { status: 503 }) : fullSitemap(url) });
+  const realNow = Date.now;
+  let offset = 0;
+  Date.now = () => realNow() + offset;
+  try {
+    assert.match((await searchOfficialPages(APPEAL, fetcher)).passages[0]?.text ?? '', /18\/05\/2026/);
+    broken = true;
+    offset = 31 * 60_000;
+    const sitemaps = () => requested.filter(url => url === 'https://proex.ufg.br/sitemap.xml').length;
+    const before = sitemaps();
+    const renewed = await searchOfficialPages(APPEAL, fetcher);
+    assert.equal(sitemaps(), before + 1, 'tentou renovar o índice vencido');
+    assert.equal(renewed.status, 'ok', 'o índice anterior continua valendo');
+    assert.match(renewed.passages[0]?.text ?? '', /18\/05\/2026 às 17h/);
+    await searchOfficialPages(APPEAL, fetcher);
+    assert.equal(sitemaps(), before + 1, 'dentro de 1 min não tenta de novo');
+    offset += 61_000;
+    broken = false;
+    await searchOfficialPages(APPEAL, fetcher);
+    assert.equal(sitemaps(), before + 2, 'depois de 1 min tenta renovar outra vez');
+  } finally { Date.now = realNow; }
+});
+
+/** Banco falso só com a cópia diária das páginas oficiais (settings role.official.v1). */
+const snapshotDb = links => ({ prepare: sql => ({ bind: (...values) => ({
+  first: async () => /settings/.test(sql) && values[0] === 'role.official.v1'
+    ? { value: JSON.stringify({ refreshedAt: '2026-11-16T09:00:00.000Z', pages: [{ id: 'proex-editais', label: 'PROEX · editais', url: 'https://proex.ufg.br/p/editais-proex', fetchedAt: '2026-11-16T09:00:00.000Z', title: 'Editais PROEX', summary: 'Lista sintética de editais.', links }] }) }
+    : null,
+  all: async () => ({ results: [] }),
+}) }) });
+
+test('ÍNDICE · RESERVA: sem índice nenhum, usa as páginas /p/ e /n/ da cópia diária, com as regras do índice', async () => {
+  const links = [
+    { text: 'Edital PROEC nº 05/2026 · PROBEC 2026/2027', url: PROBEC_PAGE },
+    { text: 'Edital PROBEC 2026/2027 em outro endereço', url: 'https://exemplo.test/p/402-edital-probec-2026-2027' },
+    { text: 'Edital PROBEC 2026/2027 com consulta extra', url: `${PROBEC_PAGE}?vazar=1` },
+    { text: 'Edital PROBEC 2026/2027 com âncora na página', url: `${PROBEC_PAGE}#anexos` },
+    { text: 'Edital PROBEC 2026/2027 fora de /p/ ou /n/', url: 'https://proex.ufg.br/news/403-edital-probec-2026-2027' },
+    { text: 'Edital PROBEC 2026/2027 bloqueado pelo robots', url: 'https://proex.ufg.br/p/999-edital-probec-2026-2027-bloqueado' },
+  ];
+  const { fetcher, requested } = probecSite({ robots: 'User-agent: *\nDisallow: /p/999-', sitemap: () => new Response('', { status: 503 }) });
+  const reply = await officialSearchReply(snapshotDb(links), 'org_test', APPEAL, fetcher);
+  assert.match(reply.reply, /^Termo Aditivo nº 01 ao Edital PROBEC 2026\/2027 · p\. 1\nLi o PDF e o trecho está na p\. 1\./);
+  assert.match(reply.reply, /18\/05\/2026 às 17h/);
+  assert.ok(requested.every(url => /^https:\/\/(?:proex\.ufg\.br|23conpeex\.plateia\.ufg\.br|files\.cercomp\.ufg\.br)\//.test(url) && !/[?#]|999|\/news\//.test(url)), requested.join('\n'));
+
+  // Sem cópia diária: a mensagem de sempre.
+  const cold = probecSite({ sitemap: () => new Response('', { status: 503 }) });
+  const empty = await officialSearchReply(emptyDb, 'org_test', APPEAL, cold.fetcher);
+  assert.equal(empty.reply, 'Não consegui consultar as fontes oficiais agora. Tente novamente em instantes.');
+});
+
+test('INTENÇÃO · PEDIDO MISTO: Agenda, compromissos e "depois veja no Portal" vão para a conversa; cronograma do edital continua busca', async () => {
+  const mixed = 'Leia o termo aditivo do edital do PROBEC e me diga o novo prazo de recurso da habilitação. Depois veja na Agenda do projeto se há algum compromisso nesse período.';
+  const official = [
+    'qual o calendário do edital PROBEC?',
+    'qual o cronograma do edital PROBEC?',
+    'Qual o calendário do edital PROEC nº 08/2026?',
+    'Quando é o evento de apresentação do CONPEEX, segundo o edital?',
+    'Qual a data do evento CONPEEX no edital PROEC nº 08/2026?',
+    'No site oficial da PROEX, quando é o evento de apresentação do CONPEEX?',
+    'Qual a agenda do edital PROBEC?',
+  ];
+  const portal = [
+    mixed,
+    'Qual o prazo de recurso do edital PROBEC? Tenho algum compromisso nesse dia?',
+    'O prazo do aditivo do edital PROBEC bate com alguma reunião do projeto?',
+    'Tem evento do projeto no período de inscrição do edital PROBEC?',
+    'Compare o cronograma do edital PROBEC com o calendário do projeto',
+    'O resultado do edital PROBEC cai em que dia da minha agenda?',
+    'Qual o prazo do aditivo do edital? Depois consulte as demandas sobre isso.',
+    'Leia o edital PROBEC e depois confira no Portal quais atividades temos.',
+    'Veja o edital do PROBEC e depois verifique na agenda as reuniões.',
+    'No site oficial da PROEX, qual o prazo do edital? Depois veja na Agenda.',
+  ];
+  for (const phrase of official) assert.equal(isOfficialSearch(phrase), true, `deveria buscar: ${phrase}`);
+  for (const phrase of portal) assert.equal(isOfficialSearch(phrase), false, `não deveria buscar: ${phrase}`);
+  // Com o botão "Fontes oficiais" ligado, a decisão é da pessoa: continua busca.
+  const { officialRoute } = await import(compile('assistant/official-search-intent'));
+  assert.deepEqual(officialRoute({ mode: 'chat', toggled: true, publicSearch: true, attachment: false, text: mixed }), { official: true, explicit: true });
+  assert.deepEqual(officialRoute({ mode: 'chat', toggled: false, publicSearch: true, attachment: false, text: mixed }), { official: false, explicit: false });
+});
