@@ -15,6 +15,8 @@ export type HistoryMovement = {
 };
 export const MOVEMENT_NAMES: Record<string, string> = { receive: 'Recebimento', distribute: 'Distribuição', consume: 'Consumo interno', adjust: 'Ajuste de contagem', redeem: 'Entrega de brinde', transfer: 'Transferência' };
 export const when = (value: string) => new Date(value).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Sao_Paulo' });
+/** "+40 unidades", "−1 unidade": plural simples, sem mexer em unidades que já terminam em s. */
+const unitFor = (value: number, unit: string) => Math.abs(value) === 1 || /s$/i.test(unit) ? unit : `${unit}s`;
 const signed = (value: number) => `${value > 0 ? '+' : value < 0 ? '−' : ''}${Math.abs(value)}`;
 type Filter = 'all' | 'in' | 'out' | 'revised';
 const FILTERS: [Filter, string][] = [['all', 'Tudo'], ['in', 'Entradas'], ['out', 'Saídas'], ['revised', 'Corrigidas ou desfeitas']];
@@ -38,7 +40,7 @@ export default function MaterialMovementHistory({ movements, unit, onOpen, onDes
             {movement.status === 'undone' && <span className={`${styles.chip} ${styles.chipUndone}`}>Desfeita</span>}
             {movement.correctionOf && movement.status === 'current' && <span className={`${styles.chip} ${styles.chipRole}`}>Versão corrigida</span>}
           </div>
-          <div className={`${styles.quantity} ${superseded ? styles.struck : movement.delta > 0 ? styles.positive : styles.negative}`}>{signed(movement.delta)} {measure}{movement.correctionOf?.before && <small>antes {signed(movement.correctionOf.before.delta)}</small>}</div>
+          <div className={`${styles.quantity} ${superseded ? styles.struck : movement.delta > 0 ? styles.positive : styles.negative}`}>{signed(movement.delta)} {unitFor(movement.delta, measure)}{movement.correctionOf?.before && <small>antes {signed(movement.correctionOf.before.delta)}</small>}</div>
           <div className={styles.meta}>
             <p>{movement.reason || 'Sem observação adicional'}</p>
             {movement.destination && <p className={styles.place}><MapPin size={13} aria-hidden="true"/> {movement.kind === 'receive' ? 'Veio de' : 'Para'} {onDestinationOpen ? <button type="button" data-stop className={styles.destinationLink} onClick={() => onDestinationOpen(movement.destination!.id)}>{movement.destination.name}</button> : <a className={styles.destinationLink} data-stop href={movement.destination.href}>{movement.destination.name}</a>}</p>}

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
-import { ArrowUpRight, CheckCircle2, Pin, PinOff, Circle, CircleDot, CircleX, Flag, FolderKanban, Landmark, PauseCircle, Pencil, Plus, RefreshCw, Search, ShieldCheck, UserRoundCheck, Users, X } from 'lucide-react';
+import { AlertTriangle, ArrowUpRight, CheckCircle2, Pin, PinOff, Circle, CircleDot, CircleX, Flag, FolderKanban, Landmark, PauseCircle, Pencil, Plus, RefreshCw, Search, ShieldCheck, UserRoundCheck, Users, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { stateLabels, TASK_STATES, type TaskStatus } from '@/lib/follow-up/contracts';
 import { TEAM_TASK_PAGE_SIZE, type TeamsWorkspace, type WorkTeam, type TeamPerson, type TeamProject } from '@/lib/follow-up/teams-contract';
@@ -222,7 +222,7 @@ export default function WorkTeamsPanel({ userId, defaultProjectId = '', organiza
  }, [loading, shownTeamId, data]);
  return <section className={styles.workspace} aria-label="Equipes de trabalho">
   <div className={styles.intro}><h2><Users size={22} aria-hidden="true"/>Trabalho em equipe</h2><div className={styles.actions}>
-   <button className="p-button" disabled={busy || exporting} onClick={() => { setEditor(null); setAttempt(value => value + 1); }}><RefreshCw size={17} aria-hidden="true"/>Atualizar</button>
+   <button type="button" className="p-button p-button-subtle" disabled={busy || exporting} onClick={() => { setEditor(null); setAttempt(value => value + 1); }}><RefreshCw size={16} aria-hidden="true"/>Atualizar</button>
    {(canEditTeams || data?.scope.canManage) && <button className="p-button p-button-primary" disabled={busy || exporting || loading} onClick={startNewTeam}><Plus size={17} aria-hidden="true"/>Nova equipe</button>}
   </div></div>
   <div className={styles.filters}>
@@ -247,7 +247,7 @@ export default function WorkTeamsPanel({ userId, defaultProjectId = '', organiza
     <strong>{team.name}</strong><span className={styles.cardMeta}>{quantity(team.members.length,'integrante visível','integrantes visíveis')} · {quantity(team.counts.total,'demanda','demandas')}</span>
     {(canManage || team.units.length > 0 || team.projects.length > 0) && <span className={styles.teamScope}>{team.units.length > 0 && <span><Landmark size={14} aria-hidden="true"/>{team.units[0].acronym || team.units[0].name}{team.units.length > 1 && ` +${team.units.length - 1}`}</span>}{canManage ? <span><FolderKanban size={14} aria-hidden="true"/>{team.projects.length ? quantity(team.projects.length,'projeto registrado','projetos registrados') : 'Sem atuação em projetos'}</span> : team.projects.length > 0 && <span><FolderKanban size={14} aria-hidden="true"/>Atua neste projeto</span>}</span>}
     <span className={styles.meter} role="progressbar" aria-valuemin={0} aria-valuemax={Math.max(1,team.counts.total)} aria-valuenow={team.counts.completed} aria-label="Demandas concluídas" aria-valuetext={team.counts.total ? `${team.counts.completed} de ${team.counts.total} demandas concluídas` : 'Sem demandas neste recorte'}><span style={{ width: `${team.counts.total ? team.counts.completed / team.counts.total * 100 : 0}%` }}/></span>
-    <span className={styles.cardBottom}><span><CheckCircle2 size={14} aria-hidden="true"/>{quantity(team.counts.completed,'concluída','concluídas')}</span>{Boolean(team.counts.high || team.counts.overdue) && <span className={styles.attention}><Flag size={14} aria-hidden="true"/>{team.counts.overdue ? quantity(team.counts.overdue,'vencida','vencidas') : quantity(team.counts.high,'alta','altas')}</span>}</span>
+    <span className={styles.cardBottom}><span><CheckCircle2 size={14} aria-hidden="true"/>{quantity(team.counts.completed,'concluída','concluídas')}</span>{Boolean(team.counts.high || team.counts.overdue) && <span className={styles.attention}>{team.counts.overdue ? <AlertTriangle size={14} aria-hidden="true"/> : <Flag size={14} aria-hidden="true"/>}{team.counts.overdue ? quantity(team.counts.overdue,'vencida','vencidas') : quantity(team.counts.high,'alta','altas')}</span>}</span>
    </button>)}</div>
    {!visible.length && <div className={styles.empty}><Users size={28} aria-hidden="true"/><h3>{data.teams.length ? 'Nenhuma equipe neste filtro' : 'Nenhuma equipe disponível neste recorte'}</h3><p>{data.teams.length ? 'Experimente mudar a busca ou limpar os filtros de equipes.' : data.scope.canManage ? 'Crie uma equipe e escolha os integrantes. Ela poderá receber demandas e responsabilidades nos projetos da organização.' : 'Aqui aparecem suas equipes e as que têm trabalho registrado no projeto que você acompanha.'}</p>{!data.teams.length && data.scope.canManage && <button className="p-button p-button-primary" disabled={busy || exporting || loading} onClick={startNewTeam}><Plus size={17} aria-hidden="true"/>Criar equipe</button>}</div>}
    {selected && shownTeamId && <section className={styles.detail} aria-busy={loading} aria-label={`Equipe ${selected.name}`}>

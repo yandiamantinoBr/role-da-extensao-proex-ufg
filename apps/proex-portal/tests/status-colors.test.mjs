@@ -37,3 +37,21 @@ test('tags are round like the status badges', () => {
   assert.match(source('../components/portal/project-panel.module.css'), /\.featureBadge\{[^}]*border-radius:999px;/);
   assert.match(source('../components/portal/work-teams-panel.module.css'), /\.mine \{[^}]*border-radius: 999px;/);
 });
+
+test('overdue is red in Gestão too, and Meu trabalho/Equipes use the same progress colors as Início', () => {
+  const dashboard = source('../components/portal/management/dashboard-panel.tsx');
+  assert.match(dashboard, /card\('Demandas em atraso', k\.demandsOverdue, 'prazo vencido', link\('demands', projectId\), 'danger'\)/);
+  assert.match(dashboard, /data-tone=\{item\.key === 'overdue' \|\| item\.key === 'critical' \? 'danger' : undefined\}/);
+  const management = source('../components/portal/management/management.module.css');
+  assert.match(management, /\.kpiDanger strong \{ color: var\(--danger\); \}/);
+  const work = source('../components/portal/meu-trabalho-panel.module.css');
+  assert.match(work, /\.metric\[data-tone=info\]\{--metric-tone:var\(--doing\)\}\.metric\[data-tone=success\]\{--metric-tone:var\(--done\)\}/);
+  // No escuro, as regras antigas (azul e verde) pesavam mais; as novas repetem o seletor do tema escuro.
+  assert.match(work, /:global\(html\[data-theme=dark\]\) \.metric\[data-tone=info\]\{--metric-tone:var\(--doing\)\}/);
+  assert.match(management, /\.attention li\[data-tone=danger\] a, \.attention li\[data-tone=danger\] button \{ background: color-mix\(in srgb, var\(--danger\) 9%, var\(--surface\)\); \}/);
+  assert.match(source('../app/work-integration.module.css'), /:global\(html\[data-theme=dark\]\) \.consumption > :global\(\.p-button\) \{ background: transparent; border: 0; \}/);
+  const teams = source('../components/portal/work-teams-panel.module.css');
+  assert.match(teams, /\.chartRow\[data-state=in_progress\] \.bar > span \{ background: #6b3c85; \}/);
+  assert.match(teams, /\.chartRow\[data-state=completed\] \.bar > span \{ background: #1a9aa8; \}/);
+  assert.match(source('../components/portal/work-teams-panel.tsx'), /team\.counts\.overdue \? <AlertTriangle size=\{14\} aria-hidden="true"\/> : <Flag/);
+});

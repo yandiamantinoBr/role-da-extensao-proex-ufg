@@ -2,6 +2,15 @@
 
 Comece pela [Retomada de 13/11](RETOMADA-13NOV-PORTAL-PROEX.md) para conferir a base publicada, a ordem das PRs pendentes, o padrão visual e o roteiro de convite. Para a rodada de 14/11, consulte [Ações de projeto e acessos](../apps/proex-portal/docs/QA-ACOES-E-PERFIS.md).
 
+## Coerência visual e fim do R1 · 16/11 (Claude Code, sessão de aparência)
+
+- **R1, última etapa** · [PR147](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/147), integrada em `700f455`. "Histórico" nomeia só a linha do tempo única (Registros → Histórico). As outras listas dizem o que são e levam a ela: **Movimentações** (ficha do material), **Versões da demanda**, **Versões do cadastro**, **Alterações deste lançamento**, **Documentos e registros** e **Lançamentos**. As listas do patrimônio que repetiam o Histórico viraram um atalho.
+- **Seta de Configurações** · [PR158](https://github.com/yandiamantinoBr/role-da-extensao-proex-ufg/pull/158), integrada em `5f59767`. Chevron à direita que gira, nos grupos e nos blocos internos.
+- **Passada de coerência** (setas iguais no portal, cores pelo significado, selos no escuro, abas e "Atualizar" iguais). Ramos empilhados `claude/setas-iguais-16nov` → `claude/selos-cores-16nov` → `claude/abas-atualizar-16nov`. Detalhe e números na PR de cada um.
+- **Padrões novos:** classe global `p-disclosure` no `<summary>` (seta comum); vermelho só para prazo vencido e risco crítico; prioridade alta laranja; "Atualizar" do módulo = `p-button p-button-subtle` com ícone e texto (no cartão, só o ícone); aba ativa = fundo suave e texto da marca (no escuro, faixa embaixo).
+- **Lint:** 3 erros que já estão na `main` e não são desta frente: `app/portal-client.tsx` (memoização de `shownLoans`, Empréstimos) e `tests/assistant-administration-state.test.mjs` (atribuição a `module`).
+- **Falta:** cartões de número em quatro formatos (Início, Meu trabalho, Demandas, Materiais, Gestão); filtro de projeto em cinco formatos; escala única de títulos de seção; posição do botão principal; "Histórico de alterações" do pré-cadastro e "Histórico das chaves" (telas de outras frentes).
+
 ## Empréstimos · rodada de 16/11 (itens 1 e 2 de 5)
 
 - **1 · Privacidade (PR153, publicada):** quem só lê relatórios vê "Restrito" na condição de saída e de retorno (tela e arquivos). O ICS de empréstimos sai sem a ação atendida, e registros ligados a empréstimos saem sem título livre. Teste: `tests/loan-privacy.test.mjs`.

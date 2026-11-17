@@ -21,6 +21,11 @@
 .metric{border:1px solid var(--line)}
 .metric strong{font-size:28px}
 .metric>span{font-weight:600;color:var(--ink)}
+.metrics{--doing:#6b3c85;--done:#0f6f78}
+:global(html[data-theme=dark]) .metrics{--doing:#d3b2ec;--done:#8fe0e7}
+/* Mesmas cores do Início (16/11): em andamento roxo, concluídas aqua, atenção laranja. */
+.metric[data-tone=info]{--metric-tone:var(--doing)}.metric[data-tone=success]{--metric-tone:var(--done)}.metric[data-tone=warning]{--metric-tone:var(--warning-ink)}
+:global(html[data-theme=dark]) .metric[data-tone=info]{--metric-tone:var(--doing)}:global(html[data-theme=dark]) .metric[data-tone=success]{--metric-tone:var(--done)}:global(html[data-theme=dark]) .metric[data-tone=warning]{--metric-tone:var(--warning-ink)}
 
 /* Zero não é alerta (crítica de 16/11): "Atenção 0" e "Prazo hoje 0" ficam em cinza, nos dois temas. */
 :root .metrics .metric[data-zero]{--metric-tone:var(--muted)}

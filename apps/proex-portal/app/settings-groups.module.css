@@ -24,7 +24,7 @@
 .sectionHeader h2 { margin: 0; font-size: 13px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--brand-ink); }
 .sectionHeader p { margin: 2px 0 0; font-size: 12px; color: var(--text-secondary); line-height: 1.5; }
 .group { scroll-margin-top: 90px; }
-@media (max-width: 480px) { .index { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; } .index::-webkit-scrollbar { display: none; } .indexLink { flex: 0 0 auto; } }
+@media (max-width: 480px) { .index { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; padding-right: 28px; -webkit-mask-image: linear-gradient(to right, #000 82%, transparent); mask-image: linear-gradient(to right, #000 82%, transparent); } .index::-webkit-scrollbar { display: none; } .indexLink { flex: 0 0 auto; } }
 .group .body > :global(.p-form) { margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
 
 /* Seta igual em todos os grupos de Configurações (padrão do portal, como em "Refinar contexto"):
@@ -45,7 +45,9 @@
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") center / contain no-repeat;
   transition: transform .15s ease;
 }
-.group details > summary::after { width: 16px; height: 16px; }
+.group details > summary::after { width: 16px; height: 16px; grid-row: 1; }
+/* Blocos que abrem dentro de um grupo: texto da marca e peso de título, para não parecerem parágrafo comum. */
+.group details > summary { min-height: 44px; color: var(--brand-ink); font-weight: 600; }
 .group[open] > summary::after,
 .group details[open] > summary::after { transform: rotate(180deg); }
 .group > summary:focus-visible,

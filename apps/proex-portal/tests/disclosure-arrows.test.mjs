@@ -26,7 +26,8 @@ test('the boxes that used the browser triangle, "›" or no arrow now use it', (
     '../components/portal/follow-up-panel.tsx': ['Vincular à demanda', 'Mais materiais e tamanhos', 'Autorizar atualizações nesta demanda', 'Buscar e filtrar', 'Criar equipe', 'integrantes', 'Versões da demanda'],
     '../components/portal/task-triage.tsx': ['Matriz de urgência e importância', 'Triagem com IA'],
     '../components/portal/organization-email-settings.tsx': ['Avisos por e-mail'],
-    '../app/portal-client.tsx': ['Novo material', 'Nova dinâmica', 'Cadastrar um patrimônio individual'],
+    '../app/portal-client.tsx': ['Novo material', 'Nova dinâmica', 'Cadastrar um patrimônio individual', 'Assistente e importação de materiais'],
+    '../components/portal/work-context-panel.tsx': ['Responsáveis e demandas'],
   };
   for (const [file, labels] of Object.entries(boxes)) {
     const code = source(file);
@@ -37,4 +38,14 @@ test('the boxes that used the browser triangle, "›" or no arrow now use it', (
     }
   }
   assert.ok(!source('../components/portal/meu-trabalho-panel.module.css').includes("content:'›'"), 'sem o "›" em Meu trabalho');
+});
+
+test('material sheet boxes and the consumption toggle use the same chevron', () => {
+  const drawer = source('../components/portal/material-detail-drawer.tsx');
+  assert.ok(!drawer.includes('<details className={styles.details}><summary>'), 'todas as caixas da ficha com a seta comum');
+  assert.match(drawer, /<details className=\{styles\.details\}><summary className="p-disclosure">/);
+  const integration = source('../app/work-integration.module.css');
+  assert.ok(!/content: '▸'|content: '▾'/.test(integration));
+  assert.match(integration, /\.consumption > :global\(\.p-button\[aria-expanded=true\]\)::after \{ transform: rotate\(180deg\); \}/);
+  assert.match(source('../components/portal/material-movement-history.tsx'), /\{signed\(movement\.delta\)\} \{unitFor\(movement\.delta, measure\)\}/);
 });

@@ -16,6 +16,8 @@ test('settings groups and the blocks inside them share the portal chevron', () =
     /\.group > summary::after, \.group details > summary::after \{ content: ""; grid-column: 2;[^}]*background: var\(--brand-ink\);[^}]*mask: url\("data:image\/svg\+xml,[^"]*m6 9 6 6 6-6/,
     /\.group\[open\] > summary::after, \.group details\[open\] > summary::after \{ transform: rotate\(180deg\); \}/,
     /@media \(prefers-reduced-motion: reduce\) \{ \.group > summary::after, \.group details > summary::after \{ transition: none; \} \}/,
+    /\.group details > summary::after \{ width: 16px; height: 16px; grid-row: 1; \}/,
+    /\.group details > summary \{ min-height: 44px; color: var\(--brand-ink\); font-weight: 600; \}/,
   ]) assert.match(css, rule);
   // Os grupos são os mesmos <details> com a classe do módulo, inclusive o da central de chaves.
   assert.ok((client.match(/<details id="settings-[a-z-]+" className=\{settingsStyles\.group\}>/g) ?? []).length >= 5);
