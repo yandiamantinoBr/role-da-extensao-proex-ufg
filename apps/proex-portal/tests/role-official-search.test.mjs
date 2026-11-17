@@ -439,11 +439,14 @@ test('TELA · COMPOSITOR: alternância "Fontes oficiais" com estado visível, pe
   assert.match(tsx, /data-search-only=\{searchOnly \? true : undefined\}/);
   // Toque de 44 px, ligado sem parecer um segundo Enviar, bordas com contraste e tema escuro.
   assert.match(css, /\.officialToggle\{[^}]*min-height:44px[^}]*padding:0 \.6rem/);
-  assert.match(css, /\.officialToggle\[aria-pressed=true\]\{background:#efe6f6;border:2px solid var\(--purple\);color:var\(--purple\)\}/);
+  assert.match(css, /\.officialToggle\[aria-pressed=true\]\{background:#efe6f6;border:2px solid var\(--purple\);color:var\(--purple\);padding:0 calc\(\.6rem - 1px\)\}/);
   assert.match(css, /:global\(html\[data-theme=dark\]\) \.officialToggle\[aria-pressed=true\]\{background:#3a2850;border-color:#b48ad6;color:#f2ebf8\}/);
   assert.match(css, /\.dialog\{--role-control-border:#8e7aa0\}/);
   assert.match(css, /:global\(html\[data-theme=dark\]\) \.dialog\{--role-control-border:#8a6ba0\}/);
   assert.match(css, /\.iconButton,\.officialToggle\{border-color:var\(--role-control-border\)\}/);
   assert.match(css, /\.searchOnlyNotice\{[^}]*border-left:4px solid/);
-  assert.match(css, /@container \(max-width:390px\)\{\.composer\[data-search-only\] \.cost\{flex-basis:auto;order:0\}\}/);
+  assert.match(css, /@container \(max-width:390px\)\{\.composer\[data-search-only\] \.cost\{flex:1 1 0;order:0\}\}/);
+  // O custo divide a linha com o Enviar em vez de ficar espremido ao lado dos botões.
+  assert.match(css, /\.cost\{flex:1 1 12rem;min-width:0;/);
+  assert.match(css, /\.project select:disabled\{opacity:\.55;cursor:not-allowed\}/);
 });
