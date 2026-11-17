@@ -1051,7 +1051,7 @@ export default function PortalClient({ initial, release = 'Versão local' }: {
         <div hidden={showPrizeView}>
 
 
-        <Section title="Materiais e estoque" description="Saldo físico, reservas e unidades disponíveis ficam separados." aside={can('inventory.manage') && formProjects.length > 0 && <button type="button" className="p-button p-button-subtle" onClick={()=>setMovementLauncher('one')}>Registrar movimento<ArrowRight size={15} aria-hidden="true"/></button>}>
+        <Section title="Materiais e estoque" description="Saldo físico, reservas e unidades disponíveis ficam separados." aside={can('inventory.manage') && formProjects.length > 0 && <button type="button" data-tutorial="materiais-registrar" className="p-button p-button-subtle" onClick={()=>setMovementLauncher('one')}>Registrar movimento<ArrowRight size={15} aria-hidden="true"/></button>}>
             <MaterialCatalog key={string(user.userId)} onOpen={id=>{setMaterialMode('view');setSelectedMaterialId(id);}} materials={visibleItems.map(item => {
                 const availableQuantity = available(item);
                 const projectId = string(get(item, 'projectId', 'project_id'));

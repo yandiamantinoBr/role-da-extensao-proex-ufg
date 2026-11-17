@@ -5,7 +5,7 @@ import { startChapter, useTutorials } from './tutorial-store';
 import styles from './tutorials.module.css';
 
 /** Assuntos que entram nos próximos capítulos (roteiro de 15/11). Só texto: nada aqui abre telas. */
-export const UPCOMING_TOPICS = ['Materiais', 'Empréstimos', 'Dinâmicas'];
+export const UPCOMING_TOPICS = ['Empréstimos', 'Dinâmicas'];
 
 const day = (iso: string | null) => iso ? new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'America/Sao_Paulo' }).format(new Date(iso)) : '';
 
