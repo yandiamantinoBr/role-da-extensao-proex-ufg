@@ -1,5 +1,5 @@
 import { officialPdfUrl } from './official-pdf-url';
-import { readOfficialPdfText, type PdfTextPage } from './official-pdf-text';
+import { PdfPageLimitError, readOfficialPdf, readOfficialPdfText, type PdfTextPage } from './official-pdf-text';
 
 export type OfficialDocument = { url: string; title: string };
 export type OfficialPassage = OfficialDocument & { page: number; text: string };
@@ -43,6 +43,58 @@ async function readBounded(response: Response, limit: number): Promise<Uint8Arra
   let offset = 0;
   for (const part of parts) { bytes.set(part, offset); offset += part.byteLength; }
   return bytes;
+}
+
+class PdfTooLarge extends Error { constructor() { super('Fonte pública acima do limite de tamanho.'); } }
+
+/** Mesmo download para a busca e para a leitura com IA: sem redirecionamento, ≤ 2 MB, tipo e assinatura de PDF. */
+async function downloadPdf(url: URL, fetcher: typeof fetch, userAgent: string): Promise<Uint8Array<ArrayBuffer>> {
+  url.hash = '';
+  const response = await fetcher(url.href, {
+    headers: { 'User-Agent': userAgent, Accept: 'application/pdf' },
+    redirect: 'error', credentials: 'omit', signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  });
+  if (!response.ok || !/^application\/pdf\b/i.test(response.headers.get('content-type') ?? '')) {
+    await response.body?.cancel().catch(() => {});
+    throw new Error('Documento público indisponível.');
+  }
+  if (Number(response.headers.get('content-length')) > PDF_BYTES) {
+    await response.body?.cancel().catch(() => {});
+    throw new PdfTooLarge();
+  }
+  const bytes = await readBounded(response, PDF_BYTES).catch(error => { throw /limite de tamanho/.test(String(error)) ? new PdfTooLarge() : error; });
+  if (new TextDecoder().decode(bytes.subarray(0, 5)) !== '%PDF-') throw new Error('Assinatura de PDF ausente.');
+  return bytes;
+}
+
+export type ScannedPdfFailure = 'fora' | 'bloqueado' | 'indisponivel' | 'tamanho' | 'paginas' | 'com_texto';
+export type ScannedPdf = { ok: true; url: string; bytes: Uint8Array<ArrayBuffer>; pageCount: number } | { ok: false; reason: ScannedPdfFailure; pageCount?: number };
+
+/**
+ * Leitura com IA: baixa de novo o PDF oficial pelas mesmas regras da busca (endereço, robots, tamanho,
+ * assinatura e limite de páginas). Só segue se ele continuar sem texto (escaneado) e couber no teto de páginas.
+ */
+export async function readScannedOfficialPdf(
+  raw: string, maxPages: number, fetcher: typeof fetch, userAgent: string, disallowed: (robots: string, path: string) => boolean,
+): Promise<ScannedPdf> {
+  const url = officialPdfUrl(raw);
+  if (!url) return { ok: false, reason: 'fora' };
+  url.hash = '';
+  let robots: string | null = null;
+  try { robots = await pdfRobots(fetcher, userAgent); } catch { /* indisponível */ }
+  if (robots === null) return { ok: false, reason: 'indisponivel' };
+  if (disallowed(robots, url.pathname)) return { ok: false, reason: 'bloqueado' };
+  let bytes: Uint8Array<ArrayBuffer>;
+  try { bytes = await downloadPdf(url, fetcher, userAgent); }
+  catch (error) { return { ok: false, reason: error instanceof PdfTooLarge ? 'tamanho' : 'indisponivel' }; }
+  let read: Awaited<ReturnType<typeof readOfficialPdf>>;
+  // O PDF.js pode transferir o buffer que recebe: ele lê uma cópia e o original segue para o provedor.
+  try { read = await readOfficialPdf(bytes.slice(), maxPages); }
+  catch (error) { return error instanceof PdfPageLimitError ? { ok: false, reason: 'paginas', pageCount: error.pageCount } : { ok: false, reason: 'indisponivel' }; }
+  if (read.pageCount < 1) return { ok: false, reason: 'indisponivel' };
+  const textSize = read.pages.reduce((size, page) => size + page.text.replace(/\s+/g, ' ').trim().length, 0);
+  if (textSize >= MIN_PDF_TEXT) return { ok: false, reason: 'com_texto' };
+  return { ok: true, url: url.href, bytes, pageCount: read.pageCount };
 }
 
 function passageFor(document: OfficialDocument, pages: PdfTextPage[], subject: string, terms: (text: string) => string[]): OfficialPassage | null {
@@ -90,17 +142,7 @@ export async function searchOfficialPdfs(
     let reason: OfficialReadFailure = 'indisponivel';
     try {
       if (disallowed(robots, url.pathname)) { reason = 'bloqueado'; throw new Error('Documento não liberado para consulta automática.'); }
-      url.hash = '';
-      const response = await fetcher(url.href, {
-        headers: { 'User-Agent': userAgent, Accept: 'application/pdf' },
-        redirect: 'error', credentials: 'omit', signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-      });
-      if (!response.ok || !/^application\/pdf\b/i.test(response.headers.get('content-type') ?? '') || Number(response.headers.get('content-length')) > PDF_BYTES) {
-        await response.body?.cancel().catch(() => {});
-        throw new Error('Documento público indisponível.');
-      }
-      const bytes = await readBounded(response, PDF_BYTES);
-      if (new TextDecoder().decode(bytes.subarray(0, 5)) !== '%PDF-') throw new Error('Assinatura de PDF ausente.');
+      const bytes = await downloadPdf(url, fetcher, userAgent);
       // Sem OCR: um PDF que abre com zero páginas de texto é tratado como imagem escaneada.
       const pages = await readOfficialPdfText(bytes);
       const textSize = pages.reduce((size, page) => size + page.text.replace(/\s+/g, ' ').trim().length, 0);

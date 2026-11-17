@@ -1,0 +1,3766 @@
+{
+  "data": "2026-11-17",
+  "branch": "claude/role-ocr-17nov",
+  "commit": "f0a25ce",
+  "origin": "http://127.0.0.1:5177",
+  "base": "Descartável, loopback (cópia local de scripts/qa-local.mjs --credential-vault na porta 5177), conta e chave sintéticas. Rodada 2 (após f0a25ce). Nenhuma IA foi chamada: a resposta da busca oficial (com pdfReading assinado sintético) e a de pdf.read foram simuladas no navegador; nada foi gravado.",
+  "login": 200,
+  "setup": {
+    "org": "org_proex",
+    "status": 200,
+    "body": ""
+  },
+  "telas": {
+    "390-claro": {
+      "abriu": "atalho",
+      "entendi": true,
+      "oficial": "true",
+      "enviar": true,
+      "oferta": {
+        "tema": "light",
+        "innerWidth": 390,
+        "docScrollWidth": 390,
+        "semRolagemHorizontal": true,
+        "dialog": {
+          "x": 0,
+          "y": 0,
+          "w": 390,
+          "h": 844,
+          "scrollW": 390,
+          "clientW": 390
+        },
+        "bloqueados": [],
+        "mocked": [
+          "role:chat officialSearch=true"
+        ],
+        "ativo": {
+          "tag": "BODY",
+          "t": "Pular para o conteúdoGestão PROEXSeu espaço de tra"
+        },
+        "balao": {
+          "x": 56,
+          "y": 142,
+          "w": 304.3,
+          "h": 538.4,
+          "padding": "11.2px 14.4px",
+          "gap": "7.2px",
+          "fundo": "rgb(243, 238, 248)",
+          "scrollW": 302,
+          "clientW": 302,
+          "filhos": [
+            {
+              "tag": "P",
+              "t": "Edital PROBEC 2027 · retificação\nEncontrei o PDF, mas ele parece ser uma imagem escaneada:",
+              "x": 71.4,
+              "y": 155,
+              "w": 273.5,
+              "h": 151.8,
+              "contraste": 13.31,
+              "fonte": "14px",
+              "cor": "rgb(41, 35, 51)",
+              "transborda": false
+            },
+            {
+              "tag": "DIV",
+              "t": "Fontes da respostaEdital PROBEC 2027 · retificação ↗",
+              "x": 71.4,
+              "y": 322,
+              "w": 273.5,
+              "h": 77.1,
+              "contraste": 13.31,
+              "fonte": "14px",
+              "cor": "rgb(41, 35, 51)",
+              "transborda": false
+            },
+            {
+              "tag": "SMALL",
+              "t": "Consulta pública · sem custo de IA (a leitura abaixo é cobrada à parte)",
+              "x": 71.4,
+              "y": 406,
+              "w": 273.5,
+              "h": 37.2,
+              "contraste": 5.48,
+              "fonte": "12px",
+              "cor": "rgb(105, 91, 118)",
+              "transborda": false
+            },
+            {
+              "tag": "SECTION",
+              "t": "Ler o PDF escaneado com IAO PDF público e a sua pergunta serão enviados ao Google Gemini (",
+              "x": 71.4,
+              "y": 450,
+              "w": 273.5,
+              "h": 218.3,
+              "contraste": 15.19,
+              "fonte": "14px",
+              "cor": "rgb(41, 35, 51)",
+              "transborda": false
+            }
+          ],
+          "links": [
+            {
+              "t": "Edital PROBEC 2027 · retificação ↗",
+              "x": 71.4,
+              "y": 355,
+              "w": 224.9,
+              "h": 44,
+              "contraste": 9.47
+            }
+          ]
+        },
+        "cartoes": 1,
+        "pensando": false,
+        "cartao": {
+          "x": 71.4,
+          "y": 450,
+          "w": 273.5,
+          "h": 218.3,
+          "scrollW": 269,
+          "clientW": 269,
+          "padding": "12px",
+          "gap": "8.8px",
+          "fundo": "rgb(255, 255, 255)",
+          "borda": "1px rgb(232, 227, 238)",
+          "bordaEsq": "4px rgb(59, 23, 83)",
+          "raio": "12px",
+          "contrasteBorda": 1.1,
+          "contrasteBordaEsq": 12.83,
+          "fundoVsPai": 1.14,
+          "margemBalao": {
+            "esq": 15,
+            "dir": 15
+          },
+          "titulo": true
+        },
+        "filhos": [
+          {
+            "tag": "P",
+            "role": null,
+            "t": "Ler o PDF escaneado com IA",
+            "x": 87.4,
+            "y": 463,
+            "w": 244.5,
+            "h": 22.8,
+            "contraste": 10.8,
+            "fonte": "14.72px",
+            "peso": "800",
+            "lh": "22.816px",
+            "cor": "rgb(88, 39, 113)",
+            "transborda": false
+          },
+          {
+            "tag": "P",
+            "role": null,
+            "t": "O PDF público e a sua pergunta serão enviados ao Google Gemini (IA do Google) para leitura.",
+            "x": 87.4,
+            "y": 495,
+            "w": 244.5,
+            "h": 59.5,
+            "contraste": 6.25,
+            "fonte": "12.8px",
+            "peso": "400",
+            "lh": "19.84px",
+            "cor": "rgb(105, 91, 118)",
+            "transborda": false
+          },
+          {
+            "tag": "P",
+            "role": null,
+            "t": "Custo máximo: US$ 0,0106. Nada é enviado até você tocar no botão.",
+            "x": 87.4,
+            "y": 563,
+            "w": 244.5,
+            "h": 39.7,
+            "contraste": 6.25,
+            "fonte": "12.8px",
+            "peso": "400",
+            "lh": "19.84px",
+            "cor": "rgb(105, 91, 118)",
+            "transborda": false
+          },
+          {
+            "tag": "STRONG",
+            "role": null,
+            "t": "Custo máximo: US$ 0,0106.",
+            "x": 87.4,
+            "y": 564,
+            "w": 169.3,
+            "h": 17,
+            "contraste": 6.25,
+            "fonte": "12.8px",
+            "peso": "700",
+            "lh": "19.84px",
+            "cor": "rgb(105, 91, 118)",
+            "transborda": false
+          },
+          {
+            "tag": "BUTTON",
+            "role": null,
+            "t": "Ler com IA · até US$ 0,0106",
+            "x": 87.4,
+            "y": 612,
+            "w": 215.3,
+            "h": 44,
+            "contraste": 14.65,
+            "fonte": "14.4px",
+            "peso": "600",
+            "lh": "19.44px",
+            "cor": "rgb(255, 255, 255)",
+            "transborda": false
+          }
+        ],
+        "botao": {
+          "t": "Ler com IA · até US$ 0,0106",
+          "x": 87.4,
+          "y": 612,
+          "w": 215.3,
+          "h": 44,
+          "disabled": false,
+          "classe": "p-button p-button-primary",
+          "fundo": "rgb(59, 23, 83)",
+          "cor": "rgb(255, 255, 255)",
+          "contrasteTexto": 14.65,
+          "fundoVsCartao": 14.65,
+          "opacity": "1",
+          "cursor": "pointer",
+          "raio": "9px",
+          "fonte": "14.4px",
+          "peso": "600",
+          "whiteSpace": "normal",
+          "linhas": 2,
+          "icone": null,
+          "ariaDisabled": null,
+          "borda": "1px rgb(59, 23, 83)"
+        },
+        "paddingRascunhoRef": null
+      },
+      "focoPassos": [
+        {
+          "role": null,
+          "tabIndex": 0,
+          "inBubble": true,
+          "tag": "BUTTON",
+          "t": "Ler com IA · até US$ 0,0106",
+          "focusVisible": true,
+          "outline": "solid 3px rgb(35, 133, 150)",
+          "offset": "2px",
+          "boxShadow": "rgba(255, 255, 255, 0.12) 0px 1px 0px 0px inset, rgba(59, 23, 83, 0.6) 0px 6px 14px -8px"
+        }
+      ],
+      "clique1": true,
+      "focoDuranteLeitura": {
+        "role": null,
+        "tabIndex": 0,
+        "inBubble": true,
+        "tag": "BUTTON",
+        "t": "Lendo o PDF com IA…",
+        "focusVisible": true,
+        "outline": "solid 3px rgb(35, 133, 150)",
+        "offset": "2px",
+        "boxShadow": "rgba(255, 255, 255, 0.12) 0px 1px 0px 0px inset, rgba(59, 23, 83, 0.6) 0px 6px 14px -8px"
+      },
+      "lendo": {
+        "tema": "light",
+        "innerWidth": 390,
+        "docScrollWidth": 390,
+        "semRolagemHorizontal": true,
+        "dialog": {
+          "x": 0,
+          "y": 0,
+          "w": 390,
+          "h": 844,
+          "scrollW": 390,
+          "clientW": 390
+        },
+        "bloqueados": [],
+        "mocked": [
+          "role:chat officialSearch=true",
+          "pdf.read:hang accepted=10554 consent=true"
+        ],
+        "ativo": {
+          "tag": "BUTTON",
+          "t": "Lendo o PDF com IA…"
+        },
+        "balao": {
+          "x": 56,
+          "y": -2,
+          "w": 304.3,
+          "h": 538.4,
+          "padding": "11.2px 14.4px",
+          "gap": "7.2px",
+          "fundo": "rgb(243, 238, 248)",
+          "scrollW": 302,
+          "clientW": 302,
+          "filhos": [
+            {
+              "tag": "P",
+              "t": "Edital PROBEC 2027 · retificação\nEncontrei o PDF, mas ele parece ser uma imagem escaneada:",
+              "x": 71.4,
+              "y": 11,
+              "w": 273.5,
+              "h": 151.8,
+              "contraste": 13.31,
+              "fonte": "14px",
+              "cor": "rgb(41, 35, 51)",
+              "transborda": false
+            },
+            {
+              "tag": "DIV",
+              "t": "Fontes da respostaEdital PROBEC 2027 · retificação ↗",
+              "x": 71.4,
+              "y": 178,
+              "w": 273.5,
+              "h": 77.1,
+              "contraste": 13.31,
+              "fonte": "14px",
+              "cor": "rgb(41, 35, 51)",
+              "transborda": false
+            },
+            {
+              "tag": "SMALL",
+              "t": "Consulta pública · sem custo de IA (a leitura abaixo é cobrada à parte)",
+              "x": 71.4,
+              "y": 262,
+              "w": 273.5,
+              "h": 37.2,
+              "contraste": 5.48,
+              "fonte": "12px",
+              "cor": "rgb(105, 91, 118)",
+              "transborda": false
+            },
+            {
+              "tag": "SECTION",
+              "t": "Ler o PDF escaneado com IAO PDF público e a sua pergunta serão enviados ao Google Gemini (",
+              "x": 71.4,
+              "y": 306,
+              "w": 273.5,
+              "h": 218.3,
+              "contraste": 15.19,
+              "fonte": "14px",
+              "cor": "rgb(41, 35, 51)",
+              "transborda": false
+            }
+          ],
+          "links": [
+            {
+              "t": "Edital PROBEC 2027 · retificação ↗",
+              "x": 71.4,
+              "y": 211,
+              "w": 224.9,
+              "h": 44,
+              "contraste": 9.47
+            }
+          ]
+        },
+        "cartoes": 1,
+        "pensando": false,
+        "cartao": {
+          "x": 71.4,
+          "y": 306,
+          "w": 273.5,
+          "h": 218.3,
+          "scrollW": 269,
+          "clientW": 269,
+          "padding": "12px",
+          "gap": "8.8px",
+          "fundo": "rgb(255, 255, 255)",
+          "borda": "1px rgb(232, 227, 238)",
+          "bordaEsq": "4px rgb(59, 23, 83)",
+          "raio": "12px",
+          "contrasteBorda": 1.1,
+          "contrasteBordaEsq": 12.83,
+          "fundoVsPai": 1.14,
+          "margemBalao": {
+            "esq": 15,
+            "dir": 15
+          },
+          "titulo": true
+        },
+        "filhos": [
+          {
+            "tag": "P",
+            "role": null,
+            "t": "Ler o PDF escaneado com IA",
+            "x": 87.4,
+            "y": 319,
+            "w": 244.5,
+            "h": 22.8,
+            "contraste": 10.8,
+            "fonte": "14.72px",
+            "peso": "800",
+            "lh": "22.816px",
+            "cor": "rgb(88, 39, 113)",
+            "transborda": false
+          },
+          {
+            "tag": "P",
+            "role": null,
+            "t": "O PDF público e a sua pergunta serão enviados ao Google Gemini (IA do Google) para leitura.",
+            "x": 87.4,
+            "y": 351,
+            "w": 244.5,
+            "h": 59.5,
+            "contraste": 6.25,
+            "fonte": "12.8px",
+            "peso": "400",
+            "lh": "19.84px",
+            "cor": "rgb(105, 91, 118)",
+            "transborda": false
+          },
+          {
+            "tag": "P",
+            "role": null,
+            "t": "Custo máximo: US$ 0,0106. Nada é enviado até você tocar no botão.",
+            "x": 87.4,
+            "y": 419,
+            "w": 244.5,
+            "h": 39.7,
+            "contraste": 6.25,
+            "fonte": "12.8px",
+            "peso": "400",
+            "lh": "19.84px",
+            "cor": "rgb(105, 91, 118)",
+            "transborda": false
+          },
+          {
+            "tag": "STRONG",
+            "role": null,
+            "t": "Custo máximo: US$ 0,0106.",
+            "x": 87.4,
+            "y": 420,
+            "w": 169.3,
+            "h": 17,
+            "contraste": 6.25,
+            "fonte": "12.8px",
+            "peso": "700",
+            "lh": "19.84px",
+            "cor": "rgb(105, 91, 118)",
+            "transborda": false
+          },
+          {
+            "tag": "BUTTON",
+            "role": null,
+            "t": "Lendo o PDF com IA…",
+            "x": 87.4,
+            "y": 468,
+            "w": 197.5,
+            "h": 44,
+            "contraste": 14.65,
+            "fonte": "14.4px",
+            "peso": "600",
+            "lh": "19.44px",
+            "cor": "rgb(255, 255, 255)",
+            "transborda": false
+          }
+        ],
+        "botao": {
+          "t": "Lendo o PDF com IA…",
+          "x": 87.4,
+          "y": 468,
+          "w": 197.5,
+          "h": 44,
+          "disabled": false,
+          "classe": "p-button p-button-primary",
+          "fundo": "rgb(59, 23, 83)",
+          "cor": "rgb(255, 255, 255)",
+          "contrasteTexto": 14.65,
+          "fundoVsCartao": 14.65,
+          "opacity": "1",
+          "cursor": "progress",
+          "raio": "9px",
+          "fonte": "14.4px",
+          "peso": "600",
+          "whiteSpace": "normal",
+          "linhas": 2,
+          "icone": {
+            "classe": "lucide lucide-loader-circle p-spin",
+            "anim": "portal-spin",
+            "w": 16
+          },
+          "ariaDisabled": "true",
+          "borda": "1px rgb(59, 23, 83)"
+        },
+        "paddingRascunhoRef": null
+      },
+      "focoAposLeitura": {
+        "role": null,
+        "tabIndex": -1,
+        "inBubble": true,
+        "tag": "P",
+        "t": "Li o PDF com IA (escaneado). Na p. 3: As",
+        "focusVisible": true,
+        "outline": "auto 1px rgb(16, 16, 16)",
+        "offset": "0px",
+        "boxShadow": "none"
+      },
+      "lido": {
+        "tema": "light",
+        "innerWidth": 390,
+        "docScrollWidth": 390,
+        "semRolagemHorizontal": true,
+        "dialog": {
+          "x": 0,
+          "y": 0,
+          "w": 390,
+          "h": 844,
+          "scrollW": 390,
+          "clientW": 390
+        },
+        "bloqueados": [],
+        "mocked": [
+          "role:chat officialSearch=true",
+          "pdf.read:hang accepted=10554 consent=true"
+        ],
+        "ativo": {
+          "tag": "P",
+          "t": "Li o PDF com IA (escaneado). Na p. 3: As inscriçõe"
+        },
+        "balao": {
+          "x": 56,
+          "y": 218,
+          "w": 304.3,
+          "h": 318.8,
+          "padding": "11.2px 14.4px",
+          "gap": "7.2px",
+          "fundo": "rgb(243, 238, 248)",
+          "scrollW": 302,
+          "clientW": 302,
+          "filhos": [
+            {
+              "tag": "P",
+              "t": "Li o PDF com IA (escaneado). Na p. 3: As inscrições ficam abertas de 1º a 15 de dezembro d",
+              "x": 71.4,
+              "y": 230,
+              "w": 273.5,
+              "h": 108.4,
+              "contraste": 13.31,
+              "fonte": "14px",
+              "cor": "rgb(41, 35, 51)",
+              "transborda": false
+            },
+            {
+              "tag": "P",
+              "t": "Leitura feita por IA a partir da imagem do documento; confira no PDF.",
+              "x": 71.4,
+              "y": 346,
+              "w": 273.5,
+              "h": 42.1,
+              "contraste": 5.48,
+              "fonte": "13.6px",
+              "cor": "rgb(105, 91, 118)",
+              "transborda": false
+            },
+            {
+              "tag": "DIV",
+              "t": "Fontes da respostaEdital PROBEC 2027 · retificação · p. 3 ↗",
+              "x": 71.4,
+              "y": 403,
+              "w": 273.5,
+              "h": 77.1,
+              "contraste": 13.31,
+              "fonte": "14px",
+              "cor": "rgb(41, 35, 51)",
+              "transborda": false
+            },
+            {
+              "tag": "SMALL",
+              "t": "Leitura por IA (Google Gemini) · Custou menos de 1 centavo (US$ 0,0062)",
+              "x": 71.4,
+              "y": 487,
+              "w": 273.5,
+              "h": 37.2,
+              "contraste": 5.48,
+              "fonte": "12px",
+              "cor": "rgb(105, 91, 118)",
+              "transborda": false
+            }
+          ],
+          "links": [
+            {
+              "t": "Edital PROBEC 2027 · retificação · p. 3 ↗",
+              "x": 71.4,
+              "y": 436,
+              "w": 258.4,
+              "h": 44,
+              "contraste": 9.47
+            }
+          ]
+        },
+        "cartoes": 0,
+        "pensando": false
+      },
+      "clique2": true,
+      "semTrecho": {
+        "tema": "light",
+        "innerWidth": 390,
+        "docScrollWidth": 390,
+        "semRolagemHorizontal": true,
+        "dialog": {
+          "x": 0,
+          "y": 0,
+          "w": 390,
+          "h": 844,
+          "scrollW": 390,
+          "clientW": 390
+        },
+        "bloqueados": [],
+        "mocked": [
+          "role:chat officialSearch=true",
+          "pdf.read:hang accepted=10554 consent=true",
+          "role:chat officialSearch=true",
+          "pdf.read:none accepted=10554 consent=true"
+        ],
+        "ativo": {
+          "tag": "P",
+          "t": "Li o PDF com IA (escaneado), mas não achei um trec"
+        },
+        "balao": {
+          "x": 56,
+          "y": 261,
+          "w": 304.3,
+          "h": 275.5,
+          "padding": "11.2px 14.4px",
+          "gap": "7.2px",
+          "fundo": "rgb(243, 238, 248)",
+          "scrollW": 302,
+          "clientW": 302,
+          "filhos": [
+            {
+              "tag": "P",
+              "t": "Li o PDF com IA (escaneado), mas não achei um trecho que responda à pergunta.",
+              "x": 71.4,
+              "y": 273,
+              "w": 273.5,
+              "h": 65.1,
+              "contraste": 13.31,
+              "fonte": "14px",
+              "cor": "rgb(41, 35, 51)",
+              "transborda": false
+            },
+            {
+              "tag": "P",
+              "t": "Leitura feita por IA a partir da imagem do documento; confira no PDF.",
+              "x": 71.4,
+              "y": 346,
+              "w": 273.5,
+              "h": 42.1,
+              "contraste": 5.48,
+              "fonte": "13.6px",
+              "cor": "rgb(105, 91, 118)",
+              "transborda": false
+            },
+            {
+              "tag": "DIV",
+              "t": "Fontes da respostaEdital PROBEC 2027 · retificação ↗",
+              "x": 71.4,
+              "y": 403,
+              "w": 273.5,
+              "h": 77.1,
+              "contraste": 13.31,
+              "fonte": "14px",
+              "cor": "rgb(41, 35, 51)",
+              "transborda": false
+            },
+            {
+              "tag": "SMALL",
+              "t": "Leitura por IA (Google Gemini) · Custou menos de 1 centavo (US$ 0,0059)",
+              "x": 71.4,
+              "y": 487,
+              "w": 273.5,
+              "h": 37.2,
+              "contraste": 5.48,
+              "fonte": "12px",
+              "cor": "rgb(105, 91, 118)",
+              "transborda": false
+            }
+          ],
+          "links": [
+            {
+              "t": "Edital PROBEC 2027 · retificação ↗",
+              "x": 71.4,
+              "y": 436,
+              "w": 224.9,
+              "h": 44,
+              "contraste": 9.47
+            }
+          ]
+        },
+        "cartoes": 0,
+        "pensando": false
+      },
+      "clique3": true,
+      "focoAposRecusa": {
+        "role": "alert",
+        "tabIndex": -1,
+        "inBubble": true,
+        "tag": "P",
+        "t": "Este PDF tem 14 páginas; a leitura com I",
+        "focusVisible": true,
+        "outline": "auto 1px rgb(16, 16, 16)",
+        "offset": "0px",
+        "boxShadow": "none"
+      },
+      "recusa": {
+        "tema": "light",
+        "innerWidth": 390,
+        "docScrollWidth": 390,
+        "semRolagemHorizontal": true,
+        "dialog": {
+          "x": 0,
+          "y": 0,
+          "w": 390,
+          "h": 844,
+          "scrollW": 390,
+          "clientW": 390
+        },
+        "bloqueados": [],
+        "mocked": [
+          "role:chat officialSearch=true",
+          "pdf.read:hang accepted=10554 consent=true",
+          "role:chat officialSearch=true",
+          "pdf.read:none accepted=10554 consent=true",
+          "role:chat officialSearch=true",
+          "pdf.read:refuse accepted=10554 consent=true"
+        ],
+        "ativo": {
+          "tag": "P",
+          "t": "Este PDF tem 14 páginas; a leitura com IA aceita a"
+        },
+        "balao": {
+          "x": 56,
+          "y": 132,
+          "w": 304.3,
+          "h": 404.5,
+          "padding": "11.2px 14.4px",
+          "gap": "7.2px",
+          "fundo": "rgb(243, 238, 248)",
+          "scrollW": 302,
+          "clientW": 302,
+          "filhos": [
+            {
+              "tag": "P",
+              "t": "Edital PROBEC 2027 · retificação\nEncontrei o PDF, mas ele parece ser uma imagem escaneada:",
+              "x": 71.4,
+              "y": 145,
+              "w": 273.5,
+              "h": 151.8,
+              "contraste": 13.31,
+              "fonte": "14px",
+              "cor": "rgb(41, 35, 51)",
+              "transborda": false
+            },
+            {
+              "tag": "DIV",
+              "t": "Fontes da respostaEdital PROBEC 2027 · retificação ↗",
+              "x": 71.4,
+              "y": 312,
+              "w": 273.5,
+              "h": 77.1,
+              "contraste": 13.31,
+              "fonte": "14px",
+              "cor": "rgb(41, 35, 51)",
+              "transborda": false
+            },
+            {
+              "tag": "SMALL",
+              "t": "Consulta pública · sem custo de IA (a leitura abaixo é cobrada à parte)",
+              "x": 71.4,
+              "y": 396,
+              "w": 273.5,
+              "h": 37.2,
+              "contraste": 5.48,
+              "fonte": "12px",
+              "cor": "rgb(105, 91, 118)",
+              "transborda": false
+            },
+            {
+              "tag": "P",
+              "t": "Este PDF tem 14 páginas; a leitura com IA aceita até 10 páginas. Nada foi cobrado. Abra o ",
+              "x": 71.4,
+              "y": 440,
+              "w": 273.5,
+              "h": 84.4,
+              "contraste": 5.78,
+              "fonte": "13.6px",
+              "cor": "rgb(169, 46, 76)",
+              "transborda": false
+            }
+          ],
+          "links": [
+            {
+              "t": "Edital PROBEC 2027 · retificação ↗",
+              "x": 71.4,
+              "y": 345,
+              "w": 224.9,
+              "h": 44,
+              "contraste": 9.47
+            }
+          ]
+        },
+        "cartoes": 0,
+        "pensando": false,
+        "alerta": {
+          "t": "Este PDF tem 14 páginas; a leitura com IA aceita até 10 páginas. Nada foi cobrado. Abra o link para conferir.",
+          "x": 71.4,
+          "y": 440,
+          "w": 273.5,
+          "h": 84.4,
+          "contraste": 5.78,
+          "fonte": "13.6px",
+          "borda": "color(srgb 0.662745 0.180392 0.298039 / 0.35)",
+          "fundo": "color(srgb 0.662745 0.180392 0.298039 / 0.08)",
+          "padding": "9.6px 12px",
+          "dentroDeSecao": false,
+          "focado": true,
+          "margemBalao": {
+            "esq": 15,
+            "dir": 15
+          }
+        }
+      },
+      "semOferta": {
+        "tema": "light",
+        "innerWidth": 390,
+        "docScrollWidth": 390,
+        "semRolagemHorizontal": true,
+        "dialog": {
+          "x": 0,
+          "y": 0,
+          "w": 390,
+          "h": 844,
+          "scrollW": 390,
+          "clientW": 390
+        },
+        "bloqueados": [],
+        "mocked": [
+          "role:chat officialSearch=true",
+          "pdf.read:hang accepted=10554 consent=true",
+          "role:chat officialSearch=true",
+          "pdf.read:none accepted=10554 consent=true",
+          "role:chat officialSearch=true",
+          "pdf.read:refuse accepted=10554 consent=true",
+          "role:chat officialSearch=true"
+        ],
+        "ativo": {
+          "tag": "P",
+          "t": "Este PDF tem 14 páginas; a leitura com IA aceita a"
+        },
+        "balao": {
+          "x": 56,
+          "y": 142,
+          "w": 304.3,
+          "h": 405.8,
+          "padding": "11.2px 14.4px",
+          "gap": "7.2px",
+          "fundo": "rgb(243, 238, 248)",
+          "scrollW": 302,
+          "clientW": 302,
+          "filhos": [
+            {
+              "tag": "P",
+              "t": "Bolsas de extensão PROBEC 2027\nInscrições pelo SIGAA até 15/12/2026; resultado preliminar ",
+              "x": 71.4,
+              "y": 154,
+              "w": 273.5,
+              "h": 216.9,
+              "contraste": 13.31,
+              "fonte": "14px",
+              "cor": "rgb(41, 35, 51)",
+              "transborda": false
+            },
+            {
+              "tag": "DIV",
+              "t": "Fontes da respostaBolsas de extensão PROBEC 2027 ↗Calendário de editais da PROEX ↗",
+              "x": 71.4,
+              "y": 386,
+              "w": 273.5,
+              "h": 123.5,
+              "contraste": 13.31,
+              "fonte": "14px",
+              "cor": "rgb(41, 35, 51)",
+              "transborda": false
+            },
+            {
+              "tag": "SMALL",
+              "t": "Consulta pública · sem custo de IA",
+              "x": 71.4,
+              "y": 517,
+              "w": 273.5,
+              "h": 18.6,
+              "contraste": 5.48,
+              "fonte": "12px",
+              "cor": "rgb(105, 91, 118)",
+              "transborda": false
+            }
+          ],
+          "links": [
+            {
+              "t": "Bolsas de extensão PROBEC 2027 ↗",
+              "x": 71.4,
+              "y": 419,
+              "w": 232.8,
+              "h": 44,
+              "contraste": 9.47
+            },
+            {
+              "t": "Calendário de editais da PROEX ↗",
+              "x": 71.4,
+              "y": 466,
+              "w": 221.5,
+              "h": 44,
+              "contraste": 9.47
+            }
+          ]
+        },
+        "cartoes": 0,
+        "pensando": false
+      }
+    },
+    "390-escuro": {
+      "abriu": "atalho",
+      "entendi": false,
+      "oficial": "true",
+      "enviar": true,
+      "oferta": {
+        "tema": "dark",
+        "innerWidth": 390,
+        "docScrollWidth": 390,
+        "semRolagemHorizontal": true,
+        "dialog": {
+          "x": 0,
+          "y": 0,
+          "w": 390,
+          "h": 844,
+          "scrollW": 390,
+          "clientW": 390
+        },
+        "bloqueados": [],
+        "mocked": [
+          "role:chat officialSearch=true"
+        ],
+        "ativo": {
+          "tag": "BODY",
+          "t": "Pular para o conteúdoGestão PROEXSeu espaço de tra"
+        },
+        "balao": {
+          "x": 56,
+          "y": 142,
+          "w": 304.3,
+          "h": 538.4,
+          "padding": "11.2px 14.4px",
+          "gap": "7.2px",
+          "fundo": "rgb(48, 36, 59)",
+          "scrollW": 302,
+          "clientW": 302,
+          "filhos": [
+            {
+              "tag": "P",
+              "t": "Edital PROBEC 2027 · retificação\nEncontrei o PDF, mas ele parece ser uma imagem escaneada:",
+              "x": 71.4,
+              "y": 155,
+              "w": 273.5,
+              "h": 151.8,
+              "contraste": 12.5,
+              "fonte": "14px",
+              "cor": "rgb(242, 235, 248)",
+              "transborda": false
+            },
+            {
+              "tag": "DIV",
+              "t": "Fontes da respostaEdital PROBEC 2027 · retificação ↗",
+              "x": 71.4,
+              "y": 322,
+              "w": 273.5,
+              "h": 77.1,
+              "contraste": 12.5,
+              "fonte": "14px",
+              "cor": "rgb(242, 235, 248)",
+              "transborda": false
+            },
+            {
+              "tag": "SMALL",
+              "t": "Consulta pública · sem custo de IA (a leitura abaixo é cobrada à parte)",
+              "x": 71.4,
+              "y": 406,
+              "w": 273.5,
+              "h": 37.2,
+              "contraste": 7.21,
+              "fonte": "12px",
+              "cor": "rgb(194, 176, 206)",
+              "transborda": false
+            },
+            {
+              "tag": "SECTION",
+              "t": "Ler o PDF escaneado com IAO PDF público e a sua pergunta serão enviados ao Google Gemini (",
+              "x": 71.4,
+              "y": 450,
+              "w": 273.5,
+              "h": 218.3,
+              "contraste": 14.17,
+              "fonte": "14px",
+              "cor": "rgb(242, 235, 248)",
+              "transborda": false
+            }
+          ],
+          "links": [
+            {
+              "t": "Edital PROBEC 2027 · retificação ↗",
+              "x": 71.4,
+              "y": 355,
+              "w": 224.9,
+              "h": 44,
+              "contraste": 8.65
+            }
+          ]
+        },
+        "cartoes": 1,
+        "pensando": false,
+        "cartao": {
+          "x": 71.4,
+          "y": 450,
+          "w": 273.5,
+          "h": 218.3,
+          "scrollW": 269,
+          "clientW": 269,
+          "padding": "12px",
+          "gap": "8.8px",
+          "fundo": "rgb(36, 27, 46)",
+          "borda": "1px rgb(68, 49, 79)",
+          "bordaEsq": "4px rgb(180, 138, 214)",
+          "raio": "12px",
+          "contrasteBorda": 1.25,
+          "contrasteBordaEsq": 5.24,
+          "fundoVsPai": 1.13,
+          "margemBalao": {
+            "esq": 15,
+            "dir": 15
+          },
+          "titulo": true
+        },
+        "filhos": [
+          {
+            "tag": "P",
+            "role": null,
+            "t": "Ler o PDF escaneado com IA",
+            "x": 87.4,
+            "y": 463,
+            "w": 244.5,
+            "h": 22.8,
+            "contraste": 9.81,
+            "fonte": "14.72px",
+            "peso": "800",
+            "lh": "22.816px",
+            "cor": "rgb(223, 186, 244)",
+            "transborda": false
+          },
+          {
+            "tag": "P",
+            "role": null,
+            "t": "O PDF público e a sua pergunta serão enviados ao Google Gemini (IA do Google) para leitura.",
+            "x": 87.4,
+            "y": 495,
+            "w": 244.5,
+            "h": 59.5,
+            "contraste": 8.18,
+            "fonte": "12.8px",
+            "peso": "400",
+            "lh": "19.84px",
+            "cor": "rgb(194, 176, 206)",
+            "transborda": false
+          },
+          {
+            "tag": "P",
+            "role": null,
+            "t": "Custo máximo: US$ 0,0106. Nada é enviado até você tocar no botão.",
+            "x": 87.4,
+            "y": 563,
+            "w": 244.5,
+            "h": 39.7,
+            "contraste": 8.18,
+            "fonte": "12.8px",
+            "peso": "400",
+            "lh": "19.84px",
+            "cor": "rgb(194, 176, 206)",
+            "transborda": false
+          },
+          {
+            "tag": "STRONG",
+            "role": null,
+            "t": "Custo máximo: US$ 0,0106.",
+            "x": 87.4,
+            "y": 564,
+            "w": 169.3,
+            "h": 17,
+            "contraste": 8.18,
+            "fonte": "12.8px",
+            "peso": "700",
+            "lh": "19.84px",
+            "cor": "rgb(194, 176, 206)",
+            "transborda": false
+          },
+          {
+            "tag": "BUTTON",
+            "role": null,
+            "t": "Ler com IA · até US$ 0,0106",
+            "x": 87.4,
+            "y": 612,
+            "w": 215.3,
+            "h": 44,
+            "contraste": 5.61,
+            "fonte": "14.4px",
+            "peso": "600",
+            "lh": "19.44px",
+            "cor": "rgb(255, 255, 255)",
+            "transborda": false
+          }
+        ],
+        "botao": {
+          "t": "Ler com IA · até US$ 0,0106",
+          "x": 87.4,
+          "y": 612,
+          "w": 215.3,
+          "h": 44,
+          "disabled": false,
+          "classe": "p-button p-button-primary",
+          "fundo": "rgb(134, 81, 166)",
+          "cor": "rgb(255, 255, 255)",
+          "contrasteTexto": 5.61,
+          "fundoVsCartao": 2.94,
+          "opacity": "1",
+          "cursor": "pointer",
+          "raio": "9px",
+          "fonte": "14.4px",
+          "peso": "600",
+          "whiteSpace": "normal",
+          "linhas": 2,
+          "icone": null,
+          "ariaDisabled": null,
+          "borda": "1px rgb(212, 179, 232)"
+        },
+        "paddingRascunhoRef": null
+      },
+      "focoPassos": [
+        {
+          "role": null,
+          "tabIndex": 0,
+          "inBubble": true,
+          "tag": "BUTTON",
+          "t": "Ler com IA · até US$ 0,0106",
+          "focusVisible": true,
+          "outline": "solid 3px rgb(119, 220, 229)",
+          "offset": "2px",
+          "boxShadow": "rgba(255, 255, 255, 0.12) 0px 1px 0px 0px inset, rgba(59, 23, 83, 0.6) 0px 6px 14px -8px"
+        }
+      ],
+      "clique1": true,
+      "focoDuranteLeitura": {
+        "role": null,
+        "tabIndex": 0,
+        "inBubble": true,
+        "tag": "BUTTON",
+        "t": "Lendo o PDF com IA…",
+        "focusVisible": true,
+        "outline": "solid 3px rgb(119, 220, 229)",
+        "offset": "2px",
+        "boxShadow": "rgba(255, 255, 255, 0.12) 0px 1px 0px 0px inset, rgba(59, 23, 83, 0.6) 0px 6px 14px -8px"
+      },
+      "lendo": {
+        "tema": "dark",
+        "innerWidth": 390,
+        "docScrollWidth": 390,
+        "semRolagemHorizontal": true,
+        "dialog": {
+          "x": 0,
+          "y": 0,
+          "w": 390,
+          "h": 844,
+          "scrollW": 390,
+          "clientW": 390
+        },
+        "bloqueados": [],
+        "mocked": [
+          "role:chat officialSearch=true",
+          "pdf.read:hang accepted=10554 consent=true"
+        ],
+        "ativo": {
+          "tag": "BUTTON",
+          "t": "Lendo o PDF com IA…"
+        },
+        "balao": {
+          "x": 56,
+          "y": -2,
+          "w": 304.3,
+          "h": 538.4,
+          "padding": "11.2px 14.4px",
+          "gap": "7.2px",
+          "fundo": "rgb(48, 36, 59)",
+          "scrollW": 302,
+          "clientW": 302,
+          "filhos": [
+            {
+              "tag": "P",
+              "t": "Edital PROBEC 2027 · retificação\nEncontrei o PDF, mas ele parece ser uma imagem escaneada:",
+              "x": 71.4,
+              "y": 11,
+              "w": 273.5,
+              "h": 151.8,
+              "contraste": 12.5,
+              "fonte": "14px",
+              "cor": "rgb(242, 235, 248)",
+              "transborda": false
+            },
+            {
+              "tag": "DIV",
+              "t": "Fontes da respostaEdital PROBEC 2027 · retificação ↗",
+              "x": 71.4,
+              "y": 178,
+              "w": 273.5,
+              "h": 77.1,
+              "contraste": 12.5,
+              "fonte": "14px",
+              "cor": "rgb(242, 235, 248)",
+              "transborda": false
+            },
+            {
+              "tag": "SMALL",
+              "t": "Consulta pública · sem custo de IA (a leitura abaixo é cobrada à parte)",
+              "x": 71.4,
+              "y": 262,
+              "w": 273.5,
+              "h": 37.2,
+              "contraste": 7.21,
+              "fonte": "12px",
+              "cor": "rgb(194, 176, 206)",
+              "transborda": false
+            },
+            {
+              "tag": "SECTION",
+              "t": "Ler o PDF escaneado com IAO PDF público e a sua pergunta serão enviados ao Google Gemini (",
+              "x": 71.4,
+              "y": 306,
+              "w": 273.5,
+              "h": 218.3,
+              "contraste": 14.17,
+              "fonte": "14px",
+              "cor": "rgb(242, 235, 248)",
+              "transborda": false
+            }
+          ],
+          "links": [
+            {
+              "t": "Edital PROBEC 2027 · retificação ↗",
+              "x": 71.4,
+              "y": 211,
+              "w": 224.9,
+              "h": 44,
+              "contraste": 8.65
+            }
+          ]
+        },
+        "cartoes": 1,
+        "pensando": false,
+        "cartao": {
+          "x": 71.4,
+          "y": 306,
+          "w": 273.5,
+          "h": 218.3,
+          "scrollW": 269,
+          "clientW": 269,
+          "padding": "12px",
+          "gap": "8.8px",
+          "fundo": "rgb(36, 27, 46)",
+          "borda": "1px rgb(68, 49, 79)",
+          "bordaEsq": "4px rgb(180, 138, 214)",
+          "raio": "12px",
+          "contrasteBorda": 1.25,
+          "contrasteBordaEsq": 5.24,
+          "fundoVsPai": 1.13,
+          "margemBalao": {
+            "esq": 15,
+            "dir": 15
+          },
+          "titulo": true
+        },
+        "filhos": [
+          {
+            "tag": "P",
+            "role": null,
+            "t": "Ler o PDF escaneado com IA",
+            "x": 87.4,
+            "y": 319,
+            "w": 244.5,
+            "h": 22.8,
+            "contraste": 9.81,
+            "fonte": "14.72px",
+            "peso": "800",
+            "lh": "22.816px",
+            "cor": "rgb(223, 186, 244)",
+            "transborda": false
+          },
+          {
+            "tag": "P",
+            "role": null,
+            "t": "O PDF público e a sua pergunta serão enviados ao Google Gemini (IA do Google) para leitura.",
+            "x": 87.4,
+            "y": 351,
+            "w": 244.5,
+            "h": 59.5,
+            "contraste": 8.18,
+            "fonte": "12.8px",
+            "peso": "400",
+            "lh": "19.84px",
+            "cor": "rgb(194, 176, 206)",
+            "transborda": false
+          },
+          {
+            "tag": "P",
+            "role": null,
+            "t": "Custo máximo: US$ 0,0106. Nada é enviado até você tocar no botão.",
+            "x": 87.4,
+            "y": 419,
+            "w": 244.5,
+            "h": 39.7,
+            "contraste": 8.18,
+            "fonte": "12.8px",
+            "peso": "400",
+            "lh": "19.84px",
+            "cor": "rgb(194, 176, 206)",
+            "transborda": false
+          },
+          {
+            "tag": "STRONG",
+            "role": null,
+            "t": "Custo máximo: US$ 0,0106.",
+            "x": 87.4,
+            "y": 420,
+            "w": 169.3,
+            "h": 17,
+            "contraste": 8.18,
+            "fonte": "12.8px",
+            "peso": "700",
+            "lh": "19.84px",
+            "cor": "rgb(194, 176, 206)",
+            "transborda": false
+          },
+          {
+            "tag": "BUTTON",
+            "role": null,
+            "t": "Lendo o PDF com IA…",
+            "x": 87.4,
+            "y": 468,
+            "w": 197.5,
+            "h": 44,
+            "contraste": 5.61,
+            "fonte": "14.4px",
+            "peso": "600",
+            "lh": "19.44px",
+            "cor": "rgb(255, 255, 255)",
+            "transborda": false
+          }
+        ],
+        "botao": {
+          "t": "Lendo o PDF com IA…",
+          "x": 87.4,
+          "y": 468,
+          "w": 197.5,
+          "h": 44,
+          "disabled": false,
+          "classe": "p-button p-button-primary",
+          "fundo": "rgb(134, 81, 166)",
+          "cor": "rgb(255, 255, 255)",
+          "contrasteTexto": 5.61,
+          "fundoVsCartao": 2.94,
+          "opacity": "1",
+          "cursor": "progress",
+          "raio": "9px",
+          "fonte": "14.4px",
+          "peso": "600",
+          "whiteSpace": "normal",
+          "linhas": 2,
+          "icone": {
+            "classe": "lucide lucide-loader-circle p-spin",
+            "anim": "portal-spin",
+            "w": 16
+          },
+          "ariaDisabled": "true",
+          "borda": "1px rgb(212, 179, 232)"
+        },
+        "paddingRascunhoRef": null
+      },
+      "focoAposLeitura": {
+        "role": null,
+        "tabIndex": -1,
+        "inBubble": true,
+        "tag": "P",
+        "t": "Li o PDF com IA (escaneado). Na p. 3: As",
+        "focusVisible": true,
+        "outline": "auto 1px rgb(238, 238, 238)",
+        "offset": "0px",
+        "boxShadow": "none"
+      },
+      "lido": {
+        "tema": "dark",
+        "innerWidth": 390,
+        "docScrollWidth": 390,
+        "semRolagemHorizontal": true,
+        "dialog": {
+          "x": 0,
+          "y": 0,
+          "w": 390,
+          "h": 844,
+          "scrollW": 390,
+          "clientW": 390
+        },
+        "bloqueados": [],
+        "mocked": [
+          "role:chat officialSearch=true",
+          "pdf.read:hang accepted=10554 consent=true"
+        ],
+        "ativo": {
+          "tag": "P",
+          "t": "Li o PDF com IA (escaneado). Na p. 3: As inscriçõe"
+        },
+        "balao": {
+          "x": 56,
+          "y": 218,
+          "w": 304.3,
+          "h": 318.8,
+          "padding": "11.2px 14.4px",
+          "gap": "7.2px",
+          "fundo": "rgb(48, 36, 59)",
+          "scrollW": 302,
+          "clientW": 302,
+          "filhos": [
+            {
+              "tag": "P",
+              "t": "Li o PDF com IA (escaneado). Na p. 3: As inscrições ficam abertas de 1º a 15 de dezembro d",
+              "x": 71.4,
+              "y": 230,
+              "w": 273.5,
+              "h": 108.4,
+              "contraste": 12.5,
+              "fonte": "14px",
+              "cor": "rgb(242, 235, 248)",
+              "transborda": false
+            },
+            {
+              "tag": "P",
+              "t": "Leitura feita por IA a partir da imagem do documento; confira no PDF.",
+              "x": 71.4,
+              "y": 346,
+              "w": 273.5,
+              "h": 42.1,
+              "contraste": 7.21,
+              "fonte": "13.6px",
+              "cor": "rgb(194, 176, 206)",
+              "transborda": false
+            },
+            {
+              "tag": "DIV",
+              "t": "Fontes da respostaEdital PROBEC 2027 · retificação · p. 3 ↗",
+              "x": 71.4,
+              "y": 403,
+              "w": 273.5,
+              "h": 77.1,
+              "contraste": 12.5,
+              "fonte": "14px",
+              "cor": "rgb(242, 235, 248)",
+              "transborda": false
+            },
+            {
+              "tag": "SMALL",
+              "t": "Leitura por IA (Google Gemini) · Custou menos de 1 centavo (US$ 0,0062)",
+              "x": 71.4,
+              "y": 487,
+              "w": 273.5,
+              "h": 37.2,
+              "contraste": 7.21,
+              "fonte": "12px",
+              "cor": "rgb(194, 176, 206)",
+              "transborda": false
+            }
+          ],
+          "links": [
+            {
+              "t": "Edital PROBEC 2027 · retificação · p. 3 ↗",
+              "x": 71.4,
+              "y": 436,
+              "w": 258.4,
+              "h": 44,
+              "contraste": 8.65
+            }
+          ]
+        },
+        "cartoes": 0,
+        "pensando": false
+      },
+      "clique2": true,
+      "semTrecho": {
+        "tema": "dark",
+        "innerWidth": 390,
+        "docScrollWidth": 390,
+        "semRolagemHorizontal": true,
+        "dialog": {
+          "x": 0,
+          "y": 0,
+          "w": 390,
+          "h": 844,
+          "scrollW": 390,
+          "clientW": 390
+        },
+        "bloqueados": [],
+        "mocked": [
+          "role:chat officialSearch=true",
+          "pdf.read:hang accepted=10554 consent=true",
+          "role:chat officialSearch=true",
+          "pdf.read:none accepted=10554 consent=true"
+        ],
+        "ativo": {
+          "tag": "P",
+          "t": "Li o PDF com IA (escaneado), mas não achei um trec"
+        },
+        "balao": {
+          "x": 56,
+          "y": 261,
+          "w": 304.3,
+          "h": 275.5,
+          "padding": "11.2px 14.4px",
+          "gap": "7.2px",
+          "fundo": "rgb(48, 36, 59)",
+          "scrollW": 302,
+          "clientW": 302,
+          "filhos": [
+            {
+              "tag": "P",
+              "t": "Li o PDF com IA (escaneado), mas não achei um trecho que responda à pergunta.",
+              "x": 71.4,
+              "y": 273,
+              "w": 273.5,
+              "h": 65.1,
+              "contraste": 12.5,
+              "fonte": "14px",
+              "cor": "rgb(242, 235, 248)",
+              "transborda": false
+            },
+            {
+              "tag": "P",
+              "t": "Leitura feita por IA a partir da imagem do documento; confira no PDF.",
+              "x": 71.4,
+              "y": 346,
+              "w": 273.5,
+              "h": 42.1,
+              "contraste": 7.21,
+              "fonte": "13.6px",
+              "cor": "rgb(194, 176, 206)",
+              "transborda": false
+            },
+            {
+              "tag": "DIV",
+              "t": "Fontes da respostaEdital PROBEC 2027 · retificação ↗",
+              "x": 71.4,
+              "y": 403,
+              "w": 273.5,
+              "h": 77.1,
+              "contraste": 12.5,
+              "fonte": "14px",
+              "cor": "rgb(242, 235, 248)",
+              "transborda": false
+            },
+            {
+              "tag": "SMALL",
+              "t": "Leitura por IA (Google Gemini) · Custou menos de 1 centavo (US$ 0,0059)",
+              "x": 71.4,
+              "y": 487,
+              "w": 273.5,
+              "h": 37.2,
+              "contraste": 7.21,
+              "fonte": "12px",
+              "cor": "rgb(194, 176, 206)",
+              "transborda": false
+            }
+          ],
+          "links": [
+            {
+              "t": "Edital PROBEC 2027 · retificação ↗",
+              "x": 71.4,
+              "y": 436,
+              "w": 224.9,
+              "h": 44,
+              "contraste": 8.65
+            }
+          ]
+        },
+        "cartoes": 0,
+        "pensando": false
+      },
+      "clique3": true,
+      "focoAposRecusa": {
+        "role": "alert",
+        "tabIndex": -1,
+        "inBubble": true,
+        "tag": "P",
+        "t": "Este PDF tem 14 páginas; a leitura com I",
+        "focusVisible": true,
+        "outline": "auto 1px rgb(238, 238, 238)",
+        "offset": "0px",
+        "boxShadow": "none"
+      },
+      "recusa": {
+        "tema": "dark",
+        "innerWidth": 390,
+        "docScrollWidth": 390,
+        "semRolagemHorizontal": true,
+        "dialog": {
+          "x": 0,
+          "y": 0,
+          "w": 390,
+          "h": 844,
+          "scrollW": 390,
+          "clientW": 390
+        },
+        "bloqueados": [],
+        "mocked": [
+          "role:chat officialSearch=true",
+          "pdf.read:hang accepted=10554 consent=true",
+          "role:chat officialSearch=true",
+          "pdf.read:none accepted=10554 consent=true",
+          "role:chat officialSearch=true",
+          "pdf.read:refuse accepted=10554 consent=true"
+        ],
+        "ativo": {
+          "tag": "P",
+          "t": "Este PDF tem 14 páginas; a leitura com IA aceita a"
+        },
+        "balao": {
+          "x": 56,
+          "y": 132,
+          "w": 304.3,
+          "h": 404.5,
+          "padding": "11.2px 14.4px",
+          "gap": "7.2px",
+          "fundo": "rgb(48, 36, 59)",
+          "scrollW": 302,
+          "clientW": 302,
+          "filhos": [
+            {
+              "tag": "P",
+              "t": "Edital PROBEC 2027 · retificação\nEncontrei o PDF, mas ele parece ser uma imagem escaneada:",
+              "x": 71.4,
+              "y": 145,
+              "w": 273.5,
+              "h": 151.8,
+              "contraste": 12.5,
+              "fonte": "14px",
+              "cor": "rgb(242, 235, 248)",
+              "transborda": false
+            },
+            {
+              "tag": "DIV",
+              "t": "Fontes da respostaEdital PROBEC 2027 · retificação ↗",
+              "x": 71.4,
+              "y": 312,
+              "w": 273.5,
+              "h": 77.1,
+              "contraste": 12.5,
+              "fonte": "14px",
+              "cor": "rgb(242, 235, 248)",
+              "transborda": false
+            },
+            {
+              "tag": "SMALL",
+              "t": "Consulta pública · sem custo de IA (a leitura abaixo é cobrada à parte)",
+              "x": 71.4,
+              "y": 396,
+              "w": 273.5,
+              "h": 37.2,
+              "contraste": 7.21,
+              "fonte": "12px",
+              "cor": "rgb(194, 176, 206)",
+              "transborda": false
+            },
+            {
+              "tag": "P",
+              "t": "Este PDF tem 14 páginas; a leitura com IA aceita até 10 páginas. Nada foi cobrado. Abra o ",
+              "x": 71.4,
+              "y": 440,
+              "w": 273.5,
+              "h": 84.4,
+              "contraste": 8.68,
+              "fonte": "13.6px",
+              "cor": "rgb(255, 179, 198)",
+              "transborda": false
+            }
+          ],
+          "links": [
+            {
+              "t": "Edital PROBEC 2027 · retificação ↗",
+              "x": 71.4,
+              "y": 345,
+              "w": 224.9,
+              "h": 44,
+              "contraste": 8.65
+            }
+          ]
+        },
+        "cartoes": 0,
+        "pensando": false,
+        "alerta": {
+          "t": "Este PDF tem 14 páginas; a leitura com IA aceita até 10 páginas. Nada foi cobrado. Abra o link para conferir.",
+          "x": 71.4,
+          "y": 440,
+          "w": 273.5,
+          "h": 84.4,
+          "contraste": 8.68,
+          "fonte": "13.6px",
+          "borda": "color(srgb 1 0.701961 0.776471 / 0.35)",
+          "fundo": "color(srgb 1 0.701961 0.776471 / 0.08)",
+          "padding": "9.6px 12px",
+          "dentroDeSecao": false,
+          "focado": true,
+          "margemBalao": {
+            "esq": 15,
+            "dir": 15
+          }
+        }
+      },
+      "semOferta": {
+        "tema": "dark",
+        "innerWidth": 390,
+        "docScrollWidth": 390,
+        "semRolagemHorizontal": true,
+        "dialog": {
+          "x": 0,
+          "y": 0,
+          "w": 390,
+          "h": 844,
+          "scrollW": 390,
+          "clientW": 390
+        },
+        "bloqueados": [],
+        "mocked": [
+          "role:chat officialSearch=true",
+          "pdf.read:hang accepted=10554 consent=true",
+          "role:chat officialSearch=true",
+          "pdf.read:none accepted=10554 consent=true",
+          "role:chat officialSearch=true",
+          "pdf.read:refuse accepted=10554 consent=true",
+          "role:chat officialSearch=true"
+        ],
+        "ativo": {
+          "tag": "P",
+          "t": "Este PDF tem 14 páginas; a leitura com IA aceita a"
+        },
+        "balao": {
+          "x": 56,
+          "y": 142,
+          "w": 304.3,
+          "h": 405.8,
+          "padding": "11.2px 14.4px",
+          "gap": "7.2px",
+          "fundo": "rgb(48, 36, 59)",
+          "scrollW": 302,
+          "clientW": 302,
+          "filhos": [
+            {
+              "tag": "P",
+              "t": "Bolsas de extensão PROBEC 2027\nInscrições pelo SIGAA até 15/12/2026; resultado preliminar ",
+              "x": 71.4,
+              "y": 154,
+              "w": 273.5,
+              "h": 216.9,
+              "contraste": 12.5,
+              "fonte": "14px",
+              "cor": "rgb(242, 235, 248)",
+              "transborda": false
+            },
+            {
+              "tag": "DIV",
+              "t": "Fontes da respostaBolsas de extensão PROBEC 2027 ↗Calendário de editais da PROEX ↗",
+              "x": 71.4,
+              "y": 386,
+              "w": 273.5,
+              "h": 123.5,
+              "contraste": 12.5,
+              "fonte": "14px",
+              "cor": "rgb(242, 235, 248)",
+              "transborda": false
+            },
+            {
+              "tag": "SMALL",
+              "t": "Consulta pública · sem custo de IA",
+              "x": 71.4,
+              "y": 517,
+              "w": 273.5,
+              "h": 18.6,
+              "contraste": 7.21,
+              "fonte": "12px",
+              "cor": "rgb(194, 176, 206)",
+              "transborda": false
+            }
+          ],
+          "links": [
+            {
+              "t": "Bolsas de extensão PROBEC 2027 ↗",
+              "x": 71.4,
+              "y": 419,
+              "w": 232.8,
+              "h": 44,
+              "contraste": 8.65
+            },
+            {
+              "t": "Calendário de editais da PROEX ↗",
+              "x": 71.4,
+              "y": 466,
+              "w": 221.5,
+              "h": 44,
+              "contraste": 8.65
+            }
+          ]
+        },
+        "cartoes": 0,
+        "pensando": false
+      }
+    },
+    "1366-claro": {
+      "abriu": "botao",
+      "entendi": false,
+      "oficial": "true",
+      "enviar": true,
+      "oferta": {
+        "tema": "light",
+        "innerWidth": 1366,
+        "docScrollWidth": 1366,
+        "semRolagemHorizontal": true,
+        "dialog": {
+          "x": 926,
+          "y": 0,
+          "w": 440,
+          "h": 900,
+          "scrollW": 439,
+          "clientW": 439
+        },
+        "bloqueados": [],
+        "mocked": [
+          "role:chat officialSearch=true"
+        ],
+        "ativo": {
+          "tag": "BODY",
+          "t": "Pular para o conteúdoGestão PROEXSeu espaço de tra"
+        },
+        "balao": {
+          "x": 983,
+          "y": 116,
+          "w": 345.9,
+          "h": 518.6,
+          "padding": "11.2px 14.4px",
+          "gap": "7.2px",
+          "fundo": "rgb(243, 238, 248)",
+          "scrollW": 344,
+          "clientW": 344,
+          "filhos": [
+            {
+              "tag": "P",
+              "t": "Edital PROBEC 2027 · retificação\nEncontrei o PDF, mas ele parece ser uma imagem escaneada:",
+              "x": 998.4,
+              "y": 129,
+              "w": 315.2,
+              "h": 151.8,
+              "contraste": 13.31,
+              "fonte": "14px",
+              "cor": "rgb(41, 35, 51)",
+              "transborda": false
+            },
+            {
+              "tag": "DIV",
+              "t": "Fontes da respostaEdital PROBEC 2027 · retificação ↗",
+              "x": 998.4,
+              "y": 296,
+              "w": 315.2,
+              "h": 77.1,
+              "contraste": 13.31,
+              "fonte": "14px",
+              "cor": "rgb(41, 35, 51)",
+              "transborda": false
+            },
+            {
+              "tag": "SMALL",
+              "t": "Consulta pública · sem custo de IA (a leitura abaixo é cobrada à parte)",
+              "x": 998.4,
+              "y": 380,
+              "w": 315.2,
+              "h": 37.2,
+              "contraste": 5.48,
+              "fonte": "12px",
+              "cor": "rgb(105, 91, 118)",
+              "transborda": false
+            },
+            {
+              "tag": "SECTION",
+              "t": "Ler o PDF escaneado com IAO PDF público e a sua pergunta serão enviados ao Google Gemini (",
+              "x": 998.4,
+              "y": 424,
+              "w": 315.2,
+              "h": 198.5,
+              "contraste": 15.19,
+              "fonte": "14px",
+              "cor": "rgb(41, 35, 51)",
+              "transborda": false
+            }
+          ],
+          "links": [
+            {
+              "t": "Edital PROBEC 2027 · retificação ↗",
+              "x": 998.4,
+              "y": 329,
+              "w": 224.9,
+              "h": 44,
+              "contraste": 9.47
+            }
+          ]
+        },
+        "cartoes": 1,
+        "pensando": false,
+        "cartao": {
+          "x": 998.4,
+          "y": 424,
+          "w": 315.2,
+          "h": 198.5,
+          "scrollW": 310,
+          "clientW": 310,
+          "padding": "12px",
+          "gap": "8.8px",
+          "fundo": "rgb(255, 255, 255)",
+          "borda": "1px rgb(232, 227, 238)",
+          "bordaEsq": "4px rgb(59, 23, 83)",
+          "raio": "12px",
+          "contrasteBorda": 1.1,
+          "contrasteBordaEsq": 12.83,
+          "fundoVsPai": 1.14,
+          "margemBalao": {
+            "esq": 15,
+            "dir": 15
+          },
+          "titulo": true
+        },
+        "filhos": [
+          {
+            "tag": "P",
+            "role": null,
+            "t": "Ler o PDF escaneado com IA",
+            "x": 1014.4,
+            "y": 437,
+            "w": 286.2,
+            "h": 22.8,
+            "contraste": 10.8,
+            "fonte": "14.72px",
+            "peso": "800",
+            "lh": "22.816px",
+            "cor": "rgb(88, 39, 113)",
+            "transborda": false
+          },
+          {
+            "tag": "P",
+            "role": null,
+            "t": "O PDF público e a sua pergunta serão enviados ao Google Gemini (IA do Google) para leitura.",
+            "x": 1014.4,
+            "y": 469,
+            "w": 286.2,
+            "h": 39.7,
+            "contraste": 6.25,
+            "fonte": "12.8px",
+            "peso": "400",
+            "lh": "19.84px",
+            "cor": "rgb(105, 91, 118)",
+            "transborda": false
+          },
+          {
+            "tag": "P",
+            "role": null,
+            "t": "Custo máximo: US$ 0,0106. Nada é enviado até você tocar no botão.",
+            "x": 1014.4,
+            "y": 517,
+            "w": 286.2,
+            "h": 39.7,
+            "contraste": 6.25,
+            "fonte": "12.8px",
+            "peso": "400",
+            "lh": "19.84px",
+            "cor": "rgb(105, 91, 118)",
+            "transborda": false
+          },
+          {
+            "tag": "STRONG",
+            "role": null,
+            "t": "Custo máximo: US$ 0,0106.",
+            "x": 1014.4,
+            "y": 518,
+            "w": 169.3,
+            "h": 17,
+            "contraste": 6.25,
+            "fonte": "12.8px",
+            "peso": "700",
+            "lh": "19.84px",
+            "cor": "rgb(105, 91, 118)",
+            "transborda": false
+          },
+          {
+            "tag": "BUTTON",
+            "role": null,
+            "t": "Ler com IA · até US$ 0,0106",
+            "x": 1014.4,
+            "y": 566,
+            "w": 215.3,
+            "h": 44,
+            "contraste": 14.65,
+            "fonte": "14.4px",
+            "peso": "600",
+            "lh": "19.44px",
+            "cor": "rgb(255, 255, 255)",
+            "transborda": false
+          }
+        ],
+        "botao": {
+          "t": "Ler com IA · até US$ 0,0106",
+          "x": 1014.4,
+          "y": 566,
+          "w": 215.3,
+          "h": 44,
+          "disabled": false,
+          "classe": "p-button p-button-primary",
+          "fundo": "rgb(59, 23, 83)",
+          "cor": "rgb(255, 255, 255)",
+          "contrasteTexto": 14.65,
+          "fundoVsCartao": 14.65,
+          "opacity": "1",
+          "cursor": "pointer",
+          "raio": "9px",
+          "fonte": "14.4px",
+          "peso": "600",
+          "whiteSpace": "normal",
+          "linhas": 2,
+          "icone": null,
+          "ariaDisabled": null,
+          "borda": "1px rgb(59, 23, 83)"
+        },
+        "paddingRascunhoRef": null
+      },
+      "focoPassos": [
+        {
+          "role": null,
+          "tabIndex": 0,
+          "inBubble": true,
+          "tag": "BUTTON",
+          "t": "Ler com IA · até US$ 0,0106",
+          "focusVisible": true,
+          "outline": "solid 3px rgb(35, 133, 150)",
+          "offset": "2px",
+          "boxShadow": "rgba(255, 255, 255, 0.12) 0px 1px 0px 0px inset, rgba(59, 23, 83, 0.6) 0px 6px 14px -8px"
+        }
+      ],
+      "clique1": true,
+      "focoDuranteLeitura": {
+        "role": null,
+        "tabIndex": 0,
+        "inBubble": true,
+        "tag": "BUTTON",
+        "t": "Lendo o PDF com IA…",
+        "focusVisible": true,
+        "outline": "solid 3px rgb(35, 133, 150)",
+        "offset": "2px",
+        "boxShadow": "rgba(255, 255, 255, 0.12) 0px 1px 0px 0px inset, rgba(59, 23, 83, 0.6) 0px 6px 14px -8px"
+      },
+      "lendo": {
+        "tema": "light",
+        "innerWidth": 1366,
+        "docScrollWidth": 1366,
+        "semRolagemHorizontal": true,
+        "dialog": {
+          "x": 926,
+          "y": 0,
+          "w": 440,
+          "h": 900,
+          "scrollW": 439,
+          "clientW": 439
+        },
+        "bloqueados": [],
+        "mocked": [
+          "role:chat officialSearch=true",
+          "pdf.read:hang accepted=10554 consent=true"
+        ],
+        "ativo": {
+          "tag": "BUTTON",
+          "t": "Lendo o PDF com IA…"
+        },
+        "balao": {
+          "x": 983,
+          "y": 74,
+          "w": 345.9,
+          "h": 518.6,
+          "padding": "11.2px 14.4px",
+          "gap": "7.2px",
+          "fundo": "rgb(243, 238, 248)",
+          "scrollW": 344,
+          "clientW": 344,
+          "filhos": [
+            {
+              "tag": "P",
+              "t": "Edital PROBEC 2027 · retificação\nEncontrei o PDF, mas ele parece ser uma imagem escaneada:",
+              "x": 998.4,
+              "y": 87,
+              "w": 315.2,
+              "h": 151.8,
+              "contraste": 13.31,
+              "fonte": "14px",
+              "cor": "rgb(41, 35, 51)",
+              "transborda": false
+            },
+            {
+              "tag": "DIV",
+              "t": "Fontes da respostaEdital PROBEC 2027 · retificação ↗",
+              "x": 998.4,
+              "y": 254,
+              "w": 315.2,
+              "h": 77.1,
+              "contraste": 13.31,
+              "fonte": "14px",
+              "cor": "rgb(41, 35, 51)",
+              "transborda": false
+            },
+            {
+              "tag": "SMALL",
+              "t": "Consulta pública · sem custo de IA (a leitura abaixo é cobrada à parte)",
+              "x": 998.4,
+              "y": 338,
+              "w": 315.2,
+              "h": 37.2,
+              "contraste": 5.48,
+              "fonte": "12px",
+              "cor": "rgb(105, 91, 118)",
+              "transborda": false
+            },
+            {
+              "tag": "SECTION",
+              "t": "Ler o PDF escaneado com IAO PDF público e a sua pergunta serão enviados ao Google Gemini (",
+              "x": 998.4,
+              "y": 382,
+              "w": 315.2,
+              "h": 198.5,
+              "contraste": 15.19,
+              "fonte": "14px",
+              "cor": "rgb(41, 35, 51)",
+              "transborda": false
+            }
+          ],
+          "links": [
+            {
+              "t": "Edital PROBEC 2027 · retificação ↗",
+              "x": 998.4,
+              "y": 287,
+              "w": 224.9,
+              "h": 44,
+              "contraste": 9.47
+            }
+          ]
+        },
+        "cartoes": 1,
+        "pensando": false,
+        "cartao": {
+          "x": 998.4,
+          "y": 382,
+          "w": 315.2,
+          "h": 198.5,
+          "scrollW": 310,
+          "clientW": 310,
+          "padding": "12px",
+          "gap": "8.8px",
+          "fundo": "rgb(255, 255, 255)",
+          "borda": "1px rgb(232, 227, 238)",
+          "bordaEsq": "4px rgb(59, 23, 83)",
+          "raio": "12px",
+          "contrasteBorda": 1.1,
+          "contrasteBordaEsq": 12.83,
+          "fundoVsPai": 1.14,
+          "margemBalao": {
+            "esq": 15,
+            "dir": 15
+          },
+          "titulo": true
+        },
+        "filhos": [
+          {
+            "tag": "P",
+            "role": null,
+            "t": "Ler o PDF escaneado com IA",
+            "x": 1014.4,
+            "y": 395,
+            "w": 286.2,
+            "h": 22.8,
+            "contraste": 10.8,
+            "fonte": "14.72px",
+            "peso": "800",
+            "lh": "22.816px",
+            "cor": "rgb(88, 39, 113)",
+            "transborda": false
+          },
+          {
+            "tag": "P",
+            "role": null,
+            "t": "O PDF público e a sua pergunta serão enviados ao Google Gemini (IA do Google) para leitura.",
+            "x": 1014.4,
+            "y": 427,
+            "w": 286.2,
+            "h": 39.7,
+            "contraste": 6.25,
+            "fonte": "12.8px",
+            "peso": "400",
+            "lh": "19.84px",
+            "cor": "rgb(105, 91, 118)",
+            "transborda": false
+          },
+          {
+            "tag": "P",
+            "role": null,
+            "t": "Custo máximo: US$ 0,0106. Nada é enviado até você tocar no botão.",
+            "x": 1014.4,
+            "y": 475,
+            "w": 286.2,
+            "h": 39.7,
+            "contraste": 6.25,
+            "fonte": "12.8px",
+            "peso": "400",
+            "lh": "19.84px",
+            "cor": "rgb(105, 91, 118)",
+            "transborda": false
+          },
+          {
+            "tag": "STRONG",
+            "role": null,
+            "t": "Custo máximo: US$ 0,0106.",
+            "x": 1014.4,
+            "y": 476,
+            "w": 169.3,
+            "h": 17,
+            "contraste": 6.25,
+            "fonte": "12.8px",
+            "peso": "700",
+            "lh": "19.84px",
+            "cor": "rgb(105, 91, 118)",
+            "transborda": false
+          },
+          {
+            "tag": "BUTTON",
+            "role": null,
+            "t": "Lendo o PDF com IA…",
+            "x": 1014.4,
+            "y": 524,
+            "w": 197.5,
+            "h": 44,
+            "contraste": 14.65,
+            "fonte": "14.4px",
+            "peso": "600",
+            "lh": "19.44px",
+            "cor": "rgb(255, 255, 255)",
+            "transborda": false
+          }
+        ],
+        "botao": {
+          "t": "Lendo o PDF com IA…",
+          "x": 1014.4,
+          "y": 524,
+          "w": 197.5,
+          "h": 44,
+          "disabled": false,
+          "classe": "p-button p-button-primary",
+          "fundo": "rgb(59, 23, 83)",
+          "cor": "rgb(255, 255, 255)",
+          "contrasteTexto": 14.65,
+          "fundoVsCartao": 14.65,
+          "opacity": "1",
+          "cursor": "progress",
+          "raio": "9px",
+          "fonte": "14.4px",
+          "peso": "600",
+          "whiteSpace": "normal",
+          "linhas": 2,
+          "icone": {
+            "classe": "lucide lucide-loader-circle p-spin",
+            "anim": "portal-spin",
+            "w": 16
+          },
+          "ariaDisabled": "true",
+          "borda": "1px rgb(59, 23, 83)"
+        },
+        "paddingRascunhoRef": null
+      },
+      "focoAposLeitura": {
+        "role": null,
+        "tabIndex": -1,
+        "inBubble": true,
+        "tag": "P",
+        "t": "Li o PDF com IA (escaneado). Na p. 3: As",
+        "focusVisible": true,
+        "outline": "auto 1px rgb(16, 16, 16)",
+        "offset": "0px",
+        "boxShadow": "none"
+      },
+      "lido": {
+        "tema": "light",
+        "innerWidth": 1366,
+        "docScrollWidth": 1366,
+        "semRolagemHorizontal": true,
+        "dialog": {
+          "x": 926,
+          "y": 0,
+          "w": 440,
+          "h": 900,
+          "scrollW": 439,
+          "clientW": 439
+        },
+        "bloqueados": [],
+        "mocked": [
+          "role:chat officialSearch=true",
+          "pdf.read:hang accepted=10554 consent=true"
+        ],
+        "ativo": {
+          "tag": "P",
+          "t": "Li o PDF com IA (escaneado). Na p. 3: As inscriçõe"
+        },
+        "balao": {
+          "x": 983,
+          "y": 296,
+          "w": 345.9,
+          "h": 297.1,
+          "padding": "11.2px 14.4px",
+          "gap": "7.2px",
+          "fundo": "rgb(243, 238, 248)",
+          "scrollW": 344,
+          "clientW": 344,
+          "filhos": [
+            {
+              "tag": "P",
+              "t": "Li o PDF com IA (escaneado). Na p. 3: As inscrições ficam abertas de 1º a 15 de dezembro d",
+              "x": 998.4,
+              "y": 308,
+              "w": 315.2,
+              "h": 86.8,
+              "contraste": 13.31,
+              "fonte": "14px",
+              "cor": "rgb(41, 35, 51)",
+              "transborda": false
+            },
+            {
+              "tag": "P",
+              "t": "Leitura feita por IA a partir da imagem do documento; confira no PDF.",
+              "x": 998.4,
+              "y": 402,
+              "w": 315.2,
+              "h": 42.1,
+              "contraste": 5.48,
+              "fonte": "13.6px",
+              "cor": "rgb(105, 91, 118)",
+              "transborda": false
+            },
+            {
+              "tag": "DIV",
+              "t": "Fontes da respostaEdital PROBEC 2027 · retificação · p. 3 ↗",
+              "x": 998.4,
+              "y": 459,
+              "w": 315.2,
+              "h": 77.1,
+              "contraste": 13.31,
+              "fonte": "14px",
+              "cor": "rgb(41, 35, 51)",
+              "transborda": false
+            },
+            {
+              "tag": "SMALL",
+              "t": "Leitura por IA (Google Gemini) · Custou menos de 1 centavo (US$ 0,0062)",
+              "x": 998.4,
+              "y": 544,
+              "w": 315.2,
+              "h": 37.2,
+              "contraste": 5.48,
+              "fonte": "12px",
+              "cor": "rgb(105, 91, 118)",
+              "transborda": false
+            }
+          ],
+          "links": [
+            {
+              "t": "Edital PROBEC 2027 · retificação · p. 3 ↗",
+              "x": 998.4,
+              "y": 492,
+              "w": 258.4,
+              "h": 44,
+              "contraste": 9.47
+            }
+          ]
+        },
+        "cartoes": 0,
+        "pensando": false
+      },
+      "clique2": true,
+      "semTrecho": {
+        "tema": "light",
+        "innerWidth": 1366,
+        "docScrollWidth": 1366,
+        "semRolagemHorizontal": true,
+        "dialog": {
+          "x": 926,
+          "y": 0,
+          "w": 440,
+          "h": 900,
+          "scrollW": 439,
+          "clientW": 439
+        },
+        "bloqueados": [],
+        "mocked": [
+          "role:chat officialSearch=true",
+          "pdf.read:hang accepted=10554 consent=true",
+          "role:chat officialSearch=true",
+          "pdf.read:none accepted=10554 consent=true"
+        ],
+        "ativo": {
+          "tag": "P",
+          "t": "Li o PDF com IA (escaneado), mas não achei um trec"
+        },
+        "balao": {
+          "x": 983,
+          "y": 339,
+          "w": 345.9,
+          "h": 253.8,
+          "padding": "11.2px 14.4px",
+          "gap": "7.2px",
+          "fundo": "rgb(243, 238, 248)",
+          "scrollW": 344,
+          "clientW": 344,
+          "filhos": [
+            {
+              "tag": "P",
+              "t": "Li o PDF com IA (escaneado), mas não achei um trecho que responda à pergunta.",
+              "x": 998.4,
+              "y": 352,
+              "w": 315.2,
+              "h": 43.4,
+              "contraste": 13.31,
+              "fonte": "14px",
+              "cor": "rgb(41, 35, 51)",
+              "transborda": false
+            },
+            {
+              "tag": "P",
+              "t": "Leitura feita por IA a partir da imagem do documento; confira no PDF.",
+              "x": 998.4,
+              "y": 402,
+              "w": 315.2,
+              "h": 42.1,
+              "contraste": 5.48,
+              "fonte": "13.6px",
+              "cor": "rgb(105, 91, 118)",
+              "transborda": false
+            },
+            {
+              "tag": "DIV",
+              "t": "Fontes da respostaEdital PROBEC 2027 · retificação ↗",
+              "x": 998.4,
+              "y": 459,
+              "w": 315.2,
+              "h": 77.1,
+              "contraste": 13.31,
+              "fonte": "14px",
+              "cor": "rgb(41, 35, 51)",
+              "transborda": false
+            },
+            {
+              "tag": "SMALL",
+              "t": "Leitura por IA (Google Gemini) · Custou menos de 1 centavo (US$ 0,0059)",
+              "x": 998.4,
+              "y": 544,
+              "w": 315.2,
+              "h": 37.2,
+              "contraste": 5.48,
+              "fonte": "12px",
+              "cor": "rgb(105, 91, 118)",
+              "transborda": false
+            }
+          ],
+          "links": [
+            {
+              "t": "Edital PROBEC 2027 · retificação ↗",
+              "x": 998.4,
+              "y": 493,
+              "w": 224.9,
+              "h": 44,
+              "contraste": 9.47
+            }
+          ]
+        },
+        "cartoes": 0,
+        "pensando": false
+      },
+      "clique3": true,
+      "focoAposRecusa": {
+        "role": "alert",
+        "tabIndex": -1,
+        "inBubble": true,
+        "tag": "P",
+        "t": "Este PDF tem 14 páginas; a leitura com I",
+        "focusVisible": true,
+        "outline": "auto 1px rgb(16, 16, 16)",
+        "offset": "0px",
+        "boxShadow": "none"
+      },
+      "recusa": {
+        "tema": "light",
+        "innerWidth": 1366,
+        "docScrollWidth": 1366,
+        "semRolagemHorizontal": true,
+        "dialog": {
+          "x": 926,
+          "y": 0,
+          "w": 440,
+          "h": 900,
+          "scrollW": 439,
+          "clientW": 439
+        },
+        "bloqueados": [],
+        "mocked": [
+          "role:chat officialSearch=true",
+          "pdf.read:hang accepted=10554 consent=true",
+          "role:chat officialSearch=true",
+          "pdf.read:none accepted=10554 consent=true",
+          "role:chat officialSearch=true",
+          "pdf.read:refuse accepted=10554 consent=true"
+        ],
+        "ativo": {
+          "tag": "P",
+          "t": "Este PDF tem 14 páginas; a leitura com IA aceita a"
+        },
+        "balao": {
+          "x": 983,
+          "y": 188,
+          "w": 345.9,
+          "h": 404.5,
+          "padding": "11.2px 14.4px",
+          "gap": "7.2px",
+          "fundo": "rgb(243, 238, 248)",
+          "scrollW": 344,
+          "clientW": 344,
+          "filhos": [
+            {
+              "tag": "P",
+              "t": "Edital PROBEC 2027 · retificação\nEncontrei o PDF, mas ele parece ser uma imagem escaneada:",
+              "x": 998.4,
+              "y": 200,
+              "w": 315.2,
+              "h": 151.8,
+              "contraste": 13.31,
+              "fonte": "14px",
+              "cor": "rgb(41, 35, 51)",
+              "transborda": false
+            },
+            {
+              "tag": "DIV",
+              "t": "Fontes da respostaEdital PROBEC 2027 · retificação ↗",
+              "x": 998.4,
+              "y": 367,
+              "w": 315.2,
+              "h": 77.1,
+              "contraste": 13.31,
+              "fonte": "14px",
+              "cor": "rgb(41, 35, 51)",
+              "transborda": false
+            },
+            {
+              "tag": "SMALL",
+              "t": "Consulta pública · sem custo de IA (a leitura abaixo é cobrada à parte)",
+              "x": 998.4,
+              "y": 452,
+              "w": 315.2,
+              "h": 37.2,
+              "contraste": 5.48,
+              "fonte": "12px",
+              "cor": "rgb(105, 91, 118)",
+              "transborda": false
+            },
+            {
+              "tag": "P",
+              "t": "Este PDF tem 14 páginas; a leitura com IA aceita até 10 páginas. Nada foi cobrado. Abra o ",
+              "x": 998.4,
+              "y": 496,
+              "w": 315.2,
+              "h": 84.4,
+              "contraste": 5.78,
+              "fonte": "13.6px",
+              "cor": "rgb(169, 46, 76)",
+              "transborda": false
+            }
+          ],
+          "links": [
+            {
+              "t": "Edital PROBEC 2027 · retificação ↗",
+              "x": 998.4,
+              "y": 400,
+              "w": 224.9,
+              "h": 44,
+              "contraste": 9.47
+            }
+          ]
+        },
+        "cartoes": 0,
+        "pensando": false,
+        "alerta": {
+          "t": "Este PDF tem 14 páginas; a leitura com IA aceita até 10 páginas. Nada foi cobrado. Abra o link para conferir.",
+          "x": 998.4,
+          "y": 496,
+          "w": 315.2,
+          "h": 84.4,
+          "contraste": 5.78,
+          "fonte": "13.6px",
+          "borda": "color(srgb 0.662745 0.180392 0.298039 / 0.35)",
+          "fundo": "color(srgb 0.662745 0.180392 0.298039 / 0.08)",
+          "padding": "9.6px 12px",
+          "dentroDeSecao": false,
+          "focado": true,
+          "margemBalao": {
+            "esq": 15,
+            "dir": 15
+          }
+        }
+      },
+      "semOferta": {
+        "tema": "light",
+        "innerWidth": 1366,
+        "docScrollWidth": 1366,
+        "semRolagemHorizontal": true,
+        "dialog": {
+          "x": 926,
+          "y": 0,
+          "w": 440,
+          "h": 900,
+          "scrollW": 439,
+          "clientW": 439
+        },
+        "bloqueados": [],
+        "mocked": [
+          "role:chat officialSearch=true",
+          "pdf.read:hang accepted=10554 consent=true",
+          "role:chat officialSearch=true",
+          "pdf.read:none accepted=10554 consent=true",
+          "role:chat officialSearch=true",
+          "pdf.read:refuse accepted=10554 consent=true",
+          "role:chat officialSearch=true"
+        ],
+        "ativo": {
+          "tag": "P",
+          "t": "Este PDF tem 14 páginas; a leitura com IA aceita a"
+        },
+        "balao": {
+          "x": 983,
+          "y": 208,
+          "w": 345.9,
+          "h": 384.1,
+          "padding": "11.2px 14.4px",
+          "gap": "7.2px",
+          "fundo": "rgb(243, 238, 248)",
+          "scrollW": 344,
+          "clientW": 344,
+          "filhos": [
+            {
+              "tag": "P",
+              "t": "Bolsas de extensão PROBEC 2027\nInscrições pelo SIGAA até 15/12/2026; resultado preliminar ",
+              "x": 998.4,
+              "y": 221,
+              "w": 315.2,
+              "h": 195.2,
+              "contraste": 13.31,
+              "fonte": "14px",
+              "cor": "rgb(41, 35, 51)",
+              "transborda": false
+            },
+            {
+              "tag": "DIV",
+              "t": "Fontes da respostaBolsas de extensão PROBEC 2027 ↗Calendário de editais da PROEX ↗",
+              "x": 998.4,
+              "y": 431,
+              "w": 315.2,
+              "h": 123.5,
+              "contraste": 13.31,
+              "fonte": "14px",
+              "cor": "rgb(41, 35, 51)",
+              "transborda": false
+            },
+            {
+              "tag": "SMALL",
+              "t": "Consulta pública · sem custo de IA",
+              "x": 998.4,
+              "y": 562,
+              "w": 315.2,
+              "h": 18.6,
+              "contraste": 5.48,
+              "fonte": "12px",
+              "cor": "rgb(105, 91, 118)",
+              "transborda": false
+            }
+          ],
+          "links": [
+            {
+              "t": "Bolsas de extensão PROBEC 2027 ↗",
+              "x": 998.4,
+              "y": 464,
+              "w": 232.8,
+              "h": 44,
+              "contraste": 9.47
+            },
+            {
+              "t": "Calendário de editais da PROEX ↗",
+              "x": 998.4,
+              "y": 511,
+              "w": 221.5,
+              "h": 44,
+              "contraste": 9.47
+            }
+          ]
+        },
+        "cartoes": 0,
+        "pensando": false
+      }
+    },
+    "1366-escuro": {
+      "abriu": "botao",
+      "entendi": false,
+      "oficial": "true",
+      "enviar": true,
+      "oferta": {
+        "tema": "dark",
+        "innerWidth": 1366,
+        "docScrollWidth": 1366,
+        "semRolagemHorizontal": true,
+        "dialog": {
+          "x": 926,
+          "y": 0,
+          "w": 440,
+          "h": 900,
+          "scrollW": 439,
+          "clientW": 439
+        },
+        "bloqueados": [],
+        "mocked": [
+          "role:chat officialSearch=true"
+        ],
+        "ativo": {
+          "tag": "BODY",
+          "t": "Pular para o conteúdoGestão PROEXSeu espaço de tra"
+        },
+        "balao": {
+          "x": 983,
+          "y": 116,
+          "w": 345.9,
+          "h": 518.6,
+          "padding": "11.2px 14.4px",
+          "gap": "7.2px",
+          "fundo": "rgb(48, 36, 59)",
+          "scrollW": 344,
+          "clientW": 344,
+          "filhos": [
+            {
+              "tag": "P",
+              "t": "Edital PROBEC 2027 · retificação\nEncontrei o PDF, mas ele parece ser uma imagem escaneada:",
+              "x": 998.4,
+              "y": 129,
+              "w": 315.2,
+              "h": 151.8,
+              "contraste": 12.5,
+              "fonte": "14px",
+              "cor": "rgb(242, 235, 248)",
+              "transborda": false
+            },
+            {
+              "tag": "DIV",
+              "t": "Fontes da respostaEdital PROBEC 2027 · retificação ↗",
+              "x": 998.4,
+              "y": 296,
+              "w": 315.2,
+              "h": 77.1,
+              "contraste": 12.5,
+              "fonte": "14px",
+              "cor": "rgb(242, 235, 248)",
+              "transborda": false
+            },
+            {
+              "tag": "SMALL",
+              "t": "Consulta pública · sem custo de IA (a leitura abaixo é cobrada à parte)",
+              "x": 998.4,
+              "y": 380,
+              "w": 315.2,
+              "h": 37.2,
+              "contraste": 7.21,
+              "fonte": "12px",
+              "cor": "rgb(194, 176, 206)",
+              "transborda": false
+            },
+            {
+              "tag": "SECTION",
+              "t": "Ler o PDF escaneado com IAO PDF público e a sua pergunta serão enviados ao Google Gemini (",
+              "x": 998.4,
+              "y": 424,
+              "w": 315.2,
+              "h": 198.5,
+              "contraste": 14.17,
+              "fonte": "14px",
+              "cor": "rgb(242, 235, 248)",
+              "transborda": false
+            }
+          ],
+          "links": [
+            {
+              "t": "Edital PROBEC 2027 · retificação ↗",
+              "x": 998.4,
+              "y": 329,
+              "w": 224.9,
+              "h": 44,
+              "contraste": 8.65
+            }
+          ]
+        },
+        "cartoes": 1,
+        "pensando": false,
+        "cartao": {
+          "x": 998.4,
+          "y": 424,
+          "w": 315.2,
+          "h": 198.5,
+          "scrollW": 310,
+          "clientW": 310,
+          "padding": "12px",
+          "gap": "8.8px",
+          "fundo": "rgb(36, 27, 46)",
+          "borda": "1px rgb(68, 49, 79)",
+          "bordaEsq": "4px rgb(180, 138, 214)",
+          "raio": "12px",
+          "contrasteBorda": 1.25,
+          "contrasteBordaEsq": 5.24,
+          "fundoVsPai": 1.13,
+          "margemBalao": {
+            "esq": 15,
+            "dir": 15
+          },
+          "titulo": true
+        },
+        "filhos": [
+          {
+            "tag": "P",
+            "role": null,
+            "t": "Ler o PDF escaneado com IA",
+            "x": 1014.4,
+            "y": 437,
+            "w": 286.2,
+            "h": 22.8,
+            "contraste": 9.81,
+            "fonte": "14.72px",
+            "peso": "800",
+            "lh": "22.816px",
+            "cor": "rgb(223, 186, 244)",
+            "transborda": false
+          },
+          {
+            "tag": "P",
+            "role": null,
+            "t": "O PDF público e a sua pergunta serão enviados ao Google Gemini (IA do Google) para leitura.",
+            "x": 1014.4,
+            "y": 469,
+            "w": 286.2,
+            "h": 39.7,
+            "contraste": 8.18,
+            "fonte": "12.8px",
+            "peso": "400",
+            "lh": "19.84px",
+            "cor": "rgb(194, 176, 206)",
+            "transborda": false
+          },
+          {
+            "tag": "P",
+            "role": null,
+            "t": "Custo máximo: US$ 0,0106. Nada é enviado até você tocar no botão.",
+            "x": 1014.4,
+            "y": 517,
+            "w": 286.2,
+            "h": 39.7,
+            "contraste": 8.18,
+            "fonte": "12.8px",
+            "peso": "400",
+            "lh": "19.84px",
+            "cor": "rgb(194, 176, 206)",
+            "transborda": false
+          },
+          {
+            "tag": "STRONG",
+            "role": null,
+            "t": "Custo máximo: US$ 0,0106.",
+            "x": 1014.4,
+            "y": 518,
+            "w": 169.3,
+            "h": 17,
+            "contraste": 8.18,
+            "fonte": "12.8px",
+            "peso": "700",
+            "lh": "19.84px",
+            "cor": "rgb(194, 176, 206)",
+            "transborda": false
+          },
+          {
+            "tag": "BUTTON",
+            "role": null,
+            "t": "Ler com IA · até US$ 0,0106",
+            "x": 1014.4,
+            "y": 566,
+            "w": 215.3,
+            "h": 44,
+            "contraste": 5.61,
+            "fonte": "14.4px",
+            "peso": "600",
+            "lh": "19.44px",
+            "cor": "rgb(255, 255, 255)",
+            "transborda": false
+          }
+        ],
+        "botao": {
+          "t": "Ler com IA · até US$ 0,0106",
+          "x": 1014.4,
+          "y": 566,
+          "w": 215.3,
+          "h": 44,
+          "disabled": false,
+          "classe": "p-button p-button-primary",
+          "fundo": "rgb(134, 81, 166)",
+          "cor": "rgb(255, 255, 255)",
+          "contrasteTexto": 5.61,
+          "fundoVsCartao": 2.94,
+          "opacity": "1",
+          "cursor": "pointer",
+          "raio": "9px",
+          "fonte": "14.4px",
+          "peso": "600",
+          "whiteSpace": "normal",
+          "linhas": 2,
+          "icone": null,
+          "ariaDisabled": null,
+          "borda": "1px rgb(212, 179, 232)"
+        },
+        "paddingRascunhoRef": null
+      },
+      "focoPassos": [
+        {
+          "role": null,
+          "tabIndex": 0,
+          "inBubble": true,
+          "tag": "BUTTON",
+          "t": "Ler com IA · até US$ 0,0106",
+          "focusVisible": true,
+          "outline": "solid 3px rgb(119, 220, 229)",
+          "offset": "2px",
+          "boxShadow": "rgba(255, 255, 255, 0.12) 0px 1px 0px 0px inset, rgba(59, 23, 83, 0.6) 0px 6px 14px -8px"
+        }
+      ],
+      "clique1": true,
+      "focoDuranteLeitura": {
+        "role": null,
+        "tabIndex": 0,
+        "inBubble": true,
+        "tag": "BUTTON",
+        "t": "Lendo o PDF com IA…",
+        "focusVisible": true,
+        "outline": "solid 3px rgb(119, 220, 229)",
+        "offset": "2px",
+        "boxShadow": "rgba(255, 255, 255, 0.12) 0px 1px 0px 0px inset, rgba(59, 23, 83, 0.6) 0px 6px 14px -8px"
+      },
+      "lendo": {
+        "tema": "dark",
+        "innerWidth": 1366,
+        "docScrollWidth": 1366,
+        "semRolagemHorizontal": true,
+        "dialog": {
+          "x": 926,
+          "y": 0,
+          "w": 440,
+          "h": 900,
+          "scrollW": 439,
+          "clientW": 439
+        },
+        "bloqueados": [],
+        "mocked": [
+          "role:chat officialSearch=true",
+          "pdf.read:hang accepted=10554 consent=true"
+        ],
+        "ativo": {
+          "tag": "BUTTON",
+          "t": "Lendo o PDF com IA…"
+        },
+        "balao": {
+          "x": 983,
+          "y": 74,
+          "w": 345.9,
+          "h": 518.6,
+          "padding": "11.2px 14.4px",
+          "gap": "7.2px",
+          "fundo": "rgb(48, 36, 59)",
+          "scrollW": 344,
+          "clientW": 344,
+          "filhos": [
+            {
+              "tag": "P",
+              "t": "Edital PROBEC 2027 · retificação\nEncontrei o PDF, mas ele parece ser uma imagem escaneada:",
+              "x": 998.4,
+              "y": 87,
+              "w": 315.2,
+              "h": 151.8,
+              "contraste": 12.5,
+              "fonte": "14px",
+              "cor": "rgb(242, 235, 248)",
+              "transborda": false
+            },
+            {
+              "tag": "DIV",
+              "t": "Fontes da respostaEdital PROBEC 2027 · retificação ↗",
+              "x": 998.4,
+              "y": 254,
+              "w": 315.2,
+              "h": 77.1,
+              "contraste": 12.5,
+              "fonte": "14px",
+              "cor": "rgb(242, 235, 248)",
+              "transborda": false
+            },
+            {
+              "tag": "SMALL",
+              "t": "Consulta pública · sem custo de IA (a leitura abaixo é cobrada à parte)",
+              "x": 998.4,
+              "y": 338,
+              "w": 315.2,
+              "h": 37.2,
+              "contraste": 7.21,
+              "fonte": "12px",
+              "cor": "rgb(194, 176, 206)",
+              "transborda": false
+            },
+            {
+              "tag": "SECTION",
+              "t": "Ler o PDF escaneado com IAO PDF público e a sua pergunta serão enviados ao Google Gemini (",
+              "x": 998.4,
+              "y": 382,
+              "w": 315.2,
+              "h": 198.5,
+              "contraste": 14.17,
+              "fonte": "14px",
+              "cor": "rgb(242, 235, 248)",
+              "transborda": false
+            }
+          ],
+          "links": [
+            {
+              "t": "Edital PROBEC 2027 · retificação ↗",
+              "x": 998.4,
+              "y": 287,
+              "w": 224.9,
+              "h": 44,
+              "contraste": 8.65
+            }
+          ]
+        },
+        "cartoes": 1,
+        "pensando": false,
+        "cartao": {
+          "x": 998.4,
+          "y": 382,
+          "w": 315.2,
+          "h": 198.5,
+          "scrollW": 310,
+          "clientW": 310,
+          "padding": "12px",
+          "gap": "8.8px",
+          "fundo": "rgb(36, 27, 46)",
+          "borda": "1px rgb(68, 49, 79)",
+          "bordaEsq": "4px rgb(180, 138, 214)",
+          "raio": "12px",
+          "contrasteBorda": 1.25,
+          "contrasteBordaEsq": 5.24,
+          "fundoVsPai": 1.13,
+          "margemBalao": {
+            "esq": 15,
+            "dir": 15
+          },
+          "titulo": true
+        },
+        "filhos": [
+          {
+            "tag": "P",
+            "role": null,
+            "t": "Ler o PDF escaneado com IA",
+            "x": 1014.4,
+            "y": 395,
+            "w": 286.2,
+            "h": 22.8,
+            "contraste": 9.81,
+            "fonte": "14.72px",
+            "peso": "800",
+            "lh": "22.816px",
+            "cor": "rgb(223, 186, 244)",
+            "transborda": false
+          },
+          {
+            "tag": "P",
+            "role": null,
+            "t": "O PDF público e a sua pergunta serão enviados ao Google Gemini (IA do Google) para leitura.",
+            "x": 1014.4,
+            "y": 427,
+            "w": 286.2,
+            "h": 39.7,
+            "contraste": 8.18,
+            "fonte": "12.8px",
+            "peso": "400",
+            "lh": "19.84px",
+            "cor": "rgb(194, 176, 206)",
+            "transborda": false
+          },
+          {
+            "tag": "P",
+            "role": null,
+            "t": "Custo máximo: US$ 0,0106. Nada é enviado até você tocar no botão.",
+            "x": 1014.4,
+            "y": 475,
+            "w": 286.2,
+            "h": 39.7,
+            "contraste": 8.18,
+            "fonte": "12.8px",
+            "peso": "400",
+            "lh": "19.84px",
+            "cor": "rgb(194, 176, 206)",
+            "transborda": false
+          },
+          {
+            "tag": "STRONG",
+            "role": null,
+            "t": "Custo máximo: US$ 0,0106.",
+            "x": 1014.4,
+            "y": 476,
+            "w": 169.3,
+            "h": 17,
+            "contraste": 8.18,
+            "fonte": "12.8px",
+            "peso": "700",
+            "lh": "19.84px",
+            "cor": "rgb(194, 176, 206)",
+            "transborda": false
+          },
+          {
+            "tag": "BUTTON",
+            "role": null,
+            "t": "Lendo o PDF com IA…",
+            "x": 1014.4,
+            "y": 524,
+            "w": 197.5,
+            "h": 44,
+            "contraste": 5.61,
+            "fonte": "14.4px",
+            "peso": "600",
+            "lh": "19.44px",
+            "cor": "rgb(255, 255, 255)",
+            "transborda": false
+          }
+        ],
+        "botao": {
+          "t": "Lendo o PDF com IA…",
+          "x": 1014.4,
+          "y": 524,
+          "w": 197.5,
+          "h": 44,
+          "disabled": false,
+          "classe": "p-button p-button-primary",
+          "fundo": "rgb(134, 81, 166)",
+          "cor": "rgb(255, 255, 255)",
+          "contrasteTexto": 5.61,
+          "fundoVsCartao": 2.94,
+          "opacity": "1",
+          "cursor": "progress",
+          "raio": "9px",
+          "fonte": "14.4px",
+          "peso": "600",
+          "whiteSpace": "normal",
+          "linhas": 2,
+          "icone": {
+            "classe": "lucide lucide-loader-circle p-spin",
+            "anim": "portal-spin",
+            "w": 16
+          },
+          "ariaDisabled": "true",
+          "borda": "1px rgb(212, 179, 232)"
+        },
+        "paddingRascunhoRef": null
+      },
+      "focoAposLeitura": {
+        "role": null,
+        "tabIndex": -1,
+        "inBubble": true,
+        "tag": "P",
+        "t": "Li o PDF com IA (escaneado). Na p. 3: As",
+        "focusVisible": true,
+        "outline": "auto 1px rgb(238, 238, 238)",
+        "offset": "0px",
+        "boxShadow": "none"
+      },
+      "lido": {
+        "tema": "dark",
+        "innerWidth": 1366,
+        "docScrollWidth": 1366,
+        "semRolagemHorizontal": true,
+        "dialog": {
+          "x": 926,
+          "y": 0,
+          "w": 440,
+          "h": 900,
+          "scrollW": 439,
+          "clientW": 439
+        },
+        "bloqueados": [],
+        "mocked": [
+          "role:chat officialSearch=true",
+          "pdf.read:hang accepted=10554 consent=true"
+        ],
+        "ativo": {
+          "tag": "P",
+          "t": "Li o PDF com IA (escaneado). Na p. 3: As inscriçõe"
+        },
+        "balao": {
+          "x": 983,
+          "y": 296,
+          "w": 345.9,
+          "h": 297.1,
+          "padding": "11.2px 14.4px",
+          "gap": "7.2px",
+          "fundo": "rgb(48, 36, 59)",
+          "scrollW": 344,
+          "clientW": 344,
+          "filhos": [
+            {
+              "tag": "P",
+              "t": "Li o PDF com IA (escaneado). Na p. 3: As inscrições ficam abertas de 1º a 15 de dezembro d",
+              "x": 998.4,
+              "y": 308,
+              "w": 315.2,
+              "h": 86.8,
+              "contraste": 12.5,
+              "fonte": "14px",
+              "cor": "rgb(242, 235, 248)",
+              "transborda": false
+            },
+            {
+              "tag": "P",
+              "t": "Leitura feita por IA a partir da imagem do documento; confira no PDF.",
+              "x": 998.4,
+              "y": 402,
+              "w": 315.2,
+              "h": 42.1,
+              "contraste": 7.21,
+              "fonte": "13.6px",
+              "cor": "rgb(194, 176, 206)",
+              "transborda": false
+            },
+            {
+              "tag": "DIV",
+              "t": "Fontes da respostaEdital PROBEC 2027 · retificação · p. 3 ↗",
+              "x": 998.4,
+              "y": 459,
+              "w": 315.2,
+              "h": 77.1,
+              "contraste": 12.5,
+              "fonte": "14px",
+              "cor": "rgb(242, 235, 248)",
+              "transborda": false
+            },
+            {
+              "tag": "SMALL",
+              "t": "Leitura por IA (Google Gemini) · Custou menos de 1 centavo (US$ 0,0062)",
+              "x": 998.4,
+              "y": 544,
+              "w": 315.2,
+              "h": 37.2,
+              "contraste": 7.21,
+              "fonte": "12px",
+              "cor": "rgb(194, 176, 206)",
+              "transborda": false
+            }
+          ],
+          "links": [
+            {
+              "t": "Edital PROBEC 2027 · retificação · p. 3 ↗",
+              "x": 998.4,
+              "y": 492,
+              "w": 258.4,
+              "h": 44,
+              "contraste": 8.65
+            }
+          ]
+        },
+        "cartoes": 0,
+        "pensando": false
+      },
+      "clique2": true,
+      "semTrecho": {
+        "tema": "dark",
+        "innerWidth": 1366,
+        "docScrollWidth": 1366,
+        "semRolagemHorizontal": true,
+        "dialog": {
+          "x": 926,
+          "y": 0,
+          "w": 440,
+          "h": 900,
+          "scrollW": 439,
+          "clientW": 439
+        },
+        "bloqueados": [],
+        "mocked": [
+          "role:chat officialSearch=true",
+          "pdf.read:hang accepted=10554 consent=true",
+          "role:chat officialSearch=true",
+          "pdf.read:none accepted=10554 consent=true"
+        ],
+        "ativo": {
+          "tag": "P",
+          "t": "Li o PDF com IA (escaneado), mas não achei um trec"
+        },
+        "balao": {
+          "x": 983,
+          "y": 339,
+          "w": 345.9,
+          "h": 253.8,
+          "padding": "11.2px 14.4px",
+          "gap": "7.2px",
+          "fundo": "rgb(48, 36, 59)",
+          "scrollW": 344,
+          "clientW": 344,
+          "filhos": [
+            {
+              "tag": "P",
+              "t": "Li o PDF com IA (escaneado), mas não achei um trecho que responda à pergunta.",
+              "x": 998.4,
+              "y": 352,
+              "w": 315.2,
+              "h": 43.4,
+              "contraste": 12.5,
+              "fonte": "14px",
+              "cor": "rgb(242, 235, 248)",
+              "transborda": false
+            },
+            {
+              "tag": "P",
+              "t": "Leitura feita por IA a partir da imagem do documento; confira no PDF.",
+              "x": 998.4,
+              "y": 402,
+              "w": 315.2,
+              "h": 42.1,
+              "contraste": 7.21,
+              "fonte": "13.6px",
+              "cor": "rgb(194, 176, 206)",
+              "transborda": false
+            },
+            {
+              "tag": "DIV",
+              "t": "Fontes da respostaEdital PROBEC 2027 · retificação ↗",
+              "x": 998.4,
+              "y": 459,
+              "w": 315.2,
+              "h": 77.1,
+              "contraste": 12.5,
+              "fonte": "14px",
+              "cor": "rgb(242, 235, 248)",
+              "transborda": false
+            },
+            {
+              "tag": "SMALL",
+              "t": "Leitura por IA (Google Gemini) · Custou menos de 1 centavo (US$ 0,0059)",
+              "x": 998.4,
+              "y": 544,
+              "w": 315.2,
+              "h": 37.2,
+              "contraste": 7.21,
+              "fonte": "12px",
+              "cor": "rgb(194, 176, 206)",
+              "transborda": false
+            }
+          ],
+          "links": [
+            {
+              "t": "Edital PROBEC 2027 · retificação ↗",
+              "x": 998.4,
+              "y": 493,
+              "w": 224.9,
+              "h": 44,
+              "contraste": 8.65
+            }
+          ]
+        },
+        "cartoes": 0,
+        "pensando": false
+      },
+      "clique3": true,
+      "focoAposRecusa": {
+        "role": "alert",
+        "tabIndex": -1,
+        "inBubble": true,
+        "tag": "P",
+        "t": "Este PDF tem 14 páginas; a leitura com I",
+        "focusVisible": true,
+        "outline": "auto 1px rgb(238, 238, 238)",
+        "offset": "0px",
+        "boxShadow": "none"
+      },
+      "recusa": {
+        "tema": "dark",
+        "innerWidth": 1366,
+        "docScrollWidth": 1366,
+        "semRolagemHorizontal": true,
+        "dialog": {
+          "x": 926,
+          "y": 0,
+          "w": 440,
+          "h": 900,
+          "scrollW": 439,
+          "clientW": 439
+        },
+        "bloqueados": [],
+        "mocked": [
+          "role:chat officialSearch=true",
+          "pdf.read:hang accepted=10554 consent=true",
+          "role:chat officialSearch=true",
+          "pdf.read:none accepted=10554 consent=true",
+          "role:chat officialSearch=true",
+          "pdf.read:refuse accepted=10554 consent=true"
+        ],
+        "ativo": {
+          "tag": "P",
+          "t": "Este PDF tem 14 páginas; a leitura com IA aceita a"
+        },
+        "balao": {
+          "x": 983,
+          "y": 188,
+          "w": 345.9,
+          "h": 404.5,
+          "padding": "11.2px 14.4px",
+          "gap": "7.2px",
+          "fundo": "rgb(48, 36, 59)",
+          "scrollW": 344,
+          "clientW": 344,
+          "filhos": [
+            {
+              "tag": "P",
+              "t": "Edital PROBEC 2027 · retificação\nEncontrei o PDF, mas ele parece ser uma imagem escaneada:",
+              "x": 998.4,
+              "y": 200,
+              "w": 315.2,
+              "h": 151.8,
+              "contraste": 12.5,
+              "fonte": "14px",
+              "cor": "rgb(242, 235, 248)",
+              "transborda": false
+            },
+            {
+              "tag": "DIV",
+              "t": "Fontes da respostaEdital PROBEC 2027 · retificação ↗",
+              "x": 998.4,
+              "y": 367,
+              "w": 315.2,
+              "h": 77.1,
+              "contraste": 12.5,
+              "fonte": "14px",
+              "cor": "rgb(242, 235, 248)",
+              "transborda": false
+            },
+            {
+              "tag": "SMALL",
+              "t": "Consulta pública · sem custo de IA (a leitura abaixo é cobrada à parte)",
+              "x": 998.4,
+              "y": 452,
+              "w": 315.2,
+              "h": 37.2,
+              "contraste": 7.21,
+              "fonte": "12px",
+              "cor": "rgb(194, 176, 206)",
+              "transborda": false
+            },
+            {
+              "tag": "P",
+              "t": "Este PDF tem 14 páginas; a leitura com IA aceita até 10 páginas. Nada foi cobrado. Abra o ",
+              "x": 998.4,
+              "y": 496,
+              "w": 315.2,
+              "h": 84.4,
+              "contraste": 8.68,
+              "fonte": "13.6px",
+              "cor": "rgb(255, 179, 198)",
+              "transborda": false
+            }
+          ],
+          "links": [
+            {
+              "t": "Edital PROBEC 2027 · retificação ↗",
+              "x": 998.4,
+              "y": 400,
+              "w": 224.9,
+              "h": 44,
+              "contraste": 8.65
+            }
+          ]
+        },
+        "cartoes": 0,
+        "pensando": false,
+        "alerta": {
+          "t": "Este PDF tem 14 páginas; a leitura com IA aceita até 10 páginas. Nada foi cobrado. Abra o link para conferir.",
+          "x": 998.4,
+          "y": 496,
+          "w": 315.2,
+          "h": 84.4,
+          "contraste": 8.68,
+          "fonte": "13.6px",
+          "borda": "color(srgb 1 0.701961 0.776471 / 0.35)",
+          "fundo": "color(srgb 1 0.701961 0.776471 / 0.08)",
+          "padding": "9.6px 12px",
+          "dentroDeSecao": false,
+          "focado": true,
+          "margemBalao": {
+            "esq": 15,
+            "dir": 15
+          }
+        }
+      },
+      "semOferta": {
+        "tema": "dark",
+        "innerWidth": 1366,
+        "docScrollWidth": 1366,
+        "semRolagemHorizontal": true,
+        "dialog": {
+          "x": 926,
+          "y": 0,
+          "w": 440,
+          "h": 900,
+          "scrollW": 439,
+          "clientW": 439
+        },
+        "bloqueados": [],
+        "mocked": [
+          "role:chat officialSearch=true",
+          "pdf.read:hang accepted=10554 consent=true",
+          "role:chat officialSearch=true",
+          "pdf.read:none accepted=10554 consent=true",
+          "role:chat officialSearch=true",
+          "pdf.read:refuse accepted=10554 consent=true",
+          "role:chat officialSearch=true"
+        ],
+        "ativo": {
+          "tag": "P",
+          "t": "Este PDF tem 14 páginas; a leitura com IA aceita a"
+        },
+        "balao": {
+          "x": 983,
+          "y": 208,
+          "w": 345.9,
+          "h": 384.1,
+          "padding": "11.2px 14.4px",
+          "gap": "7.2px",
+          "fundo": "rgb(48, 36, 59)",
+          "scrollW": 344,
+          "clientW": 344,
+          "filhos": [
+            {
+              "tag": "P",
+              "t": "Bolsas de extensão PROBEC 2027\nInscrições pelo SIGAA até 15/12/2026; resultado preliminar ",
+              "x": 998.4,
+              "y": 221,
+              "w": 315.2,
+              "h": 195.2,
+              "contraste": 12.5,
+              "fonte": "14px",
+              "cor": "rgb(242, 235, 248)",
+              "transborda": false
+            },
+            {
+              "tag": "DIV",
+              "t": "Fontes da respostaBolsas de extensão PROBEC 2027 ↗Calendário de editais da PROEX ↗",
+              "x": 998.4,
+              "y": 431,
+              "w": 315.2,
+              "h": 123.5,
+              "contraste": 12.5,
+              "fonte": "14px",
+              "cor": "rgb(242, 235, 248)",
+              "transborda": false
+            },
+            {
+              "tag": "SMALL",
+              "t": "Consulta pública · sem custo de IA",
+              "x": 998.4,
+              "y": 562,
+              "w": 315.2,
+              "h": 18.6,
+              "contraste": 7.21,
+              "fonte": "12px",
+              "cor": "rgb(194, 176, 206)",
+              "transborda": false
+            }
+          ],
+          "links": [
+            {
+              "t": "Bolsas de extensão PROBEC 2027 ↗",
+              "x": 998.4,
+              "y": 464,
+              "w": 232.8,
+              "h": 44,
+              "contraste": 8.65
+            },
+            {
+              "t": "Calendário de editais da PROEX ↗",
+              "x": 998.4,
+              "y": 511,
+              "w": 221.5,
+              "h": 44,
+              "contraste": 8.65
+            }
+          ]
+        },
+        "cartoes": 0,
+        "pensando": false
+      }
+    }
+  },
+  "shots": [
+    {
+      "file": "oferta-390-claro.png",
+      "bytes": 186938
+    },
+    {
+      "file": "oferta-fim-390-claro.png",
+      "bytes": 176182
+    },
+    {
+      "file": "oferta-foco-390-claro.png",
+      "bytes": 169778
+    },
+    {
+      "file": "lendo-390-claro.png",
+      "bytes": 167774
+    },
+    {
+      "file": "lido-390-claro.png",
+      "bytes": 176931
+    },
+    {
+      "file": "lido-fim-390-claro.png",
+      "bytes": 179778
+    },
+    {
+      "file": "sem-trecho-390-claro.png",
+      "bytes": 169222
+    },
+    {
+      "file": "recusa-390-claro.png",
+      "bytes": 195609
+    },
+    {
+      "file": "busca-sem-oferta-390-claro.png",
+      "bytes": 187447
+    },
+    {
+      "file": "oferta-390-escuro.png",
+      "bytes": 185932
+    },
+    {
+      "file": "oferta-fim-390-escuro.png",
+      "bytes": 175187
+    },
+    {
+      "file": "oferta-foco-390-escuro.png",
+      "bytes": 169368
+    },
+    {
+      "file": "lendo-390-escuro.png",
+      "bytes": 167314
+    },
+    {
+      "file": "lido-390-escuro.png",
+      "bytes": 176581
+    },
+    {
+      "file": "lido-fim-390-escuro.png",
+      "bytes": 179420
+    },
+    {
+      "file": "sem-trecho-390-escuro.png",
+      "bytes": 169645
+    },
+    {
+      "file": "recusa-390-escuro.png",
+      "bytes": 195399
+    },
+    {
+      "file": "busca-sem-oferta-390-escuro.png",
+      "bytes": 188051
+    },
+    {
+      "file": "oferta-1366-claro.png",
+      "bytes": 300825
+    },
+    {
+      "file": "oferta-foco-1366-claro.png",
+      "bytes": 296801
+    },
+    {
+      "file": "lendo-1366-claro.png",
+      "bytes": 295404
+    },
+    {
+      "file": "lido-1366-claro.png",
+      "bytes": 291434
+    },
+    {
+      "file": "sem-trecho-1366-claro.png",
+      "bytes": 289860
+    },
+    {
+      "file": "recusa-1366-claro.png",
+      "bytes": 292011
+    },
+    {
+      "file": "busca-sem-oferta-1366-claro.png",
+      "bytes": 293284
+    },
+    {
+      "file": "oferta-1366-escuro.png",
+      "bytes": 300950
+    },
+    {
+      "file": "oferta-foco-1366-escuro.png",
+      "bytes": 297554
+    },
+    {
+      "file": "lendo-1366-escuro.png",
+      "bytes": 296301
+    },
+    {
+      "file": "lido-1366-escuro.png",
+      "bytes": 292268
+    },
+    {
+      "file": "sem-trecho-1366-escuro.png",
+      "bytes": 290906
+    },
+    {
+      "file": "recusa-1366-escuro.png",
+      "bytes": 292682
+    },
+    {
+      "file": "busca-sem-oferta-1366-escuro.png",
+      "bytes": 293889
+    }
+  ],
+  "pageErrors": []
+}

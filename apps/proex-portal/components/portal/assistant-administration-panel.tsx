@@ -189,7 +189,7 @@ export default function AssistantAdministrationPanel({ canManageKeys=false, refr
         {canManageKeys && <label className={styles.confirm}>
           <input type="checkbox" disabled={busy || !config.roleEnabled || !(geminiKey?.organizationId === selection && geminiKey.ready)} checked={config.roleVideoEnabled}
             onChange={event=>setConfig({...config,roleVideoEnabled:event.target.checked})}/>
-          <span><strong>Analisar vídeos com Google Gemini</strong><small>Vídeos MP4 curtos, com confirmação a cada envio. A análise respeita o acesso e as cotas da organização.</small></span>
+          <span><strong>Analisar vídeos com Google Gemini</strong><small>Vídeos MP4 curtos, com confirmação a cada envio. A análise respeita o acesso e as cotas da organização. Também libera a leitura de PDF oficial escaneado com o Gemini, com custo mostrado antes.</small></span>
         </label>}
         {canManageKeys && <div className={styles.voice}>
           <label className="p-field"><span>Modelo para vídeos</span>

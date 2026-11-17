@@ -66,3 +66,26 @@ export const ROLE_TASK_DRAFT_TTL_MS = 30 * 60_000;
 const taskDraftDomain = 'proex.role.task-draft/v1';
 export async function signTaskDraft(secret: string, payload: { actorId: string; organizationId: string; projectId: string; expiresAt: number }): Promise<string> { const body = b64(encoder.encode(JSON.stringify(payload))); return `${body}.${b64(new Uint8Array(await crypto.subtle.sign('HMAC', await signingKey(secret), encoder.encode(`${taskDraftDomain}:${body}`))))}`; }
 export async function verifyTaskDraft(secret: string, token: unknown, actorId: string, projectId: string, now = Date.now()): Promise<{ actorId: string; organizationId: string; projectId: string; expiresAt: number }> { try { if (typeof token !== 'string' || token.length > 2000) throw new Error('token'); const [body, signature, extra] = token.split('.'); if (!body || !signature || extra || !await crypto.subtle.verify('HMAC', await signingKey(secret), un64(signature), encoder.encode(`${taskDraftDomain}:${body}`))) throw new Error('signature'); const payload = JSON.parse(new TextDecoder().decode(un64(body))); if (payload.actorId !== actorId || payload.projectId !== projectId || typeof payload.organizationId !== 'string' || !Number.isSafeInteger(payload.expiresAt) || payload.expiresAt <= now || payload.expiresAt > now + ROLE_TASK_DRAFT_TTL_MS + 60_000) throw new Error('expired'); return payload; } catch (error) { if (error instanceof HttpError) throw error; throw new HttpError(409, 'Este rascunho expirou ou não é seu neste projeto. Peça um novo ao Rolê ou crie a demanda na tela de Demandas.', 'role_task_draft_invalid'); } }
+/**
+ * Oferta de leitura com IA de PDF escaneado: assinada na busca, vale só para a mesma pessoa, organização,
+ * projeto, endereço, pergunta (resumo), custo e revisão da configuração, por 30 minutos.
+ */
+export const ROLE_PDF_OFFER_TTL_MS = 30 * 60_000;
+export type RolePdfOfferPayload = { actorId: string; organizationId: string; projectId: string; url: string; question: string; costMicros: number; revision: number; expiresAt: number };
+const pdfOfferDomain = 'proex.role.pdf-reading/v1';
+export async function signPdfOffer(secret: string, payload: RolePdfOfferPayload): Promise<string> { const body = b64(encoder.encode(JSON.stringify(payload))); return `${body}.${b64(new Uint8Array(await crypto.subtle.sign('HMAC', await signingKey(secret), encoder.encode(`${pdfOfferDomain}:${body}`))))}`; }
+export async function verifyPdfOffer(secret: string, token: unknown, expected: Omit<RolePdfOfferPayload, 'expiresAt' | 'costMicros'> & { minCostMicros: number }, now = Date.now()): Promise<RolePdfOfferPayload> {
+  try {
+    if (typeof token !== 'string' || token.length > 3000) throw new Error('token');
+    const [body, signature, extra] = token.split('.');
+    if (!body || !signature || extra || !await crypto.subtle.verify('HMAC', await signingKey(secret), un64(signature), encoder.encode(`${pdfOfferDomain}:${body}`))) throw new Error('signature');
+    const payload = JSON.parse(new TextDecoder().decode(un64(body))) as RolePdfOfferPayload;
+    const same = payload.actorId === expected.actorId && payload.organizationId === expected.organizationId && payload.projectId === expected.projectId
+      && payload.url === expected.url && payload.question === expected.question && payload.revision === expected.revision;
+    if (!same || !Number.isSafeInteger(payload.costMicros) || payload.costMicros < expected.minCostMicros || !Number.isSafeInteger(payload.expiresAt) || payload.expiresAt <= now || payload.expiresAt > now + ROLE_PDF_OFFER_TTL_MS + 60_000) throw new Error('offer');
+    return payload;
+  } catch (error) {
+    if (error instanceof HttpError) throw error;
+    throw new HttpError(409, 'Esta oferta de leitura expirou ou mudou. Faça a busca de novo e toque em Ler com IA. Nada foi cobrado.', 'role_pdf_offer_invalid');
+  }
+}

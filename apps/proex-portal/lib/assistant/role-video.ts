@@ -157,7 +157,7 @@ function usageCount(value: unknown) {
   return Number.isSafeInteger(value) && Number(value) >= 0 && Number(value) <= 1_048_576 ? Number(value) : null;
 }
 
-function responseUsage(value: unknown) {
+export function responseUsage(value: unknown) {
   const usage = jsonRecord(value);
   if (!usage) return null;
   const input = usageCount(usage.total_input_tokens);
@@ -168,7 +168,7 @@ function responseUsage(value: unknown) {
   return { inputTokens: input + toolUse, outputTokens: output + thoughts, reasoningTokens: thoughts };
 }
 
-function responseText(value: unknown) {
+export function responseText(value: unknown) {
   if (!Array.isArray(value)) return '';
   return value.flatMap(item => {
     const step = jsonRecord(item);
@@ -180,7 +180,7 @@ function responseText(value: unknown) {
   }).join('\n').trim();
 }
 
-function sensitive(value: string) {
+export function sensitive(value: string) {
   return containsCredential(value) || /(?:^|[^A-Za-z0-9_-])AIza[A-Za-z0-9_-]{35}(?![A-Za-z0-9_-])/.test(value);
 }
 

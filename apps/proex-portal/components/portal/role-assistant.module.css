@@ -116,7 +116,7 @@
 .sources{display:grid;gap:.3rem;margin-top:.5rem;padding-top:.5rem;border-top:1px solid var(--line)}
 .sources span{font-size:max(12px,.78rem);font-weight:700;color:var(--text-secondary)}
 .sources ul{display:grid;gap:.15rem;margin:0;padding:0;list-style:none}
-.sources a{display:inline-flex;align-items:center;min-height:32px;color:var(--brand-ink);font-weight:650;font-size:max(13px,.85rem);text-decoration:underline;text-underline-offset:2px;overflow-wrap:anywhere}
+.sources a{display:inline-flex;align-items:center;min-height:44px;color:var(--brand-ink);font-weight:650;font-size:max(13px,.85rem);text-decoration:underline;text-underline-offset:2px;overflow-wrap:anywhere}
 .sources a:focus-visible{outline:3px solid var(--focus);outline-offset:2px;border-radius:4px}
 .myUsage{margin:0}
 .myUsage>summary{min-height:36px;display:flex;align-items:center;cursor:pointer;font-size:max(12px,.8rem);font-weight:650;color:var(--brand-ink)}
@@ -169,4 +169,11 @@
 :global(html[data-theme=dark]) .taskDraft input[type=checkbox]{accent-color:#b48ad6}
 .taskDraft .reviseActions :global(.p-button){font-size:max(14px,.9rem);padding-inline:12px}
 .taskDraft .taskDraftOpen{justify-self:start;min-height:44px;font-size:max(14px,.9rem)}
+/* Leitura com IA de PDF escaneado: mesmo sistema do cartão do rascunho. "Lendo…" usa aria-disabled (sem opacidade baixa). */
+.pdfReading .reviseActions :global(.p-button){font-size:max(14px,.9rem);padding-inline:12px}
+.pdfReading :global(.p-button[aria-disabled=true]){cursor:progress}
+.pdfReading button:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+:global(html[data-theme=dark]) .pdfReading :global(.p-button-primary:not(:disabled)){border-color:#d4b3e8}
 .taskDraftNote{margin:0;border-radius:6px}
+.bubble p[tabindex="-1"]:focus-visible{outline:3px solid var(--focus);outline-offset:4px;border-radius:6px}
+.pdfReading .sendsTo{font-size:max(13.6px,.85rem)}

@@ -12,6 +12,7 @@ import { prepareSpeechWav } from './speech-audio';
 import { RoleLocalPlayer, type RoleLocalMedia } from './role-local-media';
 import RoleDocumentCard, { type RoleDocumentRevision } from './role-document-card';
 import RoleTaskDraftCard, { roleTaskDraftFrom, type RoleTaskDraftStatus, type RoleTaskDraftView } from './role-task-draft-card';
+import RoleScannedPdfCard, { roleScannedPdfFrom, type RoleScannedPdfOffer } from './role-scanned-pdf-card';
 import { ROLE_DOCUMENT_EXCERPT_LIMIT, roleDocumentExcerpt, roleDocumentMessage, type RoleDocumentExcerpt, type RoleDocumentPreview } from '@/lib/assistant/role-document-contracts';
 import { MAX_UPLOAD_FILE_BYTES } from '@/lib/upload-limits';
 import AiPeopleUsage from './ai-people-usage';
@@ -31,7 +32,7 @@ type Status = { document?: { approval: string; canSaveToRecords: boolean }; vide
 type Match = { projectId: string; projectName: string; itemName: string; score: number };
 type Operation = { request: string; stage: 'idle' | 'estimated' | 'preview' | 'done'; costMicros?: number; provider?: string; jev?: boolean; /** Modelo que confere, como veio da estimativa (vazio = padrão do portal). É o nome que o aviso mostra e que vai no preparo. */ decisionDestination?: string; decisionApproval?: string; stale?: boolean; projectId?: string; matches?: Match[]; ambiguous?: boolean; error?: string; limit?: boolean; preview?: { plan: Omit<AssistantPlan, 'actorId'>; planToken: string; undoReason: string }; confirmed?: boolean; receipt?: string; key: string; /** Pedido exatamente como foi enviado para preparar a prévia; vai junto na confirmação. */ prepared?: string; destinationDefault?: string; movementId?: string; destination?: string | null; revise?: 'correct' | 'undo' | null; reviseKey?: string };
 type Source = { label: string; href: string };
-type Message = { id: string; role: 'user' | 'assistant'; content: string; image?: string; video?: true; official?: true; isolated?: true; document?: RoleDocumentPreview; documentRevision?: RoleDocumentRevision; media?: RoleLocalMedia; meta?: string; operation?: Operation; sources?: Source[]; taskDraft?: RoleTaskDraftView; taskDraftStatus?: RoleTaskDraftStatus };
+type Message = { id: string; role: 'user' | 'assistant'; content: string; image?: string; video?: true; official?: true; isolated?: true; document?: RoleDocumentPreview; documentRevision?: RoleDocumentRevision; media?: RoleLocalMedia; meta?: string; operation?: Operation; sources?: Source[]; taskDraft?: RoleTaskDraftView; taskDraftStatus?: RoleTaskDraftStatus; pdfReading?: RoleScannedPdfOffer; notice?: string; focusOnShow?: true };
 type Picked = { dataUrl: string; bytes: number };
 type Recorded = { file: File; seconds: number };
 
@@ -43,6 +44,9 @@ function quantity(value: number, unit: string): string {
   const plural: Record<string, string> = { unidade: 'unidades', caixa: 'caixas', pacote: 'pacotes', kit: 'kits', folha: 'folhas', par: 'pares' };
   return `${value} ${value === 1 ? unit : plural[unit] ?? unit}`;
 }
+
+/** Leva o foco à nova resposta da leitura com IA, como o cartão do rascunho faz. */
+const focusOnMount = (node: HTMLElement | null) => { node?.focus(); };
 
 class RequestError extends Error { constructor(readonly status: number, message: string, readonly code?: string) { super(message); } }
 /** Recusa por limite diário (da organização ou a parte de cada pessoa). */
@@ -149,6 +153,8 @@ function RoleConversation({ projects, defaultProjectId, onApplied, onOpenSetting
   const returnFocus = useRef<HTMLElement | null>(null);
   const recorder = useRef<MediaRecorder | null>(null), stream = useRef<MediaStream | null>(null), stopTimer = useRef<number | null>(null), mounted = useRef(true);
   const conversationEpoch = useRef(0), captureEpoch = useRef(0), statusEpoch = useRef(0);
+  /** Chaves de leitura com IA em andamento: ignora o segundo toque no mesmo botão. */
+  const pendingPdf = useRef<Set<string>>(new Set());
   // Último modo carregado: a conversa só é apagada quando a conversa com IA deixa de existir, não a cada recarga.
   const previousMode = useRef<ReturnType<typeof roleComposerMode>>('off');
   const project = projects.find(item => item.id === projectId);
@@ -263,6 +269,8 @@ function RoleConversation({ projects, defaultProjectId, onApplied, onOpenSetting
   const officialOn = chatOn && officialMode && !!status?.policy?.publicSearch;
   const route = officialRoute({ mode, toggled: officialMode, publicSearch: !!status?.policy?.publicSearch, attachment, text: sanitized.text });
   const officialLookup = route.official;
+  // Leitura com IA em andamento: o cartão já mostra "Lendo o PDF com IA…"; sem o "Pensando…" repetido.
+  const readingPdf = messages.some(message => message.pdfReading?.reading);
   function toggleOfficial() { setOfficialMode(value => !value); setError(''); }
   const officialCost = <>Consulta às fontes oficiais, <span className={styles.nowrap}>sem custo de IA.</span></>;
   const videoQuote = video?.seconds && status?.video && sanitized.text ? roleVideoEstimate({
@@ -292,6 +300,41 @@ function RoleConversation({ projects, defaultProjectId, onApplied, onOpenSetting
 
   // Só em memória: some ao recarregar ou trocar de conta.
 
+  /** Só com o toque: o servidor baixa de novo o PDF oficial, confere a oferta assinada e o teto e manda ao Gemini uma vez por chave. */
+  async function readScannedPdf(messageId: string) {
+    const offer = messages.find(message => message.id === messageId)?.pdfReading;
+    // Dois toques seguidos: a chave em andamento ignora o segundo antes de qualquer renderização.
+    if (!offer || offer.reading || offer.done || busy || pendingPdf.current.has(offer.key)) return;
+    pendingPdf.current.add(offer.key);
+    const epoch = conversationEpoch.current;
+    const update = (patch: Partial<RoleScannedPdfOffer>) => setMessages(current => current.map(entry => entry.id === messageId && entry.pdfReading ? { ...entry, pdfReading: { ...entry.pdfReading, ...patch } } : entry));
+    update({ reading: true, error: undefined }); setBusy(true); setError(''); setLimitHit(false);
+    try {
+      const result = await post<{ reply: string; notice?: string; costMicros: number; sources?: Source[] }>('/api/assistant/role', {
+        action: 'pdf.read', projectId, scope: scopeKind === 'org' ? { kind: 'org' } : { kind: scopeKind, id: scopeId }, operationKey: offer.key,
+        consent: true, message: offer.question, url: offer.url, acceptedCostMicros: offer.costMicros, offer: offer.signature,
+      }, 55_000);
+      if (!mounted.current || conversationEpoch.current !== epoch) return;
+      const reply: Message = { id: crypto.randomUUID(), role: 'assistant', content: result.reply, official: true, focusOnShow: true,
+        ...(typeof result.notice === 'string' ? { notice: result.notice.slice(0, 200) } : {}),
+        sources: (result.sources ?? []).filter(source => officialPdfUrl(source.href)).slice(0, 1), meta: `Leitura por IA (Google Gemini) · Custou ${friendlyMicros(result.costMicros)}` };
+      setMessages(current => [...current.map(entry => entry.id === messageId && entry.pdfReading ? { ...entry, pdfReading: { ...entry.pdfReading, reading: false, done: true } } : entry), reply]);
+      void loadStatus(projectId, { keep: true });
+    } catch (cause) {
+      if (!mounted.current || conversationEpoch.current !== epoch) return;
+      // Só uma recusa com código do servidor encerra a tentativa e libera uma nova chave. Sem código, 502/504 ou tempo esgotado,
+      // a chave fica: se a leitura tiver chegado ao Gemini, repetir não cobra de novo.
+      const answered = cause instanceof RequestError && !!cause.code && cause.code !== 'assistant_call_replay' && cause.status !== 502 && cause.status !== 504;
+      const closed = cause instanceof RequestError && ['role_pdf_disabled', 'role_official_disabled', 'role_pdf_has_text', 'role_pdf_pages', 'role_pdf_size', 'role_pdf_blocked', 'role_pdf_url', 'role_pdf_offer_invalid'].includes(cause.code ?? '');
+      update({ reading: false, closed, error: cause instanceof Error ? limitText(cause) : 'Não foi possível ler o PDF com IA.', errorId: crypto.randomUUID(), ...(answered ? { key: crypto.randomUUID() } : {}) });
+      setLimitHit(isLimit(cause));
+      if (cause instanceof RequestError && cause.status === 401) void loadStatus(projectId);
+    } finally {
+      pendingPdf.current.delete(offer.key);
+      if (mounted.current && conversationEpoch.current === epoch) setBusy(false);
+    }
+  }
+
   async function send(event?: FormEvent) {
     event?.preventDefault();
     if (!canSend || !status || (!officialLookup && !estimate)) return;
@@ -301,7 +344,7 @@ function RoleConversation({ projects, defaultProjectId, onApplied, onOpenSetting
     setMessages(current => [...current, user]); setDraft(''); setPicked(null); setBusy(true); setError(''); setNotice(''); setLimitHit(false);
     try {
       const encodedVideo = video && status.video ? await sendableVideo(video.file) : null;
-      const result = await post<{ reply: string; operation: string | null; operationDropped?: boolean; model: string; provider?: string; costMicros: number; reservedMicros: number; inputTokens: number; outputTokens: number; reasoningTokens?: number; sources?: Source[]; lookups?: number; taskDraft?: unknown }>('/api/assistant/role', {
+      const result = await post<{ reply: string; operation: string | null; operationDropped?: boolean; model: string; provider?: string; costMicros: number; reservedMicros: number; inputTokens: number; outputTokens: number; reasoningTokens?: number; sources?: Source[]; lookups?: number; taskDraft?: unknown; pdfReading?: unknown }>('/api/assistant/role', {
         action: 'chat', projectId, scope: scopeKind === 'org' ? { kind: 'org' } : { kind: scopeKind, id: scopeId }, operationKey: crypto.randomUUID(), history: encodedVideo || officialLookup || document ? [] : history, message: text, ...(image ? { image } : {}),
         ...(encodedVideo ? { video: encodedVideo, videoConsent: true, videoApproval: status.video?.approval } : {}),
         ...(document ? { document, documentConsent: true, documentApproval: status.document?.approval } : {}),
@@ -311,7 +354,9 @@ function RoleConversation({ projects, defaultProjectId, onApplied, onOpenSetting
       if (!mounted.current || conversationEpoch.current !== epoch) return;
       const videoUsage = encodedVideo ? ` · ${result.inputTokens} tokens de entrada · ${result.outputTokens} de saída${typeof result.reasoningTokens === 'number' ? ` (${result.reasoningTokens} de raciocínio)` : ''}` : '';
       const taskDraft = roleTaskDraftFrom(result.taskDraft);
-      const reply: Message = { id: crypto.randomUUID(), role: 'assistant', content: result.reply, ...(taskDraft ? { taskDraft } : {}), ...(result.provider === 'official' ? { official: true } : {}), ...(document ? { isolated: true } : {}), ...(encodedVideo ? { video: true } : {}), sources: (result.sources ?? []).filter(source => source.href.startsWith('/?module=') || OFFICIAL_LINK.test(source.href) || officialPdfUrl(source.href)).slice(0, 6), meta: result.provider === 'official' ? 'Consulta pública · sem custo de IA' : result.provider === 'portal' ? 'Resposta do Portal · sem custo de IA' : `${encodedVideo ? `${videoLabel} · Custo estimado` : 'Custou'} ${friendlyMicros(result.costMicros)}${videoUsage}${result.lookups ? ` · consultou o portal ${result.lookups === 1 ? '1 vez' : `${result.lookups} vezes`}` : ''}${result.operationDropped ? ' · Não foi preparado rascunho. Confira suas permissões e os dados informados.' : ''}`,
+      // PDF escaneado na busca oficial: a oferta guarda a pergunta e uma chave fixa para o toque em Ler com IA.
+      const pdfReading = result.provider === 'official' ? roleScannedPdfFrom(result.pdfReading, text, crypto.randomUUID()) : undefined;
+      const reply: Message = { id: crypto.randomUUID(), role: 'assistant', content: result.reply, ...(taskDraft ? { taskDraft } : {}), ...(pdfReading ? { pdfReading } : {}), ...(result.provider === 'official' ? { official: true } : {}), ...(document ? { isolated: true } : {}), ...(encodedVideo ? { video: true } : {}), sources: (result.sources ?? []).filter(source => source.href.startsWith('/?module=') || OFFICIAL_LINK.test(source.href) || officialPdfUrl(source.href)).slice(0, 6), meta: result.provider === 'official' ? (pdfReading ? 'Consulta pública · sem custo de IA (a leitura abaixo é cobrada à parte)' : 'Consulta pública · sem custo de IA') : result.provider === 'portal' ? 'Resposta do Portal · sem custo de IA' : `${encodedVideo ? `${videoLabel} · Custo estimado` : 'Custou'} ${friendlyMicros(result.costMicros)}${videoUsage}${result.lookups ? ` · consultou o portal ${result.lookups === 1 ? '1 vez' : `${result.lookups} vezes`}` : ''}${result.operationDropped ? ' · Não foi preparado rascunho. Confira suas permissões e os dados informados.' : ''}`,
         operation: result.operation ? { request: result.operation, stage: 'idle', key: crypto.randomUUID() } : undefined };
       setMessages(current => [
         ...(encodedVideo && video ? current.map(message => message.id === user.id ? { ...message, media: { kind: 'video', file: video.file } satisfies RoleLocalMedia } : message) : current),
@@ -649,11 +694,13 @@ function RoleConversation({ projects, defaultProjectId, onApplied, onOpenSetting
                     onAsk={askAboutDocument} onCopy={(draft, destination) => saveDocumentCopy(message.id, draft, destination)}/>}
                   {message.media && <RoleLocalPlayer media={message.media} className={styles.sentMedia}
                     label={message.media.kind === 'video' ? 'Reproduzir vídeo enviado' : 'Ouvir gravação transcrita'}/>}
-                  {message.content && <p>{message.content}</p>}
+                  {message.content && <p ref={message.focusOnShow ? focusOnMount : undefined} tabIndex={message.focusOnShow ? -1 : undefined}>{message.content}</p>}
+                  {message.notice && <p className={styles.help}>{message.notice}</p>}
                   {!!message.sources?.length && <div className={styles.sources}><span>Fontes da resposta</span><ul>{message.sources.map(source => <li key={source.href}>{source.href.startsWith('/') ? <a href={source.href} onClick={() => close()}>{source.label}</a> : <a href={source.href} target="_blank" rel="noopener noreferrer">{source.label} ↗</a>}</li>)}</ul></div>}
                   {message.taskDraft && <RoleTaskDraftCard draft={message.taskDraft} status={message.taskDraftStatus} onOpen={() => close()}
                     onStatus={taskDraftStatus => setMessages(current => current.map(entry => entry.id === message.id ? { ...entry, taskDraftStatus } : entry))}/>}
                   {message.meta && <small>{message.meta}</small>}
+                  {message.pdfReading && <RoleScannedPdfCard offer={message.pdfReading} disabled={busy || recording || transcribing || readingDocument || preparingAudio} onRead={() => void readScannedPdf(message.id)}/>}
                   {message.operation && <div className={styles.operation}>
                     <p className={styles.operationTitle}>Posso preparar isto para você</p>
                     {(message.operation.stage === 'idle' || message.operation.stage === 'estimated') && status?.operationsAvailable
@@ -711,7 +758,7 @@ function RoleConversation({ projects, defaultProjectId, onApplied, onOpenSetting
                   </div>}
                 </div>
               </li>)}
-              {busy && <li className={styles.theirs}><img className={styles.bubbleAvatar} src="/brand/role-mascote/role-rosto.svg" alt="" width={32} height={32}/><div className={styles.bubble}><p className={styles.typing}><LoaderCircle size={16} className="p-spin" aria-hidden="true"/>Pensando…</p></div></li>}
+              {busy && !readingPdf && <li className={styles.theirs}><img className={styles.bubbleAvatar} src="/brand/role-mascote/role-rosto.svg" alt="" width={32} height={32}/><div className={styles.bubble}><p className={styles.typing}><LoaderCircle size={16} className="p-spin" aria-hidden="true"/>Pensando…</p></div></li>}
             </ol>
           </>}
         </div>
