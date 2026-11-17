@@ -1215,3 +1215,30 @@ test('BUSCA EXPLÍCITA COM CHAVE: o pedido explícito vai à busca sem custo; se
     assert.equal(provider.calls.length, 1);
   } finally { f.native.close(); }
 });
+
+test('BUSCA OFICIAL · LIMITE E CIÊNCIA: a 21ª busca no minuto é recusada sem buscar; o pedido explícito dispensa a ciência de IA, a conversa não', async () => {
+  const f = fixture();
+  try {
+    await setup(f);
+    const official = countingOfficial(), provider = fakeProvider(), options = { keys, fetcher: provider.fetch, officialFetcher: official.fetch };
+    const ask = extra => { const input = chatInput(f, { message: 'Quais editais de extensão estão abertos?', acceptedCostMicros: 0, ...extra }); delete input.consent; return input; };
+    // Pedido explícito sem "consent": a busca não manda nada para IA.
+    const first = await roleChat(f.db, f.actors.viewer, ask({ officialSearch: true }), secret, options);
+    assert.equal(first.provider, 'official');
+    // Sem pedido explícito, a falta de ciência continua recusada como hoje (o caminho com IA exige).
+    await assert.rejects(roleChat(f.db, f.actors.viewer, ask({}), secret, options), error => error.code === 'assistant_consent');
+    await assert.rejects(roleChat(f.db, f.actors.viewer, ask({ message: 'Como registro a entrega de brindes?' }), secret, options), error => error.code === 'assistant_consent');
+    for (let index = 1; index < 20; index++) await roleChat(f.db, f.actors.viewer, ask({ officialSearch: true }), secret, options);
+    const searched = official.calls;
+    await assert.rejects(roleChat(f.db, f.actors.viewer, ask({ officialSearch: true }), secret, options),
+      error => error.status === 429 && error.code === 'role_official_rate' && error.message === 'Muitas buscas seguidas. Espere um minuto e tente de novo.');
+    // Busca reconhecida automaticamente conta no mesmo limite.
+    await assert.rejects(roleChat(f.db, f.actors.viewer, chatInput(f, { message: 'Quais editais de extensão estão abertos?', acceptedCostMicros: 0 }), secret, options), error => error.code === 'role_official_rate');
+    assert.equal(official.calls, searched, 'a recusa por limite não chega a buscar');
+    assert.equal(provider.calls.length, 0);
+    // Outra pessoa tem o próprio limite.
+    f.native.prepare("INSERT INTO members(id,user_id,email,role,project_id,created_at) VALUES('outsider-a','outsider-qa','outsider@example.test','inventory','project-a',?)").run(new Date().toISOString());
+    const other = { ...f.actors.outsider, members: [...f.actors.outsider.members, { id: 'outsider-a', user_id: 'outsider-qa', email: 'outsider@example.test', role: 'inventory', project_id: 'project-a', revoked_at: null, created_at: new Date().toISOString() }] };
+    assert.equal((await roleChat(f.db, other, ask({ officialSearch: true }), secret, options)).provider, 'official');
+  } finally { f.native.close(); }
+});

@@ -1,6 +1,7 @@
 import { getActor, projectAuthoritySql, requireCapability, requireLiveCapability, type PortalActor } from '../access';
 import { all, one } from '../database';
 import { HttpError } from '../errors';
+import { rateLimitAll } from '../rate-limit';
 import { reservationStatements } from './admission';
 import { quotaRefusal, responsibleName } from './quota';
 import { onlyKeys, safeRequest, type AssistantConfig, type AssistantCredentials } from './contracts';
@@ -461,7 +462,8 @@ async function catalogDispatch(chosen: Extract<Route, { kind: 'catalog' }>, turn
 export async function roleChat(db: D1Database, actor: PortalActor | null, input: Record<string, unknown>, secret: string, options: Options = {}) {
   onlyKeys(input, ['action', 'projectId', 'operationKey', 'consent', 'history', 'message', 'image', 'video', 'videoApproval', 'videoConsent', 'acceptedCostMicros', 'scope', 'document', 'documentConsent', 'documentApproval', 'officialSearch']);
   if (input.officialSearch !== undefined && input.officialSearch !== true) throw new HttpError(400, 'Pedido de busca em fontes oficiais inválido.', 'assistant_request');
-  if (input.consent !== true) throw new HttpError(400, 'Confirme que o texto e a imagem podem ir para o provedor de IA.', 'assistant_consent');
+  // A ciência de envio à IA vale para a conversa; a busca pedida explicitamente não manda nada para IA.
+  if (input.officialSearch !== true && input.consent !== true) throw new HttpError(400, 'Confirme que o texto e a imagem podem ir para o provedor de IA.', 'assistant_consent');
   if (typeof input.operationKey !== 'string' || !/^[A-Za-z0-9_-]{8,100}$/.test(input.operationKey)) throw new HttpError(400, 'Reabra o Rolê antes de enviar.', 'assistant_operation');
   if (typeof input.message !== 'string' || input.message.length > ROLE_MAX_MESSAGE_CHARS) throw new HttpError(400, 'Escreva até 2.000 caracteres por mensagem.', 'assistant_request');
   const project = projectId(input.projectId), message = safeRequest(input.message);
@@ -476,6 +478,13 @@ export async function roleChat(db: D1Database, actor: PortalActor | null, input:
   if (!hasMedia && officialSearchOn(config) && (explicitSearch || isOfficialSearch(message))) {
     await resolveRoleScope(db, current, organizationId, input.scope);
     history(input.history);
+    // Sem custo de IA, mas cada busca lê sites públicos: limite por pessoa e por organização, antes de qualquer pedido externo.
+    try {
+      await rateLimitAll(db, [{ bucket: `role-official:${current.userId}`, limit: 20, windowMs: 60_000 }, { bucket: `role-official:org:${organizationId}`, limit: 300, windowMs: 60_000 }]);
+    } catch (error) {
+      if (error instanceof HttpError && error.code === 'rate_limited') throw new HttpError(429, 'Muitas buscas seguidas. Espere um minuto e tente de novo.', 'role_official_rate');
+      throw error;
+    }
     const authorization = roleAuthorization(db, current, project, organizationId, revision);
     try {
       await authorization.first();
